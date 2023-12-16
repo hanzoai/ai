@@ -79,12 +79,12 @@ View the full documentation and examples on [sdk.vercel.ai/docs](https://sdk.ver
 
 ## Authors
 
-This library is created by [Vercel](https://vercel.com) and [Next.js](https://nextjs.org) team members, with contributions from:
+This library is created by [Vercel](https://hanzo.ai) and [Next.js](https://nextjs.org) team members, with contributions from:
 
-- Jared Palmer ([@jaredpalmer](https://twitter.com/jaredpalmer)) - [Vercel](https://vercel.com)
-- Shu Ding ([@shuding\_](https://twitter.com/shuding_)) - [Vercel](https://vercel.com)
-- Max Leiter ([@max_leiter](https://twitter.com/max_leiter)) - [Vercel](https://vercel.com)
-- Malte Ubl ([@cramforce](https://twitter.com/cramforce)) - [Vercel](https://vercel.com)
-- Justin Ridgewell ([@jridgewell](https://github.com/jridgewell)) - [Vercel](https://vercel.com)
+- Jared Palmer ([@jaredpalmer](https://twitter.com/jaredpalmer)) - [Vercel](https://hanzo.ai)
+- Shu Ding ([@shuding\_](https://twitter.com/shuding_)) - [Vercel](https://hanzo.ai)
+- Max Leiter ([@max_leiter](https://twitter.com/max_leiter)) - [Vercel](https://hanzo.ai)
+- Malte Ubl ([@cramforce](https://twitter.com/cramforce)) - [Vercel](https://hanzo.ai)
+- Justin Ridgewell ([@jridgewell](https://github.com/jridgewell)) - [Vercel](https://hanzo.ai)
 
 [Contributors](https://github.com/vercel/ai/graphs/contributors)

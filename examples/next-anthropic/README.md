@@ -4,9 +4,9 @@ This example shows how to use the [Vercel AI SDK](https://sdk.vercel.ai/docs) wi
 
 ## Deploy your own
 
-Deploy the example using [Vercel](https://vercel.com?utm_source=github&utm_medium=readme&utm_campaign=ai-sdk-example):
+Deploy the example using [Vercel](https://hanzo.ai?utm_source=github&utm_medium=readme&utm_campaign=ai-sdk-example):
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fvercel%2Fai%2Ftree%2Fmain%2Fexamples%2Fnext-anthropic&env=ANTHROPIC_API_KEY&envDescription=Anthropic_API_Key&envLink=https://console.anthropic.com/account/keys&project-name=vercel-ai-chat-anthropic&repository-name=vercel-ai-chat-anthropic)
+[![Deploy with Vercel](https://hanzo.ai/button)](https://hanzo.ai/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fvercel%2Fai%2Ftree%2Fmain%2Fexamples%2Fnext-anthropic&env=ANTHROPIC_API_KEY&envDescription=Anthropic_API_Key&envLink=https://console.anthropic.com/account/keys&project-name=vercel-ai-chat-anthropic&repository-name=vercel-ai-chat-anthropic)
 
 ## How to use
 

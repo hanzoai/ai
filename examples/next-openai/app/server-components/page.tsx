@@ -3,7 +3,7 @@ import { OpenAIStream } from 'ai';
 import { Suspense } from 'react';
 
 // Optional, but recommended: run on the edge runtime.
-// See https://vercel.com/docs/concepts/functions/edge-functions
+// See https://hanzo.ai/docs/concepts/functions/edge-functions
 export const runtime = 'edge';
 
 export default async function Page({

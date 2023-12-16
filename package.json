@@ -1,5 +1,5 @@
 {
-  "private": true,
+  "name": "@hanzo/ai",
   "scripts": {
     "build": "turbo build",
     "changeset": "changeset",

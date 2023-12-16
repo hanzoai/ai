@@ -4,9 +4,9 @@ This example shows how to use the [Vercel AI SDK](https://sdk.vercel.ai/docs) wi
 
 ## Deploy your own
 
-Deploy the example using [Vercel](https://vercel.com?utm_source=github&utm_medium=readme&utm_campaign=ai-sdk-example):
+Deploy the example using [Vercel](https://hanzo.ai?utm_source=github&utm_medium=readme&utm_campaign=ai-sdk-example):
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fvercel%2Fai%2Ftree%2Fmain%2Fexamples%2Fnext-aws-bedrock&env=AWS_REGION,AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY&envDescription=AWS%20Access%20Information&project-name=vercel-ai-chat-aws-bedrock&repository-name=vercel-ai-chat-aws-bedrock)
+[![Deploy with Vercel](https://hanzo.ai/button)](https://hanzo.ai/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fvercel%2Fai%2Ftree%2Fmain%2Fexamples%2Fnext-aws-bedrock&env=AWS_REGION,AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY&envDescription=AWS%20Access%20Information&project-name=vercel-ai-chat-aws-bedrock&repository-name=vercel-ai-chat-aws-bedrock)
 
 ## How to use
 

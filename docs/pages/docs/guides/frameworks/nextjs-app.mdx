@@ -18,7 +18,7 @@ import OpenAI from 'openai';
 import { OpenAIStream, StreamingTextResponse } from 'ai';
 
 // Optional, but recommended: run on the edge runtime.
-// See https://vercel.com/docs/concepts/functions/edge-functions
+// See https://hanzo.ai/docs/concepts/functions/edge-functions
 export const runtime = 'edge';
 
 const openai = new OpenAI({
@@ -44,7 +44,7 @@ export async function POST(req: Request) {
 }
 ```
 
-Note that using the Edge Runtime is optional but highly recommended due to [longer streaming timeouts on Vercel](https://vercel.com/docs/concepts/functions/edge-functions/limitations#maximum-initial-response-time), no cold starts, and lower latency.
+Note that using the Edge Runtime is optional but highly recommended due to [longer streaming timeouts on Vercel](https://hanzo.ai/docs/concepts/functions/edge-functions/limitations#maximum-initial-response-time), no cold starts, and lower latency.
 
 ## In Server Components
 
@@ -56,7 +56,7 @@ import { OpenAIStream } from 'ai';
 import { Suspense } from 'react';
 
 // Optional, but recommended: run on the edge runtime.
-// See https://vercel.com/docs/concepts/functions/edge-functions
+// See https://hanzo.ai/docs/concepts/functions/edge-functions
 export const runtime = 'edge';
 
 const openai = new OpenAI({
