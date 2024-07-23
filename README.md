@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD030 -->
 
 # ai
-# Hanzo AI - Build LLM Apps Easily
+### Build LLM Apps Easily
 
 [![Release Notes](https://img.shields.io/github/release/hanzoai/ai)](https://github.com/hanzoai/ai/releases)
 [![Discord](https://img.shields.io/discord/1087698854775881778?label=Discord&logo=discord)](https://discord.gg/jbaHfsRVBW)
