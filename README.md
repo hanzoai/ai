@@ -144,7 +144,7 @@ Hanzo support different environment variables to configure your instance. You ca
 
 ## 🌐 Self Host
 
-Deploy Hanzo self-hosted in your existing infrastructure, we support various [deployments](https://docs.hanzo.ai/configuration/deployment)
+Deploy Hanzo AI self-hosted in your existing infrastructure, we support various [deployments](https://docs.hanzo.ai/configuration/deployment)
 
 -   [AWS](https://docs.hanzo.ai/deployment/aws)
 -   [Azure](https://docs.hanzo.ai/deployment/azure)
