@@ -4,7 +4,6 @@
 ### Build LLM Apps Easily
 
 [![Release Notes](https://img.shields.io/github/release/hanzoai/ai)](https://github.com/hanzoai/ai/releases)
-[![Discord](https://img.shields.io/discord/1087698854775881778?label=Discord&logo=discord)](https://discord.gg/jbaHfsRVBW)
 [![Twitter Follow](https://img.shields.io/twitter/follow/HanzoAI?style=social)](https://twitter.com/HanzoAI)
 [![GitHub star chart](https://img.shields.io/github/stars/HanzoAI/Hanzo?style=social)](https://star-history.com/#hanzoai/ai)
 [![GitHub fork](https://img.shields.io/github/forks/HanzoAI/Hanzo?style=social)](https://github.com/hanzoai/ai/fork)
@@ -195,8 +194,7 @@ Thanks go to these awesome contributors
 <img src="https://contrib.rocks/image?repo=hanzoai/ai" />
 </a>
 
-See [contributing guide](CONTRIBUTING.md). Reach out to us at [Discord](https://discord.gg/jbaHfsRVBW) if you have any questions or issues.
-[![Star History Chart](https://api.star-history.com/svg?repos=HanzoAI/Hanzo&type=Timeline)](https://star-history.com/#hanzoai/ai&Date)
+See [contributing guide](CONTRIBUTING.md). Reach out to us via [Email](mailto:hi@hanzo.ai) if you have any questions or issues.
 
 ## 📄 License
 
