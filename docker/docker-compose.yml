@@ -1,0 +1,36 @@
+version: '3.1'
+
+services:
+    hanzo:
+        image: hanzoai/hanzo
+        restart: always
+        environment:
+            - PORT=${PORT}
+            - CORS_ORIGINS=${CORS_ORIGINS}
+            - IFRAME_ORIGINS=${IFRAME_ORIGINS}
+            - HANZO_USERNAME=${HANZO_USERNAME}
+            - HANZO_PASSWORD=${HANZO_PASSWORD}
+            - HANZO_FILE_SIZE_LIMIT=${HANZO_FILE_SIZE_LIMIT}
+            - DEBUG=${DEBUG}
+            - DATABASE_PATH=${DATABASE_PATH}
+            - DATABASE_TYPE=${DATABASE_TYPE}
+            - DATABASE_PORT=${DATABASE_PORT}
+            - DATABASE_HOST=${DATABASE_HOST}
+            - DATABASE_NAME=${DATABASE_NAME}
+            - DATABASE_USER=${DATABASE_USER}
+            - DATABASE_PASSWORD=${DATABASE_PASSWORD}
+            - DATABASE_SSL=${DATABASE_SSL}
+            - DATABASE_SSL_KEY_BASE64=${DATABASE_SSL_KEY_BASE64}
+            - APIKEY_PATH=${APIKEY_PATH}
+            - SECRETKEY_PATH=${SECRETKEY_PATH}
+            - HANZO_SECRETKEY_OVERWRITE=${HANZO_SECRETKEY_OVERWRITE}
+            - LOG_LEVEL=${LOG_LEVEL}
+            - LOG_PATH=${LOG_PATH}
+            - BLOB_STORAGE_PATH=${BLOB_STORAGE_PATH}
+            - DISABLE_HANZO_TELEMETRY=${DISABLE_HANZO_TELEMETRY}
+            - MODEL_LIST_CONFIG_JSON=${MODEL_LIST_CONFIG_JSON}
+        ports:
+            - '${PORT}:${PORT}'
+        volumes:
+            - ~/.hanzo:/root/.hanzo
+        entrypoint: /bin/sh -c "sleep 3; hanzo start"
