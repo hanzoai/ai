@@ -1,21 +1,21 @@
 <!-- markdownlint-disable MD030 -->
 
-# Flowise Embed React
+# Hanzo Embed React
 
 React library to display flowise chatbot on your website
 
-![Flowise](https://github.com/FlowiseAI/FlowiseChatEmbed/blob/main/images/ChatEmbed.gif?raw=true)
+![Hanzo](https://github.com/FlowiseAI/FlowiseChatEmbed/blob/main/images/ChatEmbed.gif?raw=true)
 
 ## Install
 
 ```bash
-npm install @hanzo/ai-embed @hanzo/ai-embed-react
+npm install @hanzo/embed @hanzo/embed-react
 ```
 
 or
 
 ```bash
-yarn add @hanzo/ai-embed @hanzo/ai-embed-react
+yarn add @hanzo/embed @hanzo/embed-react
 ```
 
 ## Import
@@ -23,26 +23,19 @@ yarn add @hanzo/ai-embed @hanzo/ai-embed-react
 Full Page Chat
 
 ```tsx
-import { FullPageChat } from "@hanzo/ai-embed-react";
+import { FullPageChat } from '@hanzo/embed-react'
 
 const App = () => {
-  return (
-    <FullPageChat
-      chatflowid="your-chatflow-id"
-      apiHost="http://localhost:3000"
-    />
-  );
-};
+    return <FullPageChat chatflowid='your-chatflow-id' apiHost='http://localhost:3000' />
+}
 ```
 
 Popup Chat
 
 ```tsx
-import { BubbleChat } from "@hanzo/ai-embed-react";
+import { BubbleChat } from '@hanzo/embed-react'
 
 const App = () => {
-  return (
-    <BubbleChat chatflowid="your-chatflow-id" apiHost="http://localhost:3000" />
-  );
-};
+    return <BubbleChat chatflowid='your-chatflow-id' apiHost='http://localhost:3000' />
+}
 ```

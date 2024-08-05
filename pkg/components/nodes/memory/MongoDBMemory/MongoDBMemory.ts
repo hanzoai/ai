@@ -116,7 +116,7 @@ const initializeMongoDB = async (nodeData: INodeData, options: ICommonObject): P
             sessionId: (mongoDBChatMessageHistory as any).sessionId
         })
         const messages = document?.messages || []
-        return messages.map(mapStoredMessageToChatMessage)
+        return messages.map(mapStoredMessageToChatMessage) as BaseMessage[]
     }
 
     mongoDBChatMessageHistory.addMessage = async (message: BaseMessage): Promise<void> => {

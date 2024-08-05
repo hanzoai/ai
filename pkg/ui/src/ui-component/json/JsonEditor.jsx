@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import PropTypes from 'prop-types'
 import { FormControl, Popover } from '@mui/material'
-import ReactJson from 'hanzo-react-json-view'
+import ReactJson from '@hanzo/react-json-view'
 import SelectVariable from './SelectVariable'
 import { cloneDeep } from 'lodash'
 import { getAvailableNodesForVariable } from '@/utils/genericHelper'

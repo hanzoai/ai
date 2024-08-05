@@ -1,12 +1,11 @@
 FROM node:14.15.4-buster-slim
-MAINTAINER mac <mac.gainor@gmail.com>
-
+LABEL maintainer="woo <woo@lux.network>"
 # install the node modules at container build time
 RUN mkdir -p /react
 ADD package.json /react/package.json
 RUN cd /react && npm install --save-dev --silent
 
-# Now add our project code
+## Now add our project code
 ADD . /react
 WORKDIR /react
 

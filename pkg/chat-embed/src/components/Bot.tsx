@@ -285,7 +285,7 @@ export const Bot = (botProps: BotProps & { class?: string }) => {
     });
     setLocalStorageChatflow(props.chatflowid, chatId(), { chatHistory: messages });
   };
-  
+
   // Define the audioRef
   let audioRef: HTMLAudioElement | undefined;
   // CDN link for default receive sound
@@ -626,7 +626,9 @@ export const Bot = (botProps: BotProps & { class?: string }) => {
     const socket = socketIOClient(props.apiHost as string);
 
     socket.on('connect', () => {
-      setSocketIOClientId(socket.id);
+      if (socket.id) {
+        setSocketIOClientId(socket.id);
+      }
     });
 
     socket.on('start', () => {

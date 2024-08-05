@@ -7,6 +7,7 @@
     "bin": {
         "hanzo": "./bin/run"
     },
+    "type": "module",
     "files": [
         "bin",
         "marketplaces",
@@ -54,7 +55,7 @@
     },
     "license": "SEE LICENSE IN LICENSE.md",
     "dependencies": {
-        "@oclif/core": "^1.13.10",
+        "@oclif/core": "^2.0.0",
         "@types/lodash": "^4.14.202",
         "@types/uuid": "^9.0.7",
         "async-mutex": "^0.4.0",
