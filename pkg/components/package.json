@@ -44,7 +44,7 @@
         "@langchain/groq": "^0.0.8",
         "@langchain/langgraph": "^0.0.22",
         "@langchain/mistralai": "^0.0.26",
-        "@langchain/mongodb": "^0.0.1",
+        "@langchain/mongodb": "^0.0.4",
         "@langchain/openai": "^0.0.30",
         "@langchain/pinecone": "^0.0.3",
         "@langchain/qdrant": "^0.0.5",

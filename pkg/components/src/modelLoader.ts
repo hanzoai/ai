@@ -3,7 +3,7 @@ import axios from 'axios'
 import * as fs from 'fs'
 import * as path from 'path'
 
-const MASTER_MODEL_LIST = 'https://raw.githubusercontent.com/HanzoAI/Hanzo/main/packages/components/models.json'
+const MASTER_MODEL_LIST = 'https://raw.githubusercontent.com/hanzoai/ai/main/pkg/components/models.json'
 
 export enum MODEL_TYPE {
     CHAT = 'chat',

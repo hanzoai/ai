@@ -5,9 +5,8 @@
     "main": "dist/index",
     "types": "dist/index.d.ts",
     "bin": {
-        "hanzo": "./bin/run"
+        "@hanzo/ai-server": "./bin/run"
     },
-    "type": "module",
     "files": [
         "bin",
         "marketplaces",
@@ -17,7 +16,7 @@
         "oauth2.html"
     ],
     "oclif": {
-        "bin": "hanzo",
+        "bin": "@hanzo/ai-server",
         "commands": "./dist/commands"
     },
     "scripts": {
@@ -47,15 +46,15 @@
     "keywords": [],
     "homepage": "https://hanzo.ai",
     "author": {
-        "name": "Henry Heng",
-        "email": "henryheng@hanzo.ai"
+        "name": "Hanzo Dev Team",
+        "email": "dev@hanzo.ai"
     },
     "engines": {
         "node": ">=18.15.0 <19.0.0 || ^20"
     },
     "license": "SEE LICENSE IN LICENSE.md",
     "dependencies": {
-        "@oclif/core": "^2.0.0",
+        "@oclif/core": "^1.13.10",
         "@types/lodash": "^4.14.202",
         "@types/uuid": "^9.0.7",
         "async-mutex": "^0.4.0",

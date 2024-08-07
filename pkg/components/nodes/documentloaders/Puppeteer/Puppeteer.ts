@@ -157,7 +157,7 @@ class Puppeteer_DocumentLoaders implements INode {
                 const config: PuppeteerWebBaseLoaderOptions = {
                     launchOptions: {
                         args: ['--no-sandbox'],
-                        headless: 'new'
+                        headless: true
                     }
                 }
                 if (waitUntilGoToOption) {

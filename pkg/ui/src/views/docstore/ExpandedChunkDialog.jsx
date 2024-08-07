@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import PropTypes from 'prop-types'
 import { useDispatch, useSelector } from 'react-redux'
-import ReactJson from 'hanzo-react-json-view'
+import ReactJson from '@hanzo/react-json-view'
 import { HIDE_CANVAS_DIALOG, SHOW_CANVAS_DIALOG } from '@/store/actions'
 
 // Material

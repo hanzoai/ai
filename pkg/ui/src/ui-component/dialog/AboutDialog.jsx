@@ -23,7 +23,7 @@ const AboutDialog = ({ show, onCancel }) => {
                     password
                 }
             }
-            const latestReleaseReq = axios.get('https://api.github.com/repos/HanzoAI/Hanzo/releases/latest')
+            const latestReleaseReq = axios.get('https://api.github.com/repos/hanzoai/ai/releases/latest')
             const currentVersionReq = axios.get(`${baseURL}/api/v1/version`, { ...config })
 
             Promise.all([latestReleaseReq, currentVersionReq])

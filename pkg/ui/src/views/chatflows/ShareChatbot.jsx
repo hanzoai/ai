@@ -421,7 +421,7 @@ const ShareChatbot = ({ isSessionMemory, isAgentCanvas }) => {
                 'titleAvatarSrc',
                 'Title Avatar Link',
                 'string',
-              `https://raw.githubusercontent.com/hanzoai/ai/main/assets/HanzoAI_dark.png`
+              `/assets/images/hanzo_logo_dark.png`
             )}
             {textField(welcomeMessage, 'welcomeMessage', 'Welcome Message', 'string', 'Hello! This is custom welcome message')}
             {textField(errorMessage, 'errorMessage', 'Error Message', 'string', 'This is custom error message')}

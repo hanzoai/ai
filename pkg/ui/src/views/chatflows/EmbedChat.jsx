@@ -40,7 +40,7 @@ function a11yProps(index) {
 
 const embedPopupHtmlCode = (chatflowid) => {
     return `<script type="module">
-    import Chatbot from "https://cdn.jsdelivr.net/npm/hanzo-embed/dist/web.js"
+    import Chatbot from "https://cdn.jsdelivr.net/npm/@hanzo/embed/dist/web.js"
     Chatbot.init({
         chatflowid: "${chatflowid}",
         apiHost: "${baseURL}",
@@ -49,7 +49,7 @@ const embedPopupHtmlCode = (chatflowid) => {
 }
 
 const embedPopupReactCode = (chatflowid) => {
-    return `import { BubbleChat } from 'hanzo-embed-react'
+    return `import { BubbleChat } from '@hanzo/embed-react'
 
 const App = () => {
     return (
@@ -59,9 +59,9 @@ const App = () => {
 }
 
 const embedFullpageHtmlCode = (chatflowid) => {
-    return `<hanzo-fullchatbot></hanzo-fullchatbot>
+    return `<hanzo-chatbot></hanzo-chatbot>
 <script type="module">
-    import Chatbot from "https://cdn.jsdelivr.net/npm/hanzo-embed/dist/web.js"
+    import Chatbot from "https://cdn.jsdelivr.net/npm/@hanzo/embed/dist/web.js"
     Chatbot.initFull({
         chatflowid: "${chatflowid}",
         apiHost: "${baseURL}",
@@ -70,7 +70,7 @@ const embedFullpageHtmlCode = (chatflowid) => {
 }
 
 const embedFullpageReactCode = (chatflowid) => {
-    return `import { FullPageChat } from "hanzo-embed-react"
+    return `import { FullPageChat } from "@hanzo/embed-react"
 
 const App = () => {
     return (
@@ -222,7 +222,7 @@ const chatwindowConfig = (isReact = false) => {
 
 const embedPopupHtmlCodeCustomization = (chatflowid) => {
     return `<script type="module">
-    import Chatbot from "https://cdn.jsdelivr.net/npm/hanzo-embed/dist/web.js"
+    import Chatbot from "https://cdn.jsdelivr.net/npm/@hanzo/embed/dist/web.js"
     Chatbot.init({
         chatflowid: "${chatflowid}",
         apiHost: "${baseURL}",
@@ -239,7 +239,7 @@ const embedPopupHtmlCodeCustomization = (chatflowid) => {
 }
 
 const embedPopupReactCodeCustomization = (chatflowid) => {
-    return `import { BubbleChat } from 'hanzo-embed-react'
+    return `import { BubbleChat } from '@hanzo/embed-react'
 
 const App = () => {
     return (
@@ -257,9 +257,9 @@ const App = () => {
 }
 
 const embedFullpageHtmlCodeCustomization = (chatflowid) => {
-    return `<hanzo-fullchatbot></hanzo-fullchatbot>
+    return `<hanzo-chatbot></hanzo-chatbot>
 <script type="module">
-    import Chatbot from "https://cdn.jsdelivr.net/npm/hanzo-embed/dist/web.js"
+    import Chatbot from "https://cdn.jsdelivr.net/npm/@hanzo/embed/dist/web.js"
     Chatbot.initFull({
         chatflowid: "${chatflowid}",
         apiHost: "${baseURL}",
@@ -271,7 +271,7 @@ const embedFullpageHtmlCodeCustomization = (chatflowid) => {
 }
 
 const embedFullpageReactCodeCustomization = (chatflowid) => {
-    return `import { FullPageChat } from "hanzo-embed-react"
+    return `import { FullPageChat } from "@hanzo/embed-react"
 
 const App = () => {
     return (
@@ -352,11 +352,11 @@ const EmbedChat = ({ chatflowid }) => {
                                     <a
                                         rel='noreferrer'
                                         target='_blank'
-                                        href='https://www.npmjs.com/package/hanzo-embed?activeTab=versions'
+                                        href='https://www.npmjs.com/package/@hanzo/embed?activeTab=versions'
                                     >
                                         version
                                     </a>
-                                    :&nbsp;<code>{`https://cdn.jsdelivr.net/npm/hanzo-embed@<version>/dist/web.js`}</code>
+                                    :&nbsp;<code>{`https://cdn.jsdelivr.net/npm/@hanzo/embed@<version>/dist/web.js`}</code>
                                 </p>
                             </span>
                             <div style={{ height: 10 }}></div>

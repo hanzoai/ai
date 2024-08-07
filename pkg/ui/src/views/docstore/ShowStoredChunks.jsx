@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
 import { useNavigate } from 'react-router-dom'
-import ReactJson from 'hanzo-react-json-view'
+import ReactJson from '@hanzo/react-json-view'
 
 // material-ui
 import { Box, Card, Button, Grid, IconButton, Stack, Typography } from '@mui/material'

@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react'
 import { useSelector } from 'react-redux'
 import PropTypes from 'prop-types'
 import { Dialog, DialogContent, DialogTitle } from '@mui/material'
-import ReactJson from 'hanzo-react-json-view'
+import ReactJson from '@hanzo/react-json-view'
 
 const SourceDocDialog = ({ show, dialogProps, onCancel }) => {
     const portalElement = document.getElementById('portal')

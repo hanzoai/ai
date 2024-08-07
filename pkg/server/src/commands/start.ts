@@ -1,4 +1,5 @@
-import { Command, Flags } from '@oclif/core'
+import { Command, Flags,  } from '@oclif/core'
+import { ArgInput } from '@oclif/core/lib/interfaces/parser'
 import path from 'path'
 import * as Server from '../index'
 import * as DataSource from '../DataSource'
@@ -14,7 +15,7 @@ enum EXIT_CODE {
 let processExitCode = EXIT_CODE.SUCCESS
 
 export default class Start extends Command {
-    static args = []
+    static args: ArgInput
     static flags = {
         HANZO_USERNAME: Flags.string(),
         HANZO_PASSWORD: Flags.string(),
