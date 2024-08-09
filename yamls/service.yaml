@@ -1,0 +1,15 @@
+apiVersion: 'v1'
+kind: 'Service'
+metadata:
+    name: 'hazo-flowise-service'
+    namespace: 'default'
+    labels:
+        app: 'hanzo-flowise'
+spec:
+    ports:
+        - protocol: 'TCP'
+          port: 80
+          targetPort: 3000
+    selector:
+        app: 'hanzo-flowise'
+    type: 'LoadBalancer'
