@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router-dom'
 
 // material-ui
 import { useTheme } from '@mui/material/styles'
-import { Avatar, Box, ButtonBase, Switch } from '@mui/material'
+import { Box, Switch } from '@mui/material'
 import { styled } from '@mui/material/styles'
 
 // project imports
@@ -13,7 +13,6 @@ import LogoSection from '../LogoSection'
 import ProfileSection from './ProfileSection'
 
 // assets
-import { IconMenu2 } from '@tabler/icons-react'
 
 // store
 import { SET_DARKMODE } from '@/store/actions'
@@ -104,7 +103,7 @@ const Header = ({ handleLeftDrawerToggle }) => {
                 <Box component='span' sx={{ display: { xs: 'none', md: 'block' }, flexGrow: 1 }}>
                     <LogoSection />
                 </Box>
-                <ButtonBase sx={{ borderRadius: '12px', overflow: 'hidden' }}>
+                {/* <ButtonBase sx={{ borderRadius: '12px', overflow: 'hidden' }}>
                     <Avatar
                         variant='rounded'
                         sx={{
@@ -123,7 +122,7 @@ const Header = ({ handleLeftDrawerToggle }) => {
                     >
                         <IconMenu2 stroke={1.5} size='1.3rem' />
                     </Avatar>
-                </ButtonBase>
+                </ButtonBase> */}
             </Box>
             <Box sx={{ flexGrow: 1 }} />
             <MaterialUISwitch checked={isDark} onChange={changeDarkMode} />

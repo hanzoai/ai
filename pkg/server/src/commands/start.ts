@@ -1,4 +1,4 @@
-import { Command, Flags,  } from '@oclif/core'
+import { Command, Flags } from '@oclif/core'
 import { ArgInput } from '@oclif/core/lib/interfaces/parser'
 import path from 'path'
 import * as Server from '../index'

@@ -92,10 +92,10 @@ const MainLayout = () => {
             </AppBar>
 
             {/* drawer */}
-            <Sidebar drawerOpen={leftDrawerOpened} drawerToggle={handleLeftDrawerToggle} />
+            <Sidebar drawerOpen={false} drawerToggle={handleLeftDrawerToggle} />
 
             {/* main content */}
-            <Main theme={theme} open={leftDrawerOpened}>
+            <Main theme={theme} open={false}>
                 <Outlet />
             </Main>
         </Box>
