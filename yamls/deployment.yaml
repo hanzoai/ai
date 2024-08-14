@@ -1,0 +1,24 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+    name: hanzo-flowise
+    labels:
+        app: hanzo-flowise
+spec:
+    selector:
+        matchLabels:
+            app: hanzo-flowise
+    replicas: 1
+    template:
+        metadata:
+            labels:
+                app: hanzo-flowise
+        spec:
+            containers:
+                - name: hanzo-flowise
+                  image: gcr.io/hanzo-production/hanzo-flowise:dev
+                  imagePullPolicy: Always
+                  resources:
+                      requests:
+                          cpu: '1'
+                          memory: '1Gi'
