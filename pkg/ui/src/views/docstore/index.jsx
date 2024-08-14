@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useSelector } from 'react-redux'
 
 // material-ui
@@ -43,6 +43,9 @@ import { baseURL, gridSpacing } from '@/store/constant'
 // ==============================|| DOCUMENTS ||============================== //
 
 const Documents = () => {
+    const [searchParams] = useSearchParams()
+    const project = searchParams.get('project')
+
     const theme = useTheme()
     const customization = useSelector((state) => state.customization)
 

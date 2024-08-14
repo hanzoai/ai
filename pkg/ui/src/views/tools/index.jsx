@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from 'react'
+import { useSearchParams } from 'react-router-dom'
 
 // material-ui
 import { Box, Stack, Button, ButtonGroup, Skeleton } from '@mui/material'
@@ -25,6 +26,9 @@ import ErrorBoundary from '@/ErrorBoundary'
 // ==============================|| CHATFLOWS ||============================== //
 
 const Tools = () => {
+    const [searchParams] = useSearchParams()
+    const project = searchParams.get('project')
+
     const getAllToolsApi = useApi(toolsApi.getAllTools)
 
     const [isLoading, setLoading] = useState(true)
