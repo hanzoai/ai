@@ -73,7 +73,7 @@ const Documents = () => {
     }
 
     const goToDocumentStore = (id) => {
-        navigate('/document-stores/' + id)
+        navigate('/document-stores/' + id + `?project=${project}`)
     }
 
     const addNew = () => {
@@ -100,8 +100,15 @@ const Documents = () => {
 
     useEffect(() => {
         if (getAllDocumentStores.data) {
+            const data = getAllDocumentStores.data
+            const newData = []
+            for (let j = 0; j < data.length; j++) {
+                if (data[j].projectId == project) {
+                    newData.push(data[j])
+                }
+            }
             try {
-                const docStores = getAllDocumentStores.data
+                const docStores = newData
                 if (!Array.isArray(docStores)) return
                 const loaderImages = {}
 

@@ -1,4 +1,5 @@
 import { createPortal } from 'react-dom'
+import { useSearchParams } from 'react-router-dom'
 import PropTypes from 'prop-types'
 import { useState, useEffect } from 'react'
 import { useDispatch } from 'react-redux'
@@ -40,6 +41,9 @@ const variableTypes = [
 ]
 
 const AddEditVariableDialog = ({ show, dialogProps, onCancel, onConfirm, setError }) => {
+    const [searchParams] = useSearchParams()
+    const project = searchParams.get('project')
+
     const portalElement = document.getElementById('portal')
 
     const dispatch = useDispatch()
@@ -92,7 +96,8 @@ const AddEditVariableDialog = ({ show, dialogProps, onCancel, onConfirm, setErro
             const obj = {
                 name: variableName,
                 value: variableValue,
-                type: variableType
+                type: variableType,
+                projectId: project
             }
             const createResp = await variablesApi.createVariable(obj)
             if (createResp.data) {

@@ -204,7 +204,14 @@ const Credentials = () => {
 
     useEffect(() => {
         if (getAllCredentialsApi.data) {
-            setCredentials(getAllCredentialsApi.data)
+            const data = getAllChatflowsApi.data
+            const newData = []
+            for (let j = 0; j < data.length; j++) {
+                if (data[j].projectId == project) {
+                    newData.push(data[j])
+                }
+            }
+            setCredentials(newData)
         }
     }, [getAllCredentialsApi.data])
 

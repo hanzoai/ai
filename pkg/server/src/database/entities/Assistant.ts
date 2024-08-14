@@ -7,6 +7,9 @@ export class Assistant implements IAssistant {
     @PrimaryGeneratedColumn('uuid')
     id: string
 
+    @Column()
+    projectId: string
+
     @Column({ type: 'text' })
     details: string
 

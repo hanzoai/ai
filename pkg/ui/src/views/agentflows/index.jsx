@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 
 // material-ui
 import { Box, Skeleton, Stack, ToggleButton, ToggleButtonGroup } from '@mui/material'
@@ -34,6 +34,8 @@ import { IconPlus, IconLayoutGrid, IconList } from '@tabler/icons-react'
 const Agentflows = () => {
     const navigate = useNavigate()
     const theme = useTheme()
+    const [searchParams] = useSearchParams()
+    const project = searchParams.get('project')
 
     const [isLoading, setLoading] = useState(true)
     const [error, setError] = useState(null)
@@ -69,11 +71,11 @@ const Agentflows = () => {
     }
 
     const addNew = () => {
-        navigate('/agentcanvas')
+        navigate(`/agentcanvas?project=${project}`)
     }
 
     const goToCanvas = (selectedAgentflow) => {
-        navigate(`/agentcanvas/${selectedAgentflow.id}`)
+        navigate(`/agentcanvas/${selectedAgentflow.id}?project=${project}`)
     }
 
     useEffect(() => {
@@ -102,6 +104,14 @@ const Agentflows = () => {
 
     useEffect(() => {
         if (getAllAgentflows.data) {
+            const data = getAllAgentflows.data
+            const newData = []
+            for (let j = 0; j < data.length; j++) {
+                if (data[j].projectId == project) {
+                    newData.push(data[j])
+                }
+            }
+            getAllAgentflows.setData(newData)
             try {
                 const agentflows = getAllAgentflows.data
                 const images = {}

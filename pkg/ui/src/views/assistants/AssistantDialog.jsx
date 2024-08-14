@@ -1,4 +1,5 @@
 import { createPortal } from 'react-dom'
+import { useSearchParams } from 'react-router-dom'
 import PropTypes from 'prop-types'
 import { useState, useEffect, useRef } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
@@ -101,6 +102,8 @@ const assistantAvailableModels = [
 ]
 
 const AssistantDialog = ({ show, dialogProps, onCancel, onConfirm, setError }) => {
+    const [searchParams] = useSearchParams()
+    const project = searchParams.get('project')
     const portalElement = document.getElementById('portal')
     useNotifier()
     const dispatch = useDispatch()
@@ -337,7 +340,8 @@ const AssistantDialog = ({ show, dialogProps, onCancel, onConfirm, setError }) =
             const obj = {
                 details: JSON.stringify(assistantDetails),
                 iconSrc: assistantIcon,
-                credential: assistantCredential
+                credential: assistantCredential,
+                projectId: project
             }
 
             const createResp = await assistantsApi.createNewAssistant(obj)

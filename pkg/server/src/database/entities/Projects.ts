@@ -1,9 +1,8 @@
 /* eslint-disable */
-import { Entity, Column, PrimaryGeneratedColumn, Index, CreateDateColumn, UpdateDateColumn } from 'typeorm'
-import { ICredential } from '../../Interface'
-
+import { Entity, Column, CreateDateColumn, UpdateDateColumn, PrimaryGeneratedColumn } from 'typeorm'
+import { IProject } from '../../Interface'
 @Entity()
-export class Credential implements ICredential {
+export class Projects implements IProject {
     @PrimaryGeneratedColumn('uuid')
     id: string
 
@@ -14,10 +13,7 @@ export class Credential implements ICredential {
     projectId: string
 
     @Column()
-    credentialName: string
-
-    @Column({ type: 'text' })
-    encryptedData: string
+    orgId: string
 
     @Column({ type: 'timestamp' })
     @CreateDateColumn()

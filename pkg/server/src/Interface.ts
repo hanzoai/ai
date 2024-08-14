@@ -101,6 +101,24 @@ export interface IVariable {
     createdDate: Date
 }
 
+export interface IProject {
+    id: string
+    name: string
+    projectId: string
+    orgId: string
+    createdDate: Date
+    updatedDate: Date
+}
+
+export interface IApiKey {
+    id: string
+    keyName: string
+    apiKey: string
+    projectId: string
+    apiSecret: string
+    updatedDate: Date
+}
+
 export interface ILead {
     id: string
     name?: string

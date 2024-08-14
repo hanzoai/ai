@@ -189,7 +189,14 @@ const Variables = () => {
 
     useEffect(() => {
         if (getAllVariables.data) {
-            setVariables(getAllVariables.data)
+            const data = getAllVariables.data
+            const newData = []
+            for (let j = 0; j < data.length; j++) {
+                if (data[j].projectId == project) {
+                    newData.push(data[j])
+                }
+            }
+            setVariables(newData)
         }
     }, [getAllVariables.data])
 

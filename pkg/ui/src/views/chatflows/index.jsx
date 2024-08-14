@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 
 // material-ui
 import { Box, Skeleton, Stack, ToggleButton, ToggleButtonGroup } from '@mui/material'
@@ -34,6 +34,8 @@ import { IconPlus, IconLayoutGrid, IconList } from '@tabler/icons-react'
 const Chatflows = () => {
     const navigate = useNavigate()
     const theme = useTheme()
+    const [searchParams] = useSearchParams()
+    const project = searchParams.get('project')
 
     const [isLoading, setLoading] = useState(true)
     const [error, setError] = useState(null)
@@ -69,11 +71,11 @@ const Chatflows = () => {
     }
 
     const addNew = () => {
-        navigate('/canvas')
+        navigate(`/canvas?project=${project}`)
     }
 
     const goToCanvas = (selectedChatflow) => {
-        navigate(`/canvas/${selectedChatflow.id}`)
+        navigate(`/canvas/${selectedChatflow.id}?project=${project}`)
     }
 
     useEffect(() => {
@@ -102,8 +104,16 @@ const Chatflows = () => {
 
     useEffect(() => {
         if (getAllChatflowsApi.data) {
+            const data = getAllChatflowsApi.data
+            const newData = []
+            for (let j = 0; j < data.length; j++) {
+                if (data[j].projectId == project) {
+                    newData.push(data[j])
+                }
+            }
+            getAllChatflowsApi.setData(newData)
             try {
-                const chatflows = getAllChatflowsApi.data
+                const chatflows = newData
                 const images = {}
                 for (let i = 0; i < chatflows.length; i += 1) {
                     const flowDataStr = chatflows[i].flowData

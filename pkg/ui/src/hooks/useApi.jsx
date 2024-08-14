@@ -19,6 +19,7 @@ export default (apiFunc) => {
 
     return {
         data,
+        setData,
         error,
         loading,
         request

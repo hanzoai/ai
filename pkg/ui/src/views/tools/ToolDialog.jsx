@@ -1,4 +1,5 @@
 import { createPortal } from 'react-dom'
+import { useSearchParams } from 'react-router-dom'
 import PropTypes from 'prop-types'
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
@@ -56,6 +57,9 @@ try {
 }`
 
 const ToolDialog = ({ show, dialogProps, onUseTemplate, onCancel, onConfirm, setError }) => {
+    const [searchParams] = useSearchParams()
+    const project = searchParams.get('project')
+
     const portalElement = document.getElementById('portal')
 
     const customization = useSelector((state) => state.customization)
@@ -259,7 +263,8 @@ const ToolDialog = ({ show, dialogProps, onUseTemplate, onCancel, onConfirm, set
                 color: generateRandomGradient(),
                 schema: JSON.stringify(toolSchema),
                 func: toolFunc,
-                iconSrc: toolIcon
+                iconSrc: toolIcon,
+                projectId: project
             }
             const createResp = await toolsApi.createNewTool(obj)
             if (createResp.data) {

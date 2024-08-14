@@ -10,6 +10,9 @@ export class Tool implements ITool {
     @Column()
     name: string
 
+    @Column()
+    projectId: string
+
     @Column({ type: 'text' })
     description: string
 

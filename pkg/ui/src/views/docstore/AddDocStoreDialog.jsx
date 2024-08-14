@@ -1,4 +1,5 @@
 import { createPortal } from 'react-dom'
+import { useSearchParams } from 'react-router-dom'
 import PropTypes from 'prop-types'
 import { useState, useEffect } from 'react'
 import { useDispatch } from 'react-redux'
@@ -26,6 +27,9 @@ import documentStoreApi from '@/api/documentstore'
 import useNotifier from '@/utils/useNotifier'
 
 const AddDocStoreDialog = ({ show, dialogProps, onCancel, onConfirm }) => {
+    const [searchParams] = useSearchParams()
+    const project = searchParams.get('project')
+
     const portalElement = document.getElementById('portal')
 
     const dispatch = useDispatch()
@@ -69,7 +73,8 @@ const AddDocStoreDialog = ({ show, dialogProps, onCancel, onConfirm }) => {
         try {
             const obj = {
                 name: documentStoreName,
-                description: documentStoreDesc
+                description: documentStoreDesc,
+                projectId: project
             }
             const createResp = await documentStoreApi.createDocumentStore(obj)
             if (createResp.data) {

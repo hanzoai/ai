@@ -3,7 +3,7 @@ import ReactFlow, { addEdge, Controls, Background, useNodesState, useEdgesState 
 import 'reactflow/dist/style.css'
 
 import { useDispatch, useSelector } from 'react-redux'
-import { useNavigate, useLocation } from 'react-router-dom'
+import { useNavigate, useLocation, useSearchParams } from 'react-router-dom'
 import {
     REMOVE_DIRTY,
     SET_DIRTY,
@@ -62,6 +62,8 @@ const edgeTypes = { buttonedge: ButtonEdge }
 const Canvas = () => {
     const theme = useTheme()
     const navigate = useNavigate()
+    const [searchParams] = useSearchParams()
+    const project = searchParams.get('project')
 
     const { state } = useLocation()
     const templateFlowData = state ? state.templateFlowData : ''
@@ -179,7 +181,7 @@ const Canvas = () => {
             try {
                 await chatflowsApi.deleteChatflow(chatflow.id)
                 localStorage.removeItem(`${chatflow.id}_INTERNAL`)
-                navigate(isAgentCanvas ? '/agentflows' : '/')
+                navigate(isAgentCanvas ? `/agentflows?project=${project}` : `/chatflows?project=${project}`)
             } catch (error) {
                 enqueueSnackbar({
                     message: typeof error.response.data === 'object' ? error.response.data.message : error.response.data,
@@ -220,6 +222,7 @@ const Canvas = () => {
             if (!chatflow.id) {
                 const newChatflowBody = {
                     name: chatflowName,
+                    projectId: project,
                     deployed: false,
                     isPublic: false,
                     flowData,
@@ -418,7 +421,11 @@ const Canvas = () => {
             const chatflow = createNewChatflowApi.data
             dispatch({ type: SET_CHATFLOW, chatflow })
             saveChatflowSuccess()
-            window.history.replaceState(state, null, `/${isAgentCanvas ? 'agentcanvas' : 'canvas'}/${chatflow.id}`)
+            window.history.replaceState(
+                state,
+                null,
+                `/${isAgentCanvas ? 'agentcanvas' : 'canvas'}/${chatflow.id}?project=${chatflow.projectId}`
+            )
         } else if (createNewChatflowApi.error) {
             errorFailed(`Failed to save ${canvasTitle}: ${createNewChatflowApi.error.response.data.message}`)
         }

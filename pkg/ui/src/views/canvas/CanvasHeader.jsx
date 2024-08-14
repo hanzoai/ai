@@ -29,6 +29,7 @@ import { generateExportFlowData } from '@/utils/genericHelper'
 import { uiBaseURL } from '@/store/constant'
 import { SET_CHATFLOW } from '@/store/actions'
 import ViewLeadsDialog from '@/ui-component/dialog/ViewLeadsDialog'
+import { useSearchParams } from 'react-router-dom'
 
 // ==============================|| CANVAS HEADER ||============================== //
 
@@ -36,6 +37,8 @@ const CanvasHeader = ({ chatflow, isAgentCanvas, handleSaveFlow, handleDeleteFlo
     const theme = useTheme()
     const dispatch = useDispatch()
     const navigate = useNavigate()
+    const [searchParams] = useSearchParams()
+    const project = searchParams.get('project')
     const flowNameRef = useRef()
     const settingsRef = useRef()
 
@@ -94,7 +97,7 @@ const CanvasHeader = ({ chatflow, isAgentCanvas, handleSaveFlow, handleDeleteFlo
                 const parsedFlowData = JSON.parse(flowData)
                 flowData = JSON.stringify(parsedFlowData)
                 localStorage.setItem('duplicatedFlowData', flowData)
-                window.open(`${uiBaseURL}/${isAgentCanvas ? 'agentcanvas' : 'canvas'}`, '_blank')
+                window.open(`${uiBaseURL}/${isAgentCanvas ? 'agentcanvas' : 'canvas'}?project=${project}`, '_blank')
             } catch (e) {
                 console.error(e)
             }
@@ -226,7 +229,9 @@ const CanvasHeader = ({ chatflow, isAgentCanvas, handleSaveFlow, handleDeleteFlo
                                 }}
                                 color='inherit'
                                 onClick={() =>
-                                    window.history.state && window.history.state.idx > 0 ? navigate(-1) : navigate('/', { replace: true })
+                                    window.history.state && window.history.state.idx > 0
+                                        ? navigate(-1)
+                                        : navigate(`/?project=${project}`, { replace: true })
                                 }
                             >
                                 <IconChevronLeft stroke={1.5} size='1.3rem' />

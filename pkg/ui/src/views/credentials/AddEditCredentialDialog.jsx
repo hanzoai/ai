@@ -1,4 +1,5 @@
 import { createPortal } from 'react-dom'
+import { useSearchParams } from 'react-router-dom'
 import PropTypes from 'prop-types'
 import { useState, useEffect } from 'react'
 import { useDispatch } from 'react-redux'
@@ -30,6 +31,9 @@ import { baseURL, REDACTED_CREDENTIAL_VALUE } from '@/store/constant'
 import { HIDE_CANVAS_DIALOG, SHOW_CANVAS_DIALOG } from '@/store/actions'
 
 const AddEditCredentialDialog = ({ show, dialogProps, onCancel, onConfirm, setError }) => {
+    const [searchParams] = useSearchParams()
+    const project = searchParams.get('project')
+
     const portalElement = document.getElementById('portal')
 
     const dispatch = useDispatch()
@@ -113,7 +117,8 @@ const AddEditCredentialDialog = ({ show, dialogProps, onCancel, onConfirm, setEr
             const obj = {
                 name,
                 credentialName: componentCredential.name,
-                plainDataObj: credentialData
+                plainDataObj: credentialData,
+                projectId: project
             }
             const createResp = await credentialsApi.createCredential(obj)
             if (createResp.data) {

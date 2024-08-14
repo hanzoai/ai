@@ -9,6 +9,9 @@ export class DocumentStore implements IDocumentStore {
     @Column({ nullable: false, type: 'text' })
     name: string
 
+    @Column()
+    projectId: string
+
     @Column({ nullable: true, type: 'text' })
     description: string
 

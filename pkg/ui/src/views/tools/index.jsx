@@ -101,6 +101,19 @@ const Tools = () => {
     }, [])
 
     useEffect(() => {
+        if (getAllToolsApi.data) {
+            const data = getAllToolsApi.data
+            const newData = []
+            for (let j = 0; j < data.length; j++) {
+                if (data[j].projectId == project) {
+                    newData.push(data[j])
+                }
+            }
+            getAllToolsApi.setData(newData)
+        }
+    }, [getAllToolsApi.data])
+
+    useEffect(() => {
         setLoading(getAllToolsApi.loading)
     }, [getAllToolsApi.loading])
 

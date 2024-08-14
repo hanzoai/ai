@@ -21,6 +21,14 @@ import { AddLeadToChatMessage1711537986113 } from './1711537986113-AddLeadToChat
 import { AddAgentReasoningToChatMessage1714679514451 } from './1714679514451-AddAgentReasoningToChatMessage'
 import { AddTypeToChatFlow1766759476232 } from './1766759476232-AddTypeToChatFlow'
 import { AddActionToChatMessage1721078251523 } from './1721078251523-AddActionToChatMessage'
+import { Projects1723571494453 } from './1723571494453-Projects'
+import { AddApiKey1723572854165 } from './1723572854165-AddApiKey'
+import { AddProjectIdToAssistant1723572720459 } from './1723572720459-AddProjectIdToAssistant'
+import { AddProjectIdToChatFlow1723572696288 } from './1723572696288-AddProjectIdToChatFlow'
+import { AddProjectIdToCredential1723572733222 } from './1723572733222-AddProjectIdToCredential'
+import { AddProjectIdToDocumentStore1723572745089 } from './1723572745089-AddProjectIdToDocumentStore'
+import { AddProjectIdToTool1723572753767 } from './1723572753767-AddProjectIdToTool'
+import { AddProjectIdToVariable1723572763202 } from './1723572763202-AddProjectIdToVariable'
 
 export const sqliteMigrations = [
     Init1693835579790,
@@ -45,5 +53,13 @@ export const sqliteMigrations = [
     AddLeadToChatMessage1711537986113,
     AddAgentReasoningToChatMessage1714679514451,
     AddTypeToChatFlow1766759476232,
-    AddActionToChatMessage1721078251523
+    AddActionToChatMessage1721078251523,
+    Projects1723571494453,
+    AddApiKey1723572854165,
+    AddProjectIdToAssistant1723572720459,
+    AddProjectIdToChatFlow1723572696288,
+    AddProjectIdToCredential1723572733222,
+    AddProjectIdToDocumentStore1723572745089,
+    AddProjectIdToTool1723572753767,
+    AddProjectIdToVariable1723572763202
 ]

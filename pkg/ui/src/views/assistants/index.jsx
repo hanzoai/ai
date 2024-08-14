@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 
 // material-ui
 import { Box, Stack, Button, Skeleton } from '@mui/material'
@@ -26,6 +27,9 @@ import ErrorBoundary from '@/ErrorBoundary'
 // ==============================|| CHATFLOWS ||============================== //
 
 const Assistants = () => {
+    const [searchParams] = useSearchParams()
+    const project = searchParams.get('project')
+
     const getAllAssistantsApi = useApi(assistantsApi.getAllAssistants)
 
     const [isLoading, setLoading] = useState(true)
@@ -83,6 +87,19 @@ const Assistants = () => {
 
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [])
+
+    useEffect(() => {
+        if (getAllAssistantsApi.data) {
+            const data = getAllAssistantsApi.data
+            const newData = []
+            for (let j = 0; j < data.length; j++) {
+                if (data[j].projectId == project) {
+                    newData.push(data[j])
+                }
+            }
+            getAllAssistantsApi.setData(newData)
+        }
+    }, [getAllAssistantsApi.data])
 
     useEffect(() => {
         setLoading(getAllAssistantsApi.loading)
