@@ -208,7 +208,7 @@ const Credentials = () => {
 
     useEffect(() => {
         if (getAllCredentialsApi.data) {
-            const data = getAllChatflowsApi.data
+            const data = getAllCredentialsApi.data
             const newData = []
             for (let j = 0; j < data.length; j++) {
                 if (data[j].projectId == project) {
