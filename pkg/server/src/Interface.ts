@@ -269,6 +269,7 @@ export interface ICredentialReqBody {
     name: string
     credentialName: string
     plainDataObj: ICredentialDataDecrypted
+    projectId: string
 }
 
 // Decrypted credential object sent back to client

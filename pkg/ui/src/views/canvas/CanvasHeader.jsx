@@ -231,7 +231,7 @@ const CanvasHeader = ({ chatflow, isAgentCanvas, handleSaveFlow, handleDeleteFlo
                                 onClick={() =>
                                     window.history.state && window.history.state.idx > 0
                                         ? navigate(-1)
-                                        : navigate(`/?project=${project}`, { replace: true })
+                                        : navigate(`/${isAgentCanvas ? 'agentflows' : 'chatflows'}?project=${project}`, { replace: true })
                                 }
                             >
                                 <IconChevronLeft stroke={1.5} size='1.3rem' />
