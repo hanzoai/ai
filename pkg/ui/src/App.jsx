@@ -24,6 +24,7 @@ import projectsApi from '@/api/projects'
 const App = () => {
     const customization = useSelector((state) => state.customization)
     const createProject = useApi(projectsApi.createProject)
+    customization.isDarkMode = true
 
     useEffect(() => {
         window.addEventListener('message', (event) => {
