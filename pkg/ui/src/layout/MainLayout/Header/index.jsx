@@ -23,10 +23,12 @@ const MaterialUISwitch = styled(Switch)(({ theme }) => ({
     width: 62,
     height: 34,
     padding: 7,
+    display: 'none',
     '& .MuiSwitch-switchBase': {
         margin: 1,
         padding: 0,
         transform: 'translateX(6px)',
+        display: 'none',
         '&.Mui-checked': {
             color: '#fff',
             transform: 'translateX(22px)',
@@ -45,6 +47,7 @@ const MaterialUISwitch = styled(Switch)(({ theme }) => ({
         backgroundColor: theme.palette.mode === 'dark' ? '#003892' : '#001e3c',
         width: 32,
         height: 32,
+        display: 'none',
         '&:before': {
             content: "''",
             position: 'absolute',
@@ -61,6 +64,7 @@ const MaterialUISwitch = styled(Switch)(({ theme }) => ({
     },
     '& .MuiSwitch-track': {
         opacity: 1,
+        display: 'none',
         backgroundColor: theme.palette.mode === 'dark' ? '#8796A5' : '#aab4be',
         borderRadius: 20 / 2
     }
@@ -76,9 +80,9 @@ const Header = ({ handleLeftDrawerToggle }) => {
     const dispatch = useDispatch()
 
     const changeDarkMode = () => {
-        dispatch({ type: SET_DARKMODE, isDarkMode: !isDark })
-        setIsDark((isDark) => !isDark)
-        localStorage.setItem('isDarkMode', !isDark)
+        dispatch({ type: SET_DARKMODE, isDarkMode: true })
+        setIsDark((isDark) => true)
+        localStorage.setItem('isDarkMode', true)
     }
 
     const signOutClicked = () => {
@@ -125,7 +129,7 @@ const Header = ({ handleLeftDrawerToggle }) => {
                 </ButtonBase> */}
             </Box>
             <Box sx={{ flexGrow: 1 }} />
-            <MaterialUISwitch checked={isDark} onChange={changeDarkMode} />
+            <MaterialUISwitch checked={true} onChange={changeDarkMode} className='hidden' />
             <Box sx={{ ml: 2 }}></Box>
             <ProfileSection handleLogout={signOutClicked} username={localStorage.getItem('username') ?? ''} />
         </>

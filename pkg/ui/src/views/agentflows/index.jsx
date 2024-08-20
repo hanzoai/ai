@@ -173,7 +173,13 @@ const Agentflows = () => {
                                 <IconList />
                             </ToggleButton>
                         </ToggleButtonGroup>
-                        <StyledButton variant='contained' onClick={addNew} startIcon={<IconPlus />} sx={{ borderRadius: 2, height: 40 }}>
+                        <StyledButton
+                            variant='contained'
+                            color='secondary'
+                            onClick={addNew}
+                            startIcon={<IconPlus />}
+                            sx={{ borderRadius: 2, height: 40 }}
+                        >
                             Add New
                         </StyledButton>
                     </ViewHeader>

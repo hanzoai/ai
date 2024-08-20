@@ -129,6 +129,7 @@ const Assistants = () => {
                             </Button>
                             <StyledButton
                                 variant='contained'
+                                color='secondary'
                                 sx={{ borderRadius: 2, height: 40 }}
                                 onClick={addNew}
                                 startIcon={<IconPlus />}

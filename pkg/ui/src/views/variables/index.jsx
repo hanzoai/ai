@@ -217,6 +217,7 @@ const Variables = () => {
                             </Button>
                             <StyledButton
                                 variant='contained'
+                                color='secondary'
                                 sx={{ borderRadius: 2, height: '100%' }}
                                 onClick={addNew}
                                 startIcon={<IconPlus />}

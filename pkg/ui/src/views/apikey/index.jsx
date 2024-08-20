@@ -343,6 +343,7 @@ const APIKey = () => {
                         <ViewHeader onSearchChange={onSearchChange} search={true} searchPlaceholder='Search API Keys' title='API Keys'>
                             <StyledButton
                                 variant='contained'
+                                color='secondary'
                                 sx={{ borderRadius: 2, height: '100%' }}
                                 onClick={addNew}
                                 startIcon={<IconPlus />}

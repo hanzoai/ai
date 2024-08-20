@@ -156,6 +156,7 @@ const Tools = () => {
                             <ButtonGroup disableElevation aria-label='outlined primary button group'>
                                 <StyledButton
                                     variant='contained'
+                                    color='secondary'
                                     onClick={addNew}
                                     startIcon={<IconPlus />}
                                     sx={{ borderRadius: 2, height: 40 }}

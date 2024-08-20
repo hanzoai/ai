@@ -247,6 +247,7 @@ const Credentials = () => {
                         >
                             <StyledButton
                                 variant='contained'
+                                color='secondary'
                                 sx={{ borderRadius: 2, height: '100%' }}
                                 onClick={listCredential}
                                 startIcon={<IconPlus />}
