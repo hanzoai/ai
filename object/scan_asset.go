@@ -18,8 +18,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/casibase/casibase/scan"
-	"github.com/casibase/casibase/util"
+	"github.com/hanzoai/casibase/scan"
+	"github.com/hanzoai/casibase/util"
 )
 
 // ScanResult represents the result of a scan operation

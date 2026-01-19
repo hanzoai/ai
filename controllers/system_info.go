@@ -15,7 +15,7 @@
 package controllers
 
 import (
-	"github.com/casibase/casibase/util"
+	"github.com/hanzoai/casibase/util"
 )
 
 // GetSystemInfo

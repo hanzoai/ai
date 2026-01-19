@@ -20,7 +20,7 @@ import (
 	"fmt"
 
 	"github.com/beego/beego/context"
-	"github.com/casibase/casibase/util"
+	"github.com/hanzoai/casibase/util"
 	"github.com/sashabaranov/go-openai"
 )
 

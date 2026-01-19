@@ -19,8 +19,8 @@ import (
 	"sort"
 
 	"github.com/beego/beego/utils/pagination"
-	"github.com/casibase/casibase/object"
-	"github.com/casibase/casibase/util"
+	"github.com/hanzoai/casibase/object"
+	"github.com/hanzoai/casibase/util"
 )
 
 // GetGlobalStores

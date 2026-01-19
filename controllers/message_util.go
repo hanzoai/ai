@@ -23,9 +23,9 @@ import (
 	"path/filepath"
 	"regexp"
 
-	"github.com/casibase/casibase/i18n"
-	"github.com/casibase/casibase/object"
-	"github.com/casibase/casibase/txt"
+	"github.com/hanzoai/casibase/i18n"
+	"github.com/hanzoai/casibase/object"
+	"github.com/hanzoai/casibase/txt"
 )
 
 func (c *ApiController) ResponseErrorStream(message *object.Message, errorText string) {

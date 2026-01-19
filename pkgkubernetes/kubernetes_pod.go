@@ -17,7 +17,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/casibase/casibase/i18n"
+	"github.com/hanzoai/casibase/i18n"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"

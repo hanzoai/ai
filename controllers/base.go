@@ -23,7 +23,7 @@ import (
 	"github.com/beego/beego"
 	"github.com/beego/beego/logs"
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
-	"github.com/casibase/casibase/object"
+	"github.com/hanzoai/casibase/object"
 )
 
 type ApiController struct {

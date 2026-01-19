@@ -17,8 +17,8 @@ package object
 import (
 	"fmt"
 
-	"github.com/casibase/casibase/embedding"
-	"github.com/casibase/casibase/i18n"
+	"github.com/hanzoai/casibase/embedding"
+	"github.com/hanzoai/casibase/i18n"
 )
 
 type DefaultSearchProvider struct {

@@ -20,8 +20,8 @@ package object_test
 import (
 	"testing"
 
-	"github.com/casibase/casibase/controllers"
-	"github.com/casibase/casibase/object"
+	"github.com/hanzoai/casibase/controllers"
+	"github.com/hanzoai/casibase/object"
 )
 
 func TestSendErrorEmail(t *testing.T) {

@@ -19,7 +19,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/casibase/casibase/util"
+	"github.com/hanzoai/casibase/util"
 	"github.com/sashabaranov/go-openai"
 	"xorm.io/xorm"
 )
