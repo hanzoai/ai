@@ -19,9 +19,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/casibase/casibase/carrier"
-	"github.com/casibase/casibase/model"
-	"github.com/casibase/casibase/object"
+	"github.com/hanzoai/casibase/carrier"
+	"github.com/hanzoai/casibase/model"
+	"github.com/hanzoai/casibase/object"
 )
 
 func getCarrier(suggestionCount int, needTitle bool) (string, error) {

@@ -19,9 +19,9 @@ import (
 
 	"github.com/beego/beego"
 	"github.com/beego/beego/context"
-	"github.com/casibase/casibase/conf"
-	"github.com/casibase/casibase/controllers"
-	"github.com/casibase/casibase/util"
+	"github.com/hanzoai/casibase/conf"
+	"github.com/hanzoai/casibase/controllers"
+	"github.com/hanzoai/casibase/util"
 )
 
 func AuthzFilter(ctx *context.Context) {

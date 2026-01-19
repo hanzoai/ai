@@ -21,7 +21,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/casibase/casibase/util"
+	"github.com/hanzoai/casibase/util"
 )
 
 type I18nData map[string]map[string]string

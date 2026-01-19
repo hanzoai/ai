@@ -20,7 +20,7 @@ import (
 	"runtime"
 
 	"github.com/beego/beego"
-	"github.com/casibase/casibase/conf"
+	"github.com/hanzoai/casibase/conf"
 	_ "github.com/denisenkom/go-mssqldb" // mssql
 	_ "github.com/go-sql-driver/mysql"   // mysql
 	_ "github.com/lib/pq"                // postgres

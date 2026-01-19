@@ -17,8 +17,8 @@ package routers
 import (
 	"github.com/beego/beego/context"
 	"github.com/beego/beego/logs"
-	"github.com/casibase/casibase/object"
-	"github.com/casibase/casibase/util"
+	"github.com/hanzoai/casibase/object"
+	"github.com/hanzoai/casibase/util"
 )
 
 func RecordMessage(ctx *context.Context) {

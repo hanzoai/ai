@@ -19,9 +19,9 @@ import (
 	"sync"
 
 	"github.com/beego/beego/logs"
-	"github.com/casibase/casibase/chain"
-	"github.com/casibase/casibase/i18n"
-	"github.com/casibase/casibase/util"
+	"github.com/hanzoai/casibase/chain"
+	"github.com/hanzoai/casibase/i18n"
+	"github.com/hanzoai/casibase/util"
 	"github.com/robfig/cron/v3"
 )
 

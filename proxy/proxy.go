@@ -22,7 +22,7 @@ import (
 	"time"
 
 	"github.com/beego/beego/logs"
-	"github.com/casibase/casibase/conf"
+	"github.com/hanzoai/casibase/conf"
 	"golang.org/x/net/proxy"
 )
 

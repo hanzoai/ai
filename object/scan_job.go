@@ -19,8 +19,8 @@ import (
 	"os"
 
 	"github.com/beego/beego/logs"
-	scanpkg "github.com/casibase/casibase/scan"
-	"github.com/casibase/casibase/util"
+	scanpkg "github.com/hanzoai/casibase/scan"
+	"github.com/hanzoai/casibase/util"
 	"github.com/robfig/cron/v3"
 )
 

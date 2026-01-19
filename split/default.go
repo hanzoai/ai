@@ -18,7 +18,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/casibase/casibase/model"
+	"github.com/hanzoai/casibase/model"
 )
 
 type DefaultSplitProvider struct {

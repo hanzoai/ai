@@ -17,12 +17,12 @@ package object
 import (
 	"fmt"
 
-	"github.com/casibase/casibase/agent"
-	"github.com/casibase/casibase/embedding"
-	"github.com/casibase/casibase/i18n"
-	"github.com/casibase/casibase/model"
-	"github.com/casibase/casibase/util"
-	"github.com/casibase/casibase/video"
+	"github.com/hanzoai/casibase/agent"
+	"github.com/hanzoai/casibase/embedding"
+	"github.com/hanzoai/casibase/i18n"
+	"github.com/hanzoai/casibase/model"
+	"github.com/hanzoai/casibase/util"
+	"github.com/hanzoai/casibase/video"
 )
 
 func getModelProviderFromName(owner string, providerName string, lang string) (*Provider, model.ModelProvider, error) {

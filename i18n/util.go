@@ -19,7 +19,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/casibase/casibase/util"
+	"github.com/hanzoai/casibase/util"
 )
 
 //go:embed locales/*/data.json

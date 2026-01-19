@@ -23,8 +23,8 @@ import (
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
-	"github.com/casibase/casibase/i18n"
-	"github.com/casibase/casibase/proxy"
+	"github.com/hanzoai/casibase/i18n"
+	"github.com/hanzoai/casibase/proxy"
 )
 
 type ClaudeModelProvider struct {

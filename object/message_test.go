@@ -21,9 +21,9 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/casibase/casibase/embedding"
-	"github.com/casibase/casibase/model"
-	"github.com/casibase/casibase/util"
+	"github.com/hanzoai/casibase/embedding"
+	"github.com/hanzoai/casibase/model"
+	"github.com/hanzoai/casibase/util"
 )
 
 func TestUpdateMessagePrices(t *testing.T) {

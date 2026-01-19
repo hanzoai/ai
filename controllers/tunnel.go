@@ -20,10 +20,10 @@ import (
 	"strconv"
 
 	"github.com/beego/beego/logs"
-	"github.com/casibase/casibase/conf"
-	"github.com/casibase/casibase/object"
-	"github.com/casibase/casibase/util"
-	"github.com/casibase/casibase/util/guacamole"
+	"github.com/hanzoai/casibase/conf"
+	"github.com/hanzoai/casibase/object"
+	"github.com/hanzoai/casibase/util"
+	"github.com/hanzoai/casibase/util/guacamole"
 	"github.com/gorilla/websocket"
 )
 

@@ -18,7 +18,7 @@ import (
 	"bytes"
 	"strings"
 
-	"github.com/casibase/casibase/storage"
+	"github.com/hanzoai/casibase/storage"
 )
 
 type SubpathStorageProvider struct {

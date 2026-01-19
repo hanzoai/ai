@@ -18,7 +18,7 @@ import (
 	"encoding/json"
 	"mime/multipart"
 
-	"github.com/casibase/casibase/object"
+	"github.com/hanzoai/casibase/object"
 )
 
 // UpdateTreeFile

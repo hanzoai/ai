@@ -19,7 +19,7 @@ import (
 	"encoding/json"
 
 	"github.com/ThinkInAIXYZ/go-mcp/protocol"
-	"github.com/casibase/casibase/agent/builtin_tool/time"
+	"github.com/hanzoai/casibase/agent/builtin_tool/time"
 )
 
 type BuiltinTool interface {

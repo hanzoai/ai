@@ -25,7 +25,7 @@ package routers
 
 import (
 	"github.com/beego/beego"
-	"github.com/casibase/casibase/controllers"
+	"github.com/hanzoai/casibase/controllers"
 )
 
 func init() {

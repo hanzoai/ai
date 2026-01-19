@@ -19,8 +19,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/casibase/casibase/util"
-	"github.com/casibase/casibase/video"
+	"github.com/hanzoai/casibase/util"
+	"github.com/hanzoai/casibase/video"
 	"xorm.io/core"
 )
 

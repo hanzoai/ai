@@ -15,7 +15,7 @@
 package controllers
 
 import (
-	"github.com/casibase/casibase/object"
+	"github.com/hanzoai/casibase/object"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
