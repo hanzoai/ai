@@ -22,9 +22,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/hanzoai/cloud/i18n"
 	"github.com/casibase/dashscopego"
 	"github.com/casibase/dashscopego/qwen"
+	"github.com/hanzoai/cloud/i18n"
 )
 
 type AlibabacloudModelProvider struct {
