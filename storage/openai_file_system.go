@@ -21,7 +21,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/casibase/casibase/model"
+	"github.com/hanzoai/casibase/model"
 	"github.com/openai/openai-go/v2"
 )
 

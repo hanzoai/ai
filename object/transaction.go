@@ -20,8 +20,8 @@ import (
 
 	"github.com/beego/beego/logs"
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
-	"github.com/casibase/casibase/conf"
-	"github.com/casibase/casibase/util"
+	"github.com/hanzoai/casibase/conf"
+	"github.com/hanzoai/casibase/util"
 	"github.com/robfig/cron/v3"
 )
 

@@ -17,7 +17,7 @@ package pkgmachine
 import (
 	"fmt"
 
-	"github.com/casibase/casibase/i18n"
+	"github.com/hanzoai/casibase/i18n"
 )
 
 type MachineClientInterface interface {

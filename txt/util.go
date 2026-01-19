@@ -19,7 +19,7 @@ import (
 	"io/ioutil"
 	"path/filepath"
 
-	"github.com/casibase/casibase/util"
+	"github.com/hanzoai/casibase/util"
 )
 
 func getTempFilePathFromUrl(url string) (string, error) {

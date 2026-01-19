@@ -21,8 +21,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/casibase/casibase/i18n"
-	"github.com/casibase/casibase/proxy"
+	"github.com/hanzoai/casibase/i18n"
+	"github.com/hanzoai/casibase/proxy"
 	"github.com/casibase/go-openrouter"
 )
 

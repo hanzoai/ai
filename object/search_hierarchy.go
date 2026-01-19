@@ -18,9 +18,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/casibase/casibase/embedding"
-	"github.com/casibase/casibase/i18n"
-	"github.com/casibase/casibase/model"
+	"github.com/hanzoai/casibase/embedding"
+	"github.com/hanzoai/casibase/i18n"
+	"github.com/hanzoai/casibase/model"
 )
 
 type HierarchySearchProvider struct {

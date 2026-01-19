@@ -17,8 +17,8 @@ package object
 import (
 	"fmt"
 
-	"github.com/casibase/casibase/i18n"
-	"github.com/casibase/casibase/pkgmachine"
+	"github.com/hanzoai/casibase/i18n"
+	"github.com/hanzoai/casibase/pkgmachine"
 )
 
 func getMachineFromService(owner string, provider string, clientMachine *pkgmachine.Machine) *Machine {

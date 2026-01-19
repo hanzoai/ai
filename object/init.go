@@ -20,8 +20,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/casibase/casibase/conf"
-	"github.com/casibase/casibase/util"
+	"github.com/hanzoai/casibase/conf"
+	"github.com/hanzoai/casibase/util"
 )
 
 func InitDb() {

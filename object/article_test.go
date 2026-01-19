@@ -21,8 +21,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/casibase/casibase/proxy"
-	"github.com/casibase/casibase/util"
+	"github.com/hanzoai/casibase/proxy"
+	"github.com/hanzoai/casibase/util"
 )
 
 func TestTranslateArticle(t *testing.T) {

@@ -22,7 +22,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/casibase/casibase/i18n"
+	"github.com/hanzoai/casibase/i18n"
 	"github.com/casibase/dashscopego"
 	"github.com/casibase/dashscopego/qwen"
 )

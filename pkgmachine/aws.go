@@ -22,7 +22,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2Types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
-	"github.com/casibase/casibase/i18n"
+	"github.com/hanzoai/casibase/i18n"
 )
 
 type MachineAwsClient struct {

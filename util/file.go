@@ -24,8 +24,8 @@ import (
 	"strings"
 
 	"github.com/beego/beego/logs"
-	"github.com/casibase/casibase/conf"
-	"github.com/casibase/casibase/proxy"
+	"github.com/hanzoai/casibase/conf"
+	"github.com/hanzoai/casibase/proxy"
 )
 
 func parseJsonToFloats(s string) []float64 {

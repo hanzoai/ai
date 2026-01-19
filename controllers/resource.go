@@ -19,7 +19,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/casibase/casibase/object"
+	"github.com/hanzoai/casibase/object"
 )
 
 // UploadFile

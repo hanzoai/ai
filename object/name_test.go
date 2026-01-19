@@ -22,8 +22,8 @@ import (
 	"testing"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
-	"github.com/casibase/casibase/controllers"
-	"github.com/casibase/casibase/object"
+	"github.com/hanzoai/casibase/controllers"
+	"github.com/hanzoai/casibase/object"
 )
 
 var userTag = "user"

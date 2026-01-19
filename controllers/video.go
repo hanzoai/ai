@@ -26,12 +26,12 @@ import (
 	"time"
 
 	"github.com/beego/beego/utils/pagination"
-	"github.com/casibase/casibase/audio"
-	"github.com/casibase/casibase/conf"
-	"github.com/casibase/casibase/object"
-	"github.com/casibase/casibase/storage"
-	"github.com/casibase/casibase/util"
-	"github.com/casibase/casibase/video"
+	"github.com/hanzoai/casibase/audio"
+	"github.com/hanzoai/casibase/conf"
+	"github.com/hanzoai/casibase/object"
+	"github.com/hanzoai/casibase/storage"
+	"github.com/hanzoai/casibase/util"
+	"github.com/hanzoai/casibase/video"
 )
 
 // GetGlobalVideos
