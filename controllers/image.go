@@ -18,8 +18,8 @@ import (
 	"encoding/json"
 
 	"github.com/beego/beego/utils/pagination"
-	"github.com/hanzoai/casibase/object"
-	"github.com/hanzoai/casibase/util"
+	"github.com/hanzoai/cloud/object"
+	"github.com/hanzoai/cloud/util"
 )
 
 // GetImages

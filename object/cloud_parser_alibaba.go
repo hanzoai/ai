@@ -1,4 +1,4 @@
-// Copyright 2025 The Casibase Authors. All Rights Reserved.
+// Copyright 2023-2025 Hanzo AI Inc. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -23,7 +23,7 @@ import (
 	resourcecenter20221201 "github.com/alibabacloud-go/resourcecenter-20221201/client"
 	util2 "github.com/alibabacloud-go/tea-utils/v2/service"
 	"github.com/alibabacloud-go/tea/tea"
-	"github.com/hanzoai/casibase/util"
+	"github.com/hanzoai/cloud/util"
 )
 
 // AlibabaCloudParser implements CloudParser for Alibaba Cloud
