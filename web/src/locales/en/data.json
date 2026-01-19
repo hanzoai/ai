@@ -84,7 +84,7 @@
     "Edit Chat": "Edit Chat",
     "Failed to recognize speech": "Failed to recognize speech",
     "Group": "Group",
-    "Hello, I'm Casibase AI Assistant": "Hello, I'm Casibase AI Assistant",
+    "Hello, I'm Hanzo Cloud AI Assistant": "Hello, I'm Hanzo Cloud AI Assistant",
     "I'm here to help answer your questions": "I'm here to help answer your questions",
     "I'm listening...": "I'm listening...",
     "Knowledge Fragment": "Knowledge Fragment",
@@ -931,7 +931,7 @@
   "system": {
     "API Latency": "API Latency",
     "API Throughput": "API Throughput",
-    "About Casibase": "About Casibase",
+    "About Hanzo Cloud": "About Hanzo Cloud",
     "CPU Usage": "CPU Usage",
     "Community": "Community",
     "Count": "Count",

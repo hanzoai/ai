@@ -84,7 +84,7 @@
     "Edit Chat": "编辑会话",
     "Failed to recognize speech": "语音识别失败",
     "Group": "群聊",
-    "Hello, I'm Casibase AI Assistant": "您好，我是Casibase AI助理",
+    "Hello, I'm Hanzo Cloud AI Assistant": "您好，我是Hanzo Cloud AI助理",
     "I'm here to help answer your questions": "我可以帮助回答您的问题",
     "I'm listening...": "正在倾听...",
     "Knowledge Fragment": "知识片段",
@@ -931,7 +931,7 @@
   "system": {
     "API Latency": "API延迟",
     "API Throughput": "API吞吐量",
-    "About Casibase": "关于Casibase",
+    "About Hanzo Cloud": "关于Hanzo Cloud",
     "CPU Usage": "CPU使用率",
     "Community": "社区",
     "Count": "次数",

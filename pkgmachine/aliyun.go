@@ -1,4 +1,4 @@
-// Copyright 2025 The Casibase Authors. All Rights Reserved.
+// Copyright 2023-2025 Hanzo AI Inc. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -20,7 +20,7 @@ import (
 	openapi "github.com/alibabacloud-go/darabonba-openapi/v2/client"
 	ecs20140526 "github.com/alibabacloud-go/ecs-20140526/v4/client"
 	"github.com/alibabacloud-go/tea/tea"
-	"github.com/hanzoai/casibase/i18n"
+	"github.com/hanzoai/cloud/i18n"
 )
 
 type Machine struct {

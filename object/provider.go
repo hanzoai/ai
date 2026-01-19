@@ -1,4 +1,4 @@
-// Copyright 2023 The Casibase Authors. All Rights Reserved.
+// Copyright 2023-2025 Hanzo AI Inc. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -19,15 +19,15 @@ import (
 	"strings"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
-	"github.com/hanzoai/casibase/agent"
-	"github.com/hanzoai/casibase/embedding"
-	"github.com/hanzoai/casibase/i18n"
-	"github.com/hanzoai/casibase/model"
-	"github.com/hanzoai/casibase/scan"
-	"github.com/hanzoai/casibase/storage"
-	"github.com/hanzoai/casibase/stt"
-	"github.com/hanzoai/casibase/tts"
-	"github.com/hanzoai/casibase/util"
+	"github.com/hanzoai/cloud/agent"
+	"github.com/hanzoai/cloud/embedding"
+	"github.com/hanzoai/cloud/i18n"
+	"github.com/hanzoai/cloud/model"
+	"github.com/hanzoai/cloud/scan"
+	"github.com/hanzoai/cloud/storage"
+	"github.com/hanzoai/cloud/stt"
+	"github.com/hanzoai/cloud/tts"
+	"github.com/hanzoai/cloud/util"
 	"xorm.io/core"
 	"xorm.io/xorm"
 )

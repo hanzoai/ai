@@ -84,7 +84,7 @@
     "Edit Chat": "チャットを編集",
     "Failed to recognize speech": "音声認識に失敗しました",
     "Group": "グループチャット",
-    "Hello, I'm Casibase AI Assistant": "こんにちは、Casibase AIアシスタントです",
+    "Hello, I'm Hanzo Cloud AI Assistant": "こんにちは、Hanzo Cloud AIアシスタントです",
     "I'm here to help answer your questions": "あなたの質問にお答えするためにここにいます",
     "I'm listening...": "聞いています...",
     "Knowledge Fragment": "知識フラグメント",
@@ -931,7 +931,7 @@
   "system": {
     "API Latency": "API遅延",
     "API Throughput": "APIスループット",
-    "About Casibase": "Casibaseについて",
+    "About Hanzo Cloud": "Hanzo Cloudについて",
     "CPU Usage": "CPU使用率",
     "Community": "コミュニティ",
     "Count": "回数",
