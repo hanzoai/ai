@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/beego/beego/logs"
+	"github.com/cenkalti/backoff/v4"
 	"github.com/hanzoai/cloud/embedding"
 	"github.com/hanzoai/cloud/i18n"
 	"github.com/hanzoai/cloud/model"
@@ -30,7 +31,6 @@ import (
 	"github.com/hanzoai/cloud/storage"
 	"github.com/hanzoai/cloud/txt"
 	"github.com/hanzoai/cloud/util"
-	"github.com/cenkalti/backoff/v4"
 )
 
 func filterTextFiles(files []*storage.Object) []*storage.Object {
