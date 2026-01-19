@@ -20,9 +20,9 @@ import (
 	"os"
 	"testing"
 
-	"github.com/casibase/casibase/object"
-	"github.com/casibase/casibase/proxy"
-	"github.com/casibase/casibase/util"
+	"github.com/hanzoai/casibase/object"
+	"github.com/hanzoai/casibase/proxy"
+	"github.com/hanzoai/casibase/util"
 )
 
 const (

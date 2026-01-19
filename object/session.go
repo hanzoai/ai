@@ -18,7 +18,7 @@ import (
 	"fmt"
 
 	"github.com/beego/beego"
-	"github.com/casibase/casibase/util"
+	"github.com/hanzoai/casibase/util"
 	"xorm.io/core"
 )
 

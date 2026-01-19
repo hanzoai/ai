@@ -23,8 +23,8 @@ import (
 	"strings"
 
 	"github.com/beego/beego/logs"
-	"github.com/casibase/casibase/txt"
-	"github.com/casibase/casibase/util"
+	"github.com/hanzoai/casibase/txt"
+	"github.com/hanzoai/casibase/util"
 )
 
 type TxtLabel struct {

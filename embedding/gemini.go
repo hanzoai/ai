@@ -17,7 +17,7 @@ package embedding
 import (
 	"context"
 
-	"github.com/casibase/casibase/proxy"
+	"github.com/hanzoai/casibase/proxy"
 	"google.golang.org/genai"
 )
 

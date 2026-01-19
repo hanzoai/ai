@@ -23,13 +23,13 @@ import (
 	"time"
 
 	"github.com/beego/beego/logs"
-	"github.com/casibase/casibase/embedding"
-	"github.com/casibase/casibase/i18n"
-	"github.com/casibase/casibase/model"
-	"github.com/casibase/casibase/split"
-	"github.com/casibase/casibase/storage"
-	"github.com/casibase/casibase/txt"
-	"github.com/casibase/casibase/util"
+	"github.com/hanzoai/casibase/embedding"
+	"github.com/hanzoai/casibase/i18n"
+	"github.com/hanzoai/casibase/model"
+	"github.com/hanzoai/casibase/split"
+	"github.com/hanzoai/casibase/storage"
+	"github.com/hanzoai/casibase/txt"
+	"github.com/hanzoai/casibase/util"
 	"github.com/cenkalti/backoff/v4"
 )
 

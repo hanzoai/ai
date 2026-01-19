@@ -19,9 +19,9 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/casibase/casibase/model"
-	"github.com/casibase/casibase/object"
-	"github.com/casibase/casibase/util"
+	"github.com/hanzoai/casibase/model"
+	"github.com/hanzoai/casibase/object"
+	"github.com/hanzoai/casibase/util"
 )
 
 func deleteExistingStore(name string) error {

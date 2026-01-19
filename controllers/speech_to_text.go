@@ -18,7 +18,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/casibase/casibase/object"
+	"github.com/hanzoai/casibase/object"
 )
 
 // ProcessSpeechToText

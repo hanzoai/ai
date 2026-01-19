@@ -25,7 +25,7 @@ import (
 
 	dashscopego "github.com/casibase/dashscope-go-sdk"
 
-	"github.com/casibase/casibase/i18n"
+	"github.com/hanzoai/casibase/i18n"
 	"github.com/casibase/dashscope-go-sdk/paraformer"
 )
 

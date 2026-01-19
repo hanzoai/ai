@@ -21,8 +21,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/casibase/casibase/i18n"
-	"github.com/casibase/casibase/util"
+	"github.com/hanzoai/casibase/i18n"
+	"github.com/hanzoai/casibase/util"
 	"gopkg.in/yaml.v3"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"

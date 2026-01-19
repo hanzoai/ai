@@ -23,7 +23,7 @@ import (
 
 	textv1 "github.com/ConnectAI-E/go-minimax/gen/go/minimax/text/v1"
 	"github.com/ConnectAI-E/go-minimax/minimax"
-	"github.com/casibase/casibase/i18n"
+	"github.com/hanzoai/casibase/i18n"
 )
 
 type MiniMaxModelProvider struct {

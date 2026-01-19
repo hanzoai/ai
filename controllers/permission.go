@@ -18,7 +18,7 @@ import (
 	"encoding/json"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
-	"github.com/casibase/casibase/util"
+	"github.com/hanzoai/casibase/util"
 )
 
 // GetPermissions

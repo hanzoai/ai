@@ -19,8 +19,8 @@ import (
 
 	"github.com/ThinkInAIXYZ/go-mcp/client"
 	"github.com/ThinkInAIXYZ/go-mcp/protocol"
-	"github.com/casibase/casibase/agent/builtin_tool"
-	"github.com/casibase/casibase/i18n"
+	"github.com/hanzoai/casibase/agent/builtin_tool"
+	"github.com/hanzoai/casibase/i18n"
 )
 
 type AgentProvider interface {

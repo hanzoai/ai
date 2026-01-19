@@ -18,7 +18,7 @@ import (
 	"encoding/json"
 
 	"github.com/beego/beego/logs"
-	"github.com/casibase/casibase/object"
+	"github.com/hanzoai/casibase/object"
 )
 
 type TextToSpeechRequest struct {

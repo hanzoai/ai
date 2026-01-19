@@ -18,9 +18,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/casibase/casibase/i18n"
-	"github.com/casibase/casibase/tts"
-	"github.com/casibase/casibase/util"
+	"github.com/hanzoai/casibase/i18n"
+	"github.com/hanzoai/casibase/tts"
+	"github.com/hanzoai/casibase/util"
 )
 
 func addProviderMessage(providerId, text string, lang string) (*Message, *Chat, *Provider, error) {

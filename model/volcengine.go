@@ -22,7 +22,7 @@ import (
 	"regexp"
 
 	"github.com/beego/beego/logs"
-	"github.com/casibase/casibase/i18n"
+	"github.com/hanzoai/casibase/i18n"
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime"
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
 	"github.com/volcengine/volcengine-go-sdk/volcengine"

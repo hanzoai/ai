@@ -17,7 +17,7 @@ package controllers
 import (
 	"encoding/json"
 
-	"github.com/casibase/casibase/object"
+	"github.com/hanzoai/casibase/object"
 )
 
 // CommitRecord

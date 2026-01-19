@@ -22,7 +22,7 @@ import (
 	"os/exec"
 	"unicode/utf8"
 
-	"github.com/casibase/casibase/i18n"
+	"github.com/hanzoai/casibase/i18n"
 	"golang.org/x/text/encoding/simplifiedchinese"
 	"golang.org/x/text/transform"
 )

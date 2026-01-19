@@ -17,7 +17,7 @@ package embedding
 import (
 	"context"
 
-	"github.com/casibase/casibase/proxy"
+	"github.com/hanzoai/casibase/proxy"
 	huggingfaceembedder "github.com/henomis/lingoose/embedder/huggingface"
 )
 

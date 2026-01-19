@@ -25,9 +25,9 @@ import (
 	"github.com/beego/beego"
 	"github.com/beego/beego/context"
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
-	"github.com/casibase/casibase/conf"
-	"github.com/casibase/casibase/i18n"
-	"github.com/casibase/casibase/util"
+	"github.com/hanzoai/casibase/conf"
+	"github.com/hanzoai/casibase/i18n"
+	"github.com/hanzoai/casibase/util"
 )
 
 type Response struct {

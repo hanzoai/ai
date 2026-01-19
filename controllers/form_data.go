@@ -21,8 +21,8 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/casibase/casibase/object"
-	"github.com/casibase/casibase/util"
+	"github.com/hanzoai/casibase/object"
+	"github.com/hanzoai/casibase/util"
 )
 
 // GetFormData

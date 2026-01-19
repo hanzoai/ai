@@ -18,7 +18,7 @@ import (
 	"fmt"
 	"net/url"
 
-	"github.com/casibase/casibase/i18n"
+	"github.com/hanzoai/casibase/i18n"
 	"github.com/digitalocean/go-libvirt"
 )
 

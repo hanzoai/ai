@@ -17,7 +17,7 @@ package controllers
 import (
 	"context"
 
-	"github.com/casibase/casibase/util/guacamole"
+	"github.com/hanzoai/casibase/util/guacamole"
 	"github.com/gorilla/websocket"
 )
 
