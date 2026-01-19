@@ -18,8 +18,8 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/casibase/casibase/util"
-	"github.com/casibase/casibase/util/guacamole"
+	"github.com/hanzoai/casibase/util"
+	"github.com/hanzoai/casibase/util/guacamole"
 	"xorm.io/core"
 )
 

@@ -19,7 +19,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/casibase/casibase/i18n"
+	"github.com/hanzoai/casibase/i18n"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/client"
 )

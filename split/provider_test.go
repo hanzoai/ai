@@ -22,10 +22,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/casibase/casibase/object"
-	"github.com/casibase/casibase/split"
-	"github.com/casibase/casibase/txt"
-	"github.com/casibase/casibase/util"
+	"github.com/hanzoai/casibase/object"
+	"github.com/hanzoai/casibase/split"
+	"github.com/hanzoai/casibase/txt"
+	"github.com/hanzoai/casibase/util"
 )
 
 func TestSplit(t *testing.T) {

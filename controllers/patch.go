@@ -15,8 +15,8 @@
 package controllers
 
 import (
-	"github.com/casibase/casibase/object"
-	"github.com/casibase/casibase/util"
+	"github.com/hanzoai/casibase/object"
+	"github.com/hanzoai/casibase/util"
 )
 
 // InstallPatch

@@ -20,8 +20,8 @@ import (
 	"time"
 
 	"github.com/beego/beego/context"
-	"github.com/casibase/casibase/object"
-	"github.com/casibase/casibase/util"
+	"github.com/hanzoai/casibase/object"
+	"github.com/hanzoai/casibase/util"
 )
 
 func recordSystemInfo(systemInfo *util.SystemInfo) {

@@ -23,8 +23,8 @@ import (
 	"strings"
 
 	"github.com/ThinkInAIXYZ/go-mcp/protocol"
-	"github.com/casibase/casibase/i18n"
-	"github.com/casibase/casibase/proxy"
+	"github.com/hanzoai/casibase/i18n"
+	"github.com/hanzoai/casibase/proxy"
 	"github.com/openai/openai-go/v2"
 	"github.com/openai/openai-go/v2/option"
 	"github.com/openai/openai-go/v2/packages/param"

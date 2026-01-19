@@ -22,8 +22,8 @@ import (
 	"strings"
 
 	"github.com/ThinkInAIXYZ/go-mcp/protocol"
-	"github.com/casibase/casibase/agent"
-	"github.com/casibase/casibase/i18n"
+	"github.com/hanzoai/casibase/agent"
+	"github.com/hanzoai/casibase/i18n"
 	"github.com/openai/openai-go/v2/responses"
 	"github.com/sashabaranov/go-openai"
 )

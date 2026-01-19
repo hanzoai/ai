@@ -17,8 +17,8 @@ package controllers
 import (
 	"fmt"
 
-	"github.com/casibase/casibase/model"
-	"github.com/casibase/casibase/object"
+	"github.com/hanzoai/casibase/model"
+	"github.com/hanzoai/casibase/object"
 )
 
 // dryRunWriter is a dummy writer that implements both io.Writer and http.Flusher

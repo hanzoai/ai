@@ -22,8 +22,8 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/casibase/casibase/model"
-	"github.com/casibase/casibase/util"
+	"github.com/hanzoai/casibase/model"
+	"github.com/hanzoai/casibase/util"
 )
 
 func TestUpdateChatCounts(t *testing.T) {

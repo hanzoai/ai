@@ -23,8 +23,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/casibase/casibase/i18n"
-	"github.com/casibase/casibase/util"
+	"github.com/hanzoai/casibase/i18n"
+	"github.com/hanzoai/casibase/util"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"

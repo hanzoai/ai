@@ -18,8 +18,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/casibase/casibase/i18n"
-	"github.com/casibase/casibase/model"
+	"github.com/hanzoai/casibase/i18n"
+	"github.com/hanzoai/casibase/model"
 )
 
 func GetRangeUsages(rangeType string, count int, user string, storeName string, lang string) ([]*Usage, error) {

@@ -15,7 +15,7 @@
 package object
 
 import (
-	"github.com/casibase/casibase/embedding"
+	"github.com/hanzoai/casibase/embedding"
 )
 
 type SearchProvider interface {

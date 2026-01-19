@@ -15,7 +15,7 @@
 package embedding
 
 import (
-	"github.com/casibase/casibase/proxy"
+	"github.com/hanzoai/casibase/proxy"
 	"github.com/sashabaranov/go-openai"
 )
 

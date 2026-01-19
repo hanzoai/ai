@@ -22,11 +22,11 @@ import (
 	"github.com/beego/beego"
 	"github.com/beego/beego/logs"
 	_ "github.com/beego/beego/session/redis"
-	"github.com/casibase/casibase/conf"
-	"github.com/casibase/casibase/object"
-	"github.com/casibase/casibase/proxy"
-	"github.com/casibase/casibase/routers"
-	"github.com/casibase/casibase/util"
+	"github.com/hanzoai/casibase/conf"
+	"github.com/hanzoai/casibase/object"
+	"github.com/hanzoai/casibase/proxy"
+	"github.com/hanzoai/casibase/routers"
+	"github.com/hanzoai/casibase/util"
 )
 
 func main() {

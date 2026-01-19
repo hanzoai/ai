@@ -22,7 +22,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/casibase/casibase/util"
+	"github.com/hanzoai/casibase/util"
 )
 
 var organization = "casibase"

@@ -23,7 +23,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/casibase/casibase/i18n"
+	"github.com/hanzoai/casibase/i18n"
 )
 
 var ch string = "aaaaaaaaa`"

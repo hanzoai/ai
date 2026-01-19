@@ -21,8 +21,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/casibase/casibase/model"
-	"github.com/casibase/casibase/util"
+	"github.com/hanzoai/casibase/model"
+	"github.com/hanzoai/casibase/util"
 	"xorm.io/core"
 )
 

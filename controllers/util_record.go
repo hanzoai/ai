@@ -17,10 +17,10 @@ package controllers
 import (
 	"fmt"
 
-	"github.com/casibase/casibase/conf"
-	"github.com/casibase/casibase/i18n"
-	"github.com/casibase/casibase/object"
-	"github.com/casibase/casibase/util"
+	"github.com/hanzoai/casibase/conf"
+	"github.com/hanzoai/casibase/i18n"
+	"github.com/hanzoai/casibase/object"
+	"github.com/hanzoai/casibase/util"
 )
 
 func addRecord(c *ApiController, userName string, requestUri string, lang string) error {

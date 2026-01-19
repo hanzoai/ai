@@ -23,7 +23,7 @@ import (
 	"net/http"
 
 	"github.com/WqyJh/go-cosyvoice"
-	"github.com/casibase/casibase/i18n"
+	"github.com/hanzoai/casibase/i18n"
 )
 
 type AlibabacloudTextToSpeechProvider struct {

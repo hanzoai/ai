@@ -18,8 +18,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/casibase/casibase/i18n"
-	"github.com/casibase/casibase/util"
+	"github.com/hanzoai/casibase/i18n"
+	"github.com/hanzoai/casibase/util"
 	"xorm.io/core"
 )
 

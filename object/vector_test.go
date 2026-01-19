@@ -20,7 +20,7 @@ package object
 import (
 	"testing"
 
-	"github.com/casibase/casibase/model"
+	"github.com/hanzoai/casibase/model"
 )
 
 func TestUpdateVectors(t *testing.T) {

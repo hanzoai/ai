@@ -1,4 +1,4 @@
-module github.com/casibase/casibase
+module github.com/hanzoai/casibase
 
 go 1.23.0
 
