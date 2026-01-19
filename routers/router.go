@@ -1,4 +1,4 @@
-// Copyright 2023 The Casibase Authors. All Rights Reserved.
+// Copyright 2023-2025 Hanzo AI Inc. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,18 +14,18 @@
 
 // Package routers
 // @APIVersion 1.70.0
-// @Title Casibase RESTful API
-// @Description Swagger Docs of Casibase Backend API
-// @Contact admin@casibase.org
+// @Title Hanzo Cloud RESTful API
+// @Description Swagger Docs of Hanzo Cloud Backend API
+// @Contact cloud@hanzo.ai
 // @SecurityDefinition AccessToken apiKey Authorization header
 // @Schemes https,http
-// @ExternalDocs Find out more about Casibase
-// @ExternalDocsUrl https://casibase.org/
+// @ExternalDocs Find out more about Hanzo Cloud
+// @ExternalDocsUrl https://hanzo.ai/cloud
 package routers
 
 import (
 	"github.com/beego/beego"
-	"github.com/hanzoai/casibase/controllers"
+	"github.com/hanzoai/cloud/controllers"
 )
 
 func init() {

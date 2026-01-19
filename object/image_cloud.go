@@ -15,7 +15,7 @@
 package object
 
 import (
-	"github.com/hanzoai/casibase/pkgimage"
+	"github.com/hanzoai/cloud/pkgimage"
 )
 
 func getImageFromService(owner string, provider string, clientImage *pkgimage.Image) *Image {

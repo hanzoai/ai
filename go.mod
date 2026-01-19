@@ -1,4 +1,4 @@
-module github.com/hanzoai/casibase
+module github.com/hanzoai/cloud
 
 go 1.23.0
 

@@ -1,4 +1,4 @@
-// Copyright 2024 The Casibase Authors. All Rights Reserved.
+// Copyright 2023-2025 Hanzo AI Inc. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,8 +15,8 @@
 package controllers
 
 import (
-	"github.com/hanzoai/casibase/object"
-	"github.com/hanzoai/casibase/util"
+	"github.com/hanzoai/cloud/object"
+	"github.com/hanzoai/cloud/util"
 )
 
 // GetUsages
