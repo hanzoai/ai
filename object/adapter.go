@@ -20,11 +20,11 @@ import (
 	"runtime"
 
 	"github.com/beego/beego"
-	"github.com/hanzoai/cloud/conf"
 	_ "github.com/denisenkom/go-mssqldb" // mssql
 	_ "github.com/go-sql-driver/mysql"   // mysql
-	_ "github.com/lib/pq"                // postgres
-	_ "modernc.org/sqlite"               // sqlite
+	"github.com/hanzoai/cloud/conf"
+	_ "github.com/lib/pq"  // postgres
+	_ "modernc.org/sqlite" // sqlite
 	"xorm.io/xorm"
 )
 

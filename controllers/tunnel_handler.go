@@ -17,8 +17,8 @@ package controllers
 import (
 	"context"
 
-	"github.com/hanzoai/cloud/util/guacamole"
 	"github.com/gorilla/websocket"
+	"github.com/hanzoai/cloud/util/guacamole"
 )
 
 type GuacamoleHandler struct {

@@ -19,8 +19,8 @@ import (
 	"io"
 	"strings"
 
-	"github.com/hanzoai/cloud/i18n"
 	"github.com/gage-technologies/mistral-go"
+	"github.com/hanzoai/cloud/i18n"
 )
 
 type MistralModelProvider struct {
