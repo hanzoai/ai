@@ -1,4 +1,4 @@
-// Copyright 2025 The Casibase Authors. All Rights Reserved.
+// Copyright 2023-2025 Hanzo AI Inc. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -19,8 +19,8 @@ import (
 	"os"
 
 	"github.com/beego/beego/logs"
-	scanpkg "github.com/hanzoai/casibase/scan"
-	"github.com/hanzoai/casibase/util"
+	scanpkg "github.com/hanzoai/cloud/scan"
+	"github.com/hanzoai/cloud/util"
 	"github.com/robfig/cron/v3"
 )
 

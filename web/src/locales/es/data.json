@@ -84,7 +84,7 @@
     "Edit Chat": "Editar conversación",
     "Failed to recognize speech": "Error en el reconocimiento de voz",
     "Group": "Chat de grupo",
-    "Hello, I'm Casibase AI Assistant": "Hola, soy el Asistente IA de Casibase",
+    "Hello, I'm Hanzo Cloud AI Assistant": "Hola, soy el Asistente IA de Hanzo Cloud",
     "I'm here to help answer your questions": "Estoy aquí para ayudar a responder tus preguntas",
     "I'm listening...": "Escuchando...",
     "Knowledge Fragment": "Fragmento de conocimiento",
@@ -931,7 +931,7 @@
   "system": {
     "API Latency": "Latencia de API",
     "API Throughput": "Tasa de procesamiento de API",
-    "About Casibase": "Acerca de Casibase",
+    "About Hanzo Cloud": "Acerca de Hanzo Cloud",
     "CPU Usage": "Uso de CPU",
     "Community": "Comunidad",
     "Count": "Veces",
