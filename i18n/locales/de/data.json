@@ -252,7 +252,7 @@
   },
   "store": {
     "Cannot delete the default store": "Standard-Speicher kann nicht gelöscht werden",
-    "given that there must be one default store in Casibase, you cannot set this store to non-default. You can directly set another store as default": "Da es in Casibase einen Standard-Speicher geben muss, können Sie diesen Speicher nicht auf Nicht-Standard setzen. Sie können direkt einen anderen Speicher als Standard festlegen"
+    "given that there must be one default store in Hanzo, you cannot set this store to non-default. You can directly set another store as default": "Da es in Hanzo einen Standard-Speicher geben muss, können Sie diesen Speicher nicht auf Nicht-Standard setzen. Sie können direkt einen anderen Speicher als Standard festlegen"
   },
   "stt": {
     "API error: %s": "API-Fehler: %s",

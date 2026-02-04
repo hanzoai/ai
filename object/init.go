@@ -43,7 +43,7 @@ func initBuiltInStore(modelProviderName string, embeddingProviderName string, tt
 	imageProviderName := ""
 	providerDbName := conf.GetConfigString("providerDbName")
 	if providerDbName != "" {
-		imageProviderName = "provider_storage_casibase_default"
+		imageProviderName = "provider_storage_hanzo_default"
 	}
 
 	store := &Store{
@@ -52,7 +52,7 @@ func initBuiltInStore(modelProviderName string, embeddingProviderName string, tt
 		CreatedTime:          util.GetCurrentTime(),
 		DisplayName:          "Built-in Store",
 		Title:                "AI Assistant",
-		Avatar:               "https://cdn.casibase.com/static/favicon.png",
+		Avatar:               "https://cdn.hanzo.ai/static/favicon.png",
 		StorageProvider:      "provider-storage-built-in",
 		StorageSubpath:       "store-built-in",
 		ImageProvider:        imageProviderName,
@@ -66,7 +66,7 @@ func initBuiltInStore(modelProviderName string, embeddingProviderName string, tt
 		MemoryLimit:          10,
 		LimitMinutes:         15,
 		Welcome:              "Hello",
-		WelcomeTitle:         "Hello, this is the Casibase AI Assistant",
+		WelcomeTitle:         "Hello, this is the Hanzo AI Assistant",
 		WelcomeText:          "I'm here to help answer your questions",
 		Prompt:               "You are an expert in your field and you specialize in using your knowledge to answer or solve people's problems.",
 		ExampleQuestions:     []ExampleQuestion{},
@@ -105,7 +105,7 @@ func getDefaultStoragePath() (string, error) {
 	providerDbName := conf.GetConfigString("providerDbName")
 	if providerDbName != "" {
 		dbName := conf.GetConfigString("dbName")
-		return fmt.Sprintf("C:/casibase_data/%s", dbName), nil
+		return fmt.Sprintf("C:/hanzo_cloud_data/%s", dbName), nil
 	}
 
 	cwd, err := os.Getwd()
