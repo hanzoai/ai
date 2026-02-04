@@ -747,7 +747,7 @@ export function submitStoreEdit(storeObj) {
 }
 
 export function getDefaultAiAvatar() {
-  return `${StaticBaseUrl}/img/casibase.png`;
+  return `${StaticBaseUrl}/img/hanzo-cloud.png`;
 }
 
 export const Countries = [{label: "English", key: "en", country: "US", alt: "English"},
@@ -2303,17 +2303,17 @@ export function getAlgorithm(themeAlgorithmNames) {
 }
 
 export function getHtmlTitle(storeHtmlTitle) {
-  const defaultHtmlTitle = "Casibase";
+  const defaultHtmlTitle = "Hanzo Cloud Console";
   let htmlTitle = Conf.HtmlTitle;
   if (storeHtmlTitle && storeHtmlTitle !== defaultHtmlTitle) {
     htmlTitle = storeHtmlTitle;
   }
-  return htmlTitle;
+  return htmlTitle || defaultHtmlTitle;
 }
 
 export function getFaviconUrl(themes, storeFaviconUrl) {
-  const defaultFaviconUrl = "https://cdn.casibase.com/static/favicon.png";
-  let faviconUrl = Conf.FaviconUrl;
+  const defaultFaviconUrl = "https://cdn.hanzo.ai/img/favicon.png";
+  let faviconUrl = Conf.FaviconUrl || defaultFaviconUrl;
   if (storeFaviconUrl && storeFaviconUrl !== defaultFaviconUrl) {
     faviconUrl = storeFaviconUrl;
   }
@@ -2325,8 +2325,8 @@ export function getFaviconUrl(themes, storeFaviconUrl) {
 }
 
 export function getLogo(themes, storeLogoUrl) {
-  const defaultLogoUrl = "https://cdn.casibase.org/img/casibase-logo_1200x256.png";
-  let logoUrl = Conf.LogoUrl;
+  const defaultLogoUrl = "https://cdn.hanzo.ai/img/hanzo-cloud-logo_1200x256.png";
+  let logoUrl = Conf.LogoUrl || defaultLogoUrl;
   if (storeLogoUrl && storeLogoUrl !== defaultLogoUrl) {
     logoUrl = storeLogoUrl;
   }
@@ -2339,8 +2339,8 @@ export function getLogo(themes, storeLogoUrl) {
 }
 
 export function getFooterHtml(themes, storeFooterHtml) {
-  const defaultFooterHtml = "Powered by <a target=\"_blank\" href=\"https://github.com/casibase/casibase\" rel=\"noreferrer\"><img style=\"padding-bottom: 3px;\" height=\"20\" alt=\"Casibase\" src=\"https://cdn.casibase.org/img/casibase-logo_1200x256.png\" /></a>";
-  let footerHtml = Conf.FooterHtml;
+  const defaultFooterHtml = "Powered by <a target=\"_blank\" href=\"https://hanzo.ai\" rel=\"noreferrer\"><img style=\"padding-bottom: 3px;\" height=\"20\" alt=\"Hanzo Cloud\" src=\"https://cdn.hanzo.ai/img/hanzo-cloud-logo_1200x256.png\" /></a>";
+  let footerHtml = Conf.FooterHtml || defaultFooterHtml;
   if (storeFooterHtml && storeFooterHtml !== defaultFooterHtml) {
     footerHtml = storeFooterHtml;
   }

@@ -252,7 +252,7 @@
   },
   "store": {
     "Cannot delete the default store": "Impossible de supprimer le magasin par défaut",
-    "given that there must be one default store in Casibase, you cannot set this store to non-default. You can directly set another store as default": "Étant donné qu'il doit y avoir un magasin par défaut dans Casibase, vous ne pouvez pas définir ce magasin comme non par défaut. Vous pouvez définir directement un autre magasin par défaut"
+    "given that there must be one default store in Hanzo, you cannot set this store to non-default. You can directly set another store as default": "Étant donné qu'il doit y avoir un magasin par défaut dans Hanzo, vous ne pouvez pas définir ce magasin comme non par défaut. Vous pouvez définir directement un autre magasin par défaut"
   },
   "stt": {
     "API error: %s": "Erreur API: %s",
