@@ -1,6 +1,7 @@
 FROM --platform=$BUILDPLATFORM node:20.18.0 AS FRONT
 WORKDIR /web
 COPY ./web .
+ENV NODE_OPTIONS="--max-old-space-size=4096"
 RUN yarn install --frozen-lockfile --network-timeout 1000000 && yarn run build
 
 
