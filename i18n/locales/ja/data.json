@@ -252,7 +252,7 @@
   },
   "store": {
     "Cannot delete the default store": "デフォルトストアは削除できません",
-    "given that there must be one default store in Casibase, you cannot set this store to non-default. You can directly set another store as default": "Casibaseには1つのデフォルトストアが必要であるため、このストアを非デフォルトに設定することはできません。直接別のストアをデフォルトとして設定できます"
+    "given that there must be one default store in Hanzo, you cannot set this store to non-default. You can directly set another store as default": "Hanzoには1つのデフォルトストアが必要であるため、このストアを非デフォルトに設定することはできません。直接別のストアをデフォルトとして設定できます"
   },
   "stt": {
     "API error: %s": "APIエラー: %s",
