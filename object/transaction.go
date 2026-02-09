@@ -25,7 +25,7 @@ import (
 	"github.com/robfig/cron/v3"
 )
 
-var CasibaseHost = ""
+var CloudHost = ""
 
 // createTransactionFromMessage creates a transaction object from a message.
 // This is a helper function to reduce code duplication.
@@ -34,8 +34,8 @@ func createTransactionFromMessage(message *Message) *casdoorsdk.Transaction {
 		Owner:       conf.GetConfigString("casdoorOrganization"),
 		CreatedTime: message.CreatedTime,
 		Application: conf.GetConfigString("casdoorApplication"),
-		Domain:      CasibaseHost,
-		Category:    "Casibase Chat",
+		Domain:      CloudHost,
+		Category:    "Hanzo Cloud Chat",
 		Type:        message.Chat,
 		Subtype:     message.Name,
 		Provider:    message.ModelProvider,

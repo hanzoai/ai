@@ -98,17 +98,17 @@ func GetConfigString(key string) string {
 	res := beego.AppConfig.String(key)
 	if res == "" {
 		if key == "staticBaseUrl" {
-			res = "https://cdn.casibase.org"
+			res = "https://cdn.hanzo.ai"
 		} else if key == "logConfig" {
-			res = "{\"filename\": \"logs/casibase.log\", \"maxdays\":99999, \"perm\":\"0770\"}"
+			res = "{\"filename\": \"logs/cloud.log\", \"maxdays\":99999, \"perm\":\"0770\"}"
 		} else if key == "avatarErrorUrl" {
-			res = "https://cdn.casibase.org/gravatar/error.png"
+			res = "https://cdn.hanzo.ai/gravatar/error.png"
 		}
 	}
 
 	if key == "staticBaseUrl" {
-		if strings.HasSuffix(beego.AppConfig.String("casdoorEndpoint"), ".casdoor.net") && res == "https://cdn.casibase.org" {
-			res = "https://cdn.casibase.com"
+		if strings.HasSuffix(beego.AppConfig.String("casdoorEndpoint"), ".casdoor.net") && res == "https://cdn.hanzo.ai" {
+			res = "https://cdn.hanzo.ai"
 		}
 	}
 

@@ -39,7 +39,7 @@ const (
 	StatusUnknown     = string(v1.PodUnknown) // "Unknown"
 	StatusFailed      = string(v1.PodFailed)
 	StatusTerminating = "Terminating"
-	NamespaceFormat   = "casibase-%s"
+	NamespaceFormat   = "hanzo-cloud-%s"
 )
 
 func UpdateApplicationStatus(owner string, name string, status string, lang string) error {
