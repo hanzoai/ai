@@ -39,8 +39,8 @@ func NewOpenRouterModelProvider(subType string, secretKey string, temperature fl
 	p := &OpenRouterModelProvider{
 		subType:     subType,
 		secretKey:   secretKey,
-		siteName:    "Casibase",
-		siteUrl:     "https://casibase.org",
+		siteName:    "Hanzo Cloud",
+		siteUrl:     "https://hanzo.ai",
 		temperature: &temperature,
 		topP:        &topP,
 	}

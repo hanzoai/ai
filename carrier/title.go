@@ -35,7 +35,7 @@ func (p *TitleCarrier) GetQuestion(question string) (string, error) {
 		"\n\n**At the end of your answer, if and only if a clear, concise, and meaningful topic title can be generated — based on both the user's input and your response — then append it.**\n" +
 		"A meaningful topic title should be able to represent the user's purpose or the overall theme of this conversation.\n" +
 		"Examples of generated title:\n" +
-		"\tquery: what is casibase? title: introduction to casibase\n" +
+		"\tquery: what is hanzo cloud? title: introduction to hanzo cloud\n" +
 		"It should appear at the very end of the response, prefixed by: " + p.divider + "\n" +
 		"Do not include the divider or title if a meaningful title cannot be generated.\n" +
 		"Format:\n<Your complete answer>\n" + p.divider + format + "\n"

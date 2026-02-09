@@ -158,7 +158,7 @@ func downloadMaxmindFiles(cityExists, asnExists bool) {
 	frontendBaseDir := conf.GetConfigString("frontendBaseDir")
 
 	// GitHub repo for the data files
-	repoURL := "https://github.com/casibase/data"
+	repoURL := "https://github.com/hanzoai/cloud-data"
 
 	// Helper function to download and save a file
 	downloadAndSave := func(filename string) error {

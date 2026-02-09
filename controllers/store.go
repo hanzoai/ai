@@ -161,7 +161,7 @@ func (c *ApiController) UpdateStore() {
 	}
 
 	if oldStore.IsDefault && !store.IsDefault {
-		c.ResponseError(c.T("store:given that there must be one default store in Casibase, you cannot set this store to non-default. You can directly set another store as default"))
+		c.ResponseError(c.T("store:given that there must be one default store in Hanzo Cloud, you cannot set this store to non-default. You can directly set another store as default"))
 		return
 	}
 

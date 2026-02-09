@@ -80,7 +80,7 @@ func getMemoryUsage() (uint64, uint64, error) {
 	return memInfo.RSS, virtualMem.Total, nil
 }
 
-// getDiskUsage gets disk usage for Casibase's data directory
+// getDiskUsage gets disk usage for Hanzo Cloud's data directory
 func getDiskUsage() (uint64, uint64, error) {
 	// Get the root path of the project
 	_, filename, _, _ := runtime.Caller(0)
@@ -116,7 +116,7 @@ func getDiskUsage() (uint64, uint64, error) {
 	return size, diskStat.Total, nil
 }
 
-// getNetworkUsage gets Casibase process's own network I/O usage
+// getNetworkUsage gets Hanzo Cloud process's own network I/O usage
 func getNetworkUsage() (uint64, uint64, uint64, error) {
 	proc, err := process.NewProcess(int32(os.Getpid()))
 	if err != nil {
