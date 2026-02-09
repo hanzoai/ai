@@ -74,8 +74,8 @@ func CorsFilter(ctx *context.Context) {
 		responseError(ctx, fmt.Sprintf("CORS error: origin [%s] is not allowed, path: %s", origin, ctx.Request.URL.Path))
 	}
 
-	if object.CasibaseHost == "" {
-		object.CasibaseHost = origin
+	if object.CloudHost == "" {
+		object.CloudHost = origin
 	}
 }
 

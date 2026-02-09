@@ -202,7 +202,7 @@ func (k *K8sClient) createNamespaceIfNotExists(name string) error {
 					"metadata": map[string]interface{}{
 						"name": name,
 						"labels": map[string]interface{}{
-							"managed-by": "casibase",
+							"managed-by": "hanzo-cloud",
 						},
 					},
 				},
@@ -255,7 +255,7 @@ func (k *K8sClient) deployResource(yamlContent, namespace string, lang string) e
 	if labels == nil {
 		labels = make(map[string]string)
 	}
-	labels["managed-by"] = "casibase"
+	labels["managed-by"] = "hanzo-cloud"
 	obj.SetLabels(labels)
 
 	// Get GVR for the resource

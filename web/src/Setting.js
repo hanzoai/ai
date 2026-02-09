@@ -2330,7 +2330,7 @@ export function getLogo(themes, storeLogoUrl) {
   if (storeLogoUrl && storeLogoUrl !== defaultLogoUrl) {
     logoUrl = storeLogoUrl;
   }
-  logoUrl = logoUrl.replace("https://cdn.casibase.org", Conf.StaticBaseUrl);
+  logoUrl = logoUrl.replace("https://cdn.casibase.org", Conf.StaticBaseUrl).replace("https://cdn.hanzo.ai", Conf.StaticBaseUrl);
   if (themes.includes("dark")) {
     return logoUrl.replace(/\.png$/, "_white.png");
   } else {
@@ -2344,7 +2344,7 @@ export function getFooterHtml(themes, storeFooterHtml) {
   if (storeFooterHtml && storeFooterHtml !== defaultFooterHtml) {
     footerHtml = storeFooterHtml;
   }
-  footerHtml = footerHtml.replace("https://cdn.casibase.org", Conf.StaticBaseUrl);
+  footerHtml = footerHtml.replace("https://cdn.casibase.org", Conf.StaticBaseUrl).replace("https://cdn.hanzo.ai", Conf.StaticBaseUrl);
   if (themes.includes("dark")) {
     return footerHtml.replace(/(\.png)/g, "_white$1");
   } else {

@@ -108,7 +108,7 @@ class ApplicationStorePage extends React.Component {
       displayName: `${template.displayName} - ${randomName}`,
       description: template.description,
       template: template.name,
-      namespace: `casibase-application-${randomName}`,
+      namespace: `hanzo-cloud-app-${randomName}`,
       parameters: "",
       status: "Not Deployed",
     };
