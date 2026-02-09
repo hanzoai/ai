@@ -145,7 +145,7 @@ class SystemInfo extends React.Component {
       <PrometheusInfoTable prometheusInfo={this.state.prometheusInfo} table={"latency"} />;
     const throughputUi = this.state.prometheusInfo?.apiThroughput === null || this.state.prometheusInfo?.apiThroughput?.length <= 0 ? <Spin size="large" /> :
       <PrometheusInfoTable prometheusInfo={this.state.prometheusInfo} table={"throughput"} />;
-    const link = this.state.versionInfo?.version !== "" ? `https://github.com/casibase/casibase/releases/tag/${this.state.versionInfo?.version}` : "";
+    const link = this.state.versionInfo?.version !== "" ? `https://github.com/hanzoai/cloud/releases/tag/${this.state.versionInfo?.version}` : "";
     let versionText = this.state.versionInfo?.version !== "" ? this.state.versionInfo?.version : i18next.t("system:Unknown version");
     if (this.state.versionInfo?.commitOffset > 0) {
       versionText += ` (ahead+${this.state.versionInfo?.commitOffset})`;
@@ -186,15 +186,15 @@ class SystemInfo extends React.Component {
               </Card>
             </Col>
             <Col span={24}>
-              <Card id="about-card" title={i18next.t("system:About Casibase")} bordered={true} style={{textAlign: "center"}}>
-                <div>{i18next.t("system:🚀⚡️Open-Source LangChain-like AI Knowledge Database & Chat Bot with Admin UI and multi-model support (ChatGPT, Claude, Llama 3, DeepSeek R1, HuggingFace, etc.)")}</div>
-                GitHub: <a target="_blank" rel="noreferrer" href="https://github.com/casibase/casibase">Casibase</a>
+              <Card id="about-card" title={i18next.t("system:About Hanzo Cloud")} bordered={true} style={{textAlign: "center"}}>
+                <div>{i18next.t("system:AI Knowledge Database & Chat Bot with Admin UI and multi-model support (ChatGPT, Claude, Llama 3, DeepSeek R1, HuggingFace, etc.)")}</div>
+                GitHub: <a target="_blank" rel="noreferrer" href="https://github.com/hanzoai/cloud">Hanzo Cloud</a>
                 <br />
                 {i18next.t("system:Version")}: <a target="_blank" rel="noreferrer" href={link}>{versionText}</a>
                 <br />
-                {i18next.t("system:Official website")}: <a target="_blank" rel="noreferrer" href="https://casibase.org">https://casibase.org</a>
+                {i18next.t("system:Official website")}: <a target="_blank" rel="noreferrer" href="https://hanzo.ai">https://hanzo.ai</a>
                 <br />
-                {i18next.t("system:Community")}: <a target="_blank" rel="noreferrer" href="https://casibase.org/#:~:text=Casibase%20API-,Community,-GitHub">Get in Touch!</a>
+                {i18next.t("system:Community")}: <a target="_blank" rel="noreferrer" href="https://github.com/hanzoai/cloud/discussions">Get in Touch!</a>
               </Card>
             </Col>
           </Row>
@@ -224,15 +224,15 @@ class SystemInfo extends React.Component {
             </Card>
           </Col>
           <Col span={24}>
-            <Card title={i18next.t("system:About Casibase")} bordered={true} style={{textAlign: "center"}}>
-              <div>{i18next.t("system:🚀⚡️Open-Source LangChain-like AI Knowledge Database & Chat Bot with Admin UI and multi-model support (ChatGPT, Claude, Llama 3, DeepSeek R1, HuggingFace, etc.)")}</div>
-              GitHub: <a target="_blank" rel="noreferrer" href="https://github.com/casibase/casibase">Casibase</a>
+            <Card title={i18next.t("system:About Hanzo Cloud")} bordered={true} style={{textAlign: "center"}}>
+              <div>{i18next.t("system:AI Knowledge Database & Chat Bot with Admin UI and multi-model support (ChatGPT, Claude, Llama 3, DeepSeek R1, HuggingFace, etc.)")}</div>
+              GitHub: <a target="_blank" rel="noreferrer" href="https://github.com/hanzoai/cloud">Hanzo Cloud</a>
               <br />
               {i18next.t("system:Version")}: <a target="_blank" rel="noreferrer" href={link}>{versionText}</a>
               <br />
-              {i18next.t("system:Official website")}: <a target="_blank" rel="noreferrer" href="https://casibase.org">https://casibase.org</a>
+              {i18next.t("system:Official website")}: <a target="_blank" rel="noreferrer" href="https://hanzo.ai">https://hanzo.ai</a>
               <br />
-              {i18next.t("system:Community")}: <a target="_blank" rel="noreferrer" href="https://casibase.org/#:~:text=Casibase%20API-,Community,-GitHub">Get in Touch!</a>
+              {i18next.t("system:Community")}: <a target="_blank" rel="noreferrer" href="https://github.com/hanzoai/cloud/discussions">Get in Touch!</a>
             </Card>
           </Col>
         </Row>

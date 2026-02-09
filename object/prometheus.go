@@ -55,17 +55,17 @@ var (
 
 	CpuUsage = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "casibase_cpu_usage",
-		Help: "casibase cpu usage",
+		Help: "Hanzo Cloud cpu usage",
 	}, []string{"cpuNum"})
 
 	MemoryUsage = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "casibase_memory_usage",
-		Help: "casibase memory usage in Byte",
+		Help: "Hanzo Cloud memory usage in Byte",
 	}, []string{"type"})
 
 	TotalThroughput = promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "casibase_total_throughput",
-		Help: "The total throughput of casibase",
+		Help: "The total throughput of Hanzo Cloud",
 	})
 )
 
