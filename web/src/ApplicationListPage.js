@@ -161,7 +161,7 @@ class ApplicationListPage extends BaseListPage {
       displayName: `${i18next.t("application:New Application")} - ${randomName}`,
       description: "",
       template: this.state.templates[0]?.name || "",
-      namespace: `casibase-application-${randomName}`,
+      namespace: `hanzo-cloud-app-${randomName}`,
       parameters: defaultParameters,
       status: "Not Deployed",
     };

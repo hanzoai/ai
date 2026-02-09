@@ -137,7 +137,7 @@ They must:
 **Finally, generate a concise and meaningful title for the original question. No need to answer user question. 
 A meaningful topic title should be able to represent the user's purpose or the overall theme of this conversation.
 Examples of generated title:
-	query: what is casibase? title: introduction to casibase
+	query: what is hanzo cloud? title: introduction to hanzo cloud
 - The title must start with "=====" (five equals signs, no space).
 - Do not include the divider or title if a meaningful title cannot be generated.
 - Do NOT include any explanations or extra text—just output the title.`)

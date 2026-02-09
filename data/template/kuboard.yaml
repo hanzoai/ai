@@ -1,4 +1,4 @@
-apiVersion: app.casibase.org/v1
+apiVersion: app.cloud.hanzo.ai/v1
 kind: Template
 metadata:
   name: kuboard
@@ -24,10 +24,10 @@ metadata:
   name: {{ .application.name }}
   annotations:
     originImageName: eipwork/kuboard:v3
-    casibase/minReplicas: '1'
-    casibase/maxReplicas: '1'
+    hanzo-cloud/minReplicas: '1'
+    hanzo-cloud/maxReplicas: '1'
   labels:
-    casibase/app-deploy-manager: {{ .application.name }}
+    hanzo-cloud/app-deploy-manager: {{ .application.name }}
     app: {{ .application.name }}
 spec:
   replicas: 1
@@ -91,7 +91,7 @@ kind: Service
 metadata:
   name: {{ .application.name }}
   labels:
-    casibase/app-deploy-manager: {{ .application.name }}
+    hanzo-cloud/app-deploy-manager: {{ .application.name }}
 spec:
   ports:
     - port: 80
@@ -104,8 +104,8 @@ kind: Ingress
 metadata:
   name: {{ .application.name }}
   labels:
-    casibase/app-deploy-manager: {{ .application.name }}
-    casibase/app-deploy-manager-domain: {{ .options.host }}
+    hanzo-cloud/app-deploy-manager: {{ .application.name }}
+    hanzo-cloud/app-deploy-manager-domain: {{ .options.host }}
 spec:
   rules:
     - host: {{ .options.host }}

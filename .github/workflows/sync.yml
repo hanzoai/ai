@@ -10,7 +10,7 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
-    if: github.repository == 'casibase/casibase' && github.event_name == 'push'
+    if: github.repository == 'hanzoai/cloud' && github.event_name == 'push'
     steps:
 
     - name: Checkout

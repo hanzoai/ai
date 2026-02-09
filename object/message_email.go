@@ -65,7 +65,7 @@ func (message *Message) SendEmail(lang string) error {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Casibase Message Update</title>
+<title>Hanzo Cloud Message Update</title>
 <style>
     body { font-family: Arial, sans-serif; }
     .email-container { width: 600px; margin: 0 auto; }
@@ -79,7 +79,7 @@ func (message *Message) SendEmail(lang string) error {
 <div class="email-container">
   <div class="header">
         <h3>%s</h3>
-        <img src="%s" alt="Casibase Logo" width="300">
+        <img src="%s" alt="Hanzo Cloud Logo" width="300">
     </div>
     <p>Hi <strong>%s</strong>, your AI reply has been updated by the administrator! </p>
     <p>Question:</p>
@@ -98,7 +98,7 @@ func (message *Message) SendEmail(lang string) error {
     <p>%s</p>
     <hr>
     <div class="footer">
-        <p>Copyright © 2025 Casibase Organization</p>
+        <p>Copyright &copy; 2025 Hanzo AI Inc.</p>
     </div>
 </div>
 </body>
@@ -162,7 +162,7 @@ func (message *Message) SendErrorEmail(errorText string, lang string) error {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Casibase Message Error</title>
+<title>Hanzo Cloud Message Error</title>
 <style>
     body { font-family: Arial, sans-serif; }
     .email-container { width: 600px; margin: 0 auto; }
@@ -176,7 +176,7 @@ func (message *Message) SendErrorEmail(errorText string, lang string) error {
 <div class="email-container">
   <div class="header">
         <h3>%s</h3>
-        <img src="%s" alt="Casibase Logo" width="300">
+        <img src="%s" alt="Hanzo Cloud Logo" width="300">
     </div>
     <p>The message for user: <strong>%s</strong> has encountered error! </p>
     <p>Question:</p>
@@ -191,7 +191,7 @@ func (message *Message) SendErrorEmail(errorText string, lang string) error {
     <p>%s</p>
     <hr>
     <div class="footer">
-        <p>Copyright © 2025 Casibase Organization</p>
+        <p>Copyright &copy; 2025 Hanzo AI Inc.</p>
     </div>
 </div>
 </body>

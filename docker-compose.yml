@@ -1,6 +1,6 @@
 version: '3.1'
 services:
-  casibase:
+  cloud:
     restart: always
     build:
       context: ./
