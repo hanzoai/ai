@@ -41,7 +41,7 @@ func (p *OpenAIFileSystemStorageProvider) ListObjects(prefix string) ([]*Object,
 }
 
 func (p *OpenAIFileSystemStorageProvider) PutObject(user string, parent string, key string, fileBuffer *bytes.Buffer) (string, error) {
-	client := model.GetOpenAiClientFromToken(p.clientSecret)
+	client := model.GetOpenAiClientFromToken(p.clientSecret, "")
 	ctx := context.Background()
 
 	fileName := key
@@ -75,7 +75,7 @@ func (p *OpenAIFileSystemStorageProvider) PutObject(user string, parent string, 
 
 func (p *OpenAIFileSystemStorageProvider) DeleteObject(key string) error {
 	ctx := context.Background()
-	client := model.GetOpenAiClientFromToken(p.clientSecret)
+	client := model.GetOpenAiClientFromToken(p.clientSecret, "")
 
 	fileId := getCachedFileId(p.storeId, key)
 	_, err := client.VectorStores.Files.Delete(ctx, p.vectorStoreId, fileId)
@@ -112,7 +112,7 @@ func (p *OpenAIFileSystemStorageProvider) getCachedFiles(prefix string) ([]*Obje
 
 func getOpenaiFileObjects(clientSecret string, vectorStoreId string) (map[string]CachedFile, error) {
 	ctx := context.Background()
-	client := model.GetOpenAiClientFromToken(clientSecret)
+	client := model.GetOpenAiClientFromToken(clientSecret, "")
 
 	FileMap := make(map[string]string)
 	fp := client.Files.ListAutoPaging(ctx, openai.FileListParams{})

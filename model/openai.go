@@ -36,16 +36,18 @@ import (
 type OpenAiModelProvider struct {
 	subType          string
 	secretKey        string
+	providerUrl      string
 	temperature      float32
 	topP             float32
 	frequencyPenalty float32
 	presencePenalty  float32
 }
 
-func NewOpenAiModelProvider(subType string, secretKey string, temperature float32, topP float32, frequencyPenalty float32, presencePenalty float32) (*OpenAiModelProvider, error) {
+func NewOpenAiModelProvider(subType string, secretKey string, providerUrl string, temperature float32, topP float32, frequencyPenalty float32, presencePenalty float32) (*OpenAiModelProvider, error) {
 	p := &OpenAiModelProvider{
 		subType:          subType,
 		secretKey:        secretKey,
+		providerUrl:      providerUrl,
 		temperature:      temperature,
 		topP:             topP,
 		frequencyPenalty: frequencyPenalty,
@@ -200,9 +202,13 @@ func (p *OpenAiModelProvider) GetPricing() string {
 	return getOpenAIModelPrice()
 }
 
-func GetOpenAiClientFromToken(authToken string) openai.Client {
+func GetOpenAiClientFromToken(authToken string, providerUrl string) openai.Client {
 	httpClient := proxy.ProxyHttpClient
-	c := openai.NewClient(option.WithHTTPClient(httpClient), option.WithAPIKey(authToken))
+	opts := []option.RequestOption{option.WithHTTPClient(httpClient), option.WithAPIKey(authToken)}
+	if providerUrl != "" {
+		opts = append(opts, option.WithBaseURL(providerUrl))
+	}
+	c := openai.NewClient(opts...)
 	return c
 }
 
@@ -210,7 +216,7 @@ func (p *OpenAiModelProvider) QueryText(question string, writer io.Writer, histo
 	var client openai.Client
 	var flushData interface{}
 
-	client = GetOpenAiClientFromToken(p.secretKey)
+	client = GetOpenAiClientFromToken(p.secretKey, p.providerUrl)
 	flushData = flushDataThink
 
 	ctx := context.Background()
