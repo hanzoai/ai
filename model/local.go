@@ -161,7 +161,7 @@ func (p *LocalModelProvider) QueryText(question string, writer io.Writer, histor
 	var client *openai.Client
 	var flushData interface{} // Can be either flushData or flushDataThink
 
-	if p.typ == "Local" {
+	if p.typ == "Local" || p.typ == "DigitalOcean" {
 		client = getLocalClientFromUrl(p.secretKey, p.providerUrl)
 		flushData = flushDataThink
 	} else if p.typ == "Azure" {
