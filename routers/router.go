@@ -299,4 +299,5 @@ func initAPI() {
 	beego.Router("/api/wecom-bot/callback/:botId", &controllers.ApiController{}, "GET:WecomBotVerifyUrl;POST:WecomBotHandleMessage")
 
 	beego.Router("/api/get-agents-dashboard-url", &controllers.ApiController{}, "GET:GetAgentsDashboardUrl")
+	beego.Router("/api/get-vm-dashboard-url", &controllers.ApiController{}, "GET:GetVmDashboardUrl")
 }
