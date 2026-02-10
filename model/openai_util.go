@@ -161,6 +161,13 @@ func ChatCompletionRequest(model string, messages []openai.ChatCompletionMessage
 		res.MaxTokens = 4096
 	}
 
+	// Anthropic and other models routed through OpenAI-compatible APIs require max_tokens
+	if strings.Contains(model, "claude") || strings.Contains(model, "llama") || strings.Contains(model, "mistral") || strings.Contains(model, "qwen") || strings.Contains(model, "deepseek") {
+		if res.MaxTokens == 0 {
+			res.MaxTokens = 4096
+		}
+	}
+
 	return res
 }
 
