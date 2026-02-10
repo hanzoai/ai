@@ -81,12 +81,15 @@ func (p *LocalModelProvider) GetPricing() string {
 }
 
 func (p *LocalModelProvider) CalculatePrice(modelResult *ModelResult, lang string) error {
-	// local custom model:
-	if p.subType == "custom-model" {
+	// Use provider-configured pricing for custom models and DigitalOcean
+	if p.subType == "custom-model" || p.typ == "DigitalOcean" || p.inputPricePerThousandTokens > 0 {
 		inputPrice := getPrice(modelResult.PromptTokenCount, p.inputPricePerThousandTokens)
 		outputPrice := getPrice(modelResult.ResponseTokenCount, p.outputPricePerThousandTokens)
 		modelResult.TotalPrice = AddPrices(inputPrice, outputPrice)
 		modelResult.Currency = p.currency
+		if modelResult.Currency == "" {
+			modelResult.Currency = "USD"
+		}
 		return nil
 	}
 	return CalculateOpenAIModelPrice(p.subType, modelResult, lang)
@@ -286,7 +289,7 @@ func (p *LocalModelProvider) QueryText(question string, writer io.Writer, histor
 			}
 
 			// Handle both regular content and reasoning content
-			if p.typ == "Custom-think" || p.typ == "Local" {
+			if p.typ == "Custom-think" || p.typ == "Local" || p.typ == "DigitalOcean" {
 				// For Custom-think type, we'll handle both reasoning and regular content
 				flushThink := flushData.(func(string, string, io.Writer, string) error)
 
