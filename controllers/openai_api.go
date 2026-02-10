@@ -42,18 +42,37 @@ func (c *ApiController) ChatCompletions() {
 
 	apiKey = strings.TrimPrefix(apiKey, "Bearer ")
 
-	// Get the model provider based on API key
-	modelProvider, err := object.GetModelProviderByProviderKey(apiKey, c.GetAcceptLanguage())
+	// Parse request body
+	var request openai.ChatCompletionRequest
+	err := json.Unmarshal(c.Ctx.Input.RequestBody, &request)
+	if err != nil {
+		c.ResponseError(fmt.Sprintf("Failed to parse request: %s", err.Error()))
+		return
+	}
+
+	// Get the provider based on API key
+	provider, err := object.GetProviderByProviderKey(apiKey, c.GetAcceptLanguage())
 	if err != nil {
 		c.ResponseError(fmt.Sprintf("Authentication failed: %s", err.Error()))
 		return
 	}
+	if provider == nil {
+		c.ResponseError("Authentication failed: invalid API key")
+		return
+	}
+	if provider.Category != "Model" {
+		c.ResponseError(fmt.Sprintf("Provider %s is not a model provider", provider.Name))
+		return
+	}
 
-	// Parse request body
-	var request openai.ChatCompletionRequest
-	err = json.Unmarshal(c.Ctx.Input.RequestBody, &request)
+	// Use the model from the request if provided, otherwise fall back to provider's subType
+	if request.Model != "" {
+		provider.SubType = request.Model
+	}
+
+	modelProvider, err := provider.GetModelProvider(c.GetAcceptLanguage())
 	if err != nil {
-		c.ResponseError(fmt.Sprintf("Failed to parse request: %s", err.Error()))
+		c.ResponseError(fmt.Sprintf("Failed to get model provider: %s", err.Error()))
 		return
 	}
 
