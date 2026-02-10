@@ -16,7 +16,7 @@ import React, {Component} from "react";
 import {Link, Redirect, Route, Switch, withRouter} from "react-router-dom";
 import {StyleProvider, legacyLogicalPropertiesTransformer} from "@ant-design/cssinjs";
 import {Avatar, Button, Card, ConfigProvider, Drawer, Dropdown, FloatButton, Layout, Menu, Result} from "antd";
-import {AppstoreTwoTone, BarsOutlined, BulbTwoTone, CloudTwoTone, CommentOutlined, DownOutlined, HomeTwoTone, LockTwoTone, LoginOutlined, LogoutOutlined, RobotOutlined, SettingOutlined, SettingTwoTone, VideoCameraTwoTone, WalletTwoTone} from "@ant-design/icons";
+import {AppstoreTwoTone, BarsOutlined, BulbTwoTone, CloudTwoTone, CommentOutlined, DesktopOutlined, DownOutlined, HomeTwoTone, LockTwoTone, LoginOutlined, LogoutOutlined, RobotOutlined, SettingOutlined, SettingTwoTone, VideoCameraTwoTone, WalletTwoTone} from "@ant-design/icons";
 import "./App.less";
 import {Helmet} from "react-helmet";
 import * as Setting from "./Setting";
@@ -109,6 +109,7 @@ import CaaseEditPage from "./CaaseEditPage";
 import ConsultationListPage from "./ConsultationListPage";
 import ConsultationEditPage from "./ConsultationEditPage";
 import AgentsPage from "./AgentsPage";
+import VmPage from "./VmPage";
 
 const {Header, Footer, Content} = Layout;
 
@@ -279,6 +280,8 @@ class App extends Component {
       this.setState({selectedMenuKey: "/chat"});
     } else if (uri.includes("/agents")) {
       this.setState({selectedMenuKey: "/agents"});
+    } else if (uri.includes("/vm")) {
+      this.setState({selectedMenuKey: "/vm"});
     } else if (uri.includes("/sysinfo")) {
       this.setState({selectedMenuKey: "/sysinfo"});
     } else if (uri.includes("/swagger")) {
@@ -753,6 +756,10 @@ class App extends Component {
         Setting.getItem(<Link to="/agents">{i18next.t("general:Dashboard")}</Link>, "/agents"),
       ]));
 
+      res.push(Setting.getItem(<Link style={{color: textColor}} to="/vm">{i18next.t("general:Virtual Machines")}</Link>, "/vm", <DesktopOutlined style={{color: twoToneColor}} />, [
+        Setting.getItem(<Link to="/vm">{i18next.t("general:Dashboard")}</Link>, "/vm"),
+      ]));
+
       res.push(Setting.getItem(<Link style={{color: textColor}} to="/sysinfo">{i18next.t("general:Admin")}</Link>, "/admin", <SettingTwoTone twoToneColor={twoToneColor} />, [
         Setting.getItem(<Link to="/sysinfo">{i18next.t("general:System Info")}</Link>, "/sysinfo"),
         Setting.getItem(
@@ -895,6 +902,7 @@ class App extends Component {
         <Route exact path="/graphs/:graphName" render={(props) => this.renderSigninIfNotSignedIn(<GraphEditPage account={this.state.account} {...props} />)} />
         <Route exact path="/workbench" render={(props) => this.renderSigninIfNotSignedIn(<NodeWorkbench account={this.state.account} {...props} />)} />
         <Route exact path="/agents" render={(props) => this.renderSigninIfNotSignedIn(<AgentsPage account={this.state.account} {...props} />)} />
+        <Route exact path="/vm" render={(props) => this.renderSigninIfNotSignedIn(<VmPage account={this.state.account} {...props} />)} />
         <Route exact path="/sysinfo" render={(props) => this.renderSigninIfNotSignedIn(<SystemInfo account={this.state.account} {...props} />)} />
         <Route path="" render={() => <Result status="404" title="404 NOT FOUND" subTitle={i18next.t("general:Sorry, the page you visited does not exist.")} extra={<a href="/"><Button type="primary">{i18next.t("general:Back Home")}</Button></a>} />} />
       </Switch>
