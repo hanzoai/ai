@@ -69,12 +69,23 @@ func resolveProviderFromJwt(token string, requestedModel string, lang string) (*
 	// Enforce free-tier restrictions: users without prepaid balance
 	// can only use the free-tier DigitalOcean provider.
 	if !isDigitalOceanProvider(provider) && user.Balance <= 0 {
-		return nil, user, fmt.Errorf(
-			"model %q requires a paid plan. Your current balance is $%.2f. "+
-				"Add funds at https://hanzo.ai/billing to access premium models, "+
-				"or use a free-tier model instead",
-			requestedModel, user.Balance,
-		)
+		// JWT tokens may not include the balance field; fetch from IAM API
+		// to get the authoritative balance before rejecting the request.
+		if user.Name != "" {
+			iamUser, err := iamsdk.GetUser(user.Name)
+			if err == nil && iamUser != nil {
+				user.Balance = iamUser.Balance
+			}
+		}
+
+		if user.Balance <= 0 {
+			return nil, user, fmt.Errorf(
+				"model %q requires a paid plan. Your current balance is $%.2f. "+
+					"Add funds at https://hanzo.ai/billing to access premium models, "+
+					"or use a free-tier model instead",
+				requestedModel, user.Balance,
+			)
+		}
 	}
 
 	return provider, user, nil
