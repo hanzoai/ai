@@ -19,7 +19,7 @@ import (
 	"strings"
 
 	"github.com/beego/beego/logs"
-	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
+	iamsdk "github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"github.com/hanzoai/cloud/conf"
 	"github.com/hanzoai/cloud/util"
 	"github.com/robfig/cron/v3"
@@ -29,11 +29,11 @@ var CloudHost = ""
 
 // createTransactionFromMessage creates a transaction object from a message.
 // This is a helper function to reduce code duplication.
-func createTransactionFromMessage(message *Message) *casdoorsdk.Transaction {
-	transaction := &casdoorsdk.Transaction{
-		Owner:       conf.GetConfigString("casdoorOrganization"),
+func createTransactionFromMessage(message *Message) *iamsdk.Transaction {
+	transaction := &iamsdk.Transaction{
+		Owner:       conf.GetConfigString("iamOrganization"),
 		CreatedTime: message.CreatedTime,
-		Application: conf.GetConfigString("casdoorApplication"),
+		Application: conf.GetConfigString("iamApplication"),
 		Domain:      CloudHost,
 		Category:    "Hanzo Cloud Chat",
 		Type:        message.Chat,
@@ -65,8 +65,8 @@ func ValidateTransactionForMessage(message *Message) error {
 	// Create transaction object
 	transaction := createTransactionFromMessage(message)
 
-	// Validate transaction via Casdoor SDK with dry run mode
-	_, _, err := casdoorsdk.AddTransactionWithDryRun(transaction, true)
+	// Validate transaction via IAM SDK with dry run mode
+	_, _, err := iamsdk.AddTransactionWithDryRun(transaction, true)
 	if err != nil {
 		return fmt.Errorf("failed to validate transaction: %s", err.Error())
 	}
@@ -74,7 +74,7 @@ func ValidateTransactionForMessage(message *Message) error {
 	return nil
 }
 
-// AddTransactionForMessage creates a transaction in Casdoor for a message with price,
+// AddTransactionForMessage creates a transaction in IAM for a message with price,
 // sets the message's TransactionId, and if transaction creation fails, updates the message's ErrorText field in the database and returns an error to the caller.
 func AddTransactionForMessage(message *Message) error {
 	// Only create transaction if message has a price
@@ -85,8 +85,8 @@ func AddTransactionForMessage(message *Message) error {
 	// Create transaction object
 	transaction := createTransactionFromMessage(message)
 
-	// Add transaction via Casdoor SDK
-	_, transactionName, err := casdoorsdk.AddTransaction(transaction)
+	// Add transaction via IAM SDK
+	_, transactionName, err := iamsdk.AddTransaction(transaction)
 	if err != nil {
 		message.ErrorText = fmt.Sprintf("failed to add transaction: %s", err.Error())
 

@@ -18,7 +18,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
+	iamsdk "github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"github.com/hanzoai/cloud/conf"
 	"github.com/hanzoai/cloud/i18n"
 	"github.com/hanzoai/cloud/model"
@@ -191,22 +191,22 @@ func GetUsage(date string) (*Usage, error) {
 }
 
 func GetUsageMetadata(lang string) (*UsageMetadata, error) {
-	casdoorOrganization := conf.GetConfigString("casdoorOrganization")
-	organization, err := casdoorsdk.GetOrganization(casdoorOrganization)
+	iamOrganization := conf.GetConfigString("iamOrganization")
+	organization, err := iamsdk.GetOrganization(iamOrganization)
 	if err != nil {
 		return nil, err
 	}
 	if organization == nil {
-		return nil, fmt.Errorf(i18n.Translate(lang, "object:Casdoor organization: [%s] doesn't exist"), casdoorOrganization)
+		return nil, fmt.Errorf(i18n.Translate(lang, "object:IAM organization: [%s] doesn't exist"), iamOrganization)
 	}
 
-	casdoorApplication := conf.GetConfigString("casdoorApplication")
-	application, err := casdoorsdk.GetApplication(casdoorApplication)
+	iamApplication := conf.GetConfigString("iamApplication")
+	application, err := iamsdk.GetApplication(iamApplication)
 	if err != nil {
 		return nil, err
 	}
 	if application == nil {
-		return nil, fmt.Errorf(i18n.Translate(lang, "object:Casdoor application: [%s] doesn't exist"), casdoorApplication)
+		return nil, fmt.Errorf(i18n.Translate(lang, "object:IAM application: [%s] doesn't exist"), iamApplication)
 	}
 
 	res := &UsageMetadata{

@@ -24,7 +24,7 @@ import (
 
 	"github.com/beego/beego"
 	"github.com/beego/beego/context"
-	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
+	iamsdk "github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"github.com/hanzoai/cloud/conf"
 	"github.com/hanzoai/cloud/i18n"
 	"github.com/hanzoai/cloud/util"
@@ -100,7 +100,7 @@ func (c *ApiController) RequireSignedIn() (string, bool) {
 	return userId, true
 }
 
-func (c *ApiController) RequireSignedInUser() (*casdoorsdk.User, bool) {
+func (c *ApiController) RequireSignedInUser() (*iamsdk.User, bool) {
 	user := c.GetSessionUser()
 	if user == nil {
 		c.ResponseError(c.T("auth:Please sign in first"))

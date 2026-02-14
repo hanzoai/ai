@@ -240,7 +240,7 @@ func (store *Store) GetStorageProviderObj(lang string) (storage.StorageProvider,
 			return nil, err
 		}
 	} else {
-		storageProvider, err = storage.NewCasdoorProvider(store.StorageProvider, lang)
+		storageProvider, err = storage.NewIamProvider(store.StorageProvider, lang)
 		if err != nil {
 			return nil, err
 		}
@@ -254,7 +254,7 @@ func (store *Store) GetImageProviderObj(lang string) (storage.StorageProvider, e
 		return nil, fmt.Errorf(i18n.Translate(lang, "object:The image provider for store: %s should not be empty"), store.GetId())
 	}
 
-	return storage.NewCasdoorProvider(store.ImageProvider, lang)
+	return storage.NewIamProvider(store.ImageProvider, lang)
 }
 
 func (store *Store) GetModelProvider() (*Provider, error) {

@@ -21,7 +21,7 @@ import (
 	"strings"
 
 	"github.com/beego/beego/context"
-	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
+	iamsdk "github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"github.com/hanzoai/cloud/conf"
 	"github.com/hanzoai/cloud/i18n"
 	"github.com/hanzoai/cloud/util"
@@ -34,13 +34,13 @@ type Response struct {
 	Data2  interface{} `json:"data2"`
 }
 
-func GetSessionUser(ctx *context.Context) *casdoorsdk.User {
+func GetSessionUser(ctx *context.Context) *iamsdk.User {
 	s := ctx.Input.Session("user")
 	if s == nil {
 		return nil
 	}
 
-	claims := s.(casdoorsdk.Claims)
+	claims := s.(iamsdk.Claims)
 	return &claims.User
 }
 
@@ -90,8 +90,8 @@ func setSessionUser(ctx *context.Context, userId string) {
 	if err != nil {
 		panic(err)
 	}
-	claims := casdoorsdk.Claims{
-		User: casdoorsdk.User{
+	claims := iamsdk.Claims{
+		User: iamsdk.User{
 			Owner:   owner,
 			Name:    name,
 			IsAdmin: true,
@@ -117,7 +117,7 @@ func getUsernameByClientIdSecret(ctx *context.Context) (string, error) {
 		return "", nil
 	}
 
-	applicationName := conf.GetConfigString("casdoorApplication")
+	applicationName := conf.GetConfigString("iamApplication")
 	if clientSecret != conf.GetConfigString("clientSecret") {
 		return "", fmt.Errorf("Incorrect client secret for application: %s", applicationName)
 	}
@@ -126,7 +126,7 @@ func getUsernameByClientIdSecret(ctx *context.Context) (string, error) {
 }
 
 func getUsernameByAccessToken(accessTokenInput string) (string, error) {
-	applicationName := conf.GetConfigString("casdoorApplication")
+	applicationName := conf.GetConfigString("iamApplication")
 	clientSecret := conf.GetConfigString("clientSecret")
 	clientId := conf.GetConfigString("clientId")
 	accessToken := getMd5HexDigest(clientId + ":" + clientSecret)

@@ -21,7 +21,7 @@ import (
 	"strings"
 
 	"github.com/beego/beego/context"
-	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
+	iamsdk "github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"github.com/hanzoai/cloud/conf"
 	"github.com/hanzoai/cloud/object"
 )
@@ -54,13 +54,13 @@ func CorsFilter(ctx *context.Context) {
 		return
 	}
 
-	// Check if origin is allowed based on Casdoor application's RedirectUris
+	// Check if origin is allowed based on IAM application's RedirectUris
 	setCorsHeaders(ctx, origin)
 	ok, err := isOriginAllowed(origin)
 	if err != nil {
-		// If Casdoor is not configured, allow the origin for backwards compatibility
-		casdoorEndpoint := conf.GetConfigString("casdoorEndpoint")
-		if casdoorEndpoint == "" {
+		// If IAM is not configured, allow the origin for backwards compatibility
+		iamEndpoint := conf.GetConfigString("iamEndpoint")
+		if iamEndpoint == "" {
 			return
 		}
 		// Otherwise, reject the request
@@ -80,20 +80,20 @@ func CorsFilter(ctx *context.Context) {
 }
 
 func isOriginAllowed(origin string) (bool, error) {
-	casdoorEndpoint := conf.GetConfigString("casdoorEndpoint")
-	casdoorApplication := conf.GetConfigString("casdoorApplication")
+	iamEndpoint := conf.GetConfigString("iamEndpoint")
+	iamApplication := conf.GetConfigString("iamApplication")
 
-	// If Casdoor is not configured, return error to trigger backwards compatibility
-	if casdoorEndpoint == "" || casdoorApplication == "" {
-		return false, fmt.Errorf("casdoorEndpoint or casdoorApplication is empty")
+	// If IAM is not configured, return error to trigger backwards compatibility
+	if iamEndpoint == "" || iamApplication == "" {
+		return false, fmt.Errorf("iamEndpoint or iamApplication is empty")
 	}
 
-	application, err := casdoorsdk.GetApplication(casdoorApplication)
+	application, err := iamsdk.GetApplication(iamApplication)
 	if err != nil {
 		return false, err
 	}
 	if application == nil {
-		return false, fmt.Errorf("The application: %s does not exist", casdoorApplication)
+		return false, fmt.Errorf("The application: %s does not exist", iamApplication)
 	}
 
 	// Check if origin matches any RedirectUri

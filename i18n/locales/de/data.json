@@ -119,8 +119,8 @@
   },
   "object": {
     "Cannot generate word cloud, the dict file: [%s] does not exist": "Wortwolke kann nicht generiert werden, die Wörterbuchdatei: [%s] existiert nicht",
-    "Casdoor application: [%s] doesn't exist": "Casdoor-Anwendung: [%s] existiert nicht",
-    "Casdoor organization: [%s] doesn't exist": "Casdoor-Organisation: [%s] existiert nicht",
+    "IAM application: [%s] doesn't exist": "IAM-Anwendung: [%s] existiert nicht",
+    "IAM organization: [%s] doesn't exist": "IAM-Organisation: [%s] existiert nicht",
     "Please add a model provider first": "Bitte fügen Sie zuerst einen Modellanbieter hinzu",
     "Please add an embedding provider first": "Bitte fügen Sie zuerst einen Embedding-Anbieter hinzu",
     "Question message: [%s] doesn't exist": "Fragenachricht: [%s] existiert nicht",

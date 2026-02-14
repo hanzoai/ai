@@ -18,27 +18,27 @@ import (
 	"bytes"
 	"fmt"
 
-	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
+	iamsdk "github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"github.com/hanzoai/cloud/conf"
 	"github.com/hanzoai/cloud/i18n"
 )
 
-type CasdoorProvider struct {
+type IamProvider struct {
 	providerName string
 }
 
-func NewCasdoorProvider(providerName string, lang string) (*CasdoorProvider, error) {
+func NewIamProvider(providerName string, lang string) (*IamProvider, error) {
 	if providerName == "" {
 		return nil, fmt.Errorf(i18n.Translate(lang, "storage:storage provider name: [%s] doesn't exist"), providerName)
 	}
 
-	return &CasdoorProvider{providerName: providerName}, nil
+	return &IamProvider{providerName: providerName}, nil
 }
 
-func (p *CasdoorProvider) ListObjects(prefix string) ([]*Object, error) {
-	casdoorOrganization := conf.GetConfigString("casdoorOrganization")
-	casdoorApplication := conf.GetConfigString("casdoorApplication")
-	resources, err := casdoorsdk.GetResources(casdoorOrganization, casdoorApplication, "provider", p.providerName, "Direct", prefix)
+func (p *IamProvider) ListObjects(prefix string) ([]*Object, error) {
+	iamOrganization := conf.GetConfigString("iamOrganization")
+	iamApplication := conf.GetConfigString("iamApplication")
+	resources, err := iamsdk.GetResources(iamOrganization, iamApplication, "provider", p.providerName, "Direct", prefix)
 	if err != nil {
 		return nil, err
 	}
@@ -55,20 +55,20 @@ func (p *CasdoorProvider) ListObjects(prefix string) ([]*Object, error) {
 	return res, nil
 }
 
-func (p *CasdoorProvider) PutObject(user string, parent string, key string, fileBuffer *bytes.Buffer) (string, error) {
-	fileUrl, _, err := casdoorsdk.UploadResource(user, "HanzoCloud", parent, fmt.Sprintf("Direct/%s/%s", p.providerName, key), fileBuffer.Bytes())
+func (p *IamProvider) PutObject(user string, parent string, key string, fileBuffer *bytes.Buffer) (string, error) {
+	fileUrl, _, err := iamsdk.UploadResource(user, "HanzoCloud", parent, fmt.Sprintf("Direct/%s/%s", p.providerName, key), fileBuffer.Bytes())
 	if err != nil {
 		return "", err
 	}
 	return fileUrl, nil
 }
 
-func (p *CasdoorProvider) DeleteObject(key string) error {
-	resource := casdoorsdk.Resource{
+func (p *IamProvider) DeleteObject(key string) error {
+	resource := iamsdk.Resource{
 		Name: key,
 	}
 
-	_, err := casdoorsdk.DeleteResourceWithTag(&resource, "Direct")
+	_, err := iamsdk.DeleteResourceWithTag(&resource, "Direct")
 	if err != nil {
 		return err
 	}

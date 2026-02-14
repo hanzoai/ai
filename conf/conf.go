@@ -107,7 +107,7 @@ func GetConfigString(key string) string {
 	}
 
 	if key == "staticBaseUrl" {
-		if strings.HasSuffix(beego.AppConfig.String("casdoorEndpoint"), ".casdoor.net") && res == "https://cdn.hanzo.ai" {
+		if strings.HasSuffix(beego.AppConfig.String("iamEndpoint"), ".hanzo.ai") && res == "https://cdn.hanzo.ai" {
 			res = "https://cdn.hanzo.ai"
 		}
 	}
@@ -194,10 +194,10 @@ func GetStringArray(key string) []string {
 func GetWebConfig() *WebConfig {
 	config := &WebConfig{}
 
-	config.AuthConfig.ServerUrl = GetConfigString("casdoorEndpoint")
+	config.AuthConfig.ServerUrl = GetConfigString("iamEndpoint")
 	config.AuthConfig.ClientId = GetConfigString("clientId")
-	config.AuthConfig.AppName = GetConfigString("casdoorApplication")
-	config.AuthConfig.OrganizationName = GetConfigString("casdoorOrganization")
+	config.AuthConfig.AppName = GetConfigString("iamApplication")
+	config.AuthConfig.OrganizationName = GetConfigString("iamOrganization")
 	config.AuthConfig.RedirectPath = GetConfigString("redirectPath")
 
 	config.EnableExtraPages = GetConfigBool("enableExtraPages")
