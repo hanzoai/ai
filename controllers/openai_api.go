@@ -82,7 +82,8 @@ func isJwtToken(token string) bool {
 // financial state checked against IAM at request time — never from the JWT,
 // since JWTs are valid for days and balance changes on every transaction.
 //
-// Free-tier users (balance <= 0) are restricted to the DigitalOcean provider.
+// All models route through the default LiteLLM gateway provider.
+// Premium models (fireworks/*, openai-direct/*, anthropic/*) require balance > 0.
 func resolveProviderFromJwt(token string, requestedModel string, lang string) (*object.Provider, *iamsdk.User, error) {
 	claims, err := iamsdk.ParseJwtToken(token)
 	if err != nil {
@@ -91,32 +92,20 @@ func resolveProviderFromJwt(token string, requestedModel string, lang string) (*
 
 	user := &claims.User
 
-	// Route model name to the correct provider type
-	providerType := modelToProviderType(requestedModel)
-
-	// Look up the provider for this model
-	var provider *object.Provider
-	if providerType != "" {
-		provider, err = object.GetModelProviderByType(providerType)
-		if err != nil {
-			return nil, user, fmt.Errorf("failed to get model provider: %s", err.Error())
-		}
+	// All models are routed through the default provider, which is the
+	// LiteLLM gateway. LiteLLM handles upstream routing to DO-AI,
+	// Fireworks, OpenAI Direct, Anthropic, etc.
+	provider, err := object.GetDefaultModelProvider()
+	if err != nil {
+		return nil, user, fmt.Errorf("failed to get model provider: %s", err.Error())
 	}
-
-	// Fall back to default provider if no specific match
 	if provider == nil {
-		provider, err = object.GetDefaultModelProvider()
-		if err != nil {
-			return nil, user, fmt.Errorf("failed to get default model provider: %s", err.Error())
-		}
-		if provider == nil {
-			return nil, user, fmt.Errorf("no default model provider configured")
-		}
+		return nil, user, fmt.Errorf("no default model provider configured")
 	}
 
-	// Free-tier models (DigitalOcean) are available to all authenticated users.
-	// Premium models require a positive balance, checked against IAM.
-	if !isDigitalOceanProvider(provider) {
+	// Premium models (fireworks/*, openai-direct/*, anthropic/*) require
+	// a positive balance. Free-tier models are available to all authenticated users.
+	if isPremiumModel(requestedModel) {
 		balance, err := getUserBalance(user.Name)
 		if err != nil {
 			return nil, user, fmt.Errorf("failed to verify account balance: %s", err.Error())
@@ -137,31 +126,15 @@ func resolveProviderFromJwt(token string, requestedModel string, lang string) (*
 	return provider, user, nil
 }
 
-// modelToProviderType maps a model name prefix to the provider type string
-// used in the database. Returns empty string for unknown models (falls back
-// to the default provider).
-func modelToProviderType(model string) string {
+// isPremiumModel returns true for models that require a positive balance.
+// All models are routed through the default provider (LiteLLM gateway),
+// which handles upstream routing. This function only controls billing.
+func isPremiumModel(model string) bool {
 	m := strings.ToLower(model)
-	switch {
-	case strings.HasPrefix(m, "claude-"):
-		return "Claude"
-	case strings.HasPrefix(m, "gpt-"), strings.HasPrefix(m, "o1-"), strings.HasPrefix(m, "o3-"), strings.HasPrefix(m, "o4-"):
-		return "OpenAI"
-	case strings.HasPrefix(m, "qwen"), strings.Contains(m, "fireworks"):
-		return "Fireworks"
-	case strings.HasPrefix(m, "gemini-"):
-		return "Gemini"
-	case strings.HasPrefix(m, "deepseek-"):
-		return "DeepSeek"
-	default:
-		return ""
-	}
-}
-
-// isDigitalOceanProvider checks if a provider is backed by DigitalOcean
-// infrastructure (free-tier eligible).
-func isDigitalOceanProvider(provider *object.Provider) bool {
-	return provider.Type == "DigitalOcean"
+	// Models explicitly routed to premium upstream providers via LiteLLM
+	return strings.HasPrefix(m, "fireworks/") ||
+		strings.HasPrefix(m, "openai-direct/") ||
+		strings.HasPrefix(m, "anthropic/")
 }
 
 // ChatCompletions implements the OpenAI-compatible chat completions API
