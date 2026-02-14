@@ -19,28 +19,65 @@ import (
 	"fmt"
 	"strings"
 
+	iamsdk "github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"github.com/hanzoai/cloud/model"
 	"github.com/hanzoai/cloud/object"
 	"github.com/hanzoai/cloud/util"
 	"github.com/sashabaranov/go-openai"
 )
 
+// isJwtToken checks if a token looks like a JWT (3 base64 segments separated by dots).
+func isJwtToken(token string) bool {
+	parts := strings.Split(token, ".")
+	return len(parts) == 3 && len(parts[0]) > 10 && len(parts[1]) > 10
+}
+
+// resolveProviderFromJwt validates a hanzo.id JWT token and returns the default
+// model provider. Free-tier users ($5 credit) are restricted to DigitalOcean-
+// backed models only.
+func resolveProviderFromJwt(token string, lang string) (*object.Provider, *iamsdk.User, error) {
+	claims, err := iamsdk.ParseJwtToken(token)
+	if err != nil {
+		return nil, nil, fmt.Errorf("invalid hanzo.id token: %s", err.Error())
+	}
+
+	user := &claims.User
+
+	// Get the default model provider for authenticated users
+	provider, err := object.GetDefaultModelProvider()
+	if err != nil {
+		return nil, user, fmt.Errorf("failed to get default model provider: %s", err.Error())
+	}
+	if provider == nil {
+		return nil, user, fmt.Errorf("no default model provider configured")
+	}
+
+	return provider, user, nil
+}
+
+// isDigitalOceanProvider checks if a provider is backed by DigitalOcean
+// infrastructure (free-tier eligible).
+func isDigitalOceanProvider(provider *object.Provider) bool {
+	return provider.Type == "DigitalOcean"
+}
+
 // ChatCompletions implements the OpenAI-compatible chat completions API
 // @Title ChatCompletions
 // @Tag OpenAI Compatible API
-// @Description OpenAI compatible chat completions API
+// @Description OpenAI compatible chat completions API. Accepts either a provider
+// API key (sk-...) or a hanzo.id OAuth JWT token for authentication.
 // @Param   body    body    openai.ChatCompletionRequest  true    "The OpenAI chat request"
 // @Success 200 {object} openai.ChatCompletionResponse
 // @router /api/chat/completions [post]
 func (c *ApiController) ChatCompletions() {
-	// Authenticate using API key
-	apiKey := c.Ctx.Request.Header.Get("Authorization")
-	if !strings.HasPrefix(apiKey, "Bearer ") {
+	// Extract Bearer token
+	authHeader := c.Ctx.Request.Header.Get("Authorization")
+	if !strings.HasPrefix(authHeader, "Bearer ") {
 		c.ResponseError(c.T("openai:Invalid API key format. Expected 'Bearer API_KEY'"))
 		return
 	}
 
-	apiKey = strings.TrimPrefix(apiKey, "Bearer ")
+	token := strings.TrimPrefix(authHeader, "Bearer ")
 
 	// Parse request body
 	var request openai.ChatCompletionRequest
@@ -50,16 +87,34 @@ func (c *ApiController) ChatCompletions() {
 		return
 	}
 
-	// Get the provider based on API key
-	provider, err := object.GetProviderByProviderKey(apiKey, c.GetAcceptLanguage())
-	if err != nil {
-		c.ResponseError(fmt.Sprintf("Authentication failed: %s", err.Error()))
-		return
+	var provider *object.Provider
+	var authUser *iamsdk.User
+
+	if isJwtToken(token) {
+		// Authenticate via hanzo.id JWT token
+		provider, authUser, err = resolveProviderFromJwt(token, c.GetAcceptLanguage())
+		if err != nil {
+			c.ResponseError(fmt.Sprintf("Authentication failed: %s", err.Error()))
+			return
+		}
+
+		// TODO: Check user balance/tier and enforce free-tier restrictions
+		// For now, all JWT-authenticated users get the default provider.
+		// Future: check authUser's balance, restrict non-DO providers for free tier.
+		_ = authUser
+	} else {
+		// Authenticate via provider API key (sk-...)
+		provider, err = object.GetProviderByProviderKey(token, c.GetAcceptLanguage())
+		if err != nil {
+			c.ResponseError(fmt.Sprintf("Authentication failed: %s", err.Error()))
+			return
+		}
+		if provider == nil {
+			c.ResponseError("Authentication failed: invalid API key")
+			return
+		}
 	}
-	if provider == nil {
-		c.ResponseError("Authentication failed: invalid API key")
-		return
-	}
+
 	if provider.Category != "Model" {
 		c.ResponseError(fmt.Sprintf("Provider %s is not a model provider", provider.Name))
 		return
@@ -79,13 +134,19 @@ func (c *ApiController) ChatCompletions() {
 	// Extract messages content
 	var question string
 	var systemPrompt string
+	history := []*model.RawMessage{}
 
 	for _, msg := range request.Messages {
-		if msg.Role == "system" {
+		switch msg.Role {
+		case "system":
 			systemPrompt = msg.Content
-		} else if msg.Role == "user" {
-			// Keep the last user message
+		case "user":
 			question = msg.Content
+		case "assistant":
+			history = append(history, &model.RawMessage{
+				Author: "AI",
+				Text:   msg.Content,
+			})
 		}
 	}
 
@@ -109,7 +170,7 @@ func (c *ApiController) ChatCompletions() {
 
 	// Create custom writer for OpenAI format
 	writer := &OpenAIWriter{
-		Response:  *c.Ctx.ResponseWriter, // Embed Response by dereferencing the pointer
+		Response:  *c.Ctx.ResponseWriter,
 		Buffer:    []byte{},
 		RequestID: requestId,
 		Stream:    request.Stream,
@@ -117,8 +178,6 @@ func (c *ApiController) ChatCompletions() {
 		Model:     request.Model,
 	}
 
-	// Prepare empty history and knowledge for the model
-	history := []*model.RawMessage{}
 	knowledge := []*model.RawMessage{}
 
 	// Call the model provider
@@ -130,10 +189,8 @@ func (c *ApiController) ChatCompletions() {
 
 	// Handle response based on streaming mode
 	if !request.Stream {
-		// For non-streaming, send complete response at once
 		answer := writer.MessageString()
 
-		// Create response using go-openai structures
 		response := openai.ChatCompletionResponse{
 			ID:      "chatcmpl-" + requestId,
 			Object:  "chat.completion",
@@ -165,7 +222,6 @@ func (c *ApiController) ChatCompletions() {
 		c.Ctx.Output.Header("Content-Type", "application/json")
 		c.Ctx.Output.Body(jsonResponse)
 	} else {
-		// For streaming, close the stream with token counts
 		err = writer.Close(
 			modelResult.PromptTokenCount,
 			modelResult.ResponseTokenCount,
