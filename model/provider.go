@@ -55,6 +55,8 @@ func GetModelProvider(typ string, subType string, clientId string, clientSecret 
 		p, err = NewOpenAiModelProvider(subType, clientSecret, providerUrl, temperature, topP, frequencyPenalty, presencePenalty)
 	} else if typ == "DigitalOcean" {
 		p, err = NewLocalModelProvider(typ, subType, clientSecret, temperature, topP, frequencyPenalty, presencePenalty, providerUrl, "", inputPricePerThousandTokens, outputPricePerThousandTokens, Currency)
+	} else if typ == "Fireworks" {
+		p, err = NewFireworksProvider(subType, clientSecret, temperature, topP, frequencyPenalty, presencePenalty)
 	} else if typ == "Gemini" {
 		p, err = NewGeminiModelProvider(subType, clientSecret, temperature, topP, topK)
 	} else if typ == "Azure" {
