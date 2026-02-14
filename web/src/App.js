@@ -147,7 +147,7 @@ class App extends Component {
     }
 
     FetchFilter.initDemoMode();
-    Setting.initCasdoorSdk(Conf.AuthConfig);
+    Setting.initIamSdk(Conf.AuthConfig);
     if (!Conf.DisablePreviewMode) {
       this.previewInterceptor = new PreviewInterceptor(() => this.state.account, this.props.history); // add interceptor
     }

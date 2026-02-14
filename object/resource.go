@@ -17,7 +17,7 @@ package object
 import (
 	"time"
 
-	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
+	iamsdk "github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 )
 
 func UploadFileToStorageSafe(user string, tag string, parent string, fullFilePath string, fileBytes []byte) (string, error) {
@@ -25,7 +25,7 @@ func UploadFileToStorageSafe(user string, tag string, parent string, fullFilePat
 	var err error
 	times := 0
 	for {
-		fileUrl, _, err = casdoorsdk.UploadResource(user, tag, parent, fullFilePath, fileBytes)
+		fileUrl, _, err = iamsdk.UploadResource(user, tag, parent, fullFilePath, fileBytes)
 		if err != nil {
 			times += 1
 			time.Sleep(3 * time.Second)
