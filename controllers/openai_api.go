@@ -18,6 +18,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
+	"time"
 
 	iamsdk "github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"github.com/hanzoai/cloud/model"
@@ -26,6 +28,47 @@ import (
 	"github.com/sashabaranov/go-openai"
 )
 
+// balanceEntry caches a user's balance from IAM to avoid per-request lookups.
+type balanceEntry struct {
+	balance   float64
+	fetchedAt time.Time
+}
+
+var (
+	balanceCache    = make(map[string]*balanceEntry)
+	balanceCacheMu  sync.RWMutex
+	balanceCacheTTL = 30 * time.Second
+)
+
+// getUserBalance returns the current balance for a user, fetching from IAM
+// and caching briefly. Balance is mutable financial state (not identity) so
+// it is never read from the JWT — always checked against the source of truth.
+func getUserBalance(username string) (float64, error) {
+	key := username
+
+	balanceCacheMu.RLock()
+	entry, ok := balanceCache[key]
+	balanceCacheMu.RUnlock()
+
+	if ok && time.Since(entry.fetchedAt) < balanceCacheTTL {
+		return entry.balance, nil
+	}
+
+	user, err := iamsdk.GetUser(username)
+	if err != nil {
+		return 0, fmt.Errorf("failed to fetch user from IAM: %s", err.Error())
+	}
+	if user == nil {
+		return 0, fmt.Errorf("user %q not found in IAM", username)
+	}
+
+	balanceCacheMu.Lock()
+	balanceCache[key] = &balanceEntry{balance: user.Balance, fetchedAt: time.Now()}
+	balanceCacheMu.Unlock()
+
+	return user.Balance, nil
+}
+
 // isJwtToken checks if a token looks like a JWT (3 base64 segments separated by dots).
 func isJwtToken(token string) bool {
 	parts := strings.Split(token, ".")
@@ -33,8 +76,13 @@ func isJwtToken(token string) bool {
 }
 
 // resolveProviderFromJwt validates a hanzo.id JWT token and returns the
-// appropriate model provider for the requested model. Free-tier users
-// (Balance <= 0) are restricted to the default DigitalOcean-backed provider.
+// appropriate model provider for the requested model.
+//
+// Architecture: JWT provides identity (who the user is). Balance is mutable
+// financial state checked against IAM at request time — never from the JWT,
+// since JWTs are valid for days and balance changes on every transaction.
+//
+// Free-tier users (balance <= 0) are restricted to the DigitalOcean provider.
 func resolveProviderFromJwt(token string, requestedModel string, lang string) (*object.Provider, *iamsdk.User, error) {
 	claims, err := iamsdk.ParseJwtToken(token)
 	if err != nil {
@@ -66,15 +114,24 @@ func resolveProviderFromJwt(token string, requestedModel string, lang string) (*
 		}
 	}
 
-	// Enforce free-tier restrictions: users without prepaid balance
-	// can only use the free-tier DigitalOcean provider.
-	if !isDigitalOceanProvider(provider) && user.Balance <= 0 {
-		return nil, user, fmt.Errorf(
-			"model %q requires a paid plan. Your current balance is $%.2f. "+
-				"Add funds at https://hanzo.ai/billing to access premium models, "+
-				"or use a free-tier model instead",
-			requestedModel, user.Balance,
-		)
+	// Free-tier models (DigitalOcean) are available to all authenticated users.
+	// Premium models require a positive balance, checked against IAM.
+	if !isDigitalOceanProvider(provider) {
+		balance, err := getUserBalance(user.Name)
+		if err != nil {
+			return nil, user, fmt.Errorf("failed to verify account balance: %s", err.Error())
+		}
+
+		if balance <= 0 {
+			return nil, user, fmt.Errorf(
+				"model %q requires a paid plan. Your current balance is $%.2f. "+
+					"Add funds at https://hanzo.ai/billing to access premium models, "+
+					"or use a free-tier model instead",
+				requestedModel, balance,
+			)
+		}
+
+		user.Balance = balance
 	}
 
 	return provider, user, nil
