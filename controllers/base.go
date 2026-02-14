@@ -22,7 +22,7 @@ import (
 
 	"github.com/beego/beego"
 	"github.com/beego/beego/logs"
-	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
+	iamsdk "github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"github.com/hanzoai/cloud/object"
 )
 
@@ -31,10 +31,10 @@ type ApiController struct {
 }
 
 func init() {
-	gob.Register(casdoorsdk.Claims{})
+	gob.Register(iamsdk.Claims{})
 }
 
-func GetUserName(user *casdoorsdk.User) string {
+func GetUserName(user *iamsdk.User) string {
 	if user == nil {
 		return ""
 	}
@@ -42,17 +42,17 @@ func GetUserName(user *casdoorsdk.User) string {
 	return user.Name
 }
 
-func (c *ApiController) GetSessionClaims() *casdoorsdk.Claims {
+func (c *ApiController) GetSessionClaims() *iamsdk.Claims {
 	s := c.GetSession("user")
 	if s == nil {
 		return nil
 	}
 
-	claims := s.(casdoorsdk.Claims)
+	claims := s.(iamsdk.Claims)
 	return &claims
 }
 
-func (c *ApiController) SetSessionClaims(claims *casdoorsdk.Claims) {
+func (c *ApiController) SetSessionClaims(claims *iamsdk.Claims) {
 	if claims == nil {
 		c.DelSession("user")
 		return
@@ -61,7 +61,7 @@ func (c *ApiController) SetSessionClaims(claims *casdoorsdk.Claims) {
 	c.SetSession("user", *claims)
 }
 
-func (c *ApiController) GetSessionUser() *casdoorsdk.User {
+func (c *ApiController) GetSessionUser() *iamsdk.User {
 	claims := c.GetSessionClaims()
 	if claims == nil {
 		return nil
@@ -70,7 +70,7 @@ func (c *ApiController) GetSessionUser() *casdoorsdk.User {
 	return &claims.User
 }
 
-func (c *ApiController) SetSessionUser(user *casdoorsdk.User) {
+func (c *ApiController) SetSessionUser(user *iamsdk.User) {
 	if user == nil {
 		c.DelSession("user")
 		return
@@ -115,7 +115,7 @@ func (c *ApiController) EnforceStoreIsolation(requestedStoreName string) (string
 }
 
 // FilterStoresByHomepage filters stores based on user's Homepage field.
-func FilterStoresByHomepage(stores []*object.Store, user *casdoorsdk.User) []*object.Store {
+func FilterStoresByHomepage(stores []*object.Store, user *iamsdk.User) []*object.Store {
 	if user == nil || user.Homepage == "" {
 		// No Homepage binding, return all stores
 		return stores

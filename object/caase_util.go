@@ -15,10 +15,10 @@
 package object
 
 import (
-	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
+	iamsdk "github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 )
 
-func FilterCaasesByUser(user *casdoorsdk.User, caases []*Caase) []*Caase {
+func FilterCaasesByUser(user *iamsdk.User, caases []*Caase) []*Caase {
 	if user == nil {
 		return []*Caase{}
 	}

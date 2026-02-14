@@ -18,36 +18,36 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
+	iamsdk "github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"github.com/hanzoai/cloud/conf"
 	"github.com/hanzoai/cloud/i18n"
 	"github.com/hanzoai/cloud/util"
 )
 
 func (message *Message) SendEmail(lang string) error {
-	casdoorOrganization := conf.GetConfigString("casdoorOrganization")
-	organization, err := casdoorsdk.GetOrganization(casdoorOrganization)
+	iamOrganization := conf.GetConfigString("iamOrganization")
+	organization, err := iamsdk.GetOrganization(iamOrganization)
 	if err != nil {
 		return err
 	}
 	if organization == nil {
-		return fmt.Errorf(i18n.Translate(lang, "object:Casdoor organization: [%s] doesn't exist"), casdoorOrganization)
+		return fmt.Errorf(i18n.Translate(lang, "object:IAM organization: [%s] doesn't exist"), iamOrganization)
 	}
 	sender := organization.DisplayName
 
-	casdoorApplication := conf.GetConfigString("casdoorApplication")
-	application, err := casdoorsdk.GetApplication(casdoorApplication)
+	iamApplication := conf.GetConfigString("iamApplication")
+	application, err := iamsdk.GetApplication(iamApplication)
 	if err != nil {
 		return err
 	}
 	if application == nil {
-		return fmt.Errorf(i18n.Translate(lang, "object:Casdoor application: [%s] doesn't exist"), casdoorApplication)
+		return fmt.Errorf(i18n.Translate(lang, "object:IAM application: [%s] doesn't exist"), iamApplication)
 	}
 	title := application.DisplayName
 
 	logoUrl := conf.GetConfigString("logoUrl")
 
-	user, err := casdoorsdk.GetUser(message.User)
+	user, err := iamsdk.GetUser(message.User)
 	if err != nil {
 		return err
 	}
@@ -105,7 +105,7 @@ func (message *Message) SendEmail(lang string) error {
 </html>
 `, title, logoUrl, username, question, message.Text, message.Comment, title)
 
-	err = casdoorsdk.SendEmail(title, content, sender, receiverEmail)
+	err = iamsdk.SendEmail(title, content, sender, receiverEmail)
 	if err != nil {
 		return err
 	}
@@ -114,7 +114,7 @@ func (message *Message) SendEmail(lang string) error {
 }
 
 func (message *Message) SendErrorEmail(errorText string, lang string) error {
-	adminUser, err := casdoorsdk.GetUser("admin")
+	adminUser, err := iamsdk.GetUser("admin")
 	if err != nil {
 		return err
 	}
@@ -127,17 +127,17 @@ func (message *Message) SendErrorEmail(errorText string, lang string) error {
 		return nil
 	}
 
-	casdoorOrganization := conf.GetConfigString("casdoorOrganization")
-	organization, err := casdoorsdk.GetOrganization(casdoorOrganization)
+	iamOrganization := conf.GetConfigString("iamOrganization")
+	organization, err := iamsdk.GetOrganization(iamOrganization)
 	if err != nil {
 		return err
 	}
 	if organization == nil {
-		return fmt.Errorf(i18n.Translate(lang, "object:Casdoor organization: [%s] doesn't exist"), casdoorOrganization)
+		return fmt.Errorf(i18n.Translate(lang, "object:IAM organization: [%s] doesn't exist"), iamOrganization)
 	}
 	sender := organization.DisplayName
 
-	user, err := casdoorsdk.GetUser(message.User)
+	user, err := iamsdk.GetUser(message.User)
 	if err != nil {
 		return err
 	}
@@ -198,7 +198,7 @@ func (message *Message) SendErrorEmail(errorText string, lang string) error {
 </html>
 `, title, logoUrl, username, question, errorText, sender)
 
-	err = casdoorsdk.SendEmail(title, content, sender, receiverEmail)
+	err = iamsdk.SendEmail(title, content, sender, receiverEmail)
 	if err != nil {
 		return err
 	}

@@ -153,10 +153,10 @@ func serveFileWithReplace(w http.ResponseWriter, r *http.Request, path string) {
 	oldContent := util.ReadStringFromPath(path)
 	newContent := oldContent
 
-	serverUrl := conf.GetConfigString("casdoorEndpoint")
+	serverUrl := conf.GetConfigString("iamEndpoint")
 	clientId := conf.GetConfigString("clientId")
-	appName := conf.GetConfigString("casdoorApplication")
-	organizationName := conf.GetConfigString("casdoorOrganization")
+	appName := conf.GetConfigString("iamApplication")
+	organizationName := conf.GetConfigString("iamOrganization")
 
 	newContent = regexp.MustCompile(`serverUrl:"[^"]*"`).ReplaceAllString(newContent, fmt.Sprintf(`serverUrl:"%s"`, serverUrl))
 	newContent = regexp.MustCompile(`clientId:"[^"]*"`).ReplaceAllString(newContent, fmt.Sprintf(`clientId:"%s"`, clientId))

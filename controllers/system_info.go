@@ -37,7 +37,7 @@ func (c *ApiController) GetSystemInfo() {
 // GetVersionInfo
 // @Title GetVersionInfo
 // @Tag System API
-// @Description get version info like Casdoor release version and commit ID
+// @Description get version info like IAM release version and commit ID
 // @Success 200 {object} util.VersionInfo The Response object
 // @router /get-version-info [get]
 func (c *ApiController) GetVersionInfo() {

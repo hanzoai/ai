@@ -119,8 +119,8 @@
   },
   "object": {
     "Cannot generate word cloud, the dict file: [%s] does not exist": "无法生成词云，词典文件：[%s] 不存在",
-    "Casdoor application: [%s] doesn't exist": "Casdoor 应用：[%s] 不存在",
-    "Casdoor organization: [%s] doesn't exist": "Casdoor 组织：[%s] 不存在",
+    "IAM application: [%s] doesn't exist": "IAM 应用：[%s] 不存在",
+    "IAM organization: [%s] doesn't exist": "IAM 组织：[%s] 不存在",
     "Please add a model provider first": "请先添加模型提供商",
     "Please add an embedding provider first": "请先添加嵌入提供商",
     "Question message: [%s] doesn't exist": "问题消息：[%s] 不存在",

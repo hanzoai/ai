@@ -34,7 +34,7 @@ func addRecord(c *ApiController, userName string, requestUri string, lang string
 		record.RequestUri = requestUri
 	}
 
-	record.Organization = conf.GetConfigString("casdoorOrganization")
+	record.Organization = conf.GetConfigString("iamOrganization")
 
 	_, _, err = object.AddRecord(record, c.GetAcceptLanguage())
 	return err
