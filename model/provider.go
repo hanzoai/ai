@@ -101,6 +101,9 @@ func GetModelProvider(typ string, subType string, clientId string, clientSecret 
 		p, err = NewYiProvider(subType, clientSecret, temperature, topP)
 	} else if typ == "Silicon Flow" {
 		p, err = NewSiliconFlowProvider(subType, clientSecret, temperature, topP)
+	} else if typ == "Hanzo" || typ == "Zen" {
+		// Zen model family routes through Hanzo LLM Gateway (OpenAI-compatible)
+		p, err = NewLocalModelProvider(typ, subType, clientSecret, temperature, topP, frequencyPenalty, presencePenalty, providerUrl, "openai", inputPricePerThousandTokens, outputPricePerThousandTokens, Currency)
 	} else if typ == "Dummy" {
 		p, err = NewDummyModelProvider(subType)
 	} else if typ == "GitHub" {
