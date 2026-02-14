@@ -16,7 +16,7 @@ import {Tag, Tooltip, message, theme} from "antd";
 import {QuestionCircleTwoTone, SyncOutlined} from "@ant-design/icons";
 import {isMobile as isMobileDevice} from "react-device-detect";
 import i18next from "i18next";
-import Sdk from "casdoor-js-sdk";
+import Sdk from "casdoor-js-sdk"; // TODO: migrate to @hanzo/iam-js-sdk;
 import xlsx from "xlsx";
 import FileSaver from "file-saver";
 import moment from "moment/moment";
@@ -30,7 +30,7 @@ import * as Conf from "./Conf";
 import * as Cookie from "cookie";
 
 export let ServerUrl = "";
-export let CasdoorSdk;
+export let IamSdk;
 
 export function initServerUrl() {
   const hostname = window.location.hostname;
@@ -44,8 +44,8 @@ export function isLocalhost() {
   return hostname === "localhost";
 }
 
-export function initCasdoorSdk(config) {
-  CasdoorSdk = new Sdk(config);
+export function initIamSdk(config) {
+  IamSdk = new Sdk(config);
 }
 
 export function initWebConfig() {
@@ -70,23 +70,23 @@ export function getSignupUrl() {
   if (!Conf.AuthConfig || !Conf.AuthConfig.serverUrl) {
     return "";
   }
-  return getUrlWithLanguage(CasdoorSdk.getSignupUrl());
+  return getUrlWithLanguage(IamSdk.getSignupUrl());
 }
 
 export function getSigninUrl() {
   if (!Conf.AuthConfig || !Conf.AuthConfig.serverUrl) {
     return "";
   }
-  return getUrlWithLanguage(CasdoorSdk.getSigninUrl());
+  return getUrlWithLanguage(IamSdk.getSigninUrl());
 }
 
 export function getUserProfileUrl(userName, account) {
-  return getUrlWithLanguage(CasdoorSdk.getUserProfileUrl(userName, account));
+  return getUrlWithLanguage(IamSdk.getUserProfileUrl(userName, account));
 }
 
 export function getMyProfileUrl(account) {
   const returnUrl = window.location.href;
-  return getUrlWithLanguage(CasdoorSdk.getMyProfileUrl(account, returnUrl));
+  return getUrlWithLanguage(IamSdk.getMyProfileUrl(account, returnUrl));
 }
 
 export function getUserAvatar(message, account) {
@@ -116,7 +116,7 @@ export function getUserAvatar(message, account) {
 }
 
 export function signin() {
-  return CasdoorSdk.signin(ServerUrl);
+  return IamSdk.signin(ServerUrl);
 }
 
 export function parseJson(s) {
@@ -965,9 +965,9 @@ export function getOtherProviderInfo() {
         logo: `${StaticBaseUrl}/img/social_synology.png`,
         url: "https://www.synology.com/en-global/dsm/feature/file_sharing",
       },
-      "Casdoor": {
-        logo: `${StaticBaseUrl}/img/casdoor.png`,
-        url: "https://casdoor.org/docs/provider/storage/overview",
+      "IAM": {
+        logo: `${StaticBaseUrl}/img/iam.png`,
+        url: "https://iam.hanzo.ai/docs/provider/storage/overview",
       },
       "CUCloud OSS": {
         logo: `${StaticBaseUrl}/img/social_cucloud.png`,

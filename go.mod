@@ -305,3 +305,5 @@ require (
 replace github.com/sashabaranov/go-openai => github.com/casibase/go-openai v1.39.0
 
 replace google.golang.org/api v0.153.0 => google.golang.org/api v0.150.0
+
+replace github.com/casdoor/casdoor-go-sdk => github.com/hanzoid/go-sdk v1.44.0

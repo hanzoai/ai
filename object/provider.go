@@ -18,7 +18,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
+	iamsdk "github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"github.com/hanzoai/cloud/agent"
 	"github.com/hanzoai/cloud/embedding"
 	"github.com/hanzoai/cloud/i18n"
@@ -89,7 +89,7 @@ type Provider struct {
 	BrowserUrl string `xorm:"varchar(200)" json:"browserUrl"`
 }
 
-func GetMaskedProvider(provider *Provider, isMaskEnabled bool, user *casdoorsdk.User) *Provider {
+func GetMaskedProvider(provider *Provider, isMaskEnabled bool, user *iamsdk.User) *Provider {
 	if !isMaskEnabled {
 		return provider
 	}
@@ -120,7 +120,7 @@ func GetMaskedProvider(provider *Provider, isMaskEnabled bool, user *casdoorsdk.
 	return provider
 }
 
-func GetMaskedProviders(providers []*Provider, isMaskEnabled bool, user *casdoorsdk.User) []*Provider {
+func GetMaskedProviders(providers []*Provider, isMaskEnabled bool, user *iamsdk.User) []*Provider {
 	if !isMaskEnabled {
 		return providers
 	}

@@ -279,7 +279,7 @@ func getAudioSegments(userName string, filename string, fileBuffer *bytes.Buffer
 		return "", nil, err
 	}
 
-	audioStorageProvider, err := storage.NewCasdoorProvider(audioStorageProviderName, lang)
+	audioStorageProvider, err := storage.NewIamProvider(audioStorageProviderName, lang)
 	if err != nil {
 		return "", nil, err
 	}

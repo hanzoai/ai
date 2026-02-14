@@ -15,31 +15,31 @@
 package object
 
 import (
-	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
+	iamsdk "github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 )
 
-func IsAdmin(user *casdoorsdk.User) bool {
+func IsAdmin(user *iamsdk.User) bool {
 	if user == nil {
 		return false
 	}
 	return user.IsAdmin || user.Tag == "Admin"
 }
 
-func IsDoctor(user *casdoorsdk.User) bool {
+func IsDoctor(user *iamsdk.User) bool {
 	if user == nil {
 		return false
 	}
 	return user.Tag == "Doctor"
 }
 
-func IsPatient(user *casdoorsdk.User) bool {
+func IsPatient(user *iamsdk.User) bool {
 	if user == nil {
 		return false
 	}
 	return user.Tag == "Patient"
 }
 
-func CanEditPatient(user *casdoorsdk.User, patient *Patient) bool {
+func CanEditPatient(user *iamsdk.User, patient *Patient) bool {
 	if user == nil || patient == nil {
 		return false
 	}
@@ -61,7 +61,7 @@ func CanEditPatient(user *casdoorsdk.User, patient *Patient) bool {
 	return false
 }
 
-func FilterPatientsByUser(user *casdoorsdk.User, patients []*Patient) []*Patient {
+func FilterPatientsByUser(user *iamsdk.User, patients []*Patient) []*Patient {
 	if user == nil {
 		return []*Patient{}
 	}

@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
+	iamsdk "github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"github.com/hanzoai/cloud/controllers"
 	"github.com/hanzoai/cloud/object"
 )
@@ -32,12 +32,12 @@ func TestUpdateMessagesForName(t *testing.T) {
 	object.InitConfig()
 	controllers.InitAuthConfig()
 
-	users, err := casdoorsdk.GetUsers()
+	users, err := iamsdk.GetUsers()
 	if err != nil {
 		panic(err)
 	}
 
-	userMap := map[string]*casdoorsdk.User{}
+	userMap := map[string]*iamsdk.User{}
 	for _, user := range users {
 		if user.Tag != userTag {
 			continue
@@ -77,12 +77,12 @@ func TestUpdateChatsForName(t *testing.T) {
 	object.InitConfig()
 	controllers.InitAuthConfig()
 
-	users, err := casdoorsdk.GetUsers()
+	users, err := iamsdk.GetUsers()
 	if err != nil {
 		panic(err)
 	}
 
-	userMap := map[string]*casdoorsdk.User{}
+	userMap := map[string]*iamsdk.User{}
 	for _, user := range users {
 		if user.Tag != userTag {
 			continue

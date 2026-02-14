@@ -38,7 +38,7 @@ class StoreEditPage extends React.Component {
       owner: props.match.params.owner,
       storeName: props.match.params.storeName,
       stores: [],
-      casdoorStorageProviders: [],
+      iamStorageProviders: [],
       storageProviders: [],
       vectorStoreId: "",
       storageSubpath: "",
@@ -108,7 +108,7 @@ class StoreEditPage extends React.Component {
       .then((res) => {
         if (res.status === "ok") {
           this.setState({
-            casdoorStorageProviders: res.data,
+            iamStorageProviders: res.data,
           });
         } else {
           Setting.showMessage("error", `${i18next.t("general:Failed to get")}: ${res.msg}`);
@@ -194,7 +194,7 @@ class StoreEditPage extends React.Component {
   }
 
   isAIStorageProvider(storageProvider) {
-    const providerSelected = this.state.storageProviders.concat(this.state.casdoorStorageProviders).find(v => v.name === storageProvider);
+    const providerSelected = this.state.storageProviders.concat(this.state.iamStorageProviders).find(v => v.name === storageProvider);
     if (providerSelected && providerSelected.type === "OpenAI File System") {
       return true;
     }
@@ -289,7 +289,7 @@ class StoreEditPage extends React.Component {
             <Select virtual={false} style={{width: "100%"}} value={this.state.store.storageProvider} onChange={(value => {this.updateStoreField("storageProvider", value);})}
             >
               {
-                this.state.storageProviders.concat(this.state.casdoorStorageProviders).map((provider, index) =>
+                this.state.storageProviders.concat(this.state.iamStorageProviders).map((provider, index) =>
                   this.renderProviderOption(provider, index)
                 )
               }
@@ -331,7 +331,7 @@ class StoreEditPage extends React.Component {
                 {i18next.t("general:empty")}
               </Option>
               {
-                this.state.casdoorStorageProviders.map((provider, index) =>
+                this.state.iamStorageProviders.map((provider, index) =>
                   this.renderProviderOption(provider, index)
                 )
               }
