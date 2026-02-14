@@ -240,3 +240,25 @@ func GetDefaultSpeechToTextProvider() (*Provider, error) {
 
 	return &provider, nil
 }
+
+// GetModelProviderByType retrieves a model provider by its type (e.g. "OpenAI", "Claude", "Fireworks").
+func GetModelProviderByType(providerType string) (*Provider, error) {
+	provider := &Provider{}
+	existed, err := adapter.engine.Where("category = ? AND type = ?", "Model", providerType).Get(provider)
+	if err != nil {
+		return nil, err
+	}
+
+	if providerAdapter != nil && !existed {
+		existed, err = providerAdapter.engine.Where("category = ? AND type = ?", "Model", providerType).Get(provider)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if !existed {
+		return nil, nil
+	}
+
+	return provider, nil
+}
