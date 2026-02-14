@@ -1,0 +1,39 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cloud-api-config
+  namespace: hanzo
+type: Opaque
+stringData:
+  app.conf: |
+    appname = hanzo-cloud
+    httpport = 8000
+    runmode = prod
+    SessionOn = true
+    copyrequestbody = true
+    driverName = postgres
+    dataSourceName = "user=hanzo password=hanzo-pg-secret-6fcc8aeb dbname=hanzo_cloud host=postgres.hanzo.svc.cluster.local port=5432 sslmode=disable"
+    dbName = hanzo_cloud
+    redisEndpoint =
+    isDemoMode = false
+    disablePreviewMode = false
+    logPostOnly = true
+    iamEndpoint = http://iam.hanzo.svc.cluster.local:8000
+    clientId = hanzo-cloud-client-id
+    clientSecret = 3c7c4d9817bf0993681f6da2605e07ba5949da87a32862ed
+    iamOrganization = "hanzo"
+    iamApplication = "app-cloud"
+    redirectPath = /callback
+    cacheDir = "/tmp/hanzo_cloud_cache"
+    isLocalIpDb = false
+    publicDomain = ""
+    adminDomain = ""
+    enableExtraPages = false
+    defaultLanguage = "en"
+    staticBaseUrl = "https://cdn.hanzo.ai"
+    htmlTitle = "Hanzo Cloud"
+    faviconUrl = "https://cdn.hanzo.ai/static/favicon.png"
+    logoUrl = "https://cdn.hanzo.ai/img/hanzo-cloud-logo.png"
+    showGithubCorner = false
+    defaultColorPrimary = "#fd4444"
+    logConfig = {"adapter":"console"}

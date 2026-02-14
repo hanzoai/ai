@@ -37,7 +37,7 @@ func GetStorageProvider(typ string, clientId string, clientSecret string, provid
 	} else if typ == "OpenAI File System" {
 		p, err = NewOpenAIFileSystemStorageProvider(vectorStoreId, clientSecret)
 	} else {
-		p, err = NewCasdoorProvider(providerName, lang)
+		p, err = NewIamProvider(providerName, lang)
 	}
 
 	if err != nil {

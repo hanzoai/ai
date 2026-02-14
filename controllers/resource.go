@@ -25,7 +25,7 @@ import (
 // UploadFile
 // @Title UploadFile
 // @Tag File API
-// @Description upload file to casdoor storage
+// @Description upload file to IAM storage
 // @Param file formData string true "The base64 encoded file data"
 // @Param type formData string true "The file type/extension"
 // @Param name formData string true "The file name"

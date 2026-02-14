@@ -119,8 +119,8 @@
   },
   "object": {
     "Cannot generate word cloud, the dict file: [%s] does not exist": "Cannot generate word cloud, the dict file: [%s] does not exist",
-    "Casdoor application: [%s] doesn't exist": "Casdoor application: [%s] doesn't exist",
-    "Casdoor organization: [%s] doesn't exist": "Casdoor organization: [%s] doesn't exist",
+    "IAM application: [%s] doesn't exist": "IAM application: [%s] doesn't exist",
+    "IAM organization: [%s] doesn't exist": "IAM organization: [%s] doesn't exist",
     "Please add a model provider first": "Please add a model provider first",
     "Please add an embedding provider first": "Please add an embedding provider first",
     "Question message: [%s] doesn't exist": "Question message: [%s] doesn't exist",

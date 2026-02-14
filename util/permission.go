@@ -17,7 +17,7 @@ package util
 import (
 	"strings"
 
-	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
+	iamsdk "github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 )
 
 const (
@@ -30,7 +30,7 @@ func IsAnonymousUserByUsername(username string) bool {
 }
 
 // IsAdmin checks if the user is either a system admin or a chat-admin
-func IsAdmin(user *casdoorsdk.User) bool {
+func IsAdmin(user *iamsdk.User) bool {
 	if user == nil {
 		return false
 	}
@@ -38,7 +38,7 @@ func IsAdmin(user *casdoorsdk.User) bool {
 }
 
 // IsVideoNormalUser checks if the user has the video-normal-user role
-func IsVideoNormalUser(user *casdoorsdk.User) bool {
+func IsVideoNormalUser(user *iamsdk.User) bool {
 	if user == nil {
 		return false
 	}

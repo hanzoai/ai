@@ -273,7 +273,7 @@ paths:
         description: The details of the permission
         required: true
         schema:
-          $ref: '#/definitions/casdoorsdk.Permission'
+          $ref: '#/definitions/iamsdk.Permission'
       responses:
         "200":
           description: The Response object
@@ -744,7 +744,7 @@ paths:
         description: The details of the permission
         required: true
         schema:
-          $ref: '#/definitions/casdoorsdk.Permission'
+          $ref: '#/definitions/iamsdk.Permission'
       responses:
         "200":
           description: The Response object
@@ -1002,7 +1002,7 @@ paths:
       operationId: ApiController.GetAccount
       responses:
         "200":
-          description: '{casdoorsdk} casdoorsdk.Claims The Response object'
+          description: '{iamsdk} iamsdk.Claims The Response object'
   /get-active-file:
     get:
       tags:
@@ -1683,7 +1683,7 @@ paths:
         "200":
           description: The Response object
           schema:
-            $ref: '#/definitions/casdoorsdk.Permission'
+            $ref: '#/definitions/iamsdk.Permission'
   /get-permissions:
     get:
       tags:
@@ -1696,7 +1696,7 @@ paths:
           schema:
             type: array
             items:
-              $ref: '#/definitions/casdoorsdk.Permission'
+              $ref: '#/definitions/iamsdk.Permission'
   /get-pod:
     get:
       tags:
@@ -2010,7 +2010,7 @@ paths:
     get:
       tags:
       - System API
-      description: get version info like Casdoor release version and commit ID
+      description: get version info like IAM release version and commit ID
       operationId: ApiController.GetVersionInfo
       responses:
         "200":
@@ -2211,7 +2211,7 @@ paths:
         type: string
       responses:
         "200":
-          description: '{casdoorsdk} casdoorsdk.Claims The Response object'
+          description: '{iamsdk} iamsdk.Claims The Response object'
   /signout:
     post:
       tags:
@@ -2545,7 +2545,7 @@ paths:
         description: The details of the permission
         required: true
         schema:
-          $ref: '#/definitions/casdoorsdk.Permission'
+          $ref: '#/definitions/iamsdk.Permission'
       responses:
         "200":
           description: The Response object
@@ -2762,7 +2762,7 @@ paths:
     post:
       tags:
       - File API
-      description: upload file to casdoor storage
+      description: upload file to IAM storage
       operationId: ApiController.UploadFile
       parameters:
       - in: formData
@@ -2825,7 +2825,7 @@ definitions:
         type: string
       tools:
         type: string
-  casdoorsdk.Permission:
+  iamsdk.Permission:
     title: Permission
     type: object
   controllers.Response:

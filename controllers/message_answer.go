@@ -430,14 +430,14 @@ func (c *ApiController) GetAnswer() {
 		return
 	}
 	if chat == nil {
-		casdoorOrganization := conf.GetConfigString("casdoorOrganization")
+		iamOrganization := conf.GetConfigString("iamOrganization")
 		currentTime := util.GetCurrentTime()
 		chat = &object.Chat{
 			Owner:         "admin",
 			Name:          chatName,
 			CreatedTime:   currentTime,
 			UpdatedTime:   currentTime,
-			Organization:  casdoorOrganization,
+			Organization:  iamOrganization,
 			DisplayName:   chatName,
 			Store:         "",
 			ModelProvider: provider,
