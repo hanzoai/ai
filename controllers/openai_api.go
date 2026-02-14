@@ -168,13 +168,17 @@ func (c *ApiController) ChatCompletions() {
 
 	if isJwtToken(token) {
 		// Authenticate via hanzo.id JWT token and resolve model → provider.
-		// Free-tier users (Balance <= 0) are restricted to DigitalOcean models.
 		provider, authUser, err = resolveProviderFromJwt(token, request.Model, c.GetAcceptLanguage())
 		if err != nil {
 			c.ResponseError(fmt.Sprintf("Authentication failed: %s", err.Error()))
 			return
 		}
-		_ = authUser
+		// Store user identity in request context for the record middleware
+		// (AfterRecordMessage) to attribute usage to this user.
+		if authUser != nil {
+			userId := authUser.Owner + "/" + authUser.Name
+			c.Ctx.Input.SetParam("recordUserId", userId)
+		}
 	} else {
 		// Authenticate via provider API key (sk-...)
 		provider, err = object.GetProviderByProviderKey(token, c.GetAcceptLanguage())
