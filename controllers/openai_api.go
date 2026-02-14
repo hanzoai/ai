@@ -32,10 +32,10 @@ func isJwtToken(token string) bool {
 	return len(parts) == 3 && len(parts[0]) > 10 && len(parts[1]) > 10
 }
 
-// resolveProviderFromJwt validates a hanzo.id JWT token and returns the default
-// model provider. Free-tier users ($5 credit) are restricted to DigitalOcean-
-// backed models only.
-func resolveProviderFromJwt(token string, lang string) (*object.Provider, *iamsdk.User, error) {
+// resolveProviderFromJwt validates a hanzo.id JWT token and returns the
+// appropriate model provider for the requested model. Free-tier users
+// (Balance <= 0) are restricted to the default DigitalOcean-backed provider.
+func resolveProviderFromJwt(token string, requestedModel string, lang string) (*object.Provider, *iamsdk.User, error) {
 	claims, err := iamsdk.ParseJwtToken(token)
 	if err != nil {
 		return nil, nil, fmt.Errorf("invalid hanzo.id token: %s", err.Error())
@@ -43,16 +43,62 @@ func resolveProviderFromJwt(token string, lang string) (*object.Provider, *iamsd
 
 	user := &claims.User
 
-	// Get the default model provider for authenticated users
-	provider, err := object.GetDefaultModelProvider()
-	if err != nil {
-		return nil, user, fmt.Errorf("failed to get default model provider: %s", err.Error())
+	// Route model name to the correct provider type
+	providerType := modelToProviderType(requestedModel)
+
+	// Look up the provider for this model
+	var provider *object.Provider
+	if providerType != "" {
+		provider, err = object.GetModelProviderByType(providerType)
+		if err != nil {
+			return nil, user, fmt.Errorf("failed to get model provider: %s", err.Error())
+		}
 	}
+
+	// Fall back to default provider if no specific match
 	if provider == nil {
-		return nil, user, fmt.Errorf("no default model provider configured")
+		provider, err = object.GetDefaultModelProvider()
+		if err != nil {
+			return nil, user, fmt.Errorf("failed to get default model provider: %s", err.Error())
+		}
+		if provider == nil {
+			return nil, user, fmt.Errorf("no default model provider configured")
+		}
+	}
+
+	// Enforce free-tier restrictions: users without prepaid balance
+	// can only use the free-tier DigitalOcean provider.
+	if !isDigitalOceanProvider(provider) && user.Balance <= 0 {
+		return nil, user, fmt.Errorf(
+			"model %q requires a paid plan. Your current balance is $%.2f. "+
+				"Add funds at https://hanzo.ai/billing to access premium models, "+
+				"or use a free-tier model instead",
+			requestedModel, user.Balance,
+		)
 	}
 
 	return provider, user, nil
+}
+
+// modelToProviderType maps a model name prefix to the provider type string
+// used in the database. Returns empty string for unknown models (falls back
+// to the default provider).
+func modelToProviderType(model string) string {
+	m := strings.ToLower(model)
+	switch {
+	case strings.HasPrefix(m, "claude-"):
+		return "Claude"
+	case strings.HasPrefix(m, "gpt-"), strings.HasPrefix(m, "o1-"), strings.HasPrefix(m, "o3-"), strings.HasPrefix(m, "o4-"):
+		return "OpenAI"
+	case strings.HasPrefix(m, "qwen"), strings.Contains(m, "fireworks"):
+		return "Fireworks"
+	case strings.HasPrefix(m, "gemini-"):
+		return "Gemini"
+	case strings.HasPrefix(m, "deepseek-"):
+		return "DeepSeek"
+	default:
+		return ""
+	}
 }
 
 // isDigitalOceanProvider checks if a provider is backed by DigitalOcean
@@ -91,16 +137,13 @@ func (c *ApiController) ChatCompletions() {
 	var authUser *iamsdk.User
 
 	if isJwtToken(token) {
-		// Authenticate via hanzo.id JWT token
-		provider, authUser, err = resolveProviderFromJwt(token, c.GetAcceptLanguage())
+		// Authenticate via hanzo.id JWT token and resolve model → provider.
+		// Free-tier users (Balance <= 0) are restricted to DigitalOcean models.
+		provider, authUser, err = resolveProviderFromJwt(token, request.Model, c.GetAcceptLanguage())
 		if err != nil {
 			c.ResponseError(fmt.Sprintf("Authentication failed: %s", err.Error()))
 			return
 		}
-
-		// TODO: Check user balance/tier and enforce free-tier restrictions
-		// For now, all JWT-authenticated users get the default provider.
-		// Future: check authUser's balance, restrict non-DO providers for free tier.
 		_ = authUser
 	} else {
 		// Authenticate via provider API key (sk-...)
