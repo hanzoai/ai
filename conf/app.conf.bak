@@ -8,8 +8,8 @@ dataSourceName = "user=hanzo password=hanzo-pg-secret-6fcc8aeb dbname=hanzo_clou
 dbName = hanzo_cloud
 redisEndpoint =
 isDemoMode = false
-casdoorEndpoint = https://iam.hanzo.ai
+iamEndpoint = https://iam.hanzo.ai
 clientId = hanzo-cloud-client-id
 clientSecret = 3c7c4d9817bf0993681f6da2605e07ba5949da87a32862ed
-casdoorOrganization = "hanzo"
-casdoorApplication = "app-cloud"
+iamOrganization = "hanzo"
+iamApplication = "app-cloud"
