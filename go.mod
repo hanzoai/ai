@@ -25,7 +25,6 @@ require (
 	github.com/baidubce/bce-qianfan-sdk/go/qianfan v0.0.14
 	github.com/beego/beego v1.12.12
 	github.com/carmel/gooxml v0.0.0-20220216072414-40ff56130850
-	github.com/casdoor/casdoor-go-sdk v1.44.0
 	github.com/casibase/dashscope-go-sdk v0.0.2
 	github.com/casibase/dashscopego v0.6.0
 	github.com/casibase/go-openrouter v1.0.0
@@ -41,6 +40,7 @@ require (
 	github.com/go-sql-driver/mysql v1.6.0
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674
+	github.com/hanzoid/go-sdk v1.44.0
 	github.com/henomis/lingoose v0.1.0
 	github.com/hupe1980/go-huggingface v0.0.15
 	github.com/leverly/ChatGLM v1.2.0
@@ -306,4 +306,4 @@ replace github.com/sashabaranov/go-openai => github.com/casibase/go-openai v1.39
 
 replace google.golang.org/api v0.153.0 => google.golang.org/api v0.150.0
 
-replace github.com/casdoor/casdoor-go-sdk => github.com/hanzoid/go-sdk v1.44.0
+replace github.com/hanzoid/go-sdk v1.44.0 => github.com/casdoor/casdoor-go-sdk v1.44.0
