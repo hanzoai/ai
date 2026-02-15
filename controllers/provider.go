@@ -46,7 +46,10 @@ func (c *ApiController) GetGlobalProviders() {
 // @Success 200 {array} object.Provider The Response object
 // @router /get-providers [get]
 func (c *ApiController) GetProviders() {
-	owner := "admin"
+	owner, ok := c.RequireSessionOwner()
+	if !ok {
+		return
+	}
 	limit := c.Input().Get("pageSize")
 	page := c.Input().Get("p")
 	field := c.Input().Get("field")
@@ -57,7 +60,6 @@ func (c *ApiController) GetProviders() {
 	storeName := c.Input().Get("store")
 
 	// Apply store isolation based on user's Homepage field
-	var ok bool
 	storeName, ok = c.EnforceStoreIsolation(storeName)
 	if !ok {
 		return
@@ -157,7 +159,11 @@ func (c *ApiController) AddProvider() {
 		return
 	}
 
-	provider.Owner = "admin"
+	owner, ok := c.RequireSessionOwner()
+	if !ok {
+		return
+	}
+	provider.Owner = owner
 	success, err := object.AddProvider(&provider)
 	if err != nil {
 		c.ResponseError(err.Error())

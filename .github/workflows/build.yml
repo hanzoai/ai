@@ -7,10 +7,36 @@ on:
   pull_request:
 
 jobs:
+  policy-check:
+    name: Enforce Hanzo Cloud production policy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Enforce IAM + KMS + image policy
+        run: |
+          set -euo pipefail
+          grep -q 'image: ghcr.io/hanzoai/cloud:latest' k8s/deployment.yaml
+          grep -q 'name: cloud-runtime-secrets' k8s/deployment.yaml
+          grep -q 'kind: KMSSecret' k8s/kms-secrets.yaml
+          grep -q 'managedSecretReference:' k8s/kms-secrets.yaml
+          grep -q 'HANZO_API_KEY' k8s/kms-secrets.yaml
+          ! grep -q 'casdoorEndpoint' controllers/openai_api.go
+          grep -q '/api/add-usage-record' controllers/openai_api.go
+          grep -q 'secrets.HANZO_API_KEY' .github/workflows/deploy-production.yml
+          grep -q 'https://github.com/hanzoai/cloud/pkgs/container/cloud' README.md
+          if grep -nE 'clientSecret = \"[^\"]+\"' k8s/configmap.yaml; then
+            echo "k8s/configmap.yaml must not contain hardcoded clientSecret values"
+            exit 1
+          fi
+          if grep -nE 'dataSourceName = \"user=' k8s/configmap.yaml; then
+            echo "k8s/configmap.yaml must not contain hardcoded DB credentials"
+            exit 1
+          fi
 
   go-tests:
     name: Running Go tests
     runs-on: ubuntu-latest
+    needs: [ policy-check ]
     services:
       mysql:
         image: mysql:5.7

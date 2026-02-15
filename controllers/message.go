@@ -30,7 +30,15 @@ import (
 // @Success 200 {array} object.Message The Response object
 // @router /get-global-messages [get]
 func (c *ApiController) GetGlobalMessages() {
-	owner := "admin"
+	_, ok := c.RequireSignedIn()
+	if !ok {
+		return
+	}
+	if !c.IsAdmin() {
+		c.ResponseError(c.T("auth:this operation requires admin privilege"))
+		return
+	}
+	owner := c.GetSessionOwner()
 	limit := c.Input().Get("pageSize")
 	page := c.Input().Get("p")
 	field := c.Input().Get("field")
@@ -73,6 +81,11 @@ func (c *ApiController) GetGlobalMessages() {
 // @Success 200 {array} object.Message The Response object
 // @router /get-Messages [get]
 func (c *ApiController) GetMessages() {
+	_, ok := c.RequireSignedIn()
+	if !ok {
+		return
+	}
+
 	user := c.Input().Get("user")
 	chat := c.Input().Get("chat")
 	selectedUser := c.Input().Get("selectedUser")
@@ -91,7 +104,8 @@ func (c *ApiController) GetMessages() {
 	}
 
 	if chat == "" {
-		messages, err := object.GetMessages("admin", user, "")
+		owner := c.GetSessionOwner()
+		messages, err := object.GetMessages(owner, user, "")
 		if err != nil {
 			c.ResponseError(err.Error())
 			return

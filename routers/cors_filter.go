@@ -21,7 +21,7 @@ import (
 	"strings"
 
 	"github.com/beego/beego/context"
-	iamsdk "github.com/casdoor/casdoor-go-sdk/casdoorsdk"
+	iamsdk "github.com/hanzoid/go-sdk/casdoorsdk"
 	"github.com/hanzoai/cloud/conf"
 	"github.com/hanzoai/cloud/object"
 )
@@ -38,7 +38,10 @@ const (
 func setCorsHeaders(ctx *context.Context, origin string) {
 	ctx.Output.Header(headerAllowOrigin, origin)
 	ctx.Output.Header(headerAllowMethods, "GET, POST, DELETE, PUT, PATCH, OPTIONS")
-	ctx.Output.Header(headerAllowHeaders, "Origin, X-Requested-With, Content-Type, Accept")
+	ctx.Output.Header(
+		headerAllowHeaders,
+		"Origin, X-Requested-With, Content-Type, Accept, X-Org-ID, X-Project-ID, X-Tenant-ID, X-Actor-ID, X-Env",
+	)
 	ctx.Output.Header(headerExposeHeaders, "Content-Length")
 	ctx.Output.Header(headerAllowCredentials, "true")
 

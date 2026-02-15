@@ -19,7 +19,7 @@ import (
 	"strings"
 
 	"github.com/beego/beego/logs"
-	iamsdk "github.com/casdoor/casdoor-go-sdk/casdoorsdk"
+	iamsdk "github.com/hanzoid/go-sdk/casdoorsdk"
 	"github.com/hanzoai/cloud/conf"
 	"github.com/hanzoai/cloud/util"
 	"github.com/robfig/cron/v3"
