@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"testing"
 
-	iamsdk "github.com/casdoor/casdoor-go-sdk/casdoorsdk"
+	iamsdk "github.com/hanzoid/go-sdk/casdoorsdk"
 	"github.com/hanzoai/cloud/controllers"
 	"github.com/hanzoai/cloud/object"
 )

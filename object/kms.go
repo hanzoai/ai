@@ -32,11 +32,13 @@ import (
 //
 // Authentication modes (checked in order):
 //  1. Service Token: set KMS_SERVICE_TOKEN (format: "st.{id}.{secret}")
+//     OR set HANZO_API_KEY as the unified service token.
 //  2. Universal Auth: set KMS_CLIENT_ID + KMS_CLIENT_SECRET (machine identity)
 //
 // Environment variables:
 //   - KMS_ENDPOINT:      Base URL (default: http://kms.hanzo.svc)
 //   - KMS_SERVICE_TOKEN:  Service token for direct auth
+//   - HANZO_API_KEY:      Unified service token (fallback for KMS_SERVICE_TOKEN)
 //   - KMS_CLIENT_ID:      Universal Auth client ID
 //   - KMS_CLIENT_SECRET:  Universal Auth client secret
 //   - KMS_PROJECT_ID:     Default project ID for system (admin-owned) secrets
@@ -82,6 +84,9 @@ type kmsSecretEntry struct {
 func initKMS() {
 	kmsOnce.Do(func() {
 		serviceToken := os.Getenv("KMS_SERVICE_TOKEN")
+		if serviceToken == "" {
+			serviceToken = os.Getenv("HANZO_API_KEY")
+		}
 		clientID := os.Getenv("KMS_CLIENT_ID")
 		clientSecret := os.Getenv("KMS_CLIENT_SECRET")
 
