@@ -187,8 +187,7 @@ class TaskEditPage extends React.Component {
           )
         }
         {
-          // Show Model provider field only for admin users who are NOT task-users
-          (this.props.account.name === "admin" && !Setting.isTaskUser(this.props.account)) ? (
+          (Setting.isAdminUser(this.props.account)) ? (
             <Row style={{marginTop: "20px"}} >
               <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
                 {Setting.getLabel(i18next.t("provider:Model provider"), i18next.t("provider:Model provider - Tooltip"))} :
@@ -311,8 +310,7 @@ class TaskEditPage extends React.Component {
           )
         }
         {
-          // Show Text field only for non-task-user users
-          !Setting.isTaskUser(this.props.account) ? (
+          Setting.isAdminUser(this.props.account) ? (
             <Row style={{marginTop: "20px"}} >
               <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
                 {Setting.getLabel(i18next.t("general:Text"), i18next.t("general:Text - Tooltip"))} :
@@ -385,8 +383,7 @@ class TaskEditPage extends React.Component {
           )
         }
         {
-          // Show Question field only for non-task-user users
-          !Setting.isTaskUser(this.props.account) ? (
+          Setting.isAdminUser(this.props.account) ? (
             <Row style={{marginTop: "20px"}} >
               <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
                 {Setting.getLabel(i18next.t("task:Question"), i18next.t("task:Question - Tooltip"))} :
