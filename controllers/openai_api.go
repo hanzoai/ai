@@ -19,11 +19,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
 
-	iamsdk "github.com/casdoor/casdoor-go-sdk/casdoorsdk"
+	iamsdk "github.com/hanzoid/go-sdk/casdoorsdk"
 	"github.com/hanzoai/cloud/conf"
 	"github.com/hanzoai/cloud/model"
 	"github.com/hanzoai/cloud/object"
@@ -158,22 +159,26 @@ func resolveProviderForUser(user *iamsdk.User, requestedModel string, lang strin
 	return provider, user, route.upstreamModel, nil
 }
 
-// getUserByAccessKey looks up a user by their IAM API key via the IAM HTTP API.
+// getUserByAccessKey looks up a user by their IAM API key via Hanzo IAM.
 func getUserByAccessKey(accessKey string) (*iamsdk.User, error) {
 	// Call IAM's get-user endpoint with accessKey query parameter
 	iamEndpoint := conf.GetConfigString("iamEndpoint")
 	if iamEndpoint == "" {
-		iamEndpoint = conf.GetConfigString("casdoorEndpoint")
-	}
-	if iamEndpoint == "" {
-		return nil, fmt.Errorf("IAM endpoint not configured")
+		return nil, fmt.Errorf("iamEndpoint is not configured")
 	}
 	iamEndpoint = strings.TrimRight(iamEndpoint, "/")
 
 	url := fmt.Sprintf("%s/api/get-user?accessKey=%s", iamEndpoint, accessKey)
 
 	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Get(url)
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("IAM request build failed: %w", err)
+	}
+	if hanzoAPIKey := os.Getenv("HANZO_API_KEY"); hanzoAPIKey != "" {
+		req.Header.Set("Authorization", "Bearer "+hanzoAPIKey)
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("IAM request failed: %w", err)
 	}
@@ -184,8 +189,8 @@ func getUserByAccessKey(accessKey string) (*iamsdk.User, error) {
 	}
 
 	var result struct {
-		Status string     `json:"status"`
-		Msg    string     `json:"msg"`
+		Status string       `json:"status"`
+		Msg    string       `json:"msg"`
 		Data   *iamsdk.User `json:"data"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -226,9 +231,7 @@ func recordUsage(record *usageRecord) {
 	go func() {
 		iamEndpoint := conf.GetConfigString("iamEndpoint")
 		if iamEndpoint == "" {
-			iamEndpoint = conf.GetConfigString("casdoorEndpoint")
-		}
-		if iamEndpoint == "" {
+			// Billing records must go through Hanzo IAM.
 			return
 		}
 		iamEndpoint = strings.TrimRight(iamEndpoint, "/")
@@ -240,7 +243,15 @@ func recordUsage(record *usageRecord) {
 
 		url := iamEndpoint + "/api/add-usage-record"
 		client := &http.Client{Timeout: 5 * time.Second}
-		resp, err := client.Post(url, "application/json", bytes.NewReader(body))
+		req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
+		if err != nil {
+			return
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if hanzoAPIKey := os.Getenv("HANZO_API_KEY"); hanzoAPIKey != "" {
+			req.Header.Set("Authorization", "Bearer "+hanzoAPIKey)
+		}
+		resp, err := client.Do(req)
 		if err != nil {
 			return // best-effort, don't block model serving
 		}
@@ -322,6 +333,11 @@ func (c *ApiController) ChatCompletions() {
 		if provider == nil {
 			c.ResponseError("Authentication failed: invalid API key")
 			return
+		}
+		// Apply model routing for sk- keys too
+		if route := resolveModelRoute(request.Model); route != nil {
+			upstreamModel = route.upstreamModel
+			isPremium = route.premium
 		}
 	}
 
