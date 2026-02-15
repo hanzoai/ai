@@ -4,7 +4,7 @@
 
 ## Overview
 
-ZAP is Hanzo's native protocol for high-performance LLM inference routing. It defines the contract between clients, the API gateway, upstream providers, and supporting services (IAM, KMS). ZAP is designed for zero unnecessary hops — every request takes the shortest path from client to model.
+ZAP is Hanzo's native protocol for high-performance AI inference routing. It defines the contract between clients, the API gateway, upstream providers, and supporting services (IAM, KMS). ZAP is designed for zero unnecessary hops — every request takes the shortest path from client to model.
 
 ```
 Client ──ZAP──> cloud-api (Go) ──ZAP──> upstream provider
@@ -182,7 +182,7 @@ Engine exposes an MCP server on `--mcp-port`. Node connects to Engine as MCP cli
     ┌──────────────────────────────────────────────┐
     │           Hanzo Node (Rust)                   │
     │  AI agent platform, MCP client               │
-    │  100+ LLM providers, tool execution          │
+    │  100+ AI providers, tool execution           │
     └──────────────────────────────────────────────┘
 ```
 
