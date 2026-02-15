@@ -236,6 +236,15 @@ export function isTaskUser(account) {
   if (account === undefined || account === null) {
     return false;
   }
+
+  if (isAdminUser(account)) {
+    return false;
+  }
+
+  if (account.owner.endsWith("hjy")) {
+    return true;
+  }
+
   return account.type === "task-user";
 }
 
