@@ -18,7 +18,7 @@ import (
 	"fmt"
 	"strings"
 
-	iamsdk "github.com/casdoor/casdoor-go-sdk/casdoorsdk"
+	iamsdk "github.com/hanzoid/go-sdk/casdoorsdk"
 	"github.com/hanzoai/cloud/agent"
 	"github.com/hanzoai/cloud/embedding"
 	"github.com/hanzoai/cloud/i18n"

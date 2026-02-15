@@ -17,7 +17,7 @@ package controllers
 import (
 	"encoding/json"
 
-	iamsdk "github.com/casdoor/casdoor-go-sdk/casdoorsdk"
+	iamsdk "github.com/hanzoid/go-sdk/casdoorsdk"
 	"github.com/hanzoai/cloud/util"
 )
 

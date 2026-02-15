@@ -14,7 +14,7 @@
 
 package controllers
 
-import iamsdk "github.com/casdoor/casdoor-go-sdk/casdoorsdk"
+import iamsdk "github.com/hanzoid/go-sdk/casdoorsdk"
 
 func getStorageProviders() ([]*iamsdk.Provider, error) {
 	providers, err := iamsdk.GetProviders()

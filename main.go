@@ -51,6 +51,7 @@ func main() {
 	beego.InsertFilter("*", beego.BeforeRouter, routers.CacheControlFilter)
 	beego.InsertFilter("*", beego.BeforeRouter, routers.AutoSigninFilter)
 	beego.InsertFilter("*", beego.BeforeRouter, routers.StaticFilter)
+	beego.InsertFilter("*", beego.BeforeRouter, routers.TenantContextFilter)
 	beego.InsertFilter("*", beego.BeforeRouter, routers.AuthzFilter)
 	beego.InsertFilter("*", beego.BeforeRouter, routers.PrometheusFilter)
 	beego.InsertFilter("*", beego.BeforeRouter, routers.RecordMessage)

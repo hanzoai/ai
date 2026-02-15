@@ -22,7 +22,7 @@ import (
 
 	"github.com/beego/beego"
 	"github.com/beego/beego/logs"
-	iamsdk "github.com/casdoor/casdoor-go-sdk/casdoorsdk"
+	iamsdk "github.com/hanzoid/go-sdk/casdoorsdk"
 	"github.com/hanzoai/cloud/object"
 )
 
@@ -90,6 +90,43 @@ func (c *ApiController) GetSessionUsername() string {
 	}
 
 	return GetUserName(user)
+}
+
+func (c *ApiController) GetRequestTenantOrgID() string {
+	if c == nil || c.Ctx == nil {
+		return ""
+	}
+	return strings.TrimSpace(c.Ctx.Input.Header("X-Org-ID"))
+}
+
+func (c *ApiController) GetRequestTenantProjectID() string {
+	if c == nil || c.Ctx == nil {
+		return ""
+	}
+	return strings.TrimSpace(c.Ctx.Input.Header("X-Project-ID"))
+}
+
+// GetSessionOwner returns the organization (owner) of the authenticated user.
+// This ensures multi-tenant resource scoping -- users only see their own org's resources.
+// Returns empty string if no authenticated session exists. X-Org-ID is NOT trusted
+// as a session owner source since it can be spoofed by unauthenticated callers.
+func (c *ApiController) GetSessionOwner() string {
+	user := c.GetSessionUser()
+	if user != nil {
+		return user.Owner
+	}
+	return ""
+}
+
+// RequireSessionOwner ensures the caller is authenticated and returns their org owner.
+// X-Org-ID header is NOT trusted here -- authentication via session is required.
+func (c *ApiController) RequireSessionOwner() (string, bool) {
+	user := c.GetSessionUser()
+	if user != nil {
+		return user.Owner, true
+	}
+	c.ResponseError(c.T("auth:Please sign in first"))
+	return "", false
 }
 
 // EnforceStoreIsolation enforces store isolation based on user's Homepage field.
