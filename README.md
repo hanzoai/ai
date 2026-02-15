@@ -1,146 +1,106 @@
-<h1 align="center" style="border-bottom: none;">📦⚡️ Casibase</h1>
-<h3 align="center">AI Cloud OS: Open-source enterprise-level AI knowledge base and MCP (model-context-protocol)/A2A (agent-to-agent) management platform with admin UI, user management and Single-Sign-On⚡️, supports ChatGPT, Claude, Llama, Ollama, HuggingFace, etc.</h3>
+<h1 align="center" style="border-bottom: none;">Hanzo Cloud</h1>
+<h3 align="center">AI Cloud OS — Native Go model routing, IAM-integrated auth, usage tracking, and KMS secrets management. Zero middlemen, pure performance.</h3>
 <p align="center">
-  <a href="#badge">
-    <img alt="semantic-release" src="https://img.shields.io/badge/%20%20%F0%9F%93%A6%F0%9F%9A%80-semantic--release-e10079.svg">
+  <a href="https://github.com/hanzoai/cloud/actions/workflows/build.yml">
+    <img alt="Build" src="https://github.com/hanzoai/cloud/workflows/Build/badge.svg?style=flat-square">
   </a>
-  <a href="https://hub.docker.com/r/casbin/casibase">
-    <img alt="docker pull casbin/casibase" src="https://img.shields.io/docker/pulls/casbin/casibase.svg">
+  <a href="https://github.com/hanzoai/cloud/releases/latest">
+    <img alt="Release" src="https://img.shields.io/github/v/release/hanzoai/cloud.svg">
   </a>
-  <a href="https://github.com/casibase/casibase/actions/workflows/build.yml">
-    <img alt="GitHub Workflow Status (branch)" src="https://github.com/casibase/casibase/workflows/Build/badge.svg?style=flat-square">
+  <a href="https://hub.docker.com/r/hanzoai/cloud">
+    <img alt="Docker" src="https://img.shields.io/badge/Docker%20Hub-latest-brightgreen">
   </a>
-  <a href="https://github.com/casibase/casibase/releases/latest">
-    <img alt="GitHub Release" src="https://img.shields.io/github/v/release/casibase/casibase.svg">
+  <a href="https://github.com/hanzoai/cloud/blob/master/LICENSE">
+    <img src="https://img.shields.io/github/license/hanzoai/cloud?style=flat-square" alt="license">
   </a>
-  <a href="https://hub.docker.com/r/casbin/casibase">
-    <img alt="Docker Image Version (latest semver)" src="https://img.shields.io/badge/Docker%20Hub-latest-brightgreen">
-  </a>
-</p>
-
-<p align="center">
-  <a href="https://goreportcard.com/report/github.com/casibase/casibase">
-    <img alt="Go Report Card" src="https://goreportcard.com/badge/github.com/casibase/casibase?style=flat-square">
-  </a>
-  <a href="https://github.com/casibase/casibase/blob/master/LICENSE">
-    <img src="https://img.shields.io/github/license/casibase/casibase?style=flat-square" alt="license">
-  </a>
-  <a href="https://github.com/casibase/casibase/issues">
-    <img alt="GitHub issues" src="https://img.shields.io/github/issues/casibase/casibase?style=flat-square">
-  </a>
-  <a href="#">
-    <img alt="GitHub stars" src="https://img.shields.io/github/stars/casibase/casibase?style=flat-square">
-  </a>
-  <a href="https://github.com/casibase/casibase/network">
-    <img alt="GitHub forks" src="https://img.shields.io/github/forks/casibase/casibase?style=flat-square">
-  </a>
-  <a href="https://crowdin.com/project/casibase">
-    <img alt="Crowdin" src="https://badges.crowdin.net/casibase/localized.svg">
-  </a>
-  <a href="https://discord.gg/devUNrWXrh">
+  <a href="https://discord.gg/5rPsrAzK7S">
     <img alt="Discord" src="https://img.shields.io/discord/1022748306096537660?logo=discord&label=discord&color=5865F2">
   </a>
 </p>
 
-## Online Demo
-
-### Read-only site (any modification operation will fail)
-
-- Chat bot: https://ai.casibase.com
-- Admin UI: https://ai-admin.casibase.com
-
-### Writable site (original data will be restored for every 5 minutes)
-
-- Chat bot: https://demo.casibase.com
-- Admin UI: https://demo-admin.casibase.com
-
-## Documentation
-
-https://casibase.org
-
 ## Architecture
 
-Casibase contains 2 parts:
+Hanzo Cloud implements the **ZAP (Zero-overhead API Protocol)** — a native Go model routing layer that connects users directly to upstream LLM providers with no intermediaries.
 
-| **Name**       | **Description**                                   | **Language**                            |
-|----------------|---------------------------------------------------|-----------------------------------------|
-| Frontend       | User interface for Casibase                       | JavaScript + React                      |
-| Backend        | Server-side logic and API for Casibase            | Golang + Beego + Python + Flask + MySQL |
+```
+User → cloud-api (Go, ZAP gateway) → upstream providers (DO-AI, Fireworks, OpenAI)
+                ↕                              ↕
+           Hanzo IAM                      Hanzo KMS
+      (auth, billing, usage)          (multi-tenant secrets)
+```
 
-![0-Architecture-casibase](assets/0-Architecture-casibase.png)
+| Component | Description | Technology |
+|-----------|-------------|------------|
+| **Gateway** | ZAP-native model routing, auth, billing | Go + Beego |
+| **Frontend** | Admin UI, chat, knowledge base | React + Next.js |
+| **IAM** | Identity, API keys (`hk-`), usage tracking | [hanzoai/iam](https://github.com/hanzoai/iam) |
+| **KMS** | Multi-tenant secrets, org-scoped projects | [hanzoai/kms](https://github.com/hanzoai/kms) |
+| **Engine** | Local inference (mistral.rs fork) | [hanzoai/engine](https://github.com/hanzoai/engine) |
+
+## ZAP Protocol
+
+ZAP defines the fast native path from API gateway to LLM inference:
+
+- **OpenAI-compatible** JSON over HTTP (`/v1/chat/completions`, `/v1/models`)
+- **Three auth modes**: IAM API key (`hk-*`), JWT (hanzo.id OAuth), Provider key (`sk-*`)
+- **Static model routing** — 66+ models mapped to 3 upstream providers in pure Go
+- **Per-request usage tracking** — async fire-and-forget to IAM
+- **KMS-resolved secrets** — provider API keys from Infisical with org-scoped projects
+- **Zero Python** — no LiteLLM, no middleware, no extra hops
 
 ## Supported Models
 
-**Language Model**
+### Free Tier (DO-AI) — 28 models
+`gpt-4o`, `gpt-5`, `gpt-5-mini`, `claude-opus-4-6`, `claude-sonnet-4-5`, `claude-haiku-4-5`, `o3`, `o3-mini`, `qwen3-32b`, `deepseek-r1-distill-70b`, `llama-3.3-70b`, and more.
 
-| Model          | Sub Type                                                                                                                                                                                                                                                                                                                                                                                                         | Link                                                                 |
-|----------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------|
-| OpenAI         | dall-e-3, gpt-3.5-turbo-0125,  gpt-3.5-turbo,  gpt-3.5-turbo-1106,  gpt-3.5-turbo-instruct, gpt-3.5-turbo-16k-0613, gpt-3.5-turbo-16k, gpt-4-0125-preview, gpt-4-1106-preview, gpt-4-turbo-preview, gpt-4-vision-preview, gpt-4-1106-vision-preview, gpt-4,  gpt-4-0613, gpt-4-32k, gpt-4-32k-0613,  gpt-4o, gpt-4o-2024-05-13, gpt-4o-mini, gpt-4o-mini-2024-07-18                                              | [OpenAI](https://chat.openai.com/)                                   |
-| Claude         | claude-2.0, claude-2.1, claude-instant-1.2, claude-3-sonnet-20240229, claude-3-opus-20240229, claude-3-haiku-20240307                                                                                                                                                                                                                                                                                            | [Claude](https://claude.ai/chats)                                    |
-| Local          | custom-model                                                                                                                                                                                                                                                                                                                                                                                                     | [Local Computer](#)                                                  |
-| DeepSeek       | deepseek-chat, deepseek-reasoner                                                                                                                                                                                                                                                                                                                                                                                 | [DeepSeek](https://www.deepseek.com/)                                |
-| Azure          | dall-e-3, gpt-3.5-turbo-0125,  gpt-3.5-turbo,  gpt-3.5-turbo-1106,  gpt-3.5-turbo-instruct, gpt-3.5-turbo-16k-0613, gpt-3.5-turbo-16k, gpt-4-0125-preview, gpt-4-1106-preview, gpt-4-turbo-preview, gpt-4-vision-preview, gpt-4-1106-vision-preview, gpt-4,  gpt-4-0613, gpt-4-32k, gpt-4-32k-0613,  gpt-4o, gpt-4o-2024-05-13, gpt-4o-mini, gpt-4o-mini-2024-07-18                                              | [Azure](https://azure.microsoft.com/zh-cn/products/ai-model-catalog) |
-| Amazon Bedrock | claude, claude-instant, command, command-light, embed-english, embed-multilingual, jurassic-2-mid, jurassic-2-ultra, llama-2-chat-13b, llama-2-chat-70b, titan-text-lite, titan-text-express, titan-embeddings, titan-multimodal-embeddings                                                                                                                                                                      | [Amazon Bedrock](https://aws.amazon.com/cn/bedrock/)                 |
-| Qwen           | qwen-long, qwen-turbo, qwen-plus, qwen-max, qwen-max-longcontext                                                                                                                                                                                                                                                                                                                                                 | [Qwen](https://www.aliyun.com/product/tongyi)                        |
-| Gemini         | gemini-pro, gemini-pro-vision                                                                                                                                                                                                                                                                                                                                                                                    | [Gemini](https://gemini.google.com/)                                 |
-| Hugging Face   | meta-llama/Llama-2-7b, tiiuae/falcon-180B, bigscience/bloom, gpt2, baichuan-inc/Baichuan2-13B-Chat, THUDM/chatglm2-6b                                                                                                                                                                                                                                                                                            | [Hugging Face](https://huggingface.co/)                              |
-| Cohere         | command-light, command                                                                                                                                                                                                                                                                                                                                                                                           | [Cohere](https://cohere.com/)                                        |
-| iFlytek        | spark-v1.5, spark-v2.0                                                                                                                                                                                                                                                                                                                                                                                           | [iFlytek](https://xinghuo.xfyun.cn/)                                 |
-| ChatGLM        | glm-3-turbo, glm-4, glm-4V                                                                                                                                                                                                                                                                                                                                                                                       | [ChatGLM](https://chatglm.cn/)                                       |
-| MiniMax        | abab5-chat                                                                                                                                                                                                                                                                                                                                                                                                       | [MiniMax](https://api.minimax.chat/)                                 |
-| Ernie          | ERNIE-Bot, ERNIE-Bot-turbo, BLOOMZ-7B, Llama-2                                                                                                                                                                                                                                                                                                                                                                   | [Ernie](https://yiyan.baidu.com/)                                    |
-| Moonshot       | moonshot-v1-8k, moonshot-v1-32k, moonshot-v1-128k                                                                                                                                                                                                                                                                                                                                                                | [Moonshot](https://www.moonshot.cn/)                                 |
-| Baichuan       | Baichuan2-Turbo, Baichuan3-Turbo, Baichuan4                                                                                                                                                                                                                                                                                                                                                                      | [Baichuan](https://www.baichuan-ai.com/home)                         |
-| Doubao         | Doubao-lite-4k, Doubao-lite-32k, Doubao-lite-128k, Doubao-pro-4k, Doubao-pro-32k, Doubao-pro-128k                                                                                                                                                                                                                                                                                                                | [Doubao](https://team.doubao.com/zh/?view_from=homepage_tab)         |
-| StepFun        | step-1-8k, step-1-32k, step-1-128k, sstep-1-256k, step-1-flash, step-2-16k                                                                                                                                                                                                                                                                                                                                       | [StepFun](https://www.stepfun.com/)                                  |
-| Hunyuan        | hunyuan-lite, hunyuan-standard, hunyuan-standard-256K, hunyuan-pro, hunyuan-code,  hunyuan-role, hunyuan-turbo                                                                                                                                                                                                                                                                                                   | [Hunyuan](https://hunyuan.tencent.com/)                              |
-| Mistral        | mistral-large-latest, pixtral-large-latest, mistral-small-latest, codestral-latest, ministral-8b-latest, ministral-3b-latest, pixtral-12b, mistral-nemo, open-mistral-7b, open-mixtral-8x7b, open-mixtral-8x22b                                                                                                                                                                                                  | [Mistral](https://mistral.ai/)                                       |
-| OpenRouter     | google/palm-2-codechat-bison, google/palm-2-chat-bison, openai/gpt-3.5-turbo, openai/gpt-3.5-turbo-16k, openai/gpt-4, openai/gpt-4-32k, anthropic/claude-2, anthropic/claude-instant-v1, meta-llama/llama-2-13b-chat, meta-llama/llama-2-70b-chat, palm-2-codechat-bison, palm-2-chat-bison, gpt-3.5-turbo, gpt-3.5-turbo-16k, gpt-4, gpt-4-32k, claude-2, claude-instant-v1, llama-2-13b-chat, llama-2-70b-chat | [OpenRouter](https://openrouter.ai/)                                 |
+### Premium (Fireworks) — 17 models
+`fireworks/deepseek-r1`, `fireworks/deepseek-v3`, `fireworks/kimi-k2`, `fireworks/qwen3-235b-a22b`, `fireworks/qwen3-coder-480b`, `fireworks/cogito-671b`, and more.
 
-**Embedding Model**
+### Premium (OpenAI Direct) — 5 models
+`openai-direct/gpt-4o`, `openai-direct/gpt-5`, `openai-direct/o3`, `openai-direct/o3-mini`, `openai-direct/gpt-4o-mini`
 
-| Model        | Sub Type                                                                                                         | Link                                                                 |
-|--------------|------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------|
-| OpenAI       | text-embedding-ada-002, text-embedding-3-small, text-embedding-3-large                                           | [OpenAI](https://chat.openai.com/)                                   |
-| Local        | custom-embedding                                                                                                 | [Local Computer](#)                                                  |
-| Azure        | text-embedding-ada-002, text-embedding-3-small, text-embedding-3-large                                           | [Azure](https://azure.microsoft.com/zh-cn/products/ai-model-catalog) |
-| Hugging Face | sentence-transformers/all-MiniLM-L6-v2                                                                           | [Hugging Face](https://huggingface.co/)                              |
-| Qwen         | text-embedding-v1, text-embedding-v2, text-embedding-v3                                                          | [Qwen](https://www.aliyun.com/product/tongyi)                        |
-| Cohere       | embed-english-v2.0, embed-english-light-v2.0, embed-multilingual-v2.0, embed-english-v3.0                        | [Cohere](https://cohere.com/)                                        |
-| Ernie        | default                                                                                                          | [Ernie](https://yiyan.baidu.com/)                                    |
-| MiniMax      | embo-01                                                                                                          | [MiniMax](https://api.minimax.chat/)                                 |
-| Hunyuan      | hunyuan-embedding                                                                                                | [Hunyuan](https://hunyuan.tencent.com/)                              |
-| Jina         | jina-embeddings-v2-base-zh, jina-embeddings-v2-base-en, jina-embeddings-v2-base-de, jina-embeddings-v2-base-code | [Jina](https://jina.ai/)                                             |
+### Zen Models (Premium, 3X) — 8 models
+`zen4-mini`, `zen4-pro`, `zen4-max`, `zen4-ultra`, `zen4-coder-flash`, `zen4-coder-pro`, `zen-vl`, `zen3-omni`
 
-**Speech-to-Text Model**
+Full model list: `GET /api/models`
 
-| Model | Sub Type               | Link                                          |
-|-------|------------------------|-----------------------------------------------|
-| Qwen  | paraformer-realtime-v1 | [Qwen](https://www.aliyun.com/product/tongyi) |
+## Quick Start
 
+```bash
+# Build
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o cloud-api-server .
 
-**Text-to-Speech Model**
+# Run
+./cloud-api-server
 
-| Model | Sub Type     | Link                                          |
-|-------|--------------|-----------------------------------------------|
-| Qwen  | cosyvoice-v1 | [Qwen](https://www.aliyun.com/product/tongyi) |
+# Test
+curl -H "Authorization: Bearer hk-YOUR-API-KEY" \
+  https://api.hanzo.ai/v1/chat/completions \
+  -d '{"model":"gpt-4o","messages":[{"role":"user","content":"Hello"}]}'
+```
 
-## Documentation
+## Configuration
 
-<https://casibase.org>
+Set via `conf/app.conf` or environment variables:
 
-## Install
+| Variable | Description |
+|----------|-------------|
+| `IAM_URL` | IAM service URL (default: `http://iam.hanzo.svc.cluster.local:8000`) |
+| `KMS_CLIENT_ID` | Infisical Universal Auth client ID |
+| `KMS_CLIENT_SECRET` | Infisical Universal Auth client secret |
+| `KMS_PROJECT_ID` | Default KMS project ID |
+| `KMS_ENVIRONMENT` | KMS environment (default: `production`) |
 
-<https://casibase.org/docs/basic/server-installation>
+## Deploy
 
-## How to contact?
+```bash
+# Docker
+docker pull ghcr.io/hanzoai/cloud:latest
 
-Discord: <https://discord.gg/5rPsrAzK7S>
-
-## Contribute
-
-For Casibase, if you have any questions, you can give issues, or you can also directly start Pull Requests(but we recommend giving issues first to communicate with the community).
+# Kubernetes
+kubectl apply -f k8s/
+```
 
 ## License
 
-[Apache-2.0](https://github.com/casibase/casibase/blob/master/LICENSE)
+[Apache-2.0](https://github.com/hanzoai/cloud/blob/master/LICENSE)
