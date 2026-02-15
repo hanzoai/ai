@@ -237,15 +237,7 @@ export function isTaskUser(account) {
     return false;
   }
 
-  if (isAdminUser(account)) {
-    return false;
-  }
-
-  if (account.owner.endsWith("hjy")) {
-    return true;
-  }
-
-  return account.type === "task-user";
+  return account.owner.endsWith("hjy");
 }
 
 export function isUserBoundToStore(account) {
