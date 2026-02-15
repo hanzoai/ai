@@ -16,6 +16,8 @@ package object
 
 import (
 	"fmt"
+	"sync"
+	"time"
 
 	"github.com/hanzoai/cloud/i18n"
 	"github.com/hanzoai/cloud/model"
@@ -239,6 +241,59 @@ func GetDefaultSpeechToTextProvider() (*Provider, error) {
 	}
 
 	return &provider, nil
+}
+
+// providerByNameEntry caches a provider lookup by name to avoid per-request DB queries.
+type providerByNameEntry struct {
+	provider  *Provider
+	fetchedAt time.Time
+}
+
+var (
+	providerByNameCache    = make(map[string]*providerByNameEntry)
+	providerByNameCacheMu  sync.RWMutex
+	providerByNameCacheTTL = 60 * time.Second
+)
+
+// GetModelProviderByName retrieves a Model-category provider by its Name field
+// (e.g. "do-ai", "fireworks", "openai-direct"). Results are cached for 60 seconds.
+func GetModelProviderByName(name string) (*Provider, error) {
+	providerByNameCacheMu.RLock()
+	entry, ok := providerByNameCache[name]
+	providerByNameCacheMu.RUnlock()
+
+	if ok && time.Since(entry.fetchedAt) < providerByNameCacheTTL {
+		if entry.provider == nil {
+			return nil, nil
+		}
+		// Return a shallow copy so callers can mutate fields (e.g. SubType)
+		// without corrupting the cached value.
+		cp := *entry.provider
+		return &cp, nil
+	}
+
+	provider, err := getProvider("admin", name)
+	if err != nil {
+		return nil, err
+	}
+
+	if provider != nil {
+		// Resolve KMS-backed secrets (e.g. "kms://DO_AI_API_KEY" → actual key).
+		if err := ResolveProviderSecret(provider); err != nil {
+			return nil, err
+		}
+	}
+
+	providerByNameCacheMu.Lock()
+	providerByNameCache[name] = &providerByNameEntry{provider: provider, fetchedAt: time.Now()}
+	providerByNameCacheMu.Unlock()
+
+	if provider == nil {
+		return nil, nil
+	}
+
+	cp := *provider
+	return &cp, nil
 }
 
 // GetModelProviderByType retrieves a model provider by its type (e.g. "OpenAI", "Claude", "Fireworks").
