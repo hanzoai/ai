@@ -58,11 +58,11 @@ class FileListPage extends BaseListPage {
         if (res.status === "ok" && res.data?.name) {
           storeName = res.data.name;
         } else {
-          Setting.showMessage("error", `${i18next.t("general:Failed to get store")}: ${res.msg}`);
+          Setting.showMessage("error", `${i18next.t("general:Failed to get")}: ${res.msg}`);
           return;
         }
       } catch (error) {
-        Setting.showMessage("error", `${i18next.t("general:Failed to get store")}: ${error}`);
+        Setting.showMessage("error", `${i18next.t("general:Failed to get")}: ${error}`);
         return;
       }
     } else {
@@ -184,7 +184,7 @@ class FileListPage extends BaseListPage {
         },
       },
       {
-        title: i18next.t("file:Storage provider"),
+        title: i18next.t("store:Storage provider"),
         dataIndex: "storageProvider",
         key: "storageProvider",
         width: "150px",
@@ -199,7 +199,7 @@ class FileListPage extends BaseListPage {
         },
       },
       {
-        title: i18next.t("file:Token count"),
+        title: i18next.t("chat:Token count"),
         dataIndex: "tokenCount",
         key: "tokenCount",
         width: "100px",
