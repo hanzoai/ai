@@ -16,7 +16,7 @@ import {Tag, Tooltip, message, theme} from "antd";
 import {QuestionCircleTwoTone, SyncOutlined} from "@ant-design/icons";
 import {isMobile as isMobileDevice} from "react-device-detect";
 import i18next from "i18next";
-import Sdk from "casdoor-js-sdk"; // TODO: migrate to @hanzo/iam-js-sdk;
+import Sdk from "@hanzo/iam-js-sdk";
 import xlsx from "xlsx";
 import FileSaver from "file-saver";
 import moment from "moment/moment";
