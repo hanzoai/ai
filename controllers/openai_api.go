@@ -15,13 +15,16 @@
 package controllers
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
 
 	iamsdk "github.com/casdoor/casdoor-go-sdk/casdoorsdk"
+	"github.com/hanzoai/cloud/conf"
 	"github.com/hanzoai/cloud/model"
 	"github.com/hanzoai/cloud/object"
 	"github.com/hanzoai/cloud/util"
@@ -75,17 +78,14 @@ func isJwtToken(token string) bool {
 	return len(parts) == 3 && len(parts[0]) > 10 && len(parts[1]) > 10
 }
 
+// isIAMApiKey checks if a token is an IAM-issued API key (hk- prefix).
+func isIAMApiKey(token string) bool {
+	return strings.HasPrefix(token, "hk-")
+}
+
 // resolveProviderFromJwt validates a hanzo.id JWT token and returns the
 // appropriate model provider for the requested model, plus the translated
 // upstream model name.
-//
-// Architecture: JWT provides identity (who the user is). Balance is mutable
-// financial state checked against IAM at request time — never from the JWT,
-// since JWTs are valid for days and balance changes on every transaction.
-//
-// Models are resolved via the static routing table in model_routes.go.
-// Each route specifies which DB provider holds the API key and the upstream
-// model ID to forward to. Premium models require balance > 0.
 func resolveProviderFromJwt(token string, requestedModel string, lang string) (*object.Provider, *iamsdk.User, string, error) {
 	claims, err := iamsdk.ParseJwtToken(token)
 	if err != nil {
@@ -93,7 +93,30 @@ func resolveProviderFromJwt(token string, requestedModel string, lang string) (*
 	}
 
 	user := &claims.User
+	return resolveProviderForUser(user, requestedModel, lang)
+}
 
+// resolveProviderFromIAMKey validates an IAM API key (hk-{accessKey})
+// and returns the model provider + user, same as JWT path.
+func resolveProviderFromIAMKey(apiKey string, requestedModel string, lang string) (*object.Provider, *iamsdk.User, string, error) {
+	// IAM API key format: hk-{uuid}
+	// Look up user by accessKey via IAM API
+	accessKey := apiKey // the full token including hk- prefix is the accessKey
+
+	user, err := getUserByAccessKey(accessKey)
+	if err != nil {
+		return nil, nil, "", fmt.Errorf("API key validation failed: %s", err.Error())
+	}
+	if user == nil {
+		return nil, nil, "", fmt.Errorf("invalid API key")
+	}
+
+	return resolveProviderForUser(user, requestedModel, lang)
+}
+
+// resolveProviderForUser is the shared logic for JWT and API key auth paths.
+// Given a validated user, resolves the model route and provider.
+func resolveProviderForUser(user *iamsdk.User, requestedModel string, lang string) (*object.Provider, *iamsdk.User, string, error) {
 	// Look up the model in the static routing table.
 	route := resolveModelRoute(requestedModel)
 	if route == nil {
@@ -135,11 +158,106 @@ func resolveProviderFromJwt(token string, requestedModel string, lang string) (*
 	return provider, user, route.upstreamModel, nil
 }
 
+// getUserByAccessKey looks up a user by their IAM API key via the IAM HTTP API.
+func getUserByAccessKey(accessKey string) (*iamsdk.User, error) {
+	// Call IAM's get-user endpoint with accessKey query parameter
+	iamEndpoint := conf.GetConfigString("iamEndpoint")
+	if iamEndpoint == "" {
+		iamEndpoint = conf.GetConfigString("casdoorEndpoint")
+	}
+	if iamEndpoint == "" {
+		return nil, fmt.Errorf("IAM endpoint not configured")
+	}
+	iamEndpoint = strings.TrimRight(iamEndpoint, "/")
+
+	url := fmt.Sprintf("%s/api/get-user?accessKey=%s", iamEndpoint, accessKey)
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Get(url)
+	if err != nil {
+		return nil, fmt.Errorf("IAM request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("IAM returned status %d", resp.StatusCode)
+	}
+
+	var result struct {
+		Status string     `json:"status"`
+		Msg    string     `json:"msg"`
+		Data   *iamsdk.User `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to parse IAM response: %w", err)
+	}
+
+	if result.Status != "ok" {
+		return nil, fmt.Errorf("IAM error: %s", result.Msg)
+	}
+
+	return result.Data, nil
+}
+
+// ── Usage tracking ──────────────────────────────────────────────────────────
+
+// usageRecord mirrors IAM's UsageRecord for JSON serialization.
+type usageRecord struct {
+	Owner            string  `json:"owner"`
+	User             string  `json:"user"`
+	Organization     string  `json:"organization"`
+	Model            string  `json:"model"`
+	Provider         string  `json:"provider"`
+	PromptTokens     int     `json:"promptTokens"`
+	CompletionTokens int     `json:"completionTokens"`
+	TotalTokens      int     `json:"totalTokens"`
+	Cost             float64 `json:"cost"`
+	Currency         string  `json:"currency"`
+	Premium          bool    `json:"premium"`
+	Stream           bool    `json:"stream"`
+	Status           string  `json:"status"`
+	ErrorMsg         string  `json:"errorMsg"`
+	ClientIP         string  `json:"clientIp"`
+	RequestID        string  `json:"requestId"`
+}
+
+// recordUsage sends a usage record to IAM asynchronously (fire-and-forget).
+func recordUsage(record *usageRecord) {
+	go func() {
+		iamEndpoint := conf.GetConfigString("iamEndpoint")
+		if iamEndpoint == "" {
+			iamEndpoint = conf.GetConfigString("casdoorEndpoint")
+		}
+		if iamEndpoint == "" {
+			return
+		}
+		iamEndpoint = strings.TrimRight(iamEndpoint, "/")
+
+		body, err := json.Marshal(record)
+		if err != nil {
+			return
+		}
+
+		url := iamEndpoint + "/api/add-usage-record"
+		client := &http.Client{Timeout: 5 * time.Second}
+		resp, err := client.Post(url, "application/json", bytes.NewReader(body))
+		if err != nil {
+			return // best-effort, don't block model serving
+		}
+		resp.Body.Close()
+	}()
+}
+
+// ── API handlers ────────────────────────────────────────────────────────────
+
 // ChatCompletions implements the OpenAI-compatible chat completions API
 // @Title ChatCompletions
 // @Tag OpenAI Compatible API
-// @Description OpenAI compatible chat completions API. Accepts either a provider
-// API key (sk-...) or a hanzo.id OAuth JWT token for authentication.
+// @Description OpenAI compatible chat completions API. Accepts:
+//   - IAM API key (hk-...)  — full model routing + billing
+//   - hanzo.id JWT token    — full model routing + billing
+//   - Provider API key      — direct provider access
+//
 // @Param   body    body    openai.ChatCompletionRequest  true    "The OpenAI chat request"
 // @Success 200 {object} openai.ChatCompletionResponse
 // @router /api/chat/completions [post]
@@ -164,22 +282,38 @@ func (c *ApiController) ChatCompletions() {
 	var provider *object.Provider
 	var authUser *iamsdk.User
 	var upstreamModel string
+	var isPremium bool
 
-	if isJwtToken(token) {
-		// Authenticate via hanzo.id JWT token and resolve model → provider.
+	if isIAMApiKey(token) {
+		// Authenticate via IAM API key (hk-...) — full model routing
+		provider, authUser, upstreamModel, err = resolveProviderFromIAMKey(token, request.Model, c.GetAcceptLanguage())
+		if err != nil {
+			c.ResponseError(fmt.Sprintf("Authentication failed: %s", err.Error()))
+			return
+		}
+		if authUser != nil {
+			userId := authUser.Owner + "/" + authUser.Name
+			c.Ctx.Input.SetParam("recordUserId", userId)
+		}
+		if route := resolveModelRoute(request.Model); route != nil {
+			isPremium = route.premium
+		}
+	} else if isJwtToken(token) {
+		// Authenticate via hanzo.id JWT token — full model routing
 		provider, authUser, upstreamModel, err = resolveProviderFromJwt(token, request.Model, c.GetAcceptLanguage())
 		if err != nil {
 			c.ResponseError(fmt.Sprintf("Authentication failed: %s", err.Error()))
 			return
 		}
-		// Store user identity in request context for the record middleware
-		// (AfterRecordMessage) to attribute usage to this user.
 		if authUser != nil {
 			userId := authUser.Owner + "/" + authUser.Name
 			c.Ctx.Input.SetParam("recordUserId", userId)
 		}
+		if route := resolveModelRoute(request.Model); route != nil {
+			isPremium = route.premium
+		}
 	} else {
-		// Authenticate via provider API key (sk-...)
+		// Authenticate via provider API key (sk-...) — direct provider access
 		provider, err = object.GetProviderByProviderKey(token, c.GetAcceptLanguage())
 		if err != nil {
 			c.ResponseError(fmt.Sprintf("Authentication failed: %s", err.Error()))
@@ -196,9 +330,9 @@ func (c *ApiController) ChatCompletions() {
 		return
 	}
 
-	// Set the upstream model name on the provider. For JWT auth, this is the
-	// translated upstream model from the routing table. For API key auth,
-	// fall back to the request model or provider's default.
+	// Set the upstream model name on the provider. For JWT/IAM key auth, this
+	// is the translated upstream model from the routing table. For provider
+	// API key auth, fall back to the request model or provider's default.
 	if upstreamModel != "" {
 		provider.SubType = upstreamModel
 	} else if request.Model != "" {
@@ -263,8 +397,43 @@ func (c *ApiController) ChatCompletions() {
 	// Call the model provider
 	modelResult, err := modelProvider.QueryText(question, writer, history, "", knowledge, nil, c.GetAcceptLanguage())
 	if err != nil {
+		// Record failed usage
+		if authUser != nil {
+			recordUsage(&usageRecord{
+				Owner:     authUser.Owner,
+				User:      authUser.Owner + "/" + authUser.Name,
+				Model:     request.Model,
+				Provider:  provider.Name,
+				Premium:   isPremium,
+				Stream:    request.Stream,
+				Status:    "error",
+				ErrorMsg:  err.Error(),
+				ClientIP:  c.Ctx.Request.RemoteAddr,
+				RequestID: requestId,
+			})
+		}
 		c.ResponseError(err.Error())
 		return
+	}
+
+	// Record successful usage
+	if authUser != nil {
+		recordUsage(&usageRecord{
+			Owner:            authUser.Owner,
+			User:             authUser.Owner + "/" + authUser.Name,
+			Organization:     authUser.Owner,
+			Model:            request.Model,
+			Provider:         provider.Name,
+			PromptTokens:     modelResult.PromptTokenCount,
+			CompletionTokens: modelResult.ResponseTokenCount,
+			TotalTokens:      modelResult.TotalTokenCount,
+			Currency:         "USD",
+			Premium:          isPremium,
+			Stream:           request.Stream,
+			Status:           "success",
+			ClientIP:         c.Ctx.Request.RemoteAddr,
+			RequestID:        requestId,
+		})
 	}
 
 	// Handle response based on streaming mode
