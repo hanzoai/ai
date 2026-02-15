@@ -45,7 +45,10 @@ func (c *ApiController) GetGlobalVectors() {
 // @Success 200 {array} object.Vector The Response object
 // @router /get-vectors [get]
 func (c *ApiController) GetVectors() {
-	owner := "admin"
+	owner, ok := c.RequireSessionOwner()
+	if !ok {
+		return
+	}
 	storeName := c.Input().Get("store")
 	limit := c.Input().Get("pageSize")
 	page := c.Input().Get("p")
@@ -55,7 +58,6 @@ func (c *ApiController) GetVectors() {
 	sortOrder := c.Input().Get("sortOrder")
 
 	// Apply store isolation based on user's Homepage field
-	var ok bool
 	storeName, ok = c.EnforceStoreIsolation(storeName)
 	if !ok {
 		return
@@ -195,7 +197,10 @@ func (c *ApiController) DeleteVector() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /delete-all-vectors [post]
 func (c *ApiController) DeleteAllVectors() {
-	owner := "admin"
+	owner, ok := c.RequireSessionOwner()
+	if !ok {
+		return
+	}
 
 	vectors, err := object.GetVectors(owner)
 	if err != nil {

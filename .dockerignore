@@ -1,0 +1,10 @@
+.git
+.github
+node_modules
+web/node_modules
+tmp
+logs
+files
+*.log
+*.tmp
+*.cache

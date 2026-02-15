@@ -27,6 +27,15 @@ import (
 // @Success 200 {array} object.Usage The Response object
 // @router /get-usages [get]
 func (c *ApiController) GetUsages() {
+	_, ok := c.RequireSignedIn()
+	if !ok {
+		return
+	}
+	if !c.IsAdmin() {
+		c.ResponseError(c.T("auth:this operation requires admin privilege"))
+		return
+	}
+
 	days := util.ParseInt(c.Input().Get("days"))
 	user := c.Input().Get("selectedUser")
 	storeName := c.Input().Get("store")
@@ -54,6 +63,15 @@ func (c *ApiController) GetUsages() {
 // @Success 200 {array} object.Usage The Response object
 // @router /get-range-usages [get]
 func (c *ApiController) GetRangeUsages() {
+	_, ok := c.RequireSignedIn()
+	if !ok {
+		return
+	}
+	if !c.IsAdmin() {
+		c.ResponseError(c.T("auth:this operation requires admin privilege"))
+		return
+	}
+
 	rangeType := c.Input().Get("rangeType")
 	count := util.ParseInt(c.Input().Get("count"))
 	user := c.Input().Get("user")
@@ -81,11 +99,18 @@ func (c *ApiController) GetRangeUsages() {
 // @Success 200 {array} string The Response object
 // @router /get-users [get]
 func (c *ApiController) GetUsers() {
+	_, ok := c.RequireSignedIn()
+	if !ok {
+		return
+	}
+	if !c.IsAdmin() {
+		c.ResponseError(c.T("auth:this operation requires admin privilege"))
+		return
+	}
+
 	user := c.Input().Get("user")
 	storeName := c.Input().Get("store")
-	if c.IsAdmin() {
-		user = ""
-	}
+	user = ""
 	users, err := object.GetUsers(storeName, user)
 	if err != nil {
 		c.ResponseError(err.Error())
@@ -102,11 +127,18 @@ func (c *ApiController) GetUsers() {
 // @Success 200 {array} object.Usage The Response object
 // @router /get-usages [get]
 func (c *ApiController) GetUserTableInfos() {
+	_, ok := c.RequireSignedIn()
+	if !ok {
+		return
+	}
+	if !c.IsAdmin() {
+		c.ResponseError(c.T("auth:this operation requires admin privilege"))
+		return
+	}
+
 	user := c.Input().Get("user")
 	storeName := c.Input().Get("store")
-	if c.IsAdmin() {
-		user = ""
-	}
+	user = ""
 	userInfos, err := object.GetUserTableInfos(storeName, user)
 	if err != nil {
 		c.ResponseError(err.Error())
