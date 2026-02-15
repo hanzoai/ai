@@ -76,43 +76,52 @@ func isJwtToken(token string) bool {
 }
 
 // resolveProviderFromJwt validates a hanzo.id JWT token and returns the
-// appropriate model provider for the requested model.
+// appropriate model provider for the requested model, plus the translated
+// upstream model name.
 //
 // Architecture: JWT provides identity (who the user is). Balance is mutable
 // financial state checked against IAM at request time — never from the JWT,
 // since JWTs are valid for days and balance changes on every transaction.
 //
-// All models route through the default LiteLLM gateway provider.
-// Premium models (fireworks/*, openai-direct/*, anthropic/*) require balance > 0.
-func resolveProviderFromJwt(token string, requestedModel string, lang string) (*object.Provider, *iamsdk.User, error) {
+// Models are resolved via the static routing table in model_routes.go.
+// Each route specifies which DB provider holds the API key and the upstream
+// model ID to forward to. Premium models require balance > 0.
+func resolveProviderFromJwt(token string, requestedModel string, lang string) (*object.Provider, *iamsdk.User, string, error) {
 	claims, err := iamsdk.ParseJwtToken(token)
 	if err != nil {
-		return nil, nil, fmt.Errorf("invalid hanzo.id token: %s", err.Error())
+		return nil, nil, "", fmt.Errorf("invalid hanzo.id token: %s", err.Error())
 	}
 
 	user := &claims.User
 
-	// All models are routed through the default provider, which is the
-	// LiteLLM gateway. LiteLLM handles upstream routing to DO-AI,
-	// Fireworks, OpenAI Direct, Anthropic, etc.
-	provider, err := object.GetDefaultModelProvider()
-	if err != nil {
-		return nil, user, fmt.Errorf("failed to get model provider: %s", err.Error())
-	}
-	if provider == nil {
-		return nil, user, fmt.Errorf("no default model provider configured")
+	// Look up the model in the static routing table.
+	route := resolveModelRoute(requestedModel)
+	if route == nil {
+		return nil, user, "", fmt.Errorf(
+			"model %q is not available. Use GET /api/models to list available models",
+			requestedModel,
+		)
 	}
 
-	// Premium models (fireworks/*, openai-direct/*, anthropic/*) require
-	// a positive balance. Free-tier models are available to all authenticated users.
-	if isPremiumModel(requestedModel) {
+	// Fetch the provider entry that holds API keys/URLs for this upstream.
+	// GetModelProviderByName returns a shallow copy, safe to mutate.
+	provider, err := object.GetModelProviderByName(route.providerName)
+	if err != nil {
+		return nil, user, "", fmt.Errorf("failed to get provider %q: %s", route.providerName, err.Error())
+	}
+	if provider == nil {
+		return nil, user, "", fmt.Errorf("provider %q not configured in database", route.providerName)
+	}
+
+	// Premium models require a positive balance.
+	if route.premium {
 		balance, err := getUserBalance(user.Name)
 		if err != nil {
-			return nil, user, fmt.Errorf("failed to verify account balance: %s", err.Error())
+			return nil, user, "", fmt.Errorf("failed to verify account balance: %s", err.Error())
 		}
 
 		if balance <= 0 {
-			return nil, user, fmt.Errorf(
+			return nil, user, "", fmt.Errorf(
 				"model %q requires a paid plan. Your current balance is $%.2f. "+
 					"Add funds at https://hanzo.ai/billing to access premium models, "+
 					"or use a free-tier model instead",
@@ -123,18 +132,7 @@ func resolveProviderFromJwt(token string, requestedModel string, lang string) (*
 		user.Balance = balance
 	}
 
-	return provider, user, nil
-}
-
-// isPremiumModel returns true for models that require a positive balance.
-// All models are routed through the default provider (LiteLLM gateway),
-// which handles upstream routing. This function only controls billing.
-func isPremiumModel(model string) bool {
-	m := strings.ToLower(model)
-	// Models explicitly routed to premium upstream providers via LiteLLM
-	return strings.HasPrefix(m, "fireworks/") ||
-		strings.HasPrefix(m, "openai-direct/") ||
-		strings.HasPrefix(m, "anthropic/")
+	return provider, user, route.upstreamModel, nil
 }
 
 // ChatCompletions implements the OpenAI-compatible chat completions API
@@ -165,10 +163,11 @@ func (c *ApiController) ChatCompletions() {
 
 	var provider *object.Provider
 	var authUser *iamsdk.User
+	var upstreamModel string
 
 	if isJwtToken(token) {
 		// Authenticate via hanzo.id JWT token and resolve model → provider.
-		provider, authUser, err = resolveProviderFromJwt(token, request.Model, c.GetAcceptLanguage())
+		provider, authUser, upstreamModel, err = resolveProviderFromJwt(token, request.Model, c.GetAcceptLanguage())
 		if err != nil {
 			c.ResponseError(fmt.Sprintf("Authentication failed: %s", err.Error()))
 			return
@@ -197,8 +196,12 @@ func (c *ApiController) ChatCompletions() {
 		return
 	}
 
-	// Use the model from the request if provided, otherwise fall back to provider's subType
-	if request.Model != "" {
+	// Set the upstream model name on the provider. For JWT auth, this is the
+	// translated upstream model from the routing table. For API key auth,
+	// fall back to the request model or provider's default.
+	if upstreamModel != "" {
+		provider.SubType = upstreamModel
+	} else if request.Model != "" {
 		provider.SubType = request.Model
 	}
 
@@ -309,5 +312,30 @@ func (c *ApiController) ChatCompletions() {
 			return
 		}
 	}
+	c.EnableRender = false
+}
+
+// ListModels returns the list of available models from the routing table.
+// @Title ListModels
+// @Tag OpenAI Compatible API
+// @Description Returns a list of all available models. No authentication required.
+// @Success 200 {object} object
+// @router /api/models [get]
+func (c *ApiController) ListModels() {
+	models := listAvailableModels()
+
+	response := map[string]interface{}{
+		"object": "list",
+		"data":   models,
+	}
+
+	jsonResponse, err := json.Marshal(response)
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+
+	c.Ctx.Output.Header("Content-Type", "application/json")
+	c.Ctx.Output.Body(jsonResponse)
 	c.EnableRender = false
 }
