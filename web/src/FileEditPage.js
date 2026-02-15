@@ -119,7 +119,7 @@ class FileEditPage extends React.Component {
         </Row>
         <Row style={{marginTop: "20px"}} >
           <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("file:Storage provider"), i18next.t("file:Storage provider - Tooltip"))} :
+            {Setting.getLabel(i18next.t("store:Storage provider"), i18next.t("store:Storage provider - Tooltip"))} :
           </Col>
           <Col span={22} >
             <Input value={this.state.file.storageProvider} onChange={e => {
@@ -129,7 +129,7 @@ class FileEditPage extends React.Component {
         </Row>
         <Row style={{marginTop: "20px"}} >
           <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("file:Token count"), i18next.t("file:Token count - Tooltip"))} :
+            {Setting.getLabel(i18next.t("chat:Token count"), i18next.t("chat:Token count - Tooltip"))} :
           </Col>
           <Col span={22} >
             <InputNumber value={this.state.file.tokenCount} onChange={value => {
@@ -154,7 +154,7 @@ class FileEditPage extends React.Component {
         </Row>
         <Row style={{marginTop: "20px"}} >
           <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("file:Error text"), i18next.t("file:Error text - Tooltip"))} :
+            {Setting.getLabel(i18next.t("message:Error text"), i18next.t("message:Error text - Tooltip"))} :
           </Col>
           <Col span={22} >
             <Input.TextArea value={this.state.file.errorText} autoSize={{minRows: 2, maxRows: 4}} readOnly />
