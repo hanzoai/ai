@@ -7,8 +7,8 @@
   <a href="https://github.com/hanzoai/cloud/releases/latest">
     <img alt="Release" src="https://img.shields.io/github/v/release/hanzoai/cloud.svg">
   </a>
-  <a href="https://hub.docker.com/r/hanzoai/cloud">
-    <img alt="Docker" src="https://img.shields.io/badge/Docker%20Hub-latest-brightgreen">
+  <a href="https://github.com/hanzoai/cloud/pkgs/container/cloud">
+    <img alt="GHCR" src="https://img.shields.io/badge/GHCR-latest-brightgreen">
   </a>
   <a href="https://github.com/hanzoai/cloud/blob/master/LICENSE">
     <img src="https://img.shields.io/github/license/hanzoai/cloud?style=flat-square" alt="license">
@@ -20,7 +20,7 @@
 
 ## Architecture
 
-Hanzo Cloud implements the **ZAP (Zero-overhead API Protocol)** — a native Go model routing layer that connects users directly to upstream LLM providers with no intermediaries.
+Hanzo Cloud implements the **ZAP (Zero-overhead API Protocol)** — a native Go model routing layer that connects users directly to upstream AI providers with no intermediaries.
 
 ```
 User → cloud-api (Go, ZAP gateway) → upstream providers (DO-AI, Fireworks, OpenAI)
@@ -39,14 +39,14 @@ User → cloud-api (Go, ZAP gateway) → upstream providers (DO-AI, Fireworks, O
 
 ## ZAP Protocol
 
-ZAP defines the fast native path from API gateway to LLM inference:
+ZAP defines the fast native path from API gateway to AI inference:
 
 - **OpenAI-compatible** JSON over HTTP (`/v1/chat/completions`, `/v1/models`)
 - **Three auth modes**: IAM API key (`hk-*`), JWT (hanzo.id OAuth), Provider key (`sk-*`)
 - **Static model routing** — 66+ models mapped to 3 upstream providers in pure Go
 - **Per-request usage tracking** — async fire-and-forget to IAM
 - **KMS-resolved secrets** — provider API keys from Infisical with org-scoped projects
-- **Zero Python** — no LiteLLM, no middleware, no extra hops
+- **Zero Python** — no legacy proxy middleware, no extra hops
 
 ## Supported Models
 
@@ -85,7 +85,11 @@ Set via `conf/app.conf` or environment variables:
 
 | Variable | Description |
 |----------|-------------|
-| `IAM_URL` | IAM service URL (default: `http://iam.hanzo.svc.cluster.local:8000`) |
+| `HANZO_API_KEY` | Unified service token for internal IAM + KMS operations (billing/usage/auth support) |
+| `iamEndpoint` | IAM service URL (production: `http://iam.hanzo.svc.cluster.local:8000`) |
+| `clientId` | IAM OAuth client ID for cloud |
+| `clientSecret` | IAM OAuth client secret for cloud |
+| `dataSourceName` | Database DSN (do not commit; inject via KMS-managed secret) |
 | `KMS_CLIENT_ID` | Infisical Universal Auth client ID |
 | `KMS_CLIENT_SECRET` | Infisical Universal Auth client secret |
 | `KMS_PROJECT_ID` | Default KMS project ID |
@@ -97,9 +101,14 @@ Set via `conf/app.conf` or environment variables:
 # Docker
 docker pull ghcr.io/hanzoai/cloud:latest
 
-# Kubernetes
-kubectl apply -f k8s/
+# Kubernetes (production)
+kubectl apply -f k8s/kms-secrets.yaml
+kubectl apply -f k8s/configmap.yaml
+kubectl apply -f k8s/deployment.yaml
+kubectl apply -f k8s/service.yaml
 ```
+
+GitHub Actions production deploy (`.github/workflows/deploy-production.yml`) resolves deployment credentials from Hanzo KMS. Preferred setup is a single GitHub secret: `HANZO_API_KEY`. Universal Auth (`KMS_CLIENT_ID` + `KMS_CLIENT_SECRET`) remains as a fallback.
 
 ## License
 
