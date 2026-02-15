@@ -155,7 +155,7 @@ class MachineListPage extends BaseListPage {
         sorter: (a, b) => a.region.localeCompare(b.region),
       },
       {
-        title: i18next.t("machine:Zone"),
+        title: i18next.t("general:Zone"),
         dataIndex: "zone",
         key: "zone",
         width: "120px",
