@@ -259,12 +259,17 @@ func (c *kmsClient) getSecret(name string, projectID string) (string, error) {
 
 // ── Public API ──────────────────────────────────────────────────────────────
 
-// ResolveProviderSecret resolves the ClientSecret for a provider.
-// If KMS is configured and the provider's ClientSecret starts with "kms://",
-// the secret is fetched from KMS. Otherwise, the DB value is used as-is.
+// ResolveProviderSecret resolves KMS-backed secret fields for a provider.
+// If KMS is configured and provider fields start with "kms://", each secret
+// is fetched from KMS. Otherwise, DB values are used as-is.
 //
-// Convention: store "kms://SECRET_NAME" in the provider's ClientSecret field
-// in the database. At runtime, this is resolved to the actual secret value.
+// Supported provider fields:
+//   - ClientSecret
+//   - UserKey
+//   - SignKey
+//
+// Convention: store "kms://SECRET_NAME" in these fields in the database.
+// At runtime, they are resolved to actual secret values.
 //
 // Multi-tenant scoping:
 //   - Admin-owned providers use the default KMS_PROJECT_ID
@@ -273,15 +278,16 @@ func (c *kmsClient) getSecret(name string, projectID string) (string, error) {
 func ResolveProviderSecret(provider *Provider) error {
 	initKMS()
 
-	if kms == nil {
+	if kms == nil || provider == nil {
 		return nil // KMS disabled, use DB value as-is
 	}
 
-	if !strings.HasPrefix(provider.ClientSecret, "kms://") {
+	hasKmsRef := strings.HasPrefix(provider.ClientSecret, "kms://") ||
+		strings.HasPrefix(provider.UserKey, "kms://") ||
+		strings.HasPrefix(provider.SignKey, "kms://")
+	if !hasKmsRef {
 		return nil // Not a KMS reference
 	}
-
-	secretName := strings.TrimPrefix(provider.ClientSecret, "kms://")
 
 	// Determine project ID: org-specific or system default.
 	// Org-owned providers can store "kms-project:{id}" in ConfigText
@@ -298,15 +304,43 @@ func ResolveProviderSecret(provider *Provider) error {
 	}
 
 	if projectID == "" {
-		return fmt.Errorf("kms: no project ID for provider %q (set KMS_PROJECT_ID or provider ClientSecret2)", provider.Name)
+		return fmt.Errorf("kms: no project ID for provider %q (set KMS_PROJECT_ID or provider ConfigText 'kms-project:{id}')", provider.Name)
 	}
 
-	value, err := kms.getSecret(secretName, projectID)
+	resolveField := func(fieldName string, currentValue string) (string, error) {
+		if !strings.HasPrefix(currentValue, "kms://") {
+			return currentValue, nil
+		}
+
+		secretName := strings.TrimPrefix(currentValue, "kms://")
+		if secretName == "" {
+			return "", fmt.Errorf("kms: empty secret reference for provider %q field %s", provider.Name, fieldName)
+		}
+
+		value, err := kms.getSecret(secretName, projectID)
+		if err != nil {
+			return "", fmt.Errorf("failed to resolve KMS secret for provider %q field %s: %w", provider.Name, fieldName, err)
+		}
+
+		return value, nil
+	}
+
+	clientSecret, err := resolveField("clientSecret", provider.ClientSecret)
 	if err != nil {
-		return fmt.Errorf("failed to resolve KMS secret for provider %q: %w", provider.Name, err)
+		return err
+	}
+	userKey, err := resolveField("userKey", provider.UserKey)
+	if err != nil {
+		return err
+	}
+	signKey, err := resolveField("signKey", provider.SignKey)
+	if err != nil {
+		return err
 	}
 
-	provider.ClientSecret = value
+	provider.ClientSecret = clientSecret
+	provider.UserKey = userKey
+	provider.SignKey = signKey
 	return nil
 }
 

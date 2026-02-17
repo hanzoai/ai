@@ -46,10 +46,18 @@ func TestResolveModelRoute_KnownModels(t *testing.T) {
 		{"openai-direct/gpt-5", "openai-direct", "gpt-5", true},
 		{"openai-direct/o3", "openai-direct", "o3", true},
 
-		// Zen branded premium
-		{"zen4-mini", "fireworks", "accounts/fireworks/models/qwen3-30b-a3b", true},
-		{"zen4-pro", "fireworks", "accounts/fireworks/models/qwen3-235b-a22b", true},
-		{"zen4-coder-flash", "do-ai", "alibaba-qwen3-32b", true},
+		// Zen branded premium (routed through internal zen gateway)
+		{"zen4", "zen", "zen4", true},
+		{"zen4-mini", "zen", "zen4-mini", true},
+		{"zen4-pro", "zen", "zen4-pro", true},
+		{"zen4-coder-flash", "zen", "zen4-coder-flash", true},
+		{"zen3-omni", "zen", "zen3-omni", true},
+
+		// Zen versionless aliases → latest zenN
+		{"zen", "zen", "zen4", true},
+		{"zen-pro", "zen", "zen4-pro", true},
+		{"zen-mini", "zen", "zen4-mini", true},
+		{"zen-vl", "zen", "zen3-vl", true},
 	}
 
 	for _, tc := range cases {
@@ -143,9 +151,10 @@ func TestModelRoutes_NoEmptyFields(t *testing.T) {
 
 func TestModelRoutes_ProviderNamesAreKnown(t *testing.T) {
 	known := map[string]bool{
-		"do-ai":        true,
-		"fireworks":    true,
+		"do-ai":         true,
+		"fireworks":     true,
 		"openai-direct": true,
+		"zen":           true,
 	}
 	for name, route := range modelRoutes {
 		if !known[route.providerName] {
@@ -189,9 +198,9 @@ func TestListAvailableModels_ReturnsSortedList(t *testing.T) {
 
 func TestListAvailableModels_CountSanity(t *testing.T) {
 	models := listAvailableModels()
-	// As of 2026-02: 28 DO-AI + 8 aliases + 17 fireworks + 5 openai-direct + 8 zen = 66
+	// As of 2026-02: 28 DO-AI + 8 aliases + 17 fireworks + 5 openai-direct + 14 zen + 14 zen aliases = 86
 	// Adjust if routes are added/removed. This is a canary for unexpected drift.
-	if len(models) < 50 {
-		t.Errorf("expected at least 50 models in routing table, got %d", len(models))
+	if len(models) < 75 {
+		t.Errorf("expected at least 75 models in routing table, got %d", len(models))
 	}
 }

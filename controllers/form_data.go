@@ -33,7 +33,10 @@ import (
 // @Success 200 {array} object.Form The Response object
 // @router /get-form-data [get]
 func (c *ApiController) GetFormData() {
-	owner := c.Input().Get("owner")
+	owner, allowed := c.GetScopedOwner()
+	if !allowed {
+		return
+	}
 	form := c.Input().Get("form")
 	limitStr := c.Input().Get("pageSize")
 	pageStr := c.Input().Get("p")
