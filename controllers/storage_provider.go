@@ -38,7 +38,9 @@ func getStorageProviders() ([]*iamsdk.Provider, error) {
 // @Success 200 {array} object.Provider The Response object
 // @router /get-storage-providers [get]
 func (c *ApiController) GetStorageProviders() {
-	// owner := c.Input().Get("owner")
+	if _, ok := c.RequireSignedInUser(); !ok {
+		return
+	}
 
 	providers, err := getStorageProviders()
 	if err != nil {

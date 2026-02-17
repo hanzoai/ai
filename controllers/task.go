@@ -46,7 +46,10 @@ func (c *ApiController) GetGlobalTasks() {
 // @Success 200 {array} object.Task The Response object
 // @router /get-tasks [get]
 func (c *ApiController) GetTasks() {
-	owner := c.Input().Get("owner")
+	owner, allowed := c.GetScopedOwner()
+	if !allowed {
+		return
+	}
 	limit := c.Input().Get("pageSize")
 	page := c.Input().Get("p")
 	field := c.Input().Get("field")

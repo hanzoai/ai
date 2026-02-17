@@ -75,7 +75,10 @@ func (c *ApiController) GetGlobalFiles() {
 // @Success 200 {array} object.File The Response object
 // @router /get-files [get]
 func (c *ApiController) GetFiles() {
-	owner := c.Input().Get("owner")
+	owner, allowed := c.GetScopedOwner()
+	if !allowed {
+		return
+	}
 	store := c.Input().Get("store")
 
 	var files []*object.File

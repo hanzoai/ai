@@ -58,7 +58,10 @@ func (c *ApiController) GetGlobalVideos() {
 // @Success 200 {array} object.Video The Response object
 // @router /get-videos [get]
 func (c *ApiController) GetVideos() {
-	owner := c.Input().Get("owner")
+	owner, allowed := c.GetScopedOwner()
+	if !allowed {
+		return
+	}
 	limit := c.Input().Get("pageSize")
 	page := c.Input().Get("p")
 	field := c.Input().Get("field")

@@ -87,7 +87,10 @@ func (c *ApiController) GetGlobalStores() {
 // @Success 200 {array} object.Store The Response object
 // @router /get-stores [get]
 func (c *ApiController) GetStores() {
-	owner := c.Input().Get("owner")
+	owner, allowed := c.GetScopedOwner()
+	if !allowed {
+		return
+	}
 
 	stores, err := object.GetStores(owner)
 	if err != nil {
@@ -310,7 +313,10 @@ func (c *ApiController) RefreshStoreVectors() {
 // @Success 200 {array} object.Store The Response object
 // @router /get-store-names [get]
 func (c *ApiController) GetStoreNames() {
-	owner := c.Input().Get("owner")
+	owner, allowed := c.GetScopedOwner()
+	if !allowed {
+		return
+	}
 	storeNames, err := object.GetStoresByFields(owner, []string{"name", "display_name"}...)
 	if err != nil {
 		c.ResponseError(err.Error())

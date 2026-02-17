@@ -46,7 +46,10 @@ func (c *ApiController) GetGlobalForms() {
 // @Success 200 {array} object.Form The Response object
 // @router /get-forms [get]
 func (c *ApiController) GetForms() {
-	owner := c.Input().Get("owner")
+	owner, allowed := c.GetScopedOwner()
+	if !allowed {
+		return
+	}
 	limit := c.Input().Get("pageSize")
 	page := c.Input().Get("p")
 	field := c.Input().Get("field")

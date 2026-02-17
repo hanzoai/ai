@@ -98,14 +98,40 @@ var modelRoutes = map[string]modelRoute{
 	"openai-direct/o3-mini":     {providerName: "openai-direct", upstreamModel: "o3-mini", premium: true},
 
 	// ── Zen branded models (premium, 3X pricing) ────────────────────────
-	"zen4-mini":        {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/qwen3-30b-a3b", premium: true},
-	"zen4-pro":         {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/qwen3-235b-a22b", premium: true},
-	"zen4-max":         {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/glm-5", premium: true},
-	"zen4-ultra":       {providerName: "fireworks", upstreamModel: "accounts/cogito/models/cogito-671b-v2-p1", premium: true},
-	"zen4-coder-flash": {providerName: "do-ai", upstreamModel: "alibaba-qwen3-32b", premium: true},
-	"zen4-coder-pro":   {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/qwen3-coder-480b-a35b-instruct", premium: true},
-	"zen-vl":           {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/qwen3-vl-235b-a22b-instruct", premium: true},
-	"zen3-omni":        {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/qwen3-235b-a22b", premium: true},
+	// Routed through the internal Zen gateway (zen.hanzo.ai) which injects
+	// Zen identity system prompts, tracks usage via Langfuse, and forwards
+	// to upstream providers. DB provider "zen" must have base URL pointing
+	// to http://zen-gateway.hanzo.svc.cluster.local:4000 (or zen.hanzo.ai).
+	"zen4":             {providerName: "zen", upstreamModel: "zen4", premium: true},
+	"zen4-pro":         {providerName: "zen", upstreamModel: "zen4-pro", premium: true},
+	"zen4-max":         {providerName: "zen", upstreamModel: "zen4-max", premium: true},
+	"zen4-mini":        {providerName: "zen", upstreamModel: "zen4-mini", premium: true},
+	"zen4-ultra":       {providerName: "zen", upstreamModel: "zen4-ultra", premium: true},
+	"zen4-coder":       {providerName: "zen", upstreamModel: "zen4-coder", premium: true},
+	"zen4-coder-flash": {providerName: "zen", upstreamModel: "zen4-coder-flash", premium: true},
+	"zen4-coder-pro":   {providerName: "zen", upstreamModel: "zen4-coder-pro", premium: true},
+	"zen4-thinking":    {providerName: "zen", upstreamModel: "zen4-thinking", premium: true},
+	"zen3-vl":          {providerName: "zen", upstreamModel: "zen3-vl", premium: true},
+	"zen3-nano":        {providerName: "zen", upstreamModel: "zen3-nano", premium: true},
+	"zen3-omni":        {providerName: "zen", upstreamModel: "zen3-omni", premium: true},
+	"zen3-guard":       {providerName: "zen", upstreamModel: "zen3-guard", premium: true},
+	"zen3-embedding":   {providerName: "zen", upstreamModel: "zen3-embedding", premium: true},
+
+	// ── Zen versionless aliases (always point to latest zenN variant) ──
+	"zen":             {providerName: "zen", upstreamModel: "zen4", premium: true},
+	"zen-pro":         {providerName: "zen", upstreamModel: "zen4-pro", premium: true},
+	"zen-max":         {providerName: "zen", upstreamModel: "zen4-max", premium: true},
+	"zen-mini":        {providerName: "zen", upstreamModel: "zen4-mini", premium: true},
+	"zen-ultra":       {providerName: "zen", upstreamModel: "zen4-ultra", premium: true},
+	"zen-coder":       {providerName: "zen", upstreamModel: "zen4-coder", premium: true},
+	"zen-coder-flash": {providerName: "zen", upstreamModel: "zen4-coder-flash", premium: true},
+	"zen-coder-pro":   {providerName: "zen", upstreamModel: "zen4-coder-pro", premium: true},
+	"zen-thinking":    {providerName: "zen", upstreamModel: "zen4-thinking", premium: true},
+	"zen-vl":          {providerName: "zen", upstreamModel: "zen3-vl", premium: true},
+	"zen-nano":        {providerName: "zen", upstreamModel: "zen3-nano", premium: true},
+	"zen-omni":        {providerName: "zen", upstreamModel: "zen3-omni", premium: true},
+	"zen-guard":       {providerName: "zen", upstreamModel: "zen3-guard", premium: true},
+	"zen-embedding":   {providerName: "zen", upstreamModel: "zen3-embedding", premium: true},
 }
 
 // resolveModelRoute looks up a user-facing model name and returns its route.
