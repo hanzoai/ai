@@ -31,7 +31,10 @@ import (
 // @Success 200 {object} object.Machine The Response object
 // @router /get-machines [get]
 func (c *ApiController) GetMachines() {
-	owner := c.Input().Get("owner")
+	owner, allowed := c.GetScopedOwner()
+	if !allowed {
+		return
+	}
 	limit := c.Input().Get("pageSize")
 	page := c.Input().Get("p")
 	field := c.Input().Get("field")

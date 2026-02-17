@@ -36,7 +36,10 @@ func (c *ApiController) GetSessions() {
 	value := c.Input().Get("value")
 	sortField := c.Input().Get("sortField")
 	sortOrder := c.Input().Get("sortOrder")
-	owner := c.Input().Get("owner")
+	owner, allowed := c.GetScopedOwner()
+	if !allowed {
+		return
+	}
 
 	if limit == "" || page == "" {
 		sessions, err := object.GetSessions(owner)
