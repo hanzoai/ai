@@ -24,8 +24,8 @@ func AutoSigninFilter(ctx *context.Context) {
 	urlPath := ctx.Request.URL.Path
 
 	// Only run for API requests and /storage paths
-	// Skip for /chat/completions, static files, and other non-API paths
-	if strings.HasSuffix(urlPath, "/chat/completions") {
+	// Skip for /chat/completions, /api/models, and other public API paths
+	if strings.HasSuffix(urlPath, "/chat/completions") || urlPath == "/api/models" {
 		return
 	}
 

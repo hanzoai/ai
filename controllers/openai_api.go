@@ -19,7 +19,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -159,6 +158,16 @@ func resolveProviderForUser(user *iamsdk.User, requestedModel string, lang strin
 	return provider, user, route.upstreamModel, nil
 }
 
+// iamAuthQuery returns the clientId/clientSecret query string for IAM API auth.
+func iamAuthQuery() string {
+	clientId := conf.GetConfigString("clientId")
+	clientSecret := conf.GetConfigString("clientSecret")
+	if clientId != "" && clientSecret != "" {
+		return "&clientId=" + clientId + "&clientSecret=" + clientSecret
+	}
+	return ""
+}
+
 // getUserByAccessKey looks up a user by their IAM API key via Hanzo IAM.
 func getUserByAccessKey(accessKey string) (*iamsdk.User, error) {
 	// Call IAM's get-user endpoint with accessKey query parameter
@@ -168,15 +177,12 @@ func getUserByAccessKey(accessKey string) (*iamsdk.User, error) {
 	}
 	iamEndpoint = strings.TrimRight(iamEndpoint, "/")
 
-	url := fmt.Sprintf("%s/api/get-user?accessKey=%s", iamEndpoint, accessKey)
+	url := fmt.Sprintf("%s/api/get-user?accessKey=%s%s", iamEndpoint, accessKey, iamAuthQuery())
 
 	client := &http.Client{Timeout: 10 * time.Second}
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("IAM request build failed: %w", err)
-	}
-	if hanzoAPIKey := os.Getenv("HANZO_API_KEY"); hanzoAPIKey != "" {
-		req.Header.Set("Authorization", "Bearer "+hanzoAPIKey)
 	}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -241,16 +247,13 @@ func recordUsage(record *usageRecord) {
 			return
 		}
 
-		url := iamEndpoint + "/api/add-usage-record"
+		url := iamEndpoint + "/api/add-usage-record?" + iamAuthQuery()
 		client := &http.Client{Timeout: 5 * time.Second}
 		req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
 		if err != nil {
 			return
 		}
 		req.Header.Set("Content-Type", "application/json")
-		if hanzoAPIKey := os.Getenv("HANZO_API_KEY"); hanzoAPIKey != "" {
-			req.Header.Set("Authorization", "Bearer "+hanzoAPIKey)
-		}
 		resp, err := client.Do(req)
 		if err != nil {
 			return // best-effort, don't block model serving
