@@ -26,6 +26,7 @@ import (
 
 func InitDb() {
 	modelProviderName, embeddingProviderName, ttsProviderName, sttProviderName := initBuiltInProviders()
+	initLLMProviders()
 	initBuiltInStore(modelProviderName, embeddingProviderName, ttsProviderName, sttProviderName)
 	initTemplates()
 }
@@ -205,4 +206,78 @@ func initBuiltInProviders() (string, string, string, string) {
 	sttProviderName := "Browser Built-In"
 
 	return modelProvider.Name, embeddingProvider.Name, ttsProviderName, sttProviderName
+}
+
+// initLLMProviders bootstraps the LLM provider records needed by the
+// model routing table (see controllers/model_routes.go). Each provider
+// maps to an upstream service with its own API key and base URL.
+//
+// Provider secrets can use KMS references ("kms://SECRET_NAME") which
+// are resolved at runtime via ResolveProviderSecret().
+func initLLMProviders() {
+	providers := []Provider{
+		{
+			Owner:       "admin",
+			Name:        "do-ai",
+			DisplayName: "DigitalOcean AI (GenAI)",
+			Category:    "Model",
+			Type:        "OpenAI",
+			SubType:     "gpt-4o",
+			ProviderUrl: "https://inference.do-ai.run/v1",
+			ClientSecret: conf.GetConfigString("doAiApiKey"),
+			State:       "Active",
+		},
+		{
+			Owner:       "admin",
+			Name:        "fireworks",
+			DisplayName: "Fireworks AI",
+			Category:    "Model",
+			Type:        "OpenAI",
+			SubType:     "qwen3-235b-a22b",
+			ProviderUrl: "https://api.fireworks.ai/inference/v1",
+			ClientSecret: "kms://FIREWORKS_API_KEY",
+			State:       "Active",
+		},
+		{
+			Owner:       "admin",
+			Name:        "openai-direct",
+			DisplayName: "OpenAI Direct",
+			Category:    "Model",
+			Type:        "OpenAI",
+			SubType:     "gpt-5",
+			ProviderUrl: "https://api.openai.com/v1",
+			ClientSecret: "kms://OPENAI_API_KEY",
+			State:       "Active",
+		},
+		{
+			Owner:       "admin",
+			Name:        "zen",
+			DisplayName: "Zen LM Gateway",
+			Category:    "Model",
+			Type:        "OpenAI",
+			SubType:     "zen4",
+			ProviderUrl: "http://zen-gateway.zen.svc.cluster.local:4100",
+			ClientSecret: "kms://ZEN_GATEWAY_KEY",
+			State:       "Active",
+		},
+	}
+
+	for _, p := range providers {
+		existing, err := getProvider("admin", p.Name)
+		if err != nil {
+			fmt.Printf("[init] WARNING: failed to check provider %q: %v\n", p.Name, err)
+			continue
+		}
+		if existing != nil {
+			continue // Already exists, don't overwrite
+		}
+
+		p.CreatedTime = util.GetCurrentTime()
+		_, err = AddProvider(&p)
+		if err != nil && !strings.Contains(err.Error(), "Duplicate entry") {
+			fmt.Printf("[init] WARNING: failed to create provider %q: %v\n", p.Name, err)
+		} else {
+			fmt.Printf("[init] Created LLM provider: %s (%s)\n", p.Name, p.DisplayName)
+		}
+	}
 }
