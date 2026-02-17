@@ -22,8 +22,8 @@ import (
 
 	"github.com/beego/beego"
 	"github.com/beego/beego/logs"
-	iamsdk "github.com/hanzoid/go-sdk/casdoorsdk"
 	"github.com/hanzoai/cloud/object"
+	iamsdk "github.com/hanzoid/go-sdk/casdoorsdk"
 )
 
 type ApiController struct {
@@ -127,6 +127,25 @@ func (c *ApiController) RequireSessionOwner() (string, bool) {
 	}
 	c.ResponseError(c.T("auth:Please sign in first"))
 	return "", false
+}
+
+// GetScopedOwner resolves owner from the authenticated session.
+// Non-admin users are always scoped to their own org, ignoring request owner params.
+// Global admins can optionally target a specific owner via query parameter.
+func (c *ApiController) GetScopedOwner() (string, bool) {
+	user, ok := c.RequireSignedInUser()
+	if !ok {
+		return "", false
+	}
+
+	if user.Owner == "admin" {
+		requestedOwner := strings.TrimSpace(c.Input().Get("owner"))
+		if requestedOwner != "" {
+			return requestedOwner, true
+		}
+	}
+
+	return user.Owner, true
 }
 
 // EnforceStoreIsolation enforces store isolation based on user's Homepage field.
