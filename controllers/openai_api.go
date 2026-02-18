@@ -31,7 +31,7 @@ import (
 	"github.com/sashabaranov/go-openai"
 )
 
-// balanceEntry caches a user's balance from IAM to avoid per-request lookups.
+// balanceEntry caches a user's balance from Commerce to avoid per-request lookups.
 type balanceEntry struct {
 	balance   float64
 	fetchedAt time.Time
@@ -43,11 +43,12 @@ var (
 	balanceCacheTTL = 30 * time.Second
 )
 
-// getUserBalance returns the current balance for a user, fetching from IAM
+// getUserBalance returns the current balance for a user, fetching from Commerce
 // and caching briefly. Balance is mutable financial state (not identity) so
 // it is never read from the JWT — always checked against the source of truth.
-func getUserBalance(username string) (float64, error) {
-	key := username
+// The userId should be in "owner/name" format (e.g., "hanzo/alice").
+func getUserBalance(userId string) (float64, error) {
+	key := userId
 
 	balanceCacheMu.RLock()
 	entry, ok := balanceCache[key]
@@ -57,19 +58,49 @@ func getUserBalance(username string) (float64, error) {
 		return entry.balance, nil
 	}
 
-	user, err := iamsdk.GetUser(username)
+	commerceEndpoint := conf.GetConfigString("commerceEndpoint")
+	if commerceEndpoint == "" {
+		return 0, fmt.Errorf("commerceEndpoint is not configured")
+	}
+	commerceEndpoint = strings.TrimRight(commerceEndpoint, "/")
+	commerceToken := conf.GetConfigString("commerceToken")
+
+	url := fmt.Sprintf("%s/api/v1/billing/balance?user=%s&currency=usd", commerceEndpoint, userId)
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
-		return 0, fmt.Errorf("failed to fetch user from IAM: %s", err.Error())
+		return 0, fmt.Errorf("Commerce request build failed: %w", err)
 	}
-	if user == nil {
-		return 0, fmt.Errorf("user %q not found in IAM", username)
+	if commerceToken != "" {
+		req.Header.Set("Authorization", "Bearer "+commerceToken)
 	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("Commerce request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return 0, fmt.Errorf("Commerce returned status %d", resp.StatusCode)
+	}
+
+	var result struct {
+		Available int64 `json:"available"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return 0, fmt.Errorf("failed to parse Commerce response: %w", err)
+	}
+
+	// Convert cents to dollars for backward compatibility with existing balance > 0 check
+	balanceDollars := float64(result.Available) / 100.0
 
 	balanceCacheMu.Lock()
-	balanceCache[key] = &balanceEntry{balance: user.Balance, fetchedAt: time.Now()}
+	balanceCache[key] = &balanceEntry{balance: balanceDollars, fetchedAt: time.Now()}
 	balanceCacheMu.Unlock()
 
-	return user.Balance, nil
+	return balanceDollars, nil
 }
 
 // isJwtToken checks if a token looks like a JWT (3 base64 segments separated by dots).
@@ -138,7 +169,7 @@ func resolveProviderForUser(user *iamsdk.User, requestedModel string, lang strin
 
 	// Premium models require a positive balance.
 	if route.premium {
-		balance, err := getUserBalance(user.Name)
+		balance, err := getUserBalance(user.Owner + "/" + user.Name)
 		if err != nil {
 			return nil, user, "", fmt.Errorf("failed to verify account balance: %s", err.Error())
 		}
@@ -232,28 +263,62 @@ type usageRecord struct {
 	RequestID        string  `json:"requestId"`
 }
 
-// recordUsage sends a usage record to IAM asynchronously (fire-and-forget).
+// recordUsage sends a usage record to Commerce asynchronously (fire-and-forget).
+// All successful API calls are tracked regardless of tier (DO-AI costs money too).
+// Premium flag controls balance checks, not usage recording.
 func recordUsage(record *usageRecord) {
 	go func() {
-		iamEndpoint := conf.GetConfigString("iamEndpoint")
-		if iamEndpoint == "" {
-			// Billing records must go through Hanzo IAM.
+		commerceEndpoint := conf.GetConfigString("commerceEndpoint")
+		if commerceEndpoint == "" {
 			return
 		}
-		iamEndpoint = strings.TrimRight(iamEndpoint, "/")
+		commerceEndpoint = strings.TrimRight(commerceEndpoint, "/")
+		commerceToken := conf.GetConfigString("commerceToken")
 
-		body, err := json.Marshal(record)
+		// Only record successful calls
+		if record.Status != "success" {
+			return
+		}
+
+		// Calculate cost in cents from token usage
+		// Placeholder: $0.01 per 1K tokens for premium models
+		costCents := int64(float64(record.TotalTokens) * 0.01)
+		if costCents <= 0 {
+			costCents = 1 // minimum 1 cent per call
+		}
+
+		payload := map[string]interface{}{
+			"user":             record.User,
+			"currency":         "usd",
+			"amount":           costCents,
+			"model":            record.Model,
+			"provider":         record.Provider,
+			"promptTokens":     record.PromptTokens,
+			"completionTokens": record.CompletionTokens,
+			"totalTokens":      record.TotalTokens,
+			"requestId":        record.RequestID,
+			"premium":          record.Premium,
+			"stream":           record.Stream,
+			"status":           record.Status,
+			"clientIp":         record.ClientIP,
+		}
+
+		body, err := json.Marshal(payload)
 		if err != nil {
 			return
 		}
 
-		url := iamEndpoint + "/api/add-usage-record?" + iamAuthQuery()
+		url := commerceEndpoint + "/api/v1/billing/usage"
 		client := &http.Client{Timeout: 5 * time.Second}
 		req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
 		if err != nil {
 			return
 		}
 		req.Header.Set("Content-Type", "application/json")
+		if commerceToken != "" {
+			req.Header.Set("Authorization", "Bearer "+commerceToken)
+		}
+
 		resp, err := client.Do(req)
 		if err != nil {
 			return // best-effort, don't block model serving
