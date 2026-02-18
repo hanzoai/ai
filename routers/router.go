@@ -301,6 +301,9 @@ func initAPI() {
 	beego.Router("/api/messages", &controllers.ApiController{}, "POST:AnthropicMessages")
 	beego.Router("/v1/messages", &controllers.ApiController{}, "POST:AnthropicMessages")
 
+	// ZAP protocol endpoint (default for all Hanzo clients)
+	beego.Router("/zap", &controllers.ApiController{}, "POST:ZapDispatch")
+
 	beego.Router("/api/wecom-bot/callback/:botId", &controllers.ApiController{}, "GET:WecomBotVerifyUrl;POST:WecomBotHandleMessage")
 
 	beego.Router("/api/get-agents-dashboard-url", &controllers.ApiController{}, "GET:GetAgentsDashboardUrl")
