@@ -167,24 +167,22 @@ func resolveProviderForUser(user *iamsdk.User, requestedModel string, lang strin
 		return nil, user, "", fmt.Errorf("provider %q not configured in database", route.providerName)
 	}
 
-	// Premium models require a positive balance.
-	if route.premium {
-		balance, err := getUserBalance(user.Owner + "/" + user.Name)
-		if err != nil {
-			return nil, user, "", fmt.Errorf("failed to verify account balance: %s", err.Error())
-		}
-
-		if balance <= 0 {
-			return nil, user, "", fmt.Errorf(
-				"model %q requires a paid plan. Your current balance is $%.2f. "+
-					"Add funds at https://hanzo.ai/billing to access premium models, "+
-					"or use a free-tier model instead",
-				requestedModel, balance,
-			)
-		}
-
-		user.Balance = balance
+	// All models require prepaid balance. New accounts receive a $5 starter
+	// credit for non-premium models (expires 30 days after grant).
+	balance, err := getUserBalance(user.Owner + "/" + user.Name)
+	if err != nil {
+		return nil, user, "", fmt.Errorf("failed to verify account balance: %s", err.Error())
 	}
+
+	if balance <= 0 {
+		return nil, user, "", fmt.Errorf(
+			"model %q requires a positive balance. Your current balance is $%.2f. "+
+				"Add funds at https://hanzo.ai/billing",
+			requestedModel, balance,
+		)
+	}
+
+	user.Balance = balance
 
 	return provider, user, route.upstreamModel, nil
 }
