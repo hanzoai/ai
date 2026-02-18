@@ -168,7 +168,9 @@ func resolveProviderForUser(user *iamsdk.User, requestedModel string, lang strin
 	}
 
 	// All models require prepaid balance. New accounts receive a $5 starter
-	// credit for non-premium models (expires 30 days after grant).
+	// credit that works only for non-premium (DO-AI) models.
+	// Premium models (Fireworks, OpenAI Direct, Zen) require the user to
+	// have added funds beyond the starter credit.
 	balance, err := getUserBalance(user.Owner + "/" + user.Name)
 	if err != nil {
 		return nil, user, "", fmt.Errorf("failed to verify account balance: %s", err.Error())
@@ -178,6 +180,17 @@ func resolveProviderForUser(user *iamsdk.User, requestedModel string, lang strin
 		return nil, user, "", fmt.Errorf(
 			"model %q requires a positive balance. Your current balance is $%.2f. "+
 				"Add funds at https://hanzo.ai/billing",
+			requestedModel, balance,
+		)
+	}
+
+	// Premium models require funds beyond the starter credit.
+	// A balance <= StarterCreditDollars means the user only has free credit.
+	if route.premium && balance <= StarterCreditDollars {
+		return nil, user, "", fmt.Errorf(
+			"model %q is a premium model requiring a paid balance. "+
+				"Your current balance ($%.2f) is from the starter credit. "+
+				"Add funds at https://hanzo.ai/billing to access premium models",
 			requestedModel, balance,
 		)
 	}
@@ -278,12 +291,8 @@ func recordUsage(record *usageRecord) {
 			return
 		}
 
-		// Calculate cost in cents from token usage
-		// Placeholder: $0.01 per 1K tokens for premium models
-		costCents := int64(float64(record.TotalTokens) * 0.01)
-		if costCents <= 0 {
-			costCents = 1 // minimum 1 cent per call
-		}
+		// Calculate cost from per-model pricing table
+		costCents := calculateCostCents(record.Model, record.PromptTokens, record.CompletionTokens)
 
 		payload := map[string]interface{}{
 			"user":             record.User,
