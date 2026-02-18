@@ -31,7 +31,7 @@ type modelRoute struct {
 // (case-insensitive lookup via resolveModelRoute). Values describe where and
 // how to forward the request.
 var modelRoutes = map[string]modelRoute{
-	// ── DO-AI free-tier models (28) ──────────────────────────────────────
+	// ── DO-AI models (28) ── usage tracked, no balance gate ─────────────
 	"gpt-4o":                   {providerName: "do-ai", upstreamModel: "openai-gpt-4o"},
 	"gpt-4o-mini":              {providerName: "do-ai", upstreamModel: "openai-gpt-4o-mini"},
 	"gpt-4.1":                  {providerName: "do-ai", upstreamModel: "openai-gpt-4.1"},
@@ -61,7 +61,7 @@ var modelRoutes = map[string]modelRoute{
 	"mistral-nemo":             {providerName: "do-ai", upstreamModel: "mistral-nemo-instruct-2407"},
 	"qwen3-32b":                {providerName: "do-ai", upstreamModel: "alibaba-qwen3-32b"},
 
-	// ── DO-AI aliases (8 free-tier) ──────────────────────────────────────
+	// ── DO-AI aliases (8) ── usage tracked, no balance gate ─────────────
 	"openai/gpt-4o":                          {providerName: "do-ai", upstreamModel: "openai-gpt-4o"},
 	"openai/gpt-4o-mini":                     {providerName: "do-ai", upstreamModel: "openai-gpt-4o-mini"},
 	"openai/gpt-5":                           {providerName: "do-ai", upstreamModel: "openai-gpt-5"},
