@@ -1,0 +1,28 @@
+FROM --platform=$BUILDPLATFORM golang:1.23.6 AS back
+WORKDIR /go/src/hanzo-cloud
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o /go/src/hanzo-cloud/server .
+
+FROM alpine:latest
+LABEL MAINTAINER="https://hanzo.ai/"
+ARG USER=hanzo
+
+RUN sed -i 's/https/http/' /etc/apk/repositories
+RUN apk add --update sudo curl ca-certificates && update-ca-certificates
+
+RUN adduser -D $USER -u 1000 \
+    && echo "$USER ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/$USER \
+    && chmod 0440 /etc/sudoers.d/$USER \
+    && mkdir logs \
+    && mkdir files \
+    && chown -R $USER:$USER logs \
+    && chown -R $USER:$USER files
+
+USER 1000
+WORKDIR /
+COPY --from=back --chown=$USER:$USER /go/src/hanzo-cloud/server ./server
+COPY --from=back --chown=$USER:$USER /go/src/hanzo-cloud/data ./data
+COPY --from=back --chown=$USER:$USER /go/src/hanzo-cloud/conf/app.conf ./conf/app.conf
+ENV RUNNING_IN_DOCKER=true
+
+ENTRYPOINT ["/server"]
