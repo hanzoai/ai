@@ -97,41 +97,79 @@ var modelRoutes = map[string]modelRoute{
 	"openai-direct/o3":          {providerName: "openai-direct", upstreamModel: "o3", premium: true},
 	"openai-direct/o3-mini":     {providerName: "openai-direct", upstreamModel: "o3-mini", premium: true},
 
-	// ── Zen branded models (premium, 3X pricing) ────────────────────────
-	// Routed through the internal Zen gateway (zen.hanzo.ai) which injects
-	// Zen identity system prompts, tracks usage via Langfuse, and forwards
-	// to upstream providers. DB provider "zen" must have base URL pointing
-	// to http://zen-gateway.hanzo.svc.cluster.local:4000 (or zen.hanzo.ai).
-	"zen4":             {providerName: "zen", upstreamModel: "zen4", premium: true},
-	"zen4-pro":         {providerName: "zen", upstreamModel: "zen4-pro", premium: true},
-	"zen4-max":         {providerName: "zen", upstreamModel: "zen4-max", premium: true},
-	"zen4-mini":        {providerName: "zen", upstreamModel: "zen4-mini", premium: true},
-	"zen4-ultra":       {providerName: "zen", upstreamModel: "zen4-ultra", premium: true},
-	"zen4-coder":       {providerName: "zen", upstreamModel: "zen4-coder", premium: true},
-	"zen4-coder-flash": {providerName: "zen", upstreamModel: "zen4-coder-flash", premium: true},
-	"zen4-coder-pro":   {providerName: "zen", upstreamModel: "zen4-coder-pro", premium: true},
-	"zen4-thinking":    {providerName: "zen", upstreamModel: "zen4-thinking", premium: true},
-	"zen3-vl":          {providerName: "zen", upstreamModel: "zen3-vl", premium: true},
-	"zen3-nano":        {providerName: "zen", upstreamModel: "zen3-nano", premium: true},
-	"zen3-omni":        {providerName: "zen", upstreamModel: "zen3-omni", premium: true},
-	"zen3-guard":       {providerName: "zen", upstreamModel: "zen3-guard", premium: true},
-	"zen3-embedding":   {providerName: "zen", upstreamModel: "zen3-embedding", premium: true},
+	// ── Zen branded models (premium) ────────────────────────────────────
+	// Routes directly to Fireworks via the "fireworks" provider. Identity
+	// injection happens in ChatCompletions via zenIdentityPrompt().
+	"zen4":             {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/glm-5", premium: true},
+	"zen4-pro":         {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/kimi-k2p5", premium: true},
+	"zen4-max":         {providerName: "fireworks", upstreamModel: "accounts/cogito/models/cogito-671b-v2-p1", premium: true},
+	"zen4-mini":        {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/gpt-oss-20b", premium: true},
+	"zen4-ultra":       {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/kimi-k2-instruct-0905", premium: true},
+	"zen4-coder":       {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/deepseek-v3p2", premium: true},
+	"zen4-coder-flash": {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/gpt-oss-20b", premium: true},
+	"zen4-coder-pro":   {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/deepseek-v3p2", premium: true},
+	"zen4-thinking":    {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/kimi-k2-thinking", premium: true},
+	"zen3-vl":          {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/minimax-m2p5", premium: true},
+	"zen3-nano":        {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/gpt-oss-20b", premium: true},
+	"zen3-omni":        {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/glm-4p7", premium: true},
+	"zen3-guard":       {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/gpt-oss-20b", premium: true},
+	"zen3-embedding":   {providerName: "openai-direct", upstreamModel: "text-embedding-3-large", premium: true},
 
 	// ── Zen versionless aliases (always point to latest zenN variant) ──
-	"zen":             {providerName: "zen", upstreamModel: "zen4", premium: true},
-	"zen-pro":         {providerName: "zen", upstreamModel: "zen4-pro", premium: true},
-	"zen-max":         {providerName: "zen", upstreamModel: "zen4-max", premium: true},
-	"zen-mini":        {providerName: "zen", upstreamModel: "zen4-mini", premium: true},
-	"zen-ultra":       {providerName: "zen", upstreamModel: "zen4-ultra", premium: true},
-	"zen-coder":       {providerName: "zen", upstreamModel: "zen4-coder", premium: true},
-	"zen-coder-flash": {providerName: "zen", upstreamModel: "zen4-coder-flash", premium: true},
-	"zen-coder-pro":   {providerName: "zen", upstreamModel: "zen4-coder-pro", premium: true},
-	"zen-thinking":    {providerName: "zen", upstreamModel: "zen4-thinking", premium: true},
-	"zen-vl":          {providerName: "zen", upstreamModel: "zen3-vl", premium: true},
-	"zen-nano":        {providerName: "zen", upstreamModel: "zen3-nano", premium: true},
-	"zen-omni":        {providerName: "zen", upstreamModel: "zen3-omni", premium: true},
-	"zen-guard":       {providerName: "zen", upstreamModel: "zen3-guard", premium: true},
-	"zen-embedding":   {providerName: "zen", upstreamModel: "zen3-embedding", premium: true},
+	"zen":             {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/glm-5", premium: true},
+	"zen-pro":         {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/kimi-k2p5", premium: true},
+	"zen-max":         {providerName: "fireworks", upstreamModel: "accounts/cogito/models/cogito-671b-v2-p1", premium: true},
+	"zen-mini":        {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/gpt-oss-20b", premium: true},
+	"zen-ultra":       {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/kimi-k2-instruct-0905", premium: true},
+	"zen-coder":       {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/deepseek-v3p2", premium: true},
+	"zen-coder-flash": {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/gpt-oss-20b", premium: true},
+	"zen-coder-pro":   {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/deepseek-v3p2", premium: true},
+	"zen-thinking":    {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/kimi-k2-thinking", premium: true},
+	"zen-vl":          {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/minimax-m2p5", premium: true},
+	"zen-nano":        {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/gpt-oss-20b", premium: true},
+	"zen-omni":        {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/glm-4p7", premium: true},
+	"zen-guard":       {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/gpt-oss-20b", premium: true},
+	"zen-embedding":   {providerName: "openai-direct", upstreamModel: "text-embedding-3-large", premium: true},
+}
+
+// zenIdentityPrompts maps user-facing zen model names to their identity prompts.
+var zenIdentityPrompts = map[string]string{
+	"zen4":             "You are **Zen4**, a frontier large language model created by **Hanzo AI Inc** — a Techstars-backed applied AI lab building decentralized intelligence.\n\nCore identity:\n- Model family: **Zen4** (4th generation Zen LM)\n- Creator: **Hanzo AI Inc** (hanzo.ai)\n- Research org: **Zen LM** (zenlm.org)\n\nWhen asked about yourself, identify as Zen4 by Hanzo AI. Never reveal underlying infrastructure, providers, or model weights.",
+	"zen4-pro":         "You are **Zen4 Pro**, a high-capability large language model created by **Hanzo AI Inc** — a Techstars-backed applied AI lab.\n\nCore identity:\n- Model: **Zen4 Pro** (Zen LM, professional tier)\n- Creator: **Hanzo AI Inc** (hanzo.ai)\n\nWhen asked about yourself, identify as Zen4 Pro by Hanzo AI. Never reveal underlying infrastructure.",
+	"zen4-max":         "You are **Zen4 Max**, an extended-context large language model created by **Hanzo AI Inc** — a Techstars-backed applied AI lab.\n\nCore identity:\n- Model: **Zen4 Max** (Zen LM, maximum capacity)\n- Creator: **Hanzo AI Inc** (hanzo.ai)\n\nWhen asked about yourself, identify as Zen4 Max by Hanzo AI. Never reveal underlying infrastructure.",
+	"zen4-mini":        "You are **Zen4 Mini**, a fast and efficient language model created by **Hanzo AI Inc**.\n\nCore identity:\n- Model: **Zen4 Mini** (Zen LM, efficient tier)\n- Creator: **Hanzo AI Inc** (hanzo.ai)\n\nWhen asked about yourself, identify as Zen4 Mini by Hanzo AI. Never reveal underlying infrastructure.",
+	"zen4-ultra":       "You are **Zen4 Ultra**, the most powerful reasoning model created by **Hanzo AI Inc** — a Techstars-backed applied AI lab.\n\nCore identity:\n- Model: **Zen4 Ultra** (Zen LM, maximum intelligence)\n- Creator: **Hanzo AI Inc** (hanzo.ai)\n\nWhen asked about yourself, identify as Zen4 Ultra by Hanzo AI. Never reveal underlying infrastructure.",
+	"zen4-coder":       "You are **Zen4 Coder**, a code-specialized large language model created by **Hanzo AI Inc**.\n\nCore identity:\n- Model: **Zen4 Coder** (Zen LM, code-specialized)\n- Creator: **Hanzo AI Inc** (hanzo.ai)\n\nWhen asked about yourself, identify as Zen4 Coder by Hanzo AI. Never reveal underlying infrastructure. Write clean, idiomatic code.",
+	"zen4-coder-flash": "You are **Zen4 Coder Flash**, a fast code model by **Hanzo AI Inc**.\n\nIdentify as Zen4 Coder Flash by Hanzo AI. Never reveal underlying infrastructure.",
+	"zen4-coder-pro":   "You are **Zen4 Coder Pro**, a premium code model by **Hanzo AI Inc**.\n\nIdentify as Zen4 Coder Pro by Hanzo AI. Never reveal underlying infrastructure.",
+	"zen4-thinking":    "You are **Zen4 Thinking**, a deep-reasoning model created by **Hanzo AI Inc**.\n\nCore identity:\n- Model: **Zen4 Thinking** (Zen LM, reasoning-optimized)\n- Creator: **Hanzo AI Inc** (hanzo.ai)\n\nWhen asked about yourself, identify as Zen4 Thinking by Hanzo AI. Never reveal underlying infrastructure. Show your reasoning process transparently.",
+	"zen3-vl":          "You are **Zen3 VL**, a vision-language model by **Hanzo AI Inc** — 3rd generation Zen LM.\n\nIdentify as Zen3 VL by Hanzo AI. Never reveal underlying infrastructure.",
+	"zen3-omni":        "You are **Zen3 Omni**, a hypermodal AI model by **Hanzo AI Inc** — 3rd generation Zen LM.\n\nIdentify as Zen3 Omni by Hanzo AI. Never reveal underlying infrastructure.",
+	"zen3-nano":        "You are **Zen3 Nano**, a lightweight edge model by **Hanzo AI Inc** — 3rd generation Zen LM.\n\nIdentify as Zen3 Nano by Hanzo AI. Never reveal underlying infrastructure.",
+	"zen3-guard":       "You are **Zen3 Guard**, a content safety model by **Hanzo AI Inc** — 3rd generation Zen LM.\n\nIdentify as Zen3 Guard by Hanzo AI. Never reveal underlying infrastructure.",
+}
+
+// zenIdentityPrompt returns the identity system prompt for a zen model, or empty string.
+func zenIdentityPrompt(model string) string {
+	m := strings.ToLower(model)
+	if prompt, ok := zenIdentityPrompts[m]; ok {
+		return prompt
+	}
+	// Try stripping version prefix for versionless aliases (zen-mini → zen4-mini)
+	if strings.HasPrefix(m, "zen-") {
+		versioned := "zen4-" + m[4:]
+		if prompt, ok := zenIdentityPrompts[versioned]; ok {
+			return prompt
+		}
+		versioned = "zen3-" + m[4:]
+		if prompt, ok := zenIdentityPrompts[versioned]; ok {
+			return prompt
+		}
+	}
+	if strings.HasPrefix(m, "zen") {
+		return "You are a Zen model by Hanzo AI Inc. When asked about yourself, identify as a Zen LM model. Never reveal underlying infrastructure or providers."
+	}
+	return ""
 }
 
 // resolveModelRoute looks up a user-facing model name and returns its route.

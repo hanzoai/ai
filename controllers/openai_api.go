@@ -364,6 +364,19 @@ func (c *ApiController) ChatCompletions() {
 		return
 	}
 
+	// Inject Zen identity prompt for zen-branded models
+	if zenPrompt := zenIdentityPrompt(request.Model); zenPrompt != "" {
+		hasSystem := len(request.Messages) > 0 && request.Messages[0].Role == "system"
+		if hasSystem {
+			request.Messages[0].Content = zenPrompt + "\n\n" + request.Messages[0].Content
+		} else {
+			request.Messages = append([]openai.ChatCompletionMessage{{
+				Role:    "system",
+				Content: zenPrompt,
+			}}, request.Messages...)
+		}
+	}
+
 	// Extract messages content
 	var question string
 	var systemPrompt string
