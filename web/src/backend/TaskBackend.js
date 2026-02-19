@@ -94,3 +94,13 @@ export function uploadTaskDocument(taskId, base64, filename, filetype) {
     body: formData,
   }).then((res) => res.json());
 }
+
+export function analyzeTask(owner, name) {
+  return fetch(`${Setting.ServerUrl}/api/analyze-task?id=${owner}/${encodeURIComponent(name)}`, {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      "Accept-Language": Setting.getAcceptLanguage(),
+    },
+  }).then(res => res.json());
+}
