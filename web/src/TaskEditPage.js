@@ -13,14 +13,13 @@
 // limitations under the License.
 
 import React from "react";
-import {Button, Card, Col, Input, Row, Select, Upload} from "antd";
+import {Button, Card, Col, Input, Row, Select, Spin, Table, Upload} from "antd";
 import {FilePdfOutlined, FileWordOutlined, UploadOutlined} from "@ant-design/icons";
 import * as TaskBackend from "./backend/TaskBackend";
 import * as Setting from "./Setting";
 import i18next from "i18next";
 import * as ProviderBackend from "./backend/ProviderBackend";
 import * as MessageBackend from "./backend/MessageBackend";
-import ChatPage from "./ChatPage";
 import * as ConfTask from "./ConfTask";
 import Editor from "./common/Editor";
 
@@ -37,7 +36,7 @@ class TaskEditPage extends React.Component {
       isNewTask: props.location?.state?.isNewTask || false,
       modelProviders: [],
       task: null,
-      chatPageObj: null,
+      analyzing: false,
       loading: false,
       uploadingDocument: false,
     };
@@ -63,6 +62,28 @@ class TaskEditPage extends React.Component {
 
   getQuestion() {
     return `${this.state.task.text.replace("{example}", this.state.task.example).replace("{labels}", this.state.task.labels.map(label => `"${label}"`).join(", "))}`;
+  }
+
+  analyzeTask() {
+    this.setState({analyzing: true});
+    TaskBackend.analyzeTask(this.state.task.owner, this.state.task.name)
+      .then((res) => {
+        if (res.status === "ok") {
+          const task = this.state.task;
+          task.result = res.data;
+          task.score = res.data.score;
+          this.setState({task: task});
+          Setting.showMessage("success", i18next.t("general:Successfully saved"));
+        } else {
+          Setting.showMessage("error", `${i18next.t("general:Failed to get")}: ${res.msg}`);
+        }
+      })
+      .catch(err => {
+        Setting.showMessage("error", `${i18next.t("general:Failed to get")}: ${err.message}`);
+      })
+      .finally(() => {
+        this.setState({analyzing: false});
+      });
   }
 
   getAnswer() {
@@ -272,24 +293,6 @@ class TaskEditPage extends React.Component {
               </Row>
               <Row style={{marginTop: "20px"}} >
                 <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-                  {Setting.getLabel(i18next.t("general:Result"), i18next.t("general:Result - Tooltip"))} :
-                </Col>
-                <Col span={22} >
-                  {ConfTask.ResultOptions.length > 0 ? (
-                    <Select virtual={false} style={{width: "100%"}} value={this.state.task.result} onChange={(value => {this.updateTaskField("result", value);})}>
-                      {
-                        ConfTask.ResultOptions.map((item, index) => <Option key={index} value={item.id}>{item.name}</Option>)
-                      }
-                    </Select>
-                  ) : (
-                    <Input value={this.state.task.result} onChange={e => {
-                      this.updateTaskField("result", e.target.value);
-                    }} />
-                  )}
-                </Col>
-              </Row>
-              <Row style={{marginTop: "20px"}} >
-                <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
                   {Setting.getLabel(i18next.t("task:Activity"), i18next.t("task:Activity - Tooltip"))} :
                 </Col>
                 <Col span={22} >
@@ -398,11 +401,22 @@ class TaskEditPage extends React.Component {
           (this.state.task.type !== "Labeling") ? (
             <Row style={{marginTop: "20px"}} >
               <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-                {Setting.getLabel(i18next.t("general:Chat"), i18next.t("general:Chat - Tooltip"))} :
+                {Setting.getLabel(i18next.t("task:Analysis Report"), i18next.t("task:Analysis Report - Tooltip"))} :
               </Col>
               <Col span={22} >
-                <Button disabled={this.state.task.subject === "" && this.state.task.topic === "" && this.state.task.result === "" && this.state.task.activity === "" && this.state.task.grade === ""} style={{marginBottom: "20px", width: "200px"}} type="primary" onClick={() => this.generateProject()}>{i18next.t("task:Analyze")}</Button>
-                <ChatPage onCreateChatPage={(chatPageObj) => {this.setState({chatPageObj: chatPageObj});}} account={this.props.account} />
+                <Button
+                  loading={this.state.analyzing}
+                  disabled={!this.state.task.documentText}
+                  style={{marginBottom: "20px", width: "200px"}}
+                  type="primary"
+                  onClick={() => this.analyzeTask()}
+                >
+                  {i18next.t("task:Analyze")}
+                </Button>
+                {this.state.analyzing && (
+                  <Spin style={{marginLeft: "16px"}} tip={i18next.t("task:Analyzing")} />
+                )}
+                {this.state.task.result && this.renderAnalysisReport(this.state.task.result)}
               </Col>
             </Row>
           ) : (
@@ -437,14 +451,61 @@ class TaskEditPage extends React.Component {
     text = text.replaceAll("${subject}", this.state.task.subject);
     text = text.replaceAll("${topic}", this.state.task.topic);
     text = text.replaceAll("${grade}", this.state.task.grade);
-    text = text.replaceAll("${result}", this.state.task.result);
     text = text.replaceAll("${activity}", this.state.task.activity);
     return text;
   }
 
-  generateProject() {
-    const text = this.getProjectText();
-    this.state.chatPageObj.sendMessage(text, "", true);
+  renderAnalysisReport(result) {
+    const metaItems = [
+      {label: i18next.t("task:Unit Name"), value: result.title},
+      {label: i18next.t("task:Designer"), value: result.designer},
+      {label: i18next.t("task:Stage"), value: result.stage},
+      {label: i18next.t("task:Participants"), value: result.participants},
+      {label: i18next.t("video:Grade"), value: result.grade},
+      {label: i18next.t("task:Instructor"), value: result.instructor},
+      {label: i18next.t("store:Subject"), value: result.subject},
+      {label: i18next.t("task:School"), value: result.school},
+      {label: i18next.t("task:Other Subjects"), value: result.otherSubjects},
+      {label: i18next.t("task:Textbook"), value: result.textbook},
+    ];
+
+    const reportColumns = [
+      {title: i18next.t("task:Sub-criteria"), dataIndex: "name", key: "name", width: "12%"},
+      {title: i18next.t("task:AI Score"), dataIndex: "score", key: "score", width: "8%", render: (score) => `${score}${i18next.t("task:Score Unit")}`},
+      {title: i18next.t("task:Advantages"), dataIndex: "advantage", key: "advantage", width: "27%"},
+      {title: i18next.t("task:Disadvantages"), dataIndex: "disadvantage", key: "disadvantage", width: "27%"},
+      {title: i18next.t("task:Suggestions"), dataIndex: "suggestion", key: "suggestion", width: "26%"},
+    ];
+
+    return (
+      <div style={{marginTop: "16px"}}>
+        <div style={{display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px 24px", marginBottom: "16px", padding: "12px", border: "1px solid #f0f0f0", borderRadius: "6px", background: "#fafafa"}}>
+          {metaItems.map((item, idx) => (
+            <div key={idx} style={{display: "flex", gap: "8px"}}>
+              <span style={{fontWeight: 600, whiteSpace: "nowrap"}}>{item.label}：</span>
+              <span>{item.value || "-"}</span>
+            </div>
+          ))}
+        </div>
+        <div style={{marginBottom: "12px", fontSize: "16px", fontWeight: 600}}>
+          {i18next.t("task:Overall Score")}：<span style={{color: "#1677ff", fontSize: "20px"}}>{result.score}</span>
+        </div>
+        {(result.categories || []).map((cat, idx) => (
+          <div key={idx} style={{marginBottom: "24px"}}>
+            <div style={{fontWeight: 600, marginBottom: "8px", fontSize: "14px"}}>
+              {idx + 1}. {cat.name}（{i18next.t("task:Score")}：{cat.score}{i18next.t("task:Score Unit")}）
+            </div>
+            <Table
+              size="small"
+              bordered
+              pagination={false}
+              columns={reportColumns}
+              dataSource={(cat.items || []).map((item, i) => ({...item, key: i}))}
+            />
+          </div>
+        ))}
+      </div>
+    );
   }
 
   runTask() {

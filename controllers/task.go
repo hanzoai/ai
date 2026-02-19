@@ -243,3 +243,48 @@ func (c *ApiController) DeleteTask() {
 
 	c.ResponseOk(success)
 }
+
+// AnalyzeTask
+// @Title AnalyzeTask
+// @Tag Task API
+// @Description analyze task document and generate structured report
+// @Param id query string true "The id (owner/name) of the task"
+// @Success 200 {object} object.TaskResult The Response object
+// @router /analyze-task [post]
+func (c *ApiController) AnalyzeTask() {
+	id := c.Input().Get("id")
+
+	task, err := object.GetTask(id)
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+	if task == nil {
+		c.ResponseError(c.T("general:The task does not exist"))
+		return
+	}
+
+	if !c.IsAdmin() && !c.IsPreviewMode() {
+		username := c.GetSessionUsername()
+		if task.Owner != username {
+			c.ResponseError(c.T("auth:Unauthorized operation"))
+			return
+		}
+	}
+
+	result, err := object.AnalyzeTask(task, c.GetAcceptLanguage())
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+
+	task.Result = result
+	task.Score = result.Score
+	_, err = object.UpdateTask(id, task)
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+
+	c.ResponseOk(result)
+}
