@@ -278,7 +278,12 @@ func (c *ApiController) AnalyzeTask() {
 		return
 	}
 
-	task.Result = result
+	resultBytes, err := json.Marshal(result)
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+	task.Result = string(resultBytes)
 	task.Score = result.Score
 	_, err = object.UpdateTask(id, task)
 	if err != nil {
