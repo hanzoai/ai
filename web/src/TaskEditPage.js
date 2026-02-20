@@ -22,6 +22,7 @@ import * as ProviderBackend from "./backend/ProviderBackend";
 import * as MessageBackend from "./backend/MessageBackend";
 import Editor from "./common/Editor";
 import TaskAnalysisReport from "./TaskAnalysisReport";
+import * as Provider from "./Provider";
 
 const {Option} = Select;
 const {TextArea} = Input;
@@ -254,9 +255,21 @@ class TaskEditPage extends React.Component {
             <>
               <Col style={{marginTop: "5px"}} span={8}>
                 <div>{Setting.getLabel(i18next.t("provider:Model provider"), i18next.t("provider:Model provider - Tooltip"))} :</div>
-                <Select virtual={false} style={{width: "100%"}} value={this.state.task.provider} onChange={(value => {this.updateTaskField("provider", value);})}
-                  options={this.state.modelProviders.map((provider) => Setting.getOption(`${provider.displayName} (${provider.name})`, `${provider.name}`))
-                  } />
+                <Select
+                  virtual={false}
+                  style={{width: "100%"}}
+                  value={this.state.task.provider}
+                  onChange={(value) => this.updateTaskField("provider", value)}
+                  options={this.state.modelProviders.map((p) => ({
+                    value: p.name,
+                    label: (
+                      <span style={{display: "inline-flex", alignItems: "center", gap: 8}}>
+                        <Provider.ProviderLogo provider={p} width={20} height={20} />
+                        <span>{p.displayName} ({p.name})</span>
+                      </span>
+                    ),
+                  }))}
+                />
               </Col>
               <Col style={{marginTop: "5px"}} span={8}>
                 <div>{Setting.getLabel(i18next.t("general:Type"), i18next.t("general:Type - Tooltip"))} :</div>
