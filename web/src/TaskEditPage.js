@@ -107,6 +107,13 @@ class TaskEditPage extends React.Component {
       });
   }
 
+  clearReport = () => {
+    const task = this.state.task;
+    task.result = null;
+    task.score = 0;
+    this.setState({task: task});
+  };
+
   getAnswer() {
     const provider = this.state.task.provider;
     const question = this.getQuestion();
@@ -331,7 +338,7 @@ class TaskEditPage extends React.Component {
                 showUploadList={false}
                 customRequest={this.handleDocumentUpload}
               >
-                <Button icon={<UploadOutlined />} loading={this.state.uploadingDocument}>
+                <Button type="primary" icon={<UploadOutlined />} loading={this.state.uploadingDocument}>
                   {i18next.t("store:Upload file")} (.docx, .pdf)
                 </Button>
               </Upload>
@@ -375,13 +382,21 @@ class TaskEditPage extends React.Component {
               <Col span={22} >
                 <Button
                   loading={this.state.analyzing}
-                  disabled={!this.state.task.documentText}
+                  disabled={!this.state.task.documentText || !!this.state.task.result}
                   style={{marginBottom: "20px", width: "200px"}}
                   type="primary"
                   onClick={() => this.analyzeTask()}
                 >
                   {i18next.t("task:Analyze")}
                 </Button>
+                {Setting.isAdminUser(this.props.account) && this.state.task.result ? (
+                  <Button
+                    style={{marginBottom: "20px", marginLeft: "8px", width: "200px"}}
+                    onClick={this.clearReport}
+                  >
+                    {i18next.t("general:Clear")}
+                  </Button>
+                ) : null}
                 {this.state.analyzing && (
                   <Spin style={{marginLeft: "16px"}} tip={i18next.t("task:Analyzing")} />
                 )}
