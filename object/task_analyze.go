@@ -59,18 +59,18 @@ const analyzeTaskPrompt = `请对以下教学设计文本进行深度分析，�
 }`
 
 func AnalyzeTask(task *Task, lang string) (*TaskResult, error) {
-	effectiveText, err := GetTaskEffectiveText(task)
+	effectiveScale, err := GetTaskEffectiveScale(task)
 	if err != nil {
 		return nil, err
 	}
-	if effectiveText == "" {
-		return nil, fmt.Errorf("task evaluation rubric (text) is empty")
+	if effectiveScale == "" {
+		return nil, fmt.Errorf("task scale should not be empty")
 	}
 	if task.DocumentText == "" {
-		return nil, fmt.Errorf("task document text is empty, please upload a document first")
+		return nil, fmt.Errorf("task document should not be empty, please upload a document first")
 	}
 
-	question := fmt.Sprintf(analyzeTaskPrompt, effectiveText, task.DocumentText)
+	question := fmt.Sprintf(analyzeTaskPrompt, effectiveScale, task.DocumentText)
 
 	answer, _, err := GetAnswerFake(task.Provider, question, lang) // debug: use fake response for fast local run
 	// answer, _, err := GetAnswer(task.Provider, question, lang)
