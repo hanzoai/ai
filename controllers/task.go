@@ -128,7 +128,26 @@ func (c *ApiController) GetTask() {
 		}
 	}
 
-	c.ResponseOk(object.GetMaskedTask(task, true))
+	c.ResponseOk(task)
+}
+
+// GetTaskTemplates
+// @Title GetTaskTemplates
+// @Tag Task API
+// @Description get task templates (admin only). Returns tasks under owner "admin" for use as task templates.
+// @Success 200 {array} object.Task The Response object
+// @router /get-task-templates [get]
+func (c *ApiController) GetTaskTemplates() {
+	if !c.IsAdmin() {
+		c.ResponseError(c.T("auth:this operation requires admin privilege"))
+		return
+	}
+	tasks, err := object.GetTasks("admin")
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+	c.ResponseOk(object.GetMaskedTasks(tasks, true))
 }
 
 // UpdateTask

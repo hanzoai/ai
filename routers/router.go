@@ -148,6 +148,7 @@ func initAPI() {
 	beego.Router("/api/get-global-tasks", &controllers.ApiController{}, "GET:GetGlobalTasks")
 	beego.Router("/api/get-tasks", &controllers.ApiController{}, "GET:GetTasks")
 	beego.Router("/api/get-task", &controllers.ApiController{}, "GET:GetTask")
+	beego.Router("/api/get-task-templates", &controllers.ApiController{}, "GET:GetTaskTemplates")
 	beego.Router("/api/update-task", &controllers.ApiController{}, "POST:UpdateTask")
 	beego.Router("/api/add-task", &controllers.ApiController{}, "POST:AddTask")
 	beego.Router("/api/delete-task", &controllers.ApiController{}, "POST:DeleteTask")

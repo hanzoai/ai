@@ -34,6 +34,7 @@ class TaskEditPage extends React.Component {
       taskName: props.match.params.taskName,
       isNewTask: props.location?.state?.isNewTask || false,
       modelProviders: [],
+      templates: [],
       task: null,
       analyzing: false,
       loading: false,
@@ -44,6 +45,13 @@ class TaskEditPage extends React.Component {
   UNSAFE_componentWillMount() {
     this.getTask();
     this.getModelProviders();
+    if (Setting.isAdminUser(this.props.account)) {
+      TaskBackend.getTaskTemplates().then((res) => {
+        if (res.status === "ok" && res.data) {
+          this.setState({templates: res.data});
+        }
+      });
+    }
   }
 
   normalizeTaskResult(task) {
@@ -271,6 +279,29 @@ class TaskEditPage extends React.Component {
                 <TextArea autoSize={{minRows: 1, maxRows: 15}} value={this.state.task.text} onChange={(e) => {
                   this.updateTaskField("text", e.target.value);
                 }} />
+              </Col>
+            </Row>
+          ) : null
+        }
+        {
+          Setting.isAdminUser(this.props.account) ? (
+            <Row style={{marginTop: "20px"}} >
+              <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+                {Setting.getLabel(i18next.t("general:Template"), i18next.t("general:Template - Tooltip"))} :
+              </Col>
+              <Col span={22} >
+                <Select
+                  virtual={false}
+                  style={{width: "100%"}}
+                  placeholder={i18next.t("general:None")}
+                  allowClear
+                  value={this.state.task.template ?? ""}
+                  onChange={(value) => this.updateTaskField("template", value || "")}
+                  options={[
+                    {value: "", label: i18next.t("general:None")},
+                    ...this.state.templates.map((t) => ({value: `${t.owner}/${t.name}`, label: t.displayName ? `${t.displayName} (${t.owner}/${t.name})` : `${t.owner}/${t.name}`})),
+                  ]}
+                />
               </Col>
             </Row>
           ) : null
