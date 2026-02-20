@@ -17,7 +17,6 @@ import ReactEcharts from "echarts-for-react";
 import i18next from "i18next";
 
 const ITEM_NAME_MAX_LEN = 18;
-const ITEM_SCORE_MAX = 50;
 
 function flattenItems(categories) {
   const list = [];
@@ -33,11 +32,35 @@ function flattenItems(categories) {
   return list.sort((a, b) => b.score - a.score);
 }
 
+function getScoreRange(categories) {
+  let min = 100;
+  let max = 0;
+  (categories || []).forEach((cat) => {
+    (cat.items || []).forEach((item) => {
+      const s = Number(item.score) || 0;
+      if (s < min) {
+        min = s;
+      }
+      if (s > max) {
+        max = s;
+      }
+    });
+  });
+  if (min > max) {
+    return {min: 0, max: 100};
+  }
+  const padding = Math.max(10, Math.ceil((max - min) * 0.1));
+  const axisMin = Math.max(0, min <= 10 ? 0 : Math.floor(min / 10) * 10 - 10);
+  const axisMax = Math.min(100, max >= 90 ? 100 : Math.ceil((max + padding) / 10) * 10);
+  return {min: axisMin, max: Math.max(axisMax, axisMin + 10)};
+}
+
 export default function TaskAnalysisBarChart({categories}) {
   const items = flattenItems(categories);
   if (items.length === 0) {
     return null;
   }
+  const {min: xMin, max: xMax} = getScoreRange(categories);
   const yData = items.map((it) => {
     const short = it.name.length > ITEM_NAME_MAX_LEN ? it.name.slice(0, ITEM_NAME_MAX_LEN) + "…" : it.name;
     return short;
@@ -54,7 +77,8 @@ export default function TaskAnalysisBarChart({categories}) {
     grid: {left: "8%", right: "12%", top: "4%", bottom: "4%", containLabel: true},
     xAxis: {
       type: "value",
-      max: ITEM_SCORE_MAX,
+      min: xMin,
+      max: xMax,
       axisLabel: {color: "#000", fontSize: 11},
       splitLine: {lineStyle: {opacity: 0.3}},
     },
