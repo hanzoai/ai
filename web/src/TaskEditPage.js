@@ -13,8 +13,8 @@
 // limitations under the License.
 
 import React from "react";
-import {Button, Card, Col, Input, Row, Select, Spin, Table, Upload} from "antd";
-import {FilePdfOutlined, FileWordOutlined, UploadOutlined} from "@ant-design/icons";
+import {Button, Card, Col, Input, Row, Select, Space, Spin, Table, Typography, Upload} from "antd";
+import {CloseOutlined, DownloadOutlined, FilePdfOutlined, FileWordOutlined, UploadOutlined} from "@ant-design/icons";
 import * as TaskBackend from "./backend/TaskBackend";
 import * as Setting from "./Setting";
 import i18next from "i18next";
@@ -186,6 +186,28 @@ class TaskEditPage extends React.Component {
       });
   };
 
+  clearDocument = () => {
+    const task = this.state.task;
+    task.documentUrl = "";
+    task.documentText = "";
+    this.setState({task: task});
+  };
+
+  getDocumentFileName() {
+    const url = this.state.task?.documentUrl || "";
+    try {
+      const path = new URL(url).pathname || url;
+      const encoded = path.split("/").filter(Boolean).pop() || url;
+      try {
+        return decodeURIComponent(encoded);
+      } catch {
+        return encoded;
+      }
+    } catch {
+      return url;
+    }
+  }
+
   renderTask() {
     return (
       <Card size="small" title={
@@ -257,31 +279,32 @@ class TaskEditPage extends React.Component {
           <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
             {Setting.getLabel(i18next.t("store:File"), i18next.t("store:File - Tooltip"))} :
           </Col>
-          <Col span={22} >
-            <Input
-              value={this.state.task.documentUrl}
-              onChange={e => {
-                this.updateTaskField("documentUrl", e.target.value);
-              }}
-              addonAfter={
-                this.state.task.documentUrl && (
-                  <a href={this.state.task.documentUrl} target="_blank" rel="noopener noreferrer">
+          <Col span={22}>
+            {this.state.task.documentUrl ? (
+              <Card size="small" style={{maxWidth: 560}}>
+                <Space align="center">
+                  <span style={{fontSize: 28, color: this.state.task.documentUrl.endsWith(".pdf") ? "#cf1322" : "#1890ff"}}>
                     {this.state.task.documentUrl.endsWith(".pdf") ? <FilePdfOutlined /> : <FileWordOutlined />}
-                  </a>
-                )
-              }
-            />
-            <Upload
-              name="file"
-              accept=".docx,.pdf"
-              showUploadList={false}
-              customRequest={this.handleDocumentUpload}
-              style={{marginTop: "10px"}}
-            >
-              <Button icon={<UploadOutlined />} loading={this.state.uploadingDocument} style={{marginTop: "10px"}}>
-                {i18next.t("store:Upload file")} (.docx, .pdf)
-              </Button>
-            </Upload>
+                  </span>
+                  <Typography.Text ellipsis style={{maxWidth: 420}}>{this.getDocumentFileName()}</Typography.Text>
+                  <Button type="link" size="small" icon={<DownloadOutlined />} href={this.state.task.documentUrl} target="_blank" rel="noopener noreferrer">
+                    {i18next.t("general:Download")}
+                  </Button>
+                  <Button type="text" size="small" danger icon={<CloseOutlined />} onClick={this.clearDocument} aria-label={i18next.t("general:Delete")} />
+                </Space>
+              </Card>
+            ) : (
+              <Upload
+                name="file"
+                accept=".docx,.pdf"
+                showUploadList={false}
+                customRequest={this.handleDocumentUpload}
+              >
+                <Button icon={<UploadOutlined />} loading={this.state.uploadingDocument}>
+                  {i18next.t("store:Upload file")} (.docx, .pdf)
+                </Button>
+              </Upload>
+            )}
           </Col>
         </Row>
         {
@@ -313,10 +336,10 @@ class TaskEditPage extends React.Component {
           )
         }
         {
-          (this.state.task.type !== "Labeling") ? (
+          (this.state.task.type !== "Labeling") && this.state.task.documentUrl ? (
             <Row style={{marginTop: "20px"}} >
               <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-                {Setting.getLabel(i18next.t("task:Analysis Report"), i18next.t("task:Analysis Report - Tooltip"))} :
+                {Setting.getLabel(i18next.t("task:Report"), i18next.t("task:Report - Tooltip"))} :
               </Col>
               <Col span={22} >
                 <Button
@@ -334,7 +357,7 @@ class TaskEditPage extends React.Component {
                 {this.state.task.result && this.renderAnalysisReport(this.state.task.result)}
               </Col>
             </Row>
-          ) : (
+          ) : this.state.task.type === "Labeling" ? (
             <Row style={{marginTop: "20px"}} >
               <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
                 {Setting.getLabel(i18next.t("task:Log"), i18next.t("task:Log - Tooltip"))} :
@@ -354,7 +377,7 @@ class TaskEditPage extends React.Component {
                 </div>
               </Col>
             </Row>
-          )
+          ) : null
         }
       </Card>
     );
