@@ -14,7 +14,7 @@
 
 import React from "react";
 import {Link} from "react-router-dom";
-import {Button, Popconfirm, Table, Tag, Tooltip} from "antd";
+import {Button, Input, Popconfirm, Popover, Table, Tag, Tooltip} from "antd";
 import {DeleteOutlined, FilePdfOutlined, FileWordOutlined} from "@ant-design/icons";
 import moment from "moment";
 import BaseListPage from "./BaseListPage";
@@ -23,6 +23,9 @@ import * as TaskBackend from "./backend/TaskBackend";
 import i18next from "i18next";
 import * as ConfTask from "./ConfTask";
 import * as Conf from "./Conf";
+import TaskAnalysisReport from "./TaskAnalysisReport";
+
+const {TextArea} = Input;
 
 class TaskListPage extends BaseListPage {
   constructor(props) {
@@ -90,6 +93,20 @@ class TaskListPage extends BaseListPage {
       });
   }
 
+  parseReportResult(result) {
+    if (!result) {
+      return null;
+    }
+    if (typeof result === "object") {
+      return result;
+    }
+    try {
+      return JSON.parse(result);
+    } catch {
+      return null;
+    }
+  }
+
   renderTable(tasks) {
     let columns = [
       {
@@ -97,127 +114,95 @@ class TaskListPage extends BaseListPage {
         dataIndex: "owner",
         key: "owner",
         width: "90px",
-        sorter: true,
+        sorter: (a, b) => (a.owner || "").localeCompare(b.owner || ""),
         ...this.getColumnSearchProps("owner"),
-        render: (text, record, index) => {
-          return (
-            <a target="_blank" rel="noreferrer" href={Setting.getMyProfileUrl(this.props.account).replace("/account", `/users/${Conf.AuthConfig.organizationName}/${text}`)}>
-              {text}
-            </a>
-          );
-        },
+        render: (text) => (
+          <a target="_blank" rel="noreferrer" href={Setting.getMyProfileUrl(this.props.account).replace("/account", `/users/${Conf.AuthConfig.organizationName}/${text}`)}>
+            {text}
+          </a>
+        ),
       },
       {
         title: i18next.t("general:Name"),
         dataIndex: "name",
         key: "name",
         width: "160px",
-        sorter: (a, b) => a.name.localeCompare(b.name),
+        sorter: (a, b) => (a.name || "").localeCompare(b.name || ""),
         ...this.getColumnSearchProps("name"),
-        render: (text, record, index) => {
-          return (
-            <Link to={`/tasks/${record.owner}/${text}`}>
-              {text}
-            </Link>
-          );
-        },
+        render: (text, record) => <Link to={`/tasks/${record.owner}/${text}`}>{text}</Link>,
       },
       {
         title: i18next.t("general:Display name"),
         dataIndex: "displayName",
         key: "displayName",
-        width: "200px",
-        sorter: (a, b) => a.displayName.localeCompare(b.displayName),
+        width: "180px",
+        sorter: (a, b) => (a.displayName || "").localeCompare(b.displayName || ""),
         ...this.getColumnSearchProps("displayName"),
+        render: (text) => text ?? null,
       },
       {
         title: i18next.t("provider:Model provider"),
         dataIndex: "provider",
         key: "provider",
-        width: "250px",
-        sorter: (a, b) => a.provider.localeCompare(b.provider),
+        width: "200px",
+        sorter: (a, b) => (a.provider || "").localeCompare(b.provider || ""),
         ...this.getColumnSearchProps("provider"),
-        render: (text, record, index) => {
-          return (
-            <Link to={`/providers/${text}`}>
-              {text}
-            </Link>
-          );
-        },
+        render: (text) => (text ? <Link to={`/providers/${text}`}>{text}</Link> : null),
       },
       {
         title: i18next.t("general:Type"),
         dataIndex: "type",
         key: "type",
         width: "90px",
-        sorter: (a, b) => a.type.localeCompare(b.type),
+        sorter: (a, b) => (a.type || "").localeCompare(b.type || ""),
         ...this.getColumnSearchProps("type"),
       },
       {
-        title: i18next.t("store:Subject"),
-        dataIndex: "subject",
-        key: "subject",
-        width: "200px",
-        sorter: (a, b) => a.subject.localeCompare(b.subject),
-        ...this.getColumnSearchProps("subject"),
-      },
-      {
-        title: i18next.t("video:Topic"),
-        dataIndex: "topic",
-        key: "topic",
-        width: "200px",
-        sorter: (a, b) => a.topic.localeCompare(b.topic),
-        ...this.getColumnSearchProps("topic"),
-      },
-      {
-        title: i18next.t("video:Grade"),
-        dataIndex: "grade",
-        key: "grade",
-        width: "200px",
-        sorter: (a, b) => a.grade.localeCompare(b.grade),
-        ...this.getColumnSearchProps("grade"),
-      },
-      {
-        title: i18next.t("general:Result"),
-        dataIndex: "result",
-        key: "result",
-        width: "200px",
-        sorter: (a, b) => a.result.localeCompare(b.result),
-        ...this.getColumnSearchProps("result"),
-      },
-      {
-        title: i18next.t("task:Activity"),
-        dataIndex: "activity",
-        key: "activity",
-        width: "200px",
-        sorter: (a, b) => a.activity.localeCompare(b.activity),
-        ...this.getColumnSearchProps("activity"),
+        title: i18next.t("general:Template"),
+        dataIndex: "template",
+        key: "template",
+        width: "140px",
+        sorter: (a, b) => (a.template || "").localeCompare(b.template || ""),
+        ...this.getColumnSearchProps("template"),
+        render: (text) => {
+          if (!text) {
+            return null;
+          }
+          return <Link to={`/tasks/${text}`}>{text}</Link>;
+        },
       },
       {
         title: i18next.t("task:Scale"),
         dataIndex: "scale",
         key: "scale",
-        // width: "160px",
+        width: "200px",
         sorter: (a, b) => (a.scale || "").localeCompare(b.scale || ""),
         ...this.getColumnSearchProps("scale"),
-        render: (text, record, index) => {
+        render: (text) => {
+          if (text === null || text === "") {
+            return null;
+          }
           return (
-            <Tooltip placement="left" title={Setting.getShortText(text, 1000)}>
-              <div style={{maxWidth: "300px"}}>
-                {Setting.getShortText(text, 100)}
-              </div>
-            </Tooltip>
+            <Popover
+              trigger="hover"
+              placement="left"
+              content={
+                <TextArea readOnly value={text} rows={12} style={{width: 420, whiteSpace: "pre-wrap"}} />
+              }
+            >
+              <div style={{maxWidth: "200px", cursor: "pointer"}}>{Setting.getShortText(text, 80)}</div>
+            </Popover>
           );
         },
       },
       {
-        title: i18next.t("task:Document"),
+        title: i18next.t("store:File"),
         dataIndex: "documentUrl",
         key: "documentUrl",
-        width: "120px",
+        width: "100px",
         sorter: (a, b) => (a.documentUrl || "").localeCompare(b.documentUrl || ""),
         ...this.getColumnSearchProps("documentUrl"),
-        render: (text, record, index) => {
+        render: (text) => {
           if (!text) {
             return null;
           }
@@ -230,35 +215,38 @@ class TaskListPage extends BaseListPage {
         },
       },
       {
-        title: i18next.t("task:Labels"),
-        dataIndex: "labels",
-        key: "labels",
-        width: "250px",
-        sorter: (a, b) => a.labels.localeCompare(b.labels),
-        render: (text, record, index) => {
-          return record.labels?.map(label => {
-            return (
-              <Tag key={label} color={"processing"}>
-                {label}
-              </Tag>
-            );
-          });
+        title: i18next.t("task:Report"),
+        dataIndex: "result",
+        key: "result",
+        width: "100px",
+        render: (text, record) => {
+          const parsed = this.parseReportResult(record.result);
+          if (!parsed) {
+            return null;
+          }
+          return (
+            <Tooltip overlayInnerStyle={{maxWidth: 720, maxHeight: 480, overflow: "auto"}} title={<TaskAnalysisReport result={parsed} />} placement="left">
+              <span style={{cursor: "pointer"}}>{parsed.score !== null && parsed.score !== undefined ? `${parsed.score}${i18next.t("task:Score Unit")}` : i18next.t("task:Report")}</span>
+            </Tooltip>
+          );
         },
       },
       {
         title: i18next.t("task:Example"),
         dataIndex: "example",
         key: "example",
-        // width: "160px",
-        sorter: (a, b) => a.example.localeCompare(b.example),
-        render: (text, record, index) => {
-          return (
-            <Tooltip placement="left" title={Setting.getShortText(text, 1000)}>
-              <div style={{maxWidth: "200px"}}>
-                {Setting.getShortText(text, 100)}
-              </div>
-            </Tooltip>
-          );
+        width: "160px",
+        sorter: (a, b) => (a.example || "").localeCompare(b.example || ""),
+        ...this.getColumnSearchProps("example"),
+        render: (text) => (text !== null && text !== undefined && text !== "" ? <div style={{maxWidth: "140px"}}>{Setting.getShortText(text, 40)}</div> : null),
+      },
+      {
+        title: i18next.t("task:Labels"),
+        dataIndex: "labels",
+        key: "labels",
+        width: "200px",
+        render: (text, record) => {
+          return record.labels?.length ? record.labels.map(label => <Tag key={label} color="processing">{label}</Tag>) : null;
         },
       },
       {
@@ -267,33 +255,32 @@ class TaskListPage extends BaseListPage {
         key: "action",
         width: "180px",
         fixed: (Setting.isMobile()) ? "false" : "right",
-        render: (text, record, index) => {
-          return (
-            <div>
-              <Button style={{marginTop: "10px", marginBottom: "10px", marginRight: "10px"}} type="primary" onClick={() => this.props.history.push(`/tasks/${record.owner}/${record.name}`)}>{i18next.t("general:Edit")}</Button>
-              <Popconfirm
-                title={`${i18next.t("general:Sure to delete")}: ${record.name} ?`}
-                onConfirm={() => this.deleteTask(record)}
-                okText={i18next.t("general:OK")}
-                cancelText={i18next.t("general:Cancel")}
-              >
-                <Button style={{marginBottom: "10px"}} type="primary" danger>{i18next.t("general:Delete")}</Button>
-              </Popconfirm>
-            </div>
-          );
-        },
+        render: (text, record) => (
+          <div>
+            <Button style={{marginRight: "8px"}} type="primary" size="small" onClick={() => this.props.history.push(`/tasks/${record.owner}/${record.name}`)}>
+              {i18next.t("general:Edit")}
+            </Button>
+            <Popconfirm
+              title={`${i18next.t("general:Sure to delete")}: ${record.name} ?`}
+              onConfirm={() => this.deleteTask(record)}
+              okText={i18next.t("general:OK")}
+              cancelText={i18next.t("general:Cancel")}
+            >
+              <Button type="primary" danger size="small">{i18next.t("general:Delete")}</Button>
+            </Popconfirm>
+          </div>
+        ),
       },
     ];
+
     columns = Setting.filterTableColumns(columns, this.props.formItems ?? this.state.formItems);
 
     if (!this.props.account || !Setting.isAdminUser(this.props.account)) {
-      columns = columns.filter(column => column.key !== "provider" && column.key !== "text");
+      columns = columns.filter(column => !["provider", "type", "template", "scale"].includes(column.key));
     }
 
     if (ConfTask.TaskMode !== "Labeling") {
-      columns = columns.filter(column => column.key !== "displayName" && column.key !== "labels" && column.key !== "example");
-    } else {
-      columns = columns.filter(column => column.key !== "subject" && column.key !== "topic" && column.key !== "result" && column.key !== "activity" && column.key !== "grade");
+      columns = columns.filter(column => !["displayName", "example", "labels"].includes(column.key));
     }
 
     const paginationProps = {

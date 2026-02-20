@@ -13,7 +13,7 @@
 // limitations under the License.
 
 import React from "react";
-import {Button, Card, Col, Input, Row, Select, Space, Spin, Table, Typography, Upload} from "antd";
+import {Button, Card, Col, Input, Row, Select, Space, Spin, Typography, Upload} from "antd";
 import {CloseOutlined, DownloadOutlined, FilePdfOutlined, FileWordOutlined, UploadOutlined} from "@ant-design/icons";
 import * as TaskBackend from "./backend/TaskBackend";
 import * as Setting from "./Setting";
@@ -21,6 +21,7 @@ import i18next from "i18next";
 import * as ProviderBackend from "./backend/ProviderBackend";
 import * as MessageBackend from "./backend/MessageBackend";
 import Editor from "./common/Editor";
+import TaskAnalysisReport from "./TaskAnalysisReport";
 
 const {Option} = Select;
 const {TextArea} = Input;
@@ -413,7 +414,7 @@ class TaskEditPage extends React.Component {
                 {this.state.analyzing && (
                   <Spin style={{marginLeft: "16px"}} tip={i18next.t("task:Analyzing")} />
                 )}
-                {this.state.task.result && this.renderAnalysisReport(this.state.task.result)}
+                {this.state.task.result && <TaskAnalysisReport result={this.state.task.result} />}
               </Col>
             </Row>
           ) : this.state.task.type === "Labeling" ? (
@@ -439,69 +440,6 @@ class TaskEditPage extends React.Component {
           ) : null
         }
       </Card>
-    );
-  }
-
-  getProjectText() {
-    let text = this.getEffectiveScale();
-    text = text.replaceAll("${document}", this.state.task.documentText);
-    text = text.replaceAll("${subject}", this.state.task.subject);
-    text = text.replaceAll("${topic}", this.state.task.topic);
-    text = text.replaceAll("${grade}", this.state.task.grade);
-    text = text.replaceAll("${activity}", this.state.task.activity);
-    return text;
-  }
-
-  renderAnalysisReport(result) {
-    const metaItems = [
-      {label: i18next.t("task:Unit Name"), value: result.title},
-      {label: i18next.t("task:Designer"), value: result.designer},
-      {label: i18next.t("task:Stage"), value: result.stage},
-      {label: i18next.t("task:Participants"), value: result.participants},
-      {label: i18next.t("video:Grade"), value: result.grade},
-      {label: i18next.t("task:Instructor"), value: result.instructor},
-      {label: i18next.t("store:Subject"), value: result.subject},
-      {label: i18next.t("task:School"), value: result.school},
-      {label: i18next.t("task:Other Subjects"), value: result.otherSubjects},
-      {label: i18next.t("task:Textbook"), value: result.textbook},
-    ];
-
-    const reportColumns = [
-      {title: i18next.t("task:Sub-criteria"), dataIndex: "name", key: "name", width: "12%"},
-      {title: i18next.t("task:Score"), dataIndex: "score", key: "score", width: "8%", render: (score) => `${score}${i18next.t("task:Score Unit")}`},
-      {title: i18next.t("task:Advantages"), dataIndex: "advantage", key: "advantage", width: "27%"},
-      {title: i18next.t("task:Disadvantages"), dataIndex: "disadvantage", key: "disadvantage", width: "27%"},
-      {title: i18next.t("task:Suggestions"), dataIndex: "suggestion", key: "suggestion", width: "26%"},
-    ];
-
-    return (
-      <div style={{marginTop: "16px"}}>
-        <div style={{display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px 24px", marginBottom: "16px", padding: "12px", border: "1px solid #f0f0f0", borderRadius: "6px", background: "#fafafa"}}>
-          {metaItems.map((item, idx) => (
-            <div key={idx} style={{display: "flex", gap: "8px"}}>
-              <span style={{fontWeight: 600, whiteSpace: "nowrap"}}>{item.label}：</span>
-              <span>{item.value || "-"}</span>
-            </div>
-          ))}
-        </div>
-        <div style={{marginBottom: "12px", fontSize: "16px", fontWeight: 600}}>
-          {i18next.t("task:Overall Score")}：<span style={{color: "#1677ff", fontSize: "20px"}}>{result.score}</span>
-        </div>
-        {(result.categories || []).map((cat, idx) => (
-          <div key={idx} style={{marginBottom: "24px"}}>
-            <div style={{fontWeight: 600, marginBottom: "8px", fontSize: "14px"}}>
-              {idx + 1}. {cat.name}（{i18next.t("task:Score")}：{cat.score}{i18next.t("task:Score Unit")}）
-            </div>
-            <Table
-              size="small"
-              bordered
-              pagination={false}
-              columns={reportColumns}
-              dataSource={(cat.items || []).map((item, i) => ({...item, key: i}))}
-            />
-          </div>
-        ))}
-      </div>
     );
   }
 
