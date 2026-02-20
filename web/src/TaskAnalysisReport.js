@@ -14,6 +14,7 @@
 
 import React from "react";
 import {Table} from "antd";
+import ReactEcharts from "echarts-for-react";
 import i18next from "i18next";
 
 export default function TaskAnalysisReport({result}) {
@@ -41,6 +42,40 @@ export default function TaskAnalysisReport({result}) {
     {title: i18next.t("task:Suggestions"), dataIndex: "suggestion", key: "suggestion", width: "26%"},
   ];
 
+  const categories = result.categories || [];
+  const radarMax = (() => {
+    if (categories.length === 0) {
+      return 5;
+    }
+    const maxScore = Math.max(...categories.map((c) => Number(c.score) || 0));
+    if (maxScore <= 5) {
+      return 5;
+    }
+    if (maxScore <= 10) {
+      return 10;
+    }
+    return Math.ceil(maxScore * 1.2);
+  })();
+  const radarOption = categories.length > 0 ? {
+    tooltip: {},
+    radar: {
+      indicator: categories.map((c) => ({name: c.name, max: radarMax})),
+      radius: "65%",
+      axisName: {
+        fontSize: 16,
+        color: "#000",
+      },
+    },
+    series: [{
+      type: "radar",
+      data: [{
+        value: categories.map((c) => Number(c.score) || 0),
+        name: i18next.t("task:Score"),
+        areaStyle: {opacity: 0.3},
+      }],
+    }],
+  } : null;
+
   return (
     <div style={{marginTop: "16px"}}>
       <div style={{display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px 24px", marginBottom: "16px", padding: "12px", border: "1px solid #f0f0f0", borderRadius: "6px", background: "#fafafa"}}>
@@ -54,7 +89,12 @@ export default function TaskAnalysisReport({result}) {
       <div style={{marginBottom: "12px", fontSize: "16px", fontWeight: 600}}>
         {i18next.t("task:Overall Score")}：<span style={{color: "#1677ff", fontSize: "20px"}}>{result.score}</span>
       </div>
-      {(result.categories || []).map((cat, idx) => (
+      {radarOption && (
+        <div style={{marginBottom: "24px", height: "320px"}}>
+          <ReactEcharts option={radarOption} style={{width: "100%", height: "100%"}} notMerge />
+        </div>
+      )}
+      {categories.map((cat, idx) => (
         <div key={idx} style={{marginBottom: "24px"}}>
           <div style={{fontWeight: 600, marginBottom: "8px", fontSize: "14px"}}>
             {idx + 1}. {cat.name}（{i18next.t("task:Score")}：{cat.score}{i18next.t("task:Score Unit")}）
