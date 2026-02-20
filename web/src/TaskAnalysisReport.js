@@ -14,8 +14,10 @@
 
 import React from "react";
 import {Table} from "antd";
-import ReactEcharts from "echarts-for-react";
 import i18next from "i18next";
+import TaskAnalysisRadarChart from "./TaskAnalysisRadarChart";
+import TaskAnalysisBarChart from "./TaskAnalysisBarChart";
+import TaskAnalysisPieChart from "./TaskAnalysisPieChart";
 
 export default function TaskAnalysisReport({result}) {
   if (!result) {
@@ -56,25 +58,8 @@ export default function TaskAnalysisReport({result}) {
     }
     return Math.ceil(maxScore * 1.2);
   })();
-  const radarOption = categories.length > 0 ? {
-    tooltip: {},
-    radar: {
-      indicator: categories.map((c) => ({name: c.name, max: radarMax})),
-      radius: "65%",
-      axisName: {
-        fontSize: 16,
-        color: "#000",
-      },
-    },
-    series: [{
-      type: "radar",
-      data: [{
-        value: categories.map((c) => Number(c.score) || 0),
-        name: i18next.t("task:Score"),
-        areaStyle: {opacity: 0.3},
-      }],
-    }],
-  } : null;
+
+  const hasCharts = categories.length > 0;
 
   return (
     <div style={{marginTop: "16px"}}>
@@ -89,9 +74,17 @@ export default function TaskAnalysisReport({result}) {
       <div style={{marginBottom: "12px", fontSize: "16px", fontWeight: 600}}>
         {i18next.t("task:Overall Score")}：<span style={{color: "#1677ff", fontSize: "20px"}}>{result.score}</span>
       </div>
-      {radarOption && (
-        <div style={{marginBottom: "24px", height: "320px"}}>
-          <ReactEcharts option={radarOption} style={{width: "100%", height: "100%"}} notMerge />
+      {hasCharts && (
+        <div style={{marginBottom: "24px", height: "320px", display: "flex", gap: "24px"}}>
+          <div style={{flex: 1, minWidth: 0}}>
+            <TaskAnalysisRadarChart categories={categories} radarMax={radarMax} />
+          </div>
+          <div style={{flex: 1, minWidth: 0}}>
+            <TaskAnalysisBarChart categories={categories} />
+          </div>
+          <div style={{flex: 1, minWidth: 0}}>
+            <TaskAnalysisPieChart categories={categories} />
+          </div>
         </div>
       )}
       {categories.map((cat, idx) => (
