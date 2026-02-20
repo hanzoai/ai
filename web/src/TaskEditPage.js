@@ -20,7 +20,6 @@ import * as Setting from "./Setting";
 import i18next from "i18next";
 import * as ProviderBackend from "./backend/ProviderBackend";
 import * as MessageBackend from "./backend/MessageBackend";
-import * as ConfTask from "./ConfTask";
 import Editor from "./common/Editor";
 
 const {Option} = Select;
@@ -197,15 +196,34 @@ class TaskEditPage extends React.Component {
           {this.state.isNewTask && <Button style={{marginLeft: "20px"}} onClick={() => this.cancelTaskEdit()}>{i18next.t("general:Cancel")}</Button>}
         </div>
       } style={{marginLeft: "5px"}} type="inner">
-        <Row style={{marginTop: "10px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("general:Name"), i18next.t("general:Name - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+        <Row style={{marginTop: "10px"}} gutter={16}>
+          <Col style={{marginTop: "5px"}} span={Setting.isAdminUser(this.props.account) ? 8 : 24}>
+            <div>{Setting.getLabel(i18next.t("general:Name"), i18next.t("general:Name - Tooltip"))} :</div>
             <Input value={this.state.task.name} onChange={e => {
               this.updateTaskField("name", e.target.value);
             }} />
           </Col>
+          {Setting.isAdminUser(this.props.account) ? (
+            <>
+              <Col style={{marginTop: "5px"}} span={8}>
+                <div>{Setting.getLabel(i18next.t("provider:Model provider"), i18next.t("provider:Model provider - Tooltip"))} :</div>
+                <Select virtual={false} style={{width: "100%"}} value={this.state.task.provider} onChange={(value => {this.updateTaskField("provider", value);})}
+                  options={this.state.modelProviders.map((provider) => Setting.getOption(`${provider.displayName} (${provider.name})`, `${provider.name}`))
+                  } />
+              </Col>
+              <Col style={{marginTop: "5px"}} span={8}>
+                <div>{Setting.getLabel(i18next.t("general:Type"), i18next.t("general:Type - Tooltip"))} :</div>
+                <Select virtual={false} style={{width: "100%"}} value={this.state.task.type} onChange={(value => {this.updateTaskField("type", value);})}>
+                  {
+                    [
+                      {id: "Labeling", name: "Labeling"},
+                      {id: "PBL", name: "PBL"},
+                    ].map((item, index) => <Option key={index} value={item.id}>{item.name}</Option>)
+                  }
+                </Select>
+              </Col>
+            </>
+          ) : null}
         </Row>
         {
           this.state.task.type !== "Labeling" ? null : (
@@ -219,111 +237,6 @@ class TaskEditPage extends React.Component {
                 }} />
               </Col>
             </Row>
-          )
-        }
-        {
-          (Setting.isAdminUser(this.props.account)) ? (
-            <Row style={{marginTop: "20px"}} >
-              <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-                {Setting.getLabel(i18next.t("provider:Model provider"), i18next.t("provider:Model provider - Tooltip"))} :
-              </Col>
-              <Col span={22} >
-                <Select virtual={false} style={{width: "100%"}} value={this.state.task.provider} onChange={(value => {this.updateTaskField("provider", value);})}
-                  options={this.state.modelProviders.map((provider) => Setting.getOption(`${provider.displayName} (${provider.name})`, `${provider.name}`))
-                  } />
-              </Col>
-            </Row>
-          ) : null
-        }
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("general:Type"), i18next.t("general:Type - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Select virtual={false} style={{width: "100%"}} value={this.state.task.type} onChange={(value => {this.updateTaskField("type", value);})}>
-              {
-                [
-                  {id: "Labeling", name: "Labeling"},
-                  {id: "PBL", name: "PBL"},
-                ].map((item, index) => <Option key={index} value={item.id}>{item.name}</Option>)
-              }
-            </Select>
-          </Col>
-        </Row>
-        {
-          this.state.task.type === "Labeling" ? null : (
-            <React.Fragment>
-              <Row style={{marginTop: "20px"}} >
-                <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-                  {Setting.getLabel(i18next.t("store:Subject"), i18next.t("store:Subject - Tooltip"))} :
-                </Col>
-                <Col span={3} >
-                  {ConfTask.SubjectOptions.length > 0 ? (
-                    <Select virtual={false} style={{width: "100%"}} value={this.state.task.subject} onChange={(value => {this.updateTaskField("subject", value);})}>
-                      {
-                        ConfTask.SubjectOptions.map((item, index) => <Option key={index} value={item.id}>{item.name}</Option>)
-                      }
-                    </Select>
-                  ) : (
-                    <Input value={this.state.task.subject} onChange={e => {
-                      this.updateTaskField("subject", e.target.value);
-                    }} />
-                  )}
-                </Col>
-                <Col span={2} />
-                <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-                  {Setting.getLabel(i18next.t("video:Topic"), i18next.t("video:Topic - Tooltip"))} :
-                </Col>
-                <Col span={3} >
-                  {ConfTask.TopicOptions.length > 0 ? (
-                    <Select virtual={false} style={{width: "100%"}} value={this.state.task.topic} onChange={(value => {this.updateTaskField("topic", value);})}>
-                      {
-                        ConfTask.TopicOptions.map((item, index) => <Option key={index} value={item.id}>{item.name}</Option>)
-                      }
-                    </Select>
-                  ) : (
-                    <Input value={this.state.task.topic} onChange={e => {
-                      this.updateTaskField("topic", e.target.value);
-                    }} />
-                  )}
-                </Col>
-                <Col span={2} />
-                <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-                  {Setting.getLabel(i18next.t("video:Grade"), i18next.t("video:Grade - Tooltip"))} :
-                </Col>
-                <Col span={3} >
-                  {ConfTask.GradeOptions.length > 0 ? (
-                    <Select virtual={false} style={{width: "100%"}} value={this.state.task.grade} onChange={(value => {this.updateTaskField("grade", value);})}>
-                      {
-                        ConfTask.GradeOptions.map((item, index) => <Option key={index} value={item.id}>{item.name}</Option>)
-                      }
-                    </Select>
-                  ) : (
-                    <Input value={this.state.task.grade} onChange={e => {
-                      this.updateTaskField("grade", e.target.value);
-                    }} />
-                  )}
-                </Col>
-              </Row>
-              <Row style={{marginTop: "20px"}} >
-                <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-                  {Setting.getLabel(i18next.t("task:Activity"), i18next.t("task:Activity - Tooltip"))} :
-                </Col>
-                <Col span={22} >
-                  {ConfTask.ActivityOptions.length > 0 ? (
-                    <Select virtual={false} style={{width: "100%"}} value={this.state.task.activity} onChange={(value => {this.updateTaskField("activity", value);})}>
-                      {
-                        ConfTask.ActivityOptions.map((item, index) => <Option key={index} value={item.id}>{item.name}</Option>)
-                      }
-                    </Select>
-                  ) : (
-                    <Input value={this.state.task.activity} onChange={e => {
-                      this.updateTaskField("activity", e.target.value);
-                    }} />
-                  )}
-                </Col>
-              </Row>
-            </React.Fragment>
           )
         }
         {
@@ -398,18 +311,6 @@ class TaskEditPage extends React.Component {
               </Row>
             </React.Fragment>
           )
-        }
-        {
-          Setting.isAdminUser(this.props.account) ? (
-            <Row style={{marginTop: "20px"}} >
-              <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-                {Setting.getLabel(i18next.t("task:Question"), i18next.t("task:Question - Tooltip"))} :
-              </Col>
-              <Col span={22} >
-                <TextArea disabled={true} autoSize={{minRows: 1, maxRows: 15}} value={(this.state.task.type !== "Labeling") ? this.getProjectText() : this.getQuestion()} onChange={(e) => {}} />
-              </Col>
-            </Row>
-          ) : null
         }
         {
           (this.state.task.type !== "Labeling") ? (
