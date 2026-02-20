@@ -46,13 +46,35 @@ class TaskListPage extends BaseListPage {
     }
   }
 
+  getNextTaskIndex() {
+    const username = this.props.account?.name || "admin";
+    const prefix = `task_${username}_`;
+    const re = new RegExp(`^${prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(\\d{3})$`);
+    let maxNum = 0;
+    (this.state.data || []).forEach((task) => {
+      if (task.owner !== username || !task.name?.startsWith(prefix)) {
+        return;
+      }
+      const m = task.name.match(re);
+      if (m) {
+        const n = parseInt(m[1], 10);
+        if (n > maxNum) {
+          maxNum = n;
+        }
+      }
+    });
+    return Math.min(999, maxNum + 1);
+  }
+
   newTask() {
-    const randomName = Setting.getRandomName();
+    const username = this.props.account?.name || "admin";
+    const nextIndex = String(this.getNextTaskIndex()).padStart(3, "0");
+    const taskName = `task_${username}_${nextIndex}`;
     return {
       owner: this.props.account.name,
-      name: `task_${randomName}`,
+      name: taskName,
       createdTime: moment().format(),
-      displayName: `New Task - ${randomName}`,
+      displayName: `New Task - ${taskName}`,
       provider: "provider_model_azure_gpt4",
       type: ConfTask.TaskMode === "Labeling" ? "Labeling" : "PBL",
       path: "F:/github_repos/casdoor-website",
