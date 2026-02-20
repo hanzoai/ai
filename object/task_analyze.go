@@ -64,10 +64,10 @@ func AnalyzeTask(task *Task, lang string) (*TaskResult, error) {
 		return nil, err
 	}
 	if effectiveScale == "" {
-		return nil, fmt.Errorf("task scale should not be empty")
+		return nil, fmt.Errorf("任务量表不能为空")
 	}
 	if task.DocumentText == "" {
-		return nil, fmt.Errorf("task document should not be empty, please upload a document first")
+		return nil, fmt.Errorf("任务文档不能为空，请先上传文档")
 	}
 
 	question := fmt.Sprintf(analyzeTaskPrompt, effectiveScale, task.DocumentText)
@@ -75,7 +75,7 @@ func AnalyzeTask(task *Task, lang string) (*TaskResult, error) {
 	answer, _, err := GetAnswerFake(task.Provider, question, lang) // debug: use fake response for fast local run
 	// answer, _, err := GetAnswer(task.Provider, question, lang)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get analysis from AI model: %v", err)
+		return nil, fmt.Errorf("从AI模型获取分析失败: %v", err)
 	}
 
 	answer = strings.TrimSpace(answer)
@@ -92,7 +92,7 @@ func AnalyzeTask(task *Task, lang string) (*TaskResult, error) {
 
 	var result TaskResult
 	if err = json.Unmarshal([]byte(answer), &result); err != nil {
-		return nil, fmt.Errorf("failed to parse AI analysis result as JSON: %v\nRaw answer: %s", err, answer)
+		return nil, fmt.Errorf("解析AI分析结果为JSON失败: %v\n原始回复: %s", err, answer)
 	}
 
 	return &result, nil
