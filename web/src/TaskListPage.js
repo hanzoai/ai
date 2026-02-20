@@ -14,7 +14,7 @@
 
 import React from "react";
 import {Link} from "react-router-dom";
-import {Button, Input, Popconfirm, Popover, Table, Tag, Tooltip} from "antd";
+import {Button, Input, Popconfirm, Popover, Table, Tag} from "antd";
 import {DeleteOutlined, FilePdfOutlined, FileWordOutlined} from "@ant-design/icons";
 import moment from "moment";
 import BaseListPage from "./BaseListPage";
@@ -222,7 +222,9 @@ class TaskListPage extends BaseListPage {
               trigger="hover"
               placement="left"
               content={
-                <TextArea readOnly value={text} rows={12} style={{width: 420, whiteSpace: "pre-wrap"}} />
+                <div style={{width: "50vw", height: "50vh", overflow: "auto"}}>
+                  <TextArea readOnly value={text} style={{width: "100%", minHeight: "50vh", boxSizing: "border-box", whiteSpace: "pre-wrap"}} />
+                </div>
               }
             >
               <div style={{maxWidth: "200px", cursor: "pointer"}}>{Setting.getShortText(text, 80)}</div>
@@ -260,9 +262,17 @@ class TaskListPage extends BaseListPage {
             return null;
           }
           return (
-            <Tooltip overlayInnerStyle={{maxWidth: 720, maxHeight: 480, overflow: "auto"}} title={<TaskAnalysisReport result={parsed} />} placement="left">
+            <Popover
+              trigger="hover"
+              placement="left"
+              content={
+                <div style={{width: "50vw", height: "50vh", overflow: "auto"}}>
+                  <TaskAnalysisReport result={parsed} />
+                </div>
+              }
+            >
               <span style={{cursor: "pointer"}}>{parsed.score !== null && parsed.score !== undefined ? `${parsed.score}${i18next.t("task:Score Unit")}` : i18next.t("task:Report")}</span>
-            </Tooltip>
+            </Popover>
           );
         },
       },
