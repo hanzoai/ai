@@ -17,26 +17,56 @@ import ReactEcharts from "echarts-for-react";
 import i18next from "i18next";
 
 const PIE_COLORS = ["#f5222d", "#fa8c16", "#faad14", "#52c41a", "#1677ff"];
-const SCORE_BANDS = [
-  {min: 0, max: 10, label: "0-10"},
-  {min: 10, max: 20, label: "10-20"},
-  {min: 20, max: 30, label: "20-30"},
-  {min: 30, max: 40, label: "30-40"},
-  {min: 40, max: 51, label: "40-50"},
-];
+const NUM_BANDS = 5;
 
-function countByScoreBand(categories) {
-  const counts = SCORE_BANDS.map(() => 0);
+function collectScores(categories) {
+  const scores = [];
   (categories || []).forEach((cat) => {
     (cat.items || []).forEach((item) => {
       const s = Number(item.score) || 0;
-      const idx = SCORE_BANDS.findIndex((b) => s >= b.min && s < b.max);
-      if (idx >= 0) {
-        counts[idx] += 1;
-      }
+      scores.push(s);
     });
   });
-  return SCORE_BANDS.map((b, i) => ({
+  return scores;
+}
+
+function buildBandsFromScores(scores) {
+  if (scores.length === 0) {
+    return [];
+  }
+  const dataMin = Math.min(...scores);
+  const dataMax = Math.max(...scores);
+  const low = Math.max(0, dataMin <= 10 ? 0 : Math.floor(dataMin / 10) * 10);
+  let high = Math.min(100, dataMax >= 90 ? 100 : Math.ceil((dataMax + 5) / 10) * 10);
+  if (high <= low) {
+    high = Math.min(100, low + 20);
+  }
+  const step = (high - low) / NUM_BANDS;
+  const bands = [];
+  for (let i = 0; i < NUM_BANDS; i++) {
+    const bMin = Math.round(low + i * step);
+    const bMax = i === NUM_BANDS - 1 ? high : Math.round(low + (i + 1) * step);
+    if (bMax > bMin) {
+      bands.push({min: bMin, max: bMax, label: `${bMin}-${bMax}`});
+    }
+  }
+  return bands;
+}
+
+function countByScoreBand(categories) {
+  const scores = collectScores(categories);
+  const bands = buildBandsFromScores(scores);
+  if (bands.length === 0) {
+    return [];
+  }
+  const counts = bands.map(() => 0);
+  scores.forEach((s) => {
+    const idx = bands.findIndex((b, i) => (i < bands.length - 1 ? s >= b.min && s < b.max : s >= b.min && s <= b.max));
+    if (idx >= 0) {
+      counts[idx] += 1;
+    }
+  });
+  return bands.map((b, i) => ({
     band: b.label,
     count: counts[i],
   })).filter((d) => d.count > 0);
