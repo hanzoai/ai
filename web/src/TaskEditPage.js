@@ -13,7 +13,12 @@
 // limitations under the License.
 
 import React from "react";
-import {Button, Card, Col, Input, Row, Select, Space, Spin, Typography, Upload} from "antd";
+import {Button, Card, Col, Input, Progress, Row, Select, Space, Spin, Typography, Upload} from "antd";
+
+const ANALYZE_PROGRESS_DURATION_SEC = 300;
+const ANALYZE_PROGRESS_TICK_MS = 500;
+const ANALYZE_PROGRESS_MAX_PERCENT = 99;
+
 import {CloseOutlined, DownloadOutlined, FilePdfOutlined, FileWordOutlined, UploadOutlined} from "@ant-design/icons";
 import * as TaskBackend from "./backend/TaskBackend";
 import * as Setting from "./Setting";
@@ -39,9 +44,18 @@ class TaskEditPage extends React.Component {
       templates: [],
       task: null,
       analyzing: false,
+      analyzeProgress: 0,
       loading: false,
       uploadingDocument: false,
     };
+    this.analyzeProgressIntervalId = null;
+    this.analyzeStartTime = null;
+  }
+
+  componentWillUnmount() {
+    if (this.analyzeProgressIntervalId !== null) {
+      clearInterval(this.analyzeProgressIntervalId);
+    }
   }
 
   UNSAFE_componentWillMount() {
@@ -97,7 +111,14 @@ class TaskEditPage extends React.Component {
   }
 
   analyzeTask() {
-    this.setState({analyzing: true});
+    this.analyzeStartTime = Date.now();
+    this.setState({analyzing: true, analyzeProgress: 0});
+    const durationMs = ANALYZE_PROGRESS_DURATION_SEC * 1000;
+    this.analyzeProgressIntervalId = setInterval(() => {
+      const elapsed = Date.now() - this.analyzeStartTime;
+      const percent = Math.min(ANALYZE_PROGRESS_MAX_PERCENT, (99 * elapsed) / durationMs);
+      this.setState({analyzeProgress: Math.round(percent)});
+    }, ANALYZE_PROGRESS_TICK_MS);
     TaskBackend.analyzeTask(this.state.task.owner, this.state.task.name)
       .then((res) => {
         if (res.status === "ok") {
@@ -114,7 +135,15 @@ class TaskEditPage extends React.Component {
         Setting.showMessage("error", `${i18next.t("general:Failed to get")}: ${err.message}`);
       })
       .finally(() => {
-        this.setState({analyzing: false});
+        if (this.analyzeProgressIntervalId !== null) {
+          clearInterval(this.analyzeProgressIntervalId);
+          this.analyzeProgressIntervalId = null;
+        }
+        this.setState({analyzeProgress: 100}, () => {
+          setTimeout(() => {
+            this.setState({analyzing: false, analyzeProgress: 0});
+          }, 400);
+        });
       });
   }
 
@@ -425,7 +454,12 @@ class TaskEditPage extends React.Component {
                   </Button>
                 ) : null}
                 {this.state.analyzing && (
-                  <Spin style={{marginLeft: "16px"}} tip={i18next.t("task:Analyzing")} />
+                  <>
+                    <div style={{maxWidth: "400px", marginTop: "8px", marginBottom: "8px"}}>
+                      <Progress percent={this.state.analyzeProgress} status="active" />
+                    </div>
+                    <Spin style={{marginLeft: "16px"}} tip={i18next.t("task:Analyzing")} />
+                  </>
                 )}
                 {this.state.task.result && <TaskAnalysisReport result={this.state.task.result} />}
               </Col>
