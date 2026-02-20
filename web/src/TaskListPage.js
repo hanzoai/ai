@@ -131,29 +131,36 @@ class TaskListPage extends BaseListPage {
         width: "90px",
         sorter: (a, b) => (a.owner || "").localeCompare(b.owner || ""),
         ...this.getColumnSearchProps("owner"),
-        render: (text) => (
-          <a target="_blank" rel="noreferrer" href={Setting.getMyProfileUrl(this.props.account).replace("/account", `/users/${Conf.AuthConfig.organizationName}/${text}`)}>
-            {text}
-          </a>
-        ),
+        render: (text, record, index) => {
+          return (
+            <a target="_blank" rel="noreferrer" href={Setting.getMyProfileUrl(this.props.account).replace("/account", `/users/${Conf.AuthConfig.organizationName}/${text}`)}>
+              {text}
+            </a>
+          );
+        },
       },
       {
         title: i18next.t("general:Name"),
         dataIndex: "name",
         key: "name",
-        width: "160px",
+        width: "180px",
         sorter: (a, b) => (a.name || "").localeCompare(b.name || ""),
         ...this.getColumnSearchProps("name"),
-        render: (text, record) => <Link to={`/tasks/${record.owner}/${text}`}>{text}</Link>,
+        render: (text, record, index) => {
+          return (
+            <Link to={`/tasks/${record.owner}/${text}`}>
+              {text}
+            </Link>
+          );
+        },
       },
       {
         title: i18next.t("general:Display name"),
         dataIndex: "displayName",
         key: "displayName",
-        width: "180px",
+        width: "220px",
         sorter: (a, b) => (a.displayName || "").localeCompare(b.displayName || ""),
         ...this.getColumnSearchProps("displayName"),
-        render: (text) => text ?? null,
       },
       {
         title: i18next.t("provider:Model provider"),
@@ -162,7 +169,7 @@ class TaskListPage extends BaseListPage {
         width: "200px",
         sorter: (a, b) => (a.provider || "").localeCompare(b.provider || ""),
         ...this.getColumnSearchProps("provider"),
-        render: (text) => {
+        render: (text, record, index) => {
           if (!text) {
             return null;
           }
@@ -190,11 +197,13 @@ class TaskListPage extends BaseListPage {
         width: "140px",
         sorter: (a, b) => (a.template || "").localeCompare(b.template || ""),
         ...this.getColumnSearchProps("template"),
-        render: (text) => {
+        render: (text, record, index) => {
           if (!text) {
             return null;
           }
-          return <Link to={`/tasks/${text}`}>{text}</Link>;
+          return (
+            <Link to={`/tasks/${text}`}>{text}</Link>
+          );
         },
       },
       {
@@ -204,7 +213,7 @@ class TaskListPage extends BaseListPage {
         width: "200px",
         sorter: (a, b) => (a.scale || "").localeCompare(b.scale || ""),
         ...this.getColumnSearchProps("scale"),
-        render: (text) => {
+        render: (text, record, index) => {
           if (text === null || text === "") {
             return null;
           }
@@ -228,7 +237,7 @@ class TaskListPage extends BaseListPage {
         width: "100px",
         sorter: (a, b) => (a.documentUrl || "").localeCompare(b.documentUrl || ""),
         ...this.getColumnSearchProps("documentUrl"),
-        render: (text) => {
+        render: (text, record, index) => {
           if (!text) {
             return null;
           }
@@ -245,7 +254,7 @@ class TaskListPage extends BaseListPage {
         dataIndex: "result",
         key: "result",
         width: "100px",
-        render: (text, record) => {
+        render: (text, record, index) => {
           const parsed = this.parseReportResult(record.result);
           if (!parsed) {
             return null;
@@ -264,15 +273,31 @@ class TaskListPage extends BaseListPage {
         width: "160px",
         sorter: (a, b) => (a.example || "").localeCompare(b.example || ""),
         ...this.getColumnSearchProps("example"),
-        render: (text) => (text !== null && text !== undefined && text !== "" ? <div style={{maxWidth: "140px"}}>{Setting.getShortText(text, 40)}</div> : null),
+        render: (text, record, index) => {
+          if (text !== null && text !== undefined && text !== "") {
+            return (
+              <div style={{maxWidth: "140px"}}>{Setting.getShortText(text, 40)}</div>
+            );
+          }
+          return null;
+        },
       },
       {
         title: i18next.t("task:Labels"),
         dataIndex: "labels",
         key: "labels",
         width: "200px",
-        render: (text, record) => {
-          return record.labels?.length ? record.labels.map(label => <Tag key={label} color="processing">{label}</Tag>) : null;
+        render: (text, record, index) => {
+          if (record.labels?.length) {
+            return record.labels.map(label => {
+              return (
+                <Tag key={label} color="processing">
+                  {label}
+                </Tag>
+              );
+            });
+          }
+          return null;
         },
       },
       {
@@ -280,22 +305,34 @@ class TaskListPage extends BaseListPage {
         dataIndex: "action",
         key: "action",
         width: "180px",
-        fixed: (Setting.isMobile()) ? "false" : "right",
-        render: (text, record) => (
-          <div>
-            <Button style={{marginRight: "8px"}} type="primary" size="small" onClick={() => this.props.history.push(`/tasks/${record.owner}/${record.name}`)}>
-              {i18next.t("general:Edit")}
-            </Button>
-            <Popconfirm
-              title={`${i18next.t("general:Sure to delete")}: ${record.name} ?`}
-              onConfirm={() => this.deleteTask(record)}
-              okText={i18next.t("general:OK")}
-              cancelText={i18next.t("general:Cancel")}
-            >
-              <Button type="primary" danger size="small">{i18next.t("general:Delete")}</Button>
-            </Popconfirm>
-          </div>
-        ),
+        fixed: "right",
+        render: (text, record, index) => {
+          return (
+            <div>
+              <Button
+                style={{marginTop: "10px", marginBottom: "10px", marginRight: "10px"}}
+                type="primary"
+                onClick={() => this.props.history.push(`/tasks/${record.owner}/${record.name}`)}
+              >
+                {i18next.t("general:Edit")}
+              </Button>
+              <Popconfirm
+                title={`${i18next.t("general:Sure to delete")}: ${record.name} ?`}
+                onConfirm={() => this.deleteTask(record)}
+                okText={i18next.t("general:OK")}
+                cancelText={i18next.t("general:Cancel")}
+              >
+                <Button
+                  style={{marginBottom: "10px"}}
+                  type="primary"
+                  danger
+                >
+                  {i18next.t("general:Delete")}
+                </Button>
+              </Popconfirm>
+            </div>
+          );
+        },
       },
     ];
 
