@@ -258,7 +258,7 @@ class TaskListPage extends BaseListPage {
         title: i18next.t("store:File"),
         dataIndex: "documentUrl",
         key: "documentUrl",
-        width: "100px",
+        // width: "100px",
         sorter: (a, b) => (a.documentUrl || "").localeCompare(b.documentUrl || ""),
         ...this.getColumnSearchProps("documentUrl"),
         render: (text, record, index) => {
@@ -270,7 +270,7 @@ class TaskListPage extends BaseListPage {
           return (
             <a href={text} target="_blank" rel="noopener noreferrer" download style={{display: "inline-flex", alignItems: "center", gap: "6px"}}>
               {isPdf ? <FilePdfOutlined style={{fontSize: "20px"}} /> : <FileWordOutlined style={{fontSize: "20px"}} />}
-              <span style={{cursor: "pointer", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "120px"}} title={fileName}>{fileName}</span>
+              <span style={{cursor: "pointer", overflow: "hidden", textOverflow: "ellipsis"}} title={fileName}>{fileName}</span>
             </a>
           );
         },
