@@ -39,7 +39,7 @@ class TaskListPage extends BaseListPage {
       type: ConfTask.TaskMode === "Labeling" ? "Labeling" : "PBL",
       path: "F:/github_repos/casdoor-website",
       template: "admin/template",
-      text: ConfTask.TaskText,
+      scale: "",
       example: "",
       labels: [],
       log: "",
@@ -194,12 +194,12 @@ class TaskListPage extends BaseListPage {
         ...this.getColumnSearchProps("activity"),
       },
       {
-        title: i18next.t("general:Text"),
-        dataIndex: "text",
-        key: "text",
+        title: i18next.t("task:Scale"),
+        dataIndex: "scale",
+        key: "scale",
         // width: "160px",
-        sorter: (a, b) => a.text.localeCompare(b.text),
-        ...this.getColumnSearchProps("text"),
+        sorter: (a, b) => (a.scale || "").localeCompare(b.scale || ""),
+        ...this.getColumnSearchProps("scale"),
         render: (text, record, index) => {
           return (
             <Tooltip placement="left" title={Setting.getShortText(text, 1000)}>

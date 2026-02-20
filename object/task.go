@@ -67,10 +67,10 @@ type Task struct {
 
 	Path     string   `xorm:"varchar(100)" json:"path"`
 	Template string   `xorm:"varchar(200)" json:"template"`
-	Text     string   `xorm:"mediumtext" json:"text"`
+	Scale    string   `xorm:"mediumtext" json:"scale"`
 	Example  string   `xorm:"varchar(200)" json:"example"`
-	Labels  []string `xorm:"mediumtext" json:"labels"`
-	Log     string   `xorm:"mediumtext" json:"log"`
+	Labels   []string `xorm:"mediumtext" json:"labels"`
+	Log      string   `xorm:"mediumtext" json:"log"`
 
 	Result string `xorm:"mediumtext" json:"result"`
 
@@ -151,22 +151,22 @@ func GetTask(id string) (*Task, error) {
 	return getTask(owner, name)
 }
 
-// GetTaskEffectiveText returns the text to use for this task: if Template is set, returns the template task's Text; otherwise task.Text.
-func GetTaskEffectiveText(task *Task) (string, error) {
+// GetTaskEffectiveScale returns the scale to use for this task: if Template is set, returns the template task's Scale; otherwise task.Scale.
+func GetTaskEffectiveScale(task *Task) (string, error) {
 	if task == nil {
 		return "", fmt.Errorf("task is nil")
 	}
 	if task.Template == "" {
-		return task.Text, nil
+		return task.Scale, nil
 	}
 	tpl, err := GetTask(task.Template)
 	if err != nil {
 		return "", err
 	}
 	if tpl == nil {
-		return task.Text, nil
+		return task.Scale, nil
 	}
-	return tpl.Text, nil
+	return tpl.Scale, nil
 }
 
 func UpdateTask(id string, task *Task) (bool, error) {

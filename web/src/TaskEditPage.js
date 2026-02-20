@@ -81,8 +81,17 @@ class TaskEditPage extends React.Component {
       });
   }
 
+  getEffectiveScale() {
+    if (this.state.task.template) {
+      const tpl = this.state.templates.find((t) => `${t.owner}/${t.name}` === this.state.task.template);
+      return tpl ? (tpl.scale || "") : "";
+    }
+    return this.state.task.scale || "";
+  }
+
   getQuestion() {
-    return `${this.state.task.text.replace("{example}", this.state.task.example).replace("{labels}", this.state.task.labels.map(label => `"${label}"`).join(", "))}`;
+    const scale = this.getEffectiveScale();
+    return `${scale.replace("{example}", this.state.task.example).replace("{labels}", this.state.task.labels.map(label => `"${label}"`).join(", "))}`;
   }
 
   analyzeTask() {
@@ -280,20 +289,6 @@ class TaskEditPage extends React.Component {
           Setting.isAdminUser(this.props.account) ? (
             <Row style={{marginTop: "20px"}} >
               <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-                {Setting.getLabel(i18next.t("general:Text"), i18next.t("general:Text - Tooltip"))} :
-              </Col>
-              <Col span={22} >
-                <TextArea autoSize={{minRows: 1, maxRows: 15}} value={this.state.task.text} onChange={(e) => {
-                  this.updateTaskField("text", e.target.value);
-                }} />
-              </Col>
-            </Row>
-          ) : null
-        }
-        {
-          Setting.isAdminUser(this.props.account) ? (
-            <Row style={{marginTop: "20px"}} >
-              <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
                 {Setting.getLabel(i18next.t("general:Template"), i18next.t("general:Template - Tooltip"))} :
               </Col>
               <Col span={22} >
@@ -308,6 +303,24 @@ class TaskEditPage extends React.Component {
                     {value: "", label: i18next.t("general:None")},
                     ...this.state.templates.map((t) => ({value: `${t.owner}/${t.name}`, label: t.displayName ? `${t.displayName} (${t.owner}/${t.name})` : `${t.owner}/${t.name}`})),
                   ]}
+                />
+              </Col>
+            </Row>
+          ) : null
+        }
+        {
+          Setting.isAdminUser(this.props.account) ? (
+            <Row style={{marginTop: "20px"}} >
+              <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+                {Setting.getLabel(i18next.t("task:Scale"), i18next.t("task:Scale - Tooltip"))} :
+              </Col>
+              <Col span={22} >
+                <TextArea
+                  rows={5}
+                  style={{maxHeight: "120px", overflow: "auto"}}
+                  value={this.getEffectiveScale()}
+                  disabled={!!this.state.task.template}
+                  onChange={this.state.task.template ? undefined : (e) => this.updateTaskField("scale", e.target.value)}
                 />
               </Col>
             </Row>
@@ -430,7 +443,7 @@ class TaskEditPage extends React.Component {
   }
 
   getProjectText() {
-    let text = this.state.task.text;
+    let text = this.getEffectiveScale();
     text = text.replaceAll("${document}", this.state.task.documentText);
     text = text.replaceAll("${subject}", this.state.task.subject);
     text = text.replaceAll("${topic}", this.state.task.topic);
