@@ -468,7 +468,7 @@ class TaskEditPage extends React.Component {
 
     const reportColumns = [
       {title: i18next.t("task:Sub-criteria"), dataIndex: "name", key: "name", width: "12%"},
-      {title: i18next.t("task:AI Score"), dataIndex: "score", key: "score", width: "8%", render: (score) => `${score}${i18next.t("task:Score Unit")}`},
+      {title: i18next.t("task:Score"), dataIndex: "score", key: "score", width: "8%", render: (score) => `${score}${i18next.t("task:Score Unit")}`},
       {title: i18next.t("task:Advantages"), dataIndex: "advantage", key: "advantage", width: "27%"},
       {title: i18next.t("task:Disadvantages"), dataIndex: "disadvantage", key: "disadvantage", width: "27%"},
       {title: i18next.t("task:Suggestions"), dataIndex: "suggestion", key: "suggestion", width: "26%"},
