@@ -65,9 +65,10 @@ type Task struct {
 	Activity string  `xorm:"varchar(100)" json:"activity"`
 	Grade    string  `xorm:"varchar(100)" json:"grade"`
 
-	Path    string   `xorm:"varchar(100)" json:"path"`
-	Text    string   `xorm:"mediumtext" json:"text"`
-	Example string   `xorm:"varchar(200)" json:"example"`
+	Path     string   `xorm:"varchar(100)" json:"path"`
+	Template string   `xorm:"varchar(200)" json:"template"`
+	Text     string   `xorm:"mediumtext" json:"text"`
+	Example  string   `xorm:"varchar(200)" json:"example"`
 	Labels  []string `xorm:"mediumtext" json:"labels"`
 	Log     string   `xorm:"mediumtext" json:"log"`
 
@@ -148,6 +149,24 @@ func GetTask(id string) (*Task, error) {
 		return nil, err
 	}
 	return getTask(owner, name)
+}
+
+// GetTaskEffectiveText returns the text to use for this task: if Template is set, returns the template task's Text; otherwise task.Text.
+func GetTaskEffectiveText(task *Task) (string, error) {
+	if task == nil {
+		return "", fmt.Errorf("task is nil")
+	}
+	if task.Template == "" {
+		return task.Text, nil
+	}
+	tpl, err := GetTask(task.Template)
+	if err != nil {
+		return "", err
+	}
+	if tpl == nil {
+		return task.Text, nil
+	}
+	return tpl.Text, nil
 }
 
 func UpdateTask(id string, task *Task) (bool, error) {
