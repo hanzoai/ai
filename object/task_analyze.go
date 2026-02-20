@@ -74,8 +74,12 @@ func AnalyzeTask(task *Task, lang string) (*TaskResult, error) {
 
 	question := fmt.Sprintf(analyzeTaskPrompt, effectiveScale, task.DocumentText)
 
-	answer, _, err := GetAnswerFake(task.Provider, question, lang) // debug: use fake response for fast local run
-	// answer, _, err := GetAnswer(task.Provider, question, lang)
+	var answer string
+	if strings.Contains(strings.ToLower(task.Name), "demo") {
+		answer, _, err = GetAnswerFake(task.Provider, question, lang)
+	} else {
+		answer, _, err = GetAnswer(task.Provider, question, lang)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("从AI模型获取分析失败: %v", err)
 	}
