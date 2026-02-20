@@ -20,17 +20,32 @@ import moment from "moment";
 import BaseListPage from "./BaseListPage";
 import * as Setting from "./Setting";
 import * as TaskBackend from "./backend/TaskBackend";
+import * as ProviderBackend from "./backend/ProviderBackend";
 import i18next from "i18next";
 import * as ConfTask from "./ConfTask";
 import * as Conf from "./Conf";
 import TaskAnalysisReport from "./TaskAnalysisReport";
+import * as Provider from "./Provider";
 
 const {TextArea} = Input;
 
 class TaskListPage extends BaseListPage {
   constructor(props) {
     super(props);
+    this.state = {...this.state, modelProviders: []};
   }
+
+  UNSAFE_componentWillMount() {
+    super.UNSAFE_componentWillMount?.();
+    if (Setting.isAdminUser(this.props.account)) {
+      ProviderBackend.getProviders(this.props.account.name).then((res) => {
+        if (res.status === "ok" && res.data) {
+          this.setState({modelProviders: (res.data || []).filter((p) => p.category === "Model")});
+        }
+      });
+    }
+  }
+
   newTask() {
     const randomName = Setting.getRandomName();
     return {
@@ -147,7 +162,18 @@ class TaskListPage extends BaseListPage {
         width: "200px",
         sorter: (a, b) => (a.provider || "").localeCompare(b.provider || ""),
         ...this.getColumnSearchProps("provider"),
-        render: (text) => (text ? <Link to={`/providers/${text}`}>{text}</Link> : null),
+        render: (text) => {
+          if (!text) {
+            return null;
+          }
+          const provider = this.state.modelProviders.find((p) => p.name === text);
+          return (
+            <span style={{display: "inline-flex", alignItems: "center", gap: 8}}>
+              {provider ? <Provider.ProviderLogo provider={provider} width={20} height={20} /> : null}
+              <Link to={`/providers/${text}`}>{text}</Link>
+            </span>
+          );
+        },
       },
       {
         title: i18next.t("general:Type"),
