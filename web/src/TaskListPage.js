@@ -38,6 +38,7 @@ class TaskListPage extends BaseListPage {
       provider: "provider_model_azure_gpt4",
       type: ConfTask.TaskMode === "Labeling" ? "Labeling" : "PBL",
       path: "F:/github_repos/casdoor-website",
+      template: "admin/template",
       text: ConfTask.TaskText,
       example: "",
       labels: [],

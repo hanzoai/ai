@@ -59,17 +59,21 @@ const analyzeTaskPrompt = `请对以下教学设计文本进行深度分析，�
 }`
 
 func AnalyzeTask(task *Task, lang string) (*TaskResult, error) {
-	if task.Text == "" {
+	effectiveText, err := GetTaskEffectiveText(task)
+	if err != nil {
+		return nil, err
+	}
+	if effectiveText == "" {
 		return nil, fmt.Errorf("task evaluation rubric (text) is empty")
 	}
 	if task.DocumentText == "" {
 		return nil, fmt.Errorf("task document text is empty, please upload a document first")
 	}
 
-	question := fmt.Sprintf(analyzeTaskPrompt, task.Text, task.DocumentText)
+	question := fmt.Sprintf(analyzeTaskPrompt, effectiveText, task.DocumentText)
 
-	// answer, _, err := GetAnswerFake(task.Provider, question, lang) // debug: use fake response for fast local run
-	answer, _, err := GetAnswer(task.Provider, question, lang)
+	answer, _, err := GetAnswerFake(task.Provider, question, lang) // debug: use fake response for fast local run
+	// answer, _, err := GetAnswer(task.Provider, question, lang)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get analysis from AI model: %v", err)
 	}
