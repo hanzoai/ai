@@ -45,7 +45,7 @@ jobs:
           set -euo pipefail
           grep -q 'iamEndpoint' controllers/openai_api.go
           ! grep -q 'casdoorEndpoint' controllers/openai_api.go
-          grep -q '/api/add-usage-record' controllers/openai_api.go
+          grep -q 'recordUsage' controllers/openai_api.go
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
