@@ -71,24 +71,32 @@ var modelRoutes = map[string]modelRoute{
 	"anthropic/claude-opus-4-6":              {providerName: "do-ai", upstreamModel: "anthropic-claude-opus-4.6"},
 	"anthropic/claude-sonnet-4-5-20250929":   {providerName: "do-ai", upstreamModel: "anthropic-claude-4.5-sonnet"},
 
-	// ── Fireworks premium models (17) ────────────────────────────────────
-	"fireworks/cogito-671b":        {providerName: "fireworks", upstreamModel: "accounts/cogito/models/cogito-671b-v2-p1", premium: true},
-	"fireworks/deepseek-r1":        {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/deepseek-r1-0528", premium: true},
-	"fireworks/deepseek-v3":        {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/deepseek-v3-0324", premium: true},
-	"fireworks/deepseek-v3p1":      {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/deepseek-v3p1", premium: true},
-	"fireworks/deepseek-v3p2":      {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/deepseek-v3p2", premium: true},
-	"fireworks/glm-4p7":            {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/glm-4p7", premium: true},
-	"fireworks/glm-5":              {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/glm-5", premium: true},
-	"fireworks/gpt-oss-120b":       {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/gpt-oss-120b", premium: true},
-	"fireworks/gpt-oss-20b":        {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/gpt-oss-20b", premium: true},
-	"fireworks/kimi-k2":            {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/kimi-k2-instruct-0905", premium: true},
-	"fireworks/kimi-k2-thinking":   {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/kimi-k2-thinking", premium: true},
-	"fireworks/kimi-k2p5":          {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/kimi-k2p5", premium: true},
-	"fireworks/minimax-m2p5":       {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/minimax-m2p5", premium: true},
-	"fireworks/mixtral-8x22b":      {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/mixtral-8x22b-instruct", premium: true},
-	"fireworks/qwen3-235b-a22b":    {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/qwen3-235b-a22b", premium: true},
-	"fireworks/qwen3-coder-480b":   {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/qwen3-coder-480b-a35b-instruct", premium: true},
-	"fireworks/qwen3-vl-235b":      {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/qwen3-vl-235b-a22b-instruct", premium: true},
+	// ── Fireworks premium models (25) ────────────────────────────────────
+	"fireworks/cogito-671b":                {providerName: "fireworks", upstreamModel: "accounts/cogito/models/cogito-671b-v2-p1", premium: true},
+	"fireworks/deepseek-r1":                {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/deepseek-r1-0528", premium: true},
+	"fireworks/deepseek-v3":                {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/deepseek-v3-0324", premium: true},
+	"fireworks/deepseek-v3p1":              {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/deepseek-v3p1", premium: true},
+	"fireworks/deepseek-v3p2":              {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/deepseek-v3p2", premium: true},
+	"fireworks/glm-4p7":                    {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/glm-4p7", premium: true},
+	"fireworks/glm-5":                      {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/glm-5", premium: true},
+	"fireworks/glm-5-thinking":             {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/glm-5-thinking", premium: true},
+	"fireworks/gpt-oss-120b":               {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/gpt-oss-120b", premium: true},
+	"fireworks/gpt-oss-20b":                {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/gpt-oss-20b", premium: true},
+	"fireworks/kimi-k2":                    {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/kimi-k2-instruct-0905", premium: true},
+	"fireworks/kimi-k2-thinking":           {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/kimi-k2-thinking", premium: true},
+	"fireworks/kimi-k2p5":                  {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/kimi-k2p5", premium: true},
+	"fireworks/minimax-m2p5":               {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/minimax-m2p5", premium: true},
+	"fireworks/mixtral-8x22b":              {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/mixtral-8x22b-instruct", premium: true},
+	"fireworks/qwen3-4b":                   {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/qwen3-4b", premium: true},
+	"fireworks/qwen3-8b":                   {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/qwen3-8b", premium: true},
+	"fireworks/qwen3-235b-a22b":            {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/qwen3-235b-a22b", premium: true},
+	"fireworks/qwen3-coder-30b-a3b":        {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/qwen3-coder-30b-a3b", premium: true},
+	"fireworks/qwen3-coder-480b":           {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/qwen3-coder-480b-a35b-instruct", premium: true},
+	"fireworks/qwen3-coder-480b-bf16":      {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/qwen3-coder-480b-bf16", premium: true},
+	"fireworks/qwen3-next-80b-a3b":         {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/qwen3-next-80b-a3b", premium: true},
+	"fireworks/qwen3-next-80b-a3b-thinking": {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/qwen3-next-80b-a3b-thinking", premium: true},
+	"fireworks/qwen3-vl-30b-a3b":           {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/qwen3-vl-30b-a3b", premium: true},
+	"fireworks/qwen3-vl-235b":              {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/qwen3-vl-235b-a22b-instruct", premium: true},
 
 	// ── OpenAI Direct premium models (5 chat) ───────────────────────────
 	"openai-direct/gpt-4o":      {providerName: "openai-direct", upstreamModel: "gpt-4o", premium: true},
@@ -97,38 +105,41 @@ var modelRoutes = map[string]modelRoute{
 	"openai-direct/o3":          {providerName: "openai-direct", upstreamModel: "o3", premium: true},
 	"openai-direct/o3-mini":     {providerName: "openai-direct", upstreamModel: "o3-mini", premium: true},
 
-	// ── Zen branded models (premium) ────────────────────────────────────
+	// ── Zen branded models (14 premium) ─────────────────────────────────
 	// Routes directly to Fireworks via the "fireworks" provider. Identity
 	// injection happens in ChatCompletions via zenIdentityPrompt().
-	"zen4":             {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/glm-5", premium: true},
-	"zen4-pro":         {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/kimi-k2p5", premium: true},
-	"zen4-max":         {providerName: "fireworks", upstreamModel: "accounts/cogito/models/cogito-671b-v2-p1", premium: true},
-	"zen4-mini":        {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/gpt-oss-20b", premium: true},
-	"zen4-ultra":       {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/kimi-k2-instruct-0905", premium: true},
-	"zen4-coder":       {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/deepseek-v3p2", premium: true},
-	"zen4-coder-flash": {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/gpt-oss-20b", premium: true},
-	"zen4-coder-pro":   {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/deepseek-v3p2", premium: true},
-	"zen4-thinking":    {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/kimi-k2-thinking", premium: true},
-	"zen3-vl":          {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/minimax-m2p5", premium: true},
-	"zen3-nano":        {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/gpt-oss-20b", premium: true},
-	"zen3-omni":        {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/glm-4p7", premium: true},
-	"zen3-guard":       {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/gpt-oss-20b", premium: true},
-	"zen3-embedding":   {providerName: "openai-direct", upstreamModel: "text-embedding-3-large", premium: true},
+	//
+	// Zen4 generation: GLM-5 and Qwen3 family
+	"zen4":             {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/glm-5", premium: true},                        // GLM-5, ~400B, 202K ctx
+	"zen4-ultra":       {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/glm-5-thinking", premium: true},               // GLM-5 thinking, ~400B, 202K ctx
+	"zen4-pro":         {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/qwen3-next-80b-a3b", premium: true},           // Qwen3-Next-80B-A3B, 80B(3B), 131K ctx
+	"zen4-max":         {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/qwen3-235b-a22b", premium: true},              // Qwen3-235B-A22B, 235B(22B), 131K ctx
+	"zen4-mini":        {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/qwen3-8b", premium: true},                     // Qwen3-8B, 8B, 40K ctx
+	"zen4-thinking":    {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/qwen3-next-80b-a3b-thinking", premium: true},  // Qwen3-Next-80B-A3B thinking, 80B(3B), 131K ctx
+	"zen4-coder":       {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/qwen3-coder-480b-a35b-instruct", premium: true}, // Qwen3-Coder-480B-A35B, 480B(35B), 262K ctx
+	"zen4-coder-pro":   {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/qwen3-coder-480b-bf16", premium: true},        // Qwen3-Coder-480B BF16, 480B, 262K ctx
+	"zen4-coder-flash": {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/qwen3-coder-30b-a3b", premium: true},          // Qwen3-Coder-30B-A3B, 30B(3B), 262K ctx
+	// Zen3 generation: GLM-4.7, Qwen3-VL, Qwen3-4B
+	"zen3-omni":        {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/glm-4p7", premium: true},                      // GLM-4.7, ~200B, 202K ctx
+	"zen3-vl":          {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/qwen3-vl-30b-a3b", premium: true},             // Qwen3-VL-30B-A3B, 30B(3B), 131K ctx
+	"zen3-nano":        {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/qwen3-4b", premium: true},                     // Qwen3-4B, 4B, 40K ctx
+	"zen3-guard":       {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/qwen3-4b", premium: true},                     // Qwen3-4B, 4B, 40K ctx
+	"zen3-embedding":   {providerName: "openai-direct", upstreamModel: "text-embedding-3-large", premium: true},                             // text-embedding-3-large, 8K ctx
 
 	// ── Zen versionless aliases (always point to latest zenN variant) ──
 	"zen":             {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/glm-5", premium: true},
-	"zen-pro":         {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/kimi-k2p5", premium: true},
-	"zen-max":         {providerName: "fireworks", upstreamModel: "accounts/cogito/models/cogito-671b-v2-p1", premium: true},
-	"zen-mini":        {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/gpt-oss-20b", premium: true},
-	"zen-ultra":       {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/kimi-k2-instruct-0905", premium: true},
-	"zen-coder":       {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/deepseek-v3p2", premium: true},
-	"zen-coder-flash": {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/gpt-oss-20b", premium: true},
-	"zen-coder-pro":   {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/deepseek-v3p2", premium: true},
-	"zen-thinking":    {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/kimi-k2-thinking", premium: true},
-	"zen-vl":          {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/minimax-m2p5", premium: true},
-	"zen-nano":        {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/gpt-oss-20b", premium: true},
+	"zen-pro":         {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/qwen3-next-80b-a3b", premium: true},
+	"zen-max":         {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/qwen3-235b-a22b", premium: true},
+	"zen-mini":        {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/qwen3-8b", premium: true},
+	"zen-ultra":       {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/glm-5-thinking", premium: true},
+	"zen-coder":       {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/qwen3-coder-480b-a35b-instruct", premium: true},
+	"zen-coder-flash": {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/qwen3-coder-30b-a3b", premium: true},
+	"zen-coder-pro":   {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/qwen3-coder-480b-bf16", premium: true},
+	"zen-thinking":    {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/qwen3-next-80b-a3b-thinking", premium: true},
+	"zen-vl":          {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/qwen3-vl-30b-a3b", premium: true},
+	"zen-nano":        {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/qwen3-4b", premium: true},
 	"zen-omni":        {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/glm-4p7", premium: true},
-	"zen-guard":       {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/gpt-oss-20b", premium: true},
+	"zen-guard":       {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/qwen3-4b", premium: true},
 	"zen-embedding":   {providerName: "openai-direct", upstreamModel: "text-embedding-3-large", premium: true},
 }
 
