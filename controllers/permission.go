@@ -17,8 +17,8 @@ package controllers
 import (
 	"encoding/json"
 
-	iamsdk "github.com/hanzoid/go-sdk/casdoorsdk"
 	"github.com/hanzoai/cloud/util"
+	iamsdk "github.com/hanzoid/go-sdk/casdoorsdk"
 )
 
 // GetPermissions

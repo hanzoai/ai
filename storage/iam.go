@@ -18,9 +18,9 @@ import (
 	"bytes"
 	"fmt"
 
-	iamsdk "github.com/hanzoid/go-sdk/casdoorsdk"
 	"github.com/hanzoai/cloud/conf"
 	"github.com/hanzoai/cloud/i18n"
+	iamsdk "github.com/hanzoid/go-sdk/casdoorsdk"
 )
 
 type IamProvider struct {

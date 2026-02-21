@@ -101,4 +101,3 @@ func GetTenantActorID(ctx *context.Context) string {
 	}
 	return getTenantHeader(ctx, "X-Actor-ID")
 }
-

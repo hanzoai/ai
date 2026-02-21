@@ -21,9 +21,9 @@ import (
 	"strings"
 
 	"github.com/beego/beego/context"
-	iamsdk "github.com/hanzoid/go-sdk/casdoorsdk"
 	"github.com/hanzoai/cloud/conf"
 	"github.com/hanzoai/cloud/object"
+	iamsdk "github.com/hanzoid/go-sdk/casdoorsdk"
 )
 
 const (
