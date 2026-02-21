@@ -764,7 +764,7 @@ class ChatPage extends BaseListPage {
     if (this.state.loading) {
       return (
         <div style={{display: "flex", justifyContent: "center", alignItems: "center"}}>
-          <Spin size="large" tip={i18next.t("login:Loading")} style={{paddingTop: "10%"}} />
+          <Spin size="large" tip={i18next.t("general:Loading")} style={{paddingTop: "10%"}} />
         </div>
       );
     }
@@ -786,7 +786,7 @@ class ChatPage extends BaseListPage {
         }
 
         {Setting.isMobile() && (
-          <Drawer title={i18next.t("chat:Chats")} placement="left" open={this.state.chatMenuVisible} onClose={this.closeChatMenu} width={250}
+          <Drawer title={i18next.t("general:Chats")} placement="left" open={this.state.chatMenuVisible} onClose={this.closeChatMenu} width={250}
           >
             <ChatMenu ref={this.menu} chats={chats} chatName={this.getChat()} onSelectChat={onSelectChat} onAddChat={onAddChat} onDeleteChat={onDeleteChat} onUpdateChatName={onUpdateChatName} stores={this.state.stores} />
           </Drawer>

@@ -270,7 +270,7 @@ class RecordListPage extends BaseListPage {
         },
       },
       {
-        title: i18next.t("vector:Provider"),
+        title: i18next.t("general:Provider"),
         dataIndex: "provider",
         key: "provider",
         width: "150px",
@@ -418,7 +418,7 @@ class RecordListPage extends BaseListPage {
         ...this.getColumnSearchProps("response"),
       },
       {
-        title: i18next.t("record:Object"),
+        title: i18next.t("general:Object"),
         dataIndex: "object",
         key: "object",
         width: "200px",
@@ -601,7 +601,7 @@ class RecordListPage extends BaseListPage {
                         onClick={() => {
                           this.queryRecord(record, true);
                         }}
-                      >{i18next.t("record:Query")}
+                      >{i18next.t("general:Query")}
                       </Button>
                     </Popover>
                   )}
@@ -641,7 +641,7 @@ class RecordListPage extends BaseListPage {
                           onClick={() => {
                             this.queryRecord(record, false);
                           }}
-                        >{i18next.t("record:Query") + " 2"}
+                        >{i18next.t("general:Query") + " 2"}
                         </Button>
                       </Popover>
                     )

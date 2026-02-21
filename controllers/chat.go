@@ -147,7 +147,7 @@ func (c *ApiController) GetChat() {
 	}
 
 	// Check if user has permission to view this chat
-	if !c.IsAdmin() {
+	if !c.IsAdmin() && !c.IsPreviewMode() {
 		username := c.GetSessionUsername()
 		if username != chat.User {
 			c.ResponseError(c.T("auth:Unauthorized operation"))
@@ -241,7 +241,7 @@ func (c *ApiController) AddChat() {
 			return
 		}
 		if store == nil {
-			c.ResponseError(c.T("chat:The default store is not found"))
+			c.ResponseError(c.T("account:The default store is not found"))
 			return
 		}
 

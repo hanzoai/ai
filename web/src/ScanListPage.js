@@ -300,7 +300,7 @@ class ScanListPage extends BaseListPage {
         ...this.getColumnSearchProps("runner"),
       },
       {
-        title: i18next.t("scan:Error"),
+        title: i18next.t("general:Error"),
         dataIndex: "errorText",
         key: "errorText",
         width: "200px",
