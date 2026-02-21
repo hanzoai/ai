@@ -34,6 +34,16 @@ export function getTasks(owner, page = "", pageSize = "", field = "", value = ""
   }).then(res => res.json());
 }
 
+export function getTaskTemplates() {
+  return fetch(`${Setting.ServerUrl}/api/get-task-templates`, {
+    method: "GET",
+    credentials: "include",
+    headers: {
+      "Accept-Language": Setting.getAcceptLanguage(),
+    },
+  }).then(res => res.json());
+}
+
 export function getTask(owner, name) {
   return fetch(`${Setting.ServerUrl}/api/get-task?id=${owner}/${encodeURIComponent(name)}`, {
     method: "GET",
@@ -77,5 +87,30 @@ export function deleteTask(task) {
       "Accept-Language": Setting.getAcceptLanguage(),
     },
     body: JSON.stringify(newTask),
+  }).then(res => res.json());
+}
+
+export function uploadTaskDocument(taskId, base64, filename, filetype) {
+  const formData = new FormData();
+  formData.append("file", base64);
+  formData.append("name", filename);
+  formData.append("type", filetype);
+  return fetch(`${Setting.ServerUrl}/api/upload-task-document?id=${taskId}`, {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      "Accept-Language": Setting.getAcceptLanguage(),
+    },
+    body: formData,
+  }).then((res) => res.json());
+}
+
+export function analyzeTask(owner, name) {
+  return fetch(`${Setting.ServerUrl}/api/analyze-task?id=${owner}/${encodeURIComponent(name)}`, {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      "Accept-Language": Setting.getAcceptLanguage(),
+    },
   }).then(res => res.json());
 }

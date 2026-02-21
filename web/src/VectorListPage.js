@@ -150,7 +150,7 @@ class VectorListPage extends BaseListPage {
         },
       },
       {
-        title: i18next.t("vector:Provider"),
+        title: i18next.t("general:Provider"),
         dataIndex: "provider",
         key: "provider",
         width: "200px",
@@ -206,7 +206,7 @@ class VectorListPage extends BaseListPage {
         sorter: (a, b) => a.size - b.size,
       },
       {
-        title: i18next.t("vector:Data"),
+        title: i18next.t("general:Data"),
         dataIndex: "data",
         key: "data",
         width: "200px",
