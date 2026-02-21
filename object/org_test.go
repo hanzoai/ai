@@ -45,7 +45,7 @@ func TestUpdateMessagesForOrg(t *testing.T) {
 		if strings.Contains(message.Author, "/") {
 			_, author, err := util.GetOwnerAndNameFromIdWithError(message.Author)
 			if err != nil {
-				return err
+				panic(err)
 			}
 			message.Author = author
 		}
