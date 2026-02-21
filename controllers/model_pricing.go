@@ -42,20 +42,20 @@ var modelPricing = map[string]modelPrice{
 	// ── DO-AI models (non-premium, included in free credit) ──────────
 
 	// OpenAI via DO-AI
-	"gpt-4o":             {InputPerMillion: 2.50, OutputPerMillion: 10.00},
-	"gpt-4o-mini":        {InputPerMillion: 0.15, OutputPerMillion: 0.60},
-	"gpt-4.1":            {InputPerMillion: 2.00, OutputPerMillion: 8.00},
-	"gpt-5":              {InputPerMillion: 5.00, OutputPerMillion: 15.00},
-	"gpt-5-mini":         {InputPerMillion: 1.25, OutputPerMillion: 5.00},
-	"gpt-5-nano":         {InputPerMillion: 0.30, OutputPerMillion: 1.20},
-	"gpt-5.1-codex-max":  {InputPerMillion: 3.00, OutputPerMillion: 12.00},
-	"gpt-5.2":            {InputPerMillion: 5.00, OutputPerMillion: 15.00},
-	"gpt-5.2-pro":        {InputPerMillion: 10.00, OutputPerMillion: 30.00},
-	"gpt-oss-120b":       {InputPerMillion: 0.90, OutputPerMillion: 0.90},
-	"gpt-oss-20b":        {InputPerMillion: 0.20, OutputPerMillion: 0.20},
-	"o1":                 {InputPerMillion: 15.00, OutputPerMillion: 60.00},
-	"o3":                 {InputPerMillion: 10.00, OutputPerMillion: 40.00},
-	"o3-mini":            {InputPerMillion: 1.10, OutputPerMillion: 4.40},
+	"gpt-4o":            {InputPerMillion: 2.50, OutputPerMillion: 10.00},
+	"gpt-4o-mini":       {InputPerMillion: 0.15, OutputPerMillion: 0.60},
+	"gpt-4.1":           {InputPerMillion: 2.00, OutputPerMillion: 8.00},
+	"gpt-5":             {InputPerMillion: 5.00, OutputPerMillion: 15.00},
+	"gpt-5-mini":        {InputPerMillion: 1.25, OutputPerMillion: 5.00},
+	"gpt-5-nano":        {InputPerMillion: 0.30, OutputPerMillion: 1.20},
+	"gpt-5.1-codex-max": {InputPerMillion: 3.00, OutputPerMillion: 12.00},
+	"gpt-5.2":           {InputPerMillion: 5.00, OutputPerMillion: 15.00},
+	"gpt-5.2-pro":       {InputPerMillion: 10.00, OutputPerMillion: 30.00},
+	"gpt-oss-120b":      {InputPerMillion: 0.90, OutputPerMillion: 0.90},
+	"gpt-oss-20b":       {InputPerMillion: 0.20, OutputPerMillion: 0.20},
+	"o1":                {InputPerMillion: 15.00, OutputPerMillion: 60.00},
+	"o3":                {InputPerMillion: 10.00, OutputPerMillion: 40.00},
+	"o3-mini":           {InputPerMillion: 1.10, OutputPerMillion: 4.40},
 
 	// Anthropic via DO-AI
 	"claude-3-5-haiku":  {InputPerMillion: 0.80, OutputPerMillion: 4.00},
@@ -77,31 +77,31 @@ var modelPricing = map[string]modelPrice{
 
 	// ── Fireworks premium models ────────────────────────────────────
 
-	"fireworks/cogito-671b":                {InputPerMillion: 3.00, OutputPerMillion: 3.00},
-	"fireworks/deepseek-r1":                {InputPerMillion: 3.00, OutputPerMillion: 8.00},
-	"fireworks/deepseek-v3":                {InputPerMillion: 0.90, OutputPerMillion: 0.90},
-	"fireworks/deepseek-v3p1":              {InputPerMillion: 0.90, OutputPerMillion: 0.90},
-	"fireworks/deepseek-v3p2":              {InputPerMillion: 0.90, OutputPerMillion: 0.90},
-	"fireworks/glm-4p7":                    {InputPerMillion: 1.80, OutputPerMillion: 6.60},
-	"fireworks/glm-5":                      {InputPerMillion: 3.00, OutputPerMillion: 9.60},
-	"fireworks/glm-5-thinking":             {InputPerMillion: 3.00, OutputPerMillion: 9.60},
-	"fireworks/gpt-oss-120b":               {InputPerMillion: 0.90, OutputPerMillion: 0.90},
-	"fireworks/gpt-oss-20b":                {InputPerMillion: 0.20, OutputPerMillion: 0.20},
-	"fireworks/kimi-k2":                    {InputPerMillion: 2.00, OutputPerMillion: 8.00},
-	"fireworks/kimi-k2-thinking":           {InputPerMillion: 2.00, OutputPerMillion: 8.00},
-	"fireworks/kimi-k2p5":                  {InputPerMillion: 2.50, OutputPerMillion: 10.00},
-	"fireworks/minimax-m2p5":               {InputPerMillion: 1.00, OutputPerMillion: 4.00},
-	"fireworks/mixtral-8x22b":              {InputPerMillion: 0.90, OutputPerMillion: 0.90},
-	"fireworks/qwen3-4b":                   {InputPerMillion: 0.30, OutputPerMillion: 0.30},
-	"fireworks/qwen3-8b":                   {InputPerMillion: 0.60, OutputPerMillion: 0.60},
-	"fireworks/qwen3-235b-a22b":            {InputPerMillion: 3.60, OutputPerMillion: 3.60},
-	"fireworks/qwen3-coder-30b-a3b":        {InputPerMillion: 1.50, OutputPerMillion: 1.50},
-	"fireworks/qwen3-coder-480b":           {InputPerMillion: 3.60, OutputPerMillion: 3.60},
-	"fireworks/qwen3-coder-480b-bf16":      {InputPerMillion: 4.50, OutputPerMillion: 4.50},
-	"fireworks/qwen3-next-80b-a3b":         {InputPerMillion: 2.70, OutputPerMillion: 2.70},
+	"fireworks/cogito-671b":                 {InputPerMillion: 3.00, OutputPerMillion: 3.00},
+	"fireworks/deepseek-r1":                 {InputPerMillion: 3.00, OutputPerMillion: 8.00},
+	"fireworks/deepseek-v3":                 {InputPerMillion: 0.90, OutputPerMillion: 0.90},
+	"fireworks/deepseek-v3p1":               {InputPerMillion: 0.90, OutputPerMillion: 0.90},
+	"fireworks/deepseek-v3p2":               {InputPerMillion: 0.90, OutputPerMillion: 0.90},
+	"fireworks/glm-4p7":                     {InputPerMillion: 1.80, OutputPerMillion: 6.60},
+	"fireworks/glm-5":                       {InputPerMillion: 3.00, OutputPerMillion: 9.60},
+	"fireworks/glm-5-thinking":              {InputPerMillion: 3.00, OutputPerMillion: 9.60},
+	"fireworks/gpt-oss-120b":                {InputPerMillion: 0.90, OutputPerMillion: 0.90},
+	"fireworks/gpt-oss-20b":                 {InputPerMillion: 0.20, OutputPerMillion: 0.20},
+	"fireworks/kimi-k2":                     {InputPerMillion: 2.00, OutputPerMillion: 8.00},
+	"fireworks/kimi-k2-thinking":            {InputPerMillion: 2.00, OutputPerMillion: 8.00},
+	"fireworks/kimi-k2p5":                   {InputPerMillion: 2.50, OutputPerMillion: 10.00},
+	"fireworks/minimax-m2p5":                {InputPerMillion: 1.00, OutputPerMillion: 4.00},
+	"fireworks/mixtral-8x22b":               {InputPerMillion: 0.90, OutputPerMillion: 0.90},
+	"fireworks/qwen3-4b":                    {InputPerMillion: 0.30, OutputPerMillion: 0.30},
+	"fireworks/qwen3-8b":                    {InputPerMillion: 0.60, OutputPerMillion: 0.60},
+	"fireworks/qwen3-235b-a22b":             {InputPerMillion: 3.60, OutputPerMillion: 3.60},
+	"fireworks/qwen3-coder-30b-a3b":         {InputPerMillion: 1.50, OutputPerMillion: 1.50},
+	"fireworks/qwen3-coder-480b":            {InputPerMillion: 3.60, OutputPerMillion: 3.60},
+	"fireworks/qwen3-coder-480b-bf16":       {InputPerMillion: 4.50, OutputPerMillion: 4.50},
+	"fireworks/qwen3-next-80b-a3b":          {InputPerMillion: 2.70, OutputPerMillion: 2.70},
 	"fireworks/qwen3-next-80b-a3b-thinking": {InputPerMillion: 2.70, OutputPerMillion: 2.70},
-	"fireworks/qwen3-vl-30b-a3b":           {InputPerMillion: 0.45, OutputPerMillion: 1.80},
-	"fireworks/qwen3-vl-235b":              {InputPerMillion: 1.20, OutputPerMillion: 1.20},
+	"fireworks/qwen3-vl-30b-a3b":            {InputPerMillion: 0.45, OutputPerMillion: 1.80},
+	"fireworks/qwen3-vl-235b":               {InputPerMillion: 1.20, OutputPerMillion: 1.20},
 
 	// ── OpenAI Direct premium models ────────────────────────────────
 
@@ -114,20 +114,20 @@ var modelPricing = map[string]modelPrice{
 	// ── Zen branded models (use Fireworks pricing via upstream) ──────
 
 	// Zen4 models
-	"zen4":             {InputPerMillion: 3.00, OutputPerMillion: 9.60},   // GLM-5
-	"zen4-ultra":       {InputPerMillion: 3.00, OutputPerMillion: 9.60},   // GLM-5 thinking
-	"zen4-pro":         {InputPerMillion: 2.70, OutputPerMillion: 2.70},   // Qwen3-Next-80B-A3B
-	"zen4-max":         {InputPerMillion: 3.60, OutputPerMillion: 3.60},   // Qwen3-235B-A22B
-	"zen4-mini":        {InputPerMillion: 0.60, OutputPerMillion: 0.60},   // Qwen3-8B
-	"zen4-thinking":    {InputPerMillion: 2.70, OutputPerMillion: 2.70},   // Qwen3-Next-80B-A3B thinking
-	"zen4-coder":       {InputPerMillion: 3.60, OutputPerMillion: 3.60},   // Qwen3-Coder-480B-A35B
-	"zen4-coder-pro":   {InputPerMillion: 4.50, OutputPerMillion: 4.50},   // Qwen3-Coder-480B BF16
-	"zen4-coder-flash": {InputPerMillion: 1.50, OutputPerMillion: 1.50},   // Qwen3-Coder-30B-A3B
-	"zen3-omni":        {InputPerMillion: 1.80, OutputPerMillion: 6.60},   // GLM-4.7
-	"zen3-vl":          {InputPerMillion: 0.45, OutputPerMillion: 1.80},   // Qwen3-VL-30B-A3B
-	"zen3-nano":        {InputPerMillion: 0.30, OutputPerMillion: 0.30},   // Qwen3-4B
-	"zen3-guard":       {InputPerMillion: 0.30, OutputPerMillion: 0.30},   // Qwen3-4B
-	"zen3-embedding":   {InputPerMillion: 0.39, OutputPerMillion: 0.39},   // text-embedding-3-large
+	"zen4":             {InputPerMillion: 3.00, OutputPerMillion: 9.60}, // GLM-5
+	"zen4-ultra":       {InputPerMillion: 3.00, OutputPerMillion: 9.60}, // GLM-5 thinking
+	"zen4-pro":         {InputPerMillion: 2.70, OutputPerMillion: 2.70}, // Qwen3-Next-80B-A3B
+	"zen4-max":         {InputPerMillion: 3.60, OutputPerMillion: 3.60}, // Qwen3-235B-A22B
+	"zen4-mini":        {InputPerMillion: 0.60, OutputPerMillion: 0.60}, // Qwen3-8B
+	"zen4-thinking":    {InputPerMillion: 2.70, OutputPerMillion: 2.70}, // Qwen3-Next-80B-A3B thinking
+	"zen4-coder":       {InputPerMillion: 3.60, OutputPerMillion: 3.60}, // Qwen3-Coder-480B-A35B
+	"zen4-coder-pro":   {InputPerMillion: 4.50, OutputPerMillion: 4.50}, // Qwen3-Coder-480B BF16
+	"zen4-coder-flash": {InputPerMillion: 1.50, OutputPerMillion: 1.50}, // Qwen3-Coder-30B-A3B
+	"zen3-omni":        {InputPerMillion: 1.80, OutputPerMillion: 6.60}, // GLM-4.7
+	"zen3-vl":          {InputPerMillion: 0.45, OutputPerMillion: 1.80}, // Qwen3-VL-30B-A3B
+	"zen3-nano":        {InputPerMillion: 0.30, OutputPerMillion: 0.30}, // Qwen3-4B
+	"zen3-guard":       {InputPerMillion: 0.30, OutputPerMillion: 0.30}, // Qwen3-4B
+	"zen3-embedding":   {InputPerMillion: 0.39, OutputPerMillion: 0.39}, // text-embedding-3-large
 
 	// Versionless aliases (same pricing as zen4/zen3 variants)
 	"zen":             {InputPerMillion: 3.00, OutputPerMillion: 9.60},

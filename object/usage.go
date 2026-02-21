@@ -18,10 +18,10 @@ import (
 	"fmt"
 	"time"
 
-	iamsdk "github.com/hanzoid/go-sdk/casdoorsdk"
 	"github.com/hanzoai/cloud/conf"
 	"github.com/hanzoai/cloud/i18n"
 	"github.com/hanzoai/cloud/model"
+	iamsdk "github.com/hanzoid/go-sdk/casdoorsdk"
 )
 
 type Usage struct {
