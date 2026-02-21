@@ -23,6 +23,8 @@ files/
 .idea/
 *.iml
 
+.claude
+
 tmp/
 tmpFiles/
 *.tmp

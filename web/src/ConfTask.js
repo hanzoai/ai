@@ -12,16 +12,4 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-export const TaskMode = "Labeling";
-
-export const SubjectOptions = [];
-
-export const TopicOptions = [];
-
-export const GradeOptions = [];
-
-export const ResultOptions = [];
-
-export const ActivityOptions = [];
-
-export const TaskText = "";
+export const TaskMode = "PBL";
