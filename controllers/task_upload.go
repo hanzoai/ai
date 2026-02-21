@@ -21,8 +21,8 @@ import (
 	"strings"
 
 	"github.com/beego/beego/logs"
-	"github.com/casibase/casibase/object"
-	"github.com/casibase/casibase/txt"
+	"github.com/hanzoai/cloud/object"
+	"github.com/hanzoai/cloud/txt"
 )
 
 // UploadTaskDocument
