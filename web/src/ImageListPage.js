@@ -155,7 +155,7 @@ class ImageListPage extends BaseListPage {
         },
       },
       {
-        title: i18next.t("provider:Category"),
+        title: i18next.t("general:Category"),
         dataIndex: "category",
         key: "category",
         width: "120px",

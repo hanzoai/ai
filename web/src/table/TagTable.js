@@ -51,7 +51,7 @@ class TagTable extends React.Component {
   }
 
   getQuestion(task, example) {
-    return `${task.text.replace("{example}", example).replace("{labels}", task.labels.map(label => `"${label}"`).join(", "))}`;
+    return `${task.scale.replace("{example}", example).replace("{labels}", task.labels.map(label => `"${label}"`).join(", "))}`;
   }
 
   trimAnswer(s) {

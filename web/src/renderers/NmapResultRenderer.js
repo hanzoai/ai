@@ -69,13 +69,13 @@ class NmapResultRenderer extends React.Component {
   renderHostCard(host, index) {
     const portColumns = [
       {
-        title: i18next.t("scan:Port"),
+        title: i18next.t("machine:Port"),
         dataIndex: "port",
         key: "port",
         width: "20%",
       },
       {
-        title: i18next.t("scan:State"),
+        title: i18next.t("general:State"),
         dataIndex: "state",
         key: "state",
         width: "20%",
@@ -88,7 +88,7 @@ class NmapResultRenderer extends React.Component {
         width: "30%",
       },
       {
-        title: i18next.t("scan:Version"),
+        title: i18next.t("general:Version"),
         dataIndex: "version",
         key: "version",
         width: "30%",
@@ -125,7 +125,7 @@ class NmapResultRenderer extends React.Component {
             </Descriptions.Item>
           )}
           {host.os && (
-            <Descriptions.Item label={i18next.t("scan:OS")}>
+            <Descriptions.Item label={i18next.t("node:OS")}>
               {host.os}
             </Descriptions.Item>
           )}

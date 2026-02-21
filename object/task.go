@@ -21,29 +21,61 @@ import (
 	"xorm.io/core"
 )
 
+type TaskResultItem struct {
+	Name         string  `json:"name"`
+	Score        float64 `json:"score"`
+	Advantage    string  `json:"advantage"`
+	Disadvantage string  `json:"disadvantage"`
+	Suggestion   string  `json:"suggestion"`
+}
+
+type TaskResultCategory struct {
+	Name  string            `json:"name"`
+	Score float64           `json:"score"`
+	Items []*TaskResultItem `json:"items"`
+}
+
+type TaskResult struct {
+	Title         string                `json:"title"`
+	Designer      string                `json:"designer"`
+	Stage         string                `json:"stage"`
+	Participants  string                `json:"participants"`
+	Grade         string                `json:"grade"`
+	Instructor    string                `json:"instructor"`
+	Subject       string                `json:"subject"`
+	School        string                `json:"school"`
+	OtherSubjects string                `json:"otherSubjects"`
+	Textbook      string                `json:"textbook"`
+	Score         float64               `json:"score"`
+	Categories    []*TaskResultCategory `json:"categories"`
+}
+
 type Task struct {
 	Owner       string `xorm:"varchar(100) notnull pk" json:"owner"`
 	Name        string `xorm:"varchar(100) notnull pk" json:"name"`
 	CreatedTime string `xorm:"varchar(100)" json:"createdTime"`
 
-	DisplayName string   `xorm:"varchar(100)" json:"displayName"`
-	Provider    string   `xorm:"varchar(100)" json:"provider"`
-	Providers   []string `xorm:"mediumtext" json:"providers"`
-	Type        string   `xorm:"varchar(100)" json:"type"`
+	DisplayName string `xorm:"varchar(100)" json:"displayName"`
+	Provider    string `xorm:"varchar(100)" json:"provider"`
+	Type        string `xorm:"varchar(100)" json:"type"`
 
-	Subject       string               `xorm:"varchar(100)" json:"subject"`
-	Topic         string               `xorm:"varchar(100)" json:"topic"`
-	Result        string               `xorm:"varchar(100)" json:"result"`
-	Activity      string               `xorm:"varchar(100)" json:"activity"`
-	Grade         string               `xorm:"varchar(100)" json:"grade"`
-	ModelUsageMap map[string]UsageInfo `xorm:"mediumtext" json:"modelUsageMap"`
+	Subject  string  `xorm:"varchar(100)" json:"subject"`
+	Topic    string  `xorm:"varchar(100)" json:"topic"`
+	Score    float64 `xorm:"float" json:"score"`
+	Activity string  `xorm:"varchar(100)" json:"activity"`
+	Grade    string  `xorm:"varchar(100)" json:"grade"`
 
-	Application string   `xorm:"varchar(100)" json:"application"`
-	Path        string   `xorm:"varchar(100)" json:"path"`
-	Text        string   `xorm:"mediumtext" json:"text"`
-	Example     string   `xorm:"varchar(200)" json:"example"`
-	Labels      []string `xorm:"mediumtext" json:"labels"`
-	Log         string   `xorm:"mediumtext" json:"log"`
+	Path     string   `xorm:"varchar(100)" json:"path"`
+	Template string   `xorm:"varchar(200)" json:"template"`
+	Scale    string   `xorm:"mediumtext" json:"scale"`
+	Example  string   `xorm:"varchar(200)" json:"example"`
+	Labels   []string `xorm:"mediumtext" json:"labels"`
+	Log      string   `xorm:"mediumtext" json:"log"`
+
+	Result string `xorm:"mediumtext" json:"result"`
+
+	DocumentUrl  string `xorm:"varchar(500)" json:"documentUrl"`
+	DocumentText string `xorm:"mediumtext" json:"documentText"`
 }
 
 func GetMaskedTask(task *Task, isMaskEnabled bool) *Task {
@@ -69,9 +101,13 @@ func GetMaskedTasks(tasks []*Task, isMaskEnabled bool) []*Task {
 	return tasks
 }
 
-func GetGlobalTasks() ([]*Task, error) {
+func GetGlobalTasks(owner string) ([]*Task, error) {
 	tasks := []*Task{}
-	err := adapter.engine.Asc("owner").Desc("created_time").Find(&tasks)
+	session := adapter.engine.Asc("owner").Desc("created_time")
+	if owner != "" {
+		session = session.Where("owner = ?", owner)
+	}
+	err := session.Find(&tasks)
 	if err != nil {
 		return tasks, err
 	}
@@ -81,7 +117,11 @@ func GetGlobalTasks() ([]*Task, error) {
 
 func GetTasks(owner string) ([]*Task, error) {
 	tasks := []*Task{}
-	err := adapter.engine.Desc("created_time").Find(&tasks, &Task{Owner: owner})
+	session := adapter.engine.Desc("created_time")
+	if owner != "" {
+		session = session.Where("owner = ?", owner)
+	}
+	err := session.Find(&tasks)
 	if err != nil {
 		return tasks, err
 	}
@@ -109,6 +149,24 @@ func GetTask(id string) (*Task, error) {
 		return nil, err
 	}
 	return getTask(owner, name)
+}
+
+// GetTaskEffectiveScale returns the scale to use for this task: if Template is set, returns the template task's Scale; otherwise task.Scale.
+func GetTaskEffectiveScale(task *Task) (string, error) {
+	if task == nil {
+		return "", fmt.Errorf("task is nil")
+	}
+	if task.Template == "" {
+		return task.Scale, nil
+	}
+	tpl, err := GetTask(task.Template)
+	if err != nil {
+		return "", err
+	}
+	if tpl == nil {
+		return task.Scale, nil
+	}
+	return tpl.Scale, nil
 }
 
 func UpdateTask(id string, task *Task) (bool, error) {

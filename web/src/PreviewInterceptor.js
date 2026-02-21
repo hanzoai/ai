@@ -24,7 +24,7 @@ class PreviewInterceptor {
     this.history = history;
     this.handleButtonClick = this.handleButtonClick.bind(this);
     document.addEventListener("click", this.handleButtonClick, true);
-    this.bannededButtonTexts = [i18next.t("general:OK"), i18next.t("general:Save"), i18next.t("general:Save & Exit"), i18next.t("store:Refresh Vectors"), i18next.t("general:Add"), i18next.t("provider:Add Storage Provider")];
+    this.bannededButtonTexts = [i18next.t("general:OK"), i18next.t("general:Save"), i18next.t("general:Save & Exit"), i18next.t("general:Refresh Vectors"), i18next.t("general:Add"), i18next.t("provider:Add Storage Provider")];
     this.bannedMessageActions = ["like", "dislike"];
     this.handleSpanClick = this.handleSpanClick.bind(this);
     document.addEventListener("click", this.handleSpanClick, true);

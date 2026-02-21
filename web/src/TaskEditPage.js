@@ -13,15 +13,21 @@
 // limitations under the License.
 
 import React from "react";
-import {Button, Card, Col, Input, Row, Select} from "antd";
+import {Button, Card, Col, Input, Progress, Row, Select, Space, Spin, Typography, Upload} from "antd";
+
+const ANALYZE_PROGRESS_DURATION_SEC = 300;
+const ANALYZE_PROGRESS_TICK_MS = 500;
+const ANALYZE_PROGRESS_MAX_PERCENT = 99;
+
+import {CloseOutlined, DownloadOutlined, FilePdfOutlined, FileWordOutlined, UploadOutlined} from "@ant-design/icons";
 import * as TaskBackend from "./backend/TaskBackend";
 import * as Setting from "./Setting";
 import i18next from "i18next";
 import * as ProviderBackend from "./backend/ProviderBackend";
 import * as MessageBackend from "./backend/MessageBackend";
-import ChatPage from "./ChatPage";
-import * as ConfTask from "./ConfTask";
 import Editor from "./common/Editor";
+import TaskAnalysisReport from "./TaskAnalysisReport";
+import * as Provider from "./Provider";
 
 const {Option} = Select;
 const {TextArea} = Input;
@@ -31,26 +37,59 @@ class TaskEditPage extends React.Component {
     super(props);
     this.state = {
       classes: props,
+      owner: props.match.params.owner,
       taskName: props.match.params.taskName,
       isNewTask: props.location?.state?.isNewTask || false,
       modelProviders: [],
+      templates: [],
       task: null,
-      chatPageObj: null,
+      analyzing: false,
+      analyzeProgress: 0,
       loading: false,
+      uploadingDocument: false,
     };
+    this.analyzeProgressIntervalId = null;
+    this.analyzeStartTime = null;
+  }
+
+  componentWillUnmount() {
+    if (this.analyzeProgressIntervalId !== null) {
+      clearInterval(this.analyzeProgressIntervalId);
+    }
   }
 
   UNSAFE_componentWillMount() {
     this.getTask();
     this.getModelProviders();
+    if (Setting.isAdminUser(this.props.account)) {
+      TaskBackend.getTaskTemplates().then((res) => {
+        if (res.status === "ok" && res.data) {
+          this.setState({templates: res.data});
+        }
+      });
+    }
+  }
+
+  normalizeTaskResult(task) {
+    if (!task || !task.result) {
+      return task;
+    }
+    if (typeof task.result === "string") {
+      try {
+        task = {...task, result: JSON.parse(task.result)};
+      } catch {
+        task = {...task, result: null};
+      }
+    }
+    return task;
   }
 
   getTask() {
-    TaskBackend.getTask(this.props.account.name, this.state.taskName)
+    TaskBackend.getTask(this.state.owner, this.state.taskName)
       .then((res) => {
         if (res.status === "ok") {
           this.setState({
-            task: res.data,
+            task: this.normalizeTaskResult(res.data),
           });
         } else {
           Setting.showMessage("error", `${i18next.t("general:Failed to get")}: ${res.msg}`);
@@ -58,9 +97,62 @@ class TaskEditPage extends React.Component {
       });
   }
 
-  getQuestion() {
-    return `${this.state.task.text.replace("{example}", this.state.task.example).replace("{labels}", this.state.task.labels.map(label => `"${label}"`).join(", "))}`;
+  getEffectiveScale() {
+    if (this.state.task.template) {
+      const tpl = this.state.templates.find((t) => `${t.owner}/${t.name}` === this.state.task.template);
+      return tpl ? (tpl.scale || "") : "";
+    }
+    return this.state.task.scale || "";
   }
+
+  getQuestion() {
+    const scale = this.getEffectiveScale();
+    return `${scale.replace("{example}", this.state.task.example).replace("{labels}", this.state.task.labels.map(label => `"${label}"`).join(", "))}`;
+  }
+
+  analyzeTask() {
+    this.analyzeStartTime = Date.now();
+    this.setState({analyzing: true, analyzeProgress: 0});
+    const durationMs = ANALYZE_PROGRESS_DURATION_SEC * 1000;
+    this.analyzeProgressIntervalId = setInterval(() => {
+      const elapsed = Date.now() - this.analyzeStartTime;
+      const percent = Math.min(ANALYZE_PROGRESS_MAX_PERCENT, (99 * elapsed) / durationMs);
+      this.setState({analyzeProgress: Math.round(percent)});
+    }, ANALYZE_PROGRESS_TICK_MS);
+    TaskBackend.analyzeTask(this.state.task.owner, this.state.task.name)
+      .then((res) => {
+        if (res.status === "ok") {
+          const task = this.state.task;
+          task.result = res.data;
+          task.score = res.data.score;
+          this.setState({task: task});
+          Setting.showMessage("success", i18next.t("general:Successfully saved"));
+        } else {
+          Setting.showMessage("error", `${i18next.t("general:Failed to get")}: ${res.msg}`);
+        }
+      })
+      .catch(err => {
+        Setting.showMessage("error", `${i18next.t("general:Failed to get")}: ${err.message}`);
+      })
+      .finally(() => {
+        if (this.analyzeProgressIntervalId !== null) {
+          clearInterval(this.analyzeProgressIntervalId);
+          this.analyzeProgressIntervalId = null;
+        }
+        this.setState({analyzeProgress: 100}, () => {
+          setTimeout(() => {
+            this.setState({analyzing: false, analyzeProgress: 0});
+          }, 400);
+        });
+      });
+  }
+
+  clearReport = () => {
+    const task = this.state.task;
+    task.result = null;
+    task.score = 0;
+    this.setState({task: task});
+  };
 
   getAnswer() {
     const provider = this.state.task.provider;
@@ -111,17 +203,64 @@ class TaskEditPage extends React.Component {
     });
   }
 
-  updateModelUsageMapForTask(value) {
-    const modelUsageMap = {};
-
-    value.forEach(provider => {
-      modelUsageMap[provider] = {
-        tokenCount: 0,
-        startTime: new Date().toISOString(),
-      };
+  fileToBase64 = (file) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = error => reject(error);
     });
+  };
 
-    this.updateTaskField("modelUsageMap", modelUsageMap);
+  handleDocumentUpload = async({file}) => {
+    this.setState({uploadingDocument: true});
+
+    const base64Data = await this.fileToBase64(file);
+    const taskId = `${this.state.task.owner}/${this.state.task.name}`;
+
+    TaskBackend.uploadTaskDocument(taskId, base64Data, file.name, file.type)
+      .then((res) => {
+        if (res.status === "ok") {
+          const result = res.data;
+          // Update both fields in a single setState to avoid race conditions
+          const task = this.state.task;
+          task.documentUrl = result.url;
+          task.documentText = result.text;
+          this.setState({task: task});
+
+          Setting.showMessage("success", i18next.t("general:Successfully uploaded"));
+        } else {
+          Setting.showMessage("error", `${i18next.t("general:Failed to upload")}: ${res.msg}`);
+        }
+      })
+      .catch(err => {
+        Setting.showMessage("error", `${i18next.t("general:Failed to upload")}: ${err.message}`);
+      })
+      .finally(() => {
+        this.setState({uploadingDocument: false});
+      });
+  };
+
+  clearDocument = () => {
+    const task = this.state.task;
+    task.documentUrl = "";
+    task.documentText = "";
+    this.setState({task: task});
+  };
+
+  getDocumentFileName() {
+    const url = this.state.task?.documentUrl || "";
+    try {
+      const path = new URL(url).pathname || url;
+      const encoded = path.split("/").filter(Boolean).pop() || url;
+      try {
+        return decodeURIComponent(encoded);
+      } catch {
+        return encoded;
+      }
+    } catch {
+      return url;
+    }
   }
 
   renderTask() {
@@ -134,15 +273,46 @@ class TaskEditPage extends React.Component {
           {this.state.isNewTask && <Button style={{marginLeft: "20px"}} onClick={() => this.cancelTaskEdit()}>{i18next.t("general:Cancel")}</Button>}
         </div>
       } style={{marginLeft: "5px"}} type="inner">
-        <Row style={{marginTop: "10px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("general:Name"), i18next.t("general:Name - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+        <Row style={{marginTop: "10px"}} gutter={16}>
+          <Col style={{marginTop: "5px"}} span={Setting.isAdminUser(this.props.account) ? 8 : 24}>
+            <div>{Setting.getLabel(i18next.t("general:Name"), i18next.t("general:Name - Tooltip"))} :</div>
             <Input value={this.state.task.name} onChange={e => {
               this.updateTaskField("name", e.target.value);
             }} />
           </Col>
+          {Setting.isAdminUser(this.props.account) ? (
+            <>
+              <Col style={{marginTop: "5px"}} span={8}>
+                <div>{Setting.getLabel(i18next.t("provider:Model provider"), i18next.t("provider:Model provider - Tooltip"))} :</div>
+                <Select
+                  virtual={false}
+                  style={{width: "100%"}}
+                  value={this.state.task.provider}
+                  onChange={(value) => this.updateTaskField("provider", value)}
+                  options={this.state.modelProviders.map((p) => ({
+                    value: p.name,
+                    label: (
+                      <span style={{display: "inline-flex", alignItems: "center", gap: 8}}>
+                        <Provider.ProviderLogo provider={p} width={20} height={20} />
+                        <span>{p.displayName} ({p.name})</span>
+                      </span>
+                    ),
+                  }))}
+                />
+              </Col>
+              <Col style={{marginTop: "5px"}} span={8}>
+                <div>{Setting.getLabel(i18next.t("general:Type"), i18next.t("general:Type - Tooltip"))} :</div>
+                <Select virtual={false} style={{width: "100%"}} value={this.state.task.type} onChange={(value => {this.updateTaskField("type", value);})}>
+                  {
+                    [
+                      {id: "Labeling", name: "Labeling"},
+                      {id: "PBL", name: "PBL"},
+                    ].map((item, index) => <Option key={index} value={item.id}>{item.name}</Option>)
+                  }
+                </Select>
+              </Col>
+            </>
+          ) : null}
         </Row>
         {
           this.state.task.type !== "Labeling" ? null : (
@@ -159,147 +329,76 @@ class TaskEditPage extends React.Component {
           )
         }
         {
-          this.props.account.name !== "admin" ? null : (
+          Setting.isAdminUser(this.props.account) ? (
             <Row style={{marginTop: "20px"}} >
               <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-                {Setting.getLabel(i18next.t("store:Model provider"), i18next.t("store:Model provider - Tooltip"))} :
+                {Setting.getLabel(i18next.t("general:Template"), i18next.t("general:Template - Tooltip"))} :
               </Col>
               <Col span={22} >
-                <Select virtual={false} style={{width: "100%"}} value={this.state.task.provider} onChange={(value => {this.updateTaskField("provider", value);})}
-                  options={this.state.modelProviders.map((provider) => Setting.getOption(`${provider.displayName} (${provider.name})`, `${provider.name}`))
-                  } />
+                <Select
+                  virtual={false}
+                  style={{width: "100%"}}
+                  placeholder={i18next.t("general:None")}
+                  allowClear
+                  value={this.state.task.template ?? ""}
+                  onChange={(value) => this.updateTaskField("template", value || "")}
+                  options={[
+                    {value: "", label: i18next.t("general:None")},
+                    ...this.state.templates.map((t) => ({value: `${t.owner}/${t.name}`, label: t.displayName ? `${t.displayName} (${t.owner}/${t.name})` : `${t.owner}/${t.name}`})),
+                  ]}
+                />
               </Col>
             </Row>
-          )
+          ) : null
         }
         {
-          this.props.account.name !== "admin" ? null : (
+          Setting.isAdminUser(this.props.account) ? (
             <Row style={{marginTop: "20px"}} >
               <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-                {Setting.getLabel(i18next.t("store:Model providers"), i18next.t("store:Model providers - Tooltip"))} :
+                {Setting.getLabel(i18next.t("task:Scale"), i18next.t("task:Scale - Tooltip"))} :
               </Col>
               <Col span={22} >
-                <Select mode={"multiple"} virtual={false} style={{width: "100%"}} value={this.state.task.providers ?? []} onChange={(value => {
-                  this.updateTaskField("providers", value);
-                  this.updateModelUsageMapForTask(value);
-                })}
-                options={this.state.modelProviders.map((provider) => Setting.getOption(`${provider.displayName} (${provider.name})`, `${provider.name}`))
-                } />
+                <TextArea
+                  rows={5}
+                  style={{maxHeight: "120px", overflow: "auto"}}
+                  value={this.getEffectiveScale()}
+                  disabled={!!this.state.task.template}
+                  onChange={this.state.task.template ? undefined : (e) => this.updateTaskField("scale", e.target.value)}
+                />
               </Col>
             </Row>
-          )
-        }
-        {/* <Row style={{marginTop: "20px"}} >*/}
-        {/*  <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>*/}
-        {/*    {i18next.t("task:Application")}:*/}
-        {/*  </Col>*/}
-        {/*  <Col span={22} >*/}
-        {/*    <Select virtual={false} style={{width: "100%"}} value={this.state.task.application} onChange={(value => {this.updateTaskField("application", value);})}>*/}
-        {/*      {*/}
-        {/*        [*/}
-        {/*          {id: "Docs-Polish", name: "Docs-Polish"},*/}
-        {/*        ].map((item, index) => <Option key={index} value={item.id}>{item.name}</Option>)*/}
-        {/*      }*/}
-        {/*    </Select>*/}
-        {/*  </Col>*/}
-        {/* </Row>*/}
-        {/* <Row style={{marginTop: "20px"}} >*/}
-        {/*  <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>*/}
-        {/*    {i18next.t("provider:Path")}:*/}
-        {/*  </Col>*/}
-        {/*  <Col span={22} >*/}
-        {/*    <Input value={this.state.task.path} onChange={e => {*/}
-        {/*      this.updateTaskField("path", e.target.value);*/}
-        {/*    }} />*/}
-        {/*  </Col>*/}
-        {/* </Row>*/}
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("general:Type"), i18next.t("general:Type - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Select virtual={false} style={{width: "100%"}} value={this.state.task.type} onChange={(value => {this.updateTaskField("type", value);})}>
-              {
-                [
-                  {id: "Labeling", name: "Labeling"},
-                  {id: "PBL", name: "PBL"},
-                ].map((item, index) => <Option key={index} value={item.id}>{item.name}</Option>)
-              }
-            </Select>
-          </Col>
-        </Row>
-        {
-          this.state.task.type === "Labeling" ? null : (
-            <React.Fragment>
-              <Row style={{marginTop: "20px"}} >
-                <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-                  {Setting.getLabel(i18next.t("store:Subject"), i18next.t("store:Subject - Tooltip"))} :
-                </Col>
-                <Col span={3} >
-                  <Select virtual={false} style={{width: "100%"}} value={this.state.task.subject} onChange={(value => {this.updateTaskField("subject", value);})}>
-                    {
-                      ConfTask.SubjectOptions.map((item, index) => <Option key={index} value={item.id}>{item.name}</Option>)
-                    }
-                  </Select>
-                </Col>
-                <Col span={2} />
-                <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-                  {Setting.getLabel(i18next.t("video:Topic"), i18next.t("video:Topic - Tooltip"))} :
-                </Col>
-                <Col span={3} >
-                  <Select virtual={false} style={{width: "100%"}} value={this.state.task.topic} onChange={(value => {this.updateTaskField("topic", value);})}>
-                    {
-                      ConfTask.TopicOptions.map((item, index) => <Option key={index} value={item.id}>{item.name}</Option>)
-                    }
-                  </Select>
-                </Col>
-                <Col span={2} />
-                <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-                  {Setting.getLabel(i18next.t("video:Grade"), i18next.t("video:Grade - Tooltip"))} :
-                </Col>
-                <Col span={3} >
-                  <Select virtual={false} style={{width: "100%"}} value={this.state.task.grade} onChange={(value => {this.updateTaskField("grade", value);})}>
-                    {
-                      ConfTask.GradeOptions.map((item, index) => <Option key={index} value={item.id}>{item.name}</Option>)
-                    }
-                  </Select>
-                </Col>
-              </Row>
-              <Row style={{marginTop: "20px"}} >
-                <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-                  {Setting.getLabel(i18next.t("general:Result"), i18next.t("general:Result - Tooltip"))} :
-                </Col>
-                <Col span={22} >
-                  <Select virtual={false} style={{width: "100%"}} value={this.state.task.result} onChange={(value => {this.updateTaskField("result", value);})}>
-                    {
-                      ConfTask.ResultOptions.map((item, index) => <Option key={index} value={item.id}>{item.name}</Option>)
-                    }
-                  </Select>
-                </Col>
-              </Row>
-              <Row style={{marginTop: "20px"}} >
-                <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-                  {Setting.getLabel(i18next.t("task:Activity"), i18next.t("task:Activity - Tooltip"))} :
-                </Col>
-                <Col span={22} >
-                  <Select virtual={false} style={{width: "100%"}} value={this.state.task.activity} onChange={(value => {this.updateTaskField("activity", value);})}>
-                    {
-                      ConfTask.ActivityOptions.map((item, index) => <Option key={index} value={item.id}>{item.name}</Option>)
-                    }
-                  </Select>
-                </Col>
-              </Row>
-            </React.Fragment>
-          )
+          ) : null
         }
         <Row style={{marginTop: "20px"}} >
           <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("general:Text"), i18next.t("general:Text - Tooltip"))} :
+            {Setting.getLabel(i18next.t("store:File"), i18next.t("store:File - Tooltip"))} :
           </Col>
-          <Col span={22} >
-            <TextArea autoSize={{minRows: 1, maxRows: 15}} value={this.state.task.text} onChange={(e) => {
-              this.updateTaskField("text", e.target.value);
-            }} />
+          <Col span={22}>
+            {this.state.task.documentUrl ? (
+              <Card size="small" style={{maxWidth: 560}}>
+                <Space align="center">
+                  <span style={{fontSize: 28, color: this.state.task.documentUrl.endsWith(".pdf") ? "#cf1322" : "#1890ff"}}>
+                    {this.state.task.documentUrl.endsWith(".pdf") ? <FilePdfOutlined /> : <FileWordOutlined />}
+                  </span>
+                  <Typography.Text ellipsis style={{maxWidth: 420}}>{this.getDocumentFileName()}</Typography.Text>
+                  <Button type="link" size="small" icon={<DownloadOutlined />} href={this.state.task.documentUrl} target="_blank" rel="noopener noreferrer">
+                    {i18next.t("general:Download")}
+                  </Button>
+                  <Button type="text" size="small" danger icon={<CloseOutlined />} onClick={this.clearDocument} aria-label={i18next.t("general:Delete")} />
+                </Space>
+              </Card>
+            ) : (
+              <Upload
+                name="file"
+                accept=".docx,.pdf"
+                showUploadList={false}
+                customRequest={this.handleDocumentUpload}
+              >
+                <Button type="primary" icon={<UploadOutlined />} loading={this.state.uploadingDocument}>
+                  {i18next.t("store:Upload file")} (.docx, .pdf)
+                </Button>
+              </Upload>
+            )}
           </Col>
         </Row>
         {
@@ -330,26 +429,42 @@ class TaskEditPage extends React.Component {
             </React.Fragment>
           )
         }
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("task:Question"), i18next.t("task:Question - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <TextArea disabled={true} autoSize={{minRows: 1, maxRows: 15}} value={(this.state.task.type !== "Labeling") ? this.getProjectText() : this.getQuestion()} onChange={(e) => {}} />
-          </Col>
-        </Row>
         {
-          (this.state.task.type !== "Labeling") ? (
+          (this.state.task.type !== "Labeling") && this.state.task.documentUrl ? (
             <Row style={{marginTop: "20px"}} >
               <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-                {Setting.getLabel(i18next.t("general:Chat"), i18next.t("general:Chat - Tooltip"))} :
+                {Setting.getLabel(i18next.t("task:Report"), i18next.t("task:Report - Tooltip"))} :
               </Col>
               <Col span={22} >
-                <Button disabled={this.state.task.subject === "" || this.state.task.topic === "" || this.state.task.result === "" || this.state.task.activity === "" || this.state.task.grade === ""} style={{marginBottom: "20px", width: "200px"}} type="primary" onClick={() => this.generateProject()}>{i18next.t("task:Generate Project")}</Button>
-                <ChatPage onCreateChatPage={(chatPageObj) => {this.setState({chatPageObj: chatPageObj});}} account={this.props.account} />
+                <Button
+                  loading={this.state.analyzing}
+                  disabled={!this.state.task.documentText || !!this.state.task.result}
+                  style={{marginBottom: "20px", width: "200px"}}
+                  type="primary"
+                  onClick={() => this.analyzeTask()}
+                >
+                  {i18next.t("task:Analyze")}
+                </Button>
+                {Setting.isAdminUser(this.props.account) && this.state.task.result ? (
+                  <Button
+                    style={{marginBottom: "20px", marginLeft: "8px", width: "200px"}}
+                    onClick={this.clearReport}
+                  >
+                    {i18next.t("general:Clear")}
+                  </Button>
+                ) : null}
+                {this.state.analyzing && (
+                  <>
+                    <div style={{maxWidth: "400px", marginTop: "8px", marginBottom: "8px"}}>
+                      <Progress percent={this.state.analyzeProgress} status="active" />
+                    </div>
+                    <Spin style={{marginLeft: "16px"}} tip={i18next.t("task:Analyzing")} />
+                  </>
+                )}
+                {this.state.task.result && <TaskAnalysisReport result={this.state.task.result} />}
               </Col>
             </Row>
-          ) : (
+          ) : this.state.task.type === "Labeling" ? (
             <Row style={{marginTop: "20px"}} >
               <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
                 {Setting.getLabel(i18next.t("task:Log"), i18next.t("task:Log - Tooltip"))} :
@@ -369,25 +484,10 @@ class TaskEditPage extends React.Component {
                 </div>
               </Col>
             </Row>
-          )
+          ) : null
         }
       </Card>
     );
-  }
-
-  getProjectText() {
-    let text = this.state.task.text;
-    text = text.replaceAll("${subject}", this.state.task.subject);
-    text = text.replaceAll("${topic}", this.state.task.topic);
-    text = text.replaceAll("${result}", this.state.task.result);
-    text = text.replaceAll("${activity}", this.state.task.activity);
-    text = text.replaceAll("${grade}", this.state.task.grade);
-    return text;
-  }
-
-  generateProject() {
-    const text = this.getProjectText();
-    this.state.chatPageObj.sendMessage(text, "", true);
   }
 
   runTask() {
@@ -400,6 +500,9 @@ class TaskEditPage extends React.Component {
 
   submitTaskEdit(exitAfterSave) {
     const task = Setting.deepCopy(this.state.task);
+    if (task.result && typeof task.result === "object") {
+      task.result = JSON.stringify(task.result);
+    }
     TaskBackend.updateTask(this.state.task.owner, this.state.taskName, task)
       .then((res) => {
         if (res.status === "ok") {
@@ -412,7 +515,7 @@ class TaskEditPage extends React.Component {
             if (exitAfterSave) {
               this.props.history.push("/tasks");
             } else {
-              this.props.history.push(`/tasks/${this.state.task.name}`);
+              this.props.history.push(`/tasks/${this.state.task.owner}/${this.state.task.name}`);
             }
           } else {
             Setting.showMessage("error", i18next.t("general:Failed to save"));

@@ -49,7 +49,7 @@ function getDefaultLogoURL(provider) {
   return "";
 }
 
-function ProviderLogo({provider, width = 36, height = 36}) {
+export function ProviderLogo({provider, width = 36, height = 36}) {
   const [imgSrc, setImgSrc] = useState(Setting.getProviderLogoURL(provider));
   const [hasError, setHasError] = useState(false);
 

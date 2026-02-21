@@ -678,7 +678,7 @@ class TestScanWidget extends React.Component {
         {isScanEditPage && (
           <Row style={{marginTop: "20px"}} >
             <Col style={{marginTop: "5px"}} span={Setting.isMobile() ? 22 : 2}>
-              {Setting.getLabel(i18next.t("general:Provider"), i18next.t("scan:Provider - Tooltip"))} :
+              {Setting.getLabel(i18next.t("general:Provider"), i18next.t("general:Provider - Tooltip"))} :
             </Col>
             <Col span={22} >
               <Select
