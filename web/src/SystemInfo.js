@@ -190,7 +190,7 @@ class SystemInfo extends React.Component {
                 <div>{i18next.t("system:AI Knowledge Database & Chat Bot with Admin UI and multi-model support (ChatGPT, Claude, Llama 3, DeepSeek R1, HuggingFace, etc.)")}</div>
                 GitHub: <a target="_blank" rel="noreferrer" href="https://github.com/hanzoai/cloud">Hanzo Cloud</a>
                 <br />
-                {i18next.t("system:Version")}: <a target="_blank" rel="noreferrer" href={link}>{versionText}</a>
+                {i18next.t("general:Version")}: <a target="_blank" rel="noreferrer" href={link}>{versionText}</a>
                 <br />
                 {i18next.t("system:Official website")}: <a target="_blank" rel="noreferrer" href="https://hanzo.ai">https://hanzo.ai</a>
                 <br />
@@ -228,7 +228,7 @@ class SystemInfo extends React.Component {
               <div>{i18next.t("system:AI Knowledge Database & Chat Bot with Admin UI and multi-model support (ChatGPT, Claude, Llama 3, DeepSeek R1, HuggingFace, etc.)")}</div>
               GitHub: <a target="_blank" rel="noreferrer" href="https://github.com/hanzoai/cloud">Hanzo Cloud</a>
               <br />
-              {i18next.t("system:Version")}: <a target="_blank" rel="noreferrer" href={link}>{versionText}</a>
+              {i18next.t("general:Version")}: <a target="_blank" rel="noreferrer" href={link}>{versionText}</a>
               <br />
               {i18next.t("system:Official website")}: <a target="_blank" rel="noreferrer" href="https://hanzo.ai">https://hanzo.ai</a>
               <br />

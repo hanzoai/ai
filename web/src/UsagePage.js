@@ -413,7 +413,7 @@ class UsagePage extends BaseListPage {
           }
           );
         }}>
-          <Radio.Button value={"All"}>{i18next.t("usage:All")}</Radio.Button>
+          <Radio.Button value={"All"}>{i18next.t("store:All")}</Radio.Button>
           <Radio.Button value={"Hour"}>{i18next.t("usage:Hour")}</Radio.Button>
           <Radio.Button value={"Day"}>{i18next.t("usage:Day")}</Radio.Button>
           <Radio.Button value={"Week"}>{i18next.t("usage:Week")}</Radio.Button>
