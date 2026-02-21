@@ -20,10 +20,10 @@ import (
 	"strings"
 
 	"github.com/beego/beego"
-	iamsdk "github.com/hanzoid/go-sdk/casdoorsdk"
 	"github.com/hanzoai/cloud/conf"
 	"github.com/hanzoai/cloud/object"
 	"github.com/hanzoai/cloud/util"
+	iamsdk "github.com/hanzoid/go-sdk/casdoorsdk"
 )
 
 func init() {
