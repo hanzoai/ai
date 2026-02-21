@@ -21,7 +21,7 @@ jobs:
           grep -q 'managedSecretReference:' k8s/kms-secrets.yaml
           grep -q 'HANZO_API_KEY' k8s/kms-secrets.yaml
           ! grep -q 'casdoorEndpoint' controllers/openai_api.go
-          grep -q '/api/add-usage-record' controllers/openai_api.go
+          grep -q 'recordUsage' controllers/openai_api.go
           grep -q 'secrets.HANZO_API_KEY' .github/workflows/deploy-production.yml
           grep -q 'https://github.com/hanzoai/cloud/pkgs/container/cloud' README.md
           if grep -nE 'clientSecret = \"[^\"]+\"' k8s/configmap.yaml; then
