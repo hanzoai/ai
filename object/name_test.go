@@ -21,9 +21,9 @@ import (
 	"fmt"
 	"testing"
 
-	iamsdk "github.com/hanzoid/go-sdk/casdoorsdk"
 	"github.com/hanzoai/cloud/controllers"
 	"github.com/hanzoai/cloud/object"
+	iamsdk "github.com/hanzoid/go-sdk/casdoorsdk"
 )
 
 var userTag = "user"

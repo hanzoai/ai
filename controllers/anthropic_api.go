@@ -20,11 +20,11 @@ import (
 	"fmt"
 	"strings"
 
-	iamsdk "github.com/hanzoid/go-sdk/casdoorsdk"
 	"github.com/beego/beego/context"
 	"github.com/hanzoai/cloud/model"
 	"github.com/hanzoai/cloud/object"
 	"github.com/hanzoai/cloud/util"
+	iamsdk "github.com/hanzoid/go-sdk/casdoorsdk"
 	"github.com/sashabaranov/go-openai"
 )
 

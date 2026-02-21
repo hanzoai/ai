@@ -139,15 +139,15 @@ func AddTransactionForMessage(message *Message) error {
 	}
 
 	payload := map[string]interface{}{
-		"user":     userId,
-		"currency": cur,
-		"amount":   amountCents,
-		"model":    message.ModelProvider,
-		"provider": message.ModelProvider,
+		"user":      userId,
+		"currency":  cur,
+		"amount":    amountCents,
+		"model":     message.ModelProvider,
+		"provider":  message.ModelProvider,
 		"requestId": util.GetRandomName(),
-		"premium":  true,
-		"stream":   false,
-		"status":   "success",
+		"premium":   true,
+		"stream":    false,
+		"status":    "success",
 	}
 
 	body, err := json.Marshal(payload)

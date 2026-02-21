@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"strings"
 
-	iamsdk "github.com/hanzoid/go-sdk/casdoorsdk"
 	"github.com/hanzoai/cloud/agent"
 	"github.com/hanzoai/cloud/embedding"
 	"github.com/hanzoai/cloud/i18n"
@@ -28,6 +27,7 @@ import (
 	"github.com/hanzoai/cloud/stt"
 	"github.com/hanzoai/cloud/tts"
 	"github.com/hanzoai/cloud/util"
+	iamsdk "github.com/hanzoid/go-sdk/casdoorsdk"
 	"xorm.io/core"
 	"xorm.io/xorm"
 )
