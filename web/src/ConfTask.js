@@ -13,3 +13,4 @@
 // limitations under the License.
 
 export const TaskMode = "PBL";
+export const TaskText = "";
