@@ -208,8 +208,6 @@ github.com/carmel/gooxml v0.0.0-20220216072414-40ff56130850 h1:5HOeLYzNkwXRWppRF
 github.com/carmel/gooxml v0.0.0-20220216072414-40ff56130850/go.mod h1:2u6ODG4PzDELX8qnX0wOGCdPJpWxnC5hBM7542SFrYc=
 github.com/casbin/casbin v1.7.0/go.mod h1:c67qKN6Oum3UF5Q1+BByfFxkwKvhwW57ITjqwtzR1KE=
 github.com/casbin/casbin/v2 v2.1.2/go.mod h1:YcPU1XXisHhLzuxH9coDNf2FbKpjGlbCg3n9yuLkIJQ=
-github.com/casdoor/casdoor-go-sdk v1.44.0 h1:tKxzgSvgPAaotjywBA9rXvi0GUHSfCMpHQDsXnAyFls=
-github.com/casdoor/casdoor-go-sdk v1.44.0/go.mod h1:7aXOpfl6s5M5/yjHgIGuPBwdHeSCV/jha1iYsnE1MNc=
 github.com/casibase/dashscope-go-sdk v0.0.2 h1:8J24x5g2N5eDslELPAHs0uflHjfpgtBqLGrqxbTx7QM=
 github.com/casibase/dashscope-go-sdk v0.0.2/go.mod h1:bpoto3SbZoci9vOM8mjskQl+IEfn+R1QHXrbvEMtGtc=
 github.com/casibase/dashscopego v0.6.0 h1:L//ElAtEw5fNJV2Cr/z+t7r23j1X4ygWbcDLDOV6S08=
@@ -512,6 +510,8 @@ github.com/h2non/gock v1.2.0 h1:K6ol8rfrRkUOefooBC8elXoaNGYkpp7y2qcxGG6BzUE=
 github.com/h2non/gock v1.2.0/go.mod h1:tNhoxHYW2W42cYkYb1WqzdbYIieALC99kpYr7rH/BQk=
 github.com/h2non/parth v0.0.0-20190131123155-b4df798d6542 h1:2VTzZjLZBgl62/EtslCrtky5vbi9dd7HrQPQIx6wqiw=
 github.com/h2non/parth v0.0.0-20190131123155-b4df798d6542/go.mod h1:Ow0tF8D4Kplbc8s8sSb3V2oUCygFHVp8gC3Dn6U4MNI=
+github.com/hanzoid/go-sdk v1.45.0 h1:rrVCRBCm+GlsHnEHP4OVwPZu28srBU3DNcLmXOHb2ug=
+github.com/hanzoid/go-sdk v1.45.0/go.mod h1:TODWe4MUJtqAbjlm0b6b6avfcPyelSF6DQQibWEHNmE=
 github.com/hashicorp/consul/api v1.3.0/go.mod h1:MmDNSzIMUjNpY/mQ398R4bk2FnqQLoPndWW5VkKPlCE=
 github.com/hashicorp/consul/sdk v0.3.0/go.mod h1:VKf9jXwCTEY1QZP2MOLRhb5i/I/ssyNV1vwHyQBF0x8=
 github.com/hashicorp/errwrap v1.0.0/go.mod h1:YH+1FKiLXxHSkmPseP+kNlulaMuP3n2brvKWEqk/Jc4=
