@@ -302,6 +302,6 @@ require (
 	xorm.io/builder v0.3.9 // indirect
 )
 
-replace github.com/sashabaranov/go-openai => github.com/hanzoai/go-openai v1.39.0
+replace github.com/sashabaranov/go-openai => github.com/hanzoai/go-openai v1.40.0
 
 replace google.golang.org/api v0.153.0 => google.golang.org/api v0.150.0
