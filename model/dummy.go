@@ -41,7 +41,7 @@ This is a dummy module provider.
 
 func (p *DummyModelProvider) QueryText(message string, writer io.Writer, chat_history []*RawMessage, prompt string, knowledgeMessages []*RawMessage, agentInfo *AgentInfo, lang string) (*ModelResult, error) {
 	answer := "this is the answer for \"" + message + "\""
-	if strings.HasPrefix(message, "$CasibaseDryRun$") {
+	if strings.HasPrefix(message, "$CloudDryRun$") {
 		return &ModelResult{}, nil
 	}
 	err := flushDataAzure(answer, writer, lang)

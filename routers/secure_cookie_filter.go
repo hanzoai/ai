@@ -32,7 +32,7 @@ func SecureCookieFilter(ctx *context.Context) {
 	// Process each cookie
 	for i, cookie := range cookies {
 		// Only modify session cookies
-		if strings.Contains(cookie, "casibase_session_id=") {
+		if strings.Contains(cookie, "cloud_session_id=") {
 			// Check if Secure flag is already present
 			if !strings.Contains(cookie, "Secure") && !strings.Contains(cookie, "secure") {
 				// Add Secure flag

@@ -18,9 +18,10 @@ import (
 	"fmt"
 	"time"
 
+	metric "github.com/luxfi/metric"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/prometheus/client_model/go"
+	io_prometheus_client "github.com/prometheus/client_model/go"
 )
 
 type PrometheusInfo struct {
@@ -43,34 +44,34 @@ type HistogramVecInfo struct {
 }
 
 var (
-	ApiThroughput = promauto.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "casibase_api_throughput",
+	// ApiThroughput uses *prometheus.GaugeVec directly because Reset() is needed
+	ApiThroughput = promauto.NewGaugeVec(metric.GaugeOpts{
+		Name: "cloud_api_throughput",
 		Help: "The throughput of each api access",
 	}, []string{"path", "method"})
 
-	ApiLatency = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Name: "casibase_api_latency",
+	ApiLatency = promauto.NewHistogramVec(metric.HistogramOpts{
+		Name: "cloud_api_latency",
 		Help: "API processing latency in milliseconds",
 	}, []string{"path", "method"})
 
-	CpuUsage = promauto.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "casibase_cpu_usage",
+	CpuUsage = promauto.NewGaugeVec(metric.GaugeOpts{
+		Name: "cloud_cpu_usage",
 		Help: "Hanzo Cloud cpu usage",
 	}, []string{"cpuNum"})
 
-	MemoryUsage = promauto.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "casibase_memory_usage",
+	MemoryUsage = promauto.NewGaugeVec(metric.GaugeOpts{
+		Name: "cloud_memory_usage",
 		Help: "Hanzo Cloud memory usage in Byte",
 	}, []string{"type"})
 
-	TotalThroughput = promauto.NewGauge(prometheus.GaugeOpts{
-		Name: "casibase_total_throughput",
+	TotalThroughput = promauto.NewGauge(metric.GaugeOpts{
+		Name: "cloud_total_throughput",
 		Help: "The total throughput of Hanzo Cloud",
 	})
 )
 
 func ClearThroughputPerSecond() {
-	// Clear the throughput every second
 	ticker := time.NewTicker(time.Second)
 	for range ticker.C {
 		ApiThroughput.Reset()
@@ -86,11 +87,11 @@ func GetPrometheusInfo() (*PrometheusInfo, error) {
 	}
 	for _, metricFamily := range metricFamilies {
 		switch metricFamily.GetName() {
-		case "casibase_api_throughput":
+		case "cloud_api_throughput":
 			res.ApiThroughput = getGaugeVecInfo(metricFamily)
-		case "casibase_api_latency":
+		case "cloud_api_latency":
 			res.ApiLatency = getHistogramVecInfo(metricFamily)
-		case "casibase_total_throughput":
+		case "cloud_total_throughput":
 			res.TotalThroughput = metricFamily.GetMetric()[0].GetGauge().GetValue()
 		}
 	}

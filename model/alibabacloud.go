@@ -22,9 +22,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/casibase/dashscopego"
-	"github.com/casibase/dashscopego/qwen"
 	"github.com/hanzoai/cloud/i18n"
+	"github.com/hanzoai/dashscopego"
+	"github.com/hanzoai/dashscopego/qwen"
 )
 
 type AlibabacloudModelProvider struct {
@@ -112,7 +112,7 @@ func (p *AlibabacloudModelProvider) QueryText(question string, writer io.Writer,
 
 	cli := dashscopego.NewTongyiClient(p.subType, p.apiKey)
 
-	if strings.HasPrefix(question, "$CasibaseDryRun$") {
+	if strings.HasPrefix(question, "$CloudDryRun$") {
 		modelResult, err := getDefaultModelResult(p.subType, question, "")
 		if err != nil {
 			return nil, fmt.Errorf(i18n.Translate(lang, "model:cannot calculate tokens"))

@@ -1,4 +1,4 @@
-// Copyright 2023 The Casibase Authors. All Rights Reserved.
+// Copyright 2023 Hanzo AI Inc. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -161,7 +161,7 @@ class App extends Component {
   }
 
   setTheme() {
-    StoreBackend.getStore("admin", "_casibase_default_store_").then((res) => {
+    StoreBackend.getStore("admin", "_cloud_default_store_").then((res) => {
       if (res.status === "ok" && res.data) {
         const color = res.data.themeColor ? res.data.themeColor : Conf.ThemeDefault.colorPrimary;
         const currentColor = localStorage.getItem("themeColor");

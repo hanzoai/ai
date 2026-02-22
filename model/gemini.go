@@ -216,7 +216,7 @@ func (p *GeminiModelProvider) QueryText(question string, writer io.Writer, histo
 		return nil, err
 	}
 
-	if strings.HasPrefix(question, "$CasibaseDryRun$") {
+	if strings.HasPrefix(question, "$CloudDryRun$") {
 		modelResult, err := getDefaultModelResult(p.subType, question, "")
 		if err != nil {
 			return nil, fmt.Errorf(i18n.Translate(lang, "model:cannot calculate tokens"))
