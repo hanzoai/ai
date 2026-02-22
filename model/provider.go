@@ -20,7 +20,7 @@ import (
 
 // DryRunPrefix is a special prefix that triggers model providers to estimate
 // token count and price without actually calling the AI model APIs.
-const DryRunPrefix = "$CasibaseDryRun$"
+const DryRunPrefix = "$CloudDryRun$"
 
 type ModelResult struct {
 	PromptTokenCount   int

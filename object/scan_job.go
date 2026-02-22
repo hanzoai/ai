@@ -135,7 +135,7 @@ func claimScanJob(scan *Scan, hostname string) (bool, error) {
 			return false, nil
 		}
 		// Check if the asset name matches the current hostname
-		// This ensures only the Casibase instance on the target machine picks up the job
+		// This ensures only the Hanzo Cloud instance on the target machine picks up the job
 		if asset.DisplayName != hostname {
 			if provider.Type == "OS Patch" {
 				return false, nil

@@ -23,8 +23,8 @@ import (
 )
 
 func extractAudioExample() {
-	inputPath := "C:\\Users\\yangluo\\AppData\\Local\\Temp\\casibase-input-2968149305.mp4"
-	outputPath := "C:\\Users\\yangluo\\AppData\\Local\\Temp\\casibase-output-469162762.mp3"
+	inputPath := "C:\\Users\\yangluo\\AppData\\Local\\Temp\\cloud-input-2968149305.mp4"
+	outputPath := "C:\\Users\\yangluo\\AppData\\Local\\Temp\\cloud-output-469162762.mp3"
 
 	// https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl-shared.zip
 	cmd := exec.Command("ffmpeg", "-i", inputPath, "-q:a", "0", "-map", "a", outputPath)
@@ -35,7 +35,7 @@ func extractAudioExample() {
 }
 
 func GetAudioFromVideo(inputBuffer *bytes.Buffer) (*bytes.Buffer, error) {
-	tmpInputFile, err := os.CreateTemp("", "casibase-audio-*.mp4")
+	tmpInputFile, err := os.CreateTemp("", "cloud-audio-*.mp4")
 	if err != nil {
 		return nil, err
 	}

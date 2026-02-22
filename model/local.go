@@ -234,7 +234,7 @@ func (p *LocalModelProvider) QueryText(question string, writer io.Writer, histor
 			return nil, err
 		}
 
-		if strings.HasPrefix(question, "$CasibaseDryRun$") {
+		if strings.HasPrefix(question, "$CloudDryRun$") {
 			return modelResult, nil
 
 			//if GetOpenAiMaxTokens(p.subType) > modelResult.TotalTokenCount {
@@ -360,7 +360,7 @@ func (p *LocalModelProvider) QueryText(question string, writer io.Writer, histor
 		}
 		return modelResult, nil
 	} else if getOpenAiModelType(p.subType) == "imagesGenerations" {
-		if strings.HasPrefix(question, "$CasibaseDryRun$") {
+		if strings.HasPrefix(question, "$CloudDryRun$") {
 			return modelResult, nil
 		}
 		reqUrl := openai.ImageRequest{
