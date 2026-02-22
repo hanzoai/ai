@@ -503,8 +503,8 @@ github.com/hanzoai/dashscope-go-sdk v0.0.2 h1:L/FlStjXeehrNSBqU8y/ecSG/MnaAJqfyf
 github.com/hanzoai/dashscope-go-sdk v0.0.2/go.mod h1:DSUNMIR7RvSoO8B/VOQLGTqsMAnE6boJm9MjeodsVF4=
 github.com/hanzoai/dashscopego v0.6.0 h1:sLUepwcnVajaDgzlgfuJWkZblBg9UIalkpFUjXHx0Fg=
 github.com/hanzoai/dashscopego v0.6.0/go.mod h1:ciV938pktk0Tw6ssGYzEdxwS8OaHgv3xCWiy7W5664E=
-github.com/hanzoai/go-openai v1.39.0 h1:pp0w3K8LSDA3JnKfYieBksUdCSAdXDFqh7gWWJd6Ytc=
-github.com/hanzoai/go-openai v1.39.0/go.mod h1:lj5b/K+zjTSFxVLijLSTDZuP7adOgerWeFyZLUhAKRg=
+github.com/hanzoai/go-openai v1.40.0 h1:8KHDSUaJCNHlueMp76ZyJuJGc5wrz/ANMGvkfKBB3a4=
+github.com/hanzoai/go-openai v1.40.0/go.mod h1:lj5b/K+zjTSFxVLijLSTDZuP7adOgerWeFyZLUhAKRg=
 github.com/hanzoai/go-openrouter v1.0.0 h1:oQTSk4mjBhdgbUMdVm6XxPQy4u0QNhQrEBuuEn/ETAo=
 github.com/hanzoai/go-openrouter v1.0.0/go.mod h1:wC86avp4HRT7ZrvdwOIs3ZmnwUSkSeX2+HfLAAEYHVo=
 github.com/hanzoai/pdf v1.2.0 h1:3/zYs4estaf6hpa3Ug/NgfYEQpmkmMClmRcREAP8KUo=
