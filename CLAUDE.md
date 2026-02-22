@@ -1,20 +1,20 @@
-# Casibase - Claude Code Guide
+# Hanzo Cloud - Claude Code Guide
 
 ## Project Overview
 
-Casibase is an open-source enterprise-level AI knowledge base and MCP (Model Context Protocol) / A2A (Agent-to-Agent) management platform. It supports 30+ AI model providers (OpenAI, Claude, Gemini, Ollama, etc.) with admin UI, user management, and SSO via Casdoor.
+Hanzo Cloud is an enterprise-level AI knowledge base and MCP (Model Context Protocol) / A2A (Agent-to-Agent) management platform. It supports 30+ AI model providers (OpenAI, Claude, Gemini, Ollama, etc.) with admin UI, user management, and SSO via Hanzo IAM.
 
 ## Architecture
 
 Full-stack application:
 - **Backend:** Go 1.23.6 + Beego framework (MVC), MySQL/MariaDB
 - **Frontend:** React + Ant Design v5, located in `web/`
-- **Auth:** Casdoor SSO integration
+- **Auth:** Hanzo IAM SSO integration
 
 ## Directory Structure
 
 ```
-casibase/
+cloud/
 ├── main.go                 # Entry point
 ├── go.mod                  # Go module
 ├── conf/app.conf           # Beego config
@@ -105,7 +105,7 @@ cd web && yarn lint
 2. Frontend build (Node.js 20 + Yarn)
 3. Go binary build
 4. golangci-lint
-5. Semantic release + Docker push to `casbin/casibase`
+5. Semantic release + Docker push to `ghcr.io/hanzoai/cloud`
 
 ## Configuration
 

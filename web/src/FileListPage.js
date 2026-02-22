@@ -1,4 +1,4 @@
-// Copyright 2025 The Casibase Authors. All Rights Reserved.
+// Copyright 2025 Hanzo AI Inc. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -54,7 +54,7 @@ class FileListPage extends BaseListPage {
     let storeName;
     if (Setting.isDefaultStoreSelected(this.props.account)) {
       try {
-        const res = await StoreBackend.getStore("admin", "_casibase_default_store_");
+        const res = await StoreBackend.getStore("admin", "_cloud_default_store_");
         if (res.status === "ok" && res.data?.name) {
           storeName = res.data.name;
         } else {
