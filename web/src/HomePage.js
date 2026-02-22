@@ -1,4 +1,4 @@
-// Copyright 2023 The Casibase Authors. All Rights Reserved.
+// Copyright 2023 Hanzo AI Inc. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -34,7 +34,7 @@ class HomePage extends React.Component {
   }
 
   getStore() {
-    StoreBackend.getStore("admin", "_casibase_default_store_")
+    StoreBackend.getStore("admin", "_cloud_default_store_")
       .then((res) => {
         if (res.status === "ok") {
           if (res.data && typeof res.data2 === "string" && res.data2 !== "") {

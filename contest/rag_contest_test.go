@@ -131,7 +131,7 @@ func createStore(paperId string) (*object.Store, error) {
 		CreatedTime:          currentTime,
 		DisplayName:          fmt.Sprintf("Paper Store - %s", paperId),
 		Title:                fmt.Sprintf("Paper %s Assistant", paperId),
-		Avatar:               "https://cdn.casibase.com/static/favicon.png",
+		Avatar:               "https://cdn.hanzo.ai/static/favicon.png",
 		StorageProvider:      StorageProviderName,
 		StorageSubpath:       paperId,
 		SplitProvider:        "Default",

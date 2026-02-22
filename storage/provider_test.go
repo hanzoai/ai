@@ -30,7 +30,7 @@ func TestStorage(t *testing.T) {
 	object.InitConfig()
 	controllers.InitAuthConfig()
 
-	provider := "provider_storage_casibase"
+	provider := "provider_storage_cloud"
 	providerObj, err := storage.NewIamProvider(provider, "en")
 	objects, err := providerObj.ListObjects("")
 	if err != nil {

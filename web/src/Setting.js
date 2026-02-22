@@ -1,4 +1,4 @@
-// Copyright 2023 The Casibase Authors. All Rights Reserved.
+// Copyright 2023 Hanzo AI Inc. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -2350,7 +2350,7 @@ export function getLogo(themes, storeLogoUrl) {
   if (storeLogoUrl && storeLogoUrl !== defaultLogoUrl) {
     logoUrl = storeLogoUrl;
   }
-  logoUrl = logoUrl.replace("https://cdn.casibase.org", Conf.StaticBaseUrl).replace("https://cdn.hanzo.ai", Conf.StaticBaseUrl);
+  logoUrl = logoUrl.replace("https://cdn.hanzo.ai", Conf.StaticBaseUrl).replace("https://cdn.hanzo.ai", Conf.StaticBaseUrl);
   if (themes.includes("dark")) {
     return logoUrl.replace(/\.png$/, "_white.png");
   } else {
@@ -2364,7 +2364,7 @@ export function getFooterHtml(themes, storeFooterHtml) {
   if (storeFooterHtml && storeFooterHtml !== defaultFooterHtml) {
     footerHtml = storeFooterHtml;
   }
-  footerHtml = footerHtml.replace("https://cdn.casibase.org", Conf.StaticBaseUrl).replace("https://cdn.hanzo.ai", Conf.StaticBaseUrl);
+  footerHtml = footerHtml.replace("https://cdn.hanzo.ai", Conf.StaticBaseUrl).replace("https://cdn.hanzo.ai", Conf.StaticBaseUrl);
   if (themes.includes("dark")) {
     return footerHtml.replace(/(\.png)/g, "_white$1");
   } else {

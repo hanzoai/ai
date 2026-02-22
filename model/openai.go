@@ -321,7 +321,7 @@ func (p *OpenAiModelProvider) QueryText(question string, writer io.Writer, histo
 			messages = openaiRawMessagesToMessages(rawMessages)
 		}
 
-		if strings.HasPrefix(question, "$CasibaseDryRun$") {
+		if strings.HasPrefix(question, "$CloudDryRun$") {
 			promptTokenCount, err := openaiNumTokensFromMessages(messages, model)
 			if err != nil {
 				return nil, err
@@ -436,7 +436,7 @@ func (p *OpenAiModelProvider) QueryText(question string, writer io.Writer, histo
 		}
 		return modelResult, nil
 	} else if getOpenAiModelType(model) == "imagesGenerations" {
-		if strings.HasPrefix(question, "$CasibaseDryRun$") {
+		if strings.HasPrefix(question, "$CloudDryRun$") {
 			return modelResult, nil
 		}
 		quality := getGenerateImageQuality(model)

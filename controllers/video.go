@@ -293,7 +293,7 @@ func getAudioSegments(userName string, filename string, fileBuffer *bytes.Buffer
 		return "", nil, err
 	}
 
-	tmpInputFile, err := os.CreateTemp("", "casibase-audio-*.mp3")
+	tmpInputFile, err := os.CreateTemp("", "cloud-audio-*.mp3")
 	if err != nil {
 		return "", nil, err
 	}
