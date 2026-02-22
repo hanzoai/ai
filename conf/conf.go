@@ -63,7 +63,7 @@ func ReadGlobalConfigTokens() []string {
 		return nil
 	}
 
-	path := "C:/casibase_data/config.txt"
+	path := "C:/cloud_data/config.txt"
 	if !FileExist(path) {
 		return nil
 	}

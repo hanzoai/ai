@@ -19,7 +19,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/casibase/pdf"
+	"github.com/hanzoai/pdf"
 	"github.com/pdfcpu/pdfcpu/pkg/api"
 )
 

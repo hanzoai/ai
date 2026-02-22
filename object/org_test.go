@@ -25,7 +25,7 @@ import (
 	"github.com/hanzoai/cloud/util"
 )
 
-var organization = "casibase"
+var organization = "hanzo"
 
 func TestUpdateMessagesForOrg(t *testing.T) {
 	InitConfig()
