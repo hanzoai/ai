@@ -26,8 +26,10 @@ const StarterCreditDollars = 5.00
 
 // modelPrice defines per-model pricing in dollars per 1M tokens.
 type modelPrice struct {
-	InputPerMillion  float64 // $ per 1M input tokens
-	OutputPerMillion float64 // $ per 1M output tokens
+	InputPerMillion      float64 // $ per 1M input tokens
+	OutputPerMillion     float64 // $ per 1M output tokens
+	CacheReadPerMillion  float64 // $ per 1M cache-read tokens (0 = use InputPerMillion)
+	CacheWritePerMillion float64 // $ per 1M cache-write tokens (0 = use InputPerMillion)
 }
 
 // modelPricing maps upstream model identifiers to their pricing.
@@ -181,15 +183,37 @@ func getModelPrice(model string) modelPrice {
 
 // calculateCostCents computes the cost in cents for a model call.
 func calculateCostCents(model string, promptTokens, completionTokens int) int64 {
+	return calculateCostCentsWithCache(model, promptTokens, completionTokens, 0, 0)
+}
+
+// calculateCostCentsWithCache computes cost in cents including cache token pricing.
+// Cache-read tokens are billed at 10% of input price (matching Anthropic).
+// Cache-write tokens are billed at the same rate as input tokens.
+func calculateCostCentsWithCache(model string, promptTokens, completionTokens, cacheReadTokens, cacheWriteTokens int) int64 {
 	price := getModelPrice(model)
+
+	// Cache-read price: use explicit CacheReadPerMillion if set, else 10% of input
+	cacheReadRate := price.CacheReadPerMillion
+	if cacheReadRate == 0 && price.InputPerMillion > 0 {
+		cacheReadRate = price.InputPerMillion * 0.10
+	}
+
+	// Cache-write price: use explicit CacheWritePerMillion if set, else same as input
+	cacheWriteRate := price.CacheWritePerMillion
+	if cacheWriteRate == 0 {
+		cacheWriteRate = price.InputPerMillion
+	}
 
 	inputCost := float64(promptTokens) * price.InputPerMillion / 1_000_000.0
 	outputCost := float64(completionTokens) * price.OutputPerMillion / 1_000_000.0
-	totalDollars := inputCost + outputCost
+	cacheReadCost := float64(cacheReadTokens) * cacheReadRate / 1_000_000.0
+	cacheWriteCost := float64(cacheWriteTokens) * cacheWriteRate / 1_000_000.0
+
+	totalDollars := inputCost + outputCost + cacheReadCost + cacheWriteCost
 	costCents := int64(math.Round(totalDollars * 100))
 
 	// Minimum 1 cent for any non-zero usage
-	if costCents <= 0 && (promptTokens > 0 || completionTokens > 0) {
+	if costCents <= 0 && (promptTokens > 0 || completionTokens > 0 || cacheReadTokens > 0 || cacheWriteTokens > 0) {
 		costCents = 1
 	}
 
