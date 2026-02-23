@@ -33,3 +33,6 @@ lastupdate.tmp
 commentsRouter*.go
 
 dist/
+conf/app.local.conf
+casibase
+web/.yarn/
