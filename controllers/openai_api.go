@@ -264,6 +264,8 @@ type usageRecord struct {
 	PromptTokens     int     `json:"promptTokens"`
 	CompletionTokens int     `json:"completionTokens"`
 	TotalTokens      int     `json:"totalTokens"`
+	CacheReadTokens  int     `json:"cacheReadTokens,omitempty"`
+	CacheWriteTokens int     `json:"cacheWriteTokens,omitempty"`
 	Cost             float64 `json:"cost"`
 	Currency         string  `json:"currency"`
 	Premium          bool    `json:"premium"`
@@ -291,8 +293,11 @@ func recordUsage(record *usageRecord) {
 			return
 		}
 
-		// Calculate cost from per-model pricing table
-		costCents := calculateCostCents(record.Model, record.PromptTokens, record.CompletionTokens)
+		// Calculate cost from per-model pricing table (cache-aware)
+		costCents := calculateCostCentsWithCache(
+			record.Model, record.PromptTokens, record.CompletionTokens,
+			record.CacheReadTokens, record.CacheWriteTokens,
+		)
 
 		payload := map[string]interface{}{
 			"user":             record.User,
@@ -303,6 +308,8 @@ func recordUsage(record *usageRecord) {
 			"promptTokens":     record.PromptTokens,
 			"completionTokens": record.CompletionTokens,
 			"totalTokens":      record.TotalTokens,
+			"cacheReadTokens":  record.CacheReadTokens,
+			"cacheWriteTokens": record.CacheWriteTokens,
 			"requestId":        record.RequestID,
 			"premium":          record.Premium,
 			"stream":           record.Stream,
