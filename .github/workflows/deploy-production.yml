@@ -24,8 +24,8 @@ env:
   CONTAINER_NAME: cloud-api
   IAM_INTERNAL_ENDPOINT: http://iam.hanzo.svc.cluster.local:8000
   KMS_ENDPOINT: https://kms.hanzo.ai
-  KMS_PROJECT_ID: cloud
-  KMS_ENVIRONMENT: production
+  KMS_PROJECT_ID: 2104f3b4-9276-476c-9727-550313285bd8
+  KMS_ENVIRONMENT: prod
   KMS_DO_API_TOKEN_KEY: do-api-token
   KMS_DO_CLUSTER_ID_KEY: do-cluster-id
 
@@ -106,7 +106,7 @@ jobs:
             ACCESS_TOKEN="$(curl -fsS \
               -H "Content-Type: application/json" \
               -d "$AUTH_PAYLOAD" \
-              "${KMS_ENDPOINT}/api/v1/identities/universal-auth/login" | \
+              "${KMS_ENDPOINT}/api/v1/auth/universal-auth/login" | \
               python3 -c 'import sys, json; print(json.load(sys.stdin)["accessToken"])')"
           fi
 
