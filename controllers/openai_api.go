@@ -416,10 +416,18 @@ func (c *ApiController) ChatCompletions() {
 			c.ResponseError("Authentication failed: invalid API key")
 			return
 		}
-		// Apply model routing for sk- keys too
+		// Apply model routing for sk- keys too. If the route points to a
+		// different provider than the one that owns the API key, switch to
+		// the route's provider so zen/fireworks models work with any key.
 		if route := resolveModelRoute(request.Model); route != nil {
 			upstreamModel = route.upstreamModel
 			isPremium = route.premium
+			if route.providerName != provider.Name {
+				routeProvider, routeErr := object.GetModelProviderByName(route.providerName)
+				if routeErr == nil && routeProvider != nil {
+					provider = routeProvider
+				}
+			}
 		}
 	}
 

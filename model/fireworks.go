@@ -51,11 +51,20 @@ func (p *FireworksModelProvider) GetPricing() string {
 
 func (p *FireworksModelProvider) calculatePrice(modelResult *ModelResult) error {
 	priceTable := map[string][2]float64{
-		"accounts/fireworks/models/llama-v3p3-70b-instruct":  {0.0009, 0.0009},
-		"accounts/fireworks/models/llama-v3p1-405b-instruct": {0.003, 0.003},
-		"accounts/fireworks/models/qwen3-235b-a22b":          {0.0012, 0.0048},
-		"accounts/fireworks/models/deepseek-v3":              {0.0009, 0.0009},
-		"accounts/fireworks/models/mixtral-8x22b-instruct":   {0.0012, 0.0012},
+		// Current Fireworks account models (Feb 2026)
+		"accounts/fireworks/models/glm-5":                {0.001, 0.0032},
+		"accounts/fireworks/models/glm-4p7":              {0.0006, 0.0022},
+		"accounts/fireworks/models/deepseek-v3p1":        {0.0009, 0.0009},
+		"accounts/fireworks/models/deepseek-v3p2":        {0.0009, 0.0009},
+		"accounts/fireworks/models/kimi-k2-instruct-0905": {0.0009, 0.0009},
+		"accounts/fireworks/models/kimi-k2-thinking":     {0.0009, 0.0009},
+		"accounts/fireworks/models/kimi-k2p5":            {0.0012, 0.0012},
+		"accounts/fireworks/models/minimax-m2p1":         {0.0009, 0.0009},
+		"accounts/cogito/models/cogito-671b-v2-p1":       {0.003, 0.003},
+		"accounts/fireworks/models/gpt-oss-120b":         {0.0009, 0.0009},
+		"accounts/fireworks/models/gpt-oss-20b":          {0.0002, 0.0002},
+		"accounts/fireworks/models/mixtral-8x22b-instruct": {0.0012, 0.0012},
+		"accounts/fireworks/models/llama-v3-8b-instruct": {0.0002, 0.0002},
 	}
 
 	if prices, ok := priceTable[p.subType]; ok {
