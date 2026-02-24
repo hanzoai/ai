@@ -51,20 +51,24 @@ func (p *FireworksModelProvider) GetPricing() string {
 
 func (p *FireworksModelProvider) calculatePrice(modelResult *ModelResult) error {
 	priceTable := map[string][2]float64{
-		// Current Fireworks account models (Feb 2026)
-		"accounts/fireworks/models/glm-5":                {0.001, 0.0032},
-		"accounts/fireworks/models/glm-4p7":              {0.0006, 0.0022},
-		"accounts/fireworks/models/deepseek-v3p1":        {0.0009, 0.0009},
-		"accounts/fireworks/models/deepseek-v3p2":        {0.0009, 0.0009},
-		"accounts/fireworks/models/kimi-k2-instruct-0905": {0.0009, 0.0009},
-		"accounts/fireworks/models/kimi-k2-thinking":     {0.0009, 0.0009},
-		"accounts/fireworks/models/kimi-k2p5":            {0.0012, 0.0012},
-		"accounts/fireworks/models/minimax-m2p1":         {0.0009, 0.0009},
-		"accounts/cogito/models/cogito-671b-v2-p1":       {0.003, 0.003},
-		"accounts/fireworks/models/gpt-oss-120b":         {0.0009, 0.0009},
-		"accounts/fireworks/models/gpt-oss-20b":          {0.0002, 0.0002},
-		"accounts/fireworks/models/mixtral-8x22b-instruct": {0.0012, 0.0012},
-		"accounts/fireworks/models/llama-v3-8b-instruct": {0.0002, 0.0002},
+		// Fireworks pricing per 1K tokens (Feb 2026, from fireworks.ai/pricing)
+		"accounts/fireworks/models/glm-5":                  {0.001, 0.0032},    // $1.00/$3.20 per MTok
+		"accounts/fireworks/models/glm-4p7":                {0.0006, 0.0022},   // $0.60/$2.20 per MTok
+		"accounts/fireworks/models/deepseek-v3p1":          {0.00056, 0.00168}, // $0.56/$1.68 per MTok
+		"accounts/fireworks/models/deepseek-v3p2":          {0.00056, 0.00168}, // $0.56/$1.68 per MTok
+		"accounts/fireworks/models/kimi-k2-instruct-0905":  {0.0006, 0.0025},   // $0.60/$2.50 per MTok
+		"accounts/fireworks/models/kimi-k2-thinking":       {0.0006, 0.0025},   // $0.60/$2.50 per MTok
+		"accounts/fireworks/models/kimi-k2p5":              {0.0006, 0.003},    // $0.60/$3.00 per MTok
+		"accounts/fireworks/models/minimax-m2p1":           {0.0003, 0.0012},   // $0.30/$1.20 per MTok
+		"accounts/fireworks/models/minimax-m2p5":           {0.0003, 0.0012},   // $0.30/$1.20 per MTok
+		"accounts/cogito/models/cogito-671b-v2-p1":         {0.0012, 0.0012},   // $1.20/$1.20 per MTok
+		"accounts/fireworks/models/gpt-oss-120b":           {0.00015, 0.0006},  // $0.15/$0.60 per MTok
+		"accounts/fireworks/models/gpt-oss-20b":            {0.00007, 0.0003},  // $0.07/$0.30 per MTok
+		"accounts/fireworks/models/mixtral-8x22b-instruct": {0.0009, 0.0009},   // $0.90/$0.90 per MTok
+		"accounts/fireworks/models/qwen3-8b":               {0.0002, 0.0002},   // $0.20/$0.20 per MTok
+		"accounts/fireworks/models/qwen3-vl-30b-a3b-instruct": {0.00015, 0.0006}, // $0.15/$0.60 per MTok
+		"accounts/fireworks/models/qwen3-vl-30b-a3b-thinking": {0.00015, 0.0006}, // $0.15/$0.60 per MTok
+		"accounts/fireworks/models/llama-v3p3-70b-instruct": {0.0009, 0.0009},  // $0.90/$0.90 per MTok
 	}
 
 	if prices, ok := priceTable[p.subType]; ok {

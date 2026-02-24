@@ -39,8 +39,8 @@ func TestResolveModelRoute_KnownModels(t *testing.T) {
 		{"anthropic/claude-opus-4-6", "do-ai", "anthropic-claude-opus-4.6", false},
 
 		// Fireworks premium
-		{"fireworks/deepseek-r1", "fireworks", "accounts/fireworks/models/deepseek-r1-0528", true},
-		{"fireworks/qwen3-235b-a22b", "fireworks", "accounts/fireworks/models/qwen3-235b-a22b", true},
+		{"fireworks/glm-5", "fireworks", "accounts/fireworks/models/glm-5", true},
+		{"fireworks/qwen3-8b", "fireworks", "accounts/fireworks/models/qwen3-8b", true},
 
 		// OpenAI direct premium
 		{"openai-direct/gpt-5", "openai-direct", "gpt-5", true},
@@ -49,24 +49,24 @@ func TestResolveModelRoute_KnownModels(t *testing.T) {
 		// Zen branded premium (routed through Fireworks)
 		{"zen4", "fireworks", "accounts/fireworks/models/glm-5", true},
 		{"zen4-mini", "fireworks", "accounts/fireworks/models/qwen3-8b", true},
-		{"zen4-pro", "fireworks", "accounts/fireworks/models/qwen3-next-80b-a3b", true},
-		{"zen4-max", "fireworks", "accounts/fireworks/models/qwen3-235b-a22b", true},
-		{"zen4-ultra", "fireworks", "accounts/fireworks/models/glm-5-thinking", true},
-		{"zen4-coder", "fireworks", "accounts/fireworks/models/qwen3-coder-480b-a35b-instruct", true},
-		{"zen4-coder-flash", "fireworks", "accounts/fireworks/models/qwen3-coder-30b-a3b", true},
-		{"zen4-coder-pro", "fireworks", "accounts/fireworks/models/qwen3-coder-480b-bf16", true},
-		{"zen4-thinking", "fireworks", "accounts/fireworks/models/qwen3-next-80b-a3b-thinking", true},
+		{"zen4-pro", "fireworks", "accounts/fireworks/models/kimi-k2p5", true},
+		{"zen4-max", "fireworks", "accounts/cogito/models/cogito-671b-v2-p1", true},
+		{"zen4-ultra", "fireworks", "accounts/fireworks/models/kimi-k2-thinking", true},
+		{"zen4-coder", "fireworks", "accounts/fireworks/models/deepseek-v3p2", true},
+		{"zen4-coder-flash", "fireworks", "accounts/fireworks/models/kimi-k2-instruct-0905", true},
+		{"zen4-coder-pro", "fireworks", "accounts/fireworks/models/gpt-oss-120b", true},
+		{"zen4-thinking", "fireworks", "accounts/fireworks/models/kimi-k2-thinking", true},
 		{"zen3-omni", "fireworks", "accounts/fireworks/models/glm-4p7", true},
-		{"zen3-vl", "fireworks", "accounts/fireworks/models/qwen3-vl-30b-a3b", true},
-		{"zen3-nano", "fireworks", "accounts/fireworks/models/qwen3-4b", true},
-		{"zen3-guard", "fireworks", "accounts/fireworks/models/qwen3-4b", true},
+		{"zen3-vl", "fireworks", "accounts/fireworks/models/qwen3-vl-30b-a3b-instruct", true},
+		{"zen3-nano", "fireworks", "accounts/fireworks/models/qwen3-8b", true},
+		{"zen3-guard", "fireworks", "accounts/fireworks/models/mixtral-8x22b-instruct", true},
 		{"zen3-embedding", "openai-direct", "text-embedding-3-large", true},
 
 		// Zen versionless aliases → latest zenN
 		{"zen", "fireworks", "accounts/fireworks/models/glm-5", true},
-		{"zen-pro", "fireworks", "accounts/fireworks/models/qwen3-next-80b-a3b", true},
+		{"zen-pro", "fireworks", "accounts/fireworks/models/kimi-k2p5", true},
 		{"zen-mini", "fireworks", "accounts/fireworks/models/qwen3-8b", true},
-		{"zen-vl", "fireworks", "accounts/fireworks/models/qwen3-vl-30b-a3b", true},
+		{"zen-vl", "fireworks", "accounts/fireworks/models/qwen3-vl-30b-a3b-instruct", true},
 	}
 
 	for _, tc := range cases {
@@ -206,9 +206,9 @@ func TestListAvailableModels_ReturnsSortedList(t *testing.T) {
 
 func TestListAvailableModels_CountSanity(t *testing.T) {
 	models := listAvailableModels()
-	// As of 2026-02: 28 DO-AI + 8 aliases + 25 fireworks + 5 openai-direct + 14 zen + 14 zen aliases = 94
+	// As of 2026-02: 28 DO-AI + 8 aliases + 17 fireworks + 5 openai-direct + 14 zen + 14 zen aliases = 86
 	// Adjust if routes are added/removed. This is a canary for unexpected drift.
-	if len(models) < 85 {
-		t.Errorf("expected at least 85 models in routing table, got %d", len(models))
+	if len(models) < 80 {
+		t.Errorf("expected at least 80 models in routing table, got %d", len(models))
 	}
 }
