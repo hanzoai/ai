@@ -1,0 +1,295 @@
+---
+title: Hanzo Cloud
+description: Core platform infrastructure powering all Hanzo services with API management, data storage, analytics, and billing.
+---
+
+# Hanzo Cloud
+
+Hanzo Cloud is the core platform infrastructure powering all Hanzo services. It provides API management, data storage, analytics, and billing across the Hanzo ecosystem.
+
+## Features
+
+- **API Gateway**: Unified API management and routing
+- **Data Storage**: PostgreSQL, Redis, object storage
+- **Analytics**: Real-time usage analytics and metrics
+- **Billing**: Subscription and usage-based billing
+- **Multi-Tenant**: Organization and project isolation
+- **SDK Support**: TypeScript, Python, Go SDKs
+
+## Architecture
+
+```
++---------------------------------------------------------------+
+|                        HANZO CLOUD                             |
++---------------------------------------------------------------+
+|                                                                |
+|  +-----------------------+  +-------------------------------+  |
+|  |      API Gateway      |  |         Data Layer            |  |
+|  |  +------+  +-------+  |  |  +--------+  +-------------+  |  |
+|  |  | REST |  | gRPC  |  |  |  | Postgres|  | Redis      |  |  |
+|  |  +------+  +-------+  |  |  +--------+  +-------------+  |  |
+|  +-----------------------+  +-------------------------------+  |
+|                                                                |
+|  +-----------------------+  +-------------------------------+  |
+|  |     Analytics         |  |         Billing               |  |
+|  |  +------+  +-------+  |  |  +--------+  +-------------+  |  |
+|  |  |Events|  |Metrics|  |  |  | Stripe |  | Usage Meter |  |  |
+|  |  +------+  +-------+  |  |  +--------+  +-------------+  |  |
+|  +-----------------------+  +-------------------------------+  |
+|                                                                |
++---------------------------------------------------------------+
+```
+
+## Endpoints
+
+| Environment | URL |
+|-------------|-----|
+| Production | `https://api.hanzo.ai` |
+| Console | `https://console.hanzo.ai` |
+| Staging | `https://stg.api.hanzo.ai` |
+
+## Quick Start
+
+### 1. Install SDK
+
+```bash
+# TypeScript/JavaScript
+npm install @hanzo/sdk
+
+# Python
+pip install hanzo-sdk
+
+# Go
+go get github.com/hanzoai/go-sdk
+```
+
+### 2. Initialize Client
+
+```typescript
+import { Hanzo } from '@hanzo/sdk'
+
+const hanzo = new Hanzo({
+  apiKey: process.env.HANZO_API_KEY
+})
+```
+
+### 3. Make API Calls
+
+```typescript
+// List projects
+const projects = await hanzo.projects.list()
+
+// Get usage
+const usage = await hanzo.usage.get({
+  projectId: 'proj-123',
+  startDate: '2024-01-01',
+  endDate: '2024-01-31'
+})
+```
+
+## Organizations
+
+### Create Organization
+
+```typescript
+const org = await hanzo.organizations.create({
+  name: 'Acme Inc',
+  slug: 'acme',
+  plan: 'team'
+})
+```
+
+### Manage Members
+
+```typescript
+// Invite member
+await hanzo.organizations.invite(org.id, {
+  email: 'user@example.com',
+  role: 'admin'
+})
+
+// List members
+const members = await hanzo.organizations.members(org.id)
+```
+
+## Projects
+
+### Create Project
+
+```typescript
+const project = await hanzo.projects.create({
+  organizationId: org.id,
+  name: 'My AI App',
+  description: 'AI-powered application'
+})
+```
+
+### Project Settings
+
+```typescript
+// Configure project
+await hanzo.projects.update(project.id, {
+  settings: {
+    defaultModel: 'gpt-4o',
+    rateLimit: 1000,
+    budgetLimit: 100.00
+  }
+})
+```
+
+## API Keys
+
+### Create API Key
+
+```typescript
+const key = await hanzo.apiKeys.create({
+  projectId: project.id,
+  name: 'Production Key',
+  scopes: ['inference:read', 'inference:write']
+})
+
+console.log(key.key) // Only shown once!
+```
+
+### Rotate Key
+
+```typescript
+await hanzo.apiKeys.rotate(key.id)
+```
+
+## Usage & Billing
+
+### Get Usage
+
+```typescript
+const usage = await hanzo.usage.get({
+  projectId: project.id,
+  metric: 'tokens',
+  granularity: 'day'
+})
+```
+
+### Billing Portal
+
+```typescript
+// Get billing portal URL
+const { url } = await hanzo.billing.portal(org.id)
+// Redirect user to Stripe portal
+```
+
+### Upgrade Plan
+
+```typescript
+await hanzo.billing.upgrade(org.id, {
+  plan: 'enterprise',
+  seats: 50
+})
+```
+
+## Webhooks
+
+### Configure Webhook
+
+```typescript
+await hanzo.webhooks.create({
+  projectId: project.id,
+  url: 'https://example.com/webhook',
+  events: ['usage.limit_reached', 'key.rotated']
+})
+```
+
+### Webhook Events
+
+| Event | Description |
+|-------|-------------|
+| `usage.limit_reached` | Usage limit exceeded |
+| `key.created` | New API key created |
+| `key.rotated` | API key rotated |
+| `member.invited` | Team member invited |
+| `invoice.paid` | Invoice payment received |
+
+## Environment Variables
+
+```bash
+# API
+HANZO_API_URL=https://api.hanzo.ai
+HANZO_API_KEY=hzo_xxx
+
+# Database
+DATABASE_URL=postgres://user:pass@host:5432/hanzo
+REDIS_URL=redis://localhost:6379
+
+# Billing
+STRIPE_SECRET_KEY=sk_xxx
+STRIPE_WEBHOOK_SECRET=whsec_xxx
+
+# Storage
+S3_BUCKET=hanzo-uploads
+S3_REGION=us-east-1
+```
+
+## Docker Deployment
+
+```yaml
+# compose.yml
+services:
+  api:
+    image: hanzoai/cloud:latest
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgres://postgres:postgres@db:5432/hanzo
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - db
+      - redis
+
+  db:
+    image: postgres:16
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+
+volumes:
+  pgdata:
+```
+
+## SDK Reference
+
+### TypeScript
+
+```typescript
+import { Hanzo, HanzoError } from '@hanzo/sdk'
+
+try {
+  const hanzo = new Hanzo({ apiKey: 'xxx' })
+  const result = await hanzo.projects.list()
+} catch (error) {
+  if (error instanceof HanzoError) {
+    console.error(error.code, error.message)
+  }
+}
+```
+
+### Python
+
+```python
+from hanzo import Hanzo, HanzoError
+
+try:
+    hanzo = Hanzo(api_key="xxx")
+    projects = hanzo.projects.list()
+except HanzoError as e:
+    print(e.code, e.message)
+```
+
+### Go
+
+```go
+import "github.com/hanzoai/go-sdk"
+
+client := hanzo.NewClient("xxx")
+projects, err := client.Projects.List(ctx)
+```
