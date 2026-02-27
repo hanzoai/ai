@@ -163,6 +163,11 @@ var aliasPricing = map[string]string{
 // getModelPrice looks up pricing for a user-facing model name.
 // Returns a default price if the model isn't in the pricing table.
 func getModelPrice(model string) modelPrice {
+	if cfg := GetModelConfig(); cfg != nil {
+		return cfg.GetPrice(model)
+	}
+
+	// Static fallback
 	m := strings.ToLower(model)
 
 	// Direct lookup

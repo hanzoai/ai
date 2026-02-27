@@ -156,6 +156,11 @@ var zenIdentityPrompts = map[string]string{
 
 // zenIdentityPrompt returns the identity system prompt for a zen model, or empty string.
 func zenIdentityPrompt(model string) string {
+	if cfg := GetModelConfig(); cfg != nil {
+		return cfg.GetIdentityPrompt(model)
+	}
+
+	// Static fallback
 	m := strings.ToLower(model)
 	if prompt, ok := zenIdentityPrompts[m]; ok {
 		return prompt
@@ -180,6 +185,11 @@ func zenIdentityPrompt(model string) string {
 // resolveModelRoute looks up a user-facing model name and returns its route.
 // Lookup is case-insensitive. Returns nil if the model is not in the routing table.
 func resolveModelRoute(model string) *modelRoute {
+	if cfg := GetModelConfig(); cfg != nil {
+		return cfg.ResolveRoute(model)
+	}
+
+	// Static fallback
 	m := strings.ToLower(model)
 	if route, ok := modelRoutes[m]; ok {
 		return &route
@@ -200,6 +210,11 @@ type modelInfo struct {
 // Hidden models (provider-prefixed aliases, upstream-named routes) are excluded
 // from the listing but remain callable via the completions endpoint.
 func listAvailableModels() []modelInfo {
+	if cfg := GetModelConfig(); cfg != nil {
+		return cfg.ListModels()
+	}
+
+	// Static fallback
 	now := time.Now().Unix()
 	models := make([]modelInfo, 0, len(modelRoutes))
 
