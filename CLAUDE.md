@@ -94,7 +94,7 @@ cd web && yarn lint
 
 ### Commits & PRs
 - Branch naming: `claude/<name>`
-- Main branch: `master`
+- Main branch: `main`
 - Follows semantic versioning (`.releaserc.json`)
 - PR titles should be semantic (feat/fix/chore/docs/refactor)
 
