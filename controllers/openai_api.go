@@ -16,14 +16,13 @@ package controllers
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
-
-	"encoding/base64"
 
 	"github.com/hanzoai/cloud/conf"
 	"github.com/hanzoai/cloud/model"
@@ -456,15 +455,15 @@ func recordTrace(record *usageRecord, startTime time.Time) {
 					"type":      "generation-create",
 					"timestamp": endTime.Format(time.RFC3339Nano),
 					"body": map[string]interface{}{
-						"id":              genId,
-						"traceId":         traceId,
-						"name":            record.Model,
-						"model":           record.Model,
-						"startTime":       startTime.UTC().Format(time.RFC3339Nano),
-						"endTime":         endTime.Format(time.RFC3339Nano),
+						"id":                  genId,
+						"traceId":             traceId,
+						"name":                record.Model,
+						"model":               record.Model,
+						"startTime":           startTime.UTC().Format(time.RFC3339Nano),
+						"endTime":             endTime.Format(time.RFC3339Nano),
 						"completionStartTime": endTime.Format(time.RFC3339Nano),
-						"level":           "DEFAULT",
-						"statusMessage":   record.Status,
+						"level":               "DEFAULT",
+						"statusMessage":       record.Status,
 						"usage": map[string]interface{}{
 							"input":  record.PromptTokens,
 							"output": record.CompletionTokens,

@@ -89,7 +89,7 @@ func writeTestConfig(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "models.yaml")
-	if err := os.WriteFile(path, []byte(testYAML), 0644); err != nil {
+	if err := os.WriteFile(path, []byte(testYAML), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	return path
