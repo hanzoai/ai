@@ -23,6 +23,8 @@ import (
 	"sync"
 	"time"
 
+	"encoding/base64"
+
 	"github.com/hanzoai/cloud/conf"
 	"github.com/hanzoai/cloud/model"
 	"github.com/hanzoai/cloud/object"
@@ -347,6 +349,106 @@ func recordUsage(record *usageRecord) {
 	}()
 }
 
+// recordTrace sends a Langfuse-compatible trace+generation event to the console
+// for observability. This is fire-and-forget — failures are silently ignored.
+func recordTrace(record *usageRecord, startTime time.Time) {
+	go func() {
+		consoleEndpoint := conf.GetConfigString("consoleEndpoint")
+		consoleApiKey := conf.GetConfigString("consolePublicKey")
+		consoleSecretKey := conf.GetConfigString("consoleSecretKey")
+
+		// Skip if console observability is not configured
+		if consoleEndpoint == "" || consoleApiKey == "" || consoleSecretKey == "" {
+			return
+		}
+		consoleEndpoint = strings.TrimRight(consoleEndpoint, "/")
+
+		endTime := time.Now().UTC()
+		traceId := util.GenerateUUID()
+		genId := util.GenerateUUID()
+
+		// Build Langfuse ingestion batch
+		batch := map[string]interface{}{
+			"batch": []map[string]interface{}{
+				{
+					"id":        util.GenerateUUID(),
+					"type":      "trace-create",
+					"timestamp": startTime.UTC().Format(time.RFC3339Nano),
+					"body": map[string]interface{}{
+						"id":        traceId,
+						"name":      "chat-completion",
+						"userId":    record.User,
+						"timestamp": startTime.UTC().Format(time.RFC3339Nano),
+						"metadata": map[string]interface{}{
+							"model":     record.Model,
+							"provider":  record.Provider,
+							"premium":   record.Premium,
+							"stream":    record.Stream,
+							"requestId": record.RequestID,
+							"clientIp":  record.ClientIP,
+							"source":    "cloud-api",
+						},
+						"tags": []string{"chat", record.Model, record.Provider},
+					},
+				},
+				{
+					"id":        util.GenerateUUID(),
+					"type":      "generation-create",
+					"timestamp": endTime.Format(time.RFC3339Nano),
+					"body": map[string]interface{}{
+						"id":              genId,
+						"traceId":         traceId,
+						"name":            record.Model,
+						"model":           record.Model,
+						"startTime":       startTime.UTC().Format(time.RFC3339Nano),
+						"endTime":         endTime.Format(time.RFC3339Nano),
+						"completionStartTime": endTime.Format(time.RFC3339Nano),
+						"level":           "DEFAULT",
+						"statusMessage":   record.Status,
+						"usage": map[string]interface{}{
+							"input":  record.PromptTokens,
+							"output": record.CompletionTokens,
+							"total":  record.TotalTokens,
+							"unit":   "TOKENS",
+						},
+						"metadata": map[string]interface{}{
+							"provider":  record.Provider,
+							"requestId": record.RequestID,
+						},
+					},
+				},
+			},
+			"metadata": map[string]interface{}{
+				"sdk_name":    "cloud-api",
+				"sdk_version": "1.0.0",
+				"public_key":  consoleApiKey,
+			},
+		}
+
+		body, err := json.Marshal(batch)
+		if err != nil {
+			return
+		}
+
+		url := consoleEndpoint + "/api/public/ingestion"
+		client := &http.Client{Timeout: 5 * time.Second}
+		req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
+		if err != nil {
+			return
+		}
+		req.Header.Set("Content-Type", "application/json")
+		// Langfuse uses Basic auth: base64(publicKey:secretKey)
+		auth := base64.StdEncoding.EncodeToString([]byte(consoleApiKey + ":" + consoleSecretKey))
+		req.Header.Set("Authorization", "Basic "+auth)
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return // best-effort, don't block model serving
+		}
+		resp.Body.Close()
+	}()
+}
+
 // ── API handlers ────────────────────────────────────────────────────────────
 
 // ChatCompletions implements the OpenAI-compatible chat completions API
@@ -378,6 +480,9 @@ func (c *ApiController) ChatCompletions() {
 		c.EnableRender = false
 		return
 	}
+
+	// Track timing for observability
+	requestStartTime := time.Now().UTC()
 
 	// Parse request body
 	var request openai.ChatCompletionRequest
@@ -533,7 +638,7 @@ func (c *ApiController) ChatCompletions() {
 	if err != nil {
 		// Record failed usage
 		if authUser != nil {
-			recordUsage(&usageRecord{
+			errRecord := &usageRecord{
 				Owner:     authUser.Owner,
 				User:      authUser.Owner + "/" + authUser.Name,
 				Model:     request.Model,
@@ -544,7 +649,9 @@ func (c *ApiController) ChatCompletions() {
 				ErrorMsg:  err.Error(),
 				ClientIP:  c.Ctx.Request.RemoteAddr,
 				RequestID: requestId,
-			})
+			}
+			recordUsage(errRecord)
+			recordTrace(errRecord, requestStartTime)
 		}
 		c.ResponseError(err.Error())
 		return
@@ -552,7 +659,7 @@ func (c *ApiController) ChatCompletions() {
 
 	// Record successful usage
 	if authUser != nil {
-		recordUsage(&usageRecord{
+		successRecord := &usageRecord{
 			Owner:            authUser.Owner,
 			User:             authUser.Owner + "/" + authUser.Name,
 			Organization:     authUser.Owner,
@@ -567,7 +674,9 @@ func (c *ApiController) ChatCompletions() {
 			Status:           "success",
 			ClientIP:         c.Ctx.Request.RemoteAddr,
 			RequestID:        requestId,
-		})
+		}
+		recordUsage(successRecord)
+		recordTrace(successRecord, requestStartTime)
 	}
 
 	// Handle response based on streaming mode
