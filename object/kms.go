@@ -43,7 +43,7 @@ import (
 //   - KMS_CLIENT_ID:      Universal Auth client ID
 //   - KMS_CLIENT_SECRET:  Universal Auth client secret
 //   - KMS_PROJECT_ID:     Default project ID for system (admin-owned) secrets
-//   - KMS_ENVIRONMENT:    Environment slug (default: production)
+//   - KMS_ENVIRONMENT:    Environment slug (default: prod)
 //
 // Multi-tenant model:
 //   - Admin-owned providers use KMS_PROJECT_ID (system secrets)
@@ -105,7 +105,7 @@ func initKMS() {
 		projectID := os.Getenv("KMS_PROJECT_ID")
 		environment := os.Getenv("KMS_ENVIRONMENT")
 		if environment == "" {
-			environment = "production"
+			environment = "prod"
 		}
 
 		kms = &kmsClient{
@@ -163,7 +163,7 @@ func (c *kmsClient) getAuthToken() (string, error) {
 		return "", fmt.Errorf("kms: failed to marshal login request: %w", err)
 	}
 
-	url := c.endpoint + "/api/v1/identities/universal-auth/login"
+	url := c.endpoint + "/api/v1/auth/universal-auth/login"
 	resp, err := c.httpClient.Post(url, "application/json", bytes.NewReader(body))
 	if err != nil {
 		return "", fmt.Errorf("kms: universal auth login failed: %w", err)
