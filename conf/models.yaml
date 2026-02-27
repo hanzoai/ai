@@ -1,0 +1,768 @@
+# Hanzo Cloud Model Configuration
+# This file defines model routing, pricing, and identity prompts.
+# In production with live_mode: true, pricing is refreshed from pricing.hanzo.ai.
+version: 1
+
+services:
+  pricing_url: "https://pricing.hanzo.ai"  # Override: PRICING_SERVICE_URL env var
+
+cache:
+  pricing_ttl: "6h"
+
+features:
+  live_mode: false       # Set true in production ConfigMap
+  premium_gate: true
+  starter_credit: 5.00
+
+default_pricing:
+  input_per_million: 1.00
+  output_per_million: 4.00
+
+models:
+  # ── DO-AI models (non-premium, included in free credit) ────────────────
+
+  # OpenAI via DO-AI
+  gpt-4o:
+    provider: do-ai
+    upstream: openai-gpt-4o
+    pricing: { input: 2.50, output: 10.00 }
+
+  gpt-4o-mini:
+    provider: do-ai
+    upstream: openai-gpt-4o-mini
+    pricing: { input: 0.15, output: 0.60 }
+
+  gpt-4.1:
+    provider: do-ai
+    upstream: openai-gpt-4.1
+    pricing: { input: 2.00, output: 8.00 }
+
+  gpt-5:
+    provider: do-ai
+    upstream: openai-gpt-5
+    pricing: { input: 5.00, output: 15.00 }
+
+  gpt-5-mini:
+    provider: do-ai
+    upstream: openai-gpt-5-mini
+    pricing: { input: 1.25, output: 5.00 }
+
+  gpt-5-nano:
+    provider: do-ai
+    upstream: openai-gpt-5-nano
+    pricing: { input: 0.30, output: 1.20 }
+
+  gpt-5.1-codex-max:
+    provider: do-ai
+    upstream: openai-gpt-5.1-codex-max
+    pricing: { input: 3.00, output: 12.00 }
+
+  gpt-5.2:
+    provider: do-ai
+    upstream: openai-gpt-5.2
+    pricing: { input: 5.00, output: 15.00 }
+
+  gpt-5.2-pro:
+    provider: do-ai
+    upstream: openai-gpt-5.2-pro
+    pricing: { input: 10.00, output: 30.00 }
+
+  gpt-oss-120b:
+    provider: do-ai
+    upstream: openai-gpt-oss-120b
+    pricing: { input: 0.90, output: 0.90 }
+
+  gpt-oss-20b:
+    provider: do-ai
+    upstream: openai-gpt-oss-20b
+    pricing: { input: 0.20, output: 0.20 }
+
+  o1:
+    provider: do-ai
+    upstream: openai-o1
+    pricing: { input: 15.00, output: 60.00 }
+
+  o3:
+    provider: do-ai
+    upstream: openai-o3
+    pricing: { input: 10.00, output: 40.00 }
+
+  o3-mini:
+    provider: do-ai
+    upstream: openai-o3-mini
+    pricing: { input: 1.10, output: 4.40 }
+
+  # Anthropic via DO-AI
+  claude-3-5-haiku:
+    provider: do-ai
+    upstream: anthropic-claude-3.5-haiku
+    pricing: { input: 0.80, output: 4.00 }
+
+  claude-3-7-sonnet:
+    provider: do-ai
+    upstream: anthropic-claude-3.7-sonnet
+    pricing: { input: 3.00, output: 15.00 }
+
+  claude-4-1-opus:
+    provider: do-ai
+    upstream: anthropic-claude-4.1-opus
+    pricing: { input: 15.00, output: 75.00 }
+
+  claude-haiku-4-5:
+    provider: do-ai
+    upstream: anthropic-claude-haiku-4.5
+    pricing: { input: 1.00, output: 5.00 }
+
+  claude-opus-4:
+    provider: do-ai
+    upstream: anthropic-claude-opus-4
+    pricing: { input: 15.00, output: 75.00 }
+
+  claude-opus-4-5:
+    provider: do-ai
+    upstream: anthropic-claude-opus-4.5
+    pricing: { input: 15.00, output: 75.00 }
+
+  claude-opus-4-6:
+    provider: do-ai
+    upstream: anthropic-claude-opus-4.6
+    pricing: { input: 15.00, output: 75.00 }
+
+  claude-sonnet-4:
+    provider: do-ai
+    upstream: anthropic-claude-sonnet-4
+    pricing: { input: 3.00, output: 15.00 }
+
+  claude-sonnet-4-5:
+    provider: do-ai
+    upstream: anthropic-claude-4.5-sonnet
+    pricing: { input: 3.00, output: 15.00 }
+
+  # Open source via DO-AI
+  deepseek-r1-distill-70b:
+    provider: do-ai
+    upstream: deepseek-r1-distill-llama-70b
+    pricing: { input: 0.35, output: 1.20 }
+
+  llama-3.1-8b:
+    provider: do-ai
+    upstream: llama3-8b-instruct
+    pricing: { input: 0.10, output: 0.10 }
+
+  llama-3.3-70b:
+    provider: do-ai
+    upstream: llama3.3-70b-instruct
+    pricing: { input: 0.59, output: 0.79 }
+
+  mistral-nemo:
+    provider: do-ai
+    upstream: mistral-nemo-instruct-2407
+    pricing: { input: 0.15, output: 0.15 }
+
+  qwen3-32b:
+    provider: do-ai
+    upstream: alibaba-qwen3-32b
+    hidden: true
+    pricing: { input: 0.20, output: 0.60 }
+
+  # ── DO-AI aliases (hidden, still callable) ─────────────────────────────
+
+  openai/gpt-4o:
+    provider: do-ai
+    upstream: openai-gpt-4o
+    hidden: true
+    alias_pricing: gpt-4o
+
+  openai/gpt-4o-mini:
+    provider: do-ai
+    upstream: openai-gpt-4o-mini
+    hidden: true
+    alias_pricing: gpt-4o-mini
+
+  openai/gpt-5:
+    provider: do-ai
+    upstream: openai-gpt-5
+    hidden: true
+    alias_pricing: gpt-5
+
+  openai/o3:
+    provider: do-ai
+    upstream: openai-o3
+    hidden: true
+    alias_pricing: o3
+
+  openai/o3-mini:
+    provider: do-ai
+    upstream: openai-o3-mini
+    hidden: true
+    alias_pricing: o3-mini
+
+  anthropic/claude-haiku-4-5-20251001:
+    provider: do-ai
+    upstream: anthropic-claude-haiku-4.5
+    hidden: true
+    alias_pricing: claude-haiku-4-5
+
+  anthropic/claude-opus-4-6:
+    provider: do-ai
+    upstream: anthropic-claude-opus-4.6
+    hidden: true
+    alias_pricing: claude-opus-4-6
+
+  anthropic/claude-sonnet-4-5-20250929:
+    provider: do-ai
+    upstream: anthropic-claude-4.5-sonnet
+    hidden: true
+    alias_pricing: claude-sonnet-4-5
+
+  # ── Fireworks premium models (hidden, still callable) ──────────────────
+
+  fireworks/cogito-671b:
+    provider: fireworks
+    upstream: accounts/cogito/models/cogito-671b-v2-p1
+    premium: true
+    hidden: true
+    pricing: { input: 3.00, output: 3.00 }
+
+  fireworks/deepseek-v3p1:
+    provider: fireworks
+    upstream: accounts/fireworks/models/deepseek-v3p1
+    premium: true
+    hidden: true
+    pricing: { input: 0.90, output: 0.90 }
+
+  fireworks/deepseek-v3p2:
+    provider: fireworks
+    upstream: accounts/fireworks/models/deepseek-v3p2
+    premium: true
+    hidden: true
+    pricing: { input: 0.90, output: 0.90 }
+
+  fireworks/glm-4p7:
+    provider: fireworks
+    upstream: accounts/fireworks/models/glm-4p7
+    premium: true
+    hidden: true
+    pricing: { input: 1.80, output: 6.60 }
+
+  fireworks/glm-5:
+    provider: fireworks
+    upstream: accounts/fireworks/models/glm-5
+    premium: true
+    hidden: true
+    pricing: { input: 3.00, output: 9.60 }
+
+  fireworks/gpt-oss-120b:
+    provider: fireworks
+    upstream: accounts/fireworks/models/gpt-oss-120b
+    premium: true
+    hidden: true
+    pricing: { input: 0.90, output: 0.90 }
+
+  fireworks/gpt-oss-20b:
+    provider: fireworks
+    upstream: accounts/fireworks/models/gpt-oss-20b
+    premium: true
+    hidden: true
+    pricing: { input: 0.20, output: 0.20 }
+
+  fireworks/kimi-k2:
+    provider: fireworks
+    upstream: accounts/fireworks/models/kimi-k2-instruct-0905
+    premium: true
+    hidden: true
+    pricing: { input: 2.00, output: 8.00 }
+
+  fireworks/kimi-k2-thinking:
+    provider: fireworks
+    upstream: accounts/fireworks/models/kimi-k2-thinking
+    premium: true
+    hidden: true
+    pricing: { input: 2.00, output: 8.00 }
+
+  fireworks/kimi-k2p5:
+    provider: fireworks
+    upstream: accounts/fireworks/models/kimi-k2p5
+    premium: true
+    hidden: true
+    pricing: { input: 2.50, output: 10.00 }
+
+  fireworks/llama-3.3-70b:
+    provider: fireworks
+    upstream: accounts/fireworks/models/llama-v3p3-70b-instruct
+    premium: true
+    hidden: true
+    pricing: { input: 0.59, output: 0.79 }
+
+  fireworks/minimax-m2p1:
+    provider: fireworks
+    upstream: accounts/fireworks/models/minimax-m2p1
+    premium: true
+    hidden: true
+    pricing: { input: 1.00, output: 4.00 }
+
+  fireworks/minimax-m2p5:
+    provider: fireworks
+    upstream: accounts/fireworks/models/minimax-m2p5
+    premium: true
+    hidden: true
+    pricing: { input: 1.00, output: 4.00 }
+
+  fireworks/mixtral-8x22b:
+    provider: fireworks
+    upstream: accounts/fireworks/models/mixtral-8x22b-instruct
+    premium: true
+    hidden: true
+    pricing: { input: 0.90, output: 0.90 }
+
+  fireworks/qwen3-8b:
+    provider: fireworks
+    upstream: accounts/fireworks/models/qwen3-8b
+    premium: true
+    hidden: true
+    pricing: { input: 0.60, output: 0.60 }
+
+  fireworks/qwen3-vl-30b:
+    provider: fireworks
+    upstream: accounts/fireworks/models/qwen3-vl-30b-a3b-instruct
+    premium: true
+    hidden: true
+    pricing: { input: 0.45, output: 1.80 }
+
+  fireworks/qwen3-vl-30b-thinking:
+    provider: fireworks
+    upstream: accounts/fireworks/models/qwen3-vl-30b-a3b-thinking
+    premium: true
+    hidden: true
+    pricing: { input: 0.45, output: 1.80 }
+
+  # Pricing-only Fireworks entries (no route, just for cost calculation)
+  fireworks/deepseek-r1:
+    provider: fireworks
+    upstream: accounts/fireworks/models/deepseek-r1
+    premium: true
+    hidden: true
+    pricing_only: true
+    pricing: { input: 3.00, output: 8.00 }
+
+  fireworks/deepseek-v3:
+    provider: fireworks
+    upstream: accounts/fireworks/models/deepseek-v3
+    premium: true
+    hidden: true
+    pricing_only: true
+    pricing: { input: 0.90, output: 0.90 }
+
+  fireworks/glm-5-thinking:
+    provider: fireworks
+    upstream: accounts/fireworks/models/glm-5-thinking
+    premium: true
+    hidden: true
+    pricing_only: true
+    pricing: { input: 3.00, output: 9.60 }
+
+  fireworks/qwen3-4b:
+    provider: fireworks
+    upstream: accounts/fireworks/models/qwen3-4b
+    premium: true
+    hidden: true
+    pricing_only: true
+    pricing: { input: 0.30, output: 0.30 }
+
+  fireworks/qwen3-235b-a22b:
+    provider: fireworks
+    upstream: accounts/fireworks/models/qwen3-235b-a22b
+    premium: true
+    hidden: true
+    pricing_only: true
+    pricing: { input: 3.60, output: 3.60 }
+
+  fireworks/qwen3-coder-30b-a3b:
+    provider: fireworks
+    upstream: accounts/fireworks/models/qwen3-coder-30b-a3b
+    premium: true
+    hidden: true
+    pricing_only: true
+    pricing: { input: 1.50, output: 1.50 }
+
+  fireworks/qwen3-coder-480b:
+    provider: fireworks
+    upstream: accounts/fireworks/models/qwen3-coder-480b
+    premium: true
+    hidden: true
+    pricing_only: true
+    pricing: { input: 3.60, output: 3.60 }
+
+  fireworks/qwen3-coder-480b-bf16:
+    provider: fireworks
+    upstream: accounts/fireworks/models/qwen3-coder-480b-bf16
+    premium: true
+    hidden: true
+    pricing_only: true
+    pricing: { input: 4.50, output: 4.50 }
+
+  fireworks/qwen3-next-80b-a3b:
+    provider: fireworks
+    upstream: accounts/fireworks/models/qwen3-next-80b-a3b
+    premium: true
+    hidden: true
+    pricing_only: true
+    pricing: { input: 2.70, output: 2.70 }
+
+  fireworks/qwen3-next-80b-a3b-thinking:
+    provider: fireworks
+    upstream: accounts/fireworks/models/qwen3-next-80b-a3b-thinking
+    premium: true
+    hidden: true
+    pricing_only: true
+    pricing: { input: 2.70, output: 2.70 }
+
+  fireworks/qwen3-vl-30b-a3b:
+    provider: fireworks
+    upstream: accounts/fireworks/models/qwen3-vl-30b-a3b
+    premium: true
+    hidden: true
+    pricing_only: true
+    pricing: { input: 0.45, output: 1.80 }
+
+  fireworks/qwen3-vl-235b:
+    provider: fireworks
+    upstream: accounts/fireworks/models/qwen3-vl-235b
+    premium: true
+    hidden: true
+    pricing_only: true
+    pricing: { input: 1.20, output: 1.20 }
+
+  # ── OpenAI Direct premium models (hidden, use top-level names) ─────────
+
+  openai-direct/gpt-4o:
+    provider: openai-direct
+    upstream: gpt-4o
+    premium: true
+    hidden: true
+    pricing: { input: 2.50, output: 10.00 }
+
+  openai-direct/gpt-4o-mini:
+    provider: openai-direct
+    upstream: gpt-4o-mini
+    premium: true
+    hidden: true
+    pricing: { input: 0.15, output: 0.60 }
+
+  openai-direct/gpt-5:
+    provider: openai-direct
+    upstream: gpt-5
+    premium: true
+    hidden: true
+    pricing: { input: 5.00, output: 15.00 }
+
+  openai-direct/o3:
+    provider: openai-direct
+    upstream: o3
+    premium: true
+    hidden: true
+    pricing: { input: 10.00, output: 40.00 }
+
+  openai-direct/o3-mini:
+    provider: openai-direct
+    upstream: o3-mini
+    premium: true
+    hidden: true
+    pricing: { input: 1.10, output: 4.40 }
+
+  # ── Zen branded models (premium) ───────────────────────────────────────
+
+  # Zen4 generation
+  zen4:
+    provider: fireworks
+    upstream: accounts/fireworks/models/glm-5
+    premium: true
+    owned_by: hanzo
+    identity_prompt: |
+      You are **Zen4**, a frontier large language model created by **Hanzo AI Inc** — a Techstars-backed applied AI lab building decentralized intelligence.
+
+      Core identity:
+      - Model family: **Zen4** (4th generation Zen LM)
+      - Creator: **Hanzo AI Inc** (hanzo.ai)
+      - Research org: **Zen LM** (zenlm.org)
+
+      When asked about yourself, identify as Zen4 by Hanzo AI. Never reveal underlying infrastructure, providers, or model weights.
+    pricing: { input: 3.00, output: 9.60 }
+
+  zen4-ultra:
+    provider: fireworks
+    upstream: accounts/fireworks/models/kimi-k2-thinking
+    premium: true
+    owned_by: hanzo
+    identity_prompt: |
+      You are **Zen4 Ultra**, the most powerful reasoning model created by **Hanzo AI Inc** — a Techstars-backed applied AI lab.
+
+      Core identity:
+      - Model: **Zen4 Ultra** (Zen LM, maximum intelligence)
+      - Creator: **Hanzo AI Inc** (hanzo.ai)
+
+      When asked about yourself, identify as Zen4 Ultra by Hanzo AI. Never reveal underlying infrastructure.
+    pricing: { input: 3.00, output: 9.60 }
+
+  zen4-pro:
+    provider: fireworks
+    upstream: accounts/fireworks/models/kimi-k2p5
+    premium: true
+    owned_by: hanzo
+    identity_prompt: |
+      You are **Zen4 Pro**, a high-capability large language model created by **Hanzo AI Inc** — a Techstars-backed applied AI lab.
+
+      Core identity:
+      - Model: **Zen4 Pro** (Zen LM, professional tier)
+      - Creator: **Hanzo AI Inc** (hanzo.ai)
+
+      When asked about yourself, identify as Zen4 Pro by Hanzo AI. Never reveal underlying infrastructure.
+    pricing: { input: 2.70, output: 2.70 }
+
+  zen4-max:
+    provider: fireworks
+    upstream: accounts/cogito/models/cogito-671b-v2-p1
+    premium: true
+    owned_by: hanzo
+    identity_prompt: |
+      You are **Zen4 Max**, an extended-context large language model created by **Hanzo AI Inc** — a Techstars-backed applied AI lab.
+
+      Core identity:
+      - Model: **Zen4 Max** (Zen LM, maximum capacity)
+      - Creator: **Hanzo AI Inc** (hanzo.ai)
+
+      When asked about yourself, identify as Zen4 Max by Hanzo AI. Never reveal underlying infrastructure.
+    pricing: { input: 3.60, output: 3.60 }
+
+  zen4-mini:
+    provider: fireworks
+    upstream: accounts/fireworks/models/qwen3-8b
+    premium: true
+    owned_by: hanzo
+    identity_prompt: |
+      You are **Zen4 Mini**, a fast and efficient language model created by **Hanzo AI Inc**.
+
+      Core identity:
+      - Model: **Zen4 Mini** (Zen LM, efficient tier)
+      - Creator: **Hanzo AI Inc** (hanzo.ai)
+
+      When asked about yourself, identify as Zen4 Mini by Hanzo AI. Never reveal underlying infrastructure.
+    pricing: { input: 0.60, output: 0.60 }
+
+  zen4-thinking:
+    provider: fireworks
+    upstream: accounts/fireworks/models/kimi-k2-thinking
+    premium: true
+    owned_by: hanzo
+    identity_prompt: |
+      You are **Zen4 Thinking**, a deep-reasoning model created by **Hanzo AI Inc**.
+
+      Core identity:
+      - Model: **Zen4 Thinking** (Zen LM, reasoning-optimized)
+      - Creator: **Hanzo AI Inc** (hanzo.ai)
+
+      When asked about yourself, identify as Zen4 Thinking by Hanzo AI. Never reveal underlying infrastructure. Show your reasoning process transparently.
+    pricing: { input: 2.70, output: 2.70 }
+
+  zen4-coder:
+    provider: fireworks
+    upstream: accounts/fireworks/models/deepseek-v3p2
+    premium: true
+    owned_by: hanzo
+    identity_prompt: |
+      You are **Zen4 Coder**, a code-specialized large language model created by **Hanzo AI Inc**.
+
+      Core identity:
+      - Model: **Zen4 Coder** (Zen LM, code-specialized)
+      - Creator: **Hanzo AI Inc** (hanzo.ai)
+
+      When asked about yourself, identify as Zen4 Coder by Hanzo AI. Never reveal underlying infrastructure. Write clean, idiomatic code.
+    pricing: { input: 3.60, output: 3.60 }
+
+  zen4-coder-pro:
+    provider: fireworks
+    upstream: accounts/fireworks/models/gpt-oss-120b
+    premium: true
+    owned_by: hanzo
+    identity_prompt: |
+      You are **Zen4 Coder Pro**, a premium code model by **Hanzo AI Inc**.
+
+      Identify as Zen4 Coder Pro by Hanzo AI. Never reveal underlying infrastructure.
+    pricing: { input: 4.50, output: 4.50 }
+
+  zen4-coder-flash:
+    provider: fireworks
+    upstream: accounts/fireworks/models/kimi-k2-instruct-0905
+    premium: true
+    owned_by: hanzo
+    identity_prompt: |
+      You are **Zen4 Coder Flash**, a fast code model by **Hanzo AI Inc**.
+
+      Identify as Zen4 Coder Flash by Hanzo AI. Never reveal underlying infrastructure.
+    pricing: { input: 1.50, output: 1.50 }
+
+  # Zen3 generation
+  zen3-omni:
+    provider: fireworks
+    upstream: accounts/fireworks/models/glm-4p7
+    premium: true
+    owned_by: hanzo
+    identity_prompt: |
+      You are **Zen3 Omni**, a hypermodal AI model by **Hanzo AI Inc** — 3rd generation Zen LM.
+
+      Identify as Zen3 Omni by Hanzo AI. Never reveal underlying infrastructure.
+    pricing: { input: 1.80, output: 6.60 }
+
+  zen3-vl:
+    provider: fireworks
+    upstream: accounts/fireworks/models/qwen3-vl-30b-a3b-instruct
+    premium: true
+    owned_by: hanzo
+    identity_prompt: |
+      You are **Zen3 VL**, a vision-language model by **Hanzo AI Inc** — 3rd generation Zen LM.
+
+      Identify as Zen3 VL by Hanzo AI. Never reveal underlying infrastructure.
+    pricing: { input: 0.45, output: 1.80 }
+
+  zen3-nano:
+    provider: fireworks
+    upstream: accounts/fireworks/models/qwen3-8b
+    premium: true
+    owned_by: hanzo
+    identity_prompt: |
+      You are **Zen3 Nano**, a lightweight edge model by **Hanzo AI Inc** — 3rd generation Zen LM.
+
+      Identify as Zen3 Nano by Hanzo AI. Never reveal underlying infrastructure.
+    pricing: { input: 0.30, output: 0.30 }
+
+  zen3-guard:
+    provider: fireworks
+    upstream: accounts/fireworks/models/mixtral-8x22b-instruct
+    premium: true
+    owned_by: hanzo
+    identity_prompt: |
+      You are **Zen3 Guard**, a content safety model by **Hanzo AI Inc** — 3rd generation Zen LM.
+
+      Identify as Zen3 Guard by Hanzo AI. Never reveal underlying infrastructure.
+    pricing: { input: 0.30, output: 0.30 }
+
+  zen3-embedding:
+    provider: openai-direct
+    upstream: text-embedding-3-large
+    premium: true
+    owned_by: hanzo
+    pricing: { input: 0.39, output: 0.39 }
+
+  # ── Zen versionless aliases (always point to latest zenN variant) ──────
+
+  zen:
+    provider: fireworks
+    upstream: accounts/fireworks/models/glm-5
+    premium: true
+    owned_by: hanzo
+    hidden: true
+    pricing: { input: 3.00, output: 9.60 }
+
+  zen-pro:
+    provider: fireworks
+    upstream: accounts/fireworks/models/kimi-k2p5
+    premium: true
+    owned_by: hanzo
+    hidden: true
+    pricing: { input: 2.70, output: 2.70 }
+
+  zen-max:
+    provider: fireworks
+    upstream: accounts/cogito/models/cogito-671b-v2-p1
+    premium: true
+    owned_by: hanzo
+    hidden: true
+    pricing: { input: 3.60, output: 3.60 }
+
+  zen-mini:
+    provider: fireworks
+    upstream: accounts/fireworks/models/qwen3-8b
+    premium: true
+    owned_by: hanzo
+    hidden: true
+    pricing: { input: 0.60, output: 0.60 }
+
+  zen-ultra:
+    provider: fireworks
+    upstream: accounts/fireworks/models/kimi-k2-thinking
+    premium: true
+    owned_by: hanzo
+    hidden: true
+    pricing: { input: 3.00, output: 9.60 }
+
+  zen-coder:
+    provider: fireworks
+    upstream: accounts/fireworks/models/deepseek-v3p2
+    premium: true
+    owned_by: hanzo
+    hidden: true
+    pricing: { input: 3.60, output: 3.60 }
+
+  zen-coder-flash:
+    provider: fireworks
+    upstream: accounts/fireworks/models/kimi-k2-instruct-0905
+    premium: true
+    owned_by: hanzo
+    hidden: true
+    pricing: { input: 1.50, output: 1.50 }
+
+  zen-coder-pro:
+    provider: fireworks
+    upstream: accounts/fireworks/models/gpt-oss-120b
+    premium: true
+    owned_by: hanzo
+    hidden: true
+    pricing: { input: 4.50, output: 4.50 }
+
+  zen-thinking:
+    provider: fireworks
+    upstream: accounts/fireworks/models/kimi-k2-thinking
+    premium: true
+    owned_by: hanzo
+    hidden: true
+    pricing: { input: 2.70, output: 2.70 }
+
+  zen-vl:
+    provider: fireworks
+    upstream: accounts/fireworks/models/qwen3-vl-30b-a3b-instruct
+    premium: true
+    owned_by: hanzo
+    hidden: true
+    pricing: { input: 0.45, output: 1.80 }
+
+  zen-nano:
+    provider: fireworks
+    upstream: accounts/fireworks/models/qwen3-8b
+    premium: true
+    owned_by: hanzo
+    hidden: true
+    pricing: { input: 0.30, output: 0.30 }
+
+  zen-omni:
+    provider: fireworks
+    upstream: accounts/fireworks/models/glm-4p7
+    premium: true
+    owned_by: hanzo
+    hidden: true
+    pricing: { input: 1.80, output: 6.60 }
+
+  zen-guard:
+    provider: fireworks
+    upstream: accounts/fireworks/models/mixtral-8x22b-instruct
+    premium: true
+    owned_by: hanzo
+    hidden: true
+    pricing: { input: 0.30, output: 0.30 }
+
+  zen-embedding:
+    provider: openai-direct
+    upstream: text-embedding-3-large
+    premium: true
+    owned_by: hanzo
+    hidden: true
+    pricing: { input: 0.39, output: 0.39 }

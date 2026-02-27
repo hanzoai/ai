@@ -23,6 +23,7 @@ import (
 	"github.com/beego/beego/logs"
 	_ "github.com/beego/beego/session/redis"
 	"github.com/hanzoai/cloud/conf"
+	"github.com/hanzoai/cloud/controllers"
 	"github.com/hanzoai/cloud/object"
 	"github.com/hanzoai/cloud/proxy"
 	"github.com/hanzoai/cloud/routers"
@@ -35,6 +36,16 @@ func main() {
 	object.CreateTables()
 
 	object.InitDb()
+
+	// Load model routing/pricing config from YAML. Non-fatal: falls back to static maps.
+	configPath := conf.GetConfigString("modelConfigPath")
+	if configPath == "" {
+		configPath = "conf/models.yaml"
+	}
+	if err := controllers.InitModelConfig(configPath); err != nil {
+		logs.Warn("Model config: %v (using static fallback)", err)
+	}
+
 	proxy.InitHttpClient()
 	util.InitMaxmindFiles()
 	util.InitIpDb()
