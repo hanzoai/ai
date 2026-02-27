@@ -1,8 +1,9 @@
 FROM --platform=$BUILDPLATFORM node:20.18.0 AS FRONT
+RUN corepack enable && corepack prepare pnpm@latest --activate
 WORKDIR /web
 COPY ./web .
 ENV NODE_OPTIONS="--max-old-space-size=4096"
-RUN yarn install --frozen-lockfile --network-timeout 1000000 && yarn run build
+RUN pnpm install --no-frozen-lockfile && pnpm run build
 
 
 FROM --platform=$BUILDPLATFORM golang:1.23.6 AS BACK
@@ -37,6 +38,7 @@ WORKDIR /
 COPY --from=BACK --chown=$USER:$USER /go/src/hanzo-cloud/server_${BUILDX_ARCH} ./server
 COPY --from=BACK --chown=$USER:$USER /go/src/hanzo-cloud/data ./data
 COPY --from=BACK --chown=$USER:$USER /go/src/hanzo-cloud/conf/app.conf ./conf/app.conf
+COPY --from=BACK --chown=$USER:$USER /go/src/hanzo-cloud/conf/models.yaml ./conf/models.yaml
 COPY --from=FRONT --chown=$USER:$USER /web/build ./web/build
 ENV RUNNING_IN_DOCKER=true
 
@@ -64,6 +66,7 @@ COPY --from=BACK /go/src/hanzo-cloud/server_${BUILDX_ARCH} ./server
 COPY --from=BACK /go/src/hanzo-cloud/data ./data
 COPY --from=BACK /go/src/hanzo-cloud/docker-entrypoint.sh /docker-entrypoint.sh
 COPY --from=BACK /go/src/hanzo-cloud/conf/app.conf ./conf/app.conf
+COPY --from=BACK /go/src/hanzo-cloud/conf/models.yaml ./conf/models.yaml
 COPY --from=FRONT /web/build ./web/build
 ENV RUNNING_IN_DOCKER=true
 
