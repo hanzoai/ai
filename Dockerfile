@@ -1,5 +1,5 @@
 FROM --platform=$BUILDPLATFORM node:20.18.0 AS FRONT
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN npm install -g pnpm
 WORKDIR /web
 COPY ./web .
 ENV NODE_OPTIONS="--max-old-space-size=4096"
