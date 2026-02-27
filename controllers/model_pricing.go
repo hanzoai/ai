@@ -116,20 +116,20 @@ var modelPricing = map[string]modelPrice{
 	// ── Zen branded models (use Fireworks pricing via upstream) ──────
 
 	// Zen4 models
-	"zen4":             {InputPerMillion: 3.00, OutputPerMillion: 9.60}, // GLM-5
-	"zen4-ultra":       {InputPerMillion: 3.00, OutputPerMillion: 9.60}, // GLM-5 thinking
-	"zen4-pro":         {InputPerMillion: 2.70, OutputPerMillion: 2.70}, // Qwen3-Next-80B-A3B
-	"zen4-max":         {InputPerMillion: 3.60, OutputPerMillion: 3.60}, // Qwen3-235B-A22B
-	"zen4-mini":        {InputPerMillion: 0.60, OutputPerMillion: 0.60}, // Qwen3-8B
-	"zen4-thinking":    {InputPerMillion: 2.70, OutputPerMillion: 2.70}, // Qwen3-Next-80B-A3B thinking
-	"zen4-coder":       {InputPerMillion: 3.60, OutputPerMillion: 3.60}, // Qwen3-Coder-480B-A35B
-	"zen4-coder-pro":   {InputPerMillion: 4.50, OutputPerMillion: 4.50}, // Qwen3-Coder-480B BF16
-	"zen4-coder-flash": {InputPerMillion: 1.50, OutputPerMillion: 1.50}, // Qwen3-Coder-30B-A3B
-	"zen3-omni":        {InputPerMillion: 1.80, OutputPerMillion: 6.60}, // GLM-4.7
-	"zen3-vl":          {InputPerMillion: 0.45, OutputPerMillion: 1.80}, // Qwen3-VL-30B-A3B
-	"zen3-nano":        {InputPerMillion: 0.30, OutputPerMillion: 0.30}, // Qwen3-4B
-	"zen3-guard":       {InputPerMillion: 0.30, OutputPerMillion: 0.30}, // Qwen3-4B
-	"zen3-embedding":   {InputPerMillion: 0.39, OutputPerMillion: 0.39}, // text-embedding-3-large
+	"zen4":             {InputPerMillion: 3.00, OutputPerMillion: 9.60},
+	"zen4-ultra":       {InputPerMillion: 3.00, OutputPerMillion: 9.60},
+	"zen4-pro":         {InputPerMillion: 2.70, OutputPerMillion: 2.70},
+	"zen4-max":         {InputPerMillion: 3.60, OutputPerMillion: 3.60},
+	"zen4-mini":        {InputPerMillion: 0.60, OutputPerMillion: 0.60},
+	"zen4-thinking":    {InputPerMillion: 2.70, OutputPerMillion: 2.70},
+	"zen4-coder":       {InputPerMillion: 3.60, OutputPerMillion: 3.60},
+	"zen4-coder-pro":   {InputPerMillion: 4.50, OutputPerMillion: 4.50},
+	"zen4-coder-flash": {InputPerMillion: 1.50, OutputPerMillion: 1.50},
+	"zen3-omni":        {InputPerMillion: 1.80, OutputPerMillion: 6.60},
+	"zen3-vl":          {InputPerMillion: 0.45, OutputPerMillion: 1.80},
+	"zen3-nano":        {InputPerMillion: 0.30, OutputPerMillion: 0.30},
+	"zen3-guard":       {InputPerMillion: 0.30, OutputPerMillion: 0.30},
+	"zen3-embedding":   {InputPerMillion: 0.39, OutputPerMillion: 0.39},
 
 	// Versionless aliases (same pricing as zen4/zen3 variants)
 	"zen":             {InputPerMillion: 3.00, OutputPerMillion: 9.60},
