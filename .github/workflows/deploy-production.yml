@@ -23,11 +23,6 @@ env:
   DEPLOYMENT_NAME: cloud-api
   CONTAINER_NAME: cloud-api
   IAM_INTERNAL_ENDPOINT: http://iam.hanzo.svc.cluster.local:8000
-  KMS_ENDPOINT: https://kms.hanzo.ai
-  KMS_PROJECT_ID: 2104f3b4-9276-476c-9727-550313285bd8
-  KMS_ENVIRONMENT: prod
-  KMS_DO_API_TOKEN_KEY: do-api-token
-  KMS_DO_CLUSTER_ID_KEY: do-cluster-id
 
 jobs:
   build-and-push:
@@ -79,68 +74,15 @@ jobs:
     runs-on: ubuntu-latest
     needs: build-and-push
     steps:
-      - name: Resolve deploy secrets from Hanzo KMS
-        id: kms
-        env:
-          HANZO_API_KEY: ${{ secrets.HANZO_API_KEY }}
-          KMS_CLIENT_ID: ${{ secrets.KMS_CLIENT_ID }}
-          KMS_CLIENT_SECRET: ${{ secrets.KMS_CLIENT_SECRET }}
-          KMS_PROJECT_ID: ${{ secrets.KMS_PROJECT_ID || vars.KMS_PROJECT_ID || env.KMS_PROJECT_ID }}
-        run: |
-          set -euo pipefail
-
-          if [ -z "${KMS_PROJECT_ID:-}" ]; then
-            echo "KMS project is required: set KMS_PROJECT_ID (secret or repo variable)"
-            exit 1
-          fi
-
-          if [ -n "${HANZO_API_KEY:-}" ]; then
-            ACCESS_TOKEN="${HANZO_API_KEY}"
-          else
-            if [ -z "${KMS_CLIENT_ID:-}" ] || [ -z "${KMS_CLIENT_SECRET:-}" ]; then
-              echo "Set HANZO_API_KEY, or set both KMS_CLIENT_ID and KMS_CLIENT_SECRET"
-              exit 1
-            fi
-
-            AUTH_PAYLOAD="$(printf '{"clientId":"%s","clientSecret":"%s"}' "$KMS_CLIENT_ID" "$KMS_CLIENT_SECRET")"
-            ACCESS_TOKEN="$(curl -fsS \
-              -H "Content-Type: application/json" \
-              -d "$AUTH_PAYLOAD" \
-              "${KMS_ENDPOINT}/api/v1/auth/universal-auth/login" | \
-              python3 -c 'import sys, json; print(json.load(sys.stdin)["accessToken"])')"
-          fi
-
-          fetch_kms_secret() {
-            local secret_name="$1"
-            curl -fsS \
-              -H "Authorization: Bearer ${ACCESS_TOKEN}" \
-              "${KMS_ENDPOINT}/api/v4/secrets/${secret_name}?projectId=${KMS_PROJECT_ID}&environment=${KMS_ENVIRONMENT}" | \
-              python3 -c 'import sys, json; print(json.load(sys.stdin)["secret"]["secretValue"])'
-          }
-
-          DO_API_TOKEN="$(fetch_kms_secret "${KMS_DO_API_TOKEN_KEY}")"
-          DO_CLUSTER_ID="$(fetch_kms_secret "${KMS_DO_CLUSTER_ID_KEY}")"
-
-          echo "::add-mask::${ACCESS_TOKEN}"
-          echo "::add-mask::${DO_API_TOKEN}"
-          echo "::add-mask::${DO_CLUSTER_ID}"
-          echo "do_api_token=${DO_API_TOKEN}" >> "$GITHUB_OUTPUT"
-          echo "do_cluster_id=${DO_CLUSTER_ID}" >> "$GITHUB_OUTPUT"
-
       - name: Install doctl
         uses: digitalocean/action-doctl@v2
         with:
-          token: ${{ steps.kms.outputs.do_api_token }}
+          token: ${{ secrets.DO_API_TOKEN }}
 
       - name: Configure kubectl
         run: |
           set -euo pipefail
-          CLUSTER="${{ steps.kms.outputs.do_cluster_id }}"
-          if [ -z "$CLUSTER" ]; then
-            echo "Missing do-cluster-id secret in KMS"
-            exit 1
-          fi
-          doctl kubernetes cluster kubeconfig save "$CLUSTER"
+          doctl kubernetes cluster kubeconfig save "${{ secrets.DO_CLUSTER_ID }}"
 
       - name: Roll out cloud-api
         run: |
