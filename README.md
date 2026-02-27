@@ -10,7 +10,7 @@
   <a href="https://github.com/hanzoai/cloud/pkgs/container/cloud">
     <img alt="GHCR" src="https://img.shields.io/badge/GHCR-latest-brightgreen">
   </a>
-  <a href="https://github.com/hanzoai/cloud/blob/master/LICENSE">
+  <a href="https://github.com/hanzoai/cloud/blob/main/LICENSE">
     <img src="https://img.shields.io/github/license/hanzoai/cloud?style=flat-square" alt="license">
   </a>
   <a href="https://discord.gg/5rPsrAzK7S">
@@ -112,4 +112,4 @@ GitHub Actions production deploy (`.github/workflows/deploy-production.yml`) res
 
 ## License
 
-[Apache-2.0](https://github.com/hanzoai/cloud/blob/master/LICENSE)
+[Apache-2.0](https://github.com/hanzoai/cloud/blob/main/LICENSE)
