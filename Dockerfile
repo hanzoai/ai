@@ -1,9 +1,8 @@
 FROM --platform=$BUILDPLATFORM node:20.18.0 AS FRONT
-RUN npm install -g pnpm
 WORKDIR /web
 COPY ./web .
 ENV NODE_OPTIONS="--max-old-space-size=4096"
-RUN pnpm install --no-frozen-lockfile && pnpm run build
+RUN yarn install --frozen-lockfile --network-timeout 1000000 && yarn run build
 
 
 FROM --platform=$BUILDPLATFORM golang:1.23.6 AS BACK
