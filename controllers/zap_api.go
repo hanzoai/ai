@@ -117,6 +117,16 @@ type zapModelEntry struct {
 }
 
 func (c *ApiController) zapListModels(req zapRequest) {
+	if cfg := GetModelConfig(); cfg != nil {
+		models := cfg.ListModelsWithUpstream()
+		c.respondZap(req.ID, map[string]interface{}{
+			"object": "list",
+			"data":   models,
+		})
+		return
+	}
+
+	// Static fallback
 	models := make([]zapModelEntry, 0)
 
 	for name, route := range modelRoutes {

@@ -299,6 +299,7 @@ func initAPI() {
 
 	beego.Router("/api/chat/completions", &controllers.ApiController{}, "POST:ChatCompletions")
 	beego.Router("/api/models", &controllers.ApiController{}, "GET:ListModels")
+	beego.Router("/api/reload-model-config", &controllers.ApiController{}, "POST:ReloadModelConfig")
 
 	// Anthropic Messages API compatible endpoints
 	beego.Router("/api/messages", &controllers.ApiController{}, "POST:AnthropicMessages")
