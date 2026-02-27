@@ -25,6 +25,8 @@ type modelRoute struct {
 	providerName  string // DB provider name: "do-ai", "fireworks", "openai-direct"
 	upstreamModel string // Model ID sent to upstream API
 	premium       bool   // Requires positive balance
+	hidden        bool   // If true, excluded from /api/models listing (still callable)
+	ownedBy       string // Override for owned_by in model listing (default: providerName)
 }
 
 // modelRoutes is the static routing table. Keys are user-facing model names
@@ -59,80 +61,80 @@ var modelRoutes = map[string]modelRoute{
 	"llama-3.1-8b":            {providerName: "do-ai", upstreamModel: "llama3-8b-instruct"},
 	"llama-3.3-70b":           {providerName: "do-ai", upstreamModel: "llama3.3-70b-instruct"},
 	"mistral-nemo":            {providerName: "do-ai", upstreamModel: "mistral-nemo-instruct-2407"},
-	"qwen3-32b":               {providerName: "do-ai", upstreamModel: "alibaba-qwen3-32b"},
+	"qwen3-32b":               {providerName: "do-ai", upstreamModel: "alibaba-qwen3-32b", hidden: true}, // hidden: use zen-mini instead
 
-	// ── DO-AI aliases (8) ── usage tracked, no balance gate ─────────────
-	"openai/gpt-4o":                        {providerName: "do-ai", upstreamModel: "openai-gpt-4o"},
-	"openai/gpt-4o-mini":                   {providerName: "do-ai", upstreamModel: "openai-gpt-4o-mini"},
-	"openai/gpt-5":                         {providerName: "do-ai", upstreamModel: "openai-gpt-5"},
-	"openai/o3":                            {providerName: "do-ai", upstreamModel: "openai-o3"},
-	"openai/o3-mini":                       {providerName: "do-ai", upstreamModel: "openai-o3-mini"},
-	"anthropic/claude-haiku-4-5-20251001":  {providerName: "do-ai", upstreamModel: "anthropic-claude-haiku-4.5"},
-	"anthropic/claude-opus-4-6":            {providerName: "do-ai", upstreamModel: "anthropic-claude-opus-4.6"},
-	"anthropic/claude-sonnet-4-5-20250929": {providerName: "do-ai", upstreamModel: "anthropic-claude-4.5-sonnet"},
+	// ── DO-AI aliases (8) ── hidden from listing, still callable ─────────
+	"openai/gpt-4o":                        {providerName: "do-ai", upstreamModel: "openai-gpt-4o", hidden: true},
+	"openai/gpt-4o-mini":                   {providerName: "do-ai", upstreamModel: "openai-gpt-4o-mini", hidden: true},
+	"openai/gpt-5":                         {providerName: "do-ai", upstreamModel: "openai-gpt-5", hidden: true},
+	"openai/o3":                            {providerName: "do-ai", upstreamModel: "openai-o3", hidden: true},
+	"openai/o3-mini":                       {providerName: "do-ai", upstreamModel: "openai-o3-mini", hidden: true},
+	"anthropic/claude-haiku-4-5-20251001":  {providerName: "do-ai", upstreamModel: "anthropic-claude-haiku-4.5", hidden: true},
+	"anthropic/claude-opus-4-6":            {providerName: "do-ai", upstreamModel: "anthropic-claude-opus-4.6", hidden: true},
+	"anthropic/claude-sonnet-4-5-20250929": {providerName: "do-ai", upstreamModel: "anthropic-claude-4.5-sonnet", hidden: true},
 
-	// ── Fireworks premium models (17) ── verified available Feb 2026 ─────
-	"fireworks/cogito-671b":      {providerName: "fireworks", upstreamModel: "accounts/cogito/models/cogito-671b-v2-p1", premium: true},
-	"fireworks/deepseek-v3p1":    {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/deepseek-v3p1", premium: true},
-	"fireworks/deepseek-v3p2":    {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/deepseek-v3p2", premium: true},
-	"fireworks/glm-4p7":          {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/glm-4p7", premium: true},
-	"fireworks/glm-5":            {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/glm-5", premium: true},
-	"fireworks/gpt-oss-120b":     {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/gpt-oss-120b", premium: true},
-	"fireworks/gpt-oss-20b":      {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/gpt-oss-20b", premium: true},
-	"fireworks/kimi-k2":          {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/kimi-k2-instruct-0905", premium: true},
-	"fireworks/kimi-k2-thinking": {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/kimi-k2-thinking", premium: true},
-	"fireworks/kimi-k2p5":        {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/kimi-k2p5", premium: true},
-	"fireworks/llama-3.3-70b":    {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/llama-v3p3-70b-instruct", premium: true},
-	"fireworks/minimax-m2p1":     {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/minimax-m2p1", premium: true},
-	"fireworks/minimax-m2p5":     {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/minimax-m2p5", premium: true},
-	"fireworks/mixtral-8x22b":    {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/mixtral-8x22b-instruct", premium: true},
-	"fireworks/qwen3-8b":         {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/qwen3-8b", premium: true},
-	"fireworks/qwen3-vl-30b":     {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/qwen3-vl-30b-a3b-instruct", premium: true},
-	"fireworks/qwen3-vl-30b-thinking": {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/qwen3-vl-30b-a3b-thinking", premium: true},
+	// ── Fireworks premium models (17) ── hidden from listing, still callable ──
+	"fireworks/cogito-671b":           {providerName: "fireworks", upstreamModel: "accounts/cogito/models/cogito-671b-v2-p1", premium: true, hidden: true},
+	"fireworks/deepseek-v3p1":         {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/deepseek-v3p1", premium: true, hidden: true},
+	"fireworks/deepseek-v3p2":         {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/deepseek-v3p2", premium: true, hidden: true},
+	"fireworks/glm-4p7":               {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/glm-4p7", premium: true, hidden: true},
+	"fireworks/glm-5":                 {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/glm-5", premium: true, hidden: true},
+	"fireworks/gpt-oss-120b":          {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/gpt-oss-120b", premium: true, hidden: true},
+	"fireworks/gpt-oss-20b":           {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/gpt-oss-20b", premium: true, hidden: true},
+	"fireworks/kimi-k2":               {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/kimi-k2-instruct-0905", premium: true, hidden: true},
+	"fireworks/kimi-k2-thinking":      {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/kimi-k2-thinking", premium: true, hidden: true},
+	"fireworks/kimi-k2p5":             {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/kimi-k2p5", premium: true, hidden: true},
+	"fireworks/llama-3.3-70b":         {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/llama-v3p3-70b-instruct", premium: true, hidden: true},
+	"fireworks/minimax-m2p1":          {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/minimax-m2p1", premium: true, hidden: true},
+	"fireworks/minimax-m2p5":          {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/minimax-m2p5", premium: true, hidden: true},
+	"fireworks/mixtral-8x22b":         {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/mixtral-8x22b-instruct", premium: true, hidden: true},
+	"fireworks/qwen3-8b":              {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/qwen3-8b", premium: true, hidden: true},
+	"fireworks/qwen3-vl-30b":          {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/qwen3-vl-30b-a3b-instruct", premium: true, hidden: true},
+	"fireworks/qwen3-vl-30b-thinking": {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/qwen3-vl-30b-a3b-thinking", premium: true, hidden: true},
 
-	// ── OpenAI Direct premium models (5 chat) ───────────────────────────
-	"openai-direct/gpt-4o":      {providerName: "openai-direct", upstreamModel: "gpt-4o", premium: true},
-	"openai-direct/gpt-4o-mini": {providerName: "openai-direct", upstreamModel: "gpt-4o-mini", premium: true},
-	"openai-direct/gpt-5":       {providerName: "openai-direct", upstreamModel: "gpt-5", premium: true},
-	"openai-direct/o3":          {providerName: "openai-direct", upstreamModel: "o3", premium: true},
-	"openai-direct/o3-mini":     {providerName: "openai-direct", upstreamModel: "o3-mini", premium: true},
+	// ── OpenAI Direct premium models (5 chat) ── hidden, use top-level names ──
+	"openai-direct/gpt-4o":      {providerName: "openai-direct", upstreamModel: "gpt-4o", premium: true, hidden: true},
+	"openai-direct/gpt-4o-mini": {providerName: "openai-direct", upstreamModel: "gpt-4o-mini", premium: true, hidden: true},
+	"openai-direct/gpt-5":       {providerName: "openai-direct", upstreamModel: "gpt-5", premium: true, hidden: true},
+	"openai-direct/o3":          {providerName: "openai-direct", upstreamModel: "o3", premium: true, hidden: true},
+	"openai-direct/o3-mini":     {providerName: "openai-direct", upstreamModel: "o3-mini", premium: true, hidden: true},
 
 	// ── Zen branded models (14 premium) ─────────────────────────────────
 	// Routes to Fireworks via the "fireworks" provider. Identity injection
 	// happens in ChatCompletions via zenIdentityPrompt().
 	//
-	// Zen4 generation — remapped to available Fireworks models (Feb 2026)
-	"zen4":             {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/glm-5", premium: true},                // GLM-5, ~400B, 202K ctx
-	"zen4-ultra":       {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/kimi-k2-thinking", premium: true},     // Kimi K2 thinking, 262K ctx
-	"zen4-pro":         {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/kimi-k2p5", premium: true},            // Kimi K2.5, 262K ctx
-	"zen4-max":         {providerName: "fireworks", upstreamModel: "accounts/cogito/models/cogito-671b-v2-p1", premium: true},       // Cogito 671B, 163K ctx
-	"zen4-mini":        {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/qwen3-8b", premium: true},              // Qwen3 8B, 40K ctx
-	"zen4-thinking":    {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/kimi-k2-thinking", premium: true},     // Kimi K2 thinking, 262K ctx
-	"zen4-coder":       {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/deepseek-v3p2", premium: true},        // DeepSeek V3p2, 163K ctx
-	"zen4-coder-pro":   {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/gpt-oss-120b", premium: true},         // GPT-OSS 120B, 131K ctx
-	"zen4-coder-flash": {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/kimi-k2-instruct-0905", premium: true}, // Kimi K2, 262K ctx
+	// Zen4 generation
+	"zen4":             {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/glm-5", premium: true, ownedBy: "hanzo"},
+	"zen4-ultra":       {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/kimi-k2-thinking", premium: true, ownedBy: "hanzo"},
+	"zen4-pro":         {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/kimi-k2p5", premium: true, ownedBy: "hanzo"},
+	"zen4-max":         {providerName: "fireworks", upstreamModel: "accounts/cogito/models/cogito-671b-v2-p1", premium: true, ownedBy: "hanzo"},
+	"zen4-mini":        {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/qwen3-8b", premium: true, ownedBy: "hanzo"},
+	"zen4-thinking":    {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/kimi-k2-thinking", premium: true, ownedBy: "hanzo"},
+	"zen4-coder":       {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/deepseek-v3p2", premium: true, ownedBy: "hanzo"},
+	"zen4-coder-pro":   {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/gpt-oss-120b", premium: true, ownedBy: "hanzo"},
+	"zen4-coder-flash": {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/kimi-k2-instruct-0905", premium: true, ownedBy: "hanzo"},
 	// Zen3 generation
-	"zen3-omni":      {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/glm-4p7", premium: true},              // GLM-4.7, ~200B, 202K ctx
-	"zen3-vl":        {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/qwen3-vl-30b-a3b-instruct", premium: true}, // Qwen3 VL 30B, 262K ctx
-	"zen3-nano":      {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/qwen3-8b", premium: true},              // Qwen3 8B, 40K ctx
-	"zen3-guard":     {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/mixtral-8x22b-instruct", premium: true}, // Mixtral 8x22B MoE, 65K ctx
-	"zen3-embedding": {providerName: "openai-direct", upstreamModel: "text-embedding-3-large", premium: true},                      // text-embedding-3-large, 8K ctx
+	"zen3-omni":      {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/glm-4p7", premium: true, ownedBy: "hanzo"},
+	"zen3-vl":        {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/qwen3-vl-30b-a3b-instruct", premium: true, ownedBy: "hanzo"},
+	"zen3-nano":      {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/qwen3-8b", premium: true, ownedBy: "hanzo"},
+	"zen3-guard":     {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/mixtral-8x22b-instruct", premium: true, ownedBy: "hanzo"},
+	"zen3-embedding": {providerName: "openai-direct", upstreamModel: "text-embedding-3-large", premium: true, ownedBy: "hanzo"},
 
 	// ── Zen versionless aliases (always point to latest zenN variant) ──
-	"zen":             {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/glm-5", premium: true},
-	"zen-pro":         {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/kimi-k2p5", premium: true},
-	"zen-max":         {providerName: "fireworks", upstreamModel: "accounts/cogito/models/cogito-671b-v2-p1", premium: true},
-	"zen-mini":        {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/qwen3-8b", premium: true},
-	"zen-ultra":       {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/kimi-k2-thinking", premium: true},
-	"zen-coder":       {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/deepseek-v3p2", premium: true},
-	"zen-coder-flash": {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/kimi-k2-instruct-0905", premium: true},
-	"zen-coder-pro":   {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/gpt-oss-120b", premium: true},
-	"zen-thinking":    {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/kimi-k2-thinking", premium: true},
-	"zen-vl":          {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/qwen3-vl-30b-a3b-instruct", premium: true},
-	"zen-nano":        {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/qwen3-8b", premium: true},
-	"zen-omni":        {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/glm-4p7", premium: true},
-	"zen-guard":       {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/mixtral-8x22b-instruct", premium: true},
-	"zen-embedding":   {providerName: "openai-direct", upstreamModel: "text-embedding-3-large", premium: true},
+	"zen":             {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/glm-5", premium: true, ownedBy: "hanzo", hidden: true},
+	"zen-pro":         {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/kimi-k2p5", premium: true, ownedBy: "hanzo", hidden: true},
+	"zen-max":         {providerName: "fireworks", upstreamModel: "accounts/cogito/models/cogito-671b-v2-p1", premium: true, ownedBy: "hanzo", hidden: true},
+	"zen-mini":        {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/qwen3-8b", premium: true, ownedBy: "hanzo", hidden: true},
+	"zen-ultra":       {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/kimi-k2-thinking", premium: true, ownedBy: "hanzo", hidden: true},
+	"zen-coder":       {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/deepseek-v3p2", premium: true, ownedBy: "hanzo", hidden: true},
+	"zen-coder-flash": {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/kimi-k2-instruct-0905", premium: true, ownedBy: "hanzo", hidden: true},
+	"zen-coder-pro":   {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/gpt-oss-120b", premium: true, ownedBy: "hanzo", hidden: true},
+	"zen-thinking":    {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/kimi-k2-thinking", premium: true, ownedBy: "hanzo", hidden: true},
+	"zen-vl":          {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/qwen3-vl-30b-a3b-instruct", premium: true, ownedBy: "hanzo", hidden: true},
+	"zen-nano":        {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/qwen3-8b", premium: true, ownedBy: "hanzo", hidden: true},
+	"zen-omni":        {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/glm-4p7", premium: true, ownedBy: "hanzo", hidden: true},
+	"zen-guard":       {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/mixtral-8x22b-instruct", premium: true, ownedBy: "hanzo", hidden: true},
+	"zen-embedding":   {providerName: "openai-direct", upstreamModel: "text-embedding-3-large", premium: true, ownedBy: "hanzo", hidden: true},
 }
 
 // zenIdentityPrompts maps user-facing zen model names to their identity prompts.
@@ -194,17 +196,26 @@ type modelInfo struct {
 	Premium bool   `json:"premium"`
 }
 
-// listAvailableModels returns all models from the routing table, sorted by name.
+// listAvailableModels returns listed models from the routing table, sorted by name.
+// Hidden models (provider-prefixed aliases, upstream-named routes) are excluded
+// from the listing but remain callable via the completions endpoint.
 func listAvailableModels() []modelInfo {
 	now := time.Now().Unix()
 	models := make([]modelInfo, 0, len(modelRoutes))
 
 	for name, route := range modelRoutes {
+		if route.hidden {
+			continue
+		}
+		owner := route.ownedBy
+		if owner == "" {
+			owner = route.providerName
+		}
 		models = append(models, modelInfo{
 			ID:      name,
 			Object:  "model",
 			Created: now,
-			OwnedBy: route.providerName,
+			OwnedBy: owner,
 			Premium: route.premium,
 		})
 	}
