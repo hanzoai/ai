@@ -283,6 +283,12 @@ func (c *ApiController) AnthropicMessages() {
 		return
 	}
 
+	// Publishable keys (pk-) cannot access messages — reject early
+	if isPublishableKey(token) {
+		c.respondAnthropicError("auth_error", "Publishable keys (pk-) can only access read-only endpoints (/api/models, /health). Use a secret key (sk-) for messages.", 403)
+		return
+	}
+
 	// Parse request body.
 	var request AnthropicRequest
 	if err := json.Unmarshal(c.Ctx.Input.RequestBody, &request); err != nil {

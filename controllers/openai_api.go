@@ -114,6 +114,12 @@ func isIAMApiKey(token string) bool {
 	return strings.HasPrefix(token, "hk-")
 }
 
+// isPublishableKey checks if a token is a publishable API key (pk- prefix).
+// Publishable keys are safe for client-side use and can only access read-only endpoints.
+func isPublishableKey(token string) bool {
+	return strings.HasPrefix(token, "pk-")
+}
+
 // resolveProviderFromJwt validates a hanzo.id JWT token and returns the
 // appropriate model provider for the requested model, plus the translated
 // upstream model name.
@@ -363,6 +369,15 @@ func (c *ApiController) ChatCompletions() {
 	}
 
 	token := strings.TrimPrefix(authHeader, "Bearer ")
+
+	// Publishable keys (pk-) cannot access completions — reject early
+	if isPublishableKey(token) {
+		c.Ctx.Output.SetStatus(403)
+		c.Ctx.Output.Header("Content-Type", "application/json")
+		c.Ctx.Output.Body([]byte(`{"error":{"message":"Publishable keys (pk-) can only access read-only endpoints (/api/models, /health). Use a secret key (sk-) for completions.","type":"auth_error","code":403}}`))
+		c.EnableRender = false
+		return
+	}
 
 	// Parse request body
 	var request openai.ChatCompletionRequest
