@@ -194,7 +194,11 @@ func resolveProviderForUser(user *iamsdk.User, requestedModel string, lang strin
 
 	// Premium models require funds beyond the starter credit.
 	// A balance <= StarterCreditDollars means the user only has free credit.
-	if route.premium && balance <= StarterCreditDollars {
+	starterCredit := StarterCreditDollars
+	if cfg := GetModelConfig(); cfg != nil {
+		starterCredit = cfg.StarterCreditDollars()
+	}
+	if route.premium && balance <= starterCredit {
 		return nil, user, "", fmt.Errorf(
 			"model %q is a premium model requiring a paid balance. "+
 				"Your current balance ($%.2f) is from the starter credit. "+
@@ -349,56 +353,44 @@ func recordUsage(record *usageRecord) {
 	}()
 }
 
-// consoleOrgKeys maps organization names to console project API key pairs.
-// Parsed once from CONSOLE_ORG_KEYS env var (format: "org1=pk:sk,org2=pk:sk").
-// Falls back to global consolePublicKey/consoleSecretKey for unmatched orgs.
-var (
-	consoleOrgKeys     map[string][2]string
-	consoleOrgKeysOnce sync.Once
-)
-
-func loadConsoleOrgKeys() map[string][2]string {
-	consoleOrgKeysOnce.Do(func() {
-		consoleOrgKeys = make(map[string][2]string)
-		raw := conf.GetConfigString("consoleOrgKeys")
-		if raw == "" {
-			return
-		}
-		for _, entry := range strings.Split(raw, ",") {
-			entry = strings.TrimSpace(entry)
-			parts := strings.SplitN(entry, "=", 2)
-			if len(parts) != 2 {
-				continue
-			}
-			org := strings.TrimSpace(parts[0])
-			keys := strings.SplitN(parts[1], ":", 2)
-			if len(keys) != 2 {
-				continue
-			}
-			consoleOrgKeys[org] = [2]string{strings.TrimSpace(keys[0]), strings.TrimSpace(keys[1])}
-		}
-	})
-	return consoleOrgKeys
-}
-
 // resolveConsoleKeys returns the console API key pair for the given org.
-// If a per-org key is configured via CONSOLE_ORG_KEYS, use that.
-// Otherwise fall back to the global consolePublicKey/consoleSecretKey.
+// Keys are fetched from KMS using the naming convention:
+//   - console-pk-{org}  → public key
+//   - console-sk-{org}  → secret key
+//
+// Falls back to global console-pk / console-sk secrets in KMS.
+// KMS responses are cached for 5 minutes (kmsSecTTL in object/kms.go).
 func resolveConsoleKeys(org string) (publicKey, secretKey string) {
-	orgKeys := loadConsoleOrgKeys()
-	if pair, ok := orgKeys[org]; ok {
-		return pair[0], pair[1]
+	// Try per-org keys first: console-pk-{org}, console-sk-{org}
+	if org != "" {
+		pk, pkErr := object.GetKMSSecret("console-pk-" + org)
+		sk, skErr := object.GetKMSSecret("console-sk-" + org)
+		if pkErr == nil && skErr == nil && pk != "" && sk != "" {
+			return pk, sk
+		}
 	}
-	return conf.GetConfigString("consolePublicKey"), conf.GetConfigString("consoleSecretKey")
+
+	// Fall back to global console keys
+	pk, pkErr := object.GetKMSSecret("console-pk")
+	sk, skErr := object.GetKMSSecret("console-sk")
+	if pkErr == nil && skErr == nil {
+		return pk, sk
+	}
+
+	return "", ""
 }
 
 // recordTrace sends a Langfuse-compatible trace+generation event to the console
-// for observability. Traces are routed to per-org console projects when configured
-// via CONSOLE_ORG_KEYS, enabling each org to see their own usage in console.hanzo.ai.
-// This is fire-and-forget — failures are silently ignored.
+// for observability. Traces are routed to per-org console projects using KMS secrets
+// (console-pk-{org} / console-sk-{org}), enabling each org to see their own usage
+// in console.hanzo.ai. This is fire-and-forget — failures are silently ignored.
 func recordTrace(record *usageRecord, startTime time.Time) {
 	go func() {
-		consoleEndpoint := conf.GetConfigString("consoleEndpoint")
+		// Resolve console endpoint from KMS, fall back to env
+		consoleEndpoint, _ := object.GetKMSSecret("console-endpoint")
+		if consoleEndpoint == "" {
+			consoleEndpoint = conf.GetConfigString("consoleEndpoint")
+		}
 		if consoleEndpoint == "" {
 			return
 		}
