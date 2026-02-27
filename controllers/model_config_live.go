@@ -57,8 +57,8 @@ type livePricingResponse struct {
 }
 
 type livePricingModel struct {
-	Name    string             `json:"name"`
-	Pricing livePricingEntry   `json:"pricing"`
+	Name    string           `json:"name"`
+	Pricing livePricingEntry `json:"pricing"`
 }
 
 type livePricingEntry struct {
