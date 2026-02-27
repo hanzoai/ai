@@ -349,25 +349,91 @@ func recordUsage(record *usageRecord) {
 	}()
 }
 
+// consoleOrgKeys maps organization names to console project API key pairs.
+// Parsed once from CONSOLE_ORG_KEYS env var (format: "org1=pk:sk,org2=pk:sk").
+// Falls back to global consolePublicKey/consoleSecretKey for unmatched orgs.
+var (
+	consoleOrgKeys     map[string][2]string
+	consoleOrgKeysOnce sync.Once
+)
+
+func loadConsoleOrgKeys() map[string][2]string {
+	consoleOrgKeysOnce.Do(func() {
+		consoleOrgKeys = make(map[string][2]string)
+		raw := conf.GetConfigString("consoleOrgKeys")
+		if raw == "" {
+			return
+		}
+		for _, entry := range strings.Split(raw, ",") {
+			entry = strings.TrimSpace(entry)
+			parts := strings.SplitN(entry, "=", 2)
+			if len(parts) != 2 {
+				continue
+			}
+			org := strings.TrimSpace(parts[0])
+			keys := strings.SplitN(parts[1], ":", 2)
+			if len(keys) != 2 {
+				continue
+			}
+			consoleOrgKeys[org] = [2]string{strings.TrimSpace(keys[0]), strings.TrimSpace(keys[1])}
+		}
+	})
+	return consoleOrgKeys
+}
+
+// resolveConsoleKeys returns the console API key pair for the given org.
+// If a per-org key is configured via CONSOLE_ORG_KEYS, use that.
+// Otherwise fall back to the global consolePublicKey/consoleSecretKey.
+func resolveConsoleKeys(org string) (publicKey, secretKey string) {
+	orgKeys := loadConsoleOrgKeys()
+	if pair, ok := orgKeys[org]; ok {
+		return pair[0], pair[1]
+	}
+	return conf.GetConfigString("consolePublicKey"), conf.GetConfigString("consoleSecretKey")
+}
+
 // recordTrace sends a Langfuse-compatible trace+generation event to the console
-// for observability. This is fire-and-forget — failures are silently ignored.
+// for observability. Traces are routed to per-org console projects when configured
+// via CONSOLE_ORG_KEYS, enabling each org to see their own usage in console.hanzo.ai.
+// This is fire-and-forget — failures are silently ignored.
 func recordTrace(record *usageRecord, startTime time.Time) {
 	go func() {
 		consoleEndpoint := conf.GetConfigString("consoleEndpoint")
-		consoleApiKey := conf.GetConfigString("consolePublicKey")
-		consoleSecretKey := conf.GetConfigString("consoleSecretKey")
-
-		// Skip if console observability is not configured
-		if consoleEndpoint == "" || consoleApiKey == "" || consoleSecretKey == "" {
+		if consoleEndpoint == "" {
 			return
 		}
 		consoleEndpoint = strings.TrimRight(consoleEndpoint, "/")
+
+		// Resolve per-org or global console API keys
+		org := record.Organization
+		if org == "" {
+			org = record.Owner
+		}
+		consoleApiKey, consoleSecretKeyVal := resolveConsoleKeys(org)
+		if consoleApiKey == "" || consoleSecretKeyVal == "" {
+			return
+		}
 
 		endTime := time.Now().UTC()
 		traceId := util.GenerateUUID()
 		genId := util.GenerateUUID()
 
-		// Build Langfuse ingestion batch
+		// Build tags: org, model, provider, source app
+		tags := []string{record.Model, record.Provider}
+		if org != "" {
+			tags = append(tags, "org:"+org)
+		}
+		if record.User != "" {
+			tags = append(tags, "user:"+record.User)
+		}
+
+		// Determine cost for the generation
+		costCents := calculateCostCentsWithCache(
+			record.Model, record.PromptTokens, record.CompletionTokens,
+			record.CacheReadTokens, record.CacheWriteTokens,
+		)
+
+		// Build Langfuse ingestion batch with full org/user/cost context
 		batch := map[string]interface{}{
 			"batch": []map[string]interface{}{
 				{
@@ -378,17 +444,19 @@ func recordTrace(record *usageRecord, startTime time.Time) {
 						"id":        traceId,
 						"name":      "chat-completion",
 						"userId":    record.User,
+						"sessionId": record.RequestID,
 						"timestamp": startTime.UTC().Format(time.RFC3339Nano),
 						"metadata": map[string]interface{}{
-							"model":     record.Model,
-							"provider":  record.Provider,
-							"premium":   record.Premium,
-							"stream":    record.Stream,
-							"requestId": record.RequestID,
-							"clientIp":  record.ClientIP,
-							"source":    "cloud-api",
+							"model":        record.Model,
+							"provider":     record.Provider,
+							"organization": org,
+							"premium":      record.Premium,
+							"stream":       record.Stream,
+							"requestId":    record.RequestID,
+							"clientIp":     record.ClientIP,
+							"source":       "cloud-api",
 						},
-						"tags": []string{"chat", record.Model, record.Provider},
+						"tags": tags,
 					},
 				},
 				{
@@ -411,9 +479,15 @@ func recordTrace(record *usageRecord, startTime time.Time) {
 							"total":  record.TotalTokens,
 							"unit":   "TOKENS",
 						},
+						"costDetails": map[string]interface{}{
+							"input":  float64(costCents) * float64(record.PromptTokens) / float64(max(record.TotalTokens, 1)),
+							"output": float64(costCents) * float64(record.CompletionTokens) / float64(max(record.TotalTokens, 1)),
+						},
 						"metadata": map[string]interface{}{
-							"provider":  record.Provider,
-							"requestId": record.RequestID,
+							"provider":     record.Provider,
+							"organization": org,
+							"requestId":    record.RequestID,
+							"costCents":    costCents,
 						},
 					},
 				},
@@ -437,13 +511,12 @@ func recordTrace(record *usageRecord, startTime time.Time) {
 			return
 		}
 		req.Header.Set("Content-Type", "application/json")
-		// Langfuse uses Basic auth: base64(publicKey:secretKey)
-		auth := base64.StdEncoding.EncodeToString([]byte(consoleApiKey + ":" + consoleSecretKey))
+		auth := base64.StdEncoding.EncodeToString([]byte(consoleApiKey + ":" + consoleSecretKeyVal))
 		req.Header.Set("Authorization", "Basic "+auth)
 
 		resp, err := client.Do(req)
 		if err != nil {
-			return // best-effort, don't block model serving
+			return
 		}
 		resp.Body.Close()
 	}()
