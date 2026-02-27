@@ -375,3 +375,4 @@ func GetOrgKMSSecret(name string, orgProjectID string) (string, error) {
 
 	return kms.getSecret(name, orgProjectID)
 }
+
