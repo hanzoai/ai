@@ -30,12 +30,12 @@ import (
 
 // ModelConfigFile is the top-level structure of conf/models.yaml.
 type ModelConfigFile struct {
-	Version        int                    `yaml:"version"`
-	Services       ServiceEndpoints       `yaml:"services"`
-	Cache          CacheTTLs              `yaml:"cache"`
-	Features       FeatureFlags           `yaml:"features"`
-	DefaultPricing ModelPriceDef          `yaml:"default_pricing"`
-	Models         map[string]ModelDef    `yaml:"models"`
+	Version        int                 `yaml:"version"`
+	Services       ServiceEndpoints    `yaml:"services"`
+	Cache          CacheTTLs           `yaml:"cache"`
+	Features       FeatureFlags        `yaml:"features"`
+	DefaultPricing ModelPriceDef       `yaml:"default_pricing"`
+	Models         map[string]ModelDef `yaml:"models"`
 }
 
 // ServiceEndpoints holds URLs for external pricing/model services.
@@ -65,15 +65,15 @@ type ModelPriceDef struct {
 
 // ModelDef describes a single model entry in the config.
 type ModelDef struct {
-	Provider       string        `yaml:"provider"`
-	Upstream       string        `yaml:"upstream"`
-	Premium        bool          `yaml:"premium"`
-	Hidden         bool          `yaml:"hidden"`
-	OwnedBy        string        `yaml:"owned_by"`
-	IdentityPrompt string        `yaml:"identity_prompt"`
-	AliasOf        string        `yaml:"alias_of"`
-	AliasPricing   string        `yaml:"alias_pricing"`
-	PricingOnly    bool          `yaml:"pricing_only"`
+	Provider       string         `yaml:"provider"`
+	Upstream       string         `yaml:"upstream"`
+	Premium        bool           `yaml:"premium"`
+	Hidden         bool           `yaml:"hidden"`
+	OwnedBy        string         `yaml:"owned_by"`
+	IdentityPrompt string         `yaml:"identity_prompt"`
+	AliasOf        string         `yaml:"alias_of"`
+	AliasPricing   string         `yaml:"alias_pricing"`
+	PricingOnly    bool           `yaml:"pricing_only"`
 	Pricing        *ModelPriceDef `yaml:"pricing,omitempty"`
 }
 
@@ -88,18 +88,18 @@ var (
 // and identity prompts from a parsed YAML config file.
 type ModelConfig struct {
 	mu       sync.RWMutex
-	routes   map[string]modelRoute  // lowercase key → route
-	pricing  map[string]modelPrice  // lowercase key → price
-	prompts  map[string]string      // lowercase key → identity prompt
+	routes   map[string]modelRoute // lowercase key → route
+	pricing  map[string]modelPrice // lowercase key → price
+	prompts  map[string]string     // lowercase key → identity prompt
 	features FeatureFlags
 	defaults modelPrice
 
 	// Live refresh state
-	configPath     string
-	pricingURL     string
-	pricingTTL     time.Duration
-	lastPricingAt  time.Time
-	stopCh         chan struct{}
+	configPath    string
+	pricingURL    string
+	pricingTTL    time.Duration
+	lastPricingAt time.Time
+	stopCh        chan struct{}
 }
 
 // InitModelConfig loads the YAML config and optionally starts a background
