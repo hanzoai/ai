@@ -37,7 +37,7 @@ import (
 //
 // Environment variables:
 //   - KMS_ENDPOINT:      Base URL (default: http://kms.hanzo.svc)
-//                        External: https://kms-api.hanzo.ai (no /api prefix)
+//     External: https://kms-api.hanzo.ai (no /api prefix)
 //   - KMS_SERVICE_TOKEN:  Service token for direct auth
 //   - HANZO_API_KEY:      Unified service token (fallback for KMS_SERVICE_TOKEN)
 //   - KMS_CLIENT_ID:      Universal Auth client ID
@@ -375,4 +375,3 @@ func GetOrgKMSSecret(name string, orgProjectID string) (string, error) {
 
 	return kms.getSecret(name, orgProjectID)
 }
-
