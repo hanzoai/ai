@@ -180,9 +180,19 @@ func TestListAvailableModels_ReturnsSortedList(t *testing.T) {
 		t.Fatal("listAvailableModels() returned empty slice")
 	}
 
-	if len(models) != len(modelRoutes) {
+	// Count visible (non-hidden) models in the routing table
+	visibleCount := 0
+	for _, route := range modelRoutes {
+		if !route.hidden {
+			visibleCount++
+		}
+	}
+	if cfg := GetModelConfig(); cfg != nil {
+		visibleCount = len(cfg.ListModels())
+	}
+	if len(models) != visibleCount {
 		t.Errorf("listAvailableModels() returned %d models, want %d",
-			len(models), len(modelRoutes))
+			len(models), visibleCount)
 	}
 
 	// Verify sorted by ID
@@ -206,9 +216,9 @@ func TestListAvailableModels_ReturnsSortedList(t *testing.T) {
 
 func TestListAvailableModels_CountSanity(t *testing.T) {
 	models := listAvailableModels()
-	// As of 2026-02: 28 DO-AI + 8 aliases + 17 fireworks + 5 openai-direct + 14 zen + 14 zen aliases = 86
+	// As of 2026-02: 41 visible models (hidden aliases/prefixed routes excluded from listing).
 	// Adjust if routes are added/removed. This is a canary for unexpected drift.
-	if len(models) < 80 {
-		t.Errorf("expected at least 80 models in routing table, got %d", len(models))
+	if len(models) < 30 {
+		t.Errorf("expected at least 30 visible models, got %d", len(models))
 	}
 }
