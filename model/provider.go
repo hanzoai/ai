@@ -15,6 +15,7 @@
 package model
 
 import (
+	"fmt"
 	"io"
 )
 
