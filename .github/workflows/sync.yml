@@ -1,8 +1,7 @@
 name: Crowdin Action
 
 on:
-  push:
-    branches: [ main ]
+  workflow_dispatch:
 
 jobs:
   synchronize-with-crowdin:
@@ -10,7 +9,7 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
-    if: github.repository == 'hanzoai/cloud' && github.event_name == 'push'
+    if: false
     steps:
 
     - name: Checkout
