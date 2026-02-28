@@ -161,7 +161,6 @@ func flushDataThink(data string, eventType string, writer io.Writer, lang string
 }
 
 func (p *LocalModelProvider) QueryText(question string, writer io.Writer, history []*RawMessage, prompt string, knowledgeMessages []*RawMessage, agentInfo *AgentInfo, lang string) (*ModelResult, error) {
-	fmt.Printf("[LocalModelProvider.QueryText] typ=%q subType=%q providerUrl=%q\n", p.typ, p.subType, p.providerUrl)
 	var client *openai.Client
 	var flushData interface{} // Can be either flushData or flushDataThink
 
