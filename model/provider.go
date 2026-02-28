@@ -15,7 +15,6 @@
 package model
 
 import (
-	"fmt"
 	"io"
 )
 
@@ -46,7 +45,6 @@ type ModelProvider interface {
 }
 
 func GetModelProvider(typ string, subType string, clientId string, clientSecret string, userKey string, temperature float32, topP float32, topK int, frequencyPenalty float32, presencePenalty float32, providerUrl string, apiVersion string, compatibleProvider string, inputPricePerThousandTokens float64, outputPricePerThousandTokens float64, Currency string, enableThinking bool) (ModelProvider, error) {
-	fmt.Printf("[GetModelProvider] typ=%q subType=%q providerUrl=%q\n", typ, subType, providerUrl)
 	var p ModelProvider
 	var err error
 	if typ == "Ollama" {

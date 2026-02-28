@@ -278,10 +278,6 @@ func GetModelProviderByName(name string) (*Provider, error) {
 	}
 
 	if provider != nil {
-		// Raw SQL check to verify xorm mapping
-		var rawType string
-		_, _ = adapter.engine.SQL("SELECT type FROM provider WHERE owner='admin' AND name=?", name).Get(&rawType)
-		fmt.Printf("[GetModelProviderByName] name=%q xormType=%q rawSqlType=%q subType=%q url=%q\n", provider.Name, provider.Type, rawType, provider.SubType, provider.ProviderUrl)
 		// Resolve KMS-backed secrets (e.g. "kms://DO_AI_API_KEY" → actual key).
 		if err := ResolveProviderSecret(provider); err != nil {
 			return nil, err
