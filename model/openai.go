@@ -279,6 +279,7 @@ func GetOpenAiClientFromToken(authToken string, providerUrl string) openai.Clien
 }
 
 func (p *OpenAiModelProvider) QueryText(question string, writer io.Writer, history []*RawMessage, prompt string, knowledgeMessages []*RawMessage, agentInfo *AgentInfo, lang string) (*ModelResult, error) {
+	fmt.Printf("[OpenAiModelProvider.QueryText] subType=%q providerUrl=%q\n", p.subType, p.providerUrl)
 	var client openai.Client
 	var flushData interface{}
 
