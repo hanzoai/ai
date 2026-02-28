@@ -470,6 +470,29 @@ models:
     hidden: true
     pricing: { input: 1.10, output: 4.40 }
 
+  # ── Anthropic Direct premium models (hidden, use top-level names) ─────
+
+  anthropic/claude-haiku-4-5:
+    provider: anthropic
+    upstream: claude-haiku-4-5-20251001
+    premium: true
+    hidden: true
+    pricing: { input: 1.00, output: 5.00 }
+
+  anthropic/claude-sonnet-4:
+    provider: anthropic
+    upstream: claude-sonnet-4-20250514
+    premium: true
+    hidden: true
+    pricing: { input: 3.00, output: 15.00 }
+
+  anthropic/claude-opus-4:
+    provider: anthropic
+    upstream: claude-opus-4-20250514
+    premium: true
+    hidden: true
+    pricing: { input: 15.00, output: 75.00 }
+
   # ── Zen branded models (premium) ───────────────────────────────────────
 
   # Zen4 generation
