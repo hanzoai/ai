@@ -188,6 +188,10 @@ func getProvider(owner string, name string) (*Provider, error) {
 		return &provider, err
 	}
 
+	if existed && provider.Category == "Model" {
+		fmt.Printf("[getProvider] owner=%q name=%q type=%q subType=%q existed=%v\n", provider.Owner, provider.Name, provider.Type, provider.SubType, existed)
+	}
+
 	if providerAdapter != nil && !existed {
 		existed, err = providerAdapter.engine.Get(&provider)
 		if err != nil {

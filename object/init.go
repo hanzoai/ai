@@ -269,7 +269,17 @@ func initLLMProviders() {
 			continue
 		}
 		if existing != nil {
-			continue // Already exists, don't overwrite
+			// Ensure the provider type matches the canonical definition.
+			// This corrects providers that were originally seeded with wrong types.
+			if existing.Type != p.Type {
+				fmt.Printf("[init] Fixing provider %q type: %q -> %q\n", p.Name, existing.Type, p.Type)
+				existing.Type = p.Type
+				_, err = UpdateProvider("admin/"+p.Name, existing)
+				if err != nil {
+					fmt.Printf("[init] WARNING: failed to update provider %q type: %v\n", p.Name, err)
+				}
+			}
+			continue
 		}
 
 		p.CreatedTime = util.GetCurrentTime()
