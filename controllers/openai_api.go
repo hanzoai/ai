@@ -173,7 +173,6 @@ func resolveProviderForUser(user *iamsdk.User, requestedModel string, lang strin
 	if provider == nil {
 		return nil, user, "", fmt.Errorf("provider %q not configured in database", route.providerName)
 	}
-	fmt.Printf("[resolveProviderForUser] provider=%q type=%q subType=%q url=%q\n", provider.Name, provider.Type, provider.SubType, provider.ProviderUrl)
 
 	// All models require prepaid balance. New accounts receive a $5 starter
 	// credit that works only for non-premium (DO-AI) models.
