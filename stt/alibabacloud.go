@@ -232,7 +232,7 @@ func (p *AlibabacloudSpeechToTextProvider) ProcessAudio(audioReader io.Reader, c
 			}
 
 			mutex.Lock()
-			recognitionError = fmt.Errorf(i18n.Translate(lang, "stt:API error: %s"), message)
+			recognitionError = fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "stt:API error: %s"), message))
 			recognitionDone = true
 			mutex.Unlock()
 
@@ -325,7 +325,7 @@ func (p *AlibabacloudSpeechToTextProvider) ProcessAudio(audioReader io.Reader, c
 
 		case err := <-apiCallDone:
 			if err != nil {
-				return "", res, fmt.Errorf(i18n.Translate(lang, "stt:speech recognition API error: %v"), err)
+				return "", res, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "stt:speech recognition API error: %v"), err))
 			}
 			apiCallCompleted = true
 			timeoutTimer.Reset(waitAfterAPICallTime)
@@ -367,7 +367,7 @@ func (p *AlibabacloudSpeechToTextProvider) ProcessAudio(audioReader io.Reader, c
 				return fullTranscript, res, nil
 			}
 
-			return "", res, fmt.Errorf(i18n.Translate(lang, "stt:speech recognition timed out after %v seconds"), timeout.Seconds())
+			return "", res, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "stt:speech recognition timed out after %v seconds"), timeout.Seconds()))
 		}
 	}
 }

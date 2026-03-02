@@ -39,17 +39,17 @@ func getModelProviderFromName(owner string, providerName string, lang string) (*
 	}
 	if provider == nil {
 		if providerName != "" {
-			return nil, nil, fmt.Errorf(i18n.Translate(lang, "object:The model provider: %s is not found"), providerName)
+			return nil, nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:The model provider: %s is not found"), providerName))
 		} else {
-			return nil, nil, fmt.Errorf(i18n.Translate(lang, "object:Please add a model provider first"))
+			return nil, nil, fmt.Errorf("%s", i18n.Translate(lang, "object:Please add a model provider first"))
 		}
 	}
 
 	if provider.Category != "Model" {
-		return nil, nil, fmt.Errorf(i18n.Translate(lang, "object:The model provider: %s is expected to be \")Model\" category, got: \"%s\""), provider.GetId(), provider.Category)
+		return nil, nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:The model provider: %s is expected to be \")Model\" category, got: \"%s\""), provider.GetId(), provider.Category))
 	}
 	if provider.ClientSecret == "" && provider.Type != "Dummy" && provider.Type != "Ollama" {
-		return nil, nil, fmt.Errorf(i18n.Translate(lang, "object:The model provider: %s's client secret should not be empty"), provider.GetId())
+		return nil, nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:The model provider: %s's client secret should not be empty"), provider.GetId()))
 	}
 
 	providerObj, err := provider.GetModelProvider(lang)
@@ -74,17 +74,17 @@ func getEmbeddingProviderFromName(owner string, providerName string, lang string
 	}
 	if provider == nil {
 		if providerName != "" {
-			return nil, nil, fmt.Errorf(i18n.Translate(lang, "object:The embedding provider: %s is not found"), providerName)
+			return nil, nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:The embedding provider: %s is not found"), providerName))
 		} else {
-			return nil, nil, fmt.Errorf(i18n.Translate(lang, "object:Please add an embedding provider first"))
+			return nil, nil, fmt.Errorf("%s", i18n.Translate(lang, "object:Please add an embedding provider first"))
 		}
 	}
 
 	if provider.Category != "Embedding" {
-		return nil, nil, fmt.Errorf(i18n.Translate(lang, "object:The embedding provider: %s is expected to be \")Embedding\" category, got: \"%s\""), provider.GetId(), provider.Category)
+		return nil, nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:The embedding provider: %s is expected to be \")Embedding\" category, got: \"%s\""), provider.GetId(), provider.Category))
 	}
 	if provider.ClientSecret == "" && provider.Type != "Dummy" {
-		return nil, nil, fmt.Errorf(i18n.Translate(lang, "object:The embedding provider: %s's client secret should not be empty"), provider.GetId())
+		return nil, nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:The embedding provider: %s's client secret should not be empty"), provider.GetId()))
 	}
 
 	providerObj, err := provider.GetEmbeddingProvider(lang)
@@ -112,7 +112,7 @@ func getAgentProviderFromName(owner string, providerName string, lang string) (*
 	}
 
 	if provider.Category != "Agent" {
-		return nil, nil, fmt.Errorf(i18n.Translate(lang, "object:The agent provider: %s is expected to be \")Agent\" category, got: \"%s\""), provider.GetId(), provider.Category)
+		return nil, nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:The agent provider: %s is expected to be \")Agent\" category, got: \"%s\""), provider.GetId(), provider.Category))
 	}
 
 	providerObj, err := provider.GetAgentProvider(lang)
@@ -133,7 +133,7 @@ func SetDefaultVodClient(lang string) error {
 		return err
 	}
 	if provider == nil {
-		return fmt.Errorf(i18n.Translate(lang, "object:The default video provider should not be empty"))
+		return fmt.Errorf("%s", i18n.Translate(lang, "object:The default video provider should not be empty"))
 	}
 
 	err = video.SetVodClient(provider.Region, provider.ClientId, provider.ClientSecret)

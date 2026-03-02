@@ -34,7 +34,7 @@ func NewTencentCloudEmbeddingProvider(clientId, clientSecret string, lang string
 	cpf := profile.NewClientProfile()
 	client, err := hunyuan.NewClient(credential, region, cpf)
 	if err != nil {
-		return nil, fmt.Errorf(i18n.Translate(lang, "embedding:failed to create client: %v"), err)
+		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "embedding:failed to create client: %v"), err))
 	}
 	return &TencentCloudEmbeddingProvider{
 		client: client,
@@ -71,7 +71,7 @@ func (p *TencentCloudEmbeddingProvider) QueryVector(text string, ctx context.Con
 	}
 
 	if len(response.Response.Data) == 0 {
-		return nil, nil, fmt.Errorf(i18n.Translate(lang, "embedding:no embedding vector found in response"))
+		return nil, nil, fmt.Errorf("%s", i18n.Translate(lang, "embedding:no embedding vector found in response"))
 	}
 
 	vector := make([]float32, len(response.Response.Data[0].Embedding))

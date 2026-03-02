@@ -214,7 +214,7 @@ func updatePod(oldPod *Pod, pod *Pod, lang string) (bool, error) {
 		return false, err
 	}
 	if provider == nil {
-		return false, fmt.Errorf(i18n.Translate(lang, "object:The provider: %s does not exist"), pod.Provider)
+		return false, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:The provider: %s does not exist"), pod.Provider))
 	}
 
 	client, err := pkgkubernetes.NewPodClient(provider.Type, provider.ClientId, provider.ClientSecret, provider.Region)

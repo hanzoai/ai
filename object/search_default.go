@@ -40,7 +40,7 @@ func (p *DefaultSearchProvider) Search(relatedStores []string, embeddingProvider
 		return nil, embeddingResult, err
 	}
 	if qVector == nil || len(qVector) == 0 {
-		return nil, embeddingResult, fmt.Errorf(i18n.Translate(lang, "object:no qVector found"))
+		return nil, embeddingResult, fmt.Errorf("%s", i18n.Translate(lang, "object:no qVector found"))
 	}
 
 	var vectorData [][]float32

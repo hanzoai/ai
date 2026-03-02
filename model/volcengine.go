@@ -169,7 +169,7 @@ func (p *VolcengineModelProvider) calculatePrice(modelResult *ModelResult, lang 
 		outputPrice := getPrice(modelResult.ResponseTokenCount, priceItem[1])
 		price = inputPrice + outputPrice
 	} else {
-		return fmt.Errorf(i18n.Translate(lang, "embedding:calculatePrice() error: unknown model type: %s"), subType)
+		return fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "embedding:calculatePrice() error: unknown model type: %s"), subType))
 	}
 
 	modelResult.TotalPrice = price
@@ -181,7 +181,7 @@ func (p *VolcengineModelProvider) QueryText(question string, writer io.Writer, h
 	ctx := context.Background()
 	flusher, ok := writer.(http.Flusher)
 	if !ok {
-		return nil, fmt.Errorf(i18n.Translate(lang, "model:writer does not implement http.Flusher"))
+		return nil, fmt.Errorf("%s", i18n.Translate(lang, "model:writer does not implement http.Flusher"))
 	}
 	client := arkruntime.NewClientWithApiKey(p.apiKey)
 

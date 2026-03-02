@@ -98,7 +98,7 @@ func (p *LocalModelProvider) CalculatePrice(modelResult *ModelResult, lang strin
 func flushDataAzure(data string, writer io.Writer, lang string) error {
 	flusher, ok := writer.(http.Flusher)
 	if !ok {
-		return fmt.Errorf(i18n.Translate(lang, "model:writer does not implement http.Flusher"))
+		return fmt.Errorf("%s", i18n.Translate(lang, "model:writer does not implement http.Flusher"))
 	}
 	for _, runeValue := range data {
 		char := string(runeValue)
@@ -139,7 +139,7 @@ func flushDataAzure(data string, writer io.Writer, lang string) error {
 func flushDataOpenai(data string, writer io.Writer, lang string) error {
 	flusher, ok := writer.(http.Flusher)
 	if !ok {
-		return fmt.Errorf(i18n.Translate(lang, "model:writer does not implement http.Flusher"))
+		return fmt.Errorf("%s", i18n.Translate(lang, "model:writer does not implement http.Flusher"))
 	}
 	if _, err := fmt.Fprintf(writer, "event: message\ndata: %s\n\n", data); err != nil {
 		return err
@@ -151,7 +151,7 @@ func flushDataOpenai(data string, writer io.Writer, lang string) error {
 func flushDataThink(data string, eventType string, writer io.Writer, lang string) error {
 	flusher, ok := writer.(http.Flusher)
 	if !ok {
-		return fmt.Errorf(i18n.Translate(lang, "model:writer does not implement http.Flusher"))
+		return fmt.Errorf("%s", i18n.Translate(lang, "model:writer does not implement http.Flusher"))
 	}
 	if _, err := fmt.Fprintf(writer, "event: %s\ndata: %s\n\n", eventType, data); err != nil {
 		return err
@@ -184,7 +184,7 @@ func (p *LocalModelProvider) QueryText(question string, writer io.Writer, histor
 	ctx := context.Background()
 	flusher, ok := writer.(http.Flusher)
 	if !ok {
-		return nil, fmt.Errorf(i18n.Translate(lang, "model:writer does not implement http.Flusher"))
+		return nil, fmt.Errorf("%s", i18n.Translate(lang, "model:writer does not implement http.Flusher"))
 	}
 
 	model := p.subType
@@ -447,6 +447,6 @@ func (p *LocalModelProvider) QueryText(question string, writer io.Writer, histor
 		modelResult, err = getDefaultModelResult(model, question, response.String())
 		return modelResult, nil
 	} else {
-		return nil, fmt.Errorf(i18n.Translate(lang, "model:QueryText() error: unknown model type: %s"), p.subType)
+		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "model:QueryText() error: unknown model type: %s"), p.subType))
 	}
 }

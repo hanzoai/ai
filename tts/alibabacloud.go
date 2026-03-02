@@ -66,7 +66,7 @@ func (p *AlibabacloudTextToSpeechProvider) calculatePrice(res *TextToSpeechResul
 		res.Currency = "CNY"
 		return nil
 	} else {
-		return fmt.Errorf(i18n.Translate(lang, "embedding:calculatePrice() error: unknown model type: %s"), p.subType)
+		return fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "embedding:calculatePrice() error: unknown model type: %s"), p.subType))
 	}
 }
 
@@ -97,14 +97,14 @@ func (p *AlibabacloudTextToSpeechProvider) QueryAudio(text string, ctx context.C
 		cosyvoice.WithSynthesizerConfig(synthConfig),
 	)
 	if err != nil {
-		return nil, res, fmt.Errorf(i18n.Translate(lang, "tts:error creating synthesizer: %v"), err)
+		return nil, res, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "tts:error creating synthesizer: %v"), err))
 	}
 	defer asyncSynthesizer.Close()
 
 	// Run task
 	output, err := asyncSynthesizer.RunTask(ctx)
 	if err != nil {
-		return nil, res, fmt.Errorf(i18n.Translate(lang, "tts:error running task: %v"), err)
+		return nil, res, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "tts:error running task: %v"), err))
 	}
 
 	// Create a channel to collect audio data
@@ -116,7 +116,7 @@ func (p *AlibabacloudTextToSpeechProvider) QueryAudio(text string, ctx context.C
 		var allAudio []byte
 		for outputResult := range output {
 			if outputResult.Err != nil {
-				errorChannel <- fmt.Errorf(i18n.Translate(lang, "tts:output error: %v"), outputResult.Err)
+				errorChannel <- fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "tts:output error: %v"), outputResult.Err))
 				return
 			}
 			allAudio = append(allAudio, outputResult.Data...)
@@ -127,13 +127,13 @@ func (p *AlibabacloudTextToSpeechProvider) QueryAudio(text string, ctx context.C
 	// Send text to synthesizer
 	err = asyncSynthesizer.SendText(ctx, text)
 	if err != nil {
-		return nil, res, fmt.Errorf(i18n.Translate(lang, "tts:error sending text: %v"), err)
+		return nil, res, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "tts:error sending text: %v"), err))
 	}
 
 	// Finish task
 	err = asyncSynthesizer.FinishTask(ctx)
 	if err != nil {
-		return nil, res, fmt.Errorf(i18n.Translate(lang, "tts:error finishing task: %v"), err)
+		return nil, res, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "tts:error finishing task: %v"), err))
 	}
 
 	// Wait for either audio data or an error
@@ -158,14 +158,14 @@ func (p *AlibabacloudTextToSpeechProvider) QueryAudioStream(text string, ctx con
 		cosyvoice.WithSynthesizerConfig(synthConfig),
 	)
 	if err != nil {
-		return res, fmt.Errorf(i18n.Translate(lang, "tts:error creating synthesizer: %v"), err)
+		return res, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "tts:error creating synthesizer: %v"), err))
 	}
 	defer asyncSynthesizer.Close()
 
 	// Run task
 	output, err := asyncSynthesizer.RunTask(ctx)
 	if err != nil {
-		return res, fmt.Errorf(i18n.Translate(lang, "tts:error running task: %v"), err)
+		return res, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "tts:error running task: %v"), err))
 	}
 
 	var streamErr error
@@ -175,7 +175,7 @@ func (p *AlibabacloudTextToSpeechProvider) QueryAudioStream(text string, ctx con
 	// Check if writer supports Flush
 	flusher, ok := writer.(http.Flusher)
 	if !ok {
-		return nil, fmt.Errorf(i18n.Translate(lang, "model:writer does not implement http.Flusher"))
+		return nil, fmt.Errorf("%s", i18n.Translate(lang, "model:writer does not implement http.Flusher"))
 	}
 
 	// Error channel for streaming mode
@@ -234,12 +234,12 @@ func (p *AlibabacloudTextToSpeechProvider) QueryAudioStream(text string, ctx con
 
 	// Launch goroutine to collect audio data
 	if err = asyncSynthesizer.SendText(ctx, text); err != nil {
-		return res, fmt.Errorf(i18n.Translate(lang, "tts:error sending text: %v"), err)
+		return res, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "tts:error sending text: %v"), err))
 	}
 
 	// Finish task
 	if err = asyncSynthesizer.FinishTask(ctx); err != nil {
-		return res, fmt.Errorf(i18n.Translate(lang, "tts:error finishing task: %v"), err)
+		return res, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "tts:error finishing task: %v"), err))
 	}
 
 	// Wait for streaming to finish
