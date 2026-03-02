@@ -47,7 +47,7 @@ func GetRangeUsages(rangeType string, count int, user string, storeName string, 
 	case "Month":
 		startDateTime = now.Truncate(24*time.Hour).AddDate(0, -count+1, 0)
 	default:
-		return nil, fmt.Errorf(i18n.Translate(lang, "object:invalid range type: %s"), rangeType)
+		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:invalid range type: %s"), rangeType))
 	}
 
 	usages := make([]*Usage, count)

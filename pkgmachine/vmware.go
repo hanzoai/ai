@@ -88,7 +88,7 @@ func (client MachineVmwareClient) sendRequest(method, path string, lang string) 
 		if message.Code == 100 {
 			return nil, nil
 		} else if message.Code != 0 {
-			return nil, fmt.Errorf(i18n.Translate(lang, "pkgmachine:VMware API error, code = %d, message = %s"), message.Code, message.Message)
+			return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "pkgmachine:VMware API error, code = %d, message = %s"), message.Code, message.Message))
 		}
 	}
 
@@ -161,5 +161,5 @@ func (client MachineVmwareClient) GetMachine(name string, lang string) (*Machine
 }
 
 func (client MachineVmwareClient) UpdateMachineState(name string, state string, lang string) (bool, string, error) {
-	return false, "", fmt.Errorf(i18n.Translate(lang, "pkgmachine:Not implemented"))
+	return false, "", fmt.Errorf("%s", i18n.Translate(lang, "pkgmachine:Not implemented"))
 }

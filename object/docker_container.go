@@ -224,7 +224,7 @@ func updateContainer(oldContainer *Container, container *Container, lang string)
 		return false, err
 	}
 	if provider == nil {
-		return false, fmt.Errorf(i18n.Translate(lang, "object:The provider: %s does not exist"), container.Provider)
+		return false, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:The provider: %s does not exist"), container.Provider))
 	}
 
 	client, err := pkgdocker.NewContainerClient(provider.ClientId, provider.ClientSecret, provider.Region)

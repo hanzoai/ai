@@ -175,7 +175,7 @@ func (p *GeminiModelProvider) calculatePrice(modelResult *ModelResult, lang stri
 	case strings.Contains(p.subType, "veo-2"):
 		// $0.35 per second - need special handling
 		// Would need video duration information
-		return fmt.Errorf(i18n.Translate(lang, "model:calculatePrice() error: video generation pricing requires duration information"))
+		return fmt.Errorf("%s", i18n.Translate(lang, "model:calculatePrice() error: video generation pricing requires duration information"))
 
 	// Experimental models (using default Flash pricing)
 	case strings.Contains(p.subType, "gemini-exp"):
@@ -188,7 +188,7 @@ func (p *GeminiModelProvider) calculatePrice(modelResult *ModelResult, lang stri
 		outputPricePerMillionTokens = 0
 
 	default:
-		return fmt.Errorf(i18n.Translate(lang, "embedding:calculatePrice() error: unknown model type: %s"), p.subType)
+		return fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "embedding:calculatePrice() error: unknown model type: %s"), p.subType))
 	}
 
 	// Convert from per million to per token pricing
@@ -219,12 +219,12 @@ func (p *GeminiModelProvider) QueryText(question string, writer io.Writer, histo
 	if strings.HasPrefix(question, "$CloudDryRun$") {
 		modelResult, err := getDefaultModelResult(p.subType, question, "")
 		if err != nil {
-			return nil, fmt.Errorf(i18n.Translate(lang, "model:cannot calculate tokens"))
+			return nil, fmt.Errorf("%s", i18n.Translate(lang, "model:cannot calculate tokens"))
 		}
 		if getContextLength(p.subType) > modelResult.TotalTokenCount {
 			return modelResult, nil
 		} else {
-			return nil, fmt.Errorf(i18n.Translate(lang, "model:exceed max tokens"))
+			return nil, fmt.Errorf("%s", i18n.Translate(lang, "model:exceed max tokens"))
 		}
 	}
 
@@ -248,7 +248,7 @@ func (p *GeminiModelProvider) QueryText(question string, writer io.Writer, histo
 
 	flusher, ok := writer.(http.Flusher)
 	if !ok {
-		return nil, fmt.Errorf(i18n.Translate(lang, "model:writer does not implement http.Flusher"))
+		return nil, fmt.Errorf("%s", i18n.Translate(lang, "model:writer does not implement http.Flusher"))
 	}
 
 	flushData := func(data []*genai.Part) error {

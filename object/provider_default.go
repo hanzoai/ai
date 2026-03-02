@@ -26,7 +26,7 @@ import (
 // GetProviderByProviderKey retrieves a provider using the Provider key
 func GetProviderByProviderKey(providerKey string, lang string) (*Provider, error) {
 	if providerKey == "" {
-		return nil, fmt.Errorf(i18n.Translate(lang, "object:empty provider key"))
+		return nil, fmt.Errorf("%s", i18n.Translate(lang, "object:empty provider key"))
 	}
 
 	provider := &Provider{}
@@ -60,12 +60,12 @@ func GetModelProviderByProviderKey(providerKey string, lang string) (model.Model
 	}
 
 	if provider == nil {
-		return nil, fmt.Errorf(i18n.Translate(lang, "object:The provider is not found"))
+		return nil, fmt.Errorf("%s", i18n.Translate(lang, "object:The provider is not found"))
 	}
 
 	// Ensure it's a model provider
 	if provider.Category != "Model" {
-		return nil, fmt.Errorf(i18n.Translate(lang, "object:The model provider: %s is not found"), provider.Name)
+		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:The model provider: %s is not found"), provider.Name))
 	}
 
 	modelProvider, err := provider.GetModelProvider(lang)
@@ -73,7 +73,7 @@ func GetModelProviderByProviderKey(providerKey string, lang string) (model.Model
 		return nil, err
 	}
 	if modelProvider == nil {
-		return nil, fmt.Errorf(i18n.Translate(lang, "object:The model provider: %s is not found"), provider.Name)
+		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:The model provider: %s is not found"), provider.Name))
 	}
 
 	return modelProvider, nil

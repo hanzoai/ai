@@ -88,14 +88,14 @@ func RefineMessageImage(message *object.Message, lang string) error {
 	imgRegex := regexp.MustCompile(`<img[^>]*src="([^"]*)"[^>]*>`)
 	srcMatches := imgRegex.FindStringSubmatch(message.Text)
 	if len(srcMatches) <= 1 {
-		return fmt.Errorf(i18n.Translate(lang, "no image url found"))
+		return fmt.Errorf("%s", i18n.Translate(lang, "no image url found"))
 	}
 	imageUrl := srcMatches[1]
 
 	extRegex := regexp.MustCompile(`\.([a-zA-Z]+)\?`)
 	extMatches := extRegex.FindStringSubmatch(imageUrl)
 	if len(extMatches) <= 1 {
-		return fmt.Errorf(i18n.Translate(lang, "no extension found"))
+		return fmt.Errorf("%s", i18n.Translate(lang, "no extension found"))
 	}
 	ext := extMatches[1]
 

@@ -91,7 +91,7 @@ func (p *LocalEmbeddingProvider) calculatePrice(res *EmbeddingResult, lang strin
 		pricePerThousandTokens = p.pricePerThousandTokens
 		res.Currency = p.currency
 	default:
-		return fmt.Errorf(i18n.Translate(lang, "embedding:calculatePrice() error: unknown model type: %s"), embeddingModel)
+		return fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "embedding:calculatePrice() error: unknown model type: %s"), embeddingModel))
 	}
 
 	res.Price = getPrice(res.TokenCount, pricePerThousandTokens)
@@ -113,7 +113,7 @@ func (p *LocalEmbeddingProvider) QueryVector(text string, ctx context.Context, l
 	if model == "custom-embedding" && p.compatibleProvider != "" {
 		model = p.compatibleProvider
 	} else if model == "custom-embedding" && p.compatibleProvider == "" {
-		return nil, nil, fmt.Errorf(i18n.Translate(lang, "embedding:no embedding provider specified"))
+		return nil, nil, fmt.Errorf("%s", i18n.Translate(lang, "embedding:no embedding provider specified"))
 	}
 
 	resp, err := client.CreateEmbeddings(ctx, openai.EmbeddingRequest{

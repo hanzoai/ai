@@ -30,7 +30,7 @@ func NewImageClient(providerType string, accessKeyId string, accessKeySecret str
 	if providerType == "Aliyun" {
 		res, err = newImageAliyunClient(accessKeyId, accessKeySecret, region)
 	} else {
-		return nil, fmt.Errorf(i18n.Translate(lang, "pkgimage:unsupported provider type: %s"), providerType)
+		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "pkgimage:unsupported provider type: %s"), providerType))
 	}
 
 	if err != nil {

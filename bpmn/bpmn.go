@@ -115,7 +115,7 @@ func ParseBPMN(bpmnText string, lang string) (map[string]Task, map[string][]Sequ
 	var definitions Definitions
 	err := xml.Unmarshal(bytes, &definitions)
 	if err != nil {
-		return nil, nil, nil, nil, nil, nil, fmt.Errorf(i18n.Translate(lang, "bpmn:Error parsing BPMN file: %v"), err)
+		return nil, nil, nil, nil, nil, nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "bpmn:Error parsing BPMN file: %v"), err))
 	}
 
 	tasks := map[string]Task{}
