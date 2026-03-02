@@ -23,7 +23,11 @@ files/
 .idea/
 *.iml
 
-.claude
+.claude/
+CLAUDE.md
+AGENTS.md
+GEMINI.md
+QWEN.md
 
 tmp/
 tmpFiles/
