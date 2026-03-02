@@ -17,7 +17,6 @@ package controllers
 import (
 	"fmt"
 
-	"github.com/hanzoai/cloud/conf"
 	"github.com/hanzoai/cloud/i18n"
 	"github.com/hanzoai/cloud/object"
 	"github.com/hanzoai/cloud/util"
@@ -34,7 +33,7 @@ func addRecord(c *ApiController, userName string, requestUri string, lang string
 		record.RequestUri = requestUri
 	}
 
-	record.Organization = conf.GetConfigString("iamOrganization")
+	record.Organization = c.GetEffectiveOrg()
 
 	_, _, err = object.AddRecord(record, c.GetAcceptLanguage())
 	return err

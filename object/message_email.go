@@ -24,8 +24,11 @@ import (
 	iamsdk "github.com/hanzoid/go-sdk/casdoorsdk"
 )
 
-func (message *Message) SendEmail(lang string) error {
+func (message *Message) SendEmail(lang string, orgName ...string) error {
 	iamOrganization := conf.GetConfigString("iamOrganization")
+	if len(orgName) > 0 && orgName[0] != "" {
+		iamOrganization = orgName[0]
+	}
 	organization, err := iamsdk.GetOrganization(iamOrganization)
 	if err != nil {
 		return err
@@ -113,7 +116,7 @@ func (message *Message) SendEmail(lang string) error {
 	return nil
 }
 
-func (message *Message) SendErrorEmail(errorText string, lang string) error {
+func (message *Message) SendErrorEmail(errorText string, lang string, orgName ...string) error {
 	adminUser, err := iamsdk.GetUser("admin")
 	if err != nil {
 		return err
@@ -128,6 +131,9 @@ func (message *Message) SendErrorEmail(errorText string, lang string) error {
 	}
 
 	iamOrganization := conf.GetConfigString("iamOrganization")
+	if len(orgName) > 0 && orgName[0] != "" {
+		iamOrganization = orgName[0]
+	}
 	organization, err := iamsdk.GetOrganization(iamOrganization)
 	if err != nil {
 		return err
