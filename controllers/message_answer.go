@@ -20,7 +20,6 @@ import (
 	"strings"
 
 	"github.com/hanzoai/cloud/agent"
-	"github.com/hanzoai/cloud/conf"
 	"github.com/hanzoai/cloud/embedding"
 	"github.com/hanzoai/cloud/model"
 	"github.com/hanzoai/cloud/object"
@@ -430,14 +429,14 @@ func (c *ApiController) GetAnswer() {
 		return
 	}
 	if chat == nil {
-		iamOrganization := conf.GetConfigString("iamOrganization")
+		effectiveOrg := c.GetEffectiveOrg()
 		currentTime := util.GetCurrentTime()
 		chat = &object.Chat{
 			Owner:         "admin",
 			Name:          chatName,
 			CreatedTime:   currentTime,
 			UpdatedTime:   currentTime,
-			Organization:  iamOrganization,
+			Organization:  effectiveOrg,
 			DisplayName:   chatName,
 			Store:         "",
 			ModelProvider: provider,

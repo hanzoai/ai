@@ -45,11 +45,21 @@ func setTenantContextValue(ctx *context.Context, key string, value string) {
 
 // TenantContextFilter captures upstream multi-tenant routing headers so
 // downstream handlers can scope operations without depending on query params.
+// Reads both gateway-injected X-Hanzo-* headers and generic X-*-ID headers.
 func TenantContextFilter(ctx *context.Context) {
-	orgID := getTenantHeader(ctx, "X-Org-ID")
+	// Prefer gateway-injected headers (trusted, set after JWT validation)
+	orgID := getTenantHeader(ctx, "X-Hanzo-Org-Id")
+	if orgID == "" {
+		orgID = getTenantHeader(ctx, "X-Org-ID")
+	}
+
+	actorID := getTenantHeader(ctx, "X-Hanzo-User-Id")
+	if actorID == "" {
+		actorID = getTenantHeader(ctx, "X-Actor-ID")
+	}
+
 	projectID := getTenantHeader(ctx, "X-Project-ID")
 	tenantID := getTenantHeader(ctx, "X-Tenant-ID")
-	actorID := getTenantHeader(ctx, "X-Actor-ID")
 	env := getTenantHeader(ctx, "X-Env")
 
 	if tenantID == "" {
