@@ -58,19 +58,20 @@ jobs:
       - name: Verify IAM tenancy configuration
         run: |
           set -euo pipefail
+          # KMS operator syncs secrets with CLOUD_RUNTIME_SECRETS__ prefix
           kubectl get secret cloud-runtime-secrets -n hanzo >/dev/null
-          IAM_ENDPOINT="$(kubectl get secret cloud-runtime-secrets -n hanzo -o jsonpath='{.data.iamEndpoint}' | base64 -d)"
-          CLIENT_ID="$(kubectl get secret cloud-runtime-secrets -n hanzo -o jsonpath='{.data.clientId}' | base64 -d)"
-          CLIENT_SECRET="$(kubectl get secret cloud-runtime-secrets -n hanzo -o jsonpath='{.data.clientSecret}' | base64 -d)"
-          DATA_SOURCE_NAME="$(kubectl get secret cloud-runtime-secrets -n hanzo -o jsonpath='{.data.dataSourceName}' | base64 -d)"
-          HANZO_API_KEY_VALUE="$(kubectl get secret cloud-runtime-secrets -n hanzo -o jsonpath='{.data.HANZO_API_KEY}' | base64 -d)"
+          IAM_ENDPOINT="$(kubectl get secret cloud-runtime-secrets -n hanzo -o jsonpath='{.data.CLOUD_RUNTIME_SECRETS__IAMENDPOINT}' | base64 -d)"
+          CLIENT_ID="$(kubectl get secret cloud-runtime-secrets -n hanzo -o jsonpath='{.data.CLOUD_RUNTIME_SECRETS__CLIENTID}' | base64 -d)"
+          CLIENT_SECRET="$(kubectl get secret cloud-runtime-secrets -n hanzo -o jsonpath='{.data.CLOUD_RUNTIME_SECRETS__CLIENTSECRET}' | base64 -d)"
+          DATA_SOURCE_NAME="$(kubectl get secret cloud-runtime-secrets -n hanzo -o jsonpath='{.data.CLOUD_RUNTIME_SECRETS__DATASOURCENAME}' | base64 -d)"
+          HANZO_API_KEY_VALUE="$(kubectl get secret cloud-runtime-secrets -n hanzo -o jsonpath='{.data.CLOUD_RUNTIME_SECRETS__HANZO_API_KEY}' | base64 -d)"
           if [ "$IAM_ENDPOINT" != "http://iam.hanzo.svc.cluster.local:8000" ]; then
-            echo "cloud-runtime-secrets.iamEndpoint must be http://iam.hanzo.svc.cluster.local:8000, got ${IAM_ENDPOINT}"
+            echo "cloud-runtime-secrets.IAMENDPOINT must be http://iam.hanzo.svc.cluster.local:8000, got ${IAM_ENDPOINT}"
             exit 1
           fi
-          [ -n "$CLIENT_ID" ] || (echo "cloud-runtime-secrets.clientId is empty" && exit 1)
-          [ -n "$CLIENT_SECRET" ] || (echo "cloud-runtime-secrets.clientSecret is empty" && exit 1)
-          [ -n "$DATA_SOURCE_NAME" ] || (echo "cloud-runtime-secrets.dataSourceName is empty" && exit 1)
+          [ -n "$CLIENT_ID" ] || (echo "cloud-runtime-secrets.CLIENTID is empty" && exit 1)
+          [ -n "$CLIENT_SECRET" ] || (echo "cloud-runtime-secrets.CLIENTSECRET is empty" && exit 1)
+          [ -n "$DATA_SOURCE_NAME" ] || (echo "cloud-runtime-secrets.DATASOURCENAME is empty" && exit 1)
           [ -n "$HANZO_API_KEY_VALUE" ] || (echo "cloud-runtime-secrets.HANZO_API_KEY is empty" && exit 1)
 
       - name: Verify public health endpoint
