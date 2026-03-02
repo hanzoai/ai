@@ -251,7 +251,7 @@ func queryVectorSafe(embeddingProvider embedding.EmbeddingProvider, text string,
 	for i := 0; i < 10; i++ {
 		res, embeddingResult, err = queryVectorWithContext(embeddingProvider, text, i, lang)
 		if err != nil {
-			err = fmt.Errorf(i18n.Translate(lang, "object:queryVectorSafe() error, %s"), err.Error())
+			err = fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:queryVectorSafe() error, %s"), err.Error()))
 			if i > 0 {
 				logs.Error("\tFailed (%d): %s", i+1, err.Error())
 			}

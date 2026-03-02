@@ -105,7 +105,7 @@ func (p *OpenRouterModelProvider) calculatePrice(modelResult *ModelResult, lang 
 		inputPricePerThousandTokens = priceItem[0]
 		outputPricePerThousandTokens = priceItem[1]
 	} else {
-		return fmt.Errorf(i18n.Translate(lang, "embedding:calculatePrice() error: unknown model type: %s"), p.subType)
+		return fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "embedding:calculatePrice() error: unknown model type: %s"), p.subType))
 	}
 
 	inputPrice := getPrice(modelResult.PromptTokenCount, inputPricePerThousandTokens)
@@ -133,7 +133,7 @@ func (p *OpenRouterModelProvider) QueryText(question string, writer io.Writer, h
 	ctx := context.Background()
 	flusher, ok := writer.(http.Flusher)
 	if !ok {
-		return nil, fmt.Errorf(i18n.Translate(lang, "model:writer does not implement http.Flusher"))
+		return nil, fmt.Errorf("%s", i18n.Translate(lang, "model:writer does not implement http.Flusher"))
 	}
 
 	model := p.subType
@@ -151,18 +151,18 @@ func (p *OpenRouterModelProvider) QueryText(question string, writer io.Writer, h
 	if strings.HasPrefix(question, "$CloudDryRun$") {
 		modelResult, err := getDefaultModelResult(model, question, "")
 		if err != nil {
-			return nil, fmt.Errorf(i18n.Translate(lang, "model:cannot calculate tokens"))
+			return nil, fmt.Errorf("%s", i18n.Translate(lang, "model:cannot calculate tokens"))
 		}
 		if contextLength > modelResult.TotalTokenCount {
 			return modelResult, nil
 		} else {
-			return nil, fmt.Errorf(i18n.Translate(lang, "model:exceed max tokens"))
+			return nil, fmt.Errorf("%s", i18n.Translate(lang, "model:exceed max tokens"))
 		}
 	}
 
 	maxTokens := contextLength - tokenCount
 	if maxTokens < 0 {
-		return nil, fmt.Errorf(i18n.Translate(lang, "model:The token count: [%d] exceeds the model: [%s]'s maximum token count: [%d]"), tokenCount, model, contextLength)
+		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "model:The token count: [%d] exceeds the model: [%s]'s maximum token count: [%d]"), tokenCount, model, contextLength))
 	}
 
 	temperature := p.temperature

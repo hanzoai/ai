@@ -128,7 +128,7 @@ func UpdateApplication(id string, application *Application, lang string) (bool, 
 	// Apply Kustomize overlays
 	application.Manifest, err = generateManifestWithKustomize(application.Manifest, application.Parameters, lang)
 	if err != nil {
-		return false, fmt.Errorf(i18n.Translate(lang, "object:failed to generate manifest: %v"), err)
+		return false, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:failed to generate manifest: %v"), err))
 	}
 
 	affected, err := adapter.engine.ID(core.PK{owner, name}).AllCols().Update(application)

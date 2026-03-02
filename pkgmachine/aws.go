@@ -100,7 +100,7 @@ func (client MachineAwsClient) GetMachine(name string, lang string) (*Machine, e
 	}
 
 	if len(output.Reservations) == 0 || len(output.Reservations[0].Instances) == 0 {
-		return nil, fmt.Errorf(i18n.Translate(lang, "pkgmachine:Instance not found: %s"), name)
+		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "pkgmachine:Instance not found: %s"), name))
 	}
 
 	instance := output.Reservations[0].Instances[0]

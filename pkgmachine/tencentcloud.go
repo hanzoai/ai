@@ -93,7 +93,7 @@ func (client MachineTencentClient) GetMachines(lang string) ([]*Machine, error) 
 	response, err := client.Client.DescribeInstances(request)
 	if err != nil {
 		if _, ok := err.(*errors.TencentCloudSDKError); ok {
-			return nil, fmt.Errorf(i18n.Translate(lang, "pkgmachine:Tencent Cloud API error: %s"), err)
+			return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "pkgmachine:Tencent Cloud API error: %s"), err))
 		}
 		return nil, err
 	}
@@ -122,7 +122,7 @@ func (client MachineTencentClient) GetMachine(name string, lang string) (*Machin
 	response, err := client.Client.DescribeInstances(request)
 	if err != nil {
 		if _, ok := err.(*errors.TencentCloudSDKError); ok {
-			return nil, fmt.Errorf(i18n.Translate(lang, "pkgmachine:Tencent Cloud API error: %s"), err)
+			return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "pkgmachine:Tencent Cloud API error: %s"), err))
 		}
 		return nil, err
 	}

@@ -80,7 +80,7 @@ func (p *ClaudeModelProvider) calculatePrice(modelResult *ModelResult, lang stri
 		inputPricePerThousandTokens = priceItem[0]
 		outputPricePerThousandTokens = priceItem[1]
 	} else {
-		return fmt.Errorf(i18n.Translate(lang, "embedding:calculatePrice() error: unknown model type: %s"), p.subType)
+		return fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "embedding:calculatePrice() error: unknown model type: %s"), p.subType))
 	}
 
 	inputPrice := getPrice(modelResult.PromptTokenCount, inputPricePerThousandTokens)
@@ -99,12 +99,12 @@ func (p *ClaudeModelProvider) QueryText(question string, writer io.Writer, histo
 	if strings.HasPrefix(question, "$CloudDryRun$") {
 		modelResult, err := getDefaultModelResult(p.subType, question, "")
 		if err != nil {
-			return nil, fmt.Errorf(i18n.Translate(lang, "model:cannot calculate tokens"))
+			return nil, fmt.Errorf("%s", i18n.Translate(lang, "model:cannot calculate tokens"))
 		}
 		if getContextLength(p.subType) > modelResult.TotalTokenCount {
 			return modelResult, nil
 		} else {
-			return nil, fmt.Errorf(i18n.Translate(lang, "model:exceed max tokens"))
+			return nil, fmt.Errorf("%s", i18n.Translate(lang, "model:exceed max tokens"))
 		}
 	}
 
@@ -144,7 +144,7 @@ func (p *ClaudeModelProvider) QueryText(question string, writer io.Writer, histo
 
 	flusher, ok := writer.(http.Flusher)
 	if !ok {
-		return nil, fmt.Errorf(i18n.Translate(lang, "model:writer does not implement http.Flusher"))
+		return nil, fmt.Errorf("%s", i18n.Translate(lang, "model:writer does not implement http.Flusher"))
 	}
 
 	flushData := func(event string, data string) error {

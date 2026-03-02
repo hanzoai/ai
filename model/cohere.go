@@ -81,7 +81,7 @@ func (p *CohereModelProvider) calculatePrice(modelResult *ModelResult, lang stri
 		inputPricePerThousandTokens = 0.001
 		outputPricePerThousandTokens = 0.002
 	default:
-		return fmt.Errorf(i18n.Translate(lang, "embedding:calculatePrice() error: unknown model type: %s"), p.subType)
+		return fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "embedding:calculatePrice() error: unknown model type: %s"), p.subType))
 	}
 
 	inputPrice := getPrice(modelResult.PromptTokenCount, inputPricePerThousandTokens)
@@ -102,12 +102,12 @@ func (p *CohereModelProvider) QueryText(message string, writer io.Writer, chat_h
 	if strings.HasPrefix(message, "$CloudDryRun$") {
 		modelResult, err := getDefaultModelResult(p.subType, message, "")
 		if err != nil {
-			return nil, fmt.Errorf(i18n.Translate(lang, "model:cannot calculate tokens"))
+			return nil, fmt.Errorf("%s", i18n.Translate(lang, "model:cannot calculate tokens"))
 		}
 		if maxTokens > modelResult.TotalTokenCount {
 			return modelResult, nil
 		} else {
-			return nil, fmt.Errorf(i18n.Translate(lang, "model:exceed max tokens"))
+			return nil, fmt.Errorf("%s", i18n.Translate(lang, "model:exceed max tokens"))
 		}
 	}
 	generation, err := client.Generate(
@@ -123,7 +123,7 @@ func (p *CohereModelProvider) QueryText(message string, writer io.Writer, chat_h
 		return nil, err
 	}
 	if len(generation.Generations) == 0 {
-		return nil, fmt.Errorf(i18n.Translate(lang, "model:no generations returned"))
+		return nil, fmt.Errorf("%s", i18n.Translate(lang, "model:no generations returned"))
 	}
 
 	output := generation.Generations[0].Text

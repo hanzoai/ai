@@ -152,7 +152,7 @@ func GetRecord(id string, lang string) (*Record, error) {
 
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
 	if err != nil {
-		return nil, fmt.Errorf(i18n.Translate(lang, "object:failed to parse record identifier '%s': neither a valid owner/[id|name] format"), id)
+		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:failed to parse record identifier '%s': neither a valid owner/[id|name] format"), id))
 	}
 	// Try to parse as integer ID first
 	if recordId, err := util.ParseIntWithError(name); err == nil && recordId > 0 {
@@ -165,7 +165,7 @@ func GetRecord(id string, lang string) (*Record, error) {
 
 	existed, err := adapter.engine.Get(record)
 	if err != nil {
-		return nil, fmt.Errorf(i18n.Translate(lang, "object:failed to get record with id '%s': %w"), id, err)
+		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:failed to get record with id '%s': %w"), id, err))
 	}
 	if existed {
 		return record, nil
@@ -443,13 +443,13 @@ func (r *Record) updateErrorText(errText string, lang string) (bool, error) {
 	if r.Id != 0 {
 		affected, err := adapter.engine.Where("owner = ? AND name = ?", r.Owner, r.Name).Cols("error_text").Update(r)
 		if err != nil {
-			return affected > 0, fmt.Errorf(i18n.Translate(lang, "object:failed to update error text for record %s: %s"), r.getId(), err)
+			return affected > 0, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:failed to update error text for record %s: %s"), r.getId(), err))
 		}
 		return affected > 0, nil
 	} else {
 		affected, err := adapter.engine.ID(r.Id).Cols("error_text").Update(r)
 		if err != nil {
-			return affected > 0, fmt.Errorf(i18n.Translate(lang, "object:failed to update error text for record %s: %s"), r.getUniqueId(), err)
+			return affected > 0, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:failed to update error text for record %s: %s"), r.getUniqueId(), err))
 		}
 		return affected > 0, nil
 	}

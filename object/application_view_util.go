@@ -75,7 +75,7 @@ func GetURL(namespace string, lang string) (string, error) {
 		}
 	}
 
-	return "", fmt.Errorf(i18n.Translate(lang, "object:no accessible URL found for application"))
+	return "", fmt.Errorf("%s", i18n.Translate(lang, "object:no accessible URL found for application"))
 }
 
 // findIngressURL finds the external access URL for a service in Ingress rules.
@@ -180,7 +180,7 @@ func formatMemoryUsage(quantity resource.Quantity) string {
 
 func calculateNamespaceMetrics(ctx context.Context, metricsClient *metricsclientset.Clientset, namespace string, deployCache map[string]map[string]*appsv1.Deployment, mu *sync.RWMutex, lang string) (*CachedMetrics, error) {
 	if metricsClient == nil {
-		return nil, fmt.Errorf(i18n.Translate(lang, "object:metrics client not available"))
+		return nil, fmt.Errorf("%s", i18n.Translate(lang, "object:metrics client not available"))
 	}
 
 	podMetricsList, err := metricsClient.MetricsV1beta1().PodMetricses(namespace).List(ctx, metav1.ListOptions{})

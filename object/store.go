@@ -251,7 +251,7 @@ func (store *Store) GetStorageProviderObj(lang string) (storage.StorageProvider,
 
 func (store *Store) GetImageProviderObj(lang string) (storage.StorageProvider, error) {
 	if store.ImageProvider == "" {
-		return nil, fmt.Errorf(i18n.Translate(lang, "object:The image provider for store: %s should not be empty"), store.GetId())
+		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:The image provider for store: %s should not be empty"), store.GetId()))
 	}
 
 	return storage.NewIamProvider(store.ImageProvider, lang)
@@ -304,7 +304,7 @@ func RefreshStoreVectors(store *Store, lang string) (bool, error) {
 		return false, err
 	}
 	if modelProvider == nil {
-		return false, fmt.Errorf(i18n.Translate(lang, "object:The model provider for store: %s is not found"), store.GetId())
+		return false, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:The model provider for store: %s is not found"), store.GetId()))
 	}
 
 	embeddingProvider, err := store.GetEmbeddingProvider()
@@ -312,7 +312,7 @@ func RefreshStoreVectors(store *Store, lang string) (bool, error) {
 		return false, err
 	}
 	if embeddingProvider == nil {
-		return false, fmt.Errorf(i18n.Translate(lang, "object:The embedding provider for store: %s is not found"), store.GetId())
+		return false, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:The embedding provider for store: %s is not found"), store.GetId()))
 	}
 
 	embeddingProviderObj, err := embeddingProvider.GetEmbeddingProvider(lang)
@@ -340,7 +340,7 @@ func AddVectorsForFile(store *Store, fileName string, fileUrl string, lang strin
 		return false, err
 	}
 	if modelProvider == nil {
-		return false, fmt.Errorf(i18n.Translate(lang, "object:The model provider for store: %s is not found"), store.GetId())
+		return false, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:The model provider for store: %s is not found"), store.GetId()))
 	}
 
 	embeddingProvider, err := store.GetEmbeddingProvider()
@@ -348,7 +348,7 @@ func AddVectorsForFile(store *Store, fileName string, fileUrl string, lang strin
 		return false, err
 	}
 	if embeddingProvider == nil {
-		return false, fmt.Errorf(i18n.Translate(lang, "object:The embedding provider for store: %s is not found"), store.GetId())
+		return false, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:The embedding provider for store: %s is not found"), store.GetId()))
 	}
 
 	embeddingProviderObj, err := embeddingProvider.GetEmbeddingProvider(lang)
@@ -369,7 +369,7 @@ func RefreshFileVectors(file *File, lang string) (bool, error) {
 		return false, err
 	}
 	if store == nil {
-		return false, fmt.Errorf(i18n.Translate(lang, "account:The store: %s is not found"), file.Store)
+		return false, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "account:The store: %s is not found"), file.Store))
 	}
 
 	var objectKey string
@@ -380,11 +380,11 @@ func RefreshFileVectors(file *File, lang string) (bool, error) {
 		objectKey = file.Name
 	}
 	if objectKey == "" {
-		return false, fmt.Errorf(i18n.Translate(lang, "object:The file: %s is not found"), file.Name)
+		return false, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:The file: %s is not found"), file.Name))
 	}
 
 	if file.Url == "" {
-		return false, fmt.Errorf(i18n.Translate(lang, "object:The file URL for: %s is empty"), file.Name)
+		return false, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:The file URL for: %s is empty"), file.Name))
 	}
 
 	_, err = DeleteVectorsByFile(store.Owner, store.Name, objectKey)

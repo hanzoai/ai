@@ -117,7 +117,7 @@ var (
 // initMetricsClient init metrics client
 func initMetricsClient(lang string) error {
 	if k8sClient == nil || k8sClient.config == nil {
-		return fmt.Errorf(i18n.Translate(lang, "object:k8s client not initialized"))
+		return fmt.Errorf("%s", i18n.Translate(lang, "object:k8s client not initialized"))
 	}
 
 	var err error
@@ -164,7 +164,7 @@ func getNamespaceMetrics(namespace string, lang string) (*ResourceMetrics, error
 		if errors.IsNotFound(err) || strings.Contains(err.Error(), "metrics.k8s.io") {
 			return nil, nil
 		}
-		return nil, fmt.Errorf(i18n.Translate(lang, "object:failed to get pod metrics: %v"), err)
+		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:failed to get pod metrics: %v"), err))
 	}
 
 	if metrics == nil {
@@ -192,26 +192,26 @@ func getExternalHost(fallbackHost string) string {
 // parseK8sHost extracts server host from kubeconfig content
 func parseK8sHost(configText string, lang string) (string, error) {
 	if strings.TrimSpace(configText) == "" {
-		return "", fmt.Errorf(i18n.Translate(lang, "object:kubeconfig content is empty"))
+		return "", fmt.Errorf("%s", i18n.Translate(lang, "object:kubeconfig content is empty"))
 	}
 
 	config, err := clientcmd.RESTConfigFromKubeConfig([]byte(configText))
 	if err != nil {
-		return "", fmt.Errorf(i18n.Translate(lang, "object:failed to parse kubeconfig: %v"), err)
+		return "", fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:failed to parse kubeconfig: %v"), err))
 	}
 
 	if config.Host == "" {
-		return "", fmt.Errorf(i18n.Translate(lang, "object:server address not found"))
+		return "", fmt.Errorf("%s", i18n.Translate(lang, "object:server address not found"))
 	}
 
 	serverURL, err := url.Parse(config.Host)
 	if err != nil {
-		return "", fmt.Errorf(i18n.Translate(lang, "object:failed to parse server URL: %v"), err)
+		return "", fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:failed to parse server URL: %v"), err))
 	}
 
 	host := serverURL.Hostname()
 	if host == "" {
-		return "", fmt.Errorf(i18n.Translate(lang, "object:unable to extract host"))
+		return "", fmt.Errorf("%s", i18n.Translate(lang, "object:unable to extract host"))
 	}
 
 	return host, nil
@@ -220,11 +220,11 @@ func parseK8sHost(configText string, lang string) (string, error) {
 // GetApplicationView retrieves application view from cache with fallback
 func GetApplicationView(namespace string, lang string) (*ApplicationView, error) {
 	if err := ensureK8sClient(lang); err != nil {
-		return nil, fmt.Errorf(i18n.Translate(lang, "object:failed to initialize k8s client: %v"), err)
+		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:failed to initialize k8s client: %v"), err))
 	}
 
 	if !k8sClient.connected {
-		return nil, fmt.Errorf(i18n.Translate(lang, "object:k8s client not connected"))
+		return nil, fmt.Errorf("%s", i18n.Translate(lang, "object:k8s client not connected"))
 	}
 
 	// Try to get namespace from cache first
@@ -253,7 +253,7 @@ func GetApplicationView(namespace string, lang string) (*ApplicationView, error)
 					Namespace:   namespace,
 				}, nil
 			}
-			return nil, fmt.Errorf(i18n.Translate(lang, "object:failed to get namespace: %v"), err)
+			return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:failed to get namespace: %v"), err))
 		}
 		ns = apiNs
 	}

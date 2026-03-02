@@ -34,7 +34,7 @@ func (message *Message) SendEmail(lang string, orgName ...string) error {
 		return err
 	}
 	if organization == nil {
-		return fmt.Errorf(i18n.Translate(lang, "object:IAM organization: [%s] doesn't exist"), iamOrganization)
+		return fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:IAM organization: [%s] doesn't exist"), iamOrganization))
 	}
 	sender := organization.DisplayName
 
@@ -44,7 +44,7 @@ func (message *Message) SendEmail(lang string, orgName ...string) error {
 		return err
 	}
 	if application == nil {
-		return fmt.Errorf(i18n.Translate(lang, "object:IAM application: [%s] doesn't exist"), iamApplication)
+		return fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:IAM application: [%s] doesn't exist"), iamApplication))
 	}
 	title := application.DisplayName
 
@@ -122,7 +122,7 @@ func (message *Message) SendErrorEmail(errorText string, lang string, orgName ..
 		return err
 	}
 	if adminUser == nil {
-		return fmt.Errorf(i18n.Translate(lang, "object:SendErrorEmail() error, the receiver user: \")admin\" doesn't exist"))
+		return fmt.Errorf("%s", i18n.Translate(lang, "object:SendErrorEmail() error, the receiver user: \")admin\" doesn't exist"))
 	}
 
 	receiverEmail := adminUser.Email
@@ -139,7 +139,7 @@ func (message *Message) SendErrorEmail(errorText string, lang string, orgName ..
 		return err
 	}
 	if organization == nil {
-		return fmt.Errorf(i18n.Translate(lang, "object:IAM organization: [%s] doesn't exist"), iamOrganization)
+		return fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:IAM organization: [%s] doesn't exist"), iamOrganization))
 	}
 	sender := organization.DisplayName
 
@@ -158,7 +158,7 @@ func (message *Message) SendErrorEmail(errorText string, lang string, orgName ..
 		return err
 	}
 	if questionMessage == nil {
-		return fmt.Errorf(i18n.Translate(lang, "object:Question message: [%s] doesn't exist"), message.ReplyTo)
+		return fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:Question message: [%s] doesn't exist"), message.ReplyTo))
 	}
 
 	question := questionMessage.Text

@@ -130,7 +130,7 @@ func DeleteFile(file *File, lang string) (bool, error) {
 		objectKey = strings.TrimPrefix(file.Name, prefix)
 	}
 	if objectKey == "" {
-		return false, fmt.Errorf(i18n.Translate(lang, "object:The file: %s is not found"), file.Name)
+		return false, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:The file: %s is not found"), file.Name))
 	}
 
 	store, err := getStore(file.Owner, file.Store)
@@ -138,12 +138,12 @@ func DeleteFile(file *File, lang string) (bool, error) {
 		return false, err
 	}
 	if store == nil {
-		return false, fmt.Errorf(i18n.Translate(lang, "account:The store: %s is not found"), file.Store)
+		return false, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "account:The store: %s is not found"), file.Store))
 	}
 
 	storageProviderObj, err := store.GetStorageProviderObj(lang)
 	if err != nil {
-		return false, fmt.Errorf(i18n.Translate(lang, "object:The provider: %s does not exist"), store.StorageProvider)
+		return false, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:The provider: %s does not exist"), store.StorageProvider))
 	}
 	err = storageProviderObj.DeleteObject(objectKey)
 	if err != nil {
