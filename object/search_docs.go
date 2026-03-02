@@ -81,7 +81,7 @@ type DocStatsResponse struct {
 	Fields        map[string]int64 `json:"fields,omitempty"`
 }
 
-// qdrantSearchRequest is the JSON body for Qdrant's search endpoint.
+// qdrantSearchRequest is the JSON body for Hanzo Vector's search endpoint.
 type qdrantSearchRequest struct {
 	Vector []float32       `json:"vector"`
 	Limit  int             `json:"limit"`
@@ -106,7 +106,7 @@ type qdrantMatch struct {
 	Value string `json:"value"`
 }
 
-// qdrantSearchResponse is the JSON response from Qdrant's search endpoint.
+// qdrantSearchResponse is the JSON response from Hanzo Vector's search endpoint.
 type qdrantSearchResponse struct {
 	Result []qdrantScoredPoint `json:"result"`
 }
@@ -117,7 +117,7 @@ type qdrantScoredPoint struct {
 	Payload map[string]interface{} `json:"payload"`
 }
 
-// qdrantUpsertRequest is the JSON body for Qdrant's upsert endpoint.
+// qdrantUpsertRequest is the JSON body for Hanzo Vector's upsert endpoint.
 type qdrantUpsertRequest struct {
 	Points []qdrantPoint `json:"points"`
 }
@@ -130,7 +130,7 @@ type qdrantPoint struct {
 
 const rrfK = 60
 
-// GetSearchIndexName returns the Meilisearch index name for a given owner/store.
+// GetSearchIndexName returns the Hanzo Search index name for a given owner/store.
 func GetSearchIndexName(owner, store string) string {
 	return fmt.Sprintf("%s-%s-docs", owner, store)
 }
@@ -174,7 +174,7 @@ func getVectorEndpoint() (string, string) {
 	return url, apiKey
 }
 
-// ensureSearchIndex creates the Meilisearch index if it does not exist and configures it.
+// ensureSearchIndex creates the Hanzo Search index if it does not exist and configures it.
 func ensureSearchIndex(client meilisearch.ServiceManager, indexName string) error {
 	_, err := client.GetIndex(indexName)
 	if err != nil {
@@ -208,13 +208,13 @@ func ensureSearchIndex(client meilisearch.ServiceManager, indexName string) erro
 	return nil
 }
 
-// ensureVectorCollection creates the Qdrant collection if it does not exist.
+// ensureVectorCollection creates the Hanzo Vector collection if it does not exist.
 func ensureVectorCollection(baseURL, apiKey, collectionName string, dimension int) error {
 	url := fmt.Sprintf("%s/collections/%s", baseURL, collectionName)
 
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
-		return fmt.Errorf("failed to build qdrant request: %w", err)
+		return fmt.Errorf("failed to build Hanzo Vector request: %w", err)
 	}
 	if apiKey != "" {
 		req.Header.Set("api-key", apiKey)
@@ -223,7 +223,7 @@ func ensureVectorCollection(baseURL, apiKey, collectionName string, dimension in
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("failed to check qdrant collection: %w", err)
+		return fmt.Errorf("failed to check Hanzo Vector collection: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -239,12 +239,12 @@ func ensureVectorCollection(baseURL, apiKey, collectionName string, dimension in
 	}
 	bodyBytes, err := json.Marshal(createBody)
 	if err != nil {
-		return fmt.Errorf("failed to marshal qdrant create body: %w", err)
+		return fmt.Errorf("failed to marshal Hanzo Vector create body: %w", err)
 	}
 
 	req, err = http.NewRequest(http.MethodPut, url, bytes.NewReader(bodyBytes))
 	if err != nil {
-		return fmt.Errorf("failed to build qdrant create request: %w", err)
+		return fmt.Errorf("failed to build Hanzo Vector create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if apiKey != "" {
@@ -253,19 +253,19 @@ func ensureVectorCollection(baseURL, apiKey, collectionName string, dimension in
 
 	resp, err = client.Do(req)
 	if err != nil {
-		return fmt.Errorf("failed to create qdrant collection: %w", err)
+		return fmt.Errorf("failed to create Hanzo Vector collection: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("qdrant create collection returned %d: %s", resp.StatusCode, string(body))
+		return fmt.Errorf("Hanzo Vector create collection returned %d: %s", resp.StatusCode, string(body))
 	}
 
 	return nil
 }
 
-// searchFulltext searches Meilisearch and returns ranked document IDs.
+// searchFulltext searches Hanzo Search and returns ranked document IDs.
 func searchFulltext(client meilisearch.ServiceManager, indexName string, query string, tag string, limit int) ([]DocSearchResult, error) {
 	index := client.Index(indexName)
 
@@ -278,7 +278,7 @@ func searchFulltext(client meilisearch.ServiceManager, indexName string, query s
 
 	resp, err := index.Search(query, searchReq)
 	if err != nil {
-		return nil, fmt.Errorf("meilisearch query failed: %w", err)
+		return nil, fmt.Errorf("Hanzo Search query failed: %w", err)
 	}
 
 	results := make([]DocSearchResult, 0, len(resp.Hits))
@@ -295,7 +295,7 @@ func searchFulltext(client meilisearch.ServiceManager, indexName string, query s
 	return results, nil
 }
 
-// searchVectorRaw queries Qdrant with a pre-computed vector.
+// searchVectorRaw queries Hanzo Vector with a pre-computed vector.
 func searchVectorRaw(baseURL, apiKey, collectionName string, vector []float32, tag string, limit int) ([]DocSearchResult, error) {
 	url := fmt.Sprintf("%s/collections/%s/points/search", baseURL, collectionName)
 
@@ -315,12 +315,12 @@ func searchVectorRaw(baseURL, apiKey, collectionName string, vector []float32, t
 
 	bodyBytes, err := json.Marshal(reqBody)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal qdrant search body: %w", err)
+		return nil, fmt.Errorf("failed to marshal Hanzo Vector search body: %w", err)
 	}
 
 	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(bodyBytes))
 	if err != nil {
-		return nil, fmt.Errorf("failed to build qdrant search request: %w", err)
+		return nil, fmt.Errorf("failed to build Hanzo Vector search request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if apiKey != "" {
@@ -330,18 +330,18 @@ func searchVectorRaw(baseURL, apiKey, collectionName string, vector []float32, t
 	client := &http.Client{Timeout: 15 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("qdrant search request failed: %w", err)
+		return nil, fmt.Errorf("Hanzo Vector search request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("qdrant search returned %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("Hanzo Vector search returned %d: %s", resp.StatusCode, string(body))
 	}
 
 	var qdrantResp qdrantSearchResponse
 	if err := json.NewDecoder(resp.Body).Decode(&qdrantResp); err != nil {
-		return nil, fmt.Errorf("failed to decode qdrant response: %w", err)
+		return nil, fmt.Errorf("failed to decode Hanzo Vector response: %w", err)
 	}
 
 	results := make([]DocSearchResult, 0, len(qdrantResp.Result))
@@ -409,7 +409,7 @@ func extractPageID(r DocSearchResult) string {
 	return r.ID
 }
 
-// docResultFromMap converts a map (from Meilisearch hit or Qdrant payload) to a DocSearchResult.
+// docResultFromMap converts a map (from Hanzo Search hit or Hanzo Vector payload) to a DocSearchResult.
 func docResultFromMap(m map[string]interface{}) DocSearchResult {
 	r := DocSearchResult{}
 	if v, ok := m["id"].(string); ok {
@@ -440,7 +440,7 @@ func docResultFromMap(m map[string]interface{}) DocSearchResult {
 	return r
 }
 
-// SearchDocuments performs hybrid search across Meilisearch and Qdrant.
+// SearchDocuments performs hybrid search across Hanzo Search and Hanzo Vector.
 func SearchDocuments(owner, store string, req *DocSearchRequest, lang string) ([]DocSearchResult, error) {
 	if req.Query == "" {
 		return nil, fmt.Errorf("query must not be empty")
@@ -521,7 +521,7 @@ func SearchDocuments(owner, store string, req *DocSearchRequest, lang string) ([
 	return mergeRRF(fulltextResults, vectorResults, limit), nil
 }
 
-// IndexDocuments indexes documents into both Meilisearch and Qdrant.
+// IndexDocuments indexes documents into both Hanzo Search and Hanzo Vector.
 func IndexDocuments(owner, store string, req *DocIndexRequest, lang string) (int, error) {
 	if len(req.Documents) == 0 {
 		return 0, nil
@@ -529,7 +529,7 @@ func IndexDocuments(owner, store string, req *DocIndexRequest, lang string) (int
 
 	indexName := GetSearchIndexName(owner, store)
 
-	// Index into Meilisearch
+	// Index into Hanzo Search
 	searchClient, err := getSearchClient()
 	if err != nil {
 		return 0, fmt.Errorf("search client unavailable: %w", err)
@@ -556,14 +556,14 @@ func IndexDocuments(owner, store string, req *DocIndexRequest, lang string) (int
 	pk := "id"
 	task, err := index.AddDocuments(req.Documents, &meilisearch.DocumentOptions{PrimaryKey: &pk})
 	if err != nil {
-		return 0, fmt.Errorf("failed to index documents in meilisearch: %w", err)
+		return 0, fmt.Errorf("failed to index documents in Hanzo Search: %w", err)
 	}
 	_, err = searchClient.WaitForTask(task.TaskUID, 120*time.Second)
 	if err != nil {
-		return 0, fmt.Errorf("failed waiting for meilisearch indexing: %w", err)
+		return 0, fmt.Errorf("failed waiting for Hanzo Search indexing: %w", err)
 	}
 
-	// Index into Qdrant (best-effort: if embedding provider is not configured, skip vector indexing)
+	// Index into Hanzo Vector (best-effort: if embedding provider is not configured, skip vector indexing)
 	embeddingProvider, embeddingProviderObj, embErr := GetEmbeddingProviderFromContext("admin", "", lang)
 	if embErr != nil || embeddingProvider == nil || embeddingProviderObj == nil {
 		logs.Warning("embedding provider not available, skipping vector indexing: %v", embErr)
@@ -583,7 +583,7 @@ func IndexDocuments(owner, store string, req *DocIndexRequest, lang string) (int
 
 	err = ensureVectorCollection(vectorBaseURL, vectorAPIKey, indexName, len(sampleVector))
 	if err != nil {
-		logs.Warning("failed to ensure qdrant collection, skipping vector indexing: %v", err)
+		logs.Warning("failed to ensure Hanzo Vector collection, skipping vector indexing: %v", err)
 		return len(req.Documents), nil
 	}
 
@@ -640,19 +640,19 @@ func IndexDocuments(owner, store string, req *DocIndexRequest, lang string) (int
 	return len(req.Documents), nil
 }
 
-// upsertVectorPoints sends a batch of points to Qdrant.
+// upsertVectorPoints sends a batch of points to Hanzo Vector.
 func upsertVectorPoints(baseURL, apiKey, collectionName string, points []qdrantPoint) error {
 	url := fmt.Sprintf("%s/collections/%s/points", baseURL, collectionName)
 
 	reqBody := qdrantUpsertRequest{Points: points}
 	bodyBytes, err := json.Marshal(reqBody)
 	if err != nil {
-		return fmt.Errorf("failed to marshal qdrant upsert body: %w", err)
+		return fmt.Errorf("failed to marshal Hanzo Vector upsert body: %w", err)
 	}
 
 	req, err := http.NewRequest(http.MethodPut, url, bytes.NewReader(bodyBytes))
 	if err != nil {
-		return fmt.Errorf("failed to build qdrant upsert request: %w", err)
+		return fmt.Errorf("failed to build Hanzo Vector upsert request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if apiKey != "" {
@@ -662,7 +662,7 @@ func upsertVectorPoints(baseURL, apiKey, collectionName string, points []qdrantP
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("qdrant upsert request failed: %w", err)
+		return fmt.Errorf("Hanzo Vector upsert request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
