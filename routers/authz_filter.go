@@ -46,7 +46,7 @@ func isAllowedInDemoMode(method string, urlPath string) bool {
 		return true
 	}
 
-	if strings.HasPrefix(urlPath, "/api/signin") || urlPath == "/api/signout" || urlPath == "/api/add-chat" || urlPath == "/api/add-message" || urlPath == "/api/update-message" || urlPath == "/api/delete-welcome-message" || urlPath == "/api/generate-text-to-speech-audio" || urlPath == "/api/add-node-tunnel" || urlPath == "/api/start-connection" || urlPath == "/api/stop-connection" || urlPath == "/api/commit-record" || urlPath == "/api/commit-record-second" || urlPath == "/api/update-chat" || urlPath == "/api/delete-chat" {
+	if strings.HasPrefix(urlPath, "/api/signin") || urlPath == "/api/signout" || urlPath == "/api/add-chat" || urlPath == "/api/add-message" || urlPath == "/api/update-message" || urlPath == "/api/delete-welcome-message" || urlPath == "/api/generate-text-to-speech-audio" || urlPath == "/api/add-node-tunnel" || urlPath == "/api/start-connection" || urlPath == "/api/stop-connection" || urlPath == "/api/commit-record" || urlPath == "/api/commit-record-second" || urlPath == "/api/update-chat" || urlPath == "/api/delete-chat" || urlPath == "/api/search-docs" || urlPath == "/api/chat-docs" {
 		return true
 	}
 
@@ -80,6 +80,7 @@ func permissionFilter(ctx *context.Context) {
 		"update-chat", "add-chat", "delete-chat", "update-message", "add-message",
 		"get-chat", "get-message",
 		"get-tasks", "get-task", "update-task", "add-task", "delete-task", "upload-task-document",
+		"search-docs", "chat-docs", "search-docs/stats",
 	}
 
 	for _, exemptPath := range exemptedPaths {
