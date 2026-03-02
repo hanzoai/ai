@@ -48,10 +48,10 @@ jobs:
           - 3306:3306
         options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-go@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
         with:
-          go-version: '1.23.6'
+          go-version: '1.26'
           cache-dependency-path: ./go.mod
       - name: Tests
         run: go test -v $(go list ./...) -tags skipCi
@@ -61,30 +61,24 @@ jobs:
     runs-on: ubuntu-latest
     needs: [ go-tests ]
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-node@v3
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: 'yarn'
           cache-dependency-path: ./web/yarn.lock
       - run: yarn install && CI=false yarn run build
         working-directory: ./web
-      - name: Upload build artifacts
-        if: github.repository == 'hanzoai/cloud' && github.event_name == 'push'
-        uses: actions/upload-artifact@v4
-        with:
-          name: frontend-build-${{ github.run_id }}
-          path: ./web/build
 
   backend:
     name: Back-end
     runs-on: ubuntu-latest
     needs: [ go-tests ]
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-go@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
         with:
-          go-version: '1.23.6'
+          go-version: '1.26'
           cache-dependency-path: ./go.mod
       - run: go version
       - name: Build
@@ -97,17 +91,17 @@ jobs:
     runs-on: ubuntu-latest
     needs: [ go-tests ]
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-go@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
         with:
-          go-version: '1.23.6'
+          go-version: '1.26'
           cache: false
 
       # gen a dummy config file
       - run: touch dummy.yml
 
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v3
+        uses: golangci/golangci-lint-action@v6
         with:
           version: latest
           args: --disable-all -c dummy.yml -E=gofumpt --max-same-issues=0 --timeout 5m --modules-download-mode=mod
@@ -160,12 +154,6 @@ jobs:
           large-packages: true
           swap-storage: true
 
-      - name: Download frontend build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: frontend-build-${{ github.run_id }}
-          path: ./web/build
-
       - name: Prepare Go caches
         run: |
           echo "GOMODCACHE=$RUNNER_TEMP/gomod" >> $GITHUB_ENV
@@ -181,51 +169,22 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  docker-release:
+  docker:
     name: Docker Release
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      issues: write
-      packages: write
     if: github.repository == 'hanzoai/cloud' && github.event_name == 'push' && needs.tag-release.outputs.new-release-published == 'true'
     needs: [ tag-release ]
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v3
-        with:
-          fetch-depth: -1
+    uses: hanzoai/.github/.github/workflows/docker-build.yml@main
+    with:
+      image: ghcr.io/hanzoai/cloud
+      target: standard
+    secrets: inherit
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v2
-
-      - name: Set up buildx
-        id: buildx
-        uses: docker/setup-buildx-action@v2
-        with:
-          version: latest
-
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Push to GHCR
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          target: STANDARD
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ghcr.io/hanzoai/cloud:${{ needs.tag-release.outputs.new-release-version }},ghcr.io/hanzoai/cloud:latest
-
-      - name: Push All In One Version to GHCR
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          target: ALLINONE
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ghcr.io/hanzoai/cloud-allinone:${{ needs.tag-release.outputs.new-release-version }},ghcr.io/hanzoai/cloud-allinone:latest
+  docker-allinone:
+    name: Docker All-in-One Release
+    if: github.repository == 'hanzoai/cloud' && github.event_name == 'push' && needs.tag-release.outputs.new-release-published == 'true'
+    needs: [ tag-release ]
+    uses: hanzoai/.github/.github/workflows/docker-build.yml@main
+    with:
+      image: ghcr.io/hanzoai/cloud-allinone
+      target: allinone
+    secrets: inherit
