@@ -19,8 +19,216 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/beego/beego/logs"
 	"github.com/hanzoai/cloud/object"
+	iamsdk "github.com/hanzoid/go-sdk/casdoorsdk"
 )
+
+// searchAuth holds the validated identity for a search API request.
+// Every search/index/scrape endpoint must obtain this before processing.
+type searchAuth struct {
+	Owner  string     // organization that owns the search index
+	UserID string     // "owner/name" format for billing
+	User   *iamsdk.User // nil for session-only auth without IAM lookup
+}
+
+// resolveSearchAuth validates the caller's identity via session, JWT, or IAM API key.
+// Returns nil and sends an HTTP 401 error if authentication fails.
+// This replaces the old resolveSearchOwner() which returned "admin" for all key types.
+func (c *ApiController) resolveSearchAuth() *searchAuth {
+	// 1. Session auth (highest trust -- user already authenticated via IAM SSO)
+	user := c.GetSessionUser()
+	if user != nil {
+		return &searchAuth{
+			Owner:  user.Owner,
+			UserID: user.Owner + "/" + user.Name,
+			User:   user,
+		}
+	}
+
+	// 2. Bearer token auth
+	authHeader := c.Ctx.Request.Header.Get("Authorization")
+	if authHeader == "" {
+		c.ResponseError("authentication required: provide a session cookie or Bearer token")
+		return nil
+	}
+
+	token := strings.TrimPrefix(authHeader, "Bearer ")
+	if token == "" || token == authHeader {
+		c.ResponseError("invalid Authorization header: expected 'Bearer <token>'")
+		return nil
+	}
+
+	// 3. IAM API key (hk-*) -- validate via IAM and resolve owner
+	if isIAMApiKey(token) {
+		iamUser, err := getUserByAccessKey(token)
+		if err != nil {
+			logs.Warning("search auth: hk-* key validation failed: %s", err.Error())
+			c.ResponseError("API key validation failed")
+			return nil
+		}
+		if iamUser == nil {
+			c.ResponseError("invalid API key")
+			return nil
+		}
+		return &searchAuth{
+			Owner:  iamUser.Owner,
+			UserID: iamUser.Owner + "/" + iamUser.Name,
+			User:   iamUser,
+		}
+	}
+
+	// 4. Publishable key (pk-*) -- validate via IAM (read-only access)
+	if isPublishableKey(token) {
+		iamUser, err := getUserByAccessKey(token)
+		if err != nil {
+			logs.Warning("search auth: pk-* key validation failed: %s", err.Error())
+			c.ResponseError("publishable key validation failed")
+			return nil
+		}
+		if iamUser == nil {
+			c.ResponseError("invalid publishable key")
+			return nil
+		}
+		return &searchAuth{
+			Owner:  iamUser.Owner,
+			UserID: iamUser.Owner + "/" + iamUser.Name,
+			User:   iamUser,
+		}
+	}
+
+	// 5. JWT token -- validate via IAM OIDC
+	if isJwtToken(token) {
+		claims, err := iamsdk.ParseJwtToken(token)
+		if err != nil {
+			c.ResponseError("invalid token: " + err.Error())
+			return nil
+		}
+		jwtUser := &claims.User
+		return &searchAuth{
+			Owner:  jwtUser.Owner,
+			UserID: jwtUser.Owner + "/" + jwtUser.Name,
+			User:   jwtUser,
+		}
+	}
+
+	c.ResponseError("unrecognized token format: expected hk-*, pk-*, or JWT")
+	return nil
+}
+
+// resolveSearchStore determines the store name from the query parameter or request body field.
+// The store is scoped to the authenticated owner's namespace via GetSearchIndexName.
+func (c *ApiController) resolveSearchStore() string {
+	store := c.Input().Get("store")
+	if store == "" {
+		store = "docs-hanzo-ai"
+	}
+	return store
+}
+
+// requireIndexAuth checks that the caller has write-level auth for index/scrape operations.
+// Returns the validated searchAuth on success, or nil (with HTTP error sent) on failure.
+// Publishable keys (pk-*) are rejected since they are read-only.
+func (c *ApiController) requireIndexAuth() *searchAuth {
+	// Session admin has full access
+	if c.IsAdmin() {
+		user := c.GetSessionUser()
+		return &searchAuth{
+			Owner:  user.Owner,
+			UserID: user.Owner + "/" + user.Name,
+			User:   user,
+		}
+	}
+
+	// Bearer token auth
+	authHeader := c.Ctx.Request.Header.Get("Authorization")
+	if authHeader != "" {
+		token := strings.TrimPrefix(authHeader, "Bearer ")
+
+		// hk-* API keys: validate via IAM
+		if isIAMApiKey(token) {
+			iamUser, err := getUserByAccessKey(token)
+			if err != nil {
+				logs.Warning("index auth: hk-* key validation failed: %s", err.Error())
+				c.ResponseError("API key validation failed")
+				return nil
+			}
+			if iamUser == nil {
+				c.ResponseError("invalid API key")
+				return nil
+			}
+			return &searchAuth{
+				Owner:  iamUser.Owner,
+				UserID: iamUser.Owner + "/" + iamUser.Name,
+				User:   iamUser,
+			}
+		}
+
+		// pk-* publishable keys cannot write
+		if isPublishableKey(token) {
+			c.ResponseError("publishable keys (pk-*) cannot perform write operations")
+			return nil
+		}
+
+		// JWT token: validate via IAM OIDC
+		if isJwtToken(token) {
+			claims, err := iamsdk.ParseJwtToken(token)
+			if err != nil {
+				c.ResponseError("invalid token: " + err.Error())
+				return nil
+			}
+			jwtUser := &claims.User
+			return &searchAuth{
+				Owner:  jwtUser.Owner,
+				UserID: jwtUser.Owner + "/" + jwtUser.Name,
+				User:   jwtUser,
+			}
+		}
+	}
+
+	// Preview mode allows all operations (for development)
+	if c.IsPreviewMode() {
+		return &searchAuth{
+			Owner:  "admin",
+			UserID: "admin/admin",
+		}
+	}
+
+	c.ResponseError(c.T("auth:this operation requires admin privilege"))
+	return nil
+}
+
+// recordSearchUsage sends a usage record to Commerce for search/scrape/chat-docs operations.
+// This follows the same fire-and-forget pattern as recordUsage() in openai_api.go.
+func recordSearchUsage(auth *searchAuth, model, provider, status string, units int, clientIP string) {
+	// Calculate cost in cents based on operation type
+	var costCents int64
+	switch model {
+	case "search-query":
+		costCents = 0 // Search queries are included (Meilisearch cost is fixed infra)
+	case "search-chat":
+		costCents = 1 // $0.01 per RAG chat session (LLM inference cost)
+	case "scrape":
+		costCents = int64(units) // $0.01 per page scraped
+	case "index-docs":
+		costCents = 0 // Indexing is included (part of write operation cost)
+	}
+
+	record := &usageRecord{
+		Owner:        auth.Owner,
+		User:         auth.UserID,
+		Organization: auth.Owner,
+		Model:        model,
+		Provider:     provider,
+		TotalTokens:  units,
+		Cost:         float64(costCents) / 100.0,
+		Currency:     "USD",
+		Status:       status,
+		ClientIP:     clientIP,
+	}
+
+	recordUsage(record)
+}
 
 // SearchDocs
 // @Title SearchDocs
@@ -30,6 +238,11 @@ import (
 // @Success 200 {array} object.DocSearchResult The search results (raw array, not wrapped)
 // @router /search-docs [post]
 func (c *ApiController) SearchDocs() {
+	auth := c.resolveSearchAuth()
+	if auth == nil {
+		return
+	}
+
 	var req object.DocSearchRequest
 	err := json.Unmarshal(c.Ctx.Input.RequestBody, &req)
 	if err != nil {
@@ -42,14 +255,16 @@ func (c *ApiController) SearchDocs() {
 		return
 	}
 
-	owner := c.resolveSearchOwner()
 	store := c.resolveSearchStore()
 
-	results, err := object.SearchDocuments(owner, store, &req, c.GetAcceptLanguage())
+	results, err := object.SearchDocuments(auth.Owner, store, &req, c.GetAcceptLanguage())
 	if err != nil {
+		recordSearchUsage(auth, "search-query", req.Mode, "error", 0, c.Ctx.Request.RemoteAddr)
 		c.ResponseError(err.Error())
 		return
 	}
+
+	recordSearchUsage(auth, "search-query", req.Mode, "success", len(results), c.Ctx.Request.RemoteAddr)
 
 	// Return raw array, NOT wrapped in Response{} envelope.
 	// The frontend client expects SortedResult[] directly.
@@ -65,7 +280,8 @@ func (c *ApiController) SearchDocs() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /index-docs [post]
 func (c *ApiController) IndexDocs() {
-	if !c.requireIndexAuth() {
+	auth := c.requireIndexAuth()
+	if auth == nil {
 		return
 	}
 
@@ -81,14 +297,16 @@ func (c *ApiController) IndexDocs() {
 		return
 	}
 
-	owner := c.resolveSearchOwner()
 	store := c.resolveSearchStore()
 
-	count, err := object.IndexDocuments(owner, store, &req, c.GetAcceptLanguage())
+	count, err := object.IndexDocuments(auth.Owner, store, &req, c.GetAcceptLanguage())
 	if err != nil {
+		recordSearchUsage(auth, "index-docs", "meilisearch", "error", 0, c.Ctx.Request.RemoteAddr)
 		c.ResponseError(err.Error())
 		return
 	}
+
+	recordSearchUsage(auth, "index-docs", "meilisearch", "success", count, c.Ctx.Request.RemoteAddr)
 
 	c.ResponseOk(count)
 }
@@ -101,6 +319,11 @@ func (c *ApiController) IndexDocs() {
 // @Success 200 {stream} string "SSE stream of chat response"
 // @router /chat-docs [post]
 func (c *ApiController) ChatDocs() {
+	auth := c.resolveSearchAuth()
+	if auth == nil {
+		return
+	}
+
 	var req object.DocChatRequest
 	err := json.Unmarshal(c.Ctx.Input.RequestBody, &req)
 	if err != nil {
@@ -113,7 +336,6 @@ func (c *ApiController) ChatDocs() {
 		return
 	}
 
-	owner := c.resolveSearchOwner()
 	store := c.resolveSearchStore()
 
 	if req.Stream {
@@ -121,12 +343,19 @@ func (c *ApiController) ChatDocs() {
 		c.Ctx.ResponseWriter.Header().Set("Cache-Control", "no-cache")
 		c.Ctx.ResponseWriter.Header().Set("Connection", "keep-alive")
 
-		answer, _, err := object.GetDocChatAnswer(owner, store, &req, c.GetAcceptLanguage())
+		answer, modelResult, err := object.GetDocChatAnswer(auth.Owner, store, &req, c.GetAcceptLanguage())
 		if err != nil {
+			recordSearchUsage(auth, "search-chat", "rag", "error", 0, c.Ctx.Request.RemoteAddr)
 			event := fmt.Sprintf("event: myerror\ndata: %s\n\n", err.Error())
 			_, _ = c.Ctx.ResponseWriter.Write([]byte(event))
 			return
 		}
+
+		tokenCount := 0
+		if modelResult != nil {
+			tokenCount = modelResult.TotalTokenCount
+		}
+		recordSearchUsage(auth, "search-chat", "rag", "success", tokenCount, c.Ctx.Request.RemoteAddr)
 
 		jsonData, err := ConvertMessageDataToJSON(answer)
 		if err != nil {
@@ -141,11 +370,18 @@ func (c *ApiController) ChatDocs() {
 		return
 	}
 
-	answer, _, err := object.GetDocChatAnswer(owner, store, &req, c.GetAcceptLanguage())
+	answer, modelResult, err := object.GetDocChatAnswer(auth.Owner, store, &req, c.GetAcceptLanguage())
 	if err != nil {
+		recordSearchUsage(auth, "search-chat", "rag", "error", 0, c.Ctx.Request.RemoteAddr)
 		c.ResponseError(err.Error())
 		return
 	}
+
+	tokenCount := 0
+	if modelResult != nil {
+		tokenCount = modelResult.TotalTokenCount
+	}
+	recordSearchUsage(auth, "search-chat", "rag", "success", tokenCount, c.Ctx.Request.RemoteAddr)
 
 	c.ResponseOk(answer)
 }
@@ -157,68 +393,18 @@ func (c *ApiController) ChatDocs() {
 // @Success 200 {object} object.DocStatsResponse The stats response
 // @router /search-docs/stats [get]
 func (c *ApiController) SearchDocsStats() {
-	owner := c.resolveSearchOwner()
+	auth := c.resolveSearchAuth()
+	if auth == nil {
+		return
+	}
+
 	store := c.resolveSearchStore()
 
-	stats, err := object.GetDocIndexStats(owner, store)
+	stats, err := object.GetDocIndexStats(auth.Owner, store)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
 	}
 
 	c.ResponseOk(stats)
-}
-
-// resolveSearchOwner determines the owner for search operations.
-// Accepts session auth, Bearer token, pk-* publishable key, or defaults to "admin".
-func (c *ApiController) resolveSearchOwner() string {
-	user := c.GetSessionUser()
-	if user != nil {
-		return user.Owner
-	}
-
-	authHeader := c.Ctx.Request.Header.Get("Authorization")
-	if authHeader != "" {
-		token := strings.TrimPrefix(authHeader, "Bearer ")
-		if strings.HasPrefix(token, "pk-") || strings.HasPrefix(token, "hk-") {
-			return "admin"
-		}
-	}
-
-	return "admin"
-}
-
-// resolveSearchStore determines the store name from the request or uses a default.
-func (c *ApiController) resolveSearchStore() string {
-	store := c.Input().Get("store")
-	if store == "" {
-		store = "docs-hanzo-ai"
-	}
-	return store
-}
-
-// requireIndexAuth checks that the caller has admin-level auth for write operations.
-// Accepts session admin, hk-* API key, or specific service token.
-func (c *ApiController) requireIndexAuth() bool {
-	// Session admin
-	if c.IsAdmin() {
-		return true
-	}
-
-	// API key auth
-	authHeader := c.Ctx.Request.Header.Get("Authorization")
-	if authHeader != "" {
-		token := strings.TrimPrefix(authHeader, "Bearer ")
-		if strings.HasPrefix(token, "hk-") {
-			return true
-		}
-	}
-
-	// Preview mode allows all operations (for development)
-	if c.IsPreviewMode() {
-		return true
-	}
-
-	c.ResponseError(c.T("auth:this operation requires admin privilege"))
-	return false
 }
