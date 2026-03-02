@@ -28,7 +28,8 @@ import (
 // @Success 200 {object} object.ScrapeStats "Scrape and index statistics"
 // @router /scrape-docs [post]
 func (c *ApiController) ScrapeDocs() {
-	if !c.requireIndexAuth() {
+	auth := c.requireIndexAuth()
+	if auth == nil {
 		return
 	}
 
@@ -44,11 +45,23 @@ func (c *ApiController) ScrapeDocs() {
 		return
 	}
 
-	stats, err := object.ScrapeAndIndex(&req, c.GetAcceptLanguage())
+	// Check balance before expensive scrape operation
+	if auth.UserID != "" {
+		balance, balanceErr := getUserBalance(auth.UserID)
+		if balanceErr == nil && balance <= 0 {
+			c.ResponseError("insufficient balance for scrape operation. Add funds at https://hanzo.ai/billing")
+			return
+		}
+	}
+
+	stats, err := object.ScrapeAndIndex(auth.Owner, &req, c.GetAcceptLanguage())
 	if err != nil {
+		recordSearchUsage(auth, "scrape", "crawl", "error", 0, c.Ctx.Request.RemoteAddr)
 		c.ResponseError(err.Error())
 		return
 	}
+
+	recordSearchUsage(auth, "scrape", stats.Engine, "success", stats.PagesScraped, c.Ctx.Request.RemoteAddr)
 
 	c.ResponseOk(stats)
 }
@@ -61,7 +74,8 @@ func (c *ApiController) ScrapeDocs() {
 // @Success 200 {object} object.ScrapeResult "Structured page content"
 // @router /scrape-docs/preview [post]
 func (c *ApiController) ScrapePreview() {
-	if !c.requireIndexAuth() {
+	auth := c.requireIndexAuth()
+	if auth == nil {
 		return
 	}
 
@@ -106,6 +120,7 @@ func (c *ApiController) ScrapePreview() {
 			return
 		}
 		sr := object.Crawl4AIResultToScrapeResult(results[0])
+		recordSearchUsage(auth, "scrape", "crawl4ai", "success", 1, c.Ctx.Request.RemoteAddr)
 		c.ResponseOk(sr)
 		return
 	}
@@ -115,6 +130,8 @@ func (c *ApiController) ScrapePreview() {
 		c.ResponseError(err.Error())
 		return
 	}
+
+	recordSearchUsage(auth, "scrape", "fast", "success", 1, c.Ctx.Request.RemoteAddr)
 
 	c.ResponseOk(result)
 }
