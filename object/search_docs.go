@@ -83,9 +83,9 @@ type DocStatsResponse struct {
 
 // qdrantSearchRequest is the JSON body for Hanzo Vector's search endpoint.
 type qdrantSearchRequest struct {
-	Vector []float32       `json:"vector"`
-	Limit  int             `json:"limit"`
-	Filter *qdrantFilter   `json:"filter,omitempty"`
+	Vector []float32         `json:"vector"`
+	Limit  int               `json:"limit"`
+	Filter *qdrantFilter     `json:"filter,omitempty"`
 	With   qdrantWithPayload `json:"with_payload"`
 }
 
