@@ -100,7 +100,7 @@ func GetActivities(days int, user string, fieldNames []string, lang string) (map
 		for _, fieldName := range fieldNames {
 			value, err := getTargetfieldValue(record, fieldName)
 			if err != nil {
-				return nil, fmt.Errorf(i18n.Translate(lang, "object:failed to parse record: name %s, field %s, error: %v"), record.Name, fieldName, err)
+				return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:failed to parse record: name %s, field %s, error: %v"), record.Name, fieldName, err))
 			}
 
 			if value != "" {

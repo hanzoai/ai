@@ -172,7 +172,7 @@ func callTools(toolCall openai.ToolCall, serverName, toolName string, agentClien
 	ctx := context.Background()
 
 	if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &arguments); err != nil {
-		return nil, fmt.Errorf(i18n.Translate(lang, "model:failed to parse tool arguments: %v"), err)
+		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "model:failed to parse tool arguments: %v"), err))
 	}
 
 	var result *protocol.CallToolResult
@@ -224,7 +224,7 @@ func callTools(toolCall openai.ToolCall, serverName, toolName string, agentClien
 
 	responseJson, err := json.Marshal(response)
 	if err != nil {
-		return nil, fmt.Errorf(i18n.Translate(lang, "model:failed to marshal tool response: %v"), err)
+		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "model:failed to marshal tool response: %v"), err))
 	}
 
 	var contentStr string

@@ -25,7 +25,7 @@ import (
 func addRecord(c *ApiController, userName string, requestUri string, lang string) error {
 	record, err := object.NewRecord(c.Ctx)
 	if err != nil {
-		return fmt.Errorf(i18n.Translate(lang, "NewRecord() error: %s\n"), err.Error())
+		return fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "NewRecord() error: %s\n"), err.Error()))
 	}
 
 	record.User = userName

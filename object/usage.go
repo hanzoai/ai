@@ -200,7 +200,7 @@ func GetUsageMetadata(lang string, orgName ...string) (*UsageMetadata, error) {
 		return nil, err
 	}
 	if organization == nil {
-		return nil, fmt.Errorf(i18n.Translate(lang, "object:IAM organization: [%s] doesn't exist"), iamOrganization)
+		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:IAM organization: [%s] doesn't exist"), iamOrganization))
 	}
 
 	iamApplication := conf.GetConfigString("iamApplication")
@@ -209,7 +209,7 @@ func GetUsageMetadata(lang string, orgName ...string) (*UsageMetadata, error) {
 		return nil, err
 	}
 	if application == nil {
-		return nil, fmt.Errorf(i18n.Translate(lang, "object:IAM application: [%s] doesn't exist"), iamApplication)
+		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:IAM application: [%s] doesn't exist"), iamApplication))
 	}
 
 	res := &UsageMetadata{

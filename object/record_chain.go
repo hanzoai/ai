@@ -44,7 +44,7 @@ func (record *Record) getRecordProvider(chainProvider string, lang string) (*Pro
 		}
 
 		if provider == nil {
-			return nil, fmt.Errorf(i18n.Translate(lang, "object:the blockchain provider: %s is not found"), chainProvider)
+			return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:the blockchain provider: %s is not found"), chainProvider))
 		}
 
 		return provider, nil
@@ -64,7 +64,7 @@ func (record *Record) getRecordChainClient(chainProvider string, lang string) (c
 		return nil, nil, err
 	}
 	if provider == nil {
-		return nil, nil, fmt.Errorf(i18n.Translate(lang, "object:there is no active blockchain provider"))
+		return nil, nil, fmt.Errorf("%s", i18n.Translate(lang, "object:there is no active blockchain provider"))
 	}
 
 	client, err := chain.NewChainClient(provider.Type, provider.ClientId, provider.ClientSecret, provider.Region, provider.Network, provider.Chain, provider.ProviderUrl, provider.Text, provider.UserKey, provider.UserCert, provider.SignKey, provider.SignCert, provider.ContractName, provider.ContractMethod, lang)
@@ -122,7 +122,7 @@ func (record *Record) toParam() string {
 
 func CommitRecord(record *Record, lang string) (bool, map[string]interface{}, error) {
 	if record.Block != "" {
-		return false, nil, fmt.Errorf(i18n.Translate(lang, "object:the record: %s has already been committed, blockId = %s"), record.getUniqueId(), record.Block)
+		return false, nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:the record: %s has already been committed, blockId = %s"), record.getUniqueId(), record.Block))
 	}
 
 	client, provider, err := record.getRecordChainClient(record.Provider, lang)
@@ -174,7 +174,7 @@ func CommitRecord(record *Record, lang string) (bool, map[string]interface{}, er
 
 func CommitRecordSecond(record *Record, lang string) (bool, error) {
 	if record.Block2 != "" {
-		return false, fmt.Errorf(i18n.Translate(lang, "object:the record: %s has already been committed, blockId = %s"), record.getUniqueId(), record.Block2)
+		return false, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:the record: %s has already been committed, blockId = %s"), record.getUniqueId(), record.Block2))
 	}
 
 	client, provider, err := record.getRecordChainClient(record.Provider2, lang)
@@ -256,11 +256,11 @@ func QueryRecord(id string, lang string) (string, error) {
 		return "", err
 	}
 	if record == nil {
-		return "", fmt.Errorf(i18n.Translate(lang, "object:the record: %s does not exist"), id)
+		return "", fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:the record: %s does not exist"), id))
 	}
 
 	if record.Block == "" {
-		return "", fmt.Errorf(i18n.Translate(lang, "object:the record: %s's block ID should not be empty"), id)
+		return "", fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:the record: %s's block ID should not be empty"), id))
 	}
 
 	client, _, err := record.getRecordChainClient(record.Provider, lang)
@@ -282,11 +282,11 @@ func QueryRecordSecond(id string, lang string) (string, error) {
 		return "", err
 	}
 	if record == nil {
-		return "", fmt.Errorf(i18n.Translate(lang, "object:the record: %s does not exist"), id)
+		return "", fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:the record: %s does not exist"), id))
 	}
 
 	if record.Block2 == "" {
-		return "", fmt.Errorf(i18n.Translate(lang, "object:the record: %s's block ID should not be empty"), id)
+		return "", fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:the record: %s's block ID should not be empty"), id))
 	}
 
 	client, _, err := record.getRecordChainClient(record.Provider2, lang)

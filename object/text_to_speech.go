@@ -29,7 +29,7 @@ func addProviderMessage(providerId, text string, lang string) (*Message, *Chat, 
 		return nil, nil, nil, err
 	}
 	if provider == nil {
-		return nil, nil, nil, fmt.Errorf(i18n.Translate(lang, "object:The provider: %s is not found"), providerId)
+		return nil, nil, nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:The provider: %s is not found"), providerId))
 	}
 	chatId := util.GetChatFromProvider(provider.Owner, provider.Name)
 	chat, err := GetChat(chatId)
@@ -88,7 +88,7 @@ func getMessageAndChat(messageId string, lang string) (*Message, *Chat, error) {
 		return nil, nil, err
 	}
 	if message == nil {
-		return nil, nil, fmt.Errorf(i18n.Translate(lang, "object:The message: %s is not found"), messageId)
+		return nil, nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:The message: %s is not found"), messageId))
 	}
 
 	chatId := util.GetIdFromOwnerAndName(message.Owner, message.Chat)
@@ -97,7 +97,7 @@ func getMessageAndChat(messageId string, lang string) (*Message, *Chat, error) {
 		return nil, nil, err
 	}
 	if chat == nil {
-		return nil, nil, fmt.Errorf(i18n.Translate(lang, "object:The chat: %s is not found"), chatId)
+		return nil, nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:The chat: %s is not found"), chatId))
 	}
 
 	return message, chat, nil
@@ -110,7 +110,7 @@ func getStoreProvider(storeId string, lang string) (*Provider, error) {
 		return nil, err
 	}
 	if store == nil {
-		return nil, fmt.Errorf(i18n.Translate(lang, "account:The store: %s is not found"), storeId)
+		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "account:The store: %s is not found"), storeId))
 	}
 
 	provider, err := store.GetTextToSpeechProvider()
@@ -118,7 +118,7 @@ func getStoreProvider(storeId string, lang string) (*Provider, error) {
 		return nil, err
 	}
 	if provider == nil {
-		return nil, fmt.Errorf(i18n.Translate(lang, "object:The text-to-speech provider for store: %s is not found"), store.GetId())
+		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:The text-to-speech provider for store: %s is not found"), store.GetId()))
 	}
 
 	return provider, nil

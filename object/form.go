@@ -117,7 +117,7 @@ func UpdateForm(id string, form *Form, lang string) (bool, error) {
 	}
 	existingForm, err := getForm(owner, name)
 	if existingForm == nil {
-		return false, fmt.Errorf(i18n.Translate(lang, "object:the form: %s is not found"), id)
+		return false, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:the form: %s is not found"), id))
 	}
 	if err != nil {
 		return false, err

@@ -203,7 +203,7 @@ func OpenaiGenerateMessages(prompt string, question string, recentMessages []*Ra
 
 	leftTokens := maxTokens - queryMessageSize
 	if leftTokens <= 0 {
-		return nil, fmt.Errorf(i18n.Translate(lang, "model:the token count: [%d] exceeds the model: [%s]'s maximum token count: [%d]"), queryMessageSize, model, maxTokens)
+		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "model:the token count: [%d] exceeds the model: [%s]'s maximum token count: [%d]"), queryMessageSize, model, maxTokens))
 	}
 
 	for i, message := range knowledgeMessages {

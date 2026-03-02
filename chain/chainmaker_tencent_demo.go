@@ -42,7 +42,7 @@ func newChainTencentChainmakerDemoClient(clientId, clientSecret, region, network
 
 	client, err := tbaas.NewClient(credential, region, cpf)
 	if err != nil {
-		return nil, fmt.Errorf(i18n.Translate(lang, "chain:newChainTencentChainmakerClient() error: %v"), err)
+		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "chain:newChainTencentChainmakerClient() error: %v"), err))
 	}
 
 	return &ChainTencentChainmakerDemoClient{
@@ -64,13 +64,13 @@ func (client ChainTencentChainmakerDemoClient) getQueryResult(txId string, lang 
 	response, err := client.Client.QueryChainMakerDemoTransaction(request)
 	if err != nil {
 		if sdkErr, ok := err.(*errors.TencentCloudSDKError); ok {
-			return nil, fmt.Errorf(i18n.Translate(lang, "chain:TencentCloudSDKError: %v"), sdkErr)
+			return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "chain:TencentCloudSDKError: %v"), sdkErr))
 		}
 
-		return nil, fmt.Errorf(i18n.Translate(lang, "chain:ChainTencentChainmakerDemoClient.Client.InvokeChainMakerDemoContract() error: %v"), err)
+		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "chain:ChainTencentChainmakerDemoClient.Client.InvokeChainMakerDemoContract() error: %v"), err))
 	}
 	if *(response.Response.Result.Code) != 0 {
-		return nil, fmt.Errorf(i18n.Translate(lang, "chain:TencentCloudSDKError, code = %d, message = %s"), *(response.Response.Result.Code), *(response.Response.Result.Message))
+		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "chain:TencentCloudSDKError, code = %d, message = %s"), *(response.Response.Result.Code), *(response.Response.Result.Message)))
 	}
 
 	return response.Response.Result, nil
@@ -87,13 +87,13 @@ func (client *ChainTencentChainmakerDemoClient) Commit(data string, lang string)
 	response, err := client.Client.InvokeChainMakerDemoContract(request)
 	if err != nil {
 		if sdkErr, ok := err.(*errors.TencentCloudSDKError); ok {
-			return "", "", "", fmt.Errorf(i18n.Translate(lang, "chain:TencentCloudSDKError: %v"), sdkErr)
+			return "", "", "", fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "chain:TencentCloudSDKError: %v"), sdkErr))
 		}
 
-		return "", "", "", fmt.Errorf(i18n.Translate(lang, "chain:ChainTencentChainmakerDemoClient.Client.InvokeChainMakerDemoContract() error: %v"), err)
+		return "", "", "", fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "chain:ChainTencentChainmakerDemoClient.Client.InvokeChainMakerDemoContract() error: %v"), err))
 	}
 	if *(response.Response.Result.Code) != 0 {
-		return "", "", "", fmt.Errorf(i18n.Translate(lang, "chain:TencentCloudSDKError, code = %d, message = %s"), *(response.Response.Result.Code), *(response.Response.Result.Message))
+		return "", "", "", fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "chain:TencentCloudSDKError, code = %d, message = %s"), *(response.Response.Result.Code), *(response.Response.Result.Message)))
 	}
 
 	txId := *(response.Response.Result.TxId)

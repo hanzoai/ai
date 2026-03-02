@@ -205,7 +205,7 @@ func CalculateOpenAIModelPrice(model string, modelResult *ModelResult, lang stri
 	default:
 		// inputPricePerThousandTokens = 0
 		// outputPricePerThousandTokens = 0
-		return fmt.Errorf(i18n.Translate(lang, "embedding:calculatePrice() error: unknown model type: %s"), model)
+		return fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "embedding:calculatePrice() error: unknown model type: %s"), model))
 	}
 
 	inputPrice := getPrice(modelResult.PromptTokenCount, inputPricePerThousandTokens)
@@ -288,7 +288,7 @@ func (p *OpenAiModelProvider) QueryText(question string, writer io.Writer, histo
 	ctx := context.Background()
 	flusher, ok := writer.(http.Flusher)
 	if !ok {
-		return nil, fmt.Errorf(i18n.Translate(lang, "model:writer does not implement http.Flusher"))
+		return nil, fmt.Errorf("%s", i18n.Translate(lang, "model:writer does not implement http.Flusher"))
 	}
 
 	model := p.subType
@@ -337,7 +337,7 @@ func (p *OpenAiModelProvider) QueryText(question string, writer io.Writer, histo
 			if getContextLength(model) > modelResult.TotalTokenCount {
 				return modelResult, nil
 			} else {
-				return nil, fmt.Errorf(i18n.Translate(lang, "model:exceed max tokens"))
+				return nil, fmt.Errorf("%s", i18n.Translate(lang, "model:exceed max tokens"))
 			}
 		}
 
@@ -527,7 +527,7 @@ func (p *OpenAiModelProvider) QueryText(question string, writer io.Writer, histo
 
 		return modelResult, nil
 	} else {
-		return nil, fmt.Errorf(i18n.Translate(lang, "model:QueryText() error: unknown model type: %s"), model)
+		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "model:QueryText() error: unknown model type: %s"), model))
 	}
 }
 
