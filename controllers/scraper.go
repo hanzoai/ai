@@ -120,6 +120,12 @@ func (c *ApiController) ScrapePreview() {
 			return
 		}
 		sr := object.Crawl4AIResultToScrapeResult(results[0])
+
+		// Archive the browser crawl result to Hanzo Storage (fire-and-forget)
+		if object.IsCrawlStorageConfigured() {
+			object.ArchiveCrawlPreviewAsync(auth.Owner, req.URL, sr, results[0])
+		}
+
 		recordSearchUsage(auth, "scrape", "crawl4ai", "success", 1, c.Ctx.Request.RemoteAddr)
 		c.ResponseOk(sr)
 		return

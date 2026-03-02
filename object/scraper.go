@@ -396,6 +396,7 @@ func crawlWithGoScraper(req *ScrapeRequest) ([]ScrapeResult, []string) {
 
 // ScrapeAndIndex crawls a site and indexes the results into the owner's search index.
 // The owner parameter determines tenant isolation -- each org gets its own index namespace.
+// If Hanzo Storage is configured, crawl results are archived asynchronously for persistence.
 func ScrapeAndIndex(owner string, req *ScrapeRequest, lang string) (*ScrapeStats, error) {
 	if req.URL == "" {
 		return nil, fmt.Errorf("url must not be empty")
@@ -411,6 +412,12 @@ func ScrapeAndIndex(owner string, req *ScrapeRequest, lang string) (*ScrapeStats
 
 	if len(results) == 0 {
 		return stats, nil
+	}
+
+	// Archive crawl results to Hanzo Storage (fire-and-forget)
+	if IsCrawlStorageConfigured() {
+		jobID := hashID(fmt.Sprintf("%s-%s-%d", owner, req.URL, time.Now().UnixNano()))
+		archiveCrawlResultAsync(owner, jobID, results, nil)
 	}
 
 	tag := req.Tag
