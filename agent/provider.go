@@ -40,7 +40,7 @@ func GetAgentProvider(typ string, subType string, text string, mcpTools []*McpTo
 	if typ == "MCP" {
 		p, err = NewMcpAgentProvider(typ, subType, text, mcpTools)
 	} else {
-		return nil, fmt.Errorf(i18n.Translate(lang, "agent:the agent provider type: %s is not supported"), typ)
+		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "agent:the agent provider type: %s is not supported"), typ))
 	}
 
 	if err != nil {

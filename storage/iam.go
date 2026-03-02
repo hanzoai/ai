@@ -30,7 +30,7 @@ type IamProvider struct {
 
 func NewIamProvider(providerName string, lang string) (*IamProvider, error) {
 	if providerName == "" {
-		return nil, fmt.Errorf(i18n.Translate(lang, "storage:storage provider name: [%s] doesn't exist"), providerName)
+		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "storage:storage provider name: [%s] doesn't exist"), providerName))
 	}
 
 	return &IamProvider{providerName: providerName}, nil
@@ -39,7 +39,7 @@ func NewIamProvider(providerName string, lang string) (*IamProvider, error) {
 // NewIamProviderWithOrg creates an IamProvider scoped to a specific organization.
 func NewIamProviderWithOrg(providerName string, org string, lang string) (*IamProvider, error) {
 	if providerName == "" {
-		return nil, fmt.Errorf(i18n.Translate(lang, "storage:storage provider name: [%s] doesn't exist"), providerName)
+		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "storage:storage provider name: [%s] doesn't exist"), providerName))
 	}
 
 	return &IamProvider{providerName: providerName, org: org}, nil

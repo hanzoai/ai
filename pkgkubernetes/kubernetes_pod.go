@@ -105,7 +105,7 @@ func (client PodClient) GetPod(name string, lang string) (*Pod, error) {
 			}
 		}
 	}
-	return nil, fmt.Errorf(i18n.Translate(lang, "pkgkubernets:Pod %s not found"), name)
+	return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "pkgkubernets:Pod %s not found"), name))
 }
 
 // The status of Pods includes Pending, Running, Succeeded, Failed, etc.

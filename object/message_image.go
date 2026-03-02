@@ -29,7 +29,7 @@ func getExtFromMimeType(mimeType string, lang string) (string, error) {
 		return "", err
 	}
 	if len(exts) == 0 {
-		return "", fmt.Errorf(i18n.Translate(lang, "object:getExtFromMimeType() error: unknown MimeType: %s"), mimeType)
+		return "", fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:getExtFromMimeType() error: unknown MimeType: %s"), mimeType))
 	}
 
 	res := ""
@@ -44,12 +44,12 @@ func getExtFromMimeType(mimeType string, lang string) (string, error) {
 func parseBase64Image(data string, lang string) ([]byte, error) {
 	parts := strings.SplitN(data, ";", 2)
 	if len(parts) < 2 {
-		return nil, fmt.Errorf(i18n.Translate(lang, "object:parseBase64Image() error: invalid image format"))
+		return nil, fmt.Errorf("%s", i18n.Translate(lang, "object:parseBase64Image() error: invalid image format"))
 	}
 
 	b64Parts := strings.SplitN(parts[1], ",", 2)
 	if len(b64Parts) < 2 {
-		return nil, fmt.Errorf(i18n.Translate(lang, "object:parseBase64Image() error: invalid image format"))
+		return nil, fmt.Errorf("%s", i18n.Translate(lang, "object:parseBase64Image() error: invalid image format"))
 	}
 
 	imageContent, err := base64.StdEncoding.DecodeString(b64Parts[1])

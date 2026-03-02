@@ -103,5 +103,5 @@ func (client MachineAzureClient) GetMachine(name string, lang string) (*Machine,
 }
 
 func (client MachineAzureClient) UpdateMachineState(name string, state string, lang string) (bool, string, error) {
-	return false, "", fmt.Errorf(i18n.Translate(lang, "pkgmachine:Not implemented"))
+	return false, "", fmt.Errorf("%s", i18n.Translate(lang, "pkgmachine:Not implemented"))
 }

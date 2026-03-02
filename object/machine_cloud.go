@@ -120,7 +120,7 @@ func updateMachineCloud(oldMachine *Machine, machine *Machine, lang string) (boo
 		return false, err
 	}
 	if provider == nil {
-		return false, fmt.Errorf(i18n.Translate(lang, "object:The provider: %s does not exist"), machine.Provider)
+		return false, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:The provider: %s does not exist"), machine.Provider))
 	}
 
 	client, err := pkgmachine.NewMachineClient(provider.Type, provider.ClientId, provider.ClientSecret, provider.Region, lang)

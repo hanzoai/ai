@@ -59,7 +59,7 @@ func GetParsedTextFromUrl(url string, ext string, lang string) (string, error) {
 	} else if ext == ".pptx" {
 		res, err = getTextFromPptx(path)
 	} else {
-		return "", fmt.Errorf(i18n.Translate(lang, "txt:unsupported file type: %s"), ext)
+		return "", fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "txt:unsupported file type: %s"), ext))
 	}
 	if err != nil {
 		return "", err

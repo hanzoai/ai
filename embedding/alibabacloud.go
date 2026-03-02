@@ -62,7 +62,7 @@ func (p *AlibabacloudEmbeddingProvider) calculatePrice(res *EmbeddingResult, lan
 		res.Currency = "CNY"
 		return nil
 	} else {
-		return fmt.Errorf(i18n.Translate(lang, "embedding:calculatePrice() error: unknown model type: %s"), p.subType)
+		return fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "embedding:calculatePrice() error: unknown model type: %s"), p.subType))
 	}
 }
 

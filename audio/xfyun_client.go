@@ -97,7 +97,7 @@ func (c *Client) initSliceUpload(filename, language string, filesize, sliceNum i
 	if info.Ok == 0 {
 		taskId = info.Data
 	} else {
-		err = fmt.Errorf(i18n.Translate(lang, "audio:init slice upload failed: %s"), info.Failed)
+		err = fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "audio:init slice upload failed: %s"), info.Failed))
 	}
 
 	return
@@ -131,7 +131,7 @@ func (c *Client) performSliceUpload(filename, taskId string, filesize, sliceNum 
 		}
 
 		if info.Ok != 0 {
-			return fmt.Errorf(i18n.Translate(lang, "audio:perform slice upload failed: %s"), info.Failed)
+			return fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "audio:perform slice upload failed: %s"), info.Failed))
 		}
 	}
 	return nil
@@ -149,7 +149,7 @@ func (c *Client) completeSliceUpload(taskId string, lang string) (err error) {
 	}
 
 	if info.Ok != 0 {
-		return fmt.Errorf(i18n.Translate(lang, "audio:complete slice upload failed: %s"), info.Failed)
+		return fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "audio:complete slice upload failed: %s"), info.Failed))
 	}
 
 	return nil
@@ -168,7 +168,7 @@ func (c *Client) doWorker(filename, taskId string, b []byte, lang string) (err e
 	}
 
 	if info.Ok != 0 {
-		return fmt.Errorf(i18n.Translate(lang, "audio:worker upload failed: %s"), info.Failed)
+		return fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "audio:worker upload failed: %s"), info.Failed))
 	}
 
 	return
@@ -187,7 +187,7 @@ func (c *Client) getProgress(taskId string, lang string) (*Response, error) {
 	}
 
 	if info.Ok != 0 {
-		return nil, fmt.Errorf(i18n.Translate(lang, "audio:get progress failed: %s"), info.Failed)
+		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "audio:get progress failed: %s"), info.Failed))
 	}
 
 	var res *Response
@@ -209,7 +209,7 @@ func (c *Client) getResult(taskId string, lang string) ([]*Segment, error) {
 	}
 
 	if info.Ok != 0 {
-		return nil, fmt.Errorf(i18n.Translate(lang, "audio:get result failed: %s"), info.Failed)
+		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "audio:get result failed: %s"), info.Failed))
 	}
 
 	segments, err := parseSegmentResponse(info.Data)
