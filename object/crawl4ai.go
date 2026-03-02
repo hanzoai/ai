@@ -33,7 +33,7 @@ const (
 	crawl4aiHTTPTimeout  = 30 * time.Second
 )
 
-// Crawl4AIRequest is the request body for the crawl4ai /crawl endpoint.
+// Crawl4AIRequest is the request body for the Hanzo Crawl /crawl endpoint.
 type Crawl4AIRequest struct {
 	Urls          []string               `json:"urls"`
 	BrowserConfig *Crawl4AIBrowserConfig `json:"browser_config,omitempty"`
@@ -52,7 +52,7 @@ type Crawl4AICrawlerParams struct {
 	ProcessIframes       bool `json:"process_iframes"`
 }
 
-// Crawl4AIResponse is the response from the crawl4ai /crawl endpoint.
+// Crawl4AIResponse is the response from the Hanzo Crawl /crawl endpoint.
 type Crawl4AIResponse struct {
 	TaskID  string           `json:"task_id"`
 	Status  string           `json:"status"`
@@ -69,7 +69,7 @@ type Crawl4AIResult struct {
 	Metadata map[string]interface{}            `json:"metadata,omitempty"`
 }
 
-// getCrawlEndpoint returns the crawl4ai service base URL from config.
+// getCrawlEndpoint returns the Hanzo Crawl service base URL from config.
 func getCrawlEndpoint() string {
 	host := conf.GetConfigString("crawlHost")
 	if host == "" {
@@ -82,12 +82,12 @@ func getCrawlEndpoint() string {
 	return fmt.Sprintf("http://%s:%s", host, port)
 }
 
-// getCrawlAPIToken returns the optional API token for crawl4ai authentication.
+// getCrawlAPIToken returns the optional API token for Hanzo Crawl authentication.
 func getCrawlAPIToken() string {
 	return conf.GetConfigString("crawlApiToken")
 }
 
-// IsCrawl4AIAvailable checks whether the crawl4ai service is reachable.
+// IsCrawl4AIAvailable checks whether the Hanzo Crawl service is reachable.
 func IsCrawl4AIAvailable() bool {
 	endpoint := getCrawlEndpoint()
 	client := &http.Client{Timeout: 5 * time.Second}
@@ -101,7 +101,7 @@ func IsCrawl4AIAvailable() bool {
 	return resp.StatusCode == http.StatusOK
 }
 
-// CrawlWithCrawl4AI sends URLs to the crawl4ai service for JS-rendered crawling.
+// CrawlWithCrawl4AI sends URLs to the Hanzo Crawl service for JS-rendered crawling.
 // It submits a crawl job, polls for completion, and returns the results.
 func CrawlWithCrawl4AI(urls []string) ([]Crawl4AIResult, error) {
 	if len(urls) == 0 {
@@ -125,12 +125,12 @@ func CrawlWithCrawl4AI(urls []string) ([]Crawl4AIResult, error) {
 
 	bodyBytes, err := json.Marshal(reqBody)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal crawl4ai request: %w", err)
+		return nil, fmt.Errorf("failed to marshal Hanzo Crawl request: %w", err)
 	}
 
 	req, err := http.NewRequest(http.MethodPost, endpoint+"/crawl", bytes.NewReader(bodyBytes))
 	if err != nil {
-		return nil, fmt.Errorf("failed to build crawl4ai request: %w", err)
+		return nil, fmt.Errorf("failed to build Hanzo Crawl request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if apiToken != "" {
@@ -140,18 +140,18 @@ func CrawlWithCrawl4AI(urls []string) ([]Crawl4AIResult, error) {
 	client := &http.Client{Timeout: crawl4aiHTTPTimeout}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("crawl4ai /crawl request failed: %w", err)
+		return nil, fmt.Errorf("Hanzo Crawl /crawl request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("crawl4ai /crawl returned %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("Hanzo Crawl /crawl returned %d: %s", resp.StatusCode, string(body))
 	}
 
 	var crawlResp Crawl4AIResponse
 	if err := json.NewDecoder(resp.Body).Decode(&crawlResp); err != nil {
-		return nil, fmt.Errorf("failed to decode crawl4ai response: %w", err)
+		return nil, fmt.Errorf("failed to decode Hanzo Crawl response: %w", err)
 	}
 
 	// If the response already contains completed results, return them directly
@@ -161,13 +161,13 @@ func CrawlWithCrawl4AI(urls []string) ([]Crawl4AIResult, error) {
 
 	// Otherwise poll the task endpoint until completion
 	if crawlResp.TaskID == "" {
-		return nil, fmt.Errorf("crawl4ai returned no task_id and no results")
+		return nil, fmt.Errorf("Hanzo Crawl returned no task_id and no results")
 	}
 
 	return pollCrawl4AITask(endpoint, apiToken, crawlResp.TaskID)
 }
 
-// pollCrawl4AITask polls the crawl4ai /task/{id} endpoint until the job completes or times out.
+// pollCrawl4AITask polls the Hanzo Crawl /task/{id} endpoint until the job completes or times out.
 func pollCrawl4AITask(endpoint, apiToken, taskID string) ([]Crawl4AIResult, error) {
 	client := &http.Client{Timeout: crawl4aiHTTPTimeout}
 	taskURL := fmt.Sprintf("%s/task/%s", endpoint, taskID)
@@ -187,36 +187,36 @@ func pollCrawl4AITask(endpoint, apiToken, taskID string) ([]Crawl4AIResult, erro
 
 		resp, err := client.Do(req)
 		if err != nil {
-			logs.Warning("crawl4ai: task poll failed (will retry): %v", err)
+			logs.Warning("Hanzo Crawl: task poll failed (will retry): %v", err)
 			continue
 		}
 
 		if resp.StatusCode != http.StatusOK {
 			body, _ := io.ReadAll(resp.Body)
 			resp.Body.Close()
-			return nil, fmt.Errorf("crawl4ai /task/%s returned %d: %s", taskID, resp.StatusCode, string(body))
+			return nil, fmt.Errorf("Hanzo Crawl /task/%s returned %d: %s", taskID, resp.StatusCode, string(body))
 		}
 
 		var taskResp Crawl4AIResponse
 		decodeErr := json.NewDecoder(resp.Body).Decode(&taskResp)
 		resp.Body.Close()
 		if decodeErr != nil {
-			return nil, fmt.Errorf("failed to decode crawl4ai task response: %w", decodeErr)
+			return nil, fmt.Errorf("failed to decode Hanzo Crawl task response: %w", decodeErr)
 		}
 
 		switch taskResp.Status {
 		case "completed":
 			return taskResp.Results, nil
 		case "failed":
-			return nil, fmt.Errorf("crawl4ai task %s failed", taskID)
+			return nil, fmt.Errorf("Hanzo Crawl task %s failed", taskID)
 		}
 		// "pending" or "processing" -- continue polling
 	}
 
-	return nil, fmt.Errorf("crawl4ai task %s timed out after %v", taskID, crawl4aiPollTimeout)
+	return nil, fmt.Errorf("Hanzo Crawl task %s timed out after %v", taskID, crawl4aiPollTimeout)
 }
 
-// Crawl4AIResultToScrapeResult converts a crawl4ai result to our ScrapeResult format.
+// Crawl4AIResultToScrapeResult converts a Hanzo Crawl result to our ScrapeResult format.
 // It parses the markdown output to extract title, headings, and structured content blocks.
 func Crawl4AIResultToScrapeResult(result Crawl4AIResult) ScrapeResult {
 	sr := ScrapeResult{
@@ -288,7 +288,7 @@ func Crawl4AIResultToScrapeResult(result Crawl4AIResult) ScrapeResult {
 		})
 	}
 
-	// Extract links from the crawl4ai links map
+	// Extract links from the Hanzo Crawl links map
 	if internalLinks, ok := result.Links["internal"]; ok {
 		for _, link := range internalLinks {
 			if href, exists := link["href"]; exists && href != "" {
