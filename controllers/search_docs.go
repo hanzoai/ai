@@ -15,11 +15,16 @@
 package controllers
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"strings"
+	"time"
 
 	"github.com/beego/beego/logs"
+	"github.com/hanzoai/cloud/conf"
 	"github.com/hanzoai/cloud/object"
 	iamsdk "github.com/hanzoid/go-sdk/casdoorsdk"
 )
@@ -27,8 +32,8 @@ import (
 // searchAuth holds the validated identity for a search API request.
 // Every search/index/scrape endpoint must obtain this before processing.
 type searchAuth struct {
-	Owner  string     // organization that owns the search index
-	UserID string     // "owner/name" format for billing
+	Owner  string       // organization that owns the search index
+	UserID string       // "owner/name" format for billing
 	User   *iamsdk.User // nil for session-only auth without IAM lookup
 }
 
@@ -230,6 +235,42 @@ func recordSearchUsage(auth *searchAuth, model, provider, status string, units i
 	recordUsage(record)
 }
 
+// purgeCFCacheTag purges Cloudflare edge cache entries matching the given tag.
+// It requires cfZoneId and cfApiToken to be configured (via env or app.conf).
+// The purge runs synchronously; callers should invoke this in a goroutine to avoid
+// blocking the HTTP response.
+func purgeCFCacheTag(tag string) {
+	zoneID := conf.GetConfigString("cfZoneId")
+	apiToken := conf.GetConfigString("cfApiToken")
+	if zoneID == "" || apiToken == "" {
+		return
+	}
+
+	purgeURL := fmt.Sprintf("https://api.cloudflare.com/client/v4/zones/%s/purge_cache", zoneID)
+	body := fmt.Sprintf(`{"tags":[%q]}`, tag)
+
+	req, err := http.NewRequest(http.MethodPost, purgeURL, bytes.NewBufferString(body))
+	if err != nil {
+		logs.Warning("cf cache purge: failed to build request: %v", err)
+		return
+	}
+	req.Header.Set("Authorization", "Bearer "+apiToken)
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		logs.Warning("cf cache purge: request failed: %v", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		logs.Warning("cf cache purge: returned %d: %s", resp.StatusCode, string(respBody))
+	}
+}
+
 // SearchDocs
 // @Title SearchDocs
 // @Tag Search Docs API
@@ -265,6 +306,12 @@ func (c *ApiController) SearchDocs() {
 	}
 
 	recordSearchUsage(auth, "search-query", req.Mode, "success", len(results), c.Ctx.Request.RemoteAddr)
+
+	// Cloudflare edge cache headers: 5 min browser cache, 24h edge cache.
+	indexName := object.GetSearchIndexName(auth.Owner, store)
+	c.Ctx.ResponseWriter.Header().Set("Cache-Control", "public, max-age=300, s-maxage=86400")
+	c.Ctx.ResponseWriter.Header().Set("CF-Cache-Tag", "search:"+indexName)
+	c.Ctx.ResponseWriter.Header().Set("Vary", "Accept-Encoding, Authorization")
 
 	// Return raw array, NOT wrapped in Response{} envelope.
 	// The frontend client expects SortedResult[] directly.
@@ -307,6 +354,11 @@ func (c *ApiController) IndexDocs() {
 	}
 
 	recordSearchUsage(auth, "index-docs", "meilisearch", "success", count, c.Ctx.Request.RemoteAddr)
+
+	// Purge Cloudflare edge cache for this search index so stale results
+	// are not served after re-indexing. Runs async to avoid blocking.
+	indexName := object.GetSearchIndexName(auth.Owner, store)
+	go purgeCFCacheTag("search:" + indexName)
 
 	c.ResponseOk(count)
 }

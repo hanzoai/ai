@@ -458,12 +458,12 @@ func scrapeResultsToDocIndex(results []ScrapeResult, tag string) []DocIndex {
 
 		// Create a document for the page itself
 		pageDoc := DocIndex{
-			ID:      pageID,
-			PageID:  pageID,
-			Title:   result.Title,
-			URL:     result.URL,
-			Content: truncateContent(result.Content, 10000),
-			Tag:     tag,
+			ID:          pageID,
+			PageID:      pageID,
+			Title:       result.Title,
+			URL:         result.URL,
+			Content:     truncateContent(result.Content, 10000),
+			Tag:         tag,
 			Breadcrumbs: []string{result.Title},
 		}
 		docs = append(docs, pageDoc)
@@ -476,14 +476,14 @@ func scrapeResultsToDocIndex(results []ScrapeResult, tag string) []DocIndex {
 		for _, block := range result.Structured.Contents {
 			if block.Section != currentSection && currentSection != "" {
 				sectionDoc := DocIndex{
-					ID:        hashID(result.URL + "#" + currentSectionID),
-					PageID:    pageID,
-					Title:     result.Title,
-					URL:       sectionURL(result.URL, currentSectionID),
-					Content:   truncateContent(sectionContent.String(), 5000),
-					Section:   currentSection,
-					SectionID: currentSectionID,
-					Tag:       tag,
+					ID:          hashID(result.URL + "#" + currentSectionID),
+					PageID:      pageID,
+					Title:       result.Title,
+					URL:         sectionURL(result.URL, currentSectionID),
+					Content:     truncateContent(sectionContent.String(), 5000),
+					Section:     currentSection,
+					SectionID:   currentSectionID,
+					Tag:         tag,
 					Breadcrumbs: []string{result.Title, currentSection},
 				}
 				docs = append(docs, sectionDoc)
@@ -504,14 +504,14 @@ func scrapeResultsToDocIndex(results []ScrapeResult, tag string) []DocIndex {
 		// Flush the final section
 		if currentSection != "" && sectionContent.Len() > 0 {
 			sectionDoc := DocIndex{
-				ID:        hashID(result.URL + "#" + currentSectionID),
-				PageID:    pageID,
-				Title:     result.Title,
-				URL:       sectionURL(result.URL, currentSectionID),
-				Content:   truncateContent(sectionContent.String(), 5000),
-				Section:   currentSection,
-				SectionID: currentSectionID,
-				Tag:       tag,
+				ID:          hashID(result.URL + "#" + currentSectionID),
+				PageID:      pageID,
+				Title:       result.Title,
+				URL:         sectionURL(result.URL, currentSectionID),
+				Content:     truncateContent(sectionContent.String(), 5000),
+				Section:     currentSection,
+				SectionID:   currentSectionID,
+				Tag:         tag,
 				Breadcrumbs: []string{result.Title, currentSection},
 			}
 			docs = append(docs, sectionDoc)
