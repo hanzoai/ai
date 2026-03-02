@@ -45,6 +45,7 @@ type ScrapeRequest struct {
 	Selector string `json:"selector,omitempty"`
 	Tag      string `json:"tag,omitempty"`
 	Store    string `json:"store,omitempty"`
+	Engine   string `json:"engine,omitempty"` // "fast" (Go scraper), "browser" (crawl4ai), or "" (auto)
 }
 
 // ScrapeResult holds the extracted content from a single page.
@@ -80,9 +81,10 @@ type StructuredData struct {
 
 // ScrapeStats is the summary returned after a scrape-and-index operation.
 type ScrapeStats struct {
-	PagesScraped    int      `json:"pagesScraped"`
-	DocumentsIndexed int     `json:"documentsIndexed"`
-	Errors          []string `json:"errors,omitempty"`
+	PagesScraped     int      `json:"pagesScraped"`
+	DocumentsIndexed int      `json:"documentsIndexed"`
+	Engine           string   `json:"engine"`
+	Errors           []string `json:"errors,omitempty"`
 }
 
 // robotsRules holds parsed robots.txt disallow rules for User-agent: *.
@@ -150,8 +152,125 @@ func ScrapePage(pageURL string) (*ScrapeResult, error) {
 	return result, nil
 }
 
-// CrawlSite performs a BFS crawl starting from req.URL and returns scraped pages.
-func CrawlSite(req *ScrapeRequest) ([]ScrapeResult, []string) {
+// CrawlSite performs a crawl starting from req.URL and returns scraped pages.
+// Engine selection:
+//   - "browser": always use crawl4ai (errors if unavailable)
+//   - "fast": always use the Go HTML scraper
+//   - "" (auto): try crawl4ai first, fall back to Go scraper if unreachable
+//
+// The returned engine string indicates which engine was actually used.
+func CrawlSite(req *ScrapeRequest) (results []ScrapeResult, crawlErrors []string, engine string) {
+	engine = req.Engine
+
+	switch engine {
+	case "browser":
+		results, crawlErrors = crawlWithBrowserEngine(req)
+		return results, crawlErrors, "browser"
+	case "fast":
+		results, crawlErrors = crawlWithGoScraper(req)
+		return results, crawlErrors, "fast"
+	default:
+		// Auto mode: try crawl4ai, fall back to Go scraper
+		if IsCrawl4AIAvailable() {
+			logs.Info("scraper: crawl4ai is available, using browser engine for %s", req.URL)
+			results, crawlErrors = crawlWithBrowserEngine(req)
+			return results, crawlErrors, "browser"
+		}
+		logs.Info("scraper: crawl4ai is not available, falling back to Go scraper for %s", req.URL)
+		results, crawlErrors = crawlWithGoScraper(req)
+		return results, crawlErrors, "fast"
+	}
+}
+
+// crawlWithBrowserEngine uses crawl4ai to crawl URLs with a headless browser.
+// It first crawls the start URL, then follows discovered same-domain links up to
+// the configured depth and maxPages limits.
+func crawlWithBrowserEngine(req *ScrapeRequest) ([]ScrapeResult, []string) {
+	maxPages := req.MaxPages
+	if maxPages <= 0 {
+		maxPages = scraperDefaultMax
+	}
+	maxDepth := req.Depth
+	if maxDepth <= 0 {
+		maxDepth = scraperDefaultDepth
+	}
+
+	startURL, err := url.Parse(req.URL)
+	if err != nil {
+		return nil, []string{fmt.Sprintf("invalid start URL: %v", err)}
+	}
+	if startURL.Scheme == "" {
+		startURL.Scheme = "https"
+	}
+
+	baseDomain := startURL.Hostname()
+	visited := make(map[string]bool)
+	normalizedStart := normalizeURL(startURL.String())
+	visited[normalizedStart] = true
+
+	var results []ScrapeResult
+	var crawlErrors []string
+
+	// BFS over discovered links, batching URLs to crawl4ai
+	currentLevel := []string{normalizedStart}
+
+	for depth := 0; depth <= maxDepth && len(results) < maxPages && len(currentLevel) > 0; depth++ {
+		// Cap the batch to remaining page budget
+		remaining := maxPages - len(results)
+		batch := currentLevel
+		if len(batch) > remaining {
+			batch = batch[:remaining]
+		}
+
+		crawl4aiResults, crawlErr := CrawlWithCrawl4AI(batch)
+		if crawlErr != nil {
+			crawlErrors = append(crawlErrors, fmt.Sprintf("crawl4ai batch at depth %d: %v", depth, crawlErr))
+			break
+		}
+
+		var nextLevel []string
+
+		for _, cr := range crawl4aiResults {
+			if !cr.Success {
+				crawlErrors = append(crawlErrors, fmt.Sprintf("%s: crawl4ai reported failure", cr.URL))
+				continue
+			}
+
+			sr := Crawl4AIResultToScrapeResult(cr)
+			results = append(results, sr)
+
+			if len(results) >= maxPages {
+				break
+			}
+
+			// Collect same-domain links for the next BFS level
+			if depth < maxDepth {
+				for _, link := range sr.Links {
+					linkParsed, linkErr := url.Parse(link)
+					if linkErr != nil {
+						continue
+					}
+					if linkParsed.Hostname() != baseDomain {
+						continue
+					}
+					normalized := normalizeURL(link)
+					if visited[normalized] {
+						continue
+					}
+					visited[normalized] = true
+					nextLevel = append(nextLevel, normalized)
+				}
+			}
+		}
+
+		currentLevel = nextLevel
+	}
+
+	return results, crawlErrors
+}
+
+// crawlWithGoScraper performs a BFS crawl using the built-in Go HTML scraper.
+func crawlWithGoScraper(req *ScrapeRequest) ([]ScrapeResult, []string) {
 	maxPages := req.MaxPages
 	if maxPages <= 0 {
 		maxPages = scraperDefaultMax
@@ -182,12 +301,10 @@ func CrawlSite(req *ScrapeRequest) ([]ScrapeResult, []string) {
 	queue := make(chan crawlItem, maxPages*2)
 	var wg sync.WaitGroup
 
-	// Normalize and seed the starting URL
 	normalizedStart := normalizeURL(startURL.String())
 	visited.Store(normalizedStart, true)
 	queue <- crawlItem{url: normalizedStart, depth: 0}
 
-	// Track how many pages have been scraped
 	var pageCount int
 	var pageCountMu sync.Mutex
 
@@ -221,7 +338,6 @@ func CrawlSite(req *ScrapeRequest) ([]ScrapeResult, []string) {
 				pageCount++
 				pageCountMu.Unlock()
 
-				// Rate limit per request
 				time.Sleep(scraperRequestDelay)
 
 				if isDisallowed(robots, ci.url) {
@@ -241,7 +357,6 @@ func CrawlSite(req *ScrapeRequest) ([]ScrapeResult, []string) {
 				results = append(results, *result)
 				resultsMu.Unlock()
 
-				// Enqueue discovered links at next depth level
 				if ci.depth < maxDepth {
 					for _, link := range result.Links {
 						linkParsed, linkErr := url.Parse(link)
@@ -249,7 +364,6 @@ func CrawlSite(req *ScrapeRequest) ([]ScrapeResult, []string) {
 							continue
 						}
 
-						// Same-domain constraint
 						if linkParsed.Hostname() != baseDomain {
 							continue
 						}
@@ -259,7 +373,6 @@ func CrawlSite(req *ScrapeRequest) ([]ScrapeResult, []string) {
 							continue
 						}
 
-						// Non-blocking enqueue; drop if buffer is full
 						select {
 						case queue <- crawlItem{url: normalized, depth: ci.depth + 1}:
 						default:
@@ -271,7 +384,6 @@ func CrawlSite(req *ScrapeRequest) ([]ScrapeResult, []string) {
 		close(done)
 	}()
 
-	// Wait for all goroutines, then close queue to stop the dispatcher
 	go func() {
 		wg.Wait()
 		close(queue)
@@ -288,10 +400,11 @@ func ScrapeAndIndex(req *ScrapeRequest, lang string) (*ScrapeStats, error) {
 		return nil, fmt.Errorf("url must not be empty")
 	}
 
-	results, crawlErrors := CrawlSite(req)
+	results, crawlErrors, engine := CrawlSite(req)
 
 	stats := &ScrapeStats{
 		PagesScraped: len(results),
+		Engine:       engine,
 		Errors:       crawlErrors,
 	}
 

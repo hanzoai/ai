@@ -57,7 +57,7 @@ func (c *ApiController) ScrapeDocs() {
 // @Title ScrapePreview
 // @Tag Scraper API
 // @Description scrape a single URL and return structured data without indexing
-// @Param body body object.ScrapeRequest true "Preview request (only url field required)"
+// @Param body body object.ScrapeRequest true "Preview request (url required, engine optional: fast|browser)"
 // @Success 200 {object} object.ScrapeResult "Structured page content"
 // @router /scrape-docs/preview [post]
 func (c *ApiController) ScrapePreview() {
@@ -66,7 +66,8 @@ func (c *ApiController) ScrapePreview() {
 	}
 
 	var req struct {
-		URL string `json:"url"`
+		URL    string `json:"url"`
+		Engine string `json:"engine,omitempty"` // "fast" (Go scraper), "browser" (crawl4ai), or "" (auto)
 	}
 	err := json.Unmarshal(c.Ctx.Input.RequestBody, &req)
 	if err != nil {
@@ -76,6 +77,36 @@ func (c *ApiController) ScrapePreview() {
 
 	if req.URL == "" {
 		c.ResponseError("url must not be empty")
+		return
+	}
+
+	useBrowser := false
+	switch req.Engine {
+	case "browser":
+		useBrowser = true
+	case "fast":
+		useBrowser = false
+	default:
+		// Auto: use crawl4ai if available
+		useBrowser = object.IsCrawl4AIAvailable()
+	}
+
+	if useBrowser {
+		results, crawlErr := object.CrawlWithCrawl4AI([]string{req.URL})
+		if crawlErr != nil {
+			c.ResponseError(crawlErr.Error())
+			return
+		}
+		if len(results) == 0 {
+			c.ResponseError("crawl4ai returned no results")
+			return
+		}
+		if !results[0].Success {
+			c.ResponseError("crawl4ai reported failure for " + req.URL)
+			return
+		}
+		sr := object.Crawl4AIResultToScrapeResult(results[0])
+		c.ResponseOk(sr)
 		return
 	}
 
