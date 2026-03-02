@@ -261,9 +261,9 @@ func (c *ApiController) addInitialChatAndMessage(user *iamsdk.User) error {
 func (c *ApiController) anonymousSignin() {
 	username := c.getAnonymousUsername()
 
-	iamOrganization := conf.GetConfigString("iamOrganization")
+	effectiveOrg := c.GetEffectiveOrg()
 	user := iamsdk.User{
-		Owner:           iamOrganization,
+		Owner:           effectiveOrg,
 		Name:            username,
 		CreatedTime:     util.GetCurrentTime(),
 		Id:              username,
