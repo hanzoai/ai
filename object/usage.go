@@ -190,8 +190,11 @@ func GetUsage(date string) (*Usage, error) {
 	return usage, nil
 }
 
-func GetUsageMetadata(lang string) (*UsageMetadata, error) {
+func GetUsageMetadata(lang string, orgName ...string) (*UsageMetadata, error) {
 	iamOrganization := conf.GetConfigString("iamOrganization")
+	if len(orgName) > 0 && orgName[0] != "" {
+		iamOrganization = orgName[0]
+	}
 	organization, err := iamsdk.GetOrganization(iamOrganization)
 	if err != nil {
 		return nil, err
