@@ -25,6 +25,7 @@ import (
 
 type IamProvider struct {
 	providerName string
+	org          string // organization override; empty = use config default
 }
 
 func NewIamProvider(providerName string, lang string) (*IamProvider, error) {
@@ -35,8 +36,20 @@ func NewIamProvider(providerName string, lang string) (*IamProvider, error) {
 	return &IamProvider{providerName: providerName}, nil
 }
 
+// NewIamProviderWithOrg creates an IamProvider scoped to a specific organization.
+func NewIamProviderWithOrg(providerName string, org string, lang string) (*IamProvider, error) {
+	if providerName == "" {
+		return nil, fmt.Errorf(i18n.Translate(lang, "storage:storage provider name: [%s] doesn't exist"), providerName)
+	}
+
+	return &IamProvider{providerName: providerName, org: org}, nil
+}
+
 func (p *IamProvider) ListObjects(prefix string) ([]*Object, error) {
-	iamOrganization := conf.GetConfigString("iamOrganization")
+	iamOrganization := p.org
+	if iamOrganization == "" {
+		iamOrganization = conf.GetConfigString("iamOrganization")
+	}
 	iamApplication := conf.GetConfigString("iamApplication")
 	resources, err := iamsdk.GetResources(iamOrganization, iamApplication, "provider", p.providerName, "Direct", prefix)
 	if err != nil {
