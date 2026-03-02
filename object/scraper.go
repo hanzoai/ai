@@ -394,8 +394,9 @@ func crawlWithGoScraper(req *ScrapeRequest) ([]ScrapeResult, []string) {
 	return results, crawlErrors
 }
 
-// ScrapeAndIndex crawls a site and indexes the results into Meilisearch + Qdrant.
-func ScrapeAndIndex(req *ScrapeRequest, lang string) (*ScrapeStats, error) {
+// ScrapeAndIndex crawls a site and indexes the results into the owner's search index.
+// The owner parameter determines tenant isolation -- each org gets its own index namespace.
+func ScrapeAndIndex(owner string, req *ScrapeRequest, lang string) (*ScrapeStats, error) {
 	if req.URL == "" {
 		return nil, fmt.Errorf("url must not be empty")
 	}
@@ -432,7 +433,7 @@ func ScrapeAndIndex(req *ScrapeRequest, lang string) (*ScrapeStats, error) {
 		Replace:   false,
 	}
 
-	count, err := IndexDocuments("admin", store, indexReq, lang)
+	count, err := IndexDocuments(owner, store, indexReq, lang)
 	if err != nil {
 		return stats, fmt.Errorf("indexing failed after scraping %d pages: %w", len(results), err)
 	}
