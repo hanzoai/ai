@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -138,13 +139,19 @@ func GetSearchIndexName(owner, store string) string {
 func getSearchClient() (meilisearch.ServiceManager, error) {
 	host := conf.GetConfigString("searchHost")
 	if host == "" {
-		return nil, fmt.Errorf("searchHost is not configured")
+		host = os.Getenv("SEARCH_HOST")
+	}
+	if host == "" {
+		host = "search.hanzo.svc.cluster.local"
 	}
 	port := conf.GetConfigString("searchPort")
 	if port == "" {
 		port = "7700"
 	}
 	apiKey := conf.GetConfigString("searchApiKey")
+	if apiKey == "" {
+		apiKey = os.Getenv("SEARCH_API_KEY")
+	}
 
 	url := host
 	if !strings.HasPrefix(host, "http") {
