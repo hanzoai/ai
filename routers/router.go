@@ -317,4 +317,7 @@ func initAPI() {
 	beego.Router("/api/index-docs", &controllers.ApiController{}, "POST:IndexDocs")
 	beego.Router("/api/chat-docs", &controllers.ApiController{}, "POST:ChatDocs")
 	beego.Router("/api/search-docs/stats", &controllers.ApiController{}, "GET:SearchDocsStats")
+
+	beego.Router("/api/scrape-docs", &controllers.ApiController{}, "POST:ScrapeDocs")
+	beego.Router("/api/scrape-docs/preview", &controllers.ApiController{}, "POST:ScrapePreview")
 }
