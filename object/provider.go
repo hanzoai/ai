@@ -294,7 +294,7 @@ func (provider *Provider) GetId() string {
 func GetDefaultKubernetesProvider(lang string) (*Provider, error) {
 	providers, err := GetProviders("admin")
 	if err != nil {
-		return nil, fmt.Errorf(i18n.Translate(lang, "object:failed to get providers: %v"), err)
+		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:failed to get providers: %v"), err))
 	}
 
 	for _, provider := range providers {
@@ -302,7 +302,7 @@ func GetDefaultKubernetesProvider(lang string) (*Provider, error) {
 			return provider, nil
 		}
 	}
-	return nil, fmt.Errorf(i18n.Translate(lang, "object:no Kubernetes provider found"))
+	return nil, fmt.Errorf("%s", i18n.Translate(lang, "object:no Kubernetes provider found"))
 }
 
 func (p *Provider) GetStorageProviderObj(vectorStoreId string, lang string) (storage.StorageProvider, error) {
@@ -312,7 +312,7 @@ func (p *Provider) GetStorageProviderObj(vectorStoreId string, lang string) (sto
 	}
 
 	if pProvider == nil {
-		return nil, fmt.Errorf(i18n.Translate(lang, "object:the storage provider type: %s is not supported"), p.Type)
+		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:the storage provider type: %s is not supported"), p.Type))
 	}
 
 	return pProvider, nil
@@ -325,7 +325,7 @@ func (p *Provider) GetModelProvider(lang string) (model.ModelProvider, error) {
 	}
 
 	if pProvider == nil {
-		return nil, fmt.Errorf(i18n.Translate(lang, "object:the model provider type: %s is not supported"), p.Type)
+		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:the model provider type: %s is not supported"), p.Type))
 	}
 
 	return pProvider, nil
@@ -338,7 +338,7 @@ func (p *Provider) GetEmbeddingProvider(lang string) (embedding.EmbeddingProvide
 	}
 
 	if pProvider == nil {
-		return nil, fmt.Errorf(i18n.Translate(lang, "object:the embedding provider type: %s is not supported"), p.Type)
+		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:the embedding provider type: %s is not supported"), p.Type))
 	}
 
 	return pProvider, nil
@@ -351,7 +351,7 @@ func (p *Provider) GetAgentProvider(lang string) (agent.AgentProvider, error) {
 	}
 
 	if pProvider == nil {
-		return nil, fmt.Errorf(i18n.Translate(lang, "agent:the agent provider type: %s is not supported"), p.Type)
+		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "agent:the agent provider type: %s is not supported"), p.Type))
 	}
 
 	return pProvider, nil
@@ -364,7 +364,7 @@ func (p *Provider) GetTextToSpeechProvider(lang string) (tts.TextToSpeechProvide
 	}
 
 	if pProvider == nil {
-		return nil, fmt.Errorf(i18n.Translate(lang, "object:the TTS provider type: %s is not supported"), p.Type)
+		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:the TTS provider type: %s is not supported"), p.Type))
 	}
 
 	return pProvider, nil
@@ -377,7 +377,7 @@ func (p *Provider) GetSpeechToTextProvider(lang string) (stt.SpeechToTextProvide
 	}
 
 	if pProvider == nil {
-		return nil, fmt.Errorf(i18n.Translate(lang, "object:the STT provider type: %s is not supported"), p.Type)
+		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:the STT provider type: %s is not supported"), p.Type))
 	}
 
 	return pProvider, nil
@@ -390,7 +390,7 @@ func (p *Provider) GetScanProvider(lang string) (scan.ScanProvider, error) {
 	}
 
 	if pProvider == nil {
-		return nil, fmt.Errorf(i18n.Translate(lang, "object:the scan provider type: %s is not supported"), p.Type)
+		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:the scan provider type: %s is not supported"), p.Type))
 	}
 
 	return pProvider, nil

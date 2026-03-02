@@ -95,7 +95,7 @@ func (p *AlibabacloudModelProvider) calculatePrice(modelResult *ModelResult, lan
 		outputPrice := getPrice(modelResult.ResponseTokenCount, priceItem[1])
 		price = inputPrice + outputPrice
 	} else {
-		return fmt.Errorf(i18n.Translate(lang, "embedding:calculatePrice() error: unknown model type: %s"), p.subType)
+		return fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "embedding:calculatePrice() error: unknown model type: %s"), p.subType))
 	}
 
 	modelResult.TotalPrice = price
@@ -107,7 +107,7 @@ func (p *AlibabacloudModelProvider) QueryText(question string, writer io.Writer,
 	ctx := context.Background()
 	flusher, ok := writer.(http.Flusher)
 	if !ok {
-		return nil, fmt.Errorf(i18n.Translate(lang, "model:writer does not implement http.Flusher"))
+		return nil, fmt.Errorf("%s", i18n.Translate(lang, "model:writer does not implement http.Flusher"))
 	}
 
 	cli := dashscopego.NewTongyiClient(p.subType, p.apiKey)
@@ -115,12 +115,12 @@ func (p *AlibabacloudModelProvider) QueryText(question string, writer io.Writer,
 	if strings.HasPrefix(question, "$CloudDryRun$") {
 		modelResult, err := getDefaultModelResult(p.subType, question, "")
 		if err != nil {
-			return nil, fmt.Errorf(i18n.Translate(lang, "model:cannot calculate tokens"))
+			return nil, fmt.Errorf("%s", i18n.Translate(lang, "model:cannot calculate tokens"))
 		}
 		if getContextLength(p.subType) > modelResult.TotalTokenCount {
 			return modelResult, nil
 		} else {
-			return nil, fmt.Errorf(i18n.Translate(lang, "model:exceed max tokens"))
+			return nil, fmt.Errorf("%s", i18n.Translate(lang, "model:exceed max tokens"))
 		}
 	}
 

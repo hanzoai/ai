@@ -99,7 +99,7 @@ func (p *AmazonBedrockModelProvider) calculatePrice(modelResult *ModelResult, la
 	}
 	price, ok := prices[p.subType]
 	if !ok {
-		return fmt.Errorf(i18n.Translate(lang, "model:unsupported model: %s"), p.subType)
+		return fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "model:unsupported model: %s"), p.subType))
 	}
 	inputTokenPrice := float64(modelResult.PromptTokenCount) / 1000.0 * price.InputTokenPrice
 	outputTokenPrice := float64(modelResult.ResponseTokenCount) / 1000.0 * price.OutputTokenPrice
@@ -129,12 +129,12 @@ func (p *AmazonBedrockModelProvider) QueryText(question string, writer io.Writer
 	if strings.HasPrefix(question, "$CloudDryRun$") {
 		modelResult, err := getDefaultModelResult(p.subType, question, "")
 		if err != nil {
-			return nil, fmt.Errorf(i18n.Translate(lang, "model:cannot calculate tokens"))
+			return nil, fmt.Errorf("%s", i18n.Translate(lang, "model:cannot calculate tokens"))
 		}
 		if maxTokens > modelResult.TotalTokenCount {
 			return modelResult, nil
 		} else {
-			return nil, fmt.Errorf(i18n.Translate(lang, "model:exceed max tokens"))
+			return nil, fmt.Errorf("%s", i18n.Translate(lang, "model:exceed max tokens"))
 		}
 	}
 

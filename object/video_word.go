@@ -45,7 +45,7 @@ func (v *Video) PopulateWordCountMap(lang string) error {
 
 	dictPath := "data/dict.txt"
 	if !util.FileExist(dictPath) {
-		return fmt.Errorf(i18n.Translate(lang, "object:Cannot generate word cloud, the dict file: [%s] does not exist"), dictPath)
+		return fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:Cannot generate word cloud, the dict file: [%s] does not exist"), dictPath))
 	}
 
 	if seg == nil {

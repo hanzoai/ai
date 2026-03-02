@@ -106,7 +106,7 @@ func (client ContainerClient) GetContainer(name string, lang string) (*Container
 			return getContainerFromSummary(summary), nil
 		}
 	}
-	return nil, fmt.Errorf(i18n.Translate(lang, "pkgdocker:Container %s not found"), name)
+	return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "pkgdocker:Container %s not found"), name))
 }
 
 func (client ContainerClient) UpdateContainerState(name string, state string, lang string) (bool, string, error) {

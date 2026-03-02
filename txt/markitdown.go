@@ -49,13 +49,13 @@ func gbkToUtf8(gbkData []byte) (string, error) {
 
 func GetTextFromMarkitdown(path string, lang string) (string, error) {
 	if !markitdownExists {
-		return "", fmt.Errorf(i18n.Translate(lang, "txt:GetTextFromMarkitdown() error, markitdown does not exist"))
+		return "", fmt.Errorf("%s", i18n.Translate(lang, "txt:GetTextFromMarkitdown() error, markitdown does not exist"))
 	}
 
 	// Open the input file
 	file, err := os.Open(path)
 	if err != nil {
-		return "", fmt.Errorf(i18n.Translate(lang, "txt:GetTextFromMarkitdown() error, failed to open file: %v"), err)
+		return "", fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "txt:GetTextFromMarkitdown() error, failed to open file: %v"), err))
 	}
 	defer file.Close()
 
@@ -69,7 +69,7 @@ func GetTextFromMarkitdown(path string, lang string) (string, error) {
 
 	err = cmd.Run()
 	if err != nil {
-		return "", fmt.Errorf(i18n.Translate(lang, "txt:GetTextFromMarkitdown() error, markitdown failed to run: %v: %s"), err, stderr.String())
+		return "", fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "txt:GetTextFromMarkitdown() error, markitdown failed to run: %v: %s"), err, stderr.String()))
 	}
 
 	outputBytes := out.Bytes()
