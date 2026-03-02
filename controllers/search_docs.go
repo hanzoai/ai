@@ -313,9 +313,8 @@ func (c *ApiController) SearchDocs() {
 	c.Ctx.ResponseWriter.Header().Set("CF-Cache-Tag", "search:"+indexName)
 	c.Ctx.ResponseWriter.Header().Set("Vary", "Accept-Encoding, Authorization")
 
-	// Return raw array, NOT wrapped in Response{} envelope.
-	// The frontend client expects SortedResult[] directly.
-	c.Data["json"] = results
+	// Return {hits: [...]} envelope matching the TypeScript client's HanzoSearchResponse type.
+	c.Data["json"] = map[string]interface{}{"hits": results}
 	c.ServeJSON()
 }
 
