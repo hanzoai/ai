@@ -61,12 +61,12 @@ type Crawl4AIResponse struct {
 
 // Crawl4AIResult holds the crawl output for a single URL.
 type Crawl4AIResult struct {
-	URL      string                            `json:"url"`
-	Markdown string                            `json:"markdown"`
-	Success  bool                              `json:"success"`
-	Links    map[string][]map[string]string    `json:"links,omitempty"`
-	Media    map[string][]map[string]string    `json:"media,omitempty"`
-	Metadata map[string]interface{}            `json:"metadata,omitempty"`
+	URL      string                         `json:"url"`
+	Markdown string                         `json:"markdown"`
+	Success  bool                           `json:"success"`
+	Links    map[string][]map[string]string `json:"links,omitempty"`
+	Media    map[string][]map[string]string `json:"media,omitempty"`
+	Metadata map[string]interface{}         `json:"metadata,omitempty"`
 }
 
 // getCrawlEndpoint returns the Hanzo Crawl service base URL from config.
