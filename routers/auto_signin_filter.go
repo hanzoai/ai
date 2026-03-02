@@ -23,13 +23,19 @@ import (
 func AutoSigninFilter(ctx *context.Context) {
 	urlPath := ctx.Request.URL.Path
 
-	// Only run for API requests and /storage paths
-	// Skip for /chat/completions, /api/models, and other public API paths
-	if strings.HasSuffix(urlPath, "/chat/completions") || urlPath == "/api/models" {
+	// Skip endpoints that handle their own auth.
+	if strings.HasSuffix(urlPath, "/chat/completions") ||
+		strings.HasSuffix(urlPath, "/completions") ||
+		urlPath == "/api/models" ||
+		strings.HasPrefix(urlPath, "/v1/") ||
+		strings.HasPrefix(urlPath, "/api/search-docs") ||
+		strings.HasPrefix(urlPath, "/api/index-docs") ||
+		strings.HasPrefix(urlPath, "/api/chat-docs") ||
+		strings.HasPrefix(urlPath, "/api/scrape-docs") {
 		return
 	}
 
-	// Run for API paths and /storage paths only
+	// Run for API paths and /storage paths only.
 	if !strings.HasPrefix(urlPath, "/api/") && !strings.HasPrefix(urlPath, "/storage") {
 		return
 	}
@@ -43,6 +49,13 @@ func AutoSigninFilter(ctx *context.Context) {
 		accessToken = parseBearerToken(ctx)
 	}
 	if accessToken != "" {
+		// Skip non-legacy tokens — controllers handle hk-*, pk-*, sk-*, JWT auth.
+		if strings.HasPrefix(accessToken, "hk-") ||
+			strings.HasPrefix(accessToken, "pk-") ||
+			strings.HasPrefix(accessToken, "sk-") {
+			return
+		}
+
 		userId, err := getUsernameByAccessToken(accessToken)
 		if err != nil {
 			responseError(ctx, err.Error())
