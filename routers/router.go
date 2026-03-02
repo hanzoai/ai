@@ -312,4 +312,9 @@ func initAPI() {
 
 	beego.Router("/api/get-agents-dashboard-url", &controllers.ApiController{}, "GET:GetAgentsDashboardUrl")
 	beego.Router("/api/get-vm-dashboard-url", &controllers.ApiController{}, "GET:GetVmDashboardUrl")
+
+	beego.Router("/api/search-docs", &controllers.ApiController{}, "POST:SearchDocs")
+	beego.Router("/api/index-docs", &controllers.ApiController{}, "POST:IndexDocs")
+	beego.Router("/api/chat-docs", &controllers.ApiController{}, "POST:ChatDocs")
+	beego.Router("/api/search-docs/stats", &controllers.ApiController{}, "GET:SearchDocsStats")
 }
