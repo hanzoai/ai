@@ -31,6 +31,8 @@ spec:
           envFrom:
             - secretRef:
                 name: cloud-runtime-secrets
+            - secretRef:
+                name: cloud-search-config
           env:
             - name: RUNNING_IN_DOCKER
               value: "true"
