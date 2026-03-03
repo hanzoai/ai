@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -447,10 +448,17 @@ func resolveConsoleKeys(org string) (publicKey, secretKey string) {
 		}
 	}
 
-	// Fall back to global console keys
+	// Fall back to global console keys from KMS
 	pk, pkErr := object.GetKMSSecret("console-pk")
 	sk, skErr := object.GetKMSSecret("console-sk")
-	if pkErr == nil && skErr == nil {
+	if pkErr == nil && skErr == nil && pk != "" && sk != "" {
+		return pk, sk
+	}
+
+	// Fall back to env vars (LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY)
+	pk = os.Getenv("LANGFUSE_PUBLIC_KEY")
+	sk = os.Getenv("LANGFUSE_SECRET_KEY")
+	if pk != "" && sk != "" {
 		return pk, sk
 	}
 
@@ -463,10 +471,13 @@ func resolveConsoleKeys(org string) (publicKey, secretKey string) {
 // in console.hanzo.ai. This is fire-and-forget — failures are silently ignored.
 func recordTrace(record *usageRecord, startTime time.Time) {
 	go func() {
-		// Resolve console endpoint from KMS, fall back to env
+		// Resolve console endpoint from KMS, then Beego config, then env var
 		consoleEndpoint, _ := object.GetKMSSecret("console-endpoint")
 		if consoleEndpoint == "" {
 			consoleEndpoint = conf.GetConfigString("consoleEndpoint")
+		}
+		if consoleEndpoint == "" {
+			consoleEndpoint = os.Getenv("LANGFUSE_HOST")
 		}
 		if consoleEndpoint == "" {
 			return
