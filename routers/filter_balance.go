@@ -222,9 +222,9 @@ func resolveUserKey(ctx *context.Context) string {
 		return ""
 	}
 
-	// Provider keys (sk-) and publishable keys (pk-) don't map to IAM users
-	// with Commerce balances — skip.
-	if strings.HasPrefix(token, "sk-") || strings.HasPrefix(token, "pk-") {
+	// Provider keys (sk-), publishable keys (pk-), and widget keys (hz_)
+	// don't map to IAM users with Commerce balances — skip.
+	if strings.HasPrefix(token, "sk-") || strings.HasPrefix(token, "pk-") || strings.HasPrefix(token, "hz_") {
 		return ""
 	}
 
