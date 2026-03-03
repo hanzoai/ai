@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -120,6 +121,79 @@ func isIAMApiKey(token string) bool {
 // Publishable keys are safe for client-side use and can only access read-only endpoints.
 func isPublishableKey(token string) bool {
 	return strings.HasPrefix(token, "pk-")
+}
+
+// isWidgetKey checks if a token is a widget key (hz_ prefix).
+// Widget keys provide restricted access for public-facing chat widgets
+// on Hanzo properties (docs.hanzo.ai, hanzo.ai). They bypass balance
+// checks but are limited to non-premium models with capped tokens.
+func isWidgetKey(token string) bool {
+	return strings.HasPrefix(token, "hz_")
+}
+
+// widgetMaxTokens caps the maximum tokens per widget request to control costs.
+const widgetMaxTokens = 800
+
+// widgetAllowedModels defines which models widget keys can access.
+// Only cheap DO-AI models are allowed to keep costs minimal.
+var widgetAllowedModels = map[string]bool{
+	"llama-3.1-8b":            true,
+	"llama-3.3-70b":           true,
+	"mistral-nemo":            true,
+	"gpt-4o-mini":             true,
+	"deepseek-r1-distill-70b": true,
+	"claude-3-5-haiku":        true,
+}
+
+// resolveProviderFromWidgetKey authenticates a widget key request.
+// Widget keys skip balance checks but are restricted to non-premium models
+// and have a token cap per request.
+func resolveProviderFromWidgetKey(token string, requestedModel string, lang string) (*object.Provider, string, error) {
+	// Validate the widget key. For now, accept any hz_ prefixed key.
+	// In production, these will be validated against KMS-stored keys.
+	if token != "hz_widget_public" {
+		return nil, "", fmt.Errorf("invalid widget key")
+	}
+
+	// Look up the model in the routing table
+	route := resolveModelRoute(requestedModel)
+	if route == nil {
+		return nil, "", fmt.Errorf(
+			"model %q is not available for widget access",
+			requestedModel,
+		)
+	}
+
+	// Widget keys can only access non-premium models
+	if route.premium {
+		// Check if the model is in the allowed list (some premium models allowed for widget)
+		if !widgetAllowedModels[strings.ToLower(requestedModel)] {
+			return nil, "", fmt.Errorf(
+				"model %q requires authentication. Widget keys can only access: %s",
+				requestedModel, widgetAllowedModelsList(),
+			)
+		}
+	}
+
+	provider, err := object.GetModelProviderByName(route.providerName)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to get provider %q: %s", route.providerName, err.Error())
+	}
+	if provider == nil {
+		return nil, "", fmt.Errorf("provider %q not configured", route.providerName)
+	}
+
+	return provider, route.upstreamModel, nil
+}
+
+// widgetAllowedModelsList returns a comma-separated list of widget-allowed models.
+func widgetAllowedModelsList() string {
+	models := make([]string, 0, len(widgetAllowedModels))
+	for m := range widgetAllowedModels {
+		models = append(models, m)
+	}
+	sort.Strings(models)
+	return strings.Join(models, ", ")
 }
 
 // resolveProviderFromJwt validates a hanzo.id JWT token and returns the
@@ -525,6 +599,7 @@ func recordTrace(record *usageRecord, startTime time.Time) {
 // @Title ChatCompletions
 // @Tag OpenAI Compatible API
 // @Description OpenAI compatible chat completions API. Accepts:
+//   - Widget key (hz_...)   — restricted models, no balance check, token-capped
 //   - IAM API key (hk-...)  — full model routing + billing
 //   - hanzo.id JWT token    — full model routing + billing
 //   - Provider API key      — direct provider access
@@ -567,7 +642,23 @@ func (c *ApiController) ChatCompletions() {
 	var upstreamModel string
 	var isPremium bool
 
-	if isIAMApiKey(token) {
+	if isWidgetKey(token) {
+		// Authenticate via widget key (hz_...) — restricted model access, no balance check
+		var widgetUpstream string
+		provider, widgetUpstream, err = resolveProviderFromWidgetKey(token, request.Model, c.GetAcceptLanguage())
+		if err != nil {
+			c.ResponseError(fmt.Sprintf("Widget authentication failed: %s", err.Error()))
+			return
+		}
+		upstreamModel = widgetUpstream
+		// Cap max_tokens for widget requests
+		if request.MaxTokens == 0 || request.MaxTokens > widgetMaxTokens {
+			request.MaxTokens = widgetMaxTokens
+		}
+		// Track as anonymous widget usage
+		c.Ctx.Input.SetParam("recordUserId", "widget/anonymous")
+		logs.Info("Widget key access: model=%s, upstream=%s", request.Model, upstreamModel)
+	} else if isIAMApiKey(token) {
 		// Authenticate via IAM API key (hk-...) — full model routing
 		provider, authUser, upstreamModel, err = resolveProviderFromIAMKey(token, request.Model, c.GetAcceptLanguage())
 		if err != nil {
