@@ -59,6 +59,10 @@ func main() {
 	object.InitScanJobProcessor()
 	object.InitMessageTransactionRetry()
 
+	// Initialize the balance gate that enforces pre-request balance checks.
+	// Uses the same Commerce endpoint as the billing queue.
+	routers.InitBalanceGate()
+
 	// Initialize per-key rate limiting. Tier resolution is env-driven via
 	// RATE_LIMIT_TIERS (e.g. "hk-0d2eb=enterprise,hk-feb5b=pro").
 	rlInstance := routers.InitRateLimiter(routers.DefaultTierFunc)
@@ -70,6 +74,7 @@ func main() {
 	beego.InsertFilter("*", beego.BeforeRouter, routers.CacheControlFilter)
 	beego.InsertFilter("*", beego.BeforeRouter, routers.RateLimitFilter)
 	beego.InsertFilter("*", beego.BeforeRouter, routers.AutoSigninFilter)
+	beego.InsertFilter("*", beego.BeforeRouter, routers.BalanceGateFilter)
 	beego.InsertFilter("*", beego.BeforeRouter, routers.StaticFilter)
 	beego.InsertFilter("*", beego.BeforeRouter, routers.TenantContextFilter)
 	beego.InsertFilter("*", beego.BeforeRouter, routers.AuthzFilter)
