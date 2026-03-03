@@ -165,15 +165,12 @@ func resolveProviderFromWidgetKey(token string, requestedModel string, lang stri
 		)
 	}
 
-	// Widget keys can only access non-premium models
-	if route.premium {
-		// Check if the model is in the allowed list (some premium models allowed for widget)
-		if !widgetAllowedModels[strings.ToLower(requestedModel)] {
-			return nil, "", fmt.Errorf(
-				"model %q requires authentication. Widget keys can only access: %s",
-				requestedModel, widgetAllowedModelsList(),
-			)
-		}
+	// Widget keys can only access explicitly allowed models
+	if !widgetAllowedModels[strings.ToLower(requestedModel)] {
+		return nil, "", fmt.Errorf(
+			"model %q is not available for widget access. Allowed models: %s",
+			requestedModel, widgetAllowedModelsList(),
+		)
 	}
 
 	provider, err := object.GetModelProviderByName(route.providerName)
