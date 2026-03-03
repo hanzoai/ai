@@ -455,9 +455,9 @@ func resolveConsoleKeys(org string) (publicKey, secretKey string) {
 		return pk, sk
 	}
 
-	// Fall back to env vars (LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY)
-	pk = os.Getenv("LANGFUSE_PUBLIC_KEY")
-	sk = os.Getenv("LANGFUSE_SECRET_KEY")
+	// Fall back to env vars (CONSOLE_PUBLIC_KEY / CONSOLE_SECRET_KEY)
+	pk = os.Getenv("CONSOLE_PUBLIC_KEY")
+	sk = os.Getenv("CONSOLE_SECRET_KEY")
 	if pk != "" && sk != "" {
 		return pk, sk
 	}
@@ -477,7 +477,7 @@ func recordTrace(record *usageRecord, startTime time.Time) {
 			consoleEndpoint = conf.GetConfigString("consoleEndpoint")
 		}
 		if consoleEndpoint == "" {
-			consoleEndpoint = os.Getenv("LANGFUSE_HOST")
+			consoleEndpoint = os.Getenv("CONSOLE_HOST")
 		}
 		if consoleEndpoint == "" {
 			return
