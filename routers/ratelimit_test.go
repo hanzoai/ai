@@ -20,21 +20,21 @@ import (
 )
 
 func TestRateLimiterAllow(t *testing.T) {
-	// Free tier: 10 req/min => burst of 2 (10/5).
-	rl := NewRateLimiter(func(string) Tier { return TierFree }, time.Hour)
+	// zen-free tier: 60 req/min => burst of 12 (60/5).
+	rl := NewRateLimiter(func(string) Tier { return TierZenFree }, time.Hour)
 	defer rl.Stop()
 
 	key := "hk-test-key-free"
 
-	// Burst of 2 should all succeed.
-	for i := 0; i < 2; i++ {
+	// Burst of 12 should all succeed.
+	for i := 0; i < 12; i++ {
 		if !rl.Allow(key) {
 			t.Fatalf("request %d should have been allowed (within burst)", i)
 		}
 	}
 
 	// After exhausting burst, the next immediate request should be denied
-	// because refill rate is ~0.17/sec and no time has passed.
+	// because refill rate is 1/sec and no time has passed.
 	if rl.Allow(key) {
 		t.Fatal("request after burst should have been denied")
 	}
@@ -45,10 +45,11 @@ func TestRateLimiterTierLimits(t *testing.T) {
 		tier      Tier
 		burstSize int // reqPerMin / 5
 	}{
-		{TierFree, 2},
-		{TierStarter, 12},
-		{TierPro, 60},
-		{TierEnterprise, 200},
+		{TierZenFree, 12},
+		{TierZenPro, 100},
+		{TierZenTeam, 400},
+		{TierZenEnterprise, 10000},
+		{TierZenCustom, 20000},
 	}
 
 	for _, tt := range tests {
@@ -74,19 +75,20 @@ func TestRateLimiterTierLimits(t *testing.T) {
 }
 
 func TestRateLimiterMetrics(t *testing.T) {
-	rl := NewRateLimiter(func(string) Tier { return TierFree }, time.Hour)
+	rl := NewRateLimiter(func(string) Tier { return TierZenFree }, time.Hour)
 	defer rl.Stop()
 
 	key := "hk-metrics-test"
 
-	// 2 allowed (burst), then 1 denied.
-	rl.Allow(key)
-	rl.Allow(key)
+	// 12 allowed (burst), then 1 denied.
+	for i := 0; i < 12; i++ {
+		rl.Allow(key)
+	}
 	rl.Allow(key) // should be denied
 
 	allowed, denied := rl.Metrics()
-	if allowed != 2 {
-		t.Errorf("expected 2 allowed, got %d", allowed)
+	if allowed != 12 {
+		t.Errorf("expected 12 allowed, got %d", allowed)
 	}
 	if denied != 1 {
 		t.Errorf("expected 1 denied, got %d", denied)
@@ -94,13 +96,13 @@ func TestRateLimiterMetrics(t *testing.T) {
 }
 
 func TestRateLimiterRetryAfter(t *testing.T) {
-	rl := NewRateLimiter(func(string) Tier { return TierFree }, time.Hour)
+	rl := NewRateLimiter(func(string) Tier { return TierZenFree }, time.Hour)
 	defer rl.Stop()
 
 	key := "hk-retry-test"
 
-	// Exhaust burst.
-	for i := 0; i < 3; i++ {
+	// Exhaust burst (12 for zen-free) plus 1 more to trigger denial.
+	for i := 0; i < 13; i++ {
 		rl.Allow(key)
 	}
 
@@ -122,7 +124,7 @@ func TestRateLimiterUnknownKeyRetryAfter(t *testing.T) {
 }
 
 func TestRateLimiterCleanup(t *testing.T) {
-	rl := NewRateLimiter(func(string) Tier { return TierFree }, 50*time.Millisecond)
+	rl := NewRateLimiter(func(string) Tier { return TierZenFree }, 50*time.Millisecond)
 	defer rl.Stop()
 
 	key := "hk-cleanup-test"
@@ -146,14 +148,14 @@ func TestRateLimiterCleanup(t *testing.T) {
 }
 
 func TestRateLimiterSeparateKeys(t *testing.T) {
-	rl := NewRateLimiter(func(string) Tier { return TierFree }, time.Hour)
+	rl := NewRateLimiter(func(string) Tier { return TierZenFree }, time.Hour)
 	defer rl.Stop()
 
 	keyA := "hk-user-a"
 	keyB := "hk-user-b"
 
-	// Exhaust key A's burst.
-	for i := 0; i < 3; i++ {
+	// Exhaust key A's burst (12 for zen-free) plus 1 more.
+	for i := 0; i < 13; i++ {
 		rl.Allow(keyA)
 	}
 
@@ -193,15 +195,15 @@ func TestIsRateLimitExempt(t *testing.T) {
 }
 
 func TestDefaultTierFuncUnset(t *testing.T) {
-	// With no RATE_LIMIT_TIERS set, everything should be free tier.
+	// With no RATE_LIMIT_TIERS set, everything should be zen-free tier.
 	tier := DefaultTierFunc("hk-anything")
-	if tier != TierFree {
-		t.Errorf("expected TierFree, got %q", tier)
+	if tier != TierZenFree {
+		t.Errorf("expected TierZenFree, got %q", tier)
 	}
 }
 
 func TestRateLimiterConcurrent(t *testing.T) {
-	rl := NewRateLimiter(func(string) Tier { return TierStarter }, time.Hour)
+	rl := NewRateLimiter(func(string) Tier { return TierZenPro }, time.Hour)
 	defer rl.Stop()
 
 	done := make(chan struct{})
@@ -222,5 +224,43 @@ func TestRateLimiterConcurrent(t *testing.T) {
 	total := allowed + denied
 	if total != 1000 {
 		t.Errorf("expected 1000 total operations, got %d", total)
+	}
+}
+
+func TestMapPlanToTier(t *testing.T) {
+	tests := []struct {
+		plan     string
+		expected Tier
+	}{
+		// Canonical zen-* names
+		{"zen-free", TierZenFree},
+		{"zen-pro", TierZenPro},
+		{"zen-team", TierZenTeam},
+		{"zen-enterprise", TierZenEnterprise},
+		{"zen-custom", TierZenCustom},
+		// Legacy names (backward compat)
+		{"free", TierZenFree},
+		{"developer", TierZenFree},
+		{"starter", TierZenPro},
+		{"pro", TierZenPro},
+		{"team", TierZenTeam},
+		{"enterprise", TierZenEnterprise},
+		{"scale", TierZenEnterprise},
+		{"custom", TierZenCustom},
+		// Case insensitivity
+		{"ZEN-PRO", TierZenPro},
+		{"Enterprise", TierZenEnterprise},
+		// Unknown defaults to zen-free
+		{"", TierZenFree},
+		{"unknown", TierZenFree},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.plan, func(t *testing.T) {
+			got := mapPlanToTier(tt.plan)
+			if got != tt.expected {
+				t.Errorf("mapPlanToTier(%q) = %q, want %q", tt.plan, got, tt.expected)
+			}
+		})
 	}
 }
