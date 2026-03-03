@@ -41,35 +41,56 @@ func TestRateLimiterAllow(t *testing.T) {
 }
 
 func TestRateLimiterTierLimits(t *testing.T) {
-	tests := []struct {
-		tier      Tier
-		burstSize int // reqPerMin / 5
-	}{
-		{TierZenFree, 12},
-		{TierZenPro, 100},
-		{TierZenTeam, 400},
-		{TierZenEnterprise, 10000},
-		{TierZenCustom, 20000},
+	// Use a uniform small RPM for all tiers so the test can exhaust the burst
+	// bucket quickly. The production tierLimits map has entries up to 100k RPM
+	// whose burst (20k) is too large to loop through in a unit test without
+	// tokens refilling mid-loop. We temporarily override every tier to a small
+	// value, verify burst-then-deny behavior, and restore the original limits.
+	const testRPM = 50 // burst = testRPM/5 = 10
+	const testBurst = testRPM / 5
+
+	origLimits := make(map[Tier]int, len(tierLimits))
+	for k, v := range tierLimits {
+		origLimits[k] = v
+	}
+	defer func() {
+		for k, v := range origLimits {
+			tierLimits[k] = v
+		}
+	}()
+
+	tiers := []Tier{
+		TierZenFree,
+		TierZenPro,
+		TierZenTeam,
+		TierZenEnterprise,
+		TierZenCustom,
 	}
 
-	for _, tt := range tests {
-		t.Run(string(tt.tier), func(t *testing.T) {
-			rl := NewRateLimiter(func(string) Tier { return tt.tier }, time.Hour)
+	for _, tier := range tiers {
+		t.Run(string(tier), func(t *testing.T) {
+			// Override just this tier to the small test value.
+			tierLimits[tier] = testRPM
+
+			rl := NewRateLimiter(func(string) Tier { return tier }, time.Hour)
 			defer rl.Stop()
 
 			key := "hk-tier-test"
 
 			// All burst requests should succeed.
-			for i := 0; i < tt.burstSize; i++ {
+			for i := 0; i < testBurst; i++ {
 				if !rl.Allow(key) {
-					t.Fatalf("request %d should have been allowed (burst=%d)", i, tt.burstSize)
+					t.Fatalf("request %d should have been allowed (burst=%d)", i, testBurst)
 				}
 			}
 
 			// Next request (immediately after burst) should be denied.
 			if rl.Allow(key) {
-				t.Fatalf("request after burst should be denied for tier %s", tt.tier)
+				t.Fatalf("request after burst should be denied for tier %s", tier)
 			}
+
+			// Restore original limit for this tier before next iteration.
+			tierLimits[tier] = origLimits[tier]
 		})
 	}
 }
