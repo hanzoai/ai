@@ -101,7 +101,7 @@ jobs:
       - run: touch dummy.yml
 
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v6
+        uses: hanzoai/golangci-lint-action@v6
         with:
           version: latest
           args: --disable-all -c dummy.yml -E=gofumpt --max-same-issues=0 --timeout 5m --modules-download-mode=mod
