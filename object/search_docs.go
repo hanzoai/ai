@@ -73,6 +73,7 @@ type DocChatRequest struct {
 	Query  string `json:"query"`
 	Tag    string `json:"tag,omitempty"`
 	Stream bool   `json:"stream,omitempty"`
+	Prompt string `json:"prompt,omitempty"` // Custom system prompt (set by client)
 }
 
 // DocStatsResponse contains index statistics.
@@ -747,10 +748,12 @@ func GetDocChatAnswer(owner, store string, req *DocChatRequest, lang string) (st
 		})
 	}
 
-	prompt := "You are a helpful documentation assistant for Hanzo. " +
-		"Answer the user's question based on the provided documentation context. " +
-		"Be concise and accurate. If the documentation does not contain the answer, say so clearly. " +
-		"Include relevant links when available."
+	prompt := req.Prompt
+	if prompt == "" {
+		prompt = "You are a documentation assistant. " +
+			"Answer the user's question using the provided documentation context. " +
+			"Be concise and direct. Use markdown formatting. Include links when relevant."
+	}
 
 	history := []*model.RawMessage{}
 

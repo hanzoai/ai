@@ -461,12 +461,15 @@ func (c *ApiController) ChatDocs() {
 // Request: { "messages": [{ "role": "user", "content": "..." }] }
 // Response: AI SDK data stream format (0:"text"\n d:{...}\n)
 func (c *ApiController) chatDocsAISDK(auth *searchAuth, store, lang string, aiReq aiSDKRequest) {
-	// Extract query from the last user message.
+	// Extract query from the last user message and system prompt if present.
 	var query string
+	var systemPrompt string
 	for i := len(aiReq.Messages) - 1; i >= 0; i-- {
-		if aiReq.Messages[i].Role == "user" {
+		if aiReq.Messages[i].Role == "user" && query == "" {
 			query = aiReq.Messages[i].Content
-			break
+		}
+		if aiReq.Messages[i].Role == "system" && systemPrompt == "" {
+			systemPrompt = aiReq.Messages[i].Content
 		}
 	}
 	if query == "" {
@@ -474,7 +477,7 @@ func (c *ApiController) chatDocsAISDK(auth *searchAuth, store, lang string, aiRe
 		return
 	}
 
-	chatReq := &object.DocChatRequest{Query: query}
+	chatReq := &object.DocChatRequest{Query: query, Prompt: systemPrompt}
 	answer, modelResult, err := object.GetDocChatAnswer(auth.Owner, store, chatReq, lang)
 	if err != nil {
 		recordSearchUsage(auth, "search-chat", "rag", "error", 0, c.Ctx.Request.RemoteAddr)
