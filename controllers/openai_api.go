@@ -143,6 +143,7 @@ var widgetAllowedModels = map[string]bool{
 	"gpt-4o-mini":             true,
 	"deepseek-r1-distill-70b": true,
 	"claude-3-5-haiku":        true,
+	"claude-haiku-4-5":        true,
 }
 
 // resolveProviderFromWidgetKey authenticates a widget key request.
