@@ -1,0 +1,35 @@
+FROM golang:1.26-alpine AS back
+RUN apk add --no-cache git
+WORKDIR /go/src/hanzo-cloud
+COPY go.mod go.sum ./
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
+COPY . .
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 go build -ldflags="-w -s" -o server .
+
+FROM ghcr.io/hanzoai/cloud:latest AS existing
+
+FROM alpine:3.21
+LABEL maintainer="https://hanzo.ai/"
+ARG USER=hanzo
+
+RUN apk add --no-cache ca-certificates curl sudo \
+    && update-ca-certificates \
+    && adduser -D $USER -u 1000 \
+    && echo "$USER ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/$USER \
+    && chmod 0440 /etc/sudoers.d/$USER \
+    && mkdir logs files \
+    && chown -R $USER:$USER logs files
+
+USER 1000
+WORKDIR /
+COPY --from=back --chown=$USER:$USER /go/src/hanzo-cloud/server ./server
+COPY --from=back --chown=$USER:$USER /go/src/hanzo-cloud/data ./data
+COPY --from=back --chown=$USER:$USER /go/src/hanzo-cloud/conf/app.conf ./conf/app.conf
+COPY --from=back --chown=$USER:$USER /go/src/hanzo-cloud/conf/models.yaml ./conf/models.yaml
+COPY --from=existing --chown=$USER:$USER /web/build ./web/build
+ENV RUNNING_IN_DOCKER=true
+
+ENTRYPOINT ["/server"]
