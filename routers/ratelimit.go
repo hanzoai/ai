@@ -30,21 +30,24 @@ import (
 )
 
 // Tier represents an API usage tier with associated rate limits.
+// All tiers follow the "zen-*" naming convention as the canonical identifier.
 type Tier string
 
 const (
-	TierFree       Tier = "free"
-	TierStarter    Tier = "starter"
-	TierPro        Tier = "pro"
-	TierEnterprise Tier = "enterprise"
+	TierZenFree       Tier = "zen-free"
+	TierZenPro        Tier = "zen-pro"
+	TierZenTeam       Tier = "zen-team"
+	TierZenEnterprise Tier = "zen-enterprise"
+	TierZenCustom     Tier = "zen-custom"
 )
 
 // tierLimits maps each tier to its per-minute request allowance.
 var tierLimits = map[Tier]int{
-	TierFree:       10,
-	TierStarter:    60,
-	TierPro:        300,
-	TierEnterprise: 1000,
+	TierZenFree:       60,
+	TierZenPro:        500,
+	TierZenTeam:       2000,
+	TierZenEnterprise: 50000,
+	TierZenCustom:     100000,
 }
 
 // keyEntry holds the rate limiter and last-seen time for a single API key.
@@ -68,10 +71,10 @@ type RateLimiter struct {
 
 // NewRateLimiter creates a RateLimiter that starts a background goroutine to
 // evict stale entries every cleanupInterval. The tierFunc callback resolves an
-// API key to its Tier; pass nil to always use TierFree.
+// API key to its Tier; pass nil to always use TierZenFree.
 func NewRateLimiter(tierFunc func(string) Tier, cleanupInterval time.Duration) *RateLimiter {
 	if tierFunc == nil {
-		tierFunc = func(string) Tier { return TierFree }
+		tierFunc = func(string) Tier { return TierZenFree }
 	}
 
 	rl := &RateLimiter{
@@ -147,7 +150,7 @@ func (rl *RateLimiter) getOrCreate(apiKey string) *keyEntry {
 	tier := rl.tierFunc(apiKey)
 	reqPerMin := tierLimits[tier]
 	if reqPerMin == 0 {
-		reqPerMin = tierLimits[TierFree]
+		reqPerMin = tierLimits[TierZenFree]
 	}
 
 	// rate.Limit is events per second; burst allows short spikes up to 20%
@@ -316,16 +319,16 @@ func extractAPIKey(ctx *context.Context) string {
 
 // DefaultTierFunc resolves an API key to a Tier. It checks the RATE_LIMIT_TIERS
 // environment variable (or app.conf key) for a comma-separated mapping of
-// "key_prefix=tier" entries. Unmatched keys default to TierFree.
+// "key_prefix=tier" entries. Unmatched keys default to TierZenFree.
 //
-// Example env: RATE_LIMIT_TIERS=hk-0d2eb=enterprise,hk-feb5b=pro
+// Example env: RATE_LIMIT_TIERS=hk-0d2eb=zen-enterprise,hk-feb5b=zen-pro
 //
 // Production systems should replace this with a database or IAM lookup;
 // this env-based approach provides a working baseline without external deps.
 func DefaultTierFunc(apiKey string) Tier {
 	tierMap := parseTierConfig()
 	if tierMap == nil {
-		return TierFree
+		return TierZenFree
 	}
 
 	// Exact match first.
@@ -333,7 +336,7 @@ func DefaultTierFunc(apiKey string) Tier {
 		return t
 	}
 
-	// Prefix match: allows configuring "hk-0d2eb=enterprise" to match
+	// Prefix match: allows configuring "hk-0d2eb=zen-enterprise" to match
 	// the full key "hk-0d2eb9cfafd049389f2904cad770a9d8".
 	for prefix, t := range tierMap {
 		if strings.HasPrefix(apiKey, prefix) {
@@ -341,11 +344,12 @@ func DefaultTierFunc(apiKey string) Tier {
 		}
 	}
 
-	return TierFree
+	return TierZenFree
 }
 
 // parseTierConfig reads RATE_LIMIT_TIERS from env (or Beego app.conf).
 // Format: "prefix1=tier1,prefix2=tier2"
+// Accepts both canonical zen-* names and legacy names (mapped automatically).
 func parseTierConfig() map[string]Tier {
 	raw := strings.TrimSpace(conf.GetConfigString("RATE_LIMIT_TIERS"))
 	if raw == "" {
@@ -359,14 +363,38 @@ func parseTierConfig() map[string]Tier {
 			continue
 		}
 		key := strings.TrimSpace(parts[0])
-		tierStr := Tier(strings.TrimSpace(parts[1]))
+		rawTier := strings.TrimSpace(parts[1])
 
-		// Validate tier name.
-		if _, ok := tierLimits[tierStr]; !ok {
-			logs.Warn("rate_limit: unknown tier %q for key prefix %q, skipping", tierStr, key)
-			continue
-		}
-		result[key] = tierStr
+		// Map legacy tier names to canonical zen-* names, then validate.
+		tier := mapPlanToTier(rawTier)
+		result[key] = tier
 	}
 	return result
+}
+
+// mapPlanToTier converts a Commerce plan name or legacy tier name to a
+// canonical zen-* rate limit Tier. Supports both old and new naming conventions.
+func mapPlanToTier(plan string) Tier {
+	switch strings.ToLower(strings.TrimSpace(plan)) {
+	case "zen-free", "free", "developer":
+		return TierZenFree
+	case "zen-pro", "pro", "starter":
+		return TierZenPro
+	case "zen-team", "team":
+		return TierZenTeam
+	case "zen-enterprise", "enterprise", "scale":
+		return TierZenEnterprise
+	case "zen-custom", "custom":
+		return TierZenCustom
+	default:
+		return TierZenFree
+	}
+}
+
+// maskKey returns an API key truncated to its first 6 characters for safe logging.
+func maskKey(apiKey string) string {
+	if len(apiKey) > 6 {
+		return apiKey[:6] + "..."
+	}
+	return apiKey
 }
