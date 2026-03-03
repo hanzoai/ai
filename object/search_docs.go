@@ -84,14 +84,10 @@ type DocStatsResponse struct {
 
 // qdrantSearchRequest is the JSON body for Hanzo Vector's search endpoint.
 type qdrantSearchRequest struct {
-	Vector []float32         `json:"vector"`
-	Limit  int               `json:"limit"`
-	Filter *qdrantFilter     `json:"filter,omitempty"`
-	With   qdrantWithPayload `json:"with_payload"`
-}
-
-type qdrantWithPayload struct {
-	Enable bool `json:"enable"`
+	Vector []float32     `json:"vector"`
+	Limit  int           `json:"limit"`
+	Filter *qdrantFilter `json:"filter,omitempty"`
+	With   bool          `json:"with_payload"`
 }
 
 type qdrantFilter struct {
@@ -309,7 +305,7 @@ func searchVectorRaw(baseURL, apiKey, collectionName string, vector []float32, t
 	reqBody := qdrantSearchRequest{
 		Vector: vector,
 		Limit:  limit,
-		With:   qdrantWithPayload{Enable: true},
+		With:   true,
 	}
 
 	if tag != "" {
@@ -758,7 +754,12 @@ func GetDocChatAnswer(owner, store string, req *DocChatRequest, lang string) (st
 
 	history := []*model.RawMessage{}
 
-	answer, modelResult, err := GetAnswerWithContext("", req.Query, history, knowledge, prompt, lang)
+	provider := os.Getenv("CHAT_MODEL_PROVIDER")
+	if provider == "" {
+		provider = "fireworks"
+	}
+
+	answer, modelResult, err := GetAnswerWithContext(provider, req.Query, history, knowledge, prompt, lang)
 	if err != nil {
 		return "", nil, fmt.Errorf("RAG answer generation failed: %w", err)
 	}
