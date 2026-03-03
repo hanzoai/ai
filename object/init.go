@@ -233,7 +233,7 @@ func initLLMProviders() {
 			DisplayName:  "Fireworks AI",
 			Category:     "Model",
 			Type:         "Fireworks",
-			SubType:      "qwen3-235b-a22b",
+			SubType:      "accounts/fireworks/models/deepseek-v3p2",
 			ProviderUrl:  "https://api.fireworks.ai/inference/v1",
 			ClientSecret: "kms://FIREWORKS_API_KEY",
 			State:        "Active",
@@ -269,14 +269,22 @@ func initLLMProviders() {
 			continue
 		}
 		if existing != nil {
-			// Ensure the provider type matches the canonical definition.
-			// This corrects providers that were originally seeded with wrong types.
+			// Ensure the provider type and model match the canonical definition.
+			needsUpdate := false
 			if existing.Type != p.Type {
 				fmt.Printf("[init] Fixing provider %q type: %q -> %q\n", p.Name, existing.Type, p.Type)
 				existing.Type = p.Type
+				needsUpdate = true
+			}
+			if existing.SubType != p.SubType {
+				fmt.Printf("[init] Fixing provider %q model: %q -> %q\n", p.Name, existing.SubType, p.SubType)
+				existing.SubType = p.SubType
+				needsUpdate = true
+			}
+			if needsUpdate {
 				_, err = UpdateProvider("admin/"+p.Name, existing)
 				if err != nil {
-					fmt.Printf("[init] WARNING: failed to update provider %q type: %v\n", p.Name, err)
+					fmt.Printf("[init] WARNING: failed to update provider %q: %v\n", p.Name, err)
 				}
 			}
 			continue
