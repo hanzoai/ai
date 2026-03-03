@@ -38,7 +38,7 @@ func TestIsWidgetKey(t *testing.T) {
 
 func TestWidgetAllowedModels(t *testing.T) {
 	// Verify allowed models are in the list
-	allowed := []string{"llama-3.1-8b", "llama-3.3-70b", "mistral-nemo", "gpt-4o-mini", "deepseek-r1-distill-70b", "claude-3-5-haiku"}
+	allowed := []string{"llama-3.1-8b", "llama-3.3-70b", "mistral-nemo", "gpt-4o-mini", "deepseek-r1-distill-70b", "claude-3-5-haiku", "claude-haiku-4-5"}
 	for _, m := range allowed {
 		if !widgetAllowedModels[m] {
 			t.Errorf("expected %q to be in widgetAllowedModels", m)
