@@ -362,12 +362,23 @@ func (c *ApiController) IndexDocs() {
 	c.ResponseOk(count)
 }
 
+// aiSDKMessage is a single message in the AI SDK useChat request format.
+type aiSDKMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+// aiSDKRequest is the request body sent by the AI SDK DefaultChatTransport.
+type aiSDKRequest struct {
+	Messages []aiSDKMessage `json:"messages"`
+}
+
 // ChatDocs
 // @Title ChatDocs
 // @Tag Search Docs API
 // @Description RAG chat over documentation with search context
 // @Param body body object.DocChatRequest true "Chat request"
-// @Success 200 {stream} string "SSE stream of chat response"
+// @Success 200 {stream} string "SSE stream of chat response or AI SDK data stream"
 // @router /chat-docs [post]
 func (c *ApiController) ChatDocs() {
 	auth := c.resolveSearchAuth()
@@ -375,6 +386,17 @@ func (c *ApiController) ChatDocs() {
 		return
 	}
 
+	store := c.resolveSearchStore()
+	lang := c.GetAcceptLanguage()
+
+	// Detect AI SDK request format (has "messages" array from useChat hook).
+	var aiReq aiSDKRequest
+	if err := json.Unmarshal(c.Ctx.Input.RequestBody, &aiReq); err == nil && len(aiReq.Messages) > 0 {
+		c.chatDocsAISDK(auth, store, lang, aiReq)
+		return
+	}
+
+	// Native format: { query, tag, stream }
 	var req object.DocChatRequest
 	err := json.Unmarshal(c.Ctx.Input.RequestBody, &req)
 	if err != nil {
@@ -387,14 +409,12 @@ func (c *ApiController) ChatDocs() {
 		return
 	}
 
-	store := c.resolveSearchStore()
-
 	if req.Stream {
 		c.Ctx.ResponseWriter.Header().Set("Content-Type", "text/event-stream")
 		c.Ctx.ResponseWriter.Header().Set("Cache-Control", "no-cache")
 		c.Ctx.ResponseWriter.Header().Set("Connection", "keep-alive")
 
-		answer, modelResult, err := object.GetDocChatAnswer(auth.Owner, store, &req, c.GetAcceptLanguage())
+		answer, modelResult, err := object.GetDocChatAnswer(auth.Owner, store, &req, lang)
 		if err != nil {
 			recordSearchUsage(auth, "search-chat", "rag", "error", 0, c.Ctx.Request.RemoteAddr)
 			event := fmt.Sprintf("event: myerror\ndata: %s\n\n", err.Error())
@@ -421,7 +441,7 @@ func (c *ApiController) ChatDocs() {
 		return
 	}
 
-	answer, modelResult, err := object.GetDocChatAnswer(auth.Owner, store, &req, c.GetAcceptLanguage())
+	answer, modelResult, err := object.GetDocChatAnswer(auth.Owner, store, &req, lang)
 	if err != nil {
 		recordSearchUsage(auth, "search-chat", "rag", "error", 0, c.Ctx.Request.RemoteAddr)
 		c.ResponseError(err.Error())
@@ -435,6 +455,61 @@ func (c *ApiController) ChatDocs() {
 	recordSearchUsage(auth, "search-chat", "rag", "success", tokenCount, c.Ctx.Request.RemoteAddr)
 
 	c.ResponseOk(answer)
+}
+
+// chatDocsAISDK handles the AI SDK useChat data stream protocol.
+// Request: { "messages": [{ "role": "user", "content": "..." }] }
+// Response: AI SDK data stream format (0:"text"\n d:{...}\n)
+func (c *ApiController) chatDocsAISDK(auth *searchAuth, store, lang string, aiReq aiSDKRequest) {
+	// Extract query from the last user message.
+	var query string
+	for i := len(aiReq.Messages) - 1; i >= 0; i-- {
+		if aiReq.Messages[i].Role == "user" {
+			query = aiReq.Messages[i].Content
+			break
+		}
+	}
+	if query == "" {
+		c.writeAISDKError("no user message found")
+		return
+	}
+
+	chatReq := &object.DocChatRequest{Query: query}
+	answer, modelResult, err := object.GetDocChatAnswer(auth.Owner, store, chatReq, lang)
+	if err != nil {
+		recordSearchUsage(auth, "search-chat", "rag", "error", 0, c.Ctx.Request.RemoteAddr)
+		c.writeAISDKError(err.Error())
+		return
+	}
+
+	tokenCount := 0
+	if modelResult != nil {
+		tokenCount = modelResult.TotalTokenCount
+	}
+	recordSearchUsage(auth, "search-chat", "rag", "success", tokenCount, c.Ctx.Request.RemoteAddr)
+
+	// Write AI SDK data stream protocol response.
+	c.Ctx.ResponseWriter.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	c.Ctx.ResponseWriter.Header().Set("X-Vercel-AI-Data-Stream", "v1")
+	c.Ctx.ResponseWriter.Header().Set("Cache-Control", "no-cache")
+
+	// Text delta (type 0): the full answer as a single chunk.
+	escaped, _ := json.Marshal(answer)
+	_, _ = c.Ctx.ResponseWriter.Write([]byte(fmt.Sprintf("0:%s\n", string(escaped))))
+
+	// Finish step (type d).
+	_, _ = c.Ctx.ResponseWriter.Write([]byte("d:{\"finishReason\":\"stop\"}\n"))
+
+	c.Ctx.ResponseWriter.Flush()
+}
+
+// writeAISDKError writes an error in the AI SDK data stream protocol format.
+func (c *ApiController) writeAISDKError(msg string) {
+	c.Ctx.ResponseWriter.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	c.Ctx.ResponseWriter.Header().Set("X-Vercel-AI-Data-Stream", "v1")
+	escaped, _ := json.Marshal(msg)
+	_, _ = c.Ctx.ResponseWriter.Write([]byte(fmt.Sprintf("3:%s\n", string(escaped))))
+	c.Ctx.ResponseWriter.Flush()
 }
 
 // SearchDocsStats

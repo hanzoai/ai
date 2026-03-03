@@ -318,6 +318,11 @@ func ResolveProviderSecret(provider *Provider) error {
 			return "", fmt.Errorf("kms: empty secret reference for provider %q field %s", provider.Name, fieldName)
 		}
 
+		// Try env var first (e.g. FIREWORKS_API_KEY from cloud-search-config K8s Secret).
+		if envValue := os.Getenv(secretName); envValue != "" {
+			return envValue, nil
+		}
+
 		value, err := kms.getSecret(secretName, projectID)
 		if err != nil {
 			return "", fmt.Errorf("failed to resolve KMS secret for provider %q field %s: %w", provider.Name, fieldName, err)
