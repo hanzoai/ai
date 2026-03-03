@@ -465,8 +465,8 @@ func resolveConsoleKeys(org string) (publicKey, secretKey string) {
 	return "", ""
 }
 
-// recordTrace sends a Langfuse-compatible trace+generation event to the console
-// for observability. Traces are routed to per-org console projects using KMS secrets
+// recordTrace sends a trace+generation event to the console for observability.
+// Traces are routed to per-org console projects using KMS secrets
 // (console-pk-{org} / console-sk-{org}), enabling each org to see their own usage
 // in console.hanzo.ai. This is fire-and-forget — failures are silently ignored.
 func recordTrace(record *usageRecord, startTime time.Time) {
@@ -513,7 +513,7 @@ func recordTrace(record *usageRecord, startTime time.Time) {
 			record.CacheReadTokens, record.CacheWriteTokens,
 		)
 
-		// Build Langfuse ingestion batch with full org/user/cost context
+		// Build console ingestion batch with full org/user/cost context
 		batch := map[string]interface{}{
 			"batch": []map[string]interface{}{
 				{
