@@ -57,6 +57,14 @@ func CorsFilter(ctx *context.Context) {
 		return
 	}
 
+	// Widget keys (hz_*) are public credentials validated by the gateway's
+	// widget security middleware (origin + rate limit). They don't use IAM
+	// OAuth flows, so skip the RedirectUri-based origin check.
+	if token := parseBearerToken(ctx); strings.HasPrefix(token, "hz_") {
+		setCorsHeaders(ctx, origin)
+		return
+	}
+
 	// Check if origin is allowed based on IAM application's RedirectUris
 	setCorsHeaders(ctx, origin)
 	ok, err := isOriginAllowed(origin)
