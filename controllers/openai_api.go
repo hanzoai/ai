@@ -24,6 +24,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/beego/beego/logs"
 	"github.com/hanzoai/cloud/conf"
 	"github.com/hanzoai/cloud/model"
 	"github.com/hanzoai/cloud/object"
@@ -287,69 +288,74 @@ type usageRecord struct {
 	RequestID        string  `json:"requestId"`
 }
 
-// recordUsage sends a usage record to Commerce asynchronously (fire-and-forget).
-// All successful API calls are tracked regardless of tier (DO-AI costs money too).
-// Premium flag controls balance checks, not usage recording.
+// billingQueue is the singleton usage record delivery queue. Initialized by
+// InitBillingQueue() in main.go. If nil (Commerce not configured), recordUsage
+// is a no-op.
+var billingQueue *util.BillingQueue
+
+// InitBillingQueue creates the billing queue from app config. Must be called
+// once during startup. Returns the queue so main.go can call Shutdown().
+func InitBillingQueue() *util.BillingQueue {
+	endpoint := conf.GetConfigString("commerceEndpoint")
+	if endpoint == "" {
+		return nil
+	}
+	endpoint = strings.TrimRight(endpoint, "/")
+	token := conf.GetConfigString("commerceToken")
+
+	billingQueue = util.NewBillingQueue(endpoint, token)
+	return billingQueue
+}
+
+// recordUsage serializes a usage record and enqueues it for reliable delivery
+// to Commerce. The queue handles retries with exponential backoff.
+// Only successful API calls are recorded (error status is filtered here).
 func recordUsage(record *usageRecord) {
-	go func() {
-		commerceEndpoint := conf.GetConfigString("commerceEndpoint")
-		if commerceEndpoint == "" {
-			return
-		}
-		commerceEndpoint = strings.TrimRight(commerceEndpoint, "/")
-		commerceToken := conf.GetConfigString("commerceToken")
+	if billingQueue == nil {
+		return
+	}
 
-		// Only record successful calls
-		if record.Status != "success" {
-			return
-		}
+	// Only record successful calls
+	if record.Status != "success" {
+		return
+	}
 
-		// Calculate cost from per-model pricing table (cache-aware)
-		costCents := calculateCostCentsWithCache(
-			record.Model, record.PromptTokens, record.CompletionTokens,
-			record.CacheReadTokens, record.CacheWriteTokens,
-		)
+	// Calculate cost from per-model pricing table (cache-aware)
+	costCents := calculateCostCentsWithCache(
+		record.Model, record.PromptTokens, record.CompletionTokens,
+		record.CacheReadTokens, record.CacheWriteTokens,
+	)
 
-		payload := map[string]interface{}{
-			"user":             record.User,
-			"currency":         "usd",
-			"amount":           costCents,
-			"model":            record.Model,
-			"provider":         record.Provider,
-			"promptTokens":     record.PromptTokens,
-			"completionTokens": record.CompletionTokens,
-			"totalTokens":      record.TotalTokens,
-			"cacheReadTokens":  record.CacheReadTokens,
-			"cacheWriteTokens": record.CacheWriteTokens,
-			"requestId":        record.RequestID,
-			"premium":          record.Premium,
-			"stream":           record.Stream,
-			"status":           record.Status,
-			"clientIp":         record.ClientIP,
-		}
+	payload := map[string]interface{}{
+		"user":             record.User,
+		"currency":         "usd",
+		"amount":           costCents,
+		"model":            record.Model,
+		"provider":         record.Provider,
+		"promptTokens":     record.PromptTokens,
+		"completionTokens": record.CompletionTokens,
+		"totalTokens":      record.TotalTokens,
+		"cacheReadTokens":  record.CacheReadTokens,
+		"cacheWriteTokens": record.CacheWriteTokens,
+		"requestId":        record.RequestID,
+		"premium":          record.Premium,
+		"stream":           record.Stream,
+		"status":           record.Status,
+		"clientIp":         record.ClientIP,
+	}
 
-		body, err := json.Marshal(payload)
-		if err != nil {
-			return
-		}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		logs.Error("billing: failed to marshal usage record request_id=%s: %v", record.RequestID, err)
+		return
+	}
 
-		url := commerceEndpoint + "/api/v1/billing/usage"
-		client := &http.Client{Timeout: 5 * time.Second}
-		req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
-		if err != nil {
-			return
-		}
-		req.Header.Set("Content-Type", "application/json")
-		if commerceToken != "" {
-			req.Header.Set("Authorization", "Bearer "+commerceToken)
-		}
-
-		resp, err := client.Do(req)
-		if err != nil {
-			return // best-effort, don't block model serving
-		}
-		resp.Body.Close()
-	}()
+	billingQueue.Enqueue(&util.BillingRecord{
+		Body:      body,
+		RequestID: record.RequestID,
+		User:      record.User,
+		Model:     record.Model,
+	})
 }
 
 // resolveConsoleKeys returns the console API key pair for the given org.

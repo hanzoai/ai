@@ -18,6 +18,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/beego/beego"
 	"github.com/beego/beego/logs"
@@ -56,10 +59,16 @@ func main() {
 	object.InitScanJobProcessor()
 	object.InitMessageTransactionRetry()
 
+	// Initialize per-key rate limiting. Tier resolution is env-driven via
+	// RATE_LIMIT_TIERS (e.g. "hk-0d2eb=enterprise,hk-feb5b=pro").
+	rlInstance := routers.InitRateLimiter(routers.DefaultTierFunc)
+	logs.Info("Per-key rate limiter initialized (tiers: free=10/min, starter=60/min, pro=300/min, enterprise=1000/min)")
+
 	beego.SetStaticPath("/swagger", "swagger")
 	beego.InsertFilter("*", beego.BeforeRouter, routers.CorsFilter)
 	beego.InsertFilter("*", beego.BeforeRouter, routers.HstsFilter)
 	beego.InsertFilter("*", beego.BeforeRouter, routers.CacheControlFilter)
+	beego.InsertFilter("*", beego.BeforeRouter, routers.RateLimitFilter)
 	beego.InsertFilter("*", beego.BeforeRouter, routers.AutoSigninFilter)
 	beego.InsertFilter("*", beego.BeforeRouter, routers.StaticFilter)
 	beego.InsertFilter("*", beego.BeforeRouter, routers.TenantContextFilter)
@@ -110,6 +119,38 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+
+	// Initialize the billing usage queue. Records are retried with exponential
+	// backoff instead of being silently dropped on transient Commerce failures.
+	bq := controllers.InitBillingQueue()
+	if bq != nil {
+		logs.Info("Billing queue started (Commerce endpoint configured)")
+	}
+
+	// Graceful shutdown: drain billing queue and stop rate limiter.
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
+	go func() {
+		sig := <-sigCh
+		logs.Info("Received %v, shutting down...", sig)
+
+		if rlInstance != nil {
+			rlInstance.Stop()
+			allowed, denied := rlInstance.Metrics()
+			logs.Info("Rate limiter stopped (total_allowed=%d total_denied=%d)", allowed, denied)
+		}
+
+		if bq != nil {
+			remaining := bq.Shutdown()
+			if remaining > 0 {
+				logs.Error("Billing queue shutdown: %d records could not be delivered", remaining)
+			} else {
+				logs.Info("Billing queue drained successfully")
+			}
+		}
+
+		os.Exit(0)
+	}()
 
 	go object.ClearThroughputPerSecond()
 
