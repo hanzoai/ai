@@ -204,7 +204,7 @@ func (c *ApiController) requireIndexAuth() *searchAuth {
 }
 
 // recordSearchUsage sends a usage record to Commerce for search/scrape/chat-docs operations.
-// This follows the same fire-and-forget pattern as recordUsage() in openai_api.go.
+// Delegates to recordUsage() which enqueues the record for reliable delivery with retries.
 func recordSearchUsage(auth *searchAuth, model, provider, status string, units int, clientIP string) {
 	// Calculate cost in cents based on operation type
 	var costCents int64
