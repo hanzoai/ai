@@ -26,6 +26,15 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// zapModelEntry is used by ListModelsWithUpstream for ZAP responses.
+type zapModelEntry struct {
+	ID       string `json:"id"`
+	Object   string `json:"object"`
+	OwnedBy  string `json:"owned_by"`
+	Premium  bool   `json:"premium,omitempty"`
+	Upstream string `json:"upstream,omitempty"`
+}
+
 // ── YAML config types ───────────────────────────────────────────────────
 
 // ModelConfigFile is the top-level structure of conf/models.yaml.
