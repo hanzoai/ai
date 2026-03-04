@@ -15,7 +15,9 @@
 package routers
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"math"
 	"net/http"
 	"strings"
@@ -317,33 +319,45 @@ func extractAPIKey(ctx *context.Context) string {
 
 // ── Tier resolution ─────────────────────────────────────────────────────────
 
-// DefaultTierFunc resolves an API key to a Tier. It checks the RATE_LIMIT_TIERS
-// environment variable (or app.conf key) for a comma-separated mapping of
-// "key_prefix=tier" entries. Unmatched keys default to TierZenFree.
+// DefaultTierFunc resolves an API key to a Tier using a three-level lookup:
 //
-// Example env: RATE_LIMIT_TIERS=hk-0d2eb=zen-enterprise,hk-feb5b=zen-pro
+//  1. Static env-var overrides (RATE_LIMIT_TIERS) -- highest priority, for
+//     operator-managed key-to-tier mappings. Supports exact and prefix matching.
+//  2. Commerce tier cache -- backed by async lookups to Commerce billing API.
+//     On cache hit, the cached tier is returned immediately. On cache miss,
+//     TierZenFree is returned and a background goroutine populates the cache
+//     so the next request for this key uses the correct tier.
+//  3. TierZenFree -- default when no override or cache entry exists.
 //
-// Production systems should replace this with a database or IAM lookup;
-// this env-based approach provides a working baseline without external deps.
+// This function never blocks on network I/O. Commerce lookups happen
+// asynchronously; the worst case is that a new key's first few requests
+// are rate-limited at the free tier until the cache is populated.
 func DefaultTierFunc(apiKey string) Tier {
+	// Level 1: static env-var overrides (highest priority).
 	tierMap := parseTierConfig()
-	if tierMap == nil {
-		return TierZenFree
-	}
-
-	// Exact match first.
-	if t, ok := tierMap[apiKey]; ok {
-		return t
-	}
-
-	// Prefix match: allows configuring "hk-0d2eb=zen-enterprise" to match
-	// the full key "hk-0d2eb9cfafd049389f2904cad770a9d8".
-	for prefix, t := range tierMap {
-		if strings.HasPrefix(apiKey, prefix) {
+	if tierMap != nil {
+		// Exact match first.
+		if t, ok := tierMap[apiKey]; ok {
 			return t
+		}
+		// Prefix match: "hk-0d2eb=zen-enterprise" matches "hk-0d2eb9cfafd0...".
+		for prefix, t := range tierMap {
+			if strings.HasPrefix(apiKey, prefix) {
+				return t
+			}
 		}
 	}
 
+	// Level 2: Commerce-backed tier cache.
+	if tierCache != nil {
+		if tier, ok := tierCache.get(apiKey); ok {
+			return tier
+		}
+		// Cache miss: return TierZenFree now, populate cache asynchronously.
+		tierCache.refreshAsync(apiKey)
+	}
+
+	// Level 3: default.
 	return TierZenFree
 }
 
@@ -370,6 +384,185 @@ func parseTierConfig() map[string]Tier {
 		result[key] = tier
 	}
 	return result
+}
+
+// ── Commerce-backed tier cache ──────────────────────────────────────────────
+
+const (
+	// tierCacheTTL is how long a Commerce tier lookup remains valid.
+	tierCacheTTL = 5 * time.Minute
+
+	// tierCacheCleanupInterval is how often stale cache entries are evicted.
+	tierCacheCleanupInterval = 10 * time.Minute
+
+	// commerceHTTPTimeout is the per-request timeout for Commerce tier lookups.
+	commerceHTTPTimeout = 5 * time.Second
+)
+
+// tierCacheEntry holds a cached tier mapping for a single API key.
+type tierCacheEntry struct {
+	tier      Tier
+	fetchedAt time.Time
+}
+
+// TierCache caches apiKey-to-tier mappings resolved from Commerce. Stale
+// entries (older than tierCacheTTL) are lazily ignored on read and periodically
+// evicted by a background goroutine.
+type TierCache struct {
+	mu          sync.RWMutex
+	entries     map[string]*tierCacheEntry
+	lastCleanup time.Time
+
+	endpoint string       // Commerce base URL (e.g. "http://commerce:8001")
+	token    string       // Bearer token for Commerce API
+	client   *http.Client // shared HTTP client for tier lookups
+
+	// inflight tracks keys currently being fetched to avoid duplicate goroutines.
+	inflightMu sync.Mutex
+	inflight   map[string]struct{}
+}
+
+// tierCache is the package-level singleton, initialized by InitTierCache.
+var tierCache *TierCache
+
+// InitTierCache reads Commerce connection parameters from app config and
+// creates the tier cache. Must be called once during startup. If Commerce
+// is not configured (no commerceEndpoint), the cache is not created and
+// DefaultTierFunc falls back to env-var overrides or TierZenFree.
+func InitTierCache() {
+	endpoint := conf.GetConfigString("commerceEndpoint")
+	if endpoint == "" {
+		logs.Info("tier_cache: commerceEndpoint not configured, Commerce tier lookup disabled")
+		return
+	}
+	endpoint = strings.TrimRight(endpoint, "/")
+	token := conf.GetConfigString("commerceToken")
+
+	tc := &TierCache{
+		entries:     make(map[string]*tierCacheEntry),
+		lastCleanup: time.Now(),
+		endpoint:    endpoint,
+		token:       token,
+		client:      &http.Client{Timeout: commerceHTTPTimeout},
+		inflight:    make(map[string]struct{}),
+	}
+
+	go tc.cleanupLoop()
+
+	tierCache = tc
+	logs.Info("tier_cache: initialized (endpoint=%s, ttl=%v)", endpoint, tierCacheTTL)
+}
+
+// get returns a cached tier for the given key, or ("", false) on cache miss
+// or stale entry.
+func (tc *TierCache) get(apiKey string) (Tier, bool) {
+	tc.mu.RLock()
+	entry, ok := tc.entries[apiKey]
+	tc.mu.RUnlock()
+
+	if !ok {
+		return "", false
+	}
+	if time.Since(entry.fetchedAt) > tierCacheTTL {
+		return "", false
+	}
+	return entry.tier, true
+}
+
+// set stores a tier mapping in the cache.
+func (tc *TierCache) set(apiKey string, tier Tier) {
+	tc.mu.Lock()
+	tc.entries[apiKey] = &tierCacheEntry{
+		tier:      tier,
+		fetchedAt: time.Now(),
+	}
+	tc.mu.Unlock()
+}
+
+// refreshAsync kicks off a background goroutine to fetch the tier from Commerce
+// and populate the cache. If a fetch for the same key is already in flight,
+// this is a no-op. This ensures rate limiting never blocks on Commerce latency.
+func (tc *TierCache) refreshAsync(apiKey string) {
+	tc.inflightMu.Lock()
+	if _, running := tc.inflight[apiKey]; running {
+		tc.inflightMu.Unlock()
+		return
+	}
+	tc.inflight[apiKey] = struct{}{}
+	tc.inflightMu.Unlock()
+
+	go func() {
+		defer func() {
+			tc.inflightMu.Lock()
+			delete(tc.inflight, apiKey)
+			tc.inflightMu.Unlock()
+		}()
+
+		tier, err := tc.commerceTierLookup(apiKey)
+		if err != nil {
+			logs.Warning("tier_cache: Commerce lookup failed for key=%s: %v (defaulting to zen-free)", maskKey(apiKey), err)
+			tier = TierZenFree
+		}
+		tc.set(apiKey, tier)
+	}()
+}
+
+// cleanupLoop periodically removes stale entries from the cache.
+func (tc *TierCache) cleanupLoop() {
+	ticker := time.NewTicker(tierCacheCleanupInterval)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		now := time.Now()
+		tc.mu.Lock()
+		for key, entry := range tc.entries {
+			if now.Sub(entry.fetchedAt) > tierCacheTTL {
+				delete(tc.entries, key)
+			}
+		}
+		tc.lastCleanup = now
+		tc.mu.Unlock()
+	}
+}
+
+// commercePlanResponse is the expected JSON shape from the Commerce tier endpoint.
+type commercePlanResponse struct {
+	Plan string `json:"plan"`
+}
+
+// commerceTierLookup calls Commerce to resolve the billing plan for an API key
+// and maps the plan name to a rate limit Tier. Returns TierZenFree on any error
+// (fail-open: rate limiting should never deny service because Commerce is down).
+func (tc *TierCache) commerceTierLookup(apiKey string) (Tier, error) {
+	url := fmt.Sprintf("%s/api/v1/billing/tier?apiKey=%s", tc.endpoint, apiKey)
+
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return TierZenFree, fmt.Errorf("build request: %w", err)
+	}
+	if tc.token != "" {
+		req.Header.Set("Authorization", "Bearer "+tc.token)
+	}
+
+	resp, err := tc.client.Do(req)
+	if err != nil {
+		return TierZenFree, fmt.Errorf("http: %w", err)
+	}
+	defer func() {
+		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+	}()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return TierZenFree, fmt.Errorf("commerce returned %d", resp.StatusCode)
+	}
+
+	var planResp commercePlanResponse
+	if err := json.NewDecoder(resp.Body).Decode(&planResp); err != nil {
+		return TierZenFree, fmt.Errorf("decode response: %w", err)
+	}
+
+	return mapPlanToTier(planResp.Plan), nil
 }
 
 // mapPlanToTier converts a Commerce plan name or legacy tier name to a
