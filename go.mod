@@ -49,6 +49,7 @@ require (
 	github.com/lib/pq v1.10.2
 	github.com/luthermonson/go-proxmox v0.2.1
 	github.com/luxfi/metric v1.4.0
+	github.com/luxfi/zap v0.2.0
 	github.com/openai/openai-go/v2 v2.1.1
 	github.com/oschwald/geoip2-golang v1.11.0
 	github.com/pkg/errors v0.9.1
@@ -70,6 +71,7 @@ require (
 	github.com/workweixin/weworkapi_golang v0.0.0-20200831071321-c1fdfd3d6e7d
 	golang.org/x/net v0.40.0
 	golang.org/x/text v0.25.0
+	golang.org/x/time v0.9.0
 	google.golang.org/genai v1.10.0
 	google.golang.org/grpc v1.71.0
 	k8s.io/api v0.30.0
@@ -98,6 +100,7 @@ require (
 	github.com/bits-and-blooms/bitset v1.20.0 // indirect
 	github.com/blang/semver/v4 v4.0.0 // indirect
 	github.com/carapace-sh/carapace-shlex v1.0.1 // indirect
+	github.com/cenkalti/backoff v2.2.1+incompatible // indirect
 	github.com/clbanning/mxj/v2 v2.7.0 // indirect
 	github.com/consensys/gnark-crypto v0.18.0 // indirect
 	github.com/crate-crypto/go-eth-kzg v1.3.0 // indirect
@@ -107,11 +110,14 @@ require (
 	github.com/ethereum/c-kzg-4844/v2 v2.1.0 // indirect
 	github.com/ethereum/go-verkle v0.2.2 // indirect
 	github.com/go-errors/errors v1.4.2 // indirect
+	github.com/grandcat/zeroconf v1.0.0 // indirect
 	github.com/hhrutter/lzw v1.0.0 // indirect
 	github.com/hhrutter/pkcs7 v0.2.0 // indirect
 	github.com/hhrutter/tiff v1.0.2 // indirect
 	github.com/holiman/uint256 v1.3.2 // indirect
+	github.com/luxfi/mdns v0.1.0 // indirect
 	github.com/mattn/go-runewidth v0.0.16 // indirect
+	github.com/miekg/dns v1.1.62 // indirect
 	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db // indirect
 	github.com/monochromegane/go-gitignore v0.0.0-20200626010858-205db1a8cc00 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
@@ -122,7 +128,6 @@ require (
 	go.yaml.in/yaml/v2 v2.4.2 // indirect
 	go.yaml.in/yaml/v3 v3.0.3 // indirect
 	golang.org/x/image v0.27.0 // indirect
-	golang.org/x/time v0.9.0 // indirect
 	gopkg.in/evanphx/json-patch.v4 v4.12.0 // indirect
 )
 
