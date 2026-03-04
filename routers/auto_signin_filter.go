@@ -20,10 +20,19 @@ import (
 	"github.com/beego/beego/context"
 )
 
+// isJwtLike returns true if the token looks like a JWT (three dot-separated segments).
+func isJwtLike(token string) bool {
+	parts := strings.Split(token, ".")
+	return len(parts) == 3 && len(parts[0]) > 10 && len(parts[1]) > 10
+}
+
 func AutoSigninFilter(ctx *context.Context) {
 	urlPath := ctx.Request.URL.Path
 
-	// Skip endpoints that handle their own auth.
+	// Skip endpoints that handle their own auth (chat completions, models,
+	// search/index/scrape, and /v1/ routes). These controllers validate
+	// hk-*/pk-*/sk-* keys and JWTs directly, so the legacy MD5-based
+	// access-token check here would incorrectly reject them.
 	if strings.HasSuffix(urlPath, "/chat/completions") ||
 		strings.HasSuffix(urlPath, "/completions") ||
 		urlPath == "/api/models" ||
@@ -49,10 +58,13 @@ func AutoSigninFilter(ctx *context.Context) {
 		accessToken = parseBearerToken(ctx)
 	}
 	if accessToken != "" {
-		// Skip non-legacy tokens — controllers handle hk-*, pk-*, sk-*, JWT auth.
+		// IAM API keys (hk-*), publishable keys (pk-*), secret keys (sk-*),
+		// and JWT tokens are validated by each controller's own auth logic.
+		// Only legacy MD5-based access tokens should be handled here.
 		if strings.HasPrefix(accessToken, "hk-") ||
 			strings.HasPrefix(accessToken, "pk-") ||
-			strings.HasPrefix(accessToken, "sk-") {
+			strings.HasPrefix(accessToken, "sk-") ||
+			isJwtLike(accessToken) {
 			return
 		}
 
