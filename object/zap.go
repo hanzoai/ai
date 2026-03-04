@@ -61,6 +61,7 @@ const (
 	MsgTypeSQL       uint16 = 300
 	MsgTypeKV        uint16 = 301
 	MsgTypeDatastore uint16 = 302
+	MsgTypeDocdb     uint16 = 303
 
 	// ── Cloud service message layout ────────────────────────────────
 	// Request:  method(0:Text) + auth(8:Text) + body(16:Bytes)
@@ -87,6 +88,7 @@ var (
 	kvPeerID        string
 	sqlPeerID       string
 	datastorePeerID string
+	docdbPeerID     string
 	zapMu           sync.RWMutex
 	zapReady        bool
 )
@@ -145,6 +147,11 @@ func InitZap() {
 	// Datastore (ClickHouse) — optional, for observability traces.
 	if datastoreAddr := os.Getenv("ZAP_DATASTORE_ADDR"); datastoreAddr != "" {
 		go connectPeer(node, datastoreAddr, "datastore", &datastorePeerID)
+	}
+
+	// DocDB (FerretDB) — optional, document database via SQL wire protocol.
+	if docdbAddr := os.Getenv("ZAP_DOCDB_ADDR"); docdbAddr != "" {
+		go connectPeer(node, docdbAddr, "docdb", &docdbPeerID)
 	}
 }
 
@@ -379,6 +386,62 @@ func DatastoreEnabled() bool {
 	zapMu.RLock()
 	defer zapMu.RUnlock()
 	return zapReady && datastorePeerID != ""
+}
+
+// ── DocDB client (native ZAP-to-ZAP → FerretDB) ─────────────────────────
+
+// ZapDocdbQuery executes a read query on DocDB via native ZAP binary.
+func ZapDocdbQuery(ctx context.Context, sql string, args ...interface{}) ([]map[string]interface{}, error) {
+	zapMu.RLock()
+	node, peer := zapNode, docdbPeerID
+	zapMu.RUnlock()
+
+	if node == nil || peer == "" {
+		return nil, fmt.Errorf("zap: docdb not connected")
+	}
+
+	body, _ := json.Marshal(map[string]interface{}{"sql": sql, "args": args})
+	status, resp, err := zapCallBackend(ctx, node, peer, MsgTypeDocdb, "/query", body)
+	if err != nil {
+		return nil, err
+	}
+	if status != 200 {
+		return nil, fmt.Errorf("zap: docdb query: status %d", status)
+	}
+
+	var rows []map[string]interface{}
+	if err := json.Unmarshal(resp, &rows); err != nil {
+		return nil, fmt.Errorf("zap: docdb unmarshal: %w", err)
+	}
+	return rows, nil
+}
+
+// ZapDocdbExec executes a write query on DocDB via native ZAP binary.
+func ZapDocdbExec(ctx context.Context, sql string, args ...interface{}) error {
+	zapMu.RLock()
+	node, peer := zapNode, docdbPeerID
+	zapMu.RUnlock()
+
+	if node == nil || peer == "" {
+		return fmt.Errorf("zap: docdb not connected")
+	}
+
+	body, _ := json.Marshal(map[string]interface{}{"sql": sql, "args": args})
+	status, _, err := zapCallBackend(ctx, node, peer, MsgTypeDocdb, "/exec", body)
+	if err != nil {
+		return err
+	}
+	if status != 200 {
+		return fmt.Errorf("zap: docdb exec: status %d", status)
+	}
+	return nil
+}
+
+// DocdbEnabled returns true if the docdb peer is connected.
+func DocdbEnabled() bool {
+	zapMu.RLock()
+	defer zapMu.RUnlock()
+	return zapReady && docdbPeerID != ""
 }
 
 // ── Gateway response builder ─────────────────────────────────────────────
