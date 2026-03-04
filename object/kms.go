@@ -16,6 +16,7 @@ package object
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -202,16 +203,31 @@ type kmsSecretResponse struct {
 }
 
 // getSecret fetches a secret value by name from KMS, scoped to a project.
-// Results are cached for kmsSecTTL (5 minutes) keyed by project+name.
+// Cache hierarchy: ZAP→KV (distributed, survives restarts) → in-memory (5 min TTL).
+// On cache miss, fetches from KMS API and populates both caches.
 func (c *kmsClient) getSecret(name string, projectID string) (string, error) {
 	cacheKey := projectID + "/" + name
 
+	// L1: in-memory cache
 	kmsSecMu.RLock()
 	entry, ok := kmsSecrets[cacheKey]
 	kmsSecMu.RUnlock()
 
 	if ok && time.Since(entry.fetchedAt) < kmsSecTTL {
 		return entry.value, nil
+	}
+
+	// L2: distributed KV cache via ZAP (survives pod restarts)
+	if ZapEnabled() {
+		kvKey := "kms:" + cacheKey
+		val, err := ZapKVGet(context.Background(), kvKey)
+		if err == nil && val != "" {
+			// Populate L1 from L2 hit
+			kmsSecMu.Lock()
+			kmsSecrets[cacheKey] = &kmsSecretEntry{value: val, fetchedAt: time.Now()}
+			kmsSecMu.Unlock()
+			return val, nil
+		}
 	}
 
 	token, err := c.getAuthToken()
@@ -251,9 +267,16 @@ func (c *kmsClient) getSecret(name string, projectID string) (string, error) {
 
 	value := kmsResp.Secret.SecretValue
 
+	// Populate L1 in-memory cache.
 	kmsSecMu.Lock()
 	kmsSecrets[cacheKey] = &kmsSecretEntry{value: value, fetchedAt: time.Now()}
 	kmsSecMu.Unlock()
+
+	// Populate L2 distributed KV cache via ZAP (5 min TTL).
+	if ZapEnabled() {
+		kvKey := "kms:" + cacheKey
+		_ = ZapKVSetEx(context.Background(), kvKey, value, int(kmsSecTTL.Seconds()))
+	}
 
 	return value, nil
 }
