@@ -63,8 +63,12 @@ func main() {
 	// Uses the same Commerce endpoint as the billing queue.
 	routers.InitBalanceGate()
 
-	// Initialize per-key rate limiting. Tier resolution is env-driven via
-	// RATE_LIMIT_TIERS (e.g. "hk-0d2eb=enterprise,hk-feb5b=pro").
+	// Initialize Commerce-backed tier cache for dynamic billing plan lookups.
+	// Must be called before InitRateLimiter so DefaultTierFunc can use it.
+	routers.InitTierCache()
+
+	// Initialize per-key rate limiting. Tier resolution checks env-var overrides
+	// first (RATE_LIMIT_TIERS), then Commerce tier cache, then defaults to zen-free.
 	rlInstance := routers.InitRateLimiter(routers.DefaultTierFunc)
 	logs.Info("Per-key rate limiter initialized (tiers: free=10/min, starter=60/min, pro=300/min, enterprise=1000/min)")
 
