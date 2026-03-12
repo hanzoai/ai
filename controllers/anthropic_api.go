@@ -34,21 +34,62 @@ import (
 type AnthropicRequest struct {
 	Model     string             `json:"model"`
 	MaxTokens int                `json:"max_tokens"`
-	System    string             `json:"system,omitempty"`
+	System    json.RawMessage    `json:"system,omitempty"`
 	Messages  []AnthropicMessage `json:"messages"`
 	Stream    bool               `json:"stream"`
 }
 
+// SystemText returns the system prompt as a plain string.
+// Handles both string format ("You are helpful") and array format
+// ([{"type":"text","text":"You are helpful"}]) used by the Anthropic SDK.
+func (r *AnthropicRequest) SystemText() string {
+	return rawContentToText(r.System)
+}
+
 // AnthropicMessage is a single message in the Anthropic conversation.
+// Content accepts both string ("hello") and array-of-blocks
+// ([{"type":"text","text":"hello"}]) formats per the Anthropic Messages API.
 type AnthropicMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role    string          `json:"role"`
+	Content json.RawMessage `json:"content"`
+}
+
+// ContentText returns the message content as a plain string.
+// Handles both string format and array-of-content-blocks format.
+func (m *AnthropicMessage) ContentText() string {
+	return rawContentToText(m.Content)
 }
 
 // AnthropicContentBlock is a content block in the response.
 type AnthropicContentBlock struct {
 	Type string `json:"type"`
 	Text string `json:"text"`
+}
+
+// rawContentToText converts a json.RawMessage that is either a JSON string
+// or an array of AnthropicContentBlock into a plain Go string.
+func rawContentToText(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	// Fast path: try string first (most common for simple messages).
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		return s
+	}
+	// Slow path: array of content blocks.
+	var blocks []AnthropicContentBlock
+	if err := json.Unmarshal(raw, &blocks); err == nil {
+		var parts []string
+		for _, b := range blocks {
+			if b.Type == "text" && b.Text != "" {
+				parts = append(parts, b.Text)
+			}
+		}
+		return strings.Join(parts, "\n")
+	}
+	// Fallback: return raw JSON as string (shouldn't happen in practice).
+	return string(raw)
 }
 
 // AnthropicUsage tracks token counts.
@@ -382,17 +423,17 @@ func (c *ApiController) AnthropicMessages() {
 	oaiMessages := make([]openai.ChatCompletionMessage, 0, len(request.Messages)+1)
 
 	// Anthropic system prompt is a top-level field, not a message.
-	if request.System != "" {
+	if sysText := request.SystemText(); sysText != "" {
 		oaiMessages = append(oaiMessages, openai.ChatCompletionMessage{
 			Role:    "system",
-			Content: request.System,
+			Content: sysText,
 		})
 	}
 
 	for _, msg := range request.Messages {
 		oaiMessages = append(oaiMessages, openai.ChatCompletionMessage{
 			Role:    msg.Role,
-			Content: msg.Content,
+			Content: msg.ContentText(),
 		})
 	}
 
