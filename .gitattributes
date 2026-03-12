@@ -1,3 +1,6 @@
+# Ensure Go source is always stored with LF in the repo (gofumpt rejects CRLF)
+*.go text eol=lf
+
 *.html linguist-language=go
 *.css linguist-language=go
 *.js linguist-language=go
