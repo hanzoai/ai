@@ -75,8 +75,8 @@ const (
 	CloudRespError  = 12
 
 	// ── Sidecar message layout (matches ORM driver) ─────────────────
-	sidecarReqPath  = 4
-	sidecarReqBody  = 12
+	sidecarReqPath    = 4
+	sidecarReqBody    = 12
 	sidecarRespStatus = 0
 	sidecarRespBody   = 4
 )
