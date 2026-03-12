@@ -177,6 +177,10 @@ func (w *AnthropicWriter) Write(p []byte) (n int, err error) {
 				"role":    "assistant",
 				"content": []interface{}{},
 				"model":   w.Model,
+				"usage": map[string]interface{}{
+					"input_tokens":  0,
+					"output_tokens": 0,
+				},
 			},
 		}
 		if err := w.writeSSE("message_start", msgStart); err != nil {
