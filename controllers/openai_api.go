@@ -470,7 +470,9 @@ func resolveConsoleKeys(org string) (publicKey, secretKey string) {
 // (console-pk-{org} / console-sk-{org}), enabling each org to see their own usage
 // in console.hanzo.ai. This is fire-and-forget — failures are silently ignored.
 func recordTrace(record *usageRecord, startTime time.Time) {
-	// Write to ClickHouse via native ZAP if datastore is connected.
+	// Write billing record to ClickHouse for invoice reconciliation.
+	go zapWriteUsage(record, startTime)
+	// Write observability trace to ClickHouse via native ZAP.
 	go zapWriteTrace(record, startTime)
 
 	go func() {
