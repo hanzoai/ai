@@ -44,18 +44,22 @@ func InitAuthConfig() {
 	iamsdk.InitConfig(iamEndpoint, clientId, clientSecret, "", iamOrganization, iamApplication)
 	application, err := iamsdk.GetApplication(iamApplication)
 	if err != nil {
-		panic(err)
+		fmt.Printf("[WARN] Failed to get IAM application %q: %v (auth features disabled)\n", iamApplication, err)
+		return
 	}
 	if application == nil {
-		panic(fmt.Errorf("The application: %s does not exist", iamApplication))
+		fmt.Printf("[WARN] IAM application %q does not exist (auth features disabled)\n", iamApplication)
+		return
 	}
 
 	cert, err := iamsdk.GetCert(application.Cert)
 	if err != nil {
-		panic(err)
+		fmt.Printf("[WARN] Failed to get cert %q for application %q: %v (auth features disabled)\n", application.Cert, iamApplication, err)
+		return
 	}
 	if cert == nil {
-		panic(fmt.Errorf("The cert: %s does not exist", application.Cert))
+		fmt.Printf("[WARN] Cert %q for application %q does not exist (auth features disabled)\n", application.Cert, iamApplication)
+		return
 	}
 
 	iamsdk.InitConfig(iamEndpoint, clientId, clientSecret, cert.Certificate, iamOrganization, iamApplication)
