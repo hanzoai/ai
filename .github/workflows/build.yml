@@ -188,3 +188,41 @@ jobs:
       image: ghcr.io/hanzoai/cloud-allinone
       target: allinone
     secrets: inherit
+
+  dispatch-to-universe:
+    needs: docker
+    if: github.repository == 'hanzoai/cloud' && github.event_name == 'push' && needs.docker.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Compute image URI
+        id: meta
+        run: |
+          IMAGE="ghcr.io/hanzoai/cloud"
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            TAG="${GITHUB_REF#refs/tags/v}"
+          elif [[ "$GITHUB_REF" == refs/heads/* ]]; then
+            TAG="${GITHUB_REF#refs/heads/}"
+          else
+            TAG="${GITHUB_SHA}"
+          fi
+          echo "image=${IMAGE}:${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Dispatch image update to universe
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.UNIVERSE_DISPATCH_TOKEN }}
+          repository: hanzoai/universe
+          event-type: image-update
+          client-payload: |
+            {
+              "service": "cloud-api",
+              "image": "${{ steps.meta.outputs.image }}",
+              "sha": "${{ github.sha }}",
+              "repo": "${{ github.repository }}"
+            }
+
+      - name: Summary
+        run: |
+          echo "### Deploy dispatched to universe" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Image:** ${{ steps.meta.outputs.image }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Flow:** image-receiver -> staging -> E2E -> production" >> "$GITHUB_STEP_SUMMARY"
