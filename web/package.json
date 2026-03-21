@@ -19,6 +19,7 @@
     "aliplayer-react": "^0.7.0",
     "antd": "5.24.0",
     "antd-token-previewer": "^2.0.8",
+    "autoprefixer": "^10.4.20",
     "bpmn-font": "^0.12.1",
     "bpmn-js": "^18.4.0",
     "bpmn-js-color-picker": "^0.7.2",
@@ -26,9 +27,11 @@
     "bpmn-js-element-templates": "^2.11.0",
     "bpmn-js-properties-panel": "^5.35.0",
     "camunda-bpmn-moddle": "^7.0.1",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
     "codemirror": "^6.0.1",
+    "cookie": "^1.1.1",
     "copy-to-clipboard": "^3.3.1",
-    "craco-less": "2.0.0",
     "d3-force": "^3.0.0",
     "dayjs": "^1.11.19",
     "dompurify": "^3.0.9",
@@ -43,17 +46,20 @@
     "identicon.js": "^2.3.3",
     "js-base64": "^3.7.7",
     "katex": "^0.16.9",
+    "lodash": "4.17.21",
+    "lucide-react": "^0.468.0",
     "marked": "^12.0.1",
     "md5": "^2.3.0",
     "moment": "^2.29.1",
     "papaparse": "^5.4.1",
+    "postcss": "^8.4.49",
     "rc-bullets": "^1.5.16",
     "react": "^18.2.0",
     "react-bpmn": "^0.2.0",
     "react-device-detect": "1.17.0",
     "react-dom": "^18.2.0",
     "react-draggable": "^4.4.6",
-    "react-file-viewer": "^1.2.1",
+    "react-file-viewer": "1.2.1",
     "react-force-graph": "^1.48.1",
     "react-force-graph-2d": "^1.29.0",
     "react-github-corner": "^2.5.0",
@@ -67,6 +73,9 @@
     "remark-frontmatter": "^4.0.1",
     "remark-gfm": "^3.0.1",
     "remark-math": "^6.0.0",
+    "sonner": "^1.7.1",
+    "tailwind-merge": "^2.6.0",
+    "tailwindcss": "^3.4.17",
     "xlsx": "^0.16.9"
   },
   "scripts": {
@@ -76,10 +85,9 @@
     "test": "craco test",
     "eject": "craco eject",
     "analyze": "source-map-explorer 'build/static/js/*.js'",
-    "preinstall": "node -e \"if (process.env.npm_execpath.indexOf('yarn') === -1) throw new Error('Use yarn for installing: https://yarnpkg.com/en/docs/install')\"",
     "fix": "eslint --fix src/ --ext .js",
     "lint:js": "eslint --fix src/ --ext .js",
-    "lint:css": "stylelint src/**/*.{css,less} --fix",
+    "lint:css": "stylelint src/**/*.css --fix",
     "lint": "yarn lint:js && yarn lint:css"
   },
   "eslintConfig": {
@@ -89,14 +97,12 @@
     "production": [
       ">0.2%",
       "not dead",
-      "not op_mini all",
-      "ie 9, ie 10, ie 11"
+      "not op_mini all"
     ],
     "development": [
       "last 1 chrome version",
       "last 1 firefox version",
-      "last 1 safari version",
-      "ie 9, ie 10, ie 11"
+      "last 1 safari version"
     ]
   },
   "devDependencies": {
@@ -107,23 +113,17 @@
     "cross-env": "^7.0.3",
     "eslint": "8.22.0",
     "eslint-plugin-react": "^7.31.1",
-    "husky": "^4.3.8",
+    "eslint-plugin-unused-imports": "^2.0.0",
     "lint-staged": "^13.0.3",
     "stylelint": "^14.11.0",
-    "stylelint-config-recommended-less": "^1.0.4",
     "stylelint-config-standard": "^28.0.0"
   },
   "lint-staged": {
-    "src/**/*.{css,less}": [
+    "src/**/*.css": [
       "stylelint --fix"
     ],
-    "src/**/*.{js,jsx,ts,tsx}": [
+    "src/**/*.{js,jsx}": [
       "eslint --fix"
     ]
-  },
-  "husky": {
-    "hooks": {
-      "pre-commit": "lint-staged"
-    }
   }
 }

@@ -14,7 +14,6 @@
 
 import React from "react";
 import {Link} from "react-router-dom";
-import {Button, Table} from "antd";
 import BaseListPage from "./BaseListPage";
 import moment from "moment";
 import * as Setting from "./Setting";
@@ -247,20 +246,18 @@ class CaaseListPage extends BaseListPage {
         render: (text, caase, index) => {
           return (
             <div>
-              <Button
-                style={{
+              <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{
                   marginTop: "10px",
                   marginBottom: "10px",
                   marginRight: "10px",
-                }}
-                onClick={() =>
+                }>
                   this.props.history.push(
                     `/caases/${caase.name}`
                   )
                 }
               >
                 {i18next.t("general:Edit")}
-              </Button>
+              </button>
               <PopconfirmModal
                 disabled={caase.owner !== this.props.account.owner}
                 style={{marginBottom: "10px"}}
@@ -288,29 +285,7 @@ class CaaseListPage extends BaseListPage {
 
     return (
       <div>
-        <Table
-          scroll={{x: "max-content"}}
-          columns={columns}
-          dataSource={caases}
-          rowKey={(caase) => `${caase.owner}/${caase.name}`}
-          size="middle"
-          bordered
-          pagination={paginationProps}
-          title={() => (
-            <div>
-              {i18next.t("med:Caases")}&nbsp;&nbsp;&nbsp;&nbsp;
-              <Button
-                type="primary"
-                size="small"
-                onClick={this.addCaase.bind(this)}
-              >
-                {i18next.t("general:Add")}
-              </Button>
-            </div>
-          )}
-          loading={this.state.loading}
-          onChange={this.handleTableChange}
-        />
+        <div className="overflow-x-auto border border-zinc-800 rounded-lg"><table className="w-full text-sm text-left"><thead className="bg-zinc-900/80 border-b border-zinc-800"><tr>{columns.map(col => <th key={col.key || col.dataIndex} className="px-3 py-2 text-xs font-medium text-zinc-400 whitespace-nowrap">{col.title}</th>)}</tr></thead><tbody className="divide-y divide-zinc-800/50">{(caases || []).map((record, index) => <tr key={typeof {(caase) => `${caase.owner} === "function" ? ({(caase) => `${caase.owner})(record) : record[{(caase) => `${caase.owner}] || index} className="hover:bg-zinc-900/50 transition-colors">{columns.map(col => <td key={col.key || col.dataIndex} className="px-3 py-2 text-zinc-300 whitespace-nowrap">{col.render ? col.render(record[col.dataIndex], record, index) : record[col.dataIndex]}</td>)}</tr>)}</tbody></table></div>
       </div>
     );
   }

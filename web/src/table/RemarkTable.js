@@ -13,15 +13,11 @@
 // limitations under the License.
 
 import React from "react";
-import {Button, Col, Input, Row, Select, Switch, Table, Tooltip} from "antd";
-import {DeleteOutlined, DownOutlined, UpOutlined} from "@ant-design/icons";
 import * as Setting from "../Setting";
 import i18next from "i18next";
 import moment from "moment/moment";
 import * as Conf from "../Conf";
 
-const {TextArea} = Input;
-const {Option} = Select;
 
 class RemarkTable extends React.Component {
   constructor(props) {
@@ -162,7 +158,7 @@ class RemarkTable extends React.Component {
         width: "130px",
         render: (text, record, index) => {
           return (
-            <Select disabled={this.props.disabled || this.requireSelfOrAdmin(record)} virtual={false} style={{width: "100%"}} value={this.filterRemark1Value(record, text)} onChange={(value => {
+            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.filterRemark1Value(record, text)} disabled> {
               this.updateField(table, index, "score", value);
             })}>
               {
@@ -171,9 +167,9 @@ class RemarkTable extends React.Component {
                   {id: "Good"},
                   {id: "Pass"},
                   {id: "Fail"},
-                ].map((item, index) => <Option key={index} value={item.id}>{Setting.getRemarkTag(item.id)}</Option>)
+                ].map((item, index) => <option key={index} value={item.id}>{Setting.getRemarkTag(item.id)}</option>)
               }
-            </Select>
+            </select>
           );
         },
       },
@@ -184,9 +180,7 @@ class RemarkTable extends React.Component {
         width: "110px",
         render: (text, record, index) => {
           return (
-            <Switch disabled={this.props.disabled || this.requireSelfOrAdmin(record)} checked={this.filterRemark1Value(record, text)} onChange={checked => {
-              this.updateField(table, index, "isPublic", checked);
-            }} />
+            <span className="px-2 py-0.5 rounded text-xs " + (this.filterRemark1Value(record, text) ? "bg-green-500/20 text-green-400" : "bg-zinc-800 text-zinc-500")">{this.filterRemark1Value(record, text) ? "ON" : "OFF"}</span>
           );
         },
       },
@@ -197,7 +191,7 @@ class RemarkTable extends React.Component {
         // width: '300px',
         render: (text, record, index) => {
           return (
-            <TextArea disabled={this.props.disabled || this.requireSelfOrAdmin(record)} showCount maxLength={250} autoSize={{minRows: 1, maxRows: 15}} value={this.filterRemark1Value(record, text)} onChange={(e) => {
+            <span className="text-zinc-300 text-sm"> {
               this.updateField(table, index, "text", e.target.value);
             }} />
           );
@@ -210,15 +204,15 @@ class RemarkTable extends React.Component {
         render: (text, record, index) => {
           return (
             <div>
-              <Tooltip placement="bottomLeft" title={"Up"}>
-                <Button style={{marginRight: "5px"}} disabled={index === 0 || this.props.disabled || this.requireAdmin()} icon={<UpOutlined />} size="small" onClick={() => this.upRow(table, index)} />
-              </Tooltip>
-              <Tooltip placement="topLeft" title={"Down"}>
-                <Button style={{marginRight: "5px"}} disabled={index === table.length - 1 || this.props.disabled || this.requireAdmin()} icon={<DownOutlined />} size="small" onClick={() => this.downRow(table, index)} />
-              </Tooltip>
-              <Tooltip placement="topLeft" title={"Delete"}>
-                <Button icon={<DeleteOutlined />} size="small" disabled={this.props.disabled || this.requireSelfOrAdmin(record)} onClick={() => this.deleteRow(table, index)} />
-              </Tooltip>
+              
+                <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-50" disabled={index === 0 || this.props.disabled || this.requireAdmin()} style={{marginRight: "5px"}>} size="small" onClick={() => this.upRow(table, index)} />
+              
+              
+                <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-50" disabled={index === table.length - 1 || this.props.disabled || this.requireAdmin()} style={{marginRight: "5px"}>} size="small" onClick={() => this.downRow(table, index)} />
+              
+              
+                <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700">} size="small" disabled={this.props.disabled || this.requireSelfOrAdmin(record)} onClick={() => this.deleteRow(table, index)} />
+              
             </div>
           );
         },
@@ -228,27 +222,20 @@ class RemarkTable extends React.Component {
     const myRowCount = table.filter((row) => row.user === this.props.account.name).length;
 
     return (
-      <Table rowKey="index" columns={columns} dataSource={table} size="middle" bordered pagination={false}
-        title={() => (
-          <div>
-            {this.props.title}&nbsp;&nbsp;&nbsp;&nbsp;
-            <Button style={{marginRight: "5px"}} type="primary" size="small" disabled={this.props.maxRowCount > 0 && table.length >= this.props.maxRowCount || myRowCount >= 1 || this.props.disabled || this.requireReviewer()} onClick={() => this.addRow(table)}>{i18next.t("general:Add")}</Button>
-          </div>
-        )}
-      />
+      <div className="overflow-x-auto border border-zinc-800 rounded-lg"><table className="w-full text-sm text-left"><thead className="bg-zinc-900/80 border-b border-zinc-800"><tr>{columns.map(col => <th key={col.key || col.dataIndex} className="px-3 py-2 text-xs font-medium text-zinc-400 whitespace-nowrap">{col.title}</th>)}</tr></thead><tbody className="divide-y divide-zinc-800/50">{(table || []).map((record, index) => <tr key={typeof "index" === "function" ? ("index")(record) : record["index"] || index} className="hover:bg-zinc-900/50 transition-colors">{columns.map(col => <td key={col.key || col.dataIndex} className="px-3 py-2 text-zinc-300 whitespace-nowrap">{col.render ? col.render(record[col.dataIndex], record, index) : record[col.dataIndex]}</td>)}</tr>)}</tbody></table></div>
     );
   }
 
   render() {
     return (
       <div>
-        <Row style={{marginTop: "20px"}} >
-          <Col span={24}>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {
               this.renderTable(this.props.table)
             }
-          </Col>
-        </Row>
+          </div>
+        </div>
       </div>
     );
   }

@@ -13,7 +13,6 @@
 // limitations under the License.
 
 import React from "react";
-import {Tabs} from "antd";
 import Editor from "../common/Editor";
 import i18next from "i18next";
 import NmapResultRenderer from "../renderers/NmapResultRenderer";
@@ -86,7 +85,7 @@ export function ScanResultRenderer({scanResult, scanRawResult, providerType, pro
 
   // Render with tabs for structured, raw JSON, and raw text views
   return (
-    <Tabs defaultActiveKey="structured" type="card">
+    <div>
       <TabPane tab={i18next.t("scan:Structured View")} key="structured">
         <div style={{padding: "16px", backgroundColor: "#f5f5f5", minHeight: minHeight}}>
           {providerType === "Nmap" && <NmapResultRenderer result={scanResult} />}
@@ -123,7 +122,7 @@ export function ScanResultRenderer({scanResult, scanRawResult, providerType, pro
           readOnly
         />
       </TabPane>
-    </Tabs>
+    </div>
   );
 }
 

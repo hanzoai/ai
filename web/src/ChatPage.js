@@ -13,8 +13,7 @@
 // limitations under the License.
 
 import React from "react";
-import {Button, Drawer, Modal, Spin} from "antd";
-import {BarsOutlined, CloseCircleFilled, MenuFoldOutlined, MenuUnfoldOutlined} from "@ant-design/icons";
+import {AlertCircle, Loader2, Menu, PanelLeftClose, PanelLeftOpen, X} from "lucide-react";
 import moment from "moment";
 import * as StoreBackend from "./backend/StoreBackend";
 import ChatMenu from "./ChatMenu";
@@ -42,7 +41,6 @@ class ChatPage extends BaseListPage {
     const savedCollapsedState = localStorage.getItem("chatMenuCollapsed");
     const chatMenuCollapsed = savedCollapsedState ? JSON.parse(savedCollapsedState) : false;
 
-    // if URL path contains store name, set it to the store select widget
     const currentStore = this.getStore();
     if (currentStore) {
       Setting.setStore(currentStore);
@@ -60,7 +58,7 @@ class ChatPage extends BaseListPage {
       defaultStore: null,
       filteredStores: [],
       paneCount: 1,
-      storeName: currentStore, // Store the current store name in state
+      storeName: currentStore,
     });
 
     this.fetch();
@@ -383,11 +381,7 @@ class ChatPage extends BaseListPage {
 
               res.data[res.data.length - 1] = lastMessage2;
               res.data.map((message, index) => {
-                if (index === res.data.length - 1 && message.author === "AI") {
-                  message.html = renderText(message.text);
-                } else {
-                  message.html = renderText(message.text);
-                }
+                message.html = renderText(message.text);
               });
               this.setState({
                 messages: res.data,
@@ -421,7 +415,6 @@ class ChatPage extends BaseListPage {
                 messages: res.data,
               });
             }, (data) => {
-              // onTool callback
               if (!chat || (this.state.chat.name !== chat.name)) {
                 return;
               }
@@ -443,7 +436,6 @@ class ChatPage extends BaseListPage {
                 messages: res.data,
               });
             }, (data) => {
-              // onSearch callback
               if (!chat || (this.state.chat.name !== chat.name)) {
                 return;
               }
@@ -493,30 +485,24 @@ class ChatPage extends BaseListPage {
               const lastMessage2 = Setting.deepCopy(lastMessage);
               lastMessage2.text = text;
 
-              // Preserve reasoning when finalizing the message
               if (res.data[res.data.length - 1].reasonText) {
                 lastMessage2.reasonText = res.data[res.data.length - 1].reasonText;
                 lastMessage2.reasonHtml = res.data[res.data.length - 1].reasonHtml;
               }
 
-              // Preserve tool calls when finalizing the message
               if (res.data[res.data.length - 1].toolCalls) {
                 lastMessage2.toolCalls = res.data[res.data.length - 1].toolCalls;
               }
 
-              // Preserve search results when finalizing the message
               if (res.data[res.data.length - 1].searchResults) {
                 lastMessage2.searchResults = res.data[res.data.length - 1].searchResults;
               }
 
-              // Preserve vector scores when finalizing the message
               if (res.data[res.data.length - 1].vectorScores) {
                 lastMessage2.vectorScores = res.data[res.data.length - 1].vectorScores;
               }
 
-              // We're no longer in reasoning phase
               lastMessage2.isReasoningPhase = false;
-              // If there are suggestions or title , split them from the text
               const parsedResult = mssageCarrier.parseAnswerWithCarriers(text);
               text = parsedResult.finalAnswer;
               if (parsedResult.title !== "") {
@@ -528,10 +514,8 @@ class ChatPage extends BaseListPage {
 
               res.data[res.data.length - 1] = lastMessage2;
               res.data.map((message, index) => {
-                // Ensure the main HTML is rendered properly
                 message.html = renderText(message.text);
 
-                // Make sure the reason HTML is still there if we have reason text
                 if (message.reasonText) {
                   message.reasonHtml = renderReason(message.reasonText);
                 }
@@ -614,7 +598,6 @@ class ChatPage extends BaseListPage {
             const focusedChat = data[j];
             this.setState({
               chat: focusedChat,
-              // messages: null,
               data: data,
             });
             this.getMessages(focusedChat);
@@ -648,7 +631,6 @@ class ChatPage extends BaseListPage {
   handleMessageEdit = (chatName) => {
     const chat = this.state.data.find(c => c.name === chatName);
     if (chat) {
-      // get new messages
       this.getMessages(chat);
     }
   };
@@ -673,26 +655,23 @@ class ChatPage extends BaseListPage {
     const lastMessage = aiMessages[aiMessages.length - 1];
     const json = (lastMessage === undefined) ? "" : Setting.parseJsonFromText(lastMessage.text);
 
+    if (!this.state.isModalOpen) {return null;}
+
     return (
-      <Modal
-        width={850}
-        height={550}
-        bodyStyle={{width: "800px", height: "500px"}}
-        title={""}
-        closable={false}
-        open={this.state.isModalOpen}
-        okButtonProps={{style: {display: "none"}}}
-        cancelButtonProps={{style: {display: "none"}}}
-        onOk={null}
-        onCancel={() => {
-          this.setState({
-            isModalOpen: false,
-          });
-        }}
-      >
-        {/* eslint-disable-next-line react/no-unknown-property */}
-        <iframe key={"provider"} title={"provider"} src={`${Conf.IframeUrl}&json=${encodeURIComponent(json)}`} width={"100%"} height={"100%"} frameBorder={0} seamless="seamless" scrolling="no" allowtransparency="true" />
-      </Modal>
+      <>
+        <div className="fixed inset-0 bg-black/50 z-40" onClick={() => this.setState({isModalOpen: false})} />
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="bg-background border border-border rounded-lg shadow-xl w-[850px] h-[550px] relative">
+            <button
+              onClick={() => this.setState({isModalOpen: false})}
+              className="absolute top-2 right-2 p-1 rounded text-muted-foreground hover:text-foreground"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            <iframe key={"provider"} title={"provider"} src={`${Conf.IframeUrl}&json=${encodeURIComponent(json)}`} className="w-full h-full border-0" seamless="seamless" scrolling="no" allowtransparency="true" />
+          </div>
+        </div>
+      </>
     );
   }
 
@@ -702,32 +681,29 @@ class ChatPage extends BaseListPage {
     }
 
     return (
-      <Modal
-        title={
-          <div>
-            <CloseCircleFilled style={{color: "rgb(255,77,79)"}} />
-            &nbsp;
-            {" " + i18next.t("account:Please Modify Your Password")}
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+        <div className="bg-background border border-border rounded-lg shadow-xl p-6 max-w-md">
+          <div className="flex items-center gap-2 mb-4">
+            <AlertCircle className="w-5 h-5 text-destructive" />
+            <h3 className="font-semibold text-foreground">{i18next.t("account:Please Modify Your Password")}</h3>
           </div>
-        }
-        closable={false}
-        open={true}
-        okButtonProps={{style: {display: "none"}}}
-        cancelButtonProps={{style: {display: "none"}}}
-        onOk={null}
-        onCancel={null}
-      >
-        <div>
-          <p>{i18next.t("account:The system has detected that you are using the default password, which is not secure. You need to modify your password immediately. Here are the instructions")}:</p>
-          <p>{i18next.t("account:1. Go to your setting page by clicking on the below \"My Account\" button.")}</p>
-          <p>{i18next.t("account:2. Click \"Modify password...\" button to change your password. Then close the setting page.")}</p>
-          <p>{i18next.t("account:3. Go back to this page and refresh it by pressing F5 key. This alert message should be gone.")}</p>
-          <p>{i18next.t("account:4. If you encounter any issues, please contact your administrator.")}</p>
-          <div style={{display: "flex", justifyContent: "center", marginTop: "30px"}}>
-            <Button type="primary" onClick={() => Setting.openLink(Setting.getMyProfileUrl(this.props.account))}>{i18next.t("account:My Account")}</Button>
+          <div className="space-y-2 text-sm text-muted-foreground">
+            <p>{i18next.t("account:The system has detected that you are using the default password, which is not secure. You need to modify your password immediately. Here are the instructions")}:</p>
+            <p>{i18next.t("account:1. Go to your setting page by clicking on the below \"My Account\" button.")}</p>
+            <p>{i18next.t("account:2. Click \"Modify password...\" button to change your password. Then close the setting page.")}</p>
+            <p>{i18next.t("account:3. Go back to this page and refresh it by pressing F5 key. This alert message should be gone.")}</p>
+            <p>{i18next.t("account:4. If you encounter any issues, please contact your administrator.")}</p>
+          </div>
+          <div className="flex justify-center mt-6">
+            <button
+              onClick={() => Setting.openLink(Setting.getMyProfileUrl(this.props.account))}
+              className="rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90 transition-colors"
+            >
+              {i18next.t("account:My Account")}
+            </button>
           </div>
         </div>
-      </Modal>
+      </div>
     );
   }
 
@@ -736,7 +712,6 @@ class ChatPage extends BaseListPage {
       const chat = chats[i];
       this.setState({
         chat: chat,
-        // messages: null,
         chatMenuVisible: false,
         messageError: false,
       });
@@ -763,45 +738,63 @@ class ChatPage extends BaseListPage {
 
     if (this.state.loading) {
       return (
-        <div style={{display: "flex", justifyContent: "center", alignItems: "center"}}>
-          <Spin size="large" tip={i18next.t("general:Loading")} style={{paddingTop: "10%"}} />
+        <div className="flex items-center justify-center h-full">
+          <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
         </div>
       );
     }
 
-    return (
-      <div style={{display: "flex", height: (Setting.getUrlParam("isRaw") !== null) ? "calc(100vh)" : (window.location.pathname.startsWith("/chat")) ? "calc(100vh - 135px)" : Setting.isMobile() ? "calc(100vh - 136px)" : "calc(100vh - 135px)"}}>
-        {
-          this.renderModal()
-        }
-        {
-          this.renderUnsafePasswordModal()
-        }
-        {
-          !(Setting.isMobile() || Setting.getUrlParam("isRaw") !== null) && !this.state.chatMenuCollapsed && (
-            <div style={{width: "250px", height: "100%", marginRight: "2px"}}>
-              <ChatMenu ref={this.menu} chats={chats} chatName={this.getChat()} onSelectChat={onSelectChat} onAddChat={onAddChat} onDeleteChat={onDeleteChat} onUpdateChatName={onUpdateChatName} stores={this.state.stores} currentStoreName={currentStoreName} />
-            </div>
-          )
-        }
+    const viewHeight = (Setting.getUrlParam("isRaw") !== null)
+      ? "100vh"
+      : window.location.pathname.startsWith("/chat")
+        ? "calc(100vh - 135px)"
+        : Setting.isMobile()
+          ? "calc(100vh - 136px)"
+          : "calc(100vh - 135px)";
 
-        {Setting.isMobile() && (
-          <Drawer title={i18next.t("general:Chats")} placement="left" open={this.state.chatMenuVisible} onClose={this.closeChatMenu} width={250}
-          >
-            <ChatMenu ref={this.menu} chats={chats} chatName={this.getChat()} onSelectChat={onSelectChat} onAddChat={onAddChat} onDeleteChat={onDeleteChat} onUpdateChatName={onUpdateChatName} stores={this.state.stores} />
-          </Drawer>
+    return (
+      <div className="flex" style={{height: viewHeight}}>
+        {this.renderModal()}
+        {this.renderUnsafePasswordModal()}
+
+        {/* Desktop sidebar */}
+        {!(Setting.isMobile() || Setting.getUrlParam("isRaw") !== null) && !this.state.chatMenuCollapsed && (
+          <div className="w-[250px] h-full mr-0.5 border-r border-border">
+            <ChatMenu ref={this.menu} chats={chats} chatName={this.getChat()} onSelectChat={onSelectChat} onAddChat={onAddChat} onDeleteChat={onDeleteChat} onUpdateChatName={onUpdateChatName} stores={this.state.stores} currentStoreName={currentStoreName} />
+          </div>
         )}
 
-        <div style={{flex: 1, height: "100%", position: "relative", display: "flex", flexDirection: "column"}}>
+        {/* Mobile sidebar drawer */}
+        {Setting.isMobile() && this.state.chatMenuVisible && (
+          <>
+            <div className="fixed inset-0 bg-black/50 z-40" onClick={this.closeChatMenu} />
+            <div className="fixed inset-y-0 left-0 z-50 w-[250px] bg-background border-r border-border shadow-xl">
+              <div className="flex items-center justify-between px-3 py-2 border-b border-border">
+                <span className="text-sm font-semibold text-foreground">{i18next.t("general:Chats")}</span>
+                <button onClick={this.closeChatMenu} className="p-1 rounded text-muted-foreground hover:text-foreground">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <ChatMenu ref={this.menu} chats={chats} chatName={this.getChat()} onSelectChat={onSelectChat} onAddChat={onAddChat} onDeleteChat={onDeleteChat} onUpdateChatName={onUpdateChatName} stores={this.state.stores} />
+            </div>
+          </>
+        )}
+
+        {/* Main content */}
+        <div className="flex-1 h-full relative flex flex-col">
           {this.state.chat && this.state.paneCount === 1 && (
-            <div style={{display: "flex", alignItems: "center", marginLeft: "15px"}}>
+            <div className="flex items-center ml-4">
               {Setting.isMobile() && (
-                <Button type="text" icon={<BarsOutlined />} onClick={this.toggleChatMenu} style={{marginRight: "8px"}} />
+                <button onClick={this.toggleChatMenu} className="mr-2 p-1 rounded text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
+                  <Menu className="w-5 h-5" />
+                </button>
               )}
               {!(Setting.isMobile() || Setting.getUrlParam("isRaw") !== null) && (
-                <Button type="text" icon={this.state.chatMenuCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />} onClick={this.toggleChatMenuCollapse} style={{marginRight: "8px"}} />
+                <button onClick={this.toggleChatMenuCollapse} className="mr-2 p-1 rounded text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
+                  {this.state.chatMenuCollapsed ? <PanelLeftOpen className="w-5 h-5" /> : <PanelLeftClose className="w-5 h-5" />}
+                </button>
               )}
-              <div style={{flex: 1}}>
+              <div className="flex-1">
                 <StoreInfoTitle chat={this.state.chat} stores={this.state.stores} onChatUpdated={this.handleChatUpdate} onStoreChange={this.updateStoreAndUrl} autoRead={this.state.autoRead} onUpdateAutoRead={(checked) => this.setState({autoRead: checked})} account={this.props.account} paneCount={this.state.paneCount} onPaneCountChange={(count) => this.setState({paneCount: count})} showPaneControls={true} />
               </div>
             </div>
@@ -810,24 +803,19 @@ class ChatPage extends BaseListPage {
           {this.state.paneCount > 1 ? (
             <MultiPaneManager stores={this.state.stores} filteredStores={this.state.filteredStores} defaultStore={this.state.defaultStore} account={this.props.account} messageLoading={this.state.messageLoading} messageError={this.state.messageError} onCancelMessage={this.cancelMessage} initialChat={this.state.chat} onChatUpdate={(chat) => this.setState({chat})} onSetMessageLoading={(loading) => this.setState({messageLoading: loading})} paneCount={this.state.paneCount} onPaneCountChange={(count) => this.setState({paneCount: count})} />
           ) : (
-            <div style={{flex: 1, position: "relative", overflow: "auto"}}>
+            <div className="flex-1 relative overflow-auto">
               {(this.state.messages === undefined || this.state.messages === null) ? null : (
-                <div style={{
-                  position: "absolute",
-                  top: -50,
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  backgroundImage: `url(${Conf.StaticBaseUrl}/img/hanzo-cloud-logo_1200x256.png)`,
-                  backgroundPosition: "center",
-                  backgroundRepeat: "no-repeat",
-                  backgroundSize: "200px auto",
-                  backgroundBlendMode: "luminosity",
-                  filter: "grayscale(80%) brightness(140%) contrast(90%)",
-                  opacity: 0.5,
-                  pointerEvents: "none",
-                }}>
-                </div>
+                <div
+                  className="absolute -top-[50px] left-0 right-0 bottom-0 pointer-events-none opacity-50"
+                  style={{
+                    backgroundImage: `url(${Conf.StaticBaseUrl}/img/hanzo-cloud-logo_1200x256.png)`,
+                    backgroundPosition: "center",
+                    backgroundRepeat: "no-repeat",
+                    backgroundSize: "200px auto",
+                    backgroundBlendMode: "luminosity",
+                    filter: "grayscale(80%) brightness(140%) contrast(90%)",
+                  }}
+                />
               )}
               <ChatBox
                 ref={this.chatBox}
