@@ -13,11 +13,8 @@
 // limitations under the License.
 
 import React from "react";
-import {CheckCircleOutlined, DeleteOutlined, DownOutlined, MinusCircleOutlined, SyncOutlined, UpOutlined} from "@ant-design/icons";
-import {Button, Col, Input, Row, Select, Table, Tag, Tooltip} from "antd";
 import * as Setting from "../Setting";
 
-const {Option} = Select;
 
 class ServiceTable extends React.Component {
   constructor(props) {
@@ -143,14 +140,14 @@ class ServiceTable extends React.Component {
         width: "150px",
         render: (text, record, index) => {
           return (
-            <Select virtual={false} style={{width: "100%"}} value={text} onChange={value => {this.updateField(table, index, "expectedStatus", value);}}>
+            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={text}> {this.updateField(table, index, "expectedStatus", value);}}>
               {
                 [
                   {id: "Running", name: "Running"},
                   {id: "Stopped", name: "Stopped"},
-                ].map((item, index) => <Option key={index} value={item.id}>{item.name}</Option>)
+                ].map((item, index) => <option key={index} value={item.id}>{item.name}</option>)
               }
-            </Select>
+            </select>
           );
         },
       },
@@ -162,15 +159,15 @@ class ServiceTable extends React.Component {
         render: (text, record, index) => {
           if (record.subStatus === "In Progress") {
             return (
-              <Tag icon={<SyncOutlined spin />} color="processing">{`${text} (${record.subStatus})`}</Tag>
+              <span className="px-2 py-0.5 bg-zinc-800 text-zinc-400 rounded text-xs">} color="processing">{`${text} (${record.subStatus})`}</span>
             );
           } else if (record.status === "Running") {
             return (
-              <Tag icon={<CheckCircleOutlined />} color="success">{text}</Tag>
+              <span className="px-2 py-0.5 bg-zinc-800 text-zinc-400 rounded text-xs">} color="success">{text}</span>
             );
           } else if (record.status === "Stopped") {
             return (
-              <Tag icon={<MinusCircleOutlined />} color="error">{text}</Tag>
+              <span className="px-2 py-0.5 bg-zinc-800 text-zinc-400 rounded text-xs">} color="error">{text}</span>
             );
           } else {
             return `${text} (${record.subStatus})`;
@@ -201,15 +198,15 @@ class ServiceTable extends React.Component {
         render: (text, record, index) => {
           return (
             <div>
-              <Tooltip placement="bottomLeft" title={"Up"}>
-                <Button style={{marginRight: "5px"}} disabled={index === 0} icon={<UpOutlined />} size="small" onClick={() => this.upRow(table, index)} />
-              </Tooltip>
-              <Tooltip placement="topLeft" title={"Down"}>
-                <Button style={{marginRight: "5px"}} disabled={index === table.length - 1} icon={<DownOutlined />} size="small" onClick={() => this.downRow(table, index)} />
-              </Tooltip>
-              <Tooltip placement="topLeft" title={"Delete"}>
-                <Button icon={<DeleteOutlined />} size="small" onClick={() => this.deleteRow(table, index)} />
-              </Tooltip>
+              
+                <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-50" disabled={index === 0} style={{marginRight: "5px"}>} size="small" onClick={() => this.upRow(table, index)} />
+              
+              
+                <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-50" disabled={index === table.length - 1} style={{marginRight: "5px"}>} size="small" onClick={() => this.downRow(table, index)} />
+              
+              
+                <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700">} size="small" onClick={() => this.deleteRow(table, index)} />
+              
             </div>
           );
         },
@@ -217,27 +214,20 @@ class ServiceTable extends React.Component {
     ];
 
     return (
-      <Table rowKey="index" columns={columns} dataSource={table} size="middle" bordered pagination={false}
-        title={() => (
-          <div>
-            {this.props.title}&nbsp;&nbsp;&nbsp;&nbsp;
-            <Button style={{marginRight: "5px"}} type="primary" size="small" onClick={() => this.addRow(table)}>{"Add"}</Button>
-          </div>
-        )}
-      />
+      <div className="overflow-x-auto border border-zinc-800 rounded-lg"><table className="w-full text-sm text-left"><thead className="bg-zinc-900/80 border-b border-zinc-800"><tr>{columns.map(col => <th key={col.key || col.dataIndex} className="px-3 py-2 text-xs font-medium text-zinc-400 whitespace-nowrap">{col.title}</th>)}</tr></thead><tbody className="divide-y divide-zinc-800/50">{(table || []).map((record, index) => <tr key={typeof "index" === "function" ? ("index")(record) : record["index"] || index} className="hover:bg-zinc-900/50 transition-colors">{columns.map(col => <td key={col.key || col.dataIndex} className="px-3 py-2 text-zinc-300 whitespace-nowrap">{col.render ? col.render(record[col.dataIndex], record, index) : record[col.dataIndex]}</td>)}</tr>)}</tbody></table></div>
     );
   }
 
   render() {
     return (
       <div>
-        <Row style={{marginTop: "20px"}} >
-          <Col span={24}>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {
               this.renderTable(this.props.table)
             }
-          </Col>
-        </Row>
+          </div>
+        </div>
       </div>
     );
   }

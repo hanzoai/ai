@@ -13,7 +13,6 @@
 // limitations under the License.
 
 import React from "react";
-import {Table} from "antd";
 import i18next from "i18next";
 import TaskAnalysisRadarChart from "./TaskAnalysisRadarChart";
 import TaskAnalysisBarChart from "./TaskAnalysisBarChart";
@@ -92,13 +91,7 @@ export default function TaskAnalysisReport({result}) {
           <div style={{fontWeight: 600, marginBottom: "8px", fontSize: "14px"}}>
             {idx + 1}. {cat.name}（{i18next.t("task:Score")}：{cat.score}{i18next.t("task:Score Unit")}）
           </div>
-          <Table
-            size="small"
-            bordered
-            pagination={false}
-            columns={reportColumns}
-            dataSource={(cat.items || []).map((item, i) => ({...item, key: i}))}
-          />
+          <div className="overflow-x-auto border border-zinc-800 rounded-lg"><table className="w-full text-sm text-left"><thead className="bg-zinc-900/80 border-b border-zinc-800"><tr>{reportColumns.map(col => <th key={col.key || col.dataIndex} className="px-3 py-2 text-xs font-medium text-zinc-400 whitespace-nowrap">{col.title}</th>)}</tr></thead><tbody className="divide-y divide-zinc-800/50">{((cat.items || []).map((item, i) => ({...item, key: i || []).map((record, index) => <tr key={typeof "name" === "function" ? ("name")(record) : record["name"] || index} className="hover:bg-zinc-900/50 transition-colors">{reportColumns.map(col => <td key={col.key || col.dataIndex} className="px-3 py-2 text-zinc-300 whitespace-nowrap">{col.render ? col.render(record[col.dataIndex], record, index) : record[col.dataIndex]}</td>)}</tr>)}</tbody></table></div>
         </div>
       ))}
     </div>

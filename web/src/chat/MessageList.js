@@ -13,77 +13,70 @@
 // limitations under the License.
 
 import React from "react";
-import {List} from "antd";
 import MessageItem from "./MessageItem";
 import * as Setting from "../Setting";
 
-class MessageList extends React.Component {
-  render() {
-    const {
-      messages,
-      account,
-      store,
-      onRegenerate,
-      onMessageLike,
-      onCopyMessage,
-      onToggleRead,
-      onEditMessage,
-      previewMode,
-      hideInput,
-      disableInput,
-      isReading,
-      isLoadingTTS,
-      readingMessage,
-      sendMessage,
-      files,
-      hideThinking,
-    } = this.props;
+const MessageList = React.forwardRef(({
+  messages,
+  account,
+  store,
+  onRegenerate,
+  onMessageLike,
+  onCopyMessage,
+  onToggleRead,
+  onEditMessage,
+  previewMode,
+  hideInput,
+  disableInput,
+  isReading,
+  isLoadingTTS,
+  readingMessage,
+  sendMessage,
+  files,
+  hideThinking,
+}, ref) => {
+  const avatarSrc = store?.avatar || Setting.getDefaultAiAvatar();
+  const filteredMessages = messages.filter(message => message.isHidden === false);
 
-    const avatarSrc = store?.avatar || Setting.getDefaultAiAvatar();
-    const filteredMessages = messages.filter(message => message.isHidden === false);
+  return (
+    <div
+      ref={ref}
+      className={`flex-1 p-6 ${previewMode ? "overflow-hidden relative" : "overflow-auto absolute inset-0"}`}
+      style={{
+        bottom: hideInput ? "0px" : files?.length > 0 ? "150px" : "100px",
+        scrollBehavior: "smooth",
+        paddingBottom: hideInput ? "0px" : "40px",
+      }}
+    >
+      {filteredMessages.length === 0 ? (
+        <div className="text-center text-muted-foreground py-8">&nbsp;</div>
+      ) : (
+        <div className="space-y-2">
+          {filteredMessages.map((message, index) => (
+            <MessageItem
+              key={message.name || index}
+              message={message}
+              index={index}
+              isLastMessage={index === filteredMessages.length - 1}
+              account={account}
+              avatar={avatarSrc}
+              onCopy={onCopyMessage}
+              onRegenerate={onRegenerate}
+              onLike={onMessageLike}
+              onToggleRead={onToggleRead}
+              onEditMessage={onEditMessage}
+              disableInput={disableInput}
+              isReading={isReading}
+              isLoadingTTS={isLoadingTTS}
+              readingMessage={readingMessage}
+              sendMessage={sendMessage}
+              hideThinking={hideThinking}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+});
 
-    return (
-      <List
-        ref={this.props.innerRef}
-        locale={{emptyText: " "}}
-        style={{
-          flex: 1,
-          overflow: previewMode ? "hidden" : "auto",
-          position: previewMode ? "relative" : "absolute",
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: hideInput ? "0px" : files.length > 0 ? "150px" : "100px",
-          padding: "24px",
-          paddingBottom: hideInput ? "0px" : "40px",
-          scrollBehavior: "smooth",
-        }}
-        dataSource={filteredMessages}
-        renderItem={(message, index) => (
-          <MessageItem
-            key={message.name || index}
-            message={message}
-            index={index}
-            isLastMessage={index === filteredMessages.length - 1}
-            account={account}
-            avatar={avatarSrc}
-            onCopy={onCopyMessage}
-            onRegenerate={onRegenerate}
-            onLike={onMessageLike}
-            onToggleRead={onToggleRead}
-            onEditMessage={onEditMessage}
-            disableInput={disableInput}
-            isReading={isReading}
-            isLoadingTTS={isLoadingTTS}
-            readingMessage={readingMessage}
-            sendMessage={sendMessage}
-            hideThinking={hideThinking}
-          />
-        )}
-      />
-    );
-  }
-}
-
-// Forward the ref from parent
-export default React.forwardRef((props, ref) => <MessageList innerRef={ref} {...props} />);
+export default MessageList;

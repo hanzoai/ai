@@ -13,8 +13,6 @@
 // limitations under the License.
 
 import React from "react";
-import {Button, Popconfirm, Table} from "antd";
-import {DeleteOutlined, DownloadOutlined, FileDoneOutlined} from "@ant-design/icons";
 import * as Setting from "../Setting";
 import i18next from "i18next";
 import * as PermissionUtil from "../PermissionUtil";
@@ -193,46 +191,7 @@ class FileTable extends React.Component {
     ];
 
     return (
-      <Table rowKey="title" columns={columns} dataSource={table} size="middle" bordered pagination={false} title={() => {
-        if (!this.props.isCheckMode) {
-          return null;
-        } else {
-          const files = this.props.file.children;
-          const fileCount = files.filter(file => file.isLeaf).length;
-          const folderCount = files.filter(file => !file.isLeaf).length;
-          const text = `${fileCount} ` + i18next.t("store:files and") +
-            ` ${folderCount} ` + i18next.t("store:folders are checked");
-          return (
-            <div>
-              {text}
-              <Button icon={<DownloadOutlined />} style={{marginLeft: "20px", marginRight: "10px"}} type="primary" size="small" onClick={() => {
-                files.filter(file => file.isLeaf).forEach((file, index) => {
-                  Setting.openLink(file.url);
-                });
-              }}>{i18next.t("general:Download")}</Button>
-              <Popconfirm
-                title={`${i18next.t("general:Sure to delete")} all ${fileCount} files and ${folderCount} folders ?`}
-                onConfirm={(e) => {
-                  files.forEach((file, index) => {
-                    this.deleteFile(file, file.isLeaf);
-                  });
-                }}
-                okText={i18next.t("general:OK")}
-                cancelText={i18next.t("general:Cancel")}
-              >
-                <Button icon={<DeleteOutlined />} style={{marginRight: "10px"}} type="primary" danger size="small">{i18next.t("general:Delete")}</Button>
-              </Popconfirm>
-              <Button icon={<FileDoneOutlined />} size="small" onClick={() => {
-                const fileKeys = [];
-                files.forEach((file, index) => {
-                  fileKeys.push(file.key);
-                });
-                PermissionUtil.addPermission(this.props.account, this.props.store, true, null, fileKeys);
-              }}>{i18next.t("store:Add Permission")}</Button>
-            </div>
-          );
-        }
-      }} />
+      <div className="overflow-x-auto border border-zinc-800 rounded-lg"><table className="w-full text-sm text-left"><thead className="bg-zinc-900/80 border-b border-zinc-800"><tr>{columns.map(col => <th key={col.key || col.dataIndex} className="px-3 py-2 text-xs font-medium text-zinc-400 whitespace-nowrap">{col.title}</th>)}</tr></thead><tbody className="divide-y divide-zinc-800/50">{(table || []).map((record, index) => <tr key={typeof "title" === "function" ? ("title")(record) : record["title"] || index} className="hover:bg-zinc-900/50 transition-colors">{columns.map(col => <td key={col.key || col.dataIndex} className="px-3 py-2 text-zinc-300 whitespace-nowrap">{col.render ? col.render(record[col.dataIndex], record, index) : record[col.dataIndex]}</td>)}</tr>)}</tbody></table></div>
     );
   }
 
