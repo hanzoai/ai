@@ -12,152 +12,68 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import React from "react";
+import React, {useCallback, useEffect, useState} from "react";
 import ImageWithFallback from "./ChatExampleQuestionIcon";
 import * as Setting from "./Setting";
-import {Button} from "antd";
+import {RefreshCw} from "lucide-react";
 import i18next from "i18next";
 
-class ChatExampleQuestions extends React.Component {
-  constructor(props) {
-    super(props);
-    this.state = {
-      exampleQuestions: [],
-    };
-  }
+const ChatExampleQuestions = ({sendMessage, exampleQuestions}) => {
+  const [selected, setSelected] = useState([]);
 
-  componentDidMount() {
-    this.selectExampleQuestions();
-  }
-  shouldComponentUpdate(nextProps, nextState) {
-    return (
-      this.state.exampleQuestions !== nextState.exampleQuestions ||
-      JSON.stringify(this.props.exampleQuestions) !== JSON.stringify(nextProps.exampleQuestions)
-    );
-  }
-
-  componentDidUpdate(prevProps) {
-    if (JSON.stringify(prevProps.exampleQuestions) !== JSON.stringify(this.props.exampleQuestions)) {
-      this.selectExampleQuestions();
-    }
-  }
-
-  selectExampleQuestions = () => {
+  const selectExampleQuestions = useCallback(() => {
     const limit = Setting.isMobile() ? 4 : 8;
-    if (this.props.exampleQuestions.length <= limit) {
-      this.setState({
-        exampleQuestions: this.props.exampleQuestions,
-      });
-    } else if (this.props.exampleQuestions.length > limit) {
-      this.setState({
-        exampleQuestions: this.props.exampleQuestions.sort(() => 0.5 - Math.random()).slice(0, limit),
-      });
+    if (exampleQuestions.length <= limit) {
+      setSelected(exampleQuestions);
+    } else {
+      setSelected([...exampleQuestions].sort(() => 0.5 - Math.random()).slice(0, limit));
     }
-  };
+  }, [exampleQuestions]);
 
-  render = () => {
-    const groupedExampleQuestions = [];
-    for (let i = 0; i < this.state.exampleQuestions.length; i += 4) {
-      groupedExampleQuestions.push(this.state.exampleQuestions.slice(i, i + 4));
-    }
-    const limit = Setting.isMobile() ? 4 : 8;
-    const direction = Setting.isMobile() ? "column" : "row";
-    const fontSize = Setting.isMobile() ? "12px" : "16px";
+  useEffect(() => {
+    selectExampleQuestions();
+  }, [selectExampleQuestions]);
 
-    return (
-      <div style={{
-        position: "absolute",
-        zIndex: "100",
-        height: "80%",
-        width: "80%",
-        top: "50%",
-        left: "50%",
-        transform: "translate(-50%, -50%)",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-      }}>
-        {
-          groupedExampleQuestions.map((group, index) => (
-            <div key={index} style={{
-              display: "flex",
-              flexDirection: direction,
-              justifyContent: "center",
-              alignItems: "center",
-              margin: "10px",
-            }}>
-              {
-                group.map((exampleQuestion, index) => (
-                  <div key={index} style={{
-                    padding: "10px",
-                    position: "relative",
-                    boxShadow: "0 0 10px rgba(0,0,0,0.1)",
-                    backgroundColor: "#ffffff",
-                    width: "150px",
-                    borderRadius: "10px",
-                    overflow: "hidden",
-                    margin: "10px",
-                    cursor: "pointer",
-                    display: "flex",
-                    flexDirection: "column",
-                  }} onClick={() => {
-                    this.props.sendMessage(exampleQuestion.text, "");
-                  }}
-                  onMouseEnter={
-                    (e) => {
-                      e.currentTarget.style.backgroundColor = "#fafafa";
-                      e.currentTarget.style.transition = "background-color 0.2s";
-                    }
-                  }
-                  onMouseLeave={
-                    (e) => {
-                      e.currentTarget.style.backgroundColor = "#ffffff";
-                      e.currentTarget.style.transition = "background-color 0.2s";
-                    }
-                  }
-                  >
-                    <div style={{
-                      top: "10px",
-                      left: "10px",
-                    }}>
-                      <ImageWithFallback src={exampleQuestion.image} />
-                    </div>
-                    <p
-                      style={{
-                        marginTop: "10px",
-                        overflow: "hidden",
-                        display: "-webkit-box",
-                        WebkitLineClamp: "2",
-                        WebkitBoxOrient: "vertical",
-                        fontSize: fontSize,
-                        lineHeight: "1.5em",
-                        height: "3em",
-                      }}>{exampleQuestion.title}</p>
-                  </div>
-                ))
-              }
-            </div>
-          ))
-        }
-        {
-          this.props.exampleQuestions.length <= limit ? null : (
-            <div style={{
-              display: "flex",
-              flexDirection: "row",
-              justifyContent: "center",
-              alignItems: "center",
-              marginTop: "20px",
-              height: "40px",
-              width: "100%",
-            }}>
-              <Button type="primary" onClick={this.selectExampleQuestions}>{i18next.t("store:Refresh")}</Button>
-            </div>
-          )
-        }
+  const limit = Setting.isMobile() ? 4 : 8;
+
+  const groupedExampleQuestions = [];
+  for (let i = 0; i < selected.length; i += 4) {
+    groupedExampleQuestions.push(selected.slice(i, i + 4));
+  }
+
+  return (
+    <div className="absolute inset-0 z-10 flex flex-col items-center justify-center pointer-events-none">
+      <div className="pointer-events-auto w-4/5 max-w-3xl">
+        {groupedExampleQuestions.map((group, gIdx) => (
+          <div key={gIdx} className={`flex ${Setting.isMobile() ? "flex-col" : "flex-row"} justify-center items-center gap-3 mb-3`}>
+            {group.map((q, qIdx) => (
+              <div
+                key={qIdx}
+                className="w-[150px] p-2.5 rounded-lg bg-card border border-border shadow-sm cursor-pointer flex flex-col hover:bg-accent transition-colors"
+                onClick={() => sendMessage(q.text, "")}
+              >
+                <ImageWithFallback src={q.image} />
+                <p className="mt-2.5 text-sm leading-snug text-foreground line-clamp-2 h-[3em]">
+                  {q.title}
+                </p>
+              </div>
+            ))}
+          </div>
+        ))}
+        {exampleQuestions.length > limit && (
+          <div className="flex justify-center mt-5">
+            <button
+              onClick={selectExampleQuestions}
+              className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90 transition-colors"
+            >
+              <RefreshCw className="w-4 h-4" />
+              {i18next.t("store:Refresh")}
+            </button>
+          </div>
+        )}
       </div>
-    );
-  };
-}
+    </div>
+  );
+};
 
 export default ChatExampleQuestions;

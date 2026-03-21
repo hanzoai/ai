@@ -14,7 +14,9 @@
 
 import React from "react";
 import {Link} from "react-router-dom";
-import {Button, Popconfirm, Switch, Table} from "antd";
+/* eslint-disable unused-imports/no-unused-imports */
+import {Table} from "antd";
+/* eslint-enable unused-imports/no-unused-imports */
 import moment from "moment";
 import BaseListPage from "./BaseListPage";
 import * as Setting from "./Setting";
@@ -23,7 +25,7 @@ import i18next from "i18next";
 import {ThemeDefault} from "./Conf";
 import * as StorageProviderBackend from "./backend/StorageProviderBackend";
 import * as ProviderBackend from "./backend/ProviderBackend";
-import {CopyOutlined, DeleteOutlined} from "@ant-design/icons";
+import {Copy, Trash2} from "lucide-react";
 import copy from "copy-to-clipboard";
 
 const defaultPrompt = "You are an expert in your field and you specialize in using your knowledge to answer or solve people's problems.";
@@ -46,17 +48,13 @@ class StoreListPage extends BaseListPage {
 
   getHideChatFromStorage() {
     const saved = localStorage.getItem("hideChat");
-    if (saved === null || saved === undefined) {
-      return false;
-    }
+    if (saved === null || saved === undefined) {return false;}
     return JSON.parse(saved) === true;
   }
 
   toggleHideChat = () => {
     const newValue = !this.state.hideChat;
-    this.setState({
-      hideChat: newValue,
-    });
+    this.setState({hideChat: newValue});
     localStorage.setItem("hideChat", JSON.stringify(newValue));
   };
 
@@ -71,7 +69,6 @@ class StoreListPage extends BaseListPage {
         this.setState({loading: false});
         return;
       }
-
       if (res2.status !== "ok") {
         Setting.showMessage("error", `${i18next.t("general:Failed to get")}: ${res2.msg}`);
         this.setState({loading: false});
@@ -79,17 +76,10 @@ class StoreListPage extends BaseListPage {
       }
 
       const newProviders = {};
-      res1.data.forEach(provider => {
-        newProviders[provider.name] = provider;
-      });
-      res2.data.forEach(provider => {
-        newProviders[provider.name] = provider;
-      });
+      res1.data.forEach(provider => {newProviders[provider.name] = provider;});
+      res2.data.forEach(provider => {newProviders[provider.name] = provider;});
 
-      this.setState({
-        providers: newProviders,
-        loading: false,
-      });
+      this.setState({providers: newProviders, loading: false});
     }).catch(error => {
       Setting.showMessage("error", `${i18next.t("general:Failed to get")}: ${error}`);
       this.setState({loading: false});
@@ -99,7 +89,7 @@ class StoreListPage extends BaseListPage {
   renderProviderInfo(text) {
     const provider = this.state.providers[text];
     if (!provider) {
-      return (<a> {text} </a>);
+      return <a>{text}</a>;
     }
 
     const providerLogo = (
@@ -111,14 +101,14 @@ class StoreListPage extends BaseListPage {
 
     if (providerType === "Image" || (providerType === "Storage" && !isLocalStorage)) {
       return (
-        <a target="_blank" rel="noreferrer" href={Setting.getMyProfileUrl(this.props.account).replace("/account", `/providers/admin/${provider.name}`)}>
+        <a target="_blank" rel="noreferrer" href={Setting.getMyProfileUrl(this.props.account).replace("/account", `/providers/admin/${provider.name}`)} className="inline-flex items-center gap-1 text-primary hover:underline">
           {provider.name && providerLogo} {provider.name}
           {Setting.renderExternalLink()}
         </a>
       );
     } else {
       return (
-        <Link to={`/providers/${provider.name}`}>
+        <Link to={`/providers/${provider.name}`} className="inline-flex items-center gap-1 text-primary hover:underline">
           {provider.name && providerLogo} {provider.name}
         </Link>
       );
@@ -211,12 +201,7 @@ class StoreListPage extends BaseListPage {
   }
 
   refreshStoreVectors(i) {
-    this.setState(prevState => ({
-      generating: {
-        ...prevState.generating,
-        [i]: true,
-      },
-    }));
+    this.setState(prevState => ({generating: {...prevState.generating, [i]: true}}));
     StoreBackend.refreshStoreVectors(this.state.data[i])
       .then((res) => {
         if (res.status === "ok") {
@@ -224,21 +209,11 @@ class StoreListPage extends BaseListPage {
         } else {
           Setting.showMessage("error", `${i18next.t("general:Vectors failed to generate")}: ${res.msg}`);
         }
-        this.setState(prevState => ({
-          generating: {
-            ...prevState.generating,
-            [i]: false,
-          },
-        }));
+        this.setState(prevState => ({generating: {...prevState.generating, [i]: false}}));
       })
       .catch(error => {
         Setting.showMessage("error", `${i18next.t("general:Vectors failed to generate")}: ${error}`);
-        this.setState(prevState => ({
-          generating: {
-            ...prevState.generating,
-            [i]: false,
-          },
-        }));
+        this.setState(prevState => ({generating: {...prevState.generating, [i]: false}}));
       });
   }
 
@@ -251,19 +226,12 @@ class StoreListPage extends BaseListPage {
         width: "120px",
         sorter: (a, b) => a.name.localeCompare(b.name),
         ...this.getColumnSearchProps("name"),
-        render: (text, record, index) => {
-          return (
-            <Link to={`/stores/${record.owner}/${text}/view`}>
-              {text}
-            </Link>
-          );
-        },
+        render: (text, record) => <Link to={`/stores/${record.owner}/${text}/view`} className="text-primary hover:underline">{text}</Link>,
       },
       {
         title: i18next.t("general:Display name"),
         dataIndex: "displayName",
         key: "displayName",
-        // width: "600px",
         sorter: (a, b) => a.displayName.localeCompare(b.displayName),
         ...this.getColumnSearchProps("displayName"),
       },
@@ -274,134 +242,22 @@ class StoreListPage extends BaseListPage {
         width: "120px",
         sorter: (a, b) => a.isDefault - b.isDefault,
         ...this.getColumnFilterProps("isDefault"),
-        render: (text, record, index) => {
-          return (
-            <Switch disabled checkedChildren={i18next.t("general:ON")} unCheckedChildren={i18next.t("general:OFF")} checked={text} />
-          );
-        },
+        render: (text) => (
+          <span className={`inline-block px-2 py-0.5 rounded text-xs ${text ? "bg-green-500/20 text-green-400" : "bg-zinc-700 text-zinc-400"}`}>
+            {text ? i18next.t("general:ON") : i18next.t("general:OFF")}
+          </span>
+        ),
       },
-      {
-        title: i18next.t("store:Chat count"),
-        dataIndex: "chatCount",
-        key: "chatCount",
-        width: "150px",
-        sorter: (a, b) => a.chatCount - b.chatCount,
-        render: (text, record, index) => {
-          return (
-            <Link to={`/stores/${record.owner}/${record.name}/chats`}>
-              {text}
-            </Link>
-          );
-        },
-      },
-      {
-        title: i18next.t("store:Message count"),
-        dataIndex: "messageCount",
-        key: "messageCount",
-        width: "150px",
-        sorter: (a, b) => a.messageCount - b.messageCount,
-        render: (text, record, index) => {
-          return (
-            <Link to={`/stores/${record.owner}/${record.name}/messages`}>
-              {text}
-            </Link>
-          );
-        },
-      },
-      {
-        title: i18next.t("store:Storage provider"),
-        dataIndex: "storageProvider",
-        key: "storageProvider",
-        width: "250px",
-        sorter: (a, b) => a.storageProvider.localeCompare(b.storageProvider),
-        ...this.getColumnSearchProps("storageProvider"),
-        render: (text, record, index) => {
-          if (text === "") {
-            return null;
-          }
-          return this.renderProviderInfo(text);
-        },
-      },
-      // {
-      //   title: i18next.t("store:Split provider"),
-      //   dataIndex: "splitProvider",
-      //   key: "splitProvider",
-      //   width: "200px",
-      //   sorter: (a, b) => a.splitProvider.localeCompare(b.splitProvider),
-      // },
-      {
-        title: i18next.t("store:Image provider"),
-        dataIndex: "imageProvider",
-        key: "imageProvider",
-        width: "300px",
-        sorter: (a, b) => a.imageProvider.localeCompare(b.imageProvider),
-        ...this.getColumnSearchProps("imageProvider"),
-        render: (text, record, index) => {
-          return this.renderProviderInfo(text);
-        },
-      },
-      {
-        title: i18next.t("provider:Model provider"),
-        dataIndex: "modelProvider",
-        key: "modelProvider",
-        width: "330px",
-        sorter: (a, b) => a.modelProvider.localeCompare(b.modelProvider),
-        ...this.getColumnSearchProps("modelProvider"),
-        render: (text, record, index) => {
-          return this.renderProviderInfo(text);
-        },
-      },
-      {
-        title: i18next.t("store:Embedding provider"),
-        dataIndex: "embeddingProvider",
-        key: "embeddingProvider",
-        width: "300px",
-        sorter: (a, b) => a.embeddingProvider.localeCompare(b.embeddingProvider),
-        ...this.getColumnSearchProps("embeddingProvider"),
-        render: (text, record, index) => {
-          return this.renderProviderInfo(text);
-        },
-      },
-      {
-        title: i18next.t("store:Text-to-Speech provider"),
-        dataIndex: "textToSpeechProvider",
-        key: "textToSpeechProvider",
-        width: "300px",
-        sorter: (a, b) => a.textToSpeechProvider.localeCompare(b.textToSpeechProvider),
-        ...this.getColumnSearchProps("textToSpeechProvider"),
-        render: (text, record, index) => {
-          return this.renderProviderInfo(text);
-        },
-      },
-      {
-        title: i18next.t("store:Speech-to-Text provider"),
-        dataIndex: "speechToTextProvider",
-        key: "speechToTextProvider",
-        width: "200px",
-        sorter: (a, b) => a.speechToTextProvider.localeCompare(b.speechToTextProvider),
-        ...this.getColumnSearchProps("speechToTextProvider"),
-        render: (text) => {
-          return this.renderProviderInfo(text);
-        },
-      },
-      {
-        title: i18next.t("store:Agent provider"),
-        dataIndex: "agentProvider",
-        key: "agentProvider",
-        width: "250px",
-        sorter: (a, b) => a.agentProvider.localeCompare(b.agentProvider),
-        ...this.getColumnSearchProps("agentProvider"),
-        render: (text) => {
-          return this.renderProviderInfo(text);
-        },
-      },
-      {
-        title: i18next.t("store:Memory limit"),
-        dataIndex: "memoryLimit",
-        key: "memoryLimit",
-        width: "120px",
-        sorter: (a, b) => a.memoryLimit - b.memoryLimit,
-      },
+      {title: i18next.t("store:Chat count"), dataIndex: "chatCount", key: "chatCount", width: "150px", sorter: (a, b) => a.chatCount - b.chatCount, render: (text, record) => <Link to={`/stores/${record.owner}/${record.name}/chats`} className="text-primary hover:underline">{text}</Link>},
+      {title: i18next.t("store:Message count"), dataIndex: "messageCount", key: "messageCount", width: "150px", sorter: (a, b) => a.messageCount - b.messageCount, render: (text, record) => <Link to={`/stores/${record.owner}/${record.name}/messages`} className="text-primary hover:underline">{text}</Link>},
+      {title: i18next.t("store:Storage provider"), dataIndex: "storageProvider", key: "storageProvider", width: "250px", sorter: (a, b) => a.storageProvider.localeCompare(b.storageProvider), ...this.getColumnSearchProps("storageProvider"), render: (text) => text === "" ? null : this.renderProviderInfo(text)},
+      {title: i18next.t("store:Image provider"), dataIndex: "imageProvider", key: "imageProvider", width: "300px", sorter: (a, b) => a.imageProvider.localeCompare(b.imageProvider), ...this.getColumnSearchProps("imageProvider"), render: (text) => this.renderProviderInfo(text)},
+      {title: i18next.t("provider:Model provider"), dataIndex: "modelProvider", key: "modelProvider", width: "330px", sorter: (a, b) => a.modelProvider.localeCompare(b.modelProvider), ...this.getColumnSearchProps("modelProvider"), render: (text) => this.renderProviderInfo(text)},
+      {title: i18next.t("store:Embedding provider"), dataIndex: "embeddingProvider", key: "embeddingProvider", width: "300px", sorter: (a, b) => a.embeddingProvider.localeCompare(b.embeddingProvider), ...this.getColumnSearchProps("embeddingProvider"), render: (text) => this.renderProviderInfo(text)},
+      {title: i18next.t("store:Text-to-Speech provider"), dataIndex: "textToSpeechProvider", key: "textToSpeechProvider", width: "300px", sorter: (a, b) => a.textToSpeechProvider.localeCompare(b.textToSpeechProvider), ...this.getColumnSearchProps("textToSpeechProvider"), render: (text) => this.renderProviderInfo(text)},
+      {title: i18next.t("store:Speech-to-Text provider"), dataIndex: "speechToTextProvider", key: "speechToTextProvider", width: "200px", sorter: (a, b) => a.speechToTextProvider.localeCompare(b.speechToTextProvider), ...this.getColumnSearchProps("speechToTextProvider"), render: (text) => this.renderProviderInfo(text)},
+      {title: i18next.t("store:Agent provider"), dataIndex: "agentProvider", key: "agentProvider", width: "250px", sorter: (a, b) => a.agentProvider.localeCompare(b.agentProvider), ...this.getColumnSearchProps("agentProvider"), render: (text) => this.renderProviderInfo(text)},
+      {title: i18next.t("store:Memory limit"), dataIndex: "memoryLimit", key: "memoryLimit", width: "120px", sorter: (a, b) => a.memoryLimit - b.memoryLimit},
       {
         title: i18next.t("general:State"),
         dataIndex: "state",
@@ -409,9 +265,7 @@ class StoreListPage extends BaseListPage {
         width: "90px",
         sorter: (a, b) => a.state.localeCompare(b.state),
         ...this.getColumnSearchProps("state"),
-        render: (text) => {
-          return text === "Active" ? Setting.getDisplayTag(i18next.t("general:Active"), "green") : Setting.getDisplayTag(i18next.t("general:Inactive"), "red");
-        },
+        render: (text) => text === "Active" ? Setting.getDisplayTag(i18next.t("general:Active"), "green") : Setting.getDisplayTag(i18next.t("general:Inactive"), "red"),
       },
       {
         title: i18next.t("general:Action"),
@@ -419,61 +273,32 @@ class StoreListPage extends BaseListPage {
         key: "action",
         width: "350px",
         fixed: "right",
-        render: (text, record, index) => {
-          if (this.state.hideChat) {
-            return (
-              <div>
-                <Button style={{marginTop: "10px", marginBottom: "10px", marginRight: "10px"}} onClick={() => this.props.history.push(`/stores/${record.owner}/${record.name}/view`)}>{i18next.t("general:View")}</Button>
-                {
-                  !Setting.isLocalAdminUser(this.props.account) ? null : (
-                    <React.Fragment>
-                      <Button style={{marginBottom: "10px", marginRight: "10px"}} type="primary" onClick={() => this.props.history.push(`/stores/${record.owner}/${record.name}`)}>{i18next.t("general:Edit")}</Button>
-                      <Popconfirm
-                        title={`${i18next.t("general:Sure to delete")}: ${record.name} ?`}
-                        onConfirm={() => this.deleteStore(record)}
-                        okText={i18next.t("general:OK")}
-                        cancelText={i18next.t("general:Cancel")}
-                        disabled={record.isDefault || Setting.isUserBoundToStore(this.props.account)}
-                      >
-                        <Button style={{marginBottom: "10px"}} type="primary" danger disabled={record.isDefault || Setting.isUserBoundToStore(this.props.account)}>{i18next.t("general:Delete")}</Button>
-                      </Popconfirm>
-                    </React.Fragment>
-                  )
-                }
-              </div>
-            );
-          }
-
-          return (
-            <div>
-              <Button style={{marginTop: "10px", marginBottom: "10px", marginRight: "10px"}} onClick={() => this.props.history.push(`/stores/${record.owner}/${record.name}/view`)}>{i18next.t("general:View")}</Button>
-              <Button style={{marginBottom: "10px", marginRight: "10px"}} icon={<CopyOutlined />} onClick={() => {copy(`${window.location.origin}/${record.owner}/${record.name}/chat`);Setting.showMessage("success", i18next.t("general:Successfully copied"));}}>{i18next.t("general:Copy Link")}</Button>
-              <Button style={{marginBottom: "10px", marginRight: "10px"}} onClick={() => {
-                Setting.setStore(record.name);
-                window.open(`${window.location.origin}/${record.owner}/${record.name}/chat`, "_blank");
-              }}>{i18next.t("store:Open Chat")}</Button>
-              {
-                !Setting.isLocalAdminUser(this.props.account) ? null : (
-                  <React.Fragment>
-                    <Button style={{marginBottom: "10px", marginRight: "10px"}} loading={this.state.generating[index]} onClick={() => this.refreshStoreVectors(index)}>{i18next.t("general:Refresh Vectors")}</Button>
-                    <Button style={{marginBottom: "10px", marginRight: "10px"}} type="primary" onClick={() => this.props.history.push(`/stores/${record.owner}/${record.name}`)}>{i18next.t("general:Edit")}</Button>
-                    <Popconfirm
-                      title={`${i18next.t("general:Sure to delete")}: ${record.name} ?`}
-                      onConfirm={() => this.deleteStore(record)}
-                      okText={i18next.t("general:OK")}
-                      cancelText={i18next.t("general:Cancel")}
-                      disabled={record.isDefault || Setting.isUserBoundToStore(this.props.account)}
-                    >
-                      <Button style={{marginBottom: "10px"}} type="primary" danger disabled={record.isDefault || Setting.isUserBoundToStore(this.props.account)}>{i18next.t("general:Delete")}</Button>
-                    </Popconfirm>
-                  </React.Fragment>
-                )
-              }
-            </div>
-          );
-        },
+        render: (text, record, index) => (
+          <div className="flex flex-wrap gap-2">
+            <button onClick={() => this.props.history.push(`/stores/${record.owner}/${record.name}/view`)} className="rounded border border-border px-3 py-1 text-xs text-foreground hover:bg-secondary transition-colors">{i18next.t("general:View")}</button>
+            {!this.state.hideChat && (
+              <>
+                <button onClick={() => {copy(`${window.location.origin}/${record.owner}/${record.name}/chat`);Setting.showMessage("success", i18next.t("general:Successfully copied"));}} className="inline-flex items-center gap-1 rounded border border-border px-3 py-1 text-xs text-foreground hover:bg-secondary transition-colors">
+                  <Copy className="w-3 h-3" />
+                  {i18next.t("general:Copy Link")}
+                </button>
+                <button onClick={() => {Setting.setStore(record.name);window.open(`${window.location.origin}/${record.owner}/${record.name}/chat`, "_blank");}} className="rounded border border-border px-3 py-1 text-xs text-foreground hover:bg-secondary transition-colors">{i18next.t("store:Open Chat")}</button>
+              </>
+            )}
+            {Setting.isLocalAdminUser(this.props.account) && (
+              <>
+                {!this.state.hideChat && (
+                  <button loading={this.state.generating[index]} onClick={() => this.refreshStoreVectors(index)} className="rounded border border-border px-3 py-1 text-xs text-foreground hover:bg-secondary transition-colors">{i18next.t("general:Refresh Vectors")}</button>
+                )}
+                <button onClick={() => this.props.history.push(`/stores/${record.owner}/${record.name}`)} className="rounded bg-primary px-3 py-1 text-xs text-primary-foreground hover:bg-primary/90 transition-colors">{i18next.t("general:Edit")}</button>
+                <button disabled={record.isDefault || Setting.isUserBoundToStore(this.props.account)} onClick={() => { if (window.confirm(`${i18next.t("general:Sure to delete")}: ${record.name} ?`)) { this.deleteStore(record); } }} className="rounded bg-destructive px-3 py-1 text-xs text-destructive-foreground hover:bg-destructive/90 disabled:opacity-50 transition-colors">{i18next.t("general:Delete")}</button>
+              </>
+            )}
+          </div>
+        ),
       },
     ];
+
     let filteredColumns = Setting.filterTableColumns(columns, this.props.formItems ?? this.state.formItems);
 
     if (this.state.hideChat) {
@@ -495,26 +320,23 @@ class StoreListPage extends BaseListPage {
       <div>
         <Table scroll={{x: "max-content"}} columns={filteredColumns} dataSource={stores} rowKey="name" rowSelection={this.getRowSelection()} size="middle" bordered pagination={paginationProps}
           title={() => (
-            <div>
-              {i18next.t("general:Stores")}&nbsp;&nbsp;&nbsp;&nbsp;
-              {
-                !Setting.isLocalAdminUser(this.props.account) ? null : (
-                  <>
-                    <Button type="primary" size="small" onClick={this.addStore.bind(this)} disabled={Setting.isUserBoundToStore(this.props.account)}>{i18next.t("general:Add")}</Button>
-                    {this.state.selectedRowKeys.length > 0 && (
-                      <Popconfirm title={`${i18next.t("general:Sure to delete")}: ${this.state.selectedRowKeys.length} ${i18next.t("general:items")} ?`} onConfirm={() => this.performBulkDelete(this.state.selectedRows, this.state.selectedRowKeys)} okText={i18next.t("general:OK")} cancelText={i18next.t("general:Cancel")}>
-                        <Button type="primary" danger size="small" icon={<DeleteOutlined />} style={{marginLeft: 8}}>
-                          {i18next.t("general:Delete")} ({this.state.selectedRowKeys.length})
-                        </Button>
-                      </Popconfirm>
-                    )}
-                  </>
-                )
-              }
-              <span style={{marginLeft: 32}}>
-                {i18next.t("store:Hide chat")}:
-                <Switch checked={this.state.hideChat} onChange={this.toggleHideChat} style={{marginLeft: 8}} />
-              </span>
+            <div className="flex items-center gap-3 flex-wrap">
+              <span className="text-foreground font-medium">{i18next.t("general:Stores")}</span>
+              {Setting.isLocalAdminUser(this.props.account) && (
+                <>
+                  <button onClick={this.addStore.bind(this)} disabled={Setting.isUserBoundToStore(this.props.account)} className="rounded bg-primary px-3 py-1 text-xs text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors">{i18next.t("general:Add")}</button>
+                  {this.state.selectedRowKeys.length > 0 && (
+                    <button onClick={() => { if (window.confirm(`${i18next.t("general:Sure to delete")}: ${this.state.selectedRowKeys.length} ${i18next.t("general:items")} ?`)) { this.performBulkDelete(this.state.selectedRows, this.state.selectedRowKeys); } }} className="inline-flex items-center gap-1 rounded bg-destructive px-3 py-1 text-xs text-destructive-foreground hover:bg-destructive/90 transition-colors">
+                      <Trash2 className="w-3 h-3" />
+                      {i18next.t("general:Delete")} ({this.state.selectedRowKeys.length})
+                    </button>
+                  )}
+                </>
+              )}
+              <label className="flex items-center gap-2 ml-4 cursor-pointer">
+                <span className="text-sm text-muted-foreground">{i18next.t("store:Hide chat")}:</span>
+                <input type="checkbox" checked={this.state.hideChat} onChange={this.toggleHideChat} className="w-4 h-4 rounded accent-primary" />
+              </label>
             </div>
           )}
           loading={this.state.loading}
@@ -534,9 +356,7 @@ class StoreListPage extends BaseListPage {
     this.setState({loading: true});
     StoreBackend.getGlobalStores(Setting.getRequestStore(this.props.account), params.pagination.current, params.pagination.pageSize, field, value, sortField, sortOrder)
       .then((res) => {
-        this.setState({
-          loading: false,
-        });
+        this.setState({loading: false});
         if (res.status === "ok") {
           this.setState({
             data: res.data,
@@ -549,9 +369,7 @@ class StoreListPage extends BaseListPage {
           });
         } else {
           if (Setting.isResponseDenied(res)) {
-            this.setState({
-              isAuthorized: false,
-            });
+            this.setState({isAuthorized: false});
           } else {
             Setting.showMessage("error", res.msg);
           }

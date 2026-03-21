@@ -14,14 +14,13 @@
 
 import React from "react";
 import {Link} from "react-router-dom";
-import {Button, Popconfirm, Switch, Table} from "antd";
 import moment from "moment";
 import BaseListPage from "./BaseListPage";
 import * as Setting from "./Setting";
 import * as ProviderBackend from "./backend/ProviderBackend";
 import i18next from "i18next";
 import * as Provider from "./Provider";
-import {DeleteOutlined} from "@ant-design/icons";
+import {Trash2, Loader2} from "lucide-react";
 
 class ProviderListPage extends BaseListPage {
   constructor(props) {
@@ -89,10 +88,7 @@ class ProviderListPage extends BaseListPage {
       .then((res) => {
         if (res.status === "ok") {
           Setting.showMessage("success", i18next.t("general:Successfully added"));
-          this.props.history.push({
-            pathname: `/providers/${newProvider.name}`,
-            state: {isNewProvider: true},
-          });
+          this.props.history.push({pathname: `/providers/${newProvider.name}`, state: {isNewProvider: true}});
         } else {
           Setting.showMessage("error", `${i18next.t("general:Failed to add")}: ${res.msg}`);
         }
@@ -113,10 +109,7 @@ class ProviderListPage extends BaseListPage {
           Setting.showMessage("success", i18next.t("general:Successfully deleted"));
           this.setState({
             data: this.state.data.filter((item) => item.name !== record.name),
-            pagination: {
-              ...this.state.pagination,
-              total: this.state.pagination.total - 1,
-            },
+            pagination: {...this.state.pagination, total: this.state.pagination.total - 1},
           });
         } else {
           Setting.showMessage("error", `${i18next.t("general:Failed to delete")}: ${res.msg}`);
@@ -129,229 +122,78 @@ class ProviderListPage extends BaseListPage {
 
   renderTable(providers) {
     const columns = [
-      {
-        title: i18next.t("general:Name"),
-        dataIndex: "name",
-        key: "name",
-        width: "180px",
-        sorter: (a, b) => a.name.localeCompare(b.name),
-        ...this.getColumnSearchProps("name"),
-        render: (text, record, index) => {
-          return (
-            <Link to={`/providers/${text}`}>
-              {text}
-            </Link>
-          );
-        },
-      },
-      {
-        title: i18next.t("general:Display name"),
-        dataIndex: "displayName",
-        key: "displayName",
-        width: "220px",
-        sorter: (a, b) => a.displayName.localeCompare(b.displayName),
-        ...this.getColumnSearchProps("displayName"),
-      },
-      {
-        title: i18next.t("general:Category"),
-        dataIndex: "category",
-        key: "category",
-        width: "110px",
-        filterMultiple: false,
-        filters: [
-          {text: "Model", value: "Model"},
-          {text: "Embedding", value: "Embedding"},
-          {text: "Storage", value: "Storage"},
-          {text: "Agent", value: "Agent"},
-          {text: "Public Cloud", value: "Public Cloud"},
-          {text: "Private Cloud", value: "Private Cloud"},
-          {text: "Blockchain", value: "Blockchain"},
-          {text: "Video", value: "Video"},
-          {text: "Text-to-Speech", value: "Text-to-Speech"},
-          {text: "Speech-to-Text", value: "Speech-to-Text"},
-          {text: "Bot", value: "Bot"},
-          {text: "Scan", value: "Scan"},
-        ],
-        sorter: (a, b) => a.category.localeCompare(b.category),
-      },
-      {
-        title: i18next.t("general:Type"),
-        dataIndex: "type",
-        key: "type",
-        width: "150px",
-        align: "center",
-        filterMultiple: false,
-        filters: [
-          {text: "Model", value: "Model", children: Setting.getProviderTypeOptions("Model").map((o) => {return {text: o.id, value: o.name};})},
-          {text: "Embedding", value: "Embedding", children: Setting.getProviderTypeOptions("Embedding").map((o) => {return {text: o.id, value: o.name};})},
-          {text: "Storage", value: "Storage", children: Setting.getProviderTypeOptions("Storage").map((o) => {return {text: o.id, value: o.name};})},
-          {text: "Agent", value: "Agent", children: Setting.getProviderTypeOptions("Agent").map((o) => {return {text: o.id, value: o.name};})},
-          {text: "Public Cloud", value: "Public Cloud", children: Setting.getProviderTypeOptions("Public Cloud").map((o) => {return {text: o.id, value: o.name};})},
-          {text: "Private Cloud", value: "Private Cloud", children: Setting.getProviderTypeOptions("Private Cloud").map((o) => {return {text: o.id, value: o.name};})},
-          {text: "Blockchain", value: "Blockchain", children: Setting.getProviderTypeOptions("Blockchain").map((o) => {return {text: o.id, value: o.name};})},
-          {text: "Video", value: "Video", children: Setting.getProviderTypeOptions("Video").map((o) => {return {text: o.id, value: o.name};})},
-          {text: "Text-to-Speech", value: "Text-to-Speech", children: Setting.getProviderTypeOptions("Text-to-Speech").map((o) => {return {text: o.id, value: o.name};})},
-          {text: "Speech-to-Text", value: "Speech-to-Text", children: Setting.getProviderTypeOptions("Speech-to-Text").map((o) => {return {text: o.id, value: o.name};})},
-          {text: "Bot", value: "Bot", children: Setting.getProviderTypeOptions("Bot").map((o) => {return {text: o.id, value: o.name};})},
-          {text: "Scan", value: "Scan", children: Setting.getProviderTypeOptions("Scan").map((o) => {return {text: o.id, value: o.name};})},
-        ],
-        sorter: (a, b) => a.type.localeCompare(b.type),
-        render: (text, record, index) => {
-          return Provider.getProviderLogoWidget(record);
-        },
-      },
-      {
-        title: i18next.t("provider:Sub type"),
-        dataIndex: "subType",
-        key: "subType",
-        width: "180px",
-        sorter: (a, b) => a.subType.localeCompare(b.subType),
-        ...this.getColumnSearchProps("subType"),
-      },
-      {
-        title: i18next.t("provider:Client ID"),
-        dataIndex: "clientId",
-        key: "clientId",
-        width: "240px",
-        sorter: (a, b) => a.clientId.localeCompare(b.clientId),
-        ...this.getColumnSearchProps("clientId"),
-      },
-      {
-        title: i18next.t("general:Secret key"),
-        dataIndex: "clientSecret",
-        key: "clientSecret",
-        width: "120px",
-        sorter: (a, b) => a.clientSecret.localeCompare(b.clientSecret),
-      },
-      {
-        title: i18next.t("general:Region"),
-        dataIndex: "region",
-        key: "region",
-        width: "120px",
-        sorter: (a, b) => a.region.localeCompare(b.region),
-        ...this.getColumnSearchProps("region"),
-      },
-      {
-        title: i18next.t("provider:API key"),
-        dataIndex: "apiKey",
-        key: "apiKey",
-        width: "240px",
-        sorter: (a, b) => a.apiKey.localeCompare(b.apiKey),
-      },
-      {
-        title: i18next.t("general:Provider URL"),
-        dataIndex: "providerUrl",
-        key: "providerUrl",
-        // width: "250px",
-        sorter: (a, b) => a.providerUrl.localeCompare(b.providerUrl),
-        ...this.getColumnSearchProps("providerUrl"),
-        render: (text, record, index) => {
-          return (
-            <a target="_blank" rel="noreferrer" href={text}>
-              {
-                Setting.getShortText(text, 80)
-              }
-            </a>
-          );
-        },
-      },
-      {
-        title: i18next.t("store:Is default"),
-        dataIndex: "isDefault",
-        key: "isDefault",
-        width: "120px",
-        sorter: (a, b) => a.isDefault - b.isDefault,
-        // ...this.getColumnSearchProps("isDefault"),
-        render: (text, record, index) => {
-          return (
-            <Switch disabled checkedChildren={i18next.t("general:ON")} unCheckedChildren={i18next.t("general:OFF")} checked={text} />
-          );
-        },
-      },
-      {
-        title: i18next.t("provider:Is remote"),
-        dataIndex: "isRemote",
-        key: "isRemote",
-        width: "120px",
-        sorter: (a, b) => a.isRemote - b.isRemote,
-        render: (text, record, index) => {
-          return (
-            <Switch disabled checkedChildren={i18next.t("general:ON")} unCheckedChildren={i18next.t("general:OFF")} checked={text} />
-          );
-        },
-      },
-      {
-        title: i18next.t("general:State"),
-        dataIndex: "state",
-        key: "state",
-        width: "90px",
-        sorter: (a, b) => a.state.localeCompare(b.state),
-      },
-      {
-        title: i18next.t("general:Action"),
-        dataIndex: "action",
-        key: "action",
-        width: "180px",
-        fixed: "right",
-        render: (text, record, index) => {
-          return (
-            <div>
-              <Button
-                style={{marginTop: "10px", marginBottom: "10px", marginRight: "10px"}}
-                type={record.isRemote ? "default" : "primary"}
-                onClick={() => this.props.history.push(`/providers/${record.name}`)}
-              >
-                {record.isRemote ? i18next.t("general:View") : i18next.t("general:Edit")}
-              </Button>
-              <Popconfirm
-                title={`${i18next.t("general:Sure to delete")}: ${record.name} ?`}
-                onConfirm={() => this.deleteProvider(record)}
-                okText={i18next.t("general:OK")}
-                cancelText={i18next.t("general:Cancel")}
-                disabled={record.isRemote}
-              >
-                <Button
-                  style={{marginBottom: "10px"}}
-                  type="primary"
-                  danger
-                  disabled={record.isRemote}
-                >
-                  {i18next.t("general:Delete")}
-                </Button>
-              </Popconfirm>
-            </div>
-          );
-        },
-      },
+      {title: i18next.t("general:Name"), dataIndex: "name", key: "name", render: (text) => <Link to={`/providers/${text}`} className="text-blue-400 hover:text-blue-300">{text}</Link>},
+      {title: i18next.t("general:Display name"), dataIndex: "displayName", key: "displayName"},
+      {title: i18next.t("general:Category"), dataIndex: "category", key: "category"},
+      {title: i18next.t("general:Type"), dataIndex: "type", key: "type", render: (text, record) => Provider.getProviderLogoWidget(record)},
+      {title: i18next.t("provider:Sub type"), dataIndex: "subType", key: "subType"},
+      {title: i18next.t("provider:Client ID"), dataIndex: "clientId", key: "clientId"},
+      {title: i18next.t("general:Secret key"), dataIndex: "clientSecret", key: "clientSecret"},
+      {title: i18next.t("general:Region"), dataIndex: "region", key: "region"},
+      {title: i18next.t("provider:API key"), dataIndex: "apiKey", key: "apiKey"},
+      {title: i18next.t("general:Provider URL"), dataIndex: "providerUrl", key: "providerUrl", render: (text) => <a target="_blank" rel="noreferrer" href={text} className="text-blue-400 hover:text-blue-300">{Setting.getShortText(text, 80)}</a>},
+      {title: i18next.t("store:Is default"), dataIndex: "isDefault", key: "isDefault", render: (text) => (
+        <span className={`px-2 py-0.5 rounded text-xs ${text ? "bg-green-500/20 text-green-400" : "bg-zinc-800 text-zinc-500"}`}>{text ? i18next.t("general:ON") : i18next.t("general:OFF")}</span>
+      )},
+      {title: i18next.t("provider:Is remote"), dataIndex: "isRemote", key: "isRemote", render: (text) => (
+        <span className={`px-2 py-0.5 rounded text-xs ${text ? "bg-green-500/20 text-green-400" : "bg-zinc-800 text-zinc-500"}`}>{text ? i18next.t("general:ON") : i18next.t("general:OFF")}</span>
+      )},
+      {title: i18next.t("general:State"), dataIndex: "state", key: "state"},
+      {title: i18next.t("general:Action"), dataIndex: "action", key: "action", render: (text, record, index) => (
+        <div className="flex flex-wrap gap-2">
+          <button onClick={() => this.props.history.push(`/providers/${record.name}`)} className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${record.isRemote ? "bg-zinc-800 text-zinc-300 hover:bg-zinc-700" : "bg-white text-black hover:bg-zinc-200"}`}>
+            {record.isRemote ? i18next.t("general:View") : i18next.t("general:Edit")}
+          </button>
+          {!record.isRemote && (
+            <button onClick={() => { if (window.confirm(`${i18next.t("general:Sure to delete")}: ${record.name} ?`)) {this.deleteProvider(record);} }} className="px-3 py-1.5 bg-red-600 text-white rounded text-xs font-medium hover:bg-red-700 transition-colors">
+              {i18next.t("general:Delete")}
+            </button>
+          )}
+        </div>
+      )},
     ];
-
-    const paginationProps = {
-      total: this.state.pagination.total,
-      showQuickJumper: true,
-      showSizeChanger: true,
-      pageSizeOptions: ["10", "20", "50", "100", "1000", "10000", "100000"],
-      showTotal: () => i18next.t("general:{total} in total").replace("{total}", this.state.pagination.total),
-    };
 
     return (
       <div>
-        <Table scroll={{x: "max-content"}} columns={columns} dataSource={providers} rowKey="name" rowSelection={this.getRowSelection()} size="middle" bordered pagination={paginationProps}
-          title={() => (
-            <div>
-              {i18next.t("general:Providers")}&nbsp;&nbsp;&nbsp;&nbsp;
-              <Button type="primary" size="small" onClick={() => this.addProvider()}>{i18next.t("general:Add")}</Button>
-              {this.state.selectedRowKeys.length > 0 && (
-                <Popconfirm title={`${i18next.t("general:Sure to delete")}: ${this.state.selectedRowKeys.length} ${i18next.t("general:items")} ?`} onConfirm={() => this.performBulkDelete(this.state.selectedRows, this.state.selectedRowKeys)} okText={i18next.t("general:OK")} cancelText={i18next.t("general:Cancel")}>
-                  <Button type="primary" danger size="small" icon={<DeleteOutlined />} style={{marginLeft: 8}}>
-                    {i18next.t("general:Delete")} ({this.state.selectedRowKeys.length})
-                  </Button>
-                </Popconfirm>
-              )}
-            </div>
-          )}
-          loading={this.state.loading}
-          onChange={this.handleTableChange}
-        />
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <h2 className="text-lg font-semibold text-white">{i18next.t("general:Providers")}</h2>
+            <button onClick={() => this.addProvider()} className="px-3 py-1 bg-white text-black rounded text-xs font-medium hover:bg-zinc-200 transition-colors">{i18next.t("general:Add")}</button>
+            {this.state.selectedRowKeys.length > 0 && (
+              <button onClick={() => { if (window.confirm(`${i18next.t("general:Sure to delete")}: ${this.state.selectedRowKeys.length} ${i18next.t("general:items")} ?`)) {this.performBulkDelete(this.state.selectedRows, this.state.selectedRowKeys);} }} className="px-3 py-1 bg-red-600 text-white rounded text-xs font-medium hover:bg-red-700 transition-colors flex items-center gap-1">
+                <Trash2 className="w-3 h-3" />{i18next.t("general:Delete")} ({this.state.selectedRowKeys.length})
+              </button>
+            )}
+          </div>
+          <span className="text-xs text-zinc-500">{i18next.t("general:{total} in total").replace("{total}", this.state.pagination.total)}</span>
+        </div>
+        {this.state.loading ? (
+          <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 text-zinc-500 animate-spin" /></div>
+        ) : (
+          <div className="overflow-x-auto border border-zinc-800 rounded-lg">
+            <table className="w-full text-sm text-left">
+              <thead className="bg-zinc-900/80 border-b border-zinc-800">
+                <tr>
+                  <th className="px-3 py-2"><input type="checkbox" className="rounded bg-zinc-800 border-zinc-700" checked={this.state.selectedRowKeys.length === providers?.length && providers?.length > 0} onChange={(e) => { if (e.target.checked) {this.onSelectAll(true, providers);} else {this.clearSelection();} }} /></th>
+                  {columns.map(col => <th key={col.key} className="px-3 py-2 text-xs font-medium text-zinc-400 whitespace-nowrap">{col.title}</th>)}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-800/50">
+                {providers?.map((record, index) => (
+                  <tr key={record.name} className="hover:bg-zinc-900/50 transition-colors">
+                    <td className="px-3 py-2">
+                      <input type="checkbox" className="rounded bg-zinc-800 border-zinc-700" checked={this.state.selectedRowKeys.includes(this.getRowKey(record))} onChange={(e) => {
+                        const key = this.getRowKey(record);
+                        if (e.target.checked) {this.onSelectChange([...this.state.selectedRowKeys, key], [...this.state.selectedRows, record]);} else {this.onSelectChange(this.state.selectedRowKeys.filter(k => k !== key), this.state.selectedRows.filter(r => this.getRowKey(r) !== key));}
+                      }} />
+                    </td>
+                    {columns.map(col => <td key={col.key} className="px-3 py-2 text-zinc-300 whitespace-nowrap">{col.render ? col.render(record[col.dataIndex], record, index) : record[col.dataIndex]}</td>)}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     );
   }
@@ -369,24 +211,17 @@ class ProviderListPage extends BaseListPage {
     this.setState({loading: true});
     ProviderBackend.getProviders(this.props.account.name, Setting.getRequestStore(this.props.account), params.pagination.current, params.pagination.pageSize, field, value, sortField, sortOrder)
       .then((res) => {
-        this.setState({
-          loading: false,
-        });
+        this.setState({loading: false});
         if (res.status === "ok") {
           this.setState({
             data: res.data,
-            pagination: {
-              ...params.pagination,
-              total: res.data2,
-            },
+            pagination: {...params.pagination, total: res.data2},
             searchText: params.searchText,
             searchedColumn: params.searchedColumn,
           });
         } else {
           if (Setting.isResponseDenied(res)) {
-            this.setState({
-              isAuthorized: false,
-            });
+            this.setState({isAuthorized: false});
           } else {
             Setting.showMessage("error", res.msg);
           }

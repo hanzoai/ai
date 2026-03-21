@@ -12,83 +12,76 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import React from "react";
-import * as Setting from "./Setting";
-import {Dropdown, Space} from "antd";
-import "./App.less";
+import React, {useState} from "react";
+import {Check, Minimize2, Moon, Sun} from "lucide-react";
 import i18next from "i18next";
-import {CheckOutlined, ShrinkOutlined} from "@ant-design/icons";
-import {MoonOutlined, SunOutlined} from "@ant-design/icons";
 
 export const Themes = [
-  {label: "Default", key: "default", icon: <SunOutlined style={{fontSize: "24px"}} />},        // i18next.t("general:Default")
-  {label: "Dark", key: "dark", icon: <MoonOutlined style={{fontSize: "24px"}} />},          // i18next.t("theme:Dark")
-  {label: "Compact", key: "compact", icon: <ShrinkOutlined style={{fontSize: "24px"}} />}, // i18next.t("theme:Compact")
+  {label: "Default", key: "default", Icon: Sun},
+  {label: "Dark", key: "dark", Icon: Moon},
+  {label: "Compact", key: "compact", Icon: Minimize2},
 ];
 
-function getIcon(themeKey) {
-  if (themeKey?.includes("dark")) {
-    return Themes.find(t => t.key === "dark").icon;
-  } else if (themeKey?.includes("default")) {
-    return Themes.find(t => t.key === "default").icon;
-  }
-}
+function ThemeSelect({themeAlgorithm = ["dark"], onChange}) {
+  const [open, setOpen] = useState(false);
 
-class ThemeSelect extends React.Component {
-  constructor(props) {
-    super(props);
-  }
+  const currentIcon = themeAlgorithm.includes("dark") ? Moon : Sun;
+  const CurrentIcon = currentIcon;
 
-  icon = getIcon(this.props.themeAlgorithm);
-
-  getThemeItems() {
-    return Themes.map((theme) => Setting.getItem(
-      <Space>
-        {i18next.t(`theme:${theme.label}`)}
-        {this.props.themeAlgorithm.includes(theme.key) ? <CheckOutlined style={{marginLeft: "5px"}} /> : null}
-      </Space>,
-      theme.key, theme.icon));
-  }
-
-  render() {
-    const onClick = (e) => {
-      let nextTheme;
-      if (e.key === "compact") {
-        if (this.props.themeAlgorithm.includes("compact")) {
-          nextTheme = this.props.themeAlgorithm.filter((theme) => theme !== "compact");
+  const handleClick = (key) => {
+    let nextTheme;
+    if (key === "compact") {
+      if (themeAlgorithm.includes("compact")) {
+        nextTheme = themeAlgorithm.filter(t => t !== "compact");
+      } else {
+        nextTheme = [...themeAlgorithm, "compact"];
+      }
+    } else {
+      if (!themeAlgorithm.includes(key)) {
+        if (key === "dark") {
+          nextTheme = [...themeAlgorithm.filter(t => t !== "default"), key];
         } else {
-          nextTheme = [...this.props.themeAlgorithm, "compact"];
+          nextTheme = [...themeAlgorithm.filter(t => t !== "dark"), key];
         }
       } else {
-        if (!this.props.themeAlgorithm.includes(e.key)) {
-          if (e.key === "dark") {
-            nextTheme = [...this.props.themeAlgorithm.filter((theme) => theme !== "default"), e.key];
-          } else {
-            nextTheme = [...this.props.themeAlgorithm.filter((theme) => theme !== "dark"), e.key];
-          }
-        } else {
-          nextTheme = [...this.props.themeAlgorithm];
-        }
+        nextTheme = [...themeAlgorithm];
       }
+    }
+    if (onChange) {
+      onChange(nextTheme);
+    }
+    setOpen(false);
+  };
 
-      this.icon = getIcon(nextTheme);
-      this.props.onChange(nextTheme);
-    };
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex items-center justify-center w-10 h-10 rounded-md text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
+      >
+        <CurrentIcon className="w-5 h-5" />
+      </button>
 
-    return (
-      <Dropdown menu={{
-        items: this.getThemeItems(),
-        onClick,
-        selectable: true,
-        multiple: true,
-        selectedKeys: [...this.props.themeAlgorithm],
-      }}>
-        <div className="select-box">
-          {this.icon}
-        </div>
-      </Dropdown>
-    );
-  }
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 top-full mt-1 w-44 py-1 bg-zinc-900 border border-zinc-800 rounded-lg shadow-xl z-50">
+            {Themes.map(({label, key, Icon}) => (
+              <button
+                key={key}
+                onClick={() => handleClick(key)}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-zinc-300 hover:text-white hover:bg-zinc-800 transition-colors"
+              >
+                <Icon className="w-4 h-4" />
+                <span className="flex-1 text-left">{i18next.t(`theme:${label}`)}</span>
+                {themeAlgorithm.includes(key) && <Check className="w-3 h-3 text-white" />}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
 }
 
 export default ThemeSelect;

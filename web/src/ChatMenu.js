@@ -13,10 +13,8 @@
 // limitations under the License.
 
 import React from "react";
-import {Button, Dropdown, Input, Menu, Popconfirm, Tooltip} from "antd";
-import {CloseOutlined, DeleteOutlined, EditOutlined, LayoutOutlined, PlusOutlined, SaveOutlined} from "@ant-design/icons";
+import {Check, ChevronDown, ChevronRight, LayoutGrid, Pencil, Plus, Save, Trash2, X} from "lucide-react";
 import i18next from "i18next";
-import {ThemeDefault} from "./Conf";
 
 class ChatMenu extends React.Component {
   constructor(props) {
@@ -31,6 +29,7 @@ class ChatMenu extends React.Component {
       selectedKeys: [selectedKey],
       editChat: false,
       editChatName: "",
+      confirmDelete: null,
     };
   }
 
@@ -46,137 +45,32 @@ class ChatMenu extends React.Component {
       categories[chat.category].push(chat);
     });
 
-    const selectedKeys = this.state === undefined ? [] : this.state.selectedKeys;
-    return Object.keys(categories).map((category, index) => {
-      return {
-        key: `${index}`,
-        icon: <LayoutOutlined />,
-        label: category,
-        children: categories[category].map((chat, chatIndex) => {
-          const globalChatIndex = chats.indexOf(chat);
-          const isSelected = selectedKeys.includes(`${index}-${chatIndex}`);
-          const handleIconMouseEnter = (e) => {
-            e.currentTarget.style.color = ThemeDefault.colorPrimary;
-            e.currentTarget.style.opacity = 0.6;
-          };
-
-          const handleIconMouseLeave = (e) => {
-            e.currentTarget.style.color = "inherit";
-            e.currentTarget.style.opacity = 1;
-          };
-
-          const handleIconMouseDown = (e) => {
-            e.currentTarget.style.color = ThemeDefault.colorPrimary;
-            e.currentTarget.style.opacity = 0.4;
-          };
-
-          const handleIconMouseUp = (e) => {
-            e.currentTarget.style.color = ThemeDefault.colorPrimary;
-            e.currentTarget.style.opacity = 0.6;
-          };
-
-          const onSave = (e) => {
-            e.stopPropagation();
-            this.props.onUpdateChatName(globalChatIndex, this.state.editChatName);
-            this.setState({editChat: false});
-          };
-
-          return {
-            key: `${index}-${chatIndex}`,
-            index: globalChatIndex,
-            label: (
-              isSelected && this.state.editChat ? (
-                <div className="menu-item-container">
-                  <Input style={{width: "70%"}} value={this.state.editChatName}
-                    onChange={(event) => {this.setState({editChatName: event.target.value});}}
-                    onBlur={onSave}
-                    onPressEnter={onSave} />
-                  <SaveOutlined className="menu-item-icon"
-                    onMouseEnter={handleIconMouseEnter}
-                    onMouseLeave={handleIconMouseLeave}
-                    onMouseDown={handleIconMouseDown}
-                    onMouseUp={handleIconMouseUp}
-                    onClick={onSave}
-                  />
-                  <CloseOutlined className="menu-item-icon"
-                    onMouseEnter={handleIconMouseEnter}
-                    onMouseLeave={handleIconMouseLeave}
-                    onMouseDown={handleIconMouseDown}
-                    onMouseUp={handleIconMouseUp}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      this.setState({editChat: false});
-                    }}
-                  />
-                </div>) : (
-                <div className="menu-item-container">
-                  <div style={{width: "70%", overflow: "hidden"}}>
-                    <Tooltip title={chat.displayName}>{chat.displayName}</Tooltip>
-                  </div>
-                  {isSelected && (
-                    <div>
-                      <EditOutlined className="menu-item-icon"
-                        onMouseEnter={handleIconMouseEnter}
-                        onMouseLeave={handleIconMouseLeave}
-                        onMouseDown={handleIconMouseDown}
-                        onMouseUp={handleIconMouseUp}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          this.setState({
-                            editChatName: this.props.chats[globalChatIndex].displayName,
-                            editChat: true,
-                          });
-                        }} />
-                      <Popconfirm
-                        title={`${i18next.t("general:Sure to delete")}: ${chat.displayName} ?`}
-                        onConfirm={() => {
-                          if (this.props.onDeleteChat) {
-                            this.props.onDeleteChat(globalChatIndex);
-                          }
-                        }}
-                        okText={i18next.t("general:OK")}
-                        cancelText={i18next.t("general:Cancel")}
-                        okButtonProps={{"data-preview-allow": true}}
-                      >
-                        <DeleteOutlined className="menu-item-icon"
-                          onMouseEnter={handleIconMouseEnter}
-                          onMouseLeave={handleIconMouseLeave}
-                          onMouseDown={handleIconMouseDown}
-                          onMouseUp={handleIconMouseUp}
-                        />
-                      </Popconfirm>
-                    </div>
-                  )}
-                </div>)
-            ),
-          };
-        }),
-      };
-    });
+    return Object.keys(categories).map((category, index) => ({
+      key: `${index}`,
+      label: category,
+      children: categories[category].map((chat, chatIndex) => ({
+        key: `${index}-${chatIndex}`,
+        index: chats.indexOf(chat),
+        chat,
+      })),
+    }));
   }
 
-  onSelect = (info) => {
-    const [categoryIndex, chatIndex] = info.selectedKeys[0].split("-").map(Number);
-    const selectedItem = this.chatsToItems(this.props.chats)[categoryIndex].children[chatIndex];
+  onSelect = (categoryIndex, chatIndex, globalIndex) => {
     this.setState({
       selectedKeys: [`${categoryIndex}-${chatIndex}`],
       editChat: false,
-      editChatName: this.props.chats[chatIndex].displayName,
+      confirmDelete: null,
     });
 
     if (this.props.onSelectChat) {
-      this.props.onSelectChat(selectedItem.index);
+      this.props.onSelectChat(globalIndex);
     }
   };
-
-  getRootSubmenuKeys(items) {
-    return items.map((item, index) => `${index}`);
-  }
 
   setSelectedKeyToNewChat(chats) {
     const items = this.chatsToItems(chats);
     const openKeys = items.map((item) => item.key);
-
     this.setState({
       openKeys: openKeys,
       selectedKeys: ["0-0"],
@@ -184,9 +78,7 @@ class ChatMenu extends React.Component {
   }
 
   getSelectedKeyOfCurrentChat(chats, chatName) {
-    if (!chatName) {
-      return null;
-    }
+    if (!chatName) {return null;}
     const items = this.chatsToItems(chats);
     const chat = chats.find(chat => chat.name === chatName);
     let selectedKey = null;
@@ -199,29 +91,21 @@ class ChatMenu extends React.Component {
           break;
         }
       }
-      if (selectedKey) {
-        break;
-      }
+      if (selectedKey) {break;}
     }
     return selectedKey === null ? "0-0" : selectedKey;
   }
 
-  onOpenChange = (keys) => {
-    const items = this.chatsToItems(this.props.chats);
-    const rootSubmenuKeys = this.getRootSubmenuKeys(items);
-    const latestOpenKey = keys.find((key) => this.state.openKeys.indexOf(key) === -1);
-
-    if (rootSubmenuKeys.indexOf(latestOpenKey) === -1) {
-      this.setState({openKeys: keys});
-    } else {
-      this.setState({openKeys: latestOpenKey ? [latestOpenKey] : []});
-    }
+  toggleCategory = (key) => {
+    this.setState(prev => ({
+      openKeys: prev.openKeys.includes(key)
+        ? prev.openKeys.filter(k => k !== key)
+        : [...prev.openKeys, key],
+    }));
   };
 
   renderAddChatButton(stores = [], currentStoreName = null) {
-    if (!stores) {
-      stores = [];
-    }
+    if (!stores) {stores = [];}
 
     const defaultStore = stores.find(store => store.isDefault);
     let hasChildStores = false;
@@ -236,93 +120,150 @@ class ChatMenu extends React.Component {
       if (!defaultStore.childStores || defaultStore.childStores.length === 0) {
         stores = [];
       } else {
-        // Otherwise filter to show only the child stores
         stores = stores.filter(store => defaultStore.childStores.includes(store.name));
         hasChildStores = true;
       }
     }
 
-    let hasEmptyChat = this.props.chats.some(chat => chat.messageCount === 0);
-    hasEmptyChat = false;
-
-    const items = stores.map((store, index) => {
-      return {
-        key: store.name,
-        label: <p onClick={() => {
-          this.props.onAddChat(store);
-        }}>
-          {store.displayName || store.name}
-        </p>,
-      };
-    });
-
-    const getNewChatButton = () => {
-      return (
-        <Button
-          icon={<PlusOutlined />}
-          style={{
-            width: "calc(100% - 8px)",
-            height: "40px",
-            margin: "4px",
-            borderColor: "rgb(229,229,229)",
-          }}
-          disabled={hasEmptyChat}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.borderColor = ThemeDefault.colorPrimary;
-            e.currentTarget.style.opacity = 0.6;
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.borderColor = "rgba(0, 0, 0, 0.1)";
-          }}
-          onMouseDown={(e) => {
-            e.currentTarget.style.borderColor = ThemeDefault.colorPrimary;
-            e.currentTarget.style.opacity = 0.4;
-          }}
-          onMouseUp={(e) => {
-            e.currentTarget.style.borderColor = ThemeDefault.colorPrimary;
-            e.currentTarget.style.opacity = 0.6;
-          }}
-          onClick={() => {
-            if (currentStoreName) {
-              const currentStore = this.props.stores.find(store => store.name === currentStoreName);
-              this.props.onAddChat(currentStore);
-            } else if (!hasChildStores) {
-              this.props.onAddChat(defaultStore);
-            }
-          }}
-        >
-          {i18next.t("chat:New Chat")}
-        </Button>
-      );
-    };
-
-    if (stores.length === 0) {
-      return getNewChatButton();
-    }
-
     return (
-      <Dropdown menu={{items}} disabled={hasEmptyChat}>
-        {getNewChatButton()}
-      </Dropdown>
+      <button
+        className="w-[calc(100%-8px)] h-10 mx-1 my-1 rounded-md border border-border text-foreground flex items-center justify-center gap-2 text-sm hover:border-primary/50 hover:text-primary transition-colors"
+        onClick={() => {
+          if (currentStoreName) {
+            const currentStore = this.props.stores.find(store => store.name === currentStoreName);
+            this.props.onAddChat(currentStore);
+          } else if (!hasChildStores) {
+            this.props.onAddChat(defaultStore);
+          }
+        }}
+      >
+        <Plus className="w-4 h-4" />
+        {i18next.t("chat:New Chat")}
+      </button>
     );
   }
 
   render() {
-    const items = this.chatsToItems(this.props.chats, this.props.currentStoreName);
+    const items = this.chatsToItems(this.props.chats);
 
     return (
-      <div>
+      <div className="h-full flex flex-col">
         {this.renderAddChatButton(this.props.stores, this.props.currentStoreName)}
-        <div style={{marginRight: "4px"}}>
-          <Menu
-            style={{maxHeight: "calc(100vh - 140px - 40px - 8px)", overflowY: "auto"}}
-            mode="inline"
-            openKeys={this.state.openKeys}
-            selectedKeys={this.state.selectedKeys}
-            onOpenChange={this.onOpenChange}
-            onSelect={this.onSelect}
-            items={items}
-          />
+        <div className="flex-1 overflow-y-auto mr-1" style={{maxHeight: "calc(100vh - 140px - 40px - 8px)"}}>
+          {items.map((category) => {
+            const isOpen = this.state.openKeys.includes(category.key);
+            return (
+              <div key={category.key}>
+                {/* Category header */}
+                <button
+                  onClick={() => this.toggleCategory(category.key)}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  {isOpen ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                  <LayoutGrid className="w-3 h-3" />
+                  {category.label}
+                </button>
+
+                {/* Chat items */}
+                {isOpen && category.children.map((item) => {
+                  const isSelected = this.state.selectedKeys.includes(item.key);
+                  const isEditing = isSelected && this.state.editChat;
+                  const isConfirmingDelete = this.state.confirmDelete === item.key;
+
+                  return (
+                    <div
+                      key={item.key}
+                      onClick={() => this.onSelect(category.key, item.key.split("-")[1], item.index)}
+                      className={`group mx-1 px-3 py-2 rounded-md cursor-pointer text-sm flex items-center justify-between transition-colors ${
+                        isSelected ? "bg-accent text-accent-foreground" : "text-foreground/80 hover:bg-accent/50"
+                      }`}
+                    >
+                      {isEditing ? (
+                        <div className="flex items-center gap-1 w-full" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            className="flex-1 bg-background border border-border rounded px-2 py-1 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                            value={this.state.editChatName}
+                            onChange={(e) => this.setState({editChatName: e.target.value})}
+                            onBlur={() => {
+                              this.props.onUpdateChatName(item.index, this.state.editChatName);
+                              this.setState({editChat: false});
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                this.props.onUpdateChatName(item.index, this.state.editChatName);
+                                this.setState({editChat: false});
+                              }
+                            }}
+                            autoFocus
+                          />
+                          <button
+                            className="p-1 text-muted-foreground hover:text-foreground"
+                            onClick={() => {
+                              this.props.onUpdateChatName(item.index, this.state.editChatName);
+                              this.setState({editChat: false});
+                            }}
+                          >
+                            <Save className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            className="p-1 text-muted-foreground hover:text-foreground"
+                            onClick={() => this.setState({editChat: false})}
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ) : (
+                        <>
+                          <span className="truncate flex-1" title={item.chat.displayName}>
+                            {item.chat.displayName}
+                          </span>
+                          {isSelected && (
+                            <div className="flex items-center gap-0.5 ml-1" onClick={(e) => e.stopPropagation()}>
+                              <button
+                                className="p-1 text-muted-foreground hover:text-foreground rounded transition-colors"
+                                onClick={() => this.setState({
+                                  editChatName: this.props.chats[item.index].displayName,
+                                  editChat: true,
+                                })}
+                              >
+                                <Pencil className="w-3 h-3" />
+                              </button>
+                              {isConfirmingDelete ? (
+                                <div className="flex items-center gap-0.5">
+                                  <button
+                                    className="p-1 text-destructive hover:text-destructive/80 rounded transition-colors"
+                                    onClick={() => {
+                                      this.props.onDeleteChat(item.index);
+                                      this.setState({confirmDelete: null});
+                                    }}
+                                  >
+                                    <Check className="w-3 h-3" />
+                                  </button>
+                                  <button
+                                    className="p-1 text-muted-foreground hover:text-foreground rounded transition-colors"
+                                    onClick={() => this.setState({confirmDelete: null})}
+                                  >
+                                    <X className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  className="p-1 text-muted-foreground hover:text-destructive rounded transition-colors"
+                                  onClick={() => this.setState({confirmDelete: item.key})}
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })}
         </div>
       </div>
     );

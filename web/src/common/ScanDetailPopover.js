@@ -14,7 +14,6 @@
 
 import React from "react";
 import {Link} from "react-router-dom";
-import {Popover, Tag} from "antd";
 import i18next from "i18next";
 import * as Setting from "../Setting";
 import {ScanResultRenderer} from "./ScanResultRenderer";
@@ -90,23 +89,16 @@ export function ScanDetailPopover({
   );
 
   return (
-    <Popover
-      content={popoverContent}
-      title={null}
-      trigger="hover"
-      placement={placement}
-    >
-      <Link to={`/scans/${scan.name}`}>
-        <Tag color={tagColor} style={{cursor: "pointer", margin: "2px"}}>
+    <Link to={`/scans/${scan.name}`}>
+        <span className="px-2 py-0.5 bg-zinc-800 text-zinc-400 rounded text-xs">
           <div style={{display: "flex", alignItems: "center", gap: "4px"}}>
             {providerLogo && (
               <img src={providerLogo} alt="provider" style={{width: "16px", height: "16px"}} />
             )}
             <span>{scan.resultSummary || scan.displayName || scan.name}</span>
           </div>
-        </Tag>
+        </span>
       </Link>
-    </Popover>
   );
 }
 

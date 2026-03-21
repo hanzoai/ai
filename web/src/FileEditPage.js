@@ -13,12 +13,9 @@
 // limitations under the License.
 
 import React from "react";
-import {Button, Card, Col, Input, InputNumber, Row, Select} from "antd";
 import i18next from "i18next";
 import * as Setting from "./Setting";
 import * as FileBackend from "./backend/FileBackend";
-
-const {Option} = Select;
 
 class FileEditPage extends React.Component {
   constructor(props) {
@@ -40,10 +37,7 @@ class FileEditPage extends React.Component {
     FileBackend.getFile("admin", fileName)
       .then((res) => {
         if (res.status === "ok") {
-          this.setState({
-            file: res.data,
-            fileName: fileName,
-          });
+          this.setState({file: res.data, fileName: fileName});
         } else {
           Setting.showMessage("error", `${i18next.t("general:Failed to get")}: ${res.msg}`);
         }
@@ -59,108 +53,62 @@ class FileEditPage extends React.Component {
 
   updateFileField(key, value) {
     value = this.parseFileField(key, value);
-
     const file = this.state.file;
     file[key] = value;
-    this.setState({
-      file: file,
-    });
+    this.setState({file: file});
   }
 
   renderFile() {
     return (
-      <Card size="small" title={
-        <div>
-          {i18next.t("file:Edit File")}&nbsp;&nbsp;&nbsp;&nbsp;
-          <Button onClick={() => this.submitFileEdit(false)}>{i18next.t("general:Save")}</Button>
-          <Button style={{marginLeft: "20px"}} type="primary" onClick={() => this.submitFileEdit(true)}>{i18next.t("general:Save & Exit")}</Button>
-          {this.state.isNewFile && <Button style={{marginLeft: "20px"}} onClick={() => this.cancelFileEdit()}>{i18next.t("general:Cancel")}</Button>}
+      <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800">
+          <h3 className="text-base font-medium text-white">{i18next.t("file:Edit File")}</h3>
+          <div className="flex gap-2">
+            <button onClick={() => this.submitFileEdit(false)} className="px-4 py-1.5 bg-zinc-800 text-zinc-300 rounded text-sm hover:bg-zinc-700 transition-colors">{i18next.t("general:Save")}</button>
+            <button onClick={() => this.submitFileEdit(true)} className="px-4 py-1.5 bg-white text-black rounded text-sm font-medium hover:bg-zinc-200 transition-colors">{i18next.t("general:Save & Exit")}</button>
+            {this.state.isNewFile && <button onClick={() => this.cancelFileEdit()} className="px-4 py-1.5 bg-zinc-800 text-zinc-300 rounded text-sm hover:bg-zinc-700 transition-colors">{i18next.t("general:Cancel")}</button>}
+          </div>
         </div>
-      } style={{marginLeft: "5px"}} type="inner">
-        <Row style={{marginTop: "10px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("general:Name"), i18next.t("general:Name - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Input value={this.state.file.name} onChange={e => {
-              this.updateFileField("name", e.target.value);
-            }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("file:Filename"), i18next.t("file:Filename - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Input value={this.state.file.filename} onChange={e => {
-              this.updateFileField("filename", e.target.value);
-            }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("general:Size"), i18next.t("general:Size - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <InputNumber value={this.state.file.size} onChange={value => {
-              this.updateFileField("size", value);
-            }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("general:Store"), i18next.t("general:Store - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Input value={this.state.file.store} onChange={e => {
-              this.updateFileField("store", e.target.value);
-            }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("store:Storage provider"), i18next.t("store:Storage provider - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Input value={this.state.file.storageProvider} onChange={e => {
-              this.updateFileField("storageProvider", e.target.value);
-            }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("chat:Token count"), i18next.t("chat:Token count - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <InputNumber value={this.state.file.tokenCount} onChange={value => {
-              this.updateFileField("tokenCount", value);
-            }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("general:Status"), i18next.t("general:Status - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Select virtual={false} style={{width: "100%"}} value={this.state.file.status} onChange={(value) => {
-              this.updateFileField("status", value);
-            }}>
-              <Option value="Pending">{i18next.t("application:Pending")}</Option>
-              <Option value="Processing">{i18next.t("file:Processing")}</Option>
-              <Option value="Finished">{i18next.t("file:Finished")}</Option>
-              <Option value="Error">{i18next.t("general:Error")}</Option>
-            </Select>
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("message:Error text"), i18next.t("message:Error text - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Input.TextArea value={this.state.file.errorText} autoSize={{minRows: 2, maxRows: 4}} readOnly />
-          </Col>
-        </Row>
-      </Card>
+        <div className="p-6 space-y-5">
+          <div className="flex flex-col sm:flex-row gap-2">
+            <label className="sm:w-40 shrink-0 text-sm text-zinc-400 pt-2">{Setting.getLabel(i18next.t("general:Name"), i18next.t("general:Name - Tooltip"))}</label>
+            <input className="flex-1 px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-500" value={this.state.file.name} onChange={e => this.updateFileField("name", e.target.value)} />
+          </div>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <label className="sm:w-40 shrink-0 text-sm text-zinc-400 pt-2">{Setting.getLabel(i18next.t("file:Filename"), i18next.t("file:Filename - Tooltip"))}</label>
+            <input className="flex-1 px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-500" value={this.state.file.filename} onChange={e => this.updateFileField("filename", e.target.value)} />
+          </div>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <label className="sm:w-40 shrink-0 text-sm text-zinc-400 pt-2">{Setting.getLabel(i18next.t("general:Size"), i18next.t("general:Size - Tooltip"))}</label>
+            <input type="number" className="flex-1 px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-500" value={this.state.file.size} onChange={e => this.updateFileField("size", e.target.value)} />
+          </div>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <label className="sm:w-40 shrink-0 text-sm text-zinc-400 pt-2">{Setting.getLabel(i18next.t("general:Store"), i18next.t("general:Store - Tooltip"))}</label>
+            <input className="flex-1 px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-500" value={this.state.file.store} onChange={e => this.updateFileField("store", e.target.value)} />
+          </div>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <label className="sm:w-40 shrink-0 text-sm text-zinc-400 pt-2">{Setting.getLabel(i18next.t("store:Storage provider"), i18next.t("store:Storage provider - Tooltip"))}</label>
+            <input className="flex-1 px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-500" value={this.state.file.storageProvider} onChange={e => this.updateFileField("storageProvider", e.target.value)} />
+          </div>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <label className="sm:w-40 shrink-0 text-sm text-zinc-400 pt-2">{Setting.getLabel(i18next.t("chat:Token count"), i18next.t("chat:Token count - Tooltip"))}</label>
+            <input type="number" className="flex-1 px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-500" value={this.state.file.tokenCount} onChange={e => this.updateFileField("tokenCount", e.target.value)} />
+          </div>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <label className="sm:w-40 shrink-0 text-sm text-zinc-400 pt-2">{Setting.getLabel(i18next.t("general:Status"), i18next.t("general:Status - Tooltip"))}</label>
+            <select className="flex-1 px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500" value={this.state.file.status} onChange={e => this.updateFileField("status", e.target.value)}>
+              <option value="Pending">{i18next.t("application:Pending")}</option>
+              <option value="Processing">{i18next.t("file:Processing")}</option>
+              <option value="Finished">{i18next.t("file:Finished")}</option>
+              <option value="Error">{i18next.t("general:Error")}</option>
+            </select>
+          </div>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <label className="sm:w-40 shrink-0 text-sm text-zinc-400 pt-2">{Setting.getLabel(i18next.t("message:Error text"), i18next.t("message:Error text - Tooltip"))}</label>
+            <textarea className="flex-1 px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-500 min-h-[60px]" value={this.state.file.errorText} readOnly rows={3} />
+          </div>
+        </div>
+      </div>
     );
   }
 
@@ -171,11 +119,7 @@ class FileEditPage extends React.Component {
         if (res.status === "ok") {
           if (res.data) {
             Setting.showMessage("success", i18next.t("general:Successfully saved"));
-            this.setState({
-              fileName: this.state.file.name,
-              isNewFile: false,
-            });
-
+            this.setState({fileName: this.state.file.name, isNewFile: false});
             if (exitAfterSave) {
               this.props.history.push("/files");
             } else {
@@ -194,20 +138,6 @@ class FileEditPage extends React.Component {
       });
   }
 
-  render() {
-    return (
-      <div>
-        {
-          this.state.file !== null ? this.renderFile() : null
-        }
-        <div style={{marginTop: "20px", marginLeft: "40px"}}>
-          <Button size="large" onClick={() => this.submitFileEdit(false)}>{i18next.t("general:Save")}</Button>
-          <Button style={{marginLeft: "20px"}} type="primary" size="large" onClick={() => this.submitFileEdit(true)}>{i18next.t("general:Save & Exit")}</Button>
-          {this.state.isNewFile && <Button style={{marginLeft: "20px"}} size="large" onClick={() => this.cancelFileEdit()}>{i18next.t("general:Cancel")}</Button>}
-        </div>
-      </div>
-    );
-  }
   cancelFileEdit() {
     if (this.state.isNewFile) {
       FileBackend.deleteFile(this.state.file)
@@ -227,6 +157,18 @@ class FileEditPage extends React.Component {
     }
   }
 
+  render() {
+    return (
+      <div>
+        {this.state.file !== null ? this.renderFile() : null}
+        <div className="mt-5 ml-10 flex gap-3">
+          <button onClick={() => this.submitFileEdit(false)} className="px-6 py-2 bg-zinc-800 text-zinc-300 rounded text-sm hover:bg-zinc-700 transition-colors">{i18next.t("general:Save")}</button>
+          <button onClick={() => this.submitFileEdit(true)} className="px-6 py-2 bg-white text-black rounded text-sm font-medium hover:bg-zinc-200 transition-colors">{i18next.t("general:Save & Exit")}</button>
+          {this.state.isNewFile && <button onClick={() => this.cancelFileEdit()} className="px-6 py-2 bg-zinc-800 text-zinc-300 rounded text-sm hover:bg-zinc-700 transition-colors">{i18next.t("general:Cancel")}</button>}
+        </div>
+      </div>
+    );
+  }
 }
 
 export default FileEditPage;

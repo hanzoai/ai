@@ -14,17 +14,14 @@
 
 import React from "react";
 import {Link} from "react-router-dom";
-import {Button, Input, Popconfirm, Popover, Table, Tooltip} from "antd";
 import moment from "moment";
 import BaseListPage from "./BaseListPage";
 import * as Setting from "./Setting";
 import * as WorkflowBackend from "./backend/WorkflowBackend";
 import i18next from "i18next";
 import BpmnComponent from "./BpmnComponent";
-import {DeleteOutlined} from "@ant-design/icons";
 import Editor from "./common/Editor";
 
-const {TextArea} = Input;
 class WorkflowListPage extends BaseListPage {
   constructor(props) {
     super(props);
@@ -137,8 +134,7 @@ class WorkflowListPage extends BaseListPage {
         sorter: (a, b) => a.text.localeCompare(b.text),
         render: (text, record, index) => {
           return (
-            <Tooltip placement="left" styles={{body: {width: "515px", height: "615px"}}} title={
-              <div style={{width: "500px", height: "600px", backgroundColor: "white"}}>
+            
                 <BpmnComponent
                   diagramXML={text}
                   onLoading={(info) => {
@@ -153,7 +149,7 @@ class WorkflowListPage extends BaseListPage {
               <div style={{maxWidth: "300px"}}>
                 {Setting.getShortText(text, 100)}
               </div>
-            </Tooltip>
+            
           );
         },
       },
@@ -165,8 +161,7 @@ class WorkflowListPage extends BaseListPage {
         sorter: (a, b) => a.text2.localeCompare(b.text2),
         render: (text, record, index) => {
           return (
-            <Tooltip placement="left" styles={{body: {width: "515px", height: "615px"}}} title={
-              <div style={{width: "500px", height: "600px", backgroundColor: "white"}}>
+            
                 <BpmnComponent
                   diagramXML={text}
                   onLoading={(info) => {
@@ -181,7 +176,7 @@ class WorkflowListPage extends BaseListPage {
               <div style={{maxWidth: "300px"}}>
                 {Setting.getShortText(text, 100)}
               </div>
-            </Tooltip>
+            
           );
         },
       },
@@ -194,13 +189,12 @@ class WorkflowListPage extends BaseListPage {
         ...this.getColumnSearchProps("message"),
         render: (text, record, index) => {
           return (
-            <Tooltip placement="left" styles={{body: {width: "815px", maxHeight: "355px"}}} title={
-              <TextArea autoSize={{minRows: 1, maxRows: 15}} value={text} onChange={(e) => {}} />
+             {}} />
             }>
               <div style={{maxWidth: "300px"}}>
                 {Setting.getShortText(text, 100)}
               </div>
-            </Tooltip>
+            
           );
         },
       },
@@ -213,17 +207,7 @@ class WorkflowListPage extends BaseListPage {
         ...this.getColumnSearchProps("questionTemplate"),
         render: (text, record, index) => {
           return (
-            <Popover
-              placement="left"
-              trigger="hover"
-              title={i18next.t("task:Question")}
-              content={
-                <div style={{display: "flex"}}>
-                  <TextArea
-                    style={{width: "400px", height: "400px"}}
-                    value={text}
-                    readOnly
-                  />
+            <span className="text-zinc-300 text-sm">
                   <div style={{width: "400px", height: "400px"}}>
                     <Editor
                       value={this.renderQuestionTemplate(record)}
@@ -238,7 +222,6 @@ class WorkflowListPage extends BaseListPage {
               <div style={{maxWidth: "300px"}}>
                 {Setting.getShortText(text, 100)}
               </div>
-            </Popover>
           );
         },
       },
@@ -251,16 +234,12 @@ class WorkflowListPage extends BaseListPage {
         render: (text, record, index) => {
           return (
             <div>
-              <Button style={{marginTop: "10px", marginBottom: "10px", marginRight: "10px"}} type="primary" onClick={() => this.props.history.push(`/workflows/${record.name}`)}>{i18next.t("general:Edit")}</Button>
-              <Popconfirm
-                placement="topLeft"
-                title={`${i18next.t("general:Sure to delete")}: ${record.name} ?`}
-                onConfirm={() => this.deleteWorkflow(record)}
+              <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginTop: "10px", marginBottom: "10px", marginRight: "10px"}> this.props.history.push(`/workflows/${record.name}`)}>{i18next.t("general:Edit")}</button>
+              this.deleteWorkflow(record)}
                 okText={i18next.t("general:OK")}
                 cancelText={i18next.t("general:Cancel")}
               >
-                <Button style={{marginBottom: "10px"}} type="primary" danger>{i18next.t("general:Delete")}</Button>
-              </Popconfirm>
+                <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-red-600 text-white hover:bg-red-700" style={{marginBottom: "10px"}>{i18next.t("general:Delete")}</button>
             </div>
           );
         },
@@ -277,23 +256,7 @@ class WorkflowListPage extends BaseListPage {
 
     return (
       <div>
-        <Table scroll={{x: "max-content"}} columns={filteredColumns} dataSource={workflows} rowKey="name" rowSelection={this.getRowSelection()} size="middle" bordered pagination={paginationProps}
-          title={() => (
-            <div>
-              {i18next.t("general:Workflows")}&nbsp;&nbsp;&nbsp;&nbsp;
-              <Button type="primary" size="small" onClick={this.addWorkflow.bind(this)}>{i18next.t("general:Add")}</Button>
-              {this.state.selectedRowKeys.length > 0 && (
-                <Popconfirm title={`${i18next.t("general:Sure to delete")}: ${this.state.selectedRowKeys.length} ${i18next.t("general:items")} ?`} onConfirm={() => this.performBulkDelete(this.state.selectedRows, this.state.selectedRowKeys)} okText={i18next.t("general:OK")} cancelText={i18next.t("general:Cancel")}>
-                  <Button type="primary" danger size="small" icon={<DeleteOutlined />} style={{marginLeft: 8}}>
-                    {i18next.t("general:Delete")} ({this.state.selectedRowKeys.length})
-                  </Button>
-                </Popconfirm>
-              )}
-            </div>
-          )}
-          loading={this.state.loading}
-          onChange={this.handleTableChange}
-        />
+        <div className="overflow-x-auto border border-zinc-800 rounded-lg"><table className="w-full text-sm text-left"><thead className="bg-zinc-900/80 border-b border-zinc-800"><tr>{filteredColumns.map(col => <th key={col.key || col.dataIndex} className="px-3 py-2 text-xs font-medium text-zinc-400 whitespace-nowrap">{col.title}</th>)}</tr></thead><tbody className="divide-y divide-zinc-800/50">{(workflows || []).map((record, index) => <tr key={typeof "name" === "function" ? ("name")(record) : record["name"] || index} className="hover:bg-zinc-900/50 transition-colors">{filteredColumns.map(col => <td key={col.key || col.dataIndex} className="px-3 py-2 text-zinc-300 whitespace-nowrap">{col.render ? col.render(record[col.dataIndex], record, index) : record[col.dataIndex]}</td>)}</tr>)}</tbody></table></div>
       </div>
     );
   }

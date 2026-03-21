@@ -12,23 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import {Button, Popconfirm} from "antd";
 import i18next from "i18next";
 import React from "react";
 
 export const PopconfirmModal = (props) => {
   const text = props.text ? props.text : i18next.t("general:Delete");
-  const size = props.size ? props.size : "middle";
   return (
-    <Popconfirm
-      title={props.title}
-      onConfirm={props.onConfirm}
-      disabled={props.disabled}
-      okText={i18next.t("general:OK")}
-      cancelText={i18next.t("general:Cancel")}
+    <button
+      style={{...props.style}}
+      disabled={props.disabled || props.fakeDisabled}
+      onClick={() => {
+        if (props.disabled) {return;}
+        if (window.confirm(props.title)) {
+          props.onConfirm();
+        }
+      }}
+      className="px-3 py-1.5 bg-red-600 text-white rounded text-xs font-medium hover:bg-red-700 transition-colors disabled:opacity-50"
     >
-      <Button style={{...props.style}} size={size} disabled={props.disabled || props.fakeDisabled} type="primary" danger>{text}</Button>
-    </Popconfirm>
+      {text}
+    </button>
   );
 };
 

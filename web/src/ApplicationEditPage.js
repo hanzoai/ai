@@ -13,7 +13,6 @@
 // limitations under the License.
 
 import React from "react";
-import {Button, Card, Col, Input, Popconfirm, Row, Select} from "antd";
 import * as ApplicationBackend from "./backend/ApplicationBackend";
 import * as TemplateBackend from "./backend/TemplateBackend";
 import * as Setting from "./Setting";
@@ -21,7 +20,6 @@ import i18next from "i18next";
 import TemplateOptionTable from "./table/TemplateOptionTable";
 import Editor from "./common/Editor";
 
-const {TextArea} = Input;
 
 class ApplicationEditPage extends React.Component {
   constructor(props) {
@@ -143,51 +141,49 @@ class ApplicationEditPage extends React.Component {
 
   renderApplication() {
     return (
-      <Card size="small" title={
-        <div>
+      <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4">
           {i18next.t("application:Edit Application")}&nbsp;&nbsp;&nbsp;&nbsp;
-          <Button onClick={() => this.submitApplicationEdit(false)}>{i18next.t("general:Save")}</Button>
-          <Button style={{marginLeft: "20px"}} type="primary" onClick={() => this.submitApplicationEdit(true)}>{i18next.t("general:Save & Exit")}</Button>
-          {this.state.isNewApplication && <Button style={{marginLeft: "20px"}} onClick={() => this.cancelApplicationEdit()}>{i18next.t("general:Cancel")}</Button>}
+          <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700"> this.submitApplicationEdit(false)}>{i18next.t("general:Save")}</button>
+          <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}> this.submitApplicationEdit(true)}>{i18next.t("general:Save & Exit")}</button>
+          {this.state.isNewApplication && <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}> this.cancelApplicationEdit()}>{i18next.t("general:Cancel")}</button>}
         </div>
       } style={(Setting.isMobile()) ? {margin: "5px"} : {}} type="inner">
-        <Row style={{marginTop: "10px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Name"), i18next.t("general:Name - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+          </div>
+          <div className="flex-1">
             <Input value={this.state.application.name} onChange={e => {
               this.updateApplicationField("name", e.target.value);
             }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Display name"), i18next.t("general:Display name - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+          </div>
+          <div className="flex-1">
             <Input value={this.state.application.displayName} onChange={e => {
               this.updateApplicationField("displayName", e.target.value);
             }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Description"), i18next.t("general:Description - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <TextArea autoSize={{minRows: 1, maxRows: 5}} value={this.state.application.description} onChange={e => {
+          </div>
+          <div className="flex-1">
+            <span className="text-zinc-300 text-sm"> {
               this.updateApplicationField("description", e.target.value);
             }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Template"), i18next.t("general:Template - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Select virtual={false} style={{width: "100%"}} value={this.state.application.template}
-              onChange={(value => {
+          </div>
+          <div className="flex-1">
+            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.application.template}> {
                 this.setState({template: this.state.templates.find((template) => template.name === value)});
                 this.updateApplicationField("template", value);
                 this.updateApplicationField("basicConfigOptions", this.state.templates.find((template) => template.name === value)?.basicConfigOptions?.map(option => ({
@@ -197,62 +193,61 @@ class ApplicationEditPage extends React.Component {
               })}
               options={this.state.templates.map((template) => Setting.getOption(`${template.displayName} (${template.name})`, `${template.name}`))
               } />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Status"), i18next.t("general:Status - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+          </div>
+          <div className="flex-1">
             {Setting.getApplicationStatusTag(this.state.application.status)}
             {
               this.state.application.status === "Not Deployed" ? (
-                <Button loading={this.state.deploying} style={{marginLeft: "10px"}} type="primary" onClick={() => this.deployApplication()}>
+                <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "10px"}> this.deployApplication()}>
                   {i18next.t("application:Deploy")}
-                </Button>
+                </button>
               ) : (
-                <Popconfirm title={`${i18next.t("general:Sure to undeploy")}: ${this.state.application.name} ?`} onConfirm={() => this.undeployApplication()} okText={i18next.t("general:OK")} cancelText={i18next.t("general:Cancel")}>
-                  <Button loading={this.state.deploying} style={{marginLeft: "10px"}} type="primary" danger>
+                this.undeployApplication()} okText={i18next.t("general:OK")} cancelText={i18next.t("general:Cancel")}>
+                  <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-red-600 text-white hover:bg-red-700" style={{marginLeft: "10px"}>
                     {i18next.t("application:Undeploy")}
-                  </Button>
-                </Popconfirm>
+                  </button>
               )
             }
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Namespace"), i18next.t("general:Namespace - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+          </div>
+          <div className="flex-1">
             <Input disabled value={this.state.application.namespace} onChange={e => {
               this.updateApplicationField("namespace", e.target.value);
             }} />
-          </Col>
-        </Row>
+          </div>
+        </div>
 
         {this.state.templates && this.state.templates.find(template => template.name === this.state.application.template && template.enableBasicConfig) ? (
           <>
-            <Row style={{marginTop: "20px"}} >
-              <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+            <div className="flex flex-col sm:flex-row gap-2 mt-4">
+              <div className="flex-1">
                 {Setting.getLabel(i18next.t("template:Basic config"), i18next.t("template:Basic config - Tooltip"))} :
-              </Col>
-              <Col span={22} >
+              </div>
+              <div className="flex-1">
                 <TemplateOptionTable
                   templateOptions={this.state.templates.find(template => template.name === this.state.application.template)?.basicConfigOptions || []}
                   options={this.state.application.basicConfigOptions}
                   onUpdateOptions={options => {this.updateApplicationField("basicConfigOptions", options);}}
                 />
-              </Col>
-            </Row>
+              </div>
+            </div>
           </>
         ) : null}
 
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("application:Parameters"), i18next.t("application:Parameters - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+          </div>
+          <div className="flex-1">
             <div style={{height: "500px"}}>
               <Editor
                 value={this.state.application.parameters}
@@ -264,14 +259,14 @@ class ApplicationEditPage extends React.Component {
                 }}
               />
             </div>
-          </Col>
-        </Row>
+          </div>
+        </div>
 
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("application:Deployment manifest"), i18next.t("application:Deployment manifest - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+          </div>
+          <div className="flex-1">
             <div style={{height: "500px"}}>
               <Editor
                 value={this.state.application.manifest}
@@ -281,9 +276,9 @@ class ApplicationEditPage extends React.Component {
                 readOnly
               />
             </div>
-          </Col>
-        </Row>
-      </Card>
+          </div>
+        </div>
+      </div>
     );
   }
 
@@ -348,9 +343,9 @@ class ApplicationEditPage extends React.Component {
           this.state.application !== null ? this.renderApplication() : null
         }
         <div style={{marginTop: "20px", marginLeft: "40px"}}>
-          <Button size="large" onClick={() => this.submitApplicationEdit(false)}>{i18next.t("general:Save")}</Button>
-          <Button style={{marginLeft: "20px"}} type="primary" size="large" onClick={() => this.submitApplicationEdit(true)}>{i18next.t("general:Save & Exit")}</Button>
-          {this.state.isNewApplication && <Button style={{marginLeft: "20px"}} size="large" onClick={() => this.cancelApplicationEdit()}>{i18next.t("general:Cancel")}</Button>}
+          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700"> this.submitApplicationEdit(false)}>{i18next.t("general:Save")}</button>
+          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}> this.submitApplicationEdit(true)}>{i18next.t("general:Save & Exit")}</button>
+          {this.state.isNewApplication && <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}> this.cancelApplicationEdit()}>{i18next.t("general:Cancel")}</button>}
         </div>
       </div>
     );

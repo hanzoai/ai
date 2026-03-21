@@ -24,7 +24,6 @@ import "@bpmn-io/properties-panel/assets/properties-panel.css";
 import "diagram-js/assets/diagram-js.css";
 import "bpmn-font/dist/css/bpmn.css";
 import "bpmn-js-color-picker/colors/color-picker.css";
-import {Button} from "antd";
 
 const DegaultDiagram = `<?xml version="1.0" encoding="UTF-8"?>
 <bpmn:definitions xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:camunda="http://camunda.org/schema/1.0/bpmn" id="Definitions_1ihw2m0" targetNamespace="http://bpmn.io/schema/bpmn" exporter="bpmn-js (https://demo.bpmn.io)" exporterVersion="18.3.1">
@@ -226,14 +225,14 @@ function BpmnComponent({diagramXML, onLoading, onError, onXMLChange}) {
   return (
     <div style={{display: "flex", flexDirection: "column", width: "100%", height: isFullscreen ? "100vh" : "600px"}}>
       <div style={{marginBottom: 8}}>
-        <Button size="small" onClick={() => zoom("in")}>Zoom In</Button>
-        <Button size="small" onClick={() => zoom("out")} style={{marginLeft: 4}}>Zoom Out</Button>
-        <Button size="small" onClick={toggleFullscreen} style={{marginLeft: 4}}>
+        <button className="px-2 py-1 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700"> zoom("in")}>Zoom In</button>
+        <button className="px-2 py-1 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700"> zoom("out")} style={{marginLeft: 4}}>Zoom Out</button>
+        <button className="px-2 py-1 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" onClick={toggleFullscreen} style={{marginLeft: 4}>
           {isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
-        </Button>
-        <Button size="small" onClick={handleExport} style={{marginLeft: 4}}>Export</Button>
-        <Button size="small" onClick={resetView} style={{marginLeft: 4}}>Reset View</Button>
-        <Button size="small" onClick={() => setShowShortcuts(!showShortcuts)} style={{marginLeft: 4}}>Shortcuts</Button>
+        </button>
+        <button className="px-2 py-1 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" onClick={handleExport} style={{marginLeft: 4}>Export</button>
+        <button className="px-2 py-1 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" onClick={resetView} style={{marginLeft: 4}>Reset View</button>
+        <button className="px-2 py-1 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700"> setShowShortcuts(!showShortcuts)} style={{marginLeft: 4}}>Shortcuts</button>
       </div>
       <div style={{display: "flex", width: "100%", height: "100%", backgroundColor: "white"}}>
         <div

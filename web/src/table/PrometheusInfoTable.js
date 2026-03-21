@@ -13,71 +13,71 @@
 // limitations under the License.
 
 import React from "react";
-import {Table} from "antd";
 import i18next from "i18next";
 
-class PrometheusInfoTable extends React.Component {
-  constructor(props) {
-    super(props);
-    this.state = {
-      table: props.table,
-    };
+function DataTable({columns, data, rowKey = "name"}) {
+  return (
+    <div className="overflow-x-auto border border-zinc-800 rounded-lg">
+      <table className="w-full text-sm text-left">
+        <thead className="bg-zinc-900/80 border-b border-zinc-800">
+          <tr>
+            {columns.map(col => (
+              <th key={col.key || col.dataIndex} className="px-3 py-2 text-xs font-medium text-zinc-400 whitespace-nowrap">
+                {col.title}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-zinc-800/50">
+          {(data || []).map((record, index) => (
+            <tr key={record[rowKey] || index} className="hover:bg-zinc-900/50 transition-colors">
+              {columns.map(col => (
+                <td key={col.key || col.dataIndex} className="px-3 py-2 text-zinc-300 whitespace-nowrap">
+                  {col.render ? col.render(record[col.dataIndex], record, index) : record[col.dataIndex]}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function PrometheusInfoTable({prometheusInfo, table}) {
+  const latencyColumns = [
+    {title: i18next.t("general:Name"), dataIndex: "name", key: "name"},
+    {title: i18next.t("general:Method"), dataIndex: "method", key: "method"},
+    {title: i18next.t("general:Count"), dataIndex: "count", key: "count"},
+    {title: i18next.t("scan:Latency") + "(ms)", dataIndex: "latency", key: "latency"},
+  ];
+
+  const throughputColumns = [
+    {title: i18next.t("general:Name"), dataIndex: "name", key: "name"},
+    {title: i18next.t("general:Method"), dataIndex: "method", key: "method"},
+    {title: i18next.t("system:Throughput"), dataIndex: "throughput", key: "throughput"},
+  ];
+
+  if (table === "latency") {
+    return (
+      <div style={{height: "300px", overflow: "auto"}}>
+        <DataTable columns={latencyColumns} data={prometheusInfo.apiLatency} />
+      </div>
+    );
   }
-  render() {
-    const latencyColumns = [
-      {
-        title: i18next.t("general:Name"),
-        dataIndex: "name",
-        key: "name",
-      },
-      {
-        title: i18next.t("general:Method"),
-        dataIndex: "method",
-        key: "method",
-      },
-      {
-        title: i18next.t("general:Count"),
-        dataIndex: "count",
-        key: "count",
-      },
-      {
-        title: i18next.t("scan:Latency") + "(ms)",
-        dataIndex: "latency",
-        key: "latency",
-      },
-    ];
-    const throughputColumns = [
-      {
-        title: i18next.t("general:Name"),
-        dataIndex: "name",
-        key: "name",
-      },
-      {
-        title: i18next.t("general:Method"),
-        dataIndex: "method",
-        key: "method",
-      },
-      {
-        title: i18next.t("system:Throughput"),
-        dataIndex: "throughput",
-        key: "throughput",
-      },
-    ];
-    if (this.state.table === "latency") {
-      return (
-        <div style={{height: "300px", overflow: "auto"}}>
-          <Table columns={latencyColumns} dataSource={this.props.prometheusInfo.apiLatency} pagination={false} />
-        </div>
-      );
-    } else if (this.state.table === "throughput") {
-      return (
-        <div style={{height: "300px", overflow: "auto"}}>
-          {i18next.t("system:Total Throughput")}: {this.props.prometheusInfo.totalThroughput}
-          <Table columns={throughputColumns} dataSource={this.props.prometheusInfo.apiThroughput} pagination={false} />
-        </div>
-      );
-    }
+
+  if (table === "throughput") {
+    return (
+      <div style={{height: "300px", overflow: "auto"}}>
+        <p className="text-sm text-zinc-300 mb-2">
+          {i18next.t("system:Total Throughput")}: {prometheusInfo.totalThroughput}
+        </p>
+        <DataTable columns={throughputColumns} data={prometheusInfo.apiThroughput} />
+      </div>
+    );
   }
+
+  return null;
 }
 
 export default PrometheusInfoTable;
