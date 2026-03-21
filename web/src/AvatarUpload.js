@@ -13,7 +13,6 @@
 // limitations under the License.
 
 import React, {useState} from "react";
-import {Button, Col, Image, Input, Row, Space, Upload} from "antd";
 import * as Setting from "./Setting";
 import i18next from "i18next";
 import * as TreeFileBackend from "./backend/TreeFileBackend";
@@ -74,14 +73,14 @@ const StoreAvatarUploader = (props) => {
 
   return (
     <div>
-      <Row>
-        <Col span={24}>
+      <div className="flex flex-col sm:flex-row gap-2 mt-4">
+        <div className="flex-1">
           <Input value={currentImageUrl || ""} onChange={e => onUpdate(e.target.value)} />
-        </Col>
-      </Row>
+        </div>
+      </div>
 
-      <Row style={{marginTop: "10px"}}>
-        <Col span={24}>
+      <div className="flex flex-col sm:flex-row gap-2 mt-4">
+        <div className="flex-1">
           <Space direction="vertical" align="center">
             {
               currentImageUrl && (
@@ -93,14 +92,14 @@ const StoreAvatarUploader = (props) => {
               )
             }
 
-            <Upload name="file" accept="image/*" showUploadList={false} customRequest={handleUpload}>
-              <Button type="primary" loading={loading}>
+            
+              <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200">
                 {i18next.t("general:Upload")}
-              </Button>
-            </Upload>
+              </button>
+            
           </Space>
-        </Col>
-      </Row>
+        </div>
+      </div>
     </div>
   );
 };

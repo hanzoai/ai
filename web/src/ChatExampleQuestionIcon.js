@@ -12,60 +12,38 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import React from "react";
-import {
-  BulbOutlined,
-  FireOutlined, GiftOutlined,
-  HeartOutlined,
-  IssuesCloseOutlined,
-  QuestionOutlined, SearchOutlined,
-  TrophyOutlined
-} from "@ant-design/icons";
+import React, {useState} from "react";
+import {CircleHelp, Flame, Gift, Heart, Lightbulb, Search, ShieldCheck, Trophy} from "lucide-react";
 
-class ImageWithFallback extends React.Component {
-  constructor(props) {
-    super(props);
-    this.state = {
-      hasError: false,
-    };
+const defaultIcons = [
+  {Icon: CircleHelp, color: "text-red-500"},
+  {Icon: ShieldCheck, color: "text-blue-500"},
+  {Icon: Lightbulb, color: "text-green-500"},
+  {Icon: Flame, color: "text-orange-500"},
+  {Icon: Heart, color: "text-pink-500"},
+  {Icon: Gift, color: "text-purple-500"},
+  {Icon: Trophy, color: "text-yellow-500"},
+  {Icon: Search, color: "text-amber-700"},
+];
+
+const ImageWithFallback = ({src}) => {
+  const [hasError, setHasError] = useState(!src);
+
+  if (hasError || !src) {
+    const item = defaultIcons[Math.floor(Math.random() * defaultIcons.length)];
+    const {Icon, color} = item;
+    return <Icon className={`w-5 h-5 ${color}`} />;
   }
-  // eslint-disable-next-line react/no-deprecated
-  componentWillMount() {
-    this.setState({
-      hasError: false,
-    });
-  }
 
-  handleError = () => {
-    this.setState({hasError: true});
-  };
-
-  render() {
-    const defaultIcons = [
-      <QuestionOutlined style={{color: "red"}} key={"1"} />,
-      <IssuesCloseOutlined style={{color: "blue"}} key={"2"} />,
-      <BulbOutlined style={{color: "green"}} key={"3"} />,
-      <FireOutlined style={{color: "orange"}} key={"4"} />,
-      <HeartOutlined style={{color: "pink"}} key={"5"} />,
-      <GiftOutlined style={{color: "purple"}} key={"6"} />,
-      <TrophyOutlined style={{color: "gold"}} key={"7"} />,
-      <SearchOutlined style={{color: "brown"}} key={"8"} />,
-    ];
-
-    if (this.state.hasError || !this.props.src) {
-      return defaultIcons[Math.floor(Math.random() * defaultIcons.length)];
-    }
-
-    return (
-      <img
-        src={this.props.src}
-        alt="icon"
-        style={{width: "20px", height: "20px"}}
-        onError={this.handleError}
-        referrerPolicy="no-referrer"
-      />
-    );
-  }
-}
+  return (
+    <img
+      src={src}
+      alt="icon"
+      className="w-5 h-5"
+      onError={() => setHasError(true)}
+      referrerPolicy="no-referrer"
+    />
+  );
+};
 
 export default ImageWithFallback;

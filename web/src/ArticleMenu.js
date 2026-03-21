@@ -13,7 +13,6 @@
 // limitations under the License.
 
 import React from "react";
-import {Menu} from "antd";
 
 class ArticleMenu extends React.Component {
   // Function to truncate text exceeding a certain length

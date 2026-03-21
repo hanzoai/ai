@@ -11,7 +11,6 @@
 // limitations under the License.
 
 import React from "react";
-import {Button, Select, Tooltip} from "antd";
 import * as Setting from "../Setting";
 import {renderReason, renderText} from "../ChatMessageRender";
 import moment from "moment";
@@ -696,21 +695,14 @@ class ChatWidget extends React.Component {
         justifyContent: "space-between",
       }}>
         <div style={{display: "flex", alignItems: "center", gap: "12px", flex: 1, flexWrap: "wrap"}}>
-          <Tooltip title={chatDisplayName}>
+          
             <span style={{fontWeight: "500", color: "#333", width: Setting.isMobile() ? "35vw" : "15rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"}}>{chatDisplayName}</span>
-          </Tooltip>
+          
 
           {this.state.modelProviders.length > 0 && (
-            <Select
-              size="small"
-              style={{width: Setting.isMobile() ? "35vw" : "15rem"}}
-              value={this.state.currentChat?.modelProvider || this.state.modelProviders[0]?.name || ""}
-              onChange={this.updateModelProvider}
-              placeholder="Select model"
-              optionLabelProp="children"
-            >
+            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.currentChat?.modelProvider || this.state.modelProviders[0]?.name || ""} onChange={e => (this.updateModelProvider)(e.target.value)}>
               {this.state.modelProviders.map((provider, id) => (
-                <Select.Option key={id} value={provider.name}>
+                <option key={id} value={provider.name}>
                   <div style={{display: "flex", alignItems: "center", gap: "6px"}}>
                     <img
                       src={Setting.getProviderLogoURL(provider)}
@@ -719,20 +711,16 @@ class ChatWidget extends React.Component {
                     />
                     <span>{provider.displayName || provider.name}</span>
                   </div>
-                </Select.Option>
+                </option>
               ))}
-            </Select>
+            </select>
           )}
 
           {showNewChatButton && (
             <div style={{display: "flex", alignItems: "center", gap: "8px"}}>
-              <Button
-                type="primary"
-                size="small"
-                onClick={this.clearMessages}
-              >
+              <button className="px-2 py-1 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" onClick={this.clearMessages}>
                 {i18next.t("chat:New Chat")}
-              </Button>
+              </button>
             </div>
           )}
         </div>

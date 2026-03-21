@@ -33,19 +33,14 @@ marked.setOptions({
 export function renderMarkdown(text) {
   const rawHtml = marked(text);
   let cleanHtml = DOMPurify.sanitize(rawHtml);
-  /* replace <p></p> with <div></div>, reduce paragraph spacing. */
   cleanHtml = cleanHtml.replace(/<p>/g, "<div>").replace(/<\/p>/g, "</div>");
-  /* h2 is larger than h1, h2 is the largest, so replace h1 with h2, and set margin as 20px. */
   cleanHtml = cleanHtml.replace(/<h1>/g, "<h2>").replace(/<(h[1-6])>/g, "<$1 style='margin-top: 20px; margin-bottom: 20px'>");
-  /* adjust margin and internal gap for unordered list and ordered list. */
   cleanHtml = cleanHtml.replace(/<(ul)>/g, "<ul style='display: flex; flex-direction: column; gap: 10px; margin-top: 10px; margin-bottom: 10px'>").replace(/<(ol)>/g, "<ol style='display: flex; flex-direction: column; gap: 0px; margin-top: 20px; margin-bottom: 20px'>");
-  /* adjust code block, for auto line feed. */
   cleanHtml = cleanHtml.replace(/<pre>/g, "<pre style='white-space: pre-wrap; white-space: -moz-pre-wrap; white-space: -pre-wrap; white-space: -o-pre-wrap; word-wrap: break-word;'>");
   return cleanHtml;
 }
 
 export function renderLatex(text) {
-  // Store code blocks temporarily to avoid processing LaTeX inside them
   const codeBlocks = [];
   const codeBlockPlaceholder = "___CODE_BLOCK___";
   text = text.replace(/```[\s\S]*?```/g, (match) => {
@@ -53,64 +48,43 @@ export function renderLatex(text) {
     return codeBlockPlaceholder + (codeBlocks.length - 1) + codeBlockPlaceholder;
   });
 
-  // Match $$...$$ for display math (must be before single $ to avoid conflicts)
   const displayDollarRegex = /\$\$([\s\S]+?)\$\$/g;
-  // Match \[...\] for display math
   const displayBracketRegex = /\\\[([\s\S]+?)\\\]/g;
-  // Match $...$ for inline math (simpler pattern without lookbehind)
   const inlineDollarRegex = /\$([^$\n]+?)\$/g;
-  // Match \(...\) for inline math
   const inlineParenRegex = /\\\((.+?)\\\)/g;
 
-  // Process display math with $$ first
   text = text.replace(displayDollarRegex, (match, formula) => {
     try {
-      return katex.renderToString(formula, {
-        throwOnError: false,
-        displayMode: true,
-      });
+      return katex.renderToString(formula, {throwOnError: false, displayMode: true});
     } catch (error) {
       return match;
     }
   });
 
-  // Process display math with \[...\]
   text = text.replace(displayBracketRegex, (match, formula) => {
     try {
-      return katex.renderToString(formula, {
-        throwOnError: false,
-        displayMode: true,
-      });
+      return katex.renderToString(formula, {throwOnError: false, displayMode: true});
     } catch (error) {
       return match;
     }
   });
 
-  // Process inline math with $...$
   text = text.replace(inlineDollarRegex, (match, formula) => {
     try {
-      return katex.renderToString(formula, {
-        throwOnError: false,
-        displayMode: false,
-      });
+      return katex.renderToString(formula, {throwOnError: false, displayMode: false});
     } catch (error) {
       return match;
     }
   });
 
-  // Process inline math with \(...\)
   text = text.replace(inlineParenRegex, (match, formula) => {
     try {
-      return katex.renderToString(formula, {
-        throwOnError: false,
-        displayMode: false,
-      });
+      return katex.renderToString(formula, {throwOnError: false, displayMode: false});
     } catch (error) {
       return match;
     }
   });
 
-  // Restore code blocks
   text = text.replace(new RegExp(codeBlockPlaceholder + "(\\d+)" + codeBlockPlaceholder, "g"), (match, index) => {
     return codeBlocks[parseInt(index)];
   });
@@ -129,20 +103,17 @@ export function renderCode(text) {
 
 export function renderText(text) {
   let html;
-  // Process LaTeX first to avoid markdown interfering with math delimiters
   html = renderLatex(text);
   html = renderMarkdown(html);
   html = renderCode(html);
   return (
-    <div dangerouslySetInnerHTML={{__html: html}} style={{display: "flex", flexDirection: "column", gap: "0px"}} />
+    <div dangerouslySetInnerHTML={{__html: html}} className="flex flex-col gap-0" />
   );
 }
 
 export function renderReason(text) {
   if (!text) {return null;}
 
-  // Apply the same markdown, LaTeX, and code highlighting as renderText
-  // Process LaTeX first to avoid markdown interfering with math delimiters
   let html = renderLatex(text);
   html = renderMarkdown(html);
   html = renderCode(html);
@@ -150,15 +121,7 @@ export function renderReason(text) {
   return (
     <div
       dangerouslySetInnerHTML={{__html: html}}
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: "0px",
-        backgroundColor: "#f8f9fa",
-        borderRadius: "4px",
-        fontStyle: "italic",
-        color: "#505050",
-      }}
+      className="flex flex-col gap-0 bg-secondary rounded italic text-muted-foreground"
     />
   );
 }

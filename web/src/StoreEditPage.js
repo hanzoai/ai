@@ -13,7 +13,7 @@
 // limitations under the License.
 
 import React from "react";
-import {Button, Card, Cascader, Col, Input, InputNumber, Popover, Row, Select, Switch} from "antd";
+import {Cascader, Select} from "antd"; // eslint-disable-line unused-imports/no-unused-imports
 import * as StoreBackend from "./backend/StoreBackend";
 import * as StorageProviderBackend from "./backend/StorageProviderBackend";
 import * as ProviderBackend from "./backend/ProviderBackend";
@@ -23,12 +23,10 @@ import FileTree from "./FileTree";
 import {ThemeDefault} from "./Conf";
 import ExampleQuestionTable from "./table/ExampleQuestionTable";
 import StoreAvatarUploader from "./AvatarUpload";
-import {LinkOutlined} from "@ant-design/icons";
-import Editor from "./common/Editor";
+import {Link as LinkIcon} from "lucide-react";
 import {NavItemTree} from "./component/nav-item-tree/NavItemTree";
 
 const {Option} = Select;
-const {TextArea} = Input;
 
 class StoreEditPage extends React.Component {
   constructor(props) {
@@ -80,10 +78,7 @@ class StoreEditPage extends React.Component {
           if (res.data && typeof res.data2 === "string" && res.data2 !== "") {
             res.data.error = res.data2;
           }
-
-          this.setState({
-            store: res.data,
-          });
+          this.setState({store: res.data});
         } else {
           Setting.showMessage("error", `${i18next.t("general:Failed to get")}: ${res.msg}`);
         }
@@ -94,9 +89,7 @@ class StoreEditPage extends React.Component {
     StoreBackend.getStores(this.props.account.name)
       .then((res) => {
         if (res.status === "ok") {
-          this.setState({
-            stores: res.data,
-          });
+          this.setState({stores: res.data});
         } else {
           Setting.showMessage("error", `${i18next.t("general:Failed to get")}: ${res.msg}`);
         }
@@ -107,9 +100,7 @@ class StoreEditPage extends React.Component {
     StorageProviderBackend.getStorageProviders(this.props.account.name)
       .then((res) => {
         if (res.status === "ok") {
-          this.setState({
-            iamStorageProviders: res.data,
-          });
+          this.setState({iamStorageProviders: res.data});
         } else {
           Setting.showMessage("error", `${i18next.t("general:Failed to get")}: ${res.msg}`);
         }
@@ -141,628 +132,112 @@ class StoreEditPage extends React.Component {
     return value;
   }
 
+  updateStoreField(key, value) {
+    value = this.parseStoreField(key, value);
+    const store = this.state.store;
+    store[key] = value;
+    this.setState({store: store});
+  }
+
+  isAIStorageProvider(storageProvider) {
+    const providerSelected = this.state.storageProviders.concat(this.state.iamStorageProviders).find(v => v.name === storageProvider);
+    return providerSelected && providerSelected.type === "OpenAI File System";
+  }
+
   renderBuiltinTools() {
     const builtinToolsConfig = Setting.getBuiltinTools();
     const selectedTools = this.state.store.builtinTools || [];
-
     const options = builtinToolsConfig.map(category => ({
       value: category.category,
       label: `${category.icon} ${category.name}`,
       children: category.tools.map(tool => ({
         value: tool.name,
-        label: (
-          <div>
-            <div style={{fontWeight: 500, color: "#1890ff"}}>{tool.name}</div>
-            <div style={{fontSize: "12px", color: "#8c8c8c"}}>{tool.description}</div>
-          </div>
-        ),
+        label: (<div><div style={{fontWeight: 500, color: "#1890ff"}}>{tool.name}</div><div style={{fontSize: "12px", color: "#8c8c8c"}}>{tool.description}</div></div>),
       })),
     }));
-
     const value = selectedTools.map(tool => {
-      const category = builtinToolsConfig.find(cat =>
-        cat.tools.some(t => t.name === tool)
-      );
+      const category = builtinToolsConfig.find(cat => cat.tools.some(t => t.name === tool));
       return category ? [category.category, tool] : null;
     }).filter(v => v);
 
     return (
-      <Cascader
-        multiple
-        maxTagCount="responsive"
-        style={{width: "100%"}}
-        placeholder={i18next.t("store:Select builtin tools")}
-        options={options}
-        value={value}
-        onChange={(values) => {
-          this.updateStoreField("builtinTools", values.map(v => v[1]));
-        }}
-        showCheckedStrategy="SHOW_CHILD"
-        popupClassName="builtin-tools-cascader"
-      />
+      <Cascader multiple maxTagCount="responsive" style={{width: "100%"}} placeholder={i18next.t("store:Select builtin tools")} options={options} value={value} onChange={(values) => {this.updateStoreField("builtinTools", values.map(v => v[1]));}} showCheckedStrategy="SHOW_CHILD" popupClassName="builtin-tools-cascader" />
     );
   }
 
-  updateStoreField(key, value) {
-    value = this.parseStoreField(key, value);
-
-    const store = this.state.store;
-    store[key] = value;
-    this.setState({
-      store: store,
-    });
-  }
-
-  isAIStorageProvider(storageProvider) {
-    const providerSelected = this.state.storageProviders.concat(this.state.iamStorageProviders).find(v => v.name === storageProvider);
-    if (providerSelected && providerSelected.type === "OpenAI File System") {
-      return true;
-    }
-    return false;
+  renderFormRow(label, tooltip, content) {
+    return (
+      <div className="flex items-start gap-4 mt-5">
+        <label className="w-40 shrink-0 pt-1 text-sm text-muted-foreground text-right">
+          {Setting.getLabel(label, tooltip)} :
+        </label>
+        <div className="flex-1">{content}</div>
+      </div>
+    );
   }
 
   renderStore() {
     return (
-      <Card size="small" title={
-        <div>
-          {i18next.t("store:Edit Store")}&nbsp;&nbsp;&nbsp;&nbsp;
-          <Button onClick={() => this.submitStoreEdit(false, undefined)}>{i18next.t("general:Save")}</Button>
-          <Button style={{marginLeft: "20px"}} type="primary" onClick={() => this.submitStoreEdit(true, undefined)}>{i18next.t("general:Save & Exit")}</Button>
-          {this.state.isNewStore && <Button style={{marginLeft: "20px"}} onClick={() => this.cancelStoreEdit()}>{i18next.t("general:Cancel")}</Button>}
+      <div className="rounded-lg border border-border bg-card p-6 ml-1">
+        <div className="flex items-center gap-4 mb-6">
+          <h2 className="text-lg font-semibold text-foreground">{i18next.t("store:Edit Store")}</h2>
+          <button onClick={() => this.submitStoreEdit(false, undefined)} className="rounded-md border border-border px-3 py-1.5 text-sm text-foreground hover:bg-secondary transition-colors">{i18next.t("general:Save")}</button>
+          <button onClick={() => this.submitStoreEdit(true, undefined)} className="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground hover:bg-primary/90 transition-colors">{i18next.t("general:Save & Exit")}</button>
+          {this.state.isNewStore && <button onClick={() => this.cancelStoreEdit()} className="rounded-md border border-border px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">{i18next.t("general:Cancel")}</button>}
         </div>
-      } style={{marginLeft: "5px"}} type="inner">
-        <Row style={{marginTop: "10px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("general:Name"), i18next.t("general:Name - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Input value={this.state.store.name} onChange={e => {
-              this.updateStoreField("name", e.target.value);
-            }} disabled={Setting.isUserBoundToStore(this.props.account)} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("general:Display name"), i18next.t("general:Display name - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Input value={this.state.store.displayName} onChange={e => {
-              this.updateStoreField("displayName", e.target.value);
-            }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("general:Title"), i18next.t("general:Title - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Input value={this.state.store.title} onChange={e => {
-              this.updateStoreField("title", e.target.value);
-            }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("general:Avatar"), i18next.t("general:Avatar - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <StoreAvatarUploader
-              store={this.state.store}
-              onUpdate={(newUrl) => {
-                this.updateStoreField("avatar", newUrl);
-              }}
-              onUploadComplete={(newUrl) => {
-                this.submitStoreEdit(false, undefined);
-              }}
-            />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("store:Is default"), i18next.t("store:Is default - Tooltip"))} :
-          </Col>
-          <Col span={1}>
-            <Switch checked={this.state.store.isDefault} onChange={checked => {
-              this.updateStoreField("isDefault", checked);
-            }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}}>
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("general:State"), i18next.t("general:State - Tooltip"))} :
-          </Col>
-          <Col span={5}>
-            <Select virtual={false} style={{width: "100%"}} value={this.state.store.state} onChange={value => {
-              this.updateStoreField("state", value);
-            }}
-            options={[
-              {value: "Active", label: i18next.t("general:Active")},
-              {value: "Inactive", label: i18next.t("general:Inactive")},
-            ].map(item => Setting.getOption(item.label, item.value))} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("store:Storage provider"), i18next.t("store:Storage provider - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Select virtual={false} style={{width: "100%"}} value={this.state.store.storageProvider} onChange={(value => {this.updateStoreField("storageProvider", value);})}
-            >
-              {
-                this.state.storageProviders.concat(this.state.iamStorageProviders).map((provider, index) =>
-                  this.renderProviderOption(provider, index)
-                )
-              }
-            </Select>
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("store:Storage subpath"), i18next.t("store:Storage subpath - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Input value={this.state.store.storageSubpath} onChange={e => {
-              this.updateStoreField("storageSubpath", e.target.value);
-            }} />
-          </Col>
-        </Row>
-        {this.isAIStorageProvider(this.state.store.storageProvider) ? (
-          <>
-            <Row style={{marginTop: "20px"}} >
-              <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-                {Setting.getLabel(i18next.t("store:Vector store id"), i18next.t("store:Vector store id - Tooltip"))} :
-              </Col>
-              <Col span={22} >
-                <Input value={this.state.store.vectorStoreId} onChange={e => {
-                  this.updateStoreField("vectorStoreId", e.target.value);
-                }} />
-              </Col>
-            </Row>
-          </>
-        ) : null}
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("store:Image provider"), i18next.t("store:Image provider - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Select virtual={false} style={{width: "100%"}} value={this.state.store.imageProvider} onChange={(value => {this.updateStoreField("imageProvider", value);})}
-            >
-              <Option key="none" value="">
-                {i18next.t("general:empty")}
-              </Option>
-              {
-                this.state.iamStorageProviders.map((provider, index) =>
-                  this.renderProviderOption(provider, index)
-                )
-              }
-            </Select>
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("store:Split provider"), i18next.t("store:Split provider - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Select virtual={false} style={{width: "100%"}} value={this.state.store.splitProvider} onChange={(value => {this.updateStoreField("splitProvider", value);})}
-              options={[{name: "Default"}, {name: "Basic"}, {name: "QA"}, {name: "Markdown"}].map((provider) => Setting.getOption(provider.name, provider.name))
-              } />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("store:Search provider"), i18next.t("store:Search provider - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Select virtual={false} style={{width: "100%"}} value={this.state.store.searchProvider} onChange={(value => {this.updateStoreField("searchProvider", value);})}
-              options={[{name: "Default"}, {name: "Hierarchy"}].map((provider) => Setting.getOption(provider.name, provider.name))
-              } />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("provider:Model provider"), i18next.t("provider:Model provider - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Select virtual={false} style={{width: "100%"}} value={this.state.store.modelProvider} onChange={(value => {this.updateStoreField("modelProvider", value);})}
-            >
-              {
-                this.state.modelProviders.map((provider, index) =>
-                  this.renderProviderOption(provider, index)
-                )
-              }
-            </Select>
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("store:Embedding provider"), i18next.t("store:Embedding provider - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Select virtual={false} style={{width: "100%"}} value={this.state.store.embeddingProvider} onChange={(value => {this.updateStoreField("embeddingProvider", value);})}
-            >
-              <Option key="none" value="">
-                {i18next.t("general:empty")}
-              </Option>
-              {
-                this.state.embeddingProviders.map((provider, index) =>
-                  this.renderProviderOption(provider, index)
-                )
-              }
-            </Select>
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("store:Agent provider"), i18next.t("store:Agent provider - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Select virtual={false} style={{width: "100%"}} value={this.state.store.agentProvider} onChange={(value => {this.updateStoreField("agentProvider", value);})}>
-              <Option key="Empty" value="">{i18next.t("general:empty")}</Option>
-              {
-                this.state.agentProviders.map((provider, index) => this.renderProviderOption(provider, index))
-              }
-            </Select>
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("store:Builtin tools"), i18next.t("store:Builtin tools - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            {this.renderBuiltinTools()}
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("store:Text-to-Speech provider"), i18next.t("store:Text-to-Speech provider - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Select virtual={false} style={{width: "100%"}} value={this.state.store.textToSpeechProvider} onChange={(value => {this.updateStoreField("textToSpeechProvider", value);})}
-            >
-              <Option key="Empty" value="">{i18next.t("general:empty")}</Option>
-              <Option key="Browser Built-In" value="Browser Built-In">Browser Built-In</Option>
-              {
-                this.state.textToSpeechProviders.map((provider, index) => this.renderProviderOption(provider, index))
-              }
-            </Select>
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("store:Enable TTS streaming"), i18next.t("store:Enable TTS streaming - Tooltip"))} :
-          </Col>
-          <Col span={1}>
-            <Switch checked={this.state.store.enableTtsStreaming} onChange={checked => {
-              this.updateStoreField("enableTtsStreaming", checked);
-            }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("store:Speech-to-Text provider"), i18next.t("store:Speech-to-Text provider - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Select virtual={false} style={{width: "100%"}} value={this.state.store.speechToTextProvider} onChange={(value => {this.updateStoreField("speechToTextProvider", value);})}>
-              <Option key="Empty" value="">{i18next.t("general:empty")}</Option>
-              <Option key="Browser Built-In" value="Browser Built-In">Browser Built-In</Option>
-              {
-                this.state.speechToTextProviders.map((provider, index) => this.renderProviderOption(provider, index))
-              }
-            </Select>
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("store:Frequency"), i18next.t("store:Frequency - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <InputNumber min={0} value={this.state.store.frequency} onChange={value => {
-              this.updateStoreField("frequency", value);
-            }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("store:Memory limit"), i18next.t("store:Memory limit - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <InputNumber min={0} value={this.state.store.memoryLimit} onChange={value => {
-              this.updateStoreField("memoryLimit", value);
-            }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("store:Limit minutes"), i18next.t("store:Limit minutes - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <InputNumber min={0} value={this.state.store.limitMinutes} onChange={value => {
-              this.updateStoreField("limitMinutes", value);
-            }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("store:Welcome"), i18next.t("store:Welcome - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Input value={this.state.store.welcome} onChange={e => {
-              this.updateStoreField("welcome", e.target.value);
-            }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("store:Welcome title"), i18next.t("store:Welcome title - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Input
-              value={this.state.store.welcomeTitle} onChange={e => {
-                this.updateStoreField("welcomeTitle", e.target.value);
-              }}
-            />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("store:Welcome text"), i18next.t("store:Welcome text - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Input
-              value={this.state.store.welcomeText} onChange={e => {
-                this.updateStoreField("welcomeText", e.target.value);
-              }}
-            />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("store:Prompt"), i18next.t("store:Prompt - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <TextArea autoSize={{minRows: 1, maxRows: 15}} value={this.state.store.prompt} onChange={(e) => {
-              this.updateStoreField("prompt", e.target.value);
-            }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("store:Example questions"), i18next.t("store:Example questions - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <ExampleQuestionTable table={this.state.store.exampleQuestions} onUpdateTable={(exampleQuestions) => {
-              this.updateStoreField("exampleQuestions", exampleQuestions);
-            }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("store:Knowledge count"), i18next.t("store:Knowledge count - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <InputNumber min={0} max={100} value={this.state.store.knowledgeCount} onChange={value => {
-              this.updateStoreField("knowledgeCount", value);
-            }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("store:Suggestion count"), i18next.t("store:Suggestion count - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <InputNumber min={0} max={10} value={this.state.store.suggestionCount} onChange={value => {
-              this.updateStoreField("suggestionCount", value);
-            }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("general:Site setting"), i18next.t("general:Site setting - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Row style={{marginTop: "20px"}}>
-              <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-                {Setting.getLabel(i18next.t("store:Theme color"), i18next.t("store:Theme color - Tooltip"))} :
-              </Col>
-              <Col span={22} >
-                <input type="color" value={this.state.store.themeColor} onChange={(e) => {
-                  this.updateStoreField("themeColor", e.target.value);
-                }} />
-              </Col>
-            </Row>
-            <Row style={{marginTop: "20px"}} >
-              <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-                {Setting.getLabel(i18next.t("store:Navbar items"), i18next.t("store:Navbar items - Tooltip"))} :
-              </Col>
-              <Col span={22} >
-                <NavItemTree
-                  disabled={!Setting.isAdminUser(this.props.account)}
-                  checkedKeys={this.state.store.navItems ?? ["all"]}
-                  defaultExpandedKeys={["all"]}
-                  onCheck={(checked) => {
-                    this.updateStoreField("navItems", checked);
-                  }}
-                />
-              </Col>
-            </Row>
-            <Row style={{marginTop: "20px"}} >
-              <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-                {Setting.getLabel(i18next.t("general:HTML title"), i18next.t("general:HTML title - Tooltip"))} :
-              </Col>
-              <Col span={22} >
-                <Input value={this.state.store.htmlTitle} onChange={e => {
-                  this.updateStoreField("htmlTitle", e.target.value);
-                }} />
-              </Col>
-            </Row>
-            <Row style={{marginTop: "20px"}} >
-              <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-                {Setting.getLabel(i18next.t("general:Favicon URL"), i18next.t("general:Favicon URL - Tooltip"))} :
-              </Col>
-              <Col span={22} >
-                <Input prefix={<LinkOutlined />} value={this.state.store.faviconUrl} onChange={e => {
-                  this.updateStoreField("faviconUrl", e.target.value);
-                }} />
-              </Col>
-            </Row>
-            <Row style={{marginTop: "20px"}} >
-              <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 1}>
-                {i18next.t("general:Preview")}:
-              </Col>
-              <Col span={23} >
-                <a target="_blank" rel="noreferrer" href={Setting.getFaviconUrl("", this.state.store.faviconUrl)}>
-                  <img src={Setting.getFaviconUrl("", this.state.store.faviconUrl)} alt={Setting.getFaviconUrl("", this.state.store.faviconUrl)} height={90} style={{marginBottom: "20px"}} />
-                </a>
-              </Col>
-            </Row>
-            <Col span={22} >
-              <Row style={{marginTop: "20px"}} >
-                <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-                  {Setting.getLabel(i18next.t("general:Logo URL"), i18next.t("general:Logo URL - Tooltip"))} :
-                </Col>
-                <Col span={22} >
-                  <Input prefix={<LinkOutlined />} value={this.state.store.logoUrl} onChange={e => {
-                    this.updateStoreField("logoUrl", e.target.value);
-                  }} />
-                </Col>
-              </Row>
-              <Row style={{marginTop: "20px"}} >
-                <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 1}>
-                  {i18next.t("general:Preview")}:
-                </Col>
-                <Col span={23} >
-                  <a target="_blank" rel="noreferrer" href={Setting.getLogo("", this.state.store.logoUrl)}>
-                    <img src={Setting.getLogo("", this.state.store.logoUrl)} alt={Setting.getLogo("", this.state.store.logoUrl)} height={90} style={{marginBottom: "20px"}} />
-                  </a>
-                </Col>
-              </Row>
-              <Row style={{marginTop: "20px"}} >
-                <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-                  {Setting.getLabel(i18next.t("general:Footer HTML"), i18next.t("general:Footer HTML - Tooltip"))} :
-                </Col>
-                <Col span={22} >
-                  <Popover placement="right" content={
-                    <div style={{width: "900px", height: "300px"}} >
-                      <Editor
-                        value={this.state.store.footerHtml}
-                        lang="html"
-                        fillHeight
-                        dark
-                        onChange={value => {
-                          this.updateStoreField("footerHtml", value);
-                        }}
-                      />
-                    </div>
-                  } title={i18next.t("store:Footer HTML - Edit")} trigger="click">
-                    <Input value={this.state.store.footerHtml} style={{marginBottom: "10px"}} onChange={e => {
-                      this.updateStoreField("footerHtml", e.target.value);
-                    }} />
-                  </Popover>
-                </Col>
-              </Row>
-            </Col>
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("store:Vector stores"), i18next.t("store:Vector stores - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Select virtual={false} mode="tags" style={{width: "100%"}} value={this.state.store.vectorStores} onChange={(value => {this.updateStoreField("vectorStores", value);})}>
-              {
-                this.state.stores?.filter(item => item.name !== this.state.store.name).map((item, index) => <Option key={item.name} value={item.name}>{`${item.displayName} (${item.name})`}</Option>)
-              }
-            </Select>
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("store:Child stores"), i18next.t("store:Child stores - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Select virtual={false} mode="tags" style={{width: "100%"}} value={this.state.store.childStores} onChange={(value => {this.updateStoreField("childStores", value);})}>
-              {
-                this.state.stores?.filter(item => item.name !== this.state.store.name).map((item, index) => <Option key={item.name} value={item.name}>{`${item.displayName} (${item.name})`}</Option>)
-              }
-            </Select>
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("store:Child model providers"), i18next.t("store:Child model providers - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Select virtual={false} mode="tags" style={{width: "100%"}} value={this.state.store.childModelProviders} onChange={(value => {this.updateStoreField("childModelProviders", value);})}>
-              {
-                this.state.modelProviders?.map((item, index) =>
-                  this.renderProviderOption(item, index)
-                )
-              }
-            </Select>
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("store:Forbidden words"), i18next.t("store:Forbidden words - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Select virtual={false} mode="tags" style={{width: "100%"}} value={this.state.store.forbiddenWords} onChange={(value => {this.updateStoreField("forbiddenWords", value);})}>
-            </Select>
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("store:Show auto read"), i18next.t("store:Show auto read - Tooltip"))} :
-          </Col>
-          <Col span={1}>
-            <Switch checked={this.state.store.showAutoRead} onChange={checked => {
-              this.updateStoreField("showAutoRead", checked);
-            }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("store:Disable file upload"), i18next.t("store:Disable file upload - Tooltip"))} :
-          </Col>
-          <Col span={1}>
-            <Switch checked={this.state.store.disableFileUpload} onChange={checked => {
-              this.updateStoreField("disableFileUpload", checked);
-            }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("store:Hide thinking"), i18next.t("store:Hide thinking - Tooltip"))} :
-          </Col>
-          <Col span={1}>
-            <Switch checked={this.state.store.hideThinking} onChange={checked => {
-              this.updateStoreField("hideThinking", checked);
-            }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("store:File tree"), i18next.t("store:File tree - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <FileTree account={this.props.account} store={this.state.store} onUpdateStore={(store) => {
-              this.setState({
-                store: store,
-              });
-              this.submitStoreEdit(undefined, store);
-            }} onRefresh={() => this.getStore()} />
-          </Col>
-        </Row>
-      </Card>
+
+        {this.renderFormRow(i18next.t("general:Name"), i18next.t("general:Name - Tooltip"), <input className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50" value={this.state.store.name} disabled={Setting.isUserBoundToStore(this.props.account)} onChange={e => this.updateStoreField("name", e.target.value)} />)}
+        {this.renderFormRow(i18next.t("general:Display name"), i18next.t("general:Display name - Tooltip"), <input className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring" value={this.state.store.displayName} onChange={e => this.updateStoreField("displayName", e.target.value)} />)}
+        {this.renderFormRow(i18next.t("general:Title"), i18next.t("general:Title - Tooltip"), <input className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring" value={this.state.store.title} onChange={e => this.updateStoreField("title", e.target.value)} />)}
+        {this.renderFormRow(i18next.t("general:Avatar"), i18next.t("general:Avatar - Tooltip"), <StoreAvatarUploader store={this.state.store} onUpdate={(newUrl) => this.updateStoreField("avatar", newUrl)} onUploadComplete={() => this.submitStoreEdit(false, undefined)} />)}
+        {this.renderFormRow(i18next.t("store:Is default"), i18next.t("store:Is default - Tooltip"), <input type="checkbox" checked={this.state.store.isDefault} onChange={e => this.updateStoreField("isDefault", e.target.checked)} className="w-4 h-4 rounded border-border accent-primary" />)}
+        {this.renderFormRow(i18next.t("general:State"), i18next.t("general:State - Tooltip"), <select className="w-48 h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring" value={this.state.store.state} onChange={e => this.updateStoreField("state", e.target.value)}><option value="Active">{i18next.t("general:Active")}</option><option value="Inactive">{i18next.t("general:Inactive")}</option></select>)}
+        {this.renderFormRow(i18next.t("store:Storage provider"), i18next.t("store:Storage provider - Tooltip"), <Select virtual={false} style={{width: "100%"}} value={this.state.store.storageProvider} onChange={value => this.updateStoreField("storageProvider", value)}>{this.state.storageProviders.concat(this.state.iamStorageProviders).map((provider, index) => this.renderProviderOption(provider, index))}</Select>)}
+        {this.renderFormRow(i18next.t("store:Storage subpath"), i18next.t("store:Storage subpath - Tooltip"), <input className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring" value={this.state.store.storageSubpath} onChange={e => this.updateStoreField("storageSubpath", e.target.value)} />)}
+        {this.isAIStorageProvider(this.state.store.storageProvider) && this.renderFormRow(i18next.t("store:Vector store id"), i18next.t("store:Vector store id - Tooltip"), <input className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring" value={this.state.store.vectorStoreId} onChange={e => this.updateStoreField("vectorStoreId", e.target.value)} />)}
+        {this.renderFormRow(i18next.t("store:Image provider"), i18next.t("store:Image provider - Tooltip"), <Select virtual={false} style={{width: "100%"}} value={this.state.store.imageProvider} onChange={value => this.updateStoreField("imageProvider", value)}><Option key="none" value="">{i18next.t("general:empty")}</Option>{this.state.iamStorageProviders.map((provider, index) => this.renderProviderOption(provider, index))}</Select>)}
+        {this.renderFormRow(i18next.t("store:Split provider"), i18next.t("store:Split provider - Tooltip"), <select className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring" value={this.state.store.splitProvider} onChange={e => this.updateStoreField("splitProvider", e.target.value)}>{["Default", "Basic", "QA", "Markdown"].map(name => <option key={name} value={name}>{name}</option>)}</select>)}
+        {this.renderFormRow(i18next.t("store:Search provider"), i18next.t("store:Search provider - Tooltip"), <select className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring" value={this.state.store.searchProvider} onChange={e => this.updateStoreField("searchProvider", e.target.value)}>{["Default", "Hierarchy"].map(name => <option key={name} value={name}>{name}</option>)}</select>)}
+        {this.renderFormRow(i18next.t("provider:Model provider"), i18next.t("provider:Model provider - Tooltip"), <Select virtual={false} style={{width: "100%"}} value={this.state.store.modelProvider} onChange={value => this.updateStoreField("modelProvider", value)}>{this.state.modelProviders.map((provider, index) => this.renderProviderOption(provider, index))}</Select>)}
+        {this.renderFormRow(i18next.t("store:Embedding provider"), i18next.t("store:Embedding provider - Tooltip"), <Select virtual={false} style={{width: "100%"}} value={this.state.store.embeddingProvider} onChange={value => this.updateStoreField("embeddingProvider", value)}><Option key="none" value="">{i18next.t("general:empty")}</Option>{this.state.embeddingProviders.map((provider, index) => this.renderProviderOption(provider, index))}</Select>)}
+        {this.renderFormRow(i18next.t("store:Agent provider"), i18next.t("store:Agent provider - Tooltip"), <Select virtual={false} style={{width: "100%"}} value={this.state.store.agentProvider} onChange={value => this.updateStoreField("agentProvider", value)}><Option key="Empty" value="">{i18next.t("general:empty")}</Option>{this.state.agentProviders.map((provider, index) => this.renderProviderOption(provider, index))}</Select>)}
+        {this.renderFormRow(i18next.t("store:Builtin tools"), i18next.t("store:Builtin tools - Tooltip"), this.renderBuiltinTools())}
+        {this.renderFormRow(i18next.t("store:Text-to-Speech provider"), i18next.t("store:Text-to-Speech provider - Tooltip"), <Select virtual={false} style={{width: "100%"}} value={this.state.store.textToSpeechProvider} onChange={value => this.updateStoreField("textToSpeechProvider", value)}><Option key="Empty" value="">{i18next.t("general:empty")}</Option><Option key="Browser Built-In" value="Browser Built-In">Browser Built-In</Option>{this.state.textToSpeechProviders.map((provider, index) => this.renderProviderOption(provider, index))}</Select>)}
+        {this.renderFormRow(i18next.t("store:Enable TTS streaming"), i18next.t("store:Enable TTS streaming - Tooltip"), <input type="checkbox" checked={this.state.store.enableTtsStreaming} onChange={e => this.updateStoreField("enableTtsStreaming", e.target.checked)} className="w-4 h-4 rounded border-border accent-primary" />)}
+        {this.renderFormRow(i18next.t("store:Speech-to-Text provider"), i18next.t("store:Speech-to-Text provider - Tooltip"), <Select virtual={false} style={{width: "100%"}} value={this.state.store.speechToTextProvider} onChange={value => this.updateStoreField("speechToTextProvider", value)}><Option key="Empty" value="">{i18next.t("general:empty")}</Option><Option key="Browser Built-In" value="Browser Built-In">Browser Built-In</Option>{this.state.speechToTextProviders.map((provider, index) => this.renderProviderOption(provider, index))}</Select>)}
+        {this.renderFormRow(i18next.t("store:Frequency"), i18next.t("store:Frequency - Tooltip"), <input type="number" min={0} className="w-32 h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring" value={this.state.store.frequency} onChange={e => this.updateStoreField("frequency", parseInt(e.target.value) || 0)} />)}
+        {this.renderFormRow(i18next.t("store:Memory limit"), i18next.t("store:Memory limit - Tooltip"), <input type="number" min={0} className="w-32 h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring" value={this.state.store.memoryLimit} onChange={e => this.updateStoreField("memoryLimit", parseInt(e.target.value) || 0)} />)}
+        {this.renderFormRow(i18next.t("store:Limit minutes"), i18next.t("store:Limit minutes - Tooltip"), <input type="number" min={0} className="w-32 h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring" value={this.state.store.limitMinutes} onChange={e => this.updateStoreField("limitMinutes", parseInt(e.target.value) || 0)} />)}
+        {this.renderFormRow(i18next.t("store:Welcome"), i18next.t("store:Welcome - Tooltip"), <input className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring" value={this.state.store.welcome} onChange={e => this.updateStoreField("welcome", e.target.value)} />)}
+        {this.renderFormRow(i18next.t("store:Welcome title"), i18next.t("store:Welcome title - Tooltip"), <input className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring" value={this.state.store.welcomeTitle} onChange={e => this.updateStoreField("welcomeTitle", e.target.value)} />)}
+        {this.renderFormRow(i18next.t("store:Welcome text"), i18next.t("store:Welcome text - Tooltip"), <input className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring" value={this.state.store.welcomeText} onChange={e => this.updateStoreField("welcomeText", e.target.value)} />)}
+        {this.renderFormRow(i18next.t("store:Prompt"), i18next.t("store:Prompt - Tooltip"), <textarea className="w-full min-h-[2.5rem] max-h-[22rem] resize-y rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring" value={this.state.store.prompt} onChange={e => this.updateStoreField("prompt", e.target.value)} rows={3} />)}
+        {this.renderFormRow(i18next.t("store:Example questions"), i18next.t("store:Example questions - Tooltip"), <ExampleQuestionTable table={this.state.store.exampleQuestions} onUpdateTable={(exampleQuestions) => this.updateStoreField("exampleQuestions", exampleQuestions)} />)}
+        {this.renderFormRow(i18next.t("store:Knowledge count"), i18next.t("store:Knowledge count - Tooltip"), <input type="number" min={0} max={100} className="w-32 h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring" value={this.state.store.knowledgeCount} onChange={e => this.updateStoreField("knowledgeCount", parseInt(e.target.value) || 0)} />)}
+        {this.renderFormRow(i18next.t("store:Suggestion count"), i18next.t("store:Suggestion count - Tooltip"), <input type="number" min={0} max={10} className="w-32 h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring" value={this.state.store.suggestionCount} onChange={e => this.updateStoreField("suggestionCount", parseInt(e.target.value) || 0)} />)}
+        {this.renderFormRow(i18next.t("general:Site setting"), i18next.t("general:Site setting - Tooltip"), <div className="space-y-5">
+          {this.renderFormRow(i18next.t("store:Theme color"), i18next.t("store:Theme color - Tooltip"), <input type="color" value={this.state.store.themeColor} onChange={e => this.updateStoreField("themeColor", e.target.value)} className="w-10 h-10 rounded cursor-pointer" />)}
+          {this.renderFormRow(i18next.t("store:Navbar items"), i18next.t("store:Navbar items - Tooltip"), <NavItemTree disabled={!Setting.isAdminUser(this.props.account)} checkedKeys={this.state.store.navItems ?? ["all"]} defaultExpandedKeys={["all"]} onCheck={(checked) => this.updateStoreField("navItems", checked)} />)}
+          {this.renderFormRow(i18next.t("general:HTML title"), i18next.t("general:HTML title - Tooltip"), <input className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring" value={this.state.store.htmlTitle} onChange={e => this.updateStoreField("htmlTitle", e.target.value)} />)}
+          {this.renderFormRow(i18next.t("general:Favicon URL"), i18next.t("general:Favicon URL - Tooltip"), <div className="relative"><LinkIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" /><input className="w-full h-9 rounded-md border border-border bg-background pl-9 pr-3 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring" value={this.state.store.faviconUrl} onChange={e => this.updateStoreField("faviconUrl", e.target.value)} /></div>)}
+          {this.renderFormRow(i18next.t("general:Logo URL"), i18next.t("general:Logo URL - Tooltip"), <div className="relative"><LinkIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" /><input className="w-full h-9 rounded-md border border-border bg-background pl-9 pr-3 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring" value={this.state.store.logoUrl} onChange={e => this.updateStoreField("logoUrl", e.target.value)} /></div>)}
+          {this.renderFormRow(i18next.t("general:Footer HTML"), i18next.t("general:Footer HTML - Tooltip"), <input className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring" value={this.state.store.footerHtml} onChange={e => this.updateStoreField("footerHtml", e.target.value)} />)}
+        </div>)}
+        {this.renderFormRow(i18next.t("store:Vector stores"), i18next.t("store:Vector stores - Tooltip"), <Select virtual={false} mode="tags" style={{width: "100%"}} value={this.state.store.vectorStores} onChange={value => this.updateStoreField("vectorStores", value)}>{this.state.stores?.filter(item => item.name !== this.state.store.name).map((item) => <Option key={item.name} value={item.name}>{`${item.displayName} (${item.name})`}</Option>)}</Select>)}
+        {this.renderFormRow(i18next.t("store:Child stores"), i18next.t("store:Child stores - Tooltip"), <Select virtual={false} mode="tags" style={{width: "100%"}} value={this.state.store.childStores} onChange={value => this.updateStoreField("childStores", value)}>{this.state.stores?.filter(item => item.name !== this.state.store.name).map((item) => <Option key={item.name} value={item.name}>{`${item.displayName} (${item.name})`}</Option>)}</Select>)}
+        {this.renderFormRow(i18next.t("store:Child model providers"), i18next.t("store:Child model providers - Tooltip"), <Select virtual={false} mode="tags" style={{width: "100%"}} value={this.state.store.childModelProviders} onChange={value => this.updateStoreField("childModelProviders", value)}>{this.state.modelProviders?.map((item, index) => this.renderProviderOption(item, index))}</Select>)}
+        {this.renderFormRow(i18next.t("store:Forbidden words"), i18next.t("store:Forbidden words - Tooltip"), <Select virtual={false} mode="tags" style={{width: "100%"}} value={this.state.store.forbiddenWords} onChange={value => this.updateStoreField("forbiddenWords", value)} />)}
+        {this.renderFormRow(i18next.t("store:Show auto read"), i18next.t("store:Show auto read - Tooltip"), <input type="checkbox" checked={this.state.store.showAutoRead} onChange={e => this.updateStoreField("showAutoRead", e.target.checked)} className="w-4 h-4 rounded border-border accent-primary" />)}
+        {this.renderFormRow(i18next.t("store:Disable file upload"), i18next.t("store:Disable file upload - Tooltip"), <input type="checkbox" checked={this.state.store.disableFileUpload} onChange={e => this.updateStoreField("disableFileUpload", e.target.checked)} className="w-4 h-4 rounded border-border accent-primary" />)}
+        {this.renderFormRow(i18next.t("store:Hide thinking"), i18next.t("store:Hide thinking - Tooltip"), <input type="checkbox" checked={this.state.store.hideThinking} onChange={e => this.updateStoreField("hideThinking", e.target.checked)} className="w-4 h-4 rounded border-border accent-primary" />)}
+        {this.renderFormRow(i18next.t("store:File tree"), i18next.t("store:File tree - Tooltip"), <FileTree account={this.props.account} store={this.state.store} onUpdateStore={(store) => {this.setState({store: store});this.submitStoreEdit(undefined, store);}} onRefresh={() => this.getStore()} />)}
+      </div>
     );
   }
 
   submitStoreEdit(exitAfterSave, storeParam) {
     let store = Setting.deepCopy(this.state.store);
-    if (storeParam) {
-      store = storeParam;
-    }
-
+    if (storeParam) {store = storeParam;}
     store.fileTree = undefined;
     StoreBackend.updateStore(this.state.store.owner, this.state.storeName, store)
       .then((res) => {
@@ -770,16 +245,9 @@ class StoreEditPage extends React.Component {
           if (res.data) {
             Setting.setThemeColor(this.state.store.themeColor);
             Setting.showMessage("success", i18next.t("general:Successfully saved"));
-            this.setState({
-              storeName: this.state.store.name,
-              isNewStore: false,
-            });
+            this.setState({storeName: this.state.store.name, isNewStore: false});
             window.dispatchEvent(new Event("storesChanged"));
-            if (exitAfterSave) {
-              this.props.history.push("/stores");
-            } else {
-              this.props.history.push(`/stores/${this.state.store.owner}/${this.state.store.name}`);
-            }
+            if (exitAfterSave) {this.props.history.push("/stores");} else {this.props.history.push(`/stores/${this.state.store.owner}/${this.state.store.name}`);}
           } else {
             Setting.showMessage("error", i18next.t("general:Failed to connect to server"));
             this.updateStoreField("name", this.state.storeName);
@@ -788,9 +256,7 @@ class StoreEditPage extends React.Component {
           Setting.showMessage("error", `${i18next.t("general:Failed to save")}: ${res.msg}`);
         }
       })
-      .catch(error => {
-        Setting.showMessage("error", `${i18next.t("general:Failed to save")}: ${error}`);
-      });
+      .catch(error => {Setting.showMessage("error", `${i18next.t("general:Failed to save")}: ${error}`);});
   }
 
   cancelStoreEdit() {
@@ -801,28 +267,20 @@ class StoreEditPage extends React.Component {
             Setting.showMessage("success", i18next.t("general:Cancelled successfully"));
             window.dispatchEvent(new Event("storesChanged"));
             this.props.history.push("/stores");
-          } else {
-            Setting.showMessage("error", `${i18next.t("general:Failed to cancel")}: ${res.msg}`);
-          }
+          } else {Setting.showMessage("error", `${i18next.t("general:Failed to cancel")}: ${res.msg}`);}
         })
-        .catch(error => {
-          Setting.showMessage("error", `${i18next.t("general:Failed to cancel")}: ${error}`);
-        });
-    } else {
-      this.props.history.push("/stores");
-    }
+        .catch(error => {Setting.showMessage("error", `${i18next.t("general:Failed to cancel")}: ${error}`);});
+    } else {this.props.history.push("/stores");}
   }
 
   render() {
     return (
       <div>
-        {
-          this.state.store !== null ? this.renderStore() : null
-        }
-        <div style={{marginTop: "20px", marginLeft: "40px"}}>
-          <Button size="large" onClick={() => this.submitStoreEdit(false, undefined)}>{i18next.t("general:Save")}</Button>
-          <Button style={{marginLeft: "20px"}} type="primary" size="large" onClick={() => this.submitStoreEdit(true, undefined)}>{i18next.t("general:Save & Exit")}</Button>
-          {this.state.isNewStore && <Button style={{marginLeft: "20px"}} size="large" onClick={() => this.cancelStoreEdit()}>{i18next.t("general:Cancel")}</Button>}
+        {this.state.store !== null ? this.renderStore() : null}
+        <div className="mt-5 ml-10 flex gap-4">
+          <button onClick={() => this.submitStoreEdit(false, undefined)} className="rounded-md border border-border px-5 py-2 text-sm text-foreground hover:bg-secondary transition-colors">{i18next.t("general:Save")}</button>
+          <button onClick={() => this.submitStoreEdit(true, undefined)} className="rounded-md bg-primary px-5 py-2 text-sm text-primary-foreground hover:bg-primary/90 transition-colors">{i18next.t("general:Save & Exit")}</button>
+          {this.state.isNewStore && <button onClick={() => this.cancelStoreEdit()} className="rounded-md border border-border px-5 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">{i18next.t("general:Cancel")}</button>}
         </div>
       </div>
     );

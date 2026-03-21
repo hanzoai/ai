@@ -14,7 +14,6 @@
 
 import React from "react";
 import {Link} from "react-router-dom";
-import {Table, Tag} from "antd";
 import i18next from "i18next";
 import * as Setting from "../Setting";
 import {ScanResultPopover} from "./ScanResultPopover";
@@ -121,7 +120,7 @@ class ScanTable extends React.Component {
           } else if (text === "Running") {
             color = "processing";
           }
-          return <Tag color={color}>{text}</Tag>;
+          return <span className="px-2 py-0.5 bg-zinc-800 text-zinc-400 rounded text-xs">{text}</span>;
         },
       },
       {

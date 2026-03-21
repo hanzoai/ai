@@ -13,7 +13,6 @@
 // limitations under the License.
 
 import React from "react";
-import {Button, Col, Radio, Row, Select, Statistic} from "antd";
 import BaseListPage from "./BaseListPage";
 import * as Setting from "./Setting";
 import * as UsageBackend from "./backend/UsageBackend";
@@ -22,7 +21,6 @@ import * as Conf from "./Conf";
 import i18next from "i18next";
 import UsageTable from "./UsageTable";
 
-const {Option} = Select;
 
 class UsagePage extends BaseListPage {
   constructor(props) {
@@ -296,77 +294,77 @@ class UsagePage extends BaseListPage {
     const isLoading = this.state.usages === null;
 
     return (
-      <Row gutter={16}>
+      <div className="flex flex-col sm:flex-row gap-2 mt-4">
         {
-          this.props.account.name !== "admin" ? <Col span={6} /> : (
+          this.props.account.name !== "admin" ? <div className="flex-1"> : (
             <React.Fragment>
-              <Col span={3}>
+              <div className="flex-1">
                 <Statistic
                   loading={isLoading}
                   title={i18next.t("task:Application")}
                   value={this.state.usageMetadata?.application}
                 />
-              </Col>
+              </div>
             </React.Fragment>
           )
         }
-        <Col span={3}>
+        <div className="flex-1">
           <Statistic
             loading={isLoading}
             title={i18next.t("general:Users")}
             value={lastUsage.userCount}
           />
-        </Col>
-        <Col span={3}>
+        </div>
+        <div className="flex-1">
           <Statistic
             loading={isLoading}
             title={i18next.t("general:Chats")}
             value={lastUsage.chatCount}
           />
-        </Col>
-        <Col span={3}>
+        </div>
+        <div className="flex-1">
           <Statistic
             loading={isLoading}
             title={i18next.t("general:Messages")}
             value={lastUsage.messageCount}
           />
-        </Col>
-        <Col span={3}>
+        </div>
+        <div className="flex-1">
           <Statistic
             loading={isLoading}
             title={i18next.t("general:Tokens")}
             value={lastUsage.tokenCount}
           />
-        </Col>
+        </div>
         {
           this.props.account.name !== "admin" ? null : (
             <React.Fragment>
-              <Col span={3}>
+              <div className="flex-1">
                 <Statistic
                   loading={isLoading}
                   title={i18next.t("chat:Price")}
                   value={lastUsage.price}
                   prefix={lastUsage.currency && "$"}
                 />
-              </Col>
+              </div>
               {
                 Conf.DefaultLanguage === "en" ? null : (
                   <React.Fragment>
-                    <Col span={3}>
+                    <div className="flex-1">
                       <Statistic
                         loading={isLoading}
                         title={i18next.t("chat:CPrice")}
                         value={parseFloat((lastUsage.price * 7.2).toFixed(2))}
                         prefix={"￥"}
                       />
-                    </Col>
+                    </div>
                   </React.Fragment>
                 )
               }
             </React.Fragment>
           )
         }
-      </Row>
+      </div>
     );
   }
 
@@ -406,19 +404,19 @@ class UsagePage extends BaseListPage {
     return (
       <div style={{marginTop: "-10px", float: "right"}}>
         {this.renderDropdown()}
-        <Radio.Group style={{marginBottom: "10px"}} buttonStyle="solid" value={this.state.rangeType} onChange={e => {
+        <div className="flex gap-2"> {
           const rangeType = e.target.value;
           this.setState({
             rangeType: rangeType,
           }
           );
         }}>
-          <Radio.Button value={"All"}>{i18next.t("store:All")}</Radio.Button>
-          <Radio.Button value={"Hour"}>{i18next.t("usage:Hour")}</Radio.Button>
-          <Radio.Button value={"Day"}>{i18next.t("usage:Day")}</Radio.Button>
-          <Radio.Button value={"Week"}>{i18next.t("usage:Week")}</Radio.Button>
-          <Radio.Button value={"Month"}>{i18next.t("usage:Month")}</Radio.Button>
-        </Radio.Group>
+          <button className="px-3 py-1.5 bg-zinc-800 text-zinc-300 rounded text-xs hover:bg-zinc-700">{i18next.t("store:All")}</button>
+          <button className="px-3 py-1.5 bg-zinc-800 text-zinc-300 rounded text-xs hover:bg-zinc-700">{i18next.t("usage:Hour")}</button>
+          <button className="px-3 py-1.5 bg-zinc-800 text-zinc-300 rounded text-xs hover:bg-zinc-700">{i18next.t("usage:Day")}</button>
+          <button className="px-3 py-1.5 bg-zinc-800 text-zinc-300 rounded text-xs hover:bg-zinc-700">{i18next.t("usage:Week")}</button>
+          <button className="px-3 py-1.5 bg-zinc-800 text-zinc-300 rounded text-xs hover:bg-zinc-700">{i18next.t("usage:Month")}</button>
+        </div>
         {this.renderSelect()}
       </div>
     );
@@ -432,8 +430,7 @@ class UsagePage extends BaseListPage {
     return (
       <React.Fragment>
         <br />
-        <Select virtual={false} listHeight={360} style={{width: "280px", marginRight: "10px"}}
-          value={this.state.endpoint} onChange={(value => {
+        <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.endpoint}> {
             const endpoint = value;
             this.setState({
               endpoint: endpoint,
@@ -442,11 +439,11 @@ class UsagePage extends BaseListPage {
             this.getUsagesForAllCases(endpoint, "");
           })}>
           {
-            Conf.UsageEndpoints.map((item, index) => <Option key={index}
-              value={item.id}>{`${item.name} (${item.id})`}</Option>)
+            Conf.UsageEndpoints.map((item, index) => <option key={index}
+              value={item.id}>{`${item.name} (${item.id})`}</option>)
           }
-        </Select>
-        <Button disabled={this.getHost() === this.state.endpoint} type="primary" onClick={() => Setting.openLink(`https://${this.state.endpoint}`)}>{i18next.t("usage:Go")}</Button>
+        </select>
+        <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200 disabled:opacity-50" disabled={this.getHost() === this.state.endpoint}> Setting.openLink(`https://${this.state.endpoint}`)}>{i18next.t("usage:Go")}</button>
       </React.Fragment>
     );
   }
@@ -480,14 +477,11 @@ class UsagePage extends BaseListPage {
     return (
       <div style={{display: "flex", alignItems: "center", marginBottom: "10px"}}>
         <span style={{width: "50px", marginRight: "10px"}}>{i18next.t("general:User")}:</span>
-        <Select
-          virtual={true}
-          value={this.state.selectedUser}
-          onChange={(value => handleChange(value))}
+        <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.selectedUser}> handleChange(value))}
           style={{width: "100%"}}
         >
           {users_options}
-        </Select>
+        </select>
       </div>
     );
   }
@@ -661,9 +655,9 @@ class UsagePage extends BaseListPage {
     if (this.state.rangeType === "All") {
       return (
         <React.Fragment>
-          <Row style={{marginTop: "20px"}} >
-            <Col span={1} />
-            <Col span={11} >
+          <div className="flex flex-col sm:flex-row gap-2 mt-4">
+            <div className="flex-1">
+            <div className="flex-1">
               <ReactEcharts
                 option={this.renderLeftChart(this.state.usages || [])}
                 style={{
@@ -681,8 +675,8 @@ class UsagePage extends BaseListPage {
                   text: "",
                 }}
               />
-            </Col>
-            <Col span={11} >
+            </div>
+            <div className="flex-1">
               <ReactEcharts
                 option={this.renderRightChart(this.state.usages || [])}
                 style={{
@@ -700,9 +694,9 @@ class UsagePage extends BaseListPage {
                   text: "",
                 }}
               />
-            </Col>
-            <Col span={1} />
-          </Row>
+            </div>
+            <div className="flex-1">
+          </div>
         </React.Fragment>
       );
     } else {
@@ -753,26 +747,26 @@ class UsagePage extends BaseListPage {
   render() {
     return (
       <div style={{backgroundColor: this.props.themeAlgorithm && this.props.themeAlgorithm.includes("dark") ? "black" : "white"}}>
-        <Row style={{marginTop: "20px"}} >
-          <Col span={1} />
-          <Col span={17} >
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
+          <div className="flex-1">
             {this.renderStatistic(this.state.usages)}
-          </Col>
-          <Col span={5} >
+          </div>
+          <div className="flex-1">
             {this.renderRadio()}
-          </Col>
-          <Col span={1} />
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col span={24} >
+          </div>
+          <div className="flex-1">
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {this.renderChart()}
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col span={24} >
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             <UsageTable account={this.props.account} data={this.state.selectedTableInfo === null ? this.state.userTableInfo : this.state.selectedTableInfo} />
-          </Col>
-        </Row>
+          </div>
+        </div>
       </div>
     );
   }

@@ -13,7 +13,6 @@
 // limitations under the License.
 
 import React from "react";
-import {Col, Input, Row, Switch, Table} from "antd";
 import i18next from "i18next";
 import Editor from "../common/Editor";
 
@@ -43,9 +42,7 @@ class McpToolsTable extends React.Component {
         width: "120px",
         render: (text, record, index) => {
           return (
-            <Switch checked={text} onChange={checked => {
-              this.updateField(table, index, "isEnabled", checked);
-            }} />
+            <span className="px-2 py-0.5 rounded text-xs " + (text ? "bg-green-500/20 text-green-400" : "bg-zinc-800 text-zinc-500")">{text ? "ON" : "OFF"}</span>
           );
         },
       },
@@ -57,7 +54,7 @@ class McpToolsTable extends React.Component {
         sorter: (a, b) => a.serverName.localeCompare(b.serverName),
         render: (text, record, index) => {
           return (
-            <Input value={text} readOnly={true} />
+            <input className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={text} readOnly />
           );
         },
       },
@@ -83,26 +80,20 @@ class McpToolsTable extends React.Component {
     ];
 
     return (
-      <Table scroll={{x: "max-content"}} rowKey="serverName" columns={columns} dataSource={table} size="middle" bordered pagination={false}
-        title={() => (
-          <div>
-            {this.props.title}
-          </div>
-        )}
-      />
+      <div className="overflow-x-auto border border-zinc-800 rounded-lg"><table className="w-full text-sm text-left"><thead className="bg-zinc-900/80 border-b border-zinc-800"><tr>{columns.map(col => <th key={col.key || col.dataIndex} className="px-3 py-2 text-xs font-medium text-zinc-400 whitespace-nowrap">{col.title}</th>)}</tr></thead><tbody className="divide-y divide-zinc-800/50">{(table || []).map((record, index) => <tr key={typeof "serverName" === "function" ? ("serverName")(record) : record["serverName"] || index} className="hover:bg-zinc-900/50 transition-colors">{columns.map(col => <td key={col.key || col.dataIndex} className="px-3 py-2 text-zinc-300 whitespace-nowrap">{col.render ? col.render(record[col.dataIndex], record, index) : record[col.dataIndex]}</td>)}</tr>)}</tbody></table></div>
     );
   }
 
   render() {
     return (
       <div>
-        <Row style={{marginTop: "20px"}}>
-          <Col span={24}>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {
               this.renderTable(this.props.table)
             }
-          </Col>
-        </Row>
+          </div>
+        </div>
       </div>
     );
   }

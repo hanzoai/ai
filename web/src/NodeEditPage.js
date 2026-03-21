@@ -13,14 +13,12 @@
 // limitations under the License.
 
 import React from "react";
-import {Button, Card, Col, Input, Row, Select, Switch} from "antd";
 import * as NodeBackend from "./backend/NodeBackend";
 import * as Setting from "./Setting";
 import i18next from "i18next";
 import ServiceTable from "./table/ServiceTable";
 import RemoteAppTable from "./table/RemoteAppTable";
 
-const {Option} = Select;
 
 class NodeEditPage extends React.Component {
   constructor(props) {
@@ -150,50 +148,49 @@ class NodeEditPage extends React.Component {
 
   renderNode() {
     return (
-      <Card size="small" title={
-        <div>
+      <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4">
           {this.state.mode === "add" ? i18next.t("node:New Node") : i18next.t("node:Edit Node")}&nbsp;&nbsp;&nbsp;&nbsp;
-          <Button onClick={() => this.submitNodeEdit(false)}>{i18next.t("general:Save")}</Button>
-          <Button style={{marginLeft: "20px"}} type="primary" onClick={() => this.submitNodeEdit(true)}>{i18next.t("general:Save & Exit")}</Button>
-          {this.state.mode === "add" ? <Button style={{marginLeft: "20px"}} onClick={() => this.deleteNode()}>{i18next.t("general:Cancel")}</Button> : null}
+          <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700"> this.submitNodeEdit(false)}>{i18next.t("general:Save")}</button>
+          <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}> this.submitNodeEdit(true)}>{i18next.t("general:Save & Exit")}</button>
+          {this.state.mode === "add" ? <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}> this.deleteNode()}>{i18next.t("general:Cancel")}</button> : null}
         </div>
       } style={{marginLeft: "5px"}} type="inner">
-        <Row style={{marginTop: "10px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Organization"), i18next.t("general:Organization - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+          </div>
+          <div className="flex-1">
             <Input value={this.state.node.owner} onChange={e => {
               this.updateNodeField("owner", e.target.value);
             }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Name"), i18next.t("general:Name - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+          </div>
+          <div className="flex-1">
             <Input value={this.state.node.name} onChange={e => {
               this.updateNodeField("name", e.target.value);
             }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Description"), i18next.t("general:Description - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+          </div>
+          <div className="flex-1">
             <Input value={this.state.node.description} onChange={e => {
               this.updateNodeField("description", e.target.value);
             }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("machine:Protocol"), i18next.t("machine:Protocol - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Select virtual={false} style={{width: "100%"}} value={this.state.node.remoteProtocol} onChange={value => {
+          </div>
+          <div className="flex-1">
+            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.node.remoteProtocol}> {
               this.updateNodeField("remoteProtocol", value);
               this.updateNodeField("remotePort", this.getDefaultPort(value));
             }}>
@@ -203,26 +200,26 @@ class NodeEditPage extends React.Component {
                   {id: "VNC", name: "VNC"},
                   {id: "SSH", name: "SSH"},
                   {id: "Telnet", name: "Telnet"},
-                ].map((item, index) => <Option key={index} value={item.id}>{item.name}</Option>)
+                ].map((item, index) => <option key={index} value={item.id}>{item.name}</option>)
               }
-            </Select>
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+            </select>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:IP"), i18next.t("general:IP - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+          </div>
+          <div className="flex-1">
             <Input value={this.state.node.privateIp} onChange={e => {
               this.updateNodeField("privateIp", e.target.value);
             }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("machine:Port"), i18next.t("machine:Port - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+          </div>
+          <div className="flex-1">
             <Input
               value={this.state.node.remotePort}
               defaultValue={this.getDefaultPort(this.state.node.remoteProtocol)}
@@ -230,110 +227,100 @@ class NodeEditPage extends React.Component {
                 this.updateNodeField("remotePort", e.target.value);
               }}
             />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Username"), i18next.t("general:Username - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+          </div>
+          <div className="flex-1">
             <Input value={this.state.node.remoteUsername} onChange={e => {
               this.updateNodeField("remoteUsername", e.target.value);
             }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Password"), i18next.t("general:Password - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+          </div>
+          <div className="flex-1">
             <Input value={this.state.node.remotePassword} onChange={e => {
               this.updateNodeField("remotePassword", e.target.value);
             }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}}>
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("node:OS"), i18next.t("node:OS - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Select virtual={false} style={{width: "100%"}} value={this.state.node.os} onChange={value => {
+          </div>
+          <div className="flex-1">
+            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.node.os}> {
               this.updateNodeField("os", value);
             }}
             options={[
               {value: "Windows", label: "Windows"},
               {value: "Linux", label: "Linux"},
             ].map(item => Setting.getOption(item.label, item.value))} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}}>
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Tag"), i18next.t("general:Tag - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+          </div>
+          <div className="flex-1">
             <Input value={this.state.node.tag} onChange={e => {
               this.updateNodeField("tag", e.target.value);
             }
             } />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Language"), i18next.t("general:Language - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+          </div>
+          <div className="flex-1">
             <Input value={this.state.node.language} onChange={e => {
               this.updateNodeField("language", e.target.value);
             }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("node:Auto query"), i18next.t("node:Auto query - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Switch checked={this.state.node.autoQuery} onChange={checked => {
-              this.updateNodeField("autoQuery", checked);
-            }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+          <div className="flex-1">
+            <span className="px-2 py-0.5 rounded text-xs " + (this.state.node.autoQuery ? "bg-green-500/20 text-green-400" : "bg-zinc-800 text-zinc-500")">{this.state.node.autoQuery ? "ON" : "OFF"}</span>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("node:Is permanent"), i18next.t("node:Is permanent - Tooltip"))} :
-          </Col>
-          <Col span={1} >
-            <Switch checked={this.state.node.isPermanent} onChange={checked => {
-              this.updateNodeField("isPermanent", checked);
-            }} />
-          </Col>
-        </Row>
+          </div>
+          <div className="flex-1">
+            <span className="px-2 py-0.5 rounded text-xs " + (this.state.node.isPermanent ? "bg-green-500/20 text-green-400" : "bg-zinc-800 text-zinc-500")">{this.state.node.isPermanent ? "ON" : "OFF"}</span>
+          </div>
+        </div>
         {this.state.node.protocol === "RDP" && (
           <div>
-            <Row style={{marginTop: "20px"}} >
-              <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+            <div className="flex flex-col sm:flex-row gap-2 mt-4">
+              <div className="flex-1">
                 {Setting.getLabel(i18next.t("node:Enable Remote App"), i18next.t("node:Enable Remote App - Tooltip"))} :
-              </Col>
-              <Col span={22}>
-                <Switch checked={this.state.node.enableRemoteApp} onChange={checked => {
-                  if (checked && this.state.node.remoteApps.length === 0) {
-                    Setting.showMessage("error", i18next.t("node:Cannot enable Remote App when Remote Apps are empty. Please add at least one Remote App in below table first, then enable again"));
-                    return;
-                  }
-                  this.updateNodeField("enableRemoteApp", checked);
-                }} />
-              </Col>
-            </Row>
+              </div>
+              <div className="flex-1">
+                <span className="px-2 py-0.5 rounded text-xs " + (this.state.node.enableRemoteApp ? "bg-green-500/20 text-green-400" : "bg-zinc-800 text-zinc-500")">{this.state.node.enableRemoteApp ? "ON" : "OFF"}</span>
+              </div>
+            </div>
             {this.state.node.enableRemoteApp && (
-              <Row style={{marginTop: "20px"}} >
-                <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2} >
+              <div className="flex flex-col sm:flex-row gap-2 mt-4">
+                <div className="flex-1">
                   {Setting.getLabel(i18next.t("node:Remote Apps"), i18next.t("node:Remote Apps - Tooltip"))} :
-                </Col>
-                <Col span={22} >
+                </div>
+                <div className="flex-1">
                   <RemoteAppTable title={"Remote Apps"} table={this.state.node.remoteApps} onUpdateTable={(value) => {
                     this.updateNodeField("remoteApps", value);
                   }} />
-                </Col>
-              </Row>
+                </div>
+              </div>
             )}
           </div>
         )}
@@ -341,17 +328,17 @@ class NodeEditPage extends React.Component {
           <div>
           </div>
         )}
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("node:Services"), i18next.t("node:Services - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+          </div>
+          <div className="flex-1">
             <ServiceTable title={"Services"} table={this.state.node.services} onUpdateTable={(value) => {
               this.updateNodeField("services", value);
             }} />
-          </Col>
-        </Row>
-      </Card>
+          </div>
+        </div>
+      </div>
     );
   }
 
@@ -405,9 +392,9 @@ class NodeEditPage extends React.Component {
           this.state.node !== null ? this.renderNode() : null
         }
         <div style={{marginTop: "20px", marginLeft: "40px"}}>
-          <Button size="large" onClick={() => this.submitNodeEdit(false)}>{i18next.t("general:Save")}</Button>
-          <Button style={{marginLeft: "20px"}} type="primary" size="large" onClick={() => this.submitNodeEdit(true)}>{i18next.t("general:Save & Exit")}</Button>
-          {this.state.mode === "add" ? <Button style={{marginLeft: "20px"}} size="large" onClick={() => this.deleteNode()}>{i18next.t("general:Cancel")}</Button> : null}
+          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700"> this.submitNodeEdit(false)}>{i18next.t("general:Save")}</button>
+          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}> this.submitNodeEdit(true)}>{i18next.t("general:Save & Exit")}</button>
+          {this.state.mode === "add" ? <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}> this.deleteNode()}>{i18next.t("general:Cancel")}</button> : null}
         </div>
       </div>
     );

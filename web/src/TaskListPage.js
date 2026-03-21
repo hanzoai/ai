@@ -14,8 +14,6 @@
 
 import React from "react";
 import {Link} from "react-router-dom";
-import {Button, Input, Popconfirm, Popover, Table, Tag} from "antd";
-import {DeleteOutlined, FilePdfOutlined, FileWordOutlined} from "@ant-design/icons";
 import moment from "moment";
 import BaseListPage from "./BaseListPage";
 import * as Setting from "./Setting";
@@ -27,7 +25,6 @@ import * as Conf from "./Conf";
 import TaskAnalysisReport from "./TaskAnalysisReport";
 import * as Provider from "./Provider";
 
-const {TextArea} = Input;
 
 class TaskListPage extends BaseListPage {
   constructor(props) {
@@ -242,17 +239,11 @@ class TaskListPage extends BaseListPage {
             return null;
           }
           return (
-            <Popover
-              trigger="hover"
-              placement="left"
-              content={
-                <div style={{width: "50vw", height: "50vh", overflow: "auto"}}>
-                  <TextArea readOnly value={text} style={{width: "100%", minHeight: "50vh", boxSizing: "border-box", whiteSpace: "pre-wrap"}} />
+            <span className="text-zinc-300 text-sm">
                 </div>
               }
             >
               <div style={{maxWidth: "200px", cursor: "pointer"}}>{Setting.getShortText(text, 80)}</div>
-            </Popover>
           );
         },
       },
@@ -271,7 +262,7 @@ class TaskListPage extends BaseListPage {
           const fileName = text.split("/").filter(Boolean).pop() || text;
           return (
             <a href={text} target="_blank" rel="noopener noreferrer" download style={{display: "inline-flex", alignItems: "center", gap: "6px"}}>
-              {isPdf ? <FilePdfOutlined style={{fontSize: "20px"}} /> : <FileWordOutlined style={{fontSize: "20px"}} />}
+              {isPdf ?  : }
               <span style={{cursor: "pointer", overflow: "hidden", textOverflow: "ellipsis"}} title={fileName}>{fileName}</span>
             </a>
           );
@@ -288,17 +279,11 @@ class TaskListPage extends BaseListPage {
             return null;
           }
           return (
-            <Popover
-              trigger="hover"
-              placement="left"
-              content={
-                <div style={{width: "50vw", height: "50vh", overflow: "auto"}}>
-                  <TaskAnalysisReport result={parsed} />
+            <TaskAnalysisReport result={parsed} />
                 </div>
               }
             >
               <span style={{cursor: "pointer"}}>{parsed.score !== null && parsed.score !== undefined ? `${parsed.score}${i18next.t("task:Score Unit")}` : i18next.t("task:Report")}</span>
-            </Popover>
           );
         },
       },
@@ -327,9 +312,9 @@ class TaskListPage extends BaseListPage {
           if (record.labels?.length) {
             return record.labels.map(label => {
               return (
-                <Tag key={label} color="processing">
+                <span className="px-2 py-0.5 bg-zinc-800 text-zinc-400 rounded text-xs">
                   {label}
-                </Tag>
+                </span>
               );
             });
           }
@@ -345,27 +330,17 @@ class TaskListPage extends BaseListPage {
         render: (text, record, index) => {
           return (
             <div>
-              <Button
-                style={{marginTop: "10px", marginBottom: "10px", marginRight: "10px"}}
-                type="primary"
-                onClick={() => this.props.history.push(`/tasks/${record.owner}/${record.name}`)}
+              <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginTop: "10px", marginBottom: "10px", marginRight: "10px"}> this.props.history.push(`/tasks/${record.owner}/${record.name}`)}
               >
                 {i18next.t("general:Edit")}
-              </Button>
-              <Popconfirm
-                title={`${i18next.t("general:Sure to delete")}: ${record.name} ?`}
-                onConfirm={() => this.deleteTask(record)}
+              </button>
+              this.deleteTask(record)}
                 okText={i18next.t("general:OK")}
                 cancelText={i18next.t("general:Cancel")}
               >
-                <Button
-                  style={{marginBottom: "10px"}}
-                  type="primary"
-                  danger
-                >
+                <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-red-600 text-white hover:bg-red-700" style={{marginBottom: "10px"}>
                   {i18next.t("general:Delete")}
-                </Button>
-              </Popconfirm>
+                </button>
             </div>
           );
         },
@@ -392,23 +367,7 @@ class TaskListPage extends BaseListPage {
 
     return (
       <div>
-        <Table scroll={{x: "max-content"}} columns={columns} dataSource={tasks} rowKey="name" rowSelection={this.getRowSelection()} size="middle" bordered pagination={paginationProps}
-          title={() => (
-            <div>
-              {i18next.t("general:Tasks")}&nbsp;&nbsp;&nbsp;&nbsp;
-              <Button type="primary" size="small" onClick={this.addTask.bind(this)}>{i18next.t("general:Add")}</Button>
-              {this.state.selectedRowKeys.length > 0 && (
-                <Popconfirm title={`${i18next.t("general:Sure to delete")}: ${this.state.selectedRowKeys.length} ${i18next.t("general:items")} ?`} onConfirm={() => this.performBulkDelete(this.state.selectedRows, this.state.selectedRowKeys)} okText={i18next.t("general:OK")} cancelText={i18next.t("general:Cancel")}>
-                  <Button type="primary" danger size="small" icon={<DeleteOutlined />} style={{marginLeft: 8}}>
-                    {i18next.t("general:Delete")} ({this.state.selectedRowKeys.length})
-                  </Button>
-                </Popconfirm>
-              )}
-            </div>
-          )}
-          loading={this.state.loading}
-          onChange={this.handleTableChange}
-        />
+        <div className="overflow-x-auto border border-zinc-800 rounded-lg"><table className="w-full text-sm text-left"><thead className="bg-zinc-900/80 border-b border-zinc-800"><tr>{columns.map(col => <th key={col.key || col.dataIndex} className="px-3 py-2 text-xs font-medium text-zinc-400 whitespace-nowrap">{col.title}</th>)}</tr></thead><tbody className="divide-y divide-zinc-800/50">{(tasks || []).map((record, index) => <tr key={typeof "name" === "function" ? ("name")(record) : record["name"] || index} className="hover:bg-zinc-900/50 transition-colors">{columns.map(col => <td key={col.key || col.dataIndex} className="px-3 py-2 text-zinc-300 whitespace-nowrap">{col.render ? col.render(record[col.dataIndex], record, index) : record[col.dataIndex]}</td>)}</tr>)}</tbody></table></div>
       </div>
     );
   }
