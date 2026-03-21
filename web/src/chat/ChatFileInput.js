@@ -13,8 +13,7 @@
 // limitations under the License.
 
 import React from "react";
-import {Image} from "antd";
-import {CloseCircleOutlined, FileTextOutlined} from "@ant-design/icons";
+import {FileText, XCircle} from "lucide-react";
 
 const ChatFileInput = ({
   files,
@@ -31,12 +30,14 @@ const ChatFileInput = ({
     const isImage = uploadedFile.file.type.startsWith("image/");
     if (isImage) {
       return (
-        <div style={{display: "flex", flexDirection: "column", alignItems: "center", gap: "4px"}}>
-          <Image
-            src={uploadedFile.content} width={50} height={50} style={{objectFit: "cover", borderRadius: 4}}
+        <div className="flex flex-col items-center gap-1">
+          <img
+            src={uploadedFile.content}
+            className="w-[50px] h-[50px] object-cover rounded"
+            alt={uploadedFile.file.name}
           />
           <div
-            style={{fontSize: 10, textAlign: "center", maxWidth: "80px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"}}
+            className="text-[10px] text-center max-w-[80px] overflow-hidden text-ellipsis whitespace-nowrap text-muted-foreground"
             title={uploadedFile.file.name}
           >
             {uploadedFile.file.name}
@@ -45,14 +46,12 @@ const ChatFileInput = ({
       );
     } else {
       return (
-        <div style={{display: "flex", flexDirection: "column", alignItems: "center", gap: "4px"}}>
-          <div
-            style={{width: 50, height: 50, borderRadius: 4, display: "flex", alignItems: "center", justifyContent: "center", background: "#f5f5f5"}}
-          >
-            <FileTextOutlined style={{fontSize: 30, color: "#666"}} />
+        <div className="flex flex-col items-center gap-1">
+          <div className="w-[50px] h-[50px] rounded flex items-center justify-center bg-secondary">
+            <FileText className="w-7 h-7 text-muted-foreground" />
           </div>
           <div
-            style={{fontSize: 10, textAlign: "center", maxWidth: "80px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"}}
+            className="text-[10px] text-center max-w-[80px] overflow-hidden text-ellipsis whitespace-nowrap text-muted-foreground"
             title={uploadedFile.file.name}
           >
             {uploadedFile.file.name}
@@ -63,19 +62,19 @@ const ChatFileInput = ({
   }
 
   return (
-    <div
-      style={{display: "flex", gap: 10, flexWrap: "wrap"}}
-    >
+    <div className="flex gap-2.5 flex-wrap">
       {files.map((uploadedFile) => (
         <div
           key={uploadedFile.uid}
-          style={{position: "relative"}}
+          className="relative"
         >
           {renderFilePreview(uploadedFile)}
-          <CloseCircleOutlined
+          <button
             onClick={() => handleRemoveFile(uploadedFile.uid)}
-            style={{position: "absolute", top: -6, right: -6, color: "red", fontSize: 16, cursor: "pointer", background: "#fff", borderRadius: "50%"}}
-          />
+            className="absolute -top-1.5 -right-1.5 text-destructive bg-background rounded-full cursor-pointer"
+          >
+            <XCircle className="w-4 h-4" />
+          </button>
         </div>
       ))}
     </div>

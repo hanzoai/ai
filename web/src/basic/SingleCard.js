@@ -13,12 +13,9 @@
 // limitations under the License.
 
 import React from "react";
-import {Card, Col} from "antd";
 import * as Setting from "../Setting";
 import {withRouter} from "react-router-dom";
 import i18next from "i18next";
-
-const {Meta} = Card;
 
 class SingleCard extends React.Component {
   constructor(props) {
@@ -30,65 +27,26 @@ class SingleCard extends React.Component {
 
   wrappedAsSilentSigninLink(link) {
     return link;
-    // if (link.startsWith("http")) {
-    //   link += link.includes("?") ? "&silentSignin=1" : "?silentSignin=1";
-    // }
-    // return link;
-  }
-
-  renderCardMobile(logo, link, title, desc, time, isSingle) {
-    const gridStyle = {
-      width: "100vw",
-      textAlign: "center",
-      cursor: "pointer",
-    };
-    const silentSigninLink = this.wrappedAsSilentSigninLink(link);
-
-    return (
-      <Card.Grid style={gridStyle} onClick={() => Setting.goToLinkSoft(this, silentSigninLink)}>
-        <img src={logo} alt="logo" width={"100%"} style={{marginBottom: "20px"}} />
-        <Meta
-          title={title}
-          description={desc}
-          style={{justifyContent: "center"}}
-        />
-        <br />
-        {i18next.t("message:Comment")}
-        <br />
-        {time}
-      </Card.Grid>
-    );
-  }
-
-  renderCard(logo, link, title, desc, time, isSingle) {
-    const silentSigninLink = this.wrappedAsSilentSigninLink(link);
-
-    return (
-      <Col style={{paddingLeft: "20px", paddingRight: "20px", paddingBottom: "20px", marginTop: "50px", marginBottom: "20px"}} span={6}>
-        <Card
-          hoverable
-          cover={
-            <img alt="logo" src={logo} style={{width: "100%", height: "200px", objectFit: "scale-down"}} />
-          }
-          onClick={() => Setting.goToLinkSoft(this, silentSigninLink)}
-          style={isSingle ? {width: "320px", height: "100%"} : {width: "100%", height: "100%"}}
-        >
-          <Meta title={title} description={desc} />
-          <br />
-          {i18next.t("message:Comment")}
-          <br />
-          {time}
-        </Card>
-      </Col>
-    );
   }
 
   render() {
-    if (Setting.isMobile()) {
-      return this.renderCardMobile(this.props.logo, this.props.link, this.props.title, this.props.desc, this.props.time, this.props.isSingle);
-    } else {
-      return this.renderCard(this.props.logo, this.props.link, this.props.title, this.props.desc, this.props.time, this.props.isSingle);
-    }
+    const {logo, link, title, desc, time, isSingle} = this.props;
+    const silentSigninLink = this.wrappedAsSilentSigninLink(link);
+
+    return (
+      <div
+        className={`bg-zinc-900/50 border border-zinc-800 rounded-lg overflow-hidden cursor-pointer hover:border-zinc-700 transition-colors ${isSingle ? "max-w-[320px]" : ""}`}
+        onClick={() => Setting.goToLinkSoft(this, silentSigninLink)}
+      >
+        <img alt="logo" src={logo} className="w-full h-[200px] object-scale-down p-4" />
+        <div className="p-4 border-t border-zinc-800">
+          <h3 className="text-sm font-medium text-white mb-1">{title}</h3>
+          <p className="text-xs text-zinc-500 mb-2">{desc}</p>
+          <p className="text-xs text-zinc-500">{i18next.t("message:Comment")}</p>
+          <p className="text-xs text-zinc-500">{time}</p>
+        </div>
+      </div>
+    );
   }
 }
 

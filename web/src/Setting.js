@@ -12,8 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import {Tag, Tooltip, message, theme} from "antd";
-import {QuestionCircleTwoTone, SyncOutlined} from "@ant-design/icons";
+import {showMessage as toastMessage} from "./lib/toast";
 import {isMobile as isMobileDevice} from "react-device-detect";
 import i18next from "i18next";
 import Sdk from "@hanzo/iam-js-sdk";
@@ -154,11 +153,8 @@ export function goToLinkSoft(ths, link) {
 export function showMessage(type, text) {
   if (type === "") {
     return;
-  } else if (type === "success") {
-    message.success(text);
-  } else if (type === "error") {
-    message.error(text);
   }
+  toastMessage(type, text);
 }
 
 export function isAdminUser(account) {
@@ -379,38 +375,36 @@ export function getUrlParam(name) {
   return params.get(name);
 }
 
+const tagColors = {
+  success: "bg-green-900/30 text-green-400 border-green-700/50",
+  processing: "bg-blue-900/30 text-blue-400 border-blue-700/50",
+  error: "bg-red-900/30 text-red-400 border-red-700/50",
+  warning: "bg-yellow-900/30 text-yellow-400 border-yellow-700/50",
+  orange: "bg-orange-900/30 text-orange-400 border-orange-700/50",
+  green: "bg-green-900/30 text-green-400 border-green-700/50",
+  red: "bg-red-900/30 text-red-400 border-red-700/50",
+  default: "bg-zinc-800/50 text-zinc-400 border-zinc-700/50",
+};
+
+export function renderTag(text, color = "default", style = {}) {
+  const cls = tagColors[color] || tagColors.default;
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs border ${cls}`} style={style} title={text}>
+      {text}
+    </span>
+  );
+}
+
 export function getTag(text, type, state) {
-  let icon = null;
-  let style = {};
-  if (state === "Pending") {
-    icon = <SyncOutlined spin />;
-    style = {borderStyle: "dashed", backgroundColor: "white"};
-  }
+  const pending = state === "Pending";
+  const style = pending ? {borderStyle: "dashed"} : {};
 
   if (type === "Read") {
-    return (
-      <Tooltip placement="top" title={i18next.t("store:Read")}>
-        <Tag icon={icon} style={style} color={"success"}>
-          {text}
-        </Tag>
-      </Tooltip>
-    );
+    return renderTag(text, "success", style);
   } else if (type === "Write") {
-    return (
-      <Tooltip placement="top" title={i18next.t("store:Write")}>
-        <Tag icon={icon} style={style} color={"processing"}>
-          {text}
-        </Tag>
-      </Tooltip>
-    );
+    return renderTag(text, "processing", style);
   } else if (type === "Admin") {
-    return (
-      <Tooltip placement="top" title={i18next.t("general:Admin")}>
-        <Tag icon={icon} style={style} color={"error"}>
-          {text}
-        </Tag>
-      </Tooltip>
-    );
+    return renderTag(text, "error", style);
   } else {
     return null;
   }
@@ -436,11 +430,7 @@ export function getRemarkTag(score) {
     text = `Unknown score: ${score}`;
   }
 
-  return (
-    <Tag style={{width: "60px", textAlign: "center"}} color={color}>
-      {text}
-    </Tag>
-  );
+  return renderTag(text, color, {width: "60px", textAlign: "center"});
 }
 
 export function getApplicationStatusTag(status) {
@@ -473,11 +463,7 @@ export function getApplicationStatusTag(status) {
     translationKey = i18next.t("application:Unknown");
   }
 
-  return (
-    <Tag color={color}>
-      {translationKey}
-    </Tag>
-  );
+  return renderTag(translationKey, color);
 }
 
 export function getLabelTags(labels) {
@@ -488,11 +474,9 @@ export function getLabelTags(labels) {
   const res = [];
   labels.forEach((label, i) => {
     res.push(
-      <Tooltip placement="top" title={getShortText(JSON.stringify(label.text), 500)}>
-        <Tag color={"processing"}>
-          {`${label.startTime}: ${label.text !== "" ? label.text : "(Empty)"}`}
-        </Tag>
-      </Tooltip>
+      <span key={i} title={getShortText(JSON.stringify(label.text), 500)}>
+        {renderTag(`${label.startTime}: ${label.text !== "" ? label.text : "(Empty)"}`, "processing")}
+      </span>
     );
   });
   return res;
@@ -2067,11 +2051,8 @@ export function getSpeakerTag(speaker) {
     speaker = "Unknown";
   }
 
-  return (
-    <Tag color={speaker === "Teacher" ? "success" : speaker.startsWith("Student") ? "error" : "processing"}>
-      {speaker}
-    </Tag>
-  );
+  const color = speaker === "Teacher" ? "success" : speaker.startsWith("Student") ? "error" : "processing";
+  return renderTag(speaker, color);
 }
 
 export function getDisplayPrice(price, currency) {
@@ -2095,19 +2076,11 @@ export function getDisplayPrice(price, currency) {
     prefix = "￥";
   }
 
-  return (
-    <Tag style={{fontWeight: "bold"}} color={price === 0 ? "default" : "orange"}>
-      {`${prefix}${numberStr}`}
-    </Tag>
-  );
+  return renderTag(`${prefix}${numberStr}`, price === 0 ? "default" : "orange", {fontWeight: "bold"});
 }
 
 export function getDisplayTag(s, color = "default") {
-  return (
-    <Tag style={{fontWeight: "bold"}} color={color}>
-      {s}
-    </Tag>
-  );
+  return renderTag(s, color, {fontWeight: "bold"});
 }
 
 export function sumFields(chats, field) {
@@ -2246,9 +2219,9 @@ export function getLabel(text, tooltip) {
   return (
     <React.Fragment>
       <span style={{marginRight: 4}}>{text}</span>
-      <Tooltip placement="top" title={tooltip}>
-        <QuestionCircleTwoTone twoToneColor="rgb(45,120,213)" />
-      </Tooltip>
+      <span className="inline-flex items-center text-blue-400 cursor-help" title={tooltip}>
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" strokeWidth="2" /><path strokeWidth="2" d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" /><line x1="12" y1="17" x2="12.01" y2="17" strokeWidth="2" /></svg>
+      </span>
     </React.Fragment>
   );
 }
@@ -2311,15 +2284,9 @@ export function getThinkingModelMaxTokens(subType) {
 }
 
 export function getAlgorithm(themeAlgorithmNames) {
-  return themeAlgorithmNames.sort().reverse().map((algorithmName) => {
-    if (algorithmName === "dark") {
-      return theme.darkAlgorithm;
-    }
-    if (algorithmName === "compact") {
-      return theme.compactAlgorithm;
-    }
-    return theme.defaultAlgorithm;
-  });
+  // With Tailwind, theme algorithms are just string identifiers.
+  // The actual styling is handled by CSS variables in globals.css.
+  return themeAlgorithmNames;
 }
 
 export function getHtmlTitle(storeHtmlTitle) {

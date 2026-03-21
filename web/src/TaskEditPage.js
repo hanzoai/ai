@@ -13,13 +13,11 @@
 // limitations under the License.
 
 import React from "react";
-import {Button, Card, Col, Input, Progress, Row, Select, Space, Spin, Typography, Upload} from "antd";
 
 const ANALYZE_PROGRESS_DURATION_SEC = 300;
 const ANALYZE_PROGRESS_TICK_MS = 500;
 const ANALYZE_PROGRESS_MAX_PERCENT = 99;
 
-import {CloseOutlined, DownloadOutlined, FilePdfOutlined, FileWordOutlined, UploadOutlined} from "@ant-design/icons";
 import * as TaskBackend from "./backend/TaskBackend";
 import * as Setting from "./Setting";
 import i18next from "i18next";
@@ -28,9 +26,8 @@ import * as MessageBackend from "./backend/MessageBackend";
 import Editor from "./common/Editor";
 import TaskAnalysisReport from "./TaskAnalysisReport";
 import * as Provider from "./Provider";
+import {Loader2} from "lucide-react";
 
-const {Option} = Select;
-const {TextArea} = Input;
 
 class TaskEditPage extends React.Component {
   constructor(props) {
@@ -265,30 +262,25 @@ class TaskEditPage extends React.Component {
 
   renderTask() {
     return (
-      <Card size="small" title={
-        <div>
+      <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4">
           {i18next.t("task:Edit Task")}&nbsp;&nbsp;&nbsp;&nbsp;
-          <Button onClick={() => this.submitTaskEdit(false)}>{i18next.t("general:Save")}</Button>
-          <Button style={{marginLeft: "20px"}} type="primary" onClick={() => this.submitTaskEdit(true)}>{i18next.t("general:Save & Exit")}</Button>
-          {this.state.isNewTask && <Button style={{marginLeft: "20px"}} onClick={() => this.cancelTaskEdit()}>{i18next.t("general:Cancel")}</Button>}
+          <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700"> this.submitTaskEdit(false)}>{i18next.t("general:Save")}</button>
+          <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}> this.submitTaskEdit(true)}>{i18next.t("general:Save & Exit")}</button>
+          {this.state.isNewTask && <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}> this.cancelTaskEdit()}>{i18next.t("general:Cancel")}</button>}
         </div>
       } style={{marginLeft: "5px"}} type="inner">
-        <Row style={{marginTop: "10px"}} gutter={16}>
-          <Col style={{marginTop: "5px"}} span={Setting.isAdminUser(this.props.account) ? 8 : 24}>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             <div>{Setting.getLabel(i18next.t("general:Name"), i18next.t("general:Name - Tooltip"))} :</div>
             <Input value={this.state.task.name} onChange={e => {
               this.updateTaskField("name", e.target.value);
             }} />
-          </Col>
+          </div>
           {Setting.isAdminUser(this.props.account) ? (
             <>
-              <Col style={{marginTop: "5px"}} span={8}>
+              <div className="flex-1">
                 <div>{Setting.getLabel(i18next.t("provider:Model provider"), i18next.t("provider:Model provider - Tooltip"))} :</div>
-                <Select
-                  virtual={false}
-                  style={{width: "100%"}}
-                  value={this.state.task.provider}
-                  onChange={(value) => this.updateTaskField("provider", value)}
+                <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.task.provider}> this.updateTaskField("provider", value)}
                   options={this.state.modelProviders.map((p) => ({
                     value: p.name,
                     label: (
@@ -299,178 +291,154 @@ class TaskEditPage extends React.Component {
                     ),
                   }))}
                 />
-              </Col>
-              <Col style={{marginTop: "5px"}} span={8}>
+              </div>
+              <div className="flex-1">
                 <div>{Setting.getLabel(i18next.t("general:Type"), i18next.t("general:Type - Tooltip"))} :</div>
-                <Select virtual={false} style={{width: "100%"}} value={this.state.task.type} onChange={(value => {this.updateTaskField("type", value);})}>
+                <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.task.type}> {this.updateTaskField("type", value);})}>
                   {
                     [
                       {id: "Labeling", name: "Labeling"},
                       {id: "PBL", name: "PBL"},
-                    ].map((item, index) => <Option key={index} value={item.id}>{item.name}</Option>)
+                    ].map((item, index) => <option key={index} value={item.id}>{item.name}</option>)
                   }
-                </Select>
-              </Col>
+                </select>
+              </div>
             </>
           ) : null}
-        </Row>
+        </div>
         {
           this.state.task.type !== "Labeling" ? null : (
-            <Row style={{marginTop: "20px"}} >
-              <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+            <div className="flex flex-col sm:flex-row gap-2 mt-4">
+              <div className="flex-1">
                 {Setting.getLabel(i18next.t("general:Display name"), i18next.t("general:Display name - Tooltip"))} :
-              </Col>
-              <Col span={22} >
+              </div>
+              <div className="flex-1">
                 <Input value={this.state.task.displayName} onChange={e => {
                   this.updateTaskField("displayName", e.target.value);
                 }} />
-              </Col>
-            </Row>
+              </div>
+            </div>
           )
         }
         {
           Setting.isAdminUser(this.props.account) ? (
-            <Row style={{marginTop: "20px"}} >
-              <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+            <div className="flex flex-col sm:flex-row gap-2 mt-4">
+              <div className="flex-1">
                 {Setting.getLabel(i18next.t("general:Template"), i18next.t("general:Template - Tooltip"))} :
-              </Col>
-              <Col span={22} >
-                <Select
-                  virtual={false}
-                  style={{width: "100%"}}
-                  placeholder={i18next.t("general:None")}
-                  allowClear
-                  value={this.state.task.template ?? ""}
-                  onChange={(value) => this.updateTaskField("template", value || "")}
+              </div>
+              <div className="flex-1">
+                <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.task.template ?? ""}> this.updateTaskField("template", value || "")}
                   options={[
                     {value: "", label: i18next.t("general:None")},
                     ...this.state.templates.map((t) => ({value: `${t.owner}/${t.name}`, label: t.displayName ? `${t.displayName} (${t.owner}/${t.name})` : `${t.owner}/${t.name}`})),
                   ]}
                 />
-              </Col>
-            </Row>
+              </div>
+            </div>
           ) : null
         }
         {
           Setting.isAdminUser(this.props.account) ? (
-            <Row style={{marginTop: "20px"}} >
-              <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+            <div className="flex flex-col sm:flex-row gap-2 mt-4">
+              <div className="flex-1">
                 {Setting.getLabel(i18next.t("task:Scale"), i18next.t("task:Scale - Tooltip"))} :
-              </Col>
-              <Col span={22} >
-                <TextArea
-                  rows={5}
-                  style={{maxHeight: "120px", overflow: "auto"}}
-                  value={this.getEffectiveScale()}
-                  disabled={!!this.state.task.template}
-                  onChange={this.state.task.template ? undefined : (e) => this.updateTaskField("scale", e.target.value)}
+              </div>
+              <div className="flex-1">
+                <span className="text-zinc-300 text-sm"> this.updateTaskField("scale", e.target.value)}
                 />
-              </Col>
-            </Row>
+              </div>
+            </div>
           ) : null
         }
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("store:File"), i18next.t("store:File - Tooltip"))} :
-          </Col>
-          <Col span={22}>
+          </div>
+          <div className="flex-1">
             {this.state.task.documentUrl ? (
-              <Card size="small" style={{maxWidth: 560}}>
+              <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4">
                 <Space align="center">
                   <span style={{fontSize: 28, color: this.state.task.documentUrl.endsWith(".pdf") ? "#cf1322" : "#1890ff"}}>
-                    {this.state.task.documentUrl.endsWith(".pdf") ? <FilePdfOutlined /> : <FileWordOutlined />}
+                    {this.state.task.documentUrl.endsWith(".pdf") ?  : }
                   </span>
                   <Typography.Text ellipsis style={{maxWidth: 420}}>{this.getDocumentFileName()}</Typography.Text>
-                  <Button type="link" size="small" icon={<DownloadOutlined />} href={this.state.task.documentUrl} target="_blank" rel="noopener noreferrer">
+                  <button className="px-2 py-1 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700">} href={this.state.task.documentUrl} target="_blank" rel="noopener noreferrer">
                     {i18next.t("general:Download")}
-                  </Button>
-                  <Button type="text" size="small" danger icon={<CloseOutlined />} onClick={this.clearDocument} aria-label={i18next.t("general:Delete")} />
+                  </button>
+                  <button className="px-2 py-1 rounded text-xs font-medium transition-colors bg-red-600 text-white hover:bg-red-700">} onClick={this.clearDocument} aria-label={i18next.t("general:Delete")} />
                 </Space>
-              </Card>
+              </div>
             ) : (
-              <Upload
-                name="file"
-                accept=".docx,.pdf"
-                showUploadList={false}
-                customRequest={this.handleDocumentUpload}
-              >
-                <Button type="primary" icon={<UploadOutlined />} loading={this.state.uploadingDocument}>
+              
+                <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200">} loading={this.state.uploadingDocument}>
                   {i18next.t("store:Upload file")} (.docx, .pdf)
-                </Button>
-              </Upload>
+                </button>
+              
             )}
-          </Col>
-        </Row>
+          </div>
+        </div>
         {
           (this.state.task.type !== "Labeling") ? null : (
             <React.Fragment>
-              <Row style={{marginTop: "20px"}} >
-                <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+              <div className="flex flex-col sm:flex-row gap-2 mt-4">
+                <div className="flex-1">
                   {Setting.getLabel(i18next.t("task:Example"), i18next.t("task:Example - Tooltip"))} :
-                </Col>
-                <Col span={22} >
+                </div>
+                <div className="flex-1">
                   <Input value={this.state.task.example} onChange={e => {
                     this.updateTaskField("example", e.target.value);
                   }} />
-                </Col>
-              </Row>
-              <Row style={{marginTop: "20px"}} >
-                <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+                </div>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-2 mt-4">
+                <div className="flex-1">
                   {Setting.getLabel(i18next.t("task:Labels"), i18next.t("task:Labels - Tooltip"))} :
-                </Col>
-                <Col span={22} >
-                  <Select virtual={false} mode="tags" style={{width: "100%"}} value={this.state.task.labels} onChange={(value => {this.updateTaskField("labels", value);})}>
+                </div>
+                <div className="flex-1">
+                  <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.task.labels}> {this.updateTaskField("labels", value);})}>
                     {
-                      this.state.task.labels?.map((item, index) => <Option key={index} value={item}>{item}</Option>)
+                      this.state.task.labels?.map((item, index) => <option key={index} value={item}>{item}</option>)
                     }
-                  </Select>
-                </Col>
-              </Row>
+                  </select>
+                </div>
+              </div>
             </React.Fragment>
           )
         }
         {
           (this.state.task.type !== "Labeling") && this.state.task.documentUrl ? (
-            <Row style={{marginTop: "20px"}} >
-              <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+            <div className="flex flex-col sm:flex-row gap-2 mt-4">
+              <div className="flex-1">
                 {Setting.getLabel(i18next.t("task:Report"), i18next.t("task:Report - Tooltip"))} :
-              </Col>
-              <Col span={22} >
-                <Button
-                  loading={this.state.analyzing}
-                  disabled={!this.state.task.documentText || !!this.state.task.result}
-                  style={{marginBottom: "20px", width: "200px"}}
-                  type="primary"
-                  onClick={() => this.analyzeTask()}
+              </div>
+              <div className="flex-1">
+                <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200 disabled:opacity-50" disabled={!this.state.task.documentText || !!this.state.task.result} style={{marginBottom: "20px", width: "200px"}> this.analyzeTask()}
                 >
                   {i18next.t("task:Analyze")}
-                </Button>
+                </button>
                 {Setting.isAdminUser(this.props.account) && this.state.task.result ? (
-                  <Button
-                    style={{marginBottom: "20px", marginLeft: "8px", width: "200px"}}
-                    onClick={this.clearReport}
-                  >
+                  <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" onClick={this.clearReport} style={{marginBottom: "20px", marginLeft: "8px", width: "200px"}>
                     {i18next.t("general:Clear")}
-                  </Button>
+                  </button>
                 ) : null}
                 {this.state.analyzing && (
                   <>
                     <div style={{maxWidth: "400px", marginTop: "8px", marginBottom: "8px"}}>
                       <Progress percent={this.state.analyzeProgress} status="active" />
                     </div>
-                    <Spin style={{marginLeft: "16px"}} tip={i18next.t("task:Analyzing")} />
+                    <div className="flex justify-center py-8"><div className="w-8 h-8 border-2 border-zinc-700 border-t-white rounded-full animate-spin" /></div>
                   </>
                 )}
                 {this.state.task.result && <TaskAnalysisReport result={this.state.task.result} />}
-              </Col>
-            </Row>
+              </div>
+            </div>
           ) : this.state.task.type === "Labeling" ? (
-            <Row style={{marginTop: "20px"}} >
-              <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+            <div className="flex flex-col sm:flex-row gap-2 mt-4">
+              <div className="flex-1">
                 {Setting.getLabel(i18next.t("task:Log"), i18next.t("task:Log - Tooltip"))} :
-              </Col>
-              <Col span={22} >
-                <Button loading={this.state.loading} style={{marginBottom: "20px", width: "100px"}} type="primary" onClick={this.runTask.bind(this)}>{i18next.t("general:Run")}</Button>
+              </div>
+              <div className="flex-1">
+                <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" onClick={this.runTask.bind(this)} style={{marginBottom: "20px", width: "100px"}>{i18next.t("general:Run")}</button>
                 <div style={{height: "200px"}}>
                   <Editor
                     value={this.state.task.log}
@@ -482,11 +450,11 @@ class TaskEditPage extends React.Component {
                     }}
                   />
                 </div>
-              </Col>
-            </Row>
+              </div>
+            </div>
           ) : null
         }
-      </Card>
+      </div>
     );
   }
 
@@ -537,9 +505,9 @@ class TaskEditPage extends React.Component {
           this.state.task !== null ? this.renderTask() : null
         }
         <div style={{marginTop: "20px", marginLeft: "40px"}}>
-          <Button size="large" onClick={() => this.submitTaskEdit(false)}>{i18next.t("general:Save")}</Button>
-          <Button style={{marginLeft: "20px"}} type="primary" size="large" onClick={() => this.submitTaskEdit(true)}>{i18next.t("general:Save & Exit")}</Button>
-          {this.state.isNewTask && <Button style={{marginLeft: "20px"}} size="large" onClick={() => this.cancelTaskEdit()}>{i18next.t("general:Cancel")}</Button>}
+          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700"> this.submitTaskEdit(false)}>{i18next.t("general:Save")}</button>
+          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}> this.submitTaskEdit(true)}>{i18next.t("general:Save & Exit")}</button>
+          {this.state.isNewTask && <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}> this.cancelTaskEdit()}>{i18next.t("general:Cancel")}</button>}
         </div>
       </div>
     );
