@@ -13,7 +13,6 @@
 // limitations under the License.
 
 import React from "react";
-import {Button, Card, Col, Input, Row, Switch} from "antd";
 import * as TemplateBackend from "./backend/TemplateBackend";
 import * as StoreBackend from "./backend/StoreBackend";
 import * as Setting from "./Setting";
@@ -88,69 +87,68 @@ class TemplateEditPage extends React.Component {
 
   renderTemplate() {
     return (
-      <Card size="small" title={
-        <div>
+      <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4">
           {i18next.t("template:Edit Template")}&nbsp;&nbsp;&nbsp;&nbsp;
-          <Button onClick={() => this.submitTemplateEdit(false)}>{i18next.t("general:Save")}</Button>
-          <Button style={{marginLeft: "20px"}} type="primary" onClick={() => this.submitTemplateEdit(true)}>{i18next.t("general:Save & Exit")}</Button>
-          {this.state.isNewTemplate && <Button style={{marginLeft: "20px"}} onClick={() => this.cancelTemplateEdit()}>{i18next.t("general:Cancel")}</Button>}
+          <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700"> this.submitTemplateEdit(false)}>{i18next.t("general:Save")}</button>
+          <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}> this.submitTemplateEdit(true)}>{i18next.t("general:Save & Exit")}</button>
+          {this.state.isNewTemplate && <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}> this.cancelTemplateEdit()}>{i18next.t("general:Cancel")}</button>}
         </div>
       } style={{marginLeft: "5px"}} type="inner">
-        <Row style={{marginTop: "10px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Name"), i18next.t("general:Name - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+          </div>
+          <div className="flex-1">
             <Input value={this.state.template.name} onChange={e => {
               this.updateTemplateField("name", e.target.value);
             }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Display name"), i18next.t("general:Display name - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+          </div>
+          <div className="flex-1">
             <Input value={this.state.template.displayName} onChange={e => {
               this.updateTemplateField("displayName", e.target.value);
             }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Description"), i18next.t("general:Description - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <TextArea autoSize={{minRows: 1, maxRows: 5}} value={this.state.template.description} onChange={e => {
+          </div>
+          <div className="flex-1">
+            <span className="text-zinc-300 text-sm"> {
               this.updateTemplateField("description", e.target.value);
             }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("template:Readme"), i18next.t("template:Readme - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+          </div>
+          <div className="flex-1">
             <Input value={this.state.template.readme} onChange={e => {
               this.updateTemplateField("readme", e.target.value);
             }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Version"), i18next.t("general:Version - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+          </div>
+          <div className="flex-1">
             <Input value={this.state.template.version} onChange={e => {
               this.updateTemplateField("version", e.target.value);
             }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Icon"), i18next.t("general:Icon - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+          </div>
+          <div className="flex-1">
             <StoreAvatarUploader
               store={this.state.defaultStore}
               imageUrl={this.state.template.icon}
@@ -161,39 +159,37 @@ class TemplateEditPage extends React.Component {
                 this.submitTemplateEdit(false);
               }}
             />
-          </Col>
-        </Row>
+          </div>
+        </div>
 
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("template:Enable basic config"), i18next.t("template:Enable basic config - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Switch checked={this.state.template.enableBasicConfig} onChange={checked => {
-              this.updateTemplateField("enableBasicConfig", checked);
-            }} />
-          </Col>
-        </Row>
+          </div>
+          <div className="flex-1">
+            <span className="px-2 py-0.5 rounded text-xs " + (this.state.template.enableBasicConfig ? "bg-green-500/20 text-green-400" : "bg-zinc-800 text-zinc-500")">{this.state.template.enableBasicConfig ? "ON" : "OFF"}</span>
+          </div>
+        </div>
 
         {this.state.template.enableBasicConfig && (
-          <Row style={{marginTop: "20px"}} >
-            <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          <div className="flex flex-col sm:flex-row gap-2 mt-4">
+            <div className="flex-1">
               {Setting.getLabel(i18next.t("template:Basic config"), i18next.t("template:Basic config - Tooltip"))} :
-            </Col>
-            <Col span={22} >
+            </div>
+            <div className="flex-1">
               <TemplateOptionTable
                 mode="edit"
                 templateOptions={this.state.template.basicConfigOptions}
                 onUpdateTemplateOptions={options => {this.updateTemplateField("basicConfigOptions", options);}} />
-            </Col>
-          </Row>
+            </div>
+          </div>
         )}
 
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("template:Manifest"), i18next.t("template:Manifest - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+          </div>
+          <div className="flex-1">
             <div style={{height: "500px"}}>
               <Editor
                 value={this.state.template.manifest}
@@ -205,9 +201,9 @@ class TemplateEditPage extends React.Component {
                 }}
               />
             </div>
-          </Col>
-        </Row>
-      </Card>
+          </div>
+        </div>
+      </div>
     );
   }
 
@@ -248,9 +244,9 @@ class TemplateEditPage extends React.Component {
           this.state.template !== null ? this.renderTemplate() : null
         }
         <div style={{marginTop: "20px", marginLeft: "40px"}}>
-          <Button size="large" onClick={() => this.submitTemplateEdit(false)}>{i18next.t("general:Save")}</Button>
-          <Button style={{marginLeft: "20px"}} type="primary" size="large" onClick={() => this.submitTemplateEdit(true)}>{i18next.t("general:Save & Exit")}</Button>
-          {this.state.isNewTemplate && <Button style={{marginLeft: "20px"}} size="large" onClick={() => this.cancelTemplateEdit()}>{i18next.t("general:Cancel")}</Button>}
+          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700"> this.submitTemplateEdit(false)}>{i18next.t("general:Save")}</button>
+          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}> this.submitTemplateEdit(true)}>{i18next.t("general:Save & Exit")}</button>
+          {this.state.isNewTemplate && <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}> this.cancelTemplateEdit()}>{i18next.t("general:Cancel")}</button>}
         </div>
       </div>
     );

@@ -13,7 +13,6 @@
 // limitations under the License.
 
 import React from "react";
-import {Card, Col, Row} from "antd";
 import * as VideoBackend from "./backend/VideoBackend";
 import * as Setting from "./Setting";
 import Video from "./Video";
@@ -95,30 +94,29 @@ class VideoPage extends React.Component {
 
   renderVideo() {
     return (
-      <Card size="small" title={
-        <div style={{textAlign: "center"}}>
+      <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4">
           {this.state.video.name}
         </div>
       } style={{marginLeft: "5px"}} type="inner">
-        <Row style={{marginTop: "20px"}} >
-          <Col span={6} />
-          <Col span={12} style={(Setting.isMobile()) ? {maxWidth: "100%"} : {}}>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
+          <div className="flex-1">
             {
               this.state.video !== null ? this.renderVideoContent() : null
             }
-          </Col>
-          <Col span={6} />
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col span={6} />
-          <Col span={12} style={(Setting.isMobile()) ? {maxWidth: "100%"} : {}}>
+          </div>
+          <div className="flex-1">
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
+          <div className="flex-1">
             {
               this.state.video !== null ? this.state.video.description : null
             }
-          </Col>
-          <Col span={6} />
-        </Row>
-      </Card>
+          </div>
+          <div className="flex-1">
+        </div>
+      </div>
     );
   }
 

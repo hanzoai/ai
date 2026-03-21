@@ -13,7 +13,6 @@
 // limitations under the License.
 
 import React from "react";
-import {Button, Col, Input, Row} from "antd";
 import * as Setting from "../Setting";
 import i18next from "i18next";
 import * as TtsBackend from "../backend/TtsBackend";
@@ -116,19 +115,19 @@ class TtsTestWidget extends React.Component {
 
     return (
       <React.Fragment>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("provider:Provider test"), i18next.t("provider:Provider test - Tooltip"))} :
-          </Col>
-          <Col span={10} >
+          </div>
+          <div className="flex-1">
             <Input.TextArea rows={1} autoSize={{minRows: 1, maxRows: 5}} value={provider.testContent} onChange={e => {onUpdateProvider("testContent", e.target.value);}} />
-          </Col>
-          <Col span={6} >
-            <Button style={{marginLeft: "10px", marginBottom: "5px"}} type="primary" loading={this.state.testButtonLoading} disabled={!provider.testContent} onClick={() => this.sendTestTts(provider, originalProvider, provider.testContent, account.owner, account.name)} >
+          </div>
+          <div className="flex-1">
+            <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200 disabled:opacity-50" disabled={!provider.testContent} style={{marginLeft: "10px", marginBottom: "5px"}> this.sendTestTts(provider, originalProvider, provider.testContent, account.owner, account.name)} >
               {i18next.t("chat:Read it out")}
-            </Button>
-          </Col>
-        </Row>
+            </button>
+          </div>
+        </div>
       </React.Fragment>
     );
   }

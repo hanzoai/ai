@@ -13,12 +13,10 @@
 // limitations under the License.
 
 import React from "react";
-import {Button, Card, Col, Input, InputNumber, Row, Select} from "antd";
 import * as MachineBackend from "./backend/MachineBackend";
 import * as Setting from "./Setting";
 import i18next from "i18next";
 
-const {Option} = Select;
 
 class MachineEditPage extends React.Component {
   constructor(props) {
@@ -67,167 +65,166 @@ class MachineEditPage extends React.Component {
 
   renderMachine() {
     return (
-      <Card size="small" title={
-        <div>
+      <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4">
           {this.state.mode === "add" ? i18next.t("machine:New Machine") : i18next.t("machine:Edit Machine")}&nbsp;&nbsp;&nbsp;&nbsp;
-          <Button onClick={() => this.submitMachineEdit(false)}>{i18next.t("general:Save")}</Button>
-          <Button style={{marginLeft: "20px"}} type="primary" onClick={() => this.submitMachineEdit(true)}>{i18next.t("general:Save & Exit")}</Button>
-          {this.state.mode === "add" ? <Button style={{marginLeft: "20px"}} onClick={() => this.deleteMachine()}>{i18next.t("general:Cancel")}</Button> : null}
+          <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700"> this.submitMachineEdit(false)}>{i18next.t("general:Save")}</button>
+          <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}> this.submitMachineEdit(true)}>{i18next.t("general:Save & Exit")}</button>
+          {this.state.mode === "add" ? <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}> this.deleteMachine()}>{i18next.t("general:Cancel")}</button> : null}
         </div>
       } style={{marginLeft: "5px"}} type="inner">
-        <Row style={{marginTop: "10px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Organization"), i18next.t("general:Organization - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+          </div>
+          <div className="flex-1">
             <Input value={this.state.machine.owner} onChange={e => {
               this.updateMachineField("owner", e.target.value);
             }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Name"), i18next.t("general:Name - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+          </div>
+          <div className="flex-1">
             <Input value={this.state.machine.name} onChange={e => {
               this.updateMachineField("name", e.target.value);
             }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Provider"), i18next.t("general:Provider - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+          </div>
+          <div className="flex-1">
             <Input value={this.state.machine.provider} onChange={e => {
               this.updateMachineField("provider", e.target.value);
             }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Display name"), i18next.t("general:Display name - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+          </div>
+          <div className="flex-1">
             <Input value={this.state.machine.displayName} onChange={e => {
               this.updateMachineField("displayName", e.target.value);
             }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Created time"), i18next.t("general:Created time - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+          </div>
+          <div className="flex-1">
             <Input value={Setting.getFormattedDate(this.state.machine.createdTime)} onChange={e => {
               this.updateMachineField("createdTime", e.target.value);
             }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Expire time"), i18next.t("general:Expire time - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+          </div>
+          <div className="flex-1">
             <Input value={Setting.getFormattedDate(this.state.machine.expireTime)} onChange={e => {
               this.updateMachineField("expireTime", e.target.value);
             }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Region"), i18next.t("general:Region - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+          </div>
+          <div className="flex-1">
             <Input value={this.state.machine.region} onChange={e => {
               this.updateMachineField("region", e.target.value);
             }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Zone"), i18next.t("general:Zone - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+          </div>
+          <div className="flex-1">
             <Input value={this.state.machine.zone} onChange={e => {
               this.updateMachineField("zone", e.target.value);
             }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Category"), i18next.t("provider:Category - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+          </div>
+          <div className="flex-1">
             <Input value={this.state.machine.category} onChange={e => {
               this.updateMachineField("category", e.target.value);
             }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Type"), i18next.t("general:Type - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Select virtual={false} style={{width: "100%"}} value={this.state.machine.type} onChange={(value => {
+          </div>
+          <div className="flex-1">
+            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.machine.type}> {
               this.updateMachineField("type", value);
             })}>
               {
                 [
                   {id: "Pay As You Go", name: "Pay As You Go"},
                   {id: "Reserved", name: "Reserved"},
-                ].map((item, index) => <Option key={index} value={item.id}>{item.name}</Option>)
+                ].map((item, index) => <option key={index} value={item.id}>{item.name}</option>)
               }
-            </Select>
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+            </select>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Size"), i18next.t("general:Size - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+          </div>
+          <div className="flex-1">
             <Input value={this.state.machine.size} onChange={e => {
               this.updateMachineField("size", e.target.value);
             }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("machine:Image"), i18next.t("machine:Image - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+          </div>
+          <div className="flex-1">
             <Input value={this.state.machine.image} onChange={e => {
               this.updateMachineField("image", e.target.value);
             }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("machine:Public IP"), i18next.t("machine:Public IP - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+          </div>
+          <div className="flex-1">
             <Input value={this.state.machine.publicIp} onChange={e => {
               this.updateMachineField("publicIp", e.target.value);
             }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("machine:Private IP"), i18next.t("machine:Private IP - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+          </div>
+          <div className="flex-1">
             <Input value={this.state.machine.privateIp} onChange={e => {
               this.updateMachineField("privateIp", e.target.value);
             }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("machine:Protocol"), i18next.t("machine:Protocol - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Select virtual={false} style={{width: "100%"}} value={this.state.machine.remoteProtocol} onChange={value => {
+          </div>
+          <div className="flex-1">
+            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.machine.remoteProtocol}> {
               this.updateMachineField("remoteProtocol", value);
             }}
             options={[
@@ -236,53 +233,53 @@ class MachineEditPage extends React.Component {
               {value: "Telnet", label: "Telnet"},
               {value: "VNC", label: "VNC"},
             ].map(item => Setting.getOption(item.label, item.value))} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("machine:Port"), i18next.t("machine:Port - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+          </div>
+          <div className="flex-1">
             <InputNumber value={this.state.machine.remotePort} min={0} max={65535} step={1} onChange={value => {
               this.updateMachineField("remotePort", value);
             }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Username"), i18next.t("general:Username - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+          </div>
+          <div className="flex-1">
             <Input value={this.state.machine.remoteUsername} onChange={e => {
               this.updateMachineField("remoteUsername", e.target.value);
             }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Password"), i18next.t("general:Password - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+          </div>
+          <div className="flex-1">
             <Input value={this.state.machine.remotePassword} onChange={e => {
               this.updateMachineField("remotePassword", e.target.value);
             }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:State"), i18next.t("general:State - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Select virtual={false} style={{width: "100%"}} value={this.state.machine.state} onChange={value => {
+          </div>
+          <div className="flex-1">
+            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.machine.state}> {
               this.updateMachineField("state", value);
             }}
             options={[
               {value: "Running", label: "Running"},
               {value: "Stopped", label: "Stopped"},
             ].map(item => Setting.getOption(item.label, item.value))} />
-          </Col>
-        </Row>
-      </Card>
+          </div>
+        </div>
+      </div>
     );
   }
 
@@ -335,9 +332,9 @@ class MachineEditPage extends React.Component {
           this.state.machine !== null ? this.renderMachine() : null
         }
         <div style={{marginTop: "20px", marginLeft: "40px"}}>
-          <Button size="large" onClick={() => this.submitMachineEdit(false)}>{i18next.t("general:Save")}</Button>
-          <Button style={{marginLeft: "20px"}} type="primary" size="large" onClick={() => this.submitMachineEdit(true)}>{i18next.t("general:Save & Exit")}</Button>
-          {this.state.mode === "add" ? <Button style={{marginLeft: "20px"}} size="large" onClick={() => this.deleteMachine()}>{i18next.t("general:Cancel")}</Button> : null}
+          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700"> this.submitMachineEdit(false)}>{i18next.t("general:Save")}</button>
+          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}> this.submitMachineEdit(true)}>{i18next.t("general:Save & Exit")}</button>
+          {this.state.mode === "add" ? <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}> this.deleteMachine()}>{i18next.t("general:Cancel")}</button> : null}
         </div>
       </div>
     );

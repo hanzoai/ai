@@ -12,17 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import React from "react";
+import {useEffect} from "react";
 import * as Setting from "./Setting";
 
-class SigninPage extends React.Component {
-  componentDidMount() {
+function SigninPage() {
+  useEffect(() => {
     window.location.replace(Setting.getSigninUrl());
-  }
+  }, []);
 
-  render() {
-    return "";
-  }
+  return null;
 }
 
 export default SigninPage;

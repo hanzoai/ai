@@ -27,7 +27,7 @@ const ShortcutsPage = () => {
   };
 
   return (
-    <div style={{display: "flex", justifyContent: "center", flexDirection: "column", alignItems: "center"}}>
+    <div className="flex justify-center flex-col items-center">
       <GridCards items={getItems()} />
     </div>
   );

@@ -13,50 +13,8 @@
 // limitations under the License.
 
 import React, {useState} from "react";
-import {Button, Input, Space} from "antd";
-import {CheckOutlined, CloseOutlined, EditOutlined} from "@ant-design/icons";
+import {Check, Pencil, X} from "lucide-react";
 import i18next from "i18next";
-import {ThemeDefault} from "../Conf";
-
-// Styles for edit components
-export const editStyles = {
-  // Edit button container styles
-  editButtonContainer: (isHovering) => ({
-    marginRight: "8px",
-    opacity: isHovering ? 0.8 : 0,
-    transition: "opacity 0.2s ease-in-out",
-  }),
-
-  // Edit button styles
-  editButton: {
-    border: "none",
-    color: ThemeDefault.colorPrimary,
-    background: "rgba(255, 255, 255, 0.8)",
-    boxShadow: "0 2px 8px rgba(0, 0, 0, 0.15)",
-    borderRadius: "50%",
-    width: "32px",
-    height: "32px",
-    display: "flex",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-
-  // Edit form styles
-  editForm: {
-    width: "100%",
-  },
-
-  // TextArea styles in edit form
-  editTextArea: {
-    marginBottom: "8px",
-  },
-
-  // Button container in edit form
-  editFormButtons: {
-    display: "flex",
-    justifyContent: "flex-end",
-  },
-};
 
 const MessageEdit = ({
   message,
@@ -69,7 +27,6 @@ const MessageEdit = ({
   const [editedText, setEditedText] = useState("");
   const [isHovering, setIsHovering] = useState(false);
 
-  // Edit action handlers
   const handleEditActions = {
     start: () => {
       setIsEditing(true);
@@ -91,56 +48,54 @@ const MessageEdit = ({
     },
   };
 
-  // Edit form component
   const renderEditForm = () => (
-    <div style={editStyles.editForm}>
-      <Input.TextArea
+    <div className="w-full">
+      <textarea
         value={editedText}
         onChange={e => setEditedText(e.target.value)}
         onKeyDown={handleEditActions.keyDown}
-        autoSize={{minRows: 1, maxRows: 6}}
-        style={editStyles.editTextArea}
+        className="w-full min-h-[2.5rem] max-h-[12rem] resize-y rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring mb-2"
         autoFocus
+        rows={1}
       />
-      <Space style={editStyles.editFormButtons}>
-        <Button
-          icon={<CloseOutlined />}
+      <div className="flex justify-end gap-2">
+        <button
           onClick={handleEditActions.cancel}
-          size="small"
+          className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
         >
+          <X className="w-3 h-3" />
           {i18next.t("general:Cancel")}
-        </Button>
-        <Button
-          type="primary"
-          icon={<CheckOutlined />}
+        </button>
+        <button
           onClick={handleEditActions.save}
-          size="small"
+          className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground hover:bg-primary/90 transition-colors"
         >
+          <Check className="w-3 h-3" />
           {i18next.t("general:Save")}
-        </Button>
-      </Space>
+        </button>
+      </div>
     </div>
   );
 
-  // Edit button component
   const renderEditButton = () => {
     if (message.author !== "AI" && !isEditing && (disableInput === false || index !== isLastMessage)) {
       return (
-        <div style={editStyles.editButtonContainer(isHovering)}>
-          <Button
-            className="cs-button"
-            icon={<EditOutlined />}
-            style={editStyles.editButton}
+        <div
+          className="mr-2 transition-opacity duration-200"
+          style={{opacity: isHovering ? 0.8 : 0}}
+        >
+          <button
+            className="flex items-center justify-center w-8 h-8 rounded-full bg-card/80 shadow-md text-primary hover:bg-card transition-colors"
             onClick={handleEditActions.start}
-            size="small"
-          />
+          >
+            <Pencil className="w-3.5 h-3.5" />
+          </button>
         </div>
       );
     }
     return null;
   };
 
-  // Return the editing state and render functions
   return {
     isEditing,
     editedText,

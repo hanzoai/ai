@@ -14,14 +14,12 @@
 
 import React from "react";
 import {Link} from "react-router-dom";
-import {Button, Popconfirm, Table} from "antd";
 import moment from "moment";
 import * as Setting from "./Setting";
 import * as PodBackend from "./backend/PodBackend";
 import i18next from "i18next";
 import BaseListPage from "./BaseListPage";
 import PopconfirmModal from "./modal/PopconfirmModal";
-import {DeleteOutlined} from "@ant-design/icons";
 
 class PodListPage extends BaseListPage {
   constructor(props) {
@@ -172,11 +170,9 @@ class PodListPage extends BaseListPage {
         render: (text, pod, index) => {
           return (
             <div>
-              <Button
-                style={{marginTop: "10px", marginBottom: "10px", marginRight: "10px"}}
-                onClick={() => this.props.history.push(`/pods/${pod.owner}/${pod.name}`)}
+              <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginTop: "10px", marginBottom: "10px", marginRight: "10px"}> this.props.history.push(`/pods/${pod.owner}/${pod.name}`)}
               >{i18next.t("general:Edit")}
-              </Button>
+              </button>
               <PopconfirmModal
                 disabled={pod.owner !== this.props.account.owner}
                 title={i18next.t("general:Sure to delete") + `: ${pod.name} ?`}
@@ -200,26 +196,7 @@ class PodListPage extends BaseListPage {
 
     return (
       <div>
-        <Table columns={columns} dataSource={pods} rowKey="name" rowSelection={this.getRowSelection()} size="middle" bordered pagination={paginationProps}
-          title={() => (
-            <div>
-              {i18next.t("general:Pods")}&nbsp;&nbsp;&nbsp;&nbsp;
-              <Button type="primary" size="small" onClick={() => this.addPod()}>{i18next.t("general:Add")}</Button>
-              {this.state.selectedRowKeys.length > 0 && (
-                <Popconfirm title={`${i18next.t("general:Sure to delete")}: ${this.state.selectedRowKeys.length} ${i18next.t("general:items")} ?`} onConfirm={() => this.performBulkDelete(this.state.selectedRows, this.state.selectedRowKeys)} okText={i18next.t("general:OK")} cancelText={i18next.t("general:Cancel")}>
-                  <Button type="primary" danger size="small" icon={<DeleteOutlined />} style={{marginLeft: 8}}>
-                    {i18next.t("general:Delete")} ({this.state.selectedRowKeys.length})
-                  </Button>
-                </Popconfirm>
-              )}
-            </div>
-          )}
-          loading={pods === null}
-          onChange={(pagination, filters, sorter) => {
-            this.handleTableChange(pagination, filters, sorter);
-          }}
-          scroll={{x: "max-content"}}
-        />
+        <div className="overflow-x-auto border border-zinc-800 rounded-lg"><table className="w-full text-sm text-left"><thead className="bg-zinc-900/80 border-b border-zinc-800"><tr>{columns.map(col => <th key={col.key || col.dataIndex} className="px-3 py-2 text-xs font-medium text-zinc-400 whitespace-nowrap">{col.title}</th>)}</tr></thead><tbody className="divide-y divide-zinc-800/50">{(pods || []).map((record, index) => <tr key={typeof "name" === "function" ? ("name")(record) : record["name"] || index} className="hover:bg-zinc-900/50 transition-colors">{columns.map(col => <td key={col.key || col.dataIndex} className="px-3 py-2 text-zinc-300 whitespace-nowrap">{col.render ? col.render(record[col.dataIndex], record, index) : record[col.dataIndex]}</td>)}</tr>)}</tbody></table></div>
       </div>
     );
   }

@@ -13,7 +13,6 @@
 // limitations under the License.
 
 import React from "react";
-import {Button, Card, Col, Input, Row} from "antd";
 import * as AssetBackend from "./backend/AssetBackend";
 import * as ProviderBackend from "./backend/ProviderBackend";
 import * as ScanBackend from "./backend/ScanBackend";
@@ -172,143 +171,132 @@ class AssetEditPage extends React.Component {
     const typeIcon = this.getTypeIcon(this.state.asset.type);
 
     return (
-      <Card size="small" title={
-        <div>
+      <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4">
           {this.state.mode === "add" ? i18next.t("asset:New Asset") : i18next.t("asset:Edit Asset")}&nbsp;&nbsp;&nbsp;&nbsp;
-          <Button onClick={() => this.submitAssetEdit(false)}>{i18next.t("general:Save")}</Button>
-          <Button style={{marginLeft: "20px"}} type="primary" onClick={() => this.submitAssetEdit(true)}>{i18next.t("general:Save & Exit")}</Button>
-          {this.state.mode === "add" ? <Button style={{marginLeft: "20px"}} onClick={() => this.deleteAsset()}>{i18next.t("general:Cancel")}</Button> : null}
+          <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700"> this.submitAssetEdit(false)}>{i18next.t("general:Save")}</button>
+          <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}> this.submitAssetEdit(true)}>{i18next.t("general:Save & Exit")}</button>
+          {this.state.mode === "add" ? <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}> this.deleteAsset()}>{i18next.t("general:Cancel")}</button> : null}
         </div>
       } style={{marginLeft: "5px"}} type="inner">
-        <Row style={{marginTop: "10px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Organization"), i18next.t("general:Organization - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Input value={this.state.asset.owner} disabled />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+          <div className="flex-1">
+            <input className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.asset.owner} disabled />
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Name"), i18next.t("general:Name - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Input value={this.state.asset.name} disabled />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+          <div className="flex-1">
+            <input className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.asset.name} disabled />
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Display name"), i18next.t("general:Display name - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+          </div>
+          <div className="flex-1">
             <Input value={this.state.asset.displayName} onChange={e => {
               this.updateAssetField("displayName", e.target.value);
             }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Provider"), i18next.t("general:Provider - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Input
-              value={this.state.asset.provider}
-              disabled
-              prefix={
-                providerLogo ?
-                  <img src={providerLogo} alt={this.state.asset.provider} style={{width: "16px", height: "16px"}} /> :
+          </div>
+          <div className="flex-1">
+            <input className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.asset.provider} disabled /> :
                   null
               }
             />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:ID"), i18next.t("general:ID - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Input value={this.state.asset.id} disabled />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+          <div className="flex-1">
+            <input className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.asset.id} disabled />
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Type"), i18next.t("general:Type - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Input
-              value={this.state.asset.type}
-              disabled
-              prefix={
-                typeIcon ?
-                  <img src={typeIcon} alt={this.state.asset.type} style={{width: "16px", height: "16px"}} /> :
+          </div>
+          <div className="flex-1">
+            <input className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.asset.type} disabled /> :
                   null
               }
             />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Region"), i18next.t("general:Region - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Input value={this.state.asset.region} disabled />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+          <div className="flex-1">
+            <input className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.asset.region} disabled />
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Zone"), i18next.t("general:Zone - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Input value={this.state.asset.zone} disabled />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+          <div className="flex-1">
+            <input className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.asset.zone} disabled />
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:State"), i18next.t("general:State - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Input value={this.state.asset.state} disabled />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+          <div className="flex-1">
+            <input className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.asset.state} disabled />
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Tag"), i18next.t("general:Tag - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+          </div>
+          <div className="flex-1">
             <Input value={this.state.asset.tag} onChange={e => {
               this.updateAssetField("tag", e.target.value);
             }} />
-          </Col>
-        </Row>
+          </div>
+        </div>
         {this.state.asset.type === "Virtual Machine" ? (
           <>
-            <Row style={{marginTop: "20px"}} >
-              <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+            <div className="flex flex-col sm:flex-row gap-2 mt-4">
+              <div className="flex-1">
                 {Setting.getLabel(i18next.t("general:Username"), i18next.t("general:Username - Tooltip"))} :
-              </Col>
-              <Col span={22} >
+              </div>
+              <div className="flex-1">
                 <Input value={this.state.asset.username} onChange={e => {
                   this.updateAssetField("username", e.target.value);
                 }} />
-              </Col>
-            </Row>
-            <Row style={{marginTop: "20px"}} >
-              <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+              </div>
+            </div>
+            <div className="flex flex-col sm:flex-row gap-2 mt-4">
+              <div className="flex-1">
                 {Setting.getLabel(i18next.t("general:Password"), i18next.t("general:Password - Tooltip"))} :
-              </Col>
-              <Col span={22} >
+              </div>
+              <div className="flex-1">
                 <Input.Password value={this.state.asset.password} onChange={e => {
                   this.updateAssetField("password", e.target.value);
                 }} />
-              </Col>
-            </Row>
+              </div>
+            </div>
           </>
         ) : null}
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("asset:Properties"), i18next.t("asset:Properties - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+          </div>
+          <div className="flex-1">
             <JsonCodeMirrorEditor
               value={this.state.asset.properties || ""}
               onChange={(editor, data, value) => {
@@ -317,9 +305,9 @@ class AssetEditPage extends React.Component {
               editable={true}
               height="500px"
             />
-          </Col>
-        </Row>
-      </Card>
+          </div>
+        </div>
+      </div>
     );
   }
 
@@ -330,7 +318,7 @@ class AssetEditPage extends React.Component {
           this.state.asset !== null ? this.renderAsset() : null
         }
         {this.state.asset !== null && (
-          <Card size="small" title={i18next.t("scan:Related Scans")} style={{marginTop: "20px", marginLeft: "5px"}} type="inner">
+          <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4">
             {this.state.loadingScans ? (
               <div style={{textAlign: "center", padding: "40px"}}>
                 {i18next.t("general:Loading")}...
@@ -342,12 +330,12 @@ class AssetEditPage extends React.Component {
                 {i18next.t("scan:No scans found for this asset")}
               </div>
             )}
-          </Card>
+          </div>
         )}
         <div style={{marginTop: "20px", marginLeft: "40px"}}>
-          <Button size="large" onClick={() => this.submitAssetEdit(false)}>{i18next.t("general:Save")}</Button>
-          <Button style={{marginLeft: "20px"}} type="primary" size="large" onClick={() => this.submitAssetEdit(true)}>{i18next.t("general:Save & Exit")}</Button>
-          {this.state.mode === "add" ? <Button style={{marginLeft: "20px"}} size="large" onClick={() => this.deleteAsset()}>{i18next.t("general:Cancel")}</Button> : null}
+          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700"> this.submitAssetEdit(false)}>{i18next.t("general:Save")}</button>
+          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}> this.submitAssetEdit(true)}>{i18next.t("general:Save & Exit")}</button>
+          {this.state.mode === "add" ? <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}> this.deleteAsset()}>{i18next.t("general:Cancel")}</button> : null}
         </div>
       </div>
     );

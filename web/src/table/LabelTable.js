@@ -13,15 +13,12 @@
 // limitations under the License.
 
 import React from "react";
-import {DeleteOutlined, DownOutlined, UpOutlined} from "@ant-design/icons";
-import {Button, Col, Input, InputNumber, Row, Switch, Table, Tooltip} from "antd";
 import * as Setting from "../Setting";
 import i18next from "i18next";
 import xlsx from "xlsx";
 import FileSaver from "file-saver";
 import * as Conf from "../Conf";
 
-const {TextArea} = Input;
 
 class LabelTable extends React.Component {
   constructor(props) {
@@ -158,13 +155,13 @@ class LabelTable extends React.Component {
         width: "70px",
         render: (text, record, index) => {
           return (
-            <Button type={"text"} style={{width: "50px"}} onClick={() => {
+            <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{width: "50px"}> {
               this.props.player.seek(record.startTime);
               this.props.screen.clear();
               this.props.videoObj.clearMaps();
             }} >
               {index + 1}
-            </Button>
+            </button>
           );
         },
       },
@@ -226,7 +223,7 @@ class LabelTable extends React.Component {
         render: (text, record, index) => {
           const isNewRow = index === table.length - 1;
           return (
-            <TextArea disabled={this.props.disabled || this.requireSelfOrAdmin(record)} showCount maxLength={250} autoSize={{minRows: 1, maxRows: 15}} value={text} ref={isNewRow ? this.newInputRef : null} onChange={(e) => {
+            <span className="text-zinc-300 text-sm"> {
               this.updateField(table, index, "text", e.target.value);
             }} />
           );
@@ -239,15 +236,15 @@ class LabelTable extends React.Component {
         render: (text, record, index) => {
           return (
             <div>
-              <Tooltip placement="bottomLeft" title={"Up"}>
-                <Button style={{marginRight: "5px"}} disabled={index === 0 || this.props.disabled || this.requireAdmin()} icon={<UpOutlined />} size="small" onClick={() => this.upRow(table, index)} />
-              </Tooltip>
-              <Tooltip placement="topLeft" title={"Down"}>
-                <Button style={{marginRight: "5px"}} disabled={index === table.length - 1 || this.props.disabled || this.requireAdmin()} icon={<DownOutlined />} size="small" onClick={() => this.downRow(table, index)} />
-              </Tooltip>
-              <Tooltip placement="right" title={"Delete"}>
-                <Button icon={<DeleteOutlined />} size="small" disabled={this.props.disabled || this.requireSelfOrAdmin(record)} onClick={() => this.deleteRow(table, index)} />
-              </Tooltip>
+              
+                <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-50" disabled={index === 0 || this.props.disabled || this.requireAdmin()} style={{marginRight: "5px"}>} size="small" onClick={() => this.upRow(table, index)} />
+              
+              
+                <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-50" disabled={index === table.length - 1 || this.props.disabled || this.requireAdmin()} style={{marginRight: "5px"}>} size="small" onClick={() => this.downRow(table, index)} />
+              
+              
+                <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700">} size="small" disabled={this.props.disabled || this.requireSelfOrAdmin(record)} onClick={() => this.deleteRow(table, index)} />
+              
             </div>
           );
         },
@@ -268,42 +265,20 @@ class LabelTable extends React.Component {
     const myRowCount = table.filter((row) => row.user === this.props.account.name).length;
 
     return (
-      <Table rowKey={"id"} columns={columns} dataSource={table} size="middle" bordered pagination={false}
-        title={() => (
-          <div>
-            {this.props.title}&nbsp;&nbsp;&nbsp;&nbsp;
-            <Button style={{marginRight: "5px"}} type="primary" size="small" disabled={myRowCount >= 1 || this.props.disabled || this.requireSelfOrReviewer()} onClick={() => this.addRow(table)}>{i18next.t("general:Add")}</Button>
-            {/* &nbsp;&nbsp;*/}
-            {/* {*/}
-            {/*  table.length === 0 ? null : (*/}
-            {/*    <Button style={{marginLeft: "5px", marginRight: "5px"}} size="small" onClick={() => this.downloadLabels(table)}>{i18next.t("general:Download")}</Button>*/}
-            {/*  )*/}
-            {/* }*/}
-            &nbsp;&nbsp;&nbsp;&nbsp;
-            {i18next.t("video:Tag on pause")}:
-            &nbsp;&nbsp;
-            <Switch disabled={true} checked={this.props.video.tagOnPause} onChange={checked => {
-              this.updateTagOnPause(checked);
-            }} />
-          </div>
-        )}
-        // rowClassName={(record, index) => {
-        //   return (highlightIndex === index) ? "alert-row" : "";
-        // }}
-      />
+      <div className="overflow-x-auto border border-zinc-800 rounded-lg"><table className="w-full text-sm text-left"><thead className="bg-zinc-900/80 border-b border-zinc-800"><tr>{columns.map(col => <th key={col.key || col.dataIndex} className="px-3 py-2 text-xs font-medium text-zinc-400 whitespace-nowrap">{col.title}</th>)}</tr></thead><tbody className="divide-y divide-zinc-800/50">{(table || []).map((record, index) => <tr key={typeof {"id"} === "function" ? ({"id"})(record) : record[{"id"}] || index} className="hover:bg-zinc-900/50 transition-colors">{columns.map(col => <td key={col.key || col.dataIndex} className="px-3 py-2 text-zinc-300 whitespace-nowrap">{col.render ? col.render(record[col.dataIndex], record, index) : record[col.dataIndex]}</td>)}</tr>)}</tbody></table></div>
     );
   }
 
   render() {
     return (
       <div>
-        <Row style={{marginTop: "10px"}} >
-          <Col span={24}>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {
               this.renderTable(this.props.table)
             }
-          </Col>
-        </Row>
+          </div>
+        </div>
       </div>
     );
   }

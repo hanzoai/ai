@@ -1,10 +1,10 @@
-// Copyright 2024 The casbin Authors. All Rights Reserved.
+// Copyright 2024 Hanzo AI Inc. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//   http://www.apache.org/licenses/LICENSE-2.0
+//      http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -14,15 +14,13 @@
 
 import React from "react";
 import {Link} from "react-router-dom";
-import {Button, Popconfirm, Table} from "antd";
 import BaseListPage from "./BaseListPage";
 import moment from "moment";
 import * as Setting from "./Setting";
 import * as ImageBackend from "./backend/ImageBackend";
-import i18next from "i18next";
-import PopconfirmModal from "./modal/PopconfirmModal";
 import * as MachineBackend from "./backend/MachineBackend";
-import {DeleteOutlined} from "@ant-design/icons";
+import i18next from "i18next";
+import {Trash2, Loader2} from "lucide-react";
 
 class ImageListPage extends BaseListPage {
   constructor(props) {
@@ -76,10 +74,7 @@ class ImageListPage extends BaseListPage {
           Setting.showMessage("success", i18next.t("general:Successfully deleted"));
           this.setState({
             data: Setting.deleteRow(this.state.data, i),
-            pagination: {
-              ...this.state.pagination,
-              total: this.state.pagination.total - 1,
-            },
+            pagination: {...this.state.pagination, total: this.state.pagination.total - 1},
           });
         } else {
           Setting.showMessage("error", `${i18next.t("general:Failed to delete")}: ${res.msg}`);
@@ -126,174 +121,77 @@ class ImageListPage extends BaseListPage {
 
   renderTable(images) {
     const columns = [
-      {
-        title: i18next.t("general:Organization"),
-        dataIndex: "owner",
-        key: "owner",
-        width: "110px",
-        sorter: true,
-        ...this.getColumnSearchProps("owner"),
-        render: (text, image, index) => {
-          return (
-            <a target="_blank" rel="noreferrer" href={Setting.getMyProfileUrl(this.props.account).replace("/account", `/organizations/${text}`)}>
-              {text}
-            </a>
-          );
-        },
-      },
-      {
-        title: i18next.t("general:Name"),
-        dataIndex: "name",
-        key: "name",
-        width: "120px",
-        sorter: true,
-        ...this.getColumnSearchProps("name"),
-        render: (text, record, index) => {
-          return (
-            <Link to={`/images/${record.owner}/${record.name}`}>{text}</Link>
-          );
-        },
-      },
-      {
-        title: i18next.t("general:Category"),
-        dataIndex: "category",
-        key: "category",
-        width: "120px",
-        sorter: (a, b) => a.category.localeCompare(b.category),
-      },
-      {
-        title: i18next.t("general:ID"),
-        dataIndex: "imageId",
-        key: "imageId",
-        width: "120px",
-        sorter: (a, b) => a.imageId.localeCompare(b.imageId),
-      },
-      {
-        title: i18next.t("general:State"),
-        dataIndex: "state",
-        key: "state",
-        width: "90px",
-        sorter: (a, b) => a.state.localeCompare(b.state),
-      },
-      {
-        title: i18next.t("general:Tag"),
-        dataIndex: "tag",
-        key: "tag",
-        width: "90px",
-        sorter: (a, b) => a.tag.localeCompare(b.tag),
-      },
-      {
-        title: i18next.t("general:Description"),
-        dataIndex: "description",
-        key: "description",
-        width: "90px",
-        sorter: (a, b) => a.description.localeCompare(b.description),
-      },
-      {
-        title: i18next.t("node:OS"),
-        dataIndex: "os",
-        key: "os",
-        width: "90px",
-        sorter: (a, b) => a.os.localeCompare(b.os),
-      },
-      {
-        title: i18next.t("image:Platform"),
-        dataIndex: "platform",
-        key: "platform",
-        width: "90px",
-        sorter: (a, b) => a.platform.localeCompare(b.platform),
-      },
-      {
-        title: i18next.t("image:Arch"),
-        dataIndex: "systemArchitecture",
-        key: "systemArchitecture",
-        width: "90px",
-        sorter: (a, b) => a.systemArchitecture.localeCompare(b.systemArchitecture),
-      },
-      {
-        title: i18next.t("general:Size"),
-        dataIndex: "size",
-        key: "size",
-        width: "90px",
-        sorter: (a, b) => a.size.localeCompare(b.size),
-      },
-      {
-        title: i18next.t("image:Boot mode"),
-        dataIndex: "bootMode",
-        key: "bootMode",
-        width: "90px",
-        sorter: (a, b) => a.bootMode.localeCompare(b.bootMode),
-      },
-      {
-        title: i18next.t("general:Progress"),
-        dataIndex: "progress",
-        key: "progress",
-        width: "90px",
-        sorter: (a, b) => a.progress.localeCompare(b.progress),
-      },
-      {
-        title: i18next.t("general:Created time"),
-        dataIndex: "createdTime",
-        key: "createdTime",
-        width: "160px",
-        // sorter: true,
-        sorter: (a, b) => a.createdTime.localeCompare(b.createdTime),
-        render: (text, image, index) => {
-          return Setting.getFormattedDate(text);
-        },
-      },
-      {
-        title: i18next.t("general:Action"),
-        dataIndex: "action",
-        key: "action",
-        width: "130px",
-        fixed: (Setting.isMobile()) ? "false" : "right",
-        render: (text, image, index) => {
-          return (
-            <div>
-              <Button style={{marginTop: "10px", marginRight: "10px"}} onClick={() => this.props.history.push(`/images/${image.owner}/${image.name}`)}>
-                {i18next.t("general:Edit")}
-              </Button>
-              <Button type="primary" style={{marginTop: "10px", marginBottom: "10px", marginRight: "10px"}} onClick={() => this.createMachine(image)}>
-                {i18next.t("image:Create machine")}
-              </Button>
-              <PopconfirmModal disabled={image.owner !== this.props.account.owner} style={{marginBottom: "10px"}}
-                title={i18next.t("general:Sure to delete") + `: ${image.name} ?`} onConfirm={() => this.deleteImage(index)}>
-              </PopconfirmModal>
-            </div>
-          );
-        },
-      },
+      {title: i18next.t("general:Organization"), dataIndex: "owner", key: "owner", render: (text) => (
+        <a target="_blank" rel="noreferrer" href={Setting.getMyProfileUrl(this.props.account).replace("/account", `/organizations/${text}`)} className="text-blue-400 hover:text-blue-300">{text}</a>
+      )},
+      {title: i18next.t("general:Name"), dataIndex: "name", key: "name", render: (text, record) => (
+        <Link to={`/images/${record.owner}/${record.name}`} className="text-blue-400 hover:text-blue-300">{text}</Link>
+      )},
+      {title: i18next.t("general:Category"), dataIndex: "category", key: "category"},
+      {title: i18next.t("general:ID"), dataIndex: "imageId", key: "imageId"},
+      {title: i18next.t("general:State"), dataIndex: "state", key: "state"},
+      {title: i18next.t("general:Tag"), dataIndex: "tag", key: "tag"},
+      {title: i18next.t("general:Description"), dataIndex: "description", key: "description"},
+      {title: i18next.t("node:OS"), dataIndex: "os", key: "os"},
+      {title: i18next.t("image:Platform"), dataIndex: "platform", key: "platform"},
+      {title: i18next.t("image:Arch"), dataIndex: "systemArchitecture", key: "systemArchitecture"},
+      {title: i18next.t("general:Size"), dataIndex: "size", key: "size"},
+      {title: i18next.t("image:Boot mode"), dataIndex: "bootMode", key: "bootMode"},
+      {title: i18next.t("general:Progress"), dataIndex: "progress", key: "progress"},
+      {title: i18next.t("general:Created time"), dataIndex: "createdTime", key: "createdTime", render: (text) => Setting.getFormattedDate(text)},
+      {title: i18next.t("general:Action"), dataIndex: "action", key: "action", render: (text, image, index) => (
+        <div className="flex flex-wrap gap-2">
+          <button onClick={() => this.props.history.push(`/images/${image.owner}/${image.name}`)} className="px-3 py-1.5 bg-zinc-800 text-zinc-300 rounded text-xs hover:bg-zinc-700 transition-colors">{i18next.t("general:Edit")}</button>
+          <button onClick={() => this.createMachine(image)} className="px-3 py-1.5 bg-white text-black rounded text-xs font-medium hover:bg-zinc-200 transition-colors">{i18next.t("image:Create machine")}</button>
+          {image.owner === this.props.account.owner && (
+            <button onClick={() => { if (window.confirm(`${i18next.t("general:Sure to delete")}: ${image.name} ?`)) {this.deleteImage(index);} }} className="px-3 py-1.5 bg-red-600 text-white rounded text-xs font-medium hover:bg-red-700 transition-colors">{i18next.t("general:Delete")}</button>
+          )}
+        </div>
+      )},
     ];
-
-    const paginationProps = {
-      pageSize: this.state.pagination.pageSize,
-      total: this.state.pagination.total,
-      showQuickJumper: true,
-      showSizeChanger: true,
-      pageSizeOptions: ["10", "20", "50", "100", "1000", "10000", "100000"],
-      showTotal: () => i18next.t("general:{total} in total").replace("{total}", this.state.pagination.total),
-    };
 
     return (
       <div>
-        <Table scroll={{x: "max-content"}} columns={columns} dataSource={images} rowKey={(image) => `${image.owner}/${image.name}`} rowSelection={this.getRowSelection()} size="middle" bordered pagination={paginationProps}
-          title={() => (
-            <div>
-              {i18next.t("general:Images")}&nbsp;&nbsp;&nbsp;&nbsp;
-              <Button type="primary" size="small" onClick={this.addImage.bind(this)}>{i18next.t("general:Add")}</Button>
-              {this.state.selectedRowKeys.length > 0 && (
-                <Popconfirm title={`${i18next.t("general:Sure to delete")}: ${this.state.selectedRowKeys.length} ${i18next.t("general:items")} ?`} onConfirm={() => this.performBulkDelete(this.state.selectedRows, this.state.selectedRowKeys)} okText={i18next.t("general:OK")} cancelText={i18next.t("general:Cancel")}>
-                  <Button type="primary" danger size="small" icon={<DeleteOutlined />} style={{marginLeft: 8}}>
-                    {i18next.t("general:Delete")} ({this.state.selectedRowKeys.length})
-                  </Button>
-                </Popconfirm>
-              )}
-            </div>
-          )}
-          loading={this.state.loading}
-          onChange={this.handleTableChange}
-        />
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <h2 className="text-lg font-semibold text-white">{i18next.t("general:Images")}</h2>
+            <button onClick={this.addImage.bind(this)} className="px-3 py-1 bg-white text-black rounded text-xs font-medium hover:bg-zinc-200 transition-colors">{i18next.t("general:Add")}</button>
+            {this.state.selectedRowKeys.length > 0 && (
+              <button onClick={() => { if (window.confirm(`${i18next.t("general:Sure to delete")}: ${this.state.selectedRowKeys.length} ${i18next.t("general:items")} ?`)) {this.performBulkDelete(this.state.selectedRows, this.state.selectedRowKeys);} }} className="px-3 py-1 bg-red-600 text-white rounded text-xs font-medium hover:bg-red-700 transition-colors flex items-center gap-1">
+                <Trash2 className="w-3 h-3" />
+                {i18next.t("general:Delete")} ({this.state.selectedRowKeys.length})
+              </button>
+            )}
+          </div>
+          <span className="text-xs text-zinc-500">{i18next.t("general:{total} in total").replace("{total}", this.state.pagination.total)}</span>
+        </div>
+        {this.state.loading ? (
+          <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 text-zinc-500 animate-spin" /></div>
+        ) : (
+          <div className="overflow-x-auto border border-zinc-800 rounded-lg">
+            <table className="w-full text-sm text-left">
+              <thead className="bg-zinc-900/80 border-b border-zinc-800">
+                <tr>
+                  <th className="px-3 py-2"><input type="checkbox" className="rounded bg-zinc-800 border-zinc-700" checked={this.state.selectedRowKeys.length === images?.length && images?.length > 0} onChange={(e) => { if (e.target.checked) {this.onSelectAll(true, images);} else {this.clearSelection();} }} /></th>
+                  {columns.map(col => <th key={col.key} className="px-3 py-2 text-xs font-medium text-zinc-400 whitespace-nowrap">{col.title}</th>)}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-800/50">
+                {images?.map((record, index) => (
+                  <tr key={`${record.owner}/${record.name}`} className="hover:bg-zinc-900/50 transition-colors">
+                    <td className="px-3 py-2">
+                      <input type="checkbox" className="rounded bg-zinc-800 border-zinc-700" checked={this.state.selectedRowKeys.includes(this.getRowKey(record))} onChange={(e) => {
+                        const key = this.getRowKey(record);
+                        if (e.target.checked) {this.onSelectChange([...this.state.selectedRowKeys, key], [...this.state.selectedRows, record]);} else {this.onSelectChange(this.state.selectedRowKeys.filter(k => k !== key), this.state.selectedRows.filter(r => this.getRowKey(r) !== key));}
+                      }} />
+                    </td>
+                    {columns.map(col => <td key={col.key} className="px-3 py-2 text-zinc-300 whitespace-nowrap">{col.render ? col.render(record[col.dataIndex], record, index) : record[col.dataIndex]}</td>)}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     );
   }
@@ -308,24 +206,17 @@ class ImageListPage extends BaseListPage {
     this.setState({loading: true});
     ImageBackend.getImages(Setting.getRequestOrganization(this.props.account), params.pagination.current, params.pagination.pageSize, field, value, sortField, sortOrder)
       .then((res) => {
-        this.setState({
-          loading: false,
-        });
+        this.setState({loading: false});
         if (res.status === "ok") {
           this.setState({
             data: res.data,
-            pagination: {
-              ...params.pagination,
-              total: res.data2,
-            },
+            pagination: {...params.pagination, total: res.data2},
             searchText: params.searchText,
             searchedColumn: params.searchedColumn,
           });
         } else {
           if (Setting.isResponseDenied(res)) {
-            this.setState({
-              isAuthorized: false,
-            });
+            this.setState({isAuthorized: false});
           } else {
             Setting.showMessage("error", res.msg);
           }
