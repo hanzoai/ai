@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import {notification} from "antd";
-import {CloseOutlined} from "@ant-design/icons";
 import i18next from "i18next";
 import * as Setting from "./Setting";
 import * as Conf from "./Conf";
@@ -113,10 +111,7 @@ class PreviewInterceptor {
         </div>
       ),
       onClose,
-      closeIcon: <CloseOutlined style={{fontSize: 16}} onClick={(e) => {
-        e.stopPropagation();
-        notification.destroy();
-      }} />,
+      closeIcon: ,
       duration: 3,
       showProgress: true,
       pauseOnHover: true,

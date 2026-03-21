@@ -13,33 +13,17 @@
 // limitations under the License.
 
 import React, {useState} from "react";
-import {Drawer} from "antd";
+import {X} from "lucide-react";
 import i18next from "i18next";
-import * as Setting from "../Setting";
 
-const SearchResultItem = ({result, idx, themeColor}) => {
+const SearchResultItem = ({result, idx}) => {
   const [iconError, setIconError] = useState(false);
 
   return (
     <div
       role="button"
       tabIndex={0}
-      style={{
-        padding: "12px",
-        background: "#fff",
-        borderRadius: "8px",
-        border: "1px solid #e8e8e8",
-        cursor: "pointer",
-        transition: "all 0.2s",
-      }}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.1)";
-        e.currentTarget.style.borderColor = themeColor;
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.boxShadow = "none";
-        e.currentTarget.style.borderColor = "#e8e8e8";
-      }}
+      className="p-3 bg-card rounded-lg border border-border cursor-pointer transition-all hover:shadow-lg hover:border-primary/50"
       onClick={() => {
         if (result.url) {
           window.open(result.url, "_blank");
@@ -52,64 +36,27 @@ const SearchResultItem = ({result, idx, themeColor}) => {
         }
       }}
     >
-      <div style={{
-        display: "flex",
-        alignItems: "center",
-        gap: "8px",
-        marginBottom: "6px",
-      }}>
+      <div className="flex items-center gap-2 mb-1.5">
         {result.icon && !iconError ? (
           <img
             src={result.icon}
             alt="site icon"
-            style={{
-              width: "20px",
-              height: "20px",
-              borderRadius: "50%",
-              objectFit: "cover",
-            }}
+            className="w-5 h-5 rounded-full object-cover"
             onError={() => setIconError(true)}
           />
         ) : (
-          <span style={{
-            display: "inline-flex",
-            alignItems: "center",
-            justifyContent: "center",
-            width: "20px",
-            height: "20px",
-            background: themeColor,
-            color: "#fff",
-            borderRadius: "50%",
-            fontSize: "12px",
-            fontWeight: "bold",
-          }}>
+          <span className="inline-flex items-center justify-center w-5 h-5 bg-primary text-primary-foreground rounded-full text-xs font-bold">
             {result.index || idx + 1}
           </span>
         )}
-        <span style={{
-          color: themeColor,
-          fontSize: "12px",
-          fontWeight: "500",
-        }}>
+        <span className="text-xs font-medium text-primary">
           {result.site_name || (result.url ? new URL(result.url).hostname : "")}
         </span>
       </div>
-      <div style={{
-        fontSize: "14px",
-        color: "#333",
-        marginBottom: "6px",
-        fontWeight: "500",
-        lineHeight: "1.4",
-      }}>
+      <div className="text-sm text-foreground mb-1.5 font-medium leading-snug">
         {result.title}
       </div>
-      <div style={{
-        fontSize: "12px",
-        color: "#999",
-        overflow: "hidden",
-        textOverflow: "ellipsis",
-        whiteSpace: "nowrap",
-      }}>
+      <div className="text-xs text-muted-foreground overflow-hidden text-ellipsis whitespace-nowrap">
         {result.url}
       </div>
     </div>
@@ -117,32 +64,42 @@ const SearchResultItem = ({result, idx, themeColor}) => {
 };
 
 const SearchSourcesDrawer = ({visible, onClose, searchResults}) => {
-  const themeColor = Setting.getThemeColor();
+  if (!visible) {return null;}
 
   return (
-    <Drawer
-      title={i18next.t("chat:Web sources")}
-      placement="right"
-      width={"auto"}
-      onClose={onClose}
-      open={visible}
-      styles={{
-        body: {padding: "16px"},
-      }}
-    >
-      {searchResults?.length > 0 && (
-        <div style={{display: "flex", flexDirection: "column", gap: "12px"}}>
-          {searchResults.map((result, idx) => (
-            <SearchResultItem
-              key={idx}
-              result={result}
-              idx={idx}
-              themeColor={themeColor}
-            />
-          ))}
+    <>
+      {/* Backdrop */}
+      <div className="fixed inset-0 bg-black/50 z-40" onClick={onClose} />
+
+      {/* Slide-over panel */}
+      <div className="fixed inset-y-0 right-0 z-50 w-[400px] max-w-[90vw] bg-background border-l border-border shadow-xl flex flex-col transform transition-transform duration-300">
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+          <h3 className="text-sm font-semibold text-foreground">{i18next.t("chat:Web sources")}</h3>
+          <button
+            onClick={onClose}
+            className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
-      )}
-    </Drawer>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-4">
+          {searchResults?.length > 0 && (
+            <div className="flex flex-col gap-3">
+              {searchResults.map((result, idx) => (
+                <SearchResultItem
+                  key={idx}
+                  result={result}
+                  idx={idx}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </>
   );
 };
 

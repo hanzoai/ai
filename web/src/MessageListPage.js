@@ -14,7 +14,6 @@
 
 import React from "react";
 import {Link} from "react-router-dom";
-import {Button, Popconfirm, Switch, Table, Tag} from "antd";
 import BaseListPage from "./BaseListPage";
 import {ThemeDefault} from "./Conf";
 import * as Setting from "./Setting";
@@ -23,7 +22,6 @@ import * as ProviderBackend from "./backend/ProviderBackend";
 import moment from "moment";
 import i18next from "i18next";
 import * as Conf from "./Conf";
-import {DeleteOutlined} from "@ant-design/icons";
 import VectorTooltip from "./VectorTooltip";
 
 class MessageListPage extends BaseListPage {
@@ -122,7 +120,7 @@ class MessageListPage extends BaseListPage {
 
   renderDownloadXlsxButton() {
     return (
-      <Button size="small" style={{marginRight: "10px"}} onClick={() => {
+      <button className="px-2 py-1 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginRight: "10px"}> {
         const data = [];
         this.state.data.filter(item => item.author !== "AI").forEach((item, i) => {
           const row = {};
@@ -146,7 +144,7 @@ class MessageListPage extends BaseListPage {
         ];
 
         Setting.saveSheetToFile(sheet, i18next.t("general:Messages"), `${i18next.t("general:Messages")}-${Setting.getFormattedDate(moment().format())}.xlsx`);
-      }}>{i18next.t("general:Download")}</Button>
+      }}>{i18next.t("general:Download")}</button>
     );
   }
 
@@ -356,9 +354,9 @@ class MessageListPage extends BaseListPage {
             return (
               <VectorTooltip key={vectorScore.vector} vectorScore={vectorScore}>
                 <a target="_blank" rel="noreferrer" href={`/vectors/${vectorScore.vector}`}>
-                  <Tag style={{marginTop: "5px"}} color={"processing"}>
+                  <span className="px-2 py-0.5 bg-zinc-800 text-zinc-400 rounded text-xs">
                     {vectorScore.score}
-                  </Tag>
+                  </span>
                 </a>
               </VectorTooltip>
             );
@@ -374,7 +372,7 @@ class MessageListPage extends BaseListPage {
           return (
             text?.map(suggestion => {
               return (
-                <Tag key={suggestion.text} color={suggestion.isHit ? ThemeDefault.colorPrimary : ""}>{suggestion.text}</Tag>
+                <span className="px-2 py-0.5 bg-zinc-800 text-zinc-400 rounded text-xs">{suggestion.text}</span>
               );
             })
           );
@@ -415,7 +413,7 @@ class MessageListPage extends BaseListPage {
         ...this.getColumnFilterProps("isDeleted"),
         render: (text, record, index) => {
           return (
-            <Switch disabled checkedChildren={i18next.t("general:ON")} unCheckedChildren={i18next.t("general:OFF")} checked={text} />
+            <span className="px-2 py-0.5 rounded text-xs " + (text ? "bg-green-500/20 text-green-400" : "bg-zinc-800 text-zinc-500")">{text ? "ON" : "OFF"}</span>
           );
         },
       },
@@ -428,7 +426,7 @@ class MessageListPage extends BaseListPage {
         ...this.getColumnFilterProps("isAlerted"),
         render: (text, record, index) => {
           return (
-            <Switch disabled checkedChildren={i18next.t("general:ON")} unCheckedChildren={i18next.t("general:OFF")} checked={text} />
+            <span className="px-2 py-0.5 rounded text-xs " + (text ? "bg-green-500/20 text-green-400" : "bg-zinc-800 text-zinc-500")">{text ? "ON" : "OFF"}</span>
           );
         },
       },
@@ -441,23 +439,17 @@ class MessageListPage extends BaseListPage {
         render: (text, record, index) => {
           return (
             <div>
-              <Button
-                style={{marginTop: "10px", marginBottom: "10px", marginRight: "10px"}}
-                type="primary"
-                onClick={() => this.props.history.push(`/messages/${record.name}`)}
+              <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginTop: "10px", marginBottom: "10px", marginRight: "10px"}> this.props.history.push(`/messages/${record.name}`)}
               >
                 {i18next.t("general:Edit")}
-              </Button>
-              <Popconfirm
-                title={`${i18next.t("general:Sure to delete")}: ${record.name} ?`}
-                onConfirm={() => this.deleteMessage(record)}
+              </button>
+              this.deleteMessage(record)}
                 okText={i18next.t("general:OK")}
                 cancelText={i18next.t("general:Cancel")}
               >
-                <Button disabled={!Setting.isLocalAdminUser(this.props.account)} style={{marginBottom: "10px"}} type="primary" danger>
+                <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-red-600 text-white hover:bg-red-700 disabled:opacity-50" disabled={!Setting.isLocalAdminUser(this.props.account)} style={{marginBottom: "10px"}>
                   {i18next.t("general:Delete")}
-                </Button>
-              </Popconfirm>
+                </button>
             </div>
           );
         },
@@ -487,57 +479,7 @@ class MessageListPage extends BaseListPage {
 
     return (
       <div>
-        <Table scroll={{x: "max-content"}} columns={columns} dataSource={messages} rowKey="name" rowSelection={this.getRowSelection()} size="middle" bordered pagination={paginationProps}
-          title={() => (
-            <div>
-              {i18next.t("general:Messages")}&nbsp;&nbsp;&nbsp;&nbsp;
-              <Button disabled={!Setting.isLocalAdminUser(this.props.account)} type="primary" size="small" onClick={this.addMessage.bind(this)}>{i18next.t("general:Add")}</Button>
-              {this.state.selectedRowKeys.length > 0 && (
-                <Popconfirm title={`${i18next.t("general:Sure to delete")}: ${this.state.selectedRowKeys.length} ${i18next.t("general:items")} ?`} onConfirm={() => this.performBulkDelete(this.state.selectedRows, this.state.selectedRowKeys)} okText={i18next.t("general:OK")} cancelText={i18next.t("general:Cancel")}>
-                  <Button type="primary" danger size="small" icon={<DeleteOutlined />} style={{marginLeft: 8}}>
-                    {i18next.t("general:Delete")} ({this.state.selectedRowKeys.length})
-                  </Button>
-                </Popconfirm>
-              )}
-              &nbsp;&nbsp;&nbsp;&nbsp;
-              {
-                this.renderDownloadXlsxButton()
-              }
-              &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-              &nbsp;&nbsp;&nbsp;&nbsp;
-              {i18next.t("general:Users")}:
-              &nbsp;
-              {Setting.getDisplayTag(Setting.uniqueFields(messages, "user"))}
-              &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-              {i18next.t("general:Chats")}:
-              &nbsp;
-              {Setting.getDisplayTag(Setting.uniqueFields(messages, "chat"))}
-              &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-              {i18next.t("general:Messages")}:
-              &nbsp;
-              {Setting.getDisplayTag(this.state.pagination.total)}
-              {
-                (!this.props.account || this.props.account.name !== "admin") ? null : (
-                  <React.Fragment>
-                    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                    {i18next.t("general:Tokens")}:
-                    &nbsp;
-                    {Setting.getDisplayTag(Setting.sumFields(messages, "tokenCount"))}
-                    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                    {i18next.t("chat:Price")}:
-                    &nbsp;
-                    {Setting.getDisplayPrice(Setting.sumFields(messages, "price"))}
-                  </React.Fragment>
-                )
-              }
-            </div>
-          )}
-          loading={this.state.loading}
-          rowClassName={(record, index) => {
-            return record.isDeleted ? "highlight-row" : "";
-          }}
-          onChange={this.handleTableChange}
-        />
+        <div className="overflow-x-auto border border-zinc-800 rounded-lg"><table className="w-full text-sm text-left"><thead className="bg-zinc-900/80 border-b border-zinc-800"><tr>{columns.map(col => <th key={col.key || col.dataIndex} className="px-3 py-2 text-xs font-medium text-zinc-400 whitespace-nowrap">{col.title}</th>)}</tr></thead><tbody className="divide-y divide-zinc-800/50">{(messages || []).map((record, index) => <tr key={typeof "name" === "function" ? ("name")(record) : record["name"] || index} className="hover:bg-zinc-900/50 transition-colors">{columns.map(col => <td key={col.key || col.dataIndex} className="px-3 py-2 text-zinc-300 whitespace-nowrap">{col.render ? col.render(record[col.dataIndex], record, index) : record[col.dataIndex]}</td>)}</tr>)}</tbody></table></div>
       </div>
     );
   }

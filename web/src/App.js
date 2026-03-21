@@ -12,17 +12,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import React, {Component} from "react";
-import {Link, Redirect, Route, Switch, withRouter} from "react-router-dom";
-import {StyleProvider, legacyLogicalPropertiesTransformer} from "@ant-design/cssinjs";
-import {Avatar, Button, Card, ConfigProvider, Drawer, Dropdown, FloatButton, Layout, Menu, Result} from "antd";
-import {AppstoreTwoTone, BarsOutlined, BulbTwoTone, CloudTwoTone, CommentOutlined, DesktopOutlined, DownOutlined, HomeTwoTone, LockTwoTone, LoginOutlined, LogoutOutlined, RobotOutlined, SettingOutlined, SettingTwoTone, VideoCameraTwoTone, WalletTwoTone} from "@ant-design/icons";
-import "./App.less";
+import React, {useCallback, useEffect, useMemo, useRef, useState} from "react";
+import {Link, Redirect, Route, Switch, useHistory, useLocation} from "react-router-dom";
 import {Helmet} from "react-helmet";
+import {Toaster} from "sonner";
+import {useTranslation} from "react-i18next";
+import i18next from "i18next";
+import {Bot, ChevronDown, ChevronLeft, Cloud, Home, LayoutGrid, Lightbulb, Lock, LogIn, LogOut, Menu, MessageSquare, Monitor, Settings, User, Video, Wallet, X} from "lucide-react";
 import * as Setting from "./Setting";
 import * as AccountBackend from "./backend/AccountBackend";
-import AuthCallback from "./AuthCallback";
 import * as Conf from "./Conf";
+import * as FormBackend from "./backend/FormBackend";
+import * as StoreBackend from "./backend/StoreBackend";
+import * as FetchFilter from "./backend/FetchFilter";
+import {PreviewInterceptor} from "./PreviewInterceptor";
+import {cn} from "./lib/utils";
+
+// Page imports
+import AuthCallback from "./AuthCallback";
 import HomePage from "./HomePage";
 import StoreListPage from "./StoreListPage";
 import StoreEditPage from "./StoreEditPage";
@@ -38,10 +45,6 @@ import ProviderEditPage from "./ProviderEditPage";
 import VectorListPage from "./VectorListPage";
 import VectorEditPage from "./VectorEditPage";
 import SigninPage from "./SigninPage";
-import i18next from "i18next";
-import {withTranslation} from "react-i18next";
-import LanguageSelect from "./LanguageSelect";
-import ThemeSelect from "./ThemeSelect";
 import ChatEditPage from "./ChatEditPage";
 import ChatListPage from "./ChatListPage";
 import MessageListPage from "./MessageListPage";
@@ -73,7 +76,6 @@ import TaskEditPage from "./TaskEditPage";
 import FormListPage from "./FormListPage";
 import FormEditPage from "./FormEditPage";
 import FormDataPage from "./FormDataPage";
-import * as FormBackend from "./backend/FormBackend";
 import ArticleListPage from "./ArticleListPage";
 import ArticleEditPage from "./ArticleEditPage";
 import ChatPage from "./ChatPage";
@@ -81,15 +83,12 @@ import CustomGithubCorner from "./CustomGithubCorner";
 import ShortcutsPage from "./basic/ShortcutsPage";
 import UsagePage from "./UsagePage";
 import ActivityPage from "./ActivityPage";
-import * as StoreBackend from "./backend/StoreBackend";
 import NodeWorkbench from "./NodeWorkbench";
 import AccessPage from "./component/access/AccessPage";
-import {PreviewInterceptor} from "./PreviewInterceptor";
 import AuditPage from "./frame/AuditPage";
 import PythonYolov8miPage from "./frame/PythonYolov8miPage";
 import PythonSrPage from "./frame/PythonSrPage";
 import SystemInfo from "./SystemInfo";
-import * as FetchFilter from "./backend/FetchFilter";
 import OsDesktop from "./OsDesktop";
 import TemplateListPage from "./TemplateListPage";
 import TemplateEditPage from "./TemplateEditPage";
@@ -110,34 +109,93 @@ import ConsultationListPage from "./ConsultationListPage";
 import ConsultationEditPage from "./ConsultationEditPage";
 import AgentsPage from "./AgentsPage";
 import VmPage from "./VmPage";
+import LanguageSelect from "./LanguageSelect";
+import ThemeSelect from "./ThemeSelect";
 
-const {Header, Footer, Content} = Layout;
+// Sidebar nav group component
+function NavGroup({icon: Icon, label, children, defaultOpen = false}) {
+  const [open, setOpen] = useState(defaultOpen);
+  const location = useLocation();
 
-class App extends Component {
-  constructor(props) {
-    super(props);
-    this.setThemeAlgorithm();
-    let storageThemeAlgorithm = [];
-    try {
-      storageThemeAlgorithm = localStorage.getItem("themeAlgorithm") ? JSON.parse(localStorage.getItem("themeAlgorithm")) : ["default"];
-    } catch {
-      storageThemeAlgorithm = ["default"];
+  // Auto-open if any child matches current path
+  const isActive = useMemo(() => {
+    return React.Children.toArray(children).some(child => {
+      return child?.props?.to && location.pathname.startsWith(child.props.to);
+    });
+  }, [children, location.pathname]);
+
+  useEffect(() => {
+    if (isActive) {
+      setOpen(true);
     }
-    this.state = {
-      classes: props,
-      selectedMenuKey: 0,
-      account: undefined,
-      uri: null,
-      themeAlgorithm: storageThemeAlgorithm,
-      themeData: Conf.ThemeDefault,
-      menuVisible: false,
-      forms: [],
-      store: undefined,
-    };
-    this.initConfig();
+  }, [isActive]);
+
+  return (
+    <div>
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center gap-3 px-3 py-2 text-sm text-zinc-400 hover:text-white hover:bg-zinc-800/50 rounded-md transition-colors"
+      >
+        {Icon && <Icon className="w-4 h-4 shrink-0" />}
+        <span className="flex-1 text-left truncate">{label}</span>
+        <ChevronDown className={cn("w-3 h-3 shrink-0 transition-transform", open && "rotate-180")} />
+      </button>
+      {open && (
+        <div className="ml-4 pl-3 border-l border-zinc-800 mt-1 space-y-0.5">
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function NavItem({to, children, external}) {
+  const location = useLocation();
+  const active = location.pathname === to || (to !== "/" && location.pathname.startsWith(to));
+
+  if (external) {
+    return (
+      <a
+        href={to}
+        target="_blank"
+        rel="noreferrer"
+        className="flex items-center gap-2 px-3 py-1.5 text-sm text-zinc-400 hover:text-white hover:bg-zinc-800/50 rounded-md transition-colors"
+      >
+        {children}
+        <svg className="w-3 h-3 ml-auto opacity-50" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M21 13v10h-21v-19h12v2h-10v15h17v-8h2zm3-12h-10.988l4.035 4-6.977 7.07 2.828 2.828 6.977-7.07 4.125 4.172v-11z" />
+        </svg>
+      </a>
+    );
   }
 
-  initConfig() {
+  return (
+    <Link
+      to={to}
+      className={cn(
+        "flex items-center gap-2 px-3 py-1.5 text-sm rounded-md transition-colors",
+        active ? "text-white bg-zinc-800" : "text-zinc-400 hover:text-white hover:bg-zinc-800/50"
+      )}
+    >
+      {children}
+    </Link>
+  );
+}
+
+function App() {
+  const history = useHistory();
+  const location = useLocation();
+  const {t} = useTranslation();
+
+  const [account, setAccount] = useState(undefined);
+  const [forms, setForms] = useState([]);
+  const [store, setStore] = useState(undefined);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const previewInterceptorRef = useRef(null);
+
+  // Initialize config
+  useEffect(() => {
     Setting.initServerUrl();
     Setting.initWebConfig();
 
@@ -148,19 +206,39 @@ class App extends Component {
 
     FetchFilter.initDemoMode();
     Setting.initIamSdk(Conf.AuthConfig);
+
     if (!Conf.DisablePreviewMode) {
-      this.previewInterceptor = new PreviewInterceptor(() => this.state.account, this.props.history); // add interceptor
+      previewInterceptorRef.current = new PreviewInterceptor(() => account, history);
     }
-  }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  UNSAFE_componentWillMount() {
-    this.updateMenuKey();
-    this.getAccount();
-    this.setTheme();
-    this.getForms();
-  }
+  // Fetch account
+  const getAccount = useCallback(() => {
+    AccountBackend.getAccount().then((res) => {
+      const acc = res.data;
+      if (acc !== null) {
+        const language = localStorage.getItem("language");
+        if (language !== "" && language !== i18next.language) {
+          Setting.setLanguage(language);
+        }
+      }
+      setAccount(acc);
+    });
+  }, []);
 
-  setTheme() {
+  // Fetch forms
+  const getForms = useCallback(() => {
+    FormBackend.getForms("admin").then((res) => {
+      if (res.status === "ok") {
+        setForms(res.data);
+      } else {
+        Setting.showMessage("error", `${i18next.t("general:Failed to get")}: ${res.msg}`);
+      }
+    });
+  }, []);
+
+  // Fetch store theme
+  const getStoreTheme = useCallback(() => {
     StoreBackend.getStore("admin", "_cloud_default_store_").then((res) => {
       if (res.status === "ok" && res.data) {
         const color = res.data.themeColor ? res.data.themeColor : Conf.ThemeDefault.colorPrimary;
@@ -169,939 +247,566 @@ class App extends Component {
           Setting.setThemeColor(color);
           localStorage.setItem("themeColor", color);
         }
-        this.setState({store: res.data});
+        setStore(res.data);
       } else {
         Setting.setThemeColor(Conf.ThemeDefault.colorPrimary);
-        Setting.showMessage("error", `${i18next.t("general:Failed to get")}: ${res.msg}`);
       }
     });
-  }
+  }, []);
 
-  componentDidUpdate() {
-    // eslint-disable-next-line no-restricted-globals
-    const uri = location.pathname;
-    if (this.state.uri !== uri) {
-      this.updateMenuKey();
-    }
-  }
+  useEffect(() => {
+    getAccount();
+    getForms();
+    getStoreTheme();
+  }, [getAccount, getForms, getStoreTheme]);
 
-  updateMenuKeyForm(forms) {
-    // eslint-disable-next-line no-restricted-globals
-    const uri = location.pathname;
-    this.setState({
-      uri: uri,
-    });
+  // Close mobile sidebar on navigation
+  useEffect(() => {
+    setMobileSidebarOpen(false);
+  }, [location.pathname]);
 
-    forms.forEach(form => {
-      const path = `/forms/${form.name}/data`;
-      if (uri.includes(path)) {
-        this.setState({selectedMenuKey: path});
+  const signout = useCallback(() => {
+    AccountBackend.signout().then((res) => {
+      if (res.status === "ok") {
+        setAccount(null);
+        Setting.showMessage("success", i18next.t("account:Successfully signed out, redirected to homepage"));
+        Setting.goToLink("/");
+      } else {
+        Setting.showMessage("error", `${i18next.t("account:Signout failed")}: ${res.msg}`);
       }
     });
-  }
+  }, []);
 
-  updateMenuKey() {
-    // eslint-disable-next-line no-restricted-globals
-    const uri = location.pathname;
-    this.setState({
-      uri: uri,
-    });
-    if (uri === "/" || uri === "/home") {
-      this.setState({selectedMenuKey: "/"});
-    } else if (uri.includes("/stores")) {
-      this.setState({selectedMenuKey: "/stores"});
-    } else if (uri.includes("/providers")) {
-      this.setState({selectedMenuKey: "/providers"});
-    } else if (uri.includes("/vectors")) {
-      this.setState({selectedMenuKey: "/vectors"});
-    } else if (uri.includes("/chats")) {
-      this.setState({selectedMenuKey: "/chats"});
-    } else if (uri.includes("/messages")) {
-      this.setState({selectedMenuKey: "/messages"});
-    } else if (uri.includes("/graphs")) {
-      this.setState({selectedMenuKey: "/graphs"});
-    } else if (uri.includes("/scans")) {
-      this.setState({selectedMenuKey: "/scans"});
-    } else if (uri.includes("/usages")) {
-      this.setState({selectedMenuKey: "/usages"});
-    } else if (uri.includes("/activities")) {
-      this.setState({selectedMenuKey: "/activities"});
-    } else if (uri.includes("/nodes")) {
-      this.setState({selectedMenuKey: "/nodes"});
-    } else if (uri.includes("/machines")) {
-      this.setState({selectedMenuKey: "/machines"});
-    } else if (uri.includes("/assets")) {
-      this.setState({selectedMenuKey: "/assets"});
-    } else if (uri.includes("/images")) {
-      this.setState({selectedMenuKey: "/images"});
-    } else if (uri.includes("/containers")) {
-      this.setState({selectedMenuKey: "/containers"});
-    } else if (uri.includes("/pods")) {
-      this.setState({selectedMenuKey: "/pods"});
-    } else if (uri.includes("/templates")) {
-      this.setState({selectedMenuKey: "/templates"});
-    } else if (uri.includes("/applications")) {
-      this.setState({selectedMenuKey: "/applications"});
-    } else if (uri.includes("/sessions")) {
-      this.setState({selectedMenuKey: "/sessions"});
-    } else if (uri.includes("/connections")) {
-      this.setState({selectedMenuKey: "/connections"});
-    } else if (uri.includes("/records")) {
-      this.setState({selectedMenuKey: "/records"});
-    } else if (uri.includes("/workflows")) {
-      this.setState({selectedMenuKey: "/workflows"});
-    } else if (uri.includes("/audit")) {
-      this.setState({selectedMenuKey: "/audit"});
-    } else if (uri.includes("/yolov8mi")) {
-      this.setState({selectedMenuKey: "/yolov8mi"});
-    } else if (uri.includes("/sr")) {
-      this.setState({selectedMenuKey: "/sr"});
-    } else if (uri.includes("/tasks")) {
-      this.setState({selectedMenuKey: "/tasks"});
-    } else if (uri.includes("/forms")) {
-      this.setState({selectedMenuKey: "/forms"});
-    } else if (uri.includes("/articles")) {
-      this.setState({selectedMenuKey: "/articles"});
-    } else if (uri.includes("/hospitals")) {
-      this.setState({selectedMenuKey: "/hospitals"});
-    } else if (uri.includes("/doctors")) {
-      this.setState({selectedMenuKey: "/doctors"});
-    } else if (uri.includes("/patients")) {
-      this.setState({selectedMenuKey: "/patients"});
-    } else if (uri.includes("/caases")) {
-      this.setState({selectedMenuKey: "/caases"});
-    } else if (uri.includes("/consultations")) {
-      this.setState({selectedMenuKey: "/consultations"});
-    } else if (uri.includes("/public-videos")) {
-      this.setState({selectedMenuKey: "/public-videos"});
-    } else if (uri.includes("/videos")) {
-      this.setState({selectedMenuKey: "/videos"});
-    } else if (uri.includes("/chat")) {
-      this.setState({selectedMenuKey: "/chat"});
-    } else if (uri.includes("/agents")) {
-      this.setState({selectedMenuKey: "/agents"});
-    } else if (uri.includes("/vm")) {
-      this.setState({selectedMenuKey: "/vm"});
-    } else if (uri.includes("/sysinfo")) {
-      this.setState({selectedMenuKey: "/sysinfo"});
-    } else if (uri.includes("/swagger")) {
-      this.setState({selectedMenuKey: "/swagger"});
-    } else {
-      this.setState({selectedMenuKey: "null"});
-    }
-  }
-
-  onUpdateAccount(account) {
-    this.setState({
-      account: account,
-    });
-  }
-
-  setLanguage(account) {
-    // let language = account?.language;
-    const language = localStorage.getItem("language");
-    if (language !== "" && language !== i18next.language) {
-      Setting.setLanguage(language);
-    }
-  }
-
-  getAccount() {
-    AccountBackend.getAccount()
-      .then((res) => {
-        this.initConfig();
-        const account = res.data;
-        if (account !== null) {
-          this.setLanguage(account);
-        }
-
-        this.setState({
-          account: account,
-        });
-      });
-  }
-
-  getForms() {
-    FormBackend.getForms("admin")
-      .then((res) => {
-        if (res.status === "ok") {
-          this.setState({
-            forms: res.data,
-          });
-
-          this.updateMenuKeyForm(res.data);
-        } else {
-          Setting.showMessage("error", `${i18next.t("general:Failed to get")}: ${res.msg}`);
-        }
-      });
-  }
-
-  signout() {
-    AccountBackend.signout()
-      .then((res) => {
-        if (res.status === "ok") {
-          this.setState({
-            account: null,
-          });
-
-          Setting.showMessage("success", i18next.t("account:Successfully signed out, redirected to homepage"));
-          Setting.goToLink("/");
-          // this.props.history.push("/");
-        } else {
-          Setting.showMessage("error", `${i18next.t("account:Signout failed")}: ${res.msg}`);
-        }
-      });
-  }
-
-  handleRightDropdownClick(e) {
-    if (e.key === "/account") {
-      Setting.openLink(Setting.getMyProfileUrl(this.state.account));
-    } else if (e.key === "/logout") {
-      this.signout();
-    }
-  }
-
-  isStoreSelectEnabled() {
-    const uri = this.state.uri || window.location.pathname;
-
-    if (uri.includes("/chat")) {
-      return true;
-    }
-    const enabledStartsWith = ["/stores", "/providers", "/vectors", "/chats", "/messages", "/usages", "/files"];
-    if (enabledStartsWith.some(prefix => uri.startsWith(prefix))) {
-      return true;
-    }
-
-    if (uri === "/" || uri === "/home") {
-      if (
-        Setting.isAnonymousUser(this.state.account) ||
-        Setting.isChatUser(this.state.account) ||
-        Setting.isAdminUser(this.state.account) ||
-        Setting.isChatAdminUser(this.state.account) ||
-        Setting.getUrlParam("isRaw") !== null
-      ) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  onClose = () => {
-    this.setState({
-      menuVisible: false,
-    });
-  };
-
-  showMenu = () => {
-    this.setState({
-      menuVisible: true,
-    });
-  };
-
-  setThemeAlgorithm() {
-    const currentUrl = window.location.href;
-    const url = new URL(currentUrl);
-    const themeType = url.searchParams.get("theme");
-    if (themeType === "dark" || themeType === "default") {
-      localStorage.setItem("themeAlgorithm", JSON.stringify([themeType]));
-    }
-  }
-
-  setLogoAndThemeAlgorithm = (nextThemeAlgorithm) => {
-    this.setState({
-      themeAlgorithm: nextThemeAlgorithm,
-      logo: Setting.getLogo(nextThemeAlgorithm, this.state.store?.logoUrl),
-    });
-    localStorage.setItem("themeAlgorithm", JSON.stringify(nextThemeAlgorithm));
-  };
-
-  renderAvatar() {
-    if (this.state.account.avatar === "") {
-      return (
-        <Avatar style={{backgroundColor: Setting.getAvatarColor(this.state.account.name), verticalAlign: "middle"}} size="large">
-          {Setting.getShortName(this.state.account.name)}
-        </Avatar>
-      );
-    } else {
-      return (
-        <Avatar src={this.state.account.avatar} style={{verticalAlign: "middle"}} size="large">
-          {Setting.getShortName(this.state.account.name)}
-        </Avatar>
-      );
-    }
-  }
-
-  renderRightDropdown() {
-    if ((Setting.isAnonymousUser(this.state.account) && Conf.DisablePreviewMode) || Setting.getUrlParam("isRaw") !== null) {
-      return (
-        <div className="rightDropDown select-box">
-          {
-            this.renderAvatar()
-          }
-          &nbsp;
-          &nbsp;
-          {Setting.isMobile() ? null : Setting.getShortName(this.state.account.displayName)} &nbsp; <DownOutlined />
-          &nbsp;
-          &nbsp;
-          &nbsp;
-        </div>
-      );
-    }
-
-    const items = [];
-    if (!Setting.isAnonymousUser(this.state.account)) {
-      items.push(Setting.getItem(<><SettingOutlined />&nbsp;&nbsp;{i18next.t("account:My Account")}</>,
-        "/account"
-      ));
-      items.push(Setting.getItem(<><CommentOutlined />&nbsp;&nbsp;{i18next.t("general:Chats & Messages")}</>,
-        "/chat"
-      ));
-      items.push(Setting.getItem(<><LogoutOutlined />&nbsp;&nbsp;{i18next.t("account:Sign Out")}</>,
-        "/logout"
-      ));
-    } else {
-      items.push(Setting.getItem(<><LoginOutlined />&nbsp;&nbsp;{i18next.t("account:Sign In")}</>,
-        "/login"
-      ));
-    }
-    const onClick = (e) => {
-      if (e.key === "/account") {
-        Setting.openLink(Setting.getMyProfileUrl(this.state.account));
-      } else if (e.key === "/logout") {
-        this.signout();
-      } else if (e.key === "/chat") {
-        this.props.history.push("/chat");
-      } else if (e.key === "/login") {
-        this.props.history.push(window.location.pathname);
-        Setting.redirectToLogin();
-      }
-    };
-
-    return (
-      <Dropdown key="/rightDropDown" menu={{items, onClick}} >
-        <div className="rightDropDown">
-          {
-            this.renderAvatar()
-          }
-          &nbsp;
-          &nbsp;
-          {Setting.isMobile() ? null : Setting.getShortName(this.state.account.displayName)} &nbsp; <DownOutlined />
-          &nbsp;
-          &nbsp;
-          &nbsp;
-        </div>
-      </Dropdown>
-    );
-  }
-
-  renderAccountMenu() {
-    if (this.state.account === undefined) {
-      return null;
-    } else if (this.state.account === null) {
-      return (
-        <React.Fragment>
-          <div key="/signup" style={{float: "right", marginRight: "20px"}}>
-            <a href={Setting.getSignupUrl()}>
-              {i18next.t("account:Sign Up")}
-            </a>
-          </div>
-          <div key="/signin" style={{float: "right"}}>
-            <a href={Setting.getSigninUrl()}>
-              {i18next.t("account:Sign In")}
-            </a>
-          </div>
-          <div className="select-box" style={{float: "right", margin: "0px", padding: "0px"}}>
-            <ThemeSelect themeAlgorithm={this.state.themeAlgorithm} onChange={this.setLogoAndThemeAlgorithm} />
-          </div>
-          <div className="select-box" style={{float: "right", margin: "0px", padding: "0px"}}>
-            <LanguageSelect />
-          </div>
-        </React.Fragment>
-      );
-    } else {
-      return (
-        <React.Fragment>
-          {this.renderRightDropdown()}
-          <ThemeSelect className="select-box" themeAlgorithm={this.state.themeAlgorithm} onChange={this.setLogoAndThemeAlgorithm} />
-          <LanguageSelect className="select-box" />
-          {Setting.isLocalAdminUser(this.state.account) &&
-                <StoreSelect
-                  account={this.state.account}
-                  className="store-select"
-                  withAll={true}
-                  style={{display: Setting.isMobile() ? "none" : "flex"}}
-                  disabled={!this.isStoreSelectEnabled()}
-                />
-          }
-          <div className="select-box" style={{float: "right", marginRight: "20px", padding: "0px"}}>
-            <div dangerouslySetInnerHTML={{__html: Conf.NavbarHtml}} />
-          </div>
-        </React.Fragment>
-      );
-    }
-  }
-
-  navItemsIsAll() {
-    const navItems = this.state.store?.navItems;
-    return !navItems || navItems.includes("all");
-  }
-
-  filterMenuItems(menuItems, navItems) {
-    if (!navItems || navItems.includes("all")) {
-      return menuItems;
-    }
-
-    const filteredItems = menuItems.map(item => {
-      if (!Array.isArray(item.children)) {
-        return item;
-      }
-
-      const filteredChildren = item.children.filter(child => {
-        return navItems.includes(child.key);
-      });
-
-      const newItem = {...item};
-      newItem.children = filteredChildren;
-      return newItem;
-    });
-
-    return filteredItems.filter(item => {
-      return !Array.isArray(item.children) || item.children.length > 0;
-    });
-  }
-
-  getMenuItems() {
-    const res = [];
-
-    res.push(Setting.getItem(<Link to="/">{i18next.t("general:Home")}</Link>, "/"));
-
-    if (this.state.account === null || this.state.account === undefined) {
-      return [];
-    }
-
-    const navItems = this.state.store?.navItems;
-
-    if (this.state.account.type.startsWith("video-")) {
-      res.push(Setting.getItem(<Link to="/videos">{i18next.t("general:Videos")}</Link>, "/videos"));
-      // res.push(Setting.getItem(<Link to="/public-videos">{i18next.t("general:Public Videos")}</Link>, "/public-videos"));
-
-      if (this.state.account.type === "video-admin-user") {
-        res.push(Setting.getItem(
-          <a target="_blank" rel="noreferrer" href={Setting.getMyProfileUrl(this.state.account).replace("/account", "/users")}>
-            {i18next.t("general:Users")}
-            {Setting.renderExternalLink()}
-          </a>,
-          "#"));
-      }
-
-      // if (window.location.pathname === "/") {
-      //   Setting.goToLinkSoft(this, "/public-videos");
-      // }
-      return res;
-    }
-
-    if (!Setting.isAdminUser(this.state.account) && (Setting.isAnonymousUser(this.state.account) && !Conf.DisablePreviewMode)) { // show complete menu for anonymous user in preview mode even not login
-      if (!Setting.isChatAdminUser(this.state.account)) {
-        // res.push(Setting.getItem(<Link to="/usages">{i18next.t("general:Usages")}</Link>, "/usages"));
-        return res;
-      }
-    }
-
-    const domain = Setting.getSubdomain();
-    // const domain = "med";
-
-    if (Conf.ShortcutPageItems.length > 0 && domain === "data") {
-      res.push(Setting.getItem(<Link to="/stores">{i18next.t("general:Stores")}</Link>, "/stores"));
-      res.push(Setting.getItem(<Link to="/providers">{i18next.t("general:Providers")}</Link>, "/providers"));
-      res.push(Setting.getItem(<Link to="/nodes">{i18next.t("general:Nodes")}</Link>, "/nodes"));
-      res.push(Setting.getItem(<Link to="/sessions">{i18next.t("general:Sessions")}</Link>, "/sessions"));
-      res.push(Setting.getItem(<Link to="/connections">{i18next.t("general:Connections")}</Link>, "/connections"));
-      res.push(Setting.getItem(<Link to="/records">{i18next.t("general:Records")}</Link>, "/records"));
-    } else if (Conf.ShortcutPageItems.length > 0 && domain === "ai") {
-      res.push(Setting.getItem(<Link to="/chat">{i18next.t("general:Chat")}</Link>, "/chat"));
-      res.push(Setting.getItem(<Link to="/stores">{i18next.t("general:Stores")}</Link>, "/stores"));
-      res.push(Setting.getItem(<Link to="/providers">{i18next.t("general:Providers")}</Link>, "/providers"));
-      res.push(Setting.getItem(<Link to="/vectors">{i18next.t("general:Vectors")}</Link>, "/vectors"));
-      res.push(Setting.getItem(<Link to="/chats">{i18next.t("general:Chats")}</Link>, "/chats"));
-      res.push(Setting.getItem(<Link to="/messages">{i18next.t("general:Messages")}</Link>, "/messages"));
-      res.push(Setting.getItem(<Link to="/usages">{i18next.t("general:Usages")}</Link>, "/usages"));
-      res.push(Setting.getItem(<Link to="/activities">{i18next.t("general:Activities")}</Link>, "/activities"));
-      // res.push(Setting.getItem(<Link to="/tasks">{i18next.t("general:Tasks")}</Link>, "/tasks"));
-      // res.push(Setting.getItem(<Link to="/articles">{i18next.t("general:Articles")}</Link>, "/articles"));
-    } else if (Setting.isChatAdminUser(this.state.account)) {
-      res.push(Setting.getItem(<Link to="/chat">{i18next.t("general:Chat")}</Link>, "/chat"));
-      res.push(Setting.getItem(<Link to="/stores">{i18next.t("general:Stores")}</Link>, "/stores"));
-      res.push(Setting.getItem(<Link to="/vectors">{i18next.t("general:Vectors")}</Link>, "/vectors"));
-      res.push(Setting.getItem(<Link to="/chats">{i18next.t("general:Chats")}</Link>, "/chats"));
-      res.push(Setting.getItem(<Link to="/messages">{i18next.t("general:Messages")}</Link>, "/messages"));
-      res.push(Setting.getItem(<Link to="/usages">{i18next.t("general:Usages")}</Link>, "/usages"));
-      res.push(Setting.getItem(<Link to="/activities">{i18next.t("general:Activities")}</Link>, "/activities"));
-
-      if (window.location.pathname === "/") {
-        Setting.goToLinkSoft(this, "/chat");
-      }
-
-      res.push(Setting.getItem(
-        <a target="_blank" rel="noreferrer" href={Setting.getMyProfileUrl(this.state.account).replace("/account", "/users")}>
-          {i18next.t("general:Users")}
-          {Setting.renderExternalLink()}
-        </a>,
-        "#"));
-
-      res.push(Setting.getItem(
-        <a target="_blank" rel="noreferrer" href={Setting.getMyProfileUrl(this.state.account).replace("/account", "/resources")}>
-          {i18next.t("general:Resources")}
-          {Setting.renderExternalLink()}
-        </a>,
-        "##"));
-
-      res.push(Setting.getItem(
-        <a target="_blank" rel="noreferrer" href={Setting.getMyProfileUrl(this.state.account).replace("/account", "/permissions")}>
-          {i18next.t("general:Permissions")}
-          {Setting.renderExternalLink()}
-        </a>,
-        "###"));
-    } else if (Setting.isTaskUser(this.state.account)) {
-      res.push(Setting.getItem(<Link to="/tasks">{i18next.t("general:Tasks")}</Link>, "/tasks"));
-
-      if (window.location.pathname === "/") {
-        Setting.goToLinkSoft(this, "/tasks");
-      }
-    } else if (Conf.ShortcutPageItems.length > 0 && domain === "video") {
-      if (Conf.EnableExtraPages) {
-        res.push(Setting.getItem(<Link to="/videos">{i18next.t("general:Videos")}</Link>, "/videos"));
-        // res.push(Setting.getItem(<Link to="/public-videos">{i18next.t("general:Public Videos")}</Link>, "/public-videos"));
-        // res.push(Setting.getItem(<Link to="/tasks">{i18next.t("general:Tasks")}</Link>, "/tasks"));
-        // res.push(Setting.getItem(<Link to="/articles">{i18next.t("general:Articles")}</Link>, "/articles"));
-      }
-
-      if (window.location.pathname === "/") {
-        Setting.goToLinkSoft(this, "/videos");
-      }
-    } else {
-      const textColor = this.state.themeAlgorithm.includes("dark") ? "white" : "black";
-      const twoToneColor = this.state.themeData.colorPrimary;
-
-      res.pop();
-
-      res.push(Setting.getItem(<Link style={{color: textColor}} to="/chat">{i18next.t("general:Home")}</Link>, "/home", <HomeTwoTone twoToneColor={twoToneColor} />, [
-        Setting.getItem(<Link to="/chat">{i18next.t("general:Chat")}</Link>, "/chat"),
-        Setting.getItem(<Link to="/usages">{i18next.t("general:Usages")}</Link>, "/usages"),
-        Setting.getItem(<Link to="/activities">{i18next.t("general:Activities")}</Link>, "/activities"),
-        Setting.getItem(<Link to="/desktop">{i18next.t("general:OS Desktop")}</Link>, "/desktop"),
-      ]));
-
-      res.push(Setting.getItem(<Link style={{color: textColor}} to="/chats">{i18next.t("general:Chats & Messages")}</Link>, "/ai-chat", <BulbTwoTone twoToneColor={twoToneColor} />, [
-        Setting.getItem(<Link to="/chats">{i18next.t("general:Chats")}</Link>, "/chats"),
-        Setting.getItem(<Link to="/messages">{i18next.t("general:Messages")}</Link>, "/messages"),
-      ]));
-
-      res.push(Setting.getItem(<Link style={{color: textColor}} to="/stores">{i18next.t("general:AI Setting")}</Link>, "/ai-setting", <AppstoreTwoTone twoToneColor={twoToneColor} />, [
-        Setting.getItem(<Link to="/stores">{i18next.t("general:Stores")}</Link>, "/stores"),
-        Setting.getItem(<Link to="/files">{i18next.t("general:Files")}</Link>, "/files"),
-        Setting.getItem(<Link to="/providers">{i18next.t("general:Providers")}</Link>, "/providers"),
-        Setting.getItem(<Link to="/vectors">{i18next.t("general:Vectors")}</Link>, "/vectors"),
-      ]));
-
-      res.push(Setting.getItem(<Link style={{color: textColor}} to="/nodes">{i18next.t("general:Cloud Resources")}</Link>, "/cloud", <CloudTwoTone twoToneColor={twoToneColor} />, [
-        Setting.getItem(<Link to="/templates">{i18next.t("general:Templates")}</Link>, "/templates"),
-        Setting.getItem(<Link to="/application-store">{i18next.t("general:Application Store")}</Link>, "/application-store"),
-        Setting.getItem(<Link to="/applications">{i18next.t("general:Applications")}</Link>, "/applications"),
-        Setting.getItem(<Link to="/nodes">{i18next.t("general:Nodes")}</Link>, "/nodes"),
-        Setting.getItem(<Link to="/machines">{i18next.t("general:Machines")}</Link>, "/machines"),
-        Setting.getItem(<Link to="/assets">{i18next.t("general:Assets")}</Link>, "/assets"),
-        Setting.getItem(<Link to="/images">{i18next.t("general:Images")}</Link>, "/images"),
-        Setting.getItem(<Link to="/containers">{i18next.t("general:Containers")}</Link>, "/containers"),
-        Setting.getItem(<Link to="/pods">{i18next.t("general:Pods")}</Link>, "/pods"),
-        Setting.getItem(<Link to="/workbench" target="_blank">{i18next.t("general:Workbench")}</Link>, "workbench"),
-      ]));
-
-      res.push(Setting.getItem(<Link style={{color: textColor}} to="/videos">{i18next.t("general:Multimedia")}</Link>, "/multimedia", <VideoCameraTwoTone twoToneColor={twoToneColor} />, [
-        Setting.getItem(<Link to="/videos">{i18next.t("general:Videos")}</Link>, "/videos"),
-        Setting.getItem(<Link to="/public-videos">{i18next.t("general:Public Videos")}</Link>, "/public-videos"),
-        Setting.getItem(<Link to="/tasks">{i18next.t("general:Tasks")}</Link>, "/tasks"),
-        Setting.getItem(<Link to="/forms">{i18next.t("general:Forms")}</Link>, "/forms"),
-        Setting.getItem(<Link to="/workflows">{i18next.t("general:Workflows")}</Link>, "/workflows"),
-        Setting.getItem(<Link to="/hospitals">{i18next.t("med:Hospitals")}</Link>, "/hospitals"),
-        Setting.getItem(<Link to="/doctors">{i18next.t("med:Doctors")}</Link>, "/doctors"),
-        Setting.getItem(<Link to="/patients">{i18next.t("med:Patients")}</Link>, "/patients"),
-        Setting.getItem(<Link to="/caases">{i18next.t("med:Caases")}</Link>, "/caases"),
-        Setting.getItem(<Link to="/consultations">{i18next.t("med:Consultations")}</Link>, "/consultations"),
-        Setting.getItem(<Link to="/audit">{i18next.t("general:Audit")}</Link>, "/audit"),
-        Setting.getItem(<Link to="/yolov8mi">{i18next.t("med:Medical Image Analysis")}</Link>, "/yolov8mi"),
-        Setting.getItem(<Link to="/sr">{i18next.t("med:Super Resolution")}</Link>, "/sr"),
-        Setting.getItem(<Link to="/articles">{i18next.t("general:Articles")}</Link>, "/articles"),
-        Setting.getItem(<Link to="/graphs">{i18next.t("general:Graphs")}</Link>, "/graphs"),
-        Setting.getItem(<Link to="/scans">{i18next.t("general:Scans")}</Link>, "/scans"),
-      ]));
-
-      res.push(Setting.getItem(<Link style={{color: textColor}} to="/sessions">{i18next.t("general:Logging & Auditing")}</Link>, "/logs", <WalletTwoTone twoToneColor={twoToneColor} />, [
-        Setting.getItem(<Link to="/sessions">{i18next.t("general:Sessions")}</Link>, "/sessions"),
-        Setting.getItem(<Link to="/connections">{i18next.t("general:Connections")}</Link>, "/connections"),
-        Setting.getItem(<Link to="/records">{i18next.t("general:Records")}</Link>, "/records"),
-      ]));
-
-      res.push(Setting.getItem(<Link style={{color: textColor}} to="#">{i18next.t("general:Identity & Access Management")}</Link>, "/identity", <LockTwoTone twoToneColor={twoToneColor} />, [
-        Setting.getItem(
-          <a target="_blank" rel="noreferrer" href={Setting.getMyProfileUrl(this.state.account).replace("/account", "/users")}>
-            {i18next.t("general:Users")}
-            {Setting.renderExternalLink()}
-          </a>, "/users"),
-        Setting.getItem(
-          <a target="_blank" rel="noreferrer" href={Setting.getMyProfileUrl(this.state.account).replace("/account", "/resources")}>
-            {i18next.t("general:Resources")}
-            {Setting.renderExternalLink()}
-          </a>, "/resources"),
-        Setting.getItem(
-          <a target="_blank" rel="noreferrer" href={Setting.getMyProfileUrl(this.state.account).replace("/account", "/permissions")}>
-            {i18next.t("general:Permissions")}
-            {Setting.renderExternalLink()}
-          </a>, "/permissions"),
-      ]));
-
-      res.push(Setting.getItem(<Link style={{color: textColor}} to="/agents">{i18next.t("general:Agents")}</Link>, "/agents", <RobotOutlined style={{color: twoToneColor}} />, [
-        Setting.getItem(<Link to="/agents">{i18next.t("general:Dashboard")}</Link>, "/agents"),
-      ]));
-
-      res.push(Setting.getItem(<Link style={{color: textColor}} to="/vm">{i18next.t("general:Virtual Machines")}</Link>, "/vm", <DesktopOutlined style={{color: twoToneColor}} />, [
-        Setting.getItem(<Link to="/vm">{i18next.t("general:Dashboard")}</Link>, "/vm"),
-      ]));
-
-      res.push(Setting.getItem(<Link style={{color: textColor}} to="/sysinfo">{i18next.t("general:Admin")}</Link>, "/admin", <SettingTwoTone twoToneColor={twoToneColor} />, [
-        Setting.getItem(<Link to="/sysinfo">{i18next.t("general:System Info")}</Link>, "/sysinfo"),
-        Setting.getItem(
-          <a target="_blank" rel="noreferrer" href={Setting.isLocalhost() ? `${Setting.ServerUrl}/swagger/index.html` : "/swagger/index.html"}>
-            {i18next.t("general:Swagger")}
-            {Setting.renderExternalLink()}
-          </a>, "/swagger"),
-      ]));
-
-      return this.filterMenuItems(res, navItems);
-    }
-
-    const sortedForms = this.state.forms.slice().sort((a, b) => {
-      return a.position.localeCompare(b.position);
-    });
-
-    sortedForms.forEach(form => {
-      const path = `/forms/${form.name}/data`;
-      res.push(Setting.getItem(<Link to={path}>{form.displayName}</Link>, path));
-    });
-
-    return res;
-  }
-
-  renderHomeIfSignedIn(component) {
-    if (this.state.account !== null && this.state.account !== undefined) {
-      return <Redirect to="/" />;
-    } else {
-      return component;
-    }
-  }
-
-  renderSigninIfNotSignedIn(component) {
-    if (this.state.account === null) {
+  const renderSigninIfNotSignedIn = useCallback((component) => {
+    if (account === null) {
       const signinUrl = Setting.getSigninUrl();
       if (signinUrl && signinUrl !== "") {
         sessionStorage.setItem("from", window.location.pathname);
         window.location.replace(signinUrl);
-      } else {
-        return null;
       }
-    } else if (this.state.account === undefined) {
       return null;
-    } else {
-      return component;
+    } else if (account === undefined) {
+      return null;
     }
-  }
+    return component;
+  }, [account]);
 
-  renderRouter() {
-    if (this.state.account?.type.startsWith("video-")) {
-      if (window.location.pathname === "/") {
+  const renderHomeIfSignedIn = useCallback((component) => {
+    if (account !== null && account !== undefined) {
+      return <Redirect to="/" />;
+    }
+    return component;
+  }, [account]);
+
+  const isHiddenHeaderAndFooter = useCallback(() => {
+    const hiddenPaths = ["/workbench", "/access"];
+    return hiddenPaths.some(path => location.pathname.startsWith(path));
+  }, [location.pathname]);
+
+  const isWithoutCard = useCallback(() => {
+    return Setting.isMobile() || isHiddenHeaderAndFooter() ||
+      location.pathname === "/chat" || location.pathname.startsWith("/chat/") || location.pathname === "/";
+  }, [isHiddenHeaderAndFooter, location.pathname]);
+
+  const isStoreSelectEnabled = useCallback(() => {
+    const uri = location.pathname;
+    if (uri.includes("/chat")) {return true;}
+    const enabledPrefixes = ["/stores", "/providers", "/vectors", "/chats", "/messages", "/usages", "/files"];
+    if (enabledPrefixes.some(prefix => uri.startsWith(prefix))) {return true;}
+    if (uri === "/" || uri === "/home") {
+      if (Setting.isAnonymousUser(account) || Setting.isChatUser(account) ||
+          Setting.isAdminUser(account) || Setting.isChatAdminUser(account) ||
+          Setting.getUrlParam("isRaw") !== null) {
+        return true;
+      }
+    }
+    return false;
+  }, [location.pathname, account]);
+
+  // Build sidebar nav items based on account
+  const renderSidebar = () => {
+    if (!account) {return null;}
+
+    const isAdmin = Setting.isAdminUser(account);
+    const isChatAdmin = Setting.isChatAdminUser(account);
+
+    if (account.type?.startsWith("video-")) {
+      return (
+        <nav className="space-y-1">
+          <NavItem to="/videos">{i18next.t("general:Videos")}</NavItem>
+          {account.type === "video-admin-user" && (
+            <NavItem to={Setting.getMyProfileUrl(account).replace("/account", "/users")} external>
+              {i18next.t("general:Users")}
+            </NavItem>
+          )}
+        </nav>
+      );
+    }
+
+    if (!isAdmin && (Setting.isAnonymousUser(account) && !Conf.DisablePreviewMode)) {
+      if (!isChatAdmin) {
         return (
-          <PublicVideoListPage account={this.state.account} />
+          <nav className="space-y-1">
+            <NavItem to="/">{i18next.t("general:Home")}</NavItem>
+          </nav>
         );
+      }
+    }
+
+    if (isChatAdmin && !isAdmin) {
+      return (
+        <nav className="space-y-1">
+          <NavItem to="/chat">{i18next.t("general:Chat")}</NavItem>
+          <NavItem to="/stores">{i18next.t("general:Stores")}</NavItem>
+          <NavItem to="/vectors">{i18next.t("general:Vectors")}</NavItem>
+          <NavItem to="/chats">{i18next.t("general:Chats")}</NavItem>
+          <NavItem to="/messages">{i18next.t("general:Messages")}</NavItem>
+          <NavItem to="/usages">{i18next.t("general:Usages")}</NavItem>
+          <NavItem to="/activities">{i18next.t("general:Activities")}</NavItem>
+          <NavItem to={Setting.getMyProfileUrl(account).replace("/account", "/users")} external>
+            {i18next.t("general:Users")}
+          </NavItem>
+          <NavItem to={Setting.getMyProfileUrl(account).replace("/account", "/resources")} external>
+            {i18next.t("general:Resources")}
+          </NavItem>
+          <NavItem to={Setting.getMyProfileUrl(account).replace("/account", "/permissions")} external>
+            {i18next.t("general:Permissions")}
+          </NavItem>
+        </nav>
+      );
+    }
+
+    if (Setting.isTaskUser(account)) {
+      return (
+        <nav className="space-y-1">
+          <NavItem to="/tasks">{i18next.t("general:Tasks")}</NavItem>
+        </nav>
+      );
+    }
+
+    // Full admin nav
+    return (
+      <nav className="space-y-1">
+        <NavGroup icon={Home} label={i18next.t("general:Home")} defaultOpen>
+          <NavItem to="/chat">{i18next.t("general:Chat")}</NavItem>
+          <NavItem to="/usages">{i18next.t("general:Usages")}</NavItem>
+          <NavItem to="/activities">{i18next.t("general:Activities")}</NavItem>
+          <NavItem to="/desktop">{i18next.t("general:OS Desktop")}</NavItem>
+        </NavGroup>
+
+        <NavGroup icon={Lightbulb} label={i18next.t("general:Chats & Messages")}>
+          <NavItem to="/chats">{i18next.t("general:Chats")}</NavItem>
+          <NavItem to="/messages">{i18next.t("general:Messages")}</NavItem>
+        </NavGroup>
+
+        <NavGroup icon={LayoutGrid} label={i18next.t("general:AI Setting")}>
+          <NavItem to="/stores">{i18next.t("general:Stores")}</NavItem>
+          <NavItem to="/files">{i18next.t("general:Files")}</NavItem>
+          <NavItem to="/providers">{i18next.t("general:Providers")}</NavItem>
+          <NavItem to="/vectors">{i18next.t("general:Vectors")}</NavItem>
+        </NavGroup>
+
+        <NavGroup icon={Cloud} label={i18next.t("general:Cloud Resources")}>
+          <NavItem to="/templates">{i18next.t("general:Templates")}</NavItem>
+          <NavItem to="/application-store">{i18next.t("general:Application Store")}</NavItem>
+          <NavItem to="/applications">{i18next.t("general:Applications")}</NavItem>
+          <NavItem to="/nodes">{i18next.t("general:Nodes")}</NavItem>
+          <NavItem to="/machines">{i18next.t("general:Machines")}</NavItem>
+          <NavItem to="/assets">{i18next.t("general:Assets")}</NavItem>
+          <NavItem to="/images">{i18next.t("general:Images")}</NavItem>
+          <NavItem to="/containers">{i18next.t("general:Containers")}</NavItem>
+          <NavItem to="/pods">{i18next.t("general:Pods")}</NavItem>
+          <NavItem to="/workbench" external>{i18next.t("general:Workbench")}</NavItem>
+        </NavGroup>
+
+        <NavGroup icon={Video} label={i18next.t("general:Multimedia")}>
+          <NavItem to="/videos">{i18next.t("general:Videos")}</NavItem>
+          <NavItem to="/public-videos">{i18next.t("general:Public Videos")}</NavItem>
+          <NavItem to="/tasks">{i18next.t("general:Tasks")}</NavItem>
+          <NavItem to="/forms">{i18next.t("general:Forms")}</NavItem>
+          <NavItem to="/workflows">{i18next.t("general:Workflows")}</NavItem>
+          <NavItem to="/hospitals">{i18next.t("med:Hospitals")}</NavItem>
+          <NavItem to="/doctors">{i18next.t("med:Doctors")}</NavItem>
+          <NavItem to="/patients">{i18next.t("med:Patients")}</NavItem>
+          <NavItem to="/caases">{i18next.t("med:Caases")}</NavItem>
+          <NavItem to="/consultations">{i18next.t("med:Consultations")}</NavItem>
+          <NavItem to="/audit">{i18next.t("general:Audit")}</NavItem>
+          <NavItem to="/articles">{i18next.t("general:Articles")}</NavItem>
+          <NavItem to="/graphs">{i18next.t("general:Graphs")}</NavItem>
+          <NavItem to="/scans">{i18next.t("general:Scans")}</NavItem>
+        </NavGroup>
+
+        <NavGroup icon={Wallet} label={i18next.t("general:Logging & Auditing")}>
+          <NavItem to="/sessions">{i18next.t("general:Sessions")}</NavItem>
+          <NavItem to="/connections">{i18next.t("general:Connections")}</NavItem>
+          <NavItem to="/records">{i18next.t("general:Records")}</NavItem>
+        </NavGroup>
+
+        <NavGroup icon={Lock} label={i18next.t("general:Identity & Access Management")}>
+          <NavItem to={Setting.getMyProfileUrl(account).replace("/account", "/users")} external>
+            {i18next.t("general:Users")}
+          </NavItem>
+          <NavItem to={Setting.getMyProfileUrl(account).replace("/account", "/resources")} external>
+            {i18next.t("general:Resources")}
+          </NavItem>
+          <NavItem to={Setting.getMyProfileUrl(account).replace("/account", "/permissions")} external>
+            {i18next.t("general:Permissions")}
+          </NavItem>
+        </NavGroup>
+
+        <NavGroup icon={Bot} label={i18next.t("general:Agents")}>
+          <NavItem to="/agents">{i18next.t("general:Dashboard")}</NavItem>
+        </NavGroup>
+
+        <NavGroup icon={Monitor} label={i18next.t("general:Virtual Machines")}>
+          <NavItem to="/vm">{i18next.t("general:Dashboard")}</NavItem>
+        </NavGroup>
+
+        <NavGroup icon={Settings} label={i18next.t("general:Admin")}>
+          <NavItem to="/sysinfo">{i18next.t("general:System Info")}</NavItem>
+          <NavItem
+            to={Setting.isLocalhost() ? `${Setting.ServerUrl}/swagger/index.html` : "/swagger/index.html"}
+            external
+          >
+            {i18next.t("general:Swagger")}
+          </NavItem>
+        </NavGroup>
+
+        {/* Dynamic form nav items */}
+        {forms.slice().sort((a, b) => a.position.localeCompare(b.position)).map(form => (
+          <NavItem key={form.name} to={`/forms/${form.name}/data`}>{form.displayName}</NavItem>
+        ))}
+      </nav>
+    );
+  };
+
+  const renderAvatar = () => {
+    if (!account) {return null;}
+    if (account.avatar === "") {
+      return (
+        <div
+          className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium text-black"
+          style={{backgroundColor: Setting.getAvatarColor(account.name)}}
+        >
+          {Setting.getShortName(account.name)}
+        </div>
+      );
+    }
+    return (
+      <img src={account.avatar} alt="" className="w-8 h-8 rounded-full object-cover" />
+    );
+  };
+
+  const renderUserMenu = () => {
+    if (account === undefined) {return null;}
+
+    if (account === null) {
+      return (
+        <div className="flex items-center gap-2">
+          <LanguageSelect />
+          <a
+            href={Setting.getSigninUrl()}
+            className="flex items-center gap-2 px-3 py-1.5 text-sm text-zinc-400 hover:text-white transition-colors"
+          >
+            <LogIn className="w-4 h-4" />
+            {i18next.t("account:Sign In")}
+          </a>
+        </div>
+      );
+    }
+
+    return (
+      <div className="flex items-center gap-3">
+        {Setting.isLocalAdminUser(account) && (
+          <StoreSelect
+            account={account}
+            className="store-select"
+            withAll={true}
+            style={{display: Setting.isMobile() ? "none" : "flex"}}
+            disabled={!isStoreSelectEnabled()}
+          />
+        )}
+        <LanguageSelect />
+        <div className="relative group">
+          <button className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-zinc-800 transition-colors">
+            {renderAvatar()}
+            {!Setting.isMobile() && (
+              <span className="text-sm text-zinc-300">{Setting.getShortName(account.displayName)}</span>
+            )}
+            <ChevronDown className="w-3 h-3 text-zinc-500" />
+          </button>
+          <div className="absolute right-0 top-full mt-1 w-48 py-1 bg-zinc-900 border border-zinc-800 rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
+            {!Setting.isAnonymousUser(account) && (
+              <>
+                <button
+                  onClick={() => Setting.openLink(Setting.getMyProfileUrl(account))}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-zinc-300 hover:text-white hover:bg-zinc-800 transition-colors"
+                >
+                  <User className="w-4 h-4" />
+                  {i18next.t("account:My Account")}
+                </button>
+                <button
+                  onClick={() => history.push("/chat")}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-zinc-300 hover:text-white hover:bg-zinc-800 transition-colors"
+                >
+                  <MessageSquare className="w-4 h-4" />
+                  {i18next.t("general:Chats & Messages")}
+                </button>
+                <div className="border-t border-zinc-800 my-1" />
+                <button
+                  onClick={signout}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-zinc-300 hover:text-white hover:bg-zinc-800 transition-colors"
+                >
+                  <LogOut className="w-4 h-4" />
+                  {i18next.t("account:Sign Out")}
+                </button>
+              </>
+            )}
+            {Setting.isAnonymousUser(account) && (
+              <button
+                onClick={() => {
+                  history.push(window.location.pathname);
+                  Setting.redirectToLogin();
+                }}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-zinc-300 hover:text-white hover:bg-zinc-800 transition-colors"
+              >
+                <LogIn className="w-4 h-4" />
+                {i18next.t("account:Sign In")}
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderRouter = () => {
+    if (account?.type?.startsWith("video-")) {
+      if (location.pathname === "/") {
+        return <PublicVideoListPage account={account} />;
       }
     }
 
     return (
       <Switch>
-        <Route exact path="/access/:owner/:name" render={(props) => this.renderSigninIfNotSignedIn(<AccessPage account={this.state.account} {...props} />)} />
+        <Route exact path="/access/:owner/:name" render={(props) => renderSigninIfNotSignedIn(<AccessPage account={account} {...props} />)} />
         <Route exact path="/callback" component={AuthCallback} />
-        <Route exact path="/signin" render={(props) => this.renderHomeIfSignedIn(<SigninPage {...props} />)} />
-        <Route exact path="/" render={(props) => this.renderSigninIfNotSignedIn(<HomePage account={this.state.account} {...props} />)} />
-        <Route exact path="/home" render={(props) => this.renderSigninIfNotSignedIn(<HomePage account={this.state.account} {...props} />)} />
-        <Route exact path="/stores" render={(props) => this.renderSigninIfNotSignedIn(<StoreListPage account={this.state.account} {...props} />)} />
-        <Route exact path="/stores/:owner/:storeName" render={(props) => this.renderSigninIfNotSignedIn(<StoreEditPage account={this.state.account} {...props} />)} />
-        <Route exact path="/stores/:owner/:storeName/view" render={(props) => this.renderSigninIfNotSignedIn(<FileTreePage account={this.state.account} {...props} />)} />
-        <Route exact path="/stores/:owner/:storeName/chats" render={(props) => this.renderSigninIfNotSignedIn(<ChatListPage account={this.state.account} {...props} />)} />
-        <Route exact path="/stores/:owner/:storeName/messages" render={(props) => this.renderSigninIfNotSignedIn(<MessageListPage account={this.state.account} {...props} />)} />
-        <Route exact path="/videos" render={(props) => this.renderSigninIfNotSignedIn(<VideoListPage account={this.state.account} {...props} />)} />
-        <Route exact path="/videos/:owner/:videoName" render={(props) => this.renderSigninIfNotSignedIn(<VideoEditPage account={this.state.account} {...props} />)} />
+        <Route exact path="/signin" render={(props) => renderHomeIfSignedIn(<SigninPage {...props} />)} />
+        <Route exact path="/" render={(props) => renderSigninIfNotSignedIn(<HomePage account={account} {...props} />)} />
+        <Route exact path="/home" render={(props) => renderSigninIfNotSignedIn(<HomePage account={account} {...props} />)} />
+        <Route exact path="/stores" render={(props) => renderSigninIfNotSignedIn(<StoreListPage account={account} {...props} />)} />
+        <Route exact path="/stores/:owner/:storeName" render={(props) => renderSigninIfNotSignedIn(<StoreEditPage account={account} {...props} />)} />
+        <Route exact path="/stores/:owner/:storeName/view" render={(props) => renderSigninIfNotSignedIn(<FileTreePage account={account} {...props} />)} />
+        <Route exact path="/stores/:owner/:storeName/chats" render={(props) => renderSigninIfNotSignedIn(<ChatListPage account={account} {...props} />)} />
+        <Route exact path="/stores/:owner/:storeName/messages" render={(props) => renderSigninIfNotSignedIn(<MessageListPage account={account} {...props} />)} />
+        <Route exact path="/videos" render={(props) => renderSigninIfNotSignedIn(<VideoListPage account={account} {...props} />)} />
+        <Route exact path="/videos/:owner/:videoName" render={(props) => renderSigninIfNotSignedIn(<VideoEditPage account={account} {...props} />)} />
         <Route exact path="/public-videos" render={(props) => <PublicVideoListPage {...props} />} />
-        <Route exact path="/public-videos/:owner/:videoName" render={(props) => <VideoPage account={this.state.account} {...props} />} />
-        <Route exact path="/providers" render={(props) => this.renderSigninIfNotSignedIn(<ProviderListPage account={this.state.account} {...props} />)} />
-        <Route exact path="/providers/:providerName" render={(props) => this.renderSigninIfNotSignedIn(<ProviderEditPage account={this.state.account} {...props} />)} />
-        <Route exact path="/files" render={(props) => this.renderSigninIfNotSignedIn(<FileListPage account={this.state.account} {...props} />)} />
-        <Route exact path="/files/:fileName" render={(props) => this.renderSigninIfNotSignedIn(<FileViewPage account={this.state.account} {...props} />)} />
-        <Route exact path="/vectors" render={(props) => this.renderSigninIfNotSignedIn(<VectorListPage account={this.state.account} {...props} />)} />
-        <Route exact path="/vectors/:vectorName" render={(props) => this.renderSigninIfNotSignedIn(<VectorEditPage account={this.state.account} {...props} />)} />
-        <Route exact path="/chats" render={(props) => this.renderSigninIfNotSignedIn(<ChatListPage account={this.state.account} {...props} />)} />
-        <Route exact path="/chats/:chatName" render={(props) => this.renderSigninIfNotSignedIn(<ChatEditPage account={this.state.account} {...props} />)} />
-        <Route exact path="/messages" render={(props) => this.renderSigninIfNotSignedIn(<MessageListPage account={this.state.account} {...props} />)} />
-        <Route exact path="/messages/:messageName" render={(props) => this.renderSigninIfNotSignedIn(<MessageEditPage account={this.state.account} {...props} />)} />
-        <Route exact path="/usages" render={(props) => this.renderSigninIfNotSignedIn(<UsagePage account={this.state.account} themeAlgorithm={this.state.themeAlgorithm} {...props} />)} />
-        <Route exact path="/activities" render={(props) => this.renderSigninIfNotSignedIn(<ActivityPage account={this.state.account} themeAlgorithm={this.state.themeAlgorithm} {...props} />)} />
-        <Route exact path="/desktop" render={(props) => <OsDesktop account={this.state.account} {...props} />} />
-        <Route exact path="/templates" render={(props) => this.renderSigninIfNotSignedIn(<TemplateListPage account={this.state.account} {...props} />)} />
-        <Route exact path="/templates/:templateName" render={(props) => this.renderSigninIfNotSignedIn(<TemplateEditPage account={this.state.account} {...props} />)} />
-        <Route exact path="/applications" render={(props) => this.renderSigninIfNotSignedIn(<ApplicationListPage account={this.state.account} {...props} />)} />
-        <Route exact path="/applications/:applicationName" render={(props) => this.renderSigninIfNotSignedIn(<ApplicationEditPage account={this.state.account} {...props} />)} />
-        <Route exact path="/applications/:applicationName/view" render={(props) => this.renderSigninIfNotSignedIn(<ApplicationDetailsPage account={this.state.account} {...props} />)} />
-        <Route exact path="/application-store" render={(props) => this.renderSigninIfNotSignedIn(<ApplicationStorePage account={this.state.account} {...props} />)} />
-        <Route exact path="/nodes" render={(props) => this.renderSigninIfNotSignedIn(<NodeListPage account={this.state.account} {...props} />)} />
-        <Route exact path="/nodes/:nodeName" render={(props) => this.renderSigninIfNotSignedIn(<NodeEditPage account={this.state.account} {...props} />)} />
-        <Route exact path="/sessions" render={(props) => this.renderSigninIfNotSignedIn(<SessionListPage account={this.state.account} {...props} />)} />
-        <Route exact path="/connections" render={(props) => this.renderSigninIfNotSignedIn(<ConnectionListPage account={this.state.account} {...props} />)} />
-        <Route exact path="/records" render={(props) => this.renderSigninIfNotSignedIn(<RecordListPage account={this.state.account} {...props} />)} />
-        <Route exact path="/records/:organizationName/:recordName" render={(props) => this.renderSigninIfNotSignedIn(<RecordEditPage account={this.state.account} {...props} />)} />
-        <Route exact path="/workbench" render={(props) => this.renderSigninIfNotSignedIn(<NodeWorkbench account={this.state.account} {...props} />)} />
-        <Route exact path="/machines" render={(props) => this.renderSigninIfNotSignedIn(<MachineListPage account={this.state.account} {...props} />)} />
-        <Route exact path="/machines/:organizationName/:machineName" render={(props) => this.renderSigninIfNotSignedIn(<MachineEditPage account={this.state.account} {...props} />)} />
-        <Route exact path="/assets" render={(props) => this.renderSigninIfNotSignedIn(<AssetListPage account={this.state.account} {...props} />)} />
-        <Route exact path="/assets/:assetName" render={(props) => this.renderSigninIfNotSignedIn(<AssetEditPage account={this.state.account} {...props} />)} />
-        <Route exact path="/scans" render={(props) => this.renderSigninIfNotSignedIn(<ScanListPage account={this.state.account} {...props} />)} />
-        <Route exact path="/scans/:scanName" render={(props) => this.renderSigninIfNotSignedIn(<ScanEditPage account={this.state.account} {...props} />)} />
-        <Route exact path="/images" render={(props) => this.renderSigninIfNotSignedIn(<ImageListPage account={this.state.account} {...props} />)} />
-        <Route exact path="/images/:organizationName/:imageName" render={(props) => this.renderSigninIfNotSignedIn(<ImageEditPage account={this.state.account} {...props} />)} />
-        <Route exact path="/containers" render={(props) => this.renderSigninIfNotSignedIn(<ContainerListPage account={this.state.account} {...props} />)} />
-        <Route exact path="/containers/:organizationName/:containerName" render={(props) => this.renderSigninIfNotSignedIn(<ContainerEditPage account={this.state.account} {...props} />)} />
-        <Route exact path="/pods" render={(props) => this.renderSigninIfNotSignedIn(<PodListPage account={this.state.account} {...props} />)} />
-        <Route exact path="/pods/:organizationName/:podName" render={(props) => this.renderSigninIfNotSignedIn(<PodEditPage account={this.state.account} {...props} />)} />
-        <Route exact path="/workflows" render={(props) => this.renderSigninIfNotSignedIn(<WorkflowListPage account={this.state.account} {...props} />)} />
-        <Route exact path="/workflows/:workflowName" render={(props) => this.renderSigninIfNotSignedIn(<WorkflowEditPage account={this.state.account} {...props} />)} />
-        <Route exact path="/audit" render={(props) => this.renderSigninIfNotSignedIn(<AuditPage account={this.state.account} {...props} />)} />
-        <Route exact path="/yolov8mi" render={(props) => this.renderSigninIfNotSignedIn(<PythonYolov8miPage account={this.state.account} {...props} />)} />
-        <Route exact path="/sr" render={(props) => this.renderSigninIfNotSignedIn(<PythonSrPage account={this.state.account} {...props} />)} />
-        <Route exact path="/tasks" render={(props) => this.renderSigninIfNotSignedIn(<TaskListPage account={this.state.account} {...props} />)} />
-        <Route exact path="/tasks/:owner/:taskName" render={(props) => this.renderSigninIfNotSignedIn(<TaskEditPage account={this.state.account} {...props} />)} />
-        <Route exact path="/forms" render={(props) => this.renderSigninIfNotSignedIn(<FormListPage account={this.state.account} {...props} />)} />
-        <Route exact path="/forms/:formName" render={(props) => this.renderSigninIfNotSignedIn(<FormEditPage account={this.state.account} {...props} />)} />
-        <Route exact path="/forms/:formName/data" render={(props) => this.renderSigninIfNotSignedIn(<FormDataPage key={props.match.params.formName} account={this.state.account} {...props} />)} />
-        <Route exact path="/articles" render={(props) => this.renderSigninIfNotSignedIn(<ArticleListPage account={this.state.account} {...props} />)} />
-        <Route exact path="/articles/:articleName" render={(props) => this.renderSigninIfNotSignedIn(<ArticleEditPage account={this.state.account} {...props} />)} />
-        <Route exact path="/hospitals" render={(props) => this.renderSigninIfNotSignedIn(<HospitalListPage account={this.state.account} {...props} />)} />
-        <Route exact path="/hospitals/:hospitalName" render={(props) => this.renderSigninIfNotSignedIn(<HospitalEditPage account={this.state.account} {...props} />)} />
-        <Route exact path="/doctors" render={(props) => this.renderSigninIfNotSignedIn(<DoctorListPage account={this.state.account} {...props} />)} />
-        <Route exact path="/doctors/:doctorName" render={(props) => this.renderSigninIfNotSignedIn(<DoctorEditPage account={this.state.account} {...props} />)} />
-        <Route exact path="/patients" render={(props) => this.renderSigninIfNotSignedIn(<PatientListPage account={this.state.account} {...props} />)} />
-        <Route exact path="/patients/:patientName" render={(props) => this.renderSigninIfNotSignedIn(<PatientEditPage account={this.state.account} {...props} />)} />
-        <Route exact path="/caases" render={(props) => this.renderSigninIfNotSignedIn(<CaaseListPage account={this.state.account} {...props} />)} />
-        <Route exact path="/caases/:caaseName" render={(props) => this.renderSigninIfNotSignedIn(<CaaseEditPage account={this.state.account} {...props} />)} />
-        <Route exact path="/consultations" render={(props) => this.renderSigninIfNotSignedIn(<ConsultationListPage account={this.state.account} {...props} />)} />
-        <Route exact path="/consultations/:consultationName" render={(props) => this.renderSigninIfNotSignedIn(<ConsultationEditPage account={this.state.account} {...props} />)} />
-        <Route exact path="/chat" render={(props) => this.renderSigninIfNotSignedIn(<ChatPage account={this.state.account} {...props} />)} />
-        <Route exact path="/chat/:chatName" render={(props) => this.renderSigninIfNotSignedIn(<ChatPage account={this.state.account} {...props} />)} />
-        <Route exact path="/stores/:owner/:storeName/chat" render={(props) => this.renderSigninIfNotSignedIn(<ChatPage account={this.state.account} {...props} />)} />
-        <Route exact path="/:owner/:storeName/chat" render={(props) => this.renderSigninIfNotSignedIn(<ChatPage account={this.state.account} {...props} />)} />
-        <Route exact path="/:owner/:storeName/chat/:chatName" render={(props) => this.renderSigninIfNotSignedIn(<ChatPage account={this.state.account} {...props} />)} />
-        <Route exact path="/graphs" render={(props) => this.renderSigninIfNotSignedIn(<GraphListPage account={this.state.account} {...props} />)} />
-        <Route exact path="/graphs/:graphName" render={(props) => this.renderSigninIfNotSignedIn(<GraphEditPage account={this.state.account} {...props} />)} />
-        <Route exact path="/workbench" render={(props) => this.renderSigninIfNotSignedIn(<NodeWorkbench account={this.state.account} {...props} />)} />
-        <Route exact path="/agents" render={(props) => this.renderSigninIfNotSignedIn(<AgentsPage account={this.state.account} {...props} />)} />
-        <Route exact path="/vm" render={(props) => this.renderSigninIfNotSignedIn(<VmPage account={this.state.account} {...props} />)} />
-        <Route exact path="/sysinfo" render={(props) => this.renderSigninIfNotSignedIn(<SystemInfo account={this.state.account} {...props} />)} />
-        <Route path="" render={() => <Result status="404" title="404 NOT FOUND" subTitle={i18next.t("general:Sorry, the page you visited does not exist.")} extra={<a href="/"><Button type="primary">{i18next.t("general:Back Home")}</Button></a>} />} />
+        <Route exact path="/public-videos/:owner/:videoName" render={(props) => <VideoPage account={account} {...props} />} />
+        <Route exact path="/providers" render={(props) => renderSigninIfNotSignedIn(<ProviderListPage account={account} {...props} />)} />
+        <Route exact path="/providers/:providerName" render={(props) => renderSigninIfNotSignedIn(<ProviderEditPage account={account} {...props} />)} />
+        <Route exact path="/files" render={(props) => renderSigninIfNotSignedIn(<FileListPage account={account} {...props} />)} />
+        <Route exact path="/files/:fileName" render={(props) => renderSigninIfNotSignedIn(<FileViewPage account={account} {...props} />)} />
+        <Route exact path="/vectors" render={(props) => renderSigninIfNotSignedIn(<VectorListPage account={account} {...props} />)} />
+        <Route exact path="/vectors/:vectorName" render={(props) => renderSigninIfNotSignedIn(<VectorEditPage account={account} {...props} />)} />
+        <Route exact path="/chats" render={(props) => renderSigninIfNotSignedIn(<ChatListPage account={account} {...props} />)} />
+        <Route exact path="/chats/:chatName" render={(props) => renderSigninIfNotSignedIn(<ChatEditPage account={account} {...props} />)} />
+        <Route exact path="/messages" render={(props) => renderSigninIfNotSignedIn(<MessageListPage account={account} {...props} />)} />
+        <Route exact path="/messages/:messageName" render={(props) => renderSigninIfNotSignedIn(<MessageEditPage account={account} {...props} />)} />
+        <Route exact path="/usages" render={(props) => renderSigninIfNotSignedIn(<UsagePage account={account} {...props} />)} />
+        <Route exact path="/activities" render={(props) => renderSigninIfNotSignedIn(<ActivityPage account={account} {...props} />)} />
+        <Route exact path="/desktop" render={(props) => <OsDesktop account={account} {...props} />} />
+        <Route exact path="/templates" render={(props) => renderSigninIfNotSignedIn(<TemplateListPage account={account} {...props} />)} />
+        <Route exact path="/templates/:templateName" render={(props) => renderSigninIfNotSignedIn(<TemplateEditPage account={account} {...props} />)} />
+        <Route exact path="/applications" render={(props) => renderSigninIfNotSignedIn(<ApplicationListPage account={account} {...props} />)} />
+        <Route exact path="/applications/:applicationName" render={(props) => renderSigninIfNotSignedIn(<ApplicationEditPage account={account} {...props} />)} />
+        <Route exact path="/applications/:applicationName/view" render={(props) => renderSigninIfNotSignedIn(<ApplicationDetailsPage account={account} {...props} />)} />
+        <Route exact path="/application-store" render={(props) => renderSigninIfNotSignedIn(<ApplicationStorePage account={account} {...props} />)} />
+        <Route exact path="/nodes" render={(props) => renderSigninIfNotSignedIn(<NodeListPage account={account} {...props} />)} />
+        <Route exact path="/nodes/:nodeName" render={(props) => renderSigninIfNotSignedIn(<NodeEditPage account={account} {...props} />)} />
+        <Route exact path="/sessions" render={(props) => renderSigninIfNotSignedIn(<SessionListPage account={account} {...props} />)} />
+        <Route exact path="/connections" render={(props) => renderSigninIfNotSignedIn(<ConnectionListPage account={account} {...props} />)} />
+        <Route exact path="/records" render={(props) => renderSigninIfNotSignedIn(<RecordListPage account={account} {...props} />)} />
+        <Route exact path="/records/:organizationName/:recordName" render={(props) => renderSigninIfNotSignedIn(<RecordEditPage account={account} {...props} />)} />
+        <Route exact path="/workbench" render={(props) => renderSigninIfNotSignedIn(<NodeWorkbench account={account} {...props} />)} />
+        <Route exact path="/machines" render={(props) => renderSigninIfNotSignedIn(<MachineListPage account={account} {...props} />)} />
+        <Route exact path="/machines/:organizationName/:machineName" render={(props) => renderSigninIfNotSignedIn(<MachineEditPage account={account} {...props} />)} />
+        <Route exact path="/assets" render={(props) => renderSigninIfNotSignedIn(<AssetListPage account={account} {...props} />)} />
+        <Route exact path="/assets/:assetName" render={(props) => renderSigninIfNotSignedIn(<AssetEditPage account={account} {...props} />)} />
+        <Route exact path="/scans" render={(props) => renderSigninIfNotSignedIn(<ScanListPage account={account} {...props} />)} />
+        <Route exact path="/scans/:scanName" render={(props) => renderSigninIfNotSignedIn(<ScanEditPage account={account} {...props} />)} />
+        <Route exact path="/images" render={(props) => renderSigninIfNotSignedIn(<ImageListPage account={account} {...props} />)} />
+        <Route exact path="/images/:organizationName/:imageName" render={(props) => renderSigninIfNotSignedIn(<ImageEditPage account={account} {...props} />)} />
+        <Route exact path="/containers" render={(props) => renderSigninIfNotSignedIn(<ContainerListPage account={account} {...props} />)} />
+        <Route exact path="/containers/:organizationName/:containerName" render={(props) => renderSigninIfNotSignedIn(<ContainerEditPage account={account} {...props} />)} />
+        <Route exact path="/pods" render={(props) => renderSigninIfNotSignedIn(<PodListPage account={account} {...props} />)} />
+        <Route exact path="/pods/:organizationName/:podName" render={(props) => renderSigninIfNotSignedIn(<PodEditPage account={account} {...props} />)} />
+        <Route exact path="/workflows" render={(props) => renderSigninIfNotSignedIn(<WorkflowListPage account={account} {...props} />)} />
+        <Route exact path="/workflows/:workflowName" render={(props) => renderSigninIfNotSignedIn(<WorkflowEditPage account={account} {...props} />)} />
+        <Route exact path="/audit" render={(props) => renderSigninIfNotSignedIn(<AuditPage account={account} {...props} />)} />
+        <Route exact path="/yolov8mi" render={(props) => renderSigninIfNotSignedIn(<PythonYolov8miPage account={account} {...props} />)} />
+        <Route exact path="/sr" render={(props) => renderSigninIfNotSignedIn(<PythonSrPage account={account} {...props} />)} />
+        <Route exact path="/tasks" render={(props) => renderSigninIfNotSignedIn(<TaskListPage account={account} {...props} />)} />
+        <Route exact path="/tasks/:owner/:taskName" render={(props) => renderSigninIfNotSignedIn(<TaskEditPage account={account} {...props} />)} />
+        <Route exact path="/forms" render={(props) => renderSigninIfNotSignedIn(<FormListPage account={account} {...props} />)} />
+        <Route exact path="/forms/:formName" render={(props) => renderSigninIfNotSignedIn(<FormEditPage account={account} {...props} />)} />
+        <Route exact path="/forms/:formName/data" render={(props) => renderSigninIfNotSignedIn(<FormDataPage key={props.match.params.formName} account={account} {...props} />)} />
+        <Route exact path="/articles" render={(props) => renderSigninIfNotSignedIn(<ArticleListPage account={account} {...props} />)} />
+        <Route exact path="/articles/:articleName" render={(props) => renderSigninIfNotSignedIn(<ArticleEditPage account={account} {...props} />)} />
+        <Route exact path="/hospitals" render={(props) => renderSigninIfNotSignedIn(<HospitalListPage account={account} {...props} />)} />
+        <Route exact path="/hospitals/:hospitalName" render={(props) => renderSigninIfNotSignedIn(<HospitalEditPage account={account} {...props} />)} />
+        <Route exact path="/doctors" render={(props) => renderSigninIfNotSignedIn(<DoctorListPage account={account} {...props} />)} />
+        <Route exact path="/doctors/:doctorName" render={(props) => renderSigninIfNotSignedIn(<DoctorEditPage account={account} {...props} />)} />
+        <Route exact path="/patients" render={(props) => renderSigninIfNotSignedIn(<PatientListPage account={account} {...props} />)} />
+        <Route exact path="/patients/:patientName" render={(props) => renderSigninIfNotSignedIn(<PatientEditPage account={account} {...props} />)} />
+        <Route exact path="/caases" render={(props) => renderSigninIfNotSignedIn(<CaaseListPage account={account} {...props} />)} />
+        <Route exact path="/caases/:caaseName" render={(props) => renderSigninIfNotSignedIn(<CaaseEditPage account={account} {...props} />)} />
+        <Route exact path="/consultations" render={(props) => renderSigninIfNotSignedIn(<ConsultationListPage account={account} {...props} />)} />
+        <Route exact path="/consultations/:consultationName" render={(props) => renderSigninIfNotSignedIn(<ConsultationEditPage account={account} {...props} />)} />
+        <Route exact path="/chat" render={(props) => renderSigninIfNotSignedIn(<ChatPage account={account} {...props} />)} />
+        <Route exact path="/chat/:chatName" render={(props) => renderSigninIfNotSignedIn(<ChatPage account={account} {...props} />)} />
+        <Route exact path="/stores/:owner/:storeName/chat" render={(props) => renderSigninIfNotSignedIn(<ChatPage account={account} {...props} />)} />
+        <Route exact path="/:owner/:storeName/chat" render={(props) => renderSigninIfNotSignedIn(<ChatPage account={account} {...props} />)} />
+        <Route exact path="/:owner/:storeName/chat/:chatName" render={(props) => renderSigninIfNotSignedIn(<ChatPage account={account} {...props} />)} />
+        <Route exact path="/graphs" render={(props) => renderSigninIfNotSignedIn(<GraphListPage account={account} {...props} />)} />
+        <Route exact path="/graphs/:graphName" render={(props) => renderSigninIfNotSignedIn(<GraphEditPage account={account} {...props} />)} />
+        <Route exact path="/agents" render={(props) => renderSigninIfNotSignedIn(<AgentsPage account={account} {...props} />)} />
+        <Route exact path="/vm" render={(props) => renderSigninIfNotSignedIn(<VmPage account={account} {...props} />)} />
+        <Route exact path="/sysinfo" render={(props) => renderSigninIfNotSignedIn(<SystemInfo account={account} {...props} />)} />
+        <Route path="" render={() => (
+          <div className="flex flex-col items-center justify-center py-20">
+            <h1 className="text-4xl font-bold text-white mb-2">404</h1>
+            <p className="text-zinc-400 mb-6">{i18next.t("general:Sorry, the page you visited does not exist.")}</p>
+            <a href="/" className="px-4 py-2 bg-white text-black rounded-md text-sm font-medium hover:bg-zinc-200 transition-colors">
+              {i18next.t("general:Back Home")}
+            </a>
+          </div>
+        )} />
       </Switch>
     );
-  }
+  };
 
-  isWithoutCard() {
-    return Setting.isMobile() || this.isHiddenHeaderAndFooter() || window.location.pathname === "/chat" || window.location.pathname.startsWith("/chat/") || window.location.pathname === "/";
-  }
-
-  isHiddenHeaderAndFooter(uri) {
-    if (uri === undefined) {
-      uri = this.state.uri;
-    }
-    const hiddenPaths = ["/workbench", "/access"];
-    for (const path of hiddenPaths) {
-      if (uri.startsWith(path)) {
-        return true;
-      }
-    }
-  }
-
-  renderContent() {
-    if (Setting.getUrlParam("isRaw") !== null) {
-      return (
-        <HomePage account={this.state.account} />
-      );
-    } else if (Setting.getSubdomain() === "portal") {
-      return (
-        <ShortcutsPage account={this.state.account} />
-      );
-    }
-
+  // Raw mode or portal mode
+  if (Setting.getUrlParam("isRaw") !== null) {
     return (
-      <Layout id="parent-area">
-        {this.renderHeader()}
-        <Content style={{display: "flex", flexDirection: "column"}}>
-          {this.isWithoutCard() ?
-            this.renderRouter() :
-            <Card className="content-warp-card">
-              {this.renderRouter()}
-            </Card>
-          }
-        </Content>
-        {this.renderFooter()}
-      </Layout>
+      <>
+        <Toaster theme="dark" position="top-right" />
+        <HomePage account={account} />
+      </>
     );
   }
 
-  renderHeader() {
-    if (this.isHiddenHeaderAndFooter()) {
-      return null;
-    }
-
-    const showMenu = () => {
-      this.setState({
-        menuVisible: true,
-      });
-    };
-
-    const onClick = ({key}) => {
-      if (Setting.isMobile()) {
-        this.setState({
-          menuVisible: false,
-        });
-      }
-
-      this.setState({
-        uri: location.pathname,
-        selectedMenuKey: key,
-      });
-    };
-
+  if (Setting.getSubdomain() === "portal") {
     return (
-      <Header style={{padding: "0", marginBottom: "3px", backgroundColor: this.state.themeAlgorithm.includes("dark") ? "black" : "white", display: "flex", justifyContent: "space-between"}}>
-        <div style={{display: "flex", alignItems: "center", flex: 1, overflow: "hidden"}}>
-          {Setting.isMobile() ? null : (
-            <Link to={"/"}>
-              <img className="logo" src={this.state.logo || Setting.getLogo(this.state.themeAlgorithm, this.state.store?.logoUrl)} alt="logo" />
-            </Link>
+      <>
+        <Toaster theme="dark" position="top-right" />
+        <ShortcutsPage account={account} />
+      </>
+    );
+  }
+
+  const showShell = !isHiddenHeaderAndFooter();
+
+  return (
+    <>
+      <Helmet>
+        <title>{Setting.getHtmlTitle(store?.htmlTitle)}</title>
+        <link rel="icon" href={Setting.getFaviconUrl(["dark"], store?.faviconUrl)} />
+      </Helmet>
+      <Toaster theme="dark" position="top-right" />
+      <CustomGithubCorner />
+
+      {showShell ? (
+        <div className="flex h-screen overflow-hidden bg-background">
+          {/* Mobile sidebar overlay */}
+          {mobileSidebarOpen && (
+            <div
+              className="fixed inset-0 bg-black/60 z-40 lg:hidden"
+              onClick={() => setMobileSidebarOpen(false)}
+            />
           )}
-          {Setting.isMobile() ? (
-            <React.Fragment>
-              <Drawer title={i18next.t("general:Close")} placement="left" open={this.state.menuVisible} onClose={this.onClose}>
-                <Menu
-                  items={this.getMenuItems()}
-                  mode={"inline"}
-                  selectedKeys={[this.state.selectedMenuKey]}
-                  style={{lineHeight: "64px"}}
-                  onClick={onClick}
-                >
-                </Menu>
-              </Drawer>
-              <Button icon={<BarsOutlined />} onClick={showMenu} type="text">
-                {i18next.t("general:Menu")}
-              </Button>
-            </React.Fragment>
-          ) : (
-            <div style={{display: "flex", marginLeft: "10px", flex: 1, minWidth: 0, overflow: "auto", paddingRight: "20px"}}>
-              <Menu style={{minWidth: 0, width: "100%"}} onClick={onClick} items={this.getMenuItems()} mode={"horizontal"} selectedKeys={[this.state.selectedMenuKey]} />
+
+          {/* Sidebar */}
+          <aside className={cn(
+            "fixed lg:static inset-y-0 left-0 z-50 flex flex-col bg-zinc-950 border-r border-zinc-800 transition-all duration-200",
+            sidebarOpen ? "w-64" : "w-0 lg:w-16",
+            mobileSidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
+          )}>
+            {/* Sidebar header */}
+            <div className="flex items-center h-14 px-4 border-b border-zinc-800 shrink-0">
+              <Link to="/" className="flex items-center gap-2 min-w-0">
+                <img
+                  src={Setting.getLogo(["dark"], store?.logoUrl)}
+                  alt="Logo"
+                  className={cn("h-7 object-contain", !sidebarOpen && "lg:hidden")}
+                />
+              </Link>
+              <button
+                onClick={() => setSidebarOpen(!sidebarOpen)}
+                className="ml-auto p-1 text-zinc-500 hover:text-white rounded transition-colors hidden lg:block"
+              >
+                <ChevronLeft className={cn("w-4 h-4 transition-transform", !sidebarOpen && "rotate-180")} />
+              </button>
+              <button
+                onClick={() => setMobileSidebarOpen(false)}
+                className="ml-auto p-1 text-zinc-500 hover:text-white rounded transition-colors lg:hidden"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
-          )}
+
+            {/* Sidebar nav */}
+            <div className={cn("flex-1 overflow-y-auto px-3 py-4", !sidebarOpen && "lg:hidden")}>
+              {renderSidebar()}
+            </div>
+
+            {/* Sidebar footer */}
+            <div className={cn("border-t border-zinc-800 p-3", !sidebarOpen && "lg:hidden")}>
+              <div className="text-xs text-zinc-600" dangerouslySetInnerHTML={{__html: Setting.getFooterHtml(["dark"], store?.footerHtml)}} />
+            </div>
+          </aside>
+
+          {/* Main content */}
+          <div className="flex-1 flex flex-col min-w-0">
+            {/* Top bar */}
+            <header className="flex items-center h-14 px-4 border-b border-zinc-800 bg-zinc-950 shrink-0">
+              <button
+                onClick={() => {
+                  if (Setting.isMobile()) {
+                    setMobileSidebarOpen(true);
+                  } else {
+                    setSidebarOpen(!sidebarOpen);
+                  }
+                }}
+                className="p-1.5 text-zinc-400 hover:text-white rounded-md hover:bg-zinc-800 transition-colors mr-3"
+              >
+                <Menu className="w-5 h-5" />
+              </button>
+              <div className="flex-1" />
+              {renderUserMenu()}
+            </header>
+
+            {/* Page content */}
+            <main className="flex-1 overflow-y-auto">
+              {isWithoutCard() ? (
+                renderRouter()
+              ) : (
+                <div className="p-6">
+                  <div className="content-warp-card">
+                    {renderRouter()}
+                  </div>
+                </div>
+              )}
+            </main>
+          </div>
         </div>
-        <div style={{flexShrink: 0}}>
-          {this.renderAccountMenu()}
+      ) : (
+        <div className="min-h-screen">
+          {renderRouter()}
         </div>
-      </Header>
-    );
-  }
-
-  renderFooter() {
-    if (this.isHiddenHeaderAndFooter()) {
-      return null;
-    }
-    // How to keep your footer where it belongs ?
-    // https://www.freecodecamp.org/news/how-to-keep-your-footer-where-it-belongs-59c6aa05c59c
-
-    return (
-      <React.Fragment>
-        <Footer id="footer" style={
-          {
-            textAlign: "center",
-            height: "67px",
-          }
-        }>
-          <div dangerouslySetInnerHTML={{__html: Setting.getFooterHtml(this.state.themeAlgorithm, this.state.store?.footerHtml)}} />
-        </Footer>
-      </React.Fragment>
-    );
-  }
-
-  renderPage() {
-    return (
-      <React.Fragment>
-        {/* { */}
-        {/*   this.renderBanner() */}
-        {/* } */}
-        <FloatButton.BackTop />
-        <CustomGithubCorner />
-        {
-          this.renderContent()
-        }
-      </React.Fragment>
-    );
-  }
-
-  getAntdLocale() {
-    return {
-      Table: {
-        filterConfirm: i18next.t("general:OK"),
-        filterReset: i18next.t("general:Reset"),
-        filterEmptyText: i18next.t("general:No data"),
-        filterSearchPlaceholder: i18next.t("general:Search"),
-        emptyText: i18next.t("general:No data"),
-        selectAll: i18next.t("general:Select all"),
-        selectInvert: i18next.t("general:Invert selection"),
-        selectionAll: i18next.t("general:Select all data"),
-        sortTitle: i18next.t("general:Sort"),
-        expand: i18next.t("general:Expand row"),
-        collapse: i18next.t("general:Collapse row"),
-        triggerDesc: i18next.t("general:Click to sort descending"),
-        triggerAsc: i18next.t("general:Click to sort ascending"),
-        cancelSort: i18next.t("general:Click to cancel sorting"),
-      },
-    };
-  }
-
-  render() {
-    return (
-      <React.Fragment>
-        <Helmet>
-          <title>{Setting.getHtmlTitle(this.state.store?.htmlTitle)}</title>
-          <link rel="icon" href={Setting.getFaviconUrl(this.state.themeAlgorithm, this.state.store?.faviconUrl)} />
-        </Helmet>
-        <ConfigProvider
-          locale={this.getAntdLocale()}
-          theme={{
-            token: {
-              colorPrimary: this.state.themeData.colorPrimary,
-              colorInfo: this.state.themeData.colorPrimary,
-              borderRadius: this.state.themeData.borderRadius,
-            },
-            algorithm: Setting.getAlgorithm(this.state.themeAlgorithm),
-          }}>
-          <StyleProvider hashPriority="high" transformers={[legacyLogicalPropertiesTransformer]}>
-            {
-              this.renderPage()
-            }
-          </StyleProvider>
-        </ConfigProvider>
-      </React.Fragment>
-    );
-  }
+      )}
+    </>
+  );
 }
 
-export default withRouter(withTranslation()(App));
+export default App;

@@ -14,14 +14,12 @@
 
 import * as ConnectionBackend from "./backend/ConnectionBackend";
 import * as Setting from "./Setting";
-import {Button, Popconfirm, Radio, Table} from "antd";
 import i18next from "i18next";
 import PopconfirmModal from "./modal/PopconfirmModal";
 import BaseListPage from "./BaseListPage";
 import moment from "moment";
 import React from "react";
 import {Link} from "react-router-dom";
-import {DeleteOutlined} from "@ant-design/icons";
 
 export const Connected = "connected";
 const Disconnected = "disconnected";
@@ -245,31 +243,7 @@ class ConnectionListPage extends BaseListPage {
 
     return (
       <div>
-        <Table scroll={{x: "max-content"}} columns={columns} dataSource={connections} rowKey={(record) => `${record.owner}/${record.name}`} rowSelection={this.getRowSelection()} size="middle" bordered pagination={paginationProps}
-          title={() => (
-            <div>
-              {i18next.t("general:Connections")}&nbsp;&nbsp;&nbsp;&nbsp;
-              <Radio.Group size={"small"} buttonStyle="solid" defaultValue={Connected}
-                onChange={(e) => {
-                  this.setState({
-                    status: e.target.value,
-                  });
-                }}>
-                <Radio.Button value={Connected}>{i18next.t("connection:Online")}</Radio.Button>
-                <Radio.Button value={Disconnected}>{i18next.t("connection:History")}</Radio.Button>
-              </Radio.Group>
-              {this.state.selectedRowKeys.length > 0 && (
-                <Popconfirm title={`${i18next.t("general:Sure to delete")}: ${this.state.selectedRowKeys.length} ${i18next.t("general:items")} ?`} onConfirm={() => this.performBulkDelete(this.state.selectedRows, this.state.selectedRowKeys)} okText={i18next.t("general:OK")} cancelText={i18next.t("general:Cancel")}>
-                  <Button type="primary" danger size="small" icon={<DeleteOutlined />} style={{marginLeft: 8}}>
-                    {i18next.t("general:Delete")} ({this.state.selectedRowKeys.length})
-                  </Button>
-                </Popconfirm>
-              )}
-            </div>
-          )}
-          loading={this.state.loading}
-          onChange={this.handleTableChange}
-        />
+        <div className="overflow-x-auto border border-zinc-800 rounded-lg"><table className="w-full text-sm text-left"><thead className="bg-zinc-900/80 border-b border-zinc-800"><tr>{columns.map(col => <th key={col.key || col.dataIndex} className="px-3 py-2 text-xs font-medium text-zinc-400 whitespace-nowrap">{col.title}</th>)}</tr></thead><tbody className="divide-y divide-zinc-800/50">{(connections || []).map((record, index) => <tr key={typeof {(record) => `${record.owner} === "function" ? ({(record) => `${record.owner})(record) : record[{(record) => `${record.owner}] || index} className="hover:bg-zinc-900/50 transition-colors">{columns.map(col => <td key={col.key || col.dataIndex} className="px-3 py-2 text-zinc-300 whitespace-nowrap">{col.render ? col.render(record[col.dataIndex], record, index) : record[col.dataIndex]}</td>)}</tr>)}</tbody></table></div>
       </div>
     );
   }

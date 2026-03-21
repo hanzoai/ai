@@ -14,8 +14,6 @@
 
 import React, {useEffect, useRef, useState} from "react";
 import {useHistory} from "react-router-dom";
-import {Button, Tooltip} from "antd";
-import {LeftOutlined, RightOutlined} from "@ant-design/icons";
 import {DndContext, MouseSensor, PointerSensor, TouchSensor, useSensor, useSensors} from "@dnd-kit/core";
 import i18next from "i18next";
 import "./OsDesktop.css";
@@ -140,8 +138,7 @@ const Window = ({title, isMaximized, onClose, onMaximize, onMinimize, onFocus, a
             <div className="window-title">{i18next.t(`${appConfig?.i18nNamespace || "general"}:${title}`)}</div>
           </div>
           <div className="window-navigation">
-            <Button
-              icon={<LeftOutlined />}
+            <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700">}
               size="small"
               disabled={!canGoBack}
               onClick={(e) => {
@@ -149,8 +146,7 @@ const Window = ({title, isMaximized, onClose, onMaximize, onMinimize, onFocus, a
                 onGoBack();
               }}
             />
-            <Button
-              icon={<RightOutlined />}
+            <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700">}
               size="small"
               disabled={!canGoForward}
               onClick={(e) => {
@@ -161,36 +157,27 @@ const Window = ({title, isMaximized, onClose, onMaximize, onMinimize, onFocus, a
           </div>
         </div>
         <div className="window-controls">
-          <Button
-            className="window-control window-minimize"
-            size="small"
-            onClick={(e) => {
+          <button className="px-2 py-1 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700"> {
               e.stopPropagation();
               onMinimize();
             }}
           >
             <span className="control-icon">−</span>
-          </Button>
-          <Button
-            className="window-control window-maximize"
-            size="small"
-            onClick={(e) => {
+          </button>
+          <button className="px-2 py-1 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700"> {
               e.stopPropagation();
               onMaximize();
             }}
           >
             <span className="control-icon">{isMaximized ? "❐" : "□"}</span>
-          </Button>
-          <Button
-            className="window-control window-close"
-            size="small"
-            onClick={(e) => {
+          </button>
+          <button className="px-2 py-1 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700"> {
               e.stopPropagation();
               onClose();
             }}
           >
             <span className="control-icon">×</span>
-          </Button>
+          </button>
         </div>
       </div>
       <div className="window-content">
@@ -209,7 +196,7 @@ const Window = ({title, isMaximized, onClose, onMaximize, onMinimize, onFocus, a
 
 const DockItem = ({window, onClick, isActive, scale, translateY}) => {
   return (
-    <Tooltip title={i18next.t(`${window.appConfig?.i18nNamespace || "general"}:${window.title}`)}>
+    
       <div
         className={`dock-item ${isActive ? "active" : ""} ${window.isMinimized ? "minimized" : ""}`}
         onClick={() => onClick(window.id)}
@@ -225,7 +212,7 @@ const DockItem = ({window, onClick, isActive, scale, translateY}) => {
         />
         {!window.isMinimized && <div className="dock-indicator"></div>}
       </div>
-    </Tooltip>
+    
   );
 };
 

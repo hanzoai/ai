@@ -13,7 +13,6 @@
 // limitations under the License.
 
 import React from "react";
-import {Table, Tag} from "antd";
 import i18next from "i18next";
 import * as Setting from "./Setting";
 
@@ -30,14 +29,12 @@ const UsageTable = ({data, account}) => {
       dataIndex: "chats",
       key: "chats",
       render: (text, record) => (
-        <Tag
-          color={"success"}
-          onClick={() => {
+        <span className="px-2 py-0.5 bg-zinc-800 text-zinc-400 rounded text-xs"> {
             Setting.goToLink(`/chats?user=${record.user}`);
           }}
         >
           {text}
-        </Tag>
+        </span>
       ),
       width: "15%",
       sorter: (a, b) => a.chats - b.chats,
@@ -47,14 +44,12 @@ const UsageTable = ({data, account}) => {
       dataIndex: "messageCount",
       key: "message",
       render: (text, record) => (
-        <Tag
-          color={"success"}
-          onClick={() => {
+        <span className="px-2 py-0.5 bg-zinc-800 text-zinc-400 rounded text-xs"> {
             Setting.goToLink(`/messages?user=${record.user}`);
           }}
         >
           {text}
-        </Tag>
+        </span>
       ),
       width: "15%",
       sorter: (a, b) => a.messageCount - b.messageCount,
@@ -85,18 +80,7 @@ const UsageTable = ({data, account}) => {
       <span style={{display: "block", fontSize: "20px", marginBottom: "10px"}}>
         {i18next.t("general:Users")}
       </span>
-      <Table
-        columns={columns}
-        dataSource={data}
-        size="middle"
-        bordered
-        pagination={{pageSize: 100}}
-        showSorterTooltip={{target: "sorter-icon"}}
-        loading={{
-          spinning: !data,
-          size: "large",
-        }}
-      />
+      <div className="overflow-x-auto border border-zinc-800 rounded-lg"><table className="w-full text-sm text-left"><thead className="bg-zinc-900/80 border-b border-zinc-800"><tr>{columns.map(col => <th key={col.key || col.dataIndex} className="px-3 py-2 text-xs font-medium text-zinc-400 whitespace-nowrap">{col.title}</th>)}</tr></thead><tbody className="divide-y divide-zinc-800/50">{(data || []).map((record, index) => <tr key={typeof "name" === "function" ? ("name")(record) : record["name"] || index} className="hover:bg-zinc-900/50 transition-colors">{columns.map(col => <td key={col.key || col.dataIndex} className="px-3 py-2 text-zinc-300 whitespace-nowrap">{col.render ? col.render(record[col.dataIndex], record, index) : record[col.dataIndex]}</td>)}</tr>)}</tbody></table></div>
     </div>
   );
 };

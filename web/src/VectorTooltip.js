@@ -13,13 +13,13 @@
 // limitations under the License.
 
 import React, {useEffect, useState} from "react";
-import {Tooltip} from "antd";
 import * as Setting from "./Setting";
 import * as VectorBackend from "./backend/VectorBackend";
 import i18next from "i18next";
 
 const VectorTooltip = ({vectorScore, children}) => {
   const [vectorData, setVectorData] = useState(null);
+  const [visible, setVisible] = useState(false);
 
   useEffect(() => {
     const fetchVectorInfo = async() => {
@@ -36,27 +36,28 @@ const VectorTooltip = ({vectorScore, children}) => {
     fetchVectorInfo();
   }, [vectorScore.vector]);
 
-  const tooltipContent = () => {
-    return (
-      <div style={{maxWidth: 800, fontSize: "14px", padding: "5px", boxSizing: "border-box"}}>
-        <div style={{display: "flex", gap: "5px", flexWrap: "wrap"}}>
-          <span><strong>{i18next.t("general:Name")}:</strong> {vectorScore.vector}</span>
-          <span><strong>{i18next.t("video:Score")}:</strong> {vectorScore.score}</span>
-          <span><strong>{i18next.t("store:File")}:</strong> {vectorData?.file}</span>
-        </div>
-        <div style={{marginTop: 8, paddingTop: 8, borderTop: "1px solid #d9d9d9"}}>
-          <div style={{maxHeight: "500px", overflow: "auto", fontSize: "13px", backgroundColor: "#f5f5f5", color: "#000000", padding: "8px", borderRadius: "4px", marginTop: "4px", whiteSpace: "pre-wrap", border: "3px solid #d9d9d9"}}>
-            {vectorData?.text}
+  return (
+    <div
+      className="relative inline-block"
+      onMouseEnter={() => setVisible(true)}
+      onMouseLeave={() => setVisible(false)}
+    >
+      {children}
+      {visible && vectorData && (
+        <div className="absolute right-full top-0 mr-2 z-50 w-[500px] max-w-[800px] rounded-lg border border-border bg-card p-3 shadow-xl text-sm">
+          <div className="flex flex-wrap gap-3 text-muted-foreground">
+            <span><strong className="text-foreground">{i18next.t("general:Name")}:</strong> {vectorScore.vector}</span>
+            <span><strong className="text-foreground">{i18next.t("video:Score")}:</strong> {vectorScore.score}</span>
+            <span><strong className="text-foreground">{i18next.t("store:File")}:</strong> {vectorData?.file}</span>
+          </div>
+          <div className="mt-2 pt-2 border-t border-border">
+            <div className="max-h-[500px] overflow-auto text-[13px] bg-secondary text-foreground p-2 rounded whitespace-pre-wrap border border-border">
+              {vectorData?.text}
+            </div>
           </div>
         </div>
-      </div>
-    );
-  };
-
-  return (
-    <Tooltip title={tooltipContent()} placement="left" overlayInnerStyle={{backgroundColor: "white", color: "black"}}>
-      {children}
-    </Tooltip>
+      )}
+    </div>
   );
 };
 
