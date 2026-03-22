@@ -1,6 +1,6 @@
 module github.com/hanzoai/cloud
 
-go 1.26
+go 1.26.1
 
 require (
 	cloud.google.com/go/compute v1.28.0
