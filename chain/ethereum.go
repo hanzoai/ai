@@ -23,13 +23,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ethereum/go-ethereum"
-	"github.com/ethereum/go-ethereum/accounts/abi"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/luxfi/crypto"
+	"github.com/luxfi/geth"
+	"github.com/luxfi/geth/accounts/abi"
+	"github.com/luxfi/geth/accounts/abi/bind"
+	"github.com/luxfi/geth/common"
+	"github.com/luxfi/geth/core/types"
+	"github.com/luxfi/geth/ethclient"
 	"github.com/hanzoai/cloud/i18n"
 	"github.com/hanzoai/cloud/util"
 )
@@ -72,7 +72,7 @@ func newEthereumClient(rpcURL, privateKeyHex, contractAddressHex, contractMethod
 	if err != nil {
 		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "chain:failed to parse private key: %v"), err))
 	}
-	fromAddr := crypto.PubkeyToAddress(privateKey.PublicKey)
+	fromAddr := common.PubkeyToAddress(privateKey.PublicKey)
 	return &EthereumClient{
 		Client:          client,
 		PrivateKey:      privateKey,
@@ -246,7 +246,7 @@ func packFunctionData(method, data string, lang string) ([]byte, error) {
 	}
 
 	// 1. Get function selector first 4 bytes
-	functionSelector := crypto.Keccak256([]byte(fmt.Sprintf("%s((string,string,string))", method)))[:4]
+	functionSelector := common.Keccak256([]byte(fmt.Sprintf("%s((string,string,string))", method)))[:4]
 
 	// 2. Create Tuple type
 	tupleType, err := abi.NewType("tuple", "", []abi.ArgumentMarshaling{
