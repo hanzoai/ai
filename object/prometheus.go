@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"time"
 
-	metric "github.com/luxfi/metric"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	io_prometheus_client "github.com/prometheus/client_model/go"
@@ -45,27 +44,27 @@ type HistogramVecInfo struct {
 
 var (
 	// ApiThroughput uses *prometheus.GaugeVec directly because Reset() is needed
-	ApiThroughput = promauto.NewGaugeVec(metric.GaugeOpts{
+	ApiThroughput = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "cloud_api_throughput",
 		Help: "The throughput of each api access",
 	}, []string{"path", "method"})
 
-	ApiLatency = promauto.NewHistogramVec(metric.HistogramOpts{
+	ApiLatency = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Name: "cloud_api_latency",
 		Help: "API processing latency in milliseconds",
 	}, []string{"path", "method"})
 
-	CpuUsage = promauto.NewGaugeVec(metric.GaugeOpts{
+	CpuUsage = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "cloud_cpu_usage",
 		Help: "Hanzo Cloud cpu usage",
 	}, []string{"cpuNum"})
 
-	MemoryUsage = promauto.NewGaugeVec(metric.GaugeOpts{
+	MemoryUsage = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "cloud_memory_usage",
 		Help: "Hanzo Cloud memory usage in Byte",
 	}, []string{"type"})
 
-	TotalThroughput = promauto.NewGauge(metric.GaugeOpts{
+	TotalThroughput = promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "cloud_total_throughput",
 		Help: "The total throughput of Hanzo Cloud",
 	})
