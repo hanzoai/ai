@@ -18,6 +18,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/hanzoai/cloud/object"
 )
 
 // modelRouteFallback is an alternate provider+upstream for failover.
@@ -190,8 +192,42 @@ func zenIdentityPrompt(model string) string {
 }
 
 // resolveModelRoute looks up a user-facing model name and returns its route.
-// Lookup is case-insensitive. Returns nil if the model is not in the routing table.
+// Lookup is case-insensitive. Checks DB routes (global "admin" owner) first,
+// then falls back to YAML config, then static map.
+// Returns nil if the model is not in the routing table.
 func resolveModelRoute(model string) *modelRoute {
+	return resolveModelRouteForOrg(model, "")
+}
+
+// resolveModelRouteForOrg looks up a model route with per-org override support.
+// Resolution order: DB org-specific -> DB global ("admin") -> YAML config -> static map.
+func resolveModelRouteForOrg(model string, orgId string) *modelRoute {
+	// Check DB routes first (org-specific -> global)
+	dbRoute, err := object.ResolveModelRouteFromDB(strings.ToLower(model), orgId)
+	if err == nil && dbRoute != nil {
+		r := &modelRoute{
+			providerName:  dbRoute.Provider,
+			upstreamModel: dbRoute.Upstream,
+			premium:       dbRoute.Premium,
+			hidden:        dbRoute.Hidden,
+			ownedBy:       dbRoute.OwnedBy,
+		}
+		if dbRoute.Fallback1 != "" {
+			r.fallbacks = append(r.fallbacks, modelRouteFallback{
+				providerName:  dbRoute.Fallback1,
+				upstreamModel: dbRoute.Fallback1Up,
+			})
+		}
+		if dbRoute.Fallback2 != "" {
+			r.fallbacks = append(r.fallbacks, modelRouteFallback{
+				providerName:  dbRoute.Fallback2,
+				upstreamModel: dbRoute.Fallback2Up,
+			})
+		}
+		return r
+	}
+
+	// YAML config fallback
 	if cfg := GetModelConfig(); cfg != nil {
 		return cfg.ResolveRoute(model)
 	}
