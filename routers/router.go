@@ -309,6 +309,12 @@ func initAPI() {
 	beego.Router("/v1/models", &controllers.ApiController{}, "GET:ListModels")
 	beego.Router("/api/reload-model-config", &controllers.ApiController{}, "POST:ReloadModelConfig")
 
+	beego.Router("/api/get-model-routes", &controllers.ApiController{}, "GET:GetModelRoutes")
+	beego.Router("/api/get-model-route", &controllers.ApiController{}, "GET:GetModelRoute")
+	beego.Router("/api/add-model-route", &controllers.ApiController{}, "POST:AddModelRoute")
+	beego.Router("/api/update-model-route", &controllers.ApiController{}, "POST:UpdateModelRoute")
+	beego.Router("/api/delete-model-route", &controllers.ApiController{}, "POST:DeleteModelRoute")
+
 	// Anthropic Messages API compatible endpoints
 	beego.Router("/api/messages", &controllers.ApiController{}, "POST:AnthropicMessages")
 	beego.Router("/v1/messages", &controllers.ApiController{}, "POST:AnthropicMessages")
