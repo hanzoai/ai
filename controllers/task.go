@@ -17,6 +17,7 @@ package controllers
 import (
 	"encoding/json"
 
+	"github.com/beego/beego/logs"
 	"github.com/beego/beego/utils/pagination"
 	"github.com/hanzoai/cloud/object"
 	"github.com/hanzoai/cloud/util"
@@ -134,25 +135,6 @@ func (c *ApiController) GetTask() {
 	c.ResponseOk(task)
 }
 
-// GetTaskTemplates
-// @Title GetTaskTemplates
-// @Tag Task API
-// @Description get task templates (admin only). Returns tasks under owner "admin" for use as task templates.
-// @Success 200 {array} object.Task The Response object
-// @router /get-task-templates [get]
-func (c *ApiController) GetTaskTemplates() {
-	if !c.IsAdmin() {
-		c.ResponseError(c.T("auth:this operation requires admin privilege"))
-		return
-	}
-	tasks, err := object.GetTasks("admin")
-	if err != nil {
-		c.ResponseError(err.Error())
-		return
-	}
-	c.ResponseOk(object.GetMaskedTasks(tasks, true))
-}
-
 // UpdateTask
 // @Title UpdateTask
 // @Tag Task API
@@ -171,18 +153,19 @@ func (c *ApiController) UpdateTask() {
 		return
 	}
 
+	existingTask, err := object.GetTask(id)
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+	if existingTask == nil {
+		c.ResponseError(c.T("general:The task does not exist"))
+		return
+	}
+
 	// Check ownership for non-admins
 	if !c.IsAdmin() && !c.IsPreviewMode() {
 		username := c.GetSessionUsername()
-		existingTask, err := object.GetTask(id)
-		if err != nil {
-			c.ResponseError(err.Error())
-			return
-		}
-		if existingTask == nil {
-			c.ResponseError(c.T("general:The task does not exist"))
-			return
-		}
 		if existingTask.Owner != username {
 			c.ResponseError(c.T("auth:Unauthorized operation"))
 			return
@@ -275,9 +258,11 @@ func (c *ApiController) DeleteTask() {
 // @router /analyze-task [post]
 func (c *ApiController) AnalyzeTask() {
 	id := c.Input().Get("id")
+	logs.Info("[analyze-task] HTTP request id=%s user=%s", id, c.GetSessionUsername())
 
 	task, err := object.GetTask(id)
 	if err != nil {
+		logs.Error("[analyze-task] GetTask failed id=%s: %v", id, err)
 		c.ResponseError(err.Error())
 		return
 	}
@@ -289,6 +274,7 @@ func (c *ApiController) AnalyzeTask() {
 	if !c.IsAdmin() && !c.IsPreviewMode() {
 		username := c.GetSessionUsername()
 		if task.Owner != username {
+			logs.Warn("[analyze-task] forbidden id=%s taskOwner=%s user=%s", id, task.Owner, username)
 			c.ResponseError(c.T("auth:Unauthorized operation"))
 			return
 		}
@@ -296,22 +282,28 @@ func (c *ApiController) AnalyzeTask() {
 
 	result, err := object.AnalyzeTask(task, c.GetAcceptLanguage())
 	if err != nil {
+		logs.Error("[analyze-task] AnalyzeTask failed id=%s: %v", id, err)
 		c.ResponseError(err.Error())
 		return
 	}
 
+	logs.Info("[analyze-task] serializing result id=%s", id)
 	resultBytes, err := json.Marshal(result)
 	if err != nil {
+		logs.Error("[analyze-task] json.Marshal failed id=%s: %v", id, err)
 		c.ResponseError(err.Error())
 		return
 	}
 	task.Result = string(resultBytes)
 	task.Score = result.Score
+	logs.Info("[analyze-task] saving task id=%s resultBytes=%d", id, len(resultBytes))
 	_, err = object.UpdateTask(id, task)
 	if err != nil {
+		logs.Error("[analyze-task] UpdateTask failed id=%s: %v", id, err)
 		c.ResponseError(err.Error())
 		return
 	}
 
+	logs.Info("[analyze-task] HTTP OK id=%s", id)
 	c.ResponseOk(result)
 }
