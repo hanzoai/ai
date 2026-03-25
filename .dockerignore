@@ -34,8 +34,6 @@ cloud
 Dockerfile
 Dockerfile.*
 compose.yml
-docker-compose.yml
-docker-compose.*.yml
 
 CLAUDE.md
 AGENTS.md
