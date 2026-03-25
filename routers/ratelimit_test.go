@@ -192,7 +192,6 @@ func TestIsRateLimitExempt(t *testing.T) {
 		"/health",
 		"/api/metrics",
 		"/metrics",
-		"/api/models",
 		"/api/get-version-info",
 		"/api/get-system-info",
 	}
@@ -207,6 +206,7 @@ func TestIsRateLimitExempt(t *testing.T) {
 		"/api/messages",
 		"/v1/messages",
 		"/api/get-chats",
+		"/api/models",
 	}
 	for _, p := range nonExemptPaths {
 		if isRateLimitExempt(p) {
