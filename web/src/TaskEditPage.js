@@ -13,7 +13,7 @@
 // limitations under the License.
 
 import React from "react";
-import {Button, Card, Col, Input, Progress, Row, Select, Space, Spin, Typography, Upload} from "antd";
+import {Button, Card, Col, Input, Progress, Row, Select, Spin, Typography, Upload} from "antd";
 
 const ANALYZE_PROGRESS_DURATION_SEC = 300;
 const ANALYZE_PROGRESS_TICK_MS = 500;
@@ -21,6 +21,7 @@ const ANALYZE_PROGRESS_MAX_PERCENT = 99;
 
 import {CloseOutlined, DownloadOutlined, FilePdfOutlined, FileWordOutlined, UploadOutlined} from "@ant-design/icons";
 import * as TaskBackend from "./backend/TaskBackend";
+import * as ScaleBackend from "./backend/ScaleBackend";
 import * as Setting from "./Setting";
 import i18next from "i18next";
 import * as ProviderBackend from "./backend/ProviderBackend";
@@ -41,7 +42,7 @@ class TaskEditPage extends React.Component {
       taskName: props.match.params.taskName,
       isNewTask: props.location?.state?.isNewTask || false,
       modelProviders: [],
-      templates: [],
+      publicScales: [],
       task: null,
       analyzing: false,
       analyzeProgress: 0,
@@ -61,27 +62,29 @@ class TaskEditPage extends React.Component {
   UNSAFE_componentWillMount() {
     this.getTask();
     this.getModelProviders();
-    if (Setting.isAdminUser(this.props.account)) {
-      TaskBackend.getTaskTemplates().then((res) => {
-        if (res.status === "ok" && res.data) {
-          this.setState({templates: res.data});
-        }
-      });
-    }
+    ScaleBackend.getPublicScales().then((res) => {
+      if (res.status === "ok" && res.data) {
+        this.setState({publicScales: res.data});
+      }
+    });
   }
 
   normalizeTaskResult(task) {
-    if (!task || !task.result) {
+    if (!task) {
       return task;
     }
-    if (typeof task.result === "string") {
+    let t = task.scale === undefined || task.scale === null ? {...task, scale: ""} : task;
+    if (!t.result) {
+      return t;
+    }
+    if (typeof t.result === "string") {
       try {
-        task = {...task, result: JSON.parse(task.result)};
+        t = {...t, result: JSON.parse(t.result)};
       } catch {
-        task = {...task, result: null};
+        t = {...t, result: null};
       }
     }
-    return task;
+    return t;
   }
 
   getTask() {
@@ -98,11 +101,12 @@ class TaskEditPage extends React.Component {
   }
 
   getEffectiveScale() {
-    if (this.state.task.template) {
-      const tpl = this.state.templates.find((t) => `${t.owner}/${t.name}` === this.state.task.template);
-      return tpl ? (tpl.scale || "") : "";
+    const task = this.state.task;
+    if (!task || !task.scale || !this.state.publicScales?.length) {
+      return "";
     }
-    return this.state.task.scale || "";
+    const s = this.state.publicScales.find((x) => `${x.owner}/${x.name}` === task.scale);
+    return s ? (s.text || "") : "";
   }
 
   getQuestion() {
@@ -111,6 +115,9 @@ class TaskEditPage extends React.Component {
   }
 
   analyzeTask() {
+    if (!String(this.state.task?.scale || "").trim()) {
+      return;
+    }
     this.analyzeStartTime = Date.now();
     this.setState({analyzing: true, analyzeProgress: 0});
     const durationMs = ANALYZE_PROGRESS_DURATION_SEC * 1000;
@@ -315,7 +322,7 @@ class TaskEditPage extends React.Component {
           ) : null}
         </Row>
         {
-          this.state.task.type !== "Labeling" ? null : (
+          (this.state.task.type === "Labeling" || Setting.isAdminUser(this.props.account)) ? (
             <Row style={{marginTop: "20px"}} >
               <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
                 {Setting.getLabel(i18next.t("general:Display name"), i18next.t("general:Display name - Tooltip"))} :
@@ -326,81 +333,92 @@ class TaskEditPage extends React.Component {
                 }} />
               </Col>
             </Row>
-          )
-        }
-        {
-          Setting.isAdminUser(this.props.account) ? (
-            <Row style={{marginTop: "20px"}} >
-              <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-                {Setting.getLabel(i18next.t("general:Template"), i18next.t("general:Template - Tooltip"))} :
-              </Col>
-              <Col span={22} >
-                <Select
-                  virtual={false}
-                  style={{width: "100%"}}
-                  placeholder={i18next.t("general:None")}
-                  allowClear
-                  value={this.state.task.template ?? ""}
-                  onChange={(value) => this.updateTaskField("template", value || "")}
-                  options={[
-                    {value: "", label: i18next.t("general:None")},
-                    ...this.state.templates.map((t) => ({value: `${t.owner}/${t.name}`, label: t.displayName ? `${t.displayName} (${t.owner}/${t.name})` : `${t.owner}/${t.name}`})),
-                  ]}
-                />
-              </Col>
-            </Row>
           ) : null
         }
+        <Row style={{marginTop: "20px"}} >
+          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+            {Setting.getLabel(i18next.t("task:Scale"), i18next.t("task:Scale - Tooltip"))} :
+          </Col>
+          <Col span={22} >
+            <Select
+              virtual={false}
+              style={{width: "100%"}}
+              placeholder={i18next.t("general:None")}
+              allowClear
+              value={this.state.task.scale ?? ""}
+              onChange={(value) => {
+                this.setState({task: {...this.state.task, scale: value || ""}});
+              }}
+              options={[
+                {value: "", label: i18next.t("general:None")},
+                ...this.state.publicScales.map((s) => ({value: `${s.owner}/${s.name}`, label: s.displayName ? `${s.displayName} (${s.owner}/${s.name})` : `${s.owner}/${s.name}`})),
+              ]}
+            />
+          </Col>
+        </Row>
         {
-          Setting.isAdminUser(this.props.account) ? (
+          this.getEffectiveScale() ? (
             <Row style={{marginTop: "20px"}} >
               <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-                {Setting.getLabel(i18next.t("task:Scale"), i18next.t("task:Scale - Tooltip"))} :
+                {Setting.getLabel(i18next.t("general:Text"), i18next.t("task:Scale - Tooltip"))} :
               </Col>
               <Col span={22} >
                 <TextArea
                   rows={5}
                   style={{maxHeight: "120px", overflow: "auto"}}
+                  readOnly
                   value={this.getEffectiveScale()}
-                  disabled={!!this.state.task.template}
-                  onChange={this.state.task.template ? undefined : (e) => this.updateTaskField("scale", e.target.value)}
                 />
               </Col>
             </Row>
           ) : null
         }
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("store:File"), i18next.t("store:File - Tooltip"))} :
-          </Col>
-          <Col span={22}>
-            {this.state.task.documentUrl ? (
-              <Card size="small" style={{maxWidth: 560}}>
-                <Space align="center">
-                  <span style={{fontSize: 28, color: this.state.task.documentUrl.endsWith(".pdf") ? "#cf1322" : "#1890ff"}}>
-                    {this.state.task.documentUrl.endsWith(".pdf") ? <FilePdfOutlined /> : <FileWordOutlined />}
-                  </span>
-                  <Typography.Text ellipsis style={{maxWidth: 420}}>{this.getDocumentFileName()}</Typography.Text>
-                  <Button type="link" size="small" icon={<DownloadOutlined />} href={this.state.task.documentUrl} target="_blank" rel="noopener noreferrer">
-                    {i18next.t("general:Download")}
+        {
+          <Row style={{marginTop: "20px"}} >
+            <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+              {Setting.getLabel(i18next.t("store:File"), i18next.t("store:File - Tooltip"))} :
+            </Col>
+            <Col span={22}>
+              {this.state.task.documentUrl ? (
+                <Card
+                  size="small"
+                  style={{
+                    display: "inline-block",
+                    width: "auto",
+                    maxWidth: "100%",
+                    verticalAlign: "top",
+                  }}
+                >
+                  <div style={{display: "flex", alignItems: "center", gap: 12, flexWrap: "nowrap", minWidth: 0}}>
+                    <span style={{fontSize: 28, flexShrink: 0, color: this.state.task.documentUrl.endsWith(".pdf") ? "#cf1322" : "#1890ff"}}>
+                      {this.state.task.documentUrl.endsWith(".pdf") ? <FilePdfOutlined /> : <FileWordOutlined />}
+                    </span>
+                    <div style={{minWidth: 0, maxWidth: "min(960px, calc(100vw - 220px))", flex: "0 1 auto"}}>
+                      <Typography.Text ellipsis={{tooltip: true}} style={{width: "100%"}}>
+                        {this.getDocumentFileName()}
+                      </Typography.Text>
+                    </div>
+                    <Button type="link" size="small" icon={<DownloadOutlined />} href={this.state.task.documentUrl} target="_blank" rel="noopener noreferrer" style={{flexShrink: 0}}>
+                      {i18next.t("general:Download")}
+                    </Button>
+                    <Button type="text" size="small" danger icon={<CloseOutlined />} onClick={this.clearDocument} aria-label={i18next.t("general:Delete")} style={{flexShrink: 0}} />
+                  </div>
+                </Card>
+              ) : (
+                <Upload
+                  name="file"
+                  accept=".docx,.pdf"
+                  showUploadList={false}
+                  customRequest={this.handleDocumentUpload}
+                >
+                  <Button type="primary" icon={<UploadOutlined />} loading={this.state.uploadingDocument}>
+                    {i18next.t("store:Upload file")} (.docx, .pdf)
                   </Button>
-                  <Button type="text" size="small" danger icon={<CloseOutlined />} onClick={this.clearDocument} aria-label={i18next.t("general:Delete")} />
-                </Space>
-              </Card>
-            ) : (
-              <Upload
-                name="file"
-                accept=".docx,.pdf"
-                showUploadList={false}
-                customRequest={this.handleDocumentUpload}
-              >
-                <Button type="primary" icon={<UploadOutlined />} loading={this.state.uploadingDocument}>
-                  {i18next.t("store:Upload file")} (.docx, .pdf)
-                </Button>
-              </Upload>
-            )}
-          </Col>
-        </Row>
+                </Upload>
+              )}
+            </Col>
+          </Row>
+        }
         {
           (this.state.task.type !== "Labeling") ? null : (
             <React.Fragment>
@@ -438,14 +456,14 @@ class TaskEditPage extends React.Component {
               <Col span={22} >
                 <Button
                   loading={this.state.analyzing}
-                  disabled={!this.state.task.documentText || !!this.state.task.result}
+                  disabled={!this.state.task.documentText || !!this.state.task.result || !String(this.state.task.scale || "").trim()}
                   style={{marginBottom: "20px", width: "200px"}}
                   type="primary"
                   onClick={() => this.analyzeTask()}
                 >
                   {i18next.t("task:Analyze")}
                 </Button>
-                {Setting.isAdminUser(this.props.account) && this.state.task.result ? (
+                {this.state.task.result ? (
                   <Button
                     style={{marginBottom: "20px", marginLeft: "8px", width: "200px"}}
                     onClick={this.clearReport}
@@ -461,7 +479,12 @@ class TaskEditPage extends React.Component {
                     <Spin style={{marginLeft: "16px"}} tip={i18next.t("task:Analyzing")} />
                   </>
                 )}
-                {this.state.task.result && <TaskAnalysisReport result={this.state.task.result} />}
+                {this.state.task.result && (
+                  <TaskAnalysisReport
+                    result={this.state.task.result}
+                    downloadFileName={`${this.state.task.owner}_${this.state.task.name}_report.docx`}
+                  />
+                )}
               </Col>
             </Row>
           ) : this.state.task.type === "Labeling" ? (
