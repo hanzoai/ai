@@ -54,8 +54,7 @@ Embedding models:
 }
 
 func (p *TencentCloudEmbeddingProvider) calculatePrice(res *EmbeddingResult) error {
-	// Example placeholder logic for price calculation, real logic may vary.
-	pricePerThousandTokens := 0.0007 // Hypothetical price in CNY
+	pricePerThousandTokens := 0.0007 // CNY per 1K tokens
 	res.Price = getPrice(res.TokenCount, pricePerThousandTokens)
 	res.Currency = "CNY"
 	return nil
