@@ -222,3 +222,38 @@ func TestListAvailableModels_CountSanity(t *testing.T) {
 		t.Errorf("expected at least 30 visible models, got %d", len(models))
 	}
 }
+
+// ── resolveModelRouteForOrg ──────────────────────────────────────────────────
+
+func TestResolveModelRouteForOrg_FallsBackToStatic(t *testing.T) {
+	// When DB adapter is nil (as in tests), resolveModelRouteForOrg should
+	// fall back to the static routing table for any org.
+	route := resolveModelRouteForOrg("gpt-4o", "some-org")
+	if route == nil {
+		t.Fatal("resolveModelRouteForOrg(\"gpt-4o\", \"some-org\") = nil, want non-nil from static fallback")
+	}
+	if route.providerName != "do-ai" {
+		t.Errorf("provider = %q, want %q", route.providerName, "do-ai")
+	}
+}
+
+func TestResolveModelRouteForOrg_UnknownModelReturnsNil(t *testing.T) {
+	route := resolveModelRouteForOrg("nonexistent-model-xyz", "hanzo")
+	if route != nil {
+		t.Errorf("resolveModelRouteForOrg(\"nonexistent-model-xyz\", \"hanzo\") = %+v, want nil", route)
+	}
+}
+
+func TestResolveModelRouteForOrg_EmptyOrgFallsBack(t *testing.T) {
+	// Empty org should still resolve from static map
+	route := resolveModelRouteForOrg("zen4", "")
+	if route == nil {
+		t.Fatal("resolveModelRouteForOrg(\"zen4\", \"\") = nil, want non-nil")
+	}
+	if route.providerName != "fireworks" {
+		t.Errorf("provider = %q, want %q", route.providerName, "fireworks")
+	}
+	if !route.premium {
+		t.Error("zen4 should be premium")
+	}
+}

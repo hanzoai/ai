@@ -17,6 +17,8 @@ package controllers
 import (
 	"math"
 	"strings"
+
+	"github.com/hanzoai/cloud/object"
 )
 
 // StarterCreditDollars is the amount granted to new users as free credit.
@@ -163,6 +165,20 @@ var aliasPricing = map[string]string{
 // getModelPrice looks up pricing for a user-facing model name.
 // Returns a default price if the model isn't in the pricing table.
 func getModelPrice(model string) modelPrice {
+	return getModelPriceForOrg(model, "")
+}
+
+func getModelPriceForOrg(model string, orgId string) modelPrice {
+	// Check DB route pricing first (org-specific -> global)
+	dbRoute, err := object.ResolveModelRouteFromDB(strings.ToLower(model), orgId)
+	if err == nil && dbRoute != nil && (dbRoute.InputPrice > 0 || dbRoute.OutputPrice > 0) {
+		return modelPrice{
+			InputPerMillion:  dbRoute.InputPrice,
+			OutputPerMillion: dbRoute.OutputPrice,
+		}
+	}
+
+	// YAML config pricing
 	if cfg := GetModelConfig(); cfg != nil {
 		return cfg.GetPrice(model)
 	}
