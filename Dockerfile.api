@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM golang:1.23.6 AS back
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS back
 WORKDIR /go/src/hanzo-cloud
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o /go/src/hanzo-cloud/server .
