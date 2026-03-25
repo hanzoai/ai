@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"sort"
 	"strings"
@@ -308,7 +309,7 @@ func iamAuthQuery() string {
 	}
 
 	if clientId != "" && clientSecret != "" {
-		return "&clientId=" + clientId + "&clientSecret=" + clientSecret
+		return "&clientId=" + url.QueryEscape(clientId) + "&clientSecret=" + url.QueryEscape(clientSecret)
 	}
 	return ""
 }
@@ -322,10 +323,10 @@ func getUserByAccessKey(accessKey string) (*iamsdk.User, error) {
 	}
 	iamEndpoint = strings.TrimRight(iamEndpoint, "/")
 
-	url := fmt.Sprintf("%s/api/get-user?accessKey=%s%s", iamEndpoint, accessKey, iamAuthQuery())
+	reqURL := fmt.Sprintf("%s/api/get-user?accessKey=%s%s", iamEndpoint, url.QueryEscape(accessKey), iamAuthQuery())
 
 	client := &http.Client{Timeout: 10 * time.Second}
-	req, err := http.NewRequest(http.MethodGet, url, nil)
+	req, err := http.NewRequest(http.MethodGet, reqURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("IAM request build failed: %w", err)
 	}
@@ -968,14 +969,31 @@ func (c *ApiController) ListModels() {
 
 	// R-RED-03: Validate token format — reject obviously invalid bearer values.
 	// Accepted prefixes: hk- (IAM key), sk- (secret key), pk- (publishable key),
-	// hz_ (Hanzo token). JWTs are identified by containing at least two dots.
+	// hz_ (Hanzo token). JWTs must have 3 base64url-encoded parts.
 	if token != "" {
-		validFormat := strings.HasPrefix(token, "hk-") ||
+		isKnownPrefix := strings.HasPrefix(token, "hk-") ||
 			strings.HasPrefix(token, "sk-") ||
 			strings.HasPrefix(token, "pk-") ||
-			strings.HasPrefix(token, "hz_") ||
-			strings.Count(token, ".") >= 2 // JWT: header.payload.signature
-		if !validFormat {
+			strings.HasPrefix(token, "hz_")
+		isValidJWT := false
+		if !isKnownPrefix {
+			// JWT must have exactly 3 dot-separated parts, each valid base64url
+			parts := strings.Split(token, ".")
+			if len(parts) == 3 {
+				isValidJWT = true
+				for _, part := range parts {
+					if len(part) == 0 {
+						isValidJWT = false
+						break
+					}
+					if _, err := base64.RawURLEncoding.DecodeString(part); err != nil {
+						isValidJWT = false
+						break
+					}
+				}
+			}
+		}
+		if !isKnownPrefix && !isValidJWT {
 			c.Ctx.Output.Header("Content-Type", "application/json")
 			c.Ctx.ResponseWriter.WriteHeader(401)
 			c.Ctx.Output.Body([]byte(`{"error":{"message":"Invalid token format.","type":"authentication_error","code":"unauthorized"}}`))
