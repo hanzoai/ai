@@ -27,10 +27,12 @@
     "bpmn-js-properties-panel": "^5.35.0",
     "camunda-bpmn-moddle": "^7.0.1",
     "codemirror": "^6.0.1",
+    "cookie": "^1.1.1",
     "copy-to-clipboard": "^3.3.1",
     "craco-less": "2.0.0",
     "d3-force": "^3.0.0",
     "dayjs": "^1.11.19",
+    "diagram-js": "^15.10.0",
     "docx": "^9.6.1",
     "dompurify": "^3.0.9",
     "echarts": "^5.4.2",
@@ -48,8 +50,10 @@
     "md5": "^2.3.0",
     "moment": "^2.29.1",
     "papaparse": "^5.4.1",
+    "qs": "^6.15.0",
     "rc-bullets": "^1.5.16",
     "react": "^18.2.0",
+    "react-app-polyfill": "^3.0.0",
     "react-bpmn": "^0.2.0",
     "react-device-detect": "1.17.0",
     "react-dom": "^18.2.0",
@@ -68,6 +72,7 @@
     "remark-frontmatter": "^4.0.1",
     "remark-gfm": "^3.0.1",
     "remark-math": "^6.0.0",
+    "uuid": "^13.0.0",
     "xlsx": "^0.16.9"
   },
   "scripts": {
@@ -77,11 +82,10 @@
     "test": "craco test",
     "eject": "craco eject",
     "analyze": "source-map-explorer 'build/static/js/*.js'",
-    "preinstall": "node -e \"if (process.env.npm_execpath.indexOf('yarn') === -1) throw new Error('Use yarn for installing: https://yarnpkg.com/en/docs/install')\"",
     "fix": "eslint --fix src/ --ext .js",
     "lint:js": "eslint --fix src/ --ext .js",
     "lint:css": "stylelint src/**/*.{css,less} --fix",
-    "lint": "yarn lint:js && yarn lint:css"
+    "lint": "pnpm lint:js && pnpm lint:css"
   },
   "eslintConfig": {
     "extends": "react-app"
