@@ -26,6 +26,7 @@ import (
 	"strings"
 
 	"github.com/beego/beego/context"
+	"github.com/beego/beego/v2/core/logs"
 	"github.com/hanzoai/cloud/conf"
 	"github.com/hanzoai/cloud/util"
 )
@@ -111,7 +112,7 @@ func StaticFilter(ctx *context.Context) {
 	} else {
 		err := util.AppendWebConfigCookie(ctx)
 		if err != nil {
-			fmt.Println(err)
+			logs.Error("AppendWebConfigCookie: %v", err)
 		}
 		makeGzipResponse(ctx.ResponseWriter, ctx.Request, "web/build/index.html")
 	}
