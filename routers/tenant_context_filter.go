@@ -22,55 +22,35 @@ import (
 
 const (
 	tenantContextOrgIDKey     = "tenant.orgId"
+	tenantContextUserIDKey    = "tenant.userId"
 	tenantContextProjectIDKey = "tenant.projectId"
-	tenantContextTenantIDKey  = "tenant.tenantId"
-	tenantContextActorIDKey   = "tenant.actorId"
 	tenantContextEnvKey       = "tenant.env"
 )
 
-func normalizeTenantHeader(value string) string {
-	return strings.TrimSpace(value)
-}
-
 func getTenantHeader(ctx *context.Context, name string) string {
-	return normalizeTenantHeader(ctx.Input.Header(name))
+	return strings.TrimSpace(ctx.Input.Header(name))
 }
 
-func setTenantContextValue(ctx *context.Context, key string, value string) {
-	if value == "" {
-		return
-	}
-	ctx.Input.SetData(key, value)
-}
-
-// TenantContextFilter captures upstream multi-tenant routing headers so
-// downstream handlers can scope operations without depending on query params.
-// Reads both gateway-injected X-Hanzo-* headers and generic X-*-ID headers.
+// TenantContextFilter captures IAM identity headers from the gateway.
+// All headers use the X-IAM-* prefix — generic, not vendor-specific.
 func TenantContextFilter(ctx *context.Context) {
-	// Prefer gateway-injected headers (trusted, set after JWT validation)
-	orgID := getTenantHeader(ctx, "X-Hanzo-Org-Id")
-	if orgID == "" {
-		orgID = getTenantHeader(ctx, "X-Org-ID")
+	orgID := getTenantHeader(ctx, "X-IAM-Org-Id")
+	userID := getTenantHeader(ctx, "X-IAM-User-Id")
+	projectID := getTenantHeader(ctx, "X-IAM-Project-Id")
+	env := getTenantHeader(ctx, "X-IAM-Env")
+
+	if orgID != "" {
+		ctx.Input.SetData(tenantContextOrgIDKey, orgID)
 	}
-
-	actorID := getTenantHeader(ctx, "X-Hanzo-User-Id")
-	if actorID == "" {
-		actorID = getTenantHeader(ctx, "X-Actor-ID")
+	if userID != "" {
+		ctx.Input.SetData(tenantContextUserIDKey, userID)
 	}
-
-	projectID := getTenantHeader(ctx, "X-Project-ID")
-	tenantID := getTenantHeader(ctx, "X-Tenant-ID")
-	env := getTenantHeader(ctx, "X-Env")
-
-	if tenantID == "" {
-		tenantID = orgID
+	if projectID != "" {
+		ctx.Input.SetData(tenantContextProjectIDKey, projectID)
 	}
-
-	setTenantContextValue(ctx, tenantContextOrgIDKey, orgID)
-	setTenantContextValue(ctx, tenantContextProjectIDKey, projectID)
-	setTenantContextValue(ctx, tenantContextTenantIDKey, tenantID)
-	setTenantContextValue(ctx, tenantContextActorIDKey, actorID)
-	setTenantContextValue(ctx, tenantContextEnvKey, env)
+	if env != "" {
+		ctx.Input.SetData(tenantContextEnvKey, env)
+	}
 }
 
 func getTenantContextValue(ctx *context.Context, key string) string {
@@ -85,29 +65,17 @@ func getTenantContextValue(ctx *context.Context, key string) string {
 	return strings.TrimSpace(text)
 }
 
-// GetTenantOrgID resolves org context from request metadata.
+// GetTenantOrgID returns the org from IAM context.
 func GetTenantOrgID(ctx *context.Context) string {
-	value := getTenantContextValue(ctx, tenantContextOrgIDKey)
-	if value != "" {
-		return value
-	}
-	return getTenantHeader(ctx, "X-Org-ID")
+	return getTenantContextValue(ctx, tenantContextOrgIDKey)
 }
 
-// GetTenantProjectID resolves project context from request metadata.
+// GetTenantUserID returns the user ID from IAM context.
+func GetTenantUserID(ctx *context.Context) string {
+	return getTenantContextValue(ctx, tenantContextUserIDKey)
+}
+
+// GetTenantProjectID returns the project ID from IAM context.
 func GetTenantProjectID(ctx *context.Context) string {
-	value := getTenantContextValue(ctx, tenantContextProjectIDKey)
-	if value != "" {
-		return value
-	}
-	return getTenantHeader(ctx, "X-Project-ID")
-}
-
-// GetTenantActorID resolves actor/user context from request metadata.
-func GetTenantActorID(ctx *context.Context) string {
-	value := getTenantContextValue(ctx, tenantContextActorIDKey)
-	if value != "" {
-		return value
-	}
-	return getTenantHeader(ctx, "X-Actor-ID")
+	return getTenantContextValue(ctx, tenantContextProjectIDKey)
 }
