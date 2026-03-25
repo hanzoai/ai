@@ -72,10 +72,17 @@ type ModelPriceDef struct {
 	Output           float64 `yaml:"output,omitempty"`
 }
 
+// FallbackDef describes an alternate provider+upstream for failover.
+type FallbackDef struct {
+	Provider string `yaml:"provider"`
+	Upstream string `yaml:"upstream"`
+}
+
 // ModelDef describes a single model entry in the config.
 type ModelDef struct {
 	Provider       string         `yaml:"provider"`
 	Upstream       string         `yaml:"upstream"`
+	Fallbacks      []FallbackDef  `yaml:"fallbacks,omitempty"`
 	Premium        bool           `yaml:"premium"`
 	Hidden         bool           `yaml:"hidden"`
 	OwnedBy        string         `yaml:"owned_by"`
@@ -171,13 +178,20 @@ func (mc *ModelConfig) applyConfig(file *ModelConfigFile) error {
 
 		// Build route (skip pricing-only entries)
 		if !def.PricingOnly {
-			routes[key] = modelRoute{
+			r := modelRoute{
 				providerName:  def.Provider,
 				upstreamModel: def.Upstream,
 				premium:       def.Premium,
 				hidden:        def.Hidden,
 				ownedBy:       def.OwnedBy,
 			}
+			for _, fb := range def.Fallbacks {
+				r.fallbacks = append(r.fallbacks, modelRouteFallback{
+					providerName:  fb.Provider,
+					upstreamModel: fb.Upstream,
+				})
+			}
+			routes[key] = r
 		}
 
 		// Build pricing
