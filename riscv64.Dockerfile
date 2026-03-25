@@ -1,11 +1,11 @@
 FROM --platform=$BUILDPLATFORM riscv64/ubuntu:latest AS FRONT
 RUN apt-get update && apt-get install -y nodejs npm
-RUN npm install -g yarn
+RUN corepack enable && corepack prepare pnpm@latest --activate
 
 WORKDIR /web
 COPY ./web .
 ENV NODE_OPTIONS="--max-old-space-size=4144"
-RUN yarn install --frozen-lockfile --network-timeout 1000000 && yarn run build
+RUN pnpm install --frozen-lockfile && pnpm build
 
 FROM --platform=$BUILDPLATFORM riscv64/golang:1.23.11-alpine3.21 AS BACK
 WORKDIR /go/src/cloud
