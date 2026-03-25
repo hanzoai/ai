@@ -740,12 +740,6 @@ func (c *ApiController) ChatCompletions() {
 		provider.SubType = request.Model
 	}
 
-	modelProvider, err := provider.GetModelProvider(c.GetAcceptLanguage())
-	if err != nil {
-		c.ResponseError(fmt.Sprintf("Failed to get model provider: %s", err.Error()))
-		return
-	}
-
 	// Inject Zen identity prompt for zen-branded models
 	if zenPrompt := zenIdentityPrompt(request.Model); zenPrompt != "" {
 		hasSystem := len(request.Messages) > 0 && request.Messages[0].Role == "system"
@@ -808,8 +802,31 @@ func (c *ApiController) ChatCompletions() {
 
 	knowledge := []*model.RawMessage{}
 
-	// Call the model provider
-	modelResult, err := modelProvider.QueryText(question, writer, history, "", knowledge, nil, c.GetAcceptLanguage())
+	// Resolve the route for failover (may have fallback providers)
+	route := resolveModelRoute(request.Model)
+
+	// Call the model provider with failover support
+	var modelResult *model.ModelResult
+	var actualProvider string
+
+	if route != nil && len(route.fallbacks) > 0 {
+		modelResult, actualProvider, err = failoverQueryText(
+			route, question, writer, history, knowledge,
+			c.GetAcceptLanguage(),
+			func() bool { return writer.StreamSent },
+		)
+	} else {
+		// No fallbacks configured — direct call (original path)
+		var modelProvider model.ModelProvider
+		modelProvider, err = provider.GetModelProvider(c.GetAcceptLanguage())
+		if err != nil {
+			c.ResponseError(fmt.Sprintf("Failed to get model provider: %s", err.Error()))
+			return
+		}
+		modelResult, err = modelProvider.QueryText(question, writer, history, "", knowledge, nil, c.GetAcceptLanguage())
+		actualProvider = provider.Name
+	}
+
 	if err != nil {
 		// Record failed usage
 		if authUser != nil {
@@ -817,7 +834,7 @@ func (c *ApiController) ChatCompletions() {
 				Owner:     authUser.Owner,
 				User:      authUser.Owner + "/" + authUser.Name,
 				Model:     request.Model,
-				Provider:  provider.Name,
+				Provider:  actualProvider,
 				Premium:   isPremium,
 				Stream:    request.Stream,
 				Status:    "error",
@@ -832,14 +849,14 @@ func (c *ApiController) ChatCompletions() {
 		return
 	}
 
-	// Record successful usage
+	// Record successful usage (actualProvider reflects which provider served the request)
 	if authUser != nil {
 		successRecord := &usageRecord{
 			Owner:            authUser.Owner,
 			User:             authUser.Owner + "/" + authUser.Name,
 			Organization:     authUser.Owner,
 			Model:            request.Model,
-			Provider:         provider.Name,
+			Provider:         actualProvider,
 			PromptTokens:     modelResult.PromptTokenCount,
 			CompletionTokens: modelResult.ResponseTokenCount,
 			TotalTokens:      modelResult.TotalTokenCount,
