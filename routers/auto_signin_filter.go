@@ -33,9 +33,16 @@ func AutoSigninFilter(ctx *context.Context) {
 	// search/index/scrape, and /v1/ routes). These controllers validate
 	// hk-*/pk-*/sk-* keys and JWTs directly, so the legacy MD5-based
 	// access-token check here would incorrectly reject them.
+	// Skip endpoints that handle their own auth (chat completions,
+	// search/index/scrape, and /v1/ routes). These controllers validate
+	// hk-*/pk-*/sk-* keys and JWTs directly, so the legacy MD5-based
+	// access-token check here would incorrectly reject them.
+	//
+	// NOTE: /api/models was removed from this skip list (R-04 fix).
+	// It now runs through AutoSigninFilter so session-based users are
+	// resolved, and the controller validates Bearer tokens directly.
 	if strings.HasSuffix(urlPath, "/chat/completions") ||
 		strings.HasSuffix(urlPath, "/completions") ||
-		urlPath == "/api/models" ||
 		strings.HasPrefix(urlPath, "/v1/") ||
 		strings.HasPrefix(urlPath, "/api/search-docs") ||
 		strings.HasPrefix(urlPath, "/api/index-docs") ||

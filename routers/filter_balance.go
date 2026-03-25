@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -185,8 +186,8 @@ func isBalanceExempt(path string) bool {
 		return true
 	case path == "/api/metrics" || path == "/metrics":
 		return true
-	case path == "/api/models" || path == "/v1/models":
-		return true
+	// /api/models and /v1/models require authentication (R-04).
+	// Removed from balance exemption — callers must have a valid token.
 	case strings.HasPrefix(path, "/api/get-version-info"):
 		return true
 	case strings.HasPrefix(path, "/api/get-system-info"):
@@ -342,9 +343,9 @@ type commerceBalanceResponse struct {
 
 // fetchBalance calls Commerce to get the current balance for a user.
 func (bg *BalanceGate) fetchBalance(userKey string) (int64, error) {
-	url := fmt.Sprintf("%s/api/v1/billing/balance?user=%s&currency=usd", bg.endpoint, userKey)
+	balanceURL := fmt.Sprintf("%s/api/v1/billing/balance?user=%s&currency=usd", bg.endpoint, url.QueryEscape(userKey))
 
-	req, err := http.NewRequest(http.MethodGet, url, nil)
+	req, err := http.NewRequest(http.MethodGet, balanceURL, nil)
 	if err != nil {
 		return 0, fmt.Errorf("build request: %w", err)
 	}
@@ -413,12 +414,12 @@ func (bg *BalanceGate) resolveIAMKeyUser(apiKey string) string {
 		return ""
 	}
 
-	url := fmt.Sprintf("%s/api/get-user?accessKey=%s", bg.iamEndpoint, apiKey)
+	iamURL := fmt.Sprintf("%s/api/get-user?accessKey=%s", bg.iamEndpoint, url.QueryEscape(apiKey))
 	if bg.clientId != "" && bg.clientSecret != "" {
-		url += "&clientId=" + bg.clientId + "&clientSecret=" + bg.clientSecret
+		iamURL += "&clientId=" + url.QueryEscape(bg.clientId) + "&clientSecret=" + url.QueryEscape(bg.clientSecret)
 	}
 
-	req, err := http.NewRequest(http.MethodGet, url, nil)
+	req, err := http.NewRequest(http.MethodGet, iamURL, nil)
 	if err != nil {
 		logs.Warning("balance_gate: IAM request build failed for key=%s: %v", maskKey(apiKey), err)
 		return ""
