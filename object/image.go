@@ -49,7 +49,7 @@ type Image struct {
 	OSType                  string `xorm:"varchar(100)" json:"OSType" xml:"OSType"`
 	IsSubscribed            bool   `json:"IsSubscribed" xml:"IsSubscribed"`
 	IsSupportCloudinit      bool   `json:"IsSupportCloudinit" xml:"IsSupportCloudinit"`
-	CreationTime            string `xorm:"varchar(100)" json:"createdTime" xml:"createdTime"`
+	CreationTime            string `xorm:"varchar(100)" json:"creationTime" xml:"creationTime"`
 	ProductCode             string `xorm:"varchar(100)" json:"ProductCode" xml:"ProductCode"`
 	Progress                string `xorm:"varchar(100)" json:"progress" xml:"progress"`
 	Platform                string `xorm:"varchar(100)" json:"platform" xml:"platform"`

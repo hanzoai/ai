@@ -14,7 +14,10 @@
 
 package controllers
 
-import "testing"
+import (
+	"os"
+	"testing"
+)
 
 func TestIsWidgetKey(t *testing.T) {
 	tests := []struct {
@@ -84,5 +87,37 @@ func searchString(s, substr string) bool {
 func TestWidgetMaxTokens(t *testing.T) {
 	if widgetMaxTokens != 800 {
 		t.Errorf("widgetMaxTokens = %d, want 800", widgetMaxTokens)
+	}
+}
+
+func TestValidateWidgetKey(t *testing.T) {
+	// Set env var with comma-separated valid keys
+	os.Setenv("WIDGET_KEYS", "hz_widget_public,hz_test_key")
+	defer os.Unsetenv("WIDGET_KEYS")
+
+	tests := []struct {
+		token    string
+		expected bool
+	}{
+		{"hz_widget_public", true},
+		{"hz_test_key", true},
+		{"hz_unknown_key", false},
+		{"hk-not-widget", false},
+		{"", false},
+	}
+	for _, tt := range tests {
+		if got := validateWidgetKey(tt.token); got != tt.expected {
+			t.Errorf("validateWidgetKey(%q) = %v, want %v", tt.token, got, tt.expected)
+		}
+	}
+}
+
+func TestValidateWidgetKeyNoConfig(t *testing.T) {
+	// Ensure no env var is set
+	os.Unsetenv("WIDGET_KEYS")
+
+	// Without KMS or env vars, all keys should be rejected
+	if validateWidgetKey("hz_widget_public") {
+		t.Error("validateWidgetKey should reject all keys when WIDGET_KEYS is not configured")
 	}
 }
