@@ -415,12 +415,6 @@ func (c *ApiController) AnthropicMessages() {
 		provider.SubType = request.Model
 	}
 
-	modelProvider, err := provider.GetModelProvider(c.GetAcceptLanguage())
-	if err != nil {
-		c.respondAnthropicError("api_error", fmt.Sprintf("Failed to get model provider: %s", err.Error()), 500)
-		return
-	}
-
 	// ── Convert Anthropic messages to internal format ────────────────────
 	// Build OpenAI-style messages for zen identity injection, then extract
 	// question/history the same way the OpenAI endpoint does.
@@ -502,14 +496,37 @@ func (c *ApiController) AnthropicMessages() {
 
 	knowledge := []*model.RawMessage{}
 
-	modelResult, err := modelProvider.QueryText(question, writer, history, "", knowledge, nil, c.GetAcceptLanguage())
+	// Resolve the route for failover (may have fallback providers)
+	route := resolveModelRoute(request.Model)
+
+	var modelResult *model.ModelResult
+	var actualProvider string
+
+	if route != nil && len(route.fallbacks) > 0 {
+		modelResult, actualProvider, err = failoverQueryText(
+			route, question, writer, history, knowledge,
+			c.GetAcceptLanguage(),
+			func() bool { return writer.StreamSent },
+		)
+	} else {
+		// No fallbacks configured — direct call (original path)
+		var modelProvider model.ModelProvider
+		modelProvider, err = provider.GetModelProvider(c.GetAcceptLanguage())
+		if err != nil {
+			c.respondAnthropicError("api_error", fmt.Sprintf("Failed to get model provider: %s", err.Error()), 500)
+			return
+		}
+		modelResult, err = modelProvider.QueryText(question, writer, history, "", knowledge, nil, c.GetAcceptLanguage())
+		actualProvider = provider.Name
+	}
+
 	if err != nil {
 		if authUser != nil {
 			recordUsage(&usageRecord{
 				Owner:     authUser.Owner,
 				User:      authUser.Owner + "/" + authUser.Name,
 				Model:     request.Model,
-				Provider:  provider.Name,
+				Provider:  actualProvider,
 				Premium:   isPremium,
 				Stream:    request.Stream,
 				Status:    "error",
@@ -522,14 +539,14 @@ func (c *ApiController) AnthropicMessages() {
 		return
 	}
 
-	// Record successful usage.
+	// Record successful usage (actualProvider reflects which provider served the request).
 	if authUser != nil {
 		recordUsage(&usageRecord{
 			Owner:            authUser.Owner,
 			User:             authUser.Owner + "/" + authUser.Name,
 			Organization:     authUser.Owner,
 			Model:            request.Model,
-			Provider:         provider.Name,
+			Provider:         actualProvider,
 			PromptTokens:     modelResult.PromptTokenCount,
 			CompletionTokens: modelResult.ResponseTokenCount,
 			TotalTokens:      modelResult.TotalTokenCount,
