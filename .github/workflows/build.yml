@@ -5,6 +5,8 @@ on:
   push:
     branches:
       - main
+      - test
+      - dev
   pull_request:
   workflow_dispatch:
 
@@ -183,6 +185,30 @@ jobs:
     name: Docker All-in-One Release
     if: github.repository == 'hanzoai/cloud' && github.event_name == 'push' && needs.tag-release.outputs.new-release-published == 'true'
     needs: [ tag-release ]
+    uses: hanzoai/.github/.github/workflows/docker-build.yml@main
+    with:
+      image: ghcr.io/hanzoai/cloud-allinone
+      target: allinone
+    secrets: inherit
+
+  docker-branch:
+    name: Docker Branch Build
+    if: >-
+      github.repository == 'hanzoai/cloud' && github.event_name == 'push' &&
+      (github.ref == 'refs/heads/test' || github.ref == 'refs/heads/dev')
+    needs: [ frontend, backend, linter ]
+    uses: hanzoai/.github/.github/workflows/docker-build.yml@main
+    with:
+      image: ghcr.io/hanzoai/cloud
+      target: standard
+    secrets: inherit
+
+  docker-allinone-branch:
+    name: Docker All-in-One Branch Build
+    if: >-
+      github.repository == 'hanzoai/cloud' && github.event_name == 'push' &&
+      (github.ref == 'refs/heads/test' || github.ref == 'refs/heads/dev')
+    needs: [ frontend, backend, linter ]
     uses: hanzoai/.github/.github/workflows/docker-build.yml@main
     with:
       image: ghcr.io/hanzoai/cloud-allinone
