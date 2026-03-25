@@ -20,7 +20,7 @@ import (
 	"strings"
 
 	"github.com/beego/beego"
-	"github.com/beego/beego/v2/core/logs"
+	"github.com/beego/beego/logs"
 	"github.com/hanzoai/cloud/conf"
 	"github.com/hanzoai/cloud/object"
 	"github.com/hanzoai/cloud/util"
