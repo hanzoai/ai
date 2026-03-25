@@ -22,15 +22,12 @@ import (
 
 // GetEffectiveOrg resolves the organization for data-scoping purposes.
 // Resolution order:
-//  1. X-Hanzo-Org-Id header (injected by gateway auth middleware from JWT)
+//  1. X-IAM-Org-Id header (injected by gateway auth middleware from JWT)
 //  2. Authenticated session user's Owner field
 //  3. Config default (iamOrganization env/config value)
-//
-// This replaces all direct calls to conf.GetConfigString("iamOrganization")
-// in data-path code, enabling multi-org support without changing every query.
 func (c *ApiController) GetEffectiveOrg() string {
 	// 1. Gateway-injected header (trusted, set after JWT validation)
-	if orgID := strings.TrimSpace(c.Ctx.Input.Header("X-Hanzo-Org-Id")); orgID != "" {
+	if orgID := strings.TrimSpace(c.Ctx.Input.Header("X-IAM-Org-Id")); orgID != "" {
 		return orgID
 	}
 
