@@ -903,12 +903,49 @@ func (c *ApiController) ChatCompletions() {
 }
 
 // ListModels returns the list of available models from the routing table.
+// Requires a valid Bearer token (JWT, hk-, pk-, sk-, or hz_ key).
 // @Title ListModels
 // @Tag OpenAI Compatible API
-// @Description Returns a list of all available models. No authentication required.
+// @Description Returns a list of all available models. Requires authentication.
+// @Param Authorization header string true "Bearer token"
 // @Success 200 {object} object
+// @Failure 401 {object} object "Unauthorized"
 // @router /api/models [get]
 func (c *ApiController) ListModels() {
+	// R-04 fix: require authentication for model listing.
+	// Accept any valid token type (JWT, IAM key, publishable key, widget key).
+	authHeader := c.Ctx.Request.Header.Get("Authorization")
+	token := ""
+	if strings.HasPrefix(authHeader, "Bearer ") {
+		token = strings.TrimPrefix(authHeader, "Bearer ")
+	}
+	hasSession := c.GetSessionUsername() != ""
+	if token == "" && !hasSession {
+		c.Ctx.Output.Header("Content-Type", "application/json")
+		c.Ctx.ResponseWriter.WriteHeader(401)
+		c.Ctx.Output.Body([]byte(`{"error":{"message":"Authentication required. Provide a Bearer token.","type":"authentication_error","code":"unauthorized"}}`))
+		c.EnableRender = false
+		return
+	}
+
+	// R-RED-03: Validate token format — reject obviously invalid bearer values.
+	// Accepted prefixes: hk- (IAM key), sk- (secret key), pk- (publishable key),
+	// hz_ (Hanzo token). JWTs are identified by containing at least two dots.
+	if token != "" {
+		validFormat := strings.HasPrefix(token, "hk-") ||
+			strings.HasPrefix(token, "sk-") ||
+			strings.HasPrefix(token, "pk-") ||
+			strings.HasPrefix(token, "hz_") ||
+			strings.Count(token, ".") >= 2 // JWT: header.payload.signature
+		if !validFormat {
+			c.Ctx.Output.Header("Content-Type", "application/json")
+			c.Ctx.ResponseWriter.WriteHeader(401)
+			c.Ctx.Output.Body([]byte(`{"error":{"message":"Invalid token format.","type":"authentication_error","code":"unauthorized"}}`))
+			c.EnableRender = false
+			return
+		}
+	}
+
 	models := listAvailableModels()
 
 	response := map[string]interface{}{

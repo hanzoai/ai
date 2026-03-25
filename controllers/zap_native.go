@@ -65,6 +65,10 @@ func handleCloudService(ctx context.Context, from string, msg *zap.Message) (*za
 
 	switch method {
 	case "models.list":
+		// R-04: require auth for model listing
+		if auth == "" {
+			return object.BuildCloudResponse(401, nil, "authentication required")
+		}
 		return zapListModelsHandler()
 	case "balance":
 		return zapBalanceHandler(auth, body)
@@ -93,6 +97,17 @@ func handleGatewayHTTPRequest(ctx context.Context, from string, msg *zap.Message
 	case path == "/api/chat/completions" || path == "/v1/chat/completions":
 		return zapChatHandler(ctx, auth, body)
 	case path == "/api/models" || path == "/v1/models":
+		// R-04: require auth for model listing
+		if auth == "" {
+			errBody, _ := json.Marshal(map[string]interface{}{
+				"error": map[string]string{
+					"message": "Authentication required. Provide a Bearer token.",
+					"type":    "authentication_error",
+					"code":    "unauthorized",
+				},
+			})
+			return object.BuildGatewayResponse(401, errBody, nil)
+		}
 		return zapListModelsHandler()
 	case strings.HasPrefix(path, "/api/balance") || strings.HasPrefix(path, "/v1/balance"):
 		return zapBalanceHandler(auth, body)
