@@ -96,20 +96,18 @@ func (c *ApiController) GetRequestTenantOrgID() string {
 	if c == nil || c.Ctx == nil {
 		return ""
 	}
-	return strings.TrimSpace(c.Ctx.Input.Header("X-Org-ID"))
+	return strings.TrimSpace(c.Ctx.Input.Header("X-IAM-Org-Id"))
 }
 
 func (c *ApiController) GetRequestTenantProjectID() string {
 	if c == nil || c.Ctx == nil {
 		return ""
 	}
-	return strings.TrimSpace(c.Ctx.Input.Header("X-Project-ID"))
+	return strings.TrimSpace(c.Ctx.Input.Header("X-IAM-Project-Id"))
 }
 
 // GetSessionOwner returns the organization (owner) of the authenticated user.
-// This ensures multi-tenant resource scoping -- users only see their own org's resources.
-// Returns empty string if no authenticated session exists. X-Org-ID is NOT trusted
-// as a session owner source since it can be spoofed by unauthenticated callers.
+// This ensures multi-tenant resource scoping — users only see their own org's resources.
 func (c *ApiController) GetSessionOwner() string {
 	user := c.GetSessionUser()
 	if user != nil {
@@ -119,7 +117,7 @@ func (c *ApiController) GetSessionOwner() string {
 }
 
 // RequireSessionOwner ensures the caller is authenticated and returns their org owner.
-// X-Org-ID header is NOT trusted here -- authentication via session is required.
+// IAM headers are trusted when injected by the gateway, but session auth is primary here.
 func (c *ApiController) RequireSessionOwner() (string, bool) {
 	user := c.GetSessionUser()
 	if user != nil {

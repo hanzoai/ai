@@ -23,12 +23,12 @@ import (
 
 // GetEffectiveOrg resolves the organization for data-scoping in filters.
 // Resolution order:
-//  1. X-Hanzo-Org-Id header (injected by gateway auth middleware from JWT)
+//  1. X-IAM-Org-Id header (injected by gateway auth middleware from JWT)
 //  2. Authenticated session user's Owner field
 //  3. Config default (iamOrganization env/config value)
 func GetEffectiveOrg(ctx *context.Context) string {
 	// 1. Gateway-injected header (trusted, set after JWT validation)
-	if orgID := strings.TrimSpace(ctx.Input.Header("X-Hanzo-Org-Id")); orgID != "" {
+	if orgID := strings.TrimSpace(ctx.Input.Header("X-IAM-Org-Id")); orgID != "" {
 		return orgID
 	}
 
