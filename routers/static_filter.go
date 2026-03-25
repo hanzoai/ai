@@ -74,10 +74,15 @@ func StaticFilter(ctx *context.Context) {
 			return
 		}
 
-		ctx.Output.Header(headerAllowOrigin, "*")
-		ctx.Output.Header(headerAllowMethods, "POST, GET, OPTIONS, DELETE")
-		ctx.Output.Header(headerAllowHeaders, "Content-Type, Authorization")
-		ctx.Output.Header(headerAllowCredentials, "true")
+		// Use the requesting origin if it is on the static allowlist;
+		// otherwise omit CORS headers entirely (the browser will block).
+		storageOrigin := ctx.Input.Header(headerOrigin)
+		if storageOrigin != "" && isStaticAllowedOrigin(storageOrigin) {
+			ctx.Output.Header(headerAllowOrigin, storageOrigin)
+			ctx.Output.Header(headerAllowMethods, "POST, GET, OPTIONS, DELETE")
+			ctx.Output.Header(headerAllowHeaders, "Content-Type, Authorization")
+			ctx.Output.Header(headerAllowCredentials, "true")
+		}
 
 		if runtime.GOOS == "windows" {
 			urlPath = strings.TrimPrefix(urlPath, "/storage/")
