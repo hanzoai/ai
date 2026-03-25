@@ -25,46 +25,73 @@ models:
   gpt-4o:
     provider: do-ai
     upstream: openai-gpt-4o
+    fallbacks:
+      - provider: openai-direct
+        upstream: gpt-4o
     pricing: { input: 2.50, output: 10.00 }
 
   gpt-4o-mini:
     provider: do-ai
     upstream: openai-gpt-4o-mini
+    fallbacks:
+      - provider: openai-direct
+        upstream: gpt-4o-mini
     pricing: { input: 0.15, output: 0.60 }
 
   gpt-4.1:
     provider: do-ai
     upstream: openai-gpt-4.1
+    fallbacks:
+      - provider: openai-direct
+        upstream: gpt-4.1
     pricing: { input: 2.00, output: 8.00 }
 
   gpt-5:
     provider: do-ai
     upstream: openai-gpt-5
+    fallbacks:
+      - provider: openai-direct
+        upstream: gpt-5
     pricing: { input: 5.00, output: 15.00 }
 
   gpt-5-mini:
     provider: do-ai
     upstream: openai-gpt-5-mini
+    fallbacks:
+      - provider: openai-direct
+        upstream: gpt-5-mini
     pricing: { input: 1.25, output: 5.00 }
 
   gpt-5-nano:
     provider: do-ai
     upstream: openai-gpt-5-nano
+    fallbacks:
+      - provider: openai-direct
+        upstream: gpt-5-nano
     pricing: { input: 0.30, output: 1.20 }
 
   gpt-5.1-codex-max:
     provider: do-ai
     upstream: openai-gpt-5.1-codex-max
+    fallbacks:
+      - provider: openai-direct
+        upstream: gpt-5.1-codex-max
     pricing: { input: 3.00, output: 12.00 }
 
   gpt-5.2:
     provider: do-ai
     upstream: openai-gpt-5.2
+    fallbacks:
+      - provider: openai-direct
+        upstream: gpt-5.2
     pricing: { input: 5.00, output: 15.00 }
 
   gpt-5.2-pro:
     provider: do-ai
     upstream: openai-gpt-5.2-pro
+    fallbacks:
+      - provider: openai-direct
+        upstream: gpt-5.2-pro
     pricing: { input: 10.00, output: 30.00 }
 
   gpt-oss-120b:
@@ -96,46 +123,73 @@ models:
   claude-3-5-haiku:
     provider: do-ai
     upstream: anthropic-claude-3.5-haiku
+    fallbacks:
+      - provider: anthropic
+        upstream: claude-3-5-haiku-20241022
     pricing: { input: 0.80, output: 4.00 }
 
   claude-3-7-sonnet:
     provider: do-ai
     upstream: anthropic-claude-3.7-sonnet
+    fallbacks:
+      - provider: anthropic
+        upstream: claude-3-7-sonnet-20250219
     pricing: { input: 3.00, output: 15.00 }
 
   claude-4-1-opus:
     provider: do-ai
     upstream: anthropic-claude-4.1-opus
+    fallbacks:
+      - provider: anthropic
+        upstream: claude-4-1-opus-20250620
     pricing: { input: 15.00, output: 75.00 }
 
   claude-haiku-4-5:
     provider: do-ai
     upstream: anthropic-claude-haiku-4.5
+    fallbacks:
+      - provider: anthropic
+        upstream: claude-haiku-4-5-20251001
     pricing: { input: 1.00, output: 5.00 }
 
   claude-opus-4:
     provider: do-ai
     upstream: anthropic-claude-opus-4
+    fallbacks:
+      - provider: anthropic
+        upstream: claude-opus-4-20250514
     pricing: { input: 15.00, output: 75.00 }
 
   claude-opus-4-5:
     provider: do-ai
     upstream: anthropic-claude-opus-4.5
+    fallbacks:
+      - provider: anthropic
+        upstream: claude-opus-4-5-20250826
     pricing: { input: 15.00, output: 75.00 }
 
   claude-opus-4-6:
     provider: do-ai
     upstream: anthropic-claude-opus-4.6
+    fallbacks:
+      - provider: anthropic
+        upstream: claude-opus-4-6-20250514
     pricing: { input: 15.00, output: 75.00 }
 
   claude-sonnet-4:
     provider: do-ai
     upstream: anthropic-claude-sonnet-4
+    fallbacks:
+      - provider: anthropic
+        upstream: claude-sonnet-4-20250514
     pricing: { input: 3.00, output: 15.00 }
 
   claude-sonnet-4-5:
     provider: do-ai
     upstream: anthropic-claude-4.5-sonnet
+    fallbacks:
+      - provider: anthropic
+        upstream: claude-sonnet-4-5-20250929
     pricing: { input: 3.00, output: 15.00 }
 
   # Open source via DO-AI

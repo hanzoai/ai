@@ -20,13 +20,20 @@ import (
 	"time"
 )
 
+// modelRouteFallback is an alternate provider+upstream for failover.
+type modelRouteFallback struct {
+	providerName  string
+	upstreamModel string
+}
+
 // modelRoute maps a user-facing model name to an upstream provider and model ID.
 type modelRoute struct {
-	providerName  string // DB provider name: "do-ai", "fireworks", "openai-direct"
-	upstreamModel string // Model ID sent to upstream API
-	premium       bool   // Requires positive balance
-	hidden        bool   // If true, excluded from /api/models listing (still callable)
-	ownedBy       string // Override for owned_by in model listing (default: providerName)
+	providerName  string              // DB provider name: "do-ai", "fireworks", "openai-direct"
+	upstreamModel string              // Model ID sent to upstream API
+	fallbacks     []modelRouteFallback // Alternate providers tried on error
+	premium       bool                // Requires positive balance
+	hidden        bool                // If true, excluded from /api/models listing (still callable)
+	ownedBy       string              // Override for owned_by in model listing (default: providerName)
 }
 
 // modelRoutes is the static routing table. Keys are user-facing model names
