@@ -65,12 +65,12 @@ type Task struct {
 	Activity string  `xorm:"varchar(100)" json:"activity"`
 	Grade    string  `xorm:"varchar(100)" json:"grade"`
 
-	Path     string   `xorm:"varchar(100)" json:"path"`
-	Template string   `xorm:"varchar(200)" json:"template"`
-	Scale    string   `xorm:"mediumtext" json:"scale"`
-	Example  string   `xorm:"varchar(200)" json:"example"`
-	Labels   []string `xorm:"mediumtext" json:"labels"`
-	Log      string   `xorm:"mediumtext" json:"log"`
+	Path  string `xorm:"varchar(100)" json:"path"`
+	Scale string `xorm:"varchar(100)" json:"scale"`
+
+	Example string   `xorm:"varchar(200)" json:"example"`
+	Labels  []string `xorm:"mediumtext" json:"labels"`
+	Log     string   `xorm:"mediumtext" json:"log"`
 
 	Result string `xorm:"mediumtext" json:"result"`
 
@@ -151,22 +151,22 @@ func GetTask(id string) (*Task, error) {
 	return getTask(owner, name)
 }
 
-// GetTaskEffectiveScale returns the scale to use for this task: if Template is set, returns the template task's Scale; otherwise task.Scale.
+// GetTaskEffectiveScale returns rubric text: from referenced Scale.Text when Task.Scale is set.
 func GetTaskEffectiveScale(task *Task) (string, error) {
 	if task == nil {
 		return "", fmt.Errorf("task is nil")
 	}
-	if task.Template == "" {
-		return task.Scale, nil
+	if task.Scale == "" {
+		return "", nil
 	}
-	tpl, err := GetTask(task.Template)
+	s, err := GetScale(task.Scale)
 	if err != nil {
 		return "", err
 	}
-	if tpl == nil {
-		return task.Scale, nil
+	if s == nil {
+		return "", nil
 	}
-	return tpl.Scale, nil
+	return s.Text, nil
 }
 
 func UpdateTask(id string, task *Task) (bool, error) {
