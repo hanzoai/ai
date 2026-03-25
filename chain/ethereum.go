@@ -23,6 +23,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hanzoai/cloud/i18n"
+	"github.com/hanzoai/cloud/util"
 	"github.com/luxfi/crypto"
 	"github.com/luxfi/geth"
 	"github.com/luxfi/geth/accounts/abi"
@@ -30,8 +32,6 @@ import (
 	"github.com/luxfi/geth/common"
 	"github.com/luxfi/geth/core/types"
 	"github.com/luxfi/geth/ethclient"
-	"github.com/hanzoai/cloud/i18n"
-	"github.com/hanzoai/cloud/util"
 )
 
 type EthereumClient struct {
