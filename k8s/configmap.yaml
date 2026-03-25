@@ -39,7 +39,6 @@ stringData:
     defaultColorPrimary = "#fd4444"
     logConfig = {"adapter":"console"}
     searchHost = http://search.hanzo.svc.cluster.local:7700
-    # TODO: move searchApiKey to KMS-managed secrets
     searchApiKey = ""
     vectorHost = http://vector.hanzo.svc.cluster.local:6333
     vectorApiKey = ""
