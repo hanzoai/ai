@@ -1,10 +1,11 @@
 # syntax=docker/dockerfile:1
 
 FROM --platform=$BUILDPLATFORM node:20.18.0 AS front
+RUN corepack enable && corepack prepare pnpm@latest --activate
 WORKDIR /web
 COPY ./web .
 ENV NODE_OPTIONS="--max-old-space-size=4096"
-RUN yarn install --frozen-lockfile --network-timeout 1000000 && yarn run build
+RUN pnpm install --frozen-lockfile && pnpm build
 
 
 FROM golang:1.26-alpine AS back
