@@ -93,7 +93,6 @@ func getAllFilePathsInFolder(folder string, fileSuffix string) []string {
 			}
 
 			res = append(res, path)
-			fmt.Println(path, info.Name())
 			return nil
 		})
 	if err != nil {

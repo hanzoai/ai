@@ -20,6 +20,7 @@ import (
 	"strings"
 
 	"github.com/beego/beego"
+	"github.com/beego/beego/v2/core/logs"
 	"github.com/hanzoai/cloud/conf"
 	"github.com/hanzoai/cloud/object"
 	"github.com/hanzoai/cloud/util"
@@ -353,7 +354,7 @@ func (c *ApiController) GetAccount() {
 	disablePreviewMode, _ := beego.AppConfig.Bool("disablePreviewMode")
 	err := util.AppendWebConfigCookie(c.Ctx)
 	if err != nil {
-		fmt.Println(err)
+		logs.Error("AppendWebConfigCookie: %v", err)
 	}
 
 	if !c.isPublicDomain() && disablePreviewMode {
