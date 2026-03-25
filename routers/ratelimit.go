@@ -282,8 +282,6 @@ func isRateLimitExempt(path string) bool {
 		return true
 	case path == "/api/metrics" || path == "/metrics":
 		return true
-	case path == "/api/models":
-		return true
 	case strings.HasPrefix(path, "/api/get-version-info"):
 		return true
 	case strings.HasPrefix(path, "/api/get-system-info"):
