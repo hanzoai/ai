@@ -758,12 +758,9 @@ export function getDefaultAiAvatar() {
   return `${StaticBaseUrl}/img/hanzo-cloud.png`;
 }
 
-export const Countries = [{label: "English", key: "en", country: "US", alt: "English"},
+export const Countries = [
+  {label: "English", key: "en", country: "US", alt: "English"},
   {label: "中文", key: "zh", country: "CN", alt: "中文"},
-  {label: "Español", key: "es", country: "ES", alt: "Español"},
-  {label: "Français", key: "fr", country: "FR", alt: "Français"},
-  {label: "Deutsch", key: "de", country: "DE", alt: "Deutsch"},
-  {label: "日本語", key: "ja", country: "JP", alt: "日本語"},
 ];
 
 export function getOtherProviderInfo() {
@@ -1624,7 +1621,10 @@ export function getModelSubTypeOptions(type) {
     ];
   } else if (type === "MiniMax") {
     return [
-      {id: "abab5-chat", name: "abab5-chat"},
+      {id: "MiniMax-Text-01", name: "MiniMax-Text-01"},
+      {id: "abab6.5s-chat", name: "abab6.5s-chat"},
+      {id: "abab6.5g-chat", name: "abab6.5g-chat"},
+      {id: "abab6.5t-chat", name: "abab6.5t-chat"},
     ];
   } else if (type === "Ollama") {
     return [
