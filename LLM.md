@@ -54,7 +54,7 @@ yarn run build   # Production build
 
 ### Docker
 ```bash
-docker-compose up
+docker compose up
 ```
 
 ## Testing
@@ -111,7 +111,7 @@ cd web && yarn lint
 
 - Backend config: `conf/app.conf` (Beego format)
 - Database: MySQL 8.0+ or MariaDB
-- Default Docker DB: MySQL 8.0.25 via `docker-compose.yml`
+- Default Docker DB: PostgreSQL via `compose.yml`
 
 ## Important Files
 
