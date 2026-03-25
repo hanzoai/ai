@@ -28,18 +28,18 @@ type ModelRoute struct {
 	CreatedTime string `xorm:"varchar(100)" json:"createdTime"`
 	UpdatedTime string `xorm:"varchar(100)" json:"updatedTime"`
 
-	Provider    string `xorm:"varchar(200) notnull" json:"provider"`           // primary provider name
-	Upstream    string `xorm:"varchar(200)" json:"upstream"`                   // upstream model name
-	Fallback1   string `xorm:"varchar(200)" json:"fallback1Provider"`          // fallback provider 1
-	Fallback1Up string `xorm:"varchar(200)" json:"fallback1Upstream"`          // fallback upstream 1
-	Fallback2   string `xorm:"varchar(200)" json:"fallback2Provider"`          // fallback provider 2
-	Fallback2Up string `xorm:"varchar(200)" json:"fallback2Upstream"`          // fallback upstream 2
-	OwnedBy     string `xorm:"varchar(200)" json:"ownedBy"`                   // owned_by override for /api/models listing
-	Premium     bool   `json:"premium"`                                        // requires paid balance
-	Hidden      bool   `json:"hidden"`                                         // excluded from /api/models listing
-	InputPrice  float64 `xorm:"DECIMAL(10, 4)" json:"inputPricePerMillion"`   // custom pricing (0 = use default)
+	Provider    string  `xorm:"varchar(200) notnull" json:"provider"`       // primary provider name
+	Upstream    string  `xorm:"varchar(200)" json:"upstream"`               // upstream model name
+	Fallback1   string  `xorm:"varchar(200)" json:"fallback1Provider"`      // fallback provider 1
+	Fallback1Up string  `xorm:"varchar(200)" json:"fallback1Upstream"`      // fallback upstream 1
+	Fallback2   string  `xorm:"varchar(200)" json:"fallback2Provider"`      // fallback provider 2
+	Fallback2Up string  `xorm:"varchar(200)" json:"fallback2Upstream"`      // fallback upstream 2
+	OwnedBy     string  `xorm:"varchar(200)" json:"ownedBy"`                // owned_by override for /api/models listing
+	Premium     bool    `json:"premium"`                                    // requires paid balance
+	Hidden      bool    `json:"hidden"`                                     // excluded from /api/models listing
+	InputPrice  float64 `xorm:"DECIMAL(10, 4)" json:"inputPricePerMillion"` // custom pricing (0 = use default)
 	OutputPrice float64 `xorm:"DECIMAL(10, 4)" json:"outputPricePerMillion"`
-	Enabled     bool   `json:"enabled"`
+	Enabled     bool    `json:"enabled"`
 }
 
 func (r *ModelRoute) GetId() string {

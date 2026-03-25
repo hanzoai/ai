@@ -23,7 +23,6 @@ import (
 	"os"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/beego/beego/logs"
@@ -35,33 +34,13 @@ import (
 	"github.com/sashabaranov/go-openai"
 )
 
-// balanceEntry caches a user's balance from Commerce to avoid per-request lookups.
-type balanceEntry struct {
-	balance   float64
-	fetchedAt time.Time
-}
-
-var (
-	balanceCache    = make(map[string]*balanceEntry)
-	balanceCacheMu  sync.RWMutex
-	balanceCacheTTL = 30 * time.Second
-)
-
-// getUserBalance returns the current balance for a user, fetching from Commerce
-// and caching briefly. Balance is mutable financial state (not identity) so
-// it is never read from the JWT — always checked against the source of truth.
+// getUserBalance returns the current balance for a user by fetching from Commerce.
+// Balance is mutable financial state (not identity) so it is never read from the
+// JWT — always checked against the source of truth. Caching is handled by the
+// router-level BalanceGate (routers/filter_balance.go); this controller-level
+// call is a defense-in-depth backstop and does not maintain its own cache.
 // The userId should be in "owner/name" format (e.g., "hanzo/alice").
 func getUserBalance(userId string) (float64, error) {
-	key := userId
-
-	balanceCacheMu.RLock()
-	entry, ok := balanceCache[key]
-	balanceCacheMu.RUnlock()
-
-	if ok && time.Since(entry.fetchedAt) < balanceCacheTTL {
-		return entry.balance, nil
-	}
-
 	commerceEndpoint := conf.GetConfigString("commerceEndpoint")
 	if commerceEndpoint == "" {
 		return 0, fmt.Errorf("commerceEndpoint is not configured")
@@ -100,10 +79,6 @@ func getUserBalance(userId string) (float64, error) {
 	// Convert cents to dollars for backward compatibility with existing balance > 0 check
 	balanceDollars := float64(result.Available) / 100.0
 
-	balanceCacheMu.Lock()
-	balanceCache[key] = &balanceEntry{balance: balanceDollars, fetchedAt: time.Now()}
-	balanceCacheMu.Unlock()
-
 	return balanceDollars, nil
 }
 
@@ -132,6 +107,35 @@ func isWidgetKey(token string) bool {
 	return strings.HasPrefix(token, "hz_")
 }
 
+// validateWidgetKey checks a widget key against KMS-stored valid keys.
+// Resolution order: KMS secret "WIDGET_KEYS" (comma-separated list),
+// then WIDGET_KEYS env var, then rejects. This replaces the former
+// hardcoded "hz_widget_public" check.
+func validateWidgetKey(token string) bool {
+	// Try KMS first
+	if keys, err := object.GetKMSSecret("WIDGET_KEYS"); err == nil && keys != "" {
+		for _, k := range strings.Split(keys, ",") {
+			if strings.TrimSpace(k) == token {
+				return true
+			}
+		}
+		return false
+	}
+
+	// Env var fallback (WIDGET_KEYS=hz_widget_public,hz_other_key)
+	if keys := os.Getenv("WIDGET_KEYS"); keys != "" {
+		for _, k := range strings.Split(keys, ",") {
+			if strings.TrimSpace(k) == token {
+				return true
+			}
+		}
+		return false
+	}
+
+	// No keys configured — reject all widget tokens
+	return false
+}
+
 // widgetMaxTokens caps the maximum tokens per widget request to control costs.
 const widgetMaxTokens = 800
 
@@ -151,9 +155,8 @@ var widgetAllowedModels = map[string]bool{
 // Widget keys skip balance checks but are restricted to non-premium models
 // and have a token cap per request.
 func resolveProviderFromWidgetKey(token string, requestedModel string, lang string) (*object.Provider, string, error) {
-	// Validate the widget key. For now, accept any hz_ prefixed key.
-	// In production, these will be validated against KMS-stored keys.
-	if token != "hz_widget_public" {
+	// Validate the widget key against KMS-stored keys, with env var fallback.
+	if !validateWidgetKey(token) {
 		return nil, "", fmt.Errorf("invalid widget key")
 	}
 
@@ -286,9 +289,24 @@ func resolveProviderForUser(user *iamsdk.User, requestedModel string, lang strin
 }
 
 // iamAuthQuery returns the clientId/clientSecret query string for IAM API auth.
+// Credentials are resolved in order: env vars (IAM_CLIENT_ID/IAM_CLIENT_SECRET),
+// KMS secrets, then Beego config (for local dev).
 func iamAuthQuery() string {
 	clientId := conf.GetConfigString("clientId")
 	clientSecret := conf.GetConfigString("clientSecret")
+
+	// Try KMS if config values are empty or placeholders
+	if clientId == "" {
+		if v, err := object.GetKMSSecret("IAM_CLIENT_ID"); err == nil && v != "" {
+			clientId = v
+		}
+	}
+	if clientSecret == "" {
+		if v, err := object.GetKMSSecret("IAM_CLIENT_SECRET"); err == nil && v != "" {
+			clientSecret = v
+		}
+	}
+
 	if clientId != "" && clientSecret != "" {
 		return "&clientId=" + clientId + "&clientSecret=" + clientSecret
 	}
@@ -656,6 +674,9 @@ func (c *ApiController) ChatCompletions() {
 	var upstreamModel string
 	var isPremium bool
 
+	// Resolve org context for per-org model routing and pricing.
+	orgId := c.GetEffectiveOrg()
+
 	if isWidgetKey(token) {
 		// Authenticate via widget key (hz_...) — restricted model access, no balance check
 		var widgetUpstream string
@@ -683,7 +704,7 @@ func (c *ApiController) ChatCompletions() {
 			userId := authUser.Owner + "/" + authUser.Name
 			c.Ctx.Input.SetParam("recordUserId", userId)
 		}
-		if route := resolveModelRoute(request.Model); route != nil {
+		if route := resolveModelRouteForOrg(request.Model, orgId); route != nil {
 			isPremium = route.premium
 		}
 	} else if isJwtToken(token) {
@@ -697,7 +718,7 @@ func (c *ApiController) ChatCompletions() {
 			userId := authUser.Owner + "/" + authUser.Name
 			c.Ctx.Input.SetParam("recordUserId", userId)
 		}
-		if route := resolveModelRoute(request.Model); route != nil {
+		if route := resolveModelRouteForOrg(request.Model, orgId); route != nil {
 			isPremium = route.premium
 		}
 	} else {
@@ -714,7 +735,7 @@ func (c *ApiController) ChatCompletions() {
 		// Apply model routing for sk- keys too. If the route points to a
 		// different provider than the one that owns the API key, switch to
 		// the route's provider so zen/fireworks models work with any key.
-		if route := resolveModelRoute(request.Model); route != nil {
+		if route := resolveModelRouteForOrg(request.Model, orgId); route != nil {
 			upstreamModel = route.upstreamModel
 			isPremium = route.premium
 			if route.providerName != provider.Name {
@@ -803,7 +824,7 @@ func (c *ApiController) ChatCompletions() {
 	knowledge := []*model.RawMessage{}
 
 	// Resolve the route for failover (may have fallback providers)
-	route := resolveModelRoute(request.Model)
+	route := resolveModelRouteForOrg(request.Model, orgId)
 
 	// Call the model provider with failover support
 	var modelResult *model.ModelResult

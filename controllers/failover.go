@@ -70,7 +70,6 @@ func failoverQueryText(
 	lang string,
 	writerHasData func() bool,
 ) (*model.ModelResult, string, error) {
-
 	// Try primary provider
 	result, err := callProvider(route.providerName, route.upstreamModel, question, writer, history, knowledge, lang)
 	if err == nil {
