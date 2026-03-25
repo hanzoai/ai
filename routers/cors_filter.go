@@ -35,6 +35,46 @@ const (
 	headerExposeHeaders    = "Access-Control-Expose-Headers"
 )
 
+// allowedOriginSuffixes is the static allowlist of trusted origin domain
+// suffixes. An origin is allowed if its hostname equals or is a subdomain of
+// one of these entries. This list is evaluated BEFORE the dynamic IAM
+// RedirectUri check so that first-party origins always pass even when IAM is
+// unreachable.
+var allowedOriginSuffixes = []string{
+	"hanzo.ai",
+	"hanzo.app",
+	"hanzo.bot",
+	"hanzo.chat",
+	"hanzo.id",
+	"hanzo.agency",
+	"hanzo.industries",
+	"lux.network",
+	"zoo.ngo",
+	"zenlm.org",
+}
+
+// isStaticAllowedOrigin checks the origin against the hard-coded allowlist
+// and also permits any localhost/127.0.0.1 origin (for local development).
+func isStaticAllowedOrigin(origin string) bool {
+	u, err := url.Parse(origin)
+	if err != nil || u.Host == "" {
+		return false
+	}
+	host := u.Hostname() // strips port
+
+	// Allow localhost / 127.0.0.1 for local dev regardless of port
+	if host == "localhost" || host == "127.0.0.1" {
+		return true
+	}
+
+	for _, suffix := range allowedOriginSuffixes {
+		if host == suffix || strings.HasSuffix(host, "."+suffix) {
+			return true
+		}
+	}
+	return false
+}
+
 func setCorsHeaders(ctx *context.Context, origin string) {
 	ctx.Output.Header(headerAllowOrigin, origin)
 	ctx.Output.Header(headerAllowMethods, "GET, POST, DELETE, PUT, PATCH, OPTIONS")
@@ -53,11 +93,26 @@ func setCorsHeaders(ctx *context.Context, origin string) {
 func CorsFilter(ctx *context.Context) {
 	origin := ctx.Input.Header(headerOrigin)
 
-	if origin == "" || origin == "null" {
+	// Reject empty and literal "null" origins (sandboxed iframes, data: URIs).
+	if origin == "" {
+		return
+	}
+	if origin == "null" {
+		ctx.ResponseWriter.WriteHeader(http.StatusForbidden)
+		responseError(ctx, "CORS error: null origin is not allowed")
 		return
 	}
 
-	// Widget keys (hz_*) are public credentials validated by the gateway's
+	// 1. Static allowlist — always works, even when IAM is down.
+	if isStaticAllowedOrigin(origin) {
+		setCorsHeaders(ctx, origin)
+		if object.CloudHost == "" {
+			object.CloudHost = origin
+		}
+		return
+	}
+
+	// 2. Widget keys (hz_*) are public credentials validated by the gateway's
 	// widget security middleware (origin + rate limit). They don't use IAM
 	// OAuth flows, so skip the RedirectUri-based origin check.
 	if token := parseBearerToken(ctx); strings.HasPrefix(token, "hz_") {
@@ -65,16 +120,10 @@ func CorsFilter(ctx *context.Context) {
 		return
 	}
 
-	// Check if origin is allowed based on IAM application's RedirectUris
-	setCorsHeaders(ctx, origin)
+	// 3. Dynamic check via IAM application RedirectUris.
 	ok, err := isOriginAllowed(origin)
 	if err != nil {
-		// If IAM is not configured, allow the origin for backwards compatibility
-		iamEndpoint := conf.GetConfigString("iamEndpoint")
-		if iamEndpoint == "" {
-			return
-		}
-		// Otherwise, reject the request
+		// If IAM is not configured at all, reject — no more open fallback.
 		ctx.ResponseWriter.WriteHeader(http.StatusForbidden)
 		responseError(ctx, fmt.Sprintf("CORS error: %s, path: %s", err.Error(), ctx.Request.URL.Path))
 		return
@@ -83,8 +132,10 @@ func CorsFilter(ctx *context.Context) {
 	if !ok {
 		ctx.ResponseWriter.WriteHeader(http.StatusForbidden)
 		responseError(ctx, fmt.Sprintf("CORS error: origin [%s] is not allowed, path: %s", origin, ctx.Request.URL.Path))
+		return
 	}
 
+	setCorsHeaders(ctx, origin)
 	if object.CloudHost == "" {
 		object.CloudHost = origin
 	}
@@ -94,7 +145,6 @@ func isOriginAllowed(origin string) (bool, error) {
 	iamEndpoint := conf.GetConfigString("iamEndpoint")
 	iamApplication := conf.GetConfigString("iamApplication")
 
-	// If IAM is not configured, return error to trigger backwards compatibility
 	if iamEndpoint == "" || iamApplication == "" {
 		return false, fmt.Errorf("iamEndpoint or iamApplication is empty")
 	}
@@ -114,7 +164,7 @@ func isOriginAllowed(origin string) (bool, error) {
 			continue
 		}
 		allowedOrigin := parsedUrl.Scheme + "://" + parsedUrl.Host
-		if origin == allowedOrigin || strings.Contains(origin, allowedOrigin) {
+		if origin == allowedOrigin {
 			return true, nil
 		}
 	}
