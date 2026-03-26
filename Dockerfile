@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 FROM --platform=$BUILDPLATFORM node:20.18.0 AS front
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN npm install -g pnpm@10
 WORKDIR /web
 COPY ./web .
 ENV NODE_OPTIONS="--max-old-space-size=4096"
