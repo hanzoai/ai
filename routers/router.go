@@ -306,6 +306,7 @@ func initAPI() {
 
 	beego.Router("/api/chat/completions", &controllers.ApiController{}, "POST:ChatCompletions")
 	beego.Router("/api/completions", &controllers.ApiController{}, "POST:ChatCompletions")
+	beego.Router("/v1/chat/completions", &controllers.ApiController{}, "POST:ChatCompletions")
 	beego.Router("/v1/completions", &controllers.ApiController{}, "POST:ChatCompletions")
 	beego.Router("/api/models", &controllers.ApiController{}, "GET:ListModels")
 	beego.Router("/v1/models", &controllers.ApiController{}, "GET:ListModels")
