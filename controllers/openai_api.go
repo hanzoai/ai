@@ -781,15 +781,26 @@ func (c *ApiController) ChatCompletions() {
 	history := []*model.RawMessage{}
 
 	for _, msg := range request.Messages {
+		// Extract text from Content or MultiContent (array-style content parts)
+		text := msg.Content
+		if text == "" && len(msg.MultiContent) > 0 {
+			var parts []string
+			for _, part := range msg.MultiContent {
+				if part.Type == openai.ChatMessagePartTypeText && part.Text != "" {
+					parts = append(parts, part.Text)
+				}
+			}
+			text = strings.Join(parts, "\n")
+		}
 		switch msg.Role {
 		case "system":
-			systemPrompt = msg.Content
+			systemPrompt = text
 		case "user":
-			question = msg.Content
+			question = text
 		case "assistant":
 			history = append(history, &model.RawMessage{
 				Author: "AI",
-				Text:   msg.Content,
+				Text:   text,
 			})
 		}
 	}
