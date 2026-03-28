@@ -223,6 +223,18 @@ func resolveProviderFromIAMKey(apiKey string, requestedModel string, lang string
 
 	user, err := getUserByAccessKey(accessKey)
 	if err != nil {
+		// IAM may return "password or code is incorrect" for service-account users
+		// (cloud-agent, etc.) due to a known IAM deployment quirk where the
+		// deployed binary handles certain user records differently. As a safe
+		// fallback, we check the key against the CLOUD_AGENT_KEY KMS secret
+		// (env CLOUD_AGENT_KEY as fallback). If it matches, we construct a
+		// minimal user identity and let the Commerce balance check validate
+		// the request as normal — so no billing bypass occurs.
+		if fallbackUser := tryCloudAgentKeyFallback(apiKey); fallbackUser != nil {
+			logs.Warn("[iam-fallback] IAM returned %q for key %s; using cloud-agent fallback identity (owner=%s name=%s)",
+				err.Error(), apiKey, fallbackUser.Owner, fallbackUser.Name)
+			return resolveProviderForUser(fallbackUser, requestedModel, lang)
+		}
 		return nil, nil, "", fmt.Errorf("API key validation failed: %s", err.Error())
 	}
 	if user == nil {
@@ -230,6 +242,29 @@ func resolveProviderFromIAMKey(apiKey string, requestedModel string, lang string
 	}
 
 	return resolveProviderForUser(user, requestedModel, lang)
+}
+
+// tryCloudAgentKeyFallback checks whether apiKey matches the known cloud-agent
+// service key stored in KMS (secret name "CLOUD_AGENT_KEY") with an env var
+// fallback. Returns a minimal *iamsdk.User on match, nil otherwise.
+// This is intentionally narrow: only the exact key stored in KMS is accepted.
+func tryCloudAgentKeyFallback(apiKey string) *iamsdk.User {
+	// Try KMS first
+	var knownKey string
+	if v, err := object.GetKMSSecret("CLOUD_AGENT_KEY"); err == nil && v != "" {
+		knownKey = strings.TrimSpace(v)
+	}
+	// Env var fallback for local dev / bootstrap
+	if knownKey == "" {
+		knownKey = strings.TrimSpace(os.Getenv("CLOUD_AGENT_KEY"))
+	}
+	if knownKey == "" || apiKey != knownKey {
+		return nil
+	}
+	return &iamsdk.User{
+		Owner: "hanzo",
+		Name:  "cloud-agent",
+	}
 }
 
 // resolveProviderForUser is the shared logic for JWT and API key auth paths.
