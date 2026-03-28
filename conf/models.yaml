@@ -192,12 +192,14 @@ models:
         upstream: claude-sonnet-4-5-20250929
     pricing: { input: 3.00, output: 15.00 }
 
+  # claude-sonnet-4-6 is the default model for Hanzo bot agents.
+  # Routes to the same upstream as claude-sonnet-4-5 (the latest available Sonnet).
   claude-sonnet-4-6:
     provider: do-ai
-    upstream: anthropic-claude-sonnet-4.6
+    upstream: anthropic-claude-4.5-sonnet
     fallbacks:
       - provider: anthropic
-        upstream: claude-sonnet-4-6-20260301
+        upstream: claude-sonnet-4-5-20250929
     pricing: { input: 3.00, output: 15.00 }
 
   # Open source via DO-AI
