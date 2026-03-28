@@ -289,39 +289,61 @@ func resolveProviderForUser(user *iamsdk.User, requestedModel string, lang strin
 		return nil, user, "", fmt.Errorf("provider %q not configured in database", route.providerName)
 	}
 
-	// All models require prepaid balance. New accounts receive a $5 starter
-	// credit that works only for non-premium (DO-AI) models.
-	// Premium models (Fireworks, OpenAI Direct, Zen) require the user to
-	// have added funds beyond the starter credit.
-	balance, err := getUserBalance(user.Owner + "/" + user.Name)
-	if err != nil {
-		return nil, user, "", fmt.Errorf("failed to verify account balance: %s", err.Error())
+	// Service accounts configured in BALANCE_EXEMPT_USERS skip balance checks.
+	// This allows internal cloud agent pods to make LLM calls without Commerce setup.
+	exemptUsers := os.Getenv("BALANCE_EXEMPT_USERS")
+	userKey := user.Owner + "/" + user.Name
+	isExempt := false
+	if exemptUsers != "" {
+		for _, u := range strings.Split(exemptUsers, ",") {
+			if strings.TrimSpace(u) == userKey {
+				isExempt = true
+				break
+			}
+		}
 	}
 
-	if balance <= 0 {
-		return nil, user, "", fmt.Errorf(
-			"model %q requires a positive balance. Your current balance is $%.2f. "+
-				"Add funds at https://hanzo.ai/billing",
-			requestedModel, balance,
-		)
+	if !isExempt {
+		// All models require prepaid balance. New accounts receive a $5 starter
+		// credit that works only for non-premium (DO-AI) models.
+		// Premium models (Fireworks, OpenAI Direct, Zen) require the user to
+		// have added funds beyond the starter credit.
+		balance, err := getUserBalance(userKey)
+		if err != nil {
+			return nil, user, "", fmt.Errorf("failed to verify account balance: %s", err.Error())
+		}
+
+		if balance <= 0 {
+			return nil, user, "", fmt.Errorf(
+				"model %q requires a positive balance. Your current balance is $%.2f. "+
+					"Add funds at https://hanzo.ai/billing",
+				requestedModel, balance,
+			)
+		}
 	}
 
 	// Premium models require funds beyond the starter credit.
 	// A balance <= StarterCreditDollars means the user only has free credit.
-	starterCredit := StarterCreditDollars
-	if cfg := GetModelConfig(); cfg != nil {
-		starterCredit = cfg.StarterCreditDollars()
-	}
-	if route.premium && balance <= starterCredit {
-		return nil, user, "", fmt.Errorf(
-			"model %q is a premium model requiring a paid balance. "+
-				"Your current balance ($%.2f) is from the starter credit. "+
-				"Add funds at https://hanzo.ai/billing to access premium models",
-			requestedModel, balance,
-		)
+	if !isExempt {
+		balance, _ := getUserBalance(userKey)
+		starterCredit := StarterCreditDollars
+		if cfg := GetModelConfig(); cfg != nil {
+			starterCredit = cfg.StarterCreditDollars()
+		}
+		if route.premium && balance <= starterCredit {
+			return nil, user, "", fmt.Errorf(
+				"model %q is a premium model requiring a paid balance. "+
+					"Your current balance ($%.2f) is from the starter credit. "+
+					"Add funds at https://hanzo.ai/billing to access premium models",
+				requestedModel, balance,
+			)
+		}
 	}
 
-	user.Balance = balance
+	if !isExempt {
+		bal, _ := getUserBalance(userKey)
+		user.Balance = bal
+	}
 
 	return provider, user, route.upstreamModel, nil
 }
