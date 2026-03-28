@@ -15,10 +15,12 @@
 package controllers
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -762,6 +764,16 @@ func (c *ApiController) ChatCompletions() {
 		provider.SubType = request.Model
 	}
 
+	// ── Tool-calling pass-through ──────────────────────────────────────
+	// When the request includes tools/functions, the QueryText pipeline
+	// cannot handle structured tool calls. Proxy the raw request directly
+	// to the upstream provider's OpenAI-compatible endpoint so the LLM
+	// receives tool definitions and can return tool_calls in the response.
+	if len(request.Tools) > 0 || request.ToolChoice != nil {
+		c.proxyToolRequest(provider, &request, requestStartTime, authUser, isPremium, orgId)
+		return
+	}
+
 	// Inject Zen identity prompt for zen-branded models
 	if zenPrompt := zenIdentityPrompt(request.Model); zenPrompt != "" {
 		hasSystem := len(request.Messages) > 0 && request.Messages[0].Role == "system"
@@ -1021,6 +1033,507 @@ func (c *ApiController) ListModels() {
 	}
 
 	jsonResponse, err := json.Marshal(response)
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+
+	c.Ctx.Output.Header("Content-Type", "application/json")
+	c.Ctx.Output.Body(jsonResponse)
+	c.EnableRender = false
+}
+
+// proxyToolRequest forwards an OpenAI chat completion request that contains
+// tool definitions directly to the upstream provider, bypassing the QueryText
+// pipeline which cannot handle structured tool calls. The raw upstream response
+// (including tool_calls) is streamed back to the client.
+func (c *ApiController) proxyToolRequest(
+	provider *object.Provider,
+	request *openai.ChatCompletionRequest,
+	requestStartTime time.Time,
+	authUser *iamsdk.User,
+	isPremium bool,
+	orgId string,
+) {
+	requestId := util.GenerateUUID()
+
+	// Determine upstream endpoint and auth
+	upstreamURL, apiKey, authHeader := resolveUpstreamEndpoint(provider)
+	if upstreamURL == "" {
+		c.ResponseError("No upstream endpoint configured for provider: " + provider.Name)
+		return
+	}
+
+	// Rewrite model to upstream model name
+	request.Model = provider.SubType
+
+	// For Claude/Anthropic providers, convert to Anthropic Messages API format
+	if provider.Type == "Claude" {
+		c.proxyToolRequestAnthropic(provider, request, requestStartTime, authUser, isPremium, orgId, requestId)
+		return
+	}
+
+	// Marshal the full request (tools included) for OpenAI-compatible providers
+	body, err := json.Marshal(request)
+	if err != nil {
+		c.ResponseError(fmt.Sprintf("Failed to marshal request: %s", err.Error()))
+		return
+	}
+
+	// Build upstream HTTP request
+	req, err := http.NewRequest(http.MethodPost, upstreamURL, bytes.NewReader(body))
+	if err != nil {
+		c.ResponseError(fmt.Sprintf("Failed to create upstream request: %s", err.Error()))
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if authHeader != "" {
+		req.Header.Set("Authorization", authHeader)
+	} else if apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}
+
+	client := &http.Client{Timeout: 120 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		if authUser != nil {
+			errRecord := &usageRecord{
+				Owner:     authUser.Owner,
+				User:      authUser.Owner + "/" + authUser.Name,
+				Model:     request.Model,
+				Provider:  provider.Name,
+				Premium:   isPremium,
+				Stream:    request.Stream,
+				Status:    "error",
+				ErrorMsg:  err.Error(),
+				ClientIP:  c.Ctx.Request.RemoteAddr,
+				RequestID: requestId,
+			}
+			recordUsage(errRecord)
+			recordTrace(errRecord, requestStartTime)
+		}
+		c.ResponseError(fmt.Sprintf("Upstream request failed: %s", err.Error()))
+		return
+	}
+	defer resp.Body.Close()
+
+	// Copy upstream response headers
+	for k, vals := range resp.Header {
+		for _, v := range vals {
+			c.Ctx.ResponseWriter.Header().Add(k, v)
+		}
+	}
+
+	if request.Stream {
+		// Stream: copy SSE events directly
+		c.Ctx.ResponseWriter.Header().Set("Content-Type", "text/event-stream")
+		c.Ctx.ResponseWriter.Header().Set("Cache-Control", "no-cache")
+		c.Ctx.ResponseWriter.Header().Set("Connection", "keep-alive")
+		c.Ctx.ResponseWriter.WriteHeader(resp.StatusCode)
+
+		scanner := bufio.NewScanner(resp.Body)
+		scanner.Buffer(make([]byte, 0, 256*1024), 256*1024)
+
+		for scanner.Scan() {
+			line := scanner.Text()
+			_, _ = fmt.Fprintf(c.Ctx.ResponseWriter, "%s\n", line)
+			c.Ctx.ResponseWriter.Flush()
+		}
+
+		// Record usage (approximate — we don't parse SSE for token counts in streaming)
+		if authUser != nil {
+			successRecord := &usageRecord{
+				Owner:        authUser.Owner,
+				User:         authUser.Owner + "/" + authUser.Name,
+				Organization: authUser.Owner,
+				Model:        request.Model,
+				Provider:     provider.Name,
+				Currency:     "USD",
+				Premium:      isPremium,
+				Stream:       true,
+				Status:       "success",
+				ClientIP:     c.Ctx.Request.RemoteAddr,
+				RequestID:    requestId,
+			}
+			recordUsage(successRecord)
+			recordTrace(successRecord, requestStartTime)
+		}
+	} else {
+		// Non-streaming: read full response, extract token counts, forward
+		respBody, err := io.ReadAll(resp.Body)
+		if err != nil {
+			c.ResponseError(fmt.Sprintf("Failed to read upstream response: %s", err.Error()))
+			return
+		}
+
+		// Try to extract usage for billing
+		var upstreamResp struct {
+			Usage struct {
+				PromptTokens     int `json:"prompt_tokens"`
+				CompletionTokens int `json:"completion_tokens"`
+				TotalTokens      int `json:"total_tokens"`
+			} `json:"usage"`
+		}
+		_ = json.Unmarshal(respBody, &upstreamResp)
+
+		if authUser != nil {
+			successRecord := &usageRecord{
+				Owner:            authUser.Owner,
+				User:             authUser.Owner + "/" + authUser.Name,
+				Organization:     authUser.Owner,
+				Model:            request.Model,
+				Provider:         provider.Name,
+				PromptTokens:     upstreamResp.Usage.PromptTokens,
+				CompletionTokens: upstreamResp.Usage.CompletionTokens,
+				TotalTokens:      upstreamResp.Usage.TotalTokens,
+				Currency:         "USD",
+				Premium:          isPremium,
+				Stream:           false,
+				Status:           "success",
+				ClientIP:         c.Ctx.Request.RemoteAddr,
+				RequestID:        requestId,
+			}
+			recordUsage(successRecord)
+			recordTrace(successRecord, requestStartTime)
+		}
+
+		c.Ctx.ResponseWriter.WriteHeader(resp.StatusCode)
+		c.Ctx.Output.Body(respBody)
+	}
+	c.EnableRender = false
+}
+
+// resolveUpstreamEndpoint returns the chat completions URL, API key, and
+// optional full Authorization header for the given provider.
+func resolveUpstreamEndpoint(provider *object.Provider) (url string, apiKey string, authHeader string) {
+	apiKey = provider.ClientSecret
+
+	switch provider.Type {
+	case "OpenAI":
+		baseURL := provider.ProviderUrl
+		if baseURL == "" {
+			baseURL = "https://api.openai.com/v1"
+		}
+		baseURL = strings.TrimRight(baseURL, "/")
+		if !strings.HasSuffix(baseURL, "/v1") {
+			baseURL += "/v1"
+		}
+		return baseURL + "/chat/completions", apiKey, ""
+
+	case "Fireworks":
+		return "https://api.fireworks.ai/inference/v1/chat/completions", apiKey, ""
+
+	case "Grok":
+		return "https://api.x.ai/v1/chat/completions", apiKey, ""
+
+	case "OpenRouter":
+		return "https://openrouter.ai/api/v1/chat/completions", apiKey, ""
+
+	case "Moonshot":
+		return "https://api.moonshot.cn/v1/chat/completions", apiKey, ""
+
+	case "Gemini":
+		// Gemini uses a different URL pattern but supports OpenAI compatibility
+		return fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"), apiKey, ""
+
+	case "Azure":
+		baseURL := strings.TrimRight(provider.ProviderUrl, "/")
+		apiVersion := provider.ApiVersion
+		if apiVersion == "" {
+			apiVersion = "2024-02-01"
+		}
+		return fmt.Sprintf("%s/openai/deployments/%s/chat/completions?api-version=%s",
+			baseURL, provider.SubType, apiVersion), "", "api-key " + apiKey
+
+	case "Local", "Ollama", "DigitalOcean":
+		// Local/compatible providers with custom URLs
+		baseURL := strings.TrimRight(provider.ProviderUrl, "/")
+		if baseURL == "" {
+			return "", "", ""
+		}
+		// Ensure /v1/chat/completions path
+		if strings.HasSuffix(baseURL, "/v1") {
+			return baseURL + "/chat/completions", apiKey, ""
+		}
+		return baseURL + "/v1/chat/completions", apiKey, ""
+
+	default:
+		// For any OpenAI-compatible provider with a custom URL
+		if provider.ProviderUrl != "" {
+			baseURL := strings.TrimRight(provider.ProviderUrl, "/")
+			return baseURL + "/chat/completions", apiKey, ""
+		}
+		return "", "", ""
+	}
+}
+
+// proxyToolRequestAnthropic handles tool-calling requests for Claude/Anthropic
+// providers by converting the OpenAI format to Anthropic Messages API format
+// and converting the response back.
+func (c *ApiController) proxyToolRequestAnthropic(
+	provider *object.Provider,
+	request *openai.ChatCompletionRequest,
+	requestStartTime time.Time,
+	authUser *iamsdk.User,
+	isPremium bool,
+	orgId string,
+	requestId string,
+) {
+	apiKey := provider.ClientSecret
+	baseURL := provider.ProviderUrl
+	if baseURL == "" {
+		baseURL = "https://api.anthropic.com"
+	}
+	baseURL = strings.TrimRight(baseURL, "/")
+
+	// Convert OpenAI messages to Anthropic format
+	var systemPrompt string
+	anthropicMessages := []map[string]interface{}{}
+
+	for _, msg := range request.Messages {
+		if msg.Role == "system" {
+			systemPrompt = msg.Content
+			continue
+		}
+
+		anthropicMsg := map[string]interface{}{
+			"role": msg.Role,
+		}
+
+		if msg.Role == "tool" {
+			// Tool result message
+			anthropicMsg["role"] = "user"
+			anthropicMsg["content"] = []map[string]interface{}{
+				{
+					"type":        "tool_result",
+					"tool_use_id": msg.ToolCallID,
+					"content":     msg.Content,
+				},
+			}
+		} else if len(msg.ToolCalls) > 0 {
+			// Assistant message with tool calls
+			content := []map[string]interface{}{}
+			if msg.Content != "" {
+				content = append(content, map[string]interface{}{
+					"type": "text",
+					"text": msg.Content,
+				})
+			}
+			for _, tc := range msg.ToolCalls {
+				var inputObj interface{}
+				_ = json.Unmarshal([]byte(tc.Function.Arguments), &inputObj)
+				if inputObj == nil {
+					inputObj = map[string]interface{}{}
+				}
+				content = append(content, map[string]interface{}{
+					"type":  "tool_use",
+					"id":    tc.ID,
+					"name":  tc.Function.Name,
+					"input": inputObj,
+				})
+			}
+			anthropicMsg["content"] = content
+		} else if len(msg.MultiContent) > 0 {
+			content := []map[string]interface{}{}
+			for _, part := range msg.MultiContent {
+				if part.Type == openai.ChatMessagePartTypeText {
+					content = append(content, map[string]interface{}{
+						"type": "text",
+						"text": part.Text,
+					})
+				}
+			}
+			anthropicMsg["content"] = content
+		} else {
+			anthropicMsg["content"] = msg.Content
+		}
+
+		anthropicMessages = append(anthropicMessages, anthropicMsg)
+	}
+
+	// Convert OpenAI tools to Anthropic tool format
+	anthropicTools := []map[string]interface{}{}
+	for _, tool := range request.Tools {
+		if tool.Type == openai.ToolTypeFunction {
+			anthropicTool := map[string]interface{}{
+				"name":        tool.Function.Name,
+				"description": tool.Function.Description,
+			}
+			if tool.Function.Parameters != nil {
+				var params interface{}
+				raw, _ := json.Marshal(tool.Function.Parameters)
+				_ = json.Unmarshal(raw, &params)
+				anthropicTool["input_schema"] = params
+			} else {
+				anthropicTool["input_schema"] = map[string]interface{}{
+					"type":       "object",
+					"properties": map[string]interface{}{},
+				}
+			}
+			anthropicTools = append(anthropicTools, anthropicTool)
+		}
+	}
+
+	// Build Anthropic request
+	anthropicReq := map[string]interface{}{
+		"model":      request.Model,
+		"messages":   anthropicMessages,
+		"max_tokens": 4096,
+		"tools":      anthropicTools,
+	}
+	if systemPrompt != "" {
+		anthropicReq["system"] = systemPrompt
+	}
+	if request.MaxTokens > 0 {
+		anthropicReq["max_tokens"] = request.MaxTokens
+	}
+	if request.Temperature > 0 {
+		anthropicReq["temperature"] = request.Temperature
+	}
+	if request.Stream {
+		anthropicReq["stream"] = true
+	}
+
+	body, err := json.Marshal(anthropicReq)
+	if err != nil {
+		c.ResponseError(fmt.Sprintf("Failed to marshal Anthropic request: %s", err.Error()))
+		return
+	}
+
+	req, err := http.NewRequest(http.MethodPost, baseURL+"/v1/messages", bytes.NewReader(body))
+	if err != nil {
+		c.ResponseError(fmt.Sprintf("Failed to create Anthropic request: %s", err.Error()))
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-api-key", apiKey)
+	req.Header.Set("anthropic-version", "2023-06-01")
+
+	client := &http.Client{Timeout: 120 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		c.ResponseError(fmt.Sprintf("Anthropic request failed: %s", err.Error()))
+		return
+	}
+	defer resp.Body.Close()
+
+	if request.Stream {
+		// For streaming, we need to convert Anthropic SSE to OpenAI SSE format
+		// This is complex — for now, collect full response and send as non-stream
+		// TODO: implement true SSE conversion for Anthropic streaming
+	}
+
+	// Read full Anthropic response
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		c.ResponseError(fmt.Sprintf("Failed to read Anthropic response: %s", err.Error()))
+		return
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		logs.Error("[proxyToolRequest] Anthropic error %d: %s", resp.StatusCode, string(respBody))
+		c.Ctx.ResponseWriter.WriteHeader(resp.StatusCode)
+		c.Ctx.Output.Body(respBody)
+		c.EnableRender = false
+		return
+	}
+
+	// Parse Anthropic response
+	var anthropicResp struct {
+		ID      string `json:"id"`
+		Content []struct {
+			Type  string          `json:"type"`
+			Text  string          `json:"text,omitempty"`
+			ID    string          `json:"id,omitempty"`
+			Name  string          `json:"name,omitempty"`
+			Input json.RawMessage `json:"input,omitempty"`
+		} `json:"content"`
+		StopReason string `json:"stop_reason"`
+		Usage      struct {
+			InputTokens  int `json:"input_tokens"`
+			OutputTokens int `json:"output_tokens"`
+		} `json:"usage"`
+	}
+	if err := json.Unmarshal(respBody, &anthropicResp); err != nil {
+		c.ResponseError(fmt.Sprintf("Failed to parse Anthropic response: %s", err.Error()))
+		return
+	}
+
+	// Convert Anthropic response to OpenAI format
+	var contentText string
+	var toolCalls []openai.ToolCall
+	toolCallIdx := 0
+
+	for _, block := range anthropicResp.Content {
+		switch block.Type {
+		case "text":
+			contentText += block.Text
+		case "tool_use":
+			tc := openai.ToolCall{
+				Index: &toolCallIdx,
+				ID:    block.ID,
+				Type:  openai.ToolTypeFunction,
+				Function: openai.FunctionCall{
+					Name:      block.Name,
+					Arguments: string(block.Input),
+				},
+			}
+			toolCalls = append(toolCalls, tc)
+			toolCallIdx++
+		}
+	}
+
+	finishReason := openai.FinishReasonStop
+	if anthropicResp.StopReason == "tool_use" {
+		finishReason = openai.FinishReasonToolCalls
+	}
+
+	openaiResp := openai.ChatCompletionResponse{
+		ID:      "chatcmpl-" + requestId,
+		Object:  "chat.completion",
+		Created: util.GetCurrentUnixTime(),
+		Model:   request.Model,
+		Choices: []openai.ChatCompletionChoice{
+			{
+				Index: 0,
+				Message: openai.ChatCompletionMessage{
+					Role:      "assistant",
+					Content:   contentText,
+					ToolCalls: toolCalls,
+				},
+				FinishReason: finishReason,
+			},
+		},
+		Usage: openai.Usage{
+			PromptTokens:     anthropicResp.Usage.InputTokens,
+			CompletionTokens: anthropicResp.Usage.OutputTokens,
+			TotalTokens:      anthropicResp.Usage.InputTokens + anthropicResp.Usage.OutputTokens,
+		},
+	}
+
+	// Record usage
+	if authUser != nil {
+		successRecord := &usageRecord{
+			Owner:            authUser.Owner,
+			User:             authUser.Owner + "/" + authUser.Name,
+			Organization:     authUser.Owner,
+			Model:            request.Model,
+			Provider:         provider.Name,
+			PromptTokens:     anthropicResp.Usage.InputTokens,
+			CompletionTokens: anthropicResp.Usage.OutputTokens,
+			TotalTokens:      anthropicResp.Usage.InputTokens + anthropicResp.Usage.OutputTokens,
+			Currency:         "USD",
+			Premium:          isPremium,
+			Stream:           false,
+			Status:           "success",
+			ClientIP:         c.Ctx.Request.RemoteAddr,
+			RequestID:        requestId,
+		}
+		recordUsage(successRecord)
+		recordTrace(successRecord, requestStartTime)
+	}
+
+	jsonResponse, err := json.Marshal(openaiResp)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
