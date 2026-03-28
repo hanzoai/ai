@@ -20,6 +20,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -29,6 +30,25 @@ import (
 	"github.com/hanzoai/cloud/conf"
 	iamsdk "github.com/hanzoid/go-sdk/casdoorsdk"
 )
+
+// ── Service key exemption ────────────────────────────────────────────────────
+
+// balanceExemptKeys holds API keys that bypass balance checks (e.g. internal
+// service accounts). Populated once at init from the BALANCE_EXEMPT_KEYS env
+// var (comma-separated list of keys).
+var balanceExemptKeys map[string]struct{}
+
+func init() {
+	balanceExemptKeys = make(map[string]struct{})
+	if raw := os.Getenv("BALANCE_EXEMPT_KEYS"); raw != "" {
+		for _, k := range strings.Split(raw, ",") {
+			k = strings.TrimSpace(k)
+			if k != "" {
+				balanceExemptKeys[k] = struct{}{}
+			}
+		}
+	}
+}
 
 // ── Balance gate configuration ──────────────────────────────────────────────
 
@@ -226,6 +246,11 @@ func resolveUserKey(ctx *context.Context) string {
 	// Provider keys (sk-), publishable keys (pk-), and widget keys (hz_)
 	// don't map to IAM users with Commerce balances — skip.
 	if strings.HasPrefix(token, "sk-") || strings.HasPrefix(token, "pk-") || strings.HasPrefix(token, "hz_") {
+		return ""
+	}
+
+	// Exempt service account keys (e.g. cloud agent internal keys).
+	if _, exempt := balanceExemptKeys[token]; exempt {
 		return ""
 	}
 
