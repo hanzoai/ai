@@ -66,6 +66,7 @@ var modelRoutes = map[string]modelRoute{
 	"claude-opus-4-6":         {providerName: "do-ai", upstreamModel: "anthropic-claude-opus-4.6"},
 	"claude-sonnet-4":         {providerName: "do-ai", upstreamModel: "anthropic-claude-sonnet-4"},
 	"claude-sonnet-4-5":       {providerName: "do-ai", upstreamModel: "anthropic-claude-4.5-sonnet"},
+	"claude-sonnet-4-6":       {providerName: "do-ai", upstreamModel: "anthropic-claude-sonnet-4.6"},
 	"deepseek-r1-distill-70b": {providerName: "do-ai", upstreamModel: "deepseek-r1-distill-llama-70b"},
 	"llama-3.1-8b":            {providerName: "do-ai", upstreamModel: "llama3-8b-instruct"},
 	"llama-3.3-70b":           {providerName: "do-ai", upstreamModel: "llama3.3-70b-instruct"},
@@ -81,6 +82,7 @@ var modelRoutes = map[string]modelRoute{
 	"anthropic/claude-haiku-4-5-20251001":  {providerName: "do-ai", upstreamModel: "anthropic-claude-haiku-4.5", hidden: true},
 	"anthropic/claude-opus-4-6":            {providerName: "do-ai", upstreamModel: "anthropic-claude-opus-4.6", hidden: true},
 	"anthropic/claude-sonnet-4-5-20250929": {providerName: "do-ai", upstreamModel: "anthropic-claude-4.5-sonnet", hidden: true},
+	"anthropic/claude-sonnet-4-6":          {providerName: "do-ai", upstreamModel: "anthropic-claude-sonnet-4.6", hidden: true},
 
 	// ── Fireworks premium models (17) ── hidden from listing, still callable ──
 	"fireworks/cogito-671b":           {providerName: "fireworks", upstreamModel: "accounts/cogito/models/cogito-671b-v2-p1", premium: true, hidden: true},
