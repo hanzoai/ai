@@ -1057,19 +1057,19 @@ func (c *ApiController) proxyToolRequest(
 ) {
 	requestId := util.GenerateUUID()
 
-	// Determine upstream endpoint and auth
-	upstreamURL, apiKey, authHeader := resolveUpstreamEndpoint(provider)
-	if upstreamURL == "" {
-		c.ResponseError("No upstream endpoint configured for provider: " + provider.Name)
-		return
-	}
-
 	// Rewrite model to upstream model name
 	request.Model = provider.SubType
 
 	// For Claude/Anthropic providers, convert to Anthropic Messages API format
 	if provider.Type == "Claude" {
 		c.proxyToolRequestAnthropic(provider, request, requestStartTime, authUser, isPremium, orgId, requestId)
+		return
+	}
+
+	// Determine upstream endpoint and auth
+	upstreamURL, apiKey, authHeader := resolveUpstreamEndpoint(provider)
+	if upstreamURL == "" {
+		c.ResponseError("No upstream endpoint configured for provider: " + provider.Name)
 		return
 	}
 
