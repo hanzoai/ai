@@ -76,6 +76,11 @@ func isStaticAllowedOrigin(origin string) bool {
 }
 
 func setCorsHeaders(ctx *context.Context, origin string) {
+	// Skip if the upstream proxy (KrakenD gateway) already set CORS headers
+	// to avoid duplicate Access-Control-Allow-Origin which browsers reject.
+	if existing := ctx.ResponseWriter.Header().Get(headerAllowOrigin); existing != "" {
+		return
+	}
 	ctx.Output.Header(headerAllowOrigin, origin)
 	ctx.Output.Header(headerAllowMethods, "GET, POST, DELETE, PUT, PATCH, OPTIONS")
 	ctx.Output.Header(
