@@ -76,9 +76,13 @@ func isStaticAllowedOrigin(origin string) bool {
 }
 
 func setCorsHeaders(ctx *context.Context, origin string) {
-	// Skip if the upstream proxy (KrakenD gateway) already set CORS headers
-	// to avoid duplicate Access-Control-Allow-Origin which browsers reject.
-	if existing := ctx.ResponseWriter.Header().Get(headerAllowOrigin); existing != "" {
+	// Skip CORS when behind the KrakenD API gateway, which adds its own
+	// CORS headers.  KrakenD forwards requests with X-Forwarded-Host set;
+	// direct requests to the cloud-api service don't have this header.
+	if ctx.Input.Header("X-Forwarded-Host") != "" {
+		if ctx.Input.Method() == "OPTIONS" {
+			ctx.ResponseWriter.WriteHeader(http.StatusOK)
+		}
 		return
 	}
 	ctx.Output.Header(headerAllowOrigin, origin)
