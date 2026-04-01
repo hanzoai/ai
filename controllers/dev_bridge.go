@@ -31,6 +31,9 @@ import (
 )
 
 const maxBridgeConnsPerUser = 5
+const maxBridgeConnsGlobal = 50
+
+var globalBridgeConns int64
 
 // devBridgeUpgrader is a dedicated WebSocket upgrader for DevBridge with
 // origin checking to prevent cross-site WebSocket hijacking. The global
@@ -141,6 +144,16 @@ func (c *ApiController) DevBridge() {
 		return
 	}
 
+	// --- global connection limit ---
+	if atomic.AddInt64(&globalBridgeConns, 1) > maxBridgeConnsGlobal {
+		atomic.AddInt64(&globalBridgeConns, -1)
+		logs.Warn("DevBridge: global connection limit exceeded")
+		ctx.ResponseWriter.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = ctx.ResponseWriter.Write([]byte(`{"error":"server at capacity"}`))
+		return
+	}
+	defer atomic.AddInt64(&globalBridgeConns, -1)
+
 	// --- per-user connection limit ---
 	userKey := GetUserName(user)
 	counterVal, _ := bridgeConns.LoadOrStore(userKey, new(int64))
@@ -161,7 +174,12 @@ func (c *ApiController) DevBridge() {
 	}
 	defer ws.Close()
 
-	cmd := exec.Command("hanzo-app-server")
+	// Resolve binary path from env or PATH.
+	appServerBin := os.Getenv("HANZO_APP_SERVER_BIN")
+	if appServerBin == "" {
+		appServerBin = "hanzo-app-server"
+	}
+	cmd := exec.Command(appServerBin)
 	cmd.Dir = safeCwd
 
 	stdin, err := cmd.StdinPipe()
