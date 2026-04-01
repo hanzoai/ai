@@ -108,9 +108,13 @@ func validateCwd(raw string) (string, error) {
 }
 
 // DevBridge upgrades to WebSocket and bridges JSON-RPC messages between
-// the browser and a hanzo-app-server process over stdio.
+// the browser and a hanzo-app-server instance.
+//
+// In local mode (default): spawns hanzo-app-server as a child process.
+// In remote mode (?remote=host:port): proxies to a remote app-server via TCP.
 //
 // GET /api/dev-bridge?cwd=/path/to/project
+// GET /api/dev-bridge?remote=host:port&cwd=/path/to/project
 func (c *ApiController) DevBridge() {
 	c.EnableRender = false
 	ctx := c.Ctx
