@@ -30,8 +30,10 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-const maxBridgeConnsPerUser = 5
-const maxBridgeConnsGlobal = 50
+const (
+	maxBridgeConnsPerUser = 5
+	maxBridgeConnsGlobal  = 50
+)
 
 var globalBridgeConns int64
 
