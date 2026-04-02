@@ -145,8 +145,14 @@ func (w *OpenAIWriter) Close(promptTokens, completionTokens, totalTokens int) er
 			return err
 		}
 
-		// Send usage information as a custom message
-		usage := map[string]interface{}{
+		// Send usage information as a proper OpenAI SSE chunk so downstream
+		// OpenAI SDK clients (v6+) can parse it correctly.
+		usageChunk := map[string]interface{}{
+			"id":      "chatcmpl-" + w.RequestID,
+			"object":  "chat.completion.chunk",
+			"created": util.GetCurrentUnixTime(),
+			"model":   w.Model,
+			"choices": []interface{}{},
 			"usage": openai.Usage{
 				PromptTokens:     promptTokens,
 				CompletionTokens: completionTokens,
@@ -154,7 +160,7 @@ func (w *OpenAIWriter) Close(promptTokens, completionTokens, totalTokens int) er
 			},
 		}
 
-		usageData, err := json.Marshal(usage)
+		usageData, err := json.Marshal(usageChunk)
 		if err != nil {
 			return err
 		}
