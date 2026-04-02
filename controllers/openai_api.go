@@ -1191,8 +1191,51 @@ func (c *ApiController) proxyToolRequest(
 		scanner := bufio.NewScanner(resp.Body)
 		scanner.Buffer(make([]byte, 0, 256*1024), 256*1024)
 
+		// Track the last seen chunk ID/model so we can fix bare usage chunks.
+		var lastChunkID, lastChunkModel string
+
 		for scanner.Scan() {
 			line := scanner.Text()
+
+			// Fix bare usage-only SSE chunks (missing id/object/choices) so
+			// downstream OpenAI SDK clients can parse them correctly.
+			if strings.HasPrefix(line, "data: {\"usage\"") && !strings.Contains(line, "\"choices\"") {
+				raw := strings.TrimPrefix(line, "data: ")
+				var usageChunk map[string]interface{}
+				if json.Unmarshal([]byte(raw), &usageChunk) == nil {
+					chunkID := lastChunkID
+					if chunkID == "" {
+						chunkID = "chatcmpl-" + requestId
+					}
+					chunkModel := lastChunkModel
+					if chunkModel == "" {
+						chunkModel = request.Model
+					}
+					usageChunk["id"] = chunkID
+					usageChunk["object"] = "chat.completion.chunk"
+					usageChunk["created"] = time.Now().Unix()
+					usageChunk["model"] = chunkModel
+					usageChunk["choices"] = []interface{}{}
+					if fixed, err := json.Marshal(usageChunk); err == nil {
+						line = "data: " + string(fixed)
+					}
+				}
+			} else if strings.HasPrefix(line, "data: {") && strings.Contains(line, "\"id\"") {
+				// Extract chunk ID/model for reuse in usage chunk
+				var peek struct {
+					ID    string `json:"id"`
+					Model string `json:"model"`
+				}
+				if json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &peek) == nil {
+					if peek.ID != "" {
+						lastChunkID = peek.ID
+					}
+					if peek.Model != "" {
+						lastChunkModel = peek.Model
+					}
+				}
+			}
+
 			_, _ = fmt.Fprintf(c.Ctx.ResponseWriter, "%s\n", line)
 			c.Ctx.ResponseWriter.Flush()
 		}
