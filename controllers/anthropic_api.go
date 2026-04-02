@@ -249,6 +249,7 @@ func (w *AnthropicWriter) Close(promptTokens, completionTokens, totalTokens int)
 			"stop_reason": "end_turn",
 		},
 		"usage": map[string]interface{}{
+			"input_tokens":  promptTokens,
 			"output_tokens": completionTokens,
 		},
 	}
