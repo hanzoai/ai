@@ -11,27 +11,20 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
 package object
-
 import (
 	"fmt"
 	"time"
-
 	"github.com/hanzoai/cloud/i18n"
 	"github.com/hanzoai/cloud/model"
 )
-
 func GetRangeUsages(rangeType string, count int, user string, storeName string, lang string) ([]*Usage, error) {
 	messages, err := GetGlobalMessagesByStoreName(storeName)
 	if err != nil {
 		return nil, err
 	}
-
 	now := time.Now()
-
 	var startDateTime time.Time
-
 	switch rangeType {
 	case "Hour":
 		startDateTime = now.Truncate(time.Hour).Add(-time.Hour * time.Duration(count-1))
@@ -49,12 +42,10 @@ func GetRangeUsages(rangeType string, count int, user string, storeName string, 
 	default:
 		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:invalid range type: %s"), rangeType))
 	}
-
 	usages := make([]*Usage, count)
 	for i := range usages {
 		usages[i] = &Usage{}
 	}
-
 	// Separate sets for each bucket
 	userSets := make([]map[string]struct{}, count)
 	chatSets := make([]map[string]struct{}, count)
@@ -62,14 +53,12 @@ func GetRangeUsages(rangeType string, count int, user string, storeName string, 
 		userSets[i] = make(map[string]struct{})
 		chatSets[i] = make(map[string]struct{})
 	}
-
 	for _, message := range messages {
 		if !(user == "All" || message.User == user) {
 			continue
 		}
 		messageTime, _ := time.Parse(time.RFC3339, message.CreatedTime)
 		bucketIndex := -1
-
 		switch rangeType {
 		case "Hour":
 			bucketIndex = int(messageTime.Sub(startDateTime).Hours())
@@ -81,7 +70,6 @@ func GetRangeUsages(rangeType string, count int, user string, storeName string, 
 			monthDiff := (messageTime.Year()-startDateTime.Year())*12 + int(messageTime.Month()-startDateTime.Month())
 			bucketIndex = monthDiff
 		}
-
 		if bucketIndex >= 0 && bucketIndex < count {
 			currentUsage := usages[bucketIndex]
 			if _, exists := userSets[bucketIndex][message.User]; !exists {
@@ -100,7 +88,6 @@ func GetRangeUsages(rangeType string, count int, user string, storeName string, 
 			}
 		}
 	}
-
 	// Assign dates and refine price for each usage after calculations are complete
 	for i, usage := range usages {
 		var dateLabel string
@@ -117,6 +104,5 @@ func GetRangeUsages(rangeType string, count int, user string, storeName string, 
 		usage.Date = dateLabel
 		usage.Price = model.RefinePrice(usage.Price)
 	}
-
 	return usages, nil
 }

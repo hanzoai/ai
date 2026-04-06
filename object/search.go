@@ -11,17 +11,13 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
 package object
-
 import (
 	"github.com/hanzoai/cloud/embedding"
 )
-
 type SearchProvider interface {
 	Search(relatedStores []string, embeddingProviderName string, embeddingProviderObj embedding.EmbeddingProvider, modelProviderName string, text string, knowledgeCount int, lang string) ([]Vector, *embedding.EmbeddingResult, error)
 }
-
 func GetSearchProvider(typ string, owner string) (SearchProvider, error) {
 	var p SearchProvider
 	var err error
@@ -32,7 +28,6 @@ func GetSearchProvider(typ string, owner string) (SearchProvider, error) {
 	} else {
 		p, err = NewDefaultSearchProvider(owner)
 	}
-
 	if err != nil {
 		return nil, err
 	}

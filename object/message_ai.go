@@ -11,27 +11,18 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
 package object
-
 import "fmt"
-
 func GetRefinedQuestion(prompt string, knowledge string, question string) string {
 	if knowledge == "" {
 		return question
 	}
-
 	if prompt == "" {
 		prompt = `You have some background knowledge: 
-
 %s
-
 Now, please answer the following question based on the provided information:
-
 %s
-
 (Please answer directly in the questioner's language without using phrases like "the answer is" or "the question is.". Empty answer is not allowed. If the text is not question, you should ask for a question politely.)`
 	}
-
 	return fmt.Sprintf(prompt, knowledge, question)
 }

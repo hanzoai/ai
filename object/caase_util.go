@@ -11,23 +11,18 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
 package object
-
 import (
 	iamsdk "github.com/hanzoid/go-sdk/casdoorsdk"
 )
-
 func FilterCaasesByUser(user *iamsdk.User, caases []*Caase) []*Caase {
 	if user == nil {
 		return []*Caase{}
 	}
-
 	// Admins can view all cases
 	if IsAdmin(user) {
 		return caases
 	}
-
 	// Doctors can only view their own cases (where they are the doctor)
 	if IsDoctor(user) {
 		filtered := []*Caase{}
@@ -38,7 +33,6 @@ func FilterCaasesByUser(user *iamsdk.User, caases []*Caase) []*Caase {
 		}
 		return filtered
 	}
-
 	// Patients can only view their own cases
 	if IsPatient(user) {
 		filtered := []*Caase{}
@@ -49,6 +43,5 @@ func FilterCaasesByUser(user *iamsdk.User, caases []*Caase) []*Caase {
 		}
 		return filtered
 	}
-
 	return []*Caase{}
 }

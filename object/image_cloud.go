@@ -11,13 +11,10 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
 package object
-
 import (
 	"github.com/hanzoai/cloud/pkgimage"
 )
-
 func getImageFromService(owner string, provider string, clientImage *pkgimage.Image) *Image {
 	return &Image{
 		Owner:                   owner,
@@ -54,14 +51,12 @@ func getImageFromService(owner string, provider string, clientImage *pkgimage.Im
 		IsPublic:                clientImage.IsPublic,
 	}
 }
-
 func getImagesCloud(owner string, lang string) ([]*Image, error) {
 	images := []*Image{}
 	providers, err := getActiveCloudProviders(owner)
 	if err != nil {
 		return nil, err
 	}
-
 	for _, provider := range providers {
 		client, err2 := pkgimage.NewImageClient(provider.Type, provider.ClientId, provider.ClientSecret, provider.Region, lang)
 		if len(images) > 0 && err2 != nil {
@@ -70,34 +65,26 @@ func getImagesCloud(owner string, lang string) ([]*Image, error) {
 		if err2 != nil {
 			return nil, err2
 		}
-
 		clientImages, err2 := client.GetImages()
-
 		for _, clientImage := range clientImages {
 			images = append(images, getImageFromService(owner, provider.Type, clientImage))
 		}
-
 	}
-
 	return images, nil
 }
-
 func SyncImagesCloud(owner string, lang string) (bool, error) {
 	images, err := getImagesCloud(owner, lang)
 	if err != nil {
 		return false, err
 	}
-
 	dbImages, err := GetImages(owner)
 	if err != nil {
 		return false, err
 	}
-
 	dbImageMap := map[string]*Image{}
 	for _, dbImage := range dbImages {
 		dbImageMap[dbImage.GetId()] = dbImage
 	}
-
 	for _, image := range images {
 		if dbImage, ok := dbImageMap[image.GetId()]; ok {
 			image.RemoteProtocol = dbImage.RemoteProtocol
@@ -106,20 +93,16 @@ func SyncImagesCloud(owner string, lang string) (bool, error) {
 			image.RemotePassword = dbImage.RemotePassword
 		}
 	}
-
 	_, err = deleteImages(owner)
 	if err != nil {
 		return false, err
 	}
-
 	if len(images) == 0 {
 		return false, nil
 	}
-
 	affected, err := addImages(images)
 	return affected, err
 }
-
 //func updateImageCloud(oldImage *Image, image *Image) (bool, error) {
 //	provider, err := getProvider(oldImage.Owner, oldImage.Provider)
 //	if err != nil {

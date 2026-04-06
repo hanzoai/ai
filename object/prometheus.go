@@ -11,65 +11,53 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
 package object
-
 import (
 	"fmt"
 	"time"
-
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	io_prometheus_client "github.com/prometheus/client_model/go"
 )
-
 type PrometheusInfo struct {
 	ApiThroughput   []GaugeVecInfo     `json:"apiThroughput"`
 	ApiLatency      []HistogramVecInfo `json:"apiLatency"`
 	TotalThroughput float64            `json:"totalThroughput"`
 }
-
 type GaugeVecInfo struct {
 	Method     string  `json:"method"`
 	Name       string  `json:"name"`
 	Throughput float64 `json:"throughput"`
 }
-
 type HistogramVecInfo struct {
 	Method  string `json:"method"`
 	Name    string `json:"name"`
 	Count   uint64 `json:"count"`
 	Latency string `json:"latency"`
 }
-
 var (
 	// ApiThroughput uses *prometheus.GaugeVec directly because Reset() is needed
 	ApiThroughput = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "cloud_api_throughput",
 		Help: "The throughput of each api access",
 	}, []string{"path", "method"})
-
 	ApiLatency = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Name: "cloud_api_latency",
 		Help: "API processing latency in milliseconds",
 	}, []string{"path", "method"})
-
 	CpuUsage = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "cloud_cpu_usage",
 		Help: "Hanzo Cloud cpu usage",
 	}, []string{"cpuNum"})
-
 	MemoryUsage = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "cloud_memory_usage",
 		Help: "Hanzo Cloud memory usage in Byte",
 	}, []string{"type"})
-
 	TotalThroughput = promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "cloud_total_throughput",
 		Help: "The total throughput of Hanzo Cloud",
 	})
 )
-
 func ClearThroughputPerSecond() {
 	ticker := time.NewTicker(time.Second)
 	for range ticker.C {
@@ -77,7 +65,6 @@ func ClearThroughputPerSecond() {
 		TotalThroughput.Set(0)
 	}
 }
-
 func GetPrometheusInfo() (*PrometheusInfo, error) {
 	res := &PrometheusInfo{}
 	metricFamilies, err := prometheus.DefaultGatherer.Gather()
@@ -94,10 +81,8 @@ func GetPrometheusInfo() (*PrometheusInfo, error) {
 			res.TotalThroughput = metricFamily.GetMetric()[0].GetGauge().GetValue()
 		}
 	}
-
 	return res, nil
 }
-
 func getHistogramVecInfo(metricFamily *io_prometheus_client.MetricFamily) []HistogramVecInfo {
 	var histogramVecInfos []HistogramVecInfo
 	for _, metric := range metricFamily.GetMetric() {
@@ -114,7 +99,6 @@ func getHistogramVecInfo(metricFamily *io_prometheus_client.MetricFamily) []Hist
 	}
 	return histogramVecInfos
 }
-
 func getGaugeVecInfo(metricFamily *io_prometheus_client.MetricFamily) []GaugeVecInfo {
 	var counterVecInfos []GaugeVecInfo
 	for _, metric := range metricFamily.GetMetric() {
