@@ -25,20 +25,20 @@ import (
 )
 
 type Container struct {
-	Owner       string `xorm:"varchar(100) notnull pk" json:"owner"`
-	Name        string `xorm:"varchar(100) notnull pk" json:"name"`
-	DisplayName string `xorm:"varchar(100)" json:"displayName"`
-	Provider    string `xorm:"varchar(100)" json:"provider"`
-	CreatedTime string `xorm:"varchar(100)" json:"createdTime"`
-	Image       string `xorm:"varchar(100)" json:"image"`
-	ImageId     string `xorm:"varchar(100)" json:"imageId"`
-	Command     string `xorm:"varchar(100)" json:"command"`
-	SizeRw      int64  `xorm:"varchar(100)"  json:"sizeRw,omitempty"`
-	SizeRootFs  int64  `xorm:"varchar(100)"  json:"sizeRootFs,omitempty"`
+	Owner       string `db:"pk" json:"owner"`
+	Name        string `db:"pk" json:"name"`
+	DisplayName string `json:"displayName"`
+	Provider    string `json:"provider"`
+	CreatedTime string `json:"createdTime"`
+	Image       string `json:"image"`
+	ImageId     string `json:"imageId"`
+	Command     string `json:"command"`
+	SizeRw      int64  `json:"sizeRw,omitempty"`
+	SizeRootFs  int64  `json:"sizeRootFs,omitempty"`
 	Labels      map[string]string
-	State       string `xorm:"varchar(100)" json:"state"`
-	Status      string `xorm:"varchar(100)" json:"status"`
-	Ports       string `xorm:"varchar(100)" json:"ports"`
+	State       string `json:"state"`
+	Status      string `json:"status"`
+	Ports       string `json:"ports"`
 
 	HostConfig struct {
 		NetworkMode string            `json:",omitempty"`

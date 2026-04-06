@@ -11,16 +11,14 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
 package object
-
 import (
 	"encoding/json"
 	"regexp"
 	"strings"
 	"unicode"
+	"github.com/hanzoai/dbx"
 )
-
 // Common English stop words to filter out
 var stopWords = map[string]bool{
 	"the": true, "a": true, "an": true, "and": true, "or": true, "but": true,
@@ -38,7 +36,6 @@ var stopWords = map[string]bool{
 	"not": true, "only": true, "own": true, "same": true, "so": true,
 	"than": true, "too": true, "very": true, "s": true, "t": true,
 }
-
 // Common Chinese stop words to filter out
 var stopWordsZh = map[string]bool{
 	"的": true, "了": true, "在": true, "是": true, "我": true, "有": true,
@@ -51,12 +48,10 @@ var stopWordsZh = map[string]bool{
 	"如果": true, "因为": true, "所以": true, "虽然": true, "然后": true,
 	"或者": true, "而且": true, "还是": true, "不过": true, "这样": true,
 }
-
 func FilterChatsByTimeRange(chats []*Chat, startTime, endTime string) []*Chat {
 	if startTime == "" && endTime == "" {
 		return chats
 	}
-
 	filtered := make([]*Chat, 0)
 	for _, chat := range chats {
 		if startTime != "" && chat.CreatedTime < startTime {
@@ -67,45 +62,35 @@ func FilterChatsByTimeRange(chats []*Chat, startTime, endTime string) []*Chat {
 		}
 		filtered = append(filtered, chat)
 	}
-
 	return filtered
 }
-
 func GetMessagesForChats(chats []*Chat) ([]*Message, error) {
 	if len(chats) == 0 {
 		return []*Message{}, nil
 	}
-
 	chatNames := make([]string, 0, len(chats))
 	for _, chat := range chats {
 		chatNames = append(chatNames, chat.Name)
 	}
-
 	messages := []*Message{}
-	err := adapter.engine.In("chat", chatNames).Asc("created_time").Find(&messages)
+	err := adapter.db.Select().From("message").Where(dbx.NewExp("{:p0}", dbx.Params{"p0": chatNames})).OrderBy("created_time ASC").All(&messages)
 	if err != nil {
 		return nil, err
 	}
-
 	return messages, nil
 }
-
 func GenerateWordCloudData(messages []*Message, density int) (string, error) {
 	wordFreq := make(map[string]int)
-
 	// Regular expression to extract words (including Chinese characters)
 	wordRegex := regexp.MustCompile(`[\p{L}\p{N}]+`)
-
 	for _, message := range messages {
 		// Skip AI messages - only include messages from real users
 		if message.Author == "AI" {
 			continue
 		}
-
 		// Extract words from message text
 		text := strings.ToLower(message.Text)
 		words := wordRegex.FindAllString(text, -1)
-
 		for _, word := range words {
 			// Filter out stop words (both English and Chinese) and short words
 			if len(word) > 2 && !stopWords[word] && !stopWordsZh[word] {
@@ -123,13 +108,11 @@ func GenerateWordCloudData(messages []*Message, density int) (string, error) {
 			}
 		}
 	}
-
 	// Convert to format expected by word cloud: array of {name, value}
 	type WordData struct {
 		Name  string `json:"name"`
 		Value int    `json:"value"`
 	}
-
 	wordList := make([]WordData, 0, len(wordFreq))
 	for word, count := range wordFreq {
 		// Apply density threshold: exclude words with count < density
@@ -137,12 +120,10 @@ func GenerateWordCloudData(messages []*Message, density int) (string, error) {
 			wordList = append(wordList, WordData{Name: word, Value: count})
 		}
 	}
-
 	// Convert to JSON
 	jsonData, err := json.MarshalIndent(wordList, "", "  ")
 	if err != nil {
 		return "", err
 	}
-
 	return string(jsonData), nil
 }

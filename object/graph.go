@@ -11,16 +11,12 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
 package object
-
 import (
 	"fmt"
-
 	"github.com/hanzoai/cloud/util"
-	"xorm.io/core"
+	"github.com/hanzoai/dbx"
 )
-
 type GraphNode struct {
 	Id     string `json:"id"`
 	Name   string `json:"name"`
@@ -29,80 +25,66 @@ type GraphNode struct {
 	Tag    string `json:"tag"`
 	Weight int    `json:"weight"`
 }
-
 type Graph struct {
-	Owner       string `xorm:"varchar(100) notnull pk" json:"owner"`
-	Name        string `xorm:"varchar(100) notnull pk" json:"name"`
-	CreatedTime string `xorm:"varchar(100)" json:"createdTime"`
-
-	DisplayName string `xorm:"varchar(100)" json:"displayName"`
-	Category    string `xorm:"varchar(100)" json:"category"`
-	Layout      string `xorm:"varchar(100)" json:"layout"`
-	Density     int    `xorm:"int" json:"density"`
-	Store       string `xorm:"varchar(100)" json:"store"`
-	StartTime   string `xorm:"varchar(100)" json:"startTime"`
-	EndTime     string `xorm:"varchar(100)" json:"endTime"`
-	Text        string `xorm:"mediumtext" json:"text"`
-	ErrorText   string `xorm:"mediumtext" json:"errorText"`
+	Owner       string `db:"pk" json:"owner"`
+	Name        string `db:"pk" json:"name"`
+	CreatedTime string `json:"createdTime"`
+	DisplayName string `json:"displayName"`
+	Category    string `json:"category"`
+	Layout      string `json:"layout"`
+	Density     int    `json:"density"`
+	Store       string `json:"store"`
+	StartTime   string `json:"startTime"`
+	EndTime     string `json:"endTime"`
+	Text        string `json:"text"`
+	ErrorText   string `json:"errorText"`
 }
-
 func GetMaskedGraph(graph *Graph, isMaskEnabled bool) *Graph {
 	if !isMaskEnabled {
 		return graph
 	}
-
 	if graph == nil {
 		return nil
 	}
-
 	return graph
 }
-
 func GetMaskedGraphs(graphs []*Graph, isMaskEnabled bool) []*Graph {
 	if !isMaskEnabled {
 		return graphs
 	}
-
 	for _, graph := range graphs {
 		graph = GetMaskedGraph(graph, isMaskEnabled)
 	}
 	return graphs
 }
-
 func GetGlobalGraphs() ([]*Graph, error) {
 	graphs := []*Graph{}
-	err := adapter.engine.Asc("owner").Desc("created_time").Find(&graphs)
+	err := findAll(adapter.db, "graph", &graphs, nil, "owner ASC", "created_time DESC")
 	if err != nil {
 		return graphs, err
 	}
-
 	return graphs, nil
 }
-
 func GetGraphs(owner string) ([]*Graph, error) {
 	graphs := []*Graph{}
-	err := adapter.engine.Desc("created_time").Find(&graphs, &Graph{Owner: owner})
+	err := findAll(adapter.db, "graph", &graphs, dbx.HashExp{"owner": owner}, "created_time DESC")
 	if err != nil {
 		return graphs, err
 	}
-
 	return graphs, nil
 }
-
 func getGraph(owner string, name string) (*Graph, error) {
 	graph := Graph{Owner: owner, Name: name}
-	existed, err := adapter.engine.Get(&graph)
+	existed, err := getOne(adapter.db, "graph", &graph, pk2(graph.Owner, graph.Name))
 	if err != nil {
 		return &graph, err
 	}
-
 	if existed {
 		return &graph, nil
 	} else {
 		return nil, nil
 	}
 }
-
 func GetGraph(id string) (*Graph, error) {
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
 	if err != nil {
@@ -110,7 +92,6 @@ func GetGraph(id string) (*Graph, error) {
 	}
 	return getGraph(owner, name)
 }
-
 func UpdateGraph(id string, graph *Graph) (bool, error) {
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
 	if err != nil {
@@ -123,50 +104,46 @@ func UpdateGraph(id string, graph *Graph) (bool, error) {
 	if graph == nil {
 		return false, nil
 	}
-
-	_, err = adapter.engine.ID(core.PK{owner, name}).AllCols().Update(graph)
+	graph.Owner = owner
+	graph.Name = name
+	err = adapter.db.Model(graph).Update()
 	if err != nil {
 		return false, err
 	}
-
 	// return affected != 0
 	return true, nil
 }
-
 func AddGraph(graph *Graph) (bool, error) {
-	affected, err := adapter.engine.Insert(graph)
+	err := insertRow(adapter.db, graph)
+	affected := int64(1)
+	if err != nil {
+		affected = 0
+	}
 	if err != nil {
 		return false, err
 	}
-
 	return affected != 0, nil
 }
-
 func DeleteGraph(graph *Graph) (bool, error) {
-	affected, err := adapter.engine.ID(core.PK{graph.Owner, graph.Name}).Delete(&Graph{})
+	affected, err := deleteByPK(adapter.db, "graph", pk2(graph.Owner, graph.Name))
 	if err != nil {
 		return false, err
 	}
-
 	return affected != 0, nil
 }
-
 func (graph *Graph) GetId() string {
 	return fmt.Sprintf("%s/%s", graph.Owner, graph.Name)
 }
-
 func GetGraphCount(owner string, field, value string) (int64, error) {
-	session := GetDbSession(owner, -1, -1, field, value, "", "")
-	return session.Count(&Graph{})
+	session := GetDbQuery(owner, -1, -1, field, value, "", "")
+	return queryCount(session, "graph")
 }
-
 func GetPaginationGraphs(owner string, offset, limit int, field, value, sortField, sortOrder string) ([]*Graph, error) {
 	graphs := []*Graph{}
-	session := GetDbSession(owner, offset, limit, field, value, sortField, sortOrder)
-	err := session.Find(&graphs)
+	session := GetDbQuery(owner, offset, limit, field, value, sortField, sortOrder)
+	err := queryFind(session, "graph", &graphs)
 	if err != nil {
 		return graphs, err
 	}
-
 	return graphs, nil
 }

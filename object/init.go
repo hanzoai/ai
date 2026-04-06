@@ -11,42 +11,34 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
 package object
-
 import (
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
-
 	"github.com/hanzoai/cloud/conf"
 	"github.com/hanzoai/cloud/util"
 )
-
 func InitDb() {
 	modelProviderName, embeddingProviderName, ttsProviderName, sttProviderName := initBuiltInProviders()
 	initLLMProviders()
 	initBuiltInStore(modelProviderName, embeddingProviderName, ttsProviderName, sttProviderName)
 	initTemplates()
 }
-
 func initBuiltInStore(modelProviderName string, embeddingProviderName string, ttsProviderName string, sttProviderName string) {
 	stores, err := GetGlobalStores()
 	if err != nil {
 		panic(err)
 	}
-
 	if len(stores) > 0 {
 		return
 	}
-
 	imageProviderName := ""
 	providerDbName := conf.GetConfigString("providerDbName")
 	if providerDbName != "" {
 		imageProviderName = "provider_storage_hanzo_default"
 	}
-
 	store := &Store{
 		Owner:                "admin",
 		Name:                 "store-built-in",
@@ -80,11 +72,9 @@ func initBuiltInStore(modelProviderName string, embeddingProviderName string, tt
 		State:                "Active",
 		PropertiesMap:        map[string]*Properties{},
 	}
-
 	if providerDbName != "" {
 		store.ShowAutoRead = true
 		store.DisableFileUpload = true
-
 		tokens := conf.ReadGlobalConfigTokens()
 		if len(tokens) > 0 {
 			store.Title = tokens[0]
@@ -95,59 +85,48 @@ func initBuiltInStore(modelProviderName string, embeddingProviderName string, tt
 			store.Prompt = tokens[5]
 		}
 	}
-
 	_, err = AddStore(store)
 	if err != nil {
 		panic(err)
 	}
 }
-
 func getDefaultStoragePath() (string, error) {
 	providerDbName := conf.GetConfigString("providerDbName")
 	if providerDbName != "" {
 		dbName := conf.GetConfigString("dbName")
 		return fmt.Sprintf("C:/hanzo_cloud_data/%s", dbName), nil
 	}
-
 	cwd, err := os.Getwd()
 	if err != nil {
 		return "", err
 	}
-
 	res := filepath.Join(cwd, "files")
 	return res, nil
 }
-
 func initBuiltInProviders() (string, string, string, string) {
 	storageProvider, err := GetDefaultStorageProvider()
 	if err != nil {
 		panic(err)
 	}
-
 	modelProvider, err := GetDefaultModelProvider()
 	if err != nil {
 		panic(err)
 	}
-
 	embeddingProvider, err := GetDefaultEmbeddingProvider()
 	if err != nil {
 		panic(err)
 	}
-
 	ttsProvider, err := GetDefaultTextToSpeechProvider()
 	if err != nil {
 		panic(err)
 	}
-
 	if storageProvider == nil {
 		var path string
 		path, err = getDefaultStoragePath()
 		if err != nil {
 			panic(err)
 		}
-
 		util.EnsureFileFolderExists(path)
-
 		storageProvider = &Provider{
 			Owner:       "admin",
 			Name:        "provider-storage-built-in",
@@ -163,7 +142,6 @@ func initBuiltInProviders() (string, string, string, string) {
 			panic(err)
 		}
 	}
-
 	if modelProvider == nil {
 		modelProvider = &Provider{
 			Owner:       "admin",
@@ -180,7 +158,6 @@ func initBuiltInProviders() (string, string, string, string) {
 			panic(err)
 		}
 	}
-
 	if embeddingProvider == nil {
 		embeddingProvider = &Provider{
 			Owner:       "admin",
@@ -197,17 +174,13 @@ func initBuiltInProviders() (string, string, string, string) {
 			panic(err)
 		}
 	}
-
 	ttsProviderName := "Browser Built-In"
 	if ttsProvider != nil {
 		ttsProviderName = ttsProvider.Name
 	}
-
 	sttProviderName := "Browser Built-In"
-
 	return modelProvider.Name, embeddingProvider.Name, ttsProviderName, sttProviderName
 }
-
 // initLLMProviders bootstraps the LLM provider records needed by the
 // model routing table (see controllers/model_routes.go). Each provider
 // maps to an upstream service with its own API key and base URL.
@@ -261,7 +234,6 @@ func initLLMProviders() {
 			State:        "Active",
 		},
 	}
-
 	for _, p := range providers {
 		existing, err := getProvider("admin", p.Name)
 		if err != nil {
@@ -289,7 +261,6 @@ func initLLMProviders() {
 			}
 			continue
 		}
-
 		p.CreatedTime = util.GetCurrentTime()
 		_, err = AddProvider(&p)
 		if err != nil && !strings.Contains(err.Error(), "Duplicate entry") {

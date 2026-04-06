@@ -11,13 +11,10 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
 package object
-
 import (
 	"fmt"
 	"strings"
-
 	"github.com/hanzoai/cloud/agent"
 	"github.com/hanzoai/cloud/embedding"
 	"github.com/hanzoai/cloud/i18n"
@@ -28,80 +25,68 @@ import (
 	"github.com/hanzoai/cloud/tts"
 	"github.com/hanzoai/cloud/util"
 	iamsdk "github.com/hanzoid/go-sdk/casdoorsdk"
-	"xorm.io/core"
-	"xorm.io/xorm"
+	"github.com/hanzoai/dbx"
 )
-
 type Provider struct {
-	Owner       string `xorm:"varchar(100) notnull pk" json:"owner"`
-	Name        string `xorm:"varchar(100) notnull pk" json:"name"`
-	CreatedTime string `xorm:"varchar(100)" json:"createdTime"`
-
-	DisplayName        string            `xorm:"varchar(100)" json:"displayName"`
-	Category           string            `xorm:"varchar(100)" json:"category"`
-	Type               string            `xorm:"varchar(100)" json:"type"`
-	SubType            string            `xorm:"varchar(100)" json:"subType"`
-	Flavor             string            `xorm:"varchar(100)" json:"flavor"`
-	ClientId           string            `xorm:"varchar(100)" json:"clientId"`
-	ClientSecret       string            `xorm:"varchar(2000)" json:"clientSecret"`
-	Region             string            `xorm:"varchar(100)" json:"region"`
-	ProviderKey        string            `xorm:"varchar(100)" json:"providerKey"`
-	ProviderUrl        string            `xorm:"varchar(200)" json:"providerUrl"`
-	ApiVersion         string            `xorm:"varchar(100)" json:"apiVersion"`
-	CompatibleProvider string            `xorm:"varchar(100)" json:"compatibleProvider"`
-	McpTools           []*agent.McpTools `xorm:"text" json:"mcpTools"`
-	Text               string            `xorm:"mediumtext" json:"text"`
-	ConfigText         string            `xorm:"mediumtext" json:"configText"`
-	RawText            string            `xorm:"mediumtext" json:"rawText"` // Raw result from scan (for Scan category providers)
-
+	Owner       string `db:"pk" json:"owner"`
+	Name        string `db:"pk" json:"name"`
+	CreatedTime string `json:"createdTime"`
+	DisplayName        string            `json:"displayName"`
+	Category           string            `json:"category"`
+	Type               string            `json:"type"`
+	SubType            string            `json:"subType"`
+	Flavor             string            `json:"flavor"`
+	ClientId           string            `json:"clientId"`
+	ClientSecret       string            `json:"clientSecret"`
+	Region             string            `json:"region"`
+	ProviderKey        string            `json:"providerKey"`
+	ProviderUrl        string            `json:"providerUrl"`
+	ApiVersion         string            `json:"apiVersion"`
+	CompatibleProvider string            `json:"compatibleProvider"`
+	McpTools           []*agent.McpTools `json:"mcpTools"`
+	Text               string            `json:"text"`
+	ConfigText         string            `json:"configText"`
+	RawText            string            `json:"rawText"` // Raw result from scan (for Scan category providers)
 	EnableThinking   bool    `json:"enableThinking"`
-	Temperature      float32 `xorm:"float" json:"temperature"`
-	TopP             float32 `xorm:"float" json:"topP"`
-	TopK             int     `xorm:"int" json:"topK"`
-	FrequencyPenalty float32 `xorm:"float" json:"frequencyPenalty"`
-	PresencePenalty  float32 `xorm:"float" json:"presencePenalty"`
-
-	InputPricePerThousandTokens  float64 `xorm:"DECIMAL(10, 4)" json:"inputPricePerThousandTokens"`
-	OutputPricePerThousandTokens float64 `xorm:"DECIMAL(10, 4)" json:"outputPricePerThousandTokens"`
-	Currency                     string  `xorm:"varchar(100)" json:"currency"`
-
-	UserKey        string `xorm:"varchar(1000)" json:"userKey"`
-	UserCert       string `xorm:"mediumtext" json:"userCert"`
-	SignKey        string `xorm:"varchar(1000)" json:"signKey"`
-	SignCert       string `xorm:"mediumtext" json:"signCert"`
-	ContractName   string `xorm:"varchar(100)" json:"contractName"`
-	ContractMethod string `xorm:"varchar(100)" json:"contractMethod"`
-	Network        string `xorm:"varchar(100)" json:"network"`
-	Chain          string `xorm:"varchar(100)" json:"chain"`
-	TestContent    string `xorm:"varchar(100)" json:"testContent"`
-
+	Temperature      float32 `json:"temperature"`
+	TopP             float32 `json:"topP"`
+	TopK             int     `json:"topK"`
+	FrequencyPenalty float32 `json:"frequencyPenalty"`
+	PresencePenalty  float32 `json:"presencePenalty"`
+	InputPricePerThousandTokens  float64 `json:"inputPricePerThousandTokens"`
+	OutputPricePerThousandTokens float64 `json:"outputPricePerThousandTokens"`
+	Currency                     string  `json:"currency"`
+	UserKey        string `json:"userKey"`
+	UserCert       string `json:"userCert"`
+	SignKey        string `json:"signKey"`
+	SignCert       string `json:"signCert"`
+	ContractName   string `json:"contractName"`
+	ContractMethod string `json:"contractMethod"`
+	Network        string `json:"network"`
+	Chain          string `json:"chain"`
+	TestContent    string `json:"testContent"`
 	// New fields for unified scan widget (for Scan category providers)
-	TargetMode    string `xorm:"varchar(100)" json:"targetMode"`    // "Manual Input" or "Asset"
-	Target        string `xorm:"varchar(500)" json:"target"`        // Manual input target (IP address or network range)
-	Asset         string `xorm:"varchar(200)" json:"asset"`         // Selected asset for scan
-	Runner        string `xorm:"varchar(100)" json:"runner"`        // Hostname about who runs the scan job
-	ErrorText     string `xorm:"mediumtext" json:"errorText"`       // Error message for the job execution
-	ResultSummary string `xorm:"varchar(500)" json:"resultSummary"` // Short summary of scan results
-
+	TargetMode    string `json:"targetMode"`    // "Manual Input" or "Asset"
+	Target        string `json:"target"`        // Manual input target (IP address or network range)
+	Asset         string `json:"asset"`         // Selected asset for scan
+	Runner        string `json:"runner"`        // Hostname about who runs the scan job
+	ErrorText     string `json:"errorText"`       // Error message for the job execution
+	ResultSummary string `json:"resultSummary"` // Short summary of scan results
 	IsDefault  bool   `json:"isDefault"`
 	IsRemote   bool   `json:"isRemote"`
-	State      string `xorm:"varchar(100)" json:"state"`
-	BrowserUrl string `xorm:"varchar(200)" json:"browserUrl"`
+	State      string `json:"state"`
+	BrowserUrl string `json:"browserUrl"`
 }
-
 func GetMaskedProvider(provider *Provider, isMaskEnabled bool, user *iamsdk.User) *Provider {
 	if !isMaskEnabled {
 		return provider
 	}
-
 	if provider == nil {
 		return nil
 	}
-
 	if provider.ClientSecret != "" {
 		provider.ClientSecret = "***"
 	}
-
 	if !util.IsAdmin(user) {
 		if provider.ProviderKey != "" {
 			provider.ProviderKey = "***"
@@ -116,80 +101,65 @@ func GetMaskedProvider(provider *Provider, isMaskEnabled bool, user *iamsdk.User
 			provider.SignKey = "***"
 		}
 	}
-
 	return provider
 }
-
 func GetMaskedProviders(providers []*Provider, isMaskEnabled bool, user *iamsdk.User) []*Provider {
 	if !isMaskEnabled {
 		return providers
 	}
-
 	for _, provider := range providers {
 		provider = GetMaskedProvider(provider, isMaskEnabled, user)
 	}
 	return providers
 }
-
 func GetGlobalProviders() ([]*Provider, error) {
 	providers := []*Provider{}
-	err := adapter.engine.Asc("owner").Desc("created_time").Find(&providers)
+	err := findAll(adapter.db, "provider", &providers, nil, "owner ASC", "created_time DESC")
 	if err != nil {
 		return providers, err
 	}
-
 	if providerAdapter != nil {
 		providers2 := []*Provider{}
-		err = providerAdapter.engine.Asc("owner").Desc("created_time").Find(&providers2)
+		err = findAll(providerAdapter.db, "provider", &providers2, nil, "owner ASC", "created_time DESC")
 		if err != nil {
 			return providers2, err
 		}
-
 		// Mark remote providers
 		for _, provider := range providers2 {
 			provider.IsRemote = true
 		}
-
 		providers = append(providers, providers2...)
 	}
-
 	return providers, nil
 }
-
 func GetProviders(owner string) ([]*Provider, error) {
 	providers := []*Provider{}
-	err := adapter.engine.Desc("created_time").Find(&providers, &Provider{Owner: owner})
+	err := findAll(adapter.db, "provider", &providers, dbx.HashExp{"owner": owner}, "created_time DESC")
 	if err != nil {
 		return providers, err
 	}
-
 	if providerAdapter != nil {
 		providers2 := []*Provider{}
-		err = providerAdapter.engine.Desc("created_time").Find(&providers2, &Provider{Owner: owner})
+		err = findAll(providerAdapter.db, "provider", &providers2, dbx.HashExp{"owner": owner}, "created_time DESC")
 		if err != nil {
 			return providers2, err
 		}
-
 		// Mark remote providers
 		for _, provider := range providers2 {
 			provider.IsRemote = true
 		}
-
 		providers = append(providers, providers2...)
 	}
-
 	return providers, nil
 }
-
 func getProvider(owner string, name string) (*Provider, error) {
 	provider := Provider{Owner: owner, Name: name}
-	existed, err := adapter.engine.Get(&provider)
+	existed, err := getOne(adapter.db, "provider", &provider, pk2(provider.Owner, provider.Name))
 	if err != nil {
 		return &provider, err
 	}
-
 	if providerAdapter != nil && !existed {
-		existed, err = providerAdapter.engine.Get(&provider)
+		existed, err = getOne(providerAdapter.db, "provider", &provider, pk2(provider.Owner, provider.Name))
 		if err != nil {
 			return &provider, err
 		}
@@ -197,14 +167,12 @@ func getProvider(owner string, name string) (*Provider, error) {
 			provider.IsRemote = true
 		}
 	}
-
 	if existed {
 		return &provider, nil
 	} else {
 		return nil, nil
 	}
 }
-
 func GetProvider(id string) (*Provider, error) {
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
 	if err != nil {
@@ -212,7 +180,6 @@ func GetProvider(id string) (*Provider, error) {
 	}
 	return getProvider(owner, name)
 }
-
 func UpdateProvider(id string, provider *Provider) (bool, error) {
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
 	if err != nil {
@@ -225,78 +192,65 @@ func UpdateProvider(id string, provider *Provider) (bool, error) {
 	if provider == nil {
 		return false, nil
 	}
-
 	provider.processProviderParams(providerDb)
-
 	if providerAdapter != nil && provider.IsRemote {
-		_, err = providerAdapter.engine.ID(core.PK{owner, name}).AllCols().Update(provider)
+		provider.Owner = owner
+	provider.Name = name
+	err = providerAdapter.db.Model(provider).Update()
 		if err != nil {
 			return false, err
 		}
-
 		// return affected != 0
 		return true, nil
 	}
-
-	_, err = adapter.engine.ID(core.PK{owner, name}).AllCols().Update(provider)
+	provider.Owner = owner
+	provider.Name = name
+	err = adapter.db.Model(provider).Update()
 	if err != nil {
 		return false, err
 	}
-
 	// return affected != 0
 	return true, nil
 }
-
 func AddProvider(provider *Provider) (bool, error) {
 	if provider.ProviderKey == "" && provider.Category == "Model" {
 		provider.ProviderKey = generateProviderKey()
 	}
-
 	if providerAdapter != nil && provider.IsRemote {
-		affected, err := providerAdapter.engine.Insert(provider)
+		err := insertRow(providerAdapter.db, provider)
 		if err != nil {
 			return false, err
 		}
-
-		return affected != 0, nil
+		return true, nil
 	}
-
-	affected, err := adapter.engine.Insert(provider)
+	err := insertRow(adapter.db, provider)
 	if err != nil {
 		return false, err
 	}
-
-	return affected != 0, nil
+	return true, nil
 }
-
 func DeleteProvider(provider *Provider) (bool, error) {
 	if providerAdapter != nil && provider.IsRemote {
-		affected, err := providerAdapter.engine.ID(core.PK{provider.Owner, provider.Name}).Delete(&Provider{})
+		affected, err := deleteByPK(providerAdapter.db, "provider", pk2(provider.Owner, provider.Name))
 		if err != nil {
 			return false, err
 		}
-
 		return affected != 0, nil
 	}
-
-	affected, err := adapter.engine.ID(core.PK{provider.Owner, provider.Name}).Delete(&Provider{})
+	affected, err := deleteByPK(adapter.db, "provider", pk2(provider.Owner, provider.Name))
 	if err != nil {
 		return false, err
 	}
-
 	return affected != 0, nil
 }
-
 func (provider *Provider) GetId() string {
 	return fmt.Sprintf("%s/%s", provider.Owner, provider.Name)
 }
-
 func GetDefaultKubernetesProvider(lang string) (*Provider, error) {
 	providers, err := GetProviders("admin")
 	if err != nil {
 		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:failed to get providers: %v"), err))
 	}
-
 	for _, provider := range providers {
 		if provider.Category == "Private Cloud" && provider.Type == "Kubernetes" && provider.State == "Active" {
 			return provider, nil
@@ -304,98 +258,76 @@ func GetDefaultKubernetesProvider(lang string) (*Provider, error) {
 	}
 	return nil, fmt.Errorf("%s", i18n.Translate(lang, "object:no Kubernetes provider found"))
 }
-
 func (p *Provider) GetStorageProviderObj(vectorStoreId string, lang string) (storage.StorageProvider, error) {
 	pProvider, err := storage.GetStorageProvider(p.Type, p.ClientId, p.ClientSecret, p.Name, vectorStoreId, lang)
 	if err != nil {
 		return nil, err
 	}
-
 	if pProvider == nil {
 		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:the storage provider type: %s is not supported"), p.Type))
 	}
-
 	return pProvider, nil
 }
-
 func (p *Provider) GetModelProvider(lang string) (model.ModelProvider, error) {
 	pProvider, err := model.GetModelProvider(p.Type, p.SubType, p.ClientId, p.ClientSecret, p.UserKey, p.Temperature, p.TopP, p.TopK, p.FrequencyPenalty, p.PresencePenalty, p.ProviderUrl, p.ApiVersion, p.CompatibleProvider, p.InputPricePerThousandTokens, p.OutputPricePerThousandTokens, p.Currency, p.EnableThinking)
 	if err != nil {
 		return nil, err
 	}
-
 	if pProvider == nil {
 		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:the model provider type: %s is not supported"), p.Type))
 	}
-
 	return pProvider, nil
 }
-
 func (p *Provider) GetEmbeddingProvider(lang string) (embedding.EmbeddingProvider, error) {
 	pProvider, err := embedding.GetEmbeddingProvider(p.Type, p.SubType, p.ClientId, p.ClientSecret, p.ProviderUrl, p.ApiVersion, p.InputPricePerThousandTokens, p.Currency, lang)
 	if err != nil {
 		return nil, err
 	}
-
 	if pProvider == nil {
 		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:the embedding provider type: %s is not supported"), p.Type))
 	}
-
 	return pProvider, nil
 }
-
 func (p *Provider) GetAgentProvider(lang string) (agent.AgentProvider, error) {
 	pProvider, err := agent.GetAgentProvider(p.Type, p.SubType, p.Text, p.McpTools, lang)
 	if err != nil {
 		return nil, err
 	}
-
 	if pProvider == nil {
 		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "agent:the agent provider type: %s is not supported"), p.Type))
 	}
-
 	return pProvider, nil
 }
-
 func (p *Provider) GetTextToSpeechProvider(lang string) (tts.TextToSpeechProvider, error) {
 	pProvider, err := tts.GetTextToSpeechProvider(p.Type, p.SubType, p.ClientId, p.ClientSecret, p.ProviderUrl, p.ApiVersion, p.InputPricePerThousandTokens, p.Currency, p.Flavor, lang)
 	if err != nil {
 		return nil, err
 	}
-
 	if pProvider == nil {
 		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:the TTS provider type: %s is not supported"), p.Type))
 	}
-
 	return pProvider, nil
 }
-
 func (p *Provider) GetSpeechToTextProvider(lang string) (stt.SpeechToTextProvider, error) {
 	pProvider, err := stt.GetSpeechToTextProvider(p.Type, p.SubType, p.ClientSecret, p.ProviderUrl)
 	if err != nil {
 		return nil, err
 	}
-
 	if pProvider == nil {
 		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:the STT provider type: %s is not supported"), p.Type))
 	}
-
 	return pProvider, nil
 }
-
 func (p *Provider) GetScanProvider(lang string) (scan.ScanProvider, error) {
 	pProvider, err := scan.GetScanProvider(p.Type, p.ClientId, lang)
 	if err != nil {
 		return nil, err
 	}
-
 	if pProvider == nil {
 		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:the scan provider type: %s is not supported"), p.Type))
 	}
-
 	return pProvider, nil
 }
-
 func GetModelProviderFromContext(owner string, name string, lang string) (*Provider, model.ModelProvider, error) {
 	var providerName string
 	if name != "" {
@@ -405,15 +337,12 @@ func GetModelProviderFromContext(owner string, name string, lang string) (*Provi
 		if err != nil {
 			return nil, nil, err
 		}
-
 		if store != nil && store.ModelProvider != "" {
 			providerName = store.ModelProvider
 		}
 	}
-
 	return getModelProviderFromName(owner, providerName, lang)
 }
-
 func GetEmbeddingProviderFromContext(owner string, name string, lang string) (*Provider, embedding.EmbeddingProvider, error) {
 	var providerName string
 	if name != "" {
@@ -423,15 +352,12 @@ func GetEmbeddingProviderFromContext(owner string, name string, lang string) (*P
 		if err != nil {
 			return nil, nil, err
 		}
-
 		if store != nil && store.EmbeddingProvider != "" {
 			providerName = store.EmbeddingProvider
 		}
 	}
-
 	return getEmbeddingProviderFromName(owner, providerName, lang)
 }
-
 func GetAgentProviderFromContext(owner string, name string, lang string) (*Provider, agent.AgentProvider, error) {
 	var providerName string
 	if name != "" {
@@ -441,24 +367,20 @@ func GetAgentProviderFromContext(owner string, name string, lang string) (*Provi
 		if err != nil {
 			return nil, nil, err
 		}
-
 		if store != nil && store.AgentProvider != "" {
 			providerName = store.AgentProvider
 		}
 	}
-
 	return getAgentProviderFromName(owner, providerName, lang)
 }
-
 func GetAgentClients(agentProviderObj agent.AgentProvider) (*agent.AgentClients, error) {
 	if agentProviderObj == nil {
 		return nil, nil
 	}
 	return agentProviderObj.GetAgentClients()
 }
-
 func GetProviderCount(owner, storeName, field, value string) (int64, error) {
-	session := GetDbSession(owner, -1, -1, field, value, "", "")
+	session := GetDbQuery(owner, -1, -1, field, value, "", "")
 	if storeName != "" {
 		store, err := GetStore(util.GetIdFromOwnerAndName(owner, storeName))
 		if err != nil {
@@ -466,33 +388,29 @@ func GetProviderCount(owner, storeName, field, value string) (int64, error) {
 		}
 		providerNames := collectProviderNames(store)
 		if len(providerNames) > 0 {
-			session = session.In("name", providerNames)
+			session = session.AndWhere(dbx.In("name", toInterfaceSlice(providerNames)...))
 		}
 	}
-	count, err := session.Count(&Provider{})
+	count, err := queryCount(session, "provider")
 	if err != nil {
 		return 0, err
 	}
-
 	// Add count from remote adapter if available
 	if providerAdapter != nil {
-		session2, err := buildRemoteProviderSession(owner, field, value, storeName)
+		session2, err := buildRemoteProviderQuery(owner, field, value, storeName)
 		if err != nil {
 			return count, err
 		}
-		count2, err := session2.Count(&Provider{})
+		count2, err := queryCount(session2, "provider")
 		if err != nil {
 			return count, err
 		}
 		count += count2
 	}
-
 	return count, nil
 }
-
 func collectProviderNames(store *Store) []string {
 	var providerNames []string
-
 	if store.StorageProvider != "" {
 		providerNames = append(providerNames, store.StorageProvider)
 	}
@@ -523,21 +441,19 @@ func collectProviderNames(store *Store) []string {
 	if store.ChildModelProviders != nil {
 		providerNames = append(providerNames, store.ChildModelProviders...)
 	}
-
 	return providerNames
 }
-
-func buildRemoteProviderSession(owner, field, value, storeName string) (*xorm.Session, error) {
+func buildRemoteProviderQuery(owner, field, value, storeName string) (*dbx.SelectQuery, error) {
 	if providerAdapter == nil {
 		return nil, fmt.Errorf("providerAdapter is nil")
 	}
-	session := providerAdapter.engine.NewSession()
+	q := providerAdapter.db.Select().From("provider")
 	if owner != "" {
-		session = session.And("owner=?", owner)
+		q = q.AndWhere(dbx.HashExp{"owner": owner})
 	}
 	if field != "" && value != "" {
 		if util.FilterField(field) {
-			session = session.And(fmt.Sprintf("%s like ?", util.SnakeString(field)), fmt.Sprintf("%%%s%%", value))
+			q = q.AndWhere(dbx.Like(util.SnakeString(field), value))
 		}
 	}
 	if storeName != "" {
@@ -547,16 +463,15 @@ func buildRemoteProviderSession(owner, field, value, storeName string) (*xorm.Se
 		}
 		providerNames := collectProviderNames(store)
 		if len(providerNames) > 0 {
-			session = session.In("name", providerNames)
+			q = q.AndWhere(dbx.In("name", toInterfaceSlice(providerNames)...))
 		}
 	}
-	return session, nil
+	return q, nil
 }
-
 func GetPaginationProviders(owner, storeName string, offset, limit int, field, value, sortField, sortOrder string) ([]*Provider, error) {
 	providers := []*Provider{}
 	// Fetch from local adapter without pagination to properly merge with remote providers
-	session := GetDbSession(owner, -1, -1, field, value, sortField, sortOrder)
+	session := GetDbQuery(owner, -1, -1, field, value, sortField, sortOrder)
 	if storeName != "" {
 		store, err := GetStore(util.GetIdFromOwnerAndName(owner, storeName))
 		if err != nil {
@@ -564,19 +479,17 @@ func GetPaginationProviders(owner, storeName string, offset, limit int, field, v
 		}
 		providerNames := collectProviderNames(store)
 		if len(providerNames) > 0 {
-			session = session.In("name", providerNames)
+			session = session.AndWhere(dbx.In("name", toInterfaceSlice(providerNames)...))
 		}
 	}
-
-	err := session.Find(&providers)
+	err := queryFind(session, "provider", &providers)
 	if err != nil {
 		return providers, err
 	}
-
 	// Fetch from remote adapter if available
 	if providerAdapter != nil {
 		providers2 := []*Provider{}
-		session2, err := buildRemoteProviderSession(owner, field, value, storeName)
+		session2, err := buildRemoteProviderQuery(owner, field, value, storeName)
 		if err != nil {
 			return providers, err
 		}
@@ -586,25 +499,21 @@ func GetPaginationProviders(owner, storeName string, offset, limit int, field, v
 			sortFieldToUse = "created_time"
 		}
 		if sortOrder == "ascend" {
-			session2 = session2.Asc(util.SnakeString(sortFieldToUse))
+			session2 = session2.OrderBy(util.SnakeString(sortFieldToUse) + " ASC")
 		} else {
-			session2 = session2.Desc(util.SnakeString(sortFieldToUse))
+			session2 = session2.OrderBy(util.SnakeString(sortFieldToUse) + " DESC")
 		}
-
-		err = session2.Find(&providers2)
+		err = queryFind(session2, "provider", &providers2)
 		if err != nil {
 			return providers, err
 		}
-
 		// Mark remote providers
 		for _, provider := range providers2 {
 			provider.IsRemote = true
 		}
-
 		// Append remote providers after local providers
 		providers = append(providers, providers2...)
 	}
-
 	// Apply pagination on merged results
 	if offset != -1 && limit != -1 {
 		start := offset
@@ -617,20 +526,16 @@ func GetPaginationProviders(owner, storeName string, offset, limit int, field, v
 		}
 		providers = providers[start:end]
 	}
-
 	return providers, nil
 }
-
 func RefreshMcpTools(provider *Provider) error {
 	tools, err := agent.GetToolsList(provider.Text)
 	if err != nil {
 		return err
 	}
-
 	provider.McpTools = tools
 	return nil
 }
-
 func (p *Provider) processProviderParams(providerDb *Provider) {
 	if p.ClientSecret == "***" {
 		p.ClientSecret = providerDb.ClientSecret
@@ -644,7 +549,6 @@ func (p *Provider) processProviderParams(providerDb *Provider) {
 	if p.ProviderKey == "" && p.Category == "Model" {
 		p.ProviderKey = generateProviderKey()
 	}
-
 	if p.Type == "Ollama" && p.ProviderUrl != "" && !strings.HasPrefix(p.ProviderUrl, "http") {
 		p.ProviderUrl = "http://" + p.ProviderUrl
 	}

@@ -11,19 +11,15 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
 package object
-
 import (
 	"fmt"
 	"time"
-
 	"github.com/hanzoai/cloud/conf"
 	"github.com/hanzoai/cloud/i18n"
 	"github.com/hanzoai/cloud/model"
 	iamsdk "github.com/hanzoid/go-sdk/casdoorsdk"
 )
-
 type Usage struct {
 	Date         string  `json:"date"`
 	UserCount    int     `json:"userCount"`
@@ -33,12 +29,10 @@ type Usage struct {
 	Price        float64 `json:"price"`
 	Currency     string  `json:"currency"`
 }
-
 type UsageMetadata struct {
 	Organization string `json:"organization"`
 	Application  string `json:"application"`
 }
-
 type UserUsage struct {
 	User         string  `json:"user"`
 	Chats        int     `json:"chats"`
@@ -46,34 +40,28 @@ type UserUsage struct {
 	TokenCount   int     `json:"tokenCount"`
 	Price        float64 `json:"price"`
 }
-
 func GetUsages(days int, user string, storeName string) ([]*Usage, error) {
 	messages, err := GetGlobalMessagesByStoreName(storeName)
 	if err != nil {
 		return nil, err
 	}
-
 	now := time.Now().UTC()
 	// Adjusted to include today in the count by subtracting days-1
 	startDateTime := now.AddDate(0, 0, -(days - 1)).Truncate(24 * time.Hour)
-
 	// Adjusted the size to days, as we're now including today
 	usages := make([]*Usage, days)
 	userSet := make(map[string]int)
 	chatSet := make(map[string]int)
-
 	for i := 0; i < days; i++ {
 		usages[i] = &Usage{
 			Date: startDateTime.AddDate(0, 0, i).Format("2006-01-02"),
 		}
 	}
-
 	var currentUsage *Usage
 	dayIndex := 0
 	if len(usages) > 0 {
 		currentUsage = usages[0]
 	}
-
 	for _, message := range messages {
 		if !(message.User == user || user == "All") {
 			continue
@@ -96,7 +84,6 @@ func GetUsages(days int, user string, storeName string) ([]*Usage, error) {
 				}
 			}
 		}
-
 		// If the current message is within the statistical range
 		if dayIndex < days {
 			userSet[message.User] = 1
@@ -109,7 +96,6 @@ func GetUsages(days int, user string, storeName string) ([]*Usage, error) {
 			currentUsage.Currency = message.Currency
 		}
 	}
-
 	// Update remaining days with the last known data, if necessary
 	for i := dayIndex + 1; i < days; i++ {
 		currentUsage = usages[i]
@@ -122,25 +108,20 @@ func GetUsages(days int, user string, storeName string) ([]*Usage, error) {
 		currentUsage.Price = previousUsage.Price
 		currentUsage.Currency = previousUsage.Currency
 	}
-
 	for _, usage := range usages {
 		usage.Price = model.RefinePrice(usage.Price)
 	}
-
 	return usages, nil
 }
-
 func GetUsage(date string) (*Usage, error) {
 	messages, err := GetGlobalMessages()
 	if err != nil {
 		return nil, err
 	}
-
 	userSet := make(map[string]int)
 	chatSet := make(map[string]int)
 	var messageCount, tokenCount int
 	price := 0.0
-
 	var dateTime time.Time
 	if date != "" {
 		dateTime, err = time.Parse("2006-01-02", date)
@@ -148,14 +129,12 @@ func GetUsage(date string) (*Usage, error) {
 			return nil, err
 		}
 	}
-
 	for _, message := range messages {
 		var createdTime time.Time
 		createdTime, err = time.Parse(time.RFC3339, message.CreatedTime)
 		if err != nil {
 			return nil, err
 		}
-
 		if date == "" || createdTime.Before(dateTime.AddDate(0, 0, 1)) {
 			// Adding user to userSet for distinct user count
 			if _, exists := userSet[message.User]; !exists {
@@ -170,14 +149,11 @@ func GetUsage(date string) (*Usage, error) {
 			price += message.Price
 		}
 	}
-
 	currency := "USD"
 	if len(messages) > 0 && messages[0].Currency != "" {
 		currency = messages[0].Currency
 	}
-
 	price = model.RefinePrice(price)
-
 	usage := &Usage{
 		Date:         date,
 		UserCount:    len(userSet),
@@ -189,7 +165,6 @@ func GetUsage(date string) (*Usage, error) {
 	}
 	return usage, nil
 }
-
 func GetUsageMetadata(lang string, orgName ...string) (*UsageMetadata, error) {
 	iamOrganization := conf.GetConfigString("iamOrganization")
 	if len(orgName) > 0 && orgName[0] != "" {
@@ -202,7 +177,6 @@ func GetUsageMetadata(lang string, orgName ...string) (*UsageMetadata, error) {
 	if organization == nil {
 		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:IAM organization: [%s] doesn't exist"), iamOrganization))
 	}
-
 	iamApplication := conf.GetConfigString("iamApplication")
 	application, err := iamsdk.GetApplication(iamApplication)
 	if err != nil {
@@ -211,33 +185,27 @@ func GetUsageMetadata(lang string, orgName ...string) (*UsageMetadata, error) {
 	if application == nil {
 		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:IAM application: [%s] doesn't exist"), iamApplication))
 	}
-
 	res := &UsageMetadata{
 		Organization: organization.DisplayName,
 		Application:  application.DisplayName,
 	}
 	return res, nil
 }
-
 func GetUsers(storeName, user string) ([]string, error) {
 	users := []string{}
 	userMap := map[string]bool{}
-
 	messages, err := GetMessages("admin", user, storeName)
 	if err != nil {
 		return nil, err
 	}
-
 	for _, message := range messages {
 		if !userMap[message.User] {
 			userMap[message.User] = true
 			users = append(users, message.User)
 		}
 	}
-
 	return users, nil
 }
-
 func GetUserTableInfos(storeName, user string) ([]*UserUsage, error) {
 	messages, err := GetMessages("admin", user, storeName)
 	if err != nil {
@@ -245,7 +213,6 @@ func GetUserTableInfos(storeName, user string) ([]*UserUsage, error) {
 	}
 	userUsage := make(map[string]*UserUsage)
 	userChats := make(map[string]map[string]bool)
-
 	for _, message := range messages {
 		if _, ok := userChats[message.User]; !ok {
 			userChats[message.User] = make(map[string]bool)
@@ -263,7 +230,6 @@ func GetUserTableInfos(storeName, user string) ([]*UserUsage, error) {
 		userUsage[message.User].TokenCount += message.TokenCount
 		userUsage[message.User].Price += message.Price
 	}
-
 	userUsageSlice := make([]*UserUsage, len(userUsage))
 	i := 0
 	for _, user := range userUsage {
