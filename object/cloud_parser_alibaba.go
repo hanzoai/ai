@@ -11,13 +11,10 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
 package object
-
 import (
 	"encoding/json"
 	"fmt"
-
 	openapi "github.com/alibabacloud-go/darabonba-openapi/v2/client"
 	ecs20140526 "github.com/alibabacloud-go/ecs-20140526/v4/client"
 	resourcecenter20221201 "github.com/alibabacloud-go/resourcecenter-20221201/client"
@@ -25,24 +22,19 @@ import (
 	"github.com/alibabacloud-go/tea/tea"
 	"github.com/hanzoai/cloud/util"
 )
-
 // AlibabaCloudParser implements CloudParser for Alibaba Cloud
 type AlibabaCloudParser struct{}
-
 // ScanAssets scans all resources from Alibaba Cloud
 func (p *AlibabaCloudParser) ScanAssets(owner string, provider *Provider) ([]*Asset, error) {
 	client, err := p.createClient(provider)
 	if err != nil {
 		return nil, err
 	}
-
 	var assets []*Asset
 	var nextToken *string
-
 	// Call SearchResources API without ResourceType filter to get all resources across all types
 	for {
 		var filter []*resourcecenter20221201.SearchResourcesRequestFilter
-
 		// Add region filter if specified
 		if provider.Region != "" {
 			filter = append(filter, &resourcecenter20221201.SearchResourcesRequestFilter{
@@ -51,42 +43,35 @@ func (p *AlibabaCloudParser) ScanAssets(owner string, provider *Provider) ([]*As
 				Value:     []*string{tea.String(provider.Region)},
 			})
 		}
-
 		request := &resourcecenter20221201.SearchResourcesRequest{
 			MaxResults: tea.Int32(500),
 			NextToken:  nextToken,
 		}
-
 		// Only set Filter if we have region filter, otherwise leave it nil to get all resources
 		if len(filter) > 0 {
 			request.Filter = filter
 		}
-
 		response, err := client.SearchResourcesWithOptions(request, &util2.RuntimeOptions{})
 		if err != nil {
 			return nil, err
 		}
-
 		if response.Body.Resources != nil {
 			for _, resource := range response.Body.Resources {
 				asset := p.convertResourceToAsset(owner, provider, resource)
 				assets = append(assets, asset)
 			}
 		}
-
 		// Check if there are more pages
 		if response.Body.NextToken == nil || tea.StringValue(response.Body.NextToken) == "" {
 			break
 		}
 		nextToken = response.Body.NextToken
 	}
-
 	// Group assets by resource type to check what types exist
 	resourceTypes := make(map[string]bool)
 	for _, asset := range assets {
 		resourceTypes[asset.Type] = true
 	}
-
 	// Create ECS client if needed
 	var ecsClient *ecs20140526.Client
 	if resourceTypes["Virtual Machine"] || resourceTypes["Disk"] || resourceTypes["VPC"] {
@@ -95,7 +80,6 @@ func (p *AlibabaCloudParser) ScanAssets(owner string, provider *Provider) ([]*As
 			return nil, err
 		}
 	}
-
 	// Get and merge ECS instance details if ECS instances exist
 	if resourceTypes["Virtual Machine"] {
 		ecsDetails, err := p.getEcsInstances(ecsClient, assets)
@@ -104,7 +88,6 @@ func (p *AlibabaCloudParser) ScanAssets(owner string, provider *Provider) ([]*As
 		}
 		p.mergeEcsDetails(assets, ecsDetails)
 	}
-
 	// Get and merge disk details if disks exist
 	if resourceTypes["Disk"] {
 		diskDetails, err := p.getDisks(ecsClient, assets)
@@ -113,7 +96,6 @@ func (p *AlibabaCloudParser) ScanAssets(owner string, provider *Provider) ([]*As
 		}
 		p.mergeDiskDetails(assets, diskDetails)
 	}
-
 	// Get and merge VPC details if VPCs exist
 	if resourceTypes["VPC"] {
 		vpcDetails, err := p.getVpcs(ecsClient, assets)
@@ -122,10 +104,8 @@ func (p *AlibabaCloudParser) ScanAssets(owner string, provider *Provider) ([]*As
 		}
 		p.mergeVpcDetails(assets, vpcDetails)
 	}
-
 	return assets, nil
 }
-
 // createClient creates an Alibaba Cloud Resource Center client
 func (p *AlibabaCloudParser) createClient(provider *Provider) (*resourcecenter20221201.Client, error) {
 	config := &openapi.Config{
@@ -135,12 +115,10 @@ func (p *AlibabaCloudParser) createClient(provider *Provider) (*resourcecenter20
 	}
 	return resourcecenter20221201.NewClient(config)
 }
-
 // convertResourceToAsset converts an Alibaba Cloud resource to an Asset
 func (p *AlibabaCloudParser) convertResourceToAsset(owner string, provider *Provider, resource *resourcecenter20221201.SearchResourcesResponseBodyResources) *Asset {
 	// Extract resource type from the resource object
 	resourceType := tea.StringValue(resource.ResourceType)
-
 	// Extract public and private IPs
 	publicIp := ""
 	privateIp := ""
@@ -153,12 +131,10 @@ func (p *AlibabaCloudParser) convertResourceToAsset(owner string, provider *Prov
 			}
 		}
 	}
-
 	// Build properties map with available information
 	properties := map[string]interface{}{
 		"resourceType": resourceType,
 	}
-
 	if publicIp != "" {
 		properties["publicIp"] = publicIp
 	}
@@ -177,7 +153,6 @@ func (p *AlibabaCloudParser) convertResourceToAsset(owner string, provider *Prov
 	if resource.ResourceGroupId != nil {
 		properties["resourceGroupId"] = tea.StringValue(resource.ResourceGroupId)
 	}
-
 	propertiesJson, err := json.Marshal(properties)
 	if err != nil {
 		// Fallback to empty JSON object if marshaling fails.
@@ -186,7 +161,6 @@ func (p *AlibabaCloudParser) convertResourceToAsset(owner string, provider *Prov
 		// We handle it gracefully to avoid breaking the entire scan.
 		propertiesJson = []byte("{}")
 	}
-
 	// Extract tags
 	tag := ""
 	if resource.Tags != nil {
@@ -194,10 +168,8 @@ func (p *AlibabaCloudParser) convertResourceToAsset(owner string, provider *Prov
 			tag += fmt.Sprintf("%s=%s,", tea.StringValue(t.Key), tea.StringValue(t.Value))
 		}
 	}
-
 	// Convert resource type to display name
 	displayResourceType := p.getDisplayResourceType(resourceType)
-
 	asset := &Asset{
 		Owner:       owner,
 		Name:        util.GenerateId(),
@@ -213,10 +185,8 @@ func (p *AlibabaCloudParser) convertResourceToAsset(owner string, provider *Prov
 		Tag:         tag,
 		Properties:  string(propertiesJson),
 	}
-
 	return asset
 }
-
 // getDisplayResourceType converts an ACS resource type to a cloud-neutral display name
 func (p *AlibabaCloudParser) getDisplayResourceType(resourceType string) string {
 	// Map of known resource types to cloud-neutral display names
@@ -257,11 +227,9 @@ func (p *AlibabaCloudParser) getDisplayResourceType(resourceType string) string 
 		"ACS::KMS::Key":                    "KMS Key",
 		"ACS::FC::Function":                "Function Compute",
 	}
-
 	if displayName, ok := displayNames[resourceType]; ok {
 		return displayName
 	}
-
 	// If no mapping found, return the resource type as-is
 	return resourceType
 }

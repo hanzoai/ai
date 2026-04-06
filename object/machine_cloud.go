@@ -11,16 +11,12 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
 package object
-
 import (
 	"fmt"
-
 	"github.com/hanzoai/cloud/i18n"
 	"github.com/hanzoai/cloud/pkgmachine"
 )
-
 func getMachineFromService(owner string, provider string, clientMachine *pkgmachine.Machine) *Machine {
 	return &Machine{
 		Owner:       owner,
@@ -46,52 +42,43 @@ func getMachineFromService(owner string, provider string, clientMachine *pkgmach
 		MemSize:     clientMachine.MemSize,
 	}
 }
-
 func getMachinesCloud(owner string, lang string) ([]*Machine, error) {
 	machines := []*Machine{}
 	providers, err := getActiveCloudProviders(owner)
 	if err != nil {
 		return nil, err
 	}
-
 	for _, provider := range providers {
 		client, err2 := pkgmachine.NewMachineClient(provider.Type, provider.ClientId, provider.ClientSecret, provider.Region, lang)
 		if err2 != nil {
 			return nil, err2
 		}
-
 		clientMachines, err2 := client.GetMachines(lang)
 		if err2 != nil {
 			if provider.Type != "VMware" {
 				return nil, err2
 			}
 		}
-
 		for _, clientMachine := range clientMachines {
 			machine := getMachineFromService(owner, provider.Name, clientMachine)
 			machines = append(machines, machine)
 		}
 	}
-
 	return machines, nil
 }
-
 func SyncMachinesCloud(owner string, lang string) (bool, error) {
 	machines, err := getMachinesCloud(owner, lang)
 	if err != nil {
 		return false, err
 	}
-
 	dbMachines, err := GetMachines(owner)
 	if err != nil {
 		return false, err
 	}
-
 	dbMachineMap := map[string]*Machine{}
 	for _, dbMachine := range dbMachines {
 		dbMachineMap[dbMachine.GetId()] = dbMachine
 	}
-
 	for _, machine := range machines {
 		if dbMachine, ok := dbMachineMap[machine.GetId()]; ok {
 			machine.RemoteProtocol = dbMachine.RemoteProtocol
@@ -100,20 +87,16 @@ func SyncMachinesCloud(owner string, lang string) (bool, error) {
 			machine.RemotePassword = dbMachine.RemotePassword
 		}
 	}
-
 	_, err = deleteMachines(owner)
 	if err != nil {
 		return false, err
 	}
-
 	if len(machines) == 0 {
 		return false, nil
 	}
-
 	affected, err := addMachines(machines)
 	return affected, err
 }
-
 func updateMachineCloud(oldMachine *Machine, machine *Machine, lang string) (bool, error) {
 	provider, err := getProvider("admin", oldMachine.Provider)
 	if err != nil {
@@ -122,20 +105,16 @@ func updateMachineCloud(oldMachine *Machine, machine *Machine, lang string) (boo
 	if provider == nil {
 		return false, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:The provider: %s does not exist"), machine.Provider))
 	}
-
 	client, err := pkgmachine.NewMachineClient(provider.Type, provider.ClientId, provider.ClientSecret, provider.Region, lang)
 	if err != nil {
 		return false, err
 	}
-
 	if oldMachine.State != machine.State {
 		affected, _, err := client.UpdateMachineState(oldMachine.Name, machine.State, lang)
 		if err != nil {
 			return false, err
 		}
-
 		return affected, nil
 	}
-
 	return false, nil
 }

@@ -11,17 +11,14 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
 package object
-
 import (
 	"fmt"
 	"os"
-
 	"github.com/hanzoai/cloud/scan"
 	"github.com/hanzoai/cloud/util"
+	"github.com/hanzoai/dbx"
 )
-
 // ScanResult represents the result of a scan operation
 type ScanResult struct {
 	RawResult     string `json:"rawResult"`
@@ -29,7 +26,6 @@ type ScanResult struct {
 	ResultSummary string `json:"resultSummary"`
 	Runner        string `json:"runner"`
 }
-
 // ScanAsset performs a scan on an asset
 // @param provider: The provider ID (owner/name) for scan provider
 // @param scan: Optional scan ID (owner/name) for saving results to existing scan
@@ -49,7 +45,6 @@ func ScanAsset(provider, scanParam, targetMode, target, asset, command string, s
 		if scanObj == nil {
 			return nil, fmt.Errorf("scan not found")
 		}
-
 		scanObj.State = "Pending"
 		scanObj.UpdatedTime = util.GetCurrentTime()
 		// Clear Runner, ErrorText, and results when re-clicking Scan button
@@ -62,13 +57,11 @@ func ScanAsset(provider, scanParam, targetMode, target, asset, command string, s
 		if err != nil {
 			return nil, err
 		}
-
 		return &ScanResult{
 			RawResult: "",
 			Result:    "",
 		}, nil
 	}
-
 	// For provider edit page (saveToScan=false), execute scan immediately
 	// Extract owner from provider ID
 	owner := "admin" // Default owner
@@ -80,7 +73,6 @@ func ScanAsset(provider, scanParam, targetMode, target, asset, command string, s
 	}
 	return executeScan(provider, scanParam, targetMode, target, asset, command, owner, lang)
 }
-
 // executeScan performs the actual scan execution
 func executeScan(provider, scanParam, targetMode, target, asset, command, owner string, lang string) (*ScanResult, error) {
 	// Get the hostname to identify the runner
@@ -88,7 +80,6 @@ func executeScan(provider, scanParam, targetMode, target, asset, command, owner 
 	if err != nil {
 		return nil, fmt.Errorf("error getting hostname: %v", err)
 	}
-
 	// Get the provider
 	providerObj, err := GetProvider(provider)
 	if err != nil {
@@ -97,7 +88,6 @@ func executeScan(provider, scanParam, targetMode, target, asset, command, owner 
 	if providerObj == nil {
 		return nil, fmt.Errorf("provider not found")
 	}
-
 	// Create scan provider
 	scanProvider, err := scan.GetScanProvider(providerObj.Type, providerObj.ClientId, lang)
 	if err != nil {
@@ -106,12 +96,10 @@ func executeScan(provider, scanParam, targetMode, target, asset, command, owner 
 	if scanProvider == nil {
 		return nil, fmt.Errorf("scan provider not supported")
 	}
-
 	// Determine the scan target
 	var scanTarget string
 	if targetMode == "Asset" {
 		assetId := util.GetIdFromOwnerAndName(owner, asset)
-
 		// Get the asset
 		assetObj, err := GetAsset(assetId)
 		if err != nil {
@@ -120,7 +108,6 @@ func executeScan(provider, scanParam, targetMode, target, asset, command, owner 
 		if assetObj == nil {
 			return nil, fmt.Errorf("asset not found")
 		}
-
 		// Get the scan target from asset
 		scanTarget, err = assetObj.GetScanTarget()
 		if err != nil {
@@ -130,45 +117,40 @@ func executeScan(provider, scanParam, targetMode, target, asset, command, owner 
 		// Use manual input target
 		scanTarget = target
 	}
-
 	// Perform scan
 	rawResult, err := scanProvider.Scan(scanTarget, command)
 	if err != nil {
 		return nil, err
 	}
-
 	// Parse the raw result into structured JSON
 	result, err := scanProvider.ParseResult(rawResult)
 	if err != nil {
 		return nil, err
 	}
-
 	// Generate result summary
 	resultSummary := scanProvider.GetResultSummary(result)
-
 	return &ScanResult{RawResult: rawResult, Result: result, ResultSummary: resultSummary, Runner: hostname}, nil
 }
-
 // GetPendingScans returns all scans with state "Pending"
 func GetPendingScans() ([]*Scan, error) {
 	scans := []*Scan{}
-	err := adapter.engine.Where("state = ?", "Pending").Find(&scans)
+	err := findAll(adapter.db, "scan", &scans, dbx.HashExp{"state": "Pending"})
 	if err != nil {
 		return nil, err
 	}
 	return scans, nil
 }
-
 // AtomicClaimScan atomically updates a scan's state from "Pending" to "Running"
 // This operation will only succeed for one instance due to the WHERE condition on state
 // Returns the number of affected rows
 func AtomicClaimScan(owner, name, hostname string) (int64, error) {
-	affected, err := adapter.engine.Table(&Scan{}).
-		Where("owner = ? AND name = ? AND state = ?", owner, name, "Pending").
-		Update(map[string]interface{}{
+	affected, err := updateCols(adapter.db, "scan",
+		dbx.NewExp("owner = {:p0} AND name = {:p1} AND state = {:p2}", dbx.Params{"p0": owner, "p1": name, "p2": "Pending"}),
+		dbx.Params{
 			"state":        "Running",
 			"runner":       hostname,
 			"updated_time": util.GetCurrentTime(),
-		})
+		},
+	)
 	return affected, err
 }

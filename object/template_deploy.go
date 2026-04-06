@@ -11,16 +11,13 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
 package object
-
 import (
 	"context"
 	"fmt"
 	"strings"
 	"sync"
 	"time"
-
 	"github.com/hanzoai/cloud/i18n"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -35,7 +32,6 @@ import (
 	"k8s.io/client-go/restmapper"
 	"k8s.io/client-go/tools/clientcmd"
 )
-
 type K8sClient struct {
 	clientSet     *kubernetes.Clientset
 	dynamicClient dynamic.Interface
@@ -44,56 +40,44 @@ type K8sClient struct {
 	connected     bool
 	configText    string
 }
-
 var (
 	k8sClient      *K8sClient
 	k8sClientMutex sync.Mutex
 )
-
 func init() {
 	k8sClient = nil
 }
-
 // Create K8s client from provider's ConfigText
 func createK8sClientFromProvider(provider *Provider, lang string) (*K8sClient, error) {
 	if provider.ConfigText == "" {
 		return nil, fmt.Errorf("%s", i18n.Translate(lang, "object:provider kubeconfig content is empty"))
 	}
-
 	// Parse kubeconfig from provider.ConfigText
 	config, err := clientcmd.RESTConfigFromKubeConfig([]byte(provider.ConfigText))
 	if err != nil {
 		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:failed to parse kubeconfig from provider: %v"), err))
 	}
-
 	return createK8sClient(config, provider.ConfigText, lang)
 }
-
 func createK8sClient(config *rest.Config, configText string, lang string) (*K8sClient, error) {
 	config.Timeout = 30 * time.Second // Default timeout
-
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
 		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:failed to create kubernetes clientSet: %v"), err))
 	}
-
 	dynamicClient, err := dynamic.NewForConfig(config)
 	if err != nil {
 		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:failed to create dynamic client: %v"), err))
 	}
-
 	discoveryClient, err := discovery.NewDiscoveryClientForConfig(config)
 	if err != nil {
 		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:failed to create discovery client: %v"), err))
 	}
-
 	groupResources, err := restmapper.GetAPIGroupResources(discoveryClient)
 	if err != nil {
 		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:failed to get API group resources: %v"), err))
 	}
-
 	restMapper := restmapper.NewDiscoveryRESTMapper(groupResources)
-
 	client := &K8sClient{
 		clientSet:     clientset,
 		dynamicClient: dynamicClient,
@@ -102,90 +86,72 @@ func createK8sClient(config *rest.Config, configText string, lang string) (*K8sC
 		connected:     false,
 		configText:    configText,
 	}
-
 	if err := client.testConnection(); err != nil {
 		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:failed to connect to kubernetes cluster: %v"), err))
 	}
-
 	client.connected = true
 	return client, nil
 }
-
 func (k *K8sClient) testConnection() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-
 	_, err := k.clientSet.CoreV1().Namespaces().List(ctx, metav1.ListOptions{Limit: 1})
 	return err
 }
-
 // Ensure k8s client is initialized, try to initialize if not
 func ensureK8sClient(lang string) error {
 	// Quick check if client is already ready
 	if k8sClient != nil && k8sClient.connected {
 		return nil
 	}
-
 	k8sClientMutex.Lock()
 	defer k8sClientMutex.Unlock()
-
 	if k8sClient != nil && k8sClient.connected {
 		return nil
 	}
-
 	provider, err := GetDefaultKubernetesProvider(lang)
 	if err != nil {
 		return fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:failed to get default Kubernetes provider: %v"), err))
 	}
-
 	// Only recreate if config changed or client doesn't exist
 	if k8sClient == nil || k8sClient.configText != provider.ConfigText {
 		if cacheManager != nil {
 			cacheManager.Stop()
 			cacheManager = nil
 		}
-
 		client, err := createK8sClientFromProvider(provider, lang)
 		if err != nil {
 			return err
 		}
 		k8sClient = client
-
 		host, parseErr := parseK8sHost(provider.ConfigText, lang)
 		if parseErr != nil {
 			cachedK8sHost = ""
 		} else {
 			cachedK8sHost = host
 		}
-
 		// Initialize cache manager
 		if err := initCacheManager(); err != nil {
 			return fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:failed to initialize cache manager: %v"), err))
 		}
-
 		if err := startCacheManager(lang); err != nil {
 			return fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:failed to start cache manager: %v"), err))
 		}
 	}
-
 	return nil
 }
-
 func GetK8sStatus(lang string) (string, error) {
 	if err := ensureK8sClient(lang); err != nil {
 		return "Disconnected", err
 	}
-
 	err := k8sClient.testConnection()
 	if err != nil {
 		k8sClient.connected = false
 		return "Disconnected", err
 	}
-
 	k8sClient.connected = true
 	return "Connected", nil
 }
-
 func (k *K8sClient) createNamespaceIfNotExists(name string) error {
 	_, err := k.clientSet.CoreV1().Namespaces().Get(
 		context.TODO(),
@@ -207,13 +173,11 @@ func (k *K8sClient) createNamespaceIfNotExists(name string) error {
 					},
 				},
 			}
-
 			gvr := schema.GroupVersionResource{
 				Group:    "",
 				Version:  "v1",
 				Resource: "namespaces",
 			}
-
 			_, err = k.dynamicClient.Resource(gvr).Create(
 				context.TODO(),
 				namespace,
@@ -226,30 +190,24 @@ func (k *K8sClient) createNamespaceIfNotExists(name string) error {
 			return err
 		}
 	}
-
 	return nil
 }
-
 func (k *K8sClient) deployResource(yamlContent, namespace string, lang string) error {
 	// Parse YAML to unstructured object
 	decoder := yaml.NewYAMLToJSONDecoder(strings.NewReader(yamlContent))
-
 	var obj unstructured.Unstructured
 	err := decoder.Decode(&obj)
 	if err != nil {
 		return fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:failed to decode YAML: %v"), err))
 	}
-
 	// Skip empty objects
 	if obj.GetKind() == "" {
 		return nil
 	}
-
 	// Set namespace if not specified and resource is namespaced
 	if obj.GetNamespace() == "" && obj.GetKind() != "Namespace" {
 		obj.SetNamespace(namespace)
 	}
-
 	// Add labels for management
 	labels := obj.GetLabels()
 	if labels == nil {
@@ -257,21 +215,18 @@ func (k *K8sClient) deployResource(yamlContent, namespace string, lang string) e
 	}
 	labels["managed-by"] = "hanzo-cloud"
 	obj.SetLabels(labels)
-
 	// Get GVR for the resource
 	gvk := obj.GetObjectKind().GroupVersionKind()
 	mapping, err := k.restMapper.RESTMapping(gvk.GroupKind(), gvk.Version)
 	if err != nil {
 		return fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:failed to get REST mapping for %s: %v"), gvk, err))
 	}
-
 	var dr dynamic.ResourceInterface
 	if mapping.Scope.Name() == meta.RESTScopeNameNamespace {
 		dr = k.dynamicClient.Resource(mapping.Resource).Namespace(obj.GetNamespace())
 	} else {
 		dr = k.dynamicClient.Resource(mapping.Resource)
 	}
-
 	// Try to get existing resource
 	existing, err := dr.Get(context.TODO(), obj.GetName(), metav1.GetOptions{})
 	if err != nil {
@@ -292,6 +247,5 @@ func (k *K8sClient) deployResource(yamlContent, namespace string, lang string) e
 			return fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:failed to update resource %s/%s: %v"), obj.GetKind(), obj.GetName(), err))
 		}
 	}
-
 	return nil
 }

@@ -11,18 +11,14 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
 package object
-
 import (
 	"encoding/base64"
 	"fmt"
 	"mime"
 	"strings"
-
 	"github.com/hanzoai/cloud/i18n"
 )
-
 func getExtFromMimeType(mimeType string, lang string) (string, error) {
 	exts, err := mime.ExtensionsByType(mimeType)
 	if err != nil {
@@ -31,7 +27,6 @@ func getExtFromMimeType(mimeType string, lang string) (string, error) {
 	if len(exts) == 0 {
 		return "", fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:getExtFromMimeType() error: unknown MimeType: %s"), mimeType))
 	}
-
 	res := ""
 	if strings.HasPrefix(exts[len(exts)-1], ".x-") && len(exts) > 1 {
 		res = exts[len(exts)-2][1:]
@@ -40,22 +35,18 @@ func getExtFromMimeType(mimeType string, lang string) (string, error) {
 	}
 	return res, nil
 }
-
 func parseBase64Image(data string, lang string) ([]byte, error) {
 	parts := strings.SplitN(data, ";", 2)
 	if len(parts) < 2 {
 		return nil, fmt.Errorf("%s", i18n.Translate(lang, "object:parseBase64Image() error: invalid image format"))
 	}
-
 	b64Parts := strings.SplitN(parts[1], ",", 2)
 	if len(b64Parts) < 2 {
 		return nil, fmt.Errorf("%s", i18n.Translate(lang, "object:parseBase64Image() error: invalid image format"))
 	}
-
 	imageContent, err := base64.StdEncoding.DecodeString(b64Parts[1])
 	if err != nil {
 		return nil, err
 	}
-
 	return imageContent, nil
 }

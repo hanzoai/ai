@@ -11,94 +11,77 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
 package object
-
 import (
 	"fmt"
-
 	"github.com/hanzoai/cloud/util"
-	"xorm.io/core"
+	"github.com/hanzoai/dbx"
 )
-
 type Vector struct {
-	Owner       string `xorm:"varchar(100) notnull pk" json:"owner"`
-	Name        string `xorm:"varchar(100) notnull pk" json:"name"`
-	CreatedTime string `xorm:"varchar(100)" json:"createdTime"`
-
-	DisplayName string  `xorm:"varchar(100)" json:"displayName"`
-	Store       string  `xorm:"varchar(100)" json:"store"`
-	Provider    string  `xorm:"varchar(100) index" json:"provider"`
-	File        string  `xorm:"varchar(500)" json:"file"`
+	Owner       string `db:"pk" json:"owner"`
+	Name        string `db:"pk" json:"name"`
+	CreatedTime string `json:"createdTime"`
+	DisplayName string  `json:"displayName"`
+	Store       string  `json:"store"`
+	Provider    string  `json:"provider"`
+	File        string  `json:"file"`
 	Index       int     `json:"index"`
-	Text        string  `xorm:"mediumtext" json:"text"`
+	Text        string  `json:"text"`
 	TokenCount  int     `json:"tokenCount"`
 	Price       float64 `json:"price"`
-	Currency    string  `xorm:"varchar(100)" json:"currency"`
+	Currency    string  `json:"currency"`
 	Score       float32 `json:"score"`
-
-	Data      []float32 `xorm:"mediumtext" json:"data"`
+	Data      []float32 `json:"data"`
 	Dimension int       `json:"dimension"`
 }
-
 func GetGlobalVectors() ([]*Vector, error) {
 	vectors := []*Vector{}
-	err := adapter.engine.Asc("owner").Desc("created_time").Find(&vectors)
+	err := findAll(adapter.db, "vector", &vectors, nil, "owner ASC", "created_time DESC")
 	if err != nil {
 		return vectors, err
 	}
-
 	return vectors, nil
 }
-
 func GetVectors(owner string) ([]*Vector, error) {
 	vectors := []*Vector{}
-	err := adapter.engine.Asc("file").Asc("index").Find(&vectors, &Vector{Owner: owner})
+	err := findAll(adapter.db, "vector", &vectors, dbx.HashExp{"owner": owner}, "file ASC", "index ASC")
 	if err != nil {
 		return vectors, err
 	}
-
 	return vectors, nil
 }
-
 func getVectorsByProvider(relatedStores []string, provider string) ([]*Vector, error) {
 	vectors := []*Vector{}
-	err := adapter.engine.In("store", relatedStores).Find(&vectors, &Vector{Provider: provider})
+	err := adapter.db.Select().From("vector").Where(dbx.And(dbx.In("store", toInterfaceSlice(relatedStores)...), dbx.HashExp{"provider": provider})).All(&vectors)
 	if err != nil {
 		return vectors, err
 	}
-
 	return vectors, nil
 }
-
 func getVector(owner string, name string) (*Vector, error) {
 	vector := Vector{Owner: owner, Name: name}
-	existed, err := adapter.engine.Get(&vector)
+	existed, err := getOne(adapter.db, "vector", &vector, pk2(vector.Owner, vector.Name))
 	if err != nil {
 		return &vector, err
 	}
-
 	if existed {
 		return &vector, nil
 	} else {
 		return nil, nil
 	}
 }
-
 func getVectorByIndex(owner string, store string, file string, index int) (*Vector, error) {
 	vector := Vector{Owner: owner, Store: store, File: file, Index: index}
-	existed, err := adapter.engine.Get(&vector)
+	existed, err := getOne(adapter.db, "vector", &vector, pk2(vector.Owner, vector.Name))
 	if err != nil {
 		return &vector, err
 	}
-
 	if existed {
 		return &vector, nil
 	} else {
 		return nil, nil
 	}
 }
-
 func GetVector(id string) (*Vector, error) {
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
 	if err != nil {
@@ -106,7 +89,6 @@ func GetVector(id string) (*Vector, error) {
 	}
 	return getVector(owner, name)
 }
-
 func UpdateVector(id string, vector *Vector, lang string) (bool, error) {
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
 	if err != nil {
@@ -119,7 +101,6 @@ func UpdateVector(id string, vector *Vector, lang string) (bool, error) {
 	if vector == nil {
 		return false, nil
 	}
-
 	if oldVector.Text != vector.Text {
 		if vector.Text == "" {
 			vector.Data = []float32{}
@@ -130,78 +111,63 @@ func UpdateVector(id string, vector *Vector, lang string) (bool, error) {
 			}
 		}
 	}
-
-	_, err = adapter.engine.ID(core.PK{owner, name}).AllCols().Update(vector)
+	vector.Owner = owner
+	vector.Name = name
+	err = adapter.db.Model(vector).Update()
 	if err != nil {
 		return false, err
 	}
-
 	// return affected != 0
 	return true, nil
 }
-
 func AddVector(vector *Vector) (bool, error) {
 	//err := Index.Add(util.GetId(vector.Owner, vector.Name), vector.Data)
 	//if err != nil {
 	//	return false, err
 	//}
-
-	affected, err := adapter.engine.Insert(vector)
+	err := insertRow(adapter.db, vector)
 	if err != nil {
 		return false, err
 	}
-
-	return affected != 0, nil
+	return true, nil
 }
-
 func DeleteVector(vector *Vector) (bool, error) {
-	affected, err := adapter.engine.ID(core.PK{vector.Owner, vector.Name}).Delete(&Vector{})
+	affected, err := deleteByPK(adapter.db, "vector", pk2(vector.Owner, vector.Name))
 	if err != nil {
 		return false, err
 	}
-
 	return affected != 0, nil
 }
-
 func DeleteVectorsByStore(owner string, storeName string) (bool, error) {
-	affected, err := adapter.engine.Where("owner = ? AND store = ?", owner, storeName).Delete(&Vector{})
+	affected, err := deleteWhere(adapter.db, "vector", dbx.NewExp("owner = ? AND store = ?", dbx.Params{"p0": owner, "p1": storeName}))
 	if err != nil {
 		return false, err
 	}
-
 	return affected != 0, nil
 }
-
 func DeleteVectorsByFile(owner string, storeName string, fileKey string) (bool, error) {
-	affected, err := adapter.engine.Where("owner = ? AND store = ? AND file = ?", owner, storeName, fileKey).Delete(&Vector{})
+	affected, err := deleteWhere(adapter.db, "vector", dbx.NewExp("owner = ? AND store = ? AND file = ?", dbx.Params{"p0": owner, "p1": storeName, "p2": fileKey}))
 	if err != nil {
 		return false, err
 	}
-
 	return affected != 0, nil
 }
-
 func (vector *Vector) GetId() string {
 	return fmt.Sprintf("%s/%s", vector.Owner, vector.Name)
 }
-
 func GetVectorCount(owner string, storeName string, field string, value string) (int64, error) {
-	session := GetDbSession(owner, -1, -1, field, value, "", "")
-	return session.Count(&Vector{Store: storeName})
+	q := GetDbQuery(owner, -1, -1, field, value, "", "")
+	return queryCount(q, "vector")
 }
-
 func GetPaginationVectors(owner string, storeName string, offset, limit int, field, value, sortField, sortOrder string) ([]*Vector, error) {
 	vectors := []*Vector{}
-	session := GetDbSession(owner, offset, limit, field, value, sortField, sortOrder)
-	var err error
+	q := GetDbQuery(owner, offset, limit, field, value, sortField, sortOrder)
 	if storeName != "" {
-		err = session.Find(&vectors, &Vector{Store: storeName})
-	} else {
-		err = session.Find(&vectors)
+		q = q.AndWhere(dbx.HashExp{"store": storeName})
 	}
+	err := queryFind(q, "vector", &vectors)
 	if err != nil {
 		return vectors, err
 	}
-
 	return vectors, nil
 }

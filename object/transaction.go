@@ -11,9 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
 package object
-
 import (
 	"bytes"
 	"encoding/json"
@@ -23,15 +21,12 @@ import (
 	"net/http"
 	"strings"
 	"time"
-
 	"github.com/beego/beego/logs"
 	"github.com/hanzoai/cloud/conf"
 	"github.com/hanzoai/cloud/util"
 	"github.com/robfig/cron/v3"
 )
-
 var CloudHost = ""
-
 // commerceClient returns an HTTP client and the Commerce billing endpoint URL.
 // Returns ("", nil) if Commerce is not configured.
 func commerceClient() (string, string, *http.Client) {
@@ -43,7 +38,6 @@ func commerceClient() (string, string, *http.Client) {
 	token := conf.GetConfigString("commerceToken")
 	return endpoint, token, &http.Client{Timeout: 10 * time.Second}
 }
-
 // ValidateTransactionForMessage validates that the user has sufficient balance
 // before committing an expensive AI generation. Checks balance via Commerce.
 func ValidateTransactionForMessage(message *Message) error {
@@ -51,30 +45,24 @@ func ValidateTransactionForMessage(message *Message) error {
 	if message.Price <= 0 {
 		return nil
 	}
-
 	endpoint, token, client := commerceClient()
 	if endpoint == "" {
 		return fmt.Errorf("commerceEndpoint is not configured")
 	}
-
 	// Build the user identifier: owner/name format expected by Commerce
 	userId := message.User
 	if message.Owner != "" && !strings.Contains(userId, "/") {
 		userId = message.Owner + "/" + userId
 	}
-
 	// Convert price (dollars float64) to cents for comparison
 	priceCents := int64(math.Round(message.Price * 100))
-
 	cur := strings.ToLower(message.Currency)
 	if cur == "" {
 		cur = "usd"
 	}
-
 	// Query Commerce for balance
 	url := fmt.Sprintf("%s/api/v1/billing/balance?user=%s&currency=%s",
 		endpoint, userId, cur)
-
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return fmt.Errorf("failed to build balance request: %w", err)
@@ -82,31 +70,25 @@ func ValidateTransactionForMessage(message *Message) error {
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
-
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to check balance: %w", err)
 	}
 	defer resp.Body.Close()
-
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("Commerce balance check returned status %d", resp.StatusCode)
 	}
-
 	var result struct {
 		Available int64 `json:"available"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return fmt.Errorf("failed to parse balance response: %w", err)
 	}
-
 	if result.Available < priceCents {
 		return fmt.Errorf("insufficient balance: available %d cents, required %d cents", result.Available, priceCents)
 	}
-
 	return nil
 }
-
 // AddTransactionForMessage creates a withdraw transaction in Commerce for a message
 // with price, sets the message's TransactionId, and if transaction creation fails,
 // updates the message's ErrorText field in the database and returns an error.
@@ -115,29 +97,24 @@ func AddTransactionForMessage(message *Message) error {
 	if message.Price <= 0 {
 		return nil
 	}
-
 	endpoint, token, client := commerceClient()
 	if endpoint == "" {
 		return fmt.Errorf("commerceEndpoint is not configured")
 	}
-
 	// Build the user identifier
 	userId := message.User
 	if message.Owner != "" && !strings.Contains(userId, "/") {
 		userId = message.Owner + "/" + userId
 	}
-
 	// Convert price (dollars float64) to cents
 	amountCents := int64(math.Round(message.Price * 100))
 	if amountCents <= 0 {
 		return nil
 	}
-
 	cur := strings.ToLower(message.Currency)
 	if cur == "" {
 		cur = "usd"
 	}
-
 	payload := map[string]interface{}{
 		"user":      userId,
 		"currency":  cur,
@@ -149,12 +126,10 @@ func AddTransactionForMessage(message *Message) error {
 		"stream":    false,
 		"status":    "success",
 	}
-
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("failed to marshal usage payload: %w", err)
 	}
-
 	url := endpoint + "/api/v1/billing/usage"
 	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
@@ -164,7 +139,6 @@ func AddTransactionForMessage(message *Message) error {
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
-
 	resp, err := client.Do(req)
 	if err != nil {
 		message.ErrorText = fmt.Sprintf("failed to add transaction: %s", err.Error())
@@ -175,7 +149,6 @@ func AddTransactionForMessage(message *Message) error {
 		return fmt.Errorf("failed to add transaction: %s", err.Error())
 	}
 	defer resp.Body.Close()
-
 	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
 		bodyBytes, _ := io.ReadAll(resp.Body)
 		errMsg := fmt.Sprintf("Commerce returned status %d: %s", resp.StatusCode, string(bodyBytes))
@@ -186,7 +159,6 @@ func AddTransactionForMessage(message *Message) error {
 		}
 		return fmt.Errorf("failed to add transaction: %s", errMsg)
 	}
-
 	var result struct {
 		TransactionId string `json:"transactionId"`
 	}
@@ -195,23 +167,19 @@ func AddTransactionForMessage(message *Message) error {
 	} else if result.TransactionId != "" {
 		message.TransactionId = result.TransactionId
 	}
-
 	return nil
 }
-
 func retryFailedTransaction() error {
 	messages, err := GetGlobalFailMessages()
 	if err != nil {
 		return err
 	}
-
 	for _, message := range messages {
 		if strings.HasPrefix(message.ErrorText, "failed to add transaction") {
 			err = AddTransactionForMessage(message)
 			if err != nil {
 				return err
 			}
-
 			message.ErrorText = ""
 			_, err = UpdateMessage(message.GetId(), message, false)
 			if err != nil {
@@ -219,17 +187,14 @@ func retryFailedTransaction() error {
 			}
 		}
 	}
-
 	return nil
 }
-
 func retryFailedTransactionNoError() {
 	err := retryFailedTransaction()
 	if err != nil {
 		logs.Error("retryFailedTransactionNoError() error: %s", err.Error())
 	}
 }
-
 func InitMessageTransactionRetry() {
 	cronJob := cron.New()
 	schedule := "@every 5m"
@@ -237,6 +202,5 @@ func InitMessageTransactionRetry() {
 	if err != nil {
 		panic(err)
 	}
-
 	cronJob.Start()
 }

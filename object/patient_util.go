@@ -11,44 +11,36 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
 package object
-
 import (
 	iamsdk "github.com/hanzoid/go-sdk/casdoorsdk"
 )
-
 func IsAdmin(user *iamsdk.User) bool {
 	if user == nil {
 		return false
 	}
 	return user.IsAdmin || user.Tag == "Admin"
 }
-
 func IsDoctor(user *iamsdk.User) bool {
 	if user == nil {
 		return false
 	}
 	return user.Tag == "Doctor"
 }
-
 func IsPatient(user *iamsdk.User) bool {
 	if user == nil {
 		return false
 	}
 	return user.Tag == "Patient"
 }
-
 func CanEditPatient(user *iamsdk.User, patient *Patient) bool {
 	if user == nil || patient == nil {
 		return false
 	}
-
 	// Admins can edit all patients
 	if IsAdmin(user) {
 		return true
 	}
-
 	// Doctors who are owners can edit
 	if IsDoctor(user) {
 		for _, owner := range patient.Owners {
@@ -57,25 +49,20 @@ func CanEditPatient(user *iamsdk.User, patient *Patient) bool {
 			}
 		}
 	}
-
 	return false
 }
-
 func FilterPatientsByUser(user *iamsdk.User, patients []*Patient) []*Patient {
 	if user == nil {
 		return []*Patient{}
 	}
-
 	// Admins can view all patients
 	if IsAdmin(user) {
 		return patients
 	}
-
 	// Patients cannot view any patients
 	if IsPatient(user) {
 		return []*Patient{}
 	}
-
 	// Doctors can only view their own patients
 	if IsDoctor(user) {
 		filtered := []*Patient{}
@@ -89,6 +76,5 @@ func FilterPatientsByUser(user *iamsdk.User, patients []*Patient) []*Patient {
 		}
 		return filtered
 	}
-
 	return []*Patient{}
 }
