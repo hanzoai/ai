@@ -11,11 +11,8 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
 package object
-
 import "github.com/hanzoai/cloud/model"
-
 // GetAnswerFake returns a hardcoded string without calling the LLM API, for fast local debugging.
 // Switch between GetAnswer and GetAnswerFake by commenting one of the two call sites (e.g. in task_analyze.go).
 // Replace fakeAnswer below with your real API response (multi-line raw string is fine).

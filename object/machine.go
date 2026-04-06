@@ -11,94 +11,79 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
 package object
-
 import (
 	"fmt"
-
 	openapi "github.com/alibabacloud-go/darabonba-openapi/v2/client"
 	ecs20140526 "github.com/alibabacloud-go/ecs-20140526/v4/client"
 	"github.com/alibabacloud-go/tea/tea"
 	"github.com/hanzoai/cloud/util"
-	"xorm.io/core"
+	"github.com/hanzoai/dbx"
 )
-
 type Machine struct {
-	Owner       string `xorm:"varchar(100) notnull pk" json:"owner"`
-	Name        string `xorm:"varchar(100) notnull pk" json:"name"`
-	Id          string `xorm:"varchar(100)" json:"id"`
-	Provider    string `xorm:"varchar(100)" json:"provider"`
-	CreatedTime string `xorm:"varchar(100)" json:"createdTime"`
-	UpdatedTime string `xorm:"varchar(100)" json:"updatedTime"`
-	ExpireTime  string `xorm:"varchar(100)" json:"expireTime"`
-	DisplayName string `xorm:"varchar(100)" json:"displayName"`
-
-	Region   string `xorm:"varchar(100)" json:"region"`
-	Zone     string `xorm:"varchar(100)" json:"zone"`
-	Category string `xorm:"varchar(100)" json:"category"`
-	Type     string `xorm:"varchar(100)" json:"type"`
-	Size     string `xorm:"varchar(100)" json:"size"`
-	Tag      string `xorm:"varchar(100)" json:"tag"`
-	State    string `xorm:"varchar(100)" json:"state"`
-
-	Image     string `xorm:"varchar(100)" json:"image"`
-	Os        string `xorm:"varchar(100)" json:"os"`
-	PublicIp  string `xorm:"varchar(100)" json:"publicIp"`
-	PrivateIp string `xorm:"varchar(100)" json:"privateIp"`
-	CpuSize   string `xorm:"varchar(100)" json:"cpuSize"`
-	MemSize   string `xorm:"varchar(100)" json:"memSize"`
-
+	Owner       string `db:"pk" json:"owner"`
+	Name        string `db:"pk" json:"name"`
+	Id          string `json:"id"`
+	Provider    string `json:"provider"`
+	CreatedTime string `json:"createdTime"`
+	UpdatedTime string `json:"updatedTime"`
+	ExpireTime  string `json:"expireTime"`
+	DisplayName string `json:"displayName"`
+	Region   string `json:"region"`
+	Zone     string `json:"zone"`
+	Category string `json:"category"`
+	Type     string `json:"type"`
+	Size     string `json:"size"`
+	Tag      string `json:"tag"`
+	State    string `json:"state"`
+	Image     string `json:"image"`
+	Os        string `json:"os"`
+	PublicIp  string `json:"publicIp"`
+	PrivateIp string `json:"privateIp"`
+	CpuSize   string `json:"cpuSize"`
+	MemSize   string `json:"memSize"`
 	// DB info
-	RemoteProtocol string `xorm:"varchar(100)" json:"remoteProtocol"`
+	RemoteProtocol string `json:"remoteProtocol"`
 	RemotePort     int    `json:"remotePort"`
-	RemoteUsername string `xorm:"varchar(100)" json:"remoteUsername"`
-	RemotePassword string `xorm:"varchar(100)" json:"remotePassword"`
+	RemoteUsername string `json:"remoteUsername"`
+	RemotePassword string `json:"remotePassword"`
 }
-
 func GetMachineCount(owner, field, value string) (int64, error) {
-	session := GetDbSession(owner, -1, -1, field, value, "", "")
-	return session.Count(&Machine{})
+	session := GetDbQuery(owner, -1, -1, field, value, "", "")
+	return queryCount(session, "machine")
 }
-
 func GetMachines(owner string) ([]*Machine, error) {
 	machines := []*Machine{}
-	err := adapter.engine.Desc("created_time").Find(&machines, &Machine{Owner: owner})
+	err := findAll(adapter.db, "machine", &machines, dbx.HashExp{"owner": owner}, "created_time DESC")
 	if err != nil {
 		return machines, err
 	}
 	return machines, nil
 }
-
 func GetPaginationMachines(owner string, offset, limit int, field, value, sortField, sortOrder string) ([]*Machine, error) {
 	machines := []*Machine{}
-	session := GetDbSession(owner, offset, limit, field, value, sortField, sortOrder)
-	err := session.Find(&machines)
+	session := GetDbQuery(owner, offset, limit, field, value, sortField, sortOrder)
+	err := queryFind(session, "machine", &machines)
 	if err != nil {
 		return machines, err
 	}
-
 	return machines, nil
 }
-
 func getMachine(owner string, name string) (*Machine, error) {
 	if owner == "" || name == "" {
 		return nil, nil
 	}
-
 	machine := Machine{Owner: owner, Name: name}
-	existed, err := adapter.engine.Get(&machine)
+	existed, err := getOne(adapter.db, "machine", &machine, pk2(machine.Owner, machine.Name))
 	if err != nil {
 		return &machine, err
 	}
-
 	if existed {
 		return &machine, nil
 	} else {
 		return nil, nil
 	}
 }
-
 func GetMachine(id string) (*Machine, error) {
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
 	if err != nil {
@@ -106,28 +91,22 @@ func GetMachine(id string) (*Machine, error) {
 	}
 	return getMachine(owner, name)
 }
-
 func GetMaskedMachine(machine *Machine, errs ...error) (*Machine, error) {
 	if len(errs) > 0 && errs[0] != nil {
 		return nil, errs[0]
 	}
-
 	if machine == nil {
 		return nil, nil
 	}
-
 	if machine.RemotePassword != "" {
 		machine.RemotePassword = "***"
 	}
-
 	return machine, nil
 }
-
 func GetMaskedMachines(machines []*Machine, errs ...error) ([]*Machine, error) {
 	if len(errs) > 0 && errs[0] != nil {
 		return nil, errs[0]
 	}
-
 	var err error
 	for _, machine := range machines {
 		machine, err = GetMaskedMachine(machine)
@@ -135,10 +114,8 @@ func GetMaskedMachines(machines []*Machine, errs ...error) ([]*Machine, error) {
 			return nil, err
 		}
 	}
-
 	return machines, nil
 }
-
 func UpdateMachine(id string, machine *Machine) (bool, error) {
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
 	if err != nil {
@@ -150,24 +127,25 @@ func UpdateMachine(id string, machine *Machine) (bool, error) {
 	} else if oldMachine == nil {
 		return false, nil
 	}
-
 	if machine.RemotePassword == "***" {
 		machine.RemotePassword = oldMachine.RemotePassword
 	}
-
 	_, err = updateMachineCloud(oldMachine, machine, "en")
 	if err != nil {
 		return false, err
 	}
-
-	affected, err := adapter.engine.ID(core.PK{owner, name}).AllCols().Update(machine)
+	machine.Owner = owner
+	machine.Name = name
+	err = adapter.db.Model(machine).Update()
+	affected := int64(1)
+	if err != nil {
+		affected = 0
+	}
 	if err != nil {
 		return false, err
 	}
-
 	return affected != 0, nil
 }
-
 func AddMachine(machine *Machine) (bool, error) {
 	if len(machine.DisplayName) > 0 {
 		res, err := createMachineByImage(machine)
@@ -175,15 +153,12 @@ func AddMachine(machine *Machine) (bool, error) {
 			return false, err
 		}
 	}
-
-	affected, err := adapter.engine.Insert(machine)
+	err := insertRow(adapter.db, machine)
 	if err != nil {
 		return false, err
 	}
-
-	return affected != 0, nil
+	return true, nil
 }
-
 func createMachineByImage(machine *Machine) (bool, error) {
 	providers, err := getActiveCloudProviders(machine.Owner)
 	if err != nil {
@@ -201,7 +176,6 @@ func createMachineByImage(machine *Machine) (bool, error) {
 			if err2 != nil {
 				return false, err2
 			}
-
 			request0 := &ecs20140526.DescribeAvailableResourceRequest{
 				RegionId:            tea.String(provider.Region),
 				DestinationResource: tea.String("InstanceType"),
@@ -211,7 +185,6 @@ func createMachineByImage(machine *Machine) (bool, error) {
 				return false, err2
 			}
 			supportedResource := response0.Body.AvailableZones.AvailableZone[0].AvailableResources.AvailableResource[0].SupportedResources.SupportedResource
-
 			var instanceType string
 			for _, resource := range supportedResource {
 				if tea.StringValue(resource.Status) == "Available" {
@@ -219,7 +192,6 @@ func createMachineByImage(machine *Machine) (bool, error) {
 					break
 				}
 			}
-
 			request1 := &ecs20140526.DescribeSecurityGroupsRequest{}
 			response1, err2 := client.DescribeSecurityGroups(request1)
 			if err2 != nil {
@@ -227,7 +199,6 @@ func createMachineByImage(machine *Machine) (bool, error) {
 			}
 			securityGroupId := tea.StringValue(response1.Body.SecurityGroups.SecurityGroup[0].SecurityGroupId)
 			vpcId := tea.StringValue(response1.Body.SecurityGroups.SecurityGroup[0].VpcId)
-
 			request2 := &ecs20140526.DescribeVSwitchesRequest{
 				VpcId:    tea.String(vpcId),
 				RegionId: tea.String(provider.Region),
@@ -237,7 +208,6 @@ func createMachineByImage(machine *Machine) (bool, error) {
 				return false, err2
 			}
 			vSwitchId := tea.StringValue(response2.Body.VSwitches.VSwitch[0].VSwitchId)
-
 			request3 := &ecs20140526.DescribeAvailableResourceRequest{
 				RegionId:            tea.String(provider.Region),
 				DestinationResource: tea.String("SystemDisk"),
@@ -248,7 +218,6 @@ func createMachineByImage(machine *Machine) (bool, error) {
 				return false, err3
 			}
 			systemDiskCategory := tea.StringValue(response3.Body.AvailableZones.AvailableZone[0].AvailableResources.AvailableResource[0].SupportedResources.SupportedResource[0].Value)
-
 			request := &ecs20140526.RunInstancesRequest{
 				InstanceType:    tea.String(instanceType),
 				RegionId:        tea.String(provider.Region),
@@ -268,34 +237,31 @@ func createMachineByImage(machine *Machine) (bool, error) {
 	}
 	return false, nil
 }
-
 func addMachines(machines []*Machine) (bool, error) {
-	affected, err := adapter.engine.Insert(machines)
+	err := insertRow(adapter.db, machines)
+	affected := int64(1)
+	if err != nil {
+		affected = 0
+	}
 	if err != nil {
 		return false, err
 	}
-
 	return affected != 0, nil
 }
-
 func DeleteMachine(machine *Machine) (bool, error) {
-	affected, err := adapter.engine.ID(core.PK{machine.Owner, machine.Name}).Delete(&Machine{})
+	affected, err := deleteByPK(adapter.db, "machine", pk2(machine.Owner, machine.Name))
 	if err != nil {
 		return false, err
 	}
-
 	return affected != 0, nil
 }
-
 func deleteMachines(owner string) (bool, error) {
-	affected, err := adapter.engine.Delete(&Machine{Owner: owner})
+	affected, err := deleteWhere(adapter.db, "machine", dbx.HashExp{"owner": owner})
 	if err != nil {
 		return false, err
 	}
-
 	return affected != 0, nil
 }
-
 func (machine *Machine) GetId() string {
 	return fmt.Sprintf("%s/%s", machine.Owner, machine.Name)
 }

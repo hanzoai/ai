@@ -11,9 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
 package object
-
 import (
 	"bytes"
 	"context"
@@ -22,20 +20,17 @@ import (
 	"io"
 	"sync"
 	"time"
-
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/beego/beego/logs"
 	"github.com/hanzoai/cloud/conf"
 )
-
 const (
 	crawlStorageDefaultBucket   = "hanzo-crawl"
 	crawlStorageDefaultEndpoint = "http://minio.hanzo.svc.cluster.local:9000"
 	crawlStorageHTTPTimeout     = 30 * time.Second
 )
-
 // CrawlArchive is the envelope stored in Hanzo Storage for a crawl job's results.
 // It stores both the converted ScrapeResult data and the raw Crawl4AIResult data
 // when available, to preserve the full fidelity of crawl output.
@@ -46,12 +41,10 @@ type CrawlArchive struct {
 	Results    []ScrapeResult   `json:"results"`
 	RawResults []Crawl4AIResult `json:"raw_results,omitempty"`
 }
-
 var (
 	crawlStorageClient *s3.Client
 	crawlStorageOnce   sync.Once
 )
-
 // getCrawlStorageEndpoint returns the Hanzo Storage endpoint from config.
 func getCrawlStorageEndpoint() string {
 	endpoint := conf.GetConfigString("crawlStorageEndpoint")
@@ -60,7 +53,6 @@ func getCrawlStorageEndpoint() string {
 	}
 	return endpoint
 }
-
 // getCrawlStorageBucket returns the Hanzo Storage bucket name from config.
 func getCrawlStorageBucket() string {
 	bucket := conf.GetConfigString("crawlStorageBucket")
@@ -69,7 +61,6 @@ func getCrawlStorageBucket() string {
 	}
 	return bucket
 }
-
 // getCrawlStorageClient returns a singleton S3 client configured for Hanzo Storage.
 func getCrawlStorageClient() *s3.Client {
 	crawlStorageOnce.Do(func() {
@@ -80,12 +71,10 @@ func getCrawlStorageClient() *s3.Client {
 		if region == "" {
 			region = "us-east-1"
 		}
-
 		cfg := aws.Config{
 			Region:      region,
 			Credentials: credentials.NewStaticCredentialsProvider(accessKey, secretKey, ""),
 		}
-
 		crawlStorageClient = s3.NewFromConfig(cfg, func(o *s3.Options) {
 			o.BaseEndpoint = aws.String(endpoint)
 			o.UsePathStyle = true
@@ -93,12 +82,10 @@ func getCrawlStorageClient() *s3.Client {
 	})
 	return crawlStorageClient
 }
-
 // crawlArchiveKey builds the S3 object key for a crawl job's results.
 func crawlArchiveKey(owner, jobID string) string {
 	return fmt.Sprintf("%s/%s/results.json", owner, jobID)
 }
-
 // ArchiveCrawlResult uploads crawl results as JSON to Hanzo Storage.
 // The results are stored at {bucket}/{owner}/{jobID}/results.json.
 func ArchiveCrawlResult(owner, jobID string, results []ScrapeResult, rawResults []Crawl4AIResult) error {
@@ -106,7 +93,6 @@ func ArchiveCrawlResult(owner, jobID string, results []ScrapeResult, rawResults 
 	if client == nil {
 		return fmt.Errorf("Hanzo Storage client is not initialized")
 	}
-
 	archive := CrawlArchive{
 		Owner:      owner,
 		JobID:      jobID,
@@ -114,18 +100,14 @@ func ArchiveCrawlResult(owner, jobID string, results []ScrapeResult, rawResults 
 		Results:    results,
 		RawResults: rawResults,
 	}
-
 	data, err := json.Marshal(archive)
 	if err != nil {
 		return fmt.Errorf("failed to marshal crawl archive: %w", err)
 	}
-
 	bucket := getCrawlStorageBucket()
 	key := crawlArchiveKey(owner, jobID)
-
 	ctx, cancel := context.WithTimeout(context.Background(), crawlStorageHTTPTimeout)
 	defer cancel()
-
 	_, err = client.PutObject(ctx, &s3.PutObjectInput{
 		Bucket:      aws.String(bucket),
 		Key:         aws.String(key),
@@ -135,24 +117,19 @@ func ArchiveCrawlResult(owner, jobID string, results []ScrapeResult, rawResults 
 	if err != nil {
 		return fmt.Errorf("Hanzo Storage PutObject failed for %s: %w", key, err)
 	}
-
 	logs.Info("crawl archive: stored %d results at %s/%s (%d bytes)", len(results), bucket, key, len(data))
 	return nil
 }
-
 // GetArchivedCrawlResult retrieves previously archived crawl results from Hanzo Storage.
 func GetArchivedCrawlResult(owner, jobID string) (*CrawlArchive, error) {
 	client := getCrawlStorageClient()
 	if client == nil {
 		return nil, fmt.Errorf("Hanzo Storage client is not initialized")
 	}
-
 	bucket := getCrawlStorageBucket()
 	key := crawlArchiveKey(owner, jobID)
-
 	ctx, cancel := context.WithTimeout(context.Background(), crawlStorageHTTPTimeout)
 	defer cancel()
-
 	output, err := client.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(bucket),
 		Key:    aws.String(key),
@@ -161,20 +138,16 @@ func GetArchivedCrawlResult(owner, jobID string) (*CrawlArchive, error) {
 		return nil, fmt.Errorf("Hanzo Storage GetObject failed for %s: %w", key, err)
 	}
 	defer output.Body.Close()
-
 	data, err := io.ReadAll(output.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read crawl archive body for %s: %w", key, err)
 	}
-
 	var archive CrawlArchive
 	if err := json.Unmarshal(data, &archive); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal crawl archive for %s: %w", key, err)
 	}
-
 	return &archive, nil
 }
-
 // archiveCrawlResultAsync archives crawl results in a background goroutine.
 // Errors are logged but do not propagate to the caller.
 func archiveCrawlResultAsync(owner, jobID string, results []ScrapeResult, rawResults []Crawl4AIResult) {
@@ -184,7 +157,6 @@ func archiveCrawlResultAsync(owner, jobID string, results []ScrapeResult, rawRes
 		}
 	}()
 }
-
 // ArchiveCrawlPreviewAsync archives a single-page preview crawl result asynchronously.
 // It generates a job ID from the URL and timestamp, then stores both the converted
 // ScrapeResult and the raw Crawl4AIResult.
@@ -196,7 +168,6 @@ func ArchiveCrawlPreviewAsync(owner, pageURL string, sr ScrapeResult, raw Crawl4
 		}
 	}()
 }
-
 // IsCrawlStorageConfigured returns true if the crawl storage credentials are set.
 func IsCrawlStorageConfigured() bool {
 	accessKey := conf.GetConfigString("crawlStorageAccessKey")

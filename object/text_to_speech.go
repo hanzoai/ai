@@ -11,18 +11,14 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
 package object
-
 import (
 	"context"
 	"fmt"
-
 	"github.com/hanzoai/cloud/i18n"
 	"github.com/hanzoai/cloud/tts"
 	"github.com/hanzoai/cloud/util"
 )
-
 func addProviderMessage(providerId, text string, lang string) (*Message, *Chat, *Provider, error) {
 	provider, err := GetProvider(providerId)
 	if err != nil {
@@ -61,7 +57,6 @@ func addProviderMessage(providerId, text string, lang string) (*Message, *Chat, 
 	}
 	return message, chat, provider, nil
 }
-
 func createProviderChat(chatId string, provider *Provider) (*Chat, error) {
 	_, chatName, err := util.GetOwnerAndNameFromIdWithError(chatId)
 	if err != nil {
@@ -81,7 +76,6 @@ func createProviderChat(chatId string, provider *Provider) (*Chat, error) {
 	}
 	return chat, nil
 }
-
 func getMessageAndChat(messageId string, lang string) (*Message, *Chat, error) {
 	message, err := GetMessage(messageId)
 	if err != nil {
@@ -90,7 +84,6 @@ func getMessageAndChat(messageId string, lang string) (*Message, *Chat, error) {
 	if message == nil {
 		return nil, nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:The message: %s is not found"), messageId))
 	}
-
 	chatId := util.GetIdFromOwnerAndName(message.Owner, message.Chat)
 	chat, err := GetChat(chatId)
 	if err != nil {
@@ -99,10 +92,8 @@ func getMessageAndChat(messageId string, lang string) (*Message, *Chat, error) {
 	if chat == nil {
 		return nil, nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:The chat: %s is not found"), chatId))
 	}
-
 	return message, chat, nil
 }
-
 // getStoreProvider retrieves the text-to-speech provider for a given store ID
 func getStoreProvider(storeId string, lang string) (*Provider, error) {
 	store, err := GetStore(storeId)
@@ -112,7 +103,6 @@ func getStoreProvider(storeId string, lang string) (*Provider, error) {
 	if store == nil {
 		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "account:The store: %s is not found"), storeId))
 	}
-
 	provider, err := store.GetTextToSpeechProvider()
 	if err != nil {
 		return nil, err
@@ -120,17 +110,14 @@ func getStoreProvider(storeId string, lang string) (*Provider, error) {
 	if provider == nil {
 		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:The text-to-speech provider for store: %s is not found"), store.GetId()))
 	}
-
 	return provider, nil
 }
-
 // PrepareTextToSpeech prepares the text-to-speech conversion
 func PrepareTextToSpeech(storeId, providerId, messageId, text string, lang string) (*Message, *Chat, tts.TextToSpeechProvider, context.Context, error) {
 	var message *Message
 	var chat *Chat
 	var provider *Provider
 	var err error
-
 	if messageId == "" {
 		message, chat, provider, err = addProviderMessage(providerId, text, lang)
 		if err != nil {
@@ -141,29 +128,23 @@ func PrepareTextToSpeech(storeId, providerId, messageId, text string, lang strin
 		if err != nil {
 			return nil, nil, nil, nil, err
 		}
-
 		provider, err = getStoreProvider(storeId, lang)
 	}
-
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
-
 	ttsProvider, err := provider.GetTextToSpeechProvider(lang)
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
-
 	return message, chat, ttsProvider, context.Background(), nil
 }
-
 func UpdateChatStats(chat *Chat, ttsResult *tts.TextToSpeechResult) error {
 	chat.TokenCount += ttsResult.TokenCount
 	chat.Price += ttsResult.Price
 	if chat.Currency == "" {
 		chat.Currency = ttsResult.Currency
 	}
-
 	chat.UpdatedTime = util.GetCurrentTime()
 	_, err := UpdateChat(chat.GetId(), chat)
 	return err

@@ -11,19 +11,15 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
 package object
-
 import (
 	"fmt"
 	"strings"
-
 	"github.com/hanzoai/cloud/conf"
 	"github.com/hanzoai/cloud/i18n"
 	"github.com/hanzoai/cloud/util"
 	iamsdk "github.com/hanzoid/go-sdk/casdoorsdk"
 )
-
 func (message *Message) SendEmail(lang string, orgName ...string) error {
 	iamOrganization := conf.GetConfigString("iamOrganization")
 	if len(orgName) > 0 && orgName[0] != "" {
@@ -37,7 +33,6 @@ func (message *Message) SendEmail(lang string, orgName ...string) error {
 		return fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:IAM organization: [%s] doesn't exist"), iamOrganization))
 	}
 	sender := organization.DisplayName
-
 	iamApplication := conf.GetConfigString("iamApplication")
 	application, err := iamsdk.GetApplication(iamApplication)
 	if err != nil {
@@ -47,22 +42,18 @@ func (message *Message) SendEmail(lang string, orgName ...string) error {
 		return fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:IAM application: [%s] doesn't exist"), iamApplication))
 	}
 	title := application.DisplayName
-
 	logoUrl := conf.GetConfigString("logoUrl")
-
 	user, err := iamsdk.GetUser(message.User)
 	if err != nil {
 		return err
 	}
 	username := user.Name
 	receiverEmail := user.Email
-
 	questionMessage, err := GetMessage(util.GetId("admin", message.ReplyTo))
 	if err != nil {
 		return err
 	}
 	question := questionMessage.Text
-
 	content := fmt.Sprintf(`<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -107,15 +98,12 @@ func (message *Message) SendEmail(lang string, orgName ...string) error {
 </body>
 </html>
 `, title, logoUrl, username, question, message.Text, message.Comment, title)
-
 	err = iamsdk.SendEmail(title, content, sender, receiverEmail)
 	if err != nil {
 		return err
 	}
-
 	return nil
 }
-
 func (message *Message) SendErrorEmail(errorText string, lang string, orgName ...string) error {
 	adminUser, err := iamsdk.GetUser("admin")
 	if err != nil {
@@ -124,12 +112,10 @@ func (message *Message) SendErrorEmail(errorText string, lang string, orgName ..
 	if adminUser == nil {
 		return fmt.Errorf("%s", i18n.Translate(lang, "object:SendErrorEmail() error, the receiver user: \")admin\" doesn't exist"))
 	}
-
 	receiverEmail := adminUser.Email
 	if !strings.HasPrefix(receiverEmail, "51") {
 		return nil
 	}
-
 	iamOrganization := conf.GetConfigString("iamOrganization")
 	if len(orgName) > 0 && orgName[0] != "" {
 		iamOrganization = orgName[0]
@@ -142,17 +128,13 @@ func (message *Message) SendErrorEmail(errorText string, lang string, orgName ..
 		return fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:IAM organization: [%s] doesn't exist"), iamOrganization))
 	}
 	sender := organization.DisplayName
-
 	user, err := iamsdk.GetUser(message.User)
 	if err != nil {
 		return err
 	}
 	username := user.Name
-
 	title := fmt.Sprintf("AI-Error: %s - %s - %s - %s", sender, username, message.Chat, message.Name)
-
 	logoUrl := conf.GetConfigString("logoUrl")
-
 	questionMessage, err := GetMessage(util.GetId("admin", message.ReplyTo))
 	if err != nil {
 		return err
@@ -160,9 +142,7 @@ func (message *Message) SendErrorEmail(errorText string, lang string, orgName ..
 	if questionMessage == nil {
 		return fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:Question message: [%s] doesn't exist"), message.ReplyTo))
 	}
-
 	question := questionMessage.Text
-
 	content := fmt.Sprintf(`<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -203,11 +183,9 @@ func (message *Message) SendErrorEmail(errorText string, lang string, orgName ..
 </body>
 </html>
 `, title, logoUrl, username, question, errorText, sender)
-
 	err = iamsdk.SendEmail(title, content, sender, receiverEmail)
 	if err != nil {
 		return err
 	}
-
 	return nil
 }

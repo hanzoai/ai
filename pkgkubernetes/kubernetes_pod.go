@@ -25,15 +25,15 @@ import (
 )
 
 type Pod struct {
-	Owner       string `xorm:"varchar(100) notnull pk" json:"owner"`
-	Name        string `xorm:"varchar(100) notnull pk" json:"name"`
-	Provider    string `xorm:"varchar(100)" json:"provider"`
-	Namespace   string `xorm:"varchar(100)" json:"namespace"`
-	CreatedTime string `xorm:"varchar(100)" json:"createdTime"`
-	HostIP      string `xorm:"varchar(100)" json:"hostIP"`
-	PodIP       string `xorm:"varchar(100)" json:"podIP"`
-	Labels      string `xorm:"varchar(100)" json:"labels"`
-	Status      string `xorm:"varchar(100)" json:"status"`
+	Owner       string `db:"pk" json:"owner"`
+	Name        string `db:"pk" json:"name"`
+	Provider    string `json:"provider"`
+	Namespace   string `json:"namespace"`
+	CreatedTime string `json:"createdTime"`
+	HostIP      string `json:"hostIP"`
+	PodIP       string `json:"podIP"`
+	Labels      string `json:"labels"`
+	Status      string `json:"status"`
 }
 
 type PodClient struct {

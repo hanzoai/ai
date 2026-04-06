@@ -11,88 +11,74 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
 package object
-
 import (
 	"fmt"
-
 	"github.com/hanzoai/cloud/util"
-	"xorm.io/core"
+	"github.com/hanzoai/dbx"
 )
-
 type Scan struct {
-	Owner       string `xorm:"varchar(100) notnull pk" json:"owner"`
-	Name        string `xorm:"varchar(100) notnull pk" json:"name"`
-	CreatedTime string `xorm:"varchar(100)" json:"createdTime"`
-	UpdatedTime string `xorm:"varchar(100)" json:"updatedTime"`
-	DisplayName string `xorm:"varchar(200)" json:"displayName"`
-
-	TargetMode    string `xorm:"varchar(100)" json:"targetMode"`
-	Target        string `xorm:"varchar(100)" json:"target"`
-	Asset         string `xorm:"varchar(100)" json:"asset"`
-	Provider      string `xorm:"varchar(100)" json:"provider"`
-	State         string `xorm:"varchar(100)" json:"state"`
-	Runner        string `xorm:"varchar(100)" json:"runner"`
-	ErrorText     string `xorm:"mediumtext" json:"errorText"`
-	Command       string `xorm:"varchar(500)" json:"command"`
-	RawResult     string `xorm:"mediumtext" json:"rawResult"`
-	Result        string `xorm:"mediumtext" json:"result"`
-	ResultSummary string `xorm:"varchar(500)" json:"resultSummary"`
+	Owner       string `db:"pk" json:"owner"`
+	Name        string `db:"pk" json:"name"`
+	CreatedTime string `json:"createdTime"`
+	UpdatedTime string `json:"updatedTime"`
+	DisplayName string `json:"displayName"`
+	TargetMode    string `json:"targetMode"`
+	Target        string `json:"target"`
+	Asset         string `json:"asset"`
+	Provider      string `json:"provider"`
+	State         string `json:"state"`
+	Runner        string `json:"runner"`
+	ErrorText     string `json:"errorText"`
+	Command       string `json:"command"`
+	RawResult     string `json:"rawResult"`
+	Result        string `json:"result"`
+	ResultSummary string `json:"resultSummary"`
 }
-
 func GetScanCount(owner, field, value string) (int64, error) {
-	session := GetDbSession(owner, -1, -1, field, value, "", "")
-	return session.Count(&Scan{})
+	session := GetDbQuery(owner, -1, -1, field, value, "", "")
+	return queryCount(session, "scan")
 }
-
 func GetScans(owner string) ([]*Scan, error) {
 	scans := []*Scan{}
-	err := adapter.engine.Desc("created_time").Find(&scans, &Scan{Owner: owner})
+	err := findAll(adapter.db, "scan", &scans, dbx.HashExp{"owner": owner}, "created_time DESC")
 	if err != nil {
 		return scans, err
 	}
 	return scans, nil
 }
-
 func GetPaginationScans(owner string, offset, limit int, field, value, sortField, sortOrder string) ([]*Scan, error) {
 	scans := []*Scan{}
-	session := GetDbSession(owner, offset, limit, field, value, sortField, sortOrder)
-	err := session.Find(&scans)
+	session := GetDbQuery(owner, offset, limit, field, value, sortField, sortOrder)
+	err := queryFind(session, "scan", &scans)
 	if err != nil {
 		return scans, err
 	}
-
 	return scans, nil
 }
-
 func GetScansByAsset(owner string, assetName string) ([]*Scan, error) {
 	scans := []*Scan{}
-	err := adapter.engine.Desc("created_time").Find(&scans, &Scan{Owner: owner, Asset: assetName})
+	err := findAll(adapter.db, "scan", &scans, dbx.HashExp{"owner": owner, "asset": assetName}, "created_time DESC")
 	if err != nil {
 		return scans, err
 	}
 	return scans, nil
 }
-
 func getScan(owner string, name string) (*Scan, error) {
 	if owner == "" || name == "" {
 		return nil, nil
 	}
-
 	scan := Scan{Owner: owner, Name: name}
-	existed, err := adapter.engine.Get(&scan)
+	existed, err := getOne(adapter.db, "scan", &scan, pk2(scan.Owner, scan.Name))
 	if err != nil {
 		return &scan, err
 	}
-
 	if existed {
 		return &scan, nil
 	} else {
 		return nil, nil
 	}
 }
-
 func GetScan(id string) (*Scan, error) {
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
 	if err != nil {
@@ -100,7 +86,6 @@ func GetScan(id string) (*Scan, error) {
 	}
 	return getScan(owner, name)
 }
-
 func UpdateScan(id string, scan *Scan) (bool, error) {
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
 	if err != nil {
@@ -109,33 +94,36 @@ func UpdateScan(id string, scan *Scan) (bool, error) {
 	if _, err := getScan(owner, name); err != nil {
 		return false, err
 	}
-
-	affected, err := adapter.engine.ID(core.PK{owner, name}).AllCols().Update(scan)
+	scan.Owner = owner
+	scan.Name = name
+	err = adapter.db.Model(scan).Update()
+	affected := int64(1)
+	if err != nil {
+		affected = 0
+	}
 	if err != nil {
 		return false, err
 	}
-
 	return affected != 0, nil
 }
-
 func AddScan(scan *Scan) (bool, error) {
-	affected, err := adapter.engine.Insert(scan)
+	err := insertRow(adapter.db, scan)
+	affected := int64(1)
+	if err != nil {
+		affected = 0
+	}
 	if err != nil {
 		return false, err
 	}
-
 	return affected != 0, nil
 }
-
 func DeleteScan(scan *Scan) (bool, error) {
-	affected, err := adapter.engine.ID(core.PK{scan.Owner, scan.Name}).Delete(&Scan{})
+	affected, err := deleteByPK(adapter.db, "scan", pk2(scan.Owner, scan.Name))
 	if err != nil {
 		return false, err
 	}
-
 	return affected != 0, nil
 }
-
 func (scan *Scan) GetId() string {
 	return fmt.Sprintf("%s/%s", scan.Owner, scan.Name)
 }

@@ -11,16 +11,12 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
 package object
-
 import (
 	"fmt"
 	"strings"
-
 	"github.com/hanzoai/cloud/storage"
 )
-
 func (store *Store) createPathIfNotExisted(tokens []string, size int64, url string, lastModifiedTime string, isLeaf bool) {
 	currentFile := store.FileTree
 	for i, token := range tokens {
@@ -30,18 +26,15 @@ func (store *Store) createPathIfNotExisted(tokens []string, size int64, url stri
 		if currentFile.ChildrenMap == nil {
 			currentFile.ChildrenMap = map[string]*TreeFile{}
 		}
-
 		tmpFile, ok := currentFile.ChildrenMap[token]
 		if ok {
 			currentFile = tmpFile
 			continue
 		}
-
 		isLeafTmp := false
 		if i == len(tokens)-1 {
 			isLeafTmp = isLeaf
 		}
-
 		key := strings.Join(tokens[:i+1], "/")
 		newFile := &TreeFile{
 			Key:         key,
@@ -51,11 +44,9 @@ func (store *Store) createPathIfNotExisted(tokens []string, size int64, url stri
 			Children:    []*TreeFile{},
 			ChildrenMap: map[string]*TreeFile{},
 		}
-
 		if i == len(tokens)-1 {
 			newFile.Size = size
 			newFile.CreatedTime = lastModifiedTime
-
 			if token == "_hidden.ini" {
 				continue
 			}
@@ -64,13 +55,11 @@ func (store *Store) createPathIfNotExisted(tokens []string, size int64, url stri
 				newFile.CreatedTime = lastModifiedTime
 			}
 		}
-
 		currentFile.Children = append(currentFile.Children, newFile)
 		currentFile.ChildrenMap[token] = newFile
 		currentFile = newFile
 	}
 }
-
 func isObjectLeaf(object *storage.Object) bool {
 	isLeaf := true
 	if object.Key[len(object.Key)-1] == '/' {
@@ -78,18 +67,15 @@ func isObjectLeaf(object *storage.Object) bool {
 	}
 	return isLeaf
 }
-
 func (store *Store) Populate(origin string, lang string) error {
 	storageProviderObj, err := store.GetStorageProviderObj(lang)
 	if err != nil {
 		return err
 	}
-
 	objects, err := storageProviderObj.ListObjects("")
 	if err != nil {
 		return err
 	}
-
 	if store.FileTree == nil {
 		store.FileTree = &TreeFile{
 			Key:         "/",
@@ -101,7 +87,6 @@ func (store *Store) Populate(origin string, lang string) error {
 			ChildrenMap: map[string]*TreeFile{},
 		}
 	}
-
 	sortedObjects := []*storage.Object{}
 	for _, object := range objects {
 		if strings.HasSuffix(object.Key, "/_hidden.ini") {
@@ -113,51 +98,40 @@ func (store *Store) Populate(origin string, lang string) error {
 			sortedObjects = append(sortedObjects, object)
 		}
 	}
-
 	for _, object := range sortedObjects {
 		lastModifiedTime := object.LastModified
 		isLeaf := isObjectLeaf(object)
 		size := object.Size
-
 		var url string
 		url, err = getUrlFromPath(object.Url, origin)
 		if err != nil {
 			return err
 		}
-
 		tokens := strings.Split(strings.Trim(object.Key, "/"), "/")
 		store.createPathIfNotExisted(tokens, size, url, lastModifiedTime, isLeaf)
-
 		// fmt.Printf("%s, %d, %v\n", object.Key, object.Size, object.LastModified)
 	}
-
 	return nil
 }
-
 func (store *Store) GetVideoData(lang string) ([]string, error) {
 	storageProviderObj, err := store.GetStorageProviderObj(lang)
 	if err != nil {
 		return nil, err
 	}
-
 	objects, err := storageProviderObj.ListObjects("2023/视频附件")
 	if err != nil {
 		return nil, err
 	}
-
 	res := []string{}
 	for _, object := range objects {
 		if strings.HasSuffix(object.Key, "/_hidden.ini") {
 			continue
 		}
-
 		url := fmt.Sprintf("%s/%s", store.StorageProvider, object.Key)
 		res = append(res, url)
 	}
-
 	return res, nil
 }
-
 func SyncDefaultProvidersToStore(store *Store) error {
 	defaultStore, err := GetDefaultStore("admin")
 	if err != nil {
@@ -166,7 +140,6 @@ func SyncDefaultProvidersToStore(store *Store) error {
 	if defaultStore == nil {
 		return nil
 	}
-
 	if store.ImageProvider == "" && defaultStore.ImageProvider != "" {
 		store.ImageProvider = defaultStore.ImageProvider
 	}
@@ -179,6 +152,5 @@ func SyncDefaultProvidersToStore(store *Store) error {
 	if store.AgentProvider == "" && defaultStore.AgentProvider != "" {
 		store.AgentProvider = defaultStore.AgentProvider
 	}
-
 	return nil
 }

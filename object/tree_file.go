@@ -11,24 +11,19 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
 package object
-
 import (
 	"bytes"
 	"fmt"
 	"io"
 	"mime/multipart"
 	"strings"
-
 	"github.com/beego/beego/logs"
 	"github.com/hanzoai/cloud/util"
 )
-
 func UpdateTreeFile(storeId string, key string, file *TreeFile) bool {
 	return true
 }
-
 func AddTreeFile(storeId string, userName string, key string, isLeaf bool, filename string, file multipart.File, lang string) (bool, []byte, error) {
 	store, err := GetStore(storeId)
 	if err != nil {
@@ -37,12 +32,10 @@ func AddTreeFile(storeId string, userName string, key string, isLeaf bool, filen
 	if store == nil {
 		return false, nil, nil
 	}
-
 	storageProviderObj, err := store.GetStorageProviderObj(lang)
 	if err != nil {
 		return false, nil, err
 	}
-
 	var objectKey string
 	var fileBuffer *bytes.Buffer
 	if isLeaf {
@@ -53,13 +46,11 @@ func AddTreeFile(storeId string, userName string, key string, isLeaf bool, filen
 		if err != nil {
 			return false, nil, err
 		}
-
 		bs := fileBuffer.Bytes()
 		fileUrl, err := storageProviderObj.PutObject(userName, store.Name, objectKey, fileBuffer)
 		if err != nil {
 			return false, nil, err
 		}
-
 		// Persist file information in the file table
 		fileRecord := &File{
 			Owner:           store.Owner,
@@ -77,14 +68,12 @@ func AddTreeFile(storeId string, userName string, key string, isLeaf bool, filen
 		if err != nil {
 			return false, nil, err
 		}
-
 		go func() {
 			_, vectorErr := AddVectorsForFile(store, objectKey, fileUrl, lang)
 			if vectorErr != nil {
 				logs.Error("Failed to generate vectors for file %s: %v", objectKey, vectorErr)
 			}
 		}()
-
 		return true, bs, nil
 	} else {
 		objectKey = fmt.Sprintf("%s/%s/_hidden.ini", key, filename)
@@ -95,17 +84,14 @@ func AddTreeFile(storeId string, userName string, key string, isLeaf bool, filen
 		if err != nil {
 			return false, nil, err
 		}
-
 		return true, bs, nil
 	}
 }
-
 func DeleteTreeFile(storeId string, key string, isLeaf bool, lang string) (bool, error) {
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(storeId)
 	if err != nil {
 		return false, err
 	}
-
 	store, err := getStore(owner, name)
 	if err != nil {
 		return false, err
@@ -113,24 +99,20 @@ func DeleteTreeFile(storeId string, key string, isLeaf bool, lang string) (bool,
 	if store == nil {
 		return false, nil
 	}
-
 	storageProviderObj, err := store.GetStorageProviderObj(lang)
 	if err != nil {
 		return false, err
 	}
-
 	if isLeaf {
 		err = storageProviderObj.DeleteObject(key)
 		if err != nil {
 			return false, err
 		}
-
 		_, err = DeleteVectorsByFile(store.Owner, store.Name, key)
 		if err != nil {
 			logs.Error("Failed to delete vectors for file %s: %v", key, err)
 			return false, err
 		}
-
 		// Delete file record from the file table
 		if err := deleteFileRecord(owner, name, key); err != nil {
 			return false, err
@@ -140,19 +122,16 @@ func DeleteTreeFile(storeId string, key string, isLeaf bool, lang string) (bool,
 		if err != nil {
 			return false, err
 		}
-
 		for _, object := range objects {
 			err = storageProviderObj.DeleteObject(object.Key)
 			if err != nil {
 				return false, err
 			}
-
 			_, err = DeleteVectorsByFile(store.Owner, store.Name, object.Key)
 			if err != nil {
 				logs.Error("Failed to delete vectors for file %s: %v", object.Key, err)
 				return false, err
 			}
-
 			// Delete file record from the file table
 			if err := deleteFileRecord(owner, name, object.Key); err != nil {
 				return false, err
