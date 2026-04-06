@@ -11,63 +11,58 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
 package object
-
 import (
 	"fmt"
 	"net/url"
 	"strings"
-
 	"github.com/hanzoai/cloud/util"
+	"github.com/hanzoai/dbx"
 	"github.com/sashabaranov/go-openai"
-	"xorm.io/xorm"
 )
-
 func getUrlFromPath(path string, origin string) (string, error) {
 	if strings.HasPrefix(path, "http") {
 		return path, nil
 	}
-
 	res := strings.Replace(path, ":", "|", 1)
 	res = fmt.Sprintf("storage/%s", res)
 	res, err := url.JoinPath(origin, res)
 	return res, err
 }
-
-func GetDbSession(owner string, offset, limit int, field, value, sortField, sortOrder string) *xorm.Session {
-	session := adapter.engine.NewSession()
-	if offset != -1 && limit != -1 {
-		session.Limit(limit, offset)
-	}
+// GetDbQuery builds a SelectQuery with pagination, filtering, and sorting.
+// This replaces the old GetDbSession which returned an xorm.Session.
+func GetDbQuery(owner string, offset, limit int, field, value, sortField, sortOrder string) *dbx.SelectQuery {
+	q := adapter.db.Select()
 	if owner != "" {
-		session = session.And("owner=?", owner)
+		q = q.AndWhere(dbx.HashExp{"owner": owner})
 	}
 	if field != "" && value != "" {
 		if util.FilterField(field) {
-			session = session.And(fmt.Sprintf("%s like ?", util.SnakeString(field)), fmt.Sprintf("%%%s%%", value))
+			col := util.SnakeString(field)
+			q = q.AndWhere(dbx.Like(col, value))
 		}
 	}
 	if sortField == "" || sortOrder == "" {
 		sortField = "created_time"
 	}
+	col := util.SnakeString(sortField)
 	if sortOrder == "ascend" {
-		session = session.Asc(util.SnakeString(sortField))
+		q = q.OrderBy(col + " ASC")
 	} else {
-		session = session.Desc(util.SnakeString(sortField))
+		q = q.OrderBy(col + " DESC")
 	}
-	return session
+	if offset != -1 && limit != -1 {
+		q = q.Offset(int64(offset)).Limit(int64(limit))
+	}
+	return q
 }
-
 func isRetryableError(err error) bool {
 	if err == nil {
 		return false
 	}
-
 	retryableErrors := []string{
 		string(openai.RunErrorRateLimitExceeded),
 	}
-
 	for _, retryableErr := range retryableErrors {
 		if strings.Contains(err.Error(), retryableErr) {
 			return true

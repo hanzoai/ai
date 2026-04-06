@@ -11,83 +11,70 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
 package object
-
 import (
 	"fmt"
-
 	"github.com/hanzoai/cloud/i18n"
 	"github.com/hanzoai/cloud/pkgdocker"
 	"github.com/hanzoai/cloud/util"
-	"xorm.io/core"
+	"github.com/hanzoai/dbx"
 )
-
 type Container struct {
-	Owner       string `xorm:"varchar(100) notnull pk" json:"owner"`
-	Name        string `xorm:"varchar(100) notnull pk" json:"name"`
-	DisplayName string `xorm:"varchar(100)" json:"displayName"`
-	Provider    string `xorm:"varchar(100)" json:"provider"`
-	CreatedTime string `xorm:"varchar(100)" json:"createdTime"`
-	Image       string `xorm:"varchar(100)" json:"image"`
-	ImageId     string `xorm:"varchar(100)" json:"imageId"`
-	Command     string `xorm:"varchar(100)" json:"command"`
-	SizeRw      int64  `xorm:"varchar(100)"  json:"sizeRw,omitempty"`
-	SizeRootFs  int64  `xorm:"varchar(100)"  json:"sizeRootFs,omitempty"`
+	Owner       string `db:"pk" json:"owner"`
+	Name        string `db:"pk" json:"name"`
+	DisplayName string `json:"displayName"`
+	Provider    string `json:"provider"`
+	CreatedTime string `json:"createdTime"`
+	Image       string `json:"image"`
+	ImageId     string `json:"imageId"`
+	Command     string `json:"command"`
+	SizeRw      int64  `json:"sizeRw,omitempty"`
+	SizeRootFs  int64  `json:"sizeRootFs,omitempty"`
 	// Labels      map[string]string
-	State  string `xorm:"varchar(100)" json:"state"`
-	Status string `xorm:"varchar(100)" json:"status"`
-	Ports  string `xorm:"varchar(100)" json:"ports"`
-
+	State  string `json:"state"`
+	Status string `json:"status"`
+	Ports  string `json:"ports"`
 	// HostConfig struct {
 	//	 NetworkMode string            `json:",omitempty"`
 	//	 Annotations map[string]string `json:",omitempty"`
 	// }
 }
-
 func GetContainerCount(owner, field, value string) (int64, error) {
-	session := GetDbSession(owner, -1, -1, field, value, "", "")
-	return session.Count(&Container{})
+	session := GetDbQuery(owner, -1, -1, field, value, "", "")
+	return queryCount(session, "container")
 }
-
 func GetContainers(owner string) ([]*Container, error) {
 	containers := []*Container{}
-	err := adapter.engine.Desc("created_time").Find(&containers, &Container{Owner: owner})
+	err := findAll(adapter.db, "container", &containers, dbx.HashExp{"owner": owner}, "created_time DESC")
 	if err != nil {
 		return containers, err
 	}
 	return containers, nil
 }
-
 func GetPaginationContainers(owner string, offset, limit int, field, value, sortField, sortOrder string) ([]*Container, error) {
 	containers := []*Container{}
-	session := GetDbSession(owner, offset, limit, field, value, sortField, sortOrder)
-	err := session.Find(&containers)
+	session := GetDbQuery(owner, offset, limit, field, value, sortField, sortOrder)
+	err := queryFind(session, "container", &containers)
 	if err != nil {
 		return containers, err
 	}
-
 	return containers, nil
 }
-
 func getContainer(owner string, name string) (*Container, error) {
 	if owner == "" || name == "" {
 		return nil, nil
 	}
-
 	container := Container{Owner: owner, Name: name}
-	existed, err := adapter.engine.Get(&container)
+	existed, err := getOne(adapter.db, "container", &container, pk2(container.Owner, container.Name))
 	if err != nil {
 		return &container, err
 	}
-
 	if existed {
 		return &container, nil
 	} else {
 		return nil, nil
 	}
 }
-
 func GetContainer(id string) (*Container, error) {
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
 	if err != nil {
@@ -95,24 +82,19 @@ func GetContainer(id string) (*Container, error) {
 	}
 	return getContainer(owner, name)
 }
-
 func GetMaskedContainer(container *Container, errs ...error) (*Container, error) {
 	if len(errs) > 0 && errs[0] != nil {
 		return nil, errs[0]
 	}
-
 	if container == nil {
 		return nil, nil
 	}
-
 	return container, nil
 }
-
 func GetMaskedContainers(containers []*Container, errs ...error) ([]*Container, error) {
 	if len(errs) > 0 && errs[0] != nil {
 		return nil, errs[0]
 	}
-
 	var err error
 	for _, container := range containers {
 		container, err = GetMaskedContainer(container)
@@ -120,10 +102,8 @@ func GetMaskedContainers(containers []*Container, errs ...error) ([]*Container, 
 			return nil, err
 		}
 	}
-
 	return containers, nil
 }
-
 func UpdateContainer(id string, container *Container, lang string) (bool, error) {
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
 	if err != nil {
@@ -135,89 +115,84 @@ func UpdateContainer(id string, container *Container, lang string) (bool, error)
 	} else if oldContainer == nil {
 		return false, nil
 	}
-
 	_, err = updateContainer(oldContainer, container, lang)
 	if err != nil {
 		return false, err
 	}
-
-	affected, err := adapter.engine.ID(core.PK{owner, name}).AllCols().Update(container)
+	container.Owner = owner
+	container.Name = name
+	err = adapter.db.Model(container).Update()
+	affected := int64(1)
+	if err != nil {
+		affected = 0
+	}
 	if err != nil {
 		return false, err
 	}
-
 	return affected != 0, nil
 }
-
 func AddContainer(container *Container) (bool, error) {
-	affected, err := adapter.engine.Insert(container)
+	err := insertRow(adapter.db, container)
+	affected := int64(1)
+	if err != nil {
+		affected = 0
+	}
 	if err != nil {
 		return false, err
 	}
-
 	return affected != 0, nil
 }
-
 func addContainers(containers []*Container) (bool, error) {
-	affected, err := adapter.engine.Insert(containers)
+	err := insertRow(adapter.db, containers)
+	affected := int64(1)
+	if err != nil {
+		affected = 0
+	}
 	if err != nil {
 		return false, err
 	}
-
 	return affected != 0, nil
 }
-
 func DeleteContainer(container *Container) (bool, error) {
-	affected, err := adapter.engine.ID(core.PK{container.Owner, container.Name}).Delete(&Container{})
+	affected, err := deleteByPK(adapter.db, "container", pk2(container.Owner, container.Name))
 	if err != nil {
 		return false, err
 	}
-
 	return affected != 0, nil
 }
-
 func deleteContainers(owner string) (bool, error) {
-	affected, err := adapter.engine.Delete(&Container{Owner: owner})
+	affected, err := deleteWhere(adapter.db, "container", dbx.HashExp{"owner": owner})
 	if err != nil {
 		return false, err
 	}
-
 	return affected != 0, nil
 }
-
 func (container *Container) GetId() string {
 	return fmt.Sprintf("%s/%s", container.Owner, container.Name)
 }
-
 func SyncDockerContainers(owner string) (bool, error) {
 	containers, err := getContainers(owner)
 	if err != nil {
 		return false, err
 	}
-
 	dbContainers, err := GetContainers(owner)
 	if err != nil {
 		return false, err
 	}
-
 	dbContainerMap := map[string]*Container{}
 	for _, dbContainer := range dbContainers {
 		dbContainerMap[dbContainer.GetId()] = dbContainer
 	}
-
 	_, err = deleteContainers(owner)
 	if err != nil {
 		return false, err
 	}
-
 	if len(containers) == 0 {
 		return false, nil
 	}
-
 	affected, err := addContainers(containers)
 	return affected, err
 }
-
 func updateContainer(oldContainer *Container, container *Container, lang string) (bool, error) {
 	provider, err := getProvider("admin", oldContainer.Provider)
 	if err != nil {
@@ -226,50 +201,40 @@ func updateContainer(oldContainer *Container, container *Container, lang string)
 	if provider == nil {
 		return false, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:The provider: %s does not exist"), container.Provider))
 	}
-
 	client, err := pkgdocker.NewContainerClient(provider.ClientId, provider.ClientSecret, provider.Region)
 	if err != nil {
 		return false, err
 	}
-
 	if oldContainer.State != container.State {
 		affected, _, err := client.UpdateContainerState(oldContainer.Name, container.State, lang)
 		if err != nil {
 			return false, err
 		}
-
 		return affected, nil
 	}
-
 	return false, nil
 }
-
 func getContainers(owner string) ([]*Container, error) {
 	containers := []*Container{}
 	providers, err := GetProviders("admin")
 	if err != nil {
 		return nil, err
 	}
-
 	for _, provider := range providers {
 		if provider.Category == "Private Cloud" && provider.State == "Active" && provider.Type == "Docker" {
 			client, err2 := pkgdocker.NewContainerClient(provider.ClientId, provider.ClientSecret, provider.Region)
 			if err2 != nil {
 				return nil, err2
 			}
-
 			clientContainers, err2 := client.GetContainers()
-
 			for _, clientContainer := range clientContainers {
 				container := getContainerFromService(owner, provider.Name, clientContainer)
 				containers = append(containers, container)
 			}
 		}
 	}
-
 	return containers, nil
 }
-
 func getContainerFromService(owner string, provider string, clientContainer *pkgdocker.Container) *Container {
 	return &Container{
 		Owner:       owner,

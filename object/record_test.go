@@ -11,30 +11,23 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
 //go:build !skipCi
 // +build !skipCi
-
 package object
-
 import (
 	"strings"
 	"testing"
-
 	"github.com/hanzoai/cloud/util"
 	"github.com/schollz/progressbar/v3"
 )
-
 func TestUpdateRecordsLocation(t *testing.T) {
 	InitConfig()
 	util.InitMaxmindFiles()
 	util.InitIpDb()
-
 	records, err := getAllRecords()
 	if err != nil {
 		panic(err)
 	}
-
 	bar := progressbar.Default(int64(len(records)))
 	var errorRecords []string
 	for _, r := range records {
@@ -45,13 +38,11 @@ func TestUpdateRecordsLocation(t *testing.T) {
 				parts := strings.Split(clientIp, " ->")
 				clientIp = strings.TrimSpace(parts[len(parts)-1])
 			}
-
 			locationInfo, err := util.GetInfoFromIP(clientIp)
 			if err != nil {
 				errorRecords = append(errorRecords, r.Name+": invalid client ip.")
 				continue
 			}
-
 			r.Region = locationInfo.Country
 			r.City = locationInfo.City
 			err = UpdateRecordInternal(r.Id, *r)
@@ -60,7 +51,6 @@ func TestUpdateRecordsLocation(t *testing.T) {
 			}
 		}
 	}
-
 	t.Log("Log location information update completed.\n")
 	if len(errorRecords) > 0 {
 		t.Log("The following logs encountered errors during the update.\n")

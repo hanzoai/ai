@@ -11,19 +11,15 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
 package object
-
 import (
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
-
 	"github.com/beego/beego/logs"
 	"gopkg.in/yaml.v3"
 )
-
 // initTemplates load template files and upsert them into DB.
 func initTemplates() {
 	owner := "admin"
@@ -32,7 +28,6 @@ func initTemplates() {
 	if err != nil {
 		logs.Error("Failed to read template directory: %v", err)
 	}
-
 	for _, file := range files {
 		if file.IsDir() {
 			continue
@@ -53,25 +48,21 @@ func initTemplates() {
 		}
 	}
 }
-
 // parseTemplateFromFile parses a single template file.
 func parseTemplateFromFile(owner, path string) (*Template, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-
 	sepRe := regexp.MustCompile(`(?m)^\s*---\s*$`)
 	yamls := sepRe.Split(string(b), -1)
 	if len(yamls) == 0 {
 		return nil, nil
 	}
-
 	templateYamlString := strings.TrimSpace(yamls[0])
 	if templateYamlString == "" {
 		return nil, nil
 	}
-
 	var templateYaml struct {
 		APIVersion string `yaml:"apiVersion"`
 		Kind       string `yaml:"kind"`
@@ -87,17 +78,13 @@ func parseTemplateFromFile(owner, path string) (*Template, error) {
 			Options     []templateConfigOption `yaml:"options"`
 		} `yaml:"spec"`
 	}
-
 	if err := yaml.Unmarshal([]byte(templateYamlString), &templateYaml); err != nil {
 		return nil, err
 	}
-
 	if strings.ToLower(templateYaml.Kind) != "template" {
 		return nil, nil
 	}
-
 	manifest := strings.TrimSpace(strings.Join(yamls[1:], "\n---\n"))
-
 	template := &Template{
 		Owner:              owner,
 		Name:               templateYaml.Metadata.Name,
@@ -110,6 +97,5 @@ func parseTemplateFromFile(owner, path string) (*Template, error) {
 		BasicConfigOptions: templateYaml.Spec.Options,
 		Manifest:           manifest,
 	}
-
 	return template, nil
 }

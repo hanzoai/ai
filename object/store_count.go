@@ -14,15 +14,22 @@
 
 package object
 
+import (
+	"database/sql"
+
+	"github.com/hanzoai/dbx"
+)
+
 func InitStoreCount() {
 	emptyStoreMessage := &Message{}
-	has, err := adapter.engine.Where("store = ?", "").Or("store IS NULL").Get(emptyStoreMessage)
+	err := adapter.db.Select().From("message").
+		Where(dbx.Or(dbx.HashExp{"store": ""}, dbx.NewExp("store IS NULL"))).
+		One(emptyStoreMessage)
 	if err != nil {
+		if err == sql.ErrNoRows {
+			return
+		}
 		panic(err)
-	}
-
-	if !has {
-		return
 	}
 
 	chats, err := GetGlobalChats()
@@ -44,12 +51,10 @@ func InitStoreCount() {
 		if message.Store != "" {
 			continue
 		}
-
 		chat, ok := chatMap[message.Chat]
 		if !ok || chat.Store == "" {
 			continue
 		}
-
 		message.Store = chat.Store
 		_, err = UpdateMessage(message.GetId(), message, false)
 		if err != nil {
@@ -60,19 +65,16 @@ func InitStoreCount() {
 
 func PopulateStoreCounts(stores []*Store) error {
 	for _, store := range stores {
-		chatCount, err := adapter.engine.Count(&Chat{Store: store.Name})
+		chatCount, err := countWhere(adapter.db, "chat", dbx.HashExp{"store": store.Name})
 		if err != nil {
 			return err
 		}
-
-		messageCount, err := adapter.engine.Count(&Message{Store: store.Name})
+		messageCount, err := countWhere(adapter.db, "message", dbx.HashExp{"store": store.Name})
 		if err != nil {
 			return err
 		}
-
 		store.ChatCount = int(chatCount)
 		store.MessageCount = int(messageCount)
 	}
-
 	return nil
 }
