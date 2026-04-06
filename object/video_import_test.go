@@ -11,27 +11,20 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
 //go:build !skipCi
 // +build !skipCi
-
 package object
-
 import "testing"
-
 func TestImportVideos(t *testing.T) {
 	InitConfig()
-
 	path := ""
 	err := importVideos(path)
 	if err != nil {
 		panic(err)
 	}
 }
-
 func TestImportVideos2(t *testing.T) {
 	InitConfig()
-
 	path := ""
 	err := importVideos2(path, "en")
 	if err != nil {

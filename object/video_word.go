@@ -11,24 +11,18 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
 package object
-
 import (
 	"fmt"
 	"unicode"
-
 	"github.com/hanzoai/cloud/i18n"
 	"github.com/hanzoai/cloud/util"
 	"github.com/wangbin/jiebago"
 )
-
 var seg *jiebago.Segmenter = nil
-
 func isPunctuation(r rune) bool {
 	return !unicode.IsLetter(r) && !unicode.IsNumber(r)
 }
-
 func isNumber(s string) bool {
 	for _, r := range s {
 		if !unicode.IsNumber(r) {
@@ -37,17 +31,14 @@ func isNumber(s string) bool {
 	}
 	return true
 }
-
 func (v *Video) PopulateWordCountMap(lang string) error {
 	if len(v.Segments) == 0 {
 		return nil
 	}
-
 	dictPath := "data/dict.txt"
 	if !util.FileExist(dictPath) {
 		return fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:Cannot generate word cloud, the dict file: [%s] does not exist"), dictPath))
 	}
-
 	if seg == nil {
 		seg = &jiebago.Segmenter{}
 		err := seg.LoadDictionary(dictPath)
@@ -55,7 +46,6 @@ func (v *Video) PopulateWordCountMap(lang string) error {
 			return err
 		}
 	}
-
 	v.WordCountMap = map[string]int{}
 	for _, segment := range v.Segments {
 		words := seg.Cut(segment.Text, true)
@@ -65,6 +55,5 @@ func (v *Video) PopulateWordCountMap(lang string) error {
 			}
 		}
 	}
-
 	return nil
 }

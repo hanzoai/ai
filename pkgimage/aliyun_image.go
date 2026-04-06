@@ -23,37 +23,37 @@ import (
 )
 
 type Image struct {
-	Owner    string `xorm:"varchar(100) notnull pk" json:"owner"`
-	Name     string `xorm:"varchar(100) notnull pk" json:"name"`
-	Provider string `xorm:"varchar(100)" json:"provider"`
-	Category string `xorm:"varchar(100)" json:"category"`
+	Owner    string `db:"pk" json:"owner"`
+	Name     string `db:"pk" json:"name"`
+	Provider string `json:"provider"`
+	Category string `json:"category"`
 
-	BootMode                string `xorm:"varchar(100)" json:"bootMode" xml:"bootMode"`
-	ImageId                 string `xorm:"varchar(100)" json:"imageId" xml:"imageId"`
-	ImageOwnerAlias         string `xorm:"varchar(100)" json:"ImageOwnerAlias" xml:"ImageOwnerAlias"`
-	OSName                  string `xorm:"varchar(100)" json:"os" xml:"os"`
-	OSNameEn                string `xorm:"varchar(100)" json:"OSNameEn" xml:"OSNameEn"`
-	ImageFamily             string `xorm:"varchar(100)" json:"ImageFamily" xml:"ImageFamily"`
-	Architecture            string `xorm:"varchar(100)" json:"systemArchitecture" xml:"systemArchitecture"`
+	BootMode                string `json:"bootMode" xml:"bootMode"`
+	ImageId                 string `json:"imageId" xml:"imageId"`
+	ImageOwnerAlias         string `json:"ImageOwnerAlias" xml:"ImageOwnerAlias"`
+	OSName                  string `json:"os" xml:"os"`
+	OSNameEn                string `json:"OSNameEn" xml:"OSNameEn"`
+	ImageFamily             string `json:"ImageFamily" xml:"ImageFamily"`
+	Architecture            string `json:"systemArchitecture" xml:"systemArchitecture"`
 	IsSupportIoOptimized    bool   `json:"IsSupportIoOptimized" xml:"IsSupportIoOptimized"`
-	Size                    string `xorm:"varchar(100)" json:"size" xml:"size"`
-	ResourceGroupId         string `xorm:"varchar(100)" json:"ResourceGroupId" xml:"ResourceGroupId"`
-	SupplierName            string `xorm:"varchar(100)" json:"SupplierName" xml:"SupplierName"`
-	Description             string `xorm:"varchar(100)" json:"description" xml:"description"`
-	Usage                   string `xorm:"varchar(100)" json:"Usage" xml:"Usage"`
+	Size                    string `json:"size" xml:"size"`
+	ResourceGroupId         string `json:"ResourceGroupId" xml:"ResourceGroupId"`
+	SupplierName            string `json:"SupplierName" xml:"SupplierName"`
+	Description             string `json:"description" xml:"description"`
+	Usage                   string `json:"Usage" xml:"Usage"`
 	IsCopied                bool   `json:"IsCopied" xml:"IsCopied"`
 	LoginAsNonRootSupported bool   `json:"LoginAsNonRootSupported" xml:"LoginAsNonRootSupported"`
-	ImageVersion            string `xorm:"varchar(100)" json:"ImageVersion" xml:"ImageVersion"`
-	OSType                  string `xorm:"varchar(100)" json:"OSType" xml:"OSType"`
+	ImageVersion            string `json:"ImageVersion" xml:"ImageVersion"`
+	OSType                  string `json:"OSType" xml:"OSType"`
 	IsSubscribed            bool   `json:"IsSubscribed" xml:"IsSubscribed"`
 	IsSupportCloudinit      bool   `json:"IsSupportCloudinit" xml:"IsSupportCloudinit"`
-	CreationTime            string `xorm:"varchar(100)" json:"createdTime" xml:"createdTime"`
-	ProductCode             string `xorm:"varchar(100)" json:"ProductCode" xml:"ProductCode"`
-	Progress                string `xorm:"varchar(100)" json:"progress" xml:"progress"`
-	Platform                string `xorm:"varchar(100)" json:"platform" xml:"platform"`
-	IsSelfShared            string `xorm:"varchar(100)" json:"IsSelfShared" xml:"IsSelfShared"`
-	ImageName               string `xorm:"varchar(100)" json:"ImageName" xml:"ImageName"`
-	Status                  string `xorm:"varchar(100)" json:"state" xml:"state"`
+	CreationTime            string `json:"createdTime" xml:"createdTime"`
+	ProductCode             string `json:"ProductCode" xml:"ProductCode"`
+	Progress                string `json:"progress" xml:"progress"`
+	Platform                string `json:"platform" xml:"platform"`
+	IsSelfShared            string `json:"IsSelfShared" xml:"IsSelfShared"`
+	ImageName               string `json:"ImageName" xml:"ImageName"`
+	Status                  string `json:"state" xml:"state"`
 	ImageOwnerId            int64  `json:"ImageOwnerId" xml:"ImageOwnerId"`
 	IsPublic                bool   `json:"IsPublic" xml:"IsPublic"`
 }
