@@ -11,19 +11,15 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
 package object
-
 import (
 	"encoding/json"
 	"fmt"
 )
-
 var (
 	WecomBotCache        = make(map[string]Provider)
 	WecomBotMessageCache = make(map[string]string)
 )
-
 type WecomBotMessage struct {
 	MsgId    string        `json:"msgid"`
 	AIBotId  string        `json:"aibotid"`
@@ -35,56 +31,45 @@ type WecomBotMessage struct {
 	Image    *ImageMessage `json:"image,omitempty"`
 	Stream   *StreamRecv   `json:"stream,omitempty"`
 }
-
 type FromUser struct {
 	UserId string `json:"userid"`
 }
-
 type TextMessage struct {
 	Content string `json:"content"`
 }
-
 type ImageMessage struct {
 	Url string `json:"url"`
 }
-
 type StreamRecv struct {
 	Id string `json:"id"`
 }
-
 type StreamResponse struct {
 	MsgType string      `json:"msgtype"`
 	Stream  *StreamSend `json:"stream"`
 }
-
 type StreamSend struct {
 	ID      string    `json:"id,omitempty"`
 	Finish  bool      `json:"finish"`
 	Content string    `json:"content,omitempty"`
 	MsgItem []MsgItem `json:"msg_item,omitempty"`
 }
-
 type MsgItem struct {
 	MsgType string     `json:"msgtype"`
 	Image   *ImageItem `json:"image,omitempty"`
 }
-
 type ImageItem struct {
 	Base64 string `json:"base64"`
 	Md5    string `json:"md5"`
 }
-
 type MsgResponse struct {
 	MsgType string      `json:"msgtype"`
 	Stream  *StreamSend `json:"stream"`
 }
-
 func GetWecomBotTokenAndKey(botID string) (string, string, error) {
 	p, ok := WecomBotCache[botID]
 	if ok {
 		return p.ClientSecret, p.Region, nil
 	}
-
 	providers, err := GetProviders("admin")
 	if err != nil {
 		return "", "", err
@@ -97,7 +82,6 @@ func GetWecomBotTokenAndKey(botID string) (string, string, error) {
 	}
 	return "", "", fmt.Errorf("not found provider for bot %s", botID)
 }
-
 func MakeMsgResponse(content string, streamId string) (string, error) {
 	msg := MsgResponse{
 		MsgType: "stream",
@@ -107,11 +91,9 @@ func MakeMsgResponse(content string, streamId string) (string, error) {
 			Content: content,
 		},
 	}
-
 	data, err := json.Marshal(msg)
 	if err != nil {
 		return "", err
 	}
-
 	return string(data), nil
 }

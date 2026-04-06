@@ -11,9 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
 package object
-
 import (
 	"bufio"
 	"fmt"
@@ -21,51 +19,40 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-
 	"github.com/beego/beego/logs"
 )
-
 func getImportedVideos(path string) ([]*Video, error) {
 	files, err := os.ReadDir(path)
 	if err != nil {
 		return nil, err
 	}
-
 	videos := []*Video{}
 	for _, file := range files {
 		if filepath.Ext(file.Name()) != ".txt" {
 			continue
 		}
-
 		filePath := filepath.Join(path, file.Name())
 		video, err := parseVideoFile(filePath)
 		if err != nil {
 			return nil, err
 		}
-
 		videos = append(videos, video)
 	}
-
 	return videos, nil
 }
-
 func getParentFolderName(filePath string) string {
 	// 获取父目录的完整路径
 	parentDir := filepath.Dir(filePath)
-
 	// 获取父目录的基本名称
 	parentFolderName := filepath.Base(parentDir)
-
 	return parentFolderName
 }
-
 func parseVideoFile(filePath string) (*Video, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
 		return nil, err
 	}
 	defer file.Close()
-
 	fileId := strings.TrimSuffix(filepath.Base(filePath), filepath.Ext(filePath))
 	tag := getParentFolderName(filePath)
 	video := &Video{
@@ -83,9 +70,7 @@ func parseVideoFile(filePath string) (*Video, error) {
 		DataUrls:     []string{},
 		Keywords:     []string{},
 	}
-
 	scanner := bufio.NewScanner(file)
-
 	// 读取并解析第一行（时间信息）
 	if scanner.Scan() {
 		timestamp := scanner.Text()
@@ -98,7 +83,6 @@ func parseVideoFile(filePath string) (*Video, error) {
 	} else {
 		return nil, fmt.Errorf("file is empty")
 	}
-
 	for scanner.Scan() {
 		line := scanner.Text()
 		if line == "关键词:" {
@@ -108,7 +92,6 @@ func parseVideoFile(filePath string) (*Video, error) {
 			break
 		}
 	}
-
 	// 解析文字记录
 	var recordBuilder strings.Builder
 	for scanner.Scan() {
@@ -129,7 +112,6 @@ func parseVideoFile(filePath string) (*Video, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	for i := 0; i < len(video.Segments); i++ {
 		if i != len(video.Segments)-1 {
 			video.Segments[i].EndTime = video.Segments[i+1].StartTime
@@ -138,20 +120,16 @@ func parseVideoFile(filePath string) (*Video, error) {
 			if err != nil {
 				return nil, err
 			}
-
 			video.Segments[i].EndTime = endTime
 		}
 	}
-
 	return video, nil
 }
-
 func parseTextRecord(record string, video *Video) error {
 	tokens := strings.Split(record, "\n")
 	if len(tokens) < 2 {
 		return nil // 忽略空记录
 	}
-
 	lines := []string{}
 	for _, token := range tokens {
 		if token != "" && token != "文字记录:" {
@@ -159,43 +137,34 @@ func parseTextRecord(record string, video *Video) error {
 			lines = append(lines, token)
 		}
 	}
-
 	// 第一行是角色和时间
 	parts := SplitLastN(lines[0], " ", 2)
 	if len(parts) != 2 {
 		return fmt.Errorf("invalid record format")
 	}
-
 	speaker, timeStr := parts[0], parts[1]
-
 	speaker = mapSpeaker(speaker)
-
 	timeStr = strings.Trim(timeStr, " ")
 	startTime, err := timeToSeconds(timeStr)
 	if err != nil {
 		return err
 	}
-
 	// 其余行是内容
 	text := strings.Join(lines[1:], " ")
-
 	label := &Label{
 		Id:        strconv.Itoa(len(video.Segments)),
 		StartTime: startTime,
 		Text:      text,
 		Speaker:   speaker,
 	}
-
 	video.Segments = append(video.Segments, label)
 	return nil
 }
-
 func importVideos(path string) error {
 	videos, err := getImportedVideos(path)
 	if err != nil {
 		return err
 	}
-
 	for i, video := range videos {
 		logs.Info("[%d] Add video: %v", i, video)
 		_, err = AddVideo(video)
@@ -203,6 +172,5 @@ func importVideos(path string) error {
 			return err
 		}
 	}
-
 	return nil
 }

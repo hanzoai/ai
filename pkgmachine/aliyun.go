@@ -24,29 +24,29 @@ import (
 )
 
 type Machine struct {
-	Owner       string `xorm:"varchar(100) notnull pk" json:"owner"`
-	Name        string `xorm:"varchar(100) notnull pk" json:"name"`
-	Id          string `xorm:"varchar(100)" json:"id"`
-	Provider    string `xorm:"varchar(100)" json:"provider"`
-	CreatedTime string `xorm:"varchar(100)" json:"createdTime"`
-	UpdatedTime string `xorm:"varchar(100)" json:"updatedTime"`
-	ExpireTime  string `xorm:"varchar(100)" json:"expireTime"`
-	DisplayName string `xorm:"varchar(100)" json:"displayName"`
+	Owner       string `db:"pk" json:"owner"`
+	Name        string `db:"pk" json:"name"`
+	Id          string `json:"id"`
+	Provider    string `json:"provider"`
+	CreatedTime string `json:"createdTime"`
+	UpdatedTime string `json:"updatedTime"`
+	ExpireTime  string `json:"expireTime"`
+	DisplayName string `json:"displayName"`
 
-	Region   string `xorm:"varchar(100)" json:"region"`
-	Zone     string `xorm:"varchar(100)" json:"zone"`
-	Category string `xorm:"varchar(100)" json:"category"`
-	Type     string `xorm:"varchar(100)" json:"type"`
-	Size     string `xorm:"varchar(100)" json:"size"`
-	Tag      string `xorm:"varchar(100)" json:"tag"`
-	State    string `xorm:"varchar(100)" json:"state"`
+	Region   string `json:"region"`
+	Zone     string `json:"zone"`
+	Category string `json:"category"`
+	Type     string `json:"type"`
+	Size     string `json:"size"`
+	Tag      string `json:"tag"`
+	State    string `json:"state"`
 
-	Image     string `xorm:"varchar(100)" json:"image"`
-	Os        string `xorm:"varchar(100)" json:"os"`
-	PublicIp  string `xorm:"varchar(100)" json:"publicIp"`
-	PrivateIp string `xorm:"varchar(100)" json:"privateIp"`
-	CpuSize   string `xorm:"varchar(100)" json:"cpuSize"`
-	MemSize   string `xorm:"varchar(100)" json:"memSize"`
+	Image     string `json:"image"`
+	Os        string `json:"os"`
+	PublicIp  string `json:"publicIp"`
+	PrivateIp string `json:"privateIp"`
+	CpuSize   string `json:"cpuSize"`
+	MemSize   string `json:"memSize"`
 }
 
 type MachineAliyunClient struct {

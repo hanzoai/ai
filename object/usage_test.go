@@ -11,45 +11,34 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
 //go:build !skipCi
 // +build !skipCi
-
 package object
-
 import (
 	"fmt"
 	"testing"
 )
-
 func TestGetUsage(t *testing.T) {
 	InitConfig()
-
 	usage, err := GetUsage("")
 	if err != nil {
 		panic(err)
 	}
-
 	fmt.Printf("GetUsage result: %+v\n", usage)
 }
-
 func TestGetUsages(t *testing.T) {
 	InitConfig()
-
 	usages, err := GetUsages(30, "admin", "")
 	if err != nil {
 		panic(err)
 	}
-
 	fmt.Println("GetUsages results:")
 	for _, usage := range usages {
 		fmt.Printf("%+v\n", usage)
 	}
 }
-
 func TestGetRangeUsages(t *testing.T) {
 	InitConfig()
-
 	// usages, err := GetRangeUsages("Month", 6)
 	usages, err := GetRangeUsages("Week", 12, "admin", "", "en")
 	// usages, err := GetRangeUsages("Day", 30)
@@ -57,7 +46,6 @@ func TestGetRangeUsages(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-
 	fmt.Println("GetRangeUsages results:")
 	for _, usage := range usages {
 		fmt.Printf("%+v\n", usage)

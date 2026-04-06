@@ -11,17 +11,13 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
 package object
-
 import "fmt"
-
 // CloudParser defines the interface for cloud resource scanning
 type CloudParser interface {
 	// ScanAssets scans all resources from the cloud provider and returns them as Asset objects
 	ScanAssets(owner string, provider *Provider) ([]*Asset, error)
 }
-
 // NewCloudParser creates a new CloudParser instance based on the provider type
 func NewCloudParser(providerType string) (CloudParser, error) {
 	switch providerType {

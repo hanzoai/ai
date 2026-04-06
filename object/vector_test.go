@@ -11,33 +11,25 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
 //go:build !skipCi
 // +build !skipCi
-
 package object
-
 import (
 	"testing"
-
 	"github.com/hanzoai/cloud/model"
 )
-
 func TestUpdateVectors(t *testing.T) {
 	InitConfig()
-
 	vectors, err := GetGlobalVectors()
 	if err != nil {
 		panic(err)
 	}
-
 	for _, vector := range vectors {
 		if vector.Text != "" && (vector.TokenCount == 0 || vector.Price == 0) {
 			vector.TokenCount, err = model.GetTokenSize("text-davinci-003", vector.Text)
 			if err != nil {
 				panic(err)
 			}
-
 			_, err = UpdateVector(vector.GetId(), vector, "en")
 			if err != nil {
 				panic(err)

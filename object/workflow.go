@@ -19,30 +19,28 @@ import (
 
 	"github.com/hanzoai/cloud/bpmn"
 	"github.com/hanzoai/cloud/util"
-	"xorm.io/core"
+	"github.com/hanzoai/dbx"
 )
 
 type Workflow struct {
-	Owner       string `xorm:"varchar(100) notnull pk" json:"owner"`
-	Name        string `xorm:"varchar(100) notnull pk" json:"name"`
-	CreatedTime string `xorm:"varchar(100)" json:"createdTime"`
-	DisplayName string `xorm:"varchar(100)" json:"displayName"`
+	Owner       string `db:"pk" json:"owner"`
+	Name        string `db:"pk" json:"name"`
+	CreatedTime string `json:"createdTime"`
+	DisplayName string `json:"displayName"`
 
-	Text             string `xorm:"mediumtext" json:"text"`
-	Text2            string `xorm:"mediumtext" json:"text2"`
-	Message          string `xorm:"mediumtext" json:"message"`
-	QuestionTemplate string `xorm:"mediumtext" json:"questionTemplate"`
+	Text             string `json:"text"`
+	Text2            string `json:"text2"`
+	Message          string `json:"message"`
+	QuestionTemplate string `json:"questionTemplate"`
 }
 
 func GetMaskedWorkflow(workflow *Workflow, isMaskEnabled bool) *Workflow {
 	if !isMaskEnabled {
 		return workflow
 	}
-
 	if workflow == nil {
 		return nil
 	}
-
 	return workflow
 }
 
@@ -50,7 +48,6 @@ func GetMaskedWorkflows(workflows []*Workflow, isMaskEnabled bool) []*Workflow {
 	if !isMaskEnabled {
 		return workflows
 	}
-
 	for _, workflow := range workflows {
 		workflow = GetMaskedWorkflow(workflow, isMaskEnabled)
 	}
@@ -59,31 +56,28 @@ func GetMaskedWorkflows(workflows []*Workflow, isMaskEnabled bool) []*Workflow {
 
 func GetGlobalWorkflows() ([]*Workflow, error) {
 	workflows := []*Workflow{}
-	err := adapter.engine.Asc("owner").Desc("created_time").Find(&workflows)
+	err := findAll(adapter.db, "workflow", &workflows, nil, "owner ASC", "created_time DESC")
 	if err != nil {
 		return workflows, err
 	}
-
 	return workflows, nil
 }
 
 func GetWorkflows(owner string) ([]*Workflow, error) {
 	workflows := []*Workflow{}
-	err := adapter.engine.Desc("created_time").Find(&workflows, &Workflow{Owner: owner})
+	err := findAll(adapter.db, "workflow", &workflows, dbx.HashExp{"owner": owner}, "created_time DESC")
 	if err != nil {
 		return workflows, err
 	}
-
 	return workflows, nil
 }
 
 func getWorkflow(owner string, name string) (*Workflow, error) {
 	workflow := Workflow{Owner: owner, Name: name}
-	existed, err := adapter.engine.Get(&workflow)
+	existed, err := getOne(adapter.db, "workflow", &workflow, pk2(owner, name))
 	if err != nil {
 		return &workflow, err
 	}
-
 	if existed {
 		return &workflow, nil
 	} else {
@@ -119,12 +113,13 @@ func UpdateWorkflow(id string, workflow *Workflow, lang string) (bool, error) {
 		workflow.Message = ""
 	}
 
-	_, err = adapter.engine.ID(core.PK{owner, name}).AllCols().Update(workflow)
+	workflow.Owner = owner
+	workflow.Name = name
+	err = adapter.db.Model(workflow).Update()
 	if err != nil {
 		return false, err
 	}
 
-	// return affected != 0
 	return true, nil
 }
 
@@ -136,20 +131,19 @@ func AddWorkflow(workflow *Workflow, lang string) (bool, error) {
 		workflow.Message = ""
 	}
 
-	affected, err := adapter.engine.Insert(workflow)
+	err := insertRow(adapter.db, workflow)
 	if err != nil {
 		return false, err
 	}
 
-	return affected != 0, nil
+	return true, nil
 }
 
 func DeleteWorkflow(workflow *Workflow) (bool, error) {
-	affected, err := adapter.engine.ID(core.PK{workflow.Owner, workflow.Name}).Delete(&Workflow{})
+	affected, err := deleteByPK(adapter.db, "workflow", pk2(workflow.Owner, workflow.Name))
 	if err != nil {
 		return false, err
 	}
-
 	return affected != 0, nil
 }
 
@@ -158,17 +152,16 @@ func (workflow *Workflow) GetId() string {
 }
 
 func GetWorkflowCount(owner string, field, value string) (int64, error) {
-	session := GetDbSession(owner, -1, -1, field, value, "", "")
-	return session.Count(&Workflow{})
+	q := GetDbQuery(owner, -1, -1, field, value, "", "")
+	return queryCount(q, "workflow")
 }
 
 func GetPaginationWorkflows(owner string, offset, limit int, field, value, sortField, sortOrder string) ([]*Workflow, error) {
 	workflows := []*Workflow{}
-	session := GetDbSession(owner, offset, limit, field, value, sortField, sortOrder)
-	err := session.Find(&workflows)
+	q := GetDbQuery(owner, offset, limit, field, value, sortField, sortOrder)
+	err := queryFind(q, "workflow", &workflows)
 	if err != nil {
 		return workflows, err
 	}
-
 	return workflows, nil
 }

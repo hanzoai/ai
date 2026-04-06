@@ -11,27 +11,20 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
 //go:build !skipCi
 // +build !skipCi
-
 package object
-
 import "testing"
-
 func TestUpdateStoreFolders(t *testing.T) {
 	InitConfig()
-
 	store, err := getStore("admin", "default")
 	if err != nil {
 		panic(err)
 	}
-
 	//err = store.Populate()
 	//if err != nil {
 	//	panic(err)
 	//}
-
 	_, err = store.GetVideoData("en")
 	if err != nil {
 		panic(err)
