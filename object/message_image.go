@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,13 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 package object
+
 import (
 	"encoding/base64"
 	"fmt"
 	"mime"
 	"strings"
+
 	"github.com/hanzoai/cloud/i18n"
 )
+
 func getExtFromMimeType(mimeType string, lang string) (string, error) {
 	exts, err := mime.ExtensionsByType(mimeType)
 	if err != nil {
@@ -35,6 +38,7 @@ func getExtFromMimeType(mimeType string, lang string) (string, error) {
 	}
 	return res, nil
 }
+
 func parseBase64Image(data string, lang string) ([]byte, error) {
 	parts := strings.SplitN(data, ";", 2)
 	if len(parts) < 2 {

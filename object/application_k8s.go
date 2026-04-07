@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,22 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 package object
+
 import (
 	"context"
 	"fmt"
 	"regexp"
 	"strings"
 	"time"
+
 	"github.com/hanzoai/cloud/i18n"
 	"github.com/hanzoai/cloud/util"
 	"gopkg.in/yaml.v3"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	"sigs.k8s.io/kustomize/api/krusty"
 	"sigs.k8s.io/kustomize/api/types"
 	"sigs.k8s.io/kustomize/kyaml/filesys"
 )
+
 const (
 	StatusNotDeployed = "Not Deployed"
 	StatusPending     = string(v1.PodPending) // "Pending"
@@ -37,6 +41,7 @@ const (
 	StatusTerminating = "Terminating"
 	NamespaceFormat   = "hanzo-cloud-%s"
 )
+
 func UpdateApplicationStatus(owner string, name string, status string, lang string) error {
 	application, err := getApplication(owner, name)
 	if err != nil {
@@ -53,6 +58,7 @@ func UpdateApplicationStatus(owner string, name string, status string, lang stri
 	}
 	return nil
 }
+
 func generateManifestWithKustomize(baseManifest, parameters string, lang string) (string, error) {
 	// If no parameters provided, return base manifest directly
 	if parameters == "" {
@@ -115,6 +121,7 @@ func generateManifestWithKustomize(baseManifest, parameters string, lang string)
 	}
 	return string(finalManifestBytes), nil
 }
+
 func DeployApplication(application *Application, lang string) (bool, error) {
 	if err := ensureK8sClient(lang); err != nil {
 		return false, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:failed to initialize k8s client: %v"), err))
@@ -138,6 +145,7 @@ func DeployApplication(application *Application, lang string) (bool, error) {
 	}
 	return true, nil
 }
+
 func UndeployApplication(owner, name, namespace string, lang string) (bool, error) {
 	if err := ensureK8sClient(lang); err != nil {
 		return false, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:failed to initialize k8s client: %v"), err))
@@ -160,6 +168,7 @@ func UndeployApplication(owner, name, namespace string, lang string) (bool, erro
 	}
 	return true, nil
 }
+
 func DeployApplicationSync(application *Application, lang string) (bool, error) {
 	// First deploy the application
 	success, err := DeployApplication(application, lang)
@@ -210,6 +219,7 @@ func DeployApplicationSync(application *Application, lang string) (bool, error) 
 		}
 	}
 }
+
 // UndeployApplicationSync undeploys application and waits for it to be completely removed
 func UndeployApplicationSync(owner, name, namespace string, lang string) (bool, error) {
 	// First undeploy the application
@@ -245,6 +255,7 @@ func UndeployApplicationSync(owner, name, namespace string, lang string) (bool, 
 		}
 	}
 }
+
 // GetApplicationFailureReason returns the failure reason for an application deployment
 func GetApplicationFailureReason(namespace string, lang string) (string, error) {
 	if namespace == "" {
@@ -272,6 +283,7 @@ func GetApplicationFailureReason(namespace string, lang string) (string, error) 
 	}
 	return "deployment failed for an unknown reason. Check pod logs and events in the namespace for more details.", nil
 }
+
 // analyzePodFailures analyzes pod failures and returns a list of failure reasons
 func analyzePodFailures(pods []v1.Pod) []string {
 	var reasons []string
@@ -303,6 +315,7 @@ func analyzePodFailures(pods []v1.Pod) []string {
 	}
 	return reasons
 }
+
 // analyzeContainerStatus analyzes a single container's status and returns failure reason if any
 func analyzeContainerStatus(podName, containerName, containerType string, state v1.ContainerState) string {
 	if state.Waiting != nil && state.Waiting.Reason != "" {
@@ -316,6 +329,7 @@ func analyzeContainerStatus(podName, containerName, containerType string, state 
 	}
 	return ""
 }
+
 // GetApplicationStatus returns application status as string
 func GetApplicationStatus(owner, name, namespace string, lang string) (string, error) {
 	if err := ensureK8sClient(lang); err != nil {
@@ -403,6 +417,7 @@ func GetApplicationStatus(owner, name, namespace string, lang string) (string, e
 	}
 	return StatusRunning, nil
 }
+
 // Helper function to deploy manifest (refactored from existing code)
 func deployManifest(manifest, namespace string, lang string) error {
 	// Split manifest by "---" separator
@@ -419,6 +434,7 @@ func deployManifest(manifest, namespace string, lang string) error {
 	}
 	return nil
 }
+
 func toK8sMetadataName(name string) string {
 	if len(name) == 0 {
 		name = "default-name"

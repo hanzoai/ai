@@ -15,13 +15,16 @@
 //go:build !skipCi
 
 package object
+
 import (
 	"fmt"
 	"sort"
 	"testing"
+
 	"github.com/hanzoai/cloud/model"
 	"github.com/hanzoai/cloud/util"
 )
+
 func TestUpdateChatCounts(t *testing.T) {
 	InitConfig()
 	chats, err := GetGlobalChats()
@@ -50,6 +53,7 @@ func TestUpdateChatCounts(t *testing.T) {
 		}
 	}
 }
+
 func TestUpdateChatPrices(t *testing.T) {
 	InitConfig()
 	chats, err := GetGlobalChats()
@@ -81,6 +85,7 @@ func TestUpdateChatPrices(t *testing.T) {
 		}
 	}
 }
+
 func TestDeleteEmptyChats(t *testing.T) {
 	InitConfig()
 	chats, err := GetGlobalChats()
@@ -97,6 +102,7 @@ func TestDeleteEmptyChats(t *testing.T) {
 		}
 	}
 }
+
 func TestUpdateChatDescs(t *testing.T) {
 	InitConfig()
 	util.InitIpDb()
@@ -120,6 +126,7 @@ func TestUpdateChatDescs(t *testing.T) {
 		}
 	}
 }
+
 func TestPrintChatUsers(t *testing.T) {
 	InitConfig()
 	chats, err := GetGlobalChats()

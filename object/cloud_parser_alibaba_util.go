@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,12 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 package object
+
 import (
 	"encoding/json"
+
 	openapi "github.com/alibabacloud-go/darabonba-openapi/v2/client"
 	ecs20140526 "github.com/alibabacloud-go/ecs-20140526/v4/client"
 	"github.com/alibabacloud-go/tea/tea"
 )
+
 // EcsInstanceDetail holds detailed information for an ECS instance
 type EcsInstanceDetail struct {
 	InstanceId         string
@@ -31,6 +34,7 @@ type EcsInstanceDetail struct {
 	InstanceChargeType string
 	Status             string
 }
+
 // DiskDetail holds detailed information for a disk
 type DiskDetail struct {
 	DiskId             string
@@ -43,6 +47,7 @@ type DiskDetail struct {
 	DeleteWithInstance bool
 	Status             string
 }
+
 // VpcDetail holds detailed information for a VPC
 type VpcDetail struct {
 	VpcId       string
@@ -52,6 +57,7 @@ type VpcDetail struct {
 	Status      string
 	Description string
 }
+
 // createEcsClient creates an Alibaba Cloud ECS client
 func (p *AlibabaCloudParser) createEcsClient(provider *Provider) (*ecs20140526.Client, error) {
 	config := &openapi.Config{
@@ -62,6 +68,7 @@ func (p *AlibabaCloudParser) createEcsClient(provider *Provider) (*ecs20140526.C
 	}
 	return ecs20140526.NewClient(config)
 }
+
 // getEcsInstances retrieves detailed information for ECS instances
 func (p *AlibabaCloudParser) getEcsInstances(client *ecs20140526.Client, assets []*Asset) (map[string]*EcsInstanceDetail, error) {
 	// Group instance IDs by region
@@ -126,6 +133,7 @@ func (p *AlibabaCloudParser) getEcsInstances(client *ecs20140526.Client, assets 
 	}
 	return detailsMap, nil
 }
+
 // getDisks retrieves detailed information for disks
 func (p *AlibabaCloudParser) getDisks(client *ecs20140526.Client, assets []*Asset) (map[string]*DiskDetail, error) {
 	// Group disk IDs by region
@@ -177,6 +185,7 @@ func (p *AlibabaCloudParser) getDisks(client *ecs20140526.Client, assets []*Asse
 	}
 	return detailsMap, nil
 }
+
 // getVpcs retrieves detailed information for VPCs
 func (p *AlibabaCloudParser) getVpcs(client *ecs20140526.Client, assets []*Asset) (map[string]*VpcDetail, error) {
 	detailsMap := make(map[string]*VpcDetail)
@@ -210,6 +219,7 @@ func (p *AlibabaCloudParser) getVpcs(client *ecs20140526.Client, assets []*Asset
 	}
 	return detailsMap, nil
 }
+
 // mergeEcsDetails merges ECS instance details into assets
 func (p *AlibabaCloudParser) mergeEcsDetails(assets []*Asset, details map[string]*EcsInstanceDetail) {
 	for _, asset := range assets {
@@ -252,6 +262,7 @@ func (p *AlibabaCloudParser) mergeEcsDetails(assets []*Asset, details map[string
 		asset.Properties = string(propertiesJson)
 	}
 }
+
 // mergeDiskDetails merges disk details into assets
 func (p *AlibabaCloudParser) mergeDiskDetails(assets []*Asset, details map[string]*DiskDetail) {
 	for _, asset := range assets {
@@ -289,6 +300,7 @@ func (p *AlibabaCloudParser) mergeDiskDetails(assets []*Asset, details map[strin
 		asset.Properties = string(propertiesJson)
 	}
 }
+
 // mergeVpcDetails merges VPC details into assets
 func (p *AlibabaCloudParser) mergeVpcDetails(assets []*Asset, details map[string]*VpcDetail) {
 	for _, asset := range assets {

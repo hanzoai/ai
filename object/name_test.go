@@ -15,14 +15,18 @@
 //go:build !skipCi
 
 package object_test
+
 import (
 	"fmt"
 	"testing"
+
 	"github.com/hanzoai/cloud/controllers"
 	"github.com/hanzoai/cloud/object"
 	iamsdk "github.com/hanzoid/go-sdk/casdoorsdk"
 )
+
 var userTag = "user"
+
 func TestUpdateMessagesForName(t *testing.T) {
 	object.InitConfig()
 	controllers.InitAuthConfig()
@@ -59,6 +63,7 @@ func TestUpdateMessagesForName(t *testing.T) {
 		}
 	}
 }
+
 func TestUpdateChatsForName(t *testing.T) {
 	object.InitConfig()
 	controllers.InitAuthConfig()
@@ -93,6 +98,7 @@ func TestUpdateChatsForName(t *testing.T) {
 		}
 	}
 }
+
 func TestUpdateMessagesAndChatsForName(t *testing.T) {
 	TestUpdateMessagesForName(t)
 	TestUpdateChatsForName(t)

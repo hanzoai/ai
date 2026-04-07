@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 package object
+
 import (
 	"context"
 	"fmt"
@@ -20,6 +21,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+
 	"github.com/hanzoai/cloud/i18n"
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
@@ -29,6 +31,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	metricsclientset "k8s.io/metrics/pkg/client/clientset/versioned"
 )
+
 type ApplicationView struct {
 	Services    []ServiceDetail    `json:"services"`
 	Credentials []EnvVariable      `json:"credentials"`
@@ -39,6 +42,7 @@ type ApplicationView struct {
 	Namespace   string             `json:"namespace"`
 	Metrics     *ResourceMetrics   `json:"metrics,omitempty"`
 }
+
 // ResourceMetrics represents resource usage metrics
 type ResourceMetrics struct {
 	CPUUsage         string  `json:"cpuUsage"`         // CPU usage (e.g., "120m" for 120 millicores)
@@ -96,10 +100,12 @@ type ApplicationEvent struct {
 	FirstTime      string `json:"firstTime"`      // First occurrence time
 	LastTime       string `json:"lastTime"`       // Last occurrence time
 }
+
 var (
 	metricsClient *metricsclientset.Clientset
 	metricsOnce   sync.Once
 )
+
 // initMetricsClient init metrics client
 func initMetricsClient(lang string) error {
 	if k8sClient == nil || k8sClient.config == nil {
@@ -111,6 +117,7 @@ func initMetricsClient(lang string) error {
 	})
 	return err
 }
+
 // getNamespaceMetrics retrieves namespace metrics from cache with API fallback
 func getNamespaceMetrics(namespace string, lang string) (*ResourceMetrics, error) {
 	if cacheManager != nil && cacheManager.started {
@@ -155,6 +162,7 @@ func getNamespaceMetrics(namespace string, lang string) (*ResourceMetrics, error
 		PodCount:         metrics.PodCount,
 	}, nil
 }
+
 // getExternalHost attempts to get k8s server IP first, then falls back to provided host
 func getExternalHost(fallbackHost string) string {
 	if cachedK8sHost != "" {
@@ -162,6 +170,7 @@ func getExternalHost(fallbackHost string) string {
 	}
 	return fallbackHost
 }
+
 // parseK8sHost extracts server host from kubeconfig content
 func parseK8sHost(configText string, lang string) (string, error) {
 	if strings.TrimSpace(configText) == "" {
@@ -184,6 +193,7 @@ func parseK8sHost(configText string, lang string) (string, error) {
 	}
 	return host, nil
 }
+
 // GetApplicationView retrieves application view from cache with fallback
 func GetApplicationView(namespace string, lang string) (*ApplicationView, error) {
 	if err := ensureK8sClient(lang); err != nil {
@@ -239,6 +249,7 @@ func GetApplicationView(namespace string, lang string) (*ApplicationView, error)
 	}
 	return details, nil
 }
+
 // getNodeIPsFromCache retrieves node IPs from cache or fallback to API
 func getNodeIPsFromCache() []string {
 	var nodes []*v1.Node
@@ -267,6 +278,7 @@ func getNodeIPsFromCache() []string {
 	}
 	return nodeIPs
 }
+
 // getServicesFromCache retrieves services from cache or fallback to API
 func getServicesFromCache(namespace string, nodeIPs []string) []ServiceDetail {
 	var services []*v1.Service
@@ -328,6 +340,7 @@ func getServicesFromCache(namespace string, nodeIPs []string) []ServiceDetail {
 	}
 	return serviceDetails
 }
+
 func getIngressFromCache(namespace string) []*networkingv1.Ingress {
 	var ingresses []*networkingv1.Ingress
 	// First, try to get from the cache
@@ -347,6 +360,7 @@ func getIngressFromCache(namespace string) []*networkingv1.Ingress {
 	}
 	return ingresses
 }
+
 // getDeploymentsFromCache retrieves deployments from cache or fallback to API
 func getDeploymentsFromCache(namespace string) []DeploymentDetail {
 	var deployments []*appsv1.Deployment
@@ -390,6 +404,7 @@ func getDeploymentsFromCache(namespace string) []DeploymentDetail {
 	}
 	return deploymentDetails
 }
+
 // getCredentialsFromCache extracts environment variables containing sensitive information
 func getCredentialsFromCache(namespace string) []EnvVariable {
 	var deployments []*appsv1.Deployment
@@ -433,6 +448,7 @@ func getCredentialsFromCache(namespace string) []EnvVariable {
 	}
 	return credentials
 }
+
 // getEventsFromCache retrieves namespace-related events from cache or API
 func getEventsFromCache(namespace string) []ApplicationEvent {
 	var events []*v1.Event
@@ -453,6 +469,7 @@ func getEventsFromCache(namespace string) []ApplicationEvent {
 	}
 	return convertEventsToApplicationEvents(events)
 }
+
 // convertEventsToDetails converts Kubernetes Events to EventDetail
 func convertEventsToApplicationEvents(events []*v1.Event) []ApplicationEvent {
 	eventDetails := make([]ApplicationEvent, 0)

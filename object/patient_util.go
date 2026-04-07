@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,27 +12,32 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 package object
+
 import (
 	iamsdk "github.com/hanzoid/go-sdk/casdoorsdk"
 )
+
 func IsAdmin(user *iamsdk.User) bool {
 	if user == nil {
 		return false
 	}
 	return user.IsAdmin || user.Tag == "Admin"
 }
+
 func IsDoctor(user *iamsdk.User) bool {
 	if user == nil {
 		return false
 	}
 	return user.Tag == "Doctor"
 }
+
 func IsPatient(user *iamsdk.User) bool {
 	if user == nil {
 		return false
 	}
 	return user.Tag == "Patient"
 }
+
 func CanEditPatient(user *iamsdk.User, patient *Patient) bool {
 	if user == nil || patient == nil {
 		return false
@@ -51,6 +56,7 @@ func CanEditPatient(user *iamsdk.User, patient *Patient) bool {
 	}
 	return false
 }
+
 func FilterPatientsByUser(user *iamsdk.User, patients []*Patient) []*Patient {
 	if user == nil {
 		return []*Patient{}

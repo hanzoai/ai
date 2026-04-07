@@ -15,11 +15,14 @@
 //go:build !skipCi
 
 package object_test
+
 import (
 	"testing"
+
 	"github.com/hanzoai/cloud/controllers"
 	"github.com/hanzoai/cloud/object"
 )
+
 func TestSendErrorEmail(t *testing.T) {
 	object.InitConfig()
 	controllers.InitAuthConfig()

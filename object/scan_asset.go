@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,13 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 package object
+
 import (
 	"fmt"
 	"os"
+
 	"github.com/hanzoai/cloud/scan"
 	"github.com/hanzoai/cloud/util"
 	"github.com/hanzoai/dbx"
 )
+
 // ScanResult represents the result of a scan operation
 type ScanResult struct {
 	RawResult     string `json:"rawResult"`
@@ -26,6 +29,7 @@ type ScanResult struct {
 	ResultSummary string `json:"resultSummary"`
 	Runner        string `json:"runner"`
 }
+
 // ScanAsset performs a scan on an asset
 // @param provider: The provider ID (owner/name) for scan provider
 // @param scan: Optional scan ID (owner/name) for saving results to existing scan
@@ -73,6 +77,7 @@ func ScanAsset(provider, scanParam, targetMode, target, asset, command string, s
 	}
 	return executeScan(provider, scanParam, targetMode, target, asset, command, owner, lang)
 }
+
 // executeScan performs the actual scan execution
 func executeScan(provider, scanParam, targetMode, target, asset, command, owner string, lang string) (*ScanResult, error) {
 	// Get the hostname to identify the runner
@@ -131,6 +136,7 @@ func executeScan(provider, scanParam, targetMode, target, asset, command, owner 
 	resultSummary := scanProvider.GetResultSummary(result)
 	return &ScanResult{RawResult: rawResult, Result: result, ResultSummary: resultSummary, Runner: hostname}, nil
 }
+
 // GetPendingScans returns all scans with state "Pending"
 func GetPendingScans() ([]*Scan, error) {
 	scans := []*Scan{}
@@ -140,6 +146,7 @@ func GetPendingScans() ([]*Scan, error) {
 	}
 	return scans, nil
 }
+
 // AtomicClaimScan atomically updates a scan's state from "Pending" to "Running"
 // This operation will only succeed for one instance due to the WHERE condition on state
 // Returns the number of affected rows

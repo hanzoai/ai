@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -16,13 +16,14 @@
 // Cloud-api is a first-class ZAP node. NO gateways, NO proxies, NO sidecars,
 // NO HTTP translation layers. Everything is ZAP-to-ZAP:
 //
-//   client → cloud-api:9651 (ZAP binary)
-//   cloud-api → kv:9651     (ZAP binary)
-//   cloud-api → sql:9651    (ZAP binary)
+//	client → cloud-api:9651 (ZAP binary)
+//	cloud-api → kv:9651     (ZAP binary)
+//	cloud-api → sql:9651    (ZAP binary)
 //
 // Service handlers are registered via RegisterCloudHandler() from the
 // controllers package (avoids circular imports).
 package object
+
 import (
 	"context"
 	"encoding/json"
@@ -31,17 +32,21 @@ import (
 	"os"
 	"sync"
 	"time"
+
 	"github.com/beego/beego/logs"
 	"github.com/luxfi/zap"
 )
+
 // ── Message types ───────────────────────────────────────────────────────
 //
 // Cloud service types (100-199):
-//   100 = Cloud service request (method dispatch)
+//
+//	100 = Cloud service request (method dispatch)
 //
 // Backend types (300-399, matches sidecar protocol):
-//   300 = SQL query/exec
-//   301 = KV get/set/cmd
+//
+//	300 = SQL query/exec
+//	301 = KV get/set/cmd
 const (
 	// Cloud service — native binary RPC, NO HTTP.
 	MsgTypeCloud uint16 = 100
@@ -57,9 +62,9 @@ const (
 	// ── Cloud service message layout ────────────────────────────────
 	// Request:  method(0:Text) + auth(8:Text) + body(16:Bytes)
 	// Response: status(0:Uint32) + body(4:Bytes) + error(12:Text)
-	CloudReqMethod = 0
-	CloudReqAuth   = 8
-	CloudReqBody   = 16
+	CloudReqMethod  = 0
+	CloudReqAuth    = 8
+	CloudReqBody    = 16
 	CloudRespStatus = 0
 	CloudRespBody   = 4
 	CloudRespError  = 12
@@ -69,6 +74,7 @@ const (
 	sidecarRespStatus = 0
 	sidecarRespBody   = 4
 )
+
 // ── Package state ───────────────────────────────────────────────────────
 var (
 	zapNode         *zap.Node
@@ -79,6 +85,7 @@ var (
 	zapMu           sync.RWMutex
 	zapReady        bool
 )
+
 // ── Initialization ──────────────────────────────────────────────────────
 // InitZap starts the ZAP node and connects to KV and SQL peers.
 func InitZap() {
@@ -129,6 +136,7 @@ func InitZap() {
 		go connectPeer(node, docdbAddr, "docdb", &docdbPeerID)
 	}
 }
+
 // GetZapNode returns the ZAP node for handler registration.
 // Used by controllers package to register service handlers.
 func GetZapNode() *zap.Node {
@@ -136,12 +144,14 @@ func GetZapNode() *zap.Node {
 	defer zapMu.RUnlock()
 	return zapNode
 }
+
 // ZapEnabled returns true if the ZAP node is running.
 func ZapEnabled() bool {
 	zapMu.RLock()
 	defer zapMu.RUnlock()
 	return zapReady && zapNode != nil
 }
+
 // StopZap gracefully shuts down the ZAP node.
 func StopZap() {
 	zapMu.Lock()
@@ -153,6 +163,7 @@ func StopZap() {
 		logs.Info("ZAP: node stopped")
 	}
 }
+
 // connectPeer retries connecting to a ZAP peer with backoff.
 func connectPeer(node *zap.Node, addr, name string, peerIDOut *string) {
 	peersBefore := make(map[string]bool)
@@ -185,6 +196,7 @@ func connectPeer(node *zap.Node, addr, name string, peerIDOut *string) {
 	}
 	logs.Error("ZAP: failed to connect to %s at %s after 30 attempts", name, addr)
 }
+
 // ── KV client (native ZAP-to-ZAP) ──────────────────────────────────────
 // ZapKVGet fetches a key from KV via native ZAP binary.
 func ZapKVGet(ctx context.Context, key string) (string, error) {
@@ -208,6 +220,7 @@ func ZapKVGet(ctx context.Context, key string) (string, error) {
 	}
 	return val, nil
 }
+
 // ZapKVSet stores a key/value pair via native ZAP binary.
 func ZapKVSet(ctx context.Context, key, value string) error {
 	zapMu.RLock()
@@ -226,6 +239,7 @@ func ZapKVSet(ctx context.Context, key, value string) error {
 	}
 	return nil
 }
+
 // ZapKVSetEx stores a key/value with TTL via native ZAP binary.
 func ZapKVSetEx(ctx context.Context, key, value string, ttlSeconds int) error {
 	zapMu.RLock()
@@ -247,6 +261,7 @@ func ZapKVSetEx(ctx context.Context, key, value string, ttlSeconds int) error {
 	}
 	return nil
 }
+
 // ZapKVDel deletes a key via native ZAP binary.
 func ZapKVDel(ctx context.Context, key string) error {
 	zapMu.RLock()
@@ -262,6 +277,7 @@ func ZapKVDel(ctx context.Context, key string) error {
 	_, _, err := zapCallBackend(ctx, node, peer, MsgTypeKV, "/cmd", body)
 	return err
 }
+
 // ── SQL client (native ZAP-to-ZAP) ─────────────────────────────────────
 // ZapSQLQuery executes a read query via native ZAP binary.
 func ZapSQLQuery(ctx context.Context, sql string, args ...interface{}) ([]map[string]interface{}, error) {
@@ -285,6 +301,7 @@ func ZapSQLQuery(ctx context.Context, sql string, args ...interface{}) ([]map[st
 	}
 	return rows, nil
 }
+
 // ZapSQLExec executes a write query via native ZAP binary.
 func ZapSQLExec(ctx context.Context, sql string, args ...interface{}) error {
 	zapMu.RLock()
@@ -303,6 +320,7 @@ func ZapSQLExec(ctx context.Context, sql string, args ...interface{}) error {
 	}
 	return nil
 }
+
 // ── Datastore client (native ZAP-to-ZAP → ClickHouse) ───────────────────
 // ZapDatastoreExec executes an INSERT/DDL on ClickHouse via native ZAP binary.
 func ZapDatastoreExec(ctx context.Context, sqlStmt string, args ...interface{}) error {
@@ -322,12 +340,14 @@ func ZapDatastoreExec(ctx context.Context, sqlStmt string, args ...interface{}) 
 	}
 	return nil
 }
+
 // DatastoreEnabled returns true if the datastore peer is connected.
 func DatastoreEnabled() bool {
 	zapMu.RLock()
 	defer zapMu.RUnlock()
 	return zapReady && datastorePeerID != ""
 }
+
 // ── DocDB client (native ZAP-to-ZAP → FerretDB) ─────────────────────────
 // ZapDocdbQuery executes a read query on DocDB via native ZAP binary.
 func ZapDocdbQuery(ctx context.Context, sql string, args ...interface{}) ([]map[string]interface{}, error) {
@@ -351,6 +371,7 @@ func ZapDocdbQuery(ctx context.Context, sql string, args ...interface{}) ([]map[
 	}
 	return rows, nil
 }
+
 // ZapDocdbExec executes a write query on DocDB via native ZAP binary.
 func ZapDocdbExec(ctx context.Context, sql string, args ...interface{}) error {
 	zapMu.RLock()
@@ -369,12 +390,14 @@ func ZapDocdbExec(ctx context.Context, sql string, args ...interface{}) error {
 	}
 	return nil
 }
+
 // DocdbEnabled returns true if the docdb peer is connected.
 func DocdbEnabled() bool {
 	zapMu.RLock()
 	defer zapMu.RUnlock()
 	return zapReady && docdbPeerID != ""
 }
+
 // ── Gateway response builder ─────────────────────────────────────────────
 // BuildGatewayResponse creates a response in the gateway's expected format.
 // Layout: status(0:Uint32) + body(4:Bytes) + headers(12:Bytes)
@@ -392,6 +415,7 @@ func BuildGatewayResponse(status uint32, body []byte, headers []byte) (*zap.Mess
 	data := b.FinishWithFlags(MsgTypeHTTPRequest << 8)
 	return zap.Parse(data)
 }
+
 // ── Backend message I/O ─────────────────────────────────────────────────
 // zapCallBackend builds a sidecar-format message and sends it via ZAP.
 func zapCallBackend(ctx context.Context, node *zap.Node, peerID string, msgType uint16, path string, body []byte) (uint32, []byte, error) {
@@ -412,6 +436,7 @@ func zapCallBackend(ctx context.Context, node *zap.Node, peerID string, msgType 
 	root := resp.Root()
 	return root.Uint32(sidecarRespStatus), root.Bytes(sidecarRespBody), nil
 }
+
 // ── Cloud service response builder ──────────────────────────────────────
 // BuildCloudResponse creates a native ZAP cloud service response.
 // Used by controllers to build responses for incoming cloud requests.

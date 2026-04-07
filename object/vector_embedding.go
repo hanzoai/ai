@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 package object
+
 import (
 	"context"
 	"errors"
@@ -19,6 +20,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
 	"github.com/beego/beego/logs"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/hanzoai/cloud/embedding"
@@ -29,6 +31,7 @@ import (
 	"github.com/hanzoai/cloud/txt"
 	"github.com/hanzoai/cloud/util"
 )
+
 func filterTextFiles(files []*storage.Object) []*storage.Object {
 	fileTypes := txt.GetSupportedFileTypes()
 	fileTypeMap := map[string]bool{}
@@ -44,6 +47,7 @@ func filterTextFiles(files []*storage.Object) []*storage.Object {
 	}
 	return res
 }
+
 func addEmbeddedVector(embeddingProviderObj embedding.EmbeddingProvider, text string, storeName string, fileName string, index int, embeddingProviderName string, modelSubType string, lang string) (bool, int, error) {
 	data, embeddingResult, err := queryVectorSafe(embeddingProviderObj, text, lang)
 	if err != nil {
@@ -93,6 +97,7 @@ func addEmbeddedVector(embeddingProviderObj embedding.EmbeddingProvider, text st
 	affected, err := AddVector(vector)
 	return affected, tokenCount, err
 }
+
 func addVectorsForFile(embeddingProviderObj embedding.EmbeddingProvider, storeName string, fileKey string, fileUrl string, splitProviderName string, embeddingProviderName string, modelSubType string, lang string) (bool, int, error) {
 	var (
 		affected        bool
@@ -148,6 +153,7 @@ func addVectorsForFile(embeddingProviderObj embedding.EmbeddingProvider, storeNa
 	}
 	return affected, totalTokenCount, nil
 }
+
 func withFileStatus(owner string, storeName string, fileKey string, op func() (bool, int, error)) (bool, error) {
 	err := updateFileStatus(owner, storeName, fileKey, FileStatusProcessing, "", 0)
 	if err != nil {
@@ -168,6 +174,7 @@ func withFileStatus(owner string, storeName string, fileKey string, op func() (b
 	}
 	return affected, opErr
 }
+
 func addVectorsForStore(storageProviderObj storage.StorageProvider, embeddingProviderObj embedding.EmbeddingProvider, prefix string, owner string, storeName string, splitProviderName string, embeddingProviderName string, modelSubType string, lang string) (bool, error) {
 	var (
 		affected bool
@@ -191,6 +198,7 @@ func addVectorsForStore(storageProviderObj storage.StorageProvider, embeddingPro
 	}
 	return affected, fileErr
 }
+
 func getRelatedVectors(relatedStores []string, provider string) ([]*Vector, error) {
 	vectors, err := getVectorsByProvider(relatedStores, provider)
 	if err != nil {
@@ -201,12 +209,14 @@ func getRelatedVectors(relatedStores []string, provider string) ([]*Vector, erro
 	}
 	return vectors, nil
 }
+
 func queryVectorWithContext(embeddingProvider embedding.EmbeddingProvider, text string, timeout int, lang string) ([]float32, *embedding.EmbeddingResult, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(30+timeout*2)*time.Second)
 	defer cancel()
 	vector, embeddingResult, err := embeddingProvider.QueryVector(text, ctx, lang)
 	return vector, embeddingResult, err
 }
+
 func queryVectorSafe(embeddingProvider embedding.EmbeddingProvider, text string, lang string) ([]float32, *embedding.EmbeddingResult, error) {
 	var res []float32
 	var embeddingResult *embedding.EmbeddingResult
@@ -228,6 +238,7 @@ func queryVectorSafe(embeddingProvider embedding.EmbeddingProvider, text string,
 		return res, embeddingResult, nil
 	}
 }
+
 func GetNearestKnowledge(storeName string, vectorStores []string, searchProviderType string, embeddingProvider *Provider, embeddingProviderObj embedding.EmbeddingProvider, modelProvider *Provider, owner string, text string, knowledgeCount int, lang string) ([]*model.RawMessage, []VectorScore, *embedding.EmbeddingResult, error) {
 	searchProvider, err := GetSearchProvider(searchProviderType, owner)
 	if err != nil {

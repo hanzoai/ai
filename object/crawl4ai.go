@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 package object
+
 import (
 	"bytes"
 	"encoding/json"
@@ -20,36 +21,43 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
 	"github.com/beego/beego/logs"
 	"github.com/hanzoai/cloud/conf"
 )
+
 const (
 	crawl4aiPollInterval = 2 * time.Second
 	crawl4aiPollTimeout  = 5 * time.Minute
 	crawl4aiHTTPTimeout  = 30 * time.Second
 )
+
 // Crawl4AIRequest is the request body for the Hanzo Crawl /crawl endpoint.
 type Crawl4AIRequest struct {
 	Urls          []string               `json:"urls"`
 	BrowserConfig *Crawl4AIBrowserConfig `json:"browser_config,omitempty"`
 	CrawlerParams *Crawl4AICrawlerParams `json:"crawler_params,omitempty"`
 }
+
 // Crawl4AIBrowserConfig controls the headless browser settings.
 type Crawl4AIBrowserConfig struct {
 	Headless bool `json:"headless"`
 }
+
 // Crawl4AICrawlerParams controls the crawl extraction behavior.
 type Crawl4AICrawlerParams struct {
 	WordCountThreshold   int  `json:"word_count_threshold"`
 	ExcludeExternalLinks bool `json:"exclude_external_links"`
 	ProcessIframes       bool `json:"process_iframes"`
 }
+
 // Crawl4AIResponse is the response from the Hanzo Crawl /crawl endpoint.
 type Crawl4AIResponse struct {
 	TaskID  string           `json:"task_id"`
 	Status  string           `json:"status"`
 	Results []Crawl4AIResult `json:"results,omitempty"`
 }
+
 // Crawl4AIResult holds the crawl output for a single URL.
 type Crawl4AIResult struct {
 	URL      string                         `json:"url"`
@@ -59,6 +67,7 @@ type Crawl4AIResult struct {
 	Media    map[string][]map[string]string `json:"media,omitempty"`
 	Metadata map[string]interface{}         `json:"metadata,omitempty"`
 }
+
 // getCrawlEndpoint returns the Hanzo Crawl service base URL from config.
 func getCrawlEndpoint() string {
 	host := conf.GetConfigString("crawlHost")
@@ -71,10 +80,12 @@ func getCrawlEndpoint() string {
 	}
 	return fmt.Sprintf("http://%s:%s", host, port)
 }
+
 // getCrawlAPIToken returns the optional API token for Hanzo Crawl authentication.
 func getCrawlAPIToken() string {
 	return conf.GetConfigString("crawlApiToken")
 }
+
 // IsCrawl4AIAvailable checks whether the Hanzo Crawl service is reachable.
 func IsCrawl4AIAvailable() bool {
 	endpoint := getCrawlEndpoint()
@@ -86,6 +97,7 @@ func IsCrawl4AIAvailable() bool {
 	defer resp.Body.Close()
 	return resp.StatusCode == http.StatusOK
 }
+
 // CrawlWithCrawl4AI sends URLs to the Hanzo Crawl service for JS-rendered crawling.
 // It submits a crawl job, polls for completion, and returns the results.
 func CrawlWithCrawl4AI(urls []string) ([]Crawl4AIResult, error) {
@@ -141,6 +153,7 @@ func CrawlWithCrawl4AI(urls []string) ([]Crawl4AIResult, error) {
 	}
 	return pollCrawl4AITask(endpoint, apiToken, crawlResp.TaskID)
 }
+
 // pollCrawl4AITask polls the Hanzo Crawl /task/{id} endpoint until the job completes or times out.
 func pollCrawl4AITask(endpoint, apiToken, taskID string) ([]Crawl4AIResult, error) {
 	client := &http.Client{Timeout: crawl4aiHTTPTimeout}
@@ -181,6 +194,7 @@ func pollCrawl4AITask(endpoint, apiToken, taskID string) ([]Crawl4AIResult, erro
 	}
 	return nil, fmt.Errorf("Hanzo Crawl task %s timed out after %v", taskID, crawl4aiPollTimeout)
 }
+
 // Crawl4AIResultToScrapeResult converts a Hanzo Crawl result to our ScrapeResult format.
 // It parses the markdown output to extract title, headings, and structured content blocks.
 func Crawl4AIResultToScrapeResult(result Crawl4AIResult) ScrapeResult {
@@ -261,6 +275,7 @@ func Crawl4AIResultToScrapeResult(result Crawl4AIResult) ScrapeResult {
 	}
 	return sr
 }
+
 // parseMarkdownHeading parses a markdown heading line and returns (level, text).
 // Returns (0, "") if the line is not a valid heading.
 func parseMarkdownHeading(line string) (int, string) {
@@ -281,6 +296,7 @@ func parseMarkdownHeading(line string) (int, string) {
 	}
 	return level, text
 }
+
 // isOrderedListItem checks whether a line starts with a numeric ordered list marker (e.g., "1. ").
 func isOrderedListItem(line string) bool {
 	for i, ch := range line {

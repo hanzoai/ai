@@ -15,12 +15,15 @@
 //go:build !skipCi
 
 package object
+
 import (
 	"strings"
 	"testing"
+
 	"github.com/hanzoai/cloud/util"
 	"github.com/schollz/progressbar/v3"
 )
+
 func TestUpdateRecordsLocation(t *testing.T) {
 	InitConfig()
 	util.InitMaxmindFiles()

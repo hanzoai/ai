@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 package object
+
 import (
 	"bufio"
 	"crypto/sha256"
@@ -21,9 +22,11 @@ import (
 	"strings"
 	"sync"
 	"time"
+
 	"github.com/beego/beego/logs"
 	"golang.org/x/net/html"
 )
+
 const (
 	scraperUserAgent      = "HanzoBot/1.0 (+https://hanzo.ai/bot)"
 	scraperDefaultDepth   = 3
@@ -32,6 +35,7 @@ const (
 	scraperRequestDelay   = 200 * time.Millisecond
 	scraperRequestTimeout = 30 * time.Second
 )
+
 // ScrapeRequest is the request body for web scraping operations.
 type ScrapeRequest struct {
 	URL      string `json:"url"`
@@ -42,6 +46,7 @@ type ScrapeRequest struct {
 	Store    string `json:"store,omitempty"`
 	Engine   string `json:"engine,omitempty"` // "fast" (Go scraper), "browser" (crawl4ai), or "" (auto)
 }
+
 // ScrapeResult holds the extracted content from a single page.
 type ScrapeResult struct {
 	URL         string         `json:"url"`
@@ -52,23 +57,27 @@ type ScrapeResult struct {
 	Links       []string       `json:"links"`
 	Structured  StructuredData `json:"structured"`
 }
+
 // Heading represents a single heading element with its hierarchy level and anchor.
 type Heading struct {
 	Level int    `json:"level"`
 	ID    string `json:"id,omitempty"`
 	Text  string `json:"text"`
 }
+
 // ContentBlock represents a block of extracted content (paragraph, code, list).
 type ContentBlock struct {
 	Type    string `json:"type"` // "paragraph", "code", "list"
 	Text    string `json:"text"`
 	Section string `json:"section,omitempty"`
 }
+
 // StructuredData mirrors the docs framework format for search indexing.
 type StructuredData struct {
 	Headings []Heading      `json:"headings"`
 	Contents []ContentBlock `json:"contents"`
 }
+
 // ScrapeStats is the summary returned after a scrape-and-index operation.
 type ScrapeStats struct {
 	PagesScraped     int      `json:"pagesScraped"`
@@ -76,15 +85,18 @@ type ScrapeStats struct {
 	Engine           string   `json:"engine"`
 	Errors           []string `json:"errors,omitempty"`
 }
+
 // robotsRules holds parsed robots.txt disallow rules for User-agent: *.
 type robotsRules struct {
 	disallow []string
 }
+
 // crawlItem is a BFS queue entry.
 type crawlItem struct {
 	url   string
 	depth int
 }
+
 // ScrapePage fetches a single URL and extracts structured content.
 func ScrapePage(pageURL string) (*ScrapeResult, error) {
 	parsed, err := url.Parse(pageURL)
@@ -130,6 +142,7 @@ func ScrapePage(pageURL string) (*ScrapeResult, error) {
 	extractContent(doc, result, parsed)
 	return result, nil
 }
+
 // CrawlSite performs a crawl starting from req.URL and returns scraped pages.
 // Engine selection:
 //   - "browser": always use crawl4ai (errors if unavailable)
@@ -158,6 +171,7 @@ func CrawlSite(req *ScrapeRequest) (results []ScrapeResult, crawlErrors []string
 		return results, crawlErrors, "fast"
 	}
 }
+
 // crawlWithBrowserEngine uses crawl4ai to crawl URLs with a headless browser.
 // It first crawls the start URL, then follows discovered same-domain links up to
 // the configured depth and maxPages limits.
@@ -231,6 +245,7 @@ func crawlWithBrowserEngine(req *ScrapeRequest) ([]ScrapeResult, []string) {
 	}
 	return results, crawlErrors
 }
+
 // crawlWithGoScraper performs a BFS crawl using the built-in Go HTML scraper.
 func crawlWithGoScraper(req *ScrapeRequest) ([]ScrapeResult, []string) {
 	maxPages := req.MaxPages
@@ -332,6 +347,7 @@ func crawlWithGoScraper(req *ScrapeRequest) ([]ScrapeResult, []string) {
 	<-done
 	return results, crawlErrors
 }
+
 // ScrapeAndIndex crawls a site and indexes the results into the owner's search index.
 // The owner parameter determines tenant isolation -- each org gets its own index namespace.
 // If Hanzo Storage is configured, crawl results are archived asynchronously for persistence.
@@ -376,6 +392,7 @@ func ScrapeAndIndex(owner string, req *ScrapeRequest, lang string) (*ScrapeStats
 	stats.DocumentsIndexed = count
 	return stats, nil
 }
+
 // scrapeResultsToDocIndex converts scrape results to the DocIndex format for search indexing.
 func scrapeResultsToDocIndex(results []ScrapeResult, tag string) []DocIndex {
 	var docs []DocIndex
@@ -439,6 +456,7 @@ func scrapeResultsToDocIndex(results []ScrapeResult, tag string) []DocIndex {
 	}
 	return docs
 }
+
 // extractContent walks the HTML tree and populates the ScrapeResult.
 func extractContent(doc *html.Node, result *ScrapeResult, baseURL *url.URL) {
 	var contentBuilder strings.Builder
@@ -522,6 +540,7 @@ func extractContent(doc *html.Node, result *ScrapeResult, baseURL *url.URL) {
 	walk(doc)
 	result.Content = strings.TrimSpace(contentBuilder.String())
 }
+
 // getTextContent recursively extracts text from a node and its children.
 func getTextContent(n *html.Node) string {
 	if n.Type == html.TextNode {
@@ -536,6 +555,7 @@ func getTextContent(n *html.Node) string {
 	}
 	return sb.String()
 }
+
 // getAttr returns the value of the named attribute, or empty string.
 func getAttr(n *html.Node, key string) string {
 	for _, a := range n.Attr {
@@ -545,10 +565,12 @@ func getAttr(n *html.Node, key string) string {
 	}
 	return ""
 }
+
 // isHeadingTag returns true for h1-h6.
 func isHeadingTag(tag string) bool {
 	return len(tag) == 2 && tag[0] == 'h' && tag[1] >= '1' && tag[1] <= '6'
 }
+
 // isSkippedTag returns true for tags whose content should be stripped.
 func isSkippedTag(tag string) bool {
 	switch tag {
@@ -557,6 +579,7 @@ func isSkippedTag(tag string) bool {
 	}
 	return false
 }
+
 // extractListItems extracts text from li elements within a list.
 func extractListItems(n *html.Node) string {
 	var sb strings.Builder
@@ -572,6 +595,7 @@ func extractListItems(n *html.Node) string {
 	}
 	return sb.String()
 }
+
 // resolveHref resolves a relative or absolute href against the base URL.
 func resolveHref(href string, baseURL *url.URL) string {
 	href = strings.TrimSpace(href)
@@ -587,6 +611,7 @@ func resolveHref(href string, baseURL *url.URL) string {
 	resolved.Fragment = ""
 	return resolved.String()
 }
+
 // normalizeURL strips trailing slashes and fragments for deduplication.
 func normalizeURL(rawURL string) string {
 	parsed, err := url.Parse(rawURL)
@@ -598,6 +623,7 @@ func normalizeURL(rawURL string) string {
 	result = strings.TrimRight(result, "/")
 	return result
 }
+
 // fetchRobotsTxt fetches and parses robots.txt for the given origin.
 func fetchRobotsTxt(origin string) *robotsRules {
 	rules := &robotsRules{}
@@ -638,6 +664,7 @@ func fetchRobotsTxt(origin string) *robotsRules {
 	}
 	return rules
 }
+
 // isDisallowed checks whether a URL path is disallowed by the robots.txt rules.
 func isDisallowed(rules *robotsRules, rawURL string) bool {
 	if rules == nil || len(rules.disallow) == 0 {
@@ -655,11 +682,13 @@ func isDisallowed(rules *robotsRules, rawURL string) bool {
 	}
 	return false
 }
+
 // hashID produces a deterministic short ID from a string.
 func hashID(s string) string {
 	h := sha256.Sum256([]byte(s))
 	return fmt.Sprintf("%x", h[:12])
 }
+
 // slugify converts a heading text to a URL-safe slug.
 func slugify(s string) string {
 	s = strings.ToLower(s)
@@ -679,6 +708,7 @@ func slugify(s string) string {
 	}
 	return result
 }
+
 // sectionURL appends a fragment to a URL if the sectionID is non-empty.
 func sectionURL(pageURL, sectionID string) string {
 	if sectionID == "" {
@@ -686,6 +716,7 @@ func sectionURL(pageURL, sectionID string) string {
 	}
 	return pageURL + "#" + sectionID
 }
+
 // truncateContent limits content to maxLen characters.
 func truncateContent(s string, maxLen int) string {
 	if len(s) <= maxLen {
