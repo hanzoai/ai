@@ -15,10 +15,13 @@
 //go:build !skipCi
 
 package object
+
 import (
 	"testing"
+
 	"github.com/hanzoai/cloud/model"
 )
+
 func TestUpdateVectors(t *testing.T) {
 	InitConfig()
 	vectors, err := GetGlobalVectors()

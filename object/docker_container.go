@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,13 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 package object
+
 import (
 	"fmt"
+
 	"github.com/hanzoai/cloud/i18n"
 	"github.com/hanzoai/cloud/pkgdocker"
 	"github.com/hanzoai/cloud/util"
 	"github.com/hanzoai/dbx"
 )
+
 type Container struct {
 	Owner       string `db:"pk" json:"owner"`
 	Name        string `db:"pk" json:"name"`
@@ -39,10 +42,12 @@ type Container struct {
 	//	 Annotations map[string]string `json:",omitempty"`
 	// }
 }
+
 func GetContainerCount(owner, field, value string) (int64, error) {
 	session := GetDbQuery(owner, -1, -1, field, value, "", "")
 	return queryCount(session, "container")
 }
+
 func GetContainers(owner string) ([]*Container, error) {
 	containers := []*Container{}
 	err := findAll(adapter.db, "container", &containers, dbx.HashExp{"owner": owner}, "created_time DESC")
@@ -51,6 +56,7 @@ func GetContainers(owner string) ([]*Container, error) {
 	}
 	return containers, nil
 }
+
 func GetPaginationContainers(owner string, offset, limit int, field, value, sortField, sortOrder string) ([]*Container, error) {
 	containers := []*Container{}
 	session := GetDbQuery(owner, offset, limit, field, value, sortField, sortOrder)
@@ -60,6 +66,7 @@ func GetPaginationContainers(owner string, offset, limit int, field, value, sort
 	}
 	return containers, nil
 }
+
 func getContainer(owner string, name string) (*Container, error) {
 	if owner == "" || name == "" {
 		return nil, nil
@@ -75,6 +82,7 @@ func getContainer(owner string, name string) (*Container, error) {
 		return nil, nil
 	}
 }
+
 func GetContainer(id string) (*Container, error) {
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
 	if err != nil {
@@ -82,6 +90,7 @@ func GetContainer(id string) (*Container, error) {
 	}
 	return getContainer(owner, name)
 }
+
 func GetMaskedContainer(container *Container, errs ...error) (*Container, error) {
 	if len(errs) > 0 && errs[0] != nil {
 		return nil, errs[0]
@@ -91,6 +100,7 @@ func GetMaskedContainer(container *Container, errs ...error) (*Container, error)
 	}
 	return container, nil
 }
+
 func GetMaskedContainers(containers []*Container, errs ...error) ([]*Container, error) {
 	if len(errs) > 0 && errs[0] != nil {
 		return nil, errs[0]
@@ -104,6 +114,7 @@ func GetMaskedContainers(containers []*Container, errs ...error) ([]*Container, 
 	}
 	return containers, nil
 }
+
 func UpdateContainer(id string, container *Container, lang string) (bool, error) {
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
 	if err != nil {
@@ -131,6 +142,7 @@ func UpdateContainer(id string, container *Container, lang string) (bool, error)
 	}
 	return affected != 0, nil
 }
+
 func AddContainer(container *Container) (bool, error) {
 	err := insertRow(adapter.db, container)
 	affected := int64(1)
@@ -142,6 +154,7 @@ func AddContainer(container *Container) (bool, error) {
 	}
 	return affected != 0, nil
 }
+
 func addContainers(containers []*Container) (bool, error) {
 	err := insertRow(adapter.db, containers)
 	affected := int64(1)
@@ -153,6 +166,7 @@ func addContainers(containers []*Container) (bool, error) {
 	}
 	return affected != 0, nil
 }
+
 func DeleteContainer(container *Container) (bool, error) {
 	affected, err := deleteByPK(adapter.db, "container", pk2(container.Owner, container.Name))
 	if err != nil {
@@ -160,6 +174,7 @@ func DeleteContainer(container *Container) (bool, error) {
 	}
 	return affected != 0, nil
 }
+
 func deleteContainers(owner string) (bool, error) {
 	affected, err := deleteWhere(adapter.db, "container", dbx.HashExp{"owner": owner})
 	if err != nil {
@@ -167,9 +182,11 @@ func deleteContainers(owner string) (bool, error) {
 	}
 	return affected != 0, nil
 }
+
 func (container *Container) GetId() string {
 	return fmt.Sprintf("%s/%s", container.Owner, container.Name)
 }
+
 func SyncDockerContainers(owner string) (bool, error) {
 	containers, err := getContainers(owner)
 	if err != nil {
@@ -193,6 +210,7 @@ func SyncDockerContainers(owner string) (bool, error) {
 	affected, err := addContainers(containers)
 	return affected, err
 }
+
 func updateContainer(oldContainer *Container, container *Container, lang string) (bool, error) {
 	provider, err := getProvider("admin", oldContainer.Provider)
 	if err != nil {
@@ -214,6 +232,7 @@ func updateContainer(oldContainer *Container, container *Container, lang string)
 	}
 	return false, nil
 }
+
 func getContainers(owner string) ([]*Container, error) {
 	containers := []*Container{}
 	providers, err := GetProviders("admin")
@@ -235,6 +254,7 @@ func getContainers(owner string) ([]*Container, error) {
 	}
 	return containers, nil
 }
+
 func getContainerFromService(owner string, provider string, clientContainer *pkgdocker.Container) *Container {
 	return &Container{
 		Owner:       owner,

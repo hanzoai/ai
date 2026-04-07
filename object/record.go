@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,25 +12,30 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 package object
+
 import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
 	"github.com/beego/beego/context"
 	"github.com/hanzoai/cloud/conf"
 	"github.com/hanzoai/cloud/i18n"
 	"github.com/hanzoai/cloud/util"
 	"github.com/hanzoai/dbx"
 )
+
 var logPostOnly bool
+
 func init() {
 	logPostOnly = conf.GetConfigBool("logPostOnly")
 }
+
 type Record struct {
-	Id int `db:"pk" json:"id"`
-	Owner       string `json:"owner"`
-	Name        string `json:"name"`
-	CreatedTime string `json:"createdTime"`
+	Id           int    `db:"pk" json:"id"`
+	Owner        string `json:"owner"`
+	Name         string `json:"name"`
+	CreatedTime  string `json:"createdTime"`
 	Organization string `json:"organization"`
 	ClientIp     string `json:"clientIp"`
 	UserAgent    string `json:"userAgent"`
@@ -44,20 +49,20 @@ type Record struct {
 	City         string `json:"city"`
 	Unit         string `json:"unit"`
 	Section      string `json:"section"`
-	Object    string `json:"object"`
-	Response  string `json:"response"`
-	ErrorText string `json:"errorText"`
+	Object       string `json:"object"`
+	Response     string `json:"response"`
+	ErrorText    string `json:"errorText"`
 	// ExtendedUser *User  `db:"-" json:"extendedUser"`
-	Provider    string `json:"provider"`
-	Block       string `json:"block"`
-	BlockHash   string `json:"blockHash"`
-	Transaction string `json:"transaction"`
+	Provider     string `json:"provider"`
+	Block        string `json:"block"`
+	BlockHash    string `json:"blockHash"`
+	Transaction  string `json:"transaction"`
 	Provider2    string `json:"provider2"`
 	Block2       string `json:"block2"`
 	BlockHash2   string `json:"blockHash2"`
 	Transaction2 string `json:"transaction2"`
 	// For cross-chain records
-	Count int `json:"count"`
+	Count       int  `json:"count"`
 	IsTriggered bool `json:"isTriggered"`
 	NeedCommit  bool `db:"index" json:"needCommit"`
 }
@@ -65,10 +70,12 @@ type Response struct {
 	Status string `json:"status"`
 	Msg    string `json:"msg"`
 }
+
 func GetRecordCount(owner, field, value string) (int64, error) {
 	session := GetDbQuery(owner, -1, -1, field, value, "", "")
 	return queryCount(session, "record")
 }
+
 func GetRecords(owner string) ([]*Record, error) {
 	records := []*Record{}
 	err := findAll(adapter.db, "record", &records, dbx.HashExp{"owner": owner}, "id DESC")
@@ -77,6 +84,7 @@ func GetRecords(owner string) ([]*Record, error) {
 	}
 	return records, nil
 }
+
 func getAllRecords() ([]*Record, error) {
 	records := []*Record{}
 	err := findAll(adapter.db, "record", &records, dbx.HashExp{}, "id DESC")
@@ -85,6 +93,7 @@ func getAllRecords() ([]*Record, error) {
 	}
 	return records, nil
 }
+
 func getValidAndNeedCommitRecords(records []*Record) ([]*Record, []int, []interface{}, error) {
 	providerFirst, providerSecond, err := GetTwoActiveBlockchainProvider("admin")
 	if err != nil {
@@ -112,6 +121,7 @@ func getValidAndNeedCommitRecords(records []*Record) ([]*Record, []int, []interf
 	}
 	return validRecords, needCommitIdx, data, nil
 }
+
 func GetPaginationRecords(owner string, offset, limit int, field, value, sortField, sortOrder string) ([]*Record, error) {
 	records := []*Record{}
 	session := GetDbQuery(owner, offset, limit, field, value, sortField, sortOrder)
@@ -121,6 +131,7 @@ func GetPaginationRecords(owner string, offset, limit int, field, value, sortFie
 	}
 	return records, nil
 }
+
 // GetRecord retrieves a record by its ID or owner/name format.
 func GetRecord(id string, lang string) (*Record, error) {
 	record := &Record{}
@@ -150,6 +161,7 @@ func GetRecord(id string, lang string) (*Record, error) {
 	}
 	return nil, nil
 }
+
 func prepareRecord(record *Record, providerFirst, providerSecond *Provider) (bool, error) {
 	if logPostOnly && record.Method == "GET" {
 		return false, nil
@@ -180,6 +192,7 @@ func prepareRecord(record *Record, providerFirst, providerSecond *Provider) (boo
 	}
 	return true, nil
 }
+
 func UpdateRecord(id string, record *Record, lang string) (bool, error) {
 	p, err := GetRecord(id, lang)
 	if err != nil {
@@ -209,6 +222,7 @@ func UpdateRecord(id string, record *Record, lang string) (bool, error) {
 	}
 	return affected != 0, nil
 }
+
 func UpdateRecordInternal(id int, record Record) error {
 	err := adapter.db.Model(&record).Update()
 	if err != nil {
@@ -216,6 +230,7 @@ func UpdateRecordInternal(id int, record Record) error {
 	}
 	return nil
 }
+
 func UpdateRecordFields(id string, fields map[string]interface{}, lang string) (bool, error) {
 	p, err := GetRecord(id, lang)
 	if err != nil {
@@ -229,6 +244,7 @@ func UpdateRecordFields(id string, fields map[string]interface{}, lang string) (
 	}
 	return affected != 0, nil
 }
+
 func NewRecord(ctx *context.Context) (*Record, error) {
 	ip := strings.Replace(util.GetIPFromRequest(ctx.Request), ": ", "", -1)
 	action := strings.Replace(ctx.Request.URL.Path, "/api/", "", -1)
@@ -279,6 +295,7 @@ func NewRecord(ctx *context.Context) (*Record, error) {
 	}
 	return &record, nil
 }
+
 func AddRecord(record *Record, lang string) (bool, interface{}, error) {
 	providerFirst, providerSecond, err := GetTwoActiveBlockchainProvider(record.Owner)
 	if err != nil {
@@ -315,6 +332,7 @@ func AddRecord(record *Record, lang string) (bool, interface{}, error) {
 	}
 	return affected != 0, data, nil
 }
+
 func AddRecords(records []*Record, syncEnabled bool, lang string) (bool, interface{}, error) {
 	if len(records) == 0 {
 		return false, nil, nil
@@ -361,6 +379,7 @@ func AddRecords(records []*Record, syncEnabled bool, lang string) (bool, interfa
 	}
 	return totalAffected != 0, data, nil
 }
+
 func DeleteRecord(record *Record) (bool, error) {
 	affected, err := deleteByPK(adapter.db, "record", pkID(int(record.Id)))
 	if err != nil {
@@ -368,12 +387,15 @@ func DeleteRecord(record *Record) (bool, error) {
 	}
 	return affected != 0, nil
 }
+
 func (record *Record) getUniqueId() string {
 	return fmt.Sprintf("%s/%d", record.Owner, record.Id)
 }
+
 func (record *Record) getId() string {
 	return fmt.Sprintf("%s/%s", record.Owner, record.Name)
 }
+
 func (r *Record) updateErrorText(errText string, lang string) (bool, error) {
 	r.ErrorText = errText
 	if r.Id != 0 {

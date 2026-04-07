@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,19 +12,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 package object
+
 import (
 	"fmt"
 	"strings"
+
 	"github.com/hanzoai/cloud/embedding"
 	"github.com/hanzoai/cloud/i18n"
 	"github.com/hanzoai/cloud/model"
 )
+
 type HierarchySearchProvider struct {
 	owner string
 }
+
 func NewHierarchySearchProvider(owner string) (*HierarchySearchProvider, error) {
 	return &HierarchySearchProvider{owner: owner}, nil
 }
+
 func (p *HierarchySearchProvider) Search(relatedStores []string, embeddingProviderName string, embeddingProviderObj embedding.EmbeddingProvider, modelProviderName string, text string, knowledgeCount int, lang string) ([]Vector, *embedding.EmbeddingResult, error) {
 	vectors, err := getRelatedVectors(relatedStores, embeddingProviderName)
 	if err != nil {
@@ -70,6 +75,7 @@ func (p *HierarchySearchProvider) Search(relatedStores []string, embeddingProvid
 	}
 	return res, embeddingResult, nil
 }
+
 func getEnhancedQuestionByModel(modelProviderName string, text string, titleCandidates []string, candidateTitlesNum int, lang string) (string, *model.ModelResult, error) {
 	prompt := fmt.Sprintf("Please help me select the top %d titles that are most likely to contain the answer. Just return the title list. No other content.", candidateTitlesNum)
 	question := fmt.Sprintf("Please select the titles most relevant to the following question and choose the %v most relevant items. Just return the title list. No other content.\nquestion:\n %s \n\nTitles: \n%s", candidateTitlesNum, text, "• "+strings.Join(titleCandidates, "\n• "))

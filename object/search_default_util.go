@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,11 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 package object
+
 import (
 	"math"
 	"sort"
+
 	"github.com/beego/beego/logs"
 )
+
 func dot(vec1, vec2 []float32) float32 {
 	if len(vec1) != len(vec2) {
 		panic("Vector lengths do not match")
@@ -27,6 +30,7 @@ func dot(vec1, vec2 []float32) float32 {
 	}
 	return dotProduct
 }
+
 func norm(vec []float32) float32 {
 	normSquared := float32(0.0)
 	for _, val := range vec {
@@ -34,6 +38,7 @@ func norm(vec []float32) float32 {
 	}
 	return float32(math.Sqrt(float64(normSquared)))
 }
+
 func cosineSimilarity(vec1, vec2 []float32, vec1Norm float32) float32 {
 	dotProduct := dot(vec1, vec2)
 	vec2Norm := norm(vec2)
@@ -42,10 +47,12 @@ func cosineSimilarity(vec1, vec2 []float32, vec1Norm float32) float32 {
 	}
 	return dotProduct / (vec1Norm * vec2Norm)
 }
+
 type SimilarityIndex struct {
 	Similarity float32
 	Index      int
 }
+
 func getNearestVectors(target []float32, vectors [][]float32, n int) ([]SimilarityIndex, error) {
 	targetNorm := norm(target)
 	similarities := []SimilarityIndex{}

@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,16 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 package object
+
 import (
 	"fmt"
+
 	"github.com/hanzoai/cloud/util"
 	"github.com/hanzoai/dbx"
 )
+
 type Chat struct {
-	Owner       string `db:"pk" json:"owner"`
-	Name        string `db:"pk" json:"name"`
-	CreatedTime string `json:"createdTime"`
-	UpdatedTime string `json:"updatedTime"`
+	Owner         string   `db:"pk" json:"owner"`
+	Name          string   `db:"pk" json:"name"`
+	CreatedTime   string   `json:"createdTime"`
+	UpdatedTime   string   `json:"updatedTime"`
 	Organization  string   `json:"organization"`
 	DisplayName   string   `json:"displayName"`
 	Store         string   `json:"store"`
@@ -44,6 +47,7 @@ type Chat struct {
 	IsDeleted     bool     `json:"isDeleted"`
 	NeedTitle     bool     `json:"needTitle"`
 }
+
 func GetGlobalChats() ([]*Chat, error) {
 	chats := []*Chat{}
 	err := findAll(adapter.db, "chat", &chats, nil, "owner ASC", "created_time DESC")
@@ -52,6 +56,7 @@ func GetGlobalChats() ([]*Chat, error) {
 	}
 	return chats, nil
 }
+
 func GetChats(owner string, storeName string, user string) ([]*Chat, error) {
 	chats := []*Chat{}
 	err := findAll(adapter.db, "chat", &chats, dbx.HashExp{"owner": owner, "user": user, "store": storeName}, "updated_time DESC")
@@ -60,6 +65,7 @@ func GetChats(owner string, storeName string, user string) ([]*Chat, error) {
 	}
 	return chats, nil
 }
+
 func getChat(owner, name string) (*Chat, error) {
 	chat := Chat{Owner: owner, Name: name}
 	existed, err := getOne(adapter.db, "chat", &chat, pk2(chat.Owner, chat.Name))
@@ -72,6 +78,7 @@ func getChat(owner, name string) (*Chat, error) {
 		return nil, nil
 	}
 }
+
 func GetChat(id string) (*Chat, error) {
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
 	if err != nil {
@@ -79,6 +86,7 @@ func GetChat(id string) (*Chat, error) {
 	}
 	return getChat(owner, name)
 }
+
 func UpdateChat(id string, chat *Chat) (bool, error) {
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
 	if err != nil {
@@ -100,6 +108,7 @@ func UpdateChat(id string, chat *Chat) (bool, error) {
 	// return affected != 0
 	return true, nil
 }
+
 func AddChat(chat *Chat) (bool, error) {
 	//if chat.Type == "AI" && chat.User2 == "" {
 	//	provider, err := GetDefaultModelProvider()
@@ -121,6 +130,7 @@ func AddChat(chat *Chat) (bool, error) {
 	}
 	return affected != 0, nil
 }
+
 func DeleteChat(chat *Chat) (bool, error) {
 	affected, err := deleteByPK(adapter.db, "chat", pk2(chat.Owner, chat.Name))
 	if err != nil {
@@ -128,9 +138,11 @@ func DeleteChat(chat *Chat) (bool, error) {
 	}
 	return affected != 0, nil
 }
+
 func (chat *Chat) GetId() string {
 	return fmt.Sprintf("%s/%s", chat.Owner, chat.Name)
 }
+
 func getChatCountByMessages(owner string, value string, store string) (int64, error) {
 	q := adapter.db.Select("COUNT(DISTINCT chat.owner, chat.name)").From("chat").
 		InnerJoin("message", dbx.NewExp("chat.owner = message.owner AND chat.name = message.chat")).
@@ -145,6 +157,7 @@ func getChatCountByMessages(owner string, value string, store string) (int64, er
 	err := q.Row(&count)
 	return count, err
 }
+
 func GetChatCount(owner string, field string, value string, store string) (int64, error) {
 	if field == "messages" && value != "" {
 		return getChatCountByMessages(owner, value, store)
@@ -155,6 +168,7 @@ func GetChatCount(owner string, field string, value string, store string) (int64
 	}
 	return queryCount(q, "chat")
 }
+
 func getPaginationChatsByMessages(owner string, offset, limit int, value, sortField, sortOrder, store string) ([]*Chat, error) {
 	chats := []*Chat{}
 	q := adapter.db.Select("DISTINCT chat.*").From("chat").
@@ -184,6 +198,7 @@ func getPaginationChatsByMessages(owner string, offset, limit int, value, sortFi
 	}
 	return chats, nil
 }
+
 func GetPaginationChats(owner string, offset, limit int, field, value, sortField, sortOrder string, store string) ([]*Chat, error) {
 	if field == "messages" && value != "" {
 		return getPaginationChatsByMessages(owner, offset, limit, value, sortField, sortOrder, store)

@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,12 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 package object
+
 import (
 	"context"
 	"fmt"
 	"strings"
 	"sync"
 	"time"
+
 	"github.com/hanzoai/cloud/i18n"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -32,6 +34,7 @@ import (
 	"k8s.io/client-go/restmapper"
 	"k8s.io/client-go/tools/clientcmd"
 )
+
 type K8sClient struct {
 	clientSet     *kubernetes.Clientset
 	dynamicClient dynamic.Interface
@@ -40,13 +43,16 @@ type K8sClient struct {
 	connected     bool
 	configText    string
 }
+
 var (
 	k8sClient      *K8sClient
 	k8sClientMutex sync.Mutex
 )
+
 func init() {
 	k8sClient = nil
 }
+
 // Create K8s client from provider's ConfigText
 func createK8sClientFromProvider(provider *Provider, lang string) (*K8sClient, error) {
 	if provider.ConfigText == "" {
@@ -59,6 +65,7 @@ func createK8sClientFromProvider(provider *Provider, lang string) (*K8sClient, e
 	}
 	return createK8sClient(config, provider.ConfigText, lang)
 }
+
 func createK8sClient(config *rest.Config, configText string, lang string) (*K8sClient, error) {
 	config.Timeout = 30 * time.Second // Default timeout
 	clientset, err := kubernetes.NewForConfig(config)
@@ -92,12 +99,14 @@ func createK8sClient(config *rest.Config, configText string, lang string) (*K8sC
 	client.connected = true
 	return client, nil
 }
+
 func (k *K8sClient) testConnection() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	_, err := k.clientSet.CoreV1().Namespaces().List(ctx, metav1.ListOptions{Limit: 1})
 	return err
 }
+
 // Ensure k8s client is initialized, try to initialize if not
 func ensureK8sClient(lang string) error {
 	// Quick check if client is already ready
@@ -140,6 +149,7 @@ func ensureK8sClient(lang string) error {
 	}
 	return nil
 }
+
 func GetK8sStatus(lang string) (string, error) {
 	if err := ensureK8sClient(lang); err != nil {
 		return "Disconnected", err
@@ -152,6 +162,7 @@ func GetK8sStatus(lang string) (string, error) {
 	k8sClient.connected = true
 	return "Connected", nil
 }
+
 func (k *K8sClient) createNamespaceIfNotExists(name string) error {
 	_, err := k.clientSet.CoreV1().Namespaces().Get(
 		context.TODO(),
@@ -192,6 +203,7 @@ func (k *K8sClient) createNamespaceIfNotExists(name string) error {
 	}
 	return nil
 }
+
 func (k *K8sClient) deployResource(yamlContent, namespace string, lang string) error {
 	// Parse YAML to unstructured object
 	decoder := yaml.NewYAMLToJSONDecoder(strings.NewReader(yamlContent))

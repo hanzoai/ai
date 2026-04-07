@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,11 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 package object
+
 import (
 	"context"
 	"fmt"
 	"sync"
 	"time"
+
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
@@ -25,6 +27,7 @@ import (
 	coreinformers "k8s.io/client-go/informers/core/v1"
 	"k8s.io/client-go/tools/cache"
 )
+
 type CachedMetrics struct {
 	TotalCPU         resource.Quantity `json:"totalCPU"`
 	TotalMemory      resource.Quantity `json:"totalMemory"`
@@ -33,6 +36,7 @@ type CachedMetrics struct {
 	MemoryPercentage float64           `json:"memoryPercentage"`
 	LastUpdated      time.Time         `json:"lastUpdated"`
 }
+
 // EventCache represents namespace-level event cache
 type EventCache struct {
 	Namespace string               `json:"namespace"` // Namespace name
@@ -47,10 +51,10 @@ type CacheManager struct {
 	eventCaches  map[string]*EventCache                      // namespace -> EventCache
 	nsCache      map[string]*v1.Namespace                    // name -> namespace
 	nodeCache    map[string]*v1.Node                         // name -> node
-	metricsCache map[string]*CachedMetrics // namespace -> metrics
-	mu      sync.RWMutex
-	stopCh  chan struct{}
-	started bool
+	metricsCache map[string]*CachedMetrics                   // namespace -> metrics
+	mu           sync.RWMutex
+	stopCh       chan struct{}
+	started      bool
 	// debug counters
 	svcHits     int
 	deployHits  int
@@ -60,10 +64,12 @@ type CacheManager struct {
 	eventHits   int
 	metricsHits int
 }
+
 var (
 	cacheManager  *CacheManager
 	cachedK8sHost string
 )
+
 // initCacheManager initializes the cache manager
 func initCacheManager() error {
 	if cacheManager != nil {
@@ -88,6 +94,7 @@ func initCacheManager() error {
 	cacheManager = mgr
 	return nil
 }
+
 // startCacheManager starts the cache manager if it exists
 func startCacheManager(lang string) error {
 	if cacheManager == nil {
@@ -101,6 +108,7 @@ func startCacheManager(lang string) error {
 	}
 	return nil
 }
+
 // setupInformers configures all required informers
 func (cm *CacheManager) setupInformers() error {
 	// Namespace informer
@@ -146,19 +154,23 @@ func (cm *CacheManager) setupInformers() error {
 	})
 	return nil
 }
+
 // Event-related event handlers
 func (cm *CacheManager) onEventAdd(obj interface{}) {
 	event := obj.(*v1.Event)
 	cm.updateEventCache(event)
 }
+
 func (cm *CacheManager) onEventUpdate(oldObj, newObj interface{}) {
 	event := newObj.(*v1.Event)
 	cm.updateEventCache(event)
 }
+
 func (cm *CacheManager) onEventDelete(obj interface{}) {
 	event := obj.(*v1.Event)
 	cm.deleteEventCache(event)
 }
+
 // updateEventCache updates the event cache
 func (cm *CacheManager) updateEventCache(event *v1.Event) {
 	cm.mu.Lock()
@@ -172,6 +184,7 @@ func (cm *CacheManager) updateEventCache(event *v1.Event) {
 	}
 	cm.eventCaches[ns].Events[event.Name] = event
 }
+
 // deleteEventCache deletes from event cache
 func (cm *CacheManager) deleteEventCache(event *v1.Event) {
 	cm.mu.Lock()
@@ -183,6 +196,7 @@ func (cm *CacheManager) deleteEventCache(event *v1.Event) {
 		}
 	}
 }
+
 // getEvents retrieves all events for the specified namespace
 func (cm *CacheManager) getEvents(namespace string) []*v1.Event {
 	cm.mu.RLock()
@@ -196,6 +210,7 @@ func (cm *CacheManager) getEvents(namespace string) []*v1.Event {
 	}
 	return events
 }
+
 // Start begins the cache manager
 func (cm *CacheManager) Start(lang string) error {
 	if cm.started {
@@ -215,6 +230,7 @@ func (cm *CacheManager) Start(lang string) error {
 	cm.started = true
 	return nil
 }
+
 // Stop stops the cache manager
 func (cm *CacheManager) Stop() {
 	if cm.started {
@@ -222,6 +238,7 @@ func (cm *CacheManager) Stop() {
 		cm.started = false
 	}
 }
+
 func (cm *CacheManager) startMetricsPoller(interval time.Duration, lang string) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -235,6 +252,7 @@ func (cm *CacheManager) startMetricsPoller(interval time.Duration, lang string) 
 		}
 	}
 }
+
 func (cm *CacheManager) updateAllMetrics(lang string) {
 	cm.mu.RLock()
 	namespaces := make([]string, 0, len(cm.nsCache))
@@ -247,6 +265,7 @@ func (cm *CacheManager) updateAllMetrics(lang string) {
 		time.Sleep(100 * time.Millisecond)
 	}
 }
+
 // updateNamespaceMetrics updates cached metrics for a namespace
 func (cm *CacheManager) updateNamespaceMetrics(namespace string, lang string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -259,6 +278,7 @@ func (cm *CacheManager) updateNamespaceMetrics(namespace string, lang string) {
 	cm.metricsCache[namespace] = metrics
 	cm.mu.Unlock()
 }
+
 func (cm *CacheManager) getNamespaceMetricsFromCache(namespace string) (*CachedMetrics, bool) {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
@@ -266,24 +286,29 @@ func (cm *CacheManager) getNamespaceMetricsFromCache(namespace string) (*CachedM
 	metrics, found := cm.metricsCache[namespace]
 	return metrics, found
 }
+
 // Namespace handlers
 func (cm *CacheManager) onNamespaceAdd(obj interface{}) {
 	ns := obj.(*v1.Namespace)
 	cm.updateNamespaceCache(ns)
 }
+
 func (cm *CacheManager) onNamespaceUpdate(oldObj, newObj interface{}) {
 	ns := newObj.(*v1.Namespace)
 	cm.updateNamespaceCache(ns)
 }
+
 func (cm *CacheManager) onNamespaceDelete(obj interface{}) {
 	ns := obj.(*v1.Namespace)
 	cm.deleteNamespaceCache(ns)
 }
+
 func (cm *CacheManager) updateNamespaceCache(ns *v1.Namespace) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 	cm.nsCache[ns.Name] = ns
 }
+
 func (cm *CacheManager) deleteNamespaceCache(ns *v1.Namespace) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
@@ -291,19 +316,23 @@ func (cm *CacheManager) deleteNamespaceCache(ns *v1.Namespace) {
 	delete(cm.metricsCache, ns.Name)
 	delete(cm.eventCaches, ns.Name)
 }
+
 // Service event handlers
 func (cm *CacheManager) onServiceAdd(obj interface{}) {
 	svc := obj.(*v1.Service)
 	cm.updateServiceCache(svc)
 }
+
 func (cm *CacheManager) onServiceUpdate(oldObj, newObj interface{}) {
 	svc := newObj.(*v1.Service)
 	cm.updateServiceCache(svc)
 }
+
 func (cm *CacheManager) onServiceDelete(obj interface{}) {
 	svc := obj.(*v1.Service)
 	cm.deleteServiceCache(svc)
 }
+
 func (cm *CacheManager) updateServiceCache(svc *v1.Service) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
@@ -313,6 +342,7 @@ func (cm *CacheManager) updateServiceCache(svc *v1.Service) {
 	}
 	cm.svcCache[ns][svc.Name] = svc
 }
+
 func (cm *CacheManager) deleteServiceCache(svc *v1.Service) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
@@ -320,19 +350,23 @@ func (cm *CacheManager) deleteServiceCache(svc *v1.Service) {
 		delete(nsCache, svc.Name)
 	}
 }
+
 // Deployment event handlers
 func (cm *CacheManager) onDeploymentAdd(obj interface{}) {
 	deploy := obj.(*appsv1.Deployment)
 	cm.updateDeploymentCache(deploy)
 }
+
 func (cm *CacheManager) onDeploymentUpdate(oldObj, newObj interface{}) {
 	deploy := newObj.(*appsv1.Deployment)
 	cm.updateDeploymentCache(deploy)
 }
+
 func (cm *CacheManager) onDeploymentDelete(obj interface{}) {
 	deploy := obj.(*appsv1.Deployment)
 	cm.deleteDeploymentCache(deploy)
 }
+
 func (cm *CacheManager) updateDeploymentCache(deploy *appsv1.Deployment) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
@@ -342,6 +376,7 @@ func (cm *CacheManager) updateDeploymentCache(deploy *appsv1.Deployment) {
 	}
 	cm.deployCache[ns][deploy.Name] = deploy
 }
+
 func (cm *CacheManager) deleteDeploymentCache(deploy *appsv1.Deployment) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
@@ -349,41 +384,50 @@ func (cm *CacheManager) deleteDeploymentCache(deploy *appsv1.Deployment) {
 		delete(nsCache, deploy.Name)
 	}
 }
+
 // Node event handlers
 func (cm *CacheManager) onNodeAdd(obj interface{}) {
 	node := obj.(*v1.Node)
 	cm.updateNodeCache(node)
 }
+
 func (cm *CacheManager) onNodeUpdate(oldObj, newObj interface{}) {
 	node := newObj.(*v1.Node)
 	cm.updateNodeCache(node)
 }
+
 func (cm *CacheManager) onNodeDelete(obj interface{}) {
 	node := obj.(*v1.Node)
 	cm.deleteNodeCache(node)
 }
+
 func (cm *CacheManager) updateNodeCache(node *v1.Node) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 	cm.nodeCache[node.Name] = node
 }
+
 func (cm *CacheManager) deleteNodeCache(node *v1.Node) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 	delete(cm.nodeCache, node.Name)
 }
+
 func (cm *CacheManager) onIngressAdd(obj interface{}) {
 	ingress := obj.(*networkingv1.Ingress)
 	cm.updateIngressCache(ingress)
 }
+
 func (cm *CacheManager) onIngressUpdate(oldObj, newObj interface{}) {
 	ingress := newObj.(*networkingv1.Ingress)
 	cm.updateIngressCache(ingress)
 }
+
 func (cm *CacheManager) onIngressDelete(obj interface{}) {
 	ingress := obj.(*networkingv1.Ingress)
 	cm.deleteIngressCache(ingress)
 }
+
 func (cm *CacheManager) updateIngressCache(ingress *networkingv1.Ingress) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
@@ -393,6 +437,7 @@ func (cm *CacheManager) updateIngressCache(ingress *networkingv1.Ingress) {
 	}
 	cm.ingressCache[ns][ingress.Name] = ingress
 }
+
 func (cm *CacheManager) deleteIngressCache(ingress *networkingv1.Ingress) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
@@ -400,6 +445,7 @@ func (cm *CacheManager) deleteIngressCache(ingress *networkingv1.Ingress) {
 		delete(nsCache, ingress.Name)
 	}
 }
+
 func (cm *CacheManager) getNamespace(name string) *v1.Namespace {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
@@ -409,6 +455,7 @@ func (cm *CacheManager) getNamespace(name string) *v1.Namespace {
 	}
 	return nil
 }
+
 // Cache access methods with hit counting
 func (cm *CacheManager) getServices(namespace string) []*v1.Service {
 	cm.mu.RLock()
@@ -424,6 +471,7 @@ func (cm *CacheManager) getServices(namespace string) []*v1.Service {
 	}
 	return services
 }
+
 func (cm *CacheManager) getDeployments(namespace string) []*appsv1.Deployment {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
@@ -436,6 +484,7 @@ func (cm *CacheManager) getDeployments(namespace string) []*appsv1.Deployment {
 	}
 	return deployments
 }
+
 func (cm *CacheManager) getNodes() []*v1.Node {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
@@ -446,6 +495,7 @@ func (cm *CacheManager) getNodes() []*v1.Node {
 	}
 	return nodes
 }
+
 func (cm *CacheManager) getIngresses(namespace string) []*networkingv1.Ingress {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()

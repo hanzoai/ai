@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,18 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 package object
+
 import (
 	"fmt"
+
 	"github.com/hanzoai/cloud/util"
 	"github.com/hanzoai/dbx"
 )
+
 type Image struct {
-	Owner       string `db:"pk" json:"owner"`
-	Name        string `db:"pk" json:"name"`
-	CreatedTime string `json:"createdTime"`
-	DisplayName string `json:"displayName"`
-	Provider string `json:"provider"`
-	Category string `json:"category"`
+	Owner                   string `db:"pk" json:"owner"`
+	Name                    string `db:"pk" json:"name"`
+	CreatedTime             string `json:"createdTime"`
+	DisplayName             string `json:"displayName"`
+	Provider                string `json:"provider"`
+	Category                string `json:"category"`
 	BootMode                string `json:"bootMode" xml:"bootMode"`
 	ImageId                 string `json:"imageId" xml:"imageId"`
 	ImageOwnerAlias         string `json:"ImageOwnerAlias" xml:"ImageOwnerAlias"`
@@ -62,10 +65,12 @@ type Image struct {
 	RemoteUsername string `json:"remoteUsername"`
 	RemotePassword string `json:"remotePassword"`
 }
+
 func GetImageCount(owner, field, value string) (int64, error) {
 	session := GetDbQuery(owner, -1, -1, field, value, "", "")
 	return queryCount(session, "image")
 }
+
 func GetImages(owner string) ([]*Image, error) {
 	images := []*Image{}
 	err := findAll(adapter.db, "image", &images, dbx.HashExp{"owner": owner}, "created_time DESC")
@@ -74,6 +79,7 @@ func GetImages(owner string) ([]*Image, error) {
 	}
 	return images, nil
 }
+
 func GetPaginationImages(owner string, offset, limit int, field, value, sortField, sortOrder string) ([]*Image, error) {
 	images := []*Image{}
 	session := GetDbQuery(owner, offset, limit, field, value, sortField, sortOrder)
@@ -83,6 +89,7 @@ func GetPaginationImages(owner string, offset, limit int, field, value, sortFiel
 	}
 	return images, nil
 }
+
 func getImage(owner string, name string) (*Image, error) {
 	if owner == "" || name == "" {
 		return nil, nil
@@ -98,6 +105,7 @@ func getImage(owner string, name string) (*Image, error) {
 		return nil, nil
 	}
 }
+
 func GetImage(id string) (*Image, error) {
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
 	if err != nil {
@@ -105,6 +113,7 @@ func GetImage(id string) (*Image, error) {
 	}
 	return getImage(owner, name)
 }
+
 func GetMaskedImage(image *Image, errs ...error) (*Image, error) {
 	if len(errs) > 0 && errs[0] != nil {
 		return nil, errs[0]
@@ -117,6 +126,7 @@ func GetMaskedImage(image *Image, errs ...error) (*Image, error) {
 	//}
 	return image, nil
 }
+
 func GetMaskedImages(images []*Image, errs ...error) ([]*Image, error) {
 	if len(errs) > 0 && errs[0] != nil {
 		return nil, errs[0]
@@ -130,6 +140,7 @@ func GetMaskedImages(images []*Image, errs ...error) ([]*Image, error) {
 	}
 	return images, nil
 }
+
 func UpdateImage(id string, image *Image) (bool, error) {
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
 	if err != nil {
@@ -161,6 +172,7 @@ func UpdateImage(id string, image *Image) (bool, error) {
 	}
 	return affected != 0, nil
 }
+
 func AddImage(image *Image) (bool, error) {
 	err := insertRow(adapter.db, image)
 	affected := int64(1)
@@ -172,6 +184,7 @@ func AddImage(image *Image) (bool, error) {
 	}
 	return affected != 0, nil
 }
+
 func addImages(images []*Image) (bool, error) {
 	err := insertRow(adapter.db, images)
 	affected := int64(1)
@@ -183,6 +196,7 @@ func addImages(images []*Image) (bool, error) {
 	}
 	return affected != 0, nil
 }
+
 func DeleteImage(image *Image) (bool, error) {
 	affected, err := deleteByPK(adapter.db, "image", pk2(image.Owner, image.Name))
 	if err != nil {
@@ -190,6 +204,7 @@ func DeleteImage(image *Image) (bool, error) {
 	}
 	return affected != 0, nil
 }
+
 func deleteImages(owner string) (bool, error) {
 	affected, err := deleteWhere(adapter.db, "image", dbx.HashExp{"owner": owner})
 	if err != nil {
@@ -197,6 +212,7 @@ func deleteImages(owner string) (bool, error) {
 	}
 	return affected != 0, nil
 }
+
 func (image *Image) GetId() string {
 	return fmt.Sprintf("%s/%s", image.Owner, image.Name)
 }

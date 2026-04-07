@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,20 +12,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 package object
+
 import (
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+
 	"github.com/hanzoai/cloud/conf"
 	"github.com/hanzoai/cloud/util"
 )
+
 func InitDb() {
 	modelProviderName, embeddingProviderName, ttsProviderName, sttProviderName := initBuiltInProviders()
 	initLLMProviders()
 	initBuiltInStore(modelProviderName, embeddingProviderName, ttsProviderName, sttProviderName)
 	initTemplates()
 }
+
 func initBuiltInStore(modelProviderName string, embeddingProviderName string, ttsProviderName string, sttProviderName string) {
 	stores, err := GetGlobalStores()
 	if err != nil {
@@ -90,6 +94,7 @@ func initBuiltInStore(modelProviderName string, embeddingProviderName string, tt
 		panic(err)
 	}
 }
+
 func getDefaultStoragePath() (string, error) {
 	providerDbName := conf.GetConfigString("providerDbName")
 	if providerDbName != "" {
@@ -103,6 +108,7 @@ func getDefaultStoragePath() (string, error) {
 	res := filepath.Join(cwd, "files")
 	return res, nil
 }
+
 func initBuiltInProviders() (string, string, string, string) {
 	storageProvider, err := GetDefaultStorageProvider()
 	if err != nil {
@@ -181,6 +187,7 @@ func initBuiltInProviders() (string, string, string, string) {
 	sttProviderName := "Browser Built-In"
 	return modelProvider.Name, embeddingProvider.Name, ttsProviderName, sttProviderName
 }
+
 // initLLMProviders bootstraps the LLM provider records needed by the
 // model routing table (see controllers/model_routes.go). Each provider
 // maps to an upstream service with its own API key and base URL.

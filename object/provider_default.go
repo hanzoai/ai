@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,14 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 package object
+
 import (
 	"fmt"
 	"sync"
 	"time"
+
 	"github.com/hanzoai/cloud/i18n"
 	"github.com/hanzoai/cloud/model"
 	"github.com/hanzoai/dbx"
 )
+
 // GetProviderByProviderKey retrieves a provider using the Provider key
 func GetProviderByProviderKey(providerKey string, lang string) (*Provider, error) {
 	if providerKey == "" {
@@ -43,6 +46,7 @@ func GetProviderByProviderKey(providerKey string, lang string) (*Provider, error
 	}
 	return nil, nil
 }
+
 // GetModelProviderByProviderKey retrieves both the provider and its model provider by API key
 func GetModelProviderByProviderKey(providerKey string, lang string) (model.ModelProvider, error) {
 	provider, err := GetProviderByProviderKey(providerKey, lang)
@@ -65,6 +69,7 @@ func GetModelProviderByProviderKey(providerKey string, lang string) (model.Model
 	}
 	return modelProvider, nil
 }
+
 func getFilteredProviders(providers []*Provider, needStorage bool) []*Provider {
 	res := []*Provider{}
 	for _, provider := range providers {
@@ -74,6 +79,7 @@ func getFilteredProviders(providers []*Provider, needStorage bool) []*Provider {
 	}
 	return res
 }
+
 func GetDefaultStorageProvider() (*Provider, error) {
 	provider := Provider{Owner: "admin", Category: "Storage"}
 	existed, err := getOne(adapter.db, "provider", &provider, pk2(provider.Owner, provider.Name))
@@ -85,6 +91,7 @@ func GetDefaultStorageProvider() (*Provider, error) {
 	}
 	return &provider, nil
 }
+
 func GetDefaultVideoProvider() (*Provider, error) {
 	provider := Provider{Owner: "admin", Category: "Video"}
 	existed, err := getOne(adapter.db, "provider", &provider, pk2(provider.Owner, provider.Name))
@@ -96,6 +103,7 @@ func GetDefaultVideoProvider() (*Provider, error) {
 	}
 	return &provider, nil
 }
+
 func GetDefaultModelProvider() (*Provider, error) {
 	provider := Provider{Owner: "admin", Category: "Model", IsDefault: true}
 	existed, err := getOne(adapter.db, "provider", &provider, dbx.HashExp{"is_default": true, "category": provider.Category})
@@ -113,6 +121,7 @@ func GetDefaultModelProvider() (*Provider, error) {
 	}
 	return &provider, nil
 }
+
 func GetDefaultEmbeddingProvider() (*Provider, error) {
 	provider := Provider{Owner: "admin", Category: "Embedding", IsDefault: true}
 	existed, err := getOne(adapter.db, "provider", &provider, dbx.HashExp{"is_default": true, "category": provider.Category})
@@ -130,6 +139,7 @@ func GetDefaultEmbeddingProvider() (*Provider, error) {
 	}
 	return &provider, nil
 }
+
 func GetDefaultBlockchainProvider() (*Provider, error) {
 	provider := Provider{Owner: "admin", Category: "Blockchain", IsDefault: true}
 	existed, err := getOne(adapter.db, "provider", &provider, dbx.HashExp{"is_default": true, "category": provider.Category})
@@ -147,6 +157,7 @@ func GetDefaultBlockchainProvider() (*Provider, error) {
 	}
 	return &provider, nil
 }
+
 func GetDefaultAgentProvider() (*Provider, error) {
 	provider := Provider{Owner: "admin", Category: "Agent", IsDefault: true}
 	existed, err := getOne(adapter.db, "provider", &provider, dbx.HashExp{"is_default": true, "category": provider.Category})
@@ -164,6 +175,7 @@ func GetDefaultAgentProvider() (*Provider, error) {
 	}
 	return &provider, nil
 }
+
 func GetDefaultTextToSpeechProvider() (*Provider, error) {
 	provider := Provider{Owner: "admin", Category: "Text-to-Speech", IsDefault: true}
 	existed, err := getOne(adapter.db, "provider", &provider, dbx.HashExp{"is_default": true, "category": provider.Category})
@@ -181,6 +193,7 @@ func GetDefaultTextToSpeechProvider() (*Provider, error) {
 	}
 	return &provider, nil
 }
+
 func GetDefaultSpeechToTextProvider() (*Provider, error) {
 	provider := Provider{Owner: "admin", Category: "Speech-to-Text"}
 	existed, err := getOne(adapter.db, "provider", &provider, pk2(provider.Owner, provider.Name))
@@ -198,16 +211,19 @@ func GetDefaultSpeechToTextProvider() (*Provider, error) {
 	}
 	return &provider, nil
 }
+
 // providerByNameEntry caches a provider lookup by name to avoid per-request DB queries.
 type providerByNameEntry struct {
 	provider  *Provider
 	fetchedAt time.Time
 }
+
 var (
 	providerByNameCache    = make(map[string]*providerByNameEntry)
 	providerByNameCacheMu  sync.RWMutex
 	providerByNameCacheTTL = 60 * time.Second
 )
+
 // GetModelProviderByName retrieves a Model-category provider by its Name field
 // (e.g. "do-ai", "fireworks", "openai-direct"). Results are cached for 60 seconds.
 func GetModelProviderByName(name string) (*Provider, error) {
@@ -242,6 +258,7 @@ func GetModelProviderByName(name string) (*Provider, error) {
 	cp := *provider
 	return &cp, nil
 }
+
 // GetModelProviderByType retrieves a model provider by its type (e.g. "OpenAI", "Claude", "Fireworks").
 func GetModelProviderByType(providerType string) (*Provider, error) {
 	provider := &Provider{}

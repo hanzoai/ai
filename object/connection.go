@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,51 +12,58 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 package object
+
 import (
 	"strconv"
 	"sync"
+
 	"github.com/hanzoai/cloud/util"
 	"github.com/hanzoai/cloud/util/guacamole"
 	"github.com/hanzoai/dbx"
 )
+
 const (
 	NoConnect    = "no_connect"
 	Connecting   = "connecting"
 	Connected    = "connected"
 	Disconnected = "disconnected"
 )
+
 type Connection struct {
-	Owner       string `db:"pk" json:"owner"`
-	Name        string `db:"pk" json:"name"`
-	CreatedTime string `json:"createdTime"`
-	StartTime string `json:"startTime"`
-	EndTime   string `json:"endTime"`
-	Protocol      string `json:"protocol"`
-	ConnectionId  string `json:"connectionId"`
-	Node          string `json:"node"`
-	Creator       string `json:"creator"`
-	ClientIp      string `json:"clientIp"`
-	UserAgent     string `json:"userAgent"`
-	ClientIpDesc  string `json:"clientIpDesc"`
-	UserAgentDesc string `json:"userAgentDesc"`
-	Width         int    `json:"width"`
-	Height        int    `json:"height"`
-	Status        string `json:"status"`
-	Recording     string `json:"recording"`
-	Code          int    `json:"code"`
-	Message       string `json:"message"`
-	Mode       string   `json:"mode"`
-	Operations []string `db:"json varchar(1000)" json:"operations"`
-	Reviewed     bool  `json:"reviewed"`
-	CommandCount int64 `json:"commandCount"`
+	Owner         string   `db:"pk" json:"owner"`
+	Name          string   `db:"pk" json:"name"`
+	CreatedTime   string   `json:"createdTime"`
+	StartTime     string   `json:"startTime"`
+	EndTime       string   `json:"endTime"`
+	Protocol      string   `json:"protocol"`
+	ConnectionId  string   `json:"connectionId"`
+	Node          string   `json:"node"`
+	Creator       string   `json:"creator"`
+	ClientIp      string   `json:"clientIp"`
+	UserAgent     string   `json:"userAgent"`
+	ClientIpDesc  string   `json:"clientIpDesc"`
+	UserAgentDesc string   `json:"userAgentDesc"`
+	Width         int      `json:"width"`
+	Height        int      `json:"height"`
+	Status        string   `json:"status"`
+	Recording     string   `json:"recording"`
+	Code          int      `json:"code"`
+	Message       string   `json:"message"`
+	Mode          string   `json:"mode"`
+	Operations    []string `db:"json varchar(1000)" json:"operations"`
+	Reviewed      bool     `json:"reviewed"`
+	CommandCount  int64    `json:"commandCount"`
 }
+
 func (s *Connection) GetId() string {
 	return util.GetIdFromOwnerAndName(s.Owner, s.Name)
 }
+
 func GetConnectionCount(owner, status, field, value string) (int64, error) {
 	session := GetDbQuery(owner, -1, -1, field, value, "", "")
 	return queryCount(session, "connection")
 }
+
 func GetConnections(owner string) ([]*Connection, error) {
 	connections := []*Connection{}
 	err := findAll(adapter.db, "connection", &connections, dbx.HashExp{"owner": owner}, "connected_time DESC")
@@ -65,6 +72,7 @@ func GetConnections(owner string) ([]*Connection, error) {
 	}
 	return connections, nil
 }
+
 func GetPaginationConnections(owner, status string, offset, limit int, field, value, sortField, sortOrder string) ([]*Connection, error) {
 	connections := []*Connection{}
 	q := GetDbQuery(owner, offset, limit, field, value, sortField, sortOrder)
@@ -77,6 +85,7 @@ func GetPaginationConnections(owner, status string, offset, limit int, field, va
 	}
 	return connections, nil
 }
+
 func GetSessionsByStatus(statuses []string) ([]*Connection, error) {
 	connections := []*Connection{}
 	err := adapter.db.Select().From("connection").Where(dbx.In("status", toInterfaceSlice(statuses)...)).All(&connections)
@@ -85,6 +94,7 @@ func GetSessionsByStatus(statuses []string) ([]*Connection, error) {
 	}
 	return connections, nil
 }
+
 func getConnection(owner string, name string) (*Connection, error) {
 	if owner == "" || name == "" {
 		return nil, nil
@@ -100,10 +110,12 @@ func getConnection(owner string, name string) (*Connection, error) {
 		return nil, nil
 	}
 }
+
 func GetConnection(id string) (*Connection, error) {
 	owner, name := util.GetOwnerAndNameFromIdNoCheck(id)
 	return getConnection(owner, name)
 }
+
 func UpdateConnection(id string, connection *Connection, columns ...string) (bool, error) {
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
 	if err != nil {
@@ -140,6 +152,7 @@ func UpdateConnection(id string, connection *Connection, columns ...string) (boo
 	}
 	return true, nil
 }
+
 func DeleteConnection(connection *Connection) (bool, error) {
 	affected, err := deleteByPK(adapter.db, "connection", pk2(connection.Owner, connection.Name))
 	if err != nil {
@@ -147,6 +160,7 @@ func DeleteConnection(connection *Connection) (bool, error) {
 	}
 	return affected != 0, nil
 }
+
 func DeleteConnectionById(id string) (bool, error) {
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
 	if err != nil {
@@ -154,6 +168,7 @@ func DeleteConnectionById(id string) (bool, error) {
 	}
 	return DeleteConnection(&Connection{Owner: owner, Name: name})
 }
+
 func AddConnection(connection *Connection) (bool, error) {
 	err := insertRow(adapter.db, connection)
 	affected := int64(1)
@@ -165,6 +180,7 @@ func AddConnection(connection *Connection) (bool, error) {
 	}
 	return affected != 0, nil
 }
+
 func CreateConnection(connection *Connection, nodeId string, mode string) (*Connection, error) {
 	node, err := GetNode(nodeId)
 	if err != nil {
@@ -194,6 +210,7 @@ func CreateConnection(connection *Connection, nodeId string, mode string) (*Conn
 	}
 	return respConnection, nil
 }
+
 func CloseDbSession(id string, code int, msg string) error {
 	connection, err := GetConnection(id)
 	if err != nil {
@@ -223,13 +240,16 @@ func CloseDbSession(id string, code int, msg string) error {
 	}
 	return nil
 }
+
 func WriteCloseMessage(guacSession *guacamole.Session, mode string, code int, msg string) {
 	err := guacamole.NewInstruction("error", "", strconv.Itoa(code))
 	_ = guacSession.WriteString(err.String())
 	disconnect := guacamole.NewInstruction("disconnect")
 	_ = guacSession.WriteString(disconnect.String())
 }
+
 var mutex sync.Mutex
+
 func CloseConnection(id string, code int, msg string) error {
 	mutex.Lock()
 	defer mutex.Unlock()

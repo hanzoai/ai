@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,23 +12,28 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 package object
+
 import (
 	"fmt"
+
 	"github.com/hanzoai/cloud/util"
 	"github.com/hanzoai/dbx"
 )
+
 type Hospital struct {
 	Owner       string `db:"pk" json:"owner"`
 	Name        string `db:"pk" json:"name"`
 	CreatedTime string `json:"createdTime"`
 	UpdatedTime string `json:"updatedTime"`
 	DisplayName string `json:"displayName"`
-	Address string `json:"address"`
+	Address     string `json:"address"`
 }
+
 func GetHospitalCount(owner, field, value string) (int64, error) {
 	session := GetDbQuery(owner, -1, -1, field, value, "", "")
 	return queryCount(session, "hospital")
 }
+
 func GetHospitals(owner string) ([]*Hospital, error) {
 	hospitals := []*Hospital{}
 	err := findAll(adapter.db, "hospital", &hospitals, dbx.HashExp{"owner": owner}, "created_time DESC")
@@ -37,6 +42,7 @@ func GetHospitals(owner string) ([]*Hospital, error) {
 	}
 	return hospitals, nil
 }
+
 func GetPaginationHospitals(owner string, offset, limit int, field, value, sortField, sortOrder string) ([]*Hospital, error) {
 	hospitals := []*Hospital{}
 	session := GetDbQuery(owner, offset, limit, field, value, sortField, sortOrder)
@@ -46,6 +52,7 @@ func GetPaginationHospitals(owner string, offset, limit int, field, value, sortF
 	}
 	return hospitals, nil
 }
+
 func getHospital(owner string, name string) (*Hospital, error) {
 	if owner == "" || name == "" {
 		return nil, nil
@@ -61,6 +68,7 @@ func getHospital(owner string, name string) (*Hospital, error) {
 		return nil, nil
 	}
 }
+
 func GetHospital(id string) (*Hospital, error) {
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
 	if err != nil {
@@ -68,6 +76,7 @@ func GetHospital(id string) (*Hospital, error) {
 	}
 	return getHospital(owner, name)
 }
+
 func GetMaskedHospital(hospital *Hospital, errs ...error) (*Hospital, error) {
 	if len(errs) > 0 && errs[0] != nil {
 		return nil, errs[0]
@@ -77,6 +86,7 @@ func GetMaskedHospital(hospital *Hospital, errs ...error) (*Hospital, error) {
 	}
 	return hospital, nil
 }
+
 func GetMaskedHospitals(hospitals []*Hospital, errs ...error) ([]*Hospital, error) {
 	if len(errs) > 0 && errs[0] != nil {
 		return nil, errs[0]
@@ -90,6 +100,7 @@ func GetMaskedHospitals(hospitals []*Hospital, errs ...error) ([]*Hospital, erro
 	}
 	return hospitals, nil
 }
+
 func UpdateHospital(id string, hospital *Hospital) (bool, error) {
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
 	if err != nil {
@@ -113,6 +124,7 @@ func UpdateHospital(id string, hospital *Hospital) (bool, error) {
 	}
 	return affected != 0, nil
 }
+
 func AddHospital(hospital *Hospital) (bool, error) {
 	err := insertRow(adapter.db, hospital)
 	affected := int64(1)
@@ -124,6 +136,7 @@ func AddHospital(hospital *Hospital) (bool, error) {
 	}
 	return affected != 0, nil
 }
+
 func DeleteHospital(hospital *Hospital) (bool, error) {
 	affected, err := deleteByPK(adapter.db, "hospital", pk2(hospital.Owner, hospital.Name))
 	if err != nil {
@@ -131,6 +144,7 @@ func DeleteHospital(hospital *Hospital) (bool, error) {
 	}
 	return affected != 0, nil
 }
+
 func (hospital *Hospital) getId() string {
 	return fmt.Sprintf("%s/%s", hospital.Owner, hospital.Name)
 }
