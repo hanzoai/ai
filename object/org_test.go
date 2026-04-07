@@ -15,13 +15,17 @@
 //go:build !skipCi
 
 package object
+
 import (
 	"fmt"
 	"strings"
 	"testing"
+
 	"github.com/hanzoai/cloud/util"
 )
+
 var organization = "hanzo"
+
 func TestUpdateMessagesForOrg(t *testing.T) {
 	InitConfig()
 	messages, err := GetGlobalMessages()
@@ -48,6 +52,7 @@ func TestUpdateMessagesForOrg(t *testing.T) {
 		}
 	}
 }
+
 func TestUpdateChatsForOrg(t *testing.T) {
 	InitConfig()
 	chats, err := GetGlobalChats()
@@ -69,6 +74,7 @@ func TestUpdateChatsForOrg(t *testing.T) {
 		}
 	}
 }
+
 func TestUpdateMessagesAndChatsForOrg(t *testing.T) {
 	TestUpdateMessagesForOrg(t)
 	TestUpdateChatsForOrg(t)

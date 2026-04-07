@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,16 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 package object
+
 import (
 	"fmt"
+
 	"github.com/hanzoai/cloud/util"
 	"github.com/hanzoai/dbx"
 )
+
 // Scale state values for visibility (which scales are included in public lists).
 const (
 	ScaleStatePublic = "Public"
 	ScaleStateHidden = "Hidden"
 )
+
 // Scale is a reusable rubric / evaluation scale (量表), referenced by tasks via Task.Scale (owner/name id).
 type Scale struct {
 	Owner       string `db:"pk" json:"owner"`
@@ -31,6 +35,7 @@ type Scale struct {
 	Text        string `json:"text"`
 	State       string `json:"state"`
 }
+
 func GetMaskedScale(scale *Scale, isMaskEnabled bool) *Scale {
 	if !isMaskEnabled {
 		return scale
@@ -40,6 +45,7 @@ func GetMaskedScale(scale *Scale, isMaskEnabled bool) *Scale {
 	}
 	return scale
 }
+
 func GetMaskedScales(scales []*Scale, isMaskEnabled bool) []*Scale {
 	if !isMaskEnabled {
 		return scales
@@ -49,6 +55,7 @@ func GetMaskedScales(scales []*Scale, isMaskEnabled bool) []*Scale {
 	}
 	return scales
 }
+
 func GetGlobalScales() ([]*Scale, error) {
 	scales := []*Scale{}
 	err := findAll(adapter.db, "scale", &scales, nil, "owner ASC", "created_time DESC")
@@ -57,6 +64,7 @@ func GetGlobalScales() ([]*Scale, error) {
 	}
 	return scales, nil
 }
+
 func GetScales(owner string) ([]*Scale, error) {
 	scales := []*Scale{}
 	var where dbx.Expression
@@ -69,6 +77,7 @@ func GetScales(owner string) ([]*Scale, error) {
 	}
 	return scales, nil
 }
+
 // GetPublicScales returns scales visible to non-admins (Public or empty state).
 func GetPublicScales(owner string) ([]*Scale, error) {
 	scales := []*Scale{}
@@ -78,6 +87,7 @@ func GetPublicScales(owner string) ([]*Scale, error) {
 	}
 	return scales, nil
 }
+
 func getScale(owner string, name string) (*Scale, error) {
 	s := Scale{Owner: owner, Name: name}
 	existed, err := getOne(adapter.db, "scale", &s, pk2(s.Owner, s.Name))
@@ -89,6 +99,7 @@ func getScale(owner string, name string) (*Scale, error) {
 	}
 	return nil, nil
 }
+
 func GetScale(id string) (*Scale, error) {
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
 	if err != nil {
@@ -96,6 +107,7 @@ func GetScale(id string) (*Scale, error) {
 	}
 	return getScale(owner, name)
 }
+
 func UpdateScale(id string, scale *Scale) (bool, error) {
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
 	if err != nil {
@@ -116,6 +128,7 @@ func UpdateScale(id string, scale *Scale) (bool, error) {
 	}
 	return true, nil
 }
+
 func AddScale(scale *Scale) (bool, error) {
 	err := insertRow(adapter.db, scale)
 	affected := int64(1)
@@ -127,6 +140,7 @@ func AddScale(scale *Scale) (bool, error) {
 	}
 	return affected != 0, nil
 }
+
 func DeleteScale(scale *Scale) (bool, error) {
 	affected, err := deleteByPK(adapter.db, "scale", pk2(scale.Owner, scale.Name))
 	if err != nil {
@@ -134,13 +148,16 @@ func DeleteScale(scale *Scale) (bool, error) {
 	}
 	return affected != 0, nil
 }
+
 func (s *Scale) GetId() string {
 	return fmt.Sprintf("%s/%s", s.Owner, s.Name)
 }
+
 func GetScaleCount(owner string, field, value string) (int64, error) {
 	session := GetDbQuery(owner, -1, -1, field, value, "", "")
 	return queryCount(session, "scale")
 }
+
 func GetPaginationScales(owner string, offset, limit int, field, value, sortField, sortOrder string) ([]*Scale, error) {
 	scales := []*Scale{}
 	session := GetDbQuery(owner, offset, limit, field, value, sortField, sortOrder)

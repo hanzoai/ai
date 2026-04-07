@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,23 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 package object
+
 import (
 	"fmt"
 	"strings"
 	"time"
+
 	"github.com/hanzoai/cloud/i18n"
 	"github.com/hanzoai/cloud/storage"
 	"github.com/hanzoai/cloud/util"
 	"github.com/hanzoai/dbx"
 )
+
 type TreeFile struct {
-	Key         string      `json:"key"`
-	Title       string      `json:"title"`
-	Size        int64       `json:"size"`
-	CreatedTime string      `json:"createdTime"`
-	IsLeaf      bool        `json:"isLeaf"`
-	Url         string      `json:"url"`
-	Children    []*TreeFile `json:"children"`
+	Key         string               `json:"key"`
+	Title       string               `json:"title"`
+	Size        int64                `json:"size"`
+	CreatedTime string               `json:"createdTime"`
+	IsLeaf      bool                 `json:"isLeaf"`
+	Url         string               `json:"url"`
+	Children    []*TreeFile          `json:"children"`
 	ChildrenMap map[string]*TreeFile `db:"-" json:"-"`
 }
 type Properties struct {
@@ -46,55 +49,56 @@ type ExampleQuestion struct {
 	Image string `json:"image"`
 }
 type Store struct {
-	Owner       string `db:"pk" json:"owner"`
-	Name        string `db:"pk" json:"name"`
-	CreatedTime string `json:"createdTime"`
-	DisplayName string `json:"displayName"`
-	StorageProvider      string   `json:"storageProvider"`
-	StorageSubpath       string   `json:"storageSubpath"`
-	ImageProvider        string   `json:"imageProvider"`
-	SplitProvider        string   `json:"splitProvider"`
-	SearchProvider       string   `json:"searchProvider"`
-	ModelProvider        string   `json:"modelProvider"`
-	EmbeddingProvider    string   `json:"embeddingProvider"`
-	TextToSpeechProvider string   `json:"textToSpeechProvider"`
-	EnableTtsStreaming   bool     `json:"enableTtsStreaming"`
-	SpeechToTextProvider string   `json:"speechToTextProvider"`
-	AgentProvider        string   `json:"agentProvider"`
-	VectorStoreId        string   `json:"vectorStoreId"`
-	BuiltinTools         []string `json:"builtinTools"`
-	MemoryLimit         int               `json:"memoryLimit"`
-	Frequency           int               `json:"frequency"`
-	LimitMinutes        int               `json:"limitMinutes"`
-	KnowledgeCount      int               `json:"knowledgeCount"`
-	SuggestionCount     int               `json:"suggestionCount"`
-	Welcome             string            `json:"welcome"`
-	WelcomeTitle        string            `json:"welcomeTitle"`
-	WelcomeText         string            `json:"welcomeText"`
-	Prompt              string            `json:"prompt"`
-	ExampleQuestions    []ExampleQuestion `json:"exampleQuestions"`
-	ThemeColor          string            `json:"themeColor"`
-	Avatar              string            `json:"avatar"`
-	Title               string            `json:"title"`
-	HtmlTitle           string            `json:"htmlTitle"`
-	FaviconUrl          string            `json:"faviconUrl"`
-	LogoUrl             string            `json:"logoUrl"`
-	FooterHtml          string            `json:"footerHtml"`
-	NavItems            []string          `json:"navItems"`
-	VectorStores        []string          `json:"vectorStores"`
-	ChildStores         []string          `json:"childStores"`
-	ChildModelProviders []string          `json:"childModelProviders"`
-	ForbiddenWords      []string          `json:"forbiddenWords"`
-	ShowAutoRead        bool              `json:"showAutoRead"`
-	DisableFileUpload   bool              `json:"disableFileUpload"`
-	HideThinking        bool              `json:"hideThinking"`
-	IsDefault           bool              `json:"isDefault"`
-	State               string            `json:"state"`
-	ChatCount    int `db:"-" json:"chatCount"`
-	MessageCount int `db:"-" json:"messageCount"`
-	FileTree      *TreeFile              `json:"fileTree"`
-	PropertiesMap map[string]*Properties `json:"propertiesMap"`
+	Owner                string                 `db:"pk" json:"owner"`
+	Name                 string                 `db:"pk" json:"name"`
+	CreatedTime          string                 `json:"createdTime"`
+	DisplayName          string                 `json:"displayName"`
+	StorageProvider      string                 `json:"storageProvider"`
+	StorageSubpath       string                 `json:"storageSubpath"`
+	ImageProvider        string                 `json:"imageProvider"`
+	SplitProvider        string                 `json:"splitProvider"`
+	SearchProvider       string                 `json:"searchProvider"`
+	ModelProvider        string                 `json:"modelProvider"`
+	EmbeddingProvider    string                 `json:"embeddingProvider"`
+	TextToSpeechProvider string                 `json:"textToSpeechProvider"`
+	EnableTtsStreaming   bool                   `json:"enableTtsStreaming"`
+	SpeechToTextProvider string                 `json:"speechToTextProvider"`
+	AgentProvider        string                 `json:"agentProvider"`
+	VectorStoreId        string                 `json:"vectorStoreId"`
+	BuiltinTools         []string               `json:"builtinTools"`
+	MemoryLimit          int                    `json:"memoryLimit"`
+	Frequency            int                    `json:"frequency"`
+	LimitMinutes         int                    `json:"limitMinutes"`
+	KnowledgeCount       int                    `json:"knowledgeCount"`
+	SuggestionCount      int                    `json:"suggestionCount"`
+	Welcome              string                 `json:"welcome"`
+	WelcomeTitle         string                 `json:"welcomeTitle"`
+	WelcomeText          string                 `json:"welcomeText"`
+	Prompt               string                 `json:"prompt"`
+	ExampleQuestions     []ExampleQuestion      `json:"exampleQuestions"`
+	ThemeColor           string                 `json:"themeColor"`
+	Avatar               string                 `json:"avatar"`
+	Title                string                 `json:"title"`
+	HtmlTitle            string                 `json:"htmlTitle"`
+	FaviconUrl           string                 `json:"faviconUrl"`
+	LogoUrl              string                 `json:"logoUrl"`
+	FooterHtml           string                 `json:"footerHtml"`
+	NavItems             []string               `json:"navItems"`
+	VectorStores         []string               `json:"vectorStores"`
+	ChildStores          []string               `json:"childStores"`
+	ChildModelProviders  []string               `json:"childModelProviders"`
+	ForbiddenWords       []string               `json:"forbiddenWords"`
+	ShowAutoRead         bool                   `json:"showAutoRead"`
+	DisableFileUpload    bool                   `json:"disableFileUpload"`
+	HideThinking         bool                   `json:"hideThinking"`
+	IsDefault            bool                   `json:"isDefault"`
+	State                string                 `json:"state"`
+	ChatCount            int                    `db:"-" json:"chatCount"`
+	MessageCount         int                    `db:"-" json:"messageCount"`
+	FileTree             *TreeFile              `json:"fileTree"`
+	PropertiesMap        map[string]*Properties `json:"propertiesMap"`
 }
+
 func GetGlobalStores() ([]*Store, error) {
 	stores := []*Store{}
 	err := findAll(adapter.db, "store", &stores, nil, "owner ASC", "created_time DESC")
@@ -103,6 +107,7 @@ func GetGlobalStores() ([]*Store, error) {
 	}
 	return stores, nil
 }
+
 func GetStores(owner string) ([]*Store, error) {
 	stores := []*Store{}
 	err := findAll(adapter.db, "store", &stores, dbx.HashExp{"owner": owner}, "created_time DESC")
@@ -111,6 +116,7 @@ func GetStores(owner string) ([]*Store, error) {
 	}
 	return stores, nil
 }
+
 func GetDefaultStore(owner string) (*Store, error) {
 	stores, err := GetStores(owner)
 	if err != nil {
@@ -131,6 +137,7 @@ func GetDefaultStore(owner string) (*Store, error) {
 	}
 	return nil, nil
 }
+
 func getStore(owner string, name string) (*Store, error) {
 	store := Store{Owner: owner, Name: name}
 	existed, err := getOne(adapter.db, "store", &store, pk2(store.Owner, store.Name))
@@ -142,6 +149,7 @@ func getStore(owner string, name string) (*Store, error) {
 	}
 	return nil, nil
 }
+
 func GetStore(id string) (*Store, error) {
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
 	if err != nil {
@@ -149,6 +157,7 @@ func GetStore(id string) (*Store, error) {
 	}
 	return getStore(owner, name)
 }
+
 func UpdateStore(id string, store *Store) (bool, error) {
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
 	if err != nil {
@@ -170,6 +179,7 @@ func UpdateStore(id string, store *Store) (bool, error) {
 	// return affected != 0
 	return true, nil
 }
+
 func AddStore(store *Store) (bool, error) {
 	err := insertRow(adapter.db, store)
 	affected := int64(1)
@@ -181,6 +191,7 @@ func AddStore(store *Store) (bool, error) {
 	}
 	return affected != 0, nil
 }
+
 func DeleteStore(store *Store) (bool, error) {
 	affected, err := deleteByPK(adapter.db, "store", pk2(store.Owner, store.Name))
 	if err != nil {
@@ -188,9 +199,11 @@ func DeleteStore(store *Store) (bool, error) {
 	}
 	return affected != 0, nil
 }
+
 func (store *Store) GetId() string {
 	return fmt.Sprintf("%s/%s", store.Owner, store.Name)
 }
+
 func (store *Store) GetStorageProviderObj(lang string) (storage.StorageProvider, error) {
 	var provider *Provider
 	var err error
@@ -217,12 +230,14 @@ func (store *Store) GetStorageProviderObj(lang string) (storage.StorageProvider,
 	}
 	return NewSubpathStorageProvider(storageProvider, store.StorageSubpath), nil
 }
+
 func (store *Store) GetImageProviderObj(lang string) (storage.StorageProvider, error) {
 	if store.ImageProvider == "" {
 		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:The image provider for store: %s should not be empty"), store.GetId()))
 	}
 	return storage.NewIamProvider(store.ImageProvider, lang)
 }
+
 func (store *Store) GetModelProvider() (*Provider, error) {
 	if store.ModelProvider == "" {
 		return GetDefaultModelProvider()
@@ -230,6 +245,7 @@ func (store *Store) GetModelProvider() (*Provider, error) {
 	providerId := util.GetIdFromOwnerAndName(store.Owner, store.ModelProvider)
 	return GetProvider(providerId)
 }
+
 func (store *Store) GetTextToSpeechProvider() (*Provider, error) {
 	if store.TextToSpeechProvider == "" {
 		return GetDefaultTextToSpeechProvider()
@@ -237,6 +253,7 @@ func (store *Store) GetTextToSpeechProvider() (*Provider, error) {
 	providerId := util.GetIdFromOwnerAndName(store.Owner, store.TextToSpeechProvider)
 	return GetProvider(providerId)
 }
+
 func (store *Store) GetSpeechToTextProvider() (*Provider, error) {
 	if store.SpeechToTextProvider == "" {
 		return GetDefaultSpeechToTextProvider()
@@ -244,6 +261,7 @@ func (store *Store) GetSpeechToTextProvider() (*Provider, error) {
 	providerId := util.GetIdFromOwnerAndName(store.Owner, store.SpeechToTextProvider)
 	return GetProvider(providerId)
 }
+
 func (store *Store) GetEmbeddingProvider() (*Provider, error) {
 	if store.EmbeddingProvider == "" {
 		return GetDefaultEmbeddingProvider()
@@ -251,6 +269,7 @@ func (store *Store) GetEmbeddingProvider() (*Provider, error) {
 	providerId := util.GetIdFromOwnerAndName(store.Owner, store.EmbeddingProvider)
 	return GetProvider(providerId)
 }
+
 func RefreshStoreVectors(store *Store, lang string) (bool, error) {
 	storageProviderObj, err := store.GetStorageProviderObj(lang)
 	if err != nil {
@@ -285,6 +304,7 @@ func RefreshStoreVectors(store *Store, lang string) (bool, error) {
 	ok, err := addVectorsForStore(storageProviderObj, embeddingProviderObj, "", store.Owner, store.Name, store.SplitProvider, embeddingProvider.Name, modelProvider.SubType, lang)
 	return ok, err
 }
+
 func AddVectorsForFile(store *Store, fileName string, fileUrl string, lang string) (bool, error) {
 	modelProvider, err := store.GetModelProvider()
 	if err != nil {
@@ -309,6 +329,7 @@ func AddVectorsForFile(store *Store, fileName string, fileUrl string, lang strin
 	})
 	return ok, err
 }
+
 func RefreshFileVectors(file *File, lang string) (bool, error) {
 	store, err := getStore(file.Owner, file.Store)
 	if err != nil {
@@ -336,6 +357,7 @@ func RefreshFileVectors(file *File, lang string) (bool, error) {
 	}
 	return AddVectorsForFile(store, objectKey, file.Url, lang)
 }
+
 func refreshVector(vector *Vector, lang string) (bool, error) {
 	_, embeddingProviderObj, err := getEmbeddingProviderFromName("admin", vector.Provider, lang)
 	if err != nil {
@@ -348,6 +370,7 @@ func refreshVector(vector *Vector, lang string) (bool, error) {
 	vector.Data = data
 	return true, nil
 }
+
 func GetStoresByFields(owner string, fields ...string) ([]*Store, error) {
 	var stores []*Store
 	err := adapter.db.Select(fields...).From("store").Where(dbx.HashExp{"owner": owner}).OrderBy("created_time DESC").All(&stores)
@@ -356,10 +379,12 @@ func GetStoresByFields(owner string, fields ...string) ([]*Store, error) {
 	}
 	return stores, nil
 }
+
 func GetStoreCount(name, field, value string) (int64, error) {
 	q := GetDbQuery("", -1, -1, field, value, "", "")
 	return queryCount(q, "store")
 }
+
 func GetPaginationStores(offset, limit int, name, field, value, sortField, sortOrder string) ([]*Store, error) {
 	stores := []*Store{}
 	q := GetDbQuery("", offset, limit, field, value, sortField, sortOrder)
@@ -372,6 +397,7 @@ func GetPaginationStores(offset, limit int, name, field, value, sortField, sortO
 	}
 	return stores, nil
 }
+
 func (store *Store) ContainsForbiddenWords(text string) (bool, string) {
 	if store.ForbiddenWords == nil || len(store.ForbiddenWords) == 0 {
 		return false, ""

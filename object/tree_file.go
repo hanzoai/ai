@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,18 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 package object
+
 import (
 	"bytes"
 	"fmt"
 	"io"
 	"mime/multipart"
 	"strings"
+
 	"github.com/beego/beego/logs"
 	"github.com/hanzoai/cloud/util"
 )
+
 func UpdateTreeFile(storeId string, key string, file *TreeFile) bool {
 	return true
 }
+
 func AddTreeFile(storeId string, userName string, key string, isLeaf bool, filename string, file multipart.File, lang string) (bool, []byte, error) {
 	store, err := GetStore(storeId)
 	if err != nil {
@@ -87,6 +91,7 @@ func AddTreeFile(storeId string, userName string, key string, isLeaf bool, filen
 		return true, bs, nil
 	}
 }
+
 func DeleteTreeFile(storeId string, key string, isLeaf bool, lang string) (bool, error) {
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(storeId)
 	if err != nil {

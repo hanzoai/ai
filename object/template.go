@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,23 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 package object
+
 import (
 	"bytes"
 	"text/template"
+
 	"github.com/hanzoai/cloud/util"
 	"github.com/hanzoai/dbx"
 )
+
 type Template struct {
-	Owner       string `db:"pk" json:"owner"`
-	Name        string `db:"pk" json:"name"`
-	CreatedTime string `json:"createdTime"`
-	UpdatedTime string `json:"updatedTime"`
-	DisplayName string `json:"displayName"`
-	Description string `json:"description"`
-	Version     string `json:"version"`
-	Icon        string `json:"icon"`
-	Manifest    string `json:"manifest"`
-	Readme      string `json:"readme"`
+	Owner              string                 `db:"pk" json:"owner"`
+	Name               string                 `db:"pk" json:"name"`
+	CreatedTime        string                 `json:"createdTime"`
+	UpdatedTime        string                 `json:"updatedTime"`
+	DisplayName        string                 `json:"displayName"`
+	Description        string                 `json:"description"`
+	Version            string                 `json:"version"`
+	Icon               string                 `json:"icon"`
+	Manifest           string                 `json:"manifest"`
+	Readme             string                 `json:"readme"`
 	EnableBasicConfig  bool                   `json:"enableBasicConfig"`
 	BasicConfigOptions []templateConfigOption `db:"json" json:"basicConfigOptions"`
 }
@@ -40,6 +43,7 @@ type templateConfigOption struct {
 	Default     string   `json:"default" yaml:"default"`
 	Required    bool     `json:"required" yaml:"required"`
 }
+
 func GetTemplates(owner string) ([]*Template, error) {
 	templates := []*Template{}
 	err := findAll(adapter.db, "template", &templates, dbx.HashExp{"owner": owner}, "created_time DESC")
@@ -48,10 +52,12 @@ func GetTemplates(owner string) ([]*Template, error) {
 	}
 	return templates, nil
 }
+
 func GetTemplateCount(owner, field, value string) (int64, error) {
 	session := GetDbQuery(owner, -1, -1, field, value, "", "")
 	return queryCount(session, "template")
 }
+
 func GetPaginationTemplates(owner string, offset, limit int, field, value, sortField, sortOrder string) ([]*Template, error) {
 	templates := []*Template{}
 	session := GetDbQuery(owner, offset, limit, field, value, sortField, sortOrder)
@@ -61,6 +67,7 @@ func GetPaginationTemplates(owner string, offset, limit int, field, value, sortF
 	}
 	return templates, nil
 }
+
 func GetTemplate(id string) (*Template, error) {
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
 	if err != nil {
@@ -68,6 +75,7 @@ func GetTemplate(id string) (*Template, error) {
 	}
 	return getTemplate(owner, name)
 }
+
 func getTemplate(owner, name string) (*Template, error) {
 	template := Template{Owner: owner, Name: name}
 	existed, err := getOne(adapter.db, "template", &template, pk2(template.Owner, template.Name))
@@ -80,6 +88,7 @@ func getTemplate(owner, name string) (*Template, error) {
 		return nil, nil
 	}
 }
+
 func UpdateTemplate(id string, template *Template) (bool, error) {
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
 	if err != nil {
@@ -105,6 +114,7 @@ func UpdateTemplate(id string, template *Template) (bool, error) {
 	}
 	return affected != 0, nil
 }
+
 func AddTemplate(template *Template) (bool, error) {
 	if template.CreatedTime == "" {
 		template.CreatedTime = util.GetCurrentTime()
@@ -122,6 +132,7 @@ func AddTemplate(template *Template) (bool, error) {
 	}
 	return affected != 0, nil
 }
+
 func DeleteTemplate(template *Template) (bool, error) {
 	affected, err := deleteByPK(adapter.db, "template", pk2(template.Owner, template.Name))
 	if err != nil {
@@ -129,6 +140,7 @@ func DeleteTemplate(template *Template) (bool, error) {
 	}
 	return affected != 0, nil
 }
+
 // Render the template with the given data.
 func (t *Template) Render(data map[string]interface{}) (string, error) {
 	if data == nil {

@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,14 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 package object
+
 import (
 	"fmt"
 	"time"
+
 	"github.com/hanzoai/cloud/conf"
 	"github.com/hanzoai/cloud/i18n"
 	"github.com/hanzoai/cloud/model"
 	iamsdk "github.com/hanzoid/go-sdk/casdoorsdk"
 )
+
 type Usage struct {
 	Date         string  `json:"date"`
 	UserCount    int     `json:"userCount"`
@@ -40,6 +43,7 @@ type UserUsage struct {
 	TokenCount   int     `json:"tokenCount"`
 	Price        float64 `json:"price"`
 }
+
 func GetUsages(days int, user string, storeName string) ([]*Usage, error) {
 	messages, err := GetGlobalMessagesByStoreName(storeName)
 	if err != nil {
@@ -113,6 +117,7 @@ func GetUsages(days int, user string, storeName string) ([]*Usage, error) {
 	}
 	return usages, nil
 }
+
 func GetUsage(date string) (*Usage, error) {
 	messages, err := GetGlobalMessages()
 	if err != nil {
@@ -165,6 +170,7 @@ func GetUsage(date string) (*Usage, error) {
 	}
 	return usage, nil
 }
+
 func GetUsageMetadata(lang string, orgName ...string) (*UsageMetadata, error) {
 	iamOrganization := conf.GetConfigString("iamOrganization")
 	if len(orgName) > 0 && orgName[0] != "" {
@@ -191,6 +197,7 @@ func GetUsageMetadata(lang string, orgName ...string) (*UsageMetadata, error) {
 	}
 	return res, nil
 }
+
 func GetUsers(storeName, user string) ([]string, error) {
 	users := []string{}
 	userMap := map[string]bool{}
@@ -206,6 +213,7 @@ func GetUsers(storeName, user string) ([]string, error) {
 	}
 	return users, nil
 }
+
 func GetUserTableInfos(storeName, user string) ([]*UserUsage, error) {
 	messages, err := GetMessages("admin", user, storeName)
 	if err != nil {

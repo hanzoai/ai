@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,26 +12,31 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 package object
+
 import (
 	"fmt"
+
 	"github.com/hanzoai/cloud/util"
 	"github.com/hanzoai/dbx"
 )
+
 type Consultation struct {
-	Owner       string `db:"pk" json:"owner"`
-	Name        string `db:"pk" json:"name"`
-	CreatedTime string `json:"createdTime"`
-	UpdatedTime string `json:"updatedTime"`
-	DisplayName string `json:"displayName"`
+	Owner       string   `db:"pk" json:"owner"`
+	Name        string   `db:"pk" json:"name"`
+	CreatedTime string   `json:"createdTime"`
+	UpdatedTime string   `json:"updatedTime"`
+	DisplayName string   `json:"displayName"`
 	PatientName string   `json:"patientName"`
 	DoctorNames []string `json:"doctorNames"`
 	ExpiredTime string   `json:"expiredTime"`
 	State       string   `json:"state"`
 }
+
 func GetConsultationCount(owner, field, value string) (int64, error) {
 	session := GetDbQuery(owner, -1, -1, field, value, "", "")
 	return queryCount(session, "consultation")
 }
+
 func GetConsultations(owner string) ([]*Consultation, error) {
 	consultations := []*Consultation{}
 	err := findAll(adapter.db, "consultation", &consultations, dbx.HashExp{"owner": owner}, "created_time DESC")
@@ -40,6 +45,7 @@ func GetConsultations(owner string) ([]*Consultation, error) {
 	}
 	return consultations, nil
 }
+
 func GetPaginationConsultations(owner string, offset, limit int, field, value, sortField, sortOrder string) ([]*Consultation, error) {
 	consultations := []*Consultation{}
 	session := GetDbQuery(owner, offset, limit, field, value, sortField, sortOrder)
@@ -49,6 +55,7 @@ func GetPaginationConsultations(owner string, offset, limit int, field, value, s
 	}
 	return consultations, nil
 }
+
 func getConsultation(owner string, name string) (*Consultation, error) {
 	if owner == "" || name == "" {
 		return nil, nil
@@ -64,6 +71,7 @@ func getConsultation(owner string, name string) (*Consultation, error) {
 		return nil, nil
 	}
 }
+
 func GetConsultation(id string) (*Consultation, error) {
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
 	if err != nil {
@@ -71,6 +79,7 @@ func GetConsultation(id string) (*Consultation, error) {
 	}
 	return getConsultation(owner, name)
 }
+
 func GetMaskedConsultation(consultation *Consultation, errs ...error) (*Consultation, error) {
 	if len(errs) > 0 && errs[0] != nil {
 		return nil, errs[0]
@@ -80,6 +89,7 @@ func GetMaskedConsultation(consultation *Consultation, errs ...error) (*Consulta
 	}
 	return consultation, nil
 }
+
 func GetMaskedConsultations(consultations []*Consultation, errs ...error) ([]*Consultation, error) {
 	if len(errs) > 0 && errs[0] != nil {
 		return nil, errs[0]
@@ -93,6 +103,7 @@ func GetMaskedConsultations(consultations []*Consultation, errs ...error) ([]*Co
 	}
 	return consultations, nil
 }
+
 func UpdateConsultation(id string, consultation *Consultation) (bool, error) {
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
 	if err != nil {
@@ -116,6 +127,7 @@ func UpdateConsultation(id string, consultation *Consultation) (bool, error) {
 	}
 	return affected != 0, nil
 }
+
 func AddConsultation(consultation *Consultation) (bool, error) {
 	err := insertRow(adapter.db, consultation)
 	affected := int64(1)
@@ -127,6 +139,7 @@ func AddConsultation(consultation *Consultation) (bool, error) {
 	}
 	return affected != 0, nil
 }
+
 func DeleteConsultation(consultation *Consultation) (bool, error) {
 	affected, err := deleteByPK(adapter.db, "consultation", pk2(consultation.Owner, consultation.Name))
 	if err != nil {
@@ -134,6 +147,7 @@ func DeleteConsultation(consultation *Consultation) (bool, error) {
 	}
 	return affected != 0, nil
 }
+
 func (consultation *Consultation) getId() string {
 	return fmt.Sprintf("%s/%s", consultation.Owner, consultation.Name)
 }

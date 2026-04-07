@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,15 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 package object
+
 import (
 	"fmt"
 	"os"
+
 	"github.com/beego/beego/logs"
 	scanpkg "github.com/hanzoai/cloud/scan"
 	"github.com/hanzoai/cloud/util"
 	"github.com/robfig/cron/v3"
 )
+
 var scanJobCron *cron.Cron
+
 // InitScanJobProcessor initializes the scan job processor with a cron job
 func InitScanJobProcessor() {
 	scanJobCron = cron.New()
@@ -31,6 +35,7 @@ func InitScanJobProcessor() {
 	}
 	scanJobCron.Start()
 }
+
 // processPendingScans picks up pending scans and executes them
 func processPendingScans() {
 	// Get all pending scans
@@ -59,6 +64,7 @@ func processPendingScans() {
 		executeScanJob(scan, hostname)
 	}
 }
+
 // claimScanJob attempts to claim a scan job by setting its state to "Running"
 // Returns true if the claim was successful, false otherwise
 func claimScanJob(scan *Scan, hostname string) (bool, error) {
@@ -149,6 +155,7 @@ func claimScanJob(scan *Scan, hostname string) (bool, error) {
 	}
 	return affected > 0, nil
 }
+
 // executeScanJob executes a scan job
 func executeScanJob(scan *Scan, hostname string) {
 	defer func() {

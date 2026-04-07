@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 package object
+
 import (
 	"fmt"
 	"regexp"
@@ -19,6 +20,7 @@ import (
 	"strings"
 	"time"
 )
+
 func parseTimeString(input string) (string, string, error) {
 	// 正则表达式，可选地匹配小时和分钟部分
 	re := regexp.MustCompile(`(\d+)年(\d+)月(\d+)日 (上午|下午) (\d+):(\d+)\|((\d+)小时 )?((\d+)分钟 )?(\d+)秒`)
@@ -56,6 +58,7 @@ func parseTimeString(input string) (string, string, error) {
 	formattedDuration := fmt.Sprintf("%02d:%02d:%02d", durationHours, durationMinutes, durationSeconds)
 	return formattedTime, formattedDuration, nil
 }
+
 func parseKeywords(content string) []string {
 	tokens := strings.Split(content, "、")
 	res := []string{}
@@ -64,6 +67,7 @@ func parseKeywords(content string) []string {
 	}
 	return res
 }
+
 func timeToSeconds(timeStr string) (float64, error) {
 	parts := strings.Split(timeStr, ":")
 	partsLen := len(parts)
@@ -99,6 +103,7 @@ func timeToSeconds(timeStr string) (float64, error) {
 	res := float64(hours*3600 + minutes*60 + seconds)
 	return res, nil
 }
+
 func mapSpeaker(s string) string {
 	if strings.Contains(s, "老师") {
 		return strings.ReplaceAll(s, "老师", "Teacher")
@@ -110,6 +115,7 @@ func mapSpeaker(s string) string {
 		return fmt.Sprintf("Unknown speaker: %s", s)
 	}
 }
+
 func SplitLastN(s, sep string, n int) []string {
 	if n <= 0 {
 		return nil
