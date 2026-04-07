@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 package object
+
 import (
 	"bytes"
 	"context"
@@ -20,17 +21,20 @@ import (
 	"io"
 	"sync"
 	"time"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/beego/beego/logs"
 	"github.com/hanzoai/cloud/conf"
 )
+
 const (
 	crawlStorageDefaultBucket   = "hanzo-crawl"
 	crawlStorageDefaultEndpoint = "http://minio.hanzo.svc.cluster.local:9000"
 	crawlStorageHTTPTimeout     = 30 * time.Second
 )
+
 // CrawlArchive is the envelope stored in Hanzo Storage for a crawl job's results.
 // It stores both the converted ScrapeResult data and the raw Crawl4AIResult data
 // when available, to preserve the full fidelity of crawl output.
@@ -41,10 +45,12 @@ type CrawlArchive struct {
 	Results    []ScrapeResult   `json:"results"`
 	RawResults []Crawl4AIResult `json:"raw_results,omitempty"`
 }
+
 var (
 	crawlStorageClient *s3.Client
 	crawlStorageOnce   sync.Once
 )
+
 // getCrawlStorageEndpoint returns the Hanzo Storage endpoint from config.
 func getCrawlStorageEndpoint() string {
 	endpoint := conf.GetConfigString("crawlStorageEndpoint")
@@ -53,6 +59,7 @@ func getCrawlStorageEndpoint() string {
 	}
 	return endpoint
 }
+
 // getCrawlStorageBucket returns the Hanzo Storage bucket name from config.
 func getCrawlStorageBucket() string {
 	bucket := conf.GetConfigString("crawlStorageBucket")
@@ -61,6 +68,7 @@ func getCrawlStorageBucket() string {
 	}
 	return bucket
 }
+
 // getCrawlStorageClient returns a singleton S3 client configured for Hanzo Storage.
 func getCrawlStorageClient() *s3.Client {
 	crawlStorageOnce.Do(func() {
@@ -82,10 +90,12 @@ func getCrawlStorageClient() *s3.Client {
 	})
 	return crawlStorageClient
 }
+
 // crawlArchiveKey builds the S3 object key for a crawl job's results.
 func crawlArchiveKey(owner, jobID string) string {
 	return fmt.Sprintf("%s/%s/results.json", owner, jobID)
 }
+
 // ArchiveCrawlResult uploads crawl results as JSON to Hanzo Storage.
 // The results are stored at {bucket}/{owner}/{jobID}/results.json.
 func ArchiveCrawlResult(owner, jobID string, results []ScrapeResult, rawResults []Crawl4AIResult) error {
@@ -120,6 +130,7 @@ func ArchiveCrawlResult(owner, jobID string, results []ScrapeResult, rawResults 
 	logs.Info("crawl archive: stored %d results at %s/%s (%d bytes)", len(results), bucket, key, len(data))
 	return nil
 }
+
 // GetArchivedCrawlResult retrieves previously archived crawl results from Hanzo Storage.
 func GetArchivedCrawlResult(owner, jobID string) (*CrawlArchive, error) {
 	client := getCrawlStorageClient()
@@ -148,6 +159,7 @@ func GetArchivedCrawlResult(owner, jobID string) (*CrawlArchive, error) {
 	}
 	return &archive, nil
 }
+
 // archiveCrawlResultAsync archives crawl results in a background goroutine.
 // Errors are logged but do not propagate to the caller.
 func archiveCrawlResultAsync(owner, jobID string, results []ScrapeResult, rawResults []Crawl4AIResult) {
@@ -157,6 +169,7 @@ func archiveCrawlResultAsync(owner, jobID string, results []ScrapeResult, rawRes
 		}
 	}()
 }
+
 // ArchiveCrawlPreviewAsync archives a single-page preview crawl result asynchronously.
 // It generates a job ID from the URL and timestamp, then stores both the converted
 // ScrapeResult and the raw Crawl4AIResult.
@@ -168,6 +181,7 @@ func ArchiveCrawlPreviewAsync(owner, pageURL string, sr ScrapeResult, raw Crawl4
 		}
 	}()
 }
+
 // IsCrawlStorageConfigured returns true if the crawl storage credentials are set.
 func IsCrawlStorageConfigured() bool {
 	accessKey := conf.GetConfigString("crawlStorageAccessKey")

@@ -15,12 +15,15 @@
 //go:build !skipCi
 
 package object
+
 import (
 	"fmt"
 	"testing"
+
 	"github.com/hanzoai/cloud/proxy"
 	"github.com/hanzoai/cloud/util"
 )
+
 func TestTranslateArticle(t *testing.T) {
 	InitConfig()
 	proxy.InitHttpClient()

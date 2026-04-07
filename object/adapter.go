@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,11 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 package object
+
 import (
 	"database/sql"
 	"flag"
 	"fmt"
 	"runtime"
+
 	"github.com/beego/beego"
 	_ "github.com/denisenkom/go-mssqldb" // mssql
 	_ "github.com/go-sql-driver/mysql"   // mysql
@@ -25,23 +27,27 @@ import (
 	_ "github.com/lib/pq"  // postgres
 	_ "modernc.org/sqlite" // sqlite
 )
+
 var (
 	adapter                 *Adapter = nil
 	providerAdapter         *Adapter = nil
 	isCreateDatabaseDefined          = false
 	createDatabase                   = true
 )
+
 func InitFlag() {
 	if !isCreateDatabaseDefined {
 		isCreateDatabaseDefined = true
 		createDatabase = getCreateDatabaseFlag()
 	}
 }
+
 func getCreateDatabaseFlag() bool {
 	res := flag.Bool("createDatabase", false, "true if you need to create database")
 	flag.Parse()
 	return *res
 }
+
 func InitConfig() {
 	err := beego.LoadAppConfig("ini", "../conf/app.conf")
 	if err != nil {
@@ -50,6 +56,7 @@ func InitConfig() {
 	InitAdapter()
 	CreateTables()
 }
+
 func InitAdapter() {
 	adapter = NewAdapter(conf.GetConfigString("driverName"), conf.GetConfigDataSourceName())
 	providerDbName := conf.GetConfigString("providerDbName")
@@ -60,6 +67,7 @@ func InitAdapter() {
 		providerAdapter = NewAdapterWithDbName(conf.GetConfigString("driverName"), conf.GetConfigDataSourceName(), providerDbName)
 	}
 }
+
 func CreateTables() {
 	if createDatabase {
 		err := adapter.CreateDatabase()
@@ -69,6 +77,7 @@ func CreateTables() {
 	}
 	adapter.createTable()
 }
+
 // Adapter represents the database adapter for storage.
 type Adapter struct {
 	driverName     string
@@ -76,6 +85,7 @@ type Adapter struct {
 	DbName         string
 	db             *dbx.DB
 }
+
 // finalizer is the destructor for Adapter.
 func finalizer(a *Adapter) {
 	err := a.db.Close()
@@ -83,6 +93,7 @@ func finalizer(a *Adapter) {
 		panic(err)
 	}
 }
+
 // NewAdapter is the constructor for Adapter.
 func NewAdapter(driverName string, dataSourceName string) *Adapter {
 	a := &Adapter{}
@@ -95,6 +106,7 @@ func NewAdapter(driverName string, dataSourceName string) *Adapter {
 	runtime.SetFinalizer(a, finalizer)
 	return a
 }
+
 func NewAdapterWithDbName(driverName string, dataSourceName string, dbName string) *Adapter {
 	a := &Adapter{}
 	a.driverName = driverName
@@ -106,6 +118,7 @@ func NewAdapterWithDbName(driverName string, dataSourceName string, dbName strin
 	runtime.SetFinalizer(a, finalizer)
 	return a
 }
+
 func (a *Adapter) CreateDatabase() error {
 	db, err := dbx.Open(a.driverName, a.dataSourceName)
 	if err != nil {
@@ -133,6 +146,7 @@ func (a *Adapter) CreateDatabase() error {
 	}
 	return nil
 }
+
 func (a *Adapter) open() {
 	dataSourceName := a.dataSourceName + a.DbName
 	if a.driverName != "mysql" {
@@ -144,10 +158,12 @@ func (a *Adapter) open() {
 	}
 	a.db = db
 }
+
 func (a *Adapter) close() {
 	a.db.Close()
 	a.db = nil
 }
+
 func (a *Adapter) createTable() {
 	// Schema migration is handled externally (SQL migrations).
 	// Tables must exist before the application starts.
@@ -172,6 +188,7 @@ func (a *Adapter) createTable() {
 		}
 	}
 }
+
 // RawDB returns the underlying *sql.DB for direct access when needed.
 func (a *Adapter) RawDB() *sql.DB {
 	return a.db.DB()

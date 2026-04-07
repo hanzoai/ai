@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,9 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 package object
+
 import (
 	"fmt"
 	"strings"
+
 	"github.com/hanzoai/cloud/agent"
 	"github.com/hanzoai/cloud/embedding"
 	"github.com/hanzoai/cloud/i18n"
@@ -24,59 +26,61 @@ import (
 	"github.com/hanzoai/cloud/stt"
 	"github.com/hanzoai/cloud/tts"
 	"github.com/hanzoai/cloud/util"
-	iamsdk "github.com/hanzoid/go-sdk/casdoorsdk"
 	"github.com/hanzoai/dbx"
+	iamsdk "github.com/hanzoid/go-sdk/casdoorsdk"
 )
+
 type Provider struct {
-	Owner       string `db:"pk" json:"owner"`
-	Name        string `db:"pk" json:"name"`
-	CreatedTime string `json:"createdTime"`
-	DisplayName        string            `json:"displayName"`
-	Category           string            `json:"category"`
-	Type               string            `json:"type"`
-	SubType            string            `json:"subType"`
-	Flavor             string            `json:"flavor"`
-	ClientId           string            `json:"clientId"`
-	ClientSecret       string            `json:"clientSecret"`
-	Region             string            `json:"region"`
-	ProviderKey        string            `json:"providerKey"`
-	ProviderUrl        string            `json:"providerUrl"`
-	ApiVersion         string            `json:"apiVersion"`
-	CompatibleProvider string            `json:"compatibleProvider"`
-	McpTools           []*agent.McpTools `json:"mcpTools"`
-	Text               string            `json:"text"`
-	ConfigText         string            `json:"configText"`
-	RawText            string            `json:"rawText"` // Raw result from scan (for Scan category providers)
-	EnableThinking   bool    `json:"enableThinking"`
-	Temperature      float32 `json:"temperature"`
-	TopP             float32 `json:"topP"`
-	TopK             int     `json:"topK"`
-	FrequencyPenalty float32 `json:"frequencyPenalty"`
-	PresencePenalty  float32 `json:"presencePenalty"`
-	InputPricePerThousandTokens  float64 `json:"inputPricePerThousandTokens"`
-	OutputPricePerThousandTokens float64 `json:"outputPricePerThousandTokens"`
-	Currency                     string  `json:"currency"`
-	UserKey        string `json:"userKey"`
-	UserCert       string `json:"userCert"`
-	SignKey        string `json:"signKey"`
-	SignCert       string `json:"signCert"`
-	ContractName   string `json:"contractName"`
-	ContractMethod string `json:"contractMethod"`
-	Network        string `json:"network"`
-	Chain          string `json:"chain"`
-	TestContent    string `json:"testContent"`
+	Owner                        string            `db:"pk" json:"owner"`
+	Name                         string            `db:"pk" json:"name"`
+	CreatedTime                  string            `json:"createdTime"`
+	DisplayName                  string            `json:"displayName"`
+	Category                     string            `json:"category"`
+	Type                         string            `json:"type"`
+	SubType                      string            `json:"subType"`
+	Flavor                       string            `json:"flavor"`
+	ClientId                     string            `json:"clientId"`
+	ClientSecret                 string            `json:"clientSecret"`
+	Region                       string            `json:"region"`
+	ProviderKey                  string            `json:"providerKey"`
+	ProviderUrl                  string            `json:"providerUrl"`
+	ApiVersion                   string            `json:"apiVersion"`
+	CompatibleProvider           string            `json:"compatibleProvider"`
+	McpTools                     []*agent.McpTools `json:"mcpTools"`
+	Text                         string            `json:"text"`
+	ConfigText                   string            `json:"configText"`
+	RawText                      string            `json:"rawText"` // Raw result from scan (for Scan category providers)
+	EnableThinking               bool              `json:"enableThinking"`
+	Temperature                  float32           `json:"temperature"`
+	TopP                         float32           `json:"topP"`
+	TopK                         int               `json:"topK"`
+	FrequencyPenalty             float32           `json:"frequencyPenalty"`
+	PresencePenalty              float32           `json:"presencePenalty"`
+	InputPricePerThousandTokens  float64           `json:"inputPricePerThousandTokens"`
+	OutputPricePerThousandTokens float64           `json:"outputPricePerThousandTokens"`
+	Currency                     string            `json:"currency"`
+	UserKey                      string            `json:"userKey"`
+	UserCert                     string            `json:"userCert"`
+	SignKey                      string            `json:"signKey"`
+	SignCert                     string            `json:"signCert"`
+	ContractName                 string            `json:"contractName"`
+	ContractMethod               string            `json:"contractMethod"`
+	Network                      string            `json:"network"`
+	Chain                        string            `json:"chain"`
+	TestContent                  string            `json:"testContent"`
 	// New fields for unified scan widget (for Scan category providers)
 	TargetMode    string `json:"targetMode"`    // "Manual Input" or "Asset"
 	Target        string `json:"target"`        // Manual input target (IP address or network range)
 	Asset         string `json:"asset"`         // Selected asset for scan
 	Runner        string `json:"runner"`        // Hostname about who runs the scan job
-	ErrorText     string `json:"errorText"`       // Error message for the job execution
+	ErrorText     string `json:"errorText"`     // Error message for the job execution
 	ResultSummary string `json:"resultSummary"` // Short summary of scan results
-	IsDefault  bool   `json:"isDefault"`
-	IsRemote   bool   `json:"isRemote"`
-	State      string `json:"state"`
-	BrowserUrl string `json:"browserUrl"`
+	IsDefault     bool   `json:"isDefault"`
+	IsRemote      bool   `json:"isRemote"`
+	State         string `json:"state"`
+	BrowserUrl    string `json:"browserUrl"`
 }
+
 func GetMaskedProvider(provider *Provider, isMaskEnabled bool, user *iamsdk.User) *Provider {
 	if !isMaskEnabled {
 		return provider
@@ -103,6 +107,7 @@ func GetMaskedProvider(provider *Provider, isMaskEnabled bool, user *iamsdk.User
 	}
 	return provider
 }
+
 func GetMaskedProviders(providers []*Provider, isMaskEnabled bool, user *iamsdk.User) []*Provider {
 	if !isMaskEnabled {
 		return providers
@@ -112,6 +117,7 @@ func GetMaskedProviders(providers []*Provider, isMaskEnabled bool, user *iamsdk.
 	}
 	return providers
 }
+
 func GetGlobalProviders() ([]*Provider, error) {
 	providers := []*Provider{}
 	err := findAll(adapter.db, "provider", &providers, nil, "owner ASC", "created_time DESC")
@@ -132,6 +138,7 @@ func GetGlobalProviders() ([]*Provider, error) {
 	}
 	return providers, nil
 }
+
 func GetProviders(owner string) ([]*Provider, error) {
 	providers := []*Provider{}
 	err := findAll(adapter.db, "provider", &providers, dbx.HashExp{"owner": owner}, "created_time DESC")
@@ -152,6 +159,7 @@ func GetProviders(owner string) ([]*Provider, error) {
 	}
 	return providers, nil
 }
+
 func getProvider(owner string, name string) (*Provider, error) {
 	provider := Provider{Owner: owner, Name: name}
 	existed, err := getOne(adapter.db, "provider", &provider, pk2(provider.Owner, provider.Name))
@@ -173,6 +181,7 @@ func getProvider(owner string, name string) (*Provider, error) {
 		return nil, nil
 	}
 }
+
 func GetProvider(id string) (*Provider, error) {
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
 	if err != nil {
@@ -180,6 +189,7 @@ func GetProvider(id string) (*Provider, error) {
 	}
 	return getProvider(owner, name)
 }
+
 func UpdateProvider(id string, provider *Provider) (bool, error) {
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
 	if err != nil {
@@ -195,8 +205,8 @@ func UpdateProvider(id string, provider *Provider) (bool, error) {
 	provider.processProviderParams(providerDb)
 	if providerAdapter != nil && provider.IsRemote {
 		provider.Owner = owner
-	provider.Name = name
-	err = providerAdapter.db.Model(provider).Update()
+		provider.Name = name
+		err = providerAdapter.db.Model(provider).Update()
 		if err != nil {
 			return false, err
 		}
@@ -212,6 +222,7 @@ func UpdateProvider(id string, provider *Provider) (bool, error) {
 	// return affected != 0
 	return true, nil
 }
+
 func AddProvider(provider *Provider) (bool, error) {
 	if provider.ProviderKey == "" && provider.Category == "Model" {
 		provider.ProviderKey = generateProviderKey()
@@ -229,6 +240,7 @@ func AddProvider(provider *Provider) (bool, error) {
 	}
 	return true, nil
 }
+
 func DeleteProvider(provider *Provider) (bool, error) {
 	if providerAdapter != nil && provider.IsRemote {
 		affected, err := deleteByPK(providerAdapter.db, "provider", pk2(provider.Owner, provider.Name))
@@ -243,9 +255,11 @@ func DeleteProvider(provider *Provider) (bool, error) {
 	}
 	return affected != 0, nil
 }
+
 func (provider *Provider) GetId() string {
 	return fmt.Sprintf("%s/%s", provider.Owner, provider.Name)
 }
+
 func GetDefaultKubernetesProvider(lang string) (*Provider, error) {
 	providers, err := GetProviders("admin")
 	if err != nil {
@@ -258,6 +272,7 @@ func GetDefaultKubernetesProvider(lang string) (*Provider, error) {
 	}
 	return nil, fmt.Errorf("%s", i18n.Translate(lang, "object:no Kubernetes provider found"))
 }
+
 func (p *Provider) GetStorageProviderObj(vectorStoreId string, lang string) (storage.StorageProvider, error) {
 	pProvider, err := storage.GetStorageProvider(p.Type, p.ClientId, p.ClientSecret, p.Name, vectorStoreId, lang)
 	if err != nil {
@@ -268,6 +283,7 @@ func (p *Provider) GetStorageProviderObj(vectorStoreId string, lang string) (sto
 	}
 	return pProvider, nil
 }
+
 func (p *Provider) GetModelProvider(lang string) (model.ModelProvider, error) {
 	pProvider, err := model.GetModelProvider(p.Type, p.SubType, p.ClientId, p.ClientSecret, p.UserKey, p.Temperature, p.TopP, p.TopK, p.FrequencyPenalty, p.PresencePenalty, p.ProviderUrl, p.ApiVersion, p.CompatibleProvider, p.InputPricePerThousandTokens, p.OutputPricePerThousandTokens, p.Currency, p.EnableThinking)
 	if err != nil {
@@ -278,6 +294,7 @@ func (p *Provider) GetModelProvider(lang string) (model.ModelProvider, error) {
 	}
 	return pProvider, nil
 }
+
 func (p *Provider) GetEmbeddingProvider(lang string) (embedding.EmbeddingProvider, error) {
 	pProvider, err := embedding.GetEmbeddingProvider(p.Type, p.SubType, p.ClientId, p.ClientSecret, p.ProviderUrl, p.ApiVersion, p.InputPricePerThousandTokens, p.Currency, lang)
 	if err != nil {
@@ -288,6 +305,7 @@ func (p *Provider) GetEmbeddingProvider(lang string) (embedding.EmbeddingProvide
 	}
 	return pProvider, nil
 }
+
 func (p *Provider) GetAgentProvider(lang string) (agent.AgentProvider, error) {
 	pProvider, err := agent.GetAgentProvider(p.Type, p.SubType, p.Text, p.McpTools, lang)
 	if err != nil {
@@ -298,6 +316,7 @@ func (p *Provider) GetAgentProvider(lang string) (agent.AgentProvider, error) {
 	}
 	return pProvider, nil
 }
+
 func (p *Provider) GetTextToSpeechProvider(lang string) (tts.TextToSpeechProvider, error) {
 	pProvider, err := tts.GetTextToSpeechProvider(p.Type, p.SubType, p.ClientId, p.ClientSecret, p.ProviderUrl, p.ApiVersion, p.InputPricePerThousandTokens, p.Currency, p.Flavor, lang)
 	if err != nil {
@@ -308,6 +327,7 @@ func (p *Provider) GetTextToSpeechProvider(lang string) (tts.TextToSpeechProvide
 	}
 	return pProvider, nil
 }
+
 func (p *Provider) GetSpeechToTextProvider(lang string) (stt.SpeechToTextProvider, error) {
 	pProvider, err := stt.GetSpeechToTextProvider(p.Type, p.SubType, p.ClientSecret, p.ProviderUrl)
 	if err != nil {
@@ -318,6 +338,7 @@ func (p *Provider) GetSpeechToTextProvider(lang string) (stt.SpeechToTextProvide
 	}
 	return pProvider, nil
 }
+
 func (p *Provider) GetScanProvider(lang string) (scan.ScanProvider, error) {
 	pProvider, err := scan.GetScanProvider(p.Type, p.ClientId, lang)
 	if err != nil {
@@ -328,6 +349,7 @@ func (p *Provider) GetScanProvider(lang string) (scan.ScanProvider, error) {
 	}
 	return pProvider, nil
 }
+
 func GetModelProviderFromContext(owner string, name string, lang string) (*Provider, model.ModelProvider, error) {
 	var providerName string
 	if name != "" {
@@ -343,6 +365,7 @@ func GetModelProviderFromContext(owner string, name string, lang string) (*Provi
 	}
 	return getModelProviderFromName(owner, providerName, lang)
 }
+
 func GetEmbeddingProviderFromContext(owner string, name string, lang string) (*Provider, embedding.EmbeddingProvider, error) {
 	var providerName string
 	if name != "" {
@@ -358,6 +381,7 @@ func GetEmbeddingProviderFromContext(owner string, name string, lang string) (*P
 	}
 	return getEmbeddingProviderFromName(owner, providerName, lang)
 }
+
 func GetAgentProviderFromContext(owner string, name string, lang string) (*Provider, agent.AgentProvider, error) {
 	var providerName string
 	if name != "" {
@@ -373,12 +397,14 @@ func GetAgentProviderFromContext(owner string, name string, lang string) (*Provi
 	}
 	return getAgentProviderFromName(owner, providerName, lang)
 }
+
 func GetAgentClients(agentProviderObj agent.AgentProvider) (*agent.AgentClients, error) {
 	if agentProviderObj == nil {
 		return nil, nil
 	}
 	return agentProviderObj.GetAgentClients()
 }
+
 func GetProviderCount(owner, storeName, field, value string) (int64, error) {
 	session := GetDbQuery(owner, -1, -1, field, value, "", "")
 	if storeName != "" {
@@ -409,6 +435,7 @@ func GetProviderCount(owner, storeName, field, value string) (int64, error) {
 	}
 	return count, nil
 }
+
 func collectProviderNames(store *Store) []string {
 	var providerNames []string
 	if store.StorageProvider != "" {
@@ -443,6 +470,7 @@ func collectProviderNames(store *Store) []string {
 	}
 	return providerNames
 }
+
 func buildRemoteProviderQuery(owner, field, value, storeName string) (*dbx.SelectQuery, error) {
 	if providerAdapter == nil {
 		return nil, fmt.Errorf("providerAdapter is nil")
@@ -468,6 +496,7 @@ func buildRemoteProviderQuery(owner, field, value, storeName string) (*dbx.Selec
 	}
 	return q, nil
 }
+
 func GetPaginationProviders(owner, storeName string, offset, limit int, field, value, sortField, sortOrder string) ([]*Provider, error) {
 	providers := []*Provider{}
 	// Fetch from local adapter without pagination to properly merge with remote providers
@@ -528,6 +557,7 @@ func GetPaginationProviders(owner, storeName string, offset, limit int, field, v
 	}
 	return providers, nil
 }
+
 func RefreshMcpTools(provider *Provider) error {
 	tools, err := agent.GetToolsList(provider.Text)
 	if err != nil {
@@ -536,6 +566,7 @@ func RefreshMcpTools(provider *Provider) error {
 	provider.McpTools = tools
 	return nil
 }
+
 func (p *Provider) processProviderParams(providerDb *Provider) {
 	if p.ClientSecret == "***" {
 		p.ClientSecret = providerDb.ClientSecret

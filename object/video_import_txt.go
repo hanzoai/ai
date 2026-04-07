@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 package object
+
 import (
 	"math"
 	"os"
@@ -19,10 +20,12 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
 	"github.com/beego/beego/logs"
 	"github.com/hanzoai/cloud/txt"
 	"github.com/hanzoai/cloud/util"
 )
+
 type TxtLabel struct {
 	Type      string  `json:"type"`
 	StartTime float64 `json:"startTime"`
@@ -30,6 +33,7 @@ type TxtLabel struct {
 	Speaker   string  `json:"speaker"`
 	Text      string  `json:"text"`
 }
+
 func getImportedVideos2(path string, lang string) ([]*Video, error) {
 	files, err := os.ReadDir(path)
 	if err != nil {
@@ -49,6 +53,7 @@ func getImportedVideos2(path string, lang string) ([]*Video, error) {
 	}
 	return videos, nil
 }
+
 func parseTxtLabelsFromContent(content string) ([]*TxtLabel, error) {
 	var labels []*TxtLabel
 	lines := strings.Split(content, "\n")
@@ -75,6 +80,7 @@ func parseTxtLabelsFromContent(content string) ([]*TxtLabel, error) {
 	}
 	return labels, nil
 }
+
 func mapSpeaker2(speaker string) string {
 	switch speaker {
 	case "生":
@@ -85,6 +91,7 @@ func mapSpeaker2(speaker string) string {
 		return "Unknown"
 	}
 }
+
 func parseTxtLabelsFromContent2(txtLabels []*TxtLabel) ([]*Label, error) {
 	var labels []*Label
 	var currentTime float64 = 0
@@ -105,6 +112,7 @@ func parseTxtLabelsFromContent2(txtLabels []*TxtLabel) ([]*Label, error) {
 	}
 	return labels, nil
 }
+
 func timeInSeconds(parts []string) (float64, error) {
 	hours, _ := strconv.ParseFloat(parts[0], 64)
 	minutes, _ := strconv.ParseFloat(parts[1], 64)
@@ -112,6 +120,7 @@ func timeInSeconds(parts []string) (float64, error) {
 	totalSeconds := hours*3600 + minutes*60 + seconds
 	return totalSeconds, nil
 }
+
 func parseVideoFile2(filePath string, lang string) (*Video, error) {
 	content, err := txt.GetTextFromDocx(filePath, lang)
 	if err != nil {
@@ -153,6 +162,7 @@ func parseVideoFile2(filePath string, lang string) (*Video, error) {
 	video.Segments = labels
 	return video, nil
 }
+
 func importVideos2(path string, lang string) error {
 	videos, err := getImportedVideos2(path, lang)
 	if err != nil {

@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,9 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 package object
+
 import (
 	"github.com/hanzoai/cloud/pkgimage"
 )
+
 func getImageFromService(owner string, provider string, clientImage *pkgimage.Image) *Image {
 	return &Image{
 		Owner:                   owner,
@@ -51,6 +53,7 @@ func getImageFromService(owner string, provider string, clientImage *pkgimage.Im
 		IsPublic:                clientImage.IsPublic,
 	}
 }
+
 func getImagesCloud(owner string, lang string) ([]*Image, error) {
 	images := []*Image{}
 	providers, err := getActiveCloudProviders(owner)
@@ -72,6 +75,7 @@ func getImagesCloud(owner string, lang string) ([]*Image, error) {
 	}
 	return images, nil
 }
+
 func SyncImagesCloud(owner string, lang string) (bool, error) {
 	images, err := getImagesCloud(owner, lang)
 	if err != nil {
@@ -103,6 +107,7 @@ func SyncImagesCloud(owner string, lang string) (bool, error) {
 	affected, err := addImages(images)
 	return affected, err
 }
+
 //func updateImageCloud(oldImage *Image, image *Image) (bool, error) {
 //	provider, err := getProvider(oldImage.Owner, oldImage.Provider)
 //	if err != nil {
