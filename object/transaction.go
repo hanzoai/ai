@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 package object
+
 import (
 	"bytes"
 	"encoding/json"
@@ -21,12 +22,15 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
 	"github.com/beego/beego/logs"
 	"github.com/hanzoai/cloud/conf"
 	"github.com/hanzoai/cloud/util"
 	"github.com/robfig/cron/v3"
 )
+
 var CloudHost = ""
+
 // commerceClient returns an HTTP client and the Commerce billing endpoint URL.
 // Returns ("", nil) if Commerce is not configured.
 func commerceClient() (string, string, *http.Client) {
@@ -38,6 +42,7 @@ func commerceClient() (string, string, *http.Client) {
 	token := conf.GetConfigString("commerceToken")
 	return endpoint, token, &http.Client{Timeout: 10 * time.Second}
 }
+
 // ValidateTransactionForMessage validates that the user has sufficient balance
 // before committing an expensive AI generation. Checks balance via Commerce.
 func ValidateTransactionForMessage(message *Message) error {
@@ -89,6 +94,7 @@ func ValidateTransactionForMessage(message *Message) error {
 	}
 	return nil
 }
+
 // AddTransactionForMessage creates a withdraw transaction in Commerce for a message
 // with price, sets the message's TransactionId, and if transaction creation fails,
 // updates the message's ErrorText field in the database and returns an error.
@@ -169,6 +175,7 @@ func AddTransactionForMessage(message *Message) error {
 	}
 	return nil
 }
+
 func retryFailedTransaction() error {
 	messages, err := GetGlobalFailMessages()
 	if err != nil {
@@ -189,12 +196,14 @@ func retryFailedTransaction() error {
 	}
 	return nil
 }
+
 func retryFailedTransactionNoError() {
 	err := retryFailedTransaction()
 	if err != nil {
 		logs.Error("retryFailedTransactionNoError() error: %s", err.Error())
 	}
 }
+
 func InitMessageTransactionRetry() {
 	cronJob := cron.New()
 	schedule := "@every 5m"

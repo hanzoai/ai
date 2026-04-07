@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,16 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 package object
+
 import (
 	"bytes"
 	"fmt"
 	"regexp"
 	"strings"
 	"time"
+
 	"github.com/hanzoai/cloud/model"
 	"github.com/hanzoai/cloud/util"
 	"github.com/hanzoai/dbx"
 )
+
 type VectorScore struct {
 	Vector string  `json:"vector"`
 	Score  float32 `json:"score"`
@@ -31,9 +34,9 @@ type Suggestion struct {
 	IsHit bool   `json:"isHit"`
 }
 type Message struct {
-	Owner       string `db:"pk" json:"owner"`
-	Name        string `db:"pk" json:"name"`
-	CreatedTime string `json:"createdTime"`
+	Owner             string               `db:"pk" json:"owner"`
+	Name              string               `db:"pk" json:"name"`
+	CreatedTime       string               `json:"createdTime"`
 	Organization      string               `json:"organization"`
 	Store             string               `json:"store"`
 	User              string               `json:"user"`
@@ -63,8 +66,9 @@ type Message struct {
 	Suggestions       []Suggestion         `json:"suggestions"`
 	ToolCalls         []model.ToolCall     `json:"toolCalls"`
 	SearchResults     []model.SearchResult `json:"searchResults"`
-	TransactionId string `json:"transactionId"`
+	TransactionId     string               `json:"transactionId"`
 }
+
 func GetGlobalMessages() ([]*Message, error) {
 	messages := []*Message{}
 	err := findAll(adapter.db, "message", &messages, nil, "owner ASC", "created_time DESC")
@@ -73,6 +77,7 @@ func GetGlobalMessages() ([]*Message, error) {
 	}
 	return messages, nil
 }
+
 func GetGlobalFailMessages() ([]*Message, error) {
 	messages := []*Message{}
 	err := findAll(adapter.db, "message", &messages, dbx.NewExp("error_text != ?", dbx.Params{"p0": ""}), "owner ASC", "created_time DESC")
@@ -81,6 +86,7 @@ func GetGlobalFailMessages() ([]*Message, error) {
 	}
 	return messages, nil
 }
+
 func GetGlobalMessagesByStoreName(storeName string) ([]*Message, error) {
 	messages := []*Message{}
 	err := findAll(adapter.db, "message", &messages, dbx.HashExp{"store": storeName}, "owner ASC", "created_time ASC")
@@ -89,6 +95,7 @@ func GetGlobalMessagesByStoreName(storeName string) ([]*Message, error) {
 	}
 	return messages, nil
 }
+
 func GetChatMessages(chat string) ([]*Message, error) {
 	messages := []*Message{}
 	err := findAll(adapter.db, "message", &messages, dbx.HashExp{"chat": chat}, "created_time ASC")
@@ -97,6 +104,7 @@ func GetChatMessages(chat string) ([]*Message, error) {
 	}
 	return messages, nil
 }
+
 func GetMessages(owner string, user string, storeName string) ([]*Message, error) {
 	messages := []*Message{}
 	err := findAll(adapter.db, "message", &messages, dbx.HashExp{"owner": owner, "user": user, "store": storeName}, "created_time DESC")
@@ -105,6 +113,7 @@ func GetMessages(owner string, user string, storeName string) ([]*Message, error
 	}
 	return messages, nil
 }
+
 func GetNearMessageCount(user string, limitMinutes int) (int, error) {
 	sinceTime := time.Now().Add(-time.Minute * time.Duration(limitMinutes))
 	nearMessageCount, err := countWhere(adapter.db, "message", dbx.And(
@@ -116,6 +125,7 @@ func GetNearMessageCount(user string, limitMinutes int) (int, error) {
 	}
 	return int(nearMessageCount), nil
 }
+
 func getMessage(owner, name string) (*Message, error) {
 	message := Message{Owner: owner, Name: name}
 	existed, err := getOne(adapter.db, "message", &message, pk2(message.Owner, message.Name))
@@ -128,6 +138,7 @@ func getMessage(owner, name string) (*Message, error) {
 		return nil, nil
 	}
 }
+
 func GetMessage(id string) (*Message, error) {
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
 	if err != nil {
@@ -135,6 +146,7 @@ func GetMessage(id string) (*Message, error) {
 	}
 	return getMessage(owner, name)
 }
+
 func UpdateMessage(id string, message *Message, isHitOnly bool) (bool, error) {
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
 	if err != nil {
@@ -158,14 +170,15 @@ func UpdateMessage(id string, message *Message, isHitOnly bool) (bool, error) {
 		err = adapter.db.Model(message).Exclude().Update()
 	} else {
 		message.Owner = owner
-	message.Name = name
-	err = adapter.db.Model(message).Update()
+		message.Name = name
+		err = adapter.db.Model(message).Update()
 	}
 	if err != nil {
 		return false, err
 	}
 	return true, nil
 }
+
 func RefineMessageFiles(message *Message, origin string, lang string) error {
 	text := message.Text
 	// re := regexp.MustCompile(`data:image\/([a-zA-Z]*);base64,([^"]*)`)
@@ -207,6 +220,7 @@ func RefineMessageFiles(message *Message, origin string, lang string) error {
 	message.Text = text
 	return nil
 }
+
 func AddMessage(message *Message) (bool, error) {
 	size, err := getMessageTextTokenCount(message.ModelProvider, message.Text)
 	if err != nil {
@@ -238,6 +252,7 @@ func AddMessage(message *Message) (bool, error) {
 	}
 	return affected != 0, nil
 }
+
 func DeleteMessage(message *Message) (bool, error) {
 	affected, err := deleteByPK(adapter.db, "message", pk2(message.Owner, message.Name))
 	if err != nil {
@@ -245,6 +260,7 @@ func DeleteMessage(message *Message) (bool, error) {
 	}
 	return affected != 0, nil
 }
+
 func DeleteAllLaterMessages(messageId string) error {
 	originMessage, err := GetMessage(messageId)
 	if err != nil {
@@ -266,6 +282,7 @@ func DeleteAllLaterMessages(messageId string) error {
 	}
 	return nil
 }
+
 func DeleteMessagesByChat(message *Message) (bool, error) {
 	affected, err := deleteWhere(adapter.db, "message", dbx.HashExp{"owner": message.Owner, "chat": message.Chat})
 	if err != nil {
@@ -273,9 +290,11 @@ func DeleteMessagesByChat(message *Message) (bool, error) {
 	}
 	return affected != 0, nil
 }
+
 func (message *Message) GetId() string {
 	return fmt.Sprintf("%s/%s", message.Owner, message.Name)
 }
+
 func GetRecentRawMessages(chat string, createdTime string, memoryLimit int) ([]*model.RawMessage, error) {
 	res := []*model.RawMessage{}
 	if memoryLimit == 0 {
@@ -310,9 +329,11 @@ func GetRecentRawMessages(chat string, createdTime string, memoryLimit int) ([]*
 	}
 	return res, nil
 }
+
 type MyWriter struct {
 	bytes.Buffer
 }
+
 func (w *MyWriter) Flush() {}
 func (w *MyWriter) Write(p []byte) (n int, err error) {
 	s := string(p)
@@ -324,11 +345,13 @@ func (w *MyWriter) Write(p []byte) (n int, err error) {
 	}
 	return w.Buffer.Write(p)
 }
+
 func GetAnswer(provider string, question string, lang string) (string, *model.ModelResult, error) {
 	history := []*model.RawMessage{}
 	knowledge := []*model.RawMessage{}
 	return GetAnswerWithContext(provider, question, history, knowledge, "", lang)
 }
+
 func GetAnswerWithContext(provider string, question string, history []*model.RawMessage, knowledge []*model.RawMessage, prompt string, lang string) (string, *model.ModelResult, error) {
 	_, modelProviderObj, err := GetModelProviderFromContext("admin", provider, lang)
 	if err != nil {
@@ -346,6 +369,7 @@ func GetAnswerWithContext(provider string, question string, history []*model.Raw
 	res = strings.Trim(res, "\"")
 	return res, modelResult, nil
 }
+
 func GetMessageCount(owner string, field string, value string, store string) (int64, error) {
 	session := GetDbQuery(owner, -1, -1, field, value, "", "")
 	if store != "" {
@@ -353,6 +377,7 @@ func GetMessageCount(owner string, field string, value string, store string) (in
 	}
 	return queryCount(session, "message")
 }
+
 func GetPaginationMessages(owner string, offset, limit int, field, value, sortField, sortOrder, store string) ([]*Message, error) {
 	messages := []*Message{}
 	session := GetDbQuery(owner, offset, limit, field, value, sortField, sortOrder)
@@ -365,6 +390,7 @@ func GetPaginationMessages(owner string, offset, limit int, field, value, sortFi
 	}
 	return messages, nil
 }
+
 func getMessageTextTokenCount(modelName string, text string) (int, error) {
 	tokenCount, err := model.GetTokenSize(modelName, text)
 	if err != nil {

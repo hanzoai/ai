@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,25 +12,30 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 package object
+
 import (
 	"fmt"
 	"sync"
+
 	"github.com/beego/beego/logs"
 	"github.com/hanzoai/cloud/chain"
 	"github.com/hanzoai/cloud/i18n"
 	"github.com/hanzoai/cloud/util"
-	"github.com/robfig/cron/v3"
 	"github.com/hanzoai/dbx"
+	"github.com/robfig/cron/v3"
 )
+
 type Param struct {
 	Key   string `json:"key"`
 	Field string `json:"field"`
 	Value string `json:"value"`
 }
+
 // Global variables for commit task
 var (
 	scanNeedCommitRecordsMutex sync.Mutex
 )
+
 func (record *Record) getRecordProvider(chainProvider string, lang string) (*Provider, error) {
 	if chainProvider != "" {
 		provider, err := getProvider("admin", chainProvider)
@@ -48,6 +53,7 @@ func (record *Record) getRecordProvider(chainProvider string, lang string) (*Pro
 	}
 	return provider, nil
 }
+
 func (record *Record) getRecordChainClient(chainProvider string, lang string) (chain.ChainClientInterface, *Provider, error) {
 	provider, err := record.getRecordProvider(chainProvider, lang)
 	if err != nil {
@@ -62,6 +68,7 @@ func (record *Record) getRecordChainClient(chainProvider string, lang string) (c
 	}
 	return client, provider, nil
 }
+
 func (record *Record) toMap() map[string]string {
 	result := map[string]string{}
 	result["id"] = fmt.Sprintf("%d", record.Id)
@@ -82,6 +89,7 @@ func (record *Record) toMap() map[string]string {
 	result["isTriggered"] = fmt.Sprintf("%t", record.IsTriggered)
 	return result
 }
+
 func (record *Record) toParam() string {
 	record2 := *record
 	record2.Provider = ""
@@ -99,6 +107,7 @@ func (record *Record) toParam() string {
 	}
 	return util.StructToJson(res)
 }
+
 func CommitRecord(record *Record, lang string) (bool, map[string]interface{}, error) {
 	if record.Block != "" {
 		return false, nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:the record: %s has already been committed, blockId = %s"), record.getUniqueId(), record.Block))
@@ -142,6 +151,7 @@ func CommitRecord(record *Record, lang string) (bool, map[string]interface{}, er
 	data["name"] = record.Name
 	return affected, data, err
 }
+
 func CommitRecordSecond(record *Record, lang string) (bool, error) {
 	if record.Block2 != "" {
 		return false, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:the record: %s has already been committed, blockId = %s"), record.getUniqueId(), record.Block2))
@@ -165,6 +175,7 @@ func CommitRecordSecond(record *Record, lang string) (bool, error) {
 	affected, err := UpdateRecordFields(record.getUniqueId(), data, lang)
 	return affected, err
 }
+
 // CommitRecords commits multiple records to the blockchain.
 func CommitRecords(records []*Record, lang string) (int, []map[string]interface{}) {
 	if len(records) == 0 {
@@ -210,6 +221,7 @@ func CommitRecords(records []*Record, lang string) (int, []map[string]interface{
 	}
 	return affected, data
 }
+
 func QueryRecord(id string, lang string) (string, error) {
 	record, err := GetRecord(id, lang)
 	if err != nil {
@@ -231,6 +243,7 @@ func QueryRecord(id string, lang string) (string, error) {
 	}
 	return res, nil
 }
+
 func QueryRecordSecond(id string, lang string) (string, error) {
 	record, err := GetRecord(id, lang)
 	if err != nil {
@@ -252,6 +265,7 @@ func QueryRecordSecond(id string, lang string) (string, error) {
 	}
 	return res, nil
 }
+
 // ScanNeedCommitRecords scans the database table for records that
 // need to be committed but have not yet been committed.
 func ScanNeedCommitRecords() {
@@ -275,6 +289,7 @@ func ScanNeedCommitRecords() {
 		logs.Error("ScanNeedCommitRecords() failed to commit %d/%d records: %v", len(errors), len(records), errors)
 	}
 }
+
 func InitCommitRecordsTask() {
 	// Run once immediately on startup
 	go ScanNeedCommitRecords()

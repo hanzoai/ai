@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,14 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 package object
+
 import (
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+
 	"github.com/beego/beego/logs"
 	"gopkg.in/yaml.v3"
 )
+
 // initTemplates load template files and upsert them into DB.
 func initTemplates() {
 	owner := "admin"
@@ -48,6 +51,7 @@ func initTemplates() {
 		}
 	}
 }
+
 // parseTemplateFromFile parses a single template file.
 func parseTemplateFromFile(owner, path string) (*Template, error) {
 	b, err := os.ReadFile(path)

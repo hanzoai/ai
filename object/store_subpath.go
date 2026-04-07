@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,21 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 package object
+
 import (
 	"bytes"
 	"strings"
+
 	"github.com/hanzoai/cloud/storage"
 )
+
 type SubpathStorageProvider struct {
 	provider storage.StorageProvider
 	subpath  string
 }
+
 func NewSubpathStorageProvider(provider storage.StorageProvider, subpath string) *SubpathStorageProvider {
 	return &SubpathStorageProvider{
 		provider: provider,
 		subpath:  strings.Trim(subpath, "/"),
 	}
 }
+
 // ListObjects Implements the StorageProvider interface, automatically prepending the subpath prefix in each method
 func (w *SubpathStorageProvider) ListObjects(prefix string) ([]*storage.Object, error) {
 	// Combine the subpath with the provided prefix
@@ -45,16 +50,19 @@ func (w *SubpathStorageProvider) ListObjects(prefix string) ([]*storage.Object, 
 	}
 	return objects, nil
 }
+
 func (w *SubpathStorageProvider) PutObject(user string, parent string, key string, fileBuffer *bytes.Buffer) (string, error) {
 	// Prepend the subpath to the key
 	fullKey := w.buildFullPath(key)
 	return w.provider.PutObject(user, parent, fullKey, fileBuffer)
 }
+
 func (w *SubpathStorageProvider) DeleteObject(key string) error {
 	// Prepend the subpath to the key
 	fullKey := w.buildFullPath(key)
 	return w.provider.DeleteObject(fullKey)
 }
+
 // Constructs the full path by combining subpath and path
 func (w *SubpathStorageProvider) buildFullPath(path string) string {
 	if w.subpath == "" {

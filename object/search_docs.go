@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 package object
+
 import (
 	"bytes"
 	"context"
@@ -23,11 +24,13 @@ import (
 	"sort"
 	"strings"
 	"time"
+
 	"github.com/beego/beego/logs"
 	"github.com/hanzoai/cloud/conf"
 	"github.com/hanzoai/cloud/model"
 	meilisearch "github.com/hanzoai/search-go"
 )
+
 // DocIndex represents a single indexed documentation chunk.
 type DocIndex struct {
 	ID          string   `json:"id"`
@@ -40,6 +43,7 @@ type DocIndex struct {
 	Tag         string   `json:"tag,omitempty"`
 	Breadcrumbs []string `json:"breadcrumbs,omitempty"`
 }
+
 // DocSearchRequest is the request body for searching documents.
 type DocSearchRequest struct {
 	Query string `json:"query"`
@@ -47,6 +51,7 @@ type DocSearchRequest struct {
 	Limit int    `json:"limit,omitempty"`
 	Mode  string `json:"mode,omitempty"` // "hybrid", "fulltext", "vector"
 }
+
 // DocSearchResult is a single result returned by SearchDocuments.
 type DocSearchResult struct {
 	ID          string   `json:"id"`
@@ -55,11 +60,13 @@ type DocSearchResult struct {
 	Content     string   `json:"content"`
 	Breadcrumbs []string `json:"breadcrumbs,omitempty"`
 }
+
 // DocIndexRequest is the request body for indexing documents.
 type DocIndexRequest struct {
 	Documents []DocIndex `json:"documents"`
 	Replace   bool       `json:"replace,omitempty"`
 }
+
 // DocChatRequest is the request body for RAG chat over documentation.
 type DocChatRequest struct {
 	Query  string `json:"query"`
@@ -67,12 +74,14 @@ type DocChatRequest struct {
 	Stream bool   `json:"stream,omitempty"`
 	Prompt string `json:"prompt,omitempty"` // Custom system prompt (set by client)
 }
+
 // DocStatsResponse contains index statistics.
 type DocStatsResponse struct {
 	DocumentCount int              `json:"documentCount"`
 	IsIndexing    bool             `json:"isIndexing"`
 	Fields        map[string]int64 `json:"fields,omitempty"`
 }
+
 // qdrantSearchRequest is the JSON body for Hanzo Vector's search endpoint.
 type qdrantSearchRequest struct {
 	Vector []float32     `json:"vector"`
@@ -90,6 +99,7 @@ type qdrantCondition struct {
 type qdrantMatch struct {
 	Value string `json:"value"`
 }
+
 // qdrantSearchResponse is the JSON response from Hanzo Vector's search endpoint.
 type qdrantSearchResponse struct {
 	Result []qdrantScoredPoint `json:"result"`
@@ -99,6 +109,7 @@ type qdrantScoredPoint struct {
 	Score   float64                `json:"score"`
 	Payload map[string]interface{} `json:"payload"`
 }
+
 // qdrantUpsertRequest is the JSON body for Hanzo Vector's upsert endpoint.
 type qdrantUpsertRequest struct {
 	Points []qdrantPoint `json:"points"`
@@ -108,11 +119,14 @@ type qdrantPoint struct {
 	Vector  []float32              `json:"vector"`
 	Payload map[string]interface{} `json:"payload"`
 }
+
 const rrfK = 60
+
 // GetSearchIndexName returns the Hanzo Search index name for a given owner/store.
 func GetSearchIndexName(owner, store string) string {
 	return fmt.Sprintf("%s-%s-docs", owner, store)
 }
+
 func getSearchClient() (meilisearch.ServiceManager, error) {
 	host := conf.GetConfigString("searchHost")
 	if host == "" {
@@ -136,6 +150,7 @@ func getSearchClient() (meilisearch.ServiceManager, error) {
 	client := meilisearch.New(url, meilisearch.WithAPIKey(apiKey))
 	return client, nil
 }
+
 func getVectorEndpoint() (string, string) {
 	host := conf.GetConfigString("vectorHost")
 	if host == "" {
@@ -152,6 +167,7 @@ func getVectorEndpoint() (string, string) {
 	}
 	return url, apiKey
 }
+
 // ensureSearchIndex creates the Hanzo Search index if it does not exist and configures it.
 func ensureSearchIndex(client meilisearch.ServiceManager, indexName string) error {
 	_, err := client.GetIndex(indexName)
@@ -183,6 +199,7 @@ func ensureSearchIndex(client meilisearch.ServiceManager, indexName string) erro
 	}
 	return nil
 }
+
 // ensureVectorCollection creates the Hanzo Vector collection if it does not exist.
 func ensureVectorCollection(baseURL, apiKey, collectionName string, dimension int) error {
 	url := fmt.Sprintf("%s/collections/%s", baseURL, collectionName)
@@ -231,6 +248,7 @@ func ensureVectorCollection(baseURL, apiKey, collectionName string, dimension in
 	}
 	return nil
 }
+
 // searchFulltext searches Hanzo Search and returns ranked document IDs.
 func searchFulltext(client meilisearch.ServiceManager, indexName string, query string, tag string, limit int) ([]DocSearchResult, error) {
 	index := client.Index(indexName)
@@ -255,6 +273,7 @@ func searchFulltext(client meilisearch.ServiceManager, indexName string, query s
 	}
 	return results, nil
 }
+
 // searchVectorRaw queries Hanzo Vector with a pre-computed vector.
 func searchVectorRaw(baseURL, apiKey, collectionName string, vector []float32, tag string, limit int) ([]DocSearchResult, error) {
 	url := fmt.Sprintf("%s/collections/%s/points/search", baseURL, collectionName)
@@ -303,6 +322,7 @@ func searchVectorRaw(baseURL, apiKey, collectionName string, vector []float32, t
 	}
 	return results, nil
 }
+
 // mergeRRF merges results from two ranked lists using Reciprocal Rank Fusion.
 func mergeRRF(fulltextResults, vectorResults []DocSearchResult, limit int) []DocSearchResult {
 	scores := make(map[string]float64)
@@ -345,6 +365,7 @@ func mergeRRF(fulltextResults, vectorResults []DocSearchResult, limit int) []Doc
 	}
 	return results
 }
+
 // extractPageID derives a page identifier from the result for grouping.
 func extractPageID(r DocSearchResult) string {
 	if r.URL != "" {
@@ -353,6 +374,7 @@ func extractPageID(r DocSearchResult) string {
 	}
 	return r.ID
 }
+
 // docResultFromMap converts a map (from Hanzo Search hit or Hanzo Vector payload) to a DocSearchResult.
 func docResultFromMap(m map[string]interface{}) DocSearchResult {
 	r := DocSearchResult{}
@@ -383,6 +405,7 @@ func docResultFromMap(m map[string]interface{}) DocSearchResult {
 	}
 	return r
 }
+
 // SearchDocuments performs hybrid search across Hanzo Search and Hanzo Vector.
 func SearchDocuments(owner, store string, req *DocSearchRequest, lang string) ([]DocSearchResult, error) {
 	if req.Query == "" {
@@ -453,6 +476,7 @@ func SearchDocuments(owner, store string, req *DocSearchRequest, lang string) ([
 	}
 	return mergeRRF(fulltextResults, vectorResults, limit), nil
 }
+
 // IndexDocuments indexes documents into both Hanzo Search and Hanzo Vector.
 func IndexDocuments(owner, store string, req *DocIndexRequest, lang string) (int, error) {
 	if len(req.Documents) == 0 {
@@ -555,6 +579,7 @@ func IndexDocuments(owner, store string, req *DocIndexRequest, lang string) (int
 	}
 	return len(req.Documents), nil
 }
+
 // upsertVectorPoints sends a batch of points to Hanzo Vector.
 func upsertVectorPoints(baseURL, apiKey, collectionName string, points []qdrantPoint) error {
 	url := fmt.Sprintf("%s/collections/%s/points", baseURL, collectionName)
@@ -583,6 +608,7 @@ func upsertVectorPoints(baseURL, apiKey, collectionName string, points []qdrantP
 	}
 	return nil
 }
+
 // deleteAllVectorPoints removes all points from a Qdrant collection.
 func deleteAllVectorPoints(baseURL, apiKey, collectionName string) {
 	url := fmt.Sprintf("%s/collections/%s", baseURL, collectionName)
@@ -602,6 +628,7 @@ func deleteAllVectorPoints(baseURL, apiKey, collectionName string) {
 	}
 	defer resp.Body.Close()
 }
+
 // GetDocIndexStats returns statistics about the Meilisearch index.
 func GetDocIndexStats(owner, store string) (*DocStatsResponse, error) {
 	indexName := GetSearchIndexName(owner, store)
@@ -620,6 +647,7 @@ func GetDocIndexStats(owner, store string) (*DocStatsResponse, error) {
 		Fields:        stats.FieldDistribution,
 	}, nil
 }
+
 // GetDocChatAnswer performs RAG: searches for relevant docs, then generates an answer.
 func GetDocChatAnswer(owner, store string, req *DocChatRequest, lang string) (string, *model.ModelResult, error) {
 	searchReq := &DocSearchRequest{

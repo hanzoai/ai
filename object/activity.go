@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,16 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 package object
+
 import (
 	"errors"
 	"fmt"
 	"time"
+
 	"github.com/hanzoai/cloud/i18n"
 )
+
 type Activity struct {
 	Date       string `json:"date"`
 	FieldCount map[string]int
 }
+
 func getTargetfieldValue(record *Record, fieldName string) (string, error) {
 	switch fieldName {
 	case "action":
@@ -53,6 +57,7 @@ func getTargetfieldValue(record *Record, fieldName string) (string, error) {
 	}
 	return "", errors.New("no matched field")
 }
+
 func GetActivities(days int, user string, fieldNames []string, lang string) (map[string][]*Activity, error) {
 	records, err := getAllRecords()
 	if err != nil {

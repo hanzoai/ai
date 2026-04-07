@@ -15,10 +15,12 @@
 //go:build !skipCi
 
 package object
+
 import (
 	"fmt"
 	"testing"
 )
+
 func TestGetUsage(t *testing.T) {
 	InitConfig()
 	usage, err := GetUsage("")
@@ -27,6 +29,7 @@ func TestGetUsage(t *testing.T) {
 	}
 	fmt.Printf("GetUsage result: %+v\n", usage)
 }
+
 func TestGetUsages(t *testing.T) {
 	InitConfig()
 	usages, err := GetUsages(30, "admin", "")
@@ -38,6 +41,7 @@ func TestGetUsages(t *testing.T) {
 		fmt.Printf("%+v\n", usage)
 	}
 }
+
 func TestGetRangeUsages(t *testing.T) {
 	InitConfig()
 	// usages, err := GetRangeUsages("Month", 6)

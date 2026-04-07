@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,11 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 package object
+
 import (
 	"fmt"
 	"strings"
+
 	"github.com/hanzoai/cloud/storage"
 )
+
 func (store *Store) createPathIfNotExisted(tokens []string, size int64, url string, lastModifiedTime string, isLeaf bool) {
 	currentFile := store.FileTree
 	for i, token := range tokens {
@@ -60,6 +63,7 @@ func (store *Store) createPathIfNotExisted(tokens []string, size int64, url stri
 		currentFile = newFile
 	}
 }
+
 func isObjectLeaf(object *storage.Object) bool {
 	isLeaf := true
 	if object.Key[len(object.Key)-1] == '/' {
@@ -67,6 +71,7 @@ func isObjectLeaf(object *storage.Object) bool {
 	}
 	return isLeaf
 }
+
 func (store *Store) Populate(origin string, lang string) error {
 	storageProviderObj, err := store.GetStorageProviderObj(lang)
 	if err != nil {
@@ -113,6 +118,7 @@ func (store *Store) Populate(origin string, lang string) error {
 	}
 	return nil
 }
+
 func (store *Store) GetVideoData(lang string) ([]string, error) {
 	storageProviderObj, err := store.GetStorageProviderObj(lang)
 	if err != nil {
@@ -132,6 +138,7 @@ func (store *Store) GetVideoData(lang string) ([]string, error) {
 	}
 	return res, nil
 }
+
 func SyncDefaultProvidersToStore(store *Store) error {
 	defaultStore, err := GetDefaultStore("admin")
 	if err != nil {

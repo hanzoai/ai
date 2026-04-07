@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,22 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 package object
+
 import (
 	"fmt"
+
 	"github.com/hanzoai/cloud/util"
 	"github.com/hanzoai/dbx"
 )
+
 type Caase struct {
-	Owner       string `db:"pk" json:"owner"`
-	Name        string `db:"pk" json:"name"`
-	CreatedTime string `json:"createdTime"`
-	UpdatedTime string `json:"updatedTime"`
-	DisplayName string `json:"displayName"`
-	Symptoms      string `json:"symptoms"`
-	Diagnosis     string `json:"diagnosis"`
-	DiagnosisDate string `json:"diagnosisDate"`
-	Prescription  string `json:"prescription"`
-	FollowUp      string `json:"followUp"`
+	Owner                        string `db:"pk" json:"owner"`
+	Name                         string `db:"pk" json:"name"`
+	CreatedTime                  string `json:"createdTime"`
+	UpdatedTime                  string `json:"updatedTime"`
+	DisplayName                  string `json:"displayName"`
+	Symptoms                     string `json:"symptoms"`
+	Diagnosis                    string `json:"diagnosis"`
+	DiagnosisDate                string `json:"diagnosisDate"`
+	Prescription                 string `json:"prescription"`
+	FollowUp                     string `json:"followUp"`
 	Variation                    bool   `json:"variation"`
 	HISInterfaceInfo             string `json:"hisInterfaceInfo"`
 	PrimaryCarePhysician         string `json:"primaryCarePhysician"`
@@ -38,10 +41,12 @@ type Caase struct {
 	SpecialistAllianceId         string `json:"specialistAllianceId"`
 	IntegratedCareOrganizationId string `json:"integratedCareOrganizationId"`
 }
+
 func GetCaaseCount(owner, field, value string) (int64, error) {
 	session := GetDbQuery(owner, -1, -1, field, value, "", "")
 	return queryCount(session, "caase")
 }
+
 func GetCaases(owner string) ([]*Caase, error) {
 	caases := []*Caase{}
 	err := findAll(adapter.db, "caase", &caases, dbx.HashExp{"owner": owner}, "created_time DESC")
@@ -50,6 +55,7 @@ func GetCaases(owner string) ([]*Caase, error) {
 	}
 	return caases, nil
 }
+
 func GetPaginationCaases(owner string, offset, limit int, field, value, sortField, sortOrder string) ([]*Caase, error) {
 	caases := []*Caase{}
 	session := GetDbQuery(owner, offset, limit, field, value, sortField, sortOrder)
@@ -59,6 +65,7 @@ func GetPaginationCaases(owner string, offset, limit int, field, value, sortFiel
 	}
 	return caases, nil
 }
+
 func getCaase(owner string, name string) (*Caase, error) {
 	if owner == "" || name == "" {
 		return nil, nil
@@ -74,6 +81,7 @@ func getCaase(owner string, name string) (*Caase, error) {
 		return nil, nil
 	}
 }
+
 func GetCaase(id string) (*Caase, error) {
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
 	if err != nil {
@@ -81,6 +89,7 @@ func GetCaase(id string) (*Caase, error) {
 	}
 	return getCaase(owner, name)
 }
+
 func GetMaskedCaase(caase *Caase, errs ...error) (*Caase, error) {
 	if len(errs) > 0 && errs[0] != nil {
 		return nil, errs[0]
@@ -90,6 +99,7 @@ func GetMaskedCaase(caase *Caase, errs ...error) (*Caase, error) {
 	}
 	return caase, nil
 }
+
 func GetMaskedCaases(caases []*Caase, errs ...error) ([]*Caase, error) {
 	if len(errs) > 0 && errs[0] != nil {
 		return nil, errs[0]
@@ -103,6 +113,7 @@ func GetMaskedCaases(caases []*Caase, errs ...error) ([]*Caase, error) {
 	}
 	return caases, nil
 }
+
 func UpdateCaase(id string, caase *Caase) (bool, error) {
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
 	if err != nil {
@@ -122,6 +133,7 @@ func UpdateCaase(id string, caase *Caase) (bool, error) {
 	}
 	return true, nil
 }
+
 func AddCaase(caase *Caase) (bool, error) {
 	err := insertRow(adapter.db, caase)
 	affected := int64(1)
@@ -133,6 +145,7 @@ func AddCaase(caase *Caase) (bool, error) {
 	}
 	return affected != 0, nil
 }
+
 func DeleteCaase(caase *Caase) (bool, error) {
 	affected, err := deleteByPK(adapter.db, "caase", pk2(caase.Owner, caase.Name))
 	if err != nil {
@@ -140,6 +153,7 @@ func DeleteCaase(caase *Caase) (bool, error) {
 	}
 	return affected != 0, nil
 }
+
 func (caase *Caase) getId() string {
 	return fmt.Sprintf("%s/%s", caase.Owner, caase.Name)
 }

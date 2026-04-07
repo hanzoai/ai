@@ -15,7 +15,9 @@
 //go:build !skipCi
 
 package object
+
 import "testing"
+
 func TestImportVideos(t *testing.T) {
 	InitConfig()
 	path := ""
@@ -24,6 +26,7 @@ func TestImportVideos(t *testing.T) {
 		panic(err)
 	}
 }
+
 func TestImportVideos2(t *testing.T) {
 	InitConfig()
 	path := ""
