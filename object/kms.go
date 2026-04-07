@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 package object
+
 import (
 	"bytes"
 	"context"
@@ -23,8 +24,10 @@ import (
 	"strings"
 	"sync"
 	"time"
+
 	"github.com/beego/beego/logs"
 )
+
 // kmsClient fetches secrets from Hanzo KMS.
 //
 // Authentication modes (checked in order):
@@ -60,6 +63,7 @@ type kmsClient struct {
 	tokenExpiresAt time.Time
 	tokenMu        sync.Mutex
 }
+
 var (
 	kms     *kmsClient
 	kmsOnce sync.Once
@@ -68,10 +72,12 @@ var (
 	kmsSecMu   sync.RWMutex
 	kmsSecTTL  = 5 * time.Minute
 )
+
 type kmsSecretEntry struct {
 	value     string
 	fetchedAt time.Time
 }
+
 // initKMS initializes the KMS client from environment variables.
 func initKMS() {
 	kmsOnce.Do(func() {
@@ -114,6 +120,7 @@ func initKMS() {
 			endpoint, projectID, environment, authMode)
 	})
 }
+
 // ── Universal Auth token management ─────────────────────────────────────────
 type universalAuthResponse struct {
 	AccessToken       string `json:"accessToken"`
@@ -121,6 +128,7 @@ type universalAuthResponse struct {
 	AccessTokenMaxTTL int    `json:"accessTokenMaxTTL"`
 	TokenType         string `json:"tokenType"`
 }
+
 // getAuthToken returns the token to use in the Authorization header.
 // For service tokens, returns the token directly.
 // For Universal Auth, manages the token lifecycle (login + refresh).
@@ -164,6 +172,7 @@ func (c *kmsClient) getAuthToken() (string, error) {
 	logs.Info("KMS: universal auth token acquired, expires in %ds", authResp.ExpiresIn)
 	return c.accessToken, nil
 }
+
 // ── Secret fetching ─────────────────────────────────────────────────────────
 // kmsSecretResponse is the JSON envelope from KMS V4 GET /api/v4/secrets/:name
 type kmsSecretResponse struct {
@@ -172,6 +181,7 @@ type kmsSecretResponse struct {
 		SecretValue string `json:"secretValue"`
 	} `json:"secret"`
 }
+
 // getSecret fetches a secret value by name from KMS, scoped to a project.
 // Cache hierarchy: ZAP→KV (distributed, survives restarts) → in-memory (5 min TTL).
 // On cache miss, fetches from KMS API and populates both caches.
@@ -236,6 +246,7 @@ func (c *kmsClient) getSecret(name string, projectID string) (string, error) {
 	}
 	return value, nil
 }
+
 // ── Public API ──────────────────────────────────────────────────────────────
 // ResolveProviderSecret resolves KMS-backed secret fields for a provider.
 // If KMS is configured and provider fields start with "kms://", each secret
@@ -315,6 +326,7 @@ func ResolveProviderSecret(provider *Provider) error {
 	provider.SignKey = signKey
 	return nil
 }
+
 // GetKMSSecret fetches a secret by name from KMS using the default system project.
 // This is a convenience function for non-provider secrets.
 func GetKMSSecret(name string) (string, error) {
@@ -327,6 +339,7 @@ func GetKMSSecret(name string) (string, error) {
 	}
 	return kms.getSecret(name, kms.projectID)
 }
+
 // GetOrgKMSSecret fetches a secret scoped to an organization's KMS project.
 func GetOrgKMSSecret(name string, orgProjectID string) (string, error) {
 	initKMS()

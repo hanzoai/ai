@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,13 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 package object
+
 import (
 	"encoding/json"
 	"regexp"
 	"strings"
 	"unicode"
+
 	"github.com/hanzoai/dbx"
 )
+
 // Common English stop words to filter out
 var stopWords = map[string]bool{
 	"the": true, "a": true, "an": true, "and": true, "or": true, "but": true,
@@ -36,6 +39,7 @@ var stopWords = map[string]bool{
 	"not": true, "only": true, "own": true, "same": true, "so": true,
 	"than": true, "too": true, "very": true, "s": true, "t": true,
 }
+
 // Common Chinese stop words to filter out
 var stopWordsZh = map[string]bool{
 	"的": true, "了": true, "在": true, "是": true, "我": true, "有": true,
@@ -48,6 +52,7 @@ var stopWordsZh = map[string]bool{
 	"如果": true, "因为": true, "所以": true, "虽然": true, "然后": true,
 	"或者": true, "而且": true, "还是": true, "不过": true, "这样": true,
 }
+
 func FilterChatsByTimeRange(chats []*Chat, startTime, endTime string) []*Chat {
 	if startTime == "" && endTime == "" {
 		return chats
@@ -64,6 +69,7 @@ func FilterChatsByTimeRange(chats []*Chat, startTime, endTime string) []*Chat {
 	}
 	return filtered
 }
+
 func GetMessagesForChats(chats []*Chat) ([]*Message, error) {
 	if len(chats) == 0 {
 		return []*Message{}, nil
@@ -79,6 +85,7 @@ func GetMessagesForChats(chats []*Chat) ([]*Message, error) {
 	}
 	return messages, nil
 }
+
 func GenerateWordCloudData(messages []*Message, density int) (string, error) {
 	wordFreq := make(map[string]int)
 	// Regular expression to extract words (including Chinese characters)

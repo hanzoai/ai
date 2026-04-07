@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,28 +12,32 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 package object
+
 import (
 	"fmt"
+
 	"github.com/hanzoai/cloud/util"
 	"github.com/hanzoai/dbx"
 )
+
 type Asset struct {
 	Owner       string `db:"pk" json:"owner"`
 	Name        string `db:"pk" json:"name"`
 	CreatedTime string `json:"createdTime"`
 	UpdatedTime string `json:"updatedTime"`
 	DisplayName string `json:"displayName"`
-	Provider   string `json:"provider"`
-	Id         string `json:"id"`
-	Type       string `json:"type"`
-	Region     string `json:"region"`
-	Zone       string `json:"zone"`
-	State      string `json:"state"`
-	Tag        string `json:"tag"`
-	Username   string `json:"username"`
-	Password   string `json:"password"`
-	Properties string `json:"properties"`
+	Provider    string `json:"provider"`
+	Id          string `json:"id"`
+	Type        string `json:"type"`
+	Region      string `json:"region"`
+	Zone        string `json:"zone"`
+	State       string `json:"state"`
+	Tag         string `json:"tag"`
+	Username    string `json:"username"`
+	Password    string `json:"password"`
+	Properties  string `json:"properties"`
 }
+
 func GetMaskedAsset(asset *Asset, isMaskEnabled bool) *Asset {
 	if !isMaskEnabled {
 		return asset
@@ -48,6 +52,7 @@ func GetMaskedAsset(asset *Asset, isMaskEnabled bool) *Asset {
 	}
 	return &maskedAsset
 }
+
 func GetMaskedAssets(assets []*Asset, isMaskEnabled bool) []*Asset {
 	if !isMaskEnabled {
 		return assets
@@ -57,10 +62,12 @@ func GetMaskedAssets(assets []*Asset, isMaskEnabled bool) []*Asset {
 	}
 	return assets
 }
+
 func GetAssetCount(owner, field, value string) (int64, error) {
 	session := GetDbQuery(owner, -1, -1, field, value, "", "")
 	return queryCount(session, "asset")
 }
+
 func GetAssets(owner string) ([]*Asset, error) {
 	assets := []*Asset{}
 	err := findAll(adapter.db, "asset", &assets, dbx.HashExp{"owner": owner}, "created_time DESC")
@@ -69,6 +76,7 @@ func GetAssets(owner string) ([]*Asset, error) {
 	}
 	return assets, nil
 }
+
 func GetPaginationAssets(owner string, offset, limit int, field, value, sortField, sortOrder string) ([]*Asset, error) {
 	assets := []*Asset{}
 	session := GetDbQuery(owner, offset, limit, field, value, sortField, sortOrder)
@@ -78,6 +86,7 @@ func GetPaginationAssets(owner string, offset, limit int, field, value, sortFiel
 	}
 	return assets, nil
 }
+
 func getAsset(owner string, name string) (*Asset, error) {
 	if owner == "" || name == "" {
 		return nil, nil
@@ -93,6 +102,7 @@ func getAsset(owner string, name string) (*Asset, error) {
 		return nil, nil
 	}
 }
+
 func GetAsset(id string) (*Asset, error) {
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
 	if err != nil {
@@ -100,6 +110,7 @@ func GetAsset(id string) (*Asset, error) {
 	}
 	return getAsset(owner, name)
 }
+
 func UpdateAsset(id string, asset *Asset) (bool, error) {
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
 	if err != nil {
@@ -121,6 +132,7 @@ func UpdateAsset(id string, asset *Asset) (bool, error) {
 	}
 	return true, nil
 }
+
 func AddAsset(asset *Asset) (bool, error) {
 	err := insertRow(adapter.db, asset)
 	affected := int64(1)
@@ -132,6 +144,7 @@ func AddAsset(asset *Asset) (bool, error) {
 	}
 	return affected != 0, nil
 }
+
 func addAssets(assets []*Asset) (bool, error) {
 	err := insertRow(adapter.db, assets)
 	affected := int64(1)
@@ -143,6 +156,7 @@ func addAssets(assets []*Asset) (bool, error) {
 	}
 	return affected != 0, nil
 }
+
 func DeleteAsset(asset *Asset) (bool, error) {
 	affected, err := deleteByPK(adapter.db, "asset", pk2(asset.Owner, asset.Name))
 	if err != nil {
@@ -150,6 +164,7 @@ func DeleteAsset(asset *Asset) (bool, error) {
 	}
 	return affected != 0, nil
 }
+
 func deleteAssets(owner string) (bool, error) {
 	affected, err := deleteWhere(adapter.db, "asset", dbx.HashExp{"owner": owner})
 	if err != nil {
@@ -157,14 +172,17 @@ func deleteAssets(owner string) (bool, error) {
 	}
 	return affected != 0, nil
 }
+
 func (a *Asset) processAssetParams(assetDb *Asset) {
 	if a.Password == "***" {
 		a.Password = assetDb.Password
 	}
 }
+
 func (asset *Asset) GetId() string {
 	return fmt.Sprintf("%s/%s", asset.Owner, asset.Name)
 }
+
 func (asset *Asset) GetScanTarget() (string, error) {
 	if asset.Type == "Virtual Machine" {
 		publicIp, err := util.GetFieldFromJsonString(asset.Properties, "publicIp")

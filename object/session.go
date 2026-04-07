@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,18 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 package object
+
 import (
 	"fmt"
+
 	"github.com/beego/beego"
 	"github.com/hanzoai/cloud/util"
 	"github.com/hanzoai/dbx"
 )
+
 type Session struct {
-	Owner       string `db:"pk" json:"owner"`
-	Name        string `db:"pk" json:"name"`
-	CreatedTime string `json:"createdTime"`
-	SessionId []string `json:"sessionId"`
+	Owner       string   `db:"pk" json:"owner"`
+	Name        string   `db:"pk" json:"name"`
+	CreatedTime string   `json:"createdTime"`
+	SessionId   []string `json:"sessionId"`
 }
+
 func GetSessions(owner string) ([]*Session, error) {
 	sessions := []*Session{}
 	var err error
@@ -37,6 +41,7 @@ func GetSessions(owner string) ([]*Session, error) {
 	}
 	return sessions, nil
 }
+
 func GetPaginationSessions(owner string, offset, limit int, field, value, sortField, sortOrder string) ([]*Session, error) {
 	sessions := []*Session{}
 	session := GetDbQuery(owner, offset, limit, field, value, sortField, sortOrder)
@@ -46,10 +51,12 @@ func GetPaginationSessions(owner string, offset, limit int, field, value, sortFi
 	}
 	return sessions, nil
 }
+
 func GetSessionCount(owner, field, value string) (int64, error) {
 	session := GetDbQuery(owner, -1, -1, field, value, "", "")
 	return queryCount(session, "session")
 }
+
 func GetSession(id string) (*Session, error) {
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
 	if err != nil {
@@ -65,6 +72,7 @@ func GetSession(id string) (*Session, error) {
 	}
 	return &session, nil
 }
+
 func UpdateSession(id string, session *Session) (bool, error) {
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
 	if err != nil {
@@ -83,11 +91,13 @@ func UpdateSession(id string, session *Session) (bool, error) {
 	}
 	return true, nil
 }
+
 func removeExtraSessionIds(session *Session) {
 	if len(session.SessionId) > 100 {
 		session.SessionId = session.SessionId[(len(session.SessionId) - 100):]
 	}
 }
+
 func AddSession(session *Session) (bool, error) {
 	dbSession, err := GetSession(session.GetId())
 	if err != nil {
@@ -96,10 +106,10 @@ func AddSession(session *Session) (bool, error) {
 	if dbSession == nil {
 		session.CreatedTime = util.GetCurrentTime()
 		err = insertRow(adapter.db, session)
-	affected := int64(1)
-	if err != nil {
-		affected = 0
-	}
+		affected := int64(1)
+		if err != nil {
+			affected = 0
+		}
 		if err != nil {
 			return false, err
 		}
@@ -118,6 +128,7 @@ func AddSession(session *Session) (bool, error) {
 		return UpdateSession(dbSession.GetId(), dbSession)
 	}
 }
+
 func DeleteSession(id string) (bool, error) {
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
 	if err != nil {
@@ -136,6 +147,7 @@ func DeleteSession(id string) (bool, error) {
 	}
 	return affected != 0, nil
 }
+
 func DeleteSessionId(id string, sessionId string) (bool, error) {
 	session, err := GetSession(id)
 	if err != nil {
@@ -160,6 +172,7 @@ func DeleteSessionId(id string, sessionId string) (bool, error) {
 		return UpdateSession(id, session)
 	}
 }
+
 func DeleteBeegoSession(sessionIds []string) {
 	for _, sessionId := range sessionIds {
 		err := beego.GlobalSessions.GetProvider().SessionDestroy(sessionId)
@@ -168,9 +181,11 @@ func DeleteBeegoSession(sessionIds []string) {
 		}
 	}
 }
+
 func (session *Session) GetId() string {
 	return fmt.Sprintf("%s/%s", session.Owner, session.Name)
 }
+
 func IsSessionDuplicated(id string, sessionId string) (bool, error) {
 	session, err := GetSession(id)
 	if err != nil {

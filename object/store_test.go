@@ -15,7 +15,9 @@
 //go:build !skipCi
 
 package object
+
 import "testing"
+
 func TestUpdateStoreFolders(t *testing.T) {
 	InitConfig()
 	store, err := getStore("admin", "default")

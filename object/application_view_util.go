@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,19 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 package object
+
 import (
 	"context"
 	"fmt"
 	"sync"
 	"time"
+
+	"github.com/hanzoai/cloud/i18n"
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	metricsclientset "k8s.io/metrics/pkg/client/clientset/versioned"
-	"github.com/hanzoai/cloud/i18n"
-	networkingv1 "k8s.io/api/networking/v1"
 )
+
 func AddDetails(apps []*Application, lang string) {
 	if len(apps) == 0 {
 		return
@@ -50,6 +53,7 @@ func AddDetails(apps []*Application, lang string) {
 	}
 	wg.Wait()
 }
+
 // GetURL retrieves the access URL for an application
 func GetURL(namespace string, lang string) (string, error) {
 	nodeIPs := getNodeIPsFromCache()
@@ -64,6 +68,7 @@ func GetURL(namespace string, lang string) (string, error) {
 	}
 	return "", fmt.Errorf("%s", i18n.Translate(lang, "object:no accessible URL found for application"))
 }
+
 // findIngressURL finds the external access URL for a service in Ingress rules.
 func findIngressURL(serviceName string, servicePort int32, ingresses []*networkingv1.Ingress) string {
 	for _, ingress := range ingresses {
@@ -104,6 +109,7 @@ func findIngressURL(serviceName string, servicePort int32, ingresses []*networki
 	}
 	return ""
 }
+
 // hasTLSForHost examine if the ingress has TLS configured for the given host
 func hasTLSForHost(ingress *networkingv1.Ingress, host string) bool {
 	for _, tls := range ingress.Spec.TLS {
@@ -115,6 +121,7 @@ func hasTLSForHost(ingress *networkingv1.Ingress, host string) bool {
 	}
 	return false
 }
+
 // formatCPUUsage formats CPU usage quantity to human-readable format
 func formatCPUUsage(quantity resource.Quantity) string {
 	milliValue := quantity.MilliValue()
@@ -128,6 +135,7 @@ func formatCPUUsage(quantity resource.Quantity) string {
 	// Display as milli-cores for < 1 core
 	return fmt.Sprintf("%dm", milliValue)
 }
+
 // formatMemoryUsage formats memory usage quantity to human-readable format
 func formatMemoryUsage(quantity resource.Quantity) string {
 	bytes := quantity.Value()
@@ -150,6 +158,7 @@ func formatMemoryUsage(quantity resource.Quantity) string {
 		return fmt.Sprintf("%d", bytes)
 	}
 }
+
 func calculateNamespaceMetrics(ctx context.Context, metricsClient *metricsclientset.Clientset, namespace string, deployCache map[string]map[string]*appsv1.Deployment, mu *sync.RWMutex, lang string) (*CachedMetrics, error) {
 	if metricsClient == nil {
 		return nil, fmt.Errorf("%s", i18n.Translate(lang, "object:metrics client not available"))

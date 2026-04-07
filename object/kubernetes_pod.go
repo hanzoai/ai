@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,13 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 package object
+
 import (
 	"fmt"
+
 	"github.com/hanzoai/cloud/i18n"
 	"github.com/hanzoai/cloud/pkgkubernetes"
 	"github.com/hanzoai/cloud/util"
 	"github.com/hanzoai/dbx"
 )
+
 type Pod struct {
 	Owner       string `db:"pk" json:"owner"`
 	Name        string `db:"pk" json:"name"`
@@ -30,10 +33,12 @@ type Pod struct {
 	Labels      string `json:"labels"`
 	Status      string `json:"status"`
 }
+
 func GetPodCount(owner, field, value string) (int64, error) {
 	session := GetDbQuery(owner, -1, -1, field, value, "", "")
 	return queryCount(session, "pod")
 }
+
 func GetPods(owner string) ([]*Pod, error) {
 	pods := []*Pod{}
 	err := findAll(adapter.db, "pod", &pods, dbx.HashExp{"owner": owner}, "created_time DESC")
@@ -42,6 +47,7 @@ func GetPods(owner string) ([]*Pod, error) {
 	}
 	return pods, nil
 }
+
 func GetPaginationPods(owner string, offset, limit int, field, value, sortField, sortOrder string) ([]*Pod, error) {
 	pods := []*Pod{}
 	session := GetDbQuery(owner, offset, limit, field, value, sortField, sortOrder)
@@ -51,6 +57,7 @@ func GetPaginationPods(owner string, offset, limit int, field, value, sortField,
 	}
 	return pods, nil
 }
+
 func getPod(owner string, name string) (*Pod, error) {
 	if owner == "" || name == "" {
 		return nil, nil
@@ -66,6 +73,7 @@ func getPod(owner string, name string) (*Pod, error) {
 		return nil, nil
 	}
 }
+
 func GetPod(id string) (*Pod, error) {
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
 	if err != nil {
@@ -73,6 +81,7 @@ func GetPod(id string) (*Pod, error) {
 	}
 	return getPod(owner, name)
 }
+
 func GetMaskedPod(pod *Pod, errs ...error) (*Pod, error) {
 	if len(errs) > 0 && errs[0] != nil {
 		return nil, errs[0]
@@ -82,6 +91,7 @@ func GetMaskedPod(pod *Pod, errs ...error) (*Pod, error) {
 	}
 	return pod, nil
 }
+
 func GetMaskedPods(pods []*Pod, errs ...error) ([]*Pod, error) {
 	if len(errs) > 0 && errs[0] != nil {
 		return nil, errs[0]
@@ -95,6 +105,7 @@ func GetMaskedPods(pods []*Pod, errs ...error) ([]*Pod, error) {
 	}
 	return pods, nil
 }
+
 func UpdatePod(id string, pod *Pod, lang string) (bool, error) {
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
 	if err != nil {
@@ -122,6 +133,7 @@ func UpdatePod(id string, pod *Pod, lang string) (bool, error) {
 	}
 	return affected != 0, nil
 }
+
 func AddPod(pod *Pod) (bool, error) {
 	err := insertRow(adapter.db, pod)
 	affected := int64(1)
@@ -133,6 +145,7 @@ func AddPod(pod *Pod) (bool, error) {
 	}
 	return affected != 0, nil
 }
+
 func addPods(pods []*Pod) (bool, error) {
 	err := insertRow(adapter.db, pods)
 	affected := int64(1)
@@ -144,6 +157,7 @@ func addPods(pods []*Pod) (bool, error) {
 	}
 	return affected != 0, nil
 }
+
 func DeletePod(pod *Pod) (bool, error) {
 	affected, err := deleteByPK(adapter.db, "pod", pk2(pod.Owner, pod.Name))
 	if err != nil {
@@ -151,6 +165,7 @@ func DeletePod(pod *Pod) (bool, error) {
 	}
 	return affected != 0, nil
 }
+
 func deletePods(owner string) (bool, error) {
 	affected, err := deleteWhere(adapter.db, "pod", dbx.HashExp{"owner": owner})
 	if err != nil {
@@ -158,9 +173,11 @@ func deletePods(owner string) (bool, error) {
 	}
 	return affected != 0, nil
 }
+
 func (pod *Pod) GetId() string {
 	return fmt.Sprintf("%s/%s", pod.Owner, pod.Name)
 }
+
 func SyncKubernetesPods(owner string) (bool, error) {
 	pods, err := getPods(owner)
 	if err != nil {
@@ -184,6 +201,7 @@ func SyncKubernetesPods(owner string) (bool, error) {
 	affected, err := addPods(pods)
 	return affected, err
 }
+
 func updatePod(oldPod *Pod, pod *Pod, lang string) (bool, error) {
 	provider, err := getProvider("admin", oldPod.Provider)
 	if err != nil {
@@ -205,6 +223,7 @@ func updatePod(oldPod *Pod, pod *Pod, lang string) (bool, error) {
 	}
 	return false, nil
 }
+
 func getPods(owner string) ([]*Pod, error) {
 	pods := []*Pod{}
 	providers, err := GetProviders("admin")
@@ -226,6 +245,7 @@ func getPods(owner string) ([]*Pod, error) {
 	}
 	return pods, nil
 }
+
 func getPodFromService(owner string, provider string, clientPod *pkgkubernetes.Pod) *Pod {
 	return &Pod{
 		Owner:       owner,

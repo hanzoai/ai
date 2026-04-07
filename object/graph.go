@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,11 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 package object
+
 import (
 	"fmt"
+
 	"github.com/hanzoai/cloud/util"
 	"github.com/hanzoai/dbx"
 )
+
 type GraphNode struct {
 	Id     string `json:"id"`
 	Name   string `json:"name"`
@@ -39,6 +42,7 @@ type Graph struct {
 	Text        string `json:"text"`
 	ErrorText   string `json:"errorText"`
 }
+
 func GetMaskedGraph(graph *Graph, isMaskEnabled bool) *Graph {
 	if !isMaskEnabled {
 		return graph
@@ -48,6 +52,7 @@ func GetMaskedGraph(graph *Graph, isMaskEnabled bool) *Graph {
 	}
 	return graph
 }
+
 func GetMaskedGraphs(graphs []*Graph, isMaskEnabled bool) []*Graph {
 	if !isMaskEnabled {
 		return graphs
@@ -57,6 +62,7 @@ func GetMaskedGraphs(graphs []*Graph, isMaskEnabled bool) []*Graph {
 	}
 	return graphs
 }
+
 func GetGlobalGraphs() ([]*Graph, error) {
 	graphs := []*Graph{}
 	err := findAll(adapter.db, "graph", &graphs, nil, "owner ASC", "created_time DESC")
@@ -65,6 +71,7 @@ func GetGlobalGraphs() ([]*Graph, error) {
 	}
 	return graphs, nil
 }
+
 func GetGraphs(owner string) ([]*Graph, error) {
 	graphs := []*Graph{}
 	err := findAll(adapter.db, "graph", &graphs, dbx.HashExp{"owner": owner}, "created_time DESC")
@@ -73,6 +80,7 @@ func GetGraphs(owner string) ([]*Graph, error) {
 	}
 	return graphs, nil
 }
+
 func getGraph(owner string, name string) (*Graph, error) {
 	graph := Graph{Owner: owner, Name: name}
 	existed, err := getOne(adapter.db, "graph", &graph, pk2(graph.Owner, graph.Name))
@@ -85,6 +93,7 @@ func getGraph(owner string, name string) (*Graph, error) {
 		return nil, nil
 	}
 }
+
 func GetGraph(id string) (*Graph, error) {
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
 	if err != nil {
@@ -92,6 +101,7 @@ func GetGraph(id string) (*Graph, error) {
 	}
 	return getGraph(owner, name)
 }
+
 func UpdateGraph(id string, graph *Graph) (bool, error) {
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
 	if err != nil {
@@ -113,6 +123,7 @@ func UpdateGraph(id string, graph *Graph) (bool, error) {
 	// return affected != 0
 	return true, nil
 }
+
 func AddGraph(graph *Graph) (bool, error) {
 	err := insertRow(adapter.db, graph)
 	affected := int64(1)
@@ -124,6 +135,7 @@ func AddGraph(graph *Graph) (bool, error) {
 	}
 	return affected != 0, nil
 }
+
 func DeleteGraph(graph *Graph) (bool, error) {
 	affected, err := deleteByPK(adapter.db, "graph", pk2(graph.Owner, graph.Name))
 	if err != nil {
@@ -131,13 +143,16 @@ func DeleteGraph(graph *Graph) (bool, error) {
 	}
 	return affected != 0, nil
 }
+
 func (graph *Graph) GetId() string {
 	return fmt.Sprintf("%s/%s", graph.Owner, graph.Name)
 }
+
 func GetGraphCount(owner string, field, value string) (int64, error) {
 	session := GetDbQuery(owner, -1, -1, field, value, "", "")
 	return queryCount(session, "graph")
 }
+
 func GetPaginationGraphs(owner string, offset, limit int, field, value, sortField, sortOrder string) ([]*Graph, error) {
 	graphs := []*Graph{}
 	session := GetDbQuery(owner, offset, limit, field, value, sortField, sortOrder)

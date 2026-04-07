@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,12 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 package object
+
 import (
 	"fmt"
+
 	"github.com/hanzoai/cloud/i18n"
 	"github.com/hanzoai/cloud/util"
 	"github.com/hanzoai/dbx"
 )
+
 type FormItem struct {
 	Name    string `json:"name"`
 	Label   string `json:"label"`
@@ -26,17 +29,18 @@ type FormItem struct {
 	Width   string `json:"width"`
 }
 type Form struct {
-	Owner       string `db:"pk" json:"owner"`
-	Name        string `db:"pk" json:"name"`
-	CreatedTime string `json:"createdTime"`
-	DisplayName string `json:"displayName"`
-	Position    string `json:"position"`
-	Category    string `json:"category"`
-	Type        string `json:"type"`
-	Tag         string `json:"tag"`
-	Url         string `json:"url"`
-	FormItems []*FormItem `json:"formItems"`
+	Owner       string      `db:"pk" json:"owner"`
+	Name        string      `db:"pk" json:"name"`
+	CreatedTime string      `json:"createdTime"`
+	DisplayName string      `json:"displayName"`
+	Position    string      `json:"position"`
+	Category    string      `json:"category"`
+	Type        string      `json:"type"`
+	Tag         string      `json:"tag"`
+	Url         string      `json:"url"`
+	FormItems   []*FormItem `json:"formItems"`
 }
+
 func GetMaskedForm(form *Form, isMaskEnabled bool) *Form {
 	if !isMaskEnabled {
 		return form
@@ -46,6 +50,7 @@ func GetMaskedForm(form *Form, isMaskEnabled bool) *Form {
 	}
 	return form
 }
+
 func GetMaskedForms(forms []*Form, isMaskEnabled bool) []*Form {
 	if !isMaskEnabled {
 		return forms
@@ -55,6 +60,7 @@ func GetMaskedForms(forms []*Form, isMaskEnabled bool) []*Form {
 	}
 	return forms
 }
+
 func GetGlobalForms() ([]*Form, error) {
 	forms := []*Form{}
 	err := findAll(adapter.db, "form", &forms, nil, "owner ASC", "created_time DESC")
@@ -63,6 +69,7 @@ func GetGlobalForms() ([]*Form, error) {
 	}
 	return forms, nil
 }
+
 func GetForms(owner string) ([]*Form, error) {
 	forms := []*Form{}
 	err := findAll(adapter.db, "form", &forms, dbx.HashExp{"owner": owner}, "created_time DESC")
@@ -71,6 +78,7 @@ func GetForms(owner string) ([]*Form, error) {
 	}
 	return forms, nil
 }
+
 func getForm(owner string, name string) (*Form, error) {
 	form := Form{Owner: owner, Name: name}
 	existed, err := getOne(adapter.db, "form", &form, pk2(form.Owner, form.Name))
@@ -83,6 +91,7 @@ func getForm(owner string, name string) (*Form, error) {
 		return nil, nil
 	}
 }
+
 func GetForm(id string) (*Form, error) {
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
 	if err != nil {
@@ -90,6 +99,7 @@ func GetForm(id string) (*Form, error) {
 	}
 	return getForm(owner, name)
 }
+
 func UpdateForm(id string, form *Form, lang string) (bool, error) {
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
 	if err != nil {
@@ -114,6 +124,7 @@ func UpdateForm(id string, form *Form, lang string) (bool, error) {
 	// return affected != 0
 	return true, nil
 }
+
 func AddForm(form *Form) (bool, error) {
 	err := insertRow(adapter.db, form)
 	affected := int64(1)
@@ -125,6 +136,7 @@ func AddForm(form *Form) (bool, error) {
 	}
 	return affected != 0, nil
 }
+
 func DeleteForm(form *Form) (bool, error) {
 	affected, err := deleteByPK(adapter.db, "form", pk2(form.Owner, form.Name))
 	if err != nil {
@@ -132,13 +144,16 @@ func DeleteForm(form *Form) (bool, error) {
 	}
 	return affected != 0, nil
 }
+
 func (form *Form) GetId() string {
 	return fmt.Sprintf("%s/%s", form.Owner, form.Name)
 }
+
 func GetFormCount(owner string, field, value string) (int64, error) {
 	session := GetDbQuery(owner, -1, -1, field, value, "", "")
 	return queryCount(session, "form")
 }
+
 func GetPaginationForms(owner string, offset, limit int, field, value, sortField, sortOrder string) ([]*Form, error) {
 	forms := []*Form{}
 	session := GetDbQuery(owner, offset, limit, field, value, sortField, sortOrder)
