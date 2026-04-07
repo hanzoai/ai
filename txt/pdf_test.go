@@ -28,7 +28,6 @@ func TestParsePdfIntoTxt(t *testing.T) {
 	err := filepath.Walk(pdfDirPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			panic(err)
-			return nil
 		}
 
 		if !info.IsDir() && strings.HasSuffix(strings.ToLower(info.Name()), ".pdf") {
