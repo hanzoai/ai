@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 package object
+
 import (
 	"bufio"
 	"fmt"
@@ -19,8 +20,10 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
 	"github.com/beego/beego/logs"
 )
+
 func getImportedVideos(path string) ([]*Video, error) {
 	files, err := os.ReadDir(path)
 	if err != nil {
@@ -40,6 +43,7 @@ func getImportedVideos(path string) ([]*Video, error) {
 	}
 	return videos, nil
 }
+
 func getParentFolderName(filePath string) string {
 	// 获取父目录的完整路径
 	parentDir := filepath.Dir(filePath)
@@ -47,6 +51,7 @@ func getParentFolderName(filePath string) string {
 	parentFolderName := filepath.Base(parentDir)
 	return parentFolderName
 }
+
 func parseVideoFile(filePath string) (*Video, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -125,6 +130,7 @@ func parseVideoFile(filePath string) (*Video, error) {
 	}
 	return video, nil
 }
+
 func parseTextRecord(record string, video *Video) error {
 	tokens := strings.Split(record, "\n")
 	if len(tokens) < 2 {
@@ -160,6 +166,7 @@ func parseTextRecord(record string, video *Video) error {
 	video.Segments = append(video.Segments, label)
 	return nil
 }
+
 func importVideos(path string) error {
 	videos, err := getImportedVideos(path)
 	if err != nil {

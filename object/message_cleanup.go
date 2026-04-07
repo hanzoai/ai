@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,11 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 package object
+
 import (
 	"fmt"
+
 	"github.com/beego/beego/logs"
 	"github.com/robfig/cron/v3"
 )
+
 func getChatMessagesFromMessages(chat string, messages []*Message) []*Message {
 	res := []*Message{}
 	for _, message := range messages {
@@ -26,6 +29,7 @@ func getChatMessagesFromMessages(chat string, messages []*Message) []*Message {
 	}
 	return res
 }
+
 func deleteChatAndMessages(chat string) error {
 	_, err := DeleteChat(&Chat{Owner: "admin", Name: chat})
 	if err != nil {
@@ -37,6 +41,7 @@ func deleteChatAndMessages(chat string) error {
 	}
 	return nil
 }
+
 func isRedundentMessages(chatMessages []*Message) bool {
 	if len(chatMessages) != 2 {
 		return false
@@ -57,6 +62,7 @@ func isRedundentMessages(chatMessages []*Message) bool {
 	}
 	return false
 }
+
 func cleanupChats() error {
 	chats, err := GetGlobalChats()
 	if err != nil {
@@ -92,12 +98,14 @@ func cleanupChats() error {
 	}
 	return err
 }
+
 func cleanupChatsNoError() {
 	err := cleanupChats()
 	if err != nil {
 		logs.Error("cleanupChatsNoError() error: %s", err.Error())
 	}
 }
+
 func InitCleanupChats() {
 	cleanupChatsNoError()
 	cronJob := cron.New()

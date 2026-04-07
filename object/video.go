@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,14 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 package object
+
 import (
 	"fmt"
 	"strings"
 	"time"
+
 	"github.com/hanzoai/cloud/util"
 	"github.com/hanzoai/cloud/video"
 	"github.com/hanzoai/dbx"
 )
+
 type Label struct {
 	Id        string  `json:"id"`
 	User      string  `json:"user"`
@@ -40,10 +43,10 @@ type Remark struct {
 	IsPublic  bool   `json:"isPublic"`
 }
 type Video struct {
-	Owner       string `db:"pk" json:"owner"`
-	Name        string `db:"pk" json:"name"`
-	CreatedTime string `json:"createdTime"`
-	DisplayName string `json:"displayName"`
+	Owner          string         `db:"pk" json:"owner"`
+	Name           string         `db:"pk" json:"name"`
+	CreatedTime    string         `json:"createdTime"`
+	DisplayName    string         `json:"displayName"`
 	Description    string         `json:"description"`
 	Tag            string         `json:"tag"`
 	Type           string         `json:"type"`
@@ -67,22 +70,23 @@ type Video struct {
 	State          string         `json:"state"`
 	ReviewState    string         `json:"reviewState"`
 	IsPublic       bool           `json:"isPublic"`
-	School   string   `json:"school"`
-	Stage    string   `json:"stage"`
-	Grade    string   `json:"grade"`
-	Unit     string   `json:"unit"`
-	Lesson   string   `json:"lesson"`
-	Class    string   `json:"class"`
-	Subject  string   `json:"subject"`
-	Topic    string   `json:"topic"`
-	Grade2   string   `json:"grade2"`
-	Keywords []string `json:"keywords"`
-	Template string   `json:"template"`
-	Task1 string `json:"task1"`
-	Task2 string `json:"task2"`
-	Task3 string `json:"task3"`
-	PlayAuth string `db:"-" json:"playAuth"`
+	School         string         `json:"school"`
+	Stage          string         `json:"stage"`
+	Grade          string         `json:"grade"`
+	Unit           string         `json:"unit"`
+	Lesson         string         `json:"lesson"`
+	Class          string         `json:"class"`
+	Subject        string         `json:"subject"`
+	Topic          string         `json:"topic"`
+	Grade2         string         `json:"grade2"`
+	Keywords       []string       `json:"keywords"`
+	Template       string         `json:"template"`
+	Task1          string         `json:"task1"`
+	Task2          string         `json:"task2"`
+	Task3          string         `json:"task3"`
+	PlayAuth       string         `db:"-" json:"playAuth"`
 }
+
 func GetGlobalVideos() ([]*Video, error) {
 	videos := []*Video{}
 	err := findAll(adapter.db, "video", &videos, nil, "owner ASC", "created_time DESC")
@@ -91,6 +95,7 @@ func GetGlobalVideos() ([]*Video, error) {
 	}
 	return videos, nil
 }
+
 func GetVideos(owner string, lang string) ([]*Video, error) {
 	videos := []*Video{}
 	err := findAll(adapter.db, "video", &videos, dbx.HashExp{"owner": owner}, "created_time DESC")
@@ -105,6 +110,7 @@ func GetVideos(owner string, lang string) ([]*Video, error) {
 	}
 	return videos, nil
 }
+
 func getVideo(owner string, name string) (*Video, error) {
 	v := Video{Owner: owner, Name: name}
 	existed, err := getOne(adapter.db, "video", &v, pk2(v.Owner, v.Name))
@@ -117,6 +123,7 @@ func getVideo(owner string, name string) (*Video, error) {
 		return nil, nil
 	}
 }
+
 func GetVideo(id string, lang string) (*Video, error) {
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
 	if err != nil {
@@ -146,6 +153,7 @@ func GetVideo(id string, lang string) (*Video, error) {
 	}
 	return v, nil
 }
+
 func UpdateVideo(id string, video *Video) (bool, error) {
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
 	if err != nil {
@@ -167,6 +175,7 @@ func UpdateVideo(id string, video *Video) (bool, error) {
 	// return affected != 0
 	return true, nil
 }
+
 func AddVideo(video *Video) (bool, error) {
 	err := insertRow(adapter.db, video)
 	affected := int64(1)
@@ -178,6 +187,7 @@ func AddVideo(video *Video) (bool, error) {
 	}
 	return affected != 0, nil
 }
+
 func DeleteVideo(video *Video) (bool, error) {
 	affected, err := deleteByPK(adapter.db, "video", pk2(video.Owner, video.Name))
 	if err != nil {
@@ -185,9 +195,11 @@ func DeleteVideo(video *Video) (bool, error) {
 	}
 	return affected != 0, nil
 }
+
 func (video *Video) GetId() string {
 	return fmt.Sprintf("%s/%s", video.Owner, video.Name)
 }
+
 func (video *Video) Populate(lang string) error {
 	// store, err := GetDefaultStore("admin")
 	// if err != nil {
@@ -215,6 +227,7 @@ func (video *Video) Populate(lang string) error {
 	}
 	return nil
 }
+
 func (v *Video) refineVideoAndCoverUrl(lang string) error {
 	excellentCount := 0
 	for _, remark := range v.Remarks {
@@ -240,10 +253,12 @@ func (v *Video) refineVideoAndCoverUrl(lang string) error {
 	}
 	return nil
 }
+
 func GetVideoCount(owner string, field string, value string) (int64, error) {
 	session := GetDbQuery(owner, -1, -1, field, value, "", "")
 	return queryCount(session, "video")
 }
+
 func GetPaginationVideos(owner string, offset int, limit int, field string, value string, sortField string, sortOrder string, lang string) ([]*Video, error) {
 	videos := []*Video{}
 	session := GetDbQuery(owner, offset, limit, field, value, sortField, sortOrder)

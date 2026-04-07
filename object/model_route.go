@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,33 +12,38 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 package object
+
 import (
 	"fmt"
 	"sync"
 	"time"
+
 	"github.com/hanzoai/dbx"
 )
+
 type ModelRoute struct {
-	Owner       string `db:"pk" json:"owner"`     // org ID ("built-in" = global default)
-	ModelName   string `db:"pk" json:"modelName"` // e.g. "claude-sonnet-4-6"
-	CreatedTime string `json:"createdTime"`
-	UpdatedTime string `json:"updatedTime"`
-	Provider    string  `json:"provider"`       // primary provider name
-	Upstream    string  `json:"upstream"`               // upstream model name
-	Fallback1   string  `json:"fallback1Provider"`      // fallback provider 1
-	Fallback1Up string  `json:"fallback1Upstream"`      // fallback upstream 1
-	Fallback2   string  `json:"fallback2Provider"`      // fallback provider 2
-	Fallback2Up string  `json:"fallback2Upstream"`      // fallback upstream 2
-	OwnedBy     string  `json:"ownedBy"`                // owned_by override for /api/models listing
-	Premium     bool    `json:"premium"`                                    // requires paid balance
-	Hidden      bool    `json:"hidden"`                                     // excluded from /api/models listing
+	Owner       string  `db:"pk" json:"owner"`     // org ID ("built-in" = global default)
+	ModelName   string  `db:"pk" json:"modelName"` // e.g. "claude-sonnet-4-6"
+	CreatedTime string  `json:"createdTime"`
+	UpdatedTime string  `json:"updatedTime"`
+	Provider    string  `json:"provider"`             // primary provider name
+	Upstream    string  `json:"upstream"`             // upstream model name
+	Fallback1   string  `json:"fallback1Provider"`    // fallback provider 1
+	Fallback1Up string  `json:"fallback1Upstream"`    // fallback upstream 1
+	Fallback2   string  `json:"fallback2Provider"`    // fallback provider 2
+	Fallback2Up string  `json:"fallback2Upstream"`    // fallback upstream 2
+	OwnedBy     string  `json:"ownedBy"`              // owned_by override for /api/models listing
+	Premium     bool    `json:"premium"`              // requires paid balance
+	Hidden      bool    `json:"hidden"`               // excluded from /api/models listing
 	InputPrice  float64 `json:"inputPricePerMillion"` // custom pricing (0 = use default)
 	OutputPrice float64 `json:"outputPricePerMillion"`
 	Enabled     bool    `json:"enabled"`
 }
+
 func (r *ModelRoute) GetId() string {
 	return fmt.Sprintf("%s/%s", r.Owner, r.ModelName)
 }
+
 func GetModelRoutes(owner string) ([]*ModelRoute, error) {
 	if adapter == nil || adapter.db == nil {
 		return nil, nil
@@ -50,6 +55,7 @@ func GetModelRoutes(owner string) ([]*ModelRoute, error) {
 	}
 	return routes, nil
 }
+
 func GetModelRoute(owner string, modelName string) (*ModelRoute, error) {
 	if adapter == nil || adapter.db == nil {
 		return nil, nil
@@ -64,10 +70,12 @@ func GetModelRoute(owner string, modelName string) (*ModelRoute, error) {
 	}
 	return nil, nil
 }
+
 func GetModelRouteCount(owner, field, value string) (int64, error) {
 	session := GetDbQuery(owner, -1, -1, field, value, "", "")
 	return queryCount(session, "model_route")
 }
+
 func GetPaginationModelRoutes(owner string, offset, limit int, field, value, sortField, sortOrder string) ([]*ModelRoute, error) {
 	routes := []*ModelRoute{}
 	session := GetDbQuery(owner, offset, limit, field, value, sortField, sortOrder)
@@ -77,6 +85,7 @@ func GetPaginationModelRoutes(owner string, offset, limit int, field, value, sor
 	}
 	return routes, nil
 }
+
 func AddModelRoute(route *ModelRoute) (bool, error) {
 	route.CreatedTime = time.Now().Format(time.RFC3339)
 	route.UpdatedTime = route.CreatedTime
@@ -92,6 +101,7 @@ func AddModelRoute(route *ModelRoute) (bool, error) {
 	invalidateModelRouteCache()
 	return affected != 0, nil
 }
+
 func UpdateModelRoute(owner string, modelName string, route *ModelRoute) (bool, error) {
 	route.UpdatedTime = time.Now().Format(time.RFC3339)
 	route.Owner = owner
@@ -104,6 +114,7 @@ func UpdateModelRoute(owner string, modelName string, route *ModelRoute) (bool, 
 	invalidateModelRouteCache()
 	return true, nil
 }
+
 func DeleteModelRoute(route *ModelRoute) (bool, error) {
 	affected, err := deleteByPK(adapter.db, "model_route", pk2(route.Owner, route.ModelName))
 	if err != nil {
@@ -113,21 +124,25 @@ func DeleteModelRoute(route *ModelRoute) (bool, error) {
 	invalidateModelRouteCache()
 	return affected != 0, nil
 }
+
 // ── Cached resolution for hot path ──────────────────────────────────────
 type modelRouteCacheEntry struct {
 	routes    []*ModelRoute
 	fetchedAt time.Time
 }
+
 var (
 	modelRouteCache    = make(map[string]*modelRouteCacheEntry)
 	modelRouteCacheMu  sync.RWMutex
 	modelRouteCacheTTL = 60 * time.Second
 )
+
 func invalidateModelRouteCache() {
 	modelRouteCacheMu.Lock()
 	modelRouteCache = make(map[string]*modelRouteCacheEntry)
 	modelRouteCacheMu.Unlock()
 }
+
 // GetCachedModelRoutes returns all model routes for an owner with 60s TTL caching.
 func GetCachedModelRoutes(owner string) ([]*ModelRoute, error) {
 	modelRouteCacheMu.RLock()
@@ -145,6 +160,7 @@ func GetCachedModelRoutes(owner string) ([]*ModelRoute, error) {
 	modelRouteCacheMu.Unlock()
 	return routes, nil
 }
+
 // ResolveModelRouteFromDB looks up a model route from the database.
 // Resolution order: org-specific route -> global ("built-in") route.
 // Returns nil if no DB route found (caller should fall back to YAML).

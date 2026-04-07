@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,9 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 package object
+
 import (
 	"encoding/json"
 	"fmt"
+
 	openapi "github.com/alibabacloud-go/darabonba-openapi/v2/client"
 	ecs20140526 "github.com/alibabacloud-go/ecs-20140526/v4/client"
 	resourcecenter20221201 "github.com/alibabacloud-go/resourcecenter-20221201/client"
@@ -22,8 +24,10 @@ import (
 	"github.com/alibabacloud-go/tea/tea"
 	"github.com/hanzoai/cloud/util"
 )
+
 // AlibabaCloudParser implements CloudParser for Alibaba Cloud
 type AlibabaCloudParser struct{}
+
 // ScanAssets scans all resources from Alibaba Cloud
 func (p *AlibabaCloudParser) ScanAssets(owner string, provider *Provider) ([]*Asset, error) {
 	client, err := p.createClient(provider)
@@ -106,6 +110,7 @@ func (p *AlibabaCloudParser) ScanAssets(owner string, provider *Provider) ([]*As
 	}
 	return assets, nil
 }
+
 // createClient creates an Alibaba Cloud Resource Center client
 func (p *AlibabaCloudParser) createClient(provider *Provider) (*resourcecenter20221201.Client, error) {
 	config := &openapi.Config{
@@ -115,6 +120,7 @@ func (p *AlibabaCloudParser) createClient(provider *Provider) (*resourcecenter20
 	}
 	return resourcecenter20221201.NewClient(config)
 }
+
 // convertResourceToAsset converts an Alibaba Cloud resource to an Asset
 func (p *AlibabaCloudParser) convertResourceToAsset(owner string, provider *Provider, resource *resourcecenter20221201.SearchResourcesResponseBodyResources) *Asset {
 	// Extract resource type from the resource object
@@ -187,6 +193,7 @@ func (p *AlibabaCloudParser) convertResourceToAsset(owner string, provider *Prov
 	}
 	return asset
 }
+
 // getDisplayResourceType converts an ACS resource type to a cloud-neutral display name
 func (p *AlibabaCloudParser) getDisplayResourceType(resourceType string) string {
 	// Map of known resource types to cloud-neutral display names

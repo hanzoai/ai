@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,11 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 package object
+
 import (
 	"fmt"
+
 	"github.com/hanzoai/cloud/i18n"
 	"github.com/hanzoai/cloud/pkgmachine"
 )
+
 func getMachineFromService(owner string, provider string, clientMachine *pkgmachine.Machine) *Machine {
 	return &Machine{
 		Owner:       owner,
@@ -42,6 +45,7 @@ func getMachineFromService(owner string, provider string, clientMachine *pkgmach
 		MemSize:     clientMachine.MemSize,
 	}
 }
+
 func getMachinesCloud(owner string, lang string) ([]*Machine, error) {
 	machines := []*Machine{}
 	providers, err := getActiveCloudProviders(owner)
@@ -66,6 +70,7 @@ func getMachinesCloud(owner string, lang string) ([]*Machine, error) {
 	}
 	return machines, nil
 }
+
 func SyncMachinesCloud(owner string, lang string) (bool, error) {
 	machines, err := getMachinesCloud(owner, lang)
 	if err != nil {
@@ -97,6 +102,7 @@ func SyncMachinesCloud(owner string, lang string) (bool, error) {
 	affected, err := addMachines(machines)
 	return affected, err
 }
+
 func updateMachineCloud(oldMachine *Machine, machine *Machine, lang string) (bool, error) {
 	provider, err := getProvider("admin", oldMachine.Provider)
 	if err != nil {

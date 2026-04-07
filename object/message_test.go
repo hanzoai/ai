@@ -15,13 +15,16 @@
 //go:build !skipCi
 
 package object
+
 import (
 	"fmt"
 	"testing"
+
 	"github.com/hanzoai/cloud/embedding"
 	"github.com/hanzoai/cloud/model"
 	"github.com/hanzoai/cloud/util"
 )
+
 func TestUpdateMessagePrices(t *testing.T) {
 	InitConfig()
 	store, err := GetDefaultStore("admin")
@@ -102,6 +105,7 @@ func TestUpdateMessagePrices(t *testing.T) {
 		}
 	}
 }
+
 func TestUpdateMessagePricesFromTokens(t *testing.T) {
 	InitConfig()
 	allMessages, err := GetGlobalMessages()
@@ -131,6 +135,7 @@ func TestUpdateMessagePricesFromTokens(t *testing.T) {
 		}
 	}
 }
+
 func TestUpdateMessagesAndChats(t *testing.T) {
 	TestUpdateMessagePrices(t)
 	TestUpdateChatCounts(t)

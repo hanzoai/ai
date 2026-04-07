@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,11 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 package object
+
 import (
 	"fmt"
+
 	"github.com/hanzoai/cloud/util"
 	"github.com/hanzoai/dbx"
 )
+
 type Service struct {
 	No             int    `json:"no"`
 	Name           string `json:"name"`
@@ -46,38 +49,40 @@ type RemoteApp struct {
 	RemoteAppArgs string `json:"remoteAppArgs"`
 }
 type Node struct {
-	Owner       string `db:"pk" json:"owner"`
-	Name        string `db:"pk" json:"name"`
-	CreatedTime string `json:"createdTime"`
-	UpdatedTime string `json:"updatedTime"`
-	DisplayName string `json:"displayName"`
-	Description string `json:"description"`
-	Category string `json:"category"`
-	Type     string `json:"type"`
-	Tag      string `json:"tag"`
-	MachineName string `json:"machineName"`
-	Os          string `json:"os"`
-	PublicIp  string `json:"publicIp"`
-	PrivateIp string `json:"privateIp"`
-	Size    string `json:"size"`
-	CpuSize string `json:"cpuSize"`
-	MemSize string `json:"memSize"`
-	RemoteProtocol string `json:"remoteProtocol"`
-	RemotePort     int    `json:"remotePort"`
-	RemoteUsername string `json:"remoteUsername"`
-	RemotePassword string `json:"remotePassword"`
-	AutoQuery   bool `json:"autoQuery"`
-	IsPermanent bool `json:"isPermanent"`
-	Language string `json:"language"`
+	Owner           string       `db:"pk" json:"owner"`
+	Name            string       `db:"pk" json:"name"`
+	CreatedTime     string       `json:"createdTime"`
+	UpdatedTime     string       `json:"updatedTime"`
+	DisplayName     string       `json:"displayName"`
+	Description     string       `json:"description"`
+	Category        string       `json:"category"`
+	Type            string       `json:"type"`
+	Tag             string       `json:"tag"`
+	MachineName     string       `json:"machineName"`
+	Os              string       `json:"os"`
+	PublicIp        string       `json:"publicIp"`
+	PrivateIp       string       `json:"privateIp"`
+	Size            string       `json:"size"`
+	CpuSize         string       `json:"cpuSize"`
+	MemSize         string       `json:"memSize"`
+	RemoteProtocol  string       `json:"remoteProtocol"`
+	RemotePort      int          `json:"remotePort"`
+	RemoteUsername  string       `json:"remoteUsername"`
+	RemotePassword  string       `json:"remotePassword"`
+	AutoQuery       bool         `json:"autoQuery"`
+	IsPermanent     bool         `json:"isPermanent"`
+	Language        string       `json:"language"`
 	EnableRemoteApp bool         `json:"enableRemoteApp"`
 	RemoteApps      []*RemoteApp `json:"remoteApps"`
 	Services        []*Service   `json:"services"`
 	Patches         []*Patch     `json:"patches"`
 }
+
 func GetNodeCount(owner, field, value string) (int64, error) {
 	session := GetDbQuery(owner, -1, -1, field, value, "", "")
 	return queryCount(session, "node")
 }
+
 func GetNodes(owner string) ([]*Node, error) {
 	nodes := []*Node{}
 	err := findAll(adapter.db, "node", &nodes, dbx.HashExp{"owner": owner}, "created_time DESC")
@@ -86,6 +91,7 @@ func GetNodes(owner string) ([]*Node, error) {
 	}
 	return nodes, nil
 }
+
 func GetPaginationNodes(owner string, offset, limit int, field, value, sortField, sortOrder string) ([]*Node, error) {
 	nodes := []*Node{}
 	session := GetDbQuery(owner, offset, limit, field, value, sortField, sortOrder)
@@ -95,6 +101,7 @@ func GetPaginationNodes(owner string, offset, limit int, field, value, sortField
 	}
 	return nodes, nil
 }
+
 func getNode(owner string, name string) (*Node, error) {
 	if owner == "" || name == "" {
 		return nil, nil
@@ -110,6 +117,7 @@ func getNode(owner string, name string) (*Node, error) {
 		return nil, nil
 	}
 }
+
 func GetNode(id string) (*Node, error) {
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
 	if err != nil {
@@ -117,6 +125,7 @@ func GetNode(id string) (*Node, error) {
 	}
 	return getNode(owner, name)
 }
+
 func GetMaskedNode(node *Node, errs ...error) (*Node, error) {
 	if len(errs) > 0 && errs[0] != nil {
 		return nil, errs[0]
@@ -129,6 +138,7 @@ func GetMaskedNode(node *Node, errs ...error) (*Node, error) {
 	}
 	return node, nil
 }
+
 func GetMaskedNodes(nodes []*Node, errs ...error) ([]*Node, error) {
 	if len(errs) > 0 && errs[0] != nil {
 		return nil, errs[0]
@@ -142,6 +152,7 @@ func GetMaskedNodes(nodes []*Node, errs ...error) ([]*Node, error) {
 	}
 	return nodes, nil
 }
+
 func UpdateNode(id string, node *Node) (bool, error) {
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
 	if err != nil {
@@ -168,6 +179,7 @@ func UpdateNode(id string, node *Node) (bool, error) {
 	}
 	return affected != 0, nil
 }
+
 func AddNode(node *Node) (bool, error) {
 	err := insertRow(adapter.db, node)
 	affected := int64(1)
@@ -179,6 +191,7 @@ func AddNode(node *Node) (bool, error) {
 	}
 	return affected != 0, nil
 }
+
 func DeleteNode(node *Node) (bool, error) {
 	affected, err := deleteByPK(adapter.db, "node", pk2(node.Owner, node.Name))
 	if err != nil {
@@ -186,6 +199,7 @@ func DeleteNode(node *Node) (bool, error) {
 	}
 	return affected != 0, nil
 }
+
 func (node *Node) getId() string {
 	return fmt.Sprintf("%s/%s", node.Owner, node.Name)
 }

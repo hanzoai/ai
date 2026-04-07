@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,26 +12,31 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 package object
+
 import (
 	"fmt"
+
 	"github.com/hanzoai/cloud/util"
 	"github.com/hanzoai/dbx"
 )
+
 type Doctor struct {
-	Owner       string `db:"pk" json:"owner"`
-	Name        string `db:"pk" json:"name"`
-	CreatedTime string `json:"createdTime"`
-	UpdatedTime string `json:"updatedTime"`
-	DisplayName string `json:"displayName"`
-	Department  string `json:"department"`
-	Gender      string `json:"gender"`
-	AccessLevel string `json:"accessLevel"`
+	Owner        string `db:"pk" json:"owner"`
+	Name         string `db:"pk" json:"name"`
+	CreatedTime  string `json:"createdTime"`
+	UpdatedTime  string `json:"updatedTime"`
+	DisplayName  string `json:"displayName"`
+	Department   string `json:"department"`
+	Gender       string `json:"gender"`
+	AccessLevel  string `json:"accessLevel"`
 	HospitalName string `json:"hospitalName"`
 }
+
 func GetDoctorCount(owner, field, value string) (int64, error) {
 	session := GetDbQuery(owner, -1, -1, field, value, "", "")
 	return queryCount(session, "doctor")
 }
+
 func GetDoctors(owner string) ([]*Doctor, error) {
 	doctors := []*Doctor{}
 	err := findAll(adapter.db, "doctor", &doctors, dbx.HashExp{"owner": owner}, "created_time DESC")
@@ -40,6 +45,7 @@ func GetDoctors(owner string) ([]*Doctor, error) {
 	}
 	return doctors, nil
 }
+
 func GetPaginationDoctors(owner string, offset, limit int, field, value, sortField, sortOrder string) ([]*Doctor, error) {
 	doctors := []*Doctor{}
 	session := GetDbQuery(owner, offset, limit, field, value, sortField, sortOrder)
@@ -49,6 +55,7 @@ func GetPaginationDoctors(owner string, offset, limit int, field, value, sortFie
 	}
 	return doctors, nil
 }
+
 func getDoctor(owner string, name string) (*Doctor, error) {
 	if owner == "" || name == "" {
 		return nil, nil
@@ -64,6 +71,7 @@ func getDoctor(owner string, name string) (*Doctor, error) {
 		return nil, nil
 	}
 }
+
 func GetDoctor(id string) (*Doctor, error) {
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
 	if err != nil {
@@ -71,6 +79,7 @@ func GetDoctor(id string) (*Doctor, error) {
 	}
 	return getDoctor(owner, name)
 }
+
 func GetMaskedDoctor(doctor *Doctor, errs ...error) (*Doctor, error) {
 	if len(errs) > 0 && errs[0] != nil {
 		return nil, errs[0]
@@ -80,6 +89,7 @@ func GetMaskedDoctor(doctor *Doctor, errs ...error) (*Doctor, error) {
 	}
 	return doctor, nil
 }
+
 func GetMaskedDoctors(doctors []*Doctor, errs ...error) ([]*Doctor, error) {
 	if len(errs) > 0 && errs[0] != nil {
 		return nil, errs[0]
@@ -93,6 +103,7 @@ func GetMaskedDoctors(doctors []*Doctor, errs ...error) ([]*Doctor, error) {
 	}
 	return doctors, nil
 }
+
 func UpdateDoctor(id string, doctor *Doctor) (bool, error) {
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
 	if err != nil {
@@ -116,6 +127,7 @@ func UpdateDoctor(id string, doctor *Doctor) (bool, error) {
 	}
 	return affected != 0, nil
 }
+
 func AddDoctor(doctor *Doctor) (bool, error) {
 	err := insertRow(adapter.db, doctor)
 	affected := int64(1)
@@ -127,6 +139,7 @@ func AddDoctor(doctor *Doctor) (bool, error) {
 	}
 	return affected != 0, nil
 }
+
 func DeleteDoctor(doctor *Doctor) (bool, error) {
 	affected, err := deleteByPK(adapter.db, "doctor", pk2(doctor.Owner, doctor.Name))
 	if err != nil {
@@ -134,6 +147,7 @@ func DeleteDoctor(doctor *Doctor) (bool, error) {
 	}
 	return affected != 0, nil
 }
+
 func (doctor *Doctor) getId() string {
 	return fmt.Sprintf("%s/%s", doctor.Owner, doctor.Name)
 }

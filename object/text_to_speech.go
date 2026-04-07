@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,13 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 package object
+
 import (
 	"context"
 	"fmt"
+
 	"github.com/hanzoai/cloud/i18n"
 	"github.com/hanzoai/cloud/tts"
 	"github.com/hanzoai/cloud/util"
 )
+
 func addProviderMessage(providerId, text string, lang string) (*Message, *Chat, *Provider, error) {
 	provider, err := GetProvider(providerId)
 	if err != nil {
@@ -57,6 +60,7 @@ func addProviderMessage(providerId, text string, lang string) (*Message, *Chat, 
 	}
 	return message, chat, provider, nil
 }
+
 func createProviderChat(chatId string, provider *Provider) (*Chat, error) {
 	_, chatName, err := util.GetOwnerAndNameFromIdWithError(chatId)
 	if err != nil {
@@ -76,6 +80,7 @@ func createProviderChat(chatId string, provider *Provider) (*Chat, error) {
 	}
 	return chat, nil
 }
+
 func getMessageAndChat(messageId string, lang string) (*Message, *Chat, error) {
 	message, err := GetMessage(messageId)
 	if err != nil {
@@ -94,6 +99,7 @@ func getMessageAndChat(messageId string, lang string) (*Message, *Chat, error) {
 	}
 	return message, chat, nil
 }
+
 // getStoreProvider retrieves the text-to-speech provider for a given store ID
 func getStoreProvider(storeId string, lang string) (*Provider, error) {
 	store, err := GetStore(storeId)
@@ -112,6 +118,7 @@ func getStoreProvider(storeId string, lang string) (*Provider, error) {
 	}
 	return provider, nil
 }
+
 // PrepareTextToSpeech prepares the text-to-speech conversion
 func PrepareTextToSpeech(storeId, providerId, messageId, text string, lang string) (*Message, *Chat, tts.TextToSpeechProvider, context.Context, error) {
 	var message *Message
@@ -139,6 +146,7 @@ func PrepareTextToSpeech(storeId, providerId, messageId, text string, lang strin
 	}
 	return message, chat, ttsProvider, context.Background(), nil
 }
+
 func UpdateChatStats(chat *Chat, ttsResult *tts.TextToSpeechResult) error {
 	chat.TokenCount += ttsResult.TokenCount
 	chat.Price += ttsResult.Price
