@@ -73,6 +73,7 @@ func main() {
 	logs.Info("Per-key rate limiter initialized (tiers: free=10/min, starter=60/min, pro=300/min, enterprise=1000/min)")
 
 	beego.SetStaticPath("/swagger", "swagger")
+	beego.InsertFilter("/v1/cloud/*", beego.BeforeRouter, routers.V1CloudRewriteFilter)
 	beego.InsertFilter("*", beego.BeforeRouter, routers.CorsFilter)
 	beego.InsertFilter("*", beego.BeforeRouter, routers.HstsFilter)
 	beego.InsertFilter("*", beego.BeforeRouter, routers.CacheControlFilter)
@@ -158,6 +159,7 @@ func main() {
 			}
 		}
 
+		controllers.StopInterserviceZap()
 		object.StopZap()
 
 		os.Exit(0)
@@ -167,6 +169,10 @@ func main() {
 	// Listens on port 9651, connects to KV/SQL peers.
 	object.InitZap()
 	controllers.InitZapHandlers()
+
+	// Inter-service ZAP transport for cloud operations (deploy, status, logs).
+	// Listens on CLOUD_ZAP_PORT (default 9320), separate from inference node.
+	controllers.InitInterserviceZap()
 
 	go object.ClearThroughputPerSecond()
 
