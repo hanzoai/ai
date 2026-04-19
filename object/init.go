@@ -144,7 +144,7 @@ func initBuiltInProviders() (string, string, string, string) {
 			IsDefault:   true,
 		}
 		_, err = AddProvider(storageProvider)
-		if err != nil && !strings.Contains(err.Error(), "Duplicate entry") {
+		if err != nil && !isDuplicateKeyErr(err) {
 			panic(err)
 		}
 	}
@@ -160,7 +160,7 @@ func initBuiltInProviders() (string, string, string, string) {
 			IsDefault:   true,
 		}
 		_, err = AddProvider(modelProvider)
-		if err != nil && !strings.Contains(err.Error(), "Duplicate entry") {
+		if err != nil && !isDuplicateKeyErr(err) {
 			panic(err)
 		}
 	}
@@ -176,7 +176,7 @@ func initBuiltInProviders() (string, string, string, string) {
 			IsDefault:   true,
 		}
 		_, err = AddProvider(embeddingProvider)
-		if err != nil && !strings.Contains(err.Error(), "Duplicate entry") {
+		if err != nil && !isDuplicateKeyErr(err) {
 			panic(err)
 		}
 	}
@@ -270,10 +270,31 @@ func initLLMProviders() {
 		}
 		p.CreatedTime = util.GetCurrentTime()
 		_, err = AddProvider(&p)
-		if err != nil && !strings.Contains(err.Error(), "Duplicate entry") {
+		if err != nil && !isDuplicateKeyErr(err) {
 			fmt.Printf("[init] WARNING: failed to create provider %q: %v\n", p.Name, err)
 		} else {
 			fmt.Printf("[init] Created LLM provider: %s (%s)\n", p.Name, p.DisplayName)
 		}
 	}
+}
+
+// isDuplicateKeyErr reports whether err is a unique-constraint violation
+// from any supported database (MySQL, PostgreSQL, SQLite). All three drivers
+// surface different error strings, but we only ever care that the row already
+// exists — initBuiltInProviders re-runs on every restart and is intentionally
+// idempotent.
+func isDuplicateKeyErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := err.Error()
+	switch {
+	case strings.Contains(s, "Duplicate entry"): // MySQL
+		return true
+	case strings.Contains(s, "duplicate key value violates unique"): // PostgreSQL
+		return true
+	case strings.Contains(s, "UNIQUE constraint failed"): // SQLite
+		return true
+	}
+	return false
 }
