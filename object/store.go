@@ -75,7 +75,7 @@ type Store struct {
 	WelcomeTitle         string                 `json:"welcomeTitle"`
 	WelcomeText          string                 `json:"welcomeText"`
 	Prompt               string                 `json:"prompt"`
-	ExampleQuestions     []ExampleQuestion      `json:"exampleQuestions"`
+	ExampleQuestions     ExampleQuestionList    `json:"exampleQuestions"`
 	ThemeColor           string                 `json:"themeColor"`
 	Avatar               string                 `json:"avatar"`
 	Title                string                 `json:"title"`
