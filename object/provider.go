@@ -46,7 +46,7 @@ type Provider struct {
 	ProviderUrl                  string            `json:"providerUrl"`
 	ApiVersion                   string            `json:"apiVersion"`
 	CompatibleProvider           string            `json:"compatibleProvider"`
-	McpTools                     []*agent.McpTools `json:"mcpTools"`
+	McpTools                     agent.McpToolsList `json:"mcpTools"`
 	Text                         string            `json:"text"`
 	ConfigText                   string            `json:"configText"`
 	RawText                      string            `json:"rawText"` // Raw result from scan (for Scan category providers)
