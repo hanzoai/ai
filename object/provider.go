@@ -31,43 +31,43 @@ import (
 )
 
 type Provider struct {
-	Owner                        string            `db:"pk" json:"owner"`
-	Name                         string            `db:"pk" json:"name"`
-	CreatedTime                  string            `json:"createdTime"`
-	DisplayName                  string            `json:"displayName"`
-	Category                     string            `json:"category"`
-	Type                         string            `json:"type"`
-	SubType                      string            `json:"subType"`
-	Flavor                       string            `json:"flavor"`
-	ClientId                     string            `json:"clientId"`
-	ClientSecret                 string            `json:"clientSecret"`
-	Region                       string            `json:"region"`
-	ProviderKey                  string            `json:"providerKey"`
-	ProviderUrl                  string            `json:"providerUrl"`
-	ApiVersion                   string            `json:"apiVersion"`
-	CompatibleProvider           string            `json:"compatibleProvider"`
+	Owner                        string             `db:"pk" json:"owner"`
+	Name                         string             `db:"pk" json:"name"`
+	CreatedTime                  string             `json:"createdTime"`
+	DisplayName                  string             `json:"displayName"`
+	Category                     string             `json:"category"`
+	Type                         string             `json:"type"`
+	SubType                      string             `json:"subType"`
+	Flavor                       string             `json:"flavor"`
+	ClientId                     string             `json:"clientId"`
+	ClientSecret                 string             `json:"clientSecret"`
+	Region                       string             `json:"region"`
+	ProviderKey                  string             `json:"providerKey"`
+	ProviderUrl                  string             `json:"providerUrl"`
+	ApiVersion                   string             `json:"apiVersion"`
+	CompatibleProvider           string             `json:"compatibleProvider"`
 	McpTools                     agent.McpToolsList `json:"mcpTools"`
-	Text                         string            `json:"text"`
-	ConfigText                   string            `json:"configText"`
-	RawText                      string            `json:"rawText"` // Raw result from scan (for Scan category providers)
-	EnableThinking               bool              `json:"enableThinking"`
-	Temperature                  float32           `json:"temperature"`
-	TopP                         float32           `json:"topP"`
-	TopK                         int               `json:"topK"`
-	FrequencyPenalty             float32           `json:"frequencyPenalty"`
-	PresencePenalty              float32           `json:"presencePenalty"`
-	InputPricePerThousandTokens  float64           `json:"inputPricePerThousandTokens"`
-	OutputPricePerThousandTokens float64           `json:"outputPricePerThousandTokens"`
-	Currency                     string            `json:"currency"`
-	UserKey                      string            `json:"userKey"`
-	UserCert                     string            `json:"userCert"`
-	SignKey                      string            `json:"signKey"`
-	SignCert                     string            `json:"signCert"`
-	ContractName                 string            `json:"contractName"`
-	ContractMethod               string            `json:"contractMethod"`
-	Network                      string            `json:"network"`
-	Chain                        string            `json:"chain"`
-	TestContent                  string            `json:"testContent"`
+	Text                         string             `json:"text"`
+	ConfigText                   string             `json:"configText"`
+	RawText                      string             `json:"rawText"` // Raw result from scan (for Scan category providers)
+	EnableThinking               bool               `json:"enableThinking"`
+	Temperature                  float32            `json:"temperature"`
+	TopP                         float32            `json:"topP"`
+	TopK                         int                `json:"topK"`
+	FrequencyPenalty             float32            `json:"frequencyPenalty"`
+	PresencePenalty              float32            `json:"presencePenalty"`
+	InputPricePerThousandTokens  float64            `json:"inputPricePerThousandTokens"`
+	OutputPricePerThousandTokens float64            `json:"outputPricePerThousandTokens"`
+	Currency                     string             `json:"currency"`
+	UserKey                      string             `json:"userKey"`
+	UserCert                     string             `json:"userCert"`
+	SignKey                      string             `json:"signKey"`
+	SignCert                     string             `json:"signCert"`
+	ContractName                 string             `json:"contractName"`
+	ContractMethod               string             `json:"contractMethod"`
+	Network                      string             `json:"network"`
+	Chain                        string             `json:"chain"`
+	TestContent                  string             `json:"testContent"`
 	// New fields for unified scan widget (for Scan category providers)
 	TargetMode    string `json:"targetMode"`    // "Manual Input" or "Asset"
 	Target        string `json:"target"`        // Manual input target (IP address or network range)
