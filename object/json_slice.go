@@ -102,24 +102,12 @@ type PropertiesMapJSON map[string]*Properties
 func (m *PropertiesMapJSON) Scan(src interface{}) error  { return JSONScan(m, src) }
 func (m PropertiesMapJSON) Value() (driver.Value, error) { return JSONValue(m) }
 
-// TreeFilePtr implements sql.Scanner for *TreeFile.
-type TreeFilePtr struct{ *TreeFile }
+// Scan on *TreeFile so Store.FileTree round-trips JSON<->struct.
+func (t *TreeFile) Scan(src interface{}) error { return JSONScan(t, src) }
 
-func (t *TreeFilePtr) Scan(src interface{}) error {
-	if src == nil {
-		return nil
-	}
-	var tf TreeFile
-	if err := JSONScan(&tf, src); err != nil {
-		return err
-	}
-	t.TreeFile = &tf
-	return nil
-}
-
-func (t TreeFilePtr) Value() (driver.Value, error) {
-	if t.TreeFile == nil {
+func (t *TreeFile) Value() (driver.Value, error) {
+	if t == nil {
 		return "null", nil
 	}
-	return JSONValue(t.TreeFile)
+	return JSONValue(t)
 }
