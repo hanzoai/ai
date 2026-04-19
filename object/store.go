@@ -49,54 +49,54 @@ type ExampleQuestion struct {
 	Image string `json:"image"`
 }
 type Store struct {
-	Owner                string                 `db:"pk" json:"owner"`
-	Name                 string                 `db:"pk" json:"name"`
-	CreatedTime          string                 `json:"createdTime"`
-	DisplayName          string                 `json:"displayName"`
-	StorageProvider      string                 `json:"storageProvider"`
-	StorageSubpath       string                 `json:"storageSubpath"`
-	ImageProvider        string                 `json:"imageProvider"`
-	SplitProvider        string                 `json:"splitProvider"`
-	SearchProvider       string                 `json:"searchProvider"`
-	ModelProvider        string                 `json:"modelProvider"`
-	EmbeddingProvider    string                 `json:"embeddingProvider"`
-	TextToSpeechProvider string                 `json:"textToSpeechProvider"`
-	EnableTtsStreaming   bool                   `json:"enableTtsStreaming"`
-	SpeechToTextProvider string                 `json:"speechToTextProvider"`
-	AgentProvider        string                 `json:"agentProvider"`
-	VectorStoreId        string                 `json:"vectorStoreId"`
-	BuiltinTools         StringSlice            `json:"builtinTools"`
-	MemoryLimit          int                    `json:"memoryLimit"`
-	Frequency            int                    `json:"frequency"`
-	LimitMinutes         int                    `json:"limitMinutes"`
-	KnowledgeCount       int                    `json:"knowledgeCount"`
-	SuggestionCount      int                    `json:"suggestionCount"`
-	Welcome              string                 `json:"welcome"`
-	WelcomeTitle         string                 `json:"welcomeTitle"`
-	WelcomeText          string                 `json:"welcomeText"`
-	Prompt               string                 `json:"prompt"`
-	ExampleQuestions     ExampleQuestionList    `json:"exampleQuestions"`
-	ThemeColor           string                 `json:"themeColor"`
-	Avatar               string                 `json:"avatar"`
-	Title                string                 `json:"title"`
-	HtmlTitle            string                 `json:"htmlTitle"`
-	FaviconUrl           string                 `json:"faviconUrl"`
-	LogoUrl              string                 `json:"logoUrl"`
-	FooterHtml           string                 `json:"footerHtml"`
-	NavItems             StringSlice            `json:"navItems"`
-	VectorStores         StringSlice            `json:"vectorStores"`
-	ChildStores          StringSlice            `json:"childStores"`
-	ChildModelProviders  StringSlice            `json:"childModelProviders"`
-	ForbiddenWords       StringSlice            `json:"forbiddenWords"`
-	ShowAutoRead         bool                   `json:"showAutoRead"`
-	DisableFileUpload    bool                   `json:"disableFileUpload"`
-	HideThinking         bool                   `json:"hideThinking"`
-	IsDefault            bool                   `json:"isDefault"`
-	State                string                 `json:"state"`
-	ChatCount            int                    `db:"-" json:"chatCount"`
-	MessageCount         int                    `db:"-" json:"messageCount"`
-	FileTree             *TreeFile              `json:"fileTree"`
-	PropertiesMap        map[string]*Properties `json:"propertiesMap"`
+	Owner                string              `db:"pk" json:"owner"`
+	Name                 string              `db:"pk" json:"name"`
+	CreatedTime          string              `json:"createdTime"`
+	DisplayName          string              `json:"displayName"`
+	StorageProvider      string              `json:"storageProvider"`
+	StorageSubpath       string              `json:"storageSubpath"`
+	ImageProvider        string              `json:"imageProvider"`
+	SplitProvider        string              `json:"splitProvider"`
+	SearchProvider       string              `json:"searchProvider"`
+	ModelProvider        string              `json:"modelProvider"`
+	EmbeddingProvider    string              `json:"embeddingProvider"`
+	TextToSpeechProvider string              `json:"textToSpeechProvider"`
+	EnableTtsStreaming   bool                `json:"enableTtsStreaming"`
+	SpeechToTextProvider string              `json:"speechToTextProvider"`
+	AgentProvider        string              `json:"agentProvider"`
+	VectorStoreId        string              `json:"vectorStoreId"`
+	BuiltinTools         StringSlice         `json:"builtinTools"`
+	MemoryLimit          int                 `json:"memoryLimit"`
+	Frequency            int                 `json:"frequency"`
+	LimitMinutes         int                 `json:"limitMinutes"`
+	KnowledgeCount       int                 `json:"knowledgeCount"`
+	SuggestionCount      int                 `json:"suggestionCount"`
+	Welcome              string              `json:"welcome"`
+	WelcomeTitle         string              `json:"welcomeTitle"`
+	WelcomeText          string              `json:"welcomeText"`
+	Prompt               string              `json:"prompt"`
+	ExampleQuestions     ExampleQuestionList `json:"exampleQuestions"`
+	ThemeColor           string              `json:"themeColor"`
+	Avatar               string              `json:"avatar"`
+	Title                string              `json:"title"`
+	HtmlTitle            string              `json:"htmlTitle"`
+	FaviconUrl           string              `json:"faviconUrl"`
+	LogoUrl              string              `json:"logoUrl"`
+	FooterHtml           string              `json:"footerHtml"`
+	NavItems             StringSlice         `json:"navItems"`
+	VectorStores         StringSlice         `json:"vectorStores"`
+	ChildStores          StringSlice         `json:"childStores"`
+	ChildModelProviders  StringSlice         `json:"childModelProviders"`
+	ForbiddenWords       StringSlice         `json:"forbiddenWords"`
+	ShowAutoRead         bool                `json:"showAutoRead"`
+	DisableFileUpload    bool                `json:"disableFileUpload"`
+	HideThinking         bool                `json:"hideThinking"`
+	IsDefault            bool                `json:"isDefault"`
+	State                string              `json:"state"`
+	ChatCount            int                 `db:"-" json:"chatCount"`
+	MessageCount         int                 `db:"-" json:"messageCount"`
+	FileTree             *TreeFile           `json:"fileTree"`
+	PropertiesMap        PropertiesMapJSON   `json:"propertiesMap"`
 }
 
 func GetGlobalStores() ([]*Store, error) {
