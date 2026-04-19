@@ -65,7 +65,7 @@ type Store struct {
 	SpeechToTextProvider string                 `json:"speechToTextProvider"`
 	AgentProvider        string                 `json:"agentProvider"`
 	VectorStoreId        string                 `json:"vectorStoreId"`
-	BuiltinTools         []string               `json:"builtinTools"`
+	BuiltinTools         StringSlice            `json:"builtinTools"`
 	MemoryLimit          int                    `json:"memoryLimit"`
 	Frequency            int                    `json:"frequency"`
 	LimitMinutes         int                    `json:"limitMinutes"`
@@ -83,11 +83,11 @@ type Store struct {
 	FaviconUrl           string                 `json:"faviconUrl"`
 	LogoUrl              string                 `json:"logoUrl"`
 	FooterHtml           string                 `json:"footerHtml"`
-	NavItems             []string               `json:"navItems"`
-	VectorStores         []string               `json:"vectorStores"`
-	ChildStores          []string               `json:"childStores"`
-	ChildModelProviders  []string               `json:"childModelProviders"`
-	ForbiddenWords       []string               `json:"forbiddenWords"`
+	NavItems             StringSlice            `json:"navItems"`
+	VectorStores         StringSlice            `json:"vectorStores"`
+	ChildStores          StringSlice            `json:"childStores"`
+	ChildModelProviders  StringSlice            `json:"childModelProviders"`
+	ForbiddenWords       StringSlice            `json:"forbiddenWords"`
 	ShowAutoRead         bool                   `json:"showAutoRead"`
 	DisableFileUpload    bool                   `json:"disableFileUpload"`
 	HideThinking         bool                   `json:"hideThinking"`
