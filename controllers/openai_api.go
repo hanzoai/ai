@@ -142,6 +142,22 @@ func validateWidgetKey(token string) bool {
 // widgetMaxTokens caps the maximum tokens per widget request to control costs.
 const widgetMaxTokens = 800
 
+// widgetOwnerForKey returns the IAM org that owns the RAG index a widget key
+// can read from. Resolution order: env WIDGET_OWNER_<TOKEN>, env WIDGET_OWNER,
+// then "hanzo". Letting each brand embed its own widget key + index without
+// having to provision a full pk-* user in IAM.
+func widgetOwnerForKey(token string) string {
+	if token != "" {
+		if v := os.Getenv("WIDGET_OWNER_" + strings.ToUpper(strings.ReplaceAll(token, "-", "_"))); v != "" {
+			return v
+		}
+	}
+	if v := os.Getenv("WIDGET_OWNER"); v != "" {
+		return v
+	}
+	return "hanzo"
+}
+
 // widgetAllowedModels defines which models widget keys can access.
 // Only cheap DO-AI models are allowed to keep costs minimal.
 var widgetAllowedModels = map[string]bool{

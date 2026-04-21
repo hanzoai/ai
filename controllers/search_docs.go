@@ -102,6 +102,23 @@ func (c *ApiController) resolveSearchAuth() *searchAuth {
 		}
 	}
 
+	// 4b. Widget key (hz_*) -- origin-restricted public widget RAG.
+	// Widget keys skip IAM lookup; the store is resolved from WIDGET_STORE_<KEY>
+	// (or WIDGET_STORE default) so each brand embeds its own index.
+	// Gateway middleware already enforces Origin allowlist + rate limits.
+	if isWidgetKey(token) {
+		if !validateWidgetKey(token) {
+			c.ResponseError("invalid widget key")
+			return nil
+		}
+		owner := widgetOwnerForKey(token)
+		return &searchAuth{
+			Owner:  owner,
+			UserID: owner + "/widget",
+			User:   &iamsdk.User{Owner: owner, Name: "widget", Type: "widget-key"},
+		}
+	}
+
 	// 5. JWT token -- validate via IAM OIDC
 	if isJwtToken(token) {
 		claims, err := iamsdk.ParseJwtToken(token)
