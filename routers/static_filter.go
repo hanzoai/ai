@@ -49,7 +49,7 @@ func getWebBuildFolder() string {
 
 func StaticFilter(ctx *context.Context) {
 	urlPath := ctx.Request.URL.Path
-	if strings.HasPrefix(urlPath, "/api/") || strings.HasPrefix(urlPath, "/v1/") {
+	if strings.HasPrefix(urlPath, "/v1/") || strings.HasPrefix(urlPath, "/v1/") {
 		return
 	}
 

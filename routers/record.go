@@ -22,7 +22,7 @@ import (
 )
 
 func RecordMessage(ctx *context.Context) {
-	if ctx.Request.URL.Path == "/api/login" || ctx.Request.URL.Path == "/api/signup" || ctx.Request.URL.Path == "/api/get-assets" {
+	if ctx.Request.URL.Path == "/v1/login" || ctx.Request.URL.Path == "/v1/signup" || ctx.Request.URL.Path == "/v1/get-assets" {
 		return
 	}
 

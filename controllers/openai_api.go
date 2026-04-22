@@ -142,20 +142,77 @@ func validateWidgetKey(token string) bool {
 // widgetMaxTokens caps the maximum tokens per widget request to control costs.
 const widgetMaxTokens = 800
 
-// widgetOwnerForKey returns the IAM org that owns the RAG index a widget key
-// can read from. Resolution order: env WIDGET_OWNER_<TOKEN>, env WIDGET_OWNER,
-// then "hanzo". Letting each brand embed its own widget key + index without
-// having to provision a full pk-* user in IAM.
-func widgetOwnerForKey(token string) string {
-	if token != "" {
-		if v := os.Getenv("WIDGET_OWNER_" + strings.ToUpper(strings.ReplaceAll(token, "-", "_"))); v != "" {
-			return v
+// resolveOwnerFromOrigin maps a request's Origin/Referer hostname to an IAM
+// org. Config lives in a single WIDGET_ORIGINS env/KMS value as a JSON object
+// (or key=val,key=val) mapping hostname → owner:
+//
+//	WIDGET_ORIGINS={"lux.financial":"lux","hanzo.ai":"hanzo","zoo.ngo":"zoo"}
+//
+// or
+//
+//	WIDGET_ORIGINS=lux.financial=lux,hanzo.ai=hanzo,zoo.ngo=zoo
+//
+// Suffix matches so subdomains inherit (e.g., api.hanzo.ai → hanzo). Fallback
+// is WIDGET_DEFAULT_OWNER env, then "hanzo".
+func resolveOwnerFromOrigin(origin string) string {
+	host := originHostname(origin)
+	if host != "" {
+		m := loadWidgetOrigins()
+		if o, ok := m[host]; ok {
+			return o
+		}
+		for suffix, o := range m {
+			if strings.HasSuffix(host, "."+suffix) {
+				return o
+			}
 		}
 	}
-	if v := os.Getenv("WIDGET_OWNER"); v != "" {
+	if v := os.Getenv("WIDGET_DEFAULT_OWNER"); v != "" {
 		return v
 	}
 	return "hanzo"
+}
+
+func originHostname(origin string) string {
+	if origin == "" {
+		return ""
+	}
+	if i := strings.Index(origin, "://"); i >= 0 {
+		origin = origin[i+3:]
+	}
+	if i := strings.IndexByte(origin, '/'); i >= 0 {
+		origin = origin[:i]
+	}
+	if i := strings.LastIndexByte(origin, ':'); i >= 0 {
+		origin = origin[:i]
+	}
+	return origin
+}
+
+// loadWidgetOrigins parses WIDGET_ORIGINS (env or KMS) into a hostname→owner map.
+// Accepts JSON object or comma-separated key=value.
+func loadWidgetOrigins() map[string]string {
+	raw := os.Getenv("WIDGET_ORIGINS")
+	if raw == "" {
+		if v, err := object.GetKMSSecret("WIDGET_ORIGINS"); err == nil {
+			raw = v
+		}
+	}
+	out := map[string]string{}
+	if raw == "" {
+		return out
+	}
+	if strings.HasPrefix(strings.TrimSpace(raw), "{") {
+		_ = json.Unmarshal([]byte(raw), &out)
+		return out
+	}
+	for _, part := range strings.Split(raw, ",") {
+		kv := strings.SplitN(strings.TrimSpace(part), "=", 2)
+		if len(kv) == 2 {
+			out[strings.TrimSpace(kv[0])] = strings.TrimSpace(kv[1])
+		}
+	}
+	return out
 }
 
 // widgetAllowedModels defines which models widget keys can access.
@@ -714,7 +771,7 @@ func recordTrace(record *usageRecord, startTime time.Time) {
 //
 // @Param   body    body    openai.ChatCompletionRequest  true    "The OpenAI chat request"
 // @Success 200 {object} openai.ChatCompletionResponse
-// @router /api/chat/completions [post]
+// @router /chat [post]
 func (c *ApiController) ChatCompletions() {
 	// Extract Bearer token
 	authHeader := c.Ctx.Request.Header.Get("Authorization")
@@ -918,7 +975,17 @@ func (c *ApiController) ChatCompletions() {
 		Model:     request.Model,
 	}
 
-	knowledge := []*model.RawMessage{}
+	// Optional RAG: unified retrieval path shared with the old /chat-docs route.
+	// Enabled when any of the following is true:
+	//   - Request header `X-Retrieval: 1` or body field `retrieval=true`
+	//   - Header `X-Retrieval-Store` specifies a store
+	//   - Auth is a widget key AND WIDGET_RETRIEVAL=1 (auto-RAG for public widgets)
+	knowledge := c.retrieveKnowledgeIfEnabled(
+		question,
+		retrievalOwner(authUser, token, c.Ctx.Request.Header.Get("Origin"), c.Ctx.Request.Header.Get("Referer")),
+		c.Ctx.Request.Header.Get("X-Retrieval-Store"),
+		c.GetAcceptLanguage(),
+	)
 
 	// Resolve the route for failover (may have fallback providers)
 	route := resolveModelRouteForOrg(request.Model, orgId)
@@ -1045,7 +1112,7 @@ func (c *ApiController) ChatCompletions() {
 // @Param Authorization header string true "Bearer token"
 // @Success 200 {object} object
 // @Failure 401 {object} object "Unauthorized"
-// @router /api/models [get]
+// @router /models [get]
 func (c *ApiController) ListModels() {
 	// R-04 fix: require authentication for model listing.
 	// Accept any valid token type (JWT, IAM key, publishable key, widget key).

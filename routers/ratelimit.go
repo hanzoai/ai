@@ -236,7 +236,7 @@ func RateLimitFilter(ctx *context.Context) {
 	}
 
 	// Only rate-limit API routes.
-	if !strings.HasPrefix(path, "/api/") && !strings.HasPrefix(path, "/v1/") {
+	if !strings.HasPrefix(path, "/v1/") && !strings.HasPrefix(path, "/v1/") {
 		return
 	}
 
@@ -278,13 +278,13 @@ func RateLimitFilter(ctx *context.Context) {
 // isRateLimitExempt returns true for paths that should bypass rate limiting.
 func isRateLimitExempt(path string) bool {
 	switch {
-	case path == "/api/health" || path == "/health":
+	case path == "/v1/health" || path == "/health":
 		return true
-	case path == "/api/metrics" || path == "/metrics":
+	case path == "/v1/metrics" || path == "/metrics":
 		return true
-	case strings.HasPrefix(path, "/api/get-version-info"):
+	case strings.HasPrefix(path, "/v1/get-version-info"):
 		return true
-	case strings.HasPrefix(path, "/api/get-system-info"):
+	case strings.HasPrefix(path, "/v1/get-system-info"):
 		return true
 	default:
 		return false
