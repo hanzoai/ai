@@ -46,11 +46,11 @@ func TestHstsFilter(t *testing.T) {
 func TestHstsFilterOnMultipleRoutes(t *testing.T) {
 	routes := []string{
 		"/",
-		"/api/",
-		"/api/health",
+		"/v1/",
+		"/v1/health",
 		"/swagger/",
 		"/storage/",
-		"/api/chat/completions",
+		"/v1/chat/completions",
 	}
 
 	for _, route := range routes {

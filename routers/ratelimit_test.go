@@ -188,12 +188,12 @@ func TestRateLimiterSeparateKeys(t *testing.T) {
 
 func TestIsRateLimitExempt(t *testing.T) {
 	exemptPaths := []string{
-		"/api/health",
+		"/v1/health",
 		"/health",
-		"/api/metrics",
+		"/v1/metrics",
 		"/metrics",
-		"/api/get-version-info",
-		"/api/get-system-info",
+		"/v1/get-version-info",
+		"/v1/get-system-info",
 	}
 	for _, p := range exemptPaths {
 		if !isRateLimitExempt(p) {
@@ -202,11 +202,11 @@ func TestIsRateLimitExempt(t *testing.T) {
 	}
 
 	nonExemptPaths := []string{
-		"/api/chat/completions",
-		"/api/messages",
+		"/v1/chat/completions",
 		"/v1/messages",
-		"/api/get-chats",
-		"/api/models",
+		"/v1/messages",
+		"/v1/get-chats",
+		"/v1/models",
 	}
 	for _, p := range nonExemptPaths {
 		if isRateLimitExempt(p) {

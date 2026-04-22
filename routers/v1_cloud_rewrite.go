@@ -28,7 +28,7 @@ import (
 func V1CloudRewriteFilter(ctx *context.Context) {
 	path := ctx.Request.URL.Path
 	if strings.HasPrefix(path, "/v1/cloud/") {
-		newPath := "/api/" + strings.TrimPrefix(path, "/v1/cloud/")
+		newPath := "/v1/" + strings.TrimPrefix(path, "/v1/cloud/")
 		ctx.Request.URL.Path = newPath
 		ctx.Request.RequestURI = newPath
 		if ctx.Request.URL.RawQuery != "" {
