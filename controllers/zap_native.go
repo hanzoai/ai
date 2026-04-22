@@ -94,9 +94,9 @@ func handleGatewayHTTPRequest(ctx context.Context, from string, msg *zap.Message
 	auth := extractAuthFromHeaders(root.Bytes(16))
 
 	switch {
-	case path == "/api/chat/completions" || path == "/v1/chat/completions":
+	case path == "/v1/chat" || path == "/v1/chat/completions" || path == "/v1/completions":
 		return zapChatHandler(ctx, auth, body)
-	case path == "/api/models" || path == "/v1/models":
+	case path == "/v1/models":
 		// R-04: require auth for model listing
 		if auth == "" {
 			errBody, _ := json.Marshal(map[string]interface{}{
@@ -109,7 +109,7 @@ func handleGatewayHTTPRequest(ctx context.Context, from string, msg *zap.Message
 			return object.BuildGatewayResponse(401, errBody, nil)
 		}
 		return zapListModelsHandler()
-	case strings.HasPrefix(path, "/api/balance") || strings.HasPrefix(path, "/v1/balance"):
+	case strings.HasPrefix(path, "/v1/balance"):
 		return zapBalanceHandler(auth, body)
 	default:
 		errBody, _ := json.Marshal(map[string]string{"error": "not found: " + path})
