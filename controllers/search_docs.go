@@ -102,16 +102,20 @@ func (c *ApiController) resolveSearchAuth() *searchAuth {
 		}
 	}
 
-	// 4b. Widget key (hz_*) -- origin-restricted public widget RAG.
-	// Widget keys skip IAM lookup; the store is resolved from WIDGET_STORE_<KEY>
-	// (or WIDGET_STORE default) so each brand embeds its own index.
+	// 4b. Widget key (hz_*) -- public widget RAG access.
+	// Owner is derived from the request Origin (WIDGET_ORIGINS map) so a single
+	// widget key can serve multiple brands, each reading its own indexed store.
 	// Gateway middleware already enforces Origin allowlist + rate limits.
 	if isWidgetKey(token) {
 		if !validateWidgetKey(token) {
 			c.ResponseError("invalid widget key")
 			return nil
 		}
-		owner := widgetOwnerForKey(token)
+		origin := c.Ctx.Request.Header.Get("Origin")
+		if origin == "" {
+			origin = c.Ctx.Request.Header.Get("Referer")
+		}
+		owner := resolveOwnerFromOrigin(origin)
 		return &searchAuth{
 			Owner:  owner,
 			UserID: owner + "/widget",
@@ -294,7 +298,7 @@ func purgeCFCacheTag(tag string) {
 // @Description search documentation using hybrid fulltext + vector search
 // @Param body body object.DocSearchRequest true "Search request"
 // @Success 200 {array} object.DocSearchResult The search results (raw array, not wrapped)
-// @router /search-docs [post]
+// @router /search [post]
 func (c *ApiController) SearchDocs() {
 	auth := c.resolveSearchAuth()
 	if auth == nil {
@@ -341,7 +345,7 @@ func (c *ApiController) SearchDocs() {
 // @Description index documentation into Meilisearch and Qdrant
 // @Param body body object.DocIndexRequest true "Index request"
 // @Success 200 {object} controllers.Response The Response object
-// @router /index-docs [post]
+// @router /index [post]
 func (c *ApiController) IndexDocs() {
 	auth := c.requireIndexAuth()
 	if auth == nil {
@@ -390,154 +394,13 @@ type aiSDKRequest struct {
 	Messages []aiSDKMessage `json:"messages"`
 }
 
-// ChatDocs
-// @Title ChatDocs
-// @Tag Search Docs API
-// @Description RAG chat over documentation with search context
-// @Param body body object.DocChatRequest true "Chat request"
-// @Success 200 {stream} string "SSE stream of chat response or AI SDK data stream"
-// @router /chat-docs [post]
-func (c *ApiController) ChatDocs() {
-	auth := c.resolveSearchAuth()
-	if auth == nil {
-		return
-	}
-
-	store := c.resolveSearchStore()
-	lang := c.GetAcceptLanguage()
-
-	// Detect AI SDK request format (has "messages" array from useChat hook).
-	var aiReq aiSDKRequest
-	if err := json.Unmarshal(c.Ctx.Input.RequestBody, &aiReq); err == nil && len(aiReq.Messages) > 0 {
-		c.chatDocsAISDK(auth, store, lang, aiReq)
-		return
-	}
-
-	// Native format: { query, tag, stream }
-	var req object.DocChatRequest
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &req)
-	if err != nil {
-		c.ResponseError(err.Error())
-		return
-	}
-
-	if req.Query == "" {
-		c.ResponseError("query must not be empty")
-		return
-	}
-
-	if req.Stream {
-		c.Ctx.ResponseWriter.Header().Set("Content-Type", "text/event-stream")
-		c.Ctx.ResponseWriter.Header().Set("Cache-Control", "no-cache")
-		c.Ctx.ResponseWriter.Header().Set("Connection", "keep-alive")
-
-		answer, modelResult, err := object.GetDocChatAnswer(auth.Owner, store, &req, lang)
-		if err != nil {
-			recordSearchUsage(auth, "search-chat", "rag", "error", 0, c.Ctx.Request.RemoteAddr)
-			event := fmt.Sprintf("event: myerror\ndata: %s\n\n", err.Error())
-			_, _ = c.Ctx.ResponseWriter.Write([]byte(event))
-			return
-		}
-
-		tokenCount := 0
-		if modelResult != nil {
-			tokenCount = modelResult.TotalTokenCount
-		}
-		recordSearchUsage(auth, "search-chat", "rag", "success", tokenCount, c.Ctx.Request.RemoteAddr)
-
-		jsonData, err := ConvertMessageDataToJSON(answer)
-		if err != nil {
-			event := fmt.Sprintf("event: myerror\ndata: %s\n\n", err.Error())
-			_, _ = c.Ctx.ResponseWriter.Write([]byte(event))
-			return
-		}
-
-		_, _ = c.Ctx.ResponseWriter.Write([]byte(fmt.Sprintf("event: message\ndata: %s\n\n", jsonData)))
-		_, _ = c.Ctx.ResponseWriter.Write([]byte("event: end\ndata: end\n\n"))
-		c.Ctx.ResponseWriter.Flush()
-		return
-	}
-
-	answer, modelResult, err := object.GetDocChatAnswer(auth.Owner, store, &req, lang)
-	if err != nil {
-		recordSearchUsage(auth, "search-chat", "rag", "error", 0, c.Ctx.Request.RemoteAddr)
-		c.ResponseError(err.Error())
-		return
-	}
-
-	tokenCount := 0
-	if modelResult != nil {
-		tokenCount = modelResult.TotalTokenCount
-	}
-	recordSearchUsage(auth, "search-chat", "rag", "success", tokenCount, c.Ctx.Request.RemoteAddr)
-
-	c.ResponseOk(answer)
-}
-
-// chatDocsAISDK handles the AI SDK useChat data stream protocol.
-// Request: { "messages": [{ "role": "user", "content": "..." }] }
-// Response: AI SDK data stream format (0:"text"\n d:{...}\n)
-func (c *ApiController) chatDocsAISDK(auth *searchAuth, store, lang string, aiReq aiSDKRequest) {
-	// Extract query from the last user message and system prompt if present.
-	var query string
-	var systemPrompt string
-	for i := len(aiReq.Messages) - 1; i >= 0; i-- {
-		if aiReq.Messages[i].Role == "user" && query == "" {
-			query = aiReq.Messages[i].Content
-		}
-		if aiReq.Messages[i].Role == "system" && systemPrompt == "" {
-			systemPrompt = aiReq.Messages[i].Content
-		}
-	}
-	if query == "" {
-		c.writeAISDKError("no user message found")
-		return
-	}
-
-	chatReq := &object.DocChatRequest{Query: query, Prompt: systemPrompt}
-	answer, modelResult, err := object.GetDocChatAnswer(auth.Owner, store, chatReq, lang)
-	if err != nil {
-		recordSearchUsage(auth, "search-chat", "rag", "error", 0, c.Ctx.Request.RemoteAddr)
-		c.writeAISDKError(err.Error())
-		return
-	}
-
-	tokenCount := 0
-	if modelResult != nil {
-		tokenCount = modelResult.TotalTokenCount
-	}
-	recordSearchUsage(auth, "search-chat", "rag", "success", tokenCount, c.Ctx.Request.RemoteAddr)
-
-	// Write AI SDK data stream protocol response.
-	c.Ctx.ResponseWriter.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	c.Ctx.ResponseWriter.Header().Set("X-Vercel-AI-Data-Stream", "v1")
-	c.Ctx.ResponseWriter.Header().Set("Cache-Control", "no-cache")
-
-	// Text delta (type 0): the full answer as a single chunk.
-	escaped, _ := json.Marshal(answer)
-	_, _ = c.Ctx.ResponseWriter.Write([]byte(fmt.Sprintf("0:%s\n", string(escaped))))
-
-	// Finish step (type d).
-	_, _ = c.Ctx.ResponseWriter.Write([]byte("d:{\"finishReason\":\"stop\"}\n"))
-
-	c.Ctx.ResponseWriter.Flush()
-}
-
-// writeAISDKError writes an error in the AI SDK data stream protocol format.
-func (c *ApiController) writeAISDKError(msg string) {
-	c.Ctx.ResponseWriter.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	c.Ctx.ResponseWriter.Header().Set("X-Vercel-AI-Data-Stream", "v1")
-	escaped, _ := json.Marshal(msg)
-	_, _ = c.Ctx.ResponseWriter.Write([]byte(fmt.Sprintf("3:%s\n", string(escaped))))
-	c.Ctx.ResponseWriter.Flush()
-}
 
 // SearchDocsStats
 // @Title SearchDocsStats
 // @Tag Search Docs API
 // @Description get search index statistics
 // @Success 200 {object} object.DocStatsResponse The stats response
-// @router /search-docs/stats [get]
+// @router /search/stats [get]
 func (c *ApiController) SearchDocsStats() {
 	auth := c.resolveSearchAuth()
 	if auth == nil {
