@@ -173,7 +173,7 @@ func BalanceGateFilter(ctx *context.Context) {
 	}
 
 	// Only enforce on API and v1 routes.
-	if !strings.HasPrefix(path, "/api/") && !strings.HasPrefix(path, "/v1/") {
+	if !strings.HasPrefix(path, "/v1/") && !strings.HasPrefix(path, "/v1/") {
 		return
 	}
 
@@ -202,21 +202,21 @@ func BalanceGateFilter(ctx *context.Context) {
 // (free/public endpoints, health checks, etc.).
 func isBalanceExempt(path string) bool {
 	switch {
-	case path == "/api/health" || path == "/health":
+	case path == "/v1/health" || path == "/health":
 		return true
-	case path == "/api/metrics" || path == "/metrics":
+	case path == "/v1/metrics" || path == "/metrics":
 		return true
 	// /api/models and /v1/models require authentication (R-04).
 	// Removed from balance exemption — callers must have a valid token.
-	case strings.HasPrefix(path, "/api/get-version-info"):
+	case strings.HasPrefix(path, "/v1/get-version-info"):
 		return true
-	case strings.HasPrefix(path, "/api/get-system-info"):
+	case strings.HasPrefix(path, "/v1/get-system-info"):
 		return true
-	case strings.HasPrefix(path, "/api/signin"):
+	case strings.HasPrefix(path, "/v1/signin"):
 		return true
-	case path == "/api/signout":
+	case path == "/v1/signout":
 		return true
-	case path == "/api/get-account":
+	case path == "/v1/get-account":
 		return true
 	default:
 		return false
