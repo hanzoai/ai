@@ -46,7 +46,7 @@ func isAllowedInDemoMode(method string, urlPath string) bool {
 		return true
 	}
 
-	if strings.HasPrefix(urlPath, "/api/signin") || urlPath == "/api/signout" || urlPath == "/api/add-chat" || urlPath == "/api/add-message" || urlPath == "/api/update-message" || urlPath == "/api/delete-welcome-message" || urlPath == "/api/generate-text-to-speech-audio" || urlPath == "/api/add-node-tunnel" || urlPath == "/api/start-connection" || urlPath == "/api/stop-connection" || urlPath == "/api/commit-record" || urlPath == "/api/commit-record-second" || urlPath == "/api/update-chat" || urlPath == "/api/delete-chat" || urlPath == "/api/search-docs" || urlPath == "/api/chat-docs" {
+	if strings.HasPrefix(urlPath, "/v1/signin") || urlPath == "/v1/signout" || urlPath == "/v1/add-chat" || urlPath == "/v1/add-message" || urlPath == "/v1/update-message" || urlPath == "/v1/delete-welcome-message" || urlPath == "/v1/generate-text-to-speech-audio" || urlPath == "/v1/add-node-tunnel" || urlPath == "/v1/start-connection" || urlPath == "/v1/stop-connection" || urlPath == "/v1/commit-record" || urlPath == "/v1/commit-record-second" || urlPath == "/v1/update-chat" || urlPath == "/v1/delete-chat" || urlPath == "/v1/search-docs" || urlPath == "/v1/chat-docs" {
 		return true
 	}
 
@@ -55,9 +55,9 @@ func isAllowedInDemoMode(method string, urlPath string) bool {
 
 func permissionFilter(ctx *context.Context) {
 	path := ctx.Request.URL.Path
-	controllerName := strings.TrimPrefix(path, "/api/")
+	controllerName := strings.TrimPrefix(path, "/v1/")
 
-	if !strings.HasPrefix(path, "/api/") {
+	if !strings.HasPrefix(path, "/v1/") {
 		return
 	}
 

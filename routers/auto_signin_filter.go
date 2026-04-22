@@ -44,15 +44,15 @@ func AutoSigninFilter(ctx *context.Context) {
 	if strings.HasSuffix(urlPath, "/chat/completions") ||
 		strings.HasSuffix(urlPath, "/completions") ||
 		strings.HasPrefix(urlPath, "/v1/") ||
-		strings.HasPrefix(urlPath, "/api/search-docs") ||
-		strings.HasPrefix(urlPath, "/api/index-docs") ||
-		strings.HasPrefix(urlPath, "/api/chat-docs") ||
-		strings.HasPrefix(urlPath, "/api/scrape-docs") {
+		strings.HasPrefix(urlPath, "/v1/search-docs") ||
+		strings.HasPrefix(urlPath, "/v1/index-docs") ||
+		strings.HasPrefix(urlPath, "/v1/chat-docs") ||
+		strings.HasPrefix(urlPath, "/v1/scrape-docs") {
 		return
 	}
 
 	// Run for API paths and /storage paths only.
-	if !strings.HasPrefix(urlPath, "/api/") && !strings.HasPrefix(urlPath, "/storage") {
+	if !strings.HasPrefix(urlPath, "/v1/") && !strings.HasPrefix(urlPath, "/storage") {
 		return
 	}
 

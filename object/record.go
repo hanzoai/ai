@@ -247,7 +247,7 @@ func UpdateRecordFields(id string, fields map[string]interface{}, lang string) (
 
 func NewRecord(ctx *context.Context) (*Record, error) {
 	ip := strings.Replace(util.GetIPFromRequest(ctx.Request), ": ", "", -1)
-	action := strings.Replace(ctx.Request.URL.Path, "/api/", "", -1)
+	action := strings.TrimPrefix(ctx.Request.URL.Path, "/v1/")
 	requestUri := util.FilterQuery(ctx.Request.RequestURI, []string{"accessToken"})
 	if len(requestUri) > 1000 {
 		requestUri = requestUri[0:1000]
