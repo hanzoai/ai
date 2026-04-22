@@ -26,7 +26,7 @@ import (
 // @Description crawl a website and index structured content into search
 // @Param body body object.ScrapeRequest true "Scrape request"
 // @Success 200 {object} object.ScrapeStats "Scrape and index statistics"
-// @router /scrape-docs [post]
+// @router /scrape [post]
 func (c *ApiController) ScrapeDocs() {
 	auth := c.requireIndexAuth()
 	if auth == nil {
@@ -72,7 +72,7 @@ func (c *ApiController) ScrapeDocs() {
 // @Description scrape a single URL and return structured data without indexing
 // @Param body body object.ScrapeRequest true "Preview request (url required, engine optional: fast|browser)"
 // @Success 200 {object} object.ScrapeResult "Structured page content"
-// @router /scrape-docs/preview [post]
+// @router /scrape/preview [post]
 func (c *ApiController) ScrapePreview() {
 	auth := c.requireIndexAuth()
 	if auth == nil {
