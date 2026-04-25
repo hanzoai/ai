@@ -166,7 +166,7 @@ func main() {
 	}()
 
 	// Initialize ZAP node for native binary protocol.
-	// Listens on port 9651, connects to KV/SQL peers.
+	// Listens on port 9999, connects to KV/SQL peers.
 	object.InitZap()
 	controllers.InitZapHandlers()
 
