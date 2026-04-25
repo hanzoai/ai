@@ -16,9 +16,9 @@
 // Cloud-api is a first-class ZAP node. NO gateways, NO proxies, NO sidecars,
 // NO HTTP translation layers. Everything is ZAP-to-ZAP:
 //
-//	client → cloud-api:9651 (ZAP binary)
-//	cloud-api → kv:9651     (ZAP binary)
-//	cloud-api → sql:9651    (ZAP binary)
+//	client → cloud-api:9999 (ZAP binary)
+//	cloud-api → kv:9999     (ZAP binary)
+//	cloud-api → sql:9999    (ZAP binary)
 //
 // Service handlers are registered via RegisterCloudHandler() from the
 // controllers package (avoids circular imports).
@@ -93,7 +93,7 @@ func InitZap() {
 		logs.Info("ZAP: disabled (set ZAP_ENABLED=true)")
 		return
 	}
-	port := 9651
+	port := 9999
 	if p := os.Getenv("ZAP_PORT"); p != "" {
 		fmt.Sscanf(p, "%d", &port)
 	}
@@ -119,12 +119,12 @@ func InitZap() {
 	// Connect to backend peers asynchronously.
 	kvAddr := os.Getenv("ZAP_KV_ADDR")
 	if kvAddr == "" {
-		kvAddr = "hanzo-kv:9651"
+		kvAddr = "hanzo-kv:9999"
 	}
 	go connectPeer(node, kvAddr, "kv", &kvPeerID)
 	sqlAddr := os.Getenv("ZAP_SQL_ADDR")
 	if sqlAddr == "" {
-		sqlAddr = "sql.hanzo.svc:9651"
+		sqlAddr = "sql.hanzo.svc:9999"
 	}
 	go connectPeer(node, sqlAddr, "sql", &sqlPeerID)
 	// Datastore (ClickHouse) — optional, for observability traces.
