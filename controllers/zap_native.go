@@ -14,7 +14,7 @@
 
 // Native ZAP service handlers. Pure ZAP binary protocol, no HTTP.
 //
-// Clients connect directly to cloud-api:9651. No gateway, no proxy,
+// Clients connect directly to cloud-api:9999. No gateway, no proxy,
 // no sidecars. ZAP-to-ZAP end-to-end.
 //
 // Message type 100 (native cloud):

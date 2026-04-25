@@ -43,7 +43,7 @@ const MsgTypeCloudOps uint16 = 110
 var interserviceNode *zap.Node
 
 // InitInterserviceZap starts a dedicated ZAP node for inter-service operations.
-// Separate from the main inference ZAP node (port 9651).
+// Separate from the main inference ZAP node (port 9999).
 func InitInterserviceZap() {
 	port := 9320
 	if p := os.Getenv("CLOUD_ZAP_PORT"); p != "" {
