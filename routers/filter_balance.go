@@ -28,7 +28,7 @@ import (
 	"github.com/beego/beego/context"
 	"github.com/beego/beego/logs"
 	"github.com/hanzoai/cloud/conf"
-	iamsdk "github.com/hanzoid/go-sdk/casdoorsdk"
+	iamsdk "github.com/hanzoai/iamsdk/v2/iamsdk"
 )
 
 // ── Service key exemption ────────────────────────────────────────────────────
