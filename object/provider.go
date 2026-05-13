@@ -27,7 +27,7 @@ import (
 	"github.com/hanzoai/cloud/tts"
 	"github.com/hanzoai/cloud/util"
 	"github.com/hanzoai/dbx"
-	iamsdk "github.com/hanzoid/go-sdk/casdoorsdk"
+	iamsdk "github.com/hanzoai/iamsdk/v2/iamsdk"
 )
 
 type Provider struct {
