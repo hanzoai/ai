@@ -22,7 +22,7 @@ import (
 
 	"github.com/hanzoai/cloud/controllers"
 	"github.com/hanzoai/cloud/object"
-	iamsdk "github.com/hanzoid/go-sdk/casdoorsdk"
+	iamsdk "github.com/hanzoai/iamsdk/v2/iamsdk"
 )
 
 var userTag = "user"

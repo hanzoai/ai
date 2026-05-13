@@ -14,7 +14,7 @@
 package object
 
 import (
-	iamsdk "github.com/hanzoid/go-sdk/casdoorsdk"
+	iamsdk "github.com/hanzoai/iamsdk/v2/iamsdk"
 )
 
 func IsAdmin(user *iamsdk.User) bool {

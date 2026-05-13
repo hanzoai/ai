@@ -24,7 +24,7 @@ import (
 	"github.com/hanzoai/cloud/model"
 	"github.com/hanzoai/cloud/object"
 	"github.com/hanzoai/cloud/util"
-	iamsdk "github.com/hanzoid/go-sdk/casdoorsdk"
+	iamsdk "github.com/hanzoai/iamsdk/v2/iamsdk"
 	"github.com/sashabaranov/go-openai"
 )
 
