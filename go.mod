@@ -47,7 +47,7 @@ require (
 	github.com/leverly/ChatGLM v1.2.0
 	github.com/lib/pq v1.10.2
 	github.com/luthermonson/go-proxmox v0.2.1
-	github.com/luxfi/crypto v1.17.45
+	github.com/luxfi/crypto v1.19.0
 	github.com/luxfi/geth v1.16.79
 	github.com/luxfi/metric v1.5.0
 	github.com/luxfi/zap v0.3.1
@@ -119,6 +119,7 @@ require (
 	github.com/hhrutter/pkcs7 v0.2.0 // indirect
 	github.com/hhrutter/tiff v1.0.2 // indirect
 	github.com/holiman/uint256 v1.3.2 // indirect
+	github.com/luxfi/accel v1.0.7 // indirect
 	github.com/luxfi/cache v1.2.1 // indirect
 	github.com/luxfi/container v0.0.4 // indirect
 	github.com/luxfi/ids v1.2.9 // indirect
