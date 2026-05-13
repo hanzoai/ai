@@ -1,6 +1,6 @@
 module github.com/hanzoai/cloud
 
-go 1.26.1
+go 1.26.3
 
 require (
 	cloud.google.com/go/compute v1.28.0
@@ -50,7 +50,7 @@ require (
 	github.com/luxfi/crypto v1.17.45
 	github.com/luxfi/geth v1.16.79
 	github.com/luxfi/metric v1.5.0
-	github.com/luxfi/zap v0.2.0
+	github.com/zap-proto/go v0.2.0
 	github.com/openai/openai-go/v2 v2.1.1
 	github.com/oschwald/geoip2-golang v1.11.0
 	github.com/pkg/errors v0.9.1
