@@ -12,7 +12,7 @@
     "@cyntler/react-doc-viewer": "^1.5.2",
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/utilities": "^3.2.2",
-    "@hanzo/iam": "^0.9.0",
+    "@hanzo/iam-js-sdk": "^0.19.1",
     "@uiw/codemirror-extensions-langs": "^4.23.8",
     "@uiw/codemirror-theme-material": "^4.23.8",
     "@uiw/react-codemirror": "^4.23.8",
