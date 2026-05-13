@@ -570,6 +570,8 @@ github.com/luthermonson/go-proxmox v0.2.1 h1:RkVM1oS9PxpS336FoM9nZujbpUwNwTCvAdO
 github.com/luthermonson/go-proxmox v0.2.1/go.mod h1:wkD6045y9lKBCP0sJGjNqmlBCo0vwRwnfhmsrPBTu34=
 github.com/luxfi/accel v1.0.1 h1:JtkOS5tSjdrVRGDHiuXxR6AIBaiSN1NpQc4FobgSl5w=
 github.com/luxfi/accel v1.0.1/go.mod h1:j5NCg8eKiQwhbRuJqa5G1oozcKp8HxJWMnrNA/CocWk=
+github.com/luxfi/accel v1.0.7 h1:ksHieAp50umwqxqgyHk9WiOmXM54kia3IEDb5H7FsM8=
+github.com/luxfi/accel v1.0.7/go.mod h1:iZD3oxffiMEIT/KvzD8bgwC/cBn4AYlMW3QJpbRa4RE=
 github.com/luxfi/atomic v1.0.0 h1:xUV60MuzRvXngaQ1sM0yVC2v4TRoLlUGkkH7M9PS4yw=
 github.com/luxfi/atomic v1.0.0/go.mod h1:0G2mTlQ6TXWHICUHrUUPu1/qAiIyR4gSZ2tva9ci/bI=
 github.com/luxfi/cache v1.2.1 h1:kAzOS55/hmYeNKR+0HAKv4ma48Y6JjkI8UQeqdZ8bfI=
@@ -588,6 +590,8 @@ github.com/luxfi/container v0.0.4 h1:BXhF82WyfqVP5mjlNcr7tP0Fcnvl0Ap1rkiu+rq5XuM
 github.com/luxfi/container v0.0.4/go.mod h1:Z3SpmMF5d4t77MM0nHYXURpn+EMVaeu1fhbd/3BGaek=
 github.com/luxfi/crypto v1.17.45 h1:uGK0y4+aLipE/M0YIQ5hcsWv0ZG0E4cPv03a94K/eLE=
 github.com/luxfi/crypto v1.17.45/go.mod h1:GnAkhQ7HNs3X0Tzx5nOONS3kl0yRmWHbDcRO5ffILsg=
+github.com/luxfi/crypto v1.19.0 h1:VtH6kvZrCEjCnkHPkhExDU+GJ0ZulYX4rnA+lXJdJHw=
+github.com/luxfi/crypto v1.19.0/go.mod h1:ee525i8Recbpb0jVTDZYZBr1MmvJ27OITJHZ/nlNMBw=
 github.com/luxfi/database v1.17.42 h1:e3ZgWI155n/Nwzb2s4xhBWIQ2Lh3g5xuFA75KMII4zk=
 github.com/luxfi/database v1.17.42/go.mod h1:0nArLBm0r42J103oHR2xkAe8+mftuz5jtFgNylU1hgg=
 github.com/luxfi/geth v1.16.79 h1:MtP8ZUuSVZDjmZDa1kTJCl0PpG8+wGbQft652GO6a3A=
