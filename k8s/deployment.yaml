@@ -24,7 +24,7 @@ spec:
         - name: ghcr-secret
       containers:
         - name: cloud-api
-          image: ghcr.io/hanzoai/cloud:latest
+          image: ghcr.io/hanzoai/cloud:1.783.1
           ports:
             - containerPort: 8000
               protocol: TCP
