@@ -24,7 +24,7 @@ import (
 	"github.com/hanzoai/cloud/conf"
 	"github.com/hanzoai/cloud/object"
 	"github.com/hanzoai/cloud/util"
-	iamsdk "github.com/hanzoid/go-sdk/casdoorsdk"
+	iamsdk "github.com/hanzoai/iamsdk/v2/iamsdk"
 )
 
 func init() {
