@@ -29,7 +29,7 @@ import (
 // @Title WecomBotVerifyUrl
 // @Tag WechatWork Bot API
 // @Description verify WeChat work bot callback URL
-// @router /api/wecom-bot/callback/:botId [get]
+// @router /wecom-bot/callback/:botId [get]
 func (c *ApiController) WecomBotVerifyUrl() {
 	botId := c.Ctx.Input.Param(":botId")
 	msgSignature := c.GetString("msg_signature")
@@ -58,7 +58,7 @@ func (c *ApiController) WecomBotVerifyUrl() {
 // @Title WecomBotHandleMessage
 // @Tag WechatWork Bot API
 // @Description handle WeChat work bot messages
-// @router /api/wecom-bot/callback/:botId [post]
+// @router /wecom-bot/callback/:botId [post]
 func (c *ApiController) WecomBotHandleMessage() {
 	botId := c.Ctx.Input.Param(":botId")
 	msgSignature := c.GetString("msg_signature")

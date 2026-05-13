@@ -313,7 +313,7 @@ func (c *ApiController) respondAnthropicError(errType string, message string, st
 //
 // @Param   body    body    AnthropicRequest  true    "The Anthropic messages request"
 // @Success 200 {object} AnthropicResponse
-// @router /api/messages [post]
+// @router /messages [post]
 func (c *ApiController) AnthropicMessages() {
 	// Extract token: prefer x-api-key, fall back to Authorization: Bearer
 	token := c.Ctx.Request.Header.Get("x-api-key")

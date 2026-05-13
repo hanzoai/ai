@@ -420,7 +420,7 @@ func (mc *ModelConfig) PremiumGateEnabled() bool {
 // @Tag Admin
 // @Description Reload model configuration from YAML and refresh live pricing.
 // @Success 200 {object} controllers.Response
-// @router /api/reload-model-config [post]
+// @router /reload-model-config [post]
 func (c *ApiController) ReloadModelConfig() {
 	cfg := GetModelConfig()
 	if cfg == nil {
