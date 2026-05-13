@@ -17,7 +17,7 @@ package util
 import (
 	"strings"
 
-	iamsdk "github.com/hanzoid/go-sdk/casdoorsdk"
+	iamsdk "github.com/hanzoai/iamsdk/v2/iamsdk"
 )
 
 const (
