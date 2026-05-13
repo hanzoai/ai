@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	"github.com/beego/beego/logs"
-	iamsdk "github.com/hanzoid/go-sdk/casdoorsdk"
+	iamsdk "github.com/hanzoai/iamsdk/v2/iamsdk"
 	"github.com/hanzoai/cloud/model"
 	"github.com/hanzoai/cloud/object"
 )

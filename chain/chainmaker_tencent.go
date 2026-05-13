@@ -91,7 +91,7 @@ func (client ChainTencentChainmakerClient) Query(blockId string, data string, la
 	//// Write some code... (if error occurred, handle it as above)
 	//
 	//// assume the chain data are retrieved from the blockchain, here we just generate it statically
-	//chainData := map[string]string{"organization": "casbin"}
+	//chainData := map[string]string{"organization": "hanzo"}
 	//
 	//// Check if the data are matched with the chain data
 	//res := "Matched"
