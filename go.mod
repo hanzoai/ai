@@ -107,11 +107,9 @@ require (
 	github.com/clipperhouse/uax29/v2 v2.3.0 // indirect
 	github.com/consensys/gnark-crypto v0.19.2 // indirect
 	github.com/crate-crypto/go-eth-kzg v1.5.0 // indirect
-	github.com/crate-crypto/go-ipa v0.0.0-20240724233137-53bbb0ceb27a // indirect
 	github.com/deckarep/golang-set/v2 v2.8.0 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.0 // indirect
 	github.com/ethereum/c-kzg-4844/v2 v2.1.5 // indirect
-	github.com/ethereum/go-verkle v0.2.2 // indirect
 	github.com/go-errors/errors v1.4.2 // indirect
 	github.com/gorilla/rpc v1.2.1 // indirect
 	github.com/grandcat/zeroconf v1.0.0 // indirect
@@ -122,6 +120,7 @@ require (
 	github.com/luxfi/accel v1.0.7 // indirect
 	github.com/luxfi/cache v1.2.1 // indirect
 	github.com/luxfi/container v0.0.4 // indirect
+	github.com/luxfi/crypto/ipa v1.2.4 // indirect
 	github.com/luxfi/ids v1.2.9 // indirect
 	github.com/luxfi/log v1.4.1 // indirect
 	github.com/luxfi/math v1.2.3 // indirect
