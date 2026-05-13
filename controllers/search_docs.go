@@ -26,7 +26,7 @@ import (
 	"github.com/beego/beego/logs"
 	"github.com/hanzoai/cloud/conf"
 	"github.com/hanzoai/cloud/object"
-	iamsdk "github.com/hanzoid/go-sdk/casdoorsdk"
+	iamsdk "github.com/hanzoai/iamsdk/v2/iamsdk"
 )
 
 // searchAuth holds the validated identity for a search API request.

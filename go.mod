@@ -39,9 +39,9 @@ require (
 	github.com/hanzoai/dashscopego v0.6.0
 	github.com/hanzoai/dbx v1.13.0
 	github.com/hanzoai/go-openrouter v1.0.0
+	github.com/hanzoai/iamsdk/v2 v2.1.0
 	github.com/hanzoai/pdf v1.2.0
 	github.com/hanzoai/search-go v0.36.0
-	github.com/hanzoid/go-sdk v1.45.0
 	github.com/henomis/lingoose v0.1.0
 	github.com/hupe1980/go-huggingface v0.0.15
 	github.com/leverly/ChatGLM v1.2.0
@@ -50,7 +50,7 @@ require (
 	github.com/luxfi/crypto v1.17.45
 	github.com/luxfi/geth v1.16.79
 	github.com/luxfi/metric v1.5.0
-	github.com/zap-proto/go v0.2.0
+	github.com/luxfi/zap v0.3.1
 	github.com/openai/openai-go/v2 v2.1.1
 	github.com/oschwald/geoip2-golang v1.11.0
 	github.com/pkg/errors v0.9.1

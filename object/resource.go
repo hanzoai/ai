@@ -1,4 +1,4 @@
-// Copyright 2025 The casbin Authors. All Rights Reserved.
+// Copyright 2025 The Hanzo Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@ package object
 import (
 	"time"
 
-	iamsdk "github.com/hanzoid/go-sdk/casdoorsdk"
+	iamsdk "github.com/hanzoai/iamsdk/v2/iamsdk"
 )
 
 func UploadFileToStorageSafe(user string, tag string, parent string, fullFilePath string, fileBytes []byte) (string, error) {
