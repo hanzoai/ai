@@ -62,9 +62,9 @@ type CompletionRequest struct {
 	OrgID, UserID string
 	// AppName selects the chat-app (system prompt + tool registry +
 	// model default); empty selects the org's default app.
-	AppName  string
-	Model    string  // optional override of the app's default model
-	Messages []Message
+	AppName     string
+	Model       string // optional override of the app's default model
+	Messages    []Message
 	MaxTokens   int
 	Temperature float64
 	JSONMode    bool
@@ -129,43 +129,43 @@ type Model struct {
 
 // Chat is a saved conversation.
 type Chat struct {
-	ID         string
-	OrgID      string
-	UserID     string
-	AppName    string
-	Title      string
-	Messages   []Message
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
-	Pinned     bool
-	Archived   bool
+	ID        string
+	OrgID     string
+	UserID    string
+	AppName   string
+	Title     string
+	Messages  []Message
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	Pinned    bool
+	Archived  bool
 }
 
 // ChatSummary is the lightweight list entry.
 type ChatSummary struct {
-	ID         string
-	Title      string
-	AppName    string
-	UpdatedAt  time.Time
-	Pinned     bool
+	ID           string
+	Title        string
+	AppName      string
+	UpdatedAt    time.Time
+	Pinned       bool
 	MessageCount int
 }
 
 // ListOpts configures the chat list.
 type ListOpts struct {
-	Page          int
-	PerPage       int
-	IncludeArchived bool
+	Page               int
+	PerPage            int
+	IncludeArchived    bool
 	IncludePinnedFirst bool
 }
 
 // App is a chat-app definition.
 type App struct {
-	OrgID         string
-	Name          string
-	DisplayName   string
-	SystemPrompt  string
-	DefaultModel  string
+	OrgID        string
+	Name         string
+	DisplayName  string
+	SystemPrompt string
+	DefaultModel string
 	// Tools advertises functions the model may call inside this app.
 	Tools []Tool
 	// MemoryEnabled — true to bind a memory store at MemoryKey scope.

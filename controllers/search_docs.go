@@ -394,7 +394,6 @@ type aiSDKRequest struct {
 	Messages []aiSDKMessage `json:"messages"`
 }
 
-
 // SearchDocsStats
 // @Title SearchDocsStats
 // @Tag Search Docs API
