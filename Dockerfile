@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
-FROM --platform=$BUILDPLATFORM node:20.18.0 AS front
-RUN npm install -g pnpm@10
+FROM --platform=$BUILDPLATFORM node:22-alpine AS front
+RUN npm install -g pnpm@9.15.4
 WORKDIR /web
 COPY ./web .
 ENV NODE_OPTIONS="--max-old-space-size=4096"
