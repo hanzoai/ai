@@ -30,6 +30,10 @@ if (fs.existsSync(targetDir)) {
   console.log(`Target directory "${targetDir}" has been deleted successfully.`);
 }
 
-fs.renameSync(sourceDir, targetDir);
+// Use cp+rm instead of rename to handle EXDEV (cross-device link not permitted)
+// that occurs in multi-arch Docker buildx where source and dest live on
+// different overlay mounts.
+fs.cpSync(sourceDir, targetDir, {recursive: true});
+fs.rmSync(sourceDir, {recursive: true, force: true});
 // eslint-disable-next-line no-console
-console.log(`Renamed "${sourceDir}" to "${targetDir}" successfully.`);
+console.log(`Moved "${sourceDir}" to "${targetDir}" successfully.`);
