@@ -220,8 +220,8 @@ func InitRateLimiter(tierFunc func(string) Tier) *RateLimiter {
 // limits on API endpoints. It extracts the API key from the Authorization
 // header (Bearer token) or X-API-Key header.
 //
-// Rate-limited paths: /api/chat/completions, /api/messages, /v1/messages,
-// and other API endpoints that carry a bearer token.
+// Rate-limited paths: /v1/messages, /v1/messages,
+// and other /v1/ endpoints that carry a bearer token.
 // Excluded: health, metrics, models (read-only), static, UI routes.
 func RateLimitFilter(ctx *context.Context) {
 	if rateLimiterInstance == nil {
@@ -236,7 +236,7 @@ func RateLimitFilter(ctx *context.Context) {
 	}
 
 	// Only rate-limit API routes.
-	if !strings.HasPrefix(path, "/v1/") && !strings.HasPrefix(path, "/v1/") {
+	if !strings.HasPrefix(path, "/v1/") {
 		return
 	}
 
@@ -532,9 +532,9 @@ type commercePlanResponse struct {
 // and maps the plan name to a rate limit Tier. Returns TierZenFree on any error
 // (fail-open: rate limiting should never deny service because Commerce is down).
 func (tc *TierCache) commerceTierLookup(apiKey string) (Tier, error) {
-	// Commerce API prefix is "/" in prod, not "/api/v1/". Canonical path
+	// All commerce endpoints live under /v1/. Canonical path
 	// is /billing/tier.
-	url := fmt.Sprintf("%s/billing/tier?apiKey=%s", tc.endpoint, apiKey)
+	url := fmt.Sprintf("%s/v1/billing/tier?apiKey=%s", tc.endpoint, apiKey)
 
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
