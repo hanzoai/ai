@@ -20,8 +20,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hanzoai/cloud/model"
-	"github.com/hanzoai/cloud/util"
+	"github.com/hanzoai/ai/model"
+	"github.com/hanzoai/ai/util"
 	"github.com/hanzoai/dbx"
 )
 

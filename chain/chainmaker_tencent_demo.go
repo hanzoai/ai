@@ -18,8 +18,8 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/hanzoai/cloud/i18n"
-	"github.com/hanzoai/cloud/util"
+	"github.com/hanzoai/ai/i18n"
+	"github.com/hanzoai/ai/util"
 	"github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common"
 	"github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common/errors"
 	"github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common/profile"

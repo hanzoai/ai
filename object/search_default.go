@@ -16,8 +16,8 @@ package object
 import (
 	"fmt"
 
-	"github.com/hanzoai/cloud/embedding"
-	"github.com/hanzoai/cloud/i18n"
+	"github.com/hanzoai/ai/embedding"
+	"github.com/hanzoai/ai/i18n"
 )
 
 type DefaultSearchProvider struct {

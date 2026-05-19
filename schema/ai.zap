@@ -1,12 +1,13 @@
-# Hanzo Cloud AI Service — ZAP Schema
+# Hanzo AI — ZAP Schema (HIP-0106)
 #
-# Server: cloud-api (Go/Beego) at cloud.hanzo.ai / api.hanzo.ai
+# Server: hanzoai/ai mounted at /v1/ai inside the unified cloud binary.
+# LLM control plane, RAG, model hub, MCP management.
 #
 # Code generation:
-#   zapc generate cloud.zap --lang go --out ./gen/zap/
-#   zapc generate cloud.zap --lang ts --out ./gen/zap/
-#   zapc generate cloud.zap --lang py --out ./gen/zap/
-#   zapc generate cloud.zap --lang rust --out ./gen/zap/
+#   zapc generate schema/ai.zap --lang go --out ./pkg/ai/zap/
+#   zapc generate schema/ai.zap --lang ts --out ./web/src/zap/
+#   zapc generate schema/ai.zap --lang py --out ./py/zap/
+#   zapc generate schema/ai.zap --lang rust --out ./rust/src/zap/
 
 # ── Enums ────────────────────────────────────────────────────────────────
 
@@ -198,7 +199,7 @@ struct VectorSearchResult
 
 # ── Service Interface ────────────────────────────────────────────────────
 
-interface CloudService
+interface AI
   # Chat completions (OpenAI-compatible)
   chatCompletions (request ChatRequest) -> (response ChatResponse)
 

@@ -15,7 +15,7 @@
 package controllers
 
 import (
-	"github.com/hanzoai/cloud/util"
+	"github.com/hanzoai/ai/util"
 )
 
 // GetSystemInfo

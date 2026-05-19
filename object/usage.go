@@ -17,10 +17,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/hanzoai/cloud/conf"
-	"github.com/hanzoai/cloud/i18n"
-	"github.com/hanzoai/cloud/model"
-	iamsdk "github.com/hanzoai/iamsdk/v2/iamsdk"
+	"github.com/hanzoai/ai/conf"
+	"github.com/hanzoai/ai/i18n"
+	"github.com/hanzoai/ai/model"
+	iam "github.com/hanzoai/iam"
 )
 
 type Usage struct {
@@ -176,7 +176,7 @@ func GetUsageMetadata(lang string, orgName ...string) (*UsageMetadata, error) {
 	if len(orgName) > 0 && orgName[0] != "" {
 		iamOrganization = orgName[0]
 	}
-	organization, err := iamsdk.GetOrganization(iamOrganization)
+	organization, err := iam.GetOrganization(iamOrganization)
 	if err != nil {
 		return nil, err
 	}
@@ -184,7 +184,7 @@ func GetUsageMetadata(lang string, orgName ...string) (*UsageMetadata, error) {
 		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:IAM organization: [%s] doesn't exist"), iamOrganization))
 	}
 	iamApplication := conf.GetConfigString("IAM_APP_NAME")
-	application, err := iamsdk.GetApplication(iamApplication)
+	application, err := iam.GetApplication(iamApplication)
 	if err != nil {
 		return nil, err
 	}

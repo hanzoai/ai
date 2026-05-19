@@ -27,8 +27,8 @@ import (
 
 	"github.com/beego/beego/context"
 	"github.com/beego/beego/logs"
-	"github.com/hanzoai/cloud/conf"
-	iamsdk "github.com/hanzoai/iamsdk/v2/iamsdk"
+	"github.com/hanzoai/ai/conf"
+	iam "github.com/hanzoai/iam"
 )
 
 // ── Service key exemption ────────────────────────────────────────────────────
@@ -261,7 +261,7 @@ func resolveUserKey(ctx *context.Context) string {
 
 	// JWT token: parse locally (cheap, no network).
 	if isJwtTokenLike(token) {
-		claims, err := iamsdk.ParseJwtToken(token)
+		claims, err := iam.ParseJwtToken(token)
 		if err != nil {
 			return ""
 		}

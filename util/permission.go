@@ -17,7 +17,7 @@ package util
 import (
 	"strings"
 
-	iamsdk "github.com/hanzoai/iamsdk/v2/iamsdk"
+	iam "github.com/hanzoai/iam"
 )
 
 const (
@@ -30,7 +30,7 @@ func IsAnonymousUserByUsername(username string) bool {
 }
 
 // IsAdmin checks if the user is either a system admin or a chat-admin
-func IsAdmin(user *iamsdk.User) bool {
+func IsAdmin(user *iam.User) bool {
 	if user == nil {
 		return false
 	}
@@ -38,7 +38,7 @@ func IsAdmin(user *iamsdk.User) bool {
 }
 
 // IsVideoNormalUser checks if the user has the video-normal-user role
-func IsVideoNormalUser(user *iamsdk.User) bool {
+func IsVideoNormalUser(user *iam.User) bool {
 	if user == nil {
 		return false
 	}

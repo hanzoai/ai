@@ -22,8 +22,8 @@ import (
 
 	"github.com/beego/beego"
 	"github.com/beego/beego/logs"
-	"github.com/hanzoai/cloud/object"
-	iamsdk "github.com/hanzoai/iamsdk/v2/iamsdk"
+	"github.com/hanzoai/ai/object"
+	iam "github.com/hanzoai/iam"
 )
 
 type ApiController struct {
@@ -31,10 +31,10 @@ type ApiController struct {
 }
 
 func init() {
-	gob.Register(iamsdk.Claims{})
+	gob.Register(iam.Claims{})
 }
 
-func GetUserName(user *iamsdk.User) string {
+func GetUserName(user *iam.User) string {
 	if user == nil {
 		return ""
 	}
@@ -42,17 +42,17 @@ func GetUserName(user *iamsdk.User) string {
 	return user.Name
 }
 
-func (c *ApiController) GetSessionClaims() *iamsdk.Claims {
+func (c *ApiController) GetSessionClaims() *iam.Claims {
 	s := c.GetSession("user")
 	if s == nil {
 		return nil
 	}
 
-	claims := s.(iamsdk.Claims)
+	claims := s.(iam.Claims)
 	return &claims
 }
 
-func (c *ApiController) SetSessionClaims(claims *iamsdk.Claims) {
+func (c *ApiController) SetSessionClaims(claims *iam.Claims) {
 	if claims == nil {
 		c.DelSession("user")
 		return
@@ -61,7 +61,7 @@ func (c *ApiController) SetSessionClaims(claims *iamsdk.Claims) {
 	c.SetSession("user", *claims)
 }
 
-func (c *ApiController) GetSessionUser() *iamsdk.User {
+func (c *ApiController) GetSessionUser() *iam.User {
 	claims := c.GetSessionClaims()
 	if claims == nil {
 		return nil
@@ -70,7 +70,7 @@ func (c *ApiController) GetSessionUser() *iamsdk.User {
 	return &claims.User
 }
 
-func (c *ApiController) SetSessionUser(user *iamsdk.User) {
+func (c *ApiController) SetSessionUser(user *iam.User) {
 	if user == nil {
 		c.DelSession("user")
 		return
@@ -169,7 +169,7 @@ func (c *ApiController) EnforceStoreIsolation(requestedStoreName string) (string
 }
 
 // FilterStoresByHomepage filters stores based on user's Homepage field.
-func FilterStoresByHomepage(stores []*object.Store, user *iamsdk.User) []*object.Store {
+func FilterStoresByHomepage(stores []*object.Store, user *iam.User) []*object.Store {
 	if user == nil || user.Homepage == "" {
 		// No Homepage binding, return all stores
 		return stores
