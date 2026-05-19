@@ -18,7 +18,7 @@ import (
 	"encoding/json"
 	"mime/multipart"
 
-	"github.com/hanzoai/cloud/object"
+	"github.com/hanzoai/ai/object"
 )
 
 // UpdateTreeFile

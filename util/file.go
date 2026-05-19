@@ -24,8 +24,8 @@ import (
 	"strings"
 
 	"github.com/beego/beego/logs"
-	"github.com/hanzoai/cloud/conf"
-	"github.com/hanzoai/cloud/proxy"
+	"github.com/hanzoai/ai/conf"
+	"github.com/hanzoai/ai/proxy"
 )
 
 func parseJsonToFloats(s string) []float64 {
@@ -158,7 +158,7 @@ func downloadMaxmindFiles(cityExists, asnExists bool) {
 	frontendBaseDir := conf.GetConfigString("frontendBaseDir")
 
 	// GitHub repo for the data files
-	repoURL := "https://github.com/hanzoai/cloud-data"
+	repoURL := "https://github.com/hanzoai/ai-data"
 
 	// Helper function to download and save a file
 	downloadAndSave := func(filename string) error {

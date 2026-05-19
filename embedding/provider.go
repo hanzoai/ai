@@ -17,7 +17,7 @@ package embedding
 import (
 	"context"
 
-	"github.com/hanzoai/cloud/model"
+	"github.com/hanzoai/ai/model"
 )
 
 type EmbeddingResult struct {

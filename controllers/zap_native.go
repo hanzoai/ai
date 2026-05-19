@@ -40,9 +40,9 @@ import (
 	"github.com/luxfi/zap"
 	openai "github.com/sashabaranov/go-openai"
 
-	"github.com/hanzoai/cloud/model"
-	"github.com/hanzoai/cloud/object"
-	"github.com/hanzoai/cloud/util"
+	"github.com/hanzoai/ai/model"
+	"github.com/hanzoai/ai/object"
+	"github.com/hanzoai/ai/util"
 )
 
 // InitZapHandlers registers native ZAP service handlers on the node.
