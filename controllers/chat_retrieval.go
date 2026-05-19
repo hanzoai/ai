@@ -13,12 +13,12 @@ import (
 	"github.com/beego/beego/logs"
 	"github.com/hanzoai/ai/model"
 	"github.com/hanzoai/ai/object"
-	iamsdk "github.com/hanzoai/iamsdk/v2/iamsdk"
+	iam "github.com/hanzoai/iam"
 )
 
 // retrievalOwner returns the IAM org whose search index should be queried.
 // Resolution order: authenticated user owner, widget key origin mapping, empty.
-func retrievalOwner(authUser *iamsdk.User, token, origin, referer string) string {
+func retrievalOwner(authUser *iam.User, token, origin, referer string) string {
 	if authUser != nil && authUser.Owner != "" {
 		return authUser.Owner
 	}

@@ -27,7 +27,7 @@ import (
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/i18n"
 	"github.com/hanzoai/ai/util"
-	iamsdk "github.com/hanzoai/iamsdk/v2/iamsdk"
+	iam "github.com/hanzoai/iam"
 )
 
 type Response struct {
@@ -100,7 +100,7 @@ func (c *ApiController) RequireSignedIn() (string, bool) {
 	return userId, true
 }
 
-func (c *ApiController) RequireSignedInUser() (*iamsdk.User, bool) {
+func (c *ApiController) RequireSignedInUser() (*iam.User, bool) {
 	user := c.GetSessionUser()
 	if user == nil {
 		c.ResponseError(c.T("auth:Please sign in first"))

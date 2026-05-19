@@ -14,10 +14,10 @@
 package object
 
 import (
-	iamsdk "github.com/hanzoai/iamsdk/v2/iamsdk"
+	iam "github.com/hanzoai/iam"
 )
 
-func FilterCaasesByUser(user *iamsdk.User, caases []*Caase) []*Caase {
+func FilterCaasesByUser(user *iam.User, caases []*Caase) []*Caase {
 	if user == nil {
 		return []*Caase{}
 	}
