@@ -24,7 +24,7 @@ import (
 // Resolution order:
 //  1. X-IAM-Org-Id header (injected by gateway auth middleware from JWT)
 //  2. Authenticated session user's Owner field
-//  3. Config default (iamOrganization env/config value)
+//  3. Config default (IAM_ORG env/config value)
 func (c *ApiController) GetEffectiveOrg() string {
 	// 1. Gateway-injected header (trusted, set after JWT validation)
 	if orgID := strings.TrimSpace(c.Ctx.Input.Header("X-IAM-Org-Id")); orgID != "" {
@@ -38,5 +38,5 @@ func (c *ApiController) GetEffectiveOrg() string {
 	}
 
 	// 3. Config fallback (default org for this instance)
-	return conf.GetConfigString("iamOrganization")
+	return conf.GetConfigString("IAM_ORG")
 }
