@@ -51,9 +51,9 @@ func getUserBalance(userId string) (float64, error) {
 	commerceEndpoint = strings.TrimRight(commerceEndpoint, "/")
 	commerceToken := conf.GetConfigString("commerceToken")
 
-	// Commerce mounts its API at root in prod (config.Prefixes["api"] = "/"),
-	// so the canonical path is /billing/balance — NOT /api/v1/billing/balance.
-	url := fmt.Sprintf("%s/billing/balance?user=%s&currency=usd", commerceEndpoint, userId)
+	// Per global rule: /v1/ only, never /api/.
+	// All commerce endpoints live under /v1/.
+	url := fmt.Sprintf("%s/v1/billing/balance?user=%s&currency=usd", commerceEndpoint, userId)
 
 	client := &http.Client{Timeout: 10 * time.Second}
 	req, err := http.NewRequest(http.MethodGet, url, nil)
