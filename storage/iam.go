@@ -48,9 +48,9 @@ func NewIamProviderWithOrg(providerName string, org string, lang string) (*IamPr
 func (p *IamProvider) ListObjects(prefix string) ([]*Object, error) {
 	iamOrganization := p.org
 	if iamOrganization == "" {
-		iamOrganization = conf.GetConfigString("iamOrganization")
+		iamOrganization = conf.GetConfigString("IAM_ORG")
 	}
-	iamApplication := conf.GetConfigString("iamApplication")
+	iamApplication := conf.GetConfigString("IAM_APP_NAME")
 	resources, err := iamsdk.GetResources(iamOrganization, iamApplication, "provider", p.providerName, "Direct", prefix)
 	if err != nil {
 		return nil, err

@@ -32,11 +32,11 @@ func init() {
 }
 
 func InitAuthConfig() {
-	iamEndpoint := conf.GetConfigString("iamEndpoint")
-	clientId := conf.GetConfigString("clientId")
-	clientSecret := conf.GetConfigString("clientSecret")
-	iamOrganization := conf.GetConfigString("iamOrganization")
-	iamApplication := conf.GetConfigString("iamApplication")
+	iamEndpoint := conf.GetConfigString("IAM_URL")
+	clientId := conf.GetConfigString("IAM_CLIENT_ID")
+	clientSecret := conf.GetConfigString("IAM_CLIENT_SECRET")
+	iamOrganization := conf.GetConfigString("IAM_ORG")
+	iamApplication := conf.GetConfigString("IAM_APP_NAME")
 
 	if iamEndpoint == "" {
 		return

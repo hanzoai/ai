@@ -117,8 +117,8 @@ func getUsernameByClientIdSecret(ctx *context.Context) (string, error) {
 		return "", nil
 	}
 
-	applicationName := conf.GetConfigString("iamApplication")
-	if clientSecret != conf.GetConfigString("clientSecret") {
+	applicationName := conf.GetConfigString("IAM_APP_NAME")
+	if clientSecret != conf.GetConfigString("IAM_CLIENT_SECRET") {
 		return "", fmt.Errorf("Incorrect client secret for application: %s", applicationName)
 	}
 
@@ -126,9 +126,9 @@ func getUsernameByClientIdSecret(ctx *context.Context) (string, error) {
 }
 
 func getUsernameByAccessToken(accessTokenInput string) (string, error) {
-	applicationName := conf.GetConfigString("iamApplication")
-	clientSecret := conf.GetConfigString("clientSecret")
-	clientId := conf.GetConfigString("clientId")
+	applicationName := conf.GetConfigString("IAM_APP_NAME")
+	clientSecret := conf.GetConfigString("IAM_CLIENT_SECRET")
+	clientId := conf.GetConfigString("IAM_CLIENT_ID")
 	accessToken := getMd5HexDigest(clientId + ":" + clientSecret)
 	if accessTokenInput != accessToken {
 		return "", fmt.Errorf("Incorrect access token for application: %s", applicationName)

@@ -24,7 +24,7 @@ import (
 )
 
 func (message *Message) SendEmail(lang string, orgName ...string) error {
-	iamOrganization := conf.GetConfigString("iamOrganization")
+	iamOrganization := conf.GetConfigString("IAM_ORG")
 	if len(orgName) > 0 && orgName[0] != "" {
 		iamOrganization = orgName[0]
 	}
@@ -36,7 +36,7 @@ func (message *Message) SendEmail(lang string, orgName ...string) error {
 		return fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:IAM organization: [%s] doesn't exist"), iamOrganization))
 	}
 	sender := organization.DisplayName
-	iamApplication := conf.GetConfigString("iamApplication")
+	iamApplication := conf.GetConfigString("IAM_APP_NAME")
 	application, err := iamsdk.GetApplication(iamApplication)
 	if err != nil {
 		return err
@@ -120,7 +120,7 @@ func (message *Message) SendErrorEmail(errorText string, lang string, orgName ..
 	if !strings.HasPrefix(receiverEmail, "51") {
 		return nil
 	}
-	iamOrganization := conf.GetConfigString("iamOrganization")
+	iamOrganization := conf.GetConfigString("IAM_ORG")
 	if len(orgName) > 0 && orgName[0] != "" {
 		iamOrganization = orgName[0]
 	}

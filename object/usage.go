@@ -172,7 +172,7 @@ func GetUsage(date string) (*Usage, error) {
 }
 
 func GetUsageMetadata(lang string, orgName ...string) (*UsageMetadata, error) {
-	iamOrganization := conf.GetConfigString("iamOrganization")
+	iamOrganization := conf.GetConfigString("IAM_ORG")
 	if len(orgName) > 0 && orgName[0] != "" {
 		iamOrganization = orgName[0]
 	}
@@ -183,7 +183,7 @@ func GetUsageMetadata(lang string, orgName ...string) (*UsageMetadata, error) {
 	if organization == nil {
 		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:IAM organization: [%s] doesn't exist"), iamOrganization))
 	}
-	iamApplication := conf.GetConfigString("iamApplication")
+	iamApplication := conf.GetConfigString("IAM_APP_NAME")
 	application, err := iamsdk.GetApplication(iamApplication)
 	if err != nil {
 		return nil, err
