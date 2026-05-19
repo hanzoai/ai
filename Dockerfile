@@ -17,7 +17,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 COPY . .
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=0 go build -ldflags="-w -s" -o server .
+    CGO_ENABLED=0 go build -ldflags="-w -s" -o server ./cmd/aid
 
 
 FROM alpine:3.21 AS standard
