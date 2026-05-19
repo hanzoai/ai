@@ -21,10 +21,10 @@ import (
 
 	"github.com/beego/beego"
 	"github.com/beego/beego/logs"
-	"github.com/hanzoai/cloud/conf"
-	"github.com/hanzoai/cloud/object"
-	"github.com/hanzoai/cloud/util"
-	iamsdk "github.com/hanzoai/iamsdk/v2/iamsdk"
+	"github.com/hanzoai/ai/conf"
+	"github.com/hanzoai/ai/object"
+	"github.com/hanzoai/ai/util"
+	iam "github.com/hanzoai/iam"
 )
 
 func init() {
@@ -42,8 +42,8 @@ func InitAuthConfig() {
 		return
 	}
 
-	iamsdk.InitConfig(iamEndpoint, clientId, clientSecret, "", iamOrganization, iamApplication)
-	application, err := iamsdk.GetApplication(iamApplication)
+	iam.InitConfig(iamEndpoint, clientId, clientSecret, "", iamOrganization, iamApplication)
+	application, err := iam.GetApplication(iamApplication)
 	if err != nil {
 		fmt.Printf("[WARN] Failed to get IAM application %q: %v (auth features disabled)\n", iamApplication, err)
 		return
@@ -53,7 +53,7 @@ func InitAuthConfig() {
 		return
 	}
 
-	cert, err := iamsdk.GetCert(application.Cert)
+	cert, err := iam.GetCert(application.Cert)
 	if err != nil {
 		fmt.Printf("[WARN] Failed to get cert %q for application %q: %v (auth features disabled)\n", application.Cert, iamApplication, err)
 		return
@@ -63,7 +63,7 @@ func InitAuthConfig() {
 		return
 	}
 
-	iamsdk.InitConfig(iamEndpoint, clientId, clientSecret, cert.Certificate, iamOrganization, iamApplication)
+	iam.InitConfig(iamEndpoint, clientId, clientSecret, cert.Certificate, iamOrganization, iamApplication)
 }
 
 // Signin
@@ -72,19 +72,19 @@ func InitAuthConfig() {
 // @Description sign in
 // @Param code  query string true "code of account"
 // @Param state query string true "state of account"
-// @Success 200 {iamsdk} iamsdk.Claims The Response object
+// @Success 200 {object} iam.Claims The Response object
 // @router /signin [post]
 func (c *ApiController) Signin() {
 	code := c.Input().Get("code")
 	state := c.Input().Get("state")
 
-	token, err := iamsdk.GetOAuthToken(code, state)
+	token, err := iam.GetOAuthToken(code, state)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
 	}
 
-	claims, err := iamsdk.ParseJwtToken(token.AccessToken)
+	claims, err := iam.ParseJwtToken(token.AccessToken)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -201,7 +201,7 @@ func (c *ApiController) addInitialChat(organization string, userName string, sto
 	return chat, nil
 }
 
-func (c *ApiController) addInitialChatAndMessage(user *iamsdk.User) error {
+func (c *ApiController) addInitialChatAndMessage(user *iam.User) error {
 	chats, err := object.GetChats("admin", "", user.Name)
 	if err != nil {
 		return err
@@ -267,7 +267,7 @@ func (c *ApiController) anonymousSignin() {
 	username := c.getAnonymousUsername()
 
 	effectiveOrg := c.GetEffectiveOrg()
-	user := iamsdk.User{
+	user := iam.User{
 		Owner:           effectiveOrg,
 		Name:            username,
 		CreatedTime:     util.GetCurrentTime(),
@@ -348,7 +348,7 @@ func (c *ApiController) isSafePassword() (bool, error) {
 // @Title GetAccount
 // @Tag Account API
 // @Description get account
-// @Success 200 {iamsdk} iamsdk.Claims The Response object
+// @Success 200 {object} iam.Claims The Response object
 // @router /get-account [get]
 func (c *ApiController) GetAccount() {
 	disablePreviewMode, _ := beego.AppConfig.Bool("disablePreviewMode")
@@ -374,7 +374,7 @@ func (c *ApiController) GetAccount() {
 
 	// Fetch fresh user data from IAM in real-time for non-anonymous users
 	if claims.User.Type != "anonymous-user" {
-		user, err := iamsdk.GetUser(claims.User.Name)
+		user, err := iam.GetUser(claims.User.Name)
 		if err != nil {
 			c.ResponseError(err.Error())
 			return

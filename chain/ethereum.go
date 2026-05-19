@@ -23,8 +23,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hanzoai/cloud/i18n"
-	"github.com/hanzoai/cloud/util"
+	"github.com/hanzoai/ai/i18n"
+	"github.com/hanzoai/ai/util"
 	"github.com/luxfi/crypto"
 	"github.com/luxfi/geth"
 	"github.com/luxfi/geth/accounts/abi"

@@ -19,7 +19,7 @@ import (
 	"strings"
 
 	"github.com/carmel/gooxml/document"
-	"github.com/hanzoai/cloud/i18n"
+	"github.com/hanzoai/ai/i18n"
 )
 
 func GetTextFromDocx(path string, lang string) (string, error) {

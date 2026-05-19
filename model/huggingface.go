@@ -20,8 +20,8 @@ import (
 	"io"
 	"strings"
 
-	"github.com/hanzoai/cloud/i18n"
-	"github.com/hanzoai/cloud/proxy"
+	"github.com/hanzoai/ai/i18n"
+	"github.com/hanzoai/ai/proxy"
 	"github.com/hupe1980/go-huggingface"
 )
 

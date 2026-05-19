@@ -19,7 +19,7 @@ import (
 	"mime"
 	"strings"
 
-	"github.com/hanzoai/cloud/i18n"
+	"github.com/hanzoai/ai/i18n"
 )
 
 func getExtFromMimeType(mimeType string, lang string) (string, error) {

@@ -17,8 +17,8 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/hanzoai/cloud/util"
-	"github.com/hanzoai/cloud/util/guacamole"
+	"github.com/hanzoai/ai/util"
+	"github.com/hanzoai/ai/util/guacamole"
 	"github.com/hanzoai/dbx"
 )
 
