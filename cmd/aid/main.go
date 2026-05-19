@@ -28,7 +28,7 @@ import (
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/controllers"
 	"github.com/hanzoai/ai/object"
-	"github.com/hanzoai/ai/pkg/ai"
+	"github.com/hanzoai/ai"
 	"github.com/hanzoai/ai/proxy"
 	"github.com/hanzoai/ai/routers"
 	"github.com/hanzoai/ai/util"
