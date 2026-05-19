@@ -24,7 +24,7 @@ import (
 
 func TestHstsFilter(t *testing.T) {
 	// Create a mock HTTPS request
-	req := httptest.NewRequest(http.MethodGet, "https://example.com/api/health", nil)
+	req := httptest.NewRequest(http.MethodGet, "https://example.com/v1/health", nil)
 	resp := httptest.NewRecorder()
 
 	// Create a Beego context
@@ -78,7 +78,7 @@ func TestHstsFilterOnMultipleRoutes(t *testing.T) {
 
 func TestHstsFilterNotSetOnHTTP(t *testing.T) {
 	// Create a mock HTTP (non-HTTPS) request
-	req := httptest.NewRequest(http.MethodGet, "http://example.com/api/health", nil)
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/v1/health", nil)
 	resp := httptest.NewRecorder()
 
 	// Create a Beego context
@@ -97,7 +97,7 @@ func TestHstsFilterNotSetOnHTTP(t *testing.T) {
 
 func TestHstsFilterWithXForwardedProto(t *testing.T) {
 	// Create a mock HTTP request with X-Forwarded-Proto header (common behind reverse proxies)
-	req := httptest.NewRequest(http.MethodGet, "http://example.com/api/health", nil)
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/v1/health", nil)
 	req.Header.Set("X-Forwarded-Proto", "https")
 	resp := httptest.NewRecorder()
 

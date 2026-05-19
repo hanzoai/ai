@@ -107,7 +107,7 @@ func GetConfigString(key string) string {
 	}
 
 	if key == "staticBaseUrl" {
-		if strings.HasSuffix(beego.AppConfig.String("iamEndpoint"), ".hanzo.ai") && res == "https://cdn.hanzo.ai" {
+		if strings.HasSuffix(GetConfigString("IAM_URL"), ".hanzo.ai") && res == "https://cdn.hanzo.ai" {
 			res = "https://cdn.hanzo.ai"
 		}
 	}
@@ -194,11 +194,11 @@ func GetStringArray(key string) []string {
 func GetWebConfig() *WebConfig {
 	config := &WebConfig{}
 
-	config.AuthConfig.ServerUrl = GetConfigString("iamEndpoint")
-	config.AuthConfig.ClientId = GetConfigString("clientId")
-	config.AuthConfig.AppName = GetConfigString("iamApplication")
-	config.AuthConfig.OrganizationName = GetConfigString("iamOrganization")
-	config.AuthConfig.RedirectPath = GetConfigString("redirectPath")
+	config.AuthConfig.ServerUrl = GetConfigString("IAM_URL")
+	config.AuthConfig.ClientId = GetConfigString("IAM_CLIENT_ID")
+	config.AuthConfig.AppName = GetConfigString("IAM_APP_NAME")
+	config.AuthConfig.OrganizationName = GetConfigString("IAM_ORG")
+	config.AuthConfig.RedirectPath = GetConfigString("IAM_REDIRECT_PATH")
 
 	config.EnableExtraPages = GetConfigBool("enableExtraPages")
 	config.ShortcutPageItems = GetStringArray("shortcutPageItems")
