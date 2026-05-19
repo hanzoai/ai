@@ -14,31 +14,31 @@
 package object
 
 import (
-	iamsdk "github.com/hanzoai/iamsdk/v2/iamsdk"
+	iam "github.com/hanzoai/iam"
 )
 
-func IsAdmin(user *iamsdk.User) bool {
+func IsAdmin(user *iam.User) bool {
 	if user == nil {
 		return false
 	}
 	return user.IsAdmin || user.Tag == "Admin"
 }
 
-func IsDoctor(user *iamsdk.User) bool {
+func IsDoctor(user *iam.User) bool {
 	if user == nil {
 		return false
 	}
 	return user.Tag == "Doctor"
 }
 
-func IsPatient(user *iamsdk.User) bool {
+func IsPatient(user *iam.User) bool {
 	if user == nil {
 		return false
 	}
 	return user.Tag == "Patient"
 }
 
-func CanEditPatient(user *iamsdk.User, patient *Patient) bool {
+func CanEditPatient(user *iam.User, patient *Patient) bool {
 	if user == nil || patient == nil {
 		return false
 	}
@@ -57,7 +57,7 @@ func CanEditPatient(user *iamsdk.User, patient *Patient) bool {
 	return false
 }
 
-func FilterPatientsByUser(user *iamsdk.User, patients []*Patient) []*Patient {
+func FilterPatientsByUser(user *iam.User, patients []*Patient) []*Patient {
 	if user == nil {
 		return []*Patient{}
 	}

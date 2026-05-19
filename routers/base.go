@@ -24,7 +24,7 @@ import (
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/i18n"
 	"github.com/hanzoai/ai/util"
-	iamsdk "github.com/hanzoai/iamsdk/v2/iamsdk"
+	iam "github.com/hanzoai/iam"
 )
 
 type Response struct {
@@ -34,13 +34,13 @@ type Response struct {
 	Data2  interface{} `json:"data2"`
 }
 
-func GetSessionUser(ctx *context.Context) *iamsdk.User {
+func GetSessionUser(ctx *context.Context) *iam.User {
 	s := ctx.Input.Session("user")
 	if s == nil {
 		return nil
 	}
 
-	claims := s.(iamsdk.Claims)
+	claims := s.(iam.Claims)
 	return &claims.User
 }
 
@@ -90,8 +90,8 @@ func setSessionUser(ctx *context.Context, userId string) {
 	if err != nil {
 		panic(err)
 	}
-	claims := iamsdk.Claims{
-		User: iamsdk.User{
+	claims := iam.Claims{
+		User: iam.User{
 			Owner:   owner,
 			Name:    name,
 			IsAdmin: true,
