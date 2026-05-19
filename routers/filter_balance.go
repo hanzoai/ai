@@ -173,7 +173,7 @@ func BalanceGateFilter(ctx *context.Context) {
 	}
 
 	// Only enforce on API and v1 routes.
-	if !strings.HasPrefix(path, "/v1/") && !strings.HasPrefix(path, "/v1/") {
+	if !strings.HasPrefix(path, "/v1/") {
 		return
 	}
 
@@ -369,10 +369,10 @@ type commerceBalanceResponse struct {
 // fetchBalance calls Commerce to get the current balance for a user.
 //
 // Commerce mounts its API at root in production (config.Prefixes["api"]
-// = "/" in production.go), so the canonical path is /billing/balance,
-// NOT /api/v1/billing/balance — that's the dev-mode shape.
+// = "/" in production.go), All commerce endpoints live under /v1/.
+// 
 func (bg *BalanceGate) fetchBalance(userKey string) (int64, error) {
-	balanceURL := fmt.Sprintf("%s/billing/balance?user=%s&currency=usd", bg.endpoint, url.QueryEscape(userKey))
+	balanceURL := fmt.Sprintf("%s/v1/billing/balance?user=%s&currency=usd", bg.endpoint, url.QueryEscape(userKey))
 
 	req, err := http.NewRequest(http.MethodGet, balanceURL, nil)
 	if err != nil {
@@ -443,7 +443,7 @@ func (bg *BalanceGate) resolveIAMKeyUser(apiKey string) string {
 		return ""
 	}
 
-	iamURL := fmt.Sprintf("%s/api/get-user?accessKey=%s", bg.iamEndpoint, url.QueryEscape(apiKey))
+	iamURL := fmt.Sprintf("%s/v1/iam/get-user?accessKey=%s", bg.iamEndpoint, url.QueryEscape(apiKey))
 	if bg.clientId != "" && bg.clientSecret != "" {
 		iamURL += "&clientId=" + url.QueryEscape(bg.clientId) + "&clientSecret=" + url.QueryEscape(bg.clientSecret)
 	}
