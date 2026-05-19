@@ -17,7 +17,7 @@ package embedding
 import (
 	"context"
 
-	"github.com/hanzoai/cloud/proxy"
+	"github.com/hanzoai/ai/proxy"
 	"google.golang.org/genai"
 )
 

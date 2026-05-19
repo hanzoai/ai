@@ -14,15 +14,15 @@
 
 package controllers
 
-import iamsdk "github.com/hanzoai/iamsdk/v2/iamsdk"
+import iam "github.com/hanzoai/iam"
 
-func getStorageProviders() ([]*iamsdk.Provider, error) {
-	providers, err := iamsdk.GetProviders()
+func getStorageProviders() ([]*iam.Provider, error) {
+	providers, err := iam.GetProviders()
 	if err != nil {
 		return providers, err
 	}
 
-	res := []*iamsdk.Provider{}
+	res := []*iam.Provider{}
 	for _, provider := range providers {
 		if provider.Category == "Storage" {
 			res = append(res, provider)

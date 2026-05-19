@@ -21,7 +21,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/hanzoai/cloud/util"
+	"github.com/hanzoai/ai/util"
 )
 
 type I18nData map[string]map[string]string

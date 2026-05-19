@@ -17,8 +17,8 @@ package routers
 import (
 	"github.com/beego/beego/context"
 	"github.com/beego/beego/logs"
-	"github.com/hanzoai/cloud/object"
-	"github.com/hanzoai/cloud/util"
+	"github.com/hanzoai/ai/object"
+	"github.com/hanzoai/ai/util"
 )
 
 func RecordMessage(ctx *context.Context) {

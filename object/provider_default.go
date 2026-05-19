@@ -18,8 +18,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hanzoai/cloud/i18n"
-	"github.com/hanzoai/cloud/model"
+	"github.com/hanzoai/ai/i18n"
+	"github.com/hanzoai/ai/model"
 	"github.com/hanzoai/dbx"
 )
 

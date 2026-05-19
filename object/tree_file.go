@@ -21,7 +21,7 @@ import (
 	"strings"
 
 	"github.com/beego/beego/logs"
-	"github.com/hanzoai/cloud/util"
+	"github.com/hanzoai/ai/util"
 )
 
 func UpdateTreeFile(storeId string, key string, file *TreeFile) bool {

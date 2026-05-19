@@ -19,7 +19,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/hanzoai/cloud/i18n"
+	"github.com/hanzoai/ai/i18n"
 )
 
 type GrokModelProvider struct {

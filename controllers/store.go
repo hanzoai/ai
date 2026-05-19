@@ -19,8 +19,8 @@ import (
 	"sort"
 
 	"github.com/beego/beego/utils/pagination"
-	"github.com/hanzoai/cloud/object"
-	"github.com/hanzoai/cloud/util"
+	"github.com/hanzoai/ai/object"
+	"github.com/hanzoai/ai/util"
 )
 
 // GetGlobalStores

@@ -25,12 +25,13 @@ import (
 	"github.com/beego/beego"
 	"github.com/beego/beego/logs"
 	_ "github.com/beego/beego/session/redis"
-	"github.com/hanzoai/cloud/conf"
-	"github.com/hanzoai/cloud/controllers"
-	"github.com/hanzoai/cloud/object"
-	"github.com/hanzoai/cloud/proxy"
-	"github.com/hanzoai/cloud/routers"
-	"github.com/hanzoai/cloud/util"
+	"github.com/hanzoai/ai/conf"
+	"github.com/hanzoai/ai/controllers"
+	"github.com/hanzoai/ai/object"
+	"github.com/hanzoai/ai"
+	"github.com/hanzoai/ai/proxy"
+	"github.com/hanzoai/ai/routers"
+	"github.com/hanzoai/ai/util"
 )
 
 func main() {
@@ -173,6 +174,12 @@ func main() {
 	// Inter-service ZAP transport for cloud operations (deploy, status, logs).
 	// Listens on CLOUD_ZAP_PORT (default 9320), separate from inference node.
 	controllers.InitInterserviceZap()
+
+	// Publish the fully-configured beego ControllerRegister so the unified
+	// cloud binary's ai.Mount path can serve the same routes per HIP-0106.
+	// In the standalone mode this is a no-op; in the embedded mode the
+	// cloud orchestrator's zip.App forwards /v1/ai/* into this handler.
+	ai.SetHandler(beego.BeeApp.Handlers)
 
 	go object.ClearThroughputPerSecond()
 

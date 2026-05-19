@@ -22,7 +22,7 @@ import (
 
 	cohere "github.com/cohere-ai/cohere-go/v2"
 	cohereclient "github.com/cohere-ai/cohere-go/v2/client"
-	"github.com/hanzoai/cloud/i18n"
+	"github.com/hanzoai/ai/i18n"
 )
 
 // https://docs.cohere.com/docs/command-beta#whats-the-context-window-on-the-command-models

@@ -17,7 +17,7 @@ package controllers
 import (
 	metric "github.com/luxfi/metric"
 
-	"github.com/hanzoai/cloud/object"
+	"github.com/hanzoai/ai/object"
 )
 
 // GetPrometheusInfo

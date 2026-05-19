@@ -16,12 +16,12 @@ package object
 import (
 	"fmt"
 
-	"github.com/hanzoai/cloud/agent"
-	"github.com/hanzoai/cloud/embedding"
-	"github.com/hanzoai/cloud/i18n"
-	"github.com/hanzoai/cloud/model"
-	"github.com/hanzoai/cloud/util"
-	"github.com/hanzoai/cloud/video"
+	"github.com/hanzoai/ai/agent"
+	"github.com/hanzoai/ai/embedding"
+	"github.com/hanzoai/ai/i18n"
+	"github.com/hanzoai/ai/model"
+	"github.com/hanzoai/ai/util"
+	"github.com/hanzoai/ai/video"
 )
 
 func getModelProviderFromName(owner string, providerName string, lang string) (*Provider, model.ModelProvider, error) {

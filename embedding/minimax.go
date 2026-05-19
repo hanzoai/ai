@@ -22,7 +22,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/hanzoai/cloud/i18n"
+	"github.com/hanzoai/ai/i18n"
 )
 
 type MiniMaxEmbeddingProvider struct {
