@@ -20,7 +20,7 @@ import (
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/i18n"
 	"github.com/hanzoai/ai/util"
-	iamsdk "github.com/hanzoai/iamsdk/v2/iamsdk"
+	iam "github.com/hanzoai/iam"
 )
 
 func (message *Message) SendEmail(lang string, orgName ...string) error {
@@ -28,7 +28,7 @@ func (message *Message) SendEmail(lang string, orgName ...string) error {
 	if len(orgName) > 0 && orgName[0] != "" {
 		iamOrganization = orgName[0]
 	}
-	organization, err := iamsdk.GetOrganization(iamOrganization)
+	organization, err := iam.GetOrganization(iamOrganization)
 	if err != nil {
 		return err
 	}
@@ -37,7 +37,7 @@ func (message *Message) SendEmail(lang string, orgName ...string) error {
 	}
 	sender := organization.DisplayName
 	iamApplication := conf.GetConfigString("IAM_APP_NAME")
-	application, err := iamsdk.GetApplication(iamApplication)
+	application, err := iam.GetApplication(iamApplication)
 	if err != nil {
 		return err
 	}
@@ -46,7 +46,7 @@ func (message *Message) SendEmail(lang string, orgName ...string) error {
 	}
 	title := application.DisplayName
 	logoUrl := conf.GetConfigString("logoUrl")
-	user, err := iamsdk.GetUser(message.User)
+	user, err := iam.GetUser(message.User)
 	if err != nil {
 		return err
 	}
@@ -101,7 +101,7 @@ func (message *Message) SendEmail(lang string, orgName ...string) error {
 </body>
 </html>
 `, title, logoUrl, username, question, message.Text, message.Comment, title)
-	err = iamsdk.SendEmail(title, content, sender, receiverEmail)
+	err = iam.SendEmail(title, content, sender, receiverEmail)
 	if err != nil {
 		return err
 	}
@@ -109,7 +109,7 @@ func (message *Message) SendEmail(lang string, orgName ...string) error {
 }
 
 func (message *Message) SendErrorEmail(errorText string, lang string, orgName ...string) error {
-	adminUser, err := iamsdk.GetUser("admin")
+	adminUser, err := iam.GetUser("admin")
 	if err != nil {
 		return err
 	}
@@ -124,7 +124,7 @@ func (message *Message) SendErrorEmail(errorText string, lang string, orgName ..
 	if len(orgName) > 0 && orgName[0] != "" {
 		iamOrganization = orgName[0]
 	}
-	organization, err := iamsdk.GetOrganization(iamOrganization)
+	organization, err := iam.GetOrganization(iamOrganization)
 	if err != nil {
 		return err
 	}
@@ -132,7 +132,7 @@ func (message *Message) SendErrorEmail(errorText string, lang string, orgName ..
 		return fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:IAM organization: [%s] doesn't exist"), iamOrganization))
 	}
 	sender := organization.DisplayName
-	user, err := iamsdk.GetUser(message.User)
+	user, err := iam.GetUser(message.User)
 	if err != nil {
 		return err
 	}
@@ -187,7 +187,7 @@ func (message *Message) SendErrorEmail(errorText string, lang string, orgName ..
 </body>
 </html>
 `, title, logoUrl, username, question, errorText, sender)
-	err = iamsdk.SendEmail(title, content, sender, receiverEmail)
+	err = iam.SendEmail(title, content, sender, receiverEmail)
 	if err != nil {
 		return err
 	}

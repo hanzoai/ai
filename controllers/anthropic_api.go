@@ -24,7 +24,7 @@ import (
 	"github.com/hanzoai/ai/model"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
-	iamsdk "github.com/hanzoai/iamsdk/v2/iamsdk"
+	iam "github.com/hanzoai/iam"
 	"github.com/sashabaranov/go-openai"
 )
 
@@ -359,7 +359,7 @@ func (c *ApiController) AnthropicMessages() {
 
 	// ── Auth ────────────────────────────────────────────────────────────
 	var provider *object.Provider
-	var authUser *iamsdk.User
+	var authUser *iam.User
 	var upstreamModel string
 	var isPremium bool
 	var err error
