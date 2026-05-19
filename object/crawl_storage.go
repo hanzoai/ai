@@ -26,7 +26,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/beego/beego/logs"
-	"github.com/hanzoai/cloud/conf"
+	"github.com/hanzoai/ai/conf"
 )
 
 const (

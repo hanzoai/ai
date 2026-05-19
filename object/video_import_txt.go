@@ -22,8 +22,8 @@ import (
 	"strings"
 
 	"github.com/beego/beego/logs"
-	"github.com/hanzoai/cloud/txt"
-	"github.com/hanzoai/cloud/util"
+	"github.com/hanzoai/ai/txt"
+	"github.com/hanzoai/ai/util"
 )
 
 type TxtLabel struct {

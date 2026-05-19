@@ -19,7 +19,7 @@ import (
 	"encoding/json"
 
 	"github.com/ThinkInAIXYZ/go-mcp/protocol"
-	"github.com/hanzoai/cloud/agent/builtin_tool/time"
+	"github.com/hanzoai/ai/agent/builtin_tool/time"
 )
 
 type BuiltinTool interface {

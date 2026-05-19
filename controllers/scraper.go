@@ -17,7 +17,7 @@ package controllers
 import (
 	"encoding/json"
 
-	"github.com/hanzoai/cloud/object"
+	"github.com/hanzoai/ai/object"
 )
 
 // ScrapeDocs

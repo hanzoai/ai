@@ -22,7 +22,7 @@ import (
 
 	"github.com/beego/beego"
 	"github.com/beego/beego/logs"
-	"github.com/hanzoai/cloud/object"
+	"github.com/hanzoai/ai/object"
 	iamsdk "github.com/hanzoai/iamsdk/v2/iamsdk"
 )
 

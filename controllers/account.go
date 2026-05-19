@@ -21,9 +21,9 @@ import (
 
 	"github.com/beego/beego"
 	"github.com/beego/beego/logs"
-	"github.com/hanzoai/cloud/conf"
-	"github.com/hanzoai/cloud/object"
-	"github.com/hanzoai/cloud/util"
+	"github.com/hanzoai/ai/conf"
+	"github.com/hanzoai/ai/object"
+	"github.com/hanzoai/ai/util"
 	iamsdk "github.com/hanzoai/iamsdk/v2/iamsdk"
 )
 

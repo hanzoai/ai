@@ -19,7 +19,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/hanzoai/cloud/util"
+	"github.com/hanzoai/ai/util"
 )
 
 //go:embed locales/*/data.json

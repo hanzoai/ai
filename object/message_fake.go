@@ -13,7 +13,7 @@
 // limitations under the License.
 package object
 
-import "github.com/hanzoai/cloud/model"
+import "github.com/hanzoai/ai/model"
 
 // GetAnswerFake returns a hardcoded string without calling the LLM API, for fast local debugging.
 // Switch between GetAnswer and GetAnswerFake by commenting one of the two call sites (e.g. in task_analyze.go).

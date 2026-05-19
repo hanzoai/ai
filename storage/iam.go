@@ -18,8 +18,8 @@ import (
 	"bytes"
 	"fmt"
 
-	"github.com/hanzoai/cloud/conf"
-	"github.com/hanzoai/cloud/i18n"
+	"github.com/hanzoai/ai/conf"
+	"github.com/hanzoai/ai/i18n"
 	iamsdk "github.com/hanzoai/iamsdk/v2/iamsdk"
 )
 

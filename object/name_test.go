@@ -20,8 +20,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/hanzoai/cloud/controllers"
-	"github.com/hanzoai/cloud/object"
+	"github.com/hanzoai/ai/controllers"
+	"github.com/hanzoai/ai/object"
 	iamsdk "github.com/hanzoai/iamsdk/v2/iamsdk"
 )
 
