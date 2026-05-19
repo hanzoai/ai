@@ -25,7 +25,7 @@ import (
 // Resolution order:
 //  1. X-IAM-Org-Id header (injected by gateway auth middleware from JWT)
 //  2. Authenticated session user's Owner field
-//  3. Config default (iamOrganization env/config value)
+//  3. Config default (IAM_ORG env/config value)
 func GetEffectiveOrg(ctx *context.Context) string {
 	// 1. Gateway-injected header (trusted, set after JWT validation)
 	if orgID := strings.TrimSpace(ctx.Input.Header("X-IAM-Org-Id")); orgID != "" {
@@ -39,5 +39,5 @@ func GetEffectiveOrg(ctx *context.Context) string {
 	}
 
 	// 3. Config fallback
-	return conf.GetConfigString("iamOrganization")
+	return conf.GetConfigString("IAM_ORG")
 }
