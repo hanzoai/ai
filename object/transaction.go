@@ -65,8 +65,9 @@ func ValidateTransactionForMessage(message *Message) error {
 	if cur == "" {
 		cur = "usd"
 	}
-	// Query Commerce for balance
-	url := fmt.Sprintf("%s/api/v1/billing/balance?user=%s&currency=%s",
+	// Query Commerce for balance. API mounted at root in prod
+	// (config.Prefixes["api"] = "/"); canonical path is /billing/balance.
+	url := fmt.Sprintf("%s/billing/balance?user=%s&currency=%s",
 		endpoint, userId, cur)
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
@@ -136,7 +137,7 @@ func AddTransactionForMessage(message *Message) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal usage payload: %w", err)
 	}
-	url := endpoint + "/api/v1/billing/usage"
+	url := endpoint + "/billing/usage"
 	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("failed to build usage request: %w", err)
