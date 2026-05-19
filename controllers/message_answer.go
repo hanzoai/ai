@@ -19,11 +19,11 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/hanzoai/cloud/agent"
-	"github.com/hanzoai/cloud/embedding"
-	"github.com/hanzoai/cloud/model"
-	"github.com/hanzoai/cloud/object"
-	"github.com/hanzoai/cloud/util"
+	"github.com/hanzoai/ai/agent"
+	"github.com/hanzoai/ai/embedding"
+	"github.com/hanzoai/ai/model"
+	"github.com/hanzoai/ai/object"
+	"github.com/hanzoai/ai/util"
 )
 
 // GetMessageAnswer

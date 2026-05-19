@@ -24,7 +24,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime"
-	"github.com/hanzoai/cloud/i18n"
+	"github.com/hanzoai/ai/i18n"
 )
 
 type AmazonBedrockModelProvider struct {

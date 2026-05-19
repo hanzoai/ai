@@ -19,8 +19,8 @@ package object_test
 import (
 	"testing"
 
-	"github.com/hanzoai/cloud/controllers"
-	"github.com/hanzoai/cloud/object"
+	"github.com/hanzoai/ai/controllers"
+	"github.com/hanzoai/ai/object"
 )
 
 func TestSendErrorEmail(t *testing.T) {

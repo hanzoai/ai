@@ -19,7 +19,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/hanzoai/cloud/object"
+	"github.com/hanzoai/ai/object"
 )
 
 // UploadFile

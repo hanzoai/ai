@@ -22,7 +22,7 @@ import (
 	"github.com/beego/beego"
 	_ "github.com/denisenkom/go-mssqldb" // mssql
 	_ "github.com/go-sql-driver/mysql"   // mysql
-	"github.com/hanzoai/cloud/conf"
+	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/dbx"
 	_ "github.com/lib/pq"  // postgres
 	_ "modernc.org/sqlite" // sqlite

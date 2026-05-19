@@ -23,9 +23,9 @@ import (
 	"path/filepath"
 	"regexp"
 
-	"github.com/hanzoai/cloud/i18n"
-	"github.com/hanzoai/cloud/object"
-	"github.com/hanzoai/cloud/txt"
+	"github.com/hanzoai/ai/i18n"
+	"github.com/hanzoai/ai/object"
+	"github.com/hanzoai/ai/txt"
 )
 
 func (c *ApiController) ResponseErrorStream(message *object.Message, errorText string) {

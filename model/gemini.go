@@ -21,8 +21,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/hanzoai/cloud/i18n"
-	"github.com/hanzoai/cloud/proxy"
+	"github.com/hanzoai/ai/i18n"
+	"github.com/hanzoai/ai/proxy"
 	"google.golang.org/genai"
 )
 

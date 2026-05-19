@@ -21,9 +21,9 @@ import (
 	"strings"
 
 	"github.com/beego/beego/context"
-	"github.com/hanzoai/cloud/model"
-	"github.com/hanzoai/cloud/object"
-	"github.com/hanzoai/cloud/util"
+	"github.com/hanzoai/ai/model"
+	"github.com/hanzoai/ai/object"
+	"github.com/hanzoai/ai/util"
 	iamsdk "github.com/hanzoai/iamsdk/v2/iamsdk"
 	"github.com/sashabaranov/go-openai"
 )

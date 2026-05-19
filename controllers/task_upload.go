@@ -21,8 +21,8 @@ import (
 	"strings"
 
 	"github.com/beego/beego/logs"
-	"github.com/hanzoai/cloud/object"
-	"github.com/hanzoai/cloud/txt"
+	"github.com/hanzoai/ai/object"
+	"github.com/hanzoai/ai/txt"
 )
 
 // UploadTaskDocument
