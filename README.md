@@ -1,3 +1,53 @@
+# ai
+
+LLM control plane, RAG, and model hub for the Hanzo platform. Native Go model routing with no Python middlemen.
+
+[![Status](https://img.shields.io/badge/status-stable-green)]()
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue)]()
+
+## Quick start
+
+```bash
+docker pull ghcr.io/hanzoai/ai:latest
+```
+
+```bash
+curl -H "Authorization: Bearer hk-YOUR-API-KEY" \
+  https://api.hanzo.ai/v1/chat/completions \
+  -d '{"model":"zen4-pro","messages":[{"role":"user","content":"Hello"}]}'
+```
+
+## What this is
+
+`ai` is the canonical LLM control plane for the Hanzo platform — model routing, RAG, model hub, MCP management. OpenAI-compatible JSON over HTTP (`/v1/chat/completions`, `/v1/models`). Three auth modes (IAM API key `hk-*`, JWT, provider key `sk-*`). Static model routing — 66+ models mapped to upstream providers in pure Go. Per-request usage tracking fire-and-forget to IAM. KMS-resolved provider secrets, org-scoped. Renamed from `hanzoai/cloud` on 2026-05-19 when the unified binary took the `cloud` name per HIP-0106; `ai` mounts as the `ai` subsystem inside `hanzoai/cloud`.
+
+## Specs
+
+Implements:
+- HIP-0037 AI Cloud Platform
+- HIP-0106 Unified Cloud Binary (ai subsystem)
+
+## Architecture
+
+```
+   user / api key  ->  hanzoai/gateway  ->  hanzoai/ai (zip.App, Go)
+                                                  |
+                              auth: hk-* | JWT | sk-* (provider passthrough)
+                                                  |
+                              model routing: 66+ models -> upstream providers
+                                                  |
+                          +--------+--------+--------+--------+
+                          |        |        |        |        |
+                       DO-AI  Fireworks  OpenAI   Anthropic   ...
+                          |        |        |        |        |
+                              KMS-resolved provider secrets
+                                                  |
+                              IAM usage tracking (async)
+```
+
+
+---
+
 <h1 align="center" style="border-bottom: none;">Hanzo Cloud</h1>
 <h3 align="center">AI Cloud OS — Native Go model routing, IAM-integrated auth, usage tracking, and KMS secrets management. Zero middlemen, pure performance.</h3>
 <p align="center">
