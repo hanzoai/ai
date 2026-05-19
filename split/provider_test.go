@@ -21,10 +21,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/hanzoai/cloud/object"
-	"github.com/hanzoai/cloud/split"
-	"github.com/hanzoai/cloud/txt"
-	"github.com/hanzoai/cloud/util"
+	"github.com/hanzoai/ai/object"
+	"github.com/hanzoai/ai/split"
+	"github.com/hanzoai/ai/txt"
+	"github.com/hanzoai/ai/util"
 )
 
 func TestSplit(t *testing.T) {

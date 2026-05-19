@@ -21,8 +21,8 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/hanzoai/cloud/model"
-	"github.com/hanzoai/cloud/util"
+	"github.com/hanzoai/ai/model"
+	"github.com/hanzoai/ai/util"
 )
 
 func TestUpdateChatCounts(t *testing.T) {

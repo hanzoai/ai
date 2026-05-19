@@ -18,7 +18,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/hanzoai/cloud/i18n"
+	"github.com/hanzoai/ai/i18n"
 	"github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common"
 	"github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common/profile"
 	hunyuan "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/hunyuan/v20230901"

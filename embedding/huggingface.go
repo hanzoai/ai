@@ -17,7 +17,7 @@ package embedding
 import (
 	"context"
 
-	"github.com/hanzoai/cloud/proxy"
+	"github.com/hanzoai/ai/proxy"
 	huggingfaceembedder "github.com/henomis/lingoose/embedder/huggingface"
 )
 

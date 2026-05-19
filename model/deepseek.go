@@ -18,7 +18,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/hanzoai/cloud/i18n"
+	"github.com/hanzoai/ai/i18n"
 )
 
 type DeepSeekProvider struct {
