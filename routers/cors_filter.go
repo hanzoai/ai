@@ -151,11 +151,11 @@ func CorsFilter(ctx *context.Context) {
 }
 
 func isOriginAllowed(origin string) (bool, error) {
-	iamEndpoint := conf.GetConfigString("iamEndpoint")
-	iamApplication := conf.GetConfigString("iamApplication")
+	iamEndpoint := conf.GetConfigString("IAM_URL")
+	iamApplication := conf.GetConfigString("IAM_APP_NAME")
 
 	if iamEndpoint == "" || iamApplication == "" {
-		return false, fmt.Errorf("iamEndpoint or iamApplication is empty")
+		return false, fmt.Errorf("IAM_URL or IAM_APP_NAME is empty")
 	}
 
 	application, err := iamsdk.GetApplication(iamApplication)
