@@ -156,7 +156,8 @@ func (q *BillingQueue) worker() {
 // deliver attempts to POST a billing record to Commerce, retrying with
 // exponential backoff on transient failures.
 func (q *BillingQueue) deliver(record *BillingRecord) {
-	url := q.endpoint + "/api/v1/billing/usage"
+	// Commerce mounts its API at root in prod; canonical path is /billing/usage.
+	url := q.endpoint + "/billing/usage"
 
 	for attempt := 0; attempt < billingMaxRetries; attempt++ {
 		if attempt > 0 {
