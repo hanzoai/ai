@@ -15,7 +15,7 @@
 package embedding
 
 import (
-	"github.com/hanzoai/cloud/proxy"
+	"github.com/hanzoai/ai/proxy"
 	"github.com/sashabaranov/go-openai"
 )
 

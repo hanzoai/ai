@@ -16,7 +16,7 @@ package object
 import (
 	"fmt"
 
-	"github.com/hanzoai/cloud/util"
+	"github.com/hanzoai/ai/util"
 	"github.com/hanzoai/dbx"
 )
 

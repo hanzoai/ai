@@ -21,9 +21,9 @@ import (
 	"strings"
 
 	"github.com/beego/beego/context"
-	"github.com/hanzoai/cloud/conf"
-	"github.com/hanzoai/cloud/i18n"
-	"github.com/hanzoai/cloud/util"
+	"github.com/hanzoai/ai/conf"
+	"github.com/hanzoai/ai/i18n"
+	"github.com/hanzoai/ai/util"
 	iamsdk "github.com/hanzoai/iamsdk/v2/iamsdk"
 )
 

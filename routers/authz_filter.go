@@ -19,9 +19,9 @@ import (
 
 	"github.com/beego/beego"
 	"github.com/beego/beego/context"
-	"github.com/hanzoai/cloud/conf"
-	"github.com/hanzoai/cloud/controllers"
-	"github.com/hanzoai/cloud/util"
+	"github.com/hanzoai/ai/conf"
+	"github.com/hanzoai/ai/controllers"
+	"github.com/hanzoai/ai/util"
 )
 
 func AuthzFilter(ctx *context.Context) {

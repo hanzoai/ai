@@ -18,8 +18,8 @@ import (
 	"os"
 
 	"github.com/beego/beego/logs"
-	scanpkg "github.com/hanzoai/cloud/scan"
-	"github.com/hanzoai/cloud/util"
+	scanpkg "github.com/hanzoai/ai/scan"
+	"github.com/hanzoai/ai/util"
 	"github.com/robfig/cron/v3"
 )
 

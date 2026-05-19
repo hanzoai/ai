@@ -18,9 +18,9 @@ import (
 	"sync"
 
 	"github.com/beego/beego/logs"
-	"github.com/hanzoai/cloud/chain"
-	"github.com/hanzoai/cloud/i18n"
-	"github.com/hanzoai/cloud/util"
+	"github.com/hanzoai/ai/chain"
+	"github.com/hanzoai/ai/i18n"
+	"github.com/hanzoai/ai/util"
 	"github.com/hanzoai/dbx"
 	"github.com/robfig/cron/v3"
 )

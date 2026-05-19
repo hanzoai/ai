@@ -22,9 +22,9 @@ import (
 	"os"
 	"testing"
 
-	"github.com/hanzoai/cloud/object"
-	"github.com/hanzoai/cloud/proxy"
-	"github.com/hanzoai/cloud/util"
+	"github.com/hanzoai/ai/object"
+	"github.com/hanzoai/ai/proxy"
+	"github.com/hanzoai/ai/util"
 )
 
 const (

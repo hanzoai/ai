@@ -17,7 +17,7 @@ package split
 import (
 	"strings"
 
-	"github.com/hanzoai/cloud/model"
+	"github.com/hanzoai/ai/model"
 )
 
 type BasicSplitProvider struct{}

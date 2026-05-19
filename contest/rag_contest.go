@@ -19,9 +19,9 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/hanzoai/cloud/model"
-	"github.com/hanzoai/cloud/object"
-	"github.com/hanzoai/cloud/util"
+	"github.com/hanzoai/ai/model"
+	"github.com/hanzoai/ai/object"
+	"github.com/hanzoai/ai/util"
 )
 
 func deleteExistingStore(name string) error {

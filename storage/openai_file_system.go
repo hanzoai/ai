@@ -21,7 +21,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hanzoai/cloud/model"
+	"github.com/hanzoai/ai/model"
 	"github.com/openai/openai-go/v2"
 )
 
