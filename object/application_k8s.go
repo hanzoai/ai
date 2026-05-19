@@ -20,8 +20,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hanzoai/cloud/i18n"
-	"github.com/hanzoai/cloud/util"
+	"github.com/hanzoai/ai/i18n"
+	"github.com/hanzoai/ai/util"
 	"gopkg.in/yaml.v3"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"

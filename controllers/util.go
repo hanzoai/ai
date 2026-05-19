@@ -24,10 +24,10 @@ import (
 
 	"github.com/beego/beego"
 	"github.com/beego/beego/context"
-	"github.com/hanzoai/cloud/conf"
-	"github.com/hanzoai/cloud/i18n"
-	"github.com/hanzoai/cloud/util"
-	iamsdk "github.com/hanzoai/iamsdk/v2/iamsdk"
+	"github.com/hanzoai/ai/conf"
+	"github.com/hanzoai/ai/i18n"
+	"github.com/hanzoai/ai/util"
+	iam "github.com/hanzoai/iam"
 )
 
 type Response struct {
@@ -100,7 +100,7 @@ func (c *ApiController) RequireSignedIn() (string, bool) {
 	return userId, true
 }
 
-func (c *ApiController) RequireSignedInUser() (*iamsdk.User, bool) {
+func (c *ApiController) RequireSignedInUser() (*iam.User, bool) {
 	user := c.GetSessionUser()
 	if user == nil {
 		c.ResponseError(c.T("auth:Please sign in first"))
