@@ -51,7 +51,9 @@ func getUserBalance(userId string) (float64, error) {
 	commerceEndpoint = strings.TrimRight(commerceEndpoint, "/")
 	commerceToken := conf.GetConfigString("commerceToken")
 
-	url := fmt.Sprintf("%s/api/v1/billing/balance?user=%s&currency=usd", commerceEndpoint, userId)
+	// Commerce mounts its API at root in prod (config.Prefixes["api"] = "/"),
+	// so the canonical path is /billing/balance — NOT /api/v1/billing/balance.
+	url := fmt.Sprintf("%s/billing/balance?user=%s&currency=usd", commerceEndpoint, userId)
 
 	client := &http.Client{Timeout: 10 * time.Second}
 	req, err := http.NewRequest(http.MethodGet, url, nil)
@@ -425,8 +427,8 @@ func resolveProviderForUser(user *iamsdk.User, requestedModel string, lang strin
 // Credentials are resolved in order: env vars (IAM_CLIENT_ID/IAM_CLIENT_SECRET),
 // KMS secrets, then Beego config (for local dev).
 func iamAuthQuery() string {
-	clientId := conf.GetConfigString("clientId")
-	clientSecret := conf.GetConfigString("clientSecret")
+	clientId := conf.GetConfigString("IAM_CLIENT_ID")
+	clientSecret := conf.GetConfigString("IAM_CLIENT_SECRET")
 
 	// Try KMS if config values are empty or placeholders
 	if clientId == "" {
@@ -449,9 +451,9 @@ func iamAuthQuery() string {
 // getUserByAccessKey looks up a user by their IAM API key via Hanzo IAM.
 func getUserByAccessKey(accessKey string) (*iamsdk.User, error) {
 	// Call IAM's get-user endpoint with accessKey query parameter
-	iamEndpoint := conf.GetConfigString("iamEndpoint")
+	iamEndpoint := conf.GetConfigString("IAM_URL")
 	if iamEndpoint == "" {
-		return nil, fmt.Errorf("iamEndpoint is not configured")
+		return nil, fmt.Errorf("IAM_URL is not configured")
 	}
 	iamEndpoint = strings.TrimRight(iamEndpoint, "/")
 
