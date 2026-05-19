@@ -19,9 +19,9 @@ import (
 	"fmt"
 
 	"github.com/beego/beego/utils/pagination"
-	"github.com/hanzoai/cloud/conf"
-	"github.com/hanzoai/cloud/object"
-	"github.com/hanzoai/cloud/util"
+	"github.com/hanzoai/ai/conf"
+	"github.com/hanzoai/ai/object"
+	"github.com/hanzoai/ai/util"
 )
 
 // GetGlobalChats

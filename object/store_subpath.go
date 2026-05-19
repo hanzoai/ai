@@ -17,7 +17,7 @@ import (
 	"bytes"
 	"strings"
 
-	"github.com/hanzoai/cloud/storage"
+	"github.com/hanzoai/ai/storage"
 )
 
 type SubpathStorageProvider struct {

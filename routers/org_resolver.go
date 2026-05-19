@@ -18,7 +18,7 @@ import (
 	"strings"
 
 	"github.com/beego/beego/context"
-	"github.com/hanzoai/cloud/conf"
+	"github.com/hanzoai/ai/conf"
 )
 
 // GetEffectiveOrg resolves the organization for data-scoping in filters.

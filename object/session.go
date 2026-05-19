@@ -17,7 +17,7 @@ import (
 	"fmt"
 
 	"github.com/beego/beego"
-	"github.com/hanzoai/cloud/util"
+	"github.com/hanzoai/ai/util"
 	"github.com/hanzoai/dbx"
 )
 

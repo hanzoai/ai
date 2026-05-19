@@ -19,7 +19,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hanzoai/cloud/object"
+	"github.com/hanzoai/ai/object"
 )
 
 // modelRouteFallback is an alternate provider+upstream for failover.

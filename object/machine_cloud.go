@@ -16,8 +16,8 @@ package object
 import (
 	"fmt"
 
-	"github.com/hanzoai/cloud/i18n"
-	"github.com/hanzoai/cloud/pkgmachine"
+	"github.com/hanzoai/ai/i18n"
+	"github.com/hanzoai/ai/pkgmachine"
 )
 
 func getMachineFromService(owner string, provider string, clientMachine *pkgmachine.Machine) *Machine {

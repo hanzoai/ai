@@ -21,7 +21,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/hanzoai/cloud/i18n"
+	"github.com/hanzoai/ai/i18n"
 	"github.com/pkoukk/tiktoken-go"
 	"github.com/sashabaranov/go-openai"
 )

@@ -17,9 +17,9 @@ package controllers
 import (
 	"fmt"
 
-	"github.com/hanzoai/cloud/i18n"
-	"github.com/hanzoai/cloud/object"
-	"github.com/hanzoai/cloud/util"
+	"github.com/hanzoai/ai/i18n"
+	"github.com/hanzoai/ai/object"
+	"github.com/hanzoai/ai/util"
 )
 
 func addRecord(c *ApiController, userName string, requestUri string, lang string) error {

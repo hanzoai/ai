@@ -17,8 +17,8 @@ package controllers
 import (
 	"fmt"
 
-	"github.com/hanzoai/cloud/model"
-	"github.com/hanzoai/cloud/object"
+	"github.com/hanzoai/ai/model"
+	"github.com/hanzoai/ai/object"
 )
 
 // dryRunWriter is a dummy writer that implements both io.Writer and http.Flusher

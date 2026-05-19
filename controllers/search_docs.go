@@ -24,9 +24,9 @@ import (
 	"time"
 
 	"github.com/beego/beego/logs"
-	"github.com/hanzoai/cloud/conf"
-	"github.com/hanzoai/cloud/object"
-	iamsdk "github.com/hanzoai/iamsdk/v2/iamsdk"
+	"github.com/hanzoai/ai/conf"
+	"github.com/hanzoai/ai/object"
+	iam "github.com/hanzoai/iam"
 )
 
 // searchAuth holds the validated identity for a search API request.
@@ -34,7 +34,7 @@ import (
 type searchAuth struct {
 	Owner  string       // organization that owns the search index
 	UserID string       // "owner/name" format for billing
-	User   *iamsdk.User // nil for session-only auth without IAM lookup
+	User   *iam.User // nil for session-only auth without IAM lookup
 }
 
 // resolveSearchAuth validates the caller's identity via session, JWT, or IAM API key.
@@ -119,13 +119,13 @@ func (c *ApiController) resolveSearchAuth() *searchAuth {
 		return &searchAuth{
 			Owner:  owner,
 			UserID: owner + "/widget",
-			User:   &iamsdk.User{Owner: owner, Name: "widget", Type: "widget-key"},
+			User:   &iam.User{Owner: owner, Name: "widget", Type: "widget-key"},
 		}
 	}
 
 	// 5. JWT token -- validate via IAM OIDC
 	if isJwtToken(token) {
-		claims, err := iamsdk.ParseJwtToken(token)
+		claims, err := iam.ParseJwtToken(token)
 		if err != nil {
 			c.ResponseError("invalid token: " + err.Error())
 			return nil
@@ -198,7 +198,7 @@ func (c *ApiController) requireIndexAuth() *searchAuth {
 
 		// JWT token: validate via IAM OIDC
 		if isJwtToken(token) {
-			claims, err := iamsdk.ParseJwtToken(token)
+			claims, err := iam.ParseJwtToken(token)
 			if err != nil {
 				c.ResponseError("invalid token: " + err.Error())
 				return nil

@@ -20,8 +20,8 @@ import (
 	"time"
 
 	"github.com/beego/beego/context"
-	"github.com/hanzoai/cloud/object"
-	"github.com/hanzoai/cloud/util"
+	"github.com/hanzoai/ai/object"
+	"github.com/hanzoai/ai/util"
 )
 
 func recordSystemInfo(systemInfo *util.SystemInfo) {
