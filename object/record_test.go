@@ -20,7 +20,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hanzoai/cloud/util"
+	"github.com/hanzoai/ai/util"
 	"github.com/schollz/progressbar/v3"
 )
 

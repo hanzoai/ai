@@ -20,9 +20,9 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/hanzoai/cloud/controllers"
-	"github.com/hanzoai/cloud/object"
-	"github.com/hanzoai/cloud/storage"
+	"github.com/hanzoai/ai/controllers"
+	"github.com/hanzoai/ai/object"
+	"github.com/hanzoai/ai/storage"
 )
 
 func TestStorage(t *testing.T) {

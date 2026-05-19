@@ -20,8 +20,8 @@ import (
 	"strings"
 
 	"github.com/beego/beego/logs"
-	"github.com/hanzoai/cloud/model"
-	"github.com/hanzoai/cloud/object"
+	"github.com/hanzoai/ai/model"
+	"github.com/hanzoai/ai/object"
 )
 
 // isRetryableError returns true if the error message indicates a transient or

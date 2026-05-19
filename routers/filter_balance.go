@@ -27,7 +27,7 @@ import (
 
 	"github.com/beego/beego/context"
 	"github.com/beego/beego/logs"
-	"github.com/hanzoai/cloud/conf"
+	"github.com/hanzoai/ai/conf"
 	iamsdk "github.com/hanzoai/iamsdk/v2/iamsdk"
 )
 

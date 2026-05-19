@@ -26,12 +26,12 @@ import (
 	"time"
 
 	"github.com/beego/beego/utils/pagination"
-	"github.com/hanzoai/cloud/audio"
-	"github.com/hanzoai/cloud/conf"
-	"github.com/hanzoai/cloud/object"
-	"github.com/hanzoai/cloud/storage"
-	"github.com/hanzoai/cloud/util"
-	"github.com/hanzoai/cloud/video"
+	"github.com/hanzoai/ai/audio"
+	"github.com/hanzoai/ai/conf"
+	"github.com/hanzoai/ai/object"
+	"github.com/hanzoai/ai/storage"
+	"github.com/hanzoai/ai/util"
+	"github.com/hanzoai/ai/video"
 )
 
 // GetGlobalVideos

@@ -19,7 +19,7 @@ package object
 import (
 	"testing"
 
-	"github.com/hanzoai/cloud/model"
+	"github.com/hanzoai/ai/model"
 )
 
 func TestUpdateVectors(t *testing.T) {

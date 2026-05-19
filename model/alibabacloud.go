@@ -22,7 +22,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/hanzoai/cloud/i18n"
+	"github.com/hanzoai/ai/i18n"
 	"github.com/hanzoai/dashscopego"
 	"github.com/hanzoai/dashscopego/qwen"
 )

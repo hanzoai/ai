@@ -20,8 +20,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/hanzoai/cloud/proxy"
-	"github.com/hanzoai/cloud/util"
+	"github.com/hanzoai/ai/proxy"
+	"github.com/hanzoai/ai/util"
 )
 
 func TestTranslateArticle(t *testing.T) {

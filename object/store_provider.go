@@ -17,7 +17,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/hanzoai/cloud/storage"
+	"github.com/hanzoai/ai/storage"
 )
 
 func (store *Store) createPathIfNotExisted(tokens []string, size int64, url string, lastModifiedTime string, isLeaf bool) {
