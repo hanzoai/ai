@@ -36,7 +36,7 @@ import (
 	"time"
 
 	"github.com/beego/beego/logs"
-	iamsdk "github.com/hanzoai/iamsdk/v2/iamsdk"
+	iam "github.com/hanzoai/iam"
 	"github.com/luxfi/zap"
 	openai "github.com/sashabaranov/go-openai"
 
@@ -498,7 +498,7 @@ func zapResolveUser(auth string) (string, error) {
 	}
 
 	if isJwtToken(token) {
-		claims, err := iamsdk.ParseJwtToken(token)
+		claims, err := iam.ParseJwtToken(token)
 		if err == nil && claims != nil {
 			return claims.Owner + "/" + claims.Name, nil
 		}
@@ -507,7 +507,7 @@ func zapResolveUser(auth string) (string, error) {
 	return "", fmt.Errorf("unsupported auth type")
 }
 
-func zapResolveAuth(auth string, requestModel string) (*object.Provider, *iamsdk.User, string, error) {
+func zapResolveAuth(auth string, requestModel string) (*object.Provider, *iam.User, string, error) {
 	token := strings.TrimPrefix(auth, "Bearer ")
 
 	if isIAMApiKey(token) {

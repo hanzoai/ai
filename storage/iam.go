@@ -20,7 +20,7 @@ import (
 
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/i18n"
-	iamsdk "github.com/hanzoai/iamsdk/v2/iamsdk"
+	iam "github.com/hanzoai/iam"
 )
 
 type IamProvider struct {
@@ -51,7 +51,7 @@ func (p *IamProvider) ListObjects(prefix string) ([]*Object, error) {
 		iamOrganization = conf.GetConfigString("IAM_ORG")
 	}
 	iamApplication := conf.GetConfigString("IAM_APP_NAME")
-	resources, err := iamsdk.GetResources(iamOrganization, iamApplication, "provider", p.providerName, "Direct", prefix)
+	resources, err := iam.GetResources(iamOrganization, iamApplication, "provider", p.providerName, "Direct", prefix)
 	if err != nil {
 		return nil, err
 	}
@@ -69,7 +69,7 @@ func (p *IamProvider) ListObjects(prefix string) ([]*Object, error) {
 }
 
 func (p *IamProvider) PutObject(user string, parent string, key string, fileBuffer *bytes.Buffer) (string, error) {
-	fileUrl, _, err := iamsdk.UploadResource(user, "HanzoCloud", parent, fmt.Sprintf("Direct/%s/%s", p.providerName, key), fileBuffer.Bytes())
+	fileUrl, _, err := iam.UploadResource(user, "HanzoCloud", parent, fmt.Sprintf("Direct/%s/%s", p.providerName, key), fileBuffer.Bytes())
 	if err != nil {
 		return "", err
 	}
@@ -77,11 +77,11 @@ func (p *IamProvider) PutObject(user string, parent string, key string, fileBuff
 }
 
 func (p *IamProvider) DeleteObject(key string) error {
-	resource := iamsdk.Resource{
+	resource := iam.Resource{
 		Name: key,
 	}
 
-	_, err := iamsdk.DeleteResourceWithTag(&resource, "Direct")
+	_, err := iam.DeleteResourceWithTag(&resource, "Direct")
 	if err != nil {
 		return err
 	}

@@ -23,7 +23,7 @@ import (
 	"github.com/beego/beego/context"
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/object"
-	iamsdk "github.com/hanzoai/iamsdk/v2/iamsdk"
+	iam "github.com/hanzoai/iam"
 )
 
 const (
@@ -158,7 +158,7 @@ func isOriginAllowed(origin string) (bool, error) {
 		return false, fmt.Errorf("IAM_URL or IAM_APP_NAME is empty")
 	}
 
-	application, err := iamsdk.GetApplication(iamApplication)
+	application, err := iam.GetApplication(iamApplication)
 	if err != nil {
 		return false, err
 	}
