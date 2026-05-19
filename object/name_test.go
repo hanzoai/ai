@@ -22,7 +22,7 @@ import (
 
 	"github.com/hanzoai/ai/controllers"
 	"github.com/hanzoai/ai/object"
-	iamsdk "github.com/hanzoai/iamsdk/v2/iamsdk"
+	iam "github.com/hanzoai/iam"
 )
 
 var userTag = "user"
@@ -30,11 +30,11 @@ var userTag = "user"
 func TestUpdateMessagesForName(t *testing.T) {
 	object.InitConfig()
 	controllers.InitAuthConfig()
-	users, err := iamsdk.GetUsers()
+	users, err := iam.GetUsers()
 	if err != nil {
 		panic(err)
 	}
-	userMap := map[string]*iamsdk.User{}
+	userMap := map[string]*iam.User{}
 	for _, user := range users {
 		if user.Tag != userTag {
 			continue
@@ -67,11 +67,11 @@ func TestUpdateMessagesForName(t *testing.T) {
 func TestUpdateChatsForName(t *testing.T) {
 	object.InitConfig()
 	controllers.InitAuthConfig()
-	users, err := iamsdk.GetUsers()
+	users, err := iam.GetUsers()
 	if err != nil {
 		panic(err)
 	}
-	userMap := map[string]*iamsdk.User{}
+	userMap := map[string]*iam.User{}
 	for _, user := range users {
 		if user.Tag != userTag {
 			continue

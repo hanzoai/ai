@@ -27,7 +27,7 @@ import (
 	"github.com/hanzoai/ai/tts"
 	"github.com/hanzoai/ai/util"
 	"github.com/hanzoai/dbx"
-	iamsdk "github.com/hanzoai/iamsdk/v2/iamsdk"
+	iam "github.com/hanzoai/iam"
 )
 
 type Provider struct {
@@ -81,7 +81,7 @@ type Provider struct {
 	BrowserUrl    string `json:"browserUrl"`
 }
 
-func GetMaskedProvider(provider *Provider, isMaskEnabled bool, user *iamsdk.User) *Provider {
+func GetMaskedProvider(provider *Provider, isMaskEnabled bool, user *iam.User) *Provider {
 	if !isMaskEnabled {
 		return provider
 	}
@@ -108,7 +108,7 @@ func GetMaskedProvider(provider *Provider, isMaskEnabled bool, user *iamsdk.User
 	return provider
 }
 
-func GetMaskedProviders(providers []*Provider, isMaskEnabled bool, user *iamsdk.User) []*Provider {
+func GetMaskedProviders(providers []*Provider, isMaskEnabled bool, user *iam.User) []*Provider {
 	if !isMaskEnabled {
 		return providers
 	}

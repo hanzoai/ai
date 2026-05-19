@@ -33,7 +33,7 @@ import (
 	"github.com/hanzoai/ai/model"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
-	iamsdk "github.com/hanzoai/iamsdk/v2/iamsdk"
+	iam "github.com/hanzoai/iam"
 	"github.com/sashabaranov/go-openai"
 )
 
@@ -279,8 +279,8 @@ func widgetAllowedModelsList() string {
 // resolveProviderFromJwt validates a hanzo.id JWT token and returns the
 // appropriate model provider for the requested model, plus the translated
 // upstream model name.
-func resolveProviderFromJwt(token string, requestedModel string, lang string) (*object.Provider, *iamsdk.User, string, error) {
-	claims, err := iamsdk.ParseJwtToken(token)
+func resolveProviderFromJwt(token string, requestedModel string, lang string) (*object.Provider, *iam.User, string, error) {
+	claims, err := iam.ParseJwtToken(token)
 	if err != nil {
 		return nil, nil, "", fmt.Errorf("invalid hanzo.id token: %s", err.Error())
 	}
@@ -291,7 +291,7 @@ func resolveProviderFromJwt(token string, requestedModel string, lang string) (*
 
 // resolveProviderFromIAMKey validates an IAM API key (hk-{accessKey})
 // and returns the model provider + user, same as JWT path.
-func resolveProviderFromIAMKey(apiKey string, requestedModel string, lang string) (*object.Provider, *iamsdk.User, string, error) {
+func resolveProviderFromIAMKey(apiKey string, requestedModel string, lang string) (*object.Provider, *iam.User, string, error) {
 	// IAM API key format: hk-{uuid}
 	// Look up user by accessKey via IAM API
 	accessKey := apiKey // the full token including hk- prefix is the accessKey
@@ -321,9 +321,9 @@ func resolveProviderFromIAMKey(apiKey string, requestedModel string, lang string
 
 // tryCloudAgentKeyFallback checks whether apiKey matches the known cloud-agent
 // service key stored in KMS (secret name "CLOUD_AGENT_KEY") with an env var
-// fallback. Returns a minimal *iamsdk.User on match, nil otherwise.
+// fallback. Returns a minimal *iam.User on match, nil otherwise.
 // This is intentionally narrow: only the exact key stored in KMS is accepted.
-func tryCloudAgentKeyFallback(apiKey string) *iamsdk.User {
+func tryCloudAgentKeyFallback(apiKey string) *iam.User {
 	// Try KMS first
 	var knownKey string
 	if v, err := object.GetKMSSecret("CLOUD_AGENT_KEY"); err == nil && v != "" {
@@ -336,7 +336,7 @@ func tryCloudAgentKeyFallback(apiKey string) *iamsdk.User {
 	if knownKey == "" || apiKey != knownKey {
 		return nil
 	}
-	return &iamsdk.User{
+	return &iam.User{
 		Owner: "hanzo",
 		Name:  "cloud-agent",
 	}
@@ -344,7 +344,7 @@ func tryCloudAgentKeyFallback(apiKey string) *iamsdk.User {
 
 // resolveProviderForUser is the shared logic for JWT and API key auth paths.
 // Given a validated user, resolves the model route and provider.
-func resolveProviderForUser(user *iamsdk.User, requestedModel string, lang string) (*object.Provider, *iamsdk.User, string, error) {
+func resolveProviderForUser(user *iam.User, requestedModel string, lang string) (*object.Provider, *iam.User, string, error) {
 	// Look up the model in the static routing table.
 	route := resolveModelRoute(requestedModel)
 	if route == nil {
@@ -449,7 +449,7 @@ func iamAuthQuery() string {
 }
 
 // getUserByAccessKey looks up a user by their IAM API key via Hanzo IAM.
-func getUserByAccessKey(accessKey string) (*iamsdk.User, error) {
+func getUserByAccessKey(accessKey string) (*iam.User, error) {
 	// Call IAM's get-user endpoint with accessKey query parameter
 	iamEndpoint := conf.GetConfigString("IAM_URL")
 	if iamEndpoint == "" {
@@ -477,7 +477,7 @@ func getUserByAccessKey(accessKey string) (*iamsdk.User, error) {
 	var result struct {
 		Status string       `json:"status"`
 		Msg    string       `json:"msg"`
-		Data   *iamsdk.User `json:"data"`
+		Data   *iam.User `json:"data"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("failed to parse IAM response: %w", err)
@@ -805,7 +805,7 @@ func (c *ApiController) ChatCompletions() {
 	}
 
 	var provider *object.Provider
-	var authUser *iamsdk.User
+	var authUser *iam.User
 	var upstreamModel string
 	var isPremium bool
 
@@ -1193,7 +1193,7 @@ func (c *ApiController) proxyToolRequest(
 	provider *object.Provider,
 	request *openai.ChatCompletionRequest,
 	requestStartTime time.Time,
-	authUser *iamsdk.User,
+	authUser *iam.User,
 	isPremium bool,
 	orgId string,
 ) {
@@ -1459,7 +1459,7 @@ func (c *ApiController) proxyToolRequestAnthropic(
 	provider *object.Provider,
 	request *openai.ChatCompletionRequest,
 	requestStartTime time.Time,
-	authUser *iamsdk.User,
+	authUser *iam.User,
 	isPremium bool,
 	orgId string,
 	requestId string,
