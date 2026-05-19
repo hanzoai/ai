@@ -367,10 +367,7 @@ type commerceBalanceResponse struct {
 }
 
 // fetchBalance calls Commerce to get the current balance for a user.
-//
-// Commerce mounts its API at root in production (config.Prefixes["api"]
-// = "/" in production.go), All commerce endpoints live under /v1/.
-// 
+// Per global rule: /v1/ only, never /api/. Commerce serves /v1/billing/balance.
 func (bg *BalanceGate) fetchBalance(userKey string) (int64, error) {
 	balanceURL := fmt.Sprintf("%s/v1/billing/balance?user=%s&currency=usd", bg.endpoint, url.QueryEscape(userKey))
 
