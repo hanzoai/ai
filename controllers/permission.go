@@ -18,17 +18,17 @@ import (
 	"encoding/json"
 
 	"github.com/hanzoai/ai/util"
-	iamsdk "github.com/hanzoai/iamsdk/v2/iamsdk"
+	iam "github.com/hanzoai/iam"
 )
 
 // GetPermissions
 // @Title GetPermissions
 // @Tag Permission API
 // @Description get permissions
-// @Success 200 {array} iamsdk.Permission The Response object
+// @Success 200 {array} iam.Permission The Response object
 // @router /get-permissions [get]
 func (c *ApiController) GetPermissions() {
-	permissions, err := iamsdk.GetPermissions()
+	permissions, err := iam.GetPermissions()
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -42,7 +42,7 @@ func (c *ApiController) GetPermissions() {
 // @Tag Permission API
 // @Description get permission
 // @Param id query string true "The id(owner/name) of permission"
-// @Success 200 {object} iamsdk.Permission The Response object
+// @Success 200 {object} iam.Permission The Response object
 // @router /get-permission [get]
 func (c *ApiController) GetPermission() {
 	id := c.Input().Get("id")
@@ -52,7 +52,7 @@ func (c *ApiController) GetPermission() {
 		return
 	}
 
-	permission, err := iamsdk.GetPermission(name)
+	permission, err := iam.GetPermission(name)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -65,17 +65,17 @@ func (c *ApiController) GetPermission() {
 // @Title UpdatePermission
 // @Tag Permission API
 // @Description update permission
-// @Param body body iamsdk.Permission true "The details of the permission"
+// @Param body body iam.Permission true "The details of the permission"
 // @Success 200 {object} controllers.Response The Response object
 // @router /update-permission [post]
 func (c *ApiController) UpdatePermission() {
-	var permission iamsdk.Permission
+	var permission iam.Permission
 	err := json.Unmarshal(c.Ctx.Input.RequestBody, &permission)
 	if err != nil {
 		panic(err)
 	}
 
-	success, err := iamsdk.UpdatePermission(&permission)
+	success, err := iam.UpdatePermission(&permission)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -88,18 +88,18 @@ func (c *ApiController) UpdatePermission() {
 // @Title AddPermission
 // @Tag Permission API
 // @Description add permission
-// @Param body body iamsdk.Permission true "The details of the permission"
+// @Param body body iam.Permission true "The details of the permission"
 // @Success 200 {object} controllers.Response The Response object
 // @router /add-permission [post]
 func (c *ApiController) AddPermission() {
-	var permission iamsdk.Permission
+	var permission iam.Permission
 	err := json.Unmarshal(c.Ctx.Input.RequestBody, &permission)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
 	}
 
-	success, err := iamsdk.AddPermission(&permission)
+	success, err := iam.AddPermission(&permission)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -112,18 +112,18 @@ func (c *ApiController) AddPermission() {
 // @Title DeletePermission
 // @Tag Permission API
 // @Description delete permission
-// @Param body body iamsdk.Permission true "The details of the permission"
+// @Param body body iam.Permission true "The details of the permission"
 // @Success 200 {object} controllers.Response The Response object
 // @router /delete-permission [post]
 func (c *ApiController) DeletePermission() {
-	var permission iamsdk.Permission
+	var permission iam.Permission
 	err := json.Unmarshal(c.Ctx.Input.RequestBody, &permission)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
 	}
 
-	success, err := iamsdk.DeletePermission(&permission)
+	success, err := iam.DeletePermission(&permission)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
