@@ -18,7 +18,7 @@ import (
 	"encoding/json"
 
 	"github.com/beego/beego/context"
-	"github.com/hanzoai/cloud/conf"
+	"github.com/hanzoai/ai/conf"
 )
 
 func AppendWebConfigCookie(ctx *context.Context) error {
