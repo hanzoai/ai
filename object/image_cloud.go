@@ -14,7 +14,7 @@
 package object
 
 import (
-	"github.com/hanzoai/cloud/pkgimage"
+	"github.com/hanzoai/ai/pkgimage"
 )
 
 func getImageFromService(owner string, provider string, clientImage *pkgimage.Image) *Image {

@@ -19,8 +19,8 @@ import (
 
 	"github.com/ThinkInAIXYZ/go-mcp/client"
 	"github.com/ThinkInAIXYZ/go-mcp/protocol"
-	"github.com/hanzoai/cloud/agent/builtin_tool"
-	"github.com/hanzoai/cloud/i18n"
+	"github.com/hanzoai/ai/agent/builtin_tool"
+	"github.com/hanzoai/ai/i18n"
 )
 
 type AgentProvider interface {

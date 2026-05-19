@@ -18,7 +18,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/hanzoai/cloud/model"
+	"github.com/hanzoai/ai/model"
 )
 
 type DefaultSplitProvider struct {

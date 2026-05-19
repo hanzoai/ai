@@ -22,7 +22,7 @@ import (
 	resourcecenter20221201 "github.com/alibabacloud-go/resourcecenter-20221201/client"
 	util2 "github.com/alibabacloud-go/tea-utils/v2/service"
 	"github.com/alibabacloud-go/tea/tea"
-	"github.com/hanzoai/cloud/util"
+	"github.com/hanzoai/ai/util"
 )
 
 // AlibabaCloudParser implements CloudParser for Alibaba Cloud

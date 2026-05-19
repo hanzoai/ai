@@ -15,7 +15,7 @@
 package controllers
 
 import (
-	"github.com/hanzoai/cloud/object"
+	"github.com/hanzoai/ai/object"
 )
 
 // GetK8sStatus

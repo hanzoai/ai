@@ -1,6 +1,6 @@
 // Package client — canonical client interface for Hanzo Cloud.
 //
-//	import cloud "github.com/hanzoai/cloud/client"
+//	import cloud "github.com/hanzoai/ai/client"
 //	var c cloud.Cloud = cloud.NewClient(cfg)
 
 package client
