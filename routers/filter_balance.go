@@ -125,12 +125,12 @@ func InitBalanceGate() {
 	endpoint = strings.TrimRight(endpoint, "/")
 	token := conf.GetConfigString("commerceToken")
 
-	iamEndpoint := conf.GetConfigString("iamEndpoint")
+	iamEndpoint := conf.GetConfigString("IAM_URL")
 	if iamEndpoint != "" {
 		iamEndpoint = strings.TrimRight(iamEndpoint, "/")
 	}
-	clientId := conf.GetConfigString("clientId")
-	clientSecret := conf.GetConfigString("clientSecret")
+	clientId := conf.GetConfigString("IAM_CLIENT_ID")
+	clientSecret := conf.GetConfigString("IAM_CLIENT_SECRET")
 
 	bg := &BalanceGate{
 		entries:      make(map[string]*balanceCacheEntry),
@@ -367,8 +367,12 @@ type commerceBalanceResponse struct {
 }
 
 // fetchBalance calls Commerce to get the current balance for a user.
+//
+// Commerce mounts its API at root in production (config.Prefixes["api"]
+// = "/" in production.go), so the canonical path is /billing/balance,
+// NOT /api/v1/billing/balance — that's the dev-mode shape.
 func (bg *BalanceGate) fetchBalance(userKey string) (int64, error) {
-	balanceURL := fmt.Sprintf("%s/api/v1/billing/balance?user=%s&currency=usd", bg.endpoint, url.QueryEscape(userKey))
+	balanceURL := fmt.Sprintf("%s/billing/balance?user=%s&currency=usd", bg.endpoint, url.QueryEscape(userKey))
 
 	req, err := http.NewRequest(http.MethodGet, balanceURL, nil)
 	if err != nil {
