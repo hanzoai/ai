@@ -25,7 +25,7 @@ package routers
 
 import (
 	"github.com/beego/beego"
-	"github.com/hanzoai/cloud/controllers"
+	"github.com/hanzoai/ai/controllers"
 )
 
 func init() {

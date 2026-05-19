@@ -17,7 +17,7 @@ package pkgimage
 import (
 	"fmt"
 
-	"github.com/hanzoai/cloud/i18n"
+	"github.com/hanzoai/ai/i18n"
 )
 
 type ImageClientInterface interface {

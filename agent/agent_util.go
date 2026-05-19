@@ -19,7 +19,7 @@ import (
 	"strings"
 
 	"github.com/ThinkInAIXYZ/go-mcp/protocol"
-	"github.com/hanzoai/cloud/agent/builtin_tool"
+	"github.com/hanzoai/ai/agent/builtin_tool"
 )
 
 func GetServerNameAndToolNameFromId(id string) (string, string) {

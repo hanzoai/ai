@@ -17,7 +17,7 @@ package controllers
 import (
 	"strings"
 
-	"github.com/hanzoai/cloud/conf"
+	"github.com/hanzoai/ai/conf"
 )
 
 // GetEffectiveOrg resolves the organization for data-scoping purposes.

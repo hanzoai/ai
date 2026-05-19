@@ -17,8 +17,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/hanzoai/cloud/scan"
-	"github.com/hanzoai/cloud/util"
+	"github.com/hanzoai/ai/scan"
+	"github.com/hanzoai/ai/util"
 	"github.com/hanzoai/dbx"
 )
 

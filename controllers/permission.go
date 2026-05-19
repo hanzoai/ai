@@ -17,7 +17,7 @@ package controllers
 import (
 	"encoding/json"
 
-	"github.com/hanzoai/cloud/util"
+	"github.com/hanzoai/ai/util"
 	iamsdk "github.com/hanzoai/iamsdk/v2/iamsdk"
 )
 

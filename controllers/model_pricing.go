@@ -18,7 +18,7 @@ import (
 	"math"
 	"strings"
 
-	"github.com/hanzoai/cloud/object"
+	"github.com/hanzoai/ai/object"
 )
 
 // StarterCreditDollars is the amount granted to new users as free credit.

@@ -19,9 +19,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/hanzoai/cloud/carrier"
-	"github.com/hanzoai/cloud/model"
-	"github.com/hanzoai/cloud/object"
+	"github.com/hanzoai/ai/carrier"
+	"github.com/hanzoai/ai/model"
+	"github.com/hanzoai/ai/object"
 )
 
 func getCarrier(suggestionCount int, needTitle bool) (string, error) {
