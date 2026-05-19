@@ -532,7 +532,9 @@ type commercePlanResponse struct {
 // and maps the plan name to a rate limit Tier. Returns TierZenFree on any error
 // (fail-open: rate limiting should never deny service because Commerce is down).
 func (tc *TierCache) commerceTierLookup(apiKey string) (Tier, error) {
-	url := fmt.Sprintf("%s/api/v1/billing/tier?apiKey=%s", tc.endpoint, apiKey)
+	// Commerce API prefix is "/" in prod, not "/api/v1/". Canonical path
+	// is /billing/tier.
+	url := fmt.Sprintf("%s/billing/tier?apiKey=%s", tc.endpoint, apiKey)
 
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
