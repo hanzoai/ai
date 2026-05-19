@@ -18,7 +18,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/hanzoai/cloud/object"
+	"github.com/hanzoai/ai/object"
 )
 
 // ProcessSpeechToText

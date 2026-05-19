@@ -21,7 +21,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hanzoai/cloud/util"
+	"github.com/hanzoai/ai/util"
 )
 
 var organization = "hanzo"

@@ -19,9 +19,9 @@ import (
 	"fmt"
 
 	"github.com/beego/beego/logs"
-	"github.com/hanzoai/cloud/model"
-	"github.com/hanzoai/cloud/object"
-	"github.com/hanzoai/cloud/util"
+	"github.com/hanzoai/ai/model"
+	"github.com/hanzoai/ai/object"
+	"github.com/hanzoai/ai/util"
 	"github.com/workweixin/weworkapi_golang/json_callback/wxbizjsonmsgcrypt"
 )
 

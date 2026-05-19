@@ -17,8 +17,8 @@ package controllers
 import (
 	"strings"
 
-	"github.com/hanzoai/cloud/object"
-	"github.com/hanzoai/cloud/util"
+	"github.com/hanzoai/ai/object"
+	"github.com/hanzoai/ai/util"
 )
 
 // GetActivities

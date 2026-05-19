@@ -34,7 +34,7 @@ import (
 	"github.com/beego/beego/logs"
 	"github.com/luxfi/zap"
 
-	"github.com/hanzoai/cloud/object"
+	"github.com/hanzoai/ai/object"
 )
 
 // MsgTypeCloudOps is the ZAP message type for inter-service cloud operations.
