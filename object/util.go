@@ -18,7 +18,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/hanzoai/cloud/util"
+	"github.com/hanzoai/ai/util"
 	"github.com/hanzoai/dbx"
 	"github.com/sashabaranov/go-openai"
 )

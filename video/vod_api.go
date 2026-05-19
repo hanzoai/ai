@@ -21,7 +21,7 @@ import (
 
 	"github.com/alibabacloud-go/tea/tea"
 	vod20170321 "github.com/alibabacloud-go/vod-20170321/v2/client"
-	"github.com/hanzoai/cloud/util"
+	"github.com/hanzoai/ai/util"
 )
 
 func GetVideoPlayAuth(videoId string) (string, error) {

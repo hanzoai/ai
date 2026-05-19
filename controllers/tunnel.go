@@ -21,10 +21,10 @@ import (
 
 	"github.com/beego/beego/logs"
 	"github.com/gorilla/websocket"
-	"github.com/hanzoai/cloud/conf"
-	"github.com/hanzoai/cloud/object"
-	"github.com/hanzoai/cloud/util"
-	"github.com/hanzoai/cloud/util/guacamole"
+	"github.com/hanzoai/ai/conf"
+	"github.com/hanzoai/ai/object"
+	"github.com/hanzoai/ai/util"
+	"github.com/hanzoai/ai/util/guacamole"
 )
 
 const (

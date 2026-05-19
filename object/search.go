@@ -14,7 +14,7 @@
 package object
 
 import (
-	"github.com/hanzoai/cloud/embedding"
+	"github.com/hanzoai/ai/embedding"
 )
 
 type SearchProvider interface {

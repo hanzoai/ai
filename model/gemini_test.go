@@ -22,7 +22,7 @@ import (
 	"testing"
 
 	"github.com/beego/beego"
-	"github.com/hanzoai/cloud/proxy"
+	"github.com/hanzoai/ai/proxy"
 	"google.golang.org/genai"
 )
 

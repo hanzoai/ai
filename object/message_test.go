@@ -20,9 +20,9 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/hanzoai/cloud/embedding"
-	"github.com/hanzoai/cloud/model"
-	"github.com/hanzoai/cloud/util"
+	"github.com/hanzoai/ai/embedding"
+	"github.com/hanzoai/ai/model"
+	"github.com/hanzoai/ai/util"
 )
 
 func TestUpdateMessagePrices(t *testing.T) {

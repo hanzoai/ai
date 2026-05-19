@@ -15,7 +15,7 @@
 package xlsx
 
 import (
-	"github.com/hanzoai/cloud/util"
+	"github.com/hanzoai/ai/util"
 	"github.com/tealeg/xlsx"
 )
 
