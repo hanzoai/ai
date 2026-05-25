@@ -19,8 +19,8 @@ stringData:
     isDemoMode = false
     disablePreviewMode = false
     logPostOnly = true
-    IAM_URL = ""
-    IAM_CLIENT_ID = ""
+    IAM_URL = "https://hanzo.id"
+    IAM_CLIENT_ID = "hanzo-cloud"
     IAM_CLIENT_SECRET = ""
     IAM_ORG = "hanzo"
     IAM_APP_NAME = "hanzo-cloud"
