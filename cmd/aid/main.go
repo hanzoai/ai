@@ -124,7 +124,7 @@ func main() {
 		panic(err)
 	}
 
-	port := beego.AppConfig.DefaultInt("httpport", 14000)
+	port := beego.AppConfig.DefaultInt("httpport", 8000)
 
 	err = util.StopOldInstance(port)
 	if err != nil {
