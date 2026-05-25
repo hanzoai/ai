@@ -23,7 +23,7 @@ stringData:
     IAM_CLIENT_ID = ""
     IAM_CLIENT_SECRET = ""
     IAM_ORG = "hanzo"
-    IAM_APP_NAME = "app-cloud"
+    IAM_APP_NAME = "hanzo-cloud"
     IAM_REDIRECT_PATH = /callback
     cacheDir = "/tmp/hanzo_cloud_cache"
     isLocalIpDb = false
