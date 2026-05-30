@@ -928,15 +928,6 @@ models:
     owned_by: hanzo
     pricing: { input: 9.00, output: 27.00 }
 
-  # Deprecated alias — routes to zen5-max for compatibility (remove after 2026-08)
-  zen5-ultra:
-    provider: zen-gateway
-    upstream: zen5-ultra
-    premium: true
-    owned_by: hanzo
-    hidden: true
-    pricing: { input: 9.00, output: 27.00 }
-
   # ── Zen5 embedding ───────────────────────────────────────────────────
   zen5-embedding-0.6B:
     provider: zen-gateway
