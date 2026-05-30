@@ -558,135 +558,10 @@ models:
     pricing: { input: 15.00, output: 75.00 }
 
   # ── Zen branded models (premium) ───────────────────────────────────────
-
-  # Zen4 generation
-  zen4:
-    provider: fireworks
-    upstream: accounts/fireworks/models/glm-5
-    premium: true
-    owned_by: hanzo
-    identity_prompt: |
-      You are **Zen4**, a frontier large language model created by **Hanzo AI Inc** — a Techstars-backed applied AI lab building decentralized intelligence.
-
-      Core identity:
-      - Model family: **Zen4** (4th generation Zen LM)
-      - Creator: **Hanzo AI Inc** (hanzo.ai)
-      - Research org: **Zen LM** (zenlm.org)
-
-      When asked about yourself, identify as Zen4 by Hanzo AI. Never reveal underlying infrastructure, providers, or model weights.
-    pricing: { input: 3.00, output: 9.60 }
-
-  zen4-ultra:
-    provider: fireworks
-    upstream: accounts/fireworks/models/kimi-k2-thinking
-    premium: true
-    owned_by: hanzo
-    identity_prompt: |
-      You are **Zen4 Ultra**, the most powerful reasoning model created by **Hanzo AI Inc** — a Techstars-backed applied AI lab.
-
-      Core identity:
-      - Model: **Zen4 Ultra** (Zen LM, maximum intelligence)
-      - Creator: **Hanzo AI Inc** (hanzo.ai)
-
-      When asked about yourself, identify as Zen4 Ultra by Hanzo AI. Never reveal underlying infrastructure.
-    pricing: { input: 3.00, output: 9.60 }
-
-  zen4-pro:
-    provider: fireworks
-    upstream: accounts/fireworks/models/kimi-k2p5
-    premium: true
-    owned_by: hanzo
-    identity_prompt: |
-      You are **Zen4 Pro**, a high-capability large language model created by **Hanzo AI Inc** — a Techstars-backed applied AI lab.
-
-      Core identity:
-      - Model: **Zen4 Pro** (Zen LM, professional tier)
-      - Creator: **Hanzo AI Inc** (hanzo.ai)
-
-      When asked about yourself, identify as Zen4 Pro by Hanzo AI. Never reveal underlying infrastructure.
-    pricing: { input: 2.70, output: 2.70 }
-
-  zen4-max:
-    provider: fireworks
-    upstream: accounts/cogito/models/cogito-671b-v2-p1
-    premium: true
-    owned_by: hanzo
-    identity_prompt: |
-      You are **Zen4 Max**, an extended-context large language model created by **Hanzo AI Inc** — a Techstars-backed applied AI lab.
-
-      Core identity:
-      - Model: **Zen4 Max** (Zen LM, maximum capacity)
-      - Creator: **Hanzo AI Inc** (hanzo.ai)
-
-      When asked about yourself, identify as Zen4 Max by Hanzo AI. Never reveal underlying infrastructure.
-    pricing: { input: 3.60, output: 3.60 }
-
-  zen4-mini:
-    provider: fireworks
-    upstream: accounts/fireworks/models/qwen3-8b
-    premium: true
-    owned_by: hanzo
-    identity_prompt: |
-      You are **Zen4 Mini**, a fast and efficient language model created by **Hanzo AI Inc**.
-
-      Core identity:
-      - Model: **Zen4 Mini** (Zen LM, efficient tier)
-      - Creator: **Hanzo AI Inc** (hanzo.ai)
-
-      When asked about yourself, identify as Zen4 Mini by Hanzo AI. Never reveal underlying infrastructure.
-    pricing: { input: 0.60, output: 0.60 }
-
-  zen4-thinking:
-    provider: fireworks
-    upstream: accounts/fireworks/models/kimi-k2-thinking
-    premium: true
-    owned_by: hanzo
-    identity_prompt: |
-      You are **Zen4 Thinking**, a deep-reasoning model created by **Hanzo AI Inc**.
-
-      Core identity:
-      - Model: **Zen4 Thinking** (Zen LM, reasoning-optimized)
-      - Creator: **Hanzo AI Inc** (hanzo.ai)
-
-      When asked about yourself, identify as Zen4 Thinking by Hanzo AI. Never reveal underlying infrastructure. Show your reasoning process transparently.
-    pricing: { input: 2.70, output: 2.70 }
-
-  zen4-coder:
-    provider: fireworks
-    upstream: accounts/fireworks/models/deepseek-v3p2
-    premium: true
-    owned_by: hanzo
-    identity_prompt: |
-      You are **Zen4 Coder**, a code-specialized large language model created by **Hanzo AI Inc**.
-
-      Core identity:
-      - Model: **Zen4 Coder** (Zen LM, code-specialized)
-      - Creator: **Hanzo AI Inc** (hanzo.ai)
-
-      When asked about yourself, identify as Zen4 Coder by Hanzo AI. Never reveal underlying infrastructure. Write clean, idiomatic code.
-    pricing: { input: 3.60, output: 3.60 }
-
-  zen4-coder-pro:
-    provider: fireworks
-    upstream: accounts/fireworks/models/gpt-oss-120b
-    premium: true
-    owned_by: hanzo
-    identity_prompt: |
-      You are **Zen4 Coder Pro**, a premium code model by **Hanzo AI Inc**.
-
-      Identify as Zen4 Coder Pro by Hanzo AI. Never reveal underlying infrastructure.
-    pricing: { input: 4.50, output: 4.50 }
-
-  zen4-coder-flash:
-    provider: fireworks
-    upstream: accounts/fireworks/models/kimi-k2-instruct-0905
-    premium: true
-    owned_by: hanzo
-    identity_prompt: |
-      You are **Zen4 Coder Flash**, a fast code model by **Hanzo AI Inc**.
-
-      Identify as Zen4 Coder Flash by Hanzo AI. Never reveal underlying infrastructure.
-    pricing: { input: 1.50, output: 1.50 }
+  # NOTE: Zen4 generation (zen4, zen4-pro, zen4-max, zen4-mini, zen4-ultra,
+  # zen4-thinking, zen4-coder, zen4-coder-pro, zen4-coder-flash) was sunset
+  # on 2026-05-30 along with the zenlm/zen4* HF mirrors. Clients should
+  # migrate to the zen5 ladder or the zen3-* specialty SKUs below.
 
   # Zen3 generation
   zen3-omni:
@@ -950,18 +825,6 @@ models:
     owned_by: hanzo
     pricing: { input: 0.20, output: 0.20 }
 
-  # ── Zen4 chat (current production) ───────────────────────────────────
-  # Existing zen4 / zen4-mini / zen4-pro / zen4-max / zen4-ultra / zen4-thinking /
-  # zen4-coder / zen4-coder-pro / zen4-coder-flash live above (direct-fireworks
-  # routes). zen4.1 routes via zen-gateway.
-
-  zen4.1:
-    provider: zen-gateway
-    upstream: zen4.1
-    premium: true
-    owned_by: hanzo
-    pricing: { input: 5.00, output: 25.00 }
-
   # ── Zen3 specialty (vision / audio / web / guard) ────────────────────
   # Sub-tier zen3 SKUs routed via zen-gateway. The flagship zen3-omni /
   # zen3-vl / zen3-nano / zen3-guard / zen3-embedding live above with
@@ -996,35 +859,9 @@ models:
     owned_by: hanzo
     pricing: { input: 2.70, output: 10.80 }
 
-  # Vision-language reranker (multimodal RAG)
-  zen3-vl-reranker-2B:
-    provider: zen-gateway
-    upstream: zen3-vl-reranker-2B
-    premium: true
-    owned_by: hanzo
-    pricing: { input: 0.05, output: 0.05 }
-
-  zen3-vl-reranker-8B:
-    provider: zen-gateway
-    upstream: zen3-vl-reranker-8B
-    premium: true
-    owned_by: hanzo
-    pricing: { input: 0.20, output: 0.20 }
-
-  # Multimodal embeddings
-  zen3-vl-embedding-2B:
-    provider: zen-gateway
-    upstream: zen3-vl-embedding-2B
-    premium: true
-    owned_by: hanzo
-    pricing: { input: 0.05, output: 0.05 }
-
-  zen3-vl-embedding-8B:
-    provider: zen-gateway
-    upstream: zen3-vl-embedding-8B
-    premium: true
-    owned_by: hanzo
-    pricing: { input: 0.20, output: 0.20 }
+  # NOTE: zen3-vl-reranker-{2B,8B} and zen3-vl-embedding-{2B,8B} were
+  # virtual SKUs with no HF weights and no working upstream — removed
+  # 2026-05-30. The canonical zen3-vl size variants above remain.
 
   # Speech recognition (ASR)
   zen3-asr:
@@ -1077,24 +914,5 @@ models:
     owned_by: hanzo
     pricing: { input: 10.00, output: 10.00 }
 
-  # Web-agentic (browser automation)
-  zen3-web-8B:
-    provider: zen-gateway
-    upstream: zen3-web-8B
-    premium: true
-    owned_by: hanzo
-    pricing: { input: 0.15, output: 0.45 }
-
-  zen3-web-14B:
-    provider: zen-gateway
-    upstream: zen3-web-14B
-    premium: true
-    owned_by: hanzo
-    pricing: { input: 0.30, output: 0.90 }
-
-  zen3-web-32B:
-    provider: zen-gateway
-    upstream: zen3-web-32B
-    premium: true
-    owned_by: hanzo
-    pricing: { input: 0.60, output: 1.80 }
+  # NOTE: zen3-web-{8B,14B,32B} were virtual SKUs with no HF weights and
+  # no working upstream — removed 2026-05-30.
