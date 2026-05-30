@@ -853,3 +853,257 @@ models:
     owned_by: hanzo
     hidden: true
     pricing: { input: 0.39, output: 0.39 }
+
+  # ── Zen5 ladder (Hanzo Zen LM family) ─────────────────────────────────
+  # Routed via zen-gateway (api.zen.hanzo.ai); gateway resolves upstream
+  # weights and injects Zen identity. Pricing mirrors zen-gateway model_info.
+
+  zen5-nano-0.8B:
+    provider: zen-gateway
+    upstream: zen5-nano-0.8B
+    premium: true
+    owned_by: hanzo
+    pricing: { input: 0.03, output: 0.09 }
+
+  zen5-nano-2B:
+    provider: zen-gateway
+    upstream: zen5-nano-2B
+    premium: true
+    owned_by: hanzo
+    pricing: { input: 0.05, output: 0.15 }
+
+  zen5-nano-4B:
+    provider: zen-gateway
+    upstream: zen5-nano-4B
+    premium: true
+    owned_by: hanzo
+    pricing: { input: 0.08, output: 0.24 }
+
+  zen5-nano-9B:
+    provider: zen-gateway
+    upstream: zen5-nano-9B
+    premium: true
+    owned_by: hanzo
+    pricing: { input: 0.15, output: 0.45 }
+
+  zen5-flash:
+    provider: zen-gateway
+    upstream: zen5-flash
+    premium: true
+    owned_by: hanzo
+    pricing: { input: 0.10, output: 0.30 }
+
+  zen5-mini:
+    provider: zen-gateway
+    upstream: zen5-mini
+    premium: true
+    owned_by: hanzo
+    pricing: { input: 0.30, output: 0.90 }
+
+  zen5:
+    provider: zen-gateway
+    upstream: zen5
+    premium: true
+    owned_by: hanzo
+    pricing: { input: 0.60, output: 1.20 }
+
+  zen5-coder:
+    provider: zen-gateway
+    upstream: zen5-coder
+    premium: true
+    owned_by: hanzo
+    pricing: { input: 1.00, output: 3.00 }
+
+  zen5-pro:
+    provider: zen-gateway
+    upstream: zen5-pro
+    premium: true
+    owned_by: hanzo
+    pricing: { input: 2.70, output: 5.40 }
+
+  zen5-max:
+    provider: zen-gateway
+    upstream: zen5-max
+    premium: true
+    owned_by: hanzo
+    pricing: { input: 9.00, output: 27.00 }
+
+  # Deprecated alias — routes to zen5-max for compatibility (remove after 2026-08)
+  zen5-ultra:
+    provider: zen-gateway
+    upstream: zen5-ultra
+    premium: true
+    owned_by: hanzo
+    hidden: true
+    pricing: { input: 9.00, output: 27.00 }
+
+  # ── Zen5 embedding ───────────────────────────────────────────────────
+  zen5-embedding-0.6B:
+    provider: zen-gateway
+    upstream: zen5-embedding-0.6B
+    premium: true
+    owned_by: hanzo
+    pricing: { input: 0.05, output: 0.05 }
+
+  zen5-embedding-4B:
+    provider: zen-gateway
+    upstream: zen5-embedding-4B
+    premium: true
+    owned_by: hanzo
+    pricing: { input: 0.10, output: 0.10 }
+
+  zen5-embedding-8B:
+    provider: zen-gateway
+    upstream: zen5-embedding-8B
+    premium: true
+    owned_by: hanzo
+    pricing: { input: 0.20, output: 0.20 }
+
+  # ── Zen4 chat (current production) ───────────────────────────────────
+  # Existing zen4 / zen4-mini / zen4-pro / zen4-max / zen4-ultra / zen4-thinking /
+  # zen4-coder / zen4-coder-pro / zen4-coder-flash live above (direct-fireworks
+  # routes). zen4.1 routes via zen-gateway.
+
+  zen4.1:
+    provider: zen-gateway
+    upstream: zen4.1
+    premium: true
+    owned_by: hanzo
+    pricing: { input: 5.00, output: 25.00 }
+
+  # ── Zen3 specialty (vision / audio / web / guard) ────────────────────
+  # Sub-tier zen3 SKUs routed via zen-gateway. The flagship zen3-omni /
+  # zen3-vl / zen3-nano / zen3-guard / zen3-embedding live above with
+  # direct-Fireworks routes.
+
+  # Vision-language size variants
+  zen3-vl-2B:
+    provider: zen-gateway
+    upstream: zen3-vl-2B
+    premium: true
+    owned_by: hanzo
+    pricing: { input: 0.05, output: 0.20 }
+
+  zen3-vl-8B:
+    provider: zen-gateway
+    upstream: zen3-vl-8B
+    premium: true
+    owned_by: hanzo
+    pricing: { input: 0.15, output: 0.60 }
+
+  zen3-vl-32B:
+    provider: zen-gateway
+    upstream: zen3-vl-32B
+    premium: true
+    owned_by: hanzo
+    pricing: { input: 0.60, output: 2.40 }
+
+  zen3-vl-235B-A22B:
+    provider: zen-gateway
+    upstream: zen3-vl-235B-A22B
+    premium: true
+    owned_by: hanzo
+    pricing: { input: 2.70, output: 10.80 }
+
+  # Vision-language reranker (multimodal RAG)
+  zen3-vl-reranker-2B:
+    provider: zen-gateway
+    upstream: zen3-vl-reranker-2B
+    premium: true
+    owned_by: hanzo
+    pricing: { input: 0.05, output: 0.05 }
+
+  zen3-vl-reranker-8B:
+    provider: zen-gateway
+    upstream: zen3-vl-reranker-8B
+    premium: true
+    owned_by: hanzo
+    pricing: { input: 0.20, output: 0.20 }
+
+  # Multimodal embeddings
+  zen3-vl-embedding-2B:
+    provider: zen-gateway
+    upstream: zen3-vl-embedding-2B
+    premium: true
+    owned_by: hanzo
+    pricing: { input: 0.05, output: 0.05 }
+
+  zen3-vl-embedding-8B:
+    provider: zen-gateway
+    upstream: zen3-vl-embedding-8B
+    premium: true
+    owned_by: hanzo
+    pricing: { input: 0.20, output: 0.20 }
+
+  # Speech recognition (ASR)
+  zen3-asr:
+    provider: zen-gateway
+    upstream: zen3-asr
+    premium: true
+    owned_by: hanzo
+    pricing: { input: 0.04, output: 0.04 }
+
+  zen3-asr-0.6B:
+    provider: zen-gateway
+    upstream: zen3-asr-0.6B
+    premium: true
+    owned_by: hanzo
+    pricing: { input: 0.02, output: 0.02 }
+
+  zen3-asr-aligner:
+    provider: zen-gateway
+    upstream: zen3-asr-aligner
+    premium: true
+    owned_by: hanzo
+    pricing: { input: 0.02, output: 0.02 }
+
+  # Text-to-speech (TTS)
+  zen3-tts:
+    provider: zen-gateway
+    upstream: zen3-tts
+    premium: true
+    owned_by: hanzo
+    pricing: { input: 5.00, output: 5.00 }
+
+  zen3-tts-0.6B:
+    provider: zen-gateway
+    upstream: zen3-tts-0.6B
+    premium: true
+    owned_by: hanzo
+    pricing: { input: 2.00, output: 2.00 }
+
+  zen3-tts-voice-design:
+    provider: zen-gateway
+    upstream: zen3-tts-voice-design
+    premium: true
+    owned_by: hanzo
+    pricing: { input: 8.00, output: 8.00 }
+
+  zen3-tts-custom-voice:
+    provider: zen-gateway
+    upstream: zen3-tts-custom-voice
+    premium: true
+    owned_by: hanzo
+    pricing: { input: 10.00, output: 10.00 }
+
+  # Web-agentic (browser automation)
+  zen3-web-8B:
+    provider: zen-gateway
+    upstream: zen3-web-8B
+    premium: true
+    owned_by: hanzo
+    pricing: { input: 0.15, output: 0.45 }
+
+  zen3-web-14B:
+    provider: zen-gateway
+    upstream: zen3-web-14B
+    premium: true
+    owned_by: hanzo
+    pricing: { input: 0.30, output: 0.90 }
+
+  zen3-web-32B:
+    provider: zen-gateway
+    upstream: zen3-web-32B
+    premium: true
+    owned_by: hanzo
+    pricing: { input: 0.60, output: 1.80 }
