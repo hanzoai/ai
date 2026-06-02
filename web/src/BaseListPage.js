@@ -13,14 +13,11 @@
 // limitations under the License.
 
 import React from "react";
-import {Button, Input, Modal, Result, Space} from "antd";
-import {ExclamationCircleOutlined, SearchOutlined} from "@ant-design/icons";
+import {AlertTriangle, Search} from "lucide-react";
 import Highlighter from "react-highlight-words";
 import i18next from "i18next";
 import * as Setting from "./Setting";
 import * as FormBackend from "./backend/FormBackend";
-
-const {confirm} = Modal;
 
 class BaseListPage extends React.Component {
   constructor(props) {
@@ -55,9 +52,6 @@ class BaseListPage extends React.Component {
 
   componentDidMount() {
     window.addEventListener("storeChanged", this.handleStoreChange);
-    // if (!Setting.isLocalAdminUser(this.props.account)) {
-    //   Setting.setStore("All");
-    // }
   }
 
   componentWillUnmount() {
@@ -72,6 +66,7 @@ class BaseListPage extends React.Component {
     this.fetch({pagination});
     this.getForm();
   }
+
   getForm() {
     const tag = this.props.account.tag;
     const formType = this.props.match?.path?.replace(/^\//, "");
@@ -104,34 +99,34 @@ class BaseListPage extends React.Component {
 
   getColumnSearchProps = dataIndex => ({
     filterDropdown: ({setSelectedKeys, selectedKeys, confirm, clearFilters}) => (
-      <div style={{padding: 8}}>
-        <Input
+      <div className="p-3 bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl">
+        <input
           ref={node => {
             this.searchInput = node;
           }}
           placeholder={i18next.t("general:Please input your search")}
           value={selectedKeys[0]}
           onChange={e => setSelectedKeys(e.target.value ? [e.target.value] : [])}
-          onPressEnter={() => this.handleSearch(selectedKeys, confirm, dataIndex)}
-          style={{marginBottom: 8, display: "block"}}
+          onKeyDown={e => {
+            if (e.key === "Enter") {this.handleSearch(selectedKeys, confirm, dataIndex);}
+          }}
+          className="w-full px-3 py-1.5 mb-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-500"
         />
-
-        <Space>
-          <Button
-            type="primary"
+        <div className="flex gap-2">
+          <button
             onClick={() => this.handleSearch(selectedKeys, confirm, dataIndex)}
-            icon={<SearchOutlined />}
-            size="small"
-            style={{width: 90}}
+            className="flex items-center gap-1 px-3 py-1 bg-white text-black rounded text-xs font-medium hover:bg-zinc-200 transition-colors"
           >
+            <Search className="w-3 h-3" />
             {i18next.t("general:Search")}
-          </Button>
-          <Button onClick={() => this.handleReset(clearFilters)} size="small" style={{width: 90}}>
+          </button>
+          <button
+            onClick={() => this.handleReset(clearFilters)}
+            className="px-3 py-1 bg-zinc-800 text-zinc-300 rounded text-xs hover:bg-zinc-700 transition-colors"
+          >
             {i18next.t("general:Reset")}
-          </Button>
-          <Button
-            type="link"
-            size="small"
+          </button>
+          <button
             onClick={() => {
               confirm({closeDropdown: false});
               this.setState({
@@ -139,26 +134,27 @@ class BaseListPage extends React.Component {
                 searchedColumn: dataIndex,
               });
             }}
+            className="px-3 py-1 text-zinc-400 text-xs hover:text-white transition-colors"
           >
             {i18next.t("general:Filter")}
-          </Button>
-        </Space>
+          </button>
+        </div>
       </div>
     ),
-    filterIcon: filtered => <SearchOutlined style={{color: filtered ? "#1890ff" : undefined}} />,
+    filterIcon: filtered => <Search className={`w-4 h-4 ${filtered ? "text-blue-400" : "text-zinc-500"}`} />,
     onFilter: (value, record) =>
       record[dataIndex]
         ? record[dataIndex].toString().toLowerCase().includes(value.toLowerCase())
         : "",
     onFilterDropdownOpenChange: visible => {
       if (visible) {
-        setTimeout(() => this.searchInput.select(), 100);
+        setTimeout(() => this.searchInput?.select(), 100);
       }
     },
     render: text =>
       this.state.searchedColumn === dataIndex ? (
         <Highlighter
-          highlightStyle={{backgroundColor: "#ffc069", padding: 0}}
+          highlightStyle={{backgroundColor: "#fbbf24", padding: 0, color: "black"}}
           searchWords={[this.state.searchText]}
           autoEscape
           textToHighlight={text ? text.toString() : ""}
@@ -210,18 +206,11 @@ class BaseListPage extends React.Component {
   };
 
   handleBulkDelete = () => {
-    const {selectedRows, selectedRowKeys} = this.state;
-
-    confirm({
-      title: `${i18next.t("general:Sure to delete")}: ${selectedRowKeys.length} ${i18next.t("general:items")} ?`,
-      icon: <ExclamationCircleOutlined />,
-      okText: i18next.t("general:OK"),
-      okType: "danger",
-      cancelText: i18next.t("general:Cancel"),
-      onOk: () => {
-        this.performBulkDelete(selectedRows, selectedRowKeys);
-      },
-    });
+    const {selectedRowKeys} = this.state;
+    if (!window.confirm(`${i18next.t("general:Sure to delete")}: ${selectedRowKeys.length} ${i18next.t("general:items")} ?`)) {
+      return;
+    }
+    this.performBulkDelete(this.state.selectedRows, selectedRowKeys);
   };
 
   performBulkDelete = async(selectedRows, selectedRowKeys) => {
@@ -231,7 +220,7 @@ class BaseListPage extends React.Component {
       const sortedSelectedRows = [...selectedRows].sort((a, b) => {
         const indexA = this.state.data.findIndex(item => this.getRowKey(item) === this.getRowKey(a));
         const indexB = this.state.data.findIndex(item => this.getRowKey(item) === this.getRowKey(b));
-        return indexB - indexA; // Sort in descending order of index
+        return indexB - indexA;
       });
 
       const deletePromises = sortedSelectedRows.map(selectedRow => {
@@ -241,7 +230,6 @@ class BaseListPage extends React.Component {
 
       const results = await Promise.allSettled(deletePromises);
 
-      // Check results and handle partial failures
       const failureCount = results.filter(result =>
         result.status === "rejected" || result.value.status !== "ok"
       ).length;
@@ -252,10 +240,8 @@ class BaseListPage extends React.Component {
 
       this.clearSelection();
 
-      // Refresh the data to ensure consistency
       const {pagination} = this.state;
       this.fetch({pagination});
-
     } catch (error) {
       Setting.showMessage("error", `${i18next.t("general:Failed to connect to server")}: ${error}`);
     } finally {
@@ -263,7 +249,6 @@ class BaseListPage extends React.Component {
     }
   };
 
-  // Default deleteItem method - should be overridden by subclasses
   deleteItem = async(item) => {
     throw new Error("deleteItem method must be implemented by subclass");
   };
@@ -292,12 +277,19 @@ class BaseListPage extends React.Component {
   render() {
     if (!this.state.isAuthorized) {
       return (
-        <Result
-          status="403"
-          title="403 Unauthorized"
-          subTitle={i18next.t("general:Sorry, you do not have permission to access this page or logged in status invalid.")}
-          extra={<a href="/"><Button type="primary">{i18next.t("general:Back Home")}</Button></a>}
-        />
+        <div className="flex flex-col items-center justify-center py-20">
+          <AlertTriangle className="w-16 h-16 text-red-500 mb-4" />
+          <h1 className="text-2xl font-bold text-white mb-2">403 Unauthorized</h1>
+          <p className="text-zinc-400 mb-6">
+            {i18next.t("general:Sorry, you do not have permission to access this page or logged in status invalid.")}
+          </p>
+          <a
+            href="/"
+            className="px-4 py-2 bg-white text-black rounded-md text-sm font-medium hover:bg-zinc-200 transition-colors"
+          >
+            {i18next.t("general:Back Home")}
+          </a>
+        </div>
       );
     }
 

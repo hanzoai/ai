@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import React from "react";
+import React, {useEffect, useState} from "react";
 import {Redirect} from "react-router-dom";
 import * as StoreBackend from "./backend/StoreBackend";
 import * as Setting from "./Setting";
@@ -20,61 +20,43 @@ import ChatPage from "./ChatPage";
 import UsagePage from "./UsagePage";
 import i18next from "i18next";
 
-class HomePage extends React.Component {
-  constructor(props) {
-    super(props);
-    this.state = {
-      classes: props,
-      store: null,
-    };
-  }
+function HomePage({account}) {
+  const [store, setStore] = useState(null);
 
-  UNSAFE_componentWillMount() {
-    this.getStore();
-  }
-
-  getStore() {
+  useEffect(() => {
     StoreBackend.getStore("admin", "_cloud_default_store_")
       .then((res) => {
         if (res.status === "ok") {
           if (res.data && typeof res.data2 === "string" && res.data2 !== "") {
             res.data.error = res.data2;
           }
-
-          this.setState({
-            store: res.data,
-          });
+          setStore(res.data);
         } else {
           Setting.showMessage("error", `${i18next.t("general:Failed to get")}: ${res.msg}`);
         }
       });
+  }, []);
+
+  if (Setting.isAnonymousUser(account) || Setting.isChatUser(account) || Setting.getUrlParam("isRaw") !== null) {
+    if (!account) {
+      return null;
+    }
+    return <ChatPage account={account} />;
   }
 
-  render() {
-    if (Setting.isAnonymousUser(this.props.account) || Setting.isChatUser(this.props.account) || Setting.getUrlParam("isRaw") !== null) {
-      if (!this.props.account) {
-        return null;
-      }
-
-      return (
-        <ChatPage account={this.props.account} />
-      );
-    }
-
-    if (this.props.account?.tag === "Video") {
-      return <Redirect to="/videos" />;
-    } else {
-      if (this.state.store === null) {
-        return null;
-      } else {
-        if (Setting.canViewAllUsers(this.props.account)) {
-          return <UsagePage account={this.props.account} />;
-        }
-
-        return <ChatPage account={this.props.account} />;
-      }
-    }
+  if (account?.tag === "Video") {
+    return <Redirect to="/videos" />;
   }
+
+  if (store === null) {
+    return null;
+  }
+
+  if (Setting.canViewAllUsers(account)) {
+    return <UsagePage account={account} />;
+  }
+
+  return <ChatPage account={account} />;
 }
 
 export default HomePage;

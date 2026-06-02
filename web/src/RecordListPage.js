@@ -14,7 +14,6 @@
 
 import React from "react";
 import {Link} from "react-router-dom";
-import {Alert, Button, Popconfirm, Popover, Switch, Table, Tooltip, Typography} from "antd";
 import moment from "moment";
 import * as Setting from "./Setting";
 import * as RecordBackend from "./backend/RecordBackend";
@@ -22,7 +21,6 @@ import * as ProviderBackend from "./backend/ProviderBackend";
 import i18next from "i18next";
 import BaseListPage from "./BaseListPage";
 import PopconfirmModal from "./modal/PopconfirmModal";
-import {CloseCircleFilled, DeleteOutlined} from "@ant-design/icons";
 import Editor from "./common/Editor";
 import CommitResultWidget from "./component/record/CommitResultWidget";
 
@@ -458,11 +456,7 @@ class RecordListPage extends BaseListPage {
           }
 
           return (
-            <Popover
-              placement="right"
-              content={
-                <div style={{width: "600px", height: "400px", display: "flex", flexDirection: "column", gap: "12px"}}>
-                  {!isValidJson && (
+            {!isValidJson && (
                     <Alert type="error" showIcon message={
                       <Typography.Paragraph ellipsis={{expandable: "collapsible"}} style={{margin: 0}}>{errorMessage}</Typography.Paragraph>}
                     />)}
@@ -480,7 +474,6 @@ class RecordListPage extends BaseListPage {
               <div style={{maxWidth: "200px", cursor: "pointer"}}>
                 {Setting.getShortText(text, 50)}
               </div>
-            </Popover>
           );
         },
       },
@@ -507,7 +500,7 @@ class RecordListPage extends BaseListPage {
           }
 
           return (
-            <Switch disabled checkedChildren={i18next.t("general:ON")} unCheckedChildren={i18next.t("general:OFF")} checked={text} />
+            <span className="px-2 py-0.5 rounded text-xs " + (text ? "bg-green-500/20 text-green-400" : "bg-zinc-800 text-zinc-500")">{text ? "ON" : "OFF"}</span>
           );
         },
       },
@@ -569,19 +562,11 @@ class RecordListPage extends BaseListPage {
               {
                 <>
                   {(record.block === "") ? (
-                    <Button
-                      disabled={record.block !== ""}
-                      type="primary" danger
-                      onClick={() => this.commitRecord(index, true)}
+                    <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-red-600 text-white hover:bg-red-700 disabled:opacity-50" disabled={record.block !== ""}> this.commitRecord(index, true)}
                     >{i18next.t("record:Commit")}
-                    </Button>
+                    </button>
                   ) : (
-                    <Popover
-                      placement="left"
-                      title={i18next.t("general:Result")}
-                      content={
-                        <div style={{width: "800px", maxHeight: "600px", overflow: "auto"}}>
-                          {this.state.isComparing ? (
+                    {this.state.isComparing ? (
                             <div style={{textAlign: "center", padding: "40px"}}>
                               <div style={{fontSize: "24px", marginBottom: "16px"}}>🔄</div>
                               <div>{i18next.t("general:Loading...")}</div>
@@ -595,33 +580,21 @@ class RecordListPage extends BaseListPage {
                       }
                       trigger="click"
                     >
-                      <Button
-                        disabled={record.block === ""}
-                        type="primary"
-                        onClick={() => {
+                      <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200 disabled:opacity-50" disabled={record.block === ""}> {
                           this.queryRecord(record, true);
                         }}
                       >{i18next.t("general:Query")}
-                      </Button>
-                    </Popover>
+                      </button>
                   )}
                   {this.state.enableCrossChain && (
                     (record.block2 === "") ? (
-                      <Tooltip title={record.provider2 === "" ? i18next.t("general:Error") : ""}>
-                        <Button
-                          disabled={record.provider2 === ""}
-                          type="primary" danger
-                          onClick={() => this.commitRecord(index, false)}
+                      
+                        <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-red-600 text-white hover:bg-red-700 disabled:opacity-50" disabled={record.provider2 === ""}> this.commitRecord(index, false)}
                         >{i18next.t("record:Commit") + " 2"}
-                        </Button>
-                      </Tooltip>
+                        </button>
+                      
                     ) : (
-                      <Popover
-                        placement="left"
-                        title={i18next.t("general:Result") + " 2"}
-                        content={
-                          <div style={{width: "800px", maxHeight: "600px", overflow: "auto"}}>
-                            {this.state.isComparing ? (
+                      {this.state.isComparing ? (
                               <div style={{textAlign: "center", padding: "40px"}}>
                                 <div style={{fontSize: "24px", marginBottom: "16px"}}>🔄</div>
                                 <div>{i18next.t("general:Loading...")}</div>
@@ -635,24 +608,18 @@ class RecordListPage extends BaseListPage {
                         }
                         trigger="click"
                       >
-                        <Button
-                          disabled={record.block2 === ""}
-                          type="primary"
-                          onClick={() => {
+                        <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200 disabled:opacity-50" disabled={record.block2 === ""}> {
                             this.queryRecord(record, false);
                           }}
                         >{i18next.t("general:Query") + " 2"}
-                        </Button>
-                      </Popover>
+                        </button>
                     )
                   )}
                 </>
               }
-              <Button
-                // disabled={record.owner !== this.props.account.owner}
-                onClick={() => this.props.history.push(`/records/${record.owner}/${record.id}`)}
+              <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-50" disabled={record.owner !== this.props.account.owner}> this.props.history.push(`/records/${record.owner}/${record.id}`)}
               >{i18next.t("general:View")}
-              </Button>
+              </button>
               <PopconfirmModal
                 // disabled={record.owner !== this.props.account.owner}
                 fakeDisabled={true}
@@ -677,28 +644,13 @@ class RecordListPage extends BaseListPage {
 
     return (
       <div>
-        <Table scroll={{x: "max-content"}} columns={filteredColumns} dataSource={records} rowKey={(record) => `${record.owner}/${record.name}`} rowSelection={this.getRowSelection()} size="middle" bordered pagination={paginationProps}
-          title={() => (
-            <div>
-              {i18next.t("general:Records")}
-              {Setting.isAdminUser(this.props.account) && (
-                <>
-                  <span style={{marginLeft: 32}}>
-                    {i18next.t("record:Enable cross-chain")}:
-                    <Switch checked={this.state.enableCrossChain} onChange={this.toggleEnableCrossChain} style={{marginLeft: 8}} />
-                  </span>
-                  <span style={{marginLeft: 32}}>
-                    {i18next.t("record:Enable decoding")}:
-                    <Switch checked={this.state.enableDecoding} onChange={this.toggleEnableDecoding} style={{marginLeft: 8}} />
-                  </span>
-                </>
+        <div className="overflow-x-auto border border-zinc-800 rounded-lg"><table className="w-full text-sm text-left"><thead className="bg-zinc-900/80 border-b border-zinc-800"><tr>{filteredColumns.map(col => <th key={col.key || col.dataIndex} className="px-3 py-2 text-xs font-medium text-zinc-400 whitespace-nowrap">{col.title}</th>)}</tr></thead><tbody className="divide-y divide-zinc-800/50">{(records || []).map((record, index) => <tr key={typeof {(record) => `${record.owner} === "function" ? ({(record) => `${record.owner})(record) : record[{(record) => `${record.owner}] || index} className="hover:bg-zinc-900/50 transition-colors">{filteredColumns.map(col => <td key={col.key || col.dataIndex} className="px-3 py-2 text-zinc-300 whitespace-nowrap">{col.render ? col.render(record[col.dataIndex], record, index) : record[col.dataIndex]}</td>)}</tr>)}</tbody></table></div>
               )}
               {this.state.selectedRowKeys.length > 0 && (
-                <Popconfirm title={`${i18next.t("general:Sure to delete")}: ${this.state.selectedRowKeys.length} ${i18next.t("general:items")} ?`} onConfirm={() => this.performBulkDelete(this.state.selectedRows, this.state.selectedRowKeys)} okText={i18next.t("general:OK")} cancelText={i18next.t("general:Cancel")}>
-                  <Button type="primary" danger size="small" icon={<DeleteOutlined />} style={{marginLeft: 8}}>
+                this.performBulkDelete(this.state.selectedRows, this.state.selectedRowKeys)} okText={i18next.t("general:OK")} cancelText={i18next.t("general:Cancel")}>
+                  <button className="px-2 py-1 rounded text-xs font-medium transition-colors bg-red-600 text-white hover:bg-red-700">} style={{marginLeft: 8}}>
                     {i18next.t("general:Delete")} ({this.state.selectedRowKeys.length})
-                  </Button>
-                </Popconfirm>
+                  </button>
               )}
             </div>
           )}
