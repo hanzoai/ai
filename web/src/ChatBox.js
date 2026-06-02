@@ -13,7 +13,6 @@
 // limitations under the License.
 
 import React from "react";
-import {Card, Layout} from "antd";
 import * as Setting from "./Setting";
 import i18next from "i18next";
 import copy from "copy-to-clipboard";
@@ -63,7 +62,6 @@ class ChatBox extends React.Component {
   }
 
   componentDidUpdate(prevProps, prevState, snapshot) {
-    // clear old status when the name(chat) changes
     if (prevProps.name !== this.props.name) {
       inputStore.set(prevProps.name, this.state.value);
       this.clearOldStatus();
@@ -119,7 +117,6 @@ class ChatBox extends React.Component {
   }
 
   handleSend = (innerHtml, webSearchEnabled = false) => {
-    // abort because the remaining recognition results are useless
     this.sttHelper.stopRecognition();
 
     let newValue = this.state.value;
@@ -149,7 +146,6 @@ class ChatBox extends React.Component {
   };
 
   handleRegenerate = (index) => {
-    // can only regenerate after sending the message
     const messages = this.state.messages || [];
     const message = [...messages].reverse().find(message => message.author !== "AI");
 
@@ -180,17 +176,9 @@ class ChatBox extends React.Component {
     MessageBackend.updateMessage(message.owner, message.name, message).then((result) => {
       if (result.status === "ok") {
         if (reactionType === "like") {
-          if (isCancel) {
-            Setting.showMessage("success", i18next.t("general:Successfully unliked"));
-          } else {
-            Setting.showMessage("success", i18next.t("general:Successfully liked"));
-          }
+          Setting.showMessage("success", isCancel ? i18next.t("general:Successfully unliked") : i18next.t("general:Successfully liked"));
         } else {
-          if (isCancel) {
-            Setting.showMessage("success", i18next.t("general:Successfully undisliked"));
-          } else {
-            Setting.showMessage("success", i18next.t("general:Successfully disliked"));
-          }
+          Setting.showMessage("success", isCancel ? i18next.t("general:Successfully undisliked") : i18next.t("general:Successfully disliked"));
         }
       } else {
         Setting.showMessage("error", result.msg);
@@ -213,11 +201,9 @@ class ChatBox extends React.Component {
     this.ttsHelper.readMessage(message, this.props.store);
   };
 
-  // Updated startVoiceInput method for ChatBox component
   startVoiceInput = () => {
     this.setState({isVoiceInput: true});
 
-    // Check if using browser builtin or cloud provider
     const providerValue = this.props.store?.speechToTextProvider || "";
     const useCloudProvider = providerValue !== "" && providerValue !== "Browser Built-In";
 
@@ -228,7 +214,6 @@ class ChatBox extends React.Component {
           this.setState({isVoiceInput: false});
         });
     } else {
-      // Using browser builtin recognition
       const recognition = this.sttHelper.initBrowserRecognition(this.processVoiceResult());
 
       if (!recognition) {
@@ -238,7 +223,6 @@ class ChatBox extends React.Component {
     }
   };
 
-  // Updated stopVoiceInput method for ChatBox component
   stopVoiceInput = () => {
     const providerValue = this.props.store?.speechToTextProvider || "";
     const useCloudProvider = providerValue !== "" && providerValue !== "Browser Built-In";
@@ -252,7 +236,6 @@ class ChatBox extends React.Component {
       this.sttHelper.stopRecognition();
 
       setTimeout(() => {
-        // Send the message after speech recognition is complete
         if (this.state.value && this.state.value.trim() !== "") {
           this.handleSend();
         }
@@ -262,16 +245,14 @@ class ChatBox extends React.Component {
     this.setState({isVoiceInput: false});
   };
 
-  // Updated to handle both updating UI and to know when to send
   processVoiceResult = (shouldSendAfterProcessing = false) => {
     return (event) => {
       const transcript = Array.from(event?.results)?.map((result) => result[0].transcript).join(" ");
 
       if (!transcript || transcript.trim() === "") {
-        return; // Skip empty transcripts
+        return;
       }
 
-      // Update the input field with the transcript
       if (this.cursorPosition === undefined) {
         this.setState({value: transcript}, () => {
           if (shouldSendAfterProcessing && this.state.value && this.state.value.trim() !== "") {
@@ -339,8 +320,8 @@ class ChatBox extends React.Component {
     const hasUrlMessage = urlParams.get("newMessage");
 
     return (
-      <Layout style={{display: "flex", width: "100%", height: "100%", borderRadius: "6px", ...this.props.styles?.layout}}>
-        <Card style={{display: "flex", width: "100%", height: "100%", flexDirection: "column", position: "relative", padding: "24px", ...this.props.styles?.card}}>
+      <div className="flex flex-col w-full h-full rounded-md relative" style={this.props.styles?.layout}>
+        <div className="flex flex-col w-full h-full relative p-6 bg-card rounded-md border border-border" style={this.props.styles?.card}>
           {messages.length === 0 && !hasUrlMessage && <WelcomeHeader store={this.props.store} />}
 
           <MessageList
@@ -384,7 +365,7 @@ class ChatBox extends React.Component {
               onWebSearchChange={this.setWebSearchEnabled}
             />
           )}
-        </Card>
+        </div>
 
         {messages.length === 0 ? (
           <ChatExampleQuestions
@@ -392,7 +373,7 @@ class ChatBox extends React.Component {
             exampleQuestions={exampleQuestions}
           />
         ) : null}
-      </Layout>
+      </div>
     );
   }
 }

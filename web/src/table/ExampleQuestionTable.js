@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import {Button, Input, Table, Tooltip} from "antd";
-import {DeleteOutlined, DownOutlined, UpOutlined} from "@ant-design/icons";
 import i18next from "i18next";
 import React from "react";
 import * as Setting from "../Setting";
@@ -104,31 +102,24 @@ class ExampleQuestionTable extends React.Component {
         render: (text, record, index) => {
           return (
             <div>
-              <Tooltip placement="bottomLeft" title={i18next.t("general:Up")}>
-                <Button
-                  style={{marginRight: "5px"}}
-                  disabled={index === 0}
-                  icon={<UpOutlined />}
+              
+                <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-50" disabled={index === 0} style={{marginRight: "5px"}>}
                   size="small"
                   onClick={() => this.upRow(this.props.table, index)}
                 />
-              </Tooltip>
-              <Tooltip placement="topLeft" title={i18next.t("general:Down")}>
-                <Button
-                  style={{marginRight: "5px"}}
-                  disabled={index === this.props.table.length - 1}
-                  icon={<DownOutlined />}
+              
+              
+                <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-50" disabled={index === this.props.table.length - 1} style={{marginRight: "5px"}>}
                   size="small"
                   onClick={() => this.downRow(this.props.table, index)}
                 />
-              </Tooltip>
-              <Tooltip placement="right" title={i18next.t("general:Delete")}>
-                <Button
-                  icon={<DeleteOutlined />}
+              
+              
+                <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700">}
                   size="small"
                   onClick={() => this.deleteRow(this.props.table, index)}
                 />
-              </Tooltip>
+              
             </div>
           );
         },
@@ -137,27 +128,7 @@ class ExampleQuestionTable extends React.Component {
 
     return (
       <div style={{marginTop: "20px"}}>
-        <Table
-          rowKey="index"
-          columns={columns}
-          dataSource={this.props.table}
-          size="middle"
-          bordered
-          pagination={false}
-          title={() => (
-            <div>
-              {i18next.t("store:Example questions")}&nbsp;&nbsp;&nbsp;&nbsp;
-              <Button
-                style={{marginRight: "5px"}}
-                type="primary"
-                size="small"
-                onClick={() => this.addRow(this.props.table)}
-              >
-                {i18next.t("general:Add")}
-              </Button>
-            </div>
-          )}
-        />
+        <div className="overflow-x-auto border border-zinc-800 rounded-lg"><table className="w-full text-sm text-left"><thead className="bg-zinc-900/80 border-b border-zinc-800"><tr>{columns.map(col => <th key={col.key || col.dataIndex} className="px-3 py-2 text-xs font-medium text-zinc-400 whitespace-nowrap">{col.title}</th>)}</tr></thead><tbody className="divide-y divide-zinc-800/50">{(this.props.table || []).map((record, index) => <tr key={typeof "index" === "function" ? ("index")(record) : record["index"] || index} className="hover:bg-zinc-900/50 transition-colors">{columns.map(col => <td key={col.key || col.dataIndex} className="px-3 py-2 text-zinc-300 whitespace-nowrap">{col.render ? col.render(record[col.dataIndex], record, index) : record[col.dataIndex]}</td>)}</tr>)}</tbody></table></div>
       </div>
     );
   }

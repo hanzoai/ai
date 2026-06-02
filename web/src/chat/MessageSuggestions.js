@@ -13,7 +13,6 @@
 // limitations under the License.
 
 import React from "react";
-import {Button} from "antd";
 import * as Setting from "../Setting";
 import {updateMessage} from "../backend/MessageBackend";
 
@@ -23,7 +22,7 @@ const MessageSuggestions = ({message, sendMessage}) => {
   }
 
   return (
-    <div style={{display: "flex", flexWrap: "wrap", gap: "8px"}}>
+    <div className="flex flex-wrap gap-2">
       {message.suggestions.map((suggestion, index) => {
         let suggestionText = suggestion.text;
         if (suggestionText.trim() === "") {
@@ -33,29 +32,17 @@ const MessageSuggestions = ({message, sendMessage}) => {
         suggestionText = Setting.formatSuggestion(suggestionText);
 
         return (
-          <Button
+          <button
             key={index}
-            color="primary"
-            variant="filled"
-            style={{
-              height: "auto",
-              padding: "8px 16px",
-            }}
+            className="rounded-lg bg-primary/10 text-primary px-4 py-2 text-sm hover:bg-primary/20 transition-colors text-left leading-relaxed break-words"
             onClick={() => {
               sendMessage(suggestionText, "");
               message.suggestions[index].isHit = true;
               updateMessage(message.owner, message.name, message, true);
             }}
           >
-            <div style={{
-              whiteSpace: "normal",
-              wordBreak: "break-word",
-              textAlign: "left",
-              lineHeight: "1.5",
-            }}>
-              {suggestionText}
-            </div>
-          </Button>
+            {suggestionText}
+          </button>
         );
       })}
     </div>

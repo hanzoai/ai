@@ -13,7 +13,6 @@
 // limitations under the License.
 
 import React from "react";
-import {Button, Card, Col, Input, Row, Select} from "antd";
 import * as DoctorBackend from "./backend/DoctorBackend";
 import * as HospitalBackend from "./backend/HospitalBackend";
 import * as Setting from "./Setting";
@@ -84,85 +83,73 @@ class DoctorEditPage extends React.Component {
 
   renderDoctor() {
     return (
-      <Card
-        size="small"
-        title={
-          <div>
+      <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4">
             {this.state.mode === "add"
               ? i18next.t("doctor:New Doctor")
               : i18next.t("doctor:Edit Doctor")}
             &nbsp;&nbsp;&nbsp;&nbsp;
-            <Button onClick={() => this.submitDoctorEdit(false)}>
+            <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700"> this.submitDoctorEdit(false)}>
               {i18next.t("general:Save")}
-            </Button>
-            <Button
-              style={{marginLeft: "20px"}}
-              type="primary"
-              onClick={() => this.submitDoctorEdit(true)}
+            </button>
+            <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}> this.submitDoctorEdit(true)}
             >
               {i18next.t("general:Save & Exit")}
-            </Button>
+            </button>
             {this.state.mode === "add" ? (
-              <Button
-                style={{marginLeft: "20px"}}
-                onClick={() => this.deleteDoctor()}
+              <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}> this.deleteDoctor()}
               >
                 {i18next.t("general:Cancel")}
-              </Button>
+              </button>
             ) : null}
           </div>
         }
         style={{marginLeft: "5px"}}
         type="inner"
       >
-        <Row style={{marginTop: "10px"}}>
-          <Col style={{marginTop: "5px"}} span={Setting.isMobile() ? 22 : 2}>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(
               i18next.t("general:Name"),
               i18next.t("general:Name - Tooltip")
             )}{" "}
             :
-          </Col>
-          <Col span={22}>
+          </div>
+          <div className="flex-1">
             <Input
               value={this.state.doctor.name}
               onChange={(e) => {
                 this.updateDoctorField("name", e.target.value);
               }}
             />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}}>
-          <Col style={{marginTop: "5px"}} span={Setting.isMobile() ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(
               i18next.t("med:Department"),
               i18next.t("med:Department - Tooltip")
             )}{" "}
             :
-          </Col>
-          <Col span={22}>
+          </div>
+          <div className="flex-1">
             <Input
               value={this.state.doctor.department}
               onChange={(e) => {
                 this.updateDoctorField("department", e.target.value);
               }}
             />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}}>
-          <Col style={{marginTop: "5px"}} span={Setting.isMobile() ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(
               i18next.t("med:Gender"),
               i18next.t("med:Gender - Tooltip")
             )}{" "}
             :
-          </Col>
-          <Col span={22}>
-            <Select
-              virtual={false}
-              style={{width: "100%"}}
-              value={this.state.doctor.gender}
-              onChange={(value) => {
+          </div>
+          <div className="flex-1">
+            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.doctor.gender}> {
                 this.updateDoctorField("gender", value);
               }}
               options={[
@@ -171,39 +158,35 @@ class DoctorEditPage extends React.Component {
                 {value: "Other", label: "Other"},
               ].map((item) => Setting.getOption(item.label, item.value))}
             />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}}>
-          <Col style={{marginTop: "5px"}} span={Setting.isMobile() ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(
               i18next.t("med:Access level"),
               i18next.t("med:Access level - Tooltip")
             )}{" "}
             :
-          </Col>
-          <Col span={22}>
+          </div>
+          <div className="flex-1">
             <Input
               value={this.state.doctor.accessLevel}
               onChange={(e) => {
                 this.updateDoctorField("accessLevel", e.target.value);
               }}
             />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}}>
-          <Col style={{marginTop: "5px"}} span={Setting.isMobile() ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(
               i18next.t("med:Hospital"),
               i18next.t("med:Hospital - Tooltip")
             )}{" "}
             :
-          </Col>
-          <Col span={22}>
-            <Select
-              virtual={false}
-              style={{width: "100%"}}
-              value={this.state.doctor.hospitalName}
-              onChange={(value) => {
+          </div>
+          <div className="flex-1">
+            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.doctor.hospitalName}> {
                 this.updateDoctorField("hospitalName", value);
               }}
               options={this.state.hospitals.map((hospital) => ({
@@ -211,9 +194,9 @@ class DoctorEditPage extends React.Component {
                 value: hospital.name,
               }))}
             />
-          </Col>
-        </Row>
-      </Card>
+          </div>
+        </div>
+      </div>
     );
   }
 
@@ -271,25 +254,18 @@ class DoctorEditPage extends React.Component {
       <div>
         {this.state.doctor !== null ? this.renderDoctor() : null}
         <div style={{marginTop: "20px", marginLeft: "40px"}}>
-          <Button size="large" onClick={() => this.submitDoctorEdit(false)}>
+          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700"> this.submitDoctorEdit(false)}>
             {i18next.t("general:Save")}
-          </Button>
-          <Button
-            style={{marginLeft: "20px"}}
-            type="primary"
-            size="large"
-            onClick={() => this.submitDoctorEdit(true)}
+          </button>
+          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}> this.submitDoctorEdit(true)}
           >
             {i18next.t("general:Save & Exit")}
-          </Button>
+          </button>
           {this.state.mode === "add" ? (
-            <Button
-              style={{marginLeft: "20px"}}
-              size="large"
-              onClick={() => this.deleteDoctor()}
+            <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}> this.deleteDoctor()}
             >
               {i18next.t("general:Cancel")}
-            </Button>
+            </button>
           ) : null}
         </div>
       </div>

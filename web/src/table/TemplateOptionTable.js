@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import {Button, Input, Select, Switch, Table} from "antd";
 import i18next from "i18next";
 import React from "react";
 
@@ -79,17 +78,7 @@ class TemplateOptionTable extends React.Component {
         key: "type",
         width: "200px",
         render: (text, record, index) => (
-          <Select
-            defaultValue="string"
-            value={text}
-            style={{width: "100%"}}
-            options={[
-              {value: "string", label: "string"},
-              {value: "number", label: "number"},
-              {value: "boolean", label: "boolean"},
-              {value: "option", label: "option"},
-            ]}
-            onChange={value => {
+          <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={text}> {
               this.props.onUpdateTemplateOptions(
                 this.props.templateOptions.map((option, i) => {
                   if (i === index) {
@@ -112,7 +101,7 @@ class TemplateOptionTable extends React.Component {
         key: "required",
         width: "100px",
         render: (text, record, index) => (
-          <Switch checked={text} onChange={checked => this.updateTemplateOptions(index, "required", checked)} />
+          <span className="px-2 py-0.5 rounded text-xs " + (text ? "bg-green-500/20 text-green-400" : "bg-zinc-800 text-zinc-500")">{text ? "ON" : "OFF"}</span>
         ),
       },
       {
@@ -123,10 +112,7 @@ class TemplateOptionTable extends React.Component {
         render: (text, record, index) => {
           if (record.type === "option") {
             return (
-              <Select
-                value={text}
-                style={{width: "100%"}}
-                options={record.options?.map(option => ({
+              <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={text}> ({
                   value: option,
                   label: option,
                 }))}
@@ -143,10 +129,7 @@ class TemplateOptionTable extends React.Component {
             );
           } else if (record.type === "boolean") {
             return (
-              <Switch
-                checked={text === "true"}
-                onChange={checked => this.updateTemplateOptions(index, "default", checked.toString())}
-              />
+              <span className="px-2 py-0.5 rounded text-xs " + (text === "true" ? "bg-green-500/20 text-green-400" : "bg-zinc-800 text-zinc-500")">{text === "true" ? "ON" : "OFF"}</span>
             );
           }
           return (
@@ -162,11 +145,7 @@ class TemplateOptionTable extends React.Component {
         render: (text, record, index) => {
           if (record.type === "option") {
             return (
-              <Select
-                mode="tags"
-                style={{width: "100%"}}
-                value={Array.isArray(text) ? text : (text ? [text] : [])}
-                onChange={value => this.updateTemplateOptions(index, "options", value)}
+              <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={Array.isArray(text) ? text : (text ? [text] : [])}> this.updateTemplateOptions(index, "options", value)}
               />
             );
           }
@@ -187,11 +166,11 @@ class TemplateOptionTable extends React.Component {
         title: i18next.t("general:Action"),
         key: "action",
         render: (text, record, index) => (
-          <Button type="primary" size="small" onClick={() => {
+          <button className="px-2 py-1 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200"> {
             const inputs = [...this.props.templateOptions];
             inputs.splice(index, 1);
             this.props.onUpdateTemplateOptions(inputs);
-          }}>{i18next.t("general:Delete")}</Button>
+          }}>{i18next.t("general:Delete")}</button>
         ),
       },
     ];
@@ -224,10 +203,7 @@ class TemplateOptionTable extends React.Component {
           if (this.props.options?.[index]) {
             if (record.type === "option") {
               return (
-                <Select
-                  style={{width: "100%"}}
-                  value={this.props.options[index].setting}
-                  onChange={value => {this.updateOptions(index, "setting", value);}}
+                <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.props.options[index].setting}> {this.updateOptions(index, "setting", value);}}
                   options={record.options.map(option => ({
                     value: option,
                     label: option,
@@ -244,10 +220,7 @@ class TemplateOptionTable extends React.Component {
               );
             } else if (record.type === "boolean") {
               return (
-                <Switch
-                  checked={this.props.options[index].setting === "true"}
-                  onChange={checked => this.updateOptions(index, "setting", checked.toString())}
-                />
+                <span className="px-2 py-0.5 rounded text-xs " + (this.props.options[index].setting === "true" ? "bg-green-500/20 text-green-400" : "bg-zinc-800 text-zinc-500")">{this.props.options[index].setting === "true" ? "ON" : "OFF"}</span>
               );
             }
             return (
@@ -275,30 +248,7 @@ class TemplateOptionTable extends React.Component {
       <div style={{
         flexDirection: "row",
       }}>
-        <Table rowKey="index" size="middle" bordered
-          columns={this.props.mode === "edit" ? editOptionsColumn : optionsColumn}
-          dataSource={this.props.templateOptions}
-          pagination={false}
-          title={() => (
-            <div>
-              {i18next.t("template:Basic config")}&nbsp;&nbsp;&nbsp;&nbsp;
-              {this.props.mode === "edit" &&
-                <Button style={{marginRight: "5px"}} type="primary" size="small"
-                  onClick={() => {
-                    const newOption = {
-                      parameter: "",
-                      type: "string",
-                      required: false,
-                      default: "",
-                      description: "",
-                    };
-                    this.props.onUpdateTemplateOptions([...this.props.templateOptions, newOption]);
-                  }}>{i18next.t("general:Add")}
-                </Button>
-              }
-            </div>
-          )}
-        />
+        <div className="overflow-x-auto border border-zinc-800 rounded-lg"><table className="w-full text-sm text-left"><thead className="bg-zinc-900/80 border-b border-zinc-800"><tr>{this.props.mode === "edit" ? editOptionsColumn : optionsColumn.map(col => <th key={col.key || col.dataIndex} className="px-3 py-2 text-xs font-medium text-zinc-400 whitespace-nowrap">{col.title}</th>)}</tr></thead><tbody className="divide-y divide-zinc-800/50">{(this.props.templateOptions || []).map((record, index) => <tr key={typeof "index" === "function" ? ("index")(record) : record["index"] || index} className="hover:bg-zinc-900/50 transition-colors">{this.props.mode === "edit" ? editOptionsColumn : optionsColumn.map(col => <td key={col.key || col.dataIndex} className="px-3 py-2 text-zinc-300 whitespace-nowrap">{col.render ? col.render(record[col.dataIndex], record, index) : record[col.dataIndex]}</td>)}</tr>)}</tbody></table></div>
       </div>
     );
   }

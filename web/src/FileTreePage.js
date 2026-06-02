@@ -13,7 +13,7 @@
 // limitations under the License.
 
 import React from "react";
-import {Col, Row, Spin} from "antd";
+import {Loader2} from "lucide-react";
 import * as StoreBackend from "./backend/StoreBackend";
 import FileTree from "./FileTree";
 import i18next from "i18next";
@@ -41,10 +41,7 @@ class FileTreePage extends React.Component {
           if (res.data && typeof res.data2 === "string" && res.data2 !== "") {
             res.data.error = res.data2;
           }
-
-          this.setState({
-            store: res.data,
-          });
+          this.setState({store: res.data});
         } else {
           Setting.showMessage("error", `${i18next.t("general:Failed to get")}: ${res.msg}`);
         }
@@ -54,8 +51,8 @@ class FileTreePage extends React.Component {
   render() {
     if (this.state.store === null) {
       return (
-        <div className="App">
-          <Spin size="large" tip={i18next.t("general:Loading...")} style={{paddingTop: "10%"}} />
+        <div className="flex justify-center pt-20">
+          <Loader2 className="w-8 h-8 text-zinc-500 animate-spin" />
         </div>
       );
     }
@@ -66,19 +63,12 @@ class FileTreePage extends React.Component {
 
     return (
       <div>
-        <Row>
-          <Col span={24}>
-            <FileTree account={this.props.account} store={this.state.store} initialFileKey={initialFileKey} onUpdateStore={(store) => {
-              this.setState({
-                store: store,
-              });
-              Setting.submitStoreEdit(store);
-            }} onRefresh={() => this.getStore()} />
-          </Col>
-          {/* <Col span={10}>*/}
-          {/*  <ChatPage account={this.props.account} />*/}
-          {/* </Col>*/}
-        </Row>
+        <div className="w-full">
+          <FileTree account={this.props.account} store={this.state.store} initialFileKey={initialFileKey} onUpdateStore={(store) => {
+            this.setState({store: store});
+            Setting.submitStoreEdit(store);
+          }} onRefresh={() => this.getStore()} />
+        </div>
       </div>
     );
   }

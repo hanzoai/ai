@@ -13,13 +13,10 @@
 // limitations under the License.
 
 import React from "react";
-import {Button, Card, Table, Typography} from "antd";
-import {CopyOutlined} from "@ant-design/icons";
 import i18next from "i18next";
 import copy from "copy-to-clipboard";
 import * as Setting from "../Setting";
 
-const {Text} = Typography;
 
 class CredentialsTable extends React.Component {
   copyToClipboard = (text) => {
@@ -35,7 +32,7 @@ class CredentialsTable extends React.Component {
         key: "name",
         width: "200px",
         sorter: (a, b) => a.name.localeCompare(b.name),
-        render: (text) => <Text>{text}</Text>,
+        render: (text) => <span className="text-zinc-300 text-sm">{text}</span>,
       },
       {
         title: i18next.t("general:Data"),
@@ -43,7 +40,7 @@ class CredentialsTable extends React.Component {
         key: "value",
         width: "300px",
         render: (text) => (
-          <Text style={{wordBreak: "break-all"}}>{text}</Text>
+          <span className="text-zinc-300 text-sm">{text}</span>
         ),
       },
       {
@@ -51,14 +48,13 @@ class CredentialsTable extends React.Component {
         key: "action",
         width: "80px",
         render: (text, record) => (
-          <Button
-            icon={<CopyOutlined />}
+          <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700">}
             size="small"
             disabled={!record.value}
             onClick={() => this.copyToClipboard(record.value)}
           >
             {i18next.t("general:Copy")}
-          </Button>
+          </button>
         ),
       },
     ];
@@ -72,15 +68,9 @@ class CredentialsTable extends React.Component {
     }
 
     return (
-      <Card size="small" title={i18next.t("general:Resources")} style={{marginBottom: 16}}>
-        <Table
-          dataSource={credentials}
-          columns={this.getColumns()}
-          pagination={false}
-          size="small"
-          rowKey="name"
-        />
-      </Card>
+      <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4">
+        <div className="overflow-x-auto border border-zinc-800 rounded-lg"><table className="w-full text-sm text-left"><thead className="bg-zinc-900/80 border-b border-zinc-800"><tr>{this.getColumns().map(col => <th key={col.key || col.dataIndex} className="px-3 py-2 text-xs font-medium text-zinc-400 whitespace-nowrap">{col.title}</th>)}</tr></thead><tbody className="divide-y divide-zinc-800/50">{(credentials || []).map((record, index) => <tr key={typeof "name" === "function" ? ("name")(record) : record["name"] || index} className="hover:bg-zinc-900/50 transition-colors">{this.getColumns().map(col => <td key={col.key || col.dataIndex} className="px-3 py-2 text-zinc-300 whitespace-nowrap">{col.render ? col.render(record[col.dataIndex], record, index) : record[col.dataIndex]}</td>)}</tr>)}</tbody></table></div>
+      </div>
     );
   }
 }

@@ -13,8 +13,6 @@
 // limitations under the License.
 
 import React from "react";
-import {Button, Card, Col, Input, Row, Select} from "antd";
-import {LinkOutlined} from "@ant-design/icons";
 import * as FormBackend from "./backend/FormBackend";
 import * as Setting from "./Setting";
 import i18next from "i18next";
@@ -28,7 +26,6 @@ import WorkflowListPage from "./WorkflowListPage";
 import ArticleListPage from "./ArticleListPage";
 import GraphListPage from "./GraphListPage";
 
-const {Option} = Select;
 const formTypeOptions = Setting.getFormTypeOptions();
 
 class FormEditPage extends React.Component {
@@ -79,50 +76,49 @@ class FormEditPage extends React.Component {
 
   renderForm() {
     return (
-      <Card size="small" title={
-        <div>
+      <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4">
           {i18next.t("form:Edit Form")}&nbsp;&nbsp;&nbsp;&nbsp;
-          <Button onClick={() => this.submitFormEdit(false)}>{i18next.t("general:Save")}</Button>
-          <Button style={{marginLeft: "20px"}} type="primary" onClick={() => this.submitFormEdit(true)}>{i18next.t("general:Save & Exit")}</Button>
-          {this.state.isNewForm && <Button style={{marginLeft: "20px"}} onClick={() => this.cancelFormEdit()}>{i18next.t("general:Cancel")}</Button>}
+          <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700"> this.submitFormEdit(false)}>{i18next.t("general:Save")}</button>
+          <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}> this.submitFormEdit(true)}>{i18next.t("general:Save & Exit")}</button>
+          {this.state.isNewForm && <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}> this.cancelFormEdit()}>{i18next.t("general:Cancel")}</button>}
         </div>
       } style={{marginLeft: "5px"}} type="inner">
-        <Row style={{marginTop: "10px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Name"), i18next.t("general:Name - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+          </div>
+          <div className="flex-1">
             <Input value={this.state.form.name} onChange={e => {
               this.updateFormField("name", e.target.value);
             }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Display name"), i18next.t("general:Display name - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+          </div>
+          <div className="flex-1">
             <Input value={this.state.form.displayName} onChange={e => {
               this.updateFormField("displayName", e.target.value);
             }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("form:Position"), i18next.t("form:Position - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+          </div>
+          <div className="flex-1">
             <Input value={this.state.form.position} onChange={e => {
               this.updateFormField("position", e.target.value);
             }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Category"), i18next.t("provider:Category - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Select virtual={false} style={{width: "100%"}} value={this.state.form.category} onChange={(value => {
+          </div>
+          <div className="flex-1">
+            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.form.category}> {
               this.updateFormField("category", value);
             })}>
               {
@@ -130,52 +126,49 @@ class FormEditPage extends React.Component {
                   {id: "Table", name: i18next.t("form:Table")},
                   {id: "iFrame", name: i18next.t("form:iFrame")},
                   {id: "List Page", name: i18next.t("form:List Page")},
-                ].map((item, index) => <Option key={index} value={item.id}>{item.name}</Option>)
+                ].map((item, index) => <option key={index} value={item.id}>{item.name}</option>)
               }
-            </Select>
-          </Col>
-        </Row>
+            </select>
+          </div>
+        </div>
         {
           this.state.form.category === "Table" && (
-            <Row style={{marginTop: "20px"}} >
-              <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+            <div className="flex flex-col sm:flex-row gap-2 mt-4">
+              <div className="flex-1">
                 {Setting.getLabel(i18next.t("form:Form items"), i18next.t("form:Form items - Tooltip"))} :
-              </Col>
-              <Col span={22} >
+              </div>
+              <div className="flex-1">
                 <FormItemTable
                   title={i18next.t("form:Form items")}
                   table={this.state.form.formItems}
                   category={this.state.form.category}
                   onUpdateTable={(value) => {this.updateFormField("formItems", value);}}
                 />
-              </Col>
-            </Row>
+              </div>
+            </div>
           )
         }
         {
           this.state.form.category === "iFrame" && (
-            <Row style={{marginTop: "20px"}}>
-              <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+            <div className="flex flex-col sm:flex-row gap-2 mt-4">
+              <div className="flex-1">
                 {Setting.getLabel(i18next.t("general:URL"), i18next.t("general:URL - Tooltip"))} :
-              </Col>
-              <Col span={22}>
-                <Input prefix={<LinkOutlined />} value={this.state.form.url} onChange={e => {this.updateFormField("url", e.target.value);}} />
-              </Col>
-            </Row>
+              </div>
+              <div className="flex-1">
+                <input className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-500 disabled:opacity-50" />} value={this.state.form.url} onChange={e => {this.updateFormField("url", e.target.value);}} />
+              </div>
+            </div>
           )
         }
         {
           this.state.form.category === "List Page" && (
             <div>
-              <Row style={{marginTop: "20px"}}>
-                <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+              <div className="flex flex-col sm:flex-row gap-2 mt-4">
+                <div className="flex-1">
                   {Setting.getLabel(i18next.t("general:Type"), i18next.t("general:Type - Tooltip"))} :
-                </Col>
-                <Col span={22}>
-                  <Select
-                    style={{width: "100%"}}
-                    value={this.state.form.type}
-                    onChange={value => {
+                </div>
+                <div className="flex-1">
+                  <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.form.type}> {
                       this.updateFormField("type", value);
                       this.updateFormField("name", value);
                       this.updateFormField("displayName", value);
@@ -184,27 +177,27 @@ class FormEditPage extends React.Component {
                     }}
                   >
                     {formTypeOptions.map(option => (
-                      <Option key={option.id} value={option.id}>{i18next.t(option.name)}</Option>
+                      <option key={option.id} value={option.id}>{i18next.t(option.name)}</option>
                     ))}
-                  </Select>
-                </Col>
-              </Row>
-              <Row style={{marginTop: "20px"}}>
-                <Col style={{marginTop: "5px"}} span={Setting.isMobile() ? 22 : 2}>
+                  </select>
+                </div>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-2 mt-4">
+                <div className="flex-1">
                   {Setting.getLabel(i18next.t("general:Tag"), i18next.t("general:Tag - Tooltip"))} :
-                </Col>
-                <Col span={22}>
+                </div>
+                <div className="flex-1">
                   <Input value={this.state.form.tag} onChange={e => {
                     this.updateFormField("tag", e.target.value);
                     this.updateFormField("name", e.target.value ? `${this.state.form.type}-tag-${e.target.value}` : this.state.form.type);
                   }} />
-                </Col>
-              </Row>
-              <Row style={{marginTop: "20px"}}>
-                <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+                </div>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-2 mt-4">
+                <div className="flex-1">
                   {Setting.getLabel(i18next.t("form:Form items"), i18next.t("form:Form items - Tooltip"))} :
-                </Col>
-                <Col span={22}>
+                </div>
+                <div className="flex-1">
                   <FormItemTable
                     title={i18next.t("form:Form items")}
                     table={this.state.form.formItems}
@@ -214,24 +207,24 @@ class FormEditPage extends React.Component {
                     }}
                     formType={this.state.form.type}
                   />
-                </Col>
-              </Row>
+                </div>
+              </div>
             </div>
           )
         }
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {i18next.t("general:Preview")}:
-          </Col>
-          <Col span={22} >
+          </div>
+          <div className="flex-1">
             {this.state.form.category === "List Page" ? (this.renderListPagePreview()) :
               <div key={this.state.formCount}>
                 <iframe id="formData" title={"formData"} src={`${location.href}/data`} width="100%" height="700px" frameBorder="no" style={{border: "1px solid #e0e0e0", borderRadius: "8px", boxShadow: "0 2px 8px rgba(0, 0, 0, 0.1)"}} />
               </div>
             }
-          </Col>
-        </Row>
-      </Card>
+          </div>
+        </div>
+      </div>
     );
   }
 
@@ -313,9 +306,9 @@ class FormEditPage extends React.Component {
           this.state.form !== null ? this.renderForm() : null
         }
         <div style={{marginTop: "20px", marginLeft: "40px"}}>
-          <Button size="large" onClick={() => this.submitFormEdit(false)}>{i18next.t("general:Save")}</Button>
-          <Button style={{marginLeft: "20px"}} type="primary" size="large" onClick={() => this.submitFormEdit(true)}>{i18next.t("general:Save & Exit")}</Button>
-          {this.state.isNewForm && <Button style={{marginLeft: "20px"}} size="large" onClick={() => this.cancelFormEdit()}>{i18next.t("general:Cancel")}</Button>}
+          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700"> this.submitFormEdit(false)}>{i18next.t("general:Save")}</button>
+          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}> this.submitFormEdit(true)}>{i18next.t("general:Save & Exit")}</button>
+          {this.state.isNewForm && <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}> this.cancelFormEdit()}>{i18next.t("general:Cancel")}</button>}
         </div>
       </div>
     );

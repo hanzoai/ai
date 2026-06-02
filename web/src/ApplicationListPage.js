@@ -14,8 +14,6 @@
 
 import React from "react";
 import {Link} from "react-router-dom";
-import {Alert, Button, Popconfirm, Table, Tag, Tooltip} from "antd";
-import {DeleteOutlined, LinkOutlined} from "@ant-design/icons";
 import moment from "moment";
 import BaseListPage from "./BaseListPage";
 import * as Setting from "./Setting";
@@ -255,11 +253,11 @@ class ApplicationListPage extends BaseListPage {
         ...this.getColumnSearchProps("description"),
         render: (text, record, index) => {
           return (
-            <Tooltip placement="left" title={Setting.getShortText(text, 1000)}>
+            
               <div style={{maxWidth: "250px"}}>
                 {Setting.getShortText(text, 100)}
               </div>
-            </Tooltip>
+            
           );
         },
       },
@@ -290,9 +288,9 @@ class ApplicationListPage extends BaseListPage {
           return (
             text?.length > 0 ? text.map((option, i) => {
               if (option.parameter === "host") {
-                return <Tag key={i}>{option.parameter}: <a href={"http://" + option.setting} style={{textDecoration: "underline"}}>{option.setting}</a></Tag>;
+                return <span className="px-2 py-0.5 bg-zinc-800 text-zinc-400 rounded text-xs">{option.parameter}: <a href={"http://" + option.setting} style={{textDecoration: "underline"}}>{option.setting}</a></span>;
               } else {
-                return <Tag key={i}>{option.parameter}: {option.setting}</Tag>;
+                return <span className="px-2 py-0.5 bg-zinc-800 text-zinc-400 rounded text-xs">{option.parameter}: {option.setting}</span>;
               }
             }) : null
           );
@@ -320,10 +318,10 @@ class ApplicationListPage extends BaseListPage {
           }
           return (
             <a target="_blank" rel="noreferrer" href={text} style={{display: "flex", alignItems: "center"}}>
-              <LinkOutlined style={{marginRight: 4}} />
-              <Tooltip title={text}>
+              
+              
                 {text}
-              </Tooltip>
+              
             </a>
           );
         },
@@ -345,35 +343,31 @@ class ApplicationListPage extends BaseListPage {
         render: (text, record, index) => {
           return (
             <div>
-              <Button style={{marginTop: "10px", marginBottom: "10px", marginRight: "10px"}} type="primary" onClick={() => this.props.history.push(`/applications/${record.name}`)}>{i18next.t("general:Edit")}</Button>
+              <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginTop: "10px", marginBottom: "10px", marginRight: "10px"}> this.props.history.push(`/applications/${record.name}`)}>{i18next.t("general:Edit")}</button>
               {
                 record.status === "Not Deployed" ? (
-                  <Button style={{marginBottom: "10px", marginRight: "10px"}} loading={this.state.deploying[index]} onClick={() => this.deployApplication(record, index)}>
+                  <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginBottom: "10px", marginRight: "10px"}> this.deployApplication(record, index)}>
                     {i18next.t("application:Deploy")}
-                  </Button>
+                  </button>
                 ) : (
-                  <Popconfirm title={`${i18next.t("general:Sure to undeploy")}: ${record.name} ?`} onConfirm={() => this.undeployApplication(record, index)} okText={i18next.t("general:OK")} cancelText={i18next.t("general:Cancel")}>
-                    <Button style={{marginBottom: "10px", marginRight: "10px"}} loading={this.state.deploying[index]} danger>
+                  this.undeployApplication(record, index)} okText={i18next.t("general:OK")} cancelText={i18next.t("general:Cancel")}>
+                    <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-red-600 text-white hover:bg-red-700" style={{marginBottom: "10px", marginRight: "10px"}>
                       {i18next.t("application:Undeploy")}
-                    </Button>
-                  </Popconfirm>
+                    </button>
                 )
               }
               {
                 record.status !== "Not Deployed" && (
-                  <Button style={{marginBottom: "10px", marginRight: "10px"}} onClick={() => this.props.history.push(`/applications/${record.name}/view`, {application: record})}>
+                  <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginBottom: "10px", marginRight: "10px"}> this.props.history.push(`/applications/${record.name}/view`, {application: record})}>
                     {i18next.t("general:View")}
-                  </Button>
+                  </button>
                 )
               }
-              <Popconfirm
-                title={`${i18next.t("general:Sure to delete")}: ${record.name} ?`}
-                onConfirm={() => this.deleteApplication(record)}
+              this.deleteApplication(record)}
                 okText={i18next.t("general:OK")}
                 cancelText={i18next.t("general:Cancel")}
               >
-                <Button style={{marginBottom: "10px"}} type="primary" danger>{i18next.t("general:Delete")}</Button>
-              </Popconfirm>
+                <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-red-600 text-white hover:bg-red-700" style={{marginBottom: "10px"}>{i18next.t("general:Delete")}</button>
             </div>
           );
         },
@@ -390,25 +384,7 @@ class ApplicationListPage extends BaseListPage {
 
     return (
       <div>
-        <Table scroll={{x: "max-content"}} columns={columns} dataSource={applications} rowKey="name" rowSelection={this.getRowSelection()} size="middle" bordered pagination={paginationProps}
-          title={() => (
-            <div>
-              {i18next.t("general:Applications")}&nbsp;&nbsp;&nbsp;&nbsp;
-              <Button type="primary" size="small" onClick={this.addApplication.bind(this)}>{i18next.t("general:Add")}</Button>
-              <Button type="default" size="small" onClick={() => this.props.history.push("/application-store")} style={{marginLeft: 8}}>{i18next.t("general:Add from application store")}</Button>
-              {this.state.selectedRowKeys.length > 0 && (
-                <Popconfirm title={`${i18next.t("general:Sure to delete")}: ${this.state.selectedRowKeys.length} ${i18next.t("general:items")} ?`} onConfirm={() => this.performBulkDelete(this.state.selectedRows, this.state.selectedRowKeys)} okText={i18next.t("general:OK")} cancelText={i18next.t("general:Cancel")}>
-                  <Button type="primary" danger size="small" icon={<DeleteOutlined />} style={{marginLeft: 8}}>
-                    {i18next.t("general:Delete")} ({this.state.selectedRowKeys.length})
-                  </Button>
-                </Popconfirm>
-              )}
-                       &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-              {i18next.t("general:Status")}:
-              &nbsp;
-              {this.state.k8sStatus === "Connected" ? Setting.getDisplayTag(i18next.t("general:Active"), "green") : Setting.getDisplayTag(i18next.t("general:Inactive"), "red")}
-              {this.state.k8sStatus !== "Connected" && this.state.k8sError && (
-                <Alert message={this.state.k8sError} type="error" size="small" style={{marginLeft: "8px", display: "inline-flex", alignItems: "center", minHeight: "unset", padding: "2px 8px"}} showIcon closable />
+        <div className="overflow-x-auto border border-zinc-800 rounded-lg"><table className="w-full text-sm text-left"><thead className="bg-zinc-900/80 border-b border-zinc-800"><tr>{columns.map(col => <th key={col.key || col.dataIndex} className="px-3 py-2 text-xs font-medium text-zinc-400 whitespace-nowrap">{col.title}</th>)}</tr></thead><tbody className="divide-y divide-zinc-800/50">{(applications || []).map((record, index) => <tr key={typeof "name" === "function" ? ("name")(record) : record["name"] || index} className="hover:bg-zinc-900/50 transition-colors">{columns.map(col => <td key={col.key || col.dataIndex} className="px-3 py-2 text-zinc-300 whitespace-nowrap">{col.render ? col.render(record[col.dataIndex], record, index) : record[col.dataIndex]}</td>)}</tr>)}</tbody></table></div>
               )}
             </div>
           )}

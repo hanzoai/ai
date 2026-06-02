@@ -12,23 +12,61 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import React from "react";
-import {Select} from "antd";
+import React, {useCallback, useEffect, useState} from "react";
 import i18next from "i18next";
 import * as StoreBackend from "./backend/StoreBackend";
 import * as Setting from "./Setting";
 
-function StoreSelect(props) {
-  const {style, onSelect, withAll, className, disabled, account} = props;
-  const [stores, setStores] = React.useState([]);
-  const [value, setValue] = React.useState(Setting.getStore());
-  const [initialized, setInitialized] = React.useState(false);
+function StoreSelect({style, onSelect, withAll, className, disabled, account}) {
+  const [stores, setStores] = useState([]);
+  const [value, setValue] = useState(Setting.getStore());
+  const [initialized, setInitialized] = useState(false);
 
-  React.useEffect(() => {
-    if (props.stores === undefined) {
-      getStores();
+  const handleOnChange = useCallback((val) => {
+    setValue(val);
+    Setting.setStore(val);
+  }, []);
+
+  const getUserBoundStore = useCallback((storeList) => {
+    if (account && account.homepage && storeList) {
+      const matchingStore = storeList.find(store => store.name === account.homepage);
+      if (matchingStore) {
+        return matchingStore.name;
+      }
+    }
+    return null;
+  }, [account]);
+
+  const getStores = useCallback(() => {
+    const currentStore = Setting.getStore();
+    if (currentStore) {
+      setValue(currentStore);
     }
 
+    StoreBackend.getStoreNames("admin")
+      .then((res) => {
+        if (res.status === "ok") {
+          setStores(res.data);
+
+          const userBoundStore = getUserBoundStore(res.data);
+          if (userBoundStore) {
+            handleOnChange(userBoundStore);
+          } else {
+            const selectedValueExist = res.data.filter(store => store.name === value).length > 0;
+            if (Setting.getStore() === undefined || !selectedValueExist) {
+              const items = res.data;
+              if (items.length > 0) {
+                handleOnChange(items[0].name);
+              }
+            }
+          }
+          setInitialized(true);
+        }
+      });
+  }, [getUserBoundStore, handleOnChange, value]);
+
+  useEffect(() => {
+    getStores();
     window.addEventListener("storesChanged", getStores);
 
     const handleStorageChange = (e) => {
@@ -41,74 +79,20 @@ function StoreSelect(props) {
     };
     window.addEventListener("storage", handleStorageChange);
 
-    return function() {
+    return () => {
       window.removeEventListener("storesChanged", getStores);
       window.removeEventListener("storage", handleStorageChange);
     };
   }, []);
 
-  const getStores = () => {
-    const currentStore = Setting.getStore();
-    if (currentStore) {
-      setValue(currentStore);
-    }
-
-    StoreBackend.getStoreNames("admin")
-      .then((res) => {
-        if (res.status === "ok") {
-          setStores(res.data);
-
-          // Check if user has Homepage binding to a store
-          const userBoundStore = getUserBoundStore(res.data);
-          if (userBoundStore) {
-            // User is bound to a specific store, force select it
-            handleOnChange(userBoundStore);
-          } else {
-            // User is not bound, use normal behavior
-            const selectedValueExist = res.data.filter(store => store.name === value).length > 0;
-            if (Setting.getStore() === undefined || !selectedValueExist) {
-              const storeItems = getStoreItems();
-              handleOnChange(storeItems.length > 0 ? storeItems[0].value : "");
-            }
-          }
-          setInitialized(true);
-        }
-      });
-  };
-
-  const handleOnChange = (value) => {
-    setValue(value);
-    Setting.setStore(value);
-  };
-
-  const getUserBoundStore = (storeList) => {
-    // Check if user's Homepage field matches any store name
-    if (account && account.homepage && storeList) {
-      const matchingStore = storeList.find(store => store.name === account.homepage);
-      if (matchingStore) {
-        return matchingStore.name;
-      }
-    }
-    return null;
-  };
-
-  const isUserBoundToStore = () => {
-    // User is bound if Homepage matches a store in the list
-    return getUserBoundStore(stores) !== null;
-  };
+  const isUserBound = getUserBoundStore(stores) !== null;
+  const isDisabled = disabled || isUserBound;
 
   const getStoreItems = () => {
-    const items = [];
-
-    stores.forEach((store) => items.push(Setting.getOption(store.displayName, store.name)));
-
+    const items = stores.map(store => ({label: store.displayName, value: store.name}));
     if (withAll) {
-      items.unshift({
-        label: i18next.t("store:All"),
-        value: "All",
-      });
+      items.unshift({label: i18next.t("store:All"), value: "All"});
     }
-
     return items;
   };
 
@@ -116,20 +100,23 @@ function StoreSelect(props) {
     return <div style={{...style, width: "100%", height: "32px"}} className={className}></div>;
   }
 
+  const items = getStoreItems();
+
   return (
-    <Select
-      options={getStoreItems()}
-      virtual={false}
-      popupMatchSelectWidth={false}
+    <select
       value={value}
-      onChange={handleOnChange}
-      filterOption={(input, option) => (option?.label ?? "").toLowerCase().includes(input.toLowerCase())}
+      onChange={(e) => {
+        handleOnChange(e.target.value);
+        if (onSelect) {onSelect(e.target.value);}
+      }}
+      disabled={isDisabled}
+      className={`h-8 rounded-md border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50 disabled:cursor-not-allowed ${className || ""}`}
       style={style}
-      onSelect={onSelect}
-      className={className}
-      disabled={disabled || isUserBoundToStore()}
     >
-    </Select>
+      {items.map((item) => (
+        <option key={item.value} value={item.value}>{item.label}</option>
+      ))}
+    </select>
   );
 }
 

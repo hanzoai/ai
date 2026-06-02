@@ -13,7 +13,6 @@
 // limitations under the License.
 
 import React, {useState} from "react";
-import {Tooltip} from "antd";
 import * as Setting from "./Setting";
 
 export function getProviderUrl(provider) {
@@ -82,17 +81,17 @@ export function getProviderLogoWidget(provider) {
   const url = getProviderUrl(provider);
   if (url !== "") {
     return (
-      <Tooltip title={provider.type}>
+      
         <a target="_blank" rel="noreferrer" href={getProviderUrl(provider)}>
           <ProviderLogo provider={provider} />
         </a>
-      </Tooltip>
+      
     );
   } else {
     return (
-      <Tooltip title={provider.type}>
+      
         <ProviderLogo provider={provider} />
-      </Tooltip>
+      
     );
   }
 }
