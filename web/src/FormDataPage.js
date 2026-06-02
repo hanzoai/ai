@@ -13,11 +13,11 @@
 // limitations under the License.
 
 import React, {Component} from "react";
-import {Spin} from "antd";
 import * as Setting from "./Setting";
 import * as FormBackend from "./backend/FormBackend";
 import i18next from "i18next";
 import FormDataTablePage from "./FormDataTablePage";
+import {Loader2} from "lucide-react";
 
 class FormDataPage extends Component {
   constructor(props) {
@@ -50,7 +50,7 @@ class FormDataPage extends Component {
     if (!this.state.form) {
       return (
         <div className="App">
-          <Spin size="large" tip={i18next.t("general:Loading...")} style={{paddingTop: "10%"}} />
+          <div className="flex justify-center py-8"><div className="w-8 h-8 border-2 border-zinc-700 border-t-white rounded-full animate-spin" /></div>
         </div>
       );
     }

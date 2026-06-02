@@ -13,8 +13,7 @@
 // limitations under the License.
 
 import React, {useEffect, useMemo, useRef, useState} from "react";
-import {Button, Select, Switch} from "antd";
-import {MinusOutlined, PlusOutlined} from "@ant-design/icons";
+import {Minus, Plus} from "lucide-react";
 import * as Setting from "./Setting";
 import * as ProviderBackend from "./backend/ProviderBackend";
 import * as ChatBackend from "./backend/ChatBackend";
@@ -30,7 +29,6 @@ const StoreInfoTitle = (props) => {
   const [isMobile, setIsMobile] = useState(false);
   const [defaultStore, setDefaultStore] = useState(null);
 
-  // Use refs to track the latest state values
   const storeRef = useRef();
   const providerRef = useRef();
   const chatRef = useRef();
@@ -42,56 +40,33 @@ const StoreInfoTitle = (props) => {
     }
   }, [stores]);
 
-  // Filter stores based on user type and pane count
   const filteredStores = useMemo(() => {
     if (!stores || !defaultStore) {return [];}
-
-    // In multi-pane mode, all stores are available
-    if (paneCount > 1) {
-      return stores;
-    }
-
-    // In single chat mode: all users (including admin and chat-admin) can only see childStores
+    if (paneCount > 1) {return stores;}
     if (defaultStore.childStores && defaultStore.childStores.length > 0) {
       const childStoreNames = new Set(defaultStore.childStores);
       return stores.filter(store => childStoreNames.has(store.name));
     }
-
     return [];
   }, [stores, defaultStore, paneCount]);
 
-  // Check if user can manage panes: only admin and chat-admin
   const canManagePanes = useMemo(() => {
     return Setting.isLocalAdminUser(account);
   }, [account]);
 
-  // Check if device is mobile
   useEffect(() => {
-    const checkIsMobile = () => {
-      setIsMobile(window.innerWidth <= 768); // Common breakpoint for mobile devices
-    };
-
-    // Initial check
+    const checkIsMobile = () => setIsMobile(window.innerWidth <= 768);
     checkIsMobile();
-
-    // Add event listener for window resize
     window.addEventListener("resize", checkIsMobile);
-
-    // Cleanup
     return () => window.removeEventListener("resize", checkIsMobile);
   }, []);
 
-  // Update refs when props change
   useEffect(() => {
     chatRef.current = chat;
   }, [chat]);
 
-  // Find the current store info
-  const storeInfo = chat
-    ? stores?.find(store => store.name === chat.store)
-    : null;
+  const storeInfo = chat ? stores?.find(store => store.name === chat.store) : null;
 
-  // Initialize the local state when props change
   useEffect(() => {
     if (storeInfo) {
       setSelectedStore(storeInfo);
@@ -102,7 +77,6 @@ const StoreInfoTitle = (props) => {
     }
   }, [storeInfo, chat]);
 
-  // Get model providers when component mounts
   useEffect(() => {
     if (!chat || !defaultStore || !defaultStore.childModelProviders || defaultStore.childModelProviders.length === 0) {
       setModelProviders([]);
@@ -125,52 +99,39 @@ const StoreInfoTitle = (props) => {
     }
   }, [chat, defaultStore, storeInfo]);
 
-  // Combined update function to handle both store and provider updates
   const updateStoreAndChat = async(newStore, newProvider) => {
-    if (isUpdating) {return;} // Prevent concurrent updates
-
+    if (isUpdating) {return;}
     setIsUpdating(true);
     try {
       const updatedChat = {...chatRef.current};
       let storeChanged = false;
       let providerChanged = false;
 
-      // Update store if needed
       if (newStore && newStore.name !== updatedChat.store) {
         updatedChat.store = newStore.name;
         storeChanged = true;
       }
-
-      // Update provider in chat (not in store!)
       if (newProvider !== undefined && newProvider !== updatedChat.modelProvider) {
         updatedChat.modelProvider = newProvider;
         providerChanged = true;
       }
 
-      // Save changes to the backend
       if (storeChanged || providerChanged) {
         const chatRes = await ChatBackend.updateChat(updatedChat.owner, updatedChat.name, updatedChat);
-
         if (chatRes.status !== "ok") {
           throw new Error("Failed to update settings");
         }
-
-        // Update was successful
         if (onChatUpdated) {
           onChatUpdated(updatedChat);
         }
-
-        // Update local refs
         chatRef.current = updatedChat;
         if (newProvider !== undefined) {
           providerRef.current = newProvider;
-          setSelectedProvider(newProvider); // Sync UI state after successful update
+          setSelectedProvider(newProvider);
         }
       }
     } catch (error) {
       Setting.showMessage("error", `${i18next.t("general:Failed to save")}: ${error.message}`);
-
-      // Revert UI state on error
       setSelectedStore(storeRef.current);
       setSelectedProvider(providerRef.current);
     } finally {
@@ -178,21 +139,15 @@ const StoreInfoTitle = (props) => {
     }
   };
 
-  const handleStoreChange = (value) => {
-    // Find the store object
+  const handleStoreChange = (e) => {
+    const value = e.target.value;
     const newStore = stores?.find(store => store.name === value);
     if (newStore && chat) {
-      // Update local state immediately for UI responsiveness
       setSelectedStore(newStore);
-
-      // Also update the provider if the new store has one
       if (!chat.modelProvider && newStore.modelProvider) {
         setSelectedProvider(newStore.modelProvider);
       }
-
-      // Trigger the combined update
       updateStoreAndChat(newStore, newStore.modelProvider);
-
       if (onStoreChange) {
         const updatedChat = onStoreChange(newStore);
         if (updatedChat) {
@@ -202,54 +157,38 @@ const StoreInfoTitle = (props) => {
     }
   };
 
-  const handleProviderChange = (value) => {
-    // Find the provider object
+  const handleProviderChange = (e) => {
+    const value = e.target.value;
     const newProvider = modelProviders.find(provider => provider.name === value);
     if (newProvider && storeInfo) {
-
-      // Trigger the combined update
       updateStoreAndChat(null, newProvider.name);
     }
   };
 
-  // Pane control functions
   const addPane = () => {
-    const newCount = paneCount + 1;
-    if (newCount > 4) {
-      return;
-    }
-    if (onPaneCountChange) {
-      onPaneCountChange(newCount);
+    if (paneCount < 4 && onPaneCountChange) {
+      onPaneCountChange(paneCount + 1);
     }
   };
 
   const deletePane = () => {
-    if (paneCount <= 1) {
-      return;
-    }
-    if (onPaneCountChange) {
+    if (paneCount > 1 && onPaneCountChange) {
       onPaneCountChange(paneCount - 1);
     }
   };
 
-  // Ensure the current store is always in the options list
   const storeOptions = useMemo(() => {
     if (filteredStores.length > 0) {
-      // Check if current store is in filtered stores
       const currentStoreInFiltered = storeInfo && filteredStores.some(store => store.name === storeInfo.name);
       if (!currentStoreInFiltered && storeInfo) {
-        // Add current store to the beginning of the list
         return [storeInfo, ...filteredStores];
       }
       return filteredStores;
     }
-    // If no filtered stores, show only the current store
     return storeInfo ? [storeInfo] : [];
   }, [filteredStores, storeInfo]);
 
-  // User can change stores if there are multiple options available
   const canChangeStores = storeOptions.length > 1;
-
   const shouldShowTitleBar = paneCount === 1 && (storeInfo || modelProviders.length > 0 || (showPaneControls && canManagePanes));
 
   if (!shouldShowTitleBar) {
@@ -257,79 +196,79 @@ const StoreInfoTitle = (props) => {
   }
 
   return (
-    <div style={{
-      padding: "10px 15px",
-      borderBottom: "1px solid #e8e8e8",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "space-between",
-    }}>
-      <div style={{display: "flex", alignItems: "center"}}>
+    <div className="flex items-center justify-between px-4 py-2.5 border-b border-border">
+      <div className="flex items-center gap-5">
         {storeInfo && (
-          <div style={{marginRight: "20px"}}>
-            {!isMobile && <span style={{marginRight: "10px"}}>{i18next.t("general:Store")}:</span>}
-            <Select value={selectedStore?.name || storeInfo.name} style={{width: isMobile ? "35vw" : "12rem"}} onChange={handleStoreChange} disabled={isUpdating || !canChangeStores}>
+          <div className="flex items-center gap-2">
+            {!isMobile && <span className="text-sm text-muted-foreground">{i18next.t("general:Store")}:</span>}
+            <select
+              value={selectedStore?.name || storeInfo.name}
+              onChange={handleStoreChange}
+              disabled={isUpdating || !canChangeStores}
+              className="h-8 rounded-md border border-border bg-background px-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
+              style={{width: isMobile ? "35vw" : "12rem"}}
+            >
               {storeOptions.map(store => (
-                <Select.Option key={store.name} value={store.name}>
+                <option key={store.name} value={store.name}>
                   {store.displayName || store.name}
-                </Select.Option>
+                </option>
               ))}
-            </Select>
-          </div>)}
+            </select>
+          </div>
+        )}
 
         {modelProviders.length > 0 && (
-          <div>
-            {!isMobile && <span style={{marginRight: "10px"}}>{i18next.t("general:Model")}:</span>}
-            <Select value={selectedProvider || chat?.modelProvider || storeInfo?.modelProvider || (modelProviders[0]?.name)} style={{width: isMobile ? "35vw" : "15rem"}} onChange={handleProviderChange} disabled={isUpdating} popupMatchSelectWidth={false} optionLabelProp="children" suffixIcon={<div />}>
-              {modelProviders.map(provider => {
-                const displayName = provider.displayName || provider.name;
-                return (
-                  <Select.Option
-                    key={provider.name}
-                    value={provider.name}
-                  >
-                    <div style={{display: "flex", alignItems: "center"}}>
-                      <img
-                        src={Setting.getProviderLogoURL(provider)}
-                        alt={provider.name}
-                        style={{width: 20, height: 20, marginRight: 8}}
-                      />
-                      <span>{displayName || provider.name}</span>
-                    </div>
-                  </Select.Option>
-                );
-              })}
-            </Select>
-          </div>)}
+          <div className="flex items-center gap-2">
+            {!isMobile && <span className="text-sm text-muted-foreground">{i18next.t("general:Model")}:</span>}
+            <select
+              value={selectedProvider || chat?.modelProvider || storeInfo?.modelProvider || (modelProviders[0]?.name)}
+              onChange={handleProviderChange}
+              disabled={isUpdating}
+              className="h-8 rounded-md border border-border bg-background px-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
+              style={{width: isMobile ? "35vw" : "15rem"}}
+            >
+              {modelProviders.map(provider => (
+                <option key={provider.name} value={provider.name}>
+                  {provider.displayName || provider.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
-        {
-          storeInfo?.showAutoRead && (
-            <div>
-              <span style={{marginLeft: "20px", marginRight: "10px"}}>{i18next.t("store:Auto read")}:</span>
-              <Switch checked={autoRead} onChange={checked => {
-                onUpdateAutoRead(checked);
-              }} />
-            </div>
-          )
-        }
+        {storeInfo?.showAutoRead && (
+          <label className="flex items-center gap-2 cursor-pointer">
+            <span className="text-sm text-muted-foreground">{i18next.t("store:Auto read")}:</span>
+            <input
+              type="checkbox"
+              checked={autoRead}
+              onChange={(e) => onUpdateAutoRead(e.target.checked)}
+              className="w-4 h-4 rounded border-border accent-primary"
+            />
+          </label>
+        )}
 
         {showPaneControls && canManagePanes && (
-          <div style={{display: "flex", alignItems: "center", gap: "8px"}}>
-            <span style={{fontSize: "12px", color: "#666", marginLeft: "20px", marginRight: "10px"}}>{i18next.t("chat:Panes")}: {paneCount}</span>
-            <Button size="small" icon={<PlusOutlined />} onClick={addPane} />
-            <Button size="small" icon={<MinusOutlined />} onClick={deletePane} disabled={paneCount <= 1} />
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">{i18next.t("chat:Panes")}: {paneCount}</span>
+            <button onClick={addPane} className="p-1 rounded border border-border text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
+              <Plus className="w-3 h-3" />
+            </button>
+            <button onClick={deletePane} disabled={paneCount <= 1} className="p-1 rounded border border-border text-muted-foreground hover:text-foreground hover:bg-secondary disabled:opacity-30 transition-colors">
+              <Minus className="w-3 h-3" />
+            </button>
           </div>
         )}
       </div>
 
       {storeInfo && (
-        <div>
+        <div className="text-sm text-muted-foreground">
           {storeInfo.type && (
-            <span><strong>Type:</strong> {storeInfo.type}</span>
+            <span><strong className="text-foreground">Type:</strong> {storeInfo.type}</span>
           )}
           {storeInfo.url && (
-            <span style={{marginLeft: "15px"}}>
-              <strong>URL:</strong> {Setting.getShortText(storeInfo.url, 30)}
+            <span className="ml-4">
+              <strong className="text-foreground">URL:</strong> {Setting.getShortText(storeInfo.url, 30)}
             </span>
           )}
         </div>

@@ -13,9 +13,6 @@
 // limitations under the License.
 
 import React, {useEffect, useState} from "react";
-import {Input} from "antd";
-
-const {TextArea} = Input;
 
 const MemoTextArea = React.memo(({value, onChange}) => {
   const [inputValue, setInputValue] = useState(value);
@@ -36,14 +33,16 @@ const MemoTextArea = React.memo(({value, onChange}) => {
   }, [inputValue, onChange, value]);
 
   return (
-    <div>
-      <TextArea
-        // status={inputValue === value ? "" : "error"}
-        autoSize={{minRows: 1}}
-        showCount
+    <div className="relative">
+      <textarea
+        className="w-full min-h-[2.5rem] resize-y rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
         value={inputValue}
         onChange={(e) => setInputValue(e.target.value)}
+        rows={1}
       />
+      <span className="absolute bottom-1 right-2 text-xs text-muted-foreground">
+        {inputValue?.length || 0}
+      </span>
     </div>
   );
 }, (prevProps, nextProps) => {

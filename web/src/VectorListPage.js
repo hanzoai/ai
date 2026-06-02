@@ -14,15 +14,15 @@
 
 import React from "react";
 import {Link} from "react-router-dom";
-import {Button, Input, Popconfirm, Popover, Table, Tooltip} from "antd";
+/* eslint-disable unused-imports/no-unused-imports */
+import {Table} from "antd";
+/* eslint-enable unused-imports/no-unused-imports */
 import moment from "moment";
 import BaseListPage from "./BaseListPage";
 import * as Setting from "./Setting";
 import * as VectorBackend from "./backend/VectorBackend";
 import i18next from "i18next";
-import {DeleteOutlined} from "@ant-design/icons";
-
-const {TextArea} = Input;
+import {Trash2} from "lucide-react";
 
 class VectorListPage extends BaseListPage {
   constructor(props) {
@@ -119,21 +119,8 @@ class VectorListPage extends BaseListPage {
         width: "140px",
         sorter: (a, b) => a.name.localeCompare(b.name),
         ...this.getColumnSearchProps("name"),
-        render: (text, record, index) => {
-          return (
-            <Link to={`/vectors/${text}`}>
-              {text}
-            </Link>
-          );
-        },
+        render: (text) => <Link to={`/vectors/${text}`} className="text-primary hover:underline">{text}</Link>,
       },
-      // {
-      //   title: i18next.t("general:Display name"),
-      //   dataIndex: "displayName",
-      //   key: "displayName",
-      //   width: "200px",
-      //   sorter: (a, b) => a.displayName.localeCompare(b.displayName),
-      // },
       {
         title: i18next.t("general:Store"),
         dataIndex: "store",
@@ -141,13 +128,7 @@ class VectorListPage extends BaseListPage {
         width: "130px",
         sorter: (a, b) => a.store.localeCompare(b.store),
         ...this.getColumnSearchProps("store"),
-        render: (text, record, index) => {
-          return (
-            <Link to={`/stores/${record.owner}/${text}`}>
-              {text}
-            </Link>
-          );
-        },
+        render: (text, record) => <Link to={`/stores/${record.owner}/${text}`} className="text-primary hover:underline">{text}</Link>,
       },
       {
         title: i18next.t("general:Provider"),
@@ -156,13 +137,7 @@ class VectorListPage extends BaseListPage {
         width: "200px",
         sorter: (a, b) => a.provider.localeCompare(b.provider),
         ...this.getColumnSearchProps("provider"),
-        render: (text, record, index) => {
-          return (
-            <Link to={`/providers/${text}`}>
-              {text}
-            </Link>
-          );
-        },
+        render: (text) => <Link to={`/providers/${text}`} className="text-primary hover:underline">{text}</Link>,
       },
       {
         title: i18next.t("store:File"),
@@ -186,17 +161,11 @@ class VectorListPage extends BaseListPage {
         width: "200px",
         sorter: (a, b) => a.text.localeCompare(b.text),
         ...this.getColumnSearchProps("text"),
-        render: (text, record, index) => {
-          return (
-            <Popover placement="left" content={
-              <TextArea style={{width: "800px", backgroundColor: "black", color: "white"}} autoSize={{minRows: 1, maxRows: 100}} value={text} onChange={e => {}} />
-            } title="" trigger="hover">
-              <div style={{maxWidth: "200px"}}>
-                {Setting.getShortText(text, 60)}
-              </div>
-            </Popover>
-          );
-        },
+        render: (text) => (
+          <div className="max-w-[200px] truncate text-sm" title={text}>
+            {Setting.getShortText(text, 60)}
+          </div>
+        ),
       },
       {
         title: i18next.t("general:Size"),
@@ -211,15 +180,11 @@ class VectorListPage extends BaseListPage {
         key: "data",
         width: "200px",
         sorter: (a, b) => a.data.localeCompare(b.data),
-        render: (text, record, index) => {
-          return (
-            <Tooltip placement="left" title={Setting.getShortText(JSON.stringify(text), 1000)}>
-              <div style={{maxWidth: "200px"}}>
-                {Setting.getShortText(JSON.stringify(text), 50)}
-              </div>
-            </Tooltip>
-          );
-        },
+        render: (text) => (
+          <div className="max-w-[200px] truncate text-sm" title={Setting.getShortText(JSON.stringify(text), 1000)}>
+            {Setting.getShortText(JSON.stringify(text), 50)}
+          </div>
+        ),
       },
       {
         title: i18next.t("vector:Dimension"),
@@ -234,22 +199,12 @@ class VectorListPage extends BaseListPage {
         key: "action",
         width: "150px",
         fixed: "right",
-        render: (text, record, index) => {
-          return (
-            <div>
-              {/* <Button style={{marginBottom: "10px", marginRight: "10px"}} disabled={this.state.generating} onClick={() => Setting.showMessage("error", "Not implemented")}>{i18next.t("store:Refresh")}</Button>*/}
-              <Button style={{marginTop: "10px", marginBottom: "10px", marginRight: "10px"}} type="primary" onClick={() => this.props.history.push(`/vectors/${record.name}`)}>{i18next.t("general:Edit")}</Button>
-              <Popconfirm
-                title={`${i18next.t("general:Sure to delete")}: ${record.name} ?`}
-                onConfirm={() => this.deleteVector(record)}
-                okText={i18next.t("general:OK")}
-                cancelText={i18next.t("general:Cancel")}
-              >
-                <Button style={{marginBottom: "10px"}} type="primary" danger>{i18next.t("general:Delete")}</Button>
-              </Popconfirm>
-            </div>
-          );
-        },
+        render: (text, record) => (
+          <div className="flex flex-col gap-2">
+            <button onClick={() => this.props.history.push(`/vectors/${record.name}`)} className="rounded bg-primary px-3 py-1 text-xs text-primary-foreground hover:bg-primary/90 transition-colors">{i18next.t("general:Edit")}</button>
+            <button onClick={() => { if (window.confirm(`${i18next.t("general:Sure to delete")}: ${record.name} ?`)) { this.deleteVector(record); } }} className="rounded bg-destructive px-3 py-1 text-xs text-destructive-foreground hover:bg-destructive/90 transition-colors">{i18next.t("general:Delete")}</button>
+          </div>
+        ),
       },
     ];
     const filteredColumns = Setting.filterTableColumns(columns, this.props.formItems ?? this.state.formItems);
@@ -265,24 +220,16 @@ class VectorListPage extends BaseListPage {
       <div>
         <Table scroll={{x: "max-content"}} columns={filteredColumns} dataSource={vectors} rowKey="name" rowSelection={this.getRowSelection()} size="middle" bordered pagination={paginationProps}
           title={() => (
-            <div>
-              {i18next.t("general:Vectors")}&nbsp;&nbsp;&nbsp;&nbsp;
-              <Button type="primary" size="small" onClick={this.addVector.bind(this)}>{i18next.t("general:Add")}</Button>
+            <div className="flex items-center gap-3 flex-wrap">
+              <span className="text-foreground font-medium">{i18next.t("general:Vectors")}</span>
+              <button onClick={this.addVector.bind(this)} className="rounded bg-primary px-3 py-1 text-xs text-primary-foreground hover:bg-primary/90 transition-colors">{i18next.t("general:Add")}</button>
               {this.state.selectedRowKeys.length > 0 && (
-                <Popconfirm title={`${i18next.t("general:Sure to delete")}: ${this.state.selectedRowKeys.length} ${i18next.t("general:items")} ?`} onConfirm={() => this.performBulkDelete(this.state.selectedRows, this.state.selectedRowKeys)} okText={i18next.t("general:OK")} cancelText={i18next.t("general:Cancel")}>
-                  <Button type="primary" danger size="small" icon={<DeleteOutlined />} style={{marginLeft: 8}}>
-                    {i18next.t("general:Delete")} ({this.state.selectedRowKeys.length})
-                  </Button>
-                </Popconfirm>
+                <button onClick={() => { if (window.confirm(`${i18next.t("general:Sure to delete")}: ${this.state.selectedRowKeys.length} ${i18next.t("general:items")} ?`)) { this.performBulkDelete(this.state.selectedRows, this.state.selectedRowKeys); } }} className="inline-flex items-center gap-1 rounded bg-destructive px-3 py-1 text-xs text-destructive-foreground hover:bg-destructive/90 transition-colors">
+                  <Trash2 className="w-3 h-3" />
+                  {i18next.t("general:Delete")} ({this.state.selectedRowKeys.length})
+                </button>
               )}
-              <Popconfirm
-                title={`${i18next.t("general:Sure to delete all")} ${i18next.t("general:Vectors")}`}
-                onConfirm={() => this.deleteAllVectors()}
-                okText={i18next.t("general:OK")}
-                cancelText={i18next.t("general:Cancel")}
-              >
-                <Button style={{marginLeft: "10px"}} type="primary" size="small" danger>{i18next.t("general:Delete All")}</Button>
-              </Popconfirm>
+              <button onClick={() => { if (window.confirm(`${i18next.t("general:Sure to delete all")} ${i18next.t("general:Vectors")}?`)) { this.deleteAllVectors(); } }} className="rounded bg-destructive px-3 py-1 text-xs text-destructive-foreground hover:bg-destructive/90 transition-colors">{i18next.t("general:Delete All")}</button>
             </div>
           )}
           loading={this.state.loading}
@@ -298,9 +245,7 @@ class VectorListPage extends BaseListPage {
     this.setState({loading: true});
     VectorBackend.getVectors("admin", Setting.getRequestStore(this.props.account), params.pagination.current, params.pagination.pageSize, field, value, sortField, sortOrder)
       .then((res) => {
-        this.setState({
-          loading: false,
-        });
+        this.setState({loading: false});
         if (res.status === "ok") {
           this.setState({
             data: res.data,
@@ -313,9 +258,7 @@ class VectorListPage extends BaseListPage {
           });
         } else {
           if (Setting.isResponseDenied(res)) {
-            this.setState({
-              isAuthorized: false,
-            });
+            this.setState({isAuthorized: false});
           } else {
             Setting.showMessage("error", res.msg);
           }
