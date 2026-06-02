@@ -14,8 +14,7 @@
 
 import React, {useState} from "react";
 import i18next from "i18next";
-import {Button, Input, Modal} from "antd";
-import {LockOutlined, UserOutlined} from "@ant-design/icons";
+import {User, Lock} from "lucide-react";
 import * as Setting from "../Setting";
 
 const ConnectModal = (props) => {
@@ -44,24 +43,6 @@ const ConnectModal = (props) => {
   const showModal = () => {
     initStatus();
     handleUsernameAndPassword(node.remoteUsername, node.remotePassword);
-    // handleOk();
-    // getNode(owner, name)
-    //   .then(res => {
-    //     if (res.status === "ok") {
-    //       setUsername(res.data.username || "");
-    //       if (res.data.username && res.data.password) {
-    //         handleOk();
-    //       } else {
-    //         if (res.data.username) {
-    //           setInputDisabled(true);
-    //         }
-    //         setIsModalOpen(true);
-    //       }
-    //     }
-    //   })
-    //   .catch(error => {
-    //     setIsModalOpen(true);
-    //   });
   };
 
   const handleOk = () => {
@@ -87,57 +68,52 @@ const ConnectModal = (props) => {
     setUsername("");
     setPassword("");
   };
+
   return (
     <>
-      <Button
+      <button
         disabled={props.disabled}
-        type="primary"
         onClick={showModal}
-        style={{marginTop: "10px", marginBottom: "10px", marginRight: "10px"}}
+        className="px-3 py-1.5 bg-white text-black rounded text-xs font-medium hover:bg-zinc-200 transition-colors disabled:opacity-50 mr-2 my-1"
       >
         {text}
-      </Button>
-      <Modal
-        title="Connect"
-        open={isModalOpen}
-        onOk={handleOk}
-        onCancel={handleCancel}
-        width={420}
-        footer={
-          <Button
-            key="login"
-            type="primary"
-            onClick={handleOk}
-            disabled={!username || !password}
-            size="large"
-            block
-          >
-            login
-          </Button>
-        }
-      >
-        <Input
-          size="large"
-          style={{marginTop: "10px", marginBottom: "10px", marginRight: "10px"}}
-          prefix={<UserOutlined className="site-form-item-icon" />}
-          placeholder={i18next.t("general:Username")}
-          value={username}
-          disabled={inputDisabled}
-          onChange={e => {
-            setUsername(e.target.value);
-          }}
-        />
-        <Input.Password
-          size="large"
-          prefix={<LockOutlined className="site-form-item-icon" />}
-          style={{marginTop: "10px", marginBottom: "10px", marginRight: "10px"}}
-          placeholder={i18next.t("general:Password")}
-          value={password}
-          onChange={e => {
-            setPassword(e.target.value);
-          }}
-        />
-      </Modal>
+      </button>
+      {isModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={handleCancel}>
+          <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-6 w-[420px]" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-base font-medium text-white mb-4">Connect</h3>
+            <div className="space-y-3">
+              <div className="relative">
+                <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+                <input
+                  className="w-full pl-9 pr-3 py-2.5 bg-zinc-800 border border-zinc-700 rounded text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-500 disabled:opacity-50"
+                  placeholder={i18next.t("general:Username")}
+                  value={username}
+                  disabled={inputDisabled}
+                  onChange={e => setUsername(e.target.value)}
+                />
+              </div>
+              <div className="relative">
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+                <input
+                  type="password"
+                  className="w-full pl-9 pr-3 py-2.5 bg-zinc-800 border border-zinc-700 rounded text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-500"
+                  placeholder={i18next.t("general:Password")}
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                />
+              </div>
+              <button
+                disabled={!username || !password}
+                onClick={handleOk}
+                className="w-full py-2.5 bg-white text-black rounded text-sm font-medium hover:bg-zinc-200 transition-colors disabled:opacity-50"
+              >
+                login
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 };

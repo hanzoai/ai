@@ -14,7 +14,6 @@
 
 import React from "react";
 import {Link} from "react-router-dom";
-import {Button, Popconfirm, Switch, Table} from "antd";
 import BaseListPage from "./BaseListPage";
 import moment from "moment";
 import * as Setting from "./Setting";
@@ -22,7 +21,6 @@ import * as NodeBackend from "./backend/NodeBackend";
 import i18next from "i18next";
 import PopconfirmModal from "./modal/PopconfirmModal";
 import ConnectModal from "./modal/ConnectModal";
-import {DeleteOutlined} from "@ant-design/icons";
 
 class NodeListPage extends BaseListPage {
   constructor(props) {
@@ -189,7 +187,7 @@ class NodeListPage extends BaseListPage {
         width: "100px",
         render: (text, record, index) => {
           return (
-            <Switch disabled checked={text} />
+            <span className="px-2 py-0.5 rounded text-xs " + (text ? "bg-green-500/20 text-green-400" : "bg-zinc-800 text-zinc-500")">{text ? "ON" : "OFF"}</span>
           );
         },
       },
@@ -200,7 +198,7 @@ class NodeListPage extends BaseListPage {
         width: "110px",
         render: (text, record, index) => {
           return (
-            <Switch disabled checked={text} />
+            <span className="px-2 py-0.5 rounded text-xs " + (text ? "bg-green-500/20 text-green-400" : "bg-zinc-800 text-zinc-500")">{text ? "ON" : "OFF"}</span>
           );
         },
       },
@@ -211,7 +209,7 @@ class NodeListPage extends BaseListPage {
         width: "150px",
         render: (text, record, index) => {
           return (
-            <Switch disabled checked={text} />
+            <span className="px-2 py-0.5 rounded text-xs " + (text ? "bg-green-500/20 text-green-400" : "bg-zinc-800 text-zinc-500")">{text ? "ON" : "OFF"}</span>
           );
         },
       },
@@ -251,11 +249,9 @@ class NodeListPage extends BaseListPage {
                 category={"Node"}
                 node={node}
               />
-              <Button
-                style={{marginTop: "10px", marginBottom: "10px", marginRight: "10px"}}
-                onClick={() => this.props.history.push(`/nodes/${node.name}`)}
+              <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginTop: "10px", marginBottom: "10px", marginRight: "10px"}> this.props.history.push(`/nodes/${node.name}`)}
               >{i18next.t("general:Edit")}
-              </Button>
+              </button>
               <PopconfirmModal
                 disabled={node.owner !== this.props.account.owner}
                 title={i18next.t("general:Sure to delete") + `: ${node.name} ?`}
@@ -278,23 +274,7 @@ class NodeListPage extends BaseListPage {
 
     return (
       <div>
-        <Table scroll={{x: "max-content"}} columns={columns} dataSource={nodes} rowKey={(node) => `${node.owner}/${node.name}`} rowSelection={this.getRowSelection()} size="middle" bordered pagination={paginationProps}
-          title={() => (
-            <div>
-              {i18next.t("general:Nodes")}&nbsp;&nbsp;&nbsp;&nbsp;
-              <Button type="primary" size="small" onClick={this.addNode.bind(this)}>{i18next.t("general:Add")}</Button>
-              {this.state.selectedRowKeys.length > 0 && (
-                <Popconfirm title={`${i18next.t("general:Sure to delete")}: ${this.state.selectedRowKeys.length} ${i18next.t("general:items")} ?`} onConfirm={() => this.performBulkDelete(this.state.selectedRows, this.state.selectedRowKeys)} okText={i18next.t("general:OK")} cancelText={i18next.t("general:Cancel")}>
-                  <Button type="primary" danger size="small" icon={<DeleteOutlined />} style={{marginLeft: 8}}>
-                    {i18next.t("general:Delete")} ({this.state.selectedRowKeys.length})
-                  </Button>
-                </Popconfirm>
-              )}
-            </div>
-          )}
-          loading={this.state.loading}
-          onChange={this.handleTableChange}
-        />
+        <div className="overflow-x-auto border border-zinc-800 rounded-lg"><table className="w-full text-sm text-left"><thead className="bg-zinc-900/80 border-b border-zinc-800"><tr>{columns.map(col => <th key={col.key || col.dataIndex} className="px-3 py-2 text-xs font-medium text-zinc-400 whitespace-nowrap">{col.title}</th>)}</tr></thead><tbody className="divide-y divide-zinc-800/50">{(nodes || []).map((record, index) => <tr key={typeof {(node) => `${node.owner} === "function" ? ({(node) => `${node.owner})(record) : record[{(node) => `${node.owner}] || index} className="hover:bg-zinc-900/50 transition-colors">{columns.map(col => <td key={col.key || col.dataIndex} className="px-3 py-2 text-zinc-300 whitespace-nowrap">{col.render ? col.render(record[col.dataIndex], record, index) : record[col.dataIndex]}</td>)}</tr>)}</tbody></table></div>
       </div>
     );
   }

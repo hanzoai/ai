@@ -13,15 +13,12 @@
 // limitations under the License.
 
 import React from "react";
-import {Button, Card, Col, Input, Row, Select, Switch} from "antd";
 import i18next from "i18next";
 import * as Setting from "./Setting";
 import * as MessageBackend from "./backend/MessageBackend";
 import * as ChatBackend from "./backend/ChatBackend";
 import * as ProviderBackend from "./backend/ProviderBackend";
 
-const {TextArea} = Input;
-const {Option} = Select;
 
 class MessageEditPage extends React.Component {
   constructor(props) {
@@ -144,60 +141,55 @@ class MessageEditPage extends React.Component {
 
   renderMessage() {
     return (
-      <Card size="small" title={
-        <div>
+      <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4">
           {i18next.t("message:Edit Message")}&nbsp;&nbsp;&nbsp;&nbsp;
-          <Button onClick={() => this.submitMessageEdit(false)}>{i18next.t("general:Save")}</Button>
-          <Button style={{marginLeft: "20px"}} type="primary" onClick={() => this.submitMessageEdit(true)}>{i18next.t("general:Save & Exit")}</Button>
-          {this.state.isNewMessage && <Button style={{marginLeft: "20px"}} onClick={() => this.cancelMessageEdit()}>{i18next.t("general:Cancel")}</Button>}
+          <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700"> this.submitMessageEdit(false)}>{i18next.t("general:Save")}</button>
+          <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}> this.submitMessageEdit(true)}>{i18next.t("general:Save & Exit")}</button>
+          {this.state.isNewMessage && <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}> this.cancelMessageEdit()}>{i18next.t("general:Cancel")}</button>}
         </div>
       } style={(Setting.isMobile()) ? {margin: "5px"} : {}} type="inner">
-        {/* <Row style={{marginTop: "10px"}} >*/}
-        {/*  <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>*/}
+        {/* <div className="flex flex-col sm:flex-row gap-2 mt-4">*/}
+        {/*  <div className="flex-1">*/}
         {/*    {Setting.getLabel(i18next.t("general:Organization"), i18next.t("general:Organization - Tooltip"))}:*/}
-        {/*  </Col>*/}
-        {/*  <Col span={22} >*/}
-        {/*    <Select virtual={false} disabled={!Setting.isAdminUser(this.props.account)} style={{width: "100%"}} value={this.state.chat.organization} onChange={(value => {this.updateChatField("organization", value);})}*/}
+        {/*  </div>*/}
+        {/*  <div className="flex-1">*/}
+        {/*    <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.chat.organization} disabled> {this.updateChatField("organization", value);})}*/}
         {/*      options={this.state.organizations.map((organization) => Setting.getOption(organization.name, organization.name))*/}
         {/*      } />*/}
-        {/*  </Col>*/}
-        {/* </Row>*/}
-        <Row style={{marginTop: "10px"}}>
-          <Col style={{marginTop: "5px"}} span={2}>
+        {/*  </div>*/}
+        {/* </div>*/}
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Name"), i18next.t("general:Name - Tooltip"))} :
-          </Col>
-          <Col span={22}>
+          </div>
+          <div className="flex-1">
             <Input
               value={this.state.message.name}
               onChange={(e) => {
                 this.updateMessageField("name", e.target.value);
               }}
             />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:User"), i18next.t("general:User - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+          </div>
+          <div className="flex-1">
             <Input value={this.state.message.user} onChange={e => {
               this.updateMessageField("user", e.target.value);
             }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}}>
-          <Col style={{marginTop: "5px"}} span={2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Chat"), i18next.t("general:Chat - Tooltip"))} :
-          </Col>
-          <Col span={22}>
-            <Button onClick={() => this.props.history.push(`/chats/${this.state.message.chat}`)} >
+          </div>
+          <div className="flex-1">
+            <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700"> this.props.history.push(`/chats/${this.state.message.chat}`)} >
               {this.state.message.chat}
-            </Button>
-            {/* <Select*/}
-            {/*  virtual={false}*/}
-            {/*  style={{width: "100%"}}*/}
-            {/*  value={this.state.message.chat}*/}
-            {/*  onChange={(value) => {*/}
+            </button>
+            {/* <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.message.chat}> {*/}
             {/*    this.updateMessageField("chat", value);*/}
             {/*    this.getChat(value);*/}
             {/*  }}*/}
@@ -205,18 +197,14 @@ class MessageEditPage extends React.Component {
             {/*    Setting.getOption(chat.name, chat.name)*/}
             {/*  )}*/}
             {/* />*/}
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}}>
-          <Col style={{marginTop: "5px"}} span={2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("message:Author"), i18next.t("message:Author - Tooltip"))} :
-          </Col>
-          <Col span={22}>
-            <Select
-              virtual={false}
-              style={{width: "100%"}}
-              value={this.state.message.author}
-              onChange={(value) => {
+          </div>
+          <div className="flex-1">
+            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.message.author}> {
                 this.updateMessageField("author", value);
               }}
               options={
@@ -227,18 +215,14 @@ class MessageEditPage extends React.Component {
                   : []
               }
             />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}}>
-          <Col style={{marginTop: "5px"}} span={2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("provider:Model provider"), i18next.t("provider:Model provider - Tooltip"))} :
-          </Col>
-          <Col span={22}>
-            <Select
-              virtual={false}
-              style={{width: "100%"}}
-              value={this.state.message.modelProvider}
-              onChange={(value) => {
+          </div>
+          <div className="flex-1">
+            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.message.modelProvider}> {
                 this.updateMessageField("modelProvider", value);
                 this.getProvider(value);
               }}
@@ -249,25 +233,21 @@ class MessageEditPage extends React.Component {
             >
               {
                 this.state.providers.map((provider, index) => (
-                  <Option key={index} value={provider.name}>
+                  <option key={index} value={provider.name}>
                     <img width={20} height={20} style={{marginBottom: "3px", marginRight: "10px"}} src={Setting.getProviderLogoURL({category: provider.category, type: provider.type})} alt={provider.type} />
                     {provider.name}
-                  </Option>
+                  </option>
                 ))
               }
-            </Select>
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}}>
-          <Col style={{marginTop: "5px"}} span={2}>
+            </select>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("message:Reply to"), i18next.t("message:Reply to - Tooltip"))} :
-          </Col>
-          <Col span={22}>
-            <Select
-              virtual={false}
-              style={{width: "100%"}}
-              value={this.state.message.replyTo}
-              onChange={(value) => {
+          </div>
+          <div className="flex-1">
+            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.message.replyTo}> {
                 this.updateMessageField("replyTo", value);
               }}
               options={
@@ -278,44 +258,44 @@ class MessageEditPage extends React.Component {
                   : []
               }
             />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}}>
-          <Col style={{marginTop: "5px"}} span={2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Reasoning text"), i18next.t("general:Reasoning text - Tooltip"))} :
-          </Col>
-          <Col span={22}>
-            <TextArea autoSize={{minRows: 1, maxRows: 15}} value={this.state.message.reasonText} onChange={(e) => {
+          </div>
+          <div className="flex-1">
+            <span className="text-zinc-300 text-sm"> {
               this.updateMessageField("reasonText", e.target.value);
             }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}}>
-          <Col style={{marginTop: "5px"}} span={2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Text"), i18next.t("general:Text - Tooltip"))} :
-          </Col>
-          <Col span={22}>
-            <TextArea autoSize={{minRows: 1, maxRows: 15}} value={this.state.message.text} onChange={(e) => {
+          </div>
+          <div className="flex-1">
+            <span className="text-zinc-300 text-sm"> {
               this.updateMessageField("text", e.target.value);
             }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}}>
-          <Col style={{marginTop: "5px"}} span={2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("message:Error text"), i18next.t("message:Error text - Tooltip"))} :
-          </Col>
-          <Col span={22}>
-            <TextArea autoSize={{minRows: 1, maxRows: 15}} value={this.state.message.errorText} onChange={(e) => {
+          </div>
+          <div className="flex-1">
+            <span className="text-zinc-300 text-sm"> {
               this.updateMessageField("errorText", e.target.value);
             }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}}>
-          <Col style={{marginTop: "5px"}} span={2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("message:Comment"), i18next.t("message:Comment - Tooltip"))} :
-          </Col>
-          <Col span={22}>
-            <TextArea autoSize={{minRows: 1, maxRows: 15}} value={this.state.message.comment} onChange={(e) => {
+          </div>
+          <div className="flex-1">
+            <span className="text-zinc-300 text-sm"> {
               if (e.target.value !== "") {
                 this.updateMessageField("needNotify", true);
               } else {
@@ -324,39 +304,33 @@ class MessageEditPage extends React.Component {
 
               this.updateMessageField("comment", e.target.value);
             }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("message:Need notify"), i18next.t("message:Need notify - Tooltip"))} :
-          </Col>
-          <Col span={1} >
-            <Switch checked={this.state.message.needNotify} onChange={checked => {
-              this.updateMessageField("needNotify", checked);
-            }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 19 : 2}>
+          </div>
+          <div className="flex-1">
+            <span className="px-2 py-0.5 rounded text-xs " + (this.state.message.needNotify ? "bg-green-500/20 text-green-400" : "bg-zinc-800 text-zinc-500")">{this.state.message.needNotify ? "ON" : "OFF"}</span>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Is deleted"), i18next.t("general:Is deleted - Tooltip"))} :
-          </Col>
-          <Col span={1} >
-            <Switch checked={this.state.message.isDeleted} onChange={checked => {
-              this.updateMessageField("isDeleted", checked);
-            }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 19 : 2}>
+          </div>
+          <div className="flex-1">
+            <span className="px-2 py-0.5 rounded text-xs " + (this.state.message.isDeleted ? "bg-green-500/20 text-green-400" : "bg-zinc-800 text-zinc-500")">{this.state.message.isDeleted ? "ON" : "OFF"}</span>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Is alerted"), i18next.t("general:Is alerted - Tooltip"))} :
-          </Col>
-          <Col span={1} >
-            <Switch checked={this.state.message.isAlerted} onChange={checked => {
-              this.updateMessageField("isAlerted", checked);
-            }} />
-          </Col>
-        </Row>
-      </Card>
+          </div>
+          <div className="flex-1">
+            <span className="px-2 py-0.5 rounded text-xs " + (this.state.message.isAlerted ? "bg-green-500/20 text-green-400" : "bg-zinc-800 text-zinc-500")">{this.state.message.isAlerted ? "ON" : "OFF"}</span>
+          </div>
+        </div>
+      </div>
     );
   }
 
@@ -394,9 +368,9 @@ class MessageEditPage extends React.Component {
       <div>
         {this.state.message !== null ? this.renderMessage() : null}
         <div style={{marginTop: "20px", marginLeft: "40px"}}>
-          <Button size="large" onClick={() => this.submitMessageEdit(false)}>{i18next.t("general:Save")}</Button>
-          <Button style={{marginLeft: "20px"}} type="primary" size="large" onClick={() => this.submitMessageEdit(true)}>{i18next.t("general:Save & Exit")}</Button>
-          {this.state.isNewMessage && <Button style={{marginLeft: "20px"}} size="large" onClick={() => this.cancelMessageEdit()}>{i18next.t("general:Cancel")}</Button>}
+          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700"> this.submitMessageEdit(false)}>{i18next.t("general:Save")}</button>
+          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}> this.submitMessageEdit(true)}>{i18next.t("general:Save & Exit")}</button>
+          {this.state.isNewMessage && <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}> this.cancelMessageEdit()}>{i18next.t("general:Cancel")}</button>}
         </div>
       </div>
     );

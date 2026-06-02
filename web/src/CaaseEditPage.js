@@ -13,7 +13,6 @@
 // limitations under the License.
 
 import React from "react";
-import {Button, Card, Col, Input, Row, Select} from "antd";
 import * as CaaseBackend from "./backend/CaaseBackend";
 import * as PatientBackend from "./backend/PatientBackend";
 import * as DoctorBackend from "./backend/DoctorBackend";
@@ -115,204 +114,192 @@ class CaaseEditPage extends React.Component {
 
   renderCaase() {
     return (
-      <Card
-        size="small"
-        title={
-          <div>
+      <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4">
             {this.state.mode === "add"
               ? i18next.t("caase:New Caase")
               : i18next.t("caase:Edit Caase")}
             &nbsp;&nbsp;&nbsp;&nbsp;
-            <Button onClick={() => this.submitCaaseEdit(false)}>
+            <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700"> this.submitCaaseEdit(false)}>
               {i18next.t("general:Save")}
-            </Button>
-            <Button
-              style={{marginLeft: "20px"}}
-              type="primary"
-              onClick={() => this.submitCaaseEdit(true)}
+            </button>
+            <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}> this.submitCaaseEdit(true)}
             >
               {i18next.t("general:Save & Exit")}
-            </Button>
+            </button>
             {this.state.mode === "add" ? (
-              <Button
-                style={{marginLeft: "20px"}}
-                onClick={() => this.deleteCaase()}
+              <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}> this.deleteCaase()}
               >
                 {i18next.t("general:Cancel")}
-              </Button>
+              </button>
             ) : null}
           </div>
         }
         style={{marginLeft: "5px"}}
         type="inner"
       >
-        <Row style={{marginTop: "10px"}}>
-          <Col style={{marginTop: "5px"}} span={Setting.isMobile() ? 22 : 2}>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(
               i18next.t("general:Name"),
               i18next.t("general:Name - Tooltip")
             )}{" "}
             :
-          </Col>
-          <Col span={22}>
+          </div>
+          <div className="flex-1">
             <Input
               value={this.state.caase.name}
               onChange={(e) => {
                 this.updateCaaseField("name", e.target.value);
               }}
             />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}}>
-          <Col style={{marginTop: "5px"}} span={Setting.isMobile() ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(
               i18next.t("med:Symptoms"),
               i18next.t("med:Symptoms - Tooltip")
             )}{" "}
             :
-          </Col>
-          <Col span={22}>
+          </div>
+          <div className="flex-1">
             <Input
               value={this.state.caase.symptoms}
               onChange={(e) => {
                 this.updateCaaseField("symptoms", e.target.value);
               }}
             />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}}>
-          <Col style={{marginTop: "5px"}} span={Setting.isMobile() ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(
               i18next.t("med:Diagnosis"),
               i18next.t("med:Diagnosis - Tooltip")
             )}{" "}
             :
-          </Col>
-          <Col span={22}>
+          </div>
+          <div className="flex-1">
             <Input
               value={this.state.caase.diagnosis}
               onChange={(e) => {
                 this.updateCaaseField("diagnosis", e.target.value);
               }}
             />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}}>
-          <Col style={{marginTop: "5px"}} span={Setting.isMobile() ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(
               i18next.t("med:Diagnosis date"),
               i18next.t("med:Diagnosis date - Tooltip")
             )}{" "}
             :
-          </Col>
-          <Col span={22}>
+          </div>
+          <div className="flex-1">
             <Input
               value={this.state.caase.diagnosisDate}
               onChange={(e) => {
                 this.updateCaaseField("diagnosisDate", e.target.value);
               }}
             />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}}>
-          <Col style={{marginTop: "5px"}} span={Setting.isMobile() ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(
               i18next.t("med:Prescription"),
               i18next.t("med:Prescription - Tooltip")
             )}{" "}
             :
-          </Col>
-          <Col span={22}>
+          </div>
+          <div className="flex-1">
             <Input
               value={this.state.caase.prescription}
               onChange={(e) => {
                 this.updateCaaseField("prescription", e.target.value);
               }}
             />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}}>
-          <Col style={{marginTop: "5px"}} span={Setting.isMobile() ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(
               i18next.t("med:Follow up"),
               i18next.t("med:Follow up - Tooltip")
             )}{" "}
             :
-          </Col>
-          <Col span={22}>
+          </div>
+          <div className="flex-1">
             <Input
               value={this.state.caase.followUp}
               onChange={(e) => {
                 this.updateCaaseField("followUp", e.target.value);
               }}
             />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}}>
-          <Col style={{marginTop: "5px"}} span={Setting.isMobile() ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(
               i18next.t("med:HIS interface info"),
               i18next.t("med:HIS interface info - Tooltip")
             )}{" "}
             :
-          </Col>
-          <Col span={22}>
+          </div>
+          <div className="flex-1">
             <Input
               value={this.state.caase.hisInterfaceInfo}
               onChange={(e) => {
                 this.updateCaaseField("hisInterfaceInfo", e.target.value);
               }}
             />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}}>
-          <Col style={{marginTop: "5px"}} span={Setting.isMobile() ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(
               i18next.t("med:Primary care physician"),
               i18next.t("med:Primary care physician - Tooltip")
             )}{" "}
             :
-          </Col>
-          <Col span={22}>
+          </div>
+          <div className="flex-1">
             <Input
               value={this.state.caase.primaryCarePhysician}
               onChange={(e) => {
                 this.updateCaaseField("primaryCarePhysician", e.target.value);
               }}
             />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}}>
-          <Col style={{marginTop: "5px"}} span={Setting.isMobile() ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(
               i18next.t("general:Type"),
               i18next.t("general:Type - Tooltip")
             )}{" "}
             :
-          </Col>
-          <Col span={22}>
+          </div>
+          <div className="flex-1">
             <Input
               value={this.state.caase.type}
               onChange={(e) => {
                 this.updateCaaseField("type", e.target.value);
               }}
             />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}}>
-          <Col style={{marginTop: "5px"}} span={Setting.isMobile() ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(
               i18next.t("med:Patient"),
               i18next.t("med:Patient - Tooltip")
             )}{" "}
             :
-          </Col>
-          <Col span={22}>
-            <Select
-              virtual={false}
-              style={{width: "100%"}}
-              value={this.state.caase.patientName}
-              onChange={(value) => {
+          </div>
+          <div className="flex-1">
+            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.caase.patientName}> {
                 this.updateCaaseField("patientName", value);
               }}
               options={this.state.patients.map((patient) => ({
@@ -320,22 +307,18 @@ class CaaseEditPage extends React.Component {
                 value: patient.name,
               }))}
             />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}}>
-          <Col style={{marginTop: "5px"}} span={Setting.isMobile() ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(
               i18next.t("med:Doctor"),
               i18next.t("med:Doctor - Tooltip")
             )}{" "}
             :
-          </Col>
-          <Col span={22}>
-            <Select
-              virtual={false}
-              style={{width: "100%"}}
-              value={this.state.caase.doctorName}
-              onChange={(value) => {
+          </div>
+          <div className="flex-1">
+            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.caase.doctorName}> {
                 this.updateCaaseField("doctorName", value);
               }}
               options={this.state.doctors.map((doctor) => ({
@@ -343,22 +326,18 @@ class CaaseEditPage extends React.Component {
                 value: doctor.name,
               }))}
             />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}}>
-          <Col style={{marginTop: "5px"}} span={Setting.isMobile() ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(
               i18next.t("med:Hospital"),
               i18next.t("med:Hospital - Tooltip")
             )}{" "}
             :
-          </Col>
-          <Col span={22}>
-            <Select
-              virtual={false}
-              style={{width: "100%"}}
-              value={this.state.caase.hospitalName}
-              onChange={(value) => {
+          </div>
+          <div className="flex-1">
+            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.caase.hospitalName}> {
                 this.updateCaaseField("hospitalName", value);
               }}
               options={this.state.hospitals.map((hospital) => ({
@@ -366,34 +345,34 @@ class CaaseEditPage extends React.Component {
                 value: hospital.name,
               }))}
             />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}}>
-          <Col style={{marginTop: "5px"}} span={Setting.isMobile() ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(
               i18next.t("med:Specialist alliance Id"),
               i18next.t("med:Specialist alliance Id - Tooltip")
             )}{" "}
             :
-          </Col>
-          <Col span={22}>
+          </div>
+          <div className="flex-1">
             <Input
               value={this.state.caase.specialistAllianceId}
               onChange={(e) => {
                 this.updateCaaseField("specialistAllianceId", e.target.value);
               }}
             />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}}>
-          <Col style={{marginTop: "5px"}} span={Setting.isMobile() ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(
               i18next.t("med:Integrated care organization Id"),
               i18next.t("med:Integrated care organization Id - Tooltip")
             )}{" "}
             :
-          </Col>
-          <Col span={22}>
+          </div>
+          <div className="flex-1">
             <Input
               value={this.state.caase.integratedCareOrganizationId}
               onChange={(e) => {
@@ -403,9 +382,9 @@ class CaaseEditPage extends React.Component {
                 );
               }}
             />
-          </Col>
-        </Row>
-      </Card>
+          </div>
+        </div>
+      </div>
     );
   }
 
@@ -463,25 +442,18 @@ class CaaseEditPage extends React.Component {
       <div>
         {this.state.caase !== null ? this.renderCaase() : null}
         <div style={{marginTop: "20px", marginLeft: "40px"}}>
-          <Button size="large" onClick={() => this.submitCaaseEdit(false)}>
+          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700"> this.submitCaaseEdit(false)}>
             {i18next.t("general:Save")}
-          </Button>
-          <Button
-            style={{marginLeft: "20px"}}
-            type="primary"
-            size="large"
-            onClick={() => this.submitCaaseEdit(true)}
+          </button>
+          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}> this.submitCaaseEdit(true)}
           >
             {i18next.t("general:Save & Exit")}
-          </Button>
+          </button>
           {this.state.mode === "add" ? (
-            <Button
-              style={{marginLeft: "20px"}}
-              size="large"
-              onClick={() => this.deleteCaase()}
+            <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}> this.deleteCaase()}
             >
               {i18next.t("general:Cancel")}
-            </Button>
+            </button>
           ) : null}
         </div>
       </div>

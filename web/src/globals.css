@@ -1,0 +1,86 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 0%;
+    --foreground: 0 0% 98%;
+    --card: 0 0% 7%;
+    --card-foreground: 0 0% 98%;
+    --popover: 0 0% 7%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 0 0% 100%;
+    --primary-foreground: 0 0% 4%;
+    --secondary: 0 0% 15%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 0 0% 15%;
+    --muted-foreground: 0 0% 64%;
+    --accent: 0 0% 15%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 15%;
+    --input: 0 0% 15%;
+    --ring: 0 0% 83%;
+    --radius: 0.5rem;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html,
+  body {
+    @apply bg-background text-foreground;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    margin: 0;
+    font-family:
+      -apple-system,
+      BlinkMacSystemFont,
+      "Segoe UI",
+      Roboto,
+      Oxygen,
+      Ubuntu,
+      Cantarell,
+      "Fira Sans",
+      "Droid Sans",
+      "Helvetica Neue",
+      sans-serif;
+  }
+
+  #root {
+    height: 100%;
+  }
+
+  code {
+    font-family:
+      source-code-pro,
+      Menlo,
+      Monaco,
+      Consolas,
+      "Courier New",
+      monospace;
+  }
+}
+
+/* Legacy class compat -- support existing JSX class names */
+@layer components {
+  .logo {
+    @apply h-[27px] mt-[17px] mb-[16px] ml-[15px];
+  }
+
+  .content-warp-card {
+    @apply flex-1 items-stretch rounded-lg p-6;
+    background-color: hsl(var(--card));
+    border: 1px solid hsl(var(--border));
+  }
+
+  .language-icon {
+    @apply w-6 h-6 rounded-sm;
+  }
+}
