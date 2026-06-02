@@ -14,7 +14,7 @@
 
 import React from "react";
 import {Link} from "react-router-dom";
-import {Button, Popconfirm, Switch, Table} from "antd";
+import {Table} from "antd"; // eslint-disable-line unused-imports/no-unused-imports
 import moment from "moment";
 import BaseListPage from "./BaseListPage";
 import * as Setting from "./Setting";
@@ -25,7 +25,7 @@ import * as Conf from "./Conf";
 import * as MessageBackend from "./backend/MessageBackend";
 import ChatBox from "./ChatBox";
 import {renderText} from "./ChatMessageRender";
-import {DeleteOutlined} from "@ant-design/icons";
+import {Trash2} from "lucide-react";
 
 class ChatListPage extends BaseListPage {
   constructor(props) {
@@ -71,9 +71,7 @@ class ChatListPage extends BaseListPage {
 
   toggleMaximizeMessages = () => {
     const newValue = !this.state.maximizeMessages;
-    this.setState({
-      maximizeMessages: newValue,
-    });
+    this.setState({maximizeMessages: newValue});
     localStorage.setItem("maximizeMessages", JSON.stringify(newValue));
   };
 
@@ -85,9 +83,7 @@ class ChatListPage extends BaseListPage {
           message.html = renderText(message.text);
         });
         messagesMap[chatName] = res.data;
-        this.setState({
-          messagesMap: messagesMap,
-        });
+        this.setState({messagesMap: messagesMap});
       });
   }
 
@@ -167,10 +163,7 @@ class ChatListPage extends BaseListPage {
         if (text.includes("Other") || text.includes("Generic Smartphone")) {
           return null;
         }
-
-        return (
-          <div key={text}>{text}</div>
-        );
+        return <div key={text}>{text}</div>;
       });
     }
   }
@@ -182,7 +175,6 @@ class ChatListPage extends BaseListPage {
       if (!messages || messages.length === 0) {
         return false;
       }
-      // Search through all messages' text content
       return messages.some(message =>
         message.text && message.text.toLowerCase().includes(value.toLowerCase())
       );
@@ -191,13 +183,6 @@ class ChatListPage extends BaseListPage {
 
   renderTable(chats) {
     let columns = [
-      // {
-      //   title: i18next.t("general:Owner"),
-      //   dataIndex: "owner",
-      //   key: "owner",
-      //   width: "90px",
-      //   sorter: (a, b) => a.owner.localeCompare(b.owner),
-      // },
       {
         title: i18next.t("general:Name"),
         dataIndex: "name",
@@ -205,66 +190,16 @@ class ChatListPage extends BaseListPage {
         width: "100px",
         sorter: (a, b) => a.name.localeCompare(b.name),
         ...this.getColumnSearchProps("name"),
-        render: (text, record, index) => {
-          return (
-            <Link to={`chats/${text}`}>
-              {text}
-            </Link>
-          );
-        },
+        render: (text) => <Link to={`chats/${text}`} className="text-primary hover:underline">{text}</Link>,
       },
-      // {
-      //   title: i18next.t("general:Created time"),
-      //   dataIndex: "createdTime",
-      //   key: "createdTime",
-      //   width: "150px",
-      //   sorter: (a, b) => a.createdTime.localeCompare(b.createdTime),
-      //   render: (text, record, index) => {
-      //     return Setting.getFormattedDate(text);
-      //   },
-      // },
       {
         title: i18next.t("general:Updated time"),
         dataIndex: "updatedTime",
         key: "updatedTime",
         width: "130px",
         sorter: (a, b) => a.updatedTime.localeCompare(b.updatedTime),
-        render: (text, record, index) => {
-          return Setting.getFormattedDate(text);
-        },
+        render: (text) => Setting.getFormattedDate(text),
       },
-      // {
-      //   title: i18next.t("general:Display name"),
-      //   dataIndex: "displayName",
-      //   key: "displayName",
-      //   width: "100px",
-      //   sorter: (a, b) => a.displayName.localeCompare(b.displayName),
-      //   // ...this.getColumnSearchProps("displayName"),
-      // },
-      // {
-      //   title: i18next.t("general:Type"),
-      //   dataIndex: "type",
-      //   key: "type",
-      //   width: "110px",
-      //   sorter: (a, b) => a.type.localeCompare(b.type),
-      //   filterMultiple: false,
-      //   filters: [
-      //     {text: "Single", value: "Single"},
-      //     {text: "Group", value: "Group"},
-      //     {text: "AI", value: "AI"},
-      //   ],
-      //   render: (text, record, index) => {
-      //     return i18next.t(`chat:${text}`);
-      //   },
-      // },
-      // {
-      //   title: i18next.t("general:Category"),
-      //   dataIndex: "category",
-      //   key: "category",
-      //   width: "100px",
-      //   sorter: (a, b) => a.category.localeCompare(b.category),
-      //   // ...this.getColumnSearchProps("category"),
-      // },
       {
         title: i18next.t("general:User"),
         dataIndex: "user",
@@ -272,13 +207,10 @@ class ChatListPage extends BaseListPage {
         width: "90px",
         sorter: (a, b) => a.user.localeCompare(b.user),
         ...this.getColumnSearchProps("user"),
-        render: (text, record, index) => {
-          if (text.startsWith("u-")) {
-            return text;
-          }
-
+        render: (text) => {
+          if (text.startsWith("u-")) {return text;}
           return (
-            <a target="_blank" rel="noreferrer" href={Setting.getMyProfileUrl(this.props.account).replace("/account", `/users/${Conf.AuthConfig.organizationName}/${text}`)}>
+            <a target="_blank" rel="noreferrer" href={Setting.getMyProfileUrl(this.props.account).replace("/account", `/users/${Conf.AuthConfig.organizationName}/${text}`)} className="text-primary hover:underline">
               {text}
             </a>
           );
@@ -291,23 +223,15 @@ class ChatListPage extends BaseListPage {
         width: "150px",
         align: "center",
         sorter: (a, b) => {
-          if (!a.modelProvider) {
-            return -1;
-          }
-          if (!b.modelProvider) {
-            return 1;
-          }
+          if (!a.modelProvider) {return -1;}
+          if (!b.modelProvider) {return 1;}
           return a.modelProvider.localeCompare(b.modelProvider);
         },
         ...this.getColumnSearchProps("modelProvider"),
-        render: (text, record, index) => {
-          if (!text) {
-            return null;
-          }
+        render: (text) => {
+          if (!text) {return null;}
           const provider = this.state.providerMap[text];
-          if (!provider) {
-            return text;
-          }
+          if (!provider) {return text;}
           return (
             <a target="_blank" rel="noreferrer" href={`/providers/${text}`}>
               <img width={36} height={36} src={Setting.getProviderLogoURL({category: provider.category, type: provider.type})} alt={provider.type} title={provider.type} />
@@ -315,51 +239,6 @@ class ChatListPage extends BaseListPage {
           );
         },
       },
-      // {
-      //   title: i18next.t("chat:User1"),
-      //   dataIndex: "user1",
-      //   key: "user1",
-      //   width: "120px",
-      //   sorter: (a, b) => a.user1.localeCompare(b.user1),
-      //   // ...this.getColumnSearchProps("user1"),
-      //   render: (text, record, index) => {
-      //     if (text.includes("/u-")) {
-      //       return text;
-      //     }
-      //
-      //     return (
-      //       <a target="_blank" rel="noreferrer" href={Setting.getMyProfileUrl(this.props.account).replace("/account", `/users/${text}`)}>
-      //         {text}
-      //       </a>
-      //     );
-      //   },
-      // },
-      // {
-      //   title: i18next.t("chat:User2"),
-      //   dataIndex: "user2",
-      //   key: "user2",
-      //   width: "120px",
-      //   sorter: (a, b) => a.user2.localeCompare(b.user2),
-      //   // ...this.getColumnSearchProps("user2"),
-      //   render: (text, record, index) => {
-      //     return (
-      //       <Link to={`/users/${text}`}>
-      //         {text}
-      //       </Link>
-      //     );
-      //   },
-      // },
-      // {
-      //   title: i18next.t("general:Users"),
-      //   dataIndex: "users",
-      //   key: "users",
-      //   width: "100px",
-      //   sorter: (a, b) => a.users.localeCompare(b.users),
-      //   // ...this.getColumnSearchProps("users"),
-      //   render: (text, record, index) => {
-      //     return Setting.getTags(text, "users");
-      //   },
-      // },
       {
         title: i18next.t("general:Client IP"),
         dataIndex: "clientIp",
@@ -367,48 +246,25 @@ class ChatListPage extends BaseListPage {
         width: "120px",
         sorter: (a, b) => a.clientIp.localeCompare(b.clientIp),
         ...this.getColumnSearchProps("clientIp"),
-        render: (text, record, index) => {
-          if (text === "") {
-            return null;
-          }
-
+        render: (text, record) => {
+          if (text === "") {return null;}
           return (
-            <a target="_blank" rel="noreferrer" href={`https://db-ip.com/${text}`}>
-              {
-                record.clientIpDesc === "" ? text : (
-                  <div>
-                    {text}
-                    <br />
-                    {record.clientIpDesc}
-                    <br />
-                    <br />
-                    {
-                      this.renderUserAgent(record)
-                    }
-                  </div>
-                )
-              }
+            <a target="_blank" rel="noreferrer" href={`https://db-ip.com/${text}`} className="text-primary hover:underline">
+              {record.clientIpDesc === "" ? text : (
+                <div>
+                  {text}<br />{record.clientIpDesc}<br /><br />{this.renderUserAgent(record)}
+                </div>
+              )}
             </a>
           );
         },
       },
-      // {
-      //   title: i18next.t("general:User agent"),
-      //   dataIndex: "userAgent",
-      //   key: "userAgent",
-      //   width: "120px",
-      //   sorter: (a, b) => a.userAgent.localeCompare(b.userAgent),
-      //   render: (text, record, index) => {
-      //     return this.renderUserAgent(record);
-      //   },
-      // },
       {
         title: i18next.t("general:Count"),
         dataIndex: "messageCount",
         key: "messageCount",
         width: "80px",
         sorter: (a, b) => a.messageCount - b.messageCount,
-        // ...this.getColumnSearchProps("messageCount"),
       },
       {
         title: i18next.t("chat:Token count"),
@@ -416,7 +272,6 @@ class ChatListPage extends BaseListPage {
         key: "tokenCount",
         width: "120px",
         sorter: (a, b) => a.tokenCount - b.tokenCount,
-        // ...this.getColumnSearchProps("tokenCount"),
       },
       {
         title: i18next.t("chat:Price"),
@@ -424,10 +279,7 @@ class ChatListPage extends BaseListPage {
         key: "price",
         width: "120px",
         sorter: (a, b) => a.price - b.price,
-        // ...this.getColumnSearchProps("price"),
-        render: (text, record, index) => {
-          return Setting.getDisplayPrice(text, record.currency);
-        },
+        render: (text, record) => Setting.getDisplayPrice(text, record.currency),
       },
       {
         title: i18next.t("general:Messages"),
@@ -435,33 +287,17 @@ class ChatListPage extends BaseListPage {
         key: "messages",
         width: this.state.maximizeMessages ? "70vw" : "800px",
         ...this.getMessagesColumnSearchProps(),
-        render: (text, record, index) => {
+        render: (text, record) => {
           const messages = this.state.messagesMap[record.name];
-          if (messages === undefined || messages.length === 0) {
-            return null;
-          }
-
+          if (messages === undefined || messages.length === 0) {return null;}
           const messagesWidth = this.state.maximizeMessages ? "70vw" : "800px";
 
           return (
-            <div style={{
-              padding: "5px",
-              margin: "5px",
-              background: "rgb(191,191,191)",
-              borderRadius: "10px",
-              width: messagesWidth,
-              // boxSizing: "border-box",
-              // boxShadow: "0 0 0 1px inset",
-            }}>
-              <div style={{
-                maxHeight: "500px",
-                overflowY: "auto",
-                width: "100%",
-              }}>
+            <div className="p-1 m-1 bg-zinc-700 rounded-lg" style={{width: messagesWidth}}>
+              <div className="max-h-[500px] overflow-y-auto w-full">
                 <ChatBox disableInput={true} hideInput={true} messages={messages} sendMessage={null} account={this.props.account} previewMode={true} />
               </div>
             </div>
-
           );
         },
       },
@@ -472,11 +308,11 @@ class ChatListPage extends BaseListPage {
         width: "120px",
         sorter: (a, b) => a.isDeleted - b.isDeleted,
         ...this.getColumnFilterProps("isDeleted"),
-        render: (text, record, index) => {
-          return (
-            <Switch disabled checkedChildren={i18next.t("general:ON")} unCheckedChildren={i18next.t("general:OFF")} checked={text} />
-          );
-        },
+        render: (text) => (
+          <span className={`inline-block px-2 py-0.5 rounded text-xs ${text ? "bg-green-500/20 text-green-400" : "bg-zinc-700 text-zinc-400"}`}>
+            {text ? i18next.t("general:ON") : i18next.t("general:OFF")}
+          </span>
+        ),
       },
       {
         title: i18next.t("general:Action"),
@@ -484,21 +320,12 @@ class ChatListPage extends BaseListPage {
         key: "action",
         width: "110px",
         fixed: "right",
-        render: (text, record, index) => {
-          return (
-            <div>
-              <Button style={{marginTop: "10px", marginBottom: "10px", marginRight: "10px"}} type="primary" onClick={() => this.props.history.push(`/chats/${record.name}`)}>{i18next.t("general:Edit")}</Button>
-              <Popconfirm
-                title={`${i18next.t("general:Sure to delete")}: ${record.name} ?`}
-                onConfirm={() => this.deleteChat(record)}
-                okText={i18next.t("general:OK")}
-                cancelText={i18next.t("general:Cancel")}
-              >
-                <Button disabled={!Setting.isLocalAdminUser(this.props.account)} style={{marginBottom: "10px"}} type="primary" danger>{i18next.t("general:Delete")}</Button>
-              </Popconfirm>
-            </div>
-          );
-        },
+        render: (text, record) => (
+          <div className="flex flex-col gap-2">
+            <button onClick={() => this.props.history.push(`/chats/${record.name}`)} className="rounded bg-primary px-3 py-1 text-xs text-primary-foreground hover:bg-primary/90 transition-colors">{i18next.t("general:Edit")}</button>
+            <button disabled={!Setting.isLocalAdminUser(this.props.account)} onClick={() => { if (window.confirm(`${i18next.t("general:Sure to delete")}: ${record.name} ?`)) { this.deleteChat(record); } }} className="rounded bg-destructive px-3 py-1 text-xs text-destructive-foreground hover:bg-destructive/90 disabled:opacity-50 transition-colors">{i18next.t("general:Delete")}</button>
+          </div>
+        ),
       },
     ];
 
@@ -512,7 +339,6 @@ class ChatListPage extends BaseListPage {
       const tokenCountIndex = columns.findIndex(column => column.key === "messageCount");
       if (tokenCountIndex !== -1) {
         const [tokenCountElement] = columns.splice(tokenCountIndex, 1);
-
         const actionIndex = columns.findIndex(column => column.key === "action");
         const insertIndex = actionIndex !== -1 ? actionIndex : columns.length;
         columns.splice(insertIndex, 0, tokenCountElement);
@@ -531,53 +357,42 @@ class ChatListPage extends BaseListPage {
       <div>
         <Table scroll={{x: "max-content"}} columns={columns} dataSource={chats} rowKey="name" rowSelection={this.getRowSelection()} size="middle" bordered pagination={paginationProps}
           title={() => (
-            <div>
-              {i18next.t("general:Chats")}&nbsp;&nbsp;&nbsp;&nbsp;
-              <Button disabled={!Setting.isLocalAdminUser(this.props.account)} type="primary" size="small" onClick={this.addChat.bind(this)}>{i18next.t("general:Add")}</Button>
+            <div className="flex items-center gap-4 flex-wrap">
+              <span className="text-foreground font-medium">{i18next.t("general:Chats")}</span>
+              <button disabled={!Setting.isLocalAdminUser(this.props.account)} onClick={this.addChat.bind(this)} className="rounded bg-primary px-3 py-1 text-xs text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors">{i18next.t("general:Add")}</button>
               {this.state.selectedRowKeys.length > 0 && (
-                <Popconfirm title={`${i18next.t("general:Sure to delete")}: ${this.state.selectedRowKeys.length} ${i18next.t("general:items")} ?`} onConfirm={() => this.performBulkDelete(this.state.selectedRows, this.state.selectedRowKeys)} okText={i18next.t("general:OK")} cancelText={i18next.t("general:Cancel")}>
-                  <Button type="primary" danger size="small" icon={<DeleteOutlined />} style={{marginLeft: 8}}>
-                    {i18next.t("general:Delete")} ({this.state.selectedRowKeys.length})
-                  </Button>
-                </Popconfirm>
+                <button onClick={() => { if (window.confirm(`${i18next.t("general:Sure to delete")}: ${this.state.selectedRowKeys.length} ${i18next.t("general:items")} ?`)) { this.performBulkDelete(this.state.selectedRows, this.state.selectedRowKeys); } }} className="inline-flex items-center gap-1 rounded bg-destructive px-3 py-1 text-xs text-destructive-foreground hover:bg-destructive/90 transition-colors">
+                  <Trash2 className="w-3 h-3" />
+                  {i18next.t("general:Delete")} ({this.state.selectedRowKeys.length})
+                </button>
               )}
-              <span style={{marginLeft: 32}}>
-                {i18next.t("chat:Maximize messages")}:
-                <Switch checked={this.state.maximizeMessages} onChange={this.toggleMaximizeMessages} style={{marginLeft: 8}} />
+              <label className="flex items-center gap-2 ml-4 cursor-pointer">
+                <span className="text-sm text-muted-foreground">{i18next.t("chat:Maximize messages")}:</span>
+                <input type="checkbox" checked={this.state.maximizeMessages} onChange={this.toggleMaximizeMessages} className="w-4 h-4 rounded accent-primary" />
+              </label>
+              <span className="text-sm text-muted-foreground ml-4">
+                {i18next.t("general:Users")}: {Setting.getDisplayTag(Setting.uniqueFields(chats, "user"))}
               </span>
-              &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-              &nbsp;&nbsp;&nbsp;&nbsp;
-              {i18next.t("general:Users")}:
-              &nbsp;
-              {Setting.getDisplayTag(Setting.uniqueFields(chats, "user"))}
-              &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-              {i18next.t("general:Chats")}:
-              &nbsp;
-              {Setting.getDisplayTag(Setting.sumFields(chats, "count"))}
-              &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-              {i18next.t("general:Messages")}:
-              &nbsp;
-              {Setting.getDisplayTag(Setting.sumFields(chats, "messageCount"))}
-              {
-                (!this.props.account || this.props.account.name !== "admin") ? null : (
-                  <React.Fragment>
-                    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                    {i18next.t("general:Tokens")}:
-                    &nbsp;
-                    {Setting.getDisplayTag(Setting.sumFields(chats, "tokenCount"))}
-                    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                    {i18next.t("chat:Price")}:
-                    &nbsp;
-                    {Setting.getDisplayPrice(Setting.sumFields(chats, "price"))}
-                  </React.Fragment>
-                )
-              }
+              <span className="text-sm text-muted-foreground">
+                {i18next.t("general:Chats")}: {Setting.getDisplayTag(Setting.sumFields(chats, "count"))}
+              </span>
+              <span className="text-sm text-muted-foreground">
+                {i18next.t("general:Messages")}: {Setting.getDisplayTag(Setting.sumFields(chats, "messageCount"))}
+              </span>
+              {(!this.props.account || this.props.account.name !== "admin") ? null : (
+                <>
+                  <span className="text-sm text-muted-foreground">
+                    {i18next.t("general:Tokens")}: {Setting.getDisplayTag(Setting.sumFields(chats, "tokenCount"))}
+                  </span>
+                  <span className="text-sm text-muted-foreground">
+                    {i18next.t("chat:Price")}: {Setting.getDisplayPrice(Setting.sumFields(chats, "price"))}
+                  </span>
+                </>
+              )}
             </div>
           )}
           loading={this.state.loading}
-          rowClassName={(record, index) => {
-            return record.isDeleted ? "highlight-row" : "";
-          }}
+          rowClassName={(record) => record.isDeleted ? "highlight-row" : ""}
           onChange={this.handleTableChange}
         />
       </div>
@@ -595,9 +410,7 @@ class ChatListPage extends BaseListPage {
     this.setState({loading: true});
     ChatBackend.getGlobalChats(params.pagination.current, params.pagination.pageSize, field, value, sortField, sortOrder, this.state.storeName)
       .then((res) => {
-        this.setState({
-          loading: false,
-        });
+        this.setState({loading: false});
         if (res.status === "ok") {
           let chats = res.data;
           if (this.props.account.name !== "admin") {
@@ -621,9 +434,7 @@ class ChatListPage extends BaseListPage {
           });
         } else {
           if (Setting.isResponseDenied(res)) {
-            this.setState({
-              isAuthorized: false,
-            });
+            this.setState({isAuthorized: false});
           } else {
             Setting.showMessage("error", res.msg);
           }

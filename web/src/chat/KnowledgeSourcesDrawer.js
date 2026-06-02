@@ -13,17 +13,12 @@
 // limitations under the License.
 
 import React, {useEffect, useState} from "react";
-import {Drawer, Spin} from "antd";
+import {FileText, Loader2, X} from "lucide-react";
 import i18next from "i18next";
-import {createFromIconfontCN} from "@ant-design/icons";
 import * as Setting from "../Setting";
 import * as VectorBackend from "../backend/VectorBackend";
 
-const IconFont = createFromIconfontCN({
-  scriptUrl: "https://cdn.open-ct.com/icon/iconfont.js",
-});
-
-const KnowledgeSourceItem = ({vectorScore, vectorData, idx, themeColor, account}) => {
+const KnowledgeSourceItem = ({vectorScore, vectorData, idx, account}) => {
   if (!vectorData) {
     return null;
   }
@@ -49,98 +44,32 @@ const KnowledgeSourceItem = ({vectorScore, vectorData, idx, themeColor, account}
   };
 
   return (
-    <div
-      style={{
-        padding: "12px",
-        background: "#fff",
-        borderRadius: "8px",
-        border: "1px solid #e8e8e8",
-        transition: "all 0.2s",
-      }}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.1)";
-        e.currentTarget.style.borderColor = themeColor;
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.boxShadow = "none";
-        e.currentTarget.style.borderColor = "#e8e8e8";
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "8px",
-          marginBottom: "12px",
-        }}
-      >
+    <div className="p-3 bg-card rounded-lg border border-border transition-all hover:shadow-lg hover:border-primary/50">
+      <div className="flex items-center gap-2 mb-3">
         <span
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            justifyContent: "center",
-            width: "20px",
-            height: "20px",
-            background: themeColor,
-            color: "#fff",
-            borderRadius: "50%",
-            fontSize: "12px",
-            fontWeight: "bold",
-            cursor: "pointer",
-          }}
+          className="inline-flex items-center justify-center w-5 h-5 bg-primary text-primary-foreground rounded-full text-xs font-bold cursor-pointer"
           onClick={handleClick}
         >
           {idx + 1}
         </span>
         <span
-          style={{
-            fontSize: "20px",
-            color: "#666",
-            display: "flex",
-            alignItems: "center",
-            cursor: "pointer",
-          }}
+          className="text-muted-foreground cursor-pointer hover:text-foreground"
           onClick={handleFileOpen}
         >
-          <IconFont type={Setting.getFileIconType(vectorData.file)} />
+          <FileText className="w-5 h-5" />
         </span>
         <span
-          style={{
-            color: themeColor,
-            fontSize: "13px",
-            fontWeight: "500",
-            flex: 1,
-            cursor: "pointer",
-            textDecoration: "underline",
-          }}
+          className="text-primary text-[13px] font-medium flex-1 cursor-pointer underline hover:text-primary/80"
           onClick={handleFileOpen}
         >
           {vectorData.file || i18next.t("chat:Knowledge Fragment")}
         </span>
-        <span style={{
-          padding: "2px 8px",
-          background: "#f0f0f0",
-          borderRadius: "4px",
-          fontSize: "12px",
-          color: "#666",
-          fontWeight: "500",
-        }}>
+        <span className="px-2 py-0.5 bg-secondary rounded text-xs text-muted-foreground font-medium">
           {i18next.t("chat:Relevance")}: {(vectorScore.score * 100).toFixed(1)}%
         </span>
       </div>
       <div
-        style={{
-          fontSize: "13px",
-          color: "#666",
-          lineHeight: "1.5",
-          whiteSpace: "pre-line",
-          wordBreak: "break-word",
-          maxHeight: "800px",
-          overflow: "auto",
-          maxWidth: "800px",
-          minWidth: "400px",
-          cursor: "pointer",
-        }}
+        className="text-[13px] text-muted-foreground leading-relaxed whitespace-pre-line break-words max-h-[800px] overflow-auto max-w-[800px] min-w-[400px] cursor-pointer"
         onClick={handleClick}
       >
         {vectorData.text}
@@ -152,7 +81,6 @@ const KnowledgeSourceItem = ({vectorScore, vectorData, idx, themeColor, account}
 const KnowledgeSourcesDrawer = ({visible, onClose, vectorScores, account}) => {
   const [loading, setLoading] = useState(false);
   const [vectorsData, setVectorsData] = useState({});
-  const themeColor = Setting.getThemeColor();
 
   useEffect(() => {
     const loadVectorsData = async() => {
@@ -162,9 +90,8 @@ const KnowledgeSourcesDrawer = ({visible, onClose, vectorScores, account}) => {
       try {
         for (const vectorScore of vectorScores) {
           if (!vectorScore.vector || typeof vectorScore.vector !== "string") {
-            continue; // Skip invalid vector IDs
+            continue;
           }
-          // Use "admin" as owner, same as VectorTooltip.js
           const result = await VectorBackend.getVector("admin", vectorScore.vector);
           if (result.status === "ok" && result.data) {
             newVectorsData[vectorScore.vector] = result.data;
@@ -172,7 +99,6 @@ const KnowledgeSourcesDrawer = ({visible, onClose, vectorScores, account}) => {
         }
         setVectorsData(newVectorsData);
       } catch (error) {
-        // Failed to load vectors data
         Setting.showMessage("error", i18next.t("chat:Unable to load knowledge base sources. Please try again."));
       } finally {
         setLoading(false);
@@ -184,38 +110,50 @@ const KnowledgeSourcesDrawer = ({visible, onClose, vectorScores, account}) => {
     }
   }, [visible, vectorScores]);
 
+  if (!visible) {return null;}
+
   return (
-    <Drawer
-      title={i18next.t("chat:Knowledge sources")}
-      placement="right"
-      width={"auto"}
-      onClose={onClose}
-      open={visible}
-      styles={{
-        body: {padding: "16px"},
-      }}
-    >
-      {loading ? (
-        <div style={{textAlign: "center", padding: "20px"}}>
-          <Spin />
+    <>
+      {/* Backdrop */}
+      <div className="fixed inset-0 bg-black/50 z-40" onClick={onClose} />
+
+      {/* Slide-over panel */}
+      <div className="fixed inset-y-0 right-0 z-50 w-auto max-w-[90vw] bg-background border-l border-border shadow-xl flex flex-col transform transition-transform duration-300">
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+          <h3 className="text-sm font-semibold text-foreground">{i18next.t("chat:Knowledge sources")}</h3>
+          <button
+            onClick={onClose}
+            className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
-      ) : (
-        vectorScores?.length > 0 && (
-          <div style={{display: "flex", flexDirection: "column", gap: "20px"}}>
-            {vectorScores.map((vectorScore, idx) => (
-              <KnowledgeSourceItem
-                key={vectorScore.vector}
-                vectorScore={vectorScore}
-                vectorData={vectorsData[vectorScore.vector]}
-                idx={idx}
-                themeColor={themeColor}
-                account={account}
-              />
-            ))}
-          </div>
-        )
-      )}
-    </Drawer>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-4">
+          {loading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : (
+            vectorScores?.length > 0 && (
+              <div className="flex flex-col gap-5">
+                {vectorScores.map((vectorScore, idx) => (
+                  <KnowledgeSourceItem
+                    key={vectorScore.vector}
+                    vectorScore={vectorScore}
+                    vectorData={vectorsData[vectorScore.vector]}
+                    idx={idx}
+                    account={account}
+                  />
+                ))}
+              </div>
+            )
+          )}
+        </div>
+      </div>
+    </>
   );
 };
 

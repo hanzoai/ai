@@ -13,8 +13,6 @@
 // limitations under the License.
 
 import React, {useCallback, useEffect, useRef, useState} from "react";
-import {Button, Input, Select} from "antd";
-import {MinusOutlined, PlusOutlined, SendOutlined} from "@ant-design/icons";
 import moment from "moment";
 import ChatBox from "./ChatBox";
 import {renderReason, renderText} from "./ChatMessageRender";
@@ -26,7 +24,6 @@ import * as ProviderBackend from "./backend/ProviderBackend";
 import i18next from "i18next";
 import {MessageCarrier} from "./chat/MessageCarrier";
 
-const {TextArea} = Input;
 
 const MultiPaneManager = ({
   stores,
@@ -436,25 +433,25 @@ const MultiPaneManager = ({
     <div style={{padding: "8px 12px", borderBottom: "1px solid #f0f0f0", backgroundColor: "#fafafa", fontSize: "12px", display: "flex", gap: "12px", alignItems: "center", justifyContent: "space-between"}}>
       <div style={{display: "flex", gap: "12px", alignItems: "center"}}>
         <div style={{display: "flex", alignItems: "center", gap: "6px"}}>
-          <Select size="small" style={{minWidth: "100px"}} value={panes[index]?.store?.name || availableStores[0]?.name || ""} onChange={(value) => updatePaneStore(index, availableStores.find(s => s.name === value))} placeholder="Select store">
+          <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={panes[index]?.store?.name || availableStores[0]?.name || ""}> updatePaneStore(index, availableStores.find(s => s.name === value))} placeholder="Select store">
             {availableStores.map(store => (
-              <Select.Option key={store.name} value={store.name}>{store.displayName || store.name}</Select.Option>
+              <option key={store.name} value={store.name}>{store.displayName || store.name}</option>
             ))}
-          </Select>
+          </select>
         </div>
 
         {modelProviders.length > 0 && (
           <div style={{display: "flex", alignItems: "center", gap: "6px"}}>
-            <Select size="small" style={{minWidth: "120px"}} value={panes[index]?.chat?.modelProvider || panes[index]?.store?.modelProvider || modelProviders[0]?.name || ""} onChange={(value) => updatePaneProvider(index, value)} placeholder="Select model" optionLabelProp="children">
+            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={panes[index]?.chat?.modelProvider || panes[index]?.store?.modelProvider || modelProviders[0]?.name || ""}> updatePaneProvider(index, value)} placeholder="Select model" optionLabelProp="children">
               {modelProviders.map(provider => (
-                <Select.Option key={provider.name} value={provider.name}>
+                <option key={provider.name} value={provider.name}>
                   <div style={{display: "flex", alignItems: "center", gap: "6px"}}>
                     <img src={Setting.getProviderLogoURL(provider)} alt={provider.name} style={{width: 16, height: 16}} />
                     <span>{provider.displayName || provider.name}</span>
                   </div>
-                </Select.Option>
+                </option>
               ))}
-            </Select>
+            </select>
           </div>
         )}
       </div>
@@ -462,8 +459,8 @@ const MultiPaneManager = ({
       {index === 0 && canManagePanes && (
         <div style={{display: "flex", alignItems: "center", gap: "8px"}}>
           <span style={{fontSize: "12px", color: "#666"}}>{i18next.t("chat:Panes")}: {paneCount}</span>
-          <Button size="small" icon={<PlusOutlined />} onClick={() => paneCount < 4 && onPaneCountChange?.(paneCount + 1)} />
-          <Button size="small" icon={<MinusOutlined />} onClick={() => paneCount > 1 && onPaneCountChange?.(paneCount - 1)} disabled={paneCount <= 1} />
+          <button className="px-2 py-1 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700">} onClick={() => paneCount < 4 && onPaneCountChange?.(paneCount + 1)} />
+          <button className="px-2 py-1 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700">} onClick={() => paneCount > 1 && onPaneCountChange?.(paneCount - 1)} disabled={paneCount <= 1} />
         </div>
       )}
     </div>
@@ -474,8 +471,8 @@ const MultiPaneManager = ({
       <div style={{display: "flex", alignItems: "flex-start", gap: "12px"}}>
         <div style={{flex: 1}}>
           <Input.Group compact style={{display: "flex"}}>
-            <TextArea ref={globalInputRef} value={globalInputValue} onChange={(e) => setGlobalInputValue(e.target.value)} onPressEnter={handleGlobalInputKeyPress} placeholder="Send message to all panes..." autoSize={{minRows: 1, maxRows: 4}} style={{flex: 1, borderTopRightRadius: 0, borderBottomRightRadius: 0}} disabled={messageLoading} />
-            <Button type="primary" icon={<SendOutlined />} onClick={handleGlobalInput} disabled={messageLoading || !globalInputValue.trim()} style={{borderTopLeftRadius: 0, borderBottomLeftRadius: 0, height: "auto", display: "flex", alignItems: "center"}} />
+            <span className="text-zinc-300 text-sm"> setGlobalInputValue(e.target.value)} onPressEnter={handleGlobalInputKeyPress} placeholder="Send message to all panes..." autoSize={{minRows: 1, maxRows: 4}} style={{flex: 1, borderTopRightRadius: 0, borderBottomRightRadius: 0}} disabled={messageLoading} />
+            <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200">} onClick={handleGlobalInput} disabled={messageLoading || !globalInputValue.trim()} style={{borderTopLeftRadius: 0, borderBottomLeftRadius: 0, height: "auto", display: "flex", alignItems: "center"}} />
           </Input.Group>
         </div>
       </div>

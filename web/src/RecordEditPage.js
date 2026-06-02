@@ -13,14 +13,12 @@
 // limitations under the License.
 
 import React from "react";
-import {Button, Card, Col, Input, Row, Select, Switch} from "antd";
 import * as RecordBackend from "./backend/RecordBackend";
 import * as ProviderBackend from "./backend/ProviderBackend";
 import * as Setting from "./Setting";
 import i18next from "i18next";
 import Editor from "./common/Editor";
 
-const {Option} = Select;
 
 class RecordEditPage extends React.Component {
   constructor(props) {
@@ -86,118 +84,117 @@ class RecordEditPage extends React.Component {
   renderRecord() {
     // const history = useHistory();
     return (
-      <Card size="small" title={
-        <div>
+      <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4">
           {this.state.mode === "add" ? i18next.t("record:New Record") : i18next.t("record:View Record")}&nbsp;&nbsp;&nbsp;&nbsp;
           {this.state.mode !== "123" ? (
             <React.Fragment>
-              <Button onClick={() => this.submitRecordEdit(false)}>{i18next.t("general:Save")}</Button>
-              <Button style={{marginLeft: "20px"}} type="primary" onClick={() => this.submitRecordEdit(true)}>{i18next.t("general:Save & Exit")}</Button>
+              <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700"> this.submitRecordEdit(false)}>{i18next.t("general:Save")}</button>
+              <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}> this.submitRecordEdit(true)}>{i18next.t("general:Save & Exit")}</button>
             </React.Fragment>
           ) : (
-            <Button type="primary" onClick={() => this.props.history.push("/records")}>{i18next.t("general:Exit")}</Button>
+            <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200"> this.props.history.push("/records")}>{i18next.t("general:Exit")}</button>
           )}
-          {this.state.mode === "add" ? <Button style={{marginLeft: "20px"}} onClick={() => this.deleteRecord()}>{i18next.t("general:Cancel")}</Button> : null}
+          {this.state.mode === "add" ? <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}> this.deleteRecord()}>{i18next.t("general:Cancel")}</button> : null}
         </div>
       } style={{marginLeft: "5px"}} type="inner">
-        <Row style={{marginTop: "10px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Organization"), i18next.t("general:Organization - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+          </div>
+          <div className="flex-1">
             <Input disabled={false} value={this.state.record.owner} onChange={e => {
               // this.updateRecordField("owner", e.target.value);
             }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Name"), i18next.t("general:Name - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+          </div>
+          <div className="flex-1">
             <Input disabled={false} value={this.state.record.name} onChange={e => {
               // this.updateRecordField("name", e.target.value);
             }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}}>
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Provider"), i18next.t("general:Provider - Tooltip"))} :
-          </Col>
-          <Col span={22}>
-            <Select disabled={false} virtual={false} style={{width: "100%"}} value={this.state.record.provider} onChange={(value => {
+          </div>
+          <div className="flex-1">
+            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.record.provider} disabled> {
               this.updateRecordField("provider", value);
             })}>
               {
                 this.state.blockchainProviders.map((provider, index) => (
-                  <Option key={index} value={provider.name}>{provider.name}</Option>
+                  <option key={index} value={provider.name}>{provider.name}</option>
                 ))
               }
-            </Select>
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}}>
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+            </select>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Block"), i18next.t("general:Block - Tooltip"))} :
-          </Col>
-          <Col span={22}>
+          </div>
+          <div className="flex-1">
             <Input disabled={false} value={this.state.record.block} onChange={e => {
               // this.updateRecordField("block", e.target.value);
             }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}}>
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Provider 2"), i18next.t("general:Provider - Tooltip"))} :
-          </Col>
-          <Col span={22}>
-            <Select disabled={false} virtual={false} style={{width: "100%"}} value={this.state.record.provider2} onChange={(value => {
+          </div>
+          <div className="flex-1">
+            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.record.provider2} disabled> {
               this.updateRecordField("provider2", value);
             })}>
               {
                 this.state.blockchainProviders.map((provider, index) => (
-                  <Option key={index} value={provider.name}>{provider.name}</Option>
+                  <option key={index} value={provider.name}>{provider.name}</option>
                 ))
               }
-            </Select>
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}}>
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+            </select>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Block 2"), i18next.t("general:Block - Tooltip"))} :
-          </Col>
-          <Col span={22}>
+          </div>
+          <div className="flex-1">
             <Input disabled={false} value={this.state.record.block2} onChange={e => {
               // this.updateRecordField("block", e.target.value);
             }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Client IP"), i18next.t("general:Client IP - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+          </div>
+          <div className="flex-1">
             <Input disabled={false} value={this.state.record.clientIp} onChange={e => {
               // this.updateRecordField("clientIp", e.target.value);
             }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:User"), i18next.t("general:User - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+          </div>
+          <div className="flex-1">
             <Input disabled={false} value={this.state.record.user} onChange={e => {
               // this.updateRecordField("user", e.target.value);
             }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Method"), i18next.t("general:Method - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Select disabled={false} virtual={false} style={{width: "100%"}} value={this.state.record.method} onChange={(value => {
+          </div>
+          <div className="flex-1">
+            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.record.method} disabled> {
               // this.updateRecordField("method", value);
             })}>
               {
@@ -211,88 +208,88 @@ class RecordEditPage extends React.Component {
                   {id: "OPTIONS", name: "OPTIONS"},
                   {id: "TRACE", name: "TRACE"},
                   {id: "PATCH", name: "PATCH"},
-                ].map((item, index) => <Option key={index} value={item.id}>{item.name}</Option>)
+                ].map((item, index) => <option key={index} value={item.id}>{item.name}</option>)
               }
-            </Select>
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+            </select>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Request URI"), i18next.t("general:Request URI - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+          </div>
+          <div className="flex-1">
             <Input disabled={false} value={this.state.record.requestUri} onChange={e => {
               // this.updateRecordField("requestUri", e.target.value);
             }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Action"), i18next.t("general:Action - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+          </div>
+          <div className="flex-1">
             <Input disabled={false} value={this.state.record.action} onChange={e => {
               // this.updateRecordField("action", e.target.value);
             }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Language"), i18next.t("general:Language - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+          </div>
+          <div className="flex-1">
             <Input disabled={false} value={this.state.record.language} onChange={e => {
               // this.updateRecordField("language", e.target.value);
             }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Region"), i18next.t("general:Region - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Input disabled={false} value={this.state.record.region} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+          <div className="flex-1">
+            <input className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.record.region} disabled />
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:City"), i18next.t("general:City - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Input disabled={false} value={this.state.record.city} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+          <div className="flex-1">
+            <input className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.record.city} disabled />
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Unit"), i18next.t("general:Unit - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Input disabled={false} value={this.state.record.unit} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+          <div className="flex-1">
+            <input className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.record.unit} disabled />
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Section"), i18next.t("general:Section - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Input disabled={false} value={this.state.record.section} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+          <div className="flex-1">
+            <input className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.record.section} disabled />
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Count"), i18next.t("general:Count - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+          </div>
+          <div className="flex-1">
             <Input disabled={false} value={this.state.record.count === 0 ? 1 : this.state.record.count} onChange={e => {
               this.updateRecordField("count", e.target.value);
             }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Object"), i18next.t("general:Object - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+          </div>
+          <div className="flex-1">
             <div style={{width: "900px", height: "300px"}}>
               <Editor
                 value={Setting.formatJsonString(this.state.record.object)}
@@ -301,13 +298,13 @@ class RecordEditPage extends React.Component {
                 dark
               />
             </div>
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}}>
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Response"), i18next.t("general:Response - Tooltip"))} :
-          </Col>
-          <Col span={22}>
+          </div>
+          <div className="flex-1">
             <div style={{width: "900px", height: "300px"}}>
               <Editor
                 value={Setting.formatJsonString(this.state.record.response)}
@@ -316,19 +313,17 @@ class RecordEditPage extends React.Component {
                 dark
               />
             </div>
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 19 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Is triggered"), i18next.t("general:Is triggered - Tooltip"))} :
-          </Col>
-          <Col span={1} >
-            <Switch disabled={false} checked={this.state.record.isTriggered} onChange={checked => {
-              // this.updateRecordField("isTriggered", checked);
-            }} />
-          </Col>
-        </Row>
-      </Card>
+          </div>
+          <div className="flex-1">
+            <span className="px-2 py-0.5 rounded text-xs " + (this.state.record.isTriggered ? "bg-green-500/20 text-green-400" : "bg-zinc-800 text-zinc-500")">{this.state.record.isTriggered ? "ON" : "OFF"}</span>
+          </div>
+        </div>
+      </div>
     );
   }
 
@@ -383,13 +378,13 @@ class RecordEditPage extends React.Component {
         <div style={{marginTop: "20px", marginLeft: "40px"}}>
           {this.state.mode !== "123" ? (
             <React.Fragment>
-              <Button size="large" onClick={() => this.submitRecordEdit(false)}>{i18next.t("general:Save")}</Button>
-              <Button style={{marginLeft: "20px"}} type="primary" size="large" onClick={() => this.submitRecordEdit(true)}>{i18next.t("general:Save & Exit")}</Button>
+              <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700"> this.submitRecordEdit(false)}>{i18next.t("general:Save")}</button>
+              <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}> this.submitRecordEdit(true)}>{i18next.t("general:Save & Exit")}</button>
             </React.Fragment>
           ) : (
-            <Button type="primary" size="large" onClick={() => this.props.history.push("/records")}>{i18next.t("general:Exit")}</Button>
+            <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-white text-black hover:bg-zinc-200"> this.props.history.push("/records")}>{i18next.t("general:Exit")}</button>
           )}
-          {this.state.mode === "add" ? <Button style={{marginLeft: "20px"}} size="large" onClick={() => this.deleteRecord()}>{i18next.t("general:Cancel")}</Button> : null}
+          {this.state.mode === "add" ? <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}> this.deleteRecord()}>{i18next.t("general:Cancel")}</button> : null}
         </div>
       </div>
     );

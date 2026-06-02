@@ -13,7 +13,6 @@
 // limitations under the License.
 
 import React from "react";
-import {Button, Col, Row} from "antd";
 import * as Setting from "../Setting";
 import {renderText} from "../ChatMessageRender";
 import moment from "moment";
@@ -189,22 +188,22 @@ class ModelTestWidget extends React.Component {
 
     return (
       <React.Fragment>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("provider:Provider test"), i18next.t("provider:Provider test - Tooltip"))} :
-          </Col>
-          <Col span={20}>
+          </div>
+          <div className="flex-1">
             <div style={{marginBottom: "10px", textAlign: "right"}}>
-              <Button type="primary" onClick={() => this.clearTestMessages(provider, account, (messages) => this.setState({testMessages: messages}))} size="small">
+              <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200"> this.clearTestMessages(provider, account, (messages) => this.setState({testMessages: messages}))} size="small">
                 {i18next.t("chat:New Chat")}
-              </Button>
+              </button>
             </div>
             <div style={{width: "100%", height: "600px", border: "1px solid #d9d9d9", borderRadius: "6px"}}>
               <ChatBox disableInput={false} hideInput={false} messages={this.state.testMessages} sendMessage={(message) => this.sendTestMessage(provider, originalProvider, message, account, (loading) => this.setState({testButtonLoading: loading}), (messages) => this.setState({testMessages: messages}), this.state.testMessages)} account={account} loading={this.state.testButtonLoading}
               />
             </div>
-          </Col>
-        </Row>
+          </div>
+        </div>
       </React.Fragment>
     );
   }
