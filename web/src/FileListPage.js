@@ -14,14 +14,13 @@
 
 import React from "react";
 import {Link} from "react-router-dom";
-import {Button, Popconfirm, Table} from "antd";
 import moment from "moment";
 import BaseListPage from "./BaseListPage";
 import * as Setting from "./Setting";
 import * as FileBackend from "./backend/FileBackend";
 import * as StoreBackend from "./backend/StoreBackend";
 import i18next from "i18next";
-import {DeleteOutlined} from "@ant-design/icons";
+import {Trash2, Loader2} from "lucide-react";
 
 class FileListPage extends BaseListPage {
   constructor(props) {
@@ -139,12 +138,11 @@ class FileListPage extends BaseListPage {
         title: i18next.t("general:Name"),
         dataIndex: "name",
         key: "name",
-        width: "140px",
         sorter: (a, b) => a.name.localeCompare(b.name),
         ...this.getColumnSearchProps("name"),
         render: (text, record, index) => {
           return (
-            <Link to={`/files/${encodeURIComponent(text)}`}>
+            <Link to={`/files/${encodeURIComponent(text)}`} className="text-blue-400 hover:text-blue-300">
               {text}
             </Link>
           );
@@ -154,7 +152,6 @@ class FileListPage extends BaseListPage {
         title: i18next.t("file:Filename"),
         dataIndex: "filename",
         key: "filename",
-        width: "200px",
         sorter: (a, b) => a.filename.localeCompare(b.filename),
         ...this.getColumnSearchProps("filename"),
       },
@@ -162,54 +159,43 @@ class FileListPage extends BaseListPage {
         title: i18next.t("general:Size"),
         dataIndex: "size",
         key: "size",
-        width: "100px",
         sorter: (a, b) => a.size - b.size,
-        render: (text, record, index) => {
-          return Setting.getFormattedSize(text);
-        },
+        render: (text) => Setting.getFormattedSize(text),
       },
       {
         title: i18next.t("general:Store"),
         dataIndex: "store",
         key: "store",
-        width: "130px",
         sorter: (a, b) => a.store.localeCompare(b.store),
         ...this.getColumnSearchProps("store"),
-        render: (text, record, index) => {
-          return (
-            <Link to={`/stores/${record.owner}/${text}`}>
-              {text}
-            </Link>
-          );
-        },
+        render: (text, record) => (
+          <Link to={`/stores/${record.owner}/${text}`} className="text-blue-400 hover:text-blue-300">
+            {text}
+          </Link>
+        ),
       },
       {
         title: i18next.t("store:Storage provider"),
         dataIndex: "storageProvider",
         key: "storageProvider",
-        width: "150px",
         sorter: (a, b) => a.storageProvider.localeCompare(b.storageProvider),
         ...this.getColumnSearchProps("storageProvider"),
-        render: (text, record, index) => {
-          return (
-            <Link to={`/providers/${text}`}>
-              {text}
-            </Link>
-          );
-        },
+        render: (text) => (
+          <Link to={`/providers/${text}`} className="text-blue-400 hover:text-blue-300">
+            {text}
+          </Link>
+        ),
       },
       {
         title: i18next.t("chat:Token count"),
         dataIndex: "tokenCount",
         key: "tokenCount",
-        width: "100px",
         sorter: (a, b) => a.tokenCount - b.tokenCount,
       },
       {
         title: i18next.t("general:Status"),
         dataIndex: "status",
         key: "status",
-        width: "100px",
         sorter: (a, b) => a.status.localeCompare(b.status),
         ...this.getColumnSearchProps("status"),
       },
@@ -217,85 +203,158 @@ class FileListPage extends BaseListPage {
         title: i18next.t("message:Error text"),
         dataIndex: "errorText",
         key: "errorText",
-        width: "200px",
         sorter: (a, b) => a.errorText.localeCompare(b.errorText),
         ...this.getColumnSearchProps("errorText"),
-        render: (text, record, index) => {
-          return (
-            <div dangerouslySetInnerHTML={{__html: text}} />
-          );
-        },
+        render: (text) => (
+          <div dangerouslySetInnerHTML={{__html: text}} />
+        ),
       },
       {
         title: i18next.t("general:Action"),
         dataIndex: "action",
         key: "action",
-        width: "260px",
-        fixed: "right",
         render: (text, record, index) => {
           return (
-            <div>
-              {
-                !Setting.isLocalAdminUser(this.props.account) ? null : (
-                  <Button style={{marginTop: "10px", marginBottom: "10px", marginRight: "10px"}} loading={this.state.refreshing[index]} onClick={() => this.refreshFileVectors(index)}>{i18next.t("general:Refresh Vectors")}</Button>
-                )
-              }
-              <Button style={{marginTop: "10px", marginBottom: "10px", marginRight: "10px"}} type="primary" onClick={() => this.props.history.push(`/files/${encodeURIComponent(record.name)}`)}>{i18next.t("general:View")}</Button>
-              <Popconfirm
-                title={`${i18next.t("general:Sure to delete")}: ${record.name} ?`}
-                onConfirm={() => this.deleteFile(record)}
-                okText={i18next.t("general:OK")}
-                cancelText={i18next.t("general:Cancel")}
+            <div className="flex flex-wrap gap-2">
+              {Setting.isLocalAdminUser(this.props.account) && (
+                <button
+                  disabled={this.state.refreshing[index]}
+                  onClick={() => this.refreshFileVectors(index)}
+                  className="px-3 py-1.5 bg-zinc-800 text-zinc-300 rounded text-xs hover:bg-zinc-700 transition-colors disabled:opacity-50 flex items-center gap-1"
+                >
+                  {this.state.refreshing[index] && <Loader2 className="w-3 h-3 animate-spin" />}
+                  {i18next.t("general:Refresh Vectors")}
+                </button>
+              )}
+              <button
+                onClick={() => this.props.history.push(`/files/${encodeURIComponent(record.name)}`)}
+                className="px-3 py-1.5 bg-white text-black rounded text-xs font-medium hover:bg-zinc-200 transition-colors"
               >
-                <Button style={{marginBottom: "10px"}} type="primary" danger>{i18next.t("general:Delete")}</Button>
-              </Popconfirm>
+                {i18next.t("general:View")}
+              </button>
+              <button
+                onClick={() => {
+                  if (window.confirm(`${i18next.t("general:Sure to delete")}: ${record.name} ?`)) {
+                    this.deleteFile(record);
+                  }
+                }}
+                className="px-3 py-1.5 bg-red-600 text-white rounded text-xs font-medium hover:bg-red-700 transition-colors"
+              >
+                {i18next.t("general:Delete")}
+              </button>
             </div>
           );
         },
       },
     ];
+
     const filteredColumns = Setting.filterTableColumns(columns, this.props.formItems ?? this.state.formItems);
-    const paginationProps = {
-      total: this.state.pagination.total,
-      showQuickJumper: true,
-      showSizeChanger: true,
-      pageSizeOptions: ["10", "20", "50", "100", "1000"],
-      showTotal: () => i18next.t("general:{total} in total").replace("{total}", this.state.pagination.total),
-    };
 
     return (
       <div>
-        <Table scroll={{x: "max-content"}} columns={filteredColumns} dataSource={files} rowKey="name" rowSelection={this.getRowSelection()} size="middle" bordered pagination={paginationProps}
-          title={() => (
-            <div>
-              {i18next.t("general:Files")}&nbsp;&nbsp;&nbsp;&nbsp;
-              <Button type="primary" size="small" onClick={this.addFile.bind(this)}>{i18next.t("general:Add")}</Button>
-              {this.state.selectedRowKeys.length > 0 && (
-                <Popconfirm title={`${i18next.t("general:Sure to delete")}: ${this.state.selectedRowKeys.length} ${i18next.t("general:items")} ?`} onConfirm={() => this.performBulkDelete(this.state.selectedRows, this.state.selectedRowKeys)} okText={i18next.t("general:OK")} cancelText={i18next.t("general:Cancel")}>
-                  <Button type="primary" danger size="small" icon={<DeleteOutlined />} style={{marginLeft: 8}}>
-                    {i18next.t("general:Delete")} ({this.state.selectedRowKeys.length})
-                  </Button>
-                </Popconfirm>
-              )}
-            </div>
-          )}
-          loading={this.state.loading}
-          onChange={this.handleTableChange}
-        />
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <h2 className="text-lg font-semibold text-white">{i18next.t("general:Files")}</h2>
+            <button
+              onClick={this.addFile.bind(this)}
+              className="px-3 py-1 bg-white text-black rounded text-xs font-medium hover:bg-zinc-200 transition-colors"
+            >
+              {i18next.t("general:Add")}
+            </button>
+            {this.state.selectedRowKeys.length > 0 && (
+              <button
+                onClick={() => {
+                  if (window.confirm(`${i18next.t("general:Sure to delete")}: ${this.state.selectedRowKeys.length} ${i18next.t("general:items")} ?`)) {
+                    this.performBulkDelete(this.state.selectedRows, this.state.selectedRowKeys);
+                  }
+                }}
+                className="px-3 py-1 bg-red-600 text-white rounded text-xs font-medium hover:bg-red-700 transition-colors flex items-center gap-1"
+              >
+                <Trash2 className="w-3 h-3" />
+                {i18next.t("general:Delete")} ({this.state.selectedRowKeys.length})
+              </button>
+            )}
+          </div>
+          <span className="text-xs text-zinc-500">
+            {i18next.t("general:{total} in total").replace("{total}", this.state.pagination.total)}
+          </span>
+        </div>
+
+        {this.state.loading ? (
+          <div className="flex justify-center py-12">
+            <Loader2 className="w-8 h-8 text-zinc-500 animate-spin" />
+          </div>
+        ) : (
+          <div className="overflow-x-auto border border-zinc-800 rounded-lg">
+            <table className="w-full text-sm text-left">
+              <thead className="bg-zinc-900/80 border-b border-zinc-800">
+                <tr>
+                  <th className="px-3 py-2">
+                    <input
+                      type="checkbox"
+                      className="rounded bg-zinc-800 border-zinc-700"
+                      checked={this.state.selectedRowKeys.length === files?.length && files?.length > 0}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          this.onSelectAll(true, files);
+                        } else {
+                          this.clearSelection();
+                        }
+                      }}
+                    />
+                  </th>
+                  {filteredColumns.map(col => (
+                    <th key={col.key} className="px-3 py-2 text-xs font-medium text-zinc-400 whitespace-nowrap">
+                      {col.title}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-800/50">
+                {files?.map((record, index) => (
+                  <tr key={record.name} className="hover:bg-zinc-900/50 transition-colors">
+                    <td className="px-3 py-2">
+                      <input
+                        type="checkbox"
+                        className="rounded bg-zinc-800 border-zinc-700"
+                        checked={this.state.selectedRowKeys.includes(this.getRowKey(record))}
+                        onChange={(e) => {
+                          const key = this.getRowKey(record);
+                          if (e.target.checked) {
+                            this.onSelectChange(
+                              [...this.state.selectedRowKeys, key],
+                              [...this.state.selectedRows, record]
+                            );
+                          } else {
+                            this.onSelectChange(
+                              this.state.selectedRowKeys.filter(k => k !== key),
+                              this.state.selectedRows.filter(r => this.getRowKey(r) !== key)
+                            );
+                          }
+                        }}
+                      />
+                    </td>
+                    {filteredColumns.map(col => (
+                      <td key={col.key} className="px-3 py-2 text-zinc-300 whitespace-nowrap">
+                        {col.render ? col.render(record[col.dataIndex], record, index) : record[col.dataIndex]}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     );
   }
 
   fetch = (params = {}) => {
-    //     const field = params.searchedColumn, value = params.searchText;
-    //     const sortField = params.sortField, sortOrder = params.sortOrder;
     this.setState({loading: true});
     const store = this.state.storeName;
     FileBackend.getFiles("admin", store)
       .then((res) => {
-        this.setState({
-          loading: false,
-        });
+        this.setState({loading: false});
         if (res.status === "ok") {
           this.setState({
             data: res.data,
@@ -308,9 +367,7 @@ class FileListPage extends BaseListPage {
           });
         } else {
           if (Setting.isResponseDenied(res)) {
-            this.setState({
-              isAuthorized: false,
-            });
+            this.setState({isAuthorized: false});
           } else {
             Setting.showMessage("error", res.msg);
           }

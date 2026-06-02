@@ -14,7 +14,6 @@
 
 import React from "react";
 import {Link} from "react-router-dom";
-import {Button, Table, Tag} from "antd";
 import moment from "moment";
 import * as Setting from "./Setting";
 import * as ScanBackend from "./backend/ScanBackend";
@@ -288,7 +287,7 @@ class ScanListPage extends BaseListPage {
           } else if (text === "Created") {
             color = "default";
           }
-          return <Tag color={color}>{text}</Tag>;
+          return <span className="px-2 py-0.5 bg-zinc-800 text-zinc-400 rounded text-xs">{text}</span>;
         },
       },
       {
@@ -372,7 +371,7 @@ class ScanListPage extends BaseListPage {
         render: (text, record, index) => {
           return (
             <div>
-              <Button style={{marginTop: "10px", marginBottom: "10px", marginRight: "10px"}} type="primary" onClick={() => this.props.history.push(`/scans/${record.name}`)}>{i18next.t("general:Edit")}</Button>
+              <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginTop: "10px", marginBottom: "10px", marginRight: "10px"}> this.props.history.push(`/scans/${record.name}`)}>{i18next.t("general:Edit")}</button>
               <PopconfirmModal
                 title={i18next.t("general:Sure to delete") + `: ${record.name} ?`}
                 onConfirm={() => this.deleteItem(index).then(() => {
@@ -395,16 +394,7 @@ class ScanListPage extends BaseListPage {
 
     return (
       <div>
-        <Table scroll={{x: "max-content"}} columns={columns} dataSource={scans} rowKey={(record) => `${record.name}`} size="middle" bordered pagination={paginationProps}
-          title={() => (
-            <div>
-              {i18next.t("general:Scans")}&nbsp;&nbsp;&nbsp;&nbsp;
-              <Button type="primary" size="small" onClick={this.addScan.bind(this)}>{i18next.t("general:Add")}</Button>
-            </div>
-          )}
-          loading={this.state.loading}
-          onChange={this.handleTableChange}
-        />
+        <div className="overflow-x-auto border border-zinc-800 rounded-lg"><table className="w-full text-sm text-left"><thead className="bg-zinc-900/80 border-b border-zinc-800"><tr>{columns.map(col => <th key={col.key || col.dataIndex} className="px-3 py-2 text-xs font-medium text-zinc-400 whitespace-nowrap">{col.title}</th>)}</tr></thead><tbody className="divide-y divide-zinc-800/50">{(scans || []).map((record, index) => <tr key={typeof {(record) => `${record.name} === "function" ? ({(record) => `${record.name})(record) : record[{(record) => `${record.name}] || index} className="hover:bg-zinc-900/50 transition-colors">{columns.map(col => <td key={col.key || col.dataIndex} className="px-3 py-2 text-zinc-300 whitespace-nowrap">{col.render ? col.render(record[col.dataIndex], record, index) : record[col.dataIndex]}</td>)}</tr>)}</tbody></table></div>
       </div>
     );
   }

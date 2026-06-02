@@ -12,10 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import {Card, Row, Spin} from "antd";
-import i18next from "i18next";
 import React from "react";
-import * as Setting from "../Setting";
+import {Loader2} from "lucide-react";
+import i18next from "i18next";
 import SingleCard from "./SingleCard";
 
 const GridCards = (props) => {
@@ -23,24 +22,20 @@ const GridCards = (props) => {
 
   if (items === null || items === undefined) {
     return (
-      <div style={{display: "flex", justifyContent: "center", alignItems: "center", marginTop: "10%"}}>
-        <Spin size="large" tip={i18next.t("general:Loading")} style={{paddingTop: "10%"}} />
+      <div className="flex justify-center items-center mt-20">
+        <Loader2 className="w-8 h-8 text-zinc-500 animate-spin" />
       </div>
     );
   }
 
   return (
-    Setting.isMobile() ? (
-      <Card bodyStyle={{padding: 0}}>
-        {items.map(item => <SingleCard key={item.link} logo={item.logo} link={item.link} title={item.name} desc={item.description} time={item.createdTime} isSingle={items.length === 1} />)}
-      </Card>
-    ) : (
-      <div style={{margin: "0 15px"}}>
-        <Row>
-          {items.map(item => <SingleCard logo={item.logo} link={item.link} title={item.name} desc={item.description} time={item.createdTime} isSingle={items.length === 1} key={item.name} />)}
-        </Row>
+    <div className="mx-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+        {items.map(item => (
+          <SingleCard key={item.link || item.name} logo={item.logo} link={item.link} title={item.name} desc={item.description} time={item.createdTime} isSingle={items.length === 1} />
+        ))}
       </div>
-    )
+    </div>
   );
 };
 

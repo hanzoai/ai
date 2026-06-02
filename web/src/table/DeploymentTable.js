@@ -13,10 +13,8 @@
 // limitations under the License.
 
 import React from "react";
-import {Card, Table, Tag, Typography} from "antd";
 import i18next from "i18next";
 
-const {Text} = Typography;
 
 class DeploymentTable extends React.Component {
   getColumns = () => {
@@ -26,14 +24,14 @@ class DeploymentTable extends React.Component {
         dataIndex: "name",
         key: "name",
         width: "150px",
-        render: (text) => <Text>{text}</Text>,
+        render: (text) => <span className="text-zinc-300 text-sm">{text}</span>,
       },
       {
         title: i18next.t("application:Replicas"),
         dataIndex: "replicas",
         key: "replicas",
         width: "80px",
-        render: (text, record) => <Text>{record.readyReplicas}/{text}</Text>,
+        render: (text, record) => <span className="text-zinc-300 text-sm">{record.readyReplicas}/{text}</span>,
       },
       {
         title: i18next.t("general:Status"),
@@ -49,7 +47,7 @@ class DeploymentTable extends React.Component {
           } else if (text === "Not Ready") {
             color = "red";
           }
-          return <Tag color={color}>{text}</Tag>;
+          return <span className="px-2 py-0.5 bg-zinc-800 text-zinc-400 rounded text-xs">{text}</span>;
         },
       },
       {
@@ -61,7 +59,7 @@ class DeploymentTable extends React.Component {
           <div>
             {containers.map((container, index) => (
               <div key={index} style={{marginBottom: 4}}>
-                <Text style={{fontSize: "12px"}}>{container.image}</Text>
+                <span className="text-zinc-300 text-sm">{container.image}</span>
               </div>
             ))}
           </div>
@@ -72,7 +70,7 @@ class DeploymentTable extends React.Component {
         dataIndex: "createdTime",
         key: "createdTime",
         width: "160px",
-        render: (text) => <Text style={{fontSize: "12px"}}>{text}</Text>,
+        render: (text) => <span className="text-zinc-300 text-sm">{text}</span>,
       },
     ];
   };
@@ -85,15 +83,9 @@ class DeploymentTable extends React.Component {
     }
 
     return (
-      <Card size="small" title={i18next.t("application:Deploy")} style={{marginBottom: 16}}>
-        <Table
-          dataSource={deployments}
-          columns={this.getColumns()}
-          pagination={false}
-          size="small"
-          rowKey="name"
-        />
-      </Card>
+      <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4">
+        <div className="overflow-x-auto border border-zinc-800 rounded-lg"><table className="w-full text-sm text-left"><thead className="bg-zinc-900/80 border-b border-zinc-800"><tr>{this.getColumns().map(col => <th key={col.key || col.dataIndex} className="px-3 py-2 text-xs font-medium text-zinc-400 whitespace-nowrap">{col.title}</th>)}</tr></thead><tbody className="divide-y divide-zinc-800/50">{(deployments || []).map((record, index) => <tr key={typeof "name" === "function" ? ("name")(record) : record["name"] || index} className="hover:bg-zinc-900/50 transition-colors">{this.getColumns().map(col => <td key={col.key || col.dataIndex} className="px-3 py-2 text-zinc-300 whitespace-nowrap">{col.render ? col.render(record[col.dataIndex], record, index) : record[col.dataIndex]}</td>)}</tr>)}</tbody></table></div>
+      </div>
     );
   }
 }

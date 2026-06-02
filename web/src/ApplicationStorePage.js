@@ -13,17 +13,12 @@
 // limitations under the License.
 
 import React from "react";
-import {Avatar, Button, Card, Col, Empty, Input, Layout, Pagination, Row, Spin, Tag, Typography, message} from "antd";
-import {AppstoreOutlined} from "@ant-design/icons";
+import {ChevronLeft, ChevronRight, Grid3X3, Loader2, Search} from "lucide-react";
 import * as TemplateBackend from "./backend/TemplateBackend";
 import * as ApplicationBackend from "./backend/ApplicationBackend";
 import i18next from "i18next";
 import * as Setting from "./Setting";
 import moment from "moment";
-
-const {Content} = Layout;
-const {Search} = Input;
-const {Title, Paragraph} = Typography;
 
 class ApplicationStorePage extends React.Component {
   constructor(props) {
@@ -69,12 +64,12 @@ class ApplicationStorePage extends React.Component {
             },
           });
         } else {
-          message.error(`${i18next.t("general:Failed to get")}: ${res.msg}`);
+          Setting.showMessage("error", `${i18next.t("general:Failed to get")}: ${res.msg}`);
         }
       })
       .catch((error) => {
         this.setState({loading: false});
-        message.error(`${i18next.t("general:Failed to get")}: ${error}`);
+        Setting.showMessage("error", `${i18next.t("general:Failed to get")}: ${error}`);
       });
   };
 
@@ -87,12 +82,11 @@ class ApplicationStorePage extends React.Component {
     });
   };
 
-  handlePaginationChange = (page, pageSize) => {
+  handlePaginationChange = (page) => {
     this.setState({
       pagination: {
         ...this.state.pagination,
         current: page,
-        pageSize: pageSize,
       },
     }, () => {
       this.fetchTemplates();
@@ -116,119 +110,131 @@ class ApplicationStorePage extends React.Component {
     ApplicationBackend.addApplication(newApplication)
       .then((res) => {
         if (res.status === "ok") {
-          message.success(i18next.t("general:Successfully added"));
+          Setting.showMessage("success", i18next.t("general:Successfully added"));
           this.props.history.push({
             pathname: `/applications/${newApplication.name}`,
             state: {isNewApplication: true},
           });
         } else {
-          message.error(`${i18next.t("general:Failed to add")}: ${res.msg}`);
+          Setting.showMessage("error", `${i18next.t("general:Failed to add")}: ${res.msg}`);
         }
       })
       .catch(error => {
-        message.error(`${i18next.t("general:Failed to add")}: ${error}`);
+        Setting.showMessage("error", `${i18next.t("general:Failed to add")}: ${error}`);
       });
-  };
-
-  renderHeader = () => {
-    const {searchText} = this.state;
-
-    return (
-      <div style={{display: "flex", alignItems: "center", justifyContent: "space-between"}}>
-        <Title level={4} style={{margin: 0}}>
-          <AppstoreOutlined style={{marginRight: 8}} />
-          {i18next.t("general:Application Store")}
-        </Title>
-
-        <Search
-          placeholder={i18next.t("general:Search")}
-          allowClear
-          value={searchText}
-          onChange={(e) => this.setState({searchText: e.target.value})}
-          onSearch={this.handleSearch}
-          style={{width: 300}}
-        />
-      </div>
-    );
-  };
-
-  renderTemplateCard = (template) => {
-    return (
-      <Col key={`${template.owner}/${template.name}`} xs={24} sm={24} md={12} lg={12} xl={8} xxl={6}>
-        <Card hoverable style={{height: 200, position: "relative"}} styles={{body: {padding: "16px", height: "100%", display: "flex", flexDirection: "column"}}} onClick={() => {
-          this.handleAddApplication(template);
-        }}
-        >
-          <div style={{display: "flex", alignItems: "center", marginBottom: "8px"}}>
-            <Avatar size={42} src={template.icon} icon={<AppstoreOutlined />} style={{marginRight: 12, flexShrink: 0}} shape="square" />
-            <Title level={5} style={{margin: 0, flex: 1, fontSize: "16px", fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"}}>
-              {template.displayName || template.name}
-            </Title>
-          </div>
-
-          <div style={{flex: 1}}>
-            <Paragraph type="secondary" ellipsis={{rows: 3, expandable: false}} >
-              {template.description || ""}
-            </Paragraph>
-          </div>
-
-          <div style={{marginTop: "auto", display: "flex", justifyContent: "space-between", alignItems: "center"}}>
-            <div>
-              {template.version && (
-                <Tag color="processing" size="small" >
-                  {template.version}
-                </Tag>
-              )}
-            </div>
-            <Button type="primary" size="small" onClick={(e) => {
-              e.stopPropagation();
-              this.handleAddApplication(template);
-            }}
-            >
-              {i18next.t("general:Add")}
-            </Button>
-          </div>
-        </Card>
-      </Col>
-    );
   };
 
   render() {
     const {templates, loading, pagination} = this.state;
+    const totalPages = Math.ceil(pagination.total / pagination.pageSize);
 
     return (
-      <Layout style={{minHeight: "100vh-135px", background: "transparent"}}>
-        {this.renderHeader()}
+      <div className="min-h-[calc(100vh-135px)]">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
+            <Grid3X3 className="w-5 h-5" />
+            {i18next.t("general:Application Store")}
+          </h2>
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <input
+              className="h-9 w-[300px] rounded-md border border-border bg-background pl-9 pr-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+              placeholder={i18next.t("general:Search")}
+              value={this.state.searchText}
+              onChange={(e) => this.setState({searchText: e.target.value})}
+              onKeyDown={(e) => e.key === "Enter" && this.handleSearch(this.state.searchText)}
+            />
+          </div>
+        </div>
 
-        <Content style={{marginTop: 16}}>
-          <Card>
-            <Spin spinning={loading}>
-              {templates.length === 0 && !loading ? (
-                <Empty description={i18next.t("general:No data")} style={{margin: "40px 0"}} />
-              ) : (
-                <>
-                  <Row gutter={[16, 16]}>
-                    {templates.map(this.renderTemplateCard)}
-                  </Row>
+        {/* Content */}
+        <div className="rounded-lg border border-border bg-card p-6">
+          {loading ? (
+            <div className="flex items-center justify-center py-20">
+              <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+            </div>
+          ) : templates.length === 0 ? (
+            <div className="text-center text-muted-foreground py-20">
+              {i18next.t("general:No data")}
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                {templates.map((template) => (
+                  <div
+                    key={`${template.owner}/${template.name}`}
+                    className="rounded-lg border border-border bg-background p-4 h-[200px] flex flex-col cursor-pointer hover:border-primary/50 hover:shadow-lg transition-all"
+                    onClick={() => this.handleAddApplication(template)}
+                  >
+                    <div className="flex items-center gap-3 mb-2">
+                      {template.icon ? (
+                        <img src={template.icon} alt="" className="w-10 h-10 rounded-md object-cover shrink-0" />
+                      ) : (
+                        <div className="w-10 h-10 rounded-md bg-secondary flex items-center justify-center shrink-0">
+                          <Grid3X3 className="w-5 h-5 text-muted-foreground" />
+                        </div>
+                      )}
+                      <h3 className="text-sm font-medium text-foreground truncate flex-1">
+                        {template.displayName || template.name}
+                      </h3>
+                    </div>
 
-                  <div style={{display: "flex", justifyContent: "flex-end", marginTop: "24px"}}>
-                    <Pagination
-                      current={pagination.current}
-                      total={pagination.total}
-                      pageSize={pagination.pageSize}
-                      showSizeChanger
-                      showQuickJumper
-                      showTotal={(total, range) => i18next.t("general:{total} in total").replace("{total}", this.state.pagination.total)}
-                      onChange={this.handlePaginationChange}
-                      pageSizeOptions={["12", "24", "50", "100"]}
-                    />
+                    <p className="text-xs text-muted-foreground flex-1 line-clamp-3">
+                      {template.description || ""}
+                    </p>
+
+                    <div className="flex items-center justify-between mt-auto pt-2">
+                      <div>
+                        {template.version && (
+                          <span className="inline-block px-2 py-0.5 rounded text-xs bg-primary/10 text-primary">
+                            {template.version}
+                          </span>
+                        )}
+                      </div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          this.handleAddApplication(template);
+                        }}
+                        className="rounded bg-primary px-3 py-1 text-xs text-primary-foreground hover:bg-primary/90 transition-colors"
+                      >
+                        {i18next.t("general:Add")}
+                      </button>
+                    </div>
                   </div>
-                </>
+                ))}
+              </div>
+
+              {/* Pagination */}
+              {totalPages > 1 && (
+                <div className="flex items-center justify-end gap-2 mt-6">
+                  <button
+                    onClick={() => this.handlePaginationChange(pagination.current - 1)}
+                    disabled={pagination.current <= 1}
+                    className="p-1.5 rounded border border-border text-muted-foreground hover:text-foreground disabled:opacity-30 transition-colors"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  <span className="text-sm text-muted-foreground">
+                    {pagination.current} / {totalPages}
+                  </span>
+                  <button
+                    onClick={() => this.handlePaginationChange(pagination.current + 1)}
+                    disabled={pagination.current >= totalPages}
+                    className="p-1.5 rounded border border-border text-muted-foreground hover:text-foreground disabled:opacity-30 transition-colors"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                  <span className="text-xs text-muted-foreground ml-2">
+                    {i18next.t("general:{total} in total").replace("{total}", pagination.total)}
+                  </span>
+                </div>
               )}
-            </Spin>
-          </Card>
-        </Content>
-      </Layout>
+            </>
+          )}
+        </div>
+      </div>
     );
   }
 }

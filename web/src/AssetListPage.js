@@ -14,8 +14,6 @@
 
 import React from "react";
 import {Link} from "react-router-dom";
-import {Button, Select, Table, Tooltip} from "antd";
-import {ReloadOutlined} from "@ant-design/icons";
 import moment from "moment";
 import * as Setting from "./Setting";
 import * as AssetBackend from "./backend/AssetBackend";
@@ -27,7 +25,6 @@ import PopconfirmModal from "./modal/PopconfirmModal";
 import {JsonCodeMirrorPopover} from "./common/JsonCodeMirrorWidget";
 import {ScanDetailPopover} from "./common/ScanDetailPopover";
 
-const {Option} = Select;
 
 class AssetListPage extends BaseListPage {
   constructor(props) {
@@ -303,9 +300,9 @@ class AssetListPage extends BaseListPage {
         ...this.getColumnSearchProps("id"),
         render: (text, record, index) => {
           return (
-            <Tooltip title={text}>
+            
               <span>{Setting.getShortText(text, 25)}</span>
-            </Tooltip>
+            
           );
         },
       },
@@ -387,7 +384,7 @@ class AssetListPage extends BaseListPage {
         render: (text, record, index) => {
           return (
             <div>
-              <Button style={{marginTop: "10px", marginBottom: "10px", marginRight: "10px"}} type="primary" onClick={() => this.props.history.push(`/assets/${record.name}`)}>{i18next.t("general:Edit")}</Button>
+              <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginTop: "10px", marginBottom: "10px", marginRight: "10px"}> this.props.history.push(`/assets/${record.name}`)}>{i18next.t("general:Edit")}</button>
               <PopconfirmModal
                 title={i18next.t("general:Sure to delete") + `: ${record.name} ?`}
                 onConfirm={() => this.deleteAsset(index)}
@@ -410,38 +407,20 @@ class AssetListPage extends BaseListPage {
 
     return (
       <div>
-        <Table scroll={{x: "max-content"}} columns={columns} dataSource={assets} rowKey={(record) => `${record.owner}/${record.name}`} size="middle" bordered pagination={paginationProps}
-          title={() => (
-            <div>
-              {i18next.t("general:Assets")}
-              <span style={{marginLeft: 32}}>
-                {i18next.t("general:Provider")}:
-                <Select size={"small"}
-                  style={{width: 280, marginLeft: 8, marginRight: 16, marginTop: 2}}
-                  value={this.state.selectedProvider}
-                  onChange={(value) => this.setState({selectedProvider: value})}
-                >
-                  {this.state.providers.map((provider) => {
-                    const logo = this.getProviderLogo(provider.name);
-                    return (
-                      <Option key={provider.name} value={provider.name}>
-                        <div style={{display: "flex", alignItems: "center", gap: "8px"}}>
-                          {logo && <img src={logo} alt={provider.name} style={{width: "16px", height: "16px"}} />}
+        <div className="overflow-x-auto border border-zinc-800 rounded-lg"><table className="w-full text-sm text-left"><thead className="bg-zinc-900/80 border-b border-zinc-800"><tr>{columns.map(col => <th key={col.key || col.dataIndex} className="px-3 py-2 text-xs font-medium text-zinc-400 whitespace-nowrap">{col.title}</th>)}</tr></thead><tbody className="divide-y divide-zinc-800/50">{(assets || []).map((record, index) => <tr key={typeof {(record) => `${record.owner} === "function" ? ({(record) => `${record.owner})(record) : record[{(record) => `${record.owner}] || index} className="hover:bg-zinc-900/50 transition-colors">{columns.map(col => <td key={col.key || col.dataIndex} className="px-3 py-2 text-zinc-300 whitespace-nowrap">{col.render ? col.render(record[col.dataIndex], record, index) : record[col.dataIndex]}</td>)}</tr>)}</tbody></table></div>}
                           <span>{provider.name}</span>
                         </div>
-                      </Option>
+                      </option>
                     );
                   })}
-                </Select>
-                <Button size={"small"}
-                  type="primary"
-                  icon={<ReloadOutlined />}
+                </select>
+                <button className="px-2 py-1 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200">}
                   loading={this.state.scanning}
                   onClick={() => this.scanAssets()}
                   disabled={!this.state.selectedProvider}
                 >
                   {i18next.t("asset:Scan")}
-                </Button>
+                </button>
               </span>
             </div>
           )}
