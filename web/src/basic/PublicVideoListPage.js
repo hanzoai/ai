@@ -13,7 +13,6 @@
 // limitations under the License.
 
 import React from "react";
-import {Radio} from "antd";
 import * as VideoBackend from "../backend/VideoBackend";
 import GridCards from "./GridCards";
 import i18next from "i18next";
@@ -62,14 +61,14 @@ const PublicVideoListPage = (props) => {
 
   const renderRadio = () => {
     return (
-      <Radio.Group block style={{marginBottom: "10px", width: "100%"}} buttonStyle="solid" value={grade} onChange={e => {
+      <div className="flex gap-2"> {
         setGrade(e.target.value);
       }}>
-        <Radio.Button value={"All"}>{i18next.t("store:All")}</Radio.Button>
-        <Radio.Button value={"Grade 1"}>{i18next.t("video:Grade 1")}</Radio.Button>
-        <Radio.Button value={"Grade 2"}>{i18next.t("video:Grade 2")}</Radio.Button>
-        <Radio.Button value={"Grade 3"}>{i18next.t("video:Grade 3")}</Radio.Button>
-      </Radio.Group>
+        <button className="px-3 py-1.5 bg-zinc-800 text-zinc-300 rounded text-xs hover:bg-zinc-700">{i18next.t("store:All")}</button>
+        <button className="px-3 py-1.5 bg-zinc-800 text-zinc-300 rounded text-xs hover:bg-zinc-700">{i18next.t("video:Grade 1")}</button>
+        <button className="px-3 py-1.5 bg-zinc-800 text-zinc-300 rounded text-xs hover:bg-zinc-700">{i18next.t("video:Grade 2")}</button>
+        <button className="px-3 py-1.5 bg-zinc-800 text-zinc-300 rounded text-xs hover:bg-zinc-700">{i18next.t("video:Grade 3")}</button>
+      </div>
     );
   };
 

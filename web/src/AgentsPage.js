@@ -13,9 +13,9 @@
 // limitations under the License.
 
 import React from "react";
-import {Card, Spin} from "antd";
 import * as AgentsBackend from "./backend/AgentsBackend";
 import i18next from "i18next";
+import {Loader2} from "lucide-react";
 
 class AgentsPage extends React.Component {
   constructor(props) {
@@ -59,21 +59,21 @@ class AgentsPage extends React.Component {
     if (this.state.loading) {
       return (
         <div style={{display: "flex", justifyContent: "center", alignItems: "center", height: "60vh"}}>
-          <Spin size="large" tip={i18next.t("general:Loading...")} />
+          <div className="flex justify-center py-8"><div className="w-8 h-8 border-2 border-zinc-700 border-t-white rounded-full animate-spin" /></div>
         </div>
       );
     }
 
     if (this.state.error) {
       return (
-        <Card title={i18next.t("general:Agents")}>
+        <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4">
           <div style={{textAlign: "center", padding: "40px"}}>
             <p>{i18next.t("general:Failed to load agents dashboard")}: {this.state.error}</p>
             <p style={{color: "#999", fontSize: "12px"}}>
               {i18next.t("general:Configure AGENTS_DASHBOARD_URL environment variable to set the agents control plane URL")}
             </p>
           </div>
-        </Card>
+        </div>
       );
     }
 

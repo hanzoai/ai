@@ -13,7 +13,6 @@
 // limitations under the License.
 
 import React from "react";
-import {Button, Col, Input, Radio, Row, Select} from "antd";
 import * as Setting from "../Setting";
 import i18next from "i18next";
 import * as AssetBackend from "../backend/AssetBackend";
@@ -21,7 +20,6 @@ import * as ProviderBackend from "../backend/ProviderBackend";
 import * as ScanBackend from "../backend/ScanBackend";
 import {ScanResultRenderer} from "./ScanResultRenderer";
 
-const {Option} = Select;
 
 const DEFAULT_SCAN_TARGET = "127.0.0.1";
 const DEFAULT_SCAN_COMMAND = "-sn %s";
@@ -676,16 +674,12 @@ class TestScanWidget extends React.Component {
     return (
       <div>
         {isScanEditPage && (
-          <Row style={{marginTop: "20px"}} >
-            <Col style={{marginTop: "5px"}} span={Setting.isMobile() ? 22 : 2}>
+          <div className="flex flex-col sm:flex-row gap-2 mt-4">
+            <div className="flex-1">
               {Setting.getLabel(i18next.t("general:Provider"), i18next.t("general:Provider - Tooltip"))} :
-            </Col>
-            <Col span={22} >
-              <Select
-                virtual={false}
-                style={{width: "100%"}}
-                value={this.state.selectedProvider}
-                onChange={(value) => {
+            </div>
+            <div className="flex-1">
+              <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.selectedProvider}> {
                   // Reset command to defaults when provider changes (template auto-updates based on command)
                   this.setDefaultProviderAndCommand(value);
                 }}
@@ -694,28 +688,25 @@ class TestScanWidget extends React.Component {
                   this.state.providers?.map((provider, index) => {
                     const logo = this.getProviderLogo(provider.name);
                     return (
-                      <Option key={index} value={provider.name}>
+                      <option key={index} value={provider.name}>
                         <div style={{display: "flex", alignItems: "center", gap: "8px"}}>
                           {logo && <img src={logo} alt={provider.name} style={{width: "16px", height: "16px"}} />}
                           <span>{provider.name}</span>
                         </div>
-                      </Option>
+                      </option>
                     );
                   })
                 }
-              </Select>
-            </Col>
-          </Row>
+              </select>
+            </div>
+          </div>
         )}
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={Setting.isMobile() ? 22 : 2}>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("scan:Target mode"), i18next.t("scan:Target mode - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Radio.Group
-              disabled={isRemote}
-              value={this.state.targetMode}
-              onChange={(e) => {
+          </div>
+          <div className="flex-1">
+            <div className="flex gap-2"> {
                 const newMode = e.target.value;
                 this.setState({targetMode: newMode});
                 this.clearFieldsByTargetMode(newMode);
@@ -729,15 +720,15 @@ class TestScanWidget extends React.Component {
             >
               <Radio value="Manual Input">{i18next.t("scan:Manual Input")}</Radio>
               <Radio value="Asset">{i18next.t("general:Asset")}</Radio>
-            </Radio.Group>
-          </Col>
-        </Row>
+            </div>
+          </div>
+        </div>
         {this.state.targetMode === "Manual Input" ? (
-          <Row style={{marginTop: "20px"}} >
-            <Col style={{marginTop: "5px"}} span={Setting.isMobile() ? 22 : 2}>
+          <div className="flex flex-col sm:flex-row gap-2 mt-4">
+            <div className="flex-1">
               {Setting.getLabel(i18next.t("scan:Target"), i18next.t("scan:Target - Tooltip"))} :
-            </Col>
-            <Col span={22} >
+            </div>
+            <div className="flex-1">
               <Input
                 disabled={isRemote}
                 value={this.state.scanTarget}
@@ -753,19 +744,15 @@ class TestScanWidget extends React.Component {
                   }
                 }}
               />
-            </Col>
-          </Row>
+            </div>
+          </div>
         ) : (
-          <Row style={{marginTop: "20px"}} >
-            <Col style={{marginTop: "5px"}} span={Setting.isMobile() ? 22 : 2}>
+          <div className="flex flex-col sm:flex-row gap-2 mt-4">
+            <div className="flex-1">
               {Setting.getLabel(i18next.t("general:Asset"), i18next.t("scan:Asset - Tooltip"))} :
-            </Col>
-            <Col span={22} >
-              <Select
-                virtual={false}
-                style={{width: "100%"}}
-                value={this.state.selectedAsset}
-                onChange={(value) => {
+            </div>
+            <div className="flex-1">
+              <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.selectedAsset}> {
                   this.setState({selectedAsset: value});
                   if (this.props.onUpdateProvider) {
                     this.props.onUpdateProvider("asset", value);
@@ -780,27 +767,25 @@ class TestScanWidget extends React.Component {
                     const typeIcons = Setting.getAssetTypeIcons();
                     const icon = typeIcons[asset.type];
                     return (
-                      <Option key={index} value={asset.name}>
+                      <option key={index} value={asset.name}>
                         <div style={{display: "flex", alignItems: "center", gap: "8px"}}>
                           {icon && <img src={icon} alt={asset.type} style={{width: "16px", height: "16px"}} />}
                           <span>{`${asset.displayName} (${asset.name})`}</span>
                         </div>
-                      </Option>
+                      </option>
                     );
                   })
                 }
-              </Select>
-            </Col>
-          </Row>
+              </select>
+            </div>
+          </div>
         )}
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={Setting.isMobile() ? 22 : 2}>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Template"), i18next.t("general:Template - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Radio.Group
-              disabled={isRemote}
-              value={this.getCommandTemplates().find(t => t.command === this.state.scanCommand)?.id || "custom"}
+          </div>
+          <div className="flex-1">
+            <div className="flex gap-2"> t.command === this.state.scanCommand)?.id || "custom"}
               onChange={(e) => {
                 const value = e.target.value;
                 const template = this.getCommandTemplates().find(t => t.id === value);
@@ -820,14 +805,14 @@ class TestScanWidget extends React.Component {
                   <Radio key={item.id} value={item.id}>{item.name}</Radio>
                 ))
               }
-            </Radio.Group>
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={Setting.isMobile() ? 22 : 2}>
+            </div>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("container:Command"), i18next.t("container:Command - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+          </div>
+          <div className="flex-1">
             <Input
               disabled={isRemote}
               value={this.state.scanCommand}
@@ -842,39 +827,31 @@ class TestScanWidget extends React.Component {
                 }
               }}
             />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={Setting.isMobile() ? 22 : 2}>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Action"), i18next.t("general:Action - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Button
-              disabled={isRemote}
-              style={{marginBottom: "10px"}}
-              loading={this.state.scanButtonLoading}
-              type="primary"
-              onClick={() => this.testScan()}
+          </div>
+          <div className="flex-1">
+            <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200 disabled:opacity-50" disabled={isRemote} style={{marginBottom: "10px"}> this.testScan()}
             >
               {i18next.t("asset:Scan")}
-            </Button>
-            <Button
-              disabled={isRemote}
-              style={{marginBottom: "10px", marginLeft: "10px"}}
-              onClick={() => this.clearScan()}
+            </button>
+            <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-50" disabled={isRemote} style={{marginBottom: "10px", marginLeft: "10px"}> this.clearScan()}
             >
               {i18next.t("general:Clear")}
-            </Button>
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={Setting.isMobile() ? 22 : 2}>
+            </button>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Result"), i18next.t("general:Result - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+          </div>
+          <div className="flex-1">
             {this.renderScanResult()}
-          </Col>
-        </Row>
+          </div>
+        </div>
       </div>
     );
   }

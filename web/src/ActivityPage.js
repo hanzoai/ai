@@ -13,7 +13,6 @@
 // limitations under the License.
 
 import React from "react";
-import {Col, Row, Select, Statistic} from "antd";
 import BaseListPage from "./BaseListPage";
 import * as Setting from "./Setting";
 import * as ActivityBackend from "./backend/ActivityBackend";
@@ -21,7 +20,6 @@ import ReactEcharts from "echarts-for-react";
 import i18next from "i18next";
 import * as UsageBackend from "./backend/UsageBackend";
 
-const {Option} = Select;
 
 class ActivityPage extends BaseListPage {
   constructor(props) {
@@ -190,22 +188,22 @@ class ActivityPage extends BaseListPage {
     const isLoading = activityResponse === undefined;
 
     return (
-      <Row gutter={16}>
-        <Col span={3}>
+      <div className="flex flex-col sm:flex-row gap-2 mt-4">
+        <div className="flex-1">
           <Statistic
             loading={isLoading}
             title={i18next.t("general:Success")}
             value={lastActivity.ok}
           />
-        </Col>
-        <Col span={3}>
+        </div>
+        <div className="flex-1">
           <Statistic
             loading={isLoading}
             title={i18next.t("general:Error")}
             value={lastActivity.error}
           />
-        </Col>
-      </Row>
+        </div>
+      </div>
     );
   }
 
@@ -238,20 +236,15 @@ class ActivityPage extends BaseListPage {
     return (
       <div style={{marginTop: "-10px", float: "right"}}>
         {this.renderDropdown()}
-        <Select
-          mode="multiple"
-          style={{width: "300px", marginBottom: "10px"}}
-          placeholder="Select operations"
-          value={this.state.selectedOps}
-          onChange={(selectedOps) => this.setState({selectedOps})}
+        <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.selectedOps}> this.setState({selectedOps})}
           allowClear
           maxTagCount="responsive"
           maxTagTextLength={10}
         >
           {this.state.allOps.map(op => (
-            <Option key={op} value={op}>{op}</Option>
+            <option key={op} value={op}>{op}</option>
           ))}
-        </Select>
+        </select>
       </div>
     );
   }
@@ -286,14 +279,11 @@ class ActivityPage extends BaseListPage {
     return (
       <div style={{display: "flex", alignItems: "center", marginBottom: "10px"}}>
         <span style={{width: "50px", marginRight: "10px"}}>{i18next.t("general:User")}:</span>
-        <Select
-          virtual={true}
-          value={this.state.selectedUser}
-          onChange={(value => handleChange(value))}
+        <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.selectedUser}> handleChange(value))}
           style={{width: "100%"}}
         >
           {users_options}
-        </Select>
+        </select>
       </div>
     );
   }
@@ -337,12 +327,12 @@ class ActivityPage extends BaseListPage {
       grouped.push(this.subPieCharts.slice(i, i + 2));
     }
     return (
-      <Col span={22} key="subPieChars">
+      <div className="flex-1">
         {
           grouped.map((r, rowIndex) => (
-            <Row key={`row-${rowIndex}`} style={{marginBottom: 16}}>
+            <div className="flex flex-col sm:flex-row gap-2 mt-4">
               {r.map((dataName, colIndex) => (
-                <Col span={12} key={`col-${rowIndex}-${colIndex}`}>
+                <div className="flex-1">
                   <ReactEcharts
                     option={this.renderPieChart(this.state["activities" + dataName] || [])}
                     style={{
@@ -360,12 +350,12 @@ class ActivityPage extends BaseListPage {
                       text: "",
                     }}
                   />
-                </Col>
+                </div>
               ))}
-            </Row>
+            </div>
           ))
         }
-      </Col>
+      </div>
     );
   }
 
@@ -374,9 +364,9 @@ class ActivityPage extends BaseListPage {
     const activitiesAction = this.state[fieldName];
     return (
       <React.Fragment>
-        <Row style={{marginTop: "20px"}} >
-          <Col span={1} />
-          <Col span={11} >
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
+          <div className="flex-1">
             <ReactEcharts
               option={this.renderPieChart(activitiesAction || [])}
               style={{
@@ -394,8 +384,8 @@ class ActivityPage extends BaseListPage {
                 text: "",
               }}
             />
-          </Col>
-          <Col span={11} >
+          </div>
+          <div className="flex-1">
             <ReactEcharts
               option={this.renderLineChart(activitiesAction || [], this.state.selectedOps || [])}
               style={{
@@ -414,14 +404,14 @@ class ActivityPage extends BaseListPage {
                 text: "",
               }}
             />
-          </Col>
-          <Col span={1} />
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col span={1} key="left-spacer" />
+          </div>
+          <div className="flex-1">
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
           {this.renderSubPieCharts()}
-          <Col span={1} key="left-spacer" />
-        </Row>
+          <div className="flex-1">
+        </div>
       </React.Fragment>
     );
   }
@@ -429,21 +419,21 @@ class ActivityPage extends BaseListPage {
   render() {
     return (
       <div style={{backgroundColor: this.props.themeAlgorithm && this.props.themeAlgorithm.includes("dark") ? "black" : "white"}}>
-        <Row style={{marginTop: "20px"}} >
-          <Col span={1} />
-          <Col span={17} >
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
+          <div className="flex-1">
             {this.renderStatistic(this.state["activitiesresponse"])}
-          </Col>
-          <Col span={5} >
+          </div>
+          <div className="flex-1">
             {this.renderRadio()}
-          </Col>
-          <Col span={1} />
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col span={24} >
+          </div>
+          <div className="flex-1">
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <div className="flex-1">
             {this.renderChart()}
-          </Col>
-        </Row>
+          </div>
+        </div>
       </div>
     );
   }

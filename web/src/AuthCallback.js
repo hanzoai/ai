@@ -12,87 +12,52 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import React from "react";
-import {Button, Modal, Result, Spin} from "antd";
+import React, {useEffect, useState} from "react";
 import {withRouter} from "react-router-dom";
+import {AlertCircle, HelpCircle, Info, Loader2} from "lucide-react";
 import * as Setting from "./Setting";
 import i18next from "i18next";
 
-class AuthCallback extends React.Component {
-  constructor(props) {
-    super(props);
-    this.state = {
-      classes: props,
-      msg: null,
-      errorDetails: null,
-      showDetailsModal: false,
-    };
-  }
+function AuthCallback() {
+  const [msg, setMsg] = useState(null);
+  const [errorDetails, setErrorDetails] = useState(null);
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
 
-  UNSAFE_componentWillMount() {
-    this.login();
-  }
+  useEffect(() => {
+    login();
+  }, []);
 
-  getFromLink() {
+  function getFromLink() {
     const from = sessionStorage.getItem("from");
-    if (from === null) {
-      return "/";
-    }
-    return from;
+    return from === null ? "/" : from;
   }
 
-  login() {
+  function login() {
     Setting.signin().then((res) => {
       if (res.status === "ok") {
         Setting.showMessage("success", i18next.t("general:Successfully logged in"));
-
-        const link = this.getFromLink();
+        const link = getFromLink();
         Setting.goToLink(link);
       } else {
-        this.setState({
-          msg: res.msg,
-          errorDetails: res,
-        });
+        setMsg(res.msg);
+        setErrorDetails(res);
       }
     });
   }
 
-  handleHelp = () => {
-    window.open("https://hanzo.ai/docs/cloud", "_blank");
-  };
-
-  handleDetails = () => {
-    this.setState({showDetailsModal: true});
-  };
-
-  handleCloseDetails = () => {
-    this.setState({showDetailsModal: false});
-  };
-
-  renderErrorDetails() {
-    const {errorDetails} = this.state;
-    if (!errorDetails) {
-      return null;
-    }
+  function renderErrorDetails() {
+    if (!errorDetails) {return null;}
 
     const details = [];
-
     if (errorDetails.msg) {
-      details.push({
-        label: i18next.t("login:Error Message"),
-        value: errorDetails.msg,
-      });
+      details.push({label: i18next.t("login:Error Message"), value: errorDetails.msg});
     }
-
-    // Display additional error details for debugging purposes.
-    // The backend should sanitize sensitive information before sending it.
     if (errorDetails.data) {
       details.push({
         label: i18next.t("login:Additional Information"),
         value: typeof errorDetails.data === "string" ? errorDetails.data : JSON.stringify(errorDetails.data, null, 2),
       });
     }
-
     if (errorDetails.data2) {
       details.push({
         label: i18next.t("login:More Details"),
@@ -101,19 +66,11 @@ class AuthCallback extends React.Component {
     }
 
     return (
-      <div style={{textAlign: "left"}}>
+      <div className="text-left space-y-4">
         {details.map((detail, index) => (
-          <div key={index} style={{marginBottom: "16px"}}>
-            <strong>{detail.label}:</strong>
-            <pre style={{
-              marginTop: "8px",
-              padding: "12px",
-              backgroundColor: "#f5f5f5",
-              borderRadius: "4px",
-              overflowX: "auto",
-              whiteSpace: "pre-wrap",
-              wordBreak: "break-word",
-            }}>
+          <div key={index}>
+            <p className="text-sm font-semibold text-zinc-300 mb-1">{detail.label}:</p>
+            <pre className="text-xs text-zinc-400 bg-zinc-900 border border-zinc-800 rounded-md p-3 overflow-x-auto whitespace-pre-wrap break-words">
               {detail.value}
             </pre>
           </div>
@@ -122,48 +79,67 @@ class AuthCallback extends React.Component {
     );
   }
 
-  render() {
+  if (msg === null) {
     return (
-      <div style={{textAlign: "center"}}>
-        {this.state.msg === null ? (
-          <Spin
-            size="large"
-            tip={i18next.t("login:Signing in...")}
-            style={{paddingTop: "10%"}}
-          />
-        ) : (
-          <div style={{display: "inline"}}>
-            <Result
-              status="error"
-              title={i18next.t("login:Login Error")}
-              subTitle={this.state.msg}
-              extra={[
-                <Button type="primary" key="details" onClick={this.handleDetails}>
-                  {i18next.t("login:Details")}
-                </Button>,
-                <Button key="help" onClick={this.handleHelp}>
-                  {i18next.t("login:Help")}
-                </Button>,
-              ]}
-            />
-            <Modal
-              title={i18next.t("login:Error Details")}
-              open={this.state.showDetailsModal}
-              onCancel={this.handleCloseDetails}
-              footer={[
-                <Button key="close" type="primary" onClick={this.handleCloseDetails}>
-                  {i18next.t("general:Close")}
-                </Button>,
-              ]}
-              width={700}
-            >
-              {this.renderErrorDetails()}
-            </Modal>
-          </div>
-        )}
+      <div className="flex flex-col items-center justify-center py-20">
+        <Loader2 className="w-12 h-12 text-zinc-500 animate-spin mb-4" />
+        <p className="text-zinc-400">{i18next.t("login:Signing in...")}</p>
       </div>
     );
   }
+
+  return (
+    <div className="flex flex-col items-center justify-center py-20">
+      <AlertCircle className="w-16 h-16 text-red-500 mb-4" />
+      <h1 className="text-2xl font-bold text-white mb-2">{i18next.t("login:Login Error")}</h1>
+      <p className="text-zinc-400 mb-6 max-w-md text-center">{msg}</p>
+
+      <div className="flex gap-3">
+        <button
+          onClick={() => setShowDetailsModal(true)}
+          className="flex items-center gap-2 px-4 py-2 bg-white text-black rounded-md text-sm font-medium hover:bg-zinc-200 transition-colors"
+        >
+          <Info className="w-4 h-4" />
+          {i18next.t("login:Details")}
+        </button>
+        <button
+          onClick={() => window.open("https://hanzo.ai/docs/cloud", "_blank")}
+          className="flex items-center gap-2 px-4 py-2 bg-zinc-800 text-zinc-300 rounded-md text-sm hover:bg-zinc-700 transition-colors"
+        >
+          <HelpCircle className="w-4 h-4" />
+          {i18next.t("login:Help")}
+        </button>
+      </div>
+
+      {/* Details modal */}
+      {showDetailsModal && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-lg shadow-xl max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-4 border-b border-zinc-800">
+              <h2 className="text-lg font-semibold text-white">{i18next.t("login:Error Details")}</h2>
+              <button
+                onClick={() => setShowDetailsModal(false)}
+                className="text-zinc-500 hover:text-white transition-colors"
+              >
+                &times;
+              </button>
+            </div>
+            <div className="p-4">
+              {renderErrorDetails()}
+            </div>
+            <div className="flex justify-end p-4 border-t border-zinc-800">
+              <button
+                onClick={() => setShowDetailsModal(false)}
+                className="px-4 py-2 bg-white text-black rounded-md text-sm font-medium hover:bg-zinc-200 transition-colors"
+              >
+                {i18next.t("general:Close")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default withRouter(AuthCallback);

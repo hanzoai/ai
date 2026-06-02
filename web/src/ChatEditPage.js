@@ -13,7 +13,6 @@
 // limitations under the License.
 
 import React from "react";
-import {Button, Card, Col, Input, Row, Select, Switch} from "antd";
 import * as ChatBackend from "./backend/ChatBackend";
 import * as ProviderBackend from "./backend/ProviderBackend";
 import * as Setting from "./Setting";
@@ -21,8 +20,6 @@ import i18next from "i18next";
 import ChatBox from "./ChatBox";
 import {renderText} from "./ChatMessageRender";
 import * as MessageBackend from "./backend/MessageBackend";
-
-const {Option} = Select;
 
 class ChatEditPage extends React.Component {
   constructor(props) {
@@ -34,7 +31,6 @@ class ChatEditPage extends React.Component {
       messages: null,
       provider: null,
       providers: [],
-      // users: [],
       isNewChat: props.location?.state?.isNewChat || false,
     };
   }
@@ -43,7 +39,6 @@ class ChatEditPage extends React.Component {
     this.getChat();
     this.getMessages(this.state.chatName);
     this.getProviders();
-    // this.getUser();
   }
 
   getProviders() {
@@ -58,9 +53,7 @@ class ChatEditPage extends React.Component {
   }
 
   getProvider(providerName) {
-    if (!providerName) {
-      return;
-    }
+    if (!providerName) {return;}
     ProviderBackend.getProvider("admin", providerName)
       .then((res) => {
         if (res.status === "ok") {
@@ -106,183 +99,85 @@ class ChatEditPage extends React.Component {
 
   updateChatField(key, value) {
     value = this.parseChatField(key, value);
-
     const chat = this.state.chat;
     chat[key] = value;
-    this.setState({
-      chat: chat,
-    });
+    this.setState({chat: chat});
+  }
+
+  renderFormRow(label, tooltip, content) {
+    return (
+      <div className="flex items-start gap-4 mt-5">
+        <label className="w-40 shrink-0 pt-1 text-sm text-muted-foreground text-right">
+          {Setting.getLabel(label, tooltip)} :
+        </label>
+        <div className="flex-1">{content}</div>
+      </div>
+    );
   }
 
   renderChat() {
     return (
-      <Card size="small" title={
-        <div>
-          {i18next.t("chat:Edit Chat")}&nbsp;&nbsp;&nbsp;&nbsp;
-          <Button onClick={() => this.submitChatEdit(false)}>{i18next.t("general:Save")}</Button>
-          <Button style={{marginLeft: "20px"}} type="primary" onClick={() => this.submitChatEdit(true)}>{i18next.t("general:Save & Exit")}</Button>
-          {this.state.isNewChat && <Button style={{marginLeft: "20px"}} onClick={() => this.cancelChatEdit()}>{i18next.t("general:Cancel")}</Button>}
+      <div className="rounded-lg border border-border bg-card p-6">
+        <div className="flex items-center gap-4 mb-6">
+          <h2 className="text-lg font-semibold text-foreground">{i18next.t("chat:Edit Chat")}</h2>
+          <button onClick={() => this.submitChatEdit(false)} className="rounded-md border border-border px-3 py-1.5 text-sm text-foreground hover:bg-secondary transition-colors">{i18next.t("general:Save")}</button>
+          <button onClick={() => this.submitChatEdit(true)} className="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground hover:bg-primary/90 transition-colors">{i18next.t("general:Save & Exit")}</button>
+          {this.state.isNewChat && <button onClick={() => this.cancelChatEdit()} className="rounded-md border border-border px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">{i18next.t("general:Cancel")}</button>}
         </div>
-      } style={(Setting.isMobile()) ? {margin: "5px"} : {}} type="inner">
-        {/* <Row style={{marginTop: "10px"}} >*/}
-        {/*  <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>*/}
-        {/*    {Setting.getLabel(i18next.t("general:Organization"), i18next.t("general:Organization - Tooltip"))}:*/}
-        {/*  </Col>*/}
-        {/*  <Col span={22} >*/}
-        {/*    <Select virtual={false} disabled={!Setting.isAdminUser(this.props.account)} style={{width: "100%"}} value={this.state.chat.organization} onChange={(value => {this.updateChatField("organization", value);})}*/}
-        {/*      options={this.state.organizations.map((organization) => Setting.getOption(organization.name, organization.name))*/}
-        {/*      } />*/}
-        {/*  </Col>*/}
-        {/* </Row>*/}
-        <Row style={{marginTop: "10px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("general:Name"), i18next.t("general:Name - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Input value={this.state.chat.name} onChange={e => {
-              this.updateChatField("name", e.target.value);
-            }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("general:Display name"), i18next.t("general:Display name - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Input value={this.state.chat.displayName} onChange={e => {
-              this.updateChatField("displayName", e.target.value);
-            }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("general:Type"), i18next.t("general:Type - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Select virtual={false} style={{width: "100%"}} value={this.state.chat.type} onChange={(value => {
-              this.updateChatField("type", value);
-            })}>
-              {
-                [
-                  {id: "Single", name: i18next.t("chat:Single")},
-                  {id: "Group", name: i18next.t("chat:Group")},
-                  {id: "AI", name: i18next.t("chat:AI")},
-                ].map((item, index) => <Option key={index} value={item.id}>{item.name}</Option>)
-              }
-            </Select>
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("general:Store"), i18next.t("general:Store - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Input value={this.state.chat.store} onChange={e => {
-              this.updateChatField("store", e.target.value);
-            }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("provider:Model provider"), i18next.t("provider:Model provider - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Select
-              virtual={false}
-              style={{width: "100%"}}
-              value={this.state.chat.modelProvider}
-              onChange={(value) => {
-                this.updateChatField("modelProvider", value);
-                this.getProvider(value);
-              }}
-              showSearch
-              filterOption={(input, option) =>
-                option.children[1].toLowerCase().includes(input.toLowerCase())
-              }
-            >
-              {
-                this.state.providers.map((provider, index) => (
-                  <Option key={index} value={provider.name}>
-                    <img width={20} height={20} style={{marginBottom: "3px", marginRight: "10px"}} src={Setting.getProviderLogoURL({category: provider.category, type: provider.type})} alt={provider.type} />
-                    {provider.name}
-                  </Option>
-                ))
-              }
-            </Select>
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("general:Category"), i18next.t("provider:Category - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Input value={this.state.chat.category} onChange={e => {
-              this.updateChatField("category", e.target.value);
-            }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("general:User"), i18next.t("general:User - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Input value={this.state.chat.user} onChange={e => {
-              this.updateChatField("user", e.target.value);
-            }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("chat:User1"), i18next.t("chat:User1 - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Select virtual={false} style={{width: "100%"}} value={this.state.chat.user1} onChange={(value => {this.updateChatField("user1", value);})}
-              options={this.state.chat.users.map((user) => Setting.getOption(`${user}`, `${user}`))
-              } />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("chat:User2"), i18next.t("chat:User2 - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Select virtual={false} style={{width: "100%"}} value={this.state.chat.user2} onChange={(value => {this.updateChatField("user2", value);})}
-              options={[{label: "None", value: ""}, ...this.state.chat.users.map((user) => Setting.getOption(`${user}`, `${user}`))]
-              } />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("general:Users"), i18next.t("general:Users - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Select virtual={false} mode="multiple" style={{width: "100%"}} value={this.state.chat.users}
-              onChange={(value => {this.updateChatField("users", value);})}
-              options={this.state.chat.users.map((user) => Setting.getOption(`${user}`, `${user}`))}
-            />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 19 : 2}>
-            {Setting.getLabel(i18next.t("general:Is deleted"), i18next.t("general:Is deleted - Tooltip"))} :
-          </Col>
-          <Col span={1} >
-            <Switch checked={this.state.chat.isDeleted} onChange={checked => {
-              this.updateChatField("isDeleted", checked);
-            }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("general:Messages"), i18next.t("general:Messages - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <div style={{width: "50%", height: "800px"}}>
-              <ChatBox disableInput={true} hideInput={true} messages={this.state.messages} sendMessage={null} account={this.props.account} />
-            </div>
-          </Col>
-        </Row>
-      </Card>
+
+        {this.renderFormRow(i18next.t("general:Name"), i18next.t("general:Name - Tooltip"),
+          <input className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring" value={this.state.chat.name} onChange={e => this.updateChatField("name", e.target.value)} />
+        )}
+        {this.renderFormRow(i18next.t("general:Display name"), i18next.t("general:Display name - Tooltip"),
+          <input className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring" value={this.state.chat.displayName} onChange={e => this.updateChatField("displayName", e.target.value)} />
+        )}
+        {this.renderFormRow(i18next.t("general:Type"), i18next.t("general:Type - Tooltip"),
+          <select className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring" value={this.state.chat.type} onChange={e => this.updateChatField("type", e.target.value)}>
+            <option value="Single">{i18next.t("chat:Single")}</option>
+            <option value="Group">{i18next.t("chat:Group")}</option>
+            <option value="AI">{i18next.t("chat:AI")}</option>
+          </select>
+        )}
+        {this.renderFormRow(i18next.t("general:Store"), i18next.t("general:Store - Tooltip"),
+          <input className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring" value={this.state.chat.store} onChange={e => this.updateChatField("store", e.target.value)} />
+        )}
+        {this.renderFormRow(i18next.t("provider:Model provider"), i18next.t("provider:Model provider - Tooltip"),
+          <select className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring" value={this.state.chat.modelProvider} onChange={e => { this.updateChatField("modelProvider", e.target.value); this.getProvider(e.target.value); }}>
+            {this.state.providers.map((provider, index) => (
+              <option key={index} value={provider.name}>{provider.name}</option>
+            ))}
+          </select>
+        )}
+        {this.renderFormRow(i18next.t("general:Category"), i18next.t("provider:Category - Tooltip"),
+          <input className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring" value={this.state.chat.category} onChange={e => this.updateChatField("category", e.target.value)} />
+        )}
+        {this.renderFormRow(i18next.t("general:User"), i18next.t("general:User - Tooltip"),
+          <input className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring" value={this.state.chat.user} onChange={e => this.updateChatField("user", e.target.value)} />
+        )}
+        {this.renderFormRow(i18next.t("chat:User1"), i18next.t("chat:User1 - Tooltip"),
+          <select className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring" value={this.state.chat.user1} onChange={e => this.updateChatField("user1", e.target.value)}>
+            {this.state.chat.users.map((user) => (
+              <option key={user} value={user}>{user}</option>
+            ))}
+          </select>
+        )}
+        {this.renderFormRow(i18next.t("chat:User2"), i18next.t("chat:User2 - Tooltip"),
+          <select className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring" value={this.state.chat.user2} onChange={e => this.updateChatField("user2", e.target.value)}>
+            <option value="">None</option>
+            {this.state.chat.users.map((user) => (
+              <option key={user} value={user}>{user}</option>
+            ))}
+          </select>
+        )}
+        {this.renderFormRow(i18next.t("general:Is deleted"), i18next.t("general:Is deleted - Tooltip"),
+          <input type="checkbox" checked={this.state.chat.isDeleted} onChange={e => this.updateChatField("isDeleted", e.target.checked)} className="w-4 h-4 rounded border-border accent-primary" />
+        )}
+        {this.renderFormRow(i18next.t("general:Messages"), i18next.t("general:Messages - Tooltip"),
+          <div className="w-1/2 h-[800px]">
+            <ChatBox disableInput={true} hideInput={true} messages={this.state.messages} sendMessage={null} account={this.props.account} />
+          </div>
+        )}
+      </div>
     );
   }
 
@@ -338,13 +233,11 @@ class ChatEditPage extends React.Component {
   render() {
     return (
       <div>
-        {
-          this.state.chat !== null ? this.renderChat() : null
-        }
-        <div style={{marginTop: "20px", marginLeft: "40px"}}>
-          <Button size="large" onClick={() => this.submitChatEdit(false)}>{i18next.t("general:Save")}</Button>
-          <Button style={{marginLeft: "20px"}} type="primary" size="large" onClick={() => this.submitChatEdit(true)}>{i18next.t("general:Save & Exit")}</Button>
-          {this.state.isNewChat && <Button style={{marginLeft: "20px"}} size="large" onClick={() => this.cancelChatEdit()}>{i18next.t("general:Cancel")}</Button>}
+        {this.state.chat !== null ? this.renderChat() : null}
+        <div className="mt-5 ml-10 flex gap-4">
+          <button onClick={() => this.submitChatEdit(false)} className="rounded-md border border-border px-5 py-2 text-sm text-foreground hover:bg-secondary transition-colors">{i18next.t("general:Save")}</button>
+          <button onClick={() => this.submitChatEdit(true)} className="rounded-md bg-primary px-5 py-2 text-sm text-primary-foreground hover:bg-primary/90 transition-colors">{i18next.t("general:Save & Exit")}</button>
+          {this.state.isNewChat && <button onClick={() => this.cancelChatEdit()} className="rounded-md border border-border px-5 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">{i18next.t("general:Cancel")}</button>}
         </div>
       </div>
     );

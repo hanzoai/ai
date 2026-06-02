@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-const CracoLessPlugin = require("craco-less");
 const path = require("path");
 
 module.exports = {
@@ -28,19 +27,19 @@ module.exports = {
       },
     },
   },
-  plugins: [
-    {
-      plugin: CracoLessPlugin,
-      options: {
-        lessLoaderOptions: {
-          lessOptions: {
-            modifyVars: {"@primary-color": "rgb(89,54,213)", "@border-radius-base": "5px"},
-            javascriptEnabled: true,
-          },
-        },
+  style: {
+    postcss: {
+      loaderOptions: (postcssLoaderOptions) => {
+        postcssLoaderOptions.postcssOptions = {
+          plugins: [
+            require("tailwindcss"),
+            require("autoprefixer"),
+          ],
+        };
+        return postcssLoaderOptions;
       },
     },
-  ],
+  },
   webpack: {
     configure: (webpackConfig, {env, paths}) => {
       paths.appBuild = path.resolve(__dirname, "build-temp");
