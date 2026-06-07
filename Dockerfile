@@ -8,7 +8,7 @@ ENV NODE_OPTIONS="--max-old-space-size=4096"
 RUN pnpm install --frozen-lockfile && pnpm build
 
 
-FROM golang:1.26-alpine AS back
+FROM golang:1.26.4-alpine AS back
 RUN apk add --no-cache git
 WORKDIR /go/src/hanzo-cloud
 COPY go.mod go.sum ./
