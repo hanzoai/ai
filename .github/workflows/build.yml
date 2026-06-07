@@ -57,7 +57,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.26'
+          go-version: '1.26.4'
           cache-dependency-path: ./go.mod
       - name: Tests
         run: go test -v $(go list ./...) -tags skipCi
@@ -87,7 +87,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.26'
+          go-version: '1.26.4'
           cache-dependency-path: ./go.mod
       - run: go version
       - name: Build
@@ -103,7 +103,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.26'
+          go-version: '1.26.4'
           cache: false
 
       # gen a dummy config file
