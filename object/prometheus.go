@@ -18,7 +18,6 @@ import (
 	"time"
 
 	metric "github.com/luxfi/metric"
-	io_prometheus_client "github.com/prometheus/client_model/go"
 )
 
 type PrometheusInfo struct {
@@ -72,32 +71,34 @@ func ClearThroughputPerSecond() {
 
 func GetPrometheusInfo() (*PrometheusInfo, error) {
 	res := &PrometheusInfo{}
-	metricFamilies, err := metric.DefaultGatherer.Gather()
+	metricFamilies, err := metric.DefaultRegistry.Gather()
 	if err != nil {
 		return nil, err
 	}
 	for _, metricFamily := range metricFamilies {
-		switch metricFamily.GetName() {
+		switch metricFamily.Name {
 		case "cloud_api_throughput":
 			res.ApiThroughput = getGaugeVecInfo(metricFamily)
 		case "cloud_api_latency":
 			res.ApiLatency = getHistogramVecInfo(metricFamily)
 		case "cloud_total_throughput":
-			res.TotalThroughput = metricFamily.GetMetric()[0].GetGauge().GetValue()
+			if len(metricFamily.Metrics) > 0 {
+				res.TotalThroughput = metricFamily.Metrics[0].Value.Value
+			}
 		}
 	}
 	return res, nil
 }
 
-func getHistogramVecInfo(metricFamily *io_prometheus_client.MetricFamily) []HistogramVecInfo {
+func getHistogramVecInfo(metricFamily *metric.MetricFamily) []HistogramVecInfo {
 	var histogramVecInfos []HistogramVecInfo
-	for _, metric := range metricFamily.GetMetric() {
-		sampleCount := metric.GetHistogram().GetSampleCount()
-		sampleSum := metric.GetHistogram().GetSampleSum()
+	for _, m := range metricFamily.Metrics {
+		sampleCount := m.Value.SampleCount
+		sampleSum := m.Value.SampleSum
 		latency := sampleSum / float64(sampleCount)
 		histogramVecInfo := HistogramVecInfo{
-			Method:  metric.Label[0].GetValue(),
-			Name:    metric.Label[1].GetValue(),
+			Method:  labelValue(m.Labels, 0),
+			Name:    labelValue(m.Labels, 1),
 			Count:   sampleCount,
 			Latency: fmt.Sprintf("%.3f", latency),
 		}
@@ -106,15 +107,22 @@ func getHistogramVecInfo(metricFamily *io_prometheus_client.MetricFamily) []Hist
 	return histogramVecInfos
 }
 
-func getGaugeVecInfo(metricFamily *io_prometheus_client.MetricFamily) []GaugeVecInfo {
+func getGaugeVecInfo(metricFamily *metric.MetricFamily) []GaugeVecInfo {
 	var counterVecInfos []GaugeVecInfo
-	for _, metric := range metricFamily.GetMetric() {
+	for _, m := range metricFamily.Metrics {
 		counterVecInfo := GaugeVecInfo{
-			Method:     metric.Label[0].GetValue(),
-			Name:       metric.Label[1].GetValue(),
-			Throughput: metric.Gauge.GetValue(),
+			Method:     labelValue(m.Labels, 0),
+			Name:       labelValue(m.Labels, 1),
+			Throughput: m.Value.Value,
 		}
 		counterVecInfos = append(counterVecInfos, counterVecInfo)
 	}
 	return counterVecInfos
+}
+
+func labelValue(labels []metric.LabelPair, i int) string {
+	if i < 0 || i >= len(labels) {
+		return ""
+	}
+	return labels[i].Value
 }
