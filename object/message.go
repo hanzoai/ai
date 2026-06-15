@@ -80,7 +80,7 @@ func GetGlobalMessages() ([]*Message, error) {
 
 func GetGlobalFailMessages() ([]*Message, error) {
 	messages := []*Message{}
-	err := findAll(adapter.db, "message", &messages, dbx.NewExp("error_text != ?", dbx.Params{"p0": ""}), "owner ASC", "created_time DESC")
+	err := findAll(adapter.db, "message", &messages, dbx.NewExp("error_text != {:p0}", dbx.Params{"p0": ""}), "owner ASC", "created_time DESC")
 	if err != nil {
 		return messages, err
 	}
