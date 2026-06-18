@@ -25,10 +25,10 @@ import (
 	"github.com/beego/beego"
 	"github.com/beego/beego/logs"
 	_ "github.com/beego/beego/session/redis"
+	"github.com/hanzoai/ai"
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/controllers"
 	"github.com/hanzoai/ai/object"
-	"github.com/hanzoai/ai"
 	"github.com/hanzoai/ai/proxy"
 	"github.com/hanzoai/ai/routers"
 	"github.com/hanzoai/ai/util"
@@ -180,6 +180,16 @@ func main() {
 	// In the standalone mode this is a no-op; in the embedded mode the
 	// cloud orchestrator's zip.App forwards /v1/ai/* into this handler.
 	ai.SetHandler(beego.BeeApp.Handlers)
+
+	// Register the canonical HIP-0110 HTTP-over-ZAP terminal (luxfi/zap/forward)
+	// on the inference node so the ZAP gateway can route any HTTP request to the
+	// full beego surface. beego.BeeApp.Handlers is the fully-wrapped
+	// ControllerRegister: every BeforeRouter filter inserted above — including
+	// the balance gate (BalanceGateFilter) and all auth/tenant filters — runs on
+	// the bridged request before the route dispatches. Purely additive; the
+	// :8000 HTTP path and the existing ZAP handlers (MsgType 100/200) are
+	// untouched. Gated by ZAP_ENABLED via object.GetZapNode() returning nil.
+	controllers.InitForwardBridge(beego.BeeApp.Handlers)
 
 	go object.ClearThroughputPerSecond()
 
