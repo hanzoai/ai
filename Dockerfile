@@ -11,8 +11,16 @@ RUN pnpm install --frozen-lockfile && pnpm build
 FROM golang:1.26.4-alpine AS back
 RUN apk add --no-cache git
 WORKDIR /go/src/hanzo-cloud
+# Private cross-org modules (hanzoai/*, luxfi/* — luxfi/zap forward bridge) are
+# fetched via authenticated git, bypassing the public proxy. gh_token is the
+# shared docker-build.yml BuildKit secret; no-op when absent (local/dev).
+ENV GOPRIVATE=github.com/hanzoai/*,github.com/luxfi/*,github.com/zap-proto/*
 COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=secret,id=gh_token \
+    if [ -s /run/secrets/gh_token ]; then \
+      git config --global url."https://x-access-token:$(cat /run/secrets/gh_token)@github.com/".insteadOf "https://github.com/"; \
+    fi && \
     go mod download
 COPY . .
 RUN --mount=type=cache,target=/go/pkg/mod \
