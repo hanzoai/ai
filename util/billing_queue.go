@@ -171,7 +171,7 @@ func (q *BillingQueue) deliver(record *BillingRecord) {
 			}
 		}
 
-		err := q.post(url, record.Body)
+		err := q.post(url, record.Body, record.User)
 		if err == nil {
 			return
 		}
@@ -184,19 +184,19 @@ func (q *BillingQueue) deliver(record *BillingRecord) {
 		record.User, record.Model, record.RequestID, billingMaxRetries)
 }
 
-// post sends a single HTTP POST to the Commerce billing endpoint.
+// post sends a single HTTP POST to the Commerce billing endpoint. userKey
+// ("owner/name") supplies the X-IAM-Org-Id tenant scope so the usage debits the
+// right tenant ledger.
 // Returns nil on 2xx, a retryable error on 5xx/network errors, and a
 // non-retryable error on 4xx (which will still be retried — Commerce
 // should not return 4xx for valid records, so retrying is safer than dropping).
-func (q *BillingQueue) post(url string, body []byte) error {
+func (q *BillingQueue) post(url string, body []byte, userKey string) error {
 	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("build request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if q.token != "" {
-		req.Header.Set("Authorization", "Bearer "+q.token)
-	}
+	SetCommerceAuthHeaders(req, q.token, userKey)
 
 	resp, err := q.client.Do(req)
 	if err != nil {
