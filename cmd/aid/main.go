@@ -15,9 +15,7 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
-	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -26,116 +24,30 @@ import (
 	"github.com/beego/beego/logs"
 	_ "github.com/beego/beego/session/redis"
 	"github.com/hanzoai/ai"
-	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/controllers"
 	"github.com/hanzoai/ai/object"
-	"github.com/hanzoai/ai/proxy"
-	"github.com/hanzoai/ai/routers"
 	"github.com/hanzoai/ai/util"
 )
 
 func main() {
-	object.InitFlag()
-	object.InitAdapter()
-	object.CreateTables()
-
-	object.InitDb()
-
-	// Load model routing/pricing config from YAML. Non-fatal: falls back to static maps.
-	configPath := conf.GetConfigString("modelConfigPath")
-	if configPath == "" {
-		configPath = "conf/models.yaml"
-	}
-	if err := controllers.InitModelConfig(configPath); err != nil {
-		logs.Warn("Model config: %v (using static fallback)", err)
-	}
-
-	proxy.InitHttpClient()
-	util.InitMaxmindFiles()
-	util.InitIpDb()
-	util.InitParser()
-	object.InitCleanupChats()
-	object.InitStoreCount()
-	object.InitCommitRecordsTask()
-	object.InitScanJobProcessor()
-	object.InitMessageTransactionRetry()
-
-	// Initialize the balance gate that enforces pre-request balance checks.
-	// Uses the same Commerce endpoint as the billing queue.
-	routers.InitBalanceGate()
-
-	// Initialize Commerce-backed tier cache for dynamic billing plan lookups.
-	// Must be called before InitRateLimiter so DefaultTierFunc can use it.
-	routers.InitTierCache()
-
-	// Initialize per-key rate limiting. Tier resolution checks env-var overrides
-	// first (RATE_LIMIT_TIERS), then Commerce tier cache, then defaults to zen-free.
-	rlInstance := routers.InitRateLimiter(routers.DefaultTierFunc)
-	logs.Info("Per-key rate limiter initialized (tiers: free=10/min, starter=60/min, pro=300/min, enterprise=1000/min)")
-
-	beego.SetStaticPath("/swagger", "swagger")
-	beego.InsertFilter("/v1/cloud/*", beego.BeforeRouter, routers.V1CloudRewriteFilter)
-	beego.InsertFilter("*", beego.BeforeRouter, routers.CorsFilter)
-	beego.InsertFilter("*", beego.BeforeRouter, routers.HstsFilter)
-	beego.InsertFilter("*", beego.BeforeRouter, routers.CacheControlFilter)
-	beego.InsertFilter("*", beego.BeforeRouter, routers.RateLimitFilter)
-	beego.InsertFilter("*", beego.BeforeRouter, routers.AutoSigninFilter)
-	beego.InsertFilter("*", beego.BeforeRouter, routers.BalanceGateFilter)
-	beego.InsertFilter("*", beego.BeforeRouter, routers.StaticFilter)
-	beego.InsertFilter("*", beego.BeforeRouter, routers.TenantContextFilter)
-	beego.InsertFilter("*", beego.BeforeRouter, routers.AuthzFilter)
-	beego.InsertFilter("*", beego.BeforeRouter, routers.PrometheusFilter)
-	beego.InsertFilter("*", beego.BeforeRouter, routers.RecordMessage)
-	beego.InsertFilter("*", beego.AfterExec, routers.AfterRecordMessage, false)
-	beego.InsertFilter("*", beego.AfterExec, routers.SecureCookieFilter, false)
-
-	beego.BConfig.WebConfig.Session.SessionOn = true
-	beego.BConfig.WebConfig.Session.SessionName = "cloud_session_id"
-	if conf.GetConfigString("redisEndpoint") == "" {
-		beego.BConfig.WebConfig.Session.SessionProvider = "file"
-		beego.BConfig.WebConfig.Session.SessionProviderConfig = "./tmp"
-	} else {
-		beego.BConfig.WebConfig.Session.SessionProvider = "redis"
-		beego.BConfig.WebConfig.Session.SessionProviderConfig = conf.GetConfigString("redisEndpoint")
-	}
-	beego.BConfig.WebConfig.Session.SessionGCMaxLifetime = 3600 * 24 * 365
-
-	// Set session cookie security attributes
-	// SameSite=Lax provides CSRF protection while maintaining compatibility
-	beego.BConfig.WebConfig.Session.SessionCookieSameSite = http.SameSiteLaxMode
-
-	var logAdapter string
-	logConfigMap := make(map[string]interface{})
-	err := json.Unmarshal([]byte(conf.GetConfigString("logConfig")), &logConfigMap)
-	if err != nil {
+	// Shared AI runtime bootstrap (DB, model config, balance/tier/rate-limit,
+	// beego filter chain, billing queue) — the SAME sequence the unified
+	// cloud binary runs via ai.Mount, defined once in ai.Bootstrap. It ends
+	// by publishing beego.BeeApp.Handlers via ai.SetHandler. A bootstrap
+	// failure is fatal for the standalone server.
+	if err := ai.Bootstrap(); err != nil {
 		panic(err)
 	}
-	_, ok := logConfigMap["adapter"]
-	if !ok {
-		logAdapter = "file"
-	} else {
-		logAdapter = logConfigMap["adapter"].(string)
-	}
-	if logAdapter == "console" {
-		logs.Reset()
-	}
-	err = logs.SetLogger(logAdapter, conf.GetConfigString("logConfig"))
-	if err != nil {
-		panic(err)
-	}
+	rlInstance := ai.RateLimiter()
+	bq := ai.BillingQueue()
 
 	port := beego.AppConfig.DefaultInt("httpport", 8000)
 
-	err = util.StopOldInstance(port)
-	if err != nil {
+	// Standalone-only: free the legacy beego port before binding it. The
+	// embedded binary serves beego through zip and never listens here, so
+	// this lives in main(), not Bootstrap.
+	if err := util.StopOldInstance(port); err != nil {
 		panic(err)
-	}
-
-	// Initialize the billing usage queue. Records are retried with exponential
-	// backoff instead of being silently dropped on transient Commerce failures.
-	bq := controllers.InitBillingQueue()
-	if bq != nil {
-		logs.Info("Billing queue started (Commerce endpoint configured)")
 	}
 
 	// Graceful shutdown: drain billing queue and stop rate limiter.
@@ -175,11 +87,8 @@ func main() {
 	// Listens on CLOUD_ZAP_PORT (default 9320), separate from inference node.
 	controllers.InitInterserviceZap()
 
-	// Publish the fully-configured beego ControllerRegister so the unified
-	// cloud binary's ai.Mount path can serve the same routes per HIP-0106.
-	// In the standalone mode this is a no-op; in the embedded mode the
-	// cloud orchestrator's zip.App forwards /v1/ai/* into this handler.
-	ai.SetHandler(beego.BeeApp.Handlers)
+	// (ai.SetHandler(beego.BeeApp.Handlers) already ran inside ai.Bootstrap —
+	// the beego ControllerRegister is published once, there.)
 
 	// Register the canonical HIP-0110 HTTP-over-ZAP terminal (luxfi/zap/forward)
 	// on the inference node so the ZAP gateway can route any HTTP request to the
