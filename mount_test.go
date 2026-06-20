@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ai_test
+package ai
 
 import (
 	"io"
@@ -20,17 +20,19 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/hanzoai/ai"
-	"github.com/hanzoai/cloud"
 	"github.com/hanzoai/zip"
 )
 
-func TestMountWithoutHandlerReturns503(t *testing.T) {
+// These tests exercise the route-adapter concern (prefix forwarding and the
+// "runtime not initialized" 503) in isolation via mountRoutes, which has no
+// infrastructure dependencies. The full Mount() additionally runs Bootstrap
+// (DB, providers, billing); its runtime-init behavior needs a backend, so the
+// adapter tests deliberately use mountRoutes.
+
+func TestMountRoutesWithoutHandlerReturns503(t *testing.T) {
 	app := zip.New(zip.Config{DisableStartupMessage: true})
-	if err := ai.Mount(app, cloud.Deps{}); err != nil {
-		t.Fatalf("Mount: %v", err)
-	}
-	ai.SetHandler(nil)
+	mountRoutes(app)
+	SetHandler(nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/ai/health", nil)
 	resp, err := app.Fiber().Test(req)
@@ -42,20 +44,18 @@ func TestMountWithoutHandlerReturns503(t *testing.T) {
 	}
 }
 
-func TestMountForwardsToRegisteredHandlerStripsPrefix(t *testing.T) {
+func TestMountRoutesForwardsToRegisteredHandlerStripsPrefix(t *testing.T) {
 	app := zip.New(zip.Config{DisableStartupMessage: true})
-	if err := ai.Mount(app, cloud.Deps{}); err != nil {
-		t.Fatalf("Mount: %v", err)
-	}
+	mountRoutes(app)
 
 	var sawPath string
-	ai.SetHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	SetHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		sawPath = r.URL.Path
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"ok":true}`))
 	}))
-	defer ai.SetHandler(nil)
+	defer SetHandler(nil)
 
 	// /v1/ai/health → beego sees /v1/health
 	req := httptest.NewRequest(http.MethodGet, "/v1/ai/health", nil)
@@ -75,18 +75,16 @@ func TestMountForwardsToRegisteredHandlerStripsPrefix(t *testing.T) {
 	}
 }
 
-func TestMountForwardsRootRequest(t *testing.T) {
+func TestMountRoutesForwardsRootRequest(t *testing.T) {
 	app := zip.New(zip.Config{DisableStartupMessage: true})
-	if err := ai.Mount(app, cloud.Deps{}); err != nil {
-		t.Fatalf("Mount: %v", err)
-	}
+	mountRoutes(app)
 
 	var sawPath string
-	ai.SetHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	SetHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		sawPath = r.URL.Path
 		w.WriteHeader(http.StatusOK)
 	}))
-	defer ai.SetHandler(nil)
+	defer SetHandler(nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/ai/", nil)
 	resp, err := app.Fiber().Test(req)
