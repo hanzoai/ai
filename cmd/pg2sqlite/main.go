@@ -347,7 +347,9 @@ func main() {
 	// SQLite DSN mirrors the runtime knobs the cloud-api binary will use
 	// when it opens this same file. Keeping the pragmas identical avoids
 	// any divergence between the file we copy and the file the server opens.
-	dstDSN := fmt.Sprintf("file:%s?cache=shared&_busy_timeout=10000&_journal_mode=WAL", *dst)
+	// modernc.org/sqlite only honors the _pragma=NAME(VAL) form; the
+	// mattn-style _busy_timeout/_journal_mode keys are silently ignored.
+	dstDSN := fmt.Sprintf("file:%s?cache=shared&_pragma=busy_timeout(10000)&_pragma=journal_mode(WAL)", *dst)
 	dstDB, err := sql.Open("sqlite", dstDSN)
 	if err != nil {
 		log.Fatalf("open destination: %v", err)
