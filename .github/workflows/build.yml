@@ -18,7 +18,7 @@ permissions:
 jobs:
   policy-check:
     name: Enforce Hanzo Cloud production policy
-    runs-on: ubuntu-latest
+    runs-on: hanzo-build-linux-amd64
     steps:
       - uses: actions/checkout@v4
       - name: Enforce IAM + KMS + image policy
@@ -42,7 +42,7 @@ jobs:
 
   go-tests:
     name: Running Go tests
-    runs-on: ubuntu-latest
+    runs-on: hanzo-build-linux-amd64
     needs: [ policy-check ]
     services:
       mysql:
@@ -64,7 +64,7 @@ jobs:
 
   frontend:
     name: Front-end
-    runs-on: ubuntu-latest
+    runs-on: hanzo-build-linux-amd64
     needs: [ go-tests ]
     steps:
       - uses: actions/checkout@v4
@@ -81,7 +81,7 @@ jobs:
 
   backend:
     name: Back-end
-    runs-on: ubuntu-latest
+    runs-on: hanzo-build-linux-amd64
     needs: [ go-tests ]
     steps:
       - uses: actions/checkout@v4
@@ -97,7 +97,7 @@ jobs:
 
   linter:
     name: Go-Linter
-    runs-on: ubuntu-latest
+    runs-on: hanzo-build-linux-amd64
     needs: [ go-tests ]
     steps:
       - uses: actions/checkout@v4
@@ -118,7 +118,7 @@ jobs:
 
   tag-release:
     name: Create Tag
-    runs-on: ubuntu-latest
+    runs-on: hanzo-build-linux-amd64
     permissions:
       contents: write
       issues: write
@@ -141,7 +141,7 @@ jobs:
 
   github-release:
     name: GitHub Release
-    runs-on: ubuntu-latest
+    runs-on: hanzo-build-linux-amd64
     permissions:
       contents: write
       issues: write
@@ -203,7 +203,7 @@ jobs:
   dispatch-to-universe:
     needs: docker
     if: github.repository == 'hanzoai/cloud' && github.event_name == 'push' && needs.docker.result == 'success'
-    runs-on: ubuntu-latest
+    runs-on: hanzo-build-linux-amd64
     steps:
       - name: Compute image URI
         id: meta
