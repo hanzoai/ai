@@ -28,6 +28,7 @@ import (
 	"github.com/beego/beego/context"
 	"github.com/beego/beego/logs"
 	"github.com/hanzoai/ai/conf"
+	"github.com/hanzoai/ai/util"
 	iam "github.com/hanzoai/iam"
 )
 
@@ -158,9 +159,12 @@ func InitBalanceGate() {
 // users for legacy auth paths) and handles its own user resolution for
 // JWT and IAM API key auth paths.
 //
-// Design: fail-open. If Commerce is unreachable or the user cannot be
-// identified, the request is allowed through. The controller-level balance
-// check in resolveProviderForUser remains as a defense-in-depth backstop.
+// Design: fail-closed by default. A positive balance allows; a non-positive
+// balance returns 402; an unknown balance (Commerce unreachable) returns 503 —
+// unless BILLING_FAIL_OPEN=true, which allows on unknown (see checkBalance).
+// Unidentified callers are passed through to the downstream auth filters, which
+// reject anonymous traffic; the controller-level check in getUserBalance is a
+// defense-in-depth backstop.
 func BalanceGateFilter(ctx *context.Context) {
 	if balanceGate == nil {
 		return
@@ -183,19 +187,26 @@ func BalanceGateFilter(ctx *context.Context) {
 		return
 	}
 
-	sufficient, balance := balanceGate.checkBalance(userKey)
-	if sufficient {
+	allowed, balance, unknown := balanceGate.checkBalance(userKey)
+	if allowed {
+		return
+	}
+
+	ctx.ResponseWriter.Header().Set("Content-Type", "application/json")
+
+	if unknown {
+		// Balance could not be determined (Commerce unreachable) and fail-open is
+		// off -> deny as temporarily unavailable, matching the metering client.
+		logs.Warning("balance_gate: balance unknown, denying user=%s path=%s (fail-closed)", userKey, path)
+		ctx.ResponseWriter.WriteHeader(http.StatusServiceUnavailable)
+		ctx.ResponseWriter.Write([]byte(`{"error":{"message":"Billing temporarily unavailable","type":"billing_error","code":"balance_unavailable"}}`))
 		return
 	}
 
 	logs.Info("balance_gate: insufficient balance user=%s balance_cents=%d path=%s",
 		userKey, balance, path)
-
-	ctx.ResponseWriter.Header().Set("Content-Type", "application/json")
 	ctx.ResponseWriter.WriteHeader(http.StatusPaymentRequired)
-
-	body := `{"error":{"message":"Insufficient balance. Please add credits at console.hanzo.ai","type":"billing_error","code":"insufficient_balance"}}`
-	ctx.ResponseWriter.Write([]byte(body))
+	ctx.ResponseWriter.Write([]byte(`{"error":{"message":"Insufficient balance. Please add credits at console.hanzo.ai","type":"billing_error","code":"insufficient_balance"}}`))
 }
 
 // isBalanceExempt returns true for paths that should bypass balance checking
@@ -293,14 +304,18 @@ func isJwtTokenLike(token string) bool {
 
 // ── Balance checking ────────────────────────────────────────────────────────
 
-// checkBalance returns whether the user has a positive balance. On cache hit
-// within TTL, returns the cached result immediately. On stale cache entry,
-// returns the stale result and kicks off an async refresh. On cache miss,
-// fetches synchronously (with timeout) on first request, then caches.
+// checkBalance reports whether the user may proceed. On cache hit within TTL it
+// returns the cached result immediately; on a stale entry it serves the stale
+// result and refreshes asynchronously; on cache miss it fetches synchronously
+// (with timeout) then caches.
 //
-// Fail-open: any error from Commerce results in (true, 0) — the request is
-// allowed through, and the controller-level check provides a backstop.
-func (bg *BalanceGate) checkBalance(userKey string) (sufficient bool, balanceCents int64) {
+// Fail-closed by default: when Commerce cannot be reached on a cache miss the
+// balance is unknown and the request is DENIED (allowed=false, unknown=true),
+// mapped by the caller to HTTP 503 — matching the commerce metering client and
+// the gateway prepaid gate. Set BILLING_FAIL_OPEN=true to invert this to allow
+// (revenue leak) where availability deliberately outranks billing. The
+// controller-level check in getUserBalance remains as defense-in-depth.
+func (bg *BalanceGate) checkBalance(userKey string) (allowed bool, balanceCents int64, unknown bool) {
 	bg.mu.RLock()
 	entry, ok := bg.entries[userKey]
 	bg.mu.RUnlock()
@@ -309,26 +324,31 @@ func (bg *BalanceGate) checkBalance(userKey string) (sufficient bool, balanceCen
 		age := time.Since(entry.fetchedAt)
 		if age <= balanceCacheTTL {
 			// Fresh cache hit.
-			return entry.balanceCents > 0, entry.balanceCents
+			return entry.balanceCents > 0, entry.balanceCents, false
 		}
-		// Stale: serve stale result, refresh asynchronously.
+		// Stale: serve stale result, refresh asynchronously. A prior successful
+		// fetch is authoritative enough to keep serving while we revalidate.
 		bg.refreshAsync(userKey)
-		return entry.balanceCents > 0, entry.balanceCents
+		return entry.balanceCents > 0, entry.balanceCents, false
 	}
 
 	// Cache miss: fetch synchronously so the first request gets a real check.
 	// The timeout is capped at balanceHTTPTimeout (5s) to avoid blocking too long.
 	balance, err := bg.fetchBalance(userKey)
 	if err != nil {
-		logs.Warning("balance_gate: Commerce lookup failed for user=%s: %v (fail-open)", userKey, err)
-		return true, 0
+		if util.BillingFailOpen() {
+			logs.Warning("balance_gate: Commerce lookup failed for user=%s: %v (BILLING_FAIL_OPEN -> allow)", userKey, err)
+			return true, 0, false
+		}
+		logs.Warning("balance_gate: Commerce lookup failed for user=%s: %v (fail-closed -> deny)", userKey, err)
+		return false, 0, true
 	}
 
 	bg.mu.Lock()
 	bg.entries[userKey] = &balanceCacheEntry{balanceCents: balance, fetchedAt: time.Now()}
 	bg.mu.Unlock()
 
-	return balance > 0, balance
+	return balance > 0, balance, false
 }
 
 // refreshAsync kicks off a background goroutine to refresh the cached balance
@@ -375,9 +395,7 @@ func (bg *BalanceGate) fetchBalance(userKey string) (int64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("build request: %w", err)
 	}
-	if bg.token != "" {
-		req.Header.Set("Authorization", "Bearer "+bg.token)
-	}
+	util.SetCommerceAuthHeaders(req, bg.token, userKey)
 
 	resp, err := bg.client.Do(req)
 	if err != nil {
