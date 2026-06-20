@@ -36,17 +36,23 @@ import (
 	luxlog "github.com/luxfi/log"
 )
 
-// Mount registers AI's HTTP surface per HIP-0106.
+// Mount registers AI's HTTP surface per HIP-0106 AND initializes the AI
+// runtime so those routes actually serve.
 //
 // Routes under /v1/ai/* are forwarded to the registered handler (the
-// beego ControllerRegister built by routers/router.go). If no handler is
-// registered yet, the routes 503 — this lets the cloud binary boot the
-// ai subsystem progressively (load model config, initialize providers,
-// then call SetHandler).
+// beego ControllerRegister built by routers/router.go). The MountSpec
+// contract (cloud.MountAll) gives each subsystem exactly one hook —
+// Mount — and it owns BOTH route wiring and runtime initialization. So
+// Mount calls Bootstrap(), the single shared boot sequence (DB, model
+// config, balance/tier/rate-limit, beego filters, billing queue) that
+// ends by publishing the handler via SetHandler. Without that call the
+// adapter's getHandler() stays nil and every /v1/ai/* request 503s with
+// "ai runtime not initialized" — the exact defect this fixes.
 //
-// The standalone cmd/ai/main.go shim calls SetHandler(beego.BeeApp.Handlers)
-// after object.InitDb and routers/init. The unified binary calls the
-// same SetHandler in its bootstrap.
+// The same Bootstrap() runs in the standalone cmd/aid entrypoint, so the
+// runtime is defined ONCE and behaves identically embedded or standalone.
+// Bootstrap is sync.Once-guarded, so calling it here is safe even if the
+// process also calls it elsewhere.
 func Mount(app *zip.App, deps cloud.Deps) error {
 	log := deps.Logger
 	if log == nil {
@@ -54,8 +60,26 @@ func Mount(app *zip.App, deps cloud.Deps) error {
 	}
 	log.Info("ai: mounting routes", "prefix", "/v1/ai")
 
-	app.All("/v1/ai/*", zip.AdaptNetHTTP(handlerAdapter{}))
+	// Route wiring is a pure, dependency-free concern (separately tested).
+	mountRoutes(app)
+
+	// Runtime init (DB, providers, filters, billing) — the side that needs
+	// real infrastructure. A failure here is fatal for the AI surface, so it
+	// propagates as a precise mount error (cloud.MountAll wraps it as
+	// "mount ai: ..."); it must not be swallowed nor panic the whole binary.
+	log.Info("ai: initializing runtime")
+	if err := Bootstrap(); err != nil {
+		return err
+	}
+	log.Info("ai: runtime initialized")
 	return nil
+}
+
+// mountRoutes wires AI's /v1/ai/* prefix onto the zip app. It has no
+// infrastructure dependencies (no DB, no providers) and is what the route
+// adapter tests exercise; Mount adds runtime init on top.
+func mountRoutes(app *zip.App) {
+	app.All("/v1/ai/*", zip.AdaptNetHTTP(handlerAdapter{}))
 }
 
 func init() {
