@@ -22,7 +22,7 @@ import (
 )
 
 func main() {
-	db, _ := sql.Open("sqlite", "file:/tmp/cloud-staging.db?mode=ro&_journal_mode=OFF")
+	db, _ := sql.Open("sqlite", "file:/tmp/cloud-staging.db?mode=ro&_pragma=journal_mode(OFF)")
 	rows, _ := db.Query("SELECT name, sql FROM sqlite_master WHERE type='table' ORDER BY name")
 	for rows.Next() {
 		var n, sqlStr string
