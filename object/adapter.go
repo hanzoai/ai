@@ -137,6 +137,11 @@ func (a *Adapter) CreateDatabase() error {
 			END
 			$$`,
 			a.DbName, a.DbName)
+	case "sqlite", "sqlite3":
+		// SQLite has no server-side CREATE DATABASE; the file is created on
+		// open via the DSN. dbx.Open above already opened (and thus created)
+		// it, so there is nothing further to do.
+		return nil
 	default:
 		stmt = fmt.Sprintf("CREATE DATABASE IF NOT EXISTS %s default charset utf8mb4 COLLATE utf8mb4_general_ci", a.DbName)
 	}
