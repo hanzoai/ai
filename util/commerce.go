@@ -25,16 +25,15 @@ import (
 // authenticated and tenant-scoped, so the balance gate, the controller backstop,
 // and the usage queue all speak commerce's canonical contract identically.
 //
-// Contract (commerce/api/billing, mounted under /v1 — see commerce
-// cmd/commerced/main.go Router.Group("/v1")):
+// Contract (commerce serves billing under /v1/billing/*):
 //
 //	Authorization: Bearer {COMMERCE_SERVICE_TOKEN}   (admin-scoped S2S token)
 //	X-IAM-Org-Id:  {org}                             (tenant namespace)
 //
-// Commerce resolves the tenant from X-IAM-Org-Id (commerce middleware
-// /accesstoken.go); without it commerce falls back to COMMERCE_SERVICE_ORG,
-// which cross-bills tenants. The user query param ("owner/name") identifies the
-// ledger; the header identifies the namespace.
+// Commerce resolves the tenant from X-IAM-Org-Id; without it commerce falls back
+// to its configured default org (COMMERCE_SERVICE_ORG), which cross-bills
+// tenants. The user query param ("owner/name") identifies the ledger; the header
+// identifies the namespace.
 const HeaderIAMOrg = "X-IAM-Org-Id"
 
 // OrgFromUserKey returns the IAM org (owner) segment of an "owner/name" user
