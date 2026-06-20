@@ -169,28 +169,26 @@ func (a *Adapter) close() {
 	a.db = nil
 }
 
+// createTable creates (or, for an existing schema, adds any missing columns to)
+// every persistent model's table. dbx.Sync is the idempotent, cross-driver
+// replacement for the xorm engine.Sync2 calls this code used before the
+// xorm -> hanzoai/dbx migration (commit c3dc6ad8): it reads the same struct
+// tags the CRUD layer uses (db: tags + snake_case fallback), so the columns it
+// creates are exactly the ones adapter.db.Model/Select read and write. Schema
+// is derived from the Go models — there is no separate SQL migration source.
+//
+// The model list mirrors the original engine.Sync2 sequence one-for-one; keep
+// it in sync when a new persistent model is added.
 func (a *Adapter) createTable() {
-	// Schema migration is handled externally (SQL migrations).
-	// Tables must exist before the application starts.
-	// This is a no-op placeholder for backward compatibility.
-	//
-	// Run the appropriate migration SQL for your database before first start.
-	// See: migrations/ directory for schema definitions.
-	tables := []string{
-		"video", "store", "provider", "file", "vector", "chat", "message",
-		"template", "application", "node", "machine", "image", "container",
-		"pod", "task", "scale", "form", "workflow", "article", "session",
-		"connection", "record", "graph", "hospital", "doctor", "patient",
-		"caase", "consultation", "asset", "scan", "model_route",
+	models := []interface{}{
+		&Video{}, &Store{}, &Provider{}, &File{}, &Vector{}, &Chat{}, &Message{},
+		&Template{}, &Application{}, &Node{}, &Machine{}, &Image{}, &Container{},
+		&Pod{}, &Task{}, &Scale{}, &Form{}, &Workflow{}, &Article{}, &Session{},
+		&Connection{}, &Record{}, &Graph{}, &Hospital{}, &Doctor{}, &Patient{},
+		&Caase{}, &Consultation{}, &Asset{}, &Scan{}, &ModelRoute{},
 	}
-	for _, table := range tables {
-		var count int
-		err := a.db.NewQuery(fmt.Sprintf("SELECT 1 FROM %s LIMIT 1", a.db.QuoteTableName(table))).Row(&count)
-		if err != nil {
-			// Table doesn't exist or is inaccessible -- this is expected
-			// on first run before migrations. Log and continue.
-			_ = err
-		}
+	if err := a.db.Sync(models...); err != nil {
+		panic(fmt.Errorf("createTable: dbx sync failed: %w", err))
 	}
 }
 

@@ -1,3 +1,24 @@
+# Persistent volume for the embedded SQLite database (dataSourceName =
+# file:/data/hanzo_cloud.db). SQLite is single-writer, single-node: the file
+# must live on durable storage that survives pod restarts, and exactly one pod
+# may have it open for writes. RWO + do-block-storage-retain matches the sibling
+# single-writer KMS volume (infra/k8s/kms/pvc.yaml); -retain keeps the DB if the
+# PVC is ever deleted.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: cloud-data
+  namespace: hanzo
+  labels:
+    app: cloud-api
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: do-block-storage-retain
+  resources:
+    requests:
+      storage: 10Gi
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -6,12 +27,14 @@ metadata:
   labels:
     app: cloud-api
 spec:
-  replicas: 2
+  # SQLite is single-writer single-node: only one pod may hold the DB file open
+  # for writes, and the RWO volume can attach to only one node. Hence replicas:1
+  # and a Recreate strategy (the old pod fully terminates — releasing the volume
+  # — before the new pod starts), never RollingUpdate which would briefly run two
+  # writers / contend the RWO claim.
+  replicas: 1
   strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
+    type: Recreate
   selector:
     matchLabels:
       app: cloud-api
@@ -40,6 +63,10 @@ spec:
             - name: config
               mountPath: /conf/app.conf
               subPath: app.conf
+            # SQLite DB lives here (dataSourceName = file:/data/hanzo_cloud.db).
+            # The PVC mount creates /data; the .db file is created on first open.
+            - name: cloud-data
+              mountPath: /data
           resources:
             requests:
               cpu: 100m
@@ -65,3 +92,6 @@ spec:
         - name: config
           secret:
             secretName: cloud-api-config
+        - name: cloud-data
+          persistentVolumeClaim:
+            claimName: cloud-data
