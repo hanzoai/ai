@@ -8,29 +8,13 @@ services:
     entrypoint: /bin/sh -c './server --createDatabase=true'
     ports:
       - "8000:8000"
-    depends_on:
-      db:
-        condition: service_healthy
     environment:
       RUNNING_IN_DOCKER: "true"
     volumes:
       - ./conf:/conf/
-
-  db:
-    restart: always
-    image: ghcr.io/hanzoai/sql:latest
-    ports:
-      - "5432:5432"
-    environment:
-      POSTGRES_USER: hanzo
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-hanzo}
-      POSTGRES_DB: hanzo_cloud
-    volumes:
-      - cloud_postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U hanzo -d hanzo_cloud"]
-      timeout: 5s
-      retries: 10
+      # SQLite is the default driver; the DB file lives on a persistent
+      # volume at the path configured in conf/app.conf (dataSourceName).
+      - cloud_data:/data
 
 volumes:
-  cloud_postgres_data:
+  cloud_data:
