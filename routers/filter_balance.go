@@ -55,9 +55,18 @@ func init() {
 
 const (
 	// balanceCacheTTL controls how long a cached balance result is considered
-	// fresh. Stale entries are served immediately while an async refresh runs
-	// in the background, so requests are never blocked on Commerce latency.
+	// fresh. Within TTL a cached result is served immediately with no refresh.
 	balanceCacheTTL = 30 * time.Second
+
+	// balanceStaleGrace bounds how long past balanceCacheTTL a cached result may
+	// still be served while an async refresh runs (stale-while-revalidate). This
+	// caps the free-spend window when Commerce is unreachable: a user who has
+	// dropped to zero can keep being ALLOWED on a stale positive only until
+	// balanceCacheTTL+balanceStaleGrace, after which the entry is treated as
+	// unknown and the request is denied (unless BILLING_FAIL_OPEN). It is an
+	// explicit, short, fail-closed-honoring bound — NOT the 2*TTL cleanup
+	// interval, which exists only to evict memory, not to authorize spend.
+	balanceStaleGrace = 15 * time.Second
 
 	// balanceCacheCleanupInterval is how often stale cache entries are evicted.
 	balanceCacheCleanupInterval = 5 * time.Minute
@@ -103,6 +112,11 @@ type BalanceGate struct {
 	iamEndpoint  string // IAM base URL for hk- key resolution
 	clientId     string // IAM application client ID
 	clientSecret string // IAM application client secret
+
+	// fetch resolves a user's balance in cents from Commerce. It defaults to
+	// (*BalanceGate).fetchBalance; tests inject a stub to exercise checkBalance's
+	// fresh/stale/miss/unreachable matrix without a live Commerce server.
+	fetch func(userKey string) (int64, error)
 }
 
 // userKeyCacheEntry maps an API token to the resolved "owner/name" user key.
@@ -144,6 +158,7 @@ func InitBalanceGate() {
 		clientId:     clientId,
 		clientSecret: clientSecret,
 	}
+	bg.fetch = bg.fetchBalance
 
 	go bg.cleanupLoop()
 
@@ -304,15 +319,19 @@ func isJwtTokenLike(token string) bool {
 
 // ── Balance checking ────────────────────────────────────────────────────────
 
-// checkBalance reports whether the user may proceed. On cache hit within TTL it
-// returns the cached result immediately; on a stale entry it serves the stale
-// result and refreshes asynchronously; on cache miss it fetches synchronously
-// (with timeout) then caches.
+// checkBalance reports whether the user may proceed. On a cache hit within TTL
+// it returns the cached result immediately; within the bounded staleness grace
+// (balanceCacheTTL < age <= balanceCacheTTL+balanceStaleGrace) it serves the
+// stale result while refreshing asynchronously; beyond the grace it refreshes
+// but treats the value as unknown (it is too old to authorize spend); on cache
+// miss it fetches synchronously (with timeout) then caches.
 //
-// Fail-closed by default: when Commerce cannot be reached on a cache miss the
-// balance is unknown and the request is DENIED (allowed=false, unknown=true),
-// mapped by the caller to HTTP 503 — matching the commerce metering client and
-// the gateway prepaid gate. Set BILLING_FAIL_OPEN=true to invert this to allow
+// Fail-closed by default: when the balance is unknown — Commerce unreachable on
+// a cache miss, or a cache entry stale beyond the grace — the request is DENIED
+// (allowed=false, unknown=true), mapped by the caller to HTTP 503, matching the
+// commerce metering client and the gateway prepaid gate. This bounds the
+// free-spend window for a now-zero user during a Commerce outage to at most
+// balanceStaleGrace. Set BILLING_FAIL_OPEN=true to invert unknown to allow
 // (revenue leak) where availability deliberately outranks billing. The
 // controller-level check in getUserBalance remains as defense-in-depth.
 func (bg *BalanceGate) checkBalance(userKey string) (allowed bool, balanceCents int64, unknown bool) {
@@ -326,15 +345,28 @@ func (bg *BalanceGate) checkBalance(userKey string) (allowed bool, balanceCents 
 			// Fresh cache hit.
 			return entry.balanceCents > 0, entry.balanceCents, false
 		}
-		// Stale: serve stale result, refresh asynchronously. A prior successful
-		// fetch is authoritative enough to keep serving while we revalidate.
+		// Past TTL: always kick a background refresh.
 		bg.refreshAsync(userKey)
-		return entry.balanceCents > 0, entry.balanceCents, false
+		if age <= balanceCacheTTL+balanceStaleGrace {
+			// Within the bounded grace: serve the stale result while revalidating
+			// (graceful degradation). A prior successful fetch is authoritative
+			// enough for this short window.
+			return entry.balanceCents > 0, entry.balanceCents, false
+		}
+		// Beyond the grace: the stale value is too old to authorize spend. Do NOT
+		// serve a stale positive — treat as unknown so a now-zero user cannot keep
+		// spending free during a Commerce outage. Deny (503) unless fail-open.
+		if util.BillingFailOpen() {
+			logs.Warning("balance_gate: stale balance beyond grace for user=%s (age=%v, BILLING_FAIL_OPEN -> allow)", userKey, age)
+			return true, entry.balanceCents, false
+		}
+		logs.Warning("balance_gate: stale balance beyond grace for user=%s (age=%v, fail-closed -> deny)", userKey, age)
+		return false, 0, true
 	}
 
 	// Cache miss: fetch synchronously so the first request gets a real check.
 	// The timeout is capped at balanceHTTPTimeout (5s) to avoid blocking too long.
-	balance, err := bg.fetchBalance(userKey)
+	balance, err := bg.fetch(userKey)
 	if err != nil {
 		if util.BillingFailOpen() {
 			logs.Warning("balance_gate: Commerce lookup failed for user=%s: %v (BILLING_FAIL_OPEN -> allow)", userKey, err)
@@ -369,7 +401,7 @@ func (bg *BalanceGate) refreshAsync(userKey string) {
 			bg.inflightMu.Unlock()
 		}()
 
-		balance, err := bg.fetchBalance(userKey)
+		balance, err := bg.fetch(userKey)
 		if err != nil {
 			logs.Warning("balance_gate: async refresh failed for user=%s: %v", userKey, err)
 			return
@@ -405,6 +437,13 @@ func (bg *BalanceGate) fetchBalance(userKey string) (int64, error) {
 		io.Copy(io.Discard, resp.Body)
 		resp.Body.Close()
 	}()
+
+	// Commerce signals "no funds" with 402. Treat it as a definite zero balance
+	// (available=0 -> caller returns 402 insufficient_balance), NOT a transport
+	// error. 503 stays reserved for transport failures and 5xx (unknown balance).
+	if resp.StatusCode == http.StatusPaymentRequired {
+		return 0, nil
+	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return 0, fmt.Errorf("commerce returned %d", resp.StatusCode)
