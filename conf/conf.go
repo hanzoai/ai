@@ -78,6 +78,13 @@ func GetConfigString(key string) string {
 		return value
 	}
 
+	// DB_DRIVER is the conventional alias for the driverName config key.
+	if key == "driverName" {
+		if value, ok := os.LookupEnv("DB_DRIVER"); ok && value != "" {
+			return value
+		}
+	}
+
 	tokens := ReadGlobalConfigTokens()
 	if len(tokens) > 0 {
 		if key == "forceLanguage" {
@@ -138,6 +145,16 @@ func GetConfigInt(key string) int {
 }
 
 func GetConfigDataSourceName() string {
+	// Explicit DSN env override (KMS-injected). DATABASE_URL is the de-facto
+	// standard; DB_DSN is the Hanzo-internal alias. Either wins over app.conf
+	// and skips the localhost->docker rewrite (a file DSN has no host).
+	if dsn, ok := os.LookupEnv("DATABASE_URL"); ok && dsn != "" {
+		return dsn
+	}
+	if dsn, ok := os.LookupEnv("DB_DSN"); ok && dsn != "" {
+		return dsn
+	}
+
 	dataSourceName := GetConfigString("dataSourceName")
 
 	runningInDocker := os.Getenv("RUNNING_IN_DOCKER")

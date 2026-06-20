@@ -11,9 +11,9 @@ stringData:
     runmode = prod
     SessionOn = true
     copyrequestbody = true
-    driverName = postgres
-    # Runtime secrets are injected from cloud-runtime-secrets (KMS-managed).
-    dataSourceName = ""
+    driverName = sqlite
+    # SQLite file on a mounted PVC. DB_DSN/DATABASE_URL env (KMS-managed) overrides this.
+    dataSourceName = file:/data/hanzo_cloud.db?cache=shared&_pragma=busy_timeout(10000)&_pragma=journal_mode(WAL)
     dbName = hanzo_cloud
     redisEndpoint =
     isDemoMode = false
