@@ -60,9 +60,7 @@ func getUserBalance(userId string) (float64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("Commerce request build failed: %w", err)
 	}
-	if commerceToken != "" {
-		req.Header.Set("Authorization", "Bearer "+commerceToken)
-	}
+	util.SetCommerceAuthHeaders(req, commerceToken, userId)
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -475,8 +473,8 @@ func getUserByAccessKey(accessKey string) (*iam.User, error) {
 	}
 
 	var result struct {
-		Status string       `json:"status"`
-		Msg    string       `json:"msg"`
+		Status string    `json:"status"`
+		Msg    string    `json:"msg"`
 		Data   *iam.User `json:"data"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
