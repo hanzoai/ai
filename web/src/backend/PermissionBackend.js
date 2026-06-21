@@ -15,7 +15,7 @@
 import * as Setting from "../Setting";
 
 export function getGlobalPermissions() {
-  return fetch(`${Setting.ServerUrl}/api/get-global-permissions`, {
+  return fetch(`${Setting.ServerUrl}/v1/get-global-permissions`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -25,7 +25,7 @@ export function getGlobalPermissions() {
 }
 
 export function getPermissions(owner) {
-  return fetch(`${Setting.ServerUrl}/api/get-permissions?owner=${owner}`, {
+  return fetch(`${Setting.ServerUrl}/v1/get-permissions?owner=${owner}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -35,7 +35,7 @@ export function getPermissions(owner) {
 }
 
 export function getPermission(owner, name) {
-  return fetch(`${Setting.ServerUrl}/api/get-permission?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/get-permission?id=${owner}/${encodeURIComponent(name)}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -46,7 +46,7 @@ export function getPermission(owner, name) {
 
 export function updatePermission(owner, name, permission) {
   const newPermission = Setting.deepCopy(permission);
-  return fetch(`${Setting.ServerUrl}/api/update-permission?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/update-permission?id=${owner}/${encodeURIComponent(name)}`, {
     method: "POST",
     credentials: "include",
     headers: {
@@ -58,7 +58,7 @@ export function updatePermission(owner, name, permission) {
 
 export function addPermission(permission) {
   const newPermission = Setting.deepCopy(permission);
-  return fetch(`${Setting.ServerUrl}/api/add-permission`, {
+  return fetch(`${Setting.ServerUrl}/v1/add-permission`, {
     method: "POST",
     credentials: "include",
     headers: {
@@ -70,7 +70,7 @@ export function addPermission(permission) {
 
 export function deletePermission(permission) {
   const newPermission = Setting.deepCopy(permission);
-  return fetch(`${Setting.ServerUrl}/api/delete-permission`, {
+  return fetch(`${Setting.ServerUrl}/v1/delete-permission`, {
     method: "POST",
     credentials: "include",
     headers: {

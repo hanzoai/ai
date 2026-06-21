@@ -15,14 +15,14 @@
 import * as Setting from "../Setting";
 
 export function getImages(owner, page = "", pageSize = "", field = "", value = "", sortField = "", sortOrder = "") {
-  return fetch(`${Setting.ServerUrl}/api/get-images?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
+  return fetch(`${Setting.ServerUrl}/v1/get-images?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
     method: "GET",
     credentials: "include",
   }).then(res => res.json());
 }
 
 export function getImage(owner, name) {
-  return fetch(`${Setting.ServerUrl}/api/get-image?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/get-image?id=${owner}/${encodeURIComponent(name)}`, {
     method: "GET",
     credentials: "include",
   }).then(res => res.json());
@@ -30,7 +30,7 @@ export function getImage(owner, name) {
 
 export function updateImage(owner, name, image) {
   const newImage = Setting.deepCopy(image);
-  return fetch(`${Setting.ServerUrl}/api/update-image?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/update-image?id=${owner}/${encodeURIComponent(name)}`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newImage),
@@ -39,7 +39,7 @@ export function updateImage(owner, name, image) {
 
 export function addImage(image) {
   const newImage = Setting.deepCopy(image);
-  return fetch(`${Setting.ServerUrl}/api/add-image`, {
+  return fetch(`${Setting.ServerUrl}/v1/add-image`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newImage),
@@ -48,7 +48,7 @@ export function addImage(image) {
 
 export function deleteImage(image) {
   const newImage = Setting.deepCopy(image);
-  return fetch(`${Setting.ServerUrl}/api/delete-image`, {
+  return fetch(`${Setting.ServerUrl}/v1/delete-image`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newImage),

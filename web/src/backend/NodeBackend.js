@@ -15,14 +15,14 @@
 import * as Setting from "../Setting";
 
 export function getNodes(page = "", pageSize = "", field = "", value = "", sortField = "", sortOrder = "") {
-  return fetch(`${Setting.ServerUrl}/api/get-nodes?p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
+  return fetch(`${Setting.ServerUrl}/v1/get-nodes?p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
     method: "GET",
     credentials: "include",
   }).then(res => res.json());
 }
 
 export function getNode(owner, name) {
-  return fetch(`${Setting.ServerUrl}/api/get-node?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/get-node?id=${owner}/${encodeURIComponent(name)}`, {
     method: "GET",
     credentials: "include",
   }).then(res => res.json());
@@ -31,7 +31,7 @@ export function getNode(owner, name) {
 export function updateNode(owner, name, node) {
   const newNode = Setting.deepCopy(node);
   newNode.remotePort = parseInt(newNode.remotePort, 10);
-  return fetch(`${Setting.ServerUrl}/api/update-node?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/update-node?id=${owner}/${encodeURIComponent(name)}`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newNode),
@@ -40,7 +40,7 @@ export function updateNode(owner, name, node) {
 
 export function addNode(node) {
   const newNode = Setting.deepCopy(node);
-  return fetch(`${Setting.ServerUrl}/api/add-node`, {
+  return fetch(`${Setting.ServerUrl}/v1/add-node`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newNode),
@@ -49,7 +49,7 @@ export function addNode(node) {
 
 export function deleteNode(node) {
   const newNode = Setting.deepCopy(node);
-  return fetch(`${Setting.ServerUrl}/api/delete-node`, {
+  return fetch(`${Setting.ServerUrl}/v1/delete-node`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newNode),
