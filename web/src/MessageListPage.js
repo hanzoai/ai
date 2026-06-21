@@ -15,13 +15,13 @@
 import React from "react";
 import {Link} from "react-router-dom";
 import BaseListPage from "./BaseListPage";
-import {ThemeDefault} from "./Conf";
 import * as Setting from "./Setting";
 import * as MessageBackend from "./backend/MessageBackend";
 import * as ProviderBackend from "./backend/ProviderBackend";
 import moment from "moment";
 import i18next from "i18next";
 import * as Conf from "./Conf";
+import {Trash2} from "lucide-react";
 import VectorTooltip from "./VectorTooltip";
 
 class MessageListPage extends BaseListPage {
@@ -120,7 +120,7 @@ class MessageListPage extends BaseListPage {
 
   renderDownloadXlsxButton() {
     return (
-      <button className="px-2 py-1 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginRight: "10px"}> {
+      <button className="px-2 py-1 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginRight: "10px"}} onClick={() => {
         const data = [];
         this.state.data.filter(item => item.author !== "AI").forEach((item, i) => {
           const row = {};
@@ -370,9 +370,9 @@ class MessageListPage extends BaseListPage {
         width: "400px",
         render: (text, record, index) => {
           return (
-            text?.map(suggestion => {
+            text?.map((suggestion, index) => {
               return (
-                <span className="px-2 py-0.5 bg-zinc-800 text-zinc-400 rounded text-xs">{suggestion.text}</span>
+                <span key={index} className="px-2 py-0.5 bg-zinc-800 text-zinc-400 rounded text-xs">{suggestion.text}</span>
               );
             })
           );
@@ -413,7 +413,7 @@ class MessageListPage extends BaseListPage {
         ...this.getColumnFilterProps("isDeleted"),
         render: (text, record, index) => {
           return (
-            <span className="px-2 py-0.5 rounded text-xs " + (text ? "bg-green-500/20 text-green-400" : "bg-zinc-800 text-zinc-500")">{text ? "ON" : "OFF"}</span>
+            <span className={"px-2 py-0.5 rounded text-xs " + (text ? "bg-green-500/20 text-green-400" : "bg-zinc-800 text-zinc-500")}>{text ? "ON" : "OFF"}</span>
           );
         },
       },
@@ -426,7 +426,7 @@ class MessageListPage extends BaseListPage {
         ...this.getColumnFilterProps("isAlerted"),
         render: (text, record, index) => {
           return (
-            <span className="px-2 py-0.5 rounded text-xs " + (text ? "bg-green-500/20 text-green-400" : "bg-zinc-800 text-zinc-500")">{text ? "ON" : "OFF"}</span>
+            <span className={"px-2 py-0.5 rounded text-xs " + (text ? "bg-green-500/20 text-green-400" : "bg-zinc-800 text-zinc-500")}>{text ? "ON" : "OFF"}</span>
           );
         },
       },
@@ -439,17 +439,13 @@ class MessageListPage extends BaseListPage {
         render: (text, record, index) => {
           return (
             <div>
-              <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginTop: "10px", marginBottom: "10px", marginRight: "10px"}> this.props.history.push(`/messages/${record.name}`)}
+              <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginTop: "10px", marginBottom: "10px", marginRight: "10px"}} onClick={() => this.props.history.push(`/messages/${record.name}`)}
               >
                 {i18next.t("general:Edit")}
               </button>
-              this.deleteMessage(record)}
-                okText={i18next.t("general:OK")}
-                cancelText={i18next.t("general:Cancel")}
-              >
-                <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-red-600 text-white hover:bg-red-700 disabled:opacity-50" disabled={!Setting.isLocalAdminUser(this.props.account)} style={{marginBottom: "10px"}>
-                  {i18next.t("general:Delete")}
-                </button>
+              <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-red-600 text-white hover:bg-red-700 disabled:opacity-50" disabled={!Setting.isLocalAdminUser(this.props.account)} style={{marginBottom: "10px"}} onClick={() => {if (window.confirm(`${i18next.t("general:Sure to delete")}: ${record.name} ?`)) {this.deleteMessage(record);}}}>
+                {i18next.t("general:Delete")}
+              </button>
             </div>
           );
         },
@@ -469,17 +465,41 @@ class MessageListPage extends BaseListPage {
       }
     }
 
-    const paginationProps = {
-      total: this.state.pagination.total,
-      showQuickJumper: true,
-      showSizeChanger: true,
-      pageSizeOptions: ["10", "20", "50", "100", "1000", "10000", "100000"],
-      showTotal: () => i18next.t("general:{total} in total").replace("{total}", this.state.pagination.total),
-    };
-
     return (
       <div>
-        <div className="overflow-x-auto border border-zinc-800 rounded-lg"><table className="w-full text-sm text-left"><thead className="bg-zinc-900/80 border-b border-zinc-800"><tr>{columns.map(col => <th key={col.key || col.dataIndex} className="px-3 py-2 text-xs font-medium text-zinc-400 whitespace-nowrap">{col.title}</th>)}</tr></thead><tbody className="divide-y divide-zinc-800/50">{(messages || []).map((record, index) => <tr key={typeof "name" === "function" ? ("name")(record) : record["name"] || index} className="hover:bg-zinc-900/50 transition-colors">{columns.map(col => <td key={col.key || col.dataIndex} className="px-3 py-2 text-zinc-300 whitespace-nowrap">{col.render ? col.render(record[col.dataIndex], record, index) : record[col.dataIndex]}</td>)}</tr>)}</tbody></table></div>
+        <div className="flex items-center gap-3 flex-wrap mb-4">
+          <span className="text-foreground font-medium">{i18next.t("general:Messages")}</span>
+          <button disabled={!Setting.isLocalAdminUser(this.props.account)} onClick={this.addMessage.bind(this)} className="px-3 py-1 bg-white text-black rounded text-xs font-medium hover:bg-zinc-200 disabled:opacity-50 transition-colors">{i18next.t("general:Add")}</button>
+          {this.state.selectedRowKeys.length > 0 && (
+            <button onClick={() => {if (window.confirm(`${i18next.t("general:Sure to delete")}: ${this.state.selectedRowKeys.length} ${i18next.t("general:items")} ?`)) {this.performBulkDelete(this.state.selectedRows, this.state.selectedRowKeys);}}} className="px-3 py-1 bg-red-600 text-white rounded text-xs font-medium hover:bg-red-700 transition-colors flex items-center gap-1">
+              <Trash2 className="w-3 h-3" />
+              {i18next.t("general:Delete")} ({this.state.selectedRowKeys.length})
+            </button>
+          )}
+          {
+            this.renderDownloadXlsxButton()
+          }
+          <span className="text-sm text-zinc-400">
+            {i18next.t("general:Users")}: {Setting.getDisplayTag(Setting.uniqueFields(messages, "user"))}
+          </span>
+          <span className="text-sm text-zinc-400">
+            {i18next.t("general:Chats")}: {Setting.getDisplayTag(Setting.uniqueFields(messages, "chat"))}
+          </span>
+          <span className="text-sm text-zinc-400">
+            {i18next.t("general:Messages")}: {Setting.getDisplayTag(this.state.pagination.total)}
+          </span>
+          {(!this.props.account || this.props.account.name !== "admin") ? null : (
+            <React.Fragment>
+              <span className="text-sm text-zinc-400">
+                {i18next.t("general:Tokens")}: {Setting.getDisplayTag(Setting.sumFields(messages, "tokenCount"))}
+              </span>
+              <span className="text-sm text-zinc-400">
+                {i18next.t("chat:Price")}: {Setting.getDisplayPrice(Setting.sumFields(messages, "price"))}
+              </span>
+            </React.Fragment>
+          )}
+        </div>
+        <div className="overflow-x-auto border border-zinc-800 rounded-lg"><table className="w-full text-sm text-left"><thead className="bg-zinc-900/80 border-b border-zinc-800"><tr>{columns.map(col => <th key={col.key || col.dataIndex} className="px-3 py-2 text-xs font-medium text-zinc-400 whitespace-nowrap">{col.title}</th>)}</tr></thead><tbody className="divide-y divide-zinc-800/50">{(messages || []).map((record, index) => <tr key={record.name || index} className="hover:bg-zinc-900/50 transition-colors">{columns.map(col => <td key={col.key || col.dataIndex} className="px-3 py-2 text-zinc-300 whitespace-nowrap">{col.render ? col.render(record[col.dataIndex], record, index) : record[col.dataIndex]}</td>)}</tr>)}</tbody></table></div>
       </div>
     );
   }

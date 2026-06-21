@@ -13,6 +13,7 @@
 // limitations under the License.
 
 import React from "react";
+import {Input, Mentions, Popover} from "antd";
 import * as WorkflowBackend from "./backend/WorkflowBackend";
 import * as Setting from "./Setting";
 import i18next from "i18next";
@@ -97,13 +98,13 @@ class WorkflowEditPage extends React.Component {
 
   renderWorkflow() {
     return (
-      <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4">
+      <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4" style={{marginLeft: "5px"}}>
+        <div>
           {i18next.t("workflow:Edit Workflow")}&nbsp;&nbsp;&nbsp;&nbsp;
-          <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700"> this.submitWorkflowEdit(false)}>{i18next.t("general:Save")}</button>
-          <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}> this.submitWorkflowEdit(true)}>{i18next.t("general:Save & Exit")}</button>
-          {this.state.isNewWorkflow && <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}> this.cancelWorkflowEdit()}>{i18next.t("general:Cancel")}</button>}
+          <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" onClick={() => this.submitWorkflowEdit(false)}>{i18next.t("general:Save")}</button>
+          <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}} onClick={() => this.submitWorkflowEdit(true)}>{i18next.t("general:Save & Exit")}</button>
+          {this.state.isNewWorkflow && <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}} onClick={() => this.cancelWorkflowEdit()}>{i18next.t("general:Cancel")}</button>}
         </div>
-      } style={{marginLeft: "5px"}} type="inner">
         <div className="flex flex-col sm:flex-row gap-2 mt-4">
           <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Name"), i18next.t("general:Name - Tooltip"))} :
@@ -143,7 +144,6 @@ class WorkflowEditPage extends React.Component {
             </div>
           </div>
           <div className="flex-1">
-          <div className="flex-1">
             <div>
               <BpmnComponent
                 diagramXML={this.state.workflow.text}
@@ -178,7 +178,6 @@ class WorkflowEditPage extends React.Component {
               />
             </div>
           </div>
-          <div className="flex-1">
           <div className="flex-1">
             <div>
               <BpmnComponent
@@ -220,7 +219,10 @@ class WorkflowEditPage extends React.Component {
             {Setting.getLabel(i18next.t("general:Template"), i18next.t("general:Template - Tooltip"))} :
           </div>
           <div className="flex-1">
-            <div className="flex-1">
+            <Popover placement="top" trigger="click"
+              content={
+                <div className="flex flex-col sm:flex-row gap-2" style={{width: "1000px"}}>
+                  <div className="flex-1">
                     <div style={{marginBottom: "8px"}}>
                       {i18next.t("general:Template")}:
                     </div>
@@ -244,6 +246,7 @@ class WorkflowEditPage extends React.Component {
                 </div>
               }>
               <input className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={Setting.getShortText(this.state.workflow.questionTemplate, 60)} readOnly />
+            </Popover>
           </div>
         </div>
         <div className="flex flex-col sm:flex-row gap-2 mt-4">
@@ -308,9 +311,9 @@ class WorkflowEditPage extends React.Component {
           this.state.workflow !== null ? this.renderWorkflow() : null
         }
         <div style={{marginTop: "20px", marginLeft: "40px"}}>
-          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700"> this.submitWorkflowEdit(false)}>{i18next.t("general:Save")}</button>
-          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}> this.submitWorkflowEdit(true)}>{i18next.t("general:Save & Exit")}</button>
-          {this.state.isNewWorkflow && <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}> this.cancelWorkflowEdit()}>{i18next.t("general:Cancel")}</button>}
+          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" onClick={() => this.submitWorkflowEdit(false)}>{i18next.t("general:Save")}</button>
+          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}} onClick={() => this.submitWorkflowEdit(true)}>{i18next.t("general:Save & Exit")}</button>
+          {this.state.isNewWorkflow && <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}} onClick={() => this.cancelWorkflowEdit()}>{i18next.t("general:Cancel")}</button>}
         </div>
       </div>
     );

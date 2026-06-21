@@ -13,6 +13,7 @@
 // limitations under the License.
 
 import React from "react";
+import {Statistic} from "antd";
 import BaseListPage from "./BaseListPage";
 import * as Setting from "./Setting";
 import * as UsageBackend from "./backend/UsageBackend";
@@ -20,7 +21,6 @@ import ReactEcharts from "echarts-for-react";
 import * as Conf from "./Conf";
 import i18next from "i18next";
 import UsageTable from "./UsageTable";
-
 
 class UsagePage extends BaseListPage {
   constructor(props) {
@@ -296,7 +296,7 @@ class UsagePage extends BaseListPage {
     return (
       <div className="flex flex-col sm:flex-row gap-2 mt-4">
         {
-          this.props.account.name !== "admin" ? <div className="flex-1"> : (
+          this.props.account.name !== "admin" ? <div className="flex-1" /> : (
             <React.Fragment>
               <div className="flex-1">
                 <Statistic
@@ -404,18 +404,22 @@ class UsagePage extends BaseListPage {
     return (
       <div style={{marginTop: "-10px", float: "right"}}>
         {this.renderDropdown()}
-        <div className="flex gap-2"> {
-          const rangeType = e.target.value;
-          this.setState({
-            rangeType: rangeType,
+        <div className="flex gap-2" style={{marginBottom: "10px"}}>
+          {
+            ["All", "Hour", "Day", "Week", "Month"].map(value => {
+              const label = value === "All" ? i18next.t("store:All") : i18next.t(`usage:${value}`);
+              const active = this.state.rangeType === value;
+              return (
+                <button
+                  key={value}
+                  className={`px-3 py-1.5 rounded text-xs ${active ? "bg-white text-black" : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"}`}
+                  onClick={() => this.setState({rangeType: value})}
+                >
+                  {label}
+                </button>
+              );
+            })
           }
-          );
-        }}>
-          <button className="px-3 py-1.5 bg-zinc-800 text-zinc-300 rounded text-xs hover:bg-zinc-700">{i18next.t("store:All")}</button>
-          <button className="px-3 py-1.5 bg-zinc-800 text-zinc-300 rounded text-xs hover:bg-zinc-700">{i18next.t("usage:Hour")}</button>
-          <button className="px-3 py-1.5 bg-zinc-800 text-zinc-300 rounded text-xs hover:bg-zinc-700">{i18next.t("usage:Day")}</button>
-          <button className="px-3 py-1.5 bg-zinc-800 text-zinc-300 rounded text-xs hover:bg-zinc-700">{i18next.t("usage:Week")}</button>
-          <button className="px-3 py-1.5 bg-zinc-800 text-zinc-300 rounded text-xs hover:bg-zinc-700">{i18next.t("usage:Month")}</button>
         </div>
         {this.renderSelect()}
       </div>
@@ -430,20 +434,20 @@ class UsagePage extends BaseListPage {
     return (
       <React.Fragment>
         <br />
-        <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.endpoint}> {
-            const endpoint = value;
-            this.setState({
-              endpoint: endpoint,
-            });
+        <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" style={{width: "280px", marginRight: "10px"}} value={this.state.endpoint} onChange={e => {
+          const endpoint = e.target.value;
+          this.setState({
+            endpoint: endpoint,
+          });
 
-            this.getUsagesForAllCases(endpoint, "");
-          })}>
+          this.getUsagesForAllCases(endpoint, "");
+        }}>
           {
             Conf.UsageEndpoints.map((item, index) => <option key={index}
               value={item.id}>{`${item.name} (${item.id})`}</option>)
           }
         </select>
-        <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200 disabled:opacity-50" disabled={this.getHost() === this.state.endpoint}> Setting.openLink(`https://${this.state.endpoint}`)}>{i18next.t("usage:Go")}</button>
+        <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200 disabled:opacity-50" disabled={this.getHost() === this.state.endpoint} onClick={() => Setting.openLink(`https://${this.state.endpoint}`)}>{i18next.t("usage:Go")}</button>
       </React.Fragment>
     );
   }
@@ -477,7 +481,10 @@ class UsagePage extends BaseListPage {
     return (
       <div style={{display: "flex", alignItems: "center", marginBottom: "10px"}}>
         <span style={{width: "50px", marginRight: "10px"}}>{i18next.t("general:User")}:</span>
-        <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.selectedUser}> handleChange(value))}
+        <select
+          className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50"
+          value={this.state.selectedUser}
+          onChange={e => handleChange(e.target.value)}
           style={{width: "100%"}}
         >
           {users_options}
@@ -657,7 +664,6 @@ class UsagePage extends BaseListPage {
         <React.Fragment>
           <div className="flex flex-col sm:flex-row gap-2 mt-4">
             <div className="flex-1">
-            <div className="flex-1">
               <ReactEcharts
                 option={this.renderLeftChart(this.state.usages || [])}
                 style={{
@@ -695,7 +701,6 @@ class UsagePage extends BaseListPage {
                 }}
               />
             </div>
-            <div className="flex-1">
           </div>
         </React.Fragment>
       );
@@ -749,13 +754,11 @@ class UsagePage extends BaseListPage {
       <div style={{backgroundColor: this.props.themeAlgorithm && this.props.themeAlgorithm.includes("dark") ? "black" : "white"}}>
         <div className="flex flex-col sm:flex-row gap-2 mt-4">
           <div className="flex-1">
-          <div className="flex-1">
             {this.renderStatistic(this.state.usages)}
           </div>
           <div className="flex-1">
             {this.renderRadio()}
           </div>
-          <div className="flex-1">
         </div>
         <div className="flex flex-col sm:flex-row gap-2 mt-4">
           <div className="flex-1">

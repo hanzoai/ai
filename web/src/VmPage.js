@@ -15,7 +15,6 @@
 import React from "react";
 import * as VmBackend from "./backend/VmBackend";
 import i18next from "i18next";
-import {Loader2} from "lucide-react";
 
 class VmPage extends React.Component {
   constructor(props) {

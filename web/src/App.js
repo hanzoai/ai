@@ -16,7 +16,6 @@ import React, {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {Link, Redirect, Route, Switch, useHistory, useLocation} from "react-router-dom";
 import {Helmet} from "react-helmet";
 import {Toaster} from "sonner";
-import {useTranslation} from "react-i18next";
 import i18next from "i18next";
 import {Bot, ChevronDown, ChevronLeft, Cloud, Home, LayoutGrid, Lightbulb, Lock, LogIn, LogOut, Menu, MessageSquare, Monitor, Settings, User, Video, Wallet, X} from "lucide-react";
 import * as Setting from "./Setting";
@@ -110,7 +109,6 @@ import ConsultationEditPage from "./ConsultationEditPage";
 import AgentsPage from "./AgentsPage";
 import VmPage from "./VmPage";
 import LanguageSelect from "./LanguageSelect";
-import ThemeSelect from "./ThemeSelect";
 
 // Sidebar nav group component
 function NavGroup({icon: Icon, label, children, defaultOpen = false}) {
@@ -185,7 +183,6 @@ function NavItem({to, children, external}) {
 function App() {
   const history = useHistory();
   const location = useLocation();
-  const {t} = useTranslation();
 
   const [account, setAccount] = useState(undefined);
   const [forms, setForms] = useState([]);
@@ -210,7 +207,7 @@ function App() {
     if (!Conf.DisablePreviewMode) {
       previewInterceptorRef.current = new PreviewInterceptor(() => account, history);
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   // Fetch account
   const getAccount = useCallback(() => {

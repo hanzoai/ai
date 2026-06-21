@@ -13,10 +13,10 @@
 // limitations under the License.
 
 import React from "react";
+import {Input} from "antd";
 import * as ContainerBackend from "./backend/ContainerBackend";
 import * as Setting from "./Setting";
 import i18next from "i18next";
-
 
 class ContainerEditPage extends React.Component {
   constructor(props) {
@@ -65,13 +65,13 @@ class ContainerEditPage extends React.Component {
 
   renderContainer() {
     return (
-      <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4">
+      <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4" style={{marginLeft: "5px"}}>
+        <div>
           {this.state.mode === "add" ? i18next.t("container:New Container") : i18next.t("container:Edit Container")}&nbsp;&nbsp;&nbsp;&nbsp;
-          <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700"> this.submitContainerEdit(false)}>{i18next.t("general:Save")}</button>
-          <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}> this.submitContainerEdit(true)}>{i18next.t("general:Save & Exit")}</button>
-          {this.state.mode === "add" ? <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}> this.deleteContainer()}>{i18next.t("general:Cancel")}</button> : null}
+          <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" onClick={() => this.submitContainerEdit(false)}>{i18next.t("general:Save")}</button>
+          <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}} onClick={() => this.submitContainerEdit(true)}>{i18next.t("general:Save & Exit")}</button>
+          {this.state.mode === "add" ? <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}} onClick={() => this.deleteContainer()}>{i18next.t("general:Cancel")}</button> : null}
         </div>
-      } style={{marginLeft: "5px"}} type="inner">
         <div className="flex flex-col sm:flex-row gap-2 mt-4">
           <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Organization"), i18next.t("general:Organization - Tooltip"))} :
@@ -177,9 +177,9 @@ class ContainerEditPage extends React.Component {
             {Setting.getLabel(i18next.t("general:State"), i18next.t("general:State - Tooltip"))} :
           </div>
           <div className="flex-1">
-            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.container.state}> {
-              this.updateContainerField("state", value);
-            })}>
+            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.container.state} onChange={e => {
+              this.updateContainerField("state", e.target.value);
+            }}>
               {
                 [
                   {id: "Running", name: "Running"},
@@ -262,9 +262,9 @@ class ContainerEditPage extends React.Component {
           this.state.container !== null ? this.renderContainer() : null
         }
         <div style={{marginTop: "20px", marginLeft: "40px"}}>
-          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700"> this.submitContainerEdit(false)}>{i18next.t("general:Save")}</button>
-          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}> this.submitContainerEdit(true)}>{i18next.t("general:Save & Exit")}</button>
-          {this.state.mode === "add" ? <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}> this.deleteContainer()}>{i18next.t("general:Cancel")}</button> : null}
+          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" onClick={() => this.submitContainerEdit(false)}>{i18next.t("general:Save")}</button>
+          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}} onClick={() => this.submitContainerEdit(true)}>{i18next.t("general:Save & Exit")}</button>
+          {this.state.mode === "add" ? <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}} onClick={() => this.deleteContainer()}>{i18next.t("general:Cancel")}</button> : null}
         </div>
       </div>
     );

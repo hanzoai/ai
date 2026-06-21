@@ -13,6 +13,7 @@
 // limitations under the License.
 
 import React, {useState} from "react";
+import {Image, Input, Space, Upload} from "antd";
 import * as Setting from "./Setting";
 import i18next from "i18next";
 import * as TreeFileBackend from "./backend/TreeFileBackend";
@@ -92,11 +93,11 @@ const StoreAvatarUploader = (props) => {
               )
             }
 
-            
-              <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200">
+            <Upload name="file" accept="image/*" showUploadList={false} customRequest={handleUpload}>
+              <button disabled={loading} className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200 disabled:opacity-50">
                 {i18next.t("general:Upload")}
               </button>
-            
+            </Upload>
           </Space>
         </div>
       </div>
