@@ -96,7 +96,7 @@ class SessionListPage extends BaseListPage {
         sorter: (a, b) => a.sessionId.localeCompare(b.sessionId),
         render: (text, session, index) => {
           return text.map((item, index) =>
-            <span className="px-2 py-0.5 bg-zinc-800 text-zinc-400 rounded text-xs">{item}</span>
+            <span key={index} className="px-2 py-0.5 bg-zinc-800 text-zinc-400 rounded text-xs">{item}</span>
           );
         },
       },
@@ -120,18 +120,9 @@ class SessionListPage extends BaseListPage {
       },
     ];
 
-    const paginationProps = {
-      pageSize: this.state.pagination.pageSize,
-      total: this.state.pagination.total,
-      showQuickJumper: true,
-      showSizeChanger: true,
-      pageSizeOptions: ["10", "20", "50", "100", "1000", "10000", "100000"],
-      showTotal: () => i18next.t("general:{total} in total").replace("{total}", this.state.pagination.total),
-    };
-
     return (
       <div>
-        <div className="overflow-x-auto border border-zinc-800 rounded-lg"><table className="w-full text-sm text-left"><thead className="bg-zinc-900/80 border-b border-zinc-800"><tr>{columns.map(col => <th key={col.key || col.dataIndex} className="px-3 py-2 text-xs font-medium text-zinc-400 whitespace-nowrap">{col.title}</th>)}</tr></thead><tbody className="divide-y divide-zinc-800/50">{(sessions || []).map((record, index) => <tr key={typeof {(session) => `${session.owner} === "function" ? ({(session) => `${session.owner})(record) : record[{(session) => `${session.owner}] || index} className="hover:bg-zinc-900/50 transition-colors">{columns.map(col => <td key={col.key || col.dataIndex} className="px-3 py-2 text-zinc-300 whitespace-nowrap">{col.render ? col.render(record[col.dataIndex], record, index) : record[col.dataIndex]}</td>)}</tr>)}</tbody></table></div>
+        <div className="overflow-x-auto border border-zinc-800 rounded-lg"><table className="w-full text-sm text-left"><thead className="bg-zinc-900/80 border-b border-zinc-800"><tr>{columns.map(col => <th key={col.key || col.dataIndex} className="px-3 py-2 text-xs font-medium text-zinc-400 whitespace-nowrap">{col.title}</th>)}</tr></thead><tbody className="divide-y divide-zinc-800/50">{(sessions || []).map((record, index) => <tr key={`${record.owner}/${record.name}` || index} className="hover:bg-zinc-900/50 transition-colors">{columns.map(col => <td key={col.key || col.dataIndex} className="px-3 py-2 text-zinc-300 whitespace-nowrap">{col.render ? col.render(record[col.dataIndex], record, index) : record[col.dataIndex]}</td>)}</tr>)}</tbody></table></div>
       </div>
     );
   }

@@ -263,8 +263,7 @@ class GraphEditPage extends React.Component {
     if (this.state.isNewGraph) {
       GraphBackend.deleteGraph(this.state.graph)
         .then((res) => {
-          if (res.status === "ok") {Setting.showMessage("success", i18next.t("general:Cancelled successfully")); this.props.history.push("/graphs");}
-          else {Setting.showMessage("error", `${i18next.t("general:Failed to cancel")}: ${res.msg}`);}
+          if (res.status === "ok") {Setting.showMessage("success", i18next.t("general:Cancelled successfully")); this.props.history.push("/graphs");} else {Setting.showMessage("error", `${i18next.t("general:Failed to cancel")}: ${res.msg}`);}
         })
         .catch(error => Setting.showMessage("error", `${i18next.t("general:Failed to cancel")}: ${error}`));
     } else {

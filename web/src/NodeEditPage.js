@@ -13,12 +13,12 @@
 // limitations under the License.
 
 import React from "react";
+import {Input, Select, Switch} from "antd";
 import * as NodeBackend from "./backend/NodeBackend";
 import * as Setting from "./Setting";
 import i18next from "i18next";
 import ServiceTable from "./table/ServiceTable";
 import RemoteAppTable from "./table/RemoteAppTable";
-
 
 class NodeEditPage extends React.Component {
   constructor(props) {
@@ -149,12 +149,12 @@ class NodeEditPage extends React.Component {
   renderNode() {
     return (
       <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4">
+        <div>
           {this.state.mode === "add" ? i18next.t("node:New Node") : i18next.t("node:Edit Node")}&nbsp;&nbsp;&nbsp;&nbsp;
-          <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700"> this.submitNodeEdit(false)}>{i18next.t("general:Save")}</button>
-          <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}> this.submitNodeEdit(true)}>{i18next.t("general:Save & Exit")}</button>
-          {this.state.mode === "add" ? <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}> this.deleteNode()}>{i18next.t("general:Cancel")}</button> : null}
+          <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" onClick={() => this.submitNodeEdit(false)}>{i18next.t("general:Save")}</button>
+          <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}} onClick={() => this.submitNodeEdit(true)}>{i18next.t("general:Save & Exit")}</button>
+          {this.state.mode === "add" ? <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}} onClick={() => this.deleteNode()}>{i18next.t("general:Cancel")}</button> : null}
         </div>
-      } style={{marginLeft: "5px"}} type="inner">
         <div className="flex flex-col sm:flex-row gap-2 mt-4">
           <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Organization"), i18next.t("general:Organization - Tooltip"))} :
@@ -190,9 +190,9 @@ class NodeEditPage extends React.Component {
             {Setting.getLabel(i18next.t("machine:Protocol"), i18next.t("machine:Protocol - Tooltip"))} :
           </div>
           <div className="flex-1">
-            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.node.remoteProtocol}> {
-              this.updateNodeField("remoteProtocol", value);
-              this.updateNodeField("remotePort", this.getDefaultPort(value));
+            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.node.remoteProtocol} onChange={e => {
+              this.updateNodeField("remoteProtocol", e.target.value);
+              this.updateNodeField("remotePort", this.getDefaultPort(e.target.value));
             }}>
               {
                 [
@@ -254,7 +254,7 @@ class NodeEditPage extends React.Component {
             {Setting.getLabel(i18next.t("node:OS"), i18next.t("node:OS - Tooltip"))} :
           </div>
           <div className="flex-1">
-            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.node.os}> {
+            <Select virtual={false} style={{width: "100%"}} value={this.state.node.os} onChange={value => {
               this.updateNodeField("os", value);
             }}
             options={[
@@ -289,7 +289,9 @@ class NodeEditPage extends React.Component {
             {Setting.getLabel(i18next.t("node:Auto query"), i18next.t("node:Auto query - Tooltip"))} :
           </div>
           <div className="flex-1">
-            <span className="px-2 py-0.5 rounded text-xs " + (this.state.node.autoQuery ? "bg-green-500/20 text-green-400" : "bg-zinc-800 text-zinc-500")">{this.state.node.autoQuery ? "ON" : "OFF"}</span>
+            <Switch checked={this.state.node.autoQuery} onChange={checked => {
+              this.updateNodeField("autoQuery", checked);
+            }} />
           </div>
         </div>
         <div className="flex flex-col sm:flex-row gap-2 mt-4">
@@ -297,7 +299,9 @@ class NodeEditPage extends React.Component {
             {Setting.getLabel(i18next.t("node:Is permanent"), i18next.t("node:Is permanent - Tooltip"))} :
           </div>
           <div className="flex-1">
-            <span className="px-2 py-0.5 rounded text-xs " + (this.state.node.isPermanent ? "bg-green-500/20 text-green-400" : "bg-zinc-800 text-zinc-500")">{this.state.node.isPermanent ? "ON" : "OFF"}</span>
+            <Switch checked={this.state.node.isPermanent} onChange={checked => {
+              this.updateNodeField("isPermanent", checked);
+            }} />
           </div>
         </div>
         {this.state.node.protocol === "RDP" && (
@@ -307,7 +311,13 @@ class NodeEditPage extends React.Component {
                 {Setting.getLabel(i18next.t("node:Enable Remote App"), i18next.t("node:Enable Remote App - Tooltip"))} :
               </div>
               <div className="flex-1">
-                <span className="px-2 py-0.5 rounded text-xs " + (this.state.node.enableRemoteApp ? "bg-green-500/20 text-green-400" : "bg-zinc-800 text-zinc-500")">{this.state.node.enableRemoteApp ? "ON" : "OFF"}</span>
+                <Switch checked={this.state.node.enableRemoteApp} onChange={checked => {
+                  if (checked && this.state.node.remoteApps.length === 0) {
+                    Setting.showMessage("error", i18next.t("node:Cannot enable Remote App when Remote Apps are empty. Please add at least one Remote App in below table first, then enable again"));
+                    return;
+                  }
+                  this.updateNodeField("enableRemoteApp", checked);
+                }} />
               </div>
             </div>
             {this.state.node.enableRemoteApp && (
@@ -392,9 +402,9 @@ class NodeEditPage extends React.Component {
           this.state.node !== null ? this.renderNode() : null
         }
         <div style={{marginTop: "20px", marginLeft: "40px"}}>
-          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700"> this.submitNodeEdit(false)}>{i18next.t("general:Save")}</button>
-          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}> this.submitNodeEdit(true)}>{i18next.t("general:Save & Exit")}</button>
-          {this.state.mode === "add" ? <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}> this.deleteNode()}>{i18next.t("general:Cancel")}</button> : null}
+          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" onClick={() => this.submitNodeEdit(false)}>{i18next.t("general:Save")}</button>
+          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}} onClick={() => this.submitNodeEdit(true)}>{i18next.t("general:Save & Exit")}</button>
+          {this.state.mode === "add" ? <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}} onClick={() => this.deleteNode()}>{i18next.t("general:Cancel")}</button> : null}
         </div>
       </div>
     );

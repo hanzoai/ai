@@ -13,6 +13,7 @@
 // limitations under the License.
 
 import React from "react";
+import {Input, Select, Upload} from "antd";
 
 const ANALYZE_PROGRESS_DURATION_SEC = 300;
 const ANALYZE_PROGRESS_TICK_MS = 500;
@@ -25,9 +26,9 @@ import * as ProviderBackend from "./backend/ProviderBackend";
 import * as MessageBackend from "./backend/MessageBackend";
 import Editor from "./common/Editor";
 import TaskAnalysisReport from "./TaskAnalysisReport";
-import * as Provider from "./Provider";
-import {Loader2} from "lucide-react";
+import {Download, File, FileText, Loader2, X} from "lucide-react";
 
+const {Option} = Select;
 
 class TaskEditPage extends React.Component {
   constructor(props) {
@@ -263,12 +264,12 @@ class TaskEditPage extends React.Component {
   renderTask() {
     return (
       <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4">
+        <div className="mb-4">
           {i18next.t("task:Edit Task")}&nbsp;&nbsp;&nbsp;&nbsp;
-          <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700"> this.submitTaskEdit(false)}>{i18next.t("general:Save")}</button>
-          <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}> this.submitTaskEdit(true)}>{i18next.t("general:Save & Exit")}</button>
-          {this.state.isNewTask && <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}> this.cancelTaskEdit()}>{i18next.t("general:Cancel")}</button>}
+          <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" onClick={() => this.submitTaskEdit(false)}>{i18next.t("general:Save")}</button>
+          <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}} onClick={() => this.submitTaskEdit(true)}>{i18next.t("general:Save & Exit")}</button>
+          {this.state.isNewTask && <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}} onClick={() => this.cancelTaskEdit()}>{i18next.t("general:Cancel")}</button>}
         </div>
-      } style={{marginLeft: "5px"}} type="inner">
         <div className="flex flex-col sm:flex-row gap-2 mt-4">
           <div className="flex-1">
             <div>{Setting.getLabel(i18next.t("general:Name"), i18next.t("general:Name - Tooltip"))} :</div>
@@ -280,21 +281,15 @@ class TaskEditPage extends React.Component {
             <>
               <div className="flex-1">
                 <div>{Setting.getLabel(i18next.t("provider:Model provider"), i18next.t("provider:Model provider - Tooltip"))} :</div>
-                <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.task.provider}> this.updateTaskField("provider", value)}
-                  options={this.state.modelProviders.map((p) => ({
-                    value: p.name,
-                    label: (
-                      <span style={{display: "inline-flex", alignItems: "center", gap: 8}}>
-                        <Provider.ProviderLogo provider={p} width={20} height={20} />
-                        <span>{p.displayName} ({p.name})</span>
-                      </span>
-                    ),
-                  }))}
-                />
+                <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.task.provider} onChange={e => this.updateTaskField("provider", e.target.value)}>
+                  {
+                    this.state.modelProviders.map((p, index) => <option key={index} value={p.name}>{p.displayName} ({p.name})</option>)
+                  }
+                </select>
               </div>
               <div className="flex-1">
                 <div>{Setting.getLabel(i18next.t("general:Type"), i18next.t("general:Type - Tooltip"))} :</div>
-                <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.task.type}> {this.updateTaskField("type", value);})}>
+                <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.task.type} onChange={e => {this.updateTaskField("type", e.target.value);}}>
                   {
                     [
                       {id: "Labeling", name: "Labeling"},
@@ -327,12 +322,12 @@ class TaskEditPage extends React.Component {
                 {Setting.getLabel(i18next.t("general:Template"), i18next.t("general:Template - Tooltip"))} :
               </div>
               <div className="flex-1">
-                <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.task.template ?? ""}> this.updateTaskField("template", value || "")}
-                  options={[
-                    {value: "", label: i18next.t("general:None")},
-                    ...this.state.templates.map((t) => ({value: `${t.owner}/${t.name}`, label: t.displayName ? `${t.displayName} (${t.owner}/${t.name})` : `${t.owner}/${t.name}`})),
-                  ]}
-                />
+                <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.task.template ?? ""} onChange={e => this.updateTaskField("template", e.target.value || "")}>
+                  <option value="">{i18next.t("general:None")}</option>
+                  {
+                    this.state.templates.map((t, index) => <option key={index} value={`${t.owner}/${t.name}`}>{t.displayName ? `${t.displayName} (${t.owner}/${t.name})` : `${t.owner}/${t.name}`}</option>)
+                  }
+                </select>
               </div>
             </div>
           ) : null
@@ -344,8 +339,7 @@ class TaskEditPage extends React.Component {
                 {Setting.getLabel(i18next.t("task:Scale"), i18next.t("task:Scale - Tooltip"))} :
               </div>
               <div className="flex-1">
-                <span className="text-zinc-300 text-sm"> this.updateTaskField("scale", e.target.value)}
-                />
+                <textarea className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" rows={3} value={this.getEffectiveScale()} disabled={!!this.state.task.template} onChange={e => this.updateTaskField("scale", e.target.value)} />
               </div>
             </div>
           ) : null
@@ -357,23 +351,30 @@ class TaskEditPage extends React.Component {
           <div className="flex-1">
             {this.state.task.documentUrl ? (
               <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4">
-                <Space align="center">
-                  <span style={{fontSize: 28, color: this.state.task.documentUrl.endsWith(".pdf") ? "#cf1322" : "#1890ff"}}>
-                    {this.state.task.documentUrl.endsWith(".pdf") ?  : }
+                <div style={{display: "flex", alignItems: "center", gap: 12, flexWrap: "nowrap", minWidth: 0}}>
+                  <span style={{fontSize: 28, flexShrink: 0, color: this.state.task.documentUrl.endsWith(".pdf") ? "#cf1322" : "#1890ff"}}>
+                    {this.state.task.documentUrl.endsWith(".pdf") ? <FileText size={28} /> : <File size={28} />}
                   </span>
-                  <Typography.Text ellipsis style={{maxWidth: 420}}>{this.getDocumentFileName()}</Typography.Text>
-                  <button className="px-2 py-1 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700">} href={this.state.task.documentUrl} target="_blank" rel="noopener noreferrer">
+                  <span className="truncate text-zinc-300 text-sm" style={{maxWidth: 420}}>{this.getDocumentFileName()}</span>
+                  <a className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" href={this.state.task.documentUrl} target="_blank" rel="noopener noreferrer">
+                    <Download size={14} />
                     {i18next.t("general:Download")}
-                  </button>
-                  <button className="px-2 py-1 rounded text-xs font-medium transition-colors bg-red-600 text-white hover:bg-red-700">} onClick={this.clearDocument} aria-label={i18next.t("general:Delete")} />
-                </Space>
+                  </a>
+                  <button className="inline-flex items-center px-2 py-1 rounded text-xs font-medium transition-colors bg-red-600 text-white hover:bg-red-700" onClick={this.clearDocument} aria-label={i18next.t("general:Delete")}><X size={14} /></button>
+                </div>
               </div>
             ) : (
-              
-                <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200">} loading={this.state.uploadingDocument}>
+              <Upload
+                name="file"
+                accept=".docx,.pdf"
+                showUploadList={false}
+                customRequest={this.handleDocumentUpload}
+              >
+                <button className="inline-flex items-center gap-1 px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200 disabled:opacity-50" disabled={this.state.uploadingDocument}>
+                  {this.state.uploadingDocument && <Loader2 size={14} className="animate-spin" />}
                   {i18next.t("store:Upload file")} (.docx, .pdf)
                 </button>
-              
+              </Upload>
             )}
           </div>
         </div>
@@ -395,11 +396,11 @@ class TaskEditPage extends React.Component {
                   {Setting.getLabel(i18next.t("task:Labels"), i18next.t("task:Labels - Tooltip"))} :
                 </div>
                 <div className="flex-1">
-                  <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.task.labels}> {this.updateTaskField("labels", value);})}>
+                  <Select virtual={false} mode="tags" style={{width: "100%"}} value={this.state.task.labels} onChange={(value => {this.updateTaskField("labels", value);})}>
                     {
-                      this.state.task.labels?.map((item, index) => <option key={index} value={item}>{item}</option>)
+                      this.state.task.labels?.map((item, index) => <Option key={index} value={item}>{item}</Option>)
                     }
-                  </select>
+                  </Select>
                 </div>
               </div>
             </React.Fragment>
@@ -412,19 +413,21 @@ class TaskEditPage extends React.Component {
                 {Setting.getLabel(i18next.t("task:Report"), i18next.t("task:Report - Tooltip"))} :
               </div>
               <div className="flex-1">
-                <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200 disabled:opacity-50" disabled={!this.state.task.documentText || !!this.state.task.result} style={{marginBottom: "20px", width: "200px"}> this.analyzeTask()}
+                <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200 disabled:opacity-50" disabled={!this.state.task.documentText || !!this.state.task.result} style={{marginBottom: "20px", width: "200px"}} onClick={() => this.analyzeTask()}
                 >
                   {i18next.t("task:Analyze")}
                 </button>
                 {Setting.isAdminUser(this.props.account) && this.state.task.result ? (
-                  <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" onClick={this.clearReport} style={{marginBottom: "20px", marginLeft: "8px", width: "200px"}>
+                  <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" onClick={this.clearReport} style={{marginBottom: "20px", marginLeft: "8px", width: "200px"}}>
                     {i18next.t("general:Clear")}
                   </button>
                 ) : null}
                 {this.state.analyzing && (
                   <>
                     <div style={{maxWidth: "400px", marginTop: "8px", marginBottom: "8px"}}>
-                      <Progress percent={this.state.analyzeProgress} status="active" />
+                      <div className="w-full h-2 bg-zinc-800 rounded-full overflow-hidden">
+                        <div className="h-full bg-white transition-all" style={{width: `${this.state.analyzeProgress}%`}} />
+                      </div>
                     </div>
                     <div className="flex justify-center py-8"><div className="w-8 h-8 border-2 border-zinc-700 border-t-white rounded-full animate-spin" /></div>
                   </>
@@ -438,7 +441,7 @@ class TaskEditPage extends React.Component {
                 {Setting.getLabel(i18next.t("task:Log"), i18next.t("task:Log - Tooltip"))} :
               </div>
               <div className="flex-1">
-                <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" onClick={this.runTask.bind(this)} style={{marginBottom: "20px", width: "100px"}>{i18next.t("general:Run")}</button>
+                <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" onClick={this.runTask.bind(this)} style={{marginBottom: "20px", width: "100px"}}>{i18next.t("general:Run")}</button>
                 <div style={{height: "200px"}}>
                   <Editor
                     value={this.state.task.log}
@@ -505,9 +508,9 @@ class TaskEditPage extends React.Component {
           this.state.task !== null ? this.renderTask() : null
         }
         <div style={{marginTop: "20px", marginLeft: "40px"}}>
-          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700"> this.submitTaskEdit(false)}>{i18next.t("general:Save")}</button>
-          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}> this.submitTaskEdit(true)}>{i18next.t("general:Save & Exit")}</button>
-          {this.state.isNewTask && <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}> this.cancelTaskEdit()}>{i18next.t("general:Cancel")}</button>}
+          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" onClick={() => this.submitTaskEdit(false)}>{i18next.t("general:Save")}</button>
+          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}} onClick={() => this.submitTaskEdit(true)}>{i18next.t("general:Save & Exit")}</button>
+          {this.state.isNewTask && <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}} onClick={() => this.cancelTaskEdit()}>{i18next.t("general:Cancel")}</button>}
         </div>
       </div>
     );

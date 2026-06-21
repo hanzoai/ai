@@ -13,6 +13,7 @@
 // limitations under the License.
 
 import React from "react";
+import {Input} from "antd";
 import * as FormBackend from "./backend/FormBackend";
 import * as Setting from "./Setting";
 import i18next from "i18next";
@@ -77,12 +78,12 @@ class FormEditPage extends React.Component {
   renderForm() {
     return (
       <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4">
+        <div>
           {i18next.t("form:Edit Form")}&nbsp;&nbsp;&nbsp;&nbsp;
-          <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700"> this.submitFormEdit(false)}>{i18next.t("general:Save")}</button>
-          <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}> this.submitFormEdit(true)}>{i18next.t("general:Save & Exit")}</button>
-          {this.state.isNewForm && <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}> this.cancelFormEdit()}>{i18next.t("general:Cancel")}</button>}
+          <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" onClick={() => this.submitFormEdit(false)}>{i18next.t("general:Save")}</button>
+          <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}} onClick={() => this.submitFormEdit(true)}>{i18next.t("general:Save & Exit")}</button>
+          {this.state.isNewForm && <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}} onClick={() => this.cancelFormEdit()}>{i18next.t("general:Cancel")}</button>}
         </div>
-      } style={{marginLeft: "5px"}} type="inner">
         <div className="flex flex-col sm:flex-row gap-2 mt-4">
           <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Name"), i18next.t("general:Name - Tooltip"))} :
@@ -118,9 +119,9 @@ class FormEditPage extends React.Component {
             {Setting.getLabel(i18next.t("general:Category"), i18next.t("provider:Category - Tooltip"))} :
           </div>
           <div className="flex-1">
-            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.form.category}> {
-              this.updateFormField("category", value);
-            })}>
+            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.form.category} onChange={e => {
+              this.updateFormField("category", e.target.value);
+            }}>
               {
                 [
                   {id: "Table", name: i18next.t("form:Table")},
@@ -155,7 +156,7 @@ class FormEditPage extends React.Component {
                 {Setting.getLabel(i18next.t("general:URL"), i18next.t("general:URL - Tooltip"))} :
               </div>
               <div className="flex-1">
-                <input className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-500 disabled:opacity-50" />} value={this.state.form.url} onChange={e => {this.updateFormField("url", e.target.value);}} />
+                <input className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.form.url} onChange={e => {this.updateFormField("url", e.target.value);}} />
               </div>
             </div>
           )
@@ -168,7 +169,9 @@ class FormEditPage extends React.Component {
                   {Setting.getLabel(i18next.t("general:Type"), i18next.t("general:Type - Tooltip"))} :
                 </div>
                 <div className="flex-1">
-                  <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.form.type}> {
+                  <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.form.type}
+                    onChange={e => {
+                      const value = e.target.value;
                       this.updateFormField("type", value);
                       this.updateFormField("name", value);
                       this.updateFormField("displayName", value);
@@ -306,9 +309,9 @@ class FormEditPage extends React.Component {
           this.state.form !== null ? this.renderForm() : null
         }
         <div style={{marginTop: "20px", marginLeft: "40px"}}>
-          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700"> this.submitFormEdit(false)}>{i18next.t("general:Save")}</button>
-          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}> this.submitFormEdit(true)}>{i18next.t("general:Save & Exit")}</button>
-          {this.state.isNewForm && <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}> this.cancelFormEdit()}>{i18next.t("general:Cancel")}</button>}
+          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" onClick={() => this.submitFormEdit(false)}>{i18next.t("general:Save")}</button>
+          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}} onClick={() => this.submitFormEdit(true)}>{i18next.t("general:Save & Exit")}</button>
+          {this.state.isNewForm && <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}} onClick={() => this.cancelFormEdit()}>{i18next.t("general:Cancel")}</button>}
         </div>
       </div>
     );

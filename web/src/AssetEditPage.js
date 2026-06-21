@@ -13,6 +13,7 @@
 // limitations under the License.
 
 import React from "react";
+import {Input} from "antd";
 import * as AssetBackend from "./backend/AssetBackend";
 import * as ProviderBackend from "./backend/ProviderBackend";
 import * as ScanBackend from "./backend/ScanBackend";
@@ -172,12 +173,12 @@ class AssetEditPage extends React.Component {
 
     return (
       <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4">
+        <div>
           {this.state.mode === "add" ? i18next.t("asset:New Asset") : i18next.t("asset:Edit Asset")}&nbsp;&nbsp;&nbsp;&nbsp;
-          <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700"> this.submitAssetEdit(false)}>{i18next.t("general:Save")}</button>
-          <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}> this.submitAssetEdit(true)}>{i18next.t("general:Save & Exit")}</button>
-          {this.state.mode === "add" ? <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}> this.deleteAsset()}>{i18next.t("general:Cancel")}</button> : null}
+          <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" onClick={() => this.submitAssetEdit(false)}>{i18next.t("general:Save")}</button>
+          <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}} onClick={() => this.submitAssetEdit(true)}>{i18next.t("general:Save & Exit")}</button>
+          {this.state.mode === "add" ? <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}} onClick={() => this.deleteAsset()}>{i18next.t("general:Cancel")}</button> : null}
         </div>
-      } style={{marginLeft: "5px"}} type="inner">
         <div className="flex flex-col sm:flex-row gap-2 mt-4">
           <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Organization"), i18next.t("general:Organization - Tooltip"))} :
@@ -209,10 +210,10 @@ class AssetEditPage extends React.Component {
             {Setting.getLabel(i18next.t("general:Provider"), i18next.t("general:Provider - Tooltip"))} :
           </div>
           <div className="flex-1">
-            <input className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.asset.provider} disabled /> :
-                  null
-              }
-            />
+            <div style={{display: "flex", alignItems: "center", gap: "8px"}}>
+              {providerLogo ? <img src={providerLogo} alt={this.state.asset.provider} style={{width: "16px", height: "16px"}} /> : null}
+              <input className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.asset.provider} disabled />
+            </div>
           </div>
         </div>
         <div className="flex flex-col sm:flex-row gap-2 mt-4">
@@ -228,10 +229,10 @@ class AssetEditPage extends React.Component {
             {Setting.getLabel(i18next.t("general:Type"), i18next.t("general:Type - Tooltip"))} :
           </div>
           <div className="flex-1">
-            <input className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.asset.type} disabled /> :
-                  null
-              }
-            />
+            <div style={{display: "flex", alignItems: "center", gap: "8px"}}>
+              {typeIcon ? <img src={typeIcon} alt={this.state.asset.type} style={{width: "16px", height: "16px"}} /> : null}
+              <input className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.asset.type} disabled />
+            </div>
           </div>
         </div>
         <div className="flex flex-col sm:flex-row gap-2 mt-4">
@@ -333,9 +334,9 @@ class AssetEditPage extends React.Component {
           </div>
         )}
         <div style={{marginTop: "20px", marginLeft: "40px"}}>
-          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700"> this.submitAssetEdit(false)}>{i18next.t("general:Save")}</button>
-          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}> this.submitAssetEdit(true)}>{i18next.t("general:Save & Exit")}</button>
-          {this.state.mode === "add" ? <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}> this.deleteAsset()}>{i18next.t("general:Cancel")}</button> : null}
+          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" onClick={() => this.submitAssetEdit(false)}>{i18next.t("general:Save")}</button>
+          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}} onClick={() => this.submitAssetEdit(true)}>{i18next.t("general:Save & Exit")}</button>
+          {this.state.mode === "add" ? <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}} onClick={() => this.deleteAsset()}>{i18next.t("general:Cancel")}</button> : null}
         </div>
       </div>
     );

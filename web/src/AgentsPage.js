@@ -15,7 +15,6 @@
 import React from "react";
 import * as AgentsBackend from "./backend/AgentsBackend";
 import i18next from "i18next";
-import {Loader2} from "lucide-react";
 
 class AgentsPage extends React.Component {
   constructor(props) {
