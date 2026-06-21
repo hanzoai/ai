@@ -144,6 +144,20 @@ func doBootstrap() (err error) {
 	bootRateLimiter = routers.InitRateLimiter(routers.DefaultTierFunc)
 	logs.Info("Per-key rate limiter initialized (tiers: free=10/min, starter=60/min, pro=300/min, enterprise=1000/min)")
 
+	// Copy the request body into c.Ctx.Input.RequestBody. The OpenAI-compatible
+	// controllers read the raw body via c.Ctx.Input.RequestBody (e.g.
+	// json.Unmarshal in ChatCompletions); beego only populates it when
+	// CopyRequestBody is true. The standalone gets this from conf/app.conf
+	// (copyrequestbody = true), but the embedded unified binary has no app.conf,
+	// so set it here — otherwise every POST /v1/chat/completions (and the other
+	// body-reading routes) fails with "Failed to parse request: unexpected end
+	// of JSON input". MaxMemory bounds the copied body (64 MB, matching the
+	// standalone default) so large uploads still stream rather than buffer.
+	beego.BConfig.CopyRequestBody = true
+	if beego.BConfig.MaxMemory <= 0 {
+		beego.BConfig.MaxMemory = 1 << 26 // 64 MB
+	}
+
 	// beego filter chain — identical order to the standalone surface so
 	// the embedded handler enforces the same auth/tenant/balance pipeline.
 	beego.SetStaticPath("/swagger", "swagger")

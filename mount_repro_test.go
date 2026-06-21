@@ -17,21 +17,33 @@ package ai
 import (
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/beego/beego"
-	_ "github.com/beego/beego/session" // file session provider registration
+	_ "github.com/beego/beego/session" // memory session provider registration
 	"github.com/hanzoai/zip"
 )
 
 // reproCtrl is a minimal beego controller exposing the same OpenAI-compatible
 // endpoints that routers/router.go registers (chat/completions, models). It
 // lets the test exercise the REAL beego ControllerRegister path — not a fake
-// http.Handler — so the /v1/ai/* strip-and-forward is validated end to end.
+// http.Handler — so the bare /v1/* forward is validated end to end.
 type reproCtrl struct{ beego.Controller }
 
-func (c *reproCtrl) Chat()   { c.Ctx.Output.Body([]byte(`{"chat":"ok"}`)) }
+// Chat echoes the raw request body so the test can prove beego populated
+// c.Ctx.Input.RequestBody — which only happens when CopyRequestBody is true.
+// The real ChatCompletions controller json.Unmarshals that same field, so an
+// empty body there yields "unexpected end of JSON input".
+func (c *reproCtrl) Chat() {
+	if len(c.Ctx.Input.RequestBody) == 0 {
+		c.Ctx.Output.SetStatus(400)
+		c.Ctx.Output.Body([]byte(`{"error":"empty body — CopyRequestBody off"}`))
+		return
+	}
+	c.Ctx.Output.Body(c.Ctx.Input.RequestBody)
+}
 func (c *reproCtrl) Models() { c.Ctx.Output.Body([]byte(`{"models":"ok"}`)) }
 
 // TestMountForwardsNestedOpenAIRoutesToBeego reproduces the production defect:
@@ -101,5 +113,46 @@ func TestMountForwardsNestedOpenAIRoutesToBeego(t *testing.T) {
 				t.Fatalf("%s %s: beego panic page returned: %q", tc.method, tc.path, bs)
 			}
 		})
+	}
+}
+
+// TestChatCompletionsReceivesRequestBody guards the CopyRequestBody fix: the
+// OpenAI controllers json.Unmarshal c.Ctx.Input.RequestBody, which beego only
+// fills when BConfig.CopyRequestBody is true. The embedded binary has no
+// conf/app.conf to set it, so Bootstrap must — otherwise every POST
+// /v1/chat/completions failed with "unexpected end of JSON input" (HTTP 200
+// error envelope). Here the repro controller echoes the body; an empty echo
+// (400) means CopyRequestBody regressed.
+func TestChatCompletionsReceivesRequestBody(t *testing.T) {
+	// Unique path so this test's controller is the only handler — beego's route
+	// table is process-global and other tests register /v1/chat/completions.
+	beego.Router("/v1/repro-body-echo", &reproCtrl{}, "POST:Chat")
+	beego.BConfig.CopyRequestBody = true // the Bootstrap fix under test
+	beego.BConfig.WebConfig.Session.SessionOn = true
+	beego.BConfig.WebConfig.Session.SessionProvider = "memory"
+	beego.BConfig.WebConfig.Session.SessionProviderConfig = ""
+	beego.GlobalSessions = nil
+	if err := initSessionManager(); err != nil {
+		t.Fatalf("initSessionManager: %v", err)
+	}
+	SetHandler(beego.BeeApp.Handlers)
+	defer SetHandler(nil)
+
+	app := zip.New(zip.Config{DisableStartupMessage: true})
+	mountRoutes(app)
+
+	const payload = `{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hi"}]}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/repro-body-echo", strings.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := app.Fiber().Test(req)
+	if err != nil {
+		t.Fatalf("Test: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode == http.StatusBadRequest {
+		t.Fatalf("body did not reach controller (CopyRequestBody off): %q", body)
+	}
+	if string(body) != payload {
+		t.Fatalf("controller saw body %q, want %q (body must forward unchanged)", body, payload)
 	}
 }
