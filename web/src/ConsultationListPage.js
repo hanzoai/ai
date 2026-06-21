@@ -156,7 +156,7 @@ class ConsultationListPage extends BaseListPage {
         render: (text, consultation, index) => {
           return (
             <div>
-              <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginTop: "10px", marginBottom: "10px", marginRight: "10px"}> this.props.history.push(`/consultations/${consultation.name}`)}
+              <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginTop: "10px", marginBottom: "10px", marginRight: "10px"}} onClick={() => this.props.history.push(`/consultations/${consultation.name}`)}
               >{i18next.t("general:Edit")}
               </button>
               <PopconfirmModal
@@ -172,17 +172,9 @@ class ConsultationListPage extends BaseListPage {
       },
     ];
 
-    const paginationProps = {
-      pageSize: this.state.pagination.pageSize,
-      total: this.state.pagination.total,
-      showQuickJumper: true,
-      showSizeChanger: true,
-      showTotal: () => i18next.t("general:{total} in total").replace("{total}", this.state.pagination.total),
-    };
-
     return (
       <div>
-        <div className="overflow-x-auto border border-zinc-800 rounded-lg"><table className="w-full text-sm text-left"><thead className="bg-zinc-900/80 border-b border-zinc-800"><tr>{columns.map(col => <th key={col.key || col.dataIndex} className="px-3 py-2 text-xs font-medium text-zinc-400 whitespace-nowrap">{col.title}</th>)}</tr></thead><tbody className="divide-y divide-zinc-800/50">{(consultations || []).map((record, index) => <tr key={typeof {(consultation) => `${consultation.owner} === "function" ? ({(consultation) => `${consultation.owner})(record) : record[{(consultation) => `${consultation.owner}] || index} className="hover:bg-zinc-900/50 transition-colors">{columns.map(col => <td key={col.key || col.dataIndex} className="px-3 py-2 text-zinc-300 whitespace-nowrap">{col.render ? col.render(record[col.dataIndex], record, index) : record[col.dataIndex]}</td>)}</tr>)}</tbody></table></div>
+        <div className="overflow-x-auto border border-zinc-800 rounded-lg"><table className="w-full text-sm text-left"><thead className="bg-zinc-900/80 border-b border-zinc-800"><tr>{columns.map(col => <th key={col.key || col.dataIndex} className="px-3 py-2 text-xs font-medium text-zinc-400 whitespace-nowrap">{col.title}</th>)}</tr></thead><tbody className="divide-y divide-zinc-800/50">{(consultations || []).map((record, index) => <tr key={`${record.owner}/${record.name}`} className="hover:bg-zinc-900/50 transition-colors">{columns.map(col => <td key={col.key || col.dataIndex} className="px-3 py-2 text-zinc-300 whitespace-nowrap">{col.render ? col.render(record[col.dataIndex], record, index) : record[col.dataIndex]}</td>)}</tr>)}</tbody></table></div>
       </div>
     );
   }

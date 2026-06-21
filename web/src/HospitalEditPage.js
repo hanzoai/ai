@@ -13,7 +13,8 @@
 // limitations under the License.
 
 import React from "react";
-// import * as HospitalBackend from "./backend/HospitalBackend";
+import {Input} from "antd";
+import * as HospitalBackend from "./backend/HospitalBackend";
 import * as Setting from "./Setting";
 import i18next from "i18next";
 
@@ -66,12 +67,12 @@ class HospitalEditPage extends React.Component {
   renderHospital() {
     return (
       <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4">
+        <div>
           {this.state.mode === "add" ? i18next.t("hospital:New Hospital") : i18next.t("hospital:Edit Hospital")}&nbsp;&nbsp;&nbsp;&nbsp;
-          <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700"> this.submitHospitalEdit(false)}>{i18next.t("general:Save")}</button>
-          <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}> this.submitHospitalEdit(true)}>{i18next.t("general:Save & Exit")}</button>
-          {this.state.mode === "add" ? <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}> this.deleteHospital()}>{i18next.t("general:Cancel")}</button> : null}
+          <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" onClick={() => this.submitHospitalEdit(false)}>{i18next.t("general:Save")}</button>
+          <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}} onClick={() => this.submitHospitalEdit(true)}>{i18next.t("general:Save & Exit")}</button>
+          {this.state.mode === "add" ? <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}} onClick={() => this.deleteHospital()}>{i18next.t("general:Cancel")}</button> : null}
         </div>
-      } style={{marginLeft: "5px"}} type="inner">
         <div className="flex flex-col sm:flex-row gap-2 mt-4">
           <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Name"), i18next.t("general:Name - Tooltip"))} :
@@ -146,9 +147,9 @@ class HospitalEditPage extends React.Component {
           this.state.hospital !== null ? this.renderHospital() : null
         }
         <div style={{marginTop: "20px", marginLeft: "40px"}}>
-          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700"> this.submitHospitalEdit(false)}>{i18next.t("general:Save")}</button>
-          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}> this.submitHospitalEdit(true)}>{i18next.t("general:Save & Exit")}</button>
-          {this.state.mode === "add" ? <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}> this.deleteHospital()}>{i18next.t("general:Cancel")}</button> : null}
+          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" onClick={() => this.submitHospitalEdit(false)}>{i18next.t("general:Save")}</button>
+          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}} onClick={() => this.submitHospitalEdit(true)}>{i18next.t("general:Save & Exit")}</button>
+          {this.state.mode === "add" ? <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}} onClick={() => this.deleteHospital()}>{i18next.t("general:Cancel")}</button> : null}
         </div>
       </div>
     );

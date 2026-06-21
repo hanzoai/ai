@@ -17,7 +17,6 @@ import * as Setting from "./Setting";
 import * as FormBackend from "./backend/FormBackend";
 import i18next from "i18next";
 import FormDataTablePage from "./FormDataTablePage";
-import {Loader2} from "lucide-react";
 
 class FormDataPage extends Component {
   constructor(props) {

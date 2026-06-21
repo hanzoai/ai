@@ -94,27 +94,23 @@ class VideoPage extends React.Component {
 
   renderVideo() {
     return (
-      <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4">
+      <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4" style={{marginLeft: "5px"}}>
+        <div style={{textAlign: "center"}}>
           {this.state.video.name}
         </div>
-      } style={{marginLeft: "5px"}} type="inner">
         <div className="flex flex-col sm:flex-row gap-2 mt-4">
-          <div className="flex-1">
-          <div className="flex-1">
+          <div className="flex-1" style={(Setting.isMobile()) ? {maxWidth: "100%"} : {}}>
             {
               this.state.video !== null ? this.renderVideoContent() : null
             }
           </div>
-          <div className="flex-1">
         </div>
         <div className="flex flex-col sm:flex-row gap-2 mt-4">
-          <div className="flex-1">
-          <div className="flex-1">
+          <div className="flex-1" style={(Setting.isMobile()) ? {maxWidth: "100%"} : {}}>
             {
               this.state.video !== null ? this.state.video.description : null
             }
           </div>
-          <div className="flex-1">
         </div>
       </div>
     );
