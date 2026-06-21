@@ -15,7 +15,7 @@
 import * as Setting from "../Setting";
 
 export function getContainers(owner, page = "", pageSize = "", field = "", value = "", sortField = "", sortOrder = "") {
-  return fetch(`${Setting.ServerUrl}/api/get-containers?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
+  return fetch(`${Setting.ServerUrl}/v1/get-containers?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -25,7 +25,7 @@ export function getContainers(owner, page = "", pageSize = "", field = "", value
 }
 
 export function getContainer(owner, name) {
-  return fetch(`${Setting.ServerUrl}/api/get-container?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/get-container?id=${owner}/${encodeURIComponent(name)}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -36,7 +36,7 @@ export function getContainer(owner, name) {
 
 export function updateContainer(owner, name, container) {
   const newContainer = Setting.deepCopy(container);
-  return fetch(`${Setting.ServerUrl}/api/update-container?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/update-container?id=${owner}/${encodeURIComponent(name)}`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newContainer),
@@ -48,7 +48,7 @@ export function updateContainer(owner, name, container) {
 
 export function addContainer(container) {
   const newContainer = Setting.deepCopy(container);
-  return fetch(`${Setting.ServerUrl}/api/add-container`, {
+  return fetch(`${Setting.ServerUrl}/v1/add-container`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newContainer),
@@ -60,7 +60,7 @@ export function addContainer(container) {
 
 export function deleteContainer(container) {
   const newContainer = Setting.deepCopy(container);
-  return fetch(`${Setting.ServerUrl}/api/delete-container`, {
+  return fetch(`${Setting.ServerUrl}/v1/delete-container`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newContainer),

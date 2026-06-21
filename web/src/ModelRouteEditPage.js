@@ -156,7 +156,7 @@ class ModelRouteEditPage extends React.Component {
         </Row>
         <Row style={{marginTop: "20px"}} >
           <Col style={{marginTop: "5px"}} span={2}>
-            {Setting.getLabel("Owned By", "Override for owned_by in /api/models listing")}
+            {Setting.getLabel("Owned By", "Override for owned_by in /v1/models listing")}
           </Col>
           <Col span={22} >
             <Input value={route.ownedBy} onChange={e => this.updateRouteField("ownedBy", e.target.value)} />
@@ -198,7 +198,7 @@ class ModelRouteEditPage extends React.Component {
             <Switch checked={route.premium} onChange={checked => this.updateRouteField("premium", checked)} />
           </Col>
           <Col style={{marginTop: "5px"}} span={2}>
-            {Setting.getLabel("Hidden", "Excluded from /api/models listing but still callable")}
+            {Setting.getLabel("Hidden", "Excluded from /v1/models listing but still callable")}
           </Col>
           <Col span={4} >
             <Switch checked={route.hidden} onChange={checked => this.updateRouteField("hidden", checked)} />
