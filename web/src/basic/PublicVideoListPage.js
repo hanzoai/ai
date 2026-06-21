@@ -60,14 +60,23 @@ const PublicVideoListPage = (props) => {
   };
 
   const renderRadio = () => {
+    const grades = [
+      {value: "All", label: i18next.t("store:All")},
+      {value: "Grade 1", label: i18next.t("video:Grade 1")},
+      {value: "Grade 2", label: i18next.t("video:Grade 2")},
+      {value: "Grade 3", label: i18next.t("video:Grade 3")},
+    ];
     return (
-      <div className="flex gap-2"> {
-        setGrade(e.target.value);
-      }}>
-        <button className="px-3 py-1.5 bg-zinc-800 text-zinc-300 rounded text-xs hover:bg-zinc-700">{i18next.t("store:All")}</button>
-        <button className="px-3 py-1.5 bg-zinc-800 text-zinc-300 rounded text-xs hover:bg-zinc-700">{i18next.t("video:Grade 1")}</button>
-        <button className="px-3 py-1.5 bg-zinc-800 text-zinc-300 rounded text-xs hover:bg-zinc-700">{i18next.t("video:Grade 2")}</button>
-        <button className="px-3 py-1.5 bg-zinc-800 text-zinc-300 rounded text-xs hover:bg-zinc-700">{i18next.t("video:Grade 3")}</button>
+      <div className="flex gap-2">
+        {grades.map((g) => (
+          <button
+            key={g.value}
+            onClick={() => setGrade(g.value)}
+            className={`px-3 py-1.5 rounded text-xs ${grade === g.value ? "bg-zinc-200 text-black" : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"}`}
+          >
+            {g.label}
+          </button>
+        ))}
       </div>
     );
   };

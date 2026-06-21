@@ -13,6 +13,7 @@
 // limitations under the License.
 
 import React from "react";
+import {Alert, Popover, Typography} from "antd";
 import Editor from "../common/Editor";
 import * as Setting from "../Setting";
 
@@ -93,7 +94,11 @@ export function JsonCodeMirrorPopover({text, displayText, placement = "right", m
   }
 
   return (
-    {!isValidJson && (
+    <Popover
+      placement={placement}
+      content={
+        <div style={{width: width, height: height, display: "flex", flexDirection: "column", gap: "12px"}}>
+          {!isValidJson && (
             <Alert type="error" showIcon message={
               <Typography.Paragraph ellipsis={{expandable: "collapsible"}} style={{margin: 0}}>{errorMessage}</Typography.Paragraph>}
             />)}
@@ -112,5 +117,6 @@ export function JsonCodeMirrorPopover({text, displayText, placement = "right", m
       <div style={{maxWidth: "200px", cursor: "pointer"}}>
         {Setting.getShortText(previewText, maxDisplayLength)}
       </div>
+    </Popover>
   );
 }

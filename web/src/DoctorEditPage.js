@@ -13,6 +13,7 @@
 // limitations under the License.
 
 import React from "react";
+import {Input} from "antd";
 import * as DoctorBackend from "./backend/DoctorBackend";
 import * as HospitalBackend from "./backend/HospitalBackend";
 import * as Setting from "./Setting";
@@ -83,29 +84,26 @@ class DoctorEditPage extends React.Component {
 
   renderDoctor() {
     return (
-      <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4">
-            {this.state.mode === "add"
-              ? i18next.t("doctor:New Doctor")
-              : i18next.t("doctor:Edit Doctor")}
+      <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4" style={{marginLeft: "5px"}}>
+        <div>
+          {this.state.mode === "add"
+            ? i18next.t("doctor:New Doctor")
+            : i18next.t("doctor:Edit Doctor")}
             &nbsp;&nbsp;&nbsp;&nbsp;
-            <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700"> this.submitDoctorEdit(false)}>
-              {i18next.t("general:Save")}
-            </button>
-            <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}> this.submitDoctorEdit(true)}
+          <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" onClick={() => this.submitDoctorEdit(false)}>
+            {i18next.t("general:Save")}
+          </button>
+          <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}} onClick={() => this.submitDoctorEdit(true)}
+          >
+            {i18next.t("general:Save & Exit")}
+          </button>
+          {this.state.mode === "add" ? (
+            <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}} onClick={() => this.deleteDoctor()}
             >
-              {i18next.t("general:Save & Exit")}
+              {i18next.t("general:Cancel")}
             </button>
-            {this.state.mode === "add" ? (
-              <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}> this.deleteDoctor()}
-              >
-                {i18next.t("general:Cancel")}
-              </button>
-            ) : null}
-          </div>
-        }
-        style={{marginLeft: "5px"}}
-        type="inner"
-      >
+          ) : null}
+        </div>
         <div className="flex flex-col sm:flex-row gap-2 mt-4">
           <div className="flex-1">
             {Setting.getLabel(
@@ -149,15 +147,15 @@ class DoctorEditPage extends React.Component {
             :
           </div>
           <div className="flex-1">
-            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.doctor.gender}> {
-                this.updateDoctorField("gender", value);
-              }}
-              options={[
+            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.doctor.gender} onChange={(e) => {
+              this.updateDoctorField("gender", e.target.value);
+            }}>
+              {[
                 {value: "Male", label: "Male"},
                 {value: "Female", label: "Female"},
                 {value: "Other", label: "Other"},
-              ].map((item) => Setting.getOption(item.label, item.value))}
-            />
+              ].map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+            </select>
           </div>
         </div>
         <div className="flex flex-col sm:flex-row gap-2 mt-4">
@@ -186,14 +184,13 @@ class DoctorEditPage extends React.Component {
             :
           </div>
           <div className="flex-1">
-            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.doctor.hospitalName}> {
-                this.updateDoctorField("hospitalName", value);
-              }}
-              options={this.state.hospitals.map((hospital) => ({
-                label: hospital.name,
-                value: hospital.name,
-              }))}
-            />
+            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.doctor.hospitalName} onChange={(e) => {
+              this.updateDoctorField("hospitalName", e.target.value);
+            }}>
+              {this.state.hospitals.map((hospital) => (
+                <option key={hospital.name} value={hospital.name}>{hospital.name}</option>
+              ))}
+            </select>
           </div>
         </div>
       </div>
@@ -254,15 +251,15 @@ class DoctorEditPage extends React.Component {
       <div>
         {this.state.doctor !== null ? this.renderDoctor() : null}
         <div style={{marginTop: "20px", marginLeft: "40px"}}>
-          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700"> this.submitDoctorEdit(false)}>
+          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" onClick={() => this.submitDoctorEdit(false)}>
             {i18next.t("general:Save")}
           </button>
-          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}> this.submitDoctorEdit(true)}
+          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}} onClick={() => this.submitDoctorEdit(true)}
           >
             {i18next.t("general:Save & Exit")}
           </button>
           {this.state.mode === "add" ? (
-            <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}> this.deleteDoctor()}
+            <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}} onClick={() => this.deleteDoctor()}
             >
               {i18next.t("general:Cancel")}
             </button>

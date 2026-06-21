@@ -13,10 +13,12 @@
 // limitations under the License.
 
 import React from "react";
+import {Input, InputNumber, Select} from "antd";
 import * as MachineBackend from "./backend/MachineBackend";
 import * as Setting from "./Setting";
 import i18next from "i18next";
 
+const {Option} = Select;
 
 class MachineEditPage extends React.Component {
   constructor(props) {
@@ -65,13 +67,13 @@ class MachineEditPage extends React.Component {
 
   renderMachine() {
     return (
-      <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4">
+      <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4" style={{marginLeft: "5px"}}>
+        <div>
           {this.state.mode === "add" ? i18next.t("machine:New Machine") : i18next.t("machine:Edit Machine")}&nbsp;&nbsp;&nbsp;&nbsp;
-          <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700"> this.submitMachineEdit(false)}>{i18next.t("general:Save")}</button>
-          <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}> this.submitMachineEdit(true)}>{i18next.t("general:Save & Exit")}</button>
-          {this.state.mode === "add" ? <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}> this.deleteMachine()}>{i18next.t("general:Cancel")}</button> : null}
+          <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" onClick={() => this.submitMachineEdit(false)}>{i18next.t("general:Save")}</button>
+          <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}} onClick={() => this.submitMachineEdit(true)}>{i18next.t("general:Save & Exit")}</button>
+          {this.state.mode === "add" ? <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}} onClick={() => this.deleteMachine()}>{i18next.t("general:Cancel")}</button> : null}
         </div>
-      } style={{marginLeft: "5px"}} type="inner">
         <div className="flex flex-col sm:flex-row gap-2 mt-4">
           <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Organization"), i18next.t("general:Organization - Tooltip"))} :
@@ -167,16 +169,16 @@ class MachineEditPage extends React.Component {
             {Setting.getLabel(i18next.t("general:Type"), i18next.t("general:Type - Tooltip"))} :
           </div>
           <div className="flex-1">
-            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.machine.type}> {
+            <Select virtual={false} style={{width: "100%"}} value={this.state.machine.type} onChange={(value => {
               this.updateMachineField("type", value);
             })}>
               {
                 [
                   {id: "Pay As You Go", name: "Pay As You Go"},
                   {id: "Reserved", name: "Reserved"},
-                ].map((item, index) => <option key={index} value={item.id}>{item.name}</option>)
+                ].map((item, index) => <Option key={index} value={item.id}>{item.name}</Option>)
               }
-            </select>
+            </Select>
           </div>
         </div>
         <div className="flex flex-col sm:flex-row gap-2 mt-4">
@@ -224,7 +226,7 @@ class MachineEditPage extends React.Component {
             {Setting.getLabel(i18next.t("machine:Protocol"), i18next.t("machine:Protocol - Tooltip"))} :
           </div>
           <div className="flex-1">
-            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.machine.remoteProtocol}> {
+            <Select virtual={false} style={{width: "100%"}} value={this.state.machine.remoteProtocol} onChange={value => {
               this.updateMachineField("remoteProtocol", value);
             }}
             options={[
@@ -270,7 +272,7 @@ class MachineEditPage extends React.Component {
             {Setting.getLabel(i18next.t("general:State"), i18next.t("general:State - Tooltip"))} :
           </div>
           <div className="flex-1">
-            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.machine.state}> {
+            <Select virtual={false} style={{width: "100%"}} value={this.state.machine.state} onChange={value => {
               this.updateMachineField("state", value);
             }}
             options={[
@@ -332,9 +334,9 @@ class MachineEditPage extends React.Component {
           this.state.machine !== null ? this.renderMachine() : null
         }
         <div style={{marginTop: "20px", marginLeft: "40px"}}>
-          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700"> this.submitMachineEdit(false)}>{i18next.t("general:Save")}</button>
-          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}> this.submitMachineEdit(true)}>{i18next.t("general:Save & Exit")}</button>
-          {this.state.mode === "add" ? <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}> this.deleteMachine()}>{i18next.t("general:Cancel")}</button> : null}
+          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" onClick={() => this.submitMachineEdit(false)}>{i18next.t("general:Save")}</button>
+          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}} onClick={() => this.submitMachineEdit(true)}>{i18next.t("general:Save & Exit")}</button>
+          {this.state.mode === "add" ? <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}} onClick={() => this.deleteMachine()}>{i18next.t("general:Cancel")}</button> : null}
         </div>
       </div>
     );

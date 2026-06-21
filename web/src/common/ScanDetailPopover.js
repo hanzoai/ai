@@ -14,16 +14,12 @@
 
 import React from "react";
 import {Link} from "react-router-dom";
+import {Popover} from "antd";
 import i18next from "i18next";
 import * as Setting from "../Setting";
 import {ScanResultRenderer} from "./ScanResultRenderer";
 
 const DEFAULT_PROVIDER_TYPE = "Nmap";
-
-const SCAN_STATE_COLORS = {
-  "Completed": "success",
-  "Failed": "error",
-};
 
 /**
  * ScanDetailPopover - A popover component that displays scan details with metadata
@@ -46,8 +42,6 @@ export function ScanDetailPopover({
   if (!scan) {
     return null;
   }
-
-  const tagColor = SCAN_STATE_COLORS[scan.state] || "processing";
 
   // Get provider type and logo from provider object
   let providerLogo = null;
@@ -89,7 +83,13 @@ export function ScanDetailPopover({
   );
 
   return (
-    <Link to={`/scans/${scan.name}`}>
+    <Popover
+      content={popoverContent}
+      title={null}
+      trigger="hover"
+      placement={placement}
+    >
+      <Link to={`/scans/${scan.name}`}>
         <span className="px-2 py-0.5 bg-zinc-800 text-zinc-400 rounded text-xs">
           <div style={{display: "flex", alignItems: "center", gap: "4px"}}>
             {providerLogo && (
@@ -99,6 +99,7 @@ export function ScanDetailPopover({
           </div>
         </span>
       </Link>
+    </Popover>
   );
 }
 

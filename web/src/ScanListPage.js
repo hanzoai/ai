@@ -275,18 +275,6 @@ class ScanListPage extends BaseListPage {
         sorter: true,
         ...this.getColumnSearchProps("state"),
         render: (text, record, index) => {
-          let color = "default";
-          if (text === "Completed") {
-            color = "success";
-          } else if (text === "Running") {
-            color = "processing";
-          } else if (text === "Failed") {
-            color = "error";
-          } else if (text === "Pending") {
-            color = "warning";
-          } else if (text === "Created") {
-            color = "default";
-          }
           return <span className="px-2 py-0.5 bg-zinc-800 text-zinc-400 rounded text-xs">{text}</span>;
         },
       },
@@ -371,7 +359,7 @@ class ScanListPage extends BaseListPage {
         render: (text, record, index) => {
           return (
             <div>
-              <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginTop: "10px", marginBottom: "10px", marginRight: "10px"}> this.props.history.push(`/scans/${record.name}`)}>{i18next.t("general:Edit")}</button>
+              <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginTop: "10px", marginBottom: "10px", marginRight: "10px"}} onClick={() => this.props.history.push(`/scans/${record.name}`)}>{i18next.t("general:Edit")}</button>
               <PopconfirmModal
                 title={i18next.t("general:Sure to delete") + `: ${record.name} ?`}
                 onConfirm={() => this.deleteItem(index).then(() => {
@@ -385,16 +373,9 @@ class ScanListPage extends BaseListPage {
       },
     ];
 
-    const paginationProps = {
-      total: this.state.pagination.total,
-      showQuickJumper: true,
-      showSizeChanger: true,
-      showTotal: () => i18next.t("general:{total} in total").replace("{total}", this.state.pagination.total),
-    };
-
     return (
       <div>
-        <div className="overflow-x-auto border border-zinc-800 rounded-lg"><table className="w-full text-sm text-left"><thead className="bg-zinc-900/80 border-b border-zinc-800"><tr>{columns.map(col => <th key={col.key || col.dataIndex} className="px-3 py-2 text-xs font-medium text-zinc-400 whitespace-nowrap">{col.title}</th>)}</tr></thead><tbody className="divide-y divide-zinc-800/50">{(scans || []).map((record, index) => <tr key={typeof {(record) => `${record.name} === "function" ? ({(record) => `${record.name})(record) : record[{(record) => `${record.name}] || index} className="hover:bg-zinc-900/50 transition-colors">{columns.map(col => <td key={col.key || col.dataIndex} className="px-3 py-2 text-zinc-300 whitespace-nowrap">{col.render ? col.render(record[col.dataIndex], record, index) : record[col.dataIndex]}</td>)}</tr>)}</tbody></table></div>
+        <div className="overflow-x-auto border border-zinc-800 rounded-lg"><table className="w-full text-sm text-left"><thead className="bg-zinc-900/80 border-b border-zinc-800"><tr>{columns.map(col => <th key={col.key || col.dataIndex} className="px-3 py-2 text-xs font-medium text-zinc-400 whitespace-nowrap">{col.title}</th>)}</tr></thead><tbody className="divide-y divide-zinc-800/50">{(scans || []).map((record, index) => <tr key={record.name || index} className="hover:bg-zinc-900/50 transition-colors">{columns.map(col => <td key={col.key || col.dataIndex} className="px-3 py-2 text-zinc-300 whitespace-nowrap">{col.render ? col.render(record[col.dataIndex], record, index) : record[col.dataIndex]}</td>)}</tr>)}</tbody></table></div>
       </div>
     );
   }

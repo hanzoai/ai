@@ -20,7 +20,7 @@ import * as Setting from "./Setting";
 import * as ImageBackend from "./backend/ImageBackend";
 import * as MachineBackend from "./backend/MachineBackend";
 import i18next from "i18next";
-import {Trash2, Loader2} from "lucide-react";
+import {Loader2, Trash2} from "lucide-react";
 
 class ImageListPage extends BaseListPage {
   constructor(props) {
@@ -144,7 +144,7 @@ class ImageListPage extends BaseListPage {
           <button onClick={() => this.props.history.push(`/images/${image.owner}/${image.name}`)} className="px-3 py-1.5 bg-zinc-800 text-zinc-300 rounded text-xs hover:bg-zinc-700 transition-colors">{i18next.t("general:Edit")}</button>
           <button onClick={() => this.createMachine(image)} className="px-3 py-1.5 bg-white text-black rounded text-xs font-medium hover:bg-zinc-200 transition-colors">{i18next.t("image:Create machine")}</button>
           {image.owner === this.props.account.owner && (
-            <button onClick={() => { if (window.confirm(`${i18next.t("general:Sure to delete")}: ${image.name} ?`)) {this.deleteImage(index);} }} className="px-3 py-1.5 bg-red-600 text-white rounded text-xs font-medium hover:bg-red-700 transition-colors">{i18next.t("general:Delete")}</button>
+            <button onClick={() => {if (window.confirm(`${i18next.t("general:Sure to delete")}: ${image.name} ?`)) {this.deleteImage(index);}}} className="px-3 py-1.5 bg-red-600 text-white rounded text-xs font-medium hover:bg-red-700 transition-colors">{i18next.t("general:Delete")}</button>
           )}
         </div>
       )},
@@ -157,7 +157,7 @@ class ImageListPage extends BaseListPage {
             <h2 className="text-lg font-semibold text-white">{i18next.t("general:Images")}</h2>
             <button onClick={this.addImage.bind(this)} className="px-3 py-1 bg-white text-black rounded text-xs font-medium hover:bg-zinc-200 transition-colors">{i18next.t("general:Add")}</button>
             {this.state.selectedRowKeys.length > 0 && (
-              <button onClick={() => { if (window.confirm(`${i18next.t("general:Sure to delete")}: ${this.state.selectedRowKeys.length} ${i18next.t("general:items")} ?`)) {this.performBulkDelete(this.state.selectedRows, this.state.selectedRowKeys);} }} className="px-3 py-1 bg-red-600 text-white rounded text-xs font-medium hover:bg-red-700 transition-colors flex items-center gap-1">
+              <button onClick={() => {if (window.confirm(`${i18next.t("general:Sure to delete")}: ${this.state.selectedRowKeys.length} ${i18next.t("general:items")} ?`)) {this.performBulkDelete(this.state.selectedRows, this.state.selectedRowKeys);}}} className="px-3 py-1 bg-red-600 text-white rounded text-xs font-medium hover:bg-red-700 transition-colors flex items-center gap-1">
                 <Trash2 className="w-3 h-3" />
                 {i18next.t("general:Delete")} ({this.state.selectedRowKeys.length})
               </button>
@@ -172,7 +172,7 @@ class ImageListPage extends BaseListPage {
             <table className="w-full text-sm text-left">
               <thead className="bg-zinc-900/80 border-b border-zinc-800">
                 <tr>
-                  <th className="px-3 py-2"><input type="checkbox" className="rounded bg-zinc-800 border-zinc-700" checked={this.state.selectedRowKeys.length === images?.length && images?.length > 0} onChange={(e) => { if (e.target.checked) {this.onSelectAll(true, images);} else {this.clearSelection();} }} /></th>
+                  <th className="px-3 py-2"><input type="checkbox" className="rounded bg-zinc-800 border-zinc-700" checked={this.state.selectedRowKeys.length === images?.length && images?.length > 0} onChange={(e) => {if (e.target.checked) {this.onSelectAll(true, images);} else {this.clearSelection();}}} /></th>
                   {columns.map(col => <th key={col.key} className="px-3 py-2 text-xs font-medium text-zinc-400 whitespace-nowrap">{col.title}</th>)}
                 </tr>
               </thead>

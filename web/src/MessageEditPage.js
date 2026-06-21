@@ -13,12 +13,12 @@
 // limitations under the License.
 
 import React from "react";
+import {Input, Switch} from "antd";
 import i18next from "i18next";
 import * as Setting from "./Setting";
 import * as MessageBackend from "./backend/MessageBackend";
 import * as ChatBackend from "./backend/ChatBackend";
 import * as ProviderBackend from "./backend/ProviderBackend";
-
 
 class MessageEditPage extends React.Component {
   constructor(props) {
@@ -141,23 +141,23 @@ class MessageEditPage extends React.Component {
 
   renderMessage() {
     return (
-      <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4">
+      <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4" style={(Setting.isMobile()) ? {margin: "5px"} : {}}>
+        <div>
           {i18next.t("message:Edit Message")}&nbsp;&nbsp;&nbsp;&nbsp;
-          <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700"> this.submitMessageEdit(false)}>{i18next.t("general:Save")}</button>
-          <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}> this.submitMessageEdit(true)}>{i18next.t("general:Save & Exit")}</button>
-          {this.state.isNewMessage && <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}> this.cancelMessageEdit()}>{i18next.t("general:Cancel")}</button>}
+          <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" onClick={() => this.submitMessageEdit(false)}>{i18next.t("general:Save")}</button>
+          <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}} onClick={() => this.submitMessageEdit(true)}>{i18next.t("general:Save & Exit")}</button>
+          {this.state.isNewMessage && <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}} onClick={() => this.cancelMessageEdit()}>{i18next.t("general:Cancel")}</button>}
         </div>
-      } style={(Setting.isMobile()) ? {margin: "5px"} : {}} type="inner">
-        {/* <div className="flex flex-col sm:flex-row gap-2 mt-4">*/}
-        {/*  <div className="flex-1">*/}
+        {/* <Row style={{marginTop: "10px"}} >*/}
+        {/*  <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>*/}
         {/*    {Setting.getLabel(i18next.t("general:Organization"), i18next.t("general:Organization - Tooltip"))}:*/}
-        {/*  </div>*/}
-        {/*  <div className="flex-1">*/}
-        {/*    <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.chat.organization} disabled> {this.updateChatField("organization", value);})}*/}
+        {/*  </Col>*/}
+        {/*  <Col span={22} >*/}
+        {/*    <Select virtual={false} disabled={!Setting.isAdminUser(this.props.account)} style={{width: "100%"}} value={this.state.chat.organization} onChange={(value => {this.updateChatField("organization", value);})}*/}
         {/*      options={this.state.organizations.map((organization) => Setting.getOption(organization.name, organization.name))*/}
         {/*      } />*/}
-        {/*  </div>*/}
-        {/* </div>*/}
+        {/*  </Col>*/}
+        {/* </Row>*/}
         <div className="flex flex-col sm:flex-row gap-2 mt-4">
           <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Name"), i18next.t("general:Name - Tooltip"))} :
@@ -186,10 +186,14 @@ class MessageEditPage extends React.Component {
             {Setting.getLabel(i18next.t("general:Chat"), i18next.t("general:Chat - Tooltip"))} :
           </div>
           <div className="flex-1">
-            <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700"> this.props.history.push(`/chats/${this.state.message.chat}`)} >
+            <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" onClick={() => this.props.history.push(`/chats/${this.state.message.chat}`)} >
               {this.state.message.chat}
             </button>
-            {/* <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.message.chat}> {*/}
+            {/* <Select*/}
+            {/*  virtual={false}*/}
+            {/*  style={{width: "100%"}}*/}
+            {/*  value={this.state.message.chat}*/}
+            {/*  onChange={(value) => {*/}
             {/*    this.updateMessageField("chat", value);*/}
             {/*    this.getChat(value);*/}
             {/*  }}*/}
@@ -204,17 +208,17 @@ class MessageEditPage extends React.Component {
             {Setting.getLabel(i18next.t("message:Author"), i18next.t("message:Author - Tooltip"))} :
           </div>
           <div className="flex-1">
-            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.message.author}> {
-                this.updateMessageField("author", value);
-              }}
-              options={
+            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.message.author} onChange={(e) => {
+              this.updateMessageField("author", e.target.value);
+            }}>
+              {
                 this.state.chat !== null
-                  ? this.state.chat.users.map((user) =>
-                    Setting.getOption(`${user}`, `${user}`)
+                  ? this.state.chat.users.map((user, index) =>
+                    <option key={index} value={`${user}`}>{`${user}`}</option>
                   )
                   : []
               }
-            />
+            </select>
           </div>
         </div>
         <div className="flex flex-col sm:flex-row gap-2 mt-4">
@@ -222,15 +226,10 @@ class MessageEditPage extends React.Component {
             {Setting.getLabel(i18next.t("provider:Model provider"), i18next.t("provider:Model provider - Tooltip"))} :
           </div>
           <div className="flex-1">
-            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.message.modelProvider}> {
-                this.updateMessageField("modelProvider", value);
-                this.getProvider(value);
-              }}
-              showSearch
-              filterOption={(input, option) =>
-                option.children[1].toLowerCase().includes(input.toLowerCase())
-              }
-            >
+            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.message.modelProvider} onChange={(e) => {
+              this.updateMessageField("modelProvider", e.target.value);
+              this.getProvider(e.target.value);
+            }}>
               {
                 this.state.providers.map((provider, index) => (
                   <option key={index} value={provider.name}>
@@ -247,17 +246,17 @@ class MessageEditPage extends React.Component {
             {Setting.getLabel(i18next.t("message:Reply to"), i18next.t("message:Reply to - Tooltip"))} :
           </div>
           <div className="flex-1">
-            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.message.replyTo}> {
-                this.updateMessageField("replyTo", value);
-              }}
-              options={
+            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.message.replyTo} onChange={(e) => {
+              this.updateMessageField("replyTo", e.target.value);
+            }}>
+              {
                 this.state.messages !== null
-                  ? this.state.messages.map((message) =>
-                    Setting.getOption(`${message.name}`, `${message.name}`)
+                  ? this.state.messages.map((message, index) =>
+                    <option key={index} value={`${message.name}`}>{`${message.name}`}</option>
                   )
                   : []
               }
-            />
+            </select>
           </div>
         </div>
         <div className="flex flex-col sm:flex-row gap-2 mt-4">
@@ -265,7 +264,7 @@ class MessageEditPage extends React.Component {
             {Setting.getLabel(i18next.t("general:Reasoning text"), i18next.t("general:Reasoning text - Tooltip"))} :
           </div>
           <div className="flex-1">
-            <span className="text-zinc-300 text-sm"> {
+            <textarea className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500" rows={1} value={this.state.message.reasonText} onChange={(e) => {
               this.updateMessageField("reasonText", e.target.value);
             }} />
           </div>
@@ -275,7 +274,7 @@ class MessageEditPage extends React.Component {
             {Setting.getLabel(i18next.t("general:Text"), i18next.t("general:Text - Tooltip"))} :
           </div>
           <div className="flex-1">
-            <span className="text-zinc-300 text-sm"> {
+            <textarea className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500" rows={1} value={this.state.message.text} onChange={(e) => {
               this.updateMessageField("text", e.target.value);
             }} />
           </div>
@@ -285,7 +284,7 @@ class MessageEditPage extends React.Component {
             {Setting.getLabel(i18next.t("message:Error text"), i18next.t("message:Error text - Tooltip"))} :
           </div>
           <div className="flex-1">
-            <span className="text-zinc-300 text-sm"> {
+            <textarea className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500" rows={1} value={this.state.message.errorText} onChange={(e) => {
               this.updateMessageField("errorText", e.target.value);
             }} />
           </div>
@@ -295,7 +294,7 @@ class MessageEditPage extends React.Component {
             {Setting.getLabel(i18next.t("message:Comment"), i18next.t("message:Comment - Tooltip"))} :
           </div>
           <div className="flex-1">
-            <span className="text-zinc-300 text-sm"> {
+            <textarea className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500" rows={1} value={this.state.message.comment} onChange={(e) => {
               if (e.target.value !== "") {
                 this.updateMessageField("needNotify", true);
               } else {
@@ -311,7 +310,9 @@ class MessageEditPage extends React.Component {
             {Setting.getLabel(i18next.t("message:Need notify"), i18next.t("message:Need notify - Tooltip"))} :
           </div>
           <div className="flex-1">
-            <span className="px-2 py-0.5 rounded text-xs " + (this.state.message.needNotify ? "bg-green-500/20 text-green-400" : "bg-zinc-800 text-zinc-500")">{this.state.message.needNotify ? "ON" : "OFF"}</span>
+            <Switch checked={this.state.message.needNotify} onChange={checked => {
+              this.updateMessageField("needNotify", checked);
+            }} />
           </div>
         </div>
         <div className="flex flex-col sm:flex-row gap-2 mt-4">
@@ -319,7 +320,9 @@ class MessageEditPage extends React.Component {
             {Setting.getLabel(i18next.t("general:Is deleted"), i18next.t("general:Is deleted - Tooltip"))} :
           </div>
           <div className="flex-1">
-            <span className="px-2 py-0.5 rounded text-xs " + (this.state.message.isDeleted ? "bg-green-500/20 text-green-400" : "bg-zinc-800 text-zinc-500")">{this.state.message.isDeleted ? "ON" : "OFF"}</span>
+            <Switch checked={this.state.message.isDeleted} onChange={checked => {
+              this.updateMessageField("isDeleted", checked);
+            }} />
           </div>
         </div>
         <div className="flex flex-col sm:flex-row gap-2 mt-4">
@@ -327,7 +330,9 @@ class MessageEditPage extends React.Component {
             {Setting.getLabel(i18next.t("general:Is alerted"), i18next.t("general:Is alerted - Tooltip"))} :
           </div>
           <div className="flex-1">
-            <span className="px-2 py-0.5 rounded text-xs " + (this.state.message.isAlerted ? "bg-green-500/20 text-green-400" : "bg-zinc-800 text-zinc-500")">{this.state.message.isAlerted ? "ON" : "OFF"}</span>
+            <Switch checked={this.state.message.isAlerted} onChange={checked => {
+              this.updateMessageField("isAlerted", checked);
+            }} />
           </div>
         </div>
       </div>
@@ -368,9 +373,9 @@ class MessageEditPage extends React.Component {
       <div>
         {this.state.message !== null ? this.renderMessage() : null}
         <div style={{marginTop: "20px", marginLeft: "40px"}}>
-          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700"> this.submitMessageEdit(false)}>{i18next.t("general:Save")}</button>
-          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}> this.submitMessageEdit(true)}>{i18next.t("general:Save & Exit")}</button>
-          {this.state.isNewMessage && <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}> this.cancelMessageEdit()}>{i18next.t("general:Cancel")}</button>}
+          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" onClick={() => this.submitMessageEdit(false)}>{i18next.t("general:Save")}</button>
+          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}} onClick={() => this.submitMessageEdit(true)}>{i18next.t("general:Save & Exit")}</button>
+          {this.state.isNewMessage && <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}} onClick={() => this.cancelMessageEdit()}>{i18next.t("general:Cancel")}</button>}
         </div>
       </div>
     );
