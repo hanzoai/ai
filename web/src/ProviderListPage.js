@@ -20,7 +20,7 @@ import * as Setting from "./Setting";
 import * as ProviderBackend from "./backend/ProviderBackend";
 import i18next from "i18next";
 import * as Provider from "./Provider";
-import {Trash2, Loader2} from "lucide-react";
+import {Loader2, Trash2} from "lucide-react";
 
 class ProviderListPage extends BaseListPage {
   constructor(props) {
@@ -145,7 +145,7 @@ class ProviderListPage extends BaseListPage {
             {record.isRemote ? i18next.t("general:View") : i18next.t("general:Edit")}
           </button>
           {!record.isRemote && (
-            <button onClick={() => { if (window.confirm(`${i18next.t("general:Sure to delete")}: ${record.name} ?`)) {this.deleteProvider(record);} }} className="px-3 py-1.5 bg-red-600 text-white rounded text-xs font-medium hover:bg-red-700 transition-colors">
+            <button onClick={() => {if (window.confirm(`${i18next.t("general:Sure to delete")}: ${record.name} ?`)) {this.deleteProvider(record);}}} className="px-3 py-1.5 bg-red-600 text-white rounded text-xs font-medium hover:bg-red-700 transition-colors">
               {i18next.t("general:Delete")}
             </button>
           )}
@@ -160,7 +160,7 @@ class ProviderListPage extends BaseListPage {
             <h2 className="text-lg font-semibold text-white">{i18next.t("general:Providers")}</h2>
             <button onClick={() => this.addProvider()} className="px-3 py-1 bg-white text-black rounded text-xs font-medium hover:bg-zinc-200 transition-colors">{i18next.t("general:Add")}</button>
             {this.state.selectedRowKeys.length > 0 && (
-              <button onClick={() => { if (window.confirm(`${i18next.t("general:Sure to delete")}: ${this.state.selectedRowKeys.length} ${i18next.t("general:items")} ?`)) {this.performBulkDelete(this.state.selectedRows, this.state.selectedRowKeys);} }} className="px-3 py-1 bg-red-600 text-white rounded text-xs font-medium hover:bg-red-700 transition-colors flex items-center gap-1">
+              <button onClick={() => {if (window.confirm(`${i18next.t("general:Sure to delete")}: ${this.state.selectedRowKeys.length} ${i18next.t("general:items")} ?`)) {this.performBulkDelete(this.state.selectedRows, this.state.selectedRowKeys);}}} className="px-3 py-1 bg-red-600 text-white rounded text-xs font-medium hover:bg-red-700 transition-colors flex items-center gap-1">
                 <Trash2 className="w-3 h-3" />{i18next.t("general:Delete")} ({this.state.selectedRowKeys.length})
               </button>
             )}
@@ -174,7 +174,7 @@ class ProviderListPage extends BaseListPage {
             <table className="w-full text-sm text-left">
               <thead className="bg-zinc-900/80 border-b border-zinc-800">
                 <tr>
-                  <th className="px-3 py-2"><input type="checkbox" className="rounded bg-zinc-800 border-zinc-700" checked={this.state.selectedRowKeys.length === providers?.length && providers?.length > 0} onChange={(e) => { if (e.target.checked) {this.onSelectAll(true, providers);} else {this.clearSelection();} }} /></th>
+                  <th className="px-3 py-2"><input type="checkbox" className="rounded bg-zinc-800 border-zinc-700" checked={this.state.selectedRowKeys.length === providers?.length && providers?.length > 0} onChange={(e) => {if (e.target.checked) {this.onSelectAll(true, providers);} else {this.clearSelection();}}} /></th>
                   {columns.map(col => <th key={col.key} className="px-3 py-2 text-xs font-medium text-zinc-400 whitespace-nowrap">{col.title}</th>)}
                 </tr>
               </thead>

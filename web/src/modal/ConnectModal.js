@@ -14,7 +14,7 @@
 
 import React, {useState} from "react";
 import i18next from "i18next";
-import {User, Lock} from "lucide-react";
+import {Lock, User} from "lucide-react";
 import * as Setting from "../Setting";
 
 const ConnectModal = (props) => {

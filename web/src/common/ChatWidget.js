@@ -695,9 +695,8 @@ class ChatWidget extends React.Component {
         justifyContent: "space-between",
       }}>
         <div style={{display: "flex", alignItems: "center", gap: "12px", flex: 1, flexWrap: "wrap"}}>
-          
-            <span style={{fontWeight: "500", color: "#333", width: Setting.isMobile() ? "35vw" : "15rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"}}>{chatDisplayName}</span>
-          
+
+          <span style={{fontWeight: "500", color: "#333", width: Setting.isMobile() ? "35vw" : "15rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"}}>{chatDisplayName}</span>
 
           {this.state.modelProviders.length > 0 && (
             <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.currentChat?.modelProvider || this.state.modelProviders[0]?.name || ""} onChange={e => (this.updateModelProvider)(e.target.value)}>
