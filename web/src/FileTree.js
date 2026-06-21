@@ -15,10 +15,9 @@
 import React from "react";
 import {withRouter} from "react-router-dom";
 import {
-  Upload, Download, Trash2, FolderPlus, FilePlus, ChevronRight, ChevronDown,
-  File, Folder, FolderOpen, AlertTriangle, Search, Info, Shield, Loader2,
+  AlertTriangle, ChevronDown, ChevronRight, Download, File, Folder,
+  FolderOpen, FolderPlus, Info, Loader2, Search, Shield, Trash2, Upload
 } from "lucide-react";
-import moment from "moment";
 import * as Setting from "./Setting";
 import * as TreeFileBackend from "./backend/TreeFileBackend";
 import DocViewer, {DocViewerRenderers} from "@cyntler/react-doc-viewer";
@@ -441,7 +440,7 @@ class FileTree extends React.Component {
             <span className="truncate">{file.title} ({Setting.getFriendlyFileSize(file.size)})</span>
             <div className="ml-auto flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
               {isReadable && (
-                <button onClick={(e) => { e.stopPropagation(); Setting.openLink(file.url); }} className="p-0.5 text-zinc-500 hover:text-white" title={i18next.t("general:Download")}>
+                <button onClick={(e) => {e.stopPropagation(); Setting.openLink(file.url);}} className="p-0.5 text-zinc-500 hover:text-white" title={i18next.t("general:Download")}>
                   <Download className="w-3.5 h-3.5" />
                 </button>
               )}
@@ -518,7 +517,7 @@ class FileTree extends React.Component {
                   this.fileInputRef.current.dataset.parentKey = file.key;
                   this.fileInputRef.current.click();
                 }} className="p-0.5 text-zinc-500 hover:text-white" title={i18next.t("store:Upload file")}>
-                  
+                  <Upload className="w-3.5 h-3.5" />
                 </button>
                 {file.key !== "/" && (
                   <button onClick={(e) => {

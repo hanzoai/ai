@@ -13,6 +13,8 @@
 // limitations under the License.
 
 import React from "react";
+import {Button, Input, Select, Tooltip} from "antd";
+import {DeleteOutlined, RedoOutlined} from "@ant-design/icons";
 import * as Setting from "../Setting";
 import i18next from "i18next";
 import * as MessageBackend from "../backend/MessageBackend";
@@ -99,20 +101,20 @@ class TagTable extends React.Component {
     const taskFieldName = `task${columnIndex + 1}`;
     return (
       <React.Fragment>
-        <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.props.video[taskFieldName]}> {this.updateVideoField(taskFieldName, value);})}
+        <Select virtual={false} size={"small"} style={{width: "160px"}} value={this.props.video[taskFieldName]} onChange={(value => {this.updateVideoField(taskFieldName, value);})}
           options={this.props.tasks.map((task) => Setting.getOption(task.displayName, task.name))
           } />
         &nbsp;&nbsp;
-        
-          <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-50" disabled={this.props.video[taskFieldName] === "" || this.state.selectedRowKeys.length === 0}>} size="small" onClick={() => this.runTask(columnIndex)} />
-        
+        <Tooltip placement="right" title={"Run"}>
+          <Button disabled={this.props.video[taskFieldName] === "" || this.state.selectedRowKeys.length === 0} icon={<RedoOutlined />} size="small" onClick={() => this.runTask(columnIndex)} />
+        </Tooltip>
         &nbsp;&nbsp;
-        
-          <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700">} size="small" onClick={() => {
+        <Tooltip placement="right" title={"Clear"}>
+          <Button icon={<DeleteOutlined />} size="small" onClick={() => {
             this.clearTask(columnIndex);
             this.updateVideoField(taskFieldName, "");
           }} />
-        
+        </Tooltip>
       </React.Fragment>
     );
   }
@@ -126,7 +128,7 @@ class TagTable extends React.Component {
         width: "50px",
         render: (text, record, index) => {
           return (
-            <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{width: "50px"}> {
+            <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{width: "50px"}} onClick={() => {
               this.props.player.seek(record.startTime);
               this.props.screen.clear();
               this.props.videoObj.clearMaps();
@@ -201,21 +203,24 @@ class TagTable extends React.Component {
       },
     ];
 
-    const rowSelection = {
-      onChange: (newSelectedRowKeys) => {
-        this.setState({
-          selectedRowKeys: newSelectedRowKeys,
-        });
-      },
-      selections: [
-        Table.SELECTION_ALL,
-        Table.SELECTION_INVERT,
-        Table.SELECTION_NONE,
-      ],
+    const allKeys = (table || []).map((record, index) => `${index}`);
+    const allSelected = allKeys.length > 0 && allKeys.every(key => this.state.selectedRowKeys.includes(key));
+    const toggleRow = (key) => {
+      this.setState((prevState) => ({
+        selectedRowKeys: prevState.selectedRowKeys.includes(key)
+          ? prevState.selectedRowKeys.filter(k => k !== key)
+          : [...prevState.selectedRowKeys, key],
+      }));
+    };
+    const toggleAll = () => {
+      this.setState({selectedRowKeys: allSelected ? [] : allKeys});
     };
 
     return (
-      <div className="overflow-x-auto border border-zinc-800 rounded-lg"><table className="w-full text-sm text-left"><thead className="bg-zinc-900/80 border-b border-zinc-800"><tr>{columns.map(col => <th key={col.key || col.dataIndex} className="px-3 py-2 text-xs font-medium text-zinc-400 whitespace-nowrap">{col.title}</th>)}</tr></thead><tbody className="divide-y divide-zinc-800/50">{(table || []).map((record, index) => <tr key={typeof {"id"} === "function" ? ({"id"})(record) : record[{"id"}] || index} className="hover:bg-zinc-900/50 transition-colors">{columns.map(col => <td key={col.key || col.dataIndex} className="px-3 py-2 text-zinc-300 whitespace-nowrap">{col.render ? col.render(record[col.dataIndex], record, index) : record[col.dataIndex]}</td>)}</tr>)}</tbody></table></div>
+      <div>
+        {this.props.title ? <div className="flex items-center flex-wrap gap-2 mb-2">{this.props.title}</div> : null}
+        <div className="overflow-x-auto border border-zinc-800 rounded-lg"><table className="w-full text-sm text-left"><thead className="bg-zinc-900/80 border-b border-zinc-800"><tr><th className="px-3 py-2 w-10"><input type="checkbox" checked={allSelected} onChange={toggleAll} /></th>{columns.map(col => <th key={col.key || col.dataIndex} className="px-3 py-2 text-xs font-medium text-zinc-400 whitespace-nowrap">{col.title}</th>)}</tr></thead><tbody className="divide-y divide-zinc-800/50">{(table || []).map((record, index) => <tr key={record["id"] || index} className="hover:bg-zinc-900/50 transition-colors"><td className="px-3 py-2"><input type="checkbox" checked={this.state.selectedRowKeys.includes(`${index}`)} onChange={() => toggleRow(`${index}`)} /></td>{columns.map(col => <td key={col.key || col.dataIndex} className="px-3 py-2 text-zinc-300 whitespace-nowrap">{col.render ? col.render(record[col.dataIndex], record, index) : record[col.dataIndex]}</td>)}</tr>)}</tbody></table></div>
+      </div>
     );
   }
 

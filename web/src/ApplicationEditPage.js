@@ -13,6 +13,7 @@
 // limitations under the License.
 
 import React from "react";
+import {Input, Popconfirm, Select} from "antd";
 import * as ApplicationBackend from "./backend/ApplicationBackend";
 import * as TemplateBackend from "./backend/TemplateBackend";
 import * as Setting from "./Setting";
@@ -20,6 +21,7 @@ import i18next from "i18next";
 import TemplateOptionTable from "./table/TemplateOptionTable";
 import Editor from "./common/Editor";
 
+const {TextArea} = Input;
 
 class ApplicationEditPage extends React.Component {
   constructor(props) {
@@ -142,12 +144,12 @@ class ApplicationEditPage extends React.Component {
   renderApplication() {
     return (
       <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4">
+        <div>
           {i18next.t("application:Edit Application")}&nbsp;&nbsp;&nbsp;&nbsp;
-          <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700"> this.submitApplicationEdit(false)}>{i18next.t("general:Save")}</button>
-          <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}> this.submitApplicationEdit(true)}>{i18next.t("general:Save & Exit")}</button>
-          {this.state.isNewApplication && <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}> this.cancelApplicationEdit()}>{i18next.t("general:Cancel")}</button>}
+          <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" onClick={() => this.submitApplicationEdit(false)}>{i18next.t("general:Save")}</button>
+          <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}} onClick={() => this.submitApplicationEdit(true)}>{i18next.t("general:Save & Exit")}</button>
+          {this.state.isNewApplication && <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}} onClick={() => this.cancelApplicationEdit()}>{i18next.t("general:Cancel")}</button>}
         </div>
-      } style={(Setting.isMobile()) ? {margin: "5px"} : {}} type="inner">
         <div className="flex flex-col sm:flex-row gap-2 mt-4">
           <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Name"), i18next.t("general:Name - Tooltip"))} :
@@ -173,7 +175,7 @@ class ApplicationEditPage extends React.Component {
             {Setting.getLabel(i18next.t("general:Description"), i18next.t("general:Description - Tooltip"))} :
           </div>
           <div className="flex-1">
-            <span className="text-zinc-300 text-sm"> {
+            <TextArea autoSize={{minRows: 1, maxRows: 5}} value={this.state.application.description} onChange={e => {
               this.updateApplicationField("description", e.target.value);
             }} />
           </div>
@@ -183,7 +185,8 @@ class ApplicationEditPage extends React.Component {
             {Setting.getLabel(i18next.t("general:Template"), i18next.t("general:Template - Tooltip"))} :
           </div>
           <div className="flex-1">
-            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.application.template}> {
+            <Select virtual={false} style={{width: "100%"}} value={this.state.application.template}
+              onChange={(value => {
                 this.setState({template: this.state.templates.find((template) => template.name === value)});
                 this.updateApplicationField("template", value);
                 this.updateApplicationField("basicConfigOptions", this.state.templates.find((template) => template.name === value)?.basicConfigOptions?.map(option => ({
@@ -203,14 +206,15 @@ class ApplicationEditPage extends React.Component {
             {Setting.getApplicationStatusTag(this.state.application.status)}
             {
               this.state.application.status === "Not Deployed" ? (
-                <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "10px"}> this.deployApplication()}>
+                <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "10px"}} onClick={() => this.deployApplication()}>
                   {i18next.t("application:Deploy")}
                 </button>
               ) : (
-                this.undeployApplication()} okText={i18next.t("general:OK")} cancelText={i18next.t("general:Cancel")}>
-                  <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-red-600 text-white hover:bg-red-700" style={{marginLeft: "10px"}>
+                <Popconfirm title={`${i18next.t("general:Sure to undeploy")}: ${this.state.application.name} ?`} onConfirm={() => this.undeployApplication()} okText={i18next.t("general:OK")} cancelText={i18next.t("general:Cancel")}>
+                  <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-red-600 text-white hover:bg-red-700" style={{marginLeft: "10px"}}>
                     {i18next.t("application:Undeploy")}
                   </button>
+                </Popconfirm>
               )
             }
           </div>
@@ -343,9 +347,9 @@ class ApplicationEditPage extends React.Component {
           this.state.application !== null ? this.renderApplication() : null
         }
         <div style={{marginTop: "20px", marginLeft: "40px"}}>
-          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700"> this.submitApplicationEdit(false)}>{i18next.t("general:Save")}</button>
-          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}> this.submitApplicationEdit(true)}>{i18next.t("general:Save & Exit")}</button>
-          {this.state.isNewApplication && <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}> this.cancelApplicationEdit()}>{i18next.t("general:Cancel")}</button>}
+          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" onClick={() => this.submitApplicationEdit(false)}>{i18next.t("general:Save")}</button>
+          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}} onClick={() => this.submitApplicationEdit(true)}>{i18next.t("general:Save & Exit")}</button>
+          {this.state.isNewApplication && <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}} onClick={() => this.cancelApplicationEdit()}>{i18next.t("general:Cancel")}</button>}
         </div>
       </div>
     );

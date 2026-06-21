@@ -13,6 +13,7 @@
 // limitations under the License.
 
 import React from "react";
+import {Popover} from "antd";
 import * as Setting from "../Setting";
 import {ScanResultRenderer} from "./ScanResultRenderer";
 
@@ -63,7 +64,11 @@ export function ScanResultPopover({
   }
 
   return (
-    <ScanResultRenderer
+    <Popover
+      placement={placement}
+      content={
+        <div style={{width: width, height: height, overflow: "auto"}}>
+          <ScanResultRenderer
             scanResult={result}
             providerType={providerType}
             minHeight="400px"
@@ -77,6 +82,7 @@ export function ScanResultPopover({
           {Setting.getShortText(previewText, maxDisplayLength)}
         </div>
       )}
+    </Popover>
   );
 }
 

@@ -13,6 +13,7 @@
 // limitations under the License.
 
 import React from "react";
+import {Input} from "antd";
 import * as CaaseBackend from "./backend/CaaseBackend";
 import * as PatientBackend from "./backend/PatientBackend";
 import * as DoctorBackend from "./backend/DoctorBackend";
@@ -114,29 +115,24 @@ class CaaseEditPage extends React.Component {
 
   renderCaase() {
     return (
-      <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4">
-            {this.state.mode === "add"
-              ? i18next.t("caase:New Caase")
-              : i18next.t("caase:Edit Caase")}
-            &nbsp;&nbsp;&nbsp;&nbsp;
-            <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700"> this.submitCaaseEdit(false)}>
-              {i18next.t("general:Save")}
+      <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4" style={{marginLeft: "5px"}}>
+        <div className="flex items-center flex-wrap mb-4">
+          {this.state.mode === "add"
+            ? i18next.t("caase:New Caase")
+            : i18next.t("caase:Edit Caase")}
+          &nbsp;&nbsp;&nbsp;&nbsp;
+          <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" onClick={() => this.submitCaaseEdit(false)}>
+            {i18next.t("general:Save")}
+          </button>
+          <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}} onClick={() => this.submitCaaseEdit(true)}>
+            {i18next.t("general:Save & Exit")}
+          </button>
+          {this.state.mode === "add" ? (
+            <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}} onClick={() => this.deleteCaase()}>
+              {i18next.t("general:Cancel")}
             </button>
-            <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}> this.submitCaaseEdit(true)}
-            >
-              {i18next.t("general:Save & Exit")}
-            </button>
-            {this.state.mode === "add" ? (
-              <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}> this.deleteCaase()}
-              >
-                {i18next.t("general:Cancel")}
-              </button>
-            ) : null}
-          </div>
-        }
-        style={{marginLeft: "5px"}}
-        type="inner"
-      >
+          ) : null}
+        </div>
         <div className="flex flex-col sm:flex-row gap-2 mt-4">
           <div className="flex-1">
             {Setting.getLabel(
@@ -299,14 +295,13 @@ class CaaseEditPage extends React.Component {
             :
           </div>
           <div className="flex-1">
-            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.caase.patientName}> {
-                this.updateCaaseField("patientName", value);
-              }}
-              options={this.state.patients.map((patient) => ({
-                label: patient.name,
-                value: patient.name,
-              }))}
-            />
+            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.caase.patientName} onChange={(e) => {
+              this.updateCaaseField("patientName", e.target.value);
+            }}>
+              {this.state.patients.map((patient) => (
+                <option key={patient.name} value={patient.name}>{patient.name}</option>
+              ))}
+            </select>
           </div>
         </div>
         <div className="flex flex-col sm:flex-row gap-2 mt-4">
@@ -318,14 +313,13 @@ class CaaseEditPage extends React.Component {
             :
           </div>
           <div className="flex-1">
-            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.caase.doctorName}> {
-                this.updateCaaseField("doctorName", value);
-              }}
-              options={this.state.doctors.map((doctor) => ({
-                label: doctor.name,
-                value: doctor.name,
-              }))}
-            />
+            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.caase.doctorName} onChange={(e) => {
+              this.updateCaaseField("doctorName", e.target.value);
+            }}>
+              {this.state.doctors.map((doctor) => (
+                <option key={doctor.name} value={doctor.name}>{doctor.name}</option>
+              ))}
+            </select>
           </div>
         </div>
         <div className="flex flex-col sm:flex-row gap-2 mt-4">
@@ -337,14 +331,13 @@ class CaaseEditPage extends React.Component {
             :
           </div>
           <div className="flex-1">
-            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.caase.hospitalName}> {
-                this.updateCaaseField("hospitalName", value);
-              }}
-              options={this.state.hospitals.map((hospital) => ({
-                label: hospital.name,
-                value: hospital.name,
-              }))}
-            />
+            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.caase.hospitalName} onChange={(e) => {
+              this.updateCaaseField("hospitalName", e.target.value);
+            }}>
+              {this.state.hospitals.map((hospital) => (
+                <option key={hospital.name} value={hospital.name}>{hospital.name}</option>
+              ))}
+            </select>
           </div>
         </div>
         <div className="flex flex-col sm:flex-row gap-2 mt-4">
@@ -442,16 +435,14 @@ class CaaseEditPage extends React.Component {
       <div>
         {this.state.caase !== null ? this.renderCaase() : null}
         <div style={{marginTop: "20px", marginLeft: "40px"}}>
-          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700"> this.submitCaaseEdit(false)}>
+          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" onClick={() => this.submitCaaseEdit(false)}>
             {i18next.t("general:Save")}
           </button>
-          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}> this.submitCaaseEdit(true)}
-          >
+          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}} onClick={() => this.submitCaaseEdit(true)}>
             {i18next.t("general:Save & Exit")}
           </button>
           {this.state.mode === "add" ? (
-            <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}> this.deleteCaase()}
-            >
+            <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}} onClick={() => this.deleteCaase()}>
               {i18next.t("general:Cancel")}
             </button>
           ) : null}

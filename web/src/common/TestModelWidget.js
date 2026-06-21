@@ -194,7 +194,7 @@ class ModelTestWidget extends React.Component {
           </div>
           <div className="flex-1">
             <div style={{marginBottom: "10px", textAlign: "right"}}>
-              <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200"> this.clearTestMessages(provider, account, (messages) => this.setState({testMessages: messages}))} size="small">
+              <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" onClick={() => this.clearTestMessages(provider, account, (messages) => this.setState({testMessages: messages}))}>
                 {i18next.t("chat:New Chat")}
               </button>
             </div>

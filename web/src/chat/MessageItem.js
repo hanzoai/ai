@@ -91,7 +91,7 @@ const MessageItem = ({
   );
 
   const renderCollapsible = (title, color, expanded, onToggle, children) => (
-    <div className={`mb-4 border-l-[3px] rounded pl-3 py-2`} style={{borderColor: color}}>
+    <div className={"mb-4 border-l-[3px] rounded pl-3 py-2"} style={{borderColor: color}}>
       <button
         onClick={() => onToggle(!expanded)}
         className="flex items-center gap-1 text-sm font-bold mb-1"

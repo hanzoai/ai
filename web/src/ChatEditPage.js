@@ -142,7 +142,7 @@ class ChatEditPage extends React.Component {
           <input className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring" value={this.state.chat.store} onChange={e => this.updateChatField("store", e.target.value)} />
         )}
         {this.renderFormRow(i18next.t("provider:Model provider"), i18next.t("provider:Model provider - Tooltip"),
-          <select className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring" value={this.state.chat.modelProvider} onChange={e => { this.updateChatField("modelProvider", e.target.value); this.getProvider(e.target.value); }}>
+          <select className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring" value={this.state.chat.modelProvider} onChange={e => {this.updateChatField("modelProvider", e.target.value); this.getProvider(e.target.value);}}>
             {this.state.providers.map((provider, index) => (
               <option key={index} value={provider.name}>{provider.name}</option>
             ))}

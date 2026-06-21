@@ -13,13 +13,13 @@
 // limitations under the License.
 
 import React from "react";
+import {Statistic} from "antd";
 import BaseListPage from "./BaseListPage";
 import * as Setting from "./Setting";
 import * as ActivityBackend from "./backend/ActivityBackend";
 import ReactEcharts from "echarts-for-react";
 import i18next from "i18next";
 import * as UsageBackend from "./backend/UsageBackend";
-
 
 class ActivityPage extends BaseListPage {
   constructor(props) {
@@ -236,10 +236,11 @@ class ActivityPage extends BaseListPage {
     return (
       <div style={{marginTop: "-10px", float: "right"}}>
         {this.renderDropdown()}
-        <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.selectedOps}> this.setState({selectedOps})}
-          allowClear
-          maxTagCount="responsive"
-          maxTagTextLength={10}
+        <select
+          multiple
+          className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50"
+          value={this.state.selectedOps}
+          onChange={(e) => this.setState({selectedOps: Array.from(e.target.selectedOptions, option => option.value)})}
         >
           {this.state.allOps.map(op => (
             <option key={op} value={op}>{op}</option>
@@ -279,7 +280,10 @@ class ActivityPage extends BaseListPage {
     return (
       <div style={{display: "flex", alignItems: "center", marginBottom: "10px"}}>
         <span style={{width: "50px", marginRight: "10px"}}>{i18next.t("general:User")}:</span>
-        <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.selectedUser}> handleChange(value))}
+        <select
+          className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50"
+          value={this.state.selectedUser}
+          onChange={(e) => handleChange(e.target.value)}
           style={{width: "100%"}}
         >
           {users_options}
@@ -330,9 +334,9 @@ class ActivityPage extends BaseListPage {
       <div className="flex-1">
         {
           grouped.map((r, rowIndex) => (
-            <div className="flex flex-col sm:flex-row gap-2 mt-4">
+            <div key={rowIndex} className="flex flex-col sm:flex-row gap-2 mt-4">
               {r.map((dataName, colIndex) => (
-                <div className="flex-1">
+                <div key={dataName} className="flex-1">
                   <ReactEcharts
                     option={this.renderPieChart(this.state["activities" + dataName] || [])}
                     style={{
@@ -365,7 +369,6 @@ class ActivityPage extends BaseListPage {
     return (
       <React.Fragment>
         <div className="flex flex-col sm:flex-row gap-2 mt-4">
-          <div className="flex-1">
           <div className="flex-1">
             <ReactEcharts
               option={this.renderPieChart(activitiesAction || [])}
@@ -405,12 +408,9 @@ class ActivityPage extends BaseListPage {
               }}
             />
           </div>
-          <div className="flex-1">
         </div>
         <div className="flex flex-col sm:flex-row gap-2 mt-4">
-          <div className="flex-1">
           {this.renderSubPieCharts()}
-          <div className="flex-1">
         </div>
       </React.Fragment>
     );
@@ -421,13 +421,11 @@ class ActivityPage extends BaseListPage {
       <div style={{backgroundColor: this.props.themeAlgorithm && this.props.themeAlgorithm.includes("dark") ? "black" : "white"}}>
         <div className="flex flex-col sm:flex-row gap-2 mt-4">
           <div className="flex-1">
-          <div className="flex-1">
             {this.renderStatistic(this.state["activitiesresponse"])}
           </div>
           <div className="flex-1">
             {this.renderRadio()}
           </div>
-          <div className="flex-1">
         </div>
         <div className="flex flex-col sm:flex-row gap-2 mt-4">
           <div className="flex-1">
