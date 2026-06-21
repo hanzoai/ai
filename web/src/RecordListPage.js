@@ -100,7 +100,7 @@ class RecordListPage extends BaseListPage {
       clientIp: "::1",
       user: this.props.account.name,
       method: "POST",
-      requestUri: "/api/get-account",
+      requestUri: "/v1/get-account",
       action: "login",
       count: 1,
       isTriggered: false,

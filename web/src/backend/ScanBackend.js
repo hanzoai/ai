@@ -15,7 +15,7 @@
 import * as Setting from "../Setting";
 
 export function getScans(owner, page = "", pageSize = "", field = "", value = "", sortField = "", sortOrder = "") {
-  return fetch(`${Setting.ServerUrl}/api/get-scans?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
+  return fetch(`${Setting.ServerUrl}/v1/get-scans?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -25,7 +25,7 @@ export function getScans(owner, page = "", pageSize = "", field = "", value = ""
 }
 
 export function getScansByAsset(owner, assetName) {
-  return fetch(`${Setting.ServerUrl}/api/get-scans?owner=${owner}&asset=${encodeURIComponent(assetName)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/get-scans?owner=${owner}&asset=${encodeURIComponent(assetName)}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -35,7 +35,7 @@ export function getScansByAsset(owner, assetName) {
 }
 
 export function getScan(owner, name) {
-  return fetch(`${Setting.ServerUrl}/api/get-scan?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/get-scan?id=${owner}/${encodeURIComponent(name)}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -46,7 +46,7 @@ export function getScan(owner, name) {
 
 export function updateScan(owner, name, scan) {
   const newScan = Setting.deepCopy(scan);
-  return fetch(`${Setting.ServerUrl}/api/update-scan?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/update-scan?id=${owner}/${encodeURIComponent(name)}`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newScan),
@@ -58,7 +58,7 @@ export function updateScan(owner, name, scan) {
 
 export function addScan(scan) {
   const newScan = Setting.deepCopy(scan);
-  return fetch(`${Setting.ServerUrl}/api/add-scan`, {
+  return fetch(`${Setting.ServerUrl}/v1/add-scan`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newScan),
@@ -70,7 +70,7 @@ export function addScan(scan) {
 
 export function deleteScan(scan) {
   const newScan = Setting.deepCopy(scan);
-  return fetch(`${Setting.ServerUrl}/api/delete-scan`, {
+  return fetch(`${Setting.ServerUrl}/v1/delete-scan`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newScan),

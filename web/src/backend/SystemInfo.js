@@ -15,7 +15,7 @@
 import * as Setting from "../Setting";
 
 export function getSystemInfo() {
-  return fetch(`${Setting.ServerUrl}/api/get-system-info`, {
+  return fetch(`${Setting.ServerUrl}/v1/get-system-info`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -25,7 +25,7 @@ export function getSystemInfo() {
 }
 
 export function getVersionInfo() {
-  return fetch(`${Setting.ServerUrl}/api/get-version-info`, {
+  return fetch(`${Setting.ServerUrl}/v1/get-version-info`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -35,7 +35,7 @@ export function getVersionInfo() {
 }
 
 export function getPrometheusInfo() {
-  return fetch(`${Setting.ServerUrl}/api/get-prometheus-info `, {
+  return fetch(`${Setting.ServerUrl}/v1/get-prometheus-info `, {
     method: "GET",
     credentials: "include",
     headers: {
