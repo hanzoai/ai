@@ -668,7 +668,7 @@ class ChatPage extends BaseListPage {
             >
               <X className="w-4 h-4" />
             </button>
-            <iframe key={"provider"} title={"provider"} src={`${Conf.IframeUrl}&json=${encodeURIComponent(json)}`} className="w-full h-full border-0" seamless="seamless" scrolling="no" allowtransparency="true" />
+            <iframe key={"provider"} title={"provider"} src={`${Conf.IframeUrl}&json=${encodeURIComponent(json)}`} className="w-full h-full border-0" seamless="seamless" scrolling="no" />
           </div>
         </div>
       </>

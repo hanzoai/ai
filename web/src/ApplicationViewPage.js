@@ -15,6 +15,8 @@
 // Copyright 2025 Hanzo AI Inc. All Rights Reserved.
 
 import React from "react";
+import {Progress, Statistic} from "antd";
+import {CopyOutlined} from "@ant-design/icons";
 import * as ApplicationBackend from "./backend/ApplicationBackend";
 import * as Setting from "./Setting";
 import EventTable from "./table/EventTable";
@@ -22,7 +24,6 @@ import DeploymentTable from "./table/DeploymentTable";
 import CredentialsTable from "./table/CredentialTable";
 import i18next from "i18next";
 import copy from "copy-to-clipboard";
-
 
 class ApplicationViewPage extends React.Component {
   constructor(props) {
@@ -156,17 +157,21 @@ class ApplicationViewPage extends React.Component {
     return (
       <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4">
         {details.services.map((service, index) => (
-          <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4">{service.name}<span className="px-2 py-0.5 bg-zinc-800 text-zinc-400 rounded text-xs">{service.type}</span></span>}
-            style={{marginBottom: 12}} type="inner">
+          <div key={index} className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4" style={{marginBottom: 12}}>
+            <div style={{marginBottom: 8}}>
+              <span className="font-medium">{service.name}</span>
+              <span className="px-2 py-0.5 bg-zinc-800 text-zinc-400 rounded text-xs" style={{marginLeft: 8}}>{service.type}</span>
+            </div>
 
             {/* Internal Access */}
             <div style={{marginBottom: 16}}>
               <span className="text-zinc-300 text-sm">{i18next.t("machine:Private IP")}</span>
               <div style={{display: "flex", alignItems: "center"}}>
                 <span className="text-zinc-300 text-sm">{service.internalHost}</span>
-                <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700">} size="small"
+                <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700 inline-flex items-center gap-1"
                   disabled={!service.internalHost}
                   onClick={() => this.copyToClipboard(service.internalHost)}>
+                  <CopyOutlined />
                   {i18next.t("general:Copy")}
                 </button>
               </div>
@@ -178,9 +183,10 @@ class ApplicationViewPage extends React.Component {
                 <span className="text-zinc-300 text-sm">{i18next.t("machine:Public IP")}</span>
                 <div style={{display: "flex", alignItems: "center"}}>
                   <span className="text-zinc-300 text-sm">{service.externalHost}</span>
-                  <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700">} size="small"
+                  <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700 inline-flex items-center gap-1"
                     disabled={!service.externalHost}
                     onClick={() => this.copyToClipboard(service.externalHost)}>
+                    <CopyOutlined />
                     {i18next.t("general:Copy")}
                   </button>
                 </div>
@@ -200,8 +206,9 @@ class ApplicationViewPage extends React.Component {
                         {port.nodePort && ` → ${port.nodePort}`}
                       </span>
                       {port.url && (
-                        <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700">} size="small"
+                        <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700 inline-flex items-center gap-1"
                           onClick={() => this.copyToClipboard(port.url)}>
+                          <CopyOutlined />
                           {i18next.t("general:Copy")}
                         </button>
                       )}

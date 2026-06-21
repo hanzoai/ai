@@ -13,11 +13,11 @@
 // limitations under the License.
 
 import React from "react";
+import {DeleteOutlined, DeploymentUnitOutlined, DownOutlined, FileAddOutlined, OrderedListOutlined, UnorderedListOutlined, UpOutlined} from "@ant-design/icons";
 import * as Setting from "../Setting";
 import i18next from "i18next";
 import * as MessageBackend from "../backend/MessageBackend";
 import MemoTextArea from "../MemoTextArea";
-
 
 class ArticleTable extends React.Component {
   constructor(props) {
@@ -221,9 +221,9 @@ class ArticleTable extends React.Component {
         render: (text, record, index) => {
           return (
             <div>
-              <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={text}> {
-                this.updateField(table, index, "type", value);
-              })}>
+              <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={text} onChange={(e) => {
+                this.updateField(table, index, "type", e.target.value);
+              }}>
                 {
                   [
                     {id: "Title", name: i18next.t("general:Title")},
@@ -235,8 +235,8 @@ class ArticleTable extends React.Component {
                   ].map((item, index) => <option key={index} value={item.id}>{item.name}</option>)
                 }
               </select>
-              <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200 disabled:opacity-50" disabled={record.text === ""} style={{marginTop: "10px", marginBottom: "10px", marginRight: "5px"}>} onClick={() => this.expandBlock(this.props.article, table, index)} >
-                {i18next.t("store:Workflow")}
+              <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200 disabled:opacity-50" disabled={record.text === ""} style={{marginTop: "10px", marginBottom: "10px", marginRight: "5px"}} onClick={() => this.expandBlock(this.props.article, table, index)} >
+                <DeploymentUnitOutlined /> {i18next.t("store:Workflow")}
               </button>
             </div>
           );
@@ -294,12 +294,12 @@ class ArticleTable extends React.Component {
               {/* <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200 disabled:opacity-50" disabled={record.textEn === ""} style={{marginBottom: "10px", marginRight: "5px"}>} onClick={() => this.translateTableToZh(this.props.article, table, index)} >*/}
               {/*  {i18next.t("article:ZH 🡰 EN")}*/}
               {/* </button>*/}
-              <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-50" disabled={!record.text.includes("\n")} style={{marginBottom: "5px", marginRight: "5px"}>} size="small" onClick={() => this.parseTable(table, index)} />
-              <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-50" disabled={!record.textEn.includes("\n")} style={{marginBottom: "5px", marginRight: "5px"}>} size="small" onClick={() => this.parseTableEn(table, index)} />
-              <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginBottom: "5px", marginRight: "5px"}>} size="small" onClick={() => this.insertRow(table, index)} />
-              <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-50" disabled={index === 0} style={{marginBottom: "5px", marginRight: "5px"}>} size="small" onClick={() => this.upRow(table, index)} />
-              <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-50" disabled={index === table.length - 1} style={{marginBottom: "5px", marginRight: "5px"}>} size="small" onClick={() => this.downRow(table, index)} />
-              <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700">} size="small" onClick={() => this.deleteRow(table, index)} />
+              <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-50" disabled={!record.text.includes("\n")} style={{marginBottom: "5px", marginRight: "5px"}} onClick={() => this.parseTable(table, index)}><OrderedListOutlined /></button>
+              <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-50" disabled={!record.textEn.includes("\n")} style={{marginBottom: "5px", marginRight: "5px"}} onClick={() => this.parseTableEn(table, index)}><UnorderedListOutlined /></button>
+              <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginBottom: "5px", marginRight: "5px"}} onClick={() => this.insertRow(table, index)}><FileAddOutlined /></button>
+              <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-50" disabled={index === 0} style={{marginBottom: "5px", marginRight: "5px"}} onClick={() => this.upRow(table, index)}><UpOutlined /></button>
+              <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-50" disabled={index === table.length - 1} style={{marginBottom: "5px", marginRight: "5px"}} onClick={() => this.downRow(table, index)}><DownOutlined /></button>
+              <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" onClick={() => this.deleteRow(table, index)}><DeleteOutlined /></button>
             </div>
           );
         },
@@ -313,7 +313,7 @@ class ArticleTable extends React.Component {
     }
 
     return (
-      <div className="overflow-x-auto border border-zinc-800 rounded-lg"><table className="w-full text-sm text-left"><thead className="bg-zinc-900/80 border-b border-zinc-800"><tr>{columns.map(col => <th key={col.key || col.dataIndex} className="px-3 py-2 text-xs font-medium text-zinc-400 whitespace-nowrap">{col.title}</th>)}</tr></thead><tbody className="divide-y divide-zinc-800/50">{(table || []).map((record, index) => <tr key={typeof "index" === "function" ? ("index")(record) : record["index"] || index} className="hover:bg-zinc-900/50 transition-colors">{columns.map(col => <td key={col.key || col.dataIndex} className="px-3 py-2 text-zinc-300 whitespace-nowrap">{col.render ? col.render(record[col.dataIndex], record, index) : record[col.dataIndex]}</td>)}</tr>)}</tbody></table></div>
+      <div className="overflow-x-auto border border-zinc-800 rounded-lg"><table className="w-full text-sm text-left"><thead className="bg-zinc-900/80 border-b border-zinc-800"><tr>{columns.map(col => <th key={col.key || col.dataIndex} className="px-3 py-2 text-xs font-medium text-zinc-400 whitespace-nowrap">{col.title}</th>)}</tr></thead><tbody className="divide-y divide-zinc-800/50">{(table || []).map((record, index) => <tr key={record.index || index} className="hover:bg-zinc-900/50 transition-colors">{columns.map(col => <td key={col.key || col.dataIndex} className="px-3 py-2 text-zinc-300 whitespace-nowrap">{col.render ? col.render(record[col.dataIndex], record, index) : record[col.dataIndex]}</td>)}</tr>)}</tbody></table></div>
     );
   }
 
