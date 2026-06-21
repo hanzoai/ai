@@ -101,8 +101,7 @@ class ProviderEditPage extends React.Component {
   }
 
   parseProviderField(key, value) {
-    if (["topK"].includes(key)) {value = Setting.myParseInt(value);}
-    else if (["temperature", "topP", "frequencyPenalty", "presencePenalty"].includes(key)) {value = Setting.myParseFloat(value);}
+    if (["topK"].includes(key)) {value = Setting.myParseInt(value);} else if (["temperature", "topP", "frequencyPenalty", "presencePenalty"].includes(key)) {value = Setting.myParseFloat(value);}
     return value;
   }
 
@@ -231,10 +230,10 @@ class ProviderEditPage extends React.Component {
         </div>
         <div className="p-6">
           <Field label={Setting.getLabel(i18next.t("general:Name"), i18next.t("general:Name - Tooltip"))}>
-            <span className="text-zinc-300 text-sm"> this.updateProviderField("name", e.target.value)} />
+            <TextInput disabled={isRemote} value={p.name} onChange={(e) => this.updateProviderField("name", e.target.value)} />
           </Field>
           <Field label={Setting.getLabel(i18next.t("general:Display name"), i18next.t("general:Display name - Tooltip"))}>
-            <span className="text-zinc-300 text-sm"> this.updateProviderField("displayName", e.target.value)} />
+            <TextInput disabled={isRemote} value={p.displayName} onChange={(e) => this.updateProviderField("displayName", e.target.value)} />
           </Field>
           <Field label={Setting.getLabel(i18next.t("general:Category"), i18next.t("provider:Category - Tooltip"))}>
             <select disabled={isRemote} className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={p.category} onChange={e => handleCategoryChange(e.target.value)}>
@@ -251,7 +250,7 @@ class ProviderEditPage extends React.Component {
           {showSubType && (
             <Field label={Setting.getLabel(i18next.t("provider:Sub type"), i18next.t("provider:Sub type - Tooltip"))}>
               {p.type === "Ollama" ? (
-                <span className="text-zinc-300 text-sm"> this.updateProviderField("subType", e.target.value)} placeholder="Please select or enter the model name" />
+                <TextInput disabled={isRemote} value={p.subType} onChange={(e) => this.updateProviderField("subType", e.target.value)} placeholder="Please select or enter the model name" />
               ) : (
                 <select disabled={isRemote} className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={p.subType} onChange={e => this.updateProviderField("subType", e.target.value)}>
                   {Setting.getProviderSubTypeOptions(p.category, p.type).map((item) => (
@@ -270,12 +269,12 @@ class ProviderEditPage extends React.Component {
           )}
           {showClientId && (
             <Field label={this.getClientIdLabel(p)}>
-              <span className="text-zinc-300 text-sm"> this.updateProviderField("clientId", e.target.value)} />
+              <TextInput disabled={isRemote} value={p.clientId} onChange={(e) => this.updateProviderField("clientId", e.target.value)} />
             </Field>
           )}
           {p.type === "Local" && (
             <Field label={Setting.getLabel(i18next.t("provider:Compatible provider"), i18next.t("provider:Compatible provider - Tooltip"))}>
-              <span className="text-zinc-300 text-sm"> this.updateProviderField("compatibleProvider", e.target.value)} placeholder="Please select or enter the compatible provider" />
+              <TextInput disabled={isRemote} value={p.compatibleProvider} onChange={(e) => this.updateProviderField("compatibleProvider", e.target.value)} placeholder="Please select or enter the compatible provider" />
             </Field>
           )}
           {(p.category === "Model" && (p.type === "Local" || p.type === "Ollama")) && (
@@ -345,7 +344,7 @@ class ProviderEditPage extends React.Component {
           )}
           {showRegion && (
             <Field label={this.getRegionLabel(p)}>
-              <span className="text-zinc-300 text-sm"> this.updateProviderField("region", e.target.value)} />
+              <TextInput disabled={isRemote} value={p.region} onChange={(e) => this.updateProviderField("region", e.target.value)} />
             </Field>
           )}
           {p.category === "Blockchain" && (
@@ -353,10 +352,10 @@ class ProviderEditPage extends React.Component {
               {p.type !== "Ethereum" && (
                 <>
                   <Field label={Setting.getLabel(i18next.t("provider:Chain"), i18next.t("provider:Chain - Tooltip"))}>
-                    <span className="text-zinc-300 text-sm"> this.updateProviderField("chain", e.target.value)} />
+                    <TextInput disabled={isRemote} value={p.chain} onChange={(e) => this.updateProviderField("chain", e.target.value)} />
                   </Field>
                   <Field label={this.getNetworkLabel(p)}>
-                    <span className="text-zinc-300 text-sm"> this.updateProviderField("network", e.target.value)} />
+                    <TextInput disabled={isRemote} value={p.network} onChange={(e) => this.updateProviderField("network", e.target.value)} />
                   </Field>
                 </>
               )}
@@ -371,16 +370,16 @@ class ProviderEditPage extends React.Component {
                     <div>
                       <label className="text-sm text-zinc-400 mb-2 block">{Setting.getLabel(i18next.t("cert:User cert"), i18next.t("cert:User cert - Tooltip"))}</label>
                       <div className="flex gap-2 mb-2">
-                        <button disabled={!p.userCert} onClick={() => { copy(p.userCert); Setting.showMessage("success", i18next.t("general:Copied to clipboard successfully")); }} className="px-3 py-1 bg-zinc-800 text-zinc-300 rounded text-xs hover:bg-zinc-700 transition-colors disabled:opacity-50">{i18next.t("general:Copy")}</button>
-                        <button disabled={!p.userCert} onClick={() => { FileSaver.saveAs(new Blob([p.userCert], {type: "text/plain"}), "user_cert.pem"); }} className="px-3 py-1 bg-white text-black rounded text-xs font-medium hover:bg-zinc-200 transition-colors disabled:opacity-50">{i18next.t("general:Download")}</button>
+                        <button disabled={!p.userCert} onClick={() => {copy(p.userCert); Setting.showMessage("success", i18next.t("general:Copied to clipboard successfully"));}} className="px-3 py-1 bg-zinc-800 text-zinc-300 rounded text-xs hover:bg-zinc-700 transition-colors disabled:opacity-50">{i18next.t("general:Copy")}</button>
+                        <button disabled={!p.userCert} onClick={() => {FileSaver.saveAs(new Blob([p.userCert], {type: "text/plain"}), "user_cert.pem");}} className="px-3 py-1 bg-white text-black rounded text-xs font-medium hover:bg-zinc-200 transition-colors disabled:opacity-50">{i18next.t("general:Download")}</button>
                       </div>
                       <textarea className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white font-mono focus:outline-none focus:border-zinc-500" rows={16} value={p.userCert || ""} onChange={e => this.updateProviderField("userCert", e.target.value)} />
                     </div>
                     <div>
                       <label className="text-sm text-zinc-400 mb-2 block">{Setting.getLabel(i18next.t("cert:User key"), i18next.t("cert:User key - Tooltip"))}</label>
                       <div className="flex gap-2 mb-2">
-                        <button disabled={!p.userKey} onClick={() => { copy(p.userKey); Setting.showMessage("success", i18next.t("general:Copied to clipboard successfully")); }} className="px-3 py-1 bg-zinc-800 text-zinc-300 rounded text-xs hover:bg-zinc-700 transition-colors disabled:opacity-50">{i18next.t("general:Copy")}</button>
-                        <button disabled={!p.userKey} onClick={() => { FileSaver.saveAs(new Blob([p.userKey], {type: "text/plain"}), "token_jwt_key.key"); }} className="px-3 py-1 bg-white text-black rounded text-xs font-medium hover:bg-zinc-200 transition-colors disabled:opacity-50">{i18next.t("general:Download")}</button>
+                        <button disabled={!p.userKey} onClick={() => {copy(p.userKey); Setting.showMessage("success", i18next.t("general:Copied to clipboard successfully"));}} className="px-3 py-1 bg-zinc-800 text-zinc-300 rounded text-xs hover:bg-zinc-700 transition-colors disabled:opacity-50">{i18next.t("general:Copy")}</button>
+                        <button disabled={!p.userKey} onClick={() => {FileSaver.saveAs(new Blob([p.userKey], {type: "text/plain"}), "token_jwt_key.key");}} className="px-3 py-1 bg-white text-black rounded text-xs font-medium hover:bg-zinc-200 transition-colors disabled:opacity-50">{i18next.t("general:Download")}</button>
                       </div>
                       <textarea className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white font-mono focus:outline-none focus:border-zinc-500" rows={16} value={p.userKey || ""} onChange={e => this.updateProviderField("userKey", e.target.value)} />
                     </div>
@@ -389,16 +388,16 @@ class ProviderEditPage extends React.Component {
                     <div>
                       <label className="text-sm text-zinc-400 mb-2 block">{Setting.getLabel(i18next.t("cert:Sign cert"), i18next.t("cert:Sign cert - Tooltip"))}</label>
                       <div className="flex gap-2 mb-2">
-                        <button disabled={!p.signCert} onClick={() => { copy(p.signCert); Setting.showMessage("success", i18next.t("general:Copied to clipboard successfully")); }} className="px-3 py-1 bg-zinc-800 text-zinc-300 rounded text-xs hover:bg-zinc-700 transition-colors disabled:opacity-50">{i18next.t("general:Copy")}</button>
-                        <button disabled={!p.signCert} onClick={() => { FileSaver.saveAs(new Blob([p.signCert], {type: "text/plain"}), "user_cert.pem"); }} className="px-3 py-1 bg-white text-black rounded text-xs font-medium hover:bg-zinc-200 transition-colors disabled:opacity-50">{i18next.t("general:Download")}</button>
+                        <button disabled={!p.signCert} onClick={() => {copy(p.signCert); Setting.showMessage("success", i18next.t("general:Copied to clipboard successfully"));}} className="px-3 py-1 bg-zinc-800 text-zinc-300 rounded text-xs hover:bg-zinc-700 transition-colors disabled:opacity-50">{i18next.t("general:Copy")}</button>
+                        <button disabled={!p.signCert} onClick={() => {FileSaver.saveAs(new Blob([p.signCert], {type: "text/plain"}), "user_cert.pem");}} className="px-3 py-1 bg-white text-black rounded text-xs font-medium hover:bg-zinc-200 transition-colors disabled:opacity-50">{i18next.t("general:Download")}</button>
                       </div>
                       <textarea className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white font-mono focus:outline-none focus:border-zinc-500" rows={16} value={p.signCert || ""} onChange={e => this.updateProviderField("signCert", e.target.value)} />
                     </div>
                     <div>
                       <label className="text-sm text-zinc-400 mb-2 block">{Setting.getLabel(i18next.t("cert:Sign key"), i18next.t("cert:Sign key - Tooltip"))}</label>
                       <div className="flex gap-2 mb-2">
-                        <button disabled={!p.signKey} onClick={() => { copy(p.signKey); Setting.showMessage("success", i18next.t("general:Copied to clipboard successfully")); }} className="px-3 py-1 bg-zinc-800 text-zinc-300 rounded text-xs hover:bg-zinc-700 transition-colors disabled:opacity-50">{i18next.t("general:Copy")}</button>
-                        <button disabled={!p.signKey} onClick={() => { FileSaver.saveAs(new Blob([p.signKey], {type: "text/plain"}), "token_jwt_key.key"); }} className="px-3 py-1 bg-white text-black rounded text-xs font-medium hover:bg-zinc-200 transition-colors disabled:opacity-50">{i18next.t("general:Download")}</button>
+                        <button disabled={!p.signKey} onClick={() => {copy(p.signKey); Setting.showMessage("success", i18next.t("general:Copied to clipboard successfully"));}} className="px-3 py-1 bg-zinc-800 text-zinc-300 rounded text-xs hover:bg-zinc-700 transition-colors disabled:opacity-50">{i18next.t("general:Copy")}</button>
+                        <button disabled={!p.signKey} onClick={() => {FileSaver.saveAs(new Blob([p.signKey], {type: "text/plain"}), "token_jwt_key.key");}} className="px-3 py-1 bg-white text-black rounded text-xs font-medium hover:bg-zinc-200 transition-colors disabled:opacity-50">{i18next.t("general:Download")}</button>
                       </div>
                       <textarea className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white font-mono focus:outline-none focus:border-zinc-500" rows={16} value={p.signKey || ""} onChange={e => this.updateProviderField("signKey", e.target.value)} />
                     </div>
@@ -408,15 +407,15 @@ class ProviderEditPage extends React.Component {
               {["Ethereum", "ChainMaker"].includes(p.type) && (
                 <>
                   <Field label={this.getContractNameLabel(p)}>
-                    <span className="text-zinc-300 text-sm"> this.updateProviderField("contractName", e.target.value)} />
+                    <TextInput disabled={isRemote} value={p.contractName} onChange={(e) => this.updateProviderField("contractName", e.target.value)} />
                   </Field>
                   <Field label={Setting.getLabel(i18next.t("provider:Invoke method"), i18next.t("provider:Invoke method - Tooltip"))}>
-                    <span className="text-zinc-300 text-sm"> this.updateProviderField("contractMethod", e.target.value)} />
+                    <TextInput disabled={isRemote} value={p.contractMethod} onChange={(e) => this.updateProviderField("contractMethod", e.target.value)} />
                   </Field>
                 </>
               )}
               <Field label={Setting.getLabel(i18next.t("provider:Browser URL"), i18next.t("provider:Browser URL - Tooltip"))}>
-                <span className="text-zinc-300 text-sm"> this.updateProviderField("browserUrl", e.target.value)} prefix={<Link2 className="w-4 h-4" />} placeholder={p.type === "ChainMaker" ? "https://explorer-testnet.chainmaker.org.cn/chainmaker_testnet_chain/block/{bh}" : ""} />
+                <TextInput value={p.browserUrl} onChange={(e) => this.updateProviderField("browserUrl", e.target.value)} prefix={<Link2 className="w-4 h-4" />} placeholder={p.type === "ChainMaker" ? "https://explorer-testnet.chainmaker.org.cn/chainmaker_testnet_chain/block/{bh}" : ""} />
               </Field>
             </>
           )}
@@ -447,7 +446,7 @@ class ProviderEditPage extends React.Component {
           )}
           {(p.category === "Model" || p.category === "Embedding") && p.type === "Azure" && (
             <Field label={Setting.getLabel(i18next.t("provider:API version"), i18next.t("provider:API version - Tooltip"))}>
-              <span className="text-zinc-300 text-sm"> this.updateProviderField("apiVersion", e.target.value)} />
+              <TextInput disabled={isRemote} value={p.apiVersion} onChange={(e) => this.updateProviderField("apiVersion", e.target.value)} />
             </Field>
           )}
           <ModelTestWidget provider={p} originalProvider={this.state.originalProvider} account={this.props.account} />
@@ -467,10 +466,10 @@ class ProviderEditPage extends React.Component {
           {p.category === "Scan" && (
             <>
               <Field label={Setting.getLabel(i18next.t("scan:Result summary"), i18next.t("scan:Result summary - Tooltip"))}>
-                <span className="text-zinc-300 text-sm"> {}} />
+                <TextInput disabled value={p.resultSummary} onChange={() => {}} />
               </Field>
               <Field label={Setting.getLabel(i18next.t("scan:Runner"), i18next.t("scan:Runner - Tooltip"))}>
-                <span className="text-zinc-300 text-sm"> {}} />
+                <TextInput disabled value={p.runner} onChange={() => {}} />
               </Field>
               <Field label={Setting.getLabel(i18next.t("general:Error"), i18next.t("scan:Error - Tooltip"))}>
                 <textarea disabled className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none disabled:opacity-50" rows={4} value={p.errorText || ""} />
@@ -478,7 +477,7 @@ class ProviderEditPage extends React.Component {
             </>
           )}
           <Field label={this.getProviderUrlLabel(p)}>
-            <span className="text-zinc-300 text-sm"> this.updateProviderField("providerUrl", e.target.value)} prefix={<Link2 className="w-4 h-4" />} />
+            <TextInput value={p.providerUrl} onChange={(e) => this.updateProviderField("providerUrl", e.target.value)} prefix={<Link2 className="w-4 h-4" />} />
           </Field>
           <Field label={Setting.getLabel(i18next.t("store:Is default"), i18next.t("store:Is default - Tooltip"))}>
             <label className="relative inline-flex items-center cursor-pointer">
@@ -548,8 +547,7 @@ class ProviderEditPage extends React.Component {
     if (this.state.isNewProvider) {
       ProviderBackend.deleteProvider(this.state.provider)
         .then((res) => {
-          if (res.status === "ok") {Setting.showMessage("success", i18next.t("general:Cancelled successfully")); this.props.history.push("/providers");}
-          else {Setting.showMessage("error", `${i18next.t("general:Failed to cancel")}: ${res.msg}`);}
+          if (res.status === "ok") {Setting.showMessage("success", i18next.t("general:Cancelled successfully")); this.props.history.push("/providers");} else {Setting.showMessage("error", `${i18next.t("general:Failed to cancel")}: ${res.msg}`);}
         })
         .catch(error => Setting.showMessage("error", `${i18next.t("general:Failed to cancel")}: ${error}`));
     } else {

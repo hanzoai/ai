@@ -288,10 +288,10 @@ class StoreListPage extends BaseListPage {
             {Setting.isLocalAdminUser(this.props.account) && (
               <>
                 {!this.state.hideChat && (
-                  <button loading={this.state.generating[index]} onClick={() => this.refreshStoreVectors(index)} className="rounded border border-border px-3 py-1 text-xs text-foreground hover:bg-secondary transition-colors">{i18next.t("general:Refresh Vectors")}</button>
+                  <button disabled={this.state.generating[index]} onClick={() => this.refreshStoreVectors(index)} className="rounded border border-border px-3 py-1 text-xs text-foreground hover:bg-secondary disabled:opacity-50 transition-colors">{i18next.t("general:Refresh Vectors")}</button>
                 )}
                 <button onClick={() => this.props.history.push(`/stores/${record.owner}/${record.name}`)} className="rounded bg-primary px-3 py-1 text-xs text-primary-foreground hover:bg-primary/90 transition-colors">{i18next.t("general:Edit")}</button>
-                <button disabled={record.isDefault || Setting.isUserBoundToStore(this.props.account)} onClick={() => { if (window.confirm(`${i18next.t("general:Sure to delete")}: ${record.name} ?`)) { this.deleteStore(record); } }} className="rounded bg-destructive px-3 py-1 text-xs text-destructive-foreground hover:bg-destructive/90 disabled:opacity-50 transition-colors">{i18next.t("general:Delete")}</button>
+                <button disabled={record.isDefault || Setting.isUserBoundToStore(this.props.account)} onClick={() => {if (window.confirm(`${i18next.t("general:Sure to delete")}: ${record.name} ?`)) {this.deleteStore(record);}}} className="rounded bg-destructive px-3 py-1 text-xs text-destructive-foreground hover:bg-destructive/90 disabled:opacity-50 transition-colors">{i18next.t("general:Delete")}</button>
               </>
             )}
           </div>
@@ -326,7 +326,7 @@ class StoreListPage extends BaseListPage {
                 <>
                   <button onClick={this.addStore.bind(this)} disabled={Setting.isUserBoundToStore(this.props.account)} className="rounded bg-primary px-3 py-1 text-xs text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors">{i18next.t("general:Add")}</button>
                   {this.state.selectedRowKeys.length > 0 && (
-                    <button onClick={() => { if (window.confirm(`${i18next.t("general:Sure to delete")}: ${this.state.selectedRowKeys.length} ${i18next.t("general:items")} ?`)) { this.performBulkDelete(this.state.selectedRows, this.state.selectedRowKeys); } }} className="inline-flex items-center gap-1 rounded bg-destructive px-3 py-1 text-xs text-destructive-foreground hover:bg-destructive/90 transition-colors">
+                    <button onClick={() => {if (window.confirm(`${i18next.t("general:Sure to delete")}: ${this.state.selectedRowKeys.length} ${i18next.t("general:items")} ?`)) {this.performBulkDelete(this.state.selectedRows, this.state.selectedRowKeys);}}} className="inline-flex items-center gap-1 rounded bg-destructive px-3 py-1 text-xs text-destructive-foreground hover:bg-destructive/90 transition-colors">
                       <Trash2 className="w-3 h-3" />
                       {i18next.t("general:Delete")} ({this.state.selectedRowKeys.length})
                     </button>

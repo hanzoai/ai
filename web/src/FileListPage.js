@@ -20,7 +20,7 @@ import * as Setting from "./Setting";
 import * as FileBackend from "./backend/FileBackend";
 import * as StoreBackend from "./backend/StoreBackend";
 import i18next from "i18next";
-import {Trash2, Loader2} from "lucide-react";
+import {Loader2, Trash2} from "lucide-react";
 
 class FileListPage extends BaseListPage {
   constructor(props) {

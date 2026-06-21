@@ -14,6 +14,7 @@
 
 import React from "react";
 import {Link} from "react-router-dom";
+import {List, Popconfirm, Tooltip, Upload} from "antd";
 import moment from "moment";
 import BaseListPage from "./BaseListPage";
 import * as Setting from "./Setting";
@@ -118,11 +119,11 @@ class VideoListPage extends BaseListPage {
     };
 
     return (
-      
+      <Upload {...props}>
         <button className="px-2 py-1 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200 disabled:opacity-50" disabled={isDisabled}>
-           {i18next.t("video:Upload Video")} (.mp4)
+          {i18next.t("video:Upload Video")} (.mp4)
         </button>
-      
+      </Upload>
     );
   }
 
@@ -305,9 +306,9 @@ class VideoListPage extends BaseListPage {
                             {
                               Setting.getRemarkTag(remark.score)
                             }
-                            
+                            <Tooltip placement="left" title={remark.text}>
                               {Setting.getShortText(remark.text, 25)}
-                            
+                            </Tooltip>
                           </div>
                         </List.Item>
                       );
@@ -334,9 +335,9 @@ class VideoListPage extends BaseListPage {
                         {
                           Setting.getRemarkTag(remark.score)
                         }
-                        
+                        <Tooltip placement="left" title={remark.text}>
                           {Setting.getShortText(remark.text, 25)}
-                        
+                        </Tooltip>
                       </div>
                     </List.Item>
                   );
@@ -355,9 +356,9 @@ class VideoListPage extends BaseListPage {
                         {
                           Setting.getRemarkTag(remark.score)
                         }
-                        
+                        <Tooltip placement="left" title={remark.text}>
                           {Setting.getShortText(remark.text, 25)}
-                        
+                        </Tooltip>
                       </div>
                     </List.Item>
                   );
@@ -450,7 +451,7 @@ class VideoListPage extends BaseListPage {
 
           return (
             <a target="_blank" rel="noreferrer" href={text}>
-              <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700">} style={{marginRight: "10px"}} type="primary">{i18next.t("general:Download")}</button>
+              <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginRight: "10px"}} type="primary">{i18next.t("general:Download")}</button>
             </a>
           );
         },
@@ -487,33 +488,28 @@ class VideoListPage extends BaseListPage {
         render: (text, record, index) => {
           return (
             <div>
-              <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginTop: "10px", marginBottom: "10px", marginRight: "10px"}> Setting.openLink(`/videos/${record.owner}/${record.name}`)}>{i18next.t("general:Open")}</button>
-              <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginBottom: "10px", marginRight: "10px"}> this.props.history.push(`/videos/${record.owner}/${record.name}`)}>
+              <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginTop: "10px", marginBottom: "10px", marginRight: "10px"}} onClick={() => Setting.openLink(`/videos/${record.owner}/${record.name}`)}>{i18next.t("general:Open")}</button>
+              <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginBottom: "10px", marginRight: "10px"}} onClick={() => this.props.history.push(`/videos/${record.owner}/${record.name}`)}>
                 {
                   (this.requireUserOrAdmin(record)) ? i18next.t("general:View") :
                     i18next.t("general:Edit")
                 }
               </button>
-              this.deleteVideo(record)}
+              <Popconfirm
+                disabled={this.requireUserOrAdmin(record)}
+                title={`${i18next.t("general:Sure to delete")}: ${record.name} ?`}
+                onConfirm={() => this.deleteVideo(record)}
                 okText={i18next.t("general:OK")}
                 cancelText={i18next.t("general:Cancel")}
               >
-                <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-red-600 text-white hover:bg-red-700 disabled:opacity-50" disabled={this.requireUserOrAdmin(record)} style={{marginBottom: "10px"}>{i18next.t("general:Delete")}</button>
+                <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-red-600 text-white hover:bg-red-700 disabled:opacity-50" disabled={this.requireUserOrAdmin(record)} style={{marginBottom: "10px"}}>{i18next.t("general:Delete")}</button>
+              </Popconfirm>
             </div>
           );
         },
       },
     ];
     columns = Setting.filterTableColumns(columns, this.props.formItems ?? this.state.formItems);
-    const paginationProps = {
-      total: this.state.pagination.total,
-      showQuickJumper: true,
-      showSizeChanger: true,
-      pageSize: "1000",
-      pageSizeOptions: ["10", "20", "50", "100", "1000", "10000", "100000"],
-      showTotal: () => i18next.t("general:{total} in total").replace("{total}", this.state.pagination.total),
-    };
-
     if (this.requireReviewerOrAdmin()) {
       columns = columns.filter(column => column.key !== "excellentCount");
     }
@@ -528,7 +524,7 @@ class VideoListPage extends BaseListPage {
 
     return (
       <div>
-        <div className="overflow-x-auto border border-zinc-800 rounded-lg"><table className="w-full text-sm text-left"><thead className="bg-zinc-900/80 border-b border-zinc-800"><tr>{columns.map(col => <th key={col.key || col.dataIndex} className="px-3 py-2 text-xs font-medium text-zinc-400 whitespace-nowrap">{col.title}</th>)}</tr></thead><tbody className="divide-y divide-zinc-800/50">{(videos || []).map((record, index) => <tr key={typeof "name" === "function" ? ("name")(record) : record["name"] || index} className="hover:bg-zinc-900/50 transition-colors">{columns.map(col => <td key={col.key || col.dataIndex} className="px-3 py-2 text-zinc-300 whitespace-nowrap">{col.render ? col.render(record[col.dataIndex], record, index) : record[col.dataIndex]}</td>)}</tr>)}</tbody></table></div>
+        <div className="overflow-x-auto border border-zinc-800 rounded-lg"><table className="w-full text-sm text-left"><thead className="bg-zinc-900/80 border-b border-zinc-800"><tr>{columns.map(col => <th key={col.key || col.dataIndex} className="px-3 py-2 text-xs font-medium text-zinc-400 whitespace-nowrap">{col.title}</th>)}</tr></thead><tbody className="divide-y divide-zinc-800/50">{(videos || []).map((record, index) => <tr key={record.name || index} className="hover:bg-zinc-900/50 transition-colors">{columns.map(col => <td key={col.key || col.dataIndex} className="px-3 py-2 text-zinc-300 whitespace-nowrap">{col.render ? col.render(record[col.dataIndex], record, index) : record[col.dataIndex]}</td>)}</tr>)}</tbody></table></div>
       </div>
     );
   }

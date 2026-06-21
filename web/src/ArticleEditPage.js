@@ -13,6 +13,7 @@
 // limitations under the License.
 
 import React from "react";
+import {Affix, Input, Popover, Select} from "antd";
 import * as ArticleBackend from "./backend/ArticleBackend";
 import * as Setting from "./Setting";
 import i18next from "i18next";
@@ -20,6 +21,7 @@ import * as WorkflowBackend from "./backend/WorkflowBackend";
 import ArticleTable from "./table/ArticleTable";
 import ArticleMenu from "./ArticleMenu";
 
+const {TextArea} = Input;
 
 class ArticleEditPage extends React.Component {
   constructor(props) {
@@ -331,12 +333,12 @@ class ArticleEditPage extends React.Component {
 
     return (
       <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4">
+        <div>
           {i18next.t("article:Edit Article")}&nbsp;&nbsp;&nbsp;&nbsp;
-          <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700"> this.submitArticleEdit(false)}>{i18next.t("general:Save")}</button>
-          <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}> this.submitArticleEdit(true)}>{i18next.t("general:Save & Exit")}</button>
-          {this.state.isNewArticle && <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}> this.cancelArticleEdit()}>{i18next.t("general:Cancel")}</button>}
+          <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" onClick={() => this.submitArticleEdit(false)}>{i18next.t("general:Save")}</button>
+          <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}} onClick={() => this.submitArticleEdit(true)}>{i18next.t("general:Save & Exit")}</button>
+          {this.state.isNewArticle && <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}} onClick={() => this.cancelArticleEdit()}>{i18next.t("general:Cancel")}</button>}
         </div>
-      } style={{marginLeft: "5px"}} type="inner">
         <div className="flex flex-col sm:flex-row gap-2 mt-4">
           <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Name"), i18next.t("general:Name - Tooltip"))} :
@@ -346,7 +348,6 @@ class ArticleEditPage extends React.Component {
               this.updateArticleField("name", e.target.value);
             }} />
           </div>
-          <div className="flex-1">
           <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Display name"), i18next.t("general:Display name - Tooltip"))} :
           </div>
@@ -359,11 +360,10 @@ class ArticleEditPage extends React.Component {
             this.props.account.name !== "admin" ? null : (
               <React.Fragment>
                 <div className="flex-1">
-                <div className="flex-1">
                   {Setting.getLabel(i18next.t("store:Workflow"), i18next.t("store:Workflow - Tooltip"))} :
                 </div>
                 <div className="flex-1">
-                  <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.article.workflow}> {this.updateArticleField("workflow", value);})}
+                  <Select virtual={false} style={{width: "100%"}} value={this.state.article.workflow} onChange={(value => {this.updateArticleField("workflow", value);})}
                     options={this.state.workflows.map((item) => Setting.getOption(`${item.displayName} (${item.name})`, `${item.name}`))
                     } />
                 </div>
@@ -371,19 +371,20 @@ class ArticleEditPage extends React.Component {
             )
           }
           <div className="flex-1">
-          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Text"), i18next.t("general:Text - Tooltip"))} :
           </div>
           <div className="flex-1">
-            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.article.glossary}> {this.updateArticleField("glossary", value);})}>
+            <Popover placement="left" content={
+              <div style={{width: "1000px"}}>
+                <Select virtual={false} mode="tags" style={{width: "100%"}} value={this.state.article.glossary} onChange={(value => {this.updateArticleField("glossary", value);})}>
                   {
-                    this.state.article.glossary?.map((item, index) => <option key={index} value={item}>{item}</option>)
+                    this.state.article.glossary?.map((item, index) => <Select.Option key={index} value={item}>{item}</Select.Option>)
                   }
-                </select>
-                <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginTop: "20px", marginBottom: "20px", marginRight: "20px"}> this.parseText()}>{i18next.t("article:Parse")}</button>
-                <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginTop: "20px", marginBottom: "20px", marginRight: "20px"}> this.exportText(true)}>{i18next.t("article:Export")}</button>
-                <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginTop: "20px", marginBottom: "20px"}> this.exportText(false)}>{i18next.t("article:Export ZH")}</button>
-                <span className="text-zinc-300 text-sm"> {
+                </Select>
+                <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginTop: "20px", marginBottom: "20px", marginRight: "20px"}} onClick={() => this.parseText()}>{i18next.t("article:Parse")}</button>
+                <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginTop: "20px", marginBottom: "20px", marginRight: "20px"}} onClick={() => this.exportText(true)}>{i18next.t("article:Export")}</button>
+                <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginTop: "20px", marginBottom: "20px"}} onClick={() => this.exportText(false)}>{i18next.t("article:Export ZH")}</button>
+                <TextArea autoSize={{minRows: 1, maxRows: 30}} showCount value={this.state.article.text} onChange={(e) => {
                   this.updateArticleField("text", e.target.value);
                 }} />
               </div>
@@ -391,6 +392,7 @@ class ArticleEditPage extends React.Component {
               <Input value={this.state.article.text} onChange={e => {
                 this.updateArticleField("text", e.target.value);
               }} />
+            </Popover>
           </div>
         </div>
         <div className="flex flex-col sm:flex-row gap-2 mt-4">
@@ -472,9 +474,9 @@ class ArticleEditPage extends React.Component {
           this.state.article !== null ? this.renderArticle() : null
         }
         <div style={{marginTop: "20px", marginLeft: "40px"}}>
-          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700"> this.submitArticleEdit(false)}>{i18next.t("general:Save")}</button>
-          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}> this.submitArticleEdit(true)}>{i18next.t("general:Save & Exit")}</button>
-          {this.state.isNewArticle && <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}> this.cancelArticleEdit()}>{i18next.t("general:Cancel")}</button>}
+          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" onClick={() => this.submitArticleEdit(false)}>{i18next.t("general:Save")}</button>
+          <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}} onClick={() => this.submitArticleEdit(true)}>{i18next.t("general:Save & Exit")}</button>
+          {this.state.isNewArticle && <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}} onClick={() => this.cancelArticleEdit()}>{i18next.t("general:Cancel")}</button>}
         </div>
       </div>
     );

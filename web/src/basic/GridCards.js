@@ -14,7 +14,6 @@
 
 import React from "react";
 import {Loader2} from "lucide-react";
-import i18next from "i18next";
 import SingleCard from "./SingleCard";
 
 const GridCards = (props) => {

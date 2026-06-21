@@ -13,6 +13,7 @@
 // limitations under the License.
 
 import React from "react";
+import {Input} from "antd";
 import * as Setting from "../Setting";
 import i18next from "i18next";
 import * as TtsBackend from "../backend/TtsBackend";
@@ -123,7 +124,7 @@ class TtsTestWidget extends React.Component {
             <Input.TextArea rows={1} autoSize={{minRows: 1, maxRows: 5}} value={provider.testContent} onChange={e => {onUpdateProvider("testContent", e.target.value);}} />
           </div>
           <div className="flex-1">
-            <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200 disabled:opacity-50" disabled={!provider.testContent} style={{marginLeft: "10px", marginBottom: "5px"}> this.sendTestTts(provider, originalProvider, provider.testContent, account.owner, account.name)} >
+            <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200 disabled:opacity-50" disabled={!provider.testContent} style={{marginLeft: "10px", marginBottom: "5px"}} onClick={() => this.sendTestTts(provider, originalProvider, provider.testContent, account.owner, account.name)}>
               {i18next.t("chat:Read it out")}
             </button>
           </div>

@@ -13,8 +13,11 @@
 // limitations under the License.
 
 import React from "react";
+import {CheckCircleOutlined, DeleteOutlined, DownOutlined, MinusCircleOutlined, SyncOutlined, UpOutlined} from "@ant-design/icons";
+import {Button, Input, Select, Tag, Tooltip} from "antd";
 import * as Setting from "../Setting";
 
+const {Option} = Select;
 
 class ServiceTable extends React.Component {
   constructor(props) {
@@ -140,14 +143,14 @@ class ServiceTable extends React.Component {
         width: "150px",
         render: (text, record, index) => {
           return (
-            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={text}> {this.updateField(table, index, "expectedStatus", value);}}>
+            <Select virtual={false} style={{width: "100%"}} value={text} onChange={value => {this.updateField(table, index, "expectedStatus", value);}}>
               {
                 [
                   {id: "Running", name: "Running"},
                   {id: "Stopped", name: "Stopped"},
-                ].map((item, index) => <option key={index} value={item.id}>{item.name}</option>)
+                ].map((item, index) => <Option key={index} value={item.id}>{item.name}</Option>)
               }
-            </select>
+            </Select>
           );
         },
       },
@@ -159,15 +162,15 @@ class ServiceTable extends React.Component {
         render: (text, record, index) => {
           if (record.subStatus === "In Progress") {
             return (
-              <span className="px-2 py-0.5 bg-zinc-800 text-zinc-400 rounded text-xs">} color="processing">{`${text} (${record.subStatus})`}</span>
+              <Tag icon={<SyncOutlined spin />} color="processing">{`${text} (${record.subStatus})`}</Tag>
             );
           } else if (record.status === "Running") {
             return (
-              <span className="px-2 py-0.5 bg-zinc-800 text-zinc-400 rounded text-xs">} color="success">{text}</span>
+              <Tag icon={<CheckCircleOutlined />} color="success">{text}</Tag>
             );
           } else if (record.status === "Stopped") {
             return (
-              <span className="px-2 py-0.5 bg-zinc-800 text-zinc-400 rounded text-xs">} color="error">{text}</span>
+              <Tag icon={<MinusCircleOutlined />} color="error">{text}</Tag>
             );
           } else {
             return `${text} (${record.subStatus})`;
@@ -198,15 +201,15 @@ class ServiceTable extends React.Component {
         render: (text, record, index) => {
           return (
             <div>
-              
-                <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-50" disabled={index === 0} style={{marginRight: "5px"}>} size="small" onClick={() => this.upRow(table, index)} />
-              
-              
-                <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-50" disabled={index === table.length - 1} style={{marginRight: "5px"}>} size="small" onClick={() => this.downRow(table, index)} />
-              
-              
-                <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700">} size="small" onClick={() => this.deleteRow(table, index)} />
-              
+              <Tooltip placement="bottomLeft" title={"Up"}>
+                <Button style={{marginRight: "5px"}} disabled={index === 0} icon={<UpOutlined />} size="small" onClick={() => this.upRow(table, index)} />
+              </Tooltip>
+              <Tooltip placement="topLeft" title={"Down"}>
+                <Button style={{marginRight: "5px"}} disabled={index === table.length - 1} icon={<DownOutlined />} size="small" onClick={() => this.downRow(table, index)} />
+              </Tooltip>
+              <Tooltip placement="topLeft" title={"Delete"}>
+                <Button icon={<DeleteOutlined />} size="small" onClick={() => this.deleteRow(table, index)} />
+              </Tooltip>
             </div>
           );
         },
@@ -214,7 +217,13 @@ class ServiceTable extends React.Component {
     ];
 
     return (
-      <div className="overflow-x-auto border border-zinc-800 rounded-lg"><table className="w-full text-sm text-left"><thead className="bg-zinc-900/80 border-b border-zinc-800"><tr>{columns.map(col => <th key={col.key || col.dataIndex} className="px-3 py-2 text-xs font-medium text-zinc-400 whitespace-nowrap">{col.title}</th>)}</tr></thead><tbody className="divide-y divide-zinc-800/50">{(table || []).map((record, index) => <tr key={typeof "index" === "function" ? ("index")(record) : record["index"] || index} className="hover:bg-zinc-900/50 transition-colors">{columns.map(col => <td key={col.key || col.dataIndex} className="px-3 py-2 text-zinc-300 whitespace-nowrap">{col.render ? col.render(record[col.dataIndex], record, index) : record[col.dataIndex]}</td>)}</tr>)}</tbody></table></div>
+      <div>
+        <div className="flex items-center flex-wrap gap-2 mb-2">
+          {this.props.title}
+          <Button style={{marginRight: "5px"}} type="primary" size="small" onClick={() => this.addRow(table)}>{"Add"}</Button>
+        </div>
+        <div className="overflow-x-auto border border-zinc-800 rounded-lg"><table className="w-full text-sm text-left"><thead className="bg-zinc-900/80 border-b border-zinc-800"><tr>{columns.map(col => <th key={col.key || col.dataIndex} className="px-3 py-2 text-xs font-medium text-zinc-400 whitespace-nowrap">{col.title}</th>)}</tr></thead><tbody className="divide-y divide-zinc-800/50">{(table || []).map((record, index) => <tr key={record["index"] || index} className="hover:bg-zinc-900/50 transition-colors">{columns.map(col => <td key={col.key || col.dataIndex} className="px-3 py-2 text-zinc-300 whitespace-nowrap">{col.render ? col.render(record[col.dataIndex], record, index) : record[col.dataIndex]}</td>)}</tr>)}</tbody></table></div>
+      </div>
     );
   }
 

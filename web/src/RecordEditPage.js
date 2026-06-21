@@ -13,12 +13,12 @@
 // limitations under the License.
 
 import React from "react";
+import {Input} from "antd";
 import * as RecordBackend from "./backend/RecordBackend";
 import * as ProviderBackend from "./backend/ProviderBackend";
 import * as Setting from "./Setting";
 import i18next from "i18next";
 import Editor from "./common/Editor";
-
 
 class RecordEditPage extends React.Component {
   constructor(props) {
@@ -84,19 +84,19 @@ class RecordEditPage extends React.Component {
   renderRecord() {
     // const history = useHistory();
     return (
-      <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4">
+      <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4" style={{marginLeft: "5px"}}>
+        <div className="flex items-center flex-wrap gap-2 mb-4">
           {this.state.mode === "add" ? i18next.t("record:New Record") : i18next.t("record:View Record")}&nbsp;&nbsp;&nbsp;&nbsp;
           {this.state.mode !== "123" ? (
             <React.Fragment>
-              <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700"> this.submitRecordEdit(false)}>{i18next.t("general:Save")}</button>
-              <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}> this.submitRecordEdit(true)}>{i18next.t("general:Save & Exit")}</button>
+              <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" onClick={() => this.submitRecordEdit(false)}>{i18next.t("general:Save")}</button>
+              <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}} onClick={() => this.submitRecordEdit(true)}>{i18next.t("general:Save & Exit")}</button>
             </React.Fragment>
           ) : (
-            <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200"> this.props.history.push("/records")}>{i18next.t("general:Exit")}</button>
+            <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" onClick={() => this.props.history.push("/records")}>{i18next.t("general:Exit")}</button>
           )}
-          {this.state.mode === "add" ? <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}> this.deleteRecord()}>{i18next.t("general:Cancel")}</button> : null}
+          {this.state.mode === "add" ? <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}} onClick={() => this.deleteRecord()}>{i18next.t("general:Cancel")}</button> : null}
         </div>
-      } style={{marginLeft: "5px"}} type="inner">
         <div className="flex flex-col sm:flex-row gap-2 mt-4">
           <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Organization"), i18next.t("general:Organization - Tooltip"))} :
@@ -122,9 +122,9 @@ class RecordEditPage extends React.Component {
             {Setting.getLabel(i18next.t("general:Provider"), i18next.t("general:Provider - Tooltip"))} :
           </div>
           <div className="flex-1">
-            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.record.provider} disabled> {
-              this.updateRecordField("provider", value);
-            })}>
+            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.record.provider} disabled onChange={e => {
+              this.updateRecordField("provider", e.target.value);
+            }}>
               {
                 this.state.blockchainProviders.map((provider, index) => (
                   <option key={index} value={provider.name}>{provider.name}</option>
@@ -148,9 +148,9 @@ class RecordEditPage extends React.Component {
             {Setting.getLabel(i18next.t("general:Provider 2"), i18next.t("general:Provider - Tooltip"))} :
           </div>
           <div className="flex-1">
-            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.record.provider2} disabled> {
-              this.updateRecordField("provider2", value);
-            })}>
+            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.record.provider2} disabled onChange={e => {
+              this.updateRecordField("provider2", e.target.value);
+            }}>
               {
                 this.state.blockchainProviders.map((provider, index) => (
                   <option key={index} value={provider.name}>{provider.name}</option>
@@ -194,9 +194,9 @@ class RecordEditPage extends React.Component {
             {Setting.getLabel(i18next.t("general:Method"), i18next.t("general:Method - Tooltip"))} :
           </div>
           <div className="flex-1">
-            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.record.method} disabled> {
-              // this.updateRecordField("method", value);
-            })}>
+            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.record.method} disabled onChange={e => {
+              // this.updateRecordField("method", e.target.value);
+            }}>
               {
                 [
                   {id: "GET", name: "GET"},
@@ -320,7 +320,7 @@ class RecordEditPage extends React.Component {
             {Setting.getLabel(i18next.t("general:Is triggered"), i18next.t("general:Is triggered - Tooltip"))} :
           </div>
           <div className="flex-1">
-            <span className="px-2 py-0.5 rounded text-xs " + (this.state.record.isTriggered ? "bg-green-500/20 text-green-400" : "bg-zinc-800 text-zinc-500")">{this.state.record.isTriggered ? "ON" : "OFF"}</span>
+            <span className={`px-2 py-0.5 rounded text-xs ${this.state.record.isTriggered ? "bg-green-500/20 text-green-400" : "bg-zinc-800 text-zinc-500"}`}>{this.state.record.isTriggered ? "ON" : "OFF"}</span>
           </div>
         </div>
       </div>
@@ -378,13 +378,13 @@ class RecordEditPage extends React.Component {
         <div style={{marginTop: "20px", marginLeft: "40px"}}>
           {this.state.mode !== "123" ? (
             <React.Fragment>
-              <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700"> this.submitRecordEdit(false)}>{i18next.t("general:Save")}</button>
-              <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}> this.submitRecordEdit(true)}>{i18next.t("general:Save & Exit")}</button>
+              <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" onClick={() => this.submitRecordEdit(false)}>{i18next.t("general:Save")}</button>
+              <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}} onClick={() => this.submitRecordEdit(true)}>{i18next.t("general:Save & Exit")}</button>
             </React.Fragment>
           ) : (
-            <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-white text-black hover:bg-zinc-200"> this.props.history.push("/records")}>{i18next.t("general:Exit")}</button>
+            <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-white text-black hover:bg-zinc-200" onClick={() => this.props.history.push("/records")}>{i18next.t("general:Exit")}</button>
           )}
-          {this.state.mode === "add" ? <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}> this.deleteRecord()}>{i18next.t("general:Cancel")}</button> : null}
+          {this.state.mode === "add" ? <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}} onClick={() => this.deleteRecord()}>{i18next.t("general:Cancel")}</button> : null}
         </div>
       </div>
     );
