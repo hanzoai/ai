@@ -15,14 +15,14 @@
 import * as Setting from "../Setting";
 
 export function getCaases(owner, page = "", pageSize = "", field = "", value = "", sortField = "", sortOrder = "") {
-  return fetch(`${Setting.ServerUrl}/api/get-caases?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
+  return fetch(`${Setting.ServerUrl}/v1/get-caases?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
     method: "GET",
     credentials: "include",
   }).then(res => res.json());
 }
 
 export function getCaase(owner, name) {
-  return fetch(`${Setting.ServerUrl}/api/get-caase?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/get-caase?id=${owner}/${encodeURIComponent(name)}`, {
     method: "GET",
     credentials: "include",
   }).then(res => res.json());
@@ -30,7 +30,7 @@ export function getCaase(owner, name) {
 
 export function updateCaase(owner, name, caase) {
   const newCaase = Setting.deepCopy(caase);
-  return fetch(`${Setting.ServerUrl}/api/update-caase?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/update-caase?id=${owner}/${encodeURIComponent(name)}`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newCaase),
@@ -39,7 +39,7 @@ export function updateCaase(owner, name, caase) {
 
 export function addCaase(caase) {
   const newCaase = Setting.deepCopy(caase);
-  return fetch(`${Setting.ServerUrl}/api/add-caase`, {
+  return fetch(`${Setting.ServerUrl}/v1/add-caase`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newCaase),
@@ -48,7 +48,7 @@ export function addCaase(caase) {
 
 export function deleteCaase(caase) {
   const newCaase = Setting.deepCopy(caase);
-  return fetch(`${Setting.ServerUrl}/api/delete-caase`, {
+  return fetch(`${Setting.ServerUrl}/v1/delete-caase`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newCaase),

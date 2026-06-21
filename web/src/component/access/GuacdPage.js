@@ -83,7 +83,7 @@ const GuacdPage = (props) => {
 
   const renderDisplay = (connectionId, protocol, width, height) => {
     const wsEndpoint = Setting.ServerUrl.replace("http://", "ws://");
-    const wsUrl = `${wsEndpoint}/api/get-node-tunnel`;
+    const wsUrl = `${wsEndpoint}/v1/get-node-tunnel`;
     const tunnel = new Guacamole.WebSocketTunnel(wsUrl);
     const client = new Guacamole.Client(tunnel);
 
