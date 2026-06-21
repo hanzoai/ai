@@ -13,6 +13,7 @@
 // limitations under the License.
 
 import React from "react";
+import {Check, Download, Trash2} from "lucide-react";
 import * as Setting from "../Setting";
 import i18next from "i18next";
 import * as PermissionUtil from "../PermissionUtil";
@@ -190,8 +191,64 @@ class FileTable extends React.Component {
       // },
     ];
 
+    const renderToolbar = () => {
+      if (!this.props.isCheckMode) {
+        return null;
+      }
+      const files = this.props.file.children;
+      const fileCount = files.filter(file => file.isLeaf).length;
+      const folderCount = files.filter(file => !file.isLeaf).length;
+      const text = `${fileCount} ` + i18next.t("store:files and") +
+        ` ${folderCount} ` + i18next.t("store:folders are checked");
+      return (
+        <div className="flex items-center gap-2 mb-2">
+          <span className="text-sm text-zinc-300">{text}</span>
+          <button
+            className="inline-flex items-center gap-1 px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200"
+            onClick={() => {
+              files.filter(file => file.isLeaf).forEach((file, index) => {
+                Setting.openLink(file.url);
+              });
+            }}
+          >
+            <Download className="w-3.5 h-3.5" />
+            {i18next.t("general:Download")}
+          </button>
+          <button
+            className="inline-flex items-center gap-1 px-3 py-1.5 rounded text-xs font-medium transition-colors bg-red-600 text-white hover:bg-red-700"
+            onClick={() => {
+              if (window.confirm(`${i18next.t("general:Sure to delete")} all ${fileCount} files and ${folderCount} folders ?`)) {
+                files.forEach((file, index) => {
+                  this.deleteFile(file, file.isLeaf);
+                });
+              }
+            }}
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            {i18next.t("general:Delete")}
+          </button>
+          <button
+            className="inline-flex items-center gap-1 px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
+            onClick={() => {
+              const fileKeys = [];
+              files.forEach((file, index) => {
+                fileKeys.push(file.key);
+              });
+              PermissionUtil.addPermission(this.props.account, this.props.store, true, null, fileKeys);
+            }}
+          >
+            <Check className="w-3.5 h-3.5" />
+            {i18next.t("store:Add Permission")}
+          </button>
+        </div>
+      );
+    };
+
     return (
-      <div className="overflow-x-auto border border-zinc-800 rounded-lg"><table className="w-full text-sm text-left"><thead className="bg-zinc-900/80 border-b border-zinc-800"><tr>{columns.map(col => <th key={col.key || col.dataIndex} className="px-3 py-2 text-xs font-medium text-zinc-400 whitespace-nowrap">{col.title}</th>)}</tr></thead><tbody className="divide-y divide-zinc-800/50">{(table || []).map((record, index) => <tr key={typeof "title" === "function" ? ("title")(record) : record["title"] || index} className="hover:bg-zinc-900/50 transition-colors">{columns.map(col => <td key={col.key || col.dataIndex} className="px-3 py-2 text-zinc-300 whitespace-nowrap">{col.render ? col.render(record[col.dataIndex], record, index) : record[col.dataIndex]}</td>)}</tr>)}</tbody></table></div>
+      <div>
+        {renderToolbar()}
+        <div className="overflow-x-auto border border-zinc-800 rounded-lg"><table className="w-full text-sm text-left"><thead className="bg-zinc-900/80 border-b border-zinc-800"><tr>{columns.map(col => <th key={col.key || col.dataIndex} className="px-3 py-2 text-xs font-medium text-zinc-400 whitespace-nowrap">{col.title}</th>)}</tr></thead><tbody className="divide-y divide-zinc-800/50">{(table || []).map((record, index) => <tr key={record.title || index} className="hover:bg-zinc-900/50 transition-colors">{columns.map(col => <td key={col.key || col.dataIndex} className="px-3 py-2 text-zinc-300 whitespace-nowrap">{col.render ? col.render(record[col.dataIndex], record, index) : record[col.dataIndex]}</td>)}</tr>)}</tbody></table></div>
+      </div>
     );
   }
 

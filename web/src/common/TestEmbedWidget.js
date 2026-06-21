@@ -13,11 +13,11 @@
 // limitations under the License.
 
 import React from "react";
+import {Input} from "antd";
 import * as Setting from "../Setting";
 import i18next from "i18next";
 import * as VectorBackend from "../backend/VectorBackend";
 import {checkProvider} from "./ProviderWidget";
-
 
 class TestEmbedWidget extends React.Component {
   constructor(props) {
@@ -104,7 +104,7 @@ class TestEmbedWidget extends React.Component {
             <Input.TextArea rows={1} autoSize={{minRows: 1, maxRows: 5}} value={provider.testContent} onChange={e => {onUpdateProvider("testContent", e.target.value);}} />
           </div>
           <div className="flex-1">
-            <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200 disabled:opacity-50" disabled={!provider.testContent} style={{marginLeft: "10px", marginBottom: "5px"}> this.sendTestEmbedding(provider, originalProvider, provider.testContent, this.props.account)}>
+            <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200 disabled:opacity-50" disabled={!provider.testContent} style={{marginLeft: "10px", marginBottom: "5px"}} onClick={() => this.sendTestEmbedding(provider, originalProvider, provider.testContent, this.props.account)}>
               {i18next.t("general:Refresh Vectors")}
             </button>
           </div>
@@ -115,7 +115,7 @@ class TestEmbedWidget extends React.Component {
             <div className="flex-1">
               <div style={{border: "1px solid #d9d9d9", borderRadius: "6px", padding: "10px", backgroundColor: "#fafafa"}}>
                 <div><strong>{i18next.t("general:Data")}:</strong></div>
-                <span className="text-zinc-300 text-sm">
+                <Input.TextArea autoSize={{minRows: 3, maxRows: 10}} value={this.state.embeddingResult ? this.state.embeddingResult.join(", ") : ""} readOnly style={{marginTop: "5px", fontFamily: "monospace", fontSize: "12px"}} />
               </div>
             </div>
           </div>
