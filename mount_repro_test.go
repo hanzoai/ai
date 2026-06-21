@@ -51,8 +51,8 @@ func TestMountForwardsNestedOpenAIRoutesToBeego(t *testing.T) {
 	// is the production defect; initSessionManager() is the fix under test.
 	beego.BConfig.WebConfig.Session.SessionOn = true
 	beego.BConfig.WebConfig.Session.SessionName = "cloud_session_id"
-	beego.BConfig.WebConfig.Session.SessionProvider = "file"
-	beego.BConfig.WebConfig.Session.SessionProviderConfig = t.TempDir()
+	beego.BConfig.WebConfig.Session.SessionProvider = "memory" // matches production (scratch image, no FS)
+	beego.BConfig.WebConfig.Session.SessionProviderConfig = ""
 	beego.GlobalSessions = nil // simulate the embedded binary's pre-fix state
 	if err := initSessionManager(); err != nil {
 		t.Fatalf("initSessionManager: %v", err)
@@ -90,6 +90,9 @@ func TestMountForwardsNestedOpenAIRoutesToBeego(t *testing.T) {
 			body, _ := io.ReadAll(resp.Body)
 			if resp.StatusCode == http.StatusInternalServerError {
 				t.Fatalf("%s %s: status=500 (session panic regressed) body=%q", tc.method, tc.path, body)
+			}
+			if resp.StatusCode == http.StatusServiceUnavailable {
+				t.Fatalf("%s %s: status=503 (session store errored — memory provider regressed) body=%q", tc.method, tc.path, body)
 			}
 			if resp.StatusCode == http.StatusNotFound {
 				t.Fatalf("%s %s: status=404 (nested route did not resolve) body=%q", tc.method, tc.path, body)
