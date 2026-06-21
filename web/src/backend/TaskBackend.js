@@ -24,6 +24,18 @@ export function getGlobalTasks() {
   }).then(res => res.json());
 }
 
+// Task templates (admin). Backend route /v1/get-task-templates is a pending
+// follow-up; degrade gracefully to an empty list so the Task editor still loads.
+export function getTaskTemplates() {
+  return fetch(`${Setting.ServerUrl}/v1/get-task-templates`, {
+    method: "GET",
+    credentials: "include",
+    headers: {
+      "Accept-Language": Setting.getAcceptLanguage(),
+    },
+  }).then(res => res.json()).catch(() => ({status: "error", data: []}));
+}
+
 export function getTasks(owner, page = "", pageSize = "", field = "", value = "", sortField = "", sortOrder = "") {
   return fetch(`${Setting.ServerUrl}/v1/get-tasks?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
     method: "GET",

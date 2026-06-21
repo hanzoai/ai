@@ -13,13 +13,13 @@
 // limitations under the License.
 
 import React from "react";
+import {Input, Radio} from "antd";
 import * as Setting from "../Setting";
 import i18next from "i18next";
 import * as AssetBackend from "../backend/AssetBackend";
 import * as ProviderBackend from "../backend/ProviderBackend";
 import * as ScanBackend from "../backend/ScanBackend";
 import {ScanResultRenderer} from "./ScanResultRenderer";
-
 
 const DEFAULT_SCAN_TARGET = "127.0.0.1";
 const DEFAULT_SCAN_COMMAND = "-sn %s";
@@ -679,10 +679,11 @@ class TestScanWidget extends React.Component {
               {Setting.getLabel(i18next.t("general:Provider"), i18next.t("general:Provider - Tooltip"))} :
             </div>
             <div className="flex-1">
-              <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.selectedProvider}> {
-                  // Reset command to defaults when provider changes (template auto-updates based on command)
-                  this.setDefaultProviderAndCommand(value);
-                }}
+              <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.selectedProvider} onChange={(e) => {
+                const value = e.target.value;
+                // Reset command to defaults when provider changes (template auto-updates based on command)
+                this.setDefaultProviderAndCommand(value);
+              }}
               >
                 {
                   this.state.providers?.map((provider, index) => {
@@ -706,20 +707,20 @@ class TestScanWidget extends React.Component {
             {Setting.getLabel(i18next.t("scan:Target mode"), i18next.t("scan:Target mode - Tooltip"))} :
           </div>
           <div className="flex-1">
-            <div className="flex gap-2"> {
-                const newMode = e.target.value;
-                this.setState({targetMode: newMode});
-                this.clearFieldsByTargetMode(newMode);
-                if (this.props.onUpdateProvider) {
-                  this.props.onUpdateProvider("targetMode", newMode);
-                }
-                if (this.props.onUpdateScan) {
-                  this.props.onUpdateScan("targetMode", newMode);
-                }
-              }}
+            <div className="flex gap-2" onChange={(e) => {
+              const newMode = e.target.value;
+              this.setState({targetMode: newMode});
+              this.clearFieldsByTargetMode(newMode);
+              if (this.props.onUpdateProvider) {
+                this.props.onUpdateProvider("targetMode", newMode);
+              }
+              if (this.props.onUpdateScan) {
+                this.props.onUpdateScan("targetMode", newMode);
+              }
+            }}
             >
-              <Radio value="Manual Input">{i18next.t("scan:Manual Input")}</Radio>
-              <Radio value="Asset">{i18next.t("general:Asset")}</Radio>
+              <Radio disabled={isRemote} checked={this.state.targetMode === "Manual Input"} value="Manual Input">{i18next.t("scan:Manual Input")}</Radio>
+              <Radio disabled={isRemote} checked={this.state.targetMode === "Asset"} value="Asset">{i18next.t("general:Asset")}</Radio>
             </div>
           </div>
         </div>
@@ -752,15 +753,16 @@ class TestScanWidget extends React.Component {
               {Setting.getLabel(i18next.t("general:Asset"), i18next.t("scan:Asset - Tooltip"))} :
             </div>
             <div className="flex-1">
-              <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.selectedAsset}> {
-                  this.setState({selectedAsset: value});
-                  if (this.props.onUpdateProvider) {
-                    this.props.onUpdateProvider("asset", value);
-                  }
-                  if (this.props.onUpdateScan) {
-                    this.props.onUpdateScan("asset", value);
-                  }
-                }}
+              <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.selectedAsset} onChange={(e) => {
+                const value = e.target.value;
+                this.setState({selectedAsset: value});
+                if (this.props.onUpdateProvider) {
+                  this.props.onUpdateProvider("asset", value);
+                }
+                if (this.props.onUpdateScan) {
+                  this.props.onUpdateScan("asset", value);
+                }
+              }}
               >
                 {
                   this.state.assets?.map((asset, index) => {
@@ -785,25 +787,27 @@ class TestScanWidget extends React.Component {
             {Setting.getLabel(i18next.t("general:Template"), i18next.t("general:Template - Tooltip"))} :
           </div>
           <div className="flex-1">
-            <div className="flex gap-2"> t.command === this.state.scanCommand)?.id || "custom"}
-              onChange={(e) => {
-                const value = e.target.value;
-                const template = this.getCommandTemplates().find(t => t.id === value);
-                if (template && template.command !== "") {
-                  this.setState({scanCommand: template.command});
-                  if (this.props.onUpdateProvider) {
-                    this.props.onUpdateProvider("text", template.command);
-                  }
-                  if (this.props.onUpdateScan) {
-                    this.props.onUpdateScan("command", template.command);
-                  }
+            <div className="flex gap-2" onChange={(e) => {
+              const value = e.target.value;
+              const template = this.getCommandTemplates().find(t => t.id === value);
+              if (template && template.command !== "") {
+                this.setState({scanCommand: template.command});
+                if (this.props.onUpdateProvider) {
+                  this.props.onUpdateProvider("text", template.command);
                 }
-              }}
+                if (this.props.onUpdateScan) {
+                  this.props.onUpdateScan("command", template.command);
+                }
+              }
+            }}
             >
               {
-                this.getCommandTemplates().map((item) => (
-                  <Radio key={item.id} value={item.id}>{item.name}</Radio>
-                ))
+                this.getCommandTemplates().map((item) => {
+                  const selectedId = this.getCommandTemplates().find(t => t.command === this.state.scanCommand)?.id || "custom";
+                  return (
+                    <Radio disabled={isRemote} checked={selectedId === item.id} key={item.id} value={item.id}>{item.name}</Radio>
+                  );
+                })
               }
             </div>
           </div>
@@ -834,11 +838,11 @@ class TestScanWidget extends React.Component {
             {Setting.getLabel(i18next.t("general:Action"), i18next.t("general:Action - Tooltip"))} :
           </div>
           <div className="flex-1">
-            <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200 disabled:opacity-50" disabled={isRemote} style={{marginBottom: "10px"}> this.testScan()}
+            <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200 disabled:opacity-50" disabled={isRemote} style={{marginBottom: "10px"}} onClick={() => this.testScan()}
             >
               {i18next.t("asset:Scan")}
             </button>
-            <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-50" disabled={isRemote} style={{marginBottom: "10px", marginLeft: "10px"}> this.clearScan()}
+            <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-50" disabled={isRemote} style={{marginBottom: "10px", marginLeft: "10px"}} onClick={() => this.clearScan()}
             >
               {i18next.t("general:Clear")}
             </button>

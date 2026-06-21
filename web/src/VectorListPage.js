@@ -202,7 +202,7 @@ class VectorListPage extends BaseListPage {
         render: (text, record) => (
           <div className="flex flex-col gap-2">
             <button onClick={() => this.props.history.push(`/vectors/${record.name}`)} className="rounded bg-primary px-3 py-1 text-xs text-primary-foreground hover:bg-primary/90 transition-colors">{i18next.t("general:Edit")}</button>
-            <button onClick={() => { if (window.confirm(`${i18next.t("general:Sure to delete")}: ${record.name} ?`)) { this.deleteVector(record); } }} className="rounded bg-destructive px-3 py-1 text-xs text-destructive-foreground hover:bg-destructive/90 transition-colors">{i18next.t("general:Delete")}</button>
+            <button onClick={() => {if (window.confirm(`${i18next.t("general:Sure to delete")}: ${record.name} ?`)) {this.deleteVector(record);}}} className="rounded bg-destructive px-3 py-1 text-xs text-destructive-foreground hover:bg-destructive/90 transition-colors">{i18next.t("general:Delete")}</button>
           </div>
         ),
       },
@@ -224,12 +224,12 @@ class VectorListPage extends BaseListPage {
               <span className="text-foreground font-medium">{i18next.t("general:Vectors")}</span>
               <button onClick={this.addVector.bind(this)} className="rounded bg-primary px-3 py-1 text-xs text-primary-foreground hover:bg-primary/90 transition-colors">{i18next.t("general:Add")}</button>
               {this.state.selectedRowKeys.length > 0 && (
-                <button onClick={() => { if (window.confirm(`${i18next.t("general:Sure to delete")}: ${this.state.selectedRowKeys.length} ${i18next.t("general:items")} ?`)) { this.performBulkDelete(this.state.selectedRows, this.state.selectedRowKeys); } }} className="inline-flex items-center gap-1 rounded bg-destructive px-3 py-1 text-xs text-destructive-foreground hover:bg-destructive/90 transition-colors">
+                <button onClick={() => {if (window.confirm(`${i18next.t("general:Sure to delete")}: ${this.state.selectedRowKeys.length} ${i18next.t("general:items")} ?`)) {this.performBulkDelete(this.state.selectedRows, this.state.selectedRowKeys);}}} className="inline-flex items-center gap-1 rounded bg-destructive px-3 py-1 text-xs text-destructive-foreground hover:bg-destructive/90 transition-colors">
                   <Trash2 className="w-3 h-3" />
                   {i18next.t("general:Delete")} ({this.state.selectedRowKeys.length})
                 </button>
               )}
-              <button onClick={() => { if (window.confirm(`${i18next.t("general:Sure to delete all")} ${i18next.t("general:Vectors")}?`)) { this.deleteAllVectors(); } }} className="rounded bg-destructive px-3 py-1 text-xs text-destructive-foreground hover:bg-destructive/90 transition-colors">{i18next.t("general:Delete All")}</button>
+              <button onClick={() => {if (window.confirm(`${i18next.t("general:Sure to delete all")} ${i18next.t("general:Vectors")}?`)) {this.deleteAllVectors();}}} className="rounded bg-destructive px-3 py-1 text-xs text-destructive-foreground hover:bg-destructive/90 transition-colors">{i18next.t("general:Delete All")}</button>
             </div>
           )}
           loading={this.state.loading}

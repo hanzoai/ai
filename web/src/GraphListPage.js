@@ -19,8 +19,7 @@ import BaseListPage from "./BaseListPage";
 import * as Setting from "./Setting";
 import * as GraphBackend from "./backend/GraphBackend";
 import i18next from "i18next";
-import {Trash2, Loader2} from "lucide-react";
-import Editor from "./common/Editor";
+import {Loader2, Trash2} from "lucide-react";
 import GraphDataPage from "./GraphDataPage";
 import GraphChatDataPage from "./GraphChatDataPage";
 
@@ -112,7 +111,7 @@ class GraphListPage extends BaseListPage {
       {title: i18next.t("general:Action"), dataIndex: "action", key: "action", render: (text, record) => (
         <div className="flex flex-wrap gap-2">
           <button onClick={() => this.props.history.push(`/graphs/${record.name}`)} className="px-3 py-1.5 bg-white text-black rounded text-xs font-medium hover:bg-zinc-200 transition-colors">{i18next.t("general:Edit")}</button>
-          <button onClick={() => { if (window.confirm(`${i18next.t("general:Sure to delete")}: ${record.name} ?`)) {this.deleteGraph(record);} }} className="px-3 py-1.5 bg-red-600 text-white rounded text-xs font-medium hover:bg-red-700 transition-colors">{i18next.t("general:Delete")}</button>
+          <button onClick={() => {if (window.confirm(`${i18next.t("general:Sure to delete")}: ${record.name} ?`)) {this.deleteGraph(record);}}} className="px-3 py-1.5 bg-red-600 text-white rounded text-xs font-medium hover:bg-red-700 transition-colors">{i18next.t("general:Delete")}</button>
         </div>
       )},
     ];
@@ -125,7 +124,7 @@ class GraphListPage extends BaseListPage {
             <h2 className="text-lg font-semibold text-white">{i18next.t("general:Graphs")}</h2>
             <button onClick={this.addGraph.bind(this)} className="px-3 py-1 bg-white text-black rounded text-xs font-medium hover:bg-zinc-200 transition-colors">{i18next.t("general:Add")}</button>
             {this.state.selectedRowKeys.length > 0 && (
-              <button onClick={() => { if (window.confirm(`${i18next.t("general:Sure to delete")}: ${this.state.selectedRowKeys.length} ${i18next.t("general:items")} ?`)) {this.performBulkDelete(this.state.selectedRows, this.state.selectedRowKeys);} }} className="px-3 py-1 bg-red-600 text-white rounded text-xs font-medium hover:bg-red-700 transition-colors flex items-center gap-1">
+              <button onClick={() => {if (window.confirm(`${i18next.t("general:Sure to delete")}: ${this.state.selectedRowKeys.length} ${i18next.t("general:items")} ?`)) {this.performBulkDelete(this.state.selectedRows, this.state.selectedRowKeys);}}} className="px-3 py-1 bg-red-600 text-white rounded text-xs font-medium hover:bg-red-700 transition-colors flex items-center gap-1">
                 <Trash2 className="w-3 h-3" />{i18next.t("general:Delete")} ({this.state.selectedRowKeys.length})
               </button>
             )}
@@ -139,7 +138,7 @@ class GraphListPage extends BaseListPage {
             <table className="w-full text-sm text-left">
               <thead className="bg-zinc-900/80 border-b border-zinc-800">
                 <tr>
-                  <th className="px-3 py-2"><input type="checkbox" className="rounded bg-zinc-800 border-zinc-700" checked={this.state.selectedRowKeys.length === graphs?.length && graphs?.length > 0} onChange={(e) => { if (e.target.checked) {this.onSelectAll(true, graphs);} else {this.clearSelection();} }} /></th>
+                  <th className="px-3 py-2"><input type="checkbox" className="rounded bg-zinc-800 border-zinc-700" checked={this.state.selectedRowKeys.length === graphs?.length && graphs?.length > 0} onChange={(e) => {if (e.target.checked) {this.onSelectAll(true, graphs);} else {this.clearSelection();}}} /></th>
                   {filteredColumns.map(col => <th key={col.key} className="px-3 py-2 text-xs font-medium text-zinc-400 whitespace-nowrap">{col.title}</th>)}
                 </tr>
               </thead>

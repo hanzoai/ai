@@ -13,7 +13,7 @@
 // limitations under the License.
 
 import React from "react";
-import {ArrowLeft, List, Database, ChevronDown, ChevronRight, Loader2} from "lucide-react";
+import {ArrowLeft, ChevronDown, ChevronRight, Database, Loader2} from "lucide-react";
 import i18next from "i18next";
 import * as Setting from "./Setting";
 import * as FileBackend from "./backend/FileBackend";
@@ -102,7 +102,7 @@ class FileViewPage extends React.Component {
           <div>
             <h1 className="text-base font-medium text-white leading-tight">{file?.filename || fileName}</h1>
             <p className="text-xs text-zinc-500 flex items-center gap-1">
-               {file?.store || "Universal Store"}
+              {file?.store || "Universal Store"}
             </p>
           </div>
         </div>

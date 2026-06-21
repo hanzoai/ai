@@ -34,6 +34,7 @@
     "copy-to-clipboard": "^3.3.1",
     "d3-force": "^3.0.0",
     "dayjs": "^1.11.19",
+    "diagram-js": "^15.10.0",
     "docx": "^9.6.1",
     "dompurify": "^3.0.9",
     "echarts": "^5.4.2",

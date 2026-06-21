@@ -13,9 +13,11 @@
 // limitations under the License.
 
 import React from "react";
+import {Affix, Avatar, Button, Input, Segmented, Select, Switch, Tag, Timeline, Tooltip} from "antd";
 import * as VideoBackend from "./backend/VideoBackend";
 import * as Setting from "./Setting";
 import i18next from "i18next";
+import {CheckOutlined, EditOutlined, SyncOutlined} from "@ant-design/icons";
 import Video from "./Video";
 import LabelTable from "./table/LabelTable";
 import * as Papa from "papaparse";
@@ -28,6 +30,8 @@ import * as VideoConf from "./VideoConf";
 import RemarkTable from "./table/RemarkTable";
 import * as Conf from "./Conf";
 
+const {TextArea} = Input;
+const {Option} = Select;
 
 class VideoEditPage extends React.Component {
   constructor(props) {
@@ -152,9 +156,9 @@ class VideoEditPage extends React.Component {
       <div style={{marginTop: "10px"}}>
         <div style={{fontSize: 16, marginTop: "10px", marginBottom: "10px"}}>
           {Setting.getLabel(i18next.t("video:Current time (second)"), i18next.t("video:Current time (second) - Tooltip"))} : {" "}
-          <span className="px-2 py-0.5 bg-zinc-800 text-zinc-400 rounded text-xs">
+          <Tag color={"processing"}>
             {this.state.currentTime}
-          </span>
+          </Tag>
         </div>
         <div className="screen" style={{position: "absolute", zIndex: 100, pointerEvents: "none", width: "440px", height: "472px", marginLeft: "200px", marginRight: "200px", backgroundColor: "rgba(255,0,0,0)"}}></div>
         <Video task={task} labels={this.state.video.labels}
@@ -196,10 +200,11 @@ class VideoEditPage extends React.Component {
             {Setting.getLabel(i18next.t("general:Data"), i18next.t("general:Data - Tooltip"))} :
           </div>
           <div className="flex-1">
-            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.video.dataUrl}> {
+            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.video.dataUrl} onChange={e => {
+              const value = e.target.value;
               this.getDataAndParse(value);
               this.updateVideoField("dataUrl", value);
-            })}>
+            }}>
               {
                 this.state.video.dataUrls?.map((dataUrl, index) => <option key={index} value={dataUrl}>{dataUrl.split("/").pop()}</option>)
               }
@@ -243,7 +248,7 @@ class VideoEditPage extends React.Component {
                 return (
                   {
                     color: this.isSegmentActive(segment) ? "blue" : "gray",
-                    dot: this.isSegmentActive(segment) ?  : null,
+                    dot: this.isSegmentActive(segment) ? <SyncOutlined spin /> : null,
                     children: (
                       <div style={{marginTop: "-10px", cursor: "pointer"}} onClick={() => {
                         this.setState({
@@ -259,7 +264,7 @@ class VideoEditPage extends React.Component {
                         {
                           Setting.getSpeakerTag(segment.speaker)
                         }
-                        <span className="px-2 py-0.5 bg-zinc-800 text-zinc-400 rounded text-xs">
+                        <Tag style={{fontSize: "medium", fontWeight: this.isSegmentActive(segment) ? "bold" : "normal", marginTop: "10px", lineHeight: "30px", whiteSpace: "normal", overflow: "visible"}} color={this.isSegmentActive(segment) ? "rgb(87,52,211)" : ""}>
                           {
                             (this.state.segmentEditIndex !== index) ? segment.text : (
                               <Input style={{width: "400px"}} value={segment.text} onChange={e => {
@@ -270,17 +275,17 @@ class VideoEditPage extends React.Component {
                               }} />
                             )
                           }
-                        </span>
+                        </Tag>
                         {
                           (this.state.segmentEditIndex !== index) ? (
-                            <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700">} size="small" onClick={(event) => {
+                            <Button icon={<EditOutlined />} size="small" onClick={(event) => {
                               event.stopPropagation();
                               this.setState({
                                 segmentEditIndex: index,
                               });
                             }} />
                           ) : (
-                            <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700">} size="small" onClick={(event) => {
+                            <Button icon={<CheckOutlined />} size="small" onClick={(event) => {
                               event.stopPropagation();
                               this.setState({
                                 segmentEditIndex: -1,
@@ -303,7 +308,17 @@ class VideoEditPage extends React.Component {
   renderSegmentTags() {
     return (
       <div>
-        <span className="px-2 py-0.5 bg-zinc-800 text-zinc-400 rounded text-xs"> {this.updateVideoField("segments", value);}}
+        <TagTable
+          ref={this.labelTable}
+          title={i18next.t("video:Tags")}
+          table={this.state.video.segments}
+          tasks={this.state.tasks}
+          currentTime={this.state.currentTime}
+          video={this.state.video}
+          player={this.state.player}
+          screen={this.state.screen}
+          videoObj={this.state.videoObj}
+          onUpdateTable={(value) => {this.updateVideoField("segments", value);}}
           onUpdateVideoField={(key, value) => {this.updateVideoField(key, value);}}
         />
       </div>
@@ -351,7 +366,6 @@ class VideoEditPage extends React.Component {
             }} />
           </div>
           <div className="flex-1">
-          <div className="flex-1">
             {Setting.getLabel(i18next.t("video:Stage"), i18next.t("video:Stage - Tooltip"))} :
           </div>
           <div className="flex-1">
@@ -360,7 +374,6 @@ class VideoEditPage extends React.Component {
             }} />
           </div>
           <div className="flex-1">
-          <div className="flex-1">
             {Setting.getLabel(i18next.t("video:Grade"), i18next.t("video:Grade - Tooltip"))} :
           </div>
           <div className="flex-1">
@@ -368,7 +381,6 @@ class VideoEditPage extends React.Component {
               this.updateVideoField("grade", e.target.value);
             }} />
           </div>
-          <div className="flex-1">
           <div className="flex-1">
             {Setting.getLabel(i18next.t("video:Class"), i18next.t("video:Class - Tooltip"))} :
           </div>
@@ -383,11 +395,11 @@ class VideoEditPage extends React.Component {
             {Setting.getLabel(i18next.t("video:Keywords"), i18next.t("video:Keywords - Tooltip"))} :
           </div>
           <div className="flex-1">
-            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.video.keywords}> {this.updateVideoField("keywords", value);})}>
+            <Select virtual={false} mode="tags" style={{width: "100%"}} value={this.state.video.keywords} onChange={(value => {this.updateVideoField("keywords", value);})}>
               {
-                this.state.video.keywords?.map((item, index) => <option key={index} value={item}>{item}</option>)
+                this.state.video.keywords?.map((item, index) => <Option key={index} value={item}>{item}</Option>)
               }
-            </select>
+            </Select>
           </div>
         </div>
         <div className="flex flex-col sm:flex-row gap-2 mt-4">
@@ -400,7 +412,6 @@ class VideoEditPage extends React.Component {
             }} />
           </div>
           <div className="flex-1">
-          <div className="flex-1">
             {Setting.getLabel(i18next.t("video:Topic"), i18next.t("video:Topic - Tooltip"))} :
           </div>
           <div className="flex-1">
@@ -409,17 +420,16 @@ class VideoEditPage extends React.Component {
             }} />
           </div>
           <div className="flex-1">
-          <div className="flex-1">
-            <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}> this.generatePlan()}>{i18next.t("video:Generate Plan")}</button>
+            <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}} onClick={() => this.generatePlan()}>{i18next.t("video:Generate Plan")}</button>
           </div>
           <div className="flex-1">
-          <div className="flex-1">
-             {
+            <Tooltip placement="top" trigger={"click"} title={
+              <Input value={this.state.video.template} onChange={e => {
                 this.updateVideoField("template", e.target.value);
               }} />
             }>
-              <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}>{i18next.t("template:Edit Template")}</button>
-            
+              <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginLeft: "20px"}}>{i18next.t("template:Edit Template")}</button>
+            </Tooltip>
           </div>
         </div>
       </React.Fragment>
@@ -512,21 +522,21 @@ class VideoEditPage extends React.Component {
   renderVideo() {
     return (
       <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4">
+        <div>
           {i18next.t("video:Edit Video")}&nbsp;&nbsp;&nbsp;&nbsp;
           {
             this.requireUserOrReviewerOrAdmin(this.state.video) ? (
               <>
-                <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700"> this.exit()}>{i18next.t("general:Exit")}</button>
+                <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" onClick={() => this.exit()}>{i18next.t("general:Exit")}</button>
               </>
             ) : (
               <>
-                <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700"> this.submitVideoEdit(false)}>{i18next.t("general:Save")}</button>
-                <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}> this.submitVideoEdit(true)}>{i18next.t("general:Save & Exit")}</button>
+                <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" onClick={() => this.submitVideoEdit(false)}>{i18next.t("general:Save")}</button>
+                <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}} onClick={() => this.submitVideoEdit(true)}>{i18next.t("general:Save & Exit")}</button>
               </>
             )
           }
         </div>
-      } style={{marginLeft: "5px"}} type="inner">
         <div className="flex flex-col sm:flex-row gap-2 mt-4">
           <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Name"), i18next.t("general:Name - Tooltip"))} :
@@ -537,7 +547,6 @@ class VideoEditPage extends React.Component {
             }} />
           </div>
           <div className="flex-1">
-          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Display name"), i18next.t("general:Display name - Tooltip"))} :
           </div>
           <div className="flex-1">
@@ -545,7 +554,6 @@ class VideoEditPage extends React.Component {
               this.updateVideoField("displayName", e.target.value);
             }} />
           </div>
-          <div className="flex-1">
           <div className="flex-1">
             {Setting.getLabel(i18next.t("video:Video ID"), i18next.t("video:Video ID - Tooltip"))} :
           </div>
@@ -560,7 +568,7 @@ class VideoEditPage extends React.Component {
             {Setting.getLabel(i18next.t("general:Description"), i18next.t("general:Description - Tooltip"))} :
           </div>
           <div className="flex-1">
-            <span className="text-zinc-300 text-sm"> {
+            <TextArea disabled={this.requireUserOrAdmin(this.state.video)} showCount maxLength={250} autoSize={{minRows: 1, maxRows: 15}} value={this.state.video.description} onChange={(e) => {
               this.updateVideoField("description", e.target.value);
             }} />
           </div>
@@ -570,12 +578,13 @@ class VideoEditPage extends React.Component {
             {Setting.getLabel(i18next.t("video:Grade"), i18next.t("video:Grade - Tooltip"))} :
           </div>
           <div className="flex-1">
-            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.video.grade} disabled> {
+            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.video.grade} disabled={this.requireUserOrAdmin(this.state.video)} onChange={e => {
+              const value = e.target.value;
               this.updateVideoField("grade", value);
               this.updateVideoField("grade2", VideoConf.getGrade2(value));
               this.updateVideoField("unit", "");
               this.updateVideoField("lesson", "");
-            })}>
+            }}>
               {
                 VideoConf.GradeOptions
                 // .sort((a, b) => a.name.localeCompare(b.name))
@@ -584,14 +593,14 @@ class VideoEditPage extends React.Component {
             </select>
           </div>
           <div className="flex-1">
-          <div className="flex-1">
             {Setting.getLabel(i18next.t("general:Unit"), i18next.t("general:Unit - Tooltip"))} :
           </div>
           <div className="flex-1">
-            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.video.unit} disabled> {
+            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.video.unit} disabled={this.requireUserOrAdmin(this.state.video)} onChange={e => {
+              const value = e.target.value;
               this.updateVideoField("unit", value);
               this.updateVideoField("lesson", "");
-            })}>
+            }}>
               {
                 VideoConf.getUnitOptions(this.state.video.grade)
                 // .sort((a, b) => a.name.localeCompare(b.name))
@@ -600,11 +609,13 @@ class VideoEditPage extends React.Component {
             </select>
           </div>
           <div className="flex-1">
-          <div className="flex-1">
             {Setting.getLabel(i18next.t("video:Lesson"), i18next.t("video:Lesson - Tooltip"))} :
           </div>
           <div className="flex-1">
-            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.video.lesson} disabled> {this.updateVideoField("lesson", value);})}>
+            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.video.lesson} disabled={this.requireUserOrAdmin(this.state.video)} onChange={e => {
+              const value = e.target.value;
+              this.updateVideoField("lesson", value);
+            }}>
               {
                 VideoConf.getLessonOptions(this.state.video.grade, this.state.video.unit)
                 // .sort((a, b) => a.name.localeCompare(b.name))
@@ -677,9 +688,10 @@ class VideoEditPage extends React.Component {
             {Setting.getLabel(i18next.t("general:State"), i18next.t("general:State - Tooltip"))} :
           </div>
           <div className="flex-1">
-            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.video.state} disabled> {
+            <select className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={this.state.video.state} disabled={this.requireAdmin(this.state.video)} onChange={e => {
+              const value = e.target.value;
               this.updateVideoField("state", value);
-            })}>
+            }}>
               {
                 [
                   {id: "Draft", name: i18next.t("video:Draft")},
@@ -696,7 +708,9 @@ class VideoEditPage extends React.Component {
             {Setting.getLabel(i18next.t("video:Is public"), i18next.t("video:Is public - Tooltip"))} :
           </div>
           <div className="flex-1">
-            <span className="px-2 py-0.5 rounded text-xs " + (this.state.video.isPublic ? "bg-green-500/20 text-green-400" : "bg-zinc-800 text-zinc-500")">{this.state.video.isPublic ? "ON" : "OFF"}</span>
+            <Switch disabled={this.requireAdmin()} checked={this.state.video.isPublic} onChange={checked => {
+              this.updateVideoField("isPublic", checked);
+            }} />
           </div>
         </div>
         {
@@ -707,7 +721,7 @@ class VideoEditPage extends React.Component {
               </div>
               <div className="flex-1">
                 <a target="_blank" rel="noreferrer" href={this.state.video.downloadUrl}>
-                  <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700">} style={{marginRight: "10px"}} type="primary">{i18next.t("general:Download")}</button>
+                  <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" style={{marginRight: "10px"}} type="primary">{i18next.t("general:Download")}</button>
                 </a>
               </div>
             </div>
@@ -723,7 +737,7 @@ class VideoEditPage extends React.Component {
                 {Setting.getLabel(i18next.t("general:URL"), i18next.t("general:URL - Tooltip"))} :
               </div>
               <div className="flex-1">
-                <input className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-500 disabled:opacity-50" disabled />} value={this.state.video.coverUrl} onChange={e => {
+                <input className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-500 disabled:opacity-50" disabled value={this.state.video.coverUrl} onChange={e => {
                   this.updateVideoField("coverUrl", e.target.value);
                 }} />
               </div>
@@ -894,12 +908,12 @@ class VideoEditPage extends React.Component {
           {
             this.requireUserOrReviewerOrAdmin(this.state.video) ? (
               <>
-                <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700"> this.exit()}>{i18next.t("general:Exit")}</button>
+                <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" onClick={() => this.exit()}>{i18next.t("general:Exit")}</button>
               </>
             ) : (
               <>
-                <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700"> this.submitVideoEdit(false)}>{i18next.t("general:Save")}</button>
-                <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}> this.submitVideoEdit(true)}>{i18next.t("general:Save & Exit")}</button>
+                <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" onClick={() => this.submitVideoEdit(false)}>{i18next.t("general:Save")}</button>
+                <button className="px-6 py-2 rounded text-sm font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginLeft: "20px"}} onClick={() => this.submitVideoEdit(true)}>{i18next.t("general:Save & Exit")}</button>
               </>
             )
           }

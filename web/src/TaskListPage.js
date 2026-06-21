@@ -14,6 +14,8 @@
 
 import React from "react";
 import {Link} from "react-router-dom";
+import {Input, Popconfirm, Popover} from "antd";
+import {FilePdfOutlined, FileWordOutlined} from "@ant-design/icons";
 import moment from "moment";
 import BaseListPage from "./BaseListPage";
 import * as Setting from "./Setting";
@@ -25,6 +27,7 @@ import * as Conf from "./Conf";
 import TaskAnalysisReport from "./TaskAnalysisReport";
 import * as Provider from "./Provider";
 
+const {TextArea} = Input;
 
 class TaskListPage extends BaseListPage {
   constructor(props) {
@@ -239,11 +242,17 @@ class TaskListPage extends BaseListPage {
             return null;
           }
           return (
-            <span className="text-zinc-300 text-sm">
+            <Popover
+              trigger="hover"
+              placement="left"
+              content={
+                <div style={{width: "50vw", height: "50vh", overflow: "auto"}}>
+                  <TextArea readOnly value={text} style={{width: "100%", minHeight: "50vh", boxSizing: "border-box", whiteSpace: "pre-wrap"}} />
                 </div>
               }
             >
               <div style={{maxWidth: "200px", cursor: "pointer"}}>{Setting.getShortText(text, 80)}</div>
+            </Popover>
           );
         },
       },
@@ -262,7 +271,7 @@ class TaskListPage extends BaseListPage {
           const fileName = text.split("/").filter(Boolean).pop() || text;
           return (
             <a href={text} target="_blank" rel="noopener noreferrer" download style={{display: "inline-flex", alignItems: "center", gap: "6px"}}>
-              {isPdf ?  : }
+              {isPdf ? <FilePdfOutlined style={{fontSize: "20px"}} /> : <FileWordOutlined style={{fontSize: "20px"}} />}
               <span style={{cursor: "pointer", overflow: "hidden", textOverflow: "ellipsis"}} title={fileName}>{fileName}</span>
             </a>
           );
@@ -279,11 +288,17 @@ class TaskListPage extends BaseListPage {
             return null;
           }
           return (
-            <TaskAnalysisReport result={parsed} />
+            <Popover
+              trigger="hover"
+              placement="left"
+              content={
+                <div style={{width: "50vw", height: "50vh", overflow: "auto"}}>
+                  <TaskAnalysisReport result={parsed} />
                 </div>
               }
             >
               <span style={{cursor: "pointer"}}>{parsed.score !== null && parsed.score !== undefined ? `${parsed.score}${i18next.t("task:Score Unit")}` : i18next.t("task:Report")}</span>
+            </Popover>
           );
         },
       },
@@ -310,9 +325,9 @@ class TaskListPage extends BaseListPage {
         width: "200px",
         render: (text, record, index) => {
           if (record.labels?.length) {
-            return record.labels.map(label => {
+            return record.labels.map((label, index) => {
               return (
-                <span className="px-2 py-0.5 bg-zinc-800 text-zinc-400 rounded text-xs">
+                <span key={index} className="px-2 py-0.5 bg-zinc-800 text-zinc-400 rounded text-xs">
                   {label}
                 </span>
               );
@@ -330,17 +345,20 @@ class TaskListPage extends BaseListPage {
         render: (text, record, index) => {
           return (
             <div>
-              <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginTop: "10px", marginBottom: "10px", marginRight: "10px"}> this.props.history.push(`/tasks/${record.owner}/${record.name}`)}
+              <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-white text-black hover:bg-zinc-200" style={{marginTop: "10px", marginBottom: "10px", marginRight: "10px"}} onClick={() => this.props.history.push(`/tasks/${record.owner}/${record.name}`)}
               >
                 {i18next.t("general:Edit")}
               </button>
-              this.deleteTask(record)}
+              <Popconfirm
+                title={`${i18next.t("general:Sure to delete")}: ${record.name} ?`}
+                onConfirm={() => this.deleteTask(record)}
                 okText={i18next.t("general:OK")}
                 cancelText={i18next.t("general:Cancel")}
               >
-                <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-red-600 text-white hover:bg-red-700" style={{marginBottom: "10px"}>
+                <button className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-red-600 text-white hover:bg-red-700" style={{marginBottom: "10px"}}>
                   {i18next.t("general:Delete")}
                 </button>
+              </Popconfirm>
             </div>
           );
         },
@@ -357,17 +375,9 @@ class TaskListPage extends BaseListPage {
       columns = columns.filter(column => !["displayName", "example", "labels"].includes(column.key));
     }
 
-    const paginationProps = {
-      total: this.state.pagination.total,
-      showQuickJumper: true,
-      showSizeChanger: true,
-      pageSizeOptions: ["10", "20", "50", "100", "1000", "10000", "100000"],
-      showTotal: () => i18next.t("general:{total} in total").replace("{total}", this.state.pagination.total),
-    };
-
     return (
       <div>
-        <div className="overflow-x-auto border border-zinc-800 rounded-lg"><table className="w-full text-sm text-left"><thead className="bg-zinc-900/80 border-b border-zinc-800"><tr>{columns.map(col => <th key={col.key || col.dataIndex} className="px-3 py-2 text-xs font-medium text-zinc-400 whitespace-nowrap">{col.title}</th>)}</tr></thead><tbody className="divide-y divide-zinc-800/50">{(tasks || []).map((record, index) => <tr key={typeof "name" === "function" ? ("name")(record) : record["name"] || index} className="hover:bg-zinc-900/50 transition-colors">{columns.map(col => <td key={col.key || col.dataIndex} className="px-3 py-2 text-zinc-300 whitespace-nowrap">{col.render ? col.render(record[col.dataIndex], record, index) : record[col.dataIndex]}</td>)}</tr>)}</tbody></table></div>
+        <div className="overflow-x-auto border border-zinc-800 rounded-lg"><table className="w-full text-sm text-left"><thead className="bg-zinc-900/80 border-b border-zinc-800"><tr>{columns.map(col => <th key={col.key || col.dataIndex} className="px-3 py-2 text-xs font-medium text-zinc-400 whitespace-nowrap">{col.title}</th>)}</tr></thead><tbody className="divide-y divide-zinc-800/50">{(tasks || []).map((record, index) => <tr key={record.name || index} className="hover:bg-zinc-900/50 transition-colors">{columns.map(col => <td key={col.key || col.dataIndex} className="px-3 py-2 text-zinc-300 whitespace-nowrap">{col.render ? col.render(record[col.dataIndex], record, index) : record[col.dataIndex]}</td>)}</tr>)}</tbody></table></div>
       </div>
     );
   }

@@ -225,14 +225,14 @@ function BpmnComponent({diagramXML, onLoading, onError, onXMLChange}) {
   return (
     <div style={{display: "flex", flexDirection: "column", width: "100%", height: isFullscreen ? "100vh" : "600px"}}>
       <div style={{marginBottom: 8}}>
-        <button className="px-2 py-1 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700"> zoom("in")}>Zoom In</button>
-        <button className="px-2 py-1 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700"> zoom("out")} style={{marginLeft: 4}}>Zoom Out</button>
-        <button className="px-2 py-1 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" onClick={toggleFullscreen} style={{marginLeft: 4}>
+        <button className="px-2 py-1 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" onClick={() => zoom("in")}>Zoom In</button>
+        <button className="px-2 py-1 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" onClick={() => zoom("out")} style={{marginLeft: 4}}>Zoom Out</button>
+        <button className="px-2 py-1 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" onClick={toggleFullscreen} style={{marginLeft: 4}}>
           {isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
         </button>
-        <button className="px-2 py-1 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" onClick={handleExport} style={{marginLeft: 4}>Export</button>
-        <button className="px-2 py-1 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" onClick={resetView} style={{marginLeft: 4}>Reset View</button>
-        <button className="px-2 py-1 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700"> setShowShortcuts(!showShortcuts)} style={{marginLeft: 4}}>Shortcuts</button>
+        <button className="px-2 py-1 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" onClick={handleExport} style={{marginLeft: 4}}>Export</button>
+        <button className="px-2 py-1 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" onClick={resetView} style={{marginLeft: 4}}>Reset View</button>
+        <button className="px-2 py-1 rounded text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700" onClick={() => setShowShortcuts(!showShortcuts)} style={{marginLeft: 4}}>Shortcuts</button>
       </div>
       <div style={{display: "flex", width: "100%", height: "100%", backgroundColor: "white"}}>
         <div
