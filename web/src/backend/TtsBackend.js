@@ -22,7 +22,7 @@ export function generateTextToSpeechAudio(storeId, providerId, messageId, text) 
     text: text,
   };
 
-  return fetch(`${Setting.ServerUrl}/api/generate-text-to-speech-audio`, {
+  return fetch(`${Setting.ServerUrl}/v1/generate-text-to-speech-audio`, {
     method: "POST",
     credentials: "include",
     headers: {
@@ -41,7 +41,7 @@ export function generateTextToSpeechAudio(storeId, providerId, messageId, text) 
 }
 
 export function generateTextToSpeechAudioStream(storeId, messageId) {
-  const url = `${Setting.ServerUrl}/api/generate-text-to-speech-audio-stream?storeId=${encodeURIComponent(storeId)}&messageId=${encodeURIComponent(messageId)}`;
+  const url = `${Setting.ServerUrl}/v1/generate-text-to-speech-audio-stream?storeId=${encodeURIComponent(storeId)}&messageId=${encodeURIComponent(messageId)}`;
 
   return new EventSource(url, {
     withCredentials: true,
