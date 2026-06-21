@@ -35,10 +35,10 @@ func (c *reproCtrl) Chat()   { c.Ctx.Output.Body([]byte(`{"chat":"ok"}`)) }
 func (c *reproCtrl) Models() { c.Ctx.Output.Body([]byte(`{"models":"ok"}`)) }
 
 // TestMountForwardsNestedOpenAIRoutesToBeego reproduces the production defect:
-// /v1/ai/chat/completions and /v1/ai/models must reach beego routes that are
-// registered at /v1/chat/completions and /v1/models. /v1/ai/health already
-// resolves (a generic route shadows it at the composition root), so the inner
-// nested-path forwarding is what this guards.
+// the bare gateway paths /v1/chat/completions and /v1/models must reach the
+// beego routes registered at those exact paths, through the unified binary's
+// /v1/* mount, WITHOUT panicking in SessionStart. (The gateway forwards
+// casibase routes unchanged, so the mount is bare /v1/* — see mountRoutes.)
 func TestMountForwardsNestedOpenAIRoutesToBeego(t *testing.T) {
 	// Register the real beego routes exactly as routers/router.go does.
 	beego.Router("/v1/chat/completions", &reproCtrl{}, "POST:Chat")
@@ -77,8 +77,8 @@ func TestMountForwardsNestedOpenAIRoutesToBeego(t *testing.T) {
 	cases := []struct {
 		name, method, path string
 	}{
-		{"models", http.MethodGet, "/v1/ai/models"},
-		{"chat-completions", http.MethodPost, "/v1/ai/chat/completions"},
+		{"models", http.MethodGet, "/v1/models"},
+		{"chat-completions", http.MethodPost, "/v1/chat/completions"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
