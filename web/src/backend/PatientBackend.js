@@ -15,14 +15,14 @@
 import * as Setting from "../Setting";
 
 export function getPatients(owner, page = "", pageSize = "", field = "", value = "", sortField = "", sortOrder = "") {
-  return fetch(`${Setting.ServerUrl}/api/get-patients?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
+  return fetch(`${Setting.ServerUrl}/v1/get-patients?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
     method: "GET",
     credentials: "include",
   }).then(res => res.json());
 }
 
 export function getPatient(owner, name) {
-  return fetch(`${Setting.ServerUrl}/api/get-patient?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/get-patient?id=${owner}/${encodeURIComponent(name)}`, {
     method: "GET",
     credentials: "include",
   }).then(res => res.json());
@@ -30,7 +30,7 @@ export function getPatient(owner, name) {
 
 export function updatePatient(owner, name, patient) {
   const newPatient = Setting.deepCopy(patient);
-  return fetch(`${Setting.ServerUrl}/api/update-patient?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/update-patient?id=${owner}/${encodeURIComponent(name)}`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newPatient),
@@ -39,7 +39,7 @@ export function updatePatient(owner, name, patient) {
 
 export function addPatient(patient) {
   const newPatient = Setting.deepCopy(patient);
-  return fetch(`${Setting.ServerUrl}/api/add-patient`, {
+  return fetch(`${Setting.ServerUrl}/v1/add-patient`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newPatient),
@@ -48,7 +48,7 @@ export function addPatient(patient) {
 
 export function deletePatient(patient) {
   const newPatient = Setting.deepCopy(patient);
-  return fetch(`${Setting.ServerUrl}/api/delete-patient`, {
+  return fetch(`${Setting.ServerUrl}/v1/delete-patient`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newPatient),

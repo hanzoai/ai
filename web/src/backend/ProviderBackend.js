@@ -15,7 +15,7 @@
 import * as Setting from "../Setting";
 
 export function getGlobalProviders() {
-  return fetch(`${Setting.ServerUrl}/api/get-global-providers`, {
+  return fetch(`${Setting.ServerUrl}/v1/get-global-providers`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -25,7 +25,7 @@ export function getGlobalProviders() {
 }
 
 export function getProviders(owner, storeName = "", page = "", pageSize = "", field = "", value = "", sortField = "", sortOrder = "") {
-  return fetch(`${Setting.ServerUrl}/api/get-providers?owner=${owner}&store=${storeName}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
+  return fetch(`${Setting.ServerUrl}/v1/get-providers?owner=${owner}&store=${storeName}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -35,7 +35,7 @@ export function getProviders(owner, storeName = "", page = "", pageSize = "", fi
 }
 
 export function getProvider(owner, name) {
-  return fetch(`${Setting.ServerUrl}/api/get-provider?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/get-provider?id=${owner}/${encodeURIComponent(name)}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -46,7 +46,7 @@ export function getProvider(owner, name) {
 
 export function updateProvider(owner, name, provider) {
   const newProvider = Setting.deepCopy(provider);
-  return fetch(`${Setting.ServerUrl}/api/update-provider?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/update-provider?id=${owner}/${encodeURIComponent(name)}`, {
     method: "POST",
     credentials: "include",
     headers: {
@@ -58,7 +58,7 @@ export function updateProvider(owner, name, provider) {
 
 export function addProvider(provider) {
   const newProvider = Setting.deepCopy(provider);
-  return fetch(`${Setting.ServerUrl}/api/add-provider`, {
+  return fetch(`${Setting.ServerUrl}/v1/add-provider`, {
     method: "POST",
     credentials: "include",
     headers: {
@@ -70,7 +70,7 @@ export function addProvider(provider) {
 
 export function deleteProvider(provider) {
   const newProvider = Setting.deepCopy(provider);
-  return fetch(`${Setting.ServerUrl}/api/delete-provider`, {
+  return fetch(`${Setting.ServerUrl}/v1/delete-provider`, {
     method: "POST",
     credentials: "include",
     headers: {
@@ -82,7 +82,7 @@ export function deleteProvider(provider) {
 
 export function refreshMcpTools(provider) {
   const newProvider = Setting.deepCopy(provider);
-  return fetch(`${Setting.ServerUrl}/api/refresh-mcp-tools`, {
+  return fetch(`${Setting.ServerUrl}/v1/refresh-mcp-tools`, {
     method: "POST",
     credentials: "include",
     headers: {
