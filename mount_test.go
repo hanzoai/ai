@@ -23,18 +23,22 @@ import (
 	"github.com/hanzoai/zip"
 )
 
-// These tests exercise the route-adapter concern (prefix forwarding and the
+// These tests exercise the route-adapter concern (bare /v1/* forwarding and the
 // "runtime not initialized" 503) in isolation via mountRoutes, which has no
 // infrastructure dependencies. The full Mount() additionally runs Bootstrap
 // (DB, providers, billing); its runtime-init behavior needs a backend, so the
 // adapter tests deliberately use mountRoutes.
+//
+// AI mounts the beego handler at BARE /v1/* (no prefix, no rewrite) because the
+// production gateway forwards casibase routes unchanged (/v1/chat/completions,
+// /v1/models, …). See mountRoutes for why this is collision-safe.
 
 func TestMountRoutesWithoutHandlerReturns503(t *testing.T) {
 	app := zip.New(zip.Config{DisableStartupMessage: true})
 	mountRoutes(app)
 	SetHandler(nil)
 
-	req := httptest.NewRequest(http.MethodGet, "/v1/ai/health", nil)
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
 	resp, err := app.Fiber().Test(req)
 	if err != nil {
 		t.Fatalf("Test: %v", err)
@@ -44,7 +48,7 @@ func TestMountRoutesWithoutHandlerReturns503(t *testing.T) {
 	}
 }
 
-func TestMountRoutesForwardsToRegisteredHandlerStripsPrefix(t *testing.T) {
+func TestMountRoutesForwardsBarePathUnchanged(t *testing.T) {
 	app := zip.New(zip.Config{DisableStartupMessage: true})
 	mountRoutes(app)
 
@@ -57,8 +61,8 @@ func TestMountRoutesForwardsToRegisteredHandlerStripsPrefix(t *testing.T) {
 	}))
 	defer SetHandler(nil)
 
-	// /v1/ai/health → beego sees /v1/health
-	req := httptest.NewRequest(http.MethodGet, "/v1/ai/health", nil)
+	// Bare gateway path must reach beego UNCHANGED — no /v1/ai rewrite.
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
 	resp, err := app.Fiber().Test(req)
 	if err != nil {
 		t.Fatalf("Test: %v", err)
@@ -70,12 +74,12 @@ func TestMountRoutesForwardsToRegisteredHandlerStripsPrefix(t *testing.T) {
 	if string(body) != `{"ok":true}` {
 		t.Fatalf("body=%q want {\"ok\":true}", body)
 	}
-	if sawPath != "/v1/health" {
-		t.Fatalf("sawPath=%q want /v1/health (prefix should strip /v1/ai to /v1)", sawPath)
+	if sawPath != "/v1/chat/completions" {
+		t.Fatalf("sawPath=%q want /v1/chat/completions (no rewrite)", sawPath)
 	}
 }
 
-func TestMountRoutesForwardsRootRequest(t *testing.T) {
+func TestMountRoutesForwardsNestedAndSingleSegment(t *testing.T) {
 	app := zip.New(zip.Config{DisableStartupMessage: true})
 	mountRoutes(app)
 
@@ -86,15 +90,17 @@ func TestMountRoutesForwardsRootRequest(t *testing.T) {
 	}))
 	defer SetHandler(nil)
 
-	req := httptest.NewRequest(http.MethodGet, "/v1/ai/", nil)
-	resp, err := app.Fiber().Test(req)
-	if err != nil {
-		t.Fatalf("Test: %v", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("status=%d want 200", resp.StatusCode)
-	}
-	if sawPath != "/v1/" {
-		t.Fatalf("sawPath=%q want /v1/", sawPath)
+	for _, path := range []string{"/v1/models", "/v1/chat/completions", "/v1/get-chats"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		resp, err := app.Fiber().Test(req)
+		if err != nil {
+			t.Fatalf("Test %s: %v", path, err)
+		}
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("%s: status=%d want 200", path, resp.StatusCode)
+		}
+		if sawPath != path {
+			t.Fatalf("%s: sawPath=%q want %q (no rewrite)", path, sawPath, path)
+		}
 	}
 }
