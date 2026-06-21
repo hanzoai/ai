@@ -15,7 +15,7 @@
 import * as Setting from "../Setting";
 
 export function getGlobalArticles() {
-  return fetch(`${Setting.ServerUrl}/api/get-global-articles`, {
+  return fetch(`${Setting.ServerUrl}/v1/get-global-articles`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -25,7 +25,7 @@ export function getGlobalArticles() {
 }
 
 export function getArticles(owner, page = "", pageSize = "", field = "", value = "", sortField = "", sortOrder = "") {
-  return fetch(`${Setting.ServerUrl}/api/get-articles?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
+  return fetch(`${Setting.ServerUrl}/v1/get-articles?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -35,7 +35,7 @@ export function getArticles(owner, page = "", pageSize = "", field = "", value =
 }
 
 export function getArticle(owner, name) {
-  return fetch(`${Setting.ServerUrl}/api/get-article?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/get-article?id=${owner}/${encodeURIComponent(name)}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -46,7 +46,7 @@ export function getArticle(owner, name) {
 
 export function updateArticle(owner, name, article) {
   const newArticle = Setting.deepCopy(article);
-  return fetch(`${Setting.ServerUrl}/api/update-article?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/update-article?id=${owner}/${encodeURIComponent(name)}`, {
     method: "POST",
     credentials: "include",
     headers: {
@@ -58,7 +58,7 @@ export function updateArticle(owner, name, article) {
 
 export function addArticle(article) {
   const newArticle = Setting.deepCopy(article);
-  return fetch(`${Setting.ServerUrl}/api/add-article`, {
+  return fetch(`${Setting.ServerUrl}/v1/add-article`, {
     method: "POST",
     credentials: "include",
     headers: {
@@ -70,7 +70,7 @@ export function addArticle(article) {
 
 export function deleteArticle(article) {
   const newArticle = Setting.deepCopy(article);
-  return fetch(`${Setting.ServerUrl}/api/delete-article`, {
+  return fetch(`${Setting.ServerUrl}/v1/delete-article`, {
     method: "POST",
     credentials: "include",
     headers: {
