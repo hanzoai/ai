@@ -15,7 +15,7 @@
 import * as Setting from "../Setting";
 
 export function getGlobalFiles(page = "", pageSize = "", field = "", value = "", sortField = "", sortOrder = "") {
-  return fetch(`${Setting.ServerUrl}/api/get-global-files?p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
+  return fetch(`${Setting.ServerUrl}/v1/get-global-files?p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -25,7 +25,7 @@ export function getGlobalFiles(page = "", pageSize = "", field = "", value = "",
 }
 
 export function getFiles(owner, store = "") {
-  return fetch(`${Setting.ServerUrl}/api/get-files?owner=${owner}&store=${store}`, {
+  return fetch(`${Setting.ServerUrl}/v1/get-files?owner=${owner}&store=${store}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -35,7 +35,7 @@ export function getFiles(owner, store = "") {
 }
 
 export function getFile(owner, name) {
-  return fetch(`${Setting.ServerUrl}/api/get-file?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/get-file?id=${owner}/${encodeURIComponent(name)}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -46,7 +46,7 @@ export function getFile(owner, name) {
 
 export function updateFile(owner, name, file) {
   const newFile = Setting.deepCopy(file);
-  return fetch(`${Setting.ServerUrl}/api/update-file?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/update-file?id=${owner}/${encodeURIComponent(name)}`, {
     method: "POST",
     credentials: "include",
     headers: {
@@ -58,7 +58,7 @@ export function updateFile(owner, name, file) {
 
 export function addFile(file) {
   const newFile = Setting.deepCopy(file);
-  return fetch(`${Setting.ServerUrl}/api/add-file`, {
+  return fetch(`${Setting.ServerUrl}/v1/add-file`, {
     method: "POST",
     credentials: "include",
     headers: {
@@ -70,7 +70,7 @@ export function addFile(file) {
 
 export function deleteFile(file) {
   const newFile = Setting.deepCopy(file);
-  return fetch(`${Setting.ServerUrl}/api/delete-file`, {
+  return fetch(`${Setting.ServerUrl}/v1/delete-file`, {
     method: "POST",
     credentials: "include",
     headers: {
@@ -82,7 +82,7 @@ export function deleteFile(file) {
 
 export function refreshFileVectors(file) {
   const newFile = Setting.deepCopy(file);
-  return fetch(`${Setting.ServerUrl}/api/refresh-file-vectors`, {
+  return fetch(`${Setting.ServerUrl}/v1/refresh-file-vectors`, {
     method: "POST",
     credentials: "include",
     headers: {
