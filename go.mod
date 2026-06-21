@@ -27,7 +27,6 @@ require (
 	github.com/carmel/gooxml v0.0.0-20220216072414-40ff56130850
 	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/cohere-ai/cohere-go/v2 v2.5.2
-	github.com/denisenkom/go-mssqldb v0.10.0
 	github.com/digitalocean/go-libvirt v0.0.0-20250207191401-950a7b2d7eaf
 	github.com/docker/docker v28.1.1+incompatible
 	github.com/gage-technologies/mistral-go v1.1.0
@@ -54,6 +53,7 @@ require (
 	github.com/luxfi/log v1.4.3
 	github.com/luxfi/metric v1.5.8
 	github.com/luxfi/zap v0.8.8
+	github.com/microsoft/go-mssqldb v1.9.5
 	github.com/openai/openai-go/v2 v2.1.1
 	github.com/oschwald/geoip2-golang v1.11.0
 	github.com/pkg/errors v0.9.1
@@ -128,6 +128,7 @@ require (
 	github.com/gofiber/fiber/v3 v3.2.0 // indirect
 	github.com/gofiber/schema v1.7.1 // indirect
 	github.com/gofiber/utils/v2 v2.0.4 // indirect
+	github.com/golang-sql/sqlexp v0.1.0 // indirect
 	github.com/googleapis/gax-go/v2 v2.21.0 // indirect
 	github.com/gorilla/rpc v1.2.1 // indirect
 	github.com/grandcat/zeroconf v1.0.0 // indirect
@@ -158,6 +159,7 @@ require (
 	github.com/prometheus/client_golang v1.23.2 // indirect
 	github.com/prometheus/client_model v0.6.2 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
+	github.com/shopspring/decimal v1.4.0 // indirect
 	github.com/supranational/blst v0.3.16 // indirect
 	github.com/tidwall/sjson v1.2.5 // indirect
 	github.com/tinylib/msgp v1.6.4 // indirect

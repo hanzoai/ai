@@ -20,7 +20,7 @@ import (
 	"runtime"
 
 	"github.com/beego/beego"
-	_ "github.com/denisenkom/go-mssqldb" // mssql
+	_ "github.com/microsoft/go-mssqldb" // mssql (maintained successor to denisenkom; one mssql driver registration across the stack)
 	_ "github.com/go-sql-driver/mysql"   // mysql
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/dbx"
