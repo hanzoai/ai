@@ -162,12 +162,24 @@ func doBootstrap() (err error) {
 	beego.InsertFilter("*", beego.AfterExec, routers.AfterRecordMessage, false)
 	beego.InsertFilter("*", beego.AfterExec, routers.SecureCookieFilter, false)
 
-	// Session config (file unless redisEndpoint set).
+	// Session config (memory unless redisEndpoint set).
+	//
+	// Provider is "memory", NOT "file": the unified cloud binary ships in a
+	// scratch/distroless image with a read-only root and no working ./tmp, so
+	// beego's file provider fails inside SessionStart (os.Create on the sid
+	// path) and beego renders that as HTTP 503 on every request — the exact
+	// failure observed on the canary after the nil-GlobalSessions panic was
+	// fixed. The session contents here are incidental (API requests authenticate
+	// per-request via Bearer key/JWT, not cookies; sessions back only the
+	// web-admin cookie flow), so an in-process memory store is correct and needs
+	// no filesystem. Multi-pod deployments that need shared sessions set
+	// redisEndpoint and get the redis provider. This keeps the embedded binary
+	// and the standalone (cmd/aid) identical — one selection, no CWD dependency.
 	beego.BConfig.WebConfig.Session.SessionOn = true
 	beego.BConfig.WebConfig.Session.SessionName = "cloud_session_id"
 	if conf.GetConfigString("redisEndpoint") == "" {
-		beego.BConfig.WebConfig.Session.SessionProvider = "file"
-		beego.BConfig.WebConfig.Session.SessionProviderConfig = "./tmp"
+		beego.BConfig.WebConfig.Session.SessionProvider = "memory"
+		beego.BConfig.WebConfig.Session.SessionProviderConfig = ""
 	} else {
 		beego.BConfig.WebConfig.Session.SessionProvider = "redis"
 		beego.BConfig.WebConfig.Session.SessionProviderConfig = conf.GetConfigString("redisEndpoint")
