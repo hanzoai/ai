@@ -18,10 +18,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"path/filepath"
 	"sync"
 
 	"github.com/beego/beego"
 	"github.com/beego/beego/logs"
+	"github.com/beego/beego/session"
 
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/controllers"
@@ -174,6 +176,23 @@ func doBootstrap() (err error) {
 	// SameSite=Lax: CSRF protection while preserving compatibility.
 	beego.BConfig.WebConfig.Session.SessionCookieSameSite = http.SameSiteLaxMode
 
+	// Build the session manager NOW. In the standalone (cmd/aid) beego.Run()
+	// triggers beego's private registerSession() app-start hook, which
+	// constructs beego.GlobalSessions from the settings above. The unified
+	// cloud binary never calls beego.Run() (it owns its own zip listener), so
+	// that hook never fires and beego.GlobalSessions stays nil — then every
+	// request the /v1/ai/* adapter forwards panics with a nil-pointer deref
+	// inside SessionStart (router.go → session.go), which beego renders as a
+	// 500 "application error". Controllers across the surface read sessions
+	// (account claims, openai_api GetSessionUsername, chat, store, …), so the
+	// session manager is required, not optional. Construct it here — in the
+	// SINGLE shared Bootstrap — so the embedded handler behaves identically to
+	// the standalone. Idempotent: skip if already built (the standalone's
+	// later registerSession() hook would otherwise leak a second GC goroutine).
+	if err := initSessionManager(); err != nil {
+		return fmt.Errorf("ai: session manager: %w", err)
+	}
+
 	// Optional log adapter reconfig. Guarded: in the embedded binary there
 	// is no conf/app.conf, so logConfig is empty — json.Unmarshal("") would
 	// panic. Skip when unset and keep the default logger.
@@ -209,5 +228,52 @@ func doBootstrap() (err error) {
 	// "ai runtime not initialized".
 	SetHandler(beego.BeeApp.Handlers)
 
+	return nil
+}
+
+// initSessionManager constructs beego.GlobalSessions from the session settings
+// configured in doBootstrap, mirroring beego's own private registerSession()
+// app-start hook (beego v1.12 hooks.go) one-for-one so the embedded handler and
+// the standalone share identical session behavior. It is idempotent: when the
+// manager already exists (e.g. the standalone's later beego.Run() ran the hook
+// first) it is a no-op, avoiding a duplicate GC goroutine.
+//
+// SessionConfig (the JSON override) is honored when present, exactly as beego
+// does, so any conf/app.conf "sessionConfig" continues to work unchanged.
+func initSessionManager() error {
+	if !beego.BConfig.WebConfig.Session.SessionOn {
+		return nil
+	}
+	if beego.GlobalSessions != nil {
+		return nil
+	}
+
+	sc := beego.BConfig.WebConfig.Session
+	mc := new(session.ManagerConfig)
+	if raw := conf.GetConfigString("sessionConfig"); raw != "" {
+		if err := json.Unmarshal([]byte(raw), mc); err != nil {
+			return err
+		}
+	} else {
+		mc.CookieName = sc.SessionName
+		mc.EnableSetCookie = sc.SessionAutoSetCookie
+		mc.Gclifetime = sc.SessionGCMaxLifetime
+		mc.Secure = beego.BConfig.Listen.EnableHTTPS
+		mc.CookieLifeTime = sc.SessionCookieLifeTime
+		mc.ProviderConfig = filepath.ToSlash(sc.SessionProviderConfig)
+		mc.DisableHTTPOnly = sc.SessionDisableHTTPOnly
+		mc.Domain = sc.SessionDomain
+		mc.EnableSidInHTTPHeader = sc.SessionEnableSidInHTTPHeader
+		mc.SessionNameInHTTPHeader = sc.SessionNameInHTTPHeader
+		mc.EnableSidInURLQuery = sc.SessionEnableSidInURLQuery
+		mc.CookieSameSite = sc.SessionCookieSameSite
+	}
+
+	mgr, err := session.NewManager(sc.SessionProvider, mc)
+	if err != nil {
+		return err
+	}
+	beego.GlobalSessions = mgr
+	go mgr.GC()
 	return nil
 }
