@@ -15,14 +15,14 @@
 import * as Setting from "../Setting";
 
 export function getConsultations(owner, page = "", pageSize = "", field = "", value = "", sortField = "", sortOrder = "") {
-  return fetch(`${Setting.ServerUrl}/api/get-consultations?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
+  return fetch(`${Setting.ServerUrl}/v1/get-consultations?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
     method: "GET",
     credentials: "include",
   }).then(res => res.json());
 }
 
 export function getConsultation(owner, name) {
-  return fetch(`${Setting.ServerUrl}/api/get-consultation?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/get-consultation?id=${owner}/${encodeURIComponent(name)}`, {
     method: "GET",
     credentials: "include",
   }).then(res => res.json());
@@ -30,7 +30,7 @@ export function getConsultation(owner, name) {
 
 export function updateConsultation(owner, name, consultation) {
   const newConsultation = Setting.deepCopy(consultation);
-  return fetch(`${Setting.ServerUrl}/api/update-consultation?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/update-consultation?id=${owner}/${encodeURIComponent(name)}`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newConsultation),
@@ -39,7 +39,7 @@ export function updateConsultation(owner, name, consultation) {
 
 export function addConsultation(consultation) {
   const newConsultation = Setting.deepCopy(consultation);
-  return fetch(`${Setting.ServerUrl}/api/add-consultation`, {
+  return fetch(`${Setting.ServerUrl}/v1/add-consultation`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newConsultation),
@@ -48,7 +48,7 @@ export function addConsultation(consultation) {
 
 export function deleteConsultation(consultation) {
   const newConsultation = Setting.deepCopy(consultation);
-  return fetch(`${Setting.ServerUrl}/api/delete-consultation`, {
+  return fetch(`${Setting.ServerUrl}/v1/delete-consultation`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newConsultation),

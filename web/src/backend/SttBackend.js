@@ -20,7 +20,7 @@ export function processSpeechToText(storeId, audioBlob) {
   formData.append("audio", audioBlob);
   formData.append("storeId", storeId);
 
-  return fetch(`${Setting.ServerUrl}/api/process-speech-to-text`, {
+  return fetch(`${Setting.ServerUrl}/v1/process-speech-to-text`, {
     method: "POST",
     credentials: "include",
     headers: {

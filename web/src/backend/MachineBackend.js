@@ -15,7 +15,7 @@
 import * as Setting from "../Setting";
 
 export function getMachines(owner, page = "", pageSize = "", field = "", value = "", sortField = "", sortOrder = "") {
-  return fetch(`${Setting.ServerUrl}/api/get-machines?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
+  return fetch(`${Setting.ServerUrl}/v1/get-machines?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -25,7 +25,7 @@ export function getMachines(owner, page = "", pageSize = "", field = "", value =
 }
 
 export function getMachine(owner, name) {
-  return fetch(`${Setting.ServerUrl}/api/get-machine?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/get-machine?id=${owner}/${encodeURIComponent(name)}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -36,7 +36,7 @@ export function getMachine(owner, name) {
 
 export function updateMachine(owner, name, machine) {
   const newMachine = Setting.deepCopy(machine);
-  return fetch(`${Setting.ServerUrl}/api/update-machine?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/update-machine?id=${owner}/${encodeURIComponent(name)}`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newMachine),
@@ -48,7 +48,7 @@ export function updateMachine(owner, name, machine) {
 
 export function addMachine(machine) {
   const newMachine = Setting.deepCopy(machine);
-  return fetch(`${Setting.ServerUrl}/api/add-machine`, {
+  return fetch(`${Setting.ServerUrl}/v1/add-machine`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newMachine),
@@ -60,7 +60,7 @@ export function addMachine(machine) {
 
 export function deleteMachine(machine) {
   const newMachine = Setting.deepCopy(machine);
-  return fetch(`${Setting.ServerUrl}/api/delete-machine`, {
+  return fetch(`${Setting.ServerUrl}/v1/delete-machine`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newMachine),
