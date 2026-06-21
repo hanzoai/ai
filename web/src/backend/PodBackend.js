@@ -15,7 +15,7 @@
 import * as Setting from "../Setting";
 
 export function getPods(owner, page = "", pageSize = "", field = "", value = "", sortField = "", sortOrder = "") {
-  return fetch(`${Setting.ServerUrl}/api/get-pods?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
+  return fetch(`${Setting.ServerUrl}/v1/get-pods?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -25,7 +25,7 @@ export function getPods(owner, page = "", pageSize = "", field = "", value = "",
 }
 
 export function getPod(owner, name) {
-  return fetch(`${Setting.ServerUrl}/api/get-pod?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/get-pod?id=${owner}/${encodeURIComponent(name)}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -36,7 +36,7 @@ export function getPod(owner, name) {
 
 export function updatePod(owner, name, pod) {
   const newPod = Setting.deepCopy(pod);
-  return fetch(`${Setting.ServerUrl}/api/update-pod?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/update-pod?id=${owner}/${encodeURIComponent(name)}`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newPod),
@@ -48,7 +48,7 @@ export function updatePod(owner, name, pod) {
 
 export function addPod(pod) {
   const newPod = Setting.deepCopy(pod);
-  return fetch(`${Setting.ServerUrl}/api/add-pod`, {
+  return fetch(`${Setting.ServerUrl}/v1/add-pod`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newPod),
@@ -60,7 +60,7 @@ export function addPod(pod) {
 
 export function deletePod(pod) {
   const newPod = Setting.deepCopy(pod);
-  return fetch(`${Setting.ServerUrl}/api/delete-pod`, {
+  return fetch(`${Setting.ServerUrl}/v1/delete-pod`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newPod),

@@ -15,7 +15,7 @@
 import * as Setting from "../Setting";
 
 export function getGlobalVideos() {
-  return fetch(`${Setting.ServerUrl}/api/get-global-videos`, {
+  return fetch(`${Setting.ServerUrl}/v1/get-global-videos`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -25,7 +25,7 @@ export function getGlobalVideos() {
 }
 
 export function getVideos(owner, page = "", pageSize = "", field = "", value = "", sortField = "", sortOrder = "") {
-  return fetch(`${Setting.ServerUrl}/api/get-videos?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
+  return fetch(`${Setting.ServerUrl}/v1/get-videos?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -35,7 +35,7 @@ export function getVideos(owner, page = "", pageSize = "", field = "", value = "
 }
 
 export function getVideo(owner, name) {
-  return fetch(`${Setting.ServerUrl}/api/get-video?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/get-video?id=${owner}/${encodeURIComponent(name)}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -46,7 +46,7 @@ export function getVideo(owner, name) {
 
 export function updateVideo(owner, name, video) {
   const newVideo = Setting.deepCopy(video);
-  return fetch(`${Setting.ServerUrl}/api/update-video?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/update-video?id=${owner}/${encodeURIComponent(name)}`, {
     method: "POST",
     credentials: "include",
     headers: {
@@ -58,7 +58,7 @@ export function updateVideo(owner, name, video) {
 
 export function addVideo(video) {
   const newVideo = Setting.deepCopy(video);
-  return fetch(`${Setting.ServerUrl}/api/add-video`, {
+  return fetch(`${Setting.ServerUrl}/v1/add-video`, {
     method: "POST",
     credentials: "include",
     headers: {
@@ -70,7 +70,7 @@ export function addVideo(video) {
 
 export function deleteVideo(video) {
   const newVideo = Setting.deepCopy(video);
-  return fetch(`${Setting.ServerUrl}/api/delete-video`, {
+  return fetch(`${Setting.ServerUrl}/v1/delete-video`, {
     method: "POST",
     credentials: "include",
     headers: {

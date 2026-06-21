@@ -15,7 +15,7 @@
 import * as Setting from "../Setting";
 
 export function getModelRoutes(owner, page = "", pageSize = "", field = "", value = "", sortField = "", sortOrder = "") {
-  return fetch(`${Setting.ServerUrl}/api/get-model-routes?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
+  return fetch(`${Setting.ServerUrl}/v1/get-model-routes?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -25,7 +25,7 @@ export function getModelRoutes(owner, page = "", pageSize = "", field = "", valu
 }
 
 export function getModelRoute(owner, modelName) {
-  return fetch(`${Setting.ServerUrl}/api/get-model-route?owner=${owner}&modelName=${encodeURIComponent(modelName)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/get-model-route?owner=${owner}&modelName=${encodeURIComponent(modelName)}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -36,7 +36,7 @@ export function getModelRoute(owner, modelName) {
 
 export function addModelRoute(route) {
   const newRoute = Setting.deepCopy(route);
-  return fetch(`${Setting.ServerUrl}/api/add-model-route`, {
+  return fetch(`${Setting.ServerUrl}/v1/add-model-route`, {
     method: "POST",
     credentials: "include",
     headers: {
@@ -48,7 +48,7 @@ export function addModelRoute(route) {
 
 export function updateModelRoute(owner, modelName, route) {
   const newRoute = Setting.deepCopy(route);
-  return fetch(`${Setting.ServerUrl}/api/update-model-route?owner=${owner}&modelName=${encodeURIComponent(modelName)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/update-model-route?owner=${owner}&modelName=${encodeURIComponent(modelName)}`, {
     method: "POST",
     credentials: "include",
     headers: {
@@ -60,7 +60,7 @@ export function updateModelRoute(owner, modelName, route) {
 
 export function deleteModelRoute(route) {
   const newRoute = Setting.deepCopy(route);
-  return fetch(`${Setting.ServerUrl}/api/delete-model-route`, {
+  return fetch(`${Setting.ServerUrl}/v1/delete-model-route`, {
     method: "POST",
     credentials: "include",
     headers: {

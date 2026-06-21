@@ -15,7 +15,7 @@
 import * as Setting from "../Setting";
 
 export function installPatch(provider, patchId, scan) {
-  return fetch(`${Setting.ServerUrl}/api/install-patch?provider=${encodeURIComponent(provider)}&patchId=${encodeURIComponent(patchId)}&scan=${encodeURIComponent(scan)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/install-patch?provider=${encodeURIComponent(provider)}&patchId=${encodeURIComponent(patchId)}&scan=${encodeURIComponent(scan)}`, {
     method: "POST",
     credentials: "include",
     headers: {

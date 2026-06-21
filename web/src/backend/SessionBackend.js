@@ -15,7 +15,7 @@
 import * as Setting from "../Setting";
 
 export function getSessions(owner, page = "", pageSize = "", field = "", value = "", sortField = "", sortOrder = "") {
-  return fetch(`${Setting.ServerUrl}/api/get-sessions?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
+  return fetch(`${Setting.ServerUrl}/v1/get-sessions?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -25,7 +25,7 @@ export function getSessions(owner, page = "", pageSize = "", field = "", value =
 }
 
 export function deleteSession(session) {
-  return fetch(`${Setting.ServerUrl}/api/delete-session`, {
+  return fetch(`${Setting.ServerUrl}/v1/delete-session`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(session),
