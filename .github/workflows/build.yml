@@ -122,7 +122,7 @@ jobs:
     permissions:
       contents: write
       issues: write
-    if: github.repository == 'hanzoai/cloud' && github.event_name == 'push'
+    if: github.repository == 'hanzoai/ai' && github.event_name == 'push'
     needs: [ frontend, backend, linter ]
     outputs:
       new-release-published: ${{ steps.semantic.outputs.new_release_published }}
@@ -145,7 +145,7 @@ jobs:
     permissions:
       contents: write
       issues: write
-    if: github.repository == 'hanzoai/cloud' && github.event_name == 'push' && needs.tag-release.outputs.new-release-published == 'true'
+    if: github.repository == 'hanzoai/ai' && github.event_name == 'push' && needs.tag-release.outputs.new-release-published == 'true'
     needs: [ tag-release ]
     steps:
       - name: Checkout
@@ -180,7 +180,7 @@ jobs:
 
   docker:
     name: Docker Release
-    if: github.repository == 'hanzoai/cloud' && github.event_name == 'push' && needs.tag-release.outputs.new-release-published == 'true'
+    if: github.repository == 'hanzoai/ai' && github.event_name == 'push' && needs.tag-release.outputs.new-release-published == 'true'
     needs: [ tag-release ]
     uses: hanzoai/.github/.github/workflows/docker-build.yml@main
     with:
@@ -191,7 +191,7 @@ jobs:
   docker-branch:
     name: Docker Branch Build
     if: >-
-      github.repository == 'hanzoai/cloud' && github.event_name == 'push' &&
+      github.repository == 'hanzoai/ai' && github.event_name == 'push' &&
       (github.ref == 'refs/heads/test' || github.ref == 'refs/heads/dev')
     needs: [ frontend, backend, linter ]
     uses: hanzoai/.github/.github/workflows/docker-build.yml@main
@@ -202,7 +202,7 @@ jobs:
 
   dispatch-to-universe:
     needs: docker
-    if: github.repository == 'hanzoai/cloud' && github.event_name == 'push' && needs.docker.result == 'success'
+    if: github.repository == 'hanzoai/ai' && github.event_name == 'push' && needs.docker.result == 'success'
     runs-on: hanzo-build-linux-amd64
     steps:
       - name: Compute image URI
