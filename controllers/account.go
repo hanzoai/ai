@@ -129,11 +129,16 @@ func (c *ApiController) Signin() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /signout [post]
 func (c *ApiController) Signout() {
+	// Sign-out is idempotent: with no session user (already signed out, or an
+	// expired/cleared session) just drop the claims and return OK instead of
+	// dereferencing a nil user (which panicked → HTTP 500).
 	user := c.GetSessionUser()
-	_, err := object.DeleteSessionId(util.GetIdFromOwnerAndName(user.Owner, user.Name), c.Ctx.Input.CruSession.SessionID())
-	if err != nil {
-		c.ResponseError(err.Error())
-		return
+	if user != nil {
+		_, err := object.DeleteSessionId(util.GetIdFromOwnerAndName(user.Owner, user.Name), c.Ctx.Input.CruSession.SessionID())
+		if err != nil {
+			c.ResponseError(err.Error())
+			return
+		}
 	}
 
 	c.SetSessionClaims(nil)
