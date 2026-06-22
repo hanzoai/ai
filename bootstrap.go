@@ -18,10 +18,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"path/filepath"
 	"sync"
 
 	"github.com/beego/beego"
 	"github.com/beego/beego/logs"
+	"github.com/beego/beego/session"
 
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/controllers"
@@ -142,6 +144,20 @@ func doBootstrap() (err error) {
 	bootRateLimiter = routers.InitRateLimiter(routers.DefaultTierFunc)
 	logs.Info("Per-key rate limiter initialized (tiers: free=10/min, starter=60/min, pro=300/min, enterprise=1000/min)")
 
+	// Copy the request body into c.Ctx.Input.RequestBody. The OpenAI-compatible
+	// controllers read the raw body via c.Ctx.Input.RequestBody (e.g.
+	// json.Unmarshal in ChatCompletions); beego only populates it when
+	// CopyRequestBody is true. The standalone gets this from conf/app.conf
+	// (copyrequestbody = true), but the embedded unified binary has no app.conf,
+	// so set it here — otherwise every POST /v1/chat/completions (and the other
+	// body-reading routes) fails with "Failed to parse request: unexpected end
+	// of JSON input". MaxMemory bounds the copied body (64 MB, matching the
+	// standalone default) so large uploads still stream rather than buffer.
+	beego.BConfig.CopyRequestBody = true
+	if beego.BConfig.MaxMemory <= 0 {
+		beego.BConfig.MaxMemory = 1 << 26 // 64 MB
+	}
+
 	// beego filter chain — identical order to the standalone surface so
 	// the embedded handler enforces the same auth/tenant/balance pipeline.
 	beego.SetStaticPath("/swagger", "swagger")
@@ -160,12 +176,24 @@ func doBootstrap() (err error) {
 	beego.InsertFilter("*", beego.AfterExec, routers.AfterRecordMessage, false)
 	beego.InsertFilter("*", beego.AfterExec, routers.SecureCookieFilter, false)
 
-	// Session config (file unless redisEndpoint set).
+	// Session config (memory unless redisEndpoint set).
+	//
+	// Provider is "memory", NOT "file": the unified cloud binary ships in a
+	// scratch/distroless image with a read-only root and no working ./tmp, so
+	// beego's file provider fails inside SessionStart (os.Create on the sid
+	// path) and beego renders that as HTTP 503 on every request — the exact
+	// failure observed on the canary after the nil-GlobalSessions panic was
+	// fixed. The session contents here are incidental (API requests authenticate
+	// per-request via Bearer key/JWT, not cookies; sessions back only the
+	// web-admin cookie flow), so an in-process memory store is correct and needs
+	// no filesystem. Multi-pod deployments that need shared sessions set
+	// redisEndpoint and get the redis provider. This keeps the embedded binary
+	// and the standalone (cmd/aid) identical — one selection, no CWD dependency.
 	beego.BConfig.WebConfig.Session.SessionOn = true
 	beego.BConfig.WebConfig.Session.SessionName = "cloud_session_id"
 	if conf.GetConfigString("redisEndpoint") == "" {
-		beego.BConfig.WebConfig.Session.SessionProvider = "file"
-		beego.BConfig.WebConfig.Session.SessionProviderConfig = "./tmp"
+		beego.BConfig.WebConfig.Session.SessionProvider = "memory"
+		beego.BConfig.WebConfig.Session.SessionProviderConfig = ""
 	} else {
 		beego.BConfig.WebConfig.Session.SessionProvider = "redis"
 		beego.BConfig.WebConfig.Session.SessionProviderConfig = conf.GetConfigString("redisEndpoint")
@@ -173,6 +201,23 @@ func doBootstrap() (err error) {
 	beego.BConfig.WebConfig.Session.SessionGCMaxLifetime = 3600 * 24 * 365
 	// SameSite=Lax: CSRF protection while preserving compatibility.
 	beego.BConfig.WebConfig.Session.SessionCookieSameSite = http.SameSiteLaxMode
+
+	// Build the session manager NOW. In the standalone (cmd/aid) beego.Run()
+	// triggers beego's private registerSession() app-start hook, which
+	// constructs beego.GlobalSessions from the settings above. The unified
+	// cloud binary never calls beego.Run() (it owns its own zip listener), so
+	// that hook never fires and beego.GlobalSessions stays nil — then every
+	// request the /v1/ai/* adapter forwards panics with a nil-pointer deref
+	// inside SessionStart (router.go → session.go), which beego renders as a
+	// 500 "application error". Controllers across the surface read sessions
+	// (account claims, openai_api GetSessionUsername, chat, store, …), so the
+	// session manager is required, not optional. Construct it here — in the
+	// SINGLE shared Bootstrap — so the embedded handler behaves identically to
+	// the standalone. Idempotent: skip if already built (the standalone's
+	// later registerSession() hook would otherwise leak a second GC goroutine).
+	if err := initSessionManager(); err != nil {
+		return fmt.Errorf("ai: session manager: %w", err)
+	}
 
 	// Optional log adapter reconfig. Guarded: in the embedded binary there
 	// is no conf/app.conf, so logConfig is empty — json.Unmarshal("") would
@@ -209,5 +254,52 @@ func doBootstrap() (err error) {
 	// "ai runtime not initialized".
 	SetHandler(beego.BeeApp.Handlers)
 
+	return nil
+}
+
+// initSessionManager constructs beego.GlobalSessions from the session settings
+// configured in doBootstrap, mirroring beego's own private registerSession()
+// app-start hook (beego v1.12 hooks.go) one-for-one so the embedded handler and
+// the standalone share identical session behavior. It is idempotent: when the
+// manager already exists (e.g. the standalone's later beego.Run() ran the hook
+// first) it is a no-op, avoiding a duplicate GC goroutine.
+//
+// SessionConfig (the JSON override) is honored when present, exactly as beego
+// does, so any conf/app.conf "sessionConfig" continues to work unchanged.
+func initSessionManager() error {
+	if !beego.BConfig.WebConfig.Session.SessionOn {
+		return nil
+	}
+	if beego.GlobalSessions != nil {
+		return nil
+	}
+
+	sc := beego.BConfig.WebConfig.Session
+	mc := new(session.ManagerConfig)
+	if raw := conf.GetConfigString("sessionConfig"); raw != "" {
+		if err := json.Unmarshal([]byte(raw), mc); err != nil {
+			return err
+		}
+	} else {
+		mc.CookieName = sc.SessionName
+		mc.EnableSetCookie = sc.SessionAutoSetCookie
+		mc.Gclifetime = sc.SessionGCMaxLifetime
+		mc.Secure = beego.BConfig.Listen.EnableHTTPS
+		mc.CookieLifeTime = sc.SessionCookieLifeTime
+		mc.ProviderConfig = filepath.ToSlash(sc.SessionProviderConfig)
+		mc.DisableHTTPOnly = sc.SessionDisableHTTPOnly
+		mc.Domain = sc.SessionDomain
+		mc.EnableSidInHTTPHeader = sc.SessionEnableSidInHTTPHeader
+		mc.SessionNameInHTTPHeader = sc.SessionNameInHTTPHeader
+		mc.EnableSidInURLQuery = sc.SessionEnableSidInURLQuery
+		mc.CookieSameSite = sc.SessionCookieSameSite
+	}
+
+	mgr, err := session.NewManager(sc.SessionProvider, mc)
+	if err != nil {
+		return err
+	}
+	beego.GlobalSessions = mgr
+	go mgr.GC()
 	return nil
 }
