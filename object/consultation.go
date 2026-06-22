@@ -27,7 +27,7 @@ type Consultation struct {
 	UpdatedTime string   `json:"updatedTime"`
 	DisplayName string   `json:"displayName"`
 	PatientName string   `json:"patientName"`
-	DoctorNames []string `json:"doctorNames"`
+	DoctorNames StringList `json:"doctorNames"`
 	ExpiredTime string   `json:"expiredTime"`
 	State       string   `json:"state"`
 }

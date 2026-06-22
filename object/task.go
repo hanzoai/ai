@@ -61,7 +61,7 @@ type Task struct {
 	Path         string   `json:"path"`
 	Scale        string   `json:"scale"`
 	Example      string   `json:"example"`
-	Labels       []string `json:"labels"`
+	Labels       StringList `json:"labels"`
 	Log          string   `json:"log"`
 	Result       string   `json:"result"`
 	DocumentUrl  string   `json:"documentUrl"`

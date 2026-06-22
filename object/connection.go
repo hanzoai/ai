@@ -50,7 +50,7 @@ type Connection struct {
 	Code          int      `json:"code"`
 	Message       string   `json:"message"`
 	Mode          string   `json:"mode"`
-	Operations    []string `db:"json varchar(1000)" json:"operations"`
+	Operations    StringList `db:"json varchar(1000)" json:"operations"`
 	Reviewed      bool     `json:"reviewed"`
 	CommandCount  int64    `json:"commandCount"`
 }

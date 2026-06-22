@@ -61,8 +61,8 @@ type Message struct {
 	ModelProvider     string               `json:"modelProvider"`
 	EmbeddingProvider string               `json:"embeddingProvider"`
 	VectorScores      []VectorScore        `json:"vectorScores"`
-	LikeUsers         []string             `json:"likeUsers"`
-	DisLikeUsers      []string             `json:"dislikeUsers"`
+	LikeUsers         StringList             `json:"likeUsers"`
+	DisLikeUsers      StringList             `json:"dislikeUsers"`
 	Suggestions       []Suggestion         `json:"suggestions"`
 	ToolCalls         []model.ToolCall     `json:"toolCalls"`
 	SearchResults     []model.SearchResult `json:"searchResults"`
