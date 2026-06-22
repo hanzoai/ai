@@ -36,7 +36,7 @@ type Article struct {
 	Type        string   `json:"type"`
 	Text        string   `json:"text"`
 	Content     []*Block `json:"content"`
-	Glossary    []string `json:"glossary"`
+	Glossary    StringList `json:"glossary"`
 }
 
 func GetMaskedArticle(article *Article, isMaskEnabled bool) *Article {

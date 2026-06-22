@@ -34,7 +34,7 @@ type Chat struct {
 	User          string   `json:"user"`
 	User1         string   `json:"user1"`
 	User2         string   `json:"user2"`
-	Users         []string `json:"users"`
+	Users         StringList `json:"users"`
 	ClientIp      string   `json:"clientIp"`
 	UserAgent     string   `json:"userAgent"`
 	ClientIpDesc  string   `json:"clientIpDesc"`

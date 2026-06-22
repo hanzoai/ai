@@ -25,7 +25,7 @@ type Session struct {
 	Owner       string   `db:"pk" json:"owner"`
 	Name        string   `db:"pk" json:"name"`
 	CreatedTime string   `json:"createdTime"`
-	SessionId   []string `json:"sessionId"`
+	SessionId   StringList `json:"sessionId"`
 }
 
 func GetSessions(owner string) ([]*Session, error) {
