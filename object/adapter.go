@@ -165,26 +165,23 @@ func (a *Adapter) close() {
 }
 
 func (a *Adapter) createTable() {
-	// Schema migration is handled externally (SQL migrations).
-	// Tables must exist before the application starts.
-	// This is a no-op placeholder for backward compatibility.
-	//
-	// Run the appropriate migration SQL for your database before first start.
-	// See: migrations/ directory for schema definitions.
-	tables := []string{
-		"video", "store", "provider", "file", "vector", "chat", "message",
-		"template", "application", "node", "machine", "image", "container",
-		"pod", "task", "scale", "form", "workflow", "article", "session",
-		"connection", "record", "graph", "hospital", "doctor", "patient",
-		"caase", "consultation", "asset", "scan", "model_route",
+	// The Go structs are the single source of truth for the schema. dbx.Sync is
+	// idempotent — CREATE TABLE IF NOT EXISTS for new tables and ALTER TABLE ADD
+	// COLUMN for fields added since the table was created — so this is safe on
+	// both a fresh embedded SQLite store and an existing DB. No external SQL.
+	models := []interface{}{
+		&Application{}, &Article{}, &Asset{}, &Caase{}, &Chat{}, &Connection{},
+		&Consultation{}, &Container{}, &Doctor{}, &File{}, &Form{}, &Graph{},
+		&Hospital{}, &Image{}, &Machine{}, &Message{}, &ModelRoute{}, &Node{},
+		&Patient{}, &Pod{}, &Provider{}, &Record{}, &Scale{}, &Scan{},
+		&Session{}, &Store{}, &Task{}, &Template{}, &Vector{}, &Video{},
+		&Workflow{},
 	}
-	for _, table := range tables {
-		var count int
-		err := a.db.NewQuery(fmt.Sprintf("SELECT 1 FROM %s LIMIT 1", a.db.QuoteTableName(table))).Row(&count)
-		if err != nil {
-			// Table doesn't exist or is inaccessible -- this is expected
-			// on first run before migrations. Log and continue.
-			_ = err
+	for _, m := range models {
+		if err := a.db.Sync(m); err != nil {
+			// Log and continue so one bad model can't block the rest; a table
+			// that genuinely failed to create will surface at first use.
+			fmt.Printf("createTable: sync %T failed: %v\n", m, err)
 		}
 	}
 }
