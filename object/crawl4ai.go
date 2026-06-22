@@ -34,7 +34,7 @@ const (
 
 // Crawl4AIRequest is the request body for the Hanzo Crawl /crawl endpoint.
 type Crawl4AIRequest struct {
-	Urls          []string               `json:"urls"`
+	Urls          StringList               `json:"urls"`
 	BrowserConfig *Crawl4AIBrowserConfig `json:"browser_config,omitempty"`
 	CrawlerParams *Crawl4AICrawlerParams `json:"crawler_params,omitempty"`
 }

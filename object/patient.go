@@ -31,7 +31,7 @@ type Patient struct {
 	Email        string   `json:"email"`
 	BloodType    string   `json:"bloodType"`
 	Allergies    string   `json:"allergies"`
-	Owners       []string `json:"owners"`
+	Owners       StringList `json:"owners"`
 	HospitalName string   `json:"hospitalName"`
 }
 

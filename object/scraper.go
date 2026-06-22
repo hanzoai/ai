@@ -54,7 +54,7 @@ type ScrapeResult struct {
 	Description string         `json:"description"`
 	Content     string         `json:"content"`
 	Headings    []Heading      `json:"headings"`
-	Links       []string       `json:"links"`
+	Links       StringList       `json:"links"`
 	Structured  StructuredData `json:"structured"`
 }
 
@@ -83,7 +83,7 @@ type ScrapeStats struct {
 	PagesScraped     int      `json:"pagesScraped"`
 	DocumentsIndexed int      `json:"documentsIndexed"`
 	Engine           string   `json:"engine"`
-	Errors           []string `json:"errors,omitempty"`
+	Errors           StringList `json:"errors,omitempty"`
 }
 
 // robotsRules holds parsed robots.txt disallow rules for User-agent: *.
