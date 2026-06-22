@@ -41,7 +41,7 @@ type DocIndex struct {
 	Section     string   `json:"section,omitempty"`
 	SectionID   string   `json:"section_id,omitempty"`
 	Tag         string   `json:"tag,omitempty"`
-	Breadcrumbs []string `json:"breadcrumbs,omitempty"`
+	Breadcrumbs StringList `json:"breadcrumbs,omitempty"`
 }
 
 // DocSearchRequest is the request body for searching documents.
@@ -58,7 +58,7 @@ type DocSearchResult struct {
 	URL         string   `json:"url"`
 	Type        string   `json:"type"` // "page", "heading", "text"
 	Content     string   `json:"content"`
-	Breadcrumbs []string `json:"breadcrumbs,omitempty"`
+	Breadcrumbs StringList `json:"breadcrumbs,omitempty"`
 }
 
 // DocIndexRequest is the request body for indexing documents.
