@@ -75,11 +75,29 @@ func Mount(app *zip.App, deps cloud.Deps) error {
 	return nil
 }
 
-// mountRoutes wires AI's /v1/ai/* prefix onto the zip app. It has no
+// mountRoutes wires AI's HTTP surface onto the zip app. It has no
 // infrastructure dependencies (no DB, no providers) and is what the route
 // adapter tests exercise; Mount adds runtime init on top.
+//
+// AI owns the legacy casibase route table, which lives at BARE /v1/* paths
+// (/v1/chat/completions, /v1/chat, /v1/completions, /v1/models, /v1/messages,
+// /v1/get-chats, … — ~200 routes in routers/router.go). That is exactly what
+// the production api.hanzo.ai gateway forwards: every cloud-api backend uses an
+// unchanged url_pattern (/v1/chat/completions → cloud-api:8000/v1/chat/completions),
+// and even its /v1/ai/{path} endpoint rewrites to BARE /v1/{path}. Mounting only
+// under a /v1/ai/* prefix would 404 every real request. So AI mounts the beego
+// handler at /v1/* with no path rewrite.
+//
+// This is collision-safe BECAUSE AI registers LAST (priority 150, after kms=10 …
+// commerce=100, plans=111, pricing=112, gateway=80). Fiber v3 gives an
+// earlier-registered specific route (e.g. commerce's /v1/billing/balance,
+// plans' /v1/plans/*) precedence over this later, broader /v1/* glob — verified
+// empirically — so each owning subsystem still serves its own namespace and AI
+// is the fallback for the rest of /v1/*. The composition root's
+// /v1/<name>/health routes (registered before MountAll) likewise win over this
+// glob, so liveness is unaffected.
 func mountRoutes(app *zip.App) {
-	app.All("/v1/ai/*", zip.AdaptNetHTTP(handlerAdapter{}))
+	app.All("/v1/*", zip.AdaptNetHTTP(handlerAdapter{}))
 }
 
 func init() {
@@ -88,8 +106,11 @@ func init() {
 	})
 }
 
-// handlerAdapter forwards each request under /v1/ai/* to the registered
-// runtime handler (beego ControllerRegister) or returns 503 if none.
+// handlerAdapter forwards each request under /v1/* to the registered runtime
+// handler (the beego ControllerRegister) or returns 503 if none. The path is
+// passed through unchanged: beego's routes are registered at the same bare /v1/*
+// paths the gateway forwards, so no rewrite is needed (and none must happen —
+// rewriting would desync from the casibase route table).
 type handlerAdapter struct{}
 
 func (handlerAdapter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -98,21 +119,7 @@ func (handlerAdapter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "ai runtime not initialized", http.StatusServiceUnavailable)
 		return
 	}
-	// Strip the /v1/ai prefix before delegating so beego routes that are
-	// registered at /v1/* (the existing route table) match unchanged.
-	r2 := *r
-	if u := *r.URL; true {
-		// trim /v1/ai prefix; keep the leading /v1/ for beego routes.
-		const prefix = "/v1/ai"
-		if len(u.Path) >= len(prefix) && u.Path[:len(prefix)] == prefix {
-			u.Path = "/v1" + u.Path[len(prefix):]
-			if u.Path == "/v1" {
-				u.Path = "/v1/"
-			}
-		}
-		r2.URL = &u
-	}
-	h.ServeHTTP(w, &r2)
+	h.ServeHTTP(w, r)
 }
 
 var (
