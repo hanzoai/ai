@@ -39,7 +39,7 @@ type templateConfigOption struct {
 	Parameter   string   `json:"parameter" yaml:"parameter"`
 	Description string   `json:"description" yaml:"description"`
 	Type        string   `json:"type" yaml:"type"` // string, number, boolean, option
-	Options     []string `json:"options" yaml:"options"`
+	Options     StringList `json:"options" yaml:"options"`
 	Default     string   `json:"default" yaml:"default"`
 	Required    bool     `json:"required" yaml:"required"`
 }

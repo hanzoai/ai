@@ -61,7 +61,7 @@ type Video struct {
 	LabelCount     int            `db:"-" json:"labelCount"`
 	SegmentCount   int            `db:"-" json:"segmentCount"`
 	WordCountMap   map[string]int `json:"wordCountMap"`
-	DataUrls       []string       `json:"dataUrls"`
+	DataUrls       StringList       `json:"dataUrls"`
 	DataUrl        string         `json:"dataUrl"`
 	TagOnPause     bool           `json:"tagOnPause"`
 	Remarks        []*Remark      `json:"remarks"`
@@ -79,7 +79,7 @@ type Video struct {
 	Subject        string         `json:"subject"`
 	Topic          string         `json:"topic"`
 	Grade2         string         `json:"grade2"`
-	Keywords       []string       `json:"keywords"`
+	Keywords       StringList       `json:"keywords"`
 	Template       string         `json:"template"`
 	Task1          string         `json:"task1"`
 	Task2          string         `json:"task2"`
