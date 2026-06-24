@@ -43,7 +43,12 @@ import (
 // router-level BalanceGate (routers/filter_balance.go); this controller-level
 // call is a defense-in-depth backstop and does not maintain its own cache.
 // The userId should be in "owner/name" format (e.g., "hanzo/alice").
-func getUserBalance(userId string) (float64, error) {
+// getUserBalance returns the available balance (in dollars) for an org. Billing
+// is per-org: orgKey is the IAM org slug, used both as the balance destination
+// key (?user=) and as the namespace selector (X-Hanzo-Org), matching the gate
+// and the per-org credit. Without the header, commerce's service-token path
+// defaults to the "hanzo" namespace and a per-org credit is invisible.
+func getUserBalance(orgKey string) (float64, error) {
 	commerceEndpoint := conf.GetConfigString("commerceEndpoint")
 	if commerceEndpoint == "" {
 		return 0, fmt.Errorf("commerceEndpoint is not configured")
@@ -53,16 +58,18 @@ func getUserBalance(userId string) (float64, error) {
 
 	// Per global rule: /v1/ only, never /api/.
 	// All commerce endpoints live under /v1/.
-	url := fmt.Sprintf("%s/v1/billing/balance?user=%s&currency=usd", commerceEndpoint, userId)
+	reqURL := fmt.Sprintf("%s/v1/billing/balance?user=%s&currency=usd", commerceEndpoint, url.QueryEscape(orgKey))
 
 	client := &http.Client{Timeout: 10 * time.Second}
-	req, err := http.NewRequest(http.MethodGet, url, nil)
+	req, err := http.NewRequest(http.MethodGet, reqURL, nil)
 	if err != nil {
 		return 0, fmt.Errorf("Commerce request build failed: %w", err)
 	}
 	if commerceToken != "" {
 		req.Header.Set("Authorization", "Bearer "+commerceToken)
 	}
+	// Scope the service-token call to this org's namespace.
+	req.Header.Set("X-Hanzo-Org", orgKey)
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -366,12 +373,16 @@ func resolveProviderForUser(user *iam.User, requestedModel string, lang string) 
 
 	// Service accounts configured in BALANCE_EXEMPT_USERS skip balance checks.
 	// This allows internal cloud agent pods to make LLM calls without Commerce setup.
+	// The exempt list is matched on the per-user "owner/name" key (service
+	// accounts are named individually), while billing itself is per-org.
 	exemptUsers := os.Getenv("BALANCE_EXEMPT_USERS")
 	userKey := user.Owner + "/" + user.Name
+	orgKey := user.Owner // billing is per-org: one credit covers the whole org
 	isExempt := false
 	if exemptUsers != "" {
 		for _, u := range strings.Split(exemptUsers, ",") {
-			if strings.TrimSpace(u) == userKey {
+			t := strings.TrimSpace(u)
+			if t == userKey || t == orgKey {
 				isExempt = true
 				break
 			}
@@ -382,8 +393,8 @@ func resolveProviderForUser(user *iam.User, requestedModel string, lang string) 
 		// All models require prepaid balance. New accounts receive a $5 starter
 		// credit that works only for non-premium (DO-AI) models.
 		// Premium models (Fireworks, OpenAI Direct, Zen) require the user to
-		// have added funds beyond the starter credit.
-		balance, err := getUserBalance(userKey)
+		// have added funds beyond the starter credit. Balance is per-org.
+		balance, err := getUserBalance(orgKey)
 		if err != nil {
 			return nil, user, "", fmt.Errorf("failed to verify account balance: %s", err.Error())
 		}
@@ -400,7 +411,7 @@ func resolveProviderForUser(user *iam.User, requestedModel string, lang string) 
 	// Premium models require funds beyond the starter credit.
 	// A balance <= StarterCreditDollars means the user only has free credit.
 	if !isExempt {
-		balance, _ := getUserBalance(userKey)
+		balance, _ := getUserBalance(orgKey)
 		starterCredit := StarterCreditDollars
 		if cfg := GetModelConfig(); cfg != nil {
 			starterCredit = cfg.StarterCreditDollars()
@@ -416,7 +427,7 @@ func resolveProviderForUser(user *iam.User, requestedModel string, lang string) 
 	}
 
 	if !isExempt {
-		bal, _ := getUserBalance(userKey)
+		bal, _ := getUserBalance(orgKey)
 		user.Balance = bal
 	}
 
