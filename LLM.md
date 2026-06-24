@@ -119,7 +119,58 @@ cd web && yarn lint
 |------|---------|
 | `main.go` | Application entry point |
 | `routers/router.go` | All API route definitions |
-| `object/init.go` | Application initialization |
+| `object/init.go` | Application initialization + LLM provider seeding |
 | `conf/app.conf` | Runtime configuration |
 | `web/src/App.js` | Frontend root component |
 | `web/src/backend/` | API client helpers |
+
+## LLM serving path (OpenAI-compatible /v1) — READ THIS
+
+The `ai` module is mounted by `hanzoai/cloud` (HIP-0106). In prod it runs as
+`cloud-api` in `hanzo-k8s`, fronted by `gateway` (api.hanzo.ai). Both
+**hanzo.chat** (LibreChat, `baseURL https://api.hanzo.ai/v1`) and **hanzo.app**
+(build) consume this exact surface.
+
+Request flow for a completion:
+1. `gateway` (api.hanzo.ai) validates the IAM JWT, mints identity headers,
+   forwards `/v1/chat/completions` → `cloud-api:8000`. `/v1/models` is also
+   proxied here; admin endpoints (`/v1/get-providers`, `/v1/update-provider`,
+   `/v1/*-model-route`) are NOT gateway-exposed (use the direct
+   `api.cloud.hanzo.ai` ingress + a session).
+2. `controllers.ApiController.ListModels` (`/v1/models`) **requires a valid
+   Bearer token** — unauthenticated returns 401 with no `data` array (this looks
+   like "0 models"; it is not — authenticate to see the real list).
+3. **Model → provider routing**: `resolveModelRouteForOrg` resolves in order
+   DB routes (`/v1/*-model-route`, per-org → global "admin") → YAML config
+   (`conf/models.yaml`, the `cloud-api-models` ConfigMap — **runtime source of
+   truth in prod**) → static `controllers/model_routes.go` map. The YAML wins,
+   so changing routing live = edit the ConfigMap (then `/v1/reload-model-config`
+   or restart). The static map is the fallback when no YAML is present.
+4. **Provider records** live in the DB (`object/init.go` `initLLMProviders`),
+   keyed by name: `do-ai` (DigitalOcean GenAI, the primary — backs OpenAI/
+   Anthropic/Llama/DeepSeek/Qwen/GLM/Kimi via `inference.do-ai.run`),
+   `fireworks`, `openai-direct`, `zen`. Each call does
+   `object.GetModelProviderByName(route.providerName)` → reads `ClientSecret`.
+5. **Provider keys**: `ClientSecret` is `kms://SECRET_NAME`. `ResolveProviderSecret`
+   (`object/kms.go`) resolves it **env-var-first** (`os.Getenv(SECRET_NAME)`),
+   falling back to a real KMS call — BUT only runs when `kms != nil`, which needs
+   `KMS_CLIENT_ID` or `KMS_SERVICE_TOKEN` set. So the working prod recipe is:
+   set `KMS_CLIENT_ID` (flips kms on) + provide `DO_AI_API_KEY`/`OPENAI_API_KEY`/
+   `ANTHROPIC_API_KEY`/`FIREWORKS_API_KEY` as env (from a K8s secret sourced from
+   KMS-managed values). The env-first path means no live KMS dependency on the
+   hot path.
+6. **Provider re-seed self-heals** `ClientSecret`/`ProviderUrl`/`State`/`Type`/
+   `SubType` on every boot from the `initLLMProviders` table — so fixing a stale
+   key or upstream URL = edit the seed table and restart (no manual DB edit).
+
+**zen models**: branded, `owned_by: hanzo`, `premium: true`. Route to `do-ai`
+upstreams (qwen3+/glm/kimi/deepseek — same working key, no GPU). Identity is
+injected at call time via `zenIdentityPrompt`; upstream names are never exposed.
+Do NOT route zen to Fireworks serverless paths (`accounts/fireworks/models/*`) —
+that account returns 404 "not deployed" for most of them.
+
+**Billing gate** (`routers/filter_balance.go` + `openai_api.go`): non-premium
+models need balance > 0; premium models need balance > starter credit. Balance
+comes from `commerce` at `/v1/billing/balance?user=<org>&currency=usd`. Users in
+`BALANCE_EXEMPT_USERS` (e.g. `hanzo/z`) bypass ALL gates — use the
+`z@hanzo.ai` token to verify premium/zen without a credited org.
