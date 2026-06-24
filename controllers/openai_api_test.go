@@ -15,7 +15,10 @@
 package controllers
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -119,5 +122,42 @@ func TestValidateWidgetKeyNoConfig(t *testing.T) {
 	// Without KMS or env vars, all keys should be rejected
 	if validateWidgetKey("hz_widget_public") {
 		t.Error("validateWidgetKey should reject all keys when WIDGET_KEYS is not configured")
+	}
+}
+
+// TestGetUserByAccessKeyUsesCanonicalPath locks the regression that broke hk-
+// API-key resolution: the lookup MUST hit IAM's canonical /v1/iam/get-user,
+// never the legacy /api/get-user (which the @hanzo/id SPA ingress serves as
+// HTML, producing "invalid character '<'" on JSON decode). It also asserts the
+// resolved org owner is parsed back out.
+func TestGetUserByAccessKeyUsesCanonicalPath(t *testing.T) {
+	var gotPath, gotAccessKey string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotAccessKey = r.URL.Query().Get("accessKey")
+		w.Header().Set("Content-Type", "application/json")
+		// Mirror IAM's get-user shape: status:ok + data:{owner,name}.
+		_, _ = w.Write([]byte(`{"status":"ok","msg":"","data":{"owner":"maxpower","name":"maxpower"}}`))
+	}))
+	defer srv.Close()
+
+	os.Setenv("IAM_URL", srv.URL)
+	defer os.Unsetenv("IAM_URL")
+
+	user, err := getUserByAccessKey("hk-canonical-test")
+	if err != nil {
+		t.Fatalf("getUserByAccessKey returned error: %v", err)
+	}
+	if gotPath != "/v1/iam/get-user" {
+		t.Errorf("IAM path = %q, want /v1/iam/get-user (must NOT use legacy /api/get-user)", gotPath)
+	}
+	if strings.HasPrefix(gotPath, "/api/") {
+		t.Errorf("IAM path %q uses the legacy /api/ alias — forbidden, breaks hk- resolution via SPA ingress", gotPath)
+	}
+	if gotAccessKey != "hk-canonical-test" {
+		t.Errorf("accessKey query = %q, want hk-canonical-test", gotAccessKey)
+	}
+	if user == nil || user.Owner != "maxpower" {
+		t.Errorf("resolved user owner = %+v, want owner=maxpower (the billing org)", user)
 	}
 }

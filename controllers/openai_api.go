@@ -468,7 +468,13 @@ func getUserByAccessKey(accessKey string) (*iam.User, error) {
 	}
 	iamEndpoint = strings.TrimRight(iamEndpoint, "/")
 
-	reqURL := fmt.Sprintf("%s/api/get-user?accessKey=%s%s", iamEndpoint, url.QueryEscape(accessKey), iamAuthQuery())
+	// Per global rule: /v1/ only, never /api/. IAM serves at /v1/iam/get-user.
+	// The legacy /api/get-user path is intercepted by the @hanzo/id SPA ingress
+	// and returns HTML, which broke hk- API-key resolution ("invalid character
+	// '<'"). iamAuthQuery() appends clientId/clientSecret so the IAM
+	// AutoSigninFilter authenticates this service call (the accessKey lookup
+	// requires an authenticated caller).
+	reqURL := fmt.Sprintf("%s/v1/iam/get-user?accessKey=%s%s", iamEndpoint, url.QueryEscape(accessKey), iamAuthQuery())
 
 	client := &http.Client{Timeout: 10 * time.Second}
 	req, err := http.NewRequest(http.MethodGet, reqURL, nil)
@@ -486,8 +492,8 @@ func getUserByAccessKey(accessKey string) (*iam.User, error) {
 	}
 
 	var result struct {
-		Status string       `json:"status"`
-		Msg    string       `json:"msg"`
+		Status string    `json:"status"`
+		Msg    string    `json:"msg"`
 		Data   *iam.User `json:"data"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
