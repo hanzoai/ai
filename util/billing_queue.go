@@ -61,7 +61,7 @@ func billingBackoff(attempt int) time.Duration {
 type BillingRecord struct {
 	Body      []byte // JSON payload, serialized by the caller
 	RequestID string // for structured logging on failure
-	User      string // "owner/name" for structured logging
+	Org       string // IAM org slug — billing key + X-Hanzo-Org namespace scope
 	Model     string // model name for structured logging
 }
 
@@ -104,8 +104,8 @@ func (q *BillingQueue) Enqueue(record *BillingRecord) {
 	select {
 	case q.ch <- record:
 	default:
-		logs.Error("billing_queue: dropped record user=%s model=%s request_id=%s (queue full)",
-			record.User, record.Model, record.RequestID)
+		logs.Error("billing_queue: dropped record org=%s model=%s request_id=%s (queue full)",
+			record.Org, record.Model, record.RequestID)
 	}
 }
 
@@ -171,24 +171,26 @@ func (q *BillingQueue) deliver(record *BillingRecord) {
 			}
 		}
 
-		err := q.post(url, record.Body)
+		err := q.post(url, record.Org, record.Body)
 		if err == nil {
 			return
 		}
 
-		logs.Warning("billing_queue: attempt %d/%d failed user=%s model=%s request_id=%s: %v",
-			attempt+1, billingMaxRetries, record.User, record.Model, record.RequestID, err)
+		logs.Warning("billing_queue: attempt %d/%d failed org=%s model=%s request_id=%s: %v",
+			attempt+1, billingMaxRetries, record.Org, record.Model, record.RequestID, err)
 	}
 
-	logs.Error("billing_queue: permanently failed user=%s model=%s request_id=%s after %d attempts",
-		record.User, record.Model, record.RequestID, billingMaxRetries)
+	logs.Error("billing_queue: permanently failed org=%s model=%s request_id=%s after %d attempts",
+		record.Org, record.Model, record.RequestID, billingMaxRetries)
 }
 
-// post sends a single HTTP POST to the Commerce billing endpoint.
+// post sends a single HTTP POST to the Commerce billing endpoint. The org slug
+// scopes the service-token call to that org's namespace via X-Hanzo-Org, so the
+// usage debit lands in the same per-org balance the credit and gate use.
 // Returns nil on 2xx, a retryable error on 5xx/network errors, and a
 // non-retryable error on 4xx (which will still be retried — Commerce
 // should not return 4xx for valid records, so retrying is safer than dropping).
-func (q *BillingQueue) post(url string, body []byte) error {
+func (q *BillingQueue) post(url, org string, body []byte) error {
 	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("build request: %w", err)
@@ -196,6 +198,9 @@ func (q *BillingQueue) post(url string, body []byte) error {
 	req.Header.Set("Content-Type", "application/json")
 	if q.token != "" {
 		req.Header.Set("Authorization", "Bearer "+q.token)
+	}
+	if org != "" {
+		req.Header.Set("X-Hanzo-Org", org)
 	}
 
 	resp, err := q.client.Do(req)

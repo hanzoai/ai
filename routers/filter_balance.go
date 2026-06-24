@@ -85,8 +85,8 @@ type BalanceGate struct {
 	mu      sync.RWMutex
 	entries map[string]*balanceCacheEntry
 
-	// userKeyCache maps Bearer token -> "owner/name" to avoid re-parsing
-	// JWTs or re-calling IAM on every request for the same token.
+	// userKeyCache maps Bearer token -> org slug (billing key) to avoid
+	// re-parsing JWTs or re-calling IAM on every request for the same token.
 	userKeyMu    sync.RWMutex
 	userKeyCache map[string]*userKeyCacheEntry
 
@@ -104,7 +104,7 @@ type BalanceGate struct {
 	clientSecret string // IAM application client secret
 }
 
-// userKeyCacheEntry maps an API token to the resolved "owner/name" user key.
+// userKeyCacheEntry maps an API token to the resolved org slug (billing key).
 type userKeyCacheEntry struct {
 	userKey   string
 	fetchedAt time.Time
@@ -177,19 +177,19 @@ func BalanceGateFilter(ctx *context.Context) {
 		return
 	}
 
-	userKey := resolveUserKey(ctx)
-	if userKey == "" {
-		// Cannot identify user — let downstream auth filters handle rejection.
+	orgKey := resolveBillingKey(ctx)
+	if orgKey == "" {
+		// Cannot identify org — let downstream auth filters handle rejection.
 		return
 	}
 
-	sufficient, balance := balanceGate.checkBalance(userKey)
+	sufficient, balance := balanceGate.checkBalance(orgKey)
 	if sufficient {
 		return
 	}
 
-	logs.Info("balance_gate: insufficient balance user=%s balance_cents=%d path=%s",
-		userKey, balance, path)
+	logs.Info("balance_gate: insufficient balance org=%s balance_cents=%d path=%s",
+		orgKey, balance, path)
 
 	ctx.ResponseWriter.Header().Set("Content-Type", "application/json")
 	ctx.ResponseWriter.WriteHeader(http.StatusPaymentRequired)
@@ -223,18 +223,23 @@ func isBalanceExempt(path string) bool {
 	}
 }
 
-// resolveUserKey extracts the "owner/name" user key from the request context.
+// resolveBillingKey extracts the billing key from the request context. Billing
+// is PER-ORG: the key is the IAM org slug (the `owner` claim), so a single
+// per-org credit covers every service and every member of that org. This is the
+// one place the billing identity is derived; recordUsage debits the same key,
+// and both stamp X-Hanzo-Org so Commerce scopes to that org's namespace.
+//
 // It checks three sources in order:
 //  1. Session user (set by AutoSigninFilter for legacy auth)
 //  2. JWT Bearer token (parsed locally, no network call)
 //  3. IAM API key (hk- prefix, resolved via cached IAM lookup)
 //
-// Returns "" if the user cannot be identified (fail-open: filter skips).
-func resolveUserKey(ctx *context.Context) string {
+// Returns "" if the org cannot be identified (fail-open: filter skips).
+func resolveBillingKey(ctx *context.Context) string {
 	// Source 1: session user from AutoSigninFilter.
 	user := GetSessionUser(ctx)
-	if user != nil && user.Owner != "" && user.Name != "" {
-		return user.Owner + "/" + user.Name
+	if user != nil && user.Owner != "" {
+		return user.Owner
 	}
 
 	// Source 2/3: Bearer token.
@@ -244,7 +249,7 @@ func resolveUserKey(ctx *context.Context) string {
 	}
 
 	// Provider keys (sk-), publishable keys (pk-), and widget keys (hz_)
-	// don't map to IAM users with Commerce balances — skip.
+	// don't map to IAM orgs with Commerce balances — skip.
 	if strings.HasPrefix(token, "sk-") || strings.HasPrefix(token, "pk-") || strings.HasPrefix(token, "hz_") {
 		return ""
 	}
@@ -254,7 +259,7 @@ func resolveUserKey(ctx *context.Context) string {
 		return ""
 	}
 
-	// Check user key cache first.
+	// Check key cache first.
 	if cached := balanceGate.getUserKeyCached(token); cached != "" {
 		return cached
 	}
@@ -265,21 +270,20 @@ func resolveUserKey(ctx *context.Context) string {
 		if err != nil {
 			return ""
 		}
-		userKey := claims.User.Owner + "/" + claims.User.Name
-		if claims.User.Owner != "" && claims.User.Name != "" {
-			balanceGate.setUserKeyCache(token, userKey)
-			return userKey
+		if claims.User.Owner != "" {
+			balanceGate.setUserKeyCache(token, claims.User.Owner)
+			return claims.User.Owner
 		}
 		return ""
 	}
 
 	// IAM API key (hk- prefix): resolve via IAM (cached).
 	if strings.HasPrefix(token, "hk-") {
-		userKey := balanceGate.resolveIAMKeyUser(token)
-		if userKey != "" {
-			balanceGate.setUserKeyCache(token, userKey)
+		orgKey := balanceGate.resolveIAMKeyOrg(token)
+		if orgKey != "" {
+			balanceGate.setUserKeyCache(token, orgKey)
 		}
-		return userKey
+		return orgKey
 	}
 
 	return ""
@@ -366,10 +370,13 @@ type commerceBalanceResponse struct {
 	Available int64 `json:"available"`
 }
 
-// fetchBalance calls Commerce to get the current balance for a user.
+// fetchBalance calls Commerce to get the current balance for an org. Billing is
+// per-org: orgKey is the IAM org slug, used both as the balance destination key
+// (?user=) and as the namespace selector (X-Hanzo-Org). Both must match what
+// the deposit/usage writes use, so one per-org credit is the balance read here.
 // Per global rule: /v1/ only, never /api/. Commerce serves /v1/billing/balance.
-func (bg *BalanceGate) fetchBalance(userKey string) (int64, error) {
-	balanceURL := fmt.Sprintf("%s/v1/billing/balance?user=%s&currency=usd", bg.endpoint, url.QueryEscape(userKey))
+func (bg *BalanceGate) fetchBalance(orgKey string) (int64, error) {
+	balanceURL := fmt.Sprintf("%s/v1/billing/balance?user=%s&currency=usd", bg.endpoint, url.QueryEscape(orgKey))
 
 	req, err := http.NewRequest(http.MethodGet, balanceURL, nil)
 	if err != nil {
@@ -378,6 +385,9 @@ func (bg *BalanceGate) fetchBalance(userKey string) (int64, error) {
 	if bg.token != "" {
 		req.Header.Set("Authorization", "Bearer "+bg.token)
 	}
+	// Scope the service-token call to this org's namespace (commerce reads
+	// X-Hanzo-Org on the service-token path; absent => "hanzo" default).
+	req.Header.Set("X-Hanzo-Org", orgKey)
 
 	resp, err := bg.client.Do(req)
 	if err != nil {
@@ -433,9 +443,10 @@ type iamUserResponse struct {
 	} `json:"data"`
 }
 
-// resolveIAMKeyUser calls IAM to resolve an hk- API key to an "owner/name"
-// user key. Returns "" on any error (fail-open).
-func (bg *BalanceGate) resolveIAMKeyUser(apiKey string) string {
+// resolveIAMKeyOrg calls IAM to resolve an hk- API key to its org slug (the
+// `owner`). Billing is per-org, so only the owner is needed. Returns "" on any
+// error (fail-open).
+func (bg *BalanceGate) resolveIAMKeyOrg(apiKey string) string {
 	if bg.iamEndpoint == "" {
 		return ""
 	}
@@ -476,11 +487,11 @@ func (bg *BalanceGate) resolveIAMKeyUser(apiKey string) string {
 		return ""
 	}
 
-	if result.Data.Owner == "" || result.Data.Name == "" {
+	if result.Data.Owner == "" {
 		return ""
 	}
 
-	return result.Data.Owner + "/" + result.Data.Name
+	return result.Data.Owner
 }
 
 // ── Cleanup ─────────────────────────────────────────────────────────────────
