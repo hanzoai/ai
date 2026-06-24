@@ -117,7 +117,7 @@ Every request generates a `UsageRecord` sent async to IAM:
 
 ## KMS Integration
 
-Provider API keys are stored in Infisical (Hanzo KMS) and resolved at runtime:
+Provider API keys are stored in Hanzo KMS and resolved at runtime:
 
 ```
 Provider.ClientSecret = "kms://DO_AI_API_KEY"
@@ -190,6 +190,6 @@ Engine exposes an MCP server on `--mcp-port`. Node connects to Engine as MCP cli
 
 - **Gateway**: [`hanzoai/cloud`](https://github.com/hanzoai/cloud) — `controllers/openai_api.go`, `controllers/model_routes.go`
 - **IAM**: [`hanzoai/iam`](https://github.com/hanzoai/iam) — `object/usage.go`, `controllers/usage.go`
-- **KMS**: [`hanzoai/kms`](https://github.com/hanzoai/kms) — Infisical fork
+- **KMS**: [`hanzoai/kms`](https://github.com/hanzoai/kms) — luxfi/kms MPC backend
 - **Engine**: [`hanzoai/engine`](https://github.com/hanzoai/engine) — mistral.rs fork with MCP server
 - **Node**: [`hanzoai/node`](https://github.com/hanzoai/node) — AI agent platform with MCP client
