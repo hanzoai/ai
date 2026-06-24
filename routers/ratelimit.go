@@ -20,6 +20,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -246,22 +247,27 @@ func RateLimitFilter(ctx *context.Context) {
 		return
 	}
 
-	if rateLimiterInstance.Allow(apiKey) {
+	// Rate-limit PER-ORG, keyed by the IAM org slug — the SAME identity the
+	// balance gate bills against (resolveBillingKey is the one place this is
+	// derived). This makes a paid org's tier apply to every key and member of
+	// that org, and lets the Commerce tier lookup query ?user=<org>. When no
+	// org resolves (anonymous, sk-/pk- provider keys, JWT without owner), fall
+	// back to the raw key so that traffic is still bucketed at the free tier.
+	limitKey := resolveBillingKey(ctx)
+	if limitKey == "" {
+		limitKey = apiKey
+	}
+
+	if rateLimiterInstance.Allow(limitKey) {
 		return
 	}
 
 	// Rate limit exceeded — log and respond with 429.
-	retryAfter := rateLimiterInstance.RetryAfter(apiKey)
+	retryAfter := rateLimiterInstance.RetryAfter(limitKey)
 	allowed, denied := rateLimiterInstance.Metrics()
 
-	// Mask the key for structured logging (show first 6 chars).
-	maskedKey := apiKey
-	if len(maskedKey) > 6 {
-		maskedKey = maskedKey[:6] + "..."
-	}
-
 	logs.Info("rate_limit_exceeded key=%s path=%s retry_after=%d total_allowed=%d total_denied=%d",
-		maskedKey, path, retryAfter, allowed, denied)
+		maskKey(limitKey), path, retryAfter, allowed, denied)
 
 	ctx.ResponseWriter.Header().Set("Retry-After", fmt.Sprintf("%d", retryAfter))
 	ctx.ResponseWriter.Header().Set("X-RateLimit-Remaining", "0")
@@ -317,42 +323,47 @@ func extractAPIKey(ctx *context.Context) string {
 
 // ── Tier resolution ─────────────────────────────────────────────────────────
 
-// DefaultTierFunc resolves an API key to a Tier using a three-level lookup:
+// DefaultTierFunc resolves a rate-limit key to a Tier using a three-level
+// lookup. The key is the IAM org slug (resolved by RateLimitFilter via
+// resolveBillingKey) for authenticated traffic, or a raw API key for anonymous
+// traffic — both flow through the same path:
 //
 //  1. Static env-var overrides (RATE_LIMIT_TIERS) -- highest priority, for
-//     operator-managed key-to-tier mappings. Supports exact and prefix matching.
-//  2. Commerce tier cache -- backed by async lookups to Commerce billing API.
-//     On cache hit, the cached tier is returned immediately. On cache miss,
-//     TierZenFree is returned and a background goroutine populates the cache
-//     so the next request for this key uses the correct tier.
+//     operator-managed mappings. Supports exact and prefix matching (works for
+//     both org slugs like "acme=zen-enterprise" and key prefixes like "hk-0d2eb").
+//  2. Commerce tier cache -- backed by async lookups to Commerce billing API
+//     (GET /v1/billing/tier?user=<org>). On cache hit, the cached tier is
+//     returned immediately. On cache miss, TierZenFree is returned and a
+//     background goroutine populates the cache so the next request uses the
+//     correct tier.
 //  3. TierZenFree -- default when no override or cache entry exists.
 //
 // This function never blocks on network I/O. Commerce lookups happen
-// asynchronously; the worst case is that a new key's first few requests
+// asynchronously; the worst case is that a new org's first few requests
 // are rate-limited at the free tier until the cache is populated.
-func DefaultTierFunc(apiKey string) Tier {
+func DefaultTierFunc(key string) Tier {
 	// Level 1: static env-var overrides (highest priority).
 	tierMap := parseTierConfig()
 	if tierMap != nil {
 		// Exact match first.
-		if t, ok := tierMap[apiKey]; ok {
+		if t, ok := tierMap[key]; ok {
 			return t
 		}
 		// Prefix match: "hk-0d2eb=zen-enterprise" matches "hk-0d2eb9cfafd0...".
 		for prefix, t := range tierMap {
-			if strings.HasPrefix(apiKey, prefix) {
+			if strings.HasPrefix(key, prefix) {
 				return t
 			}
 		}
 	}
 
-	// Level 2: Commerce-backed tier cache.
+	// Level 2: Commerce-backed tier cache (keyed by org slug).
 	if tierCache != nil {
-		if tier, ok := tierCache.get(apiKey); ok {
+		if tier, ok := tierCache.get(key); ok {
 			return tier
 		}
 		// Cache miss: return TierZenFree now, populate cache asynchronously.
-		tierCache.refreshAsync(apiKey)
+		tierCache.refreshAsync(key)
 	}
 
 	// Level 3: default.
@@ -523,26 +534,37 @@ func (tc *TierCache) cleanupLoop() {
 	}
 }
 
-// commercePlanResponse is the expected JSON shape from the Commerce tier endpoint.
-type commercePlanResponse struct {
-	Plan string `json:"plan"`
+// commerceTierResponse mirrors the JSON shape of GET /v1/billing/tier
+// (commerce api/billing/tier.go GetTier): the plan name lives at tier.name.
+type commerceTierResponse struct {
+	Tier struct {
+		Name string `json:"name"`
+	} `json:"tier"`
 }
 
-// commerceTierLookup calls Commerce to resolve the billing plan for an API key
-// and maps the plan name to a rate limit Tier. Returns TierZenFree on any error
-// (fail-open: rate limiting should never deny service because Commerce is down).
-func (tc *TierCache) commerceTierLookup(apiKey string) (Tier, error) {
-	// All commerce endpoints live under /v1/. Canonical path
-	// is /billing/tier.
-	url := fmt.Sprintf("%s/v1/billing/tier?apiKey=%s", tc.endpoint, apiKey)
+// commerceTierLookup calls Commerce to resolve the billing plan for an IAM org
+// and maps the plan name to a rate limit Tier. The orgKey is the IAM org slug
+// (the `owner` claim) — the SAME key the balance gate bills against — so rate
+// limiting and billing share one identity and one namespace. Commerce keys tier
+// by ?user=<org>; passing anything else returns 400 "user query parameter is
+// required" and silently falls back to the free tier (the bug this fixes).
+// Returns TierZenFree on any error (fail-open: rate limiting must never deny
+// service because Commerce is down).
+func (tc *TierCache) commerceTierLookup(orgKey string) (Tier, error) {
+	// All commerce endpoints live under /v1/. Canonical path is /billing/tier,
+	// keyed by the org slug as the `user` query parameter.
+	endpoint := fmt.Sprintf("%s/v1/billing/tier?user=%s", tc.endpoint, url.QueryEscape(orgKey))
 
-	req, err := http.NewRequest(http.MethodGet, url, nil)
+	req, err := http.NewRequest(http.MethodGet, endpoint, nil)
 	if err != nil {
 		return TierZenFree, fmt.Errorf("build request: %w", err)
 	}
 	if tc.token != "" {
 		req.Header.Set("Authorization", "Bearer "+tc.token)
 	}
+	// Scope commerce to this org's namespace (matches the balance gate's
+	// X-Hanzo-Org stamping so the tier is read from the right tenant).
+	req.Header.Set("X-Hanzo-Org", orgKey)
 
 	resp, err := tc.client.Do(req)
 	if err != nil {
@@ -557,12 +579,12 @@ func (tc *TierCache) commerceTierLookup(apiKey string) (Tier, error) {
 		return TierZenFree, fmt.Errorf("commerce returned %d", resp.StatusCode)
 	}
 
-	var planResp commercePlanResponse
-	if err := json.NewDecoder(resp.Body).Decode(&planResp); err != nil {
+	var tierResp commerceTierResponse
+	if err := json.NewDecoder(resp.Body).Decode(&tierResp); err != nil {
 		return TierZenFree, fmt.Errorf("decode response: %w", err)
 	}
 
-	return mapPlanToTier(planResp.Plan), nil
+	return mapPlanToTier(tierResp.Tier.Name), nil
 }
 
 // mapPlanToTier converts a Commerce plan name or legacy tier name to a
