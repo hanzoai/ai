@@ -110,42 +110,45 @@ var modelRoutes = map[string]modelRoute{
 	"openai-direct/o3":          {providerName: "openai-direct", upstreamModel: "o3", premium: true, hidden: true},
 	"openai-direct/o3-mini":     {providerName: "openai-direct", upstreamModel: "o3-mini", premium: true, hidden: true},
 
-	// ── Zen branded models (14 premium) ─────────────────────────────────
-	// Routes to Fireworks via the "fireworks" provider. Identity injection
-	// happens in ChatCompletions via zenIdentityPrompt().
+	// ── Zen branded models ───────────────────────────────────────────────
+	// Routes to DigitalOcean GenAI ("do-ai" provider) — the same working
+	// upstream that backs the OpenAI/Anthropic models, so zen needs no extra
+	// key and no GPU node. Upstreams are the Qwen3+/GLM/Kimi/DeepSeek families
+	// (qwen3+ per convention). Identity injection happens in ChatCompletions
+	// via zenIdentityPrompt(); upstream names are never exposed.
 	//
 	// Zen4 generation
-	"zen4":             {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/glm-5", premium: true, ownedBy: "hanzo"},
-	"zen4-ultra":       {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/kimi-k2-thinking", premium: true, ownedBy: "hanzo"},
-	"zen4-pro":         {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/kimi-k2p5", premium: true, ownedBy: "hanzo"},
-	"zen4-max":         {providerName: "fireworks", upstreamModel: "accounts/cogito/models/cogito-671b-v2-p1", premium: true, ownedBy: "hanzo"},
-	"zen4-mini":        {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/qwen3-8b", premium: true, ownedBy: "hanzo"},
-	"zen4-thinking":    {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/kimi-k2-thinking", premium: true, ownedBy: "hanzo"},
-	"zen4-coder":       {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/deepseek-v3p2", premium: true, ownedBy: "hanzo"},
-	"zen4-coder-pro":   {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/gpt-oss-120b", premium: true, ownedBy: "hanzo"},
-	"zen4-coder-flash": {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/kimi-k2-instruct-0905", premium: true, ownedBy: "hanzo"},
+	"zen4":             {providerName: "do-ai", upstreamModel: "glm-5", premium: true, ownedBy: "hanzo"},
+	"zen4-ultra":       {providerName: "do-ai", upstreamModel: "deepseek-v4-pro", premium: true, ownedBy: "hanzo"},
+	"zen4-pro":         {providerName: "do-ai", upstreamModel: "qwen3.5-397b-a17b", premium: true, ownedBy: "hanzo"},
+	"zen4-max":         {providerName: "do-ai", upstreamModel: "kimi-k2.6", premium: true, ownedBy: "hanzo"},
+	"zen4-mini":        {providerName: "do-ai", upstreamModel: "alibaba-qwen3-32b", premium: true, ownedBy: "hanzo"},
+	"zen4-thinking":    {providerName: "do-ai", upstreamModel: "deepseek-v4-pro", premium: true, ownedBy: "hanzo"},
+	"zen4-coder":       {providerName: "do-ai", upstreamModel: "qwen3-coder-flash", premium: true, ownedBy: "hanzo"},
+	"zen4-coder-pro":   {providerName: "do-ai", upstreamModel: "glm-5.2", premium: true, ownedBy: "hanzo"},
+	"zen4-coder-flash": {providerName: "do-ai", upstreamModel: "qwen3-coder-flash", premium: true, ownedBy: "hanzo"},
 	// Zen3 generation
-	"zen3-omni":      {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/glm-4p7", premium: true, ownedBy: "hanzo"},
-	"zen3-vl":        {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/qwen3-vl-30b-a3b-instruct", premium: true, ownedBy: "hanzo"},
-	"zen3-nano":      {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/qwen3-8b", premium: true, ownedBy: "hanzo"},
-	"zen3-guard":     {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/mixtral-8x22b-instruct", premium: true, ownedBy: "hanzo"},
-	"zen3-embedding": {providerName: "openai-direct", upstreamModel: "text-embedding-3-large", premium: true, ownedBy: "hanzo"},
+	"zen3-omni":      {providerName: "do-ai", upstreamModel: "glm-5", premium: true, ownedBy: "hanzo"},
+	"zen3-vl":        {providerName: "do-ai", upstreamModel: "nemotron-nano-12b-v2-vl", premium: true, ownedBy: "hanzo"},
+	"zen3-nano":      {providerName: "do-ai", upstreamModel: "alibaba-qwen3-32b", premium: true, ownedBy: "hanzo"},
+	"zen3-guard":     {providerName: "do-ai", upstreamModel: "llama3.3-70b-instruct", premium: true, ownedBy: "hanzo"},
+	"zen3-embedding": {providerName: "do-ai", upstreamModel: "qwen3-embedding-0.6b", premium: true, ownedBy: "hanzo"},
 
 	// ── Zen versionless aliases (always point to latest zenN variant) ──
-	"zen":             {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/glm-5", premium: true, ownedBy: "hanzo", hidden: true},
-	"zen-pro":         {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/kimi-k2p5", premium: true, ownedBy: "hanzo", hidden: true},
-	"zen-max":         {providerName: "fireworks", upstreamModel: "accounts/cogito/models/cogito-671b-v2-p1", premium: true, ownedBy: "hanzo", hidden: true},
-	"zen-mini":        {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/qwen3-8b", premium: true, ownedBy: "hanzo", hidden: true},
-	"zen-ultra":       {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/kimi-k2-thinking", premium: true, ownedBy: "hanzo", hidden: true},
-	"zen-coder":       {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/deepseek-v3p2", premium: true, ownedBy: "hanzo", hidden: true},
-	"zen-coder-flash": {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/kimi-k2-instruct-0905", premium: true, ownedBy: "hanzo", hidden: true},
-	"zen-coder-pro":   {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/gpt-oss-120b", premium: true, ownedBy: "hanzo", hidden: true},
-	"zen-thinking":    {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/kimi-k2-thinking", premium: true, ownedBy: "hanzo", hidden: true},
-	"zen-vl":          {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/qwen3-vl-30b-a3b-instruct", premium: true, ownedBy: "hanzo", hidden: true},
-	"zen-nano":        {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/qwen3-8b", premium: true, ownedBy: "hanzo", hidden: true},
-	"zen-omni":        {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/glm-4p7", premium: true, ownedBy: "hanzo", hidden: true},
-	"zen-guard":       {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/mixtral-8x22b-instruct", premium: true, ownedBy: "hanzo", hidden: true},
-	"zen-embedding":   {providerName: "openai-direct", upstreamModel: "text-embedding-3-large", premium: true, ownedBy: "hanzo", hidden: true},
+	"zen":             {providerName: "do-ai", upstreamModel: "glm-5", premium: true, ownedBy: "hanzo", hidden: true},
+	"zen-pro":         {providerName: "do-ai", upstreamModel: "qwen3.5-397b-a17b", premium: true, ownedBy: "hanzo", hidden: true},
+	"zen-max":         {providerName: "do-ai", upstreamModel: "kimi-k2.6", premium: true, ownedBy: "hanzo", hidden: true},
+	"zen-mini":        {providerName: "do-ai", upstreamModel: "alibaba-qwen3-32b", premium: true, ownedBy: "hanzo", hidden: true},
+	"zen-ultra":       {providerName: "do-ai", upstreamModel: "deepseek-v4-pro", premium: true, ownedBy: "hanzo", hidden: true},
+	"zen-coder":       {providerName: "do-ai", upstreamModel: "qwen3-coder-flash", premium: true, ownedBy: "hanzo", hidden: true},
+	"zen-coder-flash": {providerName: "do-ai", upstreamModel: "qwen3-coder-flash", premium: true, ownedBy: "hanzo", hidden: true},
+	"zen-coder-pro":   {providerName: "do-ai", upstreamModel: "glm-5.2", premium: true, ownedBy: "hanzo", hidden: true},
+	"zen-thinking":    {providerName: "do-ai", upstreamModel: "deepseek-v4-pro", premium: true, ownedBy: "hanzo", hidden: true},
+	"zen-vl":          {providerName: "do-ai", upstreamModel: "nemotron-nano-12b-v2-vl", premium: true, ownedBy: "hanzo", hidden: true},
+	"zen-nano":        {providerName: "do-ai", upstreamModel: "alibaba-qwen3-32b", premium: true, ownedBy: "hanzo", hidden: true},
+	"zen-omni":        {providerName: "do-ai", upstreamModel: "glm-5", premium: true, ownedBy: "hanzo", hidden: true},
+	"zen-guard":       {providerName: "do-ai", upstreamModel: "llama3.3-70b-instruct", premium: true, ownedBy: "hanzo", hidden: true},
+	"zen-embedding":   {providerName: "do-ai", upstreamModel: "qwen3-embedding-0.6b", premium: true, ownedBy: "hanzo", hidden: true},
 }
 
 // zenIdentityPrompts maps user-facing zen model names to their identity prompts.
