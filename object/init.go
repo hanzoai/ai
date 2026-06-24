@@ -204,7 +204,7 @@ func initLLMProviders() {
 			Type:         "DigitalOcean",
 			SubType:      "gpt-4o",
 			ProviderUrl:  "https://inference.do-ai.run/v1",
-			ClientSecret: conf.GetConfigString("doAiApiKey"),
+			ClientSecret: "kms://DO_AI_API_KEY",
 			State:        "Active",
 		},
 		{
@@ -232,12 +232,12 @@ func initLLMProviders() {
 		{
 			Owner:        "admin",
 			Name:         "zen",
-			DisplayName:  "Zen LM Gateway",
+			DisplayName:  "Zen LM (Hanzo)",
 			Category:     "Model",
 			Type:         "DigitalOcean",
-			SubType:      "zen4",
-			ProviderUrl:  "http://zen-gateway.zen.svc.cluster.local:4100/v1",
-			ClientSecret: "kms://ZEN_GATEWAY_KEY",
+			SubType:      "glm-5",
+			ProviderUrl:  "https://inference.do-ai.run/v1",
+			ClientSecret: "kms://DO_AI_API_KEY",
 			State:        "Active",
 		},
 	}
@@ -248,7 +248,11 @@ func initLLMProviders() {
 			continue
 		}
 		if existing != nil {
-			// Ensure the provider type and model match the canonical definition.
+			// Ensure the provider type, model, endpoint, and secret reference
+			// match the canonical definition. This lets us re-point a provider
+			// (e.g. a stale upstream URL or an empty/expired secret) by editing
+			// the seed table — the record self-heals on the next boot instead of
+			// requiring a manual DB edit.
 			needsUpdate := false
 			if existing.Type != p.Type {
 				fmt.Printf("[init] Fixing provider %q type: %q -> %q\n", p.Name, existing.Type, p.Type)
@@ -258,6 +262,23 @@ func initLLMProviders() {
 			if existing.SubType != p.SubType {
 				fmt.Printf("[init] Fixing provider %q model: %q -> %q\n", p.Name, existing.SubType, p.SubType)
 				existing.SubType = p.SubType
+				needsUpdate = true
+			}
+			if p.ProviderUrl != "" && existing.ProviderUrl != p.ProviderUrl {
+				fmt.Printf("[init] Fixing provider %q url: %q -> %q\n", p.Name, existing.ProviderUrl, p.ProviderUrl)
+				existing.ProviderUrl = p.ProviderUrl
+				needsUpdate = true
+			}
+			// Re-sync the secret only when the canonical value is a KMS reference
+			// (resolved at call time) and the stored value differs. Never clobber
+			// a real stored secret with an empty seed value.
+			if p.ClientSecret != "" && existing.ClientSecret != p.ClientSecret {
+				fmt.Printf("[init] Fixing provider %q secret reference -> %q\n", p.Name, p.ClientSecret)
+				existing.ClientSecret = p.ClientSecret
+				needsUpdate = true
+			}
+			if p.State != "" && existing.State != p.State {
+				existing.State = p.State
 				needsUpdate = true
 			}
 			if needsUpdate {
