@@ -95,7 +95,7 @@ ZAP defines the fast native path from API gateway to AI inference:
 - **Three auth modes**: IAM API key (`hk-*`), JWT (hanzo.id OAuth), Provider key (`sk-*`)
 - **Static model routing** — 66+ models mapped to 3 upstream providers in pure Go
 - **Per-request usage tracking** — async fire-and-forget to IAM
-- **KMS-resolved secrets** — provider API keys from Infisical with org-scoped projects
+- **KMS-resolved secrets** — provider API keys from Hanzo KMS with org-scoped projects
 - **Zero Python** — no legacy proxy middleware, no extra hops
 
 ## Supported Models
@@ -140,8 +140,8 @@ Set via `conf/app.conf` or environment variables:
 | `clientId` | IAM OAuth client ID for cloud |
 | `clientSecret` | IAM OAuth client secret for cloud |
 | `dataSourceName` | Database DSN (do not commit; inject via KMS-managed secret) |
-| `KMS_CLIENT_ID` | Infisical Universal Auth client ID |
-| `KMS_CLIENT_SECRET` | Infisical Universal Auth client secret |
+| `KMS_CLIENT_ID` | KMS Universal Auth client ID |
+| `KMS_CLIENT_SECRET` | KMS Universal Auth client secret |
 | `KMS_PROJECT_ID` | Default KMS project ID |
 | `KMS_ENVIRONMENT` | KMS environment (default: `production`) |
 
