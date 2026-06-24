@@ -552,8 +552,23 @@ func recordUsage(record *usageRecord) {
 		record.CacheReadTokens, record.CacheWriteTokens,
 	)
 
+	// Billing is per-org: the debit is keyed by the org slug (record.Owner),
+	// matching the per-org credit and the balance gate. The full "owner/name"
+	// (record.User) is retained as actor metadata for attribution/audit, not as
+	// the balance key. record.Owner is the IAM `owner` claim; fall back to
+	// deriving it from "owner/name" if Owner was not populated upstream.
+	org := record.Owner
+	if org == "" {
+		if i := strings.IndexByte(record.User, '/'); i > 0 {
+			org = record.User[:i]
+		} else {
+			org = record.User
+		}
+	}
+
 	payload := map[string]interface{}{
-		"user":             record.User,
+		"user":             org,
+		"actor":            record.User,
 		"currency":         "usd",
 		"amount":           costCents,
 		"model":            record.Model,
@@ -579,7 +594,7 @@ func recordUsage(record *usageRecord) {
 	billingQueue.Enqueue(&util.BillingRecord{
 		Body:      body,
 		RequestID: record.RequestID,
-		User:      record.User,
+		Org:       org,
 		Model:     record.Model,
 	})
 }
