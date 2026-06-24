@@ -46,27 +46,27 @@ func TestResolveModelRoute_KnownModels(t *testing.T) {
 		{"openai-direct/gpt-5", "openai-direct", "gpt-5", true},
 		{"openai-direct/o3", "openai-direct", "o3", true},
 
-		// Zen branded premium (routed through Fireworks)
-		{"zen4", "fireworks", "accounts/fireworks/models/glm-5", true},
-		{"zen4-mini", "fireworks", "accounts/fireworks/models/qwen3-8b", true},
-		{"zen4-pro", "fireworks", "accounts/fireworks/models/kimi-k2p5", true},
-		{"zen4-max", "fireworks", "accounts/cogito/models/cogito-671b-v2-p1", true},
-		{"zen4-ultra", "fireworks", "accounts/fireworks/models/kimi-k2-thinking", true},
-		{"zen4-coder", "fireworks", "accounts/fireworks/models/deepseek-v3p2", true},
-		{"zen4-coder-flash", "fireworks", "accounts/fireworks/models/kimi-k2-instruct-0905", true},
-		{"zen4-coder-pro", "fireworks", "accounts/fireworks/models/gpt-oss-120b", true},
-		{"zen4-thinking", "fireworks", "accounts/fireworks/models/kimi-k2-thinking", true},
-		{"zen3-omni", "fireworks", "accounts/fireworks/models/glm-4p7", true},
-		{"zen3-vl", "fireworks", "accounts/fireworks/models/qwen3-vl-30b-a3b-instruct", true},
-		{"zen3-nano", "fireworks", "accounts/fireworks/models/qwen3-8b", true},
-		{"zen3-guard", "fireworks", "accounts/fireworks/models/mixtral-8x22b-instruct", true},
-		{"zen3-embedding", "openai-direct", "text-embedding-3-large", true},
+		// Zen branded premium (routed through DigitalOcean GenAI / "do-ai")
+		{"zen4", "do-ai", "glm-5", true},
+		{"zen4-mini", "do-ai", "alibaba-qwen3-32b", true},
+		{"zen4-pro", "do-ai", "qwen3.5-397b-a17b", true},
+		{"zen4-max", "do-ai", "kimi-k2.6", true},
+		{"zen4-ultra", "do-ai", "deepseek-v4-pro", true},
+		{"zen4-coder", "do-ai", "qwen3-coder-flash", true},
+		{"zen4-coder-flash", "do-ai", "qwen3-coder-flash", true},
+		{"zen4-coder-pro", "do-ai", "glm-5.2", true},
+		{"zen4-thinking", "do-ai", "deepseek-v4-pro", true},
+		{"zen3-omni", "do-ai", "glm-5", true},
+		{"zen3-vl", "do-ai", "nemotron-nano-12b-v2-vl", true},
+		{"zen3-nano", "do-ai", "alibaba-qwen3-32b", true},
+		{"zen3-guard", "do-ai", "llama3.3-70b-instruct", true},
+		{"zen3-embedding", "do-ai", "qwen3-embedding-0.6b", true},
 
 		// Zen versionless aliases → latest zenN
-		{"zen", "fireworks", "accounts/fireworks/models/glm-5", true},
-		{"zen-pro", "fireworks", "accounts/fireworks/models/kimi-k2p5", true},
-		{"zen-mini", "fireworks", "accounts/fireworks/models/qwen3-8b", true},
-		{"zen-vl", "fireworks", "accounts/fireworks/models/qwen3-vl-30b-a3b-instruct", true},
+		{"zen", "do-ai", "glm-5", true},
+		{"zen-pro", "do-ai", "qwen3.5-397b-a17b", true},
+		{"zen-mini", "do-ai", "alibaba-qwen3-32b", true},
+		{"zen-vl", "do-ai", "nemotron-nano-12b-v2-vl", true},
 	}
 
 	for _, tc := range cases {
@@ -250,8 +250,8 @@ func TestResolveModelRouteForOrg_EmptyOrgFallsBack(t *testing.T) {
 	if route == nil {
 		t.Fatal("resolveModelRouteForOrg(\"zen4\", \"\") = nil, want non-nil")
 	}
-	if route.providerName != "fireworks" {
-		t.Errorf("provider = %q, want %q", route.providerName, "fireworks")
+	if route.providerName != "do-ai" {
+		t.Errorf("provider = %q, want %q", route.providerName, "do-ai")
 	}
 	if !route.premium {
 		t.Error("zen4 should be premium")
