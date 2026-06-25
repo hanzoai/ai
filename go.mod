@@ -65,7 +65,7 @@ require (
 	github.com/tealeg/xlsx v1.0.5
 	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common v1.3.48
 	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/cvm v1.0.1116
-	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/hunyuan v1.0.1074
+	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/hunyuan v1.3.48
 	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/tbaas v1.0.1115
 	github.com/ua-parser/uap-go v0.0.0-20251207011819-db9adb27a0b8
 	github.com/volcengine/volcengine-go-sdk v1.0.141
@@ -332,3 +332,5 @@ require (
 )
 
 replace github.com/sashabaranov/go-openai => github.com/hanzoai/go-openai v1.40.0
+
+replace github.com/mattn/go-sqlite3 v2.0.3+incompatible => github.com/mattn/go-sqlite3 v1.14.22
