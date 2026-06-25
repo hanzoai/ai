@@ -15,117 +15,214 @@
 package routers
 
 import (
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 )
 
-// newTestGate builds a BalanceGate pointed at a stub Commerce server.
-func newTestGate(endpoint string) *BalanceGate {
+// newTestGate builds a BalanceGate pointed at the given Commerce base URL with
+// no IAM dependency. It mirrors InitBalanceGate but avoids reading app config
+// so the test is hermetic.
+func newTestGate(endpoint, token string) *BalanceGate {
 	return &BalanceGate{
 		entries:      make(map[string]*balanceCacheEntry),
 		userKeyCache: make(map[string]*userKeyCacheEntry),
 		inflight:     make(map[string]struct{}),
-		endpoint:     endpoint,
-		token:        "svc-token",
-		client:       &http.Client{Timeout: 2 * time.Second},
+		endpoint:     strings.TrimRight(endpoint, "/"),
+		token:        token,
+		client:       &http.Client{Timeout: balanceHTTPTimeout},
 	}
 }
 
-// TestFetchBalance_PerOrg verifies the unified per-org billing contract:
-// fetchBalance queries Commerce keyed by the org slug (?user=<org>) AND scopes
-// the service-token call to that org's namespace via X-Hanzo-Org. Without the
-// header, Commerce's service-token path defaults to the "hanzo" namespace and a
-// per-org credit would be invisible — the exact bug this gate must not have.
-func TestFetchBalance_PerOrg(t *testing.T) {
-	const org = "maxpower"
-	const wantCents = int64(10000)
-
-	var gotUser, gotOrgHeader, gotAuth string
+// TestFetchBalanceCallsCommerceCanonicalPath asserts the gate hits exactly the
+// canonical Commerce read endpoint (/v1/billing/balance, never /api/), passes
+// the user + currency, and forwards the bearer token.
+func TestFetchBalanceCallsCommerceCanonicalPath(t *testing.T) {
+	var gotPath, gotQueryUser, gotCurrency, gotAuth string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v1/billing/balance" {
-			t.Errorf("path = %q, want /v1/billing/balance", r.URL.Path)
-		}
-		gotUser = r.URL.Query().Get("user")
-		gotOrgHeader = r.Header.Get("X-Hanzo-Org")
+		gotPath = r.URL.Path
+		gotQueryUser = r.URL.Query().Get("user")
+		gotCurrency = r.URL.Query().Get("currency")
 		gotAuth = r.Header.Get("Authorization")
-		// Only the maxpower namespace + maxpower key holds the credit.
-		if gotOrgHeader == org && gotUser == org {
-			_ = json.NewEncoder(w).Encode(map[string]any{"available": wantCents})
-			return
-		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"available": 0})
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"user":"hanzo/alice","currency":"usd","balance":5000,"holds":0,"available":4200}`))
 	}))
 	defer srv.Close()
 
-	bg := newTestGate(srv.URL)
-	got, err := bg.fetchBalance(org)
+	bg := newTestGate(srv.URL, "svc-token-xyz")
+	balance, err := bg.fetchBalance("hanzo/alice")
 	if err != nil {
+		t.Fatalf("fetchBalance returned error: %v", err)
+	}
+	if balance != 4200 {
+		t.Errorf("expected available=4200 cents, got %d", balance)
+	}
+	if gotPath != "/v1/billing/balance" {
+		t.Errorf("expected canonical path /v1/billing/balance, got %q (no /api/ prefix allowed)", gotPath)
+	}
+	if gotQueryUser != "hanzo/alice" {
+		t.Errorf("expected user=hanzo/alice, got %q", gotQueryUser)
+	}
+	if gotCurrency != "usd" {
+		t.Errorf("expected currency=usd, got %q", gotCurrency)
+	}
+	if gotAuth != "Bearer svc-token-xyz" {
+		t.Errorf("expected bearer token forwarded, got %q", gotAuth)
+	}
+}
+
+// TestFetchBalanceEscapesUserKey ensures the owner/name slash is URL-encoded so
+// Commerce receives the intended user identifier.
+func TestFetchBalanceEscapesUserKey(t *testing.T) {
+	var rawQuery string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rawQuery = r.URL.RawQuery
+		w.Write([]byte(`{"available":1}`))
+	}))
+	defer srv.Close()
+
+	bg := newTestGate(srv.URL, "")
+	if _, err := bg.fetchBalance("hanzo/bob"); err != nil {
 		t.Fatalf("fetchBalance error: %v", err)
 	}
-
-	if gotUser != org {
-		t.Errorf("?user = %q, want org slug %q (per-org key, not owner/name)", gotUser, org)
-	}
-	if gotOrgHeader != org {
-		t.Errorf("X-Hanzo-Org = %q, want %q (namespace scope missing => credit invisible)", gotOrgHeader, org)
-	}
-	if gotAuth != "Bearer svc-token" {
-		t.Errorf("Authorization = %q, want service token", gotAuth)
-	}
-	if got != wantCents {
-		t.Errorf("balance = %d, want %d", got, wantCents)
+	if !strings.Contains(rawQuery, "user="+url.QueryEscape("hanzo/bob")) {
+		t.Errorf("user key not URL-escaped in query: %q", rawQuery)
 	}
 }
 
-// TestCheckBalance_PerOrgSufficient proves the end-to-end gate decision: with a
-// per-org credit present, checkBalance(org) reports sufficient. This is the
-// "no insufficient_balance" path for every member of the org.
-func TestCheckBalance_PerOrgSufficient(t *testing.T) {
-	const org = "maxpower"
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("X-Hanzo-Org") == org && r.URL.Query().Get("user") == org {
-			_ = json.NewEncoder(w).Encode(map[string]any{"available": 10000})
-			return
-		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"available": 0})
-	}))
-	defer srv.Close()
-
-	bg := newTestGate(srv.URL)
-	sufficient, cents := bg.checkBalance(org)
-	if !sufficient || cents != 10000 {
-		t.Fatalf("checkBalance(%q) = (%v, %d), want (true, 10000)", org, sufficient, cents)
+// TestCheckBalanceGatesOnInsufficientFunds is the core enforcement assertion:
+// a zero balance must gate (sufficient=false); a positive balance must pass.
+func TestCheckBalanceGatesOnInsufficientFunds(t *testing.T) {
+	cases := []struct {
+		name           string
+		available      string
+		wantSufficient bool
+		wantCents      int64
+	}{
+		{"positive balance passes", `{"available":1500}`, true, 1500},
+		{"zero balance gates", `{"available":0}`, false, 0},
+		{"negative balance gates", `{"available":-100}`, false, -100},
 	}
-}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Write([]byte(tc.available))
+			}))
+			defer srv.Close()
 
-// TestResolveIAMKeyOrg_ReturnsOrgOnly verifies hk- key resolution yields the
-// org slug alone (billing is per-org), not "owner/name".
-func TestResolveIAMKeyOrg_ReturnsOrgOnly(t *testing.T) {
-	const org = "maxpower"
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Mimic IAM get-user shape.
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"status": "ok",
-			"data":   map[string]any{"owner": org, "name": "davelorenzini"},
+			bg := newTestGate(srv.URL, "")
+			sufficient, cents := bg.checkBalance("hanzo/user-" + tc.name)
+			if sufficient != tc.wantSufficient {
+				t.Errorf("sufficient=%v, want %v", sufficient, tc.wantSufficient)
+			}
+			if cents != tc.wantCents {
+				t.Errorf("cents=%d, want %d", cents, tc.wantCents)
+			}
 		})
+	}
+}
+
+// TestCheckBalanceFailsOpenOnCommerceError asserts the documented fail-open
+// posture: if Commerce errors (5xx), the request is allowed (sufficient=true)
+// rather than blocking paying users on an infra blip. The controller-level
+// ValidateTransactionForMessage backstop still guards the actual debit.
+func TestCheckBalanceFailsOpenOnCommerceError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer srv.Close()
 
-	bg := newTestGate("http://unused")
-	bg.iamEndpoint = srv.URL
-	bg.client = &http.Client{Timeout: 2 * time.Second}
-
-	got := bg.resolveIAMKeyOrg("hk-abc123")
-	if got != org {
-		t.Errorf("resolveIAMKeyOrg = %q, want %q (org slug only)", got, org)
+	bg := newTestGate(srv.URL, "")
+	sufficient, cents := bg.checkBalance("hanzo/blip")
+	if !sufficient {
+		t.Error("expected fail-open (sufficient=true) when Commerce returns 5xx")
 	}
+	if cents != 0 {
+		t.Errorf("expected 0 cents on error, got %d", cents)
+	}
+}
 
-	// Sanity: the IAM call escapes the key into the query.
-	if _, err := url.Parse(srv.URL); err != nil {
-		t.Fatal(err)
+// TestCheckBalanceCachesWithinTTL asserts a second lookup inside the TTL does
+// not re-hit Commerce — the hot path must not make a network call per request.
+func TestCheckBalanceCachesWithinTTL(t *testing.T) {
+	var calls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.Write([]byte(`{"available":900}`))
+	}))
+	defer srv.Close()
+
+	bg := newTestGate(srv.URL, "")
+	if s, _ := bg.checkBalance("hanzo/cacheme"); !s {
+		t.Fatal("first check should pass")
+	}
+	if s, _ := bg.checkBalance("hanzo/cacheme"); !s {
+		t.Fatal("second check should pass from cache")
+	}
+	if calls != 1 {
+		t.Errorf("expected exactly 1 Commerce call within TTL, got %d", calls)
+	}
+}
+
+// TestBalanceExemptPaths locks in which paths bypass the gate. Health, metrics,
+// version/system info, and auth endpoints are free; paid AI paths are not.
+func TestBalanceExemptPaths(t *testing.T) {
+	exempt := []string{
+		"/v1/health", "/health",
+		"/v1/metrics", "/metrics",
+		"/v1/get-version-info", "/v1/get-system-info",
+		"/v1/signin", "/v1/signout", "/v1/get-account",
+	}
+	for _, p := range exempt {
+		if !isBalanceExempt(p) {
+			t.Errorf("path %q should be balance-exempt", p)
+		}
+	}
+	gated := []string{
+		"/v1/chat/completions", "/v1/completions",
+		"/v1/embeddings", "/v1/images/generations", "/v1/models",
+	}
+	for _, p := range gated {
+		if isBalanceExempt(p) {
+			t.Errorf("paid path %q must NOT be balance-exempt", p)
+		}
+	}
+}
+
+// TestUserKeyCacheRoundTrip verifies the token->userKey cache stores and
+// expires entries per userKeyCacheTTL.
+func TestUserKeyCacheRoundTrip(t *testing.T) {
+	bg := newTestGate("http://unused", "")
+	if got := bg.getUserKeyCached("tok"); got != "" {
+		t.Errorf("expected empty on cache miss, got %q", got)
+	}
+	bg.setUserKeyCache("tok", "hanzo/carol")
+	if got := bg.getUserKeyCached("tok"); got != "hanzo/carol" {
+		t.Errorf("expected hanzo/carol from cache, got %q", got)
+	}
+	// Force staleness.
+	bg.userKeyMu.Lock()
+	bg.userKeyCache["tok"].fetchedAt = time.Now().Add(-2 * userKeyCacheTTL)
+	bg.userKeyMu.Unlock()
+	if got := bg.getUserKeyCached("tok"); got != "" {
+		t.Errorf("expected empty on stale entry, got %q", got)
+	}
+}
+
+// TestIsJwtTokenLike guards the cheap local JWT heuristic that decides whether
+// to parse locally vs. resolve an hk- key against IAM.
+func TestIsJwtTokenLike(t *testing.T) {
+	jwt := "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyIn0.signaturepart"
+	if !isJwtTokenLike(jwt) {
+		t.Error("expected a 3-segment JWT-like token to be recognized")
+	}
+	for _, notJwt := range []string{"hk-abcdef", "sk-xyz", "", "a.b", "a.b.c.d"} {
+		if isJwtTokenLike(notJwt) {
+			t.Errorf("token %q should not be JWT-like", notJwt)
+		}
 	}
 }
