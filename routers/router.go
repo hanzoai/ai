@@ -46,6 +46,7 @@ func initAPI() {
 	beego.Router("/v1/signin", &controllers.ApiController{}, "POST:Signin")
 	beego.Router("/v1/signout", &controllers.ApiController{}, "POST:Signout")
 	beego.Router("/v1/get-account", &controllers.ApiController{}, "GET:GetAccount")
+	beego.Router("/v1/update-preferences", &controllers.ApiController{}, "POST:UpdatePreferences")
 
 	beego.Router("/v1/get-global-videos", &controllers.ApiController{}, "GET:GetGlobalVideos")
 	beego.Router("/v1/get-videos", &controllers.ApiController{}, "GET:GetVideos")
@@ -316,6 +317,11 @@ func initAPI() {
 	beego.Router("/v1/completions", &controllers.ApiController{}, "POST:ChatCompletions")
 	beego.Router("/v1/models", &controllers.ApiController{}, "GET:ListModels")
 	beego.Router("/v1/reload-model-config", &controllers.ApiController{}, "POST:ReloadModelConfig")
+
+	// OpenAI-compatible embeddings and Cohere/Jina-compatible rerank. Both ride
+	// the same auth + provider routing as /v1/chat/completions.
+	beego.Router("/v1/embeddings", &controllers.ApiController{}, "POST:Embeddings")
+	beego.Router("/v1/rerank", &controllers.ApiController{}, "POST:Rerank")
 
 	beego.Router("/v1/get-model-routes", &controllers.ApiController{}, "GET:GetModelRoutes")
 	beego.Router("/v1/get-model-route", &controllers.ApiController{}, "GET:GetModelRoute")
