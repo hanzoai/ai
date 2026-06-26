@@ -16,6 +16,7 @@ package controllers
 
 import (
 	_ "embed"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -404,4 +405,88 @@ func (c *ApiController) GetAccount() {
 	}
 
 	c.ResponseOk(claims)
+}
+
+// preferencesKey is the single IAM-user property under which all cross-product,
+// cross-device user customizations are stored as a JSON object. One home for
+// every product's settings — each product owns its own top-level key(s).
+const preferencesKey = "hanzo.preferences"
+
+// UpdatePreferences persists user customizations (favorites, layout, etc.) onto
+// the signed-in user's IAM account so they follow the user across every product
+// and every device/login.
+//
+// SELF-SCOPED BY DESIGN: the target user is taken from the session, never from
+// the request body — a caller can only ever change their own preferences. The
+// posted JSON object is SHALLOW-MERGED into the existing preferences by
+// top-level key, so one product (or device) writing its keys never clobbers
+// another's. Persisted column-scoped (`properties` only) so no other user field
+// is touched. Returns the merged preferences object.
+//
+// @Title UpdatePreferences
+// @Tag Account API
+// @Description persist the signed-in user's cross-product preferences
+// @Success 200 {object} object the merged preferences
+// @router /update-preferences [post]
+func (c *ApiController) UpdatePreferences() {
+	_, ok := c.RequireSignedIn()
+	if !ok {
+		return
+	}
+
+	claims := c.GetSessionClaims()
+	if claims == nil || claims.User.Type == "anonymous-user" {
+		c.ResponseError("auth:please sign in first")
+		return
+	}
+
+	incoming := map[string]interface{}{}
+	if err := json.Unmarshal(c.Ctx.Input.RequestBody, &incoming); err != nil {
+		c.ResponseError(fmt.Sprintf("invalid preferences body: %v", err))
+		return
+	}
+
+	// Always resolve the user from IAM by the SESSION identity, never the body.
+	user, err := iam.GetUser(claims.User.Name)
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+	if user == nil {
+		c.ResponseError("auth:user not found")
+		return
+	}
+
+	// Shallow-merge incoming top-level keys into the existing preferences object.
+	prefs := map[string]interface{}{}
+	if user.Properties != nil {
+		if raw := user.Properties[preferencesKey]; raw != "" {
+			_ = json.Unmarshal([]byte(raw), &prefs)
+		}
+	}
+	for k, v := range incoming {
+		prefs[k] = v
+	}
+
+	merged, err := json.Marshal(prefs)
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+	if user.Properties == nil {
+		user.Properties = map[string]string{}
+	}
+	user.Properties[preferencesKey] = string(merged)
+
+	// Column-scoped update: only `properties` is written.
+	if _, err := iam.UpdateUserForColumns(user, []string{"properties"}); err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+
+	// Refresh the session copy so a subsequent get-account is consistent.
+	claims.User = *user
+	c.SetSessionClaims(claims)
+
+	c.ResponseOk(prefs)
 }
