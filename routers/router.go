@@ -318,6 +318,11 @@ func initAPI() {
 	beego.Router("/v1/models", &controllers.ApiController{}, "GET:ListModels")
 	beego.Router("/v1/reload-model-config", &controllers.ApiController{}, "POST:ReloadModelConfig")
 
+	// OpenAI-compatible embeddings and Cohere/Jina-compatible rerank. Both ride
+	// the same auth + provider routing as /v1/chat/completions.
+	beego.Router("/v1/embeddings", &controllers.ApiController{}, "POST:Embeddings")
+	beego.Router("/v1/rerank", &controllers.ApiController{}, "POST:Rerank")
+
 	beego.Router("/v1/get-model-routes", &controllers.ApiController{}, "GET:GetModelRoutes")
 	beego.Router("/v1/get-model-route", &controllers.ApiController{}, "GET:GetModelRoute")
 	beego.Router("/v1/add-model-route", &controllers.ApiController{}, "POST:AddModelRoute")
