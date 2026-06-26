@@ -825,6 +825,42 @@ models:
     owned_by: hanzo
     pricing: { input: 0.20, output: 0.20 }
 
+  # ── OpenAI-compatible embeddings (served at POST /v1/embeddings) ───────
+  # Canonical text-embedding-* names route to OpenAI Direct, whose key
+  # (kms://OPENAI_API_KEY) is already configured for chat — so the OpenAI SDK
+  # works unchanged with NO new secret. Non-premium: usable on the starter
+  # credit; CPU-only (provider-routed, no GPU node).
+  text-embedding-3-small:
+    provider: openai-direct
+    upstream: text-embedding-3-small
+    owned_by: openai
+    pricing: { input: 0.02, output: 0.00 }
+
+  text-embedding-3-large:
+    provider: openai-direct
+    upstream: text-embedding-3-large
+    owned_by: openai
+    pricing: { input: 0.13, output: 0.00 }
+
+  text-embedding-ada-002:
+    provider: openai-direct
+    upstream: text-embedding-ada-002
+    owned_by: openai
+    pricing: { input: 0.10, output: 0.00 }
+
+  # ── Rerank (served at POST /v1/rerank) ────────────────────────────────
+  # zen-reranker is a bi-encoder reranker: /v1/rerank embeds query+documents via
+  # this embedding model (text-embedding-3-large on OpenAI Direct) and ranks by
+  # cosine similarity — a real ranked response with no rerank-specific key and no
+  # GPU. To add a cross-encoder reranker, seed a Jina/Cohere provider (drop
+  # JINA_API_KEY / COHERE_API_KEY into the cloud-api-llm-keys KMS secret) and add
+  # a model here routed to it; /v1/rerank proxies native rerank providers directly.
+  zen-reranker:
+    provider: openai-direct
+    upstream: text-embedding-3-large
+    owned_by: hanzo
+    pricing: { input: 0.13, output: 0.00 }
+
   # ── Zen3 specialty (vision / audio / web / guard) ────────────────────
   # Sub-tier zen3 SKUs routed via zen-gateway. The flagship zen3-omni /
   # zen3-vl / zen3-nano / zen3-guard / zen3-embedding live above with
