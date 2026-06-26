@@ -46,6 +46,7 @@ func initAPI() {
 	beego.Router("/v1/signin", &controllers.ApiController{}, "POST:Signin")
 	beego.Router("/v1/signout", &controllers.ApiController{}, "POST:Signout")
 	beego.Router("/v1/get-account", &controllers.ApiController{}, "GET:GetAccount")
+	beego.Router("/v1/update-preferences", &controllers.ApiController{}, "POST:UpdatePreferences")
 
 	beego.Router("/v1/get-global-videos", &controllers.ApiController{}, "GET:GetGlobalVideos")
 	beego.Router("/v1/get-videos", &controllers.ApiController{}, "GET:GetVideos")
