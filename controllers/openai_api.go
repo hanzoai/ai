@@ -1022,12 +1022,13 @@ func (c *ApiController) ChatCompletions() {
 
 	// Create custom writer for OpenAI format
 	writer := &OpenAIWriter{
-		Response:  *c.Ctx.ResponseWriter,
-		Buffer:    []byte{},
-		RequestID: requestId,
-		Stream:    request.Stream,
-		Cleaner:   *NewCleaner(6),
-		Model:     request.Model,
+		Response:     *c.Ctx.ResponseWriter,
+		Buffer:       []byte{},
+		RequestID:    requestId,
+		Stream:       request.Stream,
+		Cleaner:      *NewCleaner(6),
+		Model:        request.Model,
+		IncludeUsage: request.StreamOptions != nil && request.StreamOptions.IncludeUsage,
 	}
 
 	// Optional RAG: unified retrieval path shared with the old /chat-docs route.
