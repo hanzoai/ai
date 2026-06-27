@@ -34,39 +34,39 @@ type Suggestion struct {
 	IsHit bool   `json:"isHit"`
 }
 type Message struct {
-	Owner             string               `db:"pk" json:"owner"`
-	Name              string               `db:"pk" json:"name"`
-	CreatedTime       string               `json:"createdTime"`
-	Organization      string               `json:"organization"`
-	Store             string               `json:"store"`
-	User              string               `json:"user"`
-	Chat              string               `json:"chat"`
-	ReplyTo           string               `json:"replyTo"`
-	Author            string               `json:"author"`
-	Text              string               `json:"text"`
-	ReasonText        string               `json:"reasonText"`
-	ErrorText         string               `json:"errorText"`
-	FileName          string               `json:"fileName"`
-	Comment           string               `json:"comment"`
-	TokenCount        int                  `json:"tokenCount"`
-	TextTokenCount    int                  `json:"textTokenCount"`
-	Price             float64              `json:"price"`
-	Currency          string               `json:"currency"`
-	IsHidden          bool                 `json:"isHidden"`
-	IsDeleted         bool                 `json:"isDeleted"`
-	NeedNotify        bool                 `json:"needNotify"`
-	IsAlerted         bool                 `json:"isAlerted"`
-	IsRegenerated     bool                 `json:"isRegenerated"`
-	WebSearchEnabled  bool                 `json:"webSearchEnabled"`
-	ModelProvider     string               `json:"modelProvider"`
-	EmbeddingProvider string               `json:"embeddingProvider"`
-	VectorScores      []VectorScore        `json:"vectorScores"`
-	LikeUsers         StringList             `json:"likeUsers"`
-	DisLikeUsers      StringList             `json:"dislikeUsers"`
-	Suggestions       []Suggestion         `json:"suggestions"`
-	ToolCalls         []model.ToolCall     `json:"toolCalls"`
-	SearchResults     []model.SearchResult `json:"searchResults"`
-	TransactionId     string               `json:"transactionId"`
+	Owner             string                       `db:"pk" json:"owner"`
+	Name              string                       `db:"pk" json:"name"`
+	CreatedTime       string                       `json:"createdTime"`
+	Organization      string                       `json:"organization"`
+	Store             string                       `json:"store"`
+	User              string                       `json:"user"`
+	Chat              string                       `json:"chat"`
+	ReplyTo           string                       `json:"replyTo"`
+	Author            string                       `json:"author"`
+	Text              string                       `json:"text"`
+	ReasonText        string                       `json:"reasonText"`
+	ErrorText         string                       `json:"errorText"`
+	FileName          string                       `json:"fileName"`
+	Comment           string                       `json:"comment"`
+	TokenCount        int                          `json:"tokenCount"`
+	TextTokenCount    int                          `json:"textTokenCount"`
+	Price             float64                      `json:"price"`
+	Currency          string                       `json:"currency"`
+	IsHidden          bool                         `json:"isHidden"`
+	IsDeleted         bool                         `json:"isDeleted"`
+	NeedNotify        bool                         `json:"needNotify"`
+	IsAlerted         bool                         `json:"isAlerted"`
+	IsRegenerated     bool                         `json:"isRegenerated"`
+	WebSearchEnabled  bool                         `json:"webSearchEnabled"`
+	ModelProvider     string                       `json:"modelProvider"`
+	EmbeddingProvider string                       `json:"embeddingProvider"`
+	VectorScores      JSONList[VectorScore]        `json:"vectorScores"`
+	LikeUsers         StringList                   `json:"likeUsers"`
+	DisLikeUsers      StringList                   `json:"dislikeUsers"`
+	Suggestions       JSONList[Suggestion]         `json:"suggestions"`
+	ToolCalls         JSONList[model.ToolCall]     `json:"toolCalls"`
+	SearchResults     JSONList[model.SearchResult] `json:"searchResults"`
+	TransactionId     string                       `json:"transactionId"`
 }
 
 func GetGlobalMessages() ([]*Message, error) {
