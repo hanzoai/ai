@@ -45,10 +45,11 @@ func (c *ApiController) ScrapeDocs() {
 		return
 	}
 
-	// Check balance before expensive scrape operation. Billing is per-org:
-	// check the org's balance (auth.Owner), not the per-user "owner/name".
+	// Check balance before expensive scrape operation against the billing
+	// SUBJECT within the org NAMESPACE (per-user for a personal-billing org),
+	// matching the chat gate and the usage debit.
 	if auth.Owner != "" {
-		balance, balanceErr := getUserBalance(auth.Owner)
+		balance, balanceErr := getUserBalance(object.BillingSubjectFromUserKey(auth.Owner, auth.UserID), auth.Owner)
 		if balanceErr == nil && balance <= 0 {
 			c.ResponseError("insufficient balance for scrape operation. Add funds at https://hanzo.ai/billing")
 			return
