@@ -243,7 +243,7 @@ func (c *ApiController) Rerank() {
 func (c *ApiController) bearerToken() (string, bool) {
 	authHeader := c.Ctx.Request.Header.Get("Authorization")
 	if !strings.HasPrefix(authHeader, "Bearer ") {
-		c.ResponseError(c.T("openai:Invalid API key format. Expected 'Bearer API_KEY'"))
+		c.ResponseErrorWithStatus(401, c.T("openai:Invalid API key format. Expected 'Bearer API_KEY'"))
 		return "", false
 	}
 	return strings.TrimPrefix(authHeader, "Bearer "), true
