@@ -900,7 +900,7 @@ func (c *ApiController) ChatCompletions() {
 	// Extract Bearer token
 	authHeader := c.Ctx.Request.Header.Get("Authorization")
 	if !strings.HasPrefix(authHeader, "Bearer ") {
-		c.ResponseError(c.T("openai:Invalid API key format. Expected 'Bearer API_KEY'"))
+		c.ResponseErrorWithStatus(401, c.T("openai:Invalid API key format. Expected 'Bearer API_KEY'"))
 		return
 	}
 
