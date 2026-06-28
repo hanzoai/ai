@@ -48,7 +48,7 @@ import (
 // key (?user=) and as the namespace selector (X-Hanzo-Org), matching the gate
 // and the per-org credit. Without the header, commerce's service-token path
 // defaults to the "hanzo" namespace and a per-org credit is invisible.
-func getUserBalance(orgKey string) (float64, error) {
+func getUserBalance(subject, namespace string) (float64, error) {
 	commerceEndpoint := conf.GetConfigString("commerceEndpoint")
 	if commerceEndpoint == "" {
 		return 0, fmt.Errorf("commerceEndpoint is not configured")
@@ -58,7 +58,9 @@ func getUserBalance(orgKey string) (float64, error) {
 
 	// Per global rule: /v1/ only, never /api/.
 	// All commerce endpoints live under /v1/.
-	reqURL := fmt.Sprintf("%s/v1/billing/balance?user=%s&currency=usd", commerceEndpoint, url.QueryEscape(orgKey))
+	// subject (?user=) is the per-user/per-org billing key; namespace
+	// (X-Hanzo-Org) is the org. Both must match the gate and the usage debit.
+	reqURL := fmt.Sprintf("%s/v1/billing/balance?user=%s&currency=usd", commerceEndpoint, url.QueryEscape(subject))
 
 	client := &http.Client{Timeout: 10 * time.Second}
 	req, err := http.NewRequest(http.MethodGet, reqURL, nil)
@@ -69,7 +71,7 @@ func getUserBalance(orgKey string) (float64, error) {
 		req.Header.Set("Authorization", "Bearer "+commerceToken)
 	}
 	// Scope the service-token call to this org's namespace.
-	req.Header.Set("X-Hanzo-Org", orgKey)
+	req.Header.Set("X-Hanzo-Org", namespace)
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -377,7 +379,12 @@ func resolveProviderForUser(user *iam.User, requestedModel string, lang string) 
 	// accounts are named individually), while billing itself is per-org.
 	exemptUsers := os.Getenv("BALANCE_EXEMPT_USERS")
 	userKey := user.Owner + "/" + user.Name
-	orgKey := user.Owner // billing is per-org: one credit covers the whole org
+	orgKey := user.Owner // namespace (X-Hanzo-Org): the org tenant
+	// subject is the billing account WITHIN the namespace: "owner/name" for a
+	// personal-billing org (each member billed independently), the org slug for
+	// a pooled org. The gate read, this backstop, and the usage debit all key
+	// on this one subject.
+	subject := object.BillingSubject(user.Owner, user.Name)
 	isExempt := false
 	if exemptUsers != "" {
 		for _, u := range strings.Split(exemptUsers, ",") {
@@ -393,8 +400,8 @@ func resolveProviderForUser(user *iam.User, requestedModel string, lang string) 
 		// All models require prepaid balance. New accounts receive a $5 starter
 		// credit that works only for non-premium (DO-AI) models.
 		// Premium models (Fireworks, OpenAI Direct, Zen) require the user to
-		// have added funds beyond the starter credit. Balance is per-org.
-		balance, err := getUserBalance(orgKey)
+		// have added funds beyond the starter credit. Balance is per-subject.
+		balance, err := getUserBalance(subject, orgKey)
 		if err != nil {
 			return nil, user, "", fmt.Errorf("failed to verify account balance: %s", err.Error())
 		}
@@ -411,7 +418,7 @@ func resolveProviderForUser(user *iam.User, requestedModel string, lang string) 
 	// Premium models require funds beyond the starter credit.
 	// A balance <= StarterCreditDollars means the user only has free credit.
 	if !isExempt {
-		balance, _ := getUserBalance(orgKey)
+		balance, _ := getUserBalance(subject, orgKey)
 		starterCredit := StarterCreditDollars
 		if cfg := GetModelConfig(); cfg != nil {
 			starterCredit = cfg.StarterCreditDollars()
@@ -427,7 +434,7 @@ func resolveProviderForUser(user *iam.User, requestedModel string, lang string) 
 	}
 
 	if !isExempt {
-		bal, _ := getUserBalance(orgKey)
+		bal, _ := getUserBalance(subject, orgKey)
 		user.Balance = bal
 	}
 
@@ -569,11 +576,13 @@ func recordUsage(record *usageRecord) {
 		record.CacheReadTokens, record.CacheWriteTokens,
 	)
 
-	// Billing is per-org: the debit is keyed by the org slug (record.Owner),
-	// matching the per-org credit and the balance gate. The full "owner/name"
-	// (record.User) is retained as actor metadata for attribution/audit, not as
-	// the balance key. record.Owner is the IAM `owner` claim; fall back to
-	// deriving it from "owner/name" if Owner was not populated upstream.
+	// The debit MUST hit the same account the balance gate reads and the starter
+	// credit funded: the billing SUBJECT within the org NAMESPACE.
+	//   namespace (X-Hanzo-Org) = record.Owner (the org)
+	//   subject   (?user=)      = object.BillingSubject(owner, name)
+	// For a personal-billing org that is "owner/name" (per-user); for a pooled
+	// org it is the org slug. record.Owner is the IAM `owner`; fall back to
+	// deriving owner+name from "owner/name" if Owner was not populated upstream.
 	org := record.Owner
 	if org == "" {
 		if i := strings.IndexByte(record.User, '/'); i > 0 {
@@ -582,9 +591,10 @@ func recordUsage(record *usageRecord) {
 			org = record.User
 		}
 	}
+	subject := object.BillingSubjectFromUserKey(record.Owner, record.User)
 
 	payload := map[string]interface{}{
-		"user":             org,
+		"user":             subject,
 		"actor":            record.User,
 		"currency":         "usd",
 		"amount":           costCents,
