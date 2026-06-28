@@ -219,7 +219,9 @@ func widgetAllowedModelsList() string {
 // appropriate model provider for the requested model, plus the translated
 // upstream model name.
 func resolveProviderFromJwt(token string, requestedModel string, lang string) (*object.Provider, *iam.User, string, error) {
-	claims, err := iam.ParseJwtToken(token)
+	// Signature + issuer/audience validation (never raw iam.ParseJwtToken), so a
+	// token minted for a foreign app/issuer cannot authenticate a paid request.
+	claims, err := object.ParseAndValidateJWT(token)
 	if err != nil {
 		return nil, nil, "", authError("invalid hanzo.id token: %s", err.Error())
 	}
@@ -308,27 +310,17 @@ func resolveProviderForUser(user *iam.User, requestedModel string, lang string) 
 	}
 
 	// Service accounts configured in BALANCE_EXEMPT_USERS skip balance checks.
-	// This allows internal cloud agent pods to make LLM calls without Commerce setup.
-	// The exempt list is matched on the per-user "owner/name" key (service
-	// accounts are named individually), while billing itself is per-org.
-	exemptUsers := os.Getenv("BALANCE_EXEMPT_USERS")
-	userKey := user.Owner + "/" + user.Name
+	// This allows internal cloud agent pods to make LLM calls without Commerce
+	// setup. Exemption matches the per-user "owner/name" key (service accounts are
+	// named individually) OR a bare org — via object.BalanceExempt, the SAME shared
+	// definition the router gate uses, so the two can never drift in granularity.
 	orgKey := user.Owner // namespace (X-Hanzo-Org): the org tenant
 	// subject is the billing account WITHIN the namespace: "owner/name" for a
 	// personal-billing org (each member billed independently), the org slug for
 	// a pooled org. The gate read, this backstop, and the usage debit all key
 	// on this one subject.
 	subject := object.BillingSubject(user.Owner, user.Name)
-	isExempt := false
-	if exemptUsers != "" {
-		for _, u := range strings.Split(exemptUsers, ",") {
-			t := strings.TrimSpace(u)
-			if t == userKey || t == orgKey {
-				isExempt = true
-				break
-			}
-		}
-	}
+	isExempt := object.BalanceExempt().Matches(user.Owner, user.Name)
 
 	if !isExempt {
 		// All models require prepaid balance. New accounts receive a $5 starter
@@ -774,7 +766,9 @@ func (c *ApiController) authenticate(token string) error {
 		}
 		return nil
 	case isJwtToken(token):
-		if _, err := iam.ParseJwtToken(token); err != nil {
+		// Signature + issuer/audience validation (R3): a foreign-aud or
+		// wrong-issuer token is rejected here, not just signature-checked.
+		if _, err := object.ParseAndValidateJWT(token); err != nil {
 			return authError("invalid hanzo.id token: %s", err.Error())
 		}
 		return nil
@@ -965,6 +959,11 @@ func (c *ApiController) ChatCompletions() {
 	var hold *budgetHold
 	if authUser != nil {
 		subject := object.BillingSubject(authUser.Owner, authUser.Name)
+		// Clamp the upstream completion ceiling BEFORE reserving so the proxied
+		// (tool/stream) upstream can never emit more than we reserve — the actual
+		// settle can never exceed the hold (R1b). reserveCompletionTokens also
+		// covers the QueryText pipeline's fixed cap, which ignores max_tokens.
+		request.MaxTokens = clampMaxTokens(request.MaxTokens)
 		est := estimateRequestCostCents(request.Model, estimatePromptTokens(&request), request.MaxTokens)
 		var ok bool
 		if hold, ok = reserveBudget(subject, est); !ok {

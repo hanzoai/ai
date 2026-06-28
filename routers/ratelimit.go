@@ -254,7 +254,7 @@ func RateLimitFilter(ctx *context.Context) {
 	// "hanzo" catch-all get their OWN bucket and can't exhaust each other's rate
 	// limit. When no subject resolves (anonymous, sk-/pk- provider keys, JWT
 	// without owner), fall back to the raw key so traffic is still free-tier bucketed.
-	limitKey, _ := resolveBillingKey(ctx)
+	limitKey, _, _ := resolveBillingKey(ctx)
 	if limitKey == "" {
 		limitKey = apiKey
 	}
