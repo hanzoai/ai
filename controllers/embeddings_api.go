@@ -64,12 +64,20 @@ func (c *ApiController) Embeddings() {
 	var head struct {
 		Model string `json:"model"`
 	}
+	badReq := ""
 	if err := json.Unmarshal(c.Ctx.Input.RequestBody, &head); err != nil {
-		c.ResponseError(fmt.Sprintf("Failed to parse request: %s", err.Error()))
-		return
+		badReq = fmt.Sprintf("Failed to parse request: %s", err.Error())
+	} else if head.Model == "" {
+		badReq = "embeddings request requires a \"model\" field"
 	}
-	if head.Model == "" {
-		c.ResponseError("embeddings request requires a \"model\" field")
+	if badReq != "" {
+		// Authenticate before reporting the client error: an invalid credential is
+		// 401 regardless of body validity (never a probe-able 200/400).
+		if authErr := c.authenticate(token); authErr != nil {
+			c.ResponseAuthError(authErr)
+			return
+		}
+		c.ResponseErrorWithStatus(http.StatusBadRequest, badReq)
 		return
 	}
 
@@ -129,20 +137,24 @@ func (c *ApiController) Rerank() {
 		TopN            *int              `json:"top_n"`
 		ReturnDocuments *bool             `json:"return_documents"`
 	}
+	badReq := ""
 	if err := json.Unmarshal(c.Ctx.Input.RequestBody, &raw); err != nil {
-		c.ResponseError(fmt.Sprintf("Failed to parse request: %s", err.Error()))
-		return
+		badReq = fmt.Sprintf("Failed to parse request: %s", err.Error())
+	} else if raw.Model == "" {
+		badReq = "rerank request requires a \"model\" field"
+	} else if raw.Query == "" {
+		badReq = "rerank request requires a \"query\" field"
+	} else if len(raw.Documents) == 0 {
+		badReq = "rerank request requires a non-empty \"documents\" array"
 	}
-	if raw.Model == "" {
-		c.ResponseError("rerank request requires a \"model\" field")
-		return
-	}
-	if raw.Query == "" {
-		c.ResponseError("rerank request requires a \"query\" field")
-		return
-	}
-	if len(raw.Documents) == 0 {
-		c.ResponseError("rerank request requires a non-empty \"documents\" array")
+	if badReq != "" {
+		// Authenticate before reporting the client error: an invalid credential is
+		// 401 regardless of body validity (never a probe-able 200/400).
+		if authErr := c.authenticate(token); authErr != nil {
+			c.ResponseAuthError(authErr)
+			return
+		}
+		c.ResponseErrorWithStatus(http.StatusBadRequest, badReq)
 		return
 	}
 
