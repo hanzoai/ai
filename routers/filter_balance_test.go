@@ -130,19 +130,92 @@ func TestCheckBalanceGatesOnInsufficientFunds(t *testing.T) {
 // posture: if Commerce errors (5xx), the request is allowed (sufficient=true)
 // rather than blocking paying users on an infra blip. The controller-level
 // ValidateTransactionForMessage backstop still guards the actual debit.
-func TestCheckBalanceFailsOpenOnCommerceError(t *testing.T) {
+// TestCheckBalanceFailsClosedOnColdNonExemptOrg asserts the bleed fix: a hard
+// cache-miss whose Commerce lookup errors (Commerce unreachable) must fail
+// CLOSED (sufficient=false -> 402) for a non-exempt org, so a Commerce outage
+// cannot become an unmetered bleed.
+func TestCheckBalanceFailsClosedOnColdNonExemptOrg(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer srv.Close()
 
 	bg := newTestGate(srv.URL, "")
-	sufficient, cents := bg.checkBalance("hanzo/blip")
-	if !sufficient {
-		t.Error("expected fail-open (sufficient=true) when Commerce returns 5xx")
+	sufficient, cents := bg.checkBalance("acme")
+	if sufficient {
+		t.Error("expected fail-CLOSED (sufficient=false) for a cold non-exempt org when Commerce errors")
 	}
 	if cents != 0 {
 		t.Errorf("expected 0 cents on error, got %d", cents)
+	}
+}
+
+// TestCheckBalanceFailsOpenForExemptOrg asserts an org in BALANCE_EXEMPT_USERS
+// (internal/house org) is never blocked by a Commerce-error cold miss — it
+// keeps the legacy fail-open so internal traffic survives an outage.
+func TestCheckBalanceFailsOpenForExemptOrg(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	bg := newTestGate(srv.URL, "")
+	bg.exemptOrgs = parseExemptOrgs("admin/hanzo-cloud,hanzo/z")
+	if sufficient, _ := bg.checkBalance("hanzo"); !sufficient {
+		t.Error("expected fail-OPEN for exempt org 'hanzo' on Commerce error")
+	}
+	if sufficient, _ := bg.checkBalance("admin"); !sufficient {
+		t.Error("expected fail-OPEN for exempt org 'admin' on Commerce error")
+	}
+	if sufficient, _ := bg.checkBalance("acme"); sufficient {
+		t.Error("expected fail-CLOSED for non-exempt org 'acme' even when other orgs are exempt")
+	}
+}
+
+// TestCheckBalanceFailOpenOverride asserts the BALANCE_GATE_FAIL_OPEN_ON_ERROR
+// escape hatch restores the legacy fail-open for every org (no-rebuild rollback).
+func TestCheckBalanceFailOpenOverride(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	bg := newTestGate(srv.URL, "")
+	bg.failOpenOnError = true
+	if sufficient, _ := bg.checkBalance("acme"); !sufficient {
+		t.Error("expected fail-OPEN when BALANCE_GATE_FAIL_OPEN_ON_ERROR override is set")
+	}
+}
+
+// TestCheckBalanceServesStaleOnErrorForActiveOrg asserts an active (already
+// cached, funded) org is NOT blocked by a transient Commerce blip: the stale
+// entry is served while the async refresh fails harmlessly. This is the blip
+// half of the contract — only COLD non-exempt orgs fail closed.
+func TestCheckBalanceServesStaleOnErrorForActiveOrg(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	bg := newTestGate(srv.URL, "")
+	// Funded but stale (older than the 30s TTL) -> stale-serve path.
+	bg.entries["acme"] = &balanceCacheEntry{balanceCents: 500, fetchedAt: time.Now().Add(-time.Minute)}
+	sufficient, cents := bg.checkBalance("acme")
+	if !sufficient || cents != 500 {
+		t.Errorf("expected stale-serve (sufficient=true, cents=500) for an active funded org on a blip, got (%v, %d)", sufficient, cents)
+	}
+}
+
+// TestParseExemptOrgs covers the owner-part extraction from BALANCE_EXEMPT_USERS.
+func TestParseExemptOrgs(t *testing.T) {
+	got := parseExemptOrgs(" admin/hanzo-cloud , hanzo/z ,, lux ")
+	for _, want := range []string{"admin", "hanzo", "lux"} {
+		if _, ok := got[want]; !ok {
+			t.Errorf("expected exempt org %q to be parsed, got %v", want, got)
+		}
+	}
+	if len(got) != 3 {
+		t.Errorf("expected 3 exempt orgs, got %d (%v)", len(got), got)
 	}
 }
 
