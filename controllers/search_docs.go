@@ -119,9 +119,9 @@ func (c *ApiController) resolveSearchAuth() *searchAuth {
 		}
 	}
 
-	// 5. JWT token -- validate via IAM OIDC
+	// 5. JWT token -- validate via IAM OIDC (signature + iss/aud, R3)
 	if isJwtToken(token) {
-		claims, err := iam.ParseJwtToken(token)
+		claims, err := object.ParseAndValidateJWT(token)
 		if err != nil {
 			c.ResponseError("invalid token: " + err.Error())
 			return nil
@@ -192,9 +192,9 @@ func (c *ApiController) requireIndexAuth() *searchAuth {
 			return nil
 		}
 
-		// JWT token: validate via IAM OIDC
+		// JWT token: validate via IAM OIDC (signature + iss/aud, R3)
 		if isJwtToken(token) {
-			claims, err := iam.ParseJwtToken(token)
+			claims, err := object.ParseAndValidateJWT(token)
 			if err != nil {
 				c.ResponseError("invalid token: " + err.Error())
 				return nil

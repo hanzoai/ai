@@ -130,10 +130,44 @@ func streamCaptureUsage(r io.Reader, w io.Writer, flush func(), clientWantsUsage
 	return prompt, completion, total, sb.String()
 }
 
-// defaultReserveMaxTokens bounds the completion-cost estimate when a request does
-// not cap max_tokens, so the upfront reservation is large enough to bound
-// concurrent spend without grossly over-holding an open-ended request.
-const defaultReserveMaxTokens = 1024
+const (
+	// reserveCompletionFloor is the completion-token cap the QueryText pipeline
+	// applies to EVERY model (model.ChatCompletionRequest) AND the ceiling an
+	// UNCAPPED request's max_tokens is clamped to. The reservation always covers
+	// at least this many completion tokens, so a request can never settle beyond
+	// its hold — closing the single-request overdraft (R1b): the prior 1024-token
+	// estimate under-reserved an uncapped request that then settled the ACTUAL
+	// (larger) spend, driving the balance negative within one request.
+	reserveCompletionFloor = 4096
+
+	// maxReserveCompletionTokens bounds an absurd client max_tokens so the
+	// reservation can't be driven arbitrarily large by a hostile request.
+	maxReserveCompletionTokens = 32768
+)
+
+// clampMaxTokens is the upstream completion ceiling enforced on a request. A
+// normal client cap (0 < mt <= maxReserveCompletionTokens) is preserved as-is; an
+// UNCAPPED (<=0) or absurd (> max) request is clamped to reserveCompletionFloor so
+// the proxied (tool/stream) upstream can never emit an unbounded completion. The
+// caller MUST assign this back to request.MaxTokens before the upstream call.
+func clampMaxTokens(maxTokens int) int {
+	if maxTokens > 0 && maxTokens <= maxReserveCompletionTokens {
+		return maxTokens
+	}
+	return reserveCompletionFloor
+}
+
+// reserveCompletionTokens is the completion-token count to RESERVE for: the larger
+// of the (clamped) upstream ceiling and the QueryText pipeline's fixed cap. The
+// QueryText pipeline does NOT thread the request's max_tokens (it caps at
+// reserveCompletionFloor itself), so the reservation must cover that floor even
+// when the client capped lower — guaranteeing actual <= reserve on EVERY path.
+func reserveCompletionTokens(maxTokens int) int {
+	if c := clampMaxTokens(maxTokens); c > reserveCompletionFloor {
+		return c
+	}
+	return reserveCompletionFloor
+}
 
 // budgetHold is a per-request reservation against the shared balance ledger. It
 // holds an upper-bound estimate before the upstream call and releases it (while
@@ -192,13 +226,11 @@ func estimatePromptTokens(req *openai.ChatCompletionRequest) int {
 }
 
 // estimateRequestCostCents returns an UPPER-BOUND cost for a chat request: the
-// prompt cost plus the cost of the maximum requested completion (or a bounded
-// default when uncapped). The balance gate reserves this so a request is only
-// admitted when the spendable balance covers its worst-case cost.
+// prompt cost plus the cost of reserveCompletionTokens(maxTokens) — the worst-case
+// completion the upstream can actually emit on any serving path. The balance gate
+// reserves this so a request is admitted only when the spendable balance covers
+// its worst case, and (with the max_tokens clamp at the call site) the actual
+// settle can never exceed the reservation.
 func estimateRequestCostCents(modelName string, promptTokens, maxTokens int) int64 {
-	completion := maxTokens
-	if completion <= 0 || completion > 32768 {
-		completion = defaultReserveMaxTokens
-	}
-	return calculateCostCents(modelName, promptTokens, completion)
+	return calculateCostCents(modelName, promptTokens, reserveCompletionTokens(maxTokens))
 }
