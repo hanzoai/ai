@@ -17,8 +17,10 @@ package controllers
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"regexp"
 	"strings"
 
@@ -71,6 +73,75 @@ func (c *ApiController) ResponseError(error string, data ...interface{}) {
 func (c *ApiController) ResponseErrorWithStatus(status int, error string, data ...interface{}) {
 	c.Ctx.Output.SetStatus(status)
 	c.ResponseError(error, data...)
+}
+
+// apiError carries an HTTP status alongside the message so the OpenAI-compatible
+// handlers map auth / billing / validation failures to the right code instead of
+// Beego's default 200 (ServeJSON never sets a status). The shared auth+routing
+// policy (authResolveProvider and the resolveProvider* functions it composes)
+// returns exactly one category per failure, so the status is unambiguous:
+//
+//	authError    401  unknown / invalid key, bad JWT, IAM lookup failure
+//	billingError 402  valid key, insufficient / starter-only balance
+//	modelError   400  valid key, model not in the routing table
+//	serverError  500  provider misconfig or balance lookup transport failure
+//
+// Fail-secure: an untyped error reaching statusOf defaults to 401 (deny), never
+// 200 (grant).
+type apiError struct {
+	status int
+	msg    string
+}
+
+func (e *apiError) Error() string { return e.msg }
+
+func authError(format string, a ...interface{}) error {
+	return &apiError{http.StatusUnauthorized, fmt.Sprintf(format, a...)}
+}
+
+func billingError(format string, a ...interface{}) error {
+	return &apiError{http.StatusPaymentRequired, fmt.Sprintf(format, a...)}
+}
+
+func modelError(format string, a ...interface{}) error {
+	return &apiError{http.StatusBadRequest, fmt.Sprintf(format, a...)}
+}
+
+func serverError(format string, a ...interface{}) error {
+	return &apiError{http.StatusInternalServerError, fmt.Sprintf(format, a...)}
+}
+
+// statusOf returns the HTTP status carried by an apiError, or 401 for an untyped
+// error reaching an auth-gated handler (fail-secure: deny, never grant).
+func statusOf(err error) int {
+	var ae *apiError
+	if errors.As(err, &ae) {
+		return ae.status
+	}
+	return http.StatusUnauthorized
+}
+
+// wrapAuth tags an untyped error as a 401 auth failure, but leaves an already
+// typed apiError untouched — so the widget / provider-key branches of
+// authResolveProvider fail closed as 401 while the IAM / JWT branches keep the
+// precise 400 / 402 / 500 status produced deeper in the routing policy.
+func wrapAuth(err error) error {
+	if err == nil {
+		return nil
+	}
+	var ae *apiError
+	if errors.As(err, &ae) {
+		return err
+	}
+	return &apiError{http.StatusUnauthorized, err.Error()}
+}
+
+// ResponseAuthError renders an error from the auth / routing path with its
+// carried HTTP status (401 / 402 / 400 / 500). It never emits 200, so an invalid
+// key, an empty balance, or a bad model is unambiguous to OpenAI-compatible
+// clients. This is the ONE renderer for that surface (chat, embeddings, rerank).
+func (c *ApiController) ResponseAuthError(err error) {
+	c.ResponseErrorWithStatus(statusOf(err), err.Error())
 }
 
 func (c *ApiController) T(error string) string {
