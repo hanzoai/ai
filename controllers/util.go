@@ -63,6 +63,16 @@ func (c *ApiController) ResponseError(error string, data ...interface{}) {
 	c.ServeJSON()
 }
 
+// ResponseErrorWithStatus writes the standard error envelope with an explicit
+// HTTP status code. Plain ResponseError emits HTTP 200, which is wrong for auth
+// failures; the OpenAI-compatible /v1 handlers use this so a missing or invalid
+// Bearer token returns 401, matching /v1/models. Beego's Output.Body honors a
+// status set via SetStatus, so the body shape is unchanged.
+func (c *ApiController) ResponseErrorWithStatus(status int, error string, data ...interface{}) {
+	c.Ctx.Output.SetStatus(status)
+	c.ResponseError(error, data...)
+}
+
 func (c *ApiController) T(error string) string {
 	return i18n.Translate(c.GetAcceptLanguage(), error)
 }
