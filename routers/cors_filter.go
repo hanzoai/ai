@@ -89,7 +89,7 @@ func setCorsHeaders(ctx *context.Context, origin string) {
 	ctx.Output.Header(headerAllowMethods, "GET, POST, DELETE, PUT, PATCH, OPTIONS")
 	ctx.Output.Header(
 		headerAllowHeaders,
-		"Origin, X-Requested-With, Content-Type, Accept, Authorization, X-IAM-Org-Id, X-IAM-User-Id, X-IAM-User-Email, X-IAM-Project-Id, X-IAM-Env, X-API-Version, X-SDK-Name, X-SDK-Version",
+		"Origin, X-Requested-With, Content-Type, Accept, Authorization, X-Org-Id, X-IAM-User-Id, X-IAM-User-Email, X-IAM-Project-Id, X-IAM-Env, X-API-Version, X-SDK-Name, X-SDK-Version",
 	)
 	ctx.Output.Header(headerExposeHeaders, "Content-Length")
 	ctx.Output.Header(headerAllowCredentials, "true")
