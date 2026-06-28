@@ -39,14 +39,17 @@ func newTestGate(endpoint, token string) *BalanceGate {
 
 // TestFetchBalanceCallsCommerceCanonicalPath asserts the gate hits exactly the
 // canonical Commerce read endpoint (/v1/billing/balance, never /api/), passes
-// the user + currency, and forwards the bearer token.
+// the subject + currency, forwards the bearer token, AND scopes the read to the
+// caller's org namespace via X-Hanzo-Org — the per-org isolation invariant: the
+// balance read must land in the same namespace the credit and usage debit use.
 func TestFetchBalanceCallsCommerceCanonicalPath(t *testing.T) {
-	var gotPath, gotQueryUser, gotCurrency, gotAuth string
+	var gotPath, gotQueryUser, gotCurrency, gotAuth, gotNamespace string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
 		gotQueryUser = r.URL.Query().Get("user")
 		gotCurrency = r.URL.Query().Get("currency")
 		gotAuth = r.Header.Get("Authorization")
+		gotNamespace = r.Header.Get("X-Hanzo-Org")
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"user":"hanzo/alice","currency":"usd","balance":5000,"holds":0,"available":4200}`))
@@ -54,7 +57,7 @@ func TestFetchBalanceCallsCommerceCanonicalPath(t *testing.T) {
 	defer srv.Close()
 
 	bg := newTestGate(srv.URL, "svc-token-xyz")
-	balance, err := bg.fetchBalance("hanzo/alice")
+	balance, err := bg.fetchBalance("hanzo/alice", "hanzo")
 	if err != nil {
 		t.Fatalf("fetchBalance returned error: %v", err)
 	}
@@ -73,6 +76,35 @@ func TestFetchBalanceCallsCommerceCanonicalPath(t *testing.T) {
 	if gotAuth != "Bearer svc-token-xyz" {
 		t.Errorf("expected bearer token forwarded, got %q", gotAuth)
 	}
+	if gotNamespace != "hanzo" {
+		t.Errorf("expected X-Hanzo-Org=hanzo (per-org scope), got %q", gotNamespace)
+	}
+}
+
+// TestFetchBalanceScopesToNamespace proves the balance read for org A is scoped
+// to A's namespace and NOT B's — the no-cross-org-leak invariant at the gate.
+func TestFetchBalanceScopesToNamespace(t *testing.T) {
+	var gotNamespace, gotUser string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotNamespace = r.Header.Get("X-Hanzo-Org")
+		gotUser = r.URL.Query().Get("user")
+		w.Write([]byte(`{"available":1}`))
+	}))
+	defer srv.Close()
+
+	bg := newTestGate(srv.URL, "")
+	if _, err := bg.fetchBalance("acme", "acme"); err != nil {
+		t.Fatalf("fetchBalance error: %v", err)
+	}
+	if gotNamespace != "acme" {
+		t.Errorf("org acme balance read scoped to namespace %q, want acme", gotNamespace)
+	}
+	if gotUser != "acme" {
+		t.Errorf("org acme balance read used subject %q, want acme", gotUser)
+	}
+	if gotNamespace == "other-org" {
+		t.Errorf("cross-org leak: acme read used another org's namespace")
+	}
 }
 
 // TestFetchBalanceEscapesUserKey ensures the owner/name slash is URL-encoded so
@@ -86,7 +118,7 @@ func TestFetchBalanceEscapesUserKey(t *testing.T) {
 	defer srv.Close()
 
 	bg := newTestGate(srv.URL, "")
-	if _, err := bg.fetchBalance("hanzo/bob"); err != nil {
+	if _, err := bg.fetchBalance("hanzo/bob", "hanzo"); err != nil {
 		t.Fatalf("fetchBalance error: %v", err)
 	}
 	if !strings.Contains(rawQuery, "user="+url.QueryEscape("hanzo/bob")) {
@@ -115,7 +147,8 @@ func TestCheckBalanceGatesOnInsufficientFunds(t *testing.T) {
 			defer srv.Close()
 
 			bg := newTestGate(srv.URL, "")
-			sufficient, cents := bg.checkBalance("hanzo/user-" + tc.name)
+			subject := "hanzo/user-" + tc.name
+			sufficient, cents := bg.checkBalance(subject, "hanzo")
 			if sufficient != tc.wantSufficient {
 				t.Errorf("sufficient=%v, want %v", sufficient, tc.wantSufficient)
 			}
@@ -126,10 +159,6 @@ func TestCheckBalanceGatesOnInsufficientFunds(t *testing.T) {
 	}
 }
 
-// TestCheckBalanceFailsOpenOnCommerceError asserts the documented fail-open
-// posture: if Commerce errors (5xx), the request is allowed (sufficient=true)
-// rather than blocking paying users on an infra blip. The controller-level
-// ValidateTransactionForMessage backstop still guards the actual debit.
 // TestCheckBalanceFailsClosedOnColdNonExemptOrg asserts the bleed fix: a hard
 // cache-miss whose Commerce lookup errors (Commerce unreachable) must fail
 // CLOSED (sufficient=false -> 402) for a non-exempt org, so a Commerce outage
@@ -141,7 +170,7 @@ func TestCheckBalanceFailsClosedOnColdNonExemptOrg(t *testing.T) {
 	defer srv.Close()
 
 	bg := newTestGate(srv.URL, "")
-	sufficient, cents := bg.checkBalance("acme")
+	sufficient, cents := bg.checkBalance("acme", "acme")
 	if sufficient {
 		t.Error("expected fail-CLOSED (sufficient=false) for a cold non-exempt org when Commerce errors")
 	}
@@ -161,13 +190,13 @@ func TestCheckBalanceFailsOpenForExemptOrg(t *testing.T) {
 
 	bg := newTestGate(srv.URL, "")
 	bg.exemptOrgs = parseExemptOrgs("admin/hanzo-cloud,hanzo/z")
-	if sufficient, _ := bg.checkBalance("hanzo"); !sufficient {
+	if sufficient, _ := bg.checkBalance("hanzo", "hanzo"); !sufficient {
 		t.Error("expected fail-OPEN for exempt org 'hanzo' on Commerce error")
 	}
-	if sufficient, _ := bg.checkBalance("admin"); !sufficient {
+	if sufficient, _ := bg.checkBalance("admin", "admin"); !sufficient {
 		t.Error("expected fail-OPEN for exempt org 'admin' on Commerce error")
 	}
-	if sufficient, _ := bg.checkBalance("acme"); sufficient {
+	if sufficient, _ := bg.checkBalance("acme", "acme"); sufficient {
 		t.Error("expected fail-CLOSED for non-exempt org 'acme' even when other orgs are exempt")
 	}
 }
@@ -182,7 +211,7 @@ func TestCheckBalanceFailOpenOverride(t *testing.T) {
 
 	bg := newTestGate(srv.URL, "")
 	bg.failOpenOnError = true
-	if sufficient, _ := bg.checkBalance("acme"); !sufficient {
+	if sufficient, _ := bg.checkBalance("acme", "acme"); !sufficient {
 		t.Error("expected fail-OPEN when BALANCE_GATE_FAIL_OPEN_ON_ERROR override is set")
 	}
 }
@@ -198,9 +227,10 @@ func TestCheckBalanceServesStaleOnErrorForActiveOrg(t *testing.T) {
 	defer srv.Close()
 
 	bg := newTestGate(srv.URL, "")
-	// Funded but stale (older than the 30s TTL) -> stale-serve path.
+	// Funded but stale (older than the 30s TTL) -> stale-serve path. Entries are
+	// keyed by subject.
 	bg.entries["acme"] = &balanceCacheEntry{balanceCents: 500, fetchedAt: time.Now().Add(-time.Minute)}
-	sufficient, cents := bg.checkBalance("acme")
+	sufficient, cents := bg.checkBalance("acme", "acme")
 	if !sufficient || cents != 500 {
 		t.Errorf("expected stale-serve (sufficient=true, cents=500) for an active funded org on a blip, got (%v, %d)", sufficient, cents)
 	}
@@ -230,10 +260,10 @@ func TestCheckBalanceCachesWithinTTL(t *testing.T) {
 	defer srv.Close()
 
 	bg := newTestGate(srv.URL, "")
-	if s, _ := bg.checkBalance("hanzo/cacheme"); !s {
+	if s, _ := bg.checkBalance("hanzo/cacheme", "hanzo"); !s {
 		t.Fatal("first check should pass")
 	}
-	if s, _ := bg.checkBalance("hanzo/cacheme"); !s {
+	if s, _ := bg.checkBalance("hanzo/cacheme", "hanzo"); !s {
 		t.Fatal("second check should pass from cache")
 	}
 	if calls != 1 {
@@ -266,23 +296,24 @@ func TestBalanceExemptPaths(t *testing.T) {
 	}
 }
 
-// TestUserKeyCacheRoundTrip verifies the token->userKey cache stores and
-// expires entries per userKeyCacheTTL.
+// TestUserKeyCacheRoundTrip verifies the token->(subject,namespace) cache stores
+// and expires entries per userKeyCacheTTL, preserving the per-org namespace.
 func TestUserKeyCacheRoundTrip(t *testing.T) {
 	bg := newTestGate("http://unused", "")
-	if got := bg.getUserKeyCached("tok"); got != "" {
-		t.Errorf("expected empty on cache miss, got %q", got)
+	if _, _, ok := bg.getUserKeyCached("tok"); ok {
+		t.Error("expected miss on empty cache")
 	}
-	bg.setUserKeyCache("tok", "hanzo/carol")
-	if got := bg.getUserKeyCached("tok"); got != "hanzo/carol" {
-		t.Errorf("expected hanzo/carol from cache, got %q", got)
+	bg.setUserKeyCache("tok", "hanzo/carol", "hanzo")
+	subject, namespace, ok := bg.getUserKeyCached("tok")
+	if !ok || subject != "hanzo/carol" || namespace != "hanzo" {
+		t.Errorf("expected (hanzo/carol, hanzo, true) from cache, got (%q, %q, %v)", subject, namespace, ok)
 	}
 	// Force staleness.
 	bg.userKeyMu.Lock()
 	bg.userKeyCache["tok"].fetchedAt = time.Now().Add(-2 * userKeyCacheTTL)
 	bg.userKeyMu.Unlock()
-	if got := bg.getUserKeyCached("tok"); got != "" {
-		t.Errorf("expected empty on stale entry, got %q", got)
+	if _, _, ok := bg.getUserKeyCached("tok"); ok {
+		t.Error("expected miss on stale entry")
 	}
 }
 

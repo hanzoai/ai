@@ -43,12 +43,22 @@ func GetUserName(user *iam.User) string {
 }
 
 func (c *ApiController) GetSessionClaims() *iam.Claims {
+	// Fail secure: with no session store (session middleware disabled, or a
+	// pre-auth code path) treat the caller as unauthenticated rather than
+	// panicking on a nil session — no session ⇒ no user. A session value of an
+	// unexpected type is likewise ignored (never a type-assert panic).
+	if c.Ctx == nil || c.Ctx.Input == nil || c.Ctx.Input.CruSession == nil {
+		return nil
+	}
 	s := c.GetSession("user")
 	if s == nil {
 		return nil
 	}
 
-	claims := s.(iam.Claims)
+	claims, ok := s.(iam.Claims)
+	if !ok {
+		return nil
+	}
 	return &claims
 }
 
