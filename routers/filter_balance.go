@@ -50,6 +50,39 @@ func init() {
 	}
 }
 
+// parseExemptOrgs extracts the org slugs (owner-part) from a comma-separated
+// BALANCE_EXEMPT_USERS list of "owner/name" entries (e.g. "admin/hanzo-cloud,
+// hanzo/z" -> {admin, hanzo}). These orgs are never fail-closed on a
+// Commerce-error hard miss, mirroring the controller-level metering exemption
+// (controllers/openai_api.go) so internal/house traffic survives an outage.
+func parseExemptOrgs(raw string) map[string]struct{} {
+	out := make(map[string]struct{})
+	for _, e := range strings.Split(raw, ",") {
+		e = strings.TrimSpace(e)
+		if e == "" {
+			continue
+		}
+		owner := e
+		if i := strings.IndexByte(e, '/'); i >= 0 {
+			owner = e[:i]
+		}
+		owner = strings.ToLower(strings.TrimSpace(owner))
+		if owner != "" {
+			out[owner] = struct{}{}
+		}
+	}
+	return out
+}
+
+// isExemptOrg reports whether an org slug is exempt from the fail-closed gate.
+func (bg *BalanceGate) isExemptOrg(orgKey string) bool {
+	if len(bg.exemptOrgs) == 0 {
+		return false
+	}
+	_, ok := bg.exemptOrgs[strings.ToLower(orgKey)]
+	return ok
+}
+
 // ── Balance gate configuration ──────────────────────────────────────────────
 
 const (
@@ -102,6 +135,20 @@ type BalanceGate struct {
 	iamEndpoint  string // IAM base URL for hk- key resolution
 	clientId     string // IAM application client ID
 	clientSecret string // IAM application client secret
+
+	// failOpenOnError, when true, restores the legacy behavior of allowing a
+	// request through when a hard cache-miss balance lookup errors (Commerce
+	// unreachable). Default false = fail CLOSED for non-exempt orgs, so a
+	// Commerce outage cannot become an unmetered bleed. Toggled at runtime via
+	// BALANCE_GATE_FAIL_OPEN_ON_ERROR (the no-rebuild escape hatch).
+	failOpenOnError bool
+
+	// exemptOrgs holds org slugs that ALWAYS fail OPEN on a Commerce-error hard
+	// miss (never blocked), derived from the owner-part of BALANCE_EXEMPT_USERS
+	// (e.g. "admin/hanzo-cloud" -> "admin", "hanzo/z" -> "hanzo"). These mirror
+	// the controller-level metering exemption (openai_api.go) so internal/house
+	// traffic is never blocked by an outage.
+	exemptOrgs map[string]struct{}
 }
 
 // userKeyCacheEntry maps an API token to the resolved org slug (billing key).
@@ -142,6 +189,9 @@ func InitBalanceGate() {
 		iamEndpoint:  iamEndpoint,
 		clientId:     clientId,
 		clientSecret: clientSecret,
+
+		failOpenOnError: strings.EqualFold(strings.TrimSpace(os.Getenv("BALANCE_GATE_FAIL_OPEN_ON_ERROR")), "true"),
+		exemptOrgs:      parseExemptOrgs(os.Getenv("BALANCE_EXEMPT_USERS")),
 	}
 
 	go bg.cleanupLoop()
@@ -324,8 +374,18 @@ func (bg *BalanceGate) checkBalance(userKey string) (sufficient bool, balanceCen
 	// The timeout is capped at balanceHTTPTimeout (5s) to avoid blocking too long.
 	balance, err := bg.fetchBalance(userKey)
 	if err != nil {
-		logs.Warning("balance_gate: Commerce lookup failed for user=%s: %v (fail-open)", userKey, err)
-		return true, 0
+		// Hard cache-miss + Commerce error. Active orgs never reach here — they
+		// hit the 30s stale-serve path above — so this is a COLD org during a
+		// Commerce outage. Fail CLOSED for non-exempt orgs so an outage cannot
+		// become an unmetered bleed; the client retries once Commerce recovers.
+		// Exempt/house orgs (BALANCE_EXEMPT_USERS) and the explicit
+		// BALANCE_GATE_FAIL_OPEN_ON_ERROR override keep the legacy fail-open.
+		if bg.failOpenOnError || bg.isExemptOrg(userKey) {
+			logs.Warning("balance_gate: Commerce lookup failed for user=%s: %v (fail-open: exempt/override)", userKey, err)
+			return true, 0
+		}
+		logs.Warning("balance_gate: Commerce lookup failed for cold non-exempt org=%s: %v (fail-CLOSED)", userKey, err)
+		return false, 0
 	}
 
 	bg.mu.Lock()
