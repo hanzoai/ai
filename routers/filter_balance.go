@@ -106,18 +106,17 @@ const (
 
 // ── Balance cache ───────────────────────────────────────────────────────────
 
-// balanceCacheEntry holds a cached balance check result for a single user.
-type balanceCacheEntry struct {
-	balanceCents int64
-	fetchedAt    time.Time
-}
-
-// BalanceGate caches user balance checks to avoid hitting Commerce on every
-// request. Stale entries are served immediately while an async refresh runs
-// in the background — the hot path never blocks on network I/O.
+// BalanceGate enforces a positive spendable balance before paid requests. The
+// balance itself lives in the shared object.BalanceLedger — the ONE source of
+// truth also used by the controller debit path to reserve (before a request) and
+// settle (after). Reading the ledger here makes the gate reservation-aware and
+// reflects local settles immediately, so the cache window can never serve a
+// stale-positive balance after the funds are spent. The gate adds only its own
+// freshness scheduling (async refresh from Commerce) and identity resolution.
 type BalanceGate struct {
-	mu      sync.RWMutex
-	entries map[string]*balanceCacheEntry
+	// ledger is the shared balance+reservation store (defaults to
+	// object.GlobalBalanceLedger; injectable for tests).
+	ledger *object.BalanceLedger
 
 	// userKeyCache maps Bearer token -> org slug (billing key) to avoid
 	// re-parsing JWTs or re-calling IAM on every request for the same token.
@@ -183,7 +182,7 @@ func InitBalanceGate() {
 	clientSecret := conf.GetConfigString("IAM_CLIENT_SECRET")
 
 	bg := &BalanceGate{
-		entries:      make(map[string]*balanceCacheEntry),
+		ledger:       object.GlobalBalanceLedger,
 		userKeyCache: make(map[string]*userKeyCacheEntry),
 		inflight:     make(map[string]struct{}),
 		endpoint:     endpoint,
@@ -353,40 +352,33 @@ func isJwtTokenLike(token string) bool {
 
 // ── Balance checking ────────────────────────────────────────────────────────
 
-// checkBalance returns whether the user has a positive balance. On cache hit
-// within TTL, returns the cached result immediately. On stale cache entry,
-// returns the stale result and kicks off an async refresh. On cache miss,
-// fetches synchronously (with timeout) on first request, then caches.
+// checkBalance returns whether the subject has a positive SPENDABLE balance
+// (ledger balance minus outstanding reservations). On a fresh ledger entry it
+// returns immediately; on a stale entry it serves the (settle-adjusted) stale
+// value and refreshes asynchronously; on a cold subject it fetches synchronously
+// and seeds the ledger.
 //
-// Fail-open: any error from Commerce results in (true, 0) — the request is
-// allowed through, and the controller-level check provides a backstop.
+// Reading the ledger (not a private cache) makes the gate reservation-aware and
+// reflects every local settle, so the cache window can never serve a
+// stale-positive balance once the funds are spent.
+//
+// Fail posture on a COLD subject whose Commerce lookup errors: fail CLOSED for
+// non-exempt orgs (an outage must not become an unmetered bleed); exempt/house
+// orgs and the BALANCE_GATE_FAIL_OPEN_ON_ERROR override keep the legacy fail-open.
 func (bg *BalanceGate) checkBalance(subject, namespace string) (sufficient bool, balanceCents int64) {
-	bg.mu.RLock()
-	entry, ok := bg.entries[subject]
-	bg.mu.RUnlock()
-
-	if ok {
-		age := time.Since(entry.fetchedAt)
-		if age <= balanceCacheTTL {
-			// Fresh cache hit.
-			return entry.balanceCents > 0, entry.balanceCents
+	bal, reserved, fresh, known := bg.ledger.Snapshot(subject)
+	if known {
+		if !fresh {
+			// Stale: serve the settle-adjusted value, refresh asynchronously.
+			bg.refreshAsync(subject, namespace)
 		}
-		// Stale: serve stale result, refresh asynchronously.
-		bg.refreshAsync(subject, namespace)
-		return entry.balanceCents > 0, entry.balanceCents
+		avail := bal - reserved
+		return avail > 0, avail
 	}
 
-	// Cache miss: fetch synchronously so the first request gets a real check.
-	// The timeout is capped at balanceHTTPTimeout (5s) to avoid blocking too long.
+	// Cold subject: fetch synchronously so the first request gets a real check.
 	balance, err := bg.fetchBalance(subject, namespace)
 	if err != nil {
-		// Hard cache-miss + Commerce error. Active subjects never reach here —
-		// they hit the 30s stale-serve path above — so this is a COLD subject
-		// during a Commerce outage. Fail CLOSED for non-exempt orgs so an outage
-		// cannot become an unmetered bleed; the client retries once Commerce
-		// recovers. Exempt/house orgs (BALANCE_EXEMPT_USERS, matched on the
-		// namespace) and the explicit BALANCE_GATE_FAIL_OPEN_ON_ERROR override
-		// keep the legacy fail-open.
 		if bg.failOpenOnError || bg.isExemptOrg(namespace) {
 			logs.Warning("balance_gate: Commerce lookup failed for user=%s: %v (fail-open: exempt/override)", subject, err)
 			return true, 0
@@ -395,15 +387,13 @@ func (bg *BalanceGate) checkBalance(subject, namespace string) (sufficient bool,
 		return false, 0
 	}
 
-	bg.mu.Lock()
-	bg.entries[subject] = &balanceCacheEntry{balanceCents: balance, fetchedAt: time.Now()}
-	bg.mu.Unlock()
-
-	return balance > 0, balance
+	bg.ledger.SetBalance(subject, balance)
+	avail, _ := bg.ledger.Available(subject)
+	return avail > 0, avail
 }
 
-// refreshAsync kicks off a background goroutine to refresh the cached balance
-// for a user. Deduplicates concurrent refreshes for the same user key.
+// refreshAsync kicks off a background goroutine to refresh the ledger balance
+// from Commerce. Deduplicates concurrent refreshes for the same subject.
 func (bg *BalanceGate) refreshAsync(subject, namespace string) {
 	bg.inflightMu.Lock()
 	if _, running := bg.inflight[subject]; running {
@@ -426,9 +416,9 @@ func (bg *BalanceGate) refreshAsync(subject, namespace string) {
 			return
 		}
 
-		bg.mu.Lock()
-		bg.entries[subject] = &balanceCacheEntry{balanceCents: balance, fetchedAt: time.Now()}
-		bg.mu.Unlock()
+		// SetBalance resets the balance from Commerce but PRESERVES outstanding
+		// reservations for in-flight requests.
+		bg.ledger.SetBalance(subject, balance)
 	}()
 }
 
@@ -574,13 +564,8 @@ func (bg *BalanceGate) cleanupLoop() {
 	for range ticker.C {
 		now := time.Now()
 
-		bg.mu.Lock()
-		for key, entry := range bg.entries {
-			if now.Sub(entry.fetchedAt) > 2*balanceCacheTTL {
-				delete(bg.entries, key)
-			}
-		}
-		bg.mu.Unlock()
+		// Evict idle ledger entries (no holds, balance older than 2×TTL).
+		bg.ledger.EvictIdle(2 * balanceCacheTTL)
 
 		bg.userKeyMu.Lock()
 		for key, entry := range bg.userKeyCache {

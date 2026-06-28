@@ -144,6 +144,18 @@ func (c *ApiController) ResponseAuthError(err error) {
 	c.ResponseErrorWithStatus(statusOf(err), err.Error())
 }
 
+// ResponseUnauthorized renders an authentication denial (no/invalid session or
+// credential) as a real HTTP 401 — never Beego's default 200. Same body shape.
+func (c *ApiController) ResponseUnauthorized(error string, data ...interface{}) {
+	c.ResponseErrorWithStatus(http.StatusUnauthorized, error, data...)
+}
+
+// ResponseForbidden renders an authorization denial (authenticated but not
+// permitted) as a real HTTP 403 — never Beego's default 200. Same body shape.
+func (c *ApiController) ResponseForbidden(error string, data ...interface{}) {
+	c.ResponseErrorWithStatus(http.StatusForbidden, error, data...)
+}
+
 func (c *ApiController) T(error string) string {
 	return i18n.Translate(c.GetAcceptLanguage(), error)
 }
@@ -175,7 +187,7 @@ func (c *ApiController) GetAcceptLanguage() string {
 func (c *ApiController) RequireSignedIn() (string, bool) {
 	userId := c.GetSessionUsername()
 	if userId == "" {
-		c.ResponseError(c.T("auth:Please sign in first"))
+		c.ResponseUnauthorized(c.T("auth:Please sign in first"))
 		return "", false
 	}
 	return userId, true
@@ -184,7 +196,7 @@ func (c *ApiController) RequireSignedIn() (string, bool) {
 func (c *ApiController) RequireSignedInUser() (*iam.User, bool) {
 	user := c.GetSessionUser()
 	if user == nil {
-		c.ResponseError(c.T("auth:Please sign in first"))
+		c.ResponseUnauthorized(c.T("auth:Please sign in first"))
 		return nil, false
 	}
 	return user, true
@@ -205,7 +217,7 @@ func (c *ApiController) RequireAdmin() bool {
 	}
 
 	if !c.IsAdmin() {
-		c.ResponseError(c.T("auth:this operation requires admin privilege"))
+		c.ResponseForbidden(c.T("auth:this operation requires admin privilege"))
 		return false
 	}
 
@@ -223,6 +235,7 @@ func (c *ApiController) IsAdmin() bool {
 }
 
 func DenyRequest(ctx *context.Context) {
+	ctx.Output.SetStatus(http.StatusForbidden)
 	responseError(ctx, "auth:Unauthorized operation")
 }
 
@@ -314,7 +327,7 @@ func (c *ApiController) IsCurrentUser(usernameInput string) bool {
 	}
 
 	if !c.IsAdmin() && username != usernameInput {
-		c.ResponseError(c.T("auth:Unauthorized operation"))
+		c.ResponseForbidden(c.T("auth:Unauthorized operation"))
 		return false
 	}
 	return true
