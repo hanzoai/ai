@@ -90,7 +90,7 @@ func (c *ApiController) GetScale() {
 	if !c.IsAdmin() && !c.IsPreviewMode() {
 		username := c.GetSessionUsername()
 		if s.Owner != username {
-			c.ResponseError(c.T("auth:Unauthorized operation"))
+			c.ResponseForbidden(c.T("auth:Unauthorized operation"))
 			return
 		}
 	}
@@ -104,7 +104,7 @@ func (c *ApiController) GetScale() {
 // @router /get-public-scales [get]
 func (c *ApiController) GetPublicScales() {
 	if c.GetSessionUsername() == "" {
-		c.ResponseError(c.T("auth:Please sign in first"))
+		c.ResponseUnauthorized(c.T("auth:Please sign in first"))
 		return
 	}
 	scales, err := object.GetPublicScales("admin")
@@ -144,7 +144,7 @@ func (c *ApiController) UpdateScale() {
 	if !c.IsAdmin() && !c.IsPreviewMode() {
 		username := c.GetSessionUsername()
 		if existing.Owner != username {
-			c.ResponseError(c.T("auth:Unauthorized operation"))
+			c.ResponseForbidden(c.T("auth:Unauthorized operation"))
 			return
 		}
 	}
@@ -202,7 +202,7 @@ func (c *ApiController) DeleteScale() {
 			return
 		}
 		if existing.Owner != username {
-			c.ResponseError(c.T("auth:Unauthorized operation"))
+			c.ResponseForbidden(c.T("auth:Unauthorized operation"))
 			return
 		}
 	}

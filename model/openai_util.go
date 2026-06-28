@@ -163,11 +163,14 @@ func ChatCompletionRequest(model string, messages []openai.ChatCompletionMessage
 		res.MaxTokens = 4096
 	}
 
-	// Anthropic and other models routed through OpenAI-compatible APIs require max_tokens
-	if strings.Contains(model, "claude") || strings.Contains(model, "llama") || strings.Contains(model, "mistral") || strings.Contains(model, "qwen") || strings.Contains(model, "deepseek") {
-		if res.MaxTokens == 0 {
-			res.MaxTokens = 4096
-		}
+	// Default a sane completion cap for EVERY OpenAI-compatible model. The chat
+	// pipeline (QueryText) does NOT thread the request's max_tokens, so without a
+	// default an uncapped request could bill an unbounded completion. This 4096
+	// floor mirrors controllers.reserveCompletionFloor, so the per-request balance
+	// reservation always covers the actual spend on this path (R1b). Anthropic and
+	// several OpenAI-compatible upstreams also require max_tokens to be present.
+	if res.MaxTokens == 0 {
+		res.MaxTokens = 4096
 	}
 
 	return res

@@ -24,15 +24,18 @@ import (
 const (
 	UserTypeChatAdmin       = "chat-admin"
 	UserTypeVideoNormalUser = "video-normal-user"
-
-	// defaultGlobalAdminOrg is the org whose admins are platform-wide (global)
-	// admins. IAM's User has no IsGlobalAdmin flag — global authority is org
-	// membership: only members of this org (admins of the global tenant) may
-	// perform platform-wide AI ops. Overridable via the `globalAdminOrgs` app
-	// config (comma-separated) so additional platform orgs can be designated
-	// without a rebuild.
-	defaultGlobalAdminOrg = "admin"
 )
+
+// defaultGlobalAdminOrgs are the orgs whose admins are platform-wide (global)
+// admins by default: the IAM admin org ("admin") and the built-in org
+// ("built-in"). This is the ONE definition of "global admin" across the stack —
+// it matches IAM's AdminOrg (admin-guard: owner == IAM_ADMIN_ORG) and console2's
+// platform-admin set ({admin, built-in}). It is deliberately NOT the "hanzo"
+// TENANT org: a hanzo-org admin (e.g. z@hanzo.ai) is an org admin, not a platform
+// admin, and must not by default read/modify platform provider config (upstream
+// API keys). Override via the `globalAdminOrgs` app config / env (comma-separated)
+// — but the override should match this definition; see LLM.md for the live-env note.
+var defaultGlobalAdminOrgs = []string{"admin", "built-in"}
 
 func IsAnonymousUserByUsername(username string) bool {
 	return strings.HasPrefix(username, "u-") && len(username) == 10
@@ -56,7 +59,9 @@ func globalAdminOrgSet() map[string]struct{} {
 	out := map[string]struct{}{}
 	raw := strings.TrimSpace(conf.GetConfigString("globalAdminOrgs"))
 	if raw == "" {
-		out[defaultGlobalAdminOrg] = struct{}{}
+		for _, o := range defaultGlobalAdminOrgs {
+			out[o] = struct{}{}
+		}
 		return out
 	}
 	for _, o := range strings.Split(raw, ",") {

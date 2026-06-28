@@ -150,7 +150,7 @@ func (c *ApiController) GetChat() {
 	if !c.IsAdmin() && !c.IsPreviewMode() {
 		username := c.GetSessionUsername()
 		if username != chat.User {
-			c.ResponseError(c.T("auth:Unauthorized operation"))
+			c.ResponseForbidden(c.T("auth:Unauthorized operation"))
 			return
 		}
 	}

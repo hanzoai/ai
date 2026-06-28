@@ -14,35 +14,89 @@
 
 package object
 
-import iam "github.com/hanzoai/iam"
+import (
+	"reflect"
+	"strings"
 
-// RedactUserSecrets zeroes every credential-bearing field on an IAM user before
-// it is serialized to a client. This is the ONE place cloud-api scrubs a user;
-// the default read path (e.g. /v1/get-account) must call it so a browser never
-// receives the password hash, salt, MFA seed, recovery codes, or any
-// access/refresh token. Access keys are also scrubbed here — they are revealed
-// ONLY through an explicit, separately-authorized endpoint, never a default read.
+	iam "github.com/hanzoai/iam"
+)
+
+// exposableUserFields is the ALLOWLIST of iam.User json tags (string and []string
+// fields) that are safe to return on a default user read (e.g. /v1/get-account).
+// It is intentionally a projection, NOT a denylist: a string/[]string field whose
+// tag is NOT listed here is zeroed. This is fail-secure — a NEW iam.User secret
+// field (a token, key, or hash added upstream) is never exposed until it is
+// explicitly allowlisted, closing the denylist gap where any new credential field
+// would silently leak. The set covers identity, profile, contact, locale, status,
+// balance, and the fields the cloud account UI consumes (incl. createdIp).
+// Deliberately EXCLUDED (→ zeroed): password*, access*/token* credentials,
+// totpSecret/recoveryCodes, hash/preHash/externalId, idCard*/realName/ldap,
+// OAuth provider link ids (github…web3onboard), custom1..10, invitation*, and IP
+// allowlists — none are needed by the cloud account surface.
+var exposableUserFields = map[string]struct{}{
+	"owner": {}, "name": {}, "createdTime": {}, "updatedTime": {}, "deletedTime": {},
+	"id": {}, "type": {}, "displayName": {}, "firstName": {}, "lastName": {},
+	"avatar": {}, "avatarType": {}, "permanentAvatar": {},
+	"email": {}, "phone": {}, "countryCode": {}, "region": {}, "location": {}, "address": {},
+	"affiliation": {}, "title": {}, "homepage": {}, "bio": {}, "tag": {},
+	"language": {}, "gender": {}, "birthday": {}, "education": {},
+	"currency": {}, "balanceCurrency": {}, "signupApplication": {},
+	"createdIp": {}, "lastSigninTime": {}, "lastSigninIp": {},
+	"preferredMfaType": {}, "groups": {},
+}
+
+// redactNonExposableStrings zeros every string and []string field of u whose json
+// tag is NOT in exposableUserFields (the allowlist projection). Non-string fields
+// (bools, ints, floats, maps, and struct/pointer slices) are untouched here;
+// credential-bearing struct slices are cleared explicitly by RedactUserSecrets.
+func redactNonExposableStrings(u *iam.User) {
+	v := reflect.ValueOf(u).Elem()
+	t := v.Type()
+	for i := 0; i < t.NumField(); i++ {
+		f := t.Field(i)
+		if f.PkgPath != "" { // unexported field — skip
+			continue
+		}
+		tag := strings.Split(f.Tag.Get("json"), ",")[0]
+		if tag == "" || tag == "-" {
+			continue
+		}
+		if _, ok := exposableUserFields[tag]; ok {
+			continue
+		}
+		fv := v.Field(i)
+		if !fv.CanSet() {
+			continue
+		}
+		switch {
+		case fv.Kind() == reflect.String:
+			fv.SetString("")
+		case fv.Kind() == reflect.Slice && fv.Type().Elem().Kind() == reflect.String:
+			fv.Set(reflect.Zero(fv.Type()))
+		}
+	}
+}
+
+// RedactUserSecrets scrubs every credential-bearing field on an IAM user before it
+// is serialized to a client. This is the ONE place cloud-api scrubs a user; the
+// default read path (e.g. /v1/get-account) must call it so a browser never
+// receives the password hash/salt, MFA seed, recovery codes, access/refresh
+// tokens, or any other credential. It is an ALLOWLIST projection over string and
+// []string fields (redactNonExposableStrings) so a future secret field is
+// fail-secure, plus explicit clearing of the credential-bearing STRUCT slices the
+// string projection cannot reach.
 func RedactUserSecrets(u *iam.User) {
 	if u == nil {
 		return
 	}
-	// password* — never expose the hash, salt, or KDF identifier.
-	u.Password = ""
-	u.PasswordSalt = ""
-	u.PasswordType = ""
 
-	// *Secret / *Key — API credentials.
-	u.AccessKey = ""
-	u.AccessSecret = ""
+	// Allowlist projection: zero every string/[]string field not explicitly
+	// exposable. This covers password*, *Secret, *Key, *Token, totpSecret,
+	// recoveryCodes, AND any new unknown string credential (fail-secure).
+	redactNonExposableStrings(u)
 
-	// *Token — bearer/refresh material.
-	u.AccessToken = ""
-	u.OriginalToken = ""
-	u.OriginalRefreshToken = ""
-
-	// MFA seeds and recovery codes.
-	u.TotpSecret = ""
-	u.RecoveryCodes = nil
+	// Credential-bearing STRUCT slices the string projection cannot reach.
+	u.RecoveryCodes = nil // also covered by the projection; explicit for clarity.
 	for _, m := range u.MultiFactorAuths {
 		if m == nil {
 			continue
@@ -50,6 +104,10 @@ func RedactUserSecrets(u *iam.User) {
 		m.Secret = ""
 		m.RecoveryCodes = nil
 	}
+	u.MfaAccounts = nil     // MfaAccount carries a TOTP secret key.
+	u.ManagedAccounts = nil // ManagedAccount carries a password.
+	u.MfaItems = nil        // MFA enrollment items.
+	u.FaceIds = nil         // biometric face data.
 }
 
 // RedactClaimsSecrets scrubs both the embedded user and the claims-level token

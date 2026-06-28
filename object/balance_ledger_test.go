@@ -21,6 +21,29 @@ import (
 	"time"
 )
 
+// TestSinglePodReplicaHint documents/asserts the in-pod ledger's single-pod
+// invariant: the optional CLOUD_API_REPLICAS hint is parsed so the boot path can
+// refuse to start at >1 replica (the in-pod reservation ledger double-spends
+// across pods). Unset/garbage => ok=false (invariant logged, not enforced).
+func TestSinglePodReplicaHint(t *testing.T) {
+	t.Setenv("CLOUD_API_REPLICAS", "")
+	if _, ok := SinglePodReplicaHint(); ok {
+		t.Error("unset hint must be ok=false (invariant logged, not hard-enforced)")
+	}
+	t.Setenv("CLOUD_API_REPLICAS", "1")
+	if n, ok := SinglePodReplicaHint(); !ok || n != 1 {
+		t.Errorf("CLOUD_API_REPLICAS=1 => (1,true), got (%d,%v)", n, ok)
+	}
+	t.Setenv("CLOUD_API_REPLICAS", "2")
+	if n, ok := SinglePodReplicaHint(); !ok || n != 2 {
+		t.Errorf("CLOUD_API_REPLICAS=2 => (2,true) so boot can refuse, got (%d,%v)", n, ok)
+	}
+	t.Setenv("CLOUD_API_REPLICAS", "garbage")
+	if _, ok := SinglePodReplicaHint(); ok {
+		t.Error("unparseable hint must be ok=false")
+	}
+}
+
 // TestLedgerColdSubjectCannotReserve: an unknown subject (no Commerce balance
 // cached) can never be reserved against — the gate must fetch first.
 func TestLedgerColdSubjectCannotReserve(t *testing.T) {
