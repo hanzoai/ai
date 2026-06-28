@@ -304,20 +304,24 @@ func zapBalanceHandler(auth string, body []byte) (*zap.Message, error) {
 		}
 	}
 
-	// Billing is per-org: the balance lives under the org slug. userId is
-	// "owner/name" (or a bare org); take the org part as the balance key.
-	orgKey := userId
-	if i := strings.IndexByte(orgKey, '/'); i > 0 {
-		orgKey = orgKey[:i]
+	// The balance lives under the billing SUBJECT within the org NAMESPACE.
+	// userId is "owner/name" (or a bare org); namespace = the org part, subject
+	// = object.BillingSubject(owner, name) (per-user for a personal-billing org).
+	namespace := userId
+	name := ""
+	if i := strings.IndexByte(userId, '/'); i >= 0 {
+		namespace = userId[:i]
+		name = userId[i+1:]
 	}
+	subject := object.BillingSubject(namespace, name)
 
-	balance, err := getUserBalance(orgKey)
+	balance, err := getUserBalance(subject, namespace)
 	if err != nil {
 		return object.BuildCloudResponse(500, nil, "balance query failed: "+err.Error())
 	}
 
 	data, _ := json.Marshal(map[string]interface{}{
-		"user":      orgKey,
+		"user":      subject,
 		"balance":   balance,
 		"currency":  "usd",
 		"available": balance,
@@ -348,8 +352,9 @@ func zapChatHandler(ctx context.Context, auth string, body []byte) (*zap.Message
 	if route := resolveModelRoute(request.Model); route != nil {
 		isPremium = route.premium
 		if route.premium && authUser != nil {
-			// Billing is per-org: check the org's balance, not per-user.
-			balance, balErr := getUserBalance(authUser.Owner)
+			// Check the billing SUBJECT within the org NAMESPACE (per-user for a
+			// personal-billing org), matching the gate and usage debit.
+			balance, balErr := getUserBalance(object.BillingSubject(authUser.Owner, authUser.Name), authUser.Owner)
 			if balErr != nil || balance <= 0 {
 				return object.BuildCloudResponse(402, nil, "insufficient balance for premium model")
 			}

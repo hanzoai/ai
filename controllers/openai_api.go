@@ -48,7 +48,7 @@ import (
 // key (?user=) and as the namespace selector (X-Hanzo-Org), matching the gate
 // and the per-org credit. Without the header, commerce's service-token path
 // defaults to the "hanzo" namespace and a per-org credit is invisible.
-func getUserBalance(orgKey string) (float64, error) {
+func getUserBalance(subject, namespace string) (float64, error) {
 	commerceEndpoint := conf.GetConfigString("commerceEndpoint")
 	if commerceEndpoint == "" {
 		return 0, fmt.Errorf("commerceEndpoint is not configured")
@@ -58,7 +58,9 @@ func getUserBalance(orgKey string) (float64, error) {
 
 	// Per global rule: /v1/ only, never /api/.
 	// All commerce endpoints live under /v1/.
-	reqURL := fmt.Sprintf("%s/v1/billing/balance?user=%s&currency=usd", commerceEndpoint, url.QueryEscape(orgKey))
+	// subject (?user=) is the per-user/per-org billing key; namespace
+	// (X-Hanzo-Org) is the org. Both must match the gate and the usage debit.
+	reqURL := fmt.Sprintf("%s/v1/billing/balance?user=%s&currency=usd", commerceEndpoint, url.QueryEscape(subject))
 
 	client := &http.Client{Timeout: 10 * time.Second}
 	req, err := http.NewRequest(http.MethodGet, reqURL, nil)
@@ -69,7 +71,7 @@ func getUserBalance(orgKey string) (float64, error) {
 		req.Header.Set("Authorization", "Bearer "+commerceToken)
 	}
 	// Scope the service-token call to this org's namespace.
-	req.Header.Set("X-Hanzo-Org", orgKey)
+	req.Header.Set("X-Hanzo-Org", namespace)
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -377,7 +379,12 @@ func resolveProviderForUser(user *iam.User, requestedModel string, lang string) 
 	// accounts are named individually), while billing itself is per-org.
 	exemptUsers := os.Getenv("BALANCE_EXEMPT_USERS")
 	userKey := user.Owner + "/" + user.Name
-	orgKey := user.Owner // billing is per-org: one credit covers the whole org
+	orgKey := user.Owner // namespace (X-Hanzo-Org): the org tenant
+	// subject is the billing account WITHIN the namespace: "owner/name" for a
+	// personal-billing org (each member billed independently), the org slug for
+	// a pooled org. The gate read, this backstop, and the usage debit all key
+	// on this one subject.
+	subject := object.BillingSubject(user.Owner, user.Name)
 	isExempt := false
 	if exemptUsers != "" {
 		for _, u := range strings.Split(exemptUsers, ",") {
@@ -393,8 +400,8 @@ func resolveProviderForUser(user *iam.User, requestedModel string, lang string) 
 		// All models require prepaid balance. New accounts receive a $5 starter
 		// credit that works only for non-premium (DO-AI) models.
 		// Premium models (Fireworks, OpenAI Direct, Zen) require the user to
-		// have added funds beyond the starter credit. Balance is per-org.
-		balance, err := getUserBalance(orgKey)
+		// have added funds beyond the starter credit. Balance is per-subject.
+		balance, err := getUserBalance(subject, orgKey)
 		if err != nil {
 			return nil, user, "", fmt.Errorf("failed to verify account balance: %s", err.Error())
 		}
@@ -411,7 +418,7 @@ func resolveProviderForUser(user *iam.User, requestedModel string, lang string) 
 	// Premium models require funds beyond the starter credit.
 	// A balance <= StarterCreditDollars means the user only has free credit.
 	if !isExempt {
-		balance, _ := getUserBalance(orgKey)
+		balance, _ := getUserBalance(subject, orgKey)
 		starterCredit := StarterCreditDollars
 		if cfg := GetModelConfig(); cfg != nil {
 			starterCredit = cfg.StarterCreditDollars()
@@ -427,7 +434,7 @@ func resolveProviderForUser(user *iam.User, requestedModel string, lang string) 
 	}
 
 	if !isExempt {
-		bal, _ := getUserBalance(orgKey)
+		bal, _ := getUserBalance(subject, orgKey)
 		user.Balance = bal
 	}
 
@@ -569,11 +576,13 @@ func recordUsage(record *usageRecord) {
 		record.CacheReadTokens, record.CacheWriteTokens,
 	)
 
-	// Billing is per-org: the debit is keyed by the org slug (record.Owner),
-	// matching the per-org credit and the balance gate. The full "owner/name"
-	// (record.User) is retained as actor metadata for attribution/audit, not as
-	// the balance key. record.Owner is the IAM `owner` claim; fall back to
-	// deriving it from "owner/name" if Owner was not populated upstream.
+	// The debit MUST hit the same account the balance gate reads and the starter
+	// credit funded: the billing SUBJECT within the org NAMESPACE.
+	//   namespace (X-Hanzo-Org) = record.Owner (the org)
+	//   subject   (?user=)      = object.BillingSubject(owner, name)
+	// For a personal-billing org that is "owner/name" (per-user); for a pooled
+	// org it is the org slug. record.Owner is the IAM `owner`; fall back to
+	// deriving owner+name from "owner/name" if Owner was not populated upstream.
 	org := record.Owner
 	if org == "" {
 		if i := strings.IndexByte(record.User, '/'); i > 0 {
@@ -582,9 +591,10 @@ func recordUsage(record *usageRecord) {
 			org = record.User
 		}
 	}
+	subject := object.BillingSubjectFromUserKey(record.Owner, record.User)
 
 	payload := map[string]interface{}{
-		"user":             org,
+		"user":             subject,
 		"actor":            record.User,
 		"currency":         "usd",
 		"amount":           costCents,
@@ -794,6 +804,86 @@ func recordTrace(record *usageRecord, startTime time.Time) {
 
 // ── API handlers ────────────────────────────────────────────────────────────
 
+// authResolveProvider authenticates a bearer token and resolves the requested
+// model to its upstream provider. It is the single auth + model-routing policy
+// for every OpenAI-compatible surface (chat, embeddings, rerank): each handler
+// calls it instead of re-implementing the widget/IAM/JWT/provider-key branches.
+//
+// Returns the resolved provider (with KMS-resolved secret), the billed user
+// (nil for widget/provider-key auth), the upstream model id, whether the route
+// is premium, and whether the caller used an anonymous widget key. Errors are
+// returned pre-formatted for ResponseError.
+func (c *ApiController) authResolveProvider(token, requestedModel, orgId string) (provider *object.Provider, authUser *iam.User, upstreamModel string, isPremium bool, isWidget bool, err error) {
+	lang := c.GetAcceptLanguage()
+
+	switch {
+	case isWidgetKey(token):
+		// Widget key (hz_...) — restricted model access, no balance check.
+		isWidget = true
+		var widgetUpstream string
+		provider, widgetUpstream, err = resolveProviderFromWidgetKey(token, requestedModel, lang)
+		if err != nil {
+			err = fmt.Errorf("Widget authentication failed: %s", err.Error())
+			return
+		}
+		upstreamModel = widgetUpstream
+		c.Ctx.Input.SetParam("recordUserId", "widget/anonymous")
+		logs.Info("Widget key access: model=%s, upstream=%s", requestedModel, upstreamModel)
+		return
+
+	case isIAMApiKey(token):
+		// IAM API key (hk-...) — full model routing + billing.
+		provider, authUser, upstreamModel, err = resolveProviderFromIAMKey(token, requestedModel, lang)
+		if err != nil {
+			err = fmt.Errorf("Authentication failed: %s", err.Error())
+			return
+		}
+
+	case isJwtToken(token):
+		// hanzo.id JWT token — full model routing + billing.
+		provider, authUser, upstreamModel, err = resolveProviderFromJwt(token, requestedModel, lang)
+		if err != nil {
+			err = fmt.Errorf("Authentication failed: %s", err.Error())
+			return
+		}
+
+	default:
+		// Provider API key (sk-...) — direct provider access.
+		provider, err = object.GetProviderByProviderKey(token, lang)
+		if err != nil {
+			err = fmt.Errorf("Authentication failed: %s", err.Error())
+			return
+		}
+		if provider == nil {
+			err = fmt.Errorf("Authentication failed: invalid API key")
+			return
+		}
+		// Apply model routing for sk- keys too. If the route points to a
+		// different provider than the one that owns the API key, switch to the
+		// route's provider so zen/fireworks models work with any key.
+		if route := resolveModelRouteForOrg(requestedModel, orgId); route != nil {
+			upstreamModel = route.upstreamModel
+			isPremium = route.premium
+			if route.providerName != provider.Name {
+				if routeProvider, routeErr := object.GetModelProviderByName(route.providerName); routeErr == nil && routeProvider != nil {
+					provider = routeProvider
+				}
+			}
+		}
+		return
+	}
+
+	// Shared post-resolution for IAM/JWT auth: record the billed user and the
+	// premium flag from the route table.
+	if authUser != nil {
+		c.Ctx.Input.SetParam("recordUserId", authUser.Owner+"/"+authUser.Name)
+	}
+	if route := resolveModelRouteForOrg(requestedModel, orgId); route != nil {
+		isPremium = route.premium
+	}
+	return
+}
+
 // ChatCompletions implements the OpenAI-compatible chat completions API
 // @Title ChatCompletions
 // @Tag OpenAI Compatible API
@@ -836,81 +926,22 @@ func (c *ApiController) ChatCompletions() {
 		return
 	}
 
-	var provider *object.Provider
-	var authUser *iam.User
-	var upstreamModel string
-	var isPremium bool
-
 	// Resolve org context for per-org model routing and pricing.
 	orgId := c.GetEffectiveOrg()
 
-	if isWidgetKey(token) {
-		// Authenticate via widget key (hz_...) — restricted model access, no balance check
-		var widgetUpstream string
-		provider, widgetUpstream, err = resolveProviderFromWidgetKey(token, request.Model, c.GetAcceptLanguage())
-		if err != nil {
-			c.ResponseError(fmt.Sprintf("Widget authentication failed: %s", err.Error()))
-			return
-		}
-		upstreamModel = widgetUpstream
-		// Cap max_tokens for widget requests
+	// Authenticate the bearer token and resolve the requested model to its
+	// upstream provider, premium flag, and (for IAM/JWT auth) the billed user.
+	// This is the ONE auth+routing policy, shared with /v1/embeddings and
+	// /v1/rerank — see authResolveProvider.
+	provider, authUser, upstreamModel, isPremium, isWidget, err := c.authResolveProvider(token, request.Model, orgId)
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+	if isWidget {
+		// Cap max_tokens for anonymous widget requests.
 		if request.MaxTokens == 0 || request.MaxTokens > widgetMaxTokens {
 			request.MaxTokens = widgetMaxTokens
-		}
-		// Track as anonymous widget usage
-		c.Ctx.Input.SetParam("recordUserId", "widget/anonymous")
-		logs.Info("Widget key access: model=%s, upstream=%s", request.Model, upstreamModel)
-	} else if isIAMApiKey(token) {
-		// Authenticate via IAM API key (hk-...) — full model routing
-		provider, authUser, upstreamModel, err = resolveProviderFromIAMKey(token, request.Model, c.GetAcceptLanguage())
-		if err != nil {
-			c.ResponseError(fmt.Sprintf("Authentication failed: %s", err.Error()))
-			return
-		}
-		if authUser != nil {
-			userId := authUser.Owner + "/" + authUser.Name
-			c.Ctx.Input.SetParam("recordUserId", userId)
-		}
-		if route := resolveModelRouteForOrg(request.Model, orgId); route != nil {
-			isPremium = route.premium
-		}
-	} else if isJwtToken(token) {
-		// Authenticate via hanzo.id JWT token — full model routing
-		provider, authUser, upstreamModel, err = resolveProviderFromJwt(token, request.Model, c.GetAcceptLanguage())
-		if err != nil {
-			c.ResponseError(fmt.Sprintf("Authentication failed: %s", err.Error()))
-			return
-		}
-		if authUser != nil {
-			userId := authUser.Owner + "/" + authUser.Name
-			c.Ctx.Input.SetParam("recordUserId", userId)
-		}
-		if route := resolveModelRouteForOrg(request.Model, orgId); route != nil {
-			isPremium = route.premium
-		}
-	} else {
-		// Authenticate via provider API key (sk-...) — direct provider access
-		provider, err = object.GetProviderByProviderKey(token, c.GetAcceptLanguage())
-		if err != nil {
-			c.ResponseError(fmt.Sprintf("Authentication failed: %s", err.Error()))
-			return
-		}
-		if provider == nil {
-			c.ResponseError("Authentication failed: invalid API key")
-			return
-		}
-		// Apply model routing for sk- keys too. If the route points to a
-		// different provider than the one that owns the API key, switch to
-		// the route's provider so zen/fireworks models work with any key.
-		if route := resolveModelRouteForOrg(request.Model, orgId); route != nil {
-			upstreamModel = route.upstreamModel
-			isPremium = route.premium
-			if route.providerName != provider.Name {
-				routeProvider, routeErr := object.GetModelProviderByName(route.providerName)
-				if routeErr == nil && routeProvider != nil {
-					provider = routeProvider
-				}
-			}
 		}
 	}
 
@@ -1001,12 +1032,13 @@ func (c *ApiController) ChatCompletions() {
 
 	// Create custom writer for OpenAI format
 	writer := &OpenAIWriter{
-		Response:  *c.Ctx.ResponseWriter,
-		Buffer:    []byte{},
-		RequestID: requestId,
-		Stream:    request.Stream,
-		Cleaner:   *NewCleaner(6),
-		Model:     request.Model,
+		Response:     *c.Ctx.ResponseWriter,
+		Buffer:       []byte{},
+		RequestID:    requestId,
+		Stream:       request.Stream,
+		Cleaner:      *NewCleaner(6),
+		Model:        request.Model,
+		IncludeUsage: request.StreamOptions != nil && request.StreamOptions.IncludeUsage,
 	}
 
 	// Optional RAG: unified retrieval path shared with the old /chat-docs route.
@@ -1421,8 +1453,20 @@ func (c *ApiController) proxyToolRequest(
 }
 
 // resolveUpstreamEndpoint returns the chat completions URL, API key, and
-// optional full Authorization header for the given provider.
+// optional full Authorization header for the given provider. It is a thin
+// alias over resolveEndpointForPath so chat, embeddings, and rerank all share
+// exactly one per-provider endpoint map.
 func resolveUpstreamEndpoint(provider *object.Provider) (url string, apiKey string, authHeader string) {
+	return resolveEndpointForPath(provider, "chat/completions")
+}
+
+// resolveEndpointForPath returns the upstream URL, API key, and optional full
+// Authorization header for the given provider and OpenAI-style API path
+// (e.g. "chat/completions", "embeddings", "rerank"). This is the single place
+// that knows each provider's base URL and auth scheme; every OpenAI-compatible
+// surface is built by varying apiPath only — no per-endpoint copy of provider
+// routing exists.
+func resolveEndpointForPath(provider *object.Provider, apiPath string) (url string, apiKey string, authHeader string) {
 	apiKey = provider.ClientSecret
 
 	switch provider.Type {
@@ -1435,23 +1479,31 @@ func resolveUpstreamEndpoint(provider *object.Provider) (url string, apiKey stri
 		if !strings.HasSuffix(baseURL, "/v1") {
 			baseURL += "/v1"
 		}
-		return baseURL + "/chat/completions", apiKey, ""
+		return baseURL + "/" + apiPath, apiKey, ""
 
 	case "Fireworks":
-		return "https://api.fireworks.ai/inference/v1/chat/completions", apiKey, ""
+		return "https://api.fireworks.ai/inference/v1/" + apiPath, apiKey, ""
 
 	case "Grok":
-		return "https://api.x.ai/v1/chat/completions", apiKey, ""
+		return "https://api.x.ai/v1/" + apiPath, apiKey, ""
 
 	case "OpenRouter":
-		return "https://openrouter.ai/api/v1/chat/completions", apiKey, ""
+		return "https://openrouter.ai/api/v1/" + apiPath, apiKey, ""
 
 	case "Moonshot":
-		return "https://api.moonshot.cn/v1/chat/completions", apiKey, ""
+		return "https://api.moonshot.cn/v1/" + apiPath, apiKey, ""
 
 	case "Gemini":
-		// Gemini uses a different URL pattern but supports OpenAI compatibility
-		return fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"), apiKey, ""
+		// Gemini exposes an OpenAI-compatible surface under /v1beta/openai.
+		return "https://generativelanguage.googleapis.com/v1beta/openai/" + apiPath, apiKey, ""
+
+	case "Jina":
+		// Jina AI: OpenAI-compatible /v1/embeddings and a native /v1/rerank.
+		return "https://api.jina.ai/v1/" + apiPath, apiKey, ""
+
+	case "Cohere":
+		// Cohere v1 exposes /v1/embeddings and /v1/rerank.
+		return "https://api.cohere.com/v1/" + apiPath, apiKey, ""
 
 	case "Azure":
 		baseURL := strings.TrimRight(provider.ProviderUrl, "/")
@@ -1459,26 +1511,25 @@ func resolveUpstreamEndpoint(provider *object.Provider) (url string, apiKey stri
 		if apiVersion == "" {
 			apiVersion = "2024-02-01"
 		}
-		return fmt.Sprintf("%s/openai/deployments/%s/chat/completions?api-version=%s",
-			baseURL, provider.SubType, apiVersion), "", "api-key " + apiKey
+		return fmt.Sprintf("%s/openai/deployments/%s/%s?api-version=%s",
+			baseURL, provider.SubType, apiPath, apiVersion), "", "api-key " + apiKey
 
 	case "Local", "Ollama", "DigitalOcean":
-		// Local/compatible providers with custom URLs
+		// Local/compatible providers with custom URLs.
 		baseURL := strings.TrimRight(provider.ProviderUrl, "/")
 		if baseURL == "" {
 			return "", "", ""
 		}
-		// Ensure /v1/chat/completions path
 		if strings.HasSuffix(baseURL, "/v1") {
-			return baseURL + "/chat/completions", apiKey, ""
+			return baseURL + "/" + apiPath, apiKey, ""
 		}
-		return baseURL + "/v1/chat/completions", apiKey, ""
+		return baseURL + "/v1/" + apiPath, apiKey, ""
 
 	default:
-		// For any OpenAI-compatible provider with a custom URL
+		// Any other OpenAI-compatible provider with a custom URL.
 		if provider.ProviderUrl != "" {
 			baseURL := strings.TrimRight(provider.ProviderUrl, "/")
-			return baseURL + "/chat/completions", apiKey, ""
+			return baseURL + "/" + apiPath, apiKey, ""
 		}
 		return "", "", ""
 	}
