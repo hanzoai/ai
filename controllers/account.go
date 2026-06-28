@@ -400,6 +400,14 @@ func (c *ApiController) GetAccount() {
 		return
 	}
 
+	// Strip every credential field before returning the account to the browser:
+	// password hash/salt/type, MFA seed + recovery codes, and all access/refresh
+	// tokens. Access keys are revealed only via an explicit authorized endpoint,
+	// never this default read. The claims here are a per-call copy, so the
+	// server-side session set above is unaffected.
+	object.RedactClaimsSecrets(claims)
+
+	// Preserve the "must change password" signal as a non-secret sentinel.
 	if !isSafePassword {
 		claims.User.Password = "#NeedToModify#"
 	}
