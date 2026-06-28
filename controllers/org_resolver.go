@@ -46,7 +46,7 @@ func (c *ApiController) principalUser() *iam.User {
 // GetEffectiveOrg resolves the organization for data-scoping and pricing from
 // the VERIFIED request principal — never a raw client header.
 //
-// X-IAM-Org-Id is honored ONLY when it matches the authenticated principal's own
+// X-Org-Id is honored ONLY when it matches the authenticated principal's own
 // org, or the principal is a global admin (cross-org platform access). A
 // non-admin can never act as another org via a spoofed header; an
 // unauthenticated caller's header is ignored. Behind the gateway the injected
@@ -56,7 +56,7 @@ func (c *ApiController) principalUser() *iam.User {
 // this value — this governs routing, pricing, usage reads, and record
 // attribution, all of which must also be tenant-safe.
 func (c *ApiController) GetEffectiveOrg() string {
-	requested := strings.TrimSpace(c.Ctx.Input.Header("X-IAM-Org-Id"))
+	requested := strings.TrimSpace(c.Ctx.Input.Header("X-Org-Id"))
 
 	user := c.principalUser()
 	if user != nil && user.Owner != "" {
