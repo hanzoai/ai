@@ -564,8 +564,8 @@ func (tc *TierCache) commerceTierLookup(orgKey string) (Tier, error) {
 		req.Header.Set("Authorization", "Bearer "+tc.token)
 	}
 	// Scope commerce to this org's namespace (matches the balance gate's
-	// X-Hanzo-Org stamping so the tier is read from the right tenant).
-	req.Header.Set("X-Hanzo-Org", orgKey)
+	// X-Org-Id stamping so the tier is read from the right tenant).
+	req.Header.Set("X-Org-Id", orgKey)
 
 	resp, err := tc.client.Do(req)
 	if err != nil {

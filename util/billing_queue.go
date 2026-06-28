@@ -61,7 +61,7 @@ func billingBackoff(attempt int) time.Duration {
 type BillingRecord struct {
 	Body      []byte // JSON payload, serialized by the caller
 	RequestID string // for structured logging on failure
-	Org       string // IAM org slug — billing key + X-Hanzo-Org namespace scope
+	Org       string // IAM org slug — billing key + X-Org-Id namespace scope
 	Model     string // model name for structured logging
 }
 
@@ -185,7 +185,7 @@ func (q *BillingQueue) deliver(record *BillingRecord) {
 }
 
 // post sends a single HTTP POST to the Commerce billing endpoint. The org slug
-// scopes the service-token call to that org's namespace via X-Hanzo-Org, so the
+// scopes the service-token call to that org's namespace via X-Org-Id, so the
 // usage debit lands in the same per-org balance the credit and gate use.
 // Returns nil on 2xx, a retryable error on 5xx/network errors, and a
 // non-retryable error on 4xx (which will still be retried — Commerce
@@ -200,7 +200,7 @@ func (q *BillingQueue) post(url, org string, body []byte) error {
 		req.Header.Set("Authorization", "Bearer "+q.token)
 	}
 	if org != "" {
-		req.Header.Set("X-Hanzo-Org", org)
+		req.Header.Set("X-Org-Id", org)
 	}
 
 	resp, err := q.client.Do(req)

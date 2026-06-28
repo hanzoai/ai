@@ -44,7 +44,7 @@ import (
 // The userId should be in "owner/name" format (e.g., "hanzo/alice").
 // getUserBalance returns the available balance (in dollars) for an org. Billing
 // is per-org: orgKey is the IAM org slug, used both as the balance destination
-// key (?user=) and as the namespace selector (X-Hanzo-Org), matching the gate
+// key (?user=) and as the namespace selector (X-Org-Id), matching the gate
 // and the per-org credit. Without the header, commerce's service-token path
 // defaults to the "hanzo" namespace and a per-org credit is invisible.
 func getUserBalance(subject, namespace string) (float64, error) {
@@ -58,7 +58,7 @@ func getUserBalance(subject, namespace string) (float64, error) {
 	// Per global rule: /v1/ only, never /api/.
 	// All commerce endpoints live under /v1/.
 	// subject (?user=) is the per-user/per-org billing key; namespace
-	// (X-Hanzo-Org) is the org. Both must match the gate and the usage debit.
+	// (X-Org-Id) is the org. Both must match the gate and the usage debit.
 	reqURL := fmt.Sprintf("%s/v1/billing/balance?user=%s&currency=usd", commerceEndpoint, url.QueryEscape(subject))
 
 	client := &http.Client{Timeout: 10 * time.Second}
@@ -70,7 +70,7 @@ func getUserBalance(subject, namespace string) (float64, error) {
 		req.Header.Set("Authorization", "Bearer "+commerceToken)
 	}
 	// Scope the service-token call to this org's namespace.
-	req.Header.Set("X-Hanzo-Org", namespace)
+	req.Header.Set("X-Org-Id", namespace)
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -314,7 +314,7 @@ func resolveProviderForUser(user *iam.User, requestedModel string, lang string) 
 	// setup. Exemption matches the per-user "owner/name" key (service accounts are
 	// named individually) OR a bare org — via object.BalanceExempt, the SAME shared
 	// definition the router gate uses, so the two can never drift in granularity.
-	orgKey := user.Owner // namespace (X-Hanzo-Org): the org tenant
+	orgKey := user.Owner // namespace (X-Org-Id): the org tenant
 	// subject is the billing account WITHIN the namespace: "owner/name" for a
 	// personal-billing org (each member billed independently), the org slug for
 	// a pooled org. The gate read, this backstop, and the usage debit all key
@@ -506,7 +506,7 @@ func recordUsage(record *usageRecord) {
 
 	// The debit MUST hit the same account the balance gate reads and the starter
 	// credit funded: the billing SUBJECT within the org NAMESPACE.
-	//   namespace (X-Hanzo-Org) = record.Owner (the org)
+	//   namespace (X-Org-Id) = record.Owner (the org)
 	//   subject   (?user=)      = object.BillingSubject(owner, name)
 	// For a personal-billing org that is "owner/name" (per-user); for a pooled
 	// org it is the org slug. record.Owner is the IAM `owner`; fall back to
