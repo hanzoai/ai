@@ -826,13 +826,21 @@ func (c *ApiController) authenticate(token string) error {
 		}
 		return nil
 	case isIAMApiKey(token):
-		if _, err := getUserByAccessKey(token); err != nil {
+		// getUserByAccessKey returns (nil, nil) for an unknown key (IAM 200 +
+		// data:null), so check BOTH the error AND a nil user — exactly as
+		// resolveProviderFromIAMKey does. Missing the nil-user case let an invalid
+		// hk- key fall through to a 400 parse error instead of a 401.
+		user, err := getUserByAccessKey(token)
+		if err != nil {
 			// Same cloud-agent service-key fallback as resolveProviderFromIAMKey,
 			// so a valid service key is not falsely rejected here.
 			if tryCloudAgentKeyFallback(token) != nil {
 				return nil
 			}
 			return authError("API key validation failed: %s", err.Error())
+		}
+		if user == nil {
+			return authError("invalid API key")
 		}
 		return nil
 	case isJwtToken(token):
