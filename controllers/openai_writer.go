@@ -34,6 +34,11 @@ type OpenAIWriter struct {
 	Stream     bool
 	StreamSent bool
 	Model      string
+	// IncludeUsage mirrors the request's stream_options.include_usage. Per the
+	// OpenAI spec the trailing empty-choices usage chunk is emitted ONLY when the
+	// client asks for it; sending it unconditionally breaks clients that read
+	// choices[0] on every chunk.
+	IncludeUsage bool
 }
 
 // Write processes incoming data chunks and formats them for OpenAI compatibility
@@ -74,6 +79,15 @@ func (w *OpenAIWriter) Write(p []byte) (n int, err error) {
 		return len(p), nil
 	}
 
+	// OpenAI streams the assistant role on the FIRST delta chunk; clients
+	// (LangChain/LibreChat agents) read it to classify the streamed message.
+	// Omitting it breaks their parser with "Cannot read properties of undefined
+	// (reading 'role')" and the reply never renders.
+	delta := openai.ChatCompletionStreamChoiceDelta{Content: content}
+	if !w.StreamSent {
+		delta.Role = "assistant"
+	}
+
 	// Create SSE chunk using go-openai library structure
 	chunk := openai.ChatCompletionStreamResponse{
 		ID:      "chatcmpl-" + w.RequestID,
@@ -82,10 +96,8 @@ func (w *OpenAIWriter) Write(p []byte) (n int, err error) {
 		Model:   w.Model,
 		Choices: []openai.ChatCompletionStreamChoice{
 			{
-				Index: 0,
-				Delta: openai.ChatCompletionStreamChoiceDelta{
-					Content: content,
-				},
+				Index:        0,
+				Delta:        delta,
 				FinishReason: openai.FinishReasonNull,
 			},
 		},
@@ -145,29 +157,33 @@ func (w *OpenAIWriter) Close(promptTokens, completionTokens, totalTokens int) er
 			return err
 		}
 
-		// Send usage information as a proper OpenAI SSE chunk so downstream
-		// OpenAI SDK clients (v6+) can parse it correctly.
-		usageChunk := map[string]interface{}{
-			"id":      "chatcmpl-" + w.RequestID,
-			"object":  "chat.completion.chunk",
-			"created": util.GetCurrentUnixTime(),
-			"model":   w.Model,
-			"choices": []interface{}{},
-			"usage": openai.Usage{
-				PromptTokens:     promptTokens,
-				CompletionTokens: completionTokens,
-				TotalTokens:      totalTokens,
-			},
-		}
+		// Send usage as a proper OpenAI SSE chunk so SDK clients (v6+) can parse
+		// it — but ONLY when the client opted in via stream_options.include_usage.
+		// This chunk's choices array is always empty; emitting it unconditionally
+		// crashes clients that read choices[0] on every chunk.
+		if w.IncludeUsage {
+			usageChunk := map[string]interface{}{
+				"id":      "chatcmpl-" + w.RequestID,
+				"object":  "chat.completion.chunk",
+				"created": util.GetCurrentUnixTime(),
+				"model":   w.Model,
+				"choices": []interface{}{},
+				"usage": openai.Usage{
+					PromptTokens:     promptTokens,
+					CompletionTokens: completionTokens,
+					TotalTokens:      totalTokens,
+				},
+			}
 
-		usageData, err := json.Marshal(usageChunk)
-		if err != nil {
-			return err
-		}
+			usageData, err := json.Marshal(usageChunk)
+			if err != nil {
+				return err
+			}
 
-		_, err = w.ResponseWriter.Write([]byte(fmt.Sprintf("data: %s\n\n", usageData)))
-		if err != nil {
-			return err
+			_, err = w.ResponseWriter.Write([]byte(fmt.Sprintf("data: %s\n\n", usageData)))
+			if err != nil {
+				return err
+			}
 		}
 
 		// Final [DONE] marker for SSE
