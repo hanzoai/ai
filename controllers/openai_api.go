@@ -291,7 +291,7 @@ func widgetAllowedModelsList() string {
 func resolveProviderFromJwt(token string, requestedModel string, lang string) (*object.Provider, *iam.User, string, error) {
 	claims, err := iam.ParseJwtToken(token)
 	if err != nil {
-		return nil, nil, "", fmt.Errorf("invalid hanzo.id token: %s", err.Error())
+		return nil, nil, "", authError("invalid hanzo.id token: %s", err.Error())
 	}
 
 	user := &claims.User
@@ -315,14 +315,16 @@ func resolveProviderFromIAMKey(apiKey string, requestedModel string, lang string
 		// minimal user identity and let the Commerce balance check validate
 		// the request as normal — so no billing bypass occurs.
 		if fallbackUser := tryCloudAgentKeyFallback(apiKey); fallbackUser != nil {
-			logs.Warn("[iam-fallback] IAM returned %q for key %s; using cloud-agent fallback identity (owner=%s name=%s)",
-				err.Error(), apiKey, fallbackUser.Owner, fallbackUser.Name)
+			// Never log the API key (even masked) — owner/name identify the
+			// fallback identity for debugging without leaking the credential.
+			logs.Warn("[iam-fallback] IAM returned %q; using cloud-agent fallback identity (owner=%s name=%s)",
+				err.Error(), fallbackUser.Owner, fallbackUser.Name)
 			return resolveProviderForUser(fallbackUser, requestedModel, lang)
 		}
-		return nil, nil, "", fmt.Errorf("API key validation failed: %s", err.Error())
+		return nil, nil, "", authError("API key validation failed: %s", err.Error())
 	}
 	if user == nil {
-		return nil, nil, "", fmt.Errorf("invalid API key")
+		return nil, nil, "", authError("invalid API key")
 	}
 
 	return resolveProviderForUser(user, requestedModel, lang)
@@ -354,23 +356,25 @@ func tryCloudAgentKeyFallback(apiKey string) *iam.User {
 // resolveProviderForUser is the shared logic for JWT and API key auth paths.
 // Given a validated user, resolves the model route and provider.
 func resolveProviderForUser(user *iam.User, requestedModel string, lang string) (*object.Provider, *iam.User, string, error) {
-	// Look up the model in the static routing table.
+	// Look up the model in the static routing table. A valid caller asking for
+	// an unknown model is a client error (400), not an auth failure.
 	route := resolveModelRoute(requestedModel)
 	if route == nil {
-		return nil, user, "", fmt.Errorf(
-			"model %q is not available. Use GET /api/models to list available models",
+		return nil, user, "", modelError(
+			"model %q is not available. Use GET /v1/models to list available models",
 			requestedModel,
 		)
 	}
 
 	// Fetch the provider entry that holds API keys/URLs for this upstream.
-	// GetModelProviderByName returns a shallow copy, safe to mutate.
+	// GetModelProviderByName returns a shallow copy, safe to mutate. A missing
+	// or unconfigured provider is a server-side misconfiguration (500).
 	provider, err := object.GetModelProviderByName(route.providerName)
 	if err != nil {
-		return nil, user, "", fmt.Errorf("failed to get provider %q: %s", route.providerName, err.Error())
+		return nil, user, "", serverError("failed to get provider %q: %s", route.providerName, err.Error())
 	}
 	if provider == nil {
-		return nil, user, "", fmt.Errorf("provider %q not configured in database", route.providerName)
+		return nil, user, "", serverError("provider %q not configured in database", route.providerName)
 	}
 
 	// Service accounts configured in BALANCE_EXEMPT_USERS skip balance checks.
@@ -403,11 +407,13 @@ func resolveProviderForUser(user *iam.User, requestedModel string, lang string) 
 		// have added funds beyond the starter credit. Balance is per-subject.
 		balance, err := getUserBalance(subject, orgKey)
 		if err != nil {
-			return nil, user, "", fmt.Errorf("failed to verify account balance: %s", err.Error())
+			// Fail closed (server-side: cannot verify funds) — never grant on a
+			// balance-lookup transport error.
+			return nil, user, "", serverError("failed to verify account balance: %s", err.Error())
 		}
 
 		if balance <= 0 {
-			return nil, user, "", fmt.Errorf(
+			return nil, user, "", billingError(
 				"model %q requires a positive balance. Your current balance is $%.2f. "+
 					"Add funds at https://hanzo.ai/billing",
 				requestedModel, balance,
@@ -424,7 +430,7 @@ func resolveProviderForUser(user *iam.User, requestedModel string, lang string) 
 			starterCredit = cfg.StarterCreditDollars()
 		}
 		if route.premium && balance <= starterCredit {
-			return nil, user, "", fmt.Errorf(
+			return nil, user, "", billingError(
 				"model %q is a premium model requiring a paid balance. "+
 					"Your current balance ($%.2f) is from the starter credit. "+
 					"Add funds at https://hanzo.ai/billing to access premium models",
@@ -823,7 +829,7 @@ func (c *ApiController) authResolveProvider(token, requestedModel, orgId string)
 		var widgetUpstream string
 		provider, widgetUpstream, err = resolveProviderFromWidgetKey(token, requestedModel, lang)
 		if err != nil {
-			err = fmt.Errorf("Widget authentication failed: %s", err.Error())
+			err = authError("Widget authentication failed: %s", err.Error())
 			return
 		}
 		upstreamModel = widgetUpstream
@@ -832,30 +838,34 @@ func (c *ApiController) authResolveProvider(token, requestedModel, orgId string)
 		return
 
 	case isIAMApiKey(token):
-		// IAM API key (hk-...) — full model routing + billing.
+		// IAM API key (hk-...) — full model routing + billing. resolveProviderFromIAMKey
+		// returns a typed apiError (401 invalid key / 400 bad model / 402 balance /
+		// 500 misconfig); wrapAuth preserves it and 401s any untyped error.
 		provider, authUser, upstreamModel, err = resolveProviderFromIAMKey(token, requestedModel, lang)
 		if err != nil {
-			err = fmt.Errorf("Authentication failed: %s", err.Error())
+			err = wrapAuth(err)
 			return
 		}
 
 	case isJwtToken(token):
-		// hanzo.id JWT token — full model routing + billing.
+		// hanzo.id JWT token — full model routing + billing. Same typed-status
+		// contract as the IAM key path.
 		provider, authUser, upstreamModel, err = resolveProviderFromJwt(token, requestedModel, lang)
 		if err != nil {
-			err = fmt.Errorf("Authentication failed: %s", err.Error())
+			err = wrapAuth(err)
 			return
 		}
 
 	default:
-		// Provider API key (sk-...) — direct provider access.
+		// Provider API key (sk-...) — direct provider access. An unresolvable key
+		// is an auth failure (401).
 		provider, err = object.GetProviderByProviderKey(token, lang)
 		if err != nil {
-			err = fmt.Errorf("Authentication failed: %s", err.Error())
+			err = authError("invalid API key: %s", err.Error())
 			return
 		}
 		if provider == nil {
-			err = fmt.Errorf("Authentication failed: invalid API key")
+			err = authError("invalid API key")
 			return
 		}
 		// Apply model routing for sk- keys too. If the route points to a
@@ -935,7 +945,7 @@ func (c *ApiController) ChatCompletions() {
 	// /v1/rerank — see authResolveProvider.
 	provider, authUser, upstreamModel, isPremium, isWidget, err := c.authResolveProvider(token, request.Model, orgId)
 	if err != nil {
-		c.ResponseError(err.Error())
+		c.ResponseAuthError(err)
 		return
 	}
 	if isWidget {
