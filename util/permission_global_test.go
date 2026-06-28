@@ -24,6 +24,10 @@ import (
 // admin within their OWN org is NOT a global admin, while an admin in the global
 // admin org IS. This is the gate for platform-wide AI ops (provider config).
 func TestIsGlobalAdminVsOrgAdmin(t *testing.T) {
+	// Force the default global-admin set ({admin, built-in}) deterministically,
+	// independent of any ambient globalAdminOrgs config.
+	t.Setenv("globalAdminOrgs", "")
+
 	cases := []struct {
 		name string
 		user *iam.User
@@ -32,8 +36,9 @@ func TestIsGlobalAdminVsOrgAdmin(t *testing.T) {
 		{"nil user", nil, false},
 		{"org admin (maxpower/dave) is NOT global", &iam.User{Owner: "maxpower", Name: "dave", IsAdmin: true}, false},
 		{"org admin (hanzo/z) is NOT global by default", &iam.User{Owner: "hanzo", Name: "z", IsAdmin: true}, false},
-		{"global-org member who is admin IS global", &iam.User{Owner: "admin", Name: "admin", IsAdmin: true}, true},
-		{"global-org member who is NOT admin is NOT global", &iam.User{Owner: "admin", Name: "viewer", IsAdmin: false}, false},
+		{"admin-org member who is admin IS global", &iam.User{Owner: "admin", Name: "admin", IsAdmin: true}, true},
+		{"built-in-org member who is admin IS global", &iam.User{Owner: "built-in", Name: "admin", IsAdmin: true}, true},
+		{"admin-org member who is NOT admin is NOT global", &iam.User{Owner: "admin", Name: "viewer", IsAdmin: false}, false},
 		{"non-admin in customer org is NOT global", &iam.User{Owner: "maxpower", Name: "bob", IsAdmin: false}, false},
 	}
 	for _, tc := range cases {
@@ -52,5 +57,24 @@ func TestIsGlobalAdminVsOrgAdmin(t *testing.T) {
 	}
 	if IsGlobalAdmin(orgAdmin) {
 		t.Error("org admin must NOT satisfy IsGlobalAdmin (global-scoped)")
+	}
+}
+
+// TestGlobalAdminOrgsEnvOverride documents that the deployed globalAdminOrgs env
+// override is authoritative over the default. The LIVE value is "admin,hanzo"
+// (which grants hanzo-org admins global power) — this is FLAGGED: the canonical
+// definition is {admin, built-in} (see defaultGlobalAdminOrgs / LLM.md), and the
+// live env should be aligned to "admin,built-in" once the hanzo-org provider-config
+// workflow is confirmed to run via the admin org.
+func TestGlobalAdminOrgsEnvOverride(t *testing.T) {
+	t.Setenv("globalAdminOrgs", "admin,hanzo")
+	if !IsGlobalAdmin(&iam.User{Owner: "hanzo", Name: "z", IsAdmin: true}) {
+		t.Error("override admin,hanzo: a hanzo-org admin IS global (current live behavior)")
+	}
+	if !IsGlobalAdmin(&iam.User{Owner: "admin", Name: "a", IsAdmin: true}) {
+		t.Error("override admin,hanzo: admin-org admin remains global")
+	}
+	if IsGlobalAdmin(&iam.User{Owner: "built-in", Name: "a", IsAdmin: true}) {
+		t.Error("override admin,hanzo: built-in is NOT listed, so not global under this override")
 	}
 }

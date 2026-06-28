@@ -116,7 +116,7 @@ func (c *ApiController) UpdatePatient() {
 
 	// Check if user has permission to update
 	if !object.CanEditPatient(user, &patient) {
-		c.ResponseError(c.T("auth:Unauthorized operation"))
+		c.ResponseForbidden(c.T("auth:Unauthorized operation"))
 		return
 	}
 
@@ -167,7 +167,7 @@ func (c *ApiController) DeletePatient() {
 
 	// Check if user has permission to delete
 	if !object.CanEditPatient(user, &patient) {
-		c.ResponseError(c.T("auth:Unauthorized operation"))
+		c.ResponseForbidden(c.T("auth:Unauthorized operation"))
 		return
 	}
 
