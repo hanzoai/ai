@@ -123,7 +123,7 @@ func (c *ApiController) RequireSessionOwner() (string, bool) {
 	if user != nil {
 		return user.Owner, true
 	}
-	c.ResponseError(c.T("auth:Please sign in first"))
+	c.ResponseUnauthorized(c.T("auth:Please sign in first"))
 	return "", false
 }
 
