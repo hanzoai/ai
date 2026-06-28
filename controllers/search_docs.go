@@ -103,19 +103,15 @@ func (c *ApiController) resolveSearchAuth() *searchAuth {
 	}
 
 	// 4b. Widget key (hz_*) -- public widget RAG access.
-	// Owner is derived from the request Origin (WIDGET_ORIGINS map) so a single
-	// widget key can serve multiple brands, each reading its own indexed store.
-	// Gateway middleware already enforces Origin allowlist + rate limits.
+	// Owner is bound to the widget KEY (WIDGET_KEY_OWNERS), NOT the request
+	// Origin/Referer — a forgeable header must not let one widget read another
+	// tenant's indexed store.
 	if isWidgetKey(token) {
 		if !validateWidgetKey(token) {
 			c.ResponseError("invalid widget key")
 			return nil
 		}
-		origin := c.Ctx.Request.Header.Get("Origin")
-		if origin == "" {
-			origin = c.Ctx.Request.Header.Get("Referer")
-		}
-		owner := resolveOwnerFromOrigin(origin)
+		owner := widgetKeyOwner(token)
 		return &searchAuth{
 			Owner:  owner,
 			UserID: owner + "/widget",

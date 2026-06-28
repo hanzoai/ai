@@ -19,25 +19,32 @@ import (
 
 	"github.com/beego/beego/context"
 	"github.com/hanzoai/ai/conf"
+	"github.com/hanzoai/ai/util"
 )
 
-// GetEffectiveOrg resolves the organization for data-scoping in filters.
-// Resolution order:
-//  1. X-IAM-Org-Id header (injected by gateway auth middleware from JWT)
-//  2. Authenticated session user's Owner field
-//  3. Config default (IAM_ORG env/config value)
+// GetEffectiveOrg resolves the organization for data-scoping in filters from the
+// VERIFIED request principal — never a raw client header.
+//
+// On the direct (non-gateway) ingress the X-IAM-Org-Id header is fully
+// client-controlled, so trusting it would let any caller act as any org
+// (cross-tenant read/write + billing attribution). It is honored ONLY when it
+// matches the authenticated principal's own org, or the principal is a global
+// admin (cross-org platform access). A non-admin can never escape their own org
+// via a header; an unauthenticated caller's header is ignored entirely.
+//
+// Behind the gateway the injected X-IAM-Org-Id equals the JWT owner, so this
+// resolves identically — the gateway path is unaffected.
 func GetEffectiveOrg(ctx *context.Context) string {
-	// 1. Gateway-injected header (trusted, set after JWT validation)
-	if orgID := strings.TrimSpace(ctx.Input.Header("X-IAM-Org-Id")); orgID != "" {
-		return orgID
-	}
+	requested := strings.TrimSpace(ctx.Input.Header("X-IAM-Org-Id"))
 
-	// 2. Authenticated session user's organization
-	user := GetSessionUser(ctx)
+	user := sessionOrBearerUser(ctx)
 	if user != nil && user.Owner != "" {
+		if requested != "" && (requested == user.Owner || util.IsGlobalAdmin(user)) {
+			return requested
+		}
 		return user.Owner
 	}
 
-	// 3. Config fallback
+	// No verified principal: never trust a client-supplied org header.
 	return conf.GetConfigString("IAM_ORG")
 }
