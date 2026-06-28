@@ -34,6 +34,8 @@ import (
 	"github.com/hanzoai/cloud"
 	"github.com/hanzoai/zip"
 	luxlog "github.com/luxfi/log"
+
+	"github.com/hanzoai/ai/conf"
 )
 
 // Mount registers AI's HTTP surface per HIP-0106 AND initializes the AI
@@ -67,6 +69,15 @@ func Mount(app *zip.App, deps cloud.Deps) error {
 	// real infrastructure. A failure here is fatal for the AI surface, so it
 	// propagates as a precise mount error (cloud.MountAll wraps it as
 	// "mount ai: ..."); it must not be swallowed nor panic the whole binary.
+
+	// Three-mode fail-closed contract: with no DB configured (driverName
+	// empty) the runtime cannot bootstrap. Mount the routes and let
+	// handlerAdapter serve a 503 rather than hard-failing the unified binary.
+	// A configured DB that then fails to init stays fatal (real misconfig).
+	if conf.GetConfigString("driverName") == "" {
+		log.Warn("ai: no DB configured (driverName empty); serving fail-closed (503)")
+		return nil
+	}
 	log.Info("ai: initializing runtime")
 	if err := Bootstrap(); err != nil {
 		return err
