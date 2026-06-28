@@ -81,6 +81,9 @@ func permissionFilter(ctx *context.Context) {
 		"get-chat", "get-message",
 		"get-tasks", "get-task", "get-public-scales", "update-task", "add-task", "delete-task", "upload-task-document",
 		"search-docs", "chat-docs", "search-docs/stats",
+		// update-preferences is signed-in but NOT admin-gated: it is self-scoped
+		// (writes only the caller's own IAM-user properties, per the session).
+		"update-preferences",
 	}
 
 	for _, exemptPath := range exemptedPaths {

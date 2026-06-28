@@ -247,13 +247,14 @@ func RateLimitFilter(ctx *context.Context) {
 		return
 	}
 
-	// Rate-limit PER-ORG, keyed by the IAM org slug — the SAME identity the
-	// balance gate bills against (resolveBillingKey is the one place this is
-	// derived). This makes a paid org's tier apply to every key and member of
-	// that org, and lets the Commerce tier lookup query ?user=<org>. When no
-	// org resolves (anonymous, sk-/pk- provider keys, JWT without owner), fall
-	// back to the raw key so that traffic is still bucketed at the free tier.
-	limitKey := resolveBillingKey(ctx)
+	// Rate-limit by the billing SUBJECT — the SAME identity the balance gate
+	// bills against (resolveBillingKey is the one place this is derived). For a
+	// pooled org the subject is the org slug (one bucket for the whole org); for
+	// a personal-billing org it is "owner/name", so individuals in the shared
+	// "hanzo" catch-all get their OWN bucket and can't exhaust each other's rate
+	// limit. When no subject resolves (anonymous, sk-/pk- provider keys, JWT
+	// without owner), fall back to the raw key so traffic is still free-tier bucketed.
+	limitKey, _ := resolveBillingKey(ctx)
 	if limitKey == "" {
 		limitKey = apiKey
 	}
