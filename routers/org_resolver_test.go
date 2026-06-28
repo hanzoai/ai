@@ -21,15 +21,15 @@ import (
 )
 
 // TestGetEffectiveOrgIgnoresSpoofedHeaderWhenUnauth is the core #8 assertion: an
-// UNAUTHENTICATED caller cannot select a tenant via X-IAM-Org-Id on the direct
+// UNAUTHENTICATED caller cannot select a tenant via X-Org-Id on the direct
 // ingress — the spoofed org is never returned.
 func TestGetEffectiveOrgIgnoresSpoofedHeaderWhenUnauth(t *testing.T) {
 	t.Setenv("IAM_ORG", "hanzo")
 	ctx, _ := newFilterCtx("POST", "/v1/chat/completions", nil)
-	ctx.Request.Header.Set("X-IAM-Org-Id", "victim-org")
+	ctx.Request.Header.Set("X-Org-Id", "victim-org")
 
 	if got := GetEffectiveOrg(ctx); got == "victim-org" {
-		t.Fatal("spoofed X-IAM-Org-Id must NOT be honored without a verified principal")
+		t.Fatal("spoofed X-Org-Id must NOT be honored without a verified principal")
 	} else if got != "hanzo" {
 		t.Errorf("unauth effective org = %q, want config default hanzo", got)
 	}
@@ -40,7 +40,7 @@ func TestGetEffectiveOrgIgnoresSpoofedHeaderWhenUnauth(t *testing.T) {
 func TestGetEffectiveOrgNonAdminScopedToOwnOrg(t *testing.T) {
 	user := &iam.User{Owner: "maxpower", Name: "dave", IsAdmin: true} // org admin, NOT global
 	ctx, _ := newFilterCtx("POST", "/v1/chat/completions", user)
-	ctx.Request.Header.Set("X-IAM-Org-Id", "victim-org")
+	ctx.Request.Header.Set("X-Org-Id", "victim-org")
 
 	if got := GetEffectiveOrg(ctx); got != "maxpower" {
 		t.Errorf("non-global principal effective org = %q, want own org maxpower (spoof ignored)", got)
@@ -52,7 +52,7 @@ func TestGetEffectiveOrgNonAdminScopedToOwnOrg(t *testing.T) {
 func TestGetEffectiveOrgOwnOrgHeaderHonored(t *testing.T) {
 	user := &iam.User{Owner: "maxpower", Name: "dave"}
 	ctx, _ := newFilterCtx("POST", "/v1/chat/completions", user)
-	ctx.Request.Header.Set("X-IAM-Org-Id", "maxpower")
+	ctx.Request.Header.Set("X-Org-Id", "maxpower")
 	if got := GetEffectiveOrg(ctx); got != "maxpower" {
 		t.Errorf("own-org header = %q, want maxpower", got)
 	}
@@ -63,7 +63,7 @@ func TestGetEffectiveOrgOwnOrgHeaderHonored(t *testing.T) {
 func TestGetEffectiveOrgGlobalAdminCrossOrg(t *testing.T) {
 	admin := &iam.User{Owner: "admin", Name: "admin", IsAdmin: true}
 	ctx, _ := newFilterCtx("POST", "/v1/chat/completions", admin)
-	ctx.Request.Header.Set("X-IAM-Org-Id", "some-tenant")
+	ctx.Request.Header.Set("X-Org-Id", "some-tenant")
 	if got := GetEffectiveOrg(ctx); got != "some-tenant" {
 		t.Errorf("global-admin cross-org = %q, want some-tenant", got)
 	}

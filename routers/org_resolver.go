@@ -25,17 +25,17 @@ import (
 // GetEffectiveOrg resolves the organization for data-scoping in filters from the
 // VERIFIED request principal — never a raw client header.
 //
-// On the direct (non-gateway) ingress the X-IAM-Org-Id header is fully
+// On the direct (non-gateway) ingress the X-Org-Id header is fully
 // client-controlled, so trusting it would let any caller act as any org
 // (cross-tenant read/write + billing attribution). It is honored ONLY when it
 // matches the authenticated principal's own org, or the principal is a global
 // admin (cross-org platform access). A non-admin can never escape their own org
 // via a header; an unauthenticated caller's header is ignored entirely.
 //
-// Behind the gateway the injected X-IAM-Org-Id equals the JWT owner, so this
+// Behind the gateway the injected X-Org-Id equals the JWT owner, so this
 // resolves identically — the gateway path is unaffected.
 func GetEffectiveOrg(ctx *context.Context) string {
-	requested := strings.TrimSpace(ctx.Input.Header("X-IAM-Org-Id"))
+	requested := strings.TrimSpace(ctx.Input.Header("X-Org-Id"))
 
 	user := sessionOrBearerUser(ctx)
 	if user != nil && user.Owner != "" {

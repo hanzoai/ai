@@ -33,7 +33,7 @@ func getTenantHeader(ctx *context.Context, name string) string {
 
 // TenantContextFilter captures IAM identity context for downstream scoping and
 // observability. The org is taken from the VERIFIED principal (GetEffectiveOrg),
-// NOT the raw X-IAM-Org-Id header: on the direct ingress that header is
+// NOT the raw X-Org-Id header: on the direct ingress that header is
 // client-controlled, so storing it verbatim would let any caller spoof a tenant.
 // GetEffectiveOrg honors the header only for the principal's own org (or a global
 // admin), so the stored org is always the caller's real tenant.
