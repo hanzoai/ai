@@ -28,6 +28,7 @@ import (
 	"github.com/beego/beego/context"
 	"github.com/beego/beego/logs"
 	"github.com/hanzoai/ai/conf"
+	"github.com/hanzoai/ai/object"
 	iam "github.com/hanzoai/iam"
 )
 
@@ -151,9 +152,11 @@ type BalanceGate struct {
 	exemptOrgs map[string]struct{}
 }
 
-// userKeyCacheEntry maps an API token to the resolved org slug (billing key).
+// userKeyCacheEntry maps an API token to the resolved billing identity: the
+// per-user subject (?user=) and the org namespace (X-Hanzo-Org).
 type userKeyCacheEntry struct {
-	userKey   string
+	subject   string
+	namespace string
 	fetchedAt time.Time
 }
 
@@ -227,19 +230,19 @@ func BalanceGateFilter(ctx *context.Context) {
 		return
 	}
 
-	orgKey := resolveBillingKey(ctx)
-	if orgKey == "" {
-		// Cannot identify org — let downstream auth filters handle rejection.
+	subject, namespace := resolveBillingKey(ctx)
+	if subject == "" {
+		// Cannot identify the billing subject — let downstream auth filters handle rejection.
 		return
 	}
 
-	sufficient, balance := balanceGate.checkBalance(orgKey)
+	sufficient, balance := balanceGate.checkBalance(subject, namespace)
 	if sufficient {
 		return
 	}
 
-	logs.Info("balance_gate: insufficient balance org=%s balance_cents=%d path=%s",
-		orgKey, balance, path)
+	logs.Info("balance_gate: insufficient balance subject=%s namespace=%s balance_cents=%d path=%s",
+		subject, namespace, balance, path)
 
 	ctx.ResponseWriter.Header().Set("Content-Type", "application/json")
 	ctx.ResponseWriter.WriteHeader(http.StatusPaymentRequired)
@@ -273,70 +276,73 @@ func isBalanceExempt(path string) bool {
 	}
 }
 
-// resolveBillingKey extracts the billing key from the request context. Billing
-// is PER-ORG: the key is the IAM org slug (the `owner` claim), so a single
-// per-org credit covers every service and every member of that org. This is the
-// one place the billing identity is derived; recordUsage debits the same key,
-// and both stamp X-Hanzo-Org so Commerce scopes to that org's namespace.
+// resolveBillingKey extracts the billing identity from the request context and
+// returns (subject, namespace). The namespace is the IAM org slug (X-Hanzo-Org);
+// the subject is object.BillingSubject(owner, name) — "owner/name" for a
+// personal-billing org (e.g. the shared "hanzo" catch-all, so each individual is
+// billed independently) or the org slug for a pooled org. This is the one place
+// the billing identity is derived; recordUsage debits and the gate reads the same
+// subject within the same namespace.
 //
 // It checks three sources in order:
 //  1. Session user (set by AutoSigninFilter for legacy auth)
 //  2. JWT Bearer token (parsed locally, no network call)
 //  3. IAM API key (hk- prefix, resolved via cached IAM lookup)
 //
-// Returns "" if the org cannot be identified (fail-open: filter skips).
-func resolveBillingKey(ctx *context.Context) string {
+// Returns ("", "") if the subject cannot be identified (fail-open: filter skips).
+func resolveBillingKey(ctx *context.Context) (subject, namespace string) {
 	// Source 1: session user from AutoSigninFilter.
 	user := GetSessionUser(ctx)
 	if user != nil && user.Owner != "" {
-		return user.Owner
+		return object.BillingSubject(user.Owner, user.Name), user.Owner
 	}
 
 	// Source 2/3: Bearer token.
 	token := parseBearerToken(ctx)
 	if token == "" {
-		return ""
+		return "", ""
 	}
 
 	// Provider keys (sk-), publishable keys (pk-), and widget keys (hz_)
 	// don't map to IAM orgs with Commerce balances — skip.
 	if strings.HasPrefix(token, "sk-") || strings.HasPrefix(token, "pk-") || strings.HasPrefix(token, "hz_") {
-		return ""
+		return "", ""
 	}
 
 	// Exempt service account keys (e.g. cloud agent internal keys).
 	if _, exempt := balanceExemptKeys[token]; exempt {
-		return ""
+		return "", ""
 	}
 
 	// Check key cache first.
-	if cached := balanceGate.getUserKeyCached(token); cached != "" {
-		return cached
+	if s, ns, ok := balanceGate.getUserKeyCached(token); ok {
+		return s, ns
 	}
 
 	// JWT token: parse locally (cheap, no network).
 	if isJwtTokenLike(token) {
 		claims, err := iam.ParseJwtToken(token)
 		if err != nil {
-			return ""
+			return "", ""
 		}
 		if claims.User.Owner != "" {
-			balanceGate.setUserKeyCache(token, claims.User.Owner)
-			return claims.User.Owner
+			subject = object.BillingSubject(claims.User.Owner, claims.User.Name)
+			balanceGate.setUserKeyCache(token, subject, claims.User.Owner)
+			return subject, claims.User.Owner
 		}
-		return ""
+		return "", ""
 	}
 
 	// IAM API key (hk- prefix): resolve via IAM (cached).
 	if strings.HasPrefix(token, "hk-") {
-		orgKey := balanceGate.resolveIAMKeyOrg(token)
-		if orgKey != "" {
-			balanceGate.setUserKeyCache(token, orgKey)
+		subject, namespace = balanceGate.resolveIAMKeySubject(token)
+		if subject != "" {
+			balanceGate.setUserKeyCache(token, subject, namespace)
 		}
-		return orgKey
+		return subject, namespace
 	}
 
-	return ""
+	return "", ""
 }
 
 // isJwtTokenLike checks if a token looks like a JWT (3 dot-separated segments).
@@ -354,9 +360,9 @@ func isJwtTokenLike(token string) bool {
 //
 // Fail-open: any error from Commerce results in (true, 0) — the request is
 // allowed through, and the controller-level check provides a backstop.
-func (bg *BalanceGate) checkBalance(userKey string) (sufficient bool, balanceCents int64) {
+func (bg *BalanceGate) checkBalance(subject, namespace string) (sufficient bool, balanceCents int64) {
 	bg.mu.RLock()
-	entry, ok := bg.entries[userKey]
+	entry, ok := bg.entries[subject]
 	bg.mu.RUnlock()
 
 	if ok {
@@ -366,30 +372,31 @@ func (bg *BalanceGate) checkBalance(userKey string) (sufficient bool, balanceCen
 			return entry.balanceCents > 0, entry.balanceCents
 		}
 		// Stale: serve stale result, refresh asynchronously.
-		bg.refreshAsync(userKey)
+		bg.refreshAsync(subject, namespace)
 		return entry.balanceCents > 0, entry.balanceCents
 	}
 
 	// Cache miss: fetch synchronously so the first request gets a real check.
 	// The timeout is capped at balanceHTTPTimeout (5s) to avoid blocking too long.
-	balance, err := bg.fetchBalance(userKey)
+	balance, err := bg.fetchBalance(subject, namespace)
 	if err != nil {
-		// Hard cache-miss + Commerce error. Active orgs never reach here — they
-		// hit the 30s stale-serve path above — so this is a COLD org during a
-		// Commerce outage. Fail CLOSED for non-exempt orgs so an outage cannot
-		// become an unmetered bleed; the client retries once Commerce recovers.
-		// Exempt/house orgs (BALANCE_EXEMPT_USERS) and the explicit
-		// BALANCE_GATE_FAIL_OPEN_ON_ERROR override keep the legacy fail-open.
-		if bg.failOpenOnError || bg.isExemptOrg(userKey) {
-			logs.Warning("balance_gate: Commerce lookup failed for user=%s: %v (fail-open: exempt/override)", userKey, err)
+		// Hard cache-miss + Commerce error. Active subjects never reach here —
+		// they hit the 30s stale-serve path above — so this is a COLD subject
+		// during a Commerce outage. Fail CLOSED for non-exempt orgs so an outage
+		// cannot become an unmetered bleed; the client retries once Commerce
+		// recovers. Exempt/house orgs (BALANCE_EXEMPT_USERS, matched on the
+		// namespace) and the explicit BALANCE_GATE_FAIL_OPEN_ON_ERROR override
+		// keep the legacy fail-open.
+		if bg.failOpenOnError || bg.isExemptOrg(namespace) {
+			logs.Warning("balance_gate: Commerce lookup failed for user=%s: %v (fail-open: exempt/override)", subject, err)
 			return true, 0
 		}
-		logs.Warning("balance_gate: Commerce lookup failed for cold non-exempt org=%s: %v (fail-CLOSED)", userKey, err)
+		logs.Warning("balance_gate: Commerce lookup failed for cold non-exempt subject=%s: %v (fail-CLOSED)", subject, err)
 		return false, 0
 	}
 
 	bg.mu.Lock()
-	bg.entries[userKey] = &balanceCacheEntry{balanceCents: balance, fetchedAt: time.Now()}
+	bg.entries[subject] = &balanceCacheEntry{balanceCents: balance, fetchedAt: time.Now()}
 	bg.mu.Unlock()
 
 	return balance > 0, balance
@@ -397,30 +404,30 @@ func (bg *BalanceGate) checkBalance(userKey string) (sufficient bool, balanceCen
 
 // refreshAsync kicks off a background goroutine to refresh the cached balance
 // for a user. Deduplicates concurrent refreshes for the same user key.
-func (bg *BalanceGate) refreshAsync(userKey string) {
+func (bg *BalanceGate) refreshAsync(subject, namespace string) {
 	bg.inflightMu.Lock()
-	if _, running := bg.inflight[userKey]; running {
+	if _, running := bg.inflight[subject]; running {
 		bg.inflightMu.Unlock()
 		return
 	}
-	bg.inflight[userKey] = struct{}{}
+	bg.inflight[subject] = struct{}{}
 	bg.inflightMu.Unlock()
 
 	go func() {
 		defer func() {
 			bg.inflightMu.Lock()
-			delete(bg.inflight, userKey)
+			delete(bg.inflight, subject)
 			bg.inflightMu.Unlock()
 		}()
 
-		balance, err := bg.fetchBalance(userKey)
+		balance, err := bg.fetchBalance(subject, namespace)
 		if err != nil {
-			logs.Warning("balance_gate: async refresh failed for user=%s: %v", userKey, err)
+			logs.Warning("balance_gate: async refresh failed for user=%s: %v", subject, err)
 			return
 		}
 
 		bg.mu.Lock()
-		bg.entries[userKey] = &balanceCacheEntry{balanceCents: balance, fetchedAt: time.Now()}
+		bg.entries[subject] = &balanceCacheEntry{balanceCents: balance, fetchedAt: time.Now()}
 		bg.mu.Unlock()
 	}()
 }
@@ -430,13 +437,14 @@ type commerceBalanceResponse struct {
 	Available int64 `json:"available"`
 }
 
-// fetchBalance calls Commerce to get the current balance for an org. Billing is
-// per-org: orgKey is the IAM org slug, used both as the balance destination key
-// (?user=) and as the namespace selector (X-Hanzo-Org). Both must match what
-// the deposit/usage writes use, so one per-org credit is the balance read here.
+// fetchBalance calls Commerce to get the current balance for a billing subject.
+// The subject (?user=) is object.BillingSubject(owner, name) — per-user for a
+// personal-billing org, the org slug for a pooled org — and the namespace
+// (X-Hanzo-Org) is the org. Both must match what the deposit/usage writes use,
+// so the credit a user receives is the balance read here and debited from.
 // Per global rule: /v1/ only, never /api/. Commerce serves /v1/billing/balance.
-func (bg *BalanceGate) fetchBalance(orgKey string) (int64, error) {
-	balanceURL := fmt.Sprintf("%s/v1/billing/balance?user=%s&currency=usd", bg.endpoint, url.QueryEscape(orgKey))
+func (bg *BalanceGate) fetchBalance(subject, namespace string) (int64, error) {
+	balanceURL := fmt.Sprintf("%s/v1/billing/balance?user=%s&currency=usd", bg.endpoint, url.QueryEscape(subject))
 
 	req, err := http.NewRequest(http.MethodGet, balanceURL, nil)
 	if err != nil {
@@ -447,7 +455,7 @@ func (bg *BalanceGate) fetchBalance(orgKey string) (int64, error) {
 	}
 	// Scope the service-token call to this org's namespace (commerce reads
 	// X-Hanzo-Org on the service-token path; absent => "hanzo" default).
-	req.Header.Set("X-Hanzo-Org", orgKey)
+	req.Header.Set("X-Hanzo-Org", namespace)
 
 	resp, err := bg.client.Do(req)
 	if err != nil {
@@ -472,22 +480,23 @@ func (bg *BalanceGate) fetchBalance(orgKey string) (int64, error) {
 
 // ── User key cache ──────────────────────────────────────────────────────────
 
-// getUserKeyCached returns the cached userKey for a token, or "" on miss/stale.
-func (bg *BalanceGate) getUserKeyCached(token string) string {
+// getUserKeyCached returns the cached (subject, namespace) for a token. The
+// bool is false on miss/stale.
+func (bg *BalanceGate) getUserKeyCached(token string) (subject, namespace string, ok bool) {
 	bg.userKeyMu.RLock()
-	entry, ok := bg.userKeyCache[token]
+	entry, found := bg.userKeyCache[token]
 	bg.userKeyMu.RUnlock()
 
-	if !ok || time.Since(entry.fetchedAt) > userKeyCacheTTL {
-		return ""
+	if !found || time.Since(entry.fetchedAt) > userKeyCacheTTL {
+		return "", "", false
 	}
-	return entry.userKey
+	return entry.subject, entry.namespace, true
 }
 
-// setUserKeyCache stores a token -> userKey mapping in the cache.
-func (bg *BalanceGate) setUserKeyCache(token, userKey string) {
+// setUserKeyCache stores a token -> (subject, namespace) mapping in the cache.
+func (bg *BalanceGate) setUserKeyCache(token, subject, namespace string) {
 	bg.userKeyMu.Lock()
-	bg.userKeyCache[token] = &userKeyCacheEntry{userKey: userKey, fetchedAt: time.Now()}
+	bg.userKeyCache[token] = &userKeyCacheEntry{subject: subject, namespace: namespace, fetchedAt: time.Now()}
 	bg.userKeyMu.Unlock()
 }
 
@@ -503,12 +512,13 @@ type iamUserResponse struct {
 	} `json:"data"`
 }
 
-// resolveIAMKeyOrg calls IAM to resolve an hk- API key to its org slug (the
-// `owner`). Billing is per-org, so only the owner is needed. Returns "" on any
-// error (fail-open).
-func (bg *BalanceGate) resolveIAMKeyOrg(apiKey string) string {
+// resolveIAMKeySubject calls IAM to resolve an hk- API key to its billing
+// identity: (subject, namespace). The namespace is the org `owner`; the subject
+// is object.BillingSubject(owner, name) — so a personal-org key bills per-user.
+// Returns ("", "") on any error (fail-open).
+func (bg *BalanceGate) resolveIAMKeySubject(apiKey string) (subject, namespace string) {
 	if bg.iamEndpoint == "" {
-		return ""
+		return "", ""
 	}
 
 	iamURL := fmt.Sprintf("%s/v1/iam/get-user?accessKey=%s", bg.iamEndpoint, url.QueryEscape(apiKey))
@@ -519,13 +529,13 @@ func (bg *BalanceGate) resolveIAMKeyOrg(apiKey string) string {
 	req, err := http.NewRequest(http.MethodGet, iamURL, nil)
 	if err != nil {
 		logs.Warning("balance_gate: IAM request build failed for key=%s: %v", maskKey(apiKey), err)
-		return ""
+		return "", ""
 	}
 
 	resp, err := bg.client.Do(req)
 	if err != nil {
 		logs.Warning("balance_gate: IAM request failed for key=%s: %v", maskKey(apiKey), err)
-		return ""
+		return "", ""
 	}
 	defer func() {
 		io.Copy(io.Discard, resp.Body)
@@ -534,24 +544,24 @@ func (bg *BalanceGate) resolveIAMKeyOrg(apiKey string) string {
 
 	if resp.StatusCode != http.StatusOK {
 		logs.Warning("balance_gate: IAM returned %d for key=%s", resp.StatusCode, maskKey(apiKey))
-		return ""
+		return "", ""
 	}
 
 	var result iamUserResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		logs.Warning("balance_gate: IAM response decode failed for key=%s: %v", maskKey(apiKey), err)
-		return ""
+		return "", ""
 	}
 
 	if result.Status != "ok" || result.Data == nil {
-		return ""
+		return "", ""
 	}
 
 	if result.Data.Owner == "" {
-		return ""
+		return "", ""
 	}
 
-	return result.Data.Owner
+	return object.BillingSubject(result.Data.Owner, result.Data.Name), result.Data.Owner
 }
 
 // ── Cleanup ─────────────────────────────────────────────────────────────────
