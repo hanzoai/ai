@@ -77,7 +77,7 @@ func AutoSigninFilter(ctx *context.Context) {
 
 		userId, err := getUsernameByAccessToken(accessToken)
 		if err != nil {
-			responseError(ctx, err.Error())
+			denyUnauthorized(ctx, err.Error())
 			return
 		}
 
@@ -90,7 +90,7 @@ func AutoSigninFilter(ctx *context.Context) {
 	// HTTP Basic token like "Authorization: Basic 123"
 	userId, err := getUsernameByClientIdSecret(ctx)
 	if err != nil {
-		responseError(ctx, err.Error())
+		denyUnauthorized(ctx, err.Error())
 		return
 	}
 	if userId != "" {

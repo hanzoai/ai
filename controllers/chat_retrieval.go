@@ -6,6 +6,7 @@
 package controllers
 
 import (
+	"encoding/json"
 	"net/http"
 	"os"
 	"strings"
@@ -16,20 +17,57 @@ import (
 	iam "github.com/hanzoai/iam"
 )
 
-// retrievalOwner returns the IAM org whose search index should be queried.
-// Resolution order: authenticated user owner, widget key origin mapping, empty.
-func retrievalOwner(authUser *iam.User, token, origin, referer string) string {
+// retrievalOwner returns the IAM org whose search index should be queried. The
+// tenant is bound to the AUTHENTICATED principal — the user's own org, or for a
+// public widget the org bound to the widget KEY. It is NEVER derived from the
+// request Origin/Referer, which a client can forge to read another tenant's RAG
+// store (cross-tenant disclosure).
+func retrievalOwner(authUser *iam.User, token string) string {
 	if authUser != nil && authUser.Owner != "" {
 		return authUser.Owner
 	}
 	if isWidgetKey(token) {
-		h := origin
-		if h == "" {
-			h = referer
-		}
-		return resolveOwnerFromOrigin(h)
+		return widgetKeyOwner(token)
 	}
 	return ""
+}
+
+// widgetKeyOwner resolves a widget key (hz_*) to its bound IAM org. The owner is
+// taken from the widget KEY — a per-tenant credential — via the WIDGET_KEY_OWNERS
+// config (KMS first, env fallback) mapping key->owner. An unmapped key falls back
+// to WIDGET_DEFAULT_OWNER (a single configured tenant), NEVER a header-derived
+// org. This removes the Origin/Referer trust that allowed cross-tenant RAG reads.
+func widgetKeyOwner(token string) string {
+	if o, ok := loadWidgetKeyOwners()[token]; ok && o != "" {
+		return o
+	}
+	return strings.TrimSpace(os.Getenv("WIDGET_DEFAULT_OWNER"))
+}
+
+// loadWidgetKeyOwners parses WIDGET_KEY_OWNERS (env or KMS) into a key->owner
+// map. Accepts a JSON object or comma-separated key=value pairs.
+func loadWidgetKeyOwners() map[string]string {
+	raw := os.Getenv("WIDGET_KEY_OWNERS")
+	if raw == "" {
+		if v, err := object.GetKMSSecret("WIDGET_KEY_OWNERS"); err == nil {
+			raw = v
+		}
+	}
+	out := map[string]string{}
+	if raw == "" {
+		return out
+	}
+	if strings.HasPrefix(strings.TrimSpace(raw), "{") {
+		_ = json.Unmarshal([]byte(raw), &out)
+		return out
+	}
+	for _, part := range strings.Split(raw, ",") {
+		kv := strings.SplitN(strings.TrimSpace(part), "=", 2)
+		if len(kv) == 2 {
+			out[strings.TrimSpace(kv[0])] = strings.TrimSpace(kv[1])
+		}
+	}
+	return out
 }
 
 // retrievalEnabled decides whether to augment the prompt with retrieved docs.
