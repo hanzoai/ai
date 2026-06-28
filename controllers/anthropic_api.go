@@ -367,7 +367,7 @@ func (c *ApiController) AnthropicMessages() {
 	if isIAMApiKey(token) {
 		provider, authUser, upstreamModel, err = resolveProviderFromIAMKey(token, request.Model, c.GetAcceptLanguage())
 		if err != nil {
-			c.respondAnthropicError("authentication_error", fmt.Sprintf("Authentication failed: %s", err.Error()), 401)
+			c.respondAnthropicError("authentication_error", err.Error(), statusOf(err))
 			return
 		}
 		if authUser != nil {
@@ -379,7 +379,7 @@ func (c *ApiController) AnthropicMessages() {
 	} else if isJwtToken(token) {
 		provider, authUser, upstreamModel, err = resolveProviderFromJwt(token, request.Model, c.GetAcceptLanguage())
 		if err != nil {
-			c.respondAnthropicError("authentication_error", fmt.Sprintf("Authentication failed: %s", err.Error()), 401)
+			c.respondAnthropicError("authentication_error", err.Error(), statusOf(err))
 			return
 		}
 		if authUser != nil {
