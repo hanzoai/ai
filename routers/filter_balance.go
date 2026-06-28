@@ -122,7 +122,7 @@ type BalanceGate struct {
 }
 
 // userKeyCacheEntry maps an API token to the resolved billing identity: the
-// per-user subject (?user=), the org namespace (X-Hanzo-Org), and the exact
+// per-user subject (?user=), the org namespace (X-Org-Id), and the exact
 // "owner/name" userKey used for per-user exemption matching.
 type userKeyCacheEntry struct {
 	subject   string
@@ -248,7 +248,7 @@ func isBalanceExempt(path string) bool {
 }
 
 // resolveBillingKey extracts the billing identity from the request context and
-// returns (subject, namespace). The namespace is the IAM org slug (X-Hanzo-Org);
+// returns (subject, namespace). The namespace is the IAM org slug (X-Org-Id);
 // the subject is object.BillingSubject(owner, name) — "owner/name" for a
 // personal-billing org (e.g. the shared "hanzo" catch-all, so each individual is
 // billed independently) or the org slug for a pooled org. This is the one place
@@ -408,7 +408,7 @@ type commerceBalanceResponse struct {
 // fetchBalance calls Commerce to get the current balance for a billing subject.
 // The subject (?user=) is object.BillingSubject(owner, name) — per-user for a
 // personal-billing org, the org slug for a pooled org — and the namespace
-// (X-Hanzo-Org) is the org. Both must match what the deposit/usage writes use,
+// (X-Org-Id) is the org. Both must match what the deposit/usage writes use,
 // so the credit a user receives is the balance read here and debited from.
 // Per global rule: /v1/ only, never /api/. Commerce serves /v1/billing/balance.
 func (bg *BalanceGate) fetchBalance(subject, namespace string) (int64, error) {
@@ -422,8 +422,8 @@ func (bg *BalanceGate) fetchBalance(subject, namespace string) (int64, error) {
 		req.Header.Set("Authorization", "Bearer "+bg.token)
 	}
 	// Scope the service-token call to this org's namespace (commerce reads
-	// X-Hanzo-Org on the service-token path; absent => "hanzo" default).
-	req.Header.Set("X-Hanzo-Org", namespace)
+	// X-Org-Id on the service-token path; absent => "hanzo" default).
+	req.Header.Set("X-Org-Id", namespace)
 
 	resp, err := bg.client.Do(req)
 	if err != nil {

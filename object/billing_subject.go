@@ -22,7 +22,7 @@ import (
 
 // ── Per-user vs per-org billing identity ─────────────────────────────────────
 //
-// Commerce scopes balance to a namespace (X-Hanzo-Org = the IAM `owner` slug)
+// Commerce scopes balance to a namespace (X-Org-Id = the IAM `owner` slug)
 // and, WITHIN that namespace, to a subject (the ?user= / SourceId / DestinationId
 // key) that nets deposits against usage. The subject is the single billing
 // account; everything (the gate, the usage debit, the starter-credit grant) must
@@ -73,7 +73,7 @@ func IsPersonalBillingOrg(owner string) bool {
 
 // BillingSubject returns the canonical Commerce billing subject for an IAM
 // (owner, name) identity — the value passed as ?user= / posted as the usage
-// `user` / granted to as DestinationId. The namespace (X-Hanzo-Org) is always
+// `user` / granted to as DestinationId. The namespace (X-Org-Id) is always
 // `owner`; this is only the subject WITHIN that namespace:
 //
 //   - personal-billing org  → "owner/name" (per-user)
