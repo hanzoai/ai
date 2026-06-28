@@ -36,8 +36,8 @@ importers:
         specifier: ^3.2.2
         version: 3.2.2(react@18.3.1)
       '@hanzo/iam-js-sdk':
-        specifier: ^0.19.1
-        version: 0.19.1
+        specifier: npm:casdoor-js-sdk@^0.16.0
+        version: casdoor-js-sdk@0.16.0
       '@uiw/codemirror-extensions-langs':
         specifier: ^4.23.8
         version: 4.25.8(@codemirror/autocomplete@6.20.1)(@codemirror/language@6.12.3)(@codemirror/state@6.6.0)(@codemirror/view@6.40.0)(@lezer/common@1.5.1)(@lezer/highlight@1.2.3)(@lezer/javascript@1.5.4)(@lezer/lr@1.4.8)
@@ -101,12 +101,6 @@ importers:
       dayjs:
         specifier: ^1.11.19
         version: 1.11.20
-      diagram-js:
-        specifier: ^15.10.0
-        version: 15.10.0
-      docx:
-        specifier: ^9.6.1
-        version: 9.7.1
       dompurify:
         specifier: ^3.0.9
         version: 3.3.3
@@ -164,18 +158,12 @@ importers:
       postcss:
         specifier: ^8.4.49
         version: 8.5.8
-      qs:
-        specifier: ^6.15.0
-        version: 6.15.2
       rc-bullets:
         specifier: ^1.5.16
         version: 1.5.16(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       react:
         specifier: ^18.2.0
         version: 18.3.1
-      react-app-polyfill:
-        specifier: ^3.0.0
-        version: 3.0.0
       react-bpmn:
         specifier: ^0.2.0
         version: 0.2.0
@@ -189,11 +177,11 @@ importers:
         specifier: ^4.4.6
         version: 4.5.0(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       react-file-viewer:
-        specifier: ^1.2.1
+        specifier: 1.2.1
         version: 1.2.1(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(webpack@5.105.4)
       react-force-graph:
         specifier: ^1.48.1
-        version: 1.48.2(aframe@1.7.1)(react@18.3.1)(three@0.183.2)
+        version: 1.48.2(aframe@1.7.1)(react@18.3.1)(three@0.164.1)
       react-force-graph-2d:
         specifier: ^1.29.0
         version: 1.29.1(react@18.3.1)
@@ -239,9 +227,6 @@ importers:
       tailwindcss:
         specifier: ^3.4.17
         version: 3.4.19
-      uuid:
-        specifier: ^13.0.0
-        version: 13.0.0
       xlsx:
         specifier: ^0.16.9
         version: 0.16.9
@@ -1357,9 +1342,6 @@ packages:
   '@eslint/eslintrc@1.4.1':
     resolution: {integrity: sha512-XXrH9Uarn0stsyldqDYq8r++mROmWRI1xKMXa640Bb//SY1+ECYX6VzT6Lcx5frD0V30XieqJ0oX9I2Xj5aoMA==}
     engines: {node: ^12.22.0 || ^14.17.0 || >=16.0.0}
-
-  '@hanzo/iam-js-sdk@0.19.1':
-    resolution: {integrity: sha512-TlIbm/8a5toE5VYFGGyki0UHxgeFJhPnh+Ezzee5aCvTfR3SmlqKRYoIPG4iQpJCF3m9H2/F3lE8V7kF53kWeA==}
 
   '@humanwhocodes/config-array@0.10.7':
     resolution: {integrity: sha512-MDl6D6sBsaV452/QSdX+4CXIjZhIcI0PELsxUjk4U828yd58vk3bTIvk/6w5FY+4hIy9sLW0sfrV7K7Kc++j/w==}
@@ -2849,6 +2831,9 @@ packages:
     resolution: {integrity: sha512-duEt4h1HHu9sJZyVKfLRXR6tsKPY7cEELzxSRJkwddOXYvQT3P/+es98SV384JA0zMOZ5s+9gatnGfM6sL4Drg==}
     engines: {node: ^18.12.0 || >= 20.9.0}
 
+  casdoor-js-sdk@0.16.0:
+    resolution: {integrity: sha512-K5ZKaSGxzAgLzYGlp444OnhZ0nAZqnvlq5/wPhpQ0HCU0uwk0NIt+KC4LC+qUdnRxaQN6f1LP8wR/xsTZQBWVQ==}
+
   case-sensitive-paths-webpack-plugin@2.4.0:
     resolution: {integrity: sha512-roIFONhcxog0JSSWbvVAh3OocukmSgpqOH6YpMkCvav/ySIV3JKg4Dc8vYtQjYi/UxpNE36r/9v+VqTQqgkYmw==}
     engines: {node: '>=4'}
@@ -3581,10 +3566,6 @@ packages:
   doctrine@3.0.0:
     resolution: {integrity: sha512-yS+Q5i3hBf7GBkd4KG8a7eBNNWNGLTaEwwYWUijIYM7zrlYDM0BFXHjjPWlWZ1Rg7UaddZeIDmi9jF3HmqiQ2w==}
     engines: {node: '>=6.0.0'}
-
-  docx@9.7.1:
-    resolution: {integrity: sha512-ilXFf9Moz47ABjFpDiA5s1w9lpb4EFSp7+5iiJSbfyYDM+bpZdAgLlSr7fW4aXhVe/E+F6QCv0EvRVFEd5CsWg==}
-    engines: {node: '>=10'}
 
   dom-converter@0.2.0:
     resolution: {integrity: sha512-gd3ypIPfOMr9h5jIKq8E3sHOTCjeirnl0WK5ZdS1AW0Odt0b1PaWaHdJ4Qk4klv+YB9aJBS7mESXjFoDQPu6DA==}
@@ -4364,9 +4345,6 @@ packages:
     resolution: {integrity: sha512-NqADB8VjPFLM2V0VvHUewwwsw0ZWBaIdgo+ieHtK3hasLz4qeCRjYcqfB6AQrBggRKppKF8L52/VqdVsO47Dlw==}
     engines: {node: '>= 0.4'}
 
-  hash.js@1.1.7:
-    resolution: {integrity: sha512-taOaskGt4z4SOANNseOviYDvjEJinIkRgmp7LbKP2YTTmVxWBl87s/uzK9r+44BclBSp2X7K1hqeNfz9JbBeXA==}
-
   hasown@2.0.2:
     resolution: {integrity: sha512-0hJU9SCPvmMzIBdZFqNPXWa6dqh7WdH0cII9y+CyS8rG3nL48Bclra9HmKhVVUHyPWNH5Y7xDwAB7bfgSjkUMQ==}
     engines: {node: '>= 0.4'}
@@ -4552,9 +4530,6 @@ packages:
   ignore@5.3.2:
     resolution: {integrity: sha512-hsBTNUqQTDwkWtcdYI2i06Y/nUBEsNEDJKjWdigLvegy8kDuJAS8uRlpkkcQpyEXL0Z/pjDy5HBmMjRCJ2gq+g==}
     engines: {node: '>= 4'}
-
-  immediate@3.0.6:
-    resolution: {integrity: sha512-XXOFtyqDjNDAQxVfYxuF7g9Il/IbWmmlQg2MYKOH8ExIT1qg6xc4zyS3HaEEATgs1btfzxq15ciUiY7gjSXRGQ==}
 
   immer@9.0.21:
     resolution: {integrity: sha512-bc4NBHqOqSfRW7POMkHd51LvClaeMXpm8dx0e8oE2GORbq5aRK7Bxl4FyzVLdGtLmvLKL7BTDBG5ACQm4HWjTA==}
@@ -5103,9 +5078,6 @@ packages:
   jszip@2.5.0:
     resolution: {integrity: sha512-IRoyf8JSYY3nx+uyh5xPc0qdy8pUDTp2UkHOWYNF/IO/3D8nx7899UlSAjD8rf8wUgOmm0lACWx/GbW3EaxIXQ==}
 
-  jszip@3.10.1:
-    resolution: {integrity: sha512-xXDvecyTpGLrqFrvkrUSoxxfJI5AH7U8zxxtVclpsUtMCq4JQ290LY8AW5c7Ggnr/Y/oK+bQMbqK2qmtk3pN4g==}
-
   jwt-decode@4.0.0:
     resolution: {integrity: sha512-+KJGIyHgkGuIq3IEBNftfhW/LfWhXUIY6OmyVWjliu5KH1y0fw7VQ8YndE2O4qZdMSd9SqbnC8GOcZEy0Om7sA==}
     engines: {node: '>=18'}
@@ -5163,9 +5135,6 @@ packages:
   levn@0.4.1:
     resolution: {integrity: sha512-+bT2uH4E5LGE7h/n3evcS/sQlJXCpIp6ym8OWJ5eV6+67Dsql/LaaT7qJBAt2rzfoa/5QBGBhxDix1dMt2kQKQ==}
     engines: {node: '>= 0.8.0'}
-
-  lie@3.3.0:
-    resolution: {integrity: sha512-UaiMJzeWRlEujzAuw5LokY1L5ecNQYZKfmyZ9L7wDHb/p5etKaxXhohBcrw0EYby+G/NA52vRSN4N39dxHAIwQ==}
 
   lilconfig@2.1.0:
     resolution: {integrity: sha512-utWOt/GHzuUxnLKxB6dk81RoOeoNeHgbrXiuGk4yyF5qlRz+iIVWu56E2fqGHFrXz0QNUhLB/8nKqvRH66JKGQ==}
@@ -5728,11 +5697,6 @@ packages:
     engines: {node: ^10 || ^12 || ^13.7 || ^14 || >=15.0.1}
     hasBin: true
 
-  nanoid@5.1.15:
-    resolution: {integrity: sha512-kBg3RpGtIe+RpTbyXwoI6pk5yD7KUiI3sygUqgeBMRst42KmhB4RZC7eiO9Wa1HIpaCCtpE2DJ6OI4Wi5ebwFw==}
-    engines: {node: ^18 || >=20}
-    hasBin: true
-
   napi-build-utils@2.0.0:
     resolution: {integrity: sha512-GEbrYkbfF7MoNaoh2iGG84Mnf/WZfB0GdGEsM8wz7Expx/LlWf5U8t9nvJKXSp3qr5IsEbK04cBGhol/KwOsWA==}
 
@@ -5958,9 +5922,6 @@ packages:
 
   pako@0.2.9:
     resolution: {integrity: sha512-NUcwaKxUxWrZLpDG+z/xZaCgQITkA/Dv4V/T6bw7VON6l1Xz/VnrBqrYjZQ12TamKHzITTfOEIYUj48y2KXImA==}
-
-  pako@1.0.11:
-    resolution: {integrity: sha512-4hLB8Py4zZce5s4yd9XzopqwVv/yGNhV1Bl8NTmCq1763HeK2+EwVTv+leGeL13Dnh2wfbqowVPXCIO0z4taYw==}
 
   papaparse@5.5.3:
     resolution: {integrity: sha512-5QvjGxYVjxO59MGU2lHVYpRWBBtKHnlIAcSe1uNFCkkptUh63NFRj0FJQm7nR67puEruUci/ZkjmEFrjCAyP4A==}
@@ -6645,10 +6606,6 @@ packages:
 
   qs@6.14.2:
     resolution: {integrity: sha512-V/yCWTTF7VJ9hIh18Ugr2zhJMP01MY7c5kh4J870L7imm6/DIzBsNLTXzMwUA3yZ5b/KBqLx8Kp3uRvd7xSe3Q==}
-    engines: {node: '>=0.6'}
-
-  qs@6.15.2:
-    resolution: {integrity: sha512-Rzq0KEyX/w/tEybncDgdkZrJgVUsUMk3xjh3t5bv3S1HTAtg+uOYt72+ZfwiQwKdysThkTBdL/rTi6HDmX9Ddw==}
     engines: {node: '>=0.6'}
 
   quad-indices@2.0.1:
@@ -7420,9 +7377,6 @@ packages:
   set-proto@1.0.0:
     resolution: {integrity: sha512-RJRdvCo6IAnPdsvP/7m6bsQqNnn1FCBX5ZNtFL98MmFF/4xAIJTIg1YbHW5DC2W5SKZanrC6i4HsJqlajw/dZw==}
     engines: {node: '>= 0.4'}
-
-  setimmediate@1.0.5:
-    resolution: {integrity: sha512-MATJdZp8sLqDl/68LfQmbP8zKPLQNV6BIZoIgrscFDQ+RsvK/BxeDQOgyxKKoh0y/8h3BqVFnCqQ/gd+reiIXA==}
 
   setprototypeof@1.2.0:
     resolution: {integrity: sha512-E5LDX7Wrp85Kil5bhZv46j8jOeboKq5JMmYM3gVGdGH8xFpPWXUMsNrlODCrkoxMEeNi/XZIwuRvY4XNwYMJpw==}
@@ -8550,10 +8504,6 @@ packages:
     engines: {node: '>=0.8'}
     hasBin: true
 
-  xml-js@1.6.11:
-    resolution: {integrity: sha512-7rVi2KMfwfWFl+GpPg6m80IVMWXLRjO+PxTq7V2CDhoGak0wzYzFgUY2m4XJ47OGdXd8eLE8EmwfAmdjw7lC1g==}
-    hasBin: true
-
   xml-name-validator@3.0.0:
     resolution: {integrity: sha512-A5CUptxDsvxKJEU3yO6DuWBSJz/qizqzJKOMIfUJHETbBw/sFaDxgd6fxm1ewUaM0jZ444Fc5vC5ROYurg/4Pw==}
 
@@ -8563,9 +8513,6 @@ packages:
   xml2js@0.5.0:
     resolution: {integrity: sha512-drPFnkQJik/O+uPKpqSgr22mpuFHqKdbS835iAQrUC73L2F5WkboIRd63ai/2Yg6I1jzifPFKH2NTK+cfglkIA==}
     engines: {node: '>=4.0.0'}
-
-  xml@1.0.1:
-    resolution: {integrity: sha512-huCv9IH9Tcf95zuYCsQraZtWnJvBtLVE0QHMOs8bWyZAFZNDcYjsPq1nEx8jKA9y+Beo9v+7OBPRisQTjinQMw==}
 
   xmlbuilder@11.0.1:
     resolution: {integrity: sha512-fDlsI/kFEx7gLvbecc0/ohLG50fugQp8ryHzMTuW9vSa1GJ0XYWKnhsUx7oie3G98+r56aTQIUB4kht42R3JvA==}
@@ -8642,20 +8589,20 @@ packages:
 
 snapshots:
 
-  3d-force-graph-ar@1.10.0(aframe@1.7.1)(three@0.183.2):
+  3d-force-graph-ar@1.10.0(aframe@1.7.1)(three@0.164.1):
     dependencies:
-      aframe-forcegraph-component: 3.3.0(aframe@1.7.1)(three@0.183.2)
+      aframe-forcegraph-component: 3.3.0(aframe@1.7.1)(three@0.164.1)
       kapsule: 1.16.3
     transitivePeerDependencies:
       - aframe
       - three
 
-  3d-force-graph-vr@3.1.1(aframe@1.7.1)(three@0.183.2):
+  3d-force-graph-vr@3.1.1(aframe@1.7.1)(three@0.164.1):
     dependencies:
       accessor-fn: 1.5.3
       aframe: 1.7.1
       aframe-extras: 7.6.1
-      aframe-forcegraph-component: 3.3.0(aframe@1.7.1)(three@0.183.2)
+      aframe-forcegraph-component: 3.3.0(aframe@1.7.1)(three@0.164.1)
       kapsule: 1.16.3
       polished: 4.3.1
     transitivePeerDependencies:
@@ -10127,11 +10074,6 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@hanzo/iam-js-sdk@0.19.1':
-    dependencies:
-      js-pkce: 1.5.1
-      jwt-decode: 4.0.0
-
   '@humanwhocodes/config-array@0.10.7':
     dependencies:
       '@humanwhocodes/object-schema': 1.2.1
@@ -11459,10 +11401,10 @@ snapshots:
       three: 0.164.1
       three-pathfinding: 1.3.0(three@0.164.1)
 
-  aframe-forcegraph-component@3.3.0(aframe@1.7.1)(three@0.183.2):
+  aframe-forcegraph-component@3.3.0(aframe@1.7.1)(three@0.164.1):
     dependencies:
       aframe: 1.7.1
-      three-forcegraph: 1.43.1(three@0.183.2)
+      three-forcegraph: 1.43.1(three@0.164.1)
     transitivePeerDependencies:
       - three
 
@@ -12184,6 +12126,11 @@ snapshots:
       prebuild-install: 7.1.3
     optional: true
 
+  casdoor-js-sdk@0.16.0:
+    dependencies:
+      js-pkce: 1.5.1
+      jwt-decode: 4.0.0
+
   case-sensitive-paths-webpack-plugin@2.4.0: {}
 
   ccount@2.0.1: {}
@@ -12882,15 +12829,6 @@ snapshots:
   doctrine@3.0.0:
     dependencies:
       esutils: 2.0.3
-
-  docx@9.7.1:
-    dependencies:
-      '@types/node': 25.5.0
-      hash.js: 1.1.7
-      jszip: 3.10.1
-      nanoid: 5.1.15
-      xml: 1.0.1
-      xml-js: 1.6.11
 
   dom-converter@0.2.0:
     dependencies:
@@ -13883,11 +13821,6 @@ snapshots:
     dependencies:
       has-symbols: 1.1.0
 
-  hash.js@1.1.7:
-    dependencies:
-      inherits: 2.0.4
-      minimalistic-assert: 1.0.1
-
   hasown@2.0.2:
     dependencies:
       function-bind: 1.1.2
@@ -14117,8 +14050,6 @@ snapshots:
   ieee754@1.2.1: {}
 
   ignore@5.3.2: {}
-
-  immediate@3.0.6: {}
 
   immer@9.0.21: {}
 
@@ -14901,13 +14832,6 @@ snapshots:
     dependencies:
       pako: 0.2.9
 
-  jszip@3.10.1:
-    dependencies:
-      lie: 3.3.0
-      pako: 1.0.11
-      readable-stream: 2.3.8
-      setimmediate: 1.0.5
-
   jwt-decode@4.0.0: {}
 
   kapsule@1.16.3:
@@ -14959,10 +14883,6 @@ snapshots:
     dependencies:
       prelude-ls: 1.2.1
       type-check: 0.4.0
-
-  lie@3.3.0:
-    dependencies:
-      immediate: 3.0.6
 
   lilconfig@2.1.0: {}
 
@@ -15803,8 +15723,6 @@ snapshots:
 
   nanoid@3.3.11: {}
 
-  nanoid@5.1.15: {}
-
   napi-build-utils@2.0.0:
     optional: true
 
@@ -16044,8 +15962,6 @@ snapshots:
   p-try@2.2.0: {}
 
   pako@0.2.9: {}
-
-  pako@1.0.11: {}
 
   papaparse@5.5.3: {}
 
@@ -16700,10 +16616,6 @@ snapshots:
     dependencies:
       side-channel: 1.1.0
 
-  qs@6.15.2:
-    dependencies:
-      side-channel: 1.1.0
-
   quad-indices@2.0.1:
     dependencies:
       an-array: 1.0.0
@@ -17168,11 +17080,11 @@ snapshots:
       react: 18.3.1
       react-kapsule: 2.5.7(react@18.3.1)
 
-  react-force-graph@1.48.2(aframe@1.7.1)(react@18.3.1)(three@0.183.2):
+  react-force-graph@1.48.2(aframe@1.7.1)(react@18.3.1)(three@0.164.1):
     dependencies:
       3d-force-graph: 1.79.1
-      3d-force-graph-ar: 1.10.0(aframe@1.7.1)(three@0.183.2)
-      3d-force-graph-vr: 3.1.1(aframe@1.7.1)(three@0.183.2)
+      3d-force-graph-ar: 1.10.0(aframe@1.7.1)(three@0.164.1)
+      3d-force-graph-vr: 3.1.1(aframe@1.7.1)(three@0.164.1)
       force-graph: 1.51.2
       prop-types: 15.8.1
       react: 18.3.1
@@ -17801,8 +17713,6 @@ snapshots:
       es-errors: 1.3.0
       es-object-atoms: 1.1.1
 
-  setimmediate@1.0.5: {}
-
   setprototypeof@1.2.0: {}
 
   shallowequal@1.1.0: {}
@@ -18380,6 +18290,20 @@ snapshots:
       layout-bmfont-text: 1.3.4
       nice-color-palettes: 3.0.0
       quad-indices: 2.0.1
+
+  three-forcegraph@1.43.1(three@0.164.1):
+    dependencies:
+      accessor-fn: 1.5.3
+      d3-array: 3.2.4
+      d3-force-3d: 3.0.6
+      d3-scale: 4.0.2
+      d3-scale-chromatic: 3.1.0
+      data-bind-mapper: 1.0.3
+      kapsule: 1.16.3
+      ngraph.forcelayout: 3.3.1
+      ngraph.graph: 20.1.2
+      three: 0.164.1
+      tinycolor2: 1.6.0
 
   three-forcegraph@1.43.1(three@0.183.2):
     dependencies:
@@ -19213,10 +19137,6 @@ snapshots:
       wmf: 1.0.2
       word: 0.3.0
 
-  xml-js@1.6.11:
-    dependencies:
-      sax: 1.6.0
-
   xml-name-validator@3.0.0: {}
 
   xml-parse-from-string@1.0.1: {}
@@ -19225,8 +19145,6 @@ snapshots:
     dependencies:
       sax: 1.6.0
       xmlbuilder: 11.0.1
-
-  xml@1.0.1: {}
 
   xmlbuilder@11.0.1: {}
 
