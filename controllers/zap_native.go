@@ -510,7 +510,8 @@ func zapResolveUser(auth string) (string, error) {
 	}
 
 	if isJwtToken(token) {
-		claims, err := iam.ParseJwtToken(token)
+		// signature + iss/aud validation (R3), never raw iam.ParseJwtToken
+		claims, err := object.ParseAndValidateJWT(token)
 		if err == nil && claims != nil {
 			return claims.Owner + "/" + claims.Name, nil
 		}
