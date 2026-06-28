@@ -15,7 +15,6 @@
 package controllers
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
@@ -153,78 +152,9 @@ func validateWidgetKey(token string) bool {
 // widgetMaxTokens caps the maximum tokens per widget request to control costs.
 const widgetMaxTokens = 800
 
-// resolveOwnerFromOrigin maps a request's Origin/Referer hostname to an IAM
-// org. Config lives in a single WIDGET_ORIGINS env/KMS value as a JSON object
-// (or key=val,key=val) mapping hostname → owner:
-//
-//	WIDGET_ORIGINS={"lux.financial":"lux","hanzo.ai":"hanzo","zoo.ngo":"zoo"}
-//
-// or
-//
-//	WIDGET_ORIGINS=lux.financial=lux,hanzo.ai=hanzo,zoo.ngo=zoo
-//
-// Suffix matches so subdomains inherit (e.g., api.hanzo.ai → hanzo). Fallback
-// is WIDGET_DEFAULT_OWNER env, then "hanzo".
-func resolveOwnerFromOrigin(origin string) string {
-	host := originHostname(origin)
-	if host != "" {
-		m := loadWidgetOrigins()
-		if o, ok := m[host]; ok {
-			return o
-		}
-		for suffix, o := range m {
-			if strings.HasSuffix(host, "."+suffix) {
-				return o
-			}
-		}
-	}
-	if v := os.Getenv("WIDGET_DEFAULT_OWNER"); v != "" {
-		return v
-	}
-	return "hanzo"
-}
-
-func originHostname(origin string) string {
-	if origin == "" {
-		return ""
-	}
-	if i := strings.Index(origin, "://"); i >= 0 {
-		origin = origin[i+3:]
-	}
-	if i := strings.IndexByte(origin, '/'); i >= 0 {
-		origin = origin[:i]
-	}
-	if i := strings.LastIndexByte(origin, ':'); i >= 0 {
-		origin = origin[:i]
-	}
-	return origin
-}
-
-// loadWidgetOrigins parses WIDGET_ORIGINS (env or KMS) into a hostname→owner map.
-// Accepts JSON object or comma-separated key=value.
-func loadWidgetOrigins() map[string]string {
-	raw := os.Getenv("WIDGET_ORIGINS")
-	if raw == "" {
-		if v, err := object.GetKMSSecret("WIDGET_ORIGINS"); err == nil {
-			raw = v
-		}
-	}
-	out := map[string]string{}
-	if raw == "" {
-		return out
-	}
-	if strings.HasPrefix(strings.TrimSpace(raw), "{") {
-		_ = json.Unmarshal([]byte(raw), &out)
-		return out
-	}
-	for _, part := range strings.Split(raw, ",") {
-		kv := strings.SplitN(strings.TrimSpace(part), "=", 2)
-		if len(kv) == 2 {
-			out[strings.TrimSpace(kv[0])] = strings.TrimSpace(kv[1])
-		}
-	}
-	return out
-}
+// Widget tenant resolution is bound to the widget KEY (see widgetKeyOwner in
+// chat_retrieval.go), never the request Origin/Referer — a forgeable header must
+// not select another tenant's data.
 
 // widgetAllowedModels defines which models widget keys can access.
 // Only cheap DO-AI models are allowed to keep costs minimal.
@@ -289,7 +219,9 @@ func widgetAllowedModelsList() string {
 // appropriate model provider for the requested model, plus the translated
 // upstream model name.
 func resolveProviderFromJwt(token string, requestedModel string, lang string) (*object.Provider, *iam.User, string, error) {
-	claims, err := iam.ParseJwtToken(token)
+	// Signature + issuer/audience validation (never raw iam.ParseJwtToken), so a
+	// token minted for a foreign app/issuer cannot authenticate a paid request.
+	claims, err := object.ParseAndValidateJWT(token)
 	if err != nil {
 		return nil, nil, "", authError("invalid hanzo.id token: %s", err.Error())
 	}
@@ -378,27 +310,17 @@ func resolveProviderForUser(user *iam.User, requestedModel string, lang string) 
 	}
 
 	// Service accounts configured in BALANCE_EXEMPT_USERS skip balance checks.
-	// This allows internal cloud agent pods to make LLM calls without Commerce setup.
-	// The exempt list is matched on the per-user "owner/name" key (service
-	// accounts are named individually), while billing itself is per-org.
-	exemptUsers := os.Getenv("BALANCE_EXEMPT_USERS")
-	userKey := user.Owner + "/" + user.Name
+	// This allows internal cloud agent pods to make LLM calls without Commerce
+	// setup. Exemption matches the per-user "owner/name" key (service accounts are
+	// named individually) OR a bare org — via object.BalanceExempt, the SAME shared
+	// definition the router gate uses, so the two can never drift in granularity.
 	orgKey := user.Owner // namespace (X-Hanzo-Org): the org tenant
 	// subject is the billing account WITHIN the namespace: "owner/name" for a
 	// personal-billing org (each member billed independently), the org slug for
 	// a pooled org. The gate read, this backstop, and the usage debit all key
 	// on this one subject.
 	subject := object.BillingSubject(user.Owner, user.Name)
-	isExempt := false
-	if exemptUsers != "" {
-		for _, u := range strings.Split(exemptUsers, ",") {
-			t := strings.TrimSpace(u)
-			if t == userKey || t == orgKey {
-				isExempt = true
-				break
-			}
-		}
-	}
+	isExempt := object.BalanceExempt().Matches(user.Owner, user.Name)
 
 	if !isExempt {
 		// All models require prepaid balance. New accounts receive a $5 starter
@@ -844,7 +766,9 @@ func (c *ApiController) authenticate(token string) error {
 		}
 		return nil
 	case isJwtToken(token):
-		if _, err := iam.ParseJwtToken(token); err != nil {
+		// Signature + issuer/audience validation (R3): a foreign-aud or
+		// wrong-issuer token is rejected here, not just signature-checked.
+		if _, err := object.ParseAndValidateJWT(token); err != nil {
 			return authError("invalid hanzo.id token: %s", err.Error())
 		}
 		return nil
@@ -1026,13 +950,36 @@ func (c *ApiController) ChatCompletions() {
 		provider.SubType = request.Model
 	}
 
+	// ── Balance reservation ────────────────────────────────────────────
+	// Hold an upper-bound budget for this request so concurrent requests for the
+	// same subject can't double-spend a balance the async debit hasn't applied
+	// yet. The router gate is coarse (balance>0); this enforces
+	// balance >= estimated cost and reserves it atomically. It is settled with
+	// the ACTUAL cost when the request completes (deferred fail-safe release).
+	var hold *budgetHold
+	if authUser != nil {
+		subject := object.BillingSubject(authUser.Owner, authUser.Name)
+		// Clamp the upstream completion ceiling BEFORE reserving so the proxied
+		// (tool/stream) upstream can never emit more than we reserve — the actual
+		// settle can never exceed the hold (R1b). reserveCompletionTokens also
+		// covers the QueryText pipeline's fixed cap, which ignores max_tokens.
+		request.MaxTokens = clampMaxTokens(request.MaxTokens)
+		est := estimateRequestCostCents(request.Model, estimatePromptTokens(&request), request.MaxTokens)
+		var ok bool
+		if hold, ok = reserveBudget(subject, est); !ok {
+			c.ResponseAuthError(billingError("Insufficient balance for the estimated request cost. Add credits at console.hanzo.ai"))
+			return
+		}
+	}
+	defer hold.settle(0)
+
 	// ── Tool-calling pass-through ──────────────────────────────────────
 	// When the request includes tools/functions, the QueryText pipeline
 	// cannot handle structured tool calls. Proxy the raw request directly
 	// to the upstream provider's OpenAI-compatible endpoint so the LLM
 	// receives tool definitions and can return tool_calls in the response.
 	if len(request.Tools) > 0 || request.ToolChoice != nil {
-		c.proxyToolRequest(provider, &request, requestStartTime, authUser, isPremium, orgId)
+		c.proxyToolRequest(provider, &request, requestStartTime, authUser, isPremium, orgId, hold)
 		return
 	}
 
@@ -1115,7 +1062,7 @@ func (c *ApiController) ChatCompletions() {
 	//   - Auth is a widget key AND WIDGET_RETRIEVAL=1 (auto-RAG for public widgets)
 	knowledge := c.retrieveKnowledgeIfEnabled(
 		question,
-		retrievalOwner(authUser, token, c.Ctx.Request.Header.Get("Origin"), c.Ctx.Request.Header.Get("Referer")),
+		retrievalOwner(authUser, token),
 		c.Ctx.Request.Header.Get("X-Retrieval-Store"),
 		c.GetAcceptLanguage(),
 	)
@@ -1187,6 +1134,10 @@ func (c *ApiController) ChatCompletions() {
 		}
 		recordUsage(successRecord)
 		recordTrace(successRecord, requestStartTime)
+		// Settle the reservation with the ACTUAL cost (this works identically for
+		// streaming and non-streaming non-tool responses — both have real token
+		// counts here from the QueryText pipeline).
+		hold.settle(calculateCostCentsWithCache(request.Model, modelResult.PromptTokenCount, modelResult.ResponseTokenCount, 0, 0))
 	}
 
 	// Handle response based on streaming mode
@@ -1327,6 +1278,7 @@ func (c *ApiController) proxyToolRequest(
 	authUser *iam.User,
 	isPremium bool,
 	orgId string,
+	hold *budgetHold,
 ) {
 	requestId := util.GenerateUUID()
 
@@ -1335,8 +1287,20 @@ func (c *ApiController) proxyToolRequest(
 
 	// For Claude/Anthropic providers, convert to Anthropic Messages API format
 	if provider.Type == "Claude" {
-		c.proxyToolRequestAnthropic(provider, request, requestStartTime, authUser, isPremium, orgId, requestId)
+		c.proxyToolRequestAnthropic(provider, request, requestStartTime, authUser, isPremium, orgId, requestId, hold)
 		return
+	}
+
+	// On the streaming path FORCE the upstream to emit a final usage chunk
+	// (stream_options.include_usage) so streamed tool calls are billed for their
+	// real token counts. Without this the streamed response carried no usage and
+	// was debited as $0 — any funded key + a dummy tool + stream:true = free
+	// premium inference. Remember whether the CLIENT requested usage so the
+	// injected usage-only chunk can be suppressed if it did not.
+	clientWantsUsage := true
+	if request.Stream {
+		clientWantsUsage = request.StreamOptions != nil && request.StreamOptions.IncludeUsage
+		request.StreamOptions = &openai.StreamOptions{IncludeUsage: true}
 	}
 
 	// Determine upstream endpoint and auth
@@ -1398,82 +1362,55 @@ func (c *ApiController) proxyToolRequest(
 	}
 
 	if request.Stream {
-		// Stream: copy SSE events directly
+		// Stream: copy SSE events while capturing token usage for billing.
 		c.Ctx.ResponseWriter.Header().Set("Content-Type", "text/event-stream")
 		c.Ctx.ResponseWriter.Header().Set("Cache-Control", "no-cache")
 		c.Ctx.ResponseWriter.Header().Set("Connection", "keep-alive")
 		c.Ctx.ResponseWriter.WriteHeader(resp.StatusCode)
 
-		scanner := bufio.NewScanner(resp.Body)
-		scanner.Buffer(make([]byte, 0, 256*1024), 256*1024)
+		// Copy the SSE stream to the client while capturing token usage (and the
+		// output text for a tokenizer fallback). This is the billing-critical core
+		// of the streaming tool path — see streamCaptureUsage.
+		capPrompt, capCompletion, capTotal, completionText := streamCaptureUsage(
+			resp.Body, c.Ctx.ResponseWriter, c.Ctx.ResponseWriter.Flush,
+			clientWantsUsage, requestId, request.Model,
+		)
 
-		// Track the last seen chunk ID/model so we can fix bare usage chunks.
-		var lastChunkID, lastChunkModel string
-
-		for scanner.Scan() {
-			line := scanner.Text()
-
-			// Fix bare usage-only SSE chunks (missing id/object/choices) so
-			// downstream OpenAI SDK clients can parse them correctly.
-			if strings.HasPrefix(line, "data: {\"usage\"") && !strings.Contains(line, "\"choices\"") {
-				raw := strings.TrimPrefix(line, "data: ")
-				var usageChunk map[string]interface{}
-				if json.Unmarshal([]byte(raw), &usageChunk) == nil {
-					chunkID := lastChunkID
-					if chunkID == "" {
-						chunkID = "chatcmpl-" + requestId
-					}
-					chunkModel := lastChunkModel
-					if chunkModel == "" {
-						chunkModel = request.Model
-					}
-					usageChunk["id"] = chunkID
-					usageChunk["object"] = "chat.completion.chunk"
-					usageChunk["created"] = time.Now().Unix()
-					usageChunk["model"] = chunkModel
-					usageChunk["choices"] = []interface{}{}
-					if fixed, err := json.Marshal(usageChunk); err == nil {
-						line = "data: " + string(fixed)
-					}
-				}
-			} else if strings.HasPrefix(line, "data: {") && strings.Contains(line, "\"id\"") {
-				// Extract chunk ID/model for reuse in usage chunk
-				var peek struct {
-					ID    string `json:"id"`
-					Model string `json:"model"`
-				}
-				if json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &peek) == nil {
-					if peek.ID != "" {
-						lastChunkID = peek.ID
-					}
-					if peek.Model != "" {
-						lastChunkModel = peek.Model
-					}
-				}
+		// Settle billing with the REAL token usage — captured from the forced
+		// usage chunk, or tokenized as a fallback so a successful streamed
+		// response is never billed as zero.
+		prompt, completion, total := capPrompt, capCompletion, capTotal
+		if completion == 0 && total == 0 {
+			if pt, err := model.OpenaiNumTokensFromMessages(request.Messages, request.Model); err == nil {
+				prompt = pt
 			}
-
-			_, _ = fmt.Fprintf(c.Ctx.ResponseWriter, "%s\n", line)
-			c.Ctx.ResponseWriter.Flush()
+			completion, _ = model.GetTokenSize(request.Model, completionText)
 		}
-
-		// Record usage (approximate — we don't parse SSE for token counts in streaming)
+		if total == 0 {
+			total = prompt + completion
+		}
+		actualCents := calculateCostCentsWithCache(request.Model, prompt, completion, 0, 0)
 		if authUser != nil {
 			successRecord := &usageRecord{
-				Owner:        authUser.Owner,
-				User:         authUser.Owner + "/" + authUser.Name,
-				Organization: authUser.Owner,
-				Model:        request.Model,
-				Provider:     provider.Name,
-				Currency:     "USD",
-				Premium:      isPremium,
-				Stream:       true,
-				Status:       "success",
-				ClientIP:     c.Ctx.Request.RemoteAddr,
-				RequestID:    requestId,
+				Owner:            authUser.Owner,
+				User:             authUser.Owner + "/" + authUser.Name,
+				Organization:     authUser.Owner,
+				Model:            request.Model,
+				Provider:         provider.Name,
+				PromptTokens:     prompt,
+				CompletionTokens: completion,
+				TotalTokens:      total,
+				Currency:         "USD",
+				Premium:          isPremium,
+				Stream:           true,
+				Status:           "success",
+				ClientIP:         c.Ctx.Request.RemoteAddr,
+				RequestID:        requestId,
 			}
 			recordUsage(successRecord)
 			recordTrace(successRecord, requestStartTime)
 		}
+		hold.settle(actualCents)
 	} else {
 		// Non-streaming: read full response, extract token counts, forward
 		respBody, err := io.ReadAll(resp.Body)
@@ -1492,6 +1429,22 @@ func (c *ApiController) proxyToolRequest(
 		}
 		_ = json.Unmarshal(respBody, &upstreamResp)
 
+		prompt := upstreamResp.Usage.PromptTokens
+		completion := upstreamResp.Usage.CompletionTokens
+		total := upstreamResp.Usage.TotalTokens
+		if completion == 0 && total == 0 {
+			// Upstream returned no usage — tokenize so a successful tool response
+			// is never billed as zero.
+			if pt, err := model.OpenaiNumTokensFromMessages(request.Messages, request.Model); err == nil {
+				prompt = pt
+			}
+			completion, _ = model.GetTokenSize(request.Model, string(respBody))
+		}
+		if total == 0 {
+			total = prompt + completion
+		}
+		actualCents := calculateCostCentsWithCache(request.Model, prompt, completion, 0, 0)
+
 		if authUser != nil {
 			successRecord := &usageRecord{
 				Owner:            authUser.Owner,
@@ -1499,9 +1452,9 @@ func (c *ApiController) proxyToolRequest(
 				Organization:     authUser.Owner,
 				Model:            request.Model,
 				Provider:         provider.Name,
-				PromptTokens:     upstreamResp.Usage.PromptTokens,
-				CompletionTokens: upstreamResp.Usage.CompletionTokens,
-				TotalTokens:      upstreamResp.Usage.TotalTokens,
+				PromptTokens:     prompt,
+				CompletionTokens: completion,
+				TotalTokens:      total,
 				Currency:         "USD",
 				Premium:          isPremium,
 				Stream:           false,
@@ -1512,6 +1465,7 @@ func (c *ApiController) proxyToolRequest(
 			recordUsage(successRecord)
 			recordTrace(successRecord, requestStartTime)
 		}
+		hold.settle(actualCents)
 
 		c.Ctx.ResponseWriter.WriteHeader(resp.StatusCode)
 		c.Ctx.Output.Body(respBody)
@@ -1613,6 +1567,7 @@ func (c *ApiController) proxyToolRequestAnthropic(
 	isPremium bool,
 	orgId string,
 	requestId string,
+	hold *budgetHold,
 ) {
 	apiKey := provider.ClientSecret
 	baseURL := provider.ProviderUrl
@@ -1725,9 +1680,11 @@ func (c *ApiController) proxyToolRequestAnthropic(
 	if request.Temperature > 0 {
 		anthropicReq["temperature"] = request.Temperature
 	}
-	if request.Stream {
-		anthropicReq["stream"] = true
-	}
+	// Always fetch the FULL (non-streamed) Anthropic response so the body is
+	// parseable JSON carrying token usage for billing. If the client requested
+	// streaming, the converted result is re-emitted as SSE below. Previously
+	// stream=true made io.ReadAll+json.Unmarshal fail on the SSE body, so streamed
+	// tool calls errored AND were never billed.
 
 	body, err := json.Marshal(anthropicReq)
 	if err != nil {
@@ -1751,12 +1708,6 @@ func (c *ApiController) proxyToolRequestAnthropic(
 		return
 	}
 	defer resp.Body.Close()
-
-	if request.Stream {
-		// For streaming, we need to convert Anthropic SSE to OpenAI SSE format
-		// This is complex — for now, collect full response and send as non-stream
-		// TODO: implement true SSE conversion for Anthropic streaming
-	}
 
 	// Read full Anthropic response
 	respBody, err := io.ReadAll(resp.Body)
@@ -1867,10 +1818,42 @@ func (c *ApiController) proxyToolRequestAnthropic(
 		recordUsage(successRecord)
 		recordTrace(successRecord, requestStartTime)
 	}
+	hold.settle(calculateCostCentsWithCache(request.Model, anthropicResp.Usage.InputTokens, anthropicResp.Usage.OutputTokens, 0, 0))
 
 	jsonResponse, err := json.Marshal(openaiResp)
 	if err != nil {
 		c.ResponseError(err.Error())
+		return
+	}
+
+	if request.Stream {
+		// Client asked for streaming: emit the converted completion as a single
+		// SSE chunk followed by [DONE], so OpenAI SDK clients consuming a stream
+		// still work while billing used the real (full-response) token usage.
+		c.Ctx.ResponseWriter.Header().Set("Content-Type", "text/event-stream")
+		c.Ctx.ResponseWriter.Header().Set("Cache-Control", "no-cache")
+		c.Ctx.ResponseWriter.Header().Set("Connection", "keep-alive")
+		chunk := map[string]interface{}{
+			"id":      openaiResp.ID,
+			"object":  "chat.completion.chunk",
+			"created": openaiResp.Created,
+			"model":   openaiResp.Model,
+			"choices": []map[string]interface{}{{
+				"index": 0,
+				"delta": map[string]interface{}{
+					"role":       "assistant",
+					"content":    contentText,
+					"tool_calls": toolCalls,
+				},
+				"finish_reason": finishReason,
+			}},
+		}
+		if chunkJSON, mErr := json.Marshal(chunk); mErr == nil {
+			_, _ = fmt.Fprintf(c.Ctx.ResponseWriter, "data: %s\n\n", string(chunkJSON))
+		}
+		_, _ = fmt.Fprint(c.Ctx.ResponseWriter, "data: [DONE]\n\n")
+		c.Ctx.ResponseWriter.Flush()
+		c.EnableRender = false
 		return
 	}
 

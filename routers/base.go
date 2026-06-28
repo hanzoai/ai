@@ -18,6 +18,7 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/beego/beego/context"
@@ -83,6 +84,25 @@ func responseError(ctx *context.Context, error string, data ...interface{}) {
 	if err != nil {
 		panic(err)
 	}
+}
+
+// responseErrorStatus writes the standard error envelope with an explicit HTTP
+// status. Filters use it so an auth/authz denial is a real 401/403, not Beego's
+// default 200 — a denial must never look like success to a client. The body
+// shape is unchanged; only the status differs.
+func responseErrorStatus(ctx *context.Context, status int, error string, data ...interface{}) {
+	ctx.Output.SetStatus(status)
+	responseError(ctx, error, data...)
+}
+
+// denyUnauthorized renders a 401 (no/invalid credential).
+func denyUnauthorized(ctx *context.Context, error string, data ...interface{}) {
+	responseErrorStatus(ctx, http.StatusUnauthorized, error, data...)
+}
+
+// denyForbidden renders a 403 (authenticated but not permitted).
+func denyForbidden(ctx *context.Context, error string, data ...interface{}) {
+	responseErrorStatus(ctx, http.StatusForbidden, error, data...)
 }
 
 func setSessionUser(ctx *context.Context, userId string) {
