@@ -176,6 +176,7 @@ func (a *Adapter) createTable() {
 		&Patient{}, &Pod{}, &Provider{}, &Record{}, &Scale{}, &Scan{},
 		&Session{}, &Store{}, &Task{}, &Template{}, &Vector{}, &Video{},
 		&Workflow{},
+		&Memory{}, // cloud memory backend (per-user scoped)
 	}
 	for _, m := range models {
 		if err := a.db.Sync(m); err != nil {
