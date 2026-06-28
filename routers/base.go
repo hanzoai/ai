@@ -35,12 +35,21 @@ type Response struct {
 }
 
 func GetSessionUser(ctx *context.Context) *iam.User {
+	// Fail secure: no session store ⇒ unauthenticated (never a nil-session
+	// panic), and an unexpected session value type is ignored rather than
+	// triggering a type-assert panic.
+	if ctx == nil || ctx.Input == nil || ctx.Input.CruSession == nil {
+		return nil
+	}
 	s := ctx.Input.Session("user")
 	if s == nil {
 		return nil
 	}
 
-	claims := s.(iam.Claims)
+	claims, ok := s.(iam.Claims)
+	if !ok {
+		return nil
+	}
 	return &claims.User
 }
 
