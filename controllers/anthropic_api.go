@@ -335,25 +335,27 @@ func (c *ApiController) AnthropicMessages() {
 		return
 	}
 
-	// Parse request body.
+	// Parse + validate the request body. Authenticate BEFORE reporting any client
+	// error so an invalid credential is 401 regardless of body validity — a
+	// malformed/incomplete body from an unauthenticated caller must not return a
+	// probe-able 400. A valid credential with a bad body gets the precise 400.
 	var request AnthropicRequest
+	badReq := ""
 	if err := json.Unmarshal(c.Ctx.Input.RequestBody, &request); err != nil {
-		c.respondAnthropicError("invalid_request_error", fmt.Sprintf("Failed to parse request: %s", err.Error()), 400)
-		return
+		badReq = fmt.Sprintf("Failed to parse request: %s", err.Error())
+	} else if request.Model == "" {
+		badReq = "model is required"
+	} else if request.MaxTokens <= 0 {
+		badReq = "max_tokens is required and must be > 0"
+	} else if len(request.Messages) == 0 {
+		badReq = "messages must contain at least one message"
 	}
-
-	if request.Model == "" {
-		c.respondAnthropicError("invalid_request_error", "model is required", 400)
-		return
-	}
-
-	if request.MaxTokens <= 0 {
-		c.respondAnthropicError("invalid_request_error", "max_tokens is required and must be > 0", 400)
-		return
-	}
-
-	if len(request.Messages) == 0 {
-		c.respondAnthropicError("invalid_request_error", "messages must contain at least one message", 400)
+	if badReq != "" {
+		if authErr := c.authenticate(token); authErr != nil {
+			c.respondAnthropicError("authentication_error", authErr.Error(), 401)
+			return
+		}
+		c.respondAnthropicError("invalid_request_error", badReq, 400)
 		return
 	}
 

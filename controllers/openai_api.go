@@ -810,6 +810,49 @@ func recordTrace(record *usageRecord, startTime time.Time) {
 
 // ── API handlers ────────────────────────────────────────────────────────────
 
+// authenticate validates a bearer credential to a real principal WITHOUT routing
+// a model — the authentication half of authResolveProvider. Handlers call it on a
+// request-body error so an INVALID credential is rejected (401) regardless of
+// body validity: a malformed (or field-incomplete) body from an unauthenticated
+// caller must never return 200/400 that confirms the endpoint or lets it be
+// probed. It is invoked only on the error path, so the happy path keeps a single
+// validation (authResolveProvider). It mirrors authResolveProvider's four auth
+// branches EXACTLY and never grants on an unknown key (fail-secure).
+func (c *ApiController) authenticate(token string) error {
+	switch {
+	case isWidgetKey(token):
+		if !validateWidgetKey(token) {
+			return authError("Widget authentication failed: invalid widget key")
+		}
+		return nil
+	case isIAMApiKey(token):
+		if _, err := getUserByAccessKey(token); err != nil {
+			// Same cloud-agent service-key fallback as resolveProviderFromIAMKey,
+			// so a valid service key is not falsely rejected here.
+			if tryCloudAgentKeyFallback(token) != nil {
+				return nil
+			}
+			return authError("API key validation failed: %s", err.Error())
+		}
+		return nil
+	case isJwtToken(token):
+		if _, err := iam.ParseJwtToken(token); err != nil {
+			return authError("invalid hanzo.id token: %s", err.Error())
+		}
+		return nil
+	default:
+		// Provider API key (sk-...). An unresolvable key is a 401.
+		provider, err := object.GetProviderByProviderKey(token, c.GetAcceptLanguage())
+		if err != nil {
+			return authError("invalid API key: %s", err.Error())
+		}
+		if provider == nil {
+			return authError("invalid API key")
+		}
+		return nil
+	}
+}
+
 // authResolveProvider authenticates a bearer token and resolves the requested
 // model to its upstream provider. It is the single auth + model-routing policy
 // for every OpenAI-compatible surface (chat, embeddings, rerank): each handler
@@ -928,11 +971,17 @@ func (c *ApiController) ChatCompletions() {
 	// Track timing for observability
 	requestStartTime := time.Now().UTC()
 
-	// Parse request body
+	// Parse request body. Authenticate BEFORE reporting a parse error so an
+	// invalid credential is 401 regardless of body validity — a malformed body
+	// from an unauthenticated caller must not return 200. A valid credential with
+	// a bad body gets 400 (not 200).
 	var request openai.ChatCompletionRequest
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &request)
-	if err != nil {
-		c.ResponseError(fmt.Sprintf("Failed to parse request: %s", err.Error()))
+	if err := json.Unmarshal(c.Ctx.Input.RequestBody, &request); err != nil {
+		if authErr := c.authenticate(token); authErr != nil {
+			c.ResponseAuthError(authErr)
+			return
+		}
+		c.ResponseErrorWithStatus(http.StatusBadRequest, fmt.Sprintf("Failed to parse request: %s", err.Error()))
 		return
 	}
 
