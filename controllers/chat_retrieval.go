@@ -6,6 +6,7 @@
 package controllers
 
 import (
+	"fmt"
 	"net/http"
 	"os"
 	"strings"
@@ -64,7 +65,7 @@ func (c *ApiController) retrieveKnowledgeIfEnabled(
 		store = c.Input().Get("store")
 	}
 	if store == "" {
-		store = "docs-hanzo-ai"
+		store = "docs"
 	}
 
 	req := &object.DocSearchRequest{Query: question, Limit: 4}
@@ -78,7 +79,17 @@ func (c *ApiController) retrieveKnowledgeIfEnabled(
 		if h.Content == "" {
 			continue
 		}
-		out = append(out, &model.RawMessage{Author: "Knowledge", Text: h.Content})
+		// Carry the source breadcrumbs + URL into the knowledge text so the model
+		// can cite where each fact came from. Without these the LLM only sees raw
+		// content and cannot produce real citations.
+		text := h.Content
+		if len(h.Breadcrumbs) > 0 {
+			text = fmt.Sprintf("[%s] %s", strings.Join(h.Breadcrumbs, " > "), text)
+		}
+		if h.URL != "" {
+			text = fmt.Sprintf("%s\nSource: %s", text, h.URL)
+		}
+		out = append(out, &model.RawMessage{Author: "Knowledge", Text: text})
 	}
 	return out
 }

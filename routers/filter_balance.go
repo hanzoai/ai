@@ -28,6 +28,7 @@ import (
 	"github.com/beego/beego/context"
 	"github.com/beego/beego/logs"
 	"github.com/hanzoai/ai/conf"
+	"github.com/hanzoai/ai/util"
 	iam "github.com/hanzoai/iam"
 )
 
@@ -183,6 +184,14 @@ func BalanceGateFilter(ctx *context.Context) {
 		return
 	}
 
+	// Honor the BALANCE_EXEMPT_USERS allowlist (the same policy the chat
+	// controller applies) so documented service accounts (e.g. hanzo/z) bypass
+	// the gate. Without this the filter shadows the controller's exemption and
+	// 402s exempt users before their request ever reaches the controller.
+	if util.IsBalanceExemptUser(os.Getenv("BALANCE_EXEMPT_USERS"), orgKey, billingUserKey(ctx)) {
+		return
+	}
+
 	sufficient, balance := balanceGate.checkBalance(orgKey)
 	if sufficient {
 		return
@@ -286,6 +295,22 @@ func resolveBillingKey(ctx *context.Context) string {
 		return orgKey
 	}
 
+	return ""
+}
+
+// billingUserKey returns the caller's "owner/name" identity for exemption
+// matching, resolved from the session user or a JWT bearer token. Returns ""
+// when the user identity cannot be determined.
+func billingUserKey(ctx *context.Context) string {
+	if u := GetSessionUser(ctx); u != nil && u.Name != "" {
+		return u.Owner + "/" + u.Name
+	}
+	tok := parseBearerToken(ctx)
+	if isJwtTokenLike(tok) {
+		if claims, err := iam.ParseJwtToken(tok); err == nil {
+			return claims.User.Owner + "/" + claims.User.Name
+		}
+	}
 	return ""
 }
 

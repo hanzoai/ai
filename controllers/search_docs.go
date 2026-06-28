@@ -147,7 +147,7 @@ func (c *ApiController) resolveSearchAuth() *searchAuth {
 func (c *ApiController) resolveSearchStore() string {
 	store := c.Input().Get("store")
 	if store == "" {
-		store = "docs-hanzo-ai"
+		store = "docs"
 	}
 	return store
 }

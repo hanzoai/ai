@@ -44,3 +44,25 @@ func IsVideoNormalUser(user *iam.User) bool {
 	}
 	return user.Type == UserTypeVideoNormalUser
 }
+
+// IsBalanceExemptUser reports whether the caller is in the comma-separated
+// BALANCE_EXEMPT_USERS allowlist. It matches on either the per-org "owner" key
+// or the per-user "owner/name" key. This is the ONE place the exemption policy
+// lives: both the gateway balance filter (routers) and the chat controller
+// (controllers) call it, so a service account such as hanzo/z bypasses billing
+// consistently — the filter no longer shadows the controller's exemption.
+func IsBalanceExemptUser(exemptCSV, orgKey, userKey string) bool {
+	if exemptCSV == "" {
+		return false
+	}
+	for _, e := range strings.Split(exemptCSV, ",") {
+		e = strings.TrimSpace(e)
+		if e == "" {
+			continue
+		}
+		if (orgKey != "" && e == orgKey) || (userKey != "" && e == userKey) {
+			return true
+		}
+	}
+	return false
+}

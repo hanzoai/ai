@@ -378,7 +378,7 @@ func ScrapeAndIndex(owner string, req *ScrapeRequest, lang string) (*ScrapeStats
 	}
 	store := req.Store
 	if store == "" {
-		store = "docs-hanzo-ai"
+		store = "docs"
 	}
 	docs := scrapeResultsToDocIndex(results, tag)
 	indexReq := &DocIndexRequest{
