@@ -159,6 +159,7 @@
     "Active": "Active",
     "Activities": "Activities",
     "Add": "Add",
+    "Add from application store": "Add from application store",
     "Admin": "Admin",
     "Agents": "Agents",
     "Application Store": "Application Store",
@@ -209,6 +210,7 @@
     "Dislike": "Dislike",
     "Display name": "Display name",
     "Display name - Tooltip": "User-friendly display name",
+    "Down": "Down",
     "Download": "Download",
     "Edit": "Edit",
     "Enabled": "Enabled",
@@ -372,6 +374,7 @@
     "Secret key - Tooltip": "Cloud provider secret key",
     "Section": "Section",
     "Section - Tooltip": "Section or department identifier",
+    "Send": "Send",
     "Sessions": "Sessions",
     "Setting": "Setting",
     "Site setting": "Site setting",
@@ -410,6 +413,7 @@
     "Sure to delete": "Sure to delete",
     "Sure to delete all": "Sure to delete all",
     "Sure to disconnect from": "Sure to disconnect from",
+    "Sure to undeploy": "Sure to undeploy",
     "Swagger": "Swagger",
     "System Info": "System Info",
     "Tag": "Tag",
@@ -434,6 +438,7 @@
     "Unit": "unit",
     "Unit - Tooltip": "Organizational unit or department",
     "Unknown category": "Unknown category",
+    "Up": "Up",
     "Updated time": "Updated time",
     "Upload": "Upload",
     "Usages": "Usages",
@@ -592,6 +597,7 @@
   "node": {
     "Auto query": "Auto query",
     "Auto query - Tooltip": "Enable automatic status polling (3s interval)",
+    "Cannot enable Remote App when Remote Apps are empty. Please add at least one Remote App in below table first, then enable again": "Cannot enable Remote App when Remote Apps are empty. Please add at least one Remote App in below table first, then enable again",
     "Connect": "Connect",
     "Edit Node": "Edit Node",
     "Enable Remote App": "Enable Remote App",
@@ -708,6 +714,8 @@
   "record": {
     "Commit": "Commit",
     "Data Verification": "Data Verification",
+    "Enable cross-chain": "Enable cross-chain",
+    "Enable decoding": "Enable decoding",
     "New Record": "New Record",
     "View Record": "View Record"
   },
@@ -853,7 +861,9 @@
     "Welcome title": "Welcome title",
     "Welcome title - Tooltip": "Popup welcome window title",
     "Workflow": "Workflow",
-    "Workflow - Tooltip": "Associated workflow process"
+    "Workflow - Tooltip": "Associated workflow process",
+    "files and": "files and",
+    "folders are checked": "folders are checked"
   },
   "system": {
     "AI Knowledge Database & Chat Bot with Admin UI and multi-model support (ChatGPT, Claude, Llama 3, DeepSeek R1, HuggingFace, etc.)": "AI Knowledge Database & Chat Bot with Admin UI and multi-model support (ChatGPT, Claude, Llama 3, DeepSeek R1, HuggingFace, etc.)",
@@ -932,11 +942,7 @@
     "Readme - Tooltip": "The URL address of the README file"
   },
   "usage": {
-    "Day": "Day",
-    "Go": "Go",
-    "Hour": "Hour",
-    "Month": "Month",
-    "Week": "Week"
+    "Go": "Go"
   },
   "vector": {
     "Dimension": "Dimension",
@@ -998,6 +1004,8 @@
     "Stage - Tooltip": "Education stage",
     "Start time (s)": "Start time (s)",
     "Start time (s) - Tooltip": "Start time (s) - Tooltip",
+    "Tag on pause": "Tag on pause",
+    "Tags": "Tags",
     "Time": "Time",
     "Topic": "Topic",
     "Topic - Tooltip": "Project topic title",
