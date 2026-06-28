@@ -174,3 +174,48 @@ models need balance > 0; premium models need balance > starter credit. Balance
 comes from `commerce` at `/v1/billing/balance?user=<org>&currency=usd`. Users in
 `BALANCE_EXEMPT_USERS` (e.g. `hanzo/z`) bypass ALL gates — use the
 `z@hanzo.ai` token to verify premium/zen without a credited org.
+
+## Security invariants (READ before touching auth/billing/scaling)
+
+- **JWT iss/aud** — every request-auth JWT path goes through
+  `object.ParseAndValidateJWT` (signature via IAM **and** iss/aud policy), never
+  raw `iam.ParseJwtToken`. `object/jwt_validate.go` sources the issuer from
+  `JWT_ISSUER`/`IAM_ISSUER`/`CLOUD_IAM_ISSUER`/`AUTH_ISSUER` (any, default
+  `https://hanzo.id`) and the audience allowlist from `GATEWAY_ALLOWED_AUDIENCES`
+  (+ folds in `IAM_AUDIENCE`/`AUTH_AUDIENCE`), mirroring the gateway. A
+  foreign-aud token → 401. The OAuth code-exchange callback (`account.go`
+  `Signin`) is NOT a request-auth path and is intentionally exempt.
+
+- **Balance ledger — single-pod invariant** — `object.GlobalBalanceLedger` is
+  in-pod memory. Reserve/Settle are correct ONLY at `replicas: 1`. Two pods
+  double-spend (each reserves against its own cached Commerce balance). Enforced
+  by deploy `strategy: Recreate` + HPA `min=max=1` AND a boot assertion
+  (`bootstrap.go` panics if `CLOUD_API_REPLICAS > 1`). To scale out you MUST first
+  move Reserve/Settle behind a Commerce-atomic conditional reserve.
+
+- **Single-request reservation** (`controllers/billing_reserve.go`) — an uncapped
+  `max_tokens` is clamped (`clampMaxTokens`) and the reservation covers the larger
+  of the clamped ceiling and the QueryText pipeline's fixed completion cap
+  (`reserveCompletionTokens` / `reserveCompletionFloor=4096`, mirrored in
+  `model/openai_util.go`), so actual spend can never exceed the hold on any path.
+
+- **BALANCE_EXEMPT_USERS** — matched by the ONE shared `object.BalanceExemptSet`
+  (gate + controller): an `owner/name` entry exempts only that exact subject; a
+  bare `owner` exempts the whole org. `hanzo/z` does NOT exempt all of org hanzo.
+
+- **Global admin** — `util.IsGlobalAdmin` = `IsAdmin && owner ∈ globalAdminOrgs`.
+  Canonical default `defaultGlobalAdminOrgs = {admin, built-in}` (matches IAM
+  AdminOrg + console2). The live `globalAdminOrgs` env override is authoritative;
+  it is currently `admin,hanzo` (grants the hanzo TENANT org platform power) —
+  FLAGGED for alignment to `admin,built-in` once the hanzo-org provider-config
+  workflow is confirmed to run via the `admin` org.
+
+- **Authz gate** (`routers/authz_filter.go`) — platform-sensitive endpoints
+  (`globalAdminEndpoints`) are gated FIRST (before preview-mode + exempt reads).
+  There is deliberately NO `adminDomain` Host bypass (a removed full-authz-bypass
+  primitive). No principal → 401; wrong principal → 403.
+
+- **User redaction** (`object/redact.go`) — `RedactUserSecrets` is an allowlist
+  projection over string/[]string fields (`exposableUserFields`): a field not on
+  the list is zeroed, so a NEW upstream secret field is fail-secure. Credential
+  struct slices (MfaAccounts/ManagedAccounts/MfaItems/FaceIds) are nilled.
