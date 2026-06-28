@@ -43,7 +43,7 @@ func TestCommerceTierLookupQueriesByUser(t *testing.T) {
 		gotPath = r.URL.Path
 		gotUser = r.URL.Query().Get("user")
 		gotApiKey = r.URL.Query().Get("apiKey")
-		gotOrgHdr = r.Header.Get("X-Hanzo-Org")
+		gotOrgHdr = r.Header.Get("X-Org-Id")
 		// Mirror commerce's contract: 400 unless ?user is present.
 		if gotUser == "" {
 			w.WriteHeader(http.StatusBadRequest)
@@ -72,7 +72,7 @@ func TestCommerceTierLookupQueriesByUser(t *testing.T) {
 		t.Errorf("?apiKey = %q, want empty (must not send apiKey — that triggers 400)", gotApiKey)
 	}
 	if gotOrgHdr != "acme" {
-		t.Errorf("X-Hanzo-Org = %q, want acme", gotOrgHdr)
+		t.Errorf("X-Org-Id = %q, want acme", gotOrgHdr)
 	}
 	if tier != TierZenPro {
 		t.Errorf("tier = %q, want %q (parsed from tier.name=pro)", tier, TierZenPro)
