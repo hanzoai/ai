@@ -96,7 +96,7 @@ func (c *ApiController) GetRequestTenantOrgID() string {
 	if c == nil || c.Ctx == nil {
 		return ""
 	}
-	return strings.TrimSpace(c.Ctx.Input.Header("X-IAM-Org-Id"))
+	return strings.TrimSpace(c.Ctx.Input.Header("X-Org-Id"))
 }
 
 func (c *ApiController) GetRequestTenantProjectID() string {
