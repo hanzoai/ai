@@ -338,4 +338,14 @@ func initAPI() {
 	beego.Router("/v1/search/stats", &controllers.ApiController{}, "GET:SearchDocsStats")
 	beego.Router("/v1/scrape", &controllers.ApiController{}, "POST:ScrapeDocs")
 	beego.Router("/v1/scrape/preview", &controllers.ApiController{}, "POST:ScrapePreview")
+
+	// Memory subsystem — cloud backend of the unified memory interface.
+	// Per-user scoped; identity comes from gateway IAM headers, never the body.
+	beego.Router("/v1/memory/remember", &controllers.ApiController{}, "POST:MemoryRemember")
+	beego.Router("/v1/memory/search", &controllers.ApiController{}, "GET:MemorySearch")
+	beego.Router("/v1/memory/list", &controllers.ApiController{}, "GET:MemoryList")
+	beego.Router("/v1/memory/recall", &controllers.ApiController{}, "GET:MemoryRecall")
+	beego.Router("/v1/memory/facts", &controllers.ApiController{}, "GET:MemoryFacts")
+	beego.Router("/v1/memory/update", &controllers.ApiController{}, "POST:MemoryUpdate")
+	beego.Router("/v1/memory/delete", &controllers.ApiController{}, "POST:MemoryDelete")
 }
