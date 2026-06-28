@@ -78,7 +78,7 @@ func (c *ApiController) Embeddings() {
 
 	provider, authUser, upstreamModel, isPremium, _, err := c.authResolveProvider(token, head.Model, orgId)
 	if err != nil {
-		c.ResponseError(err.Error())
+		c.ResponseAuthError(err)
 		return
 	}
 	if upstreamModel != "" {
@@ -156,7 +156,7 @@ func (c *ApiController) Rerank() {
 
 	provider, authUser, upstreamModel, isPremium, _, err := c.authResolveProvider(token, raw.Model, orgId)
 	if err != nil {
-		c.ResponseError(err.Error())
+		c.ResponseAuthError(err)
 		return
 	}
 	if upstreamModel != "" {
