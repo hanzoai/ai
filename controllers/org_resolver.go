@@ -18,25 +18,54 @@ import (
 	"strings"
 
 	"github.com/hanzoai/ai/conf"
+	"github.com/hanzoai/ai/object"
+	"github.com/hanzoai/ai/util"
+	iam "github.com/hanzoai/iam"
 )
 
-// GetEffectiveOrg resolves the organization for data-scoping purposes.
-// Resolution order:
-//  1. X-IAM-Org-Id header (injected by gateway auth middleware from JWT)
-//  2. Authenticated session user's Owner field
-//  3. Config default (IAM_ORG env/config value)
-func (c *ApiController) GetEffectiveOrg() string {
-	// 1. Gateway-injected header (trusted, set after JWT validation)
-	if orgID := strings.TrimSpace(c.Ctx.Input.Header("X-IAM-Org-Id")); orgID != "" {
-		return orgID
+// principalUser resolves the request principal: the session user (cookie auth)
+// if present, else the VERIFIED Bearer JWT user (signature + issuer/audience
+// validated via object.ParseAndValidateJWT). Returns nil for an unauthenticated
+// or provider/widget-key request. This is the one identity source the org
+// resolver trusts — never a raw client header.
+func (c *ApiController) principalUser() *iam.User {
+	if u := c.GetSessionUser(); u != nil {
+		return u
 	}
+	token := bearerTokenFromRequest(c.Ctx.Request)
+	if token == "" || !isJwtToken(token) {
+		return nil
+	}
+	claims, err := object.ParseAndValidateJWT(token)
+	if err != nil {
+		return nil
+	}
+	return &claims.User
+}
 
-	// 2. Authenticated session user's organization
-	user := c.GetSessionUser()
+// GetEffectiveOrg resolves the organization for data-scoping and pricing from
+// the VERIFIED request principal — never a raw client header.
+//
+// X-IAM-Org-Id is honored ONLY when it matches the authenticated principal's own
+// org, or the principal is a global admin (cross-org platform access). A
+// non-admin can never act as another org via a spoofed header; an
+// unauthenticated caller's header is ignored. Behind the gateway the injected
+// header equals the JWT owner, so the gateway path resolves identically.
+//
+// Note: chat/embeddings BILLING is keyed on the validated authUser.Owner, not on
+// this value — this governs routing, pricing, usage reads, and record
+// attribution, all of which must also be tenant-safe.
+func (c *ApiController) GetEffectiveOrg() string {
+	requested := strings.TrimSpace(c.Ctx.Input.Header("X-IAM-Org-Id"))
+
+	user := c.principalUser()
 	if user != nil && user.Owner != "" {
+		if requested != "" && (requested == user.Owner || util.IsGlobalAdmin(user)) {
+			return requested
+		}
 		return user.Owner
 	}
 
-	// 3. Config fallback (default org for this instance)
+	// No verified principal: never trust a client-supplied org header.
 	return conf.GetConfigString("IAM_ORG")
 }

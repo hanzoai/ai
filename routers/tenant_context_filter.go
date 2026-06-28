@@ -31,10 +31,14 @@ func getTenantHeader(ctx *context.Context, name string) string {
 	return strings.TrimSpace(ctx.Input.Header(name))
 }
 
-// TenantContextFilter captures IAM identity headers from the gateway.
-// All headers use the X-IAM-* prefix — generic, not vendor-specific.
+// TenantContextFilter captures IAM identity context for downstream scoping and
+// observability. The org is taken from the VERIFIED principal (GetEffectiveOrg),
+// NOT the raw X-IAM-Org-Id header: on the direct ingress that header is
+// client-controlled, so storing it verbatim would let any caller spoof a tenant.
+// GetEffectiveOrg honors the header only for the principal's own org (or a global
+// admin), so the stored org is always the caller's real tenant.
 func TenantContextFilter(ctx *context.Context) {
-	orgID := getTenantHeader(ctx, "X-IAM-Org-Id")
+	orgID := GetEffectiveOrg(ctx)
 	userID := getTenantHeader(ctx, "X-IAM-User-Id")
 	projectID := getTenantHeader(ctx, "X-IAM-Project-Id")
 	env := getTenantHeader(ctx, "X-IAM-Env")

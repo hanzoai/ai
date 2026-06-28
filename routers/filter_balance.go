@@ -29,7 +29,6 @@ import (
 	"github.com/beego/beego/logs"
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/object"
-	iam "github.com/hanzoai/iam"
 )
 
 // ── Service key exemption ────────────────────────────────────────────────────
@@ -51,38 +50,9 @@ func init() {
 	}
 }
 
-// parseExemptOrgs extracts the org slugs (owner-part) from a comma-separated
-// BALANCE_EXEMPT_USERS list of "owner/name" entries (e.g. "admin/hanzo-cloud,
-// hanzo/z" -> {admin, hanzo}). These orgs are never fail-closed on a
-// Commerce-error hard miss, mirroring the controller-level metering exemption
-// (controllers/openai_api.go) so internal/house traffic survives an outage.
-func parseExemptOrgs(raw string) map[string]struct{} {
-	out := make(map[string]struct{})
-	for _, e := range strings.Split(raw, ",") {
-		e = strings.TrimSpace(e)
-		if e == "" {
-			continue
-		}
-		owner := e
-		if i := strings.IndexByte(e, '/'); i >= 0 {
-			owner = e[:i]
-		}
-		owner = strings.ToLower(strings.TrimSpace(owner))
-		if owner != "" {
-			out[owner] = struct{}{}
-		}
-	}
-	return out
-}
-
-// isExemptOrg reports whether an org slug is exempt from the fail-closed gate.
-func (bg *BalanceGate) isExemptOrg(orgKey string) bool {
-	if len(bg.exemptOrgs) == 0 {
-		return false
-	}
-	_, ok := bg.exemptOrgs[strings.ToLower(orgKey)]
-	return ok
-}
+// Balance exemption (BALANCE_EXEMPT_USERS) is parsed and matched by the shared
+// object.BalanceExemptSet — the SAME definition the controller backstop uses —
+// so the gate and controller exemption can never drift in granularity.
 
 // ── Balance gate configuration ──────────────────────────────────────────────
 
@@ -106,18 +76,17 @@ const (
 
 // ── Balance cache ───────────────────────────────────────────────────────────
 
-// balanceCacheEntry holds a cached balance check result for a single user.
-type balanceCacheEntry struct {
-	balanceCents int64
-	fetchedAt    time.Time
-}
-
-// BalanceGate caches user balance checks to avoid hitting Commerce on every
-// request. Stale entries are served immediately while an async refresh runs
-// in the background — the hot path never blocks on network I/O.
+// BalanceGate enforces a positive spendable balance before paid requests. The
+// balance itself lives in the shared object.BalanceLedger — the ONE source of
+// truth also used by the controller debit path to reserve (before a request) and
+// settle (after). Reading the ledger here makes the gate reservation-aware and
+// reflects local settles immediately, so the cache window can never serve a
+// stale-positive balance after the funds are spent. The gate adds only its own
+// freshness scheduling (async refresh from Commerce) and identity resolution.
 type BalanceGate struct {
-	mu      sync.RWMutex
-	entries map[string]*balanceCacheEntry
+	// ledger is the shared balance+reservation store (defaults to
+	// object.GlobalBalanceLedger; injectable for tests).
+	ledger *object.BalanceLedger
 
 	// userKeyCache maps Bearer token -> org slug (billing key) to avoid
 	// re-parsing JWTs or re-calling IAM on every request for the same token.
@@ -144,19 +113,21 @@ type BalanceGate struct {
 	// BALANCE_GATE_FAIL_OPEN_ON_ERROR (the no-rebuild escape hatch).
 	failOpenOnError bool
 
-	// exemptOrgs holds org slugs that ALWAYS fail OPEN on a Commerce-error hard
-	// miss (never blocked), derived from the owner-part of BALANCE_EXEMPT_USERS
-	// (e.g. "admin/hanzo-cloud" -> "admin", "hanzo/z" -> "hanzo"). These mirror
-	// the controller-level metering exemption (openai_api.go) so internal/house
-	// traffic is never blocked by an outage.
-	exemptOrgs map[string]struct{}
+	// exempt holds the BALANCE_EXEMPT_USERS allowlist that ALWAYS fails OPEN on a
+	// Commerce-error hard miss (never blocked). It is the SAME shared definition
+	// (object.BalanceExemptSet) the controller backstop uses, matched per-user-
+	// exact ("owner/name") OR per-org — so "hanzo/z" exempts only that service
+	// account, NOT every member of org "hanzo".
+	exempt *object.BalanceExemptSet
 }
 
 // userKeyCacheEntry maps an API token to the resolved billing identity: the
-// per-user subject (?user=) and the org namespace (X-Hanzo-Org).
+// per-user subject (?user=), the org namespace (X-Hanzo-Org), and the exact
+// "owner/name" userKey used for per-user exemption matching.
 type userKeyCacheEntry struct {
 	subject   string
 	namespace string
+	userKey   string
 	fetchedAt time.Time
 }
 
@@ -183,7 +154,7 @@ func InitBalanceGate() {
 	clientSecret := conf.GetConfigString("IAM_CLIENT_SECRET")
 
 	bg := &BalanceGate{
-		entries:      make(map[string]*balanceCacheEntry),
+		ledger:       object.GlobalBalanceLedger,
 		userKeyCache: make(map[string]*userKeyCacheEntry),
 		inflight:     make(map[string]struct{}),
 		endpoint:     endpoint,
@@ -194,7 +165,7 @@ func InitBalanceGate() {
 		clientSecret: clientSecret,
 
 		failOpenOnError: strings.EqualFold(strings.TrimSpace(os.Getenv("BALANCE_GATE_FAIL_OPEN_ON_ERROR")), "true"),
-		exemptOrgs:      parseExemptOrgs(os.Getenv("BALANCE_EXEMPT_USERS")),
+		exempt:          object.ParseBalanceExempt(os.Getenv("BALANCE_EXEMPT_USERS")),
 	}
 
 	go bg.cleanupLoop()
@@ -230,13 +201,13 @@ func BalanceGateFilter(ctx *context.Context) {
 		return
 	}
 
-	subject, namespace := resolveBillingKey(ctx)
+	subject, namespace, userKey := resolveBillingKey(ctx)
 	if subject == "" {
 		// Cannot identify the billing subject — let downstream auth filters handle rejection.
 		return
 	}
 
-	sufficient, balance := balanceGate.checkBalance(subject, namespace)
+	sufficient, balance := balanceGate.checkBalance(subject, namespace, userKey)
 	if sufficient {
 		return
 	}
@@ -289,60 +260,66 @@ func isBalanceExempt(path string) bool {
 //  2. JWT Bearer token (parsed locally, no network call)
 //  3. IAM API key (hk- prefix, resolved via cached IAM lookup)
 //
-// Returns ("", "") if the subject cannot be identified (fail-open: filter skips).
-func resolveBillingKey(ctx *context.Context) (subject, namespace string) {
+// Returns ("", "", "") if the subject cannot be identified (fail-open: filter
+// skips). The userKey is the exact "owner/name" identity used for per-user
+// exemption matching (mirrors the controller backstop), independent of whether
+// the billing subject collapses to the org slug for a pooled org.
+func resolveBillingKey(ctx *context.Context) (subject, namespace, userKey string) {
 	// Source 1: session user from AutoSigninFilter.
 	user := GetSessionUser(ctx)
 	if user != nil && user.Owner != "" {
-		return object.BillingSubject(user.Owner, user.Name), user.Owner
+		return object.BillingSubject(user.Owner, user.Name), user.Owner, user.Owner + "/" + user.Name
 	}
 
 	// Source 2/3: Bearer token.
 	token := parseBearerToken(ctx)
 	if token == "" {
-		return "", ""
+		return "", "", ""
 	}
 
 	// Provider keys (sk-), publishable keys (pk-), and widget keys (hz_)
 	// don't map to IAM orgs with Commerce balances — skip.
 	if strings.HasPrefix(token, "sk-") || strings.HasPrefix(token, "pk-") || strings.HasPrefix(token, "hz_") {
-		return "", ""
+		return "", "", ""
 	}
 
 	// Exempt service account keys (e.g. cloud agent internal keys).
 	if _, exempt := balanceExemptKeys[token]; exempt {
-		return "", ""
+		return "", "", ""
 	}
 
 	// Check key cache first.
-	if s, ns, ok := balanceGate.getUserKeyCached(token); ok {
-		return s, ns
+	if s, ns, uk, ok := balanceGate.getUserKeyCached(token); ok {
+		return s, ns, uk
 	}
 
-	// JWT token: parse locally (cheap, no network).
+	// JWT token: parse locally (cheap, no network). Signature + iss/aud
+	// validated (R3) — a foreign-aud/wrong-issuer token resolves no billing
+	// subject here, so it is not billed and the controller rejects it (401).
 	if isJwtTokenLike(token) {
-		claims, err := iam.ParseJwtToken(token)
+		claims, err := object.ParseAndValidateJWT(token)
 		if err != nil {
-			return "", ""
+			return "", "", ""
 		}
 		if claims.User.Owner != "" {
 			subject = object.BillingSubject(claims.User.Owner, claims.User.Name)
-			balanceGate.setUserKeyCache(token, subject, claims.User.Owner)
-			return subject, claims.User.Owner
+			userKey = claims.User.Owner + "/" + claims.User.Name
+			balanceGate.setUserKeyCache(token, subject, claims.User.Owner, userKey)
+			return subject, claims.User.Owner, userKey
 		}
-		return "", ""
+		return "", "", ""
 	}
 
 	// IAM API key (hk- prefix): resolve via IAM (cached).
 	if strings.HasPrefix(token, "hk-") {
-		subject, namespace = balanceGate.resolveIAMKeySubject(token)
+		subject, namespace, userKey = balanceGate.resolveIAMKeySubject(token)
 		if subject != "" {
-			balanceGate.setUserKeyCache(token, subject, namespace)
+			balanceGate.setUserKeyCache(token, subject, namespace, userKey)
 		}
-		return subject, namespace
+		return subject, namespace, userKey
 	}
 
-	return "", ""
+	return "", "", ""
 }
 
 // isJwtTokenLike checks if a token looks like a JWT (3 dot-separated segments).
@@ -353,41 +330,34 @@ func isJwtTokenLike(token string) bool {
 
 // ── Balance checking ────────────────────────────────────────────────────────
 
-// checkBalance returns whether the user has a positive balance. On cache hit
-// within TTL, returns the cached result immediately. On stale cache entry,
-// returns the stale result and kicks off an async refresh. On cache miss,
-// fetches synchronously (with timeout) on first request, then caches.
+// checkBalance returns whether the subject has a positive SPENDABLE balance
+// (ledger balance minus outstanding reservations). On a fresh ledger entry it
+// returns immediately; on a stale entry it serves the (settle-adjusted) stale
+// value and refreshes asynchronously; on a cold subject it fetches synchronously
+// and seeds the ledger.
 //
-// Fail-open: any error from Commerce results in (true, 0) — the request is
-// allowed through, and the controller-level check provides a backstop.
-func (bg *BalanceGate) checkBalance(subject, namespace string) (sufficient bool, balanceCents int64) {
-	bg.mu.RLock()
-	entry, ok := bg.entries[subject]
-	bg.mu.RUnlock()
-
-	if ok {
-		age := time.Since(entry.fetchedAt)
-		if age <= balanceCacheTTL {
-			// Fresh cache hit.
-			return entry.balanceCents > 0, entry.balanceCents
+// Reading the ledger (not a private cache) makes the gate reservation-aware and
+// reflects every local settle, so the cache window can never serve a
+// stale-positive balance once the funds are spent.
+//
+// Fail posture on a COLD subject whose Commerce lookup errors: fail CLOSED for
+// non-exempt orgs (an outage must not become an unmetered bleed); exempt/house
+// orgs and the BALANCE_GATE_FAIL_OPEN_ON_ERROR override keep the legacy fail-open.
+func (bg *BalanceGate) checkBalance(subject, namespace, userKey string) (sufficient bool, balanceCents int64) {
+	bal, reserved, fresh, known := bg.ledger.Snapshot(subject)
+	if known {
+		if !fresh {
+			// Stale: serve the settle-adjusted value, refresh asynchronously.
+			bg.refreshAsync(subject, namespace)
 		}
-		// Stale: serve stale result, refresh asynchronously.
-		bg.refreshAsync(subject, namespace)
-		return entry.balanceCents > 0, entry.balanceCents
+		avail := bal - reserved
+		return avail > 0, avail
 	}
 
-	// Cache miss: fetch synchronously so the first request gets a real check.
-	// The timeout is capped at balanceHTTPTimeout (5s) to avoid blocking too long.
+	// Cold subject: fetch synchronously so the first request gets a real check.
 	balance, err := bg.fetchBalance(subject, namespace)
 	if err != nil {
-		// Hard cache-miss + Commerce error. Active subjects never reach here —
-		// they hit the 30s stale-serve path above — so this is a COLD subject
-		// during a Commerce outage. Fail CLOSED for non-exempt orgs so an outage
-		// cannot become an unmetered bleed; the client retries once Commerce
-		// recovers. Exempt/house orgs (BALANCE_EXEMPT_USERS, matched on the
-		// namespace) and the explicit BALANCE_GATE_FAIL_OPEN_ON_ERROR override
-		// keep the legacy fail-open.
-		if bg.failOpenOnError || bg.isExemptOrg(namespace) {
+		if bg.failOpenOnError || bg.exempt.MatchesKey(userKey, namespace) {
 			logs.Warning("balance_gate: Commerce lookup failed for user=%s: %v (fail-open: exempt/override)", subject, err)
 			return true, 0
 		}
@@ -395,15 +365,13 @@ func (bg *BalanceGate) checkBalance(subject, namespace string) (sufficient bool,
 		return false, 0
 	}
 
-	bg.mu.Lock()
-	bg.entries[subject] = &balanceCacheEntry{balanceCents: balance, fetchedAt: time.Now()}
-	bg.mu.Unlock()
-
-	return balance > 0, balance
+	bg.ledger.SetBalance(subject, balance)
+	avail, _ := bg.ledger.Available(subject)
+	return avail > 0, avail
 }
 
-// refreshAsync kicks off a background goroutine to refresh the cached balance
-// for a user. Deduplicates concurrent refreshes for the same user key.
+// refreshAsync kicks off a background goroutine to refresh the ledger balance
+// from Commerce. Deduplicates concurrent refreshes for the same subject.
 func (bg *BalanceGate) refreshAsync(subject, namespace string) {
 	bg.inflightMu.Lock()
 	if _, running := bg.inflight[subject]; running {
@@ -426,9 +394,9 @@ func (bg *BalanceGate) refreshAsync(subject, namespace string) {
 			return
 		}
 
-		bg.mu.Lock()
-		bg.entries[subject] = &balanceCacheEntry{balanceCents: balance, fetchedAt: time.Now()}
-		bg.mu.Unlock()
+		// SetBalance resets the balance from Commerce but PRESERVES outstanding
+		// reservations for in-flight requests.
+		bg.ledger.SetBalance(subject, balance)
 	}()
 }
 
@@ -480,23 +448,23 @@ func (bg *BalanceGate) fetchBalance(subject, namespace string) (int64, error) {
 
 // ── User key cache ──────────────────────────────────────────────────────────
 
-// getUserKeyCached returns the cached (subject, namespace) for a token. The
-// bool is false on miss/stale.
-func (bg *BalanceGate) getUserKeyCached(token string) (subject, namespace string, ok bool) {
+// getUserKeyCached returns the cached (subject, namespace, userKey) for a token.
+// The bool is false on miss/stale.
+func (bg *BalanceGate) getUserKeyCached(token string) (subject, namespace, userKey string, ok bool) {
 	bg.userKeyMu.RLock()
 	entry, found := bg.userKeyCache[token]
 	bg.userKeyMu.RUnlock()
 
 	if !found || time.Since(entry.fetchedAt) > userKeyCacheTTL {
-		return "", "", false
+		return "", "", "", false
 	}
-	return entry.subject, entry.namespace, true
+	return entry.subject, entry.namespace, entry.userKey, true
 }
 
-// setUserKeyCache stores a token -> (subject, namespace) mapping in the cache.
-func (bg *BalanceGate) setUserKeyCache(token, subject, namespace string) {
+// setUserKeyCache stores a token -> (subject, namespace, userKey) mapping.
+func (bg *BalanceGate) setUserKeyCache(token, subject, namespace, userKey string) {
 	bg.userKeyMu.Lock()
-	bg.userKeyCache[token] = &userKeyCacheEntry{subject: subject, namespace: namespace, fetchedAt: time.Now()}
+	bg.userKeyCache[token] = &userKeyCacheEntry{subject: subject, namespace: namespace, userKey: userKey, fetchedAt: time.Now()}
 	bg.userKeyMu.Unlock()
 }
 
@@ -513,12 +481,13 @@ type iamUserResponse struct {
 }
 
 // resolveIAMKeySubject calls IAM to resolve an hk- API key to its billing
-// identity: (subject, namespace). The namespace is the org `owner`; the subject
-// is object.BillingSubject(owner, name) — so a personal-org key bills per-user.
-// Returns ("", "") on any error (fail-open).
-func (bg *BalanceGate) resolveIAMKeySubject(apiKey string) (subject, namespace string) {
+// identity: (subject, namespace, userKey). The namespace is the org `owner`; the
+// subject is object.BillingSubject(owner, name) — so a personal-org key bills
+// per-user; the userKey is the exact "owner/name" for exemption matching.
+// Returns ("", "", "") on any error (fail-open).
+func (bg *BalanceGate) resolveIAMKeySubject(apiKey string) (subject, namespace, userKey string) {
 	if bg.iamEndpoint == "" {
-		return "", ""
+		return "", "", ""
 	}
 
 	iamURL := fmt.Sprintf("%s/v1/iam/get-user?accessKey=%s", bg.iamEndpoint, url.QueryEscape(apiKey))
@@ -529,13 +498,13 @@ func (bg *BalanceGate) resolveIAMKeySubject(apiKey string) (subject, namespace s
 	req, err := http.NewRequest(http.MethodGet, iamURL, nil)
 	if err != nil {
 		logs.Warning("balance_gate: IAM request build failed for key=%s: %v", maskKey(apiKey), err)
-		return "", ""
+		return "", "", ""
 	}
 
 	resp, err := bg.client.Do(req)
 	if err != nil {
 		logs.Warning("balance_gate: IAM request failed for key=%s: %v", maskKey(apiKey), err)
-		return "", ""
+		return "", "", ""
 	}
 	defer func() {
 		io.Copy(io.Discard, resp.Body)
@@ -544,24 +513,24 @@ func (bg *BalanceGate) resolveIAMKeySubject(apiKey string) (subject, namespace s
 
 	if resp.StatusCode != http.StatusOK {
 		logs.Warning("balance_gate: IAM returned %d for key=%s", resp.StatusCode, maskKey(apiKey))
-		return "", ""
+		return "", "", ""
 	}
 
 	var result iamUserResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		logs.Warning("balance_gate: IAM response decode failed for key=%s: %v", maskKey(apiKey), err)
-		return "", ""
+		return "", "", ""
 	}
 
 	if result.Status != "ok" || result.Data == nil {
-		return "", ""
+		return "", "", ""
 	}
 
 	if result.Data.Owner == "" {
-		return "", ""
+		return "", "", ""
 	}
 
-	return object.BillingSubject(result.Data.Owner, result.Data.Name), result.Data.Owner
+	return object.BillingSubject(result.Data.Owner, result.Data.Name), result.Data.Owner, result.Data.Owner + "/" + result.Data.Name
 }
 
 // ── Cleanup ─────────────────────────────────────────────────────────────────
@@ -574,13 +543,8 @@ func (bg *BalanceGate) cleanupLoop() {
 	for range ticker.C {
 		now := time.Now()
 
-		bg.mu.Lock()
-		for key, entry := range bg.entries {
-			if now.Sub(entry.fetchedAt) > 2*balanceCacheTTL {
-				delete(bg.entries, key)
-			}
-		}
-		bg.mu.Unlock()
+		// Evict idle ledger entries (no holds, balance older than 2×TTL).
+		bg.ledger.EvictIdle(2 * balanceCacheTTL)
 
 		bg.userKeyMu.Lock()
 		for key, entry := range bg.userKeyCache {
