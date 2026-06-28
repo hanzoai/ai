@@ -123,3 +123,73 @@ func TestValidateJWTIssAud_EndToEnd(t *testing.T) {
 		t.Fatalf("wrong-issuer token must be rejected, got %v", err)
 	}
 }
+
+// TestExpectedJWTIssuerFromEnv proves the issuer is read from the ACTUAL deployed
+// env keys (JWT_ISSUER/IAM_ISSUER/CLOUD_IAM_ISSUER/AUTH_ISSUER), closing the
+// bug where the code read only the never-set `jwtIssuer` config.
+func TestExpectedJWTIssuerFromEnv(t *testing.T) {
+	t.Setenv("JWT_ISSUER", "")
+	t.Setenv("IAM_ISSUER", "https://hanzo.id")
+	t.Setenv("CLOUD_IAM_ISSUER", "")
+	t.Setenv("AUTH_ISSUER", "")
+	if got := expectedJWTIssuer(); got != "https://hanzo.id" {
+		t.Errorf("issuer from IAM_ISSUER = %q, want https://hanzo.id", got)
+	}
+	// First non-empty in priority order wins (JWT_ISSUER before IAM_ISSUER).
+	t.Setenv("JWT_ISSUER", "https://primary.example")
+	if got := expectedJWTIssuer(); got != "https://primary.example" {
+		t.Errorf("JWT_ISSUER must take priority, got %q", got)
+	}
+	// All unset => the https://hanzo.id default.
+	t.Setenv("JWT_ISSUER", "")
+	t.Setenv("IAM_ISSUER", "")
+	if got := expectedJWTIssuer(); got != defaultJWTIssuer {
+		t.Errorf("default issuer = %q, want %q", got, defaultJWTIssuer)
+	}
+}
+
+// TestJwtAudienceAllowlistFromEnv proves the audience allowlist mirrors the
+// gateway: GATEWAY_ALLOWED_AUDIENCES is the base, IAM_AUDIENCE + AUTH_AUDIENCE are
+// folded in (deduped). This closes the env-key mismatch where the code read only
+// the never-set `jwtAudiences` config, silently disabling the audience check.
+func TestJwtAudienceAllowlistFromEnv(t *testing.T) {
+	t.Setenv("GATEWAY_ALLOWED_AUDIENCES", "hanzo-app, hanzo-console , hanzo-cloud")
+	t.Setenv("IAM_AUDIENCE", "hanzo-cloud") // already present => deduped
+	t.Setenv("AUTH_AUDIENCE", "https://api.hanzo.ai")
+	got := jwtAudienceAllowlist()
+
+	want := map[string]bool{"hanzo-app": true, "hanzo-console": true, "hanzo-cloud": true, "https://api.hanzo.ai": true}
+	if len(got) != len(want) {
+		t.Fatalf("allowlist=%v, want %d unique entries", got, len(want))
+	}
+	seen := map[string]int{}
+	for _, a := range got {
+		if !want[a] {
+			t.Errorf("unexpected audience %q in allowlist", a)
+		}
+		seen[a]++
+	}
+	if seen["hanzo-cloud"] != 1 {
+		t.Errorf("hanzo-cloud (in both GATEWAY_ALLOWED_AUDIENCES and IAM_AUDIENCE) must be deduped, count=%d", seen["hanzo-cloud"])
+	}
+}
+
+// TestForeignAudienceRejectedFromEnv is the R3 end-to-end assertion: with the
+// allowlist sourced from the deployed env, a token carrying a FOREIGN aud is
+// rejected while a legitimate console token passes — proving aud is enforced.
+func TestForeignAudienceRejectedFromEnv(t *testing.T) {
+	t.Setenv("JWT_ISSUER", "https://hanzo.id")
+	t.Setenv("GATEWAY_ALLOWED_AUDIENCES", "hanzo-app,hanzo-console,hanzo-cloud,https://api.hanzo.ai")
+	t.Setenv("IAM_AUDIENCE", "hanzo-cloud")
+
+	foreign := makeJWT(t, map[string]interface{}{"iss": "https://hanzo.id", "aud": "evil-app"})
+	if err := ValidateJWTIssAud(foreign); err != ErrJWTBadAudience {
+		t.Fatalf("foreign-aud token MUST be rejected (R3), got %v", err)
+	}
+	for _, aud := range []string{"hanzo-console", "hanzo-cloud", "hanzo-app", "https://api.hanzo.ai"} {
+		good := makeJWT(t, map[string]interface{}{"iss": "https://hanzo.id", "aud": aud})
+		if err := ValidateJWTIssAud(good); err != nil {
+			t.Errorf("legit aud %q must pass, got %v", aud, err)
+		}
+	}
+}

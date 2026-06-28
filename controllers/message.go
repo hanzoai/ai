@@ -35,7 +35,7 @@ func (c *ApiController) GetGlobalMessages() {
 		return
 	}
 	if !c.IsAdmin() {
-		c.ResponseError(c.T("auth:this operation requires admin privilege"))
+		c.ResponseForbidden(c.T("auth:this operation requires admin privilege"))
 		return
 	}
 	owner := c.GetSessionOwner()
@@ -148,7 +148,7 @@ func (c *ApiController) GetMessage() {
 	if !c.IsAdmin() && !c.IsPreviewMode() {
 		username := c.GetSessionUsername()
 		if username != message.User {
-			c.ResponseError(c.T("auth:Unauthorized operation"))
+			c.ResponseForbidden(c.T("auth:Unauthorized operation"))
 			return
 		}
 	}

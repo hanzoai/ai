@@ -18,6 +18,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"os"
 	"strings"
 
 	"github.com/hanzoai/ai/conf"
@@ -38,21 +39,66 @@ var (
 	ErrJWTMalformed = errors.New("jwt: malformed token")
 )
 
-// expectedJWTIssuer returns the trusted issuer (config `jwtIssuer`, default
-// https://hanzo.id).
+// jwtIssuerEnvKeys are the issuer env keys the cloud-api deployment actually sets
+// (any one, first non-empty wins). The code previously read only the `jwtIssuer`
+// app config, which the deployment never sets — so the issuer policy fell back to
+// the default. Reading the deployed keys makes the configured issuer authoritative
+// without a rebuild. `jwtIssuer` (app config / ConfigMap) still takes precedence.
+var jwtIssuerEnvKeys = []string{"JWT_ISSUER", "IAM_ISSUER", "CLOUD_IAM_ISSUER", "AUTH_ISSUER"}
+
+// expectedJWTIssuer returns the trusted issuer: config `jwtIssuer` if set, else
+// the first non-empty deployed *_ISSUER env var, else the https://hanzo.id default.
 func expectedJWTIssuer() string {
 	if v := strings.TrimSpace(conf.GetConfigString("jwtIssuer")); v != "" {
 		return v
 	}
+	for _, k := range jwtIssuerEnvKeys {
+		if v := strings.TrimSpace(os.Getenv(k)); v != "" {
+			return v
+		}
+	}
 	return defaultJWTIssuer
 }
 
-// jwtAudienceAllowlist returns the accepted `aud` client-ids from the
-// `jwtAudiences` app config (comma-separated). Empty => audience is NOT
-// enforced (issuer-only), so the allowlist can be rolled out via ConfigMap
-// without a rebuild once every cloud-api caller app is enumerated.
+// jwtAudienceAllowlist returns the accepted `aud` client-ids. It mirrors the
+// gateway's audience allowlist (iamauth.AudiencesFromEnv): GATEWAY_ALLOWED_AUDIENCES
+// (comma-separated) is the primary source, with the cloud-api IAM_AUDIENCE and the
+// legacy AUTH_AUDIENCE single values folded IN (widen, never narrow). The
+// `jwtAudiences` app config still takes precedence so the allowlist can be pinned
+// via ConfigMap. The bug this closes: the deployment set
+// GATEWAY_ALLOWED_AUDIENCES/IAM_AUDIENCE but the code read only `jwtAudiences`, so
+// the audience check was silently disabled (issuer-only) on the direct ingress.
+//
+// Empty result => audience is NOT enforced (issuer-only). Live the deployment
+// always sets GATEWAY_ALLOWED_AUDIENCES, so the check is enforced.
 func jwtAudienceAllowlist() []string {
-	return splitCSV(conf.GetConfigString("jwtAudiences"))
+	if v := splitCSV(conf.GetConfigString("jwtAudiences")); len(v) > 0 {
+		return v
+	}
+	var out []string
+	out = appendUniqueCSV(out, os.Getenv("GATEWAY_ALLOWED_AUDIENCES"))
+	out = appendUniqueCSV(out, os.Getenv("IAM_AUDIENCE"))
+	out = appendUniqueCSV(out, os.Getenv("AUTH_AUDIENCE"))
+	return out
+}
+
+// appendUniqueCSV splits a comma-separated raw value and appends each non-empty,
+// not-already-present entry to out (preserving order). This is the audience-merge
+// primitive: GATEWAY_ALLOWED_AUDIENCES widened by IAM_AUDIENCE/AUTH_AUDIENCE.
+func appendUniqueCSV(out []string, raw string) []string {
+	for _, a := range splitCSV(raw) {
+		seen := false
+		for _, e := range out {
+			if e == a {
+				seen = true
+				break
+			}
+		}
+		if !seen {
+			out = append(out, a)
+		}
+	}
+	return out
 }
 
 func splitCSV(raw string) []string {

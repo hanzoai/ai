@@ -85,6 +85,55 @@ func TestRedactUserSecrets(t *testing.T) {
 	}
 }
 
+// TestRedactUserSecretsAllowlistFailSecure proves the allowlist projection: any
+// string/[]string field NOT in exposableUserFields is zeroed (so a NEW iam.User
+// secret field is fail-secure and never leaks), allowlisted display fields survive
+// (so the cloud account UI is unbroken), and credential-bearing struct slices the
+// string sweep cannot reach are nilled (closing the prior denylist gap on
+// MfaAccounts/ManagedAccounts).
+func TestRedactUserSecretsAllowlistFailSecure(t *testing.T) {
+	u := &iam.User{
+		Owner: "hanzo", Name: "z",
+		// Allowlisted display fields the cloud account UI reads.
+		DisplayName: "Z User", Email: "z@hanzo.ai", CreatedIp: "1.2.3.4", Tag: "vip",
+		// NON-allowlisted string fields: existing/secret/link/internal — must be zeroed.
+		GitHub: "ghuser", Custom: "customval", Hash: "sessionhash", PreHash: "preh",
+		IdCard: "ID123", Ldap: "cn=z", AccessSecret: "sekret", TotpSecret: "TOTP",
+		Google: "g-oauth-id", Custom3: "c3", IpWhitelist: "10.0.0.0/8",
+		// Credential-bearing struct slices (string sweep can't reach these).
+		ManagedAccounts: []iam.ManagedAccount{{}},
+		MfaAccounts:     []iam.MfaAccount{{}},
+		MfaItems:        []*iam.MfaItem{{}},
+		FaceIds:         []*iam.FaceId{{}},
+	}
+
+	RedactUserSecrets(u)
+
+	// Allowlisted display fields survive.
+	if u.Owner != "hanzo" || u.Name != "z" || u.DisplayName != "Z User" || u.Email != "z@hanzo.ai" || u.CreatedIp != "1.2.3.4" || u.Tag != "vip" {
+		t.Errorf("allowlisted display fields must survive: %+v", u)
+	}
+
+	// Non-allowlisted string fields are zeroed (fail-secure).
+	zeroed := map[string]string{
+		"GitHub": u.GitHub, "Custom": u.Custom, "Custom3": u.Custom3, "Hash": u.Hash,
+		"PreHash": u.PreHash, "IdCard": u.IdCard, "Ldap": u.Ldap, "Google": u.Google,
+		"AccessSecret": u.AccessSecret, "TotpSecret": u.TotpSecret, "IpWhitelist": u.IpWhitelist,
+	}
+	for name, val := range zeroed {
+		if val != "" {
+			t.Errorf("non-allowlisted field %s must be zeroed (fail-secure), got %q", name, val)
+		}
+	}
+
+	// Credential-bearing struct slices are nilled — closes the denylist gap where
+	// MfaAccount.SecretKey / ManagedAccount.Password would have leaked.
+	if u.ManagedAccounts != nil || u.MfaAccounts != nil || u.MfaItems != nil || u.FaceIds != nil {
+		t.Errorf("credential struct slices must be nilled: managed=%v mfaAcct=%v mfaItems=%v faceIds=%v",
+			u.ManagedAccounts, u.MfaAccounts, u.MfaItems, u.FaceIds)
+	}
+}
+
 // TestRedactClaimsSecrets asserts the claims-level access token is scrubbed too.
 func TestRedactClaimsSecrets(t *testing.T) {
 	c := &iam.Claims{AccessToken: "claims.access.token"}

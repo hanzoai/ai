@@ -125,12 +125,82 @@ func TestReserveBudgetSkipsUnknownAndAnon(t *testing.T) {
 // TestEstimateRequestCostMonotonic: more max_tokens never costs less (upper bound),
 // and the estimate is non-negative.
 func TestEstimateRequestCostMonotonic(t *testing.T) {
-	small := estimateRequestCostCents("gpt-4o-mini", 100, 16)
-	big := estimateRequestCostCents("gpt-4o-mini", 100, 4096)
+	small := estimateRequestCostCents("gpt-4o-mini", 100, reserveCompletionFloor)
+	big := estimateRequestCostCents("gpt-4o-mini", 100, 8192)
 	if small < 0 || big < 0 {
 		t.Fatalf("estimates must be non-negative: small=%d big=%d", small, big)
 	}
 	if big < small {
 		t.Errorf("more max_tokens must not cost less: small=%d big=%d", small, big)
+	}
+}
+
+// TestClampMaxTokens locks the upstream completion ceiling: uncapped/absurd →
+// reserveCompletionFloor; a normal client cap is preserved unchanged (R1b).
+func TestClampMaxTokens(t *testing.T) {
+	cases := []struct{ in, want int }{
+		{0, reserveCompletionFloor},                              // uncapped
+		{-5, reserveCompletionFloor},                             // negative
+		{500, 500},                                               // normal cap preserved
+		{reserveCompletionFloor, reserveCompletionFloor},         // at floor
+		{maxReserveCompletionTokens, maxReserveCompletionTokens}, // at max boundary
+		{maxReserveCompletionTokens + 1, reserveCompletionFloor}, // absurd => floor
+	}
+	for _, c := range cases {
+		if got := clampMaxTokens(c.in); got != c.want {
+			t.Errorf("clampMaxTokens(%d)=%d, want %d", c.in, got, c.want)
+		}
+	}
+}
+
+// TestReserveCoversModelLayerCeiling: the QueryText pipeline caps completion at
+// reserveCompletionFloor regardless of a low client cap, so the reservation MUST
+// cover that ceiling even when the client capped lower.
+func TestReserveCoversModelLayerCeiling(t *testing.T) {
+	if got := reserveCompletionTokens(100); got < reserveCompletionFloor {
+		t.Fatalf("reserveCompletionTokens(100)=%d must be >= floor %d (QueryText emits up to the floor)", got, reserveCompletionFloor)
+	}
+	estLowCap := estimateRequestCostCents("gpt-4o-mini", 100, 100)
+	estFloor := calculateCostCents("gpt-4o-mini", 100, reserveCompletionFloor)
+	if estLowCap < estFloor {
+		t.Fatalf("a low client cap must still reserve >= the model-layer ceiling cost: got %d, floor cost %d", estLowCap, estFloor)
+	}
+}
+
+// TestUncappedRequestCannotOverdraft is the R1b assertion: an UNCAPPED request,
+// after the max_tokens clamp at the call site, can never settle MORE than it
+// reserved — so a single request cannot drive the balance negative. The prior
+// 1024-token estimate under-reserved and the actual (larger) settle went negative.
+func TestUncappedRequestCannotOverdraft(t *testing.T) {
+	const (
+		subject = "billtest/uncapped"
+		model   = "gpt-4o-mini"
+	)
+	promptTokens := 100
+
+	// Controller flow: clamp the uncapped max_tokens, then reserve the estimate.
+	clamped := clampMaxTokens(0) // uncapped
+	if clamped != reserveCompletionFloor {
+		t.Fatalf("uncapped clamp=%d, want reserveCompletionFloor=%d", clamped, reserveCompletionFloor)
+	}
+	est := estimateRequestCostCents(model, promptTokens, clamped)
+
+	// Fund EXACTLY to the reservation — the tightest no-overdraft case.
+	object.GlobalBalanceLedger.SetBalance(subject, est)
+	hold, ok := reserveBudget(subject, est)
+	if !ok || hold == nil {
+		t.Fatalf("reserve must succeed when balance == estimate (est=%d)", est)
+	}
+
+	// Worst-case ACTUAL: a completion at the clamped ceiling. Because the upstream
+	// is clamped to `clamped` tokens, the model can emit no more — actual <= reserve.
+	worstActual := calculateCostCents(model, promptTokens, clamped)
+	if worstActual > est {
+		t.Fatalf("worst-case actual %d exceeds reservation %d — overdraft possible", worstActual, est)
+	}
+	hold.settle(worstActual)
+
+	if avail, _ := object.GlobalBalanceLedger.Available(subject); avail < 0 {
+		t.Fatalf("balance went NEGATIVE within one request: %d (worstActual=%d est=%d)", avail, worstActual, est)
 	}
 }
