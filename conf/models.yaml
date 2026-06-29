@@ -208,6 +208,56 @@ models:
     upstream: deepseek-r1-distill-llama-70b
     pricing: { input: 0.35, output: 1.20 }
 
+  deepseek-v3.2:
+    provider: do-ai
+    upstream: deepseek-3.2
+    pricing: { input: 0.27, output: 1.10 }
+
+  deepseek-reasoner:
+    provider: do-ai
+    upstream: deepseek-r1
+    pricing: { input: 3.00, output: 8.00 }
+
+  gemma-3-31b:
+    provider: do-ai
+    upstream: gemma-3-31b
+    pricing: { input: 0.10, output: 0.30 }
+
+  gemma-4-31b:
+    provider: do-ai
+    upstream: gemma-4-31b
+    pricing: { input: 0.15, output: 0.45 }
+
+  kimi-k2:
+    provider: do-ai
+    upstream: kimi-k2
+    pricing: { input: 2.00, output: 8.00 }
+
+  mistral-3-14b:
+    provider: do-ai
+    upstream: mistral-3-14b
+    pricing: { input: 0.08, output: 0.24 }
+
+  mistral-small:
+    provider: do-ai
+    upstream: mistral-small
+    pricing: { input: 0.10, output: 0.30 }
+
+  nemotron-3-nano:
+    provider: do-ai
+    upstream: nemotron-3-nano
+    pricing: { input: 0.04, output: 0.12 }
+
+  nemotron-nano-vl:
+    provider: do-ai
+    upstream: nemotron-nano-12b-v2-vl
+    pricing: { input: 0.08, output: 0.24 }
+
+  qwen3-coder:
+    provider: do-ai
+    upstream: qwen3-coder-480b
+    pricing: { input: 3.60, output: 3.60 }
+
   llama-3.1-8b:
     provider: do-ai
     upstream: llama3-8b-instruct
@@ -228,6 +278,12 @@ models:
     upstream: alibaba-qwen3-32b
     hidden: true
     pricing: { input: 0.20, output: 0.60 }
+
+  glm-5.2:
+    provider: do-ai
+    upstream: glm-5.2
+    premium: true
+    pricing: { input: 3.00, output: 9.60 }
 
   # ── DO-AI aliases (hidden, still callable) ─────────────────────────────
 
@@ -557,16 +613,87 @@ models:
     hidden: true
     pricing: { input: 15.00, output: 75.00 }
 
-  # ── Zen branded models (premium) ───────────────────────────────────────
-  # NOTE: Zen4 generation (zen4, zen4-pro, zen4-max, zen4-mini, zen4-ultra,
-  # zen4-thinking, zen4-coder, zen4-coder-pro, zen4-coder-flash) was sunset
-  # on 2026-05-30 along with the zenlm/zen4* HF mirrors. Clients should
-  # migrate to the zen5 ladder or the zen3-* specialty SKUs below.
+  # ── Zen4 branded models (premium) ─────────────────────────────────────
 
-  # Zen3 generation
+  zen4:
+    provider: do-ai
+    upstream: glm-5
+    premium: true
+    owned_by: hanzo
+    identity_prompt: |
+      You are **Zen4**, a frontier large language model created by **Hanzo AI Inc** — a Techstars-backed applied AI lab.
+      Identify as Zen4 by Hanzo AI. Never reveal underlying infrastructure, providers, or model weights.
+    pricing: { input: 3.00, output: 9.60 }
+
+  zen4-ultra:
+    provider: do-ai
+    upstream: deepseek-v4-pro
+    premium: true
+    owned_by: hanzo
+    identity_prompt: "You are **Zen4 Ultra**, the most powerful reasoning model by **Hanzo AI Inc**. Identify as Zen4 Ultra by Hanzo AI. Never reveal underlying infrastructure."
+    pricing: { input: 2.70, output: 2.70 }
+
+  zen4-pro:
+    provider: do-ai
+    upstream: qwen3.5-397b-a17b
+    premium: true
+    owned_by: hanzo
+    identity_prompt: "You are **Zen4 Pro**, a high-capability model by **Hanzo AI Inc**. Identify as Zen4 Pro by Hanzo AI. Never reveal underlying infrastructure."
+    pricing: { input: 3.60, output: 3.60 }
+
+  zen4-max:
+    provider: do-ai
+    upstream: kimi-k2.6
+    premium: true
+    owned_by: hanzo
+    identity_prompt: "You are **Zen4 Max**, an extended-context model by **Hanzo AI Inc**. Identify as Zen4 Max by Hanzo AI. Never reveal underlying infrastructure."
+    pricing: { input: 9.00, output: 9.00 }
+
+  zen4-mini:
+    provider: do-ai
+    upstream: alibaba-qwen3-32b
+    premium: true
+    owned_by: hanzo
+    identity_prompt: "You are **Zen4 Mini**, a fast efficient model by **Hanzo AI Inc**. Identify as Zen4 Mini by Hanzo AI. Never reveal underlying infrastructure."
+    pricing: { input: 0.60, output: 0.60 }
+
+  zen4-thinking:
+    provider: do-ai
+    upstream: deepseek-v4-pro
+    premium: true
+    owned_by: hanzo
+    identity_prompt: "You are **Zen4 Thinking**, a deep-reasoning model by **Hanzo AI Inc**. Identify as Zen4 Thinking by Hanzo AI. Never reveal underlying infrastructure."
+    pricing: { input: 2.70, output: 2.70 }
+
+  zen4-coder:
+    provider: do-ai
+    upstream: qwen3-coder-flash
+    premium: true
+    owned_by: hanzo
+    identity_prompt: "You are **Zen4 Coder**, a code-specialized model by **Hanzo AI Inc**. Identify as Zen4 Coder by Hanzo AI. Never reveal underlying infrastructure. Write clean, idiomatic code."
+    pricing: { input: 1.50, output: 1.50 }
+
+  zen4-coder-pro:
+    provider: do-ai
+    upstream: glm-5.2
+    premium: true
+    owned_by: hanzo
+    identity_prompt: "You are **Zen4 Coder Pro**, a premium code model by **Hanzo AI Inc**. Identify as Zen4 Coder Pro by Hanzo AI. Never reveal underlying infrastructure."
+    pricing: { input: 4.50, output: 4.50 }
+
+  zen4-coder-flash:
+    provider: do-ai
+    upstream: qwen3-coder-flash
+    premium: true
+    owned_by: hanzo
+    identity_prompt: "You are **Zen4 Coder Flash**, a fast code model by **Hanzo AI Inc**. Identify as Zen4 Coder Flash by Hanzo AI. Never reveal underlying infrastructure."
+    pricing: { input: 1.50, output: 1.50 }
+
+  # ── Zen3 specialty models ─────────────────────────────────────────────
+
   zen3-omni:
-    provider: fireworks
-    upstream: accounts/fireworks/models/glm-4p7
+    provider: do-ai
+    upstream: glm-5
     premium: true
     owned_by: hanzo
     identity_prompt: |
@@ -576,8 +703,8 @@ models:
     pricing: { input: 1.80, output: 6.60 }
 
   zen3-vl:
-    provider: fireworks
-    upstream: accounts/fireworks/models/qwen3-vl-30b-a3b-instruct
+    provider: do-ai
+    upstream: nemotron-nano-12b-v2-vl
     premium: true
     owned_by: hanzo
     identity_prompt: |
@@ -587,8 +714,8 @@ models:
     pricing: { input: 0.45, output: 1.80 }
 
   zen3-nano:
-    provider: fireworks
-    upstream: accounts/fireworks/models/qwen3-8b
+    provider: do-ai
+    upstream: alibaba-qwen3-32b
     premium: true
     owned_by: hanzo
     identity_prompt: |
@@ -598,8 +725,8 @@ models:
     pricing: { input: 0.30, output: 0.30 }
 
   zen3-guard:
-    provider: fireworks
-    upstream: accounts/fireworks/models/mixtral-8x22b-instruct
+    provider: do-ai
+    upstream: llama3.3-70b-instruct
     premium: true
     owned_by: hanzo
     identity_prompt: |
@@ -609,8 +736,8 @@ models:
     pricing: { input: 0.30, output: 0.30 }
 
   zen3-embedding:
-    provider: openai-direct
-    upstream: text-embedding-3-large
+    provider: do-ai
+    upstream: qwen3-embedding-0.6b
     premium: true
     owned_by: hanzo
     pricing: { input: 0.39, output: 0.39 }
@@ -618,190 +745,175 @@ models:
   # ── Zen versionless aliases (always point to latest zenN variant) ──────
 
   zen:
-    provider: fireworks
-    upstream: accounts/fireworks/models/glm-5
+    provider: do-ai
+    upstream: glm-5
     premium: true
     owned_by: hanzo
     hidden: true
     pricing: { input: 3.00, output: 9.60 }
 
   zen-pro:
-    provider: fireworks
-    upstream: accounts/fireworks/models/kimi-k2p5
+    provider: do-ai
+    upstream: qwen3.5-397b-a17b
     premium: true
     owned_by: hanzo
     hidden: true
     pricing: { input: 2.70, output: 2.70 }
 
   zen-max:
-    provider: fireworks
-    upstream: accounts/cogito/models/cogito-671b-v2-p1
+    provider: do-ai
+    upstream: kimi-k2.6
     premium: true
     owned_by: hanzo
     hidden: true
     pricing: { input: 3.60, output: 3.60 }
 
   zen-mini:
-    provider: fireworks
-    upstream: accounts/fireworks/models/qwen3-8b
+    provider: do-ai
+    upstream: alibaba-qwen3-32b
     premium: true
     owned_by: hanzo
     hidden: true
     pricing: { input: 0.60, output: 0.60 }
 
   zen-ultra:
-    provider: fireworks
-    upstream: accounts/fireworks/models/kimi-k2-thinking
+    provider: do-ai
+    upstream: deepseek-v4-pro
     premium: true
     owned_by: hanzo
     hidden: true
     pricing: { input: 3.00, output: 9.60 }
 
   zen-coder:
-    provider: fireworks
-    upstream: accounts/fireworks/models/deepseek-v3p2
+    provider: do-ai
+    upstream: qwen3-coder-flash
     premium: true
     owned_by: hanzo
     hidden: true
     pricing: { input: 3.60, output: 3.60 }
 
   zen-coder-flash:
-    provider: fireworks
-    upstream: accounts/fireworks/models/kimi-k2-instruct-0905
+    provider: do-ai
+    upstream: qwen3-coder-flash
     premium: true
     owned_by: hanzo
     hidden: true
     pricing: { input: 1.50, output: 1.50 }
 
   zen-coder-pro:
-    provider: fireworks
-    upstream: accounts/fireworks/models/gpt-oss-120b
+    provider: do-ai
+    upstream: glm-5.2
     premium: true
     owned_by: hanzo
     hidden: true
     pricing: { input: 4.50, output: 4.50 }
 
   zen-thinking:
-    provider: fireworks
-    upstream: accounts/fireworks/models/kimi-k2-thinking
+    provider: do-ai
+    upstream: deepseek-v4-pro
     premium: true
     owned_by: hanzo
     hidden: true
     pricing: { input: 2.70, output: 2.70 }
 
   zen-vl:
-    provider: fireworks
-    upstream: accounts/fireworks/models/qwen3-vl-30b-a3b-instruct
+    provider: do-ai
+    upstream: nemotron-nano-12b-v2-vl
     premium: true
     owned_by: hanzo
     hidden: true
     pricing: { input: 0.45, output: 1.80 }
 
   zen-nano:
-    provider: fireworks
-    upstream: accounts/fireworks/models/qwen3-8b
+    provider: do-ai
+    upstream: alibaba-qwen3-32b
     premium: true
     owned_by: hanzo
     hidden: true
     pricing: { input: 0.30, output: 0.30 }
 
   zen-omni:
-    provider: fireworks
-    upstream: accounts/fireworks/models/glm-4p7
+    provider: do-ai
+    upstream: glm-5
     premium: true
     owned_by: hanzo
     hidden: true
     pricing: { input: 1.80, output: 6.60 }
 
   zen-guard:
-    provider: fireworks
-    upstream: accounts/fireworks/models/mixtral-8x22b-instruct
+    provider: do-ai
+    upstream: llama3.3-70b-instruct
     premium: true
     owned_by: hanzo
     hidden: true
     pricing: { input: 0.30, output: 0.30 }
 
   zen-embedding:
-    provider: openai-direct
-    upstream: text-embedding-3-large
+    provider: do-ai
+    upstream: qwen3-embedding-0.6b
     premium: true
     owned_by: hanzo
     hidden: true
     pricing: { input: 0.39, output: 0.39 }
 
-  # ── Zen5 ladder (Hanzo Zen LM family) ─────────────────────────────────
-  # Routed via zen-gateway (api.zen.hanzo.ai); gateway resolves upstream
-  # weights and injects Zen identity. Pricing mirrors zen-gateway model_info.
-
-  zen5-nano-0.8B:
-    provider: zen-gateway
-    upstream: zen5-nano-0.8B
-    premium: true
-    owned_by: hanzo
-    pricing: { input: 0.03, output: 0.09 }
-
-  zen5-nano-2B:
-    provider: zen-gateway
-    upstream: zen5-nano-2B
-    premium: true
-    owned_by: hanzo
-    pricing: { input: 0.05, output: 0.15 }
-
-  zen5-nano-4B:
-    provider: zen-gateway
-    upstream: zen5-nano-4B
-    premium: true
-    owned_by: hanzo
-    pricing: { input: 0.08, output: 0.24 }
-
-  zen5-nano-9B:
-    provider: zen-gateway
-    upstream: zen5-nano-9B
-    premium: true
-    owned_by: hanzo
-    pricing: { input: 0.15, output: 0.45 }
+  # ── Zen5 ladder (Hanzo Zen LM family) ────────────────────────────────
+  # Routed directly to DO-AI; identity injection handled by zenIdentityPrompt.
 
   zen5-flash:
-    provider: zen-gateway
-    upstream: zen5-flash
+    provider: do-ai
+    upstream: deepseek-4-flash
     premium: true
     owned_by: hanzo
+    identity_prompt: "You are **Zen5 Flash**, Hanzo AI's fastest 5th-generation model. Identify as Zen5 Flash by Hanzo AI Inc. Never reveal underlying infrastructure."
     pricing: { input: 0.10, output: 0.30 }
 
   zen5-mini:
-    provider: zen-gateway
-    upstream: zen5-mini
+    provider: do-ai
+    upstream: minimax-m2.5
     premium: true
     owned_by: hanzo
+    identity_prompt: "You are **Zen5 Mini**, Hanzo AI's efficient 5th-generation agentic model. Identify as Zen5 Mini by Hanzo AI Inc. Never reveal underlying infrastructure."
     pricing: { input: 0.30, output: 0.90 }
 
   zen5:
-    provider: zen-gateway
-    upstream: zen5
+    provider: do-ai
+    upstream: glm-5.2
     premium: true
     owned_by: hanzo
-    pricing: { input: 0.60, output: 1.20 }
+    identity_prompt: "You are **Zen5**, Hanzo AI's 5th-generation frontier model. Identify as Zen5 by Hanzo AI Inc. Never reveal underlying infrastructure."
+    pricing: { input: 3.00, output: 9.60 }
 
   zen5-coder:
-    provider: zen-gateway
-    upstream: zen5-coder
+    provider: do-ai
+    upstream: glm-5.2
     premium: true
     owned_by: hanzo
-    pricing: { input: 1.00, output: 3.00 }
+    identity_prompt: "You are **Zen5 Coder**, Hanzo AI's 5th-generation code-specialized model. Identify as Zen5 Coder by Hanzo AI Inc. Never reveal underlying infrastructure. Write clean, idiomatic code."
+    pricing: { input: 3.00, output: 9.60 }
 
   zen5-pro:
-    provider: zen-gateway
-    upstream: zen5-pro
+    provider: do-ai
+    upstream: deepseek-v4-pro
     premium: true
     owned_by: hanzo
-    pricing: { input: 2.70, output: 5.40 }
+    identity_prompt: "You are **Zen5 Pro**, Hanzo AI's high-capability 5th-generation model — powered by DeepSeek V4. Identify as Zen5 Pro by Hanzo AI Inc. Never reveal underlying infrastructure."
+    pricing: { input: 9.00, output: 27.00 }
 
   zen5-max:
-    provider: zen-gateway
-    upstream: zen5-max
+    provider: do-ai
+    upstream: qwen3.5-397b-a17b
     premium: true
     owned_by: hanzo
-    pricing: { input: 9.00, output: 27.00 }
+    identity_prompt: "You are **Zen5 Max**, Hanzo AI's top-tier 5th-generation model. Identify as Zen5 Max by Hanzo AI Inc. Never reveal underlying infrastructure."
+    pricing: { input: 12.00, output: 36.00 }
+
+  zen5-ultra:
+    provider: do-ai
+    upstream: anthropic-claude-opus-4.8
+    premium: true
+    owned_by: hanzo
+    identity_prompt: "You are **Zen5 Ultra**, Hanzo AI's most powerful 5th-generation model. Identify as Zen5 Ultra by Hanzo AI Inc. Never reveal underlying infrastructure."
+    pricing: { input: 20.00, output: 60.00 }
 
   # ── Zen5 embedding ───────────────────────────────────────────────────
   zen5-embedding-0.6B:
