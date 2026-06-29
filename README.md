@@ -1,3 +1,5 @@
+<p align="center"><img src=".github/hero.svg" alt="ai" width="880"></p>
+
 # ai
 
 LLM control plane, RAG, and model hub for the Hanzo platform. Native Go model routing with no Python middlemen.
