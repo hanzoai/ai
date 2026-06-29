@@ -18,7 +18,10 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"strings"
+	"time"
 
 	"github.com/beego/beego/context"
 	"github.com/hanzoai/ai/model"
@@ -32,11 +35,21 @@ import (
 
 // AnthropicRequest is the Anthropic Messages API request body.
 type AnthropicRequest struct {
-	Model     string             `json:"model"`
-	MaxTokens int                `json:"max_tokens"`
-	System    json.RawMessage    `json:"system,omitempty"`
-	Messages  []AnthropicMessage `json:"messages"`
-	Stream    bool               `json:"stream"`
+	Model       string             `json:"model"`
+	MaxTokens   int                `json:"max_tokens"`
+	System      json.RawMessage    `json:"system,omitempty"`
+	Messages    []AnthropicMessage `json:"messages"`
+	Tools       []AnthropicTool    `json:"tools,omitempty"`
+	ToolChoice  json.RawMessage    `json:"tool_choice,omitempty"`
+	Temperature float32            `json:"temperature,omitempty"`
+	Stream      bool               `json:"stream"`
+}
+
+// AnthropicTool is a tool definition in the Anthropic format.
+type AnthropicTool struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description,omitempty"`
+	InputSchema json.RawMessage `json:"input_schema"`
 }
 
 // SystemText returns the system prompt as a plain string.
@@ -303,6 +316,19 @@ func (c *ApiController) respondAnthropicError(errType string, message string, st
 	c.EnableRender = false
 }
 
+func anthropicErrorType(err error) string {
+	switch statusOf(err) {
+	case http.StatusBadRequest:
+		return "invalid_request_error"
+	case http.StatusPaymentRequired:
+		return "billing_error"
+	case http.StatusUnauthorized:
+		return "authentication_error"
+	default:
+		return "api_error"
+	}
+}
+
 // AnthropicMessages implements the Anthropic Messages API.
 // @Title AnthropicMessages
 // @Tag Anthropic Compatible API
@@ -359,50 +385,22 @@ func (c *ApiController) AnthropicMessages() {
 		return
 	}
 
-	// ── Auth ────────────────────────────────────────────────────────────
-	var provider *object.Provider
-	var authUser *iam.User
-	var upstreamModel string
-	var isPremium bool
-	var err error
+	// Track timing for observability.
+	requestStartTime := time.Now().UTC()
 
-	if isIAMApiKey(token) {
-		provider, authUser, upstreamModel, err = resolveProviderFromIAMKey(token, request.Model, c.GetAcceptLanguage())
-		if err != nil {
-			c.respondAnthropicError("authentication_error", err.Error(), statusOf(err))
-			return
-		}
-		if authUser != nil {
-			c.Ctx.Input.SetParam("recordUserId", authUser.Owner+"/"+authUser.Name)
-		}
-		if route := resolveModelRoute(request.Model); route != nil {
-			isPremium = route.premium
-		}
-	} else if isJwtToken(token) {
-		provider, authUser, upstreamModel, err = resolveProviderFromJwt(token, request.Model, c.GetAcceptLanguage())
-		if err != nil {
-			c.respondAnthropicError("authentication_error", err.Error(), statusOf(err))
-			return
-		}
-		if authUser != nil {
-			c.Ctx.Input.SetParam("recordUserId", authUser.Owner+"/"+authUser.Name)
-		}
-		if route := resolveModelRoute(request.Model); route != nil {
-			isPremium = route.premium
-		}
-	} else {
-		provider, err = object.GetProviderByProviderKey(token, c.GetAcceptLanguage())
-		if err != nil {
-			c.respondAnthropicError("authentication_error", fmt.Sprintf("Authentication failed: %s", err.Error()), 401)
-			return
-		}
-		if provider == nil {
-			c.respondAnthropicError("authentication_error", "Invalid API key", 401)
-			return
-		}
-		if route := resolveModelRoute(request.Model); route != nil {
-			upstreamModel = route.upstreamModel
-			isPremium = route.premium
+	// Resolve org context for per-org model routing and pricing.
+	orgId := c.GetEffectiveOrg()
+
+	// Share the exact auth + model-routing policy used by /v1/chat/completions.
+	provider, authUser, upstreamModel, isPremium, isWidget, err := c.authResolveProvider(token, request.Model, orgId)
+	if err != nil {
+		c.respondAnthropicError(anthropicErrorType(err), err.Error(), statusOf(err))
+		return
+	}
+	if isWidget {
+		// Cap max_tokens for anonymous widget requests.
+		if request.MaxTokens == 0 || request.MaxTokens > widgetMaxTokens {
+			request.MaxTokens = widgetMaxTokens
 		}
 	}
 
@@ -416,6 +414,29 @@ func (c *ApiController) AnthropicMessages() {
 		provider.SubType = upstreamModel
 	} else if request.Model != "" {
 		provider.SubType = request.Model
+	}
+
+	// ── Balance reservation (shared by tool-proxy and QueryText paths) ────
+	request.MaxTokens = clampMaxTokens(request.MaxTokens)
+	var hold *budgetHold
+	if authUser != nil {
+		subject := object.BillingSubject(authUser.Owner, authUser.Name)
+		est := estimateRequestCostCents(request.Model, len(request.Messages)*500, request.MaxTokens)
+		var ok bool
+		if hold, ok = reserveBudget(subject, est); !ok {
+			c.respondAnthropicError("billing_error", "Insufficient balance for the estimated request cost. Add credits at console.hanzo.ai", http.StatusPaymentRequired)
+			return
+		}
+	}
+	defer hold.settle(0)
+
+	// ── Tool-calling proxy ────────────────────────────────────────────────
+	// When the request carries tools (Claude Code, agents, etc.) the QueryText
+	// pipeline cannot handle structured tool_use blocks. Proxy the raw Anthropic
+	// request directly to the upstream and stream/return the raw response.
+	if len(request.Tools) > 0 {
+		c.proxyAnthropicToolRequest(provider, &request, requestStartTime, authUser, isPremium, hold)
+		return
 	}
 
 	// ── Convert Anthropic messages to internal format ────────────────────
@@ -500,7 +521,7 @@ func (c *ApiController) AnthropicMessages() {
 	knowledge := []*model.RawMessage{}
 
 	// Resolve the route for failover (may have fallback providers)
-	route := resolveModelRoute(request.Model)
+	route := resolveModelRouteForOrg(request.Model, orgId)
 
 	var modelResult *model.ModelResult
 	var actualProvider string
@@ -525,7 +546,7 @@ func (c *ApiController) AnthropicMessages() {
 
 	if err != nil {
 		if authUser != nil {
-			recordUsage(&usageRecord{
+			errRecord := &usageRecord{
 				Owner:     authUser.Owner,
 				User:      authUser.Owner + "/" + authUser.Name,
 				Model:     request.Model,
@@ -536,7 +557,9 @@ func (c *ApiController) AnthropicMessages() {
 				ErrorMsg:  err.Error(),
 				ClientIP:  c.Ctx.Request.RemoteAddr,
 				RequestID: requestId,
-			})
+			}
+			recordUsage(errRecord)
+			recordTrace(errRecord, requestStartTime)
 		}
 		c.respondAnthropicError("api_error", err.Error(), 500)
 		return
@@ -544,7 +567,7 @@ func (c *ApiController) AnthropicMessages() {
 
 	// Record successful usage (actualProvider reflects which provider served the request).
 	if authUser != nil {
-		recordUsage(&usageRecord{
+		successRecord := &usageRecord{
 			Owner:            authUser.Owner,
 			User:             authUser.Owner + "/" + authUser.Name,
 			Organization:     authUser.Owner,
@@ -559,7 +582,10 @@ func (c *ApiController) AnthropicMessages() {
 			Status:           "success",
 			ClientIP:         c.Ctx.Request.RemoteAddr,
 			RequestID:        requestId,
-		})
+		}
+		recordUsage(successRecord)
+		recordTrace(successRecord, requestStartTime)
+		hold.settle(calculateCostCentsWithCache(request.Model, modelResult.PromptTokenCount, modelResult.ResponseTokenCount, 0, 0))
 	}
 
 	// ── Build response ──────────────────────────────────────────────────
@@ -600,5 +626,147 @@ func (c *ApiController) AnthropicMessages() {
 		}
 	}
 
+	c.EnableRender = false
+}
+
+// proxyAnthropicToolRequest forwards a /v1/messages request that contains tools
+// directly to the upstream, bypassing the QueryText pipeline which cannot emit
+// tool_use blocks. For DO-AI / OpenAI-compat upstreams it delegates to the
+// proxyToolRequest OpenAI path; for native Anthropic upstreams it forwards verbatim.
+func (c *ApiController) proxyAnthropicToolRequest(
+	provider *object.Provider,
+	request *AnthropicRequest,
+	requestStartTime time.Time,
+	authUser *iam.User,
+	isPremium bool,
+	hold *budgetHold,
+) {
+	// For non-native Anthropic upstreams (DO-AI, OpenAI-compat, Local, etc.):
+	// convert to an openai.ChatCompletionRequest and use the existing proxy path.
+	if provider.Type != "Claude" && provider.Type != "Anthropic" {
+		oaiMessages := []openai.ChatCompletionMessage{}
+		if sysText := request.SystemText(); sysText != "" {
+			oaiMessages = append(oaiMessages, openai.ChatCompletionMessage{Role: "system", Content: sysText})
+		}
+		for _, msg := range request.Messages {
+			oaiMessages = append(oaiMessages, openai.ChatCompletionMessage{
+				Role:    msg.Role,
+				Content: msg.ContentText(),
+			})
+		}
+		oaiTools := []openai.Tool{}
+		for _, t := range request.Tools {
+			var params interface{}
+			_ = json.Unmarshal(t.InputSchema, &params)
+			oaiTools = append(oaiTools, openai.Tool{
+				Type: openai.ToolTypeFunction,
+				Function: &openai.FunctionDefinition{
+					Name:        t.Name,
+					Description: t.Description,
+					Parameters:  params,
+				},
+			})
+		}
+		oaiReq := &openai.ChatCompletionRequest{
+			Model:    provider.SubType,
+			Messages: oaiMessages,
+			Tools:    oaiTools,
+			MaxTokens: request.MaxTokens,
+			Stream:    request.Stream,
+		}
+		if request.Temperature > 0 {
+			oaiReq.Temperature = float32(request.Temperature)
+		}
+		// proxyToolRequest handles streaming, billing, and SSE forwarding.
+		c.proxyToolRequest(provider, oaiReq, requestStartTime, authUser, isPremium, "", hold)
+		return
+	}
+
+	// Native Anthropic upstream: forward the raw request body verbatim.
+	apiKey := provider.ClientSecret
+	baseURL := strings.TrimRight(provider.ProviderUrl, "/")
+	if baseURL == "" {
+		baseURL = "https://api.anthropic.com"
+	}
+
+	body, err := json.Marshal(request)
+	if err != nil {
+		c.respondAnthropicError("api_error", "Failed to marshal request: "+err.Error(), 500)
+		return
+	}
+
+	req, err := http.NewRequest(http.MethodPost, baseURL+"/v1/messages", bytes.NewReader(body))
+	if err != nil {
+		c.respondAnthropicError("api_error", "Failed to build upstream request: "+err.Error(), 500)
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-api-key", apiKey)
+	req.Header.Set("anthropic-version", "2023-06-01")
+
+	client := &http.Client{Timeout: 120 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		c.respondAnthropicError("api_error", "Upstream request failed: "+err.Error(), 502)
+		return
+	}
+	defer resp.Body.Close()
+
+	for k, vals := range resp.Header {
+		for _, v := range vals {
+			c.Ctx.ResponseWriter.Header().Add(k, v)
+		}
+	}
+
+	requestId := util.GenerateUUID()
+
+	if request.Stream {
+		c.Ctx.ResponseWriter.Header().Set("Content-Type", "text/event-stream")
+		c.Ctx.ResponseWriter.Header().Set("Cache-Control", "no-cache")
+		c.Ctx.ResponseWriter.Header().Set("Connection", "keep-alive")
+		c.Ctx.ResponseWriter.WriteHeader(resp.StatusCode)
+		capPrompt, capCompletion, _, _ := streamCaptureUsage(
+			resp.Body, c.Ctx.ResponseWriter, c.Ctx.ResponseWriter.Flush,
+			true, requestId, request.Model,
+		)
+		if authUser != nil {
+			rec := &usageRecord{
+				Owner: authUser.Owner, User: authUser.Owner + "/" + authUser.Name,
+				Organization: authUser.Owner, Model: request.Model, Provider: provider.Name,
+				PromptTokens: capPrompt, CompletionTokens: capCompletion,
+				TotalTokens: capPrompt + capCompletion, Currency: "USD",
+				Premium: isPremium, Stream: true, Status: "success",
+				ClientIP: c.Ctx.Request.RemoteAddr, RequestID: requestId,
+			}
+			recordUsage(rec)
+			recordTrace(rec, requestStartTime)
+			hold.settle(calculateCostCentsWithCache(request.Model, capPrompt, capCompletion, 0, 0))
+		}
+	} else {
+		c.Ctx.ResponseWriter.WriteHeader(resp.StatusCode)
+		respBody, _ := io.ReadAll(resp.Body)
+		var usage struct {
+			Usage struct {
+				InputTokens  int `json:"input_tokens"`
+				OutputTokens int `json:"output_tokens"`
+			} `json:"usage"`
+		}
+		_ = json.Unmarshal(respBody, &usage)
+		prompt, completion := usage.Usage.InputTokens, usage.Usage.OutputTokens
+		if authUser != nil {
+			rec := &usageRecord{
+				Owner: authUser.Owner, User: authUser.Owner + "/" + authUser.Name,
+				Organization: authUser.Owner, Model: request.Model, Provider: provider.Name,
+				PromptTokens: prompt, CompletionTokens: completion,
+				TotalTokens: prompt + completion, Currency: "USD",
+				Premium: isPremium, Stream: false, Status: "success",
+				ClientIP: c.Ctx.Request.RemoteAddr, RequestID: requestId,
+			}
+			recordUsage(rec)
+			recordTrace(rec, requestStartTime)
+			hold.settle(calculateCostCentsWithCache(request.Model, prompt, completion, 0, 0))
+		}
+		c.Ctx.Output.Body(respBody)
+	}
 	c.EnableRender = false
 }
