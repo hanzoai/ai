@@ -133,6 +133,7 @@ jobs:
     permissions:
       contents: write
       issues: write
+      pull-requests: write
     if: github.repository == 'hanzoai/ai' && github.event_name == 'push'
     # Gate the release on the PROVEN code checks: go-tests (the full suite) +
     # backend (compiles against the shipped CGO_ENABLED=0 config). The frontend is
