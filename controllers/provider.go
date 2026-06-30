@@ -16,11 +16,24 @@ package controllers
 
 import (
 	"encoding/json"
+	"regexp"
+	"strings"
 
 	"github.com/beego/beego/utils/pagination"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
 )
+
+// byokSecretNameSanitizer keeps a KMS secret name to a safe, collision-free
+// charset so an org's custom-provider key is namespaced as byok_<org>_<provider>.
+var byokSecretNameSanitizer = regexp.MustCompile(`[^a-zA-Z0-9]+`)
+
+func byokSecretName(owner, providerName string) string {
+	clean := func(s string) string {
+		return strings.Trim(byokSecretNameSanitizer.ReplaceAllString(s, "_"), "_")
+	}
+	return "byok_" + clean(owner) + "_" + clean(providerName)
+}
 
 // GetGlobalProviders
 // @Title GetGlobalProviders
@@ -164,6 +177,20 @@ func (c *ApiController) AddProvider() {
 		return
 	}
 	provider.Owner = owner
+
+	// BYOK: a tenant-supplied provider key must land in KMS, never the DB as
+	// plaintext. Mint a kms:// ref for any org-owned RAW secret; fails closed when
+	// KMS is unavailable (StoreProviderSecret errors rather than store plaintext).
+	// An admin-owned global provider, or a value already a kms:// ref, is untouched.
+	if owner != "admin" && provider.ClientSecret != "" && !strings.HasPrefix(provider.ClientSecret, "kms://") {
+		ref, err := object.StoreProviderSecret(byokSecretName(owner, provider.Name), provider.ClientSecret)
+		if err != nil {
+			c.ResponseError(err.Error())
+			return
+		}
+		provider.ClientSecret = ref
+	}
+
 	success, err := object.AddProvider(&provider)
 	if err != nil {
 		c.ResponseError(err.Error())
