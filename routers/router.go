@@ -36,7 +36,8 @@ func initAPI() {
 	// Single namespace: /v1/*. Never /api/* (the subdomain is api.*, so /api/
 	// would double-prefix). Controller @router annotations still register the
 	// implicit routes under this namespace.
-	ns := beego.NewNamespace("/v1",
+	ns := beego.NewNamespace(
+		"/v1",
 		beego.NSInclude(
 			&controllers.ApiController{},
 		),

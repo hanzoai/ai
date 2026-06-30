@@ -21,15 +21,15 @@ import (
 )
 
 type Consultation struct {
-	Owner       string   `db:"pk" json:"owner"`
-	Name        string   `db:"pk" json:"name"`
-	CreatedTime string   `json:"createdTime"`
-	UpdatedTime string   `json:"updatedTime"`
-	DisplayName string   `json:"displayName"`
-	PatientName string   `json:"patientName"`
+	Owner       string     `db:"pk" json:"owner"`
+	Name        string     `db:"pk" json:"name"`
+	CreatedTime string     `json:"createdTime"`
+	UpdatedTime string     `json:"updatedTime"`
+	DisplayName string     `json:"displayName"`
+	PatientName string     `json:"patientName"`
 	DoctorNames StringList `json:"doctorNames"`
-	ExpiredTime string   `json:"expiredTime"`
-	State       string   `json:"state"`
+	ExpiredTime string     `json:"expiredTime"`
+	State       string     `json:"state"`
 }
 
 func GetConsultationCount(owner, field, value string) (int64, error) {

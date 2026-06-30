@@ -54,7 +54,7 @@ type ScrapeResult struct {
 	Description string         `json:"description"`
 	Content     string         `json:"content"`
 	Headings    []Heading      `json:"headings"`
-	Links       StringList       `json:"links"`
+	Links       StringList     `json:"links"`
 	Structured  StructuredData `json:"structured"`
 }
 
@@ -80,9 +80,9 @@ type StructuredData struct {
 
 // ScrapeStats is the summary returned after a scrape-and-index operation.
 type ScrapeStats struct {
-	PagesScraped     int      `json:"pagesScraped"`
-	DocumentsIndexed int      `json:"documentsIndexed"`
-	Engine           string   `json:"engine"`
+	PagesScraped     int        `json:"pagesScraped"`
+	DocumentsIndexed int        `json:"documentsIndexed"`
+	Engine           string     `json:"engine"`
 	Errors           StringList `json:"errors,omitempty"`
 }
 
