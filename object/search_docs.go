@@ -406,7 +406,159 @@ func docResultFromMap(m map[string]interface{}) DocSearchResult {
 	return r
 }
 
-// SearchDocuments performs hybrid search across Hanzo Search and Hanzo Vector.
+// ── Product sinks: Hanzo Vector (semantic) and Hanzo Search (keyword) ─────────
+// Hanzo Vector (Qdrant) and Hanzo Search (Meilisearch) are TWO SEPARATE
+// products and are NEVER conflated. The RAG orchestrator
+// (IndexDocuments/SearchDocuments) fans out to BOTH through the independent
+// seams below — one write+read pair per product — so each product stays
+// independently addressable and the fan-out is unit-testable (tests swap in
+// in-memory fakes). Production code must route through these, never inline.
+var (
+	// indexSink writes documents to Hanzo Search (keyword/full-text).
+	indexSink = writeDocsToSearch
+	// vectorSink writes embedded documents to Hanzo Vector (semantic).
+	vectorSink = writeDocsToVector
+	// searchSink queries Hanzo Search (keyword) for an owner's index.
+	searchSink = queryDocsFromSearch
+	// vectorSearchSink queries Hanzo Vector (semantic) for an owner's index.
+	vectorSearchSink = queryDocsFromVector
+)
+
+// resolveEmbedder resolves the admin-context embedding provider ONCE and returns
+// a closure to embed text with it. Ingest and query MUST share this provider so
+// the vectors written and the query vector live in the same space.
+func resolveEmbedder(lang string) (func(string) ([]float32, error), error) {
+	_, obj, err := GetEmbeddingProviderFromContext("admin", "", lang)
+	if err != nil {
+		return nil, err
+	}
+	if obj == nil {
+		return nil, fmt.Errorf("embedding provider not available")
+	}
+	return func(text string) ([]float32, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		vec, _, e := obj.QueryVector(text, ctx, lang)
+		return vec, e
+	}, nil
+}
+
+// ingestEmbed embeds a single piece of text (query path).
+func ingestEmbed(text, lang string) ([]float32, error) {
+	embed, err := resolveEmbedder(lang)
+	if err != nil {
+		return nil, err
+	}
+	return embed(text)
+}
+
+// writeDocsToSearch indexes documents into Hanzo Search (Meilisearch, keyword).
+func writeDocsToSearch(indexName string, docs []DocIndex, replace bool) (int, error) {
+	searchClient, err := getSearchClient()
+	if err != nil {
+		return 0, fmt.Errorf("search client unavailable: %w", err)
+	}
+	if err = ensureSearchIndex(searchClient, indexName); err != nil {
+		return 0, err
+	}
+	index := searchClient.Index(indexName)
+	if replace {
+		task, delErr := index.DeleteAllDocuments((*meilisearch.DocumentOptions)(nil))
+		if delErr != nil {
+			return 0, fmt.Errorf("failed to clear index: %w", delErr)
+		}
+		if _, err = searchClient.WaitForTask(task.TaskUID, 60*time.Second); err != nil {
+			return 0, fmt.Errorf("failed waiting for index clear: %w", err)
+		}
+	}
+	pk := "id"
+	task, err := index.AddDocuments(docs, &meilisearch.DocumentOptions{PrimaryKey: &pk})
+	if err != nil {
+		return 0, fmt.Errorf("failed to index documents in Hanzo Search: %w", err)
+	}
+	if _, err = searchClient.WaitForTask(task.TaskUID, 120*time.Second); err != nil {
+		return 0, fmt.Errorf("failed waiting for Hanzo Search indexing: %w", err)
+	}
+	return len(docs), nil
+}
+
+// writeDocsToVector embeds and upserts documents into Hanzo Vector (Qdrant,
+// semantic). Best-effort: a missing embedding provider returns an error that
+// the orchestrator logs but does not surface — keyword indexing already won.
+func writeDocsToVector(indexName string, docs []DocIndex, replace bool, lang string) error {
+	if len(docs) == 0 {
+		return nil
+	}
+	embed, err := resolveEmbedder(lang)
+	if err != nil {
+		return fmt.Errorf("embedding provider not available: %w", err)
+	}
+	sampleVector, err := embed(docs[0].Content)
+	if err != nil {
+		return fmt.Errorf("failed to get sample embedding: %w", err)
+	}
+	baseURL, apiKey := getVectorEndpoint()
+	if err = ensureVectorCollection(baseURL, apiKey, indexName, len(sampleVector)); err != nil {
+		return fmt.Errorf("ensure Hanzo Vector collection: %w", err)
+	}
+	if replace {
+		deleteAllVectorPoints(baseURL, apiKey, indexName)
+	}
+	const batchSize = 50
+	for i := 0; i < len(docs); i += batchSize {
+		end := i + batchSize
+		if end > len(docs) {
+			end = len(docs)
+		}
+		points := make([]qdrantPoint, 0, end-i)
+		for _, doc := range docs[i:end] {
+			vec, embErr := embed(doc.Content)
+			if embErr != nil {
+				logs.Warning("failed to embed document %s, skipping: %v", doc.ID, embErr)
+				continue
+			}
+			points = append(points, qdrantPoint{
+				ID:     doc.ID,
+				Vector: vec,
+				Payload: map[string]interface{}{
+					"id": doc.ID, "page_id": doc.PageID, "title": doc.Title,
+					"url": doc.URL, "content": doc.Content, "section": doc.Section,
+					"section_id": doc.SectionID, "tag": doc.Tag, "breadcrumbs": doc.Breadcrumbs,
+				},
+			})
+		}
+		if len(points) > 0 {
+			if err = upsertVectorPoints(baseURL, apiKey, indexName, points); err != nil {
+				logs.Warning("failed to upsert vector batch at %d: %v", i, err)
+			}
+		}
+	}
+	return nil
+}
+
+// queryDocsFromSearch queries Hanzo Search (keyword) for an index.
+func queryDocsFromSearch(indexName, query, tag string, limit int) ([]DocSearchResult, error) {
+	searchClient, err := getSearchClient()
+	if err != nil {
+		return nil, err
+	}
+	return searchFulltext(searchClient, indexName, query, tag, limit)
+}
+
+// queryDocsFromVector embeds the query and searches Hanzo Vector (semantic).
+func queryDocsFromVector(indexName, query, tag string, limit int, lang string) ([]DocSearchResult, error) {
+	vec, err := ingestEmbed(query, lang)
+	if err != nil {
+		return nil, fmt.Errorf("vector embedding failed: %w", err)
+	}
+	baseURL, apiKey := getVectorEndpoint()
+	return searchVectorRaw(baseURL, apiKey, indexName, vec, tag, limit)
+}
+
+// SearchDocuments performs hybrid retrieval over the SAME unified index that
+// IndexDocuments writes — Hanzo Search (keyword) + Hanzo Vector (semantic),
+// fused with RRF. The two products are queried through independent seams and
+// never conflated.
 func SearchDocuments(owner, store string, req *DocSearchRequest, lang string) ([]DocSearchResult, error) {
 	if req.Query == "" {
 		return nil, fmt.Errorf("query must not be empty")
@@ -423,45 +575,25 @@ func SearchDocuments(owner, store string, req *DocSearchRequest, lang string) ([
 	var fulltextResults []DocSearchResult
 	var vectorResults []DocSearchResult
 	if mode == "fulltext" || mode == "hybrid" {
-		searchClient, err := getSearchClient()
-		if err != nil && mode == "fulltext" {
-			return nil, err
-		}
-		if searchClient != nil {
-			fulltextResults, err = searchFulltext(searchClient, indexName, req.Query, req.Tag, limit)
-			if err != nil {
-				logs.Warning("fulltext search failed: %v", err)
-				if mode == "fulltext" {
-					return nil, err
-				}
+		r, err := searchSink(indexName, req.Query, req.Tag, limit)
+		if err != nil {
+			logs.Warning("keyword search failed for %s: %v", indexName, err)
+			if mode == "fulltext" {
+				return nil, err
 			}
+		} else {
+			fulltextResults = r
 		}
 	}
 	if mode == "vector" || mode == "hybrid" {
-		vectorBaseURL, vectorAPIKey := getVectorEndpoint()
-		collectionName := indexName
-		embeddingProvider, embeddingProviderObj, err := GetEmbeddingProviderFromContext("admin", "", lang)
-		if err != nil && mode == "vector" {
-			return nil, fmt.Errorf("embedding provider not available: %w", err)
-		}
-		if embeddingProvider != nil && embeddingProviderObj != nil {
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel()
-			vectorData, _, err := embeddingProviderObj.QueryVector(req.Query, ctx, lang)
-			if err != nil {
-				logs.Warning("vector embedding failed: %v", err)
-				if mode == "vector" {
-					return nil, fmt.Errorf("vector embedding failed: %w", err)
-				}
-			} else {
-				vectorResults, err = searchVectorRaw(vectorBaseURL, vectorAPIKey, collectionName, vectorData, req.Tag, limit)
-				if err != nil {
-					logs.Warning("vector search failed: %v", err)
-					if mode == "vector" {
-						return nil, err
-					}
-				}
+		r, err := vectorSearchSink(indexName, req.Query, req.Tag, limit, lang)
+		if err != nil {
+			logs.Warning("vector search failed for %s: %v", indexName, err)
+			if mode == "vector" {
+				return nil, err
 			}
+		} else {
+			vectorResults = r
 		}
 	}
 	if mode == "fulltext" {
@@ -470,114 +602,31 @@ func SearchDocuments(owner, store string, req *DocSearchRequest, lang string) ([
 	if mode == "vector" {
 		return vectorResults, nil
 	}
-	// Hybrid: merge with RRF
+	// Hybrid: merge with RRF.
 	if len(fulltextResults) == 0 && len(vectorResults) == 0 {
 		return []DocSearchResult{}, nil
 	}
 	return mergeRRF(fulltextResults, vectorResults, limit), nil
 }
 
-// IndexDocuments indexes documents into both Hanzo Search and Hanzo Vector.
+// IndexDocuments is the single ingest fan-out: it writes every document to BOTH
+// Hanzo Search (keyword) AND Hanzo Vector (semantic) under the per-tenant index
+// {owner}-{store}-docs — the EXACT index SearchDocuments (and therefore /v1/chat
+// retrieval) reads. Keyword indexing is authoritative; semantic indexing is
+// best-effort so a missing embedding provider never drops the document.
 func IndexDocuments(owner, store string, req *DocIndexRequest, lang string) (int, error) {
 	if len(req.Documents) == 0 {
 		return 0, nil
 	}
 	indexName := GetSearchIndexName(owner, store)
-	// Index into Hanzo Search
-	searchClient, err := getSearchClient()
-	if err != nil {
-		return 0, fmt.Errorf("search client unavailable: %w", err)
-	}
-	err = ensureSearchIndex(searchClient, indexName)
+	count, err := indexSink(indexName, req.Documents, req.Replace)
 	if err != nil {
 		return 0, err
 	}
-	if req.Replace {
-		index := searchClient.Index(indexName)
-		task, delErr := index.DeleteAllDocuments((*meilisearch.DocumentOptions)(nil))
-		if delErr != nil {
-			return 0, fmt.Errorf("failed to clear index: %w", delErr)
-		}
-		_, err = searchClient.WaitForTask(task.TaskUID, 60*time.Second)
-		if err != nil {
-			return 0, fmt.Errorf("failed waiting for index clear: %w", err)
-		}
+	if err := vectorSink(indexName, req.Documents, req.Replace, lang); err != nil {
+		logs.Warning("vector indexing skipped for %s: %v", indexName, err)
 	}
-	index := searchClient.Index(indexName)
-	pk := "id"
-	task, err := index.AddDocuments(req.Documents, &meilisearch.DocumentOptions{PrimaryKey: &pk})
-	if err != nil {
-		return 0, fmt.Errorf("failed to index documents in Hanzo Search: %w", err)
-	}
-	_, err = searchClient.WaitForTask(task.TaskUID, 120*time.Second)
-	if err != nil {
-		return 0, fmt.Errorf("failed waiting for Hanzo Search indexing: %w", err)
-	}
-	// Index into Hanzo Vector (best-effort: if embedding provider is not configured, skip vector indexing)
-	embeddingProvider, embeddingProviderObj, embErr := GetEmbeddingProviderFromContext("admin", "", lang)
-	if embErr != nil || embeddingProvider == nil || embeddingProviderObj == nil {
-		logs.Warning("embedding provider not available, skipping vector indexing: %v", embErr)
-		return len(req.Documents), nil
-	}
-	vectorBaseURL, vectorAPIKey := getVectorEndpoint()
-	// Determine vector dimension from first document embedding
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	sampleVector, _, err := embeddingProviderObj.QueryVector(req.Documents[0].Content, ctx, lang)
-	cancel()
-	if err != nil {
-		logs.Warning("failed to get sample embedding, skipping vector indexing: %v", err)
-		return len(req.Documents), nil
-	}
-	err = ensureVectorCollection(vectorBaseURL, vectorAPIKey, indexName, len(sampleVector))
-	if err != nil {
-		logs.Warning("failed to ensure Hanzo Vector collection, skipping vector indexing: %v", err)
-		return len(req.Documents), nil
-	}
-	if req.Replace {
-		deleteAllVectorPoints(vectorBaseURL, vectorAPIKey, indexName)
-	}
-	// Batch upsert vectors
-	batchSize := 50
-	for i := 0; i < len(req.Documents); i += batchSize {
-		end := i + batchSize
-		if end > len(req.Documents) {
-			end = len(req.Documents)
-		}
-		batch := req.Documents[i:end]
-		points := make([]qdrantPoint, 0, len(batch))
-		for _, doc := range batch {
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			vec, _, err := embeddingProviderObj.QueryVector(doc.Content, ctx, lang)
-			cancel()
-			if err != nil {
-				logs.Warning("failed to embed document %s, skipping: %v", doc.ID, err)
-				continue
-			}
-			payload := map[string]interface{}{
-				"id":          doc.ID,
-				"page_id":     doc.PageID,
-				"title":       doc.Title,
-				"url":         doc.URL,
-				"content":     doc.Content,
-				"section":     doc.Section,
-				"section_id":  doc.SectionID,
-				"tag":         doc.Tag,
-				"breadcrumbs": doc.Breadcrumbs,
-			}
-			points = append(points, qdrantPoint{
-				ID:      doc.ID,
-				Vector:  vec,
-				Payload: payload,
-			})
-		}
-		if len(points) > 0 {
-			err = upsertVectorPoints(vectorBaseURL, vectorAPIKey, indexName, points)
-			if err != nil {
-				logs.Warning("failed to upsert vector batch starting at %d: %v", i, err)
-			}
-		}
-	}
-	return len(req.Documents), nil
+	return count, nil
 }
 
 // upsertVectorPoints sends a batch of points to Hanzo Vector.
