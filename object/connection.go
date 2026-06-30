@@ -30,29 +30,29 @@ const (
 )
 
 type Connection struct {
-	Owner         string   `db:"pk" json:"owner"`
-	Name          string   `db:"pk" json:"name"`
-	CreatedTime   string   `json:"createdTime"`
-	StartTime     string   `json:"startTime"`
-	EndTime       string   `json:"endTime"`
-	Protocol      string   `json:"protocol"`
-	ConnectionId  string   `json:"connectionId"`
-	Node          string   `json:"node"`
-	Creator       string   `json:"creator"`
-	ClientIp      string   `json:"clientIp"`
-	UserAgent     string   `json:"userAgent"`
-	ClientIpDesc  string   `json:"clientIpDesc"`
-	UserAgentDesc string   `json:"userAgentDesc"`
-	Width         int      `json:"width"`
-	Height        int      `json:"height"`
-	Status        string   `json:"status"`
-	Recording     string   `json:"recording"`
-	Code          int      `json:"code"`
-	Message       string   `json:"message"`
-	Mode          string   `json:"mode"`
+	Owner         string     `db:"pk" json:"owner"`
+	Name          string     `db:"pk" json:"name"`
+	CreatedTime   string     `json:"createdTime"`
+	StartTime     string     `json:"startTime"`
+	EndTime       string     `json:"endTime"`
+	Protocol      string     `json:"protocol"`
+	ConnectionId  string     `json:"connectionId"`
+	Node          string     `json:"node"`
+	Creator       string     `json:"creator"`
+	ClientIp      string     `json:"clientIp"`
+	UserAgent     string     `json:"userAgent"`
+	ClientIpDesc  string     `json:"clientIpDesc"`
+	UserAgentDesc string     `json:"userAgentDesc"`
+	Width         int        `json:"width"`
+	Height        int        `json:"height"`
+	Status        string     `json:"status"`
+	Recording     string     `json:"recording"`
+	Code          int        `json:"code"`
+	Message       string     `json:"message"`
+	Mode          string     `json:"mode"`
 	Operations    StringList `db:"json varchar(1000)" json:"operations"`
-	Reviewed      bool     `json:"reviewed"`
-	CommandCount  int64    `json:"commandCount"`
+	Reviewed      bool       `json:"reviewed"`
+	CommandCount  int64      `json:"commandCount"`
 }
 
 func (s *Connection) GetId() string {

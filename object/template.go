@@ -36,12 +36,12 @@ type Template struct {
 	BasicConfigOptions []templateConfigOption `db:"json" json:"basicConfigOptions"`
 }
 type templateConfigOption struct {
-	Parameter   string   `json:"parameter" yaml:"parameter"`
-	Description string   `json:"description" yaml:"description"`
-	Type        string   `json:"type" yaml:"type"` // string, number, boolean, option
+	Parameter   string     `json:"parameter" yaml:"parameter"`
+	Description string     `json:"description" yaml:"description"`
+	Type        string     `json:"type" yaml:"type"` // string, number, boolean, option
 	Options     StringList `json:"options" yaml:"options"`
-	Default     string   `json:"default" yaml:"default"`
-	Required    bool     `json:"required" yaml:"required"`
+	Default     string     `json:"default" yaml:"default"`
+	Required    bool       `json:"required" yaml:"required"`
 }
 
 func GetTemplates(owner string) ([]*Template, error) {
