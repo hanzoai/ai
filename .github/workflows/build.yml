@@ -78,7 +78,9 @@ jobs:
           node-version: 22
           cache: 'pnpm'
           cache-dependency-path: ./web/pnpm-lock.yaml
-      - run: pnpm install && CI=false pnpm build
+        # The casibase-lineage web/ build needs more than Node's ~2GB default heap
+        # (craco/webpack OOMs: "Reached heap limit Allocation failed").
+      - run: pnpm install && CI=false NODE_OPTIONS=--max-old-space-size=8192 pnpm build
         working-directory: ./web
 
   backend:
@@ -97,8 +99,12 @@ jobs:
         run: git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
       - run: go version
       - name: Build
-        run: |
-          go build -race -ldflags "-extldflags '-static'"
+        # Verify the SAME build config the deployable image uses (Dockerfile:
+        # CGO_ENABLED=0 go build ./cmd/aid). The prior `-race -extldflags -static`
+        # check was unreachable for months (go-tests blocked it) and is broken
+        # anyway: `-race` requires cgo, and static+cgo+luxcpp doesn't link. Compile
+        # every package against the real shipped config instead.
+        run: CGO_ENABLED=0 go build ./...
         working-directory: ./
 
   linter:
