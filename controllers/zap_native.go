@@ -189,54 +189,19 @@ func zapWriteTrace(record *usageRecord, startTime time.Time) {
 // Writes billing/usage records to hanzo.cloud_usage for invoice reconciliation.
 // Both Commerce and Console can query this table for unified billing views.
 
-var usageTableCreated bool
-
-func zapEnsureUsageTable() {
-	if usageTableCreated {
-		return
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	err := object.ZapDatastoreExec(ctx, `
-		CREATE TABLE IF NOT EXISTS hanzo.cloud_usage (
-			id String,
-			timestamp DateTime,
-			owner String,
-			user_id String,
-			organization String,
-			model String,
-			provider String,
-			request_id String,
-			prompt_tokens UInt32,
-			completion_tokens UInt32,
-			total_tokens UInt32,
-			cache_read_tokens UInt32,
-			cache_write_tokens UInt32,
-			cost_cents UInt64,
-			currency String,
-			status String,
-			error_msg String,
-			is_premium UInt8,
-			is_stream UInt8,
-			client_ip String
-		) ENGINE = MergeTree()
-		ORDER BY (timestamp, organization, user_id)
-		TTL timestamp + INTERVAL 2 YEAR
-	`)
-	if err != nil {
-		logs.Warn("ZAP: failed to create cloud_usage table: %v", err)
-		return
-	}
-	usageTableCreated = true
-}
-
 func zapWriteUsage(record *usageRecord, startTime time.Time) {
 	if !object.DatastoreEnabled() {
 		return
 	}
 
-	zapEnsureUsageTable()
+	// Schema lives once in object.cloudUsageTableDDL; the read side ensures it too.
+	{
+		ensureCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		if err := object.EnsureCloudUsageTable(ensureCtx); err != nil {
+			logs.Warn("ZAP: ensure cloud_usage table: %v", err)
+		}
+		cancel()
+	}
 
 	org := record.Organization
 	if org == "" {
