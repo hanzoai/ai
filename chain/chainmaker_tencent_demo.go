@@ -69,8 +69,8 @@ func (client ChainTencentChainmakerDemoClient) getQueryResult(txId string, lang 
 
 		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "chain:ChainTencentChainmakerDemoClient.Client.InvokeChainMakerDemoContract() error: %v"), err))
 	}
-	if *(response.Response.Result.Code) != 0 {
-		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "chain:TencentCloudSDKError, code = %d, message = %s"), *(response.Response.Result.Code), *(response.Response.Result.Message)))
+	if *response.Response.Result.Code != 0 {
+		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "chain:TencentCloudSDKError, code = %d, message = %s"), *response.Response.Result.Code, *response.Response.Result.Message))
 	}
 
 	return response.Response.Result, nil
@@ -92,17 +92,17 @@ func (client *ChainTencentChainmakerDemoClient) Commit(data string, lang string)
 
 		return "", "", "", fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "chain:ChainTencentChainmakerDemoClient.Client.InvokeChainMakerDemoContract() error: %v"), err))
 	}
-	if *(response.Response.Result.Code) != 0 {
-		return "", "", "", fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "chain:TencentCloudSDKError, code = %d, message = %s"), *(response.Response.Result.Code), *(response.Response.Result.Message)))
+	if *response.Response.Result.Code != 0 {
+		return "", "", "", fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "chain:TencentCloudSDKError, code = %d, message = %s"), *response.Response.Result.Code, *response.Response.Result.Message))
 	}
 
-	txId := *(response.Response.Result.TxId)
+	txId := *response.Response.Result.TxId
 	queryResult, err := client.getQueryResult(txId, lang)
 	if err != nil {
 		return "", "", "", err
 	}
 
-	blockId := strconv.FormatInt(*(queryResult.BlockHeight), 10)
+	blockId := strconv.FormatInt(*queryResult.BlockHeight, 10)
 	return blockId, txId, "", nil
 }
 
@@ -112,7 +112,7 @@ func (client ChainTencentChainmakerDemoClient) Query(txId string, data string, l
 		return "", err
 	}
 
-	blockId := strconv.FormatInt(*(queryResult.BlockHeight), 10)
+	blockId := strconv.FormatInt(*queryResult.BlockHeight, 10)
 
 	type ContractEvent struct {
 		ContractName    string   `json:"contract_name"`
@@ -123,7 +123,7 @@ func (client ChainTencentChainmakerDemoClient) Query(txId string, data string, l
 	}
 
 	contractEvents := []ContractEvent{}
-	err = util.JsonToStruct(*(queryResult.ContractEvent), &contractEvents)
+	err = util.JsonToStruct(*queryResult.ContractEvent, &contractEvents)
 	if err != nil {
 		return "", err
 	}
