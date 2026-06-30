@@ -300,13 +300,44 @@ func resolveModelRouteForOrg(model string, orgId string) *modelRoute {
 	return nil
 }
 
-// modelInfo is the JSON shape returned by the /api/models endpoint.
+// modelInfo is the JSON shape returned by the /v1/models endpoint.
+//
+// The first five fields are the OpenAI-compatible core (id, object, created,
+// owned_by, premium) and MUST stay stable and always-present — external
+// consumers (Claude Code, Codex, OpenAI SDKs) parse them by exact name. The
+// remaining fields are ADDITIVE Hanzo enrichments sourced only from data ai
+// already holds (the route table + pricing tables); each is omitempty, so a
+// standard OpenAI client ignores them and any datum ai lacks is simply absent —
+// never fabricated. (ai has no context-window / tier / category data, so those
+// fields are deliberately not present.)
 type modelInfo struct {
 	ID      string `json:"id"`
 	Object  string `json:"object"`
 	Created int64  `json:"created"`
 	OwnedBy string `json:"owned_by"`
 	Premium bool   `json:"premium"`
+
+	// Additive enrichment (omitempty — present only when ai has the datum).
+	Provider string            `json:"provider,omitempty"` // serving provider for unbranded passthroughs; OMITTED for branded models so the upstream is never leaked
+	Pricing  *modelPricingInfo `json:"pricing,omitempty"`  // USD per 1M tokens; only when ai holds real pricing
+}
+
+// publicProvider returns the provider name safe to surface in /v1/models, or ""
+// to omit it. Branded models — those with an explicit ownedBy (every zen model
+// is owned_by:"hanzo"; the OpenAI-owned embeddings are owned_by:"openai") — MUST
+// NOT leak the internal upstream/infrastructure provider (route.providerName =
+// "do-ai"/"fireworks"/"openai-direct"). Policy: upstream names and underlying
+// providers are never exposed (see the Zen brand block in modelRoutes below,
+// every identity_prompt in conf/models.yaml, and LLM.md). The public owner
+// already travels in owned_by, so provider is omitted rather than echoed as a
+// redundant duplicate or — worse — the raw upstream. Unbranded passthroughs
+// declare no owner, so providerName is already their public owned_by and is
+// safe to surface as the serving provider.
+func publicProvider(route modelRoute) string {
+	if route.ownedBy != "" {
+		return ""
+	}
+	return route.providerName
 }
 
 // listAvailableModels returns listed models from the routing table, sorted by name.
@@ -330,11 +361,13 @@ func listAvailableModels() []modelInfo {
 			owner = route.providerName
 		}
 		models = append(models, modelInfo{
-			ID:      name,
-			Object:  "model",
-			Created: now,
-			OwnedBy: owner,
-			Premium: route.premium,
+			ID:       name,
+			Object:   "model",
+			Created:  now,
+			OwnedBy:  owner,
+			Premium:  route.premium,
+			Provider: publicProvider(route),
+			Pricing:  pricingInfo(staticModelPrice(name)),
 		})
 	}
 
