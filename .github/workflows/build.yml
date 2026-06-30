@@ -126,7 +126,9 @@ jobs:
       - run: touch dummy.yml
 
       - name: golangci-lint
-        uses: hanzoai/golangci-lint-action@v6
+        # The hanzoai/golangci-lint-action fork is gone ("repository not found");
+        # use the upstream action at the same major (v6 input API is unchanged).
+        uses: golangci/golangci-lint-action@v6
         with:
           version: latest
           args: --disable-all -c dummy.yml -E=gofumpt --max-same-issues=0 --timeout 5m --modules-download-mode=mod
@@ -139,7 +141,12 @@ jobs:
       contents: write
       issues: write
     if: github.repository == 'hanzoai/ai' && github.event_name == 'push'
-    needs: [ frontend, backend, linter ]
+    # Gate the release on the PROVEN code checks: go-tests (the full suite) +
+    # backend (compiles against the shipped CGO_ENABLED=0 config). The frontend is
+    # built+verified authoritatively by the Dockerfile's `front` stage (the GHA
+    # frontend job is a redundant duplicate that OOMs the runner); golangci is a
+    # non-blocking style gate. The Docker stage fails the image if frontend breaks.
+    needs: [ go-tests, backend ]
     outputs:
       new-release-published: ${{ steps.semantic.outputs.new_release_published }}
       new-release-version: ${{ steps.semantic.outputs.new_release_version }}
@@ -209,7 +216,7 @@ jobs:
     if: >-
       github.repository == 'hanzoai/ai' && github.event_name == 'push' &&
       (github.ref == 'refs/heads/test' || github.ref == 'refs/heads/dev')
-    needs: [ frontend, backend, linter ]
+    needs: [ go-tests, backend ]
     uses: hanzoai/.github/.github/workflows/docker-build.yml@main
     with:
       image: ghcr.io/hanzoai/cloud
