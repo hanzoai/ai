@@ -28,10 +28,10 @@ import (
 // session manager is not wired in unit tests, so CruSession would be nil).
 type fakeSession struct{ data map[interface{}]interface{} }
 
-func (s *fakeSession) Set(k, v interface{}) error    { s.data[k] = v; return nil }
-func (s *fakeSession) Get(k interface{}) interface{} { return s.data[k] }
-func (s *fakeSession) Delete(k interface{}) error    { delete(s.data, k); return nil }
-func (s *fakeSession) SessionID() string             { return "test" }
+func (s *fakeSession) Set(k, v interface{}) error         { s.data[k] = v; return nil }
+func (s *fakeSession) Get(k interface{}) interface{}      { return s.data[k] }
+func (s *fakeSession) Delete(k interface{}) error         { delete(s.data, k); return nil }
+func (s *fakeSession) SessionID() string                  { return "test" }
 func (s *fakeSession) SessionRelease(http.ResponseWriter) {}
 func (s *fakeSession) Flush() error {
 	s.data = map[interface{}]interface{}{}

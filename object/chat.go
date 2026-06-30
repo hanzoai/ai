@@ -21,31 +21,31 @@ import (
 )
 
 type Chat struct {
-	Owner         string   `db:"pk" json:"owner"`
-	Name          string   `db:"pk" json:"name"`
-	CreatedTime   string   `json:"createdTime"`
-	UpdatedTime   string   `json:"updatedTime"`
-	Organization  string   `json:"organization"`
-	DisplayName   string   `json:"displayName"`
-	Store         string   `json:"store"`
-	ModelProvider string   `json:"modelProvider"`
-	Category      string   `json:"category"`
-	Type          string   `json:"type"`
-	User          string   `json:"user"`
-	User1         string   `json:"user1"`
-	User2         string   `json:"user2"`
+	Owner         string     `db:"pk" json:"owner"`
+	Name          string     `db:"pk" json:"name"`
+	CreatedTime   string     `json:"createdTime"`
+	UpdatedTime   string     `json:"updatedTime"`
+	Organization  string     `json:"organization"`
+	DisplayName   string     `json:"displayName"`
+	Store         string     `json:"store"`
+	ModelProvider string     `json:"modelProvider"`
+	Category      string     `json:"category"`
+	Type          string     `json:"type"`
+	User          string     `json:"user"`
+	User1         string     `json:"user1"`
+	User2         string     `json:"user2"`
 	Users         StringList `json:"users"`
-	ClientIp      string   `json:"clientIp"`
-	UserAgent     string   `json:"userAgent"`
-	ClientIpDesc  string   `json:"clientIpDesc"`
-	UserAgentDesc string   `json:"userAgentDesc"`
-	MessageCount  int      `json:"messageCount"`
-	TokenCount    int      `json:"tokenCount"`
-	Price         float64  `json:"price"`
-	Currency      string   `json:"currency"`
-	IsHidden      bool     `json:"isHidden"`
-	IsDeleted     bool     `json:"isDeleted"`
-	NeedTitle     bool     `json:"needTitle"`
+	ClientIp      string     `json:"clientIp"`
+	UserAgent     string     `json:"userAgent"`
+	ClientIpDesc  string     `json:"clientIpDesc"`
+	UserAgentDesc string     `json:"userAgentDesc"`
+	MessageCount  int        `json:"messageCount"`
+	TokenCount    int        `json:"tokenCount"`
+	Price         float64    `json:"price"`
+	Currency      string     `json:"currency"`
+	IsHidden      bool       `json:"isHidden"`
+	IsDeleted     bool       `json:"isDeleted"`
+	NeedTitle     bool       `json:"needTitle"`
 }
 
 func GetGlobalChats() ([]*Chat, error) {

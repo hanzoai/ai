@@ -32,8 +32,8 @@ import (
 // searchAuth holds the validated identity for a search API request.
 // Every search/index/scrape endpoint must obtain this before processing.
 type searchAuth struct {
-	Owner  string       // organization that owns the search index
-	UserID string       // "owner/name" format for billing
+	Owner  string    // organization that owns the search index
+	UserID string    // "owner/name" format for billing
 	User   *iam.User // nil for session-only auth without IAM lookup
 }
 

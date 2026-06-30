@@ -93,7 +93,8 @@ func (p *AlibabacloudTextToSpeechProvider) QueryAudio(text string, ctx context.C
 	res, synthConfig, client := p.prepareRequest(text)
 
 	// Create AsyncSynthesizer with custom config
-	asyncSynthesizer, err := client.AsyncSynthesizer(ctx,
+	asyncSynthesizer, err := client.AsyncSynthesizer(
+		ctx,
 		cosyvoice.WithSynthesizerConfig(synthConfig),
 	)
 	if err != nil {
@@ -154,7 +155,8 @@ func (p *AlibabacloudTextToSpeechProvider) QueryAudioStream(text string, ctx con
 	res, synthConfig, client := p.prepareRequest(text)
 
 	// Create AsyncSynthesizer with custom config
-	asyncSynthesizer, err := client.AsyncSynthesizer(ctx,
+	asyncSynthesizer, err := client.AsyncSynthesizer(
+		ctx,
 		cosyvoice.WithSynthesizerConfig(synthConfig),
 	)
 	if err != nil {
