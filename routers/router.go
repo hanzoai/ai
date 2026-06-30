@@ -323,6 +323,15 @@ func initAPI() {
 	beego.Router("/v1/embeddings", &controllers.ApiController{}, "POST:Embeddings")
 	beego.Router("/v1/rerank", &controllers.ApiController{}, "POST:Rerank")
 
+	// Prompts — org-scoped reusable prompt templates (console Prompts surface).
+	// Same isolation pattern as stores (GetScopedOwner): a tenant sees only its
+	// own; the "admin" org owns the global defaults.
+	beego.Router("/v1/get-prompts", &controllers.ApiController{}, "GET:GetPrompts")
+	beego.Router("/v1/get-prompt", &controllers.ApiController{}, "GET:GetPrompt")
+	beego.Router("/v1/update-prompt", &controllers.ApiController{}, "POST:UpdatePrompt")
+	beego.Router("/v1/add-prompt", &controllers.ApiController{}, "POST:AddPrompt")
+	beego.Router("/v1/delete-prompt", &controllers.ApiController{}, "POST:DeletePrompt")
+
 	beego.Router("/v1/get-model-routes", &controllers.ApiController{}, "GET:GetModelRoutes")
 	beego.Router("/v1/get-model-route", &controllers.ApiController{}, "GET:GetModelRoute")
 	beego.Router("/v1/add-model-route", &controllers.ApiController{}, "POST:AddModelRoute")

@@ -59,7 +59,7 @@ func (c *ApiController) GetGlobalProviders() {
 // @Success 200 {array} object.Provider The Response object
 // @router /get-providers [get]
 func (c *ApiController) GetProviders() {
-	owner, ok := c.RequireSessionOwner()
+	owner, ok := c.GetScopedOwner()
 	if !ok {
 		return
 	}
@@ -146,6 +146,26 @@ func (c *ApiController) UpdateProvider() {
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
+	}
+
+	// BYOK: a tenant-supplied provider key must land in KMS, never the DB as
+	// plaintext — same invariant as AddProvider. The id is owner/name; only an
+	// org-owned (non-admin) provider with a RAW new secret is minted to a kms://
+	// ref. A masked "***" (keep-old, resolved in object.processProviderParams),
+	// an empty value, or an already-kms:// ref is left untouched.
+	owner, _, idErr := util.GetOwnerAndNameFromIdWithError(id)
+	if idErr != nil {
+		c.ResponseError(idErr.Error())
+		return
+	}
+	if owner != "admin" && provider.ClientSecret != "" && provider.ClientSecret != "***" &&
+		!strings.HasPrefix(provider.ClientSecret, "kms://") {
+		ref, err := object.StoreProviderSecret(byokSecretName(owner, provider.Name), provider.ClientSecret)
+		if err != nil {
+			c.ResponseError(err.Error())
+			return
+		}
+		provider.ClientSecret = ref
 	}
 
 	success, err := object.UpdateProvider(id, &provider)
