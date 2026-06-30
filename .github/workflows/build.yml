@@ -15,6 +15,13 @@ permissions:
   packages: write
   id-token: write
 
+# luxfi modules get re-tagged upstream, so the immutable sum.golang.org log keeps
+# a now-stale hash that conflicts with the re-served content ("checksum mismatch /
+# SECURITY ERROR"). GOPRIVATE makes go skip the public sumdb for luxfi and verify
+# against our committed go.sum (which carries the current content hashes) instead.
+env:
+  GOPRIVATE: github.com/luxfi/*
+
 jobs:
   policy-check:
     name: Enforce Hanzo Cloud production policy
