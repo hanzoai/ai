@@ -47,25 +47,25 @@ type TaskResult struct {
 	Categories    []*TaskResultCategory `json:"categories"`
 }
 type Task struct {
-	Owner        string   `db:"pk" json:"owner"`
-	Name         string   `db:"pk" json:"name"`
-	CreatedTime  string   `json:"createdTime"`
-	DisplayName  string   `json:"displayName"`
-	Provider     string   `json:"provider"`
-	Type         string   `json:"type"`
-	Subject      string   `json:"subject"`
-	Topic        string   `json:"topic"`
-	Score        float64  `json:"score"`
-	Activity     string   `json:"activity"`
-	Grade        string   `json:"grade"`
-	Path         string   `json:"path"`
-	Scale        string   `json:"scale"`
-	Example      string   `json:"example"`
+	Owner        string     `db:"pk" json:"owner"`
+	Name         string     `db:"pk" json:"name"`
+	CreatedTime  string     `json:"createdTime"`
+	DisplayName  string     `json:"displayName"`
+	Provider     string     `json:"provider"`
+	Type         string     `json:"type"`
+	Subject      string     `json:"subject"`
+	Topic        string     `json:"topic"`
+	Score        float64    `json:"score"`
+	Activity     string     `json:"activity"`
+	Grade        string     `json:"grade"`
+	Path         string     `json:"path"`
+	Scale        string     `json:"scale"`
+	Example      string     `json:"example"`
 	Labels       StringList `json:"labels"`
-	Log          string   `json:"log"`
-	Result       string   `json:"result"`
-	DocumentUrl  string   `json:"documentUrl"`
-	DocumentText string   `json:"documentText"`
+	Log          string     `json:"log"`
+	Result       string     `json:"result"`
+	DocumentUrl  string     `json:"documentUrl"`
+	DocumentText string     `json:"documentText"`
 }
 
 func GetMaskedTask(task *Task, isMaskEnabled bool) *Task {
