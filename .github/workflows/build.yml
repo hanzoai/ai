@@ -158,7 +158,7 @@ jobs:
 
       - name: Create Tag with Semantic Release
         id: semantic
-        uses: cycjimmy/semantic-release-action@v4
+        uses: cycjimmy/semantic-release-action@v6
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
