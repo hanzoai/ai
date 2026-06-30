@@ -50,7 +50,7 @@ func (c *reproCtrl) Models() { c.Ctx.Output.Body([]byte(`{"models":"ok"}`)) }
 // the bare gateway paths /v1/chat/completions and /v1/models must reach the
 // beego routes registered at those exact paths, through the unified binary's
 // /v1/* mount, WITHOUT panicking in SessionStart. (The gateway forwards
-// casibase routes unchanged, so the mount is bare /v1/* — see mountRoutes.)
+// the bare /v1 routes unchanged, so the mount is bare /v1/* — see mountRoutes.)
 func TestMountForwardsNestedOpenAIRoutesToBeego(t *testing.T) {
 	// Register the real beego routes exactly as routers/router.go does.
 	beego.Router("/v1/chat/completions", &reproCtrl{}, "POST:Chat")
