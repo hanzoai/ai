@@ -31,7 +31,7 @@ func AuthzFilter(ctx *context.Context) {
 	urlPath := ctx.Request.URL.Path
 
 	// NOTE: there is deliberately NO adminDomain Host bypass here. A
-	// "Host == adminDomain → return before the gates" shortcut (a Casdoor
+	// "Host == adminDomain → return before the gates" shortcut (an upstream
 	// artifact) is a latent full-authz-bypass primitive — one ConfigMap edit from
 	// CRITICAL, and trivially reachable via a spoofed Host header. The authz gates
 	// below run for EVERY request, regardless of Host.
