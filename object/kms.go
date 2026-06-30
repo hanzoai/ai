@@ -351,3 +351,68 @@ func GetOrgKMSSecret(name string, orgProjectID string) (string, error) {
 	}
 	return kms.getSecret(name, orgProjectID)
 }
+
+// putSecret upserts a secret value by name into KMS, scoped to a project, and
+// invalidates the read caches so the next resolve sees the new value. Mirrors
+// getSecret's V4 path/param shape.
+func (c *kmsClient) putSecret(name, projectID, value string) error {
+	token, err := c.getAuthToken()
+	if err != nil {
+		return err
+	}
+	payload, err := json.Marshal(map[string]string{
+		"projectId":   projectID,
+		"environment": c.environment,
+		"secretValue": value,
+		"type":        "shared",
+	})
+	if err != nil {
+		return fmt.Errorf("kms: failed to marshal put for %q: %w", name, err)
+	}
+	url := fmt.Sprintf("%s/api/v4/secrets/%s", c.endpoint, name)
+	req, err := http.NewRequest("POST", url, bytes.NewReader(payload))
+	if err != nil {
+		return fmt.Errorf("kms: failed to create put request for %q: %w", name, err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("kms: put request failed for secret %q: %w", name, err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		return fmt.Errorf("kms: put secret %q (project=%s) returned status %d: %s",
+			name, projectID, resp.StatusCode, string(body))
+	}
+	// Invalidate caches so a subsequent resolve fetches the new value.
+	cacheKey := projectID + "/" + name
+	kmsSecMu.Lock()
+	delete(kmsSecrets, cacheKey)
+	kmsSecMu.Unlock()
+	if ZapEnabled() {
+		_ = ZapKVSetEx(context.Background(), "kms:"+cacheKey, value, int(kmsSecTTL.Seconds()))
+	}
+	return nil
+}
+
+// StoreProviderSecret securely stores a tenant-supplied (BYOK) provider key in
+// KMS under the default project and returns the "kms://NAME" reference to persist
+// in the provider record — so a raw key NEVER lands in the database as plaintext.
+// FAILS CLOSED: if KMS is not configured, it errors rather than letting the caller
+// store the raw key. The secret name is caller-namespaced (e.g. by org) to avoid
+// cross-tenant collision.
+func StoreProviderSecret(name, value string) (string, error) {
+	initKMS()
+	if kms == nil {
+		return "", fmt.Errorf("kms: not configured — custom provider keys require KMS (refusing to store plaintext)")
+	}
+	if kms.projectID == "" {
+		return "", fmt.Errorf("kms: KMS_PROJECT_ID not set — cannot store custom provider key")
+	}
+	if err := kms.putSecret(name, kms.projectID, value); err != nil {
+		return "", err
+	}
+	return "kms://" + name, nil
+}
