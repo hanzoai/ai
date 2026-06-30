@@ -222,6 +222,11 @@ var (
 	providerByNameCache    = make(map[string]*providerByNameEntry)
 	providerByNameCacheMu  sync.RWMutex
 	providerByNameCacheTTL = 60 * time.Second
+
+	// Per-org BYOK override cache, keyed "org/name" (shares the global TTL). A nil
+	// provider entry negative-caches "this org has no override → use global".
+	orgProviderCache   = make(map[string]*providerByNameEntry)
+	orgProviderCacheMu sync.RWMutex
 )
 
 // GetModelProviderByName retrieves a Model-category provider by its Name field
@@ -254,6 +259,51 @@ func GetModelProviderByName(name string) (*Provider, error) {
 	providerByNameCacheMu.Unlock()
 	if provider == nil {
 		return nil, nil
+	}
+	cp := *provider
+	return &cp, nil
+}
+
+// GetModelProviderByNameForOrg resolves the provider an org's request should use:
+// the org's OWN custom provider (BYOK) if it has configured one under its slug,
+// otherwise the global built-in provider on api.hanzo.ai (the universal router).
+// This is the per-tenant override seam — "let people add their own providers to
+// route through" — with the global default inherited until they do. An empty or
+// "admin" org has no override and takes the global path directly.
+func GetModelProviderByNameForOrg(orgId, name string) (*Provider, error) {
+	if orgId == "" || orgId == "admin" {
+		return GetModelProviderByName(name)
+	}
+
+	cacheKey := orgId + "/" + name
+	orgProviderCacheMu.RLock()
+	entry, ok := orgProviderCache[cacheKey]
+	orgProviderCacheMu.RUnlock()
+	if ok && time.Since(entry.fetchedAt) < providerByNameCacheTTL {
+		if entry.provider == nil {
+			return GetModelProviderByName(name) // negative-cached: no override → global
+		}
+		cp := *entry.provider
+		return &cp, nil
+	}
+
+	// The org's own provider record is keyed (Owner=orgId, Name=name).
+	provider, err := getProvider(orgId, name)
+	if err != nil {
+		return nil, err
+	}
+	if provider != nil {
+		// BYOK key is stored as a kms:// ref (never plaintext); resolve it.
+		if err := ResolveProviderSecret(provider); err != nil {
+			return nil, err
+		}
+	}
+	orgProviderCacheMu.Lock()
+	orgProviderCache[cacheKey] = &providerByNameEntry{provider: provider, fetchedAt: time.Now()}
+	orgProviderCacheMu.Unlock()
+
+	if provider == nil {
+		return GetModelProviderByName(name) // no override → global built-in
 	}
 	cp := *provider
 	return &cp, nil
