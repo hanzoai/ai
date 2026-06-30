@@ -18,19 +18,27 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/beego/beego/logs"
-	"github.com/cenkalti/backoff/v4"
 	"github.com/hanzoai/ai/embedding"
 	"github.com/hanzoai/ai/i18n"
 	"github.com/hanzoai/ai/model"
-	"github.com/hanzoai/ai/split"
 	"github.com/hanzoai/ai/storage"
 	"github.com/hanzoai/ai/txt"
-	"github.com/hanzoai/ai/util"
 )
+
+// DEPRECATED — SQL `vector` table write path.
+//
+// Store ingestion NO LONGER writes the SQL `vector` table. The crossed wire is
+// fixed: uploads/refreshes now ingest through object.IndexDocuments (Hanzo
+// Vector + Hanzo Search — see store_ingest.go), the SAME unified index that
+// /v1/chat retrieval (SearchDocuments) reads. The legacy SQL-write helpers
+// (addEmbeddedVector / addVectorsForFile / addVectorsForStore) were removed;
+// the `vector` table, its CRUD (vector.go), routes, and the legacy in-memory
+// cosine read path (GetNearestKnowledge / search_default.go) remain ONLY for
+// backward data access and the legacy message_answer flow, pending migration.
+// filterTextFiles and withFileStatus below are reused by the new path.
 
 func filterTextFiles(files []*storage.Object) []*storage.Object {
 	fileTypes := txt.GetSupportedFileTypes()
@@ -46,112 +54,6 @@ func filterTextFiles(files []*storage.Object) []*storage.Object {
 		}
 	}
 	return res
-}
-
-func addEmbeddedVector(embeddingProviderObj embedding.EmbeddingProvider, text string, storeName string, fileName string, index int, embeddingProviderName string, modelSubType string, lang string) (bool, int, error) {
-	data, embeddingResult, err := queryVectorSafe(embeddingProviderObj, text, lang)
-	if err != nil {
-		return false, 0, err
-	}
-	displayName := text
-	if len(text) > 25 {
-		displayName = string([]rune(text)[:25])
-	}
-	tokenCount := 0
-	price := 0.0
-	currency := ""
-	if embeddingResult != nil {
-		tokenCount = embeddingResult.TokenCount
-		price = embeddingResult.Price
-		currency = embeddingResult.Currency
-	}
-	defaultEmbeddingResult, err := embedding.GetDefaultEmbeddingResult(modelSubType, text)
-	if err != nil {
-		return false, 0, err
-	}
-	if tokenCount == 0 {
-		tokenCount = defaultEmbeddingResult.TokenCount
-	}
-	if price == 0 {
-		price = defaultEmbeddingResult.Price
-	}
-	if currency == "" {
-		currency = defaultEmbeddingResult.Currency
-	}
-	vector := &Vector{
-		Owner:       "admin",
-		Name:        fmt.Sprintf("vector_%s", util.GetRandomName()),
-		CreatedTime: util.GetCurrentTime(),
-		DisplayName: displayName,
-		Store:       storeName,
-		Provider:    embeddingProviderName,
-		File:        fileName,
-		Index:       index,
-		Text:        text,
-		TokenCount:  tokenCount,
-		Price:       price,
-		Currency:    currency,
-		Data:        data,
-		Dimension:   len(data),
-	}
-	affected, err := AddVector(vector)
-	return affected, tokenCount, err
-}
-
-func addVectorsForFile(embeddingProviderObj embedding.EmbeddingProvider, storeName string, fileKey string, fileUrl string, splitProviderName string, embeddingProviderName string, modelSubType string, lang string) (bool, int, error) {
-	var (
-		affected        bool
-		totalTokenCount int
-	)
-	fileExt := filepath.Ext(fileKey)
-	text, err := txt.GetParsedTextFromUrl(fileUrl, fileExt, lang)
-	if err != nil {
-		return false, 0, err
-	}
-	splitProviderType := splitProviderName
-	if splitProviderType == "" {
-		splitProviderType = "Default"
-	}
-	if strings.HasPrefix(fileKey, "QA") && fileExt == ".docx" {
-		splitProviderType = "QA"
-	}
-	if fileExt == ".md" {
-		splitProviderType = "Markdown"
-	}
-	splitProvider, err := split.GetSplitProvider(splitProviderType)
-	if err != nil {
-		return false, 0, err
-	}
-	textSections, err := splitProvider.SplitText(text)
-	if err != nil {
-		return false, 0, err
-	}
-	for i, textSection := range textSections {
-		logs.Info("[%d/%d] Generating embedding for store: [%s], file: [%s], index: [%d]: %s", i+1, len(textSections), storeName, fileKey, i, textSection)
-		var (
-			sectionAffected   bool
-			sectionTokenCount int
-		)
-		operation := func() error {
-			var opErr error
-			sectionAffected, sectionTokenCount, opErr = addEmbeddedVector(embeddingProviderObj, textSection, storeName, fileKey, i, embeddingProviderName, modelSubType, lang)
-			if opErr != nil {
-				if isRetryableError(opErr) {
-					return opErr
-				}
-				return backoff.Permanent(opErr)
-			}
-			return nil
-		}
-		err = backoff.Retry(operation, backoff.NewExponentialBackOff())
-		if err != nil {
-			logs.Error("Failed to generate embedding after retries: %v", err)
-			return affected, totalTokenCount, err
-		}
-		affected = affected || sectionAffected
-		totalTokenCount += sectionTokenCount
-	}
-	return affected, totalTokenCount, nil
 }
 
 func withFileStatus(owner string, storeName string, fileKey string, op func() (bool, int, error)) (bool, error) {
@@ -173,30 +75,6 @@ func withFileStatus(owner string, storeName string, fileKey string, op func() (b
 		return affected, errors.Join(opErr, err)
 	}
 	return affected, opErr
-}
-
-func addVectorsForStore(storageProviderObj storage.StorageProvider, embeddingProviderObj embedding.EmbeddingProvider, prefix string, owner string, storeName string, splitProviderName string, embeddingProviderName string, modelSubType string, lang string) (bool, error) {
-	var (
-		affected bool
-		fileErr  error
-	)
-	files, err := storageProviderObj.ListObjects(prefix)
-	if err != nil {
-		return false, err
-	}
-	files = filterTextFiles(files)
-	for _, file := range files {
-		fileAffected, err := withFileStatus(owner, storeName, file.Key, func() (bool, int, error) {
-			return addVectorsForFile(embeddingProviderObj, storeName, file.Key, file.Url, splitProviderName, embeddingProviderName, modelSubType, lang)
-		})
-		if err != nil {
-			logs.Error("Failed to add vectors for store: [%s], file: [%s]: %v", storeName, file.Key, err)
-			fileErr = errors.Join(fileErr, err)
-			continue
-		}
-		affected = affected || fileAffected
-	}
-	return affected, fileErr
 }
 
 func getRelatedVectors(relatedStores []string, provider string) ([]*Vector, error) {
