@@ -173,7 +173,7 @@ func (a *Adapter) createTable() {
 		&Application{}, &Article{}, &Asset{}, &Caase{}, &Chat{}, &Connection{},
 		&Consultation{}, &Container{}, &Doctor{}, &File{}, &Form{}, &Graph{},
 		&Hospital{}, &Image{}, &Machine{}, &Message{}, &ModelRoute{}, &Node{},
-		&Patient{}, &Pod{}, &Provider{}, &Record{}, &Scale{}, &Scan{},
+		&Patient{}, &Pod{}, &Prompt{}, &Provider{}, &Record{}, &Scale{}, &Scan{},
 		&Session{}, &Store{}, &Task{}, &Template{}, &Vector{}, &Video{},
 		&Workflow{},
 		&Memory{}, // cloud memory backend (per-user scoped)

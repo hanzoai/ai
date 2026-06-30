@@ -21,8 +21,14 @@ import (
 	"github.com/hanzoai/dbx"
 )
 
+// GlobalRouteOwner is the org that owns platform-global (default) model routes.
+// It is "admin" — the canonical superadmin org — matching the model-route
+// controller's write default and GetScopedOwner's platform-global org. There is
+// no "built-in" compat.
+const GlobalRouteOwner = "admin"
+
 type ModelRoute struct {
-	Owner       string  `db:"pk" json:"owner"`     // org ID ("built-in" = global default)
+	Owner       string  `db:"pk" json:"owner"`     // org ID ("admin" = global default)
 	ModelName   string  `db:"pk" json:"modelName"` // e.g. "claude-sonnet-4-6"
 	CreatedTime string  `json:"createdTime"`
 	UpdatedTime string  `json:"updatedTime"`
@@ -162,11 +168,14 @@ func GetCachedModelRoutes(owner string) ([]*ModelRoute, error) {
 }
 
 // ResolveModelRouteFromDB looks up a model route from the database.
-// Resolution order: org-specific route -> global ("built-in") route.
+// Resolution order: org-specific route -> global ("admin") route.
+// The global default org is "admin" — the same org the model-route controller
+// writes global routes under (AddModelRoute defaults Owner to "admin") and the
+// same org GetScopedOwner treats as platform-global. One org, one way.
 // Returns nil if no DB route found (caller should fall back to YAML).
 func ResolveModelRouteFromDB(modelName string, orgId string) (*ModelRoute, error) {
 	// Try org-specific first
-	if orgId != "" && orgId != "built-in" {
+	if orgId != "" && orgId != GlobalRouteOwner {
 		routes, err := GetCachedModelRoutes(orgId)
 		if err != nil {
 			return nil, err
@@ -177,8 +186,8 @@ func ResolveModelRouteFromDB(modelName string, orgId string) (*ModelRoute, error
 			}
 		}
 	}
-	// Try global ("built-in") defaults
-	routes, err := GetCachedModelRoutes("built-in")
+	// Try global ("admin") defaults
+	routes, err := GetCachedModelRoutes(GlobalRouteOwner)
 	if err != nil {
 		return nil, err
 	}
