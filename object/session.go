@@ -22,9 +22,9 @@ import (
 )
 
 type Session struct {
-	Owner       string   `db:"pk" json:"owner"`
-	Name        string   `db:"pk" json:"name"`
-	CreatedTime string   `json:"createdTime"`
+	Owner       string     `db:"pk" json:"owner"`
+	Name        string     `db:"pk" json:"name"`
+	CreatedTime string     `json:"createdTime"`
 	SessionId   StringList `json:"sessionId"`
 }
 

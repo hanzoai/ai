@@ -31,7 +31,8 @@ type MachineAwsClient struct {
 }
 
 func newMachineAwsClient(accessKeyId string, accessKeySecret string, region string) (MachineAwsClient, error) {
-	cfg, err := config.LoadDefaultConfig(context.TODO(),
+	cfg, err := config.LoadDefaultConfig(
+		context.TODO(),
 		config.WithRegion(region),
 		config.WithCredentialsProvider(aws.CredentialsProviderFunc(func(ctx context.Context) (aws.Credentials, error) {
 			return aws.Credentials{

@@ -40,8 +40,10 @@ import (
 //     "owner", one balance for the whole org — unchanged, so the proven per-org
 //     billing keeps working with no regression.
 
-var personalBillingOrgsOnce sync.Once
-var personalBillingOrgs map[string]struct{}
+var (
+	personalBillingOrgsOnce sync.Once
+	personalBillingOrgs     map[string]struct{}
+)
 
 // loadPersonalBillingOrgs parses PERSONAL_BILLING_ORGS (comma-separated org
 // slugs, default "hanzo"). Lazy + cached so tests can set the env before first

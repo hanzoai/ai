@@ -33,14 +33,14 @@ import (
 
 // DocIndex represents a single indexed documentation chunk.
 type DocIndex struct {
-	ID          string   `json:"id"`
-	PageID      string   `json:"page_id"`
-	Title       string   `json:"title"`
-	URL         string   `json:"url"`
-	Content     string   `json:"content"`
-	Section     string   `json:"section,omitempty"`
-	SectionID   string   `json:"section_id,omitempty"`
-	Tag         string   `json:"tag,omitempty"`
+	ID          string     `json:"id"`
+	PageID      string     `json:"page_id"`
+	Title       string     `json:"title"`
+	URL         string     `json:"url"`
+	Content     string     `json:"content"`
+	Section     string     `json:"section,omitempty"`
+	SectionID   string     `json:"section_id,omitempty"`
+	Tag         string     `json:"tag,omitempty"`
 	Breadcrumbs StringList `json:"breadcrumbs,omitempty"`
 }
 
@@ -54,10 +54,10 @@ type DocSearchRequest struct {
 
 // DocSearchResult is a single result returned by SearchDocuments.
 type DocSearchResult struct {
-	ID          string   `json:"id"`
-	URL         string   `json:"url"`
-	Type        string   `json:"type"` // "page", "heading", "text"
-	Content     string   `json:"content"`
+	ID          string     `json:"id"`
+	URL         string     `json:"url"`
+	Type        string     `json:"type"` // "page", "heading", "text"
+	Content     string     `json:"content"`
 	Breadcrumbs StringList `json:"breadcrumbs,omitempty"`
 }
 

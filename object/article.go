@@ -28,14 +28,14 @@ type Block struct {
 	State  string `json:"state"`
 }
 type Article struct {
-	Owner       string   `db:"pk" json:"owner"`
-	Name        string   `db:"pk" json:"name"`
-	CreatedTime string   `json:"createdTime"`
-	DisplayName string   `json:"displayName"`
-	Workflow    string   `json:"workflow"`
-	Type        string   `json:"type"`
-	Text        string   `json:"text"`
-	Content     []*Block `json:"content"`
+	Owner       string     `db:"pk" json:"owner"`
+	Name        string     `db:"pk" json:"name"`
+	CreatedTime string     `json:"createdTime"`
+	DisplayName string     `json:"displayName"`
+	Workflow    string     `json:"workflow"`
+	Type        string     `json:"type"`
+	Text        string     `json:"text"`
+	Content     []*Block   `json:"content"`
 	Glossary    StringList `json:"glossary"`
 }
 

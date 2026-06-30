@@ -158,9 +158,9 @@ func TestCosineSimilarity(t *testing.T) {
 func TestRankByCosine(t *testing.T) {
 	query := []float64{1, 0}
 	docs := [][]float64{
-		{0, 1},       // index 0 — orthogonal (score 0)
-		{1, 0},       // index 1 — identical (score 1)
-		{0.7, 0.7},   // index 2 — 45° (score ~0.707)
+		{0, 1},     // index 0 — orthogonal (score 0)
+		{1, 0},     // index 1 — identical (score 1)
+		{0.7, 0.7}, // index 2 — 45° (score ~0.707)
 	}
 	ranked := rankByCosine(query, docs)
 	if len(ranked) != 3 {
