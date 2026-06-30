@@ -149,6 +149,17 @@ jobs:
         with:
           fetch-depth: 0
 
+      # semantic-release-action shells out to `npm ci` to install semantic-release,
+      # but the hanzo-build-linux-amd64 runner has no Node/npm on PATH by default
+      # (it's a Go+Docker builder). Without this the action prints
+      # "npm: not found", swallows the error, and exits 0 having published NOTHING
+      # — so tag-release went green while new_release_published stayed empty and
+      # Docker Release was skipped. setup-node puts npm on PATH so the release runs.
+      - name: Set up Node (semantic-release needs npm)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
       - name: Create Tag with Semantic Release
         id: semantic
         uses: cycjimmy/semantic-release-action@v6
