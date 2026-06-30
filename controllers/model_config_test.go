@@ -376,3 +376,42 @@ func TestReload(t *testing.T) {
 		t.Error("expected route for gpt-4o after reload")
 	}
 }
+
+func TestBundledConfigRoutesClaudeCodeModelsThroughDO(t *testing.T) {
+	path := filepath.Join("..", "conf", "models.yaml")
+
+	mc := &ModelConfig{
+		routes:  make(map[string]modelRoute),
+		pricing: make(map[string]modelPrice),
+		prompts: make(map[string]string),
+		stopCh:  make(chan struct{}),
+	}
+	if err := mc.loadFromFile(path); err != nil {
+		t.Fatal(err)
+	}
+
+	cases := []struct {
+		name         string
+		wantProvider string
+		wantUpstream string
+	}{
+		{"glm-5.2", "do-ai", "glm-5.2"},
+		{"zen-coder-pro", "do-ai", "glm-5.2"},
+		{"zen-coder", "do-ai", "qwen3-coder-flash"},
+		{"zen", "do-ai", "glm-5"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			route := mc.ResolveRoute(tc.name)
+			if route == nil {
+				t.Fatalf("ResolveRoute(%q) = nil", tc.name)
+			}
+			if route.providerName != tc.wantProvider {
+				t.Errorf("providerName = %q, want %q", route.providerName, tc.wantProvider)
+			}
+			if route.upstreamModel != tc.wantUpstream {
+				t.Errorf("upstreamModel = %q, want %q", route.upstreamModel, tc.wantUpstream)
+			}
+		})
+	}
+}

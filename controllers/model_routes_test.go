@@ -33,6 +33,7 @@ func TestResolveModelRoute_KnownModels(t *testing.T) {
 		{"gpt-5", "do-ai", "openai-gpt-5", false},
 		{"claude-opus-4-6", "do-ai", "anthropic-claude-opus-4.6", false},
 		{"qwen3-32b", "do-ai", "alibaba-qwen3-32b", false},
+		{"glm-5.2", "do-ai", "glm-5.2", true},
 
 		// Aliases (free-tier)
 		{"openai/gpt-4o", "do-ai", "openai-gpt-4o", false},

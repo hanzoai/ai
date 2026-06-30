@@ -2,12 +2,12 @@
 #
 # Identical artifact to the canonical BuildKit Dockerfile `standard` target,
 # but authenticates private cross-org Go modules (github.com/hanzoai/*,
-# github.com/luxfi/*, github.com/zap-proto/*) via a plain --build-arg instead
+# github.com/zap-proto/*) via a plain --build-arg instead
 # of a BuildKit `--mount=type=secret`, which kaniko does not support.
 #
 # Build (in-cluster kaniko):
 #   --dockerfile=Dockerfile.kaniko
-#   --build-arg=GH_TOKEN=<classic PAT with hanzoai+luxfi read>
+#   --build-arg=GH_TOKEN=<classic PAT with hanzoai+zap-proto read>
 #   --destination=ghcr.io/hanzoai/ai:<tag>-amd64
 #
 # The GH_TOKEN is consumed only inside the `back` builder stage and is never
@@ -31,7 +31,7 @@ ARG GH_TOKEN=""
 # Private cross-org modules are fetched via authenticated git, bypassing the
 # public proxy. Unconditional insteadOf (vs the BuildKit Dockerfile's guarded
 # block) because kaniko provides the token as a build-arg, not a secret file.
-ENV GOPRIVATE=github.com/hanzoai/*,github.com/luxfi/*,github.com/zap-proto/*
+ENV GOPRIVATE=github.com/hanzoai/*,github.com/zap-proto/*
 COPY go.mod go.sum ./
 RUN if [ -n "$GH_TOKEN" ]; then \
       git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"; \
