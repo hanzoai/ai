@@ -164,7 +164,8 @@ func zapWriteTrace(record *usageRecord, startTime time.Time) {
 	defer cancel()
 
 	// Insert trace
-	err := object.ZapDatastoreExec(ctx,
+	err := object.ZapDatastoreExec(
+		ctx,
 		`INSERT INTO hanzo.observations (id, trace_id, name, start_time, end_time, type, model, prompt_tokens, completion_tokens, total_tokens, input_cost, output_cost, total_cost, metadata, tags, user_id, session_id, level, status_message, version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		genID, traceID, "chat-completion",
 		startTime.UTC(), endTime,
@@ -225,7 +226,8 @@ func zapWriteUsage(record *usageRecord, startTime time.Time) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	err := object.ZapDatastoreExec(ctx,
+	err := object.ZapDatastoreExec(
+		ctx,
 		`INSERT INTO hanzo.cloud_usage (id, timestamp, owner, user_id, organization, model, provider, request_id, prompt_tokens, completion_tokens, total_tokens, cache_read_tokens, cache_write_tokens, cost_cents, currency, status, error_msg, is_premium, is_stream, client_ip) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		record.RequestID, startTime.UTC(),
 		record.Owner, record.User, org,

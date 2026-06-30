@@ -24,12 +24,14 @@ import (
 // @Title IngestDocs
 // @Tag Docs Ingest API
 // @Description Unified RAG ingest: parse + chunk + embed documents and pipe them
-//   to BOTH Hanzo Vector (semantic) AND Hanzo Search (keyword) under the tenant
-//   index {owner}-{store}-docs — the same index /v1/chat retrieval reads. The
-//   source is pluggable: "upload" (inline files/documents), "github" (index a
-//   repo), "crawl" (web), or "s3" (the store's object-storage space). The owner
-//   is bound to the authenticated principal; the client-supplied owner is never
-//   trusted.
+//
+//	to BOTH Hanzo Vector (semantic) AND Hanzo Search (keyword) under the tenant
+//	index {owner}-{store}-docs — the same index /v1/chat retrieval reads. The
+//	source is pluggable: "upload" (inline files/documents), "github" (index a
+//	repo), "crawl" (web), or "s3" (the store's object-storage space). The owner
+//	is bound to the authenticated principal; the client-supplied owner is never
+//	trusted.
+//
 // @Param body body object.IngestRequest true "Ingest request"
 // @Success 200 {object} object.IngestStats "Ingest statistics"
 // @router /docs/ingest [post]
