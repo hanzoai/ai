@@ -33,15 +33,15 @@ jobs:
     name: Running Go tests
     runs-on: hanzo-build-linux-amd64
     needs: [ policy-check ]
-    services:
-      mysql:
-        image: mysql:5.7
-        env:
-          MYSQL_DATABASE: hanzo_cloud
-          MYSQL_ROOT_PASSWORD: 123456
-        ports:
-          - 3306:3306
-        options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
+    # SQLite-only — Hanzo canon is Base/SQLite, never MySQL/Postgres. cloud-api is
+    # single-pod (the balance-ledger invariant pins replicas:1), so SQLite is the
+    # CORRECT driver here, not a CI stub. conf.GetConfigString reads env before
+    # app.conf, so this overrides the driver for the test run; DB-touching tests
+    # use a hermetic in-memory DB. No service container — the self-hosted runner
+    # can't start them, which is exactly what the cargo-culted mysql:5.7 broke.
+    env:
+      driverName: sqlite
+      dataSourceName: "file:cloud_ci?mode=memory&cache=shared"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
