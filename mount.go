@@ -90,7 +90,7 @@ func Mount(app *zip.App, deps cloud.Deps) error {
 // infrastructure dependencies (no DB, no providers) and is what the route
 // adapter tests exercise; Mount adds runtime init on top.
 //
-// AI owns the legacy casibase route table, which lives at BARE /v1/* paths
+// AI owns the legacy /v1 route table, which lives at BARE /v1/* paths
 // (/v1/chat/completions, /v1/chat, /v1/completions, /v1/models, /v1/messages,
 // /v1/get-chats, … — ~200 routes in routers/router.go). That is exactly what
 // the production api.hanzo.ai gateway forwards: every cloud-api backend uses an
@@ -121,7 +121,7 @@ func init() {
 // handler (the beego ControllerRegister) or returns 503 if none. The path is
 // passed through unchanged: beego's routes are registered at the same bare /v1/*
 // paths the gateway forwards, so no rewrite is needed (and none must happen —
-// rewriting would desync from the casibase route table).
+// rewriting would desync from the /v1 route table).
 type handlerAdapter struct{}
 
 func (handlerAdapter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
