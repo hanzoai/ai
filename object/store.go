@@ -270,62 +270,26 @@ func (store *Store) GetEmbeddingProvider() (*Provider, error) {
 	return GetProvider(providerId)
 }
 
+// RefreshStoreVectors re-ingests every file in the store's object storage into
+// the unified Vector+Search index — the SAME index /v1/chat retrieval reads. It
+// NO LONGER writes the deprecated SQL `vector` table (see store_ingest.go /
+// vector_embedding.go); this is the crossed-wire fix, so an uploaded store file
+// actually powers chat RAG. Re-ingest is additive + idempotent (deterministic
+// chunk IDs), so it preserves docs from other sources in the same store index.
 func RefreshStoreVectors(store *Store, lang string) (bool, error) {
-	storageProviderObj, err := store.GetStorageProviderObj(lang)
-	if err != nil {
+	if err := UpdateFilesStatusByStore(store.Owner, store.Name, FileStatusPending); err != nil {
 		return false, err
 	}
-	modelProvider, err := store.GetModelProvider()
-	if err != nil {
-		return false, err
-	}
-	if modelProvider == nil {
-		return false, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:The model provider for store: %s is not found"), store.GetId()))
-	}
-	embeddingProvider, err := store.GetEmbeddingProvider()
-	if err != nil {
-		return false, err
-	}
-	if embeddingProvider == nil {
-		return false, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:The embedding provider for store: %s is not found"), store.GetId()))
-	}
-	embeddingProviderObj, err := embeddingProvider.GetEmbeddingProvider(lang)
-	if err != nil {
-		return false, err
-	}
-	err = UpdateFilesStatusByStore(store.Owner, store.Name, FileStatusPending)
-	if err != nil {
-		return false, err
-	}
-	_, err = DeleteVectorsByStore(store.Owner, store.Name)
-	if err != nil {
-		return false, err
-	}
-	ok, err := addVectorsForStore(storageProviderObj, embeddingProviderObj, "", store.Owner, store.Name, store.SplitProvider, embeddingProvider.Name, modelProvider.SubType, lang)
-	return ok, err
+	files, docs, err := IngestStoreStorage(store, "", lang)
+	return files > 0 || docs > 0, err
 }
 
+// AddVectorsForFile ingests a single store file into the unified Vector+Search
+// index (replaces the deprecated SQL-vector write).
 func AddVectorsForFile(store *Store, fileName string, fileUrl string, lang string) (bool, error) {
-	modelProvider, err := store.GetModelProvider()
-	if err != nil {
-		return false, err
-	}
-	if modelProvider == nil {
-		return false, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:The model provider for store: %s is not found"), store.GetId()))
-	}
-	embeddingProvider, err := store.GetEmbeddingProvider()
-	if err != nil {
-		return false, err
-	}
-	if embeddingProvider == nil {
-		return false, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:The embedding provider for store: %s is not found"), store.GetId()))
-	}
-	embeddingProviderObj, err := embeddingProvider.GetEmbeddingProvider(lang)
-	if err != nil {
-		return false, err
-	}
 	ok, err := withFileStatus(store.Owner, store.Name, fileName, func() (bool, int, error) {
-		return addVectorsForFile(embeddingProviderObj, store.Name, fileName, fileUrl, store.SplitProvider, embeddingProvider.Name, modelProvider.SubType, lang)
+		c, e := ingestDocsForFile(store.Owner, store.Name, fileName, fileUrl, store.SplitProvider, false, lang)
+		return c > 0, c, e
 	})
 	return ok, err
 }
@@ -351,10 +315,8 @@ func RefreshFileVectors(file *File, lang string) (bool, error) {
 	if file.Url == "" {
 		return false, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:The file URL for: %s is empty"), file.Name))
 	}
-	_, err = DeleteVectorsByFile(store.Owner, store.Name, objectKey)
-	if err != nil {
-		return false, err
-	}
+	// Path-B (Vector+Search) re-ingest is idempotent via deterministic chunk
+	// IDs; no SQL `vector` cleanup needed (that table is deprecated for stores).
 	return AddVectorsForFile(store, objectKey, file.Url, lang)
 }
 
