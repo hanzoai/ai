@@ -15,6 +15,15 @@ permissions:
   packages: write
   id-token: write
 
+# Private cross-org modules (hanzoai/*, zap-proto/*) + re-tagged luxfi/* are fetched
+# via authenticated git, bypassing the public proxy/sumdb — the SAME set the
+# Dockerfile uses. GOPRIVATE skips the public proxy + the immutable sum.golang.org
+# log (which holds luxfi's stale pre-re-tag hashes → "checksum mismatch / SECURITY
+# ERROR"); the per-job git-auth step (token insteadOf) lets `go` reach the private
+# repos. go.sum carries the current content hashes, so downloads still verify.
+env:
+  GOPRIVATE: github.com/hanzoai/*,github.com/luxfi/*,github.com/zap-proto/*
+
 jobs:
   policy-check:
     name: Enforce Hanzo Cloud production policy
@@ -48,6 +57,10 @@ jobs:
         with:
           go-version: '1.26.4'
           cache-dependency-path: ./go.mod
+      - name: Auth private modules (hanzoai/*, zap-proto/*)
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT || secrets.UNIVERSE_DISPATCH_TOKEN || secrets.GITHUB_TOKEN }}
+        run: git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
       - name: Tests
         run: go test -v $(go list ./...) -tags skipCi
 
@@ -78,6 +91,10 @@ jobs:
         with:
           go-version: '1.26.4'
           cache-dependency-path: ./go.mod
+      - name: Auth private modules (hanzoai/*, zap-proto/*)
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT || secrets.UNIVERSE_DISPATCH_TOKEN || secrets.GITHUB_TOKEN }}
+        run: git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
       - run: go version
       - name: Build
         run: |
@@ -94,6 +111,10 @@ jobs:
         with:
           go-version: '1.26.4'
           cache: false
+      - name: Auth private modules (hanzoai/*, zap-proto/*)
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT || secrets.UNIVERSE_DISPATCH_TOKEN || secrets.GITHUB_TOKEN }}
+        run: git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
 
       # gen a dummy config file
       - run: touch dummy.yml
