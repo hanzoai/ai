@@ -360,12 +360,17 @@ func (mc *ModelConfig) ListModels() []modelInfo {
 		if owner == "" {
 			owner = route.providerName
 		}
+		// mc.pricing is guarded by the same mc.mu held here; a present entry
+		// means real per-model pricing was configured (never a default).
+		price, hasPrice := mc.pricing[name]
 		models = append(models, modelInfo{
-			ID:      name,
-			Object:  "model",
-			Created: now,
-			OwnedBy: owner,
-			Premium: route.premium,
+			ID:       name,
+			Object:   "model",
+			Created:  now,
+			OwnedBy:  owner,
+			Premium:  route.premium,
+			Provider: publicProvider(route),
+			Pricing:  pricingInfo(price, hasPrice),
 		})
 	}
 
