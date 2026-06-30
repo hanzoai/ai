@@ -214,6 +214,12 @@ jobs:
     with:
       image: ghcr.io/hanzoai/cloud
       target: standard
+      # amd64-only: cloud-api runs on the amd64 DOKS cluster, and the arm64 runner
+      # (spark-hanzoai-arm64, the home GB10 box) is intermittently offline, which
+      # hangs build-arm64 forever and starves the multi-arch manifest. The reusable
+      # workflow's tag-single-arch job (always()) tags the amd64 image as the final
+      # tag when arm64 is skipped. One arch, the one the cluster actually runs.
+      platforms: linux/amd64
     secrets: inherit
 
   docker-branch:
@@ -226,6 +232,7 @@ jobs:
     with:
       image: ghcr.io/hanzoai/cloud
       target: standard
+      platforms: linux/amd64
     secrets: inherit
 
   dispatch-to-universe:
