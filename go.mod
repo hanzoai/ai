@@ -52,7 +52,7 @@ require (
 	github.com/luxfi/geth v1.17.5
 	github.com/luxfi/log v1.4.3
 	github.com/luxfi/metric v1.5.8
-	github.com/luxfi/zap v0.8.8
+	github.com/luxfi/zap v0.8.11
 	github.com/microsoft/go-mssqldb v1.9.5
 	github.com/openai/openai-go/v2 v2.1.1
 	github.com/oschwald/geoip2-golang v1.11.0
