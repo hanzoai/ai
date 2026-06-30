@@ -298,10 +298,11 @@ func resolveProviderForUser(user *iam.User, requestedModel string, lang string) 
 		)
 	}
 
-	// Fetch the provider entry that holds API keys/URLs for this upstream.
-	// GetModelProviderByName returns a shallow copy, safe to mutate. A missing
-	// or unconfigured provider is a server-side misconfiguration (500).
-	provider, err := object.GetModelProviderByName(route.providerName)
+	// Fetch the provider entry that holds API keys/URLs for this upstream. Prefer
+	// the org's OWN custom provider (BYOK) if it configured one, else the global
+	// built-in provider on api.hanzo.ai. Returns a shallow copy, safe to mutate. A
+	// missing/unconfigured provider is a server-side misconfiguration (500).
+	provider, err := object.GetModelProviderByNameForOrg(user.Owner, route.providerName)
 	if err != nil {
 		return nil, user, "", serverError("failed to get provider %q: %s", route.providerName, err.Error())
 	}
