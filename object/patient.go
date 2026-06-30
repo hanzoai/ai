@@ -21,18 +21,18 @@ import (
 )
 
 type Patient struct {
-	Owner        string   `db:"pk" json:"owner"`
-	Name         string   `db:"pk" json:"name"`
-	CreatedTime  string   `json:"createdTime"`
-	UpdatedTime  string   `json:"updatedTime"`
-	DisplayName  string   `json:"displayName"`
-	Gender       string   `json:"gender"`
-	Address      string   `json:"address"`
-	Email        string   `json:"email"`
-	BloodType    string   `json:"bloodType"`
-	Allergies    string   `json:"allergies"`
+	Owner        string     `db:"pk" json:"owner"`
+	Name         string     `db:"pk" json:"name"`
+	CreatedTime  string     `json:"createdTime"`
+	UpdatedTime  string     `json:"updatedTime"`
+	DisplayName  string     `json:"displayName"`
+	Gender       string     `json:"gender"`
+	Address      string     `json:"address"`
+	Email        string     `json:"email"`
+	BloodType    string     `json:"bloodType"`
+	Allergies    string     `json:"allergies"`
 	Owners       StringList `json:"owners"`
-	HospitalName string   `json:"hospitalName"`
+	HospitalName string     `json:"hospitalName"`
 }
 
 func GetPatientCount(owner, field, value string) (int64, error) {
