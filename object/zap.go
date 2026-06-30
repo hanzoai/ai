@@ -341,6 +341,32 @@ func ZapDatastoreExec(ctx context.Context, sqlStmt string, args ...interface{}) 
 	return nil
 }
 
+// ZapDatastoreQuery executes a read query (SELECT) on ClickHouse via native ZAP
+// binary, returning rows as decoded maps. Symmetric to ZapDatastoreExec — same
+// datastore peer, "/query" path instead of "/exec" — and mirrors ZapDocdbQuery /
+// ZapSQLQuery. This is the read side of the hanzo.cloud_usage ledger.
+func ZapDatastoreQuery(ctx context.Context, sqlStmt string, args ...interface{}) ([]map[string]interface{}, error) {
+	zapMu.RLock()
+	node, peer := zapNode, datastorePeerID
+	zapMu.RUnlock()
+	if node == nil || peer == "" {
+		return nil, fmt.Errorf("zap: datastore not connected")
+	}
+	body, _ := json.Marshal(map[string]interface{}{"sql": sqlStmt, "args": args})
+	status, resp, err := zapCallBackend(ctx, node, peer, MsgTypeDatastore, "/query", body)
+	if err != nil {
+		return nil, err
+	}
+	if status != 200 {
+		return nil, fmt.Errorf("zap: datastore query: status %d", status)
+	}
+	var rows []map[string]interface{}
+	if err := json.Unmarshal(resp, &rows); err != nil {
+		return nil, fmt.Errorf("zap: datastore unmarshal: %w", err)
+	}
+	return rows, nil
+}
+
 // DatastoreEnabled returns true if the datastore peer is connected.
 func DatastoreEnabled() bool {
 	zapMu.RLock()
