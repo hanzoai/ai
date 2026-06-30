@@ -26,16 +26,19 @@ const (
 	UserTypeVideoNormalUser = "video-normal-user"
 )
 
-// defaultGlobalAdminOrgs are the orgs whose admins are platform-wide (global)
-// admins by default: the IAM admin org ("admin") and the built-in org
-// ("built-in"). This is the ONE definition of "global admin" across the stack —
-// it matches IAM's AdminOrg (admin-guard: owner == IAM_ADMIN_ORG) and console2's
-// platform-admin set ({admin, built-in}). It is deliberately NOT the "hanzo"
-// TENANT org: a hanzo-org admin (e.g. z@hanzo.ai) is an org admin, not a platform
-// admin, and must not by default read/modify platform provider config (upstream
-// API keys). Override via the `globalAdminOrgs` app config / env (comma-separated)
-// — but the override should match this definition; see LLM.md for the live-env note.
-var defaultGlobalAdminOrgs = []string{"admin", "built-in"}
+// defaultGlobalAdminOrgs is the org whose admins are platform-wide (global)
+// admins by default: the IAM admin org ("admin") ALONE. This is the ONE
+// definition of "global admin" across the stack — it matches IAM's AdminOrg
+// (admin-guard: owner == IAM_ADMIN_ORG) and console2's platform-admin set. The
+// platform swapped its superadmin org from the Casdoor-legacy "built-in" to
+// "admin"; there is no "built-in" compat — one predicate, one org, one way. It
+// is deliberately NOT the "hanzo" TENANT org: a hanzo-org admin (e.g.
+// z@hanzo.ai) is an org admin, not a platform admin, and must not by default
+// read/modify platform provider config (upstream API keys). Override via the
+// `globalAdminOrgs` app config / env (comma-separated) — but the override MUST
+// be set to "admin" (the live env is currently `admin,hanzo`, which wrongly
+// grants the hanzo tenant org platform power; it must be `admin`).
+var defaultGlobalAdminOrgs = []string{"admin"}
 
 func IsAnonymousUserByUsername(username string) bool {
 	return strings.HasPrefix(username, "u-") && len(username) == 10
