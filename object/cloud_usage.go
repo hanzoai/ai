@@ -484,8 +484,8 @@ func foldCloudUsageModels(rows []map[string]interface{}, topN int, totalCents in
 	}
 
 	type m struct {
-		model, provider          string
-		spend, tokens, requests  int64
+		model, provider         string
+		spend, tokens, requests int64
 	}
 	all := make([]m, 0, len(rows))
 	for _, r := range rows {

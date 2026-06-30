@@ -668,9 +668,9 @@ func (c *ApiController) proxyAnthropicToolRequest(
 			})
 		}
 		oaiReq := &openai.ChatCompletionRequest{
-			Model:    provider.SubType,
-			Messages: oaiMessages,
-			Tools:    oaiTools,
+			Model:     provider.SubType,
+			Messages:  oaiMessages,
+			Tools:     oaiTools,
 			MaxTokens: request.MaxTokens,
 			Stream:    request.Stream,
 		}
