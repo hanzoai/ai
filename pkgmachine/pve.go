@@ -36,7 +36,8 @@ func newMachinePveClient(hostname string, credential string) (MachinePveClient, 
 		Username: strings.Split(credential, ":")[0],
 		Password: strings.Split(credential, ":")[1],
 	}
-	pclient := proxmox.NewClient("https://"+hostname+"/api2/json",
+	pclient := proxmox.NewClient(
+		"https://"+hostname+"/api2/json",
 		proxmox.WithCredentials(&credentials),
 	)
 	return MachinePveClient{pclient}, nil

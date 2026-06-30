@@ -151,7 +151,8 @@ func GetPendingScans() ([]*Scan, error) {
 // This operation will only succeed for one instance due to the WHERE condition on state
 // Returns the number of affected rows
 func AtomicClaimScan(owner, name, hostname string) (int64, error) {
-	affected, err := updateCols(adapter.db, "scan",
+	affected, err := updateCols(
+		adapter.db, "scan",
 		dbx.NewExp("owner = {:p0} AND name = {:p1} AND state = {:p2}", dbx.Params{"p0": owner, "p1": name, "p2": "Pending"}),
 		dbx.Params{
 			"state":        "Running",
