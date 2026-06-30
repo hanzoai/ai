@@ -34,6 +34,44 @@ type modelPrice struct {
 	CacheWritePerMillion float64 // $ per 1M cache-write tokens (0 = use InputPerMillion)
 }
 
+// modelPricingInfo is the public, omitempty pricing block embedded in the
+// /v1/models response (modelInfo.Pricing). It is expressed in US dollars per
+// one million tokens and is emitted ONLY when ai holds real pricing for the
+// model — never synthesized from defaults.
+type modelPricingInfo struct {
+	Input  float64 `json:"input"`  // USD per 1M input tokens
+	Output float64 `json:"output"` // USD per 1M output tokens
+}
+
+// pricingInfo projects an internal modelPrice into the public pricing block, or
+// returns nil (→ dropped by omitempty) when there is no genuine pricing to
+// expose. ok reports whether a real per-model pricing entry was found; a
+// degenerate all-zero entry is treated as "no pricing" so the listing never
+// emits a meaningless {"input":0,"output":0}.
+func pricingInfo(p modelPrice, ok bool) *modelPricingInfo {
+	if !ok || (p.InputPerMillion <= 0 && p.OutputPerMillion <= 0) {
+		return nil
+	}
+	return &modelPricingInfo{Input: p.InputPerMillion, Output: p.OutputPerMillion}
+}
+
+// staticModelPrice looks up real per-model pricing from the static tables only.
+// Unlike getModelPrice it neither queries the DB nor falls back to a default
+// price: ok is false when ai holds no genuine pricing, letting the /v1/models
+// listing OMIT pricing rather than fabricate it.
+func staticModelPrice(model string) (modelPrice, bool) {
+	m := strings.ToLower(model)
+	if price, ok := modelPricing[m]; ok {
+		return price, true
+	}
+	if base, ok := aliasPricing[m]; ok {
+		if price, ok := modelPricing[base]; ok {
+			return price, true
+		}
+	}
+	return modelPrice{}, false
+}
+
 // modelPricing maps upstream model identifiers to their pricing.
 // Keyed by user-facing model name (lowercase). Pricing reflects actual
 // upstream costs with Hanzo margin applied.
