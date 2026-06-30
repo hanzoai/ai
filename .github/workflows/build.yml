@@ -64,24 +64,13 @@ jobs:
       - name: Tests
         run: go test -v $(go list ./...) -tags skipCi
 
-  frontend:
-    name: Front-end
-    runs-on: hanzo-build-linux-amd64
-    needs: [ go-tests ]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: 'pnpm'
-          cache-dependency-path: ./web/pnpm-lock.yaml
-        # The casibase-lineage web/ build needs more than Node's ~2GB default heap
-        # (craco/webpack OOMs: "Reached heap limit Allocation failed").
-      - run: pnpm install && CI=false NODE_OPTIONS=--max-old-space-size=8192 pnpm build
-        working-directory: ./web
+  # NOTE: there is intentionally no standalone Front-end job. The deployable
+  # image's Dockerfile builds web/ in its `front` stage (node:22-alpine →
+  # `pnpm install --frozen-lockfile && pnpm build` → COPY --from=front
+  # /web/build), so the Docker Release stage IS the authoritative frontend gate
+  # — a broken web/ build fails the image. A second GHA build of the same web/
+  # was a redundant duplicate that OOM-killed the self-hosted runner (heap >8GB)
+  # and gated nothing. One way to build the frontend: the Dockerfile.
 
   backend:
     name: Back-end
@@ -117,21 +106,25 @@ jobs:
         with:
           go-version: '1.26.4'
           cache: false
-      - name: Auth private modules (hanzoai/*, zap-proto/*)
-        env:
-          GH_TOKEN: ${{ secrets.GH_PAT || secrets.UNIVERSE_DISPATCH_TOKEN || secrets.GITHUB_TOKEN }}
-        run: git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
-
-      # gen a dummy config file
-      - run: touch dummy.yml
-
-      - name: golangci-lint
-        # The hanzoai/golangci-lint-action fork is gone ("repository not found");
-        # use the upstream action at the same major (v6 input API is unchanged).
-        uses: golangci/golangci-lint-action@v6
-        with:
-          version: latest
-          args: --disable-all -c dummy.yml -E=gofumpt --max-same-issues=0 --timeout 5m --modules-download-mode=mod
+      - name: gofumpt
+        # One formatting gate, one tool: gofumpt pinned, built with THIS repo's
+        # Go toolchain (go.mod: go 1.26.4). The prebuilt golangci-lint binary
+        # lags the Go release (its latest is built with go1.24) and refuses to
+        # analyze a newer target — "the Go language version (go1.24) used to
+        # build golangci-lint is lower than the targeted Go version (1.26.4)" —
+        # so a downloaded linter can NEVER run here. gofumpt is exactly what the
+        # old `-E=gofumpt` config enforced; `go install` builds it with the
+        # runner's go1.26.4, eliminating the version mismatch permanently. No
+        # private-module auth needed — gofumpt parses source, it doesn't resolve
+        # dependencies.
+        run: |
+          go install mvdan.cc/gofumpt@v0.10.0
+          dirty="$(gofumpt -l .)"
+          if [ -n "$dirty" ]; then
+            echo "::error::gofumpt: the following files are not formatted (run 'gofumpt -w .'):"
+            echo "$dirty"
+            exit 1
+          fi
 
 
   tag-release:
