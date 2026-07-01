@@ -173,6 +173,7 @@ func doBootstrap() (err error) {
 	// the embedded handler enforces the same auth/tenant/balance pipeline.
 	beego.SetStaticPath("/swagger", "swagger")
 	beego.InsertFilter("/v1/cloud/*", beego.BeforeRouter, routers.V1CloudRewriteFilter)
+	beego.InsertFilter("/v1/iam/*", beego.BeforeRouter, routers.V1IamRewriteFilter)
 	beego.InsertFilter("*", beego.BeforeRouter, routers.CorsFilter)
 	beego.InsertFilter("*", beego.BeforeRouter, routers.HstsFilter)
 	beego.InsertFilter("*", beego.BeforeRouter, routers.CacheControlFilter)
