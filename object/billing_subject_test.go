@@ -64,6 +64,42 @@ func TestBillingSubjectFromUserKey(t *testing.T) {
 	}
 }
 
+// TestBillingSubjectForPrincipal locks the M2M carve-out: an application
+// principal (client_credentials, User.Type=="application") bills its OWNER ORG
+// in BOTH billing models, so the hanzo-cloud service token can never resolve to
+// the unfunded per-app "hanzo/hanzo-cloud" subject and 402 service traffic. A
+// human principal resolves exactly as BillingSubject.
+func TestBillingSubjectForPrincipal(t *testing.T) {
+	cases := []struct {
+		name     string
+		owner    string
+		uname    string
+		userType string
+		want     string
+	}{
+		// M2M in the personal-billing "hanzo" org bills the ORG, not the app.
+		{"m2m hanzo-cloud", "hanzo", "hanzo-cloud", "application", "hanzo"},
+		// Case-insensitive on the type; still the org.
+		{"m2m mixed-case type", "hanzo", "hanzo-cloud", "Application", "hanzo"},
+		// M2M in a pooled org is the org too (BillingSubject already pools).
+		{"m2m pooled org", "maxpower", "some-app", "application", "maxpower"},
+		// Human in the personal org is unchanged: per-user.
+		{"human personal", "hanzo", "z", "normal-user", "hanzo/z"},
+		// Human in a pooled org is unchanged: per-org.
+		{"human pooled", "maxpower", "davelorenzini", "normal-user", "maxpower"},
+		// Empty type is treated as a human (fail-safe: never silently repoint a
+		// real user's spend to the org just because a type claim is missing).
+		{"empty type is human", "hanzo", "alice", "", "hanzo/alice"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := BillingSubjectForPrincipal(c.owner, c.uname, c.userType); got != c.want {
+				t.Fatalf("BillingSubjectForPrincipal(%q,%q,%q) = %q, want %q", c.owner, c.uname, c.userType, got, c.want)
+			}
+		})
+	}
+}
+
 // TestIsPersonalBillingOrg confirms the default carve-out and that a dedicated
 // org pools (no regression for proven per-org billing).
 func TestIsPersonalBillingOrg(t *testing.T) {
