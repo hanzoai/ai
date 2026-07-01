@@ -73,11 +73,10 @@ func applyMemoryIdentity(memory *object.Memory, org, userID string) {
 }
 
 // memoryUserID resolves the caller's user id from the gateway-minted X-User-Id
-// (JWT "sub"), then the legacy X-IAM-User-Id header, then the session.
+// (JWT "sub"), then the session.
 func (c *ApiController) memoryUserID() string {
 	return resolveMemoryUserID(
 		c.Ctx.Input.Header("X-User-Id"),
-		c.Ctx.Input.Header("X-IAM-User-Id"),
 		c.GetSessionUsername(),
 	)
 }
