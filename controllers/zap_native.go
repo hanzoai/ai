@@ -136,64 +136,11 @@ func extractAuthFromHeaders(headersJSON []byte) string {
 	return ""
 }
 
-// ── ZAP trace writer (datastore → ClickHouse) ──────────────────────────
-//
-// Writes observability traces directly to ClickHouse via native ZAP binary.
-// Bypasses the Console HTTP ingestion endpoint when datastore is connected.
-
-func zapWriteTrace(record *usageRecord, startTime time.Time) {
-	if !object.DatastoreEnabled() {
-		return
-	}
-
-	// Schema lives once in object.observationsTableDDL; ensure it before insert.
-	{
-		ensureCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		if err := object.EnsureObservationsTable(ensureCtx); err != nil {
-			logs.Warn("datastore: ensure observations table: %v", err)
-		}
-		cancel()
-	}
-
-	endTime := time.Now().UTC()
-	traceID := util.GenerateUUID()
-	genID := util.GenerateUUID()
-
-	org := record.Organization
-	if org == "" {
-		org = record.Owner
-	}
-
-	costCents := calculateCostCentsWithCache(
-		record.Model, record.PromptTokens, record.CompletionTokens,
-		record.CacheReadTokens, record.CacheWriteTokens,
-	)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	// Insert trace. organization is a first-class column so the trace ledger is
-	// per-tenant queryable (not only embedded in metadata/tags).
-	err := object.DatastoreExec(
-		ctx,
-		`INSERT INTO hanzo.observations (id, trace_id, name, start_time, end_time, type, model, organization, prompt_tokens, completion_tokens, total_tokens, input_cost, output_cost, total_cost, metadata, tags, user_id, session_id, level, status_message, version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		genID, traceID, "chat-completion",
-		startTime.UTC(), endTime,
-		"GENERATION", record.Model, org,
-		record.PromptTokens, record.CompletionTokens, record.TotalTokens,
-		float64(costCents)*float64(record.PromptTokens)/float64(max(record.TotalTokens, 1)),
-		float64(costCents)*float64(record.CompletionTokens)/float64(max(record.TotalTokens, 1)),
-		float64(costCents),
-		fmt.Sprintf(`{"provider":"%s","organization":"%s","requestId":"%s","premium":%v,"stream":%v}`,
-			record.Provider, org, record.RequestID, record.Premium, record.Stream),
-		fmt.Sprintf(`["%s","%s","org:%s"]`, record.Model, record.Provider, org),
-		record.User, record.RequestID,
-		"DEFAULT", record.Status, "cloud-api",
-	)
-	if err != nil {
-		logs.Warn("datastore: trace write failed: %v", err)
-	}
-}
+// The per-tenant trace ledger (canonical hanzo.observations / hanzo.traces — the
+// Langfuse-shaped analytics tables) is owned and populated by the o11y/insights
+// ingestion pipeline, NOT this module. This module writes only the spend ledger
+// (hanzo.cloud_usage, above). One writer per table — the ai module does not write
+// a second, incompatible observations shape into the o11y-owned table.
 
 // ── ZAP billing record writer (datastore → ClickHouse) ──────────────────
 //
