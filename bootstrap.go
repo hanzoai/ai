@@ -173,6 +173,13 @@ func doBootstrap() (err error) {
 	// the embedded handler enforces the same auth/tenant/balance pipeline.
 	beego.SetStaticPath("/swagger", "swagger")
 	beego.InsertFilter("/v1/cloud/*", beego.BeforeRouter, routers.V1CloudRewriteFilter)
+	// Normalize the console's organized account surface (/v1/iam/{signin,signout,
+	// get-account,update-preferences}) to the canonical /v1/<endpoint> BEFORE the
+	// balance-gate/authz filters and the router run, so their path allowlists and
+	// the code+state → cloud_session_id exchange are the one working flow, reached
+	// under either prefix. Registered here (first, alongside V1CloudRewriteFilter)
+	// so the rewrite precedes every gate.
+	beego.InsertFilter("/v1/iam/*", beego.BeforeRouter, routers.V1IamRewriteFilter)
 	beego.InsertFilter("*", beego.BeforeRouter, routers.CorsFilter)
 	beego.InsertFilter("*", beego.BeforeRouter, routers.HstsFilter)
 	beego.InsertFilter("*", beego.BeforeRouter, routers.CacheControlFilter)
