@@ -113,6 +113,14 @@ func doBootstrap() (err error) {
 	object.CreateTables()
 	object.InitDb()
 
+	// Analytics datastore (ClickHouse): the OLAP ledger behind the usage/spend
+	// Overview (hanzo.cloud_usage) and the per-tenant trace ledger
+	// (hanzo.observations). Opt-in via DATASTORE_ADDR; connects in the background
+	// and is a no-op when unset, so boot never blocks on the warehouse. This runs
+	// in BOTH cmd/aid and the unified cloud binary (the ai ZAP node does not, so
+	// the datastore is reached directly, not via a ZAP peer). See object.InitDatastore.
+	object.InitDatastore()
+
 	// Model routing/pricing config from YAML. Non-fatal: static fallback.
 	configPath := conf.GetConfigString("modelConfigPath")
 	if configPath == "" {
