@@ -102,6 +102,24 @@ func BillingSubject(owner, name string) string {
 	return owner
 }
 
+// BillingSubjectForPrincipal returns the billing subject for an authenticated
+// principal, accounting for machine (M2M) identities. A client_credentials /
+// application principal — Casdoor User.Type == "application", e.g. the
+// hanzo-cloud service token minted for cloud→cloud calls — is billed to its
+// OWNER ORG, never to a per-app "owner/app-name" subject: the app name is not a
+// funded account, so in a personal-billing org (the "hanzo" catch-all) it would
+// resolve to the unfunded "hanzo/hanzo-cloud" and 402 legitimate service
+// traffic. Human principals resolve exactly as BillingSubject (per-user for a
+// personal-billing org, else the org). This is the ONE place the M2M carve-out
+// lives, shared by the router gate and the controller backstop so they can
+// never disagree on who a service token bills.
+func BillingSubjectForPrincipal(owner, name, userType string) string {
+	if strings.EqualFold(strings.TrimSpace(userType), "application") {
+		return BillingSubject(owner, "")
+	}
+	return BillingSubject(owner, name)
+}
+
 // BillingSubjectFromUserKey is BillingSubject for callers that already hold the
 // "owner/name" user key as a single string (e.g. usage records, ZAP params,
 // searchAuth.UserID). If owner is empty it is derived from the key's prefix.

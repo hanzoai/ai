@@ -38,10 +38,14 @@ func getTenantHeader(ctx *context.Context, name string) string {
 // GetEffectiveOrg honors the header only for the principal's own org (or a global
 // admin), so the stored org is always the caller's real tenant.
 func TenantContextFilter(ctx *context.Context) {
+	// Canonical gateway-minted identity + browser sub-scopes — no X-IAM-*
+	// prefix (cloud middleware_identity injects X-User-Id/X-Org-Id; console2
+	// stamps X-Project-Id/X-Environment). The X-IAM-* variants were never sent,
+	// so user/project/env context was silently empty on the direct path.
 	orgID := GetEffectiveOrg(ctx)
-	userID := getTenantHeader(ctx, "X-IAM-User-Id")
-	projectID := getTenantHeader(ctx, "X-IAM-Project-Id")
-	env := getTenantHeader(ctx, "X-IAM-Env")
+	userID := getTenantHeader(ctx, "X-User-Id")
+	projectID := getTenantHeader(ctx, "X-Project-Id")
+	env := getTenantHeader(ctx, "X-Environment")
 
 	if orgID != "" {
 		ctx.Input.SetData(tenantContextOrgIDKey, orgID)

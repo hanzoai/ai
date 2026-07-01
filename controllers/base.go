@@ -103,7 +103,9 @@ func (c *ApiController) GetRequestTenantProjectID() string {
 	if c == nil || c.Ctx == nil {
 		return ""
 	}
-	return strings.TrimSpace(c.Ctx.Input.Header("X-IAM-Project-Id"))
+	// Canonical project sub-scope (what console2 stamps); the X-IAM- variant was
+	// never sent.
+	return strings.TrimSpace(c.Ctx.Input.Header("X-Project-Id"))
 }
 
 // GetSessionOwner returns the organization (owner) of the authenticated user.

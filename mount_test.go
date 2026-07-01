@@ -30,7 +30,7 @@ import (
 // adapter tests deliberately use mountRoutes.
 //
 // AI mounts the beego handler at BARE /v1/* (no prefix, no rewrite) because the
-// production gateway forwards casibase routes unchanged (/v1/chat/completions,
+// production gateway forwards the bare /v1 routes unchanged (/v1/chat/completions,
 // /v1/models, …). See mountRoutes for why this is collision-safe.
 
 func TestMountRoutesWithoutHandlerReturns503(t *testing.T) {
