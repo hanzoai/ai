@@ -146,6 +146,15 @@ func zapWriteTrace(record *usageRecord, startTime time.Time) {
 		return
 	}
 
+	// Schema lives once in object.observationsTableDDL; ensure it before insert.
+	{
+		ensureCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		if err := object.EnsureObservationsTable(ensureCtx); err != nil {
+			logs.Warn("datastore: ensure observations table: %v", err)
+		}
+		cancel()
+	}
+
 	endTime := time.Now().UTC()
 	traceID := util.GenerateUUID()
 	genID := util.GenerateUUID()
@@ -163,13 +172,14 @@ func zapWriteTrace(record *usageRecord, startTime time.Time) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	// Insert trace
-	err := object.ZapDatastoreExec(
+	// Insert trace. organization is a first-class column so the trace ledger is
+	// per-tenant queryable (not only embedded in metadata/tags).
+	err := object.DatastoreExec(
 		ctx,
-		`INSERT INTO hanzo.observations (id, trace_id, name, start_time, end_time, type, model, prompt_tokens, completion_tokens, total_tokens, input_cost, output_cost, total_cost, metadata, tags, user_id, session_id, level, status_message, version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO hanzo.observations (id, trace_id, name, start_time, end_time, type, model, organization, prompt_tokens, completion_tokens, total_tokens, input_cost, output_cost, total_cost, metadata, tags, user_id, session_id, level, status_message, version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		genID, traceID, "chat-completion",
 		startTime.UTC(), endTime,
-		"GENERATION", record.Model,
+		"GENERATION", record.Model, org,
 		record.PromptTokens, record.CompletionTokens, record.TotalTokens,
 		float64(costCents)*float64(record.PromptTokens)/float64(max(record.TotalTokens, 1)),
 		float64(costCents)*float64(record.CompletionTokens)/float64(max(record.TotalTokens, 1)),
@@ -181,7 +191,7 @@ func zapWriteTrace(record *usageRecord, startTime time.Time) {
 		"DEFAULT", record.Status, "cloud-api",
 	)
 	if err != nil {
-		logs.Warn("ZAP: trace write failed: %v", err)
+		logs.Warn("datastore: trace write failed: %v", err)
 	}
 }
 
@@ -226,7 +236,7 @@ func zapWriteUsage(record *usageRecord, startTime time.Time) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	err := object.ZapDatastoreExec(
+	err := object.DatastoreExec(
 		ctx,
 		`INSERT INTO hanzo.cloud_usage (id, timestamp, owner, user_id, organization, model, provider, request_id, prompt_tokens, completion_tokens, total_tokens, cache_read_tokens, cache_write_tokens, cost_cents, currency, status, error_msg, is_premium, is_stream, client_ip) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		record.RequestID, startTime.UTC(),
