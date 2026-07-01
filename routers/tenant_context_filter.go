@@ -40,8 +40,11 @@ func getTenantHeader(ctx *context.Context, name string) string {
 func TenantContextFilter(ctx *context.Context) {
 	orgID := GetEffectiveOrg(ctx)
 	userID := getTenantHeader(ctx, "X-IAM-User-Id")
-	projectID := getTenantHeader(ctx, "X-IAM-Project-Id")
-	env := getTenantHeader(ctx, "X-IAM-Env")
+	// Canonical browser sub-scopes (what console2 stamps): X-Project-Id /
+	// X-Environment. (The X-IAM-* variants were never sent, so project + env
+	// scoping was silently empty.)
+	projectID := getTenantHeader(ctx, "X-Project-Id")
+	env := getTenantHeader(ctx, "X-Environment")
 
 	if orgID != "" {
 		ctx.Input.SetData(tenantContextOrgIDKey, orgID)
