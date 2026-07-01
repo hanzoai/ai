@@ -320,7 +320,7 @@ func resolveProviderForUser(user *iam.User, requestedModel string, lang string) 
 	// personal-billing org (each member billed independently), the org slug for
 	// a pooled org. The gate read, this backstop, and the usage debit all key
 	// on this one subject.
-	subject := object.BillingSubject(user.Owner, user.Name)
+	subject := object.BillingSubjectForPrincipal(user.Owner, user.Name, user.Type)
 	isExempt := object.BalanceExempt().Matches(user.Owner, user.Name)
 
 	if !isExempt {
@@ -555,180 +555,17 @@ func recordUsage(record *usageRecord) {
 	})
 }
 
-// resolveConsoleKeys returns the console API key pair for the given org.
-// Keys are fetched from KMS using the naming convention:
-//   - console-pk-{org}  → public key
-//   - console-sk-{org}  → secret key
+// recordTrace persists an LLM/agent trace + usage record to hanzoai/datastore
+// (native ClickHouse OLAP) over native ZAP — the ONE internal telemetry path.
 //
-// Falls back to global console-pk / console-sk secrets in KMS.
-// KMS responses are cached for 5 minutes (kmsSecTTL in object/kms.go).
-func resolveConsoleKeys(org string) (publicKey, secretKey string) {
-	// Try per-org keys first: console-pk-{org}, console-sk-{org}
-	if org != "" {
-		pk, pkErr := object.GetKMSSecret("console-pk-" + org)
-		sk, skErr := object.GetKMSSecret("console-sk-" + org)
-		if pkErr == nil && skErr == nil && pk != "" && sk != "" {
-			return pk, sk
-		}
-	}
-
-	// Fall back to global console keys from KMS
-	pk, pkErr := object.GetKMSSecret("console-pk")
-	sk, skErr := object.GetKMSSecret("console-sk")
-	if pkErr == nil && skErr == nil && pk != "" && sk != "" {
-		return pk, sk
-	}
-
-	// Fall back to env vars (CONSOLE_PUBLIC_KEY / CONSOLE_SECRET_KEY)
-	pk = os.Getenv("CONSOLE_PUBLIC_KEY")
-	sk = os.Getenv("CONSOLE_SECRET_KEY")
-	if pk != "" && sk != "" {
-		return pk, sk
-	}
-
-	return "", ""
-}
-
-// recordTrace sends a trace+generation event to the console for observability.
-// Traces are routed to per-org console projects using KMS secrets
-// (console-pk-{org} / console-sk-{org}), enabling each org to see their own usage
-// in console.hanzo.ai. This is fire-and-forget — failures are silently ignored.
+// There is NO HTTP fallback: the legacy Langfuse-style `POST /api/public/ingestion`
+// HTTP ingestion was ripped (it violated the /v1-only + ZAP-native-internal rules).
+// Internal service→service is ZAP only; the datastore is reached via ZAP_DATASTORE_ADDR.
+// Fire-and-forget — failures are logged inside the writers, never block the request.
 func recordTrace(record *usageRecord, startTime time.Time) {
-	// Write billing record to ClickHouse for invoice reconciliation.
+	// Usage (billing reconciliation) + observability trace, both native ZAP → datastore.
 	go zapWriteUsage(record, startTime)
-	// Write observability trace to ClickHouse via native ZAP.
 	go zapWriteTrace(record, startTime)
-
-	go func() {
-		// Resolve console endpoint from KMS, then Beego config, then env var
-		consoleEndpoint, _ := object.GetKMSSecret("console-endpoint")
-		if consoleEndpoint == "" {
-			consoleEndpoint = conf.GetConfigString("consoleEndpoint")
-		}
-		if consoleEndpoint == "" {
-			consoleEndpoint = os.Getenv("CONSOLE_HOST")
-		}
-		if consoleEndpoint == "" {
-			return
-		}
-		consoleEndpoint = strings.TrimRight(consoleEndpoint, "/")
-
-		// Resolve per-org or global console API keys
-		org := record.Organization
-		if org == "" {
-			org = record.Owner
-		}
-		consoleApiKey, consoleSecretKeyVal := resolveConsoleKeys(org)
-		if consoleApiKey == "" || consoleSecretKeyVal == "" {
-			return
-		}
-
-		endTime := time.Now().UTC()
-		traceId := util.GenerateUUID()
-		genId := util.GenerateUUID()
-
-		// Build tags: org, model, provider, source app
-		tags := []string{record.Model, record.Provider}
-		if org != "" {
-			tags = append(tags, "org:"+org)
-		}
-		if record.User != "" {
-			tags = append(tags, "user:"+record.User)
-		}
-
-		// Determine cost for the generation
-		costCents := calculateCostCentsWithCache(
-			record.Model, record.PromptTokens, record.CompletionTokens,
-			record.CacheReadTokens, record.CacheWriteTokens,
-		)
-
-		// Build console ingestion batch with full org/user/cost context
-		batch := map[string]interface{}{
-			"batch": []map[string]interface{}{
-				{
-					"id":        util.GenerateUUID(),
-					"type":      "trace-create",
-					"timestamp": startTime.UTC().Format(time.RFC3339Nano),
-					"body": map[string]interface{}{
-						"id":        traceId,
-						"name":      "chat-completion",
-						"userId":    record.User,
-						"sessionId": record.RequestID,
-						"timestamp": startTime.UTC().Format(time.RFC3339Nano),
-						"metadata": map[string]interface{}{
-							"model":        record.Model,
-							"provider":     record.Provider,
-							"organization": org,
-							"premium":      record.Premium,
-							"stream":       record.Stream,
-							"requestId":    record.RequestID,
-							"clientIp":     record.ClientIP,
-							"source":       "cloud-api",
-						},
-						"tags": tags,
-					},
-				},
-				{
-					"id":        util.GenerateUUID(),
-					"type":      "generation-create",
-					"timestamp": endTime.Format(time.RFC3339Nano),
-					"body": map[string]interface{}{
-						"id":                  genId,
-						"traceId":             traceId,
-						"name":                record.Model,
-						"model":               record.Model,
-						"startTime":           startTime.UTC().Format(time.RFC3339Nano),
-						"endTime":             endTime.Format(time.RFC3339Nano),
-						"completionStartTime": endTime.Format(time.RFC3339Nano),
-						"level":               "DEFAULT",
-						"statusMessage":       record.Status,
-						"usage": map[string]interface{}{
-							"input":  record.PromptTokens,
-							"output": record.CompletionTokens,
-							"total":  record.TotalTokens,
-							"unit":   "TOKENS",
-						},
-						"costDetails": map[string]interface{}{
-							"input":  float64(costCents) * float64(record.PromptTokens) / float64(max(record.TotalTokens, 1)),
-							"output": float64(costCents) * float64(record.CompletionTokens) / float64(max(record.TotalTokens, 1)),
-						},
-						"metadata": map[string]interface{}{
-							"provider":     record.Provider,
-							"organization": org,
-							"requestId":    record.RequestID,
-							"costCents":    costCents,
-						},
-					},
-				},
-			},
-			"metadata": map[string]interface{}{
-				"sdk_name":    "cloud-api",
-				"sdk_version": "1.0.0",
-				"public_key":  consoleApiKey,
-			},
-		}
-
-		body, err := json.Marshal(batch)
-		if err != nil {
-			return
-		}
-
-		url := consoleEndpoint + "/api/public/ingestion"
-		client := &http.Client{Timeout: 5 * time.Second}
-		req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
-		if err != nil {
-			return
-		}
-		req.Header.Set("Content-Type", "application/json")
-		auth := base64.StdEncoding.EncodeToString([]byte(consoleApiKey + ":" + consoleSecretKeyVal))
-		req.Header.Set("Authorization", "Basic "+auth)
-
-		resp, err := client.Do(req)
-		if err != nil {
-			return
-		}
-		resp.Body.Close()
-	}()
 }
 
 // ── API handlers ────────────────────────────────────────────────────────────
