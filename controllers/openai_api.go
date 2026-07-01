@@ -320,7 +320,7 @@ func resolveProviderForUser(user *iam.User, requestedModel string, lang string) 
 	// personal-billing org (each member billed independently), the org slug for
 	// a pooled org. The gate read, this backstop, and the usage debit all key
 	// on this one subject.
-	subject := object.BillingSubject(user.Owner, user.Name)
+	subject := object.BillingSubjectForPrincipal(user.Owner, user.Name, user.Type)
 	isExempt := object.BalanceExempt().Matches(user.Owner, user.Name)
 
 	if !isExempt {
