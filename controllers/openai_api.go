@@ -558,14 +558,18 @@ func recordUsage(record *usageRecord) {
 // recordTrace persists an LLM/agent trace + usage record to hanzoai/datastore
 // (native ClickHouse OLAP) over native ZAP — the ONE internal telemetry path.
 //
-// There is NO HTTP fallback: the legacy Langfuse-style `POST /api/public/ingestion`
-// HTTP ingestion was ripped (it violated the /v1-only + ZAP-native-internal rules).
-// Internal service→service is ZAP only; the datastore is reached via ZAP_DATASTORE_ADDR.
-// Fire-and-forget — failures are logged inside the writers, never block the request.
+// The datastore (ClickHouse) is reached directly via object.DatastoreExec
+// (object/datastore.go) — the datastore image serves ClickHouse on :8123/:9000,
+// not a ZAP bridge. Fire-and-forget — failures are logged inside the writer,
+// never block the request.
+//
+// Only the spend ledger (hanzo.cloud_usage) is written here — that is the ai
+// module's table, read by GetCloudUsageOverview for the console Overview. The
+// per-tenant trace ledger (canonical hanzo.observations / hanzo.traces, the
+// Langfuse-shaped tables) is owned and populated by the o11y/insights ingestion
+// pipeline, not this module — one writer per table.
 func recordTrace(record *usageRecord, startTime time.Time) {
-	// Usage (billing reconciliation) + observability trace, both native ZAP → datastore.
 	go zapWriteUsage(record, startTime)
-	go zapWriteTrace(record, startTime)
 }
 
 // ── API handlers ────────────────────────────────────────────────────────────
