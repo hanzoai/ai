@@ -79,7 +79,7 @@ func EnsureCloudUsageTable(ctx context.Context) error {
 	if cloudUsageTableReady.Load() {
 		return nil
 	}
-	if err := ZapDatastoreExec(ctx, cloudUsageTableDDL); err != nil {
+	if err := DatastoreExec(ctx, cloudUsageTableDDL); err != nil {
 		return err
 	}
 	cloudUsageTableReady.Store(true)
@@ -292,7 +292,7 @@ func GetCloudUsageOverview(ctx context.Context, p CloudUsageParams) (*CloudUsage
 	seriesSQL := fmt.Sprintf("SELECT toStartOf%s(timestamp, 'UTC') AS bucket, sum(total_tokens) AS tokens, "+
 		"sum(cost_cents) AS cost_cents, count() AS requests, uniqExact(model) AS models "+
 		"FROM hanzo.cloud_usage WHERE %s GROUP BY bucket ORDER BY bucket", bucketFn, where)
-	seriesRows, err := ZapDatastoreQuery(ctx, seriesSQL, args...)
+	seriesRows, err := DatastoreQuery(ctx, seriesSQL, args...)
 	if err != nil {
 		return nil, fmt.Errorf("usage series: %w", err)
 	}
@@ -300,7 +300,7 @@ func GetCloudUsageOverview(ctx context.Context, p CloudUsageParams) (*CloudUsage
 	modelSQL := "SELECT model, any(provider) AS provider, sum(cost_cents) AS cost_cents, " +
 		"sum(total_tokens) AS tokens, count() AS requests FROM hanzo.cloud_usage WHERE " + where +
 		" GROUP BY model ORDER BY cost_cents DESC LIMIT 100"
-	modelRows, err := ZapDatastoreQuery(ctx, modelSQL, args...)
+	modelRows, err := DatastoreQuery(ctx, modelSQL, args...)
 	if err != nil {
 		return nil, fmt.Errorf("usage by-model: %w", err)
 	}
@@ -322,7 +322,7 @@ func GetCloudUsageOverview(ctx context.Context, p CloudUsageParams) (*CloudUsage
 		activitySQL := fmt.Sprintf("SELECT timestamp, model, provider, status, total_tokens, prompt_tokens, "+
 			"completion_tokens, cost_cents, is_stream, is_premium, request_id, user_id, organization "+
 			"FROM hanzo.cloud_usage WHERE %s ORDER BY timestamp DESC LIMIT %d OFFSET %d", where, limit, offset)
-		if activityRows, err = ZapDatastoreQuery(ctx, activitySQL, args...); err != nil {
+		if activityRows, err = DatastoreQuery(ctx, activitySQL, args...); err != nil {
 			return nil, fmt.Errorf("usage activity: %w", err)
 		}
 		countRow, err := cloudUsageQueryOne(ctx, "SELECT count() AS requests FROM hanzo.cloud_usage WHERE "+where, args)
@@ -351,7 +351,7 @@ func (p CloudUsageParams) whereClause(start, end time.Time) (string, []interface
 func cloudUsageTS(t time.Time) string { return t.UTC().Format("2006-01-02 15:04:05") }
 
 func cloudUsageQueryOne(ctx context.Context, sql string, args []interface{}) (map[string]interface{}, error) {
-	rows, err := ZapDatastoreQuery(ctx, sql, args...)
+	rows, err := DatastoreQuery(ctx, sql, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -566,7 +566,21 @@ func cuInt64(v interface{}) int64 {
 		return int64(n)
 	case int64:
 		return n
+	case int32:
+		return int64(n)
+	case int16:
+		return int64(n)
+	case int8:
+		return int64(n)
+	case uint:
+		return int64(n)
 	case uint64:
+		return int64(n)
+	case uint32:
+		return int64(n)
+	case uint16:
+		return int64(n)
+	case uint8:
 		return int64(n)
 	case float64:
 		return int64(n)
@@ -615,6 +629,11 @@ func cuBool(v interface{}) bool {
 }
 
 func cuTime(v interface{}) time.Time {
+	// The direct ClickHouse driver decodes DateTime columns to time.Time; take it
+	// as-is before falling back to the string/unix layouts (a JSON transport path).
+	if t, ok := v.(time.Time); ok {
+		return t.UTC()
+	}
 	s := strings.TrimSpace(cuString(v))
 	if s != "" {
 		for _, layout := range []string{"2006-01-02 15:04:05", time.RFC3339, "2006-01-02"} {
