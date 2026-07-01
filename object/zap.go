@@ -55,10 +55,9 @@ const (
 	// Response: status(0:Uint32) + body(4:Bytes) + headers(12:Bytes)
 	MsgTypeHTTPRequest uint16 = 200
 	// Backend sidecar protocol (KV/SQL embedded servers).
-	MsgTypeSQL       uint16 = 300
-	MsgTypeKV        uint16 = 301
-	MsgTypeDatastore uint16 = 302
-	MsgTypeDocdb     uint16 = 303
+	MsgTypeSQL   uint16 = 300
+	MsgTypeKV    uint16 = 301
+	MsgTypeDocdb uint16 = 303
 	// ── Cloud service message layout ────────────────────────────────
 	// Request:  method(0:Text) + auth(8:Text) + body(16:Bytes)
 	// Response: status(0:Uint32) + body(4:Bytes) + error(12:Text)
@@ -77,13 +76,12 @@ const (
 
 // ── Package state ───────────────────────────────────────────────────────
 var (
-	zapNode         *zap.Node
-	kvPeerID        string
-	sqlPeerID       string
-	datastorePeerID string
-	docdbPeerID     string
-	zapMu           sync.RWMutex
-	zapReady        bool
+	zapNode     *zap.Node
+	kvPeerID    string
+	sqlPeerID   string
+	docdbPeerID string
+	zapMu       sync.RWMutex
+	zapReady    bool
 )
 
 // ── Initialization ──────────────────────────────────────────────────────
@@ -127,10 +125,9 @@ func InitZap() {
 		sqlAddr = "sql.hanzo.svc:9999"
 	}
 	go connectPeer(node, sqlAddr, "sql", &sqlPeerID)
-	// Datastore (ClickHouse) — optional, for observability traces.
-	if datastoreAddr := os.Getenv("ZAP_DATASTORE_ADDR"); datastoreAddr != "" {
-		go connectPeer(node, datastoreAddr, "datastore", &datastorePeerID)
-	}
+	// Datastore (ClickHouse) is reached directly (object/datastore.go), NOT via a
+	// ZAP peer — the datastore image serves ClickHouse on :8123/:9000, not a ZAP
+	// bridge, and the unified cloud binary never starts this node. See InitDatastore.
 	// DocDB (FerretDB) — optional, document database via SQL wire protocol.
 	if docdbAddr := os.Getenv("ZAP_DOCDB_ADDR"); docdbAddr != "" {
 		go connectPeer(node, docdbAddr, "docdb", &docdbPeerID)
@@ -319,59 +316,6 @@ func ZapSQLExec(ctx context.Context, sql string, args ...interface{}) error {
 		return fmt.Errorf("zap: sql exec: status %d", status)
 	}
 	return nil
-}
-
-// ── Datastore client (native ZAP-to-ZAP → ClickHouse) ───────────────────
-// ZapDatastoreExec executes an INSERT/DDL on ClickHouse via native ZAP binary.
-func ZapDatastoreExec(ctx context.Context, sqlStmt string, args ...interface{}) error {
-	zapMu.RLock()
-	node, peer := zapNode, datastorePeerID
-	zapMu.RUnlock()
-	if node == nil || peer == "" {
-		return fmt.Errorf("zap: datastore not connected")
-	}
-	body, _ := json.Marshal(map[string]interface{}{"sql": sqlStmt, "args": args})
-	status, _, err := zapCallBackend(ctx, node, peer, MsgTypeDatastore, "/exec", body)
-	if err != nil {
-		return err
-	}
-	if status != 200 {
-		return fmt.Errorf("zap: datastore exec: status %d", status)
-	}
-	return nil
-}
-
-// ZapDatastoreQuery executes a read query (SELECT) on ClickHouse via native ZAP
-// binary, returning rows as decoded maps. Symmetric to ZapDatastoreExec — same
-// datastore peer, "/query" path instead of "/exec" — and mirrors ZapDocdbQuery /
-// ZapSQLQuery. This is the read side of the hanzo.cloud_usage ledger.
-func ZapDatastoreQuery(ctx context.Context, sqlStmt string, args ...interface{}) ([]map[string]interface{}, error) {
-	zapMu.RLock()
-	node, peer := zapNode, datastorePeerID
-	zapMu.RUnlock()
-	if node == nil || peer == "" {
-		return nil, fmt.Errorf("zap: datastore not connected")
-	}
-	body, _ := json.Marshal(map[string]interface{}{"sql": sqlStmt, "args": args})
-	status, resp, err := zapCallBackend(ctx, node, peer, MsgTypeDatastore, "/query", body)
-	if err != nil {
-		return nil, err
-	}
-	if status != 200 {
-		return nil, fmt.Errorf("zap: datastore query: status %d", status)
-	}
-	var rows []map[string]interface{}
-	if err := json.Unmarshal(resp, &rows); err != nil {
-		return nil, fmt.Errorf("zap: datastore unmarshal: %w", err)
-	}
-	return rows, nil
-}
-
-// DatastoreEnabled returns true if the datastore peer is connected.
-func DatastoreEnabled() bool {
-	zapMu.RLock()
-	defer zapMu.RUnlock()
-	return zapReady && datastorePeerID != ""
 }
 
 // ── DocDB client (native ZAP-to-ZAP → FerretDB) ─────────────────────────
