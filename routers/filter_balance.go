@@ -230,8 +230,14 @@ func isBalanceExempt(path string) bool {
 		return true
 	case path == "/v1/metrics" || path == "/metrics":
 		return true
-	// /api/models and /v1/models require authentication (R-04).
-	// Removed from balance exemption — callers must have a valid token.
+	// Model + pricing CATALOG listings are metadata, not metered inference:
+	// a caller must still be authenticated (the auth filters enforce that —
+	// balance-exemption is NOT auth-exemption), but must never need a positive
+	// balance just to READ the available-models list. Gating /v1/models on
+	// balance 402s a funded-but-zero or M2M caller browsing the catalog — the
+	// "402 on free /v1/models" console-wide outage class.
+	case path == "/v1/models" || strings.HasPrefix(path, "/v1/models/"):
+		return true
 	case strings.HasPrefix(path, "/v1/get-version-info"):
 		return true
 	case strings.HasPrefix(path, "/v1/get-system-info"):
@@ -268,7 +274,7 @@ func resolveBillingKey(ctx *context.Context) (subject, namespace, userKey string
 	// Source 1: session user from AutoSigninFilter.
 	user := GetSessionUser(ctx)
 	if user != nil && user.Owner != "" {
-		return object.BillingSubject(user.Owner, user.Name), user.Owner, user.Owner + "/" + user.Name
+		return object.BillingSubjectForPrincipal(user.Owner, user.Name, user.Type), user.Owner, user.Owner + "/" + user.Name
 	}
 
 	// Source 2/3: Bearer token.
@@ -302,7 +308,7 @@ func resolveBillingKey(ctx *context.Context) (subject, namespace, userKey string
 			return "", "", ""
 		}
 		if claims.User.Owner != "" {
-			subject = object.BillingSubject(claims.User.Owner, claims.User.Name)
+			subject = object.BillingSubjectForPrincipal(claims.User.Owner, claims.User.Name, claims.User.Type)
 			userKey = claims.User.Owner + "/" + claims.User.Name
 			balanceGate.setUserKeyCache(token, subject, claims.User.Owner, userKey)
 			return subject, claims.User.Owner, userKey
