@@ -261,7 +261,7 @@ jobs:
           event-type: image-update
           client-payload: |
             {
-              "service": "cloud-api",
+              "service": "cloud",
               "image": "${{ steps.meta.outputs.image }}",
               "sha": "${{ github.sha }}",
               "repo": "${{ github.repository }}"
