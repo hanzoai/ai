@@ -15,10 +15,12 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/beego/beego"
 	"github.com/beego/beego/logs"
@@ -74,6 +76,12 @@ func main() {
 
 		controllers.StopInterserviceZap()
 		object.StopZap()
+
+		// Flush any buffered OTel GenAI spans before exit (no-op when telemetry
+		// is disabled). Bounded so shutdown never hangs on a slow collector.
+		flushCtx, flushCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		object.ShutdownTelemetry(flushCtx)
+		flushCancel()
 
 		os.Exit(0)
 	}()
