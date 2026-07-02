@@ -136,8 +136,8 @@ func extractAuthFromHeaders(headersJSON []byte) string {
 	return ""
 }
 
-// The per-tenant trace ledger (canonical hanzo.observations / hanzo.traces — the
-// Langfuse-shaped analytics tables) is owned and populated by the o11y/insights
+// The per-tenant trace ledger (canonical hanzo.observations / hanzo.traces, the
+// OTel GenAI observations tables) is owned and populated by the o11y/insights
 // ingestion pipeline, NOT this module. This module writes only the spend ledger
 // (hanzo.cloud_usage, above). One writer per table — the ai module does not write
 // a second, incompatible observations shape into the o11y-owned table.
