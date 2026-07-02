@@ -465,6 +465,21 @@ type usageRecord struct {
 	ErrorMsg         string  `json:"errorMsg"`
 	ClientIP         string  `json:"clientIp"`
 	RequestID        string  `json:"requestId"`
+
+	// o11y-only fields (json:"-" so they NEVER reach the Commerce billing payload,
+	// which recordUsage builds from an explicit map — these carry the trace/
+	// observation content for object.EmitTrace). traceInput/traceOutput are the
+	// prompt/completion (scrubbed+truncated by the writer); traceParams the model
+	// parameters (temperature/top_p/max_tokens); traceTTFT/traceFirstByte the
+	// stream time-to-first-token; traceEnd the completion instant.
+	traceName      string         `json:"-"`
+	traceInput     string         `json:"-"`
+	traceOutput    string         `json:"-"`
+	traceSession   string         `json:"-"`
+	traceParams    map[string]any `json:"-"`
+	traceTTFT      time.Duration  `json:"-"`
+	traceFirstByte time.Time      `json:"-"`
+	traceEnd       time.Time      `json:"-"`
 }
 
 // billingQueue is the singleton usage record delivery queue. Initialized by
@@ -555,21 +570,22 @@ func recordUsage(record *usageRecord) {
 	})
 }
 
-// recordTrace persists an LLM/agent trace + usage record to hanzoai/datastore
-// (native ClickHouse OLAP) over native ZAP — the ONE internal telemetry path.
+// recordTrace is the ONE observability seam every AI operation funnels through.
+// It fans out to the two orthogonal sinks, both reached directly (ClickHouse on
+// :9000, not a ZAP bridge) and both non-blocking on the request path:
 //
-// The datastore (ClickHouse) is reached directly via object.DatastoreExec
-// (object/datastore.go) — the datastore image serves ClickHouse on :8123/:9000,
-// not a ZAP bridge. Fire-and-forget — failures are logged inside the writer,
-// never block the request.
+//   - the spend ledger  hanzo.cloud_usage        (zapWriteUsage; billing/Overview)
+//   - the trace ledger   hanzo.traces + observations (emitAIObservability →
+//     object.EmitTrace) — the Langfuse-shaped o11y tables + Prometheus metrics.
 //
-// Only the spend ledger (hanzo.cloud_usage) is written here — that is the ai
-// module's table, read by GetCloudUsageOverview for the console Overview. The
-// per-tenant trace ledger (canonical hanzo.observations / hanzo.traces, the
-// Langfuse-shaped tables) is owned and populated by the o11y/insights ingestion
-// pipeline, not this module — one writer per table.
+// This module is now the SINGLE writer of hanzo.traces/observations (the prior
+// "colliding observations write" was a second, incompatible shape; this emits the
+// agreed Langfuse v3 shape the native evals/insights read side expects). The org
+// (tenant) is server-verified from record.Owner/Organization — never a client
+// value; an operation with no resolved org yields no trace (fail-secure).
 func recordTrace(record *usageRecord, startTime time.Time) {
 	go zapWriteUsage(record, startTime)
+	emitAIObservability(record, startTime)
 }
 
 // ── API handlers ────────────────────────────────────────────────────────────
@@ -880,6 +896,9 @@ func (c *ApiController) ChatCompletions() {
 
 	// Setup for streaming if enabled
 	requestId := util.GenerateUUID()
+	// Expose the observability trace id so any caller (incl. the eval runner) can
+	// correlate a score/observation back to this request's trace.
+	c.Ctx.ResponseWriter.Header().Set("X-Hanzo-Trace-Id", "trace-"+requestId)
 	if request.Stream {
 		c.Ctx.ResponseWriter.Header().Set("Content-Type", "text/event-stream")
 		c.Ctx.ResponseWriter.Header().Set("Cache-Control", "no-cache")
@@ -949,6 +968,11 @@ func (c *ApiController) ChatCompletions() {
 				ClientIP:  c.Ctx.Request.RemoteAddr,
 				RequestID: requestId,
 			}
+			errRecord.traceName = "chat.completions"
+			errRecord.traceInput = question
+			errRecord.traceSession = c.sessionID()
+			errRecord.traceParams = chatParams(&request)
+			errRecord.traceEnd = time.Now().UTC()
 			recordUsage(errRecord)
 			recordTrace(errRecord, requestStartTime)
 		}
@@ -973,6 +997,17 @@ func (c *ApiController) ChatCompletions() {
 			Status:           "success",
 			ClientIP:         c.Ctx.Request.RemoteAddr,
 			RequestID:        requestId,
+		}
+		// Full trace content for observability (org is server-verified above).
+		successRecord.traceName = "chat.completions"
+		successRecord.traceInput = question
+		successRecord.traceOutput = writer.MessageString()
+		successRecord.traceSession = c.sessionID()
+		successRecord.traceParams = chatParams(&request)
+		successRecord.traceEnd = time.Now().UTC()
+		if request.Stream && !writer.FirstByteAt.IsZero() {
+			successRecord.traceFirstByte = writer.FirstByteAt
+			successRecord.traceTTFT = writer.FirstByteAt.Sub(requestStartTime)
 		}
 		recordUsage(successRecord)
 		recordTrace(successRecord, requestStartTime)
@@ -1249,6 +1284,12 @@ func (c *ApiController) proxyToolRequest(
 				ClientIP:         c.Ctx.Request.RemoteAddr,
 				RequestID:        requestId,
 			}
+			successRecord.traceName = "chat.completions"
+			successRecord.traceInput = messagesToText(request.Messages)
+			successRecord.traceOutput = completionText
+			successRecord.traceSession = c.sessionID()
+			successRecord.traceParams = chatParams(request)
+			successRecord.traceEnd = time.Now().UTC()
 			recordUsage(successRecord)
 			recordTrace(successRecord, requestStartTime)
 		}
@@ -1304,6 +1345,12 @@ func (c *ApiController) proxyToolRequest(
 				ClientIP:         c.Ctx.Request.RemoteAddr,
 				RequestID:        requestId,
 			}
+			successRecord.traceName = "chat.completions"
+			successRecord.traceInput = messagesToText(request.Messages)
+			successRecord.traceOutput = string(respBody)
+			successRecord.traceSession = c.sessionID()
+			successRecord.traceParams = chatParams(request)
+			successRecord.traceEnd = time.Now().UTC()
 			recordUsage(successRecord)
 			recordTrace(successRecord, requestStartTime)
 		}
@@ -1657,6 +1704,12 @@ func (c *ApiController) proxyToolRequestAnthropic(
 			ClientIP:         c.Ctx.Request.RemoteAddr,
 			RequestID:        requestId,
 		}
+		successRecord.traceName = "chat.completions"
+		successRecord.traceInput = messagesToText(request.Messages)
+		successRecord.traceOutput = contentText
+		successRecord.traceSession = c.sessionID()
+		successRecord.traceParams = chatParams(request)
+		successRecord.traceEnd = time.Now().UTC()
 		recordUsage(successRecord)
 		recordTrace(successRecord, requestStartTime)
 	}

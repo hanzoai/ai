@@ -121,6 +121,12 @@ func doBootstrap() (err error) {
 	// the datastore is reached directly, not via a ZAP peer). See object.InitDatastore.
 	object.InitDatastore()
 
+	// AI observability: the async, drop-safe writer that emits a Langfuse-shaped
+	// trace + generation-observation for every /v1 AI operation into
+	// hanzo.traces/hanzo.observations (the native evals/insights o11y ledger).
+	// Non-blocking on the request path; a counted no-op when no datastore is wired.
+	object.InitObservability()
+
 	// Model routing/pricing config from YAML. Non-fatal: static fallback.
 	configPath := conf.GetConfigString("modelConfigPath")
 	if configPath == "" {
