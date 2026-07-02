@@ -121,6 +121,13 @@ func doBootstrap() (err error) {
 	// the datastore is reached directly, not via a ZAP peer). See object.InitDatastore.
 	object.InitDatastore()
 
+	// OTel GenAI telemetry: one gen_ai span per LLM call → o11y (SigNoz) OTLP
+	// collector. Opt-in via OTEL_EXPORTER_OTLP_ENDPOINT; connects in the
+	// background and is a no-op when unset, so boot never blocks on the
+	// collector. Runs in BOTH cmd/aid and the unified cloud binary, mirroring
+	// InitDatastore. See object.InitTelemetry.
+	object.InitTelemetry()
+
 	// Model routing/pricing config from YAML. Non-fatal: static fallback.
 	configPath := conf.GetConfigString("modelConfigPath")
 	if configPath == "" {
