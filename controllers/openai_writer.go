@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/beego/beego/context"
 	"github.com/hanzoai/ai/util"
@@ -33,7 +34,11 @@ type OpenAIWriter struct {
 	RequestID  string
 	Stream     bool
 	StreamSent bool
-	Model      string
+	// FirstByteAt is the instant the first streamed token was written to the
+	// client — the time-to-first-token anchor for the observability trace. Zero
+	// until the first chunk is sent (and for non-streamed responses).
+	FirstByteAt time.Time
+	Model       string
 	// IncludeUsage mirrors the request's stream_options.include_usage. Per the
 	// OpenAI spec the trailing empty-choices usage chunk is emitted ONLY when the
 	// client asks for it; sending it unconditionally breaks clients that read
@@ -106,6 +111,11 @@ func (w *OpenAIWriter) Write(p []byte) (n int, err error) {
 	jsonData, err := json.Marshal(chunk)
 	if err != nil {
 		return 0, err
+	}
+
+	// Capture time-to-first-token: the instant the first token reaches the client.
+	if w.FirstByteAt.IsZero() {
+		w.FirstByteAt = time.Now().UTC()
 	}
 
 	// Send as SSE data chunk - use ResponseWriter to avoid recursion

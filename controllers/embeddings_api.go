@@ -236,6 +236,10 @@ func (c *ApiController) Rerank() {
 			ClientIP:     c.Ctx.Request.RemoteAddr,
 			RequestID:    util.GenerateUUID(),
 		}
+		rec.traceName = "rerank"
+		rec.traceInput = raw.Query
+		rec.traceSession = c.sessionID()
+		rec.traceEnd = time.Now().UTC()
 		recordUsage(rec)
 		recordTrace(rec, startTime)
 	}
@@ -364,6 +368,15 @@ func (c *ApiController) proxyJSON(provider *object.Provider, apiPath string, bod
 			Status:       status,
 			ClientIP:     c.Ctx.Request.RemoteAddr,
 			RequestID:    requestId,
+		}
+		// Trace the request (the input text). The embedding vectors / rerank scores
+		// are high-volume and low-value as trace output, so only the input is kept.
+		rec.traceName = apiPath
+		rec.traceInput = string(body)
+		rec.traceSession = c.sessionID()
+		rec.traceEnd = time.Now().UTC()
+		if status == "error" {
+			rec.ErrorMsg = string(respBody)
 		}
 		recordUsage(rec)
 		recordTrace(rec, startTime)
