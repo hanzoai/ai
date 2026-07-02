@@ -23,7 +23,7 @@ import (
 
 	"github.com/beego/beego"
 	_ "github.com/beego/beego/session" // memory session provider registration
-	"github.com/hanzoai/zip"
+	"github.com/zap-proto/zip"
 )
 
 // reproCtrl is a minimal beego controller exposing the same OpenAI-compatible
