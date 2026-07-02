@@ -30,6 +30,12 @@ func GetSplitProvider(typ string) (SplitProvider, error) {
 		p, err = NewBasicSplitProvider()
 	} else if typ == "Markdown" {
 		p, err = NewMarkdownSplitProvider()
+	} else if typ == "Recursive" {
+		// Character-based recursive splitter (parity with the retired rag-api's
+		// RecursiveCharacterTextSplitter). Defaults 1500/100; the RAG module
+		// constructs it directly via NewRecursiveSplitProvider to honor the
+		// configured RAG_CHUNK_SIZE / RAG_CHUNK_OVERLAP.
+		p, err = NewRecursiveSplitProvider(0, -1)
 	} else {
 		p, err = NewDefaultSplitProvider("default")
 	}
