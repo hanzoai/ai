@@ -440,3 +440,23 @@ func (c *ApiController) ReloadModelConfig() {
 
 	c.ResponseOk()
 }
+
+// RefreshModelPricing handles POST /api/refresh-model-pricing.
+// @Title RefreshModelPricing
+// @Tag Admin
+// @Description Force-refresh live pricing from the pricing service without reloading YAML.
+// @Success 200 {object} controllers.Response
+// @router /refresh-model-pricing [post]
+func (c *ApiController) RefreshModelPricing() {
+	cfg := GetModelConfig()
+	if cfg == nil {
+		c.ResponseError("model config not initialized")
+		return
+	}
+
+	cfg.fetchLivePricing()
+
+	c.ResponseOk(map[string]interface{}{
+		"lastPricingRefresh": cfg.LastPricingRefresh().Format(time.RFC3339),
+	})
+}

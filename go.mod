@@ -41,7 +41,6 @@ require (
 	github.com/hanzoai/iam v1.19.8-0.20260622075908-c2fd4872545b
 	github.com/hanzoai/pdf v1.2.0
 	github.com/hanzoai/search-go v0.36.0
-	github.com/hanzoai/zip v0.2.0
 	github.com/henomis/lingoose v0.1.0
 	github.com/hupe1980/go-huggingface v0.0.15
 	github.com/leverly/ChatGLM v1.2.0
@@ -294,6 +293,7 @@ require (
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
+	github.com/zap-proto/zip v1.0.0
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.67.0 // indirect
 	go.opentelemetry.io/otel v1.44.0 // indirect
