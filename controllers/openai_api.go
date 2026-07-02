@@ -566,11 +566,18 @@ func recordUsage(record *usageRecord) {
 //
 // Only the spend ledger (hanzo.cloud_usage) is written here — that is the ai
 // module's table, read by GetCloudUsageOverview for the console Overview. The
-// per-tenant trace ledger (canonical hanzo.observations / hanzo.traces, the
-// Langfuse-shaped tables) is owned and populated by the o11y/insights ingestion
-// pipeline, not this module — one writer per table.
+// per-tenant trace ledger (canonical hanzo.observations / hanzo.traces) is owned
+// and populated by the o11y/insights ingestion pipeline, not this module — one
+// writer per table.
+//
+// Separately, emitGenAISpan ships one OpenTelemetry GenAI span per call to the
+// o11y OTLP collector (opt-in via OTEL_EXPORTER_OTLP_ENDPOINT). That is the
+// SOURCE the o11y pipeline ingests — this module never writes the observations
+// table directly. The span emit is batched/async and a no-op when telemetry is
+// off, so it never blocks the request.
 func recordTrace(record *usageRecord, startTime time.Time) {
 	go zapWriteUsage(record, startTime)
+	emitGenAISpan(record, startTime)
 }
 
 // ── API handlers ────────────────────────────────────────────────────────────
