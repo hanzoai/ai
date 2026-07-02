@@ -28,7 +28,7 @@
 // and BOTH the read (get-cloud-usages) and write (zapWriteUsage/zapWriteTrace)
 // paths were dead. The datastore speaks ClickHouse's own protocol; we speak it
 // directly — the same clickhouse-go/v2 recipe cloud's audit OLAP mirror and the
-// insights (Langfuse) stack already use. No sidecar, no bridge, one transport.
+// insights/o11y stack already uses. No sidecar, no bridge, one transport.
 //
 // InitDatastore is called from the SHARED Bootstrap (bootstrap.go), so it runs
 // identically in the standalone (cmd/aid) and the embedded unified cloud binary
