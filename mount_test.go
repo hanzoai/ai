@@ -20,7 +20,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/hanzoai/zip"
+	"github.com/zap-proto/zip"
 )
 
 // These tests exercise the route-adapter concern (bare /v1/* forwarding and the
