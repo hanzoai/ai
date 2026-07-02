@@ -558,6 +558,10 @@ func (c *ApiController) AnthropicMessages() {
 				ClientIP:  c.Ctx.Request.RemoteAddr,
 				RequestID: requestId,
 			}
+			errRecord.traceName = "messages"
+			errRecord.traceInput = question
+			errRecord.traceSession = c.sessionID()
+			errRecord.traceEnd = time.Now().UTC()
 			recordUsage(errRecord)
 			recordTrace(errRecord, requestStartTime)
 		}
@@ -583,6 +587,12 @@ func (c *ApiController) AnthropicMessages() {
 			ClientIP:         c.Ctx.Request.RemoteAddr,
 			RequestID:        requestId,
 		}
+		successRecord.traceName = "messages"
+		successRecord.traceInput = question
+		successRecord.traceOutput = writer.MessageString()
+		successRecord.traceSession = c.sessionID()
+		successRecord.traceParams = map[string]any{"max_tokens": request.MaxTokens, "stream": request.Stream}
+		successRecord.traceEnd = time.Now().UTC()
 		recordUsage(successRecord)
 		recordTrace(successRecord, requestStartTime)
 		hold.settle(calculateCostCentsWithCache(request.Model, modelResult.PromptTokenCount, modelResult.ResponseTokenCount, 0, 0))

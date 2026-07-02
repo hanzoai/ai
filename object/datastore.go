@@ -150,6 +150,22 @@ func DatastoreExec(ctx context.Context, stmt string, args ...interface{}) error 
 	return conn.Exec(ctx, stmt, args...)
 }
 
+// DatastoreBatch opens a native ClickHouse block-insert batch for `query`
+// (an `INSERT INTO … ` statement). The caller Appends rows and Sends() the
+// block — the canonical clickhouse-go path for high-throughput inserts, used by
+// the observability trace/observation flush (object/observability.go). One block
+// per flush means zero per-row round trips. Returns an error (never a nil batch
+// on success) when the warehouse is absent, so the writer can drop-safe.
+func DatastoreBatch(ctx context.Context, query string) (driver.Batch, error) {
+	datastoreMu.RLock()
+	conn := datastoreConn
+	datastoreMu.RUnlock()
+	if conn == nil {
+		return nil, fmt.Errorf("datastore: not connected")
+	}
+	return conn.PrepareBatch(ctx, query)
+}
+
 // DatastoreQuery runs a SELECT and returns rows as column→value maps, decoding
 // each column into its native ClickHouse scan type (uint64, string, time.Time,
 // float64, …). The cloud_usage read layer's cu* coercers accept those native

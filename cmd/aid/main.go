@@ -15,10 +15,12 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/beego/beego"
 	"github.com/beego/beego/logs"
@@ -71,6 +73,13 @@ func main() {
 				logs.Info("Billing queue drained successfully")
 			}
 		}
+
+		// Flush buffered observability traces to the datastore before exit so a
+		// clean SIGTERM does not lose in-flight trace/observation events.
+		flushCtx, flushCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		object.FlushObservability(flushCtx)
+		flushCancel()
+		logs.Info("Observability trace writer flushed")
 
 		controllers.StopInterserviceZap()
 		object.StopZap()
