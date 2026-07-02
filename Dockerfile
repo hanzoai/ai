@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-FROM --platform=$BUILDPLATFORM node:22-alpine AS front
+FROM --platform=$BUILDPLATFORM public.ecr.aws/docker/library/node:22-alpine AS front
 RUN npm install -g pnpm@9.15.4
 WORKDIR /web
 COPY ./web .
@@ -8,7 +8,7 @@ ENV NODE_OPTIONS="--max-old-space-size=4096"
 RUN pnpm install --frozen-lockfile && pnpm build
 
 
-FROM golang:1.26.4-alpine AS back
+FROM public.ecr.aws/docker/library/golang:1.26.4-alpine AS back
 RUN apk add --no-cache git
 WORKDIR /go/src/hanzo-cloud
 # Private cross-org modules (hanzoai/*, luxfi/* — luxfi/zap forward bridge) are
@@ -28,7 +28,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     CGO_ENABLED=0 go build -ldflags="-w -s" -o server ./cmd/aid
 
 
-FROM alpine:3.21 AS standard
+FROM public.ecr.aws/docker/library/alpine:3.21 AS standard
 LABEL maintainer="https://hanzo.ai/"
 ARG USER=hanzo
 
@@ -52,7 +52,7 @@ ENV RUNNING_IN_DOCKER=true
 ENTRYPOINT ["/server"]
 
 
-FROM debian:latest AS db
+FROM public.ecr.aws/docker/library/debian:latest AS db
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         mariadb-server \
