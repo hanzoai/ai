@@ -210,6 +210,12 @@ func CalculateOpenAIModelPrice(model string, modelResult *ModelResult, lang stri
 		modelResult.Currency = "USD"
 		return nil
 
+	// do-ai Stable Diffusion 3.5 Large (sync OpenAI /images shape) — $0.08/image
+	case strings.Contains(model, "stable-diffusion"):
+		modelResult.TotalPrice = float64(modelResult.ImageCount) * 0.08
+		modelResult.Currency = "USD"
+		return nil
+
 	// do-ai fal FLUX diffusion (zen3-image family → fal-ai/flux/schnell)
 	case strings.Contains(model, "fal-ai/flux") || strings.Contains(model, "zen3-image"):
 		modelResult.TotalPrice = float64(modelResult.ImageCount) * 0.05
@@ -453,46 +459,30 @@ func (p *OpenAiModelProvider) QueryText(question string, writer io.Writer, histo
 			return modelResult, nil
 		}
 
-		var imageURL string
-		if isDOAIImageModel(model) {
-			// do-ai fal-hosted diffusion models use the ASYNC image API, not the
-			// OpenAI /v1/images/generations shape. Drive the SAME async client the
-			// /v1/images/generations handler uses (submit → poll → retrieve).
-			res, err := GenerateImageDOAI(ctx, p.providerUrl, p.secretKey, ImageGenRequest{
-				UpstreamModel: model,
-				Prompt:        question,
-				N:             1,
-			})
-			if err != nil {
-				return nil, err
-			}
-			imageURL = res.Images[0].URL
-		} else {
-			quality := getGenerateImageQuality(model)
-			reqUrl := openai.ImageGenerateParams{
-				Prompt:         question,
-				Model:          model,
-				Size:           openai.ImageGenerateParamsSize1024x1024,
-				ResponseFormat: openai.ImageGenerateParamsResponseFormatURL,
-				Quality:        quality,
-				N:              param.NewOpt[int64](1),
-			}
-
-			respUrl, err := client.Images.Generate(ctx, reqUrl)
-			if err != nil {
-				return nil, err
-			}
-			imageURL = respUrl.Data[0].URL
+		// One image dispatch for both upstream shapes (async fal vs sync OpenAI),
+		// shared with the /v1/images/generations handler via GenerateImageForModel.
+		res, err := GenerateImageForModel(ctx, p.providerUrl, p.secretKey, ImageGenRequest{
+			UpstreamModel: model,
+			Prompt:        question,
+			N:             1,
+		})
+		if err != nil {
+			return nil, err
 		}
 
-		url := fmt.Sprintf("<img src=\"%s\" width=\"100%%\" height=\"auto\">", imageURL)
+		// Render whichever the upstream returned: a hosted URL (fal) or an inline
+		// base64 data URI (SD 3.5 Large returns b64_json, no URL).
+		imgSrc := res.Images[0].URL
+		if imgSrc == "" && res.Images[0].B64JSON != "" {
+			imgSrc = "data:image/png;base64," + res.Images[0].B64JSON
+		}
+		url := fmt.Sprintf("<img src=\"%s\" width=\"100%%\" height=\"auto\">", imgSrc)
 		fmt.Fprint(writer, url)
 		flusher.Flush()
 
 		modelResult.ImageCount = 1
 		modelResult.TotalTokenCount = modelResult.ImageCount
-		err := CalculateOpenAIModelPrice(model, modelResult, lang)
-		if err != nil {
+		if err := CalculateOpenAIModelPrice(model, modelResult, lang); err != nil {
 			return nil, err
 		}
 
@@ -563,12 +553,101 @@ func (p *OpenAiModelProvider) QueryText(question string, writer io.Writer, histo
 }
 
 // isDOAIImageModel reports whether an image model is a do-ai fal-hosted
-// diffusion model (async image API) rather than an OpenAI image model
-// (client.Images.Generate). Both the fal upstream ids and the user-facing
-// zen3-image family route to the async path.
+// diffusion model (async image API) rather than a synchronous OpenAI-shape
+// image model (client.Images.Generate: dall-e, gpt-image, stable-diffusion).
+// Both the fal upstream ids and the user-facing zen3-image family route to the
+// async path.
 func isDOAIImageModel(model string) bool {
 	m := strings.ToLower(model)
 	return strings.HasPrefix(m, "fal-ai/") || strings.Contains(m, "zen3-image")
+}
+
+// GenerateImageForModel is the ONE image-generation dispatcher shared by both
+// image callers — the OpenAI-compatible /v1/images/generations handler
+// (controllers/images_api.go) and the chat-stream image branch (QueryText
+// below). It routes to the correct upstream shape by model:
+//
+//   - fal-hosted diffusion (fal-ai/*, zen3-image*) → DigitalOcean's ASYNC
+//     invoke API (submit → poll → retrieve) via GenerateImageDOAI.
+//   - everything else (SD 3.5 Large, dall-e, gpt-image) → the SYNCHRONOUS
+//     OpenAI /images/generations shape via client.Images.Generate.
+//
+// upstreamModel is the resolved DO catalog id; baseURL and apiKey are the do-ai
+// provider's ProviderUrl and key (never logged). It returns an OpenAI-shaped
+// result carrying a URL or b64_json per what the upstream produced.
+func GenerateImageForModel(ctx context.Context, baseURL, apiKey string, req ImageGenRequest) (*ImageGenResult, error) {
+	if isDOAIImageModel(req.UpstreamModel) {
+		return GenerateImageDOAI(ctx, baseURL, apiKey, req)
+	}
+	return generateImageOpenAI(ctx, baseURL, apiKey, req)
+}
+
+// generateImageOpenAI generates image(s) through the synchronous OpenAI
+// /images/generations shape (client.Images.Generate). It requests b64_json —
+// DO's Stable Diffusion returns base64 rather than a hosted URL — and tolerates
+// either field on the response so a URL-returning model still works.
+func generateImageOpenAI(ctx context.Context, baseURL, apiKey string, req ImageGenRequest) (*ImageGenResult, error) {
+	if strings.TrimSpace(req.Prompt) == "" {
+		return nil, fmt.Errorf("image generation requires a non-empty prompt")
+	}
+	if req.UpstreamModel == "" {
+		return nil, fmt.Errorf("image generation requires an upstream model id")
+	}
+	n := req.N
+	if n < 1 {
+		n = 1
+	}
+	if n > 10 {
+		n = 10
+	}
+
+	client := GetOpenAiClientFromToken(apiKey, baseURL)
+	params := openai.ImageGenerateParams{
+		Prompt:         req.Prompt,
+		Model:          req.UpstreamModel,
+		ResponseFormat: openai.ImageGenerateParamsResponseFormatB64JSON,
+		Quality:        getGenerateImageQuality(req.UpstreamModel),
+		N:              param.NewOpt[int64](int64(n)),
+	}
+	if size := imageSizeParam(req.Size); size != "" {
+		params.Size = size
+	}
+
+	resp, err := client.Images.Generate(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+
+	result := &ImageGenResult{Images: make([]GeneratedImage, 0, len(resp.Data))}
+	for _, d := range resp.Data {
+		if d.URL == "" && d.B64JSON == "" {
+			continue
+		}
+		result.Images = append(result.Images, GeneratedImage{URL: d.URL, B64JSON: d.B64JSON})
+	}
+	if len(result.Images) == 0 {
+		return nil, fmt.Errorf("image generation returned no images")
+	}
+	return result, nil
+}
+
+// imageSizeParam maps a caller "WxH" size to the OpenAI SDK size enum, or ""
+// (→ model default) when the size is empty or unrecognized.
+func imageSizeParam(size string) openai.ImageGenerateParamsSize {
+	switch size {
+	case "256x256":
+		return openai.ImageGenerateParamsSize256x256
+	case "512x512":
+		return openai.ImageGenerateParamsSize512x512
+	case "1024x1024":
+		return openai.ImageGenerateParamsSize1024x1024
+	case "1792x1024":
+		return openai.ImageGenerateParamsSize1792x1024
+	case "1024x1792":
+		return openai.ImageGenerateParamsSize1024x1792
+	default:
+		return ""
+	}
 }
 
 func getGenerateImageQuality(model string) openai.ImageGenerateParamsQuality {

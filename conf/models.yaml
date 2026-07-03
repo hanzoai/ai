@@ -225,8 +225,8 @@ models:
 
   gemma-4-31b:
     provider: do-ai
-    upstream: gemma-4-31b
-    pricing: { input: 0.15, output: 0.45 }
+    upstream: gemma-4-31B-it   # real DO catalog id (was "gemma-4-31b" → 404)
+    pricing: { input: 0.18, output: 0.50 }
 
   kimi-k2:
     provider: do-ai
@@ -788,6 +788,47 @@ models:
     premium: true
     owned_by: hanzo
 
+  # ── DO-AI image: Stable Diffusion 3.5 Large ───────────────────────────
+  # Unlike the fal FLUX/SDXL models (async-invoke), SD 3.5 Large is served on
+  # the SYNCHRONOUS OpenAI /images/generations shape. model.GenerateImageForModel
+  # dispatches it via client.Images.Generate; getOpenAiModelType classifies it
+  # as an image model. Usable via /v1/images/generations and the chat-image path.
+  # Billed $0.08/image (controllers.imageCostCents) — token pricing is unused.
+  stable-diffusion-3.5-large:
+    provider: do-ai
+    upstream: stable-diffusion-3.5-large
+
+  # ── DO-AI Inference Router (served at POST /v1/chat/completions) ───────
+  # DO's model router auto-selects the best foundation model per request and
+  # returns the chosen model in the response. Callable as plain chat. The router
+  # itself adds no cost (public preview); the request bills at the underlying
+  # model it selects — the price below is an in-pattern estimate for that class
+  # (matching gpt-oss-120b), NOT a published per-router rate.
+  "router:general":
+    provider: do-ai
+    upstream: "router:general"
+    pricing: { input: 0.90, output: 0.90 }
+
+  "router:knowledge-base-document":
+    provider: do-ai
+    upstream: "router:knowledge-base-document"
+    pricing: { input: 0.90, output: 0.90 }
+
+  "router:software-engineering":
+    provider: do-ai
+    upstream: "router:software-engineering"
+    pricing: { input: 0.90, output: 0.90 }
+
+  "router:software-engineering-01":
+    provider: do-ai
+    upstream: "router:software-engineering-01"
+    pricing: { input: 0.90, output: 0.90 }
+
+  "router:writing":
+    provider: do-ai
+    upstream: "router:writing"
+    pricing: { input: 0.90, output: 0.90 }
+
   # ── Zen versionless aliases (always point to latest zenN variant) ──────
 
   zen:
@@ -1005,6 +1046,36 @@ models:
     upstream: text-embedding-ada-002
     owned_by: openai
     pricing: { input: 0.10, output: 0.00 }
+
+  # ── DO-AI embeddings (served at POST /v1/embeddings) ──────────────────
+  # Open sentence-transformer / BGE / GTE / E5 embedding models served by the
+  # do-ai provider (the same working key as chat). Non-premium: usable on the
+  # starter credit. Prices are DigitalOcean's published per-1M embedding rates;
+  # embeddings bill on input tokens only (output 0). owned_by = do-ai provider.
+  bge-m3:
+    provider: do-ai
+    upstream: bge-m3
+    pricing: { input: 0.02, output: 0.00 }
+
+  e5-large-v2:
+    provider: do-ai
+    upstream: e5-large-v2
+    pricing: { input: 0.02, output: 0.00 }
+
+  gte-large-en-v1.5:
+    provider: do-ai
+    upstream: gte-large-en-v1.5
+    pricing: { input: 0.09, output: 0.00 }
+
+  all-mini-lm-l6-v2:
+    provider: do-ai
+    upstream: all-mini-lm-l6-v2
+    pricing: { input: 0.009, output: 0.00 }
+
+  multi-qa-mpnet-base-dot-v1:
+    provider: do-ai
+    upstream: multi-qa-mpnet-base-dot-v1
+    pricing: { input: 0.009, output: 0.00 }
 
   # ── Rerank (served at POST /v1/rerank) ────────────────────────────────
   # zen-reranker is a bi-encoder reranker: /v1/rerank embeds query+documents via
