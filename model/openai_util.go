@@ -89,6 +89,10 @@ func getOpenAiModelType(model string) string {
 		// path for both the user-facing name and the fal-hosted upstream this
 		// routes to (fal-ai/flux/schnell, fal-ai/fast-sdxl).
 		"zen3-image", "fal-ai/flux", "fal-ai/fast-sdxl",
+		// DO-AI Stable Diffusion 3.5 Large — served on the synchronous OpenAI
+		// /images shape (isDOAIImageModel==false → client.Images.Generate). The
+		// "stable-diffusion" substring matches its id and no chat model.
+		"stable-diffusion",
 	}
 
 	for _, pattern := range chatPatterns {
