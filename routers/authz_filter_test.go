@@ -116,3 +116,116 @@ func TestDenyRequestForbidden403(t *testing.T) {
 		t.Errorf("DenyRequest = %d, want 403", rec.Code)
 	}
 }
+
+// newFilterCtxAuth builds a filter context with a Bearer header (no session), so
+// the credential-presence gate can be exercised.
+func newFilterCtxAuth(method, path, bearer string) (*beegoctx.Context, *httptest.ResponseRecorder) {
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(method, path, nil)
+	if bearer != "" {
+		req.Header.Set("Authorization", "Bearer "+bearer)
+	}
+	ctx := beegoctx.NewContext()
+	ctx.Reset(rec, req)
+	sess := &fakeSession{data: map[interface{}]interface{}{}}
+	ctx.Input.CruSession = sess
+	return ctx, rec
+}
+
+// TestWriteEndpointsRequireCredential is the F1 defense-in-depth assertion: the
+// central filter fails closed (401) for a FULLY ANONYMOUS request to the
+// write / ingest / scrape / RAG endpoints that previously fell through it with no
+// central gate. This is the second layer behind requireIndexAuth.
+func TestWriteEndpointsRequireCredential(t *testing.T) {
+	cases := []struct{ method, path string }{
+		{"POST", "/v1/rag/embed"},
+		{"POST", "/v1/rag/query"},
+		{"POST", "/v1/rag/delete"},
+		{"GET", "/v1/rag/context"},
+		{"POST", "/v1/scrape"},
+		{"POST", "/v1/scrape/preview"},
+		{"POST", "/v1/index"},
+		{"POST", "/v1/search"},
+		{"GET", "/v1/search/stats"},
+		{"POST", "/v1/docs/ingest"},
+		{"POST", "/v1/embed"},
+		{"POST", "/v1/query"},
+		{"POST", "/v1/query_multiple"},
+		{"DELETE", "/v1/documents"},
+		{"GET", "/v1/documents/file-123/context"},
+	}
+	for _, tc := range cases {
+		ctx, rec := newFilterCtx(tc.method, tc.path, nil) // no user, no bearer
+		permissionFilter(ctx)
+		if rec.Code != http.StatusUnauthorized {
+			t.Errorf("anonymous %s %s = %d, want 401 (fail closed)", tc.method, tc.path, rec.Code)
+		}
+	}
+}
+
+// TestWriteEndpointWithCredentialPassesFilter — when SOME credential is present
+// the filter passes through (the controller does the authoritative validation);
+// the coarse presence gate must never reject a credential-bearing request.
+func TestWriteEndpointWithCredentialPassesFilter(t *testing.T) {
+	// Bearer present (validity is the controller's job).
+	ctx, rec := newFilterCtxAuth("POST", "/v1/rag/embed", "hk-some-key")
+	permissionFilter(ctx)
+	if rec.Code != http.StatusOK || rec.Body.Len() != 0 {
+		t.Errorf("credentialed /v1/rag/embed wrote a denial (code=%d, body=%q); want filter pass-through", rec.Code, rec.Body.String())
+	}
+
+	// Session present, no Bearer — also passes.
+	sessionUser := &iam.User{Owner: "acme", Name: "bob"}
+	ctx2, rec2 := newFilterCtx("POST", "/v1/scrape", sessionUser)
+	permissionFilter(ctx2)
+	if rec2.Code != http.StatusOK || rec2.Body.Len() != 0 {
+		t.Errorf("session-auth /v1/scrape wrote a denial (code=%d, body=%q); want filter pass-through", rec2.Code, rec2.Body.String())
+	}
+}
+
+// TestBenignPathsNotCredentialGated — intentionally-anonymous or
+// gateway-header-authed paths (health, metrics, memory, wecom) must NOT be
+// caught by the write-endpoint gate. The gate is an explicit set, not a blanket
+// default.
+func TestBenignPathsNotCredentialGated(t *testing.T) {
+	for _, p := range []struct{ method, path string }{
+		{"GET", "/v1/health"},
+		{"GET", "/v1/metrics"},
+		{"GET", "/v1/memory/search"},
+		{"POST", "/v1/wecom-bot/callback/bot1"},
+	} {
+		ctx, rec := newFilterCtx(p.method, p.path, nil)
+		permissionFilter(ctx)
+		if rec.Code == http.StatusUnauthorized {
+			t.Errorf("benign %s %s = 401; must not be credential-gated", p.method, p.path)
+		}
+	}
+}
+
+// TestRequiresPresentCredentialClassification locks exactly which endpoints are
+// credential-gated — the write/ingest/scrape/RAG set — and which are not
+// (chat/models/memory/health and the unrelated query-record family, which must
+// NOT be caught by the "query" entry).
+func TestRequiresPresentCredentialClassification(t *testing.T) {
+	gated := []string{
+		"scrape", "scrape/preview", "index", "search", "search/stats",
+		"docs/ingest", "embed", "query", "query_multiple", "documents",
+		"rag/embed", "rag/query", "rag/query-multiple", "rag/delete", "rag/context",
+		"documents/file-123/context",
+	}
+	for _, e := range gated {
+		if !requiresPresentCredential(e) {
+			t.Errorf("%q must require a present credential", e)
+		}
+	}
+	ungated := []string{
+		"chat/completions", "completions", "models", "messages",
+		"memory/search", "memory/remember", "health", "metrics",
+		"get-account", "query-record", "query-record-second",
+	}
+	for _, e := range ungated {
+		if requiresPresentCredential(e) {
+			t.Errorf("%q must NOT require a present credential (benign/self-authing/unrelated)", e)
+		}
+	}
+}
