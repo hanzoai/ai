@@ -216,6 +216,7 @@ type globalAuthClient struct{}
 func (globalAuthClient) GetOAuthToken(code, state string, opts ...iam.OAuthOption) (*oauth2.Token, error) {
 	return iam.GetOAuthToken(code, state, opts...)
 }
+
 func (globalAuthClient) ParseJwtToken(token string) (*iam.Claims, error) {
 	return iam.ParseJwtToken(token)
 }
