@@ -51,16 +51,18 @@ func (c *ApiController) resolveSearchAuth() *searchAuth {
 		}
 	}
 
-	// 2. Bearer token auth
+	// 2. Bearer token auth. Every failure below is an authentication failure and
+	// MUST be a real HTTP 401 (ResponseUnauthorized), never Beego's default 200
+	// (plain ResponseError) — a denial must be unambiguous to the caller.
 	authHeader := c.Ctx.Request.Header.Get("Authorization")
 	if authHeader == "" {
-		c.ResponseError("authentication required: provide a session cookie or Bearer token")
+		c.ResponseUnauthorized("authentication required: provide a session cookie or Bearer token")
 		return nil
 	}
 
 	token := strings.TrimPrefix(authHeader, "Bearer ")
 	if token == "" || token == authHeader {
-		c.ResponseError("invalid Authorization header: expected 'Bearer <token>'")
+		c.ResponseUnauthorized("invalid Authorization header: expected 'Bearer <token>'")
 		return nil
 	}
 
@@ -69,11 +71,11 @@ func (c *ApiController) resolveSearchAuth() *searchAuth {
 		iamUser, err := getUserByAccessKey(token)
 		if err != nil {
 			logs.Warning("search auth: hk-* key validation failed: %s", err.Error())
-			c.ResponseError("API key validation failed")
+			c.ResponseUnauthorized("API key validation failed")
 			return nil
 		}
 		if iamUser == nil {
-			c.ResponseError("invalid API key")
+			c.ResponseUnauthorized("invalid API key")
 			return nil
 		}
 		return &searchAuth{
@@ -88,11 +90,11 @@ func (c *ApiController) resolveSearchAuth() *searchAuth {
 		iamUser, err := getUserByAccessKey(token)
 		if err != nil {
 			logs.Warning("search auth: pk-* key validation failed: %s", err.Error())
-			c.ResponseError("publishable key validation failed")
+			c.ResponseUnauthorized("publishable key validation failed")
 			return nil
 		}
 		if iamUser == nil {
-			c.ResponseError("invalid publishable key")
+			c.ResponseUnauthorized("invalid publishable key")
 			return nil
 		}
 		return &searchAuth{
@@ -108,7 +110,7 @@ func (c *ApiController) resolveSearchAuth() *searchAuth {
 	// tenant's indexed store.
 	if isWidgetKey(token) {
 		if !validateWidgetKey(token) {
-			c.ResponseError("invalid widget key")
+			c.ResponseUnauthorized("invalid widget key")
 			return nil
 		}
 		owner := widgetKeyOwner(token)
@@ -123,7 +125,7 @@ func (c *ApiController) resolveSearchAuth() *searchAuth {
 	if isJwtToken(token) {
 		claims, err := object.ParseAndValidateJWT(token)
 		if err != nil {
-			c.ResponseError("invalid token: " + err.Error())
+			c.ResponseUnauthorized("invalid token: " + err.Error())
 			return nil
 		}
 		jwtUser := &claims.User
@@ -134,7 +136,7 @@ func (c *ApiController) resolveSearchAuth() *searchAuth {
 		}
 	}
 
-	c.ResponseError("unrecognized token format: expected hk-*, pk-*, or JWT")
+	c.ResponseUnauthorized("unrecognized token format: expected hk-*, pk-*, or JWT")
 	return nil
 }
 
@@ -172,11 +174,11 @@ func (c *ApiController) requireIndexAuth() *searchAuth {
 			iamUser, err := getUserByAccessKey(token)
 			if err != nil {
 				logs.Warning("index auth: hk-* key validation failed: %s", err.Error())
-				c.ResponseError("API key validation failed")
+				c.ResponseUnauthorized("API key validation failed")
 				return nil
 			}
 			if iamUser == nil {
-				c.ResponseError("invalid API key")
+				c.ResponseUnauthorized("invalid API key")
 				return nil
 			}
 			return &searchAuth{
@@ -186,9 +188,10 @@ func (c *ApiController) requireIndexAuth() *searchAuth {
 			}
 		}
 
-		// pk-* publishable keys cannot write
+		// pk-* publishable keys are a VALID credential but not permitted to write
+		// (read-only) — 403, not 401.
 		if isPublishableKey(token) {
-			c.ResponseError("publishable keys (pk-*) cannot perform write operations")
+			c.ResponseForbidden("publishable keys (pk-*) cannot perform write operations")
 			return nil
 		}
 
@@ -196,7 +199,7 @@ func (c *ApiController) requireIndexAuth() *searchAuth {
 		if isJwtToken(token) {
 			claims, err := object.ParseAndValidateJWT(token)
 			if err != nil {
-				c.ResponseError("invalid token: " + err.Error())
+				c.ResponseUnauthorized("invalid token: " + err.Error())
 				return nil
 			}
 			jwtUser := &claims.User
@@ -208,15 +211,12 @@ func (c *ApiController) requireIndexAuth() *searchAuth {
 		}
 	}
 
-	// Preview mode allows all operations (for development)
-	if c.IsPreviewMode() {
-		return &searchAuth{
-			Owner:  "admin",
-			UserID: "admin/admin",
-		}
-	}
-
-	c.ResponseError(c.T("auth:this operation requires admin privilege"))
+	// No session admin, no valid Bearer credential → DENY (401). Preview mode is
+	// NEVER a write-auth fallback here: a no-credential caller must not reach the
+	// admin tenant's index/scrape/ingest (retrieval-poisoning, document deletion,
+	// SSRF + cost). The env lever (DISABLE_PREVIEW_MODE) closes the surface
+	// wholesale; this removes the code path that granted admin regardless.
+	c.ResponseUnauthorized(c.T("auth:this operation requires admin privilege"))
 	return nil
 }
 
