@@ -240,14 +240,19 @@ var modelRoutes = map[string]modelRoute{
 	"wan2-2-t2v-a14b": {providerName: "do-ai", upstreamModel: "wan2-2-t2v-a14b", premium: true},
 
 	// ── Zen3 video (text-to-video) family ────────────────────────────────
-	// Routed to do-ai's wan2-2-t2v-a14b via the async video API
-	// (model/doai_video.go). do-ai serves exactly one t2v model, so the brand
-	// family collapses cleanly onto that single upstream rather than inventing
-	// per-variant models that don't exist upstream. owned_by hanzo — the do-ai
-	// upstream is never exposed (same policy as every zen route).
-	"zen3-video":      {providerName: "do-ai", upstreamModel: "wan2-2-t2v-a14b", premium: true, ownedBy: "hanzo"},
-	"zen3-video-fast": {providerName: "do-ai", upstreamModel: "wan2-2-t2v-a14b", premium: true, ownedBy: "hanzo"},
-	"zen3-video-pro":  {providerName: "do-ai", upstreamModel: "wan2-2-t2v-a14b", premium: true, ownedBy: "hanzo"},
+	// Served on OUR GB10 (spark) via Hanzo Studio (ComfyUI + the Zen video
+	// diffusion model). The "spark-video" provider row's ProviderUrl points at
+	// the spark queue service (https://spark-video.hanzo.ai/v1), which exposes
+	// the SAME OpenAI Sora-style async video API (create → poll → download) that
+	// model/doai_video.go already drives — so no client change, only the
+	// provider re-point. upstreamModel stays wan2-2-t2v-a14b: that is the id the
+	// spark async API accepts and maps to the Zen video workflow. owned_by
+	// hanzo — the backend model name is never exposed (same policy as every zen
+	// route). premium: true — ALL video is premium (minutes of GB10 compute),
+	// routed through the starter-credit gate so the free credit can't fund it.
+	"zen3-video":      {providerName: "spark-video", upstreamModel: "wan2-2-t2v-a14b", premium: true, ownedBy: "hanzo"},
+	"zen3-video-fast": {providerName: "spark-video", upstreamModel: "wan2-2-t2v-a14b", premium: true, ownedBy: "hanzo"},
+	"zen3-video-pro":  {providerName: "spark-video", upstreamModel: "wan2-2-t2v-a14b", premium: true, ownedBy: "hanzo"},
 
 	// ── Zen versionless aliases (always point to latest zenN variant) ──
 	"zen":             {providerName: "do-ai", upstreamModel: "glm-5", premium: true, ownedBy: "hanzo", hidden: true},
