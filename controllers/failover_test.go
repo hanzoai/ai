@@ -43,6 +43,9 @@ func TestIsRetryableError(t *testing.T) {
 		{"invalid request", fmt.Errorf("invalid request body"), false},
 		{"auth error different", fmt.Errorf("invalid API key format"), false},
 		{"empty error", fmt.Errorf(""), false},
+		// A disabled/unconfigured primary provider is surfaced by callProvider as
+		// "... is unavailable ..." so the failover loop advances to the fallback.
+		{"provider unavailable (disabled primary)", fmt.Errorf("provider \"do-ai\" is unavailable (disabled or not configured)"), true},
 	}
 
 	for _, tc := range cases {
