@@ -14,18 +14,7 @@
 
 package object
 
-import (
-	"sync"
-	"testing"
-)
-
-// resetIngestClientForTest clears the lazily-dialed client singleton so a test can
-// re-exercise ingestClient() with a fresh TASKS_ADDR.
-func resetIngestClientForTest() {
-	ingestOnce = sync.Once{}
-	ingestCli = nil
-	ingestErr = nil
-}
+import "testing"
 
 // TestIsAsyncIngestSource pins the sync/async split: only upload (and the empty
 // default) run inline; every bulk/external source runs as a durable workflow.
@@ -80,15 +69,16 @@ func TestIngestWorkflowIDCrawlURL(t *testing.T) {
 	}
 }
 
-// TestEnqueueIngestUnconfigured proves that with no engine wired (TASKS_ADDR unset),
-// EnqueueIngest reports ErrTasksNotConfigured so the handler cleanly falls back to
-// inline ingest — ingest is never broken by tasks being absent.
+// TestEnqueueIngestUnconfigured proves that with no client injected (the composition
+// root hasn't wired the tasks engine), EnqueueIngest reports ErrTasksNotConfigured so
+// the handler cleanly falls back to inline ingest — ingest is never broken by tasks
+// being absent. Also asserts injection is what flips it (SetIngestTasksClient(nil) =
+// unconfigured), keeping ai transport-agnostic (no env/dial).
 func TestEnqueueIngestUnconfigured(t *testing.T) {
-	t.Setenv("TASKS_ADDR", "")
-	resetIngestClientForTest()
+	SetIngestTasksClient(nil)
 	_, err := EnqueueIngest(t.Context(), "hanzo", &IngestRequest{Source: "github", GitHub: &GitHubIngestRequest{Repo: "hanzoai/ai"}}, "en")
 	if err != ErrTasksNotConfigured {
-		t.Fatalf("want ErrTasksNotConfigured with no TASKS_ADDR, got %v", err)
+		t.Fatalf("want ErrTasksNotConfigured with no injected client, got %v", err)
 	}
 }
 
