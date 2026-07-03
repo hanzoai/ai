@@ -108,12 +108,19 @@ func GetDefaultVideoProvider() (*Provider, error) {
 
 func GetDefaultModelProvider() (*Provider, error) {
 	provider := Provider{Owner: "admin", Category: "Model", IsDefault: true}
-	existed, err := getOne(adapter.db, "provider", &provider, dbx.HashExp{"is_default": true, "category": provider.Category})
+	// state="Active" is REQUIRED: this default feeds store/KB/RAG default-model
+	// resolution (store.go GetModelProvider, provider_util.go, init.go), and
+	// store.go returns this record directly with NO downstream ModelProviderUsable
+	// check — so without the state filter a DISABLED primary (or an arbitrary one
+	// if two exist) would be handed to the model call and break answers. is_default
+	// + category + state together resolve the ONE usable primary.
+	where := dbx.HashExp{"is_default": true, "category": provider.Category, "state": "Active"}
+	existed, err := getOne(adapter.db, "provider", &provider, where)
 	if err != nil {
 		return &provider, err
 	}
 	if providerAdapter != nil && !existed {
-		existed, err = getOne(providerAdapter.db, "provider", &provider, dbx.HashExp{"is_default": true, "category": provider.Category})
+		existed, err = getOne(providerAdapter.db, "provider", &provider, where)
 		if err != nil {
 			return &provider, err
 		}
@@ -122,6 +129,62 @@ func GetDefaultModelProvider() (*Provider, error) {
 		return nil, nil
 	}
 	return &provider, nil
+}
+
+// primaryModelScope is the WHERE over which "exactly one primary Model provider"
+// is maintained: the admin-owned Model-category records. The name predicate
+// (name = / name <> target) is composed onto it to select the promote vs demote
+// sets.
+func primaryModelScope() dbx.Expression {
+	return dbx.HashExp{"owner": "admin", "category": "Model"}
+}
+
+// repointStep is one UPDATE in the set-primary transition: the rows it targets
+// (where) and the is_default value it writes (setDefault).
+type repointStep struct {
+	where      dbx.Expression
+	setDefault bool
+}
+
+// primaryRepointSteps returns the ordered UPDATEs that make `name` the sole primary
+// Model provider, PROMOTE-before-DEMOTE so there is never a window with zero
+// primaries. It is pure (no DB) so SetPrimaryModelProvider and its regression test
+// execute/assert the EXACT same steps in the EXACT same order. `name` is bound as a
+// parameter (dbx.Params) — never interpolated.
+//
+//  1. PROMOTE the target FIRST — is_default=true WHERE it is the admin Model
+//     provider named `name`. If this fails, nothing changed and the previous
+//     primary is still primary (fail-safe).
+//  2. DEMOTE the rest — is_default=false WHERE it is an admin Model provider whose
+//     name <> `name`. If THIS fails we momentarily have the new AND the old primary
+//     both true — two primaries, NEVER zero; the next set-primary converges and
+//     GetDefaultModelProvider (state="Active") still resolves a usable provider.
+//
+// This replaces the prior per-record UpdateProvider loop, whose mid-loop failure
+// could leave 0 primaries (target cleared-and-not-yet-set, or old cleared first).
+func primaryRepointSteps(name string) []repointStep {
+	return []repointStep{
+		{where: dbx.And(primaryModelScope(), dbx.NewExp("name = {:name}", dbx.Params{"name": name})), setDefault: true},
+		{where: dbx.And(primaryModelScope(), dbx.NewExp("name <> {:name}", dbx.Params{"name": name})), setDefault: false},
+	}
+}
+
+// SetPrimaryModelProvider makes `name` the sole primary (is_default=true) among
+// admin-owned Model providers and clears is_default on every other, atomically and
+// with NO window in which zero primaries exist (see primaryRepointSteps). Each step
+// is a single set-wide UPDATE — never a per-row loop. The caller validates the
+// target exists and State=="Active" before calling.
+func SetPrimaryModelProvider(name string) error {
+	for _, step := range primaryRepointSteps(name) {
+		if _, err := updateCols(adapter.db, "provider", step.where, dbx.Params{"is_default": step.setDefault}); err != nil {
+			return err
+		}
+	}
+	// Immediate effect: flush the hot-path resolution caches so IsDefault reads are
+	// consistent on the very next request instead of after the 60s TTL. A set-wide
+	// change touched many records, so flush everything (empty name = full flush).
+	InvalidateProviderNameCache("")
+	return nil
 }
 
 func GetDefaultEmbeddingProvider() (*Provider, error) {

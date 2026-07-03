@@ -110,6 +110,12 @@ func getAdminModelProvider(name string) (*object.Provider, error) {
 // @Success 200 {array} controllers.adminProviderView The Response object
 // @router /admin/providers [get]
 func (c *ApiController) GetAdminProviders() {
+	// Controller self-guard (defense in depth): the authz filter gates this route
+	// on global admin, but we re-check here so a filter bypass can never expose the
+	// provider list. Fail-closed 401/403.
+	if !c.RequireGlobalAdmin() {
+		return
+	}
 	views, err := listAdminModelProviders()
 	if err != nil {
 		c.ResponseError(err.Error())
@@ -137,6 +143,12 @@ type toggleProviderRequest struct {
 // @Success 200 {object} controllers.adminProviderView The Response object
 // @router /admin/providers/toggle [post]
 func (c *ApiController) ToggleAdminProvider() {
+	// Controller self-guard (defense in depth): disabling the primary provider
+	// backs a platform-wide chat/embeddings/image DoS, so re-check global admin at
+	// the controller even though the filter gates this route. Fail-closed 401/403.
+	if !c.RequireGlobalAdmin() {
+		return
+	}
 	var req toggleProviderRequest
 	if err := json.Unmarshal(c.Ctx.Input.RequestBody, &req); err != nil {
 		c.ResponseError(err.Error())
@@ -186,6 +198,12 @@ type setPrimaryRequest struct {
 // @Success 200 {array} controllers.adminProviderView The Response object
 // @router /admin/providers/primary [post]
 func (c *ApiController) SetPrimaryAdminProvider() {
+	// Controller self-guard (defense in depth): repointing the primary changes
+	// which upstream the whole catalog routes to, so re-check global admin here even
+	// though the filter gates this route. Fail-closed 401/403.
+	if !c.RequireGlobalAdmin() {
+		return
+	}
 	var req setPrimaryRequest
 	if err := json.Unmarshal(c.Ctx.Input.RequestBody, &req); err != nil {
 		c.ResponseError(err.Error())
@@ -194,28 +212,28 @@ func (c *ApiController) SetPrimaryAdminProvider() {
 
 	// Validate the target first so an unknown name is a clean error and we never
 	// clear the existing primary without a valid replacement.
-	if _, err := getAdminModelProvider(req.Name); err != nil {
-		c.ResponseError(err.Error())
-		return
-	}
-
-	providers, err := object.GetProviders("admin")
+	provider, err := getAdminModelProvider(req.Name)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
 	}
+	// A disabled provider must never become primary: GetDefaultModelProvider filters
+	// on state="Active", so promoting a disabled one would make the default resolve
+	// to nothing (breaking KB/RAG/store default-model answers). Reuse the ONE
+	// "enabled/allowed-to-route" predicate (getAdminModelProvider already confirmed
+	// Category=="Model"). Reject cleanly.
+	if !object.ModelProviderUsable(provider) {
+		c.ResponseError(c.T("provider:the provider must be enabled before it can be made primary"))
+		return
+	}
 
-	// Exactly-one-primary: compute which Model providers must change, then persist
-	// only those (via the same store — one source of truth). Each provider here is
-	// the RAW record (kms:// ref intact), safe to persist without masking.
-	for _, p := range providersToRepointPrimary(providers, req.Name) {
-		if _, err := object.UpdateProvider(p.GetId(), p); err != nil {
-			c.ResponseError(err.Error())
-			return
-		}
-		// Immediate effect: drop the changed provider from the resolution cache so
-		// IsDefault (primary) reads are consistent on the next request.
-		object.InvalidateProviderNameCache(p.Name)
+	// Atomic repoint (exactly-one-primary, no 0/2-primaries window): set the new
+	// primary FIRST, then clear the others, so a mid-operation failure can never
+	// leave zero primaries. Both are single set-wide UPDATE statements — never a
+	// per-row loop. Also evicts the resolution cache so the change is immediate.
+	if err := object.SetPrimaryModelProvider(req.Name); err != nil {
+		c.ResponseError(err.Error())
+		return
 	}
 
 	views, err := listAdminModelProviders()
@@ -224,29 +242,6 @@ func (c *ApiController) SetPrimaryAdminProvider() {
 		return
 	}
 	c.ResponseOk(views)
-}
-
-// providersToRepointPrimary computes the exactly-one-primary transition: among
-// the Model-category providers, the one named `primaryName` must have
-// IsDefault=true and every other must have IsDefault=false. It returns ONLY the
-// records whose IsDefault flag actually changes (with the flag already flipped),
-// so the caller persists the minimal set. Pure and DB-free — the core invariant
-// is unit-tested here without touching the store. Non-Model providers are left
-// untouched.
-func providersToRepointPrimary(providers []*object.Provider, primaryName string) []*object.Provider {
-	changed := make([]*object.Provider, 0, len(providers))
-	for _, p := range providers {
-		if p.Category != "Model" {
-			continue
-		}
-		want := p.Name == primaryName
-		if p.IsDefault == want {
-			continue
-		}
-		p.IsDefault = want
-		changed = append(changed, p)
-	}
-	return changed
 }
 
 // stateForEnabled maps the boolean toggle to the canonical State string. "Active"
