@@ -394,9 +394,11 @@ func (c *ApiController) GetAccount() {
 
 	claims := c.GetSessionClaims()
 
-	// Fetch fresh user data from IAM in real-time for non-anonymous users
+	// Fetch fresh user data from IAM in real-time for non-anonymous users.
+	// Resolve by the SESSION's own owner (white-label: a lux session refreshes
+	// lux/z, not hanzo/z) — see refreshSessionUser. hanzo is byte-unchanged.
 	if claims.User.Type != "anonymous-user" {
-		user, err := iam.GetUser(claims.User.Name)
+		user, err := refreshSessionUser(c.Ctx.Request.Host, &claims.User)
 		if err != nil {
 			c.ResponseError(err.Error())
 			return
@@ -470,8 +472,9 @@ func (c *ApiController) UpdatePreferences() {
 		return
 	}
 
-	// Always resolve the user from IAM by the SESSION identity, never the body.
-	user, err := iam.GetUser(claims.User.Name)
+	// Always resolve the user from IAM by the SESSION identity, never the body —
+	// scoped to the session's own owner (white-label: lux/z, not hanzo/z).
+	user, err := refreshSessionUser(c.Ctx.Request.Host, &claims.User)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
