@@ -170,18 +170,6 @@ func archiveCrawlResultAsync(owner, jobID string, results []ScrapeResult, rawRes
 	}()
 }
 
-// ArchiveCrawlPreviewAsync archives a single-page preview crawl result asynchronously.
-// It generates a job ID from the URL and timestamp, then stores both the converted
-// ScrapeResult and the raw Crawl4AIResult.
-func ArchiveCrawlPreviewAsync(owner, pageURL string, sr ScrapeResult, raw Crawl4AIResult) {
-	go func() {
-		jobID := hashID(fmt.Sprintf("preview-%s-%s-%d", owner, pageURL, time.Now().UnixNano()))
-		if err := ArchiveCrawlResult(owner, jobID, []ScrapeResult{sr}, []Crawl4AIResult{raw}); err != nil {
-			logs.Warning("crawl archive: failed to archive preview for %s/%s: %v", owner, pageURL, err)
-		}
-	}()
-}
-
 // IsCrawlStorageConfigured returns true if the crawl storage credentials are set.
 func IsCrawlStorageConfigured() bool {
 	accessKey := conf.GetConfigString("crawlStorageAccessKey")
