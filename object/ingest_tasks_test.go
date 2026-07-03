@@ -75,10 +75,10 @@ func TestIngestWorkflowIDCrawlURL(t *testing.T) {
 // being absent. Also asserts injection is what flips it (SetIngestTasksClient(nil) =
 // unconfigured), keeping ai transport-agnostic (no env/dial).
 func TestEnqueueIngestUnconfigured(t *testing.T) {
-	SetIngestTasksClient(nil)
-	_, err := EnqueueIngest(t.Context(), "hanzo", &IngestRequest{Source: "github", GitHub: &GitHubIngestRequest{Repo: "hanzoai/ai"}}, "en")
+	SetIngestDialer(nil)
+	_, err := EnqueueIngest(t.Context(), "unconfigured-org", &IngestRequest{Source: "github", GitHub: &GitHubIngestRequest{Repo: "hanzoai/ai"}}, "en")
 	if err != ErrTasksNotConfigured {
-		t.Fatalf("want ErrTasksNotConfigured with no injected client, got %v", err)
+		t.Fatalf("want ErrTasksNotConfigured with no dialer, got %v", err)
 	}
 }
 
