@@ -76,6 +76,21 @@ var brandIssuerList = []string{
 	"https://pars.id",
 }
 
+// brandAudienceList is the set of white-label brand cloud audiences (== IAM
+// client_id == app name: <brand>-cloud) a single binary accepts. A brand's session
+// token carries aud=<brand>-cloud (HIP-0111: client_id == app == aud), so the
+// audience allowlist must include each or a valid lux/zoo/pars bearer 401s on the
+// request-auth path even after the brand issuer passes. Mirrors brandIssuerList
+// and the cloud binary's BrandAudiences() (kept in sync by hand -- the same public
+// HIP-0111 brand set). Always folded into jwtAudienceAllowlist so the check does
+// not depend on the deployed GATEWAY_ALLOWED_AUDIENCES listing the brand auds.
+var brandAudienceList = []string{
+	"hanzo-cloud",
+	"lux-cloud",
+	"zoo-cloud",
+	"pars-cloud",
+}
+
 // trustedJWTIssuers returns EVERY issuer the request-auth policy accepts: the
 // primary (expectedJWTIssuer, which honors the pinned config/env) UNIONED with the
 // white-label brand issuers and any WHITELABEL_ISSUERS override. A token whose
@@ -117,12 +132,19 @@ func trustedJWTIssuers() []string {
 // always sets GATEWAY_ALLOWED_AUDIENCES, so the check is enforced.
 func jwtAudienceAllowlist() []string {
 	if v := splitCSV(conf.GetConfigString("jwtAudiences")); len(v) > 0 {
-		return v
+		// Even a pinned allowlist folds in the brand auds — one binary must accept
+		// every brand's <brand>-cloud bearer (fail-secure: only ADDS known brands).
+		return appendUniqueCSV(v, strings.Join(brandAudienceList, ","))
 	}
 	var out []string
 	out = appendUniqueCSV(out, os.Getenv("GATEWAY_ALLOWED_AUDIENCES"))
 	out = appendUniqueCSV(out, os.Getenv("IAM_AUDIENCE"))
 	out = appendUniqueCSV(out, os.Getenv("AUTH_AUDIENCE"))
+	// White-label: ALWAYS accept every brand's cloud audience (<brand>-cloud),
+	// baked like brandIssuerList so a lux/zoo/pars bearer validates even when the
+	// deployed GATEWAY_ALLOWED_AUDIENCES predates the brands. Fail-secure — only
+	// the known-good brand client_ids are added, never an arbitrary aud.
+	out = appendUniqueCSV(out, strings.Join(brandAudienceList, ","))
 	return out
 }
 
