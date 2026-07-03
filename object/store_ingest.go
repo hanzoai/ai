@@ -88,7 +88,9 @@ type IngestStats struct {
 }
 
 // splitTypeForFile picks the splitter for a file name, honoring a store's
-// configured default. Markdown and QA-docx get specialized splitters.
+// configured default. Markdown and QA-docx get specialized splitters; SOURCE CODE
+// gets the language-aware structural splitter (whole functions/types per chunk) so a
+// github-indexed repo chunks along declarations, not blind line windows.
 func splitTypeForFile(name, configured string) string {
 	ext := strings.ToLower(filepath.Ext(name))
 	switch ext {
@@ -98,10 +100,60 @@ func splitTypeForFile(name, configured string) string {
 	if strings.HasPrefix(filepath.Base(name), "QA") && ext == ".docx" {
 		return "QA"
 	}
+	if lang := codeLangForExt(ext); lang != "" {
+		return "Code:" + lang
+	}
 	if configured != "" {
 		return configured
 	}
 	return "Default"
+}
+
+// codeLangForExt maps a file extension to the code-splitter language key, or "" when
+// the file is not source we structural-split (prose/data fall through to the
+// configured/Default splitter). Aliases collapse to their canonical key.
+func codeLangForExt(ext string) string {
+	switch ext {
+	case ".go":
+		return "go"
+	case ".py", ".pyi":
+		return "py"
+	case ".ts":
+		return "ts"
+	case ".tsx":
+		return "tsx"
+	case ".js", ".mjs", ".cjs":
+		return "js"
+	case ".jsx":
+		return "jsx"
+	case ".rs":
+		return "rs"
+	case ".java":
+		return "java"
+	case ".kt", ".kts":
+		return "kt"
+	case ".rb":
+		return "rb"
+	case ".php":
+		return "php"
+	case ".cpp", ".cc", ".cxx", ".hpp":
+		return "cpp"
+	case ".c", ".h":
+		return "c"
+	case ".cs":
+		return "cs"
+	case ".swift":
+		return "swift"
+	case ".scala":
+		return "scala"
+	case ".sol":
+		return "sol"
+	case ".sh", ".bash", ".zsh":
+		return "sh"
+	case ".proto":
+		return "proto"
+	}
+	return ""
 }
 
 // chunkTextToDocs splits text and maps each chunk to a DocIndex with a
