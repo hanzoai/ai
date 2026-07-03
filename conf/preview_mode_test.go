@@ -41,8 +41,8 @@ func TestDisablePreviewModeEnvLever(t *testing.T) {
 		{"TRUE", true},
 		{" true ", true}, // trimmed
 		{"false", false},
-		{"", false},   // empty is not "true" → preview stays ON (fail toward dev default, not toward disabling)
-		{"1", false},  // only the literal "true" flips it — no ambiguity
+		{"", false},  // empty is not "true" → preview stays ON (fail toward dev default, not toward disabling)
+		{"1", false}, // only the literal "true" flips it — no ambiguity
 		{"yes", false},
 	}
 	for _, tc := range cases {

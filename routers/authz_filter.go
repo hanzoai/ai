@@ -104,8 +104,8 @@ func requiresGlobalAdmin(controllerName string) bool {
 var authRequiredEndpoints = map[string]struct{}{
 	"scrape": {}, "scrape/preview": {}, // browser/crawl engine (SSRF + cost)
 	"index": {}, "search": {}, "search/stats": {}, // doc index write + search
-	"docs/ingest": {},                        // unified RAG ingest (github/crawl/s3)
-	"embed": {}, "query": {}, "query_multiple": {}, // librechat-compat RAG
+	"docs/ingest": {},                                    // unified RAG ingest (github/crawl/s3)
+	"embed":       {}, "query": {}, "query_multiple": {}, // librechat-compat RAG
 	"documents": {}, // librechat-compat DELETE documents
 }
 
