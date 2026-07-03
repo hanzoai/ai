@@ -16,7 +16,7 @@
 // SQLite file. cloud-api uses raw dbx queries (not ORM struct sync), so the
 // canonical schema lives in postgres only. This tool translates the live
 // postgres schema + data into a SQLite file the cloud-api binary can open
-// with driverName=sqlite (modernc.org/sqlite, already linked since v1.784.2).
+// with driverName=sqlite (the hanzoai/sqlite driver, linked platform-wide).
 //
 // Usage:
 //
@@ -24,7 +24,7 @@
 //	          -dst /tmp/cloud-staging.db
 //
 // Strategy:
-//  1. Open source postgres via lib/pq, destination sqlite via modernc.org/sqlite.
+//  1. Open source postgres via lib/pq, destination sqlite via hanzoai/sqlite.
 //  2. Discover schema from information_schema (no pg_dump dependency).
 //  3. Translate per-column types to SQLite equivalents.
 //  4. Per-table CREATE TABLE on destination using composite PK from
@@ -50,8 +50,8 @@ import (
 	"strings"
 	"time"
 
+	_ "github.com/hanzoai/sqlite" // ONE Hanzo sqlite driver (cgo→SQLCipher, !cgo→modernc); never import modernc directly
 	_ "github.com/lib/pq"
-	_ "modernc.org/sqlite"
 )
 
 // pgToSqliteType maps a postgres data_type (as reported by
