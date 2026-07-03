@@ -16,10 +16,14 @@ package controllers
 
 import (
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
+	beecontext "github.com/beego/beego/context"
 	"github.com/hanzoai/ai/object"
+	iam "github.com/hanzoai/iam"
 )
 
 // ── adminProviderView projection ────────────────────────────────────────────
@@ -143,64 +147,82 @@ func TestAdminProviderView_NeverSerializesSecrets(t *testing.T) {
 	}
 }
 
-// ── exactly-one-primary ─────────────────────────────────────────────────────
+// Note: the exactly-one-primary transition now lives in object.SetPrimaryModelProvider
+// (one atomic, promote-first UPDATE pair — no in-memory diff to loop over). Its
+// ordering + WHERE clauses are regression-tested in
+// object/provider_default_atomic_test.go against the built SQL, without a DB.
 
-func TestProvidersToRepointPrimary_ExactlyOne(t *testing.T) {
-	providers := []*object.Provider{
-		{Name: "do-ai", Category: "Model", IsDefault: true},
-		{Name: "fireworks", Category: "Model", IsDefault: false},
-		{Name: "openai-direct", Category: "Model", IsDefault: false},
-		{Name: "zen", Category: "Model", IsDefault: false},
-		{Name: "openrouter", Category: "Model", IsDefault: false},
-		// A non-Model provider must never be touched.
-		{Name: "provider-storage-built-in", Category: "Storage", IsDefault: true},
-	}
+// ── C-1 controller self-guard (RequireGlobalAdmin) ──────────────────────────
+//
+// Belt-AND-suspenders: even if the authz filter is ever bypassed, the three admin
+// controllers call c.RequireGlobalAdmin() FIRST and refuse. These tests exercise
+// that guard directly (session principal), asserting fail-closed 401/403 and pass
+// for a global admin — the SAME policy as the filter (util.IsGlobalAdmin).
 
-	changed := providersToRepointPrimary(providers, "fireworks")
+// ctrlFakeSession is a minimal in-memory session.Store so a controller test can
+// carry a principal (the real session manager is not wired in unit tests).
+type ctrlFakeSession struct{ data map[interface{}]interface{} }
 
-	// Only do-ai (true→false) and fireworks (false→true) change. do-ai currently
-	// primary must be demoted; fireworks promoted. The others already match.
-	changedNames := map[string]bool{}
-	for _, p := range changed {
-		changedNames[p.Name] = true
-	}
-	if !changedNames["do-ai"] || !changedNames["fireworks"] {
-		t.Errorf("expected do-ai and fireworks to change, got %v", changedNames)
-	}
-	if changedNames["provider-storage-built-in"] {
-		t.Error("non-Model storage provider must not be repointed")
-	}
+func (s *ctrlFakeSession) Set(k, v interface{}) error         { s.data[k] = v; return nil }
+func (s *ctrlFakeSession) Get(k interface{}) interface{}      { return s.data[k] }
+func (s *ctrlFakeSession) Delete(k interface{}) error         { delete(s.data, k); return nil }
+func (s *ctrlFakeSession) SessionID() string                  { return "test" }
+func (s *ctrlFakeSession) SessionRelease(http.ResponseWriter) {}
+func (s *ctrlFakeSession) Flush() error {
+	s.data = map[interface{}]interface{}{}
+	return nil
+}
 
-	// After applying, EXACTLY ONE Model provider is primary and it is the target.
-	primaryCount := 0
-	for _, p := range providers {
-		if p.Category == "Model" && p.IsDefault {
-			primaryCount++
-			if p.Name != "fireworks" {
-				t.Errorf("primary Model provider = %q, want fireworks", p.Name)
-			}
-		}
+// newGuardController builds an ApiController with an httptest recorder and a session
+// optionally carrying `user` as the principal.
+func newGuardController(user *iam.User) (*ApiController, *httptest.ResponseRecorder) {
+	rec := httptest.NewRecorder()
+	ctx := beecontext.NewContext()
+	ctx.Reset(rec, httptest.NewRequest("POST", "/v1/admin/providers/toggle", nil))
+	sess := &ctrlFakeSession{data: map[interface{}]interface{}{}}
+	if user != nil {
+		sess.data["user"] = iam.Claims{User: *user}
 	}
-	if primaryCount != 1 {
-		t.Errorf("primary Model provider count = %d, want exactly 1", primaryCount)
-	}
+	ctx.Input.CruSession = sess
+	c := &ApiController{}
+	c.Init(ctx, "ApiController", "ToggleAdminProvider", nil)
+	return c, rec
+}
 
-	// The Storage provider's IsDefault is untouched (still true, its own concern).
-	for _, p := range providers {
-		if p.Name == "provider-storage-built-in" && !p.IsDefault {
-			t.Error("storage provider IsDefault was incorrectly cleared")
-		}
+func TestRequireGlobalAdmin_NoPrincipal401(t *testing.T) {
+	// Ensure the default {admin, built-in} global-admin set (no env override).
+	t.Setenv("globalAdminOrgs", "")
+	c, rec := newGuardController(nil)
+	if c.RequireGlobalAdmin() {
+		t.Error("RequireGlobalAdmin() = true for no principal, want false (deny)")
+	}
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("no-principal status = %d, want 401", rec.Code)
 	}
 }
 
-func TestProvidersToRepointPrimary_NoOpWhenAlreadyPrimary(t *testing.T) {
-	providers := []*object.Provider{
-		{Name: "do-ai", Category: "Model", IsDefault: true},
-		{Name: "fireworks", Category: "Model", IsDefault: false},
+func TestRequireGlobalAdmin_OrgAdminForbidden403(t *testing.T) {
+	t.Setenv("globalAdminOrgs", "")
+	orgAdmin := &iam.User{Owner: "maxpower", Name: "dave", IsAdmin: true}
+	c, rec := newGuardController(orgAdmin)
+	if c.RequireGlobalAdmin() {
+		t.Error("RequireGlobalAdmin() = true for an ORG admin, want false (not a platform admin)")
 	}
-	changed := providersToRepointPrimary(providers, "do-ai")
-	if len(changed) != 0 {
-		t.Errorf("expected no changes when target is already the sole primary, got %d", len(changed))
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("org-admin status = %d, want 403", rec.Code)
+	}
+}
+
+func TestRequireGlobalAdmin_GlobalAdminPasses(t *testing.T) {
+	t.Setenv("globalAdminOrgs", "")
+	globalAdmin := &iam.User{Owner: "admin", Name: "admin", IsAdmin: true}
+	c, rec := newGuardController(globalAdmin)
+	if !c.RequireGlobalAdmin() {
+		t.Error("RequireGlobalAdmin() = false for a global admin, want true (pass)")
+	}
+	// Pass path writes nothing (the handler continues).
+	if rec.Body.Len() != 0 {
+		t.Errorf("global-admin pass wrote a body %q, want none", rec.Body.String())
 	}
 }
 

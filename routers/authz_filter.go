@@ -16,6 +16,7 @@
 package routers
 
 import (
+	"path"
 	"strings"
 
 	"github.com/beego/beego/context"
@@ -162,12 +163,35 @@ func sessionOrBearerUser(ctx *context.Context) *iam.User {
 	return &claims.User
 }
 
+// normalizedControllerName derives the controllerName the gate keys on from the
+// SAME normalized path Beego dispatches to. Beego path.Cleans the request path
+// before router matching (collapsing "//", "/./", "/../" and a trailing slash),
+// so a filter that keyed on the RAW path (strings.TrimPrefix of ctx.Request.URL.Path)
+// disagreed with the router: variants like "/v1/admin/providers/",
+// "/v1//admin/providers", "/v1/./admin/providers" and "/v1/admin/../admin/providers"
+// all dispatch to the gated controller yet, un-normalized, produced a controllerName
+// ("admin/providers/", …) that missed the globalAdminEndpoints map — falling through
+// to the fully-open default. Cleaning here makes the gate and the router agree on
+// ONE canonical name, closing the entire slash/dot variant set for every gated
+// endpoint (admin/providers*, the get-*/*-provider CRUD, topology reads).
+//
+// Returns ok=false only for non-/v1 paths (which the caller lets pass, unchanged).
+func normalizedControllerName(rawPath string) (name string, ok bool) {
+	// path.Clean resolves ".", ".." and duplicate slashes on the absolute request
+	// path exactly as Beego does before dispatch. path.Clean("/v1/admin/providers/")
+	// == "/v1/admin/providers"; path.Clean("/v1//admin/providers") == "/v1/admin/providers".
+	cleaned := path.Clean(rawPath)
+	if !strings.HasPrefix(cleaned, "/v1/") {
+		return "", false
+	}
+	return strings.TrimPrefix(cleaned, "/v1/"), true
+}
+
 func permissionFilter(ctx *context.Context) {
-	path := ctx.Request.URL.Path
-	if !strings.HasPrefix(path, "/v1/") {
+	controllerName, ok := normalizedControllerName(ctx.Request.URL.Path)
+	if !ok {
 		return
 	}
-	controllerName := strings.TrimPrefix(path, "/v1/")
 
 	// Platform-sensitive endpoints are gated FIRST — before the preview-mode
 	// bypass and the benign-read exempt list — so they are admin-gated regardless
