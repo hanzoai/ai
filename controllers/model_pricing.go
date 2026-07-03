@@ -256,6 +256,50 @@ func imageCostCents(model string, n int) int64 {
 	return per * int64(n)
 }
 
+// videoPricePerVideoCents maps a text-to-video model (user-facing name OR
+// upstream do-ai id, lowercase) to its price per generated video, in cents. Like
+// images, video is billed per unit, NOT per token (the token-based math yields 0
+// for a 0-token video call), so video billing is this separate, explicit seam.
+// Keyed by both the user-facing zen3-video name and the upstream id so a lookup
+// succeeds whichever the caller records.
+//
+// PRICING NOTE: DigitalOcean publishes NO per-video rate for wan2-2-t2v-a14b (the
+// catalog record carries only token fields, which are meaningless for video). 40
+// cents/video is a real, defensible estimate: Wan 2.2 T2V on comparable fal /
+// serverless GPU markets runs ~$0.20-0.40 for a short clip; 40¢ sits at the top
+// of that band with Hanzo margin, and is intentionally an order of magnitude
+// above the image rate (5-8¢) since a t2v inference is minutes of A14B compute.
+// FLAGGED as best-estimate — refine when DO publishes a per-video price.
+var videoPricePerVideoCents = map[string]int64{
+	// Zen3 video brand family (Hanzo margin over do-ai wholesale).
+	"zen3-video":      40,
+	"zen3-video-fast": 40,
+	"zen3-video-pro":  40,
+	// Upstream id (the do-ai text-to-video model) — same price, so billing is
+	// correct whether the record carries the user-facing or upstream name.
+	"wan2-2-t2v-a14b": 40,
+}
+
+// videoDefaultCostCents is the conservative per-video floor for an unknown video
+// model, so a video call is never silently free. Set to the known real rate.
+const videoDefaultCostCents int64 = 40
+
+// videoCostCents returns the total cost in cents for generating n videos with
+// the given model, matching the user-facing name or the upstream id and falling
+// back to a conservative per-video floor for an unknown video model. n <= 0
+// costs nothing.
+func videoCostCents(model string, n int) int64 {
+	if n <= 0 {
+		return 0
+	}
+	m := strings.ToLower(model)
+	per, ok := videoPricePerVideoCents[m]
+	if !ok {
+		per = videoDefaultCostCents
+	}
+	return per * int64(n)
+}
+
 // DO-AI alias pricing (same as their base model)
 var aliasPricing = map[string]string{
 	"openai/gpt-4o":                        "gpt-4o",
