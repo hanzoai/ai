@@ -261,3 +261,49 @@ func brandAuthClient(b BrandIAM) (authClient, error) {
 	brandClientCacheMu.Unlock()
 	return cl, nil
 }
+
+// refreshSessionUser re-reads the signed-in user from IAM by the SESSION's OWN
+// owner, so a lux/zoo/pars session refreshes lux/z (not hanzo/z). The SDK's
+// package-global iam.GetUser(name) builds the id as "{IAM_ORG}/{name}" — always
+// the hanzo org — so on a white-label session it silently fetched the WRONG org's
+// same-named user and overwrote the correct claims (the get-account cross-tenant
+// bug the brand login exposed). This resolves via the brand's own IAM client
+// (org-scoped to the session owner) using the full `owner/name` id.
+//
+// hanzo is byte-unchanged: a hanzo session resolves brand=hanzo → the package
+// global, i.e. exactly iam.GetUser(name) as before. A brand with no provisioned
+// client_secret (brandAuthClient errors) fails soft here — returns the caller's
+// existing user so get-account still serves the fresh signin claims rather than
+// erroring or falling back to the wrong org.
+func refreshSessionUser(host string, current *iam.User) (*iam.User, error) {
+	if current == nil {
+		return nil, nil
+	}
+	b := resolveBrandIAM(host)
+	if b.Brand == defaultBrand {
+		// Byte-unchanged hanzo path: the package-global, org=hanzo.
+		return iam.GetUser(current.Name)
+	}
+	cl, err := brandAuthClient(b)
+	if err != nil {
+		// Brand not provisioned on this deployment — keep the fresh signin claims
+		// (fail-soft, never fall back to the wrong org's user).
+		return current, nil
+	}
+	bc, ok := cl.(*iam.Client)
+	if !ok {
+		return current, nil
+	}
+	// The brand client is org-scoped to the session owner (b.Org), so its
+	// GetUser(name) builds the get-user id as "{b.Org}/{name}" = "lux/z" — the
+	// RIGHT tenant. (The package-global would build "hanzo/z".) A nil result
+	// (user genuinely absent) keeps the fresh signin claims, never errors.
+	u, err := bc.GetUser(current.Name)
+	if err != nil {
+		return nil, err
+	}
+	if u == nil {
+		return current, nil
+	}
+	return u, nil
+}
