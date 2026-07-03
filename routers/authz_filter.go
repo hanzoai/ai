@@ -75,6 +75,13 @@ var globalAdminEndpoints = map[string]struct{}{
 	"get-providers": {}, "get-provider": {}, "get-global-providers": {},
 	"add-provider": {}, "update-provider": {}, "delete-provider": {},
 	"refresh-mcp-tools": {},
+	// Provider-admin management surface. These mutate/expose provider enable +
+	// primary state (which governs routing to upstream keys), so they are gated
+	// exactly like the CRUD routes above. Keys are the controllerName produced by
+	// TrimPrefix(path,"/v1/"), so multi-segment paths appear verbatim. NOTE:
+	// "provider-flags" is deliberately NOT here — it is the public, secret-free
+	// enabled-name feed for the pricing sync (get-models-style public read).
+	"admin/providers": {}, "admin/providers/toggle": {}, "admin/providers/primary": {},
 	// Model routing config.
 	"get-model-routes": {}, "get-model-route": {},
 	"add-model-route": {}, "update-model-route": {}, "delete-model-route": {},
