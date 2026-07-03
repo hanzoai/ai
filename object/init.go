@@ -195,6 +195,24 @@ func initBuiltInProviders() (string, string, string, string) {
 //
 // Provider secrets can use KMS references ("kms://SECRET_NAME") which
 // are resolved at runtime via ResolveProviderSecret().
+//
+// DO-first defaults: do-ai is the primary (State Active, IsDefault true) —
+// the universal DigitalOcean GenAI router that backs OpenAI/Anthropic/Llama/
+// DeepSeek/Qwen/GLM/Kimi. fireworks and openai-direct ship DISABLED (an admin
+// opts in via /v1/admin/providers/toggle). zen stays Active: it is the branded
+// first-party family served over do-ai (same key, no GPU) and must keep working.
+// openrouter ships DISABLED (toggleable), keeping "DO-first" the default while
+// making the catalog manageable in the same table.
+//
+// State / IsDefault INVARIANT (admin-owned runtime toggles):
+//
+//	The seed sets State and IsDefault ONLY on initial CREATE. For an
+//	already-existing record they are NEVER overwritten — an admin toggle made
+//	via /v1/admin/providers persists across restarts. Type / SubType /
+//	ProviderUrl / ClientSecret DO continue to self-heal from the seed on every
+//	boot (so a stale upstream URL or KMS reference is corrected automatically);
+//	State and IsDefault are deliberately excluded from that self-heal because
+//	they are operator decisions, not canonical facts about the upstream.
 func initLLMProviders() {
 	providers := []Provider{
 		{
@@ -207,6 +225,7 @@ func initLLMProviders() {
 			ProviderUrl:  "https://inference.do-ai.run/v1",
 			ClientSecret: "kms://DO_AI_API_KEY",
 			State:        "Active",
+			IsDefault:    true, // primary router (DO-first)
 		},
 		{
 			Owner:        "admin",
@@ -217,7 +236,8 @@ func initLLMProviders() {
 			SubType:      "accounts/fireworks/models/deepseek-v3p2",
 			ProviderUrl:  "https://api.fireworks.ai/inference/v1",
 			ClientSecret: "kms://FIREWORKS_API_KEY",
-			State:        "Active",
+			State:        "Disabled", // opt-in via /v1/admin/providers/toggle
+			IsDefault:    false,
 		},
 		{
 			Owner:        "admin",
@@ -228,7 +248,8 @@ func initLLMProviders() {
 			SubType:      "gpt-5",
 			ProviderUrl:  "https://api.openai.com/v1",
 			ClientSecret: "kms://OPENAI_API_KEY",
-			State:        "Active",
+			State:        "Disabled", // opt-in via /v1/admin/providers/toggle
+			IsDefault:    false,
 		},
 		{
 			Owner:        "admin",
@@ -239,7 +260,20 @@ func initLLMProviders() {
 			SubType:      "glm-5",
 			ProviderUrl:  "https://inference.do-ai.run/v1",
 			ClientSecret: "kms://DO_AI_API_KEY",
-			State:        "Active",
+			State:        "Active", // branded first-party family over do-ai — keep on
+			IsDefault:    false,
+		},
+		{
+			Owner:        "admin",
+			Name:         "openrouter",
+			DisplayName:  "OpenRouter",
+			Category:     "Model",
+			Type:         "OpenRouter",
+			SubType:      "openrouter/auto",
+			ProviderUrl:  "https://openrouter.ai/api/v1",
+			ClientSecret: "kms://OPENROUTER_API_KEY",
+			State:        "Disabled", // DO-first: off by default, toggleable
+			IsDefault:    false,
 		},
 	}
 	for _, p := range providers {
@@ -254,6 +288,12 @@ func initLLMProviders() {
 			// (e.g. a stale upstream URL or an empty/expired secret) by editing
 			// the seed table — the record self-heals on the next boot instead of
 			// requiring a manual DB edit.
+			//
+			// NOTE: State and IsDefault are INTENTIONALLY NOT self-healed here —
+			// they are admin-owned runtime toggles (see the invariant above). A
+			// provider an operator disabled via /v1/admin/providers must stay
+			// disabled across restarts; re-syncing State from the seed would
+			// silently revert that decision on the next boot.
 			needsUpdate := false
 			if existing.Type != p.Type {
 				fmt.Printf("[init] Fixing provider %q type: %q -> %q\n", p.Name, existing.Type, p.Type)
@@ -278,10 +318,6 @@ func initLLMProviders() {
 				existing.ClientSecret = p.ClientSecret
 				needsUpdate = true
 			}
-			if p.State != "" && existing.State != p.State {
-				existing.State = p.State
-				needsUpdate = true
-			}
 			if needsUpdate {
 				_, err = UpdateProvider("admin/"+p.Name, existing)
 				if err != nil {
@@ -290,6 +326,8 @@ func initLLMProviders() {
 			}
 			continue
 		}
+		// Initial CREATE: the seed's State and IsDefault become the starting
+		// value. From here on they are owned by the admin (never re-clobbered).
 		p.CreatedTime = util.GetCurrentTime()
 		_, err = AddProvider(&p)
 		if err != nil && !isDuplicateKeyErr(err) {
