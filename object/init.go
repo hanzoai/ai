@@ -275,6 +275,25 @@ func initLLMProviders() {
 			State:        "Disabled", // DO-first: off by default, toggleable
 			IsDefault:    false,
 		},
+		{
+			// Zen video served on OUR GB10 (spark) via Hanzo Studio. The
+			// zen3-video* routes (controllers/model_routes.go) resolve to this row;
+			// videos_api.go drives the SAME OpenAI Sora-style async /v1/videos API
+			// as do-ai (create → poll → download) against ProviderUrl. Type
+			// DigitalOcean reuses the custom-URL branch in resolveEndpointForPath so
+			// videoUpstreamBase yields the clean /v1 base. Active so the video
+			// routes work; the branded backend model name is never exposed.
+			Owner:        "admin",
+			Name:         "spark-video",
+			DisplayName:  "Hanzo Spark Video (GB10)",
+			Category:     "Model",
+			Type:         "DigitalOcean",
+			SubType:      "wan2-2-t2v-a14b",
+			ProviderUrl:  "https://spark-video.hanzo.ai/v1",
+			ClientSecret: "kms://SPARK_VIDEO_API_KEY",
+			State:        "Active", // first-party video family — keep on
+			IsDefault:    false,
+		},
 	}
 	for _, p := range providers {
 		existing, err := getProvider("admin", p.Name)
