@@ -466,6 +466,12 @@ type usageRecord struct {
 	ErrorMsg         string  `json:"errorMsg"`
 	ClientIP         string  `json:"clientIp"`
 	RequestID        string  `json:"requestId"`
+
+	// ImageCount is the number of images generated. Image models bill per image,
+	// not per token: when > 0, recordUsage bills via imageCostCents instead of
+	// the token-based cost. Placed last so the token-field alignment above is
+	// unchanged.
+	ImageCount int `json:"imageCount,omitempty"`
 }
 
 // billingQueue is the singleton usage record delivery queue. Initialized by
@@ -500,11 +506,17 @@ func recordUsage(record *usageRecord) {
 		return
 	}
 
-	// Calculate cost from per-model pricing table (cache-aware)
-	costCents := calculateCostCentsWithCache(
-		record.Model, record.PromptTokens, record.CompletionTokens,
-		record.CacheReadTokens, record.CacheWriteTokens,
-	)
+	// Calculate cost. Image generations bill per image (token counts are 0 on
+	// that path); everything else bills from the cache-aware token table.
+	var costCents int64
+	if record.ImageCount > 0 {
+		costCents = imageCostCents(record.Model, record.ImageCount)
+	} else {
+		costCents = calculateCostCentsWithCache(
+			record.Model, record.PromptTokens, record.CompletionTokens,
+			record.CacheReadTokens, record.CacheWriteTokens,
+		)
+	}
 
 	// The debit MUST hit the same account the balance gate reads and the starter
 	// credit funded: the billing SUBJECT within the org NAMESPACE.
@@ -535,6 +547,7 @@ func recordUsage(record *usageRecord) {
 		"totalTokens":      record.TotalTokens,
 		"cacheReadTokens":  record.CacheReadTokens,
 		"cacheWriteTokens": record.CacheWriteTokens,
+		"imageCount":       record.ImageCount,
 		"requestId":        record.RequestID,
 		"premium":          record.Premium,
 		"stream":           record.Stream,

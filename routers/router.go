@@ -326,6 +326,10 @@ func initAPI() {
 	beego.Router("/v1/embeddings", &controllers.ApiController{}, "POST:Embeddings")
 	beego.Router("/v1/rerank", &controllers.ApiController{}, "POST:Rerank")
 
+	// OpenAI-compatible image generation. Same auth + provider routing; the
+	// zen3-image family routes to do-ai's fal-hosted diffusion models.
+	beego.Router("/v1/images/generations", &controllers.ApiController{}, "POST:ImagesGenerations")
+
 	beego.Router("/v1/get-model-routes", &controllers.ApiController{}, "GET:GetModelRoutes")
 	beego.Router("/v1/get-model-route", &controllers.ApiController{}, "GET:GetModelRoute")
 	beego.Router("/v1/add-model-route", &controllers.ApiController{}, "POST:AddModelRoute")

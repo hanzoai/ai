@@ -203,6 +203,18 @@ func CalculateOpenAIModelPrice(model string, modelResult *ModelResult, lang stri
 		modelResult.TotalPrice = float64(modelResult.ImageCount) * 0.08
 		modelResult.Currency = "USD"
 		return nil
+
+	// do-ai fal SDXL diffusion (zen3-image-sdxl / -ssd → fal-ai/fast-sdxl)
+	case strings.Contains(model, "fal-ai/fast-sdxl") || strings.Contains(model, "zen3-image-sdxl") || strings.Contains(model, "zen3-image-ssd"):
+		modelResult.TotalPrice = float64(modelResult.ImageCount) * 0.06
+		modelResult.Currency = "USD"
+		return nil
+
+	// do-ai fal FLUX diffusion (zen3-image family → fal-ai/flux/schnell)
+	case strings.Contains(model, "fal-ai/flux") || strings.Contains(model, "zen3-image"):
+		modelResult.TotalPrice = float64(modelResult.ImageCount) * 0.05
+		modelResult.Currency = "USD"
+		return nil
 	default:
 		// inputPricePerThousandTokens = 0
 		// outputPricePerThousandTokens = 0
@@ -440,28 +452,46 @@ func (p *OpenAiModelProvider) QueryText(question string, writer io.Writer, histo
 		if strings.HasPrefix(question, "$CloudDryRun$") {
 			return modelResult, nil
 		}
-		quality := getGenerateImageQuality(model)
-		reqUrl := openai.ImageGenerateParams{
-			Prompt:         question,
-			Model:          model,
-			Size:           openai.ImageGenerateParamsSize1024x1024,
-			ResponseFormat: openai.ImageGenerateParamsResponseFormatURL,
-			Quality:        quality,
-			N:              param.NewOpt[int64](1),
+
+		var imageURL string
+		if isDOAIImageModel(model) {
+			// do-ai fal-hosted diffusion models use the ASYNC image API, not the
+			// OpenAI /v1/images/generations shape. Drive the SAME async client the
+			// /v1/images/generations handler uses (submit → poll → retrieve).
+			res, err := GenerateImageDOAI(ctx, p.providerUrl, p.secretKey, ImageGenRequest{
+				UpstreamModel: model,
+				Prompt:        question,
+				N:             1,
+			})
+			if err != nil {
+				return nil, err
+			}
+			imageURL = res.Images[0].URL
+		} else {
+			quality := getGenerateImageQuality(model)
+			reqUrl := openai.ImageGenerateParams{
+				Prompt:         question,
+				Model:          model,
+				Size:           openai.ImageGenerateParamsSize1024x1024,
+				ResponseFormat: openai.ImageGenerateParamsResponseFormatURL,
+				Quality:        quality,
+				N:              param.NewOpt[int64](1),
+			}
+
+			respUrl, err := client.Images.Generate(ctx, reqUrl)
+			if err != nil {
+				return nil, err
+			}
+			imageURL = respUrl.Data[0].URL
 		}
 
-		respUrl, err := client.Images.Generate(ctx, reqUrl)
-		if err != nil {
-			return nil, err
-		}
-
-		url := fmt.Sprintf("<img src=\"%s\" width=\"100%%\" height=\"auto\">", respUrl.Data[0].URL)
+		url := fmt.Sprintf("<img src=\"%s\" width=\"100%%\" height=\"auto\">", imageURL)
 		fmt.Fprint(writer, url)
 		flusher.Flush()
 
 		modelResult.ImageCount = 1
 		modelResult.TotalTokenCount = modelResult.ImageCount
-		err = CalculateOpenAIModelPrice(model, modelResult, lang)
+		err := CalculateOpenAIModelPrice(model, modelResult, lang)
 		if err != nil {
 			return nil, err
 		}
@@ -530,6 +560,15 @@ func (p *OpenAiModelProvider) QueryText(question string, writer io.Writer, histo
 	} else {
 		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "model:QueryText() error: unknown model type: %s"), model))
 	}
+}
+
+// isDOAIImageModel reports whether an image model is a do-ai fal-hosted
+// diffusion model (async image API) rather than an OpenAI image model
+// (client.Images.Generate). Both the fal upstream ids and the user-facing
+// zen3-image family route to the async path.
+func isDOAIImageModel(model string) bool {
+	m := strings.ToLower(model)
+	return strings.HasPrefix(m, "fal-ai/") || strings.Contains(m, "zen3-image")
 }
 
 func getGenerateImageQuality(model string) openai.ImageGenerateParamsQuality {
