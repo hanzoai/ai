@@ -74,7 +74,7 @@ var modelRoutes = map[string]modelRoute{
 	"claude-opus-4-8":              {providerName: "do-ai", upstreamModel: "anthropic-claude-opus-4.8"},
 	"claude-sonnet-4":              {providerName: "do-ai", upstreamModel: "anthropic-claude-sonnet-4"},
 	"claude-sonnet-4-5":            {providerName: "do-ai", upstreamModel: "anthropic-claude-4.5-sonnet"},
-	"claude-sonnet-4-6":            {providerName: "do-ai", upstreamModel: "anthropic-claude-sonnet-4.6"},
+	"claude-sonnet-4-6":            {providerName: "do-ai", upstreamModel: "anthropic-claude-4.5-sonnet"}, // was "anthropic-claude-sonnet-4.6" (not in catalog → 404); 4.6-sonnet is catalog-listed but 403 on this account, so route to the working latest Sonnet (matches conf/models.yaml)
 	"deepseek-3.2":                 {providerName: "do-ai", upstreamModel: "deepseek-3.2"},
 	"deepseek-chat":                {providerName: "do-ai", upstreamModel: "deepseek-v4-pro"},
 	"deepseek-v4-flash":            {providerName: "do-ai", upstreamModel: "deepseek-4-flash"},
@@ -101,7 +101,7 @@ var modelRoutes = map[string]modelRoute{
 	"glm-5.1":                      {providerName: "do-ai", upstreamModel: "glm-5.1"},
 	"glm-5.2":                      {providerName: "do-ai", upstreamModel: "glm-5.2", premium: true},
 	"gemma-3-31b":                  {providerName: "do-ai", upstreamModel: "gemma-3-31b"},
-	"gemma-4-31b":                  {providerName: "do-ai", upstreamModel: "gemma-4-31b"},
+	"gemma-4-31b":                  {providerName: "do-ai", upstreamModel: "gemma-4-31B-it"}, // real DO catalog id (was "gemma-4-31b" → 404)
 	"kimi-k2":                      {providerName: "do-ai", upstreamModel: "kimi-k2"},
 	"mistral-3-14b":                {providerName: "do-ai", upstreamModel: "mistral-3-14b"},
 	"mistral-small":                {providerName: "do-ai", upstreamModel: "mistral-small"},
@@ -110,6 +110,34 @@ var modelRoutes = map[string]modelRoute{
 	"deepseek-v3.2":                {providerName: "do-ai", upstreamModel: "deepseek-3.2"},
 	"deepseek-reasoner":            {providerName: "do-ai", upstreamModel: "deepseek-r1"},
 	"qwen3-coder":                  {providerName: "do-ai", upstreamModel: "qwen3-coder-480b"},
+
+	// ── DO-AI embeddings ── served at POST /v1/embeddings (passthrough) ──
+	// User-facing name == DO catalog id (already clean public names). owned_by
+	// defaults to the do-ai provider (surfaced), matching every other unbranded
+	// passthrough. Verified live: each returns real vectors (dims noted).
+	"bge-m3":                     {providerName: "do-ai", upstreamModel: "bge-m3"},                     // 1024-dim, multilingual
+	"e5-large-v2":                {providerName: "do-ai", upstreamModel: "e5-large-v2"},                // 1024-dim
+	"gte-large-en-v1.5":          {providerName: "do-ai", upstreamModel: "gte-large-en-v1.5"},          // 1024-dim
+	"all-mini-lm-l6-v2":          {providerName: "do-ai", upstreamModel: "all-mini-lm-l6-v2"},          // 384-dim
+	"multi-qa-mpnet-base-dot-v1": {providerName: "do-ai", upstreamModel: "multi-qa-mpnet-base-dot-v1"}, // 768-dim
+
+	// ── DO-AI image (diffusion) ── Stable Diffusion 3.5 Large ────────────
+	// Unlike the fal FLUX/SDXL models (async-invoke), SD 3.5 Large is served on
+	// the SYNCHRONOUS OpenAI /images/generations shape (isDOAIImageModel==false
+	// → client.Images.Generate). getOpenAiModelType classifies it as an image
+	// model via the "stable-diffusion" pattern. Verified live: HTTP 200, b64.
+	"stable-diffusion-3.5-large": {providerName: "do-ai", upstreamModel: "stable-diffusion-3.5-large"},
+
+	// ── DO-AI Inference Router ── auto-selects a foundation model per request ─
+	// DO's model router: send a chat completion and it picks the best upstream
+	// (returns the chosen model in the response). Callable as plain chat
+	// (getOpenAiModelType defaults to "Chat"). Billed at the underlying model's
+	// rate (router adds no cost — public preview). Verified live: HTTP 200.
+	"router:general":                 {providerName: "do-ai", upstreamModel: "router:general"},
+	"router:knowledge-base-document": {providerName: "do-ai", upstreamModel: "router:knowledge-base-document"},
+	"router:software-engineering":    {providerName: "do-ai", upstreamModel: "router:software-engineering"},
+	"router:software-engineering-01": {providerName: "do-ai", upstreamModel: "router:software-engineering-01"},
+	"router:writing":                 {providerName: "do-ai", upstreamModel: "router:writing"},
 
 	// ── DO-AI aliases (8) ── hidden from listing, still callable ─────────
 	"openai/gpt-4o":                        {providerName: "do-ai", upstreamModel: "openai-gpt-4o", hidden: true},
@@ -120,7 +148,7 @@ var modelRoutes = map[string]modelRoute{
 	"anthropic/claude-haiku-4-5-20251001":  {providerName: "do-ai", upstreamModel: "anthropic-claude-haiku-4.5", hidden: true},
 	"anthropic/claude-opus-4-6":            {providerName: "do-ai", upstreamModel: "anthropic-claude-opus-4.6", hidden: true},
 	"anthropic/claude-sonnet-4-5-20250929": {providerName: "do-ai", upstreamModel: "anthropic-claude-4.5-sonnet", hidden: true},
-	"anthropic/claude-sonnet-4-6":          {providerName: "do-ai", upstreamModel: "anthropic-claude-sonnet-4.6", hidden: true},
+	"anthropic/claude-sonnet-4-6":          {providerName: "do-ai", upstreamModel: "anthropic-claude-4.5-sonnet", hidden: true}, // 4.6-sonnet 403s on this account; route to working latest Sonnet (matches claude-sonnet-4-6)
 
 	// ── Fireworks premium models (17) ── hidden from listing, still callable ──
 	"fireworks/cogito-671b":           {providerName: "fireworks", upstreamModel: "accounts/cogito/models/cogito-671b-v2-p1", premium: true, hidden: true},
