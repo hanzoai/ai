@@ -25,7 +25,6 @@ package object
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -89,50 +88,52 @@ func ingestActivity(_ context.Context, in IngestWorkflowInput) (*IngestStats, er
 	return IngestSource(in.Owner, &in.Request, in.Lang)
 }
 
-// tasksAddr is the durable-execution engine address; empty → in-process/unconfigured.
-func tasksAddr() string { return strings.TrimSpace(os.Getenv("TASKS_ADDR")) }
-
+// injectedClient is the tasks client the composition root wires in. ai is
+// TRANSPORT-AGNOSTIC: it never dials a network address or reads TASKS_ADDR itself —
+// the process that embeds ai (cloud) owns the tasks engine and decides HOW to reach it
+// (in-process/loopback ZAP when the engine is embedded in the same binary — mega fast,
+// no HTTP; a remote ZAP dial only if ever run split). Until injected, EnqueueIngest
+// reports ErrTasksNotConfigured and the handler runs ingest inline.
 var (
-	ingestOnce sync.Once
-	ingestCli  tasksclient.Client
-	ingestErr  error
+	injectedMu     sync.RWMutex
+	injectedClient tasksclient.Client
 )
 
-// ingestClient lazily dials the tasks engine and starts the ingest worker exactly once
-// (the ingest feature owns its own worker lifecycle — no boot wiring needed wherever
-// this library is embedded). Returns (nil, nil) when TASKS_ADDR is unset so the caller
-// falls back to inline ingest. The worker + client share one connection; the worker
-// polls ai-ingest for the lifetime of the process.
-func ingestClient() (tasksclient.Client, error) {
-	ingestOnce.Do(func() {
-		addr := tasksAddr()
-		if addr == "" {
-			return // unconfigured; ingestCli stays nil → inline fallback
-		}
-		cli, err := tasksclient.Dial(tasksclient.Options{HostPort: addr})
-		if err != nil {
-			ingestErr = fmt.Errorf("tasks dial: %w", err)
-			return
-		}
-		if err := startIngestWorker(cli); err != nil {
-			ingestErr = err
-			return
-		}
-		ingestCli = cli
-	})
-	return ingestCli, ingestErr
-}
-
-// startIngestWorker registers the ingest workflow + activity on the ai-ingest queue and
-// starts polling. Extracted so a test can drive it against an embedded engine.
-func startIngestWorker(cli tasksclient.Client) error {
+// StartIngestWorker is the ONE wiring call for the composition root: it registers the
+// ingest workflow + activity on the ai-ingest queue over the caller-supplied client
+// (whose transport the caller chose — in-process ZAP when embedded), starts the worker,
+// and wires that client as the enqueue side. cloud calls this at boot with its embedded
+// engine's in-process client; ai owns its queue/workflow/activity, cloud owns the
+// transport. Idempotent-safe to call once per process.
+func StartIngestWorker(cli tasksclient.Client) error {
+	if cli == nil {
+		return fmt.Errorf("ingest: StartIngestWorker requires a non-nil tasks client")
+	}
 	wk := tasksworker.New(cli, ingestTaskQueue, tasksworker.Options{})
 	wk.RegisterWorkflow(IngestWorkflow)
 	wk.RegisterActivity(ingestActivity)
 	if err := wk.Start(); err != nil {
 		return fmt.Errorf("tasks worker start: %w", err)
 	}
+	SetIngestTasksClient(cli)
 	return nil
+}
+
+// SetIngestTasksClient injects (or clears, with nil) the enqueue client. Separate from
+// StartIngestWorker so a caller that manages the worker lifecycle itself (e.g. an
+// in-process Embedded.RegisterWorker) can still wire the enqueue side.
+func SetIngestTasksClient(cli tasksclient.Client) {
+	injectedMu.Lock()
+	defer injectedMu.Unlock()
+	injectedClient = cli
+}
+
+// ingestClient returns the injected client (nil → inline fallback). No dialing here —
+// the transport decision lives entirely with the composition root.
+func ingestClient() tasksclient.Client {
+	injectedMu.RLock()
+	defer injectedMu.RUnlock()
+	return injectedClient
 }
 
 // ingestWorkflowID is the deterministic, owner-scoped workflow id — also the
@@ -165,12 +166,9 @@ func sanitizeWorkflowKey(s string) string {
 
 // EnqueueIngest submits a long ingest as a durable workflow and returns its id
 // immediately — the caller never blocks on the clone/chunk/embed. Returns
-// ErrTasksNotConfigured when no engine is wired so the handler can fall back to inline.
+// ErrTasksNotConfigured when no client is wired so the handler can fall back to inline.
 func EnqueueIngest(ctx context.Context, owner string, req *IngestRequest, lang string) (string, error) {
-	cli, err := ingestClient()
-	if err != nil {
-		return "", err
-	}
+	cli := ingestClient()
 	if cli == nil {
 		return "", ErrTasksNotConfigured
 	}
