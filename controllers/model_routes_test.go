@@ -164,6 +164,7 @@ func TestModelRoutes_ProviderNamesAreKnown(t *testing.T) {
 		"do-ai":         true,
 		"fireworks":     true,
 		"openai-direct": true,
+		"spark-video":   true, // zen3-video* family, seeded in initLLMProviders
 	}
 	for name, route := range modelRoutes {
 		if !known[route.providerName] {
