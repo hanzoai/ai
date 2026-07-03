@@ -49,6 +49,11 @@ jobs:
     # use a hermetic in-memory DB. No service container — the self-hosted runner
     # can't start them, which is exactly what the cargo-culted mysql:5.7 broke.
     env:
+      # Match the shipped build (Dockerfile: CGO_ENABLED=0). ai's ONE sqlite
+      # driver, github.com/hanzoai/sqlite, is pure-Go modernc under !cgo — so the
+      # test run exercises the exact backend prod uses and never needs a C
+      # toolchain. (Under cgo the fork is mattn/SQLCipher, which prod does not use.)
+      CGO_ENABLED: "0"
       driverName: sqlite
       dataSourceName: "file:cloud_ci?mode=memory&cache=shared"
     steps:

@@ -18,7 +18,7 @@ import (
 	"database/sql"
 	"fmt"
 
-	_ "modernc.org/sqlite"
+	_ "github.com/hanzoai/sqlite" // ONE Hanzo sqlite driver (cgo→SQLCipher, !cgo→modernc); never import modernc directly
 )
 
 func main() {
