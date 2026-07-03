@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/beego/beego"
 	"github.com/beego/beego/logs"
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/object"
@@ -358,7 +357,10 @@ func (c *ApiController) isSafePassword() (bool, error) {
 // @Success 200 {object} iam.Claims The Response object
 // @router /get-account [get]
 func (c *ApiController) GetAccount() {
-	disablePreviewMode, _ := beego.AppConfig.Bool("disablePreviewMode")
+	// Route through the env-first accessor (conf.DisablePreviewMode) so the
+	// DISABLE_PREVIEW_MODE lever governs GetAccount too — matching the authz filter
+	// and RequireAdmin. Reading beego.AppConfig directly bypassed that lever.
+	disablePreviewMode := conf.DisablePreviewMode()
 	err := util.AppendWebConfigCookie(c.Ctx)
 	if err != nil {
 		logs.Error("AppendWebConfigCookie: %v", err)

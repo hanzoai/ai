@@ -129,12 +129,12 @@ func TestAdminProviderView_NeverSerializesSecrets(t *testing.T) {
 	}
 	s := string(blob)
 	for _, forbidden := range []string{
-		"sk-must-not-leak-123",           // resolved kms value
-		"kms://SUPER_SECRET_TEST_KEY",    // the raw ref
-		"sk-provider-key-must-not-leak",  // providerKey
-		"user-key-must-not-leak",         // userKey
-		"sign-key-must-not-leak",         // signKey
-		"clientSecret", "providerKey",    // secret-bearing field names
+		"sk-must-not-leak-123",          // resolved kms value
+		"kms://SUPER_SECRET_TEST_KEY",   // the raw ref
+		"sk-provider-key-must-not-leak", // providerKey
+		"user-key-must-not-leak",        // userKey
+		"sign-key-must-not-leak",        // signKey
+		"clientSecret", "providerKey",   // secret-bearing field names
 		"userKey", "signKey", "configText",
 	} {
 		if strings.Contains(s, forbidden) {
@@ -159,19 +159,11 @@ func TestAdminProviderView_NeverSerializesSecrets(t *testing.T) {
 // that guard directly (session principal), asserting fail-closed 401/403 and pass
 // for a global admin — the SAME policy as the filter (util.IsGlobalAdmin).
 
-// ctrlFakeSession is a minimal in-memory session.Store so a controller test can
-// carry a principal (the real session manager is not wired in unit tests).
-type ctrlFakeSession struct{ data map[interface{}]interface{} }
-
-func (s *ctrlFakeSession) Set(k, v interface{}) error         { s.data[k] = v; return nil }
-func (s *ctrlFakeSession) Get(k interface{}) interface{}      { return s.data[k] }
-func (s *ctrlFakeSession) Delete(k interface{}) error         { delete(s.data, k); return nil }
-func (s *ctrlFakeSession) SessionID() string                  { return "test" }
-func (s *ctrlFakeSession) SessionRelease(http.ResponseWriter) {}
-func (s *ctrlFakeSession) Flush() error {
-	s.data = map[interface{}]interface{}{}
-	return nil
-}
+// ctrlFakeSession (the minimal in-memory session.Store used to carry a test
+// principal without a live session manager) is defined once in index_auth_test.go
+// and shared across the package's controller tests — reused here to keep a single
+// definition (it collided when this file, from the provider-admin PR, was rebased
+// onto the branch that introduced index_auth_test.go).
 
 // newGuardController builds an ApiController with an httptest recorder and a session
 // optionally carrying `user` as the principal.
