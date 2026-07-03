@@ -300,6 +300,8 @@ func TestGetOpenAiModelType_ImageFamily(t *testing.T) {
 		"zen3-image-playground", "zen3-image-ssd", "zen3-image-sdxl", "zen3-image-jp",
 		"fal-ai/flux/schnell", "fal-ai/fast-sdxl",
 		"dall-e-3", "dall-e-2", "gpt-image-1",
+		// DO-AI Stable Diffusion 3.5 Large (sync OpenAI /images path).
+		"stable-diffusion-3.5-large",
 	}
 	for _, m := range images {
 		if got := getOpenAiModelType(m); got != "imagesGenerations" {
@@ -328,7 +330,8 @@ func TestIsDOAIImageModel(t *testing.T) {
 			t.Errorf("isDOAIImageModel(%q) = false, want true", m)
 		}
 	}
-	for _, m := range []string{"gpt-image-1", "dall-e-3", "dall-e-2", "gpt-4o"} {
+	// SD 3.5 Large is a sync OpenAI-shape image model, NOT the async fal path.
+	for _, m := range []string{"gpt-image-1", "dall-e-3", "dall-e-2", "gpt-4o", "stable-diffusion-3.5-large"} {
 		if isDOAIImageModel(m) {
 			t.Errorf("isDOAIImageModel(%q) = true, want false", m)
 		}
@@ -348,6 +351,8 @@ func TestCalculateOpenAIModelPrice_ImageFamily(t *testing.T) {
 		{"zen3-image-sdxl", 1, 0.06},
 		{"fal-ai/fast-sdxl", 3, 0.18},
 		{"gpt-image-1", 1, 0.08},
+		{"stable-diffusion-3.5-large", 1, 0.08},
+		{"stable-diffusion-3.5-large", 4, 0.32},
 	}
 	for _, tc := range cases {
 		t.Run(tc.model, func(t *testing.T) {
