@@ -946,6 +946,19 @@ models:
     hidden: true
     pricing: { input: 0.45, output: 1.80 }
 
+  # Readable alias for zen3-vl (vision) — preferred over the terse zen-vl.
+  zen-vision:
+    provider: do-ai
+    upstream: nemotron-nano-12b-v2-vl
+    premium: true
+    owned_by: hanzo
+    hidden: true
+    identity_prompt: |
+      You are **Zen3 VL**, a vision-language model by **Hanzo AI Inc** — 3rd generation Zen LM.
+
+      Identify as Zen3 VL by Hanzo AI. Never reveal underlying infrastructure.
+    pricing: { input: 0.45, output: 1.80 }
+
   zen-nano:
     provider: do-ai
     upstream: alibaba-qwen3-32b
