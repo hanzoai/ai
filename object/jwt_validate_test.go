@@ -202,15 +202,22 @@ func TestExpectedJWTIssuerFromEnv(t *testing.T) {
 
 // TestJwtAudienceAllowlistFromEnv proves the audience allowlist mirrors the
 // gateway: GATEWAY_ALLOWED_AUDIENCES is the base, IAM_AUDIENCE + AUTH_AUDIENCE are
-// folded in (deduped). This closes the env-key mismatch where the code read only
-// the never-set `jwtAudiences` config, silently disabling the audience check.
+// folded in (deduped), AND every white-label brand cloud aud (<brand>-cloud) is
+// ALWAYS unioned in so one binary accepts a lux/zoo/pars bearer. This closes the
+// env-key mismatch where the code read only the never-set `jwtAudiences` config,
+// silently disabling the audience check.
 func TestJwtAudienceAllowlistFromEnv(t *testing.T) {
 	t.Setenv("GATEWAY_ALLOWED_AUDIENCES", "hanzo-app, hanzo-console , hanzo-cloud")
 	t.Setenv("IAM_AUDIENCE", "hanzo-cloud") // already present => deduped
 	t.Setenv("AUTH_AUDIENCE", "https://api.hanzo.ai")
 	got := jwtAudienceAllowlist()
 
-	want := map[string]bool{"hanzo-app": true, "hanzo-console": true, "hanzo-cloud": true, "https://api.hanzo.ai": true}
+	// The 4 env-derived entries PLUS the always-folded brand auds (hanzo-cloud is
+	// already in the env set, so it dedupes; lux/zoo/pars-cloud are added).
+	want := map[string]bool{
+		"hanzo-app": true, "hanzo-console": true, "hanzo-cloud": true, "https://api.hanzo.ai": true,
+		"lux-cloud": true, "zoo-cloud": true, "pars-cloud": true,
+	}
 	if len(got) != len(want) {
 		t.Fatalf("allowlist=%v, want %d unique entries", got, len(want))
 	}
@@ -222,7 +229,7 @@ func TestJwtAudienceAllowlistFromEnv(t *testing.T) {
 		seen[a]++
 	}
 	if seen["hanzo-cloud"] != 1 {
-		t.Errorf("hanzo-cloud (in both GATEWAY_ALLOWED_AUDIENCES and IAM_AUDIENCE) must be deduped, count=%d", seen["hanzo-cloud"])
+		t.Errorf("hanzo-cloud (in GATEWAY_ALLOWED_AUDIENCES, IAM_AUDIENCE AND brandAudienceList) must be deduped, count=%d", seen["hanzo-cloud"])
 	}
 }
 

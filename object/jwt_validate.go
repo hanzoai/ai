@@ -132,20 +132,33 @@ func trustedJWTIssuers() []string {
 // always sets GATEWAY_ALLOWED_AUDIENCES, so the check is enforced.
 func jwtAudienceAllowlist() []string {
 	if v := splitCSV(conf.GetConfigString("jwtAudiences")); len(v) > 0 {
-		// Even a pinned allowlist folds in the brand auds — one binary must accept
-		// every brand's <brand>-cloud bearer (fail-secure: only ADDS known brands).
-		return appendUniqueCSV(v, strings.Join(brandAudienceList, ","))
+		// A pinned allowlist folds in the brand auds — one binary must accept every
+		// brand's <brand>-cloud bearer (fail-secure: only ADDS known brands).
+		return withBrandAudiences(v)
 	}
 	var out []string
 	out = appendUniqueCSV(out, os.Getenv("GATEWAY_ALLOWED_AUDIENCES"))
 	out = appendUniqueCSV(out, os.Getenv("IAM_AUDIENCE"))
 	out = appendUniqueCSV(out, os.Getenv("AUTH_AUDIENCE"))
-	// White-label: ALWAYS accept every brand's cloud audience (<brand>-cloud),
-	// baked like brandIssuerList so a lux/zoo/pars bearer validates even when the
-	// deployed GATEWAY_ALLOWED_AUDIENCES predates the brands. Fail-secure — only
-	// the known-good brand client_ids are added, never an arbitrary aud.
-	out = appendUniqueCSV(out, strings.Join(brandAudienceList, ","))
-	return out
+	// White-label: widen a NON-EMPTY allowlist with every brand's cloud audience
+	// (<brand>-cloud), so a lux/zoo/pars bearer validates even when the deployed
+	// GATEWAY_ALLOWED_AUDIENCES predates the brands. Fail-secure — only the
+	// known-good brand client_ids are added. An EMPTY allowlist is left empty so
+	// the "no allowlist => audience not enforced (issuer-only)" contract is
+	// preserved (dev/test with no audience env stays issuer-only, not suddenly
+	// enforcing on the brand set); live always sets GATEWAY_ALLOWED_AUDIENCES.
+	return withBrandAudiences(out)
+}
+
+// withBrandAudiences folds the white-label brand cloud auds into a non-empty
+// allowlist; an empty allowlist is returned unchanged (preserving the
+// empty-means-not-enforced contract). Fail-secure: only the known-good brand
+// client_ids are added, deduped.
+func withBrandAudiences(list []string) []string {
+	if len(list) == 0 {
+		return list
+	}
+	return appendUniqueCSV(list, strings.Join(brandAudienceList, ","))
 }
 
 // appendUniqueCSV splits a comma-separated raw value and appends each non-empty,
