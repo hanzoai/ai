@@ -18,7 +18,6 @@ package routers
 import (
 	"strings"
 
-	"github.com/beego/beego"
 	"github.com/beego/beego/context"
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/controllers"
@@ -95,6 +94,45 @@ func requiresGlobalAdmin(controllerName string) bool {
 	return ok
 }
 
+// authRequiredEndpoints are the write / ingest / scrape / RAG endpoints that
+// self-authenticate in-controller AND must never be reachable by a fully
+// anonymous request. permissionFilter fails closed (401) when NO credential is
+// present; the controller does the authoritative validation. Kept as an
+// explicit set — plus the rag/ and documents/ prefixes below — so the many
+// benign self-authing or intentionally-anonymous paths (chat, models, memory,
+// health, metrics, wecom) are unaffected. Names are the path minus "/v1/".
+var authRequiredEndpoints = map[string]struct{}{
+	"scrape": {}, "scrape/preview": {}, // browser/crawl engine (SSRF + cost)
+	"index": {}, "search": {}, "search/stats": {}, // doc index write + search
+	"docs/ingest": {},                        // unified RAG ingest (github/crawl/s3)
+	"embed": {}, "query": {}, "query_multiple": {}, // librechat-compat RAG
+	"documents": {}, // librechat-compat DELETE documents
+}
+
+// requiresPresentCredential reports whether controllerName is a write/ingest/
+// scrape/RAG endpoint that must fail closed for an anonymous caller. It matches
+// the explicit set plus the native /v1/rag/* family and the librechat-compat
+// /v1/documents/{id}/context read.
+func requiresPresentCredential(controllerName string) bool {
+	if _, ok := authRequiredEndpoints[controllerName]; ok {
+		return true
+	}
+	return strings.HasPrefix(controllerName, "rag/") ||
+		strings.HasPrefix(controllerName, "documents/")
+}
+
+// hasPresentCredential reports whether the request carries SOME credential — a
+// session user (cookie auth) or a Bearer token. It is a coarse presence check
+// (defense in depth); the controller validates the credential. It deliberately
+// does not parse/verify, so it never rejects a valid credential type
+// (hk-/pk-/sk-/hz_/JWT/session) and never adds an IAM round-trip to the filter.
+func hasPresentCredential(ctx *context.Context) bool {
+	if GetSessionUser(ctx) != nil {
+		return true
+	}
+	return parseBearerToken(ctx) != ""
+}
+
 // sessionOrBearerUser resolves the request principal for the authz gate: the
 // session user (cookie auth) if present, else the VERIFIED Bearer JWT user.
 // AutoSigninFilter no-ops for /v1/ paths, so a console call that authenticates
@@ -137,7 +175,21 @@ func permissionFilter(ctx *context.Context) {
 		return
 	}
 
-	disablePreviewMode, _ := beego.AppConfig.Bool("disablePreviewMode")
+	// Write / ingest / scrape / RAG endpoints self-authenticate in their
+	// controllers (requireIndexAuth / resolveSearchAuth), but the central filter
+	// ALSO fails closed here so a fully-anonymous request can never reach them —
+	// defense in depth for index-write (retrieval-poisoning / document deletion),
+	// scrape (SSRF + cost), and RAG. Previously these fell through the "neither
+	// get- nor update-" branch below with NO central gate. A present credential
+	// (Bearer OR session) is required here; the controller performs the
+	// authoritative validation. This is an explicit set, NOT a blanket default,
+	// so health/metrics/wecom/memory stay reachable without a Bearer.
+	if requiresPresentCredential(controllerName) && !hasPresentCredential(ctx) {
+		denyUnauthorized(ctx, "auth:authentication required")
+		return
+	}
+
+	disablePreviewMode := conf.DisablePreviewMode()
 
 	isUpdateRequest := strings.HasPrefix(controllerName, "update-") || strings.HasPrefix(controllerName, "add-") || strings.HasPrefix(controllerName, "delete-") || strings.HasPrefix(controllerName, "refresh-") || strings.HasPrefix(controllerName, "deploy-")
 	isGetRequest := strings.HasPrefix(controllerName, "get-")

@@ -170,6 +170,36 @@ func IsDemoMode() bool {
 	return strings.ToLower(GetConfigString("isDemoMode")) == "true"
 }
 
+// DisablePreviewMode resolves the disablePreviewMode toggle. It is the ONE place
+// the preview-mode value is read, so it can never be resolved two ways. Preview
+// mode is the UNAUTHENTICATED, development-only relaxation; disabling it is what
+// production wants.
+//
+// Resolution order (env beats file so ops can flip it on the DEPLOYED cloud CR
+// with NO rebuild — the reversible, durable lever):
+//
+//  1. DISABLE_PREVIEW_MODE env — "true" (case-insensitive) => preview OFF.
+//  2. disablePreviewMode app.conf key (standalone/local dev).
+//
+// A security kill-switch gets its own explicit UPPER_SNAKE env name rather than
+// riding the generic GetConfigString passthrough (whose env key would be the
+// camelCase config name) — one unambiguous lever for one decision.
+func DisablePreviewMode() bool {
+	if v, ok := os.LookupEnv("DISABLE_PREVIEW_MODE"); ok {
+		return strings.EqualFold(strings.TrimSpace(v), "true")
+	}
+	b, _ := beego.AppConfig.Bool("disablePreviewMode")
+	return b
+}
+
+// IsPreviewMode reports whether the server is in preview mode: the
+// unauthenticated dev relaxation. It is the semantic every caller wants; it and
+// DisablePreviewMode are the ONLY readers of the toggle. Callers must use these
+// and never read the raw config key, so the env lever governs every call site.
+func IsPreviewMode() bool {
+	return !DisablePreviewMode()
+}
+
 func GetConfigBatchSize() int {
 	res, err := strconv.Atoi(GetConfigString("batchSize"))
 	if err != nil {
