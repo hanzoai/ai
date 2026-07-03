@@ -17,6 +17,7 @@ package object
 import (
 	"encoding/base64"
 	"encoding/json"
+	"os"
 	"testing"
 )
 
