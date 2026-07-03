@@ -427,6 +427,9 @@ func (mc *ModelConfig) PremiumGateEnabled() bool {
 // @Success 200 {object} controllers.Response
 // @router /reload-model-config [post]
 func (c *ApiController) ReloadModelConfig() {
+	if !c.RequireGlobalAdmin() {
+		return
+	}
 	cfg := GetModelConfig()
 	if cfg == nil {
 		c.ResponseError("model config not initialized")
