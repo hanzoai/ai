@@ -25,6 +25,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.99.0
 	github.com/baidubce/bce-qianfan-sdk/go/qianfan v0.0.14
 	github.com/beego/beego v1.12.12
+	github.com/beego/beego/v2 v2.3.8
 	github.com/carmel/gooxml v0.0.0-20220216072414-40ff56130850
 	github.com/cohere-ai/cohere-go/v2 v2.5.2
 	github.com/digitalocean/go-libvirt v0.0.0-20250207191401-950a7b2d7eaf
@@ -42,6 +43,7 @@ require (
 	github.com/hanzoai/iam v1.19.8-0.20260622075908-c2fd4872545b
 	github.com/hanzoai/pdf v1.2.0
 	github.com/hanzoai/search-go v0.36.0
+	github.com/hanzoai/tasks v1.43.0
 	github.com/henomis/lingoose v0.1.0
 	github.com/hupe1980/go-huggingface v0.0.15
 	github.com/leverly/ChatGLM v1.2.0
@@ -322,7 +324,7 @@ require (
 	golang.org/x/crypto v0.53.0 // indirect
 	golang.org/x/exp v0.0.0-20260410095643-746e56fc9e2f // indirect
 	golang.org/x/mod v0.36.0 // indirect
-	golang.org/x/oauth2 v0.36.0 // indirect
+	golang.org/x/oauth2 v0.36.0
 	golang.org/x/sync v0.21.0 // indirect
 	golang.org/x/sys v0.46.0 // indirect
 	golang.org/x/term v0.44.0 // indirect
