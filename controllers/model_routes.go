@@ -296,6 +296,37 @@ func zenIdentityPrompt(model string) string {
 	return ""
 }
 
+// modelCountByProvider returns, per provider name, how many user-facing model
+// keys route to it. It counts from the ACTIVE routing table: the YAML config
+// (conf/models.yaml, the runtime source of truth in prod) when loaded, else the
+// static modelRoutes map. Counting is done programmatically from the route
+// table's providerName field — never hardcoded — so adding/removing a model
+// updates the count automatically.
+//
+// Note this counts by route.providerName, which is the DB provider whose key/URL
+// serves the request. Branded families (every zen model, the OpenAI-owned
+// embeddings) route THROUGH an infrastructure provider (do-ai), so their keys are
+// attributed to that serving provider — a provider record like "zen" whose name
+// no route targets will report 0. That is accurate: the "zen" provider record
+// holds a key/URL but the zen MODELS are served via the do-ai route. DB-defined
+// per-org routes (/v1/*-model-route) are not included in this static baseline;
+// documented as an accepted baseline for the admin management view.
+func modelCountByProvider() map[string]int {
+	counts := map[string]int{}
+	if cfg := GetModelConfig(); cfg != nil {
+		cfg.mu.RLock()
+		for _, route := range cfg.routes {
+			counts[route.providerName]++
+		}
+		cfg.mu.RUnlock()
+		return counts
+	}
+	for _, route := range modelRoutes {
+		counts[route.providerName]++
+	}
+	return counts
+}
+
 // resolveModelRoute looks up a user-facing model name and returns its route.
 // Lookup is case-insensitive. Checks DB routes (global "admin" owner) first,
 // then falls back to YAML config, then static map.
