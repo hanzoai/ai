@@ -167,7 +167,7 @@ func doaiImageSubmit(ctx context.Context, client *http.Client, base, apiKey stri
 
 	raw, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("image submit failed (HTTP %d): %s", resp.StatusCode, strings.TrimSpace(string(raw)))
+		return "", fmt.Errorf("image submit failed (HTTP %d): %s", resp.StatusCode, shortUpstreamErr(raw))
 	}
 
 	var out struct {
@@ -196,7 +196,7 @@ func doaiImageWait(ctx context.Context, client *http.Client, base, apiKey, reque
 		raw, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			return fmt.Errorf("image status poll failed (HTTP %d): %s", resp.StatusCode, strings.TrimSpace(string(raw)))
+			return fmt.Errorf("image status poll failed (HTTP %d): %s", resp.StatusCode, shortUpstreamErr(raw))
 		}
 
 		var st struct {
@@ -234,7 +234,7 @@ func doaiImageRetrieve(ctx context.Context, client *http.Client, base, apiKey, r
 
 	raw, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("image retrieve failed (HTTP %d): %s", resp.StatusCode, strings.TrimSpace(string(raw)))
+		return nil, fmt.Errorf("image retrieve failed (HTTP %d): %s", resp.StatusCode, shortUpstreamErr(raw))
 	}
 
 	// fal image results expose images[]. Tolerate both a top-level "images" and
@@ -304,4 +304,19 @@ func doaiImageDo(ctx context.Context, client *http.Client, method, url, apiKey s
 		return nil, fmt.Errorf("image request to upstream failed: %w", err)
 	}
 	return resp, nil
+}
+
+// doaiErrBodyMax caps how much of a non-2xx upstream body is surfaced in an
+// error. The HTTP status is the signal; the body is a short reason only, so fal
+// internals are never echoed verbatim to the API caller.
+const doaiErrBodyMax = 200
+
+// shortUpstreamErr trims and length-caps an upstream error body for inclusion in
+// an error message (adds an ellipsis when truncated).
+func shortUpstreamErr(raw []byte) string {
+	s := strings.TrimSpace(string(raw))
+	if len(s) > doaiErrBodyMax {
+		return s[:doaiErrBodyMax] + "…"
+	}
+	return s
 }

@@ -206,6 +206,53 @@ func TestGenerateImageDOAI_SubmitError(t *testing.T) {
 	}
 }
 
+// TestGenerateImageDOAI_ErrorBodyTruncated proves a verbose upstream error body
+// is length-capped in the error surfaced to the caller (fal internals are not
+// echoed verbatim), while the HTTP status is preserved.
+func TestGenerateImageDOAI_ErrorBodyTruncated(t *testing.T) {
+	longBody := strings.Repeat("A", 5000)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(longBody))
+	}))
+	defer srv.Close()
+
+	_, err := GenerateImageDOAI(context.Background(), srv.URL+"/v1", "k", ImageGenRequest{
+		UpstreamModel: "fal-ai/flux/schnell",
+		Prompt:        "x",
+	})
+	if err == nil {
+		t.Fatal("expected an error, got nil")
+	}
+	msg := err.Error()
+	// The HTTP status is preserved.
+	if !strings.Contains(msg, "HTTP 500") {
+		t.Errorf("error should preserve the HTTP status: %q", msg)
+	}
+	// The verbose body must NOT be echoed in full: the run of A's is capped.
+	if strings.Contains(msg, strings.Repeat("A", doaiErrBodyMax+1)) {
+		t.Errorf("error body was not truncated (contains > %d chars of the upstream body)", doaiErrBodyMax)
+	}
+	if !strings.Contains(msg, "…") {
+		t.Errorf("truncated error should carry the ellipsis marker: %q", msg)
+	}
+}
+
+// TestShortUpstreamErr checks the trim + length cap directly.
+func TestShortUpstreamErr(t *testing.T) {
+	if got := shortUpstreamErr([]byte("  short  ")); got != "short" {
+		t.Errorf("shortUpstreamErr trimmed = %q, want %q", got, "short")
+	}
+	long := strings.Repeat("x", doaiErrBodyMax+50)
+	got := shortUpstreamErr([]byte(long))
+	if len([]rune(got)) != doaiErrBodyMax+1 { // doaiErrBodyMax chars + the ellipsis rune
+		t.Errorf("shortUpstreamErr length = %d runes, want %d", len([]rune(got)), doaiErrBodyMax+1)
+	}
+	if !strings.HasSuffix(got, "…") {
+		t.Errorf("shortUpstreamErr should end with ellipsis: %q", got)
+	}
+}
+
 // TestGenerateImageDOAI_EmptyResult errors when the retrieve returns no images.
 func TestGenerateImageDOAI_EmptyResult(t *testing.T) {
 	mux := http.NewServeMux()

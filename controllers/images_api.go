@@ -109,9 +109,15 @@ func (c *ApiController) ImagesGenerations() {
 		provider.SubType = req.Model
 	}
 
+	// Clamp n to [1,10] BEFORE any cost math so imageCostCents/reserveBudget are
+	// never fed an unbounded n (mirrors the same clamp in doaiImageSubmit). This
+	// makes the money-safety explicit rather than relying on int overflow.
 	n := req.N
 	if n < 1 {
 		n = 1
+	}
+	if n > 10 {
+		n = 10
 	}
 
 	// ── Balance reservation ────────────────────────────────────────────

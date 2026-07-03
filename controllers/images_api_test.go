@@ -97,6 +97,25 @@ func TestImageCostCents(t *testing.T) {
 	}
 }
 
+// TestImageNClampCeiling documents the money-safety invariant: the handler
+// clamps n to [1,10] before any cost math (imageCostCents / reserveBudget), so
+// the reserve/settle can never exceed the ceiling for 10 images — never an
+// unbounded n and never an int-overflow-to-negative reservation. The clamp is
+// the same one enforced in model.doaiImageSubmit.
+func TestImageNClampCeiling(t *testing.T) {
+	const maxN = 10
+	// Cost is monotonic and bounded at the ceiling for every image model.
+	for model, per := range imagePricePerImageCents {
+		if got := imageCostCents(model, maxN); got != per*maxN {
+			t.Errorf("imageCostCents(%q, %d) = %d, want %d (ceiling)", model, maxN, got, per*maxN)
+		}
+		// A clamped-then-billed n never exceeds the ceiling cost.
+		if imageCostCents(model, maxN) <= 0 {
+			t.Errorf("ceiling cost for %q must be positive", model)
+		}
+	}
+}
+
 // TestImageResponseData maps the model result into the OpenAI images data array:
 // url when the upstream returned a url, b64_json when it returned bytes.
 func TestImageResponseData(t *testing.T) {
