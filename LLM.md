@@ -175,6 +175,43 @@ comes from `commerce` at `/v1/billing/balance?user=<org>&currency=usd`. Users in
 `BALANCE_EXEMPT_USERS` (e.g. `hanzo/z`) bypass ALL gates — use the
 `z@hanzo.ai` token to verify premium/zen without a credited org.
 
+## RAG — ONE unified surface (retires the standalone chat-rag-api)
+
+`ai` is the single RAG layer for the whole platform. There is exactly ONE
+retrieval pipeline; the standalone `hanzoai/chat-rag-api` (danny-avila/rag_api
+fork) is now redundant and slated for archive.
+
+**One index, one embedder, one retrieval path.** Every document — doc/crawl/
+github/s3 ingest AND per-file uploads from hanzo.chat — lands in the SAME
+per-tenant index `{owner}-{store}-docs`, fanned out to BOTH Hanzo Search
+(keyword, Meilisearch) and Hanzo Vector (semantic, Qdrant) via
+`object.IndexDocuments`, and retrieved via `object.SearchDocuments` (hybrid RRF).
+See `object/search_docs.go`.
+
+**File-scoped RAG is a FILTER, not a parallel store.** `file_id` is a filterable
+dimension on that one index (`DocIndex.FileID`; Meili filterable attr `file_id`;
+Qdrant payload `file_id`). Uploaded-file retrieval = a `file_id` filter over the
+tenant index. `object/rag.go` holds the file-scoped logic (`RagEmbedFile`,
+`RagQuery`, `DeleteRagFile`, `RagFileContext`); chunking uses
+`split.RecursiveSplitProvider` (parity with rag-api's
+`RecursiveCharacterTextSplitter`, 1500/100), parsing uses
+`txt.GetParsedTextFromUrl` (PDF/CSV/XLSX/PPTX/…). Uploaded files default to the
+`rag-files` store so they don't pollute curated docs.
+
+**Two HTTP projections over the one logic** (`controllers/rag.go`,
+`controllers/rag_librechat.go`):
+- Native (canonical): `POST /v1/rag/embed`, `/v1/rag/query`,
+  `/v1/rag/query-multiple`, `/v1/rag/delete`, `GET /v1/rag/context`.
+- LibreChat-compat (drop-in for the retired rag-api's fixed contract):
+  `POST /v1/embed` (multipart), `/v1/query`, `/v1/query_multiple`,
+  `DELETE /v1/documents`, `GET /v1/documents/:file_id/context`. Returns the
+  LangChain `[[{page_content,metadata},score],…]` tuple shape hanzo.chat parses.
+
+**Migration**: point hanzo.chat's `RAG_API_URL` at `https://api.hanzo.ai/v1` —
+no chat-repo change. Auth/billing reuse the doc-RAG path
+(`resolveSearchAuth`/`requireIndexAuth` + `recordSearchUsage`); owner is the
+authenticated principal (tenant isolation), never a client-supplied field.
+
 ## Security invariants (READ before touching auth/billing/scaling)
 
 - **JWT iss/aud** — every request-auth JWT path goes through
