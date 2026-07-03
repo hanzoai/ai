@@ -21,9 +21,10 @@ import (
 	"github.com/hanzoai/ai/object"
 )
 
-// TestResolveModelRoute_VideoFamily proves every zen3-video model routes to
-// do-ai's wan2-2-t2v-a14b upstream, is premium, and is owned_by hanzo (the
-// upstream is never leaked), and that the unbranded catalog id routes too.
+// TestResolveModelRoute_VideoFamily proves every branded zen3-video model routes
+// to the spark-video backend (our GB10) on the wan2-2-t2v-a14b upstream, is
+// premium, and is owned_by hanzo (the upstream is never leaked), and that the
+// unbranded catalog id still routes to do-ai.
 func TestResolveModelRoute_VideoFamily(t *testing.T) {
 	branded := []string{"zen3-video", "zen3-video-fast", "zen3-video-pro"}
 	for _, name := range branded {
@@ -32,8 +33,8 @@ func TestResolveModelRoute_VideoFamily(t *testing.T) {
 			if route == nil {
 				t.Fatalf("resolveModelRoute(%q) = nil, want non-nil", name)
 			}
-			if route.providerName != "do-ai" {
-				t.Errorf("providerName = %q, want do-ai", route.providerName)
+			if route.providerName != "spark-video" {
+				t.Errorf("providerName = %q, want spark-video", route.providerName)
 			}
 			if route.upstreamModel != "wan2-2-t2v-a14b" {
 				t.Errorf("upstreamModel = %q, want wan2-2-t2v-a14b", route.upstreamModel)
