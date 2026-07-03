@@ -91,6 +91,10 @@ func initAPI() {
 	beego.Router("/v1/add-file", &controllers.ApiController{}, "POST:AddFile")
 	beego.Router("/v1/delete-file", &controllers.ApiController{}, "POST:DeleteFile")
 	beego.Router("/v1/refresh-file-vectors", &controllers.ApiController{}, "POST:RefreshFileVectors")
+	// Unified RAG ingest (upload | github | crawl | s3) → parse + chunk + embed into
+	// {owner}-{store}-docs (Hanzo Vector + Search). Handler exists (docs_ingest.go);
+	// this is its only route — the swagger @router annotation alone does not register it.
+	beego.Router("/v1/docs/ingest", &controllers.ApiController{}, "POST:IngestDocs")
 
 	beego.Router("/v1/get-global-vectors", &controllers.ApiController{}, "GET:GetGlobalVectors")
 	beego.Router("/v1/get-vectors", &controllers.ApiController{}, "GET:GetVectors")
