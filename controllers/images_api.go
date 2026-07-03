@@ -32,9 +32,11 @@ import (
 // authentication, model-routing, provider-resolution, balance-reservation, and
 // usage-recording machinery as ChatCompletions and Embeddings (see
 // openai_api.go / embeddings_api.go) — one auth+routing policy, one billing
-// ledger. The only image-specific piece is the execution: the zen3-image family
-// routes to do-ai's fal-hosted diffusion models, invoked through the
-// asynchronous image client (model.GenerateImageDOAI), and the response is the
+// ledger. The only image-specific piece is the execution:
+// model.GenerateImageForModel dispatches to the correct upstream shape — the
+// fal-hosted diffusion models (zen3-image* / fal-ai/*) via DO's asynchronous
+// image client, and the synchronous OpenAI shape (Stable Diffusion 3.5 Large,
+// dall-e, gpt-image) via client.Images.Generate — and the response is the
 // OpenAI images JSON shape {"created":<ts>,"data":[{"url":…}|{"b64_json":…}]}.
 
 // imagesGenerationsRequest is the OpenAI /v1/images/generations request body.
@@ -148,7 +150,7 @@ func (c *ApiController) ImagesGenerations() {
 		return
 	}
 
-	result, err := model.GenerateImageDOAI(ctx, upstreamURL, provider.ClientSecret, model.ImageGenRequest{
+	result, err := model.GenerateImageForModel(ctx, upstreamURL, provider.ClientSecret, model.ImageGenRequest{
 		UpstreamModel: provider.SubType,
 		Prompt:        req.Prompt,
 		N:             n,
