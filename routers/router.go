@@ -76,6 +76,14 @@ func initAPI() {
 	beego.Router("/v1/delete-provider", &controllers.ApiController{}, "POST:DeleteProvider")
 	beego.Router("/v1/refresh-mcp-tools", &controllers.ApiController{}, "POST:RefreshMcpTools")
 
+	// Provider-admin management surface (global-admin gated in authz_filter.go).
+	// Reads/writes the SAME object.Provider records as the CRUD routes above.
+	beego.Router("/v1/admin/providers", &controllers.ApiController{}, "GET:GetAdminProviders")
+	beego.Router("/v1/admin/providers/toggle", &controllers.ApiController{}, "POST:ToggleAdminProvider")
+	beego.Router("/v1/admin/providers/primary", &controllers.ApiController{}, "POST:SetPrimaryAdminProvider")
+	// Public, secret-free enabled-provider-name feed for the pricing catalog sync.
+	beego.Router("/v1/provider-flags", &controllers.ApiController{}, "GET:GetProviderFlags")
+
 	beego.Router("/v1/get-global-files", &controllers.ApiController{}, "GET:GetGlobalFiles")
 	beego.Router("/v1/get-files", &controllers.ApiController{}, "GET:GetFiles")
 	beego.Router("/v1/get-file", &controllers.ApiController{}, "GET:GetFileMy")

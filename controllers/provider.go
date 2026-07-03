@@ -140,6 +140,9 @@ func (c *ApiController) GetProvider() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /update-provider [post]
 func (c *ApiController) UpdateProvider() {
+	if !c.RequireGlobalAdmin() {
+		return
+	}
 	id := c.Input().Get("id")
 
 	var provider object.Provider
@@ -209,6 +212,9 @@ func (c *ApiController) AddProvider() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /delete-provider [post]
 func (c *ApiController) DeleteProvider() {
+	if !c.RequireGlobalAdmin() {
+		return
+	}
 	var provider object.Provider
 	err := json.Unmarshal(c.Ctx.Input.RequestBody, &provider)
 	if err != nil {
@@ -233,6 +239,9 @@ func (c *ApiController) DeleteProvider() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /refresh-mcp-tools [post]
 func (c *ApiController) RefreshMcpTools() {
+	if !c.RequireGlobalAdmin() {
+		return
+	}
 	var provider object.Provider
 	err := json.Unmarshal(c.Ctx.Input.RequestBody, &provider)
 	if err != nil {
