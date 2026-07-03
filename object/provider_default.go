@@ -16,6 +16,7 @@ package object
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -230,8 +231,65 @@ var (
 	orgProviderCacheMu sync.RWMutex
 )
 
+// InvalidateProviderNameCache evicts a provider (by admin name) from the hot-path
+// resolution caches so a mutation — e.g. an admin enable/disable or set-primary
+// via /v1/admin/providers — takes effect IMMEDIATELY instead of after the 60s
+// TTL. The global (admin) entry is keyed by name; per-org BYOK entries are keyed
+// "org/name", so all org overrides of that provider name are dropped too. Passing
+// an empty name flushes everything (used when a bulk change touched many records).
+func InvalidateProviderNameCache(name string) {
+	providerByNameCacheMu.Lock()
+	if name == "" {
+		providerByNameCache = make(map[string]*providerByNameEntry)
+	} else {
+		delete(providerByNameCache, name)
+	}
+	providerByNameCacheMu.Unlock()
+
+	orgProviderCacheMu.Lock()
+	if name == "" {
+		orgProviderCache = make(map[string]*providerByNameEntry)
+	} else {
+		suffix := "/" + name
+		for k := range orgProviderCache {
+			if strings.HasSuffix(k, suffix) {
+				delete(orgProviderCache, k)
+			}
+		}
+	}
+	orgProviderCacheMu.Unlock()
+}
+
+// ModelProviderUsable reports whether a Model-category provider is currently
+// eligible to serve traffic. A Model provider is usable only when its admin
+// toggle (State) is "Active" — a "Disabled"/paused provider is treated as
+// unavailable so the /v1/admin/providers toggle actually takes effect on the
+// hot path. Non-Model providers (Storage, Embedding config records, etc.) are
+// governed by their own callers and are not affected by this gate.
+//
+// This is the ONE place the "is this provider allowed to route?" policy lives:
+// GetModelProviderByName (the completion/embeddings/image chokepoint) and
+// GetModelProviderByNameForOrg (the per-org BYOK seam) both consult it, so a
+// disabled provider is uniformly unavailable to every caller (chat, anthropic,
+// embeddings, message_answer, widget, failover) without duplicating the check.
+func ModelProviderUsable(p *Provider) bool {
+	if p == nil {
+		return false
+	}
+	if p.Category == "Model" && p.State != "Active" {
+		return false
+	}
+	return true
+}
+
 // GetModelProviderByName retrieves a Model-category provider by its Name field
 // (e.g. "do-ai", "fireworks", "openai-direct"). Results are cached for 60 seconds.
+//
+// A provider whose admin toggle is disabled (State != "Active") resolves to
+// (nil, nil) — the SAME shape as a missing provider — so every completion path
+// (chat, anthropic, embeddings, images, message_answer, widget) sees a disabled
+// provider as "not configured" and fails/falls-back uniformly. See
+// ModelProviderUsable for the single-point policy.
 func GetModelProviderByName(name string) (*Provider, error) {
 	providerByNameCacheMu.RLock()
 	entry, ok := providerByNameCache[name]
@@ -248,6 +306,12 @@ func GetModelProviderByName(name string) (*Provider, error) {
 	provider, err := getProvider("admin", name)
 	if err != nil {
 		return nil, err
+	}
+	// A disabled Model provider is unavailable — cache and return it as nil so
+	// the toggle takes effect on the hot path (and the negative result is cached
+	// for the TTL, same as a genuinely-missing provider).
+	if !ModelProviderUsable(provider) {
+		provider = nil
 	}
 	if provider != nil {
 		// Resolve KMS-backed secrets (e.g. "kms://DO_AI_API_KEY" → actual key).
@@ -293,6 +357,13 @@ func GetModelProviderByNameForOrg(orgId, name string) (*Provider, error) {
 	if err != nil {
 		return nil, err
 	}
+	// A disabled org BYOK override reverts the org to the global built-in — the
+	// same behavior as "no override configured". This makes toggling an org's own
+	// provider off a clean fall-back to platform defaults rather than a hard
+	// failure, and keeps the disabled-provider policy in one predicate.
+	if !ModelProviderUsable(provider) {
+		provider = nil
+	}
 	if provider != nil {
 		// BYOK key is stored as a kms:// ref (never plaintext); resolve it.
 		if err := ResolveProviderSecret(provider); err != nil {
@@ -304,7 +375,7 @@ func GetModelProviderByNameForOrg(orgId, name string) (*Provider, error) {
 	orgProviderCacheMu.Unlock()
 
 	if provider == nil {
-		return GetModelProviderByName(name) // no override → global built-in
+		return GetModelProviderByName(name) // no override (or disabled) → global built-in
 	}
 	cp := *provider
 	return &cp, nil
