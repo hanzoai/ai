@@ -89,6 +89,12 @@ type IngestStats struct {
 	DocumentsIndexed int      `json:"documentsIndexed"`
 	Skipped          []string `json:"skipped,omitempty"`
 	Errors           []string `json:"errors,omitempty"`
+
+	// Async + WorkflowID are set when a long source (github/crawl/s3) was enqueued as
+	// a durable tasks workflow instead of run inline. The caller tracks progress in
+	// the Tasks product by this workflow id — there is no bespoke job entity.
+	Async      bool   `json:"async,omitempty"`
+	WorkflowID string `json:"workflowId,omitempty"`
 }
 
 // splitTypeForFile picks the splitter for a file name, honoring a store's
