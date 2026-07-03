@@ -34,8 +34,12 @@ import (
 	"github.com/hanzoai/ai/txt"
 )
 
-// DefaultDocsStore is the tenant's default documentation store/index slug.
-const DefaultDocsStore = "docs-hanzo-ai"
+// DefaultDocsStore is the tenant's default documentation store/index slug. It is
+// brand-NEUTRAL by design: every org (hanzo, lux, zoo, any customer) gets its own
+// isolated index `{owner}-docs-docs` because the owner prefix — bound to the
+// authenticated principal — is what separates tenants. Baking a brand here (the old
+// "docs-hanzo-ai") would have shown Hanzo's slug on every org's store, so it is not.
+const DefaultDocsStore = "docs"
 
 // IngestRequest is the source-pluggable body for POST /v1/docs/ingest. Exactly
 // one source is selected by the `source` discriminator; its matching sub-object
