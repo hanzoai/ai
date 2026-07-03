@@ -804,31 +804,33 @@ models:
   # download) by model/doai_video.go. getOpenAiModelType classifies it via
   # isDOAIVideoModel → the videos path. Billed per video via
   # controllers.videoCostCents (40¢/video, DO publishes no per-video rate) —
-  # token pricing is unused for video. The zen3-video brand family routes to
-  # this same upstream with owned_by hanzo (upstream never exposed).
+  # token pricing is unused for video. The unbranded raw id below stays on do-ai;
+  # the zen3-video brand family is served on OUR GB10 via the spark-video
+  # provider (same async /v1/videos API), owned_by hanzo (upstream never exposed).
   #
   # premium: true on EVERY video id (including this unbranded passthrough): a t2v
   # inference is minutes of A14B GPU compute (~40¢), so the free starter credit
   # must never fund it. Without premium the raw id would clear on balance>0 alone
   # and let a throwaway signup mint ~12 videos on promo credit. This YAML is the
-  # runtime source of truth (it wins over the static route map), so the flag has
-  # to live here too, not only in controllers/model_routes.go.
+  # runtime source of truth (it wins over the static route map), so the provider
+  # re-point and the flag have to live here too, not only in
+  # controllers/model_routes.go.
   wan2-2-t2v-a14b:
     provider: do-ai
     upstream: wan2-2-t2v-a14b
     premium: true
   zen3-video:
-    provider: do-ai
+    provider: spark-video
     upstream: wan2-2-t2v-a14b
     premium: true
     owned_by: hanzo
   zen3-video-fast:
-    provider: do-ai
+    provider: spark-video
     upstream: wan2-2-t2v-a14b
     premium: true
     owned_by: hanzo
   zen3-video-pro:
-    provider: do-ai
+    provider: spark-video
     upstream: wan2-2-t2v-a14b
     premium: true
     owned_by: hanzo
