@@ -20,10 +20,14 @@ import (
 	"github.com/hanzoai/ai/object"
 )
 
-// ScrapeDocs
+// ScrapeDocs is the ingest-specific route: it crawls a site and WRITES the
+// structured content into the owner's search index, returning ScrapeStats. This
+// is orthogonal to POST /v1/crawl (which fetches a URL and returns its content
+// without indexing) — /v1/scrape is "crawl-and-index", /v1/crawl is "crawl".
+//
 // @Title ScrapeDocs
 // @Tag Scraper API
-// @Description crawl a website and index structured content into search
+// @Description crawl a website and index structured content into search (ingest)
 // @Param body body object.ScrapeRequest true "Scrape request"
 // @Success 200 {object} object.ScrapeStats "Scrape and index statistics"
 // @router /scrape [post]
@@ -68,78 +72,17 @@ func (c *ApiController) ScrapeDocs() {
 	c.ResponseOk(stats)
 }
 
-// ScrapePreview
+// ScrapePreview is a DEPRECATED alias of POST /v1/crawl — the single canonical
+// "crawl a URL, get content back" endpoint (Crawl4AI). It forwards to that one
+// handler so there is exactly ONE crawl implementation; there is no parallel
+// scrape-preview path. New callers MUST use /v1/crawl.
+//
 // @Title ScrapePreview
 // @Tag Scraper API
-// @Description scrape a single URL and return structured data without indexing
-// @Param body body object.ScrapeRequest true "Preview request (url required, engine optional: fast|browser)"
-// @Success 200 {object} object.ScrapeResult "Structured page content"
+// @Description DEPRECATED — use POST /v1/crawl. Crawl a URL and return its content.
+// @Param body body controllers.crawlRequest true "Crawl request ({url} or {urls})"
+// @Success 200 {object} controllers.Response "{results: []object.CrawlResult}"
 // @router /scrape/preview [post]
 func (c *ApiController) ScrapePreview() {
-	auth := c.requireIndexAuth()
-	if auth == nil {
-		return
-	}
-
-	var req struct {
-		URL    string `json:"url"`
-		Engine string `json:"engine,omitempty"` // "fast" (Go scraper), "browser" (crawl4ai), or "" (auto)
-	}
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &req)
-	if err != nil {
-		c.ResponseError(err.Error())
-		return
-	}
-
-	if req.URL == "" {
-		c.ResponseError("url must not be empty")
-		return
-	}
-
-	useBrowser := false
-	switch req.Engine {
-	case "browser":
-		useBrowser = true
-	case "fast":
-		useBrowser = false
-	default:
-		// Auto: use crawl4ai if available
-		useBrowser = object.IsCrawl4AIAvailable()
-	}
-
-	if useBrowser {
-		results, crawlErr := object.CrawlWithCrawl4AI([]string{req.URL})
-		if crawlErr != nil {
-			c.ResponseError(crawlErr.Error())
-			return
-		}
-		if len(results) == 0 {
-			c.ResponseError("crawl4ai returned no results")
-			return
-		}
-		if !results[0].Success {
-			c.ResponseError("crawl4ai reported failure for " + req.URL)
-			return
-		}
-		sr := object.Crawl4AIResultToScrapeResult(results[0])
-
-		// Archive the browser crawl result to Hanzo Storage (fire-and-forget)
-		if object.IsCrawlStorageConfigured() {
-			object.ArchiveCrawlPreviewAsync(auth.Owner, req.URL, sr, results[0])
-		}
-
-		recordSearchUsage(auth, "scrape", "crawl4ai", "success", 1, c.Ctx.Request.RemoteAddr)
-		c.ResponseOk(sr)
-		return
-	}
-
-	result, err := object.ScrapePage(req.URL)
-	if err != nil {
-		c.ResponseError(err.Error())
-		return
-	}
-
-	recordSearchUsage(auth, "scrape", "fast", "success", 1, c.Ctx.Request.RemoteAddr)
-
-	c.ResponseOk(result)
+	c.Crawl()
 }
