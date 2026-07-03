@@ -188,6 +188,49 @@ var modelPricing = map[string]modelPrice{
 	"zen-embedding":   {InputPerMillion: 0.39, OutputPerMillion: 0.39},
 }
 
+// imagePricePerImageCents maps an image model (user-facing name OR upstream
+// fal/OpenAI id, lowercase) to its price per generated image, in cents. Image
+// generation is billed per image, NOT per token — the token-based
+// calculateCostCents math yields 0 for a 0-token image call, so image billing
+// is this separate, explicit seam. Keyed by both the user-facing zen3-image
+// name and the upstream id so a lookup succeeds whichever the caller records.
+var imagePricePerImageCents = map[string]int64{
+	// Zen3 diffusion family (Hanzo margin over fal wholesale).
+	"zen3-image":            5,
+	"zen3-image-max":        5,
+	"zen3-image-fast":       5,
+	"zen3-image-dev":        5,
+	"zen3-image-playground": 5,
+	"zen3-image-jp":         5,
+	"zen3-image-sdxl":       6,
+	"zen3-image-ssd":        6,
+	// Upstream ids (the do-ai fal image models) — same price, so billing is
+	// correct whether the record carries the user-facing or upstream name.
+	"fal-ai/flux/schnell": 5,
+	"fal-ai/fast-sdxl":    6,
+	// OpenAI-family image models, if ever routed directly ($0.08/image).
+	"gpt-image-1": 8,
+	"dall-e-3":    8,
+	"dall-e-2":    2,
+}
+
+// imageCostCents returns the total cost in cents for generating n images with
+// the given model. It matches the user-facing name or the upstream id, falling
+// back to a conservative per-image floor for an unknown image model so an image
+// call is never silently free. n <= 0 costs nothing.
+func imageCostCents(model string, n int) int64 {
+	if n <= 0 {
+		return 0
+	}
+	m := strings.ToLower(model)
+	per, ok := imagePricePerImageCents[m]
+	if !ok {
+		// Unknown image model: charge a conservative floor rather than $0.
+		per = 5
+	}
+	return per * int64(n)
+}
+
 // DO-AI alias pricing (same as their base model)
 var aliasPricing = map[string]string{
 	"openai/gpt-4o":                        "gpt-4o",
