@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -121,12 +122,44 @@ func GenerateImageDOAI(ctx context.Context, baseURL, apiKey string, req ImageGen
 
 // doaiImageInput is the fal "input" block. num_images is always sent; the rest
 // are omitempty so a model that rejects an unknown field never sees it.
+//
+// ImageSize is fal's structured size — an OBJECT {"width":W,"height":H}, NOT a
+// bare "WxH" string. fal tightened this: a string like "1024x1024" now fails
+// upstream validation ("image_size: Input should be a valid dictionary or
+// object"), so we serialize the parsed dimensions. Left as any + omitempty so a
+// blank/unparseable size is dropped and the model default applies.
 type doaiImageInput struct {
 	Prompt              string `json:"prompt"`
 	NumImages           int    `json:"num_images"`
-	ImageSize           string `json:"image_size,omitempty"`
+	ImageSize           any    `json:"image_size,omitempty"`
 	OutputFormat        string `json:"output_format,omitempty"`
 	EnableSafetyChecker bool   `json:"enable_safety_checker"`
+}
+
+// doaiImageSizeObj is fal's {width,height} image_size object.
+type doaiImageSizeObj struct {
+	Width  int `json:"width"`
+	Height int `json:"height"`
+}
+
+// doaiImageSize converts an OpenAI-style "WxH" size (e.g. "1024x1024") into
+// fal's structured image_size object. It returns nil (so image_size is omitted
+// and the model default applies) when the size is empty or not a valid "WxH".
+func doaiImageSize(size string) any {
+	size = strings.TrimSpace(size)
+	if size == "" {
+		return nil
+	}
+	parts := strings.SplitN(strings.ToLower(size), "x", 2)
+	if len(parts) != 2 {
+		return nil
+	}
+	w, werr := strconv.Atoi(strings.TrimSpace(parts[0]))
+	h, herr := strconv.Atoi(strings.TrimSpace(parts[1]))
+	if werr != nil || herr != nil || w <= 0 || h <= 0 {
+		return nil
+	}
+	return doaiImageSizeObj{Width: w, Height: h}
 }
 
 type doaiImageSubmitBody struct {
@@ -149,7 +182,7 @@ func doaiImageSubmit(ctx context.Context, client *http.Client, base, apiKey stri
 		Input: doaiImageInput{
 			Prompt:              req.Prompt,
 			NumImages:           n,
-			ImageSize:           req.Size,
+			ImageSize:           doaiImageSize(req.Size),
 			OutputFormat:        req.OutputFormat,
 			EnableSafetyChecker: true,
 		},
