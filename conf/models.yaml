@@ -742,6 +742,52 @@ models:
     owned_by: hanzo
     pricing: { input: 0.39, output: 0.39 }
 
+  # ── Zen3 image (diffusion) family ─────────────────────────────────────
+  # do-ai fal-hosted diffusion via the async image API (model/doai_image.go).
+  # FLUX.1 schnell is the flagship/fast model; SDXL serves the -sdxl/-ssd
+  # variants. Pricing is per-token-shaped here only because the config schema
+  # is token-based; image calls bill per image via controllers.imageCostCents.
+  zen3-image:
+    provider: do-ai
+    upstream: fal-ai/flux/schnell
+    premium: true
+    owned_by: hanzo
+  zen3-image-max:
+    provider: do-ai
+    upstream: fal-ai/flux/schnell
+    premium: true
+    owned_by: hanzo
+  zen3-image-fast:
+    provider: do-ai
+    upstream: fal-ai/flux/schnell
+    premium: true
+    owned_by: hanzo
+  zen3-image-dev:
+    provider: do-ai
+    upstream: fal-ai/flux/schnell
+    premium: true
+    owned_by: hanzo
+  zen3-image-playground:
+    provider: do-ai
+    upstream: fal-ai/flux/schnell
+    premium: true
+    owned_by: hanzo
+  zen3-image-jp:
+    provider: do-ai
+    upstream: fal-ai/flux/schnell
+    premium: true
+    owned_by: hanzo
+  zen3-image-sdxl:
+    provider: do-ai
+    upstream: fal-ai/fast-sdxl
+    premium: true
+    owned_by: hanzo
+  zen3-image-ssd:
+    provider: do-ai
+    upstream: fal-ai/fast-sdxl
+    premium: true
+    owned_by: hanzo
+
   # ── Zen versionless aliases (always point to latest zenN variant) ──────
 
   zen:
