@@ -229,10 +229,15 @@ var modelRoutes = map[string]modelRoute{
 	// wan2-2-t2v-a14b is the only text-to-video model in the do-ai catalog. It
 	// is served on the OpenAI Sora-style async /v1/videos API (create → poll →
 	// download), NOT the fal async-invoke image path (which 404s it). Callable
-	// directly by its catalog id (unbranded passthrough; owned_by surfaces the
-	// do-ai upstream like the embeddings passthroughs). getOpenAiModelType
-	// classifies it via isDOAIVideoModel → the videos path.
-	"wan2-2-t2v-a14b": {providerName: "do-ai", upstreamModel: "wan2-2-t2v-a14b"},
+	// directly by its catalog id (unbranded passthrough — no ownedBy, so the
+	// listing surfaces the do-ai upstream like the embeddings passthroughs).
+	// getOpenAiModelType classifies it via isDOAIVideoModel → the videos path.
+	// premium: true — ALL video is premium. A single t2v inference is minutes of
+	// A14B GPU compute (~40¢); without the premium flag the raw id would clear on
+	// balance>0 alone, letting the $5 starter credit fund the platform's priciest
+	// unit (replayable across throwaway signups). Premium routes the caller through
+	// the starter-credit gate (balance must exceed the free credit).
+	"wan2-2-t2v-a14b": {providerName: "do-ai", upstreamModel: "wan2-2-t2v-a14b", premium: true},
 
 	// ── Zen3 video (text-to-video) family ────────────────────────────────
 	// Routed to do-ai's wan2-2-t2v-a14b via the async video API
