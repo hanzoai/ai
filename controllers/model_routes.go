@@ -180,6 +180,23 @@ var modelRoutes = map[string]modelRoute{
 	"zen3-guard":     {providerName: "do-ai", upstreamModel: "llama3.3-70b-instruct", premium: true, ownedBy: "hanzo"},
 	"zen3-embedding": {providerName: "do-ai", upstreamModel: "qwen3-embedding-0.6b", premium: true, ownedBy: "hanzo"},
 
+	// ── Zen3 image (diffusion) family ─────────────────────────────────────
+	// Routed to do-ai's fal-hosted diffusion models via the ASYNC image API
+	// (model/doai_image.go), not the OpenAI /v1/images/generations shape. The
+	// flagship is FLUX.1 schnell (latest, fastest); SDXL serves the -sdxl/-ssd
+	// high-resolution variants. do-ai has one flux + one sdxl image model, so
+	// the family collapses cleanly onto those two upstreams rather than
+	// inventing per-variant models that don't exist upstream. owned_by hanzo —
+	// the fal/do-ai upstream is never exposed (same policy as every zen route).
+	"zen3-image":            {providerName: "do-ai", upstreamModel: "fal-ai/flux/schnell", premium: true, ownedBy: "hanzo"},
+	"zen3-image-max":        {providerName: "do-ai", upstreamModel: "fal-ai/flux/schnell", premium: true, ownedBy: "hanzo"},
+	"zen3-image-fast":       {providerName: "do-ai", upstreamModel: "fal-ai/flux/schnell", premium: true, ownedBy: "hanzo"},
+	"zen3-image-dev":        {providerName: "do-ai", upstreamModel: "fal-ai/flux/schnell", premium: true, ownedBy: "hanzo"},
+	"zen3-image-playground": {providerName: "do-ai", upstreamModel: "fal-ai/flux/schnell", premium: true, ownedBy: "hanzo"},
+	"zen3-image-jp":         {providerName: "do-ai", upstreamModel: "fal-ai/flux/schnell", premium: true, ownedBy: "hanzo"},
+	"zen3-image-sdxl":       {providerName: "do-ai", upstreamModel: "fal-ai/fast-sdxl", premium: true, ownedBy: "hanzo"},
+	"zen3-image-ssd":        {providerName: "do-ai", upstreamModel: "fal-ai/fast-sdxl", premium: true, ownedBy: "hanzo"},
+
 	// ── Zen versionless aliases (always point to latest zenN variant) ──
 	"zen":             {providerName: "do-ai", upstreamModel: "glm-5", premium: true, ownedBy: "hanzo", hidden: true},
 	"zen-pro":         {providerName: "do-ai", upstreamModel: "qwen3.5-397b-a17b", premium: true, ownedBy: "hanzo", hidden: true},
