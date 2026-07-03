@@ -85,7 +85,8 @@ func emitGenAISpan(record *usageRecord, startTime time.Time) {
 	}
 
 	fields := buildGenAISpanFields(record)
-	_, span := object.GenAITracer().Start(context.Background(), fields.name,
+	_, span := object.GenAITracer().Start(
+		context.Background(), fields.name,
 		trace.WithSpanKind(trace.SpanKindClient),
 		trace.WithTimestamp(startTime),
 		trace.WithAttributes(fields.attrs...),

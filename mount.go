@@ -32,8 +32,8 @@ import (
 	"sync"
 
 	"github.com/hanzoai/cloud"
-	"github.com/zap-proto/zip"
 	luxlog "github.com/luxfi/log"
+	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/ai/conf"
 )
