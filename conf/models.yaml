@@ -798,6 +798,41 @@ models:
     provider: do-ai
     upstream: stable-diffusion-3.5-large
 
+  # ── DO-AI text-to-video (served at POST /v1/videos/generations) ────────
+  # wan2-2-t2v-a14b is the only text-to-video model in the do-ai catalog,
+  # served on the OpenAI Sora-style async /v1/videos API (create → poll →
+  # download) by model/doai_video.go. getOpenAiModelType classifies it via
+  # isDOAIVideoModel → the videos path. Billed per video via
+  # controllers.videoCostCents (40¢/video, DO publishes no per-video rate) —
+  # token pricing is unused for video. The zen3-video brand family routes to
+  # this same upstream with owned_by hanzo (upstream never exposed).
+  #
+  # premium: true on EVERY video id (including this unbranded passthrough): a t2v
+  # inference is minutes of A14B GPU compute (~40¢), so the free starter credit
+  # must never fund it. Without premium the raw id would clear on balance>0 alone
+  # and let a throwaway signup mint ~12 videos on promo credit. This YAML is the
+  # runtime source of truth (it wins over the static route map), so the flag has
+  # to live here too, not only in controllers/model_routes.go.
+  wan2-2-t2v-a14b:
+    provider: do-ai
+    upstream: wan2-2-t2v-a14b
+    premium: true
+  zen3-video:
+    provider: do-ai
+    upstream: wan2-2-t2v-a14b
+    premium: true
+    owned_by: hanzo
+  zen3-video-fast:
+    provider: do-ai
+    upstream: wan2-2-t2v-a14b
+    premium: true
+    owned_by: hanzo
+  zen3-video-pro:
+    provider: do-ai
+    upstream: wan2-2-t2v-a14b
+    premium: true
+    owned_by: hanzo
+
   # ── DO-AI Inference Router (served at POST /v1/chat/completions) ───────
   # DO's model router auto-selects the best foundation model per request and
   # returns the chosen model in the response. Callable as plain chat. The router

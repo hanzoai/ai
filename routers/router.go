@@ -330,6 +330,11 @@ func initAPI() {
 	// zen3-image family routes to do-ai's fal-hosted diffusion models.
 	beego.Router("/v1/images/generations", &controllers.ApiController{}, "POST:ImagesGenerations")
 
+	// OpenAI-style text-to-video generation. Same auth + provider routing; the
+	// zen3-video family (and wan2-2-t2v-a14b) route to do-ai's Sora-style async
+	// /v1/videos API.
+	beego.Router("/v1/videos/generations", &controllers.ApiController{}, "POST:VideosGenerations")
+
 	beego.Router("/v1/get-model-routes", &controllers.ApiController{}, "GET:GetModelRoutes")
 	beego.Router("/v1/get-model-route", &controllers.ApiController{}, "GET:GetModelRoute")
 	beego.Router("/v1/add-model-route", &controllers.ApiController{}, "POST:AddModelRoute")
