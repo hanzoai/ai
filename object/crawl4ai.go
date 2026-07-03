@@ -51,21 +51,76 @@ type Crawl4AICrawlerParams struct {
 	ProcessIframes       bool `json:"process_iframes"`
 }
 
-// Crawl4AIResponse is the response from the Hanzo Crawl /crawl endpoint.
+// Crawl4AIResponse is the response from the Hanzo Crawl /crawl endpoint. The
+// field that signals batch success differs by service version — older builds set
+// a top-level status:"completed" string, 0.8.x/0.9.x set a boolean success — so
+// both are accepted and neither is required: the per-result Success is
+// authoritative and inline Results are returned whenever present.
 type Crawl4AIResponse struct {
 	TaskID  string           `json:"task_id"`
 	Status  string           `json:"status"`
+	Success bool             `json:"success"`
 	Results []Crawl4AIResult `json:"results,omitempty"`
+}
+
+// MarkdownField decodes Crawl4AI's `markdown`, which is shape-polymorphic across
+// service versions: a bare JSON string on older builds, and an OBJECT
+// {raw_markdown, fit_markdown, markdown_with_citations, …} on 0.8.x/0.9.x (the
+// deployed hanzoai/crawl). A plain string field errors the whole json.Decode on
+// the object form — the reason a crawl silently returned empty content — so this
+// unmarshaler accepts either, preferring fit_markdown (the noise-reduced,
+// LLM-oriented variant) with raw_markdown as fallback.
+type MarkdownField string
+
+func (m *MarkdownField) UnmarshalJSON(b []byte) error {
+	// Bare string form.
+	var s string
+	if err := json.Unmarshal(b, &s); err == nil {
+		*m = MarkdownField(s)
+		return nil
+	}
+	// Object form: prefer the fit (cleaned) markdown, fall back to raw.
+	var obj struct {
+		FitMarkdown string `json:"fit_markdown"`
+		RawMarkdown string `json:"raw_markdown"`
+	}
+	if err := json.Unmarshal(b, &obj); err != nil {
+		return err
+	}
+	if obj.FitMarkdown != "" {
+		*m = MarkdownField(obj.FitMarkdown)
+	} else {
+		*m = MarkdownField(obj.RawMarkdown)
+	}
+	return nil
 }
 
 // Crawl4AIResult holds the crawl output for a single URL.
 type Crawl4AIResult struct {
-	URL      string                         `json:"url"`
-	Markdown string                         `json:"markdown"`
-	Success  bool                           `json:"success"`
-	Links    map[string][]map[string]string `json:"links,omitempty"`
-	Media    map[string][]map[string]string `json:"media,omitempty"`
-	Metadata map[string]interface{}         `json:"metadata,omitempty"`
+	URL      string        `json:"url"`
+	Markdown MarkdownField `json:"markdown"`
+	Success  bool          `json:"success"`
+	// Links/Media are per-URL object lists whose fields are heterogeneous across
+	// Crawl4AI versions — 0.8.x link objects carry strings (href/text) alongside
+	// floats (intrinsic_score) and nulls (head_data). A map-of-string value errors
+	// the whole decode, so the values are typed interface{} and read with an
+	// assertion where needed.
+	Links    map[string][]map[string]interface{} `json:"links,omitempty"`
+	Media    map[string][]map[string]interface{} `json:"media,omitempty"`
+	Metadata map[string]interface{}              `json:"metadata,omitempty"`
+}
+
+// CrawlResult is the canonical, clean output of POST /v1/crawl for one URL: the
+// fetched page as LLM-ready markdown plus lightweight metadata. It is the ONE
+// crawl result shape — distinct from ScrapeResult (docs-structured, for search
+// ingest) and from the raw upstream Crawl4AIResult.
+type CrawlResult struct {
+	URL         string                 `json:"url"`
+	Title       string                 `json:"title,omitempty"`
+	Description string                 `json:"description,omitempty"`
+	Markdown    string                 `json:"markdown"`
+	Success     bool                   `json:"success"`
+	Metadata    map[string]interface{} `json:"metadata,omitempty"`
 }
 
 // getCrawlEndpoint returns the Hanzo Crawl service base URL from config.
@@ -143,15 +198,56 @@ func CrawlWithCrawl4AI(urls []string) ([]Crawl4AIResult, error) {
 	if err := json.NewDecoder(resp.Body).Decode(&crawlResp); err != nil {
 		return nil, fmt.Errorf("failed to decode Hanzo Crawl response: %w", err)
 	}
-	// If the response already contains completed results, return them directly
-	if crawlResp.Status == "completed" && len(crawlResp.Results) > 0 {
+	// Synchronous form (Crawl4AI 0.8.x/0.9.x, the deployed hanzoai/crawl): /crawl
+	// carries the results inline with no task_id. Older builds set
+	// status:"completed"; 0.8.x sets a boolean success and omits status. Per-result
+	// Success is authoritative, so return whenever inline results are present
+	// regardless of the envelope field.
+	if len(crawlResp.Results) > 0 {
 		return crawlResp.Results, nil
 	}
-	// Otherwise poll the task endpoint until completion
+	// Asynchronous form: no inline results — poll the task endpoint until done.
 	if crawlResp.TaskID == "" {
 		return nil, fmt.Errorf("Hanzo Crawl returned no task_id and no results")
 	}
 	return pollCrawl4AITask(endpoint, apiToken, crawlResp.TaskID)
+}
+
+// Crawl is the canonical crawl operation backing POST /v1/crawl: it fetches each
+// URL via the self-hosted Hanzo Crawl (Crawl4AI) service and returns clean,
+// LLM-ready markdown. It is the single "crawl a URL, get content back" path;
+// /v1/scrape (crawl-and-index) and the cloud websearch firecrawl leg reuse the
+// SAME Crawl4AI backend through CrawlWithCrawl4AI, never a parallel client.
+func Crawl(urls []string) ([]CrawlResult, error) {
+	raw, err := CrawlWithCrawl4AI(urls)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]CrawlResult, 0, len(raw))
+	for _, r := range raw {
+		out = append(out, crawl4AIResultToCrawlResult(r))
+	}
+	return out, nil
+}
+
+// crawl4AIResultToCrawlResult projects an upstream Crawl4AI result onto the clean
+// CrawlResult shape, lifting title/description out of the page metadata.
+func crawl4AIResultToCrawlResult(r Crawl4AIResult) CrawlResult {
+	cr := CrawlResult{
+		URL:      r.URL,
+		Markdown: string(r.Markdown),
+		Success:  r.Success,
+		Metadata: r.Metadata,
+	}
+	if r.Metadata != nil {
+		if title, ok := r.Metadata["title"].(string); ok {
+			cr.Title = title
+		}
+		if desc, ok := r.Metadata["description"].(string); ok {
+			cr.Description = desc
+		}
+	}
+	return cr
 }
 
 // pollCrawl4AITask polls the Hanzo Crawl /task/{id} endpoint until the job completes or times out.
@@ -200,7 +296,7 @@ func pollCrawl4AITask(endpoint, apiToken, taskID string) ([]Crawl4AIResult, erro
 func Crawl4AIResultToScrapeResult(result Crawl4AIResult) ScrapeResult {
 	sr := ScrapeResult{
 		URL:     result.URL,
-		Content: result.Markdown,
+		Content: string(result.Markdown),
 	}
 	// Extract title from metadata if available
 	if result.Metadata != nil {
@@ -212,7 +308,7 @@ func Crawl4AIResultToScrapeResult(result Crawl4AIResult) ScrapeResult {
 		}
 	}
 	// Parse markdown to extract headings and structured content
-	lines := strings.Split(result.Markdown, "\n")
+	lines := strings.Split(string(result.Markdown), "\n")
 	var currentSection string
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
@@ -261,14 +357,14 @@ func Crawl4AIResultToScrapeResult(result Crawl4AIResult) ScrapeResult {
 	// Extract links from the Hanzo Crawl links map
 	if internalLinks, ok := result.Links["internal"]; ok {
 		for _, link := range internalLinks {
-			if href, exists := link["href"]; exists && href != "" {
+			if href, _ := link["href"].(string); href != "" {
 				sr.Links = append(sr.Links, href)
 			}
 		}
 	}
 	if externalLinks, ok := result.Links["external"]; ok {
 		for _, link := range externalLinks {
-			if href, exists := link["href"]; exists && href != "" {
+			if href, _ := link["href"].(string); href != "" {
 				sr.Links = append(sr.Links, href)
 			}
 		}
