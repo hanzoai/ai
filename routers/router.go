@@ -352,6 +352,26 @@ func initAPI() {
 	beego.Router("/v1/scrape", &controllers.ApiController{}, "POST:ScrapeDocs")
 	beego.Router("/v1/scrape/preview", &controllers.ApiController{}, "POST:ScrapePreview")
 
+	// File-scoped RAG — the ONE canonical uploaded-file RAG surface (consolidates
+	// the retired standalone chat-rag-api). Embed a file under a file_id, then
+	// retrieve chunks scoped to that file (or a set of files) over the SAME
+	// Search+Vector index as doc RAG.
+	beego.Router("/v1/rag/embed", &controllers.ApiController{}, "POST:RagEmbed")
+	beego.Router("/v1/rag/query", &controllers.ApiController{}, "POST:RagQuery")
+	beego.Router("/v1/rag/query-multiple", &controllers.ApiController{}, "POST:RagQueryMultiple")
+	beego.Router("/v1/rag/delete", &controllers.ApiController{}, "POST:RagDelete")
+	beego.Router("/v1/rag/context", &controllers.ApiController{}, "GET:RagContext")
+
+	// LibreChat-compat RAG — the FIXED contract hanzo.chat's RAG client calls at
+	// RAG_API_URL. Pointing RAG_API_URL=https://api.hanzo.ai/v1 retires the
+	// standalone chat-rag-api with no chat-repo change. Thin projection over the
+	// same object.Rag* logic as /v1/rag/*.
+	beego.Router("/v1/embed", &controllers.ApiController{}, "POST:RagEmbedMultipart")
+	beego.Router("/v1/query", &controllers.ApiController{}, "POST:RagQueryCompat")
+	beego.Router("/v1/query_multiple", &controllers.ApiController{}, "POST:RagQueryMultipleCompat")
+	beego.Router("/v1/documents", &controllers.ApiController{}, "DELETE:RagDeleteDocuments")
+	beego.Router("/v1/documents/:file_id/context", &controllers.ApiController{}, "GET:RagDocumentContext")
+
 	// Memory subsystem — cloud backend of the unified memory interface.
 	// Per-user scoped; identity comes from gateway IAM headers, never the body.
 	beego.Router("/v1/memory/remember", &controllers.ApiController{}, "POST:MemoryRemember")
