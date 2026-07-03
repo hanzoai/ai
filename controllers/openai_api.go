@@ -648,6 +648,22 @@ func (c *ApiController) authenticate(token string) error {
 	}
 }
 
+// providerKeyBillingUser derives the billing identity for a provider-key (sk-)
+// caller: the org that OWNS the provider row the key belongs to (and therefore
+// minted the key). The sk- key is a machine credential, so it bills the OWNER
+// ORG — Name is empty so object.BillingSubject collapses to the org ledger for
+// BOTH personal-billing and pooled orgs, and Type "application" marks it M2M,
+// mirroring BillingSubjectForPrincipal's carve-out. A provider with no owner is
+// unattributable: return an auth error so the caller refuses rather than spend
+// the shared upstream key for free — the invariant is that every call spending
+// the shared upstream key bills someone.
+func providerKeyBillingUser(provider *object.Provider) (*iam.User, error) {
+	if provider == nil || strings.TrimSpace(provider.Owner) == "" {
+		return nil, authError("provider key is not attributable to a billable owner")
+	}
+	return &iam.User{Owner: provider.Owner, Type: "application"}, nil
+}
+
 // authResolveProvider authenticates a bearer token and resolves the requested
 // model to its upstream provider. It is the single auth + model-routing policy
 // for every OpenAI-compatible surface (chat, embeddings, rerank): each handler
@@ -706,6 +722,19 @@ func (c *ApiController) authResolveProvider(token, requestedModel, orgId string)
 			err = authError("invalid API key")
 			return
 		}
+		// Attribute + bill this sk- call to the org that OWNS the provider row
+		// (and thus minted this key). Without an authUser, BOTH reserveBudget and
+		// recordUsage are skipped (they gate on authUser != nil) — so an sk- key
+		// spending the SHARED upstream (do-ai) ran at ZERO cost and bypassed the
+		// balance/premium gate. Resolve the billing owner from the key's OWN
+		// provider row BEFORE any model-route swap below, so the debit lands on
+		// the key minter, not the upstream route provider we merely call. An
+		// unattributable provider (no owner) is refused (fail-secure).
+		authUser, err = providerKeyBillingUser(provider)
+		if err != nil {
+			return
+		}
+		c.Ctx.Input.SetParam("recordUserId", authUser.Owner+"/provider-key")
 		// Apply model routing for sk- keys too. If the route points to a
 		// different provider than the one that owns the API key, switch to the
 		// route's provider so zen/fireworks models work with any key.
