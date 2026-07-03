@@ -46,8 +46,11 @@ var (
 // without a rebuild. `jwtIssuer` (app config / ConfigMap) still takes precedence.
 var jwtIssuerEnvKeys = []string{"JWT_ISSUER", "IAM_ISSUER", "CLOUD_IAM_ISSUER", "AUTH_ISSUER"}
 
-// expectedJWTIssuer returns the trusted issuer: config `jwtIssuer` if set, else
-// the first non-empty deployed *_ISSUER env var, else the https://hanzo.id default.
+// expectedJWTIssuer returns the PRIMARY trusted issuer: config `jwtIssuer` if set,
+// else the first non-empty deployed *_ISSUER env var, else the https://hanzo.id
+// default. This is the deployment's own brand issuer; the FULL trusted set
+// (trustedJWTIssuers) also accepts the sibling white-label brand issuers so ONE
+// binary validates hanzo AND lux/zoo/pars tokens.
 func expectedJWTIssuer() string {
 	if v := strings.TrimSpace(conf.GetConfigString("jwtIssuer")); v != "" {
 		return v
@@ -58,6 +61,62 @@ func expectedJWTIssuer() string {
 		}
 	}
 	return defaultJWTIssuer
+}
+
+// brandIssuerList is the set of white-label brand OIDC issuers a single cloud
+// binary accepts, so a lux token (iss=https://lux.id) validates alongside a hanzo
+// token. It mirrors the controllers brandDefs / console BRANDS map (kept in sync
+// by hand -- both are the same public HIP-0111 issuer set). Overridable/extendable
+// via WHITELABEL_ISSUERS (comma-separated) for a deployment that adds a brand
+// without a rebuild.
+var brandIssuerList = []string{
+	"https://hanzo.id",
+	"https://lux.id",
+	"https://zoolabs.id",
+	"https://pars.id",
+}
+
+// brandAudienceList is the set of white-label brand cloud audiences (== IAM
+// client_id == app name: <brand>-cloud) a single binary accepts. A brand's session
+// token carries aud=<brand>-cloud (HIP-0111: client_id == app == aud), so the
+// audience allowlist must include each or a valid lux/zoo/pars bearer 401s on the
+// request-auth path even after the brand issuer passes. Mirrors brandIssuerList
+// and the cloud binary's BrandAudiences() (kept in sync by hand -- the same public
+// HIP-0111 brand set). Always folded into jwtAudienceAllowlist so the check does
+// not depend on the deployed GATEWAY_ALLOWED_AUDIENCES listing the brand auds.
+var brandAudienceList = []string{
+	"hanzo-cloud",
+	"lux-cloud",
+	"zoo-cloud",
+	"pars-cloud",
+}
+
+// trustedJWTIssuers returns EVERY issuer the request-auth policy accepts: the
+// primary (expectedJWTIssuer, which honors the pinned config/env) UNIONED with the
+// white-label brand issuers and any WHITELABEL_ISSUERS override. A token whose
+// `iss` is any of these passes the issuer check. The union is fail-secure: it only
+// ADDS the known-good brand issuers; it never accepts an arbitrary issuer.
+func trustedJWTIssuers() []string {
+	out := []string{expectedJWTIssuer()}
+	add := func(v string) {
+		v = strings.TrimSpace(v)
+		if v == "" {
+			return
+		}
+		for _, e := range out {
+			if e == v {
+				return
+			}
+		}
+		out = append(out, v)
+	}
+	for _, iss := range brandIssuerList {
+		add(iss)
+	}
+	for _, iss := range splitCSV(os.Getenv("WHITELABEL_ISSUERS")) {
+		add(iss)
+	}
+	return out
 }
 
 // jwtAudienceAllowlist returns the accepted `aud` client-ids. It mirrors the
@@ -73,13 +132,33 @@ func expectedJWTIssuer() string {
 // always sets GATEWAY_ALLOWED_AUDIENCES, so the check is enforced.
 func jwtAudienceAllowlist() []string {
 	if v := splitCSV(conf.GetConfigString("jwtAudiences")); len(v) > 0 {
-		return v
+		// A pinned allowlist folds in the brand auds — one binary must accept every
+		// brand's <brand>-cloud bearer (fail-secure: only ADDS known brands).
+		return withBrandAudiences(v)
 	}
 	var out []string
 	out = appendUniqueCSV(out, os.Getenv("GATEWAY_ALLOWED_AUDIENCES"))
 	out = appendUniqueCSV(out, os.Getenv("IAM_AUDIENCE"))
 	out = appendUniqueCSV(out, os.Getenv("AUTH_AUDIENCE"))
-	return out
+	// White-label: widen a NON-EMPTY allowlist with every brand's cloud audience
+	// (<brand>-cloud), so a lux/zoo/pars bearer validates even when the deployed
+	// GATEWAY_ALLOWED_AUDIENCES predates the brands. Fail-secure — only the
+	// known-good brand client_ids are added. An EMPTY allowlist is left empty so
+	// the "no allowlist => audience not enforced (issuer-only)" contract is
+	// preserved (dev/test with no audience env stays issuer-only, not suddenly
+	// enforcing on the brand set); live always sets GATEWAY_ALLOWED_AUDIENCES.
+	return withBrandAudiences(out)
+}
+
+// withBrandAudiences folds the white-label brand cloud auds into a non-empty
+// allowlist; an empty allowlist is returned unchanged (preserving the
+// empty-means-not-enforced contract). Fail-secure: only the known-good brand
+// client_ids are added, deduped.
+func withBrandAudiences(list []string) []string {
+	if len(list) == 0 {
+		return list
+	}
+	return appendUniqueCSV(list, strings.Join(brandAudienceList, ","))
 }
 
 // appendUniqueCSV splits a comma-separated raw value and appends each non-empty,
@@ -158,12 +237,22 @@ func decodeAudience(raw json.RawMessage) []string {
 	return arr
 }
 
-// checkIssAud is the pure issuer/audience policy. An empty expectedIss skips the
-// issuer check; an empty allowedAud skips the audience check. Fail-secure: when
-// an allowlist is set, a token whose audiences match none of it is rejected.
-func checkIssAud(iss string, auds []string, expectedIss string, allowedAud []string) error {
-	if expectedIss != "" && iss != expectedIss {
-		return ErrJWTBadIssuer
+// checkIssAud is the pure issuer/audience policy. An empty expectedIss set skips
+// the issuer check; an empty allowedAud skips the audience check. Fail-secure:
+// when a set is provided, a token whose iss/aud matches none of it is rejected.
+// expectedIss is a SET so ONE binary trusts every white-label brand issuer.
+func checkIssAud(iss string, auds []string, expectedIss []string, allowedAud []string) error {
+	if len(expectedIss) > 0 {
+		ok := false
+		for _, want := range expectedIss {
+			if want != "" && iss == want {
+				ok = true
+				break
+			}
+		}
+		if !ok {
+			return ErrJWTBadIssuer
+		}
 	}
 	if len(allowedAud) > 0 {
 		for _, a := range auds {
@@ -187,7 +276,7 @@ func ValidateJWTIssAud(token string) error {
 	if err != nil {
 		return err
 	}
-	return checkIssAud(iss, auds, expectedJWTIssuer(), jwtAudienceAllowlist())
+	return checkIssAud(iss, auds, trustedJWTIssuers(), jwtAudienceAllowlist())
 }
 
 // ParseAndValidateJWT verifies the token signature via IAM AND enforces the
