@@ -33,10 +33,11 @@ func makeJWT(t *testing.T, claims map[string]interface{}) string {
 	return hdr + "." + body + ".sig"
 }
 
-// TestCheckIssAud_Issuer covers the issuer half of the policy.
+// TestCheckIssAud_Issuer covers the issuer half of the policy, including the
+// white-label multi-issuer SET (one binary trusts hanzo AND lux/zoo/pars).
 func TestCheckIssAud_Issuer(t *testing.T) {
-	const want = "https://hanzo.id"
-	if err := checkIssAud(want, []string{"hanzo-console"}, want, nil); err != nil {
+	want := []string{"https://hanzo.id"}
+	if err := checkIssAud("https://hanzo.id", []string{"hanzo-console"}, want, nil); err != nil {
 		t.Fatalf("correct issuer must pass, got %v", err)
 	}
 	if err := checkIssAud("https://evil.example", []string{"hanzo-console"}, want, nil); err != ErrJWTBadIssuer {
@@ -45,31 +46,44 @@ func TestCheckIssAud_Issuer(t *testing.T) {
 	if err := checkIssAud("", nil, want, nil); err != ErrJWTBadIssuer {
 		t.Fatalf("empty issuer must be rejected when an issuer is expected, got %v", err)
 	}
-	// Empty expectedIss disables the issuer check (issuer-only rollout off).
-	if err := checkIssAud("anything", nil, "", nil); err != nil {
-		t.Fatalf("empty expected issuer must skip the check, got %v", err)
+	// Empty expectedIss set disables the issuer check (issuer-only rollout off).
+	if err := checkIssAud("anything", nil, nil, nil); err != nil {
+		t.Fatalf("empty expected issuer set must skip the check, got %v", err)
+	}
+
+	// WHITE-LABEL: a SET of trusted brand issuers accepts a token from ANY of them
+	// (a lux token validates on the hanzo binary), and STILL rejects an outsider.
+	brands := []string{"https://hanzo.id", "https://lux.id", "https://zoolabs.id", "https://pars.id"}
+	for _, iss := range brands {
+		if err := checkIssAud(iss, []string{"lux-cloud"}, brands, nil); err != nil {
+			t.Errorf("brand issuer %q must pass in the trusted set, got %v", iss, err)
+		}
+	}
+	if err := checkIssAud("https://attacker.id", []string{"lux-cloud"}, brands, nil); err != ErrJWTBadIssuer {
+		t.Fatalf("issuer outside the brand set must be rejected, got %v", err)
 	}
 }
 
 // TestCheckIssAud_Audience covers the audience allowlist half of the policy.
 func TestCheckIssAud_Audience(t *testing.T) {
-	const iss = "https://hanzo.id"
+	iss := "https://hanzo.id"
+	expIss := []string{iss}
 	allow := []string{"hanzo-console", "hanzo-cloud"}
 
 	// In-allowlist audience passes.
-	if err := checkIssAud(iss, []string{"hanzo-console"}, iss, allow); err != nil {
+	if err := checkIssAud(iss, []string{"hanzo-console"}, expIss, allow); err != nil {
 		t.Fatalf("allowed audience must pass, got %v", err)
 	}
 	// Out-of-allowlist audience is rejected.
-	if err := checkIssAud(iss, []string{"attacker-app"}, iss, allow); err != ErrJWTBadAudience {
+	if err := checkIssAud(iss, []string{"attacker-app"}, expIss, allow); err != ErrJWTBadAudience {
 		t.Fatalf("disallowed audience must be rejected, got %v", err)
 	}
 	// No audiences at all, with an allowlist set, is rejected (fail-secure).
-	if err := checkIssAud(iss, nil, iss, allow); err != ErrJWTBadAudience {
+	if err := checkIssAud(iss, nil, expIss, allow); err != ErrJWTBadAudience {
 		t.Fatalf("missing audience must be rejected when allowlist set, got %v", err)
 	}
 	// Empty allowlist disables the audience check.
-	if err := checkIssAud(iss, []string{"whatever"}, iss, nil); err != nil {
+	if err := checkIssAud(iss, []string{"whatever"}, expIss, nil); err != nil {
 		t.Fatalf("empty allowlist must skip audience check, got %v", err)
 	}
 }
@@ -191,5 +205,77 @@ func TestForeignAudienceRejectedFromEnv(t *testing.T) {
 		if err := ValidateJWTIssAud(good); err != nil {
 			t.Errorf("legit aud %q must pass, got %v", aud, err)
 		}
+	}
+}
+
+// TestTrustedJWTIssuers_WhiteLabel proves the request-auth issuer set includes the
+// primary (config/env) issuer PLUS every white-label brand issuer, so ONE binary
+// validates hanzo AND lux/zoo/pars tokens. This is the multi-brand equivalent of
+// the single expectedJWTIssuer.
+func TestTrustedJWTIssuers_WhiteLabel(t *testing.T) {
+	t.Setenv("JWT_ISSUER", "https://hanzo.id")
+	t.Setenv("WHITELABEL_ISSUERS", "")
+	got := trustedJWTIssuers()
+	want := []string{"https://hanzo.id", "https://lux.id", "https://zoolabs.id", "https://pars.id"}
+	set := map[string]bool{}
+	for _, g := range got {
+		set[g] = true
+	}
+	for _, w := range want {
+		if !set[w] {
+			t.Errorf("trusted issuer set %v missing brand issuer %q", got, w)
+		}
+	}
+
+	// The WHITELABEL_ISSUERS override ADDS a brand without a rebuild.
+	t.Setenv("WHITELABEL_ISSUERS", "https://custom.brand.id")
+	if !contains(trustedJWTIssuers(), "https://custom.brand.id") {
+		t.Errorf("WHITELABEL_ISSUERS override must add the custom issuer")
+	}
+}
+
+func contains(xs []string, v string) bool {
+	for _, x := range xs {
+		if x == v {
+			return true
+		}
+	}
+	return false
+}
+
+// TestValidateJWTIssAud_LuxToken is THE white-label gate: a lux-brand token
+// (iss=https://lux.id, aud=lux-cloud) validates on the same binary that validates
+// a hanzo token, while an attacker-issuer token is still rejected. This proves the
+// backend accepts lux without weakening the hanzo/foreign checks.
+func TestValidateJWTIssAud_LuxToken(t *testing.T) {
+	// The deployment's primary issuer is hanzo; the brand set adds lux.id.
+	t.Setenv("JWT_ISSUER", "https://hanzo.id")
+	t.Setenv("WHITELABEL_ISSUERS", "")
+	// Audience allowlist must include lux-cloud (the config step of this change).
+	t.Setenv("GATEWAY_ALLOWED_AUDIENCES", "hanzo-cloud,lux-cloud,zoo-cloud,pars-cloud")
+	t.Setenv("IAM_AUDIENCE", "hanzo-cloud")
+
+	// A real lux console token: iss=lux.id, aud=lux-cloud.
+	luxTok := makeJWT(t, map[string]interface{}{"iss": "https://lux.id", "aud": "lux-cloud", "owner": "lux"})
+	if err := ValidateJWTIssAud(luxTok); err != nil {
+		t.Fatalf("lux token (iss=lux.id, aud=lux-cloud) MUST pass on the white-label binary, got %v", err)
+	}
+
+	// A hanzo token STILL passes (no regression).
+	hanzoTok := makeJWT(t, map[string]interface{}{"iss": "https://hanzo.id", "aud": "hanzo-cloud", "owner": "hanzo"})
+	if err := ValidateJWTIssAud(hanzoTok); err != nil {
+		t.Fatalf("hanzo token MUST still pass (no regression), got %v", err)
+	}
+
+	// A lux-issuer token carrying a FOREIGN aud is still rejected (aud enforced).
+	luxForeignAud := makeJWT(t, map[string]interface{}{"iss": "https://lux.id", "aud": "evil-app"})
+	if err := ValidateJWTIssAud(luxForeignAud); err != ErrJWTBadAudience {
+		t.Fatalf("lux-issuer token with foreign aud must be rejected on aud, got %v", err)
+	}
+
+	// An attacker-issuer token is rejected even with a valid brand aud.
+	attackerTok := makeJWT(t, map[string]interface{}{"iss": "https://attacker.id", "aud": "lux-cloud"})
+	if err := ValidateJWTIssAud(attackerTok); err != ErrJWTBadIssuer {
+		t.Fatalf("attacker-issuer token must be rejected on iss, got %v", err)
 	}
 }
