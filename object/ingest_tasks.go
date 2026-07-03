@@ -39,15 +39,15 @@ import (
 // worker polls it and nothing unrelated multiplexes onto it (CONTRACT §3).
 const ingestTaskQueue = "ai-ingest"
 
-// ErrTasksNotConfigured signals no durable-execution engine is wired (TASKS_ADDR
-// unset). The handler treats it as "fall back to inline ingest" so ingest still works
-// before/without a tasks rollout — a graceful degradation, not a second async system.
+// ErrTasksNotConfigured signals no dialer was injected (the composition root hasn't
+// wired the tasks engine). The handler treats it as "fall back to inline ingest" so
+// ingest still works before/without a tasks rollout — graceful, not a second async system.
 var ErrTasksNotConfigured = tasksNotConfigured{}
 
 type tasksNotConfigured struct{}
 
 func (tasksNotConfigured) Error() string {
-	return "ingest: tasks durable-execution backend not configured (TASKS_ADDR unset)"
+	return "ingest: tasks durable-execution engine not wired (no dialer injected)"
 }
 
 // IngestWorkflowInput is the durable workflow's typed input — the owner (bound to the
@@ -88,52 +88,49 @@ func ingestActivity(_ context.Context, in IngestWorkflowInput) (*IngestStats, er
 	return IngestSource(in.Owner, &in.Request, in.Lang)
 }
 
-// injectedClient is the tasks client the composition root wires in. ai is
-// TRANSPORT-AGNOSTIC: it never dials a network address or reads TASKS_ADDR itself —
-// the process that embeds ai (cloud) owns the tasks engine and decides HOW to reach it
-// (in-process/loopback ZAP when the engine is embedded in the same binary — mega fast,
-// no HTTP; a remote ZAP dial only if ever run split). Until injected, EnqueueIngest
-// reports ErrTasksNotConfigured and the handler runs ingest inline.
+// dialer is HOW the composition root (cloud) reaches the tasks engine FOR AN ORG: it
+// returns a client scoped to that org's namespace (CONTRACT §6 — namespace maps 1:1 to
+// org, non-negotiable). ai is TRANSPORT-AGNOSTIC — it never dials or reads env; cloud
+// embeds the engine and supplies an in-process/loopback ZAP dialer (mega fast, no HTTP,
+// no cross-service auth). Set once at boot. Nil → EnqueueIngest reports
+// ErrTasksNotConfigured and the handler runs ingest inline (always works).
 var (
-	injectedMu     sync.RWMutex
-	injectedClient tasksclient.Client
+	dialer     func(org string) (tasksclient.Client, error)
+	provMu     sync.Mutex
+	orgWorkers sync.Map // org → tasksclient.Client (its ai-ingest worker already started)
 )
 
-// StartIngestWorker is the ONE wiring call for the composition root: it registers the
-// ingest workflow + activity on the ai-ingest queue over the caller-supplied client
-// (whose transport the caller chose — in-process ZAP when embedded), starts the worker,
-// and wires that client as the enqueue side. cloud calls this at boot with its embedded
-// engine's in-process client; ai owns its queue/workflow/activity, cloud owns the
-// transport. Idempotent-safe to call once per process.
-func StartIngestWorker(cli tasksclient.Client) error {
-	if cli == nil {
-		return fmt.Errorf("ingest: StartIngestWorker requires a non-nil tasks client")
+// SetIngestDialer injects the per-org dialer. Called once at boot by cloud.
+func SetIngestDialer(d func(org string) (tasksclient.Client, error)) { dialer = d }
+
+// ingestOrgClient returns the org's tasks client, lazily provisioning its per-org
+// ai-ingest worker on first use (CONTRACT §6: "one client + worker per active org,
+// lazily on first ExecuteWorkflow"). provMu serializes first-touch so an org never gets
+// two workers; the fast path is a lock-free sync.Map hit.
+func ingestOrgClient(org string) (tasksclient.Client, error) {
+	if c, ok := orgWorkers.Load(org); ok {
+		return c.(tasksclient.Client), nil
+	}
+	provMu.Lock()
+	defer provMu.Unlock()
+	if c, ok := orgWorkers.Load(org); ok {
+		return c.(tasksclient.Client), nil
+	}
+	if dialer == nil {
+		return nil, ErrTasksNotConfigured
+	}
+	cli, err := dialer(org)
+	if err != nil {
+		return nil, err
 	}
 	wk := tasksworker.New(cli, ingestTaskQueue, tasksworker.Options{})
 	wk.RegisterWorkflow(IngestWorkflow)
 	wk.RegisterActivity(ingestActivity)
 	if err := wk.Start(); err != nil {
-		return fmt.Errorf("tasks worker start: %w", err)
+		return nil, fmt.Errorf("tasks worker start: %w", err)
 	}
-	SetIngestTasksClient(cli)
-	return nil
-}
-
-// SetIngestTasksClient injects (or clears, with nil) the enqueue client. Separate from
-// StartIngestWorker so a caller that manages the worker lifecycle itself (e.g. an
-// in-process Embedded.RegisterWorker) can still wire the enqueue side.
-func SetIngestTasksClient(cli tasksclient.Client) {
-	injectedMu.Lock()
-	defer injectedMu.Unlock()
-	injectedClient = cli
-}
-
-// ingestClient returns the injected client (nil → inline fallback). No dialing here —
-// the transport decision lives entirely with the composition root.
-func ingestClient() tasksclient.Client {
-	injectedMu.RLock()
-	defer injectedMu.RUnlock()
-	return injectedClient
+	orgWorkers.Store(org, cli)
+	return cli, nil
 }
 
 // ingestWorkflowID is the deterministic, owner-scoped workflow id — also the
@@ -164,13 +161,14 @@ func sanitizeWorkflowKey(s string) string {
 	return strings.Trim(r.Replace(s), "_")
 }
 
-// EnqueueIngest submits a long ingest as a durable workflow and returns its id
-// immediately — the caller never blocks on the clone/chunk/embed. Returns
-// ErrTasksNotConfigured when no client is wired so the handler can fall back to inline.
+// EnqueueIngest submits a long ingest as a durable workflow in the OWNER's namespace
+// (CONTRACT §6) and returns its id immediately — the caller never blocks on the
+// clone/chunk/embed. Returns ErrTasksNotConfigured when no dialer is wired so the
+// handler falls back to inline.
 func EnqueueIngest(ctx context.Context, owner string, req *IngestRequest, lang string) (string, error) {
-	cli := ingestClient()
-	if cli == nil {
-		return "", ErrTasksNotConfigured
+	cli, err := ingestOrgClient(owner)
+	if err != nil {
+		return "", err
 	}
 	in := IngestWorkflowInput{Owner: owner, Request: *req, Lang: lang}
 	run, err := cli.ExecuteWorkflow(ctx, tasksclient.StartWorkflowOptions{
