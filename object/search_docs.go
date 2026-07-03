@@ -42,6 +42,12 @@ type DocIndex struct {
 	SectionID   string     `json:"section_id,omitempty"`
 	Tag         string     `json:"tag,omitempty"`
 	Breadcrumbs StringList `json:"breadcrumbs,omitempty"`
+
+	// FileID scopes a chunk to a single uploaded file (the retired rag-api's
+	// LibreChat contract). It is a filterable dimension on the SAME unified
+	// index — file-scoped retrieval is a filter over {owner}-{store}-docs, not
+	// a parallel store. Empty for doc/crawl/github chunks.
+	FileID string `json:"file_id,omitempty"`
 }
 
 // DocSearchRequest is the request body for searching documents.
@@ -50,6 +56,11 @@ type DocSearchRequest struct {
 	Tag   string `json:"tag,omitempty"`
 	Limit int    `json:"limit,omitempty"`
 	Mode  string `json:"mode,omitempty"` // "hybrid", "fulltext", "vector"
+
+	// FileIDs restricts results to chunks of the given uploaded files. Empty
+	// means unrestricted (doc-wide search). Powers the file-scoped RAG surface
+	// (/v1/rag/query, /v1/rag/query-multiple) without a separate index.
+	FileIDs []string `json:"file_ids,omitempty"`
 }
 
 // DocSearchResult is a single result returned by SearchDocuments.
@@ -59,6 +70,8 @@ type DocSearchResult struct {
 	Type        string     `json:"type"` // "page", "heading", "text"
 	Content     string     `json:"content"`
 	Breadcrumbs StringList `json:"breadcrumbs,omitempty"`
+	FileID      string     `json:"file_id,omitempty"`
+	Title       string     `json:"title,omitempty"`
 }
 
 // DocIndexRequest is the request body for indexing documents.
@@ -90,7 +103,8 @@ type qdrantSearchRequest struct {
 	With   bool          `json:"with_payload"`
 }
 type qdrantFilter struct {
-	Must []qdrantCondition `json:"must,omitempty"`
+	Must   []qdrantCondition `json:"must,omitempty"`
+	Should []qdrantCondition `json:"should,omitempty"`
 }
 type qdrantCondition struct {
 	Key   string      `json:"key"`
@@ -187,7 +201,7 @@ func ensureSearchIndex(client meilisearch.ServiceManager, indexName string) erro
 	index := client.Index(indexName)
 	task, err := index.UpdateSettings(&meilisearch.Settings{
 		SearchableAttributes: []string{"title", "content", "section"},
-		FilterableAttributes: []string{"tag", "page_id"},
+		FilterableAttributes: []string{"tag", "page_id", "file_id"},
 		SortableAttributes:   []string{},
 	})
 	if err != nil {
@@ -249,14 +263,44 @@ func ensureVectorCollection(baseURL, apiKey, collectionName string, dimension in
 	return nil
 }
 
+// buildMeiliFilter ANDs a tag equality with a file_id membership. Empty
+// components are omitted; an all-empty filter returns "" (unrestricted).
+// Values are single-quoted with embedded quotes stripped so a crafted tag or
+// file_id can't break out of the filter expression (Meili has no bind params).
+func buildMeiliFilter(tag string, fileIDs []string) string {
+	clauses := []string{}
+	if tag != "" {
+		clauses = append(clauses, fmt.Sprintf("tag = '%s'", meiliQuote(tag)))
+	}
+	if len(fileIDs) > 0 {
+		quoted := make([]string, 0, len(fileIDs))
+		for _, id := range fileIDs {
+			if id == "" {
+				continue
+			}
+			quoted = append(quoted, fmt.Sprintf("'%s'", meiliQuote(id)))
+		}
+		if len(quoted) > 0 {
+			clauses = append(clauses, fmt.Sprintf("file_id IN [%s]", strings.Join(quoted, ", ")))
+		}
+	}
+	return strings.Join(clauses, " AND ")
+}
+
+// meiliQuote strips single quotes and backslashes so a value is safe inside a
+// single-quoted Meilisearch filter literal.
+func meiliQuote(s string) string {
+	return strings.NewReplacer("'", "", "\\", "").Replace(s)
+}
+
 // searchFulltext searches Hanzo Search and returns ranked document IDs.
-func searchFulltext(client meilisearch.ServiceManager, indexName string, query string, tag string, limit int) ([]DocSearchResult, error) {
+func searchFulltext(client meilisearch.ServiceManager, indexName string, query string, tag string, fileIDs []string, limit int) ([]DocSearchResult, error) {
 	index := client.Index(indexName)
 	searchReq := &meilisearch.SearchRequest{
 		Limit: int64(limit),
 	}
-	if tag != "" {
-		searchReq.Filter = fmt.Sprintf("tag = '%s'", tag)
+	if filter := buildMeiliFilter(tag, fileIDs); filter != "" {
+		searchReq.Filter = filter
 	}
 	resp, err := index.Search(query, searchReq)
 	if err != nil {
@@ -274,21 +318,32 @@ func searchFulltext(client meilisearch.ServiceManager, indexName string, query s
 	return results, nil
 }
 
-// searchVectorRaw queries Hanzo Vector with a pre-computed vector.
-func searchVectorRaw(baseURL, apiKey, collectionName string, vector []float32, tag string, limit int) ([]DocSearchResult, error) {
+// searchVectorRaw queries Hanzo Vector with a pre-computed vector. An optional
+// tag (AND) and file_id set (OR, matching any listed file) scope the search on
+// the same collection — file-scoped retrieval is a filter, not a parallel store.
+func searchVectorRaw(baseURL, apiKey, collectionName string, vector []float32, tag string, fileIDs []string, limit int) ([]DocSearchResult, error) {
 	url := fmt.Sprintf("%s/collections/%s/points/search", baseURL, collectionName)
 	reqBody := qdrantSearchRequest{
 		Vector: vector,
 		Limit:  limit,
 		With:   true,
 	}
+	var filter *qdrantFilter
 	if tag != "" {
-		reqBody.Filter = &qdrantFilter{
-			Must: []qdrantCondition{
-				{Key: "tag", Match: qdrantMatch{Value: tag}},
-			},
+		filter = &qdrantFilter{Must: []qdrantCondition{{Key: "tag", Match: qdrantMatch{Value: tag}}}}
+	}
+	if len(fileIDs) > 0 {
+		if filter == nil {
+			filter = &qdrantFilter{}
+		}
+		for _, id := range fileIDs {
+			if id == "" {
+				continue
+			}
+			filter.Should = append(filter.Should, qdrantCondition{Key: "file_id", Match: qdrantMatch{Value: id}})
 		}
 	}
+	reqBody.Filter = filter
 	bodyBytes, err := json.Marshal(reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal Hanzo Vector search body: %w", err)
@@ -387,6 +442,12 @@ func docResultFromMap(m map[string]interface{}) DocSearchResult {
 	if v, ok := m["content"].(string); ok {
 		r.Content = v
 	}
+	if v, ok := m["file_id"].(string); ok {
+		r.FileID = v
+	}
+	if v, ok := m["title"].(string); ok {
+		r.Title = v
+	}
 	if v, ok := m["section"].(string); ok && v != "" {
 		r.Type = "heading"
 	} else if v, ok := m["title"].(string); ok && v != "" {
@@ -422,6 +483,12 @@ var (
 	searchSink = queryDocsFromSearch
 	// vectorSearchSink queries Hanzo Vector (semantic) for an owner's index.
 	vectorSearchSink = queryDocsFromVector
+	// searchDeleteSink removes a file_id's chunks from Hanzo Search (keyword).
+	searchDeleteSink = deleteFileFromSearch
+	// vectorDeleteSink removes a file_id's chunks from Hanzo Vector (semantic).
+	vectorDeleteSink = deleteFileFromVector
+	// fileContextSink fetches all stored chunks of a file_id from Hanzo Search.
+	fileContextSink = fetchFileChunksFromSearch
 )
 
 // resolveEmbedder resolves the admin-context embedding provider ONCE and returns
@@ -524,6 +591,7 @@ func writeDocsToVector(indexName string, docs []DocIndex, replace bool, lang str
 					"id": doc.ID, "page_id": doc.PageID, "title": doc.Title,
 					"url": doc.URL, "content": doc.Content, "section": doc.Section,
 					"section_id": doc.SectionID, "tag": doc.Tag, "breadcrumbs": doc.Breadcrumbs,
+					"file_id": doc.FileID,
 				},
 			})
 		}
@@ -537,22 +605,22 @@ func writeDocsToVector(indexName string, docs []DocIndex, replace bool, lang str
 }
 
 // queryDocsFromSearch queries Hanzo Search (keyword) for an index.
-func queryDocsFromSearch(indexName, query, tag string, limit int) ([]DocSearchResult, error) {
+func queryDocsFromSearch(indexName, query, tag string, fileIDs []string, limit int) ([]DocSearchResult, error) {
 	searchClient, err := getSearchClient()
 	if err != nil {
 		return nil, err
 	}
-	return searchFulltext(searchClient, indexName, query, tag, limit)
+	return searchFulltext(searchClient, indexName, query, tag, fileIDs, limit)
 }
 
 // queryDocsFromVector embeds the query and searches Hanzo Vector (semantic).
-func queryDocsFromVector(indexName, query, tag string, limit int, lang string) ([]DocSearchResult, error) {
+func queryDocsFromVector(indexName, query, tag string, fileIDs []string, limit int, lang string) ([]DocSearchResult, error) {
 	vec, err := ingestEmbed(query, lang)
 	if err != nil {
 		return nil, fmt.Errorf("vector embedding failed: %w", err)
 	}
 	baseURL, apiKey := getVectorEndpoint()
-	return searchVectorRaw(baseURL, apiKey, indexName, vec, tag, limit)
+	return searchVectorRaw(baseURL, apiKey, indexName, vec, tag, fileIDs, limit)
 }
 
 // SearchDocuments performs hybrid retrieval over the SAME unified index that
@@ -575,7 +643,7 @@ func SearchDocuments(owner, store string, req *DocSearchRequest, lang string) ([
 	var fulltextResults []DocSearchResult
 	var vectorResults []DocSearchResult
 	if mode == "fulltext" || mode == "hybrid" {
-		r, err := searchSink(indexName, req.Query, req.Tag, limit)
+		r, err := searchSink(indexName, req.Query, req.Tag, req.FileIDs, limit)
 		if err != nil {
 			logs.Warning("keyword search failed for %s: %v", indexName, err)
 			if mode == "fulltext" {
@@ -586,7 +654,7 @@ func SearchDocuments(owner, store string, req *DocSearchRequest, lang string) ([
 		}
 	}
 	if mode == "vector" || mode == "hybrid" {
-		r, err := vectorSearchSink(indexName, req.Query, req.Tag, limit, lang)
+		r, err := vectorSearchSink(indexName, req.Query, req.Tag, req.FileIDs, limit, lang)
 		if err != nil {
 			logs.Warning("vector search failed for %s: %v", indexName, err)
 			if mode == "vector" {
@@ -676,6 +744,39 @@ func deleteAllVectorPoints(baseURL, apiKey, collectionName string) {
 		return
 	}
 	defer resp.Body.Close()
+}
+
+// deleteVectorPointsByFilter removes the points matching a payload filter from a
+// Qdrant collection (e.g. all chunks of one file_id). A missing collection is
+// treated as success (nothing to delete).
+func deleteVectorPointsByFilter(ctx context.Context, baseURL, apiKey, collectionName string, filter *qdrantFilter) error {
+	url := fmt.Sprintf("%s/collections/%s/points/delete", baseURL, collectionName)
+	body, err := json.Marshal(map[string]interface{}{"filter": filter})
+	if err != nil {
+		return fmt.Errorf("failed to marshal Hanzo Vector delete body: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("failed to build Hanzo Vector delete request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if apiKey != "" {
+		req.Header.Set("api-key", apiKey)
+	}
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("Hanzo Vector delete request failed: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusOK {
+		return nil
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		return nil // collection absent -> nothing to delete
+	}
+	respBody, _ := io.ReadAll(resp.Body)
+	return fmt.Errorf("Hanzo Vector delete returned %d: %s", resp.StatusCode, string(respBody))
 }
 
 // GetDocIndexStats returns statistics about the Meilisearch index.
