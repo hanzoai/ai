@@ -472,6 +472,12 @@ type usageRecord struct {
 	// the token-based cost. Placed last so the token-field alignment above is
 	// unchanged.
 	ImageCount int `json:"imageCount,omitempty"`
+
+	// VideoCount is the number of videos generated. Like images, video models
+	// bill per unit, not per token: when > 0, recordUsage bills via
+	// videoCostCents. Mutually exclusive with ImageCount in practice (a call is
+	// either an image or a video generation, never both).
+	VideoCount int `json:"videoCount,omitempty"`
 }
 
 // billingQueue is the singleton usage record delivery queue. Initialized by
@@ -506,12 +512,16 @@ func recordUsage(record *usageRecord) {
 		return
 	}
 
-	// Calculate cost. Image generations bill per image (token counts are 0 on
-	// that path); everything else bills from the cache-aware token table.
+	// Calculate cost. Image and video generations bill per unit (token counts
+	// are 0 on those paths); everything else bills from the cache-aware token
+	// table. A record carries at most one of ImageCount/VideoCount.
 	var costCents int64
-	if record.ImageCount > 0 {
+	switch {
+	case record.VideoCount > 0:
+		costCents = videoCostCents(record.Model, record.VideoCount)
+	case record.ImageCount > 0:
 		costCents = imageCostCents(record.Model, record.ImageCount)
-	} else {
+	default:
 		costCents = calculateCostCentsWithCache(
 			record.Model, record.PromptTokens, record.CompletionTokens,
 			record.CacheReadTokens, record.CacheWriteTokens,
@@ -548,6 +558,7 @@ func recordUsage(record *usageRecord) {
 		"cacheReadTokens":  record.CacheReadTokens,
 		"cacheWriteTokens": record.CacheWriteTokens,
 		"imageCount":       record.ImageCount,
+		"videoCount":       record.VideoCount,
 		"requestId":        record.RequestID,
 		"premium":          record.Premium,
 		"stream":           record.Stream,

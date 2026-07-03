@@ -225,6 +225,30 @@ var modelRoutes = map[string]modelRoute{
 	"zen3-image-sdxl":       {providerName: "do-ai", upstreamModel: "fal-ai/fast-sdxl", premium: true, ownedBy: "hanzo"},
 	"zen3-image-ssd":        {providerName: "do-ai", upstreamModel: "fal-ai/fast-sdxl", premium: true, ownedBy: "hanzo"},
 
+	// ── DO-AI text-to-video ── served at POST /v1/videos/generations ─────
+	// wan2-2-t2v-a14b is the only text-to-video model in the do-ai catalog. It
+	// is served on the OpenAI Sora-style async /v1/videos API (create → poll →
+	// download), NOT the fal async-invoke image path (which 404s it). Callable
+	// directly by its catalog id (unbranded passthrough — no ownedBy, so the
+	// listing surfaces the do-ai upstream like the embeddings passthroughs).
+	// getOpenAiModelType classifies it via isDOAIVideoModel → the videos path.
+	// premium: true — ALL video is premium. A single t2v inference is minutes of
+	// A14B GPU compute (~40¢); without the premium flag the raw id would clear on
+	// balance>0 alone, letting the $5 starter credit fund the platform's priciest
+	// unit (replayable across throwaway signups). Premium routes the caller through
+	// the starter-credit gate (balance must exceed the free credit).
+	"wan2-2-t2v-a14b": {providerName: "do-ai", upstreamModel: "wan2-2-t2v-a14b", premium: true},
+
+	// ── Zen3 video (text-to-video) family ────────────────────────────────
+	// Routed to do-ai's wan2-2-t2v-a14b via the async video API
+	// (model/doai_video.go). do-ai serves exactly one t2v model, so the brand
+	// family collapses cleanly onto that single upstream rather than inventing
+	// per-variant models that don't exist upstream. owned_by hanzo — the do-ai
+	// upstream is never exposed (same policy as every zen route).
+	"zen3-video":      {providerName: "do-ai", upstreamModel: "wan2-2-t2v-a14b", premium: true, ownedBy: "hanzo"},
+	"zen3-video-fast": {providerName: "do-ai", upstreamModel: "wan2-2-t2v-a14b", premium: true, ownedBy: "hanzo"},
+	"zen3-video-pro":  {providerName: "do-ai", upstreamModel: "wan2-2-t2v-a14b", premium: true, ownedBy: "hanzo"},
+
 	// ── Zen versionless aliases (always point to latest zenN variant) ──
 	"zen":             {providerName: "do-ai", upstreamModel: "glm-5", premium: true, ownedBy: "hanzo", hidden: true},
 	"zen-pro":         {providerName: "do-ai", upstreamModel: "qwen3.5-397b-a17b", premium: true, ownedBy: "hanzo", hidden: true},
