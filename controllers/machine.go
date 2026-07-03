@@ -32,6 +32,9 @@ import (
 // @Success 200 {object} object.Machine The Response object
 // @router /get-machines [get]
 func (c *ApiController) GetMachines() {
+	if !c.RequireGlobalAdmin() {
+		return
+	}
 	owner, allowed := c.GetScopedOwner()
 	if !allowed {
 		return
