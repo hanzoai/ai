@@ -20,6 +20,11 @@ import (
 )
 
 // ── ModelProviderUsable: the single-point routing State gate ────────────────
+//
+// This is also the LOW-2 predicate: SetPrimaryAdminProvider rejects making a
+// provider primary unless ModelProviderUsable(provider) is true (State=="Active"),
+// so a disabled provider can never become primary. The "disabled model → false"
+// and "paused model → false" cases below are that guard's regression coverage.
 
 func TestModelProviderUsable(t *testing.T) {
 	cases := []struct {
