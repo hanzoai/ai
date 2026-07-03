@@ -30,6 +30,9 @@ import (
 // @Success 200 {array} object.ModelRoute The Response object
 // @router /get-model-routes [get]
 func (c *ApiController) GetModelRoutes() {
+	if !c.RequireGlobalAdmin() {
+		return
+	}
 	owner := c.Input().Get("owner")
 	if owner == "" {
 		owner = "admin"
@@ -77,6 +80,9 @@ func (c *ApiController) GetModelRoutes() {
 // @Success 200 {object} object.ModelRoute The Response object
 // @router /get-model-route [get]
 func (c *ApiController) GetModelRoute() {
+	if !c.RequireGlobalAdmin() {
+		return
+	}
 	owner := c.Input().Get("owner")
 	modelName := c.Input().Get("modelName")
 
@@ -102,6 +108,9 @@ func (c *ApiController) GetModelRoute() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /add-model-route [post]
 func (c *ApiController) AddModelRoute() {
+	if !c.RequireGlobalAdmin() {
+		return
+	}
 	var route object.ModelRoute
 	err := json.Unmarshal(c.Ctx.Input.RequestBody, &route)
 	if err != nil {
@@ -132,6 +141,9 @@ func (c *ApiController) AddModelRoute() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /update-model-route [post]
 func (c *ApiController) UpdateModelRoute() {
+	if !c.RequireGlobalAdmin() {
+		return
+	}
 	owner := c.Input().Get("owner")
 	modelName := c.Input().Get("modelName")
 
@@ -159,6 +171,9 @@ func (c *ApiController) UpdateModelRoute() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /delete-model-route [post]
 func (c *ApiController) DeleteModelRoute() {
+	if !c.RequireGlobalAdmin() {
+		return
+	}
 	var route object.ModelRoute
 	err := json.Unmarshal(c.Ctx.Input.RequestBody, &route)
 	if err != nil {
