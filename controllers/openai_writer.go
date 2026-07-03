@@ -45,6 +45,7 @@ type OpenAIWriter struct {
 func (w *OpenAIWriter) Write(p []byte) (n int, err error) {
 	// Parse the incoming SSE message format
 	var content string
+	var isReason bool
 
 	if bytes.HasPrefix(p, []byte("event: message\ndata: ")) {
 		prefix := []byte("event: message\ndata: ")
@@ -54,10 +55,18 @@ func (w *OpenAIWriter) Write(p []byte) (n int, err error) {
 		// Add content to message buffer
 		w.MessageBuf = append(w.MessageBuf, []byte(content)...)
 	} else if bytes.HasPrefix(p, []byte("event: reason\ndata: ")) {
-		// We don't expose reason data in OpenAI format, but we'll store it
+		// Reasoning / chain-of-thought. Emit it ONLY via the OpenAI
+		// `reasoning_content` delta field (clients like LibreChat render it as a
+		// collapsible "thinking" block) — NEVER as `content`. The old code set
+		// `content` here and then fell through to the content delta below, leaking
+		// the raw chain-of-thought into the visible answer for reasoning models
+		// (e.g. zen5-mini → minimax, which streams reason separately upstream).
+		// It is intentionally kept OUT of MessageBuf so the non-streaming answer
+		// and usage accounting stay content-only.
 		prefix := []byte("event: reason\ndata: ")
 		suffix := []byte("\n\n")
 		content = string(bytes.TrimSuffix(bytes.TrimPrefix(p, prefix), suffix))
+		isReason = true
 	} else {
 		// If we can't parse, just store the raw bytes and attempt to clean
 		content = w.Cleaner.CleanString(string(p))
@@ -83,7 +92,12 @@ func (w *OpenAIWriter) Write(p []byte) (n int, err error) {
 	// (LangChain/LibreChat agents) read it to classify the streamed message.
 	// Omitting it breaks their parser with "Cannot read properties of undefined
 	// (reading 'role')" and the reply never renders.
-	delta := openai.ChatCompletionStreamChoiceDelta{Content: content}
+	delta := openai.ChatCompletionStreamChoiceDelta{}
+	if isReason {
+		delta.ReasoningContent = content
+	} else {
+		delta.Content = content
+	}
 	if !w.StreamSent {
 		delta.Role = "assistant"
 	}
