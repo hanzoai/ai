@@ -16,6 +16,9 @@ package controllers
 
 import (
 	"encoding/json"
+	"errors"
+
+	"github.com/beego/beego/v2/core/logs"
 
 	"github.com/hanzoai/ai/object"
 )
@@ -57,7 +60,34 @@ func (c *ApiController) IngestDocs() {
 		}
 	}
 
-	stats, err := object.IngestSource(auth.Owner, &req, c.GetAcceptLanguage())
+	lang := c.GetAcceptLanguage()
+
+	// A long source (github repo / crawl / s3) is past the sync budget — enqueue it as
+	// a durable hanzoai/tasks workflow (the ONE async system) and return the workflow
+	// id immediately; the caller tracks it in the Tasks product. Durability is a bonus,
+	// never a dependency: if the engine is unwired (TASKS_ADDR unset) OR any enqueue
+	// fails, fall through to running inline so ingest ALWAYS works.
+	if object.IsAsyncIngestSource(req.Source) {
+		wfID, err := object.EnqueueIngest(c.Ctx.Request.Context(), auth.Owner, &req, lang)
+		if err == nil {
+			recordSearchUsage(auth, "index-docs", req.Source, "enqueued", 0, c.Ctx.Request.RemoteAddr)
+			c.ResponseOk(&object.IngestStats{
+				Source:     req.Source,
+				Store:      req.Store,
+				IndexName:  object.GetSearchIndexName(auth.Owner, req.Store),
+				Async:      true,
+				WorkflowID: wfID,
+			})
+			return
+		}
+		if !errors.Is(err, object.ErrTasksNotConfigured) {
+			// Engine wired but this enqueue failed — don't break ingest; log and inline.
+			logs.Warning("ingest: durable enqueue failed, running inline: %s", err.Error())
+		}
+		// fall through to inline ingest
+	}
+
+	stats, err := object.IngestSource(auth.Owner, &req, lang)
 	if err != nil {
 		recordSearchUsage(auth, "index-docs", req.Source, "error", 0, c.Ctx.Request.RemoteAddr)
 		c.ResponseError(err.Error())
