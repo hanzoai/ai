@@ -79,13 +79,26 @@ func (c *ApiController) Signin() {
 	code := c.Input().Get("code")
 	state := c.Input().Get("state")
 
-	token, err := iam.GetOAuthToken(code, state)
+	// White-label: resolve the IAM client from the request Host so a lux console
+	// (console.lux.cloud) exchanges its code as `lux-cloud` against lux.id, a zoo
+	// console as `zoo-cloud`, etc. The default (hanzo) resolves to the exact values
+	// InitAuthConfig baked, so the hanzo exchange is byte-unchanged. Exchanging a
+	// lux code as `hanzo-cloud` is what IAM rejected with "token is for wrong
+	// application" -- resolving per-brand is the fix.
+	brand := resolveBrandIAM(c.Ctx.Request.Host)
+	authClient, err := brandAuthClient(brand)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
 	}
 
-	claims, err := iam.ParseJwtToken(token.AccessToken)
+	token, err := authClient.GetOAuthToken(code, state)
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+
+	claims, err := authClient.ParseJwtToken(token.AccessToken)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
