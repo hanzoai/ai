@@ -83,6 +83,12 @@ func getOpenAiModelType(model string) string {
 
 	imageModels := []string{
 		"dall-e-3", "dall-e-2", "gpt-image-1",
+		// Hanzo Zen3 diffusion family. "zen3-image" as a substring covers the
+		// whole family (zen3-image, -max, -fast, -dev, -playground, -ssd, -sdxl,
+		// -jp) and matches no chat model, so it selects the imagesGenerations
+		// path for both the user-facing name and the fal-hosted upstream this
+		// routes to (fal-ai/flux/schnell, fal-ai/fast-sdxl).
+		"zen3-image", "fal-ai/flux", "fal-ai/fast-sdxl",
 	}
 
 	for _, pattern := range chatPatterns {
