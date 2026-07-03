@@ -43,6 +43,12 @@ func isRetryableError(err error) bool {
 		"timeout", "deadline exceeded",
 		"connection refused", "connection reset",
 		"eof", // unexpected connection close
+		// A disabled (admin-toggled-off) or unconfigured primary provider is,
+		// from the caller's perspective, a service-unavailable condition that a
+		// fallback provider should transparently handle. callProvider surfaces it
+		// as "... is unavailable ..." (see below) so the failover loop advances to
+		// the next fallback instead of hard-failing on a disabled primary.
+		"unavailable",
 	}
 	for _, sub := range retryableSubstrings {
 		if strings.Contains(msg, sub) {
@@ -143,7 +149,12 @@ func callProvider(
 		return nil, err
 	}
 	if provider == nil {
-		return nil, fmt.Errorf("provider %q not configured in database", providerName)
+		// GetModelProviderByName returns nil for BOTH a missing provider and a
+		// disabled (State != "Active") Model provider. Word this as "unavailable"
+		// so isRetryableError classifies it retryable and the failover loop tries
+		// the next fallback — this is how route.fallbacks stays honored when the
+		// primary provider is toggled off via /v1/admin/providers.
+		return nil, fmt.Errorf("provider %q is unavailable (disabled or not configured)", providerName)
 	}
 
 	provider.SubType = upstreamModel

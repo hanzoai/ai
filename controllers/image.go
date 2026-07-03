@@ -32,6 +32,9 @@ import (
 // @Success 200 {object} object.Image The Response object
 // @router /get-images [get]
 func (c *ApiController) GetImages() {
+	if !c.RequireGlobalAdmin() {
+		return
+	}
 	owner, allowed := c.GetScopedOwner()
 	if !allowed {
 		return

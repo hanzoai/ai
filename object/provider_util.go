@@ -47,6 +47,12 @@ func getModelProviderFromName(owner string, providerName string, lang string) (*
 	if provider.Category != "Model" {
 		return nil, nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:The model provider: %s is expected to be \")Model\" category, got: \"%s\""), provider.GetId(), provider.Category))
 	}
+	// A disabled Model provider is unavailable — same admin toggle (State) the
+	// completion path honors via ModelProviderUsable, applied to the store /
+	// knowledge-base resolution path.
+	if !ModelProviderUsable(provider) {
+		return nil, nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:The model provider: %s is not found"), provider.GetId()))
+	}
 	if provider.ClientSecret == "" && provider.Type != "Dummy" && provider.Type != "Ollama" {
 		return nil, nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:The model provider: %s's client secret should not be empty"), provider.GetId()))
 	}

@@ -327,6 +327,52 @@ func ResolveProviderSecret(provider *Provider) error {
 	return nil
 }
 
+// ProviderKeyPresent reports whether a provider's ClientSecret resolves to a
+// non-empty value — WITHOUT ever returning the value itself. It resolves on a
+// COPY so the caller's provider is never mutated (the raw/resolved key must not
+// leak into a response object). A "kms://…" reference that resolves to a real
+// secret (via env-first or a live KMS fetch) counts as present; an empty or
+// unresolved reference counts as absent. This is the ONLY key signal the admin
+// management view is allowed to expose (keyPresent boolean).
+//
+// Fail-closed for the admin view: if KMS is not configured, a "kms://…" ref
+// cannot be confirmed and is reported as NOT present (so the operator sees the
+// key is unavailable rather than a false-positive). A plaintext/non-kms value
+// (dev only) is reported present when non-empty.
+func ProviderKeyPresent(provider *Provider) bool {
+	if provider == nil {
+		return false
+	}
+	secret := provider.ClientSecret
+	if strings.HasPrefix(secret, "kms://") {
+		secretName := strings.TrimPrefix(secret, "kms://")
+		if secretName == "" {
+			return false
+		}
+		// Env-var-first — mirror ResolveProviderSecret's precedence exactly (the
+		// prod hot path resolves DO_AI_API_KEY/etc. from the env before any live
+		// KMS call, and does so even before the KMS client is initialized). This
+		// check is independent of kms != nil so keyPresent is truthful about the
+		// env-provided key on the same path a completion would use.
+		if strings.TrimSpace(os.Getenv(secretName)) != "" {
+			return true
+		}
+		// Otherwise confirm via a live KMS resolve on a COPY (never mutate the
+		// caller's record — the resolved value must not leak into a response).
+		cp := *provider
+		if err := ResolveProviderSecret(&cp); err != nil {
+			return false
+		}
+		// If still a kms:// ref, resolution was a no-op (KMS disabled) → absent.
+		if strings.HasPrefix(cp.ClientSecret, "kms://") {
+			return false
+		}
+		return strings.TrimSpace(cp.ClientSecret) != ""
+	}
+	// Non-kms (dev) plaintext value: present iff non-empty.
+	return strings.TrimSpace(secret) != ""
+}
+
 // GetKMSSecret fetches a secret by name from KMS using the default system project.
 // This is a convenience function for non-provider secrets.
 func GetKMSSecret(name string) (string, error) {
