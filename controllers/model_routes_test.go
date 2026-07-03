@@ -67,6 +67,7 @@ func TestResolveModelRoute_KnownModels(t *testing.T) {
 		{"zen-pro", "do-ai", "qwen3.5-397b-a17b", true},
 		{"zen-mini", "do-ai", "alibaba-qwen3-32b", true},
 		{"zen-vl", "do-ai", "nemotron-nano-12b-v2-vl", true},
+		{"zen-vision", "do-ai", "nemotron-nano-12b-v2-vl", true},
 	}
 
 	for _, tc := range cases {
