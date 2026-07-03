@@ -212,6 +212,47 @@ no chat-repo change. Auth/billing reuse the doc-RAG path
 (`resolveSearchAuth`/`requireIndexAuth` + `recordSearchUsage`); owner is the
 authenticated principal (tenant isolation), never a client-supplied field.
 
+## Search / Crawl / Web-search — THREE orthogonal products, ONE way each
+
+Three distinct products, no overlap. Do NOT add a fourth crawl path.
+
+- **`POST /v1/search` = native full-text index search** (`SearchDocs` →
+  `object.SearchDocuments`). Hanzo Search (Meilisearch, keyword, `hanzoai/search-go`
+  at `searchHost`:7700) + Hanzo Vector (Qdrant semantic, `vectorHost`:6333) fused
+  hybrid-RRF over the per-tenant index `{owner}-{store}-docs`. Returns `{hits:[…]}`.
+  Needs a populated index — an empty/new tenant index returns `{hits:[]}` (no error).
+  `GET /v1/search/stats` reports index size.
+
+- **`POST /v1/crawl` = crawl a URL, get content back** — THE single canonical
+  crawl (`controllers/crawl.go` `Crawl` → `object.Crawl` → `CrawlWithCrawl4AI`).
+  Backed by the self-hosted **Crawl4AI** (`hanzoai/crawl`, `crawl.hanzo.svc`:11235,
+  Apache-2.0). Body `{url}` or `{urls}` (merged, deduped, capped at 10); returns
+  `{results:[{url,title,description,markdown,success,metadata}]}` with LLM-ready
+  markdown (prefers Crawl4AI `fit_markdown`, falls back to `raw_markdown`).
+  Auth: `requireIndexAuth` (fail-closed, rejects read-only pk-/hz_ keys) + balance
+  gate; usage recorded via `recordSearchUsage(…, "crawl", "crawl4ai", …)`.
+  `object/crawl4ai.go` handles the deployed **Crawl4AI 0.8.6** wire shapes:
+  `markdown` is an OBJECT (`MarkdownField` polymorphic decode), the `/crawl`
+  envelope is synchronous with a boolean `success` and no `status`/`task_id`
+  (return inline `Results` whenever present), and `links`/`media` values are
+  heterogeneous (`map[string][]map[string]interface{}`).
+
+- **`POST /v1/scrape` = crawl-and-INDEX (ingest)** — NOT a general crawl. It
+  crawls a site and WRITES structured content into the tenant search index,
+  returning `ScrapeStats` (`ScrapeDocs` → `object.ScrapeAndIndex`). Sibling of
+  `POST /v1/index` (index caller-supplied docs). Stays because its output/effect
+  (index write) is distinct from `/v1/crawl` (fetch + return).
+
+- **`POST /v1/scrape/preview`** is a DEPRECATED alias of `/v1/crawl` — its handler
+  now forwards to `Crawl` (one implementation, no parallel path). Use `/v1/crawl`.
+
+- **`/v1/websearch/*` (lives in `hanzoai/cloud`, not ai) = web meta-search** — a
+  separate product: SearXNG-compat `/v1/websearch/search` + a firecrawl-compat
+  `/v1/websearch/v1/scrape` leg that hanzo.chat's web-search plugin calls. That
+  leg is a fixed EXTERNAL contract (firecrawl `{success,data:{markdown}}`) and
+  reuses the SAME Crawl4AI backend — it is an integration shim for the web-search
+  flow, not a general crawl endpoint. The general "crawl a URL" is ONLY `/v1/crawl`.
+
 ## Security invariants (READ before touching auth/billing/scaling)
 
 - **JWT iss/aud** — every request-auth JWT path goes through

@@ -232,6 +232,8 @@ func recordSearchUsage(auth *searchAuth, model, provider, status string, units i
 		costCents = 1 // $0.01 per RAG chat session (LLM inference cost)
 	case "scrape":
 		costCents = int64(units) // $0.01 per page scraped
+	case "crawl":
+		costCents = int64(units) // $0.01 per URL crawled (Crawl4AI render)
 	case "index-docs":
 		costCents = 0 // Indexing is included (part of write operation cost)
 	}

@@ -356,6 +356,7 @@ func initAPI() {
 	beego.Router("/v1/search/stats", &controllers.ApiController{}, "GET:SearchDocsStats")
 	beego.Router("/v1/scrape", &controllers.ApiController{}, "POST:ScrapeDocs")
 	beego.Router("/v1/scrape/preview", &controllers.ApiController{}, "POST:ScrapePreview")
+	beego.Router("/v1/crawl", &controllers.ApiController{}, "POST:Crawl")
 
 	// File-scoped RAG — the ONE canonical uploaded-file RAG surface (consolidates
 	// the retired standalone chat-rag-api). Embed a file under a file_id, then
