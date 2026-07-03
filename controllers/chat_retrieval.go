@@ -102,7 +102,10 @@ func (c *ApiController) retrieveKnowledgeIfEnabled(
 		store = c.Input().Get("store")
 	}
 	if store == "" {
-		store = "docs-hanzo-ai"
+		// Brand-neutral per-org default (white-label): the owner prefix on the index
+		// (`{owner}-{store}-docs`) is what isolates each org, so the store slug itself
+		// must NOT bake in a brand. Every org's assistant reads its OWN docs store.
+		store = object.DefaultDocsStore
 	}
 
 	req := &object.DocSearchRequest{Query: question, Limit: 4}
