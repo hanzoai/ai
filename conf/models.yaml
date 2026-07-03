@@ -798,6 +798,33 @@ models:
     provider: do-ai
     upstream: stable-diffusion-3.5-large
 
+  # ── DO-AI text-to-video (served at POST /v1/videos/generations) ────────
+  # wan2-2-t2v-a14b is the only text-to-video model in the do-ai catalog,
+  # served on the OpenAI Sora-style async /v1/videos API (create → poll →
+  # download) by model/doai_video.go. getOpenAiModelType classifies it via
+  # isDOAIVideoModel → the videos path. Billed per video via
+  # controllers.videoCostCents (40¢/video, DO publishes no per-video rate) —
+  # token pricing is unused for video. The zen3-video brand family routes to
+  # this same upstream with owned_by hanzo (upstream never exposed).
+  wan2-2-t2v-a14b:
+    provider: do-ai
+    upstream: wan2-2-t2v-a14b
+  zen3-video:
+    provider: do-ai
+    upstream: wan2-2-t2v-a14b
+    premium: true
+    owned_by: hanzo
+  zen3-video-fast:
+    provider: do-ai
+    upstream: wan2-2-t2v-a14b
+    premium: true
+    owned_by: hanzo
+  zen3-video-pro:
+    provider: do-ai
+    upstream: wan2-2-t2v-a14b
+    premium: true
+    owned_by: hanzo
+
   # ── DO-AI Inference Router (served at POST /v1/chat/completions) ───────
   # DO's model router auto-selects the best foundation model per request and
   # returns the chosen model in the response. Callable as plain chat. The router

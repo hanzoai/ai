@@ -562,6 +562,20 @@ func isDOAIImageModel(model string) bool {
 	return strings.HasPrefix(m, "fal-ai/") || strings.Contains(m, "zen3-image")
 }
 
+// isDOAIVideoModel reports whether a model is a do-ai text-to-video model served
+// on the OpenAI Sora-style async /v1/videos API (create → poll → download),
+// handled by model.GenerateVideoDOAI and controllers/videos_api.go. It matches
+// both the do-ai upstream id (wan2-2-t2v-a14b — "wan" prefix / "t2v" substring)
+// and the Hanzo zen3-video brand family. These substrings match no chat or image
+// model, so classification stays orthogonal: a video model never falls into the
+// chat-stream or image path.
+func isDOAIVideoModel(model string) bool {
+	m := strings.ToLower(model)
+	return strings.HasPrefix(m, "wan") ||
+		strings.Contains(m, "t2v") ||
+		strings.Contains(m, "zen3-video")
+}
+
 // GenerateImageForModel is the ONE image-generation dispatcher shared by both
 // image callers — the OpenAI-compatible /v1/images/generations handler
 // (controllers/images_api.go) and the chat-stream image branch (QueryText

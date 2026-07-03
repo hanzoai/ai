@@ -107,6 +107,14 @@ func getOpenAiModelType(model string) string {
 		}
 	}
 
+	// Text-to-video is checked BEFORE image so a video model is never
+	// misclassified as an image. Both the do-ai upstream (wan2-2-t2v-a14b) and
+	// the Hanzo zen3-video brand family select the dedicated /v1/videos/generations
+	// path; none of these substrings match a chat/image model.
+	if isDOAIVideoModel(model) {
+		return "videosGenerations"
+	}
+
 	for _, imageModel := range imageModels {
 		if strings.Contains(model, imageModel) {
 			return "imagesGenerations"
