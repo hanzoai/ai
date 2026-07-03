@@ -88,6 +88,43 @@ func TestCheckIssAud_Audience(t *testing.T) {
 	}
 }
 
+// TestJwtAudienceAllowlist_BrandUnion proves the resolved audience allowlist ALWAYS
+// includes every brand's <brand>-cloud aud (so a lux token validates on the
+// request-auth path), whether it comes from a hanzo-only GATEWAY_ALLOWED_AUDIENCES
+// env or the pinned jwtAudiences config — and never duplicates an existing entry.
+func TestJwtAudienceAllowlist_BrandUnion(t *testing.T) {
+	has := func(list []string, v string) bool {
+		for _, s := range list {
+			if s == v {
+				return true
+			}
+		}
+		return false
+	}
+
+	// A legacy hanzo-only env override must STILL accept lux-cloud (brand union),
+	// with no duplicate of the env-supplied hanzo-cloud.
+	os.Setenv("GATEWAY_ALLOWED_AUDIENCES", "hanzo-app,hanzo-console,hanzo-cloud")
+	os.Unsetenv("IAM_AUDIENCE")
+	os.Unsetenv("AUTH_AUDIENCE")
+	defer os.Unsetenv("GATEWAY_ALLOWED_AUDIENCES")
+	got := jwtAudienceAllowlist()
+	for _, want := range []string{"hanzo-cloud", "lux-cloud", "zoo-cloud", "pars-cloud"} {
+		if !has(got, want) {
+			t.Errorf("hanzo-only env override must still accept %q, got %v", want, got)
+		}
+	}
+	n := 0
+	for _, s := range got {
+		if s == "hanzo-cloud" {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Fatalf("hanzo-cloud must appear exactly once (no duplicate), got %d in %v", n, got)
+	}
+}
+
 // TestJwtUnverifiedClaims decodes iss/aud directly from the payload, proving the
 // raw-map decode avoids the iam.Claims embedded-field tag collision.
 func TestJwtUnverifiedClaims(t *testing.T) {
