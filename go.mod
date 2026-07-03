@@ -43,6 +43,7 @@ require (
 	github.com/hanzoai/iam v1.19.8-0.20260622075908-c2fd4872545b
 	github.com/hanzoai/pdf v1.2.0
 	github.com/hanzoai/search-go v0.36.0
+	github.com/hanzoai/sqlite v0.1.5
 	github.com/hanzoai/tasks v1.43.0
 	github.com/henomis/lingoose v0.1.0
 	github.com/hupe1980/go-huggingface v0.0.15
@@ -82,7 +83,6 @@ require (
 	k8s.io/apimachinery v0.35.0
 	k8s.io/client-go v0.35.0
 	k8s.io/metrics v0.30.0
-	modernc.org/sqlite v1.51.0
 	sigs.k8s.io/kustomize/api v0.20.0
 	sigs.k8s.io/kustomize/kyaml v0.20.0
 )
@@ -119,7 +119,6 @@ require (
 	github.com/dlclark/regexp2/v2 v2.2.1 // indirect
 	github.com/dop251/goja v0.0.0-20260607120635-348e6bea910d // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
-	github.com/elazarl/go-bindata-assetfs v1.0.1 // indirect
 	github.com/ethereum/c-kzg-4844/v2 v2.1.7 // indirect
 	github.com/evanw/esbuild v0.28.1 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.1 // indirect
@@ -165,6 +164,7 @@ require (
 	github.com/luxfi/pq v1.1.0 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-runewidth v0.0.21 // indirect
+	github.com/mattn/go-sqlite3 v2.0.3+incompatible // indirect
 	github.com/miekg/dns v1.1.72 // indirect
 	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db // indirect
 	github.com/monochromegane/go-gitignore v0.0.0-20200626010858-205db1a8cc00 // indirect
@@ -196,6 +196,7 @@ require (
 	google.golang.org/api v0.275.0 // indirect
 	gopkg.in/evanphx/json-patch.v4 v4.13.0 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
+	modernc.org/sqlite v1.51.0 // indirect
 	sigs.k8s.io/structured-merge-diff/v6 v6.3.0 // indirect
 )
 
