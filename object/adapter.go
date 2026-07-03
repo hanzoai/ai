@@ -24,9 +24,9 @@ import (
 	_ "github.com/go-sql-driver/mysql" // mysql
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/dbx"
+	_ "github.com/hanzoai/sqlite"       // sqlite: the ONE Hanzo driver — registers "sqlite" exactly once (cgo→mattn/SQLCipher, !cgo→modernc). Never import modernc directly, or a cgo build double-registers "sqlite" and panics at init.
 	_ "github.com/lib/pq"               // postgres
 	_ "github.com/microsoft/go-mssqldb" // mssql (maintained successor to denisenkom; one mssql driver registration across the stack)
-	_ "modernc.org/sqlite"              // sqlite
 )
 
 var (
