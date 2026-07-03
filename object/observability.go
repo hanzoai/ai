@@ -82,6 +82,15 @@ type TraceEvent struct {
 	User      string // "owner/name" end-user subject (Langfuse user_id)
 	SessionID string // optional conversation/session id (Langfuse session_id)
 
+	// Explicit row ids for the ingestion API (client-supplied ids). When empty the
+	// internal emitter derives them from TraceID ("trace-"/"gen-" prefixes) so a
+	// trace and its generation stay linked. TraceRowID doubles as the observation's
+	// trace_id, so an ingested observation links to its ingested/derived trace.
+	TraceRowID string
+	ObsRowID   string
+	// ObsType overrides the observation type (SPAN/EVENT/…); default GENERATION.
+	ObsType string
+
 	// Envelope.
 	Name     string            // operation: "chat.completions" | "embeddings" | …
 	Input    string            // prompt / request text (redacted+truncated on flush)
@@ -131,8 +140,30 @@ func (ev *TraceEvent) SetCaptureContent(v bool) { ev.captureContent = &v }
 
 // ── Pipeline state ───────────────────────────────────────────────────────────
 
+// obsKind selects which ClickHouse row(s) a buffered item contributes. A full AI
+// operation (kindFull) yields BOTH a trace row and its generation-observation
+// row; the granular kinds back the Langfuse-compatible ingestion API where
+// trace/observation/score events arrive independently.
+type obsKind uint8
+
+const (
+	kindFull      obsKind = iota // TraceEvent → trace row + observation row
+	kindTraceOnly                // TraceEvent → trace row only
+	kindObsOnly                  // TraceEvent → observation row only
+	kindScore                    // ScoreEvent → score row
+)
+
+// obsItem is one unit of buffered work. It carries the DOMAIN event (not a
+// pre-mapped row) so scrubbing + row mapping run on the drain goroutine, off the
+// request path.
+type obsItem struct {
+	kind  obsKind
+	ev    TraceEvent
+	score ScoreEvent
+}
+
 var (
-	obsCh          chan TraceEvent
+	obsCh          chan obsItem
 	obsBufSize     int
 	obsBatchSize   int
 	obsFlush       time.Duration
@@ -155,7 +186,7 @@ func InitObservability() {
 		obsMaxContent = envInt("TRACE_MAX_CONTENT_BYTES", 32768)
 		obsCaptureBase.Store(envBool("TRACE_CAPTURE_CONTENT", true))
 
-		obsCh = make(chan TraceEvent, obsBufSize)
+		obsCh = make(chan obsItem, obsBufSize)
 		obsRunning.Store(true)
 		obsWG.Add(1)
 		go drainObservations()
@@ -170,21 +201,37 @@ func InitObservability() {
 // it, so the caller's request path is never delayed and never blocks on the
 // warehouse. Fail-secure on scope: an event with no server-verified org is
 // dropped (never written into an unscoped/shared bucket).
-func EmitTrace(ev TraceEvent) {
+func EmitTrace(ev TraceEvent) { emitEvent(ev, kindFull) }
+
+// EmitTraceOnly / EmitObservation emit the halves independently — the ingestion
+// API uses them when Langfuse trace-create and observation-create events arrive
+// as separate records.
+func EmitTraceOnly(ev TraceEvent)   { emitEvent(ev, kindTraceOnly) }
+func EmitObservation(ev TraceEvent) { emitEvent(ev, kindObsOnly) }
+
+// emitEvent is the shared org-gate + truncation + enqueue for the trace halves.
+func emitEvent(ev TraceEvent, kind obsKind) {
 	ev.Org = strings.TrimSpace(ev.Org)
 	if ev.Org == "" {
 		aiTraceEvents.WithLabelValues("unscoped").Inc()
 		return
 	}
+	// Truncate at capture to bound buffer memory; scrubbing happens on flush.
+	ev.Input = truncateTraceContent(ev.Input, obsMaxContent)
+	ev.Output = truncateTraceContent(ev.Output, obsMaxContent)
+	enqueueObs(obsItem{kind: kind, ev: ev})
+}
+
+// enqueueObs is the ONE non-blocking, drop-safe send shared by every emitter
+// (traces, observations, scores, ingest). Never blocks the caller; a full buffer
+// drops and counts. An unscoped event is rejected by the caller before this.
+func enqueueObs(it obsItem) {
 	if !obsRunning.Load() || obsCh == nil {
 		aiTraceEvents.WithLabelValues("disabled").Inc()
 		return
 	}
-	// Truncate at capture to bound buffer memory; scrubbing happens on flush.
-	ev.Input = truncateTraceContent(ev.Input, obsMaxContent)
-	ev.Output = truncateTraceContent(ev.Output, obsMaxContent)
 	select {
-	case obsCh <- ev:
+	case obsCh <- it:
 		aiTraceEvents.WithLabelValues("emitted").Inc()
 	default:
 		aiTraceEvents.WithLabelValues("dropped").Inc()
@@ -215,7 +262,7 @@ func drainObservations() {
 	ticker := time.NewTicker(obsFlush)
 	defer ticker.Stop()
 
-	batch := make([]TraceEvent, 0, obsBatchSize)
+	batch := make([]obsItem, 0, obsBatchSize)
 	flush := func() {
 		if len(batch) == 0 {
 			return
@@ -226,12 +273,12 @@ func drainObservations() {
 
 	for {
 		select {
-		case ev, ok := <-obsCh:
+		case it, ok := <-obsCh:
 			if !ok {
 				flush()
 				return
 			}
-			batch = append(batch, ev)
+			batch = append(batch, it)
 			if len(batch) >= obsBatchSize {
 				flush()
 			}
@@ -241,60 +288,73 @@ func drainObservations() {
 	}
 }
 
-// writeObservationBatch persists a batch into hanzo.traces + hanzo.observations.
-// Failures are logged and counted — never propagated to a request. Two blocks
-// (one per table) keep the inserts columnar and efficient.
-func writeObservationBatch(events []TraceEvent) {
+// writeObservationBatch maps a mixed batch into per-table row sets and sends one
+// ClickHouse block per non-empty table (traces, observations, scores). Mapping +
+// secret-scrubbing run HERE, off the request path. Failures are logged/counted,
+// never propagated to a request.
+func writeObservationBatch(items []obsItem) {
 	if !DatastoreEnabled() {
-		aiTraceEvents.WithLabelValues("nostore").Add(float64(len(events)))
+		aiTraceEvents.WithLabelValues("nostore").Add(float64(len(items)))
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	if err := EnsureObservabilityTables(ctx); err != nil {
 		logs.Warn("observability: ensure tables: %v", err)
-		aiTraceEvents.WithLabelValues("failed").Add(float64(len(events)))
+		aiTraceEvents.WithLabelValues("failed").Add(float64(len(items)))
 		return
 	}
 
-	traceBatch, err := DatastoreBatch(ctx, tracesInsert)
-	if err != nil {
-		logs.Warn("observability: prepare traces batch: %v", err)
-		aiTraceEvents.WithLabelValues("failed").Add(float64(len(events)))
-		return
-	}
-	obsBatch, err := DatastoreBatch(ctx, observationsInsert)
-	if err != nil {
-		_ = traceBatch.Abort()
-		logs.Warn("observability: prepare observations batch: %v", err)
-		aiTraceEvents.WithLabelValues("failed").Add(float64(len(events)))
-		return
-	}
-
-	for i := range events {
-		ev := &events[i]
-		ev.applyCapturePolicy(obsCaptureBase.Load())
-		if err := traceBatch.Append(ev.traceRow()...); err != nil {
-			logs.Warn("observability: append trace: %v", err)
-			continue
-		}
-		if err := obsBatch.Append(ev.observationRow()...); err != nil {
-			logs.Warn("observability: append observation: %v", err)
+	var traceRows, obsRows, scoreRows [][]any
+	for i := range items {
+		it := &items[i]
+		switch it.kind {
+		case kindFull:
+			it.ev.applyCapturePolicy(obsCaptureBase.Load())
+			traceRows = append(traceRows, it.ev.traceRow())
+			obsRows = append(obsRows, it.ev.observationRow())
+		case kindTraceOnly:
+			it.ev.applyCapturePolicy(obsCaptureBase.Load())
+			traceRows = append(traceRows, it.ev.traceRow())
+		case kindObsOnly:
+			it.ev.applyCapturePolicy(obsCaptureBase.Load())
+			obsRows = append(obsRows, it.ev.observationRow())
+		case kindScore:
+			scoreRows = append(scoreRows, it.score.scoreRow())
 		}
 	}
 
-	if err := traceBatch.Send(); err != nil {
-		logs.Warn("observability: send traces: %v", err)
-		aiTraceEvents.WithLabelValues("failed").Add(float64(len(events)))
-		_ = obsBatch.Abort()
-		return
+	ok := writeRows(ctx, tracesInsert, traceRows)
+	ok = writeRows(ctx, observationsInsert, obsRows) && ok
+	ok = writeRows(ctx, scoresInsert, scoreRows) && ok
+	if ok {
+		aiTraceEvents.WithLabelValues("written").Add(float64(len(items)))
+	} else {
+		aiTraceEvents.WithLabelValues("failed").Add(float64(len(items)))
 	}
-	if err := obsBatch.Send(); err != nil {
-		logs.Warn("observability: send observations: %v", err)
-		aiTraceEvents.WithLabelValues("failed").Add(float64(len(events)))
-		return
+}
+
+// writeRows sends exactly one ClickHouse block for a table, or nothing when the
+// row set is empty (so a batch of only-traces costs one round trip, not three).
+func writeRows(ctx context.Context, insert string, rows [][]any) bool {
+	if len(rows) == 0 {
+		return true
 	}
-	aiTraceEvents.WithLabelValues("written").Add(float64(len(events)))
+	batch, err := DatastoreBatch(ctx, insert)
+	if err != nil {
+		logs.Warn("observability: prepare batch: %v", err)
+		return false
+	}
+	for _, r := range rows {
+		if err := batch.Append(r...); err != nil {
+			logs.Warn("observability: append row: %v", err)
+		}
+	}
+	if err := batch.Send(); err != nil {
+		logs.Warn("observability: send batch: %v", err)
+		return false
+	}
+	return true
 }
 
 // applyCapturePolicy resolves the content-capture decision (per-event override
@@ -415,6 +475,9 @@ func EnsureObservabilityTables(ctx context.Context) error {
 	if err := DatastoreExec(ctx, observationsTableDDL); err != nil {
 		return err
 	}
+	if err := DatastoreExec(ctx, scoresTableDDL); err != nil {
+		return err
+	}
 	obsTablesReady.Store(true)
 	return nil
 }
@@ -430,7 +493,7 @@ func (ev *TraceEvent) traceRow() []any {
 		ts = now
 	}
 	return []any{
-		"trace-" + ev.TraceID,    // id
+		ev.traceRowID(),          // id
 		ts,                       // timestamp
 		ev.Name,                  // name
 		nullString(ev.User),      // user_id
@@ -471,10 +534,10 @@ func (ev *TraceEvent) observationRow() []any {
 	}
 
 	return []any{
-		"gen-" + ev.TraceID,      // id
-		"trace-" + ev.TraceID,    // trace_id
+		ev.obsRowID(),            // id
+		ev.traceRowID(),          // trace_id
 		ev.Org,                   // project_id (tenant)
-		ObservationGeneration,    // type
+		ev.obsTypeOrDefault(),    // type
 		(*string)(nil),           // parent_observation_id (root generation)
 		start,                    // start_time
 		&end,                     // end_time
@@ -500,6 +563,30 @@ func (ev *TraceEvent) observationRow() []any {
 		now,                      // event_ts
 		uint8(0),                 // is_deleted
 	}
+}
+
+// traceRowID / obsRowID resolve the ClickHouse row ids: an explicit client id
+// (ingestion) wins; otherwise the internal emitter derives distinct ids from the
+// request's TraceID so a trace and its generation stay linked.
+func (ev *TraceEvent) traceRowID() string {
+	if ev.TraceRowID != "" {
+		return ev.TraceRowID
+	}
+	return "trace-" + ev.TraceID
+}
+
+func (ev *TraceEvent) obsRowID() string {
+	if ev.ObsRowID != "" {
+		return ev.ObsRowID
+	}
+	return "gen-" + ev.TraceID
+}
+
+func (ev *TraceEvent) obsTypeOrDefault() string {
+	if ev.ObsType != "" {
+		return ev.ObsType
+	}
+	return ObservationGeneration
 }
 
 func (ev *TraceEvent) observationName() string {

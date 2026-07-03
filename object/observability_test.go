@@ -154,7 +154,7 @@ func TestEmitTraceNonBlockingWhenBufferFull(t *testing.T) {
 	defer func() { obsCh, obsMaxContent = prevCh, prevMax; obsRunning.Store(prevRunning) }()
 
 	obsMaxContent = 32768
-	obsCh = make(chan TraceEvent, 1)
+	obsCh = make(chan obsItem, 1)
 	obsRunning.Store(true)
 
 	EmitTrace(TraceEvent{Org: "acme", Input: "one"}) // fills the buffer
