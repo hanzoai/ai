@@ -116,6 +116,27 @@ var modelPricing = map[string]modelPrice{
 	"llama-3.3-70b":           {InputPerMillion: 0.59, OutputPerMillion: 0.79},
 	"mistral-nemo":            {InputPerMillion: 0.15, OutputPerMillion: 0.15},
 	"qwen3-32b":               {InputPerMillion: 0.20, OutputPerMillion: 0.60},
+	"gemma-4-31b":             {InputPerMillion: 0.18, OutputPerMillion: 0.50}, // DO published rate
+
+	// DO-AI embeddings (POST /v1/embeddings). Output cost is 0 — embeddings
+	// bill on input tokens only. Rates are DigitalOcean's published per-1M
+	// embedding prices (real, not defaulted).
+	"bge-m3":                     {InputPerMillion: 0.02},
+	"e5-large-v2":                {InputPerMillion: 0.02},
+	"gte-large-en-v1.5":          {InputPerMillion: 0.09},
+	"all-mini-lm-l6-v2":          {InputPerMillion: 0.009},
+	"multi-qa-mpnet-base-dot-v1": {InputPerMillion: 0.009},
+
+	// DO-AI Inference Router. The router itself adds no cost (public preview);
+	// the request bills at the underlying foundation model it selects. There is
+	// no fixed per-router token price upstream, so this is a conservative
+	// in-pattern estimate matching the gpt-oss-120b class the routers select
+	// (DEFAULTED — not a published per-router rate).
+	"router:general":                 {InputPerMillion: 0.90, OutputPerMillion: 0.90},
+	"router:knowledge-base-document": {InputPerMillion: 0.90, OutputPerMillion: 0.90},
+	"router:software-engineering":    {InputPerMillion: 0.90, OutputPerMillion: 0.90},
+	"router:software-engineering-01": {InputPerMillion: 0.90, OutputPerMillion: 0.90},
+	"router:writing":                 {InputPerMillion: 0.90, OutputPerMillion: 0.90},
 
 	// ── Fireworks premium models ────────────────────────────────────
 
@@ -208,6 +229,10 @@ var imagePricePerImageCents = map[string]int64{
 	// correct whether the record carries the user-facing or upstream name.
 	"fal-ai/flux/schnell": 5,
 	"fal-ai/fast-sdxl":    6,
+	// Stable Diffusion 3.5 Large — synchronous OpenAI /images shape (not fal
+	// async). DO published rate is $0.08/image. Keyed by both the user-facing
+	// name and the identical upstream id so billing is correct either way.
+	"stable-diffusion-3.5-large": 8,
 	// OpenAI-family image models, if ever routed directly ($0.08/image).
 	"gpt-image-1": 8,
 	"dall-e-3":    8,
