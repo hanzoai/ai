@@ -25,7 +25,6 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/beego/beego"
 	"github.com/beego/beego/context"
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/i18n"
@@ -212,8 +211,9 @@ func (c *ApiController) CheckSignedIn() (string, bool) {
 }
 
 func (c *ApiController) RequireAdmin() bool {
-	disablePreviewMode, _ := beego.AppConfig.Bool("disablePreviewMode")
-	if !disablePreviewMode {
+	// conf.IsPreviewMode() is env-first (DISABLE_PREVIEW_MODE), so flipping the
+	// lever on the deployed CR makes this enforce real admin with no rebuild.
+	if conf.IsPreviewMode() {
 		return true
 	}
 
@@ -226,8 +226,7 @@ func (c *ApiController) RequireAdmin() bool {
 }
 
 func (c *ApiController) IsPreviewMode() bool {
-	disablePreviewMode, _ := beego.AppConfig.Bool("disablePreviewMode")
-	return !disablePreviewMode
+	return conf.IsPreviewMode()
 }
 
 func (c *ApiController) IsAdmin() bool {
