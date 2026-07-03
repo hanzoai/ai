@@ -19,6 +19,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/hanzoai/ai/model"
@@ -26,6 +29,62 @@ import (
 	"github.com/hanzoai/ai/util"
 	iam "github.com/hanzoai/iam"
 )
+
+// ── Video generation concurrency ceiling ─────────────────────────────────────
+//
+// Text-to-video is uniquely dangerous to this pod: one generation holds a request
+// for MINUTES (up to model.doaiVideoMaxWait per produced clip) while buffering the
+// produced MP4(s) in memory to base64-encode them into the response. The pod runs
+// single-replica (replicas: min=max=1 — the balance ledger's in-pod invariant) and
+// also serves chat, image, and RAG, so a handful of concurrent n>1 video requests
+// with no ceiling could exhaust its memory and OOM every co-hosted service — a
+// platform-wide outage, plus lost in-pod reservations and un-flushed billing.
+//
+// videoSem is a counting semaphore (buffered channel) admitting at most
+// videoMaxConcurrent() generations at once. It is a MEMORY-SAFETY ceiling, so it
+// applies to every caller — exempt or not — because a flood from any principal
+// OOMs the pod identically. A slot is taken POST-AUTH (an unauthenticated caller
+// can never occupy one) and released on every exit path.
+
+// defaultVideoMaxConcurrent is the built-in ceiling on simultaneous video
+// generations, matched to the pod's memory budget (with the lowered per-clip
+// content cap) and the do-ai upstream's own aggressive rate limiting. Deliberately
+// small: video is minutes-long and memory-heavy, so a low ceiling is correct.
+const defaultVideoMaxConcurrent = 2
+
+// videoMaxConcurrent resolves the ceiling, overridable via VIDEO_MAX_CONCURRENT
+// for a pod provisioned with more headroom. A non-positive / unparseable value
+// falls back to the safe default (never 0 — that would deadlock every request).
+func videoMaxConcurrent() int {
+	if v := strings.TrimSpace(os.Getenv("VIDEO_MAX_CONCURRENT")); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
+		}
+	}
+	return defaultVideoMaxConcurrent
+}
+
+// videoSem admits at most videoMaxConcurrent() concurrent generations.
+var videoSem = make(chan struct{}, videoMaxConcurrent())
+
+// tryAcquireVideoSlot takes one generation slot WITHOUT blocking, returning false
+// when the pod is already at capacity (the handler then answers 429). Non-blocking
+// by design: a video request that can't run right now must fail fast, not queue —
+// a queued request would still pin the client socket, its budget reservation, and
+// its memory for minutes. releaseVideoSlot returns the slot. Kept as a tiny seam
+// so the ceiling is unit-testable without standing up the whole handler.
+func tryAcquireVideoSlot() bool {
+	select {
+	case videoSem <- struct{}{}:
+		return true
+	default:
+		return false
+	}
+}
+
+// releaseVideoSlot returns a previously acquired slot. It must be called exactly
+// once per successful tryAcquireVideoSlot (via defer on every handler exit path).
+func releaseVideoSlot() { <-videoSem }
 
 // This file completes the OpenAI-compatible surface alongside chat, embeddings,
 // and images: the /v1/videos/generations endpoint (text-to-video). It rides the
@@ -106,6 +165,22 @@ func (c *ApiController) VideosGenerations() {
 		c.ResponseError(fmt.Sprintf("Provider %s is not a model provider", provider.Name))
 		return
 	}
+
+	// Concurrency ceiling (POST-AUTH): admit at most videoMaxConcurrent()
+	// generations across the pod so concurrent minutes-long, memory-heavy video
+	// requests can't OOM this single-replica pod (which also serves chat/image/
+	// RAG). Taken here — after the credential and provider are validated, so an
+	// unauthenticated or misrouted caller never occupies a slot — and released on
+	// every exit path below (defer, before any budget reservation). A full pod
+	// fails fast with 429 rather than queueing (a queue would still pin the client
+	// socket + the budget hold for minutes).
+	if !tryAcquireVideoSlot() {
+		c.ResponseErrorWithStatus(http.StatusTooManyRequests,
+			"Video generation is at capacity; please retry shortly.")
+		return
+	}
+	defer releaseVideoSlot()
+
 	if upstreamModel != "" {
 		provider.SubType = upstreamModel
 	} else if req.Model != "" {
@@ -145,9 +220,18 @@ func (c *ApiController) VideosGenerations() {
 
 	// Generate the video(s) via the do-ai async video client. The provider's
 	// resolved key (never logged) and base URL drive create → poll → download.
-	// Video generation is minutes-long, so the ctx ceiling sits just above the
-	// client's own doaiVideoMaxWait (300s) per produced video.
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(n)*310*time.Second)
+	//
+	// The context is derived from the REQUEST context (not context.Background), so
+	// a client disconnect — or an upstream gateway/ingress that gives up and closes
+	// the connection (its idle timeout MUST exceed the per-clip ceiling; see
+	// model.doaiVideoMaxWait) — cancels the in-flight generation, releasing the
+	// concurrency slot and the budget hold instead of burning GPU for a caller who
+	// is already gone. A max-timeout bound sits just above the client's own
+	// per-video doaiVideoMaxWait (300s), so a wedged upstream still can't pin the
+	// slot forever. On cancellation model.GenerateVideoDOAI returns the context
+	// error and the handler settles the hold to 0 (bills nothing) — never a
+	// charged-but-undelivered clip.
+	ctx, cancel := context.WithTimeout(c.Ctx.Request.Context(), time.Duration(n)*310*time.Second)
 	defer cancel()
 
 	upstreamURL := videoUpstreamBase(provider)

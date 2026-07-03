@@ -55,6 +55,33 @@ func TestResolveModelRoute_VideoFamily(t *testing.T) {
 	if route.ownedBy != "" {
 		t.Errorf("unbranded passthrough ownedBy = %q, want empty", route.ownedBy)
 	}
+	// premium: true even though unbranded — ALL video is premium so the free
+	// starter credit can't fund a ~40¢ GPU-minutes t2v unit on the raw id (the
+	// premium/starter gate never fires for a non-premium route).
+	if !route.premium {
+		t.Errorf("wan2-2-t2v-a14b (raw id) must be premium so the starter credit can't fund it")
+	}
+}
+
+// TestAllVideoModelsArePremium is the invariant behind the starter-credit fix:
+// EVERY billable video id — branded or the raw passthrough — must be premium, so
+// none can be funded by the free starter credit. Iterating the pricing table
+// (the authoritative set of video models) means a newly-added video id that
+// forgets the flag fails here.
+func TestAllVideoModelsArePremium(t *testing.T) {
+	if len(videoPricePerVideoCents) == 0 {
+		t.Fatal("videoPricePerVideoCents is empty — no video models to check")
+	}
+	for m := range videoPricePerVideoCents {
+		route := resolveModelRoute(m)
+		if route == nil {
+			t.Errorf("video model %q has no route", m)
+			continue
+		}
+		if !route.premium {
+			t.Errorf("video model %q must be premium (starter credit must never fund video)", m)
+		}
+	}
 }
 
 // TestResolveModelRoute_VideoFamilyCaseInsensitive: the family resolves
@@ -164,5 +191,41 @@ func TestVideoUpstreamBase(t *testing.T) {
 				t.Errorf("videoUpstreamBase = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+// TestVideoSemaphore_429WhenFull proves the pod-wide concurrency ceiling: once
+// every generation slot is taken, the next acquire fails (the handler answers
+// 429 rather than starting another minutes-long, memory-heavy generation that
+// could OOM this single-replica pod). Releasing a slot admits exactly one more.
+// The pool is fully restored so no held slot leaks into other tests.
+func TestVideoSemaphore_429WhenFull(t *testing.T) {
+	// Drain to capacity, tracking how many we took so we can restore exactly
+	// (the size is set by VIDEO_MAX_CONCURRENT at init; the test is size-agnostic).
+	taken := 0
+	for tryAcquireVideoSlot() {
+		taken++
+	}
+	if taken == 0 {
+		t.Fatal("expected at least one video slot to be available")
+	}
+	// At capacity: the next acquire must fail — this is the request that gets 429.
+	if tryAcquireVideoSlot() {
+		releaseVideoSlot()
+		t.Fatal("tryAcquireVideoSlot must fail when the semaphore is full")
+	}
+	// Freeing exactly one slot admits exactly one more, then we are full again.
+	releaseVideoSlot()
+	if !tryAcquireVideoSlot() {
+		t.Fatal("a released slot must be re-acquirable")
+	}
+	if tryAcquireVideoSlot() {
+		releaseVideoSlot()
+		t.Fatal("only one slot should have been freed")
+	}
+	// Restore the pool to empty (held == taken right now) so other tests — and a
+	// real handler — see a clean semaphore.
+	for i := 0; i < taken; i++ {
+		releaseVideoSlot()
 	}
 }

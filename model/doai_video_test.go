@@ -200,3 +200,184 @@ func TestVideoUpstreamError_RateLimit(t *testing.T) {
 		t.Fatalf("429 must be annotated retryable, got %v", err)
 	}
 }
+
+// videoLifecycleServer returns an httptest server that drives the create → poll →
+// completed → content lifecycle, serving the given content-type and body for the
+// /content download. It is the shared rig for the download-path tests below.
+func videoLifecycleServer(t *testing.T, contentType string, body []byte) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost:
+			w.WriteHeader(http.StatusAccepted)
+			_, _ = w.Write([]byte(`{"id":"v1","object":"video","status":"queued"}`))
+		case strings.HasSuffix(r.URL.Path, "/content"):
+			if contentType != "" {
+				w.Header().Set("Content-Type", contentType)
+			}
+			_, _ = w.Write(body)
+		default: // status poll → completed
+			_, _ = w.Write([]byte(`{"id":"v1","object":"video","status":"completed","error":null}`))
+		}
+	}))
+}
+
+// TestGenerateVideoDOAI_ContentCapEnforced proves the hard memory ceiling: an
+// upstream /content response one byte past doaiVideoContentMax is rejected, never
+// buffered+base64ed. This is the per-request half of the OOM defense (the pod-wide
+// half is the handler's concurrency semaphore).
+func TestGenerateVideoDOAI_ContentCapEnforced(t *testing.T) {
+	oversized := make([]byte, doaiVideoContentMax+1) // one byte past the hard ceiling
+	srv := videoLifecycleServer(t, "video/mp4", oversized)
+	defer srv.Close()
+
+	_, err := GenerateVideoDOAI(context.Background(), srv.URL, "k", VideoGenRequest{
+		UpstreamModel: "wan2-2-t2v-a14b", Prompt: "x", N: 1,
+	})
+	if err == nil || !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("want content-cap 'exceeds' error, got %v", err)
+	}
+}
+
+// TestGenerateVideoDOAI_ContentTypeAllowlist proves /content is accepted ONLY for
+// video media, a generic binary stream, or a missing header — an allowlist — and
+// every other explicit type (JSON placeholder, HTML/text error page) is rejected
+// rather than base64-encoded and returned as a "clip".
+func TestGenerateVideoDOAI_ContentTypeAllowlist(t *testing.T) {
+	mp4 := []byte("\x00\x00\x00\x18ftypmp42REALBYTES")
+
+	accept := []struct{ name, ct, wantMime string }{
+		{"mp4", "video/mp4", "video/mp4"},
+		{"webm", "video/webm", "video/webm"},
+		{"octet-stream", "application/octet-stream", "video/mp4"},
+		{"video-with-charset-param", "video/mp4; charset=binary", "video/mp4"},
+		{"missing-header", "", "video/mp4"},
+	}
+	for _, tc := range accept {
+		t.Run("accept/"+tc.name, func(t *testing.T) {
+			srv := videoLifecycleServer(t, tc.ct, mp4)
+			defer srv.Close()
+			res, err := GenerateVideoDOAI(context.Background(), srv.URL, "k", VideoGenRequest{
+				UpstreamModel: "wan2-2-t2v-a14b", Prompt: "x", N: 1,
+			})
+			if err != nil {
+				t.Fatalf("content-type %q must be accepted, got %v", tc.ct, err)
+			}
+			if len(res.Videos) != 1 || res.Videos[0].MimeType != tc.wantMime {
+				t.Fatalf("mime = %q, want %q", res.Videos[0].MimeType, tc.wantMime)
+			}
+		})
+	}
+
+	reject := []struct{ name, ct string }{
+		{"json-placeholder", "application/json"},
+		{"html-error-page", "text/html"},
+		{"plain-text", "text/plain"},
+	}
+	for _, tc := range reject {
+		t.Run("reject/"+tc.name, func(t *testing.T) {
+			srv := videoLifecycleServer(t, tc.ct, []byte("this is not a video"))
+			defer srv.Close()
+			_, err := GenerateVideoDOAI(context.Background(), srv.URL, "k", VideoGenRequest{
+				UpstreamModel: "wan2-2-t2v-a14b", Prompt: "x", N: 1,
+			})
+			if err == nil || !strings.Contains(err.Error(), "not video media") {
+				t.Fatalf("content-type %q must be rejected, got %v", tc.ct, err)
+			}
+		})
+	}
+}
+
+// TestVideoSafeReason_ScrubsSecrets proves credential-shaped substrings an
+// upstream error body might echo (Authorization header, Bearer token, sk-/hk- API
+// key) are redacted before they can reach the client, while a benign reason is
+// passed through unchanged (no over-redaction).
+func TestVideoSafeReason_ScrubsSecrets(t *testing.T) {
+	cases := []struct{ name, in, secret string }{
+		{"bearer-token", `{"error":"bad key: Bearer sk-live-ABCDEF123456"}`, "sk-live-ABCDEF123456"},
+		{"authorization-header", `unexpected: Authorization: Bearer zzzTOKENzzz here`, "zzzTOKENzzz"},
+		{"sk-key-inline", `invalid api key sk-proj-DEADBEEFcafe1234 rejected`, "sk-proj-DEADBEEFcafe1234"},
+		{"hk-key-inline", `bad hanzo key hk-abcdef012345 nope`, "hk-abcdef012345"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := videoSafeReason([]byte(tc.in))
+			if strings.Contains(got, tc.secret) {
+				t.Errorf("videoSafeReason leaked secret %q in %q", tc.secret, got)
+			}
+			if !strings.Contains(got, "[redacted]") {
+				t.Errorf("expected [redacted] marker in %q", got)
+			}
+		})
+	}
+	if got := videoSafeReason([]byte("content policy violation")); got != "content policy violation" {
+		t.Errorf("benign reason altered (over-redaction): %q", got)
+	}
+}
+
+// TestVideoUpstreamError_AuthClassNoBody proves an auth-class upstream status
+// (401/403) NEVER echoes the response body — which could contain the sent
+// credential — surfacing only the status. Non-auth statuses still carry a short,
+// scrubbed reason.
+func TestVideoUpstreamError_AuthClassNoBody(t *testing.T) {
+	body := []byte(`{"error":"invalid Authorization: Bearer sk-SECRETLEAK123456"}`)
+	for _, status := range []int{http.StatusUnauthorized, http.StatusForbidden} {
+		err := videoUpstreamError("video create", status, body)
+		if err == nil {
+			t.Fatalf("status %d must error", status)
+		}
+		if strings.Contains(err.Error(), "sk-SECRETLEAK123456") || strings.Contains(err.Error(), "Bearer") {
+			t.Errorf("status %d must not echo upstream body: %q", status, err.Error())
+		}
+		if !strings.Contains(err.Error(), "video create") {
+			t.Errorf("status %d error should name the stage: %q", status, err.Error())
+		}
+	}
+	// A non-auth status still surfaces a reason, but scrubbed.
+	e := videoUpstreamError("video status poll", http.StatusBadGateway, body)
+	if strings.Contains(e.Error(), "sk-SECRETLEAK123456") {
+		t.Errorf("non-auth status must scrub secrets from the reason: %q", e.Error())
+	}
+}
+
+// TestGenerateVideoDOAI_ContextCancelNoPartialCharge proves the money-safety
+// invariant under client-gone conditions: when the request context is canceled
+// after an earlier video already completed, GenerateVideoDOAI returns nil + the
+// context error (so the handler settles the hold to 0 and bills NOTHING) rather
+// than delivering — and billing — the partial result to a caller who has gone
+// away (client disconnect / upstream proxy idle-timeout).
+func TestGenerateVideoDOAI_ContextCancelNoPartialCharge(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var creates int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost:
+			creates++
+			if creates >= 2 {
+				// Second video requested: the caller is now gone. Cancel the context
+				// so the subsequent poll/create fails with the context error.
+				cancel()
+			}
+			w.WriteHeader(http.StatusAccepted)
+			_, _ = w.Write([]byte(`{"id":"v1","object":"video","status":"queued"}`))
+		case strings.HasSuffix(r.URL.Path, "/content"):
+			w.Header().Set("Content-Type", "video/mp4")
+			_, _ = w.Write([]byte("MP4BYTES"))
+		default: // poll → completed
+			_, _ = w.Write([]byte(`{"id":"v1","object":"video","status":"completed","error":null}`))
+		}
+	}))
+	defer srv.Close()
+
+	res, err := GenerateVideoDOAI(ctx, srv.URL, "k", VideoGenRequest{
+		UpstreamModel: "wan2-2-t2v-a14b", Prompt: "x", N: 2,
+	})
+	if err == nil {
+		t.Fatalf("want context-cancel error (caller gone → bill nothing), got videos=%d", len(res.Videos))
+	}
+	if res != nil {
+		t.Fatalf("on context cancel the result must be nil (no partial delivery), got %+v", res)
+	}
+}

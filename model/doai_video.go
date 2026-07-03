@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -67,10 +68,15 @@ const (
 	// RETRYABLE error (never a partial/silent success).
 	doaiVideoMaxWait = 300 * time.Second
 
-	// doaiVideoContentMax caps how many bytes we download from /content. A short
-	// t2v clip is well under a few MB; 64 MiB is a hard safety ceiling so a
-	// runaway/oversized response can never exhaust memory.
-	doaiVideoContentMax = 64 << 20
+	// doaiVideoContentMax caps how many bytes we download from /content. Observed
+	// real wan2-2-t2v clips are ~0.4 MB; 16 MiB is a hard safety ceiling (~40× the
+	// observed size — ample headroom for a longer/higher-res legitimate clip) that
+	// still stops a runaway/oversized response from exhausting memory. It is set
+	// deliberately low (was 64 MiB) because this pod is single-replica and also
+	// serves chat/image/RAG: at n videos each up to this cap, plus the base64 blow-
+	// up and the marshalled response copy, the per-request memory is bounded, and
+	// the pod-wide concurrency ceiling (controllers.videoSem) bounds the aggregate.
+	doaiVideoContentMax = 16 << 20
 )
 
 // GeneratedVideo is one video from a generation call. Exactly one of URL or
@@ -146,8 +152,18 @@ func GenerateVideoDOAI(ctx context.Context, baseURL, apiKey string, req VideoGen
 	for i := 0; i < n; i++ {
 		vid, err := generateOneVideoDOAI(ctx, client, base, apiKey, req)
 		if err != nil {
-			// If we already produced at least one video, deliver those rather than
-			// discarding paid-for work; the handler bills only len(result.Videos).
+			// A canceled / expired context means the CALLER is gone — a client
+			// disconnect, or an upstream gateway/ingress that timed out and closed
+			// the connection. There is no one to deliver to, so return the context
+			// error even if earlier videos completed: the handler then settles the
+			// hold to 0 and bills NOTHING (never a charged-but-undelivered clip).
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return nil, ctxErr
+			}
+			// Genuine upstream failure (not a context error): if we already produced
+			// at least one video, deliver those rather than discarding paid-for work;
+			// the handler bills only len(result.Videos) (<= n). Otherwise surface the
+			// error so the hold releases and nothing is billed.
 			if len(result.Videos) > 0 {
 				return result, nil
 			}
@@ -253,7 +269,7 @@ func doaiVideoWait(ctx context.Context, client *http.Client, base, apiKey, id st
 			return nil
 		case "failed", "error", "canceled", "cancelled":
 			if rec.Error != nil && rec.Error.Message != "" {
-				return fmt.Errorf("video generation %s: %s", strings.ToLower(rec.Status), shortUpstreamErr([]byte(rec.Error.Message)))
+				return fmt.Errorf("video generation %s: %s", strings.ToLower(rec.Status), videoSafeReason([]byte(rec.Error.Message)))
 			}
 			return fmt.Errorf("video generation %s", strings.ToLower(rec.Status))
 		}
@@ -284,16 +300,26 @@ func doaiVideoDownload(ctx context.Context, client *http.Client, base, apiKey, i
 		return nil, videoUpstreamError("video download", resp.StatusCode, raw)
 	}
 
-	mime := resp.Header.Get("Content-Type")
-	if mime == "" {
-		mime = "video/mp4"
+	// A completed job must return video media. Accept ONLY a video/* content type,
+	// a generic binary stream (application/octet-stream), or a missing header (some
+	// CDNs omit it on binary downloads) — an allowlist, not allow-by-default. Any
+	// other EXPLICIT type — notably the application/json placeholder the async API
+	// returns while the job is still in_progress — means the payload is NOT a video,
+	// so reject it rather than base64-encode a non-video document and hand it back
+	// as a clip.
+	mime := strings.ToLower(strings.TrimSpace(resp.Header.Get("Content-Type")))
+	if i := strings.IndexByte(mime, ';'); i >= 0 { // drop any "; charset=…" parameter
+		mime = strings.TrimSpace(mime[:i])
 	}
-	// A completed job must return the video media type. If it returns JSON the
-	// job was not actually ready (the /content placeholder) — treat as an error
-	// rather than handing the client a base64-encoded error document.
-	if strings.HasPrefix(strings.ToLower(mime), "application/json") {
+	if mime != "" && mime != "application/octet-stream" && !strings.HasPrefix(mime, "video/") {
 		raw, _ := io.ReadAll(io.LimitReader(resp.Body, doaiErrBodyMax+1))
-		return nil, fmt.Errorf("video content not ready (upstream returned JSON, not media): %s", shortUpstreamErr(raw))
+		return nil, fmt.Errorf("video content not ready (upstream returned %q, not video media): %s", mime, videoSafeReason(raw))
+	}
+	// Normalize the surfaced media type: a bare stream / missing header defaults to
+	// video/mp4 (what do-ai serves); an explicit video/* type is kept as-is.
+	returnMime := mime
+	if returnMime == "" || returnMime == "application/octet-stream" {
+		returnMime = "video/mp4"
 	}
 
 	data, err := io.ReadAll(io.LimitReader(resp.Body, doaiVideoContentMax+1))
@@ -309,7 +335,7 @@ func doaiVideoDownload(ctx context.Context, client *http.Client, base, apiKey, i
 
 	return &GeneratedVideo{
 		B64JSON:  base64.StdEncoding.EncodeToString(data),
-		MimeType: mime,
+		MimeType: returnMime,
 	}, nil
 }
 
@@ -337,13 +363,32 @@ func doaiVideoDo(ctx context.Context, client *http.Client, method, url, apiKey s
 	return resp, nil
 }
 
+// secretLikePattern matches credential-shaped substrings an upstream error body
+// might echo back: an Authorization header, a Bearer token, or an sk-/hk- API key.
+// They are redacted before any upstream reason is embedded in an error we surface
+// to the caller, so a misbehaving upstream can never turn our error path into a
+// key-disclosure oracle.
+var secretLikePattern = regexp.MustCompile(`(?i)(authorization\s*[:=]\s*(?:bearer\s+)?\S+|bearer\s+\S+|\b[sh]k-[A-Za-z0-9._\-]{6,})`)
+
+// videoSafeReason produces a short, secret-scrubbed reason from an upstream error
+// body: it redacts credential-shaped substrings BEFORE truncation (so a secret
+// straddling the length cap can't partially leak) and then length-caps the result
+// via shortUpstreamErr.
+func videoSafeReason(raw []byte) string {
+	return shortUpstreamErr(secretLikePattern.ReplaceAll(raw, []byte("[redacted]")))
+}
+
 // videoUpstreamError builds an error from a non-2xx upstream response. The HTTP
-// status is the signal; the body is surfaced as a short reason only (via
-// shortUpstreamErr, so do-ai internals are never echoed verbatim). A 429 is
-// annotated as retryable so callers/clients can back off.
+// status is the signal; any body is surfaced only as a short, secret-scrubbed
+// reason (via videoSafeReason) — and NOT AT ALL on an auth-class status, whose
+// body can echo the sent credential and tells the caller nothing actionable. A
+// 429 is annotated as retryable so callers/clients can back off.
 func videoUpstreamError(stage string, status int, raw []byte) error {
-	if status == http.StatusTooManyRequests {
-		return fmt.Errorf("%s rate-limited (HTTP 429): %s; retry", stage, shortUpstreamErr(raw))
+	if status == http.StatusUnauthorized || status == http.StatusForbidden {
+		return fmt.Errorf("%s failed (HTTP %d)", stage, status)
 	}
-	return fmt.Errorf("%s failed (HTTP %d): %s", stage, status, shortUpstreamErr(raw))
+	if status == http.StatusTooManyRequests {
+		return fmt.Errorf("%s rate-limited (HTTP 429): %s; retry", stage, videoSafeReason(raw))
+	}
+	return fmt.Errorf("%s failed (HTTP %d): %s", stage, status, videoSafeReason(raw))
 }
