@@ -16,26 +16,28 @@ package model
 
 import (
 	"context"
-	"encoding/base64"
 	"os"
 	"testing"
 	"time"
 )
 
-// TestGenerateVideoDOAI_Live is a REAL end-to-end text-to-video round-trip
-// against DigitalOcean's Sora-style /v1/videos API. It is skipped unless
-// DO_AI_API_KEY is set (the same credential the chat/image routes resolve), so
-// it never runs — or leaks a key — in an environment without one (CI has none).
-// Video generation is minutes-long, so run it explicitly where the key exists:
+// TestVideoDOAIAsync_Live is a REAL end-to-end text-to-video round-trip against
+// the Sora-style async /v1/videos API, exercising the SAME three primitives the
+// handler uses: CreateVideoDOAI → RetrieveVideoDOAI (poll) → DownloadVideoBytesDOAI.
+// It is skipped unless DO_AI_API_KEY is set (the same credential the chat/image
+// routes resolve), so it never runs — or leaks a key — in an environment without
+// one (CI has none). Video generation is minutes-long, so run it explicitly where
+// the key exists:
 //
-//	DO_AI_API_KEY=… go test ./model/ -run TestGenerateVideoDOAI_Live -v -timeout 360s
+//	DO_AI_API_KEY=… go test ./model/ -run TestVideoDOAIAsync_Live -v -timeout 360s
 //
-// It proves create → poll → download returns actual MP4 bytes. The key is never
-// printed; only the resulting media size/type is logged.
-func TestGenerateVideoDOAI_Live(t *testing.T) {
+// It proves create returns a job id immediately, the poll reaches "completed",
+// and the download returns actual MP4 bytes. The key is never printed; only the
+// resulting media size/type is logged.
+func TestVideoDOAIAsync_Live(t *testing.T) {
 	apiKey := os.Getenv("DO_AI_API_KEY")
 	if apiKey == "" {
-		t.Skip("DO_AI_API_KEY not set — skipping live do-ai text-to-video round-trip")
+		t.Skip("DO_AI_API_KEY not set — skipping live async text-to-video round-trip")
 	}
 
 	base := os.Getenv("DO_AI_BASE_URL")
@@ -50,22 +52,50 @@ func TestGenerateVideoDOAI_Live(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 320*time.Second)
 	defer cancel()
 
-	res, err := GenerateVideoDOAI(ctx, base, apiKey, VideoGenRequest{
+	// CREATE — must return a job id immediately (no minutes-long block).
+	createStart := time.Now()
+	id, status, err := CreateVideoDOAI(ctx, base, apiKey, VideoGenRequest{
 		UpstreamModel: upstream,
 		Prompt:        "a red panda eating bamboo in a misty forest, cinematic short clip",
-		N:             1,
 	})
 	if err != nil {
-		t.Fatalf("live GenerateVideoDOAI: %v", err)
+		t.Fatalf("live CreateVideoDOAI: %v", err)
 	}
-	if len(res.Videos) != 1 {
-		t.Fatalf("videos = %d, want 1", len(res.Videos))
+	if id == "" {
+		t.Fatal("create returned an empty job id")
 	}
-	v := res.Videos[0]
+	if d := time.Since(createStart); d > 30*time.Second {
+		t.Errorf("create took %s — async create must return promptly, not block on generation", d)
+	}
+	t.Logf("created job id=%s status=%s in %s", id, status, time.Since(createStart))
 
-	raw, err := base64.StdEncoding.DecodeString(v.B64JSON)
+	// POLL — one status call per iteration, until terminal or the deadline.
+	deadline := time.Now().Add(300 * time.Second)
+	final := ""
+	for {
+		st, errMsg, err := RetrieveVideoDOAI(ctx, base, apiKey, id)
+		if err != nil {
+			t.Fatalf("live RetrieveVideoDOAI: %v", err)
+		}
+		switch st {
+		case "completed", "complete", "succeeded", "success":
+			final = "completed"
+		case "failed", "error", "canceled", "cancelled":
+			t.Fatalf("job failed: %s", errMsg)
+		}
+		if final != "" || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(3 * time.Second)
+	}
+	if final != "completed" {
+		t.Fatalf("job did not complete before deadline")
+	}
+
+	// DOWNLOAD — raw MP4 bytes.
+	raw, mime, err := DownloadVideoBytesDOAI(ctx, base, apiKey, id)
 	if err != nil {
-		t.Fatalf("decode b64: %v", err)
+		t.Fatalf("live DownloadVideoBytesDOAI: %v", err)
 	}
 	if len(raw) < 1000 {
 		t.Fatalf("video too small (%d bytes) — not a real clip", len(raw))
@@ -74,5 +104,5 @@ func TestGenerateVideoDOAI_Live(t *testing.T) {
 	if len(raw) < 12 || string(raw[4:8]) != "ftyp" {
 		t.Fatalf("not an MP4 (missing ftyp box)")
 	}
-	t.Logf("LIVE OK: mime=%s bytes=%d (real MP4, key never printed)", v.MimeType, len(raw))
+	t.Logf("LIVE OK: mime=%s bytes=%d (real MP4, key never printed)", mime, len(raw))
 }
