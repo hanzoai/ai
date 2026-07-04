@@ -167,40 +167,34 @@ func initBuiltInProviders() (string, string, string, string) {
 	}
 	// Real default embedding provider so RAG ingest actually produces vectors. A
 	// "Dummy" provider accepts files but embeds nothing (documentsIndexed:0), which
-	// silently broke ingest. Type "Local" is the OpenAI-compatible client that HONORS
-	// ProviderUrl (unlike "OpenAI", which hardcodes api.openai.com), so it calls
-	// DigitalOcean GenAI's OpenAI-shaped /v1/embeddings — the SAME inference.do-ai.run
-	// endpoint + DO_AI_API_KEY the working do-ai model provider uses. SubType is DO's
-	// served embedding model.
+	// silently broke ingest. Mirror the gateway's canonical `zen3-embedding` route
+	// (`openai/text-embedding-3-large`): Type "OpenAI" → OpenAI's real embeddings API
+	// with kms://OPENAI_API_KEY. NOTE: inference.do-ai.run serves CHAT models only, not
+	// embeddings, and qwen3-embedding is DOKS-self-hosted (not at that endpoint) — a DO
+	// embedding config HANGS. OpenAI is the safe default: it works when OPENAI_API_KEY
+	// is provisioned, and FAILS FAST (401) if not — never a multi-minute hang. Operators
+	// can repoint this default provider at a self-hosted embedder via the console.
+	realEmbed := func(p *Provider) {
+		p.DisplayName = "OpenAI Embeddings"
+		p.Category = "Embedding"
+		p.Type = "OpenAI"
+		p.SubType = "text-embedding-3-large"
+		p.ClientSecret = "kms://OPENAI_API_KEY"
+		p.State = "Active"
+	}
 	if embeddingProvider == nil {
-		embeddingProvider = &Provider{
-			Owner:        "admin",
-			Name:         "do-embed",
-			CreatedTime:  util.GetCurrentTime(),
-			DisplayName:  "DigitalOcean Embeddings",
-			Category:     "Embedding",
-			Type:         "Local",
-			SubType:      "qwen3-embedding-0.6b",
-			ProviderUrl:  "https://inference.do-ai.run/v1",
-			ClientSecret: "kms://DO_AI_API_KEY",
-			State:        "Active",
-			IsDefault:    true,
-		}
+		embeddingProvider = &Provider{Owner: "admin", Name: "default-embed", CreatedTime: util.GetCurrentTime(), IsDefault: true}
+		realEmbed(embeddingProvider)
 		_, err = AddProvider(embeddingProvider)
 		if err != nil && !isDuplicateKeyErr(err) {
 			panic(err)
 		}
 	} else if embeddingProvider.Type == "Dummy" {
 		// Upgrade the legacy Dummy default IN PLACE (keep its Name + IsDefault) so
-		// existing deployments self-heal to real embeddings on the next boot.
-		embeddingProvider.DisplayName = "DigitalOcean Embeddings"
-		embeddingProvider.Type = "Local"
-		embeddingProvider.SubType = "qwen3-embedding-0.6b"
-		embeddingProvider.ProviderUrl = "https://inference.do-ai.run/v1"
-		embeddingProvider.ClientSecret = "kms://DO_AI_API_KEY"
-		embeddingProvider.State = "Active"
+		// existing deployments self-heal to a real embedder on the next boot.
+		realEmbed(embeddingProvider)
 		if _, uerr := UpdateProvider("admin/"+embeddingProvider.Name, embeddingProvider); uerr != nil {
-			fmt.Printf("[init] WARNING: failed to upgrade embedding provider %q to real DO embeddings: %v\n", embeddingProvider.Name, uerr)
+			fmt.Printf("[init] WARNING: failed to upgrade embedding provider %q to a real embedder: %v\n", embeddingProvider.Name, uerr)
 		}
 	}
 	ttsProviderName := "Browser Built-In"
