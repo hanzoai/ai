@@ -163,6 +163,29 @@ Request flow for a completion:
    `SubType` on every boot from the `initLLMProviders` table — so fixing a stale
    key or upstream URL = edit the seed table and restart (no manual DB edit).
 
+**Async video (`/v1/videos`) — Sora-style, NOT sync.** Text-to-video generation
+takes minutes, so `/v1/videos/generations` is ASYNC (the sync handler used to
+hold the request ~104s → console `/ai` proxy timed out → browser 502 while the
+generation actually succeeded). The lifecycle is three fast requests:
+`POST /v1/videos/generations` (create → returns a `video_<uuid>` job id +
+`queued` object immediately), `GET /v1/videos/{id}` (one status poll), and
+`GET /v1/videos/{id}/content` (stream the finished MP4). `zen3-video*` route to
+the **spark-video** provider (our GB10, `spark-video.hanzo.ai/v1`), whose OWN
+`/v1/videos` API is already the same async create→poll→download shape the three
+`model.{Create,Retrieve,Download}VideoDOAI` primitives proxy. Metering is per-user
+and lands EXACTLY ONCE on completion: create RESERVES the per-video budget and
+carries the `*budgetHold` in the in-pod `videoJobStore` (valid — the pod is
+single-replica, the balance ledger's own invariant); the first request that
+observes `completed` (poll or download) settles the hold + records the single
+Commerce usage event (`videoJob.markCompleted`, idempotent); a failed job releases
+the hold and bills nothing; a reaper releases abandoned/wedged jobs' holds (TTL)
+so budget never leaks. Every poll/download re-runs the shared auth+routing policy
+and enforces OWNERSHIP (caller subject == job subject, else 404 — never confirm
+another user's job); the provider key is re-resolved per request, never stored.
+The `gateway` passes every `/v1/*` sub-path through to cloud-api, so the poll/
+content routes need no gateway change; the console `/ai` proxy allow-list adds the
+`v1/videos/{id}[/content]` pattern (hanzoai/console#92).
+
 **zen models**: branded, `owned_by: hanzo`, `premium: true`. Route to `do-ai`
 upstreams (qwen3+/glm/kimi/deepseek — same working key, no GPU). Identity is
 injected at call time via `zenIdentityPrompt`; upstream names are never exposed.
