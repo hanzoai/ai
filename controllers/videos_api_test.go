@@ -16,8 +16,8 @@ package controllers
 
 import (
 	"testing"
+	"time"
 
-	"github.com/hanzoai/ai/model"
 	"github.com/hanzoai/ai/object"
 )
 
@@ -127,11 +127,11 @@ func TestVideoCostCents(t *testing.T) {
 	}
 }
 
-// TestVideoNClampCeiling documents the money-safety invariant: the handler
-// clamps n to [1,4] before any cost math (videoCostCents / reserveBudget), so
-// the reserve/settle can never exceed the ceiling for 4 videos — never an
-// unbounded n and never an int-overflow-to-negative reservation. The clamp is
-// the same one enforced in model.GenerateVideoDOAI (doaiVideoMaxN).
+// TestVideoNClampCeiling documents the money-safety invariant on the per-video
+// cost table: the reservation the async create handler holds is
+// videoCostCents(model, 1), and the settle on completion is the same, so the
+// debit is bounded by the table and never an unbounded/negative amount. This
+// checks the table stays positive across a small ceiling.
 func TestVideoNClampCeiling(t *testing.T) {
 	const maxN = 4
 	for model, per := range videoPricePerVideoCents {
@@ -144,32 +144,85 @@ func TestVideoNClampCeiling(t *testing.T) {
 	}
 }
 
-// TestVideoResponseData maps the model result into the OpenAI images-shaped data
-// array: b64_json (+ mime_type) for the downloaded MP4, and url only when an
-// upstream ever returns a hosted URL.
-func TestVideoResponseData(t *testing.T) {
-	res := &model.VideoGenResult{Videos: []model.GeneratedVideo{
-		{B64JSON: "AAAA", MimeType: "video/mp4"},
-		{URL: "https://cdn/x.mp4"},
-	}}
-	data := videoResponseData(res)
-	if len(data) != 2 {
-		t.Fatalf("len(data) = %d, want 2", len(data))
+// TestVideoJobResponse projects a job into the OpenAI Sora-shaped video object
+// the client sees at create/poll — id, object=="video", model, status, progress
+// — and NEVER leaks the upstream id/provider/key. A failed job surfaces its
+// scrubbed reason under error.message; queued/completed carry no error.
+func TestVideoJobResponse(t *testing.T) {
+	// queued
+	q := &videoJob{id: "video_abc", userModel: "zen3-video", createdAt: time.Now(), status: "queued"}
+	rq := videoJobResponse(q)
+	if rq["id"] != "video_abc" || rq["object"] != "video" || rq["model"] != "zen3-video" {
+		t.Fatalf("queued projection wrong: %+v", rq)
 	}
-	if data[0]["b64_json"] != "AAAA" {
-		t.Errorf("data[0].b64_json = %q", data[0]["b64_json"])
+	if rq["status"] != "queued" || rq["progress"] != 0 {
+		t.Errorf("queued status/progress wrong: %+v", rq)
 	}
-	if data[0]["mime_type"] != "video/mp4" {
-		t.Errorf("data[0].mime_type = %q", data[0]["mime_type"])
+	if _, hasErr := rq["error"]; hasErr {
+		t.Errorf("queued job must not carry error: %+v", rq)
 	}
-	if _, hasURL := data[0]["url"]; hasURL {
-		t.Errorf("data[0] must not carry url when only b64_json is set")
+	if _, hasCreated := rq["created_at"]; !hasCreated {
+		t.Errorf("projection must carry created_at")
 	}
-	if data[1]["url"] != "https://cdn/x.mp4" {
-		t.Errorf("data[1].url = %q", data[1]["url"])
+	// The upstream id must never appear anywhere in the projection.
+	q.upstreamID = "upstream_secret_id"
+	for k, v := range videoJobResponse(q) {
+		if s, ok := v.(string); ok && s == "upstream_secret_id" {
+			t.Errorf("projection leaked upstream id at key %q", k)
+		}
 	}
-	if _, hasB64 := data[1]["b64_json"]; hasB64 {
-		t.Errorf("data[1] must not carry b64_json when only url is set")
+
+	// completed → progress 100, no error
+	c := &videoJob{id: "video_c", userModel: "zen3-video", createdAt: time.Now(), hold: &budgetHold{}}
+	if !c.markCompleted(40) {
+		t.Fatal("first markCompleted must report first=true")
+	}
+	if c.markCompleted(40) {
+		t.Fatal("second markCompleted must be idempotent (first=false)")
+	}
+	rc := videoJobResponse(c)
+	if rc["status"] != "completed" || rc["progress"] != 100 {
+		t.Errorf("completed projection wrong: %+v", rc)
+	}
+
+	// failed → error.message carries the scrubbed reason
+	f := &videoJob{id: "video_f", userModel: "zen3-video", createdAt: time.Now(), hold: &budgetHold{}}
+	if !f.markFailed("failed") {
+		t.Fatal("first markFailed must report first=true")
+	}
+	if f.markFailed("failed") {
+		t.Fatal("second markFailed must be idempotent (first=false)")
+	}
+	f.setFailureReason("upstream said nope")
+	rf := videoJobResponse(f)
+	if rf["status"] != "failed" {
+		t.Errorf("failed status wrong: %+v", rf)
+	}
+	errObj, ok := rf["error"].(map[string]interface{})
+	if !ok || errObj["message"] != "upstream said nope" {
+		t.Errorf("failed error projection wrong: %+v", rf)
+	}
+}
+
+// TestNormalizeVideoStatus folds upstream synonyms into the OpenAI Sora
+// vocabulary the client sees, and treats only completed/failed as terminal.
+func TestNormalizeVideoStatus(t *testing.T) {
+	cases := map[string]string{
+		"queued": "queued", "PENDING": "queued", "created": "queued", "": "queued",
+		"in_progress": "in_progress", "processing": "in_progress", "running": "in_progress",
+		"completed": "completed", "succeeded": "completed", "SUCCESS": "completed",
+		"failed": "failed", "error": "failed", "canceled": "failed", "cancelled": "failed",
+	}
+	for in, want := range cases {
+		if got := normalizeVideoStatus(in); got != want {
+			t.Errorf("normalizeVideoStatus(%q) = %q, want %q", in, got, want)
+		}
+	}
+	if !isTerminalVideoStatus("completed") || !isTerminalVideoStatus("failed") {
+		t.Error("completed/failed must be terminal")
+	}
+	if isTerminalVideoStatus("queued") || isTerminalVideoStatus("in_progress") {
+		t.Error("queued/in_progress must not be terminal")
 	}
 }
 

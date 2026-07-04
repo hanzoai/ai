@@ -342,10 +342,16 @@ func initAPI() {
 	// zen3-image family routes to do-ai's fal-hosted diffusion models.
 	beego.Router("/v1/images/generations", &controllers.ApiController{}, "POST:ImagesGenerations")
 
-	// OpenAI-style text-to-video generation. Same auth + provider routing; the
-	// zen3-video family (and wan2-2-t2v-a14b) route to do-ai's Sora-style async
-	// /v1/videos API.
+	// OpenAI Sora-style ASYNC text-to-video. Same auth + provider routing; the
+	// zen3-video family (and wan2-2-t2v-a14b) route to the spark-video backend's
+	// async /v1/videos API. Create returns a job id immediately; the client polls
+	// {id} and downloads {id}/content — so the pod never holds a request open for
+	// the minutes a generation takes (that ~104s hold was the console-proxy 502).
+	// The static /generations route is registered BEFORE the /:id wildcard so a
+	// POST to /generations can never be captured as an :id.
 	beego.Router("/v1/videos/generations", &controllers.ApiController{}, "POST:VideosGenerations")
+	beego.Router("/v1/videos/:id", &controllers.ApiController{}, "GET:RetrieveVideo")
+	beego.Router("/v1/videos/:id/content", &controllers.ApiController{}, "GET:VideoContent")
 
 	// OpenAI-compatible text-to-speech (/v1/audio/speech). Same auth + model-route
 	// resolution as chat/images/video → a BYO TTS provider works transparently.
