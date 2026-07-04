@@ -57,6 +57,17 @@ var (
 // the provider is set. Until then TelemetryEnabled() reports false and the emit
 // path is skipped. Runs identically in cmd/aid and the embedded cloud binary.
 func InitTelemetry() {
+	// When the host process already owns the trace path — cloud installs a
+	// ZAP-native tracer provider and signals it via OTEL_EXPORTER_ZAP_ENDPOINT —
+	// do NOT fork a competing OTLP provider (that would overwrite the host's
+	// global provider and split the wire). Latch ready and emit GenAI spans
+	// through the host's global tracer, so they ride the host's wire (ZAP).
+	// One provider, one wire. The host owns flush/shutdown of that provider.
+	if strings.TrimSpace(os.Getenv("OTEL_EXPORTER_ZAP_ENDPOINT")) != "" {
+		telemetryReady.Store(true)
+		logs.Info("telemetry: OTel GenAI spans -> host global tracer provider (ZAP wire)")
+		return
+	}
 	endpoint := firstNonEmptyEnv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "OTEL_EXPORTER_OTLP_ENDPOINT")
 	if endpoint == "" {
 		logs.Info("telemetry: disabled (set OTEL_EXPORTER_OTLP_ENDPOINT to emit OTel GenAI spans to o11y)")
@@ -100,6 +111,11 @@ func GenAITracer() trace.Tracer { return otel.Tracer(genaiTracerName) }
 // happens-before with initTelemetry, so telemetryProvider is safely observed.
 func ShutdownTelemetry(ctx context.Context) {
 	if !telemetryReady.Load() {
+		return
+	}
+	// In host-provider (ZAP) mode we never installed our own provider — the host
+	// owns flush/shutdown of the global provider — so telemetryProvider is nil.
+	if telemetryProvider == nil {
 		return
 	}
 	if err := telemetryProvider.Shutdown(ctx); err != nil {
