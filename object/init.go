@@ -167,31 +167,44 @@ func initBuiltInProviders() (string, string, string, string) {
 	}
 	// Real default embedding provider so RAG ingest actually produces vectors. A
 	// "Dummy" provider accepts files but embeds nothing (documentsIndexed:0), which
-	// silently broke ingest. Mirror the gateway's canonical `zen3-embedding` route
-	// (`openai/text-embedding-3-large`): Type "OpenAI" → OpenAI's real embeddings API
-	// with kms://OPENAI_API_KEY. NOTE: inference.do-ai.run serves CHAT models only, not
-	// embeddings, and qwen3-embedding is DOKS-self-hosted (not at that endpoint) — a DO
-	// embedding config HANGS. OpenAI is the safe default: it works when OPENAI_API_KEY
-	// is provisioned, and FAILS FAST (401) if not — never a multi-minute hang. Operators
-	// can repoint this default provider at a self-hosted embedder via the console.
+	// silently broke ingest.
+	//
+	// The embedder MUST call an OpenAI-compatible endpoint the cloud pod reaches
+	// WITHOUT a multi-minute hang. Type "OpenAI" with an EMPTY ProviderUrl targets
+	// api.openai.com directly, and a server-side (in-cluster) embed to that host
+	// crawls ~180s and then fails — so RAG ingest took ~180-210s AND the vector leg
+	// never persisted (writeDocsToVector's sample embed timed out before
+	// ensureVectorCollection ran, so the Qdrant collection was never created;
+	// root-caused 2026-07-04). The fix: point the default embedder at the HANZO
+	// GATEWAY (the SAME base + key the cloud AI client uses — CLOUD_AI_BASE_URL /
+	// CLOUD_AI_API_KEY, one config, no drift), which serves embeddings in <1s and
+	// normalizes every model to KB_EMBED_DIMS (1024). SubType text-embedding-qwen3
+	// is the Hanzo-native, in-catalog embedder (routes to do-ai qwen3-embedding).
+	// Operators can still repoint this default at a self-hosted embedder via the
+	// console; the heal below only rewrites the two KNOWN-BROKEN defaults (Dummy,
+	// or an api.openai.com-direct URL), never an operator's intentional config.
 	realEmbed := func(p *Provider) {
-		p.DisplayName = "OpenAI Embeddings"
+		p.DisplayName = "Hanzo Embeddings"
 		p.Category = "Embedding"
 		p.Type = "OpenAI"
-		p.SubType = "text-embedding-3-large"
-		p.ClientSecret = "kms://OPENAI_API_KEY"
+		p.SubType = defaultEmbedModel()
+		p.ClientSecret = "kms://" + defaultEmbedKeyRef()
+		p.ProviderUrl = defaultEmbedBaseURL()
 		p.State = "Active"
 	}
-	if embeddingProvider == nil {
+	switch {
+	case embeddingProvider == nil:
 		embeddingProvider = &Provider{Owner: "admin", Name: "default-embed", CreatedTime: util.GetCurrentTime(), IsDefault: true}
 		realEmbed(embeddingProvider)
 		_, err = AddProvider(embeddingProvider)
 		if err != nil && !isDuplicateKeyErr(err) {
 			panic(err)
 		}
-	} else if embeddingProvider.Type == "Dummy" {
-		// Upgrade the legacy Dummy default IN PLACE (keep its Name + IsDefault) so
-		// existing deployments self-heal to a real embedder on the next boot.
+	case embedderNeedsHeal(embeddingProvider):
+		// Self-heal the legacy Dummy default AND the external-OpenAI-direct default
+		// (empty/api.openai.com ProviderUrl — the ~180s in-cluster hang) IN PLACE
+		// (keep Name + IsDefault) so existing deployments converge to the gateway on
+		// the next boot. An operator's intentional self-hosted repoint is left alone.
 		realEmbed(embeddingProvider)
 		if _, uerr := UpdateProvider("admin/"+embeddingProvider.Name, embeddingProvider); uerr != nil {
 			fmt.Printf("[init] WARNING: failed to upgrade embedding provider %q to a real embedder: %v\n", embeddingProvider.Name, uerr)
@@ -203,6 +216,53 @@ func initBuiltInProviders() (string, string, string, string) {
 	}
 	sttProviderName := "Browser Built-In"
 	return modelProvider.Name, embeddingProvider.Name, ttsProviderName, sttProviderName
+}
+
+// defaultEmbedBaseURL is the OpenAI-compatible base the default RAG embedder
+// calls. It MUST be a URL the cloud pod reaches without a multi-minute hang: the
+// Hanzo gateway, NOT api.openai.com. Reuses the SAME base the cloud AI client
+// uses (CLOUD_AI_BASE_URL) so there is one gateway config, no drift;
+// HANZO_EMBED_BASE_URL overrides for a bespoke embedder host.
+func defaultEmbedBaseURL() string {
+	for _, k := range []string{"HANZO_EMBED_BASE_URL", "CLOUD_AI_BASE_URL"} {
+		if v := strings.TrimSpace(os.Getenv(k)); v != "" {
+			return strings.TrimRight(v, "/")
+		}
+	}
+	return "https://api.hanzo.ai/v1"
+}
+
+// defaultEmbedModel is the gateway embedding model the default embedder requests.
+// The gateway normalizes every embedding model to KB_EMBED_DIMS (1024);
+// text-embedding-qwen3 is the Hanzo-native, in-catalog embedder.
+func defaultEmbedModel() string {
+	if v := strings.TrimSpace(os.Getenv("HANZO_EMBED_MODEL")); v != "" {
+		return v
+	}
+	return "text-embedding-qwen3"
+}
+
+// defaultEmbedKeyRef is the env var (a kms:// reference name) holding the gateway
+// key the embedder authenticates with — the SAME static key the cloud AI client
+// presents. ResolveProviderSecret resolves it env-first.
+func defaultEmbedKeyRef() string {
+	if v := strings.TrimSpace(os.Getenv("HANZO_EMBED_KEY_REF")); v != "" {
+		return v
+	}
+	return "CLOUD_AI_API_KEY"
+}
+
+// embedderNeedsHeal reports whether the existing default embedding provider is one
+// of the two KNOWN-BROKEN defaults that must be rewritten to the gateway on boot:
+// the legacy "Dummy" (embeds nothing) or an api.openai.com-direct config (empty or
+// openai.com ProviderUrl) that hangs ~180s in-cluster. An operator's intentional
+// self-hosted repoint (any other non-empty, non-openai.com URL) is left untouched.
+func embedderNeedsHeal(p *Provider) bool {
+	if p == nil || p.Type == "Dummy" {
+		return true
+	}
+	u := strings.ToLower(strings.TrimSpace(p.ProviderUrl))
+	return u == "" || strings.Contains(u, "openai.com")
 }
 
 // initLLMProviders bootstraps the LLM provider records needed by the
