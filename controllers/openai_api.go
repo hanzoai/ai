@@ -311,64 +311,67 @@ func resolveProviderForUser(user *iam.User, requestedModel string, lang string) 
 		return nil, user, "", serverError("provider %q not configured in database", route.providerName)
 	}
 
-	// Service accounts configured in BALANCE_EXEMPT_USERS skip balance checks.
-	// This allows internal cloud agent pods to make LLM calls without Commerce
-	// setup. Exemption matches the per-user "owner/name" key (service accounts are
-	// named individually) OR a bare org — via object.BalanceExempt, the SAME shared
-	// definition the router gate uses, so the two can never drift in granularity.
-	orgKey := user.Owner // namespace (X-Org-Id): the org tenant
-	// subject is the billing account WITHIN the namespace: "owner/name" for a
-	// personal-billing org (each member billed independently), the org slug for
-	// a pooled org. The gate read, this backstop, and the usage debit all key
-	// on this one subject.
-	subject := object.BillingSubjectForPrincipal(user.Owner, user.Name, user.Type)
-	isExempt := object.BalanceExempt().Matches(user.Owner, user.Name)
-
-	if !isExempt {
-		// All models require prepaid balance. New accounts receive a $5 starter
-		// credit that works only for non-premium (DO-AI) models.
-		// Premium models (Fireworks, OpenAI Direct, Zen) require the user to
-		// have added funds beyond the starter credit. Balance is per-subject.
-		balance, err := getUserBalance(subject, orgKey)
-		if err != nil {
-			// Fail closed (server-side: cannot verify funds) — never grant on a
-			// balance-lookup transport error.
-			return nil, user, "", serverError("failed to verify account balance: %s", err.Error())
-		}
-
-		if balance <= 0 {
-			return nil, user, "", billingError(
-				"model %q requires a positive balance. Your current balance is $%.2f. "+
-					"Add funds at https://hanzo.ai/billing",
-				requestedModel, balance,
-			)
-		}
-	}
-
-	// Premium models require funds beyond the starter credit.
-	// A balance <= StarterCreditDollars means the user only has free credit.
-	if !isExempt {
-		balance, _ := getUserBalance(subject, orgKey)
-		starterCredit := StarterCreditDollars
-		if cfg := GetModelConfig(); cfg != nil {
-			starterCredit = cfg.StarterCreditDollars()
-		}
-		if route.premium && balance <= starterCredit {
-			return nil, user, "", billingError(
-				"model %q is a premium model requiring a paid balance. "+
-					"Your current balance ($%.2f) is from the starter credit. "+
-					"Add funds at https://hanzo.ai/billing to access premium models",
-				requestedModel, balance,
-			)
-		}
-	}
-
-	if !isExempt {
-		bal, _ := getUserBalance(subject, orgKey)
-		user.Balance = bal
+	// Prepaid-balance + premium-credit gate. Extracted into enforceBalanceGate so
+	// the provider-key (sk-) path in authResolveProvider enforces the IDENTICAL
+	// policy — no auth path can drift (M1).
+	if gateErr := enforceBalanceGate(user, requestedModel, route.premium); gateErr != nil {
+		return nil, user, "", gateErr
 	}
 
 	return provider, user, route.upstreamModel, nil
+}
+
+// enforceBalanceGate applies the prepaid-balance + premium-credit policy to a
+// resolved billing principal and stamps user.Balance. A positive balance is
+// required for ANY model; a premium model additionally requires funds BEYOND the
+// starter credit (a balance <= StarterCreditDollars is free credit only). It
+// returns a typed billingError (402) when the gate fails, a serverError (500)
+// when the balance cannot be verified (fail-closed — never grant on a lookup
+// transport error), or nil to proceed.
+//
+// It is the SINGLE gate shared by the JWT/IAM path (resolveProviderForUser) and
+// the provider-key (sk-) path (authResolveProvider). Previously the sk- branch
+// skipped this gate entirely, so an sk- provider key reached PREMIUM upstreams on
+// starter credit alone (M1). Exempt principals (BALANCE_EXEMPT_USERS — internal
+// cloud-agent pods) bypass. subject is the per-namespace billing account the gate
+// read, the budget reservation, and the usage debit all key on.
+func enforceBalanceGate(user *iam.User, requestedModel string, premium bool) error {
+	if user == nil {
+		return nil
+	}
+	orgKey := user.Owner // namespace (X-Org-Id): the org tenant
+	subject := object.BillingSubjectForPrincipal(user.Owner, user.Name, user.Type)
+	if object.BalanceExempt().Matches(user.Owner, user.Name) {
+		return nil
+	}
+
+	balance, err := getUserBalance(subject, orgKey)
+	if err != nil {
+		return serverError("failed to verify account balance: %s", err.Error())
+	}
+	if balance <= 0 {
+		return billingError(
+			"model %q requires a positive balance. Your current balance is $%.2f. "+
+				"Add funds at https://hanzo.ai/billing",
+			requestedModel, balance,
+		)
+	}
+
+	starterCredit := StarterCreditDollars
+	if cfg := GetModelConfig(); cfg != nil {
+		starterCredit = cfg.StarterCreditDollars()
+	}
+	if premium && balance <= starterCredit {
+		return billingError(
+			"model %q is a premium model requiring a paid balance. "+
+				"Your current balance ($%.2f) is from the starter credit. "+
+				"Add funds at https://hanzo.ai/billing to access premium models",
+			requestedModel, balance,
+		)
+	}
+
+	user.Balance = balance
+	return nil
 }
 
 // iamAuthQuery returns the clientId/clientSecret query string for IAM API auth.
@@ -773,6 +776,14 @@ func (c *ApiController) authResolveProvider(token, requestedModel, orgId string)
 					provider = routeProvider
 				}
 			}
+		}
+		// M1: apply the SAME prepaid-balance + premium-credit gate the JWT/IAM
+		// paths enforce (resolveProviderForUser). Without it an sk- provider key
+		// reached premium upstreams on starter credit alone. The billed owner is
+		// authUser (the provider-row owner resolved just above).
+		if gateErr := enforceBalanceGate(authUser, requestedModel, isPremium); gateErr != nil {
+			err = gateErr
+			return
 		}
 		return
 	}
