@@ -6,7 +6,6 @@
 package controllers
 
 import (
-	"encoding/json"
 	"net/http"
 	"os"
 	"strings"
@@ -32,42 +31,13 @@ func retrievalOwner(authUser *iam.User, token string) string {
 	return ""
 }
 
-// widgetKeyOwner resolves a widget key (hz_*) to its bound IAM org. The owner is
-// taken from the widget KEY — a per-tenant credential — via the WIDGET_KEY_OWNERS
-// config (KMS first, env fallback) mapping key->owner. An unmapped key falls back
-// to WIDGET_DEFAULT_OWNER (a single configured tenant), NEVER a header-derived
-// org. This removes the Origin/Referer trust that allowed cross-tenant RAG reads.
+// widgetKeyOwner resolves a widget key (hz_*) to its bound IAM org via the ONE
+// canonical resolver (object.WidgetKeyOwner) shared with the router balance gate,
+// so a widget key means the same org for both tenant isolation and billing. See
+// object/widget_owner.go for the resolution order (WIDGET_KEY_OWNERS →
+// WIDGET_DEFAULT_OWNER, KMS-or-env). Empty ⇒ unattributable ⇒ callers fail secure.
 func widgetKeyOwner(token string) string {
-	if o, ok := loadWidgetKeyOwners()[token]; ok && o != "" {
-		return o
-	}
-	return strings.TrimSpace(os.Getenv("WIDGET_DEFAULT_OWNER"))
-}
-
-// loadWidgetKeyOwners parses WIDGET_KEY_OWNERS (env or KMS) into a key->owner
-// map. Accepts a JSON object or comma-separated key=value pairs.
-func loadWidgetKeyOwners() map[string]string {
-	raw := os.Getenv("WIDGET_KEY_OWNERS")
-	if raw == "" {
-		if v, err := object.GetKMSSecret("WIDGET_KEY_OWNERS"); err == nil {
-			raw = v
-		}
-	}
-	out := map[string]string{}
-	if raw == "" {
-		return out
-	}
-	if strings.HasPrefix(strings.TrimSpace(raw), "{") {
-		_ = json.Unmarshal([]byte(raw), &out)
-		return out
-	}
-	for _, part := range strings.Split(raw, ",") {
-		kv := strings.SplitN(strings.TrimSpace(part), "=", 2)
-		if len(kv) == 2 {
-			out[strings.TrimSpace(kv[0])] = strings.TrimSpace(kv[1])
-		}
-	}
-	return out
+	return object.WidgetKeyOwner(token)
 }
 
 // retrievalEnabled decides whether to augment the prompt with retrieved docs.
