@@ -16,7 +16,6 @@ package model
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -67,24 +66,25 @@ func TestGetOpenAiModelType_VideoFamily(t *testing.T) {
 	}
 }
 
-// TestGenerateVideoDOAI_Validation rejects an empty prompt / model without any
+// TestCreateVideoDOAI_Validation rejects an empty prompt / model without any
 // network call (fail-fast at the boundary).
-func TestGenerateVideoDOAI_Validation(t *testing.T) {
-	if _, err := GenerateVideoDOAI(context.Background(), "https://x/v1", "k", VideoGenRequest{UpstreamModel: "wan2-2-t2v-a14b"}); err == nil {
+func TestCreateVideoDOAI_Validation(t *testing.T) {
+	if _, _, err := CreateVideoDOAI(context.Background(), "https://x/v1", "k", VideoGenRequest{UpstreamModel: "wan2-2-t2v-a14b"}); err == nil {
 		t.Errorf("empty prompt must error")
 	}
-	if _, err := GenerateVideoDOAI(context.Background(), "https://x/v1", "k", VideoGenRequest{Prompt: "a fox"}); err == nil {
+	if _, _, err := CreateVideoDOAI(context.Background(), "https://x/v1", "k", VideoGenRequest{Prompt: "a fox"}); err == nil {
 		t.Errorf("empty upstream model must error")
 	}
 }
 
-// TestGenerateVideoDOAI_Lifecycle drives the full create → poll → download
-// lifecycle against an httptest server that mimics DO's /v1/videos API, proving
-// the client speaks the discovered contract: POST /videos returns an id, GET
-// /videos/{id} transitions to completed, GET /videos/{id}/content returns MP4
-// bytes the client base64-encodes. It also asserts the Authorization header
-// carries the key and is never placed in the URL.
-func TestGenerateVideoDOAI_Lifecycle(t *testing.T) {
+// TestVideoDOAIAsync_Lifecycle drives the full ASYNC create → poll → download
+// lifecycle against an httptest server that mimics the Sora-style /v1/videos API,
+// proving each primitive speaks the contract: CreateVideoDOAI returns an id +
+// initial status; RetrieveVideoDOAI reports the status transition; and
+// DownloadVideoBytesDOAI returns the raw MP4 bytes (NOT base64 — the handler
+// streams them). It also asserts the Authorization header carries the key and the
+// key is NEVER placed in the URL.
+func TestVideoDOAIAsync_Lifecycle(t *testing.T) {
 	const wantKey = "test-secret-key"
 	mp4 := []byte("\x00\x00\x00\x18ftypmp42FAKEMP4BYTES")
 	var polls int
@@ -122,73 +122,88 @@ func TestGenerateVideoDOAI_Lifecycle(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	res, err := GenerateVideoDOAI(context.Background(), srv.URL+"/v1", wantKey, VideoGenRequest{
+	// CREATE
+	id, status, err := CreateVideoDOAI(context.Background(), srv.URL+"/v1", wantKey, VideoGenRequest{
 		UpstreamModel: "wan2-2-t2v-a14b",
 		Prompt:        "a red fox in snow",
-		N:             1,
 	})
 	if err != nil {
-		t.Fatalf("GenerateVideoDOAI: %v", err)
+		t.Fatalf("CreateVideoDOAI: %v", err)
 	}
-	if len(res.Videos) != 1 {
-		t.Fatalf("len(videos) = %d, want 1", len(res.Videos))
+	if id != "video_abc" {
+		t.Fatalf("create id = %q, want video_abc", id)
 	}
-	got := res.Videos[0]
-	if got.MimeType != "video/mp4" {
-		t.Errorf("mime = %q, want video/mp4", got.MimeType)
+	if status != "queued" {
+		t.Errorf("create status = %q, want queued", status)
 	}
-	if got.B64JSON != base64.StdEncoding.EncodeToString(mp4) {
-		t.Errorf("b64 mismatch: got %q", got.B64JSON)
+
+	// POLL — the first poll is in_progress, the second completed.
+	st1, _, err := RetrieveVideoDOAI(context.Background(), srv.URL+"/v1", wantKey, id)
+	if err != nil {
+		t.Fatalf("RetrieveVideoDOAI #1: %v", err)
+	}
+	if st1 != "in_progress" {
+		t.Errorf("poll #1 status = %q, want in_progress", st1)
+	}
+	st2, _, err := RetrieveVideoDOAI(context.Background(), srv.URL+"/v1", wantKey, id)
+	if err != nil {
+		t.Fatalf("RetrieveVideoDOAI #2: %v", err)
+	}
+	if st2 != "completed" {
+		t.Errorf("poll #2 status = %q, want completed", st2)
+	}
+
+	// DOWNLOAD — raw MP4 bytes, not base64.
+	data, mime, err := DownloadVideoBytesDOAI(context.Background(), srv.URL+"/v1", wantKey, id)
+	if err != nil {
+		t.Fatalf("DownloadVideoBytesDOAI: %v", err)
+	}
+	if mime != "video/mp4" {
+		t.Errorf("mime = %q, want video/mp4", mime)
+	}
+	if string(data) != string(mp4) {
+		t.Errorf("downloaded bytes mismatch")
 	}
 	if polls < 2 {
-		t.Errorf("expected the client to poll until completed, polls=%d", polls)
+		t.Errorf("expected two polls, got %d", polls)
 	}
 }
 
-// TestGenerateVideoDOAI_ContentNotReady treats a JSON body from /content (the
-// upstream placeholder returned before the job is truly done) as an error, never
-// handing the caller a base64-encoded error document as if it were a video.
-func TestGenerateVideoDOAI_ContentNotReady(t *testing.T) {
+// TestRetrieveVideoDOAI_Failed proves a failed job is surfaced as status "failed"
+// with the (scrubbed) upstream reason — NOT as a transport error (the async
+// retrieve reports terminal states in-band so the handler can bill nothing and
+// project the reason).
+func TestRetrieveVideoDOAI_Failed(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.Method == http.MethodPost:
-			w.WriteHeader(http.StatusAccepted)
-			_, _ = w.Write([]byte(`{"id":"v1","object":"video","status":"queued"}`))
-		case strings.HasSuffix(r.URL.Path, "/content"):
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"status":"in_progress"}`))
-		default:
-			_, _ = w.Write([]byte(`{"id":"v1","object":"video","status":"completed","error":null}`))
-		}
-	}))
-	defer srv.Close()
-
-	_, err := GenerateVideoDOAI(context.Background(), srv.URL, "k", VideoGenRequest{
-		UpstreamModel: "wan2-2-t2v-a14b", Prompt: "x", N: 1,
-	})
-	if err == nil || !strings.Contains(err.Error(), "not ready") {
-		t.Fatalf("want content-not-ready error, got %v", err)
-	}
-}
-
-// TestGenerateVideoDOAI_UpstreamFailure surfaces a failed job status as an error
-// (never a silent success), including the upstream reason.
-func TestGenerateVideoDOAI_UpstreamFailure(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost {
-			w.WriteHeader(http.StatusAccepted)
-			_, _ = w.Write([]byte(`{"id":"v1","object":"video","status":"queued"}`))
-			return
-		}
 		_, _ = w.Write([]byte(`{"id":"v1","object":"video","status":"failed","error":{"message":"content policy","type":"invalid_request_error"}}`))
 	}))
 	defer srv.Close()
 
-	_, err := GenerateVideoDOAI(context.Background(), srv.URL, "k", VideoGenRequest{
-		UpstreamModel: "wan2-2-t2v-a14b", Prompt: "x", N: 1,
-	})
-	if err == nil || !strings.Contains(strings.ToLower(err.Error()), "failed") {
-		t.Fatalf("want failure error, got %v", err)
+	status, errMsg, err := RetrieveVideoDOAI(context.Background(), srv.URL, "k", "v1")
+	if err != nil {
+		t.Fatalf("RetrieveVideoDOAI transport error: %v", err)
+	}
+	if status != "failed" {
+		t.Errorf("status = %q, want failed", status)
+	}
+	if !strings.Contains(errMsg, "content policy") {
+		t.Errorf("errMsg = %q, want it to carry the reason", errMsg)
+	}
+}
+
+// TestDownloadVideoBytesDOAI_ContentNotReady treats a JSON body from /content (the
+// upstream placeholder returned before the job is truly done) as an error, never
+// handing the caller a JSON error document as if it were a video.
+func TestDownloadVideoBytesDOAI_ContentNotReady(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"in_progress"}`))
+	}))
+	defer srv.Close()
+
+	_, _, err := DownloadVideoBytesDOAI(context.Background(), srv.URL, "k", "v1")
+	if err == nil || !strings.Contains(err.Error(), "not video media") {
+		t.Fatalf("want content-not-ready error, got %v", err)
 	}
 }
 
@@ -201,49 +216,39 @@ func TestVideoUpstreamError_RateLimit(t *testing.T) {
 	}
 }
 
-// videoLifecycleServer returns an httptest server that drives the create → poll →
-// completed → content lifecycle, serving the given content-type and body for the
-// /content download. It is the shared rig for the download-path tests below.
-func videoLifecycleServer(t *testing.T, contentType string, body []byte) *httptest.Server {
+// videoContentServer returns an httptest server that serves the given
+// content-type + body for the /content download path. It is the shared rig for
+// the download-path tests below.
+func videoContentServer(t *testing.T, contentType string, body []byte) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.Method == http.MethodPost:
-			w.WriteHeader(http.StatusAccepted)
-			_, _ = w.Write([]byte(`{"id":"v1","object":"video","status":"queued"}`))
-		case strings.HasSuffix(r.URL.Path, "/content"):
-			if contentType != "" {
-				w.Header().Set("Content-Type", contentType)
-			}
-			_, _ = w.Write(body)
-		default: // status poll → completed
-			_, _ = w.Write([]byte(`{"id":"v1","object":"video","status":"completed","error":null}`))
+		if contentType != "" {
+			w.Header().Set("Content-Type", contentType)
 		}
+		_, _ = w.Write(body)
 	}))
 }
 
-// TestGenerateVideoDOAI_ContentCapEnforced proves the hard memory ceiling: an
+// TestDownloadVideoBytesDOAI_ContentCapEnforced proves the hard memory ceiling: an
 // upstream /content response one byte past doaiVideoContentMax is rejected, never
-// buffered+base64ed. This is the per-request half of the OOM defense (the pod-wide
-// half is the handler's concurrency semaphore).
-func TestGenerateVideoDOAI_ContentCapEnforced(t *testing.T) {
+// buffered. This is the per-request half of the OOM defense (the pod-wide half is
+// the handler's download concurrency semaphore).
+func TestDownloadVideoBytesDOAI_ContentCapEnforced(t *testing.T) {
 	oversized := make([]byte, doaiVideoContentMax+1) // one byte past the hard ceiling
-	srv := videoLifecycleServer(t, "video/mp4", oversized)
+	srv := videoContentServer(t, "video/mp4", oversized)
 	defer srv.Close()
 
-	_, err := GenerateVideoDOAI(context.Background(), srv.URL, "k", VideoGenRequest{
-		UpstreamModel: "wan2-2-t2v-a14b", Prompt: "x", N: 1,
-	})
+	_, _, err := DownloadVideoBytesDOAI(context.Background(), srv.URL, "k", "v1")
 	if err == nil || !strings.Contains(err.Error(), "exceeds") {
 		t.Fatalf("want content-cap 'exceeds' error, got %v", err)
 	}
 }
 
-// TestGenerateVideoDOAI_ContentTypeAllowlist proves /content is accepted ONLY for
-// video media, a generic binary stream, or a missing header — an allowlist — and
-// every other explicit type (JSON placeholder, HTML/text error page) is rejected
-// rather than base64-encoded and returned as a "clip".
-func TestGenerateVideoDOAI_ContentTypeAllowlist(t *testing.T) {
+// TestDownloadVideoBytesDOAI_ContentTypeAllowlist proves /content is accepted ONLY
+// for video media, a generic binary stream, or a missing header — an allowlist —
+// and every other explicit type (JSON placeholder, HTML/text error page) is
+// rejected rather than returned as a "clip".
+func TestDownloadVideoBytesDOAI_ContentTypeAllowlist(t *testing.T) {
 	mp4 := []byte("\x00\x00\x00\x18ftypmp42REALBYTES")
 
 	accept := []struct{ name, ct, wantMime string }{
@@ -255,16 +260,17 @@ func TestGenerateVideoDOAI_ContentTypeAllowlist(t *testing.T) {
 	}
 	for _, tc := range accept {
 		t.Run("accept/"+tc.name, func(t *testing.T) {
-			srv := videoLifecycleServer(t, tc.ct, mp4)
+			srv := videoContentServer(t, tc.ct, mp4)
 			defer srv.Close()
-			res, err := GenerateVideoDOAI(context.Background(), srv.URL, "k", VideoGenRequest{
-				UpstreamModel: "wan2-2-t2v-a14b", Prompt: "x", N: 1,
-			})
+			data, mime, err := DownloadVideoBytesDOAI(context.Background(), srv.URL, "k", "v1")
 			if err != nil {
 				t.Fatalf("content-type %q must be accepted, got %v", tc.ct, err)
 			}
-			if len(res.Videos) != 1 || res.Videos[0].MimeType != tc.wantMime {
-				t.Fatalf("mime = %q, want %q", res.Videos[0].MimeType, tc.wantMime)
+			if mime != tc.wantMime {
+				t.Fatalf("mime = %q, want %q", mime, tc.wantMime)
+			}
+			if string(data) != string(mp4) {
+				t.Fatalf("downloaded bytes mismatch for %q", tc.ct)
 			}
 		})
 	}
@@ -276,11 +282,9 @@ func TestGenerateVideoDOAI_ContentTypeAllowlist(t *testing.T) {
 	}
 	for _, tc := range reject {
 		t.Run("reject/"+tc.name, func(t *testing.T) {
-			srv := videoLifecycleServer(t, tc.ct, []byte("this is not a video"))
+			srv := videoContentServer(t, tc.ct, []byte("this is not a video"))
 			defer srv.Close()
-			_, err := GenerateVideoDOAI(context.Background(), srv.URL, "k", VideoGenRequest{
-				UpstreamModel: "wan2-2-t2v-a14b", Prompt: "x", N: 1,
-			})
+			_, _, err := DownloadVideoBytesDOAI(context.Background(), srv.URL, "k", "v1")
 			if err == nil || !strings.Contains(err.Error(), "not video media") {
 				t.Fatalf("content-type %q must be rejected, got %v", tc.ct, err)
 			}
@@ -337,47 +341,5 @@ func TestVideoUpstreamError_AuthClassNoBody(t *testing.T) {
 	e := videoUpstreamError("video status poll", http.StatusBadGateway, body)
 	if strings.Contains(e.Error(), "sk-SECRETLEAK123456") {
 		t.Errorf("non-auth status must scrub secrets from the reason: %q", e.Error())
-	}
-}
-
-// TestGenerateVideoDOAI_ContextCancelNoPartialCharge proves the money-safety
-// invariant under client-gone conditions: when the request context is canceled
-// after an earlier video already completed, GenerateVideoDOAI returns nil + the
-// context error (so the handler settles the hold to 0 and bills NOTHING) rather
-// than delivering — and billing — the partial result to a caller who has gone
-// away (client disconnect / upstream proxy idle-timeout).
-func TestGenerateVideoDOAI_ContextCancelNoPartialCharge(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	var creates int
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.Method == http.MethodPost:
-			creates++
-			if creates >= 2 {
-				// Second video requested: the caller is now gone. Cancel the context
-				// so the subsequent poll/create fails with the context error.
-				cancel()
-			}
-			w.WriteHeader(http.StatusAccepted)
-			_, _ = w.Write([]byte(`{"id":"v1","object":"video","status":"queued"}`))
-		case strings.HasSuffix(r.URL.Path, "/content"):
-			w.Header().Set("Content-Type", "video/mp4")
-			_, _ = w.Write([]byte("MP4BYTES"))
-		default: // poll → completed
-			_, _ = w.Write([]byte(`{"id":"v1","object":"video","status":"completed","error":null}`))
-		}
-	}))
-	defer srv.Close()
-
-	res, err := GenerateVideoDOAI(ctx, srv.URL, "k", VideoGenRequest{
-		UpstreamModel: "wan2-2-t2v-a14b", Prompt: "x", N: 2,
-	})
-	if err == nil {
-		t.Fatalf("want context-cancel error (caller gone → bill nothing), got videos=%d", len(res.Videos))
-	}
-	if res != nil {
-		t.Fatalf("on context cancel the result must be nil (no partial delivery), got %+v", res)
 	}
 }
