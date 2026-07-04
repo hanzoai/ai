@@ -283,9 +283,24 @@ func resolveBillingKey(ctx *context.Context) (subject, namespace, userKey string
 		return "", "", ""
 	}
 
-	// Provider keys (sk-), publishable keys (pk-), and widget keys (hz_)
-	// don't map to IAM orgs with Commerce balances — skip.
-	if strings.HasPrefix(token, "sk-") || strings.HasPrefix(token, "pk-") || strings.HasPrefix(token, "hz_") {
+	// Widget keys (hz_) bill the OWNER ORG that minted the key (mirrors the
+	// controller's authResolveProvider): resolve that org here so the router
+	// balance gate applies to widget traffic too. Type "application" (empty name)
+	// collapses the subject to the org ledger. An unattributable widget key (no
+	// owner mapping / default) resolves no subject — the controller refuses it
+	// (fail-secure), so it is never billed-free here either.
+	if strings.HasPrefix(token, "hz_") {
+		owner := strings.TrimSpace(object.WidgetKeyOwner(token))
+		if owner == "" {
+			return "", "", ""
+		}
+		return object.BillingSubjectForPrincipal(owner, "", "application"), owner, owner + "/widget"
+	}
+
+	// Provider keys (sk-) and publishable keys (pk-) don't map to IAM orgs with
+	// Commerce balances here — the controller attributes sk- to its provider
+	// owner; pk- is read-only. Skip in the router gate.
+	if strings.HasPrefix(token, "sk-") || strings.HasPrefix(token, "pk-") {
 		return "", "", ""
 	}
 
