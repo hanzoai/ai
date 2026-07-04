@@ -564,7 +564,8 @@ func isDOAIImageModel(model string) bool {
 
 // isDOAIVideoModel reports whether a model is a do-ai text-to-video model served
 // on the OpenAI Sora-style async /v1/videos API (create → poll → download),
-// handled by model.GenerateVideoDOAI and controllers/videos_api.go. It keys on the
+// handled by the model.{Create,Retrieve,Download}VideoDOAI primitives and
+// controllers/videos_api.go's async endpoints. It keys on the
 // "t2v" marker — present in the do-ai upstream id wan2-2-t2v-a14b — and the Hanzo
 // zen3-video brand family. It deliberately does NOT match a bare "wan" prefix:
 // that would drag a future non-video wan* release (a wan* chat or image model)
