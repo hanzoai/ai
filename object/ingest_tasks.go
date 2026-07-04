@@ -95,9 +95,12 @@ func ingestActivity(_ context.Context, in IngestWorkflowInput) (*IngestStats, er
 // no cross-service auth). Set once at boot. Nil → EnqueueIngest reports
 // ErrTasksNotConfigured and the handler runs ingest inline (always works).
 var (
-	dialer     func(org string) (tasksclient.Client, error)
-	provMu     sync.Mutex
-	orgWorkers sync.Map // org → tasksclient.Client (its ai-ingest worker already started)
+	dialer      func(org string) (tasksclient.Client, error)
+	provMu      sync.Mutex
+	orgWorkers  sync.Map             // org → tasksclient.Client (its ai-ingest worker already started)
+	liveWorkers []tasksworker.Worker // RETAINS started workers for the process lifetime — else the
+	// worker object is unreachable after ingestOrgClient returns and its poll loop can stop, so an
+	// enqueued workflow is accepted by the engine but NEVER picked up (0 workers/queues; describe 404).
 )
 
 // SetIngestDialer injects the per-org dialer. Called once at boot by cloud.
@@ -129,6 +132,11 @@ func ingestOrgClient(org string) (tasksclient.Client, error) {
 	if err := wk.Start(); err != nil {
 		return nil, fmt.Errorf("tasks worker start: %w", err)
 	}
+	liveWorkers = append(liveWorkers, wk) // retain (under provMu) so the poll loop is never GC'd
+	// Let the worker's Subscribe round-trips land before the caller enqueues the first
+	// workflow, so the very first ExecuteWorkflow dispatches to it instead of racing an
+	// unregistered queue (mirrors the tasks engine's own e2e test).
+	time.Sleep(150 * time.Millisecond)
 	orgWorkers.Store(org, cli)
 	return cli, nil
 }
