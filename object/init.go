@@ -265,6 +265,53 @@ func embedderNeedsHeal(p *Provider) bool {
 	return u == "" || strings.Contains(u, "openai.com")
 }
 
+// embedGatewayBaseIfConfigured returns an EXPLICITLY-configured gateway base
+// (HANZO_EMBED_BASE_URL, else CLOUD_AI_BASE_URL) or "" if neither is set. Unlike
+// defaultEmbedBaseURL it has NO hardcoded fallback: the resolution-time override
+// (forceGatewayEmbedder) only fires when an operator has actually wired a gateway
+// base, so a standalone ai deployment with no gateway env is never redirected.
+func embedGatewayBaseIfConfigured() string {
+	for _, k := range []string{"HANZO_EMBED_BASE_URL", "CLOUD_AI_BASE_URL"} {
+		if v := strings.TrimSpace(os.Getenv(k)); v != "" {
+			return strings.TrimRight(v, "/")
+		}
+	}
+	return ""
+}
+
+// forceGatewayEmbedder redirects a known-broken default embedder (the
+// api.openai.com-direct config that hangs ~180s from in-cluster) to the
+// configured Hanzo gateway, IN PLACE, at embedder-resolution time. It is the
+// runtime counterpart of the InitDb seed heal: the seed fixes the DB record for
+// deployments that run InitDb, while this catches the embed path in the fused
+// cloud binary (which reads the persisted DB provider and does not re-seed it),
+// so it works no matter which record the default store resolves. No-op unless a
+// gateway base is configured AND the provider is one of the known-broken defaults
+// — a healthy custom embedder is never touched.
+func forceGatewayEmbedder(p *Provider) {
+	if p == nil || !embedderNeedsHeal(p) {
+		return
+	}
+	base := embedGatewayBaseIfConfigured()
+	if base == "" {
+		return
+	}
+	p.Type = "OpenAI"
+	p.ProviderUrl = base
+	p.SubType = defaultEmbedModel()
+	// Resolve the gateway key here (env-first, exactly as ResolveProviderSecret
+	// does) rather than leaving a kms:// ref: this override runs at resolution
+	// time, possibly AFTER the secret was already resolved for this *Provider, so
+	// a bare ref would reach the HTTP client unresolved (→ 401). Fall back to the
+	// kms:// ref only when the env var is unset (a real KMS resolves it downstream).
+	keyRef := defaultEmbedKeyRef()
+	if v := strings.TrimSpace(os.Getenv(keyRef)); v != "" {
+		p.ClientSecret = v
+	} else {
+		p.ClientSecret = "kms://" + keyRef
+	}
+}
+
 // initLLMProviders bootstraps the LLM provider records needed by the
 // model routing table (see controllers/model_routes.go). Each provider
 // maps to an upstream service with its own API key and base URL.
