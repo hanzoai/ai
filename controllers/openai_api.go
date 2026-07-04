@@ -689,7 +689,17 @@ func (c *ApiController) authResolveProvider(token, requestedModel, orgId string)
 
 	switch {
 	case isWidgetKey(token):
-		// Widget key (hz_...) — restricted model access, no balance check.
+		// Widget key (hz_...) — restricted, token-capped model access (isWidget
+		// caps MaxTokens to widgetMaxTokens downstream). It is NOT free: like an
+		// sk- provider key, a widget call bills the OWNER ORG that minted the key
+		// (widgetKeyOwner → WIDGET_KEY_OWNERS / WIDGET_DEFAULT_OWNER), so the
+		// balance gate + budget reservation + usage debit all engage exactly as
+		// for a normal principal. Type "application" (empty Name) collapses the
+		// billing subject to the org ledger (BillingSubjectForPrincipal). An
+		// unattributable widget key (no owner mapping and no default owner) is a
+		// config error: refuse rather than spend the shared upstream for free —
+		// the same fail-secure invariant the sk- path enforces (every call that
+		// spends the shared upstream bills someone).
 		isWidget = true
 		var widgetUpstream string
 		provider, widgetUpstream, err = resolveProviderFromWidgetKey(token, requestedModel, lang)
@@ -697,9 +707,15 @@ func (c *ApiController) authResolveProvider(token, requestedModel, orgId string)
 			err = authError("Widget authentication failed: %s", err.Error())
 			return
 		}
+		owner := widgetKeyOwner(token)
+		if strings.TrimSpace(owner) == "" {
+			err = authError("widget key is not attributable to a billable owner")
+			return
+		}
+		authUser = &iam.User{Owner: owner, Type: "application"}
 		upstreamModel = widgetUpstream
-		c.Ctx.Input.SetParam("recordUserId", "widget/anonymous")
-		logs.Info("Widget key access: model=%s, upstream=%s", requestedModel, upstreamModel)
+		c.Ctx.Input.SetParam("recordUserId", owner+"/widget")
+		logs.Info("Widget key access: owner=%s, model=%s, upstream=%s", owner, requestedModel, upstreamModel)
 		return
 
 	case isIAMApiKey(token):
