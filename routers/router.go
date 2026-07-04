@@ -347,6 +347,12 @@ func initAPI() {
 	// /v1/videos API.
 	beego.Router("/v1/videos/generations", &controllers.ApiController{}, "POST:VideosGenerations")
 
+	// OpenAI-compatible text-to-speech (/v1/audio/speech). Same auth + model-route
+	// resolution as chat/images/video → a BYO TTS provider works transparently.
+	// Completes native audio+image+video: /v1/audio/speech, /v1/images/generations,
+	// /v1/videos/generations all OpenAI-shaped on the one router.
+	beego.Router("/v1/audio/speech", &controllers.ApiController{}, "POST:AudioSpeech")
+
 	beego.Router("/v1/get-model-routes", &controllers.ApiController{}, "GET:GetModelRoutes")
 	beego.Router("/v1/get-model-route", &controllers.ApiController{}, "GET:GetModelRoute")
 	beego.Router("/v1/add-model-route", &controllers.ApiController{}, "POST:AddModelRoute")
