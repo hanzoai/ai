@@ -85,6 +85,15 @@ func getEmbeddingProviderFromName(owner string, providerName string, lang string
 	if provider.Category != "Embedding" {
 		return nil, nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:The embedding provider: %s is expected to be \")Embedding\" category, got: \"%s\""), provider.GetId(), provider.Category))
 	}
+	// Force a KNOWN-BROKEN default embedder (api.openai.com-direct: empty or
+	// openai.com ProviderUrl) onto the configured Hanzo gateway at RESOLUTION
+	// time. In the fused cloud binary a server-side embed to api.openai.com from
+	// in-cluster crawls ~180s then fails (so RAG ingest hung AND the Qdrant
+	// collection was never created). Doing it here — not only in the InitDb seed
+	// — guarantees ingest/query embed through the gateway regardless of which
+	// record the default store resolves or whether the boot heal ran. A healthy
+	// custom embedder (any other non-empty, non-openai URL) is left untouched.
+	forceGatewayEmbedder(provider)
 	if provider.ClientSecret == "" && provider.Type != "Dummy" {
 		return nil, nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:The embedding provider: %s's client secret should not be empty"), provider.GetId()))
 	}
