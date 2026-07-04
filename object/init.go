@@ -165,20 +165,42 @@ func initBuiltInProviders() (string, string, string, string) {
 			panic(err)
 		}
 	}
+	// Real default embedding provider so RAG ingest actually produces vectors. A
+	// "Dummy" provider accepts files but embeds nothing (documentsIndexed:0), which
+	// silently broke ingest. Type "Local" is the OpenAI-compatible client that HONORS
+	// ProviderUrl (unlike "OpenAI", which hardcodes api.openai.com), so it calls
+	// DigitalOcean GenAI's OpenAI-shaped /v1/embeddings — the SAME inference.do-ai.run
+	// endpoint + DO_AI_API_KEY the working do-ai model provider uses. SubType is DO's
+	// served embedding model.
 	if embeddingProvider == nil {
 		embeddingProvider = &Provider{
-			Owner:       "admin",
-			Name:        "dummy-embedding-provider",
-			CreatedTime: util.GetCurrentTime(),
-			DisplayName: "Dummy Embedding Provider",
-			Category:    "Embedding",
-			Type:        "Dummy",
-			SubType:     "Dummy",
-			IsDefault:   true,
+			Owner:        "admin",
+			Name:         "do-embed",
+			CreatedTime:  util.GetCurrentTime(),
+			DisplayName:  "DigitalOcean Embeddings",
+			Category:     "Embedding",
+			Type:         "Local",
+			SubType:      "qwen3-embedding-0.6b",
+			ProviderUrl:  "https://inference.do-ai.run/v1",
+			ClientSecret: "kms://DO_AI_API_KEY",
+			State:        "Active",
+			IsDefault:    true,
 		}
 		_, err = AddProvider(embeddingProvider)
 		if err != nil && !isDuplicateKeyErr(err) {
 			panic(err)
+		}
+	} else if embeddingProvider.Type == "Dummy" {
+		// Upgrade the legacy Dummy default IN PLACE (keep its Name + IsDefault) so
+		// existing deployments self-heal to real embeddings on the next boot.
+		embeddingProvider.DisplayName = "DigitalOcean Embeddings"
+		embeddingProvider.Type = "Local"
+		embeddingProvider.SubType = "qwen3-embedding-0.6b"
+		embeddingProvider.ProviderUrl = "https://inference.do-ai.run/v1"
+		embeddingProvider.ClientSecret = "kms://DO_AI_API_KEY"
+		embeddingProvider.State = "Active"
+		if _, uerr := UpdateProvider("admin/"+embeddingProvider.Name, embeddingProvider); uerr != nil {
+			fmt.Printf("[init] WARNING: failed to upgrade embedding provider %q to real DO embeddings: %v\n", embeddingProvider.Name, uerr)
 		}
 	}
 	ttsProviderName := "Browser Built-In"
