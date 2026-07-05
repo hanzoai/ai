@@ -17,42 +17,121 @@ package pkgmachine
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
 
-	compute "google.golang.org/api/compute/v1"
-	"google.golang.org/api/option"
+	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/google"
+)
+
+const (
+	computeBaseURL = "https://compute.googleapis.com/compute/v1"
+	computeScope   = "https://www.googleapis.com/auth/compute"
 )
 
 type MachineGcpClient struct {
-	Service   *compute.Service
-	ProjectID string
-	Zone      string
+	httpClient *http.Client
+	projectID  string
+	zone       string
 }
 
-// newMachineGcpClient builds a compute client over the REST transport
-// (google.golang.org/api, JSON/HTTP). credentialsJSON is the service-account
-// key; when empty, Application Default Credentials are used (in-cluster
-// workload identity). projectID and zone scope every instance call.
+// computeInstance is the subset of the compute REST instance resource this
+// adapter maps. JSON over HTTP — no SDK, no gRPC.
+type computeInstance struct {
+	Name               string                `json:"name"`
+	Id                 string                `json:"id"`
+	CreationTimestamp  string                `json:"creationTimestamp"`
+	LastStartTimestamp string                `json:"lastStartTimestamp"`
+	Zone               string                `json:"zone"`
+	MachineType        string                `json:"machineType"`
+	Status             string                `json:"status"`
+	SourceMachineImage string                `json:"sourceMachineImage"`
+	CpuPlatform        string                `json:"cpuPlatform"`
+	Labels             map[string]string     `json:"labels"`
+	Disks              []computeDisk         `json:"disks"`
+	NetworkInterfaces  []computeNetworkIface `json:"networkInterfaces"`
+}
+
+type computeDisk struct {
+	GuestOsFeatures []computeGuestOsFeature `json:"guestOsFeatures"`
+}
+
+type computeGuestOsFeature struct {
+	Type string `json:"type"`
+}
+
+type computeNetworkIface struct {
+	NetworkIP     string                `json:"networkIP"`
+	AccessConfigs []computeAccessConfig `json:"accessConfigs"`
+}
+
+type computeAccessConfig struct {
+	NatIP string `json:"natIP"`
+}
+
+type computeInstanceList struct {
+	Items []computeInstance `json:"items"`
+}
+
+// gcpTokenSource returns an OAuth2 token source over pure HTTP token exchange:
+// the service-account JSON when supplied, else Application Default Credentials
+// (in-cluster workload identity). No gRPC is involved.
+func gcpTokenSource(ctx context.Context, credentialsJSON string) (oauth2.TokenSource, error) {
+	if credentialsJSON != "" {
+		cfg, err := google.JWTConfigFromJSON([]byte(credentialsJSON), computeScope)
+		if err != nil {
+			return nil, err
+		}
+		return cfg.TokenSource(ctx), nil
+	}
+	return google.DefaultTokenSource(ctx, computeScope)
+}
+
 func newMachineGcpClient(projectID string, credentialsJSON string, zone string) (MachineGcpClient, error) {
 	ctx := context.Background()
-
-	var opts []option.ClientOption
-	if credentialsJSON != "" {
-		opts = append(opts, option.WithCredentialsJSON([]byte(credentialsJSON)))
-	}
-
-	service, err := compute.NewService(ctx, opts...)
+	ts, err := gcpTokenSource(ctx, credentialsJSON)
 	if err != nil {
 		return MachineGcpClient{}, err
 	}
-
-	return MachineGcpClient{Service: service, ProjectID: projectID, Zone: zone}, nil
+	return MachineGcpClient{httpClient: oauth2.NewClient(ctx, ts), projectID: projectID, zone: zone}, nil
 }
 
-func getMachineFromComputeInstance(instance *compute.Instance) *Machine {
+// do issues an authenticated JSON request and decodes a 2xx body into out
+// (out may be nil). A non-2xx response is a hard error with a bounded body.
+func (client MachineGcpClient) do(ctx context.Context, method string, endpoint string, out interface{}) error {
+	req, err := http.NewRequestWithContext(ctx, method, endpoint, nil)
+	if err != nil {
+		return err
+	}
+
+	resp, err := client.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return fmt.Errorf("compute API %s %s: %s", method, resp.Status, string(body))
+	}
+
+	if out != nil {
+		return json.NewDecoder(resp.Body).Decode(out)
+	}
+	return nil
+}
+
+func (client MachineGcpClient) instancesURL() string {
+	return fmt.Sprintf("%s/projects/%s/zones/%s/instances", computeBaseURL, client.projectID, client.zone)
+}
+
+func getMachineFromComputeInstance(instance *computeInstance) *Machine {
 	machine := &Machine{
 		Name:        instance.Name,
-		Id:          fmt.Sprintf("%d", instance.Id),
+		Id:          instance.Id,
 		CreatedTime: getLocalTimestamp(instance.CreationTimestamp),
 		UpdatedTime: getLocalTimestamp(instance.LastStartTimestamp),
 		DisplayName: instance.Name,
@@ -83,15 +162,16 @@ func getMachineFromComputeInstance(instance *compute.Instance) *Machine {
 
 func (client MachineGcpClient) GetMachines(lang string) ([]*Machine, error) {
 	ctx := context.Background()
-	resp, err := client.Service.Instances.List(client.ProjectID, client.Zone).MaxResults(100).Context(ctx).Do()
-	if err != nil {
+	endpoint := fmt.Sprintf("%s?maxResults=100", client.instancesURL())
+
+	var list computeInstanceList
+	if err := client.do(ctx, http.MethodGet, endpoint, &list); err != nil {
 		return nil, err
 	}
 
 	machines := []*Machine{}
-	for _, instance := range resp.Items {
-		machine := getMachineFromComputeInstance(instance)
-		machines = append(machines, machine)
+	for i := range list.Items {
+		machines = append(machines, getMachineFromComputeInstance(&list.Items[i]))
 	}
 
 	return machines, nil
@@ -99,13 +179,14 @@ func (client MachineGcpClient) GetMachines(lang string) ([]*Machine, error) {
 
 func (client MachineGcpClient) GetMachine(name string, lang string) (*Machine, error) {
 	ctx := context.Background()
-	instance, err := client.Service.Instances.Get(client.ProjectID, client.Zone, name).Context(ctx).Do()
-	if err != nil {
+	endpoint := fmt.Sprintf("%s/%s", client.instancesURL(), url.PathEscape(name))
+
+	var instance computeInstance
+	if err := client.do(ctx, http.MethodGet, endpoint, &instance); err != nil {
 		return nil, err
 	}
 
-	machine := getMachineFromComputeInstance(instance)
-	return machine, nil
+	return getMachineFromComputeInstance(&instance), nil
 }
 
 func (client MachineGcpClient) UpdateMachineState(name string, state string, lang string) (bool, string, error) {
@@ -118,18 +199,19 @@ func (client MachineGcpClient) UpdateMachineState(name string, state string, lan
 		return false, fmt.Sprintf("Instance: [%s] is not found", name), nil
 	}
 
-	instanceId := machine.Id
-
+	var action string
 	switch state {
 	case "Running":
-		_, err = client.Service.Instances.Start(client.ProjectID, client.Zone, instanceId).Context(context.Background()).Do()
+		action = "start"
 	case "Stopped":
-		_, err = client.Service.Instances.Stop(client.ProjectID, client.Zone, instanceId).Context(context.Background()).Do()
+		action = "stop"
 	default:
 		return false, fmt.Sprintf("Unsupported state: %s", state), nil
 	}
 
-	if err != nil {
+	ctx := context.Background()
+	endpoint := fmt.Sprintf("%s/%s/%s", client.instancesURL(), url.PathEscape(name), action)
+	if err := client.do(ctx, http.MethodPost, endpoint, nil); err != nil {
 		return false, "", err
 	}
 
