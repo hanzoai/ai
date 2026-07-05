@@ -76,7 +76,6 @@ require (
 	golang.org/x/net v0.55.0
 	golang.org/x/text v0.38.0
 	golang.org/x/time v0.15.0
-	google.golang.org/api v0.275.0
 	google.golang.org/genai v1.10.0
 	k8s.io/api v0.35.0
 	k8s.io/apimachinery v0.35.0
@@ -87,7 +86,6 @@ require (
 )
 
 require (
-	cloud.google.com/go/auth/oauth2adapt v0.2.8 // indirect
 	filippo.io/edwards25519 v1.2.0 // indirect
 	github.com/ClickHouse/ch-go v0.71.0 // indirect
 	github.com/alibabacloud-go/alibabacloud-gateway-spi v0.0.5 // indirect
@@ -193,6 +191,7 @@ require (
 	go.yaml.in/yaml/v2 v2.4.4 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/image v0.41.0 // indirect
+	google.golang.org/api v0.275.0 // indirect
 	google.golang.org/grpc v1.81.1 // indirect
 	gopkg.in/evanphx/json-patch.v4 v4.13.0 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
