@@ -16,6 +16,7 @@ package object
 
 import (
 	"fmt"
+	"net/http"
 	"time"
 
 	metric "github.com/luxfi/metric"
@@ -89,6 +90,18 @@ func GetPrometheusInfo() (*PrometheusInfo, error) {
 		}
 	}
 	return res, nil
+}
+
+// MetricsHandler returns the Prometheus text-exposition handler for GET
+// /v1/metrics, bound to the SAME DefaultRegistry the metric vars above register
+// into (the package-level metric.NewGaugeVec / NewHistogramVec helpers delegate
+// to DefaultRegistry). This must NOT use metric.Handler(): that convenience
+// wrapper binds a fresh, throwaway registry, so it exposes an EMPTY scrape
+// regardless of what has been recorded — the endpoint would answer 200 with a
+// zero-length body forever. Binding DefaultRegistry mirrors GetPrometheusInfo,
+// which reads the same registry: one registry, one source of truth.
+func MetricsHandler() http.Handler {
+	return metric.HandlerFor(metric.DefaultRegistry)
 }
 
 func getHistogramVecInfo(metricFamily *metric.MetricFamily) []HistogramVecInfo {
