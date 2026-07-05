@@ -31,6 +31,16 @@ import "strings"
 
 func getContextLength(typ string) int {
 	typ = strings.ToLower(typ)
+	// Zen models (zen5*, zen-agent, zen3*, …) front large-context upstreams
+	// (deepseek-v4 / glm / qwen3 / minimax — all ≥128K). They do NOT match the
+	// provider branches below (the routed upstream name isn't in `typ`), so
+	// without this they fell through to the 4096 fallback — which is smaller
+	// than the console's grounded assistant system prompt (~4190 tokens), so
+	// EVERY console chat request 402'd "exceeds maximum token count: 4096".
+	// 131072 is the safe floor across the zen ladder (nano→max).
+	if strings.HasPrefix(typ, "zen") {
+		return 131072
+	}
 	if strings.Contains(typ, "deepseek") {
 		if strings.Contains(typ, "distill") {
 			if strings.Contains(typ, "qwen") {
@@ -258,5 +268,8 @@ func getContextLength(typ string) int {
 			return 131072
 		}
 	}
-	return 4096
+	// Unknown model → 16K, not 4096. A 4096 fallback silently truncates/402s any
+	// prompt over ~4k tokens (system prompts, RAG context, long chats) on models
+	// this table doesn't recognise; 16384 is a safe modern minimum.
+	return 16384
 }
