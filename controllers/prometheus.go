@@ -16,8 +16,6 @@
 package controllers
 
 import (
-	metric "github.com/luxfi/metric"
-
 	"github.com/hanzoai/ai/object"
 )
 
@@ -52,5 +50,5 @@ func (c *ApiController) GetMetrics() {
 		return
 	}
 
-	metric.Handler().ServeHTTP(c.Ctx.ResponseWriter, c.Ctx.Request)
+	object.MetricsHandler().ServeHTTP(c.Ctx.ResponseWriter, c.Ctx.Request)
 }
