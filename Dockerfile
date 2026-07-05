@@ -25,7 +25,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 COPY . .
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=0 go build -ldflags="-w -s" -o server ./cmd/aid
+    CGO_ENABLED=0 go build -tags metrics -ldflags="-w -s" -o server ./cmd/aid
 
 
 FROM public.ecr.aws/docker/library/alpine:3.21 AS standard
