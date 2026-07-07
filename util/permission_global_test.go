@@ -77,4 +77,11 @@ func TestGlobalAdminOrgsEnvOverride(t *testing.T) {
 	if IsGlobalAdmin(&iam.User{Owner: "built-in", Name: "a", IsAdmin: true}) {
 		t.Error("override admin,hanzo: built-in is NOT listed, so not global under this override")
 	}
+	// The exact /get-account acceptance pairing under the live config: z@hanzo
+	// (owner=hanzo) → true (its all-orgs masquerade works), a customer org owner
+	// (maxpower/dave) → false (never a platform admin), even though maxpower/dave
+	// IS an org-level admin.
+	if IsGlobalAdmin(&iam.User{Owner: "maxpower", Name: "dave", IsAdmin: true}) {
+		t.Error("override admin,hanzo: a customer org owner (maxpower) is NOT global")
+	}
 }
