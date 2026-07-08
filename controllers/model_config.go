@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/beego/beego/logs"
+	"github.com/hanzoai/ai/router"
 	"gopkg.in/yaml.v3"
 )
 
@@ -43,8 +44,21 @@ type ModelConfigFile struct {
 	Services       ServiceEndpoints    `yaml:"services"`
 	Cache          CacheTTLs           `yaml:"cache"`
 	Features       FeatureFlags        `yaml:"features"`
+	Router         RouterConfigDef     `yaml:"router"`
 	DefaultPricing ModelPriceDef       `yaml:"default_pricing"`
 	Models         map[string]ModelDef `yaml:"models"`
+}
+
+// RouterConfigDef configures the virtual `auto`/`zen-router` model. When
+// disabled (the default) `auto` is not a routable model and behaves like any
+// other unknown id. When enabled, a chat request for `auto` is classified and
+// mapped to a concrete servable model before provider/pricing/billing
+// resolution — so the request bills and reports the model that served it.
+type RouterConfigDef struct {
+	Enabled     bool                `yaml:"enabled"`
+	Endpoint    string              `yaml:"endpoint"`     // zen-router base URL; "" = heuristic only
+	Prefer      map[string][]string `yaml:"prefer"`       // task tag → ordered model ids ("default" catch-all)
+	CostCeiling float64             `yaml:"cost_ceiling"` // advisory per-1k cost cap forwarded as SLO
 }
 
 // ServiceEndpoints holds URLs for external pricing/model services.
@@ -108,6 +122,7 @@ type ModelConfig struct {
 	pricing  map[string]modelPrice // lowercase key → price
 	prompts  map[string]string     // lowercase key → identity prompt
 	features FeatureFlags
+	router   RouterConfigDef
 	defaults modelPrice
 
 	// Live refresh state
@@ -237,6 +252,16 @@ func (mc *ModelConfig) applyConfig(file *ModelConfigFile) error {
 		pricingURL = envURL
 	}
 
+	// Router config. Env overrides mirror the pricing-URL pattern so ops can flip
+	// routing/endpoint via the deployment without editing the ConfigMap.
+	routerCfg := file.Router
+	if envEndpoint := os.Getenv("ROUTER_ENDPOINT"); envEndpoint != "" {
+		routerCfg.Endpoint = envEndpoint
+	}
+	if os.Getenv("ROUTER_ENABLED") == "true" {
+		routerCfg.Enabled = true
+	}
+
 	pricingTTL := 6 * time.Hour
 	if file.Cache.PricingTTL != "" {
 		if d, err := time.ParseDuration(file.Cache.PricingTTL); err == nil {
@@ -259,6 +284,7 @@ func (mc *ModelConfig) applyConfig(file *ModelConfigFile) error {
 	mc.pricing = pricing
 	mc.prompts = prompts
 	mc.features = file.Features
+	mc.router = routerCfg
 	mc.defaults = defaults
 	mc.pricingURL = pricingURL
 	mc.pricingTTL = pricingTTL
@@ -416,6 +442,34 @@ func (mc *ModelConfig) PremiumGateEnabled() bool {
 	mc.mu.RLock()
 	defer mc.mu.RUnlock()
 	return mc.features.PremiumGate
+}
+
+// RouterEnabled reports whether the virtual `auto`/`zen-router` model is active.
+func (mc *ModelConfig) RouterEnabled() bool {
+	mc.mu.RLock()
+	defer mc.mu.RUnlock()
+	return mc.router.Enabled
+}
+
+// BuildRouterClient assembles a router.Client from the config when routing is
+// enabled. `known` restricts the choice to models the caller can serve for the
+// current org (typically resolveModelRouteForOrg != nil). Returns ok=false when
+// routing is disabled. The returned client is cheap to build per request.
+func (mc *ModelConfig) BuildRouterClient(known func(string) bool) (router.Client, bool) {
+	mc.mu.RLock()
+	defer mc.mu.RUnlock()
+	if !mc.router.Enabled {
+		return router.Client{}, false
+	}
+	return router.Client{
+		Endpoint: mc.router.Endpoint,
+		Timeout:  router.DefaultTimeout,
+		Policy: router.Policy{
+			Prefer:      mc.router.Prefer,
+			CostCeiling: mc.router.CostCeiling,
+		},
+		Known: known,
+	}, true
 }
 
 // ── Admin endpoint ──────────────────────────────────────────────────────
