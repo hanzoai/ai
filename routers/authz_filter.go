@@ -85,7 +85,7 @@ var globalAdminEndpoints = map[string]struct{}{
 	// Model routing config.
 	"get-model-routes": {}, "get-model-route": {},
 	"add-model-route": {}, "update-model-route": {}, "delete-model-route": {},
-	"reload-model-config": {},
+	"admin/reload-model-config": {}, "admin/refresh-model-pricing": {},
 	// Storage provider credentials.
 	"get-storage-providers": {},
 	// Cluster topology / infrastructure.
