@@ -28,7 +28,9 @@ features:
 # classifier — so auto works with ZERO extra infrastructure. Env overrides:
 # ROUTER_ENABLED=true, ROUTER_ENDPOINT=<url>.
 router:
-  enabled: false
+  enabled: false          # global auto-routing default (AutoRouting); org/"*" OrgSettings rows override
+  # default_session_routing has no conf flag — its conf-level default is disabled;
+  # set it per-org or platform-wide via an OrgSettings row (owner "*").
   endpoint: ""            # e.g. http://engine.hanzo.svc:3000 (zen-router via hanzo-engine)
   cost_ceiling: 0.0       # advisory per-1k cost cap, forwarded to the engine as SLO
   prefer:                 # task tag → ordered model ids; first servable wins ("default" = catch-all)
