@@ -116,6 +116,55 @@ ZAP defines the fast native path from API gateway to AI inference:
 
 Full model list: `GET /api/models`
 
+## Auto-routing (`auto` / `zen-router`)
+
+Opt-in virtual model that picks the best concrete model per request. Send
+`"model": "auto"` (alias `"zen-router"`) and the request is classified into a
+coarse task (code, reasoning, math, creative, vision, long-context, cheap-chat,
+general) and mapped to the first **servable** model in the matching preference
+list — *before* provider, pricing, and billing resolution. So an `auto` request
+is billed and reported as exactly the model that served it.
+
+Enable it in `conf/models.yaml` (the `cloud-api-models` ConfigMap in prod), or
+via env `ROUTER_ENABLED=true` / `ROUTER_ENDPOINT=<url>`:
+
+```yaml
+router:
+  enabled: true
+  endpoint: ""          # optional zen-router URL (see below); "" = built-in heuristic
+  cost_ceiling: 0.0
+  prefer:
+    code:       [zen4-coder, zen5-coder, qwen3-coder, gpt-5.3-codex]
+    reasoning:  [zen4-thinking, deepseek-reasoner, zen4-ultra]
+    cheap_chat: [zen4-mini, zen5-mini, gpt-4o-mini]
+    default:    [zen4, zen5, gpt-4o]
+```
+
+```bash
+curl -H "Authorization: Bearer hk-YOUR-API-KEY" \
+  -H "X-Max-Cost: 2.0" -H "X-Max-Latency-Ms: 800" \
+  https://api.hanzo.ai/v1/chat/completions \
+  -d '{"model":"auto","messages":[{"role":"user","content":"refactor this function"}]}'
+# → response header:  X-Routed-Model: zen4-coder
+# → response body:    {"model":"zen4-coder", ...}
+```
+
+- **Transparency**: the `X-Routed-Model` response header (and the `model` field
+  in the body) report the model that served the request.
+- **SLO** (optional): `X-Max-Cost` (per-1k, float) and `X-Max-Latency-Ms` (int)
+  headers express a per-request budget, forwarded to the engine strategy.
+- **Two strategies**: with `endpoint` set, ai POSTs `{prompt, tasks?, slo}` to
+  `{endpoint}/route` and uses its `{model, task, confidence}` reply — a learned
+  **zen-router** ([huggingface.co/zenlm/zen-router](https://huggingface.co/zenlm/zen-router))
+  served OpenAI-compatibly by [hanzo-engine](https://github.com/hanzoai/engine).
+  On **any** error (or with no endpoint) it falls back to a built-in pure-Go
+  heuristic (a faithful port of hanzo-router's classifier), so `auto` works with
+  **zero extra infrastructure**. The learned zen-router is the quality upgrade
+  over the heuristic — same interface, better routing.
+- **Per-org**: routing enable is deployment-global (there is no per-org settings
+  object yet); the *resolved* model id still goes through per-org `ModelRoute`
+  resolution and pricing, so orgs keep their overrides for whatever `auto` picks.
+
 ## Quick Start
 
 ```bash
