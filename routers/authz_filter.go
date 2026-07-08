@@ -86,6 +86,9 @@ var globalAdminEndpoints = map[string]struct{}{
 	"get-model-routes": {}, "get-model-route": {},
 	"add-model-route": {}, "update-model-route": {}, "delete-model-route": {},
 	"admin/reload-model-config": {}, "admin/refresh-model-pricing": {},
+	// Per-org feature settings (auto-routing enable/disable, …).
+	"get-org-settings-list": {}, "get-org-settings": {},
+	"add-org-settings": {}, "update-org-settings": {}, "delete-org-settings": {},
 	// Storage provider credentials.
 	"get-storage-providers": {},
 	// Cluster topology / infrastructure.
