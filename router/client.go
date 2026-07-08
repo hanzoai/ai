@@ -68,33 +68,65 @@ type engineRequest struct {
 	Slo    Slo      `json:"slo"`
 }
 
-// engineResponse is the /route wire contract returned by the engine.
+// engineResponse is the /route wire contract returned by the engine. Features is
+// the OPTIONAL frozen-backbone embedding the engine may return alongside its
+// choice; it is tolerated when absent and passed through to the routing ledger
+// for training (never prompt text).
 type engineResponse struct {
-	Model      string  `json:"model"`
-	Task       string  `json:"task"`
-	Confidence float64 `json:"confidence"`
+	Model      string    `json:"model"`
+	Task       string    `json:"task"`
+	Confidence float64   `json:"confidence"`
+	Features   []float64 `json:"features,omitempty"`
+}
+
+// Source labels which strategy produced a Decision.
+const (
+	SourceEngine    = "engine"
+	SourceHeuristic = "heuristic"
+)
+
+// Decision is the full outcome of resolving a request: the chosen model, the
+// task it was classified as, the engine confidence (0 for the heuristic), the
+// Source that produced it, and the engine's optional feature vector. It carries
+// exactly what the routing ledger records — no prompt text.
+type Decision struct {
+	Model      string
+	Task       Task
+	Confidence float64
+	Source     string
+	Features   []float64
 }
 
 // Route resolves req to a concrete model id and the task it was classified as.
-// It never errors: on any engine failure it returns the heuristic decision.
+// It never errors: on any engine failure it returns the heuristic decision. It
+// is a thin projection of RouteDecision for callers that only need the id.
 func (c Client) Route(ctx context.Context, req Request, slo Slo) (model string, task Task) {
+	d := c.RouteDecision(ctx, req, slo)
+	return d.Model, d.Task
+}
+
+// RouteDecision resolves req to a full Decision (model, task, confidence, source,
+// features). It never errors: on any engine failure it returns the heuristic
+// decision (Source == SourceHeuristic, no confidence or features).
+func (c Client) RouteDecision(ctx context.Context, req Request, slo Slo) Decision {
 	if c.Endpoint != "" {
-		if m, t, ok := c.routeEngine(ctx, req, slo); ok {
-			return m, t
+		if d, ok := c.routeEngine(ctx, req, slo); ok {
+			return d
 		}
 	}
 	t := Classify(req)
-	if m := c.Policy.ForTask(t, c.Known); m != "" {
-		return m, t
+	m := c.Policy.ForTask(t, c.Known)
+	if m == "" {
+		// Last resort: ignore servability so `auto` never dead-ends on a strict
+		// predicate — a misrouted-but-listed model is better than an empty id.
+		m = c.Policy.ForTask(t, nil)
 	}
-	// Last resort: ignore servability so `auto` never dead-ends on a strict
-	// predicate — a misrouted-but-listed model is better than an empty id.
-	return c.Policy.ForTask(t, nil), t
+	return Decision{Model: m, Task: t, Source: SourceHeuristic}
 }
 
 // routeEngine performs the constrained /route call. Returns ok=false on any
 // error so the caller falls back to the heuristic.
-func (c Client) routeEngine(ctx context.Context, req Request, slo Slo) (string, Task, bool) {
+func (c Client) routeEngine(ctx context.Context, req Request, slo Slo) (Decision, bool) {
 	timeout := c.Timeout
 	if timeout <= 0 {
 		timeout = DefaultTimeout
@@ -104,12 +136,12 @@ func (c Client) routeEngine(ctx context.Context, req Request, slo Slo) (string, 
 
 	body, err := json.Marshal(engineRequest{Prompt: req.Text, Slo: slo})
 	if err != nil {
-		return "", "", false
+		return Decision{}, false
 	}
 	url := strings.TrimRight(c.Endpoint, "/") + "/route"
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
-		return "", "", false
+		return Decision{}, false
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 
@@ -119,26 +151,26 @@ func (c Client) routeEngine(ctx context.Context, req Request, slo Slo) (string, 
 	}
 	resp, err := cli.Do(httpReq)
 	if err != nil {
-		return "", "", false
+		return Decision{}, false
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return "", "", false
+		return Decision{}, false
 	}
 	var out engineResponse
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<16)).Decode(&out); err != nil {
-		return "", "", false
+		return Decision{}, false
 	}
 
 	// Prefer an explicit, servable model; else map the returned task via the
 	// policy table (an engine that emits only a task label).
 	if out.Model != "" && (c.Known == nil || c.Known(out.Model)) {
-		return out.Model, Task(out.Task), true
+		return Decision{Model: out.Model, Task: Task(out.Task), Confidence: out.Confidence, Source: SourceEngine, Features: out.Features}, true
 	}
 	if out.Task != "" {
 		if m := c.Policy.ForTask(Task(out.Task), c.Known); m != "" {
-			return m, Task(out.Task), true
+			return Decision{Model: m, Task: Task(out.Task), Confidence: out.Confidence, Source: SourceEngine, Features: out.Features}, true
 		}
 	}
-	return "", "", false
+	return Decision{}, false
 }
