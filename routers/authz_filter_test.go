@@ -62,7 +62,7 @@ func TestRequiresGlobalAdminClassification(t *testing.T) {
 	sensitive := []string{
 		"get-providers", "get-provider", "get-global-providers",
 		"add-provider", "update-provider", "delete-provider",
-		"get-storage-providers", "get-model-routes", "reload-model-config",
+		"get-storage-providers", "get-model-routes", "admin/reload-model-config", "admin/refresh-model-pricing",
 		"get-nodes", "get-pods", "get-k8s-status",
 	}
 	for _, e := range sensitive {
