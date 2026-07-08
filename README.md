@@ -149,6 +149,32 @@ curl -H "Authorization: Bearer hk-YOUR-API-KEY" \
 # → response body:    {"model":"zen4-coder", ...}
 ```
 
+### Per-org enable/disable
+
+Routing can be overridden per org via the admin `OrgSettings` surface
+(`/v1/*-org-settings`, global-admin-gated like `/v1/*-model-route`). An org row
+carries `autoRouting`: `""` (unset), `"enabled"`, or `"disabled"`. It blends with
+the global `router.enabled` flag as follows (`AutoRoutingActive`):
+
+| global `router.enabled` | org `""` (unset) | org `"enabled"` | org `"disabled"` |
+|-------------------------|------------------|-----------------|------------------|
+| **true**                | route            | route           | **off** (no rewrite, no header) |
+| **false**               | off              | route¹          | off              |
+
+¹ Per-org opt-in routes even when the global flag is off, but ONLY when router
+config is present (a `prefer` table or an `endpoint`) — otherwise there is nothing
+to route with and `auto` is left unchanged.
+
+When routing is not active for an org, an `auto`/`zen-router` request is left
+untouched — no `X-Routed-Model` header, exactly its pre-routing behavior. Set an
+org's preference with, e.g.:
+
+```bash
+curl -X POST "$CLOUD_ADMIN/v1/update-org-settings?owner=<org>" \
+  -H "Content-Type: application/json" -b "$ADMIN_SESSION" \
+  -d '{"owner":"<org>","autoRouting":"disabled"}'
+```
+
 - **Transparency**: the `X-Routed-Model` response header (and the `model` field
   in the body) report the model that served the request.
 - **SLO** (optional): `X-Max-Cost` (per-1k, float) and `X-Max-Latency-Ms` (int)
