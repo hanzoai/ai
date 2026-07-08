@@ -20,13 +20,22 @@ import (
 	"github.com/hanzoai/dbx"
 )
 
-// Auto-routing preference values for OrgSettings.AutoRouting. The empty string
-// means "unset" — the global router flag decides. See resolveAutoModel.
+// Auto-routing preference values for OrgSettings.AutoRouting and
+// OrgSettings.DefaultSessionRouting. The empty string means "unset" — resolution
+// falls through to the "*" global-default row and then the conf file. See
+// resolveAutoModel and effectiveAutoRouting.
 const (
 	AutoRoutingUnset    = ""
 	AutoRoutingEnabled  = "enabled"
 	AutoRoutingDisabled = "disabled"
 )
+
+// GlobalDefaultOwner is the reserved OrgSettings.Owner for the platform-wide
+// default row. Its writes are RequireGlobalAdmin-gated exactly like any other
+// org's; it is read as a fallback between a real org's row and the conf file. No
+// real request ever resolves its org to "*" (GetEffectiveOrg derives the org from
+// the verified principal), so this owner is never mistaken for a tenant.
+const GlobalDefaultOwner = "*"
 
 // OrgSettings holds per-org overrides for platform features. One row per org
 // (Owner is the sole primary key), mirroring the ModelRoute storage pattern.
@@ -36,9 +45,15 @@ type OrgSettings struct {
 	UpdatedTime string `json:"updatedTime"`
 
 	// AutoRouting overrides the global auto-routing flag for this org:
-	// "" (unset) → global flag decides, "enabled" → opt in even if global off
-	// (when router config is present), "disabled" → opt out.
+	// "" (unset) → "*" row then global flag decides, "enabled" → opt in even if
+	// global off (when router config is present), "disabled" → opt out.
 	AutoRouting string `json:"autoRouting"`
+
+	// DefaultSessionRouting is the admin-settable default for whether new chat
+	// sessions default to auto-routing in the client (console/chat/app/desktop
+	// read it via /v1/get-routing-defaults). Same three-state as AutoRouting:
+	// "" (unset) → "*" row then conf default (disabled), "enabled", "disabled".
+	DefaultSessionRouting string `json:"defaultSessionRouting"`
 }
 
 func GetOrgSettingsList(owner string) ([]*OrgSettings, error) {
@@ -151,4 +166,19 @@ func GetCachedOrgAutoRouting(owner string) string {
 		return AutoRoutingUnset
 	}
 	return s.AutoRouting
+}
+
+// GetCachedOrgSessionRouting returns the org's default-session-routing preference
+// ("", "enabled", "disabled") from the 60s-cached settings row. Falls back to
+// unset ("") on any missing row or error, so a lookup failure is fail-safe (the
+// caller then folds in the "*" row and the conf default).
+func GetCachedOrgSessionRouting(owner string) string {
+	if owner == "" {
+		return AutoRoutingUnset
+	}
+	s, err := GetCachedOrgSettings(owner)
+	if err != nil || s == nil {
+		return AutoRoutingUnset
+	}
+	return s.DefaultSessionRouting
 }

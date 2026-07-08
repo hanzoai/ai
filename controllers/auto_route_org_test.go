@@ -72,7 +72,7 @@ func TestAutoRoutingPrecedenceMatrix(t *testing.T) {
 			}
 
 			// "please refactor this function" classifies to code → zen4-coder.
-			got, ok := resolveAutoModel("auto", org, chatReq("auto", "please refactor this function"), router.Slo{})
+			got, ok := resolveAutoModel("auto", org, "", chatReq("auto", "please refactor this function"), router.Slo{})
 			if ok != tc.wantRouted {
 				t.Fatalf("resolveAutoModel routed=%v, want %v", ok, tc.wantRouted)
 			}
@@ -100,7 +100,7 @@ func TestAutoRoutingOrgEnabledNeedsConfig(t *testing.T) {
 	globalModelConfig = emptyRouterConfig()
 	orgAutoRoutingLookup = func(string) string { return object.AutoRoutingEnabled }
 
-	if _, ok := resolveAutoModel("auto", "acme", chatReq("auto", "hi"), router.Slo{}); ok {
+	if _, ok := resolveAutoModel("auto", "acme", "", chatReq("auto", "hi"), router.Slo{}); ok {
 		t.Error("resolveAutoModel routed with org-enabled but empty router config, want not-routed")
 	}
 }
