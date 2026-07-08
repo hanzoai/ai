@@ -19,9 +19,15 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/router"
 	"github.com/sashabaranov/go-openai"
 )
+
+// orgAutoRoutingLookup resolves an org's auto-routing preference ("", "enabled",
+// "disabled"). Indirected through a var so tests can exercise the precedence
+// matrix without a live DB; in production it reads the cached OrgSettings row.
+var orgAutoRoutingLookup = object.GetCachedOrgAutoRouting
 
 // RoutedModelHeader is the transparency header the chat controller sets when a
 // virtual `auto`/`zen-router` request was resolved to a concrete model. Callers
@@ -49,6 +55,13 @@ func isAutoModel(model string) bool {
 // `auto` is billed and reported as exactly the model that served it. Per-org
 // routing is honored via the `known` predicate (resolveModelRouteForOrg), which
 // only admits models the org can actually serve.
+//
+// Whether routing is active for THIS org is decided by AutoRoutingActive, which
+// blends the global router.enabled flag with the org's OrgSettings preference:
+// "disabled" opts the org out even when the global flag is on; "enabled" opts it
+// in even when the global flag is off (as long as router config is present); ""
+// defers to the global flag. When routing is not active, `auto` is left
+// unchanged (no rewrite, no X-Routed-Model header) — its pre-routing behavior.
 func resolveAutoModel(requested, orgId string, req *openai.ChatCompletionRequest, slo router.Slo) (string, bool) {
 	if !isAutoModel(requested) {
 		return "", false
@@ -57,12 +70,12 @@ func resolveAutoModel(requested, orgId string, req *openai.ChatCompletionRequest
 	if cfg == nil {
 		return "", false
 	}
-	client, ok := cfg.BuildRouterClient(func(id string) bool {
-		return resolveModelRouteForOrg(id, orgId) != nil
-	})
-	if !ok {
+	if !cfg.AutoRoutingActive(orgAutoRoutingLookup(orgId)) {
 		return "", false
 	}
+	client := cfg.RouterClient(func(id string) bool {
+		return resolveModelRouteForOrg(id, orgId) != nil
+	})
 	rreq := router.Request{
 		Text:         lastUserText(req),
 		ApproxTokens: estimatePromptTokens(req),

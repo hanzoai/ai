@@ -366,6 +366,14 @@ func initAPI() {
 	beego.Router("/v1/update-model-route", &controllers.ApiController{}, "POST:UpdateModelRoute")
 	beego.Router("/v1/delete-model-route", &controllers.ApiController{}, "POST:DeleteModelRoute")
 
+	// Per-org feature settings (auto-routing enable/disable, …). Admin-gated like
+	// the model-route endpoints; not gateway-exposed (direct api.cloud.hanzo.ai).
+	beego.Router("/v1/get-org-settings-list", &controllers.ApiController{}, "GET:GetOrgSettingsList")
+	beego.Router("/v1/get-org-settings", &controllers.ApiController{}, "GET:GetOrgSettings")
+	beego.Router("/v1/add-org-settings", &controllers.ApiController{}, "POST:AddOrgSettings")
+	beego.Router("/v1/update-org-settings", &controllers.ApiController{}, "POST:UpdateOrgSettings")
+	beego.Router("/v1/delete-org-settings", &controllers.ApiController{}, "POST:DeleteOrgSettings")
+
 	// Anthropic Messages API compatible endpoints
 	beego.Router("/v1/messages", &controllers.ApiController{}, "POST:AnthropicMessages")
 
