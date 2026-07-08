@@ -425,7 +425,7 @@ func (mc *ModelConfig) PremiumGateEnabled() bool {
 // @Tag Admin
 // @Description Reload model configuration from YAML and refresh live pricing.
 // @Success 200 {object} controllers.Response
-// @router /reload-model-config [post]
+// @router /admin/reload-model-config [post]
 func (c *ApiController) ReloadModelConfig() {
 	if !c.RequireGlobalAdmin() {
 		return
@@ -442,4 +442,29 @@ func (c *ApiController) ReloadModelConfig() {
 	}
 
 	c.ResponseOk()
+}
+
+// RefreshModelPricing handles POST /v1/admin/refresh-model-pricing.
+// @Title RefreshModelPricing
+// @Tag Admin
+// @Description Force a live pricing refresh from the configured pricing service.
+// @Success 200 {object} controllers.Response
+// @router /admin/refresh-model-pricing [post]
+func (c *ApiController) RefreshModelPricing() {
+	if !c.RequireGlobalAdmin() {
+		return
+	}
+	cfg := GetModelConfig()
+	if cfg == nil {
+		c.ResponseError("model config not initialized")
+		return
+	}
+
+	cfg.fetchLivePricing()
+
+	c.ResponseOk(struct {
+		LastPricingRefresh time.Time `json:"lastPricingRefresh"`
+	}{
+		LastPricingRefresh: cfg.LastPricingRefresh().UTC(),
+	})
 }
