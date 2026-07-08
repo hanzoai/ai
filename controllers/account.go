@@ -19,7 +19,9 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
+	"time"
 
 	"github.com/beego/beego/logs"
 	"github.com/hanzoai/ai/conf"
@@ -27,6 +29,70 @@ import (
 	"github.com/hanzoai/ai/util"
 	iam "github.com/hanzoai/iam"
 )
+
+// iamTokenCookieName carries the caller's VERIFIED IAM access token (RS256 JWT)
+// to the browser as an HttpOnly, Secure, SameSite=Lax first-party cookie. It is
+// the self-healing identity credential: the beego session that backs the cookie
+// login is the process-local in-memory store, so it is lost on pod restart / GC /
+// a request that lands without it — after which get-account used to synthesize an
+// anonymous `u-<hash>` user (owner=the real tenant, isAdmin=false), the bug that
+// made a signed-in admin resolve to a guest. With this cookie present the
+// stateless JWT validator (see bearerTokenFromRequest -> principalUser ->
+// object.ParseAndValidateJWT) re-derives the canonical identity, so a real
+// authenticated subject is NEVER downgraded to a guest.
+const iamTokenCookieName = "hanzo_iam_token"
+
+// accountAction is get-account's identity decision, decoupled from the beego
+// controller plumbing so the policy is unit-testable in isolation.
+type accountAction int
+
+const (
+	// serveIdentity: a resolved (canonical) session identity is present — serve it.
+	serveIdentity accountAction = iota
+	// serveAnonymous: no identity, but the surface permits an anonymous public
+	// user (public domain / preview mode) — synthesize one.
+	serveAnonymous
+	// failUnauthenticated: no identity on a protected surface — fail LOUD (401),
+	// never fabricate a `u-<hash>` record for a would-be authenticated subject.
+	failUnauthenticated
+)
+
+// resolveAccountAction is the get-account identity policy: a resolved session
+// user (INCLUDING one self-healed from a verified IAM credential) is ALWAYS
+// served its canonical identity; the anonymous fallback is allowed ONLY on
+// public/preview surfaces; every other unauthenticated request fails loud rather
+// than impersonating the tenant with a synthesized guest.
+func resolveAccountAction(sessionUser *iam.User, anonymousAllowed bool) accountAction {
+	if sessionUser != nil {
+		return serveIdentity
+	}
+	if anonymousAllowed {
+		return serveAnonymous
+	}
+	return failUnauthenticated
+}
+
+// setIamTokenCookie persists the verified IAM access token as the self-healing
+// first-party cookie (see iamTokenCookieName). Host-only + Secure + HttpOnly +
+// SameSite=Lax, scoped to the token's own lifetime; the validator re-checks the
+// JWT `exp` on read, so an expired cookie simply fails closed to re-auth.
+func (c *ApiController) setIamTokenCookie(accessToken string, expiry time.Time) {
+	maxAge := 0 // 0 => session cookie (cleared on browser close) when no expiry
+	if !expiry.IsZero() {
+		if secs := int(time.Until(expiry).Seconds()); secs > 0 {
+			maxAge = secs
+		}
+	}
+	http.SetCookie(c.Ctx.ResponseWriter, &http.Cookie{
+		Name:     iamTokenCookieName,
+		Value:    accessToken,
+		Path:     "/",
+		MaxAge:   maxAge,
+		Secure:   true,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
+}
 
 func init() {
 	InitAuthConfig()
@@ -118,6 +184,11 @@ func (c *ApiController) Signin() {
 
 	claims.AccessToken = token.AccessToken
 	c.SetSessionClaims(claims)
+	// Persist the verified access token so identity survives an in-memory session
+	// loss: a later get-account whose beego session is gone self-heals from this
+	// cookie to the canonical identity instead of falling back to an anonymous
+	// u-<hash> user. See iamTokenCookieName + GetAccount.
+	c.setIamTokenCookie(token.AccessToken, token.Expiry)
 	userId := claims.User.Owner + "/" + claims.User.Name
 	c.Ctx.Input.SetParam("recordUserId", userId)
 
@@ -379,17 +450,27 @@ func (c *ApiController) GetAccount() {
 		logs.Error("AppendWebConfigCookie: %v", err)
 	}
 
-	if !c.isPublicDomain() && disablePreviewMode {
-		_, ok := c.RequireSignedIn()
-		if !ok {
-			return
+	// Self-heal a lost in-memory session from a verified IAM credential (the
+	// hanzo_iam_token cookie or an Authorization Bearer JWT) BEFORE deciding
+	// identity: the cookie login is backed by the process-local beego session, so
+	// a real subject whose session was dropped (pod restart / GC) must be rebound
+	// to its canonical identity — never degraded to an anonymous u-<hash> record.
+	if c.GetSessionUser() == nil {
+		if p := c.principalUser(); p != nil && !util.IsAnonymousUserByUsername(p.Name) {
+			c.SetSessionClaims(&iam.Claims{User: *p})
 		}
-	} else {
-		_, ok := c.CheckSignedIn()
-		if !ok {
-			c.anonymousSignin()
-			return
-		}
+	}
+
+	// Anonymous is permitted ONLY on public/preview surfaces. On a protected
+	// surface an unresolved identity fails LOUD (401) instead of fabricating a
+	// guest — matching the old RequireSignedIn behavior, now with self-heal ahead.
+	switch resolveAccountAction(c.GetSessionUser(), c.isPublicDomain() || !disablePreviewMode) {
+	case serveAnonymous:
+		c.anonymousSignin()
+		return
+	case failUnauthenticated:
+		c.ResponseUnauthorized(c.T("auth:Please sign in first"))
+		return
 	}
 
 	claims := c.GetSessionClaims()
