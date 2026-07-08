@@ -16,18 +16,60 @@ package controllers
 
 import (
 	"context"
+	"encoding/json"
 	"strconv"
 	"strings"
 
+	"github.com/beego/beego/logs"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/router"
 	"github.com/sashabaranov/go-openai"
 )
 
-// orgAutoRoutingLookup resolves an org's auto-routing preference ("", "enabled",
-// "disabled"). Indirected through a var so tests can exercise the precedence
-// matrix without a live DB; in production it reads the cached OrgSettings row.
+// orgAutoRoutingLookup resolves an org's own auto-routing preference ("",
+// "enabled", "disabled"). Indirected through a var so tests can exercise the
+// precedence matrix without a live DB; in production it reads the cached
+// OrgSettings row.
 var orgAutoRoutingLookup = object.GetCachedOrgAutoRouting
+
+// sessionRoutingLookup resolves an org's own default-session-routing preference
+// ("", "enabled", "disabled"), indirected for tests like orgAutoRoutingLookup.
+var sessionRoutingLookup = object.GetCachedOrgSessionRouting
+
+// effectiveAutoRouting folds the two-level OrgSettings precedence into one
+// three-state preference for AutoRoutingActive: the org's own row wins, else the
+// reserved "*" global-default row, else "" (defer to the conf router.enabled
+// flag). A row's "disabled" therefore beats a lower level's "enabled".
+func effectiveAutoRouting(org string) string {
+	if pref := orgAutoRoutingLookup(org); pref != object.AutoRoutingUnset {
+		return pref
+	}
+	return orgAutoRoutingLookup(object.GlobalDefaultOwner)
+}
+
+// effectiveSessionRouting folds the same org > "*" precedence for the
+// default-session-routing preference. Unset at both levels means the conf
+// default, which for session routing is disabled (there is no conf flag).
+func effectiveSessionRouting(org string) string {
+	if pref := sessionRoutingLookup(org); pref != object.AutoRoutingUnset {
+		return pref
+	}
+	return sessionRoutingLookup(object.GlobalDefaultOwner)
+}
+
+// routingEventSink records a routing decision for training. The default is an
+// async, best-effort DB write so a collection failure NEVER fails or slows the
+// chat request; tests swap it for a synchronous capture. It is only ever called
+// on a SUCCESSFUL resolveAutoModel resolution.
+var routingEventSink = asyncRecordRoutingEvent
+
+func asyncRecordRoutingEvent(e object.RoutingEvent) {
+	go func() {
+		if err := object.AddRoutingEvent(&e); err != nil {
+			logs.Warning("routing event persist failed: %v", err)
+		}
+	}()
+}
 
 // RoutedModelHeader is the transparency header the chat controller sets when a
 // virtual `auto`/`zen-router` request was resolved to a concrete model. Callers
@@ -62,7 +104,7 @@ func isAutoModel(model string) bool {
 // in even when the global flag is off (as long as router config is present); ""
 // defers to the global flag. When routing is not active, `auto` is left
 // unchanged (no rewrite, no X-Routed-Model header) — its pre-routing behavior.
-func resolveAutoModel(requested, orgId string, req *openai.ChatCompletionRequest, slo router.Slo) (string, bool) {
+func resolveAutoModel(requested, orgId, userId string, req *openai.ChatCompletionRequest, slo router.Slo) (string, bool) {
 	if !isAutoModel(requested) {
 		return "", false
 	}
@@ -70,7 +112,7 @@ func resolveAutoModel(requested, orgId string, req *openai.ChatCompletionRequest
 	if cfg == nil {
 		return "", false
 	}
-	if !cfg.AutoRoutingActive(orgAutoRoutingLookup(orgId)) {
+	if !cfg.AutoRoutingActive(effectiveAutoRouting(orgId)) {
 		return "", false
 	}
 	client := cfg.RouterClient(func(id string) bool {
@@ -81,11 +123,44 @@ func resolveAutoModel(requested, orgId string, req *openai.ChatCompletionRequest
 		ApproxTokens: estimatePromptTokens(req),
 		HasMedia:     requestHasMedia(req),
 	}
-	routed, _ := client.Route(context.Background(), rreq, slo)
-	if routed == "" {
+	dec := client.RouteDecision(context.Background(), rreq, slo)
+	if dec.Model == "" {
 		return "", false
 	}
-	return routed, true
+
+	// Collect the decision for training — fire-and-forget, NEVER prompt text.
+	// Serialize the engine's optional feature vector; a marshal failure just
+	// drops the features (the row is still useful).
+	features := ""
+	if len(dec.Features) > 0 {
+		if b, err := json.Marshal(dec.Features); err == nil {
+			features = string(b)
+		}
+	}
+	routingEventSink(object.RoutingEvent{
+		Owner:          orgId,
+		User:           userId,
+		Task:           string(dec.Task),
+		RequestedModel: strings.ToLower(strings.TrimSpace(requested)),
+		RoutedModel:    dec.Model,
+		Confidence:     dec.Confidence,
+		Source:         dec.Source,
+		Features:       features,
+	})
+
+	return dec.Model, true
+}
+
+// routingUserId returns the verified principal as "owner/name" (the repo's
+// user-attribution convention) for the routing ledger, or "" for a provider-key
+// or unauthenticated request. It reuses the same verified-principal source as org
+// resolution — never a raw client header.
+func (c *ApiController) routingUserId() string {
+	u := c.principalUser()
+	if u == nil {
+		return ""
+	}
+	return u.Owner + "/" + u.Name
 }
 
 // lastUserText returns the text of the last user message — enough for routing
