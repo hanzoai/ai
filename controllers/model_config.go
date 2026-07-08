@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/beego/beego/logs"
+	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/router"
 	"gopkg.in/yaml.v3"
 )
@@ -451,16 +452,40 @@ func (mc *ModelConfig) RouterEnabled() bool {
 	return mc.router.Enabled
 }
 
-// BuildRouterClient assembles a router.Client from the config when routing is
-// enabled. `known` restricts the choice to models the caller can serve for the
-// current org (typically resolveModelRouteForOrg != nil). Returns ok=false when
-// routing is disabled. The returned client is cheap to build per request.
-func (mc *ModelConfig) BuildRouterClient(known func(string) bool) (router.Client, bool) {
+// routerConfigPresent reports whether the config carries anything to route with
+// — the global enable flag, a preference table, or an engine endpoint. A per-org
+// "enabled" override only takes effect when this is true (nothing to route with
+// otherwise). Caller must hold mc.mu.
+func (mc *ModelConfig) routerConfigPresent() bool {
+	return mc.router.Enabled || len(mc.router.Prefer) > 0 || mc.router.Endpoint != ""
+}
+
+// AutoRoutingActive decides whether the virtual `auto`/`zen-router` model routes
+// for a request, given the org's preference. Precedence:
+//   - "disabled": never routes — `auto` falls through as a pre-routing unknown id
+//   - "enabled":  routes whenever router config is present, even if the global
+//     flag is off (per-org opt-in)
+//   - "" (unset): the global router.enabled flag decides
+func (mc *ModelConfig) AutoRoutingActive(orgPref string) bool {
 	mc.mu.RLock()
 	defer mc.mu.RUnlock()
-	if !mc.router.Enabled {
-		return router.Client{}, false
+	switch orgPref {
+	case object.AutoRoutingDisabled:
+		return false
+	case object.AutoRoutingEnabled:
+		return mc.routerConfigPresent()
+	default:
+		return mc.router.Enabled
 	}
+}
+
+// RouterClient assembles a router.Client from the config, regardless of the
+// enabled flag — the enable decision is made separately by AutoRoutingActive.
+// `known` restricts the choice to models the caller can serve for the current
+// org (typically resolveModelRouteForOrg != nil). Cheap to build per request.
+func (mc *ModelConfig) RouterClient(known func(string) bool) router.Client {
+	mc.mu.RLock()
+	defer mc.mu.RUnlock()
 	return router.Client{
 		Endpoint: mc.router.Endpoint,
 		Timeout:  router.DefaultTimeout,
@@ -469,7 +494,7 @@ func (mc *ModelConfig) BuildRouterClient(known func(string) bool) (router.Client
 			CostCeiling: mc.router.CostCeiling,
 		},
 		Known: known,
-	}, true
+	}
 }
 
 // ── Admin endpoint ──────────────────────────────────────────────────────
