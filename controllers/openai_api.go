@@ -855,7 +855,7 @@ func (c *ApiController) ChatCompletions() {
 	// (auth+routing, ModelRoute fallbacks, zen identity, balance reserve/settle,
 	// usage record, response `model` echo) bills and reports the model that
 	// actually served. The transparency header lets callers see the routed choice.
-	if routed, ok := resolveAutoModel(request.Model, orgId, &request, c.sloFromHeaders()); ok {
+	if routed, ok := resolveAutoModel(request.Model, orgId, c.routingUserId(), &request, c.sloFromHeaders()); ok {
 		request.Model = routed
 		c.Ctx.ResponseWriter.Header().Set(RoutedModelHeader, routed)
 	}

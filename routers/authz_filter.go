@@ -89,6 +89,8 @@ var globalAdminEndpoints = map[string]struct{}{
 	// Per-org feature settings (auto-routing enable/disable, …).
 	"get-org-settings-list": {}, "get-org-settings": {},
 	"add-org-settings": {}, "update-org-settings": {}, "delete-org-settings": {},
+	// Routing-decision ledger export (training data — platform-wide).
+	"export-routing-ledger": {},
 	// Storage provider credentials.
 	"get-storage-providers": {},
 	// Cluster topology / infrastructure.
@@ -117,7 +119,8 @@ var authRequiredEndpoints = map[string]struct{}{
 	"index": {}, "search": {}, "search/stats": {}, // doc index write + search
 	"docs/ingest": {},                                    // unified RAG ingest (github/crawl/s3)
 	"embed":       {}, "query": {}, "query_multiple": {}, // librechat-compat RAG
-	"documents": {}, // librechat-compat DELETE documents
+	"documents":            {}, // librechat-compat DELETE documents
+	"get-routing-defaults": {}, // per-caller routing defaults — any authenticated user, never anonymous
 }
 
 // requiresPresentCredential reports whether controllerName is a write/ingest/
