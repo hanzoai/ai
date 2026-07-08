@@ -14,6 +14,33 @@ features:
   premium_gate: true
   starter_credit: 5.00
 
+# ── Auto-routing (virtual `auto` / `zen-router` model) ────────────────────────
+# Opt-in. When enabled, a chat request for model "auto" (alias "zen-router") is
+# classified into a coarse task and mapped to the first SERVABLE model in the
+# matching prefer list, BEFORE provider/pricing/billing resolution — so the
+# request is billed and reported as the model that served it (see the
+# X-Routed-Model response header). Disabled by default: "auto" is then just an
+# unknown model id.
+#
+# Strategy: if `endpoint` is set, POST {endpoint}/route to a zen-router served by
+# hanzo-engine (learned routing); on ANY error (or when endpoint is empty) fall
+# back to the built-in pure-Go heuristic — a faithful port of hanzo-router's
+# classifier — so auto works with ZERO extra infrastructure. Env overrides:
+# ROUTER_ENABLED=true, ROUTER_ENDPOINT=<url>.
+router:
+  enabled: false
+  endpoint: ""            # e.g. http://engine.hanzo.svc:3000 (zen-router via hanzo-engine)
+  cost_ceiling: 0.0       # advisory per-1k cost cap, forwarded to the engine as SLO
+  prefer:                 # task tag → ordered model ids; first servable wins ("default" = catch-all)
+    code:        [zen4-coder, zen5-coder, qwen3-coder, gpt-5.3-codex]
+    reasoning:   [zen4-thinking, deepseek-reasoner, zen4-ultra]
+    math:        [zen4-ultra, deepseek-reasoner, zen4-thinking]
+    creative:    [zen4, zen4-max, claude-sonnet-4-5]
+    vision:      [zen3-vl, nemotron-nano-vl]
+    long_context: [zen4-max, gpt-5.4, claude-sonnet-4-5]
+    cheap_chat:  [zen4-mini, zen5-mini, gpt-4o-mini]
+    default:     [zen4, zen5, gpt-4o]
+
 default_pricing:
   input_per_million: 1.00
   output_per_million: 4.00

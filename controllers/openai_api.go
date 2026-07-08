@@ -850,6 +850,16 @@ func (c *ApiController) ChatCompletions() {
 	// Resolve org context for per-org model routing and pricing.
 	orgId := c.GetEffectiveOrg()
 
+	// Virtual `auto`/`zen-router` model → resolve to a concrete servable model id
+	// BEFORE any provider/pricing/billing resolution, so the ENTIRE existing path
+	// (auth+routing, ModelRoute fallbacks, zen identity, balance reserve/settle,
+	// usage record, response `model` echo) bills and reports the model that
+	// actually served. The transparency header lets callers see the routed choice.
+	if routed, ok := resolveAutoModel(request.Model, orgId, &request, c.sloFromHeaders()); ok {
+		request.Model = routed
+		c.Ctx.ResponseWriter.Header().Set(RoutedModelHeader, routed)
+	}
+
 	// Authenticate the bearer token and resolve the requested model to its
 	// upstream provider, premium flag, and (for IAM/JWT auth) the billed user.
 	// This is the ONE auth+routing policy, shared with /v1/embeddings and
