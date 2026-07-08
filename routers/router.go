@@ -374,6 +374,13 @@ func initAPI() {
 	beego.Router("/v1/update-org-settings", &controllers.ApiController{}, "POST:UpdateOrgSettings")
 	beego.Router("/v1/delete-org-settings", &controllers.ApiController{}, "POST:DeleteOrgSettings")
 
+	// Routing defaults read surface (any authenticated user) + the training-ledger
+	// export (global admin). get-routing-defaults resolves org > "*" > conf for the
+	// caller's own org; export-routing-ledger streams the privacy-preserving
+	// decision ledger as JSONL.
+	beego.Router("/v1/get-routing-defaults", &controllers.ApiController{}, "GET:GetRoutingDefaults")
+	beego.Router("/v1/export-routing-ledger", &controllers.ApiController{}, "GET:ExportRoutingLedger")
+
 	// Anthropic Messages API compatible endpoints
 	beego.Router("/v1/messages", &controllers.ApiController{}, "POST:AnthropicMessages")
 
