@@ -73,7 +73,7 @@ func (c *ApiController) AudioSpeech() {
 		return
 	}
 
-	orgId := c.GetEffectiveOrg()
+	orgId := c.GetOrg()
 	provider, _, upstreamModel, _, _, err := c.authResolveProvider(token, req.Model, orgId)
 	if err != nil {
 		c.ResponseAuthError(err)
