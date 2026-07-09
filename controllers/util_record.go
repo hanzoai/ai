@@ -34,7 +34,7 @@ func addRecord(c *ApiController, userName string, requestUri string, lang string
 		record.RequestUri = requestUri
 	}
 
-	record.Organization = c.GetEffectiveOrg()
+	record.Organization = c.GetOrg()
 
 	_, _, err = object.AddRecord(record, c.GetAcceptLanguage())
 	return err
