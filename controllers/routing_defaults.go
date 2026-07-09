@@ -45,7 +45,7 @@ type routingDefaults struct {
 // @Success 200 {object} controllers.routingDefaults The Response object
 // @router /get-routing-defaults [get]
 func (c *ApiController) GetRoutingDefaults() {
-	org := c.GetEffectiveOrg()
+	org := c.GetOrg()
 
 	autoActive := false
 	if cfg := GetModelConfig(); cfg != nil {
