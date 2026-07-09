@@ -52,7 +52,7 @@ func (c *ApiController) principalUser() *iam.User {
 	return c.credentialUser()
 }
 
-// GetEffectiveOrg resolves the organization for data-scoping and pricing from
+// GetOrg resolves the organization for data-scoping and pricing from
 // the VERIFIED request principal — never a raw client header.
 //
 // X-Org-Id is honored ONLY when it matches the authenticated principal's own
@@ -64,7 +64,7 @@ func (c *ApiController) principalUser() *iam.User {
 // Note: chat/embeddings BILLING is keyed on the validated authUser.Owner, not on
 // this value — this governs routing, pricing, usage reads, and record
 // attribution, all of which must also be tenant-safe.
-func (c *ApiController) GetEffectiveOrg() string {
+func (c *ApiController) GetOrg() string {
 	requested := strings.TrimSpace(c.Ctx.Input.Header("X-Org-Id"))
 
 	user := c.principalUser()
