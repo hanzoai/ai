@@ -182,7 +182,7 @@ func (c *ApiController) UpdateMessage() {
 	}
 
 	if message.NeedNotify {
-		err = message.SendEmail(c.GetAcceptLanguage(), c.GetEffectiveOrg())
+		err = message.SendEmail(c.GetAcceptLanguage(), c.GetOrg())
 		if err != nil {
 			c.ResponseError(err.Error())
 			return

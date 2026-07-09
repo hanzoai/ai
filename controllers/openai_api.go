@@ -881,7 +881,7 @@ func (c *ApiController) ChatCompletions() {
 	}
 
 	// Resolve org context for per-org model routing and pricing.
-	orgId := c.GetEffectiveOrg()
+	orgId := c.GetOrg()
 
 	// Virtual `auto`/`zen-router` model → resolve to a concrete servable model id
 	// BEFORE any provider/pricing/billing resolution, so the ENTIRE existing path
