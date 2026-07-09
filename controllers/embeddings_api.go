@@ -82,7 +82,7 @@ func (c *ApiController) Embeddings() {
 	}
 
 	startTime := time.Now().UTC()
-	orgId := c.GetEffectiveOrg()
+	orgId := c.GetOrg()
 
 	provider, authUser, upstreamModel, isPremium, _, err := c.authResolveProvider(token, head.Model, orgId)
 	if err != nil {
@@ -164,7 +164,7 @@ func (c *ApiController) Rerank() {
 	}
 
 	startTime := time.Now().UTC()
-	orgId := c.GetEffectiveOrg()
+	orgId := c.GetOrg()
 
 	provider, authUser, upstreamModel, isPremium, _, err := c.authResolveProvider(token, raw.Model, orgId)
 	if err != nil {
