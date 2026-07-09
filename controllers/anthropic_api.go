@@ -389,7 +389,7 @@ func (c *ApiController) AnthropicMessages() {
 	requestStartTime := time.Now().UTC()
 
 	// Resolve org context for per-org model routing and pricing.
-	orgId := c.GetEffectiveOrg()
+	orgId := c.GetOrg()
 
 	// Share the exact auth + model-routing policy used by /v1/chat/completions.
 	provider, authUser, upstreamModel, isPremium, isWidget, err := c.authResolveProvider(token, request.Model, orgId)

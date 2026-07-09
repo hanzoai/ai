@@ -94,7 +94,7 @@ func (c *ApiController) ImagesGenerations() {
 	}
 
 	startTime := time.Now().UTC()
-	orgId := c.GetEffectiveOrg()
+	orgId := c.GetOrg()
 
 	provider, authUser, upstreamModel, isPremium, _, err := c.authResolveProvider(token, req.Model, orgId)
 	if err != nil {

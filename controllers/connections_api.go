@@ -122,7 +122,7 @@ func connectionView(provider string, row *object.Provider) aiConnResponse {
 // requireConnectionOrg resolves the caller's org from the VERIFIED principal
 // (session or signed JWT) and rejects an anonymous request. Connections are
 // org-scoped and self-served — a normal logged-in org user manages THEIR OWN org's
-// connections (not a super-admin operation). GetEffectiveOrg binds any X-Org-Id
+// connections (not a super-admin operation). GetOrg binds any X-Org-Id
 // to the principal's own org (a non-admin can never target another org).
 func (c *ApiController) requireConnectionOrg() (string, bool) {
 	user := c.principalUser()
@@ -130,7 +130,7 @@ func (c *ApiController) requireConnectionOrg() (string, bool) {
 		c.ResponseUnauthorized(c.T("auth:Please sign in first"))
 		return "", false
 	}
-	org := c.GetEffectiveOrg()
+	org := c.GetOrg()
 	if strings.TrimSpace(org) == "" {
 		c.ResponseUnauthorized(c.T("auth:Please sign in first"))
 		return "", false
