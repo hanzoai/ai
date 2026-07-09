@@ -125,14 +125,18 @@ var authRequiredEndpoints = map[string]struct{}{
 
 // requiresPresentCredential reports whether controllerName is a write/ingest/
 // scrape/RAG endpoint that must fail closed for an anonymous caller. It matches
-// the explicit set plus the native /v1/rag/* family and the librechat-compat
-// /v1/documents/{id}/context read.
+// the explicit set plus the native /v1/rag/* family, the librechat-compat
+// /v1/documents/{id}/context read, and the AI login-manager /v1/ai/connections*
+// family (org-scoped: a present credential is required at the filter; the
+// controller does the authoritative per-org check — NOT a global-admin gate).
 func requiresPresentCredential(controllerName string) bool {
 	if _, ok := authRequiredEndpoints[controllerName]; ok {
 		return true
 	}
 	return strings.HasPrefix(controllerName, "rag/") ||
-		strings.HasPrefix(controllerName, "documents/")
+		strings.HasPrefix(controllerName, "documents/") ||
+		controllerName == "ai/connections" ||
+		strings.HasPrefix(controllerName, "ai/connections/")
 }
 
 // hasPresentCredential reports whether the request carries SOME credential — a
