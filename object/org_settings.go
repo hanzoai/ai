@@ -33,7 +33,7 @@ const (
 // GlobalDefaultOwner is the reserved OrgSettings.Owner for the platform-wide
 // default row. Its writes are RequireSuperAdmin-gated exactly like any other
 // org's; it is read as a fallback between a real org's row and the conf file. No
-// real request ever resolves its org to "*" (GetEffectiveOrg derives the org from
+// real request ever resolves its org to "*" (GetOrg derives the org from
 // the verified principal), so this owner is never mistaken for a tenant.
 const GlobalDefaultOwner = "*"
 
