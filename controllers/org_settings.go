@@ -28,7 +28,7 @@ import (
 // @Success 200 {array} object.OrgSettings The Response object
 // @router /get-org-settings-list [get]
 func (c *ApiController) GetOrgSettingsList() {
-	if !c.RequireGlobalAdmin() {
+	if !c.RequireSuperAdmin() {
 		return
 	}
 	owner := c.Input().Get("owner")
@@ -52,7 +52,7 @@ func (c *ApiController) GetOrgSettingsList() {
 // @Success 200 {object} object.OrgSettings The Response object
 // @router /get-org-settings [get]
 func (c *ApiController) GetOrgSettings() {
-	if !c.RequireGlobalAdmin() {
+	if !c.RequireSuperAdmin() {
 		return
 	}
 	owner := c.Input().Get("owner")
@@ -77,7 +77,7 @@ func (c *ApiController) GetOrgSettings() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /add-org-settings [post]
 func (c *ApiController) AddOrgSettings() {
-	if !c.RequireGlobalAdmin() {
+	if !c.RequireSuperAdmin() {
 		return
 	}
 	var settings object.OrgSettings
@@ -108,7 +108,7 @@ func (c *ApiController) AddOrgSettings() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /update-org-settings [post]
 func (c *ApiController) UpdateOrgSettings() {
-	if !c.RequireGlobalAdmin() {
+	if !c.RequireSuperAdmin() {
 		return
 	}
 	owner := c.Input().Get("owner")
@@ -155,7 +155,7 @@ func (c *ApiController) UpdateOrgSettings() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /delete-org-settings [post]
 func (c *ApiController) DeleteOrgSettings() {
-	if !c.RequireGlobalAdmin() {
+	if !c.RequireSuperAdmin() {
 		return
 	}
 	var settings object.OrgSettings

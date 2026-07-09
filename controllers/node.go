@@ -32,7 +32,7 @@ import (
 // @Success 200 {object} object.Node The Response object
 // @router /get-nodes [get]
 func (c *ApiController) GetNodes() {
-	if !c.RequireGlobalAdmin() {
+	if !c.RequireSuperAdmin() {
 		return
 	}
 	owner, allowed := c.GetScopedOwner()
