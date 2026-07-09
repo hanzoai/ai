@@ -35,7 +35,7 @@ import (
 // @Param range query string false "24h | 7d | 30d | custom (default 24h)"
 // @Param start query string false "custom range start (RFC3339 or unix seconds)"
 // @Param end query string false "custom range end (RFC3339 or unix seconds)"
-// @Param org query string false "global admin only: target org slug, 'all' for every org"
+// @Param org query string false "super admin only: target org slug, 'all' for every org"
 // @Param topModels query string false "spend-by-model top-N (default 6)"
 // @Param activityType query string false "all | inference (default all)"
 // @Param activityLimit query string false "recent-activity page size (default 20)"
@@ -44,9 +44,9 @@ import (
 // @router /get-cloud-usages [get]
 //
 // Scoping is the dual-use o11y read shared by console2 (tenant) and admin.hanzo.ai
-// (god-view): a non-global-admin is pinned to their own session org — request
+// (god-view): a non-super-admin is pinned to their own session org — request
 // scope hints (X-Org-Id header, ?org=) are ignored, so a tenant can never read
-// another org. A global admin targets one org via ?org=<slug> (or the X-Org-Id
+// another org. A super admin targets one org via ?org=<slug> (or the X-Org-Id
 // header that console2 stamps from currentOrg()), or omits it / passes ?org=all
 // for the ALL-orgs view.
 func (c *ApiController) GetCloudUsages() {
@@ -92,10 +92,10 @@ func (c *ApiController) GetCloudUsages() {
 
 // resolveCloudUsageScope decides whose data the caller may read. Non-global
 // admins are pinned to their authenticated org (header/param hints ignored).
-// Global admins may target one org (?org= / ?owner=, else the X-Org-Id header
+// Super admins may target one org (?org= / ?owner=, else the X-Org-Id header
 // console2 sends) or get the all-orgs view (omitted, empty, "all", or "*").
 func (c *ApiController) resolveCloudUsageScope(user *iam.User) (org string, allOrgs bool) {
-	if !util.IsGlobalAdmin(user) {
+	if !util.IsSuperAdmin(user) {
 		return user.Owner, false
 	}
 

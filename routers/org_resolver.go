@@ -39,7 +39,7 @@ func GetEffectiveOrg(ctx *context.Context) string {
 
 	user := sessionOrBearerUser(ctx)
 	if user != nil && user.Owner != "" {
-		if requested != "" && (requested == user.Owner || util.IsGlobalAdmin(user)) {
+		if requested != "" && (requested == user.Owner || util.IsSuperAdmin(user)) {
 			return requested
 		}
 		return user.Owner

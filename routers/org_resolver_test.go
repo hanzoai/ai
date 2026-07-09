@@ -58,13 +58,13 @@ func TestGetEffectiveOrgOwnOrgHeaderHonored(t *testing.T) {
 	}
 }
 
-// TestGetEffectiveOrgGlobalAdminCrossOrg: only a global admin may target another
+// TestGetEffectiveOrgGlobalAdminCrossOrg: only a super admin may target another
 // org via the header (platform cross-org access).
 func TestGetEffectiveOrgGlobalAdminCrossOrg(t *testing.T) {
 	admin := &iam.User{Owner: "admin", Name: "admin", IsAdmin: true}
 	ctx, _ := newFilterCtx("POST", "/v1/chat/completions", admin)
 	ctx.Request.Header.Set("X-Org-Id", "some-tenant")
 	if got := GetEffectiveOrg(ctx); got != "some-tenant" {
-		t.Errorf("global-admin cross-org = %q, want some-tenant", got)
+		t.Errorf("super-admin cross-org = %q, want some-tenant", got)
 	}
 }
