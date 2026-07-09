@@ -21,22 +21,20 @@ import (
 	iam "github.com/hanzoai/iam"
 )
 
-// TestNakedHandlersRequireGlobalAdmin asserts that every platform-sensitive handler
+// TestNakedHandlersRequireSuperAdmin asserts that every platform-sensitive handler
 // that previously relied SOLELY on the routers.permissionFilter gate now ALSO
-// self-guards with c.RequireGlobalAdmin() as its first statement (defense in depth,
+// self-guards with c.RequireSuperAdmin() as its first statement (defense in depth,
 // matching the provider_admin handlers). Even if the filter is ever bypassed (the
 // path-normalization class this PR also closes), provider / model-route mutation and
 // cluster (node/pod/container/image/machine/k8s) introspection can no longer be
 // reached unauthenticated (=> 401) or by a mere org admin (=> 403).
 //
-// Only the DENY paths are exercised: RequireGlobalAdmin() is the FIRST statement in
+// Only the DENY paths are exercised: RequireSuperAdmin() is the FIRST statement in
 // each handler and returns before any request-body parse or datastore/object call, so
-// no live DB is needed. The global-admin PASS path is covered by
-// TestRequireGlobalAdmin_GlobalAdminPasses plus each handler's own downstream tests.
-func TestNakedHandlersRequireGlobalAdmin(t *testing.T) {
-	t.Setenv("globalAdminOrgs", "") // default {admin, built-in} global-admin set
-
-	// Every handler this PR added the c.RequireGlobalAdmin() guard to.
+// no live DB is needed. The super-admin PASS path is covered by
+// TestRequireSuperAdmin_SuperAdminPasses plus each handler's own downstream tests.
+func TestNakedHandlersRequireSuperAdmin(t *testing.T) {
+	// Every handler this PR added the c.RequireSuperAdmin() guard to.
 	handlers := []struct {
 		name string
 		call func(*ApiController)
