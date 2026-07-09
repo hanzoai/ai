@@ -529,27 +529,26 @@ func (c *ApiController) GetAccount() {
 		claims.User.Password = "#NeedToModify#"
 	}
 
-	// Surface the cloud's AUTHORITATIVE global-admin verdict to the browser.
-	// iam.User has no isGlobalAdmin field, and User.IsGlobalAdmin() only checks
-	// owner==AdminOrg — it ignores the configurable globalAdminOrgs. The console
-	// gate (isGlobalAdminAccount) reads account.isGlobalAdmin off this SAME object,
-	// so wrap the claims (their fields stay promoted to the top level — owner,
-	// isAdmin, email, … are unchanged) and add the computed bool alongside. Stamped
-	// AFTER redaction (it's a non-secret bool, and redaction never touches it).
+	// Surface the cloud's AUTHORITATIVE super-admin verdict to the browser.
+	// iam.User has no isSuperAdmin field, so wrap the claims (their fields stay
+	// promoted to the top level — owner, isAdmin, email, … are unchanged) and add
+	// the computed bool alongside. The console gate (isSuperAdminAccount) reads
+	// account.isSuperAdmin off this SAME object. Stamped AFTER redaction (it's a
+	// non-secret bool, and redaction never touches it).
 	c.ResponseOk(accountResponse{
-		Claims:        claims,
-		IsGlobalAdmin: util.IsGlobalAdmin(&claims.User),
+		Claims:       claims,
+		IsSuperAdmin: util.IsSuperAdmin(&claims.User),
 	})
 }
 
 // accountResponse is the /get-account payload: the full claims (every field
 // promoted to the top level of the JSON object, so existing consumers still read
 // owner/name/isAdmin/email/… off the same object unchanged) plus the cloud's
-// authoritative isGlobalAdmin verdict (util.IsGlobalAdmin, honoring the
-// configurable globalAdminOrgs — NOT iam.User's owner==AdminOrg method).
+// authoritative isSuperAdmin verdict (util.IsSuperAdmin: membership in the
+// reserved `admin` org — the ONE super-admin rule, matching IAM and the console).
 type accountResponse struct {
 	*iam.Claims
-	IsGlobalAdmin bool `json:"isGlobalAdmin"`
+	IsSuperAdmin bool `json:"isSuperAdmin"`
 }
 
 // preferencesKey is the single IAM-user property under which all cross-product,

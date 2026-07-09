@@ -111,7 +111,7 @@ func EnsureCloudUsageTable(ctx context.Context) error {
 
 // CloudUsageParams is the resolved, already-authorized query for one Overview.
 // The controller fills Org/AllOrgs from the session (a tenant is pinned to its
-// own org; a global admin may target one org or omit for all orgs). Start/End/
+// own org; a super admin may target one org or omit for all orgs). Start/End/
 // Interval come from ResolveCloudUsageWindow. The only field that reaches SQL
 // un-parameterized is Interval, a closed server-chosen enum ("hour"|"day");
 // Org is always passed as a bound parameter.
@@ -121,7 +121,7 @@ type CloudUsageParams struct {
 	End            time.Time
 	Interval       string // "hour" | "day" — time-series bucket width
 	Org            string // organization slug; ignored when AllOrgs is true
-	AllOrgs        bool   // global-admin all-orgs view (no organization filter)
+	AllOrgs        bool   // super-admin all-orgs view (no organization filter)
 	TopModels      int    // spend-by-model: keep top N, fold the rest into "other"
 	ActivityType   string // "all" | "inference" (others → honest-empty feed)
 	ActivityLimit  int
@@ -358,7 +358,7 @@ func GetCloudUsageOverview(ctx context.Context, p CloudUsageParams) (*CloudUsage
 
 // whereClause builds the time + organization predicate. Times are formatted as
 // ClickHouse DateTime literals (UTC); the org slug is always a bound parameter
-// (never interpolated) so a global admin's ?org= can't inject SQL.
+// (never interpolated) so a super admin's ?org= can't inject SQL.
 func (p CloudUsageParams) whereClause(start, end time.Time) (string, []interface{}) {
 	clause := "timestamp >= ? AND timestamp < ?"
 	args := []interface{}{cloudUsageTS(start), cloudUsageTS(end)}
