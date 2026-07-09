@@ -42,6 +42,19 @@ func IsAnonymousUserByUsername(username string) bool {
 	return strings.HasPrefix(username, "u-") && len(username) == 10
 }
 
+// IsAnonymousUser reports whether a resolved user is an anonymous guest — the
+// synthesized u-<hash> record from anonymousSignin. It is the ONE canonical
+// anonymity predicate: a guest is stamped BOTH with Type "anonymous-user" and a
+// u-<hash> username, and either signal alone is authoritative (a session copy or
+// a JWT claim may carry one without the other). A nil user is NOT anonymous —
+// absence of a user is a distinct "unauthenticated" state its callers handle.
+func IsAnonymousUser(user *iam.User) bool {
+	if user == nil {
+		return false
+	}
+	return user.Type == "anonymous-user" || IsAnonymousUserByUsername(user.Name)
+}
+
 // IsAdmin checks if the user is an ORG-level admin (or a chat-admin). This is
 // org-scoped: it is true for the admin/owner of ANY org (e.g. a customer org
 // owner). It must NOT be used to gate platform-wide operations — see
