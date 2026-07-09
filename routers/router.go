@@ -84,6 +84,12 @@ func initAPI() {
 	// Public, secret-free enabled-provider-name feed for the pricing catalog sync.
 	beego.Router("/v1/provider-flags", &controllers.ApiController{}, "GET:GetProviderFlags")
 
+	// AI login-manager: org-scoped connections to third-party AI accounts. Curated
+	// surface over object.Provider — authenticated org user (NOT global-admin);
+	// keys are sealed into KMS, never returned. See controllers/connections_api.go.
+	beego.Router("/v1/ai/connections", &controllers.ApiController{}, "GET:GetAIConnections;POST:AddAIConnection")
+	beego.Router("/v1/ai/connections/:provider", &controllers.ApiController{}, "DELETE:DeleteAIConnection;POST:DeleteAIConnection")
+
 	beego.Router("/v1/get-global-files", &controllers.ApiController{}, "GET:GetGlobalFiles")
 	beego.Router("/v1/get-files", &controllers.ApiController{}, "GET:GetFiles")
 	beego.Router("/v1/get-file", &controllers.ApiController{}, "GET:GetFileMy")
