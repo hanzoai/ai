@@ -23,15 +23,13 @@ import (
 	iam "github.com/hanzoai/iam"
 )
 
-// principalUser resolves the request principal: the session user (cookie auth)
-// if present, else the VERIFIED Bearer JWT user (signature + issuer/audience
-// validated via object.ParseAndValidateJWT). Returns nil for an unauthenticated
-// or provider/widget-key request. This is the one identity source the org
-// resolver trusts — never a raw client header.
-func (c *ApiController) principalUser() *iam.User {
-	if u := c.GetSessionUser(); u != nil {
-		return u
-	}
+// credentialUser resolves the request principal STRICTLY from its verified
+// bearer credential (Authorization: Bearer JWT, or the hanzo_iam_token cookie
+// fallback), BYPASSING the beego session. Unlike principalUser it never consults
+// GetSessionUser, so get-account can re-derive the canonical identity even when
+// the process-local session already holds a stale anonymous guest that would
+// otherwise shadow it. Returns nil when no valid JWT credential is present.
+func (c *ApiController) credentialUser() *iam.User {
 	token := bearerTokenFromRequest(c.Ctx.Request)
 	if token == "" || !isJwtToken(token) {
 		return nil
@@ -41,6 +39,17 @@ func (c *ApiController) principalUser() *iam.User {
 		return nil
 	}
 	return &claims.User
+}
+
+// principalUser resolves the request principal: the session user (cookie auth)
+// if present, else the VERIFIED Bearer JWT user (see credentialUser). Returns
+// nil for an unauthenticated or provider/widget-key request. This is the one
+// identity source the org resolver trusts — never a raw client header.
+func (c *ApiController) principalUser() *iam.User {
+	if u := c.GetSessionUser(); u != nil {
+		return u
+	}
+	return c.credentialUser()
 }
 
 // GetEffectiveOrg resolves the organization for data-scoping and pricing from
