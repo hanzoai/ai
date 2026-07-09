@@ -65,22 +65,43 @@ const cloudUsageTableDDL = `
 		error_msg String,
 		is_premium UInt8,
 		is_stream UInt8,
-		client_ip String
+		client_ip String,
+		byo UInt8,
+		fee_cents Int64,
+		account String
 	) ENGINE = MergeTree()
 	ORDER BY (timestamp, organization, user_id)
 	TTL timestamp + INTERVAL 2 YEAR`
 
+// cloudUsageColumnMigrations bring an ALREADY-EXISTING table up to the current
+// schema: CREATE TABLE IF NOT EXISTS is a no-op on a table created before these
+// columns were added, so each additive column also needs an idempotent
+// ADD COLUMN IF NOT EXISTS. Applied after the CREATE in EnsureCloudUsageTable so
+// both a fresh and a legacy table converge on the same shape. Keep in lockstep
+// with the DDL above and the zapWriteUsage INSERT.
+var cloudUsageColumnMigrations = []string{
+	`ALTER TABLE hanzo.cloud_usage ADD COLUMN IF NOT EXISTS byo UInt8`,
+	`ALTER TABLE hanzo.cloud_usage ADD COLUMN IF NOT EXISTS fee_cents Int64`,
+	`ALTER TABLE hanzo.cloud_usage ADD COLUMN IF NOT EXISTS account String`,
+}
+
 var cloudUsageTableReady atomic.Bool
 
-// EnsureCloudUsageTable creates hanzo.cloud_usage if it does not exist. It is
-// idempotent and only latches success, so a transient datastore outage at boot
-// does not permanently poison later attempts.
+// EnsureCloudUsageTable creates hanzo.cloud_usage if it does not exist, then
+// applies the additive column migrations so a pre-existing table gains the
+// byo/fee_cents/account columns. It is idempotent and only latches success, so a
+// transient datastore outage at boot does not permanently poison later attempts.
 func EnsureCloudUsageTable(ctx context.Context) error {
 	if cloudUsageTableReady.Load() {
 		return nil
 	}
 	if err := DatastoreExec(ctx, cloudUsageTableDDL); err != nil {
 		return err
+	}
+	for _, stmt := range cloudUsageColumnMigrations {
+		if err := DatastoreExec(ctx, stmt); err != nil {
+			return err
+		}
 	}
 	cloudUsageTableReady.Store(true)
 	return nil
