@@ -179,13 +179,22 @@ func zapWriteUsage(record *usageRecord, startTime time.Time) {
 	if record.Stream {
 		stream = 1
 	}
+	byo := uint8(0)
+	if record.BYO {
+		byo = 1
+	}
+	// The platform fee is a pure function of (costCents, BYO) — derive it here from
+	// the cost this writer already computed rather than depending on recordUsage's
+	// stamp (recordUsage may early-return without stamping when the billing queue
+	// is off, while this warehouse path is independent). Same value as record.FeeCents.
+	feeCents := platformFeeCents(costCents, record.BYO)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	err := object.DatastoreExec(
 		ctx,
-		`INSERT INTO hanzo.cloud_usage (id, timestamp, owner, user_id, organization, model, provider, request_id, prompt_tokens, completion_tokens, total_tokens, cache_read_tokens, cache_write_tokens, cost_cents, currency, status, error_msg, is_premium, is_stream, client_ip) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO hanzo.cloud_usage (id, timestamp, owner, user_id, organization, model, provider, request_id, prompt_tokens, completion_tokens, total_tokens, cache_read_tokens, cache_write_tokens, cost_cents, currency, status, error_msg, is_premium, is_stream, client_ip, byo, fee_cents, account) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		record.RequestID, startTime.UTC(),
 		record.Owner, record.User, org,
 		record.Model, record.Provider, record.RequestID,
@@ -194,6 +203,7 @@ func zapWriteUsage(record *usageRecord, startTime time.Time) {
 		costCents, "usd",
 		record.Status, record.ErrorMsg,
 		premium, stream, record.ClientIP,
+		byo, feeCents, record.Account,
 	)
 	if err != nil {
 		logs.Warn("ZAP: usage write failed: %v", err)
