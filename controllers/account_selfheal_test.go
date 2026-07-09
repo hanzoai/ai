@@ -46,6 +46,30 @@ func TestResolveAccountAction(t *testing.T) {
 	}
 }
 
+// TestSessionNeedsSelfHeal pins the cookie-path fix: get-account must attempt
+// credential self-heal not only when the session is empty, but ALSO when the
+// session already holds an anonymous guest — the case where an earlier
+// anonymousSignin bound a u-<hash> record that would otherwise shadow a real
+// signed-in subject (the u-19669097 admin-403 bug). A resolved real subject
+// needs no self-heal.
+func TestSessionNeedsSelfHeal(t *testing.T) {
+	cases := []struct {
+		name        string
+		sessionUser *iam.User
+		want        bool
+	}{
+		{"no session -> self-heal", nil, true},
+		{"anonymous guest by type -> self-heal", &iam.User{Type: "anonymous-user", Name: "someone"}, true},
+		{"anonymous guest by u-<hash> name -> self-heal", &iam.User{Name: "u-19669097"}, true},
+		{"real subject -> no self-heal", &iam.User{Owner: "hanzo", Name: "z", IsAdmin: true}, false},
+	}
+	for _, tc := range cases {
+		if got := sessionNeedsSelfHeal(tc.sessionUser); got != tc.want {
+			t.Errorf("%s: sessionNeedsSelfHeal = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
 // TestBearerTokenFromRequestCookieFallback verifies the self-heal credential
 // source: the hanzo_iam_token cookie is honored when no Authorization header is
 // present (the browser cookie-session case), the header still wins when both are
