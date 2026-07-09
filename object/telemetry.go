@@ -13,7 +13,7 @@
 // limitations under the License.
 
 // OTel GenAI telemetry — the OTLP trace exporter that ships one gen_ai span per
-// LLM call to o11y (SigNoz), following the OpenTelemetry GenAI semantic
+// LLM call to o11y, following the OpenTelemetry GenAI semantic
 // conventions. This is the ONE way the ai module emits per-request LLM traces.
 // It is orthogonal to the two usage writers: the spend ledger
 // (hanzo.cloud_usage, written by zapWriteUsage) and the o11y-owned observations
