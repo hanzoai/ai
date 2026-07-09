@@ -105,15 +105,15 @@ func getAdminModelProvider(name string) (*object.Provider, error) {
 // @Description List admin-owned Model providers as a clean management view
 //
 //	(enabled/primary/keyPresent/modelCount). Never returns secret material.
-//	Global-admin gated (see routers/authz_filter.go globalAdminEndpoints).
+//	Super-admin gated (see routers/authz_filter.go superAdminEndpoints).
 //
 // @Success 200 {array} controllers.adminProviderView The Response object
 // @router /admin/providers [get]
 func (c *ApiController) GetAdminProviders() {
 	// Controller self-guard (defense in depth): the authz filter gates this route
-	// on global admin, but we re-check here so a filter bypass can never expose the
+	// on super admin, but we re-check here so a filter bypass can never expose the
 	// provider list. Fail-closed 401/403.
-	if !c.RequireGlobalAdmin() {
+	if !c.RequireSuperAdmin() {
 		return
 	}
 	views, err := listAdminModelProviders()
@@ -144,9 +144,9 @@ type toggleProviderRequest struct {
 // @router /admin/providers/toggle [post]
 func (c *ApiController) ToggleAdminProvider() {
 	// Controller self-guard (defense in depth): disabling the primary provider
-	// backs a platform-wide chat/embeddings/image DoS, so re-check global admin at
+	// backs a platform-wide chat/embeddings/image DoS, so re-check super admin at
 	// the controller even though the filter gates this route. Fail-closed 401/403.
-	if !c.RequireGlobalAdmin() {
+	if !c.RequireSuperAdmin() {
 		return
 	}
 	var req toggleProviderRequest
@@ -199,9 +199,9 @@ type setPrimaryRequest struct {
 // @router /admin/providers/primary [post]
 func (c *ApiController) SetPrimaryAdminProvider() {
 	// Controller self-guard (defense in depth): repointing the primary changes
-	// which upstream the whole catalog routes to, so re-check global admin here even
+	// which upstream the whole catalog routes to, so re-check super admin here even
 	// though the filter gates this route. Fail-closed 401/403.
-	if !c.RequireGlobalAdmin() {
+	if !c.RequireSuperAdmin() {
 		return
 	}
 	var req setPrimaryRequest
