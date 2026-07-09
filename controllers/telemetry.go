@@ -74,7 +74,7 @@ func buildGenAISpanFields(record *usageRecord) genAISpanFields {
 	return fields
 }
 
-// emitGenAISpan emits one OTel GenAI span per LLM call to o11y (SigNoz). It is
+// emitGenAISpan emits one OTel GenAI span per LLM call to o11y. It is
 // called from recordTrace — the single funnel every completion surface (chat,
 // Anthropic, tool-proxy, embeddings, ZAP) passes through — so there is exactly
 // one emit site. No-op when telemetry is disabled (OTEL_EXPORTER_OTLP_ENDPOINT
