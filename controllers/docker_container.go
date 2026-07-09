@@ -32,7 +32,7 @@ import (
 // @Success 200 {object} object.Container The Response object
 // @router /get-containers [get]
 func (c *ApiController) GetContainers() {
-	if !c.RequireGlobalAdmin() {
+	if !c.RequireSuperAdmin() {
 		return
 	}
 	owner, allowed := c.GetScopedOwner()
