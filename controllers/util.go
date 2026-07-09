@@ -225,23 +225,23 @@ func (c *ApiController) RequireAdmin() bool {
 	return true
 }
 
-// RequireGlobalAdmin is the controller-level self-guard for platform-sensitive
+// RequireSuperAdmin is the controller-level self-guard for platform-sensitive
 // endpoints (provider-admin, upstream-key/topology config). It mirrors the authz
-// filter's globalAdminEndpoints gate EXACTLY — same principal (session or VERIFIED
-// Bearer JWT via c.principalUser) and same policy (util.IsGlobalAdmin) — so it is
+// filter's superAdminEndpoints gate EXACTLY — same principal (session or VERIFIED
+// Bearer JWT via c.principalUser) and same policy (util.IsSuperAdmin) — so it is
 // belt-AND-suspenders: even if the filter is ever bypassed (e.g. a path-normalization
 // disagreement), the controller still refuses. Fail-closed: no principal → 401,
-// authenticated non-global-admin → 403. Unlike RequireAdmin it is NOT relaxed by
+// authenticated non-super-admin → 403. Unlike RequireAdmin it is NOT relaxed by
 // preview mode and checks GLOBAL (platform) admin, not org admin — these routes
 // govern the primary provider that backs the whole model catalog.
-func (c *ApiController) RequireGlobalAdmin() bool {
+func (c *ApiController) RequireSuperAdmin() bool {
 	user := c.principalUser()
 	if user == nil {
 		c.ResponseUnauthorized(c.T("auth:Please sign in first"))
 		return false
 	}
-	if !util.IsGlobalAdmin(user) {
-		c.ResponseForbidden(c.T("auth:this operation requires global admin privilege"))
+	if !util.IsSuperAdmin(user) {
+		c.ResponseForbidden(c.T("auth:this operation requires super admin privilege"))
 		return false
 	}
 	return true
