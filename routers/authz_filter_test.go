@@ -57,7 +57,7 @@ func newFilterCtx(method, path string, user *iam.User) (*beegoctx.Context, *http
 }
 
 // TestRequiresGlobalAdminClassification locks in which endpoints are platform
-// (global-admin) sensitive and which stay public — crucially get-models stays out.
+// (super-admin) sensitive and which stay public — crucially get-models stays out.
 func TestRequiresGlobalAdminClassification(t *testing.T) {
 	sensitive := []string{
 		"get-providers", "get-provider", "get-global-providers",
@@ -66,14 +66,14 @@ func TestRequiresGlobalAdminClassification(t *testing.T) {
 		"get-nodes", "get-pods", "get-k8s-status",
 	}
 	for _, e := range sensitive {
-		if !requiresGlobalAdmin(e) {
-			t.Errorf("%q must require global admin", e)
+		if !requiresSuperAdmin(e) {
+			t.Errorf("%q must require super admin", e)
 		}
 	}
 	public := []string{"models", "get-models", "get-account", "get-chats", "get-messages", "chat/completions"}
 	for _, e := range public {
-		if requiresGlobalAdmin(e) {
-			t.Errorf("%q must NOT require global admin (public/benign)", e)
+		if requiresSuperAdmin(e) {
+			t.Errorf("%q must NOT require super admin (public/benign)", e)
 		}
 	}
 }
@@ -101,13 +101,13 @@ func TestSensitiveOrgAdminForbidden403(t *testing.T) {
 	}
 }
 
-// TestSensitiveGlobalAdminAllowed — a global admin passes the gate untouched.
+// TestSensitiveGlobalAdminAllowed — a super admin passes the gate untouched.
 func TestSensitiveGlobalAdminAllowed(t *testing.T) {
 	globalAdmin := &iam.User{Owner: "admin", Name: "admin", IsAdmin: true}
 	ctx, rec := newFilterCtx("GET", "/v1/get-providers", globalAdmin)
 	permissionFilter(ctx)
 	if rec.Code != http.StatusOK || rec.Body.Len() != 0 {
-		t.Errorf("global-admin get-providers wrote a denial (code=%d, body=%q); want pass-through", rec.Code, rec.Body.String())
+		t.Errorf("super-admin get-providers wrote a denial (code=%d, body=%q); want pass-through", rec.Code, rec.Body.String())
 	}
 }
 
@@ -283,8 +283,8 @@ func TestNormalizedControllerName_CollapsesVariants(t *testing.T) {
 			t.Errorf("normalizedControllerName(%q) = (%q, %v), want (%q, true)", c.raw, got, ok, c.want)
 		}
 		// The normalized name MUST hit the gate for these gated endpoints.
-		if !requiresGlobalAdmin(got) {
-			t.Errorf("normalized %q -> %q does NOT require global admin (gate bypass!)", c.raw, got)
+		if !requiresSuperAdmin(got) {
+			t.Errorf("normalized %q -> %q does NOT require super admin (gate bypass!)", c.raw, got)
 		}
 	}
 	// Non-/v1 paths are correctly reported as pass-through.
@@ -308,8 +308,8 @@ func TestAdminRoutesUnauthenticated401_AllVariants(t *testing.T) {
 }
 
 // TestAdminRoutesOrgAdminForbidden403_AllVariants: a non-global (org) admin must be
-// 403 on every variant — the gate normalizes, THEN checks global admin. This proves
-// the variant can't be used to downgrade from the global-admin requirement either.
+// 403 on every variant — the gate normalizes, THEN checks super admin. This proves
+// the variant can't be used to downgrade from the super-admin requirement either.
 func TestAdminRoutesOrgAdminForbidden403_AllVariants(t *testing.T) {
 	orgAdmin := &iam.User{Owner: "maxpower", Name: "dave", IsAdmin: true}
 	for _, v := range c1BypassVariants {
@@ -333,13 +333,13 @@ func TestAdminRoutesGlobalAdminPass_Canonical(t *testing.T) {
 		ctx, rec := newFilterCtx(p.method, p.path, globalAdmin)
 		permissionFilter(ctx)
 		if rec.Code != http.StatusOK || rec.Body.Len() != 0 {
-			t.Errorf("global-admin %s %s wrote a denial (code=%d, body=%q); want pass-through", p.method, p.path, rec.Code, rec.Body.String())
+			t.Errorf("super-admin %s %s wrote a denial (code=%d, body=%q); want pass-through", p.method, p.path, rec.Code, rec.Body.String())
 		}
 	}
 }
 
 // TestPublicProviderFlagsNotGated: /v1/provider-flags is the public secret-free
-// enabled-name feed — it must NOT require global admin (the pricing sync reads it
+// enabled-name feed — it must NOT require super admin (the pricing sync reads it
 // unauthenticated). Guards against accidentally gating the public feed.
 func TestPublicProviderFlagsNotGated(t *testing.T) {
 	for _, raw := range []string{"/v1/provider-flags", "/v1/provider-flags/"} {
@@ -347,8 +347,8 @@ func TestPublicProviderFlagsNotGated(t *testing.T) {
 		if !ok {
 			t.Fatalf("%s should be a /v1 path", raw)
 		}
-		if requiresGlobalAdmin(name) {
-			t.Errorf("%q (%q) must NOT require global admin — it is the public feed", raw, name)
+		if requiresSuperAdmin(name) {
+			t.Errorf("%q (%q) must NOT require super admin — it is the public feed", raw, name)
 		}
 	}
 }

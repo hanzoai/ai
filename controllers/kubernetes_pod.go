@@ -32,7 +32,7 @@ import (
 // @Success 200 {object} object.Pod The Response object
 // @router /get-pods [get]
 func (c *ApiController) GetPods() {
-	if !c.RequireGlobalAdmin() {
+	if !c.RequireSuperAdmin() {
 		return
 	}
 	owner, allowed := c.GetScopedOwner()

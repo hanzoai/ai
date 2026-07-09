@@ -152,12 +152,12 @@ func TestAdminProviderView_NeverSerializesSecrets(t *testing.T) {
 // ordering + WHERE clauses are regression-tested in
 // object/provider_default_atomic_test.go against the built SQL, without a DB.
 
-// ── C-1 controller self-guard (RequireGlobalAdmin) ──────────────────────────
+// ── C-1 controller self-guard (RequireSuperAdmin) ──────────────────────────
 //
 // Belt-AND-suspenders: even if the authz filter is ever bypassed, the three admin
-// controllers call c.RequireGlobalAdmin() FIRST and refuse. These tests exercise
+// controllers call c.RequireSuperAdmin() FIRST and refuse. These tests exercise
 // that guard directly (session principal), asserting fail-closed 401/403 and pass
-// for a global admin — the SAME policy as the filter (util.IsGlobalAdmin).
+// for a super admin — the SAME policy as the filter (util.IsSuperAdmin).
 
 // ctrlFakeSession (the minimal in-memory session.Store used to carry a test
 // principal without a live session manager) is defined once in index_auth_test.go
@@ -181,40 +181,36 @@ func newGuardController(user *iam.User) (*ApiController, *httptest.ResponseRecor
 	return c, rec
 }
 
-func TestRequireGlobalAdmin_NoPrincipal401(t *testing.T) {
-	// Ensure the default {admin, built-in} global-admin set (no env override).
-	t.Setenv("globalAdminOrgs", "")
+func TestRequireSuperAdmin_NoPrincipal401(t *testing.T) {
 	c, rec := newGuardController(nil)
-	if c.RequireGlobalAdmin() {
-		t.Error("RequireGlobalAdmin() = true for no principal, want false (deny)")
+	if c.RequireSuperAdmin() {
+		t.Error("RequireSuperAdmin() = true for no principal, want false (deny)")
 	}
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("no-principal status = %d, want 401", rec.Code)
 	}
 }
 
-func TestRequireGlobalAdmin_OrgAdminForbidden403(t *testing.T) {
-	t.Setenv("globalAdminOrgs", "")
+func TestRequireSuperAdmin_OrgAdminForbidden403(t *testing.T) {
 	orgAdmin := &iam.User{Owner: "maxpower", Name: "dave", IsAdmin: true}
 	c, rec := newGuardController(orgAdmin)
-	if c.RequireGlobalAdmin() {
-		t.Error("RequireGlobalAdmin() = true for an ORG admin, want false (not a platform admin)")
+	if c.RequireSuperAdmin() {
+		t.Error("RequireSuperAdmin() = true for an ORG admin, want false (not a platform admin)")
 	}
 	if rec.Code != http.StatusForbidden {
 		t.Errorf("org-admin status = %d, want 403", rec.Code)
 	}
 }
 
-func TestRequireGlobalAdmin_GlobalAdminPasses(t *testing.T) {
-	t.Setenv("globalAdminOrgs", "")
-	globalAdmin := &iam.User{Owner: "admin", Name: "admin", IsAdmin: true}
-	c, rec := newGuardController(globalAdmin)
-	if !c.RequireGlobalAdmin() {
-		t.Error("RequireGlobalAdmin() = false for a global admin, want true (pass)")
+func TestRequireSuperAdmin_SuperAdminPasses(t *testing.T) {
+	superAdmin := &iam.User{Owner: "admin", Name: "admin", IsAdmin: true}
+	c, rec := newGuardController(superAdmin)
+	if !c.RequireSuperAdmin() {
+		t.Error("RequireSuperAdmin() = false for a super admin, want true (pass)")
 	}
 	// Pass path writes nothing (the handler continues).
 	if rec.Body.Len() != 0 {
-		t.Errorf("global-admin pass wrote a body %q, want none", rec.Body.String())
+		t.Errorf("super-admin pass wrote a body %q, want none", rec.Body.String())
 	}
 }
 

@@ -132,7 +132,7 @@ func (c *ApiController) RequireSessionOwner() (string, bool) {
 
 // GetScopedOwner resolves owner from the authenticated session.
 // Non-admin users are always scoped to their own org, ignoring request owner params.
-// Global admins can optionally target a specific owner via query parameter.
+// Super admins can optionally target a specific owner via query parameter.
 func (c *ApiController) GetScopedOwner() (string, bool) {
 	user, ok := c.RequireSignedInUser()
 	if !ok {
