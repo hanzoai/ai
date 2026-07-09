@@ -59,7 +59,7 @@ func (c *ApiController) GetRoutingDefaults() {
 }
 
 // ExportRoutingLedger streams the privacy-preserving routing-decision ledger as
-// JSONL (one event per line) for router training. RequireGlobalAdmin — it is a
+// JSONL (one event per line) for router training. RequireSuperAdmin — it is a
 // platform-wide export.
 //
 // The line schema matches the keys zen-router training/build_dataset.py --ledger
@@ -74,13 +74,13 @@ func (c *ApiController) GetRoutingDefaults() {
 //
 // @Title ExportRoutingLedger
 // @Tag Router API
-// @Description stream the routing-decision ledger as JSONL for training (global admin only)
+// @Description stream the routing-decision ledger as JSONL for training (super admin only)
 // @Param org query string false "filter to one org"
 // @Param since query string false "only events at/after this RFC3339 timestamp"
 // @Success 200 {string} string "JSONL, one routing event per line"
 // @router /export-routing-ledger [get]
 func (c *ApiController) ExportRoutingLedger() {
-	if !c.RequireGlobalAdmin() {
+	if !c.RequireSuperAdmin() {
 		return
 	}
 

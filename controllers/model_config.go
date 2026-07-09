@@ -506,7 +506,7 @@ func (mc *ModelConfig) RouterClient(known func(string) bool) router.Client {
 // @Success 200 {object} controllers.Response
 // @router /admin/reload-model-config [post]
 func (c *ApiController) ReloadModelConfig() {
-	if !c.RequireGlobalAdmin() {
+	if !c.RequireSuperAdmin() {
 		return
 	}
 	cfg := GetModelConfig()
@@ -530,7 +530,7 @@ func (c *ApiController) ReloadModelConfig() {
 // @Success 200 {object} controllers.Response
 // @router /admin/refresh-model-pricing [post]
 func (c *ApiController) RefreshModelPricing() {
-	if !c.RequireGlobalAdmin() {
+	if !c.RequireSuperAdmin() {
 		return
 	}
 	cfg := GetModelConfig()
