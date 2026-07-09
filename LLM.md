@@ -198,6 +198,64 @@ comes from `commerce` at `/v1/billing/balance?user=<org>&currency=usd`. Users in
 `BALANCE_EXEMPT_USERS` (e.g. `hanzo/z`) bypass ALL gates — use the
 `z@hanzo.ai` token to verify premium/zen without a credited org.
 
+## AI Login Manager — universal metering + connected accounts + 1% BYO fee
+
+`ai` is the centralized login manager for every user's AI providers. Every AI call
+from every surface (@hanzo/dev, Hanzo Desktop, hanzo.chat, hanzo.app) routes through
+THIS router at `api.hanzo.ai/v1`. For the caller's org the router resolves WHICH
+account executes the call, runs it, and meters ONE usage event — regardless of whose
+credits paid for it. There is exactly one meter and one credential store.
+
+**Two account modes (one router, one meter):**
+- **Hanzo credits (default).** No org-owned provider for the requested model →
+  the global built-in (`Owner == "admin"`) serves it. Billed = token list-price
+  cost (existing behavior). No surcharge.
+- **Connected third-party account (BYO).** The org connected its OWN OpenAI /
+  Anthropic / Google account via `/v1/ai/connections`. The router uses the org's
+  KMS-sealed key, the customer pays that provider directly, and Hanzo bills a **1%
+  platform fee** on the provider list price for routing + metering + management.
+
+**BYO is the EXISTING BYOK seam, not new plumbing.** `resolveProviderForUser` →
+`object.GetModelProviderByNameForOrg(org, name)` returns the org's own provider row
+when it has one (`Owner == org`), else the global `admin` built-in. `providerBYO`
+(`controllers/platform_fee.go`) classifies the resolved pair: BYO iff
+`provider.Owner != "" && != "admin" && == user.Owner`.
+
+**Metering — one path, extended not rebuilt.** Every completion terminal already
+calls `recordUsage` (→ commerce `POST /v1/billing/usage`) + `recordTrace` (→ the
+`hanzo.cloud_usage` warehouse). This feature adds three dimensions to that ONE
+event: `byo`, `fee_cents`, `account`. `platformFeeCents(costCents, byo) =
+byo ? ceil(costCents/100) : 0`. Billed `amount = byo ? fee_cents : cost_cents`; the
+full `cost_cents` is recorded on every row for analytics even when only the fee is
+billed. `hanzo.cloud_usage` is the ONE global usage store (its `organization` column
+is the row-level tenant filter — a tenant reads only its own org; the admin org
+reads unfiltered). The rich per-org analytics lens is entitlement-gated in
+`hanzoai/cloud` (`analytics.datastore`); basic own-org usage is always readable.
+
+**Connected accounts API (`/v1/ai/connections`, IAM-authed, org-scoped).** Curated
+login-manager surface over the per-org `object.Provider` store
+(`controllers/connections_api.go`). Keys are sealed via `object.StoreProviderSecret`
+→ `kms://…` ref (fails closed if KMS is down); the raw key is NEVER stored in a row,
+returned, or logged.
+- `GET /v1/ai/connections` → `[{provider, connected, account_label, updated_at}]` (never the key)
+- `POST /v1/ai/connections` `{provider, apiKey}` → seals key, activates the org row; returns metadata only
+- `DELETE /v1/ai/connections/:provider` → deactivates the org row (resolution reverts to Hanzo credits)
+
+**Enforce "even if logged in".** All AI traffic must reach this router; no surface
+bills a third party off-meter. hanzo.app's workspace default was flipped
+`openrouter → hanzo`; hanzo.chat routes via its gateway config; @hanzo/dev defaults
+to `api.hanzo.ai/v1` under Hanzo login. Claude/Opus for @hanzo/dev is served HERE
+(Anthropic-native `/v1/messages` + OpenAI-compat `/v1/chat/completions`) against the
+org's connected Anthropic account + 1% fee — no direct-to-provider bypass.
+
+**Next slice (route selection).** Connections are stored/sealed/listed and the
+1%-fee metering fires the instant the resolver returns an org-owned provider. But
+the route table maps all models to `providerName: "do-ai"` (the aggregating
+upstream), so a connection row named `openai`/`anthropic`/`google` is not yet
+SELECTED for its model family. Making a connected consumer account actually serve
+its models is a bounded route-table change (model-family → org-connection selection
++ real upstream model-id/base-url mapping) — deliberately not in this slice.
+
 ## RAG — ONE unified surface (retires the standalone chat-rag-api)
 
 `ai` is the single RAG layer for the whole platform. There is exactly ONE
