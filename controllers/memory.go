@@ -82,13 +82,13 @@ func (c *ApiController) memoryUserID() string {
 }
 
 // memoryOrg resolves the caller's org from the gateway-minted X-Org-Id (JWT
-// "owner"), falling back to GetEffectiveOrg (legacy X-Org-Id → session
+// "owner"), falling back to GetOrg (legacy X-Org-Id → session
 // owner → config default).
 func (c *ApiController) memoryOrg() string {
 	if v := strings.TrimSpace(c.Ctx.Input.Header("X-Org-Id")); v != "" {
 		return v
 	}
-	return c.GetEffectiveOrg()
+	return c.GetOrg()
 }
 
 // requireMemoryIdentity returns the trusted (org, userId) or writes an auth

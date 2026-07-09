@@ -22,7 +22,7 @@ import (
 	"github.com/hanzoai/ai/util"
 )
 
-// GetEffectiveOrg resolves the organization for data-scoping in filters from the
+// GetOrg resolves the organization for data-scoping in filters from the
 // VERIFIED request principal — never a raw client header.
 //
 // On the direct (non-gateway) ingress the X-Org-Id header is fully
@@ -34,7 +34,7 @@ import (
 //
 // Behind the gateway the injected X-Org-Id equals the JWT owner, so this
 // resolves identically — the gateway path is unaffected.
-func GetEffectiveOrg(ctx *context.Context) string {
+func GetOrg(ctx *context.Context) string {
 	requested := strings.TrimSpace(ctx.Input.Header("X-Org-Id"))
 
 	user := sessionOrBearerUser(ctx)

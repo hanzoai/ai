@@ -156,7 +156,7 @@ func (c *ApiController) VideosGenerations() {
 	}
 
 	startTime := time.Now().UTC()
-	orgId := c.GetEffectiveOrg()
+	orgId := c.GetOrg()
 
 	provider, authUser, upstreamModel, isPremium, _, err := c.authResolveProvider(token, req.Model, orgId)
 	if err != nil {
@@ -392,7 +392,7 @@ func (c *ApiController) resolveOwnedVideoJob(token, id string) (*videoJob, *obje
 		return nil, nil, nil, false
 	}
 
-	orgId := c.GetEffectiveOrg()
+	orgId := c.GetOrg()
 	provider, authUser, _, _, _, err := c.authResolveProvider(token, job.userModel, orgId)
 	if err != nil {
 		c.ResponseAuthError(err)

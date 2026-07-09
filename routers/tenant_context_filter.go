@@ -32,17 +32,17 @@ func getTenantHeader(ctx *context.Context, name string) string {
 }
 
 // TenantContextFilter captures IAM identity context for downstream scoping and
-// observability. The org is taken from the VERIFIED principal (GetEffectiveOrg),
+// observability. The org is taken from the VERIFIED principal (GetOrg),
 // NOT the raw X-Org-Id header: on the direct ingress that header is
 // client-controlled, so storing it verbatim would let any caller spoof a tenant.
-// GetEffectiveOrg honors the header only for the principal's own org (or a global
+// GetOrg honors the header only for the principal's own org (or a global
 // admin), so the stored org is always the caller's real tenant.
 func TenantContextFilter(ctx *context.Context) {
 	// Canonical gateway-minted identity + browser sub-scopes — no X-IAM-*
 	// prefix (cloud middleware_identity injects X-User-Id/X-Org-Id; console2
 	// stamps X-Project-Id/X-Environment). The X-IAM-* variants were never sent,
 	// so user/project/env context was silently empty on the direct path.
-	orgID := GetEffectiveOrg(ctx)
+	orgID := GetOrg(ctx)
 	userID := getTenantHeader(ctx, "X-User-Id")
 	projectID := getTenantHeader(ctx, "X-Project-Id")
 	env := getTenantHeader(ctx, "X-Environment")
