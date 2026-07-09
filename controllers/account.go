@@ -72,6 +72,16 @@ func resolveAccountAction(sessionUser *iam.User, anonymousAllowed bool) accountA
 	return failUnauthenticated
 }
 
+// sessionNeedsSelfHeal reports whether get-account should attempt to re-derive
+// the canonical identity from a verified credential: true when there is no
+// session identity at all, OR when the session holds only an anonymous guest (an
+// earlier anonymousSignin bound a u-<hash> record that must not shadow a real
+// signed-in subject). Decoupled from the controller so the precedence rule —
+// a verified credential beats a guest session — is unit-testable in isolation.
+func sessionNeedsSelfHeal(sessionUser *iam.User) bool {
+	return sessionUser == nil || util.IsAnonymousUser(sessionUser)
+}
+
 // setIamTokenCookie persists the verified IAM access token as the self-healing
 // first-party cookie (see iamTokenCookieName). Host-only + Secure + HttpOnly +
 // SameSite=Lax, scoped to the token's own lifetime; the validator re-checks the
@@ -450,13 +460,21 @@ func (c *ApiController) GetAccount() {
 		logs.Error("AppendWebConfigCookie: %v", err)
 	}
 
-	// Self-heal a lost in-memory session from a verified IAM credential (the
+	// Self-heal the session identity from a verified IAM credential (the
 	// hanzo_iam_token cookie or an Authorization Bearer JWT) BEFORE deciding
-	// identity: the cookie login is backed by the process-local beego session, so
-	// a real subject whose session was dropped (pod restart / GC) must be rebound
-	// to its canonical identity — never degraded to an anonymous u-<hash> record.
-	if c.GetSessionUser() == nil {
-		if p := c.principalUser(); p != nil && !util.IsAnonymousUserByUsername(p.Name) {
+	// identity. The cookie login is backed by the process-local beego session, so
+	// two failure modes downgrade a real subject to an anonymous u-<hash> record:
+	//   (1) the session was dropped (pod restart / GC) — GetSessionUser() == nil;
+	//   (2) an earlier anonymousSignin already bound a guest INTO the session, so
+	//       GetSessionUser() returns that guest and principalUser (session-first)
+	//       would keep serving it.
+	// In BOTH cases, resolve the principal DIRECTLY from the credential (via
+	// credentialUser, which bypasses the session) and, when it re-derives a
+	// canonical non-anonymous identity, OVERRIDE the session with it — a signed-in
+	// subject is never served a guest. A genuine anonymous caller (no credential)
+	// keeps its guest session and flows to the anonymous branch below.
+	if sessionNeedsSelfHeal(c.GetSessionUser()) {
+		if p := c.credentialUser(); p != nil && !util.IsAnonymousUser(p) {
 			c.SetSessionClaims(&iam.Claims{User: *p})
 		}
 	}
