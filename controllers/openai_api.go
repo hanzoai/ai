@@ -481,6 +481,23 @@ type usageRecord struct {
 	// videoCostCents. Mutually exclusive with ImageCount in practice (a call is
 	// either an image or a video generation, never both).
 	VideoCount int `json:"videoCount,omitempty"`
+
+	// BYO marks a call executed against a customer-connected third-party account
+	// (the caller's org supplied its own provider key via /v1/ai/connections),
+	// rather than a Hanzo-served provider bought with Hanzo credits. When true the
+	// customer already paid the upstream directly, so recordUsage bills only the
+	// 1% platform fee (platformFeeCents) instead of the full token cost — the full
+	// cost is still recorded for analytics. Set at the emit site via providerBYO.
+	BYO bool `json:"byo,omitempty"`
+
+	// FeeCents is the Hanzo platform surcharge stamped by recordUsage
+	// (platformFeeCents(costCents, BYO)): the amount actually billed on a BYO
+	// call, 0 for a Hanzo-credits call. Persisted to the warehouse fee_cents column.
+	FeeCents int64 `json:"feeCents,omitempty"`
+
+	// Account is the attribution label for the account that served the call:
+	// "<owner>/<name>" for a BYO connection, "hanzo" for a Hanzo-served provider.
+	Account string `json:"account,omitempty"`
 }
 
 // billingQueue is the singleton usage record delivery queue. Initialized by
@@ -531,6 +548,18 @@ func recordUsage(record *usageRecord) {
 		)
 	}
 
+	// BYO: the customer paid the upstream directly with their own connected key,
+	// so Hanzo bills ONLY the 1% platform fee — not the token cost. The full
+	// costCents is still recorded (payload + warehouse) for analytics. On a
+	// Hanzo-served call (byo=false) feeCents is 0 and the token cost is billed as
+	// before. Stamp record.FeeCents so the warehouse writer persists the same value.
+	feeCents := platformFeeCents(costCents, record.BYO)
+	record.FeeCents = feeCents
+	amount := costCents
+	if record.BYO {
+		amount = feeCents
+	}
+
 	// The debit MUST hit the same account the balance gate reads and the starter
 	// credit funded: the billing SUBJECT within the org NAMESPACE.
 	//   namespace (X-Org-Id) = record.Owner (the org)
@@ -552,7 +581,7 @@ func recordUsage(record *usageRecord) {
 		"user":             subject,
 		"actor":            record.User,
 		"currency":         "usd",
-		"amount":           costCents,
+		"amount":           amount,
 		"model":            record.Model,
 		"provider":         record.Provider,
 		"promptTokens":     record.PromptTokens,
@@ -567,6 +596,10 @@ func recordUsage(record *usageRecord) {
 		"stream":           record.Stream,
 		"status":           record.Status,
 		"clientIp":         record.ClientIP,
+		"byo":              record.BYO,
+		"feeCents":         feeCents,
+		"costCents":        costCents,
+		"account":          record.Account,
 	}
 
 	body, err := json.Marshal(payload)
@@ -1047,6 +1080,7 @@ func (c *ApiController) ChatCompletions() {
 				ClientIP:  c.Ctx.Request.RemoteAddr,
 				RequestID: requestId,
 			}
+			errRecord.BYO, errRecord.Account = providerBYO(provider, authUser)
 			recordUsage(errRecord)
 			recordTrace(errRecord, requestStartTime)
 		}
@@ -1072,6 +1106,7 @@ func (c *ApiController) ChatCompletions() {
 			ClientIP:         c.Ctx.Request.RemoteAddr,
 			RequestID:        requestId,
 		}
+		successRecord.BYO, successRecord.Account = providerBYO(provider, authUser)
 		recordUsage(successRecord)
 		recordTrace(successRecord, requestStartTime)
 		// Settle the reservation with the ACTUAL cost (this works identically for
@@ -1286,6 +1321,7 @@ func (c *ApiController) proxyToolRequest(
 				ClientIP:  c.Ctx.Request.RemoteAddr,
 				RequestID: requestId,
 			}
+			errRecord.BYO, errRecord.Account = providerBYO(provider, authUser)
 			recordUsage(errRecord)
 			recordTrace(errRecord, requestStartTime)
 		}
@@ -1347,6 +1383,7 @@ func (c *ApiController) proxyToolRequest(
 				ClientIP:         c.Ctx.Request.RemoteAddr,
 				RequestID:        requestId,
 			}
+			successRecord.BYO, successRecord.Account = providerBYO(provider, authUser)
 			recordUsage(successRecord)
 			recordTrace(successRecord, requestStartTime)
 		}
@@ -1402,6 +1439,7 @@ func (c *ApiController) proxyToolRequest(
 				ClientIP:         c.Ctx.Request.RemoteAddr,
 				RequestID:        requestId,
 			}
+			successRecord.BYO, successRecord.Account = providerBYO(provider, authUser)
 			recordUsage(successRecord)
 			recordTrace(successRecord, requestStartTime)
 		}
@@ -1755,6 +1793,7 @@ func (c *ApiController) proxyToolRequestAnthropic(
 			ClientIP:         c.Ctx.Request.RemoteAddr,
 			RequestID:        requestId,
 		}
+		successRecord.BYO, successRecord.Account = providerBYO(provider, authUser)
 		recordUsage(successRecord)
 		recordTrace(successRecord, requestStartTime)
 	}
