@@ -76,7 +76,7 @@ func initAPI() {
 	beego.Router("/v1/delete-provider", &controllers.ApiController{}, "POST:DeleteProvider")
 	beego.Router("/v1/refresh-mcp-tools", &controllers.ApiController{}, "POST:RefreshMcpTools")
 
-	// Provider-admin management surface (global-admin gated in authz_filter.go).
+	// Provider-admin management surface (super-admin gated in authz_filter.go).
 	// Reads/writes the SAME object.Provider records as the CRUD routes above.
 	beego.Router("/v1/admin/providers", &controllers.ApiController{}, "GET:GetAdminProviders")
 	beego.Router("/v1/admin/providers/toggle", &controllers.ApiController{}, "POST:ToggleAdminProvider")
@@ -85,7 +85,7 @@ func initAPI() {
 	beego.Router("/v1/provider-flags", &controllers.ApiController{}, "GET:GetProviderFlags")
 
 	// AI login-manager: org-scoped connections to third-party AI accounts. Curated
-	// surface over object.Provider — authenticated org user (NOT global-admin);
+	// surface over object.Provider — authenticated org user (NOT super-admin);
 	// keys are sealed into KMS, never returned. See controllers/connections_api.go.
 	beego.Router("/v1/ai/connections", &controllers.ApiController{}, "GET:GetAIConnections;POST:AddAIConnection")
 	beego.Router("/v1/ai/connections/:provider", &controllers.ApiController{}, "DELETE:DeleteAIConnection;POST:DeleteAIConnection")
@@ -381,7 +381,7 @@ func initAPI() {
 	beego.Router("/v1/delete-org-settings", &controllers.ApiController{}, "POST:DeleteOrgSettings")
 
 	// Routing defaults read surface (any authenticated user) + the training-ledger
-	// export (global admin). get-routing-defaults resolves org > "*" > conf for the
+	// export (super admin). get-routing-defaults resolves org > "*" > conf for the
 	// caller's own org; export-routing-ledger streams the privacy-preserving
 	// decision ledger as JSONL.
 	beego.Router("/v1/get-routing-defaults", &controllers.ApiController{}, "GET:GetRoutingDefaults")

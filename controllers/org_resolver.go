@@ -56,7 +56,7 @@ func (c *ApiController) principalUser() *iam.User {
 // the VERIFIED request principal — never a raw client header.
 //
 // X-Org-Id is honored ONLY when it matches the authenticated principal's own
-// org, or the principal is a global admin (cross-org platform access). A
+// org, or the principal is a super admin (cross-org platform access). A
 // non-admin can never act as another org via a spoofed header; an
 // unauthenticated caller's header is ignored. Behind the gateway the injected
 // header equals the JWT owner, so the gateway path resolves identically.
@@ -69,7 +69,7 @@ func (c *ApiController) GetEffectiveOrg() string {
 
 	user := c.principalUser()
 	if user != nil && user.Owner != "" {
-		if requested != "" && (requested == user.Owner || util.IsGlobalAdmin(user)) {
+		if requested != "" && (requested == user.Owner || util.IsSuperAdmin(user)) {
 			return requested
 		}
 		return user.Owner

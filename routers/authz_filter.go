@@ -57,10 +57,10 @@ func isAllowedInDemoMode(method string, urlPath string) bool {
 	return false
 }
 
-// globalAdminEndpoints are platform-sensitive operations — they expose or mutate
+// superAdminEndpoints are platform-sensitive operations — they expose or mutate
 // upstream provider config (which holds upstream API keys), model routing,
 // storage credentials, or cluster topology. They ALWAYS require a GLOBAL admin
-// (util.IsGlobalAdmin) and are NEVER relaxed by preview mode or the benign-read
+// (util.IsSuperAdmin) and are NEVER relaxed by preview mode or the benign-read
 // exempt list. This closes two issues at once:
 //   - preview-mode default-open: with disablePreviewMode=false (the default) the
 //     old filter let ALL get-* through, disclosing provider/topology config to
@@ -70,7 +70,7 @@ func isAllowedInDemoMode(method string, urlPath string) bool {
 //
 // get-models is deliberately NOT here — it is the public model catalog and stays
 // reachable (it has its own per-request auth in ListModels).
-var globalAdminEndpoints = map[string]struct{}{
+var superAdminEndpoints = map[string]struct{}{
 	// Upstream provider config (holds upstream API keys).
 	"get-providers": {}, "get-provider": {}, "get-global-providers": {},
 	"add-provider": {}, "update-provider": {}, "delete-provider": {},
@@ -102,8 +102,8 @@ var globalAdminEndpoints = map[string]struct{}{
 	"get-k8s-status": {},
 }
 
-func requiresGlobalAdmin(controllerName string) bool {
-	_, ok := globalAdminEndpoints[controllerName]
+func requiresSuperAdmin(controllerName string) bool {
+	_, ok := superAdminEndpoints[controllerName]
 	return ok
 }
 
@@ -128,7 +128,7 @@ var authRequiredEndpoints = map[string]struct{}{
 // the explicit set plus the native /v1/rag/* family, the librechat-compat
 // /v1/documents/{id}/context read, and the AI login-manager /v1/ai/connections*
 // family (org-scoped: a present credential is required at the filter; the
-// controller does the authoritative per-org check — NOT a global-admin gate).
+// controller does the authoritative per-org check — NOT a super-admin gate).
 func requiresPresentCredential(controllerName string) bool {
 	if _, ok := authRequiredEndpoints[controllerName]; ok {
 		return true
@@ -180,7 +180,7 @@ func sessionOrBearerUser(ctx *context.Context) *iam.User {
 // disagreed with the router: variants like "/v1/admin/providers/",
 // "/v1//admin/providers", "/v1/./admin/providers" and "/v1/admin/../admin/providers"
 // all dispatch to the gated controller yet, un-normalized, produced a controllerName
-// ("admin/providers/", …) that missed the globalAdminEndpoints map — falling through
+// ("admin/providers/", …) that missed the superAdminEndpoints map — falling through
 // to the fully-open default. Cleaning here makes the gate and the router agree on
 // ONE canonical name, closing the entire slash/dot variant set for every gated
 // endpoint (admin/providers*, the get-*/*-provider CRUD, topology reads).
@@ -206,12 +206,12 @@ func permissionFilter(ctx *context.Context) {
 	// Platform-sensitive endpoints are gated FIRST — before the preview-mode
 	// bypass and the benign-read exempt list — so they are admin-gated regardless
 	// of configuration. Fail-secure: no principal => 401, wrong principal => 403.
-	if requiresGlobalAdmin(controllerName) {
+	if requiresSuperAdmin(controllerName) {
 		user := sessionOrBearerUser(ctx)
 		if user == nil {
 			denyUnauthorized(ctx, "auth:authentication required")
-		} else if !util.IsGlobalAdmin(user) {
-			denyForbidden(ctx, "auth:this operation requires global admin privilege")
+		} else if !util.IsSuperAdmin(user) {
+			denyForbidden(ctx, "auth:this operation requires super admin privilege")
 		}
 		return
 	}
