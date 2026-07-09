@@ -558,6 +558,7 @@ func (c *ApiController) AnthropicMessages() {
 				ClientIP:  c.Ctx.Request.RemoteAddr,
 				RequestID: requestId,
 			}
+			errRecord.BYO, errRecord.Account = providerBYO(provider, authUser)
 			recordUsage(errRecord)
 			recordTrace(errRecord, requestStartTime)
 		}
@@ -583,6 +584,7 @@ func (c *ApiController) AnthropicMessages() {
 			ClientIP:         c.Ctx.Request.RemoteAddr,
 			RequestID:        requestId,
 		}
+		successRecord.BYO, successRecord.Account = providerBYO(provider, authUser)
 		recordUsage(successRecord)
 		recordTrace(successRecord, requestStartTime)
 		hold.settle(calculateCostCentsWithCache(request.Model, modelResult.PromptTokenCount, modelResult.ResponseTokenCount, 0, 0))
@@ -738,6 +740,7 @@ func (c *ApiController) proxyAnthropicToolRequest(
 				Premium: isPremium, Stream: true, Status: "success",
 				ClientIP: c.Ctx.Request.RemoteAddr, RequestID: requestId,
 			}
+			rec.BYO, rec.Account = providerBYO(provider, authUser)
 			recordUsage(rec)
 			recordTrace(rec, requestStartTime)
 			hold.settle(calculateCostCentsWithCache(request.Model, capPrompt, capCompletion, 0, 0))
@@ -762,6 +765,7 @@ func (c *ApiController) proxyAnthropicToolRequest(
 				Premium: isPremium, Stream: false, Status: "success",
 				ClientIP: c.Ctx.Request.RemoteAddr, RequestID: requestId,
 			}
+			rec.BYO, rec.Account = providerBYO(provider, authUser)
 			recordUsage(rec)
 			recordTrace(rec, requestStartTime)
 			hold.settle(calculateCostCentsWithCache(request.Model, prompt, completion, 0, 0))
