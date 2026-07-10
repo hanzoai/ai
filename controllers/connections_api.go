@@ -195,40 +195,21 @@ func (c *ApiController) AddAIConnection() {
 		return
 	}
 
-	// Seal the raw key into KMS FIRST — fails closed (StoreProviderSecret refuses to
+	// Seal the raw key into KMS FIRST — fails closed (sealProviderSecret refuses to
 	// store plaintext when KMS is unconfigured), so the row is never built or written
-	// with a raw key.
-	ref, err := object.StoreProviderSecret(connectionSecretName(org, spec.name), body.APIKey)
+	// with a raw key. sealProviderSecret + persistConnection are the SAME seal +
+	// upsert path the OAuth connect flow (CallbackAIProvider) uses.
+	ref, err := sealProviderSecret(connectionSecretName(org, spec.name), body.APIKey)
 	if err != nil {
 		c.ResponseErrorWithStatus(http.StatusServiceUnavailable, "secret store unavailable, cannot store key")
 		return
 	}
-
-	row := buildConnectionProvider(org, spec, ref)
-	id := org + "/" + spec.name
-	existing, err := object.GetProvider(id)
-	if err != nil {
+	if err := persistConnection(org, spec, ref); err != nil {
 		c.ResponseError(err.Error())
 		return
 	}
-	if existing != nil {
-		// Reconnect: preserve the row's minted ProviderKey and original CreatedTime,
-		// refresh the sealed secret ref + reactivate.
-		row.ProviderKey = existing.ProviderKey
-		row.CreatedTime = existing.CreatedTime
-		if _, err := object.UpdateProvider(id, row); err != nil {
-			c.ResponseError(err.Error())
-			return
-		}
-	} else {
-		if _, err := object.AddProvider(row); err != nil {
-			c.ResponseError(err.Error())
-			return
-		}
-	}
-	object.InvalidateProviderNameCache(spec.name)
 
-	c.ResponseOk(aiConnResponse{Provider: spec.name, Connected: true, AccountLabel: id})
+	c.ResponseOk(aiConnResponse{Provider: spec.name, Connected: true, AccountLabel: org + "/" + spec.name})
 }
 
 // DeleteAIConnection disconnects a third-party AI account: it deactivates the org's
