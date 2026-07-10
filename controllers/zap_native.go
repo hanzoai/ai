@@ -418,7 +418,7 @@ func zapChatHandler(ctx context.Context, auth string, body []byte) (*zap.Message
 				RequestID:        requestId,
 			}
 			recordUsage(record)
-			recordTrace(record, requestStartTime)
+			recordTrace(ctx, record, requestStartTime)
 		}()
 	}
 
