@@ -111,12 +111,6 @@ func mountRoutes(app *zip.App) {
 	app.All("/v1/*", zip.AdaptNetHTTP(handlerAdapter{}))
 }
 
-func init() {
-	cloud.Register("ai", 150, func(app any, deps cloud.Deps) error {
-		return Mount(app.(*zip.App), deps)
-	})
-}
-
 // handlerAdapter forwards each request under /v1/* to the registered runtime
 // handler (the beego ControllerRegister) or returns 503 if none. The path is
 // passed through unchanged: beego's routes are registered at the same bare /v1/*
