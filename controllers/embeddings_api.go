@@ -237,7 +237,7 @@ func (c *ApiController) Rerank() {
 			RequestID:    util.GenerateUUID(),
 		}
 		recordUsage(rec)
-		recordTrace(rec, startTime)
+		recordTrace(c.Ctx.Request.Context(), rec, startTime)
 	}
 
 	c.jsonResponse(map[string]interface{}{
@@ -324,7 +324,7 @@ func (c *ApiController) proxyJSON(provider *object.Provider, apiPath string, bod
 				RequestID: requestId,
 			}
 			recordUsage(errRecord)
-			recordTrace(errRecord, startTime)
+			recordTrace(c.Ctx.Request.Context(), errRecord, startTime)
 		}
 		c.ResponseError(fmt.Sprintf("Upstream request failed: %s", err.Error()))
 		return
@@ -366,7 +366,7 @@ func (c *ApiController) proxyJSON(provider *object.Provider, apiPath string, bod
 			RequestID:    requestId,
 		}
 		recordUsage(rec)
-		recordTrace(rec, startTime)
+		recordTrace(c.Ctx.Request.Context(), rec, startTime)
 	}
 
 	for k, vals := range resp.Header {
