@@ -562,6 +562,20 @@ func usageCostCents(record *usageRecord) int64 {
 	}
 }
 
+// usageBilledCents is what Hanzo actually DEBITS the org ledger for a call, in
+// cents, given its full provider cost: the full cost for a Hanzo-served call, or
+// only the platform fee (platformFeeCents, ~1%) for a BYO call where the customer
+// already paid the upstream with their own key. This is the ONE billed-amount of
+// record: recordUsage debits it and emitGenAISpan reports it as
+// _o11y.gen_ai.billed_cost, so Observe reconciles with the invoice — while
+// _o11y.gen_ai.total_cost keeps the full provider cost for analytics.
+func usageBilledCents(record *usageRecord, costCents int64) int64 {
+	if record.BYO {
+		return platformFeeCents(costCents, true)
+	}
+	return costCents
+}
+
 // recordUsage serializes a usage record and enqueues it for reliable delivery
 // to Commerce. The queue handles retries with exponential backoff.
 // Only successful API calls are recorded (error status is filtered here).
@@ -587,10 +601,7 @@ func recordUsage(record *usageRecord) {
 	// before. Stamp record.FeeCents so the warehouse writer persists the same value.
 	feeCents := platformFeeCents(costCents, record.BYO)
 	record.FeeCents = feeCents
-	amount := costCents
-	if record.BYO {
-		amount = feeCents
-	}
+	amount := usageBilledCents(record, costCents)
 
 	// The debit MUST hit the same account the balance gate reads and the starter
 	// credit funded: the billing SUBJECT within the org NAMESPACE.
