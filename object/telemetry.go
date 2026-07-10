@@ -19,7 +19,11 @@
 // (hanzo.cloud_usage, written by zapWriteUsage) and the o11y-owned observations
 // table are separate concerns — see controllers/openai_api.go recordTrace.
 //
-// Opt-in via OTEL_EXPORTER_OTLP_ENDPOINT (or OTEL_EXPORTER_OTLP_TRACES_ENDPOINT),
+// In the fused cloud binary the composition root installs the process-global
+// tracer provider (wired to the embedded o11y in-process trace sink) and calls
+// AdoptHostTracerProvider; ai then emits every gen_ai span through that provider —
+// one provider, one wire — and does NOT install its own. Standalone (cmd/aid) is
+// opt-in via OTEL_EXPORTER_OTLP_ENDPOINT (or OTEL_EXPORTER_OTLP_TRACES_ENDPOINT),
 // mirroring InitDatastore's env-gated, background, non-fatal posture: with no
 // endpoint the emitter stays honest-off (TelemetryEnabled() == false) and the
 // span emit is a no-op, so local dev never ships to a nonexistent collector. The
@@ -50,27 +54,43 @@ var (
 	telemetryReady    atomic.Bool
 )
 
-// InitTelemetry opens the OTLP trace exporter that emits OTel GenAI spans to
-// o11y. Opt-in via OTEL_EXPORTER_OTLP_ENDPOINT (or the traces-specific variant).
-// Non-fatal and asynchronous: a collector outage at boot must never take down
-// the cloud process, so it builds in the background and only latches ready once
-// the provider is set. Until then TelemetryEnabled() reports false and the emit
-// path is skipped. Runs identically in cmd/aid and the embedded cloud binary.
+// AdoptHostTracerProvider declares that a host composition root has installed the
+// process-global OTel tracer provider — the fused cloud binary does exactly this,
+// wiring that provider to the embedded o11y in-process trace sink (Cost-0, no
+// socket). Once adopted, the ai module emits every gen_ai span through that global
+// provider (one provider, one wire) and InitTelemetry will NOT fork a competing
+// exporter. It is the ONE signal a host uses to make ai ride its trace path:
+// explicit and typed, not env archaeology. Idempotent, and safe to call before
+// InitTelemetry — the composition root installs the provider, adopts it, then
+// mounts ai. The host owns the provider's flush/shutdown.
+func AdoptHostTracerProvider() { telemetryReady.Store(true) }
+
+// InitTelemetry wires the GenAI span emit path. There are two mutually exclusive
+// modes, selected by who owns the process-global tracer provider:
+//
+//   - Host-owned (the fused cloud binary): the composition root installed the
+//     provider and called AdoptHostTracerProvider first, so telemetryReady is
+//     already latched. ai emits through the host's global provider and never forks
+//     its own — that would win the global slot for the GenAI tracer created
+//     afterward and split the wire, stranding gen_ai spans off the host's sink.
+//   - Standalone (cmd/aid): ai owns the provider. Opt-in via
+//     OTEL_EXPORTER_OTLP_ENDPOINT (or the traces-specific variant); it builds in the
+//     background and only latches ready once the provider is set. With no endpoint
+//     the emitter stays honest-off (TelemetryEnabled() == false) and the emit is a
+//     no-op, so local dev never ships to a nonexistent collector.
+//
+// Non-fatal and asynchronous: a collector outage at boot never takes the process
+// down. Runs identically in cmd/aid and the embedded cloud binary.
 func InitTelemetry() {
-	// When the host process already owns the trace path — cloud installs a
-	// ZAP-native tracer provider and signals it via OTEL_EXPORTER_ZAP_ENDPOINT —
-	// do NOT fork a competing OTLP provider (that would overwrite the host's
-	// global provider and split the wire). Latch ready and emit GenAI spans
-	// through the host's global tracer, so they ride the host's wire (ZAP).
-	// One provider, one wire. The host owns flush/shutdown of that provider.
-	if strings.TrimSpace(os.Getenv("OTEL_EXPORTER_ZAP_ENDPOINT")) != "" {
-		telemetryReady.Store(true)
-		logs.Info("telemetry: OTel GenAI spans -> host global tracer provider (ZAP wire)")
+	// Host already owns the global provider (AdoptHostTracerProvider was called by
+	// the composition root before this mount): emit through it, never fork.
+	if telemetryReady.Load() {
+		logs.Info("telemetry: OTel GenAI spans -> host global tracer provider")
 		return
 	}
 	endpoint := firstNonEmptyEnv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "OTEL_EXPORTER_OTLP_ENDPOINT")
 	if endpoint == "" {
-		logs.Info("telemetry: disabled (set OTEL_EXPORTER_OTLP_ENDPOINT to emit OTel GenAI spans to o11y)")
+		logs.Info("telemetry: disabled (no host provider adopted; set OTEL_EXPORTER_OTLP_ENDPOINT to emit OTel GenAI spans to o11y)")
 		return
 	}
 	go initTelemetry()
