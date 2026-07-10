@@ -122,7 +122,8 @@ func buildGenAISpanFields(record *usageRecord, totalCostUSD, billedCostUSD float
 
 	// Per-component cost detail — token-billed calls only (breakdown != nil).
 	if breakdown != nil {
-		attrs = append(attrs,
+		attrs = append(
+			attrs,
 			attribute.Float64(attrO11yCostInput, breakdown.Input),
 			attribute.Float64(attrO11yCostOutput, breakdown.Output),
 			attribute.Float64(attrO11yCostCacheRead, breakdown.CacheRead),
@@ -133,7 +134,8 @@ func buildGenAISpanFields(record *usageRecord, totalCostUSD, billedCostUSD float
 	// Session turns the o11y sessions/conversations view on for this org. Emitted
 	// under both the OTel conversation key and o11y's session.id grouping key.
 	if record.Session != "" {
-		attrs = append(attrs,
+		attrs = append(
+			attrs,
 			attribute.String(attrSessionID, record.Session),
 			attribute.String(attrConversationID, record.Session),
 		)

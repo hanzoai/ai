@@ -89,6 +89,11 @@ func initAPI() {
 	// keys are sealed into KMS, never returned. See controllers/connections_api.go.
 	beego.Router("/v1/ai/connections", &controllers.ApiController{}, "GET:GetAIConnections;POST:AddAIConnection")
 	beego.Router("/v1/ai/connections/:provider", &controllers.ApiController{}, "DELETE:DeleteAIConnection;POST:DeleteAIConnection")
+	// OAuth "connect your provider login": authorize sends the org (from the
+	// session) to the provider; callback seals the returned token into KMS exactly
+	// like the BYOK path. See controllers/connections_oauth.go.
+	beego.Router("/v1/ai/connections/:provider/authorize", &controllers.ApiController{}, "GET:ConnectAIProvider")
+	beego.Router("/v1/ai/connections/:provider/callback", &controllers.ApiController{}, "GET:CallbackAIProvider")
 
 	beego.Router("/v1/get-global-files", &controllers.ApiController{}, "GET:GetGlobalFiles")
 	beego.Router("/v1/get-files", &controllers.ApiController{}, "GET:GetFiles")

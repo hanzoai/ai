@@ -56,18 +56,18 @@ func TestBuildGenAISpanFields_ChatSuccess(t *testing.T) {
 
 	m := attrMap(f.attrs)
 	wantStr := map[string]string{
-		"gen_ai.system":            "hanzo",
-		"gen_ai.operation.name":    "chat",
-		"gen_ai.request.model":     "zen5",
-		"gen_ai.response.model":    "zen5",
-		"user.id":                  "acme/alice",
-		"gen_ai.hanzo.org_id":      "acme",
-		"gen_ai.hanzo.provider":    "digitalocean",
-		"gen_ai.hanzo.request_id":  "req-abc",
-		"session.id":               "conv-42",
-		"gen_ai.conversation.id":   "conv-42",
-		"gen_ai.hanzo.served_by":   "byo-gpu",
-		"gen_ai.hanzo.cluster_id":  "cl-1",
+		"gen_ai.system":             "hanzo",
+		"gen_ai.operation.name":     "chat",
+		"gen_ai.request.model":      "zen5",
+		"gen_ai.response.model":     "zen5",
+		"user.id":                   "acme/alice",
+		"gen_ai.hanzo.org_id":       "acme",
+		"gen_ai.hanzo.provider":     "digitalocean",
+		"gen_ai.hanzo.request_id":   "req-abc",
+		"session.id":                "conv-42",
+		"gen_ai.conversation.id":    "conv-42",
+		"gen_ai.hanzo.served_by":    "byo-gpu",
+		"gen_ai.hanzo.cluster_id":   "cl-1",
 		"gen_ai.hanzo.route_policy": "enso:cheap",
 	}
 	for k, want := range wantStr {
@@ -81,11 +81,11 @@ func TestBuildGenAISpanFields_ChatSuccess(t *testing.T) {
 		}
 	}
 	wantInt := map[string]int64{
-		"gen_ai.usage.input_tokens":                  120,
-		"gen_ai.usage.output_tokens":                 45,
-		"gen_ai.usage.total_tokens":                  165,
-		"gen_ai.usage.cache_read.input_tokens":       30,
-		"gen_ai.usage.cache_creation.input_tokens":   10,
+		"gen_ai.usage.input_tokens":                120,
+		"gen_ai.usage.output_tokens":               45,
+		"gen_ai.usage.total_tokens":                165,
+		"gen_ai.usage.cache_read.input_tokens":     30,
+		"gen_ai.usage.cache_creation.input_tokens": 10,
 	}
 	for k, want := range wantInt {
 		if got := m[k].AsInt64(); got != want {
@@ -191,8 +191,16 @@ func TestGenAICaptureMessages(t *testing.T) {
 		val  string
 		want bool
 	}{
-		{"", false}, {"false", false}, {"0", false}, {"no", false}, {"off", false},
-		{"true", true}, {"1", true}, {"TRUE", true}, {"Yes", true}, {"on", true},
+		{"", false},
+		{"false", false},
+		{"0", false},
+		{"no", false},
+		{"off", false},
+		{"true", true},
+		{"1", true},
+		{"TRUE", true},
+		{"Yes", true},
+		{"on", true},
 	} {
 		t.Setenv("O11Y_GENAI_CAPTURE_MESSAGES", tc.val)
 		if got := genAICaptureMessages(); got != tc.want {
