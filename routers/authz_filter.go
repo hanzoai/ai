@@ -133,6 +133,13 @@ func requiresPresentCredential(controllerName string) bool {
 	if _, ok := authRequiredEndpoints[controllerName]; ok {
 		return true
 	}
+	// The OAuth callback is authenticated by the HMAC-signed, org-bound state (not a
+	// session): the provider redirects the browser to it and our cookie may not ride
+	// along, so it must be reachable without a present credential. The authorize +
+	// CRUD paths still require one; the callback re-derives the org from the state.
+	if strings.HasPrefix(controllerName, "ai/connections/") && strings.HasSuffix(controllerName, "/callback") {
+		return false
+	}
 	return strings.HasPrefix(controllerName, "rag/") ||
 		strings.HasPrefix(controllerName, "documents/") ||
 		controllerName == "ai/connections" ||
