@@ -560,7 +560,7 @@ func (c *ApiController) AnthropicMessages() {
 			}
 			errRecord.BYO, errRecord.Account = providerBYO(provider, authUser)
 			recordUsage(errRecord)
-			recordTrace(errRecord, requestStartTime)
+			recordTrace(c.Ctx.Request.Context(), errRecord, requestStartTime)
 		}
 		c.respondAnthropicError("api_error", err.Error(), 500)
 		return
@@ -586,7 +586,7 @@ func (c *ApiController) AnthropicMessages() {
 		}
 		successRecord.BYO, successRecord.Account = providerBYO(provider, authUser)
 		recordUsage(successRecord)
-		recordTrace(successRecord, requestStartTime)
+		recordTrace(c.Ctx.Request.Context(), successRecord, requestStartTime)
 		hold.settle(calculateCostCentsWithCache(request.Model, modelResult.PromptTokenCount, modelResult.ResponseTokenCount, 0, 0))
 	}
 
@@ -742,7 +742,7 @@ func (c *ApiController) proxyAnthropicToolRequest(
 			}
 			rec.BYO, rec.Account = providerBYO(provider, authUser)
 			recordUsage(rec)
-			recordTrace(rec, requestStartTime)
+			recordTrace(c.Ctx.Request.Context(), rec, requestStartTime)
 			hold.settle(calculateCostCentsWithCache(request.Model, capPrompt, capCompletion, 0, 0))
 		}
 	} else {
@@ -767,7 +767,7 @@ func (c *ApiController) proxyAnthropicToolRequest(
 			}
 			rec.BYO, rec.Account = providerBYO(provider, authUser)
 			recordUsage(rec)
-			recordTrace(rec, requestStartTime)
+			recordTrace(c.Ctx.Request.Context(), rec, requestStartTime)
 			hold.settle(calculateCostCentsWithCache(request.Model, prompt, completion, 0, 0))
 		}
 		c.Ctx.Output.Body(respBody)
