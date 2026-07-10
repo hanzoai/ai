@@ -17,6 +17,7 @@ package controllers
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -498,6 +499,29 @@ type usageRecord struct {
 	// Account is the attribution label for the account that served the call:
 	// "<owner>/<name>" for a BYO connection, "hanzo" for a Hanzo-served provider.
 	Account string `json:"account,omitempty"`
+
+	// ── o11y gen_ai span enrichment (all optional, best-effort) ──────────────
+	// These carry the observation-of-record attribution the o11y span plane reads
+	// (controllers/telemetry.go emitGenAISpan). They are omitempty so a record that
+	// does not populate them emits no attribute — the span is honest, never a
+	// fabricated value, and each dimension lights up as its producer is wired.
+
+	// Session is the conversation/session id. Emitted as gen_ai.conversation.id +
+	// session.id, which is what turns the o11y sessions view on for this org.
+	Session string `json:"session,omitempty"`
+	// ServedBy is where inference ran: "hanzo" (cloud), "byo-provider" (an
+	// org-owned provider key), or "byo-gpu" (an org's own cluster). Empty defaults
+	// to "hanzo" at emit — the cloud-served majority.
+	ServedBy string `json:"servedBy,omitempty"`
+	// ClusterID is the BYO-GPU cluster id when ServedBy == "byo-gpu".
+	ClusterID string `json:"clusterId,omitempty"`
+	// RoutePolicy is the enso route-policy decision that selected the model.
+	RoutePolicy string `json:"routePolicy,omitempty"`
+	// InputMessages / OutputMessages are the serialized prompt/completion. They are
+	// PII and are emitted ONLY when O11Y_GENAI_CAPTURE_MESSAGES is enabled
+	// (default off = redacted). Never logged, never billed — telemetry only.
+	InputMessages  string `json:"inputMessages,omitempty"`
+	OutputMessages string `json:"outputMessages,omitempty"`
 }
 
 // billingQueue is the singleton usage record delivery queue. Initialized by
@@ -519,6 +543,39 @@ func InitBillingQueue() *util.BillingQueue {
 	return billingQueue
 }
 
+// usageCostCents is the authoritative billable cost of a call, in cents. Image and
+// video generations bill per unit (token counts are 0 on those paths); everything
+// else bills from the cache-aware token table. A record carries at most one of
+// ImageCount/VideoCount. This is the ONE cost of record: recordUsage debits it and
+// emitGenAISpan reports it, so the ledger and the span never diverge.
+func usageCostCents(record *usageRecord) int64 {
+	switch {
+	case record.VideoCount > 0:
+		return videoCostCents(record.Model, record.VideoCount)
+	case record.ImageCount > 0:
+		return imageCostCents(record.Model, record.ImageCount)
+	default:
+		return calculateCostCentsWithCache(
+			record.Model, record.PromptTokens, record.CompletionTokens,
+			record.CacheReadTokens, record.CacheWriteTokens,
+		)
+	}
+}
+
+// usageBilledCents is what Hanzo actually DEBITS the org ledger for a call, in
+// cents, given its full provider cost: the full cost for a Hanzo-served call, or
+// only the platform fee (platformFeeCents, ~1%) for a BYO call where the customer
+// already paid the upstream with their own key. This is the ONE billed-amount of
+// record: recordUsage debits it and emitGenAISpan reports it as
+// _o11y.gen_ai.billed_cost, so Observe reconciles with the invoice — while
+// _o11y.gen_ai.total_cost keeps the full provider cost for analytics.
+func usageBilledCents(record *usageRecord, costCents int64) int64 {
+	if record.BYO {
+		return platformFeeCents(costCents, true)
+	}
+	return costCents
+}
+
 // recordUsage serializes a usage record and enqueues it for reliable delivery
 // to Commerce. The queue handles retries with exponential backoff.
 // Only successful API calls are recorded (error status is filtered here).
@@ -532,21 +589,10 @@ func recordUsage(record *usageRecord) {
 		return
 	}
 
-	// Calculate cost. Image and video generations bill per unit (token counts
-	// are 0 on those paths); everything else bills from the cache-aware token
-	// table. A record carries at most one of ImageCount/VideoCount.
-	var costCents int64
-	switch {
-	case record.VideoCount > 0:
-		costCents = videoCostCents(record.Model, record.VideoCount)
-	case record.ImageCount > 0:
-		costCents = imageCostCents(record.Model, record.ImageCount)
-	default:
-		costCents = calculateCostCentsWithCache(
-			record.Model, record.PromptTokens, record.CompletionTokens,
-			record.CacheReadTokens, record.CacheWriteTokens,
-		)
-	}
+	// Calculate cost. usageCostCents is the ONE cost of record — the same value the
+	// o11y gen_ai span reports (emitGenAISpan), so the ledger debit and the span
+	// can never disagree.
+	costCents := usageCostCents(record)
 
 	// BYO: the customer paid the upstream directly with their own connected key,
 	// so Hanzo bills ONLY the 1% platform fee — not the token cost. The full
@@ -555,10 +601,7 @@ func recordUsage(record *usageRecord) {
 	// before. Stamp record.FeeCents so the warehouse writer persists the same value.
 	feeCents := platformFeeCents(costCents, record.BYO)
 	record.FeeCents = feeCents
-	amount := costCents
-	if record.BYO {
-		amount = feeCents
-	}
+	amount := usageBilledCents(record, costCents)
 
 	// The debit MUST hit the same account the balance gate reads and the starter
 	// credit funded: the billing SUBJECT within the org NAMESPACE.
@@ -635,9 +678,9 @@ func recordUsage(record *usageRecord) {
 // SOURCE the o11y pipeline ingests — this module never writes the observations
 // table directly. The span emit is batched/async and a no-op when telemetry is
 // off, so it never blocks the request.
-func recordTrace(record *usageRecord, startTime time.Time) {
+func recordTrace(ctx context.Context, record *usageRecord, startTime time.Time) {
 	go zapWriteUsage(record, startTime)
-	emitGenAISpan(record, startTime)
+	emitGenAISpan(ctx, record, startTime)
 }
 
 // ── API handlers ────────────────────────────────────────────────────────────
@@ -1082,7 +1125,7 @@ func (c *ApiController) ChatCompletions() {
 			}
 			errRecord.BYO, errRecord.Account = providerBYO(provider, authUser)
 			recordUsage(errRecord)
-			recordTrace(errRecord, requestStartTime)
+			recordTrace(c.Ctx.Request.Context(), errRecord, requestStartTime)
 		}
 		c.ResponseError(err.Error())
 		return
@@ -1108,7 +1151,7 @@ func (c *ApiController) ChatCompletions() {
 		}
 		successRecord.BYO, successRecord.Account = providerBYO(provider, authUser)
 		recordUsage(successRecord)
-		recordTrace(successRecord, requestStartTime)
+		recordTrace(c.Ctx.Request.Context(), successRecord, requestStartTime)
 		// Settle the reservation with the ACTUAL cost (this works identically for
 		// streaming and non-streaming non-tool responses — both have real token
 		// counts here from the QueryText pipeline).
@@ -1323,7 +1366,7 @@ func (c *ApiController) proxyToolRequest(
 			}
 			errRecord.BYO, errRecord.Account = providerBYO(provider, authUser)
 			recordUsage(errRecord)
-			recordTrace(errRecord, requestStartTime)
+			recordTrace(c.Ctx.Request.Context(), errRecord, requestStartTime)
 		}
 		c.ResponseError(fmt.Sprintf("Upstream request failed: %s", err.Error()))
 		return
@@ -1385,7 +1428,7 @@ func (c *ApiController) proxyToolRequest(
 			}
 			successRecord.BYO, successRecord.Account = providerBYO(provider, authUser)
 			recordUsage(successRecord)
-			recordTrace(successRecord, requestStartTime)
+			recordTrace(c.Ctx.Request.Context(), successRecord, requestStartTime)
 		}
 		hold.settle(actualCents)
 	} else {
@@ -1441,7 +1484,7 @@ func (c *ApiController) proxyToolRequest(
 			}
 			successRecord.BYO, successRecord.Account = providerBYO(provider, authUser)
 			recordUsage(successRecord)
-			recordTrace(successRecord, requestStartTime)
+			recordTrace(c.Ctx.Request.Context(), successRecord, requestStartTime)
 		}
 		hold.settle(actualCents)
 
@@ -1795,7 +1838,7 @@ func (c *ApiController) proxyToolRequestAnthropic(
 		}
 		successRecord.BYO, successRecord.Account = providerBYO(provider, authUser)
 		recordUsage(successRecord)
-		recordTrace(successRecord, requestStartTime)
+		recordTrace(c.Ctx.Request.Context(), successRecord, requestStartTime)
 	}
 	hold.settle(calculateCostCentsWithCache(request.Model, anthropicResp.Usage.InputTokens, anthropicResp.Usage.OutputTokens, 0, 0))
 
