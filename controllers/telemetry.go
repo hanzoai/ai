@@ -42,7 +42,12 @@ const (
 	attrGenAICacheCreation = "gen_ai.usage.cache_creation.input_tokens"
 
 	// _o11y.gen_ai.* cost attributes (dollars) the o11y cost views read.
+	// total_cost = the FULL provider cost of the call (analytics). billed_cost = what
+	// Hanzo actually charged the org ledger — equal to total_cost for a Hanzo-served
+	// call, but only the ~1% platform fee for a BYO call (the customer paid the
+	// upstream directly), so Observe reconciles with the invoice.
 	attrO11yTotalCost      = "_o11y.gen_ai.total_cost"
+	attrO11yBilledCost     = "_o11y.gen_ai.billed_cost"
 	attrO11yCostInput      = "_o11y.gen_ai.cost_input"
 	attrO11yCostOutput     = "_o11y.gen_ai.cost_output"
 	attrO11yCostCacheRead  = "_o11y.gen_ai.cost_cache_read"
@@ -86,7 +91,7 @@ type genAISpanFields struct {
 // for token-billed calls, nil for image/video which have no component split). This
 // keeps the o11y attribute contract unit-testable without a pricing table. Message
 // capture is gated by the caller (captureMessages) — PII is emitted only on opt-in.
-func buildGenAISpanFields(record *usageRecord, totalCostUSD float64, breakdown *costBreakdown, captureMessages bool) genAISpanFields {
+func buildGenAISpanFields(record *usageRecord, totalCostUSD, billedCostUSD float64, breakdown *costBreakdown, captureMessages bool) genAISpanFields {
 	model := record.Model
 	if model == "" {
 		model = "unknown"
@@ -100,9 +105,11 @@ func buildGenAISpanFields(record *usageRecord, totalCostUSD float64, breakdown *
 		attribute.Int(attrGenAIInputTokens, record.PromptTokens),
 		attribute.Int(attrGenAIOutputTokens, record.CompletionTokens),
 		attribute.Int(attrGenAITotalTokens, record.TotalTokens),
-		// Total cost is always emitted (even 0) so the o11y cost views have the
-		// column; it is the authoritative ledger cost, not a re-derivation.
+		// total_cost = full provider cost (analytics). billed_cost = what the ledger
+		// charged (== total for Hanzo-served, ~1% fee for BYO). Both always emitted
+		// so the o11y cost views have the columns and Observe reconciles the invoice.
 		attribute.Float64(attrO11yTotalCost, totalCostUSD),
+		attribute.Float64(attrO11yBilledCost, billedCostUSD),
 	}
 
 	// Cache tokens (Anthropic-style prompt caching) — omitted when absent.
@@ -205,16 +212,19 @@ func emitGenAISpan(ctx context.Context, record *usageRecord, startTime time.Time
 		ctx = context.Background()
 	}
 
-	// One authoritative cost (same value recordUsage debits); component breakdown
-	// only for token-billed calls (image/video bill per unit, no split).
-	totalCostUSD := float64(usageCostCents(record)) / 100.0
+	// Full provider cost (total, analytics) and the billed amount (what the ledger
+	// charged — == total for Hanzo-served, ~1% platform fee for BYO). Both derive
+	// from the ONE usageCostCents, so the span and the invoice never diverge.
+	costCents := usageCostCents(record)
+	totalCostUSD := float64(costCents) / 100.0
+	billedCostUSD := float64(usageBilledCents(record, costCents)) / 100.0
 	var breakdown *costBreakdown
 	if record.ImageCount == 0 && record.VideoCount == 0 {
 		b := modelCostBreakdown(record.Model, record.PromptTokens, record.CompletionTokens, record.CacheReadTokens, record.CacheWriteTokens)
 		breakdown = &b
 	}
 
-	fields := buildGenAISpanFields(record, totalCostUSD, breakdown, genAICaptureMessages())
+	fields := buildGenAISpanFields(record, totalCostUSD, billedCostUSD, breakdown, genAICaptureMessages())
 	_, span := object.GenAITracer().Start(
 		ctx, fields.name,
 		trace.WithSpanKind(trace.SpanKindClient),
