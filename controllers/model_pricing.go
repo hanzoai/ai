@@ -357,31 +357,52 @@ func calculateCostCents(model string, promptTokens, completionTokens int) int64 
 	return calculateCostCentsWithCache(model, promptTokens, completionTokens, 0, 0)
 }
 
-// calculateCostCentsWithCache computes cost in cents including cache token pricing.
-// Cache-read tokens are billed at 10% of input price (matching Anthropic).
-// Cache-write tokens are billed at the same rate as input tokens.
-func calculateCostCentsWithCache(model string, promptTokens, completionTokens, cacheReadTokens, cacheWriteTokens int) int64 {
+// costBreakdown is the per-component dollar cost of a token-billed LLM call. It is
+// the ONE place the input/output/cache component split is computed, so the billing
+// total (calculateCostCentsWithCache) and the o11y gen_ai span cost-detail
+// (_o11y.gen_ai.cost_*) read the same numbers and can never drift.
+type costBreakdown struct {
+	Input      float64
+	Output     float64
+	CacheRead  float64
+	CacheWrite float64
+	Total      float64
+}
+
+// modelCostBreakdown computes the per-component dollar cost of a token-billed call.
+// Cache-read defaults to 10% of input price (Anthropic parity) and cache-write to the
+// input price when the model declares no explicit cache rate. Pure: a pricing lookup
+// and arithmetic, no I/O, no globals mutated — safe to call from the span emit path.
+func modelCostBreakdown(model string, promptTokens, completionTokens, cacheReadTokens, cacheWriteTokens int) costBreakdown {
 	price := getModelPrice(model)
 
-	// Cache-read price: use explicit CacheReadPerMillion if set, else 10% of input
+	// Cache-read price: use explicit CacheReadPerMillion if set, else 10% of input.
 	cacheReadRate := price.CacheReadPerMillion
 	if cacheReadRate == 0 && price.InputPerMillion > 0 {
 		cacheReadRate = price.InputPerMillion * 0.10
 	}
-
-	// Cache-write price: use explicit CacheWritePerMillion if set, else same as input
+	// Cache-write price: use explicit CacheWritePerMillion if set, else same as input.
 	cacheWriteRate := price.CacheWritePerMillion
 	if cacheWriteRate == 0 {
 		cacheWriteRate = price.InputPerMillion
 	}
 
-	inputCost := float64(promptTokens) * price.InputPerMillion / 1_000_000.0
-	outputCost := float64(completionTokens) * price.OutputPerMillion / 1_000_000.0
-	cacheReadCost := float64(cacheReadTokens) * cacheReadRate / 1_000_000.0
-	cacheWriteCost := float64(cacheWriteTokens) * cacheWriteRate / 1_000_000.0
+	b := costBreakdown{
+		Input:      float64(promptTokens) * price.InputPerMillion / 1_000_000.0,
+		Output:     float64(completionTokens) * price.OutputPerMillion / 1_000_000.0,
+		CacheRead:  float64(cacheReadTokens) * cacheReadRate / 1_000_000.0,
+		CacheWrite: float64(cacheWriteTokens) * cacheWriteRate / 1_000_000.0,
+	}
+	b.Total = b.Input + b.Output + b.CacheRead + b.CacheWrite
+	return b
+}
 
-	totalDollars := inputCost + outputCost + cacheReadCost + cacheWriteCost
-	costCents := int64(math.Round(totalDollars * 100))
+// calculateCostCentsWithCache computes cost in cents including cache token pricing.
+// Cache-read tokens are billed at 10% of input price (matching Anthropic).
+// Cache-write tokens are billed at the same rate as input tokens.
+func calculateCostCentsWithCache(model string, promptTokens, completionTokens, cacheReadTokens, cacheWriteTokens int) int64 {
+	b := modelCostBreakdown(model, promptTokens, completionTokens, cacheReadTokens, cacheWriteTokens)
+	costCents := int64(math.Round(b.Total * 100))
 
 	// Minimum 1 cent for any non-zero usage
 	if costCents <= 0 && (promptTokens > 0 || completionTokens > 0 || cacheReadTokens > 0 || cacheWriteTokens > 0) {

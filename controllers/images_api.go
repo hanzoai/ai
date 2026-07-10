@@ -236,5 +236,5 @@ func (c *ApiController) recordImageUsage(authUser *iam.User, provider *object.Pr
 		RequestID:    util.GenerateUUID(),
 	}
 	recordUsage(rec)
-	recordTrace(rec, startTime)
+	recordTrace(c.Ctx.Request.Context(), rec, startTime)
 }
