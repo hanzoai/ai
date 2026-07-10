@@ -190,6 +190,13 @@ func buildGenAISpanFields(record *usageRecord, totalCostUSD, billedCostUSD float
 // genAICaptureMessages reports whether prompt/completion bodies may be attached to
 // the span. Fail-secure: only an explicit opt-in
 // (O11Y_GENAI_CAPTURE_MESSAGES=true/1) enables it; anything else redacts.
+//
+// OPS NOTE: leave O11Y_GENAI_CAPTURE_MESSAGES UNSET in production. Enabling it writes
+// raw prompt/completion text (PII, and the customer's proprietary data) into the
+// shared o11y_traces span store, where any org member with Observe access reads it and
+// it rides the platform's retention/backup. Turn it on only for a scoped debugging
+// window with the tenant's consent, then unset it. Default OFF = redacted is the
+// safe, compliant posture.
 func genAICaptureMessages() bool {
 	switch strings.ToLower(strings.TrimSpace(os.Getenv("O11Y_GENAI_CAPTURE_MESSAGES"))) {
 	case "1", "true", "yes", "on":
