@@ -17,6 +17,9 @@ package object
 import (
 	"context"
 	"testing"
+
+	"go.opentelemetry.io/otel"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
 // TestTelemetryDisabledByDefault asserts the honest-off posture: with no
@@ -44,7 +47,12 @@ func TestTelemetryDisabledByDefault(t *testing.T) {
 func TestAdoptHostTracerProvider(t *testing.T) {
 	prevReady := telemetryReady.Load()
 	prevProvider := telemetryProvider
-	t.Cleanup(func() { telemetryReady.Store(prevReady); telemetryProvider = prevProvider })
+	prevPin := hostGenAITracer.Load()
+	t.Cleanup(func() {
+		telemetryReady.Store(prevReady)
+		telemetryProvider = prevProvider
+		hostGenAITracer.Store(prevPin)
+	})
 
 	// Reproduce the in-process-sink host: no ai-owned exporter endpoint set.
 	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "")
@@ -63,6 +71,43 @@ func TestAdoptHostTracerProvider(t *testing.T) {
 	}
 	if !TelemetryEnabled() {
 		t.Fatal("TelemetryEnabled() must stay true after InitTelemetry in host-adopted mode")
+	}
+}
+
+// TestGenAITracer_PinnedThroughGlobalClobber is the regression test for the LIVE
+// prod failure: gen_ai spans stopped landing in o11y_traces even though the emit
+// path ran and the host provider was adopted (telemetryReady true). Cause: the fused
+// cloud binary embeds the o11y (SigNoz) runtime, whose self-instrumentation SDK
+// (hanzoai/o11y pkg/instrumentation/sdk.go) calls otel.SetTracerProvider when it
+// starts (during mount, AFTER adopt), reassigning the process-global provider. A
+// per-emit otel.Tracer(...) then bound gen_ai spans to that provider and dropped
+// them — while cloud's request-span tracer, captured at package init, survived (so
+// HTTP spans kept landing, gen_ai did not). The fix PINS the GenAI tracer at adopt
+// time; this asserts the pin holds THROUGH a later global SetTracerProvider.
+func TestGenAITracer_PinnedThroughGlobalClobber(t *testing.T) {
+	prevReady := telemetryReady.Load()
+	prevPin := hostGenAITracer.Load()
+	t.Cleanup(func() { telemetryReady.Store(prevReady); hostGenAITracer.Store(prevPin) })
+
+	// Host installs its provider (the o11y in-process sink) and adopts it.
+	host := sdktrace.NewTracerProvider()
+	otel.SetTracerProvider(host)
+	AdoptHostTracerProvider()
+	wantHost := host.Tracer(genaiTracerName)
+
+	// A later in-process component (the embedded OTel Collector) installs its OWN
+	// provider as the process-global — the exact clobber that dropped gen_ai spans.
+	otel.SetTracerProvider(sdktrace.NewTracerProvider())
+
+	// Premise guard: the global WAS reassigned (a fresh resolve no longer yields the
+	// host tracer) — otherwise this test would pass vacuously.
+	if fresh := otel.Tracer(genaiTracerName); fresh == wantHost {
+		t.Fatal("test premise moot: the second SetTracerProvider did not replace the global tracer")
+	}
+	// The fix: GenAITracer stays PINNED to the host provider, so gen_ai spans still
+	// reach the o11y sink — immune to the collector's global reassignment.
+	if got := GenAITracer(); got != wantHost {
+		t.Fatal("GenAITracer must stay pinned to the adopted host provider after a later global SetTracerProvider (the embedded-collector clobber); else gen_ai spans strand on the collector's provider and never reach o11y_traces")
 	}
 }
 
