@@ -271,6 +271,18 @@ func isBalanceExempt(path string) bool {
 // exemption matching (mirrors the controller backstop), independent of whether
 // the billing subject collapses to the org slug for a pooled org.
 func resolveBillingKey(ctx *context.Context) (subject, namespace, userKey string) {
+	// Balance enforcement disabled ⇒ balanceGate is nil (InitBalanceGate returns
+	// early when commerceEndpoint is unconfigured). RateLimitFilter calls this on
+	// EVERY authenticated /v1 request BEFORE BalanceGateFilter's own nil guard, so
+	// without this check `balanceGate.getUserKeyCached` below nil-derefs and panics
+	// — a bare 500 on every authed request the moment Commerce is unwired. Resolve
+	// no billing subject instead (fail-open): RateLimitFilter then buckets by the
+	// raw key (its documented fallback) and nothing bills. A disabled billing
+	// subsystem must never crash a request.
+	if balanceGate == nil {
+		return "", "", ""
+	}
+
 	// Source 1: session user from AutoSigninFilter.
 	user := GetSessionUser(ctx)
 	if user != nil && user.Owner != "" {
