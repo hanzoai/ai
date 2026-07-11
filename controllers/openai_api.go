@@ -348,6 +348,15 @@ func enforceBalanceGate(user *iam.User, requestedModel string, premium bool) err
 
 	balance, err := getUserBalance(subject, orgKey)
 	if err != nil {
+		// A billing-backend transport/auth failure (Commerce down/unreachable, a
+		// rejected service token, or commerceEndpoint unset) must not hard-fail
+		// every chat. The router BalanceGateFilter and the rate-limit tier lookup
+		// already fail-open on BALANCE_GATE_FAIL_OPEN_ON_ERROR; make this controller
+		// gate consistent so a broken/misconfigured Commerce degrades to
+		// "allowed, ungated" instead of 500-ing all authenticated inference.
+		if strings.EqualFold(strings.TrimSpace(os.Getenv("BALANCE_GATE_FAIL_OPEN_ON_ERROR")), "true") {
+			return nil
+		}
 		return serverError("failed to verify account balance: %s", err.Error())
 	}
 	if balance <= 0 {
