@@ -52,18 +52,51 @@ const genaiTracerName = "github.com/hanzoai/ai/genai"
 var (
 	telemetryProvider *sdktrace.TracerProvider
 	telemetryReady    atomic.Bool
+	// hostGenAITracer PINS the GenAI tracer to the tracer provider that owns the emit
+	// path — the host's adopted provider (fused cloud) or ai's own (standalone) —
+	// captured the moment that provider becomes the process-global. GenAITracer
+	// returns it instead of re-resolving otel.Tracer on every emit, so a LATER
+	// otel.SetTracerProvider by another in-process component cannot redirect gen_ai
+	// spans off the o11y sink. nil until a provider is captured (pre-init / disabled).
+	hostGenAITracer atomic.Pointer[trace.Tracer]
 )
 
 // AdoptHostTracerProvider declares that a host composition root has installed the
 // process-global OTel tracer provider — the fused cloud binary does exactly this,
 // wiring that provider to the embedded o11y in-process trace sink (Cost-0, no
-// socket). Once adopted, the ai module emits every gen_ai span through that global
-// provider (one provider, one wire) and InitTelemetry will NOT fork a competing
-// exporter. It is the ONE signal a host uses to make ai ride its trace path:
-// explicit and typed, not env archaeology. Idempotent, and safe to call before
-// InitTelemetry — the composition root installs the provider, adopts it, then
-// mounts ai. The host owns the provider's flush/shutdown.
-func AdoptHostTracerProvider() { telemetryReady.Store(true) }
+// socket). Once adopted, the ai module PINS its GenAI tracer to that provider and
+// emits every gen_ai span through it (one provider, one wire); InitTelemetry will
+// NOT fork a competing exporter. It is the ONE signal a host uses to make ai ride
+// its trace path: explicit and typed, not env archaeology. Idempotent, and MUST be
+// called immediately after the host installs the provider — the composition root
+// installs the provider, adopts it, then mounts ai.
+//
+// PINNING (capturing the tracer here rather than re-resolving otel.Tracer per emit)
+// is load-bearing, not an optimization: another in-process component reassigns the
+// process-global tracer provider when it starts during mount, AFTER this adopt. The
+// confirmed culprit in the fused cloud binary is the embedded o11y (SigNoz) runtime
+// self-instrumenting — hanzoai/o11y pkg/instrumentation/sdk.go does
+// `otel.SetTracerProvider(sdk.TracerProvider())` — invoked via the o11y runtime
+// start. OTel's global delegation upgrades tracers captured BEFORE the first
+// SetTracerProvider (cloud's request-span tracer, captured at package init — so HTTP
+// spans keep reaching the sink) but a tracer resolved AFTER the reassignment binds
+// to the newcomer's provider. A per-emit otel.Tracer(genaiTracerName) would thus
+// strand every gen_ai span on that provider and silently drop it — the exact symptom
+// (HTTP spans land, gen_ai spans do not; worked before o11y was embedded, broke
+// after) this pin fixes.
+func AdoptHostTracerProvider() {
+	captureGenAITracer()
+	telemetryReady.Store(true)
+}
+
+// captureGenAITracer pins hostGenAITracer to the tracer the CURRENT process-global
+// provider yields — the provider the caller installed immediately before. Called
+// from AdoptHostTracerProvider (host mode) and initTelemetry (standalone), each
+// right after its provider becomes global.
+func captureGenAITracer() {
+	t := otel.Tracer(genaiTracerName)
+	hostGenAITracer.Store(&t)
+}
 
 // InitTelemetry wires the GenAI span emit path. There are two mutually exclusive
 // modes, selected by who owns the process-global tracer provider:
@@ -112,6 +145,7 @@ func initTelemetry() {
 		)),
 	)
 	otel.SetTracerProvider(tp)
+	captureGenAITracer()
 	telemetryProvider = tp
 	telemetryReady.Store(true)
 	logs.Info("telemetry: OTel GenAI spans -> o11y via OTLP (service.name=%s)", telemetryServiceName())
@@ -121,10 +155,18 @@ func initTelemetry() {
 // path gates on it to skip span construction entirely when telemetry is off.
 func TelemetryEnabled() bool { return telemetryReady.Load() }
 
-// GenAITracer returns the named tracer for GenAI spans. Safe before init: the
-// global provider is a no-op until initTelemetry latches, and emit callers gate
-// on TelemetryEnabled anyway.
-func GenAITracer() trace.Tracer { return otel.Tracer(genaiTracerName) }
+// GenAITracer returns the tracer for GenAI spans. Once a provider is adopted (host)
+// or installed (standalone), it returns the PINNED tracer bound to that provider —
+// never re-resolving the process-global, so a later otel.SetTracerProvider by
+// another component (e.g. the embedded o11y runtime's self-instrumentation SDK)
+// cannot redirect gen_ai spans. Before any provider is captured it falls back to the global (a
+// no-op tracer until telemetry latches; emit callers gate on TelemetryEnabled).
+func GenAITracer() trace.Tracer {
+	if t := hostGenAITracer.Load(); t != nil {
+		return *t
+	}
+	return otel.Tracer(genaiTracerName)
+}
 
 // ShutdownTelemetry flushes buffered spans and stops the exporter. Non-fatal and
 // a no-op when telemetry was never enabled; the atomic gate establishes the
