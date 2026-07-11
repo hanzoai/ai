@@ -205,6 +205,22 @@ models:
         upstream: claude-opus-4-6-20250514
     pricing: { input: 15.00, output: 75.00 }
 
+  claude-opus-4-7:
+    provider: do-ai
+    upstream: anthropic-claude-opus-4.7
+    fallbacks:
+      - provider: anthropic
+        upstream: claude-opus-4-7
+    pricing: { input: 15.00, output: 75.00 }
+
+  claude-opus-4-8:
+    provider: do-ai
+    upstream: anthropic-claude-opus-4.8
+    fallbacks:
+      - provider: anthropic
+        upstream: claude-opus-4-8
+    pricing: { input: 15.00, output: 75.00 }
+
   claude-sonnet-4:
     provider: do-ai
     upstream: anthropic-claude-sonnet-4
