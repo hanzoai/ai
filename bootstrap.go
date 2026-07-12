@@ -113,7 +113,7 @@ func doBootstrap() (err error) {
 	object.CreateTables()
 	object.InitDb()
 
-	// Analytics datastore (ClickHouse): the OLAP ledger behind the usage/spend
+	// Analytics datastore (datastore): the OLAP ledger behind the usage/spend
 	// Overview (hanzo.cloud_usage) and the per-tenant trace ledger
 	// (hanzo.observations). Opt-in via DATASTORE_ADDR; connects in the background
 	// and is a no-op when unset, so boot never blocks on the warehouse. This runs
