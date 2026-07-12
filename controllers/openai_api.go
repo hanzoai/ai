@@ -50,6 +50,15 @@ import (
 // and the per-org credit. Without the header, commerce's service-token path
 // defaults to the "hanzo" namespace and a per-org credit is invisible.
 func getUserBalance(subject, namespace string) (float64, error) {
+	// Native path: a co-resident host (cloud) reads the subject's wallet balance
+	// DIRECTLY from the in-process finance ledger — no HTTP. Cents → dollars.
+	if r := object.BalanceReader(); r != nil {
+		cents, err := r(context.Background(), subject, namespace, "usd")
+		if err != nil {
+			return 0, err
+		}
+		return float64(cents) / 100, nil
+	}
 	commerceEndpoint := conf.GetConfigString("commerceEndpoint")
 	if commerceEndpoint == "" {
 		return 0, fmt.Errorf("commerceEndpoint is not configured")
@@ -63,7 +72,7 @@ func getUserBalance(subject, namespace string) (float64, error) {
 	// (X-Org-Id) is the org. Both must match the gate and the usage debit.
 	reqURL := fmt.Sprintf("%s/v1/billing/balance?user=%s&currency=usd", commerceEndpoint, url.QueryEscape(subject))
 
-	client := object.CommerceHTTPClient(&http.Client{Timeout: 10 * time.Second})
+	client := &http.Client{Timeout: 10 * time.Second}
 	req, err := http.NewRequest(http.MethodGet, reqURL, nil)
 	if err != nil {
 		return 0, fmt.Errorf("Commerce request build failed: %w", err)
