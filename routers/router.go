@@ -394,6 +394,7 @@ func initAPI() {
 
 	// Anthropic Messages API compatible endpoints
 	beego.Router("/v1/messages", &controllers.ApiController{}, "POST:AnthropicMessages")
+	beego.Router("/v1/messages/count_tokens", &controllers.ApiController{}, "POST:AnthropicCountTokens")
 
 	beego.Router("/v1/wecom-bot/callback/:botId", &controllers.ApiController{}, "GET:WecomBotVerifyUrl;POST:WecomBotHandleMessage")
 
