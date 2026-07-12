@@ -125,8 +125,8 @@ func InitZap() {
 		sqlAddr = "sql.hanzo.svc:9999"
 	}
 	go connectPeer(node, sqlAddr, "sql", &sqlPeerID)
-	// Datastore (ClickHouse) is reached directly (object/datastore.go), NOT via a
-	// ZAP peer — the datastore image serves ClickHouse on :8123/:9000, not a ZAP
+	// Datastore (datastore) is reached directly (object/datastore.go), NOT via a
+	// ZAP peer — the datastore image serves datastore on :8123/:9000, not a ZAP
 	// bridge, and the unified cloud binary never starts this node. See InitDatastore.
 	// DocDB (FerretDB) — optional, document database via SQL wire protocol.
 	if docdbAddr := os.Getenv("ZAP_DOCDB_ADDR"); docdbAddr != "" {
