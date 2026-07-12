@@ -106,6 +106,12 @@ type ModelDef struct {
 	AliasPricing   string         `yaml:"alias_pricing"`
 	PricingOnly    bool           `yaml:"pricing_only"`
 	Pricing        *ModelPriceDef `yaml:"pricing,omitempty"`
+	// ContextWindow is the model's max input+output context in tokens. When
+	// set (>0) it overrides the heuristic getContextLength table — models.yaml
+	// is the per-model source of truth, configurable without a rebuild. This
+	// is the single field that stops long prompts (and /compact) dead-ending
+	// on a stale 16K/256K fallback for models the table predates.
+	ContextWindow int `yaml:"context_window,omitempty"`
 }
 
 // ── Singleton ───────────────────────────────────────────────────────────
@@ -195,11 +201,12 @@ func (mc *ModelConfig) applyConfig(file *ModelConfigFile) error {
 		// Build route (skip pricing-only entries)
 		if !def.PricingOnly {
 			r := modelRoute{
-				providerName:  def.Provider,
-				upstreamModel: def.Upstream,
-				premium:       def.Premium,
-				hidden:        def.Hidden,
-				ownedBy:       def.OwnedBy,
+				providerName:   def.Provider,
+				upstreamModel:  def.Upstream,
+				premium:        def.Premium,
+				hidden:         def.Hidden,
+				ownedBy:        def.OwnedBy,
+				contextWindow:  def.ContextWindow,
 			}
 			for _, fb := range def.Fallbacks {
 				r.fallbacks = append(r.fallbacks, modelRouteFallback{
@@ -327,6 +334,31 @@ func (mc *ModelConfig) ResolveRoute(model string) *modelRoute {
 		return &route
 	}
 	return nil
+}
+
+// ContextWindow returns the declared max context (tokens) for a model, or 0
+// when models.yaml leaves it unset (caller falls back to getContextLength).
+// It follows the alias chain: a zen alias inherits its upstream's declared
+// window, so `zen5` → `glm-5.2` carries the 1M window without redeclaring it.
+// The lookup is by normalized lowercase key — the same key applyConfig built.
+func (mc *ModelConfig) ContextWindow(model string) int {
+	key := strings.ToLower(model)
+	mc.mu.RLock()
+	defer mc.mu.RUnlock()
+
+	if route, ok := mc.routes[key]; ok {
+		if route.contextWindow > 0 {
+			return route.contextWindow
+		}
+		// Follow the alias: an alias's own window is usually unset; resolve
+		// to the upstream model it routes to and read ITS declared window.
+		if route.upstreamModel != "" && route.upstreamModel != key {
+			if up, ok := mc.routes[strings.ToLower(route.upstreamModel)]; ok && up.contextWindow > 0 {
+				return up.contextWindow
+			}
+		}
+	}
+	return 0
 }
 
 // GetPrice returns pricing for a model name, with alias and default fallback.
