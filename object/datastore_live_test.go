@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-// TestDatastoreTransportLive exercises the direct ClickHouse transport
+// TestDatastoreTransportLive exercises the direct datastore transport
 // (DatastoreExec/DatastoreQuery — reflect scanning + `?` binding + the cu*
 // coercers) against a REAL datastore. It is SKIPPED unless DATASTORE_ADDR is set,
 // so normal CI needs no warehouse. It uses an isolated temp table in the default
