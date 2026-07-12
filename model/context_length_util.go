@@ -17,6 +17,19 @@ package model
 
 import "strings"
 
+// contextWindowResolver is the configurable override for a model's max
+// context. controllers wires it to ModelConfig.ContextWindow at init so
+// models.yaml — the per-model source of truth — wins over the static table
+// below. nil (the zero value) falls back to getContextLength's heuristic,
+// which remains the last-resort for models the YAML does not declare.
+// Set once at startup; read on every request — no lock, init-time write only.
+var contextWindowResolver func(model string) int
+
+// SetContextWindowResolver installs the YAML-backed context-window lookup.
+// Called once from controllers after ModelConfig is initialized. Passing
+// nil restores the static-table-only behavior (used by tests + standalone).
+func SetContextWindowResolver(f func(model string) int) { contextWindowResolver = f }
+
 // deepseek https://api-docs.deepseek.com/zh-cn/quick_start/pricing
 // qwen     https://help.aliyun.com/zh/model-studio/models
 // moonshot https://platform.moonshot.cn/docs/pricing/chat#%E7%94%9F%E6%88%90%E6%A8%A1%E5%9E%8B-moonshot-v1
@@ -28,6 +41,20 @@ import "strings"
 // hunyuan  https://cloud.tencent.com/document/product/1729/104753
 // chatGLM  https://open.bigmodel.cn/pricing
 // claude   https://docs.anthropic.com/zh-CN/docs/about-claude/models/overview
+
+// GetContextLength returns the max context (tokens) for a model. It checks
+// the YAML-backed resolver first (models.yaml context_window — the per-model
+// source of truth), then falls back to getContextLength's static heuristic.
+// This is the single entry point callers should use; getContextLength itself
+// is the table-only fallback kept for the resolver's default path.
+func GetContextLength(typ string) int {
+	if contextWindowResolver != nil {
+		if w := contextWindowResolver(typ); w > 0 {
+			return w
+		}
+	}
+	return getContextLength(typ)
+}
 
 func getContextLength(typ string) int {
 	typ = strings.ToLower(typ)
