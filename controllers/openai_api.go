@@ -636,7 +636,7 @@ func recordUsage(record *usageRecord) {
 		if err := rec(context.Background(), object.UsageEvent{
 			Subject:   subject,
 			Namespace: org,
-			Cents:     amount,
+			USD:       usageBilledUSD(record), // EXACT atto-precise debit, never a floored cent
 			Currency:  "usd",
 			Model:     record.Model,
 			Provider:  record.Provider,
