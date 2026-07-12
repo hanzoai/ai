@@ -43,6 +43,16 @@ func TestIsRetryableError(t *testing.T) {
 		{"invalid request", fmt.Errorf("invalid request body"), false},
 		{"auth error different", fmt.Errorf("invalid API key format"), false},
 		{"empty error", fmt.Errorf(""), false},
+		// Credit-first -> paid cascade: credit/quota exhaustion + agreement gates
+		// MUST be retryable so the fallback chain advances to the next provider.
+		{"402 payment required", fmt.Errorf("HTTP 402 Payment Required"), true},
+		{"403 agreement gate (DO)", fmt.Errorf("error, status code: 403, message: this model is not available for your account"), true},
+		{"insufficient_quota (openai credit spent)", fmt.Errorf("You exceeded your current quota, code: insufficient_quota"), true},
+		{"out of credit", fmt.Errorf("provider credit exhausted for this account"), true},
+		{"billing hard limit", fmt.Errorf("Billing hard limit has been reached"), true},
+		// Guard: a REQUEST-size error must NOT cascade (every provider fails it the
+		// same way) — locks the deliberate exclusion of bare "exceeded".
+		{"context length exceeded (not retryable)", fmt.Errorf("This model's maximum context length is 8192 tokens"), false},
 		// A disabled/unconfigured primary provider is surfaced by callProvider as
 		// "... is unavailable ..." so the failover loop advances to the fallback.
 		{"provider unavailable (disabled primary)", fmt.Errorf("provider \"do-ai\" is unavailable (disabled or not configured)"), true},
