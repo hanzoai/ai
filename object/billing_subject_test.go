@@ -5,7 +5,28 @@
 
 package object
 
-import "testing"
+import (
+	"sync"
+	"testing"
+)
+
+// useBillingEnv installs a fresh billing-org environment for one test, defeating
+// the process-once memoization so the case observes exactly (personal, org). It
+// resets the caches before AND after (t.Cleanup) so no test leaks its allowlist
+// into another. sync.Once{} is a zero composite literal — vet-clean to assign.
+func useBillingEnv(t *testing.T, personal, org string) {
+	t.Helper()
+	reset := func() {
+		personalBillingOrgsOnce = sync.Once{}
+		orgBillingOrgsOnce = sync.Once{}
+		personalBillingOrgs = nil
+		orgBillingOrgs = nil
+	}
+	reset()
+	t.Cleanup(reset)
+	t.Setenv("PERSONAL_BILLING_ORGS", personal)
+	t.Setenv("ORG_BILLING_ORGS", org)
+}
 
 // TestBillingSubject locks the per-user vs per-org billing identity. The default
 // personal-billing org set is {hanzo} (PERSONAL_BILLING_ORGS unset), so members
@@ -108,5 +129,79 @@ func TestIsPersonalBillingOrg(t *testing.T) {
 	}
 	if IsPersonalBillingOrg("maxpower") {
 		t.Fatal("maxpower must pool (not personal-billing) by default")
+	}
+}
+
+// TestBillingSubject_OrgBillingOverride locks the ORG_BILLING_ORGS allowlist: an
+// org named there shares ONE pooled wallet (subject = owner) even when it would
+// otherwise bill per-user, and the switch is SCOPED — no other tenant moves, and
+// an empty/unset allowlist is a zero-behavior change.
+func TestBillingSubject_OrgBillingOverride(t *testing.T) {
+	cases := []struct {
+		name     string
+		personal string // PERSONAL_BILLING_ORGS
+		org      string // ORG_BILLING_ORGS
+		owner    string
+		uname    string
+		want     string
+	}{
+		// hanzo promoted to org-billing → the shared pool (subject = org), even
+		// though hanzo is a personal-billing org by default. The override wins.
+		{"hanzo org-billed", "hanzo", "hanzo", "hanzo", "z", "hanzo"},
+		// Same hanzo WITHOUT the override → unchanged, per-user (regression guard).
+		{"hanzo personal when unset", "hanzo", "", "hanzo", "z", "hanzo/z"},
+		// Empty allowlist = zero change: another hanzo member stays per-user.
+		{"empty allowlist no change", "hanzo", "", "hanzo", "alice@gmail.com", "hanzo/alice@gmail.com"},
+		// Scoped: promoting hanzo does NOT touch another personal-billing org.
+		{"other personal org unaffected", "hanzo,acme", "hanzo", "acme", "bob", "acme/bob"},
+		// A pooled org is unchanged whether or not it is on the allowlist.
+		{"pooled org unaffected", "hanzo", "hanzo", "maxpower", "dave", "maxpower"},
+		// The allowlist is case/space-insensitive, like the org slug.
+		{"allowlist normalized", "hanzo", " Hanzo , lux ", "hanzo", "z", "hanzo"},
+		// Override collapses an empty name to the org slug (no trailing slash).
+		{"org-billed empty name", "hanzo", "hanzo", "hanzo", "", "hanzo"},
+		// Override wins even for an org that is not personal-billing (still org).
+		{"override on non-personal", "hanzo", "lux", "lux", "sam", "lux"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			useBillingEnv(t, c.personal, c.org)
+			if got := BillingSubject(c.owner, c.uname); got != c.want {
+				t.Fatalf("BillingSubject(%q,%q) [PERSONAL_BILLING_ORGS=%q ORG_BILLING_ORGS=%q] = %q, want %q",
+					c.owner, c.uname, c.personal, c.org, got, c.want)
+			}
+		})
+	}
+}
+
+// TestIsOrgBilling confirms the predicate and that the override does not disturb
+// the personal predicate itself (the two allowlists are orthogonal; the override
+// only wins where they intersect, inside BillingSubject).
+func TestIsOrgBilling(t *testing.T) {
+	useBillingEnv(t, "hanzo", "hanzo,lux")
+	if !isOrgBilling("hanzo") {
+		t.Fatal("hanzo must be org-billing when on ORG_BILLING_ORGS")
+	}
+	if !isOrgBilling("LUX") {
+		t.Fatal("org-billing match must be case-insensitive")
+	}
+	if isOrgBilling("maxpower") {
+		t.Fatal("maxpower (not on the allowlist) must not be org-billing")
+	}
+	if !IsPersonalBillingOrg("hanzo") {
+		t.Fatal("hanzo is still a personal-billing org; the override only wins in BillingSubject")
+	}
+}
+
+// TestBillingSubjectForPrincipal_OrgBillingOverride shows the override composes
+// with the M2M carve-out: a human in a promoted org bills the org pool (was
+// per-user), and an application principal still bills the org.
+func TestBillingSubjectForPrincipal_OrgBillingOverride(t *testing.T) {
+	useBillingEnv(t, "hanzo", "hanzo")
+	if got := BillingSubjectForPrincipal("hanzo", "z", "normal-user"); got != "hanzo" {
+		t.Fatalf("human in org-billed hanzo = %q, want hanzo", got)
+	}
+	if got := BillingSubjectForPrincipal("hanzo", "hanzo-cloud", "application"); got != "hanzo" {
+		t.Fatalf("m2m in org-billed hanzo = %q, want hanzo", got)
 	}
 }
