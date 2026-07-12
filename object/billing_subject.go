@@ -39,11 +39,33 @@ import (
 //   - POOLED org (any dedicated customer/team org, e.g. "maxpower"): subject =
 //     "owner", one balance for the whole org — unchanged, so the proven per-org
 //     billing keeps working with no regression.
+//
+//   - ORG-BILLING override (ORG_BILLING_ORGS allowlist): an org that WOULD be
+//     personal-billing but is named here bills as ONE shared pool (subject =
+//     "owner"), e.g. promoting the "hanzo" catch-all to a single org credit pool.
+//     Empty/unset ⇒ no override; scoped, so no other tenant is affected. This is
+//     the explicit switch that wins over the personal default (see isOrgBilling),
+//     never the PERSONAL_BILLING_ORGS sentinel that would flip every tenant.
 
 var (
 	personalBillingOrgsOnce sync.Once
 	personalBillingOrgs     map[string]struct{}
+
+	orgBillingOrgsOnce sync.Once
+	orgBillingOrgs     map[string]struct{}
 )
+
+// parseOrgSet parses a comma-separated list of org slugs into a lowercased set —
+// the ONE parser both billing-org allowlists share.
+func parseOrgSet(raw string) map[string]struct{} {
+	m := make(map[string]struct{})
+	for _, o := range strings.Split(raw, ",") {
+		if o = strings.ToLower(strings.TrimSpace(o)); o != "" {
+			m[o] = struct{}{}
+		}
+	}
+	return m
+}
 
 // loadPersonalBillingOrgs parses PERSONAL_BILLING_ORGS (comma-separated org
 // slugs, default "hanzo"). Lazy + cached so tests can set the env before first
@@ -54,22 +76,37 @@ func loadPersonalBillingOrgs() map[string]struct{} {
 		if strings.TrimSpace(raw) == "" {
 			raw = "hanzo"
 		}
-		m := make(map[string]struct{})
-		for _, o := range strings.Split(raw, ",") {
-			o = strings.ToLower(strings.TrimSpace(o))
-			if o != "" {
-				m[o] = struct{}{}
-			}
-		}
-		personalBillingOrgs = m
+		personalBillingOrgs = parseOrgSet(raw)
 	})
 	return personalBillingOrgs
 }
 
+// loadOrgBillingOrgs parses ORG_BILLING_ORGS (comma-separated org slugs, default
+// EMPTY). Lazy + cached, same as the personal set. An org listed here shares ONE
+// pooled wallet even when it would otherwise be personal-billing — the scoped,
+// additive override; unset ⇒ no org is promoted (zero behavior change).
+func loadOrgBillingOrgs() map[string]struct{} {
+	orgBillingOrgsOnce.Do(func() {
+		orgBillingOrgs = parseOrgSet(os.Getenv("ORG_BILLING_ORGS"))
+	})
+	return orgBillingOrgs
+}
+
 // IsPersonalBillingOrg reports whether members of org are billed individually
-// (per-user) rather than sharing one org-pooled balance.
+// (per-user) rather than sharing one org-pooled balance. The org-billing
+// allowlist (isOrgBilling) overrides this in BillingSubject.
 func IsPersonalBillingOrg(owner string) bool {
 	_, ok := loadPersonalBillingOrgs()[strings.ToLower(strings.TrimSpace(owner))]
+	return ok
+}
+
+// isOrgBilling reports whether org is on the ORG_BILLING_ORGS allowlist — its
+// members share ONE pooled wallet (subject = owner). This is the explicit switch
+// that WINS over the personal-billing default, so promoting the shared "hanzo"
+// catch-all to a single org credit pool is a scoped env flip, not a code fork
+// and not the every-tenant PERSONAL_BILLING_ORGS sentinel.
+func isOrgBilling(owner string) bool {
+	_, ok := loadOrgBillingOrgs()[strings.ToLower(strings.TrimSpace(owner))]
 	return ok
 }
 
@@ -78,6 +115,7 @@ func IsPersonalBillingOrg(owner string) bool {
 // `user` / granted to as DestinationId. The namespace (X-Org-Id) is always
 // `owner`; this is only the subject WITHIN that namespace:
 //
+//   - ORG_BILLING_ORGS org  → "owner"      (per-org, override — wins)
 //   - personal-billing org  → "owner/name" (per-user)
 //   - pooled org            → "owner"      (per-org)
 //
@@ -91,6 +129,12 @@ func BillingSubject(owner, name string) string {
 	owner = strings.ToLower(strings.TrimSpace(owner))
 	if owner == "" {
 		return ""
+	}
+	// ORG-billing allowlist wins: the org shares ONE pooled wallet (subject =
+	// owner), regardless of the personal-billing default. Scoped + additive —
+	// only orgs named in ORG_BILLING_ORGS switch; every other tenant is unchanged.
+	if isOrgBilling(owner) {
+		return owner
 	}
 	if IsPersonalBillingOrg(owner) {
 		name = strings.ToLower(strings.TrimSpace(name))
