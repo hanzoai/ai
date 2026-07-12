@@ -22,6 +22,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -128,27 +129,29 @@ func AddTransactionForMessage(message *Message) error {
 	if message.Owner != "" && !strings.Contains(userId, "/") {
 		userId = message.Owner + "/" + userId
 	}
-	// Convert price (dollars float64) to cents
-	amountCents := int64(math.Round(message.Price * 100))
-	if amountCents <= 0 {
-		return nil
-	}
 	cur := strings.ToLower(message.Currency)
 	if cur == "" {
 		cur = "usd"
 	}
-	// Native path: debit the usage DIRECTLY to the host's in-process finance
-	// ledger (cloud), no HTTP. Idempotent on the message id.
+	// Native path: debit the usage DIRECTLY to the host's in-process finance ledger
+	// (cloud), no HTTP. The price (dollars) is carried EXACTLY as a decimal-USD string
+	// to nano precision — never floored to cents — so a sub-cent message bills precisely.
+	// Idempotent on the message id.
 	if usageRecorder != nil {
 		return usageRecorder(context.Background(), UsageEvent{
 			Subject:   userId,
 			Namespace: message.Owner,
-			Cents:     amountCents,
+			USD:       strconv.FormatFloat(message.Price, 'f', 9, 64),
 			Currency:  cur,
 			Model:     message.ModelProvider,
 			Provider:  message.ModelProvider,
 			RequestID: message.GetId(),
 		})
+	}
+	// HTTP fallback (standalone ai): Commerce speaks cents.
+	amountCents := int64(math.Round(message.Price * 100))
+	if amountCents <= 0 {
+		return nil
 	}
 	endpoint, token, client := commerceClient()
 	if endpoint == "" {
