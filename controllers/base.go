@@ -44,12 +44,32 @@ func GetUserName(user *iam.User) string {
 }
 
 func (c *ApiController) GetSessionClaims() *iam.Claims {
+	// A nil session store must resolve to "no session user", never a panic. beego's
+	// c.GetSession dereferences Ctx.Input.CruSession directly (session.go), and
+	// CruSession is only populated by SessionStart — which does NOT run when the
+	// embedded cloud binary serves these routes without beego's session hook. On
+	// the chat hot path GetOrg/routingUserId read the session BEFORE credential
+	// auth, so a nil store there was a pre-model nil-deref that beego rendered as a
+	// 500 for EVERY request, unattributed probes included. Guarding here — the ONE
+	// funnel every session accessor passes through — turns that into the correct
+	// flow: no session ⇒ no principal ⇒ fall through to Bearer-credential auth,
+	// which returns a typed 401 for an invalid/absent credential. Fail-secure: a
+	// missing session grants nothing.
+	if c.Ctx == nil || c.Ctx.Input == nil || c.Ctx.Input.CruSession == nil {
+		return nil
+	}
+
 	s := c.GetSession("user")
 	if s == nil {
 		return nil
 	}
 
-	claims := s.(iam.Claims)
+	// The session value is written only as iam.Claims (SetSessionClaims); a foreign
+	// type is treated as "no session user" rather than panicking on the assertion.
+	claims, ok := s.(iam.Claims)
+	if !ok {
+		return nil
+	}
 	return &claims
 }
 
