@@ -590,10 +590,6 @@ func usageBilledCents(record *usageRecord, costCents int64) int64 {
 // to Commerce. The queue handles retries with exponential backoff.
 // Only successful API calls are recorded (error status is filtered here).
 func recordUsage(record *usageRecord) {
-	if billingQueue == nil {
-		return
-	}
-
 	// Only record successful calls
 	if record.Status != "success" {
 		return
@@ -629,6 +625,31 @@ func recordUsage(record *usageRecord) {
 		}
 	}
 	subject := object.BillingSubjectFromUserKey(record.Owner, record.User)
+
+	// Native in-proc finance debit — the ONE money path when co-resident with the
+	// finance ledger (hanzoai/cloud unified binary). The debit lands DIRECTLY on the
+	// org's SQLite wallet, the SAME account the prepaid gate reads, so a funded
+	// account both gates AND depletes. When the hook is installed we do NOT also
+	// enqueue to Commerce — that would double-bill. Standalone ai (no hook) falls
+	// through to the HTTP billing queue below.
+	if rec := object.UsageRecorder(); rec != nil {
+		if err := rec(context.Background(), object.UsageEvent{
+			Subject:   subject,
+			Namespace: org,
+			Cents:     amount,
+			Currency:  "usd",
+			Model:     record.Model,
+			Provider:  record.Provider,
+			RequestID: record.RequestID,
+		}); err != nil {
+			logs.Error("billing: native usage record failed request_id=%s: %v", record.RequestID, err)
+		}
+		return
+	}
+
+	if billingQueue == nil {
+		return
+	}
 
 	payload := map[string]interface{}{
 		"user":             subject,
