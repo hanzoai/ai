@@ -378,9 +378,11 @@ func TestListModelsWithUpstream(t *testing.T) {
 
 	models := mc.ListModelsWithUpstream()
 
-	// Should include ALL routed models (including hidden)
-	if len(models) != 5 {
-		t.Errorf("expected 5 models (including hidden), got %d", len(models))
+	// Should include ALL routed models (including hidden). The fixture has 7
+	// routed models (gpt-4o, glm-5.2, zen5, zen4, zen4-mini, zen, openai/gpt-4o);
+	// fireworks/deepseek-r1 is pricing_only and excluded from routes.
+	if len(models) != 7 {
+		t.Errorf("expected 7 models (including hidden), got %d", len(models))
 	}
 
 	// Should include upstream info
