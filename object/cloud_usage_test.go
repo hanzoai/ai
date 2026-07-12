@@ -352,7 +352,7 @@ func TestCloudUsageCoercion(t *testing.T) {
 		t.Error("cuString coercion wrong")
 	}
 	if got := cuTime("2026-06-29 02:30:00"); got.Format(time.RFC3339) != "2026-06-29T02:30:00Z" {
-		t.Errorf("cuTime clickhouse layout = %v", got)
+		t.Errorf("cuTime datastore layout = %v", got)
 	}
 	if got := cuTime("2026-06-29T02:30:00Z"); got.Format(time.RFC3339) != "2026-06-29T02:30:00Z" {
 		t.Errorf("cuTime rfc3339 = %v", got)
