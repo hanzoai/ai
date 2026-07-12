@@ -194,3 +194,26 @@ func (a *Adapter) createTable() {
 func (a *Adapter) RawDB() *sql.DB {
 	return a.db.DB()
 }
+
+// UseMemoryDB points the package adapter at a fresh in-memory SQLite database,
+// syncs the given models, and returns a restore func that reinstates the previous
+// adapter and closes the DB. It is the ONE hermetic in-memory-DB seam shared by
+// every package's tests — object's own unit tests and the controllers' HTTP-status
+// tests — so no test hand-rolls adapter wiring. SQLite is the canonical embedded
+// store (the same driver prod uses), so this exercises the real query path, not a
+// fake. Never call it from non-test code: it swaps the process-wide adapter.
+func UseMemoryDB(dsn string, models ...interface{}) (restore func(), err error) {
+	db, err := dbx.Open("sqlite", dsn)
+	if err != nil {
+		return nil, err
+	}
+	for _, m := range models {
+		if err := db.Sync(m); err != nil {
+			_ = db.Close()
+			return nil, err
+		}
+	}
+	prev := adapter
+	adapter = &Adapter{driverName: "sqlite", dataSourceName: dsn, db: db}
+	return func() { adapter = prev; _ = db.Close() }, nil
+}
