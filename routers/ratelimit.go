@@ -29,7 +29,6 @@ import (
 	"github.com/beego/beego/context"
 	"github.com/beego/beego/logs"
 	"github.com/hanzoai/ai/conf"
-	"github.com/hanzoai/ai/object"
 	"golang.org/x/time/rate"
 )
 
@@ -454,7 +453,7 @@ func InitTierCache() {
 		lastCleanup: time.Now(),
 		endpoint:    endpoint,
 		token:       token,
-		client:      object.CommerceHTTPClient(&http.Client{Timeout: commerceHTTPTimeout}),
+		client:      &http.Client{Timeout: commerceHTTPTimeout},
 		inflight:    make(map[string]struct{}),
 	}
 
