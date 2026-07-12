@@ -37,7 +37,10 @@ type UsageRecorderFunc func(ctx context.Context, u UsageEvent) error
 type UsageEvent struct {
 	Subject   string // billing subject (SourceId): "owner/name" or org slug
 	Namespace string // org (X-Org-Id)
-	Cents     int64  // amount to debit (> 0)
+	// USD is the EXACT amount to debit as a decimal USD string ("0.00132"), never a
+	// rounded cent. The host parses it to atto-USD (1e-18) so a sub-cent AI call bills
+	// precisely and is never floored to zero. Empty or "0" debits nothing.
+	USD       string
 	Currency  string // default "usd"
 	Model     string
 	Provider  string
