@@ -316,7 +316,7 @@ func (p *OpenAiModelProvider) QueryText(question string, writer io.Writer, histo
 	frequencyPenalty := p.frequencyPenalty
 	presencePenalty := p.presencePenalty
 
-	maxTokens := getContextLength(model)
+	maxTokens := GetContextLength(model)
 
 	modelResult := &ModelResult{}
 	if getOpenAiModelType(model) == "Chat" {
@@ -353,7 +353,7 @@ func (p *OpenAiModelProvider) QueryText(question string, writer io.Writer, histo
 				return nil, err
 			}
 
-			if getContextLength(model) > modelResult.TotalTokenCount {
+			if GetContextLength(model) > modelResult.TotalTokenCount {
 				return modelResult, nil
 			} else {
 				return nil, fmt.Errorf("%s", i18n.Translate(lang, "model:exceed max tokens"))
