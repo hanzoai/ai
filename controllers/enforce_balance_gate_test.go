@@ -107,7 +107,7 @@ func TestEnforceBalanceGate_NoExemptBypass(t *testing.T) {
 	globalModelConfig = nil
 	t.Cleanup(func() { globalModelConfig = prev })
 
-	t.Setenv("commerceEndpoint", "")            // gate must still consult balance → errors
+	t.Setenv("commerceEndpoint", "")              // gate must still consult balance → errors
 	t.Setenv("BALANCE_EXEMPT_USERS", "m1-exempt") // set but IGNORED: the concept is removed
 
 	err := enforceBalanceGate(&iam.User{Owner: "m1-exempt", Type: "application"}, "zen-max", true)
