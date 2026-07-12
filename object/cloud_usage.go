@@ -15,7 +15,7 @@
 // Read side of the hanzo.cloud_usage ledger.
 //
 // The write side (controllers/zap_native.go zapWriteUsage) appends one row per
-// inference call to the ClickHouse table hanzo.cloud_usage via the native ZAP
+// inference call to the datastore table hanzo.cloud_usage via the native ZAP
 // datastore peer. This file is the symmetric READ side: it aggregates that
 // ledger into the console2 "Overview" dashboard payload — totals + period
 // deltas, an evenly-spaced time series, spend-by-model (top-N + "other"), and
@@ -25,7 +25,7 @@
 // Design: every shaping rule (window resolution, gap-filled series, top-N fold,
 // delta math, value coercion) is a pure function. GetCloudUsageOverview is a
 // thin "fetch six aggregates, then assemble" orchestration; buildCloudUsageOverview
-// is the pure assembler the test drives with mock rows — no ClickHouse needed.
+// is the pure assembler the test drives with mock rows — no datastore needed.
 
 package object
 
@@ -282,7 +282,7 @@ const cloudUsageTotalsSelect = "SELECT count() AS requests, sum(total_tokens) AS
 	"sum(cost_cents) AS cost_cents, uniqExact(model) AS models, uniqExact(provider) AS providers " +
 	"FROM hanzo.cloud_usage WHERE "
 
-// GetCloudUsageOverview runs the aggregate queries against the ClickHouse ledger
+// GetCloudUsageOverview runs the aggregate queries against the datastore ledger
 // and assembles the Overview. Errors are surfaced (not swallowed) so the client
 // can show an honest "unavailable" state rather than fabricated zeros.
 func GetCloudUsageOverview(ctx context.Context, p CloudUsageParams) (*CloudUsageOverview, error) {
@@ -357,7 +357,7 @@ func GetCloudUsageOverview(ctx context.Context, p CloudUsageParams) (*CloudUsage
 }
 
 // whereClause builds the time + organization predicate. Times are formatted as
-// ClickHouse DateTime literals (UTC); the org slug is always a bound parameter
+// datastore DateTime literals (UTC); the org slug is always a bound parameter
 // (never interpolated) so a super admin's ?org= can't inject SQL.
 func (p CloudUsageParams) whereClause(start, end time.Time) (string, []interface{}) {
 	clause := "timestamp >= ? AND timestamp < ?"
@@ -398,7 +398,7 @@ func cloudUsageActivityQueryable(t string) bool {
 // ── Pure assembler (unit-tested) ──────────────────────────────────────────────
 
 // buildCloudUsageOverview assembles the Overview from already-fetched raw rows.
-// It is pure (no I/O), so the test drives it with mock ClickHouse rows.
+// It is pure (no I/O), so the test drives it with mock datastore rows.
 func buildCloudUsageOverview(
 	p CloudUsageParams,
 	totalsRow, priorRow map[string]interface{},
@@ -457,7 +457,7 @@ func cloudUsageDelta(current, prior int64) CloudUsageDelta {
 	return d
 }
 
-// buildCloudUsageSeries turns sparse ClickHouse buckets into an evenly-spaced,
+// buildCloudUsageSeries turns sparse datastore buckets into an evenly-spaced,
 // gap-filled series so the client charts a continuous line. Bucket alignment
 // matches toStartOf{Hour,Day}(…, 'UTC'): Go's Truncate over the chosen step
 // lands on the same UTC boundaries.
@@ -575,7 +575,7 @@ func buildCloudUsageActivity(p CloudUsageParams, rows []map[string]interface{}, 
 
 // ── Value coercion ────────────────────────────────────────────────────────────
 //
-// ClickHouse rows arrive over ZAP as JSON-decoded maps: numbers may be float64,
+// datastore rows arrive over ZAP as JSON-decoded maps: numbers may be float64,
 // json.Number, or (for big UInt64) strings; DateTime is "2006-01-02 15:04:05".
 // These helpers coerce robustly so a sidecar encoding change can't crash a read.
 
@@ -650,7 +650,7 @@ func cuBool(v interface{}) bool {
 }
 
 func cuTime(v interface{}) time.Time {
-	// The direct ClickHouse driver decodes DateTime columns to time.Time; take it
+	// The direct datastore driver decodes DateTime columns to time.Time; take it
 	// as-is before falling back to the string/unix layouts (a JSON transport path).
 	if t, ok := v.(time.Time); ok {
 		return t.UTC()
