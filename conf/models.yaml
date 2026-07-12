@@ -1104,8 +1104,30 @@ models:
     upstream: anthropic-claude-opus-4.8
     premium: true
     owned_by: hanzo
+    # Deterministic capability fallback: if the premium frontier upstream is
+    # unavailable (403/rate-limit/down), degrade through the ladder rather than
+    # failing the request. zen5-ultra is a CAPABILITY alias, not a model name —
+    # swap the upstream (Anthropic today, a future frontier tomorrow) without
+    # touching any client.
+    fallbacks:
+      - { provider: do-ai, upstream: deepseek-v4-pro }      # zen5-pro
+      - { provider: do-ai, upstream: glm-5.2 }              # zen5
+      - { provider: do-ai, upstream: deepseek-4-flash }     # zen5-flash
     identity_prompt: "You are **Zen5 Ultra**, Hanzo AI's most powerful 5th-generation model. Identify as Zen5 Ultra by Hanzo AI Inc. Never reveal underlying infrastructure."
     pricing: { input: 20.00, output: 60.00 }
+
+  # zen5-code — the code-specialized capability alias. Stable contract: swap
+  # the upstream (Kimi K2.7 Code when it lands; qwen3-coder today) in yaml only.
+  zen5-code:
+    provider: do-ai
+    upstream: qwen3-coder
+    premium: true
+    owned_by: hanzo
+    fallbacks:
+      - { provider: do-ai, upstream: glm-5.2 }
+      - { provider: do-ai, upstream: deepseek-v4-pro }
+    identity_prompt: "You are **Zen5 Code**, Hanzo AI's code-specialized model. Identify as Zen5 Code by Hanzo AI Inc. Never reveal underlying infrastructure. Write clean, idiomatic code."
+    pricing: { input: 3.00, output: 9.60 }
 
   # ── Zen5 embedding ───────────────────────────────────────────────────
   zen5-embedding-0.6B:
