@@ -936,6 +936,21 @@ func (c *ApiController) ChatCompletions() {
 	// Resolve org context for per-org model routing and pricing.
 	orgId := c.GetOrg()
 
+	// `auto`/`zen-router` resolution (below) calls the router engine — an internal
+	// HTTP request carrying the caller's prompt — and records a RoutingEvent, BEFORE
+	// authResolveProvider authenticates further down. Authenticate FIRST so an
+	// UNAUTHENTICATED caller can never drive that internal machinery: auth precedes
+	// every side effect. authenticate is the SAME credential check authResolveProvider
+	// runs (a strict subset — credential only, no model/balance), read-only, so it
+	// never rejects a request the resolver would accept. Concrete models skip this
+	// (resolveAutoModel is a no-op for them), so the dominant path pays nothing.
+	if isAutoModel(request.Model) {
+		if authErr := c.authenticate(token); authErr != nil {
+			c.ResponseAuthError(authErr)
+			return
+		}
+	}
+
 	// Virtual `auto`/`zen-router` model → resolve to a concrete servable model id
 	// BEFORE any provider/pricing/billing resolution, so the ENTIRE existing path
 	// (auth+routing, ModelRoute fallbacks, zen identity, balance reserve/settle,
