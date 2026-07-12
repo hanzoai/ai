@@ -13,8 +13,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build skipCi
-
 package model
 
 import "testing"
@@ -52,6 +50,26 @@ func TestGetContextLength(t *testing.T) {
 		// doubao
 		"Doubao-pro-32k": 32768,
 		"Doubao-lite-4k": 4096,
+		// ── GLM: the 1M window landed at GLM-4.5 and holds through GLM-5.x.
+		// glm-5.2 is the model Hanzo serves for `best`; it MUST be 1M, not the
+		// 16384 fallback (which dead-ends /compact and caps long CC sessions).
+		"glm-5.2":  1048576,
+		"glm-5.1":  1048576,
+		"GLM-5.2":  1048576,
+		"glm-4.5":  1048576,
+		"glm-4-plus": 1048576,
+		"glm-4":      131072,
+		"glm-3-turbo": 131072,
+		"glm-4V":     8192,
+		// ── Kimi K2.x: 256K context.
+		"kimi-k2.6": 262144,
+		"kimi-k2.7": 262144,
+		// ── Modern DO-AI models the legacy table predates must NOT collapse to
+		// 16384. The safe floor is 131072 (every served model is ≥128K).
+		"deepseek-v4-pro":   131072,
+		"deepseek-v4-flash": 131072,
+		"qwen3.5-397b-a17b": 131072,
+		"some-unknown-future-model": 131072,
 	}
 	for modelName, gtcontextLength := range testModel {
 		contextLength := getContextLength(modelName)

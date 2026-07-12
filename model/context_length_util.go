@@ -259,17 +259,35 @@ func getContextLength(typ string) int {
 		}
 	} else if strings.Contains(typ, "yi") {
 		return 16384
+	// ── chatGLM / GLM ────────────────────────────────────────────────────
+	// The GLM family grew a 1M context window at GLM-4.5 and keeps it through
+	// GLM-5.x (the upstream `glm-5.2` Hanzo serves is a 1M-context model). The
+	// legacy branches below (3-turbo=128K, 4V=8K, 4=128K) predate that; without
+	// a `5`/`4.5` branch, glm-5.2 fell through to the 16384 fallback — silently
+	// capping every long prompt and dead-ending /compact one token over 262144.
+	// 1M is the real served window; 4.5+ inherits it.
 	} else if strings.Contains(typ, "glm") {
-		if strings.Contains(typ, "3-turbo") {
+		if strings.Contains(typ, "5") || strings.Contains(typ, "4.5") || strings.Contains(typ, "4-plus") || strings.Contains(typ, "4plus") {
+			return 1048576
+		} else if strings.Contains(typ, "3-turbo") {
 			return 131072
-		} else if strings.Contains(typ, "4V") {
+		} else if strings.Contains(typ, "4v") {
 			return 8192
 		} else if strings.Contains(typ, "4") {
 			return 131072
 		}
+	} else if strings.Contains(typ, "kimi") {
+		// Moonshot Kimi K2.x — 256K context (kimi-k2.6 / kimi-k2.7).
+		if strings.Contains(typ, "k2") || strings.Contains(typ, "k1.5") {
+			return 262144
+		}
+		return 131072
 	}
-	// Unknown model → 16K, not 4096. A 4096 fallback silently truncates/402s any
-	// prompt over ~4k tokens (system prompts, RAG context, long chats) on models
-	// this table doesn't recognise; 16384 is a safe modern minimum.
-	return 16384
+	// Unknown model → 131072, not 16384. The old 16K fallback silently 402'd
+	// any prompt over 16K tokens on every modern model this table predates
+	// (glm-5.x, kimi-k2.x, deepseek-v4, qwen3.5 …), dead-ending /compact and
+	// capping long Claude Code sessions. 128K is the safe modern floor across
+	// the DO-AI lineup (every served model is ≥128K); the table is the ONLY
+	// source of truth for context length — models.yaml declares no window.
+	return 131072
 }
