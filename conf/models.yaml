@@ -337,6 +337,7 @@ models:
     provider: do-ai
     upstream: glm-5.2
     premium: true
+    context_window: 1048576   # 1M — GLM-5.2's real served window (DO GenAI)
     pricing: { input: 3.00, output: 9.60 }
 
   # ── DO-AI aliases (hidden, still callable) ─────────────────────────────
