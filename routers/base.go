@@ -36,12 +36,27 @@ type Response struct {
 }
 
 func GetSessionUser(ctx *context.Context) *iam.User {
+	// Twin of controllers.GetSessionClaims: a nil session store resolves to "no
+	// session user", never a panic. ctx.Input.Session dereferences CruSession
+	// directly, and CruSession is only populated by beego's SessionStart — which
+	// does NOT run when the embedded cloud binary serves these routes without the
+	// session hook. This function runs in the BeforeRouter filters (RateLimit,
+	// BalanceGate, Authz) via resolveBillingKey — BEFORE the controller — so a nil
+	// store here was a pre-model 500 on every /v1 request. Fail-secure: no session
+	// ⇒ no user ⇒ the filters bill/limit by the raw key and the controller enforces
+	// Bearer-credential auth (typed 401 for an invalid/absent credential).
+	if ctx == nil || ctx.Input == nil || ctx.Input.CruSession == nil {
+		return nil
+	}
 	s := ctx.Input.Session("user")
 	if s == nil {
 		return nil
 	}
 
-	claims := s.(iam.Claims)
+	claims, ok := s.(iam.Claims)
+	if !ok {
+		return nil
+	}
 	return &claims.User
 }
 
