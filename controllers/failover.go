@@ -34,7 +34,14 @@ func isRetryableError(err error) bool {
 
 	// HTTP status codes embedded in error messages from upstream providers
 	retryableSubstrings := []string{
+		// Auth / access on THIS provider — cascade to the next provider's key.
 		"401", "unauthorized",
+		"402", "payment required",
+		// 403 / agreement-gated: a model the provider won't serve this account
+		// (DO GenAI returns 403 "this model is not available for your account" for
+		// upstream-agreement models). Cascading is what makes the do-ai -> anthropic
+		// opus fallback actually fire instead of hard-failing on the DO 403.
+		"403", "forbidden", "not available for your account",
 		"429", "rate limit", "too many requests",
 		"500", "internal server error",
 		"502", "bad gateway",
@@ -49,6 +56,13 @@ func isRetryableError(err error) bool {
 		// as "... is unavailable ..." (see below) so the failover loop advances to
 		// the next fallback instead of hard-failing on a disabled primary.
 		"unavailable",
+		// Credit / quota exhaustion: a provider whose FREE CREDIT or paid quota is
+		// spent must cascade to the next provider in the fallback chain, so
+		// credit-first routing degrades to paid / paid-only instead of a hard fail
+		// (OpenAI "insufficient_quota", generic "quota"/"credit"/"billing limit").
+		// Deliberately NOT bare "exceeded" — that also matches request-size errors
+		// ("maximum context length ... exceeded") which must NOT cascade.
+		"quota", "insufficient", "credit", "billing",
 	}
 	for _, sub := range retryableSubstrings {
 		if strings.Contains(msg, sub) {
