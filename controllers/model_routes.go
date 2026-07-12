@@ -36,6 +36,7 @@ type modelRoute struct {
 	premium       bool                 // Requires positive balance
 	hidden        bool                 // If true, excluded from /api/models listing (still callable)
 	ownedBy       string               // Override for owned_by in model listing (default: providerName)
+	contextWindow int                  // Max context tokens; 0 = defer to getContextLength heuristic
 }
 
 // modelRoutes is the static routing table. Keys are user-facing model names

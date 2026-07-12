@@ -27,6 +27,7 @@ import (
 
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/controllers"
+	"github.com/hanzoai/ai/model"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/proxy"
 	"github.com/hanzoai/ai/routers"
@@ -135,6 +136,15 @@ func doBootstrap() (err error) {
 	}
 	if err := controllers.InitModelConfig(configPath); err != nil {
 		logs.Warn("Model config: %v (using static fallback)", err)
+	}
+
+	// Wire the YAML-backed context-window resolver: models.yaml context_window
+	// becomes the per-model source of truth for max context, overriding the
+	// static getContextLength table. Without this, glm-5.2 (1M context) fell
+	// through the table to a 16K fallback and dead-ended long prompts + /compact.
+	// Nil-safe: if ModelConfig failed to load, the table-only path stays.
+	if mc := controllers.GetModelConfig(); mc != nil {
+		model.SetContextWindowResolver(mc.ContextWindow)
 	}
 
 	// Provider HTTP client, GeoIP, request parsing, maintenance tasks.
