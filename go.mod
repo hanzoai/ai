@@ -27,7 +27,7 @@ require (
 	github.com/carmel/gooxml v0.0.0-20220216072414-40ff56130850
 	github.com/cohere-ai/cohere-go/v2 v2.5.2
 	github.com/digitalocean/go-libvirt v0.0.0-20250207191401-950a7b2d7eaf
-	github.com/docker/docker v28.3.3+incompatible
+	github.com/docker/docker v28.5.2+incompatible
 	github.com/gage-technologies/mistral-go v1.1.0
 	github.com/go-git/go-git/v5 v5.19.1
 	github.com/go-sql-driver/mysql v1.10.0
@@ -36,6 +36,7 @@ require (
 	github.com/hanzoai/cloud v0.1.3
 	github.com/hanzoai/dashscope-go-sdk v0.0.2
 	github.com/hanzoai/dashscopego v0.6.0
+	github.com/hanzoai/datastore-go/v2 v2.47.0
 	github.com/hanzoai/dbx v1.16.0
 	github.com/hanzoai/go-openrouter v1.0.0
 	github.com/hanzoai/iam v1.19.8-0.20260622075908-c2fd4872545b
@@ -86,6 +87,7 @@ require (
 
 require (
 	filippo.io/edwards25519 v1.2.0 // indirect
+	github.com/ClickHouse/ch-go v0.72.0 // indirect
 	github.com/alibabacloud-go/alibabacloud-gateway-spi v0.0.5 // indirect
 	github.com/alibabacloud-go/debug v1.0.1 // indirect
 	github.com/alibabacloud-go/endpoint-util v1.1.0 // indirect
@@ -164,6 +166,7 @@ require (
 	github.com/miekg/dns v1.1.72 // indirect
 	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db // indirect
 	github.com/monochromegane/go-gitignore v0.0.0-20200626010858-205db1a8cc00 // indirect
+	github.com/morikuni/aec v1.0.0 // indirect
 	github.com/mr-tron/base58 v1.2.0 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/paulmach/orb v0.13.0 // indirect
@@ -232,7 +235,7 @@ require (
 	github.com/diskfs/go-diskfs v1.2.0 // indirect
 	github.com/distribution/reference v0.6.0 // indirect
 	github.com/dlclark/regexp2 v1.11.5 // indirect
-	github.com/docker/go-connections v0.5.0 // indirect
+	github.com/docker/go-connections v0.6.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/emicklei/go-restful/v3 v3.12.2 // indirect
 	github.com/emirpasic/gods v1.18.1 // indirect
@@ -257,8 +260,6 @@ require (
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/s2a-go v0.1.9 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.14 // indirect
-	github.com/hanzo-ds/go v1.0.0
-	github.com/hanzo-ds/native v0.72.0
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
 	github.com/hashicorp/hcl v1.0.1-vault-5 // indirect
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 // indirect
@@ -274,7 +275,6 @@ require (
 	github.com/mitchellh/mapstructure v1.5.1-0.20231216201459-8508981c8b6c // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
 	github.com/moby/sys/atomicwriter v0.1.0 // indirect
-	github.com/moby/term v0.5.2 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.3-0.20250322232337-35a7c28c31ee // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
