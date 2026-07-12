@@ -20,7 +20,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -31,30 +30,12 @@ import (
 	"github.com/hanzoai/ai/object"
 )
 
-// ── Service key exemption ────────────────────────────────────────────────────
-
-// balanceExemptKeys holds API keys that bypass balance checks (e.g. internal
-// service accounts). Populated once at init from the BALANCE_EXEMPT_KEYS env
-// var (comma-separated list of keys).
-var balanceExemptKeys map[string]struct{}
-
-func init() {
-	balanceExemptKeys = make(map[string]struct{})
-	if raw := os.Getenv("BALANCE_EXEMPT_KEYS"); raw != "" {
-		for _, k := range strings.Split(raw, ",") {
-			k = strings.TrimSpace(k)
-			if k != "" {
-				balanceExemptKeys[k] = struct{}{}
-			}
-		}
-	}
-}
-
-// Balance exemption (BALANCE_EXEMPT_USERS) is parsed and matched by the shared
-// object.BalanceExemptSet — the SAME definition the controller backstop uses —
-// so the gate and controller exemption can never drift in granularity.
-
 // ── Balance gate configuration ──────────────────────────────────────────────
+//
+// There is NO exemption of any kind: no exempt keys, no exempt users, no
+// fail-open override. Every priced request is gated on a positive prepaid
+// balance, and a balance that cannot be read denies the request (fail-closed).
+// AI is prepaid — nothing runs on credit it has not been funded for.
 
 const (
 	// balanceCacheTTL controls how long a cached balance result is considered
@@ -105,20 +86,6 @@ type BalanceGate struct {
 	iamEndpoint  string // IAM base URL for hk- key resolution
 	clientId     string // IAM application client ID
 	clientSecret string // IAM application client secret
-
-	// failOpenOnError, when true, restores the legacy behavior of allowing a
-	// request through when a hard cache-miss balance lookup errors (Commerce
-	// unreachable). Default false = fail CLOSED for non-exempt orgs, so a
-	// Commerce outage cannot become an unmetered bleed. Toggled at runtime via
-	// BALANCE_GATE_FAIL_OPEN_ON_ERROR (the no-rebuild escape hatch).
-	failOpenOnError bool
-
-	// exempt holds the BALANCE_EXEMPT_USERS allowlist that ALWAYS fails OPEN on a
-	// Commerce-error hard miss (never blocked). It is the SAME shared definition
-	// (object.BalanceExemptSet) the controller backstop uses, matched per-user-
-	// exact ("owner/name") OR per-org — so "hanzo/z" exempts only that service
-	// account, NOT every member of org "hanzo".
-	exempt *object.BalanceExemptSet
 }
 
 // userKeyCacheEntry maps an API token to the resolved billing identity: the
@@ -159,13 +126,10 @@ func InitBalanceGate() {
 		inflight:     make(map[string]struct{}),
 		endpoint:     endpoint,
 		token:        token,
-		client:       &http.Client{Timeout: balanceHTTPTimeout},
+		client:       object.CommerceHTTPClient(&http.Client{Timeout: balanceHTTPTimeout}),
 		iamEndpoint:  iamEndpoint,
 		clientId:     clientId,
 		clientSecret: clientSecret,
-
-		failOpenOnError: strings.EqualFold(strings.TrimSpace(os.Getenv("BALANCE_GATE_FAIL_OPEN_ON_ERROR")), "true"),
-		exempt:          object.ParseBalanceExempt(os.Getenv("BALANCE_EXEMPT_USERS")),
 	}
 
 	go bg.cleanupLoop()
@@ -316,11 +280,6 @@ func resolveBillingKey(ctx *context.Context) (subject, namespace, userKey string
 		return "", "", ""
 	}
 
-	// Exempt service account keys (e.g. cloud agent internal keys).
-	if _, exempt := balanceExemptKeys[token]; exempt {
-		return "", "", ""
-	}
-
 	// Check key cache first.
 	if s, ns, uk, ok := balanceGate.getUserKeyCached(token); ok {
 		return s, ns, uk
@@ -373,10 +332,11 @@ func isJwtTokenLike(token string) bool {
 // reflects every local settle, so the cache window can never serve a
 // stale-positive balance once the funds are spent.
 //
-// Fail posture on a COLD subject whose Commerce lookup errors: fail CLOSED for
-// non-exempt orgs (an outage must not become an unmetered bleed); exempt/house
-// orgs and the BALANCE_GATE_FAIL_OPEN_ON_ERROR override keep the legacy fail-open.
+// Fail posture on a COLD subject whose Commerce lookup errors: fail CLOSED,
+// always — an outage must never become an unmetered bleed, and there is no
+// exempt or fail-open escape. userKey is retained for caller-signature parity.
 func (bg *BalanceGate) checkBalance(subject, namespace, userKey string) (sufficient bool, balanceCents int64) {
+	_ = userKey
 	bal, reserved, fresh, known := bg.ledger.Snapshot(subject)
 	if known {
 		if !fresh {
@@ -390,11 +350,9 @@ func (bg *BalanceGate) checkBalance(subject, namespace, userKey string) (suffici
 	// Cold subject: fetch synchronously so the first request gets a real check.
 	balance, err := bg.fetchBalance(subject, namespace)
 	if err != nil {
-		if bg.failOpenOnError || bg.exempt.MatchesKey(userKey, namespace) {
-			logs.Warning("balance_gate: Commerce lookup failed for user=%s: %v (fail-open: exempt/override)", subject, err)
-			return true, 0
-		}
-		logs.Warning("balance_gate: Commerce lookup failed for cold non-exempt subject=%s: %v (fail-CLOSED)", subject, err)
+		// Balance unknown → DENY. A Commerce outage must never become an
+		// unmetered bleed, and there is no exempt/fail-open escape.
+		logs.Warning("balance_gate: Commerce lookup failed for cold subject=%s: %v (fail-CLOSED)", subject, err)
 		return false, 0
 	}
 
