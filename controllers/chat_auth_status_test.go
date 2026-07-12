@@ -278,6 +278,55 @@ func TestAuthResolveProviderFundedProceeds(t *testing.T) {
 	}
 }
 
+// TestChatCompletionsAutoModelAuthBeforeRouting closes the LOW that the session
+// fix unmasked: an `auto`/`zen-router` request resolves the concrete model via the
+// router engine (an internal HTTP call with the caller's prompt) and records a
+// RoutingEvent BEFORE the provider/billing resolution authenticates. An
+// UNAUTHENTICATED caller must not drive that internal machinery. Proof: with
+// auto-routing ENABLED, an unauth `auto` request must 401 and leave X-Routed-Model
+// UNSET (routing never ran) — auth precedes every side effect. An authed caller
+// still routes normally.
+func TestChatCompletionsAutoModelAuthBeforeRouting(t *testing.T) {
+	setupChatMoneyPath(t)
+	prev := globalModelConfig
+	defer func() { globalModelConfig = prev }()
+	globalModelConfig = routerTestConfig(true) // auto-routing ON: routing WOULD set the header if reached
+
+	body := `{"model":"auto","messages":[{"role":"user","content":"please refactor this function"}]}`
+
+	// Unauthenticated `auto`: 401 BEFORE routing — no side effect leaked.
+	c, rec := newChatController("Bearer sk-unknown-probe", body)
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				rec.Code = 500
+				t.Logf("HANDLER PANIC: %v", r)
+			}
+		}()
+		c.ChatCompletions()
+	}()
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("unauth auto => %d, want 401", rec.Code)
+	}
+	if h := rec.Header().Get(RoutedModelHeader); h != "" {
+		t.Fatalf("unauth auto set %s=%q — the router engine ran BEFORE auth (pre-auth side effect leaked)", RoutedModelHeader, h)
+	}
+
+	// Authed `auto` (funded sk-): routing still runs and rewrites the model.
+	object.SetBalanceReader(balReader(100_00, nil))
+	c2, rec2 := newChatController("Bearer "+chatFundedKey, body)
+	func() {
+		defer func() { _ = recover() }()
+		c2.ChatCompletions()
+	}()
+	if rec2.Code == http.StatusUnauthorized {
+		t.Fatalf("authed auto => 401; the pre-auth gate must not reject a valid credential")
+	}
+	if h := rec2.Header().Get(RoutedModelHeader); h == "" {
+		t.Fatalf("authed auto did not set %s — routing must still run for an authenticated caller", RoutedModelHeader)
+	}
+}
+
 // TestAuthErrorStatusContract locks the typed-error → HTTP-status mapping that IS
 // the fix: each failure category carries its own status, and — critically — an
 // UNTYPED error reaching the auth-gated renderer is fail-secure 401 (deny), NEVER
