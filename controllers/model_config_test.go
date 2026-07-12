@@ -42,13 +42,29 @@ models:
   gpt-4o:
     provider: do-ai
     upstream: openai-gpt-4o
+    context_window: 128000
     pricing: { input: 2.50, output: 10.00 }
+
+  glm-5.2:
+    provider: do-ai
+    upstream: glm-5.2
+    premium: true
+    context_window: 1048576
+    pricing: { input: 3.00, output: 9.60 }
+
+  zen5:
+    provider: do-ai
+    upstream: glm-5.2
+    premium: true
+    owned_by: hanzo
+    pricing: { input: 3.00, output: 9.60 }
 
   zen4:
     provider: fireworks
     upstream: accounts/fireworks/models/glm-5
     premium: true
     owned_by: hanzo
+    context_window: 131072
     identity_prompt: |
       You are Zen4 by Hanzo AI.
     pricing: { input: 3.00, output: 9.60 }
@@ -110,8 +126,8 @@ func TestLoadConfig(t *testing.T) {
 	}
 
 	// Should have routes for non-pricing-only entries
-	if len(mc.routes) != 5 {
-		t.Errorf("expected 5 routes, got %d", len(mc.routes))
+	if len(mc.routes) != 7 {
+		t.Errorf("expected 7 routes, got %d", len(mc.routes))
 	}
 
 	// pricing-only entry should NOT have a route
@@ -172,6 +188,50 @@ func TestResolveRoute(t *testing.T) {
 	route = mc.ResolveRoute("nonexistent-model")
 	if route != nil {
 		t.Error("expected nil for unknown model")
+	}
+}
+
+func TestContextWindow(t *testing.T) {
+	path := writeTestConfig(t)
+
+	mc := &ModelConfig{
+		routes:  make(map[string]modelRoute),
+		pricing: make(map[string]modelPrice),
+		prompts: make(map[string]string),
+		stopCh:  make(chan struct{}),
+	}
+	if err := mc.loadFromFile(path); err != nil {
+		t.Fatal(err)
+	}
+
+	// Directly declared window.
+	if w := mc.ContextWindow("gpt-4o"); w != 128000 {
+		t.Errorf("gpt-4o context_window: want 128000, got %d", w)
+	}
+	if w := mc.ContextWindow("glm-5.2"); w != 1048576 {
+		t.Errorf("glm-5.2 context_window: want 1048576 (1M), got %d", w)
+	}
+
+	// Alias chain: zen5 has no own window but routes to glm-5.2, so it
+	// inherits the 1M window. This is the load-bearing case — without it,
+	// `zen5` (the default Claude Code model) would fall to the 16K fallback.
+	if w := mc.ContextWindow("zen5"); w != 1048576 {
+		t.Errorf("zen5 should inherit glm-5.2's 1M window via alias, got %d", w)
+	}
+
+	// Case-insensitive lookup.
+	if w := mc.ContextWindow("GLM-5.2"); w != 1048576 {
+		t.Errorf("case-insensitive GLM-5.2: want 1048576, got %d", w)
+	}
+
+	// Unset window → 0 (caller falls back to the getContextLength table).
+	if w := mc.ContextWindow("zen4-mini"); w != 0 {
+		t.Errorf("zen4-mini has no declared window: want 0, got %d", w)
+	}
+
+	// Unknown model → 0.
+	if w := mc.ContextWindow("no-such-model"); w != 0 {
+		t.Errorf("unknown model: want 0, got %d", w)
 	}
 }
 
