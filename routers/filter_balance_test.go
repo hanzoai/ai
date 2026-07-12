@@ -178,68 +178,28 @@ func TestCheckBalanceFailsClosedOnColdNonExemptOrg(t *testing.T) {
 	}
 }
 
-// TestCheckBalanceExemptIsPerUserExact: the exemption matches the controller's
-// per-user-exact OR per-org semantics — a slash entry ("admin/hanzo-cloud",
-// "hanzo/z") exempts ONLY that exact service account, NOT every member of its org.
-// This is the R-fix: "hanzo/z" must no longer fail-OPEN all of org "hanzo".
-func TestCheckBalanceExemptIsPerUserExact(t *testing.T) {
+// TestCheckBalanceNoExemption: the exempt concept is REMOVED. Subjects formerly
+// listed in BALANCE_EXEMPT_USERS (admin/hanzo-cloud; hanzo/z — a normal hanzo
+// customer, never an admin) get NO special treatment: on a Commerce error a cold
+// subject fails CLOSED like any other. There is no per-user, per-org, or fail-open
+// escape — AI is prepaid for everyone, so an outage can never hand out free
+// inference to a "house" identity.
+func TestCheckBalanceNoExemption(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer srv.Close()
 
 	bg := newTestGate(srv.URL, "", balanceCacheTTL)
-	bg.exempt = object.ParseBalanceExempt("admin/hanzo-cloud,hanzo/z")
-
-	// The exact exempt service accounts fail OPEN (never blocked by an outage).
-	if sufficient, _ := bg.checkBalance("admin", "admin", "admin/hanzo-cloud"); !sufficient {
-		t.Error("exact service account admin/hanzo-cloud must fail-OPEN on Commerce error")
-	}
-	if sufficient, _ := bg.checkBalance("hanzo/z", "hanzo", "hanzo/z"); !sufficient {
-		t.Error("exact service account hanzo/z must fail-OPEN on Commerce error")
-	}
-
-	// A DIFFERENT member of the same org is NOT exempt (the old per-org collapse
-	// wrongly exempted these): a normal hanzo user must fail-CLOSED.
-	if sufficient, _ := bg.checkBalance("hanzo/alice", "hanzo", "hanzo/alice"); sufficient {
-		t.Error("hanzo/alice must fail-CLOSED — only the exact hanzo/z is exempt, not all of org hanzo")
-	}
-	// A different admin-org user is NOT exempt either (entry was admin/hanzo-cloud).
-	if sufficient, _ := bg.checkBalance("admin/other", "admin", "admin/other"); sufficient {
-		t.Error("admin/other must fail-CLOSED — only the exact admin/hanzo-cloud is exempt")
-	}
-	// A wholly different org is not exempt.
-	if sufficient, _ := bg.checkBalance("acme", "acme", "acme/user"); sufficient {
-		t.Error("non-exempt org 'acme' must fail-CLOSED")
-	}
-}
-
-// TestCheckBalanceExemptWholeOrg: a BARE org entry (no slash) still exempts the
-// whole org — the per-org escape hatch is preserved for pooled service orgs.
-func TestCheckBalanceExemptWholeOrg(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-	}))
-	defer srv.Close()
-
-	bg := newTestGate(srv.URL, "", balanceCacheTTL)
-	bg.exempt = object.ParseBalanceExempt("house")
-	if sufficient, _ := bg.checkBalance("house", "house", "house/anyone"); !sufficient {
-		t.Error("bare-org entry 'house' must exempt every member (fail-OPEN)")
-	}
-}
-
-// TestCheckBalanceFailOpenOverride: the escape hatch restores legacy fail-open.
-func TestCheckBalanceFailOpenOverride(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-	}))
-	defer srv.Close()
-
-	bg := newTestGate(srv.URL, "", balanceCacheTTL)
-	bg.failOpenOnError = true
-	if sufficient, _ := bg.checkBalance("acme", "acme", "acme/user"); !sufficient {
-		t.Error("expected fail-OPEN when BALANCE_GATE_FAIL_OPEN_ON_ERROR override is set")
+	for _, s := range []struct{ subject, ns, key string }{
+		{"admin/hanzo-cloud", "admin", "admin/hanzo-cloud"}, // formerly exempt service account
+		{"hanzo/z", "hanzo", "hanzo/z"},                     // formerly exempt — a normal customer
+		{"house", "house", "house/anyone"},                  // formerly a whole-org exemption
+		{"acme", "acme", "acme/user"},                       // never exempt
+	} {
+		if sufficient, cents := bg.checkBalance(s.subject, s.ns, s.key); sufficient || cents != 0 {
+			t.Errorf("%s must fail-CLOSED (no exemption), got sufficient=%v cents=%d", s.subject, sufficient, cents)
+		}
 	}
 }
 
@@ -259,9 +219,6 @@ func TestCheckBalanceServesStaleOnErrorForActiveOrg(t *testing.T) {
 		t.Errorf("expected stale-serve (sufficient=true, cents=500) on a blip, got (%v, %d)", sufficient, cents)
 	}
 }
-
-// (BALANCE_EXEMPT_USERS parsing + matching granularity is covered by
-// object.TestBalanceExemptGranularity — the ONE shared definition.)
 
 // TestCheckBalanceCachesWithinTTL asserts a second lookup inside the TTL does
 // not re-hit Commerce — the hot path must not make a network call per request.

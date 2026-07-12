@@ -63,7 +63,7 @@ func getUserBalance(subject, namespace string) (float64, error) {
 	// (X-Org-Id) is the org. Both must match the gate and the usage debit.
 	reqURL := fmt.Sprintf("%s/v1/billing/balance?user=%s&currency=usd", commerceEndpoint, url.QueryEscape(subject))
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := object.CommerceHTTPClient(&http.Client{Timeout: 10 * time.Second})
 	req, err := http.NewRequest(http.MethodGet, reqURL, nil)
 	if err != nil {
 		return 0, fmt.Errorf("Commerce request build failed: %w", err)
@@ -333,8 +333,8 @@ func resolveProviderForUser(user *iam.User, requestedModel string, lang string) 
 // It is the SINGLE gate shared by the JWT/IAM path (resolveProviderForUser) and
 // the provider-key (sk-) path (authResolveProvider). Previously the sk- branch
 // skipped this gate entirely, so an sk- provider key reached PREMIUM upstreams on
-// starter credit alone (M1). Exempt principals (BALANCE_EXEMPT_USERS — internal
-// cloud-agent pods) bypass. subject is the per-namespace billing account the gate
+// starter credit alone (M1). There is NO exempt path: every principal is gated on a
+// positive prepaid balance. subject is the per-namespace billing account the gate
 // read, the budget reservation, and the usage debit all key on.
 func enforceBalanceGate(user *iam.User, requestedModel string, premium bool) error {
 	if user == nil {
@@ -342,21 +342,13 @@ func enforceBalanceGate(user *iam.User, requestedModel string, premium bool) err
 	}
 	orgKey := user.Owner // namespace (X-Org-Id): the org tenant
 	subject := object.BillingSubjectForPrincipal(user.Owner, user.Name, user.Type)
-	if object.BalanceExempt().Matches(user.Owner, user.Name) {
-		return nil
-	}
 
 	balance, err := getUserBalance(subject, orgKey)
 	if err != nil {
-		// A billing-backend transport/auth failure (Commerce down/unreachable, a
-		// rejected service token, or commerceEndpoint unset) must not hard-fail
-		// every chat. The router BalanceGateFilter and the rate-limit tier lookup
-		// already fail-open on BALANCE_GATE_FAIL_OPEN_ON_ERROR; make this controller
-		// gate consistent so a broken/misconfigured Commerce degrades to
-		// "allowed, ungated" instead of 500-ing all authenticated inference.
-		if strings.EqualFold(strings.TrimSpace(os.Getenv("BALANCE_GATE_FAIL_OPEN_ON_ERROR")), "true") {
-			return nil
-		}
+		// Balance unverifiable (Commerce down, a rejected service token, or an
+		// unset endpoint) → DENY. AI is prepaid: a broken or misconfigured billing
+		// backend must never degrade to free, ungated inference. There is no
+		// fail-open escape and no exempt principal.
 		return serverError("failed to verify account balance: %s", err.Error())
 	}
 	if balance <= 0 {
