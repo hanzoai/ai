@@ -16,6 +16,7 @@ package object
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -41,7 +42,7 @@ func commerceClient() (string, string, *http.Client) {
 	}
 	endpoint = strings.TrimRight(endpoint, "/")
 	token := conf.GetConfigString("commerceToken")
-	return endpoint, token, CommerceHTTPClient(&http.Client{Timeout: 10 * time.Second})
+	return endpoint, token, &http.Client{Timeout: 10 * time.Second}
 }
 
 // ValidateTransactionForMessage validates that the user has sufficient balance
@@ -50,10 +51,6 @@ func ValidateTransactionForMessage(message *Message) error {
 	// Only validate if message has a price
 	if message.Price <= 0 {
 		return nil
-	}
-	endpoint, token, client := commerceClient()
-	if endpoint == "" {
-		return fmt.Errorf("commerceEndpoint is not configured")
 	}
 	// Build the user identifier: owner/name format expected by Commerce
 	userId := message.User
@@ -65,6 +62,22 @@ func ValidateTransactionForMessage(message *Message) error {
 	cur := strings.ToLower(message.Currency)
 	if cur == "" {
 		cur = "usd"
+	}
+	// Native path: read the wallet balance DIRECTLY from the host's in-process
+	// finance ledger (cloud), no HTTP.
+	if balanceReader != nil {
+		avail, err := balanceReader(context.Background(), userId, message.Owner, cur)
+		if err != nil {
+			return fmt.Errorf("failed to check balance: %w", err)
+		}
+		if avail < priceCents {
+			return fmt.Errorf("insufficient balance: available %d cents, required %d cents", avail, priceCents)
+		}
+		return nil
+	}
+	endpoint, token, client := commerceClient()
+	if endpoint == "" {
+		return fmt.Errorf("commerceEndpoint is not configured")
 	}
 	// Query Commerce for balance. API mounted at root in prod
 	// All commerce endpoints live under /v1/.
@@ -110,10 +123,6 @@ func AddTransactionForMessage(message *Message) error {
 	if message.Price <= 0 {
 		return nil
 	}
-	endpoint, token, client := commerceClient()
-	if endpoint == "" {
-		return fmt.Errorf("commerceEndpoint is not configured")
-	}
 	// Build the user identifier
 	userId := message.User
 	if message.Owner != "" && !strings.Contains(userId, "/") {
@@ -127,6 +136,23 @@ func AddTransactionForMessage(message *Message) error {
 	cur := strings.ToLower(message.Currency)
 	if cur == "" {
 		cur = "usd"
+	}
+	// Native path: debit the usage DIRECTLY to the host's in-process finance
+	// ledger (cloud), no HTTP. Idempotent on the message id.
+	if usageRecorder != nil {
+		return usageRecorder(context.Background(), UsageEvent{
+			Subject:   userId,
+			Namespace: message.Owner,
+			Cents:     amountCents,
+			Currency:  cur,
+			Model:     message.ModelProvider,
+			Provider:  message.ModelProvider,
+			RequestID: message.GetId(),
+		})
+	}
+	endpoint, token, client := commerceClient()
+	if endpoint == "" {
+		return fmt.Errorf("commerceEndpoint is not configured")
 	}
 	payload := map[string]interface{}{
 		"user":      userId,
