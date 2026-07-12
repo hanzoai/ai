@@ -644,43 +644,22 @@ func (c *ApiController) proxyAnthropicToolRequest(
 	hold *budgetHold,
 ) {
 	// For non-native Anthropic upstreams (DO-AI, OpenAI-compat, Local, etc.):
-	// convert to an openai.ChatCompletionRequest and use the existing proxy path.
+	// fully translate the request Anthropic→OpenAI (messages incl. tool_use /
+	// tool_result / images, tools, tool_choice) and translate the response
+	// OpenAI→Anthropic (SSE events or JSON) — never a raw OpenAI passthrough.
 	if provider.Type != "Claude" && provider.Type != "Anthropic" {
-		oaiMessages := []openai.ChatCompletionMessage{}
-		if sysText := request.SystemText(); sysText != "" {
-			oaiMessages = append(oaiMessages, openai.ChatCompletionMessage{Role: "system", Content: sysText})
-		}
-		for _, msg := range request.Messages {
-			oaiMessages = append(oaiMessages, openai.ChatCompletionMessage{
-				Role:    msg.Role,
-				Content: msg.ContentText(),
-			})
-		}
-		oaiTools := []openai.Tool{}
-		for _, t := range request.Tools {
-			var params interface{}
-			_ = json.Unmarshal(t.InputSchema, &params)
-			oaiTools = append(oaiTools, openai.Tool{
-				Type: openai.ToolTypeFunction,
-				Function: &openai.FunctionDefinition{
-					Name:        t.Name,
-					Description: t.Description,
-					Parameters:  params,
-				},
-			})
-		}
 		oaiReq := &openai.ChatCompletionRequest{
-			Model:     provider.SubType,
-			Messages:  oaiMessages,
-			Tools:     oaiTools,
-			MaxTokens: request.MaxTokens,
-			Stream:    request.Stream,
+			Model:      provider.SubType,
+			Messages:   anthropicToOpenAIMessages(request),
+			Tools:      anthropicToolsToOpenAI(request.Tools),
+			ToolChoice: anthropicToolChoiceToOpenAI(request.ToolChoice),
+			MaxTokens:  request.MaxTokens,
+			Stream:     request.Stream,
 		}
 		if request.Temperature > 0 {
-			oaiReq.Temperature = float32(request.Temperature)
+			oaiReq.Temperature = request.Temperature
 		}
-		// proxyToolRequest handles streaming, billing, and SSE forwarding.
-		c.proxyToolRequest(provider, oaiReq, requestStartTime, authUser, isPremium, "", hold)
+		c.proxyAnthropicViaOpenAI(provider, oaiReq, request, requestStartTime, authUser, isPremium, hold)
 		return
 	}
 
@@ -727,9 +706,10 @@ func (c *ApiController) proxyAnthropicToolRequest(
 		c.Ctx.ResponseWriter.Header().Set("Cache-Control", "no-cache")
 		c.Ctx.ResponseWriter.Header().Set("Connection", "keep-alive")
 		c.Ctx.ResponseWriter.WriteHeader(resp.StatusCode)
-		capPrompt, capCompletion, _, _ := streamCaptureUsage(
+		// Native Anthropic SSE passes through verbatim; capture usage from the
+		// Anthropic events (message_start/message_delta), not the OpenAI shape.
+		capPrompt, capCompletion := streamCaptureAnthropicUsage(
 			resp.Body, c.Ctx.ResponseWriter, c.Ctx.ResponseWriter.Flush,
-			true, requestId, request.Model,
 		)
 		if authUser != nil {
 			rec := &usageRecord{
@@ -772,5 +752,249 @@ func (c *ApiController) proxyAnthropicToolRequest(
 		}
 		c.Ctx.Output.Body(respBody)
 	}
+	c.EnableRender = false
+}
+
+// proxyAnthropicViaOpenAI sends a translated OpenAI request to an OpenAI-compatible
+// upstream and converts the response back into Anthropic Messages format — proper
+// Anthropic SSE events on the streaming path, a content-block JSON body otherwise.
+// This is the total translation that replaces the old raw-OpenAI passthrough.
+func (c *ApiController) proxyAnthropicViaOpenAI(
+	provider *object.Provider,
+	oaiReq *openai.ChatCompletionRequest,
+	request *AnthropicRequest,
+	requestStartTime time.Time,
+	authUser *iam.User,
+	isPremium bool,
+	hold *budgetHold,
+) {
+	requestId := util.GenerateUUID()
+
+	// Force a final usage chunk on the streaming path so tool calls bill for real
+	// token counts (a funded key must never get free premium inference via
+	// stream:true — the same guard proxyToolRequest applies).
+	if oaiReq.Stream {
+		oaiReq.StreamOptions = &openai.StreamOptions{IncludeUsage: true}
+	}
+
+	upstreamURL, apiKey, authHeader := resolveUpstreamEndpoint(provider)
+	if upstreamURL == "" {
+		c.respondAnthropicError("api_error", "No upstream endpoint configured for provider: "+provider.Name, 500)
+		return
+	}
+
+	body, err := json.Marshal(oaiReq)
+	if err != nil {
+		c.respondAnthropicError("api_error", "Failed to marshal request: "+err.Error(), 500)
+		return
+	}
+
+	req, err := http.NewRequest(http.MethodPost, upstreamURL, bytes.NewReader(body))
+	if err != nil {
+		c.respondAnthropicError("api_error", "Failed to build upstream request: "+err.Error(), 500)
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if authHeader != "" {
+		req.Header.Set("Authorization", authHeader)
+	} else if apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}
+
+	client := &http.Client{Timeout: 120 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		if authUser != nil {
+			errRecord := &usageRecord{
+				Owner: authUser.Owner, User: authUser.Owner + "/" + authUser.Name,
+				Model: request.Model, Provider: provider.Name, Premium: isPremium,
+				Stream: request.Stream, Status: "error", ErrorMsg: err.Error(),
+				ClientIP: c.Ctx.Request.RemoteAddr, RequestID: requestId,
+			}
+			errRecord.BYO, errRecord.Account = providerBYO(provider, authUser)
+			recordUsage(errRecord)
+			recordTrace(c.Ctx.Request.Context(), errRecord, requestStartTime)
+		}
+		c.respondAnthropicError("api_error", "Upstream request failed: "+err.Error(), 502)
+		return
+	}
+	defer resp.Body.Close()
+
+	if request.Stream {
+		if resp.StatusCode != http.StatusOK {
+			respBody, _ := io.ReadAll(resp.Body)
+			c.respondAnthropicError(anthropicErrorTypeForStatus(resp.StatusCode), upstreamErrorMessage(respBody), resp.StatusCode)
+			return
+		}
+		c.Ctx.ResponseWriter.Header().Set("Content-Type", "text/event-stream")
+		c.Ctx.ResponseWriter.Header().Set("Cache-Control", "no-cache")
+		c.Ctx.ResponseWriter.Header().Set("Connection", "keep-alive")
+		c.Ctx.ResponseWriter.WriteHeader(http.StatusOK)
+
+		emit := func(event string, data interface{}) error {
+			jsonData, mErr := json.Marshal(data)
+			if mErr != nil {
+				return mErr
+			}
+			if _, wErr := fmt.Fprintf(c.Ctx.ResponseWriter, "event: %s\ndata: %s\n\n", event, jsonData); wErr != nil {
+				return wErr
+			}
+			c.Ctx.ResponseWriter.Flush()
+			return nil
+		}
+		prompt, completion, _ := translateOpenAIStream(resp.Body, emit, request.Model, requestId)
+
+		// Tokenizer fallback so a successful streamed tool call is never billed $0.
+		if prompt == 0 {
+			if pt, e := model.OpenaiNumTokensFromMessages(oaiReq.Messages, request.Model); e == nil {
+				prompt = pt
+			}
+		}
+		c.recordAnthropicToolUsage(request, provider, authUser, isPremium, true, requestId, prompt, completion, requestStartTime, hold)
+		c.EnableRender = false
+		return
+	}
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		c.respondAnthropicError("api_error", "Failed to read upstream response: "+err.Error(), 502)
+		return
+	}
+	if resp.StatusCode != http.StatusOK {
+		c.respondAnthropicError(anthropicErrorTypeForStatus(resp.StatusCode), upstreamErrorMessage(respBody), resp.StatusCode)
+		return
+	}
+	antResp, prompt, completion := openAIResponseToAnthropic(respBody, request.Model, requestId)
+	out, err := json.Marshal(antResp)
+	if err != nil {
+		c.respondAnthropicError("api_error", err.Error(), 500)
+		return
+	}
+	c.Ctx.Output.Header("Content-Type", "application/json")
+	c.Ctx.Output.Body(out)
+	c.recordAnthropicToolUsage(request, provider, authUser, isPremium, false, requestId, prompt, completion, requestStartTime, hold)
+	c.EnableRender = false
+}
+
+// recordAnthropicToolUsage settles the budget hold and records usage + trace for a
+// translated Anthropic tool request. Shared by the streaming and non-streaming
+// paths so billing lives in exactly one place.
+func (c *ApiController) recordAnthropicToolUsage(
+	request *AnthropicRequest, provider *object.Provider, authUser *iam.User,
+	isPremium, stream bool, requestId string, prompt, completion int,
+	requestStartTime time.Time, hold *budgetHold,
+) {
+	actualCents := calculateCostCentsWithCache(request.Model, prompt, completion, 0, 0)
+	if authUser != nil {
+		rec := &usageRecord{
+			Owner: authUser.Owner, User: authUser.Owner + "/" + authUser.Name,
+			Organization: authUser.Owner, Model: request.Model, Provider: provider.Name,
+			PromptTokens: prompt, CompletionTokens: completion, TotalTokens: prompt + completion,
+			Currency: "USD", Premium: isPremium, Stream: stream, Status: "success",
+			ClientIP: c.Ctx.Request.RemoteAddr, RequestID: requestId,
+		}
+		rec.BYO, rec.Account = providerBYO(provider, authUser)
+		recordUsage(rec)
+		recordTrace(c.Ctx.Request.Context(), rec, requestStartTime)
+	}
+	hold.settle(actualCents)
+}
+
+// anthropicErrorTypeForStatus maps an upstream HTTP status to an Anthropic error type.
+func anthropicErrorTypeForStatus(status int) string {
+	switch status {
+	case http.StatusBadRequest:
+		return "invalid_request_error"
+	case http.StatusUnauthorized:
+		return "authentication_error"
+	case http.StatusForbidden:
+		return "permission_error"
+	case http.StatusNotFound:
+		return "not_found_error"
+	case http.StatusTooManyRequests:
+		return "rate_limit_error"
+	default:
+		return "api_error"
+	}
+}
+
+// upstreamErrorMessage extracts a readable message from an OpenAI-shaped error
+// body ({"error":{"message":...}}), falling back to the raw body.
+func upstreamErrorMessage(body []byte) string {
+	var e struct {
+		Error struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if json.Unmarshal(body, &e) == nil && e.Error.Message != "" {
+		return e.Error.Message
+	}
+	if len(body) > 0 {
+		return string(body)
+	}
+	return "upstream error"
+}
+
+// AnthropicCountTokens implements POST /v1/messages/count_tokens. Claude Code
+// calls it before a request; it returns {"input_tokens": N} for the given
+// model + messages + tools.
+// @Title AnthropicCountTokens
+// @Tag Anthropic Compatible API
+// @Description Anthropic-compatible token counting.
+// @router /messages/count_tokens [post]
+func (c *ApiController) AnthropicCountTokens() {
+	token := c.Ctx.Request.Header.Get("x-api-key")
+	if token == "" {
+		authHeader := c.Ctx.Request.Header.Get("Authorization")
+		if strings.HasPrefix(authHeader, "Bearer ") {
+			token = strings.TrimPrefix(authHeader, "Bearer ")
+		}
+	}
+	if token == "" {
+		c.respondAnthropicError("authentication_error", "Missing API key. Provide x-api-key header or Authorization: Bearer header.", 401)
+		return
+	}
+	if isPublishableKey(token) {
+		c.respondAnthropicError("auth_error", "Publishable keys (pk-) can only access read-only endpoints. Use a secret key (sk-) for messages.", 403)
+		return
+	}
+
+	var request AnthropicRequest
+	parseErr := json.Unmarshal(c.Ctx.Input.RequestBody, &request)
+	if authErr := c.authenticate(token); authErr != nil {
+		c.respondAnthropicError("authentication_error", authErr.Error(), 401)
+		return
+	}
+	if parseErr != nil {
+		c.respondAnthropicError("invalid_request_error", "Failed to parse request: "+parseErr.Error(), 400)
+		return
+	}
+	if request.Model == "" {
+		c.respondAnthropicError("invalid_request_error", "model is required", 400)
+		return
+	}
+
+	msgs := anthropicToOpenAIMessages(&request)
+	n, err := model.OpenaiNumTokensFromMessages(msgs, request.Model)
+	if err != nil || n <= 0 {
+		// Coarse character-based fallback when the tokenizer can't handle the model.
+		chars := 0
+		for _, m := range msgs {
+			chars += len(m.Content)
+		}
+		n = chars / 4
+	}
+	// Tool schemas contribute input tokens too.
+	if len(request.Tools) > 0 {
+		if tb, e := json.Marshal(anthropicToolsToOpenAI(request.Tools)); e == nil {
+			if tn, e2 := model.GetTokenSize(request.Model, string(tb)); e2 == nil {
+				n += tn
+			}
+		}
+	}
+
+	out, _ := json.Marshal(map[string]interface{}{"input_tokens": n})
+	c.Ctx.Output.Header("Content-Type", "application/json")
+	c.Ctx.Output.Body(out)
 	c.EnableRender = false
 }
