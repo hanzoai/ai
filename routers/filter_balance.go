@@ -15,6 +15,7 @@
 package routers
 
 import (
+	stdcontext "context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -126,7 +127,7 @@ func InitBalanceGate() {
 		inflight:     make(map[string]struct{}),
 		endpoint:     endpoint,
 		token:        token,
-		client:       object.CommerceHTTPClient(&http.Client{Timeout: balanceHTTPTimeout}),
+		client:       &http.Client{Timeout: balanceHTTPTimeout},
 		iamEndpoint:  iamEndpoint,
 		clientId:     clientId,
 		clientSecret: clientSecret,
@@ -403,6 +404,11 @@ type commerceBalanceResponse struct {
 // so the credit a user receives is the balance read here and debited from.
 // Per global rule: /v1/ only, never /api/. Commerce serves /v1/billing/balance.
 func (bg *BalanceGate) fetchBalance(subject, namespace string) (int64, error) {
+	// Native path: read the wallet balance DIRECTLY from the host's in-process
+	// finance ledger (cloud), no HTTP. Falls back to the S2S HTTP read standalone.
+	if r := object.BalanceReader(); r != nil {
+		return r(stdcontext.Background(), subject, namespace, "usd")
+	}
 	balanceURL := fmt.Sprintf("%s/v1/billing/balance?user=%s&currency=usd", bg.endpoint, url.QueryEscape(subject))
 
 	req, err := http.NewRequest(http.MethodGet, balanceURL, nil)
