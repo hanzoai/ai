@@ -97,14 +97,24 @@ func TestEnforceBalanceGate_FailClosedOnLookupError(t *testing.T) {
 	}
 }
 
-// TestEnforceBalanceGate_ExemptBypass proves BALANCE_EXEMPT_USERS still bypasses
-// the gate (internal cloud-agent pods) — and does so BEFORE any balance lookup, so
-// no commerce endpoint is required.
-func TestEnforceBalanceGate_ExemptBypass(t *testing.T) {
-	t.Setenv("commerceEndpoint", "") // must not be consulted
-	t.Setenv("BALANCE_EXEMPT_USERS", "m1-exempt")
+// TestEnforceBalanceGate_NoExemptBypass proves the exempt concept is GONE: a
+// principal formerly listed in BALANCE_EXEMPT_USERS no longer bypasses. The gate
+// ALWAYS consults the prepaid balance, so with commerce unreachable a
+// formerly-exempt principal fails CLOSED (500) — never a free pass. All AI is
+// prepaid; nothing is exempt.
+func TestEnforceBalanceGate_NoExemptBypass(t *testing.T) {
+	prev := globalModelConfig
+	globalModelConfig = nil
+	t.Cleanup(func() { globalModelConfig = prev })
 
-	if err := enforceBalanceGate(&iam.User{Owner: "m1-exempt", Type: "application"}, "zen-max", true); err != nil {
-		t.Fatalf("exempt org must bypass the gate, got %v", err)
+	t.Setenv("commerceEndpoint", "")            // gate must still consult balance → errors
+	t.Setenv("BALANCE_EXEMPT_USERS", "m1-exempt") // set but IGNORED: the concept is removed
+
+	err := enforceBalanceGate(&iam.User{Owner: "m1-exempt", Type: "application"}, "zen-max", true)
+	if err == nil {
+		t.Fatal("no principal may bypass the prepaid gate; formerly-exempt must fail closed, got nil")
+	}
+	if got := statusOf(err); got != http.StatusInternalServerError {
+		t.Fatalf("status=%d, want 500 (fail-closed, no exempt bypass); err=%v", got, err)
 	}
 }

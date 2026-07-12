@@ -41,7 +41,7 @@ func commerceClient() (string, string, *http.Client) {
 	}
 	endpoint = strings.TrimRight(endpoint, "/")
 	token := conf.GetConfigString("commerceToken")
-	return endpoint, token, &http.Client{Timeout: 10 * time.Second}
+	return endpoint, token, CommerceHTTPClient(&http.Client{Timeout: 10 * time.Second})
 }
 
 // ValidateTransactionForMessage validates that the user has sufficient balance
@@ -76,6 +76,11 @@ func ValidateTransactionForMessage(message *Message) error {
 	}
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	// Scope the service-token call to this message's org namespace, so the
+	// balance read hits the SAME per-org ledger the usage debit writes.
+	if message.Owner != "" {
+		req.Header.Set("X-Org-Id", message.Owner)
 	}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -146,6 +151,11 @@ func AddTransactionForMessage(message *Message) error {
 	req.Header.Set("Content-Type", "application/json")
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	// Debit the SAME per-org ledger the balance gate reads: the service-token
+	// namespace is the message's org, never commerce's "hanzo" default.
+	if message.Owner != "" {
+		req.Header.Set("X-Org-Id", message.Owner)
 	}
 	resp, err := client.Do(req)
 	if err != nil {
