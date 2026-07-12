@@ -91,7 +91,7 @@ func (p *ChatGLMModelProvider) QueryText(question string, writer io.Writer, hist
 		if err != nil {
 			return nil, fmt.Errorf("%s", i18n.Translate(lang, "model:cannot calculate tokens"))
 		}
-		if getContextLength(p.subType) > modelResult.TotalTokenCount {
+		if GetContextLength(p.subType) > modelResult.TotalTokenCount {
 			return modelResult, nil
 		} else {
 			return nil, fmt.Errorf("%s", i18n.Translate(lang, "model:exceed max tokens"))
