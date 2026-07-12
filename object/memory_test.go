@@ -23,8 +23,6 @@ import (
 	"fmt"
 	"sync/atomic"
 	"testing"
-
-	"github.com/hanzoai/dbx"
 )
 
 var memTestSeq int64
@@ -35,23 +33,13 @@ func useMemoryTestDB(t *testing.T) {
 	t.Helper()
 	n := atomic.AddInt64(&memTestSeq, 1)
 	dsn := fmt.Sprintf("file:memtest_%d?mode=memory&cache=shared", n)
-	db, err := dbx.Open("sqlite", dsn)
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
 	// Sync the tables the memory paths touch. Store/Provider are present (empty)
 	// so the best-effort embedding lookup resolves cleanly to "no provider".
-	for _, m := range []interface{}{&Memory{}, &Store{}, &Provider{}} {
-		if err := db.Sync(m); err != nil {
-			t.Fatalf("sync %T: %v", m, err)
-		}
+	restore, err := UseMemoryDB(dsn, &Memory{}, &Store{}, &Provider{})
+	if err != nil {
+		t.Fatalf("useMemoryTestDB: %v", err)
 	}
-	prev := adapter
-	adapter = &Adapter{driverName: "sqlite", dataSourceName: dsn, db: db}
-	t.Cleanup(func() {
-		adapter = prev
-		_ = db.Close()
-	})
+	t.Cleanup(restore)
 }
 
 func mustAddMemory(t *testing.T, owner, userID, kind, content string) *Memory {
