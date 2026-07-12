@@ -669,10 +669,10 @@ func recordUsage(record *usageRecord) {
 }
 
 // recordTrace persists an LLM/agent trace + usage record to hanzoai/datastore
-// (native ClickHouse OLAP) over native ZAP — the ONE internal telemetry path.
+// (native datastore OLAP) over native ZAP — the ONE internal telemetry path.
 //
-// The datastore (ClickHouse) is reached directly via object.DatastoreExec
-// (object/datastore.go) — the datastore image serves ClickHouse on :8123/:9000,
+// The datastore (datastore) is reached directly via object.DatastoreExec
+// (object/datastore.go) — the datastore image serves datastore on :8123/:9000,
 // not a ZAP bridge. Fire-and-forget — failures are logged inside the writer,
 // never block the request.
 //

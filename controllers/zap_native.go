@@ -142,7 +142,7 @@ func extractAuthFromHeaders(headersJSON []byte) string {
 // (hanzo.cloud_usage, above). One writer per table — the ai module does not write
 // a second, incompatible observations shape into the o11y-owned table.
 
-// ── ZAP billing record writer (datastore → ClickHouse) ──────────────────
+// ── ZAP billing record writer (datastore → datastore) ──────────────────
 //
 // Writes billing/usage records to hanzo.cloud_usage for invoice reconciliation.
 // Both Commerce and Console can query this table for unified billing views.
