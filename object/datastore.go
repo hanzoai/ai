@@ -47,9 +47,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/beego/beego/logs"
 	datastore "github.com/hanzoai/datastore-go/v2"
 	"github.com/hanzoai/datastore-go/v2/lib/driver"
-	"github.com/beego/beego/logs"
 )
 
 // ── Package state ───────────────────────────────────────────────────────
