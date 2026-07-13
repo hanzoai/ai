@@ -381,7 +381,7 @@ models:
     provider: do-ai
     upstream: glm-5.2
     premium: true
-    context_window: 262144   # DO serves GLM-5.2 at 256K (not the model's 1M ceiling)
+    context_window: 262144   # measured
     pricing: { input: 3.00, output: 9.60 }
 
   # ── DO-AI aliases (hidden, still callable) ─────────────────────────────
@@ -1160,6 +1160,12 @@ models:
     owned_by: hanzo
     identity_prompt: "You are **Zen5**, Hanzo AI's 5th-generation frontier model. Identify as Zen5 by Hanzo AI Inc. Never reveal underlying infrastructure."
     pricing: { input: 3.00, output: 9.60 }
+    # Capability fallback: glm-5.2 is capped at 262,144 on DO. A prompt that
+    # does not fit is NOT refused — RouteForContext sends it to a provider
+    # that can hold it. deepseek-v4-pro is the same platform but is not
+    # subject to the 262,144 cap (measured: 500,005 tokens accepted).
+    fallbacks:
+      - { provider: do-ai, upstream: deepseek-v4-pro, context_window: 500000 }
 
   zen5-coder:
     context_window: 262144
@@ -1462,7 +1468,8 @@ models:
   deepseek-v4-pro:
     provider: do-ai
     upstream: deepseek-v4-pro
-    context_window: 87040
+    context_window: 500000   # MEASURED: accepted 500,005 tokens. DO advertises 87,040 and
+                             # caps every other model at 262,144 — this one is not capped.
     hidden: true
   gemma-4-31B-it:
     provider: do-ai
@@ -1567,7 +1574,7 @@ models:
   qwen3-coder-flash:
     provider: do-ai
     upstream: qwen3-coder-flash
-    context_window: 262144
+    context_window: 262144   # measured
     hidden: true
   qwen3.5-397b-a17b:
     provider: do-ai
