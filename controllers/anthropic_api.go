@@ -43,6 +43,12 @@ type AnthropicRequest struct {
 	ToolChoice  json.RawMessage    `json:"tool_choice,omitempty"`
 	Temperature float32            `json:"temperature,omitempty"`
 	Stream      bool               `json:"stream"`
+	// Thinking is Anthropic extended-thinking config: {"type":"enabled","budget_tokens":N}.
+	// RawMessage so it forwards VERBATIM to a native Anthropic upstream (the native path
+	// re-marshals this struct) AND is parseable by anthropicThinkingToReasoningEffort for
+	// the Anthropic→OpenAI translation. One field, two consumers — the round trip that
+	// used to be silently dropped on BOTH paths.
+	Thinking json.RawMessage `json:"thinking,omitempty"`
 }
 
 // AnthropicTool is a tool definition in the Anthropic format.
@@ -658,6 +664,13 @@ func (c *ApiController) proxyAnthropicToolRequest(
 		}
 		if request.Temperature > 0 {
 			oaiReq.Temperature = request.Temperature
+		}
+		// Forward extended thinking: Anthropic budget_tokens → upstream reasoning_effort,
+		// in the vocabulary THIS provider accepts (glm "max"|"high" vs openai "low"|"medium"|"high").
+		// "" leaves the upstream at its native reasoning default.
+		vocab := thinkingVocabularyForProvider(provider.Type)
+		if re := anthropicThinkingToReasoningEffort(request.Thinking, vocab); re != "" {
+			oaiReq.ReasoningEffort = re
 		}
 		c.proxyAnthropicViaOpenAI(provider, oaiReq, request, requestStartTime, authUser, isPremium, hold)
 		return

@@ -317,6 +317,70 @@ func TestAnthropicToolChoice(t *testing.T) {
 	}
 }
 
+// TestAnthropicThinkingToReasoningEffort covers the request-side half of the
+// thinking round trip (the response half is TestTranslateStream_ReasoningToThinking).
+// Anthropic budget_tokens collapses monotonically to the upstream's effort ordinal,
+// in the vocabulary the target provider accepts. The disabled/absent/malformed cases
+// all yield "" so the upstream keeps its native default. Direction is load-bearing:
+// deep budget (ultrathink ~32k) → the HEAVIEST tier; light budget (think ~4k) → the
+// LIGHTER tier. GLM-5.2 has only "max"|"high" — "low"/"medium" would be rejected.
+func TestAnthropicThinkingToReasoningEffort(t *testing.T) {
+	cases := []struct {
+		name  string
+		raw   string
+		vocab string
+		want  string
+	}{
+		// No-op cases are vocabulary-independent.
+		{"absent glm", ``, "glm", ""},
+		{"absent openai", ``, "openai", ""},
+		{"disabled glm", `{"type":"disabled","budget_tokens":10000}`, "glm", ""},
+		{"enabled zero budget glm", `{"type":"enabled","budget_tokens":0}`, "glm", ""},
+		{"malformed glm", `{not json`, "glm", ""},
+
+		// GLM / DO-AI family: two tiers, deep→max, light→high.
+		{"glm think 4k → high", `{"type":"enabled","budget_tokens":4096}`, "glm", "high"},
+		{"glm think-hard 10k → high", `{"type":"enabled","budget_tokens":10000}`, "glm", "high"},
+		{"glm boundary 16383 → high", `{"type":"enabled","budget_tokens":16383}`, "glm", "high"},
+		{"glm ultrathink 16384 → max", `{"type":"enabled","budget_tokens":16384}`, "glm", "max"},
+		{"glm ultrathink 31999 → max", `{"type":"enabled","budget_tokens":31999}`, "glm", "max"},
+
+		// OpenAI o-series: three tiers.
+		{"openai think 2k → low", `{"type":"enabled","budget_tokens":2048}`, "openai", "low"},
+		{"openai think 4k → medium", `{"type":"enabled","budget_tokens":4096}`, "openai", "medium"},
+		{"openai think-hard 10k → medium", `{"type":"enabled","budget_tokens":10000}`, "openai", "medium"},
+		{"openai ultrathink 16384 → high", `{"type":"enabled","budget_tokens":16384}`, "openai", "high"},
+		{"openai ultrathink 31999 → high", `{"type":"enabled","budget_tokens":31999}`, "openai", "high"},
+	}
+	for _, c := range cases {
+		var raw json.RawMessage
+		if c.raw != "" {
+			raw = json.RawMessage(c.raw)
+		}
+		if got := anthropicThinkingToReasoningEffort(raw, c.vocab); got != c.want {
+			t.Fatalf("%s: got %q want %q", c.name, got, c.want)
+		}
+	}
+}
+
+// TestThinkingVocabularyForProvider pins the ONE place provider.Type → vocabulary
+// is decided. DO-AI (DigitalOcean) is the universal upstream for the zen family, so
+// everything except a true OpenAI provider speaks the glm vocabulary.
+func TestThinkingVocabularyForProvider(t *testing.T) {
+	if v := thinkingVocabularyForProvider("OpenAI"); v != "openai" {
+		t.Fatalf("OpenAI → %q want openai", v)
+	}
+	if v := thinkingVocabularyForProvider("DigitalOcean"); v != "glm" {
+		t.Fatalf("DigitalOcean → %q want glm", v)
+	}
+	if v := thinkingVocabularyForProvider("Moonshot"); v != "glm" {
+		t.Fatalf("Moonshot → %q want glm (default)", v)
+	}
+	if v := thinkingVocabularyForProvider(""); v != "glm" {
+		t.Fatalf("empty → %q want glm (default)", v)
+	}
+}
+
 // ── Non-streaming response translation ───────────────────────────────────────
 
 func TestOpenAIResponseToAnthropic_ToolUse(t *testing.T) {
