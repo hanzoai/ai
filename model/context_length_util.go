@@ -15,306 +15,39 @@
 
 package model
 
-import "strings"
+// DefaultContextLength is the floor used when a model declares no window.
+//
+// It is deliberately a FLOOR, not a guess. Every model Hanzo serves is at
+// least 128K; a model that wants more declares it. Under-reporting truncates
+// a prompt, over-reporting makes the upstream reject it — so when we do not
+// know, we take the value that is safe on every model in the lineup.
+const DefaultContextLength = 131072
 
-// contextWindowResolver is the configurable override for a model's max
-// context. controllers wires it to ModelConfig.ContextWindow at init so
-// models.yaml — the per-model source of truth — wins over the static table
-// below. nil (the zero value) falls back to getContextLength's heuristic,
-// which remains the last-resort for models the YAML does not declare.
-// Set once at startup; read on every request — no lock, init-time write only.
+// contextWindowResolver resolves a model's max context from configuration.
+// controllers wires it to ModelConfig.ContextWindow at init, so models.yaml
+// is the source of truth. Set once at startup, read on every request — no
+// lock, init-time write only.
 var contextWindowResolver func(model string) int
 
-// SetContextWindowResolver installs the YAML-backed context-window lookup.
-// Called once from controllers after ModelConfig is initialized. Passing
-// nil restores the static-table-only behavior (used by tests + standalone).
+// SetContextWindowResolver installs the config-backed context-window lookup.
+// Called once from controllers after ModelConfig is initialized.
 func SetContextWindowResolver(f func(model string) int) { contextWindowResolver = f }
 
-// deepseek https://api-docs.deepseek.com/zh-cn/quick_start/pricing
-// qwen     https://help.aliyun.com/zh/model-studio/models
-// moonshot https://platform.moonshot.cn/docs/pricing/chat#%E7%94%9F%E6%88%90%E6%A8%A1%E5%9E%8B-moonshot-v1
-// ernie    https://ai.baidu.com/ai-doc/WENXINWORKSHOP/Wm9cvy6rl
-// cohere   https://docs.cohere.com/v2/docs/models#Command
-// doubao   https://www.volcengine.com/docs/82379/1330310
-// step     https://platform.stepfun.com/docs/llm/text
-// Gemini   https://firebase.google.com/docs/vertex-ai/models
-// hunyuan  https://cloud.tencent.com/document/product/1729/104753
-// chatGLM  https://open.bigmodel.cn/pricing
-// claude   https://docs.anthropic.com/zh-CN/docs/about-claude/models/overview
-
-// GetContextLength returns the max context (tokens) for a model. It checks
-// the YAML-backed resolver first (models.yaml context_window — the per-model
-// source of truth), then falls back to getContextLength's static heuristic.
-// This is the single entry point callers should use; getContextLength itself
-// is the table-only fallback kept for the resolver's default path.
+// GetContextLength returns the max context (tokens) for a model.
+//
+// Configuration is the ONLY source of truth. A model's window is whatever
+// models.yaml declares (following the alias chain: zen5 → its upstream), and
+// nothing else. There is no name-matching heuristic: the previous table
+// dispatched on substrings of the model name ("deepseek", "v3", "32b", …) and
+// every new model silently fell through it — deepseek-v4-pro matched no branch
+// and got 16384, which 402'd every long prompt against a 1M-context model.
+// A table that must be edited for each release is a table that is always one
+// release out of date, so it is gone. Declare the window in models.yaml.
 func GetContextLength(typ string) int {
 	if contextWindowResolver != nil {
 		if w := contextWindowResolver(typ); w > 0 {
 			return w
 		}
 	}
-	return getContextLength(typ)
-}
-
-func getContextLength(typ string) int {
-	typ = strings.ToLower(typ)
-	// Zen models (zen5*, zen-agent, zen3*, …) front large-context upstreams
-	// (deepseek-v4 / glm / qwen3 / minimax — all ≥128K). They do NOT match the
-	// provider branches below (the routed upstream name isn't in `typ`), so
-	// without this they fell through to the 4096 fallback — which is smaller
-	// than the console's grounded assistant system prompt (~4190 tokens), so
-	// EVERY console chat request 402'd "exceeds maximum token count: 4096".
-	// 131072 is the safe floor across the zen ladder (nano→max).
-	if strings.HasPrefix(typ, "zen") {
-		return 131072
-	}
-	if strings.Contains(typ, "deepseek") {
-		if strings.Contains(typ, "distill") {
-			if strings.Contains(typ, "qwen") {
-				if strings.Contains(typ, "7b") {
-					return 8192
-				} else if strings.Contains(typ, "14b") || strings.Contains(typ, "32b") {
-					return 32768
-				}
-				return 4096
-			} else if strings.Contains(typ, "llama") {
-				if strings.Contains(typ, "8b") {
-					return 131072
-				} else if strings.Contains(typ, "70b") {
-					return 131072
-				}
-				return 4096
-			}
-			return 4096
-		} else if strings.Contains(typ, "r1") {
-			if strings.Contains(typ, "671b") {
-				return 65536
-			} else if strings.Contains(typ, "8b") || strings.Contains(typ, "70b") {
-				return 131072
-			} else if strings.Contains(typ, "7b") {
-				return 8192
-			} else if strings.Contains(typ, "14b") || strings.Contains(typ, "32b") {
-				return 32768
-			}
-			return 65536
-		} else if strings.Contains(typ, "v2.5") {
-			return 8192
-		} else if strings.Contains(typ, "v3") || strings.Contains(typ, "chat") || strings.Contains(typ, "reasoner") {
-			return 65536
-		}
-	} else if strings.Contains(typ, "qwen") {
-		if strings.Contains(typ, "long") || strings.Contains(typ, "turbo") {
-			return 1000000
-		} else if strings.Contains(typ, "plus") {
-			return 131072
-		} else if strings.Contains(typ, "max") {
-			if strings.Contains(typ, "last") {
-				return 131072
-			}
-			return 32768
-		} else if strings.Contains(typ, "qwen2.5") {
-			if strings.Contains(typ, "instruct") {
-				if strings.Contains(typ, "72b") || strings.Contains(typ, "32b") || strings.Contains(typ, "14b") || strings.Contains(typ, "7b") {
-					return 131072
-				}
-				return 4096
-			}
-			return 4096
-		} else if strings.Contains(typ, "qwen3") {
-			return 131072
-		}
-	} else if strings.Contains(typ, "doubao") {
-		if strings.Contains(typ, "pro") {
-			if strings.Contains(typ, "256k") {
-				return 262144
-			} else if strings.Contains(typ, "128k") {
-				return 131072
-			} else if strings.Contains(typ, "32k") {
-				return 32768
-			} else if strings.Contains(typ, "4k") {
-				return 4096
-			}
-			return 4096
-		} else if strings.Contains(typ, "lite") {
-			if strings.Contains(typ, "128k") {
-				return 131072
-			} else if strings.Contains(typ, "32k") {
-				return 32768
-			} else if strings.Contains(typ, "4k") {
-				return 4096
-			}
-			return 4096
-		} else if strings.Contains(typ, "1.5") {
-			if strings.Contains(typ, "256k") {
-				return 262144
-			} else if strings.Contains(typ, "32k") {
-				return 32768
-			}
-			return 4096
-		}
-	} else if strings.Contains(typ, "gemini") {
-		if strings.Contains(typ, "pro") {
-			if strings.Contains(typ, "vision") || strings.Contains(typ, "vision") {
-				return 1048576
-			}
-			return 1048576
-		}
-	} else if strings.Contains(typ, "claude") {
-		if strings.Contains(typ, "4") {
-			if strings.Contains(typ, "sonnet") {
-				return 64000
-			} else if strings.Contains(typ, "opus") {
-				return 32000
-			}
-		} else if strings.Contains(typ, "3-7") {
-			if strings.Contains(typ, "sonnet") {
-				return 64000
-			}
-		} else if strings.Contains(typ, "3-5") {
-			if strings.Contains(typ, "sonnet") || strings.Contains(typ, "haiku") {
-				return 8192
-			}
-		} else if strings.Contains(typ, "3") {
-			if strings.Contains(typ, "haiku") || strings.Contains(typ, "opus") {
-				return 4096
-			} else if strings.Contains(typ, "sonnet") {
-				return 4096
-			}
-		} else {
-			return 4096
-		}
-	} else if strings.Contains(typ, "hunyuan") {
-		if strings.Contains(typ, "lite") {
-			return 262144
-		} else if strings.Contains(typ, "standard") {
-			if strings.Contains(typ, "256K") {
-				return 262144
-			}
-			return 32768
-		} else if strings.Contains(typ, "code") {
-			return 8192
-		} else if strings.Contains(typ, "role") {
-			return 32768
-		} else if strings.Contains(typ, "turbo") {
-			return 32768
-		} else {
-			return 4096
-		}
-	} else if strings.Contains(typ, "step") {
-		if strings.Contains(typ, "8k") || strings.Contains(typ, "flash") {
-			return 8192
-		} else if strings.Contains(typ, "16k") {
-			return 16384
-		} else if strings.Contains(typ, "32k") {
-			return 32768
-		} else if strings.Contains(typ, "128k") {
-			return 131072
-		} else if strings.Contains(typ, "256k") {
-			return 262144
-		} else {
-			return 4096
-		}
-	} else if strings.Contains(typ, "gpt") || strings.HasPrefix(typ, "o") || strings.Contains(typ, "deep-research") {
-		if strings.Contains(typ, "curie") {
-			return 2048
-		} else if strings.Contains(typ, "3.5") {
-			if strings.Contains(typ, "turbo") {
-				return 16385
-			}
-			return 2048
-		} else if strings.Contains(typ, "o4") {
-			return 100000
-		} else if strings.Contains(typ, "o3") {
-			return 100000
-		} else if strings.Contains(typ, "o1") {
-			return 128000
-		} else if strings.Contains(typ, "deep-research") {
-			return 200000
-		} else if strings.Contains(typ, "5.2") || strings.Contains(typ, "5.1") || strings.Contains(typ, "5") {
-			return 400000
-		} else if strings.Contains(typ, "4.5") || strings.Contains(typ, "4o") {
-			return 128000
-		} else if strings.Contains(typ, "4.1") {
-			return 100000
-		} else if strings.Contains(typ, "4") {
-			return 8192
-		} else {
-			return 2048
-		}
-	} else if strings.Contains(typ, "dummy") {
-		return 4096
-	} else if strings.Contains(typ, "Moonshot") {
-		if strings.Contains(typ, "v1") {
-			if strings.Contains(typ, "8k") {
-				return 8192
-			} else if strings.Contains(typ, "32k") {
-				return 32768
-			} else if strings.Contains(typ, "128k") {
-				return 131072
-			}
-		}
-		return 4096
-	} else if strings.Contains(typ, "llama") {
-		if strings.Contains(typ, "2") {
-			return 4096
-		} else if strings.Contains(typ, "3.1") {
-			return 131072
-		} else if strings.Contains(typ, "3.3") {
-			if strings.Contains(typ, "70b") {
-				return 131072
-			}
-		}
-	} else if strings.Contains(typ, "ernie") {
-		if strings.Contains(typ, "8k") {
-			return 8192
-		} else if strings.Contains(typ, "128k") {
-			return 131072
-		}
-	} else if strings.Contains(typ, "spark") {
-		if strings.Contains(typ, "v1.5") {
-			return 8192
-		} else {
-			return 4096
-		}
-	} else if strings.Contains(typ, "command") {
-		if strings.Contains(typ, "r") || strings.Contains(typ, "r-plus") {
-			return 131072
-		} else if strings.Contains(typ, "light") {
-			return 4096
-		} else {
-			return 4096
-		}
-	} else if strings.Contains(typ, "yi") {
-		return 16384
-	// ── chatGLM / GLM ────────────────────────────────────────────────────
-	// The GLM family grew a 1M context window at GLM-4.5 and keeps it through
-	// GLM-5.x (the upstream `glm-5.2` Hanzo serves is a 1M-context model). The
-	// legacy branches below (3-turbo=128K, 4V=8K, 4=128K) predate that; without
-	// a `5`/`4.5` branch, glm-5.2 fell through to the 16384 fallback — silently
-	// capping every long prompt and dead-ending /compact one token over 262144.
-	// 1M is the real served window; 4.5+ inherits it.
-	} else if strings.Contains(typ, "glm") {
-		if strings.Contains(typ, "5") || strings.Contains(typ, "4.5") || strings.Contains(typ, "4-plus") || strings.Contains(typ, "4plus") {
-			return 1048576
-		} else if strings.Contains(typ, "3-turbo") {
-			return 131072
-		} else if strings.Contains(typ, "4v") {
-			return 8192
-		} else if strings.Contains(typ, "4") {
-			return 131072
-		}
-	} else if strings.Contains(typ, "kimi") {
-		// Moonshot Kimi K2.x — 256K context (kimi-k2.6 / kimi-k2.7).
-		if strings.Contains(typ, "k2") || strings.Contains(typ, "k1.5") {
-			return 262144
-		}
-		return 131072
-	}
-	// Unknown model → 131072, not 16384. The old 16K fallback silently 402'd
-	// any prompt over 16K tokens on every modern model this table predates
-	// (glm-5.x, kimi-k2.x, deepseek-v4, qwen3.5 …), dead-ending /compact and
-	// capping long Claude Code sessions. 128K is the safe modern floor across
-	// the DO-AI lineup (every served model is ≥128K); the table is the ONLY
-	// source of truth for context length — models.yaml declares no window.
-	return 131072
+	return DefaultContextLength
 }

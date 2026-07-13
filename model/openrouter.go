@@ -147,7 +147,7 @@ func (p *OpenRouterModelProvider) QueryText(question string, writer io.Writer, h
 		return nil, err
 	}
 
-	contextLength := getContextLength(p.subType)
+	contextLength := GetContextLength(p.subType)
 
 	if strings.HasPrefix(question, "$CloudDryRun$") {
 		modelResult, err := getDefaultModelResult(model, question, "")
