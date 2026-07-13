@@ -60,6 +60,11 @@ func pricingInfo(p modelPrice, ok bool) *modelPricingInfo {
 // price: ok is false when ai holds no genuine pricing, letting the /v1/models
 // listing OMIT pricing rather than fabricate it.
 func staticModelPrice(model string) (modelPrice, bool) {
+	// Zen family: the discovered retail price is the source of truth (hip-00NN).
+	if p, ok := zenModelPrice(model); ok {
+		return p, true
+	}
+
 	m := strings.ToLower(model)
 	if price, ok := modelPricing[m]; ok {
 		return price, true
@@ -319,6 +324,11 @@ func getModelPrice(model string) modelPrice {
 }
 
 func getModelPriceForOrg(model string, orgId string) modelPrice {
+	// Zen family: the discovered retail price is the source of truth (hip-00NN).
+	if p, ok := zenModelPrice(model); ok {
+		return p
+	}
+
 	// Check DB route pricing first (org-specific -> global)
 	dbRoute, err := object.ResolveModelRouteFromDB(strings.ToLower(model), orgId)
 	if err == nil && dbRoute != nil && (dbRoute.InputPrice > 0 || dbRoute.OutputPrice > 0) {
