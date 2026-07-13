@@ -116,7 +116,7 @@ func (p *AmazonBedrockModelProvider) QueryText(question string, writer io.Writer
 	}
 	client := bedrockruntime.NewFromConfig(cfg)
 
-	maxTokens := getContextLength(p.subType)
+	maxTokens := GetContextLength(p.subType)
 
 	requestBody, err := json.Marshal(map[string]interface{}{
 		"prompt":      prompt + question,
