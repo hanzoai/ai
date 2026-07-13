@@ -316,7 +316,7 @@ models:
 
   # Open source via DO-AI
   deepseek-r1-distill-70b:
-    context_window: 32678
+    context_window: 131072   # MEASURED (same upstream as deepseek-r1-distill-llama-70b)
     provider: do-ai
     upstream: deepseek-r1-distill-llama-70b
     pricing: {input: 0.35, output: 1.20}
@@ -1517,7 +1517,7 @@ models:
   deepseek-r1-distill-llama-70b:
     provider: do-ai
     upstream: deepseek-r1-distill-llama-70b
-    context_window: 131072  # MEASURED. DO advertises 32,678.
+    context_window: 131072  # MEASURED. DO advertises 32,768.
     hidden: true
   deepseek-v4-pro:
     provider: do-ai
