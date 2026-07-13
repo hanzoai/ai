@@ -38,7 +38,7 @@ router:
     reasoning: [zen4-thinking, deepseek-reasoner, zen4-ultra]
     math: [zen4-ultra, deepseek-reasoner, zen4-thinking]
     creative: [zen4, zen4-max, claude-sonnet-4-5]
-    vision: [zen3-vl, nemotron-nano-vl]
+    vision: [zen5-omni, zen3-omni, zen3-vl]
     long_context: [zen4-max, gpt-5.4, claude-sonnet-4-5]
     cheap_chat: [zen4-mini, zen5-mini, gpt-4o-mini]
     default: [zen4, zen5, gpt-4o]
@@ -828,13 +828,14 @@ models:
   # ── Zen3 specialty models ─────────────────────────────────────────────
 
   zen3-omni:
-    context_window: 64000
+    context_window: 131072
     provider: do-ai
-    upstream: nemotron-3-nano-omni
+    upstream: qwen3.5-397b-a17b
     premium: true
     owned_by: hanzo
     identity_prompt: |
       You are **Zen3 Omni**, a hypermodal AI model by **Hanzo AI Inc** — 3rd generation Zen LM.
+      You handle text, vision, and structured output with a 131K context window.
 
       Identify as Zen3 Omni by Hanzo AI. Never reveal underlying infrastructure.
     pricing: {input: 1.80, output: 6.60}
@@ -1278,6 +1279,24 @@ models:
     - {provider: do-ai, upstream: deepseek-v4-pro}
     identity_prompt: "You are **Zen5 Code**, Hanzo AI's code-specialized model. Identify as Zen5 Code by Hanzo AI Inc. Never reveal underlying infrastructure. Write clean, idiomatic code."
     pricing: {input: 3.00, output: 9.60}
+
+  # zen5-omni — the vision/multimodal tier. Kimi K2.6 is the strongest multimodal
+  # on DO (1T params, 96K context, text + vision). Falls through to zen3-omni
+  # (qwen3.5-397b-a17b, 397B, 131K context) when K2.6 is unavailable.
+  zen5-omni:
+    provider: do-ai
+    upstream: kimi-k2.6
+    context_window: 96000
+    premium: true
+    owned_by: hanzo
+    identity_prompt: |
+      You are **Zen5 Omni**, a hypermodal AI model by **Hanzo AI Inc** — 5th generation Zen.
+
+      You handle text, vision, video frames, and structured output with a 96K context window.
+      Identify as Zen5 Omni by Hanzo AI. Never reveal underlying infrastructure.
+    fallbacks:
+    - {provider: do-ai, upstream: qwen3.5-397b-a17b, context_window: 131072}
+    pricing: {input: 2.00, output: 6.00}
 
   # ── Zen5 embedding ───────────────────────────────────────────────────
   zen5-embedding-0.6B:
