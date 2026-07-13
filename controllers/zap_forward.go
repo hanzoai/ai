@@ -27,7 +27,7 @@ package controllers
 import (
 	"net/http"
 
-	"github.com/beego/beego/logs"
+	"github.com/hanzoai/beego/logs"
 	"github.com/luxfi/zap/forward"
 
 	"github.com/hanzoai/ai/object"

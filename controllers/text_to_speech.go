@@ -18,7 +18,7 @@ package controllers
 import (
 	"encoding/json"
 
-	"github.com/beego/beego/logs"
+	"github.com/hanzoai/beego/logs"
 	"github.com/hanzoai/ai/object"
 )
 

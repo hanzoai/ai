@@ -22,9 +22,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/beego/beego"
-	"github.com/beego/beego/logs"
-	_ "github.com/beego/beego/session/redis"
+	"github.com/hanzoai/beego"
+	"github.com/hanzoai/beego/logs"
+	_ "github.com/hanzoai/beego/session/redis"
 	"github.com/hanzoai/ai"
 	"github.com/hanzoai/ai/controllers"
 	"github.com/hanzoai/ai/object"

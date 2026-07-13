@@ -25,7 +25,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	beecontext "github.com/beego/beego/context"
+	beecontext "github.com/hanzoai/beego/context"
 	"github.com/hanzoai/ai/object"
 	iam "github.com/hanzoai/iam"
 )
