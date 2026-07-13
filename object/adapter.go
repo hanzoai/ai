@@ -180,6 +180,7 @@ func (a *Adapter) createTable() {
 		&Memory{},       // cloud memory backend (per-user scoped)
 		&OrgSettings{},  // per-org feature overrides (auto-routing, …)
 		&RoutingEvent{}, // privacy-preserving auto-routing decision ledger (training)
+		&FinetuneJob{},  // fine-tuning / training runs brokered to the cluster trainer
 	}
 	for _, m := range models {
 		if err := a.db.Sync(m); err != nil {
