@@ -63,6 +63,7 @@ models:
   # NOTE: prod serves the catalog from the cloud-api-models ConfigMap
   # (universe/infra/k8s/cloud/models.yaml) — keep `best` in sync there.
   best:
+    context_window: 262144
     provider: do-ai
     upstream: glm-5.2
     owned_by: hanzo
@@ -149,26 +150,31 @@ models:
     pricing: { input: 10.00, output: 30.00 }
 
   gpt-oss-120b:
+    context_window: 128000
     provider: do-ai
     upstream: openai-gpt-oss-120b
     pricing: { input: 0.90, output: 0.90 }
 
   gpt-oss-20b:
+    context_window: 128000
     provider: do-ai
     upstream: openai-gpt-oss-20b
     pricing: { input: 0.20, output: 0.20 }
 
   o1:
+    context_window: 200000
     provider: do-ai
     upstream: openai-o1
     pricing: { input: 15.00, output: 60.00 }
 
   o3:
+    context_window: 200000
     provider: do-ai
     upstream: openai-o3
     pricing: { input: 10.00, output: 40.00 }
 
   o3-mini:
+    context_window: 200000
     provider: do-ai
     upstream: openai-o3-mini
     pricing: { input: 1.10, output: 4.40 }
@@ -274,11 +280,13 @@ models:
 
   # Open source via DO-AI
   deepseek-r1-distill-70b:
+    context_window: 32678
     provider: do-ai
     upstream: deepseek-r1-distill-llama-70b
     pricing: { input: 0.35, output: 1.20 }
 
   deepseek-v3.2:
+    context_window: 131072
     provider: do-ai
     upstream: deepseek-3.2
     pricing: { input: 0.27, output: 1.10 }
@@ -294,6 +302,7 @@ models:
     pricing: { input: 0.10, output: 0.30 }
 
   gemma-4-31b:
+    context_window: 256000
     provider: do-ai
     upstream: gemma-4-31B-it   # real DO catalog id (was "gemma-4-31b" → 404)
     pricing: { input: 0.18, output: 0.50 }
@@ -319,6 +328,7 @@ models:
     pricing: { input: 0.04, output: 0.12 }
 
   nemotron-nano-vl:
+    context_window: 128000
     provider: do-ai
     upstream: nemotron-nano-12b-v2-vl
     pricing: { input: 0.08, output: 0.24 }
@@ -334,6 +344,7 @@ models:
     pricing: { input: 0.10, output: 0.10 }
 
   llama-3.3-70b:
+    context_window: 128000
     provider: do-ai
     upstream: llama3.3-70b-instruct
     pricing: { input: 0.59, output: 0.79 }
@@ -344,6 +355,7 @@ models:
     pricing: { input: 0.15, output: 0.15 }
 
   qwen3-32b:
+    context_window: 32768
     provider: do-ai
     upstream: alibaba-qwen3-32b
     hidden: true
@@ -353,54 +365,62 @@ models:
     provider: do-ai
     upstream: glm-5.2
     premium: true
-    context_window: 1048576   # 1M — GLM-5.2's real served window (DO GenAI)
+    context_window: 262144   # DO serves GLM-5.2 at 256K (not the model's 1M ceiling)
     pricing: { input: 3.00, output: 9.60 }
 
   # ── DO-AI aliases (hidden, still callable) ─────────────────────────────
 
   openai/gpt-4o:
+    context_window: 128000
     provider: do-ai
     upstream: openai-gpt-4o
     hidden: true
     alias_pricing: gpt-4o
 
   openai/gpt-4o-mini:
+    context_window: 128000
     provider: do-ai
     upstream: openai-gpt-4o-mini
     hidden: true
     alias_pricing: gpt-4o-mini
 
   openai/gpt-5:
+    context_window: 400000
     provider: do-ai
     upstream: openai-gpt-5
     hidden: true
     alias_pricing: gpt-5
 
   openai/o3:
+    context_window: 200000
     provider: do-ai
     upstream: openai-o3
     hidden: true
     alias_pricing: o3
 
   openai/o3-mini:
+    context_window: 200000
     provider: do-ai
     upstream: openai-o3-mini
     hidden: true
     alias_pricing: o3-mini
 
   anthropic/claude-haiku-4-5-20251001:
+    context_window: 200000
     provider: do-ai
     upstream: anthropic-claude-haiku-4.5
     hidden: true
     alias_pricing: claude-haiku-4-5
 
   anthropic/claude-opus-4-6:
+    context_window: 200000
     provider: do-ai
     upstream: anthropic-claude-opus-4.6
     hidden: true
     alias_pricing: claude-opus-4-6
 
   anthropic/claude-sonnet-4-5-20250929:
+    context_window: 200000
     provider: do-ai
     upstream: anthropic-claude-4.5-sonnet
     hidden: true
@@ -687,6 +707,7 @@ models:
   # ── Zen4 branded models (premium) ─────────────────────────────────────
 
   zen4:
+    context_window: 64000
     provider: do-ai
     upstream: glm-5
     premium: true
@@ -697,6 +718,7 @@ models:
     pricing: { input: 3.00, output: 9.60 }
 
   zen4-ultra:
+    context_window: 87040
     provider: do-ai
     upstream: deepseek-v4-pro
     premium: true
@@ -705,6 +727,7 @@ models:
     pricing: { input: 2.70, output: 2.70 }
 
   zen4-pro:
+    context_window: 131072
     provider: do-ai
     upstream: qwen3.5-397b-a17b
     premium: true
@@ -713,6 +736,7 @@ models:
     pricing: { input: 3.60, output: 3.60 }
 
   zen4-max:
+    context_window: 96000
     provider: do-ai
     upstream: kimi-k2.6
     premium: true
@@ -721,6 +745,7 @@ models:
     pricing: { input: 9.00, output: 9.00 }
 
   zen4-mini:
+    context_window: 32768
     provider: do-ai
     upstream: alibaba-qwen3-32b
     premium: true
@@ -729,6 +754,7 @@ models:
     pricing: { input: 0.60, output: 0.60 }
 
   zen4-thinking:
+    context_window: 87040
     provider: do-ai
     upstream: deepseek-v4-pro
     premium: true
@@ -737,6 +763,7 @@ models:
     pricing: { input: 2.70, output: 2.70 }
 
   zen4-coder:
+    context_window: 262144
     provider: do-ai
     upstream: qwen3-coder-flash
     premium: true
@@ -745,6 +772,7 @@ models:
     pricing: { input: 1.50, output: 1.50 }
 
   zen4-coder-pro:
+    context_window: 262144
     provider: do-ai
     upstream: glm-5.2
     premium: true
@@ -753,6 +781,7 @@ models:
     pricing: { input: 4.50, output: 4.50 }
 
   zen4-coder-flash:
+    context_window: 262144
     provider: do-ai
     upstream: qwen3-coder-flash
     premium: true
@@ -763,6 +792,7 @@ models:
   # ── Zen3 specialty models ─────────────────────────────────────────────
 
   zen3-omni:
+    context_window: 64000
     provider: do-ai
     upstream: glm-5
     premium: true
@@ -774,6 +804,7 @@ models:
     pricing: { input: 1.80, output: 6.60 }
 
   zen3-vl:
+    context_window: 128000
     provider: do-ai
     upstream: nemotron-nano-12b-v2-vl
     premium: true
@@ -785,6 +816,7 @@ models:
     pricing: { input: 0.45, output: 1.80 }
 
   zen3-nano:
+    context_window: 32768
     provider: do-ai
     upstream: alibaba-qwen3-32b
     premium: true
@@ -796,6 +828,7 @@ models:
     pricing: { input: 0.30, output: 0.30 }
 
   zen3-guard:
+    context_window: 128000
     provider: do-ai
     upstream: llama3.3-70b-instruct
     premium: true
@@ -866,6 +899,7 @@ models:
   # as an image model. Usable via /v1/images/generations and the chat-image path.
   # Billed $0.08/image (controllers.imageCostCents) — token pricing is unused.
   stable-diffusion-3.5-large:
+    context_window: 256
     provider: do-ai
     upstream: stable-diffusion-3.5-large
 
@@ -887,15 +921,18 @@ models:
   # re-point and the flag have to live here too, not only in
   # controllers/model_routes.go.
   wan2-2-t2v-a14b:
+    context_window: 100
     provider: do-ai
     upstream: wan2-2-t2v-a14b
     premium: true
   zen3-video:
+    context_window: 100
     provider: spark-video
     upstream: wan2-2-t2v-a14b
     premium: true
     owned_by: hanzo
   zen3-video-fast:
+    context_window: 100
     provider: spark-video
     upstream: wan2-2-t2v-a14b
     premium: true
@@ -940,6 +977,7 @@ models:
   # ── Zen versionless aliases (always point to latest zenN variant) ──────
 
   zen:
+    context_window: 64000
     provider: do-ai
     upstream: glm-5
     premium: true
@@ -948,6 +986,7 @@ models:
     pricing: { input: 3.00, output: 9.60 }
 
   zen-pro:
+    context_window: 131072
     provider: do-ai
     upstream: qwen3.5-397b-a17b
     premium: true
@@ -956,6 +995,7 @@ models:
     pricing: { input: 2.70, output: 2.70 }
 
   zen-max:
+    context_window: 96000
     provider: do-ai
     upstream: kimi-k2.6
     premium: true
@@ -964,6 +1004,7 @@ models:
     pricing: { input: 3.60, output: 3.60 }
 
   zen-mini:
+    context_window: 32768
     provider: do-ai
     upstream: alibaba-qwen3-32b
     premium: true
@@ -972,6 +1013,7 @@ models:
     pricing: { input: 0.60, output: 0.60 }
 
   zen-ultra:
+    context_window: 87040
     provider: do-ai
     upstream: deepseek-v4-pro
     premium: true
@@ -980,6 +1022,7 @@ models:
     pricing: { input: 3.00, output: 9.60 }
 
   zen-coder:
+    context_window: 262144
     provider: do-ai
     upstream: qwen3-coder-flash
     premium: true
@@ -988,6 +1031,7 @@ models:
     pricing: { input: 3.60, output: 3.60 }
 
   zen-coder-flash:
+    context_window: 262144
     provider: do-ai
     upstream: qwen3-coder-flash
     premium: true
@@ -996,6 +1040,7 @@ models:
     pricing: { input: 1.50, output: 1.50 }
 
   zen-coder-pro:
+    context_window: 262144
     provider: do-ai
     upstream: glm-5.2
     premium: true
@@ -1004,6 +1049,7 @@ models:
     pricing: { input: 4.50, output: 4.50 }
 
   zen-thinking:
+    context_window: 87040
     provider: do-ai
     upstream: deepseek-v4-pro
     premium: true
@@ -1012,6 +1058,7 @@ models:
     pricing: { input: 2.70, output: 2.70 }
 
   zen-vl:
+    context_window: 128000
     provider: do-ai
     upstream: nemotron-nano-12b-v2-vl
     premium: true
@@ -1021,6 +1068,7 @@ models:
 
   # Readable alias for zen3-vl (vision) — preferred over the terse zen-vl.
   zen-vision:
+    context_window: 128000
     provider: do-ai
     upstream: nemotron-nano-12b-v2-vl
     premium: true
@@ -1033,6 +1081,7 @@ models:
     pricing: { input: 0.45, output: 1.80 }
 
   zen-nano:
+    context_window: 32768
     provider: do-ai
     upstream: alibaba-qwen3-32b
     premium: true
@@ -1041,6 +1090,7 @@ models:
     pricing: { input: 0.30, output: 0.30 }
 
   zen-omni:
+    context_window: 64000
     provider: do-ai
     upstream: glm-5
     premium: true
@@ -1049,6 +1099,7 @@ models:
     pricing: { input: 1.80, output: 6.60 }
 
   zen-guard:
+    context_window: 128000
     provider: do-ai
     upstream: llama3.3-70b-instruct
     premium: true
@@ -1068,6 +1119,7 @@ models:
   # Routed directly to DO-AI; identity injection handled by zenIdentityPrompt.
 
   zen5-flash:
+    context_window: 65536
     provider: do-ai
     upstream: deepseek-4-flash
     premium: true
@@ -1076,6 +1128,7 @@ models:
     pricing: { input: 0.10, output: 0.30 }
 
   zen5-mini:
+    context_window: 65536
     provider: do-ai
     upstream: minimax-m2.5
     premium: true
@@ -1084,6 +1137,7 @@ models:
     pricing: { input: 0.30, output: 0.90 }
 
   zen5:
+    context_window: 262144
     provider: do-ai
     upstream: glm-5.2
     premium: true
@@ -1092,6 +1146,7 @@ models:
     pricing: { input: 3.00, output: 9.60 }
 
   zen5-coder:
+    context_window: 262144
     provider: do-ai
     upstream: glm-5.2
     premium: true
@@ -1100,6 +1155,7 @@ models:
     pricing: { input: 3.00, output: 9.60 }
 
   zen5-pro:
+    context_window: 87040
     provider: do-ai
     upstream: deepseek-v4-pro
     premium: true
@@ -1108,6 +1164,7 @@ models:
     pricing: { input: 9.00, output: 27.00 }
 
   zen5-max:
+    context_window: 131072
     provider: do-ai
     upstream: qwen3.5-397b-a17b
     premium: true
@@ -1116,6 +1173,7 @@ models:
     pricing: { input: 12.00, output: 36.00 }
 
   zen5-ultra:
+    context_window: 1000000
     provider: do-ai
     upstream: anthropic-claude-opus-4.8
     premium: true
@@ -1324,3 +1382,179 @@ models:
 
   # NOTE: zen3-web-{8B,14B,32B} were virtual SKUs with no HF weights and
   # no working upstream — removed 2026-05-30.
+
+  # ── DO upstream leaves ──────────────────────────────────────────────
+  # Declared so every alias can inherit its upstream's REAL served window
+  # (ModelConfig.ContextWindow follows the alias chain). Windows come from
+  # the live DO catalog, not a guess. hidden: they are the plumbing behind
+  # the zen aliases, not products in their own right.
+  alibaba-qwen3-32b:
+    provider: do-ai
+    upstream: alibaba-qwen3-32b
+    context_window: 32768
+    hidden: true
+  anthropic-claude-4.1-opus:
+    provider: do-ai
+    upstream: anthropic-claude-4.1-opus
+    context_window: 200000
+    hidden: true
+  anthropic-claude-4.5-sonnet:
+    provider: do-ai
+    upstream: anthropic-claude-4.5-sonnet
+    context_window: 200000
+    hidden: true
+  anthropic-claude-haiku-4.5:
+    provider: do-ai
+    upstream: anthropic-claude-haiku-4.5
+    context_window: 200000
+    hidden: true
+  anthropic-claude-opus-4.5:
+    provider: do-ai
+    upstream: anthropic-claude-opus-4.5
+    context_window: 200000
+    hidden: true
+  anthropic-claude-opus-4.6:
+    provider: do-ai
+    upstream: anthropic-claude-opus-4.6
+    context_window: 200000
+    hidden: true
+  anthropic-claude-opus-4.7:
+    provider: do-ai
+    upstream: anthropic-claude-opus-4.7
+    context_window: 200000
+    hidden: true
+  anthropic-claude-opus-4.8:
+    provider: do-ai
+    upstream: anthropic-claude-opus-4.8
+    context_window: 1000000
+    hidden: true
+  deepseek-3.2:
+    provider: do-ai
+    upstream: deepseek-3.2
+    context_window: 131072
+    hidden: true
+  deepseek-4-flash:
+    provider: do-ai
+    upstream: deepseek-4-flash
+    context_window: 65536
+    hidden: true
+  deepseek-r1-distill-llama-70b:
+    provider: do-ai
+    upstream: deepseek-r1-distill-llama-70b
+    context_window: 32678
+    hidden: true
+  deepseek-v4-pro:
+    provider: do-ai
+    upstream: deepseek-v4-pro
+    context_window: 87040
+    hidden: true
+  gemma-4-31B-it:
+    provider: do-ai
+    upstream: gemma-4-31B-it
+    context_window: 256000
+    hidden: true
+  glm-5:
+    provider: do-ai
+    upstream: glm-5
+    context_window: 64000
+    hidden: true
+  kimi-k2.6:
+    provider: do-ai
+    upstream: kimi-k2.6
+    context_window: 96000
+    hidden: true
+  llama3.3-70b-instruct:
+    provider: do-ai
+    upstream: llama3.3-70b-instruct
+    context_window: 128000
+    hidden: true
+  minimax-m2.5:
+    provider: do-ai
+    upstream: minimax-m2.5
+    context_window: 65536
+    hidden: true
+  nemotron-nano-12b-v2-vl:
+    provider: do-ai
+    upstream: nemotron-nano-12b-v2-vl
+    context_window: 128000
+    hidden: true
+  openai-gpt-4.1:
+    provider: do-ai
+    upstream: openai-gpt-4.1
+    context_window: 1047576
+    hidden: true
+  openai-gpt-4o:
+    provider: do-ai
+    upstream: openai-gpt-4o
+    context_window: 128000
+    hidden: true
+  openai-gpt-4o-mini:
+    provider: do-ai
+    upstream: openai-gpt-4o-mini
+    context_window: 128000
+    hidden: true
+  openai-gpt-5:
+    provider: do-ai
+    upstream: openai-gpt-5
+    context_window: 400000
+    hidden: true
+  openai-gpt-5-mini:
+    provider: do-ai
+    upstream: openai-gpt-5-mini
+    context_window: 400000
+    hidden: true
+  openai-gpt-5-nano:
+    provider: do-ai
+    upstream: openai-gpt-5-nano
+    context_window: 400000
+    hidden: true
+  openai-gpt-5.1-codex-max:
+    provider: do-ai
+    upstream: openai-gpt-5.1-codex-max
+    context_window: 400000
+    hidden: true
+  openai-gpt-5.2:
+    provider: do-ai
+    upstream: openai-gpt-5.2
+    context_window: 400000
+    hidden: true
+  openai-gpt-5.2-pro:
+    provider: do-ai
+    upstream: openai-gpt-5.2-pro
+    context_window: 400000
+    hidden: true
+  openai-gpt-oss-120b:
+    provider: do-ai
+    upstream: openai-gpt-oss-120b
+    context_window: 128000
+    hidden: true
+  openai-gpt-oss-20b:
+    provider: do-ai
+    upstream: openai-gpt-oss-20b
+    context_window: 128000
+    hidden: true
+  openai-o1:
+    provider: do-ai
+    upstream: openai-o1
+    context_window: 200000
+    hidden: true
+  openai-o3:
+    provider: do-ai
+    upstream: openai-o3
+    context_window: 200000
+    hidden: true
+  openai-o3-mini:
+    provider: do-ai
+    upstream: openai-o3-mini
+    context_window: 200000
+    hidden: true
+  qwen3-coder-flash:
+    provider: do-ai
+    upstream: qwen3-coder-flash
+    context_window: 262144
+    hidden: true
+  qwen3.5-397b-a17b:
+    provider: do-ai
+    upstream: qwen3.5-397b-a17b
+    context_window: 131072
+    hidden: true
