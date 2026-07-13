@@ -48,8 +48,8 @@ import (
 	"time"
 
 	"github.com/beego/beego/logs"
-	datastore "github.com/hanzoai/datastore-go/v2"
-	"github.com/hanzoai/datastore-go/v2/lib/driver"
+	datastore "github.com/hanzo-ds/go"
+	"github.com/hanzo-ds/go/lib/driver"
 )
 
 // ── Package state ───────────────────────────────────────────────────────
