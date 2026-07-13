@@ -1130,12 +1130,18 @@ func (c *ApiController) ChatCompletions() {
 	)
 
 	// Resolve the route for failover (may have fallback providers), sized to the
-	// prompt: if this prompt is bigger than the provider we would normally use
-	// can hold, we route it to one that can rather than refusing it. See
-	// routeForPrompt — a too-large prompt is a fact about the PROVIDER, not the
-	// model, and the fallback chain already knows who else serves it.
+	// FULL context the upstream enforces — prompt PLUS the reserved output. A
+	// provider's context length bounds input+output together, so a 258049-token
+	// prompt with the 4096-token reserve is 262145 against glm-5.2's 262144 cap,
+	// a one-token overflow: routing on the prompt alone said "fits" and the
+	// upstream 400'd on the sum. reserveCompletionTokens (NOT clampMaxTokens) is
+	// what the QueryText pipeline actually reserves — it ignores the client's
+	// max_tokens and always holds at least the floor — so a client that caps LOW
+	// still has the floor counted upstream. Routing on that total reroutes an
+	// over-window request to a provider that can hold it (glm-5.2 -> DS4-Pro at
+	// 1M) rather than refusing it. See routeForPrompt / RouteForContext.
 	promptTokens, _ := model.GetTokenSize(request.Model, question)
-	route := routeForPrompt(request.Model, orgId, promptTokens)
+	route := routeForPrompt(request.Model, orgId, promptTokens+reserveCompletionTokens(request.MaxTokens))
 
 	// Call the model provider with failover support
 	var modelResult *model.ModelResult
