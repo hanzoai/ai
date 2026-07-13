@@ -15,8 +15,8 @@
 // Read side of the hanzo.cloud_usage ledger.
 //
 // The write side (controllers/zap_native.go zapWriteUsage) appends one row per
-// inference call to the datastore table hanzo.cloud_usage via the native ZAP
-// datastore peer. This file is the symmetric READ side: it aggregates that
+// inference call to the datastore table hanzo.cloud_usage via the direct datastore
+// client (object/datastore.go). This file is the symmetric READ side: it aggregates that
 // ledger into the console2 "Overview" dashboard payload — totals + period
 // deltas, an evenly-spaced time series, spend-by-model (top-N + "other"), and
 // the recent-activity feed — for BOTH the tenant-scoped console surface and the
@@ -575,9 +575,11 @@ func buildCloudUsageActivity(p CloudUsageParams, rows []map[string]interface{}, 
 
 // ── Value coercion ────────────────────────────────────────────────────────────
 //
-// datastore rows arrive over ZAP as JSON-decoded maps: numbers may be float64,
-// json.Number, or (for big UInt64) strings; DateTime is "2006-01-02 15:04:05".
-// These helpers coerce robustly so a sidecar encoding change can't crash a read.
+// datastore rows arrive from the direct datastore-go client as native-typed maps
+// (uint64/string/time.Time/float64), but coercion stays defensive: a value may
+// still surface as float64, json.Number, or (for big UInt64) a string, and DateTime
+// as "2006-01-02 15:04:05". These helpers coerce robustly so a driver encoding
+// change can't crash a read.
 
 func cuInt64(v interface{}) int64 {
 	switch n := v.(type) {
