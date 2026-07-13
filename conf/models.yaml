@@ -401,7 +401,11 @@ models:
     provider: do-ai
     upstream: glm-5.2
     premium: true
-    context_window: 262144   # measured
+    context_window: 262144   # measured (DO serving cap; see docs/do-genai-issue.md)
+    # Auto-roll: a prompt over DO's 262,144 cap is served on deepseek-v4-pro
+    # (same DO platform, uncapped 1M+) via routeForPrompt/RouteForContext.
+    fallbacks:
+      - {provider: do-ai, upstream: deepseek-v4-pro, context_window: 1000000}
     pricing: {input: 3.00, output: 9.60}
 
   # ── DO-AI aliases (hidden, still callable) ─────────────────────────────
