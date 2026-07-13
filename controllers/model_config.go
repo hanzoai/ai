@@ -22,9 +22,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hanzoai/beego/logs"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/router"
+	"github.com/hanzoai/beego/logs"
 	"gopkg.in/yaml.v3"
 )
 
