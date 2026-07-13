@@ -48,7 +48,7 @@ require (
 	github.com/lib/pq v1.12.3
 	github.com/luthermonson/go-proxmox v0.2.1
 	github.com/luxfi/crypto v1.19.26
-	github.com/luxfi/geth v1.17.5
+	github.com/luxfi/geth v1.17.12
 	github.com/luxfi/log v1.4.3
 	github.com/luxfi/metric v1.5.8
 	github.com/luxfi/zap v1.2.0
@@ -160,13 +160,13 @@ require (
 	github.com/luxfi/mdns v0.1.1 // indirect
 	github.com/luxfi/mock v0.1.1 // indirect
 	github.com/luxfi/pq v1.1.0 // indirect
-	github.com/mattn/go-colorable v0.1.14 // indirect
+	github.com/mattn/go-colorable v0.1.15 // indirect
 	github.com/mattn/go-runewidth v0.0.21 // indirect
 	github.com/miekg/dns v1.1.72 // indirect
 	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db // indirect
 	github.com/moby/term v0.5.2 // indirect
 	github.com/monochromegane/go-gitignore v0.0.0-20200626010858-205db1a8cc00 // indirect
-	github.com/mr-tron/base58 v1.2.0 // indirect
+	github.com/mr-tron/base58 v1.3.0 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/paulmach/orb v0.13.0 // indirect
 	github.com/philhofer/fwd v1.2.0 // indirect
@@ -322,7 +322,7 @@ require (
 	go.uber.org/mock v0.6.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/crypto v0.53.0 // indirect
-	golang.org/x/exp v0.0.0-20260410095643-746e56fc9e2f // indirect
+	golang.org/x/exp v0.0.0-20260529124908-c761662dc8c9 // indirect
 	golang.org/x/mod v0.36.0 // indirect
 	golang.org/x/oauth2 v0.36.0
 	golang.org/x/sync v0.21.0 // indirect
