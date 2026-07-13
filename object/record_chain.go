@@ -18,7 +18,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/beego/beego/logs"
+	"github.com/hanzoai/beego/logs"
 	"github.com/hanzoai/ai/chain"
 	"github.com/hanzoai/ai/i18n"
 	"github.com/hanzoai/ai/util"

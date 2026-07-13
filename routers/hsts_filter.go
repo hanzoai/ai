@@ -16,7 +16,7 @@
 package routers
 
 import (
-	"github.com/beego/beego/context"
+	"github.com/hanzoai/beego/context"
 )
 
 // HstsFilter adds HTTP Strict Transport Security header to HTTPS responses

@@ -18,7 +18,7 @@ package util
 import (
 	"encoding/json"
 
-	"github.com/beego/beego/context"
+	"github.com/hanzoai/beego/context"
 	"github.com/hanzoai/ai/conf"
 )
 
