@@ -9,7 +9,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	beegoctx "github.com/beego/beego/context"
+	beegoctx "github.com/hanzoai/beego/context"
 )
 
 // TestResolveBillingKey_NilGateNoPanic locks in the fix for the prod-down bug:
