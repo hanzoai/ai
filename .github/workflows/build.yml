@@ -147,7 +147,7 @@ jobs:
       contents: write
       issues: write
       pull-requests: write
-    if: github.repository == 'hanzoai/ai' && github.event_name == 'push'
+    if: github.repository == 'hanzoai/ai' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     # Gate the release on the PROVEN code checks: go-tests (the full suite) +
     # backend (compiles against the shipped CGO_ENABLED=0 config). The frontend is
     # built+verified authoritatively by the Dockerfile's `front` stage (the GHA
@@ -186,7 +186,7 @@ jobs:
     permissions:
       contents: write
       issues: write
-    if: github.repository == 'hanzoai/ai' && github.event_name == 'push' && needs.tag-release.outputs.new-release-published == 'true'
+    if: github.repository == 'hanzoai/ai' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && needs.tag-release.outputs.new-release-published == 'true'
     needs: [ tag-release ]
     steps:
       - name: Checkout
@@ -221,7 +221,7 @@ jobs:
 
   docker:
     name: Docker Release
-    if: github.repository == 'hanzoai/ai' && github.event_name == 'push' && needs.tag-release.outputs.new-release-published == 'true'
+    if: github.repository == 'hanzoai/ai' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && needs.tag-release.outputs.new-release-published == 'true'
     needs: [ tag-release ]
     uses: hanzoai/.github/.github/workflows/docker-build.yml@main
     with:
