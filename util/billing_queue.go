@@ -22,7 +22,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/beego/beego/logs"
+	"github.com/hanzoai/beego/logs"
 )
 
 const (

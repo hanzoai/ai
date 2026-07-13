@@ -18,7 +18,7 @@ import (
 	"encoding/json"
 	"errors"
 
-	"github.com/beego/beego/v2/core/logs"
+	"github.com/hanzoai/beego/logs"
 
 	"github.com/hanzoai/ai/object"
 )

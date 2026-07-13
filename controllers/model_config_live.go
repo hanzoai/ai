@@ -21,7 +21,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/beego/beego/logs"
+	"github.com/hanzoai/beego/logs"
 )
 
 // backgroundRefresh is a long-running goroutine that periodically refreshes

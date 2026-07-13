@@ -9,7 +9,7 @@ package controllers
 import (
 	"encoding/json"
 
-	"github.com/beego/beego/utils/pagination"
+	"github.com/hanzoai/beego/utils/pagination"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
 )
