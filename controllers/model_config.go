@@ -91,6 +91,13 @@ type ModelPriceDef struct {
 type FallbackDef struct {
 	Provider string `yaml:"provider"`
 	Upstream string `yaml:"upstream"`
+	// ContextWindow is the window THIS provider serves the model at. The same
+	// model is served at different sizes by different providers — DO serves
+	// glm-5.2 at 262144 while the model itself is a 1M-context model — so the
+	// window belongs to the (provider, upstream) pair, not to the model. A
+	// fallback that reaches a bigger window declares it here; 0 inherits the
+	// primary route's window.
+	ContextWindow int `yaml:"context_window,omitempty"`
 }
 
 // ModelDef describes a single model entry in the config.
@@ -212,6 +219,7 @@ func (mc *ModelConfig) applyConfig(file *ModelConfigFile) error {
 				r.fallbacks = append(r.fallbacks, modelRouteFallback{
 					providerName:  fb.Provider,
 					upstreamModel: fb.Upstream,
+					contextWindow: fb.ContextWindow,
 				})
 			}
 			routes[key] = r
@@ -336,29 +344,86 @@ func (mc *ModelConfig) ResolveRoute(model string) *modelRoute {
 	return nil
 }
 
-// ContextWindow returns the declared max context (tokens) for a model, or 0
-// when models.yaml leaves it unset (caller falls back to getContextLength).
-// It follows the alias chain: a zen alias inherits its upstream's declared
-// window, so `zen5` → `glm-5.2` carries the 1M window without redeclaring it.
-// The lookup is by normalized lowercase key — the same key applyConfig built.
+// ContextWindow returns the max context (tokens) a model is served at, or 0
+// when nothing declares it (the caller applies the floor).
+//
+// A window is a property of WHERE a model is served, not of the model alone:
+// GLM-5.2 is a 1M-context model, but DigitalOcean serves it at 262144. So the
+// value resolves in three steps, most specific first:
+//
+//	provider override  (this route's own context_window)
+//	model default      (the upstream leaf's context_window, via the alias chain)
+//	floor              (0 here; model.DefaultContextLength at the call site)
+//
+// The alias chain means `zen5` inherits its upstream's window without
+// redeclaring it. Lookup is by normalized lowercase key.
 func (mc *ModelConfig) ContextWindow(model string) int {
-	key := strings.ToLower(model)
 	mc.mu.RLock()
 	defer mc.mu.RUnlock()
+	return mc.contextWindowLocked(strings.ToLower(model))
+}
 
-	if route, ok := mc.routes[key]; ok {
-		if route.contextWindow > 0 {
-			return route.contextWindow
-		}
-		// Follow the alias: an alias's own window is usually unset; resolve
-		// to the upstream model it routes to and read ITS declared window.
-		if route.upstreamModel != "" && route.upstreamModel != key {
-			if up, ok := mc.routes[strings.ToLower(route.upstreamModel)]; ok && up.contextWindow > 0 {
-				return up.contextWindow
-			}
+func (mc *ModelConfig) contextWindowLocked(key string) int {
+	route, ok := mc.routes[key]
+	if !ok {
+		return 0
+	}
+	if route.contextWindow > 0 {
+		return route.contextWindow
+	}
+	// Follow the alias to the upstream leaf and read ITS declared window.
+	if route.upstreamModel != "" && route.upstreamModel != key {
+		if up, ok := mc.routes[strings.ToLower(route.upstreamModel)]; ok && up.contextWindow > 0 {
+			return up.contextWindow
 		}
 	}
 	return 0
+}
+
+// RouteForContext picks a route for `model` that can actually serve a prompt of
+// `tokens`, returning the provider and upstream to call.
+//
+// The primary route is used whenever it fits. When it does not — the prompt is
+// 400K and DO serves glm-5.2 at 262144 — the request is not refused: the
+// fallback chain is searched for a provider that serves the SAME model with a
+// window big enough, and that one is called instead. Fallbacks are declared in
+// preference order, so the first that fits wins.
+//
+// This is why the window lives on the (provider, upstream) pair: it turns the
+// fallback chain from failover-only into capability selection. If nothing in
+// the chain fits, the primary is returned and the upstream rejects it — an
+// honest error from the model rather than a guess from us.
+//
+// tokens <= 0 means "unknown size": take the primary.
+func (mc *ModelConfig) RouteForContext(model string, tokens int) (provider, upstream string, window int, ok bool) {
+	key := strings.ToLower(model)
+
+	mc.mu.RLock()
+	defer mc.mu.RUnlock()
+
+	route, found := mc.routes[key]
+	if !found {
+		return "", "", 0, false
+	}
+
+	primary := mc.contextWindowLocked(key)
+	if tokens <= 0 || primary == 0 || tokens <= primary {
+		return route.providerName, route.upstreamModel, primary, true
+	}
+
+	// The primary cannot hold this prompt. Find a provider that can.
+	for _, fb := range route.fallbacks {
+		w := fb.contextWindow
+		if w == 0 {
+			w = mc.contextWindowLocked(strings.ToLower(fb.upstreamModel))
+		}
+		if w >= tokens {
+			return fb.providerName, fb.upstreamModel, w, true
+		}
+	}
+
+	// Nothing fits. Return the primary and let the upstream speak for itself.
+	return route.providerName, route.upstreamModel, primary, true
 }
 
 // GetPrice returns pricing for a model name, with alias and default fallback.
