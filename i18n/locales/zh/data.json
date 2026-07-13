@@ -22,8 +22,7 @@
   "auth": {
     "Please sign in first": "请先登录",
     "Unauthorized operation": "未授权的操作",
-    "this operation requires admin privilege": "此操作需要管理员权限",
-    "this operation requires super admin privilege": "this operation requires super admin privilege"
+    "this operation requires admin privilege": "此操作需要管理员权限"
   },
   "blockchain": {
     "The default blockchain provider is not found": "未找到默认区块链提供商",
@@ -97,13 +96,6 @@
     "Failed to update": "更新失败",
     "The task does not exist": "任务不存在"
   },
-  "memory": {
-    "Failed to store the memory": "Failed to store the memory",
-    "The memory content should not be empty": "The memory content should not be empty",
-    "The memory id should not be empty": "The memory id should not be empty",
-    "The memory was not found": "The memory was not found",
-    "The search query should not be empty": "The search query should not be empty"
-  },
   "message_answer": {
     "object.GetNearestKnowledge() error, %s": "object.GetNearestKnowledge() 错误，%s"
   },
@@ -135,6 +127,7 @@
     "The agent provider: %s is expected to be ": "The agent provider: %s is expected to be ",
     "The chat: %s is not found": "聊天：%s 未找到",
     "The default video provider should not be empty": "默认视频提供商不能为空",
+    "The embedding provider for store: %s is not found": "存储 %s 的嵌入提供商未找到",
     "The embedding provider: %s is expected to be ": "The embedding provider: %s is expected to be ",
     "The embedding provider: %s is not found": "嵌入提供商：%s 未找到",
     "The embedding provider: %s's client secret should not be empty": "嵌入提供商：%s 的客户端密钥不能为空",
@@ -142,6 +135,7 @@
     "The file: %s is not found": "未找到文件：%s",
     "The image provider for store: %s should not be empty": "存储 %s 的图像提供商不能为空",
     "The message: %s is not found": "消息：%s 未找到",
+    "The model provider for store: %s is not found": "存储 %s 的模型提供商未找到",
     "The model provider: %s is expected to be ": "The model provider: %s is expected to be ",
     "The model provider: %s is not found": "模型提供商：%s 未找到",
     "The model provider: %s's client secret should not be empty": "模型提供商：%s 的客户端密钥不能为空",
@@ -226,9 +220,7 @@
   },
   "openai": {
     "Invalid API key format. Expected 'Bearer API_KEY'": "API 密钥格式无效。应为 'Bearer API_KEY'",
-    "No user message found in the request": "请求中未找到用户消息",
-    "apiKey is required": "apiKey is required",
-    "provider must be one of: openai, anthropic, google": "provider must be one of: openai, anthropic, google"
+    "No user message found in the request": "请求中未找到用户消息"
   },
   "pkgdocker": {
     "Container %s not found": "容器 %s 未找到"
@@ -248,9 +240,6 @@
     "Tencent Cloud API error: %s": "腾讯云 API 错误：%s",
     "Unsupported state: %s": "不支持的状态：%s",
     "VMware API error, code = %d, message = %s": "VMware API 错误，错误码 = %d，错误信息 = %s"
-  },
-  "provider": {
-    "the provider must be enabled before it can be made primary": "the provider must be enabled before it can be made primary"
   },
   "resource": {
     "Invalid file data format": "无效的文件数据格式",

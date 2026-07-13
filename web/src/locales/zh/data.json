@@ -159,7 +159,6 @@
     "Active": "已开启",
     "Activities": "用户活动统计",
     "Add": "添加",
-    "Add from application store": "Add from application store",
     "Admin": "管理工具",
     "Agents": "Agents",
     "Application Store": "应用商店",
@@ -210,7 +209,6 @@
     "Dislike": "不喜欢",
     "Display name": "显示名称",
     "Display name - Tooltip": "面向用户显示的名称",
-    "Down": "Down",
     "Download": "下载",
     "Edit": "编辑",
     "Enabled": "Enabled",
@@ -374,7 +372,6 @@
     "Secret key - Tooltip": "云服务商加密密钥",
     "Section": "单位",
     "Section - Tooltip": "部门或区段标识符",
-    "Send": "Send",
     "Sessions": "会话",
     "Setting": "设置",
     "Site setting": "网站设置",
@@ -413,7 +410,6 @@
     "Sure to delete": "确定删除",
     "Sure to delete all": "确定删除全部",
     "Sure to disconnect from": "确定断开",
-    "Sure to undeploy": "Sure to undeploy",
     "Swagger": "API文档",
     "System Info": "系统信息",
     "Tag": "标签",
@@ -438,7 +434,6 @@
     "Unit": "部门",
     "Unit - Tooltip": "组织单位或部门",
     "Unknown category": "未知分类",
-    "Up": "Up",
     "Updated time": "更新时间",
     "Upload": "上传",
     "Usages": "用量统计",
@@ -597,7 +592,6 @@
   "node": {
     "Auto query": "自动查询",
     "Auto query - Tooltip": "启用自动状态轮询（每3秒刷新节点指标）",
-    "Cannot enable Remote App when Remote Apps are empty. Please add at least one Remote App in below table first, then enable again": "Cannot enable Remote App when Remote Apps are empty. Please add at least one Remote App in below table first, then enable again",
     "Connect": "连接",
     "Edit Node": "编辑节点",
     "Enable Remote App": "启用远程应用",
@@ -714,8 +708,6 @@
   "record": {
     "Commit": "上链",
     "Data Verification": "数据验证",
-    "Enable cross-chain": "Enable cross-chain",
-    "Enable decoding": "Enable decoding",
     "New Record": "新建日志",
     "View Record": "查看日志"
   },
@@ -861,9 +853,7 @@
     "Welcome title": "欢迎标题",
     "Welcome title - Tooltip": "欢迎弹窗的标题",
     "Workflow": "工作流",
-    "Workflow - Tooltip": "关联的工作流程",
-    "files and": "files and",
-    "folders are checked": "folders are checked"
+    "Workflow - Tooltip": "关联的工作流程"
   },
   "system": {
     "AI Knowledge Database & Chat Bot with Admin UI and multi-model support (ChatGPT, Claude, Llama 3, DeepSeek R1, HuggingFace, etc.)": "AI Knowledge Database & Chat Bot with Admin UI and multi-model support (ChatGPT, Claude, Llama 3, DeepSeek R1, HuggingFace, etc.)",
@@ -942,7 +932,11 @@
     "Readme - Tooltip": "说明文件的URL地址"
   },
   "usage": {
-    "Go": "跳转"
+    "Day": "每日",
+    "Go": "跳转",
+    "Hour": "每小时",
+    "Month": "每月",
+    "Week": "每周"
   },
   "vector": {
     "Dimension": "维度",
@@ -1004,8 +998,6 @@
     "Stage - Tooltip": "教育阶段",
     "Start time (s)": "开始时间（秒）",
     "Start time (s) - Tooltip": "片段开始时间（秒）",
-    "Tag on pause": "Tag on pause",
-    "Tags": "Tags",
     "Time": "时间",
     "Topic": "主题",
     "Topic - Tooltip": "项目主题",
