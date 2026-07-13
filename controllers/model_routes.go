@@ -447,17 +447,19 @@ func resolveModelRouteForOrg(model string, orgId string) *modelRoute {
 		return r
 	}
 
-	// YAML config fallback
+	// YAML config (the runtime source of truth) — or, when none is loaded, the
+	// static map. Either resolves everything ai serves directly.
 	if cfg := GetModelConfig(); cfg != nil {
-		return cfg.ResolveRoute(model)
-	}
-
-	// Static fallback
-	m := strings.ToLower(model)
-	if route, ok := modelRoutes[m]; ok {
+		if route := cfg.ResolveRoute(model); route != nil {
+			return route
+		}
+	} else if route, ok := modelRoutes[strings.ToLower(model)]; ok {
 		return &route
 	}
-	return nil
+
+	// Zen family: any zen SKU routes to the zen service, which owns the SKU→upstream
+	// mapping, identity, and reasoning. ai holds no zen route of its own (hip-00NN).
+	return zenPassthroughRoute(model)
 }
 
 // modelInfo is the JSON shape returned by the /v1/models endpoint.
@@ -501,7 +503,7 @@ func publicProvider(route modelRoute) string {
 // from the listing but remain callable via the completions endpoint.
 func listAvailableModels() []modelInfo {
 	if cfg := GetModelConfig(); cfg != nil {
-		return cfg.ListModels()
+		return mergeZenModels(cfg.ListModels())
 	}
 
 	// Static fallback
