@@ -18,7 +18,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/beego/beego/logs"
+	"github.com/hanzoai/beego/logs"
 	scanpkg "github.com/hanzoai/ai/scan"
 	"github.com/hanzoai/ai/util"
 	"github.com/robfig/cron/v3"

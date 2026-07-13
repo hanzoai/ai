@@ -20,7 +20,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/beego/beego/logs"
+	"github.com/hanzoai/beego/logs"
 )
 
 var licenseText = `// Copyright 2023-2025 Hanzo AI Inc. All Rights Reserved.
