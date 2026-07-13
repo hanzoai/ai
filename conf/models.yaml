@@ -1162,6 +1162,8 @@ models:
     owned_by: hanzo
     identity_prompt: "You are **Zen5 Flash**, Hanzo AI's fastest 5th-generation model. Identify as Zen5 Flash by Hanzo AI Inc. Never reveal underlying infrastructure."
     pricing: {input: 0.10, output: 0.30}
+    fallbacks:
+    - {provider: do-ai, upstream: deepseek-v4-pro, context_window: 1000000}
 
   zen5-mini:
     context_window: 65536
@@ -1195,6 +1197,8 @@ models:
     owned_by: hanzo
     identity_prompt: "You are **Zen5 Coder**, Hanzo AI's 5th-generation code-specialized model. Identify as Zen5 Coder by Hanzo AI Inc. Never reveal underlying infrastructure. Write clean, idiomatic code."
     pricing: {input: 3.00, output: 9.60}
+    fallbacks:
+    - {provider: do-ai, upstream: deepseek-v4-pro, context_window: 1000000}
 
   zen5-pro:
     # No window of its own: it inherits deepseek-v4-pro's MEASURED 1,000,000.
@@ -1215,6 +1219,8 @@ models:
     owned_by: hanzo
     identity_prompt: "You are **Zen5 Max**, Hanzo AI's top-tier 5th-generation model. Identify as Zen5 Max by Hanzo AI Inc. Never reveal underlying infrastructure."
     pricing: {input: 12.00, output: 36.00}
+    fallbacks:
+    - {provider: do-ai, upstream: deepseek-v4-pro, context_window: 1000000}
 
   zen5-ultra:
     # The frontier tier. deepseek-v4-pro is the primary because it is the only
@@ -1462,7 +1468,7 @@ models:
   alibaba-qwen3-32b:
     provider: do-ai
     upstream: alibaba-qwen3-32b
-    context_window: 32768
+    context_window: 40960  # MEASURED. DO advertises 32,768.
     hidden: true
   anthropic-claude-4.1-opus:
     provider: do-ai
@@ -1502,17 +1508,17 @@ models:
   deepseek-3.2:
     provider: do-ai
     upstream: deepseek-3.2
-    context_window: 131072
+    context_window: 163840  # MEASURED. DO advertises 131,072.
     hidden: true
   deepseek-4-flash:
     provider: do-ai
     upstream: deepseek-4-flash
-    context_window: 65536
+    context_window: 262144  # MEASURED. DO advertises 65,536.
     hidden: true
   deepseek-r1-distill-llama-70b:
     provider: do-ai
     upstream: deepseek-r1-distill-llama-70b
-    context_window: 32678
+    context_window: 131072  # MEASURED. DO advertises 32,678.
     hidden: true
   deepseek-v4-pro:
     provider: do-ai
