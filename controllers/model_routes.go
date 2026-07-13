@@ -26,6 +26,7 @@ import (
 type modelRouteFallback struct {
 	providerName  string
 	upstreamModel string
+	contextWindow int // window THIS provider serves it at; 0 = same as primary
 }
 
 // modelRoute maps a user-facing model name to an upstream provider and model ID.
@@ -36,7 +37,7 @@ type modelRoute struct {
 	premium       bool                 // Requires positive balance
 	hidden        bool                 // If true, excluded from /api/models listing (still callable)
 	ownedBy       string               // Override for owned_by in model listing (default: providerName)
-	contextWindow int                  // Max context tokens; 0 = defer to getContextLength heuristic
+	contextWindow int                  // Max context tokens as THIS provider serves it; 0 = undeclared (caller uses the floor)
 }
 
 // modelRoutes is the static routing table. Keys are user-facing model names
