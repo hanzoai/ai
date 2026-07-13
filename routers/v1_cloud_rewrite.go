@@ -17,7 +17,7 @@ package routers
 import (
 	"strings"
 
-	"github.com/beego/beego/context"
+	"github.com/hanzoai/beego/context"
 )
 
 // V1CloudRewriteFilter rewrites /v1/cloud/* requests to /api/* so the

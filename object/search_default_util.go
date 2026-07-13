@@ -18,7 +18,7 @@ import (
 	"math"
 	"sort"
 
-	"github.com/beego/beego/logs"
+	"github.com/hanzoai/beego/logs"
 )
 
 func dot(vec1, vec2 []float32) float32 {
