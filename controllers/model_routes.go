@@ -19,7 +19,7 @@ import (
 	"strings"
 	"time"
 
-	beegoLogs "github.com/beego/beego/logs"
+	beegoLogs "github.com/hanzoai/beego/logs"
 	"github.com/hanzoai/ai/object"
 )
 

@@ -31,7 +31,7 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/beego/beego/logs"
+	"github.com/hanzoai/beego/logs"
 	"github.com/luxfi/zap"
 
 	"github.com/hanzoai/ai/object"

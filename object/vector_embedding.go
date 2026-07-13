@@ -21,7 +21,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/beego/beego/logs"
+	"github.com/hanzoai/beego/logs"
 	"github.com/hanzoai/ai/embedding"
 	"github.com/hanzoai/ai/i18n"
 	"github.com/hanzoai/ai/model"
