@@ -1035,6 +1035,15 @@ func (c *ApiController) ChatCompletions() {
 	}
 	defer hold.settle(0)
 
+	// ── Zen family ─────────────────────────────────────────────────────
+	// A zen model is served by the zen service, which owns identity, reasoning,
+	// the 1M ladder, vision, and the upstream. ai forwards the request verbatim
+	// and meters the result; it holds no zen routing of its own (hip-00NN).
+	if provider.Type == "Zen" {
+		c.pipeToZen("chat/completions", "openai", request.Model, c.Ctx.Input.RequestBody, request.Stream, orgId, authUser, isPremium, hold, requestStartTime)
+		return
+	}
+
 	// ── Tool-calling pass-through ──────────────────────────────────────
 	// When the request includes tools/functions, the QueryText pipeline
 	// cannot handle structured tool calls. Proxy the raw request directly
@@ -1043,19 +1052,6 @@ func (c *ApiController) ChatCompletions() {
 	if len(request.Tools) > 0 || request.ToolChoice != nil {
 		c.proxyToolRequest(provider, &request, requestStartTime, authUser, isPremium, orgId, hold)
 		return
-	}
-
-	// Inject Zen identity prompt for zen-branded models
-	if zenPrompt := zenIdentityPrompt(request.Model); zenPrompt != "" {
-		hasSystem := len(request.Messages) > 0 && request.Messages[0].Role == "system"
-		if hasSystem {
-			request.Messages[0].Content = zenPrompt + "\n\n" + request.Messages[0].Content
-		} else {
-			request.Messages = append([]openai.ChatCompletionMessage{{
-				Role:    "system",
-				Content: zenPrompt,
-			}}, request.Messages...)
-		}
 	}
 
 	// Extract messages content
@@ -1141,21 +1137,37 @@ func (c *ApiController) ChatCompletions() {
 	var modelResult *model.ModelResult
 	var actualProvider string
 
-	if route != nil && len(route.fallbacks) > 0 {
+	if route != nil {
+		// ONE execute path (mirrors the Anthropic handler): failoverQueryText rides
+		// out a transient upstream 429/5xx with the shared retry policy, then
+		// cascades through the route's fallbacks. A model with no fallbacks still
+		// gets the retry — the cascade is the identity case — so there is no
+		// longer a retry-less path that lets a 429 fall through to the client.
 		modelResult, actualProvider, err = failoverQueryText(
 			route, question, writer, history, knowledge,
 			c.GetAcceptLanguage(),
 			func() bool { return writer.StreamSent },
 		)
 	} else {
-		// No fallbacks configured — direct call (original path)
+		// Model not in the route table: call the resolved provider directly, on
+		// the SAME retry policy failover uses, typing the error at the boundary.
 		var modelProvider model.ModelProvider
 		modelProvider, err = provider.GetModelProvider(c.GetAcceptLanguage())
 		if err != nil {
 			c.ResponseError(fmt.Sprintf("Failed to get model provider: %s", err.Error()))
 			return
 		}
-		modelResult, err = modelProvider.QueryText(question, writer, history, "", knowledge, nil, c.GetAcceptLanguage())
+		err = retryTransient(context.Background(), currentRetryPolicy(), func() error {
+			if writer.StreamSent {
+				return errPartiallyWritten
+			}
+			res, e := modelProvider.QueryText(question, writer, history, "", knowledge, nil, c.GetAcceptLanguage())
+			if e != nil {
+				return wrapUpstreamError(e)
+			}
+			modelResult = res
+			return nil
+		})
 		actualProvider = provider.Name
 	}
 
@@ -1178,7 +1190,10 @@ func (c *ApiController) ChatCompletions() {
 			recordUsage(errRecord)
 			recordTrace(c.Ctx.Request.Context(), errRecord, requestStartTime)
 		}
-		c.ResponseError(err.Error())
+		// Surface the real upstream status (429 stays 429) instead of Beego's
+		// default 200-with-error-body — an OpenAI client must see a non-2xx to
+		// retry, and 200 silently reads as success. Mirrors the Anthropic path.
+		c.ResponseErrorWithStatus(statusForModelError(err), err.Error())
 		return
 	}
 
@@ -1608,7 +1623,8 @@ func resolveEndpointForPath(provider *object.Provider, apiPath string) (url stri
 			baseURL, provider.SubType, apiPath, apiVersion), "", "api-key " + apiKey
 
 	case "Local", "Ollama", "DigitalOcean":
-		// Local/compatible providers with custom URLs.
+		// Local/compatible providers with custom URLs. All expose OpenAI-shaped
+		// paths under /v1.
 		baseURL := strings.TrimRight(provider.ProviderUrl, "/")
 		if baseURL == "" {
 			return "", "", ""

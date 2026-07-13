@@ -34,14 +34,20 @@ router:
   endpoint: ""            # e.g. http://engine.hanzo.svc:3000 (zen-router via hanzo-engine)
   cost_ceiling: 0.0       # advisory per-1k cost cap, forwarded to the engine as SLO
   prefer:                 # task tag → ordered model ids; first servable wins ("default" = catch-all)
-    code: [zen4-coder, zen5-coder, qwen3-coder, gpt-5.3-codex]
-    reasoning: [zen4-thinking, deepseek-reasoner, zen4-ultra]
-    math: [zen4-ultra, deepseek-reasoner, zen4-thinking]
-    creative: [zen4, zen4-max, claude-sonnet-4-5]
-    vision: [zen5-omni, zen3-omni, zen3-vl]
-    long_context: [zen4-max, gpt-5.4, claude-sonnet-4-5]
-    cheap_chat: [zen4-mini, zen5-mini, gpt-4o-mini]
-    default: [zen4, zen5, gpt-4o]
+    code: [zen5-coder, zen5-pro, qwen3-coder, gpt-5.3-codex]
+    reasoning: [zen5-pro, deepseek-reasoner]
+    math: [zen5-pro, deepseek-reasoner]
+    creative: [zen5, zen5-max]
+    # vision/video MUST hit a hypermodal upstream. kimi-k2.6 is the strongest
+    # multimodal on DO (text + vision + video, 96K ctx) — the default. zen5-omni
+    # IS kimi-k2.6 but is kept out of the lane (use the concrete id) until the
+    # omni alias is promoted. zen3-omni is the legacy fallback.
+    vision: [kimi-k2.6, zen3-omni, zen3-vl]
+    # Long context strips images (no multimodal at 1M) and uses the only measured
+    # 1M-window model: deepseek-v4-pro (= zen5-pro). glm-5.2 (256K) is fallback.
+    long_context: [zen5-pro, glm-5.2]
+    cheap_chat: [zen5-flash, zen5-mini]
+    default: [zen5, glm-5.2, zen5-pro]
 
 default_pricing:
   input_per_million: 1.00
@@ -403,6 +409,13 @@ models:
     premium: true
     context_window: 262144   # measured
     pricing: {input: 3.00, output: 9.60}
+    # Reliability + capability fallback. glm-5.2 caps at 262,144 on DO and can
+    # rate-limit (429 "Platform overloaded"). This chain makes `hanzo code
+    # claude`'s default model ride out 429s (retryTransient) and cascade, and
+    # RouteForContext upgrades an oversized prompt to the only measured 1M-window
+    # model on the same platform — deepseek-v4-pro — instead of refusing.
+    fallbacks:
+    - {provider: do-ai, upstream: deepseek-v4-pro, context_window: 1000000}
 
   # ── DO-AI aliases (hidden, still callable) ─────────────────────────────
 
@@ -1221,6 +1234,11 @@ models:
     upstream: deepseek-v4-pro
     premium: true
     owned_by: hanzo
+    # Disabled from discovery: zen5-ultra is NOT listed in /v1/models and no
+    # prefer lane or Claude Code tier slot routes to it (Fable → zen5-pro). It
+    # stays callable for deliberate allowlisted use but is effectively dead until
+    # the Anthropic frontier (fable-5 / opus-4.8) is actually served by DO.
+    hidden: true
     fallbacks:
     - {provider: do-ai, upstream: anthropic-claude-fable-5}       # 1M, when entitled
     - {provider: do-ai, upstream: anthropic-claude-opus-4.8}      # 1M, when entitled

@@ -180,13 +180,13 @@ var modelRoutes = map[string]modelRoute{
 	"openai-direct/o3-mini":     {providerName: "openai-direct", upstreamModel: "o3-mini", premium: true, hidden: true},
 
 	// ── Zen branded models ───────────────────────────────────────────────
-	// Routes to DigitalOcean GenAI ("do-ai" provider) — the same upstream
-	// that backs the OpenAI/Anthropic models, so zen needs no extra key and no
-	// GPU node. Upstreams are the Qwen3+/GLM/Kimi/DeepSeek families (qwen3+ per
-	// convention). Each zen model is owned_by hanzo; the public owner travels
-	// in owned_by and the identity is injected via zenIdentityPrompt() (hip-00NN).
-	// Cutover: ai will discover this family from zen's /v1/models and proxy to
-	// zen (ZEN_URL), at which point these static routes are deleted.
+	// These entries exist ONLY so ai's /v1/models discovery lists the zen family
+	// (id, owned_by:hanzo, premium, pricing) — ai is the discovery authority.
+	// The upstreamModel here is vestigial: zen owns the SKU→upstream mapping,
+	// identity, reasoning fold, 1M ladder, and codec, and the co-resident cloud
+	// binary claims every zen* chat/messages/embeddings request in-process before
+	// ai's handlers run (cloud subsystems/zen.go, hip-00NN). ai never SERVES a
+	// zen model; it only surfaces the family in the model list.
 	//
 	// Zen4 generation
 	"zen4":             {providerName: "do-ai", upstreamModel: "glm-5", premium: true, ownedBy: "hanzo"},
@@ -198,14 +198,14 @@ var modelRoutes = map[string]modelRoute{
 	"zen4-coder":       {providerName: "do-ai", upstreamModel: "qwen3-coder-flash", premium: true, ownedBy: "hanzo"},
 	"zen4-coder-pro":   {providerName: "do-ai", upstreamModel: "glm-5.2", premium: true, ownedBy: "hanzo"},
 	"zen4-coder-flash": {providerName: "do-ai", upstreamModel: "qwen3-coder-flash", premium: true, ownedBy: "hanzo"},
-	// Zen5 generation — routed directly to DO-AI; identity injected via zenIdentityPrompt
+	// Zen5 generation — discovery-only (zen serves; see the family note above)
 	"zen5-flash": {providerName: "do-ai", upstreamModel: "deepseek-4-flash", premium: true, ownedBy: "hanzo"},
 	"zen5-mini":  {providerName: "do-ai", upstreamModel: "minimax-m2.5", premium: true, ownedBy: "hanzo"},
 	"zen5":       {providerName: "do-ai", upstreamModel: "glm-5.2", premium: true, ownedBy: "hanzo"},
 	"zen5-coder": {providerName: "do-ai", upstreamModel: "glm-5.2", premium: true, ownedBy: "hanzo"},
 	"zen5-pro":   {providerName: "do-ai", upstreamModel: "deepseek-v4-pro", premium: true, ownedBy: "hanzo"},
 	"zen5-max":   {providerName: "do-ai", upstreamModel: "qwen3.5-397b-a17b", premium: true, ownedBy: "hanzo"},
-	"zen5-ultra": {providerName: "do-ai", upstreamModel: "anthropic-claude-opus-4.8", premium: true, ownedBy: "hanzo"},
+	"zen5-ultra": {providerName: "do-ai", upstreamModel: "deepseek-v4-pro", premium: true, ownedBy: "hanzo", hidden: true}, // disabled (hidden); YAML is source of truth. Synced to ds4-pro — opus-4.8 403s on this account.
 	// Zen3 generation
 	"zen3-omni":      {providerName: "do-ai", upstreamModel: "nemotron-3-nano-omni", premium: true, ownedBy: "hanzo"},
 	"zen3-vl":        {providerName: "do-ai", upstreamModel: "nemotron-nano-12b-v2-vl", premium: true, ownedBy: "hanzo"},
@@ -275,61 +275,6 @@ var modelRoutes = map[string]modelRoute{
 	"zen-omni":        {providerName: "do-ai", upstreamModel: "nemotron-3-nano-omni", premium: true, ownedBy: "hanzo", hidden: true},
 	"zen-guard":       {providerName: "do-ai", upstreamModel: "llama3.3-70b-instruct", premium: true, ownedBy: "hanzo", hidden: true},
 	"zen-embedding":   {providerName: "do-ai", upstreamModel: "qwen3-embedding-0.6b", premium: true, ownedBy: "hanzo", hidden: true},
-}
-
-// zenIdentityPrompts maps user-facing zen model names to their identity prompts.
-var zenIdentityPrompts = map[string]string{
-	// Zen5 generation
-	"zen5":       "You are **Zen5**, Hanzo AI's 5th-generation frontier model. Identify as Zen5 by Hanzo AI Inc.",
-	"zen5-flash": "You are **Zen5 Flash**, Hanzo AI's fastest 5th-generation model. Identify as Zen5 Flash by Hanzo AI Inc.",
-	"zen5-mini":  "You are **Zen5 Mini**, Hanzo AI's efficient 5th-generation agentic model. Identify as Zen5 Mini by Hanzo AI Inc.",
-	"zen5-coder": "You are **Zen5 Coder**, Hanzo AI's 5th-generation code-specialized model. Identify as Zen5 Coder by Hanzo AI Inc. Write clean, idiomatic code.",
-	"zen5-pro":   "You are **Zen5 Pro**, Hanzo AI's high-capability 5th-generation model. Identify as Zen5 Pro by Hanzo AI Inc.",
-	"zen5-max":   "You are **Zen5 Max**, Hanzo AI's top-tier 5th-generation model. Identify as Zen5 Max by Hanzo AI Inc.",
-	"zen5-ultra": "You are **Zen5 Ultra**, Hanzo AI's most powerful 5th-generation reasoning model. Identify as Zen5 Ultra by Hanzo AI Inc.",
-	// Zen4 generation
-	"zen4":             "You are **Zen4**, a frontier large language model created by **Hanzo AI Inc** — a Techstars-backed applied AI lab building decentralized intelligence.\n\nCore identity:\n- Model family: **Zen4** (4th generation Zen LM)\n- Creator: **Hanzo AI Inc** (hanzo.ai)\n- Research org: **Zen LM** (zenlm.org)\n\nWhen asked about yourself, identify as Zen4 by Hanzo AI.",
-	"zen4-pro":         "You are **Zen4 Pro**, a high-capability large language model created by **Hanzo AI Inc** — a Techstars-backed applied AI lab.\n\nCore identity:\n- Model: **Zen4 Pro** (Zen LM, professional tier)\n- Creator: **Hanzo AI Inc** (hanzo.ai)\n\nWhen asked about yourself, identify as Zen4 Pro by Hanzo AI.",
-	"zen4-max":         "You are **Zen4 Max**, an extended-context large language model created by **Hanzo AI Inc** — a Techstars-backed applied AI lab.\n\nCore identity:\n- Model: **Zen4 Max** (Zen LM, maximum capacity)\n- Creator: **Hanzo AI Inc** (hanzo.ai)\n\nWhen asked about yourself, identify as Zen4 Max by Hanzo AI.",
-	"zen4-mini":        "You are **Zen4 Mini**, a fast and efficient language model created by **Hanzo AI Inc**.\n\nCore identity:\n- Model: **Zen4 Mini** (Zen LM, efficient tier)\n- Creator: **Hanzo AI Inc** (hanzo.ai)\n\nWhen asked about yourself, identify as Zen4 Mini by Hanzo AI.",
-	"zen4-ultra":       "You are **Zen4 Ultra**, the most powerful reasoning model created by **Hanzo AI Inc** — a Techstars-backed applied AI lab.\n\nCore identity:\n- Model: **Zen4 Ultra** (Zen LM, maximum intelligence)\n- Creator: **Hanzo AI Inc** (hanzo.ai)\n\nWhen asked about yourself, identify as Zen4 Ultra by Hanzo AI.",
-	"zen4-coder":       "You are **Zen4 Coder**, a code-specialized large language model created by **Hanzo AI Inc**.\n\nCore identity:\n- Model: **Zen4 Coder** (Zen LM, code-specialized)\n- Creator: **Hanzo AI Inc** (hanzo.ai)\n\nWhen asked about yourself, identify as Zen4 Coder by Hanzo AI. Write clean, idiomatic code.",
-	"zen4-coder-flash": "You are **Zen4 Coder Flash**, a fast code model by **Hanzo AI Inc**.\n\nIdentify as Zen4 Coder Flash by Hanzo AI.",
-	"zen4-coder-pro":   "You are **Zen4 Coder Pro**, a premium code model by **Hanzo AI Inc**.\n\nIdentify as Zen4 Coder Pro by Hanzo AI.",
-	"zen4-thinking":    "You are **Zen4 Thinking**, a deep-reasoning model created by **Hanzo AI Inc**.\n\nCore identity:\n- Model: **Zen4 Thinking** (Zen LM, reasoning-optimized)\n- Creator: **Hanzo AI Inc** (hanzo.ai)\n\nWhen asked about yourself, identify as Zen4 Thinking by Hanzo AI. Show your reasoning process transparently.",
-	"zen3-vl":          "You are **Zen3 VL**, a vision-language model by **Hanzo AI Inc** — 3rd generation Zen LM.\n\nIdentify as Zen3 VL by Hanzo AI.",
-	"zen-vision":       "You are **Zen3 VL**, a vision-language model by **Hanzo AI Inc** — 3rd generation Zen LM.\n\nIdentify as Zen3 VL by Hanzo AI.",
-	"zen3-omni":        "You are **Zen3 Omni**, a hypermodal AI model by **Hanzo AI Inc** — 3rd generation Zen LM.\n\nIdentify as Zen3 Omni by Hanzo AI.",
-	"zen3-nano":        "You are **Zen3 Nano**, a lightweight edge model by **Hanzo AI Inc** — 3rd generation Zen LM.\n\nIdentify as Zen3 Nano by Hanzo AI.",
-	"zen3-guard":       "You are **Zen3 Guard**, a content safety model by **Hanzo AI Inc** — 3rd generation Zen LM.\n\nIdentify as Zen3 Guard by Hanzo AI.",
-}
-
-// zenIdentityPrompt returns the identity system prompt for a zen model, or empty string.
-func zenIdentityPrompt(model string) string {
-	if cfg := GetModelConfig(); cfg != nil {
-		return cfg.GetIdentityPrompt(model)
-	}
-
-	// Static fallback
-	m := strings.ToLower(model)
-	if prompt, ok := zenIdentityPrompts[m]; ok {
-		return prompt
-	}
-	// Try stripping version prefix for versionless aliases (zen-mini → zen4-mini)
-	if strings.HasPrefix(m, "zen-") {
-		versioned := "zen4-" + m[4:]
-		if prompt, ok := zenIdentityPrompts[versioned]; ok {
-			return prompt
-		}
-		versioned = "zen3-" + m[4:]
-		if prompt, ok := zenIdentityPrompts[versioned]; ok {
-			return prompt
-		}
-	}
-	if strings.HasPrefix(m, "zen") {
-		return "You are a Zen LM model by Hanzo AI Inc. When asked about yourself, identify as a Zen LM model by Hanzo AI."
-	}
-	return ""
 }
 
 // modelCountByProvider returns, per provider name, how many user-facing model
@@ -447,17 +392,19 @@ func resolveModelRouteForOrg(model string, orgId string) *modelRoute {
 		return r
 	}
 
-	// YAML config fallback
+	// YAML config (the runtime source of truth) — or, when none is loaded, the
+	// static map. Either resolves everything ai serves directly.
 	if cfg := GetModelConfig(); cfg != nil {
-		return cfg.ResolveRoute(model)
-	}
-
-	// Static fallback
-	m := strings.ToLower(model)
-	if route, ok := modelRoutes[m]; ok {
+		if route := cfg.ResolveRoute(model); route != nil {
+			return route
+		}
+	} else if route, ok := modelRoutes[strings.ToLower(model)]; ok {
 		return &route
 	}
-	return nil
+
+	// Zen family: any zen SKU routes to the zen service, which owns the SKU→upstream
+	// mapping, identity, and reasoning. ai holds no zen route of its own (hip-00NN).
+	return zenPassthroughRoute(model)
 }
 
 // modelInfo is the JSON shape returned by the /v1/models endpoint.
@@ -501,7 +448,7 @@ func publicProvider(route modelRoute) string {
 // from the listing but remain callable via the completions endpoint.
 func listAvailableModels() []modelInfo {
 	if cfg := GetModelConfig(); cfg != nil {
-		return cfg.ListModels()
+		return mergeZenModels(cfg.ListModels())
 	}
 
 	// Static fallback

@@ -216,5 +216,10 @@ func callProvider(
 		return nil, err
 	}
 
-	return modelProvider.QueryText(question, writer, history, "", knowledge, nil, lang)
+	// Type the upstream result at the ONE boundary: a provider HTTP failure
+	// (429 / 403 / 5xx) becomes an apiError carrying its real status, so the
+	// retry loop's isRetryableError, the cascade, and the client-edge renderer
+	// all fold over the same typed value instead of re-sniffing strings.
+	res, e := modelProvider.QueryText(question, writer, history, "", knowledge, nil, lang)
+	return res, wrapUpstreamError(e)
 }
