@@ -1165,7 +1165,7 @@ models:
     # that can hold it. deepseek-v4-pro is the same platform but is not
     # subject to the 262,144 cap (measured: 500,005 tokens accepted).
     fallbacks:
-      - { provider: do-ai, upstream: deepseek-v4-pro, context_window: 500000 }
+      - { provider: do-ai, upstream: deepseek-v4-pro, context_window: 1000000 }
 
   zen5-coder:
     context_window: 262144
@@ -1177,7 +1177,9 @@ models:
     pricing: { input: 3.00, output: 9.60 }
 
   zen5-pro:
-    context_window: 87040
+    # No window of its own: it inherits deepseek-v4-pro's MEASURED 1,000,000.
+    # It used to declare 87040 here — DO's advertised figure, which is wrong —
+    # and so capped our only true 1M model to 8.7% of what it actually serves.
     provider: do-ai
     upstream: deepseek-v4-pro
     premium: true
@@ -1195,21 +1197,48 @@ models:
     pricing: { input: 12.00, output: 36.00 }
 
   zen5-ultra:
-    context_window: 1000000
+    # The frontier tier. deepseek-v4-pro is the primary because it is the only
+    # model DO actually serves at 1M today (measured: 1,000,005 tokens accepted).
+    #
+    # The Anthropic frontier models (fable-5, opus-4.8) are what this tier WANTS
+    # — both advertised at 1M — but DO returns 403 "this model is not available
+    # for your account" for them. They are listed, not served. So they sit at the
+    # head of the fallback chain rather than being the primary: leading with a
+    # model we cannot call bought a wasted 403 round-trip on every request before
+    # the fallback rescued it. The day the agreement lands the chain promotes
+    # itself with no code change and no client change.
+    #
+    # A capability alias must name a capability we HAVE.
     provider: do-ai
-    upstream: anthropic-claude-opus-4.8
+    upstream: deepseek-v4-pro
     premium: true
     owned_by: hanzo
-    # Deterministic capability fallback: if the premium frontier upstream is
-    # unavailable (403/rate-limit/down), degrade through the ladder rather than
-    # failing the request. zen5-ultra is a CAPABILITY alias, not a model name —
-    # swap the upstream (Anthropic today, a future frontier tomorrow) without
-    # touching any client.
     fallbacks:
-      - { provider: do-ai, upstream: deepseek-v4-pro }      # zen5-pro
-      - { provider: do-ai, upstream: glm-5.2 }              # zen5
-      - { provider: do-ai, upstream: deepseek-4-flash }     # zen5-flash
+      - { provider: do-ai, upstream: anthropic-claude-fable-5 }   # 1M, when entitled
+      - { provider: do-ai, upstream: anthropic-claude-opus-4.8 }  # 1M, when entitled
+      - { provider: do-ai, upstream: glm-5.2 }                    # 256K
+      - { provider: do-ai, upstream: deepseek-4-flash }           # 64K
     identity_prompt: "You are **Zen5 Ultra**, Hanzo AI's most powerful 5th-generation model. Identify as Zen5 Ultra by Hanzo AI Inc. Never reveal underlying infrastructure."
+    pricing: { input: 20.00, output: 60.00 }
+
+  # zen5-fable — the Anthropic frontier tier, NOT yet generally available.
+  #
+  # hidden: it does not appear in /v1/models, so no user can discover or select
+  # it, but it stays callable for anyone we deliberately let through (waitlist /
+  # allowlist). DO currently 403s it for this account; the moment the agreement
+  # lands this serves 1M with no further change, and dropping `hidden` is what
+  # makes it public. Until then it degrades to the same 1M we can actually serve
+  # rather than failing, so an allowlisted caller is never broken.
+  zen5-fable:
+    provider: do-ai
+    upstream: anthropic-claude-fable-5
+    premium: true
+    hidden: true
+    owned_by: hanzo
+    context_window: 1000000
+    identity_prompt: "You are **Zen5 Fable**, Hanzo AI's frontier 5th-generation model. Identify as Zen5 Fable by Hanzo AI Inc. Never reveal underlying infrastructure."
+    fallbacks:
+      - { provider: do-ai, upstream: deepseek-v4-pro, context_window: 1000000 }
     pricing: { input: 20.00, output: 60.00 }
 
   # zen5-code — the code-specialized capability alias. Stable contract: swap
@@ -1468,8 +1497,10 @@ models:
   deepseek-v4-pro:
     provider: do-ai
     upstream: deepseek-v4-pro
-    context_window: 500000   # MEASURED: accepted 500,005 tokens. DO advertises 87,040 and
-                             # caps every other model at 262,144 — this one is not capped.
+    context_window: 1000000   # MEASURED: accepted 1,000,005 tokens. DO advertises 87,040 and caps
+                              # every other model at 262,144 — this one is not capped.
+                              # (>1.2M fails as "invalid request body" = HTTP payload limit,
+                              #  not a context limit — the model itself never refuses.)
     hidden: true
   gemma-4-31B-it:
     provider: do-ai
@@ -1580,4 +1611,12 @@ models:
     provider: do-ai
     upstream: qwen3.5-397b-a17b
     context_window: 131072
+    hidden: true
+
+  # Anthropic frontier leaf. Advertised (and, once entitled, served) at 1M.
+  # 403 for this account today — present so the aliases above resolve.
+  anthropic-claude-fable-5:
+    provider: do-ai
+    upstream: anthropic-claude-fable-5
+    context_window: 1000000
     hidden: true
