@@ -244,9 +244,11 @@ func emitGenAISpan(ctx context.Context, record *usageRecord, startTime time.Time
 	span.End(trace.WithTimestamp(time.Now().UTC()))
 }
 
+// firstNonEmptyStr returns the first argument that is non-empty after trimming
+// surrounding whitespace — the single shared helper (finetune, telemetry, …).
 func firstNonEmptyStr(vals ...string) string {
 	for _, v := range vals {
-		if v != "" {
+		if strings.TrimSpace(v) != "" {
 			return v
 		}
 	}
