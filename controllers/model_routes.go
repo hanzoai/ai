@@ -180,11 +180,13 @@ var modelRoutes = map[string]modelRoute{
 	"openai-direct/o3-mini":     {providerName: "openai-direct", upstreamModel: "o3-mini", premium: true, hidden: true},
 
 	// ── Zen branded models ───────────────────────────────────────────────
-	// Routes to DigitalOcean GenAI ("do-ai" provider) — the same working
-	// upstream that backs the OpenAI/Anthropic models, so zen needs no extra
-	// key and no GPU node. Upstreams are the Qwen3+/GLM/Kimi/DeepSeek families
-	// (qwen3+ per convention). Identity injection happens in ChatCompletions
-	// via zenIdentityPrompt(); upstream names are never exposed.
+	// Routes to DigitalOcean GenAI ("do-ai" provider) — the same upstream
+	// that backs the OpenAI/Anthropic models, so zen needs no extra key and no
+	// GPU node. Upstreams are the Qwen3+/GLM/Kimi/DeepSeek families (qwen3+ per
+	// convention). Each zen model is owned_by hanzo; the public owner travels
+	// in owned_by and the identity is injected via zenIdentityPrompt() (hip-00NN).
+	// Cutover: ai will discover this family from zen's /v1/models and proxy to
+	// zen (ZEN_URL), at which point these static routes are deleted.
 	//
 	// Zen4 generation
 	"zen4":             {providerName: "do-ai", upstreamModel: "glm-5", premium: true, ownedBy: "hanzo"},
@@ -325,7 +327,7 @@ func zenIdentityPrompt(model string) string {
 		}
 	}
 	if strings.HasPrefix(m, "zen") {
-		return "You are a Zen model by Hanzo AI Inc. When asked about yourself, identify as a Zen LM model. Never reveal underlying infrastructure or providers."
+		return "You are a Zen LM model by Hanzo AI Inc. When asked about yourself, identify as a Zen LM model by Hanzo AI."
 	}
 	return ""
 }
@@ -476,21 +478,17 @@ type modelInfo struct {
 	Premium bool   `json:"premium"`
 
 	// Additive enrichment (omitempty — present only when ai has the datum).
-	Provider string            `json:"provider,omitempty"` // serving provider for unbranded passthroughs; OMITTED for branded models so the upstream is never leaked
+	Provider string            `json:"provider,omitempty"` // serving provider, surfaced for unbranded passthroughs; omitted for branded models (owned_by already carries the public owner — see hip-00NN)
 	Pricing  *modelPricingInfo `json:"pricing,omitempty"`  // USD per 1M tokens; only when ai holds real pricing
 }
 
-// publicProvider returns the provider name safe to surface in /v1/models, or ""
-// to omit it. Branded models — those with an explicit ownedBy (every zen model
-// is owned_by:"hanzo"; the OpenAI-owned embeddings are owned_by:"openai") — MUST
-// NOT leak the internal upstream/infrastructure provider (route.providerName =
-// "do-ai"/"fireworks"/"openai-direct"). Policy: upstream names and underlying
-// providers are never exposed (see the Zen brand block in modelRoutes below,
-// every identity_prompt in conf/models.yaml, and LLM.md). The public owner
-// already travels in owned_by, so provider is omitted rather than echoed as a
-// redundant duplicate or — worse — the raw upstream. Unbranded passthroughs
-// declare no owner, so providerName is already their public owned_by and is
-// safe to surface as the serving provider.
+// publicProvider returns the provider name to surface in /v1/models, or "" to
+// omit it. A branded model declares its public owner in ownedBy (every zen model
+// is owned_by:"hanzo"; the OpenAI-owned embeddings are owned_by:"openai"), and
+// the public owner already travels in owned_by — so the serving provider is
+// omitted rather than echoed as a redundant duplicate. An unbranded passthrough
+// declares no owner, so providerName is its public owned_by and is surfaced as
+// the serving provider. See hip-00NN for the catalog/ownership contract.
 func publicProvider(route modelRoute) string {
 	if route.ownedBy != "" {
 		return ""
