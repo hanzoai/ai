@@ -45,6 +45,7 @@ type ModelConfigFile struct {
 	Services       ServiceEndpoints    `yaml:"services"`
 	Cache          CacheTTLs           `yaml:"cache"`
 	Features       FeatureFlags        `yaml:"features"`
+	Retry          RetryDef            `yaml:"retry"`
 	Router         RouterConfigDef     `yaml:"router"`
 	DefaultPricing ModelPriceDef       `yaml:"default_pricing"`
 	Models         map[string]ModelDef `yaml:"models"`
@@ -77,6 +78,22 @@ type FeatureFlags struct {
 	LiveMode      bool    `yaml:"live_mode"`
 	PremiumGate   bool    `yaml:"premium_gate"`
 	StarterCredit float64 `yaml:"starter_credit"`
+}
+
+// RetryDef is how long we hold a request open for a provider that is merely
+// busy, rather than handing its 429 to the client.
+//
+// It is configuration, not a constant, for the same reason the context windows
+// are: the right number is a property of the providers we happen to be using
+// today, and it changes without our code changing. Baking it in means a rebuild
+// to tune a timeout — which is how the context table ended up lying for a year.
+//
+// attempts: total tries of ONE provider (1 disables same-provider retry).
+// base/max: exponential backoff bounds, jittered, capped by the caller's deadline.
+type RetryDef struct {
+	Attempts    int    `yaml:"attempts,omitempty"`
+	BaseBackoff string `yaml:"base_backoff,omitempty"` // e.g. "500ms"
+	MaxBackoff  string `yaml:"max_backoff,omitempty"`  // e.g. "4s"
 }
 
 // ModelPriceDef holds per-million token pricing.
@@ -136,6 +153,7 @@ type ModelConfig struct {
 	pricing  map[string]modelPrice // lowercase key → price
 	prompts  map[string]string     // lowercase key → identity prompt
 	features FeatureFlags
+	retry    RetryDef
 	router   RouterConfigDef
 	defaults modelPrice
 
@@ -300,6 +318,7 @@ func (mc *ModelConfig) applyConfig(file *ModelConfigFile) error {
 	mc.pricing = pricing
 	mc.prompts = prompts
 	mc.features = file.Features
+	mc.retry = file.Retry
 	mc.router = routerCfg
 	mc.defaults = defaults
 	mc.pricingURL = pricingURL
@@ -342,6 +361,14 @@ func (mc *ModelConfig) ResolveRoute(model string) *modelRoute {
 		return &route
 	}
 	return nil
+}
+
+// RetryConfig returns the configured retry policy (zero fields mean "use the
+// default"). Read under the lock so a live config reload is safe.
+func (mc *ModelConfig) RetryConfig() RetryDef {
+	mc.mu.RLock()
+	defer mc.mu.RUnlock()
+	return mc.retry
 }
 
 // ContextWindow returns the max context (tokens) a model is served at, or 0

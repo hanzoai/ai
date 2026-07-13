@@ -47,6 +47,22 @@ default_pricing:
   input_per_million: 1.00
   output_per_million: 4.00
 
+# How long we hold a request open for a provider that is merely busy, instead
+# of handing its 429 to the client. A 429 means "ask again shortly" — and we
+# can do that far better than a client can: it cannot pick another provider,
+# and if every client retries at once they arrive together and overload the
+# provider again. Tunable here (and from admin) without a rebuild.
+#
+# attempts:     total tries of ONE provider (1 = no same-provider retry).
+# base_backoff: first wait; doubles each attempt, jittered to avoid a herd.
+# max_backoff:  ceiling on any single wait. A provider still refusing after a
+#               few seconds is not blipping — the cure is a different provider
+#               (the fallbacks: chain), not a longer sleep.
+retry:
+  attempts: 3
+  base_backoff: 500ms
+  max_backoff: 4s
+
 models:
   # ── `best` — auto-routing "best available coding model" (quality-ranked) ─
   # A virtual policy model: it resolves to the FIRST SERVABLE model in the
