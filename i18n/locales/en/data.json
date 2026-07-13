@@ -22,7 +22,8 @@
   "auth": {
     "Please sign in first": "Please sign in first",
     "Unauthorized operation": "Unauthorized operation",
-    "this operation requires admin privilege": "this operation requires admin privilege"
+    "this operation requires admin privilege": "this operation requires admin privilege",
+    "this operation requires super admin privilege": "this operation requires super admin privilege"
   },
   "blockchain": {
     "The default blockchain provider is not found": "The default blockchain provider is not found",
@@ -96,6 +97,13 @@
     "Failed to update": "Failed to update",
     "The task does not exist": "The task does not exist"
   },
+  "memory": {
+    "Failed to store the memory": "Failed to store the memory",
+    "The memory content should not be empty": "The memory content should not be empty",
+    "The memory id should not be empty": "The memory id should not be empty",
+    "The memory was not found": "The memory was not found",
+    "The search query should not be empty": "The search query should not be empty"
+  },
   "message_answer": {
     "object.GetNearestKnowledge() error, %s": "object.GetNearestKnowledge() error, %s"
   },
@@ -127,7 +135,6 @@
     "The agent provider: %s is expected to be ": "The agent provider: %s is expected to be ",
     "The chat: %s is not found": "The chat: %s is not found",
     "The default video provider should not be empty": "The default video provider should not be empty",
-    "The embedding provider for store: %s is not found": "The embedding provider for store: %s is not found",
     "The embedding provider: %s is expected to be ": "The embedding provider: %s is expected to be ",
     "The embedding provider: %s is not found": "The embedding provider: %s is not found",
     "The embedding provider: %s's client secret should not be empty": "The embedding provider: %s's client secret should not be empty",
@@ -135,7 +142,6 @@
     "The file: %s is not found": "The file: %s is not found",
     "The image provider for store: %s should not be empty": "The image provider for store: %s should not be empty",
     "The message: %s is not found": "The message: %s is not found",
-    "The model provider for store: %s is not found": "The model provider for store: %s is not found",
     "The model provider: %s is expected to be ": "The model provider: %s is expected to be ",
     "The model provider: %s is not found": "The model provider: %s is not found",
     "The model provider: %s's client secret should not be empty": "The model provider: %s's client secret should not be empty",
@@ -220,7 +226,9 @@
   },
   "openai": {
     "Invalid API key format. Expected 'Bearer API_KEY'": "Invalid API key format. Expected 'Bearer API_KEY'",
-    "No user message found in the request": "No user message found in the request"
+    "No user message found in the request": "No user message found in the request",
+    "apiKey is required": "apiKey is required",
+    "provider must be one of: openai, anthropic, google": "provider must be one of: openai, anthropic, google"
   },
   "pkgdocker": {
     "Container %s not found": "Container %s not found"
@@ -240,6 +248,9 @@
     "Tencent Cloud API error: %s": "Tencent Cloud API error: %s",
     "Unsupported state: %s": "Unsupported state: %s",
     "VMware API error, code = %d, message = %s": "VMware API error, code = %d, message = %s"
+  },
+  "provider": {
+    "the provider must be enabled before it can be made primary": "the provider must be enabled before it can be made primary"
   },
   "resource": {
     "Invalid file data format": "Invalid file data format",
