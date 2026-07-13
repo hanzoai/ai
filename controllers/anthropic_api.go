@@ -433,6 +433,15 @@ func (c *ApiController) AnthropicMessages() {
 	}
 	defer hold.settle(0)
 
+	// ── Zen family ─────────────────────────────────────
+	// A zen model is served by the zen service, which owns identity, reasoning,
+	// the 1M ladder, vision, and the upstream. ai forwards verbatim and meters the
+	// result; it holds no zen routing of its own (hip-00NN).
+	if provider.Type == "Zen" {
+		c.pipeToZen("messages", "anthropic", request.Model, c.Ctx.Input.RequestBody, request.Stream, orgId, authUser, isPremium, hold, requestStartTime)
+		return
+	}
+
 	// ── Tool-calling proxy ────────────────────────────────────────────────
 	// When the request carries tools (Claude Code, agents, etc.) the QueryText
 	// pipeline cannot handle structured tool_use blocks. Proxy the raw Anthropic
