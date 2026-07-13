@@ -20,7 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/beego/beego/context"
+	"github.com/hanzoai/beego/context"
 	"github.com/hanzoai/ai/util"
 	"github.com/sashabaranov/go-openai"
 )
