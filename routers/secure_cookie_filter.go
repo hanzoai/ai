@@ -18,7 +18,7 @@ package routers
 import (
 	"strings"
 
-	"github.com/beego/beego/context"
+	"github.com/hanzoai/beego/context"
 )
 
 // SecureCookieFilter ensures session cookies have the Secure flag set

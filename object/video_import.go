@@ -22,7 +22,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/beego/beego/logs"
+	"github.com/hanzoai/beego/logs"
 )
 
 func getImportedVideos(path string) ([]*Video, error) {

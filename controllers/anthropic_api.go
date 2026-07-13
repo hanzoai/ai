@@ -23,7 +23,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/beego/beego/context"
+	"github.com/hanzoai/beego/context"
 	"github.com/hanzoai/ai/model"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"

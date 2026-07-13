@@ -22,7 +22,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/beego/beego/context"
+	"github.com/hanzoai/beego/context"
 )
 
 type RefinedWriter struct {

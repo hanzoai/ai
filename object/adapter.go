@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"runtime"
 
-	"github.com/beego/beego"
+	"github.com/hanzoai/beego"
 	_ "github.com/go-sql-driver/mysql" // mysql
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/dbx"
