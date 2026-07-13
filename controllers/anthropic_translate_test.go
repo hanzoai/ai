@@ -351,6 +351,11 @@ func TestAnthropicThinkingToReasoningEffort(t *testing.T) {
 		{"openai think-hard 10k → medium", `{"type":"enabled","budget_tokens":10000}`, "openai", "medium"},
 		{"openai ultrathink 16384 → high", `{"type":"enabled","budget_tokens":16384}`, "openai", "high"},
 		{"openai ultrathink 31999 → high", `{"type":"enabled","budget_tokens":31999}`, "openai", "high"},
+
+		// qwen/kimi/unknown ("" vocab): never emit reasoning_effort — those
+		// upstreams use a native thinking param or none.
+		{"none deep budget → empty", `{"type":"enabled","budget_tokens":31999}`, "", ""},
+		{"none light budget → empty", `{"type":"enabled","budget_tokens":4096}`, "", ""},
 	}
 	for _, c := range cases {
 		var raw json.RawMessage
@@ -363,21 +368,57 @@ func TestAnthropicThinkingToReasoningEffort(t *testing.T) {
 	}
 }
 
-// TestThinkingVocabularyForProvider pins the ONE place provider.Type → vocabulary
-// is decided. DO-AI (DigitalOcean) is the universal upstream for the zen family, so
-// everything except a true OpenAI provider speaks the glm vocabulary.
-func TestThinkingVocabularyForProvider(t *testing.T) {
-	if v := thinkingVocabularyForProvider("OpenAI"); v != "openai" {
-		t.Fatalf("OpenAI → %q want openai", v)
+// TestThinkingVocabularyForUpstream pins the ONE place upstream model → reasoning
+// vocabulary is decided. Only families that accept an OpenAI-style reasoning_effort
+// string are named — openai (low|medium|high) and glm (max|high, shared by GLM-5.*
+// and DeepSeek V4). qwen (native enable_thinking), kimi (native thinking.type), and
+// models with no reasoning control return "" so no reasoning_effort is forwarded.
+func TestThinkingVocabularyForUpstream(t *testing.T) {
+	cases := []struct{ upstream, want string }{
+		{"glm-5.2", "glm"},
+		{"glm-5", "glm"},
+		{"deepseek-v4-pro", "glm"},
+		{"deepseek-4-flash", "glm"},
+		{"gpt-5.2", "openai"},
+		{"openai-gpt-5", "openai"},
+		{"o3", "openai"},
+		{"qwen3.5-397b-a17b", ""},
+		{"alibaba-qwen3-32b", ""},
+		{"kimi-k2.6", ""},
+		{"minimax-m2.5", ""},
+		{"nemotron-3-nano-omni", ""},
+		{"llama3.3-70b-instruct", ""},
+		{"", ""},
 	}
-	if v := thinkingVocabularyForProvider("DigitalOcean"); v != "glm" {
-		t.Fatalf("DigitalOcean → %q want glm", v)
+	for _, c := range cases {
+		if got := thinkingVocabularyForUpstream(c.upstream); got != c.want {
+			t.Errorf("%s → %q want %q", c.upstream, got, c.want)
+		}
 	}
-	if v := thinkingVocabularyForProvider("Moonshot"); v != "glm" {
-		t.Fatalf("Moonshot → %q want glm (default)", v)
+}
+
+// TestAssistantThinkingRoundTrips proves an assistant thinking block maps to
+// reasoning_content so a tool-call loop echoes the prior chain-of-thought back
+// (DeepSeek V4 400s without it; Kimi loses continuity).
+func TestAssistantThinkingRoundTrips(t *testing.T) {
+	blocks := []anthropicBlock{
+		{Type: "thinking", Thinking: "Need the weather, call the tool."},
+		{Type: "text", Text: "Let me check."},
+		{Type: "tool_use", ID: "call_1", Name: "get_weather", Input: json.RawMessage(`{"city":"SF"}`)},
 	}
-	if v := thinkingVocabularyForProvider(""); v != "glm" {
-		t.Fatalf("empty → %q want glm (default)", v)
+	msg := assistantBlocksToOpenAI(blocks)
+	if msg.ReasoningContent != "Need the weather, call the tool." {
+		t.Fatalf("reasoning_content = %q, want the thinking text", msg.ReasoningContent)
+	}
+	if msg.Content != "Let me check." {
+		t.Fatalf("content = %q", msg.Content)
+	}
+	if len(msg.ToolCalls) != 1 || msg.ToolCalls[0].Function.Name != "get_weather" {
+		t.Fatalf("tool_calls not preserved: %+v", msg.ToolCalls)
+	}
+	// No thinking → reasoning_content omitted (empty).
+	if m := assistantBlocksToOpenAI([]anthropicBlock{{Type: "text", Text: "hi"}}); m.ReasoningContent != "" {
+		t.Fatalf("reasoning_content = %q, want empty when no thinking", m.ReasoningContent)
 	}
 }
 
