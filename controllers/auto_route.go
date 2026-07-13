@@ -20,7 +20,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/beego/beego/logs"
+	"github.com/hanzoai/beego/logs"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/router"
 	"github.com/sashabaranov/go-openai"

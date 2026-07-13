@@ -21,9 +21,9 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/beego/beego"
-	"github.com/beego/beego/logs"
-	"github.com/beego/beego/session"
+	"github.com/hanzoai/beego"
+	"github.com/hanzoai/beego/logs"
+	"github.com/hanzoai/beego/session"
 
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/controllers"

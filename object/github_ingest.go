@@ -34,7 +34,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/beego/beego/logs"
+	"github.com/hanzoai/beego/logs"
 )
 
 // githubAPIBase is the GitHub REST API root (overridable in tests).
