@@ -22,7 +22,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/beego/beego"
+	"github.com/hanzoai/beego"
 )
 
 type WebConfig struct {

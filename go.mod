@@ -22,8 +22,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ec2 v1.203.0
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.99.0
 	github.com/baidubce/bce-qianfan-sdk/go/qianfan v0.0.14
-	github.com/beego/beego v1.12.12
-	github.com/beego/beego/v2 v2.3.8
 	github.com/carmel/gooxml v0.0.0-20220216072414-40ff56130850
 	github.com/cohere-ai/cohere-go/v2 v2.5.2
 	github.com/digitalocean/go-libvirt v0.0.0-20250207191401-950a7b2d7eaf
@@ -42,14 +40,14 @@ require (
 	github.com/hanzoai/iam v1.19.8-0.20260622075908-c2fd4872545b
 	github.com/hanzoai/pdf v1.2.0
 	github.com/hanzoai/search-go v0.36.0
-	github.com/hanzoai/sqlite v0.1.5
+	github.com/hanzoai/sqlite v0.3.0
 	github.com/hanzoai/tasks v1.43.0
 	github.com/henomis/lingoose v0.1.0
 	github.com/hupe1980/go-huggingface v0.0.15
 	github.com/leverly/ChatGLM v1.2.0
 	github.com/lib/pq v1.12.3
 	github.com/luthermonson/go-proxmox v0.2.1
-	github.com/luxfi/crypto v1.19.20
+	github.com/luxfi/crypto v1.19.26
 	github.com/luxfi/geth v1.17.5
 	github.com/luxfi/log v1.4.3
 	github.com/luxfi/metric v1.5.8
@@ -117,6 +115,7 @@ require (
 	github.com/dlclark/regexp2/v2 v2.2.1 // indirect
 	github.com/dop251/goja v0.0.0-20260607120635-348e6bea910d // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
+	github.com/elazarl/go-bindata-assetfs v1.0.1 // indirect
 	github.com/ethereum/c-kzg-4844/v2 v2.1.7 // indirect
 	github.com/evanw/esbuild v0.28.1 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.1 // indirect
@@ -144,6 +143,7 @@ require (
 	github.com/gorilla/rpc v1.2.1 // indirect
 	github.com/grandcat/zeroconf v1.0.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.28.0 // indirect
+	github.com/hanzoai/csqlite v0.1.0 // indirect
 	github.com/hhrutter/lzw v1.0.0 // indirect
 	github.com/hhrutter/pkcs7 v0.2.0 // indirect
 	github.com/hhrutter/tiff v1.0.2 // indirect
@@ -162,7 +162,6 @@ require (
 	github.com/luxfi/pq v1.1.0 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-runewidth v0.0.21 // indirect
-	github.com/mattn/go-sqlite3 v2.0.3+incompatible // indirect
 	github.com/miekg/dns v1.1.72 // indirect
 	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db // indirect
 	github.com/monochromegane/go-gitignore v0.0.0-20200626010858-205db1a8cc00 // indirect
@@ -260,6 +259,7 @@ require (
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/s2a-go v0.1.9 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.14 // indirect
+	github.com/hanzoai/beego v1.12.13
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
 	github.com/hashicorp/hcl v1.0.1-vault-5 // indirect
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 // indirect
@@ -351,5 +351,3 @@ require (
 )
 
 replace github.com/sashabaranov/go-openai => github.com/hanzoai/go-openai v1.40.0
-
-replace github.com/mattn/go-sqlite3 v2.0.3+incompatible => github.com/mattn/go-sqlite3 v1.14.47

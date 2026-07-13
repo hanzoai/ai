@@ -24,7 +24,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/beego/beego"
+	"github.com/hanzoai/beego"
 	zaplib "github.com/luxfi/zap"
 	"github.com/luxfi/zap/forward"
 )
