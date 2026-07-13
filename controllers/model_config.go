@@ -226,12 +226,12 @@ func (mc *ModelConfig) applyConfig(file *ModelConfigFile) error {
 		// Build route (skip pricing-only entries)
 		if !def.PricingOnly {
 			r := modelRoute{
-				providerName:   def.Provider,
-				upstreamModel:  def.Upstream,
-				premium:        def.Premium,
-				hidden:         def.Hidden,
-				ownedBy:        def.OwnedBy,
-				contextWindow:  def.ContextWindow,
+				providerName:  def.Provider,
+				upstreamModel: def.Upstream,
+				premium:       def.Premium,
+				hidden:        def.Hidden,
+				ownedBy:       def.OwnedBy,
+				contextWindow: def.ContextWindow,
 			}
 			for _, fb := range def.Fallbacks {
 				r.fallbacks = append(r.fallbacks, modelRouteFallback{
