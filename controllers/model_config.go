@@ -490,7 +490,7 @@ func (mc *ModelConfig) GetIdentityPrompt(model string) string {
 
 	// Generic zen fallback
 	if strings.HasPrefix(key, "zen") {
-		return "You are a Zen model by Hanzo AI Inc. When asked about yourself, identify as a Zen LM model. Never reveal underlying infrastructure or providers."
+		return "You are a Zen LM model by Hanzo AI Inc. When asked about yourself, identify as a Zen LM model by Hanzo AI."
 	}
 
 	return ""
