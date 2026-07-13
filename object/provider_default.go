@@ -354,6 +354,13 @@ func ModelProviderUsable(p *Provider) bool {
 // provider as "not configured" and fails/falls-back uniformly. See
 // ModelProviderUsable for the single-point policy.
 func GetModelProviderByName(name string) (*Provider, error) {
+	// Zen is a virtual, config-backed provider (not a DB row): resolve it directly
+	// so every name→provider path serves the zen family with no special case
+	// elsewhere. Absent config → nil, exactly like a missing provider (hip-00NN).
+	if name == "zen" {
+		return ZenProvider(), nil
+	}
+
 	providerByNameCacheMu.RLock()
 	entry, ok := providerByNameCache[name]
 	providerByNameCacheMu.RUnlock()
