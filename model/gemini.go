@@ -222,7 +222,7 @@ func (p *GeminiModelProvider) QueryText(question string, writer io.Writer, histo
 		if err != nil {
 			return nil, fmt.Errorf("%s", i18n.Translate(lang, "model:cannot calculate tokens"))
 		}
-		if getContextLength(p.subType) > modelResult.TotalTokenCount {
+		if GetContextLength(p.subType) > modelResult.TotalTokenCount {
 			return modelResult, nil
 		} else {
 			return nil, fmt.Errorf("%s", i18n.Translate(lang, "model:exceed max tokens"))

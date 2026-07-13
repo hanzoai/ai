@@ -17,64 +17,51 @@ package model
 
 import "testing"
 
-func TestGetContextLength(t *testing.T) {
-	testModel := map[string]int{
-		// gpt
-		"gpt-3.5-turbo":     16385,
-		"gpt-4":             8192,
-		"gpt-4o-2024-08-06": 128000,
-		"gpt-4o":            128000,
-		"gpt-4o-mini":       128000,
-		// deepseek
-		"deepseek-r1-distill-llama-70b": 131072,
-		"deepseek-r1-distill-qwen-7b":   8192,
-		"deepseek-r1:70b":               131072,
-		"deepseek-r1:671b":              65536,
-		"deepseek-r1":                   65536,
-		"Deepseek-R1":                   65536,
-		"deepseek-chat":                 65536,
-		"Deepseek-R1-Distill-Qwen-32B":  32768,
-		// qwen
-		"qwen-long":       1000000,
-		"qwen3-235b-a22b": 131072,
-		"qwen3-32b":       131072,
-		// llama
-		"meta-llama/Meta-Llama-3.1-70B-Instruct": 131072,
-		// hunyuan
-		"hunyuan-lite":  262144,
-		"hunyuan-turbo": 32768,
-		// step
-		"step-1-flash": 8192,
-		"step-1-32k":   32768,
-		"step-2-16k":   16384,
-		// doubao
-		"Doubao-pro-32k": 32768,
-		"Doubao-lite-4k": 4096,
-		// ── GLM: the 1M window landed at GLM-4.5 and holds through GLM-5.x.
-		// glm-5.2 is the model Hanzo serves for `best`; it MUST be 1M, not the
-		// 16384 fallback (which dead-ends /compact and caps long CC sessions).
-		"glm-5.2":  1048576,
-		"glm-5.1":  1048576,
-		"GLM-5.2":  1048576,
-		"glm-4.5":  1048576,
-		"glm-4-plus": 1048576,
-		"glm-4":      131072,
-		"glm-3-turbo": 131072,
-		"glm-4V":     8192,
-		// ── Kimi K2.x: 256K context.
-		"kimi-k2.6": 262144,
-		"kimi-k2.7": 262144,
-		// ── Modern DO-AI models the legacy table predates must NOT collapse to
-		// 16384. The safe floor is 131072 (every served model is ≥128K).
-		"deepseek-v4-pro":   131072,
-		"deepseek-v4-flash": 131072,
-		"qwen3.5-397b-a17b": 131072,
-		"some-unknown-future-model": 131072,
-	}
-	for modelName, gtcontextLength := range testModel {
-		contextLength := getContextLength(modelName)
-		if contextLength != gtcontextLength {
-			t.Errorf("got wrong context length for %s. expect %d , but %d returned", modelName, gtcontextLength, contextLength)
+// The contract is two lines long: whatever config declares, else the floor.
+// The old table dispatched on substrings of the model name and asserted a
+// hand-maintained number per model; both the table and those assertions were
+// wrong for every model shipped after they were written (deepseek-v4-pro fell
+// through every branch to 16384 and 402'd real requests against a model DO
+// serves with an 87K window). Nothing here may re-introduce a name heuristic.
+
+func TestGetContextLength_ConfigIsSourceOfTruth(t *testing.T) {
+	t.Cleanup(func() { SetContextWindowResolver(nil) })
+
+	SetContextWindowResolver(func(model string) int {
+		switch model {
+		case "glm-5.2":
+			return 262144
+		case "deepseek-v4-pro":
+			return 87040
 		}
+		return 0 // undeclared
+	})
+
+	if got := GetContextLength("glm-5.2"); got != 262144 {
+		t.Errorf("glm-5.2: want the declared 262144, got %d", got)
+	}
+	if got := GetContextLength("deepseek-v4-pro"); got != 87040 {
+		t.Errorf("deepseek-v4-pro: want the declared 87040, got %d", got)
+	}
+	// A model the config does not declare must not be guessed at from its
+	// name — it gets the floor.
+	if got := GetContextLength("some-model-shipped-tomorrow"); got != DefaultContextLength {
+		t.Errorf("undeclared model: want the floor %d, got %d", DefaultContextLength, got)
+	}
+}
+
+func TestGetContextLength_FloorWithoutResolver(t *testing.T) {
+	t.Cleanup(func() { SetContextWindowResolver(nil) })
+	SetContextWindowResolver(nil)
+
+	// No resolver installed (standalone / tests): every model gets the floor,
+	// never the old 16384 that silently truncated long prompts.
+	for _, m := range []string{"glm-5.2", "deepseek-v4-pro", "gpt-4o", ""} {
+		if got := GetContextLength(m); got != DefaultContextLength {
+			t.Errorf("%q: want floor %d, got %d", m, DefaultContextLength, got)
+		}
+	}
+	if DefaultContextLength < 131072 {
+		t.Errorf("the floor must stay >=128K: every served model is at least that, and a lower floor 402s real prompts (got %d)", DefaultContextLength)
 	}
 }
