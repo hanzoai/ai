@@ -12,10 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Direct ClickHouse datastore client — the OLAP ledger transport.
+// Direct Datastore datastore client — the OLAP ledger transport.
 //
 // This is the ONE way the cloud runtime reaches the analytics datastore
-// (ClickHouse, deployed as `datastore` / `insights-datastore` in-cluster). It
+// (Datastore, deployed as `datastore` / `insights-datastore` in-cluster). It
 // backs the hanzo.cloud_usage usage ledger (console2 Overview + admin god-view)
 // and the hanzo.observations trace ledger.
 //
@@ -23,11 +23,11 @@
 // (see object/zap.go), which required (a) object.InitZap() — a node the UNIFIED
 // cloud binary deliberately never starts (its ZAP listener lives only in
 // cmd/aid), and (b) a ZAP server on the datastore's :9999 — which does not
-// exist (the datastore image is ClickHouse behind nginx on :8123/:9000, no ZAP
+// exist (the datastore image is Datastore behind nginx on :8123/:9000, no ZAP
 // bridge). So the peer never connected, DatastoreEnabled() was always false,
 // and BOTH the read (get-cloud-usages) and write (zapWriteUsage/zapWriteTrace)
-// paths were dead. The datastore speaks ClickHouse's own protocol; we speak it
-// directly — the same clickhouse-go/v2 recipe cloud's audit OLAP mirror and the
+// paths were dead. The datastore speaks Datastore's own protocol; we speak it
+// directly — the same datastore-go/v2 recipe cloud's audit OLAP mirror and the
 // insights/o11y stack already uses. No sidecar, no bridge, one transport.
 //
 // InitDatastore is called from the SHARED Bootstrap (bootstrap.go), so it runs
@@ -61,7 +61,7 @@ var (
 
 // ── Initialization ──────────────────────────────────────────────────────
 
-// InitDatastore opens the ClickHouse connection that backs the usage +
+// InitDatastore opens the Datastore connection that backs the usage +
 // observability ledgers. Opt-in via DATASTORE_ADDR (host:port of the native
 // port, default 9000). Non-fatal and asynchronous: a transient datastore
 // outage at boot must never take down the cloud process, so it retries in the
@@ -78,14 +78,14 @@ var (
 func InitDatastore() {
 	addr := strings.TrimSpace(os.Getenv("DATASTORE_ADDR"))
 	if addr == "" {
-		logs.Info("datastore: disabled (set DATASTORE_ADDR to enable the ClickHouse usage/observability ledger)")
+		logs.Info("datastore: disabled (set DATASTORE_ADDR to enable the Datastore usage/observability ledger)")
 		return
 	}
 	go connectDatastore(addr)
 }
 
-// connectDatastore dials ClickHouse with bounded retry/backoff and latches the
-// connection on the first successful Ping. clickhouse-go's own pool reconnects
+// connectDatastore dials Datastore with bounded retry/backoff and latches the
+// connection on the first successful Ping. datastore-go's own pool reconnects
 // transparently after that, so this only needs to win once.
 func connectDatastore(addr string) {
 	db := datastoreEnv("DATASTORE_DB", "hanzo")
@@ -120,7 +120,7 @@ func connectDatastore(addr string) {
 				datastoreConn = conn
 				datastoreMu.Unlock()
 				datastoreReady.Store(true)
-				logs.Info("datastore: connected to ClickHouse at %s (db=%s)", addr, db)
+				logs.Info("datastore: connected to Datastore at %s (db=%s)", addr, db)
 				return
 			}
 			_ = conn.Close()
@@ -131,15 +131,15 @@ func connectDatastore(addr string) {
 	logs.Error("datastore: failed to connect to %s after 30 attempts", addr)
 }
 
-// DatastoreEnabled reports whether the ClickHouse ledger connection is live. The
+// DatastoreEnabled reports whether the Datastore ledger connection is live. The
 // read path gates on it to return an honest "unavailable" (not fake zeros) and
 // the write path gates on it to skip the insert when the warehouse is absent.
 func DatastoreEnabled() bool { return datastoreReady.Load() }
 
 // ── Exec / Query ────────────────────────────────────────────────────────
 
-// DatastoreExec runs a DDL or INSERT against ClickHouse. `?` placeholders are
-// bound positionally from args (clickhouse-go renders them into the statement).
+// DatastoreExec runs a DDL or INSERT against Datastore. `?` placeholders are
+// bound positionally from args (datastore-go renders them into the statement).
 func DatastoreExec(ctx context.Context, stmt string, args ...interface{}) error {
 	datastoreMu.RLock()
 	conn := datastoreConn
@@ -151,7 +151,7 @@ func DatastoreExec(ctx context.Context, stmt string, args ...interface{}) error 
 }
 
 // DatastoreQuery runs a SELECT and returns rows as column→value maps, decoding
-// each column into its native ClickHouse scan type (uint64, string, time.Time,
+// each column into its native Datastore scan type (uint64, string, time.Time,
 // float64, …). The cloud_usage read layer's cu* coercers accept those native
 // types, so callers never touch reflect. Symmetric to DatastoreExec.
 func DatastoreQuery(ctx context.Context, query string, args ...interface{}) ([]map[string]interface{}, error) {
