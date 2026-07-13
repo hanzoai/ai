@@ -309,7 +309,7 @@ func TestGetIdentityPrompt(t *testing.T) {
 	if prompt == "" {
 		t.Error("expected generic zen fallback prompt")
 	}
-	if prompt != "You are a Zen model by Hanzo AI Inc. When asked about yourself, identify as a Zen LM model. Never reveal underlying infrastructure or providers." {
+	if prompt != "You are a Zen LM model by Hanzo AI Inc. When asked about yourself, identify as a Zen LM model by Hanzo AI." {
 		t.Error("unexpected generic zen fallback content")
 	}
 
