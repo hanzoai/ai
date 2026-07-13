@@ -158,14 +158,19 @@ func anthropicToOpenAIMessages(req *AnthropicRequest) []openai.ChatCompletionMes
 	return out
 }
 
-// assistantBlocksToOpenAI folds an assistant turn's text + tool_use blocks into
-// one OpenAI assistant message (thinking blocks are dropped — OpenAI has no
-// equivalent, and echoing them to the upstream is meaningless).
+// assistantBlocksToOpenAI folds an assistant turn's thinking + text + tool_use
+// blocks into one OpenAI assistant message. The thinking block maps to
+// reasoning_content so the chain-of-thought round-trips: inside a tool-call loop
+// DeepSeek V4 rejects an assistant turn that omits the prior reasoning_content
+// (HTTP 400), and Kimi loses reasoning continuity. The upstream selects which
+// parts it needs. See hip-00NN.
 func assistantBlocksToOpenAI(blocks []anthropicBlock) openai.ChatCompletionMessage {
 	msg := openai.ChatCompletionMessage{Role: "assistant"}
-	var text strings.Builder
+	var text, reasoning strings.Builder
 	for _, b := range blocks {
 		switch b.Type {
+		case "thinking":
+			reasoning.WriteString(b.Thinking)
 		case "text":
 			text.WriteString(b.Text)
 		case "tool_use":
@@ -184,6 +189,7 @@ func assistantBlocksToOpenAI(blocks []anthropicBlock) openai.ChatCompletionMessa
 		}
 	}
 	msg.Content = text.String()
+	msg.ReasoningContent = reasoning.String() // omitempty: absent when no thinking
 	return msg
 }
 
@@ -339,24 +345,39 @@ func anthropicThinkingToReasoningEffort(raw json.RawMessage, vocab string) strin
 			return "medium"
 		}
 		return "high"
-	default:
-		// glm / deepseek / DO-AI family: two tiers only. Deep→max, else→high.
+	case "glm":
+		// GLM-5.* and DeepSeek V4: two tiers only. Deep→max, else→high.
 		if deep {
 			return "max"
 		}
 		return "high"
+	default:
+		// Upstreams that take no reasoning_effort string — qwen (native
+		// enable_thinking), kimi (native thinking.type), and models with no
+		// reasoning control. Forward none; leave the upstream at its default.
+		return ""
 	}
 }
 
-// thinkingVocabularyForProvider returns the effort-string vocabulary the
-// upstream accepts, keyed by provider.Type (the ONE place this mapping lives).
-// Unknown/OpenAI-compatible providers default to the glm/DO-AI vocabulary
-// since DO-AI is the universal upstream for the zen model family.
-func thinkingVocabularyForProvider(providerType string) string {
-	if providerType == "OpenAI" {
+// thinkingVocabularyForUpstream returns the reasoning-effort vocabulary the
+// given upstream model accepts, keyed by the upstream model id (the ONE place
+// this mapping lives). Only families that take an OpenAI-style reasoning_effort
+// string are named — openai (low|medium|high) and glm (max|high, which
+// GLM-5.* and DeepSeek V4 share). qwen (native enable_thinking), kimi (native
+// thinking.type), and models with no reasoning control return "" so the
+// adapter forwards no reasoning_effort. Mirrors zen's reasoningVocab; see
+// hip-00NN.
+func thinkingVocabularyForUpstream(upstream string) string {
+	m := strings.ToLower(upstream)
+	switch {
+	case strings.HasPrefix(m, "gpt-") || strings.HasPrefix(m, "openai-gpt") ||
+		strings.HasPrefix(m, "o1") || strings.HasPrefix(m, "o3") || strings.HasPrefix(m, "o4"):
 		return "openai"
+	case strings.HasPrefix(m, "glm-5") || strings.HasPrefix(m, "deepseek"):
+		return "glm"
+	default:
+		return ""
 	}
-	return "glm"
 }
 
 // mapFinishReason maps an OpenAI finish_reason to an Anthropic stop_reason.
