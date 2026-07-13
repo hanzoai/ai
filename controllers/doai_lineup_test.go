@@ -145,19 +145,32 @@ func TestBestVirtualModelCascade(t *testing.T) {
 		t.Errorf("best primary = %s/%s, want do-ai/glm-5.2", r.providerName, r.upstreamModel)
 	}
 	// The fallback chain, IN ORDER, is the quality ranking.
-	wantChain := []modelRouteFallback{
-		{providerName: "do-ai", upstreamModel: "deepseek-v4-pro"},
-		{providerName: "do-ai", upstreamModel: "kimi-k2.6"},
-		{providerName: "do-ai", upstreamModel: "deepseek-4-flash"},
-		{providerName: "do-ai", upstreamModel: "qwen3.5-397b-a17b"},
+	wantChain := []struct{ provider, upstream string }{
+		{"do-ai", "deepseek-v4-pro"},
+		{"do-ai", "kimi-k2.6"},
+		{"do-ai", "deepseek-4-flash"},
+		{"do-ai", "qwen3.5-397b-a17b"},
 	}
 	if len(r.fallbacks) != len(wantChain) {
 		t.Fatalf("best has %d fallbacks, want %d (%v)", len(r.fallbacks), len(wantChain), r.fallbacks)
 	}
 	for i, want := range wantChain {
-		if r.fallbacks[i] != want {
-			t.Errorf("best fallback[%d] = %+v, want %+v", i, r.fallbacks[i], want)
+		if r.fallbacks[i].providerName != want.provider || r.fallbacks[i].upstreamModel != want.upstream {
+			t.Errorf("best fallback[%d] = %s/%s, want %s/%s",
+				i, r.fallbacks[i].providerName, r.fallbacks[i].upstreamModel, want.provider, want.upstream)
 		}
+	}
+
+	// `best` is the model `hanzo code claude` runs on by default, and glm-5.2 —
+	// its primary — is served by DO at 262,144. Without a fallback that declares
+	// a bigger window, a long session hits that ceiling and the request is
+	// refused. deepseek-v4-pro is the one model DO serves at a true 1M
+	// (measured), so it must carry its window here: that declaration is what
+	// lets routeForPrompt send an oversized prompt to it instead of failing.
+	if got := r.fallbacks[0].contextWindow; got != 1000000 {
+		t.Errorf("best's deepseek-v4-pro fallback declares a %d window, want 1000000 — "+
+			"without it, `hanzo code claude` is capped at glm-5.2's 262144 and long "+
+			"sessions dead-end instead of routing to the model that can hold them", got)
 	}
 	// owned_by hanzo: it is a Hanzo policy model, so the upstream is never leaked
 	// in the /v1/models listing (publicProvider omits it) and model-sync leaves it

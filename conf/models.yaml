@@ -84,7 +84,7 @@ models:
     upstream: glm-5.2
     owned_by: hanzo
     fallbacks:
-    - {provider: do-ai, upstream: deepseek-v4-pro}
+    - {provider: do-ai, upstream: deepseek-v4-pro, context_window: 1000000}
     - {provider: do-ai, upstream: kimi-k2.6}
     - {provider: do-ai, upstream: deepseek-4-flash}
     - {provider: do-ai, upstream: qwen3.5-397b-a17b}
@@ -1155,7 +1155,6 @@ models:
   # Routed directly to DO-AI; identity injection handled by zenIdentityPrompt.
 
   zen5-flash:
-    context_window: 65536
     provider: do-ai
     upstream: deepseek-4-flash
     premium: true
