@@ -1,0 +1,422 @@
+[
+ {
+  "id": "alibaba-qwen3-32b",
+  "kind": "text",
+  "status": "OK",
+  "msg": "ok"
+ },
+ {
+  "id": "all-mini-lm-l6-v2",
+  "kind": "embed",
+  "status": "OK",
+  "msg": "ok"
+ },
+ {
+  "id": "anthropic-claude-4.1-opus",
+  "kind": "text",
+  "status": "403",
+  "msg": "this model is not available for your account"
+ },
+ {
+  "id": "anthropic-claude-4.5-sonnet",
+  "kind": "text",
+  "status": "403",
+  "msg": "this model is not available for your account"
+ },
+ {
+  "id": "anthropic-claude-4.6-sonnet",
+  "kind": "text",
+  "status": "403",
+  "msg": "this model is not available for your account"
+ },
+ {
+  "id": "anthropic-claude-5-sonnet",
+  "kind": "text",
+  "status": "403",
+  "msg": "this model is not available for your account"
+ },
+ {
+  "id": "anthropic-claude-fable-5",
+  "kind": "text",
+  "status": "403",
+  "msg": "this model is not available for your account"
+ },
+ {
+  "id": "anthropic-claude-haiku-4.5",
+  "kind": "text",
+  "status": "403",
+  "msg": "this model is not available for your account"
+ },
+ {
+  "id": "anthropic-claude-opus-4.5",
+  "kind": "text",
+  "status": "403",
+  "msg": "this model is not available for your account"
+ },
+ {
+  "id": "anthropic-claude-opus-4.6",
+  "kind": "text",
+  "status": "403",
+  "msg": "this model is not available for your account"
+ },
+ {
+  "id": "anthropic-claude-opus-4.7",
+  "kind": "text",
+  "status": "403",
+  "msg": "this model is not available for your account"
+ },
+ {
+  "id": "anthropic-claude-opus-4.8",
+  "kind": "text",
+  "status": "403",
+  "msg": "this model is not available for your account"
+ },
+ {
+  "id": "arcee-trinity-large-thinking",
+  "kind": "text",
+  "status": "403",
+  "msg": "this model is not available for your account"
+ },
+ {
+  "id": "bge-m3",
+  "kind": "embed",
+  "status": "OK",
+  "msg": "ok"
+ },
+ {
+  "id": "bge-reranker-v2-m3",
+  "kind": "rerank",
+  "status": "OK",
+  "msg": "ok"
+ },
+ {
+  "id": "deepseek-3.2",
+  "kind": "text",
+  "status": "OK",
+  "msg": "ok"
+ },
+ {
+  "id": "deepseek-4-flash",
+  "kind": "text",
+  "status": "OK",
+  "msg": "ok"
+ },
+ {
+  "id": "deepseek-r1-distill-llama-70b",
+  "kind": "text",
+  "status": "OK",
+  "msg": "ok"
+ },
+ {
+  "id": "deepseek-v4-pro",
+  "kind": "text",
+  "status": "OK",
+  "msg": "ok"
+ },
+ {
+  "id": "e5-large-v2",
+  "kind": "embed",
+  "status": "OK",
+  "msg": "ok"
+ },
+ {
+  "id": "gemma-4-31B-it",
+  "kind": "text",
+  "status": "OK",
+  "msg": "ok"
+ },
+ {
+  "id": "glm-5",
+  "kind": "text",
+  "status": "OK",
+  "msg": "ok"
+ },
+ {
+  "id": "glm-5.1",
+  "kind": "text",
+  "status": "OK",
+  "msg": "ok"
+ },
+ {
+  "id": "glm-5.2",
+  "kind": "text",
+  "status": "OK",
+  "msg": "ok"
+ },
+ {
+  "id": "gte-large-en-v1.5",
+  "kind": "embed",
+  "status": "OK",
+  "msg": "ok"
+ },
+ {
+  "id": "kimi-k2.5",
+  "kind": "text",
+  "status": "OK",
+  "msg": "ok"
+ },
+ {
+  "id": "kimi-k2.6",
+  "kind": "text",
+  "status": "OK",
+  "msg": "ok"
+ },
+ {
+  "id": "llama-4-maverick",
+  "kind": "text",
+  "status": "OK",
+  "msg": "ok"
+ },
+ {
+  "id": "llama3.3-70b-instruct",
+  "kind": "text",
+  "status": "OK",
+  "msg": "ok"
+ },
+ {
+  "id": "mimo-v2.5",
+  "kind": "text",
+  "status": "OK",
+  "msg": "ok"
+ },
+ {
+  "id": "mimo-v2.5-pro",
+  "kind": "text",
+  "status": "OK",
+  "msg": "ok"
+ },
+ {
+  "id": "minimax-m2.5",
+  "kind": "text",
+  "status": "OK",
+  "msg": "ok"
+ },
+ {
+  "id": "mistral-3-14B",
+  "kind": "text",
+  "status": "OK",
+  "msg": "ok"
+ },
+ {
+  "id": "multi-qa-mpnet-base-dot-v1",
+  "kind": "embed",
+  "status": "OK",
+  "msg": "ok"
+ },
+ {
+  "id": "nemotron-3-nano-omni",
+  "kind": "text",
+  "status": "OK",
+  "msg": "ok"
+ },
+ {
+  "id": "nemotron-3-ultra-550b",
+  "kind": "text",
+  "status": "OK",
+  "msg": "ok"
+ },
+ {
+  "id": "nemotron-nano-12b-v2-vl",
+  "kind": "text",
+  "status": "OK",
+  "msg": "ok"
+ },
+ {
+  "id": "nvidia-nemotron-3-super-120b",
+  "kind": "text",
+  "status": "OK",
+  "msg": "ok"
+ },
+ {
+  "id": "openai-gpt-4.1",
+  "kind": "text",
+  "status": "403",
+  "msg": "this model is not available for your account"
+ },
+ {
+  "id": "openai-gpt-4o",
+  "kind": "text",
+  "status": "403",
+  "msg": "this model is not available for your account"
+ },
+ {
+  "id": "openai-gpt-4o-mini",
+  "kind": "text",
+  "status": "403",
+  "msg": "this model is not available for your account"
+ },
+ {
+  "id": "openai-gpt-5",
+  "kind": "text",
+  "status": "403",
+  "msg": "this model is not available for your account"
+ },
+ {
+  "id": "openai-gpt-5-mini",
+  "kind": "text",
+  "status": "403",
+  "msg": "this model is not available for your account"
+ },
+ {
+  "id": "openai-gpt-5-nano",
+  "kind": "text",
+  "status": "403",
+  "msg": "this model is not available for your account"
+ },
+ {
+  "id": "openai-gpt-5.1-codex-max",
+  "kind": "text",
+  "status": "403",
+  "msg": "this model is not available for your account"
+ },
+ {
+  "id": "openai-gpt-5.2",
+  "kind": "text",
+  "status": "403",
+  "msg": "this model is not available for your account"
+ },
+ {
+  "id": "openai-gpt-5.2-pro",
+  "kind": "text",
+  "status": "403",
+  "msg": "this model is not available for your account"
+ },
+ {
+  "id": "openai-gpt-5.3-codex",
+  "kind": "text",
+  "status": "403",
+  "msg": "this model is not available for your account"
+ },
+ {
+  "id": "openai-gpt-5.4",
+  "kind": "text",
+  "status": "403",
+  "msg": "this model is not available for your account"
+ },
+ {
+  "id": "openai-gpt-5.4-mini",
+  "kind": "text",
+  "status": "403",
+  "msg": "this model is not available for your account"
+ },
+ {
+  "id": "openai-gpt-5.4-nano",
+  "kind": "text",
+  "status": "403",
+  "msg": "this model is not available for your account"
+ },
+ {
+  "id": "openai-gpt-5.4-pro",
+  "kind": "text",
+  "status": "403",
+  "msg": "this model is not available for your account"
+ },
+ {
+  "id": "openai-gpt-5.5",
+  "kind": "text",
+  "status": "403",
+  "msg": "this model is not available for your account"
+ },
+ {
+  "id": "openai-gpt-5.6-luna",
+  "kind": "text",
+  "status": "403",
+  "msg": "this model is not available for your account"
+ },
+ {
+  "id": "openai-gpt-5.6-sol",
+  "kind": "text",
+  "status": "403",
+  "msg": "this model is not available for your account"
+ },
+ {
+  "id": "openai-gpt-5.6-terra",
+  "kind": "text",
+  "status": "403",
+  "msg": "this model is not available for your account"
+ },
+ {
+  "id": "openai-gpt-image-1",
+  "kind": "image",
+  "status": "403",
+  "msg": "this model is not available for your account"
+ },
+ {
+  "id": "openai-gpt-image-1.5",
+  "kind": "image",
+  "status": "403",
+  "msg": "this model is not available for your account"
+ },
+ {
+  "id": "openai-gpt-image-2",
+  "kind": "image",
+  "status": "403",
+  "msg": "this model is not available for your account"
+ },
+ {
+  "id": "openai-gpt-oss-120b",
+  "kind": "text",
+  "status": "OK",
+  "msg": "ok"
+ },
+ {
+  "id": "openai-gpt-oss-20b",
+  "kind": "text",
+  "status": "OK",
+  "msg": "ok"
+ },
+ {
+  "id": "openai-o1",
+  "kind": "text",
+  "status": "403",
+  "msg": "this model is not available for your account"
+ },
+ {
+  "id": "openai-o3",
+  "kind": "text",
+  "status": "403",
+  "msg": "this model is not available for your account"
+ },
+ {
+  "id": "openai-o3-mini",
+  "kind": "text",
+  "status": "403",
+  "msg": "this model is not available for your account"
+ },
+ {
+  "id": "qwen3-coder-flash",
+  "kind": "text",
+  "status": "OK",
+  "msg": "ok"
+ },
+ {
+  "id": "qwen3-embedding-0.6b",
+  "kind": "embed",
+  "status": "OK",
+  "msg": "ok"
+ },
+ {
+  "id": "qwen3-tts-voicedesign",
+  "kind": "tts",
+  "status": "400",
+  "msg": "the request could not be processed"
+ },
+ {
+  "id": "qwen3.5-397b-a17b",
+  "kind": "text",
+  "status": "OK",
+  "msg": "ok"
+ },
+ {
+  "id": "stable-diffusion-3.5-large",
+  "kind": "image",
+  "status": "OK",
+  "msg": "ok"
+ },
+ {
+  "id": "wan2-2-t2v-a14b",
+  "kind": "video",
+  "status": "405",
+  "msg": ""
+ }
+]
