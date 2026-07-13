@@ -21,7 +21,7 @@ import (
 	"mime/multipart"
 	"strings"
 
-	"github.com/beego/beego/logs"
+	"github.com/hanzoai/beego/logs"
 	"github.com/hanzoai/ai/util"
 )
 

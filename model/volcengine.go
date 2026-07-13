@@ -22,7 +22,7 @@ import (
 	"net/http"
 	"regexp"
 
-	"github.com/beego/beego/logs"
+	"github.com/hanzoai/beego/logs"
 	"github.com/hanzoai/ai/i18n"
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime"
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"

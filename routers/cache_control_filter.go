@@ -18,7 +18,7 @@ package routers
 import (
 	"strings"
 
-	"github.com/beego/beego/context"
+	"github.com/hanzoai/beego/context"
 )
 
 // CacheControlFilter adds Cache-Control headers to prevent caching of sensitive API endpoints

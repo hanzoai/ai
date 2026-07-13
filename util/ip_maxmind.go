@@ -19,7 +19,7 @@ import (
 	"net"
 	"path/filepath"
 
-	"github.com/beego/beego/logs"
+	"github.com/hanzoai/beego/logs"
 	"github.com/hanzoai/ai/conf"
 	"github.com/oschwald/geoip2-golang"
 )
