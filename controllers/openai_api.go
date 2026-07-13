@@ -1035,6 +1035,15 @@ func (c *ApiController) ChatCompletions() {
 	}
 	defer hold.settle(0)
 
+	// ── Zen family ────────────────────────────────────
+	// A zen model is served by the zen service, which owns identity, reasoning,
+	// the 1M ladder, vision, and the upstream. ai forwards verbatim and meters the
+	// result; it holds no zen routing of its own (hip-00NN).
+	if provider.Type == "Zen" {
+		c.pipeToZen("chat/completions", "openai", request.Model, c.Ctx.Input.RequestBody, request.Stream, orgId, authUser, isPremium, hold, requestStartTime)
+		return
+	}
+
 	// ── Tool-calling pass-through ──────────────────────────────────────
 	// When the request includes tools/functions, the QueryText pipeline
 	// cannot handle structured tool calls. Proxy the raw request directly
