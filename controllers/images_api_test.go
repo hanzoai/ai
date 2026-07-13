@@ -25,18 +25,31 @@ import (
 // do-ai's fal diffusion upstreams, is premium, and is owned_by hanzo (the
 // upstream is never leaked).
 func TestResolveModelRoute_ImageFamily(t *testing.T) {
+	// Every one of these used to assert fal-ai/flux/schnell or fal-ai/fast-sdxl,
+	// and so the suite was green while image generation was entirely broken:
+	// DigitalOcean 404s the fal-ai models on every endpoint ("this model is not
+	// a image generation model"). They are listed in DO's web console, marked
+	// Async, and are not callable through the inference API at all.
+	//
+	// stable-diffusion-3.5-large is the image model DO actually serves us —
+	// verified end to end: 200, with a real b64_json image in the response.
+	//
+	// A test that pins the upstream to a name we cannot call is a test that
+	// defends the bug.
+	const image = "stable-diffusion-3.5-large"
+
 	cases := []struct {
 		input        string
 		wantUpstream string
 	}{
-		{"zen3-image", "fal-ai/flux/schnell"},
-		{"zen3-image-max", "fal-ai/flux/schnell"},
-		{"zen3-image-fast", "fal-ai/flux/schnell"},
-		{"zen3-image-dev", "fal-ai/flux/schnell"},
-		{"zen3-image-playground", "fal-ai/flux/schnell"},
-		{"zen3-image-jp", "fal-ai/flux/schnell"},
-		{"zen3-image-sdxl", "fal-ai/fast-sdxl"},
-		{"zen3-image-ssd", "fal-ai/fast-sdxl"},
+		{"zen3-image", image},
+		{"zen3-image-max", image},
+		{"zen3-image-fast", image},
+		{"zen3-image-dev", image},
+		{"zen3-image-playground", image},
+		{"zen3-image-jp", image},
+		{"zen3-image-sdxl", image},
+		{"zen3-image-ssd", image},
 	}
 	for _, tc := range cases {
 		t.Run(tc.input, func(t *testing.T) {
@@ -64,7 +77,7 @@ func TestResolveModelRoute_ImageFamily(t *testing.T) {
 // case-insensitively like every other route.
 func TestResolveModelRoute_ImageFamilyCaseInsensitive(t *testing.T) {
 	route := resolveModelRoute("ZEN3-IMAGE")
-	if route == nil || route.upstreamModel != "fal-ai/flux/schnell" {
+	if route == nil || route.upstreamModel != "stable-diffusion-3.5-large" {
 		t.Fatalf("case-insensitive resolve failed: %+v", route)
 	}
 }

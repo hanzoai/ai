@@ -1129,8 +1129,13 @@ func (c *ApiController) ChatCompletions() {
 		c.GetAcceptLanguage(),
 	)
 
-	// Resolve the route for failover (may have fallback providers)
-	route := resolveModelRouteForOrg(request.Model, orgId)
+	// Resolve the route for failover (may have fallback providers), sized to the
+	// prompt: if this prompt is bigger than the provider we would normally use
+	// can hold, we route it to one that can rather than refusing it. See
+	// routeForPrompt — a too-large prompt is a fact about the PROVIDER, not the
+	// model, and the fallback chain already knows who else serves it.
+	promptTokens, _ := model.GetTokenSize(request.Model, question)
+	route := routeForPrompt(request.Model, orgId, promptTokens)
 
 	// Call the model provider with failover support
 	var modelResult *model.ModelResult

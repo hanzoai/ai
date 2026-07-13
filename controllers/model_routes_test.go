@@ -56,7 +56,10 @@ func TestResolveModelRoute_KnownModels(t *testing.T) {
 		{"zen4-coder-flash", "do-ai", "qwen3-coder-flash", true},
 		{"zen4-coder-pro", "do-ai", "glm-5.2", true},
 		{"zen4-thinking", "do-ai", "deepseek-v4-pro", true},
-		{"zen3-omni", "do-ai", "glm-5", true},
+		// zen3-omni used to resolve to glm-5 — a TEXT model. An "omni" alias that
+		// serves a text-only model is a promise we do not keep. DO's actual
+		// omni model is nemotron-3-nano-omni (verified working).
+		{"zen3-omni", "do-ai", "nemotron-3-nano-omni", true},
 		{"zen3-vl", "do-ai", "nemotron-nano-12b-v2-vl", true},
 		{"zen3-nano", "do-ai", "alibaba-qwen3-32b", true},
 		{"zen3-guard", "do-ai", "llama3.3-70b-instruct", true},

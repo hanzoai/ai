@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	beegoLogs "github.com/beego/beego/logs"
 	"github.com/hanzoai/ai/object"
 )
 
@@ -366,6 +367,54 @@ func modelCountByProvider() map[string]int {
 // Returns nil if the model is not in the routing table.
 func resolveModelRoute(model string) *modelRoute {
 	return resolveModelRouteForOrg(model, "")
+}
+
+// routeForPrompt resolves a model's route and, when the prompt will not fit the
+// provider that route names, upgrades it to a provider that can hold it.
+//
+// The same model is served at different sizes by different providers, so a
+// prompt that is too large is not a property of the MODEL — it is a property of
+// WHERE we were about to send it. DigitalOcean serves glm-5.2 at 262,144, so a
+// 400K prompt to zen5 used to be refused outright:
+//
+//	the token count: [400000] exceeds the model: [glm-5.2]'s
+//	maximum token count: [262144]
+//
+// but deepseek-v4-pro on the same platform holds 1M (measured). Refusing was
+// never necessary; we simply were not looking. So the fallback chain, which
+// already exists to survive a provider being DOWN, is also consulted for a
+// provider being TOO SMALL. Failover and capability selection are the same
+// question — "can this provider serve me?" — and so they are the same mechanism.
+//
+// The upgraded route keeps everything else about the request intact (premium
+// gate, owner, identity prompt): only the provider and upstream move, and the
+// caller cannot tell the difference except that the request now succeeds.
+//
+// promptTokens <= 0 means the size is unknown; the route is returned unchanged.
+func routeForPrompt(model string, orgId string, promptTokens int) *modelRoute {
+	route := resolveModelRouteForOrg(model, orgId)
+	if route == nil || promptTokens <= 0 {
+		return route
+	}
+
+	cfg := GetModelConfig()
+	if cfg == nil {
+		return route
+	}
+
+	provider, upstream, window, ok := cfg.RouteForContext(model, promptTokens)
+	if !ok || provider == route.providerName && upstream == route.upstreamModel {
+		return route // it already fits, or nothing better exists
+	}
+
+	beegoLogs.Info("context routing: %s prompt is %d tokens, more than %s/%s can hold — routing to %s/%s (%d)",
+		model, promptTokens, route.providerName, route.upstreamModel, provider, upstream, window)
+
+	upgraded := *route // copy: never mutate the shared route
+	upgraded.providerName = provider
+	upgraded.upstreamModel = upstream
+	upgraded.contextWindow = window
+	return &upgraded
 }
 
 // resolveModelRouteForOrg looks up a model route with per-org override support.
