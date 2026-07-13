@@ -18,7 +18,7 @@ package util
 import (
 	"fmt"
 
-	"github.com/beego/beego/logs"
+	"github.com/hanzoai/beego/logs"
 )
 
 func SafeGoroutine(fn func()) {

@@ -20,7 +20,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/beego/beego/context"
+	"github.com/hanzoai/beego/context"
 )
 
 func TestHstsFilter(t *testing.T) {

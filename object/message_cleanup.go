@@ -17,7 +17,7 @@ package object
 import (
 	"fmt"
 
-	"github.com/beego/beego/logs"
+	"github.com/hanzoai/beego/logs"
 	"github.com/robfig/cron/v3"
 )
 

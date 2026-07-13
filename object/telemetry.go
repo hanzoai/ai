@@ -37,7 +37,7 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/beego/beego/logs"
+	"github.com/hanzoai/beego/logs"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"

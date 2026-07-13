@@ -19,7 +19,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/beego/beego/context"
+	"github.com/hanzoai/beego/context"
 )
 
 func rewriteIam(method, target string) *context.Context {
