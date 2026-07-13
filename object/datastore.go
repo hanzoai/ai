@@ -27,7 +27,7 @@
 // bridge). So the peer never connected, DatastoreEnabled() was always false,
 // and BOTH the read (get-cloud-usages) and write (zapWriteUsage/zapWriteTrace)
 // paths were dead. The datastore speaks Datastore's own protocol; we speak it
-// directly — the same datastore-go/v2 recipe cloud's audit OLAP mirror and the
+// directly — the same hanzo-ds/go recipe cloud's audit OLAP mirror and the
 // insights/o11y stack already uses. No sidecar, no bridge, one transport.
 //
 // InitDatastore is called from the SHARED Bootstrap (bootstrap.go), so it runs
@@ -48,8 +48,8 @@ import (
 	"time"
 
 	"github.com/hanzoai/beego/logs"
-	datastore "github.com/hanzoai/datastore-go/v2"
-	"github.com/hanzoai/datastore-go/v2/lib/driver"
+	datastore "github.com/hanzo-ds/go"
+	"github.com/hanzo-ds/go/lib/driver"
 )
 
 // ── Package state ───────────────────────────────────────────────────────
