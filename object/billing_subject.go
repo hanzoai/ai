@@ -15,167 +15,152 @@
 package object
 
 import (
-	"os"
 	"strings"
-	"sync"
 )
 
-// ── Per-user vs per-org billing identity ─────────────────────────────────────
+// ── Who pays ─────────────────────────────────────────────────────────────────
 //
-// Commerce scopes balance to a namespace (X-Org-Id = the IAM `owner` slug)
-// and, WITHIN that namespace, to a subject (the ?user= / SourceId / DestinationId
-// key) that nets deposits against usage. The subject is the single billing
-// account; everything (the gate, the usage debit, the starter-credit grant) must
-// agree on it or a user tops up one account and spends from another.
+// Commerce scopes balance to a namespace (X-Org-Id = the IAM `owner` slug) and,
+// within it, to a SUBJECT — the account that nets deposits against usage. The
+// gate, the usage debit and the starter-credit grant must all agree on the
+// subject, or a user tops up one account and spends from another.
 //
-// Two billing models, distinguished only by the org:
+// A member of an org can have TWO accounts, and the org's comes first:
 //
-//   - PERSONAL-billing org (default: the shared "hanzo" catch-all, the home of
-//     every unaffiliated individual signup): subject = "owner/name", so each
-//     member has their OWN balance and their OWN starter credit and can never
-//     drain another member. This is the fix for new gmail signups, who all land
-//     in owner=hanzo and previously shared the single (hanzo,hanzo) balance.
+//	the ORG wallet      "owner"       funded by the org, shared by the team
+//	the MEMBER's wallet "owner/name"  funded by the member, theirs alone
 //
-//   - POOLED org (any dedicated customer/team org, e.g. "maxpower"): subject =
-//     "owner", one balance for the whole org — unchanged, so the proven per-org
-//     billing keeps working with no regression.
+// So a request does not have one subject, it has an ordered CHAIN of them —
+// BillingChain — and it is paid by the first account that can cover it. The org
+// pays for its team; when the org's wallet is empty (or its spend limit is
+// reached), a member who has their own credit keeps working on their own dime
+// instead of being cut off. Nobody is blocked by someone else's budget, and no
+// one silently spends the org's money after it has run out.
 //
-//   - ORG-BILLING override (ORG_BILLING_ORGS allowlist): an org that WOULD be
-//     personal-billing but is named here bills as ONE shared pool (subject =
-//     "owner"), e.g. promoting the "hanzo" catch-all to a single org credit pool.
-//     Empty/unset ⇒ no override; scoped, so no other tenant is affected. This is
-//     the explicit switch that wins over the personal default (see isOrgBilling),
-//     never the PERSONAL_BILLING_ORGS sentinel that would flip every tenant.
-
-var (
-	personalBillingOrgsOnce sync.Once
-	personalBillingOrgs     map[string]struct{}
-
-	orgBillingOrgsOnce sync.Once
-	orgBillingOrgs     map[string]struct{}
-)
-
-// parseOrgSet parses a comma-separated list of org slugs into a lowercased set —
-// the ONE parser both billing-org allowlists share.
-func parseOrgSet(raw string) map[string]struct{} {
-	m := make(map[string]struct{})
-	for _, o := range strings.Split(raw, ",") {
-		if o = strings.ToLower(strings.TrimSpace(o)); o != "" {
-			m[o] = struct{}{}
-		}
-	}
-	return m
-}
-
-// loadPersonalBillingOrgs parses PERSONAL_BILLING_ORGS (comma-separated org
-// slugs, default "hanzo"). Lazy + cached so tests can set the env before first
-// use. Fail-safe default keeps the shared catch-all per-user even if unset.
-func loadPersonalBillingOrgs() map[string]struct{} {
-	personalBillingOrgsOnce.Do(func() {
-		raw := os.Getenv("PERSONAL_BILLING_ORGS")
-		if strings.TrimSpace(raw) == "" {
-			raw = "hanzo"
-		}
-		personalBillingOrgs = parseOrgSet(raw)
-	})
-	return personalBillingOrgs
-}
-
-// loadOrgBillingOrgs parses ORG_BILLING_ORGS (comma-separated org slugs, default
-// EMPTY). Lazy + cached, same as the personal set. An org listed here shares ONE
-// pooled wallet even when it would otherwise be personal-billing — the scoped,
-// additive override; unset ⇒ no org is promoted (zero behavior change).
-func loadOrgBillingOrgs() map[string]struct{} {
-	orgBillingOrgsOnce.Do(func() {
-		orgBillingOrgs = parseOrgSet(os.Getenv("ORG_BILLING_ORGS"))
-	})
-	return orgBillingOrgs
-}
-
-// IsPersonalBillingOrg reports whether members of org are billed individually
-// (per-user) rather than sharing one org-pooled balance. The org-billing
-// allowlist (isOrgBilling) overrides this in BillingSubject.
-func IsPersonalBillingOrg(owner string) bool {
-	_, ok := loadPersonalBillingOrgs()[strings.ToLower(strings.TrimSpace(owner))]
-	return ok
-}
-
-// isOrgBilling reports whether org is on the ORG_BILLING_ORGS allowlist — its
-// members share ONE pooled wallet (subject = owner). This is the explicit switch
-// that WINS over the personal-billing default, so promoting the shared "hanzo"
-// catch-all to a single org credit pool is a scoped env flip, not a code fork
-// and not the every-tenant PERSONAL_BILLING_ORGS sentinel.
-func isOrgBilling(owner string) bool {
-	_, ok := loadOrgBillingOrgs()[strings.ToLower(strings.TrimSpace(owner))]
-	return ok
-}
-
-// BillingSubject returns the canonical Commerce billing subject for an IAM
-// (owner, name) identity — the value passed as ?user= / posted as the usage
-// `user` / granted to as DestinationId. The namespace (X-Org-Id) is always
-// `owner`; this is only the subject WITHIN that namespace:
+// The org's limit is what makes that useful: an org can cap what the pool will
+// cover per member (OrgSettings.MemberLimitCents) — the Anthropic/Team model —
+// and the overflow to personal is the release valve, not a failure.
 //
-//   - ORG_BILLING_ORGS org  → "owner"      (per-org, override — wins)
-//   - personal-billing org  → "owner/name" (per-user)
-//   - pooled org            → "owner"      (per-org)
+// Which model an org uses is a property OF THE ORG, stored on the org
+// (OrgSettings.Billing) and editable by an admin. It is not an environment
+// variable, and no org's name appears in this source.
 //
-// Always lowercased: the read paths lowercase ?user=, and RecordUsage stores
-// SourceId verbatim, so an un-lowercased subject would record usage that never
-// nets against the balance (a silent leak). Lowercasing at the single source of
-// the subject closes that.
-//
-// Empty owner yields "" (caller fails open / cannot bill).
-func BillingSubject(owner, name string) string {
-	owner = strings.ToLower(strings.TrimSpace(owner))
-	if owner == "" {
+// This replaced two env allowlists that fought each other: PERSONAL_BILLING_ORGS
+// defaulted to the literal string "hanzo", and ORG_BILLING_ORGS existed to undo
+// that for the same org. The shipped default was therefore "bill each member
+// separately" for the org holding the credits — so every request 402'd
+// "Insufficient balance" against a funded account, because the gate reserved
+// from a member's empty wallet while the money sat in the org's. Fixing it meant
+// setting an env var in production, per tenant. Whether a tenant bills as a team
+// is a customer fact, not a deployment fact.
+
+// BillingChain is the ordered list of accounts a request may draw on: the first
+// that can cover the cost pays it. Never empty for a valid owner.
+type BillingChain []string
+
+// Primary is the account a request bills when it can cover the cost — the one
+// reported as THE subject where a single value is required.
+func (c BillingChain) Primary() string {
+	if len(c) == 0 {
 		return ""
 	}
-	// ORG-billing allowlist wins: the org shares ONE pooled wallet (subject =
-	// owner), regardless of the personal-billing default. Scoped + additive —
-	// only orgs named in ORG_BILLING_ORGS switch; every other tenant is unchanged.
-	if isOrgBilling(owner) {
-		return owner
+	return c[0]
+}
+
+// BillingChainFor returns the accounts an (owner, name) identity can draw on, in
+// the order they should be charged.
+//
+//	pooled org (default) → ["owner", "owner/name"]  org first, then the member
+//	personal-billing org → ["owner/name"]           the member only
+//
+// A pooled org falls through to the member's own wallet, so a member with credit
+// is never blocked by an exhausted org pool. A personal-billing org — a
+// catch-all namespace of unaffiliated individual signups, who share a namespace
+// but are not a team — has no shared wallet to fall back FROM, and one member
+// must never be able to spend another's, so its chain is the member alone.
+//
+// Subjects are lowercased at this single source: the read paths lowercase
+// ?user=, while RecordUsage stores SourceId verbatim, so an un-lowercased
+// subject would record usage that never nets against the balance — a silent
+// leak.
+//
+// An empty owner yields an empty chain (the caller cannot bill).
+func BillingChainFor(owner, name string) BillingChain {
+	owner = strings.ToLower(strings.TrimSpace(owner))
+	if owner == "" {
+		return nil
 	}
-	if IsPersonalBillingOrg(owner) {
-		name = strings.ToLower(strings.TrimSpace(name))
-		if name == "" {
-			return owner
+	name = strings.ToLower(strings.TrimSpace(name))
+
+	member := ""
+	if name != "" {
+		member = owner + "/" + name
+	}
+
+	if ResolveOrgBilling(owner) == BillingPersonal {
+		if member == "" {
+			return BillingChain{owner} // no member identity to bill
 		}
-		return owner + "/" + name
+		return BillingChain{member}
 	}
-	return owner
+
+	// Pooled (the default): the org pays for its team, and a member with their
+	// own credit can keep going once the org's pool is spent.
+	if member == "" {
+		return BillingChain{owner}
+	}
+	return BillingChain{owner, member}
 }
 
-// BillingSubjectForPrincipal returns the billing subject for an authenticated
-// principal, accounting for machine (M2M) identities. A client_credentials /
-// application principal — Casdoor User.Type == "application", e.g. the
-// hanzo-cloud service token minted for cloud→cloud calls — is billed to its
-// OWNER ORG, never to a per-app "owner/app-name" subject: the app name is not a
-// funded account, so in a personal-billing org (the "hanzo" catch-all) it would
-// resolve to the unfunded "hanzo/hanzo-cloud" and 402 legitimate service
-// traffic. Human principals resolve exactly as BillingSubject (per-user for a
-// personal-billing org, else the org). This is the ONE place the M2M carve-out
-// lives, shared by the router gate and the controller backstop so they can
-// never disagree on who a service token bills.
-func BillingSubjectForPrincipal(owner, name, userType string) string {
+// BillingSubject returns the account an (owner, name) identity bills FIRST.
+//
+// Callers that can consult more than one account should use BillingChainFor and
+// charge the first that covers the cost; this is the single-value answer for the
+// places that record or report one subject.
+func BillingSubject(owner, name string) string {
+	return BillingChainFor(owner, name).Primary()
+}
+
+// BillingChainForPrincipal is BillingChainFor with the machine (M2M) carve-out.
+//
+// A client_credentials / application principal — Casdoor User.Type ==
+// "application", e.g. the hanzo-cloud service token minted for cloud→cloud calls
+// — bills its OWNER ORG and has no personal wallet to fall back to: an app name
+// is not a funded account, so a chain through "owner/app-name" could only ever
+// 402 legitimate service traffic. This is the ONE place that carve-out lives, so
+// the router gate and the controller backstop can never disagree about who a
+// service token bills.
+func BillingChainForPrincipal(owner, name, userType string) BillingChain {
 	if strings.EqualFold(strings.TrimSpace(userType), "application") {
-		return BillingSubject(owner, "")
+		return BillingChainFor(owner, "")
 	}
-	return BillingSubject(owner, name)
+	return BillingChainFor(owner, name)
 }
 
-// BillingSubjectFromUserKey is BillingSubject for callers that already hold the
-// "owner/name" user key as a single string (e.g. usage records, ZAP params,
+// BillingSubjectForPrincipal returns the account an authenticated principal bills
+// first, accounting for machine (M2M) identities. See BillingChainForPrincipal.
+func BillingSubjectForPrincipal(owner, name, userType string) string {
+	return BillingChainForPrincipal(owner, name, userType).Primary()
+}
+
+// BillingChainFromUserKey is BillingChainFor for callers that already hold the
+// "owner/name" user key as a single string (usage records, ZAP params,
 // searchAuth.UserID). If owner is empty it is derived from the key's prefix.
-func BillingSubjectFromUserKey(owner, userKey string) string {
+func BillingChainFromUserKey(owner, userKey string) BillingChain {
 	name := ""
 	if i := strings.IndexByte(userKey, '/'); i >= 0 {
 		if strings.TrimSpace(owner) == "" {
 			owner = userKey[:i]
 		}
 		name = userKey[i+1:]
-	} else if strings.TrimSpace(owner) == "" {
-		owner = userKey
+	} else {
+		name = userKey
 	}
-	return BillingSubject(owner, name)
+	return BillingChainFor(owner, name)
+}
+
+// BillingSubjectFromUserKey returns the first account for an "owner/name" user
+// key. See BillingChainFromUserKey.
+func BillingSubjectFromUserKey(owner, userKey string) string {
+	return BillingChainFromUserKey(owner, userKey).Primary()
 }

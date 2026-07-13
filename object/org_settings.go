@@ -54,6 +54,29 @@ type OrgSettings struct {
 	// read it via /v1/get-routing-defaults). Same three-state as AutoRouting:
 	// "" (unset) → "*" row then conf default (disabled), "enabled", "disabled".
 	DefaultSessionRouting string `json:"defaultSessionRouting"`
+
+	// Billing selects who pays: the ORG (one pooled wallet, the team model) or
+	// each MEMBER (their own). "" (unset) → "*" row, then pooled.
+	//
+	// Pooled orgs fall through to a member's own wallet when the pool is spent,
+	// so this chooses the FIRST payer, not the only one. See BillingChainFor.
+	//
+	// A property OF THE ORG, so it lives on the org — admin-settable, per tenant,
+	// effective within one cache TTL. It replaces two environment allowlists that
+	// hardcoded one org's name as the personal-billing default in the source, and
+	// so left a funded org unable to spend its own credits until someone set an
+	// env var in production. Billing correctly out of the box is not something a
+	// tenant should have to be allowlisted for.
+	Billing string `json:"billing"`
+
+	// MemberLimitCents caps what the ORG's pooled wallet will cover for ONE
+	// member per calendar month. 0 = no limit (the pool covers whatever it holds).
+	//
+	// It is a budget, not a block: a member who reaches it does not stop working,
+	// they continue on their OWN wallet (the next account in the billing chain).
+	// The org bounds what it subsidises; the member decides whether to keep going
+	// at their own expense. Ignored by a personal-billing org, which has no pool.
+	MemberLimitCents int64 `json:"memberLimitCents"`
 }
 
 func GetOrgSettingsList(owner string) ([]*OrgSettings, error) {
@@ -181,4 +204,57 @@ func GetCachedOrgSessionRouting(owner string) string {
 		return AutoRoutingUnset
 	}
 	return s.DefaultSessionRouting
+}
+
+// ResolveOrgBilling returns the billing model in force for an org: its own row,
+// then the "*" global-default row, then pooled.
+//
+// POOLED IS THE DEFAULT, and deliberately: an org exists to be a team, and a
+// team that has credits must be able to spend them the moment it has them. The
+// previous default was the opposite — each member billed separately — which left
+// a funded org unable to spend its own money until an operator added it to an
+// env allowlist. A tenant should never have to be allowlisted in order to be
+// billed correctly.
+//
+// A lookup failure resolves to pooled rather than propagating an error. The
+// alternative — refusing the request — would take an org offline because a
+// settings row could not be read, and the org wallet is the account it would
+// have used anyway.
+func ResolveOrgBilling(owner string) string {
+	owner = strings.ToLower(strings.TrimSpace(owner))
+	if owner == "" {
+		return BillingPooled
+	}
+	if s, err := GetCachedOrgSettings(owner); err == nil && s != nil && s.Billing != BillingUnset {
+		return s.Billing
+	}
+	// The platform-wide default row, so an operator can change the default for
+	// every org that has expressed no preference — without touching any of them.
+	if s, err := GetCachedOrgSettings(GlobalDefaultOwner); err == nil && s != nil && s.Billing != BillingUnset {
+		return s.Billing
+	}
+	return BillingPooled
+}
+
+// ResolveOrgMemberLimitCents returns what the org's pooled wallet will cover for
+// ONE member per calendar month: its own row, then the "*" row, then 0 (no
+// limit).
+//
+// Reaching the limit does not stop a member working — it moves them to their own
+// wallet, the next account in the billing chain. The org bounds what it
+// subsidises; the member decides whether to continue at their own expense.
+//
+// Zero for a personal-billing org, which has no pool to draw a limit against.
+func ResolveOrgMemberLimitCents(owner string) int64 {
+	owner = strings.ToLower(strings.TrimSpace(owner))
+	if owner == "" || ResolveOrgBilling(owner) == BillingPersonal {
+		return 0
+	}
+	if s, err := GetCachedOrgSettings(owner); err == nil && s != nil && s.MemberLimitCents > 0 {
+		return s.MemberLimitCents
+	}
+	if s, err := GetCachedOrgSettings(GlobalDefaultOwner); err == nil && s != nil && s.MemberLimitCents > 0 {
+		return s.MemberLimitCents
+	}
+	return 0
 }
