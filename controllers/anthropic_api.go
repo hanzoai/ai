@@ -16,6 +16,7 @@ package controllers
 
 import (
 	"bytes"
+	ctx "context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -23,10 +24,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hanzoai/beego/context"
 	"github.com/hanzoai/ai/model"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
+	"github.com/hanzoai/beego/context"
 	iam "github.com/hanzoai/iam"
 	"github.com/sashabaranov/go-openai"
 )
@@ -322,17 +323,13 @@ func (c *ApiController) respondAnthropicError(errType string, message string, st
 	c.EnableRender = false
 }
 
+// anthropicErrorType maps an auth/routing/upstream error to its Anthropic wire
+// type. ONE way to turn an error into a wire type: read its status (statusOf),
+// fold through the single table (anthropicErrorTypeForStatus). Upstream HTTP
+// failures are typed at the provider boundary (wrapUpstreamError), so a 429
+// becomes rate_limit_error here — not a generic api_error.
 func anthropicErrorType(err error) string {
-	switch statusOf(err) {
-	case http.StatusBadRequest:
-		return "invalid_request_error"
-	case http.StatusPaymentRequired:
-		return "billing_error"
-	case http.StatusUnauthorized:
-		return "authentication_error"
-	default:
-		return "api_error"
-	}
+	return anthropicErrorTypeForStatus(statusOf(err))
 }
 
 // AnthropicMessages implements the Anthropic Messages API.
@@ -532,21 +529,38 @@ func (c *ApiController) AnthropicMessages() {
 	var modelResult *model.ModelResult
 	var actualProvider string
 
-	if route != nil && len(route.fallbacks) > 0 {
+	if route != nil {
+		// ONE execute path. failoverQueryText rides out a transient upstream
+		// refusal (429 / 5xx) with the shared retry policy, then cascades through
+		// the route's fallbacks if any. A model with no fallbacks still gets the
+		// retry — the cascade is just the identity case — so there is no longer a
+		// second, retry-less path that silently turns a 429 into a hard client
+		// 500 (the failure behind "it stops in ours").
 		modelResult, actualProvider, err = failoverQueryText(
 			route, question, writer, history, knowledge,
 			c.GetAcceptLanguage(),
 			func() bool { return writer.StreamSent },
 		)
 	} else {
-		// No fallbacks configured — direct call (original path)
+		// Model not in the route table: call the resolved provider directly, on
+		// the SAME retry policy failover uses, typing the error at the boundary.
 		var modelProvider model.ModelProvider
 		modelProvider, err = provider.GetModelProvider(c.GetAcceptLanguage())
 		if err != nil {
 			c.respondAnthropicError("api_error", fmt.Sprintf("Failed to get model provider: %s", err.Error()), 500)
 			return
 		}
-		modelResult, err = modelProvider.QueryText(question, writer, history, "", knowledge, nil, c.GetAcceptLanguage())
+		err = retryTransient(ctx.Background(), currentRetryPolicy(), func() error {
+			if writer.StreamSent {
+				return errPartiallyWritten
+			}
+			res, e := modelProvider.QueryText(question, writer, history, "", knowledge, nil, c.GetAcceptLanguage())
+			if e != nil {
+				return wrapUpstreamError(e)
+			}
+			modelResult = res
+			return nil
+		})
 		actualProvider = provider.Name
 	}
 
@@ -568,7 +582,11 @@ func (c *ApiController) AnthropicMessages() {
 			recordUsage(errRecord)
 			recordTrace(c.Ctx.Request.Context(), errRecord, requestStartTime)
 		}
-		c.respondAnthropicError("api_error", err.Error(), 500)
+		// Surface the real upstream status: a 429 stays a 429 (rate_limit_error)
+		// so the client retries with backoff instead of treating it as a fatal
+		// 500 and stopping. Status typed at the provider boundary.
+		st := statusForModelError(err)
+		c.respondAnthropicError(anthropicErrorTypeForStatus(st), err.Error(), st)
 		return
 	}
 
@@ -666,9 +684,10 @@ func (c *ApiController) proxyAnthropicToolRequest(
 			oaiReq.Temperature = request.Temperature
 		}
 		// Forward extended thinking: Anthropic budget_tokens → upstream reasoning_effort,
-		// in the vocabulary THIS provider accepts (glm "max"|"high" vs openai "low"|"medium"|"high").
-		// "" leaves the upstream at its native reasoning default.
-		vocab := thinkingVocabularyForProvider(provider.Type)
+		// in the vocabulary THIS upstream model accepts (glm "max"|"high" for
+		// GLM-5.*/DeepSeek V4, openai "low"|"medium"|"high", "" for qwen/kimi which
+		// use a native thinking param). "" leaves the upstream at its native default.
+		vocab := thinkingVocabularyForUpstream(provider.SubType)
 		if re := anthropicThinkingToReasoningEffort(request.Thinking, vocab); re != "" {
 			oaiReq.ReasoningEffort = re
 		}
