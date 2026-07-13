@@ -830,7 +830,7 @@ models:
   zen3-omni:
     context_window: 64000
     provider: do-ai
-    upstream: glm-5
+    upstream: nemotron-3-nano-omni
     premium: true
     owned_by: hanzo
     identity_prompt: |
@@ -889,42 +889,42 @@ models:
   # is token-based; image calls bill per image via controllers.imageCostCents.
   zen3-image:
     provider: do-ai
-    upstream: fal-ai/flux/schnell
+    upstream: stable-diffusion-3.5-large
     premium: true
     owned_by: hanzo
   zen3-image-max:
     provider: do-ai
-    upstream: fal-ai/flux/schnell
+    upstream: stable-diffusion-3.5-large
     premium: true
     owned_by: hanzo
   zen3-image-fast:
     provider: do-ai
-    upstream: fal-ai/flux/schnell
+    upstream: stable-diffusion-3.5-large
     premium: true
     owned_by: hanzo
   zen3-image-dev:
     provider: do-ai
-    upstream: fal-ai/flux/schnell
+    upstream: stable-diffusion-3.5-large
     premium: true
     owned_by: hanzo
   zen3-image-playground:
     provider: do-ai
-    upstream: fal-ai/flux/schnell
+    upstream: stable-diffusion-3.5-large
     premium: true
     owned_by: hanzo
   zen3-image-jp:
     provider: do-ai
-    upstream: fal-ai/flux/schnell
+    upstream: stable-diffusion-3.5-large
     premium: true
     owned_by: hanzo
   zen3-image-sdxl:
     provider: do-ai
-    upstream: fal-ai/fast-sdxl
+    upstream: stable-diffusion-3.5-large
     premium: true
     owned_by: hanzo
   zen3-image-ssd:
     provider: do-ai
-    upstream: fal-ai/fast-sdxl
+    upstream: stable-diffusion-3.5-large
     premium: true
     owned_by: hanzo
 
@@ -1128,7 +1128,7 @@ models:
   zen-omni:
     context_window: 64000
     provider: do-ai
-    upstream: glm-5
+    upstream: nemotron-3-nano-omni
     premium: true
     owned_by: hanzo
     hidden: true
@@ -1640,3 +1640,8 @@ models:
     upstream: anthropic-claude-fable-5
     context_window: 1000000
     hidden: true
+  nemotron-3-nano-omni:
+    provider: do-ai
+    upstream: nemotron-3-nano-omni
+    hidden: true
+    context_window: 65536
