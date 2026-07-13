@@ -15,6 +15,8 @@
 package controllers
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -23,6 +25,12 @@ import (
 	"github.com/hanzoai/ai/model"
 	"github.com/hanzoai/ai/object"
 )
+
+// errPartiallyWritten stops a retry that can no longer be made safely: bytes
+// are already on the wire, so replaying the call would duplicate or corrupt the
+// client's stream. It is deliberately NOT transient — retryTransient sees a
+// permanent error and stops immediately rather than sleeping first.
+var errPartiallyWritten = errors.New("response partially written; cannot retry")
 
 // isRetryableError returns true if the error message indicates a transient or
 // provider-side failure that warrants trying a fallback provider.
@@ -90,8 +98,38 @@ func failoverQueryText(
 	lang string,
 	writerHasData func() bool,
 ) (*model.ModelResult, string, error) {
+	// callWithRetry calls one provider, riding out a transient refusal (a 429
+	// "Platform overloaded", a 503, a timeout) instead of giving up on it.
+	//
+	// A 429 does not mean "this request cannot be served" — it means "ask again
+	// shortly". Returning it to the client just relocates the retry to something
+	// that can neither pick a different provider nor stagger itself against
+	// every other client doing the same thing. So we wait it out here, and only
+	// give up on the provider once waiting has stopped helping — at which point
+	// the loop below moves to one that can serve the request.
+	//
+	// Only safe while nothing has been written: once tokens are on the wire the
+	// request is committed and cannot be replayed. Hence the writerHasData guard
+	// before every retry, the same rule cascading already obeys.
+	callWithRetry := func(provider, upstream string) (*model.ModelResult, error) {
+		var res *model.ModelResult
+		err := retryTransient(context.Background(), currentRetryPolicy(), func() error {
+			if writerHasData != nil && writerHasData() {
+				// Partially streamed: not replayable. Surface the last error.
+				return errPartiallyWritten
+			}
+			var e error
+			res, e = callProvider(provider, upstream, question, writer, history, knowledge, lang)
+			if e != nil && isTransientError(e) {
+				logs.Warn("retry: provider=%s is busy (%v) — holding the request rather than bouncing it to the client", provider, e)
+			}
+			return e
+		})
+		return res, err
+	}
+
 	// Try primary provider
-	result, err := callProvider(route.providerName, route.upstreamModel, question, writer, history, knowledge, lang)
+	result, err := callWithRetry(route.providerName, route.upstreamModel)
 	if err == nil {
 		return result, route.providerName, nil
 	}
@@ -123,7 +161,7 @@ func failoverQueryText(
 		logs.Info("failover: attempting fallback[%d] provider=%s upstream=%s",
 			i, fb.providerName, fb.upstreamModel)
 
-		result, fbErr := callProvider(fb.providerName, fb.upstreamModel, question, writer, history, knowledge, lang)
+		result, fbErr := callWithRetry(fb.providerName, fb.upstreamModel)
 		if fbErr == nil {
 			logs.Info("failover: fallback[%d] provider=%s succeeded", i, fb.providerName)
 			return result, fb.providerName, nil
