@@ -142,10 +142,12 @@ func extractAuthFromHeaders(headersJSON []byte) string {
 // (hanzo.cloud_usage, above). One writer per table — the ai module does not write
 // a second, incompatible observations shape into the o11y-owned table.
 
-// ── ZAP billing record writer (datastore → datastore) ──────────────────
+// ── Datastore billing record writer (direct datastore client) ──────────
 //
-// Writes billing/usage records to hanzo.cloud_usage for invoice reconciliation.
-// Both Commerce and Console can query this table for unified billing views.
+// Writes billing/usage records to hanzo.cloud_usage for invoice reconciliation
+// via the direct datastore client (object/datastore.go) — NOT a ZAP peer (see the
+// "WHY NOT ZAP" note atop object/datastore.go). Both Commerce and Console query
+// this table for unified billing views.
 
 func zapWriteUsage(record *usageRecord, startTime time.Time) {
 	if !object.DatastoreEnabled() {
@@ -166,10 +168,13 @@ func zapWriteUsage(record *usageRecord, startTime time.Time) {
 		org = record.Owner
 	}
 
-	costCents := calculateCostCentsWithCache(
-		record.Model, record.PromptTokens, record.CompletionTokens,
-		record.CacheReadTokens, record.CacheWriteTokens,
-	)
+	// Cost authority = usageCostCents (the SAME function the debit uses): it prices
+	// image/video per-unit (ImageCount/VideoCount) and text per-token, so this
+	// analytics/reconciliation ledger's cost_cents matches what the customer was
+	// billed. The prior token-only calc recorded image/video spend as $0 (those
+	// rows carry no tokens) — under-reporting that revenue in console2 Overview,
+	// the admin god-view, and spend-by-model.
+	costCents := usageCostCents(record)
 
 	premium := uint8(0)
 	if record.Premium {
