@@ -21,8 +21,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/beego/beego"
-	_ "github.com/beego/beego/session" // memory session provider registration
+	"github.com/hanzoai/beego"
+	_ "github.com/hanzoai/beego/session" // memory session provider registration
 	"github.com/zap-proto/zip"
 )
 

@@ -18,7 +18,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	beegoctx "github.com/beego/beego/context"
+	beegoctx "github.com/hanzoai/beego/context"
 )
 
 // GetSessionUser is the session-read funnel the BeforeRouter filters (RateLimit,
