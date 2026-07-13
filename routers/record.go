@@ -15,8 +15,8 @@
 package routers
 
 import (
-	"github.com/beego/beego/context"
-	"github.com/beego/beego/logs"
+	"github.com/hanzoai/beego/context"
+	"github.com/hanzoai/beego/logs"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
 )

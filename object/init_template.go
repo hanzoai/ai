@@ -20,7 +20,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/beego/beego/logs"
+	"github.com/hanzoai/beego/logs"
 	"gopkg.in/yaml.v3"
 )
 
