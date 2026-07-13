@@ -26,13 +26,10 @@ import (
 // (modelInfo): the OpenAI-compatible core stays byte-stable while provider +
 // pricing are added omitempty, sourced only from data ai already holds. Both
 // builders are covered — ListModels() (YAML/prod) and listAvailableModels()
-// (static fallback) — so they emit the identical shape. Crucially, the provider
-// field must NEVER leak the upstream/infrastructure provider for branded
-// (owned_by) models (zen, the OpenAI embeddings): policy is that upstream names
-// are never exposed (zenIdentityPrompt, conf/models.yaml, LLM.md).
-
-// upstreamProviders are the internal provider names that must never appear as a
-// public "provider" for a branded model.
+// (static fallback) — so they emit the identical shape. A branded (owned_by)
+// model surfaces its public owner in owned_by; the serving provider is omitted
+// (publicProvider). These are the internal provider names that, for a branded
+// model, must not appear as the public "provider" — see hip-00NN.
 var upstreamProviders = map[string]bool{"do-ai": true, "fireworks": true, "openai-direct": true}
 
 func indexModels(models []modelInfo) map[string]modelInfo {

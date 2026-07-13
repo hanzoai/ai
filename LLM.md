@@ -187,10 +187,11 @@ content routes need no gateway change; the console `/ai` proxy allow-list adds t
 `v1/videos/{id}[/content]` pattern (hanzoai/console#92).
 
 **zen models**: branded, `owned_by: hanzo`, `premium: true`. Route to `do-ai`
-upstreams (qwen3+/glm/kimi/deepseek — same working key, no GPU). Identity is
-injected at call time via `zenIdentityPrompt`; upstream names are never exposed.
-Do NOT route zen to Fireworks serverless paths (`accounts/fireworks/models/*`) —
-that account returns 404 "not deployed" for most of them.
+upstreams (qwen3+/glm/kimi/deepseek — same working key, no GPU). Each zen model
+declares its public owner in `owned_by`; the identity is injected at call time
+via `zenIdentityPrompt` (hip-00NN). Do NOT route zen to Fireworks serverless
+paths (`accounts/fireworks/models/*`) — that account returns 404 "not deployed"
+for most of them.
 
 **Billing gate** (`routers/filter_balance.go` + `openai_api.go`): non-premium
 models need balance > 0; premium models need balance > starter credit. Balance

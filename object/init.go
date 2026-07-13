@@ -404,8 +404,8 @@ func initLLMProviders() {
 			// videos_api.go drives the SAME OpenAI Sora-style async /v1/videos API
 			// as do-ai (create → poll → download) against ProviderUrl. Type
 			// DigitalOcean reuses the custom-URL branch in resolveEndpointForPath so
-			// videoUpstreamBase yields the clean /v1 base. Active so the video
-			// routes work; the branded backend model name is never exposed.
+			// videoUpstreamBase yields the clean /v1 base. The zen3-video family is
+			// owned_by hanzo; the public owner travels in owned_by (hip-00NN).
 			Owner:        "admin",
 			Name:         "spark-video",
 			DisplayName:  "Hanzo Spark Video (GB10)",
