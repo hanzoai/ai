@@ -290,6 +290,75 @@ func anthropicToolChoiceToOpenAI(raw json.RawMessage) interface{} {
 	return nil
 }
 
+// anthropicThinkingToReasoningEffort is the ONE Anthropic→upstream adapter for
+// the extended-thinking config. Anthropic models thinking as a token BUDGET
+// ({"type":"enabled","budget_tokens":N}); every upstream reasons by a coarse
+// EFFORT ordinal — but the ordinals DIFFER by provider, so the functor is
+// parameterized by the target vocabulary (the codomain category). The shapes
+// are not isomorphic, so this is a lossy, monotone collapse: deeper budget →
+// harder effort. "" means "don't set reasoning_effort" — disabled/absent
+// thinking leaves the upstream at its native default (glm-5.2 / ds4-pro / kimi
+// all reason by default, so this is never a correctness break, only a lost
+// budget hint). Models that ignore the field are unaffected.
+//
+// Vocabularies (verified against each model's docs, 2026-07-13):
+//   - glm (glm-5.2, deepseek-v4-pro via DO-AI "DigitalOcean" provider): "max"|"high".
+//     GLM-5.2 defaults to Max; "high" is the half-token ~98%-intelligence tier.
+//     "low"/"medium" are NOT valid GLM values and would be rejected — which is
+//     exactly the kind of upstream error the 429 surfacing fix exists to surface,
+//     so we must never emit them here.
+//   - openai (gpt-5.3-codex etc via the "OpenAI" provider): "low"|"medium"|"high".
+//
+// Kimi K2.6 (also via DO-AI) takes a thinking OBJECT, not a reasoning_effort
+// string; the fork's ChatCompletionRequest has no such field, so Kimi keeps its
+// native default (reasons on). Wiring Kimi's object form is a follow-on; the 99%
+// path for `hanzo code claude` is zen5=glm-5.2, which this serves correctly.
+func anthropicThinkingToReasoningEffort(raw json.RawMessage, vocab string) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var t struct {
+		Type         string `json:"type"`
+		BudgetTokens int    `json:"budget_tokens"`
+	}
+	if err := json.Unmarshal(raw, &t); err != nil {
+		return ""
+	}
+	if t.Type != "enabled" || t.BudgetTokens <= 0 {
+		return ""
+	}
+	// deep = the heaviest CC request (ultrathink ~32k); light = "think" (~4k).
+	deep := t.BudgetTokens >= 16384
+	switch vocab {
+	case "openai":
+		// OpenAI o-series: three tiers. Medium collapses "think hard" (~10k).
+		if t.BudgetTokens < 4096 {
+			return "low"
+		}
+		if !deep {
+			return "medium"
+		}
+		return "high"
+	default:
+		// glm / deepseek / DO-AI family: two tiers only. Deep→max, else→high.
+		if deep {
+			return "max"
+		}
+		return "high"
+	}
+}
+
+// thinkingVocabularyForProvider returns the effort-string vocabulary the
+// upstream accepts, keyed by provider.Type (the ONE place this mapping lives).
+// Unknown/OpenAI-compatible providers default to the glm/DO-AI vocabulary
+// since DO-AI is the universal upstream for the zen model family.
+func thinkingVocabularyForProvider(providerType string) string {
+	if providerType == "OpenAI" {
+		return "openai"
+	}
+	return "glm"
+}
+
 // mapFinishReason maps an OpenAI finish_reason to an Anthropic stop_reason.
 // tool_calls → tool_use is load-bearing: Claude Code reads it to know it must
 // run a tool and continue the loop.
