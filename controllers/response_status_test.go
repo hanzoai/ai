@@ -18,7 +18,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	beecontext "github.com/beego/beego/context"
+	beecontext "github.com/hanzoai/beego/context"
 )
 
 // newRecorderController builds an ApiController wired to an httptest recorder so a

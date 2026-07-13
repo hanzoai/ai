@@ -35,7 +35,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/beego/beego/logs"
+	"github.com/hanzoai/beego/logs"
 	iam "github.com/hanzoai/iam"
 	"github.com/luxfi/zap"
 	openai "github.com/sashabaranov/go-openai"

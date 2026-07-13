@@ -18,7 +18,7 @@ package routers
 import (
 	"strings"
 
-	"github.com/beego/beego/context"
+	"github.com/hanzoai/beego/context"
 )
 
 // isJwtLike returns true if the token looks like a JWT (three dot-separated segments).
