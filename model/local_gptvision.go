@@ -69,20 +69,56 @@ func getImageRefinedText(text string) (string, error) {
 }
 
 func IsVisionModel(subType string) bool {
-	visionModels := []string{
-		"gpt-4o", "gpt-4o-2024-08-06", "gpt-4o-mini", "gpt-4o-mini-2024-07-18",
-		"gpt-4.5-preview", "gpt-4.5-preview-2025-02-27", "gpt-4.1",
-		"gpt-4.1-mini", "gpt-4.1-nano", "o1", "o1-pro", "o3", "o4-mini",
+	// upstream (DO AI) vision-capable models — the actual model IDs sent to the provider.
+	// Zen-branded models are resolved to their upstream BEFORE this check (route resolution
+	// translates zen3-vl → nemotron-nano-12b-v2-vl, etc.), so this includes both the DO AI
+	// model IDs AND the zen aliases for the path where no route resolution runs.
+	upstreamVision := map[string]bool{
+		// OpenAI vision models
+		"gpt-4o": true, "gpt-4o-2024-08-06": true, "gpt-4o-mini": true, "gpt-4o-mini-2024-07-18": true,
+		"gpt-4.5-preview": true, "gpt-4.5-preview-2025-02-27": true, "gpt-4.1": true,
+		"gpt-4.1-mini": true, "gpt-4.1-nano": true, "o1": true, "o1-pro": true, "o3": true, "o4-mini": true,
+		// DO AI multimodal / VL models (catalog July 2026)
+		"qwen3.5-397b-a17b":            true, // Alibaba Qwen 3.5 — multimodal
+		"qwen3-coder-flash":            true, // Alibaba Qwen3 Coder Flash 30B — multimodal
+		"alibaba-qwen3-32b":            true, // Alibaba Qwen3-32B — multimodal
+		"nemotron-nano-12b-v2-vl":      true, // NVIDIA Nemotron Nano 12B v2 VL
+		"nemotron-3-nano-omni":         true, // NVIDIA Nemotron 3 Nano Omni — hypermodal
+		"nemotron-3-ultra-550b":        true, // NVIDIA Nemotron 3 Ultra — multimodal
+		"nemotron-3-super-120b":        true, // NVIDIA Nemotron 3 Super — multimodal
+		"gemma-4-31b-it":               true, // Google Gemma 4 — multimodal
+		"kimi-k2.5":                    true, // Moonshot Kimi K2.5 — multimodal
+		"kimi-k2.6":                    true, // Moonshot Kimi K2.6 — multimodal
+		"ministral-3-8b-instruct-2512": true, // Mistral Ministral 3 8B — multimodal
+		"mistral-3-14B":                true, // Mistral Ministral 3 14B — multimodal
+		// Zen-branded vision aliases (catch before/after route resolution)
+		"zen3-vl": true, "zen3-omni": true, "zen5-omni": true, "zen-vision": true,
+		"zen3-vl-2b": true, "zen3-vl-8b": true, "zen3-vl-32b": true, "zen3-vl-235b-a22b": true,
+		// Fireworks VL aliases
+		"qwen3-vl-30b": true, "qwen3-vl-30b-a3b": true, "qwen3-vl-235b": true,
+		"qwen3-vl-30b-a3b-instruct": true, "qwen3-vl-30b-a3b-thinking": true,
 	}
+	return upstreamVision[subType]
+}
 
-	for _, visionModel := range visionModels {
-		if subType == visionModel {
-			return true
+// hasImageContent reports whether any message in the request carries image content.
+// OpenAI format: MultiContent with ChatMessagePartTypeImageURL parts.
+// Anthropic format: messages with "image" content blocks.
+func HasImageContent(req *openai.ChatCompletionRequest) bool {
+	for _, m := range req.Messages {
+		for _, part := range m.MultiContent {
+			if part.Type == openai.ChatMessagePartTypeImageURL {
+				return true
+			}
 		}
 	}
-
 	return false
 }
+
+// VisionModelForImages is the model to rewrite to when a request carries images
+// and the current model cannot handle them. zen5-omni (kimi-k2.6, 1T multimodal)
+// is the primary; zen3-omni (qwen3.5-397b-a17b) is the cheaper fallback.
+const VisionModelForImages = "zen5-omni"
 
 func OpenaiRawMessagesToGptVisionMessages(messages []*RawMessage) ([]openai.ChatCompletionMessage, error) {
 	res := []openai.ChatCompletionMessage{}
