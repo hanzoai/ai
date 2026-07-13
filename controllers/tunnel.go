@@ -20,7 +20,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/beego/beego/logs"
+	"github.com/hanzoai/beego/logs"
 	"github.com/gorilla/websocket"
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/object"

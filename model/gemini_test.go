@@ -22,7 +22,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/beego/beego"
+	"github.com/hanzoai/beego"
 	"github.com/hanzoai/ai/proxy"
 	"google.golang.org/genai"
 )
