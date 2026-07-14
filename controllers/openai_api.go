@@ -410,6 +410,14 @@ func iamAuthQuery() string {
 	return ""
 }
 
+// GetUserByAccessKey resolves an hk- IAM API key to its owning user via Hanzo
+// IAM. Exported so the authz filter (package routers) resolves the key path to
+// the same verified principal as the JWT path — one credential resolver, one
+// tenant, one billing subject.
+func GetUserByAccessKey(accessKey string) (*iam.User, error) {
+	return getUserByAccessKey(accessKey)
+}
+
 // getUserByAccessKey looks up a user by their IAM API key via Hanzo IAM.
 func getUserByAccessKey(accessKey string) (*iam.User, error) {
 	// Call IAM's get-user endpoint with accessKey query parameter
