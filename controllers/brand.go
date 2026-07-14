@@ -249,11 +249,22 @@ func brandAuthClient(b BrandIAM) (authClient, error) {
 	}
 	brandClientCacheMu.RUnlock()
 
-	// Build the per-brand client. Certificate is left empty: ParseJwtToken prefers
-	// the published JWKS at <Endpoint>/v1/iam/.well-known/jwks (keyed by the token
-	// kid), and the in-cluster IAM serves EVERY brand's signing cert in one JWKS
-	// (cert-hanzo/cert-lux/cert-zoo/...), so a brand token verifies by kid without a
-	// configured PEM. This matches the SDK's own JWKS-first design.
+	// Build the per-brand confidential client for the OAuth code→token exchange and
+	// org-scoped GetUser (refreshSessionUser). Certificate is left empty ON PURPOSE:
+	// this client NEVER verifies a JWT signature — the vendored IAM SDK's
+	// ParseJwtToken verifies against a SINGLE configured PEM (publicKeyFromPEM over
+	// c.Certificate), NOT a per-brand JWKS-by-kid. So request-auth JWT verification
+	// (object.ParseAndValidateJWT → the package-global's hanzo cert) accepts ONLY
+	// hanzo-SIGNED tokens today; a sibling brand's token, though its ISSUER is
+	// trusted, fails signature verification.
+	//
+	// SDK-BUMP RISK: if a future iam release adds JWKS-multi-cert verification (so
+	// lux/zoo/pars tokens verify by kid), every trustedJWTIssuers() brand becomes a
+	// valid request principal, and any grant gated PURELY on util.IsSuperAdmin
+	// (owner=="admin") would then accept ANOTHER brand's admin. The all-customer
+	// financial god-view (resolveCloudUsageScope) is already hardened for this — it
+	// additionally requires principalIsOwnBrand (iss == expectedJWTIssuer) — but
+	// AUDIT every other IsSuperAdmin gate BEFORE landing such a bump.
 	cl := iam.NewClient(b.Endpoint, b.ClientID, b.ClientSecret, "", b.Org, b.ClientID)
 
 	brandClientCacheMu.Lock()
