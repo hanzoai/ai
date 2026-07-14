@@ -177,6 +177,12 @@ func (c *ApiController) Rerank() {
 		provider.SubType = raw.Model
 	}
 
+	// Zen family: forward to the zen service, billed per call at the discovered price.
+	if provider.Type == "Zen" {
+		c.serveZenMedia("rerank", raw.Model, c.Ctx.Input.RequestBody, 1, orgId, authUser, isPremium, startTime)
+		return
+	}
+
 	// Native rerank provider → proxy the request straight through.
 	if isNativeRerankProvider(provider.Type) {
 		body, rerr := setJSONModel(c.Ctx.Input.RequestBody, provider.SubType)
