@@ -125,9 +125,11 @@ func InitZap() {
 		sqlAddr = "sql.hanzo.svc:9999"
 	}
 	go connectPeer(node, sqlAddr, "sql", &sqlPeerID)
-	// Datastore (datastore) is reached directly (object/datastore.go), NOT via a
-	// ZAP peer — the datastore image serves datastore on :8123/:9000, not a ZAP
-	// bridge, and the unified cloud binary never starts this node. See InitDatastore.
+	// Datastore (cloud_usage / observations ledger): optional ZAP peer to the
+	// datastore image cmd/zap-bridge (:9999). Dormant unless ZAP_DATASTORE_ADDR is
+	// set; even then the direct client (object/datastore.go) stays the ledger
+	// transport until the cutover repoints it. See object/datastore_zap.go.
+	initDatastorePeer(node)
 	// DocDB (FerretDB) — optional, document database via SQL wire protocol.
 	if docdbAddr := os.Getenv("ZAP_DOCDB_ADDR"); docdbAddr != "" {
 		go connectPeer(node, docdbAddr, "docdb", &docdbPeerID)
