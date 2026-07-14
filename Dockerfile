@@ -11,10 +11,17 @@ RUN pnpm install --frozen-lockfile && pnpm build
 FROM public.ecr.aws/docker/library/golang:1.26.4-alpine AS back
 RUN apk add --no-cache git
 WORKDIR /go/src/hanzo-cloud
-# Private cross-org modules (hanzoai/*, luxfi/* — luxfi/zap forward bridge) are
-# fetched via authenticated git, bypassing the public proxy. gh_token is the
-# shared docker-build.yml BuildKit secret; no-op when absent (local/dev).
-ENV GOPRIVATE=github.com/hanzoai/*,github.com/luxfi/*,github.com/zap-proto/*
+# Private cross-org modules (hanzoai/*, zap-proto/*) are fetched via authenticated
+# git, bypassing the public proxy. gh_token is the shared docker-build.yml BuildKit
+# secret; no-op when absent (local/dev).
+#
+# luxfi/* is PUBLIC and published to the Go module proxy, but its git tags are
+# transient — the remote re-tags, so a pinned tag (geth v1.17.12) later 404s on a
+# direct git fetch ("unknown revision"). Resolve luxfi through the proxy, which
+# holds each version immutably; GONOSUMDB skips the transparency log (whose stale
+# pre-re-tag hashes would mismatch), and go.sum still verifies the download.
+ENV GOPRIVATE=github.com/hanzoai/*,github.com/zap-proto/* \
+    GONOSUMDB=github.com/hanzoai/*,github.com/luxfi/*,github.com/zap-proto/*
 COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=secret,id=gh_token \
