@@ -119,17 +119,16 @@ type FallbackDef struct {
 
 // ModelDef describes a single model entry in the config.
 type ModelDef struct {
-	Provider       string         `yaml:"provider"`
-	Upstream       string         `yaml:"upstream"`
-	Fallbacks      []FallbackDef  `yaml:"fallbacks,omitempty"`
-	Premium        bool           `yaml:"premium"`
-	Hidden         bool           `yaml:"hidden"`
-	OwnedBy        string         `yaml:"owned_by"`
-	IdentityPrompt string         `yaml:"identity_prompt"`
-	AliasOf        string         `yaml:"alias_of"`
-	AliasPricing   string         `yaml:"alias_pricing"`
-	PricingOnly    bool           `yaml:"pricing_only"`
-	Pricing        *ModelPriceDef `yaml:"pricing,omitempty"`
+	Provider     string         `yaml:"provider"`
+	Upstream     string         `yaml:"upstream"`
+	Fallbacks    []FallbackDef  `yaml:"fallbacks,omitempty"`
+	Premium      bool           `yaml:"premium"`
+	Hidden       bool           `yaml:"hidden"`
+	OwnedBy      string         `yaml:"owned_by"`
+	AliasOf      string         `yaml:"alias_of"`
+	AliasPricing string         `yaml:"alias_pricing"`
+	PricingOnly  bool           `yaml:"pricing_only"`
+	Pricing      *ModelPriceDef `yaml:"pricing,omitempty"`
 	// ContextWindow is the model's max input+output context in tokens. When
 	// set (>0) it overrides the heuristic getContextLength table — models.yaml
 	// is the per-model source of truth, configurable without a rebuild. This
@@ -145,13 +144,12 @@ var (
 	configOnce        sync.Once
 )
 
-// ModelConfig is the runtime singleton that serves model routing, pricing,
-// and identity prompts from a parsed YAML config file.
+// ModelConfig is the runtime singleton that serves model routing and pricing
+// from a parsed YAML config file.
 type ModelConfig struct {
 	mu       sync.RWMutex
 	routes   map[string]modelRoute // lowercase key → route
 	pricing  map[string]modelPrice // lowercase key → price
-	prompts  map[string]string     // lowercase key → identity prompt
 	features FeatureFlags
 	retry    RetryDef
 	router   RouterConfigDef
@@ -173,7 +171,6 @@ func InitModelConfig(path string) error {
 	mc := &ModelConfig{
 		routes:  make(map[string]modelRoute),
 		pricing: make(map[string]modelPrice),
-		prompts: make(map[string]string),
 		stopCh:  make(chan struct{}),
 	}
 
@@ -215,7 +212,6 @@ func (mc *ModelConfig) loadFromFile(path string) error {
 func (mc *ModelConfig) applyConfig(file *ModelConfigFile) error {
 	routes := make(map[string]modelRoute, len(file.Models))
 	pricing := make(map[string]modelPrice, len(file.Models))
-	prompts := make(map[string]string)
 
 	// Build alias pricing map for resolution
 	aliasPricingMap := make(map[string]string)
@@ -264,11 +260,6 @@ func (mc *ModelConfig) applyConfig(file *ModelConfigFile) error {
 		if def.AliasPricing != "" {
 			aliasPricingMap[key] = strings.ToLower(def.AliasPricing)
 		}
-
-		// Identity prompts
-		if def.IdentityPrompt != "" {
-			prompts[key] = strings.TrimSpace(def.IdentityPrompt)
-		}
 	}
 
 	// Resolve alias pricing (second pass)
@@ -316,7 +307,6 @@ func (mc *ModelConfig) applyConfig(file *ModelConfigFile) error {
 	mc.mu.Lock()
 	mc.routes = routes
 	mc.pricing = pricing
-	mc.prompts = prompts
 	mc.features = file.Features
 	mc.retry = file.Retry
 	mc.router = routerCfg
@@ -325,8 +315,8 @@ func (mc *ModelConfig) applyConfig(file *ModelConfigFile) error {
 	mc.pricingTTL = pricingTTL
 	mc.mu.Unlock()
 
-	logs.Info("Model config loaded: %d routes, %d pricing entries, %d identity prompts",
-		len(routes), len(pricing), len(prompts))
+	logs.Info("Model config loaded: %d routes, %d pricing entries",
+		len(routes), len(pricing))
 
 	return nil
 }
@@ -463,37 +453,6 @@ func (mc *ModelConfig) GetPrice(model string) modelPrice {
 		return price
 	}
 	return mc.defaults
-}
-
-// GetIdentityPrompt returns the identity system prompt for a zen model.
-// Falls back through version aliases (zen-mini → zen4-mini → zen3-mini)
-// and a generic zen catch-all.
-func (mc *ModelConfig) GetIdentityPrompt(model string) string {
-	key := strings.ToLower(model)
-	mc.mu.RLock()
-	defer mc.mu.RUnlock()
-
-	if prompt, ok := mc.prompts[key]; ok {
-		return prompt
-	}
-
-	// Try stripping version prefix for versionless aliases
-	if strings.HasPrefix(key, "zen-") {
-		suffix := key[4:]
-		if prompt, ok := mc.prompts["zen4-"+suffix]; ok {
-			return prompt
-		}
-		if prompt, ok := mc.prompts["zen3-"+suffix]; ok {
-			return prompt
-		}
-	}
-
-	// Generic zen fallback
-	if strings.HasPrefix(key, "zen") {
-		return "You are a Zen LM model by Hanzo AI Inc. When asked about yourself, identify as a Zen LM model by Hanzo AI."
-	}
-
-	return ""
 }
 
 // ListModels returns visible models sorted by name (excludes hidden).

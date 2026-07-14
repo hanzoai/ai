@@ -20,9 +20,9 @@ import (
 	"os"
 	"testing"
 
-	beecontext "github.com/hanzoai/beego/context"
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/object"
+	beecontext "github.com/hanzoai/beego/context"
 	iam "github.com/hanzoai/iam"
 )
 

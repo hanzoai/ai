@@ -18,7 +18,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -183,7 +182,6 @@ models:
 	mc := &ModelConfig{
 		routes:  make(map[string]modelRoute),
 		pricing: make(map[string]modelPrice),
-		prompts: make(map[string]string),
 		stopCh:  make(chan struct{}),
 	}
 	if err := mc.loadFromFile(path); err != nil {
@@ -307,32 +305,19 @@ func TestListModelsRichStaticPath(t *testing.T) {
 	}
 }
 
-// TestZenProviderNeverLeaksUpstream is the regression guard for the brand leak.
-// It sweeps EVERY visible model in the real static table and asserts that no
-// branded model (ownedBy set) exposes an internal upstream provider. This is the
-// coverage that was missing when the leak shipped.
-func TestZenProviderNeverLeaksUpstream(t *testing.T) {
+// TestNoStaticBrandedModels is the invariant after the Zen family moved to the
+// zen service: ai's static table holds NO branded (owned_by) model. The Zen
+// family — the only branded models — is discovered from zen's /v1/models and
+// served through the zen provider; zen's discovery surface carries no upstream,
+// so that is where the brand-leak guard now lives. A branded model reappearing
+// here means a zen SKU was re-hardcoded into ai, the exact drift this removed.
+func TestNoStaticBrandedModels(t *testing.T) {
 	if GetModelConfig() != nil {
 		t.Skip("global model config set by another test; static path not exercised")
 	}
-	branded := 0
 	for _, m := range listAvailableModels() {
-		route := modelRoutes[m.ID]
-		if route.ownedBy == "" {
-			continue // unbranded passthrough — providerName is the public owned_by
+		if route := modelRoutes[m.ID]; route.ownedBy != "" {
+			t.Errorf("static table has branded model %q (owned_by=%s) — zen SKUs must be dynamic, not hardcoded", m.ID, route.ownedBy)
 		}
-		branded++
-		if upstreamProviders[m.Provider] {
-			t.Errorf("branded model %q (owned_by=%s) leaks upstream provider %q", m.ID, route.ownedBy, m.Provider)
-		}
-		if m.Provider == route.providerName && route.providerName != "" {
-			t.Errorf("branded model %q must not echo route.providerName %q", m.ID, route.providerName)
-		}
-		if strings.Contains(strings.ToLower(m.Provider), "fireworks") {
-			t.Errorf("branded model %q exposes fireworks: %q", m.ID, m.Provider)
-		}
-	}
-	if branded == 0 {
-		t.Fatal("no branded models in listing — test is vacuous; expected zen/* owned_by:hanzo")
 	}
 }

@@ -70,7 +70,6 @@ models:
   # credit, agreement-gated, or down (402/403/429/quota/credit/5xx/unavailable)
   # via the deployed failover machinery (controllers/failover.go). This is the
   # DRY "one way": `best` is just a model whose fallback chain IS the quality
-  # ranking — the SAME mechanism as zen-pro, not a parallel router. Re-rank by
   # reordering the list. `hanzo code` defaults to this model. A SuperAdmin can
   # override the ranking at runtime WITHOUT a restart via a DB model_route for
   # `best` (owner "built-in"), which resolves before this file and hot-reloads
@@ -740,179 +739,10 @@ models:
     hidden: true
     pricing: {input: 15.00, output: 75.00}
 
-  # ── Zen4 branded models (premium) ─────────────────────────────────────
-
-  zen4:
-    context_window: 64000
-    provider: do-ai
-    upstream: glm-5
-    premium: true
-    owned_by: hanzo
-    identity_prompt: "You are **Zen4**, a frontier large language model created by **Hanzo AI Inc** — a Techstars-backed applied AI lab. Identify as Zen4 by Hanzo AI."
-    pricing: {input: 3.00, output: 9.60}
-
-  zen4-ultra:
-    context_window: 87040
-    provider: do-ai
-    upstream: deepseek-v4-pro
-    premium: true
-    owned_by: hanzo
-    identity_prompt: "You are **Zen4 Ultra**, the most powerful reasoning model by **Hanzo AI Inc**. Identify as Zen4 Ultra by Hanzo AI."
-    pricing: {input: 2.70, output: 2.70}
-
-  zen4-pro:
-    context_window: 131072
-    provider: do-ai
-    upstream: qwen3.5-397b-a17b
-    premium: true
-    owned_by: hanzo
-    identity_prompt: "You are **Zen4 Pro**, a high-capability model by **Hanzo AI Inc**. Identify as Zen4 Pro by Hanzo AI."
-    pricing: {input: 3.60, output: 3.60}
-
-  zen4-max:
-    context_window: 96000
-    provider: do-ai
-    upstream: kimi-k2.6
-    premium: true
-    owned_by: hanzo
-    identity_prompt: "You are **Zen4 Max**, an extended-context model by **Hanzo AI Inc**. Identify as Zen4 Max by Hanzo AI."
-    pricing: {input: 9.00, output: 9.00}
-
-  zen4-mini:
-    context_window: 32768
-    provider: do-ai
-    upstream: alibaba-qwen3-32b
-    premium: true
-    owned_by: hanzo
-    identity_prompt: "You are **Zen4 Mini**, a fast efficient model by **Hanzo AI Inc**. Identify as Zen4 Mini by Hanzo AI."
-    pricing: {input: 0.60, output: 0.60}
-
-  zen4-thinking:
-    context_window: 87040
-    provider: do-ai
-    upstream: deepseek-v4-pro
-    premium: true
-    owned_by: hanzo
-    identity_prompt: "You are **Zen4 Thinking**, a deep-reasoning model by **Hanzo AI Inc**. Identify as Zen4 Thinking by Hanzo AI."
-    pricing: {input: 2.70, output: 2.70}
-
-  zen4-coder:
-    context_window: 262144
-    provider: do-ai
-    upstream: qwen3-coder-flash
-    premium: true
-    owned_by: hanzo
-    identity_prompt: "You are **Zen4 Coder**, a code-specialized model by **Hanzo AI Inc**. Identify as Zen4 Coder by Hanzo AI. Write clean, idiomatic code."
-    pricing: {input: 1.50, output: 1.50}
-
-  zen4-coder-pro:
-    context_window: 262144
-    provider: do-ai
-    upstream: glm-5.2
-    premium: true
-    owned_by: hanzo
-    identity_prompt: "You are **Zen4 Coder Pro**, a premium code model by **Hanzo AI Inc**. Identify as Zen4 Coder Pro by Hanzo AI."
-    pricing: {input: 4.50, output: 4.50}
-
-  zen4-coder-flash:
-    context_window: 262144
-    provider: do-ai
-    upstream: qwen3-coder-flash
-    premium: true
-    owned_by: hanzo
-    identity_prompt: "You are **Zen4 Coder Flash**, a fast code model by **Hanzo AI Inc**. Identify as Zen4 Coder Flash by Hanzo AI."
-    pricing: {input: 1.50, output: 1.50}
-
-  # ── Zen3 specialty models ─────────────────────────────────────────────
-
-  zen3-omni:
-    context_window: 131072
-    provider: do-ai
-    upstream: nemotron-3-nano-omni
-    premium: true
-    owned_by: hanzo
-    identity_prompt: "You are **Zen3 Omni**, a hypermodal AI model by **Hanzo AI Inc** — 3rd generation Zen LM. You handle text, vision, and structured output with a 131K context window. Identify as Zen3 Omni by Hanzo AI."
-    pricing: {input: 1.80, output: 6.60}
-
-  zen3-vl:
-    context_window: 128000
-    provider: do-ai
-    upstream: nemotron-nano-12b-v2-vl
-    premium: true
-    owned_by: hanzo
-    identity_prompt: "You are **Zen3 VL**, a vision-language model by **Hanzo AI Inc** — 3rd generation Zen LM. Identify as Zen3 VL by Hanzo AI."
-    pricing: {input: 0.45, output: 1.80}
-
-  zen3-nano:
-    context_window: 32768
-    provider: do-ai
-    upstream: alibaba-qwen3-32b
-    premium: true
-    owned_by: hanzo
-    identity_prompt: "You are **Zen3 Nano**, a lightweight edge model by **Hanzo AI Inc** — 3rd generation Zen LM. Identify as Zen3 Nano by Hanzo AI."
-    pricing: {input: 0.30, output: 0.30}
-
-  zen3-guard:
-    context_window: 128000
-    provider: do-ai
-    upstream: llama3.3-70b-instruct
-    premium: true
-    owned_by: hanzo
-    identity_prompt: "You are **Zen3 Guard**, a content safety model by **Hanzo AI Inc** — 3rd generation Zen LM. Identify as Zen3 Guard by Hanzo AI."
-    pricing: {input: 0.30, output: 0.30}
-
-  zen3-embedding:
-    provider: do-ai
-    upstream: qwen3-embedding-0.6b
-    premium: true
-    owned_by: hanzo
-    pricing: {input: 0.39, output: 0.39}
-
-  # ── Zen3 image (diffusion) family ─────────────────────────────────────
   # do-ai fal-hosted diffusion via the async image API (model/doai_image.go).
   # FLUX.1 schnell is the flagship/fast model; SDXL serves the -sdxl/-ssd
   # variants. Pricing is per-token-shaped here only because the config schema
   # is token-based; image calls bill per image via controllers.imageCostCents.
-  zen3-image:
-    provider: do-ai
-    upstream: stable-diffusion-3.5-large
-    premium: true
-    owned_by: hanzo
-  zen3-image-max:
-    provider: do-ai
-    upstream: stable-diffusion-3.5-large
-    premium: true
-    owned_by: hanzo
-  zen3-image-fast:
-    provider: do-ai
-    upstream: stable-diffusion-3.5-large
-    premium: true
-    owned_by: hanzo
-  zen3-image-dev:
-    provider: do-ai
-    upstream: stable-diffusion-3.5-large
-    premium: true
-    owned_by: hanzo
-  zen3-image-playground:
-    provider: do-ai
-    upstream: stable-diffusion-3.5-large
-    premium: true
-    owned_by: hanzo
-  zen3-image-jp:
-    provider: do-ai
-    upstream: stable-diffusion-3.5-large
-    premium: true
-    owned_by: hanzo
-  zen3-image-sdxl:
-    provider: do-ai
-    upstream: stable-diffusion-3.5-large
-    premium: true
-    owned_by: hanzo
-  zen3-image-ssd:
-    provider: do-ai
-    upstream: stable-diffusion-3.5-large
-    premium: true
-    owned_by: hanzo
 
   # ── DO-AI image: Stable Diffusion 3.5 Large ───────────────────────────
   # Unlike the fal FLUX/SDXL models (async-invoke), SD 3.5 Large is served on
@@ -932,7 +762,6 @@ models:
   # isDOAIVideoModel → the videos path. Billed per video via
   # controllers.videoCostCents (40¢/video, DO publishes no per-video rate) —
   # token pricing is unused for video. The unbranded raw id below stays on do-ai;
-  # the zen3-video brand family is served on OUR GB10 via the spark-video
   # provider (same async /v1/videos API), owned_by hanzo (upstream never exposed).
   #
   # premium: true on EVERY video id (including this unbranded passthrough): a t2v
@@ -947,23 +776,6 @@ models:
     provider: do-ai
     upstream: wan2-2-t2v-a14b
     premium: true
-  zen3-video:
-    context_window: 100
-    provider: spark-video
-    upstream: wan2-2-t2v-a14b
-    premium: true
-    owned_by: hanzo
-  zen3-video-fast:
-    context_window: 100
-    provider: spark-video
-    upstream: wan2-2-t2v-a14b
-    premium: true
-    owned_by: hanzo
-  zen3-video-pro:
-    provider: spark-video
-    upstream: wan2-2-t2v-a14b
-    premium: true
-    owned_by: hanzo
 
   # ── DO-AI Inference Router (served at POST /v1/chat/completions) ───────
   # DO's model router auto-selects the best foundation model per request and
@@ -996,240 +808,6 @@ models:
     upstream: "router:writing"
     pricing: {input: 0.90, output: 0.90}
 
-  # ── Zen versionless aliases (always point to latest zenN variant) ──────
-
-  zen:
-    context_window: 64000
-    provider: do-ai
-    upstream: glm-5
-    premium: true
-    owned_by: hanzo
-    hidden: true
-    pricing: {input: 3.00, output: 9.60}
-
-  zen-pro:
-    context_window: 131072
-    provider: do-ai
-    upstream: qwen3.5-397b-a17b
-    premium: true
-    owned_by: hanzo
-    hidden: true
-    pricing: {input: 2.70, output: 2.70}
-
-  zen-max:
-    context_window: 96000
-    provider: do-ai
-    upstream: kimi-k2.6
-    premium: true
-    owned_by: hanzo
-    hidden: true
-    pricing: {input: 3.60, output: 3.60}
-
-  zen-mini:
-    context_window: 32768
-    provider: do-ai
-    upstream: alibaba-qwen3-32b
-    premium: true
-    owned_by: hanzo
-    hidden: true
-    pricing: {input: 0.60, output: 0.60}
-
-  zen-ultra:
-    context_window: 87040
-    provider: do-ai
-    upstream: deepseek-v4-pro
-    premium: true
-    owned_by: hanzo
-    hidden: true
-    pricing: {input: 3.00, output: 9.60}
-
-  zen-coder:
-    context_window: 262144
-    provider: do-ai
-    upstream: qwen3-coder-flash
-    premium: true
-    owned_by: hanzo
-    hidden: true
-    pricing: {input: 3.60, output: 3.60}
-
-  zen-coder-flash:
-    context_window: 262144
-    provider: do-ai
-    upstream: qwen3-coder-flash
-    premium: true
-    owned_by: hanzo
-    hidden: true
-    pricing: {input: 1.50, output: 1.50}
-
-  zen-coder-pro:
-    context_window: 262144
-    provider: do-ai
-    upstream: glm-5.2
-    premium: true
-    owned_by: hanzo
-    hidden: true
-    pricing: {input: 4.50, output: 4.50}
-
-  zen-thinking:
-    context_window: 87040
-    provider: do-ai
-    upstream: deepseek-v4-pro
-    premium: true
-    owned_by: hanzo
-    hidden: true
-    pricing: {input: 2.70, output: 2.70}
-
-  zen-vl:
-    context_window: 128000
-    provider: do-ai
-    upstream: nemotron-nano-12b-v2-vl
-    premium: true
-    owned_by: hanzo
-    hidden: true
-    pricing: {input: 0.45, output: 1.80}
-
-  # Readable alias for zen3-vl (vision) — preferred over the terse zen-vl.
-  zen-vision:
-    context_window: 128000
-    provider: do-ai
-    upstream: nemotron-nano-12b-v2-vl
-    premium: true
-    owned_by: hanzo
-    hidden: true
-    identity_prompt: "You are **Zen3 VL**, a vision-language model by **Hanzo AI Inc** — 3rd generation Zen LM. Identify as Zen3 VL by Hanzo AI."
-    pricing: {input: 0.45, output: 1.80}
-
-  zen-nano:
-    context_window: 32768
-    provider: do-ai
-    upstream: alibaba-qwen3-32b
-    premium: true
-    owned_by: hanzo
-    hidden: true
-    pricing: {input: 0.30, output: 0.30}
-
-  zen-omni:
-    context_window: 64000
-    provider: do-ai
-    upstream: nemotron-3-nano-omni
-    premium: true
-    owned_by: hanzo
-    hidden: true
-    pricing: {input: 1.80, output: 6.60}
-
-  zen-guard:
-    context_window: 128000
-    provider: do-ai
-    upstream: llama3.3-70b-instruct
-    premium: true
-    owned_by: hanzo
-    hidden: true
-    pricing: {input: 0.30, output: 0.30}
-
-  zen-embedding:
-    provider: do-ai
-    upstream: qwen3-embedding-0.6b
-    premium: true
-    owned_by: hanzo
-    hidden: true
-    pricing: {input: 0.39, output: 0.39}
-
-  # ── Zen5 ladder (Hanzo Zen LM family) ────────────────────────────────
-  # Routed directly to DO-AI; identity injection handled by zenIdentityPrompt.
-
-  zen5-flash:
-    provider: do-ai
-    upstream: deepseek-4-flash
-    premium: true
-    owned_by: hanzo
-    identity_prompt: "You are **Zen5 Flash**, Hanzo AI's fastest 5th-generation model. Identify as Zen5 Flash by Hanzo AI Inc."
-    pricing: {input: 0.10, output: 0.30}
-    fallbacks:
-    - {provider: do-ai, upstream: deepseek-v4-pro, context_window: 1000000}
-
-  zen5-mini:
-    context_window: 65536
-    provider: do-ai
-    upstream: minimax-m2.5
-    premium: true
-    owned_by: hanzo
-    identity_prompt: "You are **Zen5 Mini**, Hanzo AI's efficient 5th-generation agentic model. Identify as Zen5 Mini by Hanzo AI Inc."
-    pricing: {input: 0.30, output: 0.90}
-
-  zen5:
-    context_window: 262144
-    provider: do-ai
-    upstream: glm-5.2
-    premium: true
-    owned_by: hanzo
-    identity_prompt: "You are **Zen5**, Hanzo AI's 5th-generation frontier model. Identify as Zen5 by Hanzo AI Inc."
-    pricing: {input: 3.00, output: 9.60}
-    # Capability fallback: glm-5.2 is capped at 262,144 on DO. A prompt that
-    # does not fit is NOT refused — RouteForContext sends it to a provider
-    # that can hold it. deepseek-v4-pro is the same platform but is not
-    # subject to the 262,144 cap (measured: 500,005 tokens accepted).
-    fallbacks:
-    - {provider: do-ai, upstream: deepseek-v4-pro, context_window: 1000000}
-
-  zen5-coder:
-    context_window: 262144
-    provider: do-ai
-    upstream: glm-5.2
-    premium: true
-    owned_by: hanzo
-    identity_prompt: "You are **Zen5 Coder**, Hanzo AI's 5th-generation code-specialized model. Identify as Zen5 Coder by Hanzo AI Inc. Write clean, idiomatic code."
-    pricing: {input: 3.00, output: 9.60}
-    fallbacks:
-    - {provider: do-ai, upstream: deepseek-v4-pro, context_window: 1000000}
-
-  zen5-pro:
-    # No window of its own: it inherits deepseek-v4-pro's MEASURED 1,000,000.
-    # It used to declare 87040 here — DO's advertised figure, which is wrong —
-    # and so capped our only true 1M model to 8.7% of what it actually serves.
-    provider: do-ai
-    upstream: deepseek-v4-pro
-    premium: true
-    owned_by: hanzo
-    identity_prompt: "You are **Zen5 Pro**, Hanzo AI's high-capability 5th-generation model. Identify as Zen5 Pro by Hanzo AI Inc."
-    pricing: {input: 9.00, output: 27.00}
-
-  zen5-max:
-    context_window: 131072
-    provider: do-ai
-    upstream: qwen3.5-397b-a17b
-    premium: true
-    owned_by: hanzo
-    identity_prompt: "You are **Zen5 Max**, Hanzo AI's top-tier 5th-generation model. Identify as Zen5 Max by Hanzo AI Inc."
-    pricing: {input: 12.00, output: 36.00}
-    fallbacks:
-    - {provider: do-ai, upstream: deepseek-v4-pro, context_window: 1000000}
-
-  zen5-ultra:
-    # The frontier tier. deepseek-v4-pro is the primary because it is the only
-    # model DO actually serves at 1M today (measured: 1,000,005 tokens accepted).
-    #
-    # The Anthropic frontier models (fable-5, opus-4.8) are what this tier WANTS
-    # — both advertised at 1M — but DO returns 403 "this model is not available
-    # for your account" for them. They are listed, not served. So they sit at the
-    # head of the fallback chain rather than being the primary: leading with a
-    # model we cannot call bought a wasted 403 round-trip on every request before
-    # the fallback rescued it. The day the agreement lands the chain promotes
-    # itself with no code change and no client change.
-    #
-    # A capability alias must name a capability we HAVE.
-    provider: do-ai
-    upstream: deepseek-v4-pro
-    premium: true
-    owned_by: hanzo
-    fallbacks:
-    - {provider: do-ai, upstream: anthropic-claude-fable-5}       # 1M, when entitled
-    - {provider: do-ai, upstream: anthropic-claude-opus-4.8}      # 1M, when entitled
-    - {provider: do-ai, upstream: glm-5.2}                        # 256K
-    - {provider: do-ai, upstream: deepseek-4-flash}               # 64K
-    identity_prompt: "You are **Zen5 Ultra**, Hanzo AI's most powerful 5th-generation model. Identify as Zen5 Ultra by Hanzo AI Inc."
-    pricing: {input: 20.00, output: 60.00}
-
-  # zen5-fable — the Anthropic frontier tier, NOT yet generally available.
   #
   # hidden: it does not appear in /v1/models, so no user can discover or select
   # it, but it stays callable for anyone we deliberately let through (waitlist /
@@ -1237,66 +815,10 @@ models:
   # lands this serves 1M with no further change, and dropping `hidden` is what
   # makes it public. Until then it degrades to the same 1M we can actually serve
   # rather than failing, so an allowlisted caller is never broken.
-  zen5-fable:
-    provider: do-ai
-    upstream: anthropic-claude-fable-5
-    premium: true
-    hidden: true
-    owned_by: hanzo
-    context_window: 1000000
-    identity_prompt: "You are **Zen5 Fable**, Hanzo AI's frontier 5th-generation model. Identify as Zen5 Fable by Hanzo AI Inc."
-    fallbacks:
-    - {provider: do-ai, upstream: deepseek-v4-pro, context_window: 1000000}
-    pricing: {input: 20.00, output: 60.00}
 
-  # zen5-code — the code-specialized capability alias. Stable contract: swap
   # the upstream (Kimi K2.7 Code when it lands; qwen3-coder today) in yaml only.
-  zen5-code:
-    provider: do-ai
-    upstream: qwen3-coder
-    premium: true
-    owned_by: hanzo
-    fallbacks:
-    - {provider: do-ai, upstream: glm-5.2}
-    - {provider: do-ai, upstream: deepseek-v4-pro}
-    identity_prompt: "You are **Zen5 Code**, Hanzo AI's code-specialized model. Identify as Zen5 Code by Hanzo AI Inc. Write clean, idiomatic code."
-    pricing: {input: 3.00, output: 9.60}
 
-  # zen5-omni — the vision/multimodal tier. Kimi K2.6 is the strongest multimodal
-  # on DO (1T params, 96K context, text + vision). Falls through to zen3-omni
   # (qwen3.5-397b-a17b, 397B, 131K context) when K2.6 is unavailable.
-  zen5-omni:
-    provider: do-ai
-    upstream: kimi-k2.6
-    context_window: 96000
-    premium: true
-    owned_by: hanzo
-    identity_prompt: "You are **Zen5 Omni**, a hypermodal AI model by **Hanzo AI Inc** — 5th generation Zen. You handle text, vision, video frames, and structured output with a 96K context window. Identify as Zen5 Omni by Hanzo AI."
-    fallbacks:
-    - {provider: do-ai, upstream: qwen3.5-397b-a17b, context_window: 131072}
-    pricing: {input: 2.00, output: 6.00}
-
-  # ── Zen5 embedding ───────────────────────────────────────────────────
-  zen5-embedding-0.6B:
-    provider: zen-gateway
-    upstream: zen5-embedding-0.6B
-    premium: true
-    owned_by: hanzo
-    pricing: {input: 0.05, output: 0.05}
-
-  zen5-embedding-4B:
-    provider: zen-gateway
-    upstream: zen5-embedding-4B
-    premium: true
-    owned_by: hanzo
-    pricing: {input: 0.10, output: 0.10}
-
-  zen5-embedding-8B:
-    provider: zen-gateway
-    upstream: zen5-embedding-8B
-    premium: true
-    owned_by: hanzo
-    pricing: {input: 0.20, output: 0.20}
 
   # ── OpenAI-compatible embeddings (served at POST /v1/embeddings) ───────
   # Canonical text-embedding-* names route to OpenAI Direct, whose key
@@ -1352,115 +874,28 @@ models:
     pricing: {input: 0.009, output: 0.00}
 
   # ── Rerank (served at POST /v1/rerank) ────────────────────────────────
-  # zen-reranker is a bi-encoder reranker: /v1/rerank embeds query+documents via
   # this embedding model (text-embedding-3-large on OpenAI Direct) and ranks by
   # cosine similarity — a real ranked response with no rerank-specific key and no
   # GPU. To add a cross-encoder reranker, seed a Jina/Cohere provider (drop
   # JINA_API_KEY / COHERE_API_KEY into the cloud-api-llm-keys KMS secret) and add
   # a model here routed to it; /v1/rerank proxies native rerank providers directly.
-  zen-reranker:
-    provider: openai-direct
-    upstream: text-embedding-3-large
-    owned_by: hanzo
-    pricing: {input: 0.13, output: 0.00}
 
-  # ── Zen3 specialty (vision / audio / web / guard) ────────────────────
-  # Sub-tier zen3 SKUs routed via zen-gateway. The flagship zen3-omni /
-  # zen3-vl / zen3-nano / zen3-guard / zen3-embedding live above with
   # direct-Fireworks routes.
 
   # Vision-language size variants
-  zen3-vl-2B:
-    provider: zen-gateway
-    upstream: zen3-vl-2B
-    premium: true
-    owned_by: hanzo
-    pricing: {input: 0.05, output: 0.20}
 
-  zen3-vl-8B:
-    provider: zen-gateway
-    upstream: zen3-vl-8B
-    premium: true
-    owned_by: hanzo
-    pricing: {input: 0.15, output: 0.60}
-
-  zen3-vl-32B:
-    provider: zen-gateway
-    upstream: zen3-vl-32B
-    premium: true
-    owned_by: hanzo
-    pricing: {input: 0.60, output: 2.40}
-
-  zen3-vl-235B-A22B:
-    provider: zen-gateway
-    upstream: zen3-vl-235B-A22B
-    premium: true
-    owned_by: hanzo
-    pricing: {input: 2.70, output: 10.80}
-
-  # NOTE: zen3-vl-reranker-{2B,8B} and zen3-vl-embedding-{2B,8B} were
   # virtual SKUs with no HF weights and no working upstream — removed
-  # 2026-05-30. The canonical zen3-vl size variants above remain.
 
   # Speech recognition (ASR)
-  zen3-asr:
-    provider: zen-gateway
-    upstream: zen3-asr
-    premium: true
-    owned_by: hanzo
-    pricing: {input: 0.04, output: 0.04}
-
-  zen3-asr-0.6B:
-    provider: zen-gateway
-    upstream: zen3-asr-0.6B
-    premium: true
-    owned_by: hanzo
-    pricing: {input: 0.02, output: 0.02}
-
-  zen3-asr-aligner:
-    provider: zen-gateway
-    upstream: zen3-asr-aligner
-    premium: true
-    owned_by: hanzo
-    pricing: {input: 0.02, output: 0.02}
 
   # Text-to-speech (TTS)
-  zen3-tts:
-    provider: zen-gateway
-    upstream: zen3-tts
-    premium: true
-    owned_by: hanzo
-    pricing: {input: 5.00, output: 5.00}
 
-  zen3-tts-0.6B:
-    provider: zen-gateway
-    upstream: zen3-tts-0.6B
-    premium: true
-    owned_by: hanzo
-    pricing: {input: 2.00, output: 2.00}
-
-  zen3-tts-voice-design:
-    provider: zen-gateway
-    upstream: zen3-tts-voice-design
-    premium: true
-    owned_by: hanzo
-    pricing: {input: 8.00, output: 8.00}
-
-  zen3-tts-custom-voice:
-    provider: zen-gateway
-    upstream: zen3-tts-custom-voice
-    premium: true
-    owned_by: hanzo
-    pricing: {input: 10.00, output: 10.00}
-
-  # NOTE: zen3-web-{8B,14B,32B} were virtual SKUs with no HF weights and
   # no working upstream — removed 2026-05-30.
 
   # ── DO upstream leaves ──────────────────────────────────────────────
   # Declared so every alias can inherit its upstream's REAL served window
   # (ModelConfig.ContextWindow follows the alias chain). Windows come from
   # the live DO catalog, not a guess. hidden: they are the plumbing behind
-  # the zen aliases, not products in their own right.
   alibaba-qwen3-32b:
     provider: do-ai
     upstream: alibaba-qwen3-32b
