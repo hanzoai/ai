@@ -159,25 +159,46 @@ func hasPresentCredential(ctx *context.Context) bool {
 }
 
 // sessionOrBearerUser resolves the request principal for the authz gate: the
-// session user (cookie auth) if present, else the VERIFIED Bearer JWT user.
+// session user (cookie auth) if present, else the VERIFIED Bearer credential's
+// user. Both Bearer forms resolve to the SAME principal so tenant scoping and
+// billing are identical on either — one way to authenticate, one way to bill:
+//
+//   - a JWT is signature- AND issuer/audience-validated via
+//     object.ParseAndValidateJWT (never raw iam.ParseJwtToken), so a forged token
+//     cannot pose as an admin.
+//   - an hk- IAM API key is resolved to its owning user via IAM (getUserByAccessKey,
+//     the same get-user?accessKey= lookup the balance gate bills against). Without
+//     this, an hk- key authenticated (e.g. /v1/models) but GetOrg saw no principal,
+//     fell back to the empty IAM_ORG default, and every chat call 402'd at zen with
+//     "a billable tenant is required" — the `hanzo code` failure.
+//
 // AutoSigninFilter no-ops for /v1/ paths, so a console call that authenticates
-// with a Bearer JWT (no cookie) would otherwise present no principal here — this
-// resolves it. The JWT is signature- AND issuer/audience-validated via
-// object.ParseAndValidateJWT (never raw iam.ParseJwtToken), so a forged token
-// cannot pose as an admin.
+// with a Bearer credential (no cookie) would otherwise present no principal here.
 func sessionOrBearerUser(ctx *context.Context) *iam.User {
 	if u := GetSessionUser(ctx); u != nil {
 		return u
 	}
 	token := parseBearerToken(ctx)
-	if token == "" || !isJwtLike(token) {
+	if token == "" {
 		return nil
 	}
-	claims, err := object.ParseAndValidateJWT(token)
-	if err != nil {
+	if isJwtLike(token) {
+		claims, err := object.ParseAndValidateJWT(token)
+		if err != nil {
+			return nil
+		}
+		return &claims.User
+	}
+	// Non-JWT Bearer: an hk- IAM API key. Resolve it to its owner via IAM so the
+	// key path carries the same verified principal (and thus the same tenant) as
+	// the JWT path. GetUserByAccessKey returns (nil, nil) for an unknown key (IAM
+	// 200 + data:null), so guard BOTH the error and a nil user — fail-secure, no
+	// principal on an unrecognized key.
+	user, err := controllers.GetUserByAccessKey(token)
+	if err != nil || user == nil {
 		return nil
 	}
-	return &claims.User
+	return user
 }
 
 // normalizedControllerName derives the controllerName the gate keys on from the
