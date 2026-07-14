@@ -374,6 +374,10 @@ func initAPI() {
 	// Completes native audio+image+video: /v1/audio/speech, /v1/images/generations,
 	// /v1/videos/generations all OpenAI-shaped on the one router.
 	beego.Router("/v1/audio/speech", &controllers.ApiController{}, "POST:AudioSpeech")
+	// Zen-native generative audio verbs: voice (TTS), music, foley.
+	beego.Router("/v1/audio/voice", &controllers.ApiController{}, "POST:AudioMedia")
+	beego.Router("/v1/audio/music", &controllers.ApiController{}, "POST:AudioMedia")
+	beego.Router("/v1/audio/foley", &controllers.ApiController{}, "POST:AudioMedia")
 
 	beego.Router("/v1/get-model-routes", &controllers.ApiController{}, "GET:GetModelRoutes")
 	beego.Router("/v1/get-model-route", &controllers.ApiController{}, "GET:GetModelRoute")
