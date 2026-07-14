@@ -202,6 +202,28 @@ func (c *ApiController) RequireSignedInUser() (*iam.User, bool) {
 	return user, true
 }
 
+// RequirePrincipal resolves the request principal from EITHER the browser session
+// cookie OR a verified Bearer JWT (c.principalUser), returning a real 401 when
+// neither is present. It is the Bearer-aware sibling of RequireSignedInUser: an
+// endpoint that must serve BOTH the console (session cookie) and the token-bearing
+// surfaces (app / chat / billing, which carry an IAM Bearer, not the console
+// cookie) with the SAME resolved identity uses this. The Bearer branch is
+// signature- AND issuer/audience-validated via object.ParseAndValidateJWT (never
+// raw iam.ParseJwtToken), so a forged token cannot pose as anyone.
+//
+// The returned user is the SOLE authority for any downstream org/role scope
+// decision — the caller MUST derive scope from THIS user (its Owner, its role via
+// util.IsSuperAdmin), NEVER from a request header or query param. That is what
+// keeps a Bearer-reachable, org-scoped read tenant-safe.
+func (c *ApiController) RequirePrincipal() (*iam.User, bool) {
+	user := c.principalUser()
+	if user == nil {
+		c.ResponseUnauthorized(c.T("auth:Please sign in first"))
+		return nil, false
+	}
+	return user, true
+}
+
 func (c *ApiController) CheckSignedIn() (string, bool) {
 	userId := c.GetSessionUsername()
 	if userId == "" {
