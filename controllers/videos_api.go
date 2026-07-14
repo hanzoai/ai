@@ -183,6 +183,16 @@ func (c *ApiController) VideosGenerations() {
 		return
 	}
 
+	// Zen family: forward to the zen service, billed per clip at the discovered
+	// price. This bypasses ai's own async job store — zen (and its self-hosted
+	// engine upstream) owns the video job. If the upstream returns a job to poll,
+	// the client polls zen directly; ai does not proxy the poll/download (a
+	// follow-on for the async engine path).
+	if provider.Type == "Zen" {
+		c.serveZenMedia("videos/generations", req.Model, c.Ctx.Input.RequestBody, 1, orgId, authUser, isPremium, startTime)
+		return
+	}
+
 	if upstreamModel != "" {
 		provider.SubType = upstreamModel
 	} else if req.Model != "" {
