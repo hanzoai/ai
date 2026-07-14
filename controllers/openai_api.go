@@ -742,6 +742,9 @@ func recordTrace(ctx context.Context, record *usageRecord, startTime time.Time) 
 		if record.Project == "" {
 			record.Project = attr.Project
 		}
+		if record.Session == "" {
+			record.Session = attr.Session
+		}
 		if record.APIKeyHash == "" {
 			record.APIKeyHash = attr.APIKeyHash
 		}

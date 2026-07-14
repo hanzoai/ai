@@ -27,12 +27,20 @@ import "context"
 type genAIAttrKey struct{}
 
 // GenAIAttribution is the per-request attribution the gen_ai span + cloud_usage
-// ledger stamp. Both fields are optional; an empty field emits/stores nothing.
+// ledger stamp. Every field is optional; an empty field emits/stores nothing.
 type GenAIAttribution struct {
 	// Project is the caller's org SUB-SCOPE (X-Project-Id); "" is the default project.
 	Project string
+	// Session is the client-supplied session/conversation id (X-Session-Id). It turns
+	// the o11y sessions view on for this org (emitted as session.id + gen_ai.conversation.id).
+	Session string
 	// APIKeyHash is a SHA-256 hex ref of the caller credential — NEVER the plaintext key.
 	APIKeyHash string
+}
+
+// empty reports whether a carries nothing worth threading.
+func (a GenAIAttribution) empty() bool {
+	return a.Project == "" && a.Session == "" && a.APIKeyHash == ""
 }
 
 // WithGenAIAttribution returns ctx carrying a. When a is empty it returns ctx
@@ -41,7 +49,7 @@ func WithGenAIAttribution(ctx context.Context, a GenAIAttribution) context.Conte
 	if ctx == nil {
 		return ctx
 	}
-	if a.Project == "" && a.APIKeyHash == "" {
+	if a.empty() {
 		return ctx
 	}
 	return context.WithValue(ctx, genAIAttrKey{}, a)
