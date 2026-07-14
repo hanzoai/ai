@@ -25,7 +25,7 @@ func TestLedgerCostAuthority(t *testing.T) {
 	}
 
 	// Video: priced per video, non-zero, == the debit.
-	vid := &usageRecord{Model: "zen3-video", VideoCount: 1}
+	vid := &usageRecord{Model: "wan2-2-t2v-a14b", VideoCount: 1}
 	if got, want := usageCostCents(vid), videoCostCents(vid.Model, 1); got != want || got <= 0 {
 		t.Fatalf("video ledger cost: got %d, want %d (>0)", got, want)
 	}
