@@ -60,7 +60,6 @@ func loadCtxRouteConfig(t *testing.T) *ModelConfig {
 	mc := &ModelConfig{
 		routes:  make(map[string]modelRoute),
 		pricing: make(map[string]modelPrice),
-		prompts: make(map[string]string),
 		stopCh:  make(chan struct{}),
 	}
 	if err := mc.loadFromFile(path); err != nil {

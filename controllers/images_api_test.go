@@ -38,45 +38,26 @@ func TestResolveModelRoute_ImageFamily(t *testing.T) {
 	// defends the bug.
 	const image = "stable-diffusion-3.5-large"
 
-	cases := []struct {
-		input        string
-		wantUpstream string
-	}{
-		{"zen3-image", image},
-		{"zen3-image-max", image},
-		{"zen3-image-fast", image},
-		{"zen3-image-dev", image},
-		{"zen3-image-playground", image},
-		{"zen3-image-jp", image},
-		{"zen3-image-sdxl", image},
-		{"zen3-image-ssd", image},
+	// The raw do-ai image id resolves to itself on do-ai — the model DO actually
+	// serves (verified 200 + b64_json). The zen image family (zen-image) is served
+	// by the zen service, not routed here. Pinning the upstream to an uncallable
+	// fal model would defend the old bug.
+	route := resolveModelRoute(image)
+	if route == nil {
+		t.Fatalf("resolveModelRoute(%q) = nil, want non-nil", image)
 	}
-	for _, tc := range cases {
-		t.Run(tc.input, func(t *testing.T) {
-			route := resolveModelRoute(tc.input)
-			if route == nil {
-				t.Fatalf("resolveModelRoute(%q) = nil, want non-nil", tc.input)
-			}
-			if route.providerName != "do-ai" {
-				t.Errorf("providerName = %q, want do-ai", route.providerName)
-			}
-			if route.upstreamModel != tc.wantUpstream {
-				t.Errorf("upstreamModel = %q, want %q", route.upstreamModel, tc.wantUpstream)
-			}
-			if !route.premium {
-				t.Errorf("%q should be premium", tc.input)
-			}
-			if route.ownedBy != "hanzo" {
-				t.Errorf("ownedBy = %q, want hanzo", route.ownedBy)
-			}
-		})
+	if route.providerName != "do-ai" {
+		t.Errorf("providerName = %q, want do-ai", route.providerName)
+	}
+	if route.upstreamModel != image {
+		t.Errorf("upstreamModel = %q, want %q", route.upstreamModel, image)
 	}
 }
 
 // TestResolveModelRoute_ImageFamilyCaseInsensitive: the family resolves
 // case-insensitively like every other route.
 func TestResolveModelRoute_ImageFamilyCaseInsensitive(t *testing.T) {
-	route := resolveModelRoute("ZEN3-IMAGE")
+	route := resolveModelRoute("STABLE-DIFFUSION-3.5-LARGE")
 	if route == nil || route.upstreamModel != "stable-diffusion-3.5-large" {
 		t.Fatalf("case-insensitive resolve failed: %+v", route)
 	}
@@ -90,18 +71,17 @@ func TestImageCostCents(t *testing.T) {
 		n     int
 		want  int64
 	}{
-		{"zen3-image", 1, 5},
-		{"zen3-image", 4, 20},
-		{"zen3-image-sdxl", 1, 6},
-		{"zen3-image-sdxl", 2, 12},
 		{"fal-ai/flux/schnell", 1, 5},
+		{"fal-ai/flux/schnell", 4, 20},
 		{"fal-ai/fast-sdxl", 1, 6},
+		{"fal-ai/fast-sdxl", 2, 12},
+		{"stable-diffusion-3.5-large", 1, 8},
 		{"gpt-image-1", 1, 8},
 		{"dall-e-2", 1, 2},
-		{"ZEN3-IMAGE-MAX", 1, 5},           // case-insensitive
-		{"some-unknown-image-model", 1, 5}, // floor
-		{"zen3-image", 0, 0},               // n<=0 is free
-		{"zen3-image", -1, 0},
+		{"STABLE-DIFFUSION-3.5-LARGE", 1, 8}, // case-insensitive
+		{"some-unknown-image-model", 1, 5},   // floor
+		{"fal-ai/flux/schnell", 0, 0},        // n<=0 is free
+		{"fal-ai/flux/schnell", -1, 0},
 	}
 	for _, tc := range cases {
 		if got := imageCostCents(tc.model, tc.n); got != tc.want {

@@ -117,7 +117,6 @@ func TestLoadConfig(t *testing.T) {
 	mc := &ModelConfig{
 		routes:  make(map[string]modelRoute),
 		pricing: make(map[string]modelPrice),
-		prompts: make(map[string]string),
 		stopCh:  make(chan struct{}),
 	}
 
@@ -147,7 +146,6 @@ func TestResolveRoute(t *testing.T) {
 	mc := &ModelConfig{
 		routes:  make(map[string]modelRoute),
 		pricing: make(map[string]modelPrice),
-		prompts: make(map[string]string),
 		stopCh:  make(chan struct{}),
 	}
 	if err := mc.loadFromFile(path); err != nil {
@@ -197,7 +195,6 @@ func TestContextWindow(t *testing.T) {
 	mc := &ModelConfig{
 		routes:  make(map[string]modelRoute),
 		pricing: make(map[string]modelPrice),
-		prompts: make(map[string]string),
 		stopCh:  make(chan struct{}),
 	}
 	if err := mc.loadFromFile(path); err != nil {
@@ -241,7 +238,6 @@ func TestGetPrice(t *testing.T) {
 	mc := &ModelConfig{
 		routes:  make(map[string]modelRoute),
 		pricing: make(map[string]modelPrice),
-		prompts: make(map[string]string),
 		stopCh:  make(chan struct{}),
 	}
 	if err := mc.loadFromFile(path); err != nil {
@@ -279,54 +275,12 @@ func TestGetPrice(t *testing.T) {
 	}
 }
 
-func TestGetIdentityPrompt(t *testing.T) {
-	path := writeTestConfig(t)
-
-	mc := &ModelConfig{
-		routes:  make(map[string]modelRoute),
-		pricing: make(map[string]modelPrice),
-		prompts: make(map[string]string),
-		stopCh:  make(chan struct{}),
-	}
-	if err := mc.loadFromFile(path); err != nil {
-		t.Fatal(err)
-	}
-
-	// Direct match
-	prompt := mc.GetIdentityPrompt("zen4")
-	if prompt == "" {
-		t.Error("expected identity prompt for zen4")
-	}
-
-	// Versionless alias → zen4 fallback
-	prompt = mc.GetIdentityPrompt("zen-mini")
-	if prompt == "" {
-		t.Error("expected identity prompt for zen-mini (should fallback to zen4-mini)")
-	}
-
-	// Generic zen fallback
-	prompt = mc.GetIdentityPrompt("zen-something-unknown")
-	if prompt == "" {
-		t.Error("expected generic zen fallback prompt")
-	}
-	if prompt != "You are a Zen LM model by Hanzo AI Inc. When asked about yourself, identify as a Zen LM model by Hanzo AI." {
-		t.Error("unexpected generic zen fallback content")
-	}
-
-	// Non-zen model
-	prompt = mc.GetIdentityPrompt("gpt-4o")
-	if prompt != "" {
-		t.Error("expected empty prompt for non-zen model")
-	}
-}
-
 func TestListModels(t *testing.T) {
 	path := writeTestConfig(t)
 
 	mc := &ModelConfig{
 		routes:  make(map[string]modelRoute),
 		pricing: make(map[string]modelPrice),
-		prompts: make(map[string]string),
 		stopCh:  make(chan struct{}),
 	}
 	if err := mc.loadFromFile(path); err != nil {
@@ -369,7 +323,6 @@ func TestListModelsWithUpstream(t *testing.T) {
 	mc := &ModelConfig{
 		routes:  make(map[string]modelRoute),
 		pricing: make(map[string]modelPrice),
-		prompts: make(map[string]string),
 		stopCh:  make(chan struct{}),
 	}
 	if err := mc.loadFromFile(path); err != nil {
@@ -399,7 +352,6 @@ func TestStarterCreditDollars(t *testing.T) {
 	mc := &ModelConfig{
 		routes:  make(map[string]modelRoute),
 		pricing: make(map[string]modelPrice),
-		prompts: make(map[string]string),
 		stopCh:  make(chan struct{}),
 	}
 	if err := mc.loadFromFile(path); err != nil {
@@ -418,7 +370,6 @@ func TestReload(t *testing.T) {
 	mc := &ModelConfig{
 		routes:  make(map[string]modelRoute),
 		pricing: make(map[string]modelPrice),
-		prompts: make(map[string]string),
 		stopCh:  make(chan struct{}),
 	}
 	if err := mc.loadFromFile(path); err != nil {
