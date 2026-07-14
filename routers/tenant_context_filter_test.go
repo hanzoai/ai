@@ -23,6 +23,7 @@ func TestTenantContextFilter_ThreadsAttribution(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("POST", "/v1/chat/completions", nil)
 	req.Header.Set("X-Project-Id", "research")
+	req.Header.Set("X-Session-Id", "conv-42")
 	req.Header.Set("Authorization", "Bearer hk-secret-key")
 
 	ctx := beegoctx.NewContext()
@@ -33,6 +34,9 @@ func TestTenantContextFilter_ThreadsAttribution(t *testing.T) {
 	attr := object.GenAIAttributionFromContext(ctx.Request.Context())
 	if attr.Project != "research" {
 		t.Fatalf("project not threaded onto request context: %q", attr.Project)
+	}
+	if attr.Session != "conv-42" {
+		t.Fatalf("session not threaded onto request context: %q", attr.Session)
 	}
 	want := sha256.Sum256([]byte("hk-secret-key"))
 	if attr.APIKeyHash != hex.EncodeToString(want[:]) {

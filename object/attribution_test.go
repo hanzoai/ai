@@ -11,10 +11,18 @@ import (
 )
 
 func TestGenAIAttribution_RoundTrip(t *testing.T) {
-	ctx := WithGenAIAttribution(context.Background(), GenAIAttribution{Project: "research", APIKeyHash: "abc123"})
+	ctx := WithGenAIAttribution(context.Background(), GenAIAttribution{Project: "research", Session: "conv-42", APIKeyHash: "abc123"})
 	got := GenAIAttributionFromContext(ctx)
-	if got.Project != "research" || got.APIKeyHash != "abc123" {
-		t.Fatalf("round-trip = %+v, want {research abc123}", got)
+	if got.Project != "research" || got.Session != "conv-42" || got.APIKeyHash != "abc123" {
+		t.Fatalf("round-trip = %+v, want {research conv-42 abc123}", got)
+	}
+}
+
+func TestGenAIAttribution_SessionOnly(t *testing.T) {
+	// A session-only attribution still wraps the context (it is not empty).
+	ctx := WithGenAIAttribution(context.Background(), GenAIAttribution{Session: "s1"})
+	if got := GenAIAttributionFromContext(ctx); got.Session != "s1" {
+		t.Fatalf("session-only round-trip = %+v", got)
 	}
 }
 

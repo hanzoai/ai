@@ -66,10 +66,15 @@ func TenantContextFilter(ctx *context.Context) {
 	// Thread the observability attribution onto the Go REQUEST context so the
 	// single telemetry funnel (controllers.recordTrace) can stamp the cloud_usage
 	// ledger row + the gen_ai span WITHOUT re-reading beego state at each of the
-	// ~15 emit sites: the project sub-scope and a NON-reversible ref of the caller
-	// credential (SHA-256 of the bearer — never the plaintext key). Replacing
-	// ctx.Request propagates to the handler's c.Ctx.Request.Context().
-	attr := object.GenAIAttribution{Project: projectID, APIKeyHash: hashBearer(getTenantHeader(ctx, "Authorization"))}
+	// ~15 emit sites: the project sub-scope, the client session id, and a
+	// NON-reversible ref of the caller credential (SHA-256 of the bearer — never
+	// the plaintext key). Replacing ctx.Request propagates to the handler's
+	// c.Ctx.Request.Context().
+	attr := object.GenAIAttribution{
+		Project:    projectID,
+		Session:    getTenantHeader(ctx, "X-Session-Id"),
+		APIKeyHash: hashBearer(getTenantHeader(ctx, "Authorization")),
+	}
 	if ctx.Request != nil {
 		ctx.Request = ctx.Request.WithContext(object.WithGenAIAttribution(ctx.Request.Context(), attr))
 	}
