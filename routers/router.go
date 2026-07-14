@@ -25,8 +25,8 @@
 package routers
 
 import (
-	"github.com/hanzoai/beego"
 	"github.com/hanzoai/ai/controllers"
+	"github.com/hanzoai/beego"
 )
 
 func init() {
@@ -341,6 +341,10 @@ func initAPI() {
 	beego.Router("/v1/chat", &controllers.ApiController{}, "POST:ChatCompletions")
 	beego.Router("/v1/chat/completions", &controllers.ApiController{}, "POST:ChatCompletions")
 	beego.Router("/v1/completions", &controllers.ApiController{}, "POST:ChatCompletions")
+	// OpenAI Responses API — the native wire protocol used by current Codex.
+	// The controller adapts onto ChatCompletions so auth, routing, billing and
+	// failover remain one policy path.
+	beego.Router("/v1/responses", &controllers.ApiController{}, "POST:Responses")
 	beego.Router("/v1/models", &controllers.ApiController{}, "GET:ListModels")
 	beego.Router("/v1/admin/reload-model-config", &controllers.ApiController{}, "POST:ReloadModelConfig")
 	beego.Router("/v1/admin/refresh-model-pricing", &controllers.ApiController{}, "POST:RefreshModelPricing")
