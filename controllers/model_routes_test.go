@@ -47,30 +47,10 @@ func TestResolveModelRoute_KnownModels(t *testing.T) {
 		{"openai-direct/o3", "openai-direct", "o3", true},
 
 		// Zen branded premium (routed through DigitalOcean GenAI / "do-ai")
-		{"zen4", "do-ai", "glm-5", true},
-		{"zen4-mini", "do-ai", "alibaba-qwen3-32b", true},
-		{"zen4-pro", "do-ai", "qwen3.5-397b-a17b", true},
-		{"zen4-max", "do-ai", "kimi-k2.6", true},
-		{"zen4-ultra", "do-ai", "deepseek-v4-pro", true},
-		{"zen4-coder", "do-ai", "qwen3-coder-flash", true},
-		{"zen4-coder-flash", "do-ai", "qwen3-coder-flash", true},
-		{"zen4-coder-pro", "do-ai", "glm-5.2", true},
-		{"zen4-thinking", "do-ai", "deepseek-v4-pro", true},
 		// zen3-omni used to resolve to glm-5 — a TEXT model. An "omni" alias that
 		// serves a text-only model is a promise we do not keep. DO's actual
 		// omni model is nemotron-3-nano-omni (verified working).
-		{"zen3-omni", "do-ai", "nemotron-3-nano-omni", true},
-		{"zen3-vl", "do-ai", "nemotron-nano-12b-v2-vl", true},
-		{"zen3-nano", "do-ai", "alibaba-qwen3-32b", true},
-		{"zen3-guard", "do-ai", "llama3.3-70b-instruct", true},
-		{"zen3-embedding", "do-ai", "qwen3-embedding-0.6b", true},
 
-		// Zen versionless aliases → latest zenN
-		{"zen", "do-ai", "glm-5", true},
-		{"zen-pro", "do-ai", "qwen3.5-397b-a17b", true},
-		{"zen-mini", "do-ai", "alibaba-qwen3-32b", true},
-		{"zen-vl", "do-ai", "nemotron-nano-12b-v2-vl", true},
-		{"zen-vision", "do-ai", "nemotron-nano-12b-v2-vl", true},
 	}
 
 	for _, tc := range cases {
@@ -250,15 +230,15 @@ func TestResolveModelRouteForOrg_UnknownModelReturnsNil(t *testing.T) {
 }
 
 func TestResolveModelRouteForOrg_EmptyOrgFallsBack(t *testing.T) {
-	// Empty org should still resolve from static map
-	route := resolveModelRouteForOrg("zen4", "")
+	// Empty org resolves from the static map
+	route := resolveModelRouteForOrg("glm-5.2", "")
 	if route == nil {
-		t.Fatal("resolveModelRouteForOrg(\"zen4\", \"\") = nil, want non-nil")
+		t.Fatal("resolveModelRouteForOrg(\"glm-5.2\", \"\") = nil, want non-nil")
 	}
 	if route.providerName != "do-ai" {
 		t.Errorf("provider = %q, want %q", route.providerName, "do-ai")
 	}
 	if !route.premium {
-		t.Error("zen4 should be premium")
+		t.Error("glm-5.2 should be premium")
 	}
 }

@@ -471,19 +471,6 @@ func (c *ApiController) AnthropicMessages() {
 		})
 	}
 
-	// Inject Zen identity prompt.
-	if zenPrompt := zenIdentityPrompt(request.Model); zenPrompt != "" {
-		hasSystem := len(oaiMessages) > 0 && oaiMessages[0].Role == "system"
-		if hasSystem {
-			oaiMessages[0].Content = zenPrompt + "\n\n" + oaiMessages[0].Content
-		} else {
-			oaiMessages = append([]openai.ChatCompletionMessage{{
-				Role:    "system",
-				Content: zenPrompt,
-			}}, oaiMessages...)
-		}
-	}
-
 	// Extract question, system, history — mirrors OpenAI endpoint logic.
 	var question string
 	var systemPrompt string

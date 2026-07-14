@@ -21,8 +21,8 @@ import (
 	"strings"
 	"testing"
 
-	beecontext "github.com/hanzoai/beego/context"
 	"github.com/hanzoai/ai/object"
+	beecontext "github.com/hanzoai/beego/context"
 	iam "github.com/hanzoai/iam"
 )
 
@@ -270,21 +270,23 @@ func TestModelCountByProvider_MatchesStaticMap(t *testing.T) {
 	}
 }
 
-// TestModelCountByProvider_ZenAttributedToServingProvider documents that branded
-// zen models are counted under their SERVING provider (do-ai), so a "zen"
-// provider record (whose name no route targets) reports 0 — accurate, since the
-// zen MODELS route via do-ai. This locks in the documented behavior.
-func TestModelCountByProvider_ZenAttributedToServingProvider(t *testing.T) {
+// TestModelCountByProvider_NoStaticZenRoute documents that ai holds no static zen
+// route: the zen family is discovered from zen's /v1/models and routed via the
+// dynamic zen passthrough, so modelCountByProvider (which counts the static table)
+// reports no "zen" provider, while raw models still count under their provider.
+func TestModelCountByProvider_NoStaticZenRoute(t *testing.T) {
 	if GetModelConfig() != nil {
 		t.Skip("YAML model config loaded; static-map behavior check not applicable")
 	}
 	counts := modelCountByProvider()
 	if _, ok := counts["zen"]; ok {
-		t.Errorf("did not expect any route with providerName=\"zen\" (zen models route via do-ai); got count=%d", counts["zen"])
+		t.Errorf("no static route should target providerName=\"zen\" (zen is a dynamic passthrough); got count=%d", counts["zen"])
 	}
-	// zen models exist and route through do-ai — confirm at least one zen key
-	// resolves to the do-ai provider so the attribution rationale holds.
-	if r := resolveModelRoute("zen4"); r == nil || r.providerName != "do-ai" {
-		t.Errorf("zen4 route = %+v, want providerName=do-ai", r)
+	if counts["do-ai"] == 0 {
+		t.Error("expected do-ai to serve at least one static route")
+	}
+	// A raw do-ai model resolves to the do-ai provider.
+	if r := resolveModelRoute("glm-5.2"); r == nil || r.providerName != "do-ai" {
+		t.Errorf("glm-5.2 route = %+v, want providerName=do-ai", r)
 	}
 }
