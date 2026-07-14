@@ -69,10 +69,33 @@ const cloudUsageTableDDL = `
 		byo UInt8,
 		fee_cents Int64,
 		account String
-	) ENGINE = MergeTree()
-	ORDER BY (timestamp, organization, user_id)
+	) ENGINE = ReplacingMergeTree()
+	ORDER BY (timestamp, organization, user_id, id)
 	TTL timestamp + INTERVAL 2 YEAR`
 
+// cloudUsageReplacingMergeTreeMigration documents the ONE-TIME, operator-run
+// migration that converts a pre-existing hanzo.cloud_usage (created as plain
+// MergeTree, ORDER BY (timestamp, organization, user_id)) to the id-deduplicating
+// ReplacingMergeTree above (same key + id appended). CREATE TABLE IF NOT EXISTS
+// does NOT alter an existing table's engine or sort key, and ClickHouse cannot
+// ALTER either in place, so this is applied by hand (devnet first) and NEVER
+// auto-run on boot (the backfill is heavy and would race across pods). Write-safe
+// sequence (no lost writes):
+//
+//	CREATE TABLE hanzo.cloud_usage_ridedup (<identical columns>)
+//	  ENGINE = ReplacingMergeTree()
+//	  ORDER BY (timestamp, organization, user_id, id)
+//	  TTL timestamp + INTERVAL 2 YEAR;
+//	-- swap the empty ReplacingMergeTree in FIRST so live writes land in it:
+//	EXCHANGE TABLES hanzo.cloud_usage AND hanzo.cloud_usage_ridedup;
+//	-- backfill old rows; existing ids are unique so nothing real collapses, and
+//	-- any id already re-written post-EXCHANGE dedups harmlessly:
+//	INSERT INTO hanzo.cloud_usage SELECT * FROM hanzo.cloud_usage_ridedup;
+//	DROP TABLE hanzo.cloud_usage_ridedup;
+//
+// GetCloudUsageOverview reads dedup by id at query time (GROUP BY id), so a
+// duplicate is never double-counted in the window between EXCHANGE and the first
+// background merge — independently of this engine change.
 // cloudUsageColumnMigrations bring an ALREADY-EXISTING table up to the current
 // schema: CREATE TABLE IF NOT EXISTS is a no-op on a table created before these
 // columns were added, so each additive column also needs an idempotent
