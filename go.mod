@@ -5,6 +5,7 @@ go 1.26.4
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.13.1
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute v1.0.0
+	github.com/DataDog/zstd v1.5.7
 	github.com/ThinkInAIXYZ/go-mcp v0.2.24
 	github.com/WqyJh/go-cosyvoice v0.1.0
 	github.com/alibabacloud-go/darabonba-openapi v0.1.18
