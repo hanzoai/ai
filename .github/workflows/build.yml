@@ -70,10 +70,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_PAT || secrets.UNIVERSE_DISPATCH_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
-          # hanzoai/* is public on git.hanzo.ai (the canonical host) and luxfi/*,
-          # zap-proto/* are public on github.com — so NO token is needed. Redirect
-          # the hanzoai org to git.hanzo.ai; everything else resolves public.
-          git config --global url."https://git.hanzo.ai/hanzoai/".insteadOf "https://github.com/hanzoai/"
+          # hanzoai/* private modules resolve from github.com with a token; the
+          # git.hanzo.ai mirror 403s / lags for some repos (dashscope-go-sdk,
+          # money, decimal). luxfi/*, zap-proto/* are public on github.com and
+          # resolve directly. go.sum verifies content, so downloads stay pinned.
+          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/hanzoai/".insteadOf "https://github.com/hanzoai/"
       - name: Tests
         run: go test -v $(go list ./...) -tags skipCi
 
@@ -99,10 +100,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_PAT || secrets.UNIVERSE_DISPATCH_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
-          # hanzoai/* is public on git.hanzo.ai (the canonical host) and luxfi/*,
-          # zap-proto/* are public on github.com — so NO token is needed. Redirect
-          # the hanzoai org to git.hanzo.ai; everything else resolves public.
-          git config --global url."https://git.hanzo.ai/hanzoai/".insteadOf "https://github.com/hanzoai/"
+          # hanzoai/* private modules resolve from github.com with a token; the
+          # git.hanzo.ai mirror 403s / lags for some repos (dashscope-go-sdk,
+          # money, decimal). luxfi/*, zap-proto/* are public on github.com and
+          # resolve directly. go.sum verifies content, so downloads stay pinned.
+          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/hanzoai/".insteadOf "https://github.com/hanzoai/"
       - run: go version
       - name: Build
         # Verify the SAME build config the deployable image uses (Dockerfile:
