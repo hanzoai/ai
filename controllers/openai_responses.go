@@ -20,8 +20,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/DataDog/zstd"
 	"github.com/hanzoai/ai/util"
+	"github.com/klauspost/compress/zstd"
 	"github.com/sashabaranov/go-openai"
 )
 
@@ -89,7 +89,7 @@ func (c *ApiController) Responses() {
 
 	body := c.Ctx.Input.RequestBody
 	if strings.EqualFold(strings.TrimSpace(c.Ctx.Request.Header.Get("Content-Encoding")), "zstd") {
-		decoded, err := zstd.Decompress(nil, body)
+		decoded, err := decodeResponsesZstd(body)
 		if err != nil {
 			if authErr := c.authenticate(token); authErr != nil {
 				c.ResponseAuthError(authErr)
@@ -138,6 +138,18 @@ func (c *ApiController) Responses() {
 		c.ResponseErrorWithStatus(http.StatusBadGateway, err.Error())
 	}
 	c.EnableRender = false
+}
+
+// decodeResponsesZstd uses a pure-Go decoder because Cloud release binaries
+// are built with CGO_ENABLED=0. Current Codex clients compress large Responses
+// requests with zstd.
+func decodeResponsesZstd(body []byte) ([]byte, error) {
+	decoder, err := zstd.NewReader(nil)
+	if err != nil {
+		return nil, err
+	}
+	defer decoder.Close()
+	return decoder.DecodeAll(body, nil)
 }
 
 func responsesToChatRequest(request *OpenAIResponsesRequest) (*openai.ChatCompletionRequest, map[string]string, error) {

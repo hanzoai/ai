@@ -6,7 +6,26 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/klauspost/compress/zstd"
 )
+
+func TestResponsesZstdPureGoRoundTrip(t *testing.T) {
+	w, err := zstd.NewWriter(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	compressed := w.EncodeAll([]byte(`{"model":"zen4-coder","input":"hello"}`), nil)
+	w.Close()
+
+	decoded, err := decodeResponsesZstd(compressed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := string(decoded), `{"model":"zen4-coder","input":"hello"}`; got != want {
+		t.Fatalf("decoded = %q, want %q", got, want)
+	}
+}
 
 func TestResponsesInputToMessagesToolRoundTrip(t *testing.T) {
 	input := json.RawMessage(`[
