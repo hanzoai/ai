@@ -95,6 +95,27 @@ func (c *ApiController) Embeddings() {
 		provider.SubType = head.Model
 	}
 
+	// Zen family: forward to the zen service, billed per token at the discovered
+	// price (embeddings are token-metered, so this rides the same pipe as chat, not
+	// the per-unit media pipe). zen owns the SKU→upstream mapping.
+	if provider.Type == "Zen" {
+		var hold *budgetHold
+		if authUser != nil {
+			subject := object.BillingSubject(authUser.Owner, authUser.Name)
+			est := int64(1)
+			if zm, ok := zenLookup(head.Model); ok {
+				est = zm.costCents(coarseTokenEstimate(c.Ctx.Input.RequestBody), 0)
+			}
+			var ok2 bool
+			if hold, ok2 = reserveBudget(subject, est); !ok2 {
+				c.ResponseAuthError(billingError("Insufficient balance for the estimated cost. Add credits at console.hanzo.ai"))
+				return
+			}
+		}
+		c.pipeToZen("embeddings", "openai", head.Model, c.Ctx.Input.RequestBody, false, orgId, authUser, isPremium, hold, startTime)
+		return
+	}
+
 	// Translate the user-facing model to the upstream id, preserving every other
 	// field (input, encoding_format, dimensions, user, …) for true passthrough.
 	body, err := setJSONModel(c.Ctx.Input.RequestBody, provider.SubType)
