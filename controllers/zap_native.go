@@ -219,10 +219,7 @@ func zapWriteUsage(record *usageRecord, startTime time.Time) {
 
 func zapListModelsHandler() (*zap.Message, error) {
 	models := listAvailableModels()
-	data, _ := json.Marshal(map[string]interface{}{
-		"object": "list",
-		"data":   models,
-	})
+	data, _ := json.Marshal(modelListEnvelope(models))
 	return object.BuildCloudResponse(200, data, "")
 }
 

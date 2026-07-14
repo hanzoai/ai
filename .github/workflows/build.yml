@@ -15,14 +15,18 @@ permissions:
   packages: write
   id-token: write
 
-# Private cross-org modules (hanzoai/*, zap-proto/*) + re-tagged luxfi/* are fetched
-# via authenticated git, bypassing the public proxy/sumdb — the SAME set the
-# Dockerfile uses. GOPRIVATE skips the public proxy + the immutable sum.golang.org
-# log (which holds luxfi's stale pre-re-tag hashes → "checksum mismatch / SECURITY
-# ERROR"); the per-job git-auth step (token insteadOf) lets `go` reach the private
-# repos. go.sum carries the current content hashes, so downloads still verify.
+# Private cross-org modules (hanzoai/*, zap-proto/*, git.hanzo.ai/*) are fetched via
+# authenticated git, bypassing the public proxy — the SAME set the Dockerfile uses;
+# the per-job git-auth step (token insteadOf) lets `go` reach them.
+#
+# luxfi/* is PUBLIC and lives on the Go module proxy, but its git tags are transient
+# — the remote re-tags, so a pinned tag (geth v1.17.12) later 404s on a direct git
+# fetch ("unknown revision"). Resolve luxfi through the proxy (immutable versions);
+# GONOSUMDB skips the transparency log (whose stale pre-re-tag hashes would
+# mismatch), and go.sum still verifies the download.
 env:
-  GOPRIVATE: github.com/hanzoai/*,github.com/luxfi/*,github.com/zap-proto/*,git.hanzo.ai/*
+  GOPRIVATE: github.com/hanzoai/*,github.com/zap-proto/*,git.hanzo.ai/*
+  GONOSUMDB: github.com/hanzoai/*,github.com/luxfi/*,github.com/zap-proto/*,git.hanzo.ai/*
 
 jobs:
   policy-check:

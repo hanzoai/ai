@@ -533,3 +533,16 @@ func listAvailableModels() []modelInfo {
 
 	return models
 }
+
+// modelListEnvelope preserves the standard OpenAI model-list response while
+// adding Codex's optional private catalog envelope. Current Codex releases GET
+// the provider's /v1/models even when remote_models is disabled; an empty
+// `models` list tells Codex to retain its safe built-in fallback metadata
+// instead of failing to decode the otherwise-valid OpenAI `data` list.
+func modelListEnvelope(models []modelInfo) map[string]interface{} {
+	return map[string]interface{}{
+		"object": "list",
+		"data":   models,
+		"models": []interface{}{},
+	}
+}
