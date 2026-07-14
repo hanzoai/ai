@@ -36,8 +36,10 @@ require (
 	github.com/hanzoai/dashscope-go-sdk v0.0.2
 	github.com/hanzoai/dashscopego v0.6.0
 	github.com/hanzoai/dbx v1.16.0
+	github.com/hanzoai/decimal v0.1.1
 	github.com/hanzoai/go-openrouter v1.0.0
 	github.com/hanzoai/iam v1.19.8-0.20260622075908-c2fd4872545b
+	github.com/hanzoai/money v0.2.1
 	github.com/hanzoai/pdf v1.2.0
 	github.com/hanzoai/search-go v0.36.0
 	github.com/hanzoai/sqlite v0.3.0

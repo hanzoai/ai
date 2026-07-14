@@ -662,12 +662,16 @@ github.com/hanzoai/dashscopego v0.6.0 h1:sLUepwcnVajaDgzlgfuJWkZblBg9UIalkpFUjXH
 github.com/hanzoai/dashscopego v0.6.0/go.mod h1:ciV938pktk0Tw6ssGYzEdxwS8OaHgv3xCWiy7W5664E=
 github.com/hanzoai/dbx v1.16.0 h1:C8wsb9BIiit4nYnXizpcB4SyzVaepPkQFwq5i9fxAV0=
 github.com/hanzoai/dbx v1.16.0/go.mod h1:ynP6HSiDDoFZ8M3DC+XvSglBPFRygfTd/gjTWabh4yA=
+github.com/hanzoai/decimal v0.1.1 h1:vANjwEzfdq1EmsgaPR0CMMi2qxuR8+pbK6/InJVkRmo=
+github.com/hanzoai/decimal v0.1.1/go.mod h1:jTNufaSe93avQTuXYP3ns2THBtRPR2SbaC0EdODLAFI=
 github.com/hanzoai/go-openai v1.40.0 h1:8KHDSUaJCNHlueMp76ZyJuJGc5wrz/ANMGvkfKBB3a4=
 github.com/hanzoai/go-openai v1.40.0/go.mod h1:lj5b/K+zjTSFxVLijLSTDZuP7adOgerWeFyZLUhAKRg=
 github.com/hanzoai/go-openrouter v1.0.0 h1:oQTSk4mjBhdgbUMdVm6XxPQy4u0QNhQrEBuuEn/ETAo=
 github.com/hanzoai/go-openrouter v1.0.0/go.mod h1:wC86avp4HRT7ZrvdwOIs3ZmnwUSkSeX2+HfLAAEYHVo=
 github.com/hanzoai/iam v1.19.8-0.20260622075908-c2fd4872545b h1:2Tuic7uTicqqC+HF4KQHpWS6jge1lrQTFSEwtjtS+28=
 github.com/hanzoai/iam v1.19.8-0.20260622075908-c2fd4872545b/go.mod h1:1ys7zYd+J8rsjqM5RXAr4L6zJOeSXPLvTESBQyGhyUU=
+github.com/hanzoai/money v0.2.1 h1:w2Fi2aP9bBYY+Zk1jyYfCOT3QhaswGzXQUmoZIjwIHM=
+github.com/hanzoai/money v0.2.1/go.mod h1:A8BJJ7CFalMMv+gyJm0gUMGfxg3zpygXgfb2WeRzStY=
 github.com/hanzoai/pdf v1.2.0 h1:3/zYs4estaf6hpa3Ug/NgfYEQpmkmMClmRcREAP8KUo=
 github.com/hanzoai/pdf v1.2.0/go.mod h1:Lb5LhbMY7QvrxxMeKbI22Kvoz4XQhHgJV7Erq0U8zHU=
 github.com/hanzoai/search-go v0.36.0 h1:bQfbAs/bc/s3qZDCtSqEAxp48koHkb0Z4ezUknt2AQc=
