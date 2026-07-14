@@ -74,7 +74,7 @@ func TestEnforceBalanceGate_M1(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			available = tc.cents
-			err := enforceBalanceGate(skOwner(), "zen-max", tc.premium)
+			err := enforceBalanceGate(skOwner(), "glm-5.2", tc.premium)
 			if tc.want == ok {
 				if err != nil {
 					t.Fatalf("want allowed, got blocked: %v (status %d)", err, statusOf(err))
@@ -102,7 +102,7 @@ func TestEnforceBalanceGate_FailClosedOnLookupError(t *testing.T) {
 	t.Setenv("commerceEndpoint", "") // unconfigured → getUserBalance errors
 	t.Setenv("BALANCE_EXEMPT_USERS", "")
 
-	err := enforceBalanceGate(&iam.User{Owner: "m1-noverify", Type: "application"}, "zen-max", true)
+	err := enforceBalanceGate(&iam.User{Owner: "m1-noverify", Type: "application"}, "glm-5.2", true)
 	if err == nil {
 		t.Fatal("balance unverifiable must fail closed, got nil (would grant free access)")
 	}
@@ -124,7 +124,7 @@ func TestEnforceBalanceGate_NoExemptBypass(t *testing.T) {
 	t.Setenv("commerceEndpoint", "")              // gate must still consult balance → errors
 	t.Setenv("BALANCE_EXEMPT_USERS", "m1-exempt") // set but IGNORED: the concept is removed
 
-	err := enforceBalanceGate(&iam.User{Owner: "m1-exempt", Type: "application"}, "zen-max", true)
+	err := enforceBalanceGate(&iam.User{Owner: "m1-exempt", Type: "application"}, "glm-5.2", true)
 	if err == nil {
 		t.Fatal("no principal may bypass the prepaid gate; formerly-exempt must fail closed, got nil")
 	}
