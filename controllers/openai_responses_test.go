@@ -83,6 +83,9 @@ func TestResponsesToChatRequestTools(t *testing.T) {
 	if enabled, ok := chat.ParallelToolCalls.(bool); !ok || !enabled {
 		t.Fatalf("parallel_tool_calls = %#v", chat.ParallelToolCalls)
 	}
+	if chat.StreamOptions == nil || !chat.StreamOptions.IncludeUsage {
+		t.Fatalf("stream_options must request the final usage chunk: %#v", chat.StreamOptions)
+	}
 }
 
 func TestResponsesStreamTextWire(t *testing.T) {

@@ -40,6 +40,29 @@ func indexModels(models []modelInfo) map[string]modelInfo {
 	return m
 }
 
+func TestModelListEnvelopeSupportsOpenAIAndCodex(t *testing.T) {
+	raw, err := json.Marshal(modelListEnvelope([]modelInfo{{
+		ID: "zen4-coder", Object: "model", Created: 1, OwnedBy: "hanzo", Premium: true,
+	}}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		Object string            `json:"object"`
+		Data   []modelInfo       `json:"data"`
+		Models []json.RawMessage `json:"models"`
+	}
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Object != "list" || len(got.Data) != 1 || got.Data[0].ID != "zen4-coder" {
+		t.Fatalf("OpenAI catalog changed: %#v", got)
+	}
+	if got.Models == nil || len(got.Models) != 0 {
+		t.Fatalf("Codex fallback catalog must be a present empty array: %#v", got.Models)
+	}
+}
+
 // jsonKeys marshals a modelInfo and returns the set of top-level JSON keys, so
 // tests can assert presence/omission of omitempty fields on the real wire shape.
 func jsonKeys(t *testing.T, mi modelInfo) map[string]bool {

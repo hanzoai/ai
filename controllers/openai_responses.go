@@ -204,6 +204,12 @@ func responsesToChatRequest(request *OpenAIResponsesRequest) (*openai.ChatComple
 		Store:               request.Store,
 		Metadata:            request.Metadata,
 	}
+	if request.Stream {
+		// The existing ChatCompletions proxy only forwards its forced upstream
+		// usage chunk when the downstream client opted in. The Responses bridge
+		// is that client, and response.completed must contain real token counts.
+		chat.StreamOptions = &openai.StreamOptions{IncludeUsage: true}
+	}
 	if request.MaxOutputTokens > 0 {
 		// DO's OpenAI-compatible models currently honor max_tokens uniformly.
 		chat.MaxTokens = request.MaxOutputTokens
