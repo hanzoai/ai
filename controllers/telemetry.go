@@ -63,6 +63,8 @@ const (
 	attrConversationID = "gen_ai.conversation.id"
 	attrUserID         = "user.id"
 	attrOrgID          = "gen_ai.hanzo.org_id"
+	attrProject        = "gen_ai.hanzo.project"
+	attrAPIKeyHash     = "gen_ai.hanzo.api_key_hash"
 	attrProvider       = "gen_ai.hanzo.provider"
 	attrRequestID      = "gen_ai.hanzo.request_id"
 	attrServedBy       = "gen_ai.hanzo.served_by"
@@ -159,6 +161,18 @@ func buildGenAISpanFields(record *usageRecord, totalCostUSD, billedCostUSD, prov
 	}
 	if org := firstNonEmptyStr(record.Organization, record.Owner); org != "" {
 		attrs = append(attrs, attribute.String(attrOrgID, org))
+	}
+	// Project is the org SUB-SCOPE (the caller's X-Project-Id). Emitting it lets the
+	// o11y views + the cloud metrics board narrow WITHIN an org by project; empty
+	// (the org's default project) emits no attribute — honest, never a fabricated scope.
+	if record.Project != "" {
+		attrs = append(attrs, attribute.String(attrProject, record.Project))
+	}
+	// APIKeyHash is a NON-reversible ref (SHA-256 hex) of the caller credential —
+	// never the plaintext key. It correlates a span to a key without the span store
+	// ever holding a secret.
+	if record.APIKeyHash != "" {
+		attrs = append(attrs, attribute.String(attrAPIKeyHash, record.APIKeyHash))
 	}
 	if record.Provider != "" {
 		attrs = append(attrs, attribute.String(attrProvider, record.Provider))

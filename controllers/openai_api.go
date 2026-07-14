@@ -521,6 +521,16 @@ type usageRecord struct {
 	// Session is the conversation/session id. Emitted as gen_ai.conversation.id +
 	// session.id, which is what turns the o11y sessions view on for this org.
 	Session string `json:"session,omitempty"`
+	// Project is the caller's org SUB-SCOPE (X-Project-Id). It is stamped on the
+	// cloud_usage ledger row + the gen_ai span, so cost/tokens/latency narrow WITHIN
+	// an org by project. Empty is the org's default project (whole-org view).
+	// Populated once in recordTrace from the request context (WithGenAIAttribution).
+	Project string `json:"project,omitempty"`
+	// APIKeyHash is a NON-reversible ref (SHA-256 hex) of the caller credential —
+	// never the plaintext key. Emitted on the gen_ai span (gen_ai.hanzo.api_key_hash)
+	// so a span correlates to a key without the store ever holding a secret.
+	// Populated in recordTrace from the request context.
+	APIKeyHash string `json:"apiKeyHash,omitempty"`
 	// ServedBy is where inference ran: "hanzo" (cloud), "byo-provider" (an
 	// org-owned provider key), or "byo-gpu" (an org's own cluster). Empty defaults
 	// to "hanzo" at emit — the cloud-served majority.
@@ -720,6 +730,22 @@ func recordUsage(record *usageRecord) {
 // table directly. The span emit is batched/async and a no-op when telemetry is
 // off, so it never blocks the request.
 func recordTrace(ctx context.Context, record *usageRecord, startTime time.Time) {
+	// Enrich the record with the request-scoped observability attribution the
+	// TenantContextFilter stashed on the context (project sub-scope + a
+	// non-reversible credential ref). Doing it HERE — the ONE funnel every
+	// completion surface passes through — stamps BOTH the warehouse row
+	// (zapWriteUsage) and the gen_ai span (emitGenAISpan) from a single place,
+	// rather than threading it through ~15 emit sites. A record that already set a
+	// value (an explicit producer) is left untouched.
+	if record != nil {
+		attr := object.GenAIAttributionFromContext(ctx)
+		if record.Project == "" {
+			record.Project = attr.Project
+		}
+		if record.APIKeyHash == "" {
+			record.APIKeyHash = attr.APIKeyHash
+		}
+	}
 	go zapWriteUsage(record, startTime)
 	emitGenAISpan(ctx, record, startTime)
 }
