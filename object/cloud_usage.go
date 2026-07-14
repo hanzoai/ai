@@ -277,10 +277,29 @@ func parseCloudUsageTimeParam(s string) (time.Time, error) {
 
 // ── Live orchestration ────────────────────────────────────────────────────────
 
-const cloudUsageTotalsSelect = "SELECT count() AS requests, sum(total_tokens) AS tokens, " +
-	"sum(prompt_tokens) AS prompt_tokens, sum(completion_tokens) AS completion_tokens, " +
-	"sum(cost_cents) AS cost_cents, uniqExact(model) AS models, uniqExact(provider) AS providers " +
-	"FROM hanzo.cloud_usage WHERE "
+// cloudUsageDedupedSource wraps the ledger in an id-deduplication subquery so a
+// duplicate row (a ZAP frame replay or an app retry) is counted exactly once at
+// query time, without waiting for the ReplacingMergeTree background merge. any()
+// is exact because rows sharing an id are byte-identical (id = the per-completion
+// request UUID). The org+time predicate stays inside so the (organization,
+// timestamp, id) sort order still prunes the scan.
+func cloudUsageDedupedSource(where string) string {
+	return "(SELECT id, any(timestamp) AS timestamp, any(owner) AS owner, " +
+		"any(user_id) AS user_id, any(organization) AS organization, any(model) AS model, " +
+		"any(provider) AS provider, any(request_id) AS request_id, " +
+		"any(prompt_tokens) AS prompt_tokens, any(completion_tokens) AS completion_tokens, " +
+		"any(total_tokens) AS total_tokens, any(cost_cents) AS cost_cents, " +
+		"any(status) AS status, any(is_stream) AS is_stream, any(is_premium) AS is_premium " +
+		"FROM hanzo.cloud_usage WHERE " + where + " GROUP BY id)"
+}
+
+// cloudUsageTotalsSQL is the id-deduplicated totals aggregation over one window.
+func cloudUsageTotalsSQL(where string) string {
+	return "SELECT count() AS requests, sum(total_tokens) AS tokens, " +
+		"sum(prompt_tokens) AS prompt_tokens, sum(completion_tokens) AS completion_tokens, " +
+		"sum(cost_cents) AS cost_cents, uniqExact(model) AS models, uniqExact(provider) AS providers " +
+		"FROM " + cloudUsageDedupedSource(where)
+}
 
 // GetCloudUsageOverview runs the aggregate queries against the datastore ledger
 // and assembles the Overview. Errors are surfaced (not swallowed) so the client
@@ -297,11 +316,11 @@ func GetCloudUsageOverview(ctx context.Context, p CloudUsageParams) (*CloudUsage
 	span := p.End.Sub(p.Start)
 	priorWhere, priorArgs := p.whereClause(p.Start.Add(-span), p.Start)
 
-	totalsRow, err := cloudUsageQueryOne(ctx, cloudUsageTotalsSelect+where, args)
+	totalsRow, err := cloudUsageQueryOne(ctx, cloudUsageTotalsSQL(where), args)
 	if err != nil {
 		return nil, fmt.Errorf("usage totals: %w", err)
 	}
-	priorRow, err := cloudUsageQueryOne(ctx, cloudUsageTotalsSelect+priorWhere, priorArgs)
+	priorRow, err := cloudUsageQueryOne(ctx, cloudUsageTotalsSQL(priorWhere), priorArgs)
 	if err != nil {
 		return nil, fmt.Errorf("usage prior totals: %w", err)
 	}
@@ -312,14 +331,14 @@ func GetCloudUsageOverview(ctx context.Context, p CloudUsageParams) (*CloudUsage
 	}
 	seriesSQL := fmt.Sprintf("SELECT toStartOf%s(timestamp, 'UTC') AS bucket, sum(total_tokens) AS tokens, "+
 		"sum(cost_cents) AS cost_cents, count() AS requests, uniqExact(model) AS models "+
-		"FROM hanzo.cloud_usage WHERE %s GROUP BY bucket ORDER BY bucket", bucketFn, where)
+		"FROM %s GROUP BY bucket ORDER BY bucket", bucketFn, cloudUsageDedupedSource(where))
 	seriesRows, err := DatastoreQuery(ctx, seriesSQL, args...)
 	if err != nil {
 		return nil, fmt.Errorf("usage series: %w", err)
 	}
 
 	modelSQL := "SELECT model, any(provider) AS provider, sum(cost_cents) AS cost_cents, " +
-		"sum(total_tokens) AS tokens, count() AS requests FROM hanzo.cloud_usage WHERE " + where +
+		"sum(total_tokens) AS tokens, count() AS requests FROM " + cloudUsageDedupedSource(where) +
 		" GROUP BY model ORDER BY cost_cents DESC LIMIT 100"
 	modelRows, err := DatastoreQuery(ctx, modelSQL, args...)
 	if err != nil {
@@ -342,11 +361,11 @@ func GetCloudUsageOverview(ctx context.Context, p CloudUsageParams) (*CloudUsage
 		}
 		activitySQL := fmt.Sprintf("SELECT timestamp, model, provider, status, total_tokens, prompt_tokens, "+
 			"completion_tokens, cost_cents, is_stream, is_premium, request_id, user_id, organization "+
-			"FROM hanzo.cloud_usage WHERE %s ORDER BY timestamp DESC LIMIT %d OFFSET %d", where, limit, offset)
+			"FROM %s ORDER BY timestamp DESC LIMIT %d OFFSET %d", cloudUsageDedupedSource(where), limit, offset)
 		if activityRows, err = DatastoreQuery(ctx, activitySQL, args...); err != nil {
 			return nil, fmt.Errorf("usage activity: %w", err)
 		}
-		countRow, err := cloudUsageQueryOne(ctx, "SELECT count() AS requests FROM hanzo.cloud_usage WHERE "+where, args)
+		countRow, err := cloudUsageQueryOne(ctx, "SELECT count(DISTINCT id) AS requests FROM hanzo.cloud_usage WHERE "+where, args)
 		if err != nil {
 			return nil, fmt.Errorf("usage activity count: %w", err)
 		}
