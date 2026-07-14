@@ -29,11 +29,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hanzoai/beego/logs"
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/model"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
+	"github.com/hanzoai/beego/logs"
 	iam "github.com/hanzoai/iam"
 	"github.com/sashabaranov/go-openai"
 )
@@ -1320,10 +1320,7 @@ func (c *ApiController) ListModels() {
 
 	models := listAvailableModels()
 
-	response := map[string]interface{}{
-		"object": "list",
-		"data":   models,
-	}
+	response := modelListEnvelope(models)
 
 	jsonResponse, err := json.Marshal(response)
 	if err != nil {
