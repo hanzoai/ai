@@ -279,6 +279,27 @@ func ValidateJWTIssAud(token string) error {
 	return checkIssAud(iss, auds, trustedJWTIssuers(), jwtAudienceAllowlist())
 }
 
+// TokenIsOwnBrand reports whether a JWT was issued by THIS deployment's OWN
+// primary brand issuer (expectedJWTIssuer) — as opposed to a sibling white-label
+// brand issuer that trustedJWTIssuers ALSO accepts for sign-in. The iss is read
+// from the raw payload (the same source ValidateJWTIssAud trusts); call only on a
+// token already accepted by ParseAndValidateJWT (signature + issuer allowlist),
+// so this only DISTINGUISHES which trusted brand signed it, never grants trust.
+//
+// This is the primitive that keeps cross-tenant / all-customer financial
+// disclosure bound to the deployment's OWN super admins: a grant gated on it
+// stays shut for a sibling brand's admin token even if a future IAM SDK starts
+// verifying every brand's signing cert (today one binary trusts many brand
+// ISSUERS for auth, but only verifies the primary brand's SIGNATURE). Fail-secure:
+// a malformed token or one whose iss is empty is NOT own-brand.
+func TokenIsOwnBrand(token string) bool {
+	iss, _, err := jwtUnverifiedClaims(token)
+	if err != nil || iss == "" {
+		return false
+	}
+	return iss == expectedJWTIssuer()
+}
+
 // ParseAndValidateJWT verifies the token signature via IAM AND enforces the
 // cloud-api issuer/audience policy. This is the ONE JWT entry point for
 // cloud-api request auth — handlers and filters must never call

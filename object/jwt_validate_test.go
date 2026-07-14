@@ -163,6 +163,45 @@ func TestJwtUnverifiedClaims(t *testing.T) {
 	}
 }
 
+// TestTokenIsOwnBrand proves the god-view brand gate primitive: a token is
+// own-brand ONLY when its iss equals expectedJWTIssuer() — a SIBLING white-label
+// brand issuer (trusted for sign-in via trustedJWTIssuers) is NOT own-brand, and a
+// missing/malformed iss is fail-secure false. This is what keeps one brand's
+// all-customer spend unreadable by another brand's admin token.
+func TestTokenIsOwnBrand(t *testing.T) {
+	t.Setenv("JWT_ISSUER", "https://hanzo.id") // deployment's own primary issuer
+
+	// Sanity: lux.id is a TRUSTED sign-in issuer (so this is a real distinction,
+	// not an already-rejected token).
+	trusted := false
+	for _, iss := range trustedJWTIssuers() {
+		if iss == "https://lux.id" {
+			trusted = true
+		}
+	}
+	if !trusted {
+		t.Fatal("precondition: https://lux.id must be a trusted sign-in issuer for this test to mean anything")
+	}
+
+	own := makeJWT(t, map[string]interface{}{"iss": "https://hanzo.id", "owner": "admin"})
+	if !TokenIsOwnBrand(own) {
+		t.Error("own-brand token (iss=hanzo.id) must be own-brand")
+	}
+	sibling := makeJWT(t, map[string]interface{}{"iss": "https://lux.id", "owner": "admin"})
+	if TokenIsOwnBrand(sibling) {
+		t.Error("sibling-brand token (iss=lux.id) must NOT be own-brand — even though its issuer is trusted for sign-in")
+	}
+	noIss := makeJWT(t, map[string]interface{}{"owner": "admin"})
+	if TokenIsOwnBrand(noIss) {
+		t.Error("token with no iss must be fail-secure NOT own-brand")
+	}
+	for _, bad := range []string{"", "a.b", "not-a-jwt"} {
+		if TokenIsOwnBrand(bad) {
+			t.Errorf("malformed token %q must be fail-secure NOT own-brand", bad)
+		}
+	}
+}
+
 // TestValidateJWTIssAud_EndToEnd exercises the config-driven wrapper: a token
 // minted by the trusted issuer passes; a wrong-issuer token is rejected.
 func TestValidateJWTIssAud_EndToEnd(t *testing.T) {

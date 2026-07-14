@@ -260,6 +260,17 @@ func permissionFilter(ctx *context.Context) {
 		// update-preferences is signed-in but NOT admin-gated: it is self-scoped
 		// (writes only the caller's own IAM-user properties, per the session).
 		"update-preferences",
+		// get-cloud-usages is the dual-use usage read (tenant own-org + super-admin
+		// god-view). It self-authenticates (RequirePrincipal: session OR verified
+		// Bearer) and self-scopes (resolveCloudUsageScope pins a non-super-admin to
+		// their own org, ignoring ?org=/X-Org-Id). It is exempt from this coarse
+		// session-only IsAdmin gate for the SAME reason get-account is: the gate
+		// reads only the session (so it would 403 every Bearer caller) AND it demands
+		// org-admin (so it would 403 a regular tenant reading its OWN usage) — both
+		// wrong for a Bearer-reachable, own-org read. The handler is the authority:
+		// fail-closed 401 with no principal, cross-org only for a verified super
+		// admin. (Preview-ON already returns above; this fixes the preview-OFF path.)
+		"get-cloud-usages",
 	}
 
 	for _, exemptPath := range exemptedPaths {
