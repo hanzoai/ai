@@ -111,6 +111,20 @@ func (c *ApiController) ImagesGenerations() {
 		provider.SubType = req.Model
 	}
 
+	// Zen family: forward to the zen service, billed per image at the discovered
+	// price. zen owns the SKU→upstream mapping; ai authenticates, meters, forwards.
+	if provider.Type == "Zen" {
+		n := req.N
+		if n < 1 {
+			n = 1
+		}
+		if n > 10 {
+			n = 10
+		}
+		c.serveZenMedia("images/generations", req.Model, c.Ctx.Input.RequestBody, n, orgId, authUser, isPremium, startTime)
+		return
+	}
+
 	// Clamp n to [1,10] BEFORE any cost math so imageCostCents/reserveBudget are
 	// never fed an unbounded n (mirrors the same clamp in doaiImageSubmit). This
 	// makes the money-safety explicit rather than relying on int overflow.
