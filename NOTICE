@@ -1,6 +1,39 @@
 ai
 Copyright (c) 2022-2026 Hanzo AI, Inc.
 
+Forked from Casibase (https://github.com/casibase/casibase), licensed under Apache-2.0.
+Upstream is authored by Yang Luo (hsluoyz@qq.com); the root commit used the Go module
+path github.com/casbin/casbase prior to the Casibase rename. Upstream source-file
+headers carry both "The OpenAgent Authors" and "The Casibase Authors" copyright lines,
+retained throughout this tree per Apache-2.0 Section 4.
+
 This product includes software from Casibase (https://github.com/casibase/casibase), licensed under Apache-2.0:
 
     Copyright 2023 The OpenAgent Authors. All Rights Reserved.
+
+DEVIATIONS
+Changes made by Hanzo AI, Inc. relative to upstream Casibase:
+
+- Repackaged from github.com/casbin/casbase (later Casibase) to the Go module
+  github.com/hanzoai/ai; product rebranded to Hanzo AI across README, docs, and UI.
+- Identity and authentication moved from Casdoor to Hanzo IAM (github.com/hanzoai/iam;
+  web SDK @hanzo/iam-js-sdk, which aliases casdoor-js-sdk).
+- Web framework forked to github.com/hanzoai/beego.
+- Datastore dropped mattn/go-sqlite3 and standardized on github.com/hanzo-ds/go with
+  github.com/hanzoai/sqlite.
+- Cryptography and runtime primitives sourced from the Lux stack
+  (github.com/luxfi/crypto, luxfi/geth, luxfi/log, luxfi/metric, luxfi/zap, luxfi/pq).
+- Rebuilt as an LLM control plane: native Go routing for 66+ models over an
+  OpenAI-compatible surface (/v1/chat/completions, /v1/models), with provider
+  integrations for Anthropic, OpenAI, Cohere, Mistral, AWS Bedrock, Azure,
+  Baidu Qianfan, and Alibaba DashScope.
+- Added the Zen model family with Anthropic reasoning-vocabulary round-tripping.
+- Added a fine-tune broker for HuggingFace-native LoRA/QLoRA training and deploy
+  (/v1/finetune/*).
+- Provider secrets resolved through Hanzo KMS, scoped per org; per-request usage
+  metered to Hanzo IAM with org-subject billing.
+- Mounts as the "ai" subsystem inside the hanzoai/cloud unified binary
+  (github.com/hanzoai/cloud).
+
+The upstream Casibase distribution does not ship a NOTICE file; this NOTICE provides
+the Apache-2.0 Section 4(d) attribution for the incorporated upstream work.
