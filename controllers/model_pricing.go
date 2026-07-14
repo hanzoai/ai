@@ -178,40 +178,6 @@ var modelPricing = map[string]modelPrice{
 	"openai-direct/gpt-5":       {InputPerMillion: 5.00, OutputPerMillion: 15.00},
 	"openai-direct/o3":          {InputPerMillion: 10.00, OutputPerMillion: 40.00},
 	"openai-direct/o3-mini":     {InputPerMillion: 1.10, OutputPerMillion: 4.40},
-
-	// ── Zen branded models (use Fireworks pricing via upstream) ──────
-
-	// Zen4 models
-	"zen4":             {InputPerMillion: 3.00, OutputPerMillion: 9.60},
-	"zen4-ultra":       {InputPerMillion: 3.00, OutputPerMillion: 9.60},
-	"zen4-pro":         {InputPerMillion: 2.70, OutputPerMillion: 2.70},
-	"zen4-max":         {InputPerMillion: 3.60, OutputPerMillion: 3.60},
-	"zen4-mini":        {InputPerMillion: 0.60, OutputPerMillion: 0.60},
-	"zen4-thinking":    {InputPerMillion: 2.70, OutputPerMillion: 2.70},
-	"zen4-coder":       {InputPerMillion: 3.60, OutputPerMillion: 3.60},
-	"zen4-coder-pro":   {InputPerMillion: 4.50, OutputPerMillion: 4.50},
-	"zen4-coder-flash": {InputPerMillion: 1.50, OutputPerMillion: 1.50},
-	"zen3-omni":        {InputPerMillion: 1.80, OutputPerMillion: 6.60},
-	"zen3-vl":          {InputPerMillion: 0.45, OutputPerMillion: 1.80},
-	"zen3-nano":        {InputPerMillion: 0.30, OutputPerMillion: 0.30},
-	"zen3-guard":       {InputPerMillion: 0.30, OutputPerMillion: 0.30},
-	"zen3-embedding":   {InputPerMillion: 0.39, OutputPerMillion: 0.39},
-
-	// Versionless aliases (same pricing as zen4/zen3 variants)
-	"zen":             {InputPerMillion: 3.00, OutputPerMillion: 9.60},
-	"zen-pro":         {InputPerMillion: 2.70, OutputPerMillion: 2.70},
-	"zen-max":         {InputPerMillion: 3.60, OutputPerMillion: 3.60},
-	"zen-mini":        {InputPerMillion: 0.60, OutputPerMillion: 0.60},
-	"zen-ultra":       {InputPerMillion: 3.00, OutputPerMillion: 9.60},
-	"zen-coder":       {InputPerMillion: 3.60, OutputPerMillion: 3.60},
-	"zen-coder-flash": {InputPerMillion: 1.50, OutputPerMillion: 1.50},
-	"zen-coder-pro":   {InputPerMillion: 4.50, OutputPerMillion: 4.50},
-	"zen-thinking":    {InputPerMillion: 2.70, OutputPerMillion: 2.70},
-	"zen-vl":          {InputPerMillion: 0.45, OutputPerMillion: 1.80},
-	"zen-nano":        {InputPerMillion: 0.30, OutputPerMillion: 0.30},
-	"zen-omni":        {InputPerMillion: 1.80, OutputPerMillion: 6.60},
-	"zen-guard":       {InputPerMillion: 0.30, OutputPerMillion: 0.30},
-	"zen-embedding":   {InputPerMillion: 0.39, OutputPerMillion: 0.39},
 }
 
 // imagePricePerImageCents maps an image model (user-facing name OR upstream
@@ -221,15 +187,6 @@ var modelPricing = map[string]modelPrice{
 // is this separate, explicit seam. Keyed by both the user-facing zen3-image
 // name and the upstream id so a lookup succeeds whichever the caller records.
 var imagePricePerImageCents = map[string]int64{
-	// Zen3 diffusion family (Hanzo margin over fal wholesale).
-	"zen3-image":            5,
-	"zen3-image-max":        5,
-	"zen3-image-fast":       5,
-	"zen3-image-dev":        5,
-	"zen3-image-playground": 5,
-	"zen3-image-jp":         5,
-	"zen3-image-sdxl":       6,
-	"zen3-image-ssd":        6,
 	// Upstream ids (the do-ai fal image models) — same price, so billing is
 	// correct whether the record carries the user-facing or upstream name.
 	"fal-ai/flux/schnell": 5,
@@ -276,12 +233,8 @@ func imageCostCents(model string, n int) int64 {
 // above the image rate (5-8¢) since a t2v inference is minutes of A14B compute.
 // FLAGGED as best-estimate — refine when DO publishes a per-video price.
 var videoPricePerVideoCents = map[string]int64{
-	// Zen3 video brand family (Hanzo margin over do-ai wholesale).
-	"zen3-video":      40,
-	"zen3-video-fast": 40,
-	"zen3-video-pro":  40,
-	// Upstream id (the do-ai text-to-video model) — same price, so billing is
-	// correct whether the record carries the user-facing or upstream name.
+	// The do-ai text-to-video upstream, callable by its raw id. The zen video
+	// family (zen-video) is served by the zen service and priced from its catalog.
 	"wan2-2-t2v-a14b": 40,
 }
 

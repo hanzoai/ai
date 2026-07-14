@@ -28,7 +28,6 @@ func emptyRouterConfig() *ModelConfig {
 	return &ModelConfig{
 		routes:  map[string]modelRoute{},
 		pricing: map[string]modelPrice{},
-		prompts: map[string]string{},
 		router:  RouterConfigDef{Enabled: false},
 	}
 }
@@ -71,13 +70,13 @@ func TestAutoRoutingPrecedenceMatrix(t *testing.T) {
 				return object.AutoRoutingUnset
 			}
 
-			// "please refactor this function" classifies to code → zen4-coder.
+			// "please refactor this function" classifies to code → glm-5.2.
 			got, ok := resolveAutoModel("auto", org, "", chatReq("auto", "please refactor this function"), router.Slo{})
 			if ok != tc.wantRouted {
 				t.Fatalf("resolveAutoModel routed=%v, want %v", ok, tc.wantRouted)
 			}
-			if tc.wantRouted && got != "zen4-coder" {
-				t.Errorf("resolveAutoModel = %q, want zen4-coder", got)
+			if tc.wantRouted && got != "glm-5.2" {
+				t.Errorf("resolveAutoModel = %q, want glm-5.2", got)
 			}
 			if !tc.wantRouted && got != "" {
 				t.Errorf("resolveAutoModel returned %q with routed=false, want empty", got)
