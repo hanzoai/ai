@@ -33,7 +33,7 @@ func newFeatureEngine(t *testing.T) string {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"model":"zen4-mini","task":"cheap_chat","confidence":0.7,"features":[0.1,0.2,0.3]}`))
+		_, _ = w.Write([]byte(`{"model":"deepseek-v4-flash","task":"cheap_chat","confidence":0.7,"features":[0.1,0.2,0.3]}`))
 	}))
 	t.Cleanup(srv.Close)
 	return srv.URL
@@ -192,8 +192,8 @@ func TestRoutingEventFiredOnResolve(t *testing.T) {
 
 	model, ok := resolveAutoModel("auto", "acme", "acme/alice",
 		chatReq("auto", "please refactor this function"), router.Slo{})
-	if !ok || model != "zen4-coder" {
-		t.Fatalf("resolveAutoModel = (%q, %v), want (zen4-coder, true)", model, ok)
+	if !ok || model != "glm-5.2" {
+		t.Fatalf("resolveAutoModel = (%q, %v), want (glm-5.2, true)", model, ok)
 	}
 	if len(got) != 1 {
 		t.Fatalf("collected %d events, want 1", len(got))
@@ -202,8 +202,8 @@ func TestRoutingEventFiredOnResolve(t *testing.T) {
 	if e.Owner != "acme" || e.User != "acme/alice" {
 		t.Errorf("event owner/user = %q/%q, want acme/acme/alice", e.Owner, e.User)
 	}
-	if e.Task != "code" || e.RoutedModel != "zen4-coder" || e.RequestedModel != "auto" {
-		t.Errorf("event task/routed/requested = %q/%q/%q, want code/zen4-coder/auto", e.Task, e.RoutedModel, e.RequestedModel)
+	if e.Task != "code" || e.RoutedModel != "glm-5.2" || e.RequestedModel != "auto" {
+		t.Errorf("event task/routed/requested = %q/%q/%q, want code/glm-5.2/auto", e.Task, e.RoutedModel, e.RequestedModel)
 	}
 	if e.Source != router.SourceHeuristic {
 		t.Errorf("event source = %q, want %q", e.Source, router.SourceHeuristic)
@@ -281,12 +281,12 @@ func TestWriteRoutingLedgerJSONL(t *testing.T) {
 	events := []*object.RoutingEvent{
 		{
 			Id: "e1", CreatedTime: "2026-07-07T00:00:00Z", Owner: "acme", User: "acme/alice",
-			Task: "code", RequestedModel: "auto", RoutedModel: "zen4-coder",
+			Task: "code", RequestedModel: "auto", RoutedModel: "glm-5.2",
 			Confidence: 0.9, Source: "engine", Features: "[0.1,0.2]",
 		},
 		{
 			Id: "e2", CreatedTime: "2026-07-07T00:01:00Z", Owner: "acme", User: "",
-			Task: "general", RequestedModel: "zen-router", RoutedModel: "zen4",
+			Task: "general", RequestedModel: "zen-router", RoutedModel: "gpt-4o",
 			Source: "heuristic", // no features
 		},
 	}
@@ -308,8 +308,8 @@ func TestWriteRoutingLedgerJSONL(t *testing.T) {
 	if _, hasPrompt := l0["prompt"]; hasPrompt {
 		t.Error("export leaked a prompt field")
 	}
-	if string(l0["model"]) != `"zen4-coder"` || string(l0["routed_model"]) != `"zen4-coder"` {
-		t.Errorf("model/routed_model = %s/%s, want zen4-coder", l0["model"], l0["routed_model"])
+	if string(l0["model"]) != `"glm-5.2"` || string(l0["routed_model"]) != `"glm-5.2"` {
+		t.Errorf("model/routed_model = %s/%s, want glm-5.2", l0["model"], l0["routed_model"])
 	}
 	if string(l0["task"]) != `"code"` {
 		t.Errorf("task = %s, want code", l0["task"])
