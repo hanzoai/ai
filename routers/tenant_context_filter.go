@@ -15,8 +15,11 @@
 package routers
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"strings"
 
+	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/beego/context"
 )
 
@@ -59,6 +62,29 @@ func TenantContextFilter(ctx *context.Context) {
 	if env != "" {
 		ctx.Input.SetData(tenantContextEnvKey, env)
 	}
+
+	// Thread the observability attribution onto the Go REQUEST context so the
+	// single telemetry funnel (controllers.recordTrace) can stamp the cloud_usage
+	// ledger row + the gen_ai span WITHOUT re-reading beego state at each of the
+	// ~15 emit sites: the project sub-scope and a NON-reversible ref of the caller
+	// credential (SHA-256 of the bearer — never the plaintext key). Replacing
+	// ctx.Request propagates to the handler's c.Ctx.Request.Context().
+	attr := object.GenAIAttribution{Project: projectID, APIKeyHash: hashBearer(getTenantHeader(ctx, "Authorization"))}
+	if ctx.Request != nil {
+		ctx.Request = ctx.Request.WithContext(object.WithGenAIAttribution(ctx.Request.Context(), attr))
+	}
+}
+
+// hashBearer returns a non-reversible ref for the caller credential: the SHA-256
+// hex of the bearer token ("Bearer " stripped). Empty in → empty out (never a hash
+// of ""). The plaintext key is never stored or logged — only this ref.
+func hashBearer(authz string) string {
+	tok := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(authz), "Bearer "))
+	if tok == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(tok))
+	return hex.EncodeToString(sum[:])
 }
 
 func getTenantContextValue(ctx *context.Context, key string) string {
