@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 )
 
 // audioSpeechRequest is the OpenAI /v1/audio/speech body: synthesize `input` with
@@ -74,9 +75,14 @@ func (c *ApiController) AudioSpeech() {
 	}
 
 	orgId := c.GetOrg()
-	provider, _, upstreamModel, _, _, err := c.authResolveProvider(token, req.Model, orgId)
+	provider, authUser, upstreamModel, isPremium, _, err := c.authResolveProvider(token, req.Model, orgId)
 	if err != nil {
 		c.ResponseAuthError(err)
+		return
+	}
+	// Zen family: /v1/audio/speech is the OpenAI-compat alias of zen's voice verb.
+	if provider.Type == "Zen" {
+		c.serveZenMedia("audio/voice", req.Model, c.Ctx.Input.RequestBody, 1, orgId, authUser, isPremium, time.Now().UTC())
 		return
 	}
 	// Bind the resolved upstream model + the requested voice onto the provider before
