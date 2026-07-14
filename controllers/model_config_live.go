@@ -152,6 +152,6 @@ func (mc *ModelConfig) Status() string {
 		}
 	}
 
-	return fmt.Sprintf("routes=%d pricing=%d prompts=%d live=%s",
-		len(mc.routes), len(mc.pricing), len(mc.prompts), liveStr)
+	return fmt.Sprintf("routes=%d pricing=%d live=%s",
+		len(mc.routes), len(mc.pricing), liveStr)
 }

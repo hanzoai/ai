@@ -21,33 +21,10 @@ import (
 	"github.com/hanzoai/ai/object"
 )
 
-// TestResolveModelRoute_VideoFamily proves every branded zen3-video model routes
-// to the spark-video backend (our GB10) on the wan2-2-t2v-a14b upstream, is
-// premium, and is owned_by hanzo (the upstream is never leaked), and that the
-// unbranded catalog id still routes to do-ai.
-func TestResolveModelRoute_VideoFamily(t *testing.T) {
-	branded := []string{"zen3-video", "zen3-video-fast", "zen3-video-pro"}
-	for _, name := range branded {
-		t.Run(name, func(t *testing.T) {
-			route := resolveModelRoute(name)
-			if route == nil {
-				t.Fatalf("resolveModelRoute(%q) = nil, want non-nil", name)
-			}
-			if route.providerName != "spark-video" {
-				t.Errorf("providerName = %q, want spark-video", route.providerName)
-			}
-			if route.upstreamModel != "wan2-2-t2v-a14b" {
-				t.Errorf("upstreamModel = %q, want wan2-2-t2v-a14b", route.upstreamModel)
-			}
-			if !route.premium {
-				t.Errorf("%q should be premium", name)
-			}
-			if route.ownedBy != "hanzo" {
-				t.Errorf("ownedBy = %q, want hanzo", route.ownedBy)
-			}
-		})
-	}
-
+// TestResolveModelRoute_Video proves the raw do-ai text-to-video id resolves to
+// itself on do-ai, unbranded, and premium (the zen video family is served by the
+// zen service, not routed here).
+func TestResolveModelRoute_Video(t *testing.T) {
 	// Unbranded passthrough: the raw catalog id resolves to itself, no brand.
 	route := resolveModelRoute("wan2-2-t2v-a14b")
 	if route == nil || route.providerName != "do-ai" || route.upstreamModel != "wan2-2-t2v-a14b" {
@@ -85,10 +62,10 @@ func TestAllVideoModelsArePremium(t *testing.T) {
 	}
 }
 
-// TestResolveModelRoute_VideoFamilyCaseInsensitive: the family resolves
+// TestResolveModelRoute_VideoCaseInsensitive: the raw do-ai video id resolves
 // case-insensitively like every other route.
-func TestResolveModelRoute_VideoFamilyCaseInsensitive(t *testing.T) {
-	route := resolveModelRoute("ZEN3-VIDEO")
+func TestResolveModelRoute_VideoCaseInsensitive(t *testing.T) {
+	route := resolveModelRoute("WAN2-2-T2V-A14B")
 	if route == nil || route.upstreamModel != "wan2-2-t2v-a14b" {
 		t.Fatalf("case-insensitive resolve failed: %+v", route)
 	}

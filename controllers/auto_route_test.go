@@ -35,20 +35,19 @@ func routerTestConfig(enabled bool) *ModelConfig {
 	}
 	return &ModelConfig{
 		routes: map[string]modelRoute{
-			"zen4-coder":    route("qwen3-coder-flash"),
-			"zen4-thinking": route("deepseek-v4-pro"),
-			"zen4-mini":     route("alibaba-qwen3-32b"),
-			"zen4":          route("glm-5"),
+			"glm-5.2":           route("qwen3-coder-flash"),
+			"deepseek-v4-pro":   route("deepseek-v4-pro"),
+			"deepseek-v4-flash": route("alibaba-qwen3-32b"),
+			"gpt-4o":            route("glm-5"),
 		},
 		pricing: map[string]modelPrice{},
-		prompts: map[string]string{},
 		router: RouterConfigDef{
 			Enabled: enabled,
 			Prefer: map[string][]string{
-				"code":       {"zen4-coder"},
-				"reasoning":  {"zen4-thinking"},
-				"cheap_chat": {"zen4-mini"},
-				"default":    {"zen4"},
+				"code":       {"glm-5.2"},
+				"reasoning":  {"deepseek-v4-pro"},
+				"cheap_chat": {"deepseek-v4-flash"},
+				"default":    {"gpt-4o"},
 			},
 		},
 	}
@@ -67,7 +66,7 @@ func TestIsAutoModel(t *testing.T) {
 			t.Errorf("isAutoModel(%q) = false, want true", m)
 		}
 	}
-	for _, m := range []string{"gpt-4o", "zen4", "router:general", ""} {
+	for _, m := range []string{"gpt-4o", "gpt-4o", "router:general", ""} {
 		if isAutoModel(m) {
 			t.Errorf("isAutoModel(%q) = true, want false", m)
 		}
@@ -114,10 +113,10 @@ func TestResolveAutoModelEnabled(t *testing.T) {
 		text  string
 		want  string
 	}{
-		{"auto", "please refactor this function", "zen4-coder"},
-		{"zen-router", "why does this work, explain how step by step", "zen4-thinking"},
-		{"auto", "hi", "zen4-mini"},
-		{"auto", "tell me about the history of the roman empire in detail", "zen4"},
+		{"auto", "please refactor this function", "glm-5.2"},
+		{"zen-router", "why does this work, explain how step by step", "deepseek-v4-pro"},
+		{"auto", "hi", "deepseek-v4-flash"},
+		{"auto", "tell me about the history of the roman empire in detail", "gpt-4o"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.text, func(t *testing.T) {
@@ -158,14 +157,14 @@ func TestAutoRoutingHTTPContract(t *testing.T) {
 	rec := httptest.NewRecorder()
 	handler(rec, httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body)))
 
-	if got := rec.Header().Get(RoutedModelHeader); got != "zen4-coder" {
-		t.Errorf("%s header = %q, want zen4-coder", RoutedModelHeader, got)
+	if got := rec.Header().Get(RoutedModelHeader); got != "glm-5.2" {
+		t.Errorf("%s header = %q, want glm-5.2", RoutedModelHeader, got)
 	}
 	var resp openai.ChatCompletionResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if resp.Model != "zen4-coder" {
-		t.Errorf("response model = %q, want zen4-coder (billed/reported as served model)", resp.Model)
+	if resp.Model != "glm-5.2" {
+		t.Errorf("response model = %q, want glm-5.2 (billed/reported as served model)", resp.Model)
 	}
 }

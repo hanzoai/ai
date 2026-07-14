@@ -89,7 +89,7 @@ func TestResolveUpstreamEndpointAliasesChat(t *testing.T) {
 
 // TestSetJSONModel rewrites the model field and preserves every other field.
 func TestSetJSONModel(t *testing.T) {
-	in := []byte(`{"model":"zen-embedding","input":["a","b"],"encoding_format":"float","dimensions":256}`)
+	in := []byte(`{"model":"text-embedding-3-small","input":["a","b"],"encoding_format":"float","dimensions":256}`)
 	out, err := setJSONModel(in, "text-embedding-3-large")
 	if err != nil {
 		t.Fatal(err)
