@@ -672,9 +672,11 @@ func (t *responsesStreamTranslator) handleChunk(chunk *openaiStreamChunk) error 
 				}
 			}
 		}
-		if choice.FinishReason != "" {
-			return t.finish()
-		}
+		// Do not finish on finish_reason. OpenAI-compatible providers commonly
+		// send the usage-only chunk *after* the terminal choice chunk and before
+		// [DONE]. Finishing here emitted response.completed with zero usage and
+		// made the later accounting chunk impossible to apply. [DONE] (or the
+		// bridge Close fallback) is the authoritative end of the stream.
 	}
 	return nil
 }

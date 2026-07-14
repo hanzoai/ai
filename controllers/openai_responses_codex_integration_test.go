@@ -66,6 +66,7 @@ func TestCodexCLIResponsesWire(t *testing.T) {
 				_ = json.Unmarshal([]byte(`{"choices":[{"delta":{"content":"HANZO_CODEX_TOOL_OK"},"finish_reason":"stop"}],"usage":{"prompt_tokens":20,"completion_tokens":4,"total_tokens":24}}`), &chunk)
 			}
 			_ = translator.handleChunk(&chunk)
+			_ = translator.finish()
 		default:
 			http.NotFound(w, r)
 		}

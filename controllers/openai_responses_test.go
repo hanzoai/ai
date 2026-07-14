@@ -97,7 +97,8 @@ func TestResponsesStreamTextWire(t *testing.T) {
 	upstream := strings.Join([]string{
 		`data: {"id":"chat_1","model":"qwen","choices":[{"delta":{"role":"assistant","content":"HANZO_"},"finish_reason":null}]}`,
 		`data: {"id":"chat_1","model":"qwen","choices":[{"delta":{"content":"OK"},"finish_reason":null}]}`,
-		`data: {"id":"chat_1","model":"qwen","choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":12,"completion_tokens":2,"total_tokens":14}}`,
+		`data: {"id":"chat_1","model":"qwen","choices":[{"delta":{},"finish_reason":"stop"}]}`,
+		`data: {"id":"chat_1","model":"qwen","choices":[],"usage":{"prompt_tokens":12,"completion_tokens":2,"total_tokens":14}}`,
 		`data: [DONE]`,
 		"",
 	}, "\n\n")
@@ -130,6 +131,9 @@ func TestResponsesStreamTextWire(t *testing.T) {
 	}
 	if !strings.Contains(wire, `"text":"HANZO_OK"`) || !strings.Contains(wire, `"total_tokens":14`) {
 		t.Fatalf("missing final text/usage:\n%s", wire)
+	}
+	if got := strings.Count(wire, `event: response.completed`); got != 1 {
+		t.Fatalf("response.completed count = %d, want exactly one after the usage chunk:\n%s", got, wire)
 	}
 }
 
