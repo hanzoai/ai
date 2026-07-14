@@ -52,6 +52,29 @@ func (c *ApiController) principalUser() *iam.User {
 	return c.credentialUser()
 }
 
+// principalIsOwnBrand reports whether the request principal was minted by THIS
+// deployment's OWN brand IAM. A cookie session is own-brand: sessions are minted
+// by this deployment's own hostname-resolved sign-in, so a lux/zoo/pars session
+// only exists on a lux/zoo/pars host — never on this brand's. A Bearer principal
+// is own-brand ONLY when its verified token issuer == expectedJWTIssuer(); a
+// sibling white-label brand's token (trusted for SIGN-IN via trustedJWTIssuers,
+// e.g. a lux.id bearer presented to api.hanzo.ai) is NOT own-brand.
+//
+// It mirrors principalUser's session-first order, so the SAME credential decides
+// both identity and brand. Callers gate cross-tenant / all-customer disclosure on
+// this AND util.IsSuperAdmin, decoupling that grant from the broader multi-brand
+// sign-in trust set — see resolveCloudUsageScope.
+func (c *ApiController) principalIsOwnBrand() bool {
+	if c.GetSessionUser() != nil {
+		return true
+	}
+	token := bearerTokenFromRequest(c.Ctx.Request)
+	if token == "" || !isJwtToken(token) {
+		return false
+	}
+	return object.TokenIsOwnBrand(token)
+}
+
 // GetOrg resolves the organization for data-scoping and pricing from
 // the VERIFIED request principal — never a raw client header.
 //
