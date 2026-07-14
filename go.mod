@@ -5,7 +5,6 @@ go 1.26.4
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.13.1
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute v1.0.0
-	github.com/DataDog/zstd v1.5.7
 	github.com/ThinkInAIXYZ/go-mcp v0.2.24
 	github.com/WqyJh/go-cosyvoice v0.1.0
 	github.com/alibabacloud-go/darabonba-openapi v0.1.18
@@ -45,6 +44,7 @@ require (
 	github.com/hanzoai/tasks v1.43.0
 	github.com/henomis/lingoose v0.1.0
 	github.com/hupe1980/go-huggingface v0.0.15
+	github.com/klauspost/compress v1.18.6
 	github.com/leverly/ChatGLM v1.2.0
 	github.com/lib/pq v1.12.3
 	github.com/luthermonson/go-proxmox v0.2.1
@@ -150,7 +150,6 @@ require (
 	github.com/hhrutter/pkcs7 v0.2.0 // indirect
 	github.com/hhrutter/tiff v1.0.2 // indirect
 	github.com/holiman/uint256 v1.3.2 // indirect
-	github.com/klauspost/compress v1.18.6 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/luxfi/accel v1.2.4 // indirect
 	github.com/luxfi/cache v1.2.1 // indirect
