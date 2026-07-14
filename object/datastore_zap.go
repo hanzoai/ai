@@ -196,6 +196,7 @@ func ZapDatastoreQuery(ctx context.Context, query string, args ...interface{}) (
 func decodeNDJSON(raw []byte) ([]map[string]interface{}, error) {
 	out := make([]map[string]interface{}, 0, 16)
 	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber() // exact UInt64 (cost_cents) — avoid float64 precision loss; cu* coercers handle json.Number
 	for dec.More() {
 		m := make(map[string]interface{})
 		if err := dec.Decode(&m); err != nil {
