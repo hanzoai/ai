@@ -43,15 +43,31 @@ import (
 // @Success 200 {object} object.CloudUsageOverview The Response object
 // @router /get-cloud-usages [get]
 //
-// Scoping is the dual-use o11y read shared by console2 (tenant) and admin.hanzo.ai
-// (god-view): a non-super-admin is pinned to their own session org — request
-// scope hints (X-Org-Id header, ?org=) are ignored, so a tenant can never read
-// another org. A super admin targets one org via ?org=<slug> (or the X-Org-Id
-// header that console2 stamps from currentOrg()), or omits it / passes ?org=all
-// for the ALL-orgs view.
+// Auth is session-OR-Bearer (c.RequirePrincipal): the console sends a session
+// cookie, while the token-bearing surfaces (app / chat / billing, which drive the
+// unified UsagePanel) send an IAM Bearer. Both resolve to the SAME principal, and
+// the scope below is decided from THAT principal alone.
+//
+// Scoping is the dual-use o11y read shared by tenant surfaces (own-org) and
+// admin.hanzo.ai (god-view): a non-super-admin is pinned to their own org —
+// request scope hints (X-Org-Id header, ?org=) are ignored, so a tenant can never
+// read another org, no matter which auth it presents. A super admin targets one
+// org via ?org=<slug> (or the X-Org-Id header console2 stamps), or omits it /
+// passes ?org=all for the ALL-orgs view. The super-admin decision comes from the
+// verified principal (util.IsSuperAdmin), never from a header or param.
 func (c *ApiController) GetCloudUsages() {
-	user, ok := c.RequireSignedInUser()
+	user, ok := c.RequirePrincipal()
 	if !ok {
+		return
+	}
+
+	// A financial read is never served to an anonymous guest. anonymousSignin binds
+	// a synthesized u-<hash> record to the deployment org (IAM_ORG) — so a persisted
+	// guest would otherwise read that org's AGGREGATE spend, and if IAM_ORG were ever
+	// "admin" it would inherit the all-orgs god-view. Reject every anonymous
+	// principal here; this endpoint requires a real signed-in identity.
+	if util.IsAnonymousUser(user) {
+		c.ResponseUnauthorized(c.T("auth:Please sign in first"))
 		return
 	}
 
@@ -95,7 +111,16 @@ func (c *ApiController) GetCloudUsages() {
 // Super admins may target one org (?org= / ?owner=, else the X-Org-Id header
 // console2 sends) or get the all-orgs view (omitted, empty, "all", or "*").
 func (c *ApiController) resolveCloudUsageScope(user *iam.User) (org string, allOrgs bool) {
-	if !util.IsSuperAdmin(user) {
+	// The all-orgs god-view and cross-org targeting expose EVERY customer's spend,
+	// so they require a SAME-BRAND super admin: a member of the reserved admin org
+	// (util.IsSuperAdmin) whose principal was minted by THIS deployment's own IAM
+	// (principalIsOwnBrand). A sibling white-label brand's super admin — a token the
+	// auth layer trusts for sign-in but that belongs to another brand — is pinned to
+	// its own org like any tenant. This binds all-customer financial disclosure to
+	// the deployment's OWN issuer, independent of which brand issuers the IAM SDK is
+	// later configured to VERIFY (today the cross-brand path is also shut by
+	// signature, but this closes it by POLICY regardless — see brand.go SDK-bump note).
+	if !util.IsSuperAdmin(user) || !c.principalIsOwnBrand() {
 		return user.Owner, false
 	}
 

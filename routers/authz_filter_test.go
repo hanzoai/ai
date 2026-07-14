@@ -353,6 +353,76 @@ func TestPublicProviderFlagsNotGated(t *testing.T) {
 	}
 }
 
+// ── get-cloud-usages: Bearer-reachable, self-scoping usage read ──────────────
+//
+// get-cloud-usages is the dual-use usage read (tenant own-org + super-admin
+// god-view). It authenticates session-OR-Bearer and self-scopes in the handler
+// (RequirePrincipal + resolveCloudUsageScope), so it must NOT be caught by the
+// coarse session-only IsAdmin gate — which reads only the session (403s every
+// Bearer caller) and demands org-admin (403s a regular tenant reading its OWN
+// usage). These tests force preview OFF (the hardened prod posture where that
+// gate is live) and assert the filter DEFERS to the handler.
+
+// TestCloudUsagesClassification locks in that get-cloud-usages is neither a
+// super-admin endpoint nor a present-credential (write/ingest) endpoint — it is a
+// benign, self-authing read like get-account.
+func TestCloudUsagesClassification(t *testing.T) {
+	if requiresSuperAdmin("get-cloud-usages") {
+		t.Error("get-cloud-usages must NOT require super admin (tenants read their own usage)")
+	}
+	if requiresPresentCredential("get-cloud-usages") {
+		t.Error("get-cloud-usages must NOT be a present-credential write endpoint (it self-auths like get-account)")
+	}
+}
+
+// TestCloudUsagesExemptFromAdminGate — preview OFF, get-cloud-usages passes the
+// filter for a Bearer caller, a non-admin session, AND a no-principal request
+// (the handler is the authority: it 401s no-principal and scopes the rest). This
+// is exactly the deferral get-account gets.
+func TestCloudUsagesExemptFromAdminGate(t *testing.T) {
+	t.Setenv("DISABLE_PREVIEW_MODE", "true") // hardened: the IsAdmin gate is live
+
+	// Bearer, no session — pre-change this 403'd (gate reads only the session).
+	ctx, rec := newFilterCtxAuth("GET", "/v1/get-cloud-usages", "some.jwt.bearer")
+	permissionFilter(ctx)
+	if rec.Code != http.StatusOK || rec.Body.Len() != 0 {
+		t.Errorf("bearer get-cloud-usages wrote a denial (code=%d, body=%q); want filter pass-through", rec.Code, rec.Body.String())
+	}
+
+	// Non-admin session — pre-change this 403'd (gate demands org-admin); a tenant
+	// must be able to read its OWN usage.
+	nonAdmin := &iam.User{Owner: "maxpower", Name: "dave"}
+	ctx2, rec2 := newFilterCtx("GET", "/v1/get-cloud-usages", nonAdmin)
+	permissionFilter(ctx2)
+	if rec2.Code != http.StatusOK || rec2.Body.Len() != 0 {
+		t.Errorf("non-admin session get-cloud-usages wrote a denial (code=%d, body=%q); want filter pass-through", rec2.Code, rec2.Body.String())
+	}
+
+	// No principal at all — the filter defers; the HANDLER (RequirePrincipal) is
+	// the fail-closed 401 authority, so the filter itself must not deny.
+	ctx3, rec3 := newFilterCtx("GET", "/v1/get-cloud-usages", nil)
+	permissionFilter(ctx3)
+	if rec3.Code != http.StatusOK || rec3.Body.Len() != 0 {
+		t.Errorf("anonymous get-cloud-usages filter wrote a denial (code=%d, body=%q); want pass-through to the handler", rec3.Code, rec3.Body.String())
+	}
+}
+
+// TestLegacyGetUsagesStillAdminGated is the anti-over-broadening regression: the
+// exemption is for get-cloud-usages ONLY. The legacy get-usages / get-range-usages
+// admin reads stay session-admin-gated under preview OFF — a non-admin session is
+// still 403.
+func TestLegacyGetUsagesStillAdminGated(t *testing.T) {
+	t.Setenv("DISABLE_PREVIEW_MODE", "true")
+	nonAdmin := &iam.User{Owner: "maxpower", Name: "dave"}
+	for _, path := range []string{"/v1/get-usages", "/v1/get-range-usages"} {
+		ctx, rec := newFilterCtx("GET", path, nonAdmin)
+		permissionFilter(ctx)
+		if rec.Code != http.StatusForbidden {
+			t.Errorf("non-admin %s = %d, want 403 (legacy admin read must stay gated)", path, rec.Code)
+		}
+	}
+}
+
 // roundTripOnce wires the real router + filter + a memory session manager exactly
 // once (Beego router/session state is process-global; re-registering leaks).
 var roundTripOnce sync.Once
