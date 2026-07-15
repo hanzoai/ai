@@ -427,7 +427,7 @@ func (c *ApiController) AnthropicMessages() {
 		est := estimateRequestCostCents(request.Model, len(request.Messages)*500, request.MaxTokens)
 		var ok bool
 		if hold, ok = reserveBudget(subject, est); !ok {
-			c.respondAnthropicError("billing_error", "Insufficient balance for the estimated request cost. Add credits at console.hanzo.ai", http.StatusPaymentRequired)
+			c.respondAnthropicError("billing_error", "Insufficient balance for the estimated request cost. add credits to your wallet at https://pay.hanzo.ai", http.StatusPaymentRequired)
 			return
 		}
 	}
