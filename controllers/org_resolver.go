@@ -31,14 +31,29 @@ import (
 // otherwise shadow it. Returns nil when no valid JWT credential is present.
 func (c *ApiController) credentialUser() *iam.User {
 	token := bearerTokenFromRequest(c.Ctx.Request)
-	if token == "" || !isJwtToken(token) {
+	if token == "" {
 		return nil
 	}
-	claims, err := object.ParseAndValidateJWT(token)
-	if err != nil {
-		return nil
+	if isJwtToken(token) {
+		claims, err := object.ParseAndValidateJWT(token)
+		if err != nil {
+			return nil
+		}
+		return &claims.User
 	}
-	return &claims.User
+	// Non-JWT Bearer: an hk- IAM API key. Resolve it to its owning user via IAM so
+	// GetOrg yields the caller's real tenant (routing, pricing, usage reads, record
+	// attribution) instead of the IAM_ORG default. Without this, an hk- chat call
+	// resolved orgId="" and relied solely on the separately-resolved authUser.Owner
+	// for tenant attribution to zen — a split that 402'd whenever that fallback was
+	// absent. Fail-secure: an unknown key (IAM data:null) yields nil, never a
+	// spoofed org.
+	if isIAMApiKey(token) {
+		if user, err := getUserByAccessKey(token); err == nil && user != nil {
+			return user
+		}
+	}
+	return nil
 }
 
 // principalUser resolves the request principal: the session user (cookie auth)

@@ -174,7 +174,7 @@ func (c *ApiController) VideosGenerations() {
 	// no subject to own or bill the job by. Reject it rather than create an
 	// unownable, unbillable job.
 	if authUser == nil {
-		c.ResponseAuthError(billingError("Video generation requires an authenticated Hanzo Cloud account. Sign in and add credits at console.hanzo.ai"))
+		c.ResponseAuthError(billingError("Video generation requires an authenticated Hanzo Cloud account. Sign in and add credits to your wallet at https://pay.hanzo.ai"))
 		return
 	}
 	subject := object.BillingSubject(authUser.Owner, authUser.Name)
@@ -213,7 +213,7 @@ func (c *ApiController) VideosGenerations() {
 	// the job is abandoned.
 	hold, okReserve := reserveBudget(subject, videoCostCents(req.Model, 1))
 	if !okReserve {
-		c.ResponseAuthError(billingError("Insufficient balance for the estimated video cost. Add credits at console.hanzo.ai"))
+		c.ResponseAuthError(billingError("Insufficient balance for the estimated video cost. add credits to your wallet at https://pay.hanzo.ai"))
 		return
 	}
 
