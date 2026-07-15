@@ -254,6 +254,10 @@ func TestBalanceExemptPaths(t *testing.T) {
 		// 402s a funded-but-zero / M2M caller browsing the catalog). Still
 		// authenticated — balance-exemption is not auth-exemption.
 		"/v1/models", "/v1/models/gpt-4",
+		// Usage/spend READS are account metadata like the model catalog — a
+		// $0-balance org must be able to SEE its own usage (to learn it needs
+		// credits), so the usage panel never 402s.
+		"/v1/get-cloud-usages", "/v1/get-usages", "/v1/get-range-usages",
 	}
 	for _, p := range exempt {
 		if !isBalanceExempt(p) {
