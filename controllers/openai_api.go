@@ -1037,7 +1037,7 @@ func (c *ApiController) ChatCompletions() {
 		est := estimateRequestCostCents(request.Model, estimatePromptTokens(&request), request.MaxTokens)
 		var ok bool
 		if hold, ok = reserveBudget(subject, est); !ok {
-			c.ResponseAuthError(billingError("Insufficient balance for the estimated request cost. Add credits at console.hanzo.ai"))
+			c.ResponseAuthError(billingError("Insufficient balance for the estimated request cost. add credits to your wallet at https://pay.hanzo.ai"))
 			return
 		}
 	}

@@ -108,7 +108,7 @@ func (c *ApiController) Embeddings() {
 			}
 			var ok2 bool
 			if hold, ok2 = reserveBudget(subject, est); !ok2 {
-				c.ResponseAuthError(billingError("Insufficient balance for the estimated cost. Add credits at console.hanzo.ai"))
+				c.ResponseAuthError(billingError("Insufficient balance for the estimated cost. add credits to your wallet at https://pay.hanzo.ai"))
 				return
 			}
 		}
