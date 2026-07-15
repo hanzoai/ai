@@ -35,7 +35,7 @@ func TestStreamCaptureUsageCapturesTokens(t *testing.T) {
 	}, "\n")
 
 	var out strings.Builder
-	prompt, completion, total, text := streamCaptureUsage(strings.NewReader(sse), &out, nil, false, "req1", "gpt-4o-mini")
+	prompt, completion, total, text := streamCaptureUsage(strings.NewReader(sse), &out, nil, false, "req1", "gpt-4o-mini", nil)
 
 	if prompt != 12 || completion != 5 || total != 17 {
 		t.Fatalf("captured usage = (%d,%d,%d), want (12,5,17) — streamed tool call MUST capture real tokens", prompt, completion, total)
@@ -63,7 +63,7 @@ func TestStreamCaptureUsageForwardsUsageWhenRequested(t *testing.T) {
 		"",
 	}, "\n")
 	var out strings.Builder
-	_, _, total, _ := streamCaptureUsage(strings.NewReader(sse), &out, nil, true, "c2", "m")
+	_, _, total, _ := streamCaptureUsage(strings.NewReader(sse), &out, nil, true, "c2", "m", nil)
 	if total != 5 {
 		t.Fatalf("total=%d, want 5", total)
 	}
