@@ -1441,10 +1441,16 @@ func (c *ApiController) proxyToolRequest(
 
 		// Copy the SSE stream to the client while capturing token usage (and the
 		// output text for a tokenizer fallback). This is the billing-critical core
-		// of the streaming tool path — see streamCaptureUsage.
+		// of the streaming tool path — see streamCaptureUsage. A reasoning-inlining
+		// upstream (DeepSeek) also gets its leading <think></think> block stripped
+		// from the forwarded content; every other upstream streams unchanged.
+		var strip *model.ReasoningStripper
+		if model.InlinesReasoning(request.Model) {
+			strip = &model.ReasoningStripper{}
+		}
 		capPrompt, capCompletion, capTotal, completionText := streamCaptureUsage(
 			resp.Body, c.Ctx.ResponseWriter, c.Ctx.ResponseWriter.Flush,
-			clientWantsUsage, requestId, request.Model,
+			clientWantsUsage, requestId, request.Model, strip,
 		)
 
 		// Settle billing with the REAL token usage — captured from the forced
@@ -1540,6 +1546,11 @@ func (c *ApiController) proxyToolRequest(
 		}
 		hold.settle(actualCents)
 
+		// Strip a reasoning-inlining upstream's leading <think></think> block from
+		// the forwarded body (billing above already tokenized the original).
+		if model.InlinesReasoning(request.Model) {
+			respBody = stripReasoningBody(respBody)
+		}
 		c.Ctx.ResponseWriter.WriteHeader(resp.StatusCode)
 		c.Ctx.Output.Body(respBody)
 	}

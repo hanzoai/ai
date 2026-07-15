@@ -479,3 +479,109 @@ func TestMapFinishReason(t *testing.T) {
 		}
 	}
 }
+
+// ── Reasoning normalization: DeepSeek inlines <think></think> in content ──────
+
+// runTranslatorModel is runTranslator with an explicit upstream model id, so a
+// reasoning-inlining upstream (DeepSeek) exercises the strip path.
+func runTranslatorModel(t *testing.T, openaiSSE, modelID string) []sseEvent {
+	t.Helper()
+	var events []sseEvent
+	emit := func(event string, data interface{}) error {
+		b, _ := json.Marshal(data)
+		var m map[string]interface{}
+		_ = json.Unmarshal(b, &m)
+		events = append(events, sseEvent{Event: event, Data: m})
+		return nil
+	}
+	translateOpenAIStream(strings.NewReader(openaiSSE), emit, modelID, "req_test")
+	return events
+}
+
+// TestTranslateStream_DeepSeekInlineReasoningStripped is the Claude-Code P0: a
+// DeepSeek upstream buries its chain-of-thought as plain content ending in
+// </think> (the opening <think> is eaten by the chat template). The translator
+// must drop that reasoning and never leak </think> into a text block — even when
+// </think> is split across two SSE chunks.
+func TestTranslateStream_DeepSeekInlineReasoningStripped(t *testing.T) {
+	sse := strings.Join([]string{
+		`data: {"choices":[{"delta":{"role":"assistant","content":"Let me think"},"finish_reason":null}]}`,
+		`data: {"choices":[{"delta":{"content":" about this.</th"},"finish_reason":null}]}`,
+		`data: {"choices":[{"delta":{"content":"ink>Hello"},"finish_reason":null}]}`,
+		`data: {"choices":[{"delta":{"content":" world"},"finish_reason":null}]}`,
+		`data: {"choices":[{"delta":{},"finish_reason":"stop"}]}`,
+		`data: [DONE]`,
+	}, "\n") + "\n"
+
+	events := runTranslatorModel(t, sse, "deepseek-v4-pro")
+
+	// Only a text block — no thinking block, since DeepSeek used no reasoning_content.
+	var blockTypes, textDeltas []string
+	for _, e := range events {
+		if e.Event == "content_block_start" {
+			blockTypes = append(blockTypes, e.Data["content_block"].(map[string]interface{})["type"].(string))
+		}
+		if e.Event == "content_block_delta" {
+			if d := e.Data["delta"].(map[string]interface{}); d["type"] == "text_delta" {
+				textDeltas = append(textDeltas, d["text"].(string))
+			}
+		}
+	}
+	if strings.Join(blockTypes, ",") != "text" {
+		t.Fatalf("block types = %v, want [text] (reasoning dropped, not a thinking block)", blockTypes)
+	}
+	if got := strings.Join(textDeltas, ""); got != "Hello world" {
+		t.Fatalf("visible text = %q, want %q (reasoning stripped)", got, "Hello world")
+	}
+	// The template token and the reasoning prose must never reach the client.
+	for _, e := range events {
+		b, _ := json.Marshal(e.Data)
+		if strings.Contains(string(b), "</think>") {
+			t.Fatalf("</think> leaked into event %s: %s", e.Event, b)
+		}
+		if strings.Contains(string(b), "Let me think") {
+			t.Fatalf("reasoning prose leaked into event %s: %s", e.Event, b)
+		}
+	}
+}
+
+// TestTranslateStream_NonDeepSeekContentUntouched locks the gate: a non-inlining
+// upstream (GLM) is never stripped, so content passes byte-for-byte — even the
+// (hypothetical) literal token — because the strip is DeepSeek-only.
+func TestTranslateStream_NonDeepSeekContentUntouched(t *testing.T) {
+	sse := strings.Join([]string{
+		`data: {"choices":[{"delta":{"content":"a</think>b"},"finish_reason":null}]}`,
+		`data: {"choices":[{"delta":{},"finish_reason":"stop"}]}`,
+		`data: [DONE]`,
+	}, "\n") + "\n"
+
+	events := runTranslatorModel(t, sse, "glm-5.2")
+	var text string
+	for _, e := range events {
+		if e.Event == "content_block_delta" {
+			if d := e.Data["delta"].(map[string]interface{}); d["type"] == "text_delta" {
+				text += d["text"].(string)
+			}
+		}
+	}
+	if text != "a</think>b" {
+		t.Fatalf("non-DeepSeek content = %q, want it passed through verbatim", text)
+	}
+}
+
+// TestOpenAIResponseToAnthropic_DeepSeekInlineReasoningStripped is the non-stream
+// twin: a DeepSeek reply whose content is `reasoning</think>answer` yields a
+// single text block holding only the answer.
+func TestOpenAIResponseToAnthropic_DeepSeekInlineReasoningStripped(t *testing.T) {
+	body := []byte(`{"choices":[{"message":{"role":"assistant","content":"Reasoning here.</think>The final answer"},"finish_reason":"stop"}],"usage":{"prompt_tokens":5,"completion_tokens":9}}`)
+	resp, _, _ := openAIResponseToAnthropic(body, "deepseek-v4-pro", "req_1")
+
+	content := resp["content"].([]interface{})
+	if len(content) != 1 {
+		t.Fatalf("content len = %d, want 1 (reasoning dropped, no thinking block)", len(content))
+	}
+	block := content[0].(map[string]interface{})
+	if block["type"] != "text" || block["text"] != "The final answer" {
+		t.Fatalf("block = %v, want text 'The final answer'", block)
+	}
+}

@@ -57,7 +57,7 @@ type sseStreamChunk struct {
 // client did not request usage; otherwise its envelope is fixed up for SDK
 // clients. This is the billing-critical core of the streaming tool path: it
 // guarantees a streamed tool call yields real token counts to bill.
-func streamCaptureUsage(r io.Reader, w io.Writer, flush func(), clientWantsUsage bool, requestID, fallbackModel string) (prompt, completion, total int, completionText string) {
+func streamCaptureUsage(r io.Reader, w io.Writer, flush func(), clientWantsUsage bool, requestID, fallbackModel string, strip *model.ReasoningStripper) (prompt, completion, total int, completionText string) {
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 0, 256*1024), 256*1024)
 	var lastChunkID, lastChunkModel string
@@ -87,6 +87,13 @@ func streamCaptureUsage(r io.Reader, w io.Writer, flush func(), clientWantsUsage
 						for _, tc := range ch.Delta.ToolCalls {
 							sb.WriteString(tc.Function.Arguments)
 						}
+					}
+					// Strip inline reasoning from the FORWARDED content only —
+					// billing above already counted the original. Gated by a
+					// non-nil stripper (reasoning-inlining upstreams only), so
+					// every other stream is byte-for-byte unchanged.
+					if strip != nil && len(chunk.Choices) > 0 {
+						line = "data: " + applyReasoningStrip(raw, strip)
 					}
 					if chunk.ID != "" {
 						lastChunkID = chunk.ID
