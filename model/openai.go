@@ -386,6 +386,14 @@ func (p *OpenAiModelProvider) QueryText(question string, writer io.Writer, histo
 		respStream := client.Responses.NewStreaming(ctx, req)
 		defer respStream.Close()
 
+		// A reasoning-inlining upstream (DeepSeek) emits its <think></think> block
+		// as plain message text rather than reasoning-summary events; strip that
+		// leading block so the console / plain-chat answer is clean.
+		var reasonStrip *ReasoningStripper
+		if InlinesReasoning(model) {
+			reasonStrip = &ReasoningStripper{}
+		}
+
 		isLeadingReturn := true
 		for respStream.Next() {
 			flushThink := flushData.(func(string, string, io.Writer, string) error)
@@ -399,6 +407,11 @@ func (p *OpenAiModelProvider) QueryText(question string, writer io.Writer, histo
 				}
 			case responses.ResponseTextDeltaEvent:
 				data := variant.Delta
+				if reasonStrip != nil {
+					if data = reasonStrip.Feed(data); data == "" {
+						continue
+					}
+				}
 				if isLeadingReturn && len(data) != 0 {
 					if strings.Count(data, "\n") == len(data) {
 						continue
