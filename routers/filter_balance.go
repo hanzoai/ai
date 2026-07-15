@@ -183,7 +183,7 @@ func BalanceGateFilter(ctx *context.Context) {
 	ctx.ResponseWriter.Header().Set("Content-Type", "application/json")
 	ctx.ResponseWriter.WriteHeader(http.StatusPaymentRequired)
 
-	body := `{"error":{"message":"Insufficient balance. Please add credits at console.hanzo.ai","type":"billing_error","code":"insufficient_balance"}}`
+	body := `{"error":{"message":"Insufficient balance. Please add credits to your wallet at https://pay.hanzo.ai","type":"billing_error","code":"insufficient_balance"}}`
 	ctx.ResponseWriter.Write([]byte(body))
 }
 
