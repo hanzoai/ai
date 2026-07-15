@@ -21,6 +21,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/hanzoai/ai/model"
 	openai "github.com/sashabaranov/go-openai"
 )
 
@@ -434,9 +435,13 @@ type openaiStreamToolCall struct {
 // interleaved thinking, text, and tool_use blocks. It also captures token usage
 // (from the forced include_usage chunk) for billing.
 type anthropicStreamTranslator struct {
-	emit  func(event string, data interface{}) error
-	model string
-	reqID string
+	emit    func(event string, data interface{}) error
+	modelID string
+	reqID   string
+
+	// reason strips a reasoning-inlining upstream's leading <think></think>
+	// block from streamed text deltas; nil for every other upstream (unchanged).
+	reason *model.ReasoningStripper
 
 	started   bool   // message_start emitted
 	blockOpen bool   // a content block is currently open
@@ -449,8 +454,12 @@ type anthropicStreamTranslator struct {
 	prompt, completion, total int
 }
 
-func newAnthropicStreamTranslator(emit func(string, interface{}) error, model, reqID string) *anthropicStreamTranslator {
-	return &anthropicStreamTranslator{emit: emit, model: model, reqID: reqID, stopReason: "end_turn"}
+func newAnthropicStreamTranslator(emit func(string, interface{}) error, modelID, reqID string) *anthropicStreamTranslator {
+	t := &anthropicStreamTranslator{emit: emit, modelID: modelID, reqID: reqID, stopReason: "end_turn"}
+	if model.InlinesReasoning(modelID) {
+		t.reason = &model.ReasoningStripper{}
+	}
+	return t
 }
 
 // ensureStarted emits message_start exactly once.
@@ -466,7 +475,7 @@ func (t *anthropicStreamTranslator) ensureStarted() error {
 			"type":          "message",
 			"role":          "assistant",
 			"content":       []interface{}{},
-			"model":         t.model,
+			"model":         t.modelID,
 			"stop_reason":   nil,
 			"stop_sequence": nil,
 			"usage":         map[string]interface{}{"input_tokens": 0, "output_tokens": 0},
@@ -553,17 +562,26 @@ func (t *anthropicStreamTranslator) handleChunk(c *openaiStreamChunk) error {
 			}
 		}
 
-		// content → text block.
+		// content → text block. A reasoning-inlining upstream (DeepSeek) buries
+		// its <think></think> block here rather than in reasoning_content; strip
+		// it so only the answer becomes text (t.reason is nil for every other
+		// upstream, leaving the delta byte-for-byte unchanged).
 		if ch.Delta.Content != "" {
-			if err := t.ensureKind("text"); err != nil {
-				return err
+			text := ch.Delta.Content
+			if t.reason != nil {
+				text = t.reason.Feed(text)
 			}
-			if err := t.emit("content_block_delta", map[string]interface{}{
-				"type":  "content_block_delta",
-				"index": t.curIndex,
-				"delta": map[string]interface{}{"type": "text_delta", "text": ch.Delta.Content},
-			}); err != nil {
-				return err
+			if text != "" {
+				if err := t.ensureKind("text"); err != nil {
+					return err
+				}
+				if err := t.emit("content_block_delta", map[string]interface{}{
+					"type":  "content_block_delta",
+					"index": t.curIndex,
+					"delta": map[string]interface{}{"type": "text_delta", "text": text},
+				}); err != nil {
+					return err
+				}
 			}
 		}
 
@@ -678,8 +696,8 @@ func streamCaptureAnthropicUsage(r io.Reader, w io.Writer, flush func()) (prompt
 
 // translateOpenAIStream reads an upstream OpenAI SSE stream and drives the
 // translator, returning captured usage. It never writes raw OpenAI frames.
-func translateOpenAIStream(r io.Reader, emit func(string, interface{}) error, model, reqID string) (prompt, completion, total int) {
-	t := newAnthropicStreamTranslator(emit, model, reqID)
+func translateOpenAIStream(r io.Reader, emit func(string, interface{}) error, modelID, reqID string) (prompt, completion, total int) {
+	t := newAnthropicStreamTranslator(emit, modelID, reqID)
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 0, 256*1024), 1024*1024)
 	for scanner.Scan() {
@@ -707,7 +725,7 @@ func translateOpenAIStream(r io.Reader, emit func(string, interface{}) error, mo
 
 // openAIResponseToAnthropic converts a non-streaming OpenAI chat completion into
 // an Anthropic Messages response (content blocks + stop_reason + usage).
-func openAIResponseToAnthropic(body []byte, model, reqID string) (resp map[string]interface{}, prompt, completion int) {
+func openAIResponseToAnthropic(body []byte, modelID, reqID string) (resp map[string]interface{}, prompt, completion int) {
 	var oai struct {
 		Choices []struct {
 			Message struct {
@@ -737,8 +755,15 @@ func openAIResponseToAnthropic(body []byte, model, reqID string) (resp map[strin
 		if ch.Message.ReasoningContent != "" {
 			content = append(content, map[string]interface{}{"type": "thinking", "thinking": ch.Message.ReasoningContent})
 		}
-		if ch.Message.Content != "" {
-			content = append(content, map[string]interface{}{"type": "text", "text": ch.Message.Content})
+		// A reasoning-inlining upstream (DeepSeek) buries its <think></think>
+		// block in content rather than reasoning_content; strip it so only the
+		// answer becomes a text block (other upstreams pass through unchanged).
+		text := ch.Message.Content
+		if model.InlinesReasoning(modelID) {
+			text = model.StripLeadingReasoning(text)
+		}
+		if text != "" {
+			content = append(content, map[string]interface{}{"type": "text", "text": text})
 		}
 		for _, tc := range ch.Message.ToolCalls {
 			var input interface{}
@@ -766,7 +791,7 @@ func openAIResponseToAnthropic(body []byte, model, reqID string) (resp map[strin
 		"id":            "msg_" + reqID,
 		"type":          "message",
 		"role":          "assistant",
-		"model":         model,
+		"model":         modelID,
 		"content":       content,
 		"stop_reason":   stopReason,
 		"stop_sequence": nil,
