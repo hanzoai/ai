@@ -147,7 +147,7 @@ func (c *ApiController) ImagesGenerations() {
 		subject := object.BillingSubject(authUser.Owner, authUser.Name)
 		var ok bool
 		if hold, ok = reserveBudget(subject, imageCostCents(req.Model, n)); !ok {
-			c.ResponseAuthError(billingError("Insufficient balance for the estimated image cost. Add credits at console.hanzo.ai"))
+			c.ResponseAuthError(billingError("Insufficient balance for the estimated image cost. add credits to your wallet at https://pay.hanzo.ai"))
 			return
 		}
 	}
