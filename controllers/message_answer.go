@@ -19,9 +19,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/hanzoai/ai/agent"
 	"github.com/hanzoai/ai/embedding"
+
 	"github.com/hanzoai/ai/model"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
@@ -315,6 +317,12 @@ func (c *ApiController) GetMessageAnswer() {
 	message.Price = modelResult.TotalPrice
 	message.Currency = modelResult.Currency
 
+	// Land the casibase chat turn in the ONE usage warehouse + o11y span plane
+	// (recordTrace) beside its legacy chat.Price accumulation, so this surface is
+	// no longer warehouse/o11y-blind. Attribution is the chat's own org (the store
+	// owner), not a bearer principal — this path is session/store-scoped.
+	c.recordCasibaseChatUsage(chat, modelProvider, modelResult)
+
 	textAnswer := answer
 	textSuggestions := []object.Suggestion{}
 	textTitle := ""
@@ -530,4 +538,47 @@ func (c *ApiController) GetAnswer() {
 	}
 
 	c.ResponseOk(answer)
+}
+
+// recordCasibaseChatUsage traces a legacy casibase chat turn (store/session-scoped,
+// not bearer-authed) into the ONE usage warehouse + o11y span plane. recordTrace is
+// unconditional (the turn is visible incl. its provider/tokens); recordUsage (the
+// commerce debit) runs only when the legacy price is USD — a non-USD float
+// (message.Currency can be CNY on some providers) must not be debited as dollars, so
+// it is traced-but-not-debited and flagged Unpriced until the legacy-price rip folds
+// currency. The casibase surface already bills via chat.Price/AddTransactionForMessage;
+// this adds observability + the unified ledger row, never a second debit of USD spend.
+func (c *ApiController) recordCasibaseChatUsage(chat *object.Chat, provider *object.Provider, r *model.ModelResult) {
+	if chat == nil || r == nil {
+		return
+	}
+	org := chat.Organization
+	if org == "" {
+		org = chat.Owner
+	}
+	providerName := ""
+	if provider != nil {
+		providerName = provider.Name
+	}
+	usd := r.Currency == "" || r.Currency == "USD"
+	rec := &usageRecord{
+		Owner:            org,
+		Organization:     org,
+		User:             chat.User,
+		Model:            providerName,
+		Provider:         providerName,
+		PromptTokens:     r.PromptTokenCount,
+		CompletionTokens: r.ResponseTokenCount,
+		TotalTokens:      r.TotalTokenCount,
+		Cost:             r.TotalPrice,
+		Currency:         "USD",
+		Status:           "success",
+		Unpriced:         !usd,
+		ClientIP:         c.Ctx.Request.RemoteAddr,
+		RequestID:        util.GenerateUUID(),
+	}
+	if usd {
+		recordUsage(rec)
+	}
+	recordTrace(c.Ctx.Request.Context(), rec, time.Now().UTC())
 }
