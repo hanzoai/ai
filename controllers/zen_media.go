@@ -56,7 +56,7 @@ func (c *ApiController) serveZenMedia(apiPath, model string, rawBody []byte, uni
 	var hold *budgetHold
 	if authUser != nil {
 		if zm, ok := zenFam.lookup(model); ok {
-			subject := object.BillingSubject(authUser.Owner, authUser.Name)
+			subject := object.Payer(object.Credential{Owner: authUser.Owner, Name: authUser.Name}).Subject()
 			var ok2 bool
 			if hold, ok2 = reserveBudget(subject, zm.unitCostCents(units)); !ok2 {
 				c.ResponseAuthError(billingError("Insufficient balance for the estimated cost. add credits to your wallet at https://pay.hanzo.ai"))
