@@ -21,6 +21,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/hanzoai/account"
+
 	"github.com/hanzoai/ai/model"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
@@ -144,7 +146,7 @@ func (c *ApiController) ImagesGenerations() {
 	// image cost, not a token estimate.
 	var hold *budgetHold
 	if authUser != nil {
-		subject := object.Payer(object.Credential{Owner: authUser.Owner, Name: authUser.Name}).Subject()
+		subject := account.Payer(account.Credential{Owner: authUser.Owner, Name: authUser.Name}).Subject()
 		var ok bool
 		if hold, ok = reserveBudget(subject, imageCostCents(req.Model, n)); !ok {
 			c.ResponseAuthError(billingError("Insufficient balance for the estimated image cost. add credits to your wallet at https://pay.hanzo.ai"))
