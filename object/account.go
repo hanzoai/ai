@@ -55,8 +55,12 @@ const (
 // Deployment and StatefulSet — the vars that used to override it were unset in
 // production, which is exactly how the lying default fired).
 //
-// It is also the LAST fact about billing that does not come from the credential,
-// and it exists only because IAM cannot yet say who pays. See Payer.
+// It is the last fact about billing that does not come from the credential, and it
+// now survives for ONE reason: tokens minted before IAM shipped the
+// `billing_account` claim name no payer, and Payer's fallback still has to answer
+// for them. IAM states this same rule authoritatively for every token minted since
+// (iam/object/billing_account.go), so this constant is a bridge, not a floor — when
+// the last pre-claim token has expired, it deletes with the fallback. See Payer.
 const SignupOrg = "hanzo"
 
 // Account is one account money is recorded against. Its fields are unexported so
@@ -136,29 +140,84 @@ func (a Account) Subject() string {
 // bill it: a request that cannot be attributed is refused, never billed free.
 func (a Account) Zero() bool { return a.org == "" }
 
+// String renders an Account as the `billing_account` claim IAM signs into every
+// token: `<kind>:<subject>` — "org:acme", "person:hanzo/alice",
+// "project:acme/website". A zero Account renders "" (unattributable names nobody).
+//
+// This is one half of a WIRE CONTRACT with iam/object/billing_account.go, which
+// builds the same string from the grant context. The two repos share no code, so
+// the grammar is the only thing holding them together: kind is one of person|org|
+// project, subject is the Account's own Subject(). ParseAccount is the inverse —
+// String ∘ ParseAccount is the identity on every account IAM can mint.
+func (a Account) String() string {
+	if a.Zero() {
+		return ""
+	}
+	return string(a.kind) + ":" + a.Subject()
+}
+
+// ParseAccount reads a `billing_account` claim back into the Account it names. It
+// is a PARSE, not a decision: it never invents an owner, and anything it cannot
+// read — an empty claim, an unknown kind, a missing subject, a person or project
+// with no name — returns the zero Account, which Payer treats as "the credential
+// named nobody" and falls back rather than billing a guess.
+//
+// Every component funnels through the same constructors the rest of this file
+// uses (Org/Person/Project), so a parsed Account is valid and folded by
+// construction — it can never address a wallet a constructed one could not.
+func ParseAccount(claim string) Account {
+	kind, subject, ok := strings.Cut(strings.TrimSpace(claim), ":")
+	if !ok {
+		return Account{}
+	}
+	slug, name, hasName := strings.Cut(subject, "/")
+	switch Kind(fold(kind)) {
+	case org:
+		if hasName {
+			return Account{} // an org account is the bare slug — a subject with a name is not one
+		}
+		return Org(slug)
+	case person:
+		if !hasName {
+			return Account{}
+		}
+		return Person(slug, name)
+	case project:
+		if !hasName {
+			return Account{}
+		}
+		return Project(slug, name)
+	}
+	return Account{} // an unknown kind names nothing we are willing to bill
+}
+
 // Credential is what a request presents, reduced to the only facts about it that
 // are both VALIDATED and relevant to money. It is the ONLY input to Payer.
 //
 // Owner and Name are the IAM `owner` and `name` claims — minted by the gateway
 // from a verified JWT and stripped from client input, so they are trustworthy.
-// Machine says the credential acts FOR its org rather than as a person (a
-// client_credentials/application token, e.g. the hanzo-cloud service token).
 //
-// MACHINE IS NOT YET TRUSTWORTHY, and callers must know it. Every caller today
-// derives it from User.Type == "application", and that field is user-writable:
-// IAM's UpdateUser carries "type" in its NON-admin column list
-// (iam/object/user.go), and IAM's own code says so —
-// "User.Type=='application' ALONE is forgeable (AddUser/UpdateUser persist
-// arbitrary Type)" (iam/object/client_credentials.go) — which is why IAM's auth
-// refuses to trust it alone and requires four correlated fields
-// (IsClientCredentialsClaim). Billing still trusts the one field, so a member of
-// the signup org who sets their own Type can be billed as a machine and reach the
-// org pool. This type does not widen that hole; it names it. The fix is to
-// resolve Machine with IAM's four-field predicate at the auth boundary and hand
-// the answer here — a credential fact, decided once, where the claims are.
+// Account is the IAM `billing_account` claim: the credential NAMING its own payer,
+// signed at the identity boundary (iam/object/billing_account.go). It is the whole
+// answer when present — Payer parses it and stops guessing. It reaches us two ways,
+// both server-minted and neither forgeable: the gateway validates the claim, strips
+// any client-supplied copy, and mints X-Billing-Account-Id from it
+// (gateway/iamauth), and cloud's own identity boundary mints the same header from
+// the same claim for the in-cluster path.
+//
+// Machine is the LEGACY fallback signal, and it is not trustworthy: callers derive
+// it from User.Type == "application", a field IAM's UpdateUser carries in its
+// NON-admin column list — IAM's own code says "User.Type=='application' ALONE is
+// forgeable" (iam/object/client_credentials.go), which is why IAM's auth requires
+// four correlated fields (IsClientCredentialsClaim). A signup-org member who set
+// their own Type could be billed as a machine and reach the org pool. That is
+// exactly what the Account claim removes: IAM now resolves machine-ness from the
+// client_credentials GRANT SHAPE and states the answer here, so Machine only ever
+// decides a token minted BEFORE the claim shipped.
 type Credential struct {
 	Owner   string
 	Name    string
+	Account string
 	Machine bool
 }
 
@@ -183,38 +242,41 @@ func IsMachine(userType string) bool {
 //
 // The rule:
 //
-//	a machine credential       → its org's account   (it IS the org)
-//	a person in the signup org → their OWN account    (strangers, not a team)
-//	anyone else                → their org's account  (a real tenant pools)
+//	the account the credential NAMES → that account   (IAM said so, over its signature)
+//	nothing named (a pre-claim token) → the legacy fallback below
 //
-// WHY THE SIGNUP ORG IS NAMED HERE, AND WHAT DELETES IT. Ideally this function
-// reads the payer straight off the credential and names no org at all. It cannot,
-// and the blocker is exact and small: IAM does not put the payer in the token.
-// Every credential it mints says owner=<org slug>, name=<who> — for humans and
-// machines alike — and nothing about which account those two should charge. So
-// the pooled/personal distinction, which is real and which money depends on, is
-// not in the credential to read.
+// THE CREDENTIAL NAMES ITS PAYER. IAM mints `billing_account` at the identity
+// boundary from the REAL grant context and signs it (iam/object/billing_account.go);
+// the gateway validates it, strips any client copy, and mints X-Billing-Account-Id
+// from it. So the pooled/personal distinction — real, and money depends on it — is
+// now IN the credential, and this function reads it instead of inferring it. That
+// is the whole point: an inference can be wrong, and this one was. It ran on
+// User.Type=="application", which IAM's UpdateUser lets a user set, so a member of
+// the shared signup org could name themselves a machine and spend the org pool.
+// A signed claim cannot be forged by the caller it describes.
 //
-// Either of these finishes the job, reduces the rule to its first two lines, and
-// deletes SignupOrg:
+// THE FALLBACK IS FOR OLD TOKENS, NOT FOR DOUBT. A token minted before the claim
+// shipped carries no account, and refusing it would 402 every live session. So an
+// unnamed credential resolves the old way — and the old way is exactly what the
+// claim now states for a new one, so the two agree for every principal that is not
+// forging. When the last pre-claim token has expired, the fallback (and SignupOrg
+// with it) deletes, and the rule is one line: the account the credential names.
 //
-//  1. IAM mints the account. The claim already exists end-to-end EXCEPT at the
-//     source: gateway/iamauth declares `billing_account`, validates it, strips any
-//     client copy, and mints X-Billing-Account-Id from it — and IAM never sets it,
-//     so it is always empty. One producer closes this and Payer becomes: the
-//     account the credential names, else its org.
-//  2. Signup stops sharing an org. If each person owned their org, "a person's
-//     account" and "their org's account" would be the same account, and the
-//     distinction would evaporate.
-//
-// Until then, naming the signup org in ONE constant, in ONE function, with no env
-// and no precedence, is the honest floor. What this replaces was never this fact
-// — it was this fact written twice, mutably, in two lists that disagreed.
+// The claim is only honored WITHIN the caller's own org — a claim naming another
+// tenant's ledger is discarded, not billed. IAM never mints one (the claim and
+// `owner` come from the same signed token), so this can only fire on a mis-wired
+// caller pairing a foreign claim with a local owner; it costs one comparison to
+// make that a fallback instead of a cross-tenant debit.
 func Payer(c Credential) Account {
 	owner := fold(c.Owner)
 	if owner == "" {
 		return Account{} // unattributable — the caller refuses; it never bills free
 	}
+	if named := ParseAccount(c.Account); !named.Zero() && named.Org() == owner {
+		return named
+	}
+	// Legacy fallback: a pre-claim token named nobody. Resolve who pays from the
+	// credential's shape, exactly as before the claim existed.
 	if c.Machine {
 		return Org(owner)
 	}
