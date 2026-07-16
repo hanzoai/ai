@@ -349,7 +349,7 @@ func enforceBalanceGate(user *iam.User, requestedModel string) error {
 		return nil
 	}
 	orgKey := user.Owner // namespace (X-Org-Id): the org tenant
-	subject := object.BillingSubjectForPrincipal(user.Owner, user.Name, user.Type)
+	subject := object.Payer(object.Credential{Owner: user.Owner, Name: user.Name, Machine: object.IsMachine(user.Type)}).Subject()
 
 	balance, err := getUserBalance(subject, orgKey)
 	if err != nil {
@@ -632,7 +632,7 @@ func recordUsage(record *usageRecord) {
 	// The debit MUST hit the same account the balance gate reads and the starter
 	// credit funded: the billing SUBJECT within the org NAMESPACE.
 	//   namespace (X-Org-Id) = record.Owner (the org)
-	//   subject   (?user=)      = object.BillingSubject(owner, name)
+	//   subject   (?user=)      = object.Payer(object.Credential{Owner: owner, Name: name}).Subject()
 	// For a personal-billing org that is "owner/name" (per-user); for a pooled
 	// org it is the org slug. record.Owner is the IAM `owner`; fall back to
 	// deriving owner+name from "owner/name" if Owner was not populated upstream.
@@ -644,7 +644,7 @@ func recordUsage(record *usageRecord) {
 			org = record.User
 		}
 	}
-	subject := object.BillingSubjectFromUserKey(record.Owner, record.User)
+	subject := object.PayerOf(record.Owner, record.User).Subject()
 
 	// Native in-proc finance debit — the ONE money path when co-resident with the
 	// finance ledger (hanzoai/cloud unified binary). The debit lands DIRECTLY on the
@@ -1065,7 +1065,7 @@ func (c *ApiController) ChatCompletions() {
 	// the ACTUAL cost when the request completes (deferred fail-safe release).
 	var hold *budgetHold
 	if authUser != nil {
-		subject := object.BillingSubject(authUser.Owner, authUser.Name)
+		subject := object.Payer(object.Credential{Owner: authUser.Owner, Name: authUser.Name}).Subject()
 		// Clamp the upstream completion ceiling BEFORE reserving so the proxied
 		// (tool/stream) upstream can never emit more than we reserve — the actual
 		// settle can never exceed the hold (R1b). reserveCompletionTokens also

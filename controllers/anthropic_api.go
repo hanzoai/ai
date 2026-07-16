@@ -423,7 +423,7 @@ func (c *ApiController) AnthropicMessages() {
 	request.MaxTokens = clampMaxTokens(request.MaxTokens)
 	var hold *budgetHold
 	if authUser != nil {
-		subject := object.BillingSubject(authUser.Owner, authUser.Name)
+		subject := object.Payer(object.Credential{Owner: authUser.Owner, Name: authUser.Name}).Subject()
 		est := estimateRequestCostCents(request.Model, len(request.Messages)*500, request.MaxTokens)
 		var ok bool
 		if hold, ok = reserveBudget(subject, est); !ok {

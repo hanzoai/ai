@@ -101,7 +101,7 @@ func (c *ApiController) Embeddings() {
 	if fam := familyForProviderType(provider.Type); fam != nil {
 		var hold *budgetHold
 		if authUser != nil {
-			subject := object.BillingSubject(authUser.Owner, authUser.Name)
+			subject := object.Payer(object.Credential{Owner: authUser.Owner, Name: authUser.Name}).Subject()
 			est := int64(1)
 			if zm, ok := fam.lookup(head.Model); ok {
 				est = zm.costCents(coarseTokenEstimate(c.Ctx.Input.RequestBody), 0)

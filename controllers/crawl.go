@@ -82,7 +82,7 @@ func (c *ApiController) Crawl() {
 	// usage debit. (The balance filter also gates this path; this is the same
 	// belt-and-suspenders check /v1/scrape performs.)
 	if auth.Owner != "" {
-		balance, balanceErr := getUserBalance(object.BillingSubjectFromUserKey(auth.Owner, auth.UserID), auth.Owner)
+		balance, balanceErr := getUserBalance(object.PayerOf(auth.Owner, auth.UserID).Subject(), auth.Owner)
 		if balanceErr == nil && balance <= 0 {
 			c.ResponseError("insufficient balance for crawl operation. Add funds at https://hanzo.ai/billing")
 			return
