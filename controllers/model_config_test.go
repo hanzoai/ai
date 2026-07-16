@@ -32,7 +32,6 @@ cache:
 features:
   live_mode: false
   premium_gate: true
-  starter_credit: 5.00
 
 default_pricing:
   input_per_million: 1.00
@@ -343,24 +342,6 @@ func TestListModelsWithUpstream(t *testing.T) {
 		if m.Upstream == "" {
 			t.Errorf("model %q missing upstream", m.ID)
 		}
-	}
-}
-
-func TestStarterCreditDollars(t *testing.T) {
-	path := writeTestConfig(t)
-
-	mc := &ModelConfig{
-		routes:  make(map[string]modelRoute),
-		pricing: make(map[string]modelPrice),
-		stopCh:  make(chan struct{}),
-	}
-	if err := mc.loadFromFile(path); err != nil {
-		t.Fatal(err)
-	}
-
-	credit := mc.StarterCreditDollars()
-	if credit != 5.00 {
-		t.Errorf("expected starter credit 5.00, got %.2f", credit)
 	}
 }
 
