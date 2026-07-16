@@ -61,8 +61,9 @@ type OrgSettings struct {
 	// JSON text column (JSONMap: database/sql rejects a bare map of slices).
 	RouterPrefer JSONMap[[]string] `json:"routerPrefer"`
 
-	// RouterCostCeiling caps the router's per-1k cost for this org. 0 = unset →
-	// "*" row then conf. A caller's X-Max-Cost header still wins per request.
+	// RouterCostCeiling caps the router's cost for this org in USD PER 1K TOKENS
+	// (per-1k — not the $/1M pricing-table unit). 0 = unset → "*" row then conf. A
+	// caller's X-Max-Cost header (also per-1k) still wins per request.
 	RouterCostCeiling float64 `json:"routerCostCeiling"`
 
 	// TrainingContribution is the org's opt-in for contributing its routing
