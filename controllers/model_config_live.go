@@ -62,8 +62,10 @@ type livePricingModel struct {
 }
 
 type livePricingEntry struct {
-	Input  float64 `json:"input"`
-	Output float64 `json:"output"`
+	Input   float64 `json:"input"`
+	Output  float64 `json:"output"`
+	CostIn  float64 `json:"cost_in,omitempty"`  // provider COGS $/1M input (optional; 0 ⇒ cost defaults to Input)
+	CostOut float64 `json:"cost_out,omitempty"` // provider COGS $/1M output (optional; 0 ⇒ cost defaults to Output)
 }
 
 // fetchLivePricing fetches current pricing from the pricing service and
@@ -111,8 +113,10 @@ func (mc *ModelConfig) fetchLivePricing() {
 		key := strings.ToLower(m.Name)
 		if m.Pricing.Input > 0 || m.Pricing.Output > 0 {
 			mc.pricing[key] = modelPrice{
-				InputPerMillion:  m.Pricing.Input,
-				OutputPerMillion: m.Pricing.Output,
+				InputPerMillion:   m.Pricing.Input,
+				OutputPerMillion:  m.Pricing.Output,
+				CostInPerMillion:  m.Pricing.CostIn,
+				CostOutPerMillion: m.Pricing.CostOut,
 			}
 			updated++
 		}

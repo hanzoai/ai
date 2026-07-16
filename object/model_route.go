@@ -35,9 +35,14 @@ type ModelRoute struct {
 	OwnedBy     string  `json:"ownedBy"`              // owned_by override for /api/models listing
 	Premium     bool    `json:"premium"`              // requires paid balance
 	Hidden      bool    `json:"hidden"`               // excluded from /api/models listing
-	InputPrice  float64 `json:"inputPricePerMillion"` // custom pricing (0 = use default)
+	InputPrice  float64 `json:"inputPricePerMillion"` // custom customer price (0 = use default)
 	OutputPrice float64 `json:"outputPricePerMillion"`
-	Enabled     bool    `json:"enabled"`
+	// Provider COGS override ($/1M tokens): what it costs Hanzo to serve, distinct from
+	// the customer price above. 0 ⇒ cost defaults to the price (zero margin). Additive
+	// columns synced by dbx (ALTER TABLE ADD COLUMN) — no manual migration.
+	CostInPerMillion  float64 `json:"costInPerMillion"`
+	CostOutPerMillion float64 `json:"costOutPerMillion"`
+	Enabled           bool    `json:"enabled"`
 }
 
 func (r *ModelRoute) GetId() string {
