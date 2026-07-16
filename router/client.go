@@ -124,6 +124,56 @@ func (c Client) RouteDecision(ctx context.Context, req Request, slo Slo) Decisio
 	return Decision{Model: m, Task: t, Source: SourceHeuristic}
 }
 
+// ObserveRequest is the online-learning feedback the gateway posts to the engine
+// after a reward is joined: the request's feature vector `x` (the same vector the
+// engine returned at decision time), the arm that served, the caller (keys the
+// per-user LinUCB bandit), the caller org (selects the scope), and the outcome reward
+// in [0,1]. No prompt text.
+type ObserveRequest struct {
+	User     string    `json:"user"`
+	Org      string    `json:"org"`
+	Features []float64 `json:"features"`
+	Model    string    `json:"model"`
+	Reward   float64   `json:"reward"`
+}
+
+// Observe forwards a joined reward to the engine's /route/observe endpoint so the
+// learned policy updates per-user theta in-process (the fast online loop). It is
+// best-effort and fire-and-forget by contract: any error (no endpoint, unreachable,
+// non-2xx) is ignored — a missed online update never fails the reward write, and the
+// offline corpus (the rewarded ledger) still captures the signal. Hard-capped by
+// Timeout so it never hangs the caller's goroutine.
+func (c Client) Observe(ctx context.Context, obs ObserveRequest) {
+	if c.Endpoint == "" || len(obs.Features) == 0 || obs.Model == "" {
+		return
+	}
+	timeout := c.Timeout
+	if timeout <= 0 {
+		timeout = DefaultTimeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	body, err := json.Marshal(obs)
+	if err != nil {
+		return
+	}
+	url := strings.TrimRight(c.Endpoint, "/") + "/route/observe"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	cli := c.HTTP
+	if cli == nil {
+		cli = http.DefaultClient
+	}
+	resp, err := cli.Do(req)
+	if err != nil {
+		return
+	}
+	_ = resp.Body.Close()
+}
+
 // routeEngine performs the constrained /route call. Returns ok=false on any
 // error so the caller falls back to the heuristic.
 func (c Client) routeEngine(ctx context.Context, req Request, slo Slo) (Decision, bool) {

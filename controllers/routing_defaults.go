@@ -106,16 +106,24 @@ func writeRoutingLedgerJSONL(w io.Writer, events []*object.RoutingEvent) error {
 	enc := json.NewEncoder(w)
 	for _, e := range events {
 		line := ledgerLine{
-			Id:             e.Id,
-			CreatedAt:      e.CreatedTime,
-			Org:            e.Owner,
-			User:           e.User,
-			Task:           e.Task,
-			RequestedModel: e.RequestedModel,
-			RoutedModel:    e.RoutedModel,
-			Model:          e.RoutedModel, // build_dataset --ledger reads "model"
-			Confidence:     e.Confidence,
-			Source:         e.Source,
+			Id:               e.Id,
+			CreatedAt:        e.CreatedTime,
+			Org:              e.Owner,
+			User:             e.User,
+			RequestId:        e.RequestId,
+			Task:             e.Task,
+			RequestedModel:   e.RequestedModel,
+			RoutedModel:      e.RoutedModel,
+			Model:            e.RoutedModel, // build_dataset --ledger reads "model"
+			Confidence:       e.Confidence,
+			Source:           e.Source,
+			ShadowModel:      e.ShadowModel,
+			PromptTokens:     e.PromptTokens,
+			CompletionTokens: e.CompletionTokens,
+			CostCents:        e.CostCents,
+			LatencyMs:        e.LatencyMs,
+			Reward:           e.Reward,
+			RewardedAt:       e.RewardedTime,
 		}
 		if e.Features != "" {
 			line.Features = json.RawMessage(e.Features)
@@ -131,17 +139,27 @@ func writeRoutingLedgerJSONL(w io.Writer, events []*object.RoutingEvent) error {
 // ledgerLine is the JSONL export shape. Keys are snake_case to match the
 // zen-router ledger contract; "model" aliases the routed model for
 // build_dataset.py, while "routed_model"/"task"/"features" serve the reward-join
-// / heads-fit stage. No prompt text is ever emitted.
+// / heads-fit stage. "shadow_model" is the engine's counterfactual pick for a
+// family call (the A/B signal); "reward"/"rewarded_at" carry the joined outcome.
+// No prompt text is ever emitted.
 type ledgerLine struct {
-	Id             string          `json:"id"`
-	CreatedAt      string          `json:"created_at"`
-	Org            string          `json:"org"`
-	User           string          `json:"user"`
-	Task           string          `json:"task"`
-	RequestedModel string          `json:"requested_model"`
-	RoutedModel    string          `json:"routed_model"`
-	Model          string          `json:"model"`
-	Confidence     float64         `json:"confidence"`
-	Source         string          `json:"source"`
-	Features       json.RawMessage `json:"features,omitempty"`
+	Id               string          `json:"id"`
+	CreatedAt        string          `json:"created_at"`
+	Org              string          `json:"org"`
+	User             string          `json:"user"`
+	RequestId        string          `json:"request_id"`
+	Task             string          `json:"task"`
+	RequestedModel   string          `json:"requested_model"`
+	RoutedModel      string          `json:"routed_model"`
+	Model            string          `json:"model"`
+	Confidence       float64         `json:"confidence"`
+	Source           string          `json:"source"`
+	ShadowModel      string          `json:"shadow_model,omitempty"`
+	PromptTokens     int             `json:"prompt_tokens,omitempty"`
+	CompletionTokens int             `json:"completion_tokens,omitempty"`
+	CostCents        int64           `json:"cost_cents,omitempty"`
+	LatencyMs        int64           `json:"latency_ms,omitempty"`
+	Reward           float64         `json:"reward,omitempty"`
+	RewardedAt       string          `json:"rewarded_at,omitempty"`
+	Features         json.RawMessage `json:"features,omitempty"`
 }
