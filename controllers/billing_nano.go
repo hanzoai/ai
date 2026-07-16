@@ -41,23 +41,41 @@ func nanoPerToken(perMillion float64) int64 {
 	return int64(math.Round(perMillion * 1000))
 }
 
-// tokenCostNano is the exact token cost in nano-USD, mirroring modelCostBreakdown's rate
-// selection (cache-read defaults to 10% of input, cache-write to input) but in integer
-// arithmetic so no sub-cent is ever lost.
+// tokenNanoAt is the exact nano-USD token cost for the four per-million base rates,
+// applying the shared cache-rate defaulting (cache-read = 10% of input when the model
+// declares none, cache-write = input). It is the ONE place the token→nano arithmetic
+// lives: both the billed-price path (tokenCostNano) and the provider-COGS path
+// (tokenProviderCostNano) call it, so their cache math can never drift.
+func tokenNanoAt(inPerM, outPerM, cacheReadPerM, cacheWritePerM float64, promptTokens, completionTokens, cacheReadTokens, cacheWriteTokens int) int64 {
+	if cacheReadPerM == 0 && inPerM > 0 {
+		cacheReadPerM = inPerM * 0.10
+	}
+	if cacheWritePerM == 0 {
+		cacheWritePerM = inPerM
+	}
+	return int64(promptTokens)*nanoPerToken(inPerM) +
+		int64(completionTokens)*nanoPerToken(outPerM) +
+		int64(cacheReadTokens)*nanoPerToken(cacheReadPerM) +
+		int64(cacheWriteTokens)*nanoPerToken(cacheWritePerM)
+}
+
+// tokenCostNano is the exact BILLED (customer-price) token cost in nano-USD, mirroring
+// modelCostBreakdown's rate selection but in integer arithmetic so no sub-cent is lost.
 func tokenCostNano(model string, promptTokens, completionTokens, cacheReadTokens, cacheWriteTokens int) int64 {
 	price := getModelPrice(model)
-	cacheReadRate := price.CacheReadPerMillion
-	if cacheReadRate == 0 && price.InputPerMillion > 0 {
-		cacheReadRate = price.InputPerMillion * 0.10
-	}
-	cacheWriteRate := price.CacheWritePerMillion
-	if cacheWriteRate == 0 {
-		cacheWriteRate = price.InputPerMillion
-	}
-	return int64(promptTokens)*nanoPerToken(price.InputPerMillion) +
-		int64(completionTokens)*nanoPerToken(price.OutputPerMillion) +
-		int64(cacheReadTokens)*nanoPerToken(cacheReadRate) +
-		int64(cacheWriteTokens)*nanoPerToken(cacheWriteRate)
+	return tokenNanoAt(price.InputPerMillion, price.OutputPerMillion, price.CacheReadPerMillion, price.CacheWritePerMillion,
+		promptTokens, completionTokens, cacheReadTokens, cacheWriteTokens)
+}
+
+// tokenProviderCostNano is the exact PROVIDER-COGS token cost in nano-USD: the same
+// arithmetic as tokenCostNano at the model's COGS rates (which default to the price
+// rates when no COGS is configured, giving cost == billed ⇒ margin 0). Cache COGS is
+// not separately configured, so pass 0 and let tokenNanoAt default cache-read to 10%
+// of the COGS input rate and cache-write to it — mirroring the price path exactly.
+func tokenProviderCostNano(model string, promptTokens, completionTokens, cacheReadTokens, cacheWriteTokens int) int64 {
+	price := getModelPrice(model)
+	return tokenNanoAt(price.costInputPerMillion(), price.costOutputPerMillion(), 0, 0,
+		promptTokens, completionTokens, cacheReadTokens, cacheWriteTokens)
 }
 
 // usageCostNano is the authoritative billable cost of a call in nano-USD — the exact twin
@@ -86,6 +104,47 @@ func usageBilledNano(record *usageRecord, costNano int64) int64 {
 		return (costNano + 99) / 100 // ceil(cost / 100) = 1% platform fee
 	}
 	return costNano
+}
+
+// costMargin is the money-of-record margin view of one call, all in integer nano-USD:
+// BilledNano (what Hanzo debits the org), CostNano (Hanzo's provider COGS to serve it),
+// and MarginNano = BilledNano − CostNano. Computed once (usageMargin) so the ledger, the
+// cloud_usage row, and the o11y span read identical figures and can never drift.
+type costMargin struct {
+	CostNano   int64 // provider COGS to Hanzo (0 for BYO — the customer paid the upstream)
+	BilledNano int64 // what Hanzo debits the org (full for served, 1% platform fee for BYO)
+	MarginNano int64 // BilledNano − CostNano
+}
+
+// providerCostNano is Hanzo's cost of goods sold for a call, in nano-USD. A BYO call is
+// 0 — the customer paid the upstream with their own key, so Hanzo carries no provider
+// cost and the platform fee is pure margin. A Hanzo-served call is the per-unit cost for
+// image/video (whose COGS equals their price today ⇒ zero margin) or the token cost at
+// COGS rates otherwise (which default to price ⇒ zero margin unless a real COGS is set).
+func providerCostNano(record *usageRecord) int64 {
+	if record.BYO {
+		return 0
+	}
+	switch {
+	case record.VideoCount > 0:
+		return videoCostCents(record.Model, record.VideoCount) * 10_000_000 // 1¢ = 1e7 nano
+	case record.ImageCount > 0:
+		return imageCostCents(record.Model, record.ImageCount) * 10_000_000
+	default:
+		return tokenProviderCostNano(record.Model, record.PromptTokens, record.CompletionTokens,
+			record.CacheReadTokens, record.CacheWriteTokens)
+	}
+}
+
+// usageMargin computes the billed/cost/margin trio for a call in nano-USD from the ONE
+// billed path (usageBilledNano ∘ usageCostNano) and the provider COGS (providerCostNano).
+// MarginNano is Hanzo's gross margin on the call: for a Hanzo-served call it is
+// price − COGS; for a BYO call CostNano is 0 so the margin is exactly the platform fee
+// (the billed amount itself is unchanged — still the 1% fee).
+func usageMargin(record *usageRecord) costMargin {
+	billed := usageBilledNano(record, usageCostNano(record))
+	cost := providerCostNano(record)
+	return costMargin{CostNano: cost, BilledNano: billed, MarginNano: billed - cost}
 }
 
 // nanoToUSD renders a signed nano-USD amount as an EXACT decimal USD string ("0.00132"),
