@@ -23,11 +23,6 @@ import (
 	"github.com/hanzoai/beego/logs"
 )
 
-// StarterCreditDollars is the amount granted to new users as free credit.
-// Premium models require a balance above this threshold to ensure the user
-// has added real funds beyond the starter credit.
-const StarterCreditDollars = 5.00
-
 // modelPrice defines per-model economics in dollars per 1M tokens. Input/Output/Cache*
 // are the CUSTOMER PRICE (what the org is billed); CostIn/CostOut are the PROVIDER COGS
 // (what it costs Hanzo to serve the call). Cost defaults to price when unset (0), so a

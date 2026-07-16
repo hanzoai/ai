@@ -35,15 +35,16 @@ func fakeCommerceBalance(t *testing.T, availableCents *int64) string {
 	return srv.URL
 }
 
-// TestEnforceBalanceGate_M1 pins the prepaid-balance + premium-credit policy that
-// the provider-key (sk-) path now shares with the JWT/IAM path (M1). The decisive
-// row: a PREMIUM model with a balance at/under the starter credit is BLOCKED (402)
-// — previously the sk- path skipped this gate entirely, so an sk- key reached
-// premium upstreams on starter credit alone. StarterCreditDollars is pinned to the
-// $5.00 const by nil'ing globalModelConfig, so the boundary is deterministic.
-func TestEnforceBalanceGate_M1(t *testing.T) {
+// TestEnforceBalanceGate_PrepaidOneWallet pins the ONE-wallet prepaid rule shared by
+// the JWT/IAM path and the provider-key (sk-) path: a strictly positive balance admits
+// ANY model, premium or not. There is no $5 "starter credit" tier and no premium/
+// non-premium differential (a grant's trial/prepaid split is a ledger tag, not a
+// spendability bucket). $0 is refused (402); a single cent is admitted. The decisive
+// row: a premium model at exactly $5 — formerly BLOCKED by the starter gate — is now
+// ALLOWED, proving the starter apparatus is gone.
+func TestEnforceBalanceGate_PrepaidOneWallet(t *testing.T) {
 	prev := globalModelConfig
-	globalModelConfig = nil // pin starter credit to StarterCreditDollars ($5.00)
+	globalModelConfig = nil
 	t.Cleanup(func() { globalModelConfig = prev })
 
 	var available int64
@@ -52,29 +53,26 @@ func TestEnforceBalanceGate_M1(t *testing.T) {
 	t.Setenv("BALANCE_EXEMPT_USERS", "") // the test principal must NOT be exempt
 
 	// sk- billing owner: org-scoped M2M principal (Name empty → org ledger).
-	skOwner := func() *iam.User { return &iam.User{Owner: "m1-acme", Type: "application"} }
+	skOwner := func() *iam.User { return &iam.User{Owner: "gate-acme", Type: "application"} }
 
 	const ok = http.StatusOK // sentinel: "no error / allowed"
 	cases := []struct {
-		name    string
-		cents   int64
-		premium bool
-		want    int
+		name  string
+		cents int64
+		model string // glm-5.2 is premium; gpt-4o-mini is non-premium
+		want  int
 	}{
-		{"premium blocked at exactly the starter credit ($5.00)", 500, true, http.StatusPaymentRequired},
-		{"premium blocked below starter ($1.00)", 100, true, http.StatusPaymentRequired},
-		{"premium allowed above starter ($5.01)", 501, true, ok},
-		{"premium allowed with real balance ($1000)", 100000, true, ok},
-		// The same $5 balance is FINE for a non-premium model — proves it is the
-		// PREMIUM rule blocking above, not merely balance>0.
-		{"non-premium allowed at starter credit ($5.00)", 500, false, ok},
-		{"non-premium blocked at zero balance", 0, false, http.StatusPaymentRequired},
-		{"non-premium allowed with balance ($10)", 1000, false, ok},
+		{"zero balance blocked (premium)", 0, "glm-5.2", http.StatusPaymentRequired},
+		{"zero balance blocked (non-premium)", 0, "gpt-4o-mini", http.StatusPaymentRequired},
+		{"one cent admits premium", 1, "glm-5.2", ok},
+		{"$5 admits premium — starter gate removed", 500, "glm-5.2", ok},
+		{"$1000 admits premium", 100000, "glm-5.2", ok},
+		{"$10 admits non-premium", 1000, "gpt-4o-mini", ok},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			available = tc.cents
-			err := enforceBalanceGate(skOwner(), "glm-5.2", tc.premium)
+			err := enforceBalanceGate(skOwner(), tc.model)
 			if tc.want == ok {
 				if err != nil {
 					t.Fatalf("want allowed, got blocked: %v (status %d)", err, statusOf(err))
@@ -82,7 +80,7 @@ func TestEnforceBalanceGate_M1(t *testing.T) {
 				return
 			}
 			if err == nil {
-				t.Fatalf("want blocked (%d), got allowed (nil) — M1 gate bypass", tc.want)
+				t.Fatalf("want blocked (%d), got allowed (nil) — prepaid gate bypass", tc.want)
 			}
 			if got := statusOf(err); got != tc.want {
 				t.Fatalf("status=%d, want %d (err=%v)", got, tc.want, err)
@@ -102,7 +100,7 @@ func TestEnforceBalanceGate_FailClosedOnLookupError(t *testing.T) {
 	t.Setenv("commerceEndpoint", "") // unconfigured → getUserBalance errors
 	t.Setenv("BALANCE_EXEMPT_USERS", "")
 
-	err := enforceBalanceGate(&iam.User{Owner: "m1-noverify", Type: "application"}, "glm-5.2", true)
+	err := enforceBalanceGate(&iam.User{Owner: "m1-noverify", Type: "application"}, "glm-5.2")
 	if err == nil {
 		t.Fatal("balance unverifiable must fail closed, got nil (would grant free access)")
 	}
@@ -124,7 +122,7 @@ func TestEnforceBalanceGate_NoExemptBypass(t *testing.T) {
 	t.Setenv("commerceEndpoint", "")              // gate must still consult balance → errors
 	t.Setenv("BALANCE_EXEMPT_USERS", "m1-exempt") // set but IGNORED: the concept is removed
 
-	err := enforceBalanceGate(&iam.User{Owner: "m1-exempt", Type: "application"}, "glm-5.2", true)
+	err := enforceBalanceGate(&iam.User{Owner: "m1-exempt", Type: "application"}, "glm-5.2")
 	if err == nil {
 		t.Fatal("no principal may bypass the prepaid gate; formerly-exempt must fail closed, got nil")
 	}

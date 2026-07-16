@@ -33,19 +33,18 @@ func TestResolveModelRoute_Video(t *testing.T) {
 	if route.ownedBy != "" {
 		t.Errorf("unbranded passthrough ownedBy = %q, want empty", route.ownedBy)
 	}
-	// premium: true even though unbranded — ALL video is premium so the free
-	// starter credit can't fund a ~40¢ GPU-minutes t2v unit on the raw id (the
-	// premium/starter gate never fires for a non-premium route).
+	// premium: true even though unbranded — ALL video is premium: a ~40¢
+	// GPU-minutes t2v unit is a paid SKU (classified for pricing + the ZAP
+	// premium balance gate), never a $0 freebie on the raw id.
 	if !route.premium {
-		t.Errorf("wan2-2-t2v-a14b (raw id) must be premium so the starter credit can't fund it")
+		t.Errorf("wan2-2-t2v-a14b (raw id) must be premium (paid GPU SKU)")
 	}
 }
 
-// TestAllVideoModelsArePremium is the invariant behind the starter-credit fix:
-// EVERY billable video id — branded or the raw passthrough — must be premium, so
-// none can be funded by the free starter credit. Iterating the pricing table
-// (the authoritative set of video models) means a newly-added video id that
-// forgets the flag fails here.
+// TestAllVideoModelsArePremium is a pricing-integrity invariant: EVERY billable
+// video id — branded or the raw passthrough — must be classified premium (paid GPU
+// compute), never a $0 freebie. Iterating the pricing table (the authoritative set
+// of video models) means a newly-added video id that forgets the flag fails here.
 func TestAllVideoModelsArePremium(t *testing.T) {
 	if len(videoPricePerVideoCents) == 0 {
 		t.Fatal("videoPricePerVideoCents is empty — no video models to check")
@@ -57,7 +56,7 @@ func TestAllVideoModelsArePremium(t *testing.T) {
 			continue
 		}
 		if !route.premium {
-			t.Errorf("video model %q must be premium (starter credit must never fund video)", m)
+			t.Errorf("video model %q must be premium (paid GPU compute, never a $0 freebie)", m)
 		}
 	}
 }

@@ -324,28 +324,28 @@ func resolveProviderForUser(user *iam.User, requestedModel string, lang string) 
 	// Prepaid-balance + premium-credit gate. Extracted into enforceBalanceGate so
 	// the provider-key (sk-) path in authResolveProvider enforces the IDENTICAL
 	// policy — no auth path can drift (M1).
-	if gateErr := enforceBalanceGate(user, requestedModel, route.premium); gateErr != nil {
+	if gateErr := enforceBalanceGate(user, requestedModel); gateErr != nil {
 		return nil, user, "", gateErr
 	}
 
 	return provider, user, route.upstreamModel, nil
 }
 
-// enforceBalanceGate applies the prepaid-balance + premium-credit policy to a
-// resolved billing principal and stamps user.Balance. A positive balance is
-// required for ANY model; a premium model additionally requires funds BEYOND the
-// starter credit (a balance <= StarterCreditDollars is free credit only). It
-// returns a typed billingError (402) when the gate fails, a serverError (500)
-// when the balance cannot be verified (fail-closed — never grant on a lookup
-// transport error), or nil to proceed.
+// enforceBalanceGate applies the prepaid-balance policy to a resolved billing
+// principal and stamps user.Balance. ONE rule, ONE wallet: a strictly positive
+// prepaid balance is required for ANY model — pay (or receive a grant) before you
+// spend; $0 until then. It returns a typed billingError (402) when the balance is
+// non-positive, a serverError (500) when the balance cannot be verified
+// (fail-closed — never grant on a lookup transport error), or nil to proceed.
 //
 // It is the SINGLE gate shared by the JWT/IAM path (resolveProviderForUser) and
-// the provider-key (sk-) path (authResolveProvider). Previously the sk- branch
-// skipped this gate entirely, so an sk- provider key reached PREMIUM upstreams on
-// starter credit alone (M1). There is NO exempt path: every principal is gated on a
-// positive prepaid balance. subject is the per-namespace billing account the gate
-// read, the budget reservation, and the usage debit all key on.
-func enforceBalanceGate(user *iam.User, requestedModel string, premium bool) error {
+// the provider-key (sk-) path (authResolveProvider), so no auth path can drift
+// onto ungated inference. There is NO exempt path and NO free tier: the native
+// finance wallet holds ONE balance (a grant's trial/prepaid split is a ledger tag,
+// not a spendability bucket), so premium and non-premium gate identically on
+// funds > 0. subject is the per-namespace billing account the gate read, the
+// budget reservation, and the usage debit all key on.
+func enforceBalanceGate(user *iam.User, requestedModel string) error {
 	if user == nil {
 		return nil
 	}
@@ -372,19 +372,6 @@ func enforceBalanceGate(user *iam.User, requestedModel string, premium bool) err
 		return billingError(
 			"model %q requires a positive balance. Your current balance is $%.2f. "+
 				"Add funds at https://hanzo.ai/billing",
-			requestedModel, balance,
-		)
-	}
-
-	starterCredit := StarterCreditDollars
-	if cfg := GetModelConfig(); cfg != nil {
-		starterCredit = cfg.StarterCreditDollars()
-	}
-	if premium && balance <= starterCredit {
-		return billingError(
-			"model %q is a premium model requiring a paid balance. "+
-				"Your current balance ($%.2f) is from the starter credit. "+
-				"Add funds at https://hanzo.ai/billing to access premium models",
 			requestedModel, balance,
 		)
 	}
@@ -920,7 +907,7 @@ func (c *ApiController) authResolveProvider(token, requestedModel, orgId string)
 		// paths enforce (resolveProviderForUser). Without it an sk- provider key
 		// reached premium upstreams on starter credit alone. The billed owner is
 		// authUser (the provider-row owner resolved just above).
-		if gateErr := enforceBalanceGate(authUser, requestedModel, isPremium); gateErr != nil {
+		if gateErr := enforceBalanceGate(authUser, requestedModel); gateErr != nil {
 			err = gateErr
 			return
 		}

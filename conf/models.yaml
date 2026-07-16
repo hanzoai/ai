@@ -12,7 +12,6 @@ cache:
 features:
   live_mode: false       # Set true in production ConfigMap
   premium_gate: true
-  starter_credit: 5.00
 
 # ── Auto-routing (virtual `auto` / `zen-router` model) ────────────────────────
 # Opt-in. When enabled, a chat request for model "auto" (alias "zen-router") is
