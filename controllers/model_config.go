@@ -60,7 +60,7 @@ type RouterConfigDef struct {
 	Enabled     bool                `yaml:"enabled"`
 	Endpoint    string              `yaml:"endpoint"`     // zen-router base URL; "" = heuristic only
 	Prefer      map[string][]string `yaml:"prefer"`       // task tag → ordered model ids ("default" catch-all)
-	CostCeiling float64             `yaml:"cost_ceiling"` // advisory per-1k cost cap forwarded as SLO
+	CostCeiling float64             `yaml:"cost_ceiling"` // advisory cost cap, USD per 1k tokens (per-1k), forwarded verbatim as the engine SLO
 }
 
 // ServiceEndpoints holds URLs for external pricing/model services.
