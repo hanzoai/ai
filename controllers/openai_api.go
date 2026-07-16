@@ -349,6 +349,14 @@ func enforceBalanceGate(user *iam.User, requestedModel string, premium bool) err
 	if user == nil {
 		return nil
 	}
+	// A comped limited-preview SKU (a gated family model the caller has been GRANTED)
+	// is free during preview: it bypasses the prepaid-balance requirement here, the
+	// same way it bypasses the BeforeRouter balance filter. Usage is still metered;
+	// only the REFUSAL is waived. Without this, a granted preview caller with $0
+	// balance 402s at provider resolution before ever reaching the family dispatch.
+	if user != nil && CompedGatedAccess(requestedModel, user.Owner, user.Name, user.Email) {
+		return nil
+	}
 	orgKey := user.Owner // namespace (X-Org-Id): the org tenant
 	subject := object.BillingSubjectForPrincipal(user.Owner, user.Name, user.Type)
 
