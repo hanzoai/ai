@@ -341,7 +341,7 @@ func (c *ApiController) ConnectAIProvider() {
 	provider := strings.ToLower(c.Ctx.Input.Param(":provider"))
 	spec, ok := aiConnSpecFor(provider)
 	if !ok {
-		c.ResponseError(c.T("openai:provider must be one of: openai, anthropic, google"))
+		c.ResponseError(c.T("openai:provider must be one of") + ": " + aiConnProviderList())
 		return
 	}
 	app, configured := aiOAuthConfig(spec.name)
@@ -386,7 +386,7 @@ func (c *ApiController) CallbackAIProvider() {
 	provider := strings.ToLower(c.Ctx.Input.Param(":provider"))
 	spec, ok := aiConnSpecFor(provider)
 	if !ok {
-		c.ResponseError(c.T("openai:provider must be one of: openai, anthropic, google"))
+		c.ResponseError(c.T("openai:provider must be one of") + ": " + aiConnProviderList())
 		return
 	}
 	fail := func(reason string) {
