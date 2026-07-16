@@ -19,6 +19,10 @@ import (
 	"fmt"
 	"net/http"
 	"time"
+
+	"github.com/hanzoai/ai/object"
+	"github.com/hanzoai/ai/util"
+	iam "github.com/hanzoai/iam"
 )
 
 // audioSpeechRequest is the OpenAI /v1/audio/speech body: synthesize `input` with
@@ -103,15 +107,19 @@ func (c *ApiController) AudioSpeech() {
 		return
 	}
 
+	startTime := time.Now().UTC()
 	audioData, _, err := ttsProvider.QueryAudio(req.Input, c.Ctx.Request.Context(), c.GetAcceptLanguage())
 	if err != nil {
+		c.recordAudioUsage(authUser, provider, req.Model, isPremium, "error", err.Error(), startTime)
 		c.ResponseError(err.Error())
 		return
 	}
 	if len(audioData) == 0 {
+		c.recordAudioUsage(authUser, provider, req.Model, isPremium, "error", "empty audio data", startTime)
 		c.ResponseError(c.T("tts:The audio data is nil"))
 		return
 	}
+	c.recordAudioUsage(authUser, provider, req.Model, isPremium, "success", "", startTime)
 
 	contentType, filename := audioFormat(req.ResponseFormat)
 	c.ResponseAudio(audioData, contentType, filename)
@@ -133,4 +141,32 @@ func audioFormat(format string) (contentType, filename string) {
 	default:
 		return "audio/mpeg", "speech.mp3"
 	}
+}
+
+// recordAudioUsage records a direct-provider TTS call for billing +
+// observability, mirroring recordImageUsage. There is no direct-provider audio
+// price table yet (the Zen "audio/voice" SKU prices itself in serveZenMedia),
+// so the row bills 0 and is flagged Unpriced — the traffic is VISIBLE in the
+// warehouse/o11y and flagged for pricing instead of invisible. recordUsage
+// filters error rows; the trace is emitted either way.
+func (c *ApiController) recordAudioUsage(authUser *iam.User, provider *object.Provider, userModel string, isPremium bool, status, errMsg string, startTime time.Time) {
+	if authUser == nil {
+		return
+	}
+	rec := &usageRecord{
+		Owner:        authUser.Owner,
+		User:         authUser.Owner + "/" + authUser.Name,
+		Organization: authUser.Owner,
+		Model:        userModel,
+		Provider:     provider.Name,
+		Currency:     "USD",
+		Premium:      isPremium,
+		Status:       status,
+		ErrorMsg:     errMsg,
+		Unpriced:     true,
+		ClientIP:     c.Ctx.Request.RemoteAddr,
+		RequestID:    util.GenerateUUID(),
+	}
+	recordUsage(rec)
+	recordTrace(c.Ctx.Request.Context(), rec, startTime)
 }

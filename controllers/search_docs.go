@@ -16,6 +16,7 @@ package controllers
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -252,6 +253,11 @@ func recordSearchUsage(auth *searchAuth, model, provider, status string, units i
 	}
 
 	recordUsage(record)
+	// Warehouse row + gen_ai span beside the billing debit (recordUsage filters
+	// error rows; the trace is emitted either way, so failures stay visible).
+	// These ops bill per unit, not per token — duration is not captured on this
+	// path, so the span anchors at write time.
+	recordTrace(context.Background(), record, time.Now().UTC())
 }
 
 // purgeCFCacheTag purges Cloudflare edge cache entries matching the given tag.
