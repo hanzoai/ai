@@ -190,7 +190,7 @@ func TestRoutingEventFiredOnResolve(t *testing.T) {
 	var got []object.RoutingEvent
 	routingEventSink = func(e object.RoutingEvent) { got = append(got, e) }
 
-	model, ok := resolveAutoModel("auto", "acme", "acme/alice",
+	model, ok := resolveAutoModel("auto", "acme", "acme/alice", "req-fired",
 		chatReq("auto", "please refactor this function"), router.Slo{})
 	if !ok || model != "glm-5.2" {
 		t.Fatalf("resolveAutoModel = (%q, %v), want (glm-5.2, true)", model, ok)
@@ -202,6 +202,9 @@ func TestRoutingEventFiredOnResolve(t *testing.T) {
 	if e.Owner != "acme" || e.User != "acme/alice" {
 		t.Errorf("event owner/user = %q/%q, want acme/acme/alice", e.Owner, e.User)
 	}
+	if e.RequestId != "req-fired" {
+		t.Errorf("event request_id = %q, want req-fired (the reward join key)", e.RequestId)
+	}
 	if e.Task != "code" || e.RoutedModel != "glm-5.2" || e.RequestedModel != "auto" {
 		t.Errorf("event task/routed/requested = %q/%q/%q, want code/glm-5.2/auto", e.Task, e.RoutedModel, e.RequestedModel)
 	}
@@ -209,7 +212,7 @@ func TestRoutingEventFiredOnResolve(t *testing.T) {
 		t.Errorf("event source = %q, want %q", e.Source, router.SourceHeuristic)
 	}
 	// Privacy invariant: no field carries prompt text.
-	blob := strings.ToLower(e.Task + e.RoutedModel + e.RequestedModel + e.Features + e.User + e.Owner)
+	blob := strings.ToLower(e.Task + e.RoutedModel + e.RequestedModel + e.Features + e.User + e.Owner + e.RequestId)
 	if strings.Contains(blob, "refactor") {
 		t.Errorf("routing event leaked prompt text: %+v", e)
 	}
@@ -225,12 +228,12 @@ func TestRoutingEventAbsentOnNonAuto(t *testing.T) {
 	routingEventSink = func(object.RoutingEvent) { count++ }
 
 	globalModelConfig = routerTestConfig(true)
-	if _, ok := resolveAutoModel("gpt-4o", "acme", "acme/alice", chatReq("gpt-4o", "hi"), router.Slo{}); ok {
+	if _, ok := resolveAutoModel("gpt-4o", "acme", "acme/alice", "", chatReq("gpt-4o", "hi"), router.Slo{}); ok {
 		t.Fatal("resolveAutoModel routed a concrete model")
 	}
 
 	globalModelConfig = routerTestConfig(false) // routing globally off
-	if _, ok := resolveAutoModel("auto", "acme", "acme/alice", chatReq("auto", "hi"), router.Slo{}); ok {
+	if _, ok := resolveAutoModel("auto", "acme", "acme/alice", "", chatReq("auto", "hi"), router.Slo{}); ok {
 		t.Fatal("resolveAutoModel routed with routing disabled")
 	}
 
@@ -255,7 +258,7 @@ func TestRoutingEventFeaturesSerialized(t *testing.T) {
 	cfg.router.Endpoint = newFeatureEngine(t)
 	globalModelConfig = cfg
 
-	if _, ok := resolveAutoModel("auto", "acme", "acme/alice", chatReq("auto", "hi"), router.Slo{}); !ok {
+	if _, ok := resolveAutoModel("auto", "acme", "acme/alice", "", chatReq("auto", "hi"), router.Slo{}); !ok {
 		t.Fatal("resolveAutoModel not ok")
 	}
 	if len(got) != 1 {
