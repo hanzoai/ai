@@ -82,7 +82,7 @@ func (c *ApiController) familyAccessAllowed(fam *modelFamily, model, orgId strin
 // FamilyModelGated reports whether a model id is a gated family SKU per discovery.
 // Exported so the balance filter (routers) can ask without knowing the family layout.
 func FamilyModelGated(model string) bool {
-	zm, ok := familyLookup(model)
+	zm, ok := familyLookupFresh(model)
 	return ok && zm.gated()
 }
 
@@ -91,7 +91,7 @@ func FamilyModelGated(model string) bool {
 // call bypasses the balance gate (the preview is free) while still being metered.
 // Exported for the balance filter; the controller path uses c.compedGated.
 func CompedGatedAccess(model, org, name, email string) bool {
-	zm, ok := familyLookup(model)
+	zm, ok := familyLookupFresh(model)
 	if !ok || !zm.gated() {
 		return false
 	}
