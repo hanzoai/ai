@@ -41,7 +41,6 @@ import (
 
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/object"
-	"github.com/hanzoai/ai/router"
 	"github.com/hanzoai/ai/util"
 	beegoLogs "github.com/hanzoai/beego/logs"
 	"github.com/hanzoai/decimal"
@@ -757,60 +756,29 @@ func (c *ApiController) recordFamilyRouting(model, served, respID, reqID string,
 		}
 		user = authUser.Owner + "/" + authUser.Name
 	}
-	if served == "" {
-		served = model
-	}
-	// The reward-join key is the response id the client sees, normalized identically to
-	// /v1/feedback's normalizeRequestId (strips the chatcmpl- prefix) so both sides key
-	// on the same value. Fall back to the internal reqID when the family disclosed none.
-	joinID := normalizeRequestId(respID)
-	if joinID == "" {
-		joinID = reqID
+	// The join key is the response id the client sees; fall back to the internal reqID
+	// when the family disclosed none (RecordFamilyRouting normalizes it identically to
+	// /v1/feedback so both sides key on the same value).
+	responseId := respID
+	if strings.TrimSpace(responseId) == "" {
+		responseId = reqID
 	}
 	text, hasMedia := familyRoutingText(rawBody)
-	slo := c.sloFromHeaders()
-	latencyMs := time.Since(start).Milliseconds()
-
-	go func() {
-		ev := object.RoutingEvent{
-			Owner:            owner,
-			User:             user,
-			RequestId:        joinID,
-			RequestedModel:   strings.ToLower(strings.TrimSpace(model)),
-			RoutedModel:      served,
-			Source:           "family",
-			PromptTokens:     prompt,
-			CompletionTokens: completion,
-			CostCents:        cents,
-			LatencyMs:        latencyMs,
-		}
-		// Shadow A/B: ask the learned engine what IT would have picked for the same
-		// request features. Only when the endpoint is configured; a slow/unreachable
-		// engine falls through to the heuristic within router.DefaultTimeout. The
-		// engine's feature vector + task come back for the training join — never prompt
-		// text. This is the production A/B study at zero user risk (already served).
-		if cfg := GetModelConfig(); cfg != nil {
-			cli := cfg.RouterClient(nil)
-			if cli.Endpoint != "" {
-				dec := cli.RouteDecision(context.Background(), router.Request{
-					Text:         text,
-					ApproxTokens: coarseTokenEstimate(rawBody),
-					HasMedia:     hasMedia,
-				}, slo)
-				ev.ShadowModel = dec.Model
-				ev.Task = string(dec.Task)
-				ev.Confidence = dec.Confidence
-				if len(dec.Features) > 0 {
-					if b, err := json.Marshal(dec.Features); err == nil {
-						ev.Features = string(b)
-					}
-				}
-			}
-		}
-		if err := object.AddRoutingEvent(&ev); err != nil {
-			beegoLogs.Warning("family routing event persist failed: %v", err)
-		}
-	}()
+	endpoint := ""
+	if cfg := GetModelConfig(); cfg != nil {
+		endpoint = cfg.RouterClient(nil).Endpoint
+	}
+	in := object.FamilyRoutingInput{
+		Owner: owner, User: user,
+		RequestedModel: model, RoutedModel: served, ResponseId: responseId,
+		PromptTokens: prompt, CompletionTokens: completion,
+		CostCents: cents, LatencyMs: time.Since(start).Milliseconds(),
+		RouterEndpoint: endpoint, ShadowText: text,
+		ShadowApproxTokens: coarseTokenEstimate(rawBody), ShadowHasMedia: hasMedia,
+	}
+	// Fire-and-forget off the request hot path — the ONE shared writer (object) is
+	// called identically by cloud's embedded-zen meter.
+	go object.RecordFamilyRouting(in)
 }
 
 // familyRoutingText extracts the last user turn's text and whether the request carries
