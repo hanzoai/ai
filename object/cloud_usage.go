@@ -51,6 +51,7 @@ const cloudUsageTableDDL = `
 		owner String,
 		user_id String,
 		organization String,
+		project String,
 		model String,
 		provider String,
 		request_id String,
@@ -96,6 +97,10 @@ var cloudUsageColumnMigrations = []string{
 	// unpriced = 1 when the model had no configured price and billed at the default,
 	// so the honest "priced?" flag is queryable in the warehouse, not just the span.
 	`ALTER TABLE hanzo.cloud_usage ADD COLUMN IF NOT EXISTS unpriced UInt8`,
+	// project is the caller's org SUB-SCOPE (X-Project-Id); it lets the per-org
+	// metrics board narrow WITHIN an org by project. Additive: a pre-existing row
+	// carries '' (the org's default project == whole-org view).
+	`ALTER TABLE hanzo.cloud_usage ADD COLUMN IF NOT EXISTS project String`,
 }
 
 var cloudUsageTableReady atomic.Bool
