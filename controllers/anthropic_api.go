@@ -24,6 +24,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hanzoai/account"
+
 	"github.com/hanzoai/ai/model"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
@@ -423,7 +425,7 @@ func (c *ApiController) AnthropicMessages() {
 	request.MaxTokens = clampMaxTokens(request.MaxTokens)
 	var hold *budgetHold
 	if authUser != nil {
-		subject := object.Payer(object.Credential{Owner: authUser.Owner, Name: authUser.Name}).Subject()
+		subject := account.Payer(account.Credential{Owner: authUser.Owner, Name: authUser.Name}).Subject()
 		est := estimateRequestCostCents(request.Model, len(request.Messages)*500, request.MaxTokens)
 		var ok bool
 		if hold, ok = reserveBudget(subject, est); !ok {
