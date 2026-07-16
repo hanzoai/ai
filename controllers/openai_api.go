@@ -1037,18 +1037,23 @@ func (c *ApiController) ChatCompletions() {
 		est := estimateRequestCostCents(request.Model, estimatePromptTokens(&request), request.MaxTokens)
 		var ok bool
 		if hold, ok = reserveBudget(subject, est); !ok {
-			c.ResponseAuthError(billingError("Insufficient balance for the estimated request cost. add credits to your wallet at https://pay.hanzo.ai"))
-			return
+			// Limited-preview comp: a granted caller of a gated SKU (enso) is not
+			// refused on balance — the preview is free. hold is nil here, so the
+			// deferred settle is a no-op; usage is still recorded downstream.
+			if !c.compedGated(request.Model, orgId, authUser) {
+				c.ResponseAuthError(billingError("Insufficient balance for the estimated request cost. add credits to your wallet at https://pay.hanzo.ai"))
+				return
+			}
 		}
 	}
 	defer hold.settle(0)
 
-	// ── Zen family ────────────────────────────────────
-	// A zen model is served by the zen service, which owns identity, reasoning,
-	// the 1M ladder, vision, and the upstream. ai forwards verbatim and meters the
-	// result; it holds no zen routing of its own (hip-00NN).
-	if provider.Type == "Zen" {
-		c.pipeToZen("chat/completions", "openai", request.Model, c.Ctx.Input.RequestBody, request.Stream, orgId, authUser, isPremium, hold, requestStartTime)
+	// ── Model families (Zen, Enso) ─────────────────────
+	// A family model is served by its family service, which owns identity, reasoning,
+	// the 1M ladder, vision, the fan-out, and the upstream. ai forwards verbatim and
+	// meters the result; it holds no family routing of its own (hip-00NN).
+	if fam := familyForProviderType(provider.Type); fam != nil {
+		c.pipeToFamily(fam, "chat/completions", "openai", request.Model, c.Ctx.Input.RequestBody, request.Stream, orgId, authUser, isPremium, hold, requestStartTime)
 		return
 	}
 
@@ -1323,6 +1328,11 @@ func (c *ApiController) ListModels() {
 	}
 
 	models := listAvailableModels()
+
+	// Annotate gated (limited-preview) SKUs with the authenticated caller's access
+	// standing (waitlist|requested|granted), so the client can show "request access"
+	// vs "granted" without a second call.
+	annotateModelAccess(models, c.principalUser())
 
 	response := modelListEnvelope(models)
 

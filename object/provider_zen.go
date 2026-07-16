@@ -20,26 +20,32 @@ import (
 	"github.com/hanzoai/ai/conf"
 )
 
-// ZenProvider synthesizes the virtual "zen" model provider from deployment
-// configuration (ZEN_URL / ZEN_API_KEY), or nil when zen is not configured.
-//
-// Zen is not a database row: its address is configuration, so this repository
-// carries no zen routing detail and reads as open source. Because it resolves the
-// same way a real Model provider does — a name, a URL, a key — every path that
-// looks a provider up by name serves the zen family without a special case beyond
-// the one lookup in GetModelProviderByName. See hip-00NN.
-func ZenProvider() *Provider {
-	base := strings.TrimRight(strings.TrimSpace(conf.GetConfigString("ZEN_URL")), "/")
+// familyProvider synthesizes a virtual model-family provider from deployment
+// configuration (a base-URL key + a service-key key), or nil when the family is not
+// configured. A family is not a database row: its address is configuration, so this
+// repository carries no routing detail and reads as open source. Because it resolves
+// the same way a real Model provider does — a name, a URL, a key — every path that
+// looks a provider up by name serves the family without a special case beyond the one
+// lookup in GetModelProviderByName. Zen and Enso are two instances. See hip-00NN.
+func familyProvider(name, typ, urlKey, keyKey string) *Provider {
+	base := strings.TrimRight(strings.TrimSpace(conf.GetConfigString(urlKey)), "/")
 	if base == "" {
 		return nil
 	}
 	return &Provider{
 		Owner:        "admin",
-		Name:         "zen",
+		Name:         name,
 		Category:     "Model",
-		Type:         "Zen",
+		Type:         typ,
 		State:        "Active",
 		ProviderUrl:  base,
-		ClientSecret: strings.TrimSpace(conf.GetConfigString("ZEN_API_KEY")),
+		ClientSecret: strings.TrimSpace(conf.GetConfigString(keyKey)),
 	}
 }
+
+// ZenProvider is the open Zen family's virtual provider (ZEN_URL / ZEN_API_KEY).
+func ZenProvider() *Provider { return familyProvider("zen", "Zen", "ZEN_URL", "ZEN_API_KEY") }
+
+// EnsoProvider is the proprietary Enso family's virtual provider (ENSO_URL /
+// ENSO_API_KEY) — the SAME zen serving binary run with ZEN_FAMILY=enso.
+func EnsoProvider() *Provider { return familyProvider("enso", "Enso", "ENSO_URL", "ENSO_API_KEY") }
