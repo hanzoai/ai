@@ -177,7 +177,7 @@ func (c *ApiController) VideosGenerations() {
 		c.ResponseAuthError(billingError("Video generation requires an authenticated Hanzo Cloud account. Sign in and add credits to your wallet at https://pay.hanzo.ai"))
 		return
 	}
-	subject := object.BillingSubject(authUser.Owner, authUser.Name)
+	subject := object.Payer(object.Credential{Owner: authUser.Owner, Name: authUser.Name}).Subject()
 	if subject == "" {
 		c.ResponseAuthError(billingError("Video generation requires an authenticated Hanzo Cloud account."))
 		return
@@ -411,7 +411,7 @@ func (c *ApiController) resolveOwnedVideoJob(token, id string) (*videoJob, *obje
 
 	subject := ""
 	if authUser != nil {
-		subject = object.BillingSubject(authUser.Owner, authUser.Name)
+		subject = object.Payer(object.Credential{Owner: authUser.Owner, Name: authUser.Name}).Subject()
 	}
 	// Ownership: a non-empty subject that matches the job's. An empty subject
 	// (anonymous/exempt) owns nothing. A mismatch is a 404 (never reveal the job).
