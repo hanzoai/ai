@@ -78,7 +78,7 @@ func TestResolveAutoModelDisabled(t *testing.T) {
 	defer func() { globalModelConfig = prev }()
 	globalModelConfig = routerTestConfig(false)
 
-	if _, ok := resolveAutoModel("auto", "", "", chatReq("auto", "refactor this function"), router.Slo{}); ok {
+	if _, ok := resolveAutoModel("auto", "", "", "", chatReq("auto", "refactor this function"), router.Slo{}); ok {
 		t.Error("resolveAutoModel with routing disabled = ok, want not-ok")
 	}
 }
@@ -88,7 +88,7 @@ func TestResolveAutoModelNilConfig(t *testing.T) {
 	defer func() { globalModelConfig = prev }()
 	globalModelConfig = nil
 
-	if _, ok := resolveAutoModel("auto", "", "", chatReq("auto", "hi"), router.Slo{}); ok {
+	if _, ok := resolveAutoModel("auto", "", "", "", chatReq("auto", "hi"), router.Slo{}); ok {
 		t.Error("resolveAutoModel with nil config = ok, want not-ok")
 	}
 }
@@ -98,7 +98,7 @@ func TestResolveAutoModelNotAuto(t *testing.T) {
 	defer func() { globalModelConfig = prev }()
 	globalModelConfig = routerTestConfig(true)
 
-	if _, ok := resolveAutoModel("gpt-4o", "", "", chatReq("gpt-4o", "refactor this function"), router.Slo{}); ok {
+	if _, ok := resolveAutoModel("gpt-4o", "", "", "", chatReq("gpt-4o", "refactor this function"), router.Slo{}); ok {
 		t.Error("resolveAutoModel for a concrete model = ok, want not-ok")
 	}
 }
@@ -120,7 +120,7 @@ func TestResolveAutoModelEnabled(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.text, func(t *testing.T) {
-			got, ok := resolveAutoModel(tc.alias, "", "", chatReq(tc.alias, tc.text), router.Slo{})
+			got, ok := resolveAutoModel(tc.alias, "", "", "", chatReq(tc.alias, tc.text), router.Slo{})
 			if !ok {
 				t.Fatalf("resolveAutoModel(%q) not ok", tc.text)
 			}
@@ -145,7 +145,7 @@ func TestAutoRoutingHTTPContract(t *testing.T) {
 	handler := func(w http.ResponseWriter, r *http.Request) {
 		var req openai.ChatCompletionRequest
 		_ = json.NewDecoder(r.Body).Decode(&req)
-		if routed, ok := resolveAutoModel(req.Model, "", "", &req, router.Slo{}); ok {
+		if routed, ok := resolveAutoModel(req.Model, "", "", "", &req, router.Slo{}); ok {
 			req.Model = routed
 			w.Header().Set(RoutedModelHeader, routed)
 		}
