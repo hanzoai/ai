@@ -95,24 +95,28 @@ func (c *ApiController) Embeddings() {
 		provider.SubType = head.Model
 	}
 
-	// Zen family: forward to the zen service, billed per token at the discovered
-	// price (embeddings are token-metered, so this rides the same pipe as chat, not
-	// the per-unit media pipe). zen owns the SKU→upstream mapping.
-	if provider.Type == "Zen" {
+	// Model families (Zen, Enso): forward to the family service, billed per token at
+	// the discovered price (embeddings are token-metered, so this rides the same pipe
+	// as chat, not the per-unit media pipe). The family owns the SKU→upstream mapping.
+	if fam := familyForProviderType(provider.Type); fam != nil {
 		var hold *budgetHold
 		if authUser != nil {
 			subject := object.BillingSubject(authUser.Owner, authUser.Name)
 			est := int64(1)
-			if zm, ok := zenLookup(head.Model); ok {
+			if zm, ok := fam.lookup(head.Model); ok {
 				est = zm.costCents(coarseTokenEstimate(c.Ctx.Input.RequestBody), 0)
 			}
 			var ok2 bool
 			if hold, ok2 = reserveBudget(subject, est); !ok2 {
-				c.ResponseAuthError(billingError("Insufficient balance for the estimated cost. add credits to your wallet at https://pay.hanzo.ai"))
-				return
+				// Limited-preview comp (parity with chat/messages): a granted caller of
+				// a gated SKU is not refused on balance.
+				if !c.compedGated(head.Model, orgId, authUser) {
+					c.ResponseAuthError(billingError("Insufficient balance for the estimated cost. add credits to your wallet at https://pay.hanzo.ai"))
+					return
+				}
 			}
 		}
-		c.pipeToZen("embeddings", "openai", head.Model, c.Ctx.Input.RequestBody, false, orgId, authUser, isPremium, hold, startTime)
+		c.pipeToFamily(fam, "embeddings", "openai", head.Model, c.Ctx.Input.RequestBody, false, orgId, authUser, isPremium, hold, startTime)
 		return
 	}
 
