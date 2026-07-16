@@ -22,9 +22,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/hanzoai/beego/logs"
 	"github.com/hanzoai/ai/txt"
 	"github.com/hanzoai/ai/util"
+	"github.com/hanzoai/beego/logs"
 )
 
 type TxtLabel struct {

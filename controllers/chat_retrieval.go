@@ -10,9 +10,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/hanzoai/beego/logs"
 	"github.com/hanzoai/ai/model"
 	"github.com/hanzoai/ai/object"
+	"github.com/hanzoai/beego/logs"
 	iam "github.com/hanzoai/iam"
 )
 

@@ -18,8 +18,8 @@ package controllers
 import (
 	"encoding/json"
 
-	"github.com/hanzoai/beego/logs"
 	"github.com/hanzoai/ai/object"
+	"github.com/hanzoai/beego/logs"
 )
 
 type TextToSpeechRequest struct {

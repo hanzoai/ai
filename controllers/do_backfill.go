@@ -504,7 +504,7 @@ func doDayInWindow(day string, from, to time.Time) bool {
 // ensureBackfillSchema adds the additive cloud_usage.source provenance column if it is
 // missing. The backfill feature is the sole reader/writer of this column, so it owns the
 // column's creation here (idempotent ADD COLUMN IF NOT EXISTS) — the native write path
-// is untouched and its rows keep the '' default that marks them as metered.
+// is untouched and its rows keep the ” default that marks them as metered.
 func ensureBackfillSchema(ctx context.Context) error {
 	return object.DatastoreExec(ctx, "ALTER TABLE hanzo.cloud_usage ADD COLUMN IF NOT EXISTS source String")
 }
@@ -521,7 +521,7 @@ func doDayWindowLits(from, to time.Time) (lo, hi string) {
 }
 
 // nativeCoveredDays returns the set of UTC days (YYYY-MM-DD) that already carry a NATIVE
-// (source='') do-ai row in [from,to] — the days a backfill must NOT touch.
+// (source=”) do-ai row in [from,to] — the days a backfill must NOT touch.
 func nativeCoveredDays(ctx context.Context, from, to time.Time) (map[string]bool, error) {
 	lo, hi := doDayWindowLits(from, to)
 	rows, err := object.DatastoreQuery(ctx,
@@ -574,7 +574,8 @@ func writeDOBackfillRows(ctx context.Context, rows []DOBackfillRow) (int, error)
 			continue
 		}
 		ts := day.Add(12 * time.Hour) // noon UTC — unambiguously inside the day for toDate()
-		if err := object.DatastoreExec(ctx,
+		if err := object.DatastoreExec(
+			ctx,
 			"INSERT INTO hanzo.cloud_usage "+
 				"(id, timestamp, owner, user_id, organization, model, provider, request_id, "+
 				"prompt_tokens, completion_tokens, total_tokens, cost_cents, currency, status, source) "+
