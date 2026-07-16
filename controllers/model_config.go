@@ -562,6 +562,20 @@ func (mc *ModelConfig) AutoRoutingActive(orgPref string) bool {
 	}
 }
 
+// ConfRouterPolicy returns the live conf router Prefer + CostCeiling under the
+// read lock — the baseline that effectiveRouterPrefer /
+// effectiveRouterCostCeiling fold the per-org OrgSettings over. The Prefer map
+// is copied so callers never hold (or mutate) the live config map.
+func (mc *ModelConfig) ConfRouterPolicy() (map[string][]string, float64) {
+	mc.mu.RLock()
+	defer mc.mu.RUnlock()
+	out := make(map[string][]string, len(mc.router.Prefer))
+	for k, v := range mc.router.Prefer {
+		out[k] = v
+	}
+	return out, mc.router.CostCeiling
+}
+
 // RouterClient assembles a router.Client from the config, regardless of the
 // enabled flag — the enable decision is made separately by AutoRoutingActive.
 // `known` restricts the choice to models the caller can serve for the current

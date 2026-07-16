@@ -54,6 +54,16 @@ type OrgSettings struct {
 	// read it via /v1/get-routing-defaults). Same three-state as AutoRouting:
 	// "" (unset) → "*" row then conf default (disabled), "enabled", "disabled".
 	DefaultSessionRouting string `json:"defaultSessionRouting"`
+
+	// RouterPrefer is this org's router preference table: task tag → ordered
+	// model ids ("default" is the catch-all). nil/empty = unset → fall through
+	// per task key to the "*" row then the conf router block. Persisted as a
+	// JSON text column (JSONMap: database/sql rejects a bare map of slices).
+	RouterPrefer JSONMap[[]string] `json:"routerPrefer"`
+
+	// RouterCostCeiling caps the router's per-1k cost for this org. 0 = unset →
+	// "*" row then conf. A caller's X-Max-Cost header still wins per request.
+	RouterCostCeiling float64 `json:"routerCostCeiling"`
 }
 
 func GetOrgSettingsList(owner string) ([]*OrgSettings, error) {
