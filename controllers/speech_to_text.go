@@ -18,8 +18,10 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/hanzoai/ai/object"
+	"github.com/hanzoai/ai/util"
 )
 
 // ProcessSpeechToText
@@ -75,7 +77,9 @@ func (c *ApiController) ProcessSpeechToText() {
 	}
 	// Process the audio data and get the transcription
 	ctx := context.Background()
+	startTime := time.Now().UTC()
 	text, _, err := providerObj.ProcessAudio(audioFile, ctx, c.GetAcceptLanguage())
+	c.recordLegacySTTUsage(store, provider, startTime, err)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -83,4 +87,33 @@ func (c *ApiController) ProcessSpeechToText() {
 
 	// Return the transcribed text
 	c.ResponseOk(text)
+}
+
+// recordLegacySTTUsage traces the legacy store-bound STT handler into the one
+// usage/o11y plane. The provider result exposes no price surface here, so the
+// row bills 0 and is flagged Unpriced — the paid transcription traffic becomes
+// visible (and errors stay visible: recordTrace is unconditional) instead of
+// invisible. Pricing is the legacy-price rip, tracked separately.
+func (c *ApiController) recordLegacySTTUsage(store *object.Store, provider *object.Provider, startTime time.Time, callErr error) {
+	if store == nil || provider == nil {
+		return
+	}
+	status, errMsg := "success", ""
+	if callErr != nil {
+		status, errMsg = "error", callErr.Error()
+	}
+	rec := &usageRecord{
+		Owner:        store.Owner,
+		Organization: store.Owner,
+		Model:        provider.Name,
+		Provider:     provider.Name,
+		Currency:     "USD",
+		Status:       status,
+		ErrorMsg:     errMsg,
+		Unpriced:     true,
+		ClientIP:     c.Ctx.Request.RemoteAddr,
+		RequestID:    util.GenerateUUID(),
+	}
+	recordUsage(rec)
+	recordTrace(c.Ctx.Request.Context(), rec, startTime)
 }

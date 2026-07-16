@@ -512,6 +512,14 @@ type usageRecord struct {
 	// recordUsage; image/video calls (own per-unit pricing) are never flagged.
 	Unpriced bool `json:"unpriced,omitempty"`
 
+	// BilledNanoExact / CostNanoExact carry an EXACT nano-USD billed amount and
+	// provider COGS when the biller knows them (zen's commerce Meter computes both
+	// per served tier). When > 0 they override usageMargin's table recompute, so a
+	// self-billing subsystem's warehouse row and span carry its true margin instead
+	// of a rate-table approximation. 0 = unset → the table path (unchanged).
+	BilledNanoExact int64 `json:"billedNanoExact,omitempty"`
+	CostNanoExact   int64 `json:"costNanoExact,omitempty"`
+
 	// ── o11y gen_ai span enrichment (all optional, best-effort) ──────────────
 	// These carry the observation-of-record attribution the o11y span plane reads
 	// (controllers/telemetry.go emitGenAISpan). They are omitempty so a record that
