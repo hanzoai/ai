@@ -26,8 +26,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/hanzoai/beego/logs"
 	"github.com/carmel/gooxml/document"
+	"github.com/hanzoai/beego/logs"
 	"github.com/pdfcpu/pdfcpu/pkg/api"
 )
 

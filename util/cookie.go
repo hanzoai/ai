@@ -18,8 +18,8 @@ package util
 import (
 	"encoding/json"
 
-	"github.com/hanzoai/beego/context"
 	"github.com/hanzoai/ai/conf"
+	"github.com/hanzoai/beego/context"
 )
 
 func AppendWebConfigCookie(ctx *context.Context) error {

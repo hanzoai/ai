@@ -22,13 +22,13 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/hanzoai/beego"
-	"github.com/hanzoai/beego/logs"
-	_ "github.com/hanzoai/beego/session/redis"
 	"github.com/hanzoai/ai"
 	"github.com/hanzoai/ai/controllers"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
+	"github.com/hanzoai/beego"
+	"github.com/hanzoai/beego/logs"
+	_ "github.com/hanzoai/beego/session/redis"
 )
 
 func main() {

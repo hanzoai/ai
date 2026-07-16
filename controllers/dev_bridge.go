@@ -26,8 +26,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/hanzoai/beego/logs"
 	"github.com/gorilla/websocket"
+	"github.com/hanzoai/beego/logs"
 )
 
 const (
