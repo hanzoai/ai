@@ -7,6 +7,8 @@ LLM control plane, RAG, and model hub for the Hanzo platform. Native Go model ro
 [![Status](https://img.shields.io/badge/status-stable-green)]()
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)]()
 
+Forked from [Casibase](https://github.com/casibase/casibase) (Apache-2.0).
+
 ## Quick start
 
 ```bash
