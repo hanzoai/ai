@@ -118,6 +118,12 @@ func resolveAutoModel(requested, orgId, userId, requestId string, req *openai.Ch
 	client := cfg.RouterClient(func(id string) bool {
 		return resolveModelRouteForOrg(id, orgId) != nil
 	})
+	// Fold the per-org router policy (org > "*" > conf) into this decision: the
+	// org's own Prefer table wins per task key, and its cost ceiling fills the
+	// SLO when the caller didn't send X-Max-Cost (an explicit header wins).
+	client.Policy.Prefer = effectiveRouterPrefer(orgId, client.Policy.Prefer)
+	client.Policy.CostCeiling = effectiveRouterCostCeiling(orgId, client.Policy.CostCeiling)
+	slo = mergeCostCeiling(slo, client.Policy.CostCeiling)
 	rreq := router.Request{
 		Text:         lastUserText(req),
 		ApproxTokens: estimatePromptTokens(req),
