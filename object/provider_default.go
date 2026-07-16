@@ -360,6 +360,9 @@ func GetModelProviderByName(name string) (*Provider, error) {
 	if name == "zen" {
 		return ZenProvider(), nil
 	}
+	if name == "enso" {
+		return EnsoProvider(), nil
+	}
 
 	providerByNameCacheMu.RLock()
 	entry, ok := providerByNameCache[name]
