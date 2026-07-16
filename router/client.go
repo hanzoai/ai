@@ -33,8 +33,8 @@ const DefaultTimeout = 150 * time.Millisecond
 // fields disable the corresponding ceiling. It mirrors hanzo-router's Slo (the
 // operator's budget for this request), distinct from a user's learned taste.
 type Slo struct {
-	MaxCost      float64 `json:"max_cost"`
-	MaxLatencyMs int     `json:"max_latency_ms"`
+	MaxCost      float64 `json:"max_cost"`       // cost cap, USD PER 1K TOKENS (per-1k); 0 disables
+	MaxLatencyMs int     `json:"max_latency_ms"` // latency cap, milliseconds; 0 disables
 }
 
 // Client resolves a Request to a concrete model id. Strategy order:
