@@ -112,3 +112,93 @@ func countSeed(events []*RoutingEvent, org string) int {
 	}
 	return n
 }
+
+// findByRequest returns the event carrying the given request_id, or nil.
+func findByRequest(events []*RoutingEvent, requestId string) *RoutingEvent {
+	for _, e := range events {
+		if e.RequestId == requestId {
+			return e
+		}
+	}
+	return nil
+}
+
+// TestRoutingRewardAttachAndExport exercises the reward signal end-to-end against
+// the canonical in-memory SQLite store (the real query path, same driver prod
+// uses): AttachRoutingReward finds an event by (org, request_id) and stamps
+// reward+rewarded_time, rejects an unknown request_id (the endpoint's 404 path) and
+// a cross-org request_id (found=false), and overwrites idempotently; then
+// GetRewardedRoutingEvents yields only the rewarded, org-scoped tuples.
+func TestRoutingRewardAttachAndExport(t *testing.T) {
+	restore, err := UseMemoryDB("file:routingreward?mode=memory&cache=shared", &RoutingEvent{})
+	if err != nil {
+		t.Fatalf("UseMemoryDB: %v", err)
+	}
+	t.Cleanup(restore)
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	seed := []*RoutingEvent{
+		{
+			Id: "rw-acme-1", CreatedTime: now, Owner: "rw-acme", User: "rw-acme/a", RequestId: "req-acme-1",
+			Task: "code", RequestedModel: "auto", RoutedModel: "glm-5.2", Source: "engine", Features: "[0.1,0.2]",
+		},
+		{
+			Id: "rw-acme-2", CreatedTime: now, Owner: "rw-acme", User: "rw-acme/a", RequestId: "req-acme-2",
+			Task: "general", RequestedModel: "auto", RoutedModel: "glm-5.2-mini", Source: "heuristic",
+		},
+		{
+			Id: "rw-beta-1", CreatedTime: now, Owner: "rw-beta", User: "rw-beta/b", RequestId: "req-beta-1",
+			Task: "math", RequestedModel: "auto", RoutedModel: "glm-5.2", Source: "engine", Features: "[0.3]",
+		},
+	}
+	for _, e := range seed {
+		if err := AddRoutingEvent(e); err != nil {
+			t.Fatalf("AddRoutingEvent(%s): %v", e.Id, err)
+		}
+	}
+
+	// Attach to a known (org, request_id).
+	if found, err := AttachRoutingReward("rw-acme", "req-acme-1", 0.75); err != nil || !found {
+		t.Fatalf("AttachRoutingReward(known) = (%v, %v), want (true, nil)", found, err)
+	}
+	// Unknown request_id → not found (the endpoint's 404 path).
+	if found, err := AttachRoutingReward("rw-acme", "req-nope", 0.5); err != nil || found {
+		t.Fatalf("AttachRoutingReward(unknown) = (%v, %v), want (false, nil)", found, err)
+	}
+	// Cross-org: beta's request under acme must not match (rejection, no write).
+	if found, err := AttachRoutingReward("rw-acme", "req-beta-1", 0.5); err != nil || found {
+		t.Fatalf("AttachRoutingReward(cross-org) = (%v, %v), want (false, nil)", found, err)
+	}
+	// Idempotent overwrite: a repeat replaces the reward.
+	if found, err := AttachRoutingReward("rw-acme", "req-acme-1", 0.25); err != nil || !found {
+		t.Fatalf("AttachRoutingReward(overwrite) = (%v, %v), want (true, nil)", found, err)
+	}
+
+	// Read back: only the rewarded acme event, carrying the OVERWRITTEN reward + a time.
+	rewarded, err := GetRewardedRoutingEvents("rw-acme", "")
+	if err != nil {
+		t.Fatalf("GetRewardedRoutingEvents: %v", err)
+	}
+	if n := countSeed(rewarded, "rw-acme"); n != 1 {
+		t.Fatalf("rewarded acme events = %d, want 1 (only req-acme-1)", n)
+	}
+	got := findByRequest(rewarded, "req-acme-1")
+	if got == nil {
+		t.Fatal("rewarded export missing req-acme-1")
+	}
+	if got.Reward != 0.25 {
+		t.Errorf("reward = %v, want 0.25 (overwritten)", got.Reward)
+	}
+	if got.RewardedTime == "" {
+		t.Error("rewarded_time empty, want set")
+	}
+	// The featureful decision keeps its feature vector for training.
+	if got.Features != "[0.1,0.2]" {
+		t.Errorf("features = %q, want [0.1,0.2]", got.Features)
+	}
+
+	// Cross-org isolation on the read side: beta has no rewarded events.
+	if beta, err := GetRewardedRoutingEvents("rw-beta", ""); err != nil || countSeed(beta, "rw-beta") != 0 {
+		t.Fatalf("GetRewardedRoutingEvents(beta) = (%d, %v), want (0, nil)", countSeed(beta, "rw-beta"), err)
+	}
+}
