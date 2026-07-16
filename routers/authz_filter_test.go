@@ -63,6 +63,7 @@ func TestRequiresGlobalAdminClassification(t *testing.T) {
 		"get-providers", "get-provider", "get-global-providers",
 		"add-provider", "update-provider", "delete-provider",
 		"get-storage-providers", "get-model-routes", "admin/reload-model-config", "admin/refresh-model-pricing",
+		"admin/usage/backfill-do",
 		"get-nodes", "get-pods", "get-k8s-status",
 	}
 	for _, e := range sensitive {
