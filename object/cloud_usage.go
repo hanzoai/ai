@@ -71,7 +71,8 @@ const cloudUsageTableDDL = `
 		account String,
 		cost_nano Int64,
 		billed_nano Int64,
-		margin_nano Int64
+		margin_nano Int64,
+		unpriced UInt8
 	) ENGINE = MergeTree()
 	ORDER BY (timestamp, organization, user_id)
 	TTL timestamp + INTERVAL 2 YEAR`
@@ -92,6 +93,9 @@ var cloudUsageColumnMigrations = []string{
 	`ALTER TABLE hanzo.cloud_usage ADD COLUMN IF NOT EXISTS cost_nano Int64`,
 	`ALTER TABLE hanzo.cloud_usage ADD COLUMN IF NOT EXISTS billed_nano Int64`,
 	`ALTER TABLE hanzo.cloud_usage ADD COLUMN IF NOT EXISTS margin_nano Int64`,
+	// unpriced = 1 when the model had no configured price and billed at the default,
+	// so the honest "priced?" flag is queryable in the warehouse, not just the span.
+	`ALTER TABLE hanzo.cloud_usage ADD COLUMN IF NOT EXISTS unpriced UInt8`,
 }
 
 var cloudUsageTableReady atomic.Bool
