@@ -168,11 +168,21 @@ func computeRouterStats(events []*object.RoutingEvent, price priceIndexFn, windo
 	var engineN int
 	var confSum float64
 	var confN int
+	// Shadow-vs-served agreement: over family rows carrying a shadow pick, the share
+	// where the learned engine WOULD have chosen what actually served — the production
+	// A/B agreement rate (now that RoutingEvent.ShadowModel lands it).
+	var shadowN, shadowAgreeN int
 
 	// First pass: distributions, quality, throughput, and the model price set.
 	prices := map[string]float64{}
 	windowSecs := now.Sub(windowStart).Seconds()
 	for _, e := range events {
+		if e.ShadowModel != "" {
+			shadowN++
+			if e.ShadowModel == e.RoutedModel {
+				shadowAgreeN++
+			}
+		}
 		if e.RoutedModel != "" {
 			byModel[e.RoutedModel]++
 			if _, seen := prices[e.RoutedModel]; !seen {
@@ -223,6 +233,10 @@ func computeRouterStats(events []*object.RoutingEvent, price priceIndexFn, windo
 
 	total := len(events)
 	q := qualityStats{ShadowAgreement: nil}
+	if shadowN > 0 {
+		agree := float64(shadowAgreeN) / float64(shadowN)
+		q.ShadowAgreement = &agree
+	}
 	if rewardedN > 0 {
 		q.RewardRate = rewardSum / float64(rewardedN)
 	}
