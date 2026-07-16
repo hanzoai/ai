@@ -81,36 +81,11 @@ func (c *ApiController) familyAccessAllowed(fam *modelFamily, model, orgId strin
 
 // FamilyModelGated reports whether a model id is a gated family SKU per discovery.
 // Exported so the balance filter (routers) can ask without knowing the family layout.
+// Access to a gated SKU still requires a grant (familyAccessAllowed), but a gated
+// SKU is PAID like any other model — a grant unlocks access, never free billing.
 func FamilyModelGated(model string) bool {
 	zm, ok := familyLookupFresh(model)
 	return ok && zm.gated()
-}
-
-// CompedGatedAccess reports whether a request for `model` by (org,name,email) is a
-// COMPED limited-preview call: a gated family SKU the caller has been GRANTED. Such a
-// call bypasses the balance gate (the preview is free) while still being metered.
-// Exported for the balance filter; the controller path uses c.compedGated.
-func CompedGatedAccess(model, org, name, email string) bool {
-	zm, ok := familyLookupFresh(model)
-	if !ok || !zm.gated() {
-		return false
-	}
-	return object.IsModelAccessGranted(org, name, email, zm.ID)
-}
-
-// compedGated is the controller-side comp check: resolve the caller's identity from
-// the request and ask CompedGatedAccess. Used to skip the balance 402 for a granted
-// caller of a gated SKU.
-func (c *ApiController) compedGated(model, orgId string, authUser *iam.User) bool {
-	owner := orgId
-	name, email := "", ""
-	if authUser != nil {
-		if owner == "" {
-			owner = authUser.Owner
-		}
-		name, email = authUser.Name, authUser.Email
-	}
-	return CompedGatedAccess(model, owner, name, email)
 }
 
 // annotateModelAccess overlays the caller's access standing onto each gated SKU in a

@@ -348,14 +348,6 @@ func enforceBalanceGate(user *iam.User, requestedModel string) error {
 	if user == nil {
 		return nil
 	}
-	// A comped limited-preview SKU (a gated family model the caller has been GRANTED)
-	// is free during preview: it bypasses the prepaid-balance requirement here, the
-	// same way it bypasses the BeforeRouter balance filter. Usage is still metered;
-	// only the REFUSAL is waived. Without this, a granted preview caller with $0
-	// balance 402s at provider resolution before ever reaching the family dispatch.
-	if CompedGatedAccess(requestedModel, user.Owner, user.Name, user.Email) {
-		return nil
-	}
 	orgKey := user.Owner // namespace (X-Org-Id): the org tenant
 	subject := object.BillingSubjectForPrincipal(user.Owner, user.Name, user.Type)
 
@@ -1053,13 +1045,8 @@ func (c *ApiController) ChatCompletions() {
 		est := estimateRequestCostCents(request.Model, estimatePromptTokens(&request), request.MaxTokens)
 		var ok bool
 		if hold, ok = reserveBudget(subject, est); !ok {
-			// Limited-preview comp: a granted caller of a gated SKU (enso) is not
-			// refused on balance — the preview is free. hold is nil here, so the
-			// deferred settle is a no-op; usage is still recorded downstream.
-			if !c.compedGated(request.Model, orgId, authUser) {
-				c.ResponseAuthError(billingError("Insufficient balance for the estimated request cost. add credits to your wallet at https://pay.hanzo.ai"))
-				return
-			}
+			c.ResponseAuthError(billingError("Insufficient balance for the estimated request cost. add credits to your wallet at https://pay.hanzo.ai"))
+			return
 		}
 	}
 	defer hold.settle(0)
