@@ -29,17 +29,26 @@ import (
 // embedding produced at inference time, not the prompt. This is the ledger that
 // feeds router data-refinement and heads-fit training (see
 // universe/docs/architecture/personal-router-training.md).
+//
+// RequestId ties the decision to the request the client sees — the response
+// `chatcmpl-<id>` and the usage ledger's request_id — so an outcome Reward (0..1,
+// with RewardedTime the nullable "scored yet?" signal) can be joined back to the
+// event's (features, routed model). That triple is the enso loop's per-request
+// training label. No field ever holds prompt text.
 type RoutingEvent struct {
 	Id             string  `db:"pk" json:"id"`
 	CreatedTime    string  `json:"createdTime"`
-	Owner          string  `json:"owner"` // org
-	User           string  `json:"user"`  // owner/name of the caller, "" if unauthenticated
+	Owner          string  `json:"owner"`     // org
+	User           string  `json:"user"`      // owner/name of the caller, "" if unauthenticated
+	RequestId      string  `json:"requestId"` // response/usage-ledger request id — the reward join key
 	Task           string  `json:"task"`
 	RequestedModel string  `json:"requestedModel"` // the virtual alias, e.g. "auto"
 	RoutedModel    string  `json:"routedModel"`    // the concrete model that served
 	Confidence     float64 `json:"confidence"`
-	Source         string  `json:"source"`   // "engine" | "heuristic"
-	Features       string  `json:"features"` // serialized JSON array; "" when the engine gave none
+	Source         string  `json:"source"`       // "engine" | "heuristic"
+	Features       string  `json:"features"`     // serialized JSON array; "" when the engine gave none
+	Reward         float64 `json:"reward"`       // outcome signal 0..1; meaningful only when RewardedTime != ""
+	RewardedTime   string  `json:"rewardedTime"` // RFC3339 when scored; "" = not yet scored (the nullable signal)
 }
 
 // AddRoutingEvent persists a routing decision. It fills in the id and created
@@ -89,4 +98,50 @@ func GetRoutingEvents(org, since string) ([]*RoutingEvent, error) {
 		return events, err
 	}
 	return events, nil
+}
+
+// AttachRoutingReward records an outcome reward (0..1) on the routing event that
+// served request requestId for org — the per-request quality label the enso loop
+// pairs with the event's (features, routed model). It is scoped to org: a
+// requestId owned by another org, or unknown, matches no row, so found is false
+// and the caller returns 404 without revealing cross-org existence. Idempotent —
+// a repeat overwrites the reward and advances rewarded_time. It touches no prompt
+// text (the ledger holds none).
+func AttachRoutingReward(org, requestId string, reward float64) (found bool, err error) {
+	if adapter == nil || adapter.db == nil {
+		return false, nil
+	}
+	where := dbx.HashExp{"owner": org, "request_id": requestId}
+	n, err := countWhere(adapter.db, "routing_event", where)
+	if err != nil || n == 0 {
+		return false, err
+	}
+	if _, err = updateCols(adapter.db, "routing_event", where, dbx.Params{
+		"reward":        reward,
+		"rewarded_time": time.Now().UTC().Format(time.RFC3339),
+	}); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// GetRewardedRoutingEvents returns routing events that carry a reward
+// (rewarded_time set), oldest first, optionally scoped to org (owner) and a since
+// timestamp (created_time >= since). These are the labeled tuples — (features,
+// routed model, reward) — the enso loop trains on; empty filters return all
+// rewarded events.
+func GetRewardedRoutingEvents(org, since string) ([]*RoutingEvent, error) {
+	if adapter == nil || adapter.db == nil {
+		return nil, nil
+	}
+	where := []dbx.Expression{dbx.NewExp("rewarded_time <> ''")}
+	if org != "" {
+		where = append(where, dbx.HashExp{"owner": org})
+	}
+	if since != "" {
+		where = append(where, dbx.NewExp("created_time >= {:since}", dbx.Params{"since": since}))
+	}
+	events := []*RoutingEvent{}
+	err := findAll(adapter.db, "routing_event", &events, dbx.And(where...), "created_time ASC")
+	return events, err
 }
