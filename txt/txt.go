@@ -20,8 +20,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/hanzoai/beego/logs"
 	"github.com/hanzoai/ai/i18n"
+	"github.com/hanzoai/beego/logs"
 )
 
 func GetSupportedFileTypes() []string {

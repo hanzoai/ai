@@ -20,10 +20,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hanzoai/beego"
-	_ "github.com/hanzoai/beego/session" // memory session provider registration
 	"github.com/hanzoai/ai/controllers"
 	_ "github.com/hanzoai/ai/routers" // registers /v1/* routes (incl. images/generations)
+	"github.com/hanzoai/beego"
+	_ "github.com/hanzoai/beego/session" // memory session provider registration
 	"github.com/zap-proto/zip"
 )
 

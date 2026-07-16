@@ -17,8 +17,8 @@ package object
 import (
 	"fmt"
 
-	"github.com/hanzoai/beego"
 	"github.com/hanzoai/ai/util"
+	"github.com/hanzoai/beego"
 	"github.com/hanzoai/dbx"
 )
 

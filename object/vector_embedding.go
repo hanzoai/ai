@@ -21,12 +21,12 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/hanzoai/beego/logs"
 	"github.com/hanzoai/ai/embedding"
 	"github.com/hanzoai/ai/i18n"
 	"github.com/hanzoai/ai/model"
 	"github.com/hanzoai/ai/storage"
 	"github.com/hanzoai/ai/txt"
+	"github.com/hanzoai/beego/logs"
 )
 
 // DEPRECATED — SQL `vector` table write path.

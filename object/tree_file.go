@@ -21,8 +21,8 @@ import (
 	"mime/multipart"
 	"strings"
 
-	"github.com/hanzoai/beego/logs"
 	"github.com/hanzoai/ai/util"
+	"github.com/hanzoai/beego/logs"
 )
 
 func UpdateTreeFile(storeId string, key string, file *TreeFile) bool {
