@@ -136,6 +136,23 @@ func familyLookup(model string) (zenModel, bool) {
 	return zenModel{}, false
 }
 
+// familyLookupFresh is familyLookup that first refreshes each family's catalog on
+// its TTL (a no-op when warm) before reading it. lookup() alone reads the cache
+// with no refresh, so on a replica whose family cache is cold or stale a real SKU
+// reads as unknown — which is why a GRANTED enso preview caller still 402'd at the
+// balance filter (CompedGatedAccess → familyLookup missed "enso" on a cold replica,
+// so the comp was skipped). Access/comp decisions must see the same catalog the
+// /v1/models merge does; they go through here.
+func familyLookupFresh(model string) (zenModel, bool) {
+	for _, f := range modelFamilies {
+		f.fresh()
+		if m, ok := f.lookup(model); ok {
+			return m, true
+		}
+	}
+	return zenModel{}, false
+}
+
 // familyPassthroughRoute routes any family SKU to its family service.
 func familyPassthroughRoute(model string) *modelRoute {
 	for _, f := range modelFamilies {
