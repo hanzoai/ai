@@ -210,6 +210,11 @@ jobs:
           large-packages: true
           swap-storage: true
 
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.4'
+          cache-dependency-path: ./go.mod
+
       - name: Prepare Go caches
         run: |
           echo "GOMODCACHE=$RUNNER_TEMP/gomod" >> $GITHUB_ENV
