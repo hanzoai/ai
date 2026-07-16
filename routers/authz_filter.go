@@ -91,8 +91,10 @@ var superAdminEndpoints = map[string]struct{}{
 	// Per-org feature settings (auto-routing enable/disable, …).
 	"get-org-settings-list": {}, "get-org-settings": {},
 	"add-org-settings": {}, "update-org-settings": {}, "delete-org-settings": {},
-	// Routing-decision ledger export (training data — platform-wide).
-	"export-routing-ledger": {},
+	// Routing-decision + reward training exports are NOT hard super-admin-gated here:
+	// they accept EITHER a super admin OR a KMS-provisioned ROUTER_ADMIN_TOKEN service
+	// token (spark's retrain). The handler (routerAdminAuthorized) is authoritative;
+	// the filter only requires a present credential (below), so anonymous still 401s.
 	// Storage provider credentials.
 	"get-storage-providers": {},
 	// Cluster topology / infrastructure.
@@ -123,6 +125,9 @@ var authRequiredEndpoints = map[string]struct{}{
 	"embed":       {}, "query": {}, "query_multiple": {}, // librechat-compat RAG
 	"documents":            {}, // librechat-compat DELETE documents
 	"get-routing-defaults": {}, // per-caller routing defaults — any authenticated user, never anonymous
+	// Training-data exports: a present credential is required at the filter (anonymous
+	// → 401); the handler (routerAdminAuthorized) enforces super-admin OR ROUTER_ADMIN_TOKEN.
+	"export-routing-ledger": {}, "export-routing-rewards": {},
 	"get-router-policy":    {}, // per-org router policy read — org-admin gated in controller, never anonymous
 	"update-router-policy": {}, // per-org router policy write — org-admin gated in controller, never anonymous
 }
