@@ -454,14 +454,22 @@ func (mc *ModelConfig) RouteForContext(model string, tokens int) (provider, upst
 
 // GetPrice returns pricing for a model name, with alias and default fallback.
 func (mc *ModelConfig) GetPrice(model string) modelPrice {
+	p, _ := mc.GetPriceOK(model)
+	return p
+}
+
+// GetPriceOK is GetPrice plus whether a REAL per-model price was found (true) or the
+// configured default was synthesized (false). The price value is identical to GetPrice;
+// only unpriced-model detection reads the bool.
+func (mc *ModelConfig) GetPriceOK(model string) (modelPrice, bool) {
 	key := strings.ToLower(model)
 	mc.mu.RLock()
 	defer mc.mu.RUnlock()
 
 	if price, ok := mc.pricing[key]; ok {
-		return price
+		return price, true
 	}
-	return mc.defaults
+	return mc.defaults, false
 }
 
 // ListModels returns visible models sorted by name (excludes hidden).
