@@ -144,6 +144,15 @@ func providerCostNano(record *usageRecord) int64 {
 func usageMargin(record *usageRecord) costMargin {
 	billed := usageBilledNano(record, usageCostNano(record))
 	cost := providerCostNano(record)
+	// A self-billing subsystem (zen's commerce Meter) knows its EXACT billed
+	// amount + upstream COGS per served tier; prefer those over the table
+	// recompute so the warehouse margin is true, not approximated.
+	if record.BilledNanoExact > 0 {
+		billed = record.BilledNanoExact
+	}
+	if record.CostNanoExact > 0 {
+		cost = record.CostNanoExact
+	}
 	return costMargin{CostNano: cost, BilledNano: billed, MarginNano: billed - cost}
 }
 
