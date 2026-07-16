@@ -26,12 +26,37 @@ import (
 // has added real funds beyond the starter credit.
 const StarterCreditDollars = 5.00
 
-// modelPrice defines per-model pricing in dollars per 1M tokens.
+// modelPrice defines per-model economics in dollars per 1M tokens. Input/Output/Cache*
+// are the CUSTOMER PRICE (what the org is billed); CostIn/CostOut are the PROVIDER COGS
+// (what it costs Hanzo to serve the call). Cost defaults to price when unset (0), so a
+// model that declares only a price bills identically and books a zero margin — a real
+// margin appears only where a genuinely lower COGS is configured.
 type modelPrice struct {
-	InputPerMillion      float64 // $ per 1M input tokens
-	OutputPerMillion     float64 // $ per 1M output tokens
+	InputPerMillion      float64 // $ per 1M input tokens (customer price)
+	OutputPerMillion     float64 // $ per 1M output tokens (customer price)
 	CacheReadPerMillion  float64 // $ per 1M cache-read tokens (0 = use InputPerMillion)
 	CacheWritePerMillion float64 // $ per 1M cache-write tokens (0 = use InputPerMillion)
+	CostInPerMillion     float64 // $ per 1M input tokens (provider COGS; 0 = use InputPerMillion)
+	CostOutPerMillion    float64 // $ per 1M output tokens (provider COGS; 0 = use OutputPerMillion)
+}
+
+// costInputPerMillion is the effective provider COGS for input tokens: the explicit
+// CostInPerMillion when set, else the customer price. The default keeps a model that
+// configures no COGS byte-identical to before COGS existed (cost == price ⇒ margin 0).
+func (p modelPrice) costInputPerMillion() float64 {
+	if p.CostInPerMillion > 0 {
+		return p.CostInPerMillion
+	}
+	return p.InputPerMillion
+}
+
+// costOutputPerMillion is the effective provider COGS for output tokens: CostOutPerMillion
+// when set, else the customer price (same zero-margin default).
+func (p modelPrice) costOutputPerMillion() float64 {
+	if p.CostOutPerMillion > 0 {
+		return p.CostOutPerMillion
+	}
+	return p.OutputPerMillion
 }
 
 // modelPricingInfo is the public, omitempty pricing block embedded in the
@@ -286,8 +311,10 @@ func getModelPriceForOrg(model string, orgId string) modelPrice {
 	dbRoute, err := object.ResolveModelRouteFromDB(strings.ToLower(model), orgId)
 	if err == nil && dbRoute != nil && (dbRoute.InputPrice > 0 || dbRoute.OutputPrice > 0) {
 		return modelPrice{
-			InputPerMillion:  dbRoute.InputPrice,
-			OutputPerMillion: dbRoute.OutputPrice,
+			InputPerMillion:   dbRoute.InputPrice,
+			OutputPerMillion:  dbRoute.OutputPrice,
+			CostInPerMillion:  dbRoute.CostInPerMillion,
+			CostOutPerMillion: dbRoute.CostOutPerMillion,
 		}
 	}
 
