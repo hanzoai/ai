@@ -115,5 +115,12 @@ func main() {
 	// Off unless ROUTER_PROBE_RPH + ROUTER_PROBE_TOKEN are set.
 	controllers.StartRouterProbe()
 
+	// Router trainer: the flywheel's fit→gate→deploy→publish loop — reads the
+	// rewarded ledger, fits per-(task,model) reward, and on a passing gate writes
+	// the empirically-best models into the shared "*" router Prefer row (which the
+	// router already folds) and publishes the retrain meta. Off unless
+	// ROUTER_TRAIN_ENABLED=1.
+	controllers.StartRouterTrainer()
+
 	beego.Run(fmt.Sprintf(":%v", port))
 }
