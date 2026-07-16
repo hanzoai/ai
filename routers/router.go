@@ -346,6 +346,11 @@ func initAPI() {
 	// failover remain one policy path.
 	beego.Router("/v1/responses", &controllers.ApiController{}, "POST:Responses")
 	beego.Router("/v1/models", &controllers.ApiController{}, "GET:ListModels")
+	// Access gating for limited-preview SKUs (enso): a caller requests/reads their own
+	// standing; a SuperAdmin grants and lists. Registered as a deeper path than
+	// /v1/models so the literal segment is not captured as a :param.
+	beego.Router("/v1/models/:model/access", &controllers.ApiController{}, "GET:GetModelAccessStatus;POST:RequestModelAccess")
+	beego.Router("/v1/admin/model-access", &controllers.ApiController{}, "GET:AdminListModelAccess;POST:AdminGrantModelAccess")
 	beego.Router("/v1/admin/reload-model-config", &controllers.ApiController{}, "POST:ReloadModelConfig")
 	beego.Router("/v1/admin/refresh-model-pricing", &controllers.ApiController{}, "POST:RefreshModelPricing")
 

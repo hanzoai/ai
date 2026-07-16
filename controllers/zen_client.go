@@ -14,14 +14,16 @@
 
 package controllers
 
-// zen_client.go — ai's thin client of the Zen model family service.
+// zen_client.go — ai's thin client of the Hanzo model-family services.
 //
-// ai authenticates, meters, and forwards; zen owns the family: which upstream
-// serves a SKU, the identity, the reasoning-vocabulary fold, the 1M context
-// ladder, and vision routing. ai discovers the family from GET <zen>/v1/models
-// and pipes zen requests to zen verbatim. It holds only a base URL (configuration)
-// and the public "zen" brand — no upstream mapping. See hip-00NN for the catalog,
-// pricing, and discovery contract.
+// A model family (Zen, Enso, …) is a self-contained serving layer: it owns which
+// upstream serves a SKU, the identity, the reasoning-vocabulary fold, the 1M context
+// ladder, vision, and the enso-ultra fan-out. ai authenticates, meters, and forwards;
+// it discovers each family from GET <family>/v1/models and pipes requests verbatim.
+// A family is a VALUE — a name, a base URL, a service key, an ownership prefix — so
+// zen and enso are two instances of the SAME machinery (modelFamily), not two copies.
+// ai holds only configuration and the public brand, never an upstream mapping. See
+// hip-00NN for the catalog, pricing, and discovery contract.
 
 import (
 	"bufio"
@@ -46,51 +48,154 @@ import (
 	"github.com/hanzoai/money"
 )
 
-// ── configuration ───────────────────────────────────────────────────────────
-// The zen base URL and service key are configuration, never source: values set in
-// the deployment, so this repository carries no routing detail and reads as open
-// source.
+// ── the families (values, not places) ────────────────────────────────────────
+//
+// Each family's address is configuration (a base URL + service key, set in the
+// deployment), so this repository carries no routing detail and reads as open
+// source. A family is added by adding an instance here — nothing else in ai knows a
+// family name.
 
-func zenBaseURL() string {
-	return strings.TrimRight(strings.TrimSpace(conf.GetConfigString("ZEN_URL")), "/")
+// modelFamily is one serving family as a value: its public name/brand + cold-start
+// ownership prefix, the config keys that hold its address, the provider record ai
+// forwards through, and a discovered-catalog snapshot refreshed from the family on a
+// TTL. All of zen's original machinery is a method on this value; zen and enso are
+// two instances.
+type modelFamily struct {
+	name       string                  // "zen" | "enso" — the Provider label + brand
+	prefix     string                  // public brand prefix for cold-start ownership (before first discovery)
+	urlKey     string                  // config key for the base URL ("ZEN_URL" | "ENSO_URL")
+	keyKey     string                  // config key for the service key ("ZEN_API_KEY" | "ENSO_API_KEY")
+	providerFn func() *object.Provider // the virtual provider ai forwards through
+
+	// discovered catalog — a read-mostly snapshot; discovery failure keeps the last
+	// good snapshot so a transient blip never empties ai's model list.
+	mu        sync.RWMutex
+	byID      map[string]zenModel
+	ids       []string
+	fetchedAt time.Time
+	loaded    bool
 }
 
-func zenServiceKey() string {
-	return strings.TrimSpace(conf.GetConfigString("ZEN_API_KEY"))
+var (
+	zenFam = &modelFamily{
+		name: "zen", prefix: "zen", urlKey: "ZEN_URL", keyKey: "ZEN_API_KEY",
+		providerFn: object.ZenProvider,
+	}
+	ensoFam = &modelFamily{
+		name: "enso", prefix: "enso", urlKey: "ENSO_URL", keyKey: "ENSO_API_KEY",
+		providerFn: object.EnsoProvider,
+	}
+	// modelFamilies is the discovery/route/merge iteration order — the ONE list every
+	// generic family helper walks.
+	modelFamilies = []*modelFamily{zenFam, ensoFam}
+)
+
+func (f *modelFamily) baseURL() string {
+	return strings.TrimRight(strings.TrimSpace(conf.GetConfigString(f.urlKey)), "/")
 }
 
-// zenEnabled reports whether a zen service is configured. When it is not, ai serves
-// no zen model (zenServes is false) and the family is simply absent from /v1/models.
-// The provider record ai forwards zen calls through is object.ZenProvider() — the
-// one place zen's address is synthesized from configuration.
-func zenEnabled() bool { return zenBaseURL() != "" }
+func (f *modelFamily) serviceKey() string {
+	return strings.TrimSpace(conf.GetConfigString(f.keyKey))
+}
+
+// enabled reports whether the family service is configured. When it is not, ai serves
+// no model of that family (serves is false) and it is simply absent from /v1/models.
+func (f *modelFamily) enabled() bool { return f.baseURL() != "" }
+
+// familyForProviderType maps a virtual provider Type ("Zen" | "Enso") to its family,
+// or nil for a non-family provider. The completion dispatch uses this to pipe to the
+// right family with no per-family branch.
+func familyForProviderType(t string) *modelFamily {
+	switch t {
+	case "Zen":
+		return zenFam
+	case "Enso":
+		return ensoFam
+	}
+	return nil
+}
+
+// familyServing returns the family that owns a model, if any.
+func familyServing(model string) (*modelFamily, bool) {
+	for _, f := range modelFamilies {
+		if f.serves(model) {
+			return f, true
+		}
+	}
+	return nil, false
+}
+
+// familyLookup returns the discovered model for an id/alias from whichever family
+// holds it.
+func familyLookup(model string) (zenModel, bool) {
+	for _, f := range modelFamilies {
+		if m, ok := f.lookup(model); ok {
+			return m, true
+		}
+	}
+	return zenModel{}, false
+}
+
+// familyPassthroughRoute routes any family SKU to its family service.
+func familyPassthroughRoute(model string) *modelRoute {
+	for _, f := range modelFamilies {
+		if r := f.passthroughRoute(model); r != nil {
+			return r
+		}
+	}
+	return nil
+}
+
+// familyModelPrice returns the discovered headline price for a family model.
+func familyModelPrice(model string) (modelPrice, bool) {
+	for _, f := range modelFamilies {
+		if p, ok := f.modelPrice(model); ok {
+			return p, true
+		}
+	}
+	return modelPrice{}, false
+}
+
+// mergeFamilyModels overlays every configured family's discovered lineup onto the
+// base /v1/models list (each SKU wins over a same-named base entry; new SKUs append).
+func mergeFamilyModels(base []modelInfo) []modelInfo {
+	for _, f := range modelFamilies {
+		base = f.mergeModels(base)
+	}
+	return base
+}
 
 // ── discovered catalog (values, not places) ──────────────────────────────────
 
 // zenTier is one context tier's retail price ($/MTok) as EXACT decimals — the same
-// values zen serves, parsed losslessly (never through float).
+// values the family serves, parsed losslessly (never through float).
 type zenTier struct {
 	MaxCtx int
 	In     decimal.Decimal
 	Out    decimal.Decimal
 }
 
-// zenModel is a discovered SKU: what ai needs to list, route, and bill it — the
-// SKU's public contract (id, context, price ladder, vision). Not its upstream,
-// which zen does not disclose (hip-00NN).
+// zenModel is a discovered SKU: what ai needs to list, route, and bill it — the SKU's
+// public contract (id, context, price ladder, vision). Not its upstream, which the
+// family does not disclose (hip-00NN).
 type zenModel struct {
 	ID      string
 	OwnedBy string
 	MaxCtx  int
 	Vision  bool
+	Access  string    // "" = generally available; "waitlist" = access-gated (limited preview) — ai enforces the grant
 	Base    zenTier   // headline price (the in-window tier)
 	Tiers   []zenTier // full ladder, ascending by MaxCtx — the billing contract
 }
 
-// tierFor picks the tier that serves promptTokens: the smallest whose context
-// covers the prompt, else the largest. This is zen's Tier rule (hip-00NN) — cost
-// keys off the SERVED tier, so a 1M-overflow bills at the pricier tier and can
-// never underbill.
+// gated reports whether the family SKU is access-controlled (a limited-preview SKU
+// that is LISTED but callable only with a granted ModelAccess row). ai learns this
+// from discovery (the family's advertised access), never a hardcode.
+func (m zenModel) gated() bool { return m.Access == "waitlist" }
+
+// tierFor picks the tier that serves promptTokens: the smallest whose context covers
+// the prompt, else the largest. This is the family's Tier rule (hip-00NN) — cost keys
+// off the SERVED tier, so a 1M-overflow bills at the pricier tier and never underbills.
 func (m zenModel) tierFor(promptTokens int) zenTier {
 	for _, t := range m.Tiers {
 		if promptTokens <= t.MaxCtx {
@@ -105,16 +210,16 @@ func (m zenModel) tierFor(promptTokens int) zenTier {
 
 var zenMillion = decimal.New(1_000_000, 0)
 
-// costCents computes exact retail cost for token counts at the served tier and
-// returns it in ai's cent-granular ledger unit. The dollar value is derived the
-// same way zen derives it — money/decimal, no float, no cents flooring mid-way;
-// only the final debit rounds to the cent, with a one-cent floor for any non-zero
-// usage so a served call is never billed zero.
+// costCents computes exact retail cost for token counts at the served tier and returns
+// it in ai's cent-granular ledger unit. The dollar value is derived the same way the
+// family derives it — money/decimal, no float, no cents flooring mid-way; only the
+// final debit rounds to the cent, with a one-cent floor for any non-zero usage so a
+// served call is never billed zero.
 func (m zenModel) costCents(promptTokens, completionTokens int) int64 {
 	t := m.tierFor(promptTokens)
 	in := t.In.Mul(decimal.New(int64(promptTokens), 0))
 	out := t.Out.Mul(decimal.New(int64(completionTokens), 0))
-	usd := in.Add(out).Quo(zenMillion, 18) // exact dollars to 18 dp — identical to zen
+	usd := in.Add(out).Quo(zenMillion, 18) // exact dollars to 18 dp — identical to the family
 	cents := money.New(usd, money.USD).Minor().Int64()
 	if cents <= 0 && (promptTokens > 0 || completionTokens > 0) {
 		cents = 1
@@ -134,12 +239,13 @@ func (m zenModel) price() (modelPrice, bool) {
 	return modelPrice{InputPerMillion: in, OutputPerMillion: out}, true
 }
 
-// zenWireModel is the /v1/models item shape zen serves. Prices are JSON strings
-// decoded straight into decimal (decimal.UnmarshalJSON), preserving the exact
-// value. There is deliberately no upstream field to read.
+// zenWireModel is the /v1/models item shape a family serves. Prices are JSON strings
+// decoded straight into decimal (decimal.UnmarshalJSON), preserving the exact value.
+// There is deliberately no upstream field to read.
 type zenWireModel struct {
 	ID            string `json:"id"`
 	OwnedBy       string `json:"owned_by"`
+	Access        string `json:"access"` // "" | "waitlist" — access gating advertised by the family
 	ContextWindow int    `json:"context_window"`
 	Pricing       struct {
 		Input  decimal.Decimal `json:"input"`
@@ -157,7 +263,7 @@ type zenWireModel struct {
 
 func (w zenWireModel) model() zenModel {
 	zm := zenModel{
-		ID: w.ID, OwnedBy: w.OwnedBy, MaxCtx: w.ContextWindow, Vision: w.Capabilities.Vision,
+		ID: w.ID, OwnedBy: w.OwnedBy, MaxCtx: w.ContextWindow, Vision: w.Capabilities.Vision, Access: w.Access,
 		Base: zenTier{MaxCtx: w.ContextWindow, In: w.Pricing.Input, Out: w.Pricing.Output},
 	}
 	for _, t := range w.PricingTiers {
@@ -169,25 +275,14 @@ func (w zenWireModel) model() zenModel {
 	return zm
 }
 
-// zenCatalog is the discovered family: a read-mostly snapshot refreshed from zen on
-// a TTL. Discovery failure keeps the last good snapshot — a transient zen blip never
-// empties ai's model list.
-var zenCatalog struct {
-	mu        sync.RWMutex
-	byID      map[string]zenModel
-	ids       []string
-	fetchedAt time.Time
-	loaded    bool
-}
-
 const zenCatalogTTL = 5 * time.Minute
 
 var zenDiscoveryClient = &http.Client{Timeout: 15 * time.Second}
 
-// refreshZenCatalog fetches GET <zen>/v1/models and swaps in a fresh snapshot.
-// Best-effort: on any error the previous snapshot stands.
-func refreshZenCatalog() error {
-	base := zenBaseURL()
+// refresh fetches GET <family>/v1/models and swaps in a fresh snapshot. Best-effort:
+// on any error the previous snapshot stands.
+func (f *modelFamily) refresh() error {
+	base := f.baseURL()
 	if base == "" {
 		return nil
 	}
@@ -197,7 +292,7 @@ func refreshZenCatalog() error {
 	if err != nil {
 		return err
 	}
-	if k := zenServiceKey(); k != "" {
+	if k := f.serviceKey(); k != "" {
 		req.Header.Set("Authorization", "Bearer "+k)
 	}
 	resp, err := zenDiscoveryClient.Do(req)
@@ -206,7 +301,7 @@ func refreshZenCatalog() error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("zen /v1/models: status %d", resp.StatusCode)
+		return fmt.Errorf("%s /v1/models: status %d", f.name, resp.StatusCode)
 	}
 	var out struct {
 		Data []zenWireModel `json:"data"`
@@ -223,104 +318,103 @@ func refreshZenCatalog() error {
 		byID[strings.ToLower(w.ID)] = w.model()
 		ids = append(ids, w.ID)
 	}
-	zenCatalog.mu.Lock()
-	zenCatalog.byID = byID
-	zenCatalog.ids = ids
-	zenCatalog.fetchedAt = time.Now()
-	zenCatalog.loaded = true
-	zenCatalog.mu.Unlock()
+	f.mu.Lock()
+	f.byID = byID
+	f.ids = ids
+	f.fetchedAt = time.Now()
+	f.loaded = true
+	f.mu.Unlock()
 	return nil
 }
 
-// zenCatalogFresh refreshes the snapshot if stale (or never loaded) and zen is
+// fresh refreshes the snapshot if stale (or never loaded) and the family is
 // configured. Errors are logged, not surfaced — a stale snapshot still serves.
-func zenCatalogFresh() {
-	if !zenEnabled() {
+func (f *modelFamily) fresh() {
+	if !f.enabled() {
 		return
 	}
-	zenCatalog.mu.RLock()
-	stale := !zenCatalog.loaded || time.Since(zenCatalog.fetchedAt) > zenCatalogTTL
-	zenCatalog.mu.RUnlock()
+	f.mu.RLock()
+	stale := !f.loaded || time.Since(f.fetchedAt) > zenCatalogTTL
+	f.mu.RUnlock()
 	if stale {
-		if err := refreshZenCatalog(); err != nil {
-			beegoLogs.Warning("zen catalog refresh failed: %v", err)
+		if err := f.refresh(); err != nil {
+			beegoLogs.Warning("%s catalog refresh failed: %v", f.name, err)
 		}
 	}
 }
 
-// zenLookup returns the discovered model for an id/alias, if any.
-func zenLookup(model string) (zenModel, bool) {
-	zenCatalog.mu.RLock()
-	defer zenCatalog.mu.RUnlock()
-	m, ok := zenCatalog.byID[strings.ToLower(strings.TrimSpace(model))]
+// lookup returns the discovered model for an id/alias, if any.
+func (f *modelFamily) lookup(model string) (zenModel, bool) {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	m, ok := f.byID[strings.ToLower(strings.TrimSpace(model))]
 	return m, ok
 }
 
-// zenModelsSnapshot returns the discovered family (refreshing on a TTL).
-func zenModelsSnapshot() []zenModel {
-	zenCatalogFresh()
-	zenCatalog.mu.RLock()
-	defer zenCatalog.mu.RUnlock()
-	out := make([]zenModel, 0, len(zenCatalog.ids))
-	for _, id := range zenCatalog.ids {
-		if m, ok := zenCatalog.byID[strings.ToLower(id)]; ok {
+// snapshot returns the discovered family (refreshing on a TTL).
+func (f *modelFamily) snapshot() []zenModel {
+	f.fresh()
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	out := make([]zenModel, 0, len(f.ids))
+	for _, id := range f.ids {
+		if m, ok := f.byID[strings.ToLower(id)]; ok {
 			out = append(out, m)
 		}
 	}
 	return out
 }
 
-// zenServes reports whether the zen service owns this model. True for any SKU the
-// discovered catalog resolves, and for the public "zen" brand prefix so a request
-// routes correctly even before the first discovery completes (cold start). The
-// prefix is the public brand, not a confidential mapping. False when zen is not
-// configured — ai then serves no zen model.
-func zenServes(model string) bool {
-	if !zenEnabled() {
+// serves reports whether the family owns this model. True for any SKU the discovered
+// catalog resolves, and for the public brand prefix so a request routes correctly even
+// before the first discovery completes (cold start). The prefix is the public brand,
+// not a confidential mapping. False when the family is not configured.
+func (f *modelFamily) serves(model string) bool {
+	if !f.enabled() {
 		return false
 	}
-	zenCatalogFresh()
-	if _, ok := zenLookup(model); ok {
+	f.fresh()
+	if _, ok := f.lookup(model); ok {
 		return true
 	}
-	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(model)), "zen")
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(model)), f.prefix)
 }
 
-// zenModelPrice returns the discovered headline price for a zen model, for the
+// modelPrice returns the discovered headline price for a family model, for the
 // balance-reservation estimate and the model listing. The exact debit uses
 // zenModel.costCents (money/decimal), never this float projection.
-func zenModelPrice(model string) (modelPrice, bool) {
-	m, ok := zenLookup(model)
+func (f *modelFamily) modelPrice(model string) (modelPrice, bool) {
+	m, ok := f.lookup(model)
 	if !ok {
 		return modelPrice{}, false
 	}
 	return m.price()
 }
 
-// zenPassthroughRoute routes any zen model to the zen provider, forwarding the SKU
-// name verbatim. ai holds no zen→upstream mapping: zen resolves the SKU, injects
+// passthroughRoute routes any family model to its family provider, forwarding the SKU
+// name verbatim. ai holds no SKU→upstream mapping: the family resolves the SKU, injects
 // identity, folds reasoning, and picks the upstream (hip-00NN).
-func zenPassthroughRoute(model string) *modelRoute {
-	if !zenServes(model) {
+func (f *modelFamily) passthroughRoute(model string) *modelRoute {
+	if !f.serves(model) {
 		return nil
 	}
 	ctx := 0
-	if m, ok := zenLookup(model); ok {
+	if m, ok := f.lookup(model); ok {
 		ctx = m.MaxCtx
 	}
 	return &modelRoute{
-		providerName:  "zen",
-		upstreamModel: model, // identity: zen maps the SKU to its real upstream
+		providerName:  f.name,
+		upstreamModel: model, // identity: the family maps the SKU to its real upstream
 		premium:       true,
 		ownedBy:       "hanzo",
 		contextWindow: ctx,
 	}
 }
 
-// mergeZenModels overlays the discovered zen family onto the base /v1/models list:
+// mergeModels overlays this family's discovered lineup onto the base /v1/models list:
 // a discovered SKU wins over any same-named base entry, and new SKUs are appended.
-func mergeZenModels(base []modelInfo) []modelInfo {
-	zs := zenModelsSnapshot()
+func (f *modelFamily) mergeModels(base []modelInfo) []modelInfo {
+	zs := f.snapshot()
 	if len(zs) == 0 {
 		return base
 	}
@@ -338,6 +432,11 @@ func mergeZenModels(base []modelInfo) []modelInfo {
 			ID: z.ID, Object: "model", Created: now, OwnedBy: owner, Premium: true,
 			Pricing: pricingInfo(z.price()),
 		}
+		// A gated SKU is LISTED but access-controlled; advertise the default standing
+		// ("waitlist"). ListModels upgrades this to the caller's real status when authed.
+		if z.gated() {
+			info.Access = &modelAccessInfo{State: "waitlist"}
+		}
 		if i, ok := idx[strings.ToLower(z.ID)]; ok {
 			base[i] = info
 		} else {
@@ -351,9 +450,9 @@ func mergeZenModels(base []modelInfo) []modelInfo {
 
 // ── the pipe (IO edge) ────────────────────────────────────────────────────────
 
-// zenPipeClient forwards inference to zen. No client-level timeout: a streamed 1M
-// request is long by design, and the request context (client disconnect) bounds it.
-// A response-header timeout guards against a dead zen without cutting live streams.
+// zenPipeClient forwards inference to a family. No client-level timeout: a streamed 1M
+// request is long by design, and the request context (client disconnect) bounds it. A
+// response-header timeout guards against a dead family without cutting live streams.
 var zenPipeClient = &http.Client{
 	Transport: &http.Transport{
 		Proxy:                 http.ProxyFromEnvironment,
@@ -366,23 +465,32 @@ var (
 	zenDataPrefix = []byte("data:")
 )
 
-// pipeToZen forwards the caller's request to zen verbatim and relays zen's response
-// back unchanged — zen owns identity, reasoning, upstream, and dialect; ai only
-// authenticates, meters, and forwards. apiPath is "messages" (Anthropic) or
-// "chat/completions" (OpenAI). Billing settles from the response usage at the
-// discovered exact retail price; the settle is idempotent with any deferred
+// pipeToFamily forwards the caller's request to the family service verbatim and relays
+// the response back unchanged — the family owns identity, reasoning, upstream, and
+// dialect; ai only authenticates, meters, and forwards. apiPath is "messages"
+// (Anthropic) or "chat/completions" (OpenAI). Billing settles from the response usage
+// at the discovered exact retail price; the settle is idempotent with any deferred
 // fail-safe settle at the call site.
-func (c *ApiController) pipeToZen(apiPath, dialect, model string, rawBody []byte, stream bool, orgId string, authUser *iam.User, isPremium bool, hold *budgetHold, start time.Time) {
-	prov := object.ZenProvider()
+func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model string, rawBody []byte, stream bool, orgId string, authUser *iam.User, isPremium bool, hold *budgetHold, start time.Time) {
+	prov := fam.providerFn()
 	if prov == nil {
-		c.zenError(dialect, "zen service is not configured", http.StatusServiceUnavailable)
+		c.zenError(dialect, fam.name+" service is not configured", http.StatusServiceUnavailable)
+		return
+	}
+	// Access gate (the ONE choke point): a gated SKU (enso limited preview) is
+	// callable only with a granted ModelAccess row. Discovery tells us which models
+	// are gated (zenModel.gated), so this is policy learned from data, not a hardcode.
+	// The deferred hold.settle(0) at the call site releases the reservation on this
+	// early return, so a denied request is never billed.
+	if !c.familyAccessAllowed(fam, model, orgId, authUser) {
+		c.zenError(dialect, gatedAccessMessage(model), http.StatusForbidden)
 		return
 	}
 	reqID := util.GenerateUUID()
 	url := prov.ProviderUrl + "/v1/" + apiPath
 	req, err := http.NewRequestWithContext(c.Ctx.Request.Context(), http.MethodPost, url, bytes.NewReader(rawBody))
 	if err != nil {
-		c.zenError(dialect, "build zen request: "+err.Error(), http.StatusInternalServerError)
+		c.zenError(dialect, "build "+fam.name+" request: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
@@ -392,8 +500,9 @@ func (c *ApiController) pipeToZen(apiPath, dialect, model string, rawBody []byte
 	if prov.ClientSecret != "" {
 		req.Header.Set("Authorization", "Bearer "+prov.ClientSecret)
 	}
-	// Tenant attribution: zen needs a billable tenant, and ai — which settles the
-	// ledger — tells zen it fronts this call so zen meters without double-charging.
+	// Tenant attribution: the family needs a billable tenant, and ai — which settles
+	// the ledger — tells the family it fronts this call so it meters without
+	// double-charging.
 	if orgId != "" {
 		req.Header.Set("X-Org-Id", orgId)
 	} else if authUser != nil {
@@ -403,8 +512,8 @@ func (c *ApiController) pipeToZen(apiPath, dialect, model string, rawBody []byte
 
 	resp, err := zenPipeClient.Do(req)
 	if err != nil {
-		c.recordZenUsage(model, authUser, isPremium, stream, reqID, 0, 0, start, hold, "error", err.Error())
-		c.zenError(dialect, "zen request failed: "+err.Error(), http.StatusBadGateway)
+		c.recordFamilyUsage(fam, model, authUser, isPremium, stream, reqID, 0, 0, start, hold, "error", err.Error())
+		c.zenError(dialect, fam.name+" request failed: "+err.Error(), http.StatusBadGateway)
 		return
 	}
 	defer resp.Body.Close()
@@ -424,7 +533,7 @@ func (c *ApiController) pipeToZen(apiPath, dialect, model string, rawBody []byte
 	} else {
 		b, rErr := io.ReadAll(resp.Body)
 		if rErr != nil {
-			c.zenError(dialect, "read zen response: "+rErr.Error(), http.StatusBadGateway)
+			c.zenError(dialect, "read "+fam.name+" response: "+rErr.Error(), http.StatusBadGateway)
 			return
 		}
 		if resp.StatusCode != http.StatusOK {
@@ -443,12 +552,12 @@ func (c *ApiController) pipeToZen(apiPath, dialect, model string, rawBody []byte
 	if prompt == 0 {
 		prompt = coarseTokenEstimate(rawBody)
 	}
-	c.recordZenUsage(model, authUser, isPremium, stream, reqID, prompt, completion, start, hold, "success", "")
+	c.recordFamilyUsage(fam, model, authUser, isPremium, stream, reqID, prompt, completion, start, hold, "success", "")
 	c.EnableRender = false
 }
 
-// relayZenStream copies zen's SSE response to the client verbatim and captures the
-// final usage for billing. zen already emits correct dialect SSE, so ai forwards
+// relayZenStream copies a family's SSE response to the client verbatim and captures the
+// final usage for billing. The family already emits correct dialect SSE, so ai forwards
 // bytes unchanged — no translation — and only reads usage as it passes.
 func (c *ApiController) relayZenStream(body io.Reader) (prompt, completion int) {
 	w := c.Ctx.ResponseWriter
@@ -469,11 +578,11 @@ func (c *ApiController) relayZenStream(body io.Reader) (prompt, completion int) 
 	return
 }
 
-// sniffZenUsage reads token usage from a zen response — an SSE data payload or a
-// full body — trying the Anthropic (input_tokens/output_tokens, possibly nested
-// under message) and OpenAI (prompt_tokens/completion_tokens) shapes. Present
-// fields update the running counts; absent ones leave them, so Anthropic's
-// message_start (input) and message_delta (output) accumulate across events.
+// sniffZenUsage reads token usage from a family response — an SSE data payload or a
+// full body — trying the Anthropic (input_tokens/output_tokens, possibly nested under
+// message) and OpenAI (prompt_tokens/completion_tokens) shapes. Present fields update
+// the running counts; absent ones leave them, so Anthropic's message_start (input) and
+// message_delta (output) accumulate across events.
 func sniffZenUsage(payload []byte, prompt, completion *int) {
 	var p struct {
 		Usage *struct {
@@ -522,12 +631,13 @@ func coarseTokenEstimate(body []byte) int {
 	return len(body)/4 + 1
 }
 
-// recordZenUsage settles the budget hold at the exact discovered price and records
-// the usage + trace. Billing lives in one place for both stream and buffered paths.
-func (c *ApiController) recordZenUsage(model string, authUser *iam.User, isPremium, stream bool, reqID string, prompt, completion int, start time.Time, hold *budgetHold, status, errMsg string) {
+// recordFamilyUsage settles the budget hold at the exact discovered price and records
+// the usage + trace. Billing lives in one place for both stream and buffered paths and
+// for every family.
+func (c *ApiController) recordFamilyUsage(fam *modelFamily, model string, authUser *iam.User, isPremium, stream bool, reqID string, prompt, completion int, start time.Time, hold *budgetHold, status, errMsg string) {
 	var cents int64
 	if status == "success" {
-		if zm, ok := zenLookup(model); ok {
+		if zm, ok := fam.lookup(model); ok {
 			cents = zm.costCents(prompt, completion)
 		} else {
 			cents = calculateCostCentsWithCache(model, prompt, completion, 0, 0)
@@ -539,7 +649,7 @@ func (c *ApiController) recordZenUsage(model string, authUser *iam.User, isPremi
 	}
 	rec := &usageRecord{
 		Owner: authUser.Owner, User: authUser.Owner + "/" + authUser.Name, Organization: authUser.Owner,
-		Model: model, Provider: "zen",
+		Model: model, Provider: fam.name,
 		PromptTokens: prompt, CompletionTokens: completion, TotalTokens: prompt + completion,
 		Cost: float64(cents) / 100.0, Currency: "USD",
 		Premium: isPremium, Stream: stream, Status: status, ErrorMsg: errMsg,
