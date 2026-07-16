@@ -512,6 +512,14 @@ type usageRecord struct {
 	// "<owner>/<name>" for a BYO connection, "hanzo" for a Hanzo-served provider.
 	Account string `json:"account,omitempty"`
 
+	// Unpriced marks a token-billed call whose model had NO configured price in any
+	// source (family/route/conf/static), so it billed at the conservative default
+	// ($1/$4 per 1M) rather than a real rate. The debit is UNCHANGED — the flag just
+	// makes the guess honest: the row is queryable and the o11y span carries
+	// priced=false, instead of silently presenting an invented price as real. Set in
+	// recordUsage; image/video calls (own per-unit pricing) are never flagged.
+	Unpriced bool `json:"unpriced,omitempty"`
+
 	// ── o11y gen_ai span enrichment (all optional, best-effort) ──────────────
 	// These carry the observation-of-record attribution the o11y span plane reads
 	// (controllers/telemetry.go emitGenAISpan). They are omitempty so a record that
@@ -601,6 +609,14 @@ func recordUsage(record *usageRecord) {
 	// o11y gen_ai span reports (emitGenAISpan), so the ledger debit and the span
 	// can never disagree.
 	costCents := usageCostCents(record)
+
+	// Honesty flag: if the model has no configured price, the cost above was billed at
+	// the conservative default. Mark the row (and warn once) rather than silently
+	// presenting the invented rate as real — the debit itself is unchanged.
+	if recordUnpriced(record) {
+		record.Unpriced = true
+		warnUnpricedOnce(record.Model)
+	}
 
 	// BYO: the customer paid the upstream directly with their own connected key,
 	// so Hanzo bills ONLY the 1% platform fee — not the token cost. The full

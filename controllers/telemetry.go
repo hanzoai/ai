@@ -68,6 +68,9 @@ const (
 	attrServedBy       = "gen_ai.hanzo.served_by"
 	attrClusterID      = "gen_ai.hanzo.cluster_id"
 	attrRoutePolicy    = "gen_ai.hanzo.route_policy"
+	// attrPriced is emitted (=false) ONLY when the model had no configured price and
+	// billed at the default — so o11y can flag the row. Absent ⇒ priced normally.
+	attrPriced         = "gen_ai.hanzo.priced"
 	attrInputMessages  = "gen_ai.input.messages"
 	attrOutputMessages = "gen_ai.output.messages"
 
@@ -176,6 +179,11 @@ func buildGenAISpanFields(record *usageRecord, totalCostUSD, billedCostUSD, prov
 	}
 	if record.RoutePolicy != "" {
 		attrs = append(attrs, attribute.String(attrRoutePolicy, record.RoutePolicy))
+	}
+	// Unpriced call: billed at the conservative default because the model has no
+	// configured price. Emit priced=false so o11y flags it; omit otherwise.
+	if record.Unpriced {
+		attrs = append(attrs, attribute.Bool(attrPriced, false))
 	}
 
 	// Prompt/completion bodies are PII — emitted ONLY on explicit opt-in
