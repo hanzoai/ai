@@ -17,8 +17,10 @@ package controllers
 import (
 	"math"
 	"strings"
+	"sync"
 
 	"github.com/hanzoai/ai/object"
+	"github.com/hanzoai/beego/logs"
 )
 
 // modelPrice defines per-model economics in dollars per 1M tokens. Input/Output/Cache*
@@ -297,9 +299,19 @@ func getModelPrice(model string) modelPrice {
 }
 
 func getModelPriceForOrg(model string, orgId string) modelPrice {
+	p, _ := getModelPriceForOrgOK(model, orgId)
+	return p
+}
+
+// getModelPriceForOrgOK is getModelPriceForOrg plus whether a REAL price was found. ok
+// is false ONLY when every source missed (family, DB route, conf, static map/alias) and
+// the conservative default ($1/$4 per 1M) was synthesized — the caller then marks the
+// usage row Unpriced instead of silently trusting an invented price. The returned price
+// is byte-identical to getModelPriceForOrg; nothing about billing changes.
+func getModelPriceForOrgOK(model string, orgId string) (modelPrice, bool) {
 	// Zen family: the discovered retail price is the source of truth (hip-00NN).
 	if p, ok := familyModelPrice(model); ok {
-		return p
+		return p, true
 	}
 
 	// Check DB route pricing first (org-specific -> global)
@@ -310,12 +322,13 @@ func getModelPriceForOrg(model string, orgId string) modelPrice {
 			OutputPerMillion:  dbRoute.OutputPrice,
 			CostInPerMillion:  dbRoute.CostInPerMillion,
 			CostOutPerMillion: dbRoute.CostOutPerMillion,
-		}
+		}, true
 	}
 
-	// YAML config pricing
+	// YAML config pricing. When a config is loaded it is authoritative: a hit is a real
+	// price, a miss returns the configured default (a synthesized price ⇒ ok=false).
 	if cfg := GetModelConfig(); cfg != nil {
-		return cfg.GetPrice(model)
+		return cfg.GetPriceOK(model)
 	}
 
 	// Static fallback
@@ -323,18 +336,44 @@ func getModelPriceForOrg(model string, orgId string) modelPrice {
 
 	// Direct lookup
 	if price, ok := modelPricing[m]; ok {
-		return price
+		return price, true
 	}
 
 	// Check aliases
 	if base, ok := aliasPricing[m]; ok {
 		if price, ok := modelPricing[base]; ok {
-			return price
+			return price, true
 		}
 	}
 
-	// Default: conservative pricing for unknown models
-	return modelPrice{InputPerMillion: 1.00, OutputPerMillion: 4.00}
+	// Default: conservative pricing for unknown models — the ONE synthesized price.
+	return modelPrice{InputPerMillion: 1.00, OutputPerMillion: 4.00}, false
+}
+
+// unpricedWarned dedupes the unpriced-model warning to once per model id, so a popular
+// unknown model logs a single actionable line instead of one per request.
+var unpricedWarned sync.Map
+
+// warnUnpricedOnce logs (once per model) that calls are billing at the conservative
+// default because the model has no configured price. The row is also flagged Unpriced;
+// this log is the ops signal to add the model to conf/models.yaml or a model route.
+func warnUnpricedOnce(model string) {
+	if _, seen := unpricedWarned.LoadOrStore(strings.ToLower(model), struct{}{}); seen {
+		return
+	}
+	logs.Warning("pricing: model %q has no configured price — billing at the conservative default ($1.00/$4.00 per 1M); add it to conf/models.yaml or a model route. Its usage rows are flagged unpriced.", model)
+}
+
+// recordUnpriced reports whether a token-billed call fell back to the conservative
+// default price because the model is unknown to every pricing source. Image/video calls
+// have their own per-unit pricing and are never "unpriced" here. The ONE detector, read
+// by recordUsage (warn + row flag) and zapWriteUsage (warehouse column).
+func recordUnpriced(record *usageRecord) bool {
+	if record.ImageCount > 0 || record.VideoCount > 0 {
+		return false
+	}
+	_, ok := getModelPriceForOrgOK(record.Model, "")
+	return !ok
 }
 
 // calculateCostCents computes the cost in cents for a model call.
