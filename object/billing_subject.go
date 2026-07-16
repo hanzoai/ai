@@ -25,14 +25,14 @@ import (
 // Commerce scopes balance to a namespace (X-Org-Id = the IAM `owner` slug)
 // and, WITHIN that namespace, to a subject (the ?user= / SourceId / DestinationId
 // key) that nets deposits against usage. The subject is the single billing
-// account; everything (the gate, the usage debit, the starter-credit grant) must
+// account; everything (the gate, the usage debit, an explicit credit grant) must
 // agree on it or a user tops up one account and spends from another.
 //
 // Two billing models, distinguished only by the org:
 //
 //   - PERSONAL-billing org (default: the shared "hanzo" catch-all, the home of
 //     every unaffiliated individual signup): subject = "owner/name", so each
-//     member has their OWN balance and their OWN starter credit and can never
+//     member has their OWN balance and can never
 //     drain another member. This is the fix for new gmail signups, who all land
 //     in owner=hanzo and previously shared the single (hanzo,hanzo) balance.
 //
