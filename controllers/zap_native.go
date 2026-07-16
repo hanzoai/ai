@@ -210,9 +210,9 @@ func zapWriteUsage(record *usageRecord, startTime time.Time) {
 
 	err := object.DatastoreExec(
 		ctx,
-		`INSERT INTO hanzo.cloud_usage (id, timestamp, owner, user_id, organization, model, provider, request_id, prompt_tokens, completion_tokens, total_tokens, cache_read_tokens, cache_write_tokens, cost_cents, currency, status, error_msg, is_premium, is_stream, client_ip, byo, fee_cents, account, cost_nano, billed_nano, margin_nano, unpriced) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO hanzo.cloud_usage (id, timestamp, owner, user_id, organization, project, model, provider, request_id, prompt_tokens, completion_tokens, total_tokens, cache_read_tokens, cache_write_tokens, cost_cents, currency, status, error_msg, is_premium, is_stream, client_ip, byo, fee_cents, account, cost_nano, billed_nano, margin_nano, unpriced) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		record.RequestID, startTime.UTC(),
-		record.Owner, record.User, org,
+		record.Owner, record.User, org, record.Project,
 		record.Model, record.Provider, record.RequestID,
 		record.PromptTokens, record.CompletionTokens, record.TotalTokens,
 		record.CacheReadTokens, record.CacheWriteTokens,
