@@ -49,44 +49,58 @@ func newRewardController(method, url, body string, user *iam.User) (*ApiControll
 	return c, rec
 }
 
-// TestResolveReward proves the two accepted inputs fold to the one canonical stored
-// reward in [0,1]: an explicit reward passes through, a 1..5 rating normalizes, out
-// -of-range is rejected, absence is rejected, and an explicit reward wins over a
-// rating.
+// TestResolveReward pins the /v1/feedback contract: the signal set maps to a reward
+// server-side; `rating` (1..3) normalizes to [0,1]; `dismiss` records NOTHING; an
+// explicit reward overrides; a missing/unknown signal is rejected.
 func TestResolveReward(t *testing.T) {
 	cases := []struct {
-		name    string
-		reward  *float64
-		rating  *float64
-		want    float64
-		wantErr bool
+		name       string
+		reward     *float64
+		rating     *float64
+		signal     string
+		want       float64
+		wantRecord bool
+		wantErr    bool
 	}{
-		{"reward passthrough", fptr(0.7), nil, 0.7, false},
-		{"reward zero is valid", fptr(0), nil, 0, false},
-		{"reward one is valid", fptr(1), nil, 1, false},
-		{"reward below range", fptr(-0.1), nil, 0, true},
-		{"reward above range", fptr(1.1), nil, 0, true},
-		{"rating 1 star → 0", nil, fptr(1), 0, false},
-		{"rating 3 stars → 0.5", nil, fptr(3), 0.5, false},
-		{"rating 5 stars → 1", nil, fptr(5), 1, false},
-		{"rating below range", nil, fptr(0), 0, true},
-		{"rating above range", nil, fptr(6), 0, true},
-		{"neither given", nil, nil, 0, true},
-		{"reward wins over rating", fptr(0.2), fptr(5), 0.2, false},
+		{"explicit reward passthrough", fptr(0.7), nil, "", 0.7, true, false},
+		{"explicit reward zero", fptr(0), nil, "", 0, true, false},
+		{"explicit reward one", fptr(1), nil, "", 1, true, false},
+		{"explicit reward below range", fptr(-0.1), nil, "", 0, false, true},
+		{"explicit reward above range", fptr(1.1), nil, "", 0, false, true},
+		{"signal up → 1", nil, nil, "up", 1, true, false},
+		{"signal accept → 1", nil, nil, "accept", 1, true, false},
+		{"signal down → 0", nil, nil, "down", 0, true, false},
+		{"signal switch → 0", nil, nil, "switch", 0, true, false},
+		{"signal abandon → 0", nil, nil, "abandon", 0, true, false},
+		{"signal revert → 0", nil, nil, "revert", 0, true, false},
+		{"signal regenerate → 0.25", nil, nil, "regenerate", 0.25, true, false},
+		{"signal case-insensitive", nil, nil, "UP", 1, true, false},
+		{"rating 1 → 0 (neg)", nil, fptr(1), "rating", 0, true, false},
+		{"rating 2 → 0.5 (neutral)", nil, fptr(2), "rating", 0.5, true, false},
+		{"rating 3 → 1 (strong-pos)", nil, fptr(3), "rating", 1, true, false},
+		{"rating out of range", nil, fptr(4), "rating", 0, false, true},
+		{"rating signal without rating", nil, nil, "rating", 0, false, true},
+		{"dismiss records nothing", nil, nil, "dismiss", 0, false, false},
+		{"no signal, no reward", nil, nil, "", 0, false, true},
+		{"unknown signal rejected", nil, nil, "meh", 0, false, true},
+		{"explicit reward wins over signal", fptr(0.9), nil, "down", 0.9, true, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := resolveReward(tc.reward, tc.rating)
+			got, record, err := resolveReward(tc.reward, tc.rating, tc.signal)
 			if tc.wantErr {
 				if err == nil {
-					t.Fatalf("resolveReward = (%v, nil), want error", got)
+					t.Fatalf("resolveReward = (%v, %v, nil), want error", got, record)
 				}
 				return
 			}
 			if err != nil {
 				t.Fatalf("resolveReward error: %v", err)
 			}
-			if got != tc.want {
+			if record != tc.wantRecord {
+				t.Errorf("record = %v, want %v", record, tc.wantRecord)
+			}
+			if record && got != tc.want {
 				t.Errorf("resolveReward = %v, want %v", got, tc.want)
 			}
 		})
@@ -216,18 +230,22 @@ func TestAddRoutingRewardStatus(t *testing.T) {
 		t.Errorf("attach args = (%q, %q, %v), want (acme, abc, 0.5)", gotOrg, gotReq, gotReward)
 	}
 
-	// 200: found. A 5★ rating normalizes to the canonical reward 1, echoed back.
+	// 200: found. A 3-rating ("strong-pos") normalizes to the canonical reward 1,
+	// echoed back with recorded=true. The online forward is stubbed (no live engine).
+	prevFwd := forwardRewardToEngine
+	forwardRewardToEngine = func(string, string, float64) {}
+	t.Cleanup(func() { forwardRewardToEngine = prevFwd })
 	attachRoutingReward = func(org, requestId string, reward float64) (bool, error) {
 		gotReward = reward
 		return true, nil
 	}
-	c, rec = newRewardController("POST", "/v1/add-routing-reward", `{"request_id":"abc","rating":5}`, acme)
+	c, rec = newRewardController("POST", "/v1/feedback", `{"request_id":"abc","signal":"rating","rating":3}`, acme)
 	c.AddRoutingReward()
 	if rec.Code != 200 {
 		t.Fatalf("found → %d, want 200 (body %s)", rec.Code, rec.Body.String())
 	}
 	if gotReward != 1 {
-		t.Errorf("rating 5 stored reward = %v, want 1", gotReward)
+		t.Errorf("rating 3 stored reward = %v, want 1", gotReward)
 	}
 	var env struct {
 		Status string              `json:"status"`
@@ -236,8 +254,24 @@ func TestAddRoutingRewardStatus(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
 		t.Fatalf("response not JSON: %v", err)
 	}
-	if env.Status != "ok" || env.Data.RequestId != "abc" || env.Data.Reward != 1 {
-		t.Errorf("echo = %+v, want ok/abc/1", env)
+	if env.Status != "ok" || env.Data.RequestId != "abc" || env.Data.Reward != 1 || !env.Data.Recorded {
+		t.Errorf("echo = %+v, want ok/abc/1/recorded", env)
+	}
+
+	// dismiss: accepted (200) but records NOTHING — never reaches the attach.
+	attachRoutingReward = mustNotCall
+	c, rec = newRewardController("POST", "/v1/feedback", `{"request_id":"abc","signal":"dismiss"}`, acme)
+	c.AddRoutingReward()
+	if rec.Code != 200 {
+		t.Fatalf("dismiss → %d, want 200 (body %s)", rec.Code, rec.Body.String())
+	}
+	env = struct {
+		Status string              `json:"status"`
+		Data   routingRewardResult `json:"data"`
+	}{}
+	_ = json.Unmarshal(rec.Body.Bytes(), &env)
+	if env.Data.Recorded {
+		t.Errorf("dismiss must not record, got recorded=true")
 	}
 }
 
