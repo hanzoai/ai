@@ -18,6 +18,8 @@ import (
 	"encoding/json"
 	"errors"
 
+	"github.com/hanzoai/account"
+
 	"github.com/hanzoai/beego/logs"
 
 	"github.com/hanzoai/ai/object"
@@ -53,7 +55,7 @@ func (c *ApiController) IngestDocs() {
 	// Gate external/bulk sources (github/crawl/s3) on balance, mirroring the
 	// scrape gate. Pure inline "upload" is ungated, matching /v1/index.
 	if auth.Owner != "" && req.Source != "" && req.Source != "upload" {
-		balance, balErr := getUserBalance(object.PayerOf(auth.Owner, auth.UserID).Subject(), auth.Owner)
+		balance, balErr := getUserBalance(account.PayerOf(auth.Owner, auth.UserID).Subject(), auth.Owner)
 		if balErr == nil && balance <= 0 {
 			c.ResponseError("insufficient balance for ingest operation. Add funds at https://hanzo.ai/billing")
 			return

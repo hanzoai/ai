@@ -29,6 +29,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hanzoai/account"
+
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/model"
 	"github.com/hanzoai/ai/object"
@@ -349,7 +351,7 @@ func enforceBalanceGate(user *iam.User, requestedModel string) error {
 		return nil
 	}
 	orgKey := user.Owner // namespace (X-Org-Id): the org tenant
-	subject := object.Payer(object.Credential{Owner: user.Owner, Name: user.Name, Machine: object.IsMachine(user.Type)}).Subject()
+	subject := account.Payer(account.Credential{Owner: user.Owner, Name: user.Name, Machine: account.IsMachine(user.Type)}).Subject()
 
 	balance, err := getUserBalance(subject, orgKey)
 	if err != nil {
@@ -640,7 +642,7 @@ func recordUsage(record *usageRecord) {
 	// The debit MUST hit the same account the balance gate reads and the starter
 	// credit funded: the billing SUBJECT within the org NAMESPACE.
 	//   namespace (X-Org-Id) = record.Owner (the org)
-	//   subject   (?user=)      = object.Payer(object.Credential{Owner: owner, Name: name}).Subject()
+	//   subject   (?user=)      = account.Payer(account.Credential{Owner: owner, Name: name}).Subject()
 	// For a personal-billing org that is "owner/name" (per-user); for a pooled
 	// org it is the org slug. record.Owner is the IAM `owner`; fall back to
 	// deriving owner+name from "owner/name" if Owner was not populated upstream.
@@ -652,7 +654,7 @@ func recordUsage(record *usageRecord) {
 			org = record.User
 		}
 	}
-	subject := object.PayerOf(record.Owner, record.User).Subject()
+	subject := account.PayerOf(record.Owner, record.User).Subject()
 
 	// Native in-proc finance debit — the ONE money path when co-resident with the
 	// finance ledger (hanzoai/cloud unified binary). The debit lands DIRECTLY on the
@@ -819,7 +821,7 @@ func (c *ApiController) authenticate(token string) error {
 // providerKeyBillingUser derives the billing identity for a provider-key (sk-)
 // caller: the org that OWNS the provider row the key belongs to (and therefore
 // minted the key). The sk- key is a machine credential, so it bills the OWNER
-// ORG — Type "application" marks it M2M (object.IsMachine), so object.Payer
+// ORG — Type "application" marks it M2M (account.IsMachine), so account.Payer
 // resolves it to the org account for every org, never a per-person wallet no one
 // funds. A provider with no owner is
 // unattributable: return an auth error so the caller refuses rather than spend
@@ -852,7 +854,7 @@ func (c *ApiController) authResolveProvider(token, requestedModel, orgId string)
 		// (widgetKeyOwner → WIDGET_KEY_OWNERS / WIDGET_DEFAULT_OWNER), so the
 		// balance gate + budget reservation + usage debit all engage exactly as
 		// for a normal principal. Type "application" marks it a machine, so
-		// object.Payer resolves the billing subject to the org account. An
+		// account.Payer resolves the billing subject to the org account. An
 		// unattributable widget key (no owner mapping and no default owner) is a
 		// config error: refuse rather than spend the shared upstream for free —
 		// the same fail-secure invariant the sk- path enforces (every call that
@@ -1073,7 +1075,7 @@ func (c *ApiController) ChatCompletions() {
 	// the ACTUAL cost when the request completes (deferred fail-safe release).
 	var hold *budgetHold
 	if authUser != nil {
-		subject := object.Payer(object.Credential{Owner: authUser.Owner, Name: authUser.Name}).Subject()
+		subject := account.Payer(account.Credential{Owner: authUser.Owner, Name: authUser.Name}).Subject()
 		// Clamp the upstream completion ceiling BEFORE reserving so the proxied
 		// (tool/stream) upstream can never emit more than we reserve — the actual
 		// settle can never exceed the hold (R1b). reserveCompletionTokens also
