@@ -19,10 +19,10 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/hanzoai/beego/logs"
 	"github.com/hanzoai/ai/model"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
+	"github.com/hanzoai/beego/logs"
 	"github.com/workweixin/weworkapi_golang/json_callback/wxbizjsonmsgcrypt"
 )
 

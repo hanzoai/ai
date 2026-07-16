@@ -26,8 +26,8 @@ import (
 	"testing"
 	"time"
 
-	beecontext "github.com/hanzoai/beego/context"
 	"github.com/golang-jwt/jwt/v4"
+	beecontext "github.com/hanzoai/beego/context"
 	iam "github.com/hanzoai/iam"
 )
 
@@ -348,7 +348,7 @@ func TestResolveCloudUsageScope_BrandScopedGodView(t *testing.T) {
 }
 
 // TestResolveCloudUsageScope_EmptyOwner — a principal with an empty Owner scopes to
-// organization='' (a real, empty tenant filter: whereClause adds `organization = ?`
+// organization=” (a real, empty tenant filter: whereClause adds `organization = ?`
 // with p.Org=""), never the all-orgs view. Fail-secure: absence of an org is NOT
 // the god-view.
 func TestResolveCloudUsageScope_EmptyOwner(t *testing.T) {
