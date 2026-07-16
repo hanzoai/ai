@@ -21,11 +21,6 @@ import (
 	"github.com/hanzoai/ai/object"
 )
 
-// StarterCreditDollars is the amount granted to new users as free credit.
-// Premium models require a balance above this threshold to ensure the user
-// has added real funds beyond the starter credit.
-const StarterCreditDollars = 5.00
-
 // modelPrice defines per-model pricing in dollars per 1M tokens.
 type modelPrice struct {
 	InputPerMillion      float64 // $ per 1M input tokens
@@ -86,7 +81,7 @@ func staticModelPrice(model string) (modelPrice, bool) {
 //   - Fireworks: Fireworks AI pricing (Feb 2026)
 //   - OpenAI Direct: OpenAI API pricing (Feb 2026)
 var modelPricing = map[string]modelPrice{
-	// ── DO-AI models (non-premium, included in free credit) ──────────
+	// ── DO-AI models (non-premium) ───────────────────────────────────
 
 	// OpenAI via DO-AI
 	"gpt-4o":            {InputPerMillion: 2.50, OutputPerMillion: 10.00},

@@ -18,6 +18,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/hanzoai/iam"
@@ -35,46 +37,40 @@ func fakeCommerceBalance(t *testing.T, availableCents *int64) string {
 	return srv.URL
 }
 
-// TestEnforceBalanceGate_M1 pins the prepaid-balance + premium-credit policy that
-// the provider-key (sk-) path now shares with the JWT/IAM path (M1). The decisive
-// row: a PREMIUM model with a balance at/under the starter credit is BLOCKED (402)
-// — previously the sk- path skipped this gate entirely, so an sk- key reached
-// premium upstreams on starter credit alone. StarterCreditDollars is pinned to the
-// $5.00 const by nil'ing globalModelConfig, so the boundary is deterministic.
-func TestEnforceBalanceGate_M1(t *testing.T) {
-	prev := globalModelConfig
-	globalModelConfig = nil // pin starter credit to StarterCreditDollars ($5.00)
-	t.Cleanup(func() { globalModelConfig = prev })
-
+// TestEnforceBalanceGate pins the prepaid-balance policy AFTER the implicit free
+// tier was removed: EVERY model needs a positive prepaid balance and nothing more.
+// A zero (or negative) balance is refused (402) with NO implicit free allowance;
+// any positive balance is allowed. There is no per-model tier and no starter-credit
+// fence, so the SAME balance clears a premium and a non-premium model identically —
+// a subject's balance is only ever what it paid or was explicitly granted. The gate
+// is shared by the JWT/IAM and provider-key (sk-) paths (M1), so this one policy
+// covers both auth paths.
+func TestEnforceBalanceGate(t *testing.T) {
 	var available int64
 	t.Setenv("commerceEndpoint", fakeCommerceBalance(t, &available))
 	t.Setenv("commerceToken", "test-svc-token")
-	t.Setenv("BALANCE_EXEMPT_USERS", "") // the test principal must NOT be exempt
 
-	// sk- billing owner: org-scoped M2M principal (Name empty → org ledger).
-	skOwner := func() *iam.User { return &iam.User{Owner: "m1-acme", Type: "application"} }
+	// org-scoped M2M principal (Name empty → org ledger).
+	principal := func() *iam.User { return &iam.User{Owner: "gate-acme", Type: "application"} }
 
-	const ok = http.StatusOK // sentinel: "no error / allowed"
+	const ok = http.StatusOK // sentinel: "allowed / no error"
 	cases := []struct {
-		name    string
-		cents   int64
-		premium bool
-		want    int
+		name  string
+		cents int64
+		want  int
 	}{
-		{"premium blocked at exactly the starter credit ($5.00)", 500, true, http.StatusPaymentRequired},
-		{"premium blocked below starter ($1.00)", 100, true, http.StatusPaymentRequired},
-		{"premium allowed above starter ($5.01)", 501, true, ok},
-		{"premium allowed with real balance ($1000)", 100000, true, ok},
-		// The same $5 balance is FINE for a non-premium model — proves it is the
-		// PREMIUM rule blocking above, not merely balance>0.
-		{"non-premium allowed at starter credit ($5.00)", 500, false, ok},
-		{"non-premium blocked at zero balance", 0, false, http.StatusPaymentRequired},
-		{"non-premium allowed with balance ($10)", 1000, false, ok},
+		{"zero balance blocked (no implicit free allowance)", 0, http.StatusPaymentRequired},
+		{"negative balance blocked", -100, http.StatusPaymentRequired},
+		// $5 — formerly the starter-credit ceiling that fenced premium models — is
+		// now just $5 of real, paid/granted credit and clears ANY model.
+		{"small balance ($5.00) allowed", 500, ok},
+		{"one cent allowed", 1, ok},
+		{"real balance ($1000) allowed", 100000, ok},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			available = tc.cents
-			err := enforceBalanceGate(skOwner(), "glm-5.2", tc.premium)
+			err := enforceBalanceGate(principal(), "glm-5.2")
 			if tc.want == ok {
 				if err != nil {
 					t.Fatalf("want allowed, got blocked: %v (status %d)", err, statusOf(err))
@@ -82,7 +78,7 @@ func TestEnforceBalanceGate_M1(t *testing.T) {
 				return
 			}
 			if err == nil {
-				t.Fatalf("want blocked (%d), got allowed (nil) — M1 gate bypass", tc.want)
+				t.Fatalf("want blocked (%d), got allowed (nil) — implicit free credit", tc.want)
 			}
 			if got := statusOf(err); got != tc.want {
 				t.Fatalf("status=%d, want %d (err=%v)", got, tc.want, err)
@@ -91,18 +87,66 @@ func TestEnforceBalanceGate_M1(t *testing.T) {
 	}
 }
 
+// TestEnforceBalanceGate_NoAutoGrantOnFirstUse proves the gate has NO ambient-credit
+// side effect: a first request from a brand-new zero-balance subject is refused
+// (402) and the ONLY thing ai does to commerce is the read-only balance lookup
+// (GET /v1/billing/balance). There is no first-use auto-mint — ai never POSTs a
+// credit/grant, so a new subject stays at $0 until credit is explicitly granted or
+// paid. (Onboarding credit, if ever wanted, must be an explicit policy-gated call
+// to commerce POST /v1/billing/credit, never an implicit grant on first use.)
+func TestEnforceBalanceGate_NoAutoGrantOnFirstUse(t *testing.T) {
+	var mu sync.Mutex
+	var calls []string // "METHOD PATH" of every commerce request ai made
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		calls = append(calls, r.Method+" "+r.URL.Path)
+		mu.Unlock()
+		// New subject: commerce reports a zero balance and is NOT auto-topped-up.
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"available": 0}`)
+	}))
+	t.Cleanup(srv.Close)
+	t.Setenv("commerceEndpoint", srv.URL)
+	t.Setenv("commerceToken", "test-svc-token")
+
+	newSubject := &iam.User{Owner: "brand-new-org", Name: "first-timer", Type: "user"}
+	err := enforceBalanceGate(newSubject, "glm-5.2")
+
+	// Refused, not handed free usage.
+	if err == nil {
+		t.Fatal("zero-balance first request must be refused (402), got allowed — implicit free credit")
+	}
+	if got := statusOf(err); got != http.StatusPaymentRequired {
+		t.Fatalf("status=%d, want 402 (insufficient balance); err=%v", got, err)
+	}
+
+	// The ONLY commerce interaction is the read-only balance lookup. Any write, or
+	// any /credit|/grant|/starter path, would be a first-use auto-mint.
+	mu.Lock()
+	defer mu.Unlock()
+	if len(calls) == 0 {
+		t.Fatal("expected the gate to read the balance from commerce, saw no call")
+	}
+	for _, c := range calls {
+		if !strings.HasPrefix(c, "GET ") {
+			t.Fatalf("gate made a non-GET commerce call %q — a first-use auto-grant/mint side effect", c)
+		}
+		if strings.Contains(c, "credit") || strings.Contains(c, "grant") || strings.Contains(c, "starter") {
+			t.Fatalf("gate hit a credit/grant endpoint %q — implicit onboarding grant must not exist", c)
+		}
+		if !strings.Contains(c, "/v1/billing/balance") {
+			t.Fatalf("unexpected commerce call %q — the gate must only READ balance", c)
+		}
+	}
+}
+
 // TestEnforceBalanceGate_FailClosedOnLookupError proves the gate never grants when
 // the balance cannot be verified: an unreachable commerce endpoint → 500, not a
 // silent pass.
 func TestEnforceBalanceGate_FailClosedOnLookupError(t *testing.T) {
-	prev := globalModelConfig
-	globalModelConfig = nil
-	t.Cleanup(func() { globalModelConfig = prev })
-
 	t.Setenv("commerceEndpoint", "") // unconfigured → getUserBalance errors
-	t.Setenv("BALANCE_EXEMPT_USERS", "")
 
-	err := enforceBalanceGate(&iam.User{Owner: "m1-noverify", Type: "application"}, "glm-5.2", true)
+	err := enforceBalanceGate(&iam.User{Owner: "gate-noverify", Type: "application"}, "glm-5.2")
 	if err == nil {
 		t.Fatal("balance unverifiable must fail closed, got nil (would grant free access)")
 	}
@@ -111,20 +155,15 @@ func TestEnforceBalanceGate_FailClosedOnLookupError(t *testing.T) {
 	}
 }
 
-// TestEnforceBalanceGate_NoExemptBypass proves the exempt concept is GONE: a
-// principal formerly listed in BALANCE_EXEMPT_USERS no longer bypasses. The gate
-// ALWAYS consults the prepaid balance, so with commerce unreachable a
-// formerly-exempt principal fails CLOSED (500) — never a free pass. All AI is
-// prepaid; nothing is exempt.
+// TestEnforceBalanceGate_NoExemptBypass proves there is no exempt principal: the
+// gate ALWAYS consults the prepaid balance, so with commerce unreachable a
+// formerly-"exempt" principal fails CLOSED (500) — never a free pass. All AI is
+// prepaid; nothing is exempt and nothing is implicitly free.
 func TestEnforceBalanceGate_NoExemptBypass(t *testing.T) {
-	prev := globalModelConfig
-	globalModelConfig = nil
-	t.Cleanup(func() { globalModelConfig = prev })
+	t.Setenv("commerceEndpoint", "")                // gate must still consult balance → errors
+	t.Setenv("BALANCE_EXEMPT_USERS", "gate-exempt") // set but IGNORED: the concept is removed
 
-	t.Setenv("commerceEndpoint", "")              // gate must still consult balance → errors
-	t.Setenv("BALANCE_EXEMPT_USERS", "m1-exempt") // set but IGNORED: the concept is removed
-
-	err := enforceBalanceGate(&iam.User{Owner: "m1-exempt", Type: "application"}, "glm-5.2", true)
+	err := enforceBalanceGate(&iam.User{Owner: "gate-exempt", Type: "application"}, "glm-5.2")
 	if err == nil {
 		t.Fatal("no principal may bypass the prepaid gate; formerly-exempt must fail closed, got nil")
 	}
