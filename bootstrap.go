@@ -200,6 +200,11 @@ func doBootstrap() (err error) {
 	beego.InsertFilter("/v1/cloud/*", beego.BeforeRouter, routers.V1CloudRewriteFilter)
 	beego.InsertFilter("/v1/iam/*", beego.BeforeRouter, routers.V1IamRewriteFilter)
 	beego.InsertFilter("*", beego.BeforeRouter, routers.CorsFilter)
+	// Live request-geo tap: folds each inbound /v1 API hit into the in-process
+	// traffic aggregate (edge country/region + service class only — never an IP).
+	// A pure side effect that never blocks/writes, so it rides high in the chain to
+	// count LB hits honestly. Powers the public /v1/traffic/globe marketing surface.
+	beego.InsertFilter("/v1/*", beego.BeforeRouter, routers.TrafficTapFilter)
 	beego.InsertFilter("*", beego.BeforeRouter, routers.HstsFilter)
 	beego.InsertFilter("*", beego.BeforeRouter, routers.CacheControlFilter)
 	beego.InsertFilter("*", beego.BeforeRouter, routers.RateLimitFilter)
