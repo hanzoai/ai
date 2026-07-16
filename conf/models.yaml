@@ -12,7 +12,6 @@ cache:
 features:
   live_mode: false       # Set true in production ConfigMap
   premium_gate: true
-  starter_credit: 5.00
 
 # ── Auto-routing (virtual `auto` / `zen-router` model) ────────────────────────
 # Opt-in. When enabled, a chat request for model "auto" (alias "zen-router") is
@@ -764,12 +763,13 @@ models:
   # token pricing is unused for video. The unbranded raw id below stays on do-ai;
   # provider (same async /v1/videos API), owned_by hanzo (upstream never exposed).
   #
-  # premium: true on EVERY video id (including this unbranded passthrough): a t2v
-  # inference is minutes of A14B GPU compute (~40¢), so the free starter credit
-  # must never fund it. Without premium the raw id would clear on balance>0 alone
-  # and let a throwaway signup mint ~12 videos on promo credit. This YAML is the
-  # runtime source of truth (it wins over the static route map), so the provider
-  # re-point and the flag have to live here too, not only in
+  # premium: true on EVERY video id (including this unbranded passthrough) tags the
+  # usage record as premium; a t2v inference is minutes of A14B GPU compute (~40¢),
+  # billed per video via controllers.videoCostCents through the one metering path.
+  # Access is gated purely on a positive prepaid balance (there is no free credit),
+  # so a $0 signup is refused at the balance gate before ever reaching video. This
+  # YAML is the runtime source of truth (it wins over the static route map), so the
+  # provider re-point and the flag have to live here too, not only in
   # controllers/model_routes.go.
   wan2-2-t2v-a14b:
     context_window: 100
@@ -823,8 +823,8 @@ models:
   # ── OpenAI-compatible embeddings (served at POST /v1/embeddings) ───────
   # Canonical text-embedding-* names route to OpenAI Direct, whose key
   # (kms://OPENAI_API_KEY) is already configured for chat — so the OpenAI SDK
-  # works unchanged with NO new secret. Non-premium: usable on the starter
-  # credit; CPU-only (provider-routed, no GPU node).
+  # works unchanged with NO new secret. Non-premium; CPU-only
+  # (provider-routed, no GPU node).
   text-embedding-3-small:
     provider: openai-direct
     upstream: text-embedding-3-small
@@ -845,8 +845,8 @@ models:
 
   # ── DO-AI embeddings (served at POST /v1/embeddings) ──────────────────
   # Open sentence-transformer / BGE / GTE / E5 embedding models served by the
-  # do-ai provider (the same working key as chat). Non-premium: usable on the
-  # starter credit. Prices are DigitalOcean's published per-1M embedding rates;
+  # do-ai provider (the same working key as chat). Non-premium.
+  # Prices are DigitalOcean's published per-1M embedding rates;
   # embeddings bill on input tokens only (output 0). owned_by = do-ai provider.
   bge-m3:
     provider: do-ai

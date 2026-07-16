@@ -186,11 +186,11 @@ var modelRoutes = map[string]modelRoute{
 	// directly by its catalog id (unbranded passthrough — no ownedBy, so the
 	// listing surfaces the do-ai upstream like the embeddings passthroughs).
 	// getOpenAiModelType classifies it via isDOAIVideoModel → the videos path.
-	// premium: true — ALL video is premium. A single t2v inference is minutes of
-	// A14B GPU compute (~40¢); without the premium flag the raw id would clear on
-	// balance>0 alone, letting the $5 starter credit fund the platform's priciest
-	// unit (replayable across throwaway signups). Premium routes the caller through
-	// the starter-credit gate (balance must exceed the free credit).
+	// premium: true — ALL video is premium; the flag tags the usage record as
+	// premium. A single t2v inference is minutes of A14B GPU compute (~40¢), billed
+	// per video via videoCostCents through the one metering path. Access is gated
+	// purely on a positive prepaid balance (there is no free credit), so a $0 signup
+	// is refused at the balance gate before ever reaching video.
 	"wan2-2-t2v-a14b": {providerName: "do-ai", upstreamModel: "wan2-2-t2v-a14b", premium: true},
 }
 
