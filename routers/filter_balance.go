@@ -228,6 +228,19 @@ func isBalanceExempt(path string) bool {
 	// self-auths); only the balance 402 is skipped.
 	case path == "/v1/feedback" || path == "/v1/add-routing-reward":
 		return true
+	// Routing configuration is metadata, not metered inference — same class as
+	// /v1/models. Every client fetches its org's effective defaults on boot, so
+	// gating the READ 402s an unfunded org's apps before any priced request
+	// exists; the org-settings CRUD + ledger export are platform administration
+	// (RequireGlobalAdmin-gated) — an operator flipping routing must never
+	// depend on a wallet balance. Auth filters still apply to all of them.
+	case path == "/v1/get-routing-defaults" ||
+		path == "/v1/get-org-settings" ||
+		path == "/v1/add-org-settings" ||
+		path == "/v1/update-org-settings" ||
+		path == "/v1/delete-org-settings" ||
+		path == "/v1/export-routing-ledger":
+		return true
 	default:
 		return false
 	}
