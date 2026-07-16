@@ -168,3 +168,33 @@ func GetRewardedRoutingEvents(org, since string) ([]*RoutingEvent, error) {
 	err := findAll(adapter.db, "routing_event", &events, dbx.And(where...), "created_time ASC")
 	return events, err
 }
+
+// GetRewardedRoutingEventsForOwners is GetRewardedRoutingEvents scoped to a SET of
+// owners (rewarded rows whose owner ∈ owners), oldest first. It is the
+// consent-respecting read for the shared "*" base fit: the trainer passes the
+// orgs that opted in (ListTrainingContributorOrgs) plus the reserved internal
+// orgs, so the cross-org base learns ONLY from data it is allowed to. An empty
+// owner set returns no rows (fail-closed: no consent → no training data), never
+// all rows.
+func GetRewardedRoutingEventsForOwners(owners []string, since string) ([]*RoutingEvent, error) {
+	if adapter == nil || adapter.db == nil {
+		return nil, nil
+	}
+	if len(owners) == 0 {
+		return nil, nil
+	}
+	vals := make([]interface{}, len(owners))
+	for i, o := range owners {
+		vals[i] = o
+	}
+	where := []dbx.Expression{
+		dbx.NewExp("rewarded_time <> ''"),
+		dbx.In("owner", vals...),
+	}
+	if since != "" {
+		where = append(where, dbx.NewExp("created_time >= {:since}", dbx.Params{"since": since}))
+	}
+	events := []*RoutingEvent{}
+	err := findAll(adapter.db, "routing_event", &events, dbx.And(where...), "created_time ASC")
+	return events, err
+}
