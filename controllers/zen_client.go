@@ -41,6 +41,7 @@ import (
 
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/object"
+	"github.com/hanzoai/ai/router"
 	"github.com/hanzoai/ai/util"
 	beegoLogs "github.com/hanzoai/beego/logs"
 	"github.com/hanzoai/decimal"
@@ -63,6 +64,7 @@ import (
 type modelFamily struct {
 	name       string                  // "zen" | "enso" — the Provider label + brand
 	prefix     string                  // public brand prefix for cold-start ownership (before first discovery)
+	owner      string                  // public /v1/models owned_by: "zenlm" (Zen LM) | "hanzo" (Hanzo)
 	urlKey     string                  // config key for the base URL ("ZEN_URL" | "ENSO_URL")
 	keyKey     string                  // config key for the service key ("ZEN_API_KEY" | "ENSO_API_KEY")
 	providerFn func() *object.Provider // the virtual provider ai forwards through
@@ -78,11 +80,11 @@ type modelFamily struct {
 
 var (
 	zenFam = &modelFamily{
-		name: "zen", prefix: "zen", urlKey: "ZEN_URL", keyKey: "ZEN_API_KEY",
+		name: "zen", prefix: "zen", owner: "zenlm", urlKey: "ZEN_URL", keyKey: "ZEN_API_KEY",
 		providerFn: object.ZenProvider,
 	}
 	ensoFam = &modelFamily{
-		name: "enso", prefix: "enso", urlKey: "ENSO_URL", keyKey: "ENSO_API_KEY",
+		name: "enso", prefix: "enso", owner: "hanzo", urlKey: "ENSO_URL", keyKey: "ENSO_API_KEY",
 		providerFn: object.EnsoProvider,
 	}
 	// modelFamilies is the discovery/route/merge iteration order — the ONE list every
@@ -139,10 +141,9 @@ func familyLookup(model string) (zenModel, bool) {
 // familyLookupFresh is familyLookup that first refreshes each family's catalog on
 // its TTL (a no-op when warm) before reading it. lookup() alone reads the cache
 // with no refresh, so on a replica whose family cache is cold or stale a real SKU
-// reads as unknown — which is why a GRANTED enso preview caller still 402'd at the
-// balance filter (CompedGatedAccess → familyLookup missed "enso" on a cold replica,
-// so the comp was skipped). Access/comp decisions must see the same catalog the
-// /v1/models merge does; they go through here.
+// reads as unknown — which would make a gated SKU (enso) read as non-gated on a cold
+// replica and skip the access gate. Access/gating decisions must see the same catalog
+// the /v1/models merge does; they go through here (FamilyModelGated).
 func familyLookupFresh(model string) (zenModel, bool) {
 	for _, f := range modelFamilies {
 		f.fresh()
@@ -423,7 +424,7 @@ func (f *modelFamily) passthroughRoute(model string) *modelRoute {
 		providerName:  f.name,
 		upstreamModel: model, // identity: the family maps the SKU to its real upstream
 		premium:       true,
-		ownedBy:       "hanzo",
+		ownedBy:       f.owner, // public branding: enso→"hanzo", zen→"zenlm"
 		contextWindow: ctx,
 	}
 }
@@ -443,7 +444,7 @@ func (f *modelFamily) mergeModels(base []modelInfo) []modelInfo {
 	for _, z := range zs {
 		owner := z.OwnedBy
 		if owner == "" {
-			owner = "hanzo"
+			owner = f.owner // public branding default: enso→"hanzo", zen→"zenlm"
 		}
 		info := modelInfo{
 			ID: z.ID, Object: "model", Created: now, OwnedBy: owner, Premium: true,
@@ -536,6 +537,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	defer resp.Body.Close()
 
 	prompt, completion := 0, 0
+	served, respID := "", ""
 	if stream {
 		if resp.StatusCode != http.StatusOK {
 			b, _ := io.ReadAll(resp.Body)
@@ -546,7 +548,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		c.Ctx.ResponseWriter.Header().Set("Cache-Control", "no-cache")
 		c.Ctx.ResponseWriter.Header().Set("Connection", "keep-alive")
 		c.Ctx.ResponseWriter.WriteHeader(http.StatusOK)
-		prompt, completion = c.relayZenStream(resp.Body)
+		prompt, completion, served, respID = c.relayZenStream(resp.Body)
 	} else {
 		b, rErr := io.ReadAll(resp.Body)
 		if rErr != nil {
@@ -558,6 +560,8 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 			return
 		}
 		sniffZenUsage(b, &prompt, &completion)
+		served = sniffZenModel(b)
+		respID = sniffZenId(b)
 		ct := resp.Header.Get("Content-Type")
 		if ct == "" {
 			ct = "application/json"
@@ -569,14 +573,20 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	if prompt == 0 {
 		prompt = coarseTokenEstimate(rawBody)
 	}
-	c.recordFamilyUsage(fam, model, authUser, isPremium, stream, reqID, prompt, completion, start, hold, "success", "")
+	cents := c.recordFamilyUsage(fam, model, authUser, isPremium, stream, reqID, prompt, completion, start, hold, "success", "")
+	// Learning ledger: record this served family call (source="family") and, when the
+	// engine endpoint is configured, the shadow A/B pick — off the hot path, no prompt
+	// text ever stored (the ledger holds none). The join key is the response id the
+	// CLIENT sees (respID), which the client threads back to /v1/feedback; falls back
+	// to the internal reqID when the family did not disclose one. See object.RoutingEvent.
+	c.recordFamilyRouting(model, served, respID, reqID, rawBody, orgId, authUser, prompt, completion, cents, start)
 	c.EnableRender = false
 }
 
 // relayZenStream copies a family's SSE response to the client verbatim and captures the
 // final usage for billing. The family already emits correct dialect SSE, so ai forwards
 // bytes unchanged — no translation — and only reads usage as it passes.
-func (c *ApiController) relayZenStream(body io.Reader) (prompt, completion int) {
+func (c *ApiController) relayZenStream(body io.Reader) (prompt, completion int, served, respID string) {
 	w := c.Ctx.ResponseWriter
 	sc := bufio.NewScanner(body)
 	sc.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
@@ -589,10 +599,61 @@ func (c *ApiController) relayZenStream(body io.Reader) (prompt, completion int) 
 			payload := bytes.TrimSpace(line[len(zenDataPrefix):])
 			if len(payload) > 0 && payload[0] == '{' {
 				sniffZenUsage(payload, &prompt, &completion)
+				if served == "" {
+					served = sniffZenModel(payload)
+				}
+				if respID == "" {
+					respID = sniffZenId(payload)
+				}
 			}
 		}
 	}
 	return
+}
+
+// sniffZenModel reads the top-level "model" (or Anthropic's message.model) from a
+// family response payload — the concrete arm/rung that served, when the family
+// discloses it. "" when absent; the caller then falls back to the requested SKU.
+func sniffZenModel(payload []byte) string {
+	var p struct {
+		Model   string `json:"model"`
+		Message *struct {
+			Model string `json:"model"`
+		} `json:"message"`
+	}
+	if json.Unmarshal(payload, &p) != nil {
+		return ""
+	}
+	if p.Model != "" {
+		return p.Model
+	}
+	if p.Message != nil {
+		return p.Message.Model
+	}
+	return ""
+}
+
+// sniffZenId reads the response id the CLIENT sees — OpenAI's top-level "id"
+// (chatcmpl-…) or Anthropic's message id (msg_…, at "id" for messages or nested under
+// "message"). This is the exact id the client threads back to /v1/feedback, so it is
+// the routing-event join key. "" when absent.
+func sniffZenId(payload []byte) string {
+	var p struct {
+		ID      string `json:"id"`
+		Message *struct {
+			ID string `json:"id"`
+		} `json:"message"`
+	}
+	if json.Unmarshal(payload, &p) != nil {
+		return ""
+	}
+	if p.ID != "" {
+		return p.ID
+	}
+	if p.Message != nil {
+		return p.Message.ID
+	}
+	return ""
 }
 
 // sniffZenUsage reads token usage from a family response — an SSE data payload or a
@@ -651,7 +712,7 @@ func coarseTokenEstimate(body []byte) int {
 // recordFamilyUsage settles the budget hold at the exact discovered price and records
 // the usage + trace. Billing lives in one place for both stream and buffered paths and
 // for every family.
-func (c *ApiController) recordFamilyUsage(fam *modelFamily, model string, authUser *iam.User, isPremium, stream bool, reqID string, prompt, completion int, start time.Time, hold *budgetHold, status, errMsg string) {
+func (c *ApiController) recordFamilyUsage(fam *modelFamily, model string, authUser *iam.User, isPremium, stream bool, reqID string, prompt, completion int, start time.Time, hold *budgetHold, status, errMsg string) int64 {
 	var cents int64
 	if status == "success" {
 		if zm, ok := fam.lookup(model); ok {
@@ -662,7 +723,7 @@ func (c *ApiController) recordFamilyUsage(fam *modelFamily, model string, authUs
 	}
 	hold.settle(cents)
 	if authUser == nil {
-		return
+		return cents
 	}
 	rec := &usageRecord{
 		Owner: authUser.Owner, User: authUser.Owner + "/" + authUser.Name, Organization: authUser.Owner,
@@ -674,6 +735,136 @@ func (c *ApiController) recordFamilyUsage(fam *modelFamily, model string, authUs
 	}
 	recordUsage(rec)
 	recordTrace(c.Ctx.Request.Context(), rec, start)
+	return cents
+}
+
+// recordFamilyRouting writes the privacy-preserving learning ledger row for a served
+// family call and, when the engine endpoint is configured, the shadow A/B pick. It is
+// fire-and-forget off the request hot path (exactly like AddRoutingEvent's auto-route
+// callers): a collection failure never touches the served response. It NEVER stores
+// prompt text — only token/cost/latency metrics, the served arm, and (for the shadow)
+// the engine's own opaque feature vector + counterfactual model.
+//
+// The request-derived routing inputs (last user text, media flag) are extracted
+// synchronously from rawBody before the goroutine spawns, so nothing reads the beego
+// context off-thread. The shadow /v1/route call is hard-capped by router.DefaultTimeout.
+func (c *ApiController) recordFamilyRouting(model, served, respID, reqID string, rawBody []byte, orgId string, authUser *iam.User, prompt, completion int, cents int64, start time.Time) {
+	owner := orgId
+	user := ""
+	if authUser != nil {
+		if owner == "" {
+			owner = authUser.Owner
+		}
+		user = authUser.Owner + "/" + authUser.Name
+	}
+	if served == "" {
+		served = model
+	}
+	// The reward-join key is the response id the client sees, normalized identically to
+	// /v1/feedback's normalizeRequestId (strips the chatcmpl- prefix) so both sides key
+	// on the same value. Fall back to the internal reqID when the family disclosed none.
+	joinID := normalizeRequestId(respID)
+	if joinID == "" {
+		joinID = reqID
+	}
+	text, hasMedia := familyRoutingText(rawBody)
+	slo := c.sloFromHeaders()
+	latencyMs := time.Since(start).Milliseconds()
+
+	go func() {
+		ev := object.RoutingEvent{
+			Owner:            owner,
+			User:             user,
+			RequestId:        joinID,
+			RequestedModel:   strings.ToLower(strings.TrimSpace(model)),
+			RoutedModel:      served,
+			Source:           "family",
+			PromptTokens:     prompt,
+			CompletionTokens: completion,
+			CostCents:        cents,
+			LatencyMs:        latencyMs,
+		}
+		// Shadow A/B: ask the learned engine what IT would have picked for the same
+		// request features. Only when the endpoint is configured; a slow/unreachable
+		// engine falls through to the heuristic within router.DefaultTimeout. The
+		// engine's feature vector + task come back for the training join — never prompt
+		// text. This is the production A/B study at zero user risk (already served).
+		if cfg := GetModelConfig(); cfg != nil {
+			cli := cfg.RouterClient(nil)
+			if cli.Endpoint != "" {
+				dec := cli.RouteDecision(context.Background(), router.Request{
+					Text:         text,
+					ApproxTokens: coarseTokenEstimate(rawBody),
+					HasMedia:     hasMedia,
+				}, slo)
+				ev.ShadowModel = dec.Model
+				ev.Task = string(dec.Task)
+				ev.Confidence = dec.Confidence
+				if len(dec.Features) > 0 {
+					if b, err := json.Marshal(dec.Features); err == nil {
+						ev.Features = string(b)
+					}
+				}
+			}
+		}
+		if err := object.AddRoutingEvent(&ev); err != nil {
+			beegoLogs.Warning("family routing event persist failed: %v", err)
+		}
+	}()
+}
+
+// familyRoutingText extracts the last user turn's text and whether the request carries
+// media from a raw chat/completions or messages body — enough for the shadow router to
+// classify, working for both dialects (both use messages[].role/content, content a
+// string or an array of typed parts). It is a pure function of rawBody; it returns no
+// prompt text to any store — only the shadow /v1/route call (which the engine already
+// receives for auto routing) reads it, and only the engine's derived features persist.
+func familyRoutingText(rawBody []byte) (text string, hasMedia bool) {
+	var body struct {
+		Messages []struct {
+			Role    string          `json:"role"`
+			Content json.RawMessage `json:"content"`
+		} `json:"messages"`
+	}
+	if json.Unmarshal(rawBody, &body) != nil {
+		return "", false
+	}
+	for i := len(body.Messages) - 1; i >= 0; i-- {
+		m := body.Messages[i]
+		if m.Role != "user" {
+			continue
+		}
+		var s string
+		if json.Unmarshal(m.Content, &s) == nil {
+			if s != "" {
+				return s, false
+			}
+			continue
+		}
+		var parts []struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		}
+		if json.Unmarshal(m.Content, &parts) != nil {
+			continue
+		}
+		var b strings.Builder
+		for _, p := range parts {
+			if strings.Contains(p.Type, "image") || strings.Contains(p.Type, "video") {
+				hasMedia = true
+			}
+			if p.Text != "" {
+				if b.Len() > 0 {
+					b.WriteByte('\n')
+				}
+				b.WriteString(p.Text)
+			}
+		}
+		if b.Len() > 0 || hasMedia {
+			return b.String(), hasMedia
+		}
+	}
+	return "", hasMedia
 }
 
 // zenError writes a dialect-correct error. Anthropic callers (Claude Code) get the
