@@ -24,10 +24,11 @@ import (
 // routerPolicyBody is the wire shape for both the resolved read and the write.
 // Prefer is task tag -> ordered model ids ("default" is the catch-all). 0/empty
 // means unset -> fall through to the "*" row then the conf file. HasOverride
-// (read-only) reports whether the org has its own row.
+// (read-only) reports whether the org has its own row. CostCeiling is USD per 1k
+// tokens (per-1k), the same unit as OrgSettings.RouterCostCeiling and the SLO.
 type routerPolicyBody struct {
 	Prefer      map[string][]string `json:"prefer"`
-	CostCeiling float64             `json:"costCeiling"`
+	CostCeiling float64             `json:"costCeiling"` // USD per 1k tokens (per-1k)
 	HasOverride bool                `json:"hasOverride,omitempty"`
 }
 
@@ -214,7 +215,9 @@ func effectiveRouterCostCeiling(org string, conf float64) float64 {
 }
 
 // mergeCostCeiling fills the caller's SLO cost budget from the resolved policy
-// ceiling when the caller didn't set one — an explicit X-Max-Cost always wins.
+// ceiling when the caller didn't set one — an explicit X-Max-Cost always wins. Both
+// are USD per 1k tokens (per-1k), so the assignment is unit-preserving: the value is
+// carried into Slo.MaxCost verbatim and forwarded to the engine as-is (no /1000).
 func mergeCostCeiling(slo router.Slo, policyCeiling float64) router.Slo {
 	if slo.MaxCost <= 0 && policyCeiling > 0 {
 		slo.MaxCost = policyCeiling
