@@ -220,7 +220,7 @@ func messageText(m openai.ChatCompletionMessage) string {
 
 // sloFromHeaders reads the optional per-request SLO from headers, so callers can
 // express a cost/latency budget for `auto` without changing the OpenAI request
-// body: `X-Max-Cost` (per-1k, float) and `X-Max-Latency-Ms` (int).
+// body: `X-Max-Cost` (USD per 1k tokens / per-1k, float) and `X-Max-Latency-Ms` (int).
 func (c *ApiController) sloFromHeaders() router.Slo {
 	var slo router.Slo
 	if v := c.Ctx.Request.Header.Get("X-Max-Cost"); v != "" {
