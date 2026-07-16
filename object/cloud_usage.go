@@ -68,7 +68,10 @@ const cloudUsageTableDDL = `
 		client_ip String,
 		byo UInt8,
 		fee_cents Int64,
-		account String
+		account String,
+		cost_nano Int64,
+		billed_nano Int64,
+		margin_nano Int64
 	) ENGINE = MergeTree()
 	ORDER BY (timestamp, organization, user_id)
 	TTL timestamp + INTERVAL 2 YEAR`
@@ -83,6 +86,12 @@ var cloudUsageColumnMigrations = []string{
 	`ALTER TABLE hanzo.cloud_usage ADD COLUMN IF NOT EXISTS byo UInt8`,
 	`ALTER TABLE hanzo.cloud_usage ADD COLUMN IF NOT EXISTS fee_cents Int64`,
 	`ALTER TABLE hanzo.cloud_usage ADD COLUMN IF NOT EXISTS account String`,
+	// Nano-USD margin ledger (money-of-record): cost_nano = provider COGS,
+	// billed_nano = org debit, margin_nano = billed_nano − cost_nano. cost_cents
+	// stays the derived spend column the console reads.
+	`ALTER TABLE hanzo.cloud_usage ADD COLUMN IF NOT EXISTS cost_nano Int64`,
+	`ALTER TABLE hanzo.cloud_usage ADD COLUMN IF NOT EXISTS billed_nano Int64`,
+	`ALTER TABLE hanzo.cloud_usage ADD COLUMN IF NOT EXISTS margin_nano Int64`,
 }
 
 var cloudUsageTableReady atomic.Bool
