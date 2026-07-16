@@ -86,6 +86,8 @@ var superAdminEndpoints = map[string]struct{}{
 	"get-model-routes": {}, "get-model-route": {},
 	"add-model-route": {}, "update-model-route": {}, "delete-model-route": {},
 	"admin/reload-model-config": {}, "admin/refresh-model-pricing": {},
+	// DO usage backfill — writes the platform-wide financial ledger (cloud_usage).
+	"admin/usage/backfill-do": {},
 	// Per-org feature settings (auto-routing enable/disable, …).
 	"get-org-settings-list": {}, "get-org-settings": {},
 	"add-org-settings": {}, "update-org-settings": {}, "delete-org-settings": {},
