@@ -436,6 +436,12 @@ func initAPI() {
 	// and the retrain job's published-state write.
 	beego.Router("/v1/router/stats", &controllers.ApiController{}, "GET:GetRouterStats")
 	beego.Router("/v1/router/publish-artifact-meta", &controllers.ApiController{}, "POST:PublishRouterArtifactMeta")
+
+	// Live request-geo aggregate for the world.hanzo.ai Hanzo-mode globe. PUBLIC:
+	// aggregates only (country/region counts + throughput rates), no auth, no IPs.
+	// Balance-exempt via isBalanceExempt; the authz filter passes it through as a
+	// non get-/update- controller name (same class as /v1/router/stats).
+	beego.Router("/v1/traffic/globe", &controllers.ApiController{}, "GET:GetTrafficGlobe")
 	beego.Router("/v1/get-training-contribution", &controllers.ApiController{}, "GET:GetTrainingContribution")
 	beego.Router("/v1/update-training-contribution", &controllers.ApiController{}, "POST:UpdateTrainingContribution")
 
