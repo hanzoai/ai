@@ -25,6 +25,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/hanzoai/account"
+
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/beego/context"
@@ -248,7 +250,7 @@ func isBalanceExempt(path string) bool {
 
 // resolveBillingKey extracts the billing identity from the request context and
 // returns (subject, namespace). The namespace is the IAM org slug (X-Org-Id);
-// the subject is object.Payer(object.Credential{Owner: owner, Name: name}).Subject() — "owner/name" for a
+// the subject is account.Payer(account.Credential{Owner: owner, Name: name}).Subject() — "owner/name" for a
 // personal-billing org (e.g. the shared "hanzo" catch-all, so each individual is
 // billed independently) or the org slug for a pooled org. This is the one place
 // the billing identity is derived; recordUsage debits and the gate reads the same
@@ -279,7 +281,7 @@ func resolveBillingKey(ctx *context.Context) (subject, namespace, userKey string
 	// Source 1: session user from AutoSigninFilter.
 	user := GetSessionUser(ctx)
 	if user != nil && user.Owner != "" {
-		return object.Payer(object.Credential{Owner: user.Owner, Name: user.Name, Machine: object.IsMachine(user.Type)}).Subject(), user.Owner, user.Owner + "/" + user.Name
+		return account.Payer(account.Credential{Owner: user.Owner, Name: user.Name, Machine: account.IsMachine(user.Type)}).Subject(), user.Owner, user.Owner + "/" + user.Name
 	}
 
 	// Source 2/3: Bearer token.
@@ -299,7 +301,7 @@ func resolveBillingKey(ctx *context.Context) (subject, namespace, userKey string
 		if owner == "" {
 			return "", "", ""
 		}
-		return object.Payer(object.Credential{Owner: owner, Name: "", Machine: object.IsMachine("application")}).Subject(), owner, owner + "/widget"
+		return account.Payer(account.Credential{Owner: owner, Name: "", Machine: account.IsMachine("application")}).Subject(), owner, owner + "/widget"
 	}
 
 	// Provider keys (sk-) and publishable keys (pk-) don't map to IAM orgs with
@@ -329,7 +331,7 @@ func resolveBillingKey(ctx *context.Context) (subject, namespace, userKey string
 			// fallback for tokens minted before the claim shipped; when the claim is
 			// present Payer ignores it, so a forged Type can no longer point this gate
 			// at the signup org's pooled balance.
-			subject = object.Payer(object.Credential{Owner: claims.User.Owner, Name: claims.User.Name, Account: claims.BillingAccount, Machine: object.IsMachine(claims.User.Type)}).Subject()
+			subject = account.Payer(account.Credential{Owner: claims.User.Owner, Name: claims.User.Name, Account: claims.BillingAccount, Machine: account.IsMachine(claims.User.Type)}).Subject()
 			userKey = claims.User.Owner + "/" + claims.User.Name
 			balanceGate.setUserKeyCache(token, subject, claims.User.Owner, userKey)
 			return subject, claims.User.Owner, userKey
@@ -432,7 +434,7 @@ type commerceBalanceResponse struct {
 }
 
 // fetchBalance calls Commerce to get the current balance for a billing subject.
-// The subject (?user=) is object.Payer(object.Credential{Owner: owner, Name: name}).Subject() — per-user for a
+// The subject (?user=) is account.Payer(account.Credential{Owner: owner, Name: name}).Subject() — per-user for a
 // personal-billing org, the org slug for a pooled org — and the namespace
 // (X-Org-Id) is the org. Both must match what the deposit/usage writes use,
 // so the credit a user receives is the balance read here and debited from.
@@ -513,7 +515,7 @@ type iamUserResponse struct {
 
 // resolveIAMKeySubject calls IAM to resolve an hk- API key to its billing
 // identity: (subject, namespace, userKey). The namespace is the org `owner`; the
-// subject is object.Payer(object.Credential{Owner: owner, Name: name}).Subject() — so a personal-org key bills
+// subject is account.Payer(account.Credential{Owner: owner, Name: name}).Subject() — so a personal-org key bills
 // per-user; the userKey is the exact "owner/name" for exemption matching.
 // Returns ("", "", "") on any error (fail-open).
 func (bg *BalanceGate) resolveIAMKeySubject(apiKey string) (subject, namespace, userKey string) {
@@ -561,7 +563,7 @@ func (bg *BalanceGate) resolveIAMKeySubject(apiKey string) (subject, namespace, 
 		return "", "", ""
 	}
 
-	return object.Payer(object.Credential{Owner: result.Data.Owner, Name: result.Data.Name}).Subject(), result.Data.Owner, result.Data.Owner + "/" + result.Data.Name
+	return account.Payer(account.Credential{Owner: result.Data.Owner, Name: result.Data.Name}).Subject(), result.Data.Owner, result.Data.Owner + "/" + result.Data.Name
 }
 
 // ── Cleanup ─────────────────────────────────────────────────────────────────
