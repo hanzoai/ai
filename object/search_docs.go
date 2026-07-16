@@ -25,9 +25,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hanzoai/beego/logs"
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/model"
+	"github.com/hanzoai/beego/logs"
 	meilisearch "github.com/hanzoai/search-go"
 )
 

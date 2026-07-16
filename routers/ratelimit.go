@@ -26,9 +26,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/beego/context"
 	"github.com/hanzoai/beego/logs"
-	"github.com/hanzoai/ai/conf"
 	"golang.org/x/time/rate"
 )
 

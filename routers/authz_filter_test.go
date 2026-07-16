@@ -20,10 +20,10 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/hanzoai/ai/controllers"
 	"github.com/hanzoai/beego"
 	beegoctx "github.com/hanzoai/beego/context"
 	"github.com/hanzoai/beego/session"
-	"github.com/hanzoai/ai/controllers"
 	iam "github.com/hanzoai/iam"
 )
 

@@ -23,10 +23,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hanzoai/beego/logs"
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
+	"github.com/hanzoai/beego/logs"
 	iam "github.com/hanzoai/iam"
 )
 

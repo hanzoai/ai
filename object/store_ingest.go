@@ -29,9 +29,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/hanzoai/beego/logs"
 	"github.com/hanzoai/ai/split"
 	"github.com/hanzoai/ai/txt"
+	"github.com/hanzoai/beego/logs"
 )
 
 // DefaultDocsStore is the tenant's default documentation store/index slug. It is

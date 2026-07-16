@@ -24,9 +24,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/hanzoai/beego/logs"
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/proxy"
+	"github.com/hanzoai/beego/logs"
 )
 
 func parseJsonToFloats(s string) []float64 {

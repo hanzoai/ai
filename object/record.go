@@ -19,10 +19,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/hanzoai/beego/context"
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/i18n"
 	"github.com/hanzoai/ai/util"
+	"github.com/hanzoai/beego/context"
 	"github.com/hanzoai/dbx"
 )
 
