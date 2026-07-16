@@ -19,11 +19,11 @@ import (
 	"path"
 	"strings"
 
-	"github.com/hanzoai/beego/context"
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/controllers"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
+	"github.com/hanzoai/beego/context"
 	iam "github.com/hanzoai/iam"
 )
 
@@ -121,6 +121,8 @@ var authRequiredEndpoints = map[string]struct{}{
 	"embed":       {}, "query": {}, "query_multiple": {}, // librechat-compat RAG
 	"documents":            {}, // librechat-compat DELETE documents
 	"get-routing-defaults": {}, // per-caller routing defaults — any authenticated user, never anonymous
+	"get-router-policy":    {}, // per-org router policy read — org-admin gated in controller, never anonymous
+	"update-router-policy": {}, // per-org router policy write — org-admin gated in controller, never anonymous
 }
 
 // requiresPresentCredential reports whether controllerName is a write/ingest/
