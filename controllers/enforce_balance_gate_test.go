@@ -140,6 +140,39 @@ func TestEnforceBalanceGate_NoAutoGrantOnFirstUse(t *testing.T) {
 	}
 }
 
+// TestEnforceBalanceGate_GatedSKUIsPaid pins that Enso (a gated family SKU) is PAID:
+// the comp bypass is GONE, so a gated SKU is gated on the prepaid balance exactly like
+// any other model. Access-gating (the grant) controls whether the SKU is callable; it
+// never makes the call free. Seeded gated so the SKU is genuinely limited-preview.
+func TestEnforceBalanceGate_GatedSKUIsPaid(t *testing.T) {
+	savedEnso := ensoFam.byID
+	ensoFam.byID = map[string]zenModel{"enso": {ID: "enso", Access: "waitlist"}}
+	t.Cleanup(func() { ensoFam.byID = savedEnso })
+	if !FamilyModelGated("enso") {
+		t.Fatal("precondition: enso must be a gated SKU for this pin to be meaningful")
+	}
+
+	var available int64
+	t.Setenv("commerceEndpoint", fakeCommerceBalance(t, &available))
+	t.Setenv("commerceToken", "test-svc-token")
+
+	user := &iam.User{Owner: "enso-preview", Name: "granted", Email: "g@hanzo.ai", Type: "normal-user"}
+
+	// Zero balance on the gated SKU → 402. No comp escape exists.
+	available = 0
+	if err := enforceBalanceGate(user, "enso"); err == nil {
+		t.Fatal("gated SKU at $0 balance must 402 — the comp bypass is removed (Enso is PAID)")
+	} else if got := statusOf(err); got != http.StatusPaymentRequired {
+		t.Fatalf("status=%d, want 402 for the gated SKU at $0; err=%v", got, err)
+	}
+
+	// Funded → allowed, same as any paid model.
+	available = 100000
+	if err := enforceBalanceGate(user, "enso"); err != nil {
+		t.Fatalf("funded caller must be allowed on the gated SKU, got blocked: %v", err)
+	}
+}
+
 // TestEnforceBalanceGate_FailClosedOnLookupError proves the gate never grants when
 // the balance cannot be verified: an unreachable commerce endpoint → 500, not a
 // silent pass.
