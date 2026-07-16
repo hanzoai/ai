@@ -811,9 +811,9 @@ func (c *ApiController) authenticate(token string) error {
 // providerKeyBillingUser derives the billing identity for a provider-key (sk-)
 // caller: the org that OWNS the provider row the key belongs to (and therefore
 // minted the key). The sk- key is a machine credential, so it bills the OWNER
-// ORG — Name is empty so object.BillingSubject collapses to the org ledger for
-// BOTH personal-billing and pooled orgs, and Type "application" marks it M2M,
-// mirroring BillingSubjectForPrincipal's carve-out. A provider with no owner is
+// ORG — Type "application" marks it M2M (object.IsMachine), so object.Payer
+// resolves it to the org account for every org, never a per-person wallet no one
+// funds. A provider with no owner is
 // unattributable: return an auth error so the caller refuses rather than spend
 // the shared upstream key for free — the invariant is that every call spending
 // the shared upstream key bills someone.
@@ -843,8 +843,8 @@ func (c *ApiController) authResolveProvider(token, requestedModel, orgId string)
 		// sk- provider key, a widget call bills the OWNER ORG that minted the key
 		// (widgetKeyOwner → WIDGET_KEY_OWNERS / WIDGET_DEFAULT_OWNER), so the
 		// balance gate + budget reservation + usage debit all engage exactly as
-		// for a normal principal. Type "application" (empty Name) collapses the
-		// billing subject to the org ledger (BillingSubjectForPrincipal). An
+		// for a normal principal. Type "application" marks it a machine, so
+		// object.Payer resolves the billing subject to the org account. An
 		// unattributable widget key (no owner mapping and no default owner) is a
 		// config error: refuse rather than spend the shared upstream for free —
 		// the same fail-secure invariant the sk- path enforces (every call that
