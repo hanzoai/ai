@@ -55,7 +55,7 @@ func (m zenModel) unitCostCents(units int) int64 {
 func (c *ApiController) serveZenMedia(apiPath, model string, rawBody []byte, units int, orgId string, authUser *iam.User, isPremium bool, start time.Time) {
 	var hold *budgetHold
 	if authUser != nil {
-		if zm, ok := zenLookup(model); ok {
+		if zm, ok := zenFam.lookup(model); ok {
 			subject := object.BillingSubject(authUser.Owner, authUser.Name)
 			var ok2 bool
 			if hold, ok2 = reserveBudget(subject, zm.unitCostCents(units)); !ok2 {
@@ -132,7 +132,7 @@ func (c *ApiController) pipeZenMedia(apiPath, model string, rawBody []byte, unit
 func (c *ApiController) recordZenMediaUsage(model string, authUser *iam.User, isPremium bool, reqID string, units int, start time.Time, hold *budgetHold, status, errMsg string) {
 	var cents int64
 	if status == "success" {
-		if zm, ok := zenLookup(model); ok {
+		if zm, ok := zenFam.lookup(model); ok {
 			cents = zm.unitCostCents(units)
 		}
 	}

@@ -427,18 +427,23 @@ func (c *ApiController) AnthropicMessages() {
 		est := estimateRequestCostCents(request.Model, len(request.Messages)*500, request.MaxTokens)
 		var ok bool
 		if hold, ok = reserveBudget(subject, est); !ok {
-			c.respondAnthropicError("billing_error", "Insufficient balance for the estimated request cost. Add credits at console.hanzo.ai", http.StatusPaymentRequired)
-			return
+			// Limited-preview comp: a granted caller of a gated SKU (enso) is not
+			// refused on balance — the preview is free (hold nil → deferred settle is a
+			// no-op; usage still recorded downstream).
+			if !c.compedGated(request.Model, orgId, authUser) {
+				c.respondAnthropicError("billing_error", "Insufficient balance for the estimated request cost. Add credits at console.hanzo.ai", http.StatusPaymentRequired)
+				return
+			}
 		}
 	}
 	defer hold.settle(0)
 
-	// ── Zen family ─────────────────────────────────────
-	// A zen model is served by the zen service, which owns identity, reasoning,
-	// the 1M ladder, vision, and the upstream. ai forwards verbatim and meters the
-	// result; it holds no zen routing of its own (hip-00NN).
-	if provider.Type == "Zen" {
-		c.pipeToZen("messages", "anthropic", request.Model, c.Ctx.Input.RequestBody, request.Stream, orgId, authUser, isPremium, hold, requestStartTime)
+	// ── Model families (Zen, Enso) ─────────────────────
+	// A family model is served by its family service, which owns identity, reasoning,
+	// the 1M ladder, vision, the fan-out, and the upstream. ai forwards verbatim and
+	// meters the result; it holds no family routing of its own (hip-00NN).
+	if fam := familyForProviderType(provider.Type); fam != nil {
+		c.pipeToFamily(fam, "messages", "anthropic", request.Model, c.Ctx.Input.RequestBody, request.Stream, orgId, authUser, isPremium, hold, requestStartTime)
 		return
 	}
 
