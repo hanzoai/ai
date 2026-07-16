@@ -181,6 +181,7 @@ func (a *Adapter) createTable() {
 		&OrgSettings{},  // per-org feature overrides (auto-routing, …)
 		&RoutingEvent{}, // privacy-preserving auto-routing decision ledger (training)
 		&FinetuneJob{},  // fine-tuning / training runs brokered to the cluster trainer
+		&ModelAccess{},  // per-(org,user,model) grants for gated SKUs (enso limited preview)
 	}
 	for _, m := range models {
 		if err := a.db.Sync(m); err != nil {
