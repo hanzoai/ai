@@ -319,9 +319,10 @@ func resolveModelRouteForOrg(model string, orgId string) *modelRoute {
 		return &route
 	}
 
-	// Zen family: any zen SKU routes to the zen service, which owns the SKU→upstream
-	// mapping, identity, and reasoning. ai holds no zen route of its own (hip-00NN).
-	return zenPassthroughRoute(model)
+	// Model families (Zen, Enso): any family SKU routes to its family service, which
+	// owns the SKU→upstream mapping, identity, and reasoning. ai holds no such route of
+	// its own (hip-00NN).
+	return familyPassthroughRoute(model)
 }
 
 // modelInfo is the JSON shape returned by the /v1/models endpoint.
@@ -344,6 +345,7 @@ type modelInfo struct {
 	// Additive enrichment (omitempty — present only when ai has the datum).
 	Provider string            `json:"provider,omitempty"` // serving provider, surfaced for unbranded passthroughs; omitted for branded models (owned_by already carries the public owner — see hip-00NN)
 	Pricing  *modelPricingInfo `json:"pricing,omitempty"`  // USD per 1M tokens; only when ai holds real pricing
+	Access   *modelAccessInfo  `json:"access,omitempty"`   // present only for a gated (limited-preview) SKU; carries the caller's standing (waitlist|requested|granted)
 }
 
 // publicProvider returns the provider name to surface in /v1/models, or "" to
@@ -365,7 +367,7 @@ func publicProvider(route modelRoute) string {
 // from the listing but remain callable via the completions endpoint.
 func listAvailableModels() []modelInfo {
 	if cfg := GetModelConfig(); cfg != nil {
-		return mergeZenModels(cfg.ListModels())
+		return mergeFamilyModels(cfg.ListModels())
 	}
 
 	// Static fallback
