@@ -323,7 +323,13 @@ func resolveBillingKey(ctx *context.Context) (subject, namespace, userKey string
 			return "", "", ""
 		}
 		if claims.User.Owner != "" {
-			subject = object.Payer(object.Credential{Owner: claims.User.Owner, Name: claims.User.Name, Machine: object.IsMachine(claims.User.Type)}).Subject()
+			// The token NAMES its payer: IAM signs `billing_account` from the real
+			// grant context, so the gate reads who pays instead of inferring it from
+			// User.Type — a field the user can set on themselves. Machine stays as the
+			// fallback for tokens minted before the claim shipped; when the claim is
+			// present Payer ignores it, so a forged Type can no longer point this gate
+			// at the signup org's pooled balance.
+			subject = object.Payer(object.Credential{Owner: claims.User.Owner, Name: claims.User.Name, Account: claims.BillingAccount, Machine: object.IsMachine(claims.User.Type)}).Subject()
 			userKey = claims.User.Owner + "/" + claims.User.Name
 			balanceGate.setUserKeyCache(token, subject, claims.User.Owner, userKey)
 			return subject, claims.User.Owner, userKey
