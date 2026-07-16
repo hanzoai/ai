@@ -36,19 +36,24 @@ import (
 // event's (features, routed model). That triple is the enso loop's per-request
 // training label. No field ever holds prompt text.
 type RoutingEvent struct {
-	Id             string  `db:"pk" json:"id"`
-	CreatedTime    string  `json:"createdTime"`
-	Owner          string  `json:"owner"`     // org
-	User           string  `json:"user"`      // owner/name of the caller, "" if unauthenticated
-	RequestId      string  `json:"requestId"` // response/usage-ledger request id — the reward join key
-	Task           string  `json:"task"`
-	RequestedModel string  `json:"requestedModel"` // the virtual alias, e.g. "auto"
-	RoutedModel    string  `json:"routedModel"`    // the concrete model that served
-	Confidence     float64 `json:"confidence"`
-	Source         string  `json:"source"`       // "engine" | "heuristic"
-	Features       string  `json:"features"`     // serialized JSON array; "" when the engine gave none
-	Reward         float64 `json:"reward"`       // outcome signal 0..1; meaningful only when RewardedTime != ""
-	RewardedTime   string  `json:"rewardedTime"` // RFC3339 when scored; "" = not yet scored (the nullable signal)
+	Id               string  `db:"pk" json:"id"`
+	CreatedTime      string  `json:"createdTime"`
+	Owner            string  `json:"owner"`     // org
+	User             string  `json:"user"`      // owner/name of the caller, "" if unauthenticated
+	RequestId        string  `json:"requestId"` // response/usage-ledger request id — the reward join key
+	Task             string  `json:"task"`
+	RequestedModel   string  `json:"requestedModel"` // the virtual alias ("auto") or the family SKU ("enso")
+	RoutedModel      string  `json:"routedModel"`    // the concrete model/arm that served
+	Confidence       float64 `json:"confidence"`
+	Source           string  `json:"source"`      // "engine" | "heuristic" | "family"
+	Features         string  `json:"features"`    // serialized JSON array; "" when the engine gave none
+	ShadowModel      string  `json:"shadowModel"` // engine's counterfactual pick for a family call; "" if none
+	PromptTokens     int     `json:"promptTokens"`
+	CompletionTokens int     `json:"completionTokens"`
+	CostCents        int64   `json:"costCents"`
+	LatencyMs        int64   `json:"latencyMs"`
+	Reward           float64 `json:"reward"`       // outcome signal 0..1; meaningful only when RewardedTime != ""
+	RewardedTime     string  `json:"rewardedTime"` // RFC3339 when scored; "" = not yet scored (the nullable signal)
 }
 
 // AddRoutingEvent persists a routing decision. It fills in the id and created
@@ -123,6 +128,24 @@ func AttachRoutingReward(org, requestId string, reward float64) (found bool, err
 		return false, err
 	}
 	return true, nil
+}
+
+// GetRoutingEventByRequestId returns the routing event for (org, requestId), or nil
+// when none matches (unknown or cross-org — the caller reveals nothing either way).
+// It backs the online-learning forward: after a reward lands, ai reads the event's
+// (features, routed model) here and forwards them with the reward to the engine's
+// observe endpoint so per-user LinUCB theta updates in-process. Most recent wins.
+func GetRoutingEventByRequestId(org, requestId string) (*RoutingEvent, error) {
+	if adapter == nil || adapter.db == nil {
+		return nil, nil
+	}
+	events := []*RoutingEvent{}
+	err := findAll(adapter.db, "routing_event", &events,
+		dbx.HashExp{"owner": org, "request_id": requestId}, "created_time DESC")
+	if err != nil || len(events) == 0 {
+		return nil, err
+	}
+	return events[0], nil
 }
 
 // GetRewardedRoutingEvents returns routing events that carry a reward
