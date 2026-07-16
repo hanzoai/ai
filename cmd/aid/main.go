@@ -110,5 +110,10 @@ func main() {
 
 	go object.ClearThroughputPerSecond()
 
+	// Router self-probe: a slow, tagged trickle of real auto-routed requests
+	// against our own /v1 so the enso training ledger accumulates continuously.
+	// Off unless ROUTER_PROBE_RPH + ROUTER_PROBE_TOKEN are set.
+	controllers.StartRouterProbe()
+
 	beego.Run(fmt.Sprintf(":%v", port))
 }
