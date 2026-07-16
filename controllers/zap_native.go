@@ -35,6 +35,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hanzoai/account"
+
 	"github.com/hanzoai/beego/logs"
 	iam "github.com/hanzoai/iam"
 	"github.com/luxfi/zap"
@@ -254,14 +256,14 @@ func zapBalanceHandler(auth string, body []byte) (*zap.Message, error) {
 
 	// The balance lives under the billing SUBJECT within the org NAMESPACE.
 	// userId is "owner/name" (or a bare org); namespace = the org part, subject
-	// = object.Payer(object.Credential{Owner: owner, Name: name}).Subject() (per-user for a personal-billing org).
+	// = account.Payer(account.Credential{Owner: owner, Name: name}).Subject() (per-user for a personal-billing org).
 	namespace := userId
 	name := ""
 	if i := strings.IndexByte(userId, '/'); i >= 0 {
 		namespace = userId[:i]
 		name = userId[i+1:]
 	}
-	subject := object.Payer(object.Credential{Owner: namespace, Name: name}).Subject()
+	subject := account.Payer(account.Credential{Owner: namespace, Name: name}).Subject()
 
 	balance, err := getUserBalance(subject, namespace)
 	if err != nil {
