@@ -117,11 +117,10 @@ func signalReward(signal string, rating *float64) (value float64, record bool, e
 	}
 }
 
-// normalizeRequestId trims the id and strips the response-object "chatcmpl-"
-// prefix, so a client may pass either the raw request id (as the usage ledger
-// stores it) or the response `id` field verbatim — one stored form, both inputs.
+// normalizeRequestId delegates to object.NormalizeRequestId — the ONE normalization
+// the feedback join and the family-event write share, so both key identically.
 func normalizeRequestId(s string) string {
-	return strings.TrimPrefix(strings.TrimSpace(s), "chatcmpl-")
+	return object.NormalizeRequestId(s)
 }
 
 // AddRoutingReward attaches a per-request outcome reward to the routing decision
