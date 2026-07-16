@@ -96,12 +96,17 @@ type RetryDef struct {
 	MaxBackoff  string `yaml:"max_backoff,omitempty"`  // e.g. "4s"
 }
 
-// ModelPriceDef holds per-million token pricing.
+// ModelPriceDef holds per-million token economics: the customer price (Input/Output,
+// with the *_per_million long form) plus the optional provider COGS
+// (cost_in_per_million / cost_out_per_million). COGS unset ⇒ cost defaults to price
+// (zero margin), so an entry that lists only a price is byte-identical to before.
 type ModelPriceDef struct {
-	InputPerMillion  float64 `yaml:"input_per_million,omitempty"`
-	OutputPerMillion float64 `yaml:"output_per_million,omitempty"`
-	Input            float64 `yaml:"input,omitempty"`
-	Output           float64 `yaml:"output,omitempty"`
+	InputPerMillion   float64 `yaml:"input_per_million,omitempty"`
+	OutputPerMillion  float64 `yaml:"output_per_million,omitempty"`
+	Input             float64 `yaml:"input,omitempty"`
+	Output            float64 `yaml:"output,omitempty"`
+	CostInPerMillion  float64 `yaml:"cost_in_per_million,omitempty"`
+	CostOutPerMillion float64 `yaml:"cost_out_per_million,omitempty"`
 }
 
 // FallbackDef describes an alternate provider+upstream for failover.
@@ -253,6 +258,10 @@ func (mc *ModelConfig) applyConfig(file *ModelConfigFile) error {
 			} else {
 				p.OutputPerMillion = def.Pricing.OutputPerMillion
 			}
+			// Provider COGS (optional). Unset ⇒ 0 ⇒ cost defaults to price at read
+			// time (modelPrice.costInputPerMillion), so margin is 0 unless declared.
+			p.CostInPerMillion = def.Pricing.CostInPerMillion
+			p.CostOutPerMillion = def.Pricing.CostOutPerMillion
 			pricing[key] = p
 		}
 
