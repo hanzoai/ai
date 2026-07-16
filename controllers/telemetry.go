@@ -53,6 +53,12 @@ const (
 	attrO11yCostCacheRead  = "_o11y.gen_ai.cost_cache_read"
 	attrO11yCostCacheWrite = "_o11y.gen_ai.cost_cache_write"
 
+	// provider_cost = Hanzo's COGS to serve the call (0 for BYO); margin = billed −
+	// provider_cost. These add the cost/margin view beside the customer-price
+	// total_cost/billed_cost above (which stay the legacy figures o11y already reads).
+	attrO11yProviderCost = "_o11y.gen_ai.provider_cost"
+	attrO11yMargin       = "_o11y.gen_ai.margin"
+
 	attrSessionID      = "session.id"
 	attrConversationID = "gen_ai.conversation.id"
 	attrUserID         = "user.id"
@@ -86,12 +92,13 @@ type genAISpanFields struct {
 // gen_ai.* attributes). Attribution (user/org/provider/request-id/session/served-by)
 // and cost/token detail ride on span attributes.
 //
-// Pure: no I/O, no globals, no pricing lookup. Cost is passed in (totalCostUSD is
-// the authoritative per-call cost in dollars; breakdown is the per-component split
-// for token-billed calls, nil for image/video which have no component split). This
-// keeps the o11y attribute contract unit-testable without a pricing table. Message
-// capture is gated by the caller (captureMessages) — PII is emitted only on opt-in.
-func buildGenAISpanFields(record *usageRecord, totalCostUSD, billedCostUSD float64, breakdown *costBreakdown, captureMessages bool) genAISpanFields {
+// Pure: no I/O, no globals, no pricing lookup. Every dollar figure is passed in
+// (totalCostUSD is the full customer-price cost; billedCostUSD what the ledger charged;
+// providerCostUSD Hanzo's COGS; marginUSD = billed − provider; breakdown is the
+// per-component split for token-billed calls, nil for image/video). This keeps the o11y
+// attribute contract unit-testable without a pricing table. Message capture is gated by
+// the caller (captureMessages) — PII is emitted only on opt-in.
+func buildGenAISpanFields(record *usageRecord, totalCostUSD, billedCostUSD, providerCostUSD, marginUSD float64, breakdown *costBreakdown, captureMessages bool) genAISpanFields {
 	model := record.Model
 	if model == "" {
 		model = "unknown"
@@ -105,11 +112,14 @@ func buildGenAISpanFields(record *usageRecord, totalCostUSD, billedCostUSD float
 		attribute.Int(attrGenAIInputTokens, record.PromptTokens),
 		attribute.Int(attrGenAIOutputTokens, record.CompletionTokens),
 		attribute.Int(attrGenAITotalTokens, record.TotalTokens),
-		// total_cost = full provider cost (analytics). billed_cost = what the ledger
-		// charged (== total for Hanzo-served, ~1% fee for BYO). Both always emitted
-		// so the o11y cost views have the columns and Observe reconciles the invoice.
+		// total_cost = full customer-price cost (analytics). billed_cost = what the
+		// ledger charged (== total for Hanzo-served, ~1% fee for BYO). provider_cost =
+		// Hanzo's COGS (0 for BYO). margin = billed − provider_cost. All always emitted
+		// so the o11y cost/margin views have the columns and Observe reconciles.
 		attribute.Float64(attrO11yTotalCost, totalCostUSD),
 		attribute.Float64(attrO11yBilledCost, billedCostUSD),
+		attribute.Float64(attrO11yProviderCost, providerCostUSD),
+		attribute.Float64(attrO11yMargin, marginUSD),
 	}
 
 	// Cache tokens (Anthropic-style prompt caching) — omitted when absent.
@@ -227,13 +237,18 @@ func emitGenAISpan(ctx context.Context, record *usageRecord, startTime time.Time
 	costCents := usageCostCents(record)
 	totalCostUSD := float64(costCents) / 100.0
 	billedCostUSD := float64(usageBilledCents(record, costCents)) / 100.0
+	// Provider COGS + margin from the exact nano ledger (usageMargin) — the same trio
+	// stamped on the cloud_usage row, so span and warehouse agree. Rendered as USD.
+	mg := usageMargin(record)
+	providerCostUSD := float64(mg.CostNano) / 1e9
+	marginUSD := float64(mg.MarginNano) / 1e9
 	var breakdown *costBreakdown
 	if record.ImageCount == 0 && record.VideoCount == 0 {
 		b := modelCostBreakdown(record.Model, record.PromptTokens, record.CompletionTokens, record.CacheReadTokens, record.CacheWriteTokens)
 		breakdown = &b
 	}
 
-	fields := buildGenAISpanFields(record, totalCostUSD, billedCostUSD, breakdown, genAICaptureMessages())
+	fields := buildGenAISpanFields(record, totalCostUSD, billedCostUSD, providerCostUSD, marginUSD, breakdown, genAICaptureMessages())
 	_, span := object.GenAITracer().Start(
 		ctx, fields.name,
 		trace.WithSpanKind(trace.SpanKindClient),
