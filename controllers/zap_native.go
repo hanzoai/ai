@@ -295,18 +295,16 @@ func zapChatHandler(ctx context.Context, auth string, body []byte) (*zap.Message
 		return object.BuildCloudResponse(401, nil, err.Error())
 	}
 
-	// Balance gate for premium models.
+	// Prepaid-balance gate — the ONE gate, shared verbatim with the HTTP path
+	// (enforceBalanceGate): a strictly positive balance is required for ANY model,
+	// premium or not. $0 → 402; an unverifiable balance → 500 (fail-closed). This
+	// closes the old ZAP-only hole where non-premium models ran ungated at $0.
+	if gateErr := enforceBalanceGate(authUser, request.Model); gateErr != nil {
+		return object.BuildCloudResponse(uint32(statusOf(gateErr)), nil, gateErr.Error())
+	}
 	isPremium := false
 	if route := resolveModelRoute(request.Model); route != nil {
 		isPremium = route.premium
-		if route.premium && authUser != nil {
-			// Check the billing SUBJECT within the org NAMESPACE (per-user for a
-			// personal-billing org), matching the gate and usage debit.
-			balance, balErr := getUserBalance(object.BillingSubject(authUser.Owner, authUser.Name), authUser.Owner)
-			if balErr != nil || balance <= 0 {
-				return object.BuildCloudResponse(402, nil, "insufficient balance for premium model")
-			}
-		}
 	}
 
 	// KMS secrets.
