@@ -422,6 +422,16 @@ func initAPI() {
 	beego.Router("/v1/get-router-policy", &controllers.ApiController{}, "GET:GetRouterPolicy")
 	beego.Router("/v1/update-router-policy", &controllers.ApiController{}, "POST:UpdateRouterPolicy")
 
+	// Router observability aggregate (aggregates only, never raw events): the
+	// admin savings-vs-perf panel reads the org-scoped form; world.hanzo.ai polls
+	// ?scope=platform, a PUBLIC-safe aggregate with no $ levels or org identity.
+	// Plus the per-org opt-in for contributing events to the shared base refresh
+	// and the retrain job's published-state write.
+	beego.Router("/v1/router/stats", &controllers.ApiController{}, "GET:GetRouterStats")
+	beego.Router("/v1/router/publish-artifact-meta", &controllers.ApiController{}, "POST:PublishRouterArtifactMeta")
+	beego.Router("/v1/get-training-contribution", &controllers.ApiController{}, "GET:GetTrainingContribution")
+	beego.Router("/v1/update-training-contribution", &controllers.ApiController{}, "POST:UpdateTrainingContribution")
+
 	// Anthropic Messages API compatible endpoints
 	beego.Router("/v1/messages", &controllers.ApiController{}, "POST:AnthropicMessages")
 	beego.Router("/v1/messages/count_tokens", &controllers.ApiController{}, "POST:AnthropicCountTokens")
