@@ -20,9 +20,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/hanzoai/beego/logs"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/router"
+	"github.com/hanzoai/beego/logs"
 	"github.com/sashabaranov/go-openai"
 )
 
@@ -104,7 +104,7 @@ func isAutoModel(model string) bool {
 // in even when the global flag is off (as long as router config is present); ""
 // defers to the global flag. When routing is not active, `auto` is left
 // unchanged (no rewrite, no X-Routed-Model header) — its pre-routing behavior.
-func resolveAutoModel(requested, orgId, userId string, req *openai.ChatCompletionRequest, slo router.Slo) (string, bool) {
+func resolveAutoModel(requested, orgId, userId, requestId string, req *openai.ChatCompletionRequest, slo router.Slo) (string, bool) {
 	if !isAutoModel(requested) {
 		return "", false
 	}
@@ -140,6 +140,7 @@ func resolveAutoModel(requested, orgId, userId string, req *openai.ChatCompletio
 	routingEventSink(object.RoutingEvent{
 		Owner:          orgId,
 		User:           userId,
+		RequestId:      requestId,
 		Task:           string(dec.Task),
 		RequestedModel: strings.ToLower(strings.TrimSpace(requested)),
 		RoutedModel:    dec.Model,

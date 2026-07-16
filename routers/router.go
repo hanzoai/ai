@@ -409,6 +409,13 @@ func initAPI() {
 	beego.Router("/v1/get-routing-defaults", &controllers.ApiController{}, "GET:GetRoutingDefaults")
 	beego.Router("/v1/export-routing-ledger", &controllers.ApiController{}, "GET:ExportRoutingLedger")
 
+	// Per-request reward signal for the enso training loop: clients POST an outcome
+	// (0..1, or a 1..5 rating) keyed by the request_id they already hold, scoped to
+	// their own org; the super-admin export streams the rewarded (features, model,
+	// reward) tuples as JSONL for fit_base/observe.
+	beego.Router("/v1/add-routing-reward", &controllers.ApiController{}, "POST:AddRoutingReward")
+	beego.Router("/v1/export-routing-rewards", &controllers.ApiController{}, "GET:ExportRoutingRewards")
+
 	// Anthropic Messages API compatible endpoints
 	beego.Router("/v1/messages", &controllers.ApiController{}, "POST:AnthropicMessages")
 	beego.Router("/v1/messages/count_tokens", &controllers.ApiController{}, "POST:AnthropicCountTokens")
