@@ -20,6 +20,8 @@ import (
 	"os"
 	"testing"
 
+	"github.com/hanzoai/account"
+
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/object"
 	beecontext "github.com/hanzoai/beego/context"
@@ -177,7 +179,7 @@ func TestProviderKeyBillingUser(t *testing.T) {
 	if u.Type != "application" {
 		t.Errorf("billing user Type = %q, want %q (M2M provider-key credential)", u.Type, "application")
 	}
-	if got := object.Payer(object.Credential{Owner: u.Owner, Name: u.Name}).Subject(); got != "acme" {
+	if got := account.Payer(account.Credential{Owner: u.Owner, Name: u.Name}).Subject(); got != "acme" {
 		t.Errorf("Payer(%q,%q).Subject() = %q, want %q (org-level ledger)", u.Owner, u.Name, got, "acme")
 	}
 
@@ -189,7 +191,7 @@ func TestProviderKeyBillingUser(t *testing.T) {
 	if err != nil || uh == nil {
 		t.Fatalf("providerKeyBillingUser(owner=hanzo) = (%v, %v); want a user", uh, err)
 	}
-	if got := object.Payer(object.Credential{Owner: uh.Owner, Name: uh.Name}).Subject(); got != "hanzo" {
+	if got := account.Payer(account.Credential{Owner: uh.Owner, Name: uh.Name}).Subject(); got != "hanzo" {
 		t.Errorf("Payer(hanzo, %q).Subject() = %q, want %q (org-level, not per-user)", uh.Name, got, "hanzo")
 	}
 }
