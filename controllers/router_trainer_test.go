@@ -123,3 +123,27 @@ func TestGateHoldsWhenNothingClears(t *testing.T) {
 		t.Error("a held run must carry an honest note")
 	}
 }
+
+// TestTrainingOwnerSetIncludesInternalAndDedups proves the consent set always
+// carries the reserved internal orgs, dedups, and drops "*"/blank.
+func TestTrainingOwnerSetIncludesInternalAndDedups(t *testing.T) {
+	t.Setenv("ROUTER_TRAIN_INTERNAL_ORGS", "hanzo, probe-org , ")
+	got := trainingOwnerSet()
+	seen := map[string]int{}
+	for _, o := range got {
+		seen[o]++
+	}
+	for _, must := range []string{"admin", "hanzo", "probe-org"} {
+		if seen[must] == 0 {
+			t.Errorf("owner set must include internal org %q; got %v", must, got)
+		}
+	}
+	for o, n := range seen {
+		if n > 1 {
+			t.Errorf("owner %q duplicated %d times", o, n)
+		}
+		if o == "*" || o == "" {
+			t.Errorf("owner set must never contain %q", o)
+		}
+	}
+}
