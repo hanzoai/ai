@@ -94,6 +94,10 @@ func initAPI() {
 	// like the BYOK path. See controllers/connections_oauth.go.
 	beego.Router("/v1/ai/connections/:provider/authorize", &controllers.ApiController{}, "GET:ConnectAIProvider")
 	beego.Router("/v1/ai/connections/:provider/callback", &controllers.ApiController{}, "GET:CallbackAIProvider")
+	// Import a connected account's usage: unseal the org's key server-side, call the
+	// provider's own usage/cost API, normalize to ProviderUsage. See
+	// controllers/connections_usage.go.
+	beego.Router("/v1/ai/connections/:provider/usage", &controllers.ApiController{}, "GET:GetAIConnectionUsage")
 
 	beego.Router("/v1/get-global-files", &controllers.ApiController{}, "GET:GetGlobalFiles")
 	beego.Router("/v1/get-files", &controllers.ApiController{}, "GET:GetFiles")

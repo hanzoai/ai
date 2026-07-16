@@ -431,7 +431,7 @@ func (c *ApiController) AnthropicMessages() {
 			// refused on balance — the preview is free (hold nil → deferred settle is a
 			// no-op; usage still recorded downstream).
 			if !c.compedGated(request.Model, orgId, authUser) {
-				c.respondAnthropicError("billing_error", "Insufficient balance for the estimated request cost. Add credits at console.hanzo.ai", http.StatusPaymentRequired)
+				c.respondAnthropicError("billing_error", "Insufficient balance for the estimated request cost. add credits to your wallet at https://pay.hanzo.ai", http.StatusPaymentRequired)
 				return
 			}
 		}

@@ -111,7 +111,7 @@ func (c *ApiController) Embeddings() {
 				// Limited-preview comp (parity with chat/messages): a granted caller of
 				// a gated SKU is not refused on balance.
 				if !c.compedGated(head.Model, orgId, authUser) {
-					c.ResponseAuthError(billingError("Insufficient balance for the estimated cost. Add credits at console.hanzo.ai"))
+					c.ResponseAuthError(billingError("Insufficient balance for the estimated cost. add credits to your wallet at https://pay.hanzo.ai"))
 					return
 				}
 			}

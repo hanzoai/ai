@@ -199,7 +199,7 @@ func BalanceGateFilter(ctx *context.Context) {
 	ctx.ResponseWriter.Header().Set("Content-Type", "application/json")
 	ctx.ResponseWriter.WriteHeader(http.StatusPaymentRequired)
 
-	body := `{"error":{"message":"Insufficient balance. Please add credits at console.hanzo.ai","type":"billing_error","code":"insufficient_balance"}}`
+	body := `{"error":{"message":"Insufficient balance. Please add credits to your wallet at https://pay.hanzo.ai","type":"billing_error","code":"insufficient_balance"}}`
 	ctx.ResponseWriter.Write([]byte(body))
 }
 
@@ -245,6 +245,15 @@ func isBalanceExempt(path string) bool {
 	case path == "/v1/signout":
 		return true
 	case path == "/v1/get-account":
+		return true
+	// Usage/spend READS are account metadata, not metered inference. A caller
+	// must ALWAYS be able to SEE its own usage — especially to learn it needs
+	// credits — so a $0-balance org never 402s on the usage view (same class as
+	// /v1/models + /v1/get-account; the auth filters still require a principal).
+	// Gating these was the "insufficient balance on the usage panel" outage.
+	case path == "/v1/get-cloud-usages" ||
+		path == "/v1/get-usages" ||
+		path == "/v1/get-range-usages":
 		return true
 	default:
 		return false
