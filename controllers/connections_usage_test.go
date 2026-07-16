@@ -304,3 +304,156 @@ func TestUnsealConnectionKeyCopiesAndRefusesRef(t *testing.T) {
 		t.Fatalf("nil row should error")
 	}
 }
+
+func TestParseOpenRouterActivityUsageRows(t *testing.T) {
+	body := `{"data":[
+	  {"date":"2026-01-02","model":"anthropic/claude-3.5-sonnet","usage":0.42,"requests":3,"prompt_tokens":1000,"completion_tokens":200},
+	  {"date":"2026-01-03","model":"openai/gpt-4o","usage":1.00,"requests":2,"prompt_tokens":500,"completion_tokens":100}
+	]}`
+	rows := parseOpenRouterActivityRows([]byte(body))
+	if len(rows) != 2 {
+		t.Fatalf("rows = %d, want 2", len(rows))
+	}
+	if rows[0].cents != 42 || rows[0].input != 1000 || rows[0].output != 200 || rows[0].requests != 3 {
+		t.Fatalf("row0 = %+v", rows[0])
+	}
+	if rows[0].model != "anthropic/claude-3.5-sonnet" || rows[0].start != dayUnix("2026-01-02") {
+		t.Fatalf("row0 model/start = %+v", rows[0])
+	}
+	// Counts may arrive float-encoded — must still decode instead of dropping the page.
+	fr := parseOpenRouterActivityRows([]byte(`{"data":[{"date":"2026-01-02","model":"x","usage":0.10,"requests":2.0,"prompt_tokens":10.0,"completion_tokens":5.0}]}`))
+	if len(fr) != 1 || fr[0].input != 10 || fr[0].output != 5 || fr[0].requests != 2 {
+		t.Fatalf("float-encoded counts = %+v", fr)
+	}
+	if parseOpenRouterActivityRows([]byte("not json")) != nil {
+		t.Fatalf("garbage should parse to nil")
+	}
+}
+
+func TestParseOpenRouterCreditsUsageCents(t *testing.T) {
+	cents, ok := parseOpenRouterCreditsUsageCents([]byte(`{"data":{"total_credits":100.0,"total_usage":12.34}}`))
+	if !ok || cents != 1234 {
+		t.Fatalf("credits usage = %d ok=%v, want 1234 true", cents, ok)
+	}
+	if _, ok := parseOpenRouterCreditsUsageCents([]byte("nope")); ok {
+		t.Fatalf("garbage should report ok=false")
+	}
+}
+
+func TestOpenRouterImporterActivityHappyPath(t *testing.T) {
+	// The 2025-06-01 row is outside the window and MUST be excluded — activity is
+	// authoritative, so windowing (not the lifetime credits total) decides the answer.
+	activity := `{"data":[
+	  {"date":"2026-01-02","model":"anthropic/claude-3.5-sonnet","usage":0.42,"requests":3,"prompt_tokens":1000,"completion_tokens":200},
+	  {"date":"2026-01-03","model":"openai/gpt-4o","usage":1.00,"requests":2,"prompt_tokens":500,"completion_tokens":100},
+	  {"date":"2025-06-01","model":"old/model","usage":9.99,"requests":9,"prompt_tokens":9,"completion_tokens":9}
+	]}`
+	withFakeUsageHTTP(t, fakeUsageDoer{byPath: map[string]fakeResp{
+		"/api/v1/activity": {200, activity},
+		"/api/v1/credits":  {200, `{"data":{"total_credits":100,"total_usage":50}}`},
+	}})
+	imp := openrouterUsageImporter{base: "https://openrouter.ai/api/v1"}
+	from := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	to := time.Date(2026, 1, 31, 0, 0, 0, 0, time.UTC)
+	out, err := imp.importUsage(context.Background(), "sk-or-x", from, to)
+	if err != nil {
+		t.Fatalf("importUsage err: %v", err)
+	}
+	if !out.Available {
+		t.Fatalf("expected available; note=%q", out.Note)
+	}
+	if out.Totals.SpendCents != 142 {
+		t.Fatalf("spend = %d, want 142 (0.42+1.00; old row excluded)", out.Totals.SpendCents)
+	}
+	if out.Totals.Tokens != 1800 || out.Totals.InputTokens != 1500 || out.Totals.OutputTokens != 300 {
+		t.Fatalf("token totals = %+v", out.Totals)
+	}
+	if out.Totals.Requests != 5 {
+		t.Fatalf("requests = %d, want 5", out.Totals.Requests)
+	}
+	if len(out.Series) != 2 {
+		t.Fatalf("series = %d, want 2 (in-window days only)", len(out.Series))
+	}
+	if len(out.ByModel) == 0 || out.ByModel[0].Model != "openai/gpt-4o" || out.ByModel[0].SpendCents != 100 {
+		t.Fatalf("byModel[0] = %+v", out.ByModel)
+	}
+}
+
+func TestOpenRouterImporterCreditsFallback(t *testing.T) {
+	// activity is analytics-scoped and this key can't read it (401) → lifetime credits
+	// aggregate, WITH an all-time note and NO fabricated per-day series.
+	withFakeUsageHTTP(t, fakeUsageDoer{byPath: map[string]fakeResp{
+		"/api/v1/activity": {401, `{"error":"insufficient scope"}`},
+		"/api/v1/credits":  {200, `{"data":{"total_credits":100.0,"total_usage":12.34}}`},
+	}})
+	imp := openrouterUsageImporter{base: "https://openrouter.ai/api/v1"}
+	out, err := imp.importUsage(context.Background(), "sk-or-normal", time.Now().AddDate(0, 0, -30), time.Now())
+	if err != nil {
+		t.Fatalf("credits fallback should not error: %v", err)
+	}
+	if !out.Available || out.Totals.SpendCents != 1234 {
+		t.Fatalf("lifetime spend = %+v, want available with 1234", out.Totals)
+	}
+	if len(out.Series) != 0 {
+		t.Fatalf("credits fallback must not fabricate a per-day series: %+v", out.Series)
+	}
+	if !strings.Contains(out.Note, "all-time") {
+		t.Fatalf("note must disclose the lifetime aggregate: %q", out.Note)
+	}
+}
+
+func TestOpenRouterImporterActivityEmptyIsHonest(t *testing.T) {
+	// activity readable but empty in-window → authoritative honest empty; it must NOT
+	// fall through to the (non-zero) lifetime credits total.
+	withFakeUsageHTTP(t, fakeUsageDoer{byPath: map[string]fakeResp{
+		"/api/v1/activity": {200, `{"data":[]}`},
+		"/api/v1/credits":  {200, `{"data":{"total_credits":100,"total_usage":50}}`},
+	}})
+	imp := openrouterUsageImporter{base: "https://openrouter.ai/api/v1"}
+	out, _ := imp.importUsage(context.Background(), "sk-or-x", time.Now().AddDate(0, 0, -30), time.Now())
+	if out.Available || out.Totals.SpendCents != 0 {
+		t.Fatalf("empty activity should be honest-unavailable with zero spend: %+v", out)
+	}
+	if !strings.Contains(out.Note, "no usage") {
+		t.Fatalf("note should say no usage: %q", out.Note)
+	}
+}
+
+func TestDeepSeekImporterHonestGap(t *testing.T) {
+	out, err := deepseekUsageImporter{}.importUsage(context.Background(), "sk-deepseek", time.Now().AddDate(0, 0, -7), time.Now())
+	if err != nil || out.Available {
+		t.Fatalf("deepseek should be honest-unavailable: %+v err=%v", out, err)
+	}
+	if !strings.Contains(out.Note, "balance") {
+		t.Fatalf("note should explain balance-not-spend gap: %q", out.Note)
+	}
+}
+
+func TestGroqImporterHonestGap(t *testing.T) {
+	out, err := groqUsageImporter{}.importUsage(context.Background(), "gsk-x", time.Now().AddDate(0, 0, -7), time.Now())
+	if err != nil || out.Available {
+		t.Fatalf("groq should be honest-unavailable: %+v err=%v", out, err)
+	}
+	if !strings.Contains(out.Note, "console") {
+		t.Fatalf("note should explain the console-only gap: %q", out.Note)
+	}
+}
+
+// TestUsageImportersMatchConnSpecs enforces the lockstep invariant: every registered
+// importer has a connectable-account spec, and the three new providers each resolve one.
+func TestUsageImportersMatchConnSpecs(t *testing.T) {
+	for slug := range providerUsageImporters {
+		if _, ok := aiConnSpecs[slug]; !ok {
+			t.Fatalf("importer %q has no aiConnSpecs entry (registry drift)", slug)
+		}
+	}
+	for _, slug := range []string{"openrouter", "deepseek", "groq"} {
+		imp := providerUsageImporterFor(slug)
+		if imp == nil || imp.provider() != slug {
+			t.Fatalf("no usage importer registered for %q", slug)
+		}
+		if _, ok := aiConnSpecs[slug]; !ok {
+			t.Fatalf("no aiConnSpecs entry for %q", slug)
+		}
+	}
+}

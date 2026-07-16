@@ -13,7 +13,7 @@
 // limitations under the License.
 //
 // connections_usage.go — the IMPORT half of the AI login-manager. For a connected
-// third-party account (OpenAI / Anthropic / Google) it UNSEALS the org's KMS-sealed
+// third-party account (OpenAI, Anthropic, Google, OpenRouter, DeepSeek, Groq) it UNSEALS the org's KMS-sealed
 // key SERVER-SIDE (the key never touches the browser), calls THAT provider's own
 // usage/cost API, and normalizes the answer into one small ProviderUsage shape
 // (spend, tokens, requests, per-model, day-bucketed time series) — so the console can
@@ -21,7 +21,7 @@
 //
 // Design mirrors connections_api.go / cloud_usage.go: the HTTP handler is thin
 // orchestration; the per-provider fetch is behind a providerUsageImporter interface
-// (OpenAI is the reference, Anthropic slots in the same way, Google is an honest gap);
+// (OpenAI/Anthropic/OpenRouter are real importers; Google/DeepSeek/Groq are honest gaps);
 // and the JSON→ProviderUsage mapping is PURE functions the tests drive with sample
 // payloads — so the two hard invariants (the raw key never leaves the server; an
 // empty/scope-denied provider answer degrades to an HONEST empty state, never a
@@ -113,12 +113,17 @@ type providerUsageImporter interface {
 }
 
 // providerUsageImporters is the closed registry: adding a provider = implement the
-// interface + register it here (one place). Keys match aiConnSpecs (openai/anthropic/
-// google) so a connectable account and its importer stay in lockstep.
+// interface + register it here (one place). Every key MUST have a matching aiConnSpecs
+// entry (asserted in the tests) so a connectable account and its importer stay in
+// lockstep. Real importers hit the provider's own usage/cost API; honest-gap importers
+// (google/deepseek/groq) return available=false with a precise note — never a fake zero.
 var providerUsageImporters = map[string]providerUsageImporter{
-	"openai":    openaiUsageImporter{base: "https://api.openai.com/v1"},
-	"anthropic": anthropicUsageImporter{base: "https://api.anthropic.com"},
-	"google":    googleUsageImporter{},
+	"openai":     openaiUsageImporter{base: "https://api.openai.com/v1"},
+	"anthropic":  anthropicUsageImporter{base: "https://api.anthropic.com"},
+	"google":     googleUsageImporter{},
+	"openrouter": openrouterUsageImporter{base: "https://openrouter.ai/api/v1"},
+	"deepseek":   deepseekUsageImporter{},
+	"groq":       groqUsageImporter{},
 }
 
 func providerUsageImporterFor(provider string) providerUsageImporter {
@@ -172,7 +177,7 @@ func isAuthStatus(s int) bool { return s == http.StatusUnauthorized || s == http
 // @Title GetAIConnectionUsage
 // @Tag AI Connections API
 // @Description import a connected third-party AI account's usage (spend/tokens/requests/per-model/series)
-// @Param provider path string true "provider slug (openai|anthropic|google)"
+// @Param provider path string true "provider slug (see GET /v1/ai/connections)"
 // @Param from query string false "window start (RFC3339, YYYY-MM-DD, or unix seconds; default 30d ago)"
 // @Param to query string false "window end (RFC3339, YYYY-MM-DD, or unix seconds; default now)"
 // @Success 200 {object} controllers.ProviderUsage The Response object
@@ -184,7 +189,7 @@ func (c *ApiController) GetAIConnectionUsage() {
 	}
 	spec, ok := aiConnSpecFor(c.Ctx.Input.Param(":provider"))
 	if !ok {
-		c.ResponseError(c.T("openai:provider must be one of: openai, anthropic, google"))
+		c.ResponseError(c.T("openai:provider must be one of") + ": " + aiConnProviderList())
 		return
 	}
 
@@ -638,6 +643,196 @@ func (googleUsageImporter) importUsage(_ context.Context, _ string, _, _ time.Ti
 		Currency:  "usd",
 		Available: false,
 		Note:      "Google Gemini has no per-API-key usage or cost API — spend is reported in Google Cloud Billing. Usage import isn't available for Google yet.",
+	}, nil
+}
+
+// ── OpenRouter importer (real; credits + activity) ──────────────────────────────────
+//
+// OpenRouter meters in USD credits (1 credit = 1 USD). Two endpoints, both authorized
+// by a normal Bearer key:
+//   - GET {base}/activity → per-DAY, per-MODEL rows {date, model, usage(USD), requests,
+//     prompt_tokens, completion_tokens}. Best fidelity; filtered to [from,to] and
+//     authoritative when readable (an empty window is a real "no usage", not a gap).
+//   - GET {base}/credits  → {data:{total_credits, total_usage}} — LIFETIME USD totals.
+//
+// activity is analytics-scoped, so a key without that scope degrades to the credits
+// LIFETIME total as ONE aggregate row WITH an explicit all-time note (never a fabricated
+// per-day split). An idle account is an honest empty; both endpoints failing is an error.
+
+type openrouterUsageImporter struct{ base string }
+
+func (openrouterUsageImporter) provider() string { return "openrouter" }
+
+func (o openrouterUsageImporter) importUsage(ctx context.Context, apiKey string, from, to time.Time) (ProviderUsage, error) {
+	hdr := map[string]string{"Authorization": "Bearer " + apiKey}
+	root := strings.TrimRight(o.base, "/")
+	out := ProviderUsage{Currency: "usd"}
+
+	// Preferred: per-day, per-model activity, filtered to the window. When this read
+	// succeeds it is authoritative — an empty window means no usage, not "try credits".
+	actBody, actStatus, actErr := providerUsageGet(ctx, root+"/activity", hdr)
+	if actErr == nil && actStatus/100 == 2 {
+		fromDay, toUnix := dayStartUnix(from), to.Unix()
+		series := map[int64]*ProviderUsageSeriesPoint{}
+		models := map[string]*ProviderUsageModelSpend{}
+		for _, r := range parseOpenRouterActivityRows(actBody) {
+			if r.start < fromDay || r.start > toUnix {
+				continue
+			}
+			tok := r.input + r.output
+			p := seriesPointAt(series, r.start)
+			p.SpendCents += r.cents
+			p.Tokens += tok
+			p.Requests += r.requests
+			out.Totals.SpendCents += r.cents
+			out.Totals.Tokens += tok
+			out.Totals.InputTokens += r.input
+			out.Totals.OutputTokens += r.output
+			out.Totals.Requests += r.requests
+			if r.model != "" {
+				m := modelSpendAt(models, r.model)
+				m.SpendCents += r.cents
+				m.Tokens += tok
+				m.Requests += r.requests
+			}
+		}
+		out.Series = sortedSeries(series)
+		out.ByModel = sortedModelSpend(models)
+		out.Available = len(out.Series) > 0 || out.Totals.SpendCents > 0 || out.Totals.Tokens > 0
+		if !out.Available {
+			out.Note = "OpenRouter reported no usage for this period."
+		}
+		return out, nil
+	}
+
+	// Fallback: activity is unreadable (no analytics scope) → lifetime credits aggregate.
+	crBody, crStatus, crErr := providerUsageGet(ctx, root+"/credits", hdr)
+	if actErr != nil && crErr != nil {
+		return ProviderUsage{}, fmt.Errorf("openrouter usage request failed: %v", actErr)
+	}
+	if crErr == nil && crStatus/100 == 2 {
+		if total, ok := parseOpenRouterCreditsUsageCents(crBody); ok && total > 0 {
+			out.Totals.SpendCents = total
+			out.Available = true
+			out.Note = "Showing your all-time OpenRouter spend — OpenRouter's per-key credits endpoint has no date-window breakdown. Connect a key with analytics access to import daily, per-model usage."
+			return out, nil
+		}
+		out.Note = "OpenRouter reported no usage yet."
+		return out, nil
+	}
+
+	// Neither endpoint was usable — distinguish a scope/auth block from a transient one.
+	if isAuthStatus(actStatus) || isAuthStatus(crStatus) {
+		out.Note = "OpenRouter didn't authorize usage import for this key."
+	} else {
+		out.Note = "OpenRouter usage is unavailable right now."
+	}
+	return out, nil
+}
+
+type openrouterActivityRow struct {
+	start    int64 // day bucket (UTC midnight unix)
+	cents    int64 // USD spend → cents
+	input    int64 // prompt tokens
+	output   int64 // completion tokens
+	requests int64
+	model    string
+}
+
+// parseOpenRouterActivityRows flattens the OpenRouter activity page into per-day,
+// per-model rows. `usage` is USD; counts are decoded as float64 then cast so an
+// int-or-float encoding of tokens/requests can't drop the whole page.
+func parseOpenRouterActivityRows(body []byte) []openrouterActivityRow {
+	var page struct {
+		Data []struct {
+			Date             string  `json:"date"`
+			Model            string  `json:"model"`
+			Usage            float64 `json:"usage"`
+			Requests         float64 `json:"requests"`
+			PromptTokens     float64 `json:"prompt_tokens"`
+			CompletionTokens float64 `json:"completion_tokens"`
+		} `json:"data"`
+	}
+	if json.Unmarshal(body, &page) != nil {
+		return nil
+	}
+	out := make([]openrouterActivityRow, 0, len(page.Data))
+	for _, r := range page.Data {
+		out = append(out, openrouterActivityRow{
+			start:    dayUnix(r.Date),
+			cents:    dollarsToCents(r.Usage),
+			input:    int64(r.PromptTokens),
+			output:   int64(r.CompletionTokens),
+			requests: int64(r.Requests),
+			model:    r.Model,
+		})
+	}
+	return out
+}
+
+// parseOpenRouterCreditsUsageCents extracts LIFETIME USD usage (→ cents) from the
+// credits payload {data:{total_credits, total_usage}}. ok is false only on a bad body.
+func parseOpenRouterCreditsUsageCents(body []byte) (int64, bool) {
+	var page struct {
+		Data struct {
+			TotalCredits float64 `json:"total_credits"`
+			TotalUsage   float64 `json:"total_usage"`
+		} `json:"data"`
+	}
+	if json.Unmarshal(body, &page) != nil {
+		return 0, false
+	}
+	return dollarsToCents(page.Data.TotalUsage), true
+}
+
+// dayStartUnix truncates t to UTC midnight — the window's lower bound so the from-day's
+// (midnight-dated) activity row is included.
+func dayStartUnix(t time.Time) int64 {
+	u := t.UTC()
+	return time.Date(u.Year(), u.Month(), u.Day(), 0, 0, 0, 0, time.UTC).Unix()
+}
+
+// dayUnix parses a YYYY-MM-DD activity date to its UTC midnight unix bucket.
+func dayUnix(date string) int64 {
+	if t, err := time.Parse("2006-01-02", strings.TrimSpace(date)); err == nil {
+		return t.UTC().Unix()
+	}
+	return 0
+}
+
+// ── DeepSeek importer (honest gap) ──────────────────────────────────────────────────
+//
+// DeepSeek's only account endpoint is GET /user/balance (remaining balance — granted +
+// topped-up), NOT spend, and there is no per-key usage or cost API. So the importer is
+// honest: connected, but usage import is unavailable (balance is a different metric).
+
+type deepseekUsageImporter struct{}
+
+func (deepseekUsageImporter) provider() string { return "deepseek" }
+
+func (deepseekUsageImporter) importUsage(_ context.Context, _ string, _, _ time.Time) (ProviderUsage, error) {
+	return ProviderUsage{
+		Currency:  "usd",
+		Available: false,
+		Note:      "DeepSeek exposes account balance (GET /user/balance), not per-key usage — there is no usage or cost API to import. Track DeepSeek spend in the DeepSeek platform.",
+	}, nil
+}
+
+// ── Groq importer (honest gap) ──────────────────────────────────────────────────────
+//
+// Groq bills per token but exposes no per-key usage or cost API — spend limits are
+// org-wide and usage is visible only in the Groq console. So the importer is honest:
+// connected, but usage import is unavailable.
+
+type groqUsageImporter struct{}
+
+func (groqUsageImporter) provider() string { return "groq" }
+
+func (groqUsageImporter) importUsage(_ context.Context, _ string, _, _ time.Time) (ProviderUsage, error) {
+	return ProviderUsage{
+		Currency:  "usd",
+		Available: false,
+		Note:      "Groq has no per-API-key usage or cost API — usage is reported only in the Groq console. Usage import isn't available for Groq yet.",
 	}, nil
 }
 

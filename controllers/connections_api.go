@@ -49,15 +49,19 @@ type aiConnSpec struct {
 	label       string // human display name
 }
 
-// aiConnSpecs is the closed allow-list of connectable consumer providers.
+// aiConnSpecs is the closed allow-list of connectable consumer providers. Groq is
+// OpenAI-compatible so its row is typed "OpenAI" pointed at Groq's base URL.
 var aiConnSpecs = map[string]aiConnSpec{
-	"openai":    {name: "openai", typ: "OpenAI", subType: "gpt-5", providerURL: "https://api.openai.com/v1", label: "OpenAI"},
-	"anthropic": {name: "anthropic", typ: "Claude", subType: "claude-opus-4-8", providerURL: "https://api.anthropic.com", label: "Anthropic"},
-	"google":    {name: "google", typ: "Gemini", subType: "gemini-2.5-pro", providerURL: "https://generativelanguage.googleapis.com/v1beta/openai", label: "Google Gemini"},
+	"openai":     {name: "openai", typ: "OpenAI", subType: "gpt-5", providerURL: "https://api.openai.com/v1", label: "OpenAI"},
+	"anthropic":  {name: "anthropic", typ: "Claude", subType: "claude-opus-4-8", providerURL: "https://api.anthropic.com", label: "Anthropic"},
+	"google":     {name: "google", typ: "Gemini", subType: "gemini-2.5-pro", providerURL: "https://generativelanguage.googleapis.com/v1beta/openai", label: "Google Gemini"},
+	"openrouter": {name: "openrouter", typ: "OpenRouter", subType: "openrouter/auto", providerURL: "https://openrouter.ai/api/v1", label: "OpenRouter"},
+	"deepseek":   {name: "deepseek", typ: "DeepSeek", subType: "deepseek-chat", providerURL: "https://api.deepseek.com/v1", label: "DeepSeek"},
+	"groq":       {name: "groq", typ: "OpenAI", subType: "llama-3.3-70b-versatile", providerURL: "https://api.groq.com/openai/v1", label: "Groq"},
 }
 
 // aiConnOrder fixes the listing order so GetAIConnections is deterministic.
-var aiConnOrder = []string{"openai", "anthropic", "google"}
+var aiConnOrder = []string{"openai", "anthropic", "google", "openrouter", "deepseek", "groq"}
 
 // aiConnSpecFor resolves a provider slug to its spec, case-insensitively. ok is
 // false for any provider outside the allow-list.
@@ -65,6 +69,10 @@ func aiConnSpecFor(provider string) (aiConnSpec, bool) {
 	spec, ok := aiConnSpecs[strings.ToLower(strings.TrimSpace(provider))]
 	return spec, ok
 }
+
+// aiConnProviderList is the human list of connectable slugs for the "unknown provider"
+// error, derived from the ONE registry order so it never drifts from aiConnSpecs.
+func aiConnProviderList() string { return strings.Join(aiConnOrder, ", ") }
 
 // aiConnResponse is one connection's PUBLIC shape. It carries a boolean key signal
 // only — never the key value and never the "kms://…" reference.
@@ -187,7 +195,7 @@ func (c *ApiController) AddAIConnection() {
 	}
 	spec, ok := aiConnSpecFor(body.Provider)
 	if !ok {
-		c.ResponseError(c.T("openai:provider must be one of: openai, anthropic, google"))
+		c.ResponseError(c.T("openai:provider must be one of") + ": " + aiConnProviderList())
 		return
 	}
 	if strings.TrimSpace(body.APIKey) == "" {
@@ -228,7 +236,7 @@ func (c *ApiController) DeleteAIConnection() {
 	}
 	spec, ok := aiConnSpecFor(c.Ctx.Input.Param(":provider"))
 	if !ok {
-		c.ResponseError(c.T("openai:provider must be one of: openai, anthropic, google"))
+		c.ResponseError(c.T("openai:provider must be one of") + ": " + aiConnProviderList())
 		return
 	}
 	id := org + "/" + spec.name
