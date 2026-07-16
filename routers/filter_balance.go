@@ -197,6 +197,11 @@ func isBalanceExempt(path string) bool {
 		return true
 	case path == "/v1/metrics" || path == "/metrics":
 		return true
+	// Public marketing aggregate — the world.hanzo.ai live-traffic globe. It exposes
+	// only country/region counts + throughput rates (no IPs, no org/user), needs no
+	// auth and no balance. Same class as /v1/router/stats?scope=platform.
+	case strings.HasPrefix(path, "/v1/traffic/"):
+		return true
 	// Model + pricing CATALOG listings are metadata, not metered inference:
 	// a caller must still be authenticated (the auth filters enforce that —
 	// balance-exemption is NOT auth-exemption), but must never need a positive
