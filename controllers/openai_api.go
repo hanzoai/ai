@@ -988,12 +988,18 @@ func (c *ApiController) ChatCompletions() {
 		}
 	}
 
+	// One request id, generated once here — it is the response id (`chatcmpl-<id>`),
+	// the usage-ledger request_id, AND the routing-event join key, so a later reward
+	// (POST /v1/add-routing-reward) can be tied back to THIS decision. Generated
+	// before routing so resolveAutoModel can stamp it on the RoutingEvent.
+	requestId := util.GenerateUUID()
+
 	// Virtual `auto`/`zen-router` model → resolve to a concrete servable model id
 	// BEFORE any provider/pricing/billing resolution, so the ENTIRE existing path
 	// (auth+routing, ModelRoute fallbacks, zen identity, balance reserve/settle,
 	// usage record, response `model` echo) bills and reports the model that
 	// actually served. The transparency header lets callers see the routed choice.
-	if routed, ok := resolveAutoModel(request.Model, orgId, c.routingUserId(), &request, c.sloFromHeaders()); ok {
+	if routed, ok := resolveAutoModel(request.Model, orgId, c.routingUserId(), requestId, &request, c.sloFromHeaders()); ok {
 		request.Model = routed
 		c.Ctx.ResponseWriter.Header().Set(RoutedModelHeader, routed)
 	}
@@ -1116,7 +1122,6 @@ func (c *ApiController) ChatCompletions() {
 	}
 
 	// Setup for streaming if enabled
-	requestId := util.GenerateUUID()
 	if request.Stream {
 		c.Ctx.ResponseWriter.Header().Set("Content-Type", "text/event-stream")
 		c.Ctx.ResponseWriter.Header().Set("Cache-Control", "no-cache")
