@@ -427,13 +427,8 @@ func (c *ApiController) AnthropicMessages() {
 		est := estimateRequestCostCents(request.Model, len(request.Messages)*500, request.MaxTokens)
 		var ok bool
 		if hold, ok = reserveBudget(subject, est); !ok {
-			// Limited-preview comp: a granted caller of a gated SKU (enso) is not
-			// refused on balance — the preview is free (hold nil → deferred settle is a
-			// no-op; usage still recorded downstream).
-			if !c.compedGated(request.Model, orgId, authUser) {
-				c.respondAnthropicError("billing_error", "Insufficient balance for the estimated request cost. add credits to your wallet at https://pay.hanzo.ai", http.StatusPaymentRequired)
-				return
-			}
+			c.respondAnthropicError("billing_error", "Insufficient balance for the estimated request cost. add credits to your wallet at https://pay.hanzo.ai", http.StatusPaymentRequired)
+			return
 		}
 	}
 	defer hold.settle(0)
