@@ -15,15 +15,39 @@
 package controllers
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"io"
+	"os"
+	"strings"
 
+	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/object"
 )
 
 // getRoutingEvents is the ledger source, indirected through a var so the export
 // contract can be tested without a live DB. Production reads the DB.
 var getRoutingEvents = object.GetRoutingEvents
+
+// routerAdminAuthorized gates the training-data exports for EITHER a platform super
+// admin (the console) OR a service holding ROUTER_ADMIN_TOKEN (spark's nightly retrain
+// script) — mirroring the commerceToken service-auth pattern. The token is a
+// KMS-provisioned secret (env or config); when unset, only super-admin works, so there
+// is no accidental open door. On failure it writes the super-admin 401/403 response.
+func (c *ApiController) routerAdminAuthorized() bool {
+	tok := strings.TrimSpace(os.Getenv("ROUTER_ADMIN_TOKEN"))
+	if tok == "" {
+		tok = strings.TrimSpace(conf.GetConfigString("ROUTER_ADMIN_TOKEN"))
+	}
+	if tok != "" {
+		auth := c.Ctx.Request.Header.Get("Authorization")
+		bearer := strings.TrimSpace(strings.TrimPrefix(auth, "Bearer "))
+		if bearer != "" && subtle.ConstantTimeCompare([]byte(bearer), []byte(tok)) == 1 {
+			return true
+		}
+	}
+	return c.RequireSuperAdmin()
+}
 
 // routingDefaults is the resolved-for-the-caller routing default surface read by
 // console/chat/app/desktop. Both fields are resolved with org > "*" > conf
@@ -80,7 +104,7 @@ func (c *ApiController) GetRoutingDefaults() {
 // @Success 200 {string} string "JSONL, one routing event per line"
 // @router /export-routing-ledger [get]
 func (c *ApiController) ExportRoutingLedger() {
-	if !c.RequireSuperAdmin() {
+	if !c.routerAdminAuthorized() {
 		return
 	}
 
