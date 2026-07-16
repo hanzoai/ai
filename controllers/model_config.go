@@ -75,9 +75,8 @@ type CacheTTLs struct {
 
 // FeatureFlags controls runtime behavior.
 type FeatureFlags struct {
-	LiveMode      bool    `yaml:"live_mode"`
-	PremiumGate   bool    `yaml:"premium_gate"`
-	StarterCredit float64 `yaml:"starter_credit"`
+	LiveMode    bool `yaml:"live_mode"`
+	PremiumGate bool `yaml:"premium_gate"`
 }
 
 // RetryDef is how long we hold a request open for a provider that is merely
@@ -508,17 +507,6 @@ func (mc *ModelConfig) ListModelsWithUpstream() []zapModelEntry {
 	}
 
 	return models
-}
-
-// StarterCreditDollars returns the configured starter credit amount.
-func (mc *ModelConfig) StarterCreditDollars() float64 {
-	mc.mu.RLock()
-	defer mc.mu.RUnlock()
-
-	if mc.features.StarterCredit > 0 {
-		return mc.features.StarterCredit
-	}
-	return 5.00
 }
 
 // PremiumGateEnabled returns whether the premium gate feature is active.
