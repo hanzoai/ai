@@ -22,8 +22,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hanzoai/beego/logs"
 	"github.com/hanzoai/ai/conf"
+	"github.com/hanzoai/beego/logs"
 	"golang.org/x/net/proxy"
 )
 

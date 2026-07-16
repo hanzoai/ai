@@ -21,9 +21,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/beego"
 	"github.com/hanzoai/beego/logs"
-	"github.com/hanzoai/ai/object"
 	iam "github.com/hanzoai/iam"
 )
 
