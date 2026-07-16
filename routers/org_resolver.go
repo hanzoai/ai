@@ -17,9 +17,9 @@ package routers
 import (
 	"strings"
 
-	"github.com/hanzoai/beego/context"
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/util"
+	"github.com/hanzoai/beego/context"
 )
 
 // GetOrg resolves the organization for data-scoping in filters from the

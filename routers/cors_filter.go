@@ -21,9 +21,9 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/hanzoai/beego/context"
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/object"
+	"github.com/hanzoai/beego/context"
 	iam "github.com/hanzoai/iam"
 )
 

@@ -21,9 +21,9 @@ import (
 	"io"
 	"strings"
 
-	"github.com/hanzoai/beego/logs"
 	"github.com/hanzoai/ai/model"
 	"github.com/hanzoai/ai/object"
+	"github.com/hanzoai/beego/logs"
 )
 
 // errPartiallyWritten stops a retry that can no longer be made safely: bytes

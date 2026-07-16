@@ -115,7 +115,8 @@ func TestResponsesStreamTextWire(t *testing.T) {
 	}
 
 	wire := recorder.Body.String()
-	assertInOrder(t, wire,
+	assertInOrder(
+		t, wire,
 		`event: response.created`,
 		`event: response.output_item.added`,
 		`event: response.content_part.added`,
@@ -159,7 +160,8 @@ func TestResponsesStreamFunctionCallWire(t *testing.T) {
 	}
 
 	wire := recorder.Body.String()
-	assertInOrder(t, wire,
+	assertInOrder(
+		t, wire,
 		`event: response.created`,
 		`event: response.output_item.added`,
 		`event: response.function_call_arguments.delta`,

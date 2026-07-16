@@ -39,11 +39,12 @@ func stubPreferCeiling(t *testing.T, prefer map[string]map[string][]string, ceil
 // an org customizing one task keeps the conf defaults for the rest.
 func TestEffectiveRouterPreferFold(t *testing.T) {
 	conf := map[string][]string{
-		"code":    {"zen4-coder"},
+		"code":      {"zen4-coder"},
 		"reasoning": {"zen4-ultra"},
-		"default": {"zen4"},
+		"default":   {"zen4"},
 	}
-	stubPreferCeiling(t,
+	stubPreferCeiling(
+		t,
 		map[string]map[string][]string{
 			"*":    {"math": {"zen4-math"}, "default": {"gpt-4o"}}, // "*" overrides default + adds math
 			"acme": {"code": {"acme-coder"}},                       // org overrides only code

@@ -15,10 +15,10 @@
 package routers
 
 import (
-	"github.com/hanzoai/beego/context"
-	"github.com/hanzoai/beego/logs"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
+	"github.com/hanzoai/beego/context"
+	"github.com/hanzoai/beego/logs"
 )
 
 func RecordMessage(ctx *context.Context) {
