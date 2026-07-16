@@ -177,7 +177,7 @@ func TestProviderKeyBillingUser(t *testing.T) {
 	if u.Type != "application" {
 		t.Errorf("billing user Type = %q, want %q (M2M provider-key credential)", u.Type, "application")
 	}
-	if got := object.BillingSubject(u.Owner, u.Name); got != "acme" {
+	if got := object.Payer(object.Credential{Owner: u.Owner, Name: u.Name}).Subject(); got != "acme" {
 		t.Errorf("BillingSubject(%q,%q) = %q, want %q (org-level ledger)", u.Owner, u.Name, got, "acme")
 	}
 
@@ -189,7 +189,7 @@ func TestProviderKeyBillingUser(t *testing.T) {
 	if err != nil || uh == nil {
 		t.Fatalf("providerKeyBillingUser(owner=hanzo) = (%v, %v); want a user", uh, err)
 	}
-	if got := object.BillingSubject(uh.Owner, uh.Name); got != "hanzo" {
+	if got := object.Payer(object.Credential{Owner: uh.Owner, Name: uh.Name}).Subject(); got != "hanzo" {
 		t.Errorf("BillingSubject(hanzo, %q) = %q, want %q (org-level, not per-user)", uh.Name, got, "hanzo")
 	}
 }
