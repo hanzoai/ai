@@ -416,6 +416,12 @@ func initAPI() {
 	beego.Router("/v1/add-routing-reward", &controllers.ApiController{}, "POST:AddRoutingReward")
 	beego.Router("/v1/export-routing-rewards", &controllers.ApiController{}, "GET:ExportRoutingRewards")
 
+	// Per-org router policy (prefer table + cost ceiling). Org-admin-gated and
+	// self-scoped to the caller's own org — an org's own admins configure their
+	// own router, never another tenant's. Not super-admin: customer-configurable.
+	beego.Router("/v1/get-router-policy", &controllers.ApiController{}, "GET:GetRouterPolicy")
+	beego.Router("/v1/update-router-policy", &controllers.ApiController{}, "POST:UpdateRouterPolicy")
+
 	// Anthropic Messages API compatible endpoints
 	beego.Router("/v1/messages", &controllers.ApiController{}, "POST:AnthropicMessages")
 	beego.Router("/v1/messages/count_tokens", &controllers.ApiController{}, "POST:AnthropicCountTokens")
