@@ -61,7 +61,7 @@ func pricingInfo(p modelPrice, ok bool) *modelPricingInfo {
 // listing OMIT pricing rather than fabricate it.
 func staticModelPrice(model string) (modelPrice, bool) {
 	// Zen family: the discovered retail price is the source of truth (hip-00NN).
-	if p, ok := zenModelPrice(model); ok {
+	if p, ok := familyModelPrice(model); ok {
 		return p, true
 	}
 
@@ -278,7 +278,7 @@ func getModelPrice(model string) modelPrice {
 
 func getModelPriceForOrg(model string, orgId string) modelPrice {
 	// Zen family: the discovered retail price is the source of truth (hip-00NN).
-	if p, ok := zenModelPrice(model); ok {
+	if p, ok := familyModelPrice(model); ok {
 		return p
 	}
 
