@@ -17,6 +17,7 @@ package controllers
 import (
 	"encoding/json"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/hanzoai/ai/object"
@@ -92,8 +93,25 @@ type throughputStats struct {
 	TotalWindow int   `json:"total_window"`
 }
 
+// retrainMeta is the public-safe published-state of the scope's heads artifact:
+// what the nightly retrain last produced and whether the gate cleared it. Carries
+// no weights and no event content, so it rides the public platform surface.
+type retrainMeta struct {
+	Version     string  `json:"version"`
+	TrainedTime string  `json:"trained_time"`
+	Events      int     `json:"events"`
+	GatePassed  bool    `json:"gate_passed"`
+	Published   bool    `json:"published"`
+	GateKind    string  `json:"gate_kind"`
+	GateMetric  string  `json:"gate_metric"`
+	GateValue   float64 `json:"gate_value"`
+	GateBase    float64 `json:"gate_base"`
+	Note        string  `json:"note"`
+}
+
 // routerStats is the whole aggregate. Cost is nil-able so the public platform
 // scope can drop it entirely if no event was priceable; Org is omitted publicly.
+// Retrain is nil until the nightly job has published a status for the scope.
 type routerStats struct {
 	Scope      string               `json:"scope"`
 	Org        string               `json:"org,omitempty"`
@@ -103,6 +121,32 @@ type routerStats struct {
 	ByTask     map[string]taskStats `json:"by_task"`
 	ByModel    map[string]int       `json:"by_model"`
 	Throughput throughputStats      `json:"throughput"`
+	Retrain    *retrainMeta         `json:"retrain,omitempty"`
+}
+
+// getRouterArtifactMeta is indirected through a var so the stats contract is
+// testable without a live DB.
+var getRouterArtifactMeta = object.GetRouterArtifactMeta
+
+// attachRetrainMeta folds the scope's published retrain status into the aggregate
+// (nil-safe: no row → no `retrain` block). owner "*" is the shared base heads.
+func attachRetrainMeta(stats *routerStats, owner string) {
+	m, err := getRouterArtifactMeta(owner)
+	if err != nil || m == nil {
+		return
+	}
+	stats.Retrain = &retrainMeta{
+		Version:     m.Version,
+		TrainedTime: m.TrainedTime,
+		Events:      m.Events,
+		GatePassed:  m.GatePassed,
+		Published:   m.Published,
+		GateKind:    m.GateKind,
+		GateMetric:  m.GateMetric,
+		GateValue:   m.GateValue,
+		GateBase:    m.GateBase,
+		Note:        m.Note,
+	}
 }
 
 // priceIndexFn returns a model's blended $/MTok price index (0 = unknown/free).
@@ -219,6 +263,61 @@ func computeRouterStats(events []*object.RoutingEvent, price priceIndexFn, windo
 			cost.CounterfactualIndex = &ci
 		}
 		out.Cost = cost
+	}
+
+	// Enso is a PRIVATE, closed family: the public platform surface must never
+	// name an upstream arm (claude/gpt/deepseek/...). Relabel every served model id
+	// to an opaque, stable Enso arm label (arm-1 = the premium/priciest arm), so the
+	// world.hanzo.ai widget shows real routing SHARE without leaking the roster.
+	if scope == scopePlatform {
+		labels := armLabelsFor(prices)
+		out.ByModel = relabelCounts(out.ByModel, labels)
+		for task, ts := range out.ByTask {
+			ts.Models = relabelCounts(ts.Models, labels)
+			out.ByTask[task] = ts
+		}
+		if out.Cost != nil {
+			out.Cost.BaselineModel = labels[out.Cost.BaselineModel]
+		}
+	}
+	return out
+}
+
+// armLabelsFor maps each concrete model id to a stable opaque Enso arm label,
+// ordered by price DESC (arm-1 = the premium arm) with ties broken by id — price
+// rank is far more stable than volume, so an arm keeps its identity across polls.
+// Unpriced/free arms are numbered after the priced ones (still opaque). This is the
+// ONE place upstream ids are turned into public arm labels.
+func armLabelsFor(prices map[string]float64) map[string]string {
+	ids := make([]string, 0, len(prices))
+	for id := range prices {
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i, j int) bool {
+		pi, pj := prices[ids[i]], prices[ids[j]]
+		if pi != pj {
+			return pi > pj
+		}
+		return ids[i] < ids[j]
+	})
+	labels := make(map[string]string, len(ids))
+	for i, id := range ids {
+		labels[id] = "arm-" + strconv.Itoa(i+1)
+	}
+	return labels
+}
+
+// relabelCounts folds a model-keyed count map through the arm labels; an id with no
+// label (never priced, so absent from the labeler) is bucketed as "arm-other" so no
+// concrete id can ever escape onto the public surface.
+func relabelCounts(byId map[string]int, labels map[string]string) map[string]int {
+	out := make(map[string]int, len(byId))
+	for id, n := range byId {
+		label := labels[id]
+		if label == "" {
+			label = "arm-other"
+		}
+		out[label] += n
 	}
 	return out
 }
@@ -345,6 +444,9 @@ func (c *ApiController) GetRouterStats() {
 			return
 		}
 		stats := computeRouterStats(events, blendedPriceForOrg(""), windowStart, now, scopePlatform, "", false)
+		// The shared base heads are scope "*"; the world widget shows the base's
+		// last retrain + gate verdict (version/time/metric only — never weights).
+		attachRetrainMeta(&stats, object.GlobalDefaultOwner)
 		c.ResponseOk(stats)
 		return
 	}
@@ -370,7 +472,48 @@ func (c *ApiController) GetRouterStats() {
 		return
 	}
 	stats := computeRouterStats(events, blendedPriceForOrg(org), windowStart, now, scopeOrg, org, true)
+	// Show the org's own heads retrain status, falling back to the shared base
+	// ("*") when the org has no personal-heads job (the common case today).
+	metaOwner := org
+	if org == "" {
+		metaOwner = object.GlobalDefaultOwner
+	}
+	attachRetrainMeta(&stats, metaOwner)
+	if stats.Retrain == nil && metaOwner != object.GlobalDefaultOwner {
+		attachRetrainMeta(&stats, object.GlobalDefaultOwner)
+	}
 	c.ResponseOk(stats)
+}
+
+// PublishRouterArtifactMeta records the outcome of a retrain run for a scope — the
+// nightly job POSTs this after fitting + gating (whether it published the new
+// artifact or kept the incumbent). Super-admin only: it is a platform-control
+// write, exactly like the ledger export. Owner defaults to "*" (the shared base
+// heads) when the body omits it.
+//
+// @Title PublishRouterArtifactMeta
+// @Tag Router API
+// @Description record a retrain run's published-state + gate verdict for a scope (super admin only)
+// @Param body body object.RouterArtifactMeta true "the retrain outcome"
+// @Success 200 {object} object.RouterArtifactMeta The stored row
+// @router /router/publish-artifact-meta [post]
+func (c *ApiController) PublishRouterArtifactMeta() {
+	if !c.RequireSuperAdmin() {
+		return
+	}
+	var meta object.RouterArtifactMeta
+	if err := json.Unmarshal(c.Ctx.Input.RequestBody, &meta); err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+	if meta.Owner == "" {
+		meta.Owner = object.GlobalDefaultOwner
+	}
+	if err := object.UpsertRouterArtifactMeta(&meta); err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+	c.ResponseOk(meta)
 }
 
 // trainingContributionBody is the wire shape for the opt-in read + write.
