@@ -28,6 +28,7 @@ import (
 	"github.com/hanzoai/beego/context"
 	"github.com/hanzoai/beego/logs"
 	"github.com/hanzoai/ai/conf"
+	"github.com/hanzoai/ai/controllers"
 	"github.com/hanzoai/ai/object"
 )
 
@@ -177,6 +178,21 @@ func BalanceGateFilter(ctx *context.Context) {
 		return
 	}
 
+	// Limited-preview comp: a caller GRANTED a gated family SKU (enso) bypasses the
+	// balance gate — the preview is free. The model is read from the (cached) body,
+	// so this is the one place the request's target is known in the filter. Usage is
+	// still metered downstream; only the REFUSAL is skipped, and only for the granted
+	// caller of a gated SKU — every other model stays on the normal gate.
+	if model := peekRequestModel(ctx); model != "" {
+		name := userKey
+		if i := strings.IndexByte(userKey, '/'); i >= 0 {
+			name = userKey[i+1:]
+		}
+		if controllers.CompedGatedAccess(model, namespace, name, "") {
+			return
+		}
+	}
+
 	logs.Info("balance_gate: insufficient balance subject=%s namespace=%s balance_cents=%d path=%s",
 		subject, namespace, balance, path)
 
@@ -185,6 +201,23 @@ func BalanceGateFilter(ctx *context.Context) {
 
 	body := `{"error":{"message":"Insufficient balance. Please add credits to your wallet at https://pay.hanzo.ai","type":"billing_error","code":"insufficient_balance"}}`
 	ctx.ResponseWriter.Write([]byte(body))
+}
+
+// peekRequestModel reads the top-level "model" field out of the cached request body
+// (CopyRequestBody is on, so this does not consume the stream the controller reads).
+// "" when there is no body or no model field — the caller then applies the normal gate.
+func peekRequestModel(ctx *context.Context) string {
+	body := ctx.Input.RequestBody
+	if len(body) == 0 {
+		return ""
+	}
+	var top struct {
+		Model string `json:"model"`
+	}
+	if json.Unmarshal(body, &top) != nil {
+		return ""
+	}
+	return top.Model
 }
 
 // isBalanceExempt returns true for paths that should bypass balance checking
