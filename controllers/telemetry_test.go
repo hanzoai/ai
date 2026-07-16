@@ -44,8 +44,8 @@ func TestBuildGenAISpanFields_ChatSuccess(t *testing.T) {
 	}
 	br := &costBreakdown{Input: 0.0012, Output: 0.0009, CacheRead: 0.00003, CacheWrite: 0.0001, Total: 0.00223}
 
-	// Hanzo-served (not BYO): billed == total.
-	f := buildGenAISpanFields(rec, 0.0022, 0.0022, br, false)
+	// Hanzo-served (not BYO): billed == total. Provider COGS 0.0015 < billed ⇒ margin 0.0007.
+	f := buildGenAISpanFields(rec, 0.0022, 0.0022, 0.0015, 0.0007, br, false)
 
 	if f.name != "chat zen5" {
 		t.Fatalf("span name = %q, want %q", f.name, "chat zen5")
@@ -95,6 +95,8 @@ func TestBuildGenAISpanFields_ChatSuccess(t *testing.T) {
 	wantFloat := map[string]float64{
 		"_o11y.gen_ai.total_cost":       0.0022,
 		"_o11y.gen_ai.billed_cost":      0.0022,
+		"_o11y.gen_ai.provider_cost":    0.0015,
+		"_o11y.gen_ai.margin":           0.0007,
 		"_o11y.gen_ai.cost_input":       0.0012,
 		"_o11y.gen_ai.cost_output":      0.0009,
 		"_o11y.gen_ai.cost_cache_read":  0.00003,
@@ -122,7 +124,7 @@ func TestBuildGenAISpanFields_ErrorAndFallbacks(t *testing.T) {
 		Model: "", Status: "error", ErrorMsg: "upstream 500",
 	}
 
-	f := buildGenAISpanFields(rec, 0, 0, nil, false)
+	f := buildGenAISpanFields(rec, 0, 0, 0, 0, nil, false)
 
 	if f.name != "chat unknown" {
 		t.Fatalf("span name = %q, want %q", f.name, "chat unknown")
@@ -139,9 +141,11 @@ func TestBuildGenAISpanFields_ErrorAndFallbacks(t *testing.T) {
 	if got := m["gen_ai.hanzo.served_by"].AsString(); got != "hanzo" {
 		t.Errorf("gen_ai.hanzo.served_by = %q, want \"hanzo\" (default)", got)
 	}
-	// total_cost is always present (the column must exist), 0 here.
-	if got, ok := m["_o11y.gen_ai.total_cost"]; !ok || got.AsFloat64() != 0 {
-		t.Errorf("_o11y.gen_ai.total_cost = %v (present=%v), want 0 present", got.AsFloat64(), ok)
+	// total_cost / provider_cost / margin are always present (the columns must exist), 0 here.
+	for _, k := range []string{"_o11y.gen_ai.total_cost", "_o11y.gen_ai.provider_cost", "_o11y.gen_ai.margin"} {
+		if got, ok := m[k]; !ok || got.AsFloat64() != 0 {
+			t.Errorf("%s = %v (present=%v), want 0 present", k, got.AsFloat64(), ok)
+		}
 	}
 	for _, k := range []string{
 		"gen_ai.hanzo.provider", "gen_ai.hanzo.request_id",
@@ -166,7 +170,7 @@ func TestBuildGenAISpanFields_MessageRedaction(t *testing.T) {
 	}
 
 	// Gate off: bodies must NOT appear.
-	off := attrMap(buildGenAISpanFields(rec, 0, 0, nil, false).attrs)
+	off := attrMap(buildGenAISpanFields(rec, 0, 0, 0, 0, nil, false).attrs)
 	if _, ok := off["gen_ai.input.messages"]; ok {
 		t.Error("gen_ai.input.messages leaked with capture disabled")
 	}
@@ -175,7 +179,7 @@ func TestBuildGenAISpanFields_MessageRedaction(t *testing.T) {
 	}
 
 	// Gate on: bodies appear verbatim.
-	on := attrMap(buildGenAISpanFields(rec, 0, 0, nil, true).attrs)
+	on := attrMap(buildGenAISpanFields(rec, 0, 0, 0, 0, nil, true).attrs)
 	if got := on["gen_ai.input.messages"].AsString(); got != rec.InputMessages {
 		t.Errorf("gen_ai.input.messages = %q, want %q", got, rec.InputMessages)
 	}
@@ -215,7 +219,7 @@ func TestUsageCostCents_MatchesSpanTotal(t *testing.T) {
 	rec := &usageRecord{Model: "zen5", PromptTokens: 1000, CompletionTokens: 500}
 	cents := usageCostCents(rec)
 	spanTotalUSD := float64(cents) / 100.0
-	m := attrMap(buildGenAISpanFields(rec, spanTotalUSD, spanTotalUSD, nil, false).attrs)
+	m := attrMap(buildGenAISpanFields(rec, spanTotalUSD, spanTotalUSD, 0, 0, nil, false).attrs)
 	if got := m["_o11y.gen_ai.total_cost"].AsFloat64(); got != spanTotalUSD {
 		t.Errorf("span total_cost = %v, want %v (== usageCostCents/100)", got, spanTotalUSD)
 	}
@@ -252,9 +256,10 @@ func TestUsageBilledCents_BYOReconcilesInvoice(t *testing.T) {
 	}
 
 	// The span reports BOTH: total_cost = full provider cost, billed_cost = the fee.
+	// BYO provider COGS is 0 (customer paid the upstream), so margin == the billed fee.
 	totalUSD := float64(cost) / 100.0
 	billedUSD := float64(fee) / 100.0
-	m := attrMap(buildGenAISpanFields(&byo, totalUSD, billedUSD, nil, false).attrs)
+	m := attrMap(buildGenAISpanFields(&byo, totalUSD, billedUSD, 0, billedUSD, nil, false).attrs)
 	if got := m["_o11y.gen_ai.total_cost"].AsFloat64(); got != totalUSD {
 		t.Errorf("BYO span total_cost = %v, want full %v", got, totalUSD)
 	}
@@ -263,5 +268,11 @@ func TestUsageBilledCents_BYOReconcilesInvoice(t *testing.T) {
 	}
 	if m["_o11y.gen_ai.billed_cost"].AsFloat64() >= m["_o11y.gen_ai.total_cost"].AsFloat64() {
 		t.Error("BYO billed_cost must be < total_cost on the span (invoice reconciliation)")
+	}
+	if got := m["_o11y.gen_ai.provider_cost"].AsFloat64(); got != 0 {
+		t.Errorf("BYO span provider_cost = %v, want 0 (customer paid the upstream)", got)
+	}
+	if got := m["_o11y.gen_ai.margin"].AsFloat64(); got != billedUSD {
+		t.Errorf("BYO span margin = %v, want the billed fee %v (0 COGS)", got, billedUSD)
 	}
 }
