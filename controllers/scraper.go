@@ -53,7 +53,7 @@ func (c *ApiController) ScrapeDocs() {
 	// SUBJECT within the org NAMESPACE (per-user for a personal-billing org),
 	// matching the chat gate and the usage debit.
 	if auth.Owner != "" {
-		balance, balanceErr := getUserBalance(object.BillingSubjectFromUserKey(auth.Owner, auth.UserID), auth.Owner)
+		balance, balanceErr := getUserBalance(object.PayerOf(auth.Owner, auth.UserID).Subject(), auth.Owner)
 		if balanceErr == nil && balance <= 0 {
 			c.ResponseError("insufficient balance for scrape operation. Add funds at https://hanzo.ai/billing")
 			return
