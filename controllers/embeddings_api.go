@@ -25,6 +25,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hanzoai/account"
+
 	iam "github.com/hanzoai/iam"
 
 	"github.com/hanzoai/ai/object"
@@ -101,7 +103,7 @@ func (c *ApiController) Embeddings() {
 	if fam := familyForProviderType(provider.Type); fam != nil {
 		var hold *budgetHold
 		if authUser != nil {
-			subject := object.Payer(object.Credential{Owner: authUser.Owner, Name: authUser.Name}).Subject()
+			subject := account.Payer(account.Credential{Owner: authUser.Owner, Name: authUser.Name}).Subject()
 			est := int64(1)
 			if zm, ok := fam.lookup(head.Model); ok {
 				est = zm.costCents(coarseTokenEstimate(c.Ctx.Input.RequestBody), 0)

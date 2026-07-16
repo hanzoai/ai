@@ -156,6 +156,7 @@ require (
 	github.com/grandcat/zeroconf v1.0.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 // indirect
 	github.com/hanzo-ds/native v0.71.0 // indirect
+	github.com/hanzoai/account v0.2.0 // indirect
 	github.com/hanzoai/commerce/metering v0.1.4 // indirect
 	github.com/hanzoai/csqlite v0.1.0 // indirect
 	github.com/hhrutter/lzw v1.0.0 // indirect
