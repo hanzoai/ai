@@ -15,6 +15,7 @@
 package controllers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -22,6 +23,7 @@ import (
 	"strings"
 
 	"github.com/hanzoai/ai/object"
+	"github.com/hanzoai/ai/router"
 	"github.com/hanzoai/ai/util"
 )
 
@@ -33,41 +35,85 @@ var (
 	getRewardedRoutingEvents = object.GetRewardedRoutingEvents
 )
 
-// routingRewardRequest is the reward-ingestion body: the request id (the response
-// `chatcmpl-<id>` or the raw usage-ledger request_id) plus EITHER a normalized
-// reward (0..1) or a 1..5 star rating. Pointers tell "absent" apart from a real 0.
-// No prompt text is ever accepted or stored.
+// routingRewardRequest is the /v1/feedback body: the request id (the gateway's own
+// response id — the chatcmpl-/msg id the client received) plus a client feedback
+// signal the SERVER maps to a reward. The canonical shapes (clients code to these):
+//
+//	{request_id, signal:"up"|"down"|"regenerate"|"switch"|"abandon"|"accept"|"revert"}
+//	{request_id, signal:"rating", rating:1|2|3}   (1=neg, 2=neutral, 3=strong-pos)
+//	{request_id, signal:"dismiss"}                 (NO reward — analytics only)
+//
+// Reward (an explicit 0..1) stays accepted as an internal override. No prompt text is
+// ever accepted or stored. `/v1/feedback` is canonical; `/v1/add-routing-reward` is a
+// thin alias on the same handler — one endpoint, one server-owned reward mapping.
 type routingRewardRequest struct {
 	RequestId string   `json:"request_id"`
-	Reward    *float64 `json:"reward,omitempty"`
+	Signal    string   `json:"signal,omitempty"`
 	Rating    *float64 `json:"rating,omitempty"`
+	Reward    *float64 `json:"reward,omitempty"` // explicit 0..1 override (internal)
 }
 
-// routingRewardResult echoes the normalized request id and the canonical stored
-// reward so the caller can confirm what was recorded.
+// routingRewardResult echoes the normalized request id, the canonical stored reward,
+// and whether it was actually recorded (false for a `dismiss` or an opted-out org).
 type routingRewardResult struct {
 	RequestId string  `json:"request_id"`
 	Reward    float64 `json:"reward"`
+	Recorded  bool    `json:"recorded"`
 }
 
-// resolveReward folds the two accepted inputs into the ONE canonical stored form —
-// a reward in [0,1]: an explicit reward is taken as-is; otherwise a 1..5 star
-// rating is normalized ((rating-1)/4, so 1★→0 and 5★→1). Exactly one must be
-// present and in range; an explicit reward wins if both are sent.
-func resolveReward(reward, rating *float64) (float64, error) {
-	switch {
-	case reward != nil:
+// trainingOptedIn reports whether an org contributes feedback as training labels —
+// the SERVER-SIDE enforcement point (clients POST unconditionally; only an opted-in
+// org's reward is recorded). It reads OrgSettings.TrainingContribution, a privacy-safe
+// opt-OUT default (Unset ⇒ contribute); only an explicit "disabled" drops the reward.
+// Indirected through a var so tests can flip it.
+var trainingOptedIn = func(org string) bool {
+	return object.GetCachedOrgTrainingContribution(org) != object.TrainingContributionDisabled
+}
+
+// resolveReward folds the accepted inputs into the ONE canonical stored reward in
+// [0,1], and reports whether a reward should be RECORDED at all: the `dismiss` signal
+// records nothing (it is prompt-fatigue analytics, never a reward=0 training label).
+// The server owns the signal→reward mapping (signalReward). An explicit `reward` (0..1)
+// is an internal override; a bare `rating` is only meaningful under signal "rating".
+func resolveReward(reward, rating *float64, signal string) (value float64, record bool, err error) {
+	if reward != nil {
 		if *reward < 0 || *reward > 1 {
-			return 0, fmt.Errorf("reward must be within 0..1")
+			return 0, false, fmt.Errorf("reward must be within 0..1")
 		}
-		return *reward, nil
-	case rating != nil:
-		if *rating < 1 || *rating > 5 {
-			return 0, fmt.Errorf("rating must be within 1..5")
+		return *reward, true, nil
+	}
+	if strings.TrimSpace(signal) == "" {
+		return 0, false, fmt.Errorf("signal is required (up|down|regenerate|switch|abandon|accept|revert|rating|dismiss)")
+	}
+	return signalReward(signal, rating)
+}
+
+// signalReward maps a client feedback signal to (reward, record). Positive intent
+// (`up`, `accept`) → 1; negative intent (`down`, `switch`, `abandon`, `revert`) → 0;
+// `regenerate` (re-rolled the same request) is a mild negative → 0.25. `rating` uses
+// the 1..3 scale (1=neg→0, 2=neutral→0.5, 3=strong-pos→1). `dismiss` records NOTHING
+// (record=false) — the user closed the prompt without judging; storing it as reward=0
+// would poison training, so it is kept only as prompt-fatigue analytics upstream.
+func signalReward(signal string, rating *float64) (value float64, record bool, err error) {
+	switch strings.ToLower(strings.TrimSpace(signal)) {
+	case "up", "accept":
+		return 1, true, nil
+	case "down", "switch", "abandon", "revert":
+		return 0, true, nil
+	case "regenerate":
+		return 0.25, true, nil
+	case "rating":
+		if rating == nil {
+			return 0, false, fmt.Errorf("signal \"rating\" requires rating (1..3)")
 		}
-		return (*rating - 1) / 4, nil
+		if *rating < 1 || *rating > 3 {
+			return 0, false, fmt.Errorf("rating must be within 1..3")
+		}
+		return (*rating - 1) / 2, true, nil
+	case "dismiss":
+		return 0, false, nil
 	default:
-		return 0, fmt.Errorf("reward (0..1) or rating (1..5) is required")
+		return 0, false, fmt.Errorf("unknown signal %q", signal)
 	}
 }
 
@@ -115,9 +161,23 @@ func (c *ApiController) AddRoutingReward() {
 		c.ResponseErrorWithStatus(http.StatusBadRequest, "request_id is required")
 		return
 	}
-	reward, err := resolveReward(body.Reward, body.Rating)
+	reward, record, err := resolveReward(body.Reward, body.Rating, body.Signal)
 	if err != nil {
 		c.ResponseErrorWithStatus(http.StatusBadRequest, err.Error())
+		return
+	}
+	// `dismiss` (and any non-recording signal) is accepted but writes NO reward — it
+	// is prompt-fatigue analytics, never a training label. Return ok so the client's
+	// unconditional POST succeeds; nothing lands in the ledger.
+	if !record {
+		c.ResponseOk(routingRewardResult{RequestId: requestId, Recorded: false})
+		return
+	}
+	// Training opt-in enforced HERE (server-side): clients send feedback
+	// unconditionally, but a reward is recorded as a training label only when the
+	// caller's org has not opted out. An opted-out org's feedback is accepted, dropped.
+	if !trainingOptedIn(user.Owner) {
+		c.ResponseOk(routingRewardResult{RequestId: requestId, Recorded: false})
 		return
 	}
 
@@ -130,7 +190,45 @@ func (c *ApiController) AddRoutingReward() {
 		c.ResponseErrorWithStatus(http.StatusNotFound, "unknown request_id")
 		return
 	}
-	c.ResponseOk(routingRewardResult{RequestId: requestId, Reward: reward})
+	// Online loop: forward the joined (features, arm, reward) to the engine so
+	// per-user LinUCB theta updates in-process. Fire-and-forget, off the response
+	// path — a missed update never fails the reward write (the offline rewarded
+	// ledger still captured it).
+	forwardRewardToEngine(user.Owner, requestId, reward)
+	c.ResponseOk(routingRewardResult{RequestId: requestId, Reward: reward, Recorded: true})
+}
+
+// forwardRewardToEngine reads the rewarded event's (features, routed arm) and posts
+// them with the reward to the engine's /route/observe endpoint, driving the online
+// LinUCB update. Indirected through a var so tests can observe the forward without a
+// live engine. No-op when the engine endpoint is unconfigured or the event carries no
+// features (an auto/heuristic row with no engine vector, or a cold engine).
+var forwardRewardToEngine = func(org, requestId string, reward float64) {
+	cfg := GetModelConfig()
+	if cfg == nil {
+		return
+	}
+	cli := cfg.RouterClient(nil)
+	if cli.Endpoint == "" {
+		return
+	}
+	go func() {
+		ev, err := object.GetRoutingEventByRequestId(org, requestId)
+		if err != nil || ev == nil || ev.RoutedModel == "" || ev.Features == "" {
+			return
+		}
+		var feats []float64
+		if json.Unmarshal([]byte(ev.Features), &feats) != nil || len(feats) == 0 {
+			return
+		}
+		cli.Observe(context.Background(), router.ObserveRequest{
+			User:     ev.User,
+			Org:      org,
+			Features: feats,
+			Model:    ev.RoutedModel,
+			Reward:   reward,
+		})
+	}()
 }
 
 // rewardTuple is the JSONL training-tuple shape: the enso loop's (features x,
