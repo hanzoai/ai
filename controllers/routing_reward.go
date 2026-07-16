@@ -257,7 +257,7 @@ type rewardTuple struct {
 // @Success 200 {string} string "JSONL, one training tuple per line"
 // @router /export-routing-rewards [get]
 func (c *ApiController) ExportRoutingRewards() {
-	if !c.RequireSuperAdmin() {
+	if !c.routerAdminAuthorized() {
 		return
 	}
 	events, err := getRewardedRoutingEvents(c.Input().Get("org"), c.Input().Get("since"))
