@@ -17,8 +17,11 @@ package controllers
 
 import (
 	"encoding/json"
+	"time"
 
 	"github.com/hanzoai/ai/object"
+	"github.com/hanzoai/ai/tts"
+	"github.com/hanzoai/ai/util"
 	"github.com/hanzoai/beego/logs"
 )
 
@@ -49,6 +52,7 @@ func (c *ApiController) GenerateTextToSpeechAudio() {
 		return
 	}
 
+	startTime := time.Now().UTC()
 	audioData, ttsResult, err := providerObj.QueryAudio(message.Text, ctx, c.GetAcceptLanguage())
 	if err != nil {
 		c.ResponseError(err.Error())
@@ -64,6 +68,7 @@ func (c *ApiController) GenerateTextToSpeechAudio() {
 		c.ResponseError(err.Error())
 		return
 	}
+	c.recordLegacyTTSUsage(chat, req.ProviderId, ttsResult, startTime)
 
 	c.ResponseAudio(audioData, "audio/mp3", "speech.mp3")
 }
@@ -90,6 +95,7 @@ func (c *ApiController) GenerateTextToSpeechAudioStream() {
 		return
 	}
 
+	startTime := time.Now().UTC()
 	ttsResult, err := providerObj.QueryAudioStream(message.Text, ctx, c.Ctx.ResponseWriter, c.GetAcceptLanguage())
 	if err != nil {
 		c.ResponseErrorStream(message, err.Error())
@@ -100,4 +106,46 @@ func (c *ApiController) GenerateTextToSpeechAudioStream() {
 	if err != nil {
 		logs.Error("Error updating chat: %s", err.Error())
 	}
+	c.recordLegacyTTSUsage(chat, "", ttsResult, startTime)
+}
+
+// recordLegacyTTSUsage meters the legacy store-bound TTS handlers into the one
+// usage/o11y plane. The legacy lane accumulates a possibly non-USD float price
+// onto chat.Price (UpdateChatStats) and never debited commerce, so: the trace
+// (warehouse row + gen_ai span) is ALWAYS emitted, and recordUsage runs only
+// for a USD-priced result (a CNY float must not be debited as dollars — that
+// currency fold is the legacy-price rip, tracked separately).
+func (c *ApiController) recordLegacyTTSUsage(chat *object.Chat, providerId string, ttsResult *tts.TextToSpeechResult, startTime time.Time) {
+	if chat == nil || ttsResult == nil {
+		return
+	}
+	org := chat.Organization
+	if org == "" {
+		org = chat.Owner
+	}
+	model := providerId
+	if model == "" {
+		model = chat.ModelProvider
+	}
+	if model == "" {
+		model = "tts"
+	}
+	rec := &usageRecord{
+		Owner:        org,
+		Organization: org,
+		User:         chat.User,
+		Model:        model,
+		Provider:     model,
+		TotalTokens:  ttsResult.TokenCount,
+		Cost:         ttsResult.Price,
+		Currency:     ttsResult.Currency,
+		Status:       "success",
+		ClientIP:     c.Ctx.Request.RemoteAddr,
+		RequestID:    util.GenerateUUID(),
+	}
+	if rec.Currency == "" || rec.Currency == "USD" {
+		rec.Currency = "USD"
+		recordUsage(rec)
+	}
+	recordTrace(c.Ctx.Request.Context(), rec, startTime)
 }
