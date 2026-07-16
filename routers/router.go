@@ -168,6 +168,9 @@ func initAPI() {
 	beego.Router("/v1/get-users", &controllers.ApiController{}, "GET:GetUsers")
 	beego.Router("/v1/get-user-table-infos", &controllers.ApiController{}, "GET:GetUserTableInfos")
 	beego.Router("/v1/get-cloud-usages", &controllers.ApiController{}, "GET:GetCloudUsages")
+	// Super-admin (authz_filter.go superAdminEndpoints): backfill the usage ledger
+	// from DigitalOcean billing for windows native metering missed. Dry-run by default.
+	beego.Router("/v1/admin/usage/backfill-do", &controllers.ApiController{}, "POST:PostBackfillDOUsage")
 
 	beego.Router("/v1/get-activities", &controllers.ApiController{}, "GET:GetActivities")
 	// beego.Router("/v1/get-range-activities", &controllers.ApiController{}, "GET:GetRangeActivities")
