@@ -32,6 +32,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674
 	github.com/hanzo-ds/go v1.0.1
+	github.com/hanzoai/account v0.2.0
 	github.com/hanzoai/cloud v1.786.112
 	github.com/hanzoai/dashscope-go-sdk v0.0.2
 	github.com/hanzoai/dashscopego v0.6.0
@@ -156,7 +157,6 @@ require (
 	github.com/grandcat/zeroconf v1.0.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 // indirect
 	github.com/hanzo-ds/native v0.71.0 // indirect
-	github.com/hanzoai/account v0.2.0 // indirect
 	github.com/hanzoai/commerce/metering v0.1.4 // indirect
 	github.com/hanzoai/csqlite v0.1.0 // indirect
 	github.com/hhrutter/lzw v1.0.0 // indirect
@@ -381,3 +381,9 @@ require (
 )
 
 replace github.com/sashabaranov/go-openai => github.com/hanzoai/go-openai v1.40.0
+
+// hanzoai/iam was force-pushed after hanzoai/account v0.2.0 pinned a pseudo-version
+// of it; that revision (4400762928a2) no longer exists, breaking every build of this
+// module. Pin the whole graph to iam's live HEAD (which carries Claims.BillingAccount,
+// required by routers/filter_balance.go) until account re-pins a live revision.
+replace github.com/hanzoai/iam => github.com/hanzoai/iam v1.31.28-0.20260716211807-8fef61e0812d
