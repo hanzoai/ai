@@ -78,7 +78,6 @@ cache:
 features:
   live_mode: false
   premium_gate: true
-  starter_credit: 5.00
 default_pricing:
   input_per_million: 1.00
   output_per_million: 4.00
