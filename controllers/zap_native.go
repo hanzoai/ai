@@ -198,13 +198,19 @@ func zapWriteUsage(record *usageRecord, startTime time.Time) {
 	// margin_nano = billed − cost. Derived here (self-contained, like feeCents) from
 	// the ONE usageMargin so the warehouse row matches the debit and the o11y span.
 	m := usageMargin(record)
+	// Honest "priced?" flag — self-contained (this writer runs independent of
+	// recordUsage's stamp): 1 when the model billed at the conservative default.
+	unpriced := uint8(0)
+	if recordUnpriced(record) {
+		unpriced = 1
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	err := object.DatastoreExec(
 		ctx,
-		`INSERT INTO hanzo.cloud_usage (id, timestamp, owner, user_id, organization, model, provider, request_id, prompt_tokens, completion_tokens, total_tokens, cache_read_tokens, cache_write_tokens, cost_cents, currency, status, error_msg, is_premium, is_stream, client_ip, byo, fee_cents, account, cost_nano, billed_nano, margin_nano) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO hanzo.cloud_usage (id, timestamp, owner, user_id, organization, model, provider, request_id, prompt_tokens, completion_tokens, total_tokens, cache_read_tokens, cache_write_tokens, cost_cents, currency, status, error_msg, is_premium, is_stream, client_ip, byo, fee_cents, account, cost_nano, billed_nano, margin_nano, unpriced) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		record.RequestID, startTime.UTC(),
 		record.Owner, record.User, org,
 		record.Model, record.Provider, record.RequestID,
@@ -214,7 +220,7 @@ func zapWriteUsage(record *usageRecord, startTime time.Time) {
 		record.Status, record.ErrorMsg,
 		premium, stream, record.ClientIP,
 		byo, feeCents, record.Account,
-		m.CostNano, m.BilledNano, m.MarginNano,
+		m.CostNano, m.BilledNano, m.MarginNano, unpriced,
 	)
 	if err != nil {
 		logs.Warn("ZAP: usage write failed: %v", err)
