@@ -29,6 +29,22 @@ func InitDb() {
 	initLLMProviders()
 	initBuiltInStore(modelProviderName, embeddingProviderName, ttsProviderName, sttProviderName)
 	initTemplates()
+	initModelAccessSeed()
+}
+
+// initModelAccessSeed grants the Enso limited-preview SKUs to the launch org so its
+// accounts work immediately. The grant is ORG-WIDE (User=""), so every member of the
+// `hanzo` org — including z (owner=hanzo, name=z) — is granted without enumerating
+// users. Idempotent: UpsertModelAccess never downgrades a grant, so re-running at
+// every boot is a no-op. Widen access later via the SuperAdmin grant endpoint — this
+// seed is only the founding allowlist, not the policy.
+func initModelAccessSeed() {
+	const org = "hanzo"
+	for _, m := range []string{"enso", "enso-ultra"} {
+		if _, err := GrantModelAccess(org, "", "", m); err != nil {
+			fmt.Printf("initModelAccessSeed: org-grant %s %s failed: %v\n", org, m, err)
+		}
+	}
 }
 
 func initBuiltInStore(modelProviderName string, embeddingProviderName string, ttsProviderName string, sttProviderName string) {
