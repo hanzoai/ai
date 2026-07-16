@@ -239,7 +239,13 @@ func runRouterTraining() error {
 		since = time.Now().UTC().Add(-w).Format(time.RFC3339)
 	}
 
-	events, err := object.GetRewardedRoutingEvents("", since) // "" = all orgs → base heads
+	// CONSENT: the shared "*" base heads learn ONLY from orgs that opted in
+	// (OrgSettings.TrainingContribution == enabled) PLUS the reserved internal orgs
+	// (our own traffic — incl. the self-probe — is always ours to train on). An org
+	// that never set the flag is excluded, so a customer owns its data and shares it
+	// only by choice. Fail-closed: no consenting owners → the fit sees no rows.
+	owners := trainingOwnerSet()
+	events, err := object.GetRewardedRoutingEventsForOwners(owners, since)
 	if err != nil {
 		return fmt.Errorf("read rewarded ledger: %w", err)
 	}
@@ -313,6 +319,39 @@ func deployRouterPrefer(prefer map[string][]string) error {
 	row.CreatedTime = existing.CreatedTime
 	_, err = object.UpdateOrgSettings(object.GlobalDefaultOwner, &row)
 	return err
+}
+
+// trainingOwnerSet is the consent-respecting owner set for the shared base fit:
+// the orgs that opted in via OrgSettings.TrainingContribution (enabled) UNION the
+// reserved internal orgs (always ours — "admin", "hanzo", plus any in
+// ROUTER_TRAIN_INTERNAL_ORGS, comma-separated). Deduped. On a lookup error it
+// falls back to the internal orgs alone (never silently widens to all orgs).
+func trainingOwnerSet() []string {
+	seen := map[string]bool{}
+	out := []string{}
+	add := func(o string) {
+		o = strings.ToLower(strings.TrimSpace(o))
+		if o == "" || o == object.GlobalDefaultOwner || seen[o] {
+			return
+		}
+		seen[o] = true
+		out = append(out, o)
+	}
+	// Reserved internal orgs — our own data (incl. the self-probe) is always ours.
+	add("admin")
+	add("hanzo")
+	for _, o := range strings.Split(os.Getenv("ROUTER_TRAIN_INTERNAL_ORGS"), ",") {
+		add(o)
+	}
+	// Consenting customer orgs.
+	if orgs, err := object.ListTrainingContributorOrgs(); err == nil {
+		for _, o := range orgs {
+			add(o)
+		}
+	} else {
+		logs.Warning("router trainer: contributor-list read failed (%v); internal orgs only", err)
+	}
+	return out
 }
 
 // ── small helpers ─────────────────────────────────────────────────────────────
