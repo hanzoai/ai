@@ -417,6 +417,10 @@ func initAPI() {
 	// their own org; the super-admin export streams the rewarded (features, model,
 	// reward) tuples as JSONL for fit_base/observe.
 	beego.Router("/v1/add-routing-reward", &controllers.ApiController{}, "POST:AddRoutingReward")
+	// /v1/feedback is the signal-typed front door onto the SAME reward join:
+	// {request_id, signal: up|down|regenerate|switch|…}. One handler, one canonical
+	// stored reward; the engine's online LinUCB observe is driven from here.
+	beego.Router("/v1/feedback", &controllers.ApiController{}, "POST:AddRoutingReward")
 	beego.Router("/v1/export-routing-rewards", &controllers.ApiController{}, "GET:ExportRoutingRewards")
 
 	// Per-org router policy (prefer table + cost ceiling). Org-admin-gated and
