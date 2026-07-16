@@ -143,8 +143,25 @@ func TestComputeRouterStats_PublicScopeRedaction(t *testing.T) {
 	if s.Cost.RoutedIndex != nil || s.Cost.CounterfactualIndex != nil {
 		t.Fatalf("platform scope must drop absolute $ levels, got routed=%v cf=%v", s.Cost.RoutedIndex, s.Cost.CounterfactualIndex)
 	}
-	if s.Cost.SavedPct <= 0 || s.Cost.BaselineModel != "opus" {
-		t.Fatalf("platform scope keeps saved_pct + baseline id, got %+v", s.Cost)
+	// Enso stays private: the baseline + by_model must be OPAQUE arm labels, never
+	// the upstream vendor ids (opus/mini). arm-1 is the premium (priciest) arm.
+	if s.Cost.SavedPct <= 0 || s.Cost.BaselineModel != "arm-1" {
+		t.Fatalf("platform scope relabels baseline to arm-1, got %+v", s.Cost)
+	}
+	for id := range s.ByModel {
+		if id == "opus" || id == "mini" {
+			t.Fatalf("platform by_model leaked an upstream id %q: %+v", id, s.ByModel)
+		}
+	}
+	if s.ByModel["arm-1"] != 1 || s.ByModel["arm-2"] != 1 {
+		t.Fatalf("expected arm-1(opus)=1, arm-2(mini)=1, got %+v", s.ByModel)
+	}
+	for task, ts := range s.ByTask {
+		for id := range ts.Models {
+			if id == "opus" || id == "mini" {
+				t.Fatalf("platform by_task[%s] leaked upstream id %q", task, id)
+			}
+		}
 	}
 
 	// Serialized, the redacted level fields must be ABSENT (omitempty on nil ptr).
@@ -160,6 +177,17 @@ func TestComputeRouterStats_PublicScopeRedaction(t *testing.T) {
 	}
 	if _, ok := m["org"]; ok {
 		t.Fatalf("org must not serialize in platform scope: %s", b)
+	}
+}
+
+func TestArmLabelsFor_StableByPriceDesc(t *testing.T) {
+	labels := armLabelsFor(map[string]float64{"opus": 30, "mid": 10, "mini": 2, "local": 0})
+	if labels["opus"] != "arm-1" || labels["mid"] != "arm-2" || labels["mini"] != "arm-3" {
+		t.Fatalf("arm order must be price-desc, got %+v", labels)
+	}
+	// the free arm is still opaque (numbered after the priced arms), never a vendor id.
+	if labels["local"] != "arm-4" {
+		t.Fatalf("free arm should be arm-4, got %q", labels["local"])
 	}
 }
 
