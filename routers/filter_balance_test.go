@@ -258,6 +258,12 @@ func TestBalanceExemptPaths(t *testing.T) {
 		// $0-balance org must be able to SEE its own usage (to learn it needs
 		// credits), so the usage panel never 402s.
 		"/v1/get-cloud-usages", "/v1/get-usages", "/v1/get-range-usages",
+		// Routing configuration is metadata (clients read defaults on boot;
+		// operators flip them) — never wallet-gated. Auth still applies.
+		"/v1/get-routing-defaults",
+		"/v1/get-org-settings", "/v1/add-org-settings",
+		"/v1/update-org-settings", "/v1/delete-org-settings",
+		"/v1/export-routing-ledger",
 	}
 	for _, p := range exempt {
 		if !isBalanceExempt(p) {
