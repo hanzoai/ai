@@ -15,15 +15,39 @@
 package controllers
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"io"
+	"os"
+	"strings"
 
+	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/object"
 )
 
 // getRoutingEvents is the ledger source, indirected through a var so the export
 // contract can be tested without a live DB. Production reads the DB.
 var getRoutingEvents = object.GetRoutingEvents
+
+// routerAdminAuthorized gates the training-data exports for EITHER a platform super
+// admin (the console) OR a service holding ROUTER_ADMIN_TOKEN (spark's nightly retrain
+// script) — mirroring the commerceToken service-auth pattern. The token is a
+// KMS-provisioned secret (env or config); when unset, only super-admin works, so there
+// is no accidental open door. On failure it writes the super-admin 401/403 response.
+func (c *ApiController) routerAdminAuthorized() bool {
+	tok := strings.TrimSpace(os.Getenv("ROUTER_ADMIN_TOKEN"))
+	if tok == "" {
+		tok = strings.TrimSpace(conf.GetConfigString("ROUTER_ADMIN_TOKEN"))
+	}
+	if tok != "" {
+		auth := c.Ctx.Request.Header.Get("Authorization")
+		bearer := strings.TrimSpace(strings.TrimPrefix(auth, "Bearer "))
+		if bearer != "" && subtle.ConstantTimeCompare([]byte(bearer), []byte(tok)) == 1 {
+			return true
+		}
+	}
+	return c.RequireSuperAdmin()
+}
 
 // routingDefaults is the resolved-for-the-caller routing default surface read by
 // console/chat/app/desktop. Both fields are resolved with org > "*" > conf
@@ -80,7 +104,7 @@ func (c *ApiController) GetRoutingDefaults() {
 // @Success 200 {string} string "JSONL, one routing event per line"
 // @router /export-routing-ledger [get]
 func (c *ApiController) ExportRoutingLedger() {
-	if !c.RequireSuperAdmin() {
+	if !c.routerAdminAuthorized() {
 		return
 	}
 
@@ -106,16 +130,24 @@ func writeRoutingLedgerJSONL(w io.Writer, events []*object.RoutingEvent) error {
 	enc := json.NewEncoder(w)
 	for _, e := range events {
 		line := ledgerLine{
-			Id:             e.Id,
-			CreatedAt:      e.CreatedTime,
-			Org:            e.Owner,
-			User:           e.User,
-			Task:           e.Task,
-			RequestedModel: e.RequestedModel,
-			RoutedModel:    e.RoutedModel,
-			Model:          e.RoutedModel, // build_dataset --ledger reads "model"
-			Confidence:     e.Confidence,
-			Source:         e.Source,
+			Id:               e.Id,
+			CreatedAt:        e.CreatedTime,
+			Org:              e.Owner,
+			User:             e.User,
+			RequestId:        e.RequestId,
+			Task:             e.Task,
+			RequestedModel:   e.RequestedModel,
+			RoutedModel:      e.RoutedModel,
+			Model:            e.RoutedModel, // build_dataset --ledger reads "model"
+			Confidence:       e.Confidence,
+			Source:           e.Source,
+			ShadowModel:      e.ShadowModel,
+			PromptTokens:     e.PromptTokens,
+			CompletionTokens: e.CompletionTokens,
+			CostCents:        e.CostCents,
+			LatencyMs:        e.LatencyMs,
+			Reward:           e.Reward,
+			RewardedAt:       e.RewardedTime,
 		}
 		if e.Features != "" {
 			line.Features = json.RawMessage(e.Features)
@@ -131,17 +163,27 @@ func writeRoutingLedgerJSONL(w io.Writer, events []*object.RoutingEvent) error {
 // ledgerLine is the JSONL export shape. Keys are snake_case to match the
 // zen-router ledger contract; "model" aliases the routed model for
 // build_dataset.py, while "routed_model"/"task"/"features" serve the reward-join
-// / heads-fit stage. No prompt text is ever emitted.
+// / heads-fit stage. "shadow_model" is the engine's counterfactual pick for a
+// family call (the A/B signal); "reward"/"rewarded_at" carry the joined outcome.
+// No prompt text is ever emitted.
 type ledgerLine struct {
-	Id             string          `json:"id"`
-	CreatedAt      string          `json:"created_at"`
-	Org            string          `json:"org"`
-	User           string          `json:"user"`
-	Task           string          `json:"task"`
-	RequestedModel string          `json:"requested_model"`
-	RoutedModel    string          `json:"routed_model"`
-	Model          string          `json:"model"`
-	Confidence     float64         `json:"confidence"`
-	Source         string          `json:"source"`
-	Features       json.RawMessage `json:"features,omitempty"`
+	Id               string          `json:"id"`
+	CreatedAt        string          `json:"created_at"`
+	Org              string          `json:"org"`
+	User             string          `json:"user"`
+	RequestId        string          `json:"request_id"`
+	Task             string          `json:"task"`
+	RequestedModel   string          `json:"requested_model"`
+	RoutedModel      string          `json:"routed_model"`
+	Model            string          `json:"model"`
+	Confidence       float64         `json:"confidence"`
+	Source           string          `json:"source"`
+	ShadowModel      string          `json:"shadow_model,omitempty"`
+	PromptTokens     int             `json:"prompt_tokens,omitempty"`
+	CompletionTokens int             `json:"completion_tokens,omitempty"`
+	CostCents        int64           `json:"cost_cents,omitempty"`
+	LatencyMs        int64           `json:"latency_ms,omitempty"`
+	Reward           float64         `json:"reward,omitempty"`
+	RewardedAt       string          `json:"rewarded_at,omitempty"`
+	Features         json.RawMessage `json:"features,omitempty"`
 }
