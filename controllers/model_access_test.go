@@ -45,9 +45,10 @@ func TestFamilyAccessAllowedDecision(t *testing.T) {
 	}
 }
 
-// FamilyModelGated / CompedGatedAccess key off discovery: a gated SKU is recognized;
-// a comp requires BOTH gated AND a grant (no grant row in the test DB → not comped).
-func TestCompedGatedAccessDecision(t *testing.T) {
+// FamilyModelGated keys off discovery: a gated SKU is recognized as access-gated.
+// Enso is PAID — gating controls ACCESS (a grant unlocks the SKU), never billing;
+// there is no comp path, so a granted caller still pays the normal balance gate.
+func TestFamilyModelGatedDecision(t *testing.T) {
 	// Seed the enso family's discovered catalog with a gated SKU.
 	saved := ensoFam.byID
 	ensoFam.byID = map[string]zenModel{"enso": {ID: "enso", Access: "waitlist"}}
@@ -58,14 +59,6 @@ func TestCompedGatedAccessDecision(t *testing.T) {
 	}
 	if FamilyModelGated("zen5") {
 		t.Fatal("zen5 is not gated")
-	}
-	// Gated but no grant (no DB) → not comped.
-	if CompedGatedAccess("enso", "hanzo", "z", "z@hanzo.ai") {
-		t.Fatal("gated SKU without a grant must not be comped")
-	}
-	// Non-gated → never comped.
-	if CompedGatedAccess("zen5", "hanzo", "z", "") {
-		t.Fatal("non-gated model must not be comped")
 	}
 }
 

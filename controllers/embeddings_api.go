@@ -108,12 +108,8 @@ func (c *ApiController) Embeddings() {
 			}
 			var ok2 bool
 			if hold, ok2 = reserveBudget(subject, est); !ok2 {
-				// Limited-preview comp (parity with chat/messages): a granted caller of
-				// a gated SKU is not refused on balance.
-				if !c.compedGated(head.Model, orgId, authUser) {
-					c.ResponseAuthError(billingError("Insufficient balance for the estimated cost. add credits to your wallet at https://pay.hanzo.ai"))
-					return
-				}
+				c.ResponseAuthError(billingError("Insufficient balance for the estimated cost. add credits to your wallet at https://pay.hanzo.ai"))
+				return
 			}
 		}
 		c.pipeToFamily(fam, "embeddings", "openai", head.Model, c.Ctx.Input.RequestBody, false, orgId, authUser, isPremium, hold, startTime)
