@@ -64,7 +64,25 @@ type OrgSettings struct {
 	// RouterCostCeiling caps the router's per-1k cost for this org. 0 = unset →
 	// "*" row then conf. A caller's X-Max-Cost header still wins per request.
 	RouterCostCeiling float64 `json:"routerCostCeiling"`
+
+	// TrainingContribution is the org's opt-in for contributing its routing
+	// events to the shared router-heads retrain (the Tier-2 base refresh in
+	// universe/docs/architecture/personal-router-training.md). It gates ONLY
+	// whether this org's privacy-preserving events (feature vectors + routed
+	// model + reward — NEVER prompt text) join the cross-org base fit; per-org
+	// heads always train on the org's own events regardless. Three-state, same
+	// as AutoRouting: "" (unset) → treated as opted-OUT (privacy default), the
+	// nightly base-refresh job includes only "enabled" orgs.
+	TrainingContribution string `json:"trainingContribution"`
 }
+
+// TrainingContribution values for OrgSettings.TrainingContribution. The empty
+// string is the privacy-safe default (opted OUT of the cross-org base refresh).
+const (
+	TrainingContributionUnset    = ""
+	TrainingContributionEnabled  = "enabled"
+	TrainingContributionDisabled = "disabled"
+)
 
 func GetOrgSettingsList(owner string) ([]*OrgSettings, error) {
 	if adapter == nil || adapter.db == nil {
@@ -191,4 +209,41 @@ func GetCachedOrgSessionRouting(owner string) string {
 		return AutoRoutingUnset
 	}
 	return s.DefaultSessionRouting
+}
+
+// GetCachedOrgTrainingContribution returns the org's training-contribution opt-in
+// ("", "enabled", "disabled") from the 60s-cached settings row. Falls back to
+// unset ("") — the privacy-safe opted-OUT default — on any missing row or error.
+func GetCachedOrgTrainingContribution(owner string) string {
+	if owner == "" {
+		return TrainingContributionUnset
+	}
+	s, err := GetCachedOrgSettings(owner)
+	if err != nil || s == nil {
+		return TrainingContributionUnset
+	}
+	return s.TrainingContribution
+}
+
+// ListTrainingContributorOrgs returns the owners of every org that has explicitly
+// opted IN to the cross-org base refresh (TrainingContribution == "enabled"). The
+// nightly base-refresh job uses this to filter the shared fit to consenting orgs;
+// an org that never set the flag (unset) is excluded. The "*" global-default row
+// is never a contributor.
+func ListTrainingContributorOrgs() ([]string, error) {
+	if adapter == nil || adapter.db == nil {
+		return nil, nil
+	}
+	rows := []*OrgSettings{}
+	err := findAll(adapter.db, "org_settings", &rows, dbx.HashExp{"training_contribution": TrainingContributionEnabled}, "owner ASC")
+	if err != nil {
+		return nil, err
+	}
+	owners := make([]string, 0, len(rows))
+	for _, r := range rows {
+		if r.Owner != GlobalDefaultOwner {
+			owners = append(owners, r.Owner)
+		}
+	}
+	return owners, nil
 }
