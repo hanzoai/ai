@@ -359,16 +359,22 @@ func zapChatHandler(ctx context.Context, auth string, body []byte) (*zap.Message
 	modelResult, err := modelProvider.QueryText(question, &buf, history, "", nil, nil, "en")
 	if err != nil {
 		if authUser != nil {
-			go recordUsage(&usageRecord{
-				User:      authUser.Owner + "/" + authUser.Name,
-				Model:     request.Model,
-				Provider:  provider.Name,
-				Premium:   isPremium,
-				Stream:    false,
-				Status:    "error",
-				ErrorMsg:  err.Error(),
-				RequestID: requestId,
-			})
+			errRec := &usageRecord{
+				Owner:        authUser.Owner,
+				User:         authUser.Owner + "/" + authUser.Name,
+				Organization: authUser.Owner,
+				Model:        request.Model,
+				Provider:     provider.Name,
+				Premium:      isPremium,
+				Stream:       false,
+				Status:       "error",
+				ErrorMsg:     err.Error(),
+				RequestID:    requestId,
+			}
+			go recordUsage(errRec)
+			// recordUsage drops non-success records — trace the error too so a
+			// failing ZAP chat is visible in the warehouse/o11y like the HTTP paths.
+			recordTrace(context.Background(), errRec, requestStartTime)
 		}
 		return object.BuildCloudResponse(502, nil, "provider error: "+err.Error())
 	}
