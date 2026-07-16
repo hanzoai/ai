@@ -150,6 +150,7 @@ func TestBuildGenAISpanFields_ErrorAndFallbacks(t *testing.T) {
 	for _, k := range []string{
 		"gen_ai.hanzo.provider", "gen_ai.hanzo.request_id",
 		"session.id", "gen_ai.conversation.id",
+		"gen_ai.hanzo.project", "gen_ai.hanzo.api_key_hash",
 		"gen_ai.hanzo.cluster_id", "gen_ai.hanzo.route_policy",
 		"gen_ai.usage.cache_read.input_tokens", "gen_ai.usage.cache_creation.input_tokens",
 		"_o11y.gen_ai.cost_input", "_o11y.gen_ai.cost_output",
@@ -158,6 +159,25 @@ func TestBuildGenAISpanFields_ErrorAndFallbacks(t *testing.T) {
 		if _, ok := m[k]; ok {
 			t.Errorf("attribute %q must be absent when unset", k)
 		}
+	}
+}
+
+// TestBuildGenAISpanFields_ProjectAndKeyHash pins the per-project + credential-ref
+// attribution: when the record carries a project and a hashed key ref, the span
+// emits gen_ai.hanzo.project + gen_ai.hanzo.api_key_hash — and the hash is a ref,
+// never the plaintext key.
+func TestBuildGenAISpanFields_ProjectAndKeyHash(t *testing.T) {
+	rec := &usageRecord{
+		Owner: "acme", Organization: "acme", Model: "zen5", Status: "success",
+		Project: "research", APIKeyHash: "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+	}
+	m := attrMap(buildGenAISpanFields(rec, 0, 0, 0, 0, nil, false).attrs)
+
+	if got := m["gen_ai.hanzo.project"].AsString(); got != "research" {
+		t.Errorf("gen_ai.hanzo.project = %q, want \"research\"", got)
+	}
+	if got := m["gen_ai.hanzo.api_key_hash"].AsString(); got != rec.APIKeyHash {
+		t.Errorf("gen_ai.hanzo.api_key_hash = %q, want the SHA-256 ref", got)
 	}
 }
 
