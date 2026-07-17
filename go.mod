@@ -32,13 +32,14 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674
 	github.com/hanzo-ds/go v1.0.1
+	github.com/hanzoai/account v0.2.0
 	github.com/hanzoai/cloud v1.786.112
 	github.com/hanzoai/dashscope-go-sdk v0.0.2
 	github.com/hanzoai/dashscopego v0.6.0
 	github.com/hanzoai/dbx v1.16.0
 	github.com/hanzoai/decimal v0.1.1
 	github.com/hanzoai/go-openrouter v1.0.0
-	github.com/hanzoai/iam v1.31.27-0.20260716191958-4400762928a2
+	github.com/hanzoai/iam v1.31.28
 	github.com/hanzoai/money v0.2.1
 	github.com/hanzoai/pdf v1.2.0
 	github.com/hanzoai/search-go v0.36.0
@@ -156,7 +157,6 @@ require (
 	github.com/grandcat/zeroconf v1.0.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 // indirect
 	github.com/hanzo-ds/native v0.71.0 // indirect
-	github.com/hanzoai/account v0.2.0 // indirect
 	github.com/hanzoai/commerce/metering v0.1.4 // indirect
 	github.com/hanzoai/csqlite v0.1.0 // indirect
 	github.com/hhrutter/lzw v1.0.0 // indirect
