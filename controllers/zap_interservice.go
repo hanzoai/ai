@@ -31,7 +31,7 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/hanzoai/beego/logs"
+	"github.com/hanzoai/ai/log"
 	"github.com/luxfi/zap"
 
 	"github.com/hanzoai/ai/object"
@@ -58,13 +58,13 @@ func InitInterserviceZap() {
 	})
 
 	if err := node.Start(); err != nil {
-		logs.Error("ZAP ops: failed to start on :%d: %v", port, err)
+		log.Error("ZAP ops: failed to start on :%d: %v", port, err)
 		return
 	}
 
 	node.Handle(MsgTypeCloudOps, handleCloudOps)
 	interserviceNode = node
-	logs.Info("ZAP ops: listening on :%d (msg_type=%d)", port, MsgTypeCloudOps)
+	log.Info("ZAP ops: listening on :%d (msg_type=%d)", port, MsgTypeCloudOps)
 }
 
 // StopInterserviceZap gracefully shuts down the inter-service ZAP node.
@@ -72,7 +72,7 @@ func StopInterserviceZap() {
 	if interserviceNode != nil {
 		interserviceNode.Stop()
 		interserviceNode = nil
-		logs.Info("ZAP ops: stopped")
+		log.Info("ZAP ops: stopped")
 	}
 }
 

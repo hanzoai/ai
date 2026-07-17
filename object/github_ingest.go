@@ -34,7 +34,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hanzoai/beego/logs"
+	"github.com/hanzoai/ai/log"
 )
 
 // githubAPIBase is the GitHub REST API root (overridable in tests).
@@ -212,7 +212,7 @@ func IngestGitHub(owner, store string, gh *GitHubIngestRequest, replace bool, ta
 		// The recursive tree is capped by GitHub; report it rather than silently
 		// indexing a partial repo.
 		stats.Skipped = append(stats.Skipped, "(repo tree truncated by GitHub; some files not listed)")
-		logs.Warning("github: tree for %s/%s@%s is truncated; indexing the listed subset", repoOwner, repoName, ref)
+		log.Warning("github: tree for %s/%s@%s is truncated; indexing the listed subset", repoOwner, repoName, ref)
 	}
 
 	if tag == "" {
@@ -237,7 +237,7 @@ func IngestGitHub(owner, store string, gh *GitHubIngestRequest, replace bool, ta
 		}
 		if stats.FilesIngested >= maxFiles {
 			stats.Skipped = append(stats.Skipped, fmt.Sprintf("(file cap %d reached; remaining files not indexed)", maxFiles))
-			logs.Warning("github: file cap %d reached for %s/%s@%s", maxFiles, repoOwner, repoName, ref)
+			log.Warning("github: file cap %d reached for %s/%s@%s", maxFiles, repoOwner, repoName, ref)
 			break
 		}
 		content, err := githubFetchBlob(repoOwner, repoName, node.SHA, token)
