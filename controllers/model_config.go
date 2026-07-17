@@ -22,9 +22,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/router"
-	"github.com/hanzoai/beego/logs"
 	"gopkg.in/yaml.v3"
 )
 
@@ -328,7 +328,7 @@ func (mc *ModelConfig) applyConfig(file *ModelConfigFile) error {
 	mc.pricingTTL = pricingTTL
 	mc.mu.Unlock()
 
-	logs.Info("Model config loaded: %d routes, %d pricing entries",
+	log.Info("Model config loaded: %d routes, %d pricing entries",
 		len(routes), len(pricing))
 
 	return nil

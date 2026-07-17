@@ -19,8 +19,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/object"
-	"github.com/hanzoai/beego/logs"
 )
 
 // modelPrice defines per-model economics in dollars per 1M tokens. Input/Output/Cache*
@@ -361,7 +361,7 @@ func warnUnpricedOnce(model string) {
 	if _, seen := unpricedWarned.LoadOrStore(strings.ToLower(model), struct{}{}); seen {
 		return
 	}
-	logs.Warning("pricing: model %q has no configured price — billing at the conservative default ($1.00/$4.00 per 1M); add it to conf/models.yaml or a model route. Its usage rows are flagged unpriced.", model)
+	log.Warning("pricing: model %q has no configured price — billing at the conservative default ($1.00/$4.00 per 1M); add it to conf/models.yaml or a model route. Its usage rows are flagged unpriced.", model)
 }
 
 // recordUnpriced reports whether a token-billed call fell back to the conservative

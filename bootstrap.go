@@ -21,8 +21,8 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/beego"
-	"github.com/hanzoai/beego/logs"
 	"github.com/hanzoai/beego/session"
 
 	"github.com/hanzoai/ai/conf"
@@ -135,7 +135,7 @@ func doBootstrap() (err error) {
 		configPath = "conf/models.yaml"
 	}
 	if err := controllers.InitModelConfig(configPath); err != nil {
-		logs.Warn("Model config: %v (using static fallback)", err)
+		log.Warn("Model config: %v (using static fallback)", err)
 	}
 
 	// Wire the YAML-backed context-window resolver: models.yaml context_window
@@ -164,10 +164,10 @@ func doBootstrap() (err error) {
 	// start rather than silently double-spend across pods; scaling out requires a
 	// Commerce-atomic conditional reserve first.
 	if n, ok := object.SinglePodReplicaHint(); ok && n > 1 {
-		logs.Error("FATAL: CLOUD_API_REPLICAS=%d — the in-pod balance ledger double-spends across pods. Refusing to start; implement a Commerce-atomic reserve before scaling out.", n)
+		log.Error("FATAL: CLOUD_API_REPLICAS=%d — the in-pod balance ledger double-spends across pods. Refusing to start; implement a Commerce-atomic reserve before scaling out.", n)
 		panic("cloud-api: in-pod balance ledger requires a single replica (CLOUD_API_REPLICAS>1)")
 	}
-	logs.Info("balance ledger: single-pod invariant active (reservation ledger requires replicas=1, strategy=Recreate, HPA min=max=1)")
+	log.Info("balance ledger: single-pod invariant active (reservation ledger requires replicas=1, strategy=Recreate, HPA min=max=1)")
 
 	// Commerce balance gate (pre-request balance enforcement).
 	routers.InitBalanceGate()
@@ -178,7 +178,7 @@ func doBootstrap() (err error) {
 
 	// Per-key rate limiting (env override → tier cache → zen-free).
 	bootRateLimiter = routers.InitRateLimiter(routers.DefaultTierFunc)
-	logs.Info("Per-key rate limiter initialized (tiers: free=10/min, starter=60/min, pro=300/min, enterprise=1000/min)")
+	log.Info("Per-key rate limiter initialized (tiers: free=10/min, starter=60/min, pro=300/min, enterprise=1000/min)")
 
 	// Copy the request body into c.Ctx.Input.RequestBody. The OpenAI-compatible
 	// controllers read the raw body via c.Ctx.Input.RequestBody (e.g.
@@ -267,17 +267,17 @@ func doBootstrap() (err error) {
 	if raw := conf.GetConfigString("logConfig"); raw != "" {
 		logConfigMap := make(map[string]interface{})
 		if err := json.Unmarshal([]byte(raw), &logConfigMap); err != nil {
-			logs.Warn("logConfig parse failed: %v (keeping default logger)", err)
+			log.Warn("logConfig parse failed: %v (keeping default logger)", err)
 		} else {
 			logAdapter := "file"
 			if v, ok := logConfigMap["adapter"].(string); ok {
 				logAdapter = v
 			}
 			if logAdapter == "console" {
-				logs.Reset()
+				log.Reset()
 			}
-			if err := logs.SetLogger(logAdapter, raw); err != nil {
-				logs.Warn("logConfig SetLogger failed: %v (keeping default logger)", err)
+			if err := log.SetLogger(logAdapter, raw); err != nil {
+				log.Warn("logConfig SetLogger failed: %v (keeping default logger)", err)
 			}
 		}
 	}
@@ -286,7 +286,7 @@ func doBootstrap() (err error) {
 	// no Commerce endpoint is configured.
 	bootBillingQueue = controllers.InitBillingQueue()
 	if bootBillingQueue != nil {
-		logs.Info("Billing queue started (Commerce endpoint configured)")
+		log.Info("Billing queue started (Commerce endpoint configured)")
 	}
 
 	// Publish the fully-wired beego ControllerRegister. Every BeforeRouter

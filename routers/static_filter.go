@@ -27,9 +27,9 @@ import (
 	"strings"
 
 	"github.com/hanzoai/ai/conf"
+	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/util"
 	"github.com/hanzoai/beego/context"
-	"github.com/hanzoai/beego/logs"
 )
 
 var frontendBaseDir = conf.GetConfigString("frontendBaseDir")
@@ -113,7 +113,7 @@ func StaticFilter(ctx *context.Context) {
 	} else {
 		err := util.AppendWebConfigCookie(ctx)
 		if err != nil {
-			logs.Error("AppendWebConfigCookie: %v", err)
+			log.Error("AppendWebConfigCookie: %v", err)
 		}
 		makeGzipResponse(ctx.ResponseWriter, ctx.Request, "web/build/index.html")
 	}

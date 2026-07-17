@@ -23,7 +23,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hanzoai/beego/logs"
+	"github.com/hanzoai/ai/log"
 	"golang.org/x/net/html"
 )
 
@@ -162,11 +162,11 @@ func CrawlSite(req *ScrapeRequest) (results []ScrapeResult, crawlErrors []string
 	default:
 		// Auto mode: try crawl4ai, fall back to Go scraper
 		if IsCrawl4AIAvailable() {
-			logs.Info("scraper: crawl4ai is available, using browser engine for %s", req.URL)
+			log.Info("scraper: crawl4ai is available, using browser engine for %s", req.URL)
 			results, crawlErrors = crawlWithBrowserEngine(req)
 			return results, crawlErrors, "browser"
 		}
-		logs.Info("scraper: crawl4ai is not available, falling back to Go scraper for %s", req.URL)
+		log.Info("scraper: crawl4ai is not available, falling back to Go scraper for %s", req.URL)
 		results, crawlErrors = crawlWithGoScraper(req)
 		return results, crawlErrors, "fast"
 	}
@@ -304,7 +304,7 @@ func crawlWithGoScraper(req *ScrapeRequest) ([]ScrapeResult, []string) {
 				pageCountMu.Unlock()
 				time.Sleep(scraperRequestDelay)
 				if isDisallowed(robots, ci.url) {
-					logs.Info("scraper: robots.txt disallows %s", ci.url)
+					log.Info("scraper: robots.txt disallows %s", ci.url)
 					return
 				}
 				result, scrapeErr := ScrapePage(ci.url)
