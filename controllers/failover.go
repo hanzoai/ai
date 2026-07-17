@@ -21,9 +21,9 @@ import (
 	"io"
 	"strings"
 
+	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/model"
 	"github.com/hanzoai/ai/object"
-	"github.com/hanzoai/beego/logs"
 )
 
 // errPartiallyWritten stops a retry that can no longer be made safely: bytes
@@ -121,7 +121,7 @@ func failoverQueryText(
 			var e error
 			res, e = callProvider(provider, upstream, question, writer, history, knowledge, lang)
 			if e != nil && isTransientError(e) {
-				logs.Warn("retry: provider=%s is busy (%v) — holding the request rather than bouncing it to the client", provider, e)
+				log.Warn("retry: provider=%s is busy (%v) — holding the request rather than bouncing it to the client", provider, e)
 			}
 			return e
 		})
@@ -137,14 +137,14 @@ func failoverQueryText(
 	// If the writer already sent data to the client (streaming), we cannot
 	// retry — the response is partially committed.
 	if writerHasData != nil && writerHasData() {
-		logs.Warn("failover: primary provider %s failed after partial write, cannot retry: %v",
+		log.Warn("failover: primary provider %s failed after partial write, cannot retry: %v",
 			route.providerName, err)
 		return nil, route.providerName, err
 	}
 
 	// Check if the error is retryable
 	if !isRetryableError(err) {
-		logs.Warn("failover: primary provider %s failed with non-retryable error: %v",
+		log.Warn("failover: primary provider %s failed with non-retryable error: %v",
 			route.providerName, err)
 		return nil, route.providerName, err
 	}
@@ -153,21 +153,21 @@ func failoverQueryText(
 		return nil, route.providerName, err
 	}
 
-	logs.Warn("failover: primary provider %s failed (%v), trying %d fallback(s)",
+	log.Warn("failover: primary provider %s failed (%v), trying %d fallback(s)",
 		route.providerName, err, len(route.fallbacks))
 
 	var lastErr error = err
 	for i, fb := range route.fallbacks {
-		logs.Info("failover: attempting fallback[%d] provider=%s upstream=%s",
+		log.Info("failover: attempting fallback[%d] provider=%s upstream=%s",
 			i, fb.providerName, fb.upstreamModel)
 
 		result, fbErr := callWithRetry(fb.providerName, fb.upstreamModel)
 		if fbErr == nil {
-			logs.Info("failover: fallback[%d] provider=%s succeeded", i, fb.providerName)
+			log.Info("failover: fallback[%d] provider=%s succeeded", i, fb.providerName)
 			return result, fb.providerName, nil
 		}
 
-		logs.Warn("failover: fallback[%d] provider=%s failed: %v", i, fb.providerName, fbErr)
+		log.Warn("failover: fallback[%d] provider=%s failed: %v", i, fb.providerName, fbErr)
 		lastErr = fbErr
 
 		// If this fallback also wrote partial data, stop trying

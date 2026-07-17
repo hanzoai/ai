@@ -20,8 +20,8 @@ import (
 	"strings"
 
 	"github.com/hanzoai/ai/conf"
+	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/util"
-	"github.com/hanzoai/beego/logs"
 )
 
 var (
@@ -86,7 +86,7 @@ func (c *ApiController) ActivateFile() {
 
 	path := fmt.Sprintf("%s/%s", cacheDir, key)
 	cacheMap[prefix] = path
-	logs.Info("%v", cacheMap)
+	log.Info("%v", cacheMap)
 
 	if !util.FileExist(getAppPath(filename)) {
 		util.CopyFile(getAppPath(filename), getAppPath(prefix))

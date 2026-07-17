@@ -69,7 +69,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hanzoai/beego/logs"
+	"github.com/hanzoai/ai/log"
 
 	"github.com/hanzoai/ai/object"
 )
@@ -461,7 +461,7 @@ func collectDOCandidates(ctx context.Context, token string, from, to time.Time) 
 		items, ierr := fetchDOInvoiceItems(ctx, token, ref.UUID)
 		if ierr != nil {
 			stats.InvoiceFetchErrors++
-			logs.Warn("DO backfill: invoice %s: %v", ref.UUID, ierr)
+			log.Warn("DO backfill: invoice %s: %v", ref.UUID, ierr)
 			continue
 		}
 		for _, it := range items {

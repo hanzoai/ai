@@ -24,10 +24,10 @@ import (
 
 	"github.com/hanzoai/ai"
 	"github.com/hanzoai/ai/controllers"
+	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
 	"github.com/hanzoai/beego"
-	"github.com/hanzoai/beego/logs"
 	_ "github.com/hanzoai/beego/session/redis"
 )
 
@@ -57,20 +57,20 @@ func main() {
 	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
 	go func() {
 		sig := <-sigCh
-		logs.Info("Received %v, shutting down...", sig)
+		log.Info("Received %v, shutting down...", sig)
 
 		if rlInstance != nil {
 			rlInstance.Stop()
 			allowed, denied := rlInstance.Metrics()
-			logs.Info("Rate limiter stopped (total_allowed=%d total_denied=%d)", allowed, denied)
+			log.Info("Rate limiter stopped (total_allowed=%d total_denied=%d)", allowed, denied)
 		}
 
 		if bq != nil {
 			remaining := bq.Shutdown()
 			if remaining > 0 {
-				logs.Error("Billing queue shutdown: %d records could not be delivered", remaining)
+				log.Error("Billing queue shutdown: %d records could not be delivered", remaining)
 			} else {
-				logs.Info("Billing queue drained successfully")
+				log.Info("Billing queue drained successfully")
 			}
 		}
 

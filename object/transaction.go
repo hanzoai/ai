@@ -27,8 +27,8 @@ import (
 	"time"
 
 	"github.com/hanzoai/ai/conf"
+	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/util"
-	"github.com/hanzoai/beego/logs"
 	"github.com/robfig/cron/v3"
 )
 
@@ -210,7 +210,7 @@ func AddTransactionForMessage(message *Message) error {
 		TransactionId string `json:"transactionId"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		logs.Warning("failed to decode Commerce response: %s", err.Error())
+		log.Warning("failed to decode Commerce response: %s", err.Error())
 	} else if result.TransactionId != "" {
 		message.TransactionId = result.TransactionId
 	}
@@ -241,7 +241,7 @@ func retryFailedTransaction() error {
 func retryFailedTransactionNoError() {
 	err := retryFailedTransaction()
 	if err != nil {
-		logs.Error("retryFailedTransactionNoError() error: %s", err.Error())
+		log.Error("retryFailedTransactionNoError() error: %s", err.Error())
 	}
 }
 

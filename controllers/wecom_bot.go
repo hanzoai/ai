@@ -19,10 +19,10 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/model"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
-	"github.com/hanzoai/beego/logs"
 	"github.com/workweixin/weworkapi_golang/json_callback/wxbizjsonmsgcrypt"
 )
 
@@ -68,7 +68,7 @@ func (c *ApiController) WecomBotHandleMessage() {
 
 	token, encodingAESKey, err := object.GetWecomBotTokenAndKey(botId)
 	if err != nil {
-		logs.Error("verify fail: %v", err)
+		log.Error("verify fail: %v", err)
 		c.Ctx.ResponseWriter.Write([]byte(fmt.Sprintf("verify fail: %v", err)))
 		return
 	}
@@ -78,14 +78,14 @@ func (c *ApiController) WecomBotHandleMessage() {
 	postData := c.Ctx.Input.RequestBody
 	plaintext, cryptErr := wxcpt.DecryptMsg(msgSignature, timestamp, nonce, postData)
 	if cryptErr != nil {
-		logs.Error("[WechatWork Bot] Decrypt message error: %v", cryptErr)
+		log.Error("[WechatWork Bot] Decrypt message error: %v", cryptErr)
 		c.Ctx.ResponseWriter.Write([]byte("error"))
 		return
 	}
 
 	var message object.WecomBotMessage
 	if err := json.Unmarshal(plaintext, &message); err != nil {
-		logs.Error("[WechatWork Bot] Parse message error: %v", err)
+		log.Error("[WechatWork Bot] Parse message error: %v", err)
 		c.Ctx.ResponseWriter.Write([]byte("error"))
 		return
 	}
@@ -95,13 +95,13 @@ func (c *ApiController) WecomBotHandleMessage() {
 	case "text", "stream":
 		responseMsg, cryptErr = c.handleTextMessage(&message, wxcpt, nonce, timestamp, c.GetAcceptLanguage())
 	default:
-		logs.Error("[WechatWork Bot] Unsupported message type: %s", message.MsgType)
+		log.Error("[WechatWork Bot] Unsupported message type: %s", message.MsgType)
 		c.Ctx.ResponseWriter.Write([]byte("success"))
 		return
 	}
 
 	if cryptErr != nil {
-		logs.Error("[WechatWork Bot] Handle message error: %v", cryptErr)
+		log.Error("[WechatWork Bot] Handle message error: %v", cryptErr)
 		c.Ctx.ResponseWriter.Write([]byte("error"))
 		return
 	}

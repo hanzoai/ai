@@ -22,7 +22,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hanzoai/beego/logs"
+	"github.com/hanzoai/ai/log"
 )
 
 const (
@@ -104,7 +104,7 @@ func (q *BillingQueue) Enqueue(record *BillingRecord) {
 	select {
 	case q.ch <- record:
 	default:
-		logs.Error("billing_queue: dropped record org=%s model=%s request_id=%s (queue full)",
+		log.Error("billing_queue: dropped record org=%s model=%s request_id=%s (queue full)",
 			record.Org, record.Model, record.RequestID)
 	}
 }
@@ -126,7 +126,7 @@ func (q *BillingQueue) Shutdown() int {
 		return 0
 	case <-time.After(billingShutdownTimeout):
 		remaining := len(q.ch)
-		logs.Error("billing_queue: shutdown timed out, %d records pending", remaining)
+		log.Error("billing_queue: shutdown timed out, %d records pending", remaining)
 		return remaining
 	}
 }
@@ -176,11 +176,11 @@ func (q *BillingQueue) deliver(record *BillingRecord) {
 			return
 		}
 
-		logs.Warning("billing_queue: attempt %d/%d failed org=%s model=%s request_id=%s: %v",
+		log.Warning("billing_queue: attempt %d/%d failed org=%s model=%s request_id=%s: %v",
 			attempt+1, billingMaxRetries, record.Org, record.Model, record.RequestID, err)
 	}
 
-	logs.Error("billing_queue: permanently failed org=%s model=%s request_id=%s after %d attempts",
+	log.Error("billing_queue: permanently failed org=%s model=%s request_id=%s after %d attempts",
 		record.Org, record.Model, record.RequestID, billingMaxRetries)
 }
 
