@@ -22,6 +22,8 @@ import (
 	"testing"
 	"time"
 
+	beecontext "github.com/hanzoai/beego/context"
+
 	"github.com/hanzoai/ai/object"
 )
 
@@ -258,6 +260,9 @@ func TestBalanceExemptPaths(t *testing.T) {
 		// $0-balance org must be able to SEE its own usage (to learn it needs
 		// credits), so the usage panel never 402s.
 		"/v1/get-cloud-usages", "/v1/get-usages", "/v1/get-range-usages",
+		// Public marketing aggregate (router flywheel stats) — 200 on both the anon
+		// and authed path, same class as /v1/traffic/.
+		"/v1/router/stats",
 		// Routing configuration is metadata (clients read defaults on boot;
 		// operators flip them) — never wallet-gated. Auth still applies.
 		"/v1/get-routing-defaults",
@@ -278,6 +283,63 @@ func TestBalanceExemptPaths(t *testing.T) {
 		if isBalanceExempt(p) {
 			t.Errorf("paid path %q must NOT be balance-exempt", p)
 		}
+	}
+}
+
+// TestReadMethodExemption locks in the "reads never spend" rule: GET/HEAD/OPTIONS are
+// read methods (balance-exempt); every mutating method stays gated.
+func TestReadMethodExemption(t *testing.T) {
+	for _, m := range []string{http.MethodGet, http.MethodHead, http.MethodOptions} {
+		if !isReadMethod(m) {
+			t.Errorf("%s must be a read method (balance-exempt)", m)
+		}
+	}
+	for _, m := range []string{http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete} {
+		if isReadMethod(m) {
+			t.Errorf("%s must NOT be read-exempt (mutating/metered paths stay gated)", m)
+		}
+	}
+}
+
+// TestBalanceGateFilterExemptsReads is the end-to-end regression for the "$0 org can't
+// view its own resources" outage: with a configured gate and a subject that has ZERO
+// spendable balance, a READ (GET) to any path — even a metered one — is admitted (no
+// 402), while a metered WRITE (POST) still 402s. Proves the fix closes the read hole
+// WITHOUT freeing metered inference.
+func TestBalanceGateFilterExemptsReads(t *testing.T) {
+	bg := newTestGate("http://unused", "", balanceCacheTTL)
+	bg.setUserKeyCache("tok", "acme", "acme", "acme/user") // resolveBillingKey → "acme", no network
+	bg.ledger.SetBalance("acme", 0)                        // known + zero spendable ⇒ insufficient
+
+	prev := balanceGate
+	balanceGate = bg
+	t.Cleanup(func() { balanceGate = prev })
+
+	status := func(method, path string) int {
+		req := httptest.NewRequest(method, path, nil)
+		req.Header.Set("Authorization", "Bearer tok")
+		rec := httptest.NewRecorder()
+		ctx := beecontext.NewContext()
+		ctx.Reset(rec, req)
+		BalanceGateFilter(ctx)
+		return rec.Code
+	}
+
+	// Reads to gated paths (a metered path plus product-subsystem reads) must NOT 402
+	// at $0 balance — the whole point of the fix.
+	for _, p := range []string{
+		"/v1/chat/completions", // metered path, but a GET of it is still a read
+		"/v1/get-chats", "/v1/kms/orgs/acme/secrets",
+		"/v1/s3/buckets", "/v1/router/stats", "/v1/marketplace/listings",
+	} {
+		if code := status(http.MethodGet, p); code == http.StatusPaymentRequired {
+			t.Errorf("GET %s must not be 402'd at $0 (reads never spend)", p)
+		}
+	}
+
+	// A metered WRITE at $0 still gates — the fix must never free inference.
+	if code := status(http.MethodPost, "/v1/chat/completions"); code != http.StatusPaymentRequired {
+		t.Errorf("POST /v1/chat/completions at $0 must 402 (metered write stays gated), got %d", code)
 	}
 }
 
