@@ -17,8 +17,10 @@ package controllers
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/router"
@@ -36,15 +38,48 @@ var orgAutoRoutingLookup = object.GetCachedOrgAutoRouting
 // ("", "enabled", "disabled"), indirected for tests like orgAutoRoutingLookup.
 var sessionRoutingLookup = object.GetCachedOrgSessionRouting
 
-// effectiveAutoRouting folds the two-level OrgSettings precedence into one
-// three-state preference for AutoRoutingActive: the org's own row wins, else the
-// reserved "*" global-default row, else "" (defer to the conf router.enabled
-// flag). A row's "disabled" therefore beats a lower level's "enabled".
+// effectiveAutoRouting folds the auto-routing precedence into one three-state
+// preference for AutoRoutingActive:
+//
+//  1. the org's own OrgSettings row (if set) wins;
+//  2. else the reserved "*" GlobalDefaultOwner row — the SINGLE source of truth
+//     for the platform-wide routing default, edited via /v1/update-org-settings
+//     from admin.hanzo.ai;
+//  3. else the DEPRECATED ROUTER_ENABLED env, honored only while the global row
+//     is unset (see deprecatedGlobalRouterEnv).
+//
+// A row's "disabled" therefore beats a lower level's "enabled", and the "*" row
+// authoritatively overrides the env. Returning "" (all three unset) defers to the
+// conf router.enabled flag in AutoRoutingActive.
 func effectiveAutoRouting(org string) string {
 	if pref := orgAutoRoutingLookup(org); pref != object.AutoRoutingUnset {
 		return pref
 	}
-	return orgAutoRoutingLookup(object.GlobalDefaultOwner)
+	if pref := orgAutoRoutingLookup(object.GlobalDefaultOwner); pref != object.AutoRoutingUnset {
+		return pref
+	}
+	return deprecatedGlobalRouterEnv()
+}
+
+// routerEnabledEnvOnce guards the ROUTER_ENABLED deprecation log so it fires at
+// most once per process — effectiveAutoRouting is on the per-request hot path.
+var routerEnabledEnvOnce sync.Once
+
+// deprecatedGlobalRouterEnv resolves the platform-wide routing default from the
+// DEPRECATED ROUTER_ENABLED env. It is consulted ONLY when the "*"
+// GlobalDefaultOwner row is unset (effectiveAutoRouting checks the row first), so
+// the row stays authoritative and the env is a reversible transitional fallback.
+// When the env is the deciding factor it returns "enabled" and logs a one-time
+// deprecation pointing at the settings row; otherwise it returns "" so the conf
+// router.enabled flag remains the last-resort default.
+func deprecatedGlobalRouterEnv() string {
+	if os.Getenv("ROUTER_ENABLED") != "true" {
+		return object.AutoRoutingUnset
+	}
+	routerEnabledEnvOnce.Do(func() {
+		logs.Warning("ROUTER_ENABLED env is DEPRECATED: set the GlobalDefaultOwner (%q) OrgSettings.AutoRouting row via /v1/update-org-settings (admin.hanzo.ai); env honored as a fallback only because the global row is unset", object.GlobalDefaultOwner)
+	})
+	return object.AutoRoutingEnabled
 }
 
 // effectiveSessionRouting folds the same org > "*" precedence for the
