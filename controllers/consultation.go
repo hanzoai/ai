@@ -20,7 +20,6 @@ import (
 
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
-	"github.com/hanzoai/beego/utils/pagination"
 )
 
 // GetConsultations
@@ -63,7 +62,7 @@ func (c *ApiController) GetConsultations() {
 			return
 		}
 
-		paginator := pagination.SetPaginator(c.Ctx, limit, count)
+		paginator := util.NewPaginator(c.Ctx.Request, limit, count)
 		consultations, err := object.GetMaskedConsultations(object.GetPaginationConsultations(owner, paginator.Offset(), limit, field, value, sortField, sortOrder))
 		if err != nil {
 			c.ResponseError(err.Error())
