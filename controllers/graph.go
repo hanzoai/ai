@@ -20,7 +20,6 @@ import (
 
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
-	"github.com/hanzoai/beego/utils/pagination"
 )
 
 // GetGlobalGraphs
@@ -74,7 +73,7 @@ func (c *ApiController) GetGraphs() {
 			return
 		}
 
-		paginator := pagination.SetPaginator(c.Ctx, limit, count)
+		paginator := util.NewPaginator(c.Ctx.Request, limit, count)
 		graphs, err := object.GetPaginationGraphs(owner, paginator.Offset(), limit, field, value, sortField, sortOrder)
 		if err != nil {
 			c.ResponseError(err.Error())
