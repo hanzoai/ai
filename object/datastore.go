@@ -49,7 +49,7 @@ import (
 
 	datastore "github.com/hanzo-ds/go"
 	"github.com/hanzo-ds/go/lib/driver"
-	"github.com/hanzoai/beego/logs"
+	"github.com/hanzoai/ai/log"
 )
 
 // ── Package state ───────────────────────────────────────────────────────
@@ -78,7 +78,7 @@ var (
 func InitDatastore() {
 	addr := strings.TrimSpace(os.Getenv("DATASTORE_ADDR"))
 	if addr == "" {
-		logs.Info("datastore: disabled (set DATASTORE_ADDR to enable the Datastore usage/observability ledger)")
+		log.Info("datastore: disabled (set DATASTORE_ADDR to enable the Datastore usage/observability ledger)")
 		return
 	}
 	go connectDatastore(addr)
@@ -112,7 +112,7 @@ func connectDatastore(addr string) {
 				// user lacks CREATE DATABASE — Ensure*Table is then the authority.
 				ddctx, ddcancel := context.WithTimeout(context.Background(), 5*time.Second)
 				if derr := conn.Exec(ddctx, "CREATE DATABASE IF NOT EXISTS "+db); derr != nil {
-					logs.Warn("datastore: ensure database %q: %v", db, derr)
+					log.Warn("datastore: ensure database %q: %v", db, derr)
 				}
 				ddcancel()
 
@@ -120,15 +120,15 @@ func connectDatastore(addr string) {
 				datastoreConn = conn
 				datastoreMu.Unlock()
 				datastoreReady.Store(true)
-				logs.Info("datastore: connected to Datastore at %s (db=%s)", addr, db)
+				log.Info("datastore: connected to Datastore at %s (db=%s)", addr, db)
 				return
 			}
 			_ = conn.Close()
 		}
-		logs.Warn("datastore: connect %s attempt %d: %v", addr, attempt, err)
+		log.Warn("datastore: connect %s attempt %d: %v", addr, attempt, err)
 		time.Sleep(2 * time.Second)
 	}
-	logs.Error("datastore: failed to connect to %s after 30 attempts", addr)
+	log.Error("datastore: failed to connect to %s after 30 attempts", addr)
 }
 
 // DatastoreEnabled reports whether the Datastore ledger connection is live. The

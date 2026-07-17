@@ -23,7 +23,7 @@ import (
 	"time"
 
 	"github.com/hanzoai/ai/conf"
-	"github.com/hanzoai/beego/logs"
+	"github.com/hanzoai/ai/log"
 	"golang.org/x/net/proxy"
 )
 
@@ -50,7 +50,7 @@ func isAddressOpen(address string) bool {
 
 	if conn != nil {
 		defer conn.Close()
-		logs.Info("Socks5 proxy enabled: %s", address)
+		log.Info("Socks5 proxy enabled: %s", address)
 		return true
 	}
 

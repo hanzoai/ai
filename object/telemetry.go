@@ -37,7 +37,7 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/hanzoai/beego/logs"
+	"github.com/hanzoai/ai/log"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
@@ -118,12 +118,12 @@ func InitTelemetry() {
 	// Host already owns the global provider (AdoptHostTracerProvider was called by
 	// the composition root before this mount): emit through it, never fork.
 	if telemetryReady.Load() {
-		logs.Info("telemetry: OTel GenAI spans -> host global tracer provider")
+		log.Info("telemetry: OTel GenAI spans -> host global tracer provider")
 		return
 	}
 	endpoint := firstNonEmptyEnv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "OTEL_EXPORTER_OTLP_ENDPOINT")
 	if endpoint == "" {
-		logs.Info("telemetry: disabled (no host provider adopted; set OTEL_EXPORTER_OTLP_ENDPOINT to emit OTel GenAI spans to o11y)")
+		log.Info("telemetry: disabled (no host provider adopted; set OTEL_EXPORTER_OTLP_ENDPOINT to emit OTel GenAI spans to o11y)")
 		return
 	}
 	go initTelemetry()
@@ -134,7 +134,7 @@ func initTelemetry() {
 	// vars (endpoint, headers, insecure-by-scheme, timeout).
 	exporter, err := otlptracehttp.New(context.Background())
 	if err != nil {
-		logs.Error("telemetry: create OTLP exporter: %v", err)
+		log.Error("telemetry: create OTLP exporter: %v", err)
 		return
 	}
 
@@ -148,7 +148,7 @@ func initTelemetry() {
 	captureGenAITracer()
 	telemetryProvider = tp
 	telemetryReady.Store(true)
-	logs.Info("telemetry: OTel GenAI spans -> o11y via OTLP (service.name=%s)", telemetryServiceName())
+	log.Info("telemetry: OTel GenAI spans -> o11y via OTLP (service.name=%s)", telemetryServiceName())
 }
 
 // TelemetryEnabled reports whether the OTLP trace exporter is live. The emit
@@ -181,7 +181,7 @@ func ShutdownTelemetry(ctx context.Context) {
 		return
 	}
 	if err := telemetryProvider.Shutdown(ctx); err != nil {
-		logs.Warn("telemetry: shutdown: %v", err)
+		log.Warn("telemetry: shutdown: %v", err)
 	}
 }
 

@@ -32,10 +32,10 @@ import (
 	"github.com/hanzoai/account"
 
 	"github.com/hanzoai/ai/conf"
+	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/model"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
-	"github.com/hanzoai/beego/logs"
 	iam "github.com/hanzoai/iam"
 	"github.com/sashabaranov/go-openai"
 )
@@ -262,7 +262,7 @@ func resolveProviderFromIAMKey(apiKey string, requestedModel string, lang string
 		if fallbackUser := tryCloudAgentKeyFallback(apiKey); fallbackUser != nil {
 			// Never log the API key (even masked) — owner/name identify the
 			// fallback identity for debugging without leaking the credential.
-			logs.Warn("[iam-fallback] IAM returned %q; using cloud-agent fallback identity (owner=%s name=%s)",
+			log.Warn("[iam-fallback] IAM returned %q; using cloud-agent fallback identity (owner=%s name=%s)",
 				err.Error(), fallbackUser.Owner, fallbackUser.Name)
 			return resolveProviderForUser(fallbackUser, requestedModel, lang)
 		}
@@ -672,7 +672,7 @@ func recordUsage(record *usageRecord) {
 			Provider:  record.Provider,
 			RequestID: record.RequestID,
 		}); err != nil {
-			logs.Error("billing: native usage record failed request_id=%s: %v", record.RequestID, err)
+			log.Error("billing: native usage record failed request_id=%s: %v", record.RequestID, err)
 		}
 		return
 	}
@@ -708,7 +708,7 @@ func recordUsage(record *usageRecord) {
 
 	body, err := json.Marshal(payload)
 	if err != nil {
-		logs.Error("billing: failed to marshal usage record request_id=%s: %v", record.RequestID, err)
+		log.Error("billing: failed to marshal usage record request_id=%s: %v", record.RequestID, err)
 		return
 	}
 
@@ -874,7 +874,7 @@ func (c *ApiController) authResolveProvider(token, requestedModel, orgId string)
 		authUser = &iam.User{Owner: owner, Type: "application"}
 		upstreamModel = widgetUpstream
 		c.Ctx.Input.SetParam("recordUserId", owner+"/widget")
-		logs.Info("Widget key access: owner=%s, model=%s, upstream=%s", owner, requestedModel, upstreamModel)
+		log.Info("Widget key access: owner=%s, model=%s, upstream=%s", owner, requestedModel, upstreamModel)
 		return
 
 	case isIAMApiKey(token):
@@ -1869,7 +1869,7 @@ func (c *ApiController) proxyToolRequestAnthropic(
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		logs.Error("[proxyToolRequest] Anthropic error %d: %s", resp.StatusCode, string(respBody))
+		log.Error("[proxyToolRequest] Anthropic error %d: %s", resp.StatusCode, string(respBody))
 		c.Ctx.ResponseWriter.WriteHeader(resp.StatusCode)
 		c.Ctx.Output.Body(respBody)
 		c.EnableRender = false

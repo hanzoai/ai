@@ -26,7 +26,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/hanzoai/ai/conf"
-	"github.com/hanzoai/beego/logs"
+	"github.com/hanzoai/ai/log"
 )
 
 const (
@@ -127,7 +127,7 @@ func ArchiveCrawlResult(owner, jobID string, results []ScrapeResult, rawResults 
 	if err != nil {
 		return fmt.Errorf("Hanzo Storage PutObject failed for %s: %w", key, err)
 	}
-	logs.Info("crawl archive: stored %d results at %s/%s (%d bytes)", len(results), bucket, key, len(data))
+	log.Info("crawl archive: stored %d results at %s/%s (%d bytes)", len(results), bucket, key, len(data))
 	return nil
 }
 
@@ -165,7 +165,7 @@ func GetArchivedCrawlResult(owner, jobID string) (*CrawlArchive, error) {
 func archiveCrawlResultAsync(owner, jobID string, results []ScrapeResult, rawResults []Crawl4AIResult) {
 	go func() {
 		if err := ArchiveCrawlResult(owner, jobID, results, rawResults); err != nil {
-			logs.Warning("crawl archive: failed to archive results for %s/%s: %v", owner, jobID, err)
+			log.Warning("crawl archive: failed to archive results for %s/%s: %v", owner, jobID, err)
 		}
 	}()
 }
