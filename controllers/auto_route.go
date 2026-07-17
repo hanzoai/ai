@@ -198,6 +198,36 @@ func resolveAutoModel(requested, orgId, userId, requestId string, req *openai.Ch
 	return dec.Model, string(dec.Task), true
 }
 
+// SourceExplicit marks a routing event for a request whose model the CALLER chose
+// (not the virtual `auto`). Recorded so EVERY request — not only auto — is a
+// labeled data point the moment the caller rates it: up/down feedback works for
+// ALL models, and the ledger captures which model was selected for which task.
+const SourceExplicit = "explicit"
+
+// recordExplicitRouting records a content-free RoutingEvent for a NON-auto request:
+// the caller's explicit model IS the served arm, classified into a task and keyed
+// by request id, so an up/down reward attaches by that id and trains the router on
+// which model the caller preferred for which task. Best-effort/async (never blocks
+// the chat), never prompt text. Returns the classified task for the traffic globe.
+func recordExplicitRouting(model, orgId, userId, requestId string, req *openai.ChatCompletionRequest) string {
+	m := strings.ToLower(strings.TrimSpace(model))
+	task := router.Classify(router.Request{
+		Text:         lastUserText(req),
+		ApproxTokens: estimatePromptTokens(req),
+		HasMedia:     requestHasMedia(req),
+	})
+	routingEventSink(object.RoutingEvent{
+		Owner:          orgId,
+		User:           userId,
+		RequestId:      requestId,
+		Task:           string(task),
+		RequestedModel: m,
+		RoutedModel:    m,
+		Source:         SourceExplicit,
+	})
+	return string(task)
+}
+
 // routingUserId returns the verified principal as "owner/name" (the repo's
 // user-attribution convention) for the routing ledger, or "" for a provider-key
 // or unauthenticated request. It reuses the same verified-principal source as org
