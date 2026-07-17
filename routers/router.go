@@ -423,6 +423,12 @@ func initAPI() {
 	beego.Router("/v1/feedback", &controllers.ApiController{}, "POST:AddRoutingReward")
 	beego.Router("/v1/export-routing-rewards", &controllers.ApiController{}, "GET:ExportRoutingRewards")
 
+	// Self-scoped data ownership (org-admin, own org only): export or delete the
+	// caller's OWN content-free routing ledger — the customer-facing right-to-
+	// access + right-to-be-forgotten that pairs with the training opt-in.
+	beego.Router("/v1/export-my-routing-data", &controllers.ApiController{}, "GET:ExportMyRoutingData")
+	beego.Router("/v1/delete-my-routing-data", &controllers.ApiController{}, "POST:DeleteMyRoutingData")
+
 	// Per-org router policy (prefer table + cost ceiling). Org-admin-gated and
 	// self-scoped to the caller's own org — an org's own admins configure their
 	// own router, never another tenant's. Not super-admin: customer-configurable.
