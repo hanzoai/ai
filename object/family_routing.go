@@ -29,9 +29,9 @@ import (
 	"encoding/json"
 	"strings"
 
+	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/router"
 	"github.com/hanzoai/ai/util"
-	beegoLogs "github.com/hanzoai/beego/logs"
 )
 
 // NormalizeRequestId trims the id and strips the response-object "chatcmpl-" prefix,
@@ -111,6 +111,6 @@ func RecordFamilyRouting(in FamilyRoutingInput) {
 		}
 	}
 	if err := AddRoutingEvent(&ev); err != nil {
-		beegoLogs.Warning("family routing event persist failed: %v", err)
+		log.Warning("family routing event persist failed: %v", err)
 	}
 }

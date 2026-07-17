@@ -22,9 +22,9 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/txt"
 	"github.com/hanzoai/ai/util"
-	"github.com/hanzoai/beego/logs"
 )
 
 type TxtLabel struct {
@@ -157,7 +157,7 @@ func parseVideoFile2(filePath string, lang string) (*Video, error) {
 		return nil, err
 	}
 	for _, label := range labels {
-		logs.Info("%v", label)
+		log.Info("%v", label)
 	}
 	video.CreatedTime = util.GetCurrentTime()
 	video.Segments = labels
@@ -170,7 +170,7 @@ func importVideos2(path string, lang string) error {
 		return err
 	}
 	for i, video := range videos {
-		logs.Info("[%d] Add video: %v", i, video)
+		log.Info("[%d] Add video: %v", i, video)
 		_, err = AddVideo(video)
 		if err != nil {
 			return err

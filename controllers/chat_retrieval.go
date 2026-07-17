@@ -10,9 +10,9 @@ import (
 	"os"
 	"strings"
 
+	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/model"
 	"github.com/hanzoai/ai/object"
-	"github.com/hanzoai/beego/logs"
 	iam "github.com/hanzoai/iam"
 )
 
@@ -81,7 +81,7 @@ func (c *ApiController) retrieveKnowledgeIfEnabled(
 	req := &object.DocSearchRequest{Query: question, Limit: 4}
 	hits, err := object.SearchDocuments(owner, store, req, lang)
 	if err != nil {
-		logs.Warning("chat retrieval: search %s/%s failed: %s", owner, store, err.Error())
+		log.Warning("chat retrieval: search %s/%s failed: %s", owner, store, err.Error())
 		return empty
 	}
 	out := make([]*model.RawMessage, 0, len(hits))

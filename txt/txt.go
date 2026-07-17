@@ -21,7 +21,7 @@ import (
 	"strings"
 
 	"github.com/hanzoai/ai/i18n"
-	"github.com/hanzoai/beego/logs"
+	"github.com/hanzoai/ai/log"
 )
 
 func GetSupportedFileTypes() []string {
@@ -41,7 +41,7 @@ func GetParsedTextFromUrl(url string, ext string, lang string) (string, error) {
 		defer func() {
 			err = os.Remove(path)
 			if err != nil {
-				logs.Error("%v", err.Error())
+				log.Error("%v", err.Error())
 			}
 		}()
 	}
