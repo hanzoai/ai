@@ -22,7 +22,6 @@ import (
 
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
-	"github.com/hanzoai/beego/utils/pagination"
 )
 
 // byokSecretNameSanitizer keeps a KMS secret name to a safe, collision-free
@@ -99,7 +98,7 @@ func (c *ApiController) GetProviders() {
 			return
 		}
 
-		paginator := pagination.SetPaginator(c.Ctx, limit, count)
+		paginator := util.NewPaginator(c.Ctx.Request, limit, count)
 		providers, err := object.GetPaginationProviders(owner, storeName, paginator.Offset(), limit, field, value, sortField, sortOrder)
 		if err != nil {
 			c.ResponseError(err.Error())
