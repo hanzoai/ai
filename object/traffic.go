@@ -76,6 +76,10 @@ type TrafficPoint struct {
 	Lon       float64        `json:"lon"`
 	Count     int            `json:"count"`
 	ByService map[string]int `json:"byService"`
+	// ByTask is the router task-classification mix (code/reasoning/chat/vision/…) for
+	// this region — "what are customers here DOING." A SUBSET of Count (only classified
+	// chat requests carry a task). Omitted when nothing was classified (honest empty).
+	ByTask map[string]int `json:"byTask,omitempty"`
 }
 
 // TrafficCountryCount is one country's total in the ranked top-countries list.
@@ -109,21 +113,55 @@ type TrafficGlobe struct {
 	Totals TrafficTotals  `json:"totals"`
 }
 
-// trafficKey is the aggregate's ONLY key. There is no IP here, by construction.
-type trafficKey struct {
+// geoKey groups counts by (country, region). There is no IP here, by construction.
+type geoKey struct {
 	country string // ISO-3166 alpha-2, upper; "" only when the edge gave no usable code
 	region  string // ISO-3166-2 subdivision (e.g. "CA"); "" when absent
-	service string // one of the Svc* classes
 }
 
-// trafficBucket is one minute of counts. minute is the unix-minute index this slot
-// currently holds (-1 = never written); total counts EVERY recorded request in the
-// minute (including geo-unresolvable ones, so the throughput rate is honest); counts
-// holds only geo-resolvable tuples (what the globe plots).
+// geoCount is one geo group's counts within a minute: total requests (count) plus two
+// INDEPENDENT breakdowns — byService (path class, from the edge tap, present on EVERY
+// request) and byTask (router task classification, from the routing decision, present
+// only on classified chat requests, so a subset of count).
+type geoCount struct {
+	count     int
+	byService map[string]int
+	byTask    map[string]int
+}
+
+// trafficBucket is one minute. minute is the unix-minute index this slot currently
+// holds (-1 = never written); total counts EVERY recorded request in the minute
+// (including geo-unresolvable ones, so the throughput rate is honest); geo holds only
+// geo-resolvable groups (what the globe plots).
 type trafficBucket struct {
 	minute int64
 	total  int
-	counts map[trafficKey]int
+	geo    map[geoKey]*geoCount
+}
+
+// roll reclaims the slot for minute m when it currently holds a different (or empty)
+// minute — the ring rotation that bounds memory (a stale minute's maps are dropped).
+func (b *trafficBucket) roll(m int64) {
+	if b.minute != m {
+		b.minute = m
+		b.total = 0
+		b.geo = make(map[geoKey]*geoCount)
+	}
+}
+
+// ensureGeo returns the group for k, creating it (with empty breakdowns) unless the
+// per-minute cardinality cap is hit — a defensive bound real traffic never reaches.
+// Returns nil only when the cap blocks a NEW group.
+func (b *trafficBucket) ensureGeo(k geoKey) *geoCount {
+	g := b.geo[k]
+	if g == nil {
+		if len(b.geo) >= trafficMaxKeysPerBucket {
+			return nil
+		}
+		g = &geoCount{byService: map[string]int{}, byTask: map[string]int{}}
+		b.geo[k] = g
+	}
+	return g
 }
 
 // TrafficAggregator is the in-process minute-ring. Safe for concurrent Record/Globe.
@@ -167,22 +205,52 @@ func (a *TrafficAggregator) recordAt(country, region, service string, now time.T
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	b := &a.buckets[idx]
-	if b.minute != m {
-		// Ring rotation: the slot held an older (or empty) minute — reclaim it. This
-		// is what bounds memory: a stale minute's map is dropped, not accumulated.
-		b.minute = m
-		b.total = 0
-		b.counts = make(map[trafficKey]int)
-	}
+	b.roll(m)
 	b.total++
 	if country == "" {
 		return // counted in the honest total, but not plottable — no centroid.
 	}
-	k := trafficKey{country: country, region: region, service: service}
-	if _, seen := b.counts[k]; !seen && len(b.counts) >= trafficMaxKeysPerBucket {
+	g := b.ensureGeo(geoKey{country: country, region: region})
+	if g == nil {
 		return // defensive cardinality cap; real traffic never reaches it.
 	}
-	b.counts[k]++
+	g.count++
+	g.byService[service]++
+}
+
+// RecordTask folds ONE classified request's TASK into its geo group's byTask
+// breakdown — the router's task classification (code/reasoning/chat/…) tagged with
+// the request's edge country/region, so the globe can answer "what are customers in
+// each region DOING." Like Record it takes only geo codes + a label — NO IP. It
+// enriches an EXISTING geo group only (the edge tap already counted the request under
+// byService microseconds earlier); it never creates a group or touches count/total, so
+// byTask stays a subset of count and never invents a plotted point. O(1), best-effort.
+func (a *TrafficAggregator) RecordTask(country, region, task string) {
+	a.recordTaskAt(country, region, task, time.Now())
+}
+
+// recordTaskAt is RecordTask with an injectable clock.
+func (a *TrafficAggregator) recordTaskAt(country, region, task string, now time.Time) {
+	country = normCountry(country)
+	task = normTask(task)
+	if country == "" || task == "" {
+		return
+	}
+	region = normRegion(region)
+	m := now.Unix() / 60
+	idx := int(m % int64(TrafficBuckets))
+
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	b := &a.buckets[idx]
+	b.roll(m)
+	// Enrich only an existing group; if the minute has rolled since the tap counted
+	// this request, drop the task (a bounded, honest best-effort loss).
+	g := b.geo[geoKey{country: country, region: region}]
+	if g == nil {
+		return
+	}
+	g.byTask[task]++
 }
 
 // Globe folds the ring over the trailing windowMin minutes into the public payload.
@@ -200,8 +268,9 @@ func (a *TrafficAggregator) Globe(windowMin int, now time.Time) TrafficGlobe {
 	type groupAgg struct {
 		count     int
 		byService map[string]int
+		byTask    map[string]int
 	}
-	groups := map[trafficKey]*groupAgg{} // keyed by (country, region); service left ""
+	groups := map[geoKey]*groupAgg{}
 	countryTotals := map[string]int{}
 	var last1m, last60m int
 
@@ -217,16 +286,20 @@ func (a *TrafficAggregator) Globe(windowMin int, now time.Time) TrafficGlobe {
 		if b.minute >= curMinute-59 { // trailing 60 minutes → the rpm basis
 			last60m += b.total
 		}
-		for k, n := range b.counts {
-			gk := trafficKey{country: k.country, region: k.region}
-			g := groups[gk]
+		for k, gc := range b.geo {
+			g := groups[k]
 			if g == nil {
-				g = &groupAgg{byService: map[string]int{}}
-				groups[gk] = g
+				g = &groupAgg{byService: map[string]int{}, byTask: map[string]int{}}
+				groups[k] = g
 			}
-			g.count += n
-			g.byService[k.service] += n
-			countryTotals[k.country] += n
+			g.count += gc.count
+			for s, n := range gc.byService {
+				g.byService[s] += n
+			}
+			for t, n := range gc.byTask {
+				g.byTask[t] += n
+			}
+			countryTotals[k.country] += gc.count
 		}
 	}
 	a.mu.Unlock()
@@ -244,6 +317,7 @@ func (a *TrafficAggregator) Globe(windowMin int, now time.Time) TrafficGlobe {
 			Lon:       lon,
 			Count:     g.count,
 			ByService: g.byService,
+			ByTask:    g.byTask, // omitempty drops it when no task was classified
 		})
 	}
 	sort.Slice(points, func(i, j int) bool {
@@ -364,6 +438,23 @@ func normRegion(s string) string {
 	for i := 0; i < len(s); i++ {
 		c := s[i]
 		if !((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) {
+			return ""
+		}
+	}
+	return s
+}
+
+// normTask lowercases and validates a router task label (code/reasoning/vision/…):
+// short, [a-z_] only; anything else → "" (dropped). The task set is controlled (the
+// router.Task constants), so this is a light defensive sanitizer, not a whitelist.
+func normTask(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	if len(s) == 0 || len(s) > 20 {
+		return ""
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if !((c >= 'a' && c <= 'z') || c == '_') {
 			return ""
 		}
 	}
