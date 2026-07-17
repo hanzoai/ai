@@ -226,11 +226,18 @@ func StartRouterTrainer() {
 	}()
 }
 
-// runRouterTraining executes ONE fit→gate→deploy→publish cycle for the shared "*"
-// scope. It reads the rewarded ledger (all orgs — the base heads learn from the
-// whole platform), fits, gates against the live "*" row + conf, and on a pass
-// writes the new "*" Prefer row (auto-deploy) then upserts the artifact meta. On a
-// gate miss it upserts the meta with GatePassed=false and leaves the row untouched.
+// runRouterTraining executes ONE training cycle that trains BOTH the shared "*"
+// base AND every org's own policy — one ledger read, many fits:
+//
+//  1. GLOBAL "*" base: fit from the CONSENTING + internal orgs' rewards
+//     (TrainingContribution == enabled, plus our own), gate against the live "*"
+//     row + conf, deploy to "*". Consent-gated — a customer shares with the base
+//     only by choice.
+//  2. PER-ORG: for EVERY org with enough of its OWN rewarded rows, fit from that
+//     org's OWN data, gate against the org's OWN incumbent row + conf, deploy to
+//     the org's OWN row. An org always trains on its own data (its data, its
+//     router — no consent needed); resolveAutoModel folds org > "*" > conf, so an
+//     org's learned policy wins for that org while the base serves everyone else.
 func runRouterTraining() error {
 	minEvents := envInt("ROUTER_TRAIN_MIN_EVENTS", trainDefaultMinEvents)
 	margin := envFloat("ROUTER_TRAIN_MARGIN", trainDefaultMargin)
@@ -239,25 +246,59 @@ func runRouterTraining() error {
 		since = time.Now().UTC().Add(-w).Format(time.RFC3339)
 	}
 
-	// CONSENT: the shared "*" base heads learn ONLY from orgs that opted in
-	// (OrgSettings.TrainingContribution == enabled) PLUS the reserved internal orgs
-	// (our own traffic — incl. the self-probe — is always ours to train on). An org
-	// that never set the flag is excluded, so a customer owns its data and shares it
-	// only by choice. Fail-closed: no consenting owners → the fit sees no rows.
-	owners := trainingOwnerSet()
-	events, err := object.GetRewardedRoutingEventsForOwners(owners, since)
+	// One read of the whole rewarded ledger, partitioned by owner.
+	all, err := object.GetRewardedRoutingEvents("", since)
 	if err != nil {
 		return fmt.Errorf("read rewarded ledger: %w", err)
 	}
-	arms := fitRouterHeads(events)
+	byOwner := map[string][]*object.RoutingEvent{}
+	for _, e := range all {
+		if e != nil {
+			byOwner[e.Owner] = append(byOwner[e.Owner], e)
+		}
+	}
 
-	incumbent := orgRouterPreferLookup(object.GlobalDefaultOwner) // current "*" row (nil if none)
+	// 1) Global "*" base — consent-gated union of the contributing owners' data.
+	consent := map[string]bool{}
+	for _, o := range trainingOwnerSet() {
+		consent[o] = true
+	}
+	var globalEvents []*object.RoutingEvent
+	for owner, evs := range byOwner {
+		if consent[owner] {
+			globalEvents = append(globalEvents, evs...)
+		}
+	}
+	if err := trainScope(object.GlobalDefaultOwner, globalEvents, minEvents, margin); err != nil {
+		logs.Warning("router trainer: global base: %v", err)
+	}
+
+	// 2) Per-org — every org trains its OWN policy from its OWN rewards.
+	for owner, evs := range byOwner {
+		if owner == "" || owner == object.GlobalDefaultOwner || len(evs) < minEvents {
+			continue
+		}
+		if err := trainScope(owner, evs, minEvents, margin); err != nil {
+			logs.Warning("router trainer: org %s: %v", owner, err)
+		}
+	}
+	return nil
+}
+
+// trainScope runs ONE fit→gate→deploy→publish cycle for a scope (the shared "*"
+// pseudo-owner or a concrete org) from the given rewarded events: fit per-(task,
+// model), gate against THIS scope's incumbent Prefer row + conf, and on a pass
+// write THIS scope's Prefer row + publish its artifact meta; on a miss keep the
+// incumbent and record the honest verdict. Reused by the base and every org.
+func trainScope(scopeOwner string, events []*object.RoutingEvent, minEvents int, margin float64) error {
+	arms := fitRouterHeads(events)
+	incumbent := orgRouterPreferLookup(scopeOwner)
 	confPrefer, _ := confRouterPolicy()
 	res := gateRouterFit(arms, incumbent, confPrefer, minEvents, margin)
 
 	version := time.Now().UTC().Format("2006-01-02T15:04Z")
 	meta := &object.RouterArtifactMeta{
-		Owner:       object.GlobalDefaultOwner,
+		Owner:       scopeOwner,
 		Version:     version,
 		TrainedTime: time.Now().UTC().Format(time.RFC3339),
 		Events:      res.Events,
@@ -268,31 +309,31 @@ func runRouterTraining() error {
 		GateBase:    res.BaseMean,
 		Note:        res.Note,
 	}
-
 	if res.Passed {
-		if err := deployRouterPrefer(res.Prefer); err != nil {
-			// Deploy failed: record the fit as gated-but-unpublished, honestly.
+		if err := deployRouterPreferTo(scopeOwner, res.Prefer); err != nil {
 			meta.Published = false
 			meta.Note = "gate passed but deploy failed: " + err.Error()
 			_ = object.UpsertRouterArtifactMeta(meta)
 			return fmt.Errorf("deploy prefer: %w", err)
 		}
 		meta.Published = true
-		logs.Info("router trainer: published v%s — %s (events=%d, reward %.3f vs %.3f)",
-			version, res.Note, res.Events, res.NewMean, res.BaseMean)
+		logs.Info("router trainer[%s]: published v%s — %s (events=%d, reward %.3f vs %.3f)",
+			scopeOwner, version, res.Note, res.Events, res.NewMean, res.BaseMean)
 	} else {
 		meta.Published = false
-		logs.Info("router trainer: %s (events=%d)", res.Note, res.Events)
+		logs.Info("router trainer[%s]: %s (events=%d)", scopeOwner, res.Note, res.Events)
 	}
 	return object.UpsertRouterArtifactMeta(meta)
 }
 
-// deployRouterPrefer merges the gated best-arm table into the shared "*"
-// OrgSettings.RouterPrefer row — the SAME row resolveAutoModel folds — preserving
-// any task the fit did not touch and the row's AutoRouting/session fields. This is
-// the auto-deploy: the router prefers the new models on the next request, no reload.
-func deployRouterPrefer(prefer map[string][]string) error {
-	existing, err := object.GetOrgSettings(object.GlobalDefaultOwner)
+// deployRouterPreferTo merges the gated best-arm table into a scope's
+// OrgSettings.RouterPrefer row (the SAME rows resolveAutoModel folds org > "*" >
+// conf) — preserving any task the fit did not touch and the row's
+// AutoRouting/session/ceiling fields. The auto-deploy: the router prefers the new
+// models on the next request, no reload. scopeOwner is "*" for the shared base or
+// a concrete org for a per-org policy.
+func deployRouterPreferTo(scopeOwner string, prefer map[string][]string) error {
+	existing, err := object.GetOrgSettings(scopeOwner)
 	if err != nil {
 		return err
 	}
@@ -306,7 +347,7 @@ func deployRouterPrefer(prefer map[string][]string) error {
 		merged[task] = models
 	}
 	row := object.OrgSettings{
-		Owner:        object.GlobalDefaultOwner,
+		Owner:        scopeOwner,
 		RouterPrefer: object.JSONMap[[]string](merged),
 	}
 	if existing == nil {
@@ -317,7 +358,7 @@ func deployRouterPrefer(prefer map[string][]string) error {
 	row.AutoRouting = existing.AutoRouting
 	row.DefaultSessionRouting = existing.DefaultSessionRouting
 	row.CreatedTime = existing.CreatedTime
-	_, err = object.UpdateOrgSettings(object.GlobalDefaultOwner, &row)
+	_, err = object.UpdateOrgSettings(scopeOwner, &row)
 	return err
 }
 
