@@ -32,7 +32,6 @@ import (
 	"github.com/hanzoai/ai/storage"
 	"github.com/hanzoai/ai/util"
 	"github.com/hanzoai/ai/video"
-	"github.com/hanzoai/beego/utils/pagination"
 )
 
 // GetGlobalVideos
@@ -88,7 +87,7 @@ func (c *ApiController) GetVideos() {
 			return
 		}
 
-		paginator := pagination.SetPaginator(c.Ctx, limit, count)
+		paginator := util.NewPaginator(c.Ctx.Request, limit, count)
 		videos, err := object.GetPaginationVideos(owner, paginator.Offset(), limit, field, value, sortField, sortOrder, c.GetAcceptLanguage())
 		if err != nil {
 			c.ResponseError(err.Error())
