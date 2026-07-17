@@ -285,14 +285,19 @@ func (mc *ModelConfig) applyConfig(file *ModelConfigFile) error {
 		pricingURL = envURL
 	}
 
-	// Router config. Env overrides mirror the pricing-URL pattern so ops can flip
-	// routing/endpoint via the deployment without editing the ConfigMap.
+	// Router config. ROUTER_ENDPOINT stays an env override — it is infra wiring
+	// (where the engine's /v1/route lives), mirroring the pricing-URL pattern so
+	// ops can point at the engine without editing the ConfigMap.
+	//
+	// ROUTER_ENABLED is NO LONGER folded in here. The platform-wide routing
+	// default is now the "*" GlobalDefaultOwner OrgSettings row (see
+	// effectiveAutoRouting), edited from admin.hanzo.ai — one source of truth. The
+	// env survives only as a DEPRECATED fallback consulted by effectiveAutoRouting
+	// when that row is unset, so router.Enabled here reflects the conf file alone:
+	// the last-resort default beneath both the row and the env.
 	routerCfg := file.Router
 	if envEndpoint := os.Getenv("ROUTER_ENDPOINT"); envEndpoint != "" {
 		routerCfg.Endpoint = envEndpoint
-	}
-	if os.Getenv("ROUTER_ENABLED") == "true" {
-		routerCfg.Enabled = true
 	}
 
 	pricingTTL := 6 * time.Hour
@@ -549,11 +554,13 @@ func (mc *ModelConfig) routerConfigPresent() bool {
 }
 
 // AutoRoutingActive decides whether the virtual `auto`/`zen-router` model routes
-// for a request, given the org's preference. Precedence:
+// for a request, given the EFFECTIVE preference already resolved by
+// effectiveAutoRouting (org row > "*" GlobalDefaultOwner row > deprecated
+// ROUTER_ENABLED env). Precedence on that resolved three-state preference:
 //   - "disabled": never routes — `auto` falls through as a pre-routing unknown id
-//   - "enabled":  routes whenever router config is present, even if the global
-//     flag is off (per-org opt-in)
-//   - "" (unset): the global router.enabled flag decides
+//   - "enabled":  routes whenever router config is present (per-org or global opt-in)
+//   - "" (unset): every row and the env are unset — the conf router.enabled flag
+//     is the last-resort default
 func (mc *ModelConfig) AutoRoutingActive(orgPref string) bool {
 	mc.mu.RLock()
 	defer mc.mu.RUnlock()
