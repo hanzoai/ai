@@ -20,7 +20,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/hanzoai/beego/logs"
+	"github.com/hanzoai/ai/log"
 )
 
 var licenseText = `// Copyright 2023-2025 Hanzo AI Inc. All Rights Reserved.
@@ -58,7 +58,7 @@ func updateAllHeaders() {
 					return err
 				}
 
-				logs.Info("Handled path: [%s]", path)
+				log.Info("Handled path: [%s]", path)
 			}
 		}
 		return nil

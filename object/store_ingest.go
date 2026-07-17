@@ -29,9 +29,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/split"
 	"github.com/hanzoai/ai/txt"
-	"github.com/hanzoai/beego/logs"
 )
 
 // DefaultDocsStore is the tenant's default documentation store/index slug. It is
@@ -243,7 +243,7 @@ func IngestStoreStorage(store *Store, prefix, lang string) (int, int, error) {
 			return c > 0, c, e
 		})
 		if statusErr != nil {
-			logs.Error("ingest store file %s/%s failed: %v", store.Name, f.Key, statusErr)
+			log.Error("ingest store file %s/%s failed: %v", store.Name, f.Key, statusErr)
 			fileErr = errors.Join(fileErr, statusErr)
 			continue
 		}

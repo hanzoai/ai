@@ -21,8 +21,8 @@ import (
 	"mime/multipart"
 	"strings"
 
+	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/util"
-	"github.com/hanzoai/beego/logs"
 )
 
 func UpdateTreeFile(storeId string, key string, file *TreeFile) bool {
@@ -76,7 +76,7 @@ func AddTreeFile(storeId string, userName string, key string, isLeaf bool, filen
 		go func() {
 			_, vectorErr := AddVectorsForFile(store, objectKey, fileUrl, lang)
 			if vectorErr != nil {
-				logs.Error("Failed to generate vectors for file %s: %v", objectKey, vectorErr)
+				log.Error("Failed to generate vectors for file %s: %v", objectKey, vectorErr)
 			}
 		}()
 		return true, bs, nil
@@ -116,7 +116,7 @@ func DeleteTreeFile(storeId string, key string, isLeaf bool, lang string) (bool,
 		}
 		_, err = DeleteVectorsByFile(store.Owner, store.Name, key)
 		if err != nil {
-			logs.Error("Failed to delete vectors for file %s: %v", key, err)
+			log.Error("Failed to delete vectors for file %s: %v", key, err)
 			return false, err
 		}
 		// Delete file record from the file table
@@ -135,7 +135,7 @@ func DeleteTreeFile(storeId string, key string, isLeaf bool, lang string) (bool,
 			}
 			_, err = DeleteVectorsByFile(store.Owner, store.Name, object.Key)
 			if err != nil {
-				logs.Error("Failed to delete vectors for file %s: %v", object.Key, err)
+				log.Error("Failed to delete vectors for file %s: %v", object.Key, err)
 				return false, err
 			}
 			// Delete file record from the file table

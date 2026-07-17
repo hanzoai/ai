@@ -21,7 +21,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hanzoai/beego/logs"
+	"github.com/hanzoai/ai/log"
 )
 
 // backgroundRefresh is a long-running goroutine that periodically refreshes
@@ -85,24 +85,24 @@ func (mc *ModelConfig) fetchLivePricing() {
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Get(url)
 	if err != nil {
-		logs.Warn("Live pricing fetch failed: %v", err)
+		log.Warn("Live pricing fetch failed: %v", err)
 		return
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		logs.Warn("Live pricing returned status %d", resp.StatusCode)
+		log.Warn("Live pricing returned status %d", resp.StatusCode)
 		return
 	}
 
 	var result livePricingResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		logs.Warn("Live pricing parse failed: %v", err)
+		log.Warn("Live pricing parse failed: %v", err)
 		return
 	}
 
 	if len(result.Models) == 0 {
-		logs.Info("Live pricing: no models in response, keeping current data")
+		log.Info("Live pricing: no models in response, keeping current data")
 		return
 	}
 
@@ -124,7 +124,7 @@ func (mc *ModelConfig) fetchLivePricing() {
 	mc.lastPricingAt = time.Now()
 	mc.mu.Unlock()
 
-	logs.Info("Live pricing refreshed: %d models updated from %s", updated, url)
+	log.Info("Live pricing refreshed: %d models updated from %s", updated, url)
 }
 
 // LastPricingRefresh returns when pricing was last refreshed from live source.

@@ -23,10 +23,10 @@ import (
 
 	"github.com/hanzoai/ai/embedding"
 	"github.com/hanzoai/ai/i18n"
+	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/model"
 	"github.com/hanzoai/ai/storage"
 	"github.com/hanzoai/ai/txt"
-	"github.com/hanzoai/beego/logs"
 )
 
 // DEPRECATED — SQL `vector` table write path.
@@ -60,7 +60,7 @@ func filterTextFiles(files []*storage.Object) []*storage.Object {
 func withFileStatus(owner string, storeName string, fileKey string, op func() (bool, int, error)) (bool, error) {
 	err := updateFileStatus(owner, storeName, fileKey, FileStatusProcessing, "", 0)
 	if err != nil {
-		logs.Error("Failed to update file status for store: [%s], file: [%s]: %v", storeName, fileKey, err)
+		log.Error("Failed to update file status for store: [%s], file: [%s]: %v", storeName, fileKey, err)
 		return false, err
 	}
 	affected, tokenCount, opErr := op()
@@ -72,7 +72,7 @@ func withFileStatus(owner string, storeName string, fileKey string, op func() (b
 	}
 	err = updateFileStatus(owner, storeName, fileKey, fileStatus, errorText, tokenCount)
 	if err != nil {
-		logs.Error("Failed to update file status for store: [%s], file: [%s]: %v", storeName, fileKey, err)
+		log.Error("Failed to update file status for store: [%s], file: [%s]: %v", storeName, fileKey, err)
 		return affected, errors.Join(opErr, err)
 	}
 	return affected, opErr
@@ -105,7 +105,7 @@ func queryVectorSafe(embeddingProvider embedding.EmbeddingProvider, text string,
 		if err != nil {
 			err = fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:queryVectorSafe() error, %s"), err.Error()))
 			if i > 0 {
-				logs.Error("\tFailed (%d): %s", i+1, err.Error())
+				log.Error("\tFailed (%d): %s", i+1, err.Error())
 			}
 		} else {
 			break

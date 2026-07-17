@@ -22,10 +22,10 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/hanzoai/ai/conf"
+	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
 	"github.com/hanzoai/ai/util/guacamole"
-	"github.com/hanzoai/beego/logs"
 )
 
 const (
@@ -199,23 +199,23 @@ func (c *ApiController) GetNodeTunnel() {
 	for {
 		_, message, err := ws.ReadMessage()
 		if err != nil {
-			logs.Error(fmt.Sprintf("GetNodeTunnel():ws.ReadMessage() error: %s", err.Error()))
+			log.Error(fmt.Sprintf("GetNodeTunnel():ws.ReadMessage() error: %s", err.Error()))
 
 			_ = tunnel.Close()
 			err2 := object.CloseConnection(connectionId, Normal, "Normal user exit")
 			if err2 != nil {
-				logs.Error(fmt.Sprintf("GetNodeTunnel():object.CloseConnection() error: %s", err.Error()))
+				log.Error(fmt.Sprintf("GetNodeTunnel():object.CloseConnection() error: %s", err.Error()))
 			}
 			return
 		}
 
 		_, err = tunnel.WriteAndFlush(message)
 		if err != nil {
-			logs.Error(fmt.Sprintf("GetNodeTunnel():tunnel.WriteAndFlush() error: %s", err.Error()))
+			log.Error(fmt.Sprintf("GetNodeTunnel():tunnel.WriteAndFlush() error: %s", err.Error()))
 
 			err2 := object.CloseConnection(connectionId, Normal, "Normal user exit")
 			if err2 != nil {
-				logs.Error(fmt.Sprintf("GetNodeTunnel():object.CloseConnection() (2nd) error: %s", err.Error()))
+				log.Error(fmt.Sprintf("GetNodeTunnel():object.CloseConnection() (2nd) error: %s", err.Error()))
 			}
 			return
 		}

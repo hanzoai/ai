@@ -21,9 +21,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/beego"
-	"github.com/hanzoai/beego/logs"
 	iam "github.com/hanzoai/iam"
 )
 
@@ -278,7 +278,7 @@ func (c *ApiController) errorLogFilter() {
 			if len(respStr) > 4096 {
 				respStr = respStr[:4096] + "...(truncated)"
 			}
-			logs.Error("API error: method=%s path=%s query=%s token=%s body=%s response=%s", method, path, query, token, body, respStr)
+			log.Error("API error: method=%s path=%s query=%s token=%s body=%s response=%s", method, path, query, token, body, respStr)
 		}
 	}
 }
