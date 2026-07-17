@@ -39,7 +39,7 @@ require (
 	github.com/hanzoai/dbx v1.16.0
 	github.com/hanzoai/decimal v0.1.1
 	github.com/hanzoai/go-openrouter v1.0.0
-	github.com/hanzoai/iam v1.31.27-0.20260716191958-4400762928a2
+	github.com/hanzoai/iam v1.31.28
 	github.com/hanzoai/money v0.2.1
 	github.com/hanzoai/pdf v1.2.0
 	github.com/hanzoai/search-go v0.36.0
@@ -381,9 +381,3 @@ require (
 )
 
 replace github.com/sashabaranov/go-openai => github.com/hanzoai/go-openai v1.40.0
-
-// hanzoai/iam was force-pushed after hanzoai/account v0.2.0 pinned a pseudo-version
-// of it; that revision (4400762928a2) no longer exists, breaking every build of this
-// module. Pin the whole graph to iam's live HEAD (which carries Claims.BillingAccount,
-// required by routers/filter_balance.go) until account re-pins a live revision.
-replace github.com/hanzoai/iam => github.com/hanzoai/iam v1.31.28-0.20260716211807-8fef61e0812d
