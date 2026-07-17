@@ -37,7 +37,7 @@ import (
 
 	"github.com/hanzoai/account"
 
-	"github.com/hanzoai/beego/logs"
+	"github.com/hanzoai/ai/log"
 	iam "github.com/hanzoai/iam"
 	"github.com/luxfi/zap"
 	openai "github.com/sashabaranov/go-openai"
@@ -56,7 +56,7 @@ func InitZapHandlers() {
 
 	node.Handle(object.MsgTypeCloud, handleCloudService)
 	node.Handle(object.MsgTypeHTTPRequest, handleGatewayHTTPRequest)
-	logs.Info("ZAP: registered handlers (cloud=%d, gateway=%d)", object.MsgTypeCloud, object.MsgTypeHTTPRequest)
+	log.Info("ZAP: registered handlers (cloud=%d, gateway=%d)", object.MsgTypeCloud, object.MsgTypeHTTPRequest)
 }
 
 func handleCloudService(ctx context.Context, from string, msg *zap.Message) (*zap.Message, error) {
@@ -160,7 +160,7 @@ func zapWriteUsage(record *usageRecord, startTime time.Time) {
 	{
 		ensureCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		if err := object.EnsureCloudUsageTable(ensureCtx); err != nil {
-			logs.Warn("ZAP: ensure cloud_usage table: %v", err)
+			log.Warn("ZAP: ensure cloud_usage table: %v", err)
 		}
 		cancel()
 	}
@@ -225,7 +225,7 @@ func zapWriteUsage(record *usageRecord, startTime time.Time) {
 		m.CostNano, m.BilledNano, m.MarginNano, unpriced,
 	)
 	if err != nil {
-		logs.Warn("ZAP: usage write failed: %v", err)
+		log.Warn("ZAP: usage write failed: %v", err)
 	}
 }
 
@@ -311,7 +311,7 @@ func zapChatHandler(ctx context.Context, auth string, body []byte) (*zap.Message
 
 	// KMS secrets.
 	if err := object.ResolveProviderSecret(provider); err != nil {
-		logs.Error("ZAP: KMS resolve %s: %v", provider.Name, err)
+		log.Error("ZAP: KMS resolve %s: %v", provider.Name, err)
 	}
 
 	// Set upstream model on provider.

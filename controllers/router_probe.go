@@ -26,7 +26,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hanzoai/beego/logs"
+	"github.com/hanzoai/ai/log"
 )
 
 // ── Router self-probe ────────────────────────────────────────────────────────
@@ -77,7 +77,7 @@ func StartRouterProbe() {
 	rph, _ := strconv.ParseFloat(strings.TrimSpace(os.Getenv("ROUTER_PROBE_RPH")), 64)
 	token := strings.TrimSpace(os.Getenv("ROUTER_PROBE_TOKEN"))
 	if rph <= 0 || token == "" {
-		logs.Info("router probe: disabled (set ROUTER_PROBE_RPH + ROUTER_PROBE_TOKEN to enable)")
+		log.Info("router probe: disabled (set ROUTER_PROBE_RPH + ROUTER_PROBE_TOKEN to enable)")
 		return
 	}
 	if rph < 1 {
@@ -91,7 +91,7 @@ func StartRouterProbe() {
 		base = "http://127.0.0.1:8000"
 	}
 	interval := time.Duration(float64(time.Hour) / rph)
-	logs.Info("router probe: enabled — %.1f req/h (every ~%s) against %s", rph, interval.Round(time.Second), base)
+	log.Info("router probe: enabled — %.1f req/h (every ~%s) against %s", rph, interval.Round(time.Second), base)
 	go probeLoop(base, token, interval)
 }
 
@@ -103,7 +103,7 @@ func probeLoop(base, token string, interval time.Duration) {
 		time.Sleep(interval + j)
 		prompt := probeCorpus[i%len(probeCorpus)]
 		if err := probeOnce(hc, base, token, prompt); err != nil {
-			logs.Warning("router probe: %v", err)
+			log.Warning("router probe: %v", err)
 		}
 	}
 }

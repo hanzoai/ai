@@ -22,7 +22,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/hanzoai/beego/logs"
+	"github.com/hanzoai/ai/log"
 )
 
 func getImportedVideos(path string) ([]*Video, error) {
@@ -174,7 +174,7 @@ func importVideos(path string) error {
 		return err
 	}
 	for i, video := range videos {
-		logs.Info("[%d] Add video: %v", i, video)
+		log.Info("[%d] Add video: %v", i, video)
 		_, err = AddVideo(video)
 		if err != nil {
 			return err

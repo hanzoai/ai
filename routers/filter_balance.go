@@ -28,9 +28,9 @@ import (
 	"github.com/hanzoai/account"
 
 	"github.com/hanzoai/ai/conf"
+	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/beego/context"
-	"github.com/hanzoai/beego/logs"
 )
 
 // ── Balance gate configuration ──────────────────────────────────────────────
@@ -110,7 +110,7 @@ var balanceGate *BalanceGate
 func InitBalanceGate() {
 	endpoint := conf.GetConfigString("commerceEndpoint")
 	if endpoint == "" {
-		logs.Info("balance_gate: commerceEndpoint not configured, balance enforcement disabled")
+		log.Info("balance_gate: commerceEndpoint not configured, balance enforcement disabled")
 		return
 	}
 	endpoint = strings.TrimRight(endpoint, "/")
@@ -138,7 +138,7 @@ func InitBalanceGate() {
 	go bg.cleanupLoop()
 
 	balanceGate = bg
-	logs.Info("balance_gate: initialized (endpoint=%s, ttl=%v)", endpoint, balanceCacheTTL)
+	log.Info("balance_gate: initialized (endpoint=%s, ttl=%v)", endpoint, balanceCacheTTL)
 }
 
 // ── Filter function ─────────────────────────────────────────────────────────
@@ -193,7 +193,7 @@ func BalanceGateFilter(ctx *context.Context) {
 		return
 	}
 
-	logs.Info("balance_gate: insufficient balance subject=%s namespace=%s balance_cents=%d path=%s",
+	log.Info("balance_gate: insufficient balance subject=%s namespace=%s balance_cents=%d path=%s",
 		subject, namespace, balance, path)
 
 	ctx.ResponseWriter.Header().Set("Content-Type", "application/json")
@@ -436,7 +436,7 @@ func (bg *BalanceGate) checkBalance(subject, namespace, userKey string) (suffici
 	if err != nil {
 		// Balance unknown → DENY. A Commerce outage must never become an
 		// unmetered bleed, and there is no exempt/fail-open escape.
-		logs.Warning("balance_gate: Commerce lookup failed for cold subject=%s: %v (fail-CLOSED)", subject, err)
+		log.Warning("balance_gate: Commerce lookup failed for cold subject=%s: %v (fail-CLOSED)", subject, err)
 		return false, 0
 	}
 
@@ -465,7 +465,7 @@ func (bg *BalanceGate) refreshAsync(subject, namespace string) {
 
 		balance, err := bg.fetchBalance(subject, namespace)
 		if err != nil {
-			logs.Warning("balance_gate: async refresh failed for user=%s: %v", subject, err)
+			log.Warning("balance_gate: async refresh failed for user=%s: %v", subject, err)
 			return
 		}
 
@@ -577,13 +577,13 @@ func (bg *BalanceGate) resolveIAMKeySubject(apiKey string) (subject, namespace, 
 
 	req, err := http.NewRequest(http.MethodGet, iamURL, nil)
 	if err != nil {
-		logs.Warning("balance_gate: IAM request build failed for key=%s: %v", maskKey(apiKey), err)
+		log.Warning("balance_gate: IAM request build failed for key=%s: %v", maskKey(apiKey), err)
 		return "", "", ""
 	}
 
 	resp, err := bg.client.Do(req)
 	if err != nil {
-		logs.Warning("balance_gate: IAM request failed for key=%s: %v", maskKey(apiKey), err)
+		log.Warning("balance_gate: IAM request failed for key=%s: %v", maskKey(apiKey), err)
 		return "", "", ""
 	}
 	defer func() {
@@ -592,13 +592,13 @@ func (bg *BalanceGate) resolveIAMKeySubject(apiKey string) (subject, namespace, 
 	}()
 
 	if resp.StatusCode != http.StatusOK {
-		logs.Warning("balance_gate: IAM returned %d for key=%s", resp.StatusCode, maskKey(apiKey))
+		log.Warning("balance_gate: IAM returned %d for key=%s", resp.StatusCode, maskKey(apiKey))
 		return "", "", ""
 	}
 
 	var result iamUserResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		logs.Warning("balance_gate: IAM response decode failed for key=%s: %v", maskKey(apiKey), err)
+		log.Warning("balance_gate: IAM response decode failed for key=%s: %v", maskKey(apiKey), err)
 		return "", "", ""
 	}
 

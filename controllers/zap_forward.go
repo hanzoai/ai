@@ -27,7 +27,7 @@ package controllers
 import (
 	"net/http"
 
-	"github.com/hanzoai/beego/logs"
+	"github.com/hanzoai/ai/log"
 	"github.com/luxfi/zap/forward"
 
 	"github.com/hanzoai/ai/object"
@@ -47,5 +47,5 @@ func InitForwardBridge(h http.Handler) {
 		return
 	}
 	forward.Serve(node, h)
-	logs.Info("forward_serve: ZAP HTTP terminal registered on node %s (msg_type=%d)", node.NodeID(), forward.MsgTypeForward)
+	log.Info("forward_serve: ZAP HTTP terminal registered on node %s (msg_type=%d)", node.NodeID(), forward.MsgTypeForward)
 }

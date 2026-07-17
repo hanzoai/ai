@@ -20,7 +20,7 @@ import (
 
 	"github.com/hanzoai/account"
 
-	"github.com/hanzoai/beego/logs"
+	"github.com/hanzoai/ai/log"
 
 	"github.com/hanzoai/ai/object"
 )
@@ -84,7 +84,7 @@ func (c *ApiController) IngestDocs() {
 		}
 		if !errors.Is(err, object.ErrTasksNotConfigured) {
 			// Engine wired but this enqueue failed — don't break ingest; log and inline.
-			logs.Warning("ingest: durable enqueue failed, running inline: %s", err.Error())
+			log.Warning("ingest: durable enqueue failed, running inline: %s", err.Error())
 		}
 		// fall through to inline ingest
 	}

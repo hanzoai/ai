@@ -23,7 +23,7 @@ import (
 	"time"
 
 	"github.com/hanzoai/ai/conf"
-	"github.com/hanzoai/beego/logs"
+	"github.com/hanzoai/ai/log"
 )
 
 const (
@@ -266,7 +266,7 @@ func pollCrawl4AITask(endpoint, apiToken, taskID string) ([]Crawl4AIResult, erro
 		}
 		resp, err := client.Do(req)
 		if err != nil {
-			logs.Warning("Hanzo Crawl: task poll failed (will retry): %v", err)
+			log.Warning("Hanzo Crawl: task poll failed (will retry): %v", err)
 			continue
 		}
 		if resp.StatusCode != http.StatusOK {

@@ -17,7 +17,7 @@ package object
 import (
 	"fmt"
 
-	"github.com/hanzoai/beego/logs"
+	"github.com/hanzoai/ai/log"
 	"github.com/robfig/cron/v3"
 )
 
@@ -93,7 +93,7 @@ func cleanupChats() error {
 			if err != nil {
 				return err
 			}
-			logs.Info("[%d] Cleaned up empty chat: [%s], user = [%s], clientIp = [%s], userAgent = [%s]", i, chat.Name, chat.User, chat.ClientIp, chat.UserAgent)
+			log.Info("[%d] Cleaned up empty chat: [%s], user = [%s], clientIp = [%s], userAgent = [%s]", i, chat.Name, chat.User, chat.ClientIp, chat.UserAgent)
 			i += 1
 		}
 	}
@@ -103,7 +103,7 @@ func cleanupChats() error {
 func cleanupChatsNoError() {
 	err := cleanupChats()
 	if err != nil {
-		logs.Error("cleanupChatsNoError() error: %s", err.Error())
+		log.Error("cleanupChatsNoError() error: %s", err.Error())
 	}
 }
 

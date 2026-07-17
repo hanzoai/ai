@@ -21,9 +21,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/txt"
-	"github.com/hanzoai/beego/logs"
 )
 
 // UploadTaskDocument
@@ -111,7 +111,7 @@ func (c *ApiController) UploadTaskDocument() {
 	documentText, err := txt.GetParsedTextFromUrl(fileUrl, ext, c.GetAcceptLanguage())
 	if err != nil {
 		// Log error but don't fail the upload
-		logs.Error("Failed to parse text from %s: %v", fileUrl, err)
+		log.Error("Failed to parse text from %s: %v", fileUrl, err)
 		documentText = ""
 	}
 

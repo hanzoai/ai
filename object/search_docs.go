@@ -26,8 +26,8 @@ import (
 	"time"
 
 	"github.com/hanzoai/ai/conf"
+	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/model"
-	"github.com/hanzoai/beego/logs"
 	meilisearch "github.com/hanzoai/search-go"
 )
 
@@ -581,7 +581,7 @@ func writeDocsToVector(indexName string, docs []DocIndex, replace bool, lang str
 		for _, doc := range docs[i:end] {
 			vec, embErr := embed(doc.Content)
 			if embErr != nil {
-				logs.Warning("failed to embed document %s, skipping: %v", doc.ID, embErr)
+				log.Warning("failed to embed document %s, skipping: %v", doc.ID, embErr)
 				continue
 			}
 			points = append(points, qdrantPoint{
@@ -597,7 +597,7 @@ func writeDocsToVector(indexName string, docs []DocIndex, replace bool, lang str
 		}
 		if len(points) > 0 {
 			if err = upsertVectorPoints(baseURL, apiKey, indexName, points); err != nil {
-				logs.Warning("failed to upsert vector batch at %d: %v", i, err)
+				log.Warning("failed to upsert vector batch at %d: %v", i, err)
 			}
 		}
 	}
@@ -645,7 +645,7 @@ func SearchDocuments(owner, store string, req *DocSearchRequest, lang string) ([
 	if mode == "fulltext" || mode == "hybrid" {
 		r, err := searchSink(indexName, req.Query, req.Tag, req.FileIDs, limit)
 		if err != nil {
-			logs.Warning("keyword search failed for %s: %v", indexName, err)
+			log.Warning("keyword search failed for %s: %v", indexName, err)
 			if mode == "fulltext" {
 				return nil, err
 			}
@@ -656,7 +656,7 @@ func SearchDocuments(owner, store string, req *DocSearchRequest, lang string) ([
 	if mode == "vector" || mode == "hybrid" {
 		r, err := vectorSearchSink(indexName, req.Query, req.Tag, req.FileIDs, limit, lang)
 		if err != nil {
-			logs.Warning("vector search failed for %s: %v", indexName, err)
+			log.Warning("vector search failed for %s: %v", indexName, err)
 			if mode == "vector" {
 				return nil, err
 			}
@@ -692,7 +692,7 @@ func IndexDocuments(owner, store string, req *DocIndexRequest, lang string) (int
 		return 0, err
 	}
 	if err := vectorSink(indexName, req.Documents, req.Replace, lang); err != nil {
-		logs.Warning("vector indexing skipped for %s: %v", indexName, err)
+		log.Warning("vector indexing skipped for %s: %v", indexName, err)
 	}
 	return count, nil
 }
@@ -731,7 +731,7 @@ func deleteAllVectorPoints(baseURL, apiKey, collectionName string) {
 	url := fmt.Sprintf("%s/collections/%s", baseURL, collectionName)
 	req, err := http.NewRequest(http.MethodDelete, url, nil)
 	if err != nil {
-		logs.Warning("failed to build qdrant delete request: %v", err)
+		log.Warning("failed to build qdrant delete request: %v", err)
 		return
 	}
 	if apiKey != "" {
@@ -740,7 +740,7 @@ func deleteAllVectorPoints(baseURL, apiKey, collectionName string) {
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		logs.Warning("qdrant delete request failed: %v", err)
+		log.Warning("qdrant delete request failed: %v", err)
 		return
 	}
 	defer resp.Body.Close()
