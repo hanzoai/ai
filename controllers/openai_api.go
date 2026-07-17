@@ -1032,9 +1032,16 @@ func (c *ApiController) ChatCompletions() {
 	// (auth+routing, ModelRoute fallbacks, zen identity, balance reserve/settle,
 	// usage record, response `model` echo) bills and reports the model that
 	// actually served. The transparency header lets callers see the routed choice.
-	if routed, ok := resolveAutoModel(request.Model, orgId, c.routingUserId(), requestId, &request, c.sloFromHeaders()); ok {
+	if routed, task, ok := resolveAutoModel(request.Model, orgId, c.routingUserId(), requestId, &request, c.sloFromHeaders()); ok {
 		request.Model = routed
 		c.Ctx.ResponseWriter.Header().Set(RoutedModelHeader, routed)
+		// Fold this request's TASK into the region's task-mix for the live-traffic
+		// globe — geo from the edge headers only (NO IP), aggregates only. Best-effort.
+		object.GlobalTraffic.RecordTask(
+			c.Ctx.Request.Header.Get("CF-IPCountry"),
+			c.Ctx.Request.Header.Get("CF-Region-Code"),
+			task,
+		)
 	}
 
 	// Authenticate the bearer token and resolve the requested model to its
