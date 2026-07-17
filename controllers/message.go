@@ -21,7 +21,6 @@ import (
 
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
-	"github.com/hanzoai/beego/utils/pagination"
 )
 
 // GetGlobalMessages
@@ -62,7 +61,7 @@ func (c *ApiController) GetGlobalMessages() {
 			c.ResponseError(err.Error())
 			return
 		}
-		paginator := pagination.SetPaginator(c.Ctx, limit, count)
+		paginator := util.NewPaginator(c.Ctx.Request, limit, count)
 		messages, err := object.GetPaginationMessages(owner, paginator.Offset(), limit, field, value, sortField, sortOrder, store)
 		if err != nil {
 			c.ResponseError(err.Error())
