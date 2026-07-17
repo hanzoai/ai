@@ -19,10 +19,10 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/tts"
 	"github.com/hanzoai/ai/util"
-	"github.com/hanzoai/beego/logs"
 )
 
 type TextToSpeechRequest struct {
@@ -104,7 +104,7 @@ func (c *ApiController) GenerateTextToSpeechAudioStream() {
 
 	err = object.UpdateChatStats(chat, ttsResult)
 	if err != nil {
-		logs.Error("Error updating chat: %s", err.Error())
+		log.Error("Error updating chat: %s", err.Error())
 	}
 	c.recordLegacyTTSUsage(chat, "", ttsResult, startTime)
 }

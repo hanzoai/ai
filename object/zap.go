@@ -33,7 +33,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hanzoai/beego/logs"
+	"github.com/hanzoai/ai/log"
 	"github.com/luxfi/zap"
 )
 
@@ -88,7 +88,7 @@ var (
 // InitZap starts the ZAP node and connects to KV and SQL peers.
 func InitZap() {
 	if os.Getenv("ZAP_ENABLED") != "true" {
-		logs.Info("ZAP: disabled (set ZAP_ENABLED=true)")
+		log.Info("ZAP: disabled (set ZAP_ENABLED=true)")
 		return
 	}
 	port := 9999
@@ -106,10 +106,10 @@ func InitZap() {
 		Logger:      slog.Default(),
 	})
 	if err := node.Start(); err != nil {
-		logs.Error("ZAP: failed to start node: %v", err)
+		log.Error("ZAP: failed to start node: %v", err)
 		return
 	}
-	logs.Info("ZAP: node started on :%d (id=%s)", port, nodeID)
+	log.Info("ZAP: node started on :%d (id=%s)", port, nodeID)
 	zapMu.Lock()
 	zapNode = node
 	zapReady = true
@@ -157,7 +157,7 @@ func StopZap() {
 		zapNode.Stop()
 		zapNode = nil
 		zapReady = false
-		logs.Info("ZAP: node stopped")
+		log.Info("ZAP: node stopped")
 	}
 }
 
@@ -169,7 +169,7 @@ func connectPeer(node *zap.Node, addr, name string, peerIDOut *string) {
 	}
 	for attempt := 1; attempt <= 30; attempt++ {
 		if err := node.ConnectDirect(addr); err != nil {
-			logs.Warn("ZAP: connect %s (%s) attempt %d: %v", name, addr, attempt, err)
+			log.Warn("ZAP: connect %s (%s) attempt %d: %v", name, addr, attempt, err)
 			time.Sleep(2 * time.Second)
 			continue
 		}
@@ -178,7 +178,7 @@ func connectPeer(node *zap.Node, addr, name string, peerIDOut *string) {
 				zapMu.Lock()
 				*peerIDOut = p
 				zapMu.Unlock()
-				logs.Info("ZAP: connected to %s at %s (peer=%s)", name, addr, p)
+				log.Info("ZAP: connected to %s at %s (peer=%s)", name, addr, p)
 				return
 			}
 		}
@@ -187,11 +187,11 @@ func connectPeer(node *zap.Node, addr, name string, peerIDOut *string) {
 			zapMu.Lock()
 			*peerIDOut = peers[len(peers)-1]
 			zapMu.Unlock()
-			logs.Info("ZAP: connected to %s at %s (peer=%s)", name, addr, *peerIDOut)
+			log.Info("ZAP: connected to %s at %s (peer=%s)", name, addr, *peerIDOut)
 			return
 		}
 	}
-	logs.Error("ZAP: failed to connect to %s at %s after 30 attempts", name, addr)
+	log.Error("ZAP: failed to connect to %s at %s after 30 attempts", name, addr)
 }
 
 // ── KV client (native ZAP-to-ZAP) ──────────────────────────────────────

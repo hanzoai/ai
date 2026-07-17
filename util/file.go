@@ -25,8 +25,8 @@ import (
 	"strings"
 
 	"github.com/hanzoai/ai/conf"
+	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/proxy"
-	"github.com/hanzoai/beego/logs"
 )
 
 func parseJsonToFloats(s string) []float64 {
@@ -168,7 +168,7 @@ func downloadMaxmindFiles(cityExists, asnExists bool) {
 
 		EnsureFileFolderExists(filePath)
 
-		logs.Info("Downloading %s database from %s", filename, fileUrl)
+		log.Info("Downloading %s database from %s", filename, fileUrl)
 		buffer, err := DownloadFile(fileUrl)
 		if err != nil {
 			return err

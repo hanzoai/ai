@@ -20,7 +20,7 @@ import (
 	"strings"
 
 	"github.com/hanzoai/ai/i18n"
-	"github.com/hanzoai/beego/logs"
+	"github.com/hanzoai/ai/log"
 	"github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common"
 	"github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common/errors"
 	"github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common/profile"
@@ -99,7 +99,7 @@ func (client MachineTencentClient) GetMachines(lang string) ([]*Machine, error) 
 		return nil, err
 	}
 
-	logs.Info("DescribeInstances response: %s", response.ToJsonString())
+	log.Info("DescribeInstances response: %s", response.ToJsonString())
 
 	machines := []*Machine{}
 	for _, reservation := range response.Response.InstanceSet {
@@ -156,7 +156,7 @@ func (client MachineTencentClient) UpdateMachineState(name string, state string,
 
 		_, err = client.Client.StartInstances(startReq)
 		if err != nil {
-			logs.Error("Error starting instance: %v", err)
+			log.Error("Error starting instance: %v", err)
 			return false, "", err
 		}
 
@@ -166,7 +166,7 @@ func (client MachineTencentClient) UpdateMachineState(name string, state string,
 
 		_, err = client.Client.StopInstances(stopReq)
 		if err != nil {
-			logs.Error("Error stopping instance: %v", err)
+			log.Error("Error stopping instance: %v", err)
 			return false, "", err
 		}
 	default:

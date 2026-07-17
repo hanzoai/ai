@@ -22,9 +22,9 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/router"
-	"github.com/hanzoai/beego/logs"
 	"github.com/sashabaranov/go-openai"
 )
 
@@ -77,7 +77,7 @@ func deprecatedGlobalRouterEnv() string {
 		return object.AutoRoutingUnset
 	}
 	routerEnabledEnvOnce.Do(func() {
-		logs.Warning("ROUTER_ENABLED env is DEPRECATED: set the GlobalDefaultOwner (%q) OrgSettings.AutoRouting row via /v1/update-org-settings (admin.hanzo.ai); env honored as a fallback only because the global row is unset", object.GlobalDefaultOwner)
+		log.Warning("ROUTER_ENABLED env is DEPRECATED: set the GlobalDefaultOwner (%q) OrgSettings.AutoRouting row via /v1/update-org-settings (admin.hanzo.ai); env honored as a fallback only because the global row is unset", object.GlobalDefaultOwner)
 	})
 	return object.AutoRoutingEnabled
 }
@@ -101,7 +101,7 @@ var routingEventSink = asyncRecordRoutingEvent
 func asyncRecordRoutingEvent(e object.RoutingEvent) {
 	go func() {
 		if err := object.AddRoutingEvent(&e); err != nil {
-			logs.Warning("routing event persist failed: %v", err)
+			log.Warning("routing event persist failed: %v", err)
 		}
 	}()
 }
