@@ -128,8 +128,10 @@ var authRequiredEndpoints = map[string]struct{}{
 	// Training-data exports: a present credential is required at the filter (anonymous
 	// → 401); the handler (routerAdminAuthorized) enforces super-admin OR ROUTER_ADMIN_TOKEN.
 	"export-routing-ledger": {}, "export-routing-rewards": {},
-	"get-router-policy":    {}, // per-org router policy read — org-admin gated in controller, never anonymous
-	"update-router-policy": {}, // per-org router policy write — org-admin gated in controller, never anonymous
+	"get-router-policy":      {}, // per-org router policy read — org-admin gated in controller, never anonymous
+	"update-router-policy":   {}, // per-org router policy write — org-admin gated in controller, never anonymous
+	"export-my-routing-data": {}, // self-scoped routing-data export — org-admin gated in controller, never anonymous
+	"delete-my-routing-data": {}, // self-scoped routing-data delete — org-admin gated in controller, never anonymous
 }
 
 // requiresPresentCredential reports whether controllerName is a write/ingest/
