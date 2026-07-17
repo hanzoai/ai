@@ -163,6 +163,20 @@ func BalanceGateFilter(ctx *context.Context) {
 		return
 	}
 
+	// Reads never spend — so a read is NEVER balance-gated; only mutating / metered
+	// methods are. Every priced action (chat/completions, completions, messages,
+	// embeddings, images/audio/video generations, crawl/scrape/ingest) is a POST, and
+	// each keeps its OWN in-controller balance backstop (openai_api.resolveProviderForUser,
+	// crawl/scraper/docs_ingest getUserBalance); a GET/HEAD/OPTIONS only lists or fetches
+	// a resource. Gating reads on a positive balance 402s a $0-balance org merely trying
+	// to VIEW its own account — its models, chats, usage, router stats, keys, buckets,
+	// deployments — which is the "can't see my own resources when broke" outage a new
+	// signup / expired trial hits on every product overview. Exempting reads can NEVER
+	// free a metered call, because no metered call is a read.
+	if isReadMethod(ctx.Request.Method) {
+		return
+	}
+
 	// Only enforce on API and v1 routes.
 	if !strings.HasPrefix(path, "/v1/") {
 		return
@@ -189,6 +203,19 @@ func BalanceGateFilter(ctx *context.Context) {
 	ctx.ResponseWriter.Write([]byte(body))
 }
 
+// isReadMethod reports whether an HTTP method only READS — it lists or fetches a
+// resource and can never spend, so the balance gate skips it. Every priced action is
+// a POST (chat/completions, embeddings, images/audio/video, crawl/scrape/ingest), so a
+// GET/HEAD/OPTIONS is always safe to admit at $0 balance; this is the "gate writes, not
+// reads" rule in one place.
+func isReadMethod(method string) bool {
+	switch method {
+	case http.MethodGet, http.MethodHead, http.MethodOptions:
+		return true
+	}
+	return false
+}
+
 // isBalanceExempt returns true for paths that should bypass balance checking
 // (free/public endpoints, health checks, etc.).
 func isBalanceExempt(path string) bool {
@@ -201,6 +228,14 @@ func isBalanceExempt(path string) bool {
 	// only country/region counts + throughput rates (no IPs, no org/user), needs no
 	// auth and no balance. Same class as /v1/router/stats?scope=platform.
 	case strings.HasPrefix(path, "/v1/traffic/"):
+		return true
+	// Public marketing aggregate — the router flywheel stats the world.hanzo.ai /
+	// console dashboards render (model/throughput/country counts; no org/user rows).
+	// Same class as /v1/traffic/: no balance needed. Explicitly exempt so it is 200 on
+	// BOTH the anon and the authed path — a $0-balance org's dashboard must never 402
+	// where an anon viewer sees 200. (The read-method skip in BalanceGateFilter covers
+	// it too; this states the intent at the source and is method-independent.)
+	case path == "/v1/router/stats":
 		return true
 	// Model + pricing CATALOG listings are metadata, not metered inference:
 	// a caller must still be authenticated (the auth filters enforce that —
