@@ -56,6 +56,9 @@ func stubLookups(t *testing.T, auto, session map[string]string) {
 // AutoRouting field: the org's own row wins, else the reserved "*" row, else ""
 // (defer to conf). A row's "disabled" beats a lower level's "enabled".
 func TestEffectiveAutoRoutingStarFold(t *testing.T) {
+	// The "both unset" case now falls through to the deprecated ROUTER_ENABLED env;
+	// clear it so this test isolates the org > "*" row fold regardless of ambient env.
+	t.Setenv("ROUTER_ENABLED", "")
 	const org = "acme"
 	cases := []struct {
 		name    string
@@ -76,6 +79,81 @@ func TestEffectiveAutoRoutingStarFold(t *testing.T) {
 				map[string]string{})
 			if got := effectiveAutoRouting(org); got != tc.want {
 				t.Errorf("effectiveAutoRouting = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestEffectiveAutoRoutingEnvFallback proves the config-doctrine precedence: the
+// "*" GlobalDefaultOwner row is the SINGLE source of truth for the platform-wide
+// default, and ROUTER_ENABLED is a DEPRECATED fallback consulted ONLY when that
+// row is unset. The row authoritatively overrides the env; an org row overrides
+// both.
+func TestEffectiveAutoRoutingEnvFallback(t *testing.T) {
+	const org = "acme"
+	cases := []struct {
+		name    string
+		orgPref string
+		star    string
+		env     string // ROUTER_ENABLED value ("" = unset)
+		want    string
+	}{
+		{"both rows unset + env=true → env fallback enables", object.AutoRoutingUnset, object.AutoRoutingUnset, "true", object.AutoRoutingEnabled},
+		{"both rows unset + env unset → defer to conf", object.AutoRoutingUnset, object.AutoRoutingUnset, "", object.AutoRoutingUnset},
+		{"both rows unset + env=garbage → defer to conf", object.AutoRoutingUnset, object.AutoRoutingUnset, "1", object.AutoRoutingUnset},
+		{"* row disabled beats env=true (row authoritative)", object.AutoRoutingUnset, object.AutoRoutingDisabled, "true", object.AutoRoutingDisabled},
+		{"* row enabled, env unset (row alone)", object.AutoRoutingUnset, object.AutoRoutingEnabled, "", object.AutoRoutingEnabled},
+		{"org disabled beats * enabled and env=true", object.AutoRoutingDisabled, object.AutoRoutingEnabled, "true", object.AutoRoutingDisabled},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("ROUTER_ENABLED", tc.env)
+			stubLookups(t,
+				map[string]string{org: tc.orgPref, object.GlobalDefaultOwner: tc.star},
+				map[string]string{})
+			if got := effectiveAutoRouting(org); got != tc.want {
+				t.Errorf("effectiveAutoRouting = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestAutoRoutingDecisionWithPolicyRow proves the end-to-end decision
+// AutoRoutingActive(effectiveAutoRouting(org)) under the settings-row doctrine:
+// the global "*" row (or its deprecated env fallback) drives the platform
+// default, per-org rows override it, and the conf global flag stays OFF
+// throughout so only the row/env decide. routerTestConfig(false) has router
+// config PRESENT (a prefer table) but the global enable flag off — so an
+// "enabled" preference still has something to route with.
+func TestAutoRoutingDecisionWithPolicyRow(t *testing.T) {
+	prev := globalModelConfig
+	t.Cleanup(func() { globalModelConfig = prev })
+	globalModelConfig = routerTestConfig(false) // conf global flag OFF; config present
+
+	const org = "acme"
+	cases := []struct {
+		name       string
+		orgPref    string
+		star       string
+		env        string
+		wantActive bool
+	}{
+		{"global row enabled → active", object.AutoRoutingUnset, object.AutoRoutingEnabled, "", true},
+		{"global row unset + env fallback → active", object.AutoRoutingUnset, object.AutoRoutingUnset, "true", true},
+		{"global row unset + env unset → inactive (conf off)", object.AutoRoutingUnset, object.AutoRoutingUnset, "", false},
+		{"per-org enabled over global-off → active", object.AutoRoutingEnabled, object.AutoRoutingUnset, "", true},
+		{"per-org disabled over global-on row → inactive", object.AutoRoutingDisabled, object.AutoRoutingEnabled, "", false},
+		{"per-org disabled over env fallback → inactive", object.AutoRoutingDisabled, object.AutoRoutingUnset, "true", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("ROUTER_ENABLED", tc.env)
+			stubLookups(t,
+				map[string]string{org: tc.orgPref, object.GlobalDefaultOwner: tc.star},
+				map[string]string{})
+			got := GetModelConfig().AutoRoutingActive(effectiveAutoRouting(org))
+			if got != tc.wantActive {
+				t.Errorf("AutoRoutingActive = %v, want %v", got, tc.wantActive)
 			}
 		})
 	}
