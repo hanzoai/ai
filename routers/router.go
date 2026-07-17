@@ -435,6 +435,10 @@ func initAPI() {
 	// Plus the per-org opt-in for contributing events to the shared base refresh
 	// and the retrain job's published-state write.
 	beego.Router("/v1/router/stats", &controllers.ApiController{}, "GET:GetRouterStats")
+	// Improvement time-series (reward + cost-saved + adoption over time, retrain
+	// markers) — the world.hanzo.ai flywheel view. PUBLIC ?scope=platform, aggregates
+	// only (task mix, never model ids). Balance+auth-exempt like /v1/router/stats.
+	beego.Router("/v1/router/history", &controllers.ApiController{}, "GET:GetRouterHistory")
 	beego.Router("/v1/router/publish-artifact-meta", &controllers.ApiController{}, "POST:PublishRouterArtifactMeta")
 
 	// Live request-geo aggregate for the world.hanzo.ai Hanzo-mode globe. PUBLIC:
