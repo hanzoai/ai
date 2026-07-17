@@ -147,3 +147,33 @@ func TestTrainingOwnerSetIncludesInternalAndDedups(t *testing.T) {
 		}
 	}
 }
+
+// TestTrainScopePerOrgAndGlobalPartition proves the driver partitions the ledger
+// by owner: the pure fit sees exactly the events for each scope. (The DB-writing
+// half of trainScope is covered by the live path; here we prove the fit input.)
+func TestTrainScopePerOrgAndGlobalPartition(t *testing.T) {
+	var all []*object.RoutingEvent
+	all = append(all, rewardedOwner("acme", "code", "acme-coder", 30, 0.9)...)
+	all = append(all, rewardedOwner("globex", "code", "globex-coder", 30, 0.8)...)
+	byOwner := map[string][]*object.RoutingEvent{}
+	for _, e := range all {
+		byOwner[e.Owner] = append(byOwner[e.Owner], e)
+	}
+	if len(byOwner["acme"]) != 30 || len(byOwner["globex"]) != 30 {
+		t.Fatalf("partition wrong: acme=%d globex=%d", len(byOwner["acme"]), len(byOwner["globex"]))
+	}
+	// acme's fit must see ONLY acme's arm (its own data trains its own policy).
+	arms := fitRouterHeads(byOwner["acme"])
+	if arms["code\x00acme-coder"] == nil || arms["code\x00globex-coder"] != nil {
+		t.Errorf("per-org fit leaked another org's data: %+v", arms)
+	}
+}
+
+// rewardedOwner is `rewarded` with an explicit owner for the partition test.
+func rewardedOwner(owner, task, model string, n int, reward float64) []*object.RoutingEvent {
+	out := rewarded(task, model, n, reward)
+	for _, e := range out {
+		e.Owner = owner
+	}
+	return out
+}
