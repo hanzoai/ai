@@ -21,7 +21,6 @@ import (
 
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
-	"github.com/hanzoai/beego/utils/pagination"
 )
 
 // GetGlobalStores
@@ -59,7 +58,7 @@ func (c *ApiController) GetGlobalStores() {
 			return
 		}
 
-		paginator := pagination.SetPaginator(c.Ctx, limit, count)
+		paginator := util.NewPaginator(c.Ctx.Request, limit, count)
 		stores, err := object.GetPaginationStores(paginator.Offset(), limit, name, field, value, sortField, sortOrder)
 		if err != nil {
 			c.ResponseError(err.Error())
