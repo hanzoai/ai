@@ -19,6 +19,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	luxlog "github.com/luxfi/log"
 )
 
 // reference reproduces beego/logs.formatLog verbatim. format must agree with
@@ -101,4 +103,30 @@ func TestSetLoggerLevelAndReset(t *testing.T) {
 		t.Fatalf("SetLogger malformed config must not error: %v", err)
 	}
 	Reset()
+}
+
+// TestParseLevel covers the string and historical-numeric level forms so a
+// numeric {"level":7} configures debug instead of silently no-opping.
+func TestParseLevel(t *testing.T) {
+	cases := []struct {
+		v    interface{}
+		want luxlog.Level
+		ok   bool
+	}{
+		{"debug", luxlog.DebugLevel, true},
+		{"ERROR", luxlog.ErrorLevel, true},
+		{float64(7), luxlog.DebugLevel, true}, // JSON numbers decode as float64
+		{float64(6), luxlog.InfoLevel, true},
+		{float64(4), luxlog.WarnLevel, true},
+		{float64(3), luxlog.ErrorLevel, true},
+		{float64(0), luxlog.ErrorLevel, true}, // clamp: errors always emit
+		{"nonsense", luxlog.InfoLevel, false},
+		{nil, luxlog.InfoLevel, false},
+	}
+	for _, c := range cases {
+		got, ok := parseLevel(c.v)
+		if ok != c.ok || (ok && got != c.want) {
+			t.Errorf("parseLevel(%v) = (%v, %v), want (%v, %v)", c.v, got, ok, c.want, c.ok)
+		}
+	}
 }
