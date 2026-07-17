@@ -139,16 +139,21 @@ func isAutoModel(model string) bool {
 // in even when the global flag is off (as long as router config is present); ""
 // defers to the global flag. When routing is not active, `auto` is left
 // unchanged (no rewrite, no X-Routed-Model header) — its pre-routing behavior.
-func resolveAutoModel(requested, orgId, userId, requestId string, req *openai.ChatCompletionRequest, slo router.Slo) (string, bool) {
+// resolveAutoModel returns (routedModel, task, ok). task is the router's task
+// classification for the request (code/reasoning/chat/…), returned so the caller —
+// which holds the request context (and thus the edge geo headers) — can fold the
+// region's task-mix into the live-traffic globe without geo ever entering this
+// routing logic. task is "" whenever ok is false.
+func resolveAutoModel(requested, orgId, userId, requestId string, req *openai.ChatCompletionRequest, slo router.Slo) (string, string, bool) {
 	if !isAutoModel(requested) {
-		return "", false
+		return "", "", false
 	}
 	cfg := GetModelConfig()
 	if cfg == nil {
-		return "", false
+		return "", "", false
 	}
 	if !cfg.AutoRoutingActive(effectiveAutoRouting(orgId)) {
-		return "", false
+		return "", "", false
 	}
 	client := cfg.RouterClient(func(id string) bool {
 		return resolveModelRouteForOrg(id, orgId) != nil
@@ -166,7 +171,7 @@ func resolveAutoModel(requested, orgId, userId, requestId string, req *openai.Ch
 	}
 	dec := client.RouteDecision(context.Background(), rreq, slo)
 	if dec.Model == "" {
-		return "", false
+		return "", "", false
 	}
 
 	// Collect the decision for training — fire-and-forget, NEVER prompt text.
@@ -190,7 +195,7 @@ func resolveAutoModel(requested, orgId, userId, requestId string, req *openai.Ch
 		Features:       features,
 	})
 
-	return dec.Model, true
+	return dec.Model, string(dec.Task), true
 }
 
 // routingUserId returns the verified principal as "owner/name" (the repo's
