@@ -169,6 +169,18 @@ func GetRewardedRoutingEvents(org, since string) ([]*RoutingEvent, error) {
 	return events, err
 }
 
+// DeleteRoutingEvents removes ALL routing events for an org — the org-scoped
+// right-to-be-forgotten path behind /v1/delete-my-routing-data. The rows are
+// content-free (features + reward, never prompt text), but ownership completeness
+// means an org can take its data back. Never a blanket delete: an empty org
+// deletes nothing. Returns the number of rows removed.
+func DeleteRoutingEvents(org string) (int64, error) {
+	if adapter == nil || adapter.db == nil || org == "" {
+		return 0, nil
+	}
+	return deleteWhere(adapter.db, "routing_event", dbx.HashExp{"owner": org})
+}
+
 // GetRewardedRoutingEventsForOwners is GetRewardedRoutingEvents scoped to a SET of
 // owners (rewarded rows whose owner ∈ owners), oldest first. It is the
 // consent-respecting read for the shared "*" base fit: the trainer passes the
