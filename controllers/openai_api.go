@@ -1042,6 +1042,16 @@ func (c *ApiController) ChatCompletions() {
 			c.Ctx.Request.Header.Get("CF-Region-Code"),
 			task,
 		)
+	} else if !isAutoModel(request.Model) {
+		// NON-auto: record the caller's explicit model selection so EVERY request is
+		// a rateable, trainable data point — up/down feedback for all models, and the
+		// ledger captures which model served which task even when the caller picked.
+		task := recordExplicitRouting(request.Model, orgId, c.routingUserId(), requestId, &request)
+		object.GlobalTraffic.RecordTask(
+			c.Ctx.Request.Header.Get("CF-IPCountry"),
+			c.Ctx.Request.Header.Get("CF-Region-Code"),
+			task,
+		)
 	}
 
 	// Authenticate the bearer token and resolve the requested model to its
