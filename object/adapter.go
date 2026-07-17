@@ -177,11 +177,13 @@ func (a *Adapter) createTable() {
 		&Patient{}, &Pod{}, &Provider{}, &Record{}, &Scale{}, &Scan{},
 		&Session{}, &Store{}, &Task{}, &Template{}, &Vector{}, &Video{},
 		&Workflow{},
-		&Memory{},       // cloud memory backend (per-user scoped)
-		&OrgSettings{},  // per-org feature overrides (auto-routing, …)
-		&RoutingEvent{}, // privacy-preserving auto-routing decision ledger (training)
-		&FinetuneJob{},  // fine-tuning / training runs brokered to the cluster trainer
-		&ModelAccess{},  // per-(org,user,model) grants for gated SKUs (enso limited preview)
+		&Memory{},             // cloud memory backend (per-user scoped)
+		&OrgSettings{},        // per-org feature overrides (auto-routing, …)
+		&RoutingEvent{},       // privacy-preserving auto-routing decision ledger (training)
+		&RouterArtifactMeta{}, // latest retrain outcome per scope (upsert, one row/owner)
+		&RouterTrainingLog{},  // append-only retrain timeline (one immutable row per fit)
+		&FinetuneJob{},        // fine-tuning / training runs brokered to the cluster trainer
+		&ModelAccess{},        // per-(org,user,model) grants for gated SKUs (enso limited preview)
 	}
 	for _, m := range models {
 		if err := a.db.Sync(m); err != nil {

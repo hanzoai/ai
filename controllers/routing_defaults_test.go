@@ -268,7 +268,7 @@ func TestRoutingEventFiredOnResolve(t *testing.T) {
 	var got []object.RoutingEvent
 	routingEventSink = func(e object.RoutingEvent) { got = append(got, e) }
 
-	model, ok := resolveAutoModel("auto", "acme", "acme/alice", "req-fired",
+	model, _, ok := resolveAutoModel("auto", "acme", "acme/alice", "req-fired",
 		chatReq("auto", "please refactor this function"), router.Slo{})
 	if !ok || model != "glm-5.2" {
 		t.Fatalf("resolveAutoModel = (%q, %v), want (glm-5.2, true)", model, ok)
@@ -306,12 +306,12 @@ func TestRoutingEventAbsentOnNonAuto(t *testing.T) {
 	routingEventSink = func(object.RoutingEvent) { count++ }
 
 	globalModelConfig = routerTestConfig(true)
-	if _, ok := resolveAutoModel("gpt-4o", "acme", "acme/alice", "", chatReq("gpt-4o", "hi"), router.Slo{}); ok {
+	if _, _, ok := resolveAutoModel("gpt-4o", "acme", "acme/alice", "", chatReq("gpt-4o", "hi"), router.Slo{}); ok {
 		t.Fatal("resolveAutoModel routed a concrete model")
 	}
 
 	globalModelConfig = routerTestConfig(false) // routing globally off
-	if _, ok := resolveAutoModel("auto", "acme", "acme/alice", "", chatReq("auto", "hi"), router.Slo{}); ok {
+	if _, _, ok := resolveAutoModel("auto", "acme", "acme/alice", "", chatReq("auto", "hi"), router.Slo{}); ok {
 		t.Fatal("resolveAutoModel routed with routing disabled")
 	}
 
@@ -336,7 +336,7 @@ func TestRoutingEventFeaturesSerialized(t *testing.T) {
 	cfg.router.Endpoint = newFeatureEngine(t)
 	globalModelConfig = cfg
 
-	if _, ok := resolveAutoModel("auto", "acme", "acme/alice", "", chatReq("auto", "hi"), router.Slo{}); !ok {
+	if _, _, ok := resolveAutoModel("auto", "acme", "acme/alice", "", chatReq("auto", "hi"), router.Slo{}); !ok {
 		t.Fatal("resolveAutoModel not ok")
 	}
 	if len(got) != 1 {
