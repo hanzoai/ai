@@ -53,13 +53,37 @@ func SetLogger(adapter string, config ...string) error {
 		if json.Unmarshal([]byte(c), &m) != nil {
 			continue
 		}
-		if lvl, ok := m["level"].(string); ok {
-			if l, err := luxlog.ParseLevel(lvl); err == nil {
-				luxlog.SetGlobalLevel(l)
-			}
+		if l, ok := parseLevel(m["level"]); ok {
+			luxlog.SetGlobalLevel(l)
 		}
 	}
 	return nil
+}
+
+// parseLevel resolves a config "level" to a luxfi/log level. It accepts a
+// level name ("debug", "error", …) or the historical numeric scale where a
+// larger number is more verbose (7 debug, 6 info, 4 warning, 3 error); JSON
+// decodes those numbers as float64. Values below error clamp to error so a
+// numeric threshold never suppresses error records.
+func parseLevel(v interface{}) (luxlog.Level, bool) {
+	switch t := v.(type) {
+	case string:
+		if l, err := luxlog.ParseLevel(t); err == nil {
+			return l, true
+		}
+	case float64:
+		switch {
+		case t >= 7:
+			return luxlog.DebugLevel, true
+		case t >= 5:
+			return luxlog.InfoLevel, true
+		case t >= 4:
+			return luxlog.WarnLevel, true
+		default:
+			return luxlog.ErrorLevel, true
+		}
+	}
+	return luxlog.InfoLevel, false
 }
 
 // Reset restores the default (info) log level.
