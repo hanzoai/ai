@@ -122,6 +122,61 @@ func (c *ApiController) ExportRoutingLedger() {
 	c.EnableRender = false
 }
 
+// ExportMyRoutingData streams the CALLER'S OWN org routing events as JSONL. Org-
+// admin gated and SELF-SCOPED — the org is forced to c.GetOrg(), never a query or
+// body value — so a customer exports only its own content-free ledger. This is the
+// customer-facing data-ownership read that pairs with the training opt-in; the
+// super-admin, any-org ExportRoutingLedger above is the platform operator's export.
+//
+// @Title ExportMyRoutingData
+// @Tag Router API
+// @Description export the caller's own org routing events (content-free) as JSONL
+// @router /export-my-routing-data [get]
+func (c *ApiController) ExportMyRoutingData() {
+	if !c.RequireAdmin() {
+		return
+	}
+	org := c.GetOrg()
+	if org == "" {
+		c.ResponseError(c.T("auth:Please sign in first"))
+		return
+	}
+	events, err := getRoutingEvents(org, c.Input().Get("since"))
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+	c.Ctx.Output.Header("Content-Type", "application/x-ndjson")
+	_ = writeRoutingLedgerJSONL(c.Ctx.ResponseWriter, events)
+	c.EnableRender = false
+}
+
+// DeleteMyRoutingData deletes ALL of the caller's OWN org routing events — the
+// self-scoped right-to-be-forgotten. Org-admin gated and self-scoped (c.GetOrg()),
+// so a caller can only ever delete its own data, never another tenant's. Completes
+// the data-ownership story: content-free ledger + opt-in + self-export + self-delete.
+//
+// @Title DeleteMyRoutingData
+// @Tag Router API
+// @Description delete all of the caller's own org routing events (right to be forgotten)
+// @router /delete-my-routing-data [post]
+func (c *ApiController) DeleteMyRoutingData() {
+	if !c.RequireAdmin() {
+		return
+	}
+	org := c.GetOrg()
+	if org == "" {
+		c.ResponseError(c.T("auth:Please sign in first"))
+		return
+	}
+	n, err := object.DeleteRoutingEvents(org)
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+	c.ResponseOk(map[string]any{"deleted": n})
+}
+
 // writeRoutingLedgerJSONL streams events as JSONL (one per line). It is a pure
 // function of its inputs so the export contract is unit-testable without a DB or
 // beego context. A write error stops the stream (a truncated download is better
