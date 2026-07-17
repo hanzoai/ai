@@ -248,6 +248,13 @@ func isBalanceExempt(path string) bool {
 		path == "/v1/delete-org-settings" ||
 		path == "/v1/export-routing-ledger":
 		return true
+	// Router observability READS — the savings/quality aggregate + the improvement
+	// time-series. Marketing/metadata, not metered inference (same class as
+	// /v1/get-routing-defaults): the public platform scope is unauthenticated (the
+	// no-subject path already passes), and an authenticated org-scope read must not
+	// 402 a $0-balance org either.
+	case path == "/v1/router/stats" || path == "/v1/router/history":
+		return true
 	default:
 		return false
 	}

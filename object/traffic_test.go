@@ -271,3 +271,97 @@ func TestWindowClamp(t *testing.T) {
 		t.Errorf("zero window not defaulted: %d", g.Window.Minutes)
 	}
 }
+
+// TestRecordTaskByTask: the router task classification folds into a region's byTask
+// breakdown (in ADDITION to byService), so the globe can show what a region is doing.
+func TestRecordTaskByTask(t *testing.T) {
+	a := NewTrafficAggregator()
+	m := testMinute
+	// The edge tap counts the requests (service=chat); the router then classifies them.
+	a.recordAt("US", "CA", SvcChat, minTime(m-1))
+	a.recordAt("US", "CA", SvcChat, minTime(m-1))
+	a.recordAt("US", "CA", SvcChat, minTime(m-1))
+	a.recordTaskAt("US", "CA", "code", minTime(m-1))
+	a.recordTaskAt("US", "CA", "code", minTime(m-1))
+	a.recordTaskAt("US", "CA", "reasoning", minTime(m-1))
+
+	g := a.Globe(60, minTime(m))
+	if len(g.Points) != 1 {
+		t.Fatalf("points = %d, want 1", len(g.Points))
+	}
+	p := g.Points[0]
+	if p.Count != 3 || p.ByService[SvcChat] != 3 {
+		t.Errorf("count/byService wrong: %+v", p)
+	}
+	if p.ByTask["code"] != 2 || p.ByTask["reasoning"] != 1 {
+		t.Errorf("byTask = %v, want code:2 reasoning:1", p.ByTask)
+	}
+	// byTask is a SUBSET of count (3 tasks over 3 requests here, but never exceeds).
+	sum := 0
+	for _, n := range p.ByTask {
+		sum += n
+	}
+	if sum > p.Count {
+		t.Errorf("byTask sum %d exceeds count %d", sum, p.Count)
+	}
+}
+
+// TestRecordTaskLeavesTotalsUnchanged: RecordTask enriches byTask only — it must not
+// move the throughput totals (rps/rpm) or a point's count, and must NOT create a
+// point for a geo the tap never counted.
+func TestRecordTaskLeavesTotalsUnchanged(t *testing.T) {
+	a := NewTrafficAggregator()
+	m := testMinute
+	a.recordAt("US", "", SvcChat, minTime(m-1))
+	before := a.Globe(60, minTime(m))
+
+	// Enrich the existing US group, and try to enrich a geo (DE) the tap never counted.
+	a.recordTaskAt("US", "", "code", minTime(m-1))
+	a.recordTaskAt("DE", "", "vision", minTime(m-1)) // no US-style tap → must be dropped
+	after := a.Globe(60, minTime(m))
+
+	if before.Totals.RPS1m != after.Totals.RPS1m || before.Totals.RPM60m != after.Totals.RPM60m {
+		t.Errorf("RecordTask moved throughput totals: before %+v after %+v", before.Totals, after.Totals)
+	}
+	if len(after.Points) != 1 || after.Points[0].Country != "US" {
+		t.Fatalf("RecordTask created a phantom point: %+v", after.Points)
+	}
+	if after.Points[0].Count != 1 {
+		t.Errorf("RecordTask changed count: %d", after.Points[0].Count)
+	}
+	if after.Points[0].ByTask["code"] != 1 {
+		t.Errorf("US byTask not recorded: %v", after.Points[0].ByTask)
+	}
+}
+
+// TestByTaskNoIPInvariant: byTask must not weaken the no-IP contract, and RecordTask
+// takes no IP by construction.
+func TestByTaskNoIPInvariant(t *testing.T) {
+	a := NewTrafficAggregator()
+	m := testMinute
+	a.recordAt("US", "CA", SvcChat, minTime(m-1))
+	a.recordTaskAt("US", "CA", "code", minTime(m-1))
+	b, err := json.Marshal(a.Globe(60, minTime(m)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ipLike.Match(b) || strings.Contains(strings.ToLower(string(b)), `"ip"`) {
+		t.Fatalf("byTask payload leaked an IP: %s", b)
+	}
+	if !strings.Contains(string(b), `"byTask"`) {
+		t.Errorf("wire shape missing byTask: %s", b)
+	}
+}
+
+// TestNormTask sanitizes router task labels.
+func TestNormTask(t *testing.T) {
+	cases := map[string]string{
+		"code": "code", "CHEAP_CHAT": "cheap_chat", " reasoning ": "reasoning",
+		"": "", "has space": "", "toolongtoolongtoolong!": "", "a1": "",
+	}
+	for in, want := range cases {
+		if got := normTask(in); got != want {
+			t.Errorf("normTask(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
