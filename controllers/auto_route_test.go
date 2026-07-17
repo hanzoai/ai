@@ -21,6 +21,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/router"
 	"github.com/sashabaranov/go-openai"
 )
@@ -166,5 +167,30 @@ func TestAutoRoutingHTTPContract(t *testing.T) {
 	}
 	if resp.Model != "glm-5.2" {
 		t.Errorf("response model = %q, want glm-5.2 (billed/reported as served model)", resp.Model)
+	}
+}
+
+// TestRecordExplicitRoutingCapturesSelection proves a non-auto request is recorded
+// as a rateable data point: source=explicit, requested==routed==the model, keyed
+// by request id so an up/down reward can attach, task classified from the prompt.
+func TestRecordExplicitRoutingCapturesSelection(t *testing.T) {
+	var got object.RoutingEvent
+	prev := routingEventSink
+	routingEventSink = func(e object.RoutingEvent) { got = e }
+	defer func() { routingEventSink = prev }()
+
+	task := recordExplicitRouting("GPT-4o", "acme", "acme/z", "req-123",
+		chatReq("gpt-4o", "Refactor this function and fix the bug"))
+	if task != "code" {
+		t.Errorf("task classify: got %q want code", task)
+	}
+	if got.Source != SourceExplicit || got.RequestId != "req-123" {
+		t.Errorf("explicit event: source=%q reqid=%q", got.Source, got.RequestId)
+	}
+	if got.RequestedModel != "gpt-4o" || got.RoutedModel != "gpt-4o" {
+		t.Errorf("model should be the caller's pick (lowered): req=%q routed=%q", got.RequestedModel, got.RoutedModel)
+	}
+	if got.Owner != "acme" {
+		t.Errorf("owner: got %q", got.Owner)
 	}
 }
