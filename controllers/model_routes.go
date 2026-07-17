@@ -19,8 +19,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/object"
-	beegoLogs "github.com/hanzoai/beego/logs"
 )
 
 // modelRouteFallback is an alternate provider+upstream for failover.
@@ -271,7 +271,7 @@ func routeForPrompt(model string, orgId string, promptTokens int) *modelRoute {
 		return route // it already fits, or nothing better exists
 	}
 
-	beegoLogs.Info("context routing: %s prompt is %d tokens, more than %s/%s can hold — routing to %s/%s (%d)",
+	log.Info("context routing: %s prompt is %d tokens, more than %s/%s can hold — routing to %s/%s (%d)",
 		model, promptTokens, route.providerName, route.upstreamModel, provider, upstream, window)
 
 	upgraded := *route // copy: never mutate the shared route

@@ -15,10 +15,10 @@
 package routers
 
 import (
+	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
 	"github.com/hanzoai/beego/context"
-	"github.com/hanzoai/beego/logs"
 )
 
 func RecordMessage(ctx *context.Context) {
@@ -33,7 +33,7 @@ func RecordMessage(ctx *context.Context) {
 func AfterRecordMessage(ctx *context.Context) {
 	record, err := object.NewRecord(ctx)
 	if err != nil {
-		logs.Error("AfterRecordMessage() error: %s", err.Error())
+		log.Error("AfterRecordMessage() error: %s", err.Error())
 		return
 	}
 

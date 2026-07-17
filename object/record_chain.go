@@ -20,8 +20,8 @@ import (
 
 	"github.com/hanzoai/ai/chain"
 	"github.com/hanzoai/ai/i18n"
+	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/util"
-	"github.com/hanzoai/beego/logs"
 	"github.com/hanzoai/dbx"
 	"github.com/robfig/cron/v3"
 )
@@ -275,7 +275,7 @@ func ScanNeedCommitRecords() {
 	records := []*Record{}
 	err := adapter.db.Select().From("record").Where(dbx.NewExp("need_commit = {:p0} AND block = {:p1}", dbx.Params{"p0": true, "p1": ""})).OrderBy("id ASC").All(&records)
 	if err != nil {
-		logs.Error("ScanNeedCommitRecords() failed to scan records that need to be committed: %v", err)
+		log.Error("ScanNeedCommitRecords() failed to scan records that need to be committed: %v", err)
 	}
 	if len(records) == 0 {
 		return
@@ -287,7 +287,7 @@ func ScanNeedCommitRecords() {
 		}
 	}
 	if len(errors) > 0 {
-		logs.Error("ScanNeedCommitRecords() failed to commit %d/%d records: %v", len(errors), len(records), errors)
+		log.Error("ScanNeedCommitRecords() failed to commit %d/%d records: %v", len(errors), len(records), errors)
 	}
 }
 

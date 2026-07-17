@@ -23,7 +23,7 @@ import (
 	"regexp"
 
 	"github.com/hanzoai/ai/i18n"
-	"github.com/hanzoai/beego/logs"
+	"github.com/hanzoai/ai/log"
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime"
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
 	"github.com/volcengine/volcengine-go-sdk/volcengine"
@@ -214,7 +214,7 @@ func (p *VolcengineModelProvider) QueryText(question string, writer io.Writer, h
 
 	stream, err := client.CreateChatCompletionStream(ctx, request)
 	if err != nil {
-		logs.Error("stream chat error: %v", err)
+		log.Error("stream chat error: %v", err)
 		return nil, err
 	}
 	defer stream.Close()

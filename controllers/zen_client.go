@@ -40,9 +40,9 @@ import (
 	"time"
 
 	"github.com/hanzoai/ai/conf"
+	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
-	beegoLogs "github.com/hanzoai/beego/logs"
 	"github.com/hanzoai/decimal"
 	iam "github.com/hanzoai/iam"
 	"github.com/hanzoai/money"
@@ -355,7 +355,7 @@ func (f *modelFamily) fresh() {
 	f.mu.RUnlock()
 	if stale {
 		if err := f.refresh(); err != nil {
-			beegoLogs.Warning("%s catalog refresh failed: %v", f.name, err)
+			log.Warning("%s catalog refresh failed: %v", f.name, err)
 		}
 	}
 }

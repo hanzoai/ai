@@ -24,9 +24,9 @@ import (
 	"time"
 
 	"github.com/hanzoai/ai/conf"
+	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
-	"github.com/hanzoai/beego/logs"
 	iam "github.com/hanzoai/iam"
 )
 
@@ -457,7 +457,7 @@ func (c *ApiController) GetAccount() {
 	disablePreviewMode := conf.DisablePreviewMode()
 	err := util.AppendWebConfigCookie(c.Ctx)
 	if err != nil {
-		logs.Error("AppendWebConfigCookie: %v", err)
+		log.Error("AppendWebConfigCookie: %v", err)
 	}
 
 	// Self-heal the session identity from a verified IAM credential (the

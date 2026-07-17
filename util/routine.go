@@ -18,7 +18,7 @@ package util
 import (
 	"fmt"
 
-	"github.com/hanzoai/beego/logs"
+	"github.com/hanzoai/ai/log"
 )
 
 func SafeGoroutine(fn func()) {
@@ -31,7 +31,7 @@ func SafeGoroutine(fn func()) {
 				if !ok {
 					err = fmt.Errorf("%v", r)
 				}
-				logs.Error("goroutine panic: %v", err)
+				log.Error("goroutine panic: %v", err)
 			}
 		}()
 		fn()

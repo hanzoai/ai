@@ -25,7 +25,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hanzoai/beego/logs"
+	"github.com/hanzoai/ai/log"
 )
 
 // kmsClient fetches secrets from Hanzo KMS.
@@ -88,7 +88,7 @@ func initKMS() {
 		clientID := os.Getenv("KMS_CLIENT_ID")
 		clientSecret := os.Getenv("KMS_CLIENT_SECRET")
 		if serviceToken == "" && clientID == "" {
-			logs.Info("KMS not configured (no KMS_SERVICE_TOKEN or KMS_CLIENT_ID) — using DB secrets")
+			log.Info("KMS not configured (no KMS_SERVICE_TOKEN or KMS_CLIENT_ID) — using DB secrets")
 			return
 		}
 		endpoint := os.Getenv("KMS_ENDPOINT")
@@ -116,7 +116,7 @@ func initKMS() {
 		if serviceToken == "" {
 			authMode = "universal-auth"
 		}
-		logs.Info("KMS client initialized: endpoint=%s project=%s env=%s auth=%s",
+		log.Info("KMS client initialized: endpoint=%s project=%s env=%s auth=%s",
 			endpoint, projectID, environment, authMode)
 	})
 }
@@ -169,7 +169,7 @@ func (c *kmsClient) getAuthToken() (string, error) {
 	}
 	c.accessToken = authResp.AccessToken
 	c.tokenExpiresAt = time.Now().Add(time.Duration(authResp.ExpiresIn) * time.Second)
-	logs.Info("KMS: universal auth token acquired, expires in %ds", authResp.ExpiresIn)
+	log.Info("KMS: universal auth token acquired, expires in %ds", authResp.ExpiresIn)
 	return c.accessToken, nil
 }
 

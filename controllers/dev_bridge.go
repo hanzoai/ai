@@ -27,7 +27,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/hanzoai/beego/logs"
+	"github.com/hanzoai/ai/log"
 )
 
 const (
@@ -140,7 +140,7 @@ func (c *ApiController) DevBridge() {
 	}
 	safeCwd, err := validateCwd(cwd)
 	if err != nil {
-		logs.Error(fmt.Sprintf("DevBridge: invalid cwd %q: %s", cwd, err.Error()))
+		log.Error(fmt.Sprintf("DevBridge: invalid cwd %q: %s", cwd, err.Error()))
 		ctx.ResponseWriter.WriteHeader(http.StatusBadRequest)
 		_, _ = ctx.ResponseWriter.Write([]byte(fmt.Sprintf(`{"error":"invalid cwd: %s"}`, err.Error())))
 		return
@@ -149,7 +149,7 @@ func (c *ApiController) DevBridge() {
 	// --- global connection limit ---
 	if atomic.AddInt64(&globalBridgeConns, 1) > maxBridgeConnsGlobal {
 		atomic.AddInt64(&globalBridgeConns, -1)
-		logs.Warn("DevBridge: global connection limit exceeded")
+		log.Warn("DevBridge: global connection limit exceeded")
 		ctx.ResponseWriter.WriteHeader(http.StatusServiceUnavailable)
 		_, _ = ctx.ResponseWriter.Write([]byte(`{"error":"server at capacity"}`))
 		return
@@ -162,7 +162,7 @@ func (c *ApiController) DevBridge() {
 	counter := counterVal.(*int64)
 	if atomic.AddInt64(counter, 1) > maxBridgeConnsPerUser {
 		atomic.AddInt64(counter, -1)
-		logs.Warn(fmt.Sprintf("DevBridge: connection limit exceeded for %s", userKey))
+		log.Warn(fmt.Sprintf("DevBridge: connection limit exceeded for %s", userKey))
 		ctx.ResponseWriter.WriteHeader(http.StatusTooManyRequests)
 		_, _ = ctx.ResponseWriter.Write([]byte(`{"error":"too many concurrent connections"}`))
 		return
@@ -171,7 +171,7 @@ func (c *ApiController) DevBridge() {
 
 	ws, err := devBridgeUpgrader.Upgrade(ctx.ResponseWriter, ctx.Request, nil)
 	if err != nil {
-		logs.Error(fmt.Sprintf("DevBridge: websocket upgrade failed: %s", err.Error()))
+		log.Error(fmt.Sprintf("DevBridge: websocket upgrade failed: %s", err.Error()))
 		return
 	}
 	defer ws.Close()
@@ -186,20 +186,20 @@ func (c *ApiController) DevBridge() {
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
-		logs.Error(fmt.Sprintf("DevBridge: stdin pipe: %s", err.Error()))
+		log.Error(fmt.Sprintf("DevBridge: stdin pipe: %s", err.Error()))
 		writeWSError(ws, "failed to create stdin pipe")
 		return
 	}
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		logs.Error(fmt.Sprintf("DevBridge: stdout pipe: %s", err.Error()))
+		log.Error(fmt.Sprintf("DevBridge: stdout pipe: %s", err.Error()))
 		writeWSError(ws, "failed to create stdout pipe")
 		return
 	}
 
 	if err := cmd.Start(); err != nil {
-		logs.Error(fmt.Sprintf("DevBridge: start app-server: %s", err.Error()))
+		log.Error(fmt.Sprintf("DevBridge: start app-server: %s", err.Error()))
 		writeWSError(ws, "failed to start hanzo-app-server")
 		return
 	}
@@ -230,11 +230,11 @@ func (c *ApiController) DevBridge() {
 			}
 			_, message, err := ws.ReadMessage()
 			if err != nil {
-				logs.Info(fmt.Sprintf("DevBridge: ws read closed: %s", err.Error()))
+				log.Info(fmt.Sprintf("DevBridge: ws read closed: %s", err.Error()))
 				return
 			}
 			if _, err := stdin.Write(append(message, '\n')); err != nil {
-				logs.Error(fmt.Sprintf("DevBridge: stdin write: %s", err.Error()))
+				log.Error(fmt.Sprintf("DevBridge: stdin write: %s", err.Error()))
 				return
 			}
 		}
@@ -257,12 +257,12 @@ func (c *ApiController) DevBridge() {
 			err := ws.WriteMessage(websocket.TextMessage, scanner.Bytes())
 			wsMu.Unlock()
 			if err != nil {
-				logs.Error(fmt.Sprintf("DevBridge: ws write: %s", err.Error()))
+				log.Error(fmt.Sprintf("DevBridge: ws write: %s", err.Error()))
 				return
 			}
 		}
 		if err := scanner.Err(); err != nil {
-			logs.Error(fmt.Sprintf("DevBridge: stdout scan: %s", err.Error()))
+			log.Error(fmt.Sprintf("DevBridge: stdout scan: %s", err.Error()))
 		}
 	}()
 
@@ -275,7 +275,7 @@ func (c *ApiController) DevBridge() {
 	select {
 	case <-waitCh:
 	case <-time.After(30 * time.Second):
-		logs.Warn("DevBridge: goroutine wait timed out after 30s, forcing cleanup")
+		log.Warn("DevBridge: goroutine wait timed out after 30s, forcing cleanup")
 		closeDone()
 		_ = ws.Close()
 	}

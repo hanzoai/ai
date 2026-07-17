@@ -25,8 +25,8 @@ import (
 	"time"
 
 	"github.com/hanzoai/ai/conf"
+	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/object"
-	"github.com/hanzoai/beego/logs"
 	iam "github.com/hanzoai/iam"
 )
 
@@ -71,7 +71,7 @@ func (c *ApiController) resolveSearchAuth() *searchAuth {
 	if isIAMApiKey(token) {
 		iamUser, err := getUserByAccessKey(token)
 		if err != nil {
-			logs.Warning("search auth: hk-* key validation failed: %s", err.Error())
+			log.Warning("search auth: hk-* key validation failed: %s", err.Error())
 			c.ResponseUnauthorized("API key validation failed")
 			return nil
 		}
@@ -90,7 +90,7 @@ func (c *ApiController) resolveSearchAuth() *searchAuth {
 	if isPublishableKey(token) {
 		iamUser, err := getUserByAccessKey(token)
 		if err != nil {
-			logs.Warning("search auth: pk-* key validation failed: %s", err.Error())
+			log.Warning("search auth: pk-* key validation failed: %s", err.Error())
 			c.ResponseUnauthorized("publishable key validation failed")
 			return nil
 		}
@@ -174,7 +174,7 @@ func (c *ApiController) requireIndexAuth() *searchAuth {
 		if isIAMApiKey(token) {
 			iamUser, err := getUserByAccessKey(token)
 			if err != nil {
-				logs.Warning("index auth: hk-* key validation failed: %s", err.Error())
+				log.Warning("index auth: hk-* key validation failed: %s", err.Error())
 				c.ResponseUnauthorized("API key validation failed")
 				return nil
 			}
@@ -276,7 +276,7 @@ func purgeCFCacheTag(tag string) {
 
 	req, err := http.NewRequest(http.MethodPost, purgeURL, bytes.NewBufferString(body))
 	if err != nil {
-		logs.Warning("cf cache purge: failed to build request: %v", err)
+		log.Warning("cf cache purge: failed to build request: %v", err)
 		return
 	}
 	req.Header.Set("Authorization", "Bearer "+apiToken)
@@ -285,14 +285,14 @@ func purgeCFCacheTag(tag string) {
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		logs.Warning("cf cache purge: request failed: %v", err)
+		log.Warning("cf cache purge: request failed: %v", err)
 		return
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
-		logs.Warning("cf cache purge: returned %d: %s", resp.StatusCode, string(respBody))
+		log.Warning("cf cache purge: returned %d: %s", resp.StatusCode, string(respBody))
 	}
 }
 

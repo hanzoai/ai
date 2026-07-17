@@ -23,7 +23,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/hanzoai/beego/logs"
+	"github.com/hanzoai/ai/log"
 )
 
 func getPidByPort(port int) (int, error) {
@@ -93,7 +93,7 @@ func StopOldInstance(port int) error {
 	if err != nil {
 		return err
 	} else {
-		logs.Warn("The old instance with pid: %d has been stopped", pid)
+		log.Warn("The old instance with pid: %d has been stopped", pid)
 	}
 
 	return nil

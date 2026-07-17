@@ -18,9 +18,9 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/hanzoai/ai/log"
 	scanpkg "github.com/hanzoai/ai/scan"
 	"github.com/hanzoai/ai/util"
-	"github.com/hanzoai/beego/logs"
 	"github.com/robfig/cron/v3"
 )
 
@@ -42,19 +42,19 @@ func processPendingScans() {
 	// Get all pending scans
 	scans, err := GetPendingScans()
 	if err != nil {
-		logs.Error("processPendingScans() error getting pending scans: %v", err)
+		log.Error("processPendingScans() error getting pending scans: %v", err)
 		return
 	}
 	hostname, err := os.Hostname()
 	if err != nil {
-		logs.Error("processPendingScans() error getting hostname: %v", err)
+		log.Error("processPendingScans() error getting hostname: %v", err)
 		return
 	}
 	for _, scan := range scans {
 		// Try to claim this scan job
 		claimed, err := claimScanJob(scan, hostname)
 		if err != nil {
-			logs.Error("processPendingScans() error claiming scan job %s: %v", scan.GetId(), err)
+			log.Error("processPendingScans() error claiming scan job %s: %v", scan.GetId(), err)
 			continue
 		}
 		if !claimed {
@@ -152,7 +152,7 @@ func claimScanJob(scan *Scan, hostname string) (bool, error) {
 		return false, err
 	}
 	if affected == 0 {
-		logs.Warn("processPendingScans() skipping scan job %s, another instance claimed this job", scan.GetId())
+		log.Warn("processPendingScans() skipping scan job %s, another instance claimed this job", scan.GetId())
 	}
 	return affected > 0, nil
 }
@@ -161,7 +161,7 @@ func claimScanJob(scan *Scan, hostname string) (bool, error) {
 func executeScanJob(scan *Scan, hostname string) {
 	defer func() {
 		if r := recover(); r != nil {
-			logs.Error("executeScanJob() recovered from panic in scan job %s: %v", scan.GetId(), r)
+			log.Error("executeScanJob() recovered from panic in scan job %s: %v", scan.GetId(), r)
 			// Update scan state to failed
 			scan.State = "Failed"
 			errorMsg := fmt.Sprintf("Error: %v", r)
@@ -171,7 +171,7 @@ func executeScanJob(scan *Scan, hostname string) {
 			scan.Runner = hostname
 			_, err := UpdateScan(scan.GetId(), scan)
 			if err != nil {
-				logs.Error("executeScanJob() error updating scan after panic %s: %v", scan.GetId(), err)
+				log.Error("executeScanJob() error updating scan after panic %s: %v", scan.GetId(), err)
 			}
 		}
 	}()
@@ -195,6 +195,6 @@ func executeScanJob(scan *Scan, hostname string) {
 	}
 	_, err = UpdateScan(scan.GetId(), scan)
 	if err != nil {
-		logs.Error("executeScanJob() error updating scan %s: %v", scan.GetId(), err)
+		log.Error("executeScanJob() error updating scan %s: %v", scan.GetId(), err)
 	}
 }

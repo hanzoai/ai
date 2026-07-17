@@ -18,7 +18,7 @@ import (
 	"math"
 	"sort"
 
-	"github.com/hanzoai/beego/logs"
+	"github.com/hanzoai/ai/log"
 )
 
 func dot(vec1, vec2 []float32) float32 {
@@ -59,7 +59,7 @@ func getNearestVectors(target []float32, vectors [][]float32, n int) ([]Similari
 	similarities := []SimilarityIndex{}
 	for i, vector := range vectors {
 		if len(target) != len(vector) {
-			logs.Warn("The target vector's length: [%d] should equal to knowledge vector's length: [%d]", len(target), len(vector))
+			log.Warn("The target vector's length: [%d] should equal to knowledge vector's length: [%d]", len(target), len(vector))
 			continue
 		}
 		similarity := cosineSimilarity(target, vector, targetNorm)

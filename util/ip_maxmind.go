@@ -20,7 +20,7 @@ import (
 	"path/filepath"
 
 	"github.com/hanzoai/ai/conf"
-	"github.com/hanzoai/beego/logs"
+	"github.com/hanzoai/ai/log"
 	"github.com/oschwald/geoip2-golang"
 )
 
@@ -42,7 +42,7 @@ func InitMaxmindDb() error {
 	if cityErr != nil {
 		maxmindCityDB, cityErr = geoip2.Open(filepath.Join(frontendBaseDir, "..", "data", "GeoLite2-City.mmdb"))
 		if cityErr != nil {
-			logs.Warn("InitMaxmindDb() open \"GeoLite2-City.mmdb\" warning: %v", cityErr)
+			log.Warn("InitMaxmindDb() open \"GeoLite2-City.mmdb\" warning: %v", cityErr)
 		}
 	}
 
@@ -51,7 +51,7 @@ func InitMaxmindDb() error {
 	if asnErr != nil {
 		maxmindASNDB, asnErr = geoip2.Open(filepath.Join(frontendBaseDir, "..", "data", "GeoLite2-ASN.mmdb"))
 		if asnErr != nil {
-			logs.Warn("InitMaxmindDb() open \"GeoLite2-ASN.mmdb\" warning: %v", asnErr)
+			log.Warn("InitMaxmindDb() open \"GeoLite2-ASN.mmdb\" warning: %v", asnErr)
 		}
 	}
 
