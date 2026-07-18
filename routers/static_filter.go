@@ -29,7 +29,7 @@ import (
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/util"
-	"github.com/hanzoai/beego/context"
+	"github.com/hanzoai/ai/web"
 )
 
 var frontendBaseDir = conf.GetConfigString("frontendBaseDir")
@@ -48,7 +48,7 @@ func getWebBuildFolder() string {
 	return path
 }
 
-func StaticFilter(ctx *context.Context) {
+func StaticFilter(ctx *web.Context) {
 	urlPath := ctx.Request.URL.Path
 	if strings.HasPrefix(urlPath, "/v1/") || strings.HasPrefix(urlPath, "/v1/") {
 		return

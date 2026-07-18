@@ -18,13 +18,13 @@ package routers
 import (
 	"strings"
 
-	"github.com/hanzoai/beego/context"
+	"github.com/hanzoai/ai/web"
 )
 
 // CacheControlFilter adds Cache-Control headers to prevent caching of sensitive API endpoints
 // This ensures that sensitive data (like passwords, user chats, messages) are not cached
 // by intermediary proxies, SSL terminators, or browsers
-func CacheControlFilter(ctx *context.Context) {
+func CacheControlFilter(ctx *web.Context) {
 	path := ctx.Request.URL.Path
 
 	// List of sensitive endpoints that should not be cached

@@ -28,7 +28,7 @@ import (
 
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/log"
-	"github.com/hanzoai/beego/context"
+	"github.com/hanzoai/ai/web"
 	"golang.org/x/time/rate"
 )
 
@@ -224,7 +224,7 @@ func InitRateLimiter(tierFunc func(string) Tier) *RateLimiter {
 // Rate-limited paths: /v1/messages, /v1/messages,
 // and other /v1/ endpoints that carry a bearer token.
 // Excluded: health, metrics, models (read-only), static, UI routes.
-func RateLimitFilter(ctx *context.Context) {
+func RateLimitFilter(ctx *web.Context) {
 	if rateLimiterInstance == nil {
 		return
 	}
@@ -302,7 +302,7 @@ func isRateLimitExempt(path string) bool {
 //   - Authorization: Bearer <token>
 //   - X-API-Key: <token>
 //   - api_key query parameter
-func extractAPIKey(ctx *context.Context) string {
+func extractAPIKey(ctx *web.Context) string {
 	// Bearer token
 	authHeader := ctx.Request.Header.Get("Authorization")
 	if strings.HasPrefix(authHeader, "Bearer ") {

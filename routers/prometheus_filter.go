@@ -22,7 +22,7 @@ import (
 
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
-	"github.com/hanzoai/beego/context"
+	"github.com/hanzoai/ai/web"
 )
 
 func recordSystemInfo(systemInfo *util.SystemInfo) {
@@ -33,7 +33,7 @@ func recordSystemInfo(systemInfo *util.SystemInfo) {
 	object.MemoryUsage.WithLabelValues("memoryTotal").Set(float64(systemInfo.MemoryTotal))
 }
 
-func PrometheusFilter(ctx *context.Context) {
+func PrometheusFilter(ctx *web.Context) {
 	method := ctx.Input.Method()
 	path := ctx.Input.URL()
 	if strings.HasPrefix(path, "/v1/metrics") {

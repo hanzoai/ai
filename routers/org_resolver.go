@@ -19,7 +19,7 @@ import (
 
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/util"
-	"github.com/hanzoai/beego/context"
+	"github.com/hanzoai/ai/web"
 )
 
 // GetOrg resolves the organization for data-scoping in filters from the
@@ -34,7 +34,7 @@ import (
 //
 // Behind the gateway the injected X-Org-Id equals the JWT owner, so this
 // resolves identically — the gateway path is unaffected.
-func GetOrg(ctx *context.Context) string {
+func GetOrg(ctx *web.Context) string {
 	requested := strings.TrimSpace(ctx.Input.Header("X-Org-Id"))
 
 	user := sessionOrBearerUser(ctx)
