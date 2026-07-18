@@ -22,7 +22,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/hanzoai/beego"
+	"github.com/hanzoai/ai/conf"
 )
 
 var isLocalIpDb bool
@@ -39,7 +39,7 @@ func tryInitLocalDb() error {
 
 // InitIpDb initializes the IP database based on configuration
 func InitIpDb() {
-	isLocalIpDb = beego.AppConfig.DefaultBool("isLocalIpDb", false)
+	isLocalIpDb = conf.AppConfig.DefaultBool("isLocalIpDb", false)
 	if isLocalIpDb {
 		// Use local IP database
 		err := tryInitLocalDb()
