@@ -299,6 +299,7 @@ require (
 	github.com/kevinburke/ssh_config v1.2.0 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/lithammer/shortuuid v3.0.0+incompatible // indirect
+	github.com/luxfi/vm v1.3.2 // indirect
 	github.com/magefile/mage v1.17.1 // indirect
 	github.com/mattn/go-isatty v0.0.22 // indirect
 	github.com/mitchellh/mapstructure v1.5.1-0.20231216201459-8508981c8b6c // indirect
