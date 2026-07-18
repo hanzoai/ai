@@ -80,9 +80,9 @@ cd web && yarn lint
 ## Key Conventions
 
 ### Backend (Go)
-- Framework: Beego MVC - controllers handle HTTP, objects contain business logic
+- Framework: native web router (`github.com/hanzoai/ai/web`, served as `routers.App`) — controllers handle HTTP, objects contain business logic; upstream beego is dropped (no direct import — routing, config, logging, pagination are all native)
 - New AI providers go in `model/` (implement the provider interface)
-- Database access via Beego ORM in `object/`
+- Database access via the native store in `object/`
 - Route registration in `routers/router.go`
 - i18n strings: avoid duplicate keys across frontend and backend
 
@@ -109,7 +109,7 @@ cd web && yarn lint
 
 ## Configuration
 
-- Backend config: `conf/app.conf` (Beego format)
+- Backend config: `conf/app.conf` read by the native `conf.AppConfig` ini reader (env-first; absent in the embedded runtime, which runs env-only)
 - Database: MySQL 8.0+ or MariaDB
 - Default Docker DB: PostgreSQL via `compose.yml`
 
