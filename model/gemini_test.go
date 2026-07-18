@@ -22,13 +22,13 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/proxy"
-	"github.com/hanzoai/beego"
 	"google.golang.org/genai"
 )
 
 func TestListGeminiModels(t *testing.T) {
-	err := beego.LoadAppConfig("ini", "../conf/app.conf")
+	err := conf.LoadAppConfig("ini", "../conf/app.conf")
 	if err != nil {
 		panic(err)
 	}

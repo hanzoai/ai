@@ -21,8 +21,6 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-
-	"github.com/hanzoai/beego"
 )
 
 type WebConfig struct {
@@ -59,7 +57,7 @@ type WebConfig struct {
 }
 
 func ReadGlobalConfigTokens() []string {
-	dbName := beego.AppConfig.String("dbName")
+	dbName := AppConfig.String("dbName")
 	if strings.Count(dbName, "_") < 2 {
 		return nil
 	}
@@ -96,7 +94,7 @@ func GetConfigString(key string) string {
 		}
 	}
 
-	res := beego.AppConfig.String(key)
+	res := AppConfig.String(key)
 	if res == "" {
 		if key == "staticBaseUrl" {
 			res = "https://cdn.hanzo.ai"
@@ -188,7 +186,7 @@ func DisablePreviewMode() bool {
 	if v, ok := os.LookupEnv("DISABLE_PREVIEW_MODE"); ok {
 		return strings.EqualFold(strings.TrimSpace(v), "true")
 	}
-	b, _ := beego.AppConfig.Bool("disablePreviewMode")
+	b, _ := AppConfig.Bool("disablePreviewMode")
 	return b
 }
 
