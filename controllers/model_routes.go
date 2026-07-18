@@ -342,10 +342,11 @@ func resolveModelRouteForOrg(model string, orgId string) *modelRoute {
 // owned_by, premium) and MUST stay stable and always-present — external
 // consumers (Claude Code, Codex, OpenAI SDKs) parse them by exact name. The
 // remaining fields are ADDITIVE Hanzo enrichments sourced only from data ai
-// already holds (the route table + pricing tables); each is omitempty, so a
-// standard OpenAI client ignores them and any datum ai lacks is simply absent —
-// never fabricated. (ai has no context-window / tier / category data, so those
-// fields are deliberately not present.)
+// already holds (the route table + pricing tables + family discovery); each is
+// omitempty, so a standard OpenAI client ignores them and any datum ai lacks is
+// simply absent — never fabricated. The context window is present for the family
+// SKUs (Zen, Enso), whose served window ai discovers and pins; models with no
+// window datum omit it.
 type modelInfo struct {
 	ID      string `json:"id"`
 	Object  string `json:"object"`
@@ -355,7 +356,7 @@ type modelInfo struct {
 
 	// Additive enrichment (omitempty — present only when ai has the datum).
 	Provider      string            `json:"provider,omitempty"`       // serving provider, surfaced for unbranded passthroughs; omitted for branded models (owned_by already carries the public owner — see hip-00NN)
-	ContextWindow int               `json:"context_window,omitempty"` // max input+output tokens the model accepts; surfaced so clients (Codex, Claude Code) size context honestly (enso = 1,000,000)
+	ContextWindow int               `json:"context_window,omitempty"` // max tokens the SKU is served at; surfaced from family discovery and pinned for the flagship SKUs (enso/zen5 = 1,000,000) so clients (Codex, Claude Code) size context honestly
 	Pricing       *modelPricingInfo `json:"pricing,omitempty"`        // USD per 1M tokens; only when ai holds real pricing
 	Access        *modelAccessInfo  `json:"access,omitempty"`         // present only for a gated (limited-preview) SKU; carries the caller's standing (waitlist|requested|granted)
 }
