@@ -47,9 +47,23 @@ type UsageEvent struct {
 	RequestID string // idempotency key
 }
 
+// TierReaderFunc returns the subject's commerce subscription-plan NAME
+// (free | starter | pro | enterprise) within the org namespace — the co-resident
+// twin of the family per-tier gate's HTTP lookup. subject is the billing subject
+// ("owner/name" or the org slug); namespace is the org (X-Org-Id). A HOST binary
+// (hanzoai/cloud) installs it so the tier is read through the in-process commerce
+// transport with the service token commerce accepts — NOT an authed self-call to
+// the cloud edge, which the edge would 401/403 (the toothless-gate bug: the gate
+// then saw "" and failed open). nil (the default, e.g. standalone ai) → the tier
+// lookup falls back to the module's HTTP path, unchanged. A "" name with a nil error
+// means the tier is UNKNOWN, which the gate treats as ALLOW (fail-safe), so a
+// commerce blip never locks a paying caller out of a SKU they already had.
+type TierReaderFunc func(ctx context.Context, subject, namespace string) (name string, err error)
+
 var (
 	balanceReader BalanceReaderFunc
 	usageRecorder UsageRecorderFunc
+	tierReader    TierReaderFunc
 )
 
 // SetBalanceReader installs the host's native balance reader (nil clears it).
@@ -58,8 +72,14 @@ func SetBalanceReader(f BalanceReaderFunc) { balanceReader = f }
 // SetUsageRecorder installs the host's native usage recorder (nil clears it).
 func SetUsageRecorder(f UsageRecorderFunc) { usageRecorder = f }
 
+// SetTierReader installs the host's native subscription-tier reader (nil clears it).
+func SetTierReader(f TierReaderFunc) { tierReader = f }
+
 // BalanceReader returns the installed native reader, or nil when unset (standalone).
 func BalanceReader() BalanceReaderFunc { return balanceReader }
 
 // UsageRecorder returns the installed native recorder, or nil when unset.
 func UsageRecorder() UsageRecorderFunc { return usageRecorder }
+
+// TierReader returns the installed native tier reader, or nil when unset (standalone).
+func TierReader() TierReaderFunc { return tierReader }
