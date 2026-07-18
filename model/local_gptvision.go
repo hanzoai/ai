@@ -101,20 +101,6 @@ func IsVisionModel(subType string) bool {
 	return upstreamVision[subType]
 }
 
-// hasImageContent reports whether any message in the request carries image content.
-// OpenAI format: MultiContent with ChatMessagePartTypeImageURL parts.
-// Anthropic format: messages with "image" content blocks.
-func HasImageContent(req *openai.ChatCompletionRequest) bool {
-	for _, m := range req.Messages {
-		for _, part := range m.MultiContent {
-			if part.Type == openai.ChatMessagePartTypeImageURL {
-				return true
-			}
-		}
-	}
-	return false
-}
-
 // VisionModelForImages is the model to rewrite to when a request carries images
 // and the current model cannot handle them. zen5-omni (kimi-k2.6, 1T multimodal)
 // is the primary; zen3-omni (qwen3.5-397b-a17b) is the cheaper fallback.
