@@ -38,9 +38,9 @@ import (
 // runtime boot sequence: DB + adapter + tables, model/pricing config, the
 // HTTP client, GeoIP/parser, the background maintenance tasks, the
 // Commerce-backed balance gate + tier cache + per-key rate limiter, the
-// full beego BeforeRouter/AfterExec filter chain, the session config, and
+// full BeforeRouter/AfterExec filter chain, the session config, and
 // the billing usage queue. After wiring those it publishes the
-// fully-configured beego ControllerRegister via SetHandler so the unified
+// fully-configured native router via SetHandler so the unified
 // binary's /v1/ai/* adapter stops returning 503 "ai runtime not
 // initialized".
 //
@@ -50,11 +50,11 @@ import (
 //
 //   - It binds NO listeners. The native ZAP inference node (port 9999),
 //     the inter-service ZAP transport (CLOUD_ZAP_PORT, default 9320) and
-//     beego.Run(:httpport) stay in cmd/aid. The unified binary serves the
-//     beego handler through zip on its own :8080 and runs its own ZAP at
-//     :9653; starting the legacy nodes here would collide.
-//   - It calls NO util.StopOldInstance — that races on the legacy beego
-//     port and is meaningless when beego never listens.
+//     the standalone HTTP listener (:httpport) stay in cmd/aid. The unified
+//     binary serves routers.App through zip on its own :8080 and runs its own
+//     ZAP at :9653; starting the legacy nodes here would collide.
+//   - It calls NO util.StopOldInstance — that races on the legacy standalone
+//     port and is meaningless when the embedded binary never listens there.
 //   - It installs NO signal handler and never calls os.Exit. cloud.Serve
 //     owns graceful shutdown for the unified binary; cmd/aid keeps its own
 //     drain goroutine, wired to the handles returned here.
@@ -178,15 +178,6 @@ func doBootstrap() (err error) {
 	bootRateLimiter = routers.InitRateLimiter(routers.DefaultTierFunc)
 	log.Info("Per-key rate limiter initialized (tiers: free=10/min, starter=60/min, pro=300/min, enterprise=1000/min)")
 
-	// Copy the request body into c.Ctx.Input.RequestBody. The OpenAI-compatible
-	// controllers read the raw body via c.Ctx.Input.RequestBody (e.g.
-	// json.Unmarshal in ChatCompletions); beego only populates it when
-	// CopyRequestBody is true. The standalone gets this from conf/app.conf
-	// (copyrequestbody = true), but the embedded unified binary has no app.conf,
-	// so set it here — otherwise every POST /v1/chat/completions (and the other
-	// body-reading routes) fails with "Failed to parse request: unexpected end
-	// of JSON input". MaxMemory bounds the copied body (64 MB, matching the
-	// standalone default) so large uploads still stream rather than buffer.
 	// Filter chain on the ai router, in the same order as the standalone
 	// surface so the handler enforces the same rewrite/auth/tenant/balance
 	// pipeline. The router caches the request body itself (no CopyRequestBody
