@@ -198,14 +198,6 @@ func IsPreviewMode() bool {
 	return !DisablePreviewMode()
 }
 
-func GetConfigBatchSize() int {
-	res, err := strconv.Atoi(GetConfigString("batchSize"))
-	if err != nil {
-		res = 100
-	}
-	return res
-}
-
 func GetStringArray(key string) []string {
 	strValue := GetConfigString(key)
 	if strValue == "" {
