@@ -63,7 +63,7 @@ func TestComputeRouterStats_Distributions(t *testing.T) {
 		ev(30, "chat", "mini", "engine", 0.8, f(0)),
 		ev(40, "chat", "mid", "engine", 0.7, nil),
 	}
-	s := computeRouterStats(events, fixedPrices, start, now, scopeOrg, "acme", true)
+	s := computeRouterStats(events, fixedPrices, start, now, scopeOrg, "acme", true, false)
 
 	if s.Window.Events != 4 {
 		t.Fatalf("events = %d, want 4", s.Window.Events)
@@ -98,7 +98,7 @@ func TestComputeRouterStats_CostSaved(t *testing.T) {
 		ev(3, "reasoning", "opus", "heuristic", 0, nil),
 		ev(4, "chat", "local", "engine", 0.9, nil), // unpriced → excluded
 	}
-	s := computeRouterStats(events, fixedPrices, start, now, scopeOrg, "acme", true)
+	s := computeRouterStats(events, fixedPrices, start, now, scopeOrg, "acme", true, false)
 	if s.Cost == nil {
 		t.Fatal("cost should be present")
 	}
@@ -132,7 +132,7 @@ func TestComputeRouterStats_PublicScopeRedaction(t *testing.T) {
 		ev(1, "chat", "mini", "engine", 0.9, nil),
 		ev(2, "reasoning", "opus", "heuristic", 0, nil),
 	}
-	s := computeRouterStats(events, fixedPrices, start, now, scopePlatform, "acme", false)
+	s := computeRouterStats(events, fixedPrices, start, now, scopePlatform, "acme", false, false)
 
 	if s.Org != "" {
 		t.Fatalf("platform scope must not leak org, got %q", s.Org)
@@ -180,6 +180,46 @@ func TestComputeRouterStats_PublicScopeRedaction(t *testing.T) {
 	}
 }
 
+// A same-brand super admin viewing the platform scope sees the REAL model ids
+// (superAdminPlatform=true lifts the arm-N relabel); the SAME stats input stays
+// masked for every other caller (superAdminPlatform=false). This is the admin-panel
+// unmask world.hanzo.ai renders for z@hanzo.ai — real names, not "Enso arm 2".
+func TestComputeRouterStats_SuperAdminPlatformUnmasksRealNames(t *testing.T) {
+	now := time.Now().UTC()
+	start := now.Add(-24 * time.Hour)
+	events := []*object.RoutingEvent{
+		ev(1, "chat", "mini", "engine", 0.9, nil),
+		ev(2, "reasoning", "opus", "heuristic", 0, nil),
+	}
+
+	// superAdminPlatform=true → REAL ids, arm-N relabel lifted.
+	admin := computeRouterStats(events, fixedPrices, start, now, scopePlatform, "", false, true)
+	if admin.ByModel["opus"] != 1 || admin.ByModel["mini"] != 1 {
+		t.Fatalf("super-admin platform view must show REAL ids, got %+v", admin.ByModel)
+	}
+	if admin.ByModel["arm-1"] != 0 || admin.ByModel["arm-2"] != 0 || admin.ByModel["arm-other"] != 0 {
+		t.Fatalf("super-admin platform view must NOT contain arm-N labels, got %+v", admin.ByModel)
+	}
+	if admin.Cost == nil || admin.Cost.BaselineModel != "opus" {
+		t.Fatalf("super-admin baseline must be the REAL id opus, got %+v", admin.Cost)
+	}
+	if admin.ByTask["reasoning"].Models["opus"] != 1 {
+		t.Fatalf("super-admin by_task must show REAL ids, got %+v", admin.ByTask["reasoning"])
+	}
+
+	// superAdminPlatform=false → the SAME input stays MASKED (arm-N); roster protected.
+	masked := computeRouterStats(events, fixedPrices, start, now, scopePlatform, "", false, false)
+	if masked.ByModel["arm-1"] != 1 || masked.ByModel["arm-2"] != 1 {
+		t.Fatalf("non-admin platform view must stay masked to arm-N, got %+v", masked.ByModel)
+	}
+	if masked.ByModel["opus"] != 0 || masked.ByModel["mini"] != 0 {
+		t.Fatalf("non-admin platform view leaked a real id: %+v", masked.ByModel)
+	}
+	if masked.Cost == nil || masked.Cost.BaselineModel != "arm-1" {
+		t.Fatalf("non-admin baseline must stay masked to arm-1, got %+v", masked.Cost)
+	}
+}
+
 func TestArmLabelsFor_StableByPriceDesc(t *testing.T) {
 	labels := armLabelsFor(map[string]float64{"opus": 30, "mid": 10, "mini": 2, "local": 0})
 	if labels["opus"] != "arm-1" || labels["mid"] != "arm-2" || labels["mini"] != "arm-3" {
@@ -200,7 +240,7 @@ func TestComputeRouterStats_Throughput(t *testing.T) {
 		ev(20, "chat", "mini", "engine", 0.9, nil),
 		ev(12*60, "chat", "mid", "engine", 0.9, nil),
 	}
-	s := computeRouterStats(events, fixedPrices, start, now, scopeOrg, "acme", true)
+	s := computeRouterStats(events, fixedPrices, start, now, scopeOrg, "acme", true, false)
 	if len(s.Throughput.PerHour) != routerStatsBuckets {
 		t.Fatalf("per_hour len = %d, want %d", len(s.Throughput.PerHour), routerStatsBuckets)
 	}
@@ -223,7 +263,7 @@ func TestComputeRouterStats_Throughput(t *testing.T) {
 func TestComputeRouterStats_Empty(t *testing.T) {
 	now := time.Now().UTC()
 	start := now.Add(-24 * time.Hour)
-	s := computeRouterStats(nil, fixedPrices, start, now, scopeOrg, "acme", true)
+	s := computeRouterStats(nil, fixedPrices, start, now, scopeOrg, "acme", true, false)
 	if s.Cost != nil {
 		t.Fatalf("no priced events → cost nil, got %+v", s.Cost)
 	}
