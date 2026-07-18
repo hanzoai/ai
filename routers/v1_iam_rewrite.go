@@ -17,7 +17,7 @@ package routers
 import (
 	"strings"
 
-	"github.com/hanzoai/beego/context"
+	"github.com/hanzoai/ai/web"
 )
 
 // iamAccountRoutes is the auth/account surface: the endpoints that establish or
@@ -46,7 +46,7 @@ var iamAccountRoutes = map[string]struct{}{
 // Mirrors V1CloudRewriteFilter; registered FIRST in the BeforeRouter chain so
 // AutoSigninFilter, BalanceGateFilter and AuthzFilter all see the canonical
 // path.
-func V1IamRewriteFilter(ctx *context.Context) {
+func V1IamRewriteFilter(ctx *web.Context) {
 	const prefix = "/v1/iam/"
 	path := ctx.Request.URL.Path
 	if !strings.HasPrefix(path, prefix) {

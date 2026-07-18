@@ -23,12 +23,12 @@ import (
 
 	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/object"
-	"github.com/hanzoai/beego"
+	"github.com/hanzoai/ai/web"
 	iam "github.com/hanzoai/iam"
 )
 
 type ApiController struct {
-	beego.Controller
+	web.Controller
 }
 
 func init() {

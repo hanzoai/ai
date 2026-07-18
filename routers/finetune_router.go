@@ -14,8 +14,6 @@
 package routers
 
 import (
-	"github.com/hanzoai/beego"
-
 	"github.com/hanzoai/ai/controllers"
 )
 
@@ -27,16 +25,16 @@ import (
 // route in router.go.
 func init() {
 	// Job lifecycle.
-	beego.Router("/v1/finetune/jobs", &controllers.ApiController{}, "GET:ListFinetuneJobs;POST:CreateFinetuneJob")
-	beego.Router("/v1/finetune/job", &controllers.ApiController{}, "GET:GetFinetuneJob")
-	beego.Router("/v1/finetune/cancel", &controllers.ApiController{}, "POST:CancelFinetuneJob")
-	beego.Router("/v1/finetune/deploy", &controllers.ApiController{}, "POST:DeployFinetuneJob")
+	App.Router("/v1/finetune/jobs", &controllers.ApiController{}, "GET:ListFinetuneJobs;POST:CreateFinetuneJob")
+	App.Router("/v1/finetune/job", &controllers.ApiController{}, "GET:GetFinetuneJob")
+	App.Router("/v1/finetune/cancel", &controllers.ApiController{}, "POST:CancelFinetuneJob")
+	App.Router("/v1/finetune/deploy", &controllers.ApiController{}, "POST:DeployFinetuneJob")
 
 	// Recommended defaults (the "Unsloth-class" presets brain).
-	beego.Router("/v1/finetune/presets", &controllers.ApiController{}, "GET:GetFinetunePresets")
+	App.Router("/v1/finetune/presets", &controllers.ApiController{}, "GET:GetFinetunePresets")
 
 	// HuggingFace discovery (base-model + dataset pickers, private via KMS token).
-	beego.Router("/v1/finetune/hf/models", &controllers.ApiController{}, "GET:SearchHfModels")
-	beego.Router("/v1/finetune/hf/datasets", &controllers.ApiController{}, "GET:SearchHfDatasets")
-	beego.Router("/v1/finetune/hf/repo", &controllers.ApiController{}, "GET:GetHfRepo")
+	App.Router("/v1/finetune/hf/models", &controllers.ApiController{}, "GET:SearchHfModels")
+	App.Router("/v1/finetune/hf/datasets", &controllers.ApiController{}, "GET:SearchHfDatasets")
+	App.Router("/v1/finetune/hf/repo", &controllers.ApiController{}, "GET:GetHfRepo")
 }

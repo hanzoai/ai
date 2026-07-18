@@ -18,7 +18,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	beegoctx "github.com/hanzoai/beego/context"
+	web "github.com/hanzoai/ai/web"
 )
 
 // GetSessionUser is the session-read funnel the BeforeRouter filters (RateLimit,
@@ -34,7 +34,7 @@ func TestGetSessionUserNilStoreNoPanic(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("POST", "/v1/chat/completions", nil)
 	req.Header.Set("Authorization", "Bearer sk-some-probe-token")
-	ctx := beegoctx.NewContext()
+	ctx := web.NewContext()
 	ctx.Reset(rec, req)
 	// Deliberately DO NOT set ctx.Input.CruSession — this is the nil store the
 	// embedded binary can present.
@@ -47,7 +47,7 @@ func TestGetSessionUserNilStoreNoPanic(t *testing.T) {
 func TestGetSessionUserForeignTypeNoPanic(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("POST", "/v1/chat/completions", nil)
-	ctx := beegoctx.NewContext()
+	ctx := web.NewContext()
 	ctx.Reset(rec, req)
 	// A session value that is NOT iam.Claims must not panic the type assertion.
 	sess := &fakeSession{data: map[interface{}]interface{}{"user": "not-a-claims-struct"}}
