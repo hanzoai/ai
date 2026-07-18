@@ -529,21 +529,9 @@ func (c *ApiController) PublishRouterArtifactMeta() {
 	}
 	// Also append to the IMMUTABLE retrain timeline (best-effort). The upsert above is
 	// the source of truth for "latest per scope"; this append is the history the
-	// world.hanzo.ai Model-Improvement panel plots (each fit's holdout metric + gate
-	// verdict + version marker). A log failure must never fail the publish.
-	_ = object.AppendRouterTrainingLog(&object.RouterTrainingLog{
-		Owner:       meta.Owner,
-		Version:     meta.Version,
-		TrainedTime: meta.TrainedTime,
-		Events:      meta.Events,
-		GatePassed:  meta.GatePassed,
-		Published:   meta.Published,
-		GateKind:    meta.GateKind,
-		GateMetric:  meta.GateMetric,
-		GateValue:   meta.GateValue,
-		GateBase:    meta.GateBase,
-		Note:        meta.Note,
-	})
+	// world.hanzo.ai Model-Improvement panel plots. Same shared projection the in-process
+	// trainer uses, so the two paths can't drift. A log failure must never fail the publish.
+	_ = object.AppendRouterTrainingLog(object.NewRouterTrainingLog(&meta))
 	c.ResponseOk(meta)
 }
 
