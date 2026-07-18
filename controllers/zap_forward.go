@@ -34,8 +34,8 @@ import (
 )
 
 // InitForwardBridge registers the canonical HTTP-over-ZAP terminal on the
-// inference node, dispatching every Forward to h. Pass beego.BeeApp.Handlers
-// (the fully-wrapped ControllerRegister) so all BeforeRouter filters — the
+// inference node, dispatching every Forward to h. Pass routers.App
+// (the fully-wrapped native router) so all BeforeRouter filters — the
 // balance gate and auth/tenant filters — run on the bridged request before
 // the route dispatches.
 //
