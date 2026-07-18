@@ -16,12 +16,12 @@
 package routers
 
 import (
-	"github.com/hanzoai/beego/context"
+	"github.com/hanzoai/ai/web"
 )
 
 // HstsFilter adds HTTP Strict Transport Security header to HTTPS responses
 // This ensures browsers only access the website using HTTPS
-func HstsFilter(ctx *context.Context) {
+func HstsFilter(ctx *web.Context) {
 	// Only set HSTS header on HTTPS requests
 	// Check both the direct TLS connection and X-Forwarded-Proto header (for reverse proxies)
 	if ctx.Input.Scheme() == "https" || ctx.Request.Header.Get("X-Forwarded-Proto") == "https" {

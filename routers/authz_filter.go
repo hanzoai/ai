@@ -23,11 +23,11 @@ import (
 	"github.com/hanzoai/ai/controllers"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
-	"github.com/hanzoai/beego/context"
+	"github.com/hanzoai/ai/web"
 	iam "github.com/hanzoai/iam"
 )
 
-func AuthzFilter(ctx *context.Context) {
+func AuthzFilter(ctx *web.Context) {
 	method := ctx.Request.Method
 	urlPath := ctx.Request.URL.Path
 
@@ -162,7 +162,7 @@ func requiresPresentCredential(controllerName string) bool {
 // (defense in depth); the controller validates the credential. It deliberately
 // does not parse/verify, so it never rejects a valid credential type
 // (hk-/pk-/sk-/hz_/JWT/session) and never adds an IAM round-trip to the filter.
-func hasPresentCredential(ctx *context.Context) bool {
+func hasPresentCredential(ctx *web.Context) bool {
 	if GetSessionUser(ctx) != nil {
 		return true
 	}
@@ -185,7 +185,7 @@ func hasPresentCredential(ctx *context.Context) bool {
 //
 // AutoSigninFilter no-ops for /v1/ paths, so a console call that authenticates
 // with a Bearer credential (no cookie) would otherwise present no principal here.
-func sessionOrBearerUser(ctx *context.Context) *iam.User {
+func sessionOrBearerUser(ctx *web.Context) *iam.User {
 	if u := GetSessionUser(ctx); u != nil {
 		return u
 	}
@@ -236,7 +236,7 @@ func normalizedControllerName(rawPath string) (name string, ok bool) {
 	return strings.TrimPrefix(cleaned, "/v1/"), true
 }
 
-func permissionFilter(ctx *context.Context) {
+func permissionFilter(ctx *web.Context) {
 	controllerName, ok := normalizedControllerName(ctx.Request.URL.Path)
 	if !ok {
 		return

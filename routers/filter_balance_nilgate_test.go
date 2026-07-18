@@ -9,7 +9,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	beegoctx "github.com/hanzoai/beego/context"
+	web "github.com/hanzoai/ai/web"
 )
 
 // TestResolveBillingKey_NilGateNoPanic locks in the fix for the prod-down bug:
@@ -30,7 +30,7 @@ func TestResolveBillingKey_NilGateNoPanic(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
 	req.Header.Set("Authorization", "Bearer hk-deadbeefcafe")
-	ctx := beegoctx.NewContext()
+	ctx := web.NewContext()
 	ctx.Reset(rec, req)
 
 	// Must not panic; must resolve no subject (fail-open when billing disabled).

@@ -21,7 +21,7 @@ import (
 	"testing"
 
 	"github.com/hanzoai/ai/controllers"
-	_ "github.com/hanzoai/ai/routers" // registers /v1/* routes (incl. /v1/crawl)
+	"github.com/hanzoai/ai/routers" // registers /v1/* routes (incl. /v1/crawl)
 	"github.com/hanzoai/beego"
 	_ "github.com/hanzoai/beego/session" // memory session provider registration
 	"github.com/zap-proto/zip"
@@ -55,7 +55,9 @@ func TestCrawlRouteIsRegisteredAndFailClosed(t *testing.T) {
 		defer beego.AppConfig.Set("disablePreviewMode", prev)
 	}
 
-	SetHandler(beego.BeeApp.Handlers)
+	routers.InstallFilters()
+	routers.App.UseSessions(beegoSessions{})
+	SetHandler(routers.App)
 	defer SetHandler(nil)
 
 	app := zip.New(zip.Config{DisableStartupMessage: true})
@@ -105,7 +107,9 @@ func TestSearchRouteStillRegistered(t *testing.T) {
 		t.Fatalf("initSessionManager: %v", err)
 	}
 
-	SetHandler(beego.BeeApp.Handlers)
+	routers.InstallFilters()
+	routers.App.UseSessions(beegoSessions{})
+	SetHandler(routers.App)
 	defer SetHandler(nil)
 
 	app := zip.New(zip.Config{DisableStartupMessage: true})

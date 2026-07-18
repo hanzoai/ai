@@ -13,7 +13,7 @@ import (
 	"testing"
 
 	"github.com/hanzoai/ai/object"
-	beegoctx "github.com/hanzoai/beego/context"
+	web "github.com/hanzoai/ai/web"
 )
 
 // TestTenantContextFilter_ThreadsAttribution proves the filter stashes the project
@@ -26,7 +26,7 @@ func TestTenantContextFilter_ThreadsAttribution(t *testing.T) {
 	req.Header.Set("X-Session-Id", "conv-42")
 	req.Header.Set("Authorization", "Bearer hk-secret-key")
 
-	ctx := beegoctx.NewContext()
+	ctx := web.NewContext()
 	ctx.Reset(rec, req)
 
 	TenantContextFilter(ctx)
@@ -52,7 +52,7 @@ func TestTenantContextFilter_ThreadsAttribution(t *testing.T) {
 func TestTenantContextFilter_NoAttributionWhenBare(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/v1/models", nil)
-	ctx := beegoctx.NewContext()
+	ctx := web.NewContext()
 	ctx.Reset(rec, req)
 
 	TenantContextFilter(ctx)
