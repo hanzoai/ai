@@ -19,7 +19,7 @@ import (
 	"strings"
 	"testing"
 
-	openai "github.com/sashabaranov/go-openai"
+	openai "github.com/hanzoai/go-openai"
 )
 
 // collectSSE runs the streaming translator over a fixed set of OpenAI SSE lines

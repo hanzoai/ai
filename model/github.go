@@ -17,7 +17,7 @@ package model
 
 import (
 	"github.com/hanzoai/ai/proxy"
-	"github.com/sashabaranov/go-openai"
+	"github.com/hanzoai/go-openai"
 )
 
 type GitHubModelProvider struct {
