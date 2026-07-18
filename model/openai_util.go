@@ -18,8 +18,8 @@ package model
 import (
 	"strings"
 
-	"github.com/pkoukk/tiktoken-go"
 	"github.com/hanzoai/go-openai"
+	"github.com/pkoukk/tiktoken-go"
 )
 
 // https://pkg.go.dev/github.com/hanzoai/go-openai@v1.27.1#pkg-constants
