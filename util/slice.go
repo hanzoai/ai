@@ -15,8 +15,6 @@
 
 package util
 
-import "slices"
-
 func DeleteVal(values []string, val string) []string {
 	newValues := []string{}
 	for _, v := range values {
@@ -25,45 +23,4 @@ func DeleteVal(values []string, val string) []string {
 		}
 	}
 	return newValues
-}
-
-func ReplaceVal(values []string, oldVal string, newVal string) []string {
-	newValues := []string{}
-	for _, v := range values {
-		if v == oldVal {
-			newValues = append(newValues, newVal)
-		} else {
-			newValues = append(newValues, v)
-		}
-	}
-	return newValues
-}
-
-func InSlice(slice []string, elem string) bool {
-	return slices.Contains(slice, elem)
-}
-
-func ReturnAnyNotEmpty(strs ...string) string {
-	for _, str := range strs {
-		if str != "" {
-			return str
-		}
-	}
-	return ""
-}
-
-func HaveIntersection(arr1 []string, arr2 []string) bool {
-	elements := make(map[string]bool)
-
-	for _, str := range arr1 {
-		elements[str] = true
-	}
-
-	for _, str := range arr2 {
-		if elements[str] {
-			return true
-		}
-	}
-
-	return false
 }
