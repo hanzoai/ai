@@ -24,7 +24,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hanzoai/beego"
+	web "github.com/hanzoai/ai/web"
 	zaplib "github.com/luxfi/zap"
 	"github.com/luxfi/zap/forward"
 )
@@ -37,8 +37,8 @@ import (
 // beego routing and controller dispatch over ZAP, without booting ai's full
 // DB/adapter/filter stack (the production handle is the same type).
 func healthHandler() http.Handler {
-	r := beego.NewControllerRegister()
-	r.Add("/v1/health", &ApiController{}, "GET:Health")
+	r := web.NewRouter()
+	r.Router("/v1/health", &ApiController{}, "GET:Health")
 	return r
 }
 

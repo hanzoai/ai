@@ -22,11 +22,11 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/hanzoai/beego/context"
+	"github.com/hanzoai/ai/web"
 )
 
 type RefinedWriter struct {
-	context.Response
+	web.Response
 	writerCleaner Cleaner
 	buf           []byte
 	messageBuf    []byte
@@ -35,7 +35,7 @@ type RefinedWriter struct {
 	searchBuf     []byte
 }
 
-func newRefinedWriter(w context.Response) *RefinedWriter {
+func newRefinedWriter(w web.Response) *RefinedWriter {
 	return &RefinedWriter{w, *NewCleaner(6), []byte{}, []byte{}, []byte{}, []byte{}, []byte{}}
 }
 

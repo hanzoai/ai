@@ -15,7 +15,7 @@
 package routers
 
 import (
-	"github.com/hanzoai/beego/context"
+	"github.com/hanzoai/ai/web"
 
 	"github.com/hanzoai/ai/object"
 )
@@ -32,7 +32,7 @@ import (
 // pass one to. It is a pure side effect: it never writes a response, never blocks,
 // never errors, and returns immediately, so its position in the filter chain cannot
 // affect any request's outcome.
-func TrafficTapFilter(ctx *context.Context) {
+func TrafficTapFilter(ctx *web.Context) {
 	req := ctx.Request
 	if !object.TrafficShouldRecord(req.URL.Path, req.Method) {
 		return

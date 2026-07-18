@@ -24,7 +24,7 @@ import (
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/i18n"
 	"github.com/hanzoai/ai/util"
-	"github.com/hanzoai/beego/context"
+	"github.com/hanzoai/ai/web"
 	iam "github.com/hanzoai/iam"
 )
 
@@ -35,7 +35,7 @@ type Response struct {
 	Data2  interface{} `json:"data2"`
 }
 
-func GetSessionUser(ctx *context.Context) *iam.User {
+func GetSessionUser(ctx *web.Context) *iam.User {
 	// Twin of controllers.GetSessionClaims: a nil session store resolves to "no
 	// session user", never a panic. ctx.Input.Session dereferences CruSession
 	// directly, and CruSession is only populated by beego's SessionStart — which
@@ -60,7 +60,7 @@ func GetSessionUser(ctx *context.Context) *iam.User {
 	return &claims.User
 }
 
-func getUsername(ctx *context.Context) (username string) {
+func getUsername(ctx *web.Context) (username string) {
 	user := GetSessionUser(ctx)
 	if user != nil {
 		username = util.GetIdFromOwnerAndName(user.Owner, user.Name)
@@ -70,7 +70,7 @@ func getUsername(ctx *context.Context) (username string) {
 	return
 }
 
-func responseError(ctx *context.Context, error string, data ...interface{}) {
+func responseError(ctx *web.Context, error string, data ...interface{}) {
 	// ctx.ResponseWriter.WriteHeader(http.StatusForbidden)
 
 	// Get language from Accept-Language header
@@ -105,22 +105,22 @@ func responseError(ctx *context.Context, error string, data ...interface{}) {
 // status. Filters use it so an auth/authz denial is a real 401/403, not Beego's
 // default 200 — a denial must never look like success to a client. The body
 // shape is unchanged; only the status differs.
-func responseErrorStatus(ctx *context.Context, status int, error string, data ...interface{}) {
+func responseErrorStatus(ctx *web.Context, status int, error string, data ...interface{}) {
 	ctx.Output.SetStatus(status)
 	responseError(ctx, error, data...)
 }
 
 // denyUnauthorized renders a 401 (no/invalid credential).
-func denyUnauthorized(ctx *context.Context, error string, data ...interface{}) {
+func denyUnauthorized(ctx *web.Context, error string, data ...interface{}) {
 	responseErrorStatus(ctx, http.StatusUnauthorized, error, data...)
 }
 
 // denyForbidden renders a 403 (authenticated but not permitted).
-func denyForbidden(ctx *context.Context, error string, data ...interface{}) {
+func denyForbidden(ctx *web.Context, error string, data ...interface{}) {
 	responseErrorStatus(ctx, http.StatusForbidden, error, data...)
 }
 
-func setSessionUser(ctx *context.Context, userId string) {
+func setSessionUser(ctx *web.Context, userId string) {
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(userId)
 	if err != nil {
 		panic(err)
@@ -141,7 +141,7 @@ func setSessionUser(ctx *context.Context, userId string) {
 	ctx.Input.CruSession.SessionRelease(ctx.ResponseWriter)
 }
 
-func getUsernameByClientIdSecret(ctx *context.Context) (string, error) {
+func getUsernameByClientIdSecret(ctx *web.Context) (string, error) {
 	clientId, clientSecret, ok := ctx.Request.BasicAuth()
 	if !ok {
 		clientId = ctx.Input.Query("clientId")
@@ -172,7 +172,7 @@ func getUsernameByAccessToken(accessTokenInput string) (string, error) {
 	return util.GetIdFromOwnerAndName("app", applicationName), nil
 }
 
-func parseBearerToken(ctx *context.Context) string {
+func parseBearerToken(ctx *web.Context) string {
 	header := ctx.Request.Header.Get("Authorization")
 	tokens := strings.Split(header, " ")
 	if len(tokens) != 2 {

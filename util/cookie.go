@@ -19,10 +19,10 @@ import (
 	"encoding/json"
 
 	"github.com/hanzoai/ai/conf"
-	"github.com/hanzoai/beego/context"
+	"github.com/hanzoai/ai/web"
 )
 
-func AppendWebConfigCookie(ctx *context.Context) error {
+func AppendWebConfigCookie(ctx *web.Context) error {
 	webConfig := conf.GetWebConfig()
 
 	jsonWebConfig, err := json.Marshal(webConfig)

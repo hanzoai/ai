@@ -47,3 +47,9 @@ func (ctx *Context) Reset(rw http.ResponseWriter, r *http.Request) {
 func (ctx *Context) Redirect(status int, localurl string) {
 	http.Redirect(ctx.ResponseWriter, ctx.Request, localurl, status)
 }
+
+// SetCookie adds a Set-Cookie response header. See Output.Cookie for the
+// positional option contract.
+func (ctx *Context) SetCookie(name, value string, others ...interface{}) {
+	ctx.Output.Cookie(name, value, others...)
+}

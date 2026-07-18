@@ -29,7 +29,7 @@ import (
 	"github.com/hanzoai/ai/model"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
-	"github.com/hanzoai/beego/context"
+	"github.com/hanzoai/ai/web"
 	iam "github.com/hanzoai/iam"
 	"github.com/sashabaranov/go-openai"
 )
@@ -145,7 +145,7 @@ type AnthropicErrorBody struct {
 // AnthropicWriter implements io.Writer, collecting output for non-streaming
 // and emitting SSE events in Anthropic format for streaming.
 type AnthropicWriter struct {
-	context.Response
+	web.Response
 	Cleaner    Cleaner
 	Buffer     []byte
 	MessageBuf []byte

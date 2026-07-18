@@ -18,14 +18,14 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	beecontext "github.com/hanzoai/beego/context"
+	web "github.com/hanzoai/ai/web"
 )
 
 // newRecorderController builds an ApiController wired to an httptest recorder so a
 // handler's HTTP status can be asserted directly.
 func newRecorderController() (*ApiController, *httptest.ResponseRecorder) {
 	rec := httptest.NewRecorder()
-	ctx := beecontext.NewContext()
+	ctx := web.NewContext()
 	ctx.Reset(rec, httptest.NewRequest("GET", "/v1/x", nil))
 	c := &ApiController{}
 	c.Init(ctx, "ApiController", "X", nil)

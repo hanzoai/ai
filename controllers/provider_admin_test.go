@@ -22,7 +22,7 @@ import (
 	"testing"
 
 	"github.com/hanzoai/ai/object"
-	beecontext "github.com/hanzoai/beego/context"
+	web "github.com/hanzoai/ai/web"
 	iam "github.com/hanzoai/iam"
 )
 
@@ -169,7 +169,7 @@ func TestAdminProviderView_NeverSerializesSecrets(t *testing.T) {
 // optionally carrying `user` as the principal.
 func newGuardController(user *iam.User) (*ApiController, *httptest.ResponseRecorder) {
 	rec := httptest.NewRecorder()
-	ctx := beecontext.NewContext()
+	ctx := web.NewContext()
 	ctx.Reset(rec, httptest.NewRequest("POST", "/v1/admin/providers/toggle", nil))
 	sess := &ctrlFakeSession{data: map[interface{}]interface{}{}}
 	if user != nil {
