@@ -300,3 +300,55 @@ func TestInsertFilterInvalidPosition(t *testing.T) {
 		t.Fatal("InsertFilter must reject an invalid position")
 	}
 }
+
+// recordingStore notes when its session was released.
+type recordingStore struct {
+	*memStore
+	released bool
+}
+
+func (s *recordingStore) SessionRelease(http.ResponseWriter) { s.released = true }
+
+type fakeSessions struct{ store *recordingStore }
+
+func (f *fakeSessions) SessionStart(http.ResponseWriter, *http.Request) (Store, error) {
+	return f.store, nil
+}
+
+type sessionProbe struct{ Controller }
+
+func (c *sessionProbe) Who() {
+	u, _ := c.GetSession("user").(string)
+	c.Ctx.Output.Body([]byte(u))
+}
+
+// TestSessionHookBindsAndReleases proves UseSessions binds the store to the
+// request (the controller reads it) and releases it after the response — the
+// I-4 session-binding mechanism 4b wires to the session provider.
+func TestSessionHookBindsAndReleases(t *testing.T) {
+	store := &recordingStore{memStore: newMemStore()}
+	store.Set("user", "alice")
+
+	r := NewRouter()
+	r.UseSessions(&fakeSessions{store: store})
+	r.Router("/v1/whoami", &sessionProbe{}, "GET:Who")
+
+	rec := serve(r, "GET", "/v1/whoami")
+	if rec.Body.String() != "alice" {
+		t.Fatalf("controller must read the bound session; got %q", rec.Body.String())
+	}
+	if !store.released {
+		t.Fatal("SessionRelease must run after the response")
+	}
+}
+
+// TestNoSessionManagerLeavesStoreNil proves that without a manager the session
+// store stays nil and the fail-secure accessors return no value.
+func TestNoSessionManagerLeavesStoreNil(t *testing.T) {
+	r := NewRouter()
+	r.Router("/v1/whoami", &sessionProbe{}, "GET:Who")
+	rec := serve(r, "GET", "/v1/whoami")
+	if rec.Body.String() != "" {
+		t.Fatalf("no session manager must yield empty session read; got %q", rec.Body.String())
+	}
+}
