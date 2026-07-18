@@ -24,7 +24,7 @@ import (
 
 	"github.com/hanzoai/ai/model"
 	"github.com/hanzoai/ai/object"
-	openai "github.com/sashabaranov/go-openai"
+	openai "github.com/hanzoai/go-openai"
 )
 
 // sseStreamChunk is the subset of an OpenAI streaming chunk we parse to bill a

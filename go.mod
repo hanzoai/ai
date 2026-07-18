@@ -38,6 +38,7 @@ require (
 	github.com/hanzoai/dashscopego v0.6.0
 	github.com/hanzoai/dbx v1.16.0
 	github.com/hanzoai/decimal v0.1.1
+	github.com/hanzoai/go-openai v1.41.0
 	github.com/hanzoai/go-openrouter v1.0.0
 	github.com/hanzoai/iam v1.31.28
 	github.com/hanzoai/money v0.2.1
@@ -62,7 +63,6 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/pkoukk/tiktoken-go v0.1.7
 	github.com/robfig/cron/v3 v3.0.1
-	github.com/sashabaranov/go-openai v1.32.0
 	github.com/schollz/progressbar/v3 v3.18.0
 	github.com/shirou/gopsutil v3.21.11+incompatible
 	github.com/tealeg/xlsx v1.0.5
@@ -208,6 +208,7 @@ require (
 	github.com/prometheus/client_model v0.6.2 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/rs/xid v1.6.0 // indirect
+	github.com/sashabaranov/go-openai v1.32.0 // indirect
 	github.com/savsgio/gotils v0.0.0-20240704082632-aef3928b8a38 // indirect
 	github.com/segmentio/asm v1.2.1 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
@@ -379,5 +380,3 @@ require (
 	sigs.k8s.io/randfill v1.0.0 // indirect
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
-
-replace github.com/sashabaranov/go-openai => github.com/hanzoai/go-openai v1.40.0
