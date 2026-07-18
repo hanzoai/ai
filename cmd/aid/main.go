@@ -34,9 +34,9 @@ import (
 
 func main() {
 	// Shared AI runtime bootstrap (DB, model config, balance/tier/rate-limit,
-	// beego filter chain, billing queue) — the SAME sequence the unified
+	// router filter chain, billing queue) — the SAME sequence the unified
 	// cloud binary runs via ai.Mount, defined once in ai.Bootstrap. It ends
-	// by publishing beego.BeeApp.Handlers via ai.SetHandler. A bootstrap
+	// by publishing routers.App via ai.SetHandler. A bootstrap
 	// failure is fatal for the standalone server.
 	if err := ai.Bootstrap(); err != nil {
 		panic(err)
@@ -46,8 +46,8 @@ func main() {
 
 	port := conf.AppConfig.DefaultInt("httpport", 8000)
 
-	// Standalone-only: free the legacy beego port before binding it. The
-	// embedded binary serves beego through zip and never listens here, so
+	// Standalone-only: free the legacy HTTP port before binding it. The
+	// embedded binary serves routers.App through zip and never listens here, so
 	// this lives in main(), not Bootstrap.
 	if err := util.StopOldInstance(port); err != nil {
 		panic(err)
@@ -96,13 +96,13 @@ func main() {
 	// Listens on CLOUD_ZAP_PORT (default 9320), separate from inference node.
 	controllers.InitInterserviceZap()
 
-	// (ai.SetHandler(beego.BeeApp.Handlers) already ran inside ai.Bootstrap —
-	// the beego ControllerRegister is published once, there.)
+	// (ai.SetHandler(routers.App) already ran inside ai.Bootstrap —
+	// the native router is published once, there.)
 
 	// Register the canonical HIP-0110 HTTP-over-ZAP terminal (luxfi/zap/forward)
 	// on the inference node so the ZAP gateway can route any HTTP request to the
-	// full beego surface. beego.BeeApp.Handlers is the fully-wrapped
-	// ControllerRegister: every BeforeRouter filter inserted above — including
+	// full HTTP surface. routers.App is the fully-wrapped native router:
+	// every BeforeRouter filter inserted above — including
 	// the balance gate (BalanceGateFilter) and all auth/tenant filters — runs on
 	// the bridged request before the route dispatches. Purely additive; the
 	// :8000 HTTP path and the existing ZAP handlers (MsgType 100/200) are
