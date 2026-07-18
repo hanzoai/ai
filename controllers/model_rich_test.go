@@ -101,13 +101,36 @@ func TestModelInfoOmitEmpty(t *testing.T) {
 	keys := jsonKeys(t, modelInfo{
 		ID: "sample", Object: "model", Created: 1, OwnedBy: "do-ai", Premium: false,
 	})
-	for _, absent := range []string{"provider", "pricing"} {
+	for _, absent := range []string{"provider", "context_window", "pricing"} {
 		if keys[absent] {
 			t.Errorf("bare modelInfo must omit %q", absent)
 		}
 	}
 	if !keys["premium"] {
 		t.Error("premium must always be present (no omitempty)")
+	}
+}
+
+// TestModelInfoContextWindowSurfaced proves the additive context_window field is
+// emitted (and honestly valued) once ai holds the datum — so an OpenAI-compatible
+// client can size a 1M-token enso context instead of guessing a smaller default.
+func TestModelInfoContextWindowSurfaced(t *testing.T) {
+	raw, err := json.Marshal(modelInfo{
+		ID: "enso", Object: "model", Created: 1, OwnedBy: "hanzo", Premium: true,
+		ContextWindow: 1_000_000,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got modelInfo
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.ContextWindow != 1_000_000 {
+		t.Errorf("enso context_window: want 1000000, got %d", got.ContextWindow)
+	}
+	if !jsonKeys(t, modelInfo{ID: "enso", ContextWindow: 1_000_000})["context_window"] {
+		t.Error("context_window must be present when set")
 	}
 }
 
