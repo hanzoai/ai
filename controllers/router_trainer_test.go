@@ -44,6 +44,27 @@ func TestFlywheelDarkByDefault(t *testing.T) {
 	}
 }
 
+// TestTrainerFitsEarlyForChurnResilience locks the fit-early invariant (HIP-510):
+// the FIRST fit runs a short boot delay after start — well before a full interval —
+// so a pod that lives past ~the boot delay always produces at least one completed
+// verdict. Without this, frequent redeploys perpetually reset a long sleep to zero
+// completed cycles (observed live: 15m interval + churn → cycles kept getting
+// starved). The boot delay MUST stay far below the minimum interval for the
+// guarantee to hold, and it is overridable via ROUTER_TRAIN_BOOT_DELAY.
+func TestTrainerFitsEarlyForChurnResilience(t *testing.T) {
+	if trainBootDelay >= trainMinEvery {
+		t.Fatalf("boot delay %s must be << min interval %s to survive redeploy churn", trainBootDelay, trainMinEvery)
+	}
+	t.Setenv("ROUTER_TRAIN_BOOT_DELAY", "")
+	if got := envDuration("ROUTER_TRAIN_BOOT_DELAY", trainBootDelay); got != trainBootDelay {
+		t.Fatalf("default boot delay = %s, want %s", got, trainBootDelay)
+	}
+	t.Setenv("ROUTER_TRAIN_BOOT_DELAY", "5s")
+	if got := envDuration("ROUTER_TRAIN_BOOT_DELAY", trainBootDelay); got != 5*time.Second {
+		t.Fatalf("override boot delay = %s, want 5s", got)
+	}
+}
+
 // rewarded builds a batch of n rewarded routing events for one (task, model) arm
 // at a fixed reward — the pure fit's only inputs.
 func rewarded(task, model string, n int, reward float64) []*object.RoutingEvent {
