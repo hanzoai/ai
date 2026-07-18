@@ -23,7 +23,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/WqyJh/go-cosyvoice"
+	"github.com/hanzoai/go-cosyvoice"
 	"github.com/hanzoai/ai/i18n"
 )
 
