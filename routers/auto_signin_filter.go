@@ -18,7 +18,7 @@ package routers
 import (
 	"strings"
 
-	"github.com/hanzoai/beego/context"
+	"github.com/hanzoai/ai/web"
 )
 
 // isJwtLike returns true if the token looks like a JWT (three dot-separated segments).
@@ -27,7 +27,7 @@ func isJwtLike(token string) bool {
 	return len(parts) == 3 && len(parts[0]) > 10 && len(parts[1]) > 10
 }
 
-func AutoSigninFilter(ctx *context.Context) {
+func AutoSigninFilter(ctx *web.Context) {
 	urlPath := ctx.Request.URL.Path
 
 	// Skip endpoints that handle their own auth (chat completions, models,

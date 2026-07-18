@@ -21,13 +21,13 @@ import (
 	"fmt"
 
 	"github.com/hanzoai/ai/util"
-	"github.com/hanzoai/beego/context"
+	"github.com/hanzoai/ai/web"
 	"github.com/sashabaranov/go-openai"
 )
 
 // OpenAIWriter implements a writer that formats responses in OpenAI format
 type OpenAIWriter struct {
-	context.Response
+	web.Response
 	Cleaner    Cleaner
 	Buffer     []byte
 	MessageBuf []byte

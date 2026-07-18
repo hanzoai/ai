@@ -18,10 +18,10 @@ import (
 	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
-	"github.com/hanzoai/beego/context"
+	"github.com/hanzoai/ai/web"
 )
 
-func RecordMessage(ctx *context.Context) {
+func RecordMessage(ctx *web.Context) {
 	if ctx.Request.URL.Path == "/v1/login" || ctx.Request.URL.Path == "/v1/signup" || ctx.Request.URL.Path == "/v1/get-assets" {
 		return
 	}
@@ -30,7 +30,7 @@ func RecordMessage(ctx *context.Context) {
 	ctx.Input.SetParam("recordUserId", userId)
 }
 
-func AfterRecordMessage(ctx *context.Context) {
+func AfterRecordMessage(ctx *web.Context) {
 	record, err := object.NewRecord(ctx)
 	if err != nil {
 		log.Error("AfterRecordMessage() error: %s", err.Error())

@@ -27,7 +27,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v4"
-	beecontext "github.com/hanzoai/beego/context"
+	web "github.com/hanzoai/ai/web"
 	iam "github.com/hanzoai/iam"
 )
 
@@ -45,7 +45,7 @@ func newUsageController(url, authHeader, orgHeader string, user *iam.User) (*Api
 	if orgHeader != "" {
 		req.Header.Set("X-Org-Id", orgHeader)
 	}
-	ctx := beecontext.NewContext()
+	ctx := web.NewContext()
 	ctx.Reset(rec, req)
 	sess := &ctrlFakeSession{data: map[interface{}]interface{}{}}
 	if user != nil {
