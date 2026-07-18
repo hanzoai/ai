@@ -18,7 +18,7 @@ import (
 	"errors"
 	"net/http"
 
-	openai "github.com/sashabaranov/go-openai"
+	openai "github.com/hanzoai/go-openai"
 )
 
 // Upstream failures carry an HTTP status. This is the ONE place that extracts

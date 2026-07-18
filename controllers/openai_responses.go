@@ -22,7 +22,7 @@ import (
 
 	"github.com/hanzoai/ai/util"
 	"github.com/klauspost/compress/zstd"
-	"github.com/sashabaranov/go-openai"
+	"github.com/hanzoai/go-openai"
 )
 
 // OpenAIResponsesRequest is the subset of POST /v1/responses used by Codex and
