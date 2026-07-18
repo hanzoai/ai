@@ -24,7 +24,7 @@ import (
 
 	"github.com/hanzoai/ai/i18n"
 	"github.com/pkoukk/tiktoken-go"
-	"github.com/sashabaranov/go-openai"
+	"github.com/hanzoai/go-openai"
 )
 
 type RawMessage struct {
