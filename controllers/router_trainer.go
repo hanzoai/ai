@@ -58,6 +58,12 @@ const (
 	trainMinEvery         = 15 * time.Minute
 	trainDefaultMinEvents = 20
 	trainDefaultMargin    = 0.02
+	// trainBootDelay is how long after boot the FIRST fit runs — short enough that
+	// frequent redeploys can't perpetually reset a long interval to zero completed
+	// cycles (churn-resilience), long enough to let the pod finish serving-init
+	// first. After this the trainer settles into the steady ROUTER_TRAIN_EVERY
+	// cadence. Overridable via ROUTER_TRAIN_BOOT_DELAY (Go duration).
+	trainBootDelay = 90 * time.Second
 )
 
 // armStat is one (task, model) arm's aggregate over the rewarded ledger.
@@ -215,13 +221,26 @@ func StartRouterTrainer() {
 	if every < trainMinEvery {
 		every = trainMinEvery
 	}
-	log.Info("router trainer: enabled — every %s", every)
+	bootDelay := envDuration("ROUTER_TRAIN_BOOT_DELAY", trainBootDelay)
+	log.Info("router trainer: enabled — first fit in %s, then every %s", bootDelay, every)
 	go func() {
-		for {
-			time.Sleep(every)
+		// Fit-early, THEN cadence. Running the first cycle shortly after boot —
+		// rather than after a full interval — means frequent redeploys can't
+		// perpetually reset a long sleep to zero completed cycles: every pod that
+		// lives past the short boot delay produces at least one verdict. The
+		// promote-or-keep gate is untouched, so a boot fit with thin rewards just
+		// logs keep-incumbent (a completed, logged cycle), never a bad promotion.
+		fit := func() {
 			if err := runRouterTraining(); err != nil {
 				log.Warning("router trainer: %v", err)
 			}
+		}
+		time.Sleep(bootDelay)
+		fit()
+		t := time.NewTicker(every)
+		defer t.Stop()
+		for range t.C {
+			fit()
 		}
 	}()
 }
