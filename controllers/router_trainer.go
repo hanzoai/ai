@@ -314,6 +314,7 @@ func trainScope(scopeOwner string, events []*object.RoutingEvent, minEvents int,
 			meta.Published = false
 			meta.Note = "gate passed but deploy failed: " + err.Error()
 			_ = object.UpsertRouterArtifactMeta(meta)
+			_ = object.AppendRouterTrainingLog(object.NewRouterTrainingLog(meta))
 			return fmt.Errorf("deploy prefer: %w", err)
 		}
 		meta.Published = true
@@ -323,7 +324,15 @@ func trainScope(scopeOwner string, events []*object.RoutingEvent, minEvents int,
 		meta.Published = false
 		log.Info("router trainer[%s]: %s (events=%d)", scopeOwner, res.Note, res.Events)
 	}
-	return object.UpsertRouterArtifactMeta(meta)
+	if err := object.UpsertRouterArtifactMeta(meta); err != nil {
+		return err
+	}
+	// Also append to the IMMUTABLE retrain timeline (best-effort) — this is the row the
+	// world.hanzo.ai "Model Improvement" panel counts as a retrain. Every fit logs one,
+	// pass OR miss, so the timeline is exactly what happened. Without this the in-process
+	// trainer only ever upserts "latest" and the panel shows 0 retrains forever.
+	_ = object.AppendRouterTrainingLog(object.NewRouterTrainingLog(meta))
+	return nil
 }
 
 // deployRouterPreferTo merges the gated best-arm table into a scope's
