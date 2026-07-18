@@ -30,6 +30,7 @@ package controllers
 // commerce blip must never lock a paying caller out of a SKU they already had.
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -40,6 +41,7 @@ import (
 
 	"github.com/hanzoai/account"
 	"github.com/hanzoai/ai/conf"
+	"github.com/hanzoai/ai/object"
 	iam "github.com/hanzoai/iam"
 )
 
@@ -175,13 +177,30 @@ func cachedFamilyTier(subject string) string {
 	return name
 }
 
-// commerceFamilyTier performs the un-cached lookup: GET
-// {commerceEndpoint}/v1/billing/tier?user=<subject>, returning the plan NAME at
-// tier.name. It mirrors getUserBalance's URL/subject/header pattern (the same
-// commerceEndpoint / commerceToken conf keys and X-Org-Id namespace scoping) and
-// ratelimit's commerceTierLookup response shape. Returns "" on ANY failure so the gate
-// fails safe (allow).
+// commerceFamilyTier performs the un-cached lookup of the plan NAME at tier.name.
+//
+// Native path FIRST: a co-resident host (cloud) installs object.TierReader so the tier
+// is read DIRECTLY through the in-process commerce transport — no HTTP to the cloud
+// edge. This is the fix for the toothless gate: the edge 401/403s a service self-call
+// to /v1/billing/*, so the plain-HTTP path below always returned "" in-cluster and the
+// gate failed OPEN. The native seam mirrors getUserBalance's object.BalanceReader():
+// cloud owns the co-resident read (over commerceinproc, with the service token commerce
+// itself accepts), ai stays transport-agnostic. Any reader error → "" (unknown → allow).
+//
+// Standalone fallback: authed HTTP GET {commerceEndpoint}/v1/billing/tier?user=<subject>
+// (the same commerceEndpoint / commerceToken conf keys and X-Org-Id namespace scoping as
+// getUserBalance's HTTP fallback). Returns "" on ANY failure so the gate fails safe (allow).
 func commerceFamilyTier(subject string) string {
+	namespace := tierNamespace(subject)
+
+	if r := object.TierReader(); r != nil {
+		name, err := r(context.Background(), subject, namespace)
+		if err != nil {
+			return "" // co-resident commerce hiccup → unknown → allow (fail-safe)
+		}
+		return strings.TrimSpace(name)
+	}
+
 	endpoint := strings.TrimRight(conf.GetConfigString("commerceEndpoint"), "/")
 	if endpoint == "" {
 		return "" // commerce not configured → unknown → allow
@@ -198,7 +217,7 @@ func commerceFamilyTier(subject string) string {
 	// Scope the service-token call to the caller's namespace (the org slug — the subject
 	// itself for an org account, or its "<org>/" prefix for a person), matching
 	// getUserBalance's X-Org-Id stamping so the tier is read from the right tenant.
-	req.Header.Set("X-Org-Id", tierNamespace(subject))
+	req.Header.Set("X-Org-Id", namespace)
 
 	resp, err := familyTierHTTP.Do(req)
 	if err != nil {
