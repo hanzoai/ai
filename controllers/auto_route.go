@@ -25,6 +25,7 @@ import (
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/router"
 	"github.com/hanzoai/beego/logs"
+	iam "github.com/hanzoai/iam"
 	"github.com/sashabaranov/go-openai"
 )
 
@@ -130,8 +131,11 @@ func isAutoModel(model string) bool {
 // resolution, ModelRoute fallbacks, per-org pricing, the zen identity prompt,
 // balance reserve/settle, the usage record, and the response `model` echo — so
 // `auto` is billed and reported as exactly the model that served it. Per-org
-// routing is honored via the `known` predicate (resolveModelRouteForOrg), which
-// only admits models the org can actually serve.
+// routing is honored via the `known` predicate, which admits a model only when it
+// resolves a route for the org (resolveModelRouteForOrg) AND the caller can actually
+// serve it (modelServable): an access-gated SKU the caller holds no grant for is NOT
+// admitted, so `auto` never routes to a model the serve path would then refuse
+// (HIP-510 §1). authUser is the request principal, threaded in for that grant check.
 //
 // Whether routing is active for THIS org is decided by AutoRoutingActive, which
 // blends the global router.enabled flag with the org's OrgSettings preference:
@@ -144,7 +148,7 @@ func isAutoModel(model string) bool {
 // which holds the request context (and thus the edge geo headers) — can fold the
 // region's task-mix into the live-traffic globe without geo ever entering this
 // routing logic. task is "" whenever ok is false.
-func resolveAutoModel(requested, orgId, userId, requestId string, req *openai.ChatCompletionRequest, slo router.Slo) (string, string, bool) {
+func resolveAutoModel(requested, orgId, userId, requestId string, authUser *iam.User, req *openai.ChatCompletionRequest, slo router.Slo) (string, string, bool) {
 	if !isAutoModel(requested) {
 		return "", "", false
 	}
@@ -156,7 +160,7 @@ func resolveAutoModel(requested, orgId, userId, requestId string, req *openai.Ch
 		return "", "", false
 	}
 	client := cfg.RouterClient(func(id string) bool {
-		return resolveModelRouteForOrg(id, orgId) != nil
+		return resolveModelRouteForOrg(id, orgId) != nil && modelServable(id, orgId, authUser)
 	})
 	// Fold the per-org router policy (org > "*" > conf) into this decision: the
 	// org's own Prefer table wins per task key, and its cost ceiling fills the

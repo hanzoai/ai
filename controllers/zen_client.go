@@ -482,6 +482,30 @@ var (
 	zenDataPrefix = []byte("data:")
 )
 
+// withModel returns body with its top-level "model" field set to model, preserving
+// every other field. It reconciles the forwarded body with the model ai resolved: an
+// `auto`/`zen-router` request rewrites request.Model to a concrete SKU while the raw
+// body still says "auto", and the family serves by the body's model field. RawMessage
+// preserves all sibling fields losslessly; on any parse/marshal error the body is
+// returned unchanged so the rewrite never drops a request (the family then surfaces a
+// precise error on the original body).
+func withModel(body []byte, model string) []byte {
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(body, &m); err != nil || m == nil {
+		return body
+	}
+	mb, err := json.Marshal(model)
+	if err != nil {
+		return body
+	}
+	m["model"] = mb
+	out, err := json.Marshal(m)
+	if err != nil {
+		return body
+	}
+	return out
+}
+
 // pipeToFamily forwards the caller's request to the family service verbatim and relays
 // the response back unchanged — the family owns identity, reasoning, upstream, and
 // dialect; ai only authenticates, meters, and forwards. apiPath is "messages"
@@ -503,6 +527,13 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		c.zenError(dialect, gatedAccessMessage(model), http.StatusForbidden)
 		return
 	}
+	// Forward the model ai RESOLVED, not the caller's raw model id. An
+	// `auto`/`zen-router` request rewrote request.Model to a concrete family SKU, but
+	// the raw body still carries "model":"auto" — and the family serves by the body's
+	// model field, so it 404s on the unknown id "auto" while a direct request for the
+	// same SKU (body model == SKU) serves. Reconcile the forwarded body's model with
+	// the resolved SKU; byte-identical for a direct request (model already matches).
+	rawBody = withModel(rawBody, model)
 	reqID := util.GenerateUUID()
 	url := prov.ProviderUrl + "/v1/" + apiPath
 	req, err := http.NewRequestWithContext(c.Ctx.Request.Context(), http.MethodPost, url, bytes.NewReader(rawBody))
