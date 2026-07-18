@@ -495,13 +495,14 @@ func (mc *ModelConfig) ListModels() []modelInfo {
 		// means real per-model pricing was configured (never a default).
 		price, hasPrice := mc.pricing[name]
 		models = append(models, modelInfo{
-			ID:       name,
-			Object:   "model",
-			Created:  now,
-			OwnedBy:  owner,
-			Premium:  route.premium,
-			Provider: publicProvider(route),
-			Pricing:  pricingInfo(price, hasPrice),
+			ID:            name,
+			Object:        "model",
+			Created:       now,
+			OwnedBy:       owner,
+			Premium:       route.premium,
+			Provider:      publicProvider(route),
+			ContextWindow: route.contextWindow,
+			Pricing:       pricingInfo(price, hasPrice),
 		})
 	}
 
