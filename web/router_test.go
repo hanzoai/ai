@@ -220,10 +220,46 @@ func TestSplitPath(t *testing.T) {
 		"/v1/items":       {"v1", "items"},
 		"/v1/greet/:name": {"v1", "greet", ":name"},
 		"v1/x/":           {"v1", "x"},
+		"/v1//items":      {"v1", "items"}, // empty segment
+		"/v1/./items":     {"v1", "items"}, // dot
+		"/v1/a/../items":  {"v1", "items"}, // dot-dot
+		"/v1/../items":    {"items"},       // dot-dot to root
 	}
 	for in, want := range cases {
 		if got := splitPath(in); !reflect.DeepEqual(got, want) {
 			t.Fatalf("splitPath(%q) = %v, want %v", in, got, want)
+		}
+	}
+}
+
+// TestFilterRewritesRoutingPath is the HIGH-1 regression: a BeforeRouter
+// filter that mutates Request.URL.Path (as the /v1/cloud and /v1/iam rewrites
+// do) must route to the NEW path. Only the rewritten target is registered —
+// mirroring /v1/cloud/*, which has no direct route and depends entirely on
+// the rewrite.
+func TestFilterRewritesRoutingPath(t *testing.T) {
+	dispatchLog = nil
+	r := NewRouter()
+	r.Router("/v1/items", &probeController{}, "GET:Hello")
+	r.InsertFilter("/v1/cloud/*", BeforeRouter, func(ctx *Context) {
+		ctx.Request.URL.Path = "/v1/items"
+	})
+
+	rec := serve(r, "GET", "/v1/cloud/items")
+	if rec.Code != http.StatusOK || rec.Body.String() != "hi" {
+		t.Fatalf("rewritten path must route to /v1/items; got code=%d body=%q", rec.Code, rec.Body.String())
+	}
+}
+
+// TestRoutingCleansPath is the I-1 regression: paths with empty, dot or
+// dot-dot segments route to the cleaned target instead of 404ing.
+func TestRoutingCleansPath(t *testing.T) {
+	r := NewRouter()
+	r.Router("/v1/items", &probeController{}, "GET:Hello")
+	for _, p := range []string{"/v1//items", "/v1/./items", "/v1/x/../items"} {
+		rec := serve(r, "GET", p)
+		if rec.Code != http.StatusOK || rec.Body.String() != "hi" {
+			t.Fatalf("path %q must clean-route to /v1/items; got code=%d body=%q", p, rec.Code, rec.Body.String())
 		}
 	}
 }
