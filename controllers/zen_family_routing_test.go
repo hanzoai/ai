@@ -14,7 +14,58 @@
 
 package controllers
 
-import "testing"
+import (
+	"encoding/json"
+	"testing"
+)
+
+// withModel reconciles a forwarded family body's "model" field with the model ai
+// resolved — the fix for the auto→family 404: an `auto` request rewrites request.Model
+// to a concrete SKU while the raw body still says "auto", and the family serves by the
+// body's model field. It must set the model AND preserve every sibling field, and never
+// drop a request on malformed input.
+func TestWithModel(t *testing.T) {
+	// The exact auto→enso case: body says "auto", resolved SKU is enso-flash.
+	body := []byte(`{"model":"auto","max_tokens":64,"messages":[{"role":"user","content":"hi"}],"temperature":0.7}`)
+	out := withModel(body, "enso-flash")
+
+	var got struct {
+		Model    string  `json:"model"`
+		MaxTok   int     `json:"max_tokens"`
+		Temp     float64 `json:"temperature"`
+		Messages []struct {
+			Role    string `json:"role"`
+			Content string `json:"content"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal(out, &got); err != nil {
+		t.Fatalf("withModel produced invalid JSON: %v", err)
+	}
+	if got.Model != "enso-flash" {
+		t.Errorf("model = %q, want enso-flash", got.Model)
+	}
+	// Every sibling field is preserved losslessly.
+	if got.MaxTok != 64 || got.Temp != 0.7 || len(got.Messages) != 1 || got.Messages[0].Content != "hi" {
+		t.Errorf("withModel did not preserve sibling fields: %+v", got)
+	}
+
+	// A body with no model field gains one.
+	if out := withModel([]byte(`{"max_tokens":8}`), "zen5"); !json.Valid(out) {
+		t.Fatalf("withModel produced invalid JSON for a model-less body")
+	} else {
+		var m map[string]json.RawMessage
+		_ = json.Unmarshal(out, &m)
+		if string(m["model"]) != `"zen5"` {
+			t.Errorf("model-less body: model = %s, want \"zen5\"", m["model"])
+		}
+	}
+
+	// Malformed input is returned unchanged — the rewrite never drops a request.
+	bad := []byte(`not json`)
+	if out := withModel(bad, "enso-flash"); string(out) != string(bad) {
+		t.Errorf("malformed body should be returned unchanged, got %q", out)
+	}
+}
 
 // familyRoutingText extracts the last user turn + media flag from a raw chat body for
 // the shadow router — one parser for both dialects (string or typed-array content).
