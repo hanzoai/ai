@@ -322,6 +322,17 @@ func resolveModelRouteForOrg(model string, orgId string) *modelRoute {
 	// Model families (Zen, Enso): any family SKU routes to its family service, which
 	// owns the SKU→upstream mapping, identity, and reasoning. ai holds no such route of
 	// its own (hip-00NN).
+	//
+	// Per-tier gate (Seam B): when the caller's commerce tier is CONFIDENTLY below the
+	// SKU's advertised min_tier, drop the route (nil) so the auto-router's `known`
+	// predicate degrades to the next servable — a free user's `auto` falls enso→
+	// enso-flash. Fail-safe: familyTierAllowed admits on any uncertainty, so the direct
+	// call path (which resolves its authoritative route with orgId "" ⇒ empty subject ⇒
+	// admit) is never degraded here; it reaches the family pipe and the 403 access gate
+	// (Seam A). Only the auto path, which carries the real orgId, degrades.
+	if _, ok := familyServing(model); ok && !familyTierAllowed(subjectFromOrg(orgId), model) {
+		return nil
+	}
 	return familyPassthroughRoute(model)
 }
 
