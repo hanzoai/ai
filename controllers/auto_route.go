@@ -169,7 +169,15 @@ func resolveAutoModel(requested, orgId, userId, requestId string, req *openai.Ch
 		ApproxTokens: estimatePromptTokens(req),
 		HasMedia:     requestHasMedia(req),
 	}
-	dec := client.RouteDecision(context.Background(), rreq, slo)
+	// Per-org strategy + deterministic overrides complete the policy (the client
+	// already carries the org's Enabled predicate and Prefer table above). Strategy
+	// "" and nil Overrides are inert, so an org with neither set routes exactly as
+	// before — the wiring is fail-safe by construction.
+	rp := router.RoutingPolicy{
+		Strategy:  effectiveRouterStrategy(orgId),
+		Overrides: effectiveRouterOverrides(orgId),
+	}
+	dec := client.RouteDecisionFor(context.Background(), rreq, slo, rp)
 	if dec.Model == "" {
 		return "", "", false
 	}
