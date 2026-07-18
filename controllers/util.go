@@ -28,7 +28,7 @@ import (
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/i18n"
 	"github.com/hanzoai/ai/util"
-	"github.com/hanzoai/beego/context"
+	"github.com/hanzoai/ai/web"
 	iam "github.com/hanzoai/iam"
 )
 
@@ -278,12 +278,12 @@ func (c *ApiController) IsAdmin() bool {
 	return util.IsAdmin(user)
 }
 
-func DenyRequest(ctx *context.Context) {
+func DenyRequest(ctx *web.Context) {
 	ctx.Output.SetStatus(http.StatusForbidden)
 	responseError(ctx, "auth:Unauthorized operation")
 }
 
-func responseError(ctx *context.Context, error string, data ...interface{}) {
+func responseError(ctx *web.Context, error string, data ...interface{}) {
 	// Get language from Accept-Language header
 	language := ctx.Request.Header.Get("Accept-Language")
 	if len(language) > 2 {

@@ -16,6 +16,7 @@ package web
 
 import (
 	"errors"
+	"mime/multipart"
 	"net/url"
 )
 
@@ -27,8 +28,9 @@ var ErrAbort = errors.New("web: stop run")
 const ModeProd = "prod"
 
 // RunMode selects response formatting: any value other than ModeProd
-// pretty-prints ServeJSON output. The serving layer sets it from config.
-var RunMode = "dev"
+// pretty-prints ServeJSON output. It defaults to ModeProd (compact), matching
+// the runtime default; the serving layer sets it from config when configured.
+var RunMode = ModeProd
 
 // ControllerInterface is the contract the router drives per request: build the
 // controller with Init, run Prepare before the handler and Finish after.
@@ -45,6 +47,11 @@ type Controller struct {
 	Data       map[interface{}]interface{}
 	CruSession Store
 
+	// EnableRender is retained for handler compatibility. Handlers write their
+	// own responses (ServeJSON, Output.Body), so the router renders nothing;
+	// toggling this flag has no effect on the response.
+	EnableRender bool
+
 	controllerName string
 	actionName     string
 	AppController  interface{}
@@ -57,6 +64,7 @@ func (c *Controller) Init(ctx *Context, controllerName, actionName string, app i
 	c.controllerName = controllerName
 	c.actionName = actionName
 	c.AppController = app
+	c.EnableRender = true
 	c.Data = ctx.Input.Data()
 }
 
@@ -79,6 +87,11 @@ func (c *Controller) Input() url.Values {
 		c.Ctx.Request.ParseForm()
 	}
 	return c.Ctx.Request.Form
+}
+
+// GetFile returns the uploaded multipart file for a form key.
+func (c *Controller) GetFile(key string) (multipart.File, *multipart.FileHeader, error) {
+	return c.Ctx.Request.FormFile(key)
 }
 
 // GetString returns a route parameter or form value for key, or the optional

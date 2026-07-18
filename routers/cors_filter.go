@@ -23,7 +23,7 @@ import (
 
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/object"
-	"github.com/hanzoai/beego/context"
+	"github.com/hanzoai/ai/web"
 	iam "github.com/hanzoai/iam"
 )
 
@@ -87,7 +87,7 @@ func isStaticAllowedOrigin(origin string) bool {
 	return false
 }
 
-func setCorsHeaders(ctx *context.Context, origin string) {
+func setCorsHeaders(ctx *web.Context, origin string) {
 	// Skip CORS when behind the KrakenD API gateway, which adds its own
 	// CORS headers.  KrakenD forwards requests with X-Forwarded-Host set;
 	// direct requests to the cloud-api service don't have this header.
@@ -111,7 +111,7 @@ func setCorsHeaders(ctx *context.Context, origin string) {
 	}
 }
 
-func CorsFilter(ctx *context.Context) {
+func CorsFilter(ctx *web.Context) {
 	origin := ctx.Input.Header(headerOrigin)
 
 	// Reject empty and literal "null" origins (sandboxed iframes, data: URIs).
