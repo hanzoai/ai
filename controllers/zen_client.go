@@ -460,7 +460,8 @@ func (f *modelFamily) mergeModels(base []modelInfo) []modelInfo {
 		}
 		info := modelInfo{
 			ID: z.ID, Object: "model", Created: now, OwnedBy: owner, Premium: true,
-			Pricing: pricingInfo(z.price()),
+			ContextWindow: z.MaxCtx, // discovered from the family's own /v1/models (enso = 1,000,000)
+			Pricing:       pricingInfo(z.price()),
 		}
 		// A gated SKU is LISTED but access-controlled; advertise the default standing
 		// ("waitlist"). ListModels upgrades this to the caller's real status when authed.
