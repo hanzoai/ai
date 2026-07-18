@@ -36,6 +36,7 @@ import (
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/ai/conf"
+	"github.com/hanzoai/ai/controllers"
 )
 
 // Mount registers AI's HTTP surface per HIP-0106 AND initializes the AI
@@ -83,6 +84,18 @@ func Mount(app *zip.App, deps cloud.Deps) error {
 		return err
 	}
 	log.Info("ai: runtime initialized")
+
+	// Enso router flywheel — the learned-routing loop that learns from real user
+	// traffic. These ran ONLY in the standalone cmd/aid binary; the deployed service
+	// mounts via cloud.Wire → ai.Mount, so without this the trainer/probe never boot
+	// (and ROUTER_TRAIN_ENABLED had no effect on the real deployment). Both are
+	// self-gating no-ops unless their env flags are set (ROUTER_TRAIN_ENABLED=1 for
+	// the trainer; ROUTER_PROBE_RPH+ROUTER_PROBE_TOKEN for the probe), so mounting
+	// them here is safe by default and turns real only via deployment config. The DB
+	// they read is ready — Bootstrap() just returned. Same calls, same order as
+	// cmd/aid/main.go, so embedded and standalone behave identically.
+	controllers.StartRouterProbe()
+	controllers.StartRouterTrainer()
 	return nil
 }
 
