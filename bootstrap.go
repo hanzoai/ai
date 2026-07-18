@@ -237,5 +237,17 @@ func doBootstrap() (err error) {
 	// /v1/ai/*; the session store was bound to the router above.
 	SetHandler(routers.App)
 
+	// Enso router flywheel (HIP-510): the learned-routing loop that trains on real
+	// traffic. Started HERE — in the SINGLE sync.Once boot sequence BOTH cmd/aid and
+	// ai.Mount run — so it is the ONE launch site (DRY): the deployed unified binary
+	// mounts via cloud.Wire → ai.Mount → Bootstrap, so wiring it here (not in a caller)
+	// is what makes the flywheel actually run in production, where it previously never
+	// did (retrains: [], rewarded_events: 0). Both Start* self-gate on env and default
+	// OFF (ROUTER_TRAIN_ENABLED for the trainer; ROUTER_PROBE_RPH+ROUTER_PROBE_TOKEN for
+	// the probe), so this is dark-by-default and turns real only via deployment config.
+	// sync.Once guarantees the goroutines are launched exactly once per process.
+	controllers.StartRouterProbe()
+	controllers.StartRouterTrainer()
+
 	return nil
 }
