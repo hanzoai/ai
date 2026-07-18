@@ -111,17 +111,11 @@ func main() {
 
 	go object.ClearThroughputPerSecond()
 
-	// Router self-probe: a slow, tagged trickle of real auto-routed requests
-	// against our own /v1 so the enso training ledger accumulates continuously.
-	// Off unless ROUTER_PROBE_RPH + ROUTER_PROBE_TOKEN are set.
-	controllers.StartRouterProbe()
-
-	// Router trainer: the flywheel's fit→gate→deploy→publish loop — reads the
-	// rewarded ledger, fits per-(task,model) reward, and on a passing gate writes
-	// the empirically-best models into the shared "*" router Prefer row (which the
-	// router already folds) and publishes the retrain meta. Off unless
-	// ROUTER_TRAIN_ENABLED=1.
-	controllers.StartRouterTrainer()
+	// The Enso router flywheel (probe + trainer) is launched inside ai.Bootstrap (run
+	// above), the SINGLE shared boot sequence — so it is the ONE launch site and boots
+	// identically in this standalone and the embedded unified binary. Both self-gate on
+	// env and default OFF (ROUTER_TRAIN_ENABLED; ROUTER_PROBE_RPH+ROUTER_PROBE_TOKEN).
+	// See ai.Bootstrap (HIP-510).
 
 	// Serve the native router directly. The embedded cloud binary serves the
 	// same routers.App through zip; here the standalone owns the listener.
