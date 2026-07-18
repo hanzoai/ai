@@ -30,7 +30,7 @@ import (
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/object"
-	"github.com/hanzoai/beego/context"
+	"github.com/hanzoai/ai/web"
 )
 
 // ── Balance gate configuration ──────────────────────────────────────────────
@@ -152,7 +152,7 @@ func InitBalanceGate() {
 // Design: fail-open. If Commerce is unreachable or the user cannot be
 // identified, the request is allowed through. The controller-level balance
 // check in resolveProviderForUser remains as a defense-in-depth backstop.
-func BalanceGateFilter(ctx *context.Context) {
+func BalanceGateFilter(ctx *web.Context) {
 	if balanceGate == nil {
 		return
 	}
@@ -312,7 +312,7 @@ func isBalanceExempt(path string) bool {
 // skips). The userKey is the exact "owner/name" identity used for per-user
 // exemption matching (mirrors the controller backstop), independent of whether
 // the billing subject collapses to the org slug for a pooled org.
-func resolveBillingKey(ctx *context.Context) (subject, namespace, userKey string) {
+func resolveBillingKey(ctx *web.Context) (subject, namespace, userKey string) {
 	// Balance enforcement disabled ⇒ balanceGate is nil (InitBalanceGate returns
 	// early when commerceEndpoint is unconfigured). RateLimitFilter calls this on
 	// EVERY authenticated /v1 request BEFORE BalanceGateFilter's own nil guard, so

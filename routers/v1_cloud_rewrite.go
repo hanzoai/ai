@@ -17,7 +17,7 @@ package routers
 import (
 	"strings"
 
-	"github.com/hanzoai/beego/context"
+	"github.com/hanzoai/ai/web"
 )
 
 // V1CloudRewriteFilter rewrites /v1/cloud/* requests to /api/* so the
@@ -25,7 +25,7 @@ import (
 // duplicating every route in router.go.
 //
 // Example: /v1/cloud/get-stores → /api/get-stores
-func V1CloudRewriteFilter(ctx *context.Context) {
+func V1CloudRewriteFilter(ctx *web.Context) {
 	path := ctx.Request.URL.Path
 	if strings.HasPrefix(path, "/v1/cloud/") {
 		newPath := "/v1/" + strings.TrimPrefix(path, "/v1/cloud/")
