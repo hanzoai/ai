@@ -64,6 +64,15 @@ func gatedAccessMessage(model string) string {
 // caller (by org, username, or email). Unknown-to-discovery is treated as non-gated
 // (fail-open only for models the family does not advertise as gated).
 func (c *ApiController) familyAccessAllowed(fam *modelFamily, model, orgId string, authUser *iam.User) bool {
+	// Per-tier gate (Seam A): a family SKU advertises a min_tier on the enso ladder
+	// (enso-flash free, enso trial+, enso-ultra paid). A caller whose commerce tier is
+	// CONFIDENTLY below it is refused here — pipeToFamily then returns the 403
+	// gatedAccessMessage. Orthogonal to the waitlist/grant gate below (both must pass),
+	// and fail-safe: familyTierAllowed admits on any commerce uncertainty, so only a
+	// confident low tier denies. Keyed on the SAME subject the balance gate bills.
+	if !familyTierAllowed(familyAccessSubject(orgId, authUser), model) {
+		return false
+	}
 	zm, ok := fam.lookup(model)
 	if !ok || !zm.gated() {
 		return true
