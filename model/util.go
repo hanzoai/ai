@@ -23,8 +23,8 @@ import (
 	"unicode"
 
 	"github.com/hanzoai/ai/i18n"
-	"github.com/pkoukk/tiktoken-go"
 	"github.com/hanzoai/go-openai"
+	"github.com/pkoukk/tiktoken-go"
 )
 
 type RawMessage struct {

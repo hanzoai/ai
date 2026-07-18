@@ -36,8 +36,8 @@ import (
 	"github.com/hanzoai/ai/model"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
-	iam "github.com/hanzoai/iam"
 	"github.com/hanzoai/go-openai"
+	iam "github.com/hanzoai/iam"
 )
 
 // getUserBalance returns the current balance for a user by fetching from Commerce.

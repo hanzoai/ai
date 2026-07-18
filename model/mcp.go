@@ -25,8 +25,8 @@ import (
 	"github.com/ThinkInAIXYZ/go-mcp/protocol"
 	"github.com/hanzoai/ai/agent"
 	"github.com/hanzoai/ai/i18n"
-	"github.com/openai/openai-go/v2/responses"
 	"github.com/hanzoai/go-openai"
+	"github.com/openai/openai-go/v2/responses"
 )
 
 type AgentMessages struct {
