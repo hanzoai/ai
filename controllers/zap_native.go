@@ -40,7 +40,7 @@ import (
 	"github.com/hanzoai/ai/log"
 	iam "github.com/hanzoai/iam"
 	"github.com/luxfi/zap"
-	openai "github.com/sashabaranov/go-openai"
+	openai "github.com/hanzoai/go-openai"
 
 	"github.com/hanzoai/ai/model"
 	"github.com/hanzoai/ai/object"

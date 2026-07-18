@@ -22,7 +22,7 @@ import (
 	"strings"
 
 	"github.com/hanzoai/ai/model"
-	openai "github.com/sashabaranov/go-openai"
+	openai "github.com/hanzoai/go-openai"
 )
 
 // ── Anthropic ⇄ OpenAI translation ───────────────────────────────────────────
