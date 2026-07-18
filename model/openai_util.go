@@ -19,10 +19,10 @@ import (
 	"strings"
 
 	"github.com/pkoukk/tiktoken-go"
-	"github.com/sashabaranov/go-openai"
+	"github.com/hanzoai/go-openai"
 )
 
-// https://pkg.go.dev/github.com/sashabaranov/go-openai@v1.27.1#pkg-constants
+// https://pkg.go.dev/github.com/hanzoai/go-openai@v1.27.1#pkg-constants
 // https://platform.openai.com/docs/models/overview
 var __maxTokens = map[string]int{
 	openai.GPT4o:                128000,
@@ -196,7 +196,7 @@ func ChatCompletionRequest(model string, messages []openai.ChatCompletionMessage
 }
 
 // https://github.com/pkoukk/tiktoken-go?tab=readme-ov-file#counting-tokens-for-chat-api-calls
-// https://github.com/sashabaranov/go-openai/pull/223#issuecomment-1608689882
+// https://github.com/hanzoai/go-openai/pull/223#issuecomment-1608689882
 func OpenaiNumTokensFromMessages(messages []openai.ChatCompletionMessage, model string) (int, error) {
 	modelToUse := getCompatibleModel(model)
 	// Get model-specific token counts

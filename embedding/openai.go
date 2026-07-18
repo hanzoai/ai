@@ -17,7 +17,7 @@ package embedding
 
 import (
 	"github.com/hanzoai/ai/proxy"
-	"github.com/sashabaranov/go-openai"
+	"github.com/hanzoai/go-openai"
 )
 
 func NewOpenAiEmbeddingProvider(typ string, subType string, secretKey string) (*LocalEmbeddingProvider, error) {

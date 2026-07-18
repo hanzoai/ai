@@ -24,7 +24,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/sashabaranov/go-openai"
+	"github.com/hanzoai/go-openai"
 )
 
 func extractImagesURL(message string) ([]string, string) {

@@ -22,7 +22,7 @@ import (
 
 	"github.com/hanzoai/ai/util"
 	"github.com/hanzoai/ai/web"
-	"github.com/sashabaranov/go-openai"
+	"github.com/hanzoai/go-openai"
 )
 
 // OpenAIWriter implements a writer that formats responses in OpenAI format

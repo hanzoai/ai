@@ -17,7 +17,7 @@ package embedding
 
 import (
 	"github.com/hanzoai/ai/proxy"
-	"github.com/sashabaranov/go-openai"
+	"github.com/hanzoai/go-openai"
 )
 
 func NewAzureEmbeddingProvider(typ string, subType string, deploymentName string, secretKey string, providerUrl string, apiVersion string) (*LocalEmbeddingProvider, error) {
