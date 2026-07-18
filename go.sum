@@ -930,8 +930,8 @@ github.com/luxfi/validators v1.3.1 h1:+/7j0CTXlMKyaSLFM+gd6Fq64/edORJfrD/xGnf7Xc
 github.com/luxfi/validators v1.3.1/go.mod h1:sIQyUZOvXoJ/9/RCOhHSzjumZIoxiqacNOn5mQWVozU=
 github.com/luxfi/version v1.0.1 h1:T/1KYWEMmsrNQk7pN7PFPAwh/7XbeX7cFAKLBqI37Sk=
 github.com/luxfi/version v1.0.1/go.mod h1:Y5fPkQ2DB0XRBCxgSPXp4ISzL1/jptKnmFknShRJCyg=
-github.com/luxfi/vm v1.3.1 h1:rLCbygaajehVkUoJ5czwhpUAJaC5J5okq3p+j2QSPSo=
-github.com/luxfi/vm v1.3.1/go.mod h1:uViH3COP8hhCbj42v1MTohkPCDwYQCZanNIOb/StWqY=
+github.com/luxfi/vm v1.3.2 h1:aYiW/ldEAaVMQ8KLExb55ggUGvjyI04KQC0AhhBrruA=
+github.com/luxfi/vm v1.3.2/go.mod h1:uViH3COP8hhCbj42v1MTohkPCDwYQCZanNIOb/StWqY=
 github.com/luxfi/warp v1.24.1 h1:9F+z6fy4sxmXp+3LlR9m3TiZ8Dfthh+s5KOeewSJL30=
 github.com/luxfi/warp v1.24.1/go.mod h1:kRGQDt6EB3oRLYo71aXqnmJuCBVfND3oQ5/2miaLoyg=
 github.com/luxfi/zap v1.2.6 h1:NBpbm9Gib41Oi/XAkAZKQ3hb+xCafo7JsrUjw+bKiAc=
