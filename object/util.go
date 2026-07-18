@@ -21,7 +21,7 @@ import (
 
 	"github.com/hanzoai/ai/util"
 	"github.com/hanzoai/dbx"
-	"github.com/sashabaranov/go-openai"
+	"github.com/hanzoai/go-openai"
 )
 
 func getUrlFromPath(path string, origin string) (string, error) {
