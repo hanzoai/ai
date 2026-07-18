@@ -20,7 +20,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/hanzoai/beego/context"
+	"github.com/hanzoai/ai/web"
 )
 
 func TestHstsFilter(t *testing.T) {
@@ -29,7 +29,7 @@ func TestHstsFilter(t *testing.T) {
 	resp := httptest.NewRecorder()
 
 	// Create a Beego context
-	ctx := context.NewContext()
+	ctx := web.NewContext()
 	ctx.Reset(resp, req)
 
 	// Apply the HSTS filter
@@ -59,7 +59,7 @@ func TestHstsFilterOnMultipleRoutes(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "https://example.com"+route, nil)
 			resp := httptest.NewRecorder()
 
-			ctx := context.NewContext()
+			ctx := web.NewContext()
 			ctx.Reset(resp, req)
 
 			HstsFilter(ctx)
@@ -83,7 +83,7 @@ func TestHstsFilterNotSetOnHTTP(t *testing.T) {
 	resp := httptest.NewRecorder()
 
 	// Create a Beego context
-	ctx := context.NewContext()
+	ctx := web.NewContext()
 	ctx.Reset(resp, req)
 
 	// Apply the HSTS filter
@@ -103,7 +103,7 @@ func TestHstsFilterWithXForwardedProto(t *testing.T) {
 	resp := httptest.NewRecorder()
 
 	// Create a Beego context
-	ctx := context.NewContext()
+	ctx := web.NewContext()
 	ctx.Reset(resp, req)
 
 	// Apply the HSTS filter

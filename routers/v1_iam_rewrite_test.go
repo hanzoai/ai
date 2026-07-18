@@ -19,12 +19,12 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/hanzoai/beego/context"
+	"github.com/hanzoai/ai/web"
 )
 
-func rewriteIam(method, target string) *context.Context {
+func rewriteIam(method, target string) *web.Context {
 	req := httptest.NewRequest(method, "https://console.hanzo.ai"+target, nil)
-	ctx := context.NewContext()
+	ctx := web.NewContext()
 	ctx.Reset(httptest.NewRecorder(), req)
 	V1IamRewriteFilter(ctx)
 	return ctx

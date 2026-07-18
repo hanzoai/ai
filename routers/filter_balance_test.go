@@ -22,7 +22,7 @@ import (
 	"testing"
 	"time"
 
-	beecontext "github.com/hanzoai/beego/context"
+	web "github.com/hanzoai/ai/web"
 
 	"github.com/hanzoai/ai/object"
 )
@@ -319,7 +319,7 @@ func TestBalanceGateFilterExemptsReads(t *testing.T) {
 		req := httptest.NewRequest(method, path, nil)
 		req.Header.Set("Authorization", "Bearer tok")
 		rec := httptest.NewRecorder()
-		ctx := beecontext.NewContext()
+		ctx := web.NewContext()
 		ctx.Reset(rec, req)
 		BalanceGateFilter(ctx)
 		return rec.Code

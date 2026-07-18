@@ -22,6 +22,7 @@ import (
 	"sync"
 
 	"github.com/hanzoai/ai/log"
+	"github.com/hanzoai/ai/web"
 	"github.com/hanzoai/beego"
 	"github.com/hanzoai/beego/session"
 
@@ -189,34 +190,11 @@ func doBootstrap() (err error) {
 	// body-reading routes) fails with "Failed to parse request: unexpected end
 	// of JSON input". MaxMemory bounds the copied body (64 MB, matching the
 	// standalone default) so large uploads still stream rather than buffer.
-	beego.BConfig.CopyRequestBody = true
-	if beego.BConfig.MaxMemory <= 0 {
-		beego.BConfig.MaxMemory = 1 << 26 // 64 MB
-	}
-
-	// beego filter chain — identical order to the standalone surface so
-	// the embedded handler enforces the same auth/tenant/balance pipeline.
-	beego.SetStaticPath("/swagger", "swagger")
-	beego.InsertFilter("/v1/cloud/*", beego.BeforeRouter, routers.V1CloudRewriteFilter)
-	beego.InsertFilter("/v1/iam/*", beego.BeforeRouter, routers.V1IamRewriteFilter)
-	beego.InsertFilter("*", beego.BeforeRouter, routers.CorsFilter)
-	// Live request-geo tap: folds each inbound /v1 API hit into the in-process
-	// traffic aggregate (edge country/region + service class only — never an IP).
-	// A pure side effect that never blocks/writes, so it rides high in the chain to
-	// count LB hits honestly. Powers the public /v1/traffic/globe marketing surface.
-	beego.InsertFilter("/v1/*", beego.BeforeRouter, routers.TrafficTapFilter)
-	beego.InsertFilter("*", beego.BeforeRouter, routers.HstsFilter)
-	beego.InsertFilter("*", beego.BeforeRouter, routers.CacheControlFilter)
-	beego.InsertFilter("*", beego.BeforeRouter, routers.RateLimitFilter)
-	beego.InsertFilter("*", beego.BeforeRouter, routers.AutoSigninFilter)
-	beego.InsertFilter("*", beego.BeforeRouter, routers.BalanceGateFilter)
-	beego.InsertFilter("*", beego.BeforeRouter, routers.StaticFilter)
-	beego.InsertFilter("*", beego.BeforeRouter, routers.TenantContextFilter)
-	beego.InsertFilter("*", beego.BeforeRouter, routers.AuthzFilter)
-	beego.InsertFilter("*", beego.BeforeRouter, routers.PrometheusFilter)
-	beego.InsertFilter("*", beego.BeforeRouter, routers.RecordMessage)
-	beego.InsertFilter("*", beego.AfterExec, routers.AfterRecordMessage, false)
-	beego.InsertFilter("*", beego.AfterExec, routers.SecureCookieFilter, false)
+	// Filter chain on the ai router, in the same order as the standalone
+	// surface so the handler enforces the same rewrite/auth/tenant/balance
+	// pipeline. The router caches the request body itself (no CopyRequestBody
+	// knob), and the /swagger static is served at the edge, not here.
+	routers.InstallFilters()
 
 	// Session config (memory unless redisEndpoint set).
 	//
@@ -289,14 +267,25 @@ func doBootstrap() (err error) {
 		log.Info("Billing queue started (Commerce endpoint configured)")
 	}
 
-	// Publish the fully-wired beego ControllerRegister. Every BeforeRouter
-	// filter inserted above — balance gate, auth, tenant — runs on each
-	// request the unified binary forwards into /v1/ai/*. This is the call
-	// whose absence made the unified binary 503 with
-	// "ai runtime not initialized".
-	SetHandler(beego.BeeApp.Handlers)
+	// Bind the session store to the router and publish it as the request
+	// handler. Every BeforeRouter filter inserted above runs on each request
+	// the unified binary forwards into /v1/ai/*.
+	routers.App.UseSessions(beegoSessions{})
+	SetHandler(routers.App)
 
 	return nil
+}
+
+// beegoSessions adapts the session provider to the router's SessionManager.
+// The provider's Store has the same shape as web.Store, so SessionStart binds
+// it directly. The provider stays in place until the native session cut.
+type beegoSessions struct{}
+
+func (beegoSessions) SessionStart(w http.ResponseWriter, r *http.Request) (web.Store, error) {
+	if beego.GlobalSessions == nil {
+		return nil, nil
+	}
+	return beego.GlobalSessions.SessionStart(w, r)
 }
 
 // initSessionManager constructs beego.GlobalSessions from the session settings
