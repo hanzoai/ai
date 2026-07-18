@@ -66,6 +66,19 @@ type OrgSettings struct {
 	// caller's X-Max-Cost header (also per-1k) still wins per request.
 	RouterCostCeiling float64 `json:"routerCostCeiling"`
 
+	// RouterStrategy pins which routing strategy leads for this org: "" (unset →
+	// "*" row then the enso-leaning default), "enso" (delegate to the learned Enso
+	// model), or "heuristic" (rules only — never call the engine). Lets an org opt
+	// out of the learned router deterministically even when the engine is configured.
+	RouterStrategy string `json:"routerStrategy"`
+
+	// RouterOverrides are this org's deterministic task→model pins, applied BEFORE
+	// any strategy: RouterOverrides["code"] forces a model for coding tasks,
+	// RouterOverrides["default"] is the catch-all. An override naming a model the org
+	// cannot serve is skipped, never honored blindly. nil/empty = none. Persisted as
+	// a JSON text column (JSONMap).
+	RouterOverrides JSONMap[string] `json:"routerOverrides"`
+
 	// TrainingContribution is the org's opt-in for contributing its routing
 	// events to the shared router-heads retrain (the Tier-2 base refresh in
 	// universe/docs/architecture/personal-router-training.md). It gates ONLY
