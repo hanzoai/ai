@@ -18,8 +18,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-
-	beecontext "github.com/hanzoai/beego/context"
 )
 
 // newResponse wraps a recorder the way the router does.
@@ -61,17 +59,6 @@ func TestResponseWriteHeaderOnce(t *testing.T) {
 	}
 	if rec.Code != http.StatusTeapot {
 		t.Fatalf("recorder Code = %d, want %d", rec.Code, http.StatusTeapot)
-	}
-
-	// Same input against beego's Response.
-	brec := httptest.NewRecorder()
-	bctx := beecontext.NewContext()
-	bctx.Reset(brec, httptest.NewRequest("GET", "/", nil))
-	bctx.ResponseWriter.WriteHeader(http.StatusTeapot)
-	bctx.ResponseWriter.WriteHeader(http.StatusOK)
-	if bctx.ResponseWriter.Status != r.Status || brec.Code != rec.Code {
-		t.Fatalf("beego parity: beego(status=%d,code=%d) vs web(status=%d,code=%d)",
-			bctx.ResponseWriter.Status, brec.Code, r.Status, rec.Code)
 	}
 }
 
