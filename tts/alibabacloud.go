@@ -23,8 +23,8 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/hanzoai/go-cosyvoice"
 	"github.com/hanzoai/ai/i18n"
+	"github.com/hanzoai/go-cosyvoice"
 )
 
 type AlibabacloudTextToSpeechProvider struct {
