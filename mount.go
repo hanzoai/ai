@@ -83,6 +83,11 @@ func Mount(app *zip.App, deps cloud.Deps) error {
 		return err
 	}
 	log.Info("ai: runtime initialized")
+
+	// The Enso router flywheel (probe + trainer) is launched inside Bootstrap — the
+	// ONE shared boot sequence both this Mount and cmd/aid run — so it boots identically
+	// embedded or standalone (HIP-510). No launch here: it would double-start the
+	// goroutines, since Bootstrap already did it above.
 	return nil
 }
 
