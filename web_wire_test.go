@@ -21,7 +21,6 @@ import (
 	"testing"
 
 	"github.com/hanzoai/ai/routers"
-	"github.com/hanzoai/beego"
 	"github.com/zap-proto/zip"
 )
 
@@ -30,16 +29,8 @@ import (
 // same /v1/* mount the unified binary uses, and returns the status code.
 func wiredStatus(t *testing.T, method, path, body string) int {
 	t.Helper()
-	beego.BConfig.WebConfig.Session.SessionOn = true
-	beego.BConfig.WebConfig.Session.SessionName = "cloud_session_id"
-	beego.BConfig.WebConfig.Session.SessionProvider = "memory"
-	beego.BConfig.WebConfig.Session.SessionProviderConfig = ""
-	beego.GlobalSessions = nil
-	if err := initSessionManager(); err != nil {
-		t.Fatalf("initSessionManager: %v", err)
-	}
+	wireTestSessions()
 	routers.InstallFilters()
-	routers.App.UseSessions(beegoSessions{})
 	SetHandler(routers.App)
 	defer SetHandler(nil)
 

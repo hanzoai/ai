@@ -20,8 +20,6 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"testing"
-
-	beecontext "github.com/hanzoai/beego/context"
 )
 
 // TestOutputBodySetsContentLength proves the ×24 Output.Body path: it writes
@@ -43,19 +41,6 @@ func TestOutputBodySetsContentLength(t *testing.T) {
 	}
 	if rec.Code != http.StatusOK {
 		t.Fatalf("Code = %d, want 200", rec.Code)
-	}
-
-	// beego parity.
-	brec := httptest.NewRecorder()
-	bctx := beecontext.NewContext()
-	bctx.Reset(brec, httptest.NewRequest("GET", "/", nil))
-	bctx.Output.Body(content)
-	if brec.Body.String() != rec.Body.String() ||
-		brec.Header().Get("Content-Length") != rec.Header().Get("Content-Length") ||
-		brec.Code != rec.Code {
-		t.Fatalf("beego parity: beego(body=%q,len=%q,code=%d) web(body=%q,len=%q,code=%d)",
-			brec.Body.String(), brec.Header().Get("Content-Length"), brec.Code,
-			rec.Body.String(), rec.Header().Get("Content-Length"), rec.Code)
 	}
 }
 
