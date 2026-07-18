@@ -19,10 +19,10 @@ import (
 	"net/http/httptest"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/hanzoai/ai/controllers"
 	web "github.com/hanzoai/ai/web"
-	"github.com/hanzoai/beego/session"
 	iam "github.com/hanzoai/iam"
 )
 
@@ -423,13 +423,6 @@ func TestLegacyGetUsagesStillAdminGated(t *testing.T) {
 	}
 }
 
-// sessionAdapter binds a memory session manager to the router.
-type sessionAdapter struct{ mgr *session.Manager }
-
-func (a sessionAdapter) SessionStart(w http.ResponseWriter, r *http.Request) (web.Store, error) {
-	return a.mgr.SessionStart(w, r)
-}
-
 // roundTripRouter is the wired router used by the round-trip tests.
 var roundTripRouter *web.Router
 
@@ -444,19 +437,9 @@ func setupRoundTripRouter(t *testing.T) {
 		// unauthenticated request yields a nil session user cleanly
 		// (Session("user") == nil) instead of panicking on a nil CruSession.
 		// This is what lets the gate return a real 401 end-to-end.
-		mgr, err := session.NewManager("memory", &session.ManagerConfig{
-			CookieName:      "cloud_session_id",
-			EnableSetCookie: true,
-			Gclifetime:      3600,
-		})
-		if err != nil {
-			t.Fatalf("session.NewManager: %v", err)
-		}
-		go mgr.GC()
-
 		// Register the REAL admin routes + the REAL filter — production wiring, not a stub.
 		r := web.NewRouter()
-		r.UseSessions(sessionAdapter{mgr})
+		r.UseSessions(web.NewMemorySessions("cloud_session_id", time.Hour))
 		r.InsertFilter("*", web.BeforeRouter, AuthzFilter)
 		r.Router("/v1/admin/providers", &controllers.ApiController{}, "GET:GetAdminProviders")
 		r.Router("/v1/admin/providers/toggle", &controllers.ApiController{}, "POST:ToggleAdminProvider")

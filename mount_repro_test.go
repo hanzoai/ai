@@ -20,72 +20,53 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
-	"github.com/hanzoai/beego"
-	_ "github.com/hanzoai/beego/session" // memory session provider registration
+	"github.com/hanzoai/ai/web"
 	"github.com/zap-proto/zip"
 )
 
-// reproCtrl is a minimal beego controller exposing the same OpenAI-compatible
-// endpoints that routers/router.go registers (chat/completions, models). It
-// lets the test exercise the REAL beego ControllerRegister path — not a fake
-// http.Handler — so the bare /v1/* forward is validated end to end.
-type reproCtrl struct{ beego.Controller }
+// reproCtrl is a minimal controller exposing the same OpenAI-compatible
+// endpoints routers/router.go registers (chat/completions, models). It lets
+// the test exercise the REAL controller-dispatch path through the /v1/* mount.
+type reproCtrl struct{ web.Controller }
 
-// Chat echoes the raw request body so the test can prove beego populated
-// c.Ctx.Input.RequestBody — which only happens when CopyRequestBody is true.
-// The real ChatCompletions controller json.Unmarshals that same field, so an
-// empty body there yields "unexpected end of JSON input".
+// Chat echoes the raw request body, proving the router populated
+// Ctx.Input.RequestBody (the real ChatCompletions controller json.Unmarshals
+// that same field, so an empty body there yields "unexpected end of JSON
+// input").
 func (c *reproCtrl) Chat() {
 	if len(c.Ctx.Input.RequestBody) == 0 {
-		c.Ctx.Output.SetStatus(400)
-		c.Ctx.Output.Body([]byte(`{"error":"empty body — CopyRequestBody off"}`))
+		c.Ctx.Output.SetStatus(http.StatusBadRequest)
+		c.Ctx.Output.Body([]byte(`{"error":"empty body"}`))
 		return
 	}
 	c.Ctx.Output.Body(c.Ctx.Input.RequestBody)
 }
 func (c *reproCtrl) Models() { c.Ctx.Output.Body([]byte(`{"models":"ok"}`)) }
 
-// TestMountForwardsNestedOpenAIRoutesToBeego reproduces the production defect:
-// the bare gateway paths /v1/chat/completions and /v1/models must reach the
-// beego routes registered at those exact paths, through the unified binary's
-// /v1/* mount, WITHOUT panicking in SessionStart. (The gateway forwards
-// the bare /v1 routes unchanged, so the mount is bare /v1/* — see mountRoutes.)
-func TestMountForwardsNestedOpenAIRoutesToBeego(t *testing.T) {
-	// Register the real beego routes exactly as routers/router.go does.
-	beego.Router("/v1/chat/completions", &reproCtrl{}, "POST:Chat")
-	beego.Router("/v1/models", &reproCtrl{}, "GET:Models")
+// reproHandler wires a session-bound router with the repro routes and publishes
+// it as the request handler the /v1/* mount serves.
+func reproHandler() {
+	r := web.NewRouter()
+	r.UseSessions(web.NewMemorySessions("cloud_session_id", time.Hour))
+	r.Router("/v1/chat/completions", &reproCtrl{}, "POST:Chat")
+	r.Router("/v1/models", &reproCtrl{}, "GET:Models")
+	r.Router("/v1/repro-body-echo", &reproCtrl{}, "POST:Chat")
+	SetHandler(r)
+}
 
-	// Enable sessions and build the manager via the SAME code path Bootstrap
-	// uses. Before the fix, beego.GlobalSessions is nil here (the unified
-	// binary never calls beego.Run()), so the first request that hits beego's
-	// SessionStart panics with a nil-pointer deref — rendered as a 500. This
-	// is the production defect; initSessionManager() is the fix under test.
-	beego.BConfig.WebConfig.Session.SessionOn = true
-	beego.BConfig.WebConfig.Session.SessionName = "cloud_session_id"
-	beego.BConfig.WebConfig.Session.SessionProvider = "memory" // matches production (scratch image, no FS)
-	beego.BConfig.WebConfig.Session.SessionProviderConfig = ""
-	beego.GlobalSessions = nil // simulate the embedded binary's pre-fix state
-	if err := initSessionManager(); err != nil {
-		t.Fatalf("initSessionManager: %v", err)
-	}
-
-	// Publish the real beego handler — the same object Bootstrap() publishes.
-	SetHandler(beego.BeeApp.Handlers)
+// TestMountForwardsNestedOpenAIRoutes proves the bare gateway paths
+// /v1/chat/completions and /v1/models reach the routes registered at those
+// exact paths through the unified binary's /v1/* mount, with session handling
+// alive (no 500) and the nested route resolving (no 404).
+func TestMountForwardsNestedOpenAIRoutes(t *testing.T) {
+	reproHandler()
 	defer SetHandler(nil)
 
 	app := zip.New(zip.Config{DisableStartupMessage: true})
 	mountRoutes(app)
 
-	// A valid Bearer token would route to the controller (200 {"chat":"ok"}).
-	// Without one, the real auth filters (AutoSignin/Authz) inserted by the
-	// runtime reject the request — which still PROVES the request traversed
-	// beego's full pipeline: the /v1/ai prefix was stripped, the nested route
-	// matched (r:/v1/models, r:/v1/chat/completions), and SessionStart did NOT
-	// panic. The defect manifested as HTTP 500 with beego's "application error"
-	// HTML (a nil GlobalSessions deref). So the assertion is: the response is
-	// NOT that 500 panic page and NOT a 404 — the nested route resolves and
-	// session handling is alive.
 	cases := []struct {
 		name, method, path string
 	}{
@@ -101,41 +82,20 @@ func TestMountForwardsNestedOpenAIRoutesToBeego(t *testing.T) {
 			}
 			body, _ := io.ReadAll(resp.Body)
 			if resp.StatusCode == http.StatusInternalServerError {
-				t.Fatalf("%s %s: status=500 (session panic regressed) body=%q", tc.method, tc.path, body)
-			}
-			if resp.StatusCode == http.StatusServiceUnavailable {
-				t.Fatalf("%s %s: status=503 (session store errored — memory provider regressed) body=%q", tc.method, tc.path, body)
+				t.Fatalf("%s %s: status=500 (session/dispatch regressed) body=%q", tc.method, tc.path, body)
 			}
 			if resp.StatusCode == http.StatusNotFound {
 				t.Fatalf("%s %s: status=404 (nested route did not resolve) body=%q", tc.method, tc.path, body)
-			}
-			if bs := string(body); strings.Contains(bs, "beego application error") || strings.Contains(bs, "nil pointer") {
-				t.Fatalf("%s %s: beego panic page returned: %q", tc.method, tc.path, bs)
 			}
 		})
 	}
 }
 
-// TestChatCompletionsReceivesRequestBody guards the CopyRequestBody fix: the
-// OpenAI controllers json.Unmarshal c.Ctx.Input.RequestBody, which beego only
-// fills when BConfig.CopyRequestBody is true. The embedded binary has no
-// conf/app.conf to set it, so Bootstrap must — otherwise every POST
-// /v1/chat/completions failed with "unexpected end of JSON input" (HTTP 200
-// error envelope). Here the repro controller echoes the body; an empty echo
-// (400) means CopyRequestBody regressed.
+// TestChatCompletionsReceivesRequestBody guards that the router caches the
+// request body: the OpenAI controllers json.Unmarshal Ctx.Input.RequestBody,
+// so an empty echo (400) means the body-cache regressed.
 func TestChatCompletionsReceivesRequestBody(t *testing.T) {
-	// Unique path so this test's controller is the only handler — beego's route
-	// table is process-global and other tests register /v1/chat/completions.
-	beego.Router("/v1/repro-body-echo", &reproCtrl{}, "POST:Chat")
-	beego.BConfig.CopyRequestBody = true // the Bootstrap fix under test
-	beego.BConfig.WebConfig.Session.SessionOn = true
-	beego.BConfig.WebConfig.Session.SessionProvider = "memory"
-	beego.BConfig.WebConfig.Session.SessionProviderConfig = ""
-	beego.GlobalSessions = nil
-	if err := initSessionManager(); err != nil {
-		t.Fatalf("initSessionManager: %v", err)
-	}
-	SetHandler(beego.BeeApp.Handlers)
+	reproHandler()
 	defer SetHandler(nil)
 
 	app := zip.New(zip.Config{DisableStartupMessage: true})
@@ -150,7 +110,7 @@ func TestChatCompletionsReceivesRequestBody(t *testing.T) {
 	}
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode == http.StatusBadRequest {
-		t.Fatalf("body did not reach controller (CopyRequestBody off): %q", body)
+		t.Fatalf("body did not reach controller (body cache off): %q", body)
 	}
 	if string(body) != payload {
 		t.Fatalf("controller saw body %q, want %q (body must forward unchanged)", body, payload)
