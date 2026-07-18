@@ -15,10 +15,34 @@
 package controllers
 
 import (
+	"runtime"
 	"testing"
+	"time"
 
 	"github.com/hanzoai/ai/object"
 )
+
+// TestFlywheelDarkByDefault proves the router flywheel launches are safe to wire into
+// the always-run Bootstrap (the single launch site, HIP-510): with none of their env
+// flags set, StartRouterProbe and StartRouterTrainer are no-ops that spawn NO background
+// goroutine. This dark-by-default gating is exactly what lets Bootstrap call them
+// unconditionally without turning the flywheel on outside a configured deployment.
+func TestFlywheelDarkByDefault(t *testing.T) {
+	t.Setenv("ROUTER_TRAIN_ENABLED", "")
+	t.Setenv("ROUTER_PROBE_RPH", "")
+	t.Setenv("ROUTER_PROBE_TOKEN", "")
+
+	// Let any async goroutines from earlier tests settle so the baseline is quiet, then
+	// measure tightly around the two synchronous calls: when disabled they run zero `go`
+	// statements, so the count cannot rise.
+	time.Sleep(50 * time.Millisecond)
+	before := runtime.NumGoroutine()
+	StartRouterProbe()
+	StartRouterTrainer()
+	if after := runtime.NumGoroutine(); after > before {
+		t.Fatalf("flywheel spawned %d goroutine(s) with env unset; must be dark by default", after-before)
+	}
+}
 
 // rewarded builds a batch of n rewarded routing events for one (task, model) arm
 // at a fixed reward — the pure fit's only inputs.
