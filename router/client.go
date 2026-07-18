@@ -106,22 +106,12 @@ func (c Client) Route(ctx context.Context, req Request, slo Slo) (model string, 
 }
 
 // RouteDecision resolves req to a full Decision (model, task, confidence, source,
-// features). It never errors: on any engine failure it returns the heuristic
-// decision (Source == SourceHeuristic, no confidence or features).
+// features) under the default policy — the zero RoutingPolicy, which reproduces the
+// historical behavior (enso-leaning: the engine when configured, else the heuristic
+// floor). It never errors. This is the zero-policy shortcut for RouteDecisionFor;
+// callers holding a per-org policy call RouteDecisionFor directly.
 func (c Client) RouteDecision(ctx context.Context, req Request, slo Slo) Decision {
-	if c.Endpoint != "" {
-		if d, ok := c.routeEngine(ctx, req, slo); ok {
-			return d
-		}
-	}
-	t := Classify(req)
-	m := c.Policy.ForTask(t, c.Known)
-	if m == "" {
-		// Last resort: ignore servability so `auto` never dead-ends on a strict
-		// predicate — a misrouted-but-listed model is better than an empty id.
-		m = c.Policy.ForTask(t, nil)
-	}
-	return Decision{Model: m, Task: t, Source: SourceHeuristic}
+	return c.RouteDecisionFor(ctx, req, slo, RoutingPolicy{})
 }
 
 // ObserveRequest is the online-learning feedback the gateway posts to the engine
