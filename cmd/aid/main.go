@@ -17,18 +17,19 @@ package main
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
 	"github.com/hanzoai/ai"
+	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/controllers"
 	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/object"
+	"github.com/hanzoai/ai/routers"
 	"github.com/hanzoai/ai/util"
-	"github.com/hanzoai/beego"
-	_ "github.com/hanzoai/beego/session/redis"
 )
 
 func main() {
@@ -43,7 +44,7 @@ func main() {
 	rlInstance := ai.RateLimiter()
 	bq := ai.BillingQueue()
 
-	port := beego.AppConfig.DefaultInt("httpport", 8000)
+	port := conf.AppConfig.DefaultInt("httpport", 8000)
 
 	// Standalone-only: free the legacy beego port before binding it. The
 	// embedded binary serves beego through zip and never listens here, so
@@ -106,7 +107,7 @@ func main() {
 	// the bridged request before the route dispatches. Purely additive; the
 	// :8000 HTTP path and the existing ZAP handlers (MsgType 100/200) are
 	// untouched. Gated by ZAP_ENABLED via object.GetZapNode() returning nil.
-	controllers.InitForwardBridge(beego.BeeApp.Handlers)
+	controllers.InitForwardBridge(routers.App)
 
 	go object.ClearThroughputPerSecond()
 
@@ -122,5 +123,10 @@ func main() {
 	// ROUTER_TRAIN_ENABLED=1.
 	controllers.StartRouterTrainer()
 
-	beego.Run(fmt.Sprintf(":%v", port))
+	// Serve the native router directly. The embedded cloud binary serves the
+	// same routers.App through zip; here the standalone owns the listener.
+	srv := &http.Server{Addr: fmt.Sprintf(":%v", port), Handler: routers.App}
+	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		log.Error("http server on :%v exited: %v", port, err)
+	}
 }
