@@ -82,6 +82,48 @@ func (output *Output) JSON(data interface{}, hasIndent bool, encoding bool) erro
 	return output.Body(content)
 }
 
+// Cookie adds a Set-Cookie response header. The optional args are positional,
+// in order: max-age (int seconds; negative deletes), path (string, default
+// "/"), domain (string), secure (bool) and http-only (bool).
+func (output *Output) Cookie(name, value string, others ...interface{}) {
+	ck := &http.Cookie{Name: name, Value: value, Path: "/"}
+	if len(others) > 0 {
+		switch v := others[0].(type) {
+		case int:
+			ck.MaxAge = v
+		case int32:
+			ck.MaxAge = int(v)
+		case int64:
+			ck.MaxAge = int(v)
+		}
+	}
+	if len(others) > 1 {
+		if v, ok := others[1].(string); ok && v != "" {
+			ck.Path = v
+		}
+	}
+	if len(others) > 2 {
+		if v, ok := others[2].(string); ok && v != "" {
+			ck.Domain = v
+		}
+	}
+	if len(others) > 3 {
+		if v, ok := others[3].(bool); ok {
+			ck.Secure = v
+		} else if others[3] != nil {
+			ck.Secure = true
+		}
+	}
+	if len(others) > 4 {
+		if v, ok := others[4].(bool); ok {
+			ck.HttpOnly = v
+		}
+	}
+	if s := ck.String(); s != "" {
+		output.Context.ResponseWriter.Header().Add("Set-Cookie", s)
+	}
+}
+
 // escapeNonASCII replaces every rune above the ASCII range with its \uXXXX
 // escape, leaving ASCII bytes untouched.
 func escapeNonASCII(s string) string {

@@ -20,7 +20,7 @@ import (
 	"strings"
 
 	"github.com/hanzoai/ai/object"
-	"github.com/hanzoai/beego/context"
+	"github.com/hanzoai/ai/web"
 )
 
 const (
@@ -30,7 +30,7 @@ const (
 	tenantContextEnvKey       = "tenant.env"
 )
 
-func getTenantHeader(ctx *context.Context, name string) string {
+func getTenantHeader(ctx *web.Context, name string) string {
 	return strings.TrimSpace(ctx.Input.Header(name))
 }
 
@@ -40,7 +40,7 @@ func getTenantHeader(ctx *context.Context, name string) string {
 // client-controlled, so storing it verbatim would let any caller spoof a tenant.
 // GetOrg honors the header only for the principal's own org (or a global
 // admin), so the stored org is always the caller's real tenant.
-func TenantContextFilter(ctx *context.Context) {
+func TenantContextFilter(ctx *web.Context) {
 	// Canonical gateway-minted identity + browser sub-scopes — no X-IAM-*
 	// prefix (cloud middleware_identity injects X-User-Id/X-Org-Id; console2
 	// stamps X-Project-Id/X-Environment). The X-IAM-* variants were never sent,
@@ -92,7 +92,7 @@ func hashBearer(authz string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func getTenantContextValue(ctx *context.Context, key string) string {
+func getTenantContextValue(ctx *web.Context, key string) string {
 	if ctx == nil {
 		return ""
 	}
@@ -104,17 +104,17 @@ func getTenantContextValue(ctx *context.Context, key string) string {
 	return strings.TrimSpace(text)
 }
 
-// GetTenantOrgID returns the org from IAM context.
-func GetTenantOrgID(ctx *context.Context) string {
+// GetTenantOrgID returns the org from IAM web.
+func GetTenantOrgID(ctx *web.Context) string {
 	return getTenantContextValue(ctx, tenantContextOrgIDKey)
 }
 
-// GetTenantUserID returns the user ID from IAM context.
-func GetTenantUserID(ctx *context.Context) string {
+// GetTenantUserID returns the user ID from IAM web.
+func GetTenantUserID(ctx *web.Context) string {
 	return getTenantContextValue(ctx, tenantContextUserIDKey)
 }
 
-// GetTenantProjectID returns the project ID from IAM context.
-func GetTenantProjectID(ctx *context.Context) string {
+// GetTenantProjectID returns the project ID from IAM web.
+func GetTenantProjectID(ctx *web.Context) string {
 	return getTenantContextValue(ctx, tenantContextProjectIDKey)
 }

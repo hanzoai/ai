@@ -26,7 +26,7 @@ import (
 	"testing"
 
 	"github.com/hanzoai/ai/object"
-	beecontext "github.com/hanzoai/beego/context"
+	web "github.com/hanzoai/ai/web"
 	iam "github.com/hanzoai/iam"
 )
 
@@ -81,7 +81,7 @@ func newChatControllerSession(authHeader, body string, withSession bool) (*ApiCo
 	if authHeader != "" {
 		req.Header.Set("Authorization", authHeader)
 	}
-	ctx := beecontext.NewContext()
+	ctx := web.NewContext()
 	ctx.Reset(rec, req)
 	ctx.Input.RequestBody = []byte(body)
 	if withSession {

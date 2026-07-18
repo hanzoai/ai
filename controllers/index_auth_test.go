@@ -24,7 +24,7 @@ import (
 
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/object"
-	beecontext "github.com/hanzoai/beego/context"
+	web "github.com/hanzoai/ai/web"
 	iam "github.com/hanzoai/iam"
 )
 
@@ -51,7 +51,7 @@ func newAuthController(method, path, authHeader string, user *iam.User) (*ApiCon
 	if authHeader != "" {
 		req.Header.Set("Authorization", authHeader)
 	}
-	ctx := beecontext.NewContext()
+	ctx := web.NewContext()
 	ctx.Reset(rec, req)
 	sess := &ctrlFakeSession{data: map[interface{}]interface{}{}}
 	if user != nil {

@@ -21,7 +21,7 @@ import (
 	"strings"
 	"testing"
 
-	beecontext "github.com/hanzoai/beego/context"
+	web "github.com/hanzoai/ai/web"
 	iam "github.com/hanzoai/iam"
 
 	"github.com/hanzoai/ai/object"
@@ -36,7 +36,7 @@ func fptr(f float64) *float64 { return &f }
 func newRewardController(method, url, body string, user *iam.User) (*ApiController, *httptest.ResponseRecorder) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(method, url, strings.NewReader(body))
-	ctx := beecontext.NewContext()
+	ctx := web.NewContext()
 	ctx.Reset(rec, req)
 	ctx.Input.RequestBody = []byte(body)
 	sess := &ctrlFakeSession{data: map[interface{}]interface{}{}}
