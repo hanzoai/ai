@@ -22,7 +22,6 @@ import (
 
 	_ "github.com/go-sql-driver/mysql" // mysql
 	"github.com/hanzoai/ai/conf"
-	"github.com/hanzoai/beego"
 	"github.com/hanzoai/dbx"
 	_ "github.com/hanzoai/sqlite"       // sqlite: the ONE Hanzo driver — registers "sqlite" exactly once (cgo→mattn/SQLCipher, !cgo→modernc). Never import modernc directly, or a cgo build double-registers "sqlite" and panics at init.
 	_ "github.com/lib/pq"               // postgres
@@ -50,7 +49,7 @@ func getCreateDatabaseFlag() bool {
 }
 
 func InitConfig() {
-	err := beego.LoadAppConfig("ini", "../conf/app.conf")
+	err := conf.LoadAppConfig("ini", "../conf/app.conf")
 	if err != nil {
 		panic(err)
 	}
