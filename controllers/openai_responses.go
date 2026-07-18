@@ -21,8 +21,8 @@ import (
 	"time"
 
 	"github.com/hanzoai/ai/util"
-	"github.com/klauspost/compress/zstd"
 	"github.com/hanzoai/go-openai"
+	"github.com/klauspost/compress/zstd"
 )
 
 // OpenAIResponsesRequest is the subset of POST /v1/responses used by Codex and
