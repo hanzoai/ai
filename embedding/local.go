@@ -23,7 +23,7 @@ import (
 	"strings"
 
 	"github.com/hanzoai/ai/i18n"
-	"github.com/sashabaranov/go-openai"
+	"github.com/hanzoai/go-openai"
 )
 
 type LocalEmbeddingProvider struct {
