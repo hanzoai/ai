@@ -58,6 +58,13 @@ type route struct {
 	methods  map[string]string // upper-case HTTP method -> handler method name; "*" matches any
 }
 
+// SessionManager starts the session store for a request. A provider that
+// matches this shape (the session provider does) binds per-request sessions
+// without the router depending on the provider.
+type SessionManager interface {
+	SessionStart(w http.ResponseWriter, r *http.Request) (Store, error)
+}
+
 // Router registers controllers and filters and serves requests: it builds a
 // per-request Context, runs the filter chain around a reflection-dispatched
 // controller method, and is itself an http.Handler.
@@ -65,11 +72,19 @@ type Router struct {
 	routes    []*route
 	filters   [FinishRouter + 1][]*filterEntry
 	maxMemory int64
+	sessions  SessionManager
 }
 
 // NewRouter returns an empty Router.
 func NewRouter() *Router {
 	return &Router{maxMemory: defaultMaxMemory}
+}
+
+// UseSessions binds a session manager. When set, ServeHTTP starts a session
+// before the filter chain (so the auth filters and controllers read it) and
+// releases it after the response.
+func (p *Router) UseSessions(m SessionManager) {
+	p.sessions = m
 }
 
 // Router registers a controller for a URL pattern with a method mapping such
@@ -121,6 +136,16 @@ func (p *Router) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}()
+
+	// Bind the request session before the filter chain so the auth filters and
+	// controllers read it; release it after the response (also on panic, since
+	// this defer runs before the recover above).
+	if p.sessions != nil {
+		if store, err := p.sessions.SessionStart(ctx.ResponseWriter, r); err == nil && store != nil {
+			ctx.Input.CruSession = store
+			defer store.SessionRelease(ctx.ResponseWriter)
+		}
+	}
 
 	urlPath := r.URL.Path
 
