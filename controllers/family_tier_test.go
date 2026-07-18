@@ -2,7 +2,44 @@
 
 package controllers
 
-import "testing"
+import (
+	"context"
+	"errors"
+	"testing"
+
+	"github.com/hanzoai/ai/object"
+)
+
+// commerceFamilyTier prefers a host-installed native tier reader (cloud's co-resident
+// commerce read over commerceinproc) over the authed HTTP self-call that the cloud edge
+// 401/403s in-cluster — the fix for the toothless gate. A reader error folds to "" so the
+// gate stays fail-safe (unknown → allow). This is the object.TierReader() twin of
+// getUserBalance's object.BalanceReader() seam.
+func TestCommerceFamilyTierNativeReader(t *testing.T) {
+	saved := object.TierReader()
+	t.Cleanup(func() { object.SetTierReader(saved) })
+
+	// Installed reader resolves the plan name directly (no HTTP), scoped to the
+	// subject's namespace (the "<org>/" prefix of a person subject).
+	object.SetTierReader(func(_ context.Context, subject, namespace string) (string, error) {
+		if subject == "hanzo/alice" && namespace == "hanzo" {
+			return "pro", nil
+		}
+		return "", nil
+	})
+	if got := commerceFamilyTier("hanzo/alice"); got != "pro" {
+		t.Errorf("native reader tier = %q, want pro", got)
+	}
+
+	// A reader error must fold to "" (unknown → the gate allows) — a co-resident
+	// commerce blip never locks out a paying caller.
+	object.SetTierReader(func(_ context.Context, _, _ string) (string, error) {
+		return "", errors.New("commerce unreachable")
+	})
+	if got := commerceFamilyTier("hanzo/alice"); got != "" {
+		t.Errorf("reader error must yield \"\" (fail-safe), got %q", got)
+	}
+}
 
 // familyTierAllowed enforces the enso subscription ladder (free < trial < paid) against
 // each SKU's advertised min_tier, and FAILS SAFE (allows) on any commerce uncertainty.
