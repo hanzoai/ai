@@ -30,7 +30,6 @@ package agent
 import (
 	"database/sql/driver"
 	"encoding/json"
-	"errors"
 	"fmt"
 )
 
@@ -74,18 +73,4 @@ func (l McpToolsList) Value() (driver.Value, error) {
 		return nil, err
 	}
 	return string(b), nil
-}
-
-// ScanInto is a helper for receiving any value into a *[]*McpTools when
-// the field can't easily be retyped to McpToolsList.
-func ScanInto(dst *[]*McpTools, src interface{}) error {
-	if dst == nil {
-		return errors.New("McpToolsList ScanInto: nil destination")
-	}
-	var l McpToolsList
-	if err := (&l).Scan(src); err != nil {
-		return err
-	}
-	*dst = []*McpTools(l)
-	return nil
 }
