@@ -17,6 +17,7 @@ package web
 import (
 	"errors"
 	"net/http"
+	"path"
 	"reflect"
 	"runtime/debug"
 	"strings"
@@ -127,7 +128,11 @@ func (p *Router) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rt, params, found := p.match(urlPath)
+	// BeforeRouter filters (the /v1/cloud and /v1/iam rewrites) mutate
+	// Request.URL.Path; route on the live post-filter path. The filter chain
+	// keeps selecting on the entry path — the filters read the live path from
+	// the context themselves.
+	rt, params, found := p.match(r.URL.Path)
 	if !found {
 		http.NotFound(ctx.ResponseWriter, r)
 		return
@@ -203,8 +208,8 @@ func (p *Router) dispatch(ctx *Context, rt *route, handler string) {
 
 // match finds the first route whose segments match the path and returns its
 // captured route parameters.
-func (p *Router) match(path string) (*route, map[string]string, bool) {
-	segs := splitPath(path)
+func (p *Router) match(urlPath string) (*route, map[string]string, bool) {
+	segs := splitPath(urlPath)
 	for _, rt := range p.routes {
 		if len(rt.segments) != len(segs) {
 			continue
@@ -226,10 +231,11 @@ func (p *Router) match(path string) (*route, map[string]string, bool) {
 	return nil, nil, false
 }
 
-// splitPath splits a URL path into non-empty segments.
+// splitPath cleans a URL path (resolving "", ".", ".." and empty segments the
+// way a served path is normalized) and splits it into non-empty segments.
 func splitPath(p string) []string {
-	p = strings.Trim(p, "/")
-	if p == "" {
+	p = strings.Trim(path.Clean(p), "/")
+	if p == "" || p == "." {
 		return []string{}
 	}
 	return strings.Split(p, "/")
