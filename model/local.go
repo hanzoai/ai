@@ -27,7 +27,7 @@ import (
 	"unicode"
 
 	"github.com/hanzoai/ai/i18n"
-	"github.com/sashabaranov/go-openai"
+	"github.com/hanzoai/go-openai"
 )
 
 type LocalModelProvider struct {
@@ -222,7 +222,7 @@ func (p *LocalModelProvider) QueryText(question string, writer io.Writer, histor
 			messages = OpenaiRawMessagesToMessages(rawMessages)
 		}
 
-		// https://github.com/sashabaranov/go-openai/pull/223#issuecomment-1494372875
+		// https://github.com/hanzoai/go-openai/pull/223#issuecomment-1494372875
 		promptTokenCount, err := OpenaiNumTokensFromMessages(messages, model)
 		if err != nil {
 			return nil, err
@@ -347,7 +347,7 @@ func (p *LocalModelProvider) QueryText(question string, writer io.Writer, histor
 			agentInfo.AgentMessages.ToolCalls = toolCalls
 		}
 
-		// https://github.com/sashabaranov/go-openai/pull/223#issuecomment-1494372875
+		// https://github.com/hanzoai/go-openai/pull/223#issuecomment-1494372875
 		responseTokenCount, err := GetTokenSize(model, answerData.String())
 		if err != nil {
 			return nil, err

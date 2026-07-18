@@ -23,7 +23,7 @@ import (
 
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/router"
-	"github.com/sashabaranov/go-openai"
+	"github.com/hanzoai/go-openai"
 )
 
 // routerTestConfig builds a ModelConfig with auto-routing enabled and a small
