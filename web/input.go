@@ -68,7 +68,7 @@ func (input *Input) Method() string {
 // Param returns the value of a route parameter, or "" when absent.
 func (input *Input) Param(key string) string {
 	for i, v := range input.pnames {
-		if v == key && i <= len(input.pvalues) {
+		if v == key && i < len(input.pvalues) {
 			return input.pvalues[i]
 		}
 	}
@@ -78,7 +78,7 @@ func (input *Input) Param(key string) string {
 // SetParam sets a route parameter, replacing any existing value for the key.
 func (input *Input) SetParam(key, val string) {
 	for i, v := range input.pnames {
-		if v == key && i <= len(input.pvalues) {
+		if v == key && i < len(input.pvalues) {
 			input.pvalues[i] = val
 			return
 		}
