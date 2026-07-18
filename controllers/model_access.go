@@ -59,21 +59,20 @@ func gatedAccessMessage(model string) string {
 	return fmt.Sprintf("%s is in limited preview — request access: POST /v1/models/%s/access", model, model)
 }
 
-// familyAccessAllowed is the enforcement predicate at the family pipe: a non-gated
-// model is always allowed; a gated model requires a granted ModelAccess row for the
-// caller (by org, username, or email). Unknown-to-discovery is treated as non-gated
-// (fail-open only for models the family does not advertise as gated).
-func (c *ApiController) familyAccessAllowed(fam *modelFamily, model, orgId string, authUser *iam.User) bool {
-	// Per-tier gate (Seam A): a family SKU advertises a min_tier on the enso ladder
-	// (enso-flash free, enso trial+, enso-ultra paid). A caller whose commerce tier is
-	// CONFIDENTLY below it is refused here — pipeToFamily then returns the 403
-	// gatedAccessMessage. Orthogonal to the waitlist/grant gate below (both must pass),
-	// and fail-safe: familyTierAllowed admits on any commerce uncertainty, so only a
-	// confident low tier denies. Keyed on the SAME subject the balance gate bills.
-	if !familyTierAllowed(familyAccessSubject(orgId, authUser), model) {
-		return false
-	}
-	zm, ok := fam.lookup(model)
+// modelAccessGrantedFn resolves whether a caller holds a grant for a gated SKU
+// (default object.IsModelAccessGranted). Indirected so the shared gated-access rule
+// is unit-testable without a live grants DB, mirroring routingEventSink/orgAutoRoutingLookup.
+var modelAccessGrantedFn = object.IsModelAccessGranted
+
+// grantAllows is the waitlist/grant half of family serve-access, shared by the serve
+// pipe (familyAccessAllowed) and the auto-router's `known` predicate (modelServable):
+// a SKU unknown to discovery or not gated always passes; a gated SKU (enso limited
+// preview) requires a granted ModelAccess row for the caller (org-wide, username, or
+// email). zm/ok is the caller's already-resolved discovery lookup — the two callers
+// differ ONLY in how they resolve the SKU (the serving family vs. cross-family
+// discovery), never in the grant decision. HIP-510 §1: `known` admits only models the
+// caller can actually serve, and access-gated SKUs additionally require an explicit grant.
+func grantAllows(zm zenModel, ok bool, orgId string, authUser *iam.User) bool {
 	if !ok || !zm.gated() {
 		return true
 	}
@@ -85,7 +84,33 @@ func (c *ApiController) familyAccessAllowed(fam *modelFamily, model, orgId strin
 	if authUser != nil {
 		name, email = authUser.Name, authUser.Email
 	}
-	return object.IsModelAccessGranted(owner, name, email, zm.ID)
+	return modelAccessGrantedFn(owner, name, email, zm.ID)
+}
+
+// familyAccessAllowed is the enforcement predicate at the family pipe: a family SKU is
+// servable only when BOTH gates pass — the per-tier gate (Seam A: enso-flash free, enso
+// trial+, enso-ultra paid; fail-safe on any commerce uncertainty) AND the waitlist/grant
+// gate (grantAllows). Unknown-to-discovery is treated as non-gated (fail-open only for
+// models the family does not advertise as gated).
+func (c *ApiController) familyAccessAllowed(fam *modelFamily, model, orgId string, authUser *iam.User) bool {
+	if !familyTierAllowed(familyAccessSubject(orgId, authUser), model) {
+		return false
+	}
+	zm, ok := fam.lookup(model)
+	return grantAllows(zm, ok, orgId, authUser)
+}
+
+// modelServable reports whether the caller can actually serve a model id — the SAME two
+// gates the serve pipe (familyAccessAllowed) enforces, tier AND grant, resolved via
+// cross-family discovery (familyLookupFresh, as FamilyModelGated does) since only the id
+// is known. The auto-router folds this into its `known` predicate so `auto` never routes
+// a caller to a family SKU their tier or grant would make the serve path refuse.
+func modelServable(model, orgId string, authUser *iam.User) bool {
+	if !familyTierAllowed(familyAccessSubject(orgId, authUser), model) {
+		return false
+	}
+	zm, ok := familyLookupFresh(model)
+	return grantAllows(zm, ok, orgId, authUser)
 }
 
 // FamilyModelGated reports whether a model id is a gated family SKU per discovery.
