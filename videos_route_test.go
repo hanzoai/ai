@@ -22,8 +22,6 @@ import (
 
 	"github.com/hanzoai/ai/controllers"
 	"github.com/hanzoai/ai/routers" // registers /v1/* routes (incl. videos/generations)
-	"github.com/hanzoai/beego"
-	_ "github.com/hanzoai/beego/session" // memory session provider registration
 	"github.com/zap-proto/zip"
 )
 
@@ -35,18 +33,9 @@ import (
 // registration half of the wiring: before it, the path 404'd (catalog-ware
 // model, no endpoint).
 func TestVideosGenerationsRouteIsRegistered(t *testing.T) {
-	beego.BConfig.CopyRequestBody = true
-	beego.BConfig.WebConfig.Session.SessionOn = true
-	beego.BConfig.WebConfig.Session.SessionName = "cloud_session_id"
-	beego.BConfig.WebConfig.Session.SessionProvider = "memory"
-	beego.BConfig.WebConfig.Session.SessionProviderConfig = ""
-	beego.GlobalSessions = nil
-	if err := initSessionManager(); err != nil {
-		t.Fatalf("initSessionManager: %v", err)
-	}
+	wireTestSessions()
 
 	routers.InstallFilters()
-	routers.App.UseSessions(beegoSessions{})
 	SetHandler(routers.App)
 	defer SetHandler(nil)
 
