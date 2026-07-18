@@ -201,6 +201,7 @@ type zenModel struct {
 	MaxCtx  int
 	Vision  bool
 	Access  string    // "" = generally available; "waitlist" = access-gated (limited preview) — ai enforces the grant
+	MinTier string    // "" | "free" | "trial" | "paid" — min subscription tier the family advertises for this SKU; ai enforces it (Seams A/B). "" ⇒ free (all tiers). Orthogonal to Access.
 	Base    zenTier   // headline price (the in-window tier)
 	Tiers   []zenTier // full ladder, ascending by MaxCtx — the billing contract
 }
@@ -209,6 +210,17 @@ type zenModel struct {
 // that is LISTED but callable only with a granted ModelAccess row). ai learns this
 // from discovery (the family's advertised access), never a hardcode.
 func (m zenModel) gated() bool { return m.Access == "waitlist" }
+
+// minTier is the SKU's advertised minimum subscription tier on the enso ladder,
+// normalized: "" ⇒ "free" (every tier may use it). One of "free" | "trial" | "paid".
+// ai learns this from discovery (the family's advertised min_tier), never a hardcode;
+// the tier gate (familyTierAllowed, Seams A/B) enforces it.
+func (m zenModel) minTier() string {
+	if t := strings.ToLower(strings.TrimSpace(m.MinTier)); t != "" {
+		return t
+	}
+	return "free"
+}
 
 // tierFor picks the tier that serves promptTokens: the smallest whose context covers
 // the prompt, else the largest. This is the family's Tier rule (hip-00NN) — cost keys
@@ -262,7 +274,8 @@ func (m zenModel) price() (modelPrice, bool) {
 type zenWireModel struct {
 	ID            string `json:"id"`
 	OwnedBy       string `json:"owned_by"`
-	Access        string `json:"access"` // "" | "waitlist" — access gating advertised by the family
+	Access        string `json:"access"`   // "" | "waitlist" — access gating advertised by the family
+	MinTier       string `json:"min_tier"` // "" | "free" | "trial" | "paid" — min subscription tier advertised for this SKU (Seams A/B)
 	ContextWindow int    `json:"context_window"`
 	Pricing       struct {
 		Input  decimal.Decimal `json:"input"`
@@ -280,7 +293,7 @@ type zenWireModel struct {
 
 func (w zenWireModel) model() zenModel {
 	zm := zenModel{
-		ID: w.ID, OwnedBy: w.OwnedBy, MaxCtx: w.ContextWindow, Vision: w.Capabilities.Vision, Access: w.Access,
+		ID: w.ID, OwnedBy: w.OwnedBy, MaxCtx: w.ContextWindow, Vision: w.Capabilities.Vision, Access: w.Access, MinTier: w.MinTier,
 		Base: zenTier{MaxCtx: w.ContextWindow, In: w.Pricing.Input, Out: w.Pricing.Output},
 	}
 	for _, t := range w.PricingTiers {
