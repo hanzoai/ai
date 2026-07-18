@@ -16,7 +16,6 @@
 package util
 
 import (
-	"io/ioutil"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -55,23 +54,6 @@ func EnsureFolderExists(path string) {
 
 func RemoveExt(filename string) string {
 	return filename[:len(filename)-len(filepath.Ext(filename))]
-}
-
-func ListFiles(path string) []string {
-	res := []string{}
-
-	files, err := ioutil.ReadDir(path)
-	if err != nil {
-		panic(err)
-	}
-
-	for _, f := range files {
-		if !f.IsDir() {
-			res = append(res, f.Name())
-		}
-	}
-
-	return res
 }
 
 func FilterQuery(urlString string, blackList []string) string {
