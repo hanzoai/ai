@@ -63,6 +63,26 @@ func AppendRouterTrainingLog(row *RouterTrainingLog) error {
 	return insertRow(adapter.db, row)
 }
 
+// NewRouterTrainingLog projects the latest-outcome artifact meta onto one immutable
+// timeline row. ONE mapping, shared by the in-process trainer (trainScope) and the
+// admin publish handler, so the retrain history and the "latest per scope" upsert can
+// never drift apart. Id + LoggedTime are stamped by AppendRouterTrainingLog.
+func NewRouterTrainingLog(m *RouterArtifactMeta) *RouterTrainingLog {
+	return &RouterTrainingLog{
+		Owner:       m.Owner,
+		Version:     m.Version,
+		TrainedTime: m.TrainedTime,
+		Events:      m.Events,
+		GatePassed:  m.GatePassed,
+		Published:   m.Published,
+		GateKind:    m.GateKind,
+		GateMetric:  m.GateMetric,
+		GateValue:   m.GateValue,
+		GateBase:    m.GateBase,
+		Note:        m.Note,
+	}
+}
+
 // ListRouterTrainingLog returns retrain-log rows for a scope, oldest first,
 // optionally filtered by a since timestamp (trained_time >= since) and capped at
 // limit (<= 0 = uncapped). Empty owner returns all scopes' rows. The retrain
