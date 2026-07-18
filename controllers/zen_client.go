@@ -55,6 +55,21 @@ import (
 // source. A family is added by adding an instance here — nothing else in ai knows a
 // family name.
 
+// flagshipWindow is the served context window (1M tokens) ai guarantees for the
+// flagship Zen/Enso SKUs, independent of what a given discovery snapshot advertises.
+const flagshipWindow = 1_000_000
+
+// pinnedSKU is a family SKU ai guarantees in /v1/models at a known context window.
+// When the family already serves the SKU, the pin fixes its listed window; when the
+// family does not advertise it yet — a SKU ai routes ahead of discovery (e.g.
+// enso-pro) — the pin also synthesizes the listing entry. Pins apply only to a
+// CONFIGURED family (enabled()), so an unconfigured family lists nothing. See
+// hip-00NN.
+type pinnedSKU struct {
+	id            string
+	contextWindow int
+}
+
 // modelFamily is one serving family as a value: its public name/brand + cold-start
 // ownership prefix, the config keys that hold its address, the provider record ai
 // forwards through, and a discovered-catalog snapshot refreshed from the family on a
@@ -67,6 +82,7 @@ type modelFamily struct {
 	urlKey     string                  // config key for the base URL ("ZEN_URL" | "ENSO_URL")
 	keyKey     string                  // config key for the service key ("ZEN_API_KEY" | "ENSO_API_KEY")
 	providerFn func() *object.Provider // the virtual provider ai forwards through
+	pins       []pinnedSKU             // SKUs ai guarantees at a known window (applied only when enabled())
 
 	// discovered catalog — a read-mostly snapshot; discovery failure keeps the last
 	// good snapshot so a transient blip never empties ai's model list.
@@ -81,15 +97,41 @@ var (
 	zenFam = &modelFamily{
 		name: "zen", prefix: "zen", owner: "zenlm", urlKey: "ZEN_URL", keyKey: "ZEN_API_KEY",
 		providerFn: object.ZenProvider,
+		pins: []pinnedSKU{
+			{id: "zen5", contextWindow: flagshipWindow},
+			{id: "zen5-coder", contextWindow: flagshipWindow},
+			{id: "zen5-pro", contextWindow: flagshipWindow},
+		},
 	}
 	ensoFam = &modelFamily{
 		name: "enso", prefix: "enso", owner: "hanzo", urlKey: "ENSO_URL", keyKey: "ENSO_API_KEY",
 		providerFn: object.EnsoProvider,
+		pins: []pinnedSKU{
+			{id: "enso", contextWindow: flagshipWindow},
+			{id: "enso-pro", contextWindow: flagshipWindow},
+			{id: "enso-ultra", contextWindow: flagshipWindow},
+		},
 	}
 	// modelFamilies is the discovery/route/merge iteration order — the ONE list every
 	// generic family helper walks.
 	modelFamilies = []*modelFamily{zenFam, ensoFam}
 )
+
+// pinnedWindow returns the context window ai guarantees when listing and routing a
+// SKU, or 0 when the family pins none. Pins apply only to a configured family, so a
+// bare or unconfigured family reports no pinned window (and synthesizes no SKU).
+func (f *modelFamily) pinnedWindow(model string) int {
+	if !f.enabled() {
+		return 0
+	}
+	m := strings.ToLower(strings.TrimSpace(model))
+	for _, p := range f.pins {
+		if strings.ToLower(p.id) == m {
+			return p.contextWindow
+		}
+	}
+	return 0
+}
 
 func (f *modelFamily) baseURL() string {
 	return strings.TrimRight(strings.TrimSpace(conf.GetConfigString(f.urlKey)), "/")
@@ -432,6 +474,9 @@ func (f *modelFamily) passthroughRoute(model string) *modelRoute {
 	if m, ok := f.lookup(model); ok {
 		ctx = m.MaxCtx
 	}
+	if w := f.pinnedWindow(model); w > 0 {
+		ctx = w // guarantee the flagship served window (and give enso-pro a window before discovery advertises it)
+	}
 	return &modelRoute{
 		providerName:  f.name,
 		upstreamModel: model, // identity: the family maps the SKU to its real upstream
@@ -442,10 +487,19 @@ func (f *modelFamily) passthroughRoute(model string) *modelRoute {
 }
 
 // mergeModels overlays this family's discovered lineup onto the base /v1/models list:
-// a discovered SKU wins over any same-named base entry, and new SKUs are appended.
+// a discovered SKU wins over any same-named base entry, new SKUs are appended, and
+// each carries its served context window (from discovery, overridden by a pinned
+// window for the flagship SKUs). A configured family also lists its pinned SKUs that
+// discovery has not advertised yet (e.g. enso-pro) so clients see the real window.
 func (f *modelFamily) mergeModels(base []modelInfo) []modelInfo {
 	zs := f.snapshot()
-	if len(zs) == 0 {
+	// Pinned SKUs are synthesized only for a CONFIGURED family, so a bare or
+	// unconfigured family lists nothing it cannot serve.
+	pins := f.pins
+	if !f.enabled() {
+		pins = nil
+	}
+	if len(zs) == 0 && len(pins) == 0 {
 		return base
 	}
 	now := time.Now().Unix()
@@ -453,27 +507,45 @@ func (f *modelFamily) mergeModels(base []modelInfo) []modelInfo {
 	for i, m := range base {
 		idx[strings.ToLower(m.ID)] = i
 	}
+	upsert := func(info modelInfo) {
+		k := strings.ToLower(info.ID)
+		if i, ok := idx[k]; ok {
+			base[i] = info
+		} else {
+			idx[k] = len(base)
+			base = append(base, info)
+		}
+	}
 	for _, z := range zs {
 		owner := z.OwnedBy
 		if owner == "" {
 			owner = f.owner // public branding default: enso→"hanzo", zen→"zenlm"
 		}
+		window := z.MaxCtx
+		if w := f.pinnedWindow(z.ID); w > 0 {
+			window = w // flagship SKUs report their guaranteed served window
+		}
 		info := modelInfo{
 			ID: z.ID, Object: "model", Created: now, OwnedBy: owner, Premium: true,
-			ContextWindow: z.MaxCtx, // discovered from the family's own /v1/models (enso = 1,000,000)
-			Pricing:       pricingInfo(z.price()),
+			Pricing: pricingInfo(z.price()), ContextWindow: window,
 		}
 		// A gated SKU is LISTED but access-controlled; advertise the default standing
 		// ("waitlist"). ListModels upgrades this to the caller's real status when authed.
 		if z.gated() {
 			info.Access = &modelAccessInfo{State: "waitlist"}
 		}
-		if i, ok := idx[strings.ToLower(z.ID)]; ok {
-			base[i] = info
-		} else {
-			idx[strings.ToLower(z.ID)] = len(base)
-			base = append(base, info)
+		upsert(info)
+	}
+	// List any pinned SKU discovery has not advertised (a SKU ai routes ahead of the
+	// family serving it, e.g. enso-pro) with its guaranteed window.
+	for _, p := range pins {
+		if _, ok := idx[strings.ToLower(p.id)]; ok {
+			continue // already listed from discovery (window pinned above)
 		}
+		upsert(modelInfo{
+			ID: p.id, Object: "model", Created: now, OwnedBy: f.owner,
+			Premium: true, ContextWindow: p.contextWindow,
+		})
 	}
 	sort.Slice(base, func(i, j int) bool { return base[i].ID < base[j].ID })
 	return base
