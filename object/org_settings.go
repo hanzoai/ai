@@ -14,6 +14,7 @@
 package object
 
 import (
+	"strings"
 	"sync"
 	"time"
 
@@ -75,6 +76,22 @@ type OrgSettings struct {
 	// as AutoRouting: "" (unset) → treated as opted-OUT (privacy default), the
 	// nightly base-refresh job includes only "enabled" orgs.
 	TrainingContribution string `json:"trainingContribution"`
+
+	// Judge* configure the LLM-as-a-judge dense-reward path (the Mean-Field Judge
+	// Panel). They are PLATFORM-GLOBAL, not per-org: read ONLY from the "*"
+	// GlobalDefaultOwner row (like the trainer's "*" RouterPrefer), live-tunable at
+	// admin.hanzo.ai via /v1/update-org-settings — no env, no restart. NO secret
+	// lives here: the judge presents the gateway's existing internal service bearer
+	// (ROUTER_PROBE_TOKEN, env/KMS), never a DB value. Every field is fail-safe to
+	// the built-in default when unset (GetCachedJudgeConfig):
+	//   JudgeEnabled — three-state "" (unset → default ON) / "enabled" / "disabled".
+	//   JudgeModels  — comma-separated served model ids; >1 ⇒ the MFJP panel. "" → the default panel.
+	//   JudgeURL     — judge inference endpoint. "" → self; point at an attested TEE for confidential inference.
+	//   JudgeSample  — fraction of eligible turns judged, 0<f<=1. 0 → the default rate.
+	JudgeEnabled string  `json:"judgeEnabled"`
+	JudgeModels  string  `json:"judgeModels"`
+	JudgeURL     string  `json:"judgeUrl"`
+	JudgeSample  float64 `json:"judgeSample"`
 }
 
 // TrainingContribution values for OrgSettings.TrainingContribution. The empty
@@ -84,6 +101,72 @@ const (
 	TrainingContributionEnabled  = "enabled"
 	TrainingContributionDisabled = "disabled"
 )
+
+// JudgeEnabled three-state values for OrgSettings.JudgeEnabled — the same
+// vocabulary as AutoRouting/TrainingContribution. Unset ("") resolves to the
+// built-in default (JudgeEnabledDefault) in GetCachedJudgeConfig.
+const (
+	JudgeConfigUnset    = ""
+	JudgeConfigEnabled  = "enabled"
+	JudgeConfigDisabled = "disabled"
+)
+
+// Judge config defaults — the platform-global LLM-as-a-judge posture applied
+// wherever the "*" GlobalDefaultOwner row leaves a field unset. On deploy, with NO
+// admin action, the Mean-Field Judge Panel runs on ~10% of eligible (opted-in,
+// non-EU-protected) traffic across a diverse, cheap, non-premium served panel;
+// admin tunes or disables it live at admin.hanzo.ai.
+const (
+	// JudgeEnabledDefault arms the judge by default (opt-out for admins).
+	JudgeEnabledDefault = true
+	// JudgeModelsDefault is a DIVERSE panel — a cheap Anthropic haiku, a cheap OpenAI
+	// mini, and a small open Meta model. Different model families decorrelate
+	// systematic error (the MFJP diversity property), and all three serve via do-ai
+	// with no balance gate, so the panel works out of the box.
+	JudgeModelsDefault = "claude-3-5-haiku,gpt-4o-mini,llama-3.1-8b"
+	// JudgeSampleDefault judges ~10% of eligible turns.
+	JudgeSampleDefault = 0.1
+)
+
+// JudgeConfig is the resolved, platform-global judge configuration — the "*"
+// GlobalDefaultOwner OrgSettings row with every unset field filled by its built-in
+// default. NO secret: the bearer is resolved separately from env/KMS at call time.
+type JudgeConfig struct {
+	Enabled bool
+	Models  string  // comma-separated panel of served model ids (>1 ⇒ MFJP)
+	URL     string  // "" = self (the caller applies the self endpoint)
+	Sample  float64 // (0,1] — fraction of eligible turns judged
+}
+
+// GetCachedJudgeConfig resolves the live judge config from the 60s-cached "*"
+// GlobalDefaultOwner row, applying the built-in default for every unset field.
+// Fail-safe: on any missing row or read error it returns the defaults (judge ON
+// with the default panel), so a lookup blip never silently disables quality
+// rewards. Read cheaply on the judge's refresh tick — admin.hanzo.ai edits to the
+// "*" row take effect within one cache/refresh window, no restart.
+func GetCachedJudgeConfig() JudgeConfig {
+	out := JudgeConfig{Enabled: JudgeEnabledDefault, Models: JudgeModelsDefault, Sample: JudgeSampleDefault}
+	s, err := GetCachedOrgSettings(GlobalDefaultOwner)
+	if err != nil || s == nil {
+		return out
+	}
+	switch s.JudgeEnabled {
+	case JudgeConfigEnabled:
+		out.Enabled = true
+	case JudgeConfigDisabled:
+		out.Enabled = false
+	}
+	if m := strings.TrimSpace(s.JudgeModels); m != "" {
+		out.Models = m
+	}
+	if u := strings.TrimSpace(s.JudgeURL); u != "" {
+		out.URL = u
+	}
+	if s.JudgeSample > 0 && s.JudgeSample <= 1 {
+		out.Sample = s.JudgeSample
+	}
+	return out
+}
 
 func GetOrgSettingsList(owner string) ([]*OrgSettings, error) {
 	if adapter == nil || adapter.db == nil {
