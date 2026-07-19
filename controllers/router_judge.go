@@ -94,7 +94,8 @@ const judgeMaxChars = 6000
 // judgeConfig is the resolved, immutable judge configuration built once at boot.
 type judgeConfig struct {
 	url    string
-	model  string
+	model  string   // primary/single judge model (also models[0])
+	models []string // the judge PANEL: >1 model ⇒ Mean-Field Judge Panel (MFJP)
 	token  string
 	sample float64 // (0,1] — fraction of eligible turns judged
 }
@@ -144,8 +145,15 @@ func StartRouterJudge() {
 	if sample <= 0 || sample > 1 {
 		sample = 0.1
 	}
-	judgeCfg.Store(&judgeConfig{url: url, model: model, token: token, sample: sample})
-	log.Info("router judge: enabled — model %s, sample %.2f, endpoint %s (point ROUTER_JUDGE_URL at an attested TEE endpoint for confidential inference)", model, sample, url)
+	// ROUTER_JUDGE_MODEL may be a comma-separated LIST — a diverse panel (MFJP). One
+	// model ⇒ the plain single judge; two or more ⇒ the mean-field panel.
+	models := splitModels(model)
+	judgeCfg.Store(&judgeConfig{url: url, model: models[0], models: models, token: token, sample: sample})
+	if len(models) > 1 {
+		log.Info("router judge: enabled — MEAN-FIELD PANEL of %d judges %v, sample %.2f, endpoint %s", len(models), models, sample, url)
+	} else {
+		log.Info("router judge: enabled — model %s, sample %.2f, endpoint %s (point ROUTER_JUDGE_URL at an attested TEE endpoint for confidential inference)", models[0], sample, url)
+	}
 }
 
 // judgeRoutedResponse is the fire-and-forget hook invoked AFTER a chat response has
@@ -193,7 +201,14 @@ func shouldJudge(cfg *judgeConfig, userAgent, org, requestId, prompt, response s
 // misjoined reward poisons training worse than a missing one. Content lives only in
 // this call's arguments and is gone when it returns.
 func runJudge(cfg *judgeConfig, org, requestId, model, task, prompt, response string) {
-	score, ok := judgeScore(cfg, task, prompt, response)
+	var score float64
+	var ok bool
+	if len(cfg.models) > 1 {
+		// Diverse panel: calibrated, reliability-weighted consensus (see MFJP).
+		score, _, ok = panelScore(cfg, cfg.models, task, prompt, response)
+	} else {
+		score, ok = judgeScore(cfg, task, prompt, response)
+	}
 	if !ok {
 		return
 	}
