@@ -191,6 +191,12 @@ func (a *Adapter) createTable() {
 			fmt.Printf("createTable: sync %T failed: %v\n", m, err)
 		}
 	}
+	// dbx.Sync's ALTER TABLE ADD COLUMN carries no default, so rows that predate a
+	// newly-added column hold SQL NULL there — which a full struct scan cannot read
+	// into a Go scalar ("converting NULL to string is unsupported"). Repair the one
+	// table whose per-org router/judge config the trainer reads at boot and on
+	// cadence; idempotent, so it is a no-op once the rows are clean.
+	backfillNullScalars(a.db, "org_settings", &OrgSettings{})
 }
 
 // RawDB returns the underlying *sql.DB for direct access when needed.
