@@ -130,6 +130,28 @@ func AttachRoutingReward(org, requestId string, reward float64) (found bool, err
 	return true, nil
 }
 
+// AttachRoutingRewardIfUnset attaches a DENSE implicit reward ONLY to an event that
+// has not been scored yet (rewarded_time empty) — the auto-reward floor (HIP-510).
+// It lets EVERY routed request's outcome train the bandit without clobbering a
+// richer EXPLICIT signal: the implicit reward fires at request completion (early),
+// so a later thumbs/judge reward (AttachRoutingReward, unconditional overwrite)
+// always wins. Idempotent, org-scoped, content-free. `set` reports whether a row
+// was actually scored (false when already rewarded or unknown/cross-org).
+func AttachRoutingRewardIfUnset(org, requestId string, reward float64) (set bool, err error) {
+	if adapter == nil || adapter.db == nil {
+		return false, nil
+	}
+	where := dbx.HashExp{"owner": org, "request_id": requestId, "rewarded_time": ""}
+	n, err := updateCols(adapter.db, "routing_event", where, dbx.Params{
+		"reward":        reward,
+		"rewarded_time": time.Now().UTC().Format(time.RFC3339),
+	})
+	if err != nil {
+		return false, err
+	}
+	return n > 0, nil
+}
+
 // GetRoutingEventByRequestId returns the routing event for (org, requestId), or nil
 // when none matches (unknown or cross-org — the caller reveals nothing either way).
 // It backs the online-learning forward: after a reward lands, ai reads the event's
