@@ -612,6 +612,13 @@ func usageBilledCents(record *usageRecord, costCents int64) int64 {
 // to Commerce. The queue handles retries with exponential backoff.
 // Only successful API calls are recorded (error status is filtered here).
 func recordUsage(record *usageRecord) {
+	// Dense flywheel reward (HIP-510): score EVERY routed request's outcome and
+	// attach it to its routing decision, so the bandit learns from request-volume
+	// signal instead of sparse explicit thumbs. Runs BEFORE the success filter so an
+	// errored request scores 0 (the arm is penalized for failing). Dark-by-default,
+	// async, best-effort — never slows or fails the request.
+	emitAutoRoutingReward(record)
+
 	// Only record successful calls
 	if record.Status != "success" {
 		return
