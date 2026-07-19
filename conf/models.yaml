@@ -33,14 +33,21 @@ router:
   endpoint: ""            # e.g. http://engine.hanzo.svc:3000 (zen-router via hanzo-engine)
   cost_ceiling: 0.0       # advisory per-1k cost cap, forwarded to the engine as SLO
   prefer:                 # task tag → ordered model ids; first servable wins ("default" = catch-all)
-    code: [zen4-coder, zen5-coder, qwen3-coder, gpt-5.3-codex]
-    reasoning: [zen4-thinking, deepseek-reasoner, zen4-ultra]
-    math: [zen4-ultra, deepseek-reasoner, zen4-thinking]
-    creative: [zen4, zen4-max, claude-sonnet-4-5]
-    vision: [zen5-omni, zen3-omni, zen3-vl]
-    long_context: [zen4-max, gpt-5.4, claude-sonnet-4-5]
-    cheap_chat: [zen4-mini, zen5-mini, gpt-4o-mini]
-    default: [zen4, zen5, gpt-4o]
+    # zen champions stay FIRST (unchanged default/cost); the newly-enabled do-ai
+    # premium models are appended as CANDIDATES — reachable by the learned engine
+    # and the exploration floor, and as fallbacks when a champion is unservable.
+    # Only models VERIFIED to have the task's capability are listed (e.g. only
+    # confirmed-vision ids go in `vision`; gpt-5.6 has no tools so it stays out of
+    # tool-heavy code/reasoning; sonnet-5/deepseek-v4-pro/glm-5.2 reject images so
+    # they are absent from `vision`).
+    code: [zen4-coder, zen5-coder, qwen3-coder, gpt-5.3-codex, claude-opus-4-8, claude-sonnet-4-6, gpt-5.4, deepseek-v4-pro]
+    reasoning: [zen4-thinking, deepseek-reasoner, zen4-ultra, o3, gpt-5.5, claude-opus-4-8, deepseek-v4-pro]
+    math: [zen4-ultra, deepseek-reasoner, zen4-thinking, o3, gpt-5.5, deepseek-v4-pro]
+    creative: [zen4, zen4-max, claude-sonnet-4-5, claude-opus-4-8, claude-fable-5, gpt-5.5]
+    vision: [zen5-omni, zen3-omni, zen3-vl, claude-sonnet-4-6, gpt-4o, gpt-5.4, llama-4-maverick, nemotron-nano-vl]
+    long_context: [zen4-max, gpt-5.4, claude-sonnet-4-5, gpt-5.5, gpt-5.6-luna, claude-opus-4-8, deepseek-v4-pro]
+    cheap_chat: [zen4-mini, zen5-mini, gpt-4o-mini, claude-haiku-4-5]
+    default: [zen4, zen5, gpt-4o, gpt-4o-mini, kimi-k2.6, glm-5.2]
 
 default_pricing:
   input_per_million: 1.00
@@ -94,20 +101,26 @@ models:
   gpt-4o:
     provider: do-ai
     upstream: openai-gpt-4o
+    context_window: 128000
+    max_output_tokens: 16384
+    vision: true            # verified live: answered image color
+    tools: true             # verified live: emitted tool_calls
     fallbacks:
     - provider: openai-direct
       upstream: gpt-4o
     pricing: {input: 2.50, output: 10.00}
-    hidden: true
 
   gpt-4o-mini:
     provider: do-ai
     upstream: openai-gpt-4o-mini
+    context_window: 128000
+    max_output_tokens: 16384
+    vision: true            # verified live
+    tools: true             # verified live
     fallbacks:
     - provider: openai-direct
       upstream: gpt-4o-mini
     pricing: {input: 0.15, output: 0.60}
-    hidden: true
 
   gpt-4.1:
     provider: do-ai
@@ -172,6 +185,60 @@ models:
     pricing: {input: 10.00, output: 30.00}
     hidden: true
 
+  # ── OpenAI frontier via DO-AI (premium; positive balance required) ─────
+  # Enabled for customers 2026-07-18: verified live on inference.do-ai.run.
+  # Pricing mirrors the gpt-5 line (do-ai publishes no per-model rate).
+  gpt-5.4:
+    provider: do-ai
+    upstream: openai-gpt-5.4
+    context_window: 400000
+    max_output_tokens: 128000
+    vision: true            # verified live
+    tools: true             # verified live: emitted tool_calls
+    premium: true
+    pricing: {input: 5.00, output: 15.00}
+
+  gpt-5.5:
+    provider: do-ai
+    upstream: openai-gpt-5.5
+    context_window: 1000000
+    max_output_tokens: 128000
+    vision: true            # verified live
+    tools: true             # verified live
+    premium: true
+    pricing: {input: 5.00, output: 15.00}
+
+  # gpt-5.6 ships as three sibling variants (luna/sol/terra). All accept image
+  # input but REJECT function/tool calling on do-ai today (verified: HTTP 400 on
+  # tools across all three) — so `tools` is intentionally unset (honest: absent =
+  # not advertised). Revisit when do-ai enables tools for the 5.6 line.
+  gpt-5.6-luna:
+    provider: do-ai
+    upstream: openai-gpt-5.6-luna
+    context_window: 1050000
+    max_output_tokens: 128000
+    vision: true            # verified live
+    premium: true
+    pricing: {input: 5.00, output: 15.00}
+
+  gpt-5.6-sol:
+    provider: do-ai
+    upstream: openai-gpt-5.6-sol
+    context_window: 1050000
+    max_output_tokens: 128000
+    vision: true
+    premium: true
+    pricing: {input: 5.00, output: 15.00}
+
+  gpt-5.6-terra:
+    provider: do-ai
+    upstream: openai-gpt-5.6-terra
+    context_window: 1050000
+    max_output_tokens: 128000
+    vision: true
+    premium: true
+    pricing: {input: 5.00, output: 15.00}
+
   gpt-oss-120b:
     context_window: 128000
     provider: do-ai
@@ -193,10 +260,13 @@ models:
 
   o3:
     context_window: 200000
+    max_output_tokens: 100000
     provider: do-ai
     upstream: openai-o3
+    vision: true            # verified live: answered image color
+    tools: true             # verified live: emitted tool_calls
+    premium: true
     pricing: {input: 10.00, output: 40.00}
-    hidden: true
 
   o3-mini:
     context_window: 200000
@@ -234,11 +304,14 @@ models:
   claude-haiku-4-5:
     provider: do-ai
     upstream: anthropic-claude-haiku-4.5
+    context_window: 200000
+    max_output_tokens: 8192
+    vision: true            # verified live: answered image color
+    tools: true             # verified live: emitted tool_calls
     fallbacks:
     - provider: anthropic
       upstream: claude-haiku-4-5-20251001
     pricing: {input: 1.00, output: 5.00}
-    hidden: true
 
   claude-opus-4:
     provider: do-ai
@@ -269,20 +342,28 @@ models:
   claude-opus-4-7:
     provider: do-ai
     upstream: anthropic-claude-opus-4.7
+    context_window: 200000
+    max_output_tokens: 8192
+    vision: true            # verified live
+    tools: true             # verified live
+    premium: true
     fallbacks:
     - provider: anthropic
       upstream: claude-opus-4-7
     pricing: {input: 15.00, output: 75.00}
-    hidden: true
 
   claude-opus-4-8:
     provider: do-ai
     upstream: anthropic-claude-opus-4.8
+    context_window: 1000000
+    max_output_tokens: 128000
+    vision: true            # verified live: answered image color
+    tools: true             # verified live: emitted tool_calls
+    premium: true
     fallbacks:
     - provider: anthropic
       upstream: claude-opus-4-8
     pricing: {input: 15.00, output: 75.00}
-    hidden: true
 
   claude-sonnet-4:
     provider: do-ai
@@ -301,16 +382,48 @@ models:
     pricing: {input: 3.00, output: 15.00}
     hidden: true
 
-  # claude-sonnet-4-6 is the default model for Hanzo bot agents.
-  # Routes to the same upstream as claude-sonnet-4-5 (the latest available Sonnet).
+  # claude-sonnet-4-6 is the default model for Hanzo bot agents. Now routes to the
+  # REAL anthropic-claude-4.6-sonnet upstream — verified served on this account
+  # 2026-07-18 (2xx chat+vision+tools); it previously degraded to 4.5 while 4.6
+  # 403'd. anthropic-direct failover stays on the working 4.5 id (that provider is
+  # disabled by default; a 4.5 safety net beats a guessed 4.6 direct id).
   claude-sonnet-4-6:
     provider: do-ai
-    upstream: anthropic-claude-4.5-sonnet
+    upstream: anthropic-claude-4.6-sonnet
+    context_window: 200000
+    max_output_tokens: 8192
+    vision: true            # verified live: accepted image input
+    tools: true             # verified live: emitted tool_calls
     fallbacks:
     - provider: anthropic
       upstream: claude-sonnet-4-5-20250929
     pricing: {input: 3.00, output: 15.00}
-    hidden: true
+
+  # ── Anthropic frontier via DO-AI (premium) — enabled 2026-07-18 ────────
+  # claude-sonnet-5: 1M-context Sonnet. Chat + tools verified live; it REJECTS
+  # image input on do-ai today (HTTP 400 on image_url — verified twice), so
+  # `vision` is intentionally unset (honest: absent = not advertised).
+  claude-sonnet-5:
+    provider: do-ai
+    upstream: anthropic-claude-5-sonnet
+    context_window: 1000000
+    max_output_tokens: 128000
+    tools: true             # verified live: emitted tool_calls
+    premium: true
+    pricing: {input: 3.00, output: 15.00}
+
+  # claude-fable-5: Anthropic frontier creative model, 1M context. Chat + vision +
+  # tools all verified live. Pricing mirrors the opus frontier tier (do-ai
+  # publishes no per-model rate); revisit if a published rate appears.
+  claude-fable-5:
+    provider: do-ai
+    upstream: anthropic-claude-fable-5
+    context_window: 1000000
+    max_output_tokens: 128000
+    vision: true            # verified live: answered image color
+    tools: true             # verified live: emitted tool_calls
+    premium: true
+    pricing: {input: 15.00, output: 75.00}
 
   # Open source via DO-AI
   deepseek-r1-distill-70b:
@@ -400,7 +513,31 @@ models:
     upstream: glm-5.2
     premium: true
     context_window: 262144   # measured
+    max_output_tokens: 52429
+    tools: true              # verified live: emitted tool_calls (rejects image input → no vision)
     pricing: {input: 3.00, output: 9.60}
+
+  # ── Strong open models via DO-AI — enabled for customers 2026-07-18 ────
+  # deepseek-v4-pro and kimi-k2.6 are exposed by unhiding their upstream-leaf
+  # entries below (the leaf key already IS the clean public name). llama-4-maverick
+  # and qwen3.5-397b get their own SKUs here. All verified live. Prices align to
+  # each family's existing sibling (do-ai publishes no per-model rate) — estimates.
+  llama-4-maverick:
+    provider: do-ai
+    upstream: llama-4-maverick
+    context_window: 128000
+    max_output_tokens: 16384
+    vision: true            # verified live: answered image color (Llama 4 is multimodal)
+    tools: true             # verified live: emitted tool_calls
+    pricing: {input: 0.35, output: 1.15}   # estimate, aligned to the llama family tier
+
+  qwen3.5-397b:
+    provider: do-ai
+    upstream: qwen3.5-397b-a17b
+    context_window: 131072
+    max_output_tokens: 26214
+    tools: true             # verified live: emitted tool_calls (vision unconfirmed → not advertised)
+    pricing: {input: 0.60, output: 2.20}   # estimate, aligned to the qwen MoE tier
 
   # ── DO-AI aliases (hidden, still callable) ─────────────────────────────
 
@@ -951,6 +1088,8 @@ models:
     upstream: deepseek-r1-distill-llama-70b
     context_window: 131072  # MEASURED. DO advertises 32,768.
     hidden: true
+  # deepseek-v4-pro: VISIBLE customer SKU (enabled 2026-07-18). Chat + tools
+  # verified live; REJECTS image input on do-ai (HTTP 400) so `vision` stays unset.
   deepseek-v4-pro:
     provider: do-ai
     upstream: deepseek-v4-pro
@@ -958,7 +1097,9 @@ models:
                               # every other model at 262,144 — this one is not capped.
                               # (>1.2M fails as "invalid request body" = HTTP payload limit,
                               #  not a context limit — the model itself never refuses.)
-    hidden: true
+    max_output_tokens: 52429
+    tools: true               # verified live: emitted tool_calls
+    pricing: {input: 0.90, output: 2.20}   # estimate, aligned to the deepseek flagship tier
   gemma-4-31B-it:
     provider: do-ai
     upstream: gemma-4-31B-it
@@ -969,11 +1110,16 @@ models:
     upstream: glm-5
     context_window: 64000
     hidden: true
+  # kimi-k2.6: VISIBLE customer SKU (enabled 2026-07-18). Chat + tools verified
+  # live. Window kept at the measured 96000 (conservative — do-ai advertises
+  # 262144; under-claiming never breaks a request, over-claiming does).
   kimi-k2.6:
     provider: do-ai
     upstream: kimi-k2.6
     context_window: 96000
-    hidden: true
+    max_output_tokens: 52429
+    tools: true               # verified live: emitted tool_calls
+    pricing: {input: 2.00, output: 8.00}   # aligned to the kimi-k2 sibling rate
   llama3.3-70b-instruct:
     provider: do-ai
     upstream: llama3.3-70b-instruct

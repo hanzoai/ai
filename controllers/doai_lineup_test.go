@@ -39,8 +39,8 @@ var doaiLineupRoutes = map[string]string{
 	"router:software-engineering-01": "router:software-engineering-01",
 	"router:writing":                 "router:writing",
 	// Latent upstream-id fixes (the id shipped in a prior version 404'd upstream).
-	"gemma-4-31b":       "gemma-4-31B-it",              // was "gemma-4-31b" (not in catalog)
-	"claude-sonnet-4-6": "anthropic-claude-4.5-sonnet", // was "anthropic-claude-sonnet-4.6" (not in catalog)
+	"gemma-4-31b":       "gemma-4-31B-it",             // was "gemma-4-31b" (not in catalog)
+	"claude-sonnet-4-6": "anthropic-claude-4.6-sonnet", // real 4.6 upstream, now served (was routed to 4.5 while 4.6 403'd)
 }
 
 // TestDOAILineupStaticRoutes asserts the static routing table maps each
