@@ -522,3 +522,96 @@ func envDuration(k string, def time.Duration) time.Duration {
 	}
 	return def
 }
+
+// ── mean-field allocation ─────────────────────────────────────────────────────
+//
+// bestArmPerTask picks the single highest-mean arm per task. That is correct only
+// when following the advice does not change the advice. It does: if every request
+// for a task goes to one model, that model saturates — provider rate limits bite,
+// the latency knee is crossed, and a cost ceiling is blown — at which point it is no
+// longer the best arm, though the table still says it is.
+//
+// The mean-field (Wardrop) view fixes this. Each request best-responds to the
+// AGGREGATE load rather than to a static table, so an arm's effective value falls as
+// its allocated share approaches capacity. The equilibrium is the allocation under
+// which no request would rather switch. Under hard capacities that equilibrium is
+// exactly water-filling: take value in descending order, fill each arm to capacity,
+// spill the remainder to the next best.
+//
+// This is a strict GENERALIZATION, not a replacement: with unlimited capacity and no
+// cost weight it allocates everything to the argmax arm and reproduces
+// bestArmPerTask exactly (asserted in TestEquilibriumReducesToArgmax).
+//
+// Note deliberately NOT applied here: mean-field consensus among JUDGES herds — each
+// judge revising toward the panel aggregate destroys the independence that made the
+// aggregate informative, and measured below plain majority. Mean-field belongs in the
+// ALLOCATION (a congestion game), not in the reward's own formation.
+
+// armCapacity describes what an arm costs and how much traffic it can absorb before
+// congesting. Capacity <= 0 means unconstrained.
+type armCapacity struct {
+	Model    string
+	Cost     float64 // per-request cost, in whatever unit the caller keeps (compared only)
+	Capacity float64 // share of this task's traffic the arm can absorb, 0..1; <=0 = unlimited
+}
+
+// equilibriumAllocation returns, per task, the models ordered by their equilibrium
+// share (largest first) — the shape deployRouterPreferTo already accepts.
+//
+// costWeight trades reward against cost: value(a) = mean(a) - costWeight*cost(a).
+// Arms below minEvents are not eligible (same rule as bestArmPerTask).
+func equilibriumAllocation(
+	arms map[string]*armStat,
+	caps map[string]armCapacity,
+	costWeight float64,
+	minEvents int,
+) map[string][]string {
+	byTask := map[string][]*armStat{}
+	for _, a := range arms {
+		if a.N >= minEvents {
+			byTask[a.Task] = append(byTask[a.Task], a)
+		}
+	}
+
+	out := map[string][]string{}
+	for task, list := range byTask {
+		// Cost-adjusted value; ties broken exactly as bestArmPerTask (N desc, then model
+		// name) so the degenerate case is bit-identical to the incumbent behaviour.
+		value := func(a *armStat) float64 {
+			return a.Mean() - costWeight*caps[a.Model].Cost
+		}
+		sort.Slice(list, func(i, j int) bool {
+			vi, vj := value(list[i]), value(list[j])
+			if vi != vj {
+				return vi > vj
+			}
+			if list[i].N != list[j].N {
+				return list[i].N > list[j].N
+			}
+			return list[i].Model < list[j].Model
+		})
+
+		// Water-fill one unit of demand down the value order.
+		remaining := 1.0
+		var ordered []string
+		for _, a := range list {
+			if remaining <= 1e-9 {
+				break
+			}
+			cap := caps[a.Model].Capacity
+			take := remaining
+			if cap > 0 && cap < take {
+				take = cap
+			}
+			if take <= 1e-9 {
+				continue // arm is at zero capacity: it cannot serve, skip it
+			}
+			ordered = append(ordered, a.Model)
+			remaining -= take
+		}
+		if len(ordered) > 0 {
+			out[task] = ordered
+		}
+	}
+	return out
+}
