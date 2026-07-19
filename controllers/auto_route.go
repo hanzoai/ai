@@ -167,6 +167,10 @@ func resolveAutoModel(requested, orgId, userId, requestId string, authUser *iam.
 	// SLO when the caller didn't send X-Max-Cost (an explicit header wins).
 	client.Policy.Prefer = effectiveRouterPrefer(orgId, client.Policy.Prefer)
 	client.Policy.CostCeiling = effectiveRouterCostCeiling(orgId, client.Policy.CostCeiling)
+	// Exploration floor: a fraction of `auto` traffic samples a non-champion arm so
+	// the bandit keeps earning reward on the whole pool (and discovers newly-added
+	// models) instead of collapsing onto the champion. 0 (unset) = pure exploit.
+	client.Explore = envFloat("ROUTER_EXPLORE_EPSILON", 0)
 	slo = mergeCostCeiling(slo, client.Policy.CostCeiling)
 	rreq := router.Request{
 		Text:         lastUserText(req),

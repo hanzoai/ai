@@ -19,6 +19,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"math/rand"
 	"net/http"
 	"strings"
 	"time"
@@ -59,6 +60,17 @@ type Client struct {
 	// Known, if set, restricts choices to models the caller can serve; a choice
 	// it rejects is skipped. nil accepts all.
 	Known func(string) bool
+	// Explore is the epsilon exploration floor in [0,1]: the probability the
+	// heuristic samples a RANDOM servable NON-champion arm instead of the champion,
+	// so the bandit keeps collecting reward on the whole pool (and reacts to newly
+	// added models) rather than collapsing onto today's champion — the reward from
+	// an explore request trains it exactly like an exploit request. 0 = pure
+	// exploit. The engine strategy does its own UCB exploration, so this governs the
+	// heuristic path.
+	Explore float64
+	// Rand, if set, sources the exploration coin flip (injectable for deterministic
+	// tests); nil uses the auto-seeded package generator.
+	Rand *rand.Rand
 }
 
 // engineRequest is the /route wire contract sent to the engine.
@@ -83,6 +95,7 @@ type engineResponse struct {
 const (
 	SourceEngine    = "engine"
 	SourceHeuristic = "heuristic"
+	SourceExplore   = "explore" // an epsilon-floor sample of a non-champion arm
 )
 
 // Decision is the full outcome of resolving a request: the chosen model, the
@@ -115,6 +128,14 @@ func (c Client) RouteDecision(ctx context.Context, req Request, slo Slo) Decisio
 		}
 	}
 	t := Classify(req)
+	// Exploration floor: with probability Explore, sample a non-champion servable
+	// arm so the router keeps learning about the whole pool instead of collapsing
+	// onto the current champion. The reward it earns trains the bandit identically.
+	if c.Explore > 0 {
+		if m, ok := c.exploreArm(t); ok {
+			return Decision{Model: m, Task: t, Source: SourceExplore}
+		}
+	}
 	m := c.Policy.ForTask(t, c.Known)
 	if m == "" {
 		// Last resort: ignore servability so `auto` never dead-ends on a strict
@@ -122,6 +143,24 @@ func (c Client) RouteDecision(ctx context.Context, req Request, slo Slo) Decisio
 		m = c.Policy.ForTask(t, nil)
 	}
 	return Decision{Model: m, Task: t, Source: SourceHeuristic}
+}
+
+// exploreArm returns a uniformly-random NON-champion servable arm for the task with
+// probability Explore, or (,false) to exploit. It needs ≥2 servable arms — with one
+// (or none) there is nothing to explore toward, so it always exploits.
+func (c Client) exploreArm(t Task) (string, bool) {
+	f, ni := rand.Float64, rand.Intn
+	if c.Rand != nil {
+		f, ni = c.Rand.Float64, c.Rand.Intn
+	}
+	if f() >= c.Explore {
+		return "", false
+	}
+	cands := c.Policy.Candidates(t, c.Known)
+	if len(cands) < 2 {
+		return "", false
+	}
+	return cands[1+ni(len(cands)-1)], true // index 0 is the champion; sample [1:]
 }
 
 // ObserveRequest is the online-learning feedback the gateway posts to the engine
