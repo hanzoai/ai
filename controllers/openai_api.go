@@ -1342,7 +1342,7 @@ func (c *ApiController) ChatCompletions() {
 	// goroutine after cheap gates, and is a no-op unless ROUTER_JUDGE_ENABLED. The
 	// prompt/response are passed transiently — never persisted (see router_judge.go).
 	if routingRecorded {
-		judgeRoutedResponse(c.Ctx.Request.UserAgent(), orgId, requestId, request.Model, routedTask, question, writer.MessageString())
+		judgeRoutedResponse(c.Ctx.Request.UserAgent(), orgId, requestId, c.Ctx.Request.Header.Get("CF-IPCountry"), request.Model, routedTask, question, writer.MessageString())
 	}
 	c.EnableRender = false
 }
