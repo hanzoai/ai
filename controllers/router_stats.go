@@ -17,7 +17,6 @@ package controllers
 import (
 	"encoding/json"
 	"sort"
-	"strconv"
 	"time"
 
 	"github.com/hanzoai/ai/object"
@@ -156,12 +155,12 @@ type priceIndexFn func(model string) float64
 // its inputs (no DB, no beego) so the whole contract is unit-testable. `now` bounds
 // the throughput buckets; `windowStart` is the oldest included instant;
 // `includeAbsoluteCost` keeps the absolute $/MTok levels (org scope) vs dropping
-// them (public platform scope). `superAdminPlatform` is set ONLY when a same-brand
-// super admin views the platform scope: it lifts the opaque arm-N relabel so the
-// admin sees the REAL model ids (the roster stays masked for every other caller).
-// Events are assumed already filtered to the window by the caller (the DB query does
-// `created_time >= since`).
-func computeRouterStats(events []*object.RoutingEvent, price priceIndexFn, windowStart, now time.Time, scope string, org string, includeAbsoluteCost bool, superAdminPlatform bool) routerStats {
+// them (public platform scope). Real model ids surface in EVERY scope — the
+// world.hanzo.ai widget shows the true roster so users can see which models win per
+// benchmark (owner product decision); only absolute $ and org identity are redacted
+// on the public platform scope. Events are assumed already filtered to the window by
+// the caller (the DB query does `created_time >= since`).
+func computeRouterStats(events []*object.RoutingEvent, price priceIndexFn, windowStart, now time.Time, scope string, org string, includeAbsoluteCost bool) routerStats {
 	byModel := map[string]int{}
 	byTask := map[string]taskStats{}
 	perHour := make([]int, routerStatsBuckets)
@@ -282,63 +281,10 @@ func computeRouterStats(events []*object.RoutingEvent, price priceIndexFn, windo
 		out.Cost = cost
 	}
 
-	// Enso is a PRIVATE, closed family: the public platform surface must never
-	// name an upstream arm (claude/gpt/deepseek/...). Relabel every served model id
-	// to an opaque, stable Enso arm label (arm-1 = the premium/priciest arm), so the
-	// world.hanzo.ai widget shows real routing SHARE without leaking the roster.
-	// EXCEPTION: a same-brand super admin viewing the platform scope
-	// (superAdminPlatform) sees the REAL ids — the admin panel needs the true roster;
-	// the masking stays on for the anonymous world widget and every tenant caller.
-	if scope == scopePlatform && !superAdminPlatform {
-		labels := armLabelsFor(prices)
-		out.ByModel = relabelCounts(out.ByModel, labels)
-		for task, ts := range out.ByTask {
-			ts.Models = relabelCounts(ts.Models, labels)
-			out.ByTask[task] = ts
-		}
-		if out.Cost != nil {
-			out.Cost.BaselineModel = labels[out.Cost.BaselineModel]
-		}
-	}
-	return out
-}
-
-// armLabelsFor maps each concrete model id to a stable opaque Enso arm label,
-// ordered by price DESC (arm-1 = the premium arm) with ties broken by id — price
-// rank is far more stable than volume, so an arm keeps its identity across polls.
-// Unpriced/free arms are numbered after the priced ones (still opaque). This is the
-// ONE place upstream ids are turned into public arm labels.
-func armLabelsFor(prices map[string]float64) map[string]string {
-	ids := make([]string, 0, len(prices))
-	for id := range prices {
-		ids = append(ids, id)
-	}
-	sort.Slice(ids, func(i, j int) bool {
-		pi, pj := prices[ids[i]], prices[ids[j]]
-		if pi != pj {
-			return pi > pj
-		}
-		return ids[i] < ids[j]
-	})
-	labels := make(map[string]string, len(ids))
-	for i, id := range ids {
-		labels[id] = "arm-" + strconv.Itoa(i+1)
-	}
-	return labels
-}
-
-// relabelCounts folds a model-keyed count map through the arm labels; an id with no
-// label (never priced, so absent from the labeler) is bucketed as "arm-other" so no
-// concrete id can ever escape onto the public surface.
-func relabelCounts(byId map[string]int, labels map[string]string) map[string]int {
-	out := make(map[string]int, len(byId))
-	for id, n := range byId {
-		label := labels[id]
-		if label == "" {
-			label = "arm-other"
-		}
-		out[label] += n
-	}
+	// Real model ids flow through in every scope — the public platform surface shows
+	// the true roster (owner product decision: users should see which models win per
+	// benchmark), and org callers already see their own ids. Only absolute $ levels
+	// and org identity are redacted on the platform scope (handled above).
 	return out
 }
 
@@ -464,16 +410,10 @@ func (c *ApiController) GetRouterStats() {
 			return
 		}
 		// The platform scope is PUBLIC (no auth) — the world widget polls it
-		// anonymously and gets opaque arm-N labels. But a same-brand super admin
-		// (session or verified Bearer) sees the REAL model roster: exactly the
-		// cross-tenant-disclosure gate resolveCloudUsageScope uses (IsSuperAdmin AND
-		// principalIsOwnBrand). principalUser() is nil for an anonymous caller, so the
-		// public path stays public and only a real super admin lifts the mask.
-		superAdmin := false
-		if u := c.principalUser(); u != nil && util.IsSuperAdmin(u) && c.principalIsOwnBrand() {
-			superAdmin = true
-		}
-		stats := computeRouterStats(events, blendedPriceForOrg(""), windowStart, now, scopePlatform, "", false, superAdmin)
+		// anonymously and now sees the REAL model roster (owner product decision: show
+		// which models win per benchmark, not opaque arm-N). Only absolute $ levels and
+		// org identity are redacted here (includeAbsoluteCost=false); ids are never masked.
+		stats := computeRouterStats(events, blendedPriceForOrg(""), windowStart, now, scopePlatform, "", false)
 		// The shared base heads are scope "*"; the world widget shows the base's
 		// last retrain + gate verdict (version/time/metric only — never weights).
 		attachRetrainMeta(&stats, object.GlobalDefaultOwner)
@@ -501,9 +441,8 @@ func (c *ApiController) GetRouterStats() {
 		c.ResponseError(err.Error())
 		return
 	}
-	// Org scope never masks (the tenant already sees its own real ids), so the
-	// superAdminPlatform lever is irrelevant here — pass false.
-	stats := computeRouterStats(events, blendedPriceForOrg(org), windowStart, now, scopeOrg, org, true, false)
+	// Org scope shows the tenant's own real ids (unchanged).
+	stats := computeRouterStats(events, blendedPriceForOrg(org), windowStart, now, scopeOrg, org, true)
 	// Show the org's own heads retrain status, falling back to the shared base
 	// ("*") when the org has no personal-heads job (the common case today).
 	metaOwner := org
