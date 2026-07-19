@@ -303,6 +303,17 @@ func permissionFilter(ctx *web.Context) {
 		// fail-closed 401 with no principal, cross-org only for a verified super
 		// admin. (Preview-ON already returns above; this fixes the preview-OFF path.)
 		"get-cloud-usages",
+		// get-/update-training-contribution are the model-improvement consent read+write.
+		// Self-scoped to the caller's OWN org (GetOrg forces the principal's owner; a
+		// spoofed X-Org-Id is ignored for a non-super-admin) and Bearer-reachable via
+		// RequirePrincipal, so the account-settings opt-in toggle works from Hanzo World
+		// (IAM Bearer, no console cookie) exactly as it does from the console cookie.
+		// Exempt from the coarse session-only IsAdmin gate for the SAME reason
+		// get-cloud-usages is: that gate reads only the cookie session, so it would 403
+		// every Bearer caller; the handler is the authority (fail-closed 401 with no
+		// principal, and it can only ever read/write the principal's own org).
+		"get-training-contribution",
+		"update-training-contribution",
 	}
 
 	for _, exemptPath := range exemptedPaths {
