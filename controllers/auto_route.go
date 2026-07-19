@@ -182,6 +182,17 @@ func resolveAutoModel(requested, orgId, userId, requestId string, authUser *iam.
 		return "", "", false
 	}
 
+	// Congestion-aware mean-field layer — GATED, default OFF (meanFieldRoute returns the
+	// champion untouched, so live routing is byte-identical). When an admin enables it at
+	// admin.hanzo.ai, `auto` best-responds to the live load mean field over the task's
+	// SERVABLE candidates, spreading traffic off a congested champion AS AN EQUILIBRIUM
+	// (avoids stampeding the single best model). The base selection above is otherwise
+	// untouched, and a re-rank is honestly re-tagged in the training ledger.
+	routedModel, source := dec.Model, dec.Source
+	if m, changed := meanFieldRoute(client, dec.Task, dec.Model); changed {
+		routedModel, source = m, SourceMeanField
+	}
+
 	// Collect the decision for training — fire-and-forget, NEVER prompt text.
 	// Serialize the engine's optional feature vector; a marshal failure just
 	// drops the features (the row is still useful).
@@ -197,13 +208,13 @@ func resolveAutoModel(requested, orgId, userId, requestId string, authUser *iam.
 		RequestId:      requestId,
 		Task:           string(dec.Task),
 		RequestedModel: strings.ToLower(strings.TrimSpace(requested)),
-		RoutedModel:    dec.Model,
+		RoutedModel:    routedModel,
 		Confidence:     dec.Confidence,
-		Source:         dec.Source,
+		Source:         source,
 		Features:       features,
 	})
 
-	return dec.Model, string(dec.Task), true
+	return routedModel, string(dec.Task), true
 }
 
 // SourceExplicit marks a routing event for a request whose model the CALLER chose
