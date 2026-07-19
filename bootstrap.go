@@ -237,8 +237,14 @@ func doBootstrap() (err error) {
 	// OFF (ROUTER_TRAIN_ENABLED for the trainer; ROUTER_PROBE_RPH+ROUTER_PROBE_TOKEN for
 	// the probe), so this is dark-by-default and turns real only via deployment config.
 	// sync.Once guarantees the goroutines are launched exactly once per process.
+	// StartRouterJudge arms the LLM-as-a-judge dense quality reward (openai_api.go's
+	// post-response hook): it turns served (prompt, response) pairs into 0..1 quality
+	// rewards for the flywheel — anonymous, consent-gated, content-transient, and OFF
+	// unless ROUTER_JUDGE_ENABLED. Point ROUTER_JUDGE_URL at a TEE endpoint for
+	// confidential inference (see controllers/router_judge.go).
 	controllers.StartRouterProbe()
 	controllers.StartRouterTrainer()
+	controllers.StartRouterJudge()
 
 	return nil
 }
