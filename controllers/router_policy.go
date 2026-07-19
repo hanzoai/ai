@@ -214,6 +214,68 @@ func effectiveRouterCostCeiling(org string, conf float64) float64 {
 	return conf
 }
 
+// orgRouterStrategyLookup returns an org's own leading strategy ("" = unset).
+// Indirected through a var so tests exercise precedence without a live DB.
+var orgRouterStrategyLookup = func(owner string) string {
+	if owner == "" {
+		return ""
+	}
+	s, err := object.GetCachedOrgSettings(owner)
+	if err != nil || s == nil {
+		return ""
+	}
+	return s.RouterStrategy
+}
+
+// orgRouterOverridesLookup returns an org's own task→model overrides (nil = unset).
+var orgRouterOverridesLookup = func(owner string) map[string]string {
+	if owner == "" {
+		return nil
+	}
+	s, err := object.GetCachedOrgSettings(owner)
+	if err != nil || s == nil || len(s.RouterOverrides) == 0 {
+		return nil
+	}
+	return s.RouterOverrides
+}
+
+// effectiveRouterStrategy folds org > "*" for the leading strategy. Unset at both
+// levels returns "" — the enso-leaning default (try the engine, then the heuristic),
+// the historical behavior. An org's "heuristic" therefore deterministically opts it
+// out of the learned router even when the engine is configured.
+func effectiveRouterStrategy(org string) router.Strategy {
+	for _, owner := range []string{org, object.GlobalDefaultOwner} {
+		if owner == "" {
+			continue
+		}
+		if s := orgRouterStrategyLookup(owner); s != "" {
+			return router.Strategy(s)
+		}
+	}
+	return ""
+}
+
+// effectiveRouterOverrides folds org > "*" per-key for the deterministic task→model
+// pins (org wins per key). Copies; never mutates a cached map. nil when neither
+// level sets any override.
+func effectiveRouterOverrides(org string) map[string]string {
+	var out map[string]string
+	for _, owner := range []string{object.GlobalDefaultOwner, org} {
+		if owner == "" {
+			continue
+		}
+		for k, v := range orgRouterOverridesLookup(owner) {
+			if v != "" {
+				if out == nil {
+					out = make(map[string]string)
+				}
+				out[k] = v
+			}
+		}
+	}
+	return out
+}
+
 // mergeCostCeiling fills the caller's SLO cost budget from the resolved policy
 // ceiling when the caller didn't set one — an explicit X-Max-Cost always wins. Both
 // are USD per 1k tokens (per-1k), so the assignment is unit-preserving: the value is
