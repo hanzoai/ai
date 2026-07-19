@@ -14,6 +14,7 @@
 package object
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -93,4 +94,73 @@ func TestGlobalDefaultOwnerRowResolves(t *testing.T) {
 	if got := GetCachedOrgAutoRouting(GlobalDefaultOwner); got != AutoRoutingEnabled {
 		t.Fatalf("global row enabled: cached auto-routing = %q, want %q", got, AutoRoutingEnabled)
 	}
+}
+
+// TestGetCachedJudgeConfig proves the platform-global judge config: with NO "*"
+// row it resolves the built-in defaults (judge ON, the 3-model diverse panel,
+// ~10% sample), and a "*" GlobalDefaultOwner row live-overrides each field — the
+// DB-backed dynamic knob admin.hanzo.ai flips, no env, no restart.
+func TestGetCachedJudgeConfig(t *testing.T) {
+	restore, err := UseMemoryDB("file:orgsettings_judge_test?mode=memory&cache=shared", &OrgSettings{})
+	if err != nil {
+		t.Fatalf("UseMemoryDB: %v", err)
+	}
+	t.Cleanup(restore)
+	invalidateOrgSettingsCache()
+
+	// No "*" row → defaults: ON, the default diverse panel, default sample.
+	def := GetCachedJudgeConfig()
+	if !def.Enabled || def.Models != JudgeModelsDefault || def.Sample != JudgeSampleDefault {
+		t.Fatalf("default judge config = %+v, want enabled/%q/%v", def, JudgeModelsDefault, JudgeSampleDefault)
+	}
+	if def.URL != "" {
+		t.Fatalf("default judge URL = %q, want empty (self)", def.URL)
+	}
+	// The default panel is a diverse committee (>1 model ⇒ MFJP).
+	if got := len(splitJudgeModelsForTest(def.Models)); got < 2 {
+		t.Fatalf("default panel size = %d, want >=2 (MFJP)", got)
+	}
+
+	// A "*" row live-overrides every field — the admin.hanzo.ai knob.
+	row := &OrgSettings{
+		Owner:        GlobalDefaultOwner,
+		JudgeEnabled: JudgeConfigDisabled,
+		JudgeModels:  "m1,m2",
+		JudgeURL:     "https://tee.hanzo.ai",
+		JudgeSample:  0.25,
+	}
+	if _, err := AddOrgSettings(row); err != nil {
+		t.Fatalf("AddOrgSettings(*): %v", err)
+	}
+	got := GetCachedJudgeConfig()
+	if got.Enabled {
+		t.Fatalf("row judgeEnabled=disabled: Enabled = true, want false")
+	}
+	if got.Models != "m1,m2" || got.URL != "https://tee.hanzo.ai" || got.Sample != 0.25 {
+		t.Fatalf("row override = %+v, want m1,m2 / tee / 0.25", got)
+	}
+
+	// Flip back to enabled; unset model/url/sample fall through to defaults.
+	row.JudgeEnabled = JudgeConfigEnabled
+	row.JudgeModels, row.JudgeURL, row.JudgeSample = "", "", 0
+	if _, err := UpdateOrgSettings(GlobalDefaultOwner, row); err != nil {
+		t.Fatalf("UpdateOrgSettings(*): %v", err)
+	}
+	got = GetCachedJudgeConfig()
+	if !got.Enabled || got.Models != JudgeModelsDefault || got.Sample != JudgeSampleDefault || got.URL != "" {
+		t.Fatalf("enabled + unset fields = %+v, want defaults", got)
+	}
+}
+
+// splitJudgeModelsForTest is a tiny comma splitter local to this test — the object
+// package must not import the controllers' splitModels, so the panel-size assertion
+// stays self-contained.
+func splitJudgeModelsForTest(s string) []string {
+	out := []string{}
+	for _, p := range strings.Split(s, ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
