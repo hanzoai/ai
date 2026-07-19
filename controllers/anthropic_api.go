@@ -88,6 +88,30 @@ type AnthropicContentBlock struct {
 	Text string `json:"text"`
 }
 
+// requestHasMediaAnthropic reports whether any message carries a non-text content
+// block (image, document). String content is text-only; an array with any block whose
+// type is not "text" is multimodal and must be forwarded verbatim, not text-flattened.
+func requestHasMediaAnthropic(req *AnthropicRequest) bool {
+	for _, m := range req.Messages {
+		s := strings.TrimSpace(string(m.Content))
+		if s == "" || s[0] != '[' {
+			continue
+		}
+		var blocks []struct {
+			Type string `json:"type"`
+		}
+		if json.Unmarshal(m.Content, &blocks) != nil {
+			continue
+		}
+		for _, b := range blocks {
+			if b.Type != "" && b.Type != "text" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // rawContentToText converts a json.RawMessage that is either a JSON string
 // or an array of AnthropicContentBlock into a plain Go string.
 func rawContentToText(raw json.RawMessage) string {
@@ -449,6 +473,14 @@ func (c *ApiController) AnthropicMessages() {
 	// pipeline cannot handle structured tool_use blocks. Proxy the raw Anthropic
 	// request directly to the upstream and stream/return the raw response.
 	if len(request.Tools) > 0 {
+		c.proxyAnthropicToolRequest(provider, &request, requestStartTime, authUser, isPremium, hold)
+		return
+	}
+
+	// Multimodal (vision): the QueryText path below is text-only and would drop image
+	// blocks. Forward multimodal requests verbatim to the upstream (same path as tools),
+	// so vision-capable models receive the images. Symmetric with the OpenAI endpoint.
+	if requestHasMediaAnthropic(&request) {
 		c.proxyAnthropicToolRequest(provider, &request, requestStartTime, authUser, isPremium, hold)
 		return
 	}
