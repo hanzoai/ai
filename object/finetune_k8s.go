@@ -291,7 +291,9 @@ func interpretTrainJobStatus(u *unstructured.Unstructured) *FinetuneTrainJobStat
 	}
 
 	if ok, msg, lt := condTrue("Failed"); ok {
-		out.Status, out.Message, out.Finished, out.Progress = "failed", msg, lt, out.Progress
+		// Progress is deliberately left unchanged on failure (unlike Complete,
+		// which pins 100) — so it is simply not reassigned here.
+		out.Status, out.Message, out.Finished = "failed", msg, lt
 		return out
 	}
 	if ok, msg, lt := condTrue("Complete"); ok {
