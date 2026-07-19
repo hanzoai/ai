@@ -292,7 +292,7 @@ func copyTable(src, dst *sql.DB, ti tableInfo) (copied, dropped int64, err error
 	return copied, dropped, nil
 }
 
-// coerceForSQLite normalises lib/pq oddities so modernc.org/sqlite stores
+// coerceForSQLite normalises lib/pq oddities so hanzoai/sqlite stores
 // them losslessly:
 //   - time.Time -> RFC3339Nano string (cloud-api stores all temporal data as varchar)
 //   - []byte    -> BLOB (kept as-is)
