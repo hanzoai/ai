@@ -17,6 +17,7 @@ package controllers
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"math/rand"
 	"net/http"
@@ -25,7 +26,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/log"
+	"github.com/hanzoai/ai/object"
 )
 
 // ── Router judge — LLM-as-a-judge dense quality rewards ───────────────────────
@@ -50,8 +53,11 @@ import (
 //     scalar; the judge's free-text "reason" is parsed but DELIBERATELY DROPPED
 //     (parseJudgeScore never returns it) because it can paraphrase content and
 //     nothing downstream stores it.
-//   - Consent-gated: only orgs where trainingOptedIn(org) is true are judged. An
-//     opted-out org's turns are never sent to the judge at all (shouldJudge).
+//   - Consent-gated: only orgs where trainingOptedIn(org) is true are judged (the
+//     global opt-out default; an explicit "disabled" drops them), AND a per-request
+//     EU/EEA/UK guard requires EXPLICIT opt-in before judging a turn geolocated to
+//     those jurisdictions (shouldJudge + isEURequest). An opted-out org's turns —
+//     and any EU turn from a non-explicitly-consenting org — are never judged.
 //
 // CONFIDENTIAL COMPUTE — the endpoint is the seam (be honest about the split):
 //
@@ -65,14 +71,21 @@ import (
 //	stored", TEE endpoint = "never seen". Default is self (http://127.0.0.1:8000):
 //	no confidentiality boundary, only the no-retention guarantee.
 //
-// OFF unless configured (mirrors the probe/trainer; all three required):
+// DYNAMIC config — DB-backed, live-tunable at admin.hanzo.ai, no env, no restart.
+// The knobs live on the "*" GlobalDefaultOwner OrgSettings row (the SAME settings
+// system the trainer's "*" RouterPrefer uses), resolved by object.GetCachedJudgeConfig
+// and refreshed on a ticker (refreshJudgeConfig):
 //
-//	ROUTER_JUDGE_ENABLED — "1"/"true" to run (default off)
-//	ROUTER_JUDGE_MODEL   — the judge model id (a small/cheap model; required)
-//	ROUTER_JUDGE_TOKEN   — the service bearer the judge call presents (required)
-//	ROUTER_JUDGE_URL     — judge endpoint; default http://127.0.0.1:8000 (self).
-//	                       Set to an attested TEE endpoint for confidential inference.
-//	ROUTER_JUDGE_SAMPLE  — fraction of eligible turns to judge, 0<f<=1 (default 0.1)
+//	judge.enabled (JudgeEnabled) — three-state; unset ⇒ the built-in default ON
+//	judge.models  (JudgeModels)  — comma list of served ids; >1 ⇒ the MFJP panel
+//	judge.url     (JudgeURL)     — endpoint; "" ⇒ self; a TEE endpoint ⇒ confidential
+//	judge.sample  (JudgeSample)  — fraction of eligible turns judged, 0<f<=1
+//
+// ON by default: the built-in defaults run the diverse panel on ~10% of eligible
+// traffic the moment the binary boots; an admin disables or retunes it live. The
+// judge presents NO bespoke token — it authenticates its self-directed chat call
+// with the gateway's EXISTING internal service bearer (internalServiceToken, the
+// same ROUTER_PROBE_TOKEN the self-probe uses); the secret never enters the DB.
 //
 // REWARD SOURCE — noted, not a column. A judge reward is INDISTINGUISHABLE at the
 // row level from a human reward: the schema stores only {reward, rewarded_time}
@@ -91,13 +104,24 @@ const judgeUserAgent = "hanzo-router-judge/1"
 // input cost on long turns; a quality verdict does not need the whole transcript.
 const judgeMaxChars = 6000
 
-// judgeConfig is the resolved, immutable judge configuration built once at boot.
+// judgeSelfURL is the default judge endpoint — the gateway's own listen address, so
+// the judge scores through the same public path as real traffic. Overridden by the
+// dynamic judge.url (point it at an attested TEE endpoint for confidential inference).
+const judgeSelfURL = "http://127.0.0.1:8000"
+
+// judgeRefreshEvery is how often the judge re-reads its DB-backed config from the
+// "*" GlobalDefaultOwner row — matched to the OrgSettings cache TTL so an
+// admin.hanzo.ai change takes effect within ~one window, no restart.
+const judgeRefreshEvery = 60 * time.Second
+
+// judgeConfig is the resolved judge configuration held in the hot-path atomic. It
+// carries NO secret — the service bearer is resolved at call time
+// (internalServiceToken), never stored here or in the DB.
 type judgeConfig struct {
 	url    string
 	model  string   // primary/single judge model (also models[0])
 	models []string // the judge PANEL: >1 model ⇒ Mean-Field Judge Panel (MFJP)
-	token  string
-	sample float64 // (0,1] — fraction of eligible turns judged
+	sample float64  // (0,1] — fraction of eligible turns judged
 }
 
 // judgeCfg holds the active config, or nil when the judge is disabled. Written once
@@ -122,38 +146,90 @@ type judgeVerdict struct {
 	Reason string  `json:"reason"`
 }
 
-// StartRouterJudge arms the LLM-as-a-judge reward path when configured. Called once
-// at boot (Bootstrap, next to StartRouterProbe/StartRouterTrainer). Never fails
-// boot: misconfiguration logs and stays disabled (judgeCfg nil ⇒ the hook is a
-// no-op). Self-gating and OFF by default — dark until deployment config turns it on.
+// loadJudgeConfig is the resolved DB-backed judge config source — indirected
+// through a var so tests drive refreshJudgeConfig without a live settings row.
+// Production reads the "*" GlobalDefaultOwner OrgSettings row via the 60s cache.
+var loadJudgeConfig = object.GetCachedJudgeConfig
+
+// StartRouterJudge arms the LLM-as-a-judge reward path from DYNAMIC, DB-backed
+// config — no env, no restart. Called once at boot (Bootstrap, next to
+// StartRouterProbe/StartRouterTrainer). It loads the config ONCE synchronously (so
+// the judge is armed before the server serves) then refreshes it on a ticker;
+// admin.hanzo.ai edits to the "*" row take effect within one refresh window. ON by
+// default (object.GetCachedJudgeConfig's built-in defaults run the diverse panel on
+// ~10% of eligible traffic); an admin disables or retunes it live. Never fails boot.
 func StartRouterJudge() {
-	if !envTrue("ROUTER_JUDGE_ENABLED") {
-		log.Info("router judge: disabled (set ROUTER_JUDGE_ENABLED=1 to enable)")
+	refreshJudgeConfig()
+	go func() {
+		t := time.NewTicker(judgeRefreshEvery)
+		defer t.Stop()
+		for range t.C {
+			refreshJudgeConfig()
+		}
+	}()
+}
+
+// refreshJudgeConfig folds the live DB config into the hot-path atomic judgeCfg:
+// nil when disabled (the post-response hook is then a single atomic-load no-op),
+// else the resolved panel with the self endpoint + default sample filled in. Pure
+// of secrets — the bearer is resolved separately at call time. Logs only on a
+// change (logJudgeConfig), so the 60s tick is silent in steady state.
+func refreshJudgeConfig() {
+	c := loadJudgeConfig()
+	var next *judgeConfig
+	if c.Enabled {
+		url := strings.TrimRight(strings.TrimSpace(c.URL), "/")
+		if url == "" {
+			url = judgeSelfURL
+		}
+		sample := c.Sample
+		if sample <= 0 || sample > 1 {
+			sample = object.JudgeSampleDefault
+		}
+		models := splitModels(c.Models)
+		next = &judgeConfig{url: url, model: models[0], models: models, sample: sample}
+	}
+	judgeCfg.Store(next)
+	logJudgeConfig(next)
+}
+
+// lastJudgeSig is the last-logged config signature — touched only by the boot call
+// and then the single refresh goroutine (never concurrently), so a plain string is
+// race-free. Empty means "nothing logged yet".
+var lastJudgeSig string
+
+// logJudgeConfig logs the judge posture ONLY when it changes from the last tick, so
+// the periodic refresh does not spam the log. A nil config logs the disabled line.
+func logJudgeConfig(cfg *judgeConfig) {
+	sig := "disabled"
+	if cfg != nil {
+		sig = fmt.Sprintf("%s@%s×%.2f", strings.Join(cfg.models, ","), cfg.url, cfg.sample)
+	}
+	if sig == lastJudgeSig {
 		return
 	}
-	model := strings.TrimSpace(os.Getenv("ROUTER_JUDGE_MODEL"))
-	token := strings.TrimSpace(os.Getenv("ROUTER_JUDGE_TOKEN"))
-	if model == "" || token == "" {
-		log.Info("router judge: disabled (ROUTER_JUDGE_MODEL + ROUTER_JUDGE_TOKEN required)")
-		return
+	lastJudgeSig = sig
+	switch {
+	case cfg == nil:
+		log.Info("router judge: disabled (set the \"*\" OrgSettings judgeEnabled=disabled row at admin.hanzo.ai to keep it off; unset ⇒ ON)")
+	case len(cfg.models) > 1:
+		log.Info("router judge: enabled — MEAN-FIELD PANEL of %d judges %v, sample %.2f, endpoint %s", len(cfg.models), cfg.models, cfg.sample, cfg.url)
+	default:
+		log.Info("router judge: enabled — model %s, sample %.2f, endpoint %s (set judge.url at admin.hanzo.ai to an attested TEE endpoint for confidential inference)", cfg.models[0], cfg.sample, cfg.url)
 	}
-	url := strings.TrimRight(strings.TrimSpace(os.Getenv("ROUTER_JUDGE_URL")), "/")
-	if url == "" {
-		url = "http://127.0.0.1:8000"
+}
+
+// internalServiceToken returns the gateway's EXISTING internal service bearer — the
+// SAME credential the self-probe presents (ROUTER_PROBE_TOKEN, env then KMS-synced
+// conf). The judge is another internal self-caller hitting /v1/chat/completions on
+// the internal org's dime, so it REUSES that one service credential rather than
+// inventing a second token: no bespoke ROUTER_JUDGE_TOKEN. The secret NEVER enters
+// the DB config — it is sourced only here, from env/KMS.
+func internalServiceToken() string {
+	if t := strings.TrimSpace(os.Getenv("ROUTER_PROBE_TOKEN")); t != "" {
+		return t
 	}
-	sample := envFloat("ROUTER_JUDGE_SAMPLE", 0.1)
-	if sample <= 0 || sample > 1 {
-		sample = 0.1
-	}
-	// ROUTER_JUDGE_MODEL may be a comma-separated LIST — a diverse panel (MFJP). One
-	// model ⇒ the plain single judge; two or more ⇒ the mean-field panel.
-	models := splitModels(model)
-	judgeCfg.Store(&judgeConfig{url: url, model: models[0], models: models, token: token, sample: sample})
-	if len(models) > 1 {
-		log.Info("router judge: enabled — MEAN-FIELD PANEL of %d judges %v, sample %.2f, endpoint %s", len(models), models, sample, url)
-	} else {
-		log.Info("router judge: enabled — model %s, sample %.2f, endpoint %s (point ROUTER_JUDGE_URL at an attested TEE endpoint for confidential inference)", models[0], sample, url)
-	}
+	return strings.TrimSpace(conf.GetConfigString("ROUTER_PROBE_TOKEN"))
 }
 
 // judgeRoutedResponse is the fire-and-forget hook invoked AFTER a chat response has
@@ -162,12 +238,35 @@ func StartRouterJudge() {
 // reply; this does cheap synchronous gates (shouldJudge) and, only if they pass,
 // spawns ONE goroutine for the judge call + reward write. On the dominant path
 // (judge off) it costs a single atomic load and returns.
-func judgeRoutedResponse(userAgent, org, requestId, model, task, prompt, response string) {
+func judgeRoutedResponse(userAgent, org, requestId, country, model, task, prompt, response string) {
 	cfg := judgeCfg.Load()
-	if !shouldJudge(cfg, userAgent, org, requestId, prompt, response, rand.Float64()) {
+	if !shouldJudge(cfg, userAgent, org, requestId, country, prompt, response, rand.Float64()) {
 		return
 	}
 	go runJudge(cfg, org, requestId, model, task, prompt, response)
+}
+
+// euCountries is the EU + EEA + UK set for the per-request training-data guard. In
+// these jurisdictions the opt-out default is NOT sufficient consent to process a
+// user's content for training — the org must EXPLICITLY opt in. Keyed by the
+// edge-supplied CF-IPCountry (ISO-3166-1 alpha-2), so the protection follows the
+// REQUEST's origin regardless of the org's home region.
+var euCountries = map[string]bool{
+	// EU-27
+	"AT": true, "BE": true, "BG": true, "HR": true, "CY": true, "CZ": true,
+	"DK": true, "EE": true, "FI": true, "FR": true, "DE": true, "GR": true,
+	"HU": true, "IE": true, "IT": true, "LV": true, "LT": true, "LU": true,
+	"MT": true, "NL": true, "PL": true, "PT": true, "RO": true, "SK": true,
+	"SI": true, "ES": true, "SE": true,
+	// EEA (non-EU) + UK
+	"IS": true, "LI": true, "NO": true, "GB": true,
+}
+
+// isEURequest reports whether the edge-tagged country is in the EU/EEA/UK set.
+// Case-insensitive; an empty country (no edge geo) is treated as NON-EU — the guard
+// fires only on a POSITIVE EU signal, so it never blocks traffic we cannot geolocate.
+func isEURequest(country string) bool {
+	return euCountries[strings.ToUpper(strings.TrimSpace(country))]
 }
 
 // shouldJudge is the synchronous, side-effect-free eligibility gate — split out so
@@ -176,8 +275,12 @@ func judgeRoutedResponse(userAgent, org, requestId, model, task, prompt, respons
 // it is ORGANIC traffic (not the judge's own calls nor the self-probe — judging
 // either would recurse or race the probe's liveness reward on the same request id),
 // it actually carries a prompt AND a response, it falls within the sample fraction,
-// and the org has CONSENTED to contribute training labels (trainingOptedIn).
-func shouldJudge(cfg *judgeConfig, userAgent, org, requestId, prompt, response string, roll float64) bool {
+// the org has CONSENTED to contribute training labels (trainingOptedIn — the global
+// opt-out default), AND — the load-bearing GDPR/UK-GDPR protection — if the request
+// is geolocated to the EU/EEA/UK, the org has EXPLICITLY opted in
+// (trainingExplicitlyEnabled). Explicit consent always wins; the opt-out default is
+// NOT enough for an EU-tagged request.
+func shouldJudge(cfg *judgeConfig, userAgent, org, requestId, country, prompt, response string, roll float64) bool {
 	if cfg == nil {
 		return false
 	}
@@ -190,7 +293,13 @@ func shouldJudge(cfg *judgeConfig, userAgent, org, requestId, prompt, response s
 	if roll >= cfg.sample {
 		return false
 	}
-	return trainingOptedIn(org)
+	if !trainingOptedIn(org) {
+		return false
+	}
+	if isEURequest(country) && !trainingExplicitlyEnabled(org) {
+		return false
+	}
+	return true
 }
 
 // runJudge calls the judge model on the (prompt, response) pair and, ONLY on a clean
@@ -235,7 +344,7 @@ func judgeScore(cfg *judgeConfig, task, prompt, response string) (float64, bool)
 	if err != nil {
 		return 0, false
 	}
-	req.Header.Set("Authorization", "Bearer "+cfg.token)
+	req.Header.Set("Authorization", "Bearer "+internalServiceToken())
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", judgeUserAgent)
 	req.Header.Set("X-Max-Cost", "0.02")
