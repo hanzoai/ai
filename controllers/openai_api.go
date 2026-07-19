@@ -1126,6 +1126,14 @@ func (c *ApiController) ChatCompletions() {
 		return
 	}
 
+	// Multimodal (vision): the QueryText pipeline below is text-only and would drop
+	// image parts. Forward multimodal requests verbatim to the upstream (the same path
+	// tool-calls take), so vision-capable models actually receive the images.
+	if requestHasMedia(&request) {
+		c.proxyToolRequest(provider, &request, requestStartTime, authUser, isPremium, orgId, hold)
+		return
+	}
+
 	// Extract messages content
 	var question string
 	var systemPrompt string
