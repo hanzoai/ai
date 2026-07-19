@@ -502,8 +502,12 @@ type trainingContributionBody struct {
 }
 
 // GetTrainingContribution returns the caller's OWN org training-contribution opt-in
-// (org > unset). Org admin-gated, self-scoped via GetOrg — a customer reads only
-// their own org's setting.
+// (org > unset). Self-scoped via GetOrg — a customer reads only their OWN org's
+// setting. Uses RequirePrincipal (session cookie OR verified Bearer JWT), NOT the
+// session-only RequireAdmin, so this consent read serves BOTH the console (cookie)
+// and the token-bearing account surfaces (Hanzo World carries an IAM Bearer, not the
+// console cookie) with the SAME resolved identity. Unset reads as false — the
+// privacy-safe default OFF.
 //
 // @Title GetTrainingContribution
 // @Tag Router API
@@ -511,7 +515,15 @@ type trainingContributionBody struct {
 // @Success 200 {object} controllers.trainingContributionBody The Response object
 // @router /get-training-contribution [get]
 func (c *ApiController) GetTrainingContribution() {
-	if !c.RequireAdmin() {
+	user, ok := c.RequirePrincipal()
+	if !ok {
+		return
+	}
+	// Never bind the opt-in to an anonymous guest: anonymousSignin synthesizes a
+	// u-<hash> record on the deployment org, so a guest would otherwise read/flip
+	// that shared org's setting. Consent requires a real signed-in identity.
+	if util.IsAnonymousUser(user) {
+		c.ResponseUnauthorized(c.T("auth:Please sign in first"))
 		return
 	}
 	org := c.GetOrg()
@@ -521,9 +533,13 @@ func (c *ApiController) GetTrainingContribution() {
 }
 
 // UpdateTrainingContribution upserts the caller's OWN org training-contribution
-// opt-in. The owner is forced to GetOrg() (any owner in the body is ignored), and
-// the other OrgSettings fields (AutoRouting / DefaultSessionRouting / RouterPrefer)
-// are preserved — the opt-in is an orthogonal concern. Org admin-gated.
+// opt-in. The owner is forced to GetOrg() (any owner in the body is ignored, and a
+// spoofed X-Org-Id is ignored for a non-super-admin), and the other OrgSettings
+// fields (AutoRouting / DefaultSessionRouting / RouterPrefer) are preserved — the
+// opt-in is an orthogonal concern. Self-scoped via RequirePrincipal (session cookie
+// OR verified Bearer JWT), so the account-settings consent toggle works identically
+// from the console and from Hanzo World; the write only ever touches the principal's
+// OWN org.
 //
 // @Title UpdateTrainingContribution
 // @Tag Router API
@@ -532,7 +548,15 @@ func (c *ApiController) GetTrainingContribution() {
 // @Success 200 {object} controllers.trainingContributionBody The resolved state
 // @router /update-training-contribution [post]
 func (c *ApiController) UpdateTrainingContribution() {
-	if !c.RequireAdmin() {
+	user, ok := c.RequirePrincipal()
+	if !ok {
+		return
+	}
+	// A guest must never flip the shared deployment org's contribution (see
+	// GetTrainingContribution). Opting IN is a deliberate act by a real signed-in
+	// principal for its OWN org.
+	if util.IsAnonymousUser(user) {
+		c.ResponseUnauthorized(c.T("auth:Please sign in first"))
 		return
 	}
 	org := c.GetOrg()
