@@ -239,9 +239,15 @@ func doBootstrap() (err error) {
 	// sync.Once guarantees the goroutines are launched exactly once per process.
 	// StartRouterJudge arms the LLM-as-a-judge dense quality reward (openai_api.go's
 	// post-response hook): it turns served (prompt, response) pairs into 0..1 quality
-	// rewards for the flywheel — anonymous, consent-gated, content-transient, and OFF
-	// unless ROUTER_JUDGE_ENABLED. Point ROUTER_JUDGE_URL at a TEE endpoint for
-	// confidential inference (see controllers/router_judge.go).
+	// rewards for the flywheel — anonymous, consent-gated, content-transient. Unlike
+	// the probe/trainer it is DB-backed and ON by default: it reads its config live
+	// from the "*" GlobalDefaultOwner OrgSettings row (judge.enabled/models/url/sample),
+	// tunable at admin.hanzo.ai with no restart, and runs the Mean-Field Judge Panel on
+	// ~10% of eligible (opted-in, non-EU-protected) traffic out of the box. Point
+	// judge.url at a TEE endpoint for confidential inference (controllers/router_judge.go).
+	// SeedInternalTrainingConsent first flips our OWN reserved orgs to explicit opt-in
+	// so the EU per-request guard never suppresses our internal traffic.
+	controllers.SeedInternalTrainingConsent()
 	controllers.StartRouterProbe()
 	controllers.StartRouterTrainer()
 	controllers.StartRouterJudge()
