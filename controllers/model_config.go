@@ -139,6 +139,17 @@ type ModelDef struct {
 	// is the single field that stops long prompts (and /compact) dead-ending
 	// on a stale 16K/256K fallback for models the table predates.
 	ContextWindow int `yaml:"context_window,omitempty"`
+	// MaxOutputTokens is the model's max completion length (tokens), taken from
+	// the upstream catalog. Surfaced in /v1/models so a client caps its output
+	// request honestly instead of guessing.
+	MaxOutputTokens int `yaml:"max_output_tokens,omitempty"`
+	// Vision reports the model accepts image input (OpenAI image_url content
+	// parts); Tools reports it supports function/tool calling. Both are additive
+	// capability flags surfaced in /v1/models (omitempty ⇒ present only when
+	// true). Set ONLY from a live capability probe of the serving provider —
+	// never guessed — so absence means "not advertised", never a fabricated yes.
+	Vision bool `yaml:"vision,omitempty"`
+	Tools  bool `yaml:"tools,omitempty"`
 }
 
 // ── Singleton ───────────────────────────────────────────────────────────
@@ -232,6 +243,9 @@ func (mc *ModelConfig) applyConfig(file *ModelConfigFile) error {
 				hidden:        def.Hidden,
 				ownedBy:       def.OwnedBy,
 				contextWindow: def.ContextWindow,
+				maxOutput:     def.MaxOutputTokens,
+				vision:        def.Vision,
+				tools:         def.Tools,
 			}
 			for _, fb := range def.Fallbacks {
 				r.fallbacks = append(r.fallbacks, modelRouteFallback{
@@ -495,14 +509,17 @@ func (mc *ModelConfig) ListModels() []modelInfo {
 		// means real per-model pricing was configured (never a default).
 		price, hasPrice := mc.pricing[name]
 		models = append(models, modelInfo{
-			ID:            name,
-			Object:        "model",
-			Created:       now,
-			OwnedBy:       owner,
-			Premium:       route.premium,
-			Provider:      publicProvider(route),
-			ContextWindow: route.contextWindow,
-			Pricing:       pricingInfo(price, hasPrice),
+			ID:              name,
+			Object:          "model",
+			Created:         now,
+			OwnedBy:         owner,
+			Premium:         route.premium,
+			Provider:        publicProvider(route),
+			ContextWindow:   route.contextWindow,
+			MaxOutputTokens: route.maxOutput,
+			SupportsVision:  route.vision,
+			SupportsTools:   route.tools,
+			Pricing:         pricingInfo(price, hasPrice),
 		})
 	}
 
