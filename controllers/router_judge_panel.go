@@ -118,29 +118,72 @@ const (
 // standard, updates the online stats + reliability weights, and returns the
 // reliability-weighted calibrated CONSENSUS plus a confidence in [0,1] (1 = judges
 // agree). ok=false only when NO judge produced a usable score (all abstained).
+// judgeConcurrency bounds, PROCESS-WIDE, how many judge scoring calls run at once.
+// Each score is an outbound HTTP self-call (judgeScore → POST /v1/chat/completions at
+// judgeSelfURL). Without a bound, a stall in the completion path lets these self-calls
+// pile up without limit — a production crash-dump once showed ~78,000 goroutines parked
+// in net/http cancel watchdogs, all judge/tier/balance self-calls to 127.0.0.1:8000,
+// OOM-killing the writer. Judging is a best-effort reward signal, so an un-acquirable
+// slot ABSTAINS (the panel is resilient to a missing judge) rather than queueing — the
+// fan-out is capped far below the danger zone while the real reward rate (~1/min) never
+// touches the bound.
+const judgeConcurrency = 32
+
+var judgeSem = make(chan struct{}, judgeConcurrency)
+
+// scoreJudge runs one judge's HTTP scoring OUTSIDE any panel lock, under the global
+// judge-concurrency bound. A saturated bound (or an erroring judge) abstains — the
+// panel stays resilient either way.
+func scoreJudge(cfg *judgeConfig, model, task, prompt, response string) (float64, bool) {
+	select {
+	case judgeSem <- struct{}{}:
+		defer func() { <-judgeSem }()
+	default:
+		return 0, false // saturated → abstain rather than pile up another self-call
+	}
+	return rawJudgeScore(cfg, model, task, prompt, response)
+}
+
 func panelScore(cfg *judgeConfig, models []string, task, prompt, response string) (reward, confidence float64, ok bool) {
 	type vote struct {
 		model string
 		cal   float64
 		w     float64
 	}
-	votes := make([]vote, 0, len(models))
 
+	// Phase 1 — gather raw judge scores over HTTP with NO panel lock held, under the
+	// process-wide concurrency bound. Holding panelState.mu across these (up to 30s
+	// each, N per request) serialized ALL judged traffic on one global mutex AND blocked
+	// the /v1/router/judge-panel read path (PanelSnapshot); combined with the unbounded
+	// self-call fan-out that wedged the writer under load. The calibration/stat updates
+	// that DO need the lock are pure in-memory and run in Phase 2 below.
+	type rawScore struct {
+		model string
+		score float64
+	}
+	raws := make([]rawScore, 0, len(models))
+	for _, m := range models {
+		s, good := scoreJudge(cfg, m, task, prompt, response)
+		if !good {
+			continue // an erroring/abstaining judge drops out; the panel stays resilient
+		}
+		raws = append(raws, rawScore{model: m, score: s})
+	}
+	if len(raws) == 0 {
+		return 0, 0, false
+	}
+
+	// Phase 2 — calibrate each raw against that judge's own standard, fold it into the
+	// online stats, and update reliability weights. Pure in-memory; the lock is held
+	// only here (microseconds), never across an HTTP call.
+	votes := make([]vote, 0, len(raws))
 	panelState.mu.Lock()
 	defer panelState.mu.Unlock()
-
-	for _, m := range models {
-		raw, good := rawJudgeScore(cfg, m, task, prompt, response)
-		if !good {
-			continue // an erroring judge abstains; the panel stays resilient
-		}
-		st := panelState.stat(m)
-		cal := calibrateScore(raw, st.mean, st.std())
-		st.observe(raw)
-		votes = append(votes, vote{model: m, cal: cal, w: st.weight})
-	}
-	if len(votes) == 0 {
-		return 0, 0, false
+	for _, r := range raws {
+		st := panelState.stat(r.model)
+		cal := calibrateScore(r.score, st.mean, st.std())
+		st.observe(r.score)
+		votes = append(votes, vote{model: r.model, cal: cal, w: st.weight})
 	}
 
 	// Reliability-weighted calibrated consensus.
