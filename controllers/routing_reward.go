@@ -70,6 +70,15 @@ var trainingOptedIn = func(org string) bool {
 	return object.GetCachedOrgTrainingContribution(org) != object.TrainingContributionDisabled
 }
 
+// trainingExplicitlyEnabled reports whether an org has EXPLICITLY set contribution
+// to "enabled" — not merely left it at the opt-out default (unset). The per-request
+// EU/EEA/UK judge guard (shouldJudge) requires this explicit consent before judging
+// a turn geolocated to those jurisdictions; the opt-out default is insufficient
+// there. Indirected through a var so tests can flip it.
+var trainingExplicitlyEnabled = func(org string) bool {
+	return object.GetCachedOrgTrainingContribution(org) == object.TrainingContributionEnabled
+}
+
 // resolveReward folds the accepted inputs into the ONE canonical stored reward in
 // [0,1], and reports whether a reward should be RECORDED at all: the `dismiss` signal
 // records nothing (it is prompt-fatigue analytics, never a reward=0 training label).
