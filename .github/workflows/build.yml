@@ -234,7 +234,14 @@ jobs:
         with:
           distribution: goreleaser
           version: '~> v2'
-          args: release --clean
+          # -p 1 serialises the cross-compiles. GoReleaser defaults parallelism to
+          # nCPU and builds ALL six GOOS/GOARCH targets at once; on this 8Gi runner
+          # the concurrent COLD `go build`s of the full tree (it imports luxfi/geth)
+          # burst past the memory limit and the kernel OOM-kills the runner — the
+          # "self-hosted runner lost communication" death at ~27min. The `backend`
+          # job proves ONE `go build ./...` fits in 8Gi, so one target at a time is
+          # the minimal, capacity-preserving fix (no arch dropped, no memory bump).
+          args: release --clean -p 1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
