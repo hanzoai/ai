@@ -390,12 +390,13 @@ func deployRouterPreferTo(scopeOwner string, prefer map[string][]string) error {
 	return err
 }
 
-// trainingOwnerSet is the consent-respecting owner set for the shared base fit:
-// the orgs that opted in via OrgSettings.TrainingContribution (enabled) UNION the
-// reserved internal orgs (always ours — "admin", "hanzo", plus any in
-// ROUTER_TRAIN_INTERNAL_ORGS, comma-separated). Deduped. On a lookup error it
-// falls back to the internal orgs alone (never silently widens to all orgs).
-func trainingOwnerSet() []string {
+// reservedInternalOrgs is the fixed set of OUR OWN orgs whose routing data is always
+// ours to train on: "admin" + "hanzo" plus any in ROUTER_TRAIN_INTERNAL_ORGS
+// (comma-separated). Deduped, lowercased, "*" excluded. The ONE definition of "our
+// internal orgs" — used both to seed their EXPLICIT training consent at boot
+// (SeedInternalTrainingConsent) and to union them into the shared base fit
+// (trainingOwnerSet).
+func reservedInternalOrgs() []string {
 	seen := map[string]bool{}
 	out := []string{}
 	add := func(o string) {
@@ -412,6 +413,28 @@ func trainingOwnerSet() []string {
 	for _, o := range strings.Split(os.Getenv("ROUTER_TRAIN_INTERNAL_ORGS"), ",") {
 		add(o)
 	}
+	return out
+}
+
+// trainingOwnerSet is the consent-respecting owner set for the shared base fit:
+// the reserved internal orgs (reservedInternalOrgs — always ours) UNION the
+// customer orgs that opted in via OrgSettings.TrainingContribution (enabled).
+// Deduped. On a lookup error it falls back to the internal orgs alone (never
+// silently widens to all orgs).
+func trainingOwnerSet() []string {
+	seen := map[string]bool{}
+	out := []string{}
+	add := func(o string) {
+		o = strings.ToLower(strings.TrimSpace(o))
+		if o == "" || o == object.GlobalDefaultOwner || seen[o] {
+			return
+		}
+		seen[o] = true
+		out = append(out, o)
+	}
+	for _, o := range reservedInternalOrgs() {
+		add(o)
+	}
 	// Consenting customer orgs.
 	if orgs, err := object.ListTrainingContributorOrgs(); err == nil {
 		for _, o := range orgs {
@@ -421,6 +444,38 @@ func trainingOwnerSet() []string {
 		log.Warning("router trainer: contributor-list read failed (%v); internal orgs only", err)
 	}
 	return out
+}
+
+// SeedInternalTrainingConsent sets TrainingContribution=enabled on the OrgSettings
+// row of every reserved INTERNAL org (reservedInternalOrgs) — our own admin/dev
+// orgs — so their turns are EXPLICITLY opted in. This matters because the
+// per-request EU/EEA/UK judge guard requires EXPLICIT consent (not the opt-out
+// default), so our own traffic stays unambiguously contributable everywhere.
+// Idempotent: an org already "enabled" is left untouched; a missing row is created,
+// any other row is updated in place (preserving its other settings). It ONLY ever
+// touches OUR reserved orgs — it NEVER bulk-enables customer orgs. Best-effort at
+// boot: a per-org failure logs and never blocks startup.
+func SeedInternalTrainingConsent() {
+	for _, org := range reservedInternalOrgs() {
+		existing, err := object.GetOrgSettings(org)
+		if err != nil {
+			log.Warning("seed internal training consent: read %s: %v", org, err)
+			continue
+		}
+		if existing == nil {
+			if _, err := object.AddOrgSettings(&object.OrgSettings{Owner: org, TrainingContribution: object.TrainingContributionEnabled}); err != nil {
+				log.Warning("seed internal training consent: add %s: %v", org, err)
+			}
+			continue
+		}
+		if existing.TrainingContribution == object.TrainingContributionEnabled {
+			continue // already opted in — idempotent no-op
+		}
+		existing.TrainingContribution = object.TrainingContributionEnabled
+		if _, err := object.UpdateOrgSettings(org, existing); err != nil {
+			log.Warning("seed internal training consent: update %s: %v", org, err)
+		}
+	}
 }
 
 // ── small helpers ─────────────────────────────────────────────────────────────
