@@ -92,6 +92,18 @@ type OrgSettings struct {
 	JudgeModels  string  `json:"judgeModels"`
 	JudgeURL     string  `json:"judgeUrl"`
 	JudgeSample  float64 `json:"judgeSample"`
+
+	// RouterMeanField* configure the congestion-aware mean-field routing LAYER
+	// (controllers/router_meanfield.go). PLATFORM-GLOBAL like the Judge* knobs: read
+	// ONLY from the "*" GlobalDefaultOwner row, live-tunable at admin.hanzo.ai via
+	// /v1/update-org-settings — no env, no restart. The layer is a pure best-response
+	// equilibrium that spreads `auto` load across near-equal-preference models instead
+	// of stampeding the single champion. It is DISABLED by default so live routing is
+	// byte-identical until an admin opts in (GetCachedMeanFieldConfig):
+	//   RouterMeanFieldEnabled — three-state "" (unset → default OFF) / "enabled" / "disabled".
+	//   RouterMeanFieldBeta    — congestion coefficient β >= 0 (0 → default). Higher ⇒ more load-spreading.
+	RouterMeanFieldEnabled string  `json:"routerMeanFieldEnabled"`
+	RouterMeanFieldBeta    float64 `json:"routerMeanFieldBeta"`
 }
 
 // TrainingContribution values for OrgSettings.TrainingContribution. The empty
@@ -164,6 +176,54 @@ func GetCachedJudgeConfig() JudgeConfig {
 	}
 	if s.JudgeSample > 0 && s.JudgeSample <= 1 {
 		out.Sample = s.JudgeSample
+	}
+	return out
+}
+
+// RouterMeanFieldEnabled three-state values — the same vocabulary as
+// AutoRouting/JudgeEnabled. Unset ("") resolves to the built-in default (OFF).
+const (
+	MeanFieldConfigUnset    = ""
+	MeanFieldConfigEnabled  = "enabled"
+	MeanFieldConfigDisabled = "disabled"
+)
+
+// Mean-field routing defaults — the congestion-aware layer is OFF by default, so a
+// fresh deploy (and any lookup blip) routes EXACTLY as it does today until an admin
+// enables it at admin.hanzo.ai. Beta is the congestion coefficient applied to a
+// model's live load share once enabled; the default is a gentle spread.
+const (
+	MeanFieldEnabledDefault = false
+	MeanFieldBetaDefault    = 0.15
+)
+
+// MeanFieldConfig is the resolved, platform-global congestion-routing config — the
+// "*" GlobalDefaultOwner OrgSettings row with every unset field filled by its
+// built-in default (DISABLED).
+type MeanFieldConfig struct {
+	Enabled bool
+	Beta    float64
+}
+
+// GetCachedMeanFieldConfig resolves the live mean-field routing config from the
+// 60s-cached "*" GlobalDefaultOwner row, applying the built-in default (OFF) for
+// every unset field. Fail-safe: on any missing row or read error it returns the
+// default (disabled), so a lookup blip NEVER silently flips congestion routing on —
+// live routing stays byte-identical to today unless an admin explicitly enables it.
+func GetCachedMeanFieldConfig() MeanFieldConfig {
+	out := MeanFieldConfig{Enabled: MeanFieldEnabledDefault, Beta: MeanFieldBetaDefault}
+	s, err := GetCachedOrgSettings(GlobalDefaultOwner)
+	if err != nil || s == nil {
+		return out
+	}
+	switch s.RouterMeanFieldEnabled {
+	case MeanFieldConfigEnabled:
+		out.Enabled = true
+	case MeanFieldConfigDisabled:
+		out.Enabled = false
+	}
+	if s.RouterMeanFieldBeta > 0 {
+		out.Beta = s.RouterMeanFieldBeta
 	}
 	return out
 }

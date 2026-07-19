@@ -7,6 +7,7 @@ package controllers
 
 import (
 	"math"
+	"sort"
 	"strings"
 	"sync"
 )
@@ -179,6 +180,32 @@ func panelScore(cfg *judgeConfig, models []string, task, prompt, response string
 	}
 	confidence = 1 - spread
 	return reward, confidence, true
+}
+
+// PanelJudge is one judge's public, in-process snapshot: its model id, current
+// reliability weight, running mean of RAW scores (the judge's own calibration
+// baseline), and how many scores it has observed. Scalars + a model id only — no
+// content, no PII — so it rides the public /v1/router/judge-panel surface the
+// world.hanzo.ai dashboard polls.
+type PanelJudge struct {
+	Model  string  `json:"model"`
+	Weight float64 `json:"weight"`
+	Mean   float64 `json:"mean"`
+	N      int     `json:"n"`
+}
+
+// PanelSnapshot copies the LIVE MFJP calibration state under the lock into a stable,
+// deterministically-ordered (by model id) slice of per-judge scalars for the read
+// endpoint. Empty when no judge has scored yet ⇒ the endpoint reports available:false.
+func PanelSnapshot() []PanelJudge {
+	panelState.mu.Lock()
+	defer panelState.mu.Unlock()
+	out := make([]PanelJudge, 0, len(panelState.stats))
+	for model, s := range panelState.stats {
+		out = append(out, PanelJudge{Model: model, Weight: s.weight, Mean: s.mean, N: int(s.n)})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Model < out[j].Model })
+	return out
 }
 
 // splitModels parses a comma-separated ROUTER_JUDGE_MODEL into a clean model list
