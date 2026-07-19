@@ -1032,8 +1032,15 @@ func (c *ApiController) ChatCompletions() {
 	// (auth+routing, ModelRoute fallbacks, zen identity, balance reserve/settle,
 	// usage record, response `model` echo) bills and reports the model that
 	// actually served. The transparency header lets callers see the routed choice.
+	// routedTask + routingRecorded carry the routing decision to the post-response
+	// judge hook at the tail of this handler (the LLM-as-a-judge dense reward): set
+	// in whichever branch records a RoutingEvent, so the judge scores only requests
+	// that are actually in the routing ledger.
+	var routedTask string
+	var routingRecorded bool
 	if routed, task, ok := resolveAutoModel(request.Model, orgId, c.routingUserId(), requestId, c.principalUser(), &request, c.sloFromHeaders()); ok {
 		request.Model = routed
+		routedTask, routingRecorded = task, true
 		c.Ctx.ResponseWriter.Header().Set(RoutedModelHeader, routed)
 		// Fold this request's TASK into the region's task-mix for the live-traffic
 		// globe — geo from the edge headers only (NO IP), aggregates only. Best-effort.
@@ -1047,6 +1054,7 @@ func (c *ApiController) ChatCompletions() {
 		// a rateable, trainable data point — up/down feedback for all models, and the
 		// ledger captures which model served which task even when the caller picked.
 		task := recordExplicitRouting(request.Model, orgId, c.routingUserId(), requestId, &request)
+		routedTask, routingRecorded = task, true
 		object.GlobalTraffic.RecordTask(
 			c.Ctx.Request.Header.Get("CF-IPCountry"),
 			c.Ctx.Request.Header.Get("CF-Region-Code"),
@@ -1320,6 +1328,14 @@ func (c *ApiController) ChatCompletions() {
 			c.ResponseError(err.Error())
 			return
 		}
+	}
+	// LLM-as-a-judge: score THIS served (prompt, response) into a dense quality
+	// reward for the enso router. Placed AFTER the reply is fully written (both
+	// stream and non-stream), so it never adds latency; the hook only spawns a
+	// goroutine after cheap gates, and is a no-op unless ROUTER_JUDGE_ENABLED. The
+	// prompt/response are passed transiently — never persisted (see router_judge.go).
+	if routingRecorded {
+		judgeRoutedResponse(c.Ctx.Request.UserAgent(), orgId, requestId, request.Model, routedTask, question, writer.MessageString())
 	}
 	c.EnableRender = false
 }
