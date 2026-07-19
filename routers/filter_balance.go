@@ -288,7 +288,7 @@ func isBalanceExempt(path string) bool {
 	// /v1/get-routing-defaults): the public platform scope is unauthenticated (the
 	// no-subject path already passes), and an authenticated org-scope read must not
 	// 402 a $0-balance org either.
-	case path == "/v1/router/stats" || path == "/v1/router/history":
+	case path == "/v1/router/stats" || path == "/v1/router/history" || path == "/v1/router/judge-panel":
 		return true
 	default:
 		return false
