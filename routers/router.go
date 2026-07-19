@@ -440,6 +440,10 @@ func initAPI() {
 	// only (task mix, never model ids). Balance+auth-exempt like /v1/router/stats.
 	App.Router("/v1/router/history", &controllers.ApiController{}, "GET:GetRouterHistory")
 	App.Router("/v1/router/publish-artifact-meta", &controllers.ApiController{}, "POST:PublishRouterArtifactMeta")
+	// Live Mean-Field Judge Panel state for the world.hanzo.ai dashboard. PUBLIC,
+	// platform-global (model ids + scalars only, no org/user rows), balance+auth-exempt
+	// like /v1/router/stats — the world widget polls it the same way.
+	App.Router("/v1/router/judge-panel", &controllers.ApiController{}, "GET:GetRouterJudgePanel")
 
 	// Live request-geo aggregate for the world.hanzo.ai Hanzo-mode globe. PUBLIC:
 	// aggregates only (country/region counts + throughput rates), no auth, no IPs.
