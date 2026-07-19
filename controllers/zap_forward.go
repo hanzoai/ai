@@ -27,15 +27,15 @@ package controllers
 import (
 	"net/http"
 
-	"github.com/hanzoai/beego/logs"
+	"github.com/hanzoai/ai/log"
 	"github.com/luxfi/zap/forward"
 
 	"github.com/hanzoai/ai/object"
 )
 
 // InitForwardBridge registers the canonical HTTP-over-ZAP terminal on the
-// inference node, dispatching every Forward to h. Pass beego.BeeApp.Handlers
-// (the fully-wrapped ControllerRegister) so all BeforeRouter filters — the
+// inference node, dispatching every Forward to h. Pass routers.App
+// (the fully-wrapped native router) so all BeforeRouter filters — the
 // balance gate and auth/tenant filters — run on the bridged request before
 // the route dispatches.
 //
@@ -47,5 +47,5 @@ func InitForwardBridge(h http.Handler) {
 		return
 	}
 	forward.Serve(node, h)
-	logs.Info("forward_serve: ZAP HTTP terminal registered on node %s (msg_type=%d)", node.NodeID(), forward.MsgTypeForward)
+	log.Info("forward_serve: ZAP HTTP terminal registered on node %s (msg_type=%d)", node.NodeID(), forward.MsgTypeForward)
 }

@@ -27,8 +27,8 @@ import (
 	"time"
 
 	"github.com/hanzoai/ai/conf"
-	"github.com/hanzoai/beego/context"
-	"github.com/hanzoai/beego/logs"
+	"github.com/hanzoai/ai/log"
+	"github.com/hanzoai/ai/web"
 	"golang.org/x/time/rate"
 )
 
@@ -224,7 +224,7 @@ func InitRateLimiter(tierFunc func(string) Tier) *RateLimiter {
 // Rate-limited paths: /v1/messages, /v1/messages,
 // and other /v1/ endpoints that carry a bearer token.
 // Excluded: health, metrics, models (read-only), static, UI routes.
-func RateLimitFilter(ctx *context.Context) {
+func RateLimitFilter(ctx *web.Context) {
 	if rateLimiterInstance == nil {
 		return
 	}
@@ -267,7 +267,7 @@ func RateLimitFilter(ctx *context.Context) {
 	retryAfter := rateLimiterInstance.RetryAfter(limitKey)
 	allowed, denied := rateLimiterInstance.Metrics()
 
-	logs.Info("rate_limit_exceeded key=%s path=%s retry_after=%d total_allowed=%d total_denied=%d",
+	log.Info("rate_limit_exceeded key=%s path=%s retry_after=%d total_allowed=%d total_denied=%d",
 		maskKey(limitKey), path, retryAfter, allowed, denied)
 
 	ctx.ResponseWriter.Header().Set("Retry-After", fmt.Sprintf("%d", retryAfter))
@@ -302,7 +302,7 @@ func isRateLimitExempt(path string) bool {
 //   - Authorization: Bearer <token>
 //   - X-API-Key: <token>
 //   - api_key query parameter
-func extractAPIKey(ctx *context.Context) string {
+func extractAPIKey(ctx *web.Context) string {
 	// Bearer token
 	authHeader := ctx.Request.Header.Get("Authorization")
 	if strings.HasPrefix(authHeader, "Bearer ") {
@@ -442,7 +442,7 @@ var tierCache *TierCache
 func InitTierCache() {
 	endpoint := conf.GetConfigString("commerceEndpoint")
 	if endpoint == "" {
-		logs.Info("tier_cache: commerceEndpoint not configured, Commerce tier lookup disabled")
+		log.Info("tier_cache: commerceEndpoint not configured, Commerce tier lookup disabled")
 		return
 	}
 	endpoint = strings.TrimRight(endpoint, "/")
@@ -460,7 +460,7 @@ func InitTierCache() {
 	go tc.cleanupLoop()
 
 	tierCache = tc
-	logs.Info("tier_cache: initialized (endpoint=%s, ttl=%v)", endpoint, tierCacheTTL)
+	log.Info("tier_cache: initialized (endpoint=%s, ttl=%v)", endpoint, tierCacheTTL)
 }
 
 // get returns a cached tier for the given key, or ("", false) on cache miss
@@ -510,7 +510,7 @@ func (tc *TierCache) refreshAsync(apiKey string) {
 
 		tier, err := tc.commerceTierLookup(apiKey)
 		if err != nil {
-			logs.Warning("tier_cache: Commerce lookup failed for key=%s: %v (defaulting to zen-free)", maskKey(apiKey), err)
+			log.Warning("tier_cache: Commerce lookup failed for key=%s: %v (defaulting to zen-free)", maskKey(apiKey), err)
 			tier = TierZenFree
 		}
 		tc.set(apiKey, tier)

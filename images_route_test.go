@@ -21,9 +21,7 @@ import (
 	"testing"
 
 	"github.com/hanzoai/ai/controllers"
-	_ "github.com/hanzoai/ai/routers" // registers /v1/* routes (incl. images/generations)
-	"github.com/hanzoai/beego"
-	_ "github.com/hanzoai/beego/session" // memory session provider registration
+	"github.com/hanzoai/ai/routers" // registers /v1/* routes (incl. images/generations)
 	"github.com/zap-proto/zip"
 )
 
@@ -35,17 +33,10 @@ import (
 // registration half of the fix: before it, the path 404'd (catalog-ware model,
 // no endpoint).
 func TestImagesGenerationsRouteIsRegistered(t *testing.T) {
-	beego.BConfig.CopyRequestBody = true
-	beego.BConfig.WebConfig.Session.SessionOn = true
-	beego.BConfig.WebConfig.Session.SessionName = "cloud_session_id"
-	beego.BConfig.WebConfig.Session.SessionProvider = "memory"
-	beego.BConfig.WebConfig.Session.SessionProviderConfig = ""
-	beego.GlobalSessions = nil
-	if err := initSessionManager(); err != nil {
-		t.Fatalf("initSessionManager: %v", err)
-	}
+	wireTestSessions()
 
-	SetHandler(beego.BeeApp.Handlers)
+	routers.InstallFilters()
+	SetHandler(routers.App)
 	defer SetHandler(nil)
 
 	app := zip.New(zip.Config{DisableStartupMessage: true})

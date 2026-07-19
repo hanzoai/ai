@@ -22,7 +22,7 @@ import (
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/i18n"
 	"github.com/hanzoai/ai/util"
-	"github.com/hanzoai/beego/context"
+	"github.com/hanzoai/ai/web"
 	"github.com/hanzoai/dbx"
 )
 
@@ -246,7 +246,7 @@ func UpdateRecordFields(id string, fields map[string]interface{}, lang string) (
 	return affected != 0, nil
 }
 
-func NewRecord(ctx *context.Context) (*Record, error) {
+func NewRecord(ctx *web.Context) (*Record, error) {
 	ip := strings.Replace(util.GetIPFromRequest(ctx.Request), ": ", "", -1)
 	action := strings.TrimPrefix(ctx.Request.URL.Path, "/v1/")
 	requestUri := util.FilterQuery(ctx.Request.RequestURI, []string{"accessToken"})

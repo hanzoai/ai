@@ -19,11 +19,13 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/router"
-	"github.com/sashabaranov/go-openai"
+	"github.com/hanzoai/go-openai"
+	iam "github.com/hanzoai/iam"
 )
 
 // routerTestConfig builds a ModelConfig with auto-routing enabled and a small
@@ -79,7 +81,7 @@ func TestResolveAutoModelDisabled(t *testing.T) {
 	defer func() { globalModelConfig = prev }()
 	globalModelConfig = routerTestConfig(false)
 
-	if _, _, ok := resolveAutoModel("auto", "", "", "", chatReq("auto", "refactor this function"), router.Slo{}); ok {
+	if _, _, ok := resolveAutoModel("auto", "", "", "", nil, chatReq("auto", "refactor this function"), router.Slo{}); ok {
 		t.Error("resolveAutoModel with routing disabled = ok, want not-ok")
 	}
 }
@@ -89,7 +91,7 @@ func TestResolveAutoModelNilConfig(t *testing.T) {
 	defer func() { globalModelConfig = prev }()
 	globalModelConfig = nil
 
-	if _, _, ok := resolveAutoModel("auto", "", "", "", chatReq("auto", "hi"), router.Slo{}); ok {
+	if _, _, ok := resolveAutoModel("auto", "", "", "", nil, chatReq("auto", "hi"), router.Slo{}); ok {
 		t.Error("resolveAutoModel with nil config = ok, want not-ok")
 	}
 }
@@ -99,7 +101,7 @@ func TestResolveAutoModelNotAuto(t *testing.T) {
 	defer func() { globalModelConfig = prev }()
 	globalModelConfig = routerTestConfig(true)
 
-	if _, _, ok := resolveAutoModel("gpt-4o", "", "", "", chatReq("gpt-4o", "refactor this function"), router.Slo{}); ok {
+	if _, _, ok := resolveAutoModel("gpt-4o", "", "", "", nil, chatReq("gpt-4o", "refactor this function"), router.Slo{}); ok {
 		t.Error("resolveAutoModel for a concrete model = ok, want not-ok")
 	}
 }
@@ -121,7 +123,7 @@ func TestResolveAutoModelEnabled(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.text, func(t *testing.T) {
-			got, _, ok := resolveAutoModel(tc.alias, "", "", "", chatReq(tc.alias, tc.text), router.Slo{})
+			got, _, ok := resolveAutoModel(tc.alias, "", "", "", nil, chatReq(tc.alias, tc.text), router.Slo{})
 			if !ok {
 				t.Fatalf("resolveAutoModel(%q) not ok", tc.text)
 			}
@@ -146,7 +148,7 @@ func TestAutoRoutingHTTPContract(t *testing.T) {
 	handler := func(w http.ResponseWriter, r *http.Request) {
 		var req openai.ChatCompletionRequest
 		_ = json.NewDecoder(r.Body).Decode(&req)
-		if routed, _, ok := resolveAutoModel(req.Model, "", "", "", &req, router.Slo{}); ok {
+		if routed, _, ok := resolveAutoModel(req.Model, "", "", "", nil, &req, router.Slo{}); ok {
 			req.Model = routed
 			w.Header().Set(RoutedModelHeader, routed)
 		}
@@ -167,6 +169,80 @@ func TestAutoRoutingHTTPContract(t *testing.T) {
 	}
 	if resp.Model != "glm-5.2" {
 		t.Errorf("response model = %q, want glm-5.2 (billed/reported as served model)", resp.Model)
+	}
+}
+
+// TestResolveAutoModelGatedServabilityGate proves the HIP-510 §1 invariant: the
+// `known` predicate admits an access-gated SKU ONLY when the caller holds a grant, so
+// `auto` never routes to a gated model the serve path would then refuse (the auto→enso
+// 404). enso-flash here is a gated (waitlist) family SKU whose route resolves; glm-5.2 is
+// a plain servable fallback; code prompts prefer enso-flash then glm-5.2. Without a grant
+// the router skips enso-flash and falls through to glm-5.2; with a grant it is chosen. The
+// gated status is real (discovered catalog, free tier so the tier gate is a no-op); only
+// the grant lookup — the DB leaf — is seamed, exercising the true grantAllows composition.
+func TestResolveAutoModelGatedServabilityGate(t *testing.T) {
+	prevCfg, prevSink, prevGrant, savedCatalog := globalModelConfig, routingEventSink, modelAccessGrantedFn, ensoFam.byID
+	t.Cleanup(func() {
+		globalModelConfig, routingEventSink, modelAccessGrantedFn, ensoFam.byID = prevCfg, prevSink, prevGrant, savedCatalog
+	})
+
+	globalModelConfig = &ModelConfig{
+		routes: map[string]modelRoute{
+			"enso-flash": {providerName: "enso", upstreamModel: "enso-flash"},
+			"glm-5.2":    {providerName: "do-ai", upstreamModel: "glm-5.2"},
+		},
+		pricing: map[string]modelPrice{},
+		router: RouterConfigDef{
+			Enabled: true,
+			Prefer:  map[string][]string{"code": {"enso-flash", "glm-5.2"}},
+		},
+	}
+	// Gated (waitlist) but MinTier "" ⇒ free, so the tier gate passes with no commerce
+	// call and the grant gate is the sole decider.
+	ensoFam.byID = map[string]zenModel{"enso-flash": {ID: "enso-flash", Access: "waitlist"}}
+
+	var events []object.RoutingEvent
+	routingEventSink = func(e object.RoutingEvent) { events = append(events, e) }
+
+	user := &iam.User{Owner: "acme", Name: "alice", Email: "alice@acme.co"}
+	const codePrompt = "please refactor this function"
+
+	// (a) No grant → the gated SKU is NOT admitted by `known`; auto falls through to
+	// the next servable candidate.
+	modelAccessGrantedFn = func(owner, name, email, model string) bool { return false }
+	got, _, ok := resolveAutoModel("auto", "acme", "acme/alice", "r1", user, chatReq("auto", codePrompt), router.Slo{})
+	if !ok {
+		t.Fatal("resolveAutoModel not ok (no grant)")
+	}
+	if got != "glm-5.2" {
+		t.Fatalf("without grant: routed to %q, want glm-5.2 (gated enso-flash must be skipped)", got)
+	}
+
+	// (b) With a grant for enso-flash → the gated SKU IS admitted and chosen.
+	modelAccessGrantedFn = func(owner, name, email, model string) bool {
+		return owner == "acme" && model == "enso-flash"
+	}
+	got, _, ok = resolveAutoModel("auto", "acme", "acme/alice", "r2", user, chatReq("auto", codePrompt), router.Slo{})
+	if !ok {
+		t.Fatal("resolveAutoModel not ok (granted)")
+	}
+	if got != "enso-flash" {
+		t.Fatalf("with grant: routed to %q, want enso-flash", got)
+	}
+
+	// The content-free RoutingEvent recording stays intact: one event per resolve, the
+	// routed model recorded, and never any prompt text.
+	if len(events) != 2 {
+		t.Fatalf("recorded %d routing events, want 2", len(events))
+	}
+	if events[1].RoutedModel != "enso-flash" || events[1].RequestedModel != "auto" {
+		t.Errorf("granted event routed/requested = %q/%q, want enso-flash/auto", events[1].RoutedModel, events[1].RequestedModel)
+	}
+	for _, e := range events {
+		blob := strings.ToLower(e.Task + e.RoutedModel + e.RequestedModel + e.Features + e.User + e.Owner + e.RequestId)
+		if strings.Contains(blob, "refactor") {
+			t.Errorf("routing event leaked prompt text: %+v", e)
+		}
 	}
 }
 

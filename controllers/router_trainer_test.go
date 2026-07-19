@@ -15,10 +15,34 @@
 package controllers
 
 import (
+	"runtime"
 	"testing"
+	"time"
 
 	"github.com/hanzoai/ai/object"
 )
+
+// TestFlywheelDarkByDefault proves the router flywheel launches are safe to wire into
+// the always-run Bootstrap (the single launch site, HIP-510): with none of their env
+// flags set, StartRouterProbe and StartRouterTrainer are no-ops that spawn NO background
+// goroutine. This dark-by-default gating is exactly what lets Bootstrap call them
+// unconditionally without turning the flywheel on outside a configured deployment.
+func TestFlywheelDarkByDefault(t *testing.T) {
+	t.Setenv("ROUTER_TRAIN_ENABLED", "")
+	t.Setenv("ROUTER_PROBE_RPH", "")
+	t.Setenv("ROUTER_PROBE_TOKEN", "")
+
+	// Let any async goroutines from earlier tests settle so the baseline is quiet, then
+	// measure tightly around the two synchronous calls: when disabled they run zero `go`
+	// statements, so the count cannot rise.
+	time.Sleep(50 * time.Millisecond)
+	before := runtime.NumGoroutine()
+	StartRouterProbe()
+	StartRouterTrainer()
+	if after := runtime.NumGoroutine(); after > before {
+		t.Fatalf("flywheel spawned %d goroutine(s) with env unset; must be dark by default", after-before)
+	}
+}
 
 // rewarded builds a batch of n rewarded routing events for one (task, model) arm
 // at a fixed reward — the pure fit's only inputs.
@@ -176,4 +200,37 @@ func rewardedOwner(owner, task, model string, n int, reward float64) []*object.R
 		e.Owner = owner
 	}
 	return out
+}
+
+// TestTrainScopeAppendsRetrainLog is the regression guard for the retrain-timeline
+// bug. The in-process trainer must append ONE RouterTrainingLog row per fit — the row
+// the world.hanzo.ai "Model Improvement" panel counts as a retrain. Before the fix
+// trainScope only upserted the "latest per scope" artifact meta and never appended, so
+// the panel showed 0 retrains forever even while the trainer ran. A fit appends whether
+// the gate passes OR misses, so one call ⇒ exactly one row.
+func TestTrainScopeAppendsRetrainLog(t *testing.T) {
+	restore, err := object.UseMemoryDB(
+		"file:trainscope_retrainlog_test?mode=memory&cache=shared",
+		&object.RouterArtifactMeta{}, &object.RouterTrainingLog{}, &object.OrgSettings{},
+	)
+	if err != nil {
+		t.Fatalf("UseMemoryDB: %v", err)
+	}
+	defer restore()
+
+	// A clean first fit for the shared-base scope with a clear winner.
+	if err := trainScope("*", rewarded("code", "zen5-coder", 30, 0.9), 1, 0.0); err != nil {
+		t.Fatalf("trainScope: %v", err)
+	}
+
+	rows, err := object.ListRouterTrainingLog("*", "", 0)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("want exactly one retrain row appended by trainScope, got %d", len(rows))
+	}
+	if rows[0].Owner != "*" || rows[0].Events <= 0 || rows[0].Version == "" {
+		t.Errorf("retrain row not populated from the fit: %+v", rows[0])
+	}
 }

@@ -22,8 +22,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/object"
-	"github.com/hanzoai/beego/logs"
 )
 
 // ── Router trainer — the flywheel's fit→gate→deploy→publish job ────────────────
@@ -208,19 +208,19 @@ func gateRouterFit(arms map[string]*armStat, incumbent map[string][]string, conf
 // Called once at boot (cmd/aid). Never fails boot.
 func StartRouterTrainer() {
 	if !envTrue("ROUTER_TRAIN_ENABLED") {
-		logs.Info("router trainer: disabled (set ROUTER_TRAIN_ENABLED=1 to enable)")
+		log.Info("router trainer: disabled (set ROUTER_TRAIN_ENABLED=1 to enable)")
 		return
 	}
 	every := envDuration("ROUTER_TRAIN_EVERY", trainDefaultEvery)
 	if every < trainMinEvery {
 		every = trainMinEvery
 	}
-	logs.Info("router trainer: enabled — every %s", every)
+	log.Info("router trainer: enabled — every %s", every)
 	go func() {
 		for {
 			time.Sleep(every)
 			if err := runRouterTraining(); err != nil {
-				logs.Warning("router trainer: %v", err)
+				log.Warning("router trainer: %v", err)
 			}
 		}
 	}()
@@ -270,7 +270,7 @@ func runRouterTraining() error {
 		}
 	}
 	if err := trainScope(object.GlobalDefaultOwner, globalEvents, minEvents, margin); err != nil {
-		logs.Warning("router trainer: global base: %v", err)
+		log.Warning("router trainer: global base: %v", err)
 	}
 
 	// 2) Per-org — every org trains its OWN policy from its OWN rewards.
@@ -279,7 +279,7 @@ func runRouterTraining() error {
 			continue
 		}
 		if err := trainScope(owner, evs, minEvents, margin); err != nil {
-			logs.Warning("router trainer: org %s: %v", owner, err)
+			log.Warning("router trainer: org %s: %v", owner, err)
 		}
 	}
 	return nil
@@ -314,16 +314,25 @@ func trainScope(scopeOwner string, events []*object.RoutingEvent, minEvents int,
 			meta.Published = false
 			meta.Note = "gate passed but deploy failed: " + err.Error()
 			_ = object.UpsertRouterArtifactMeta(meta)
+			_ = object.AppendRouterTrainingLog(object.NewRouterTrainingLog(meta))
 			return fmt.Errorf("deploy prefer: %w", err)
 		}
 		meta.Published = true
-		logs.Info("router trainer[%s]: published v%s — %s (events=%d, reward %.3f vs %.3f)",
+		log.Info("router trainer[%s]: published v%s — %s (events=%d, reward %.3f vs %.3f)",
 			scopeOwner, version, res.Note, res.Events, res.NewMean, res.BaseMean)
 	} else {
 		meta.Published = false
-		logs.Info("router trainer[%s]: %s (events=%d)", scopeOwner, res.Note, res.Events)
+		log.Info("router trainer[%s]: %s (events=%d)", scopeOwner, res.Note, res.Events)
 	}
-	return object.UpsertRouterArtifactMeta(meta)
+	if err := object.UpsertRouterArtifactMeta(meta); err != nil {
+		return err
+	}
+	// Also append to the IMMUTABLE retrain timeline (best-effort) — this is the row the
+	// world.hanzo.ai "Model Improvement" panel counts as a retrain. Every fit logs one,
+	// pass OR miss, so the timeline is exactly what happened. Without this the in-process
+	// trainer only ever upserts "latest" and the panel shows 0 retrains forever.
+	_ = object.AppendRouterTrainingLog(object.NewRouterTrainingLog(meta))
+	return nil
 }
 
 // deployRouterPreferTo merges the gated best-arm table into a scope's
@@ -390,7 +399,7 @@ func trainingOwnerSet() []string {
 			add(o)
 		}
 	} else {
-		logs.Warning("router trainer: contributor-list read failed (%v); internal orgs only", err)
+		log.Warning("router trainer: contributor-list read failed (%v); internal orgs only", err)
 	}
 	return out
 }

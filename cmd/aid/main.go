@@ -17,25 +17,26 @@ package main
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
 	"github.com/hanzoai/ai"
+	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/controllers"
+	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/object"
+	"github.com/hanzoai/ai/routers"
 	"github.com/hanzoai/ai/util"
-	"github.com/hanzoai/beego"
-	"github.com/hanzoai/beego/logs"
-	_ "github.com/hanzoai/beego/session/redis"
 )
 
 func main() {
 	// Shared AI runtime bootstrap (DB, model config, balance/tier/rate-limit,
-	// beego filter chain, billing queue) — the SAME sequence the unified
+	// router filter chain, billing queue) — the SAME sequence the unified
 	// cloud binary runs via ai.Mount, defined once in ai.Bootstrap. It ends
-	// by publishing beego.BeeApp.Handlers via ai.SetHandler. A bootstrap
+	// by publishing routers.App via ai.SetHandler. A bootstrap
 	// failure is fatal for the standalone server.
 	if err := ai.Bootstrap(); err != nil {
 		panic(err)
@@ -43,10 +44,10 @@ func main() {
 	rlInstance := ai.RateLimiter()
 	bq := ai.BillingQueue()
 
-	port := beego.AppConfig.DefaultInt("httpport", 8000)
+	port := conf.AppConfig.DefaultInt("httpport", 8000)
 
-	// Standalone-only: free the legacy beego port before binding it. The
-	// embedded binary serves beego through zip and never listens here, so
+	// Standalone-only: free the legacy HTTP port before binding it. The
+	// embedded binary serves routers.App through zip and never listens here, so
 	// this lives in main(), not Bootstrap.
 	if err := util.StopOldInstance(port); err != nil {
 		panic(err)
@@ -57,20 +58,20 @@ func main() {
 	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
 	go func() {
 		sig := <-sigCh
-		logs.Info("Received %v, shutting down...", sig)
+		log.Info("Received %v, shutting down...", sig)
 
 		if rlInstance != nil {
 			rlInstance.Stop()
 			allowed, denied := rlInstance.Metrics()
-			logs.Info("Rate limiter stopped (total_allowed=%d total_denied=%d)", allowed, denied)
+			log.Info("Rate limiter stopped (total_allowed=%d total_denied=%d)", allowed, denied)
 		}
 
 		if bq != nil {
 			remaining := bq.Shutdown()
 			if remaining > 0 {
-				logs.Error("Billing queue shutdown: %d records could not be delivered", remaining)
+				log.Error("Billing queue shutdown: %d records could not be delivered", remaining)
 			} else {
-				logs.Info("Billing queue drained successfully")
+				log.Info("Billing queue drained successfully")
 			}
 		}
 
@@ -95,32 +96,31 @@ func main() {
 	// Listens on CLOUD_ZAP_PORT (default 9320), separate from inference node.
 	controllers.InitInterserviceZap()
 
-	// (ai.SetHandler(beego.BeeApp.Handlers) already ran inside ai.Bootstrap —
-	// the beego ControllerRegister is published once, there.)
+	// (ai.SetHandler(routers.App) already ran inside ai.Bootstrap —
+	// the native router is published once, there.)
 
 	// Register the canonical HIP-0110 HTTP-over-ZAP terminal (luxfi/zap/forward)
 	// on the inference node so the ZAP gateway can route any HTTP request to the
-	// full beego surface. beego.BeeApp.Handlers is the fully-wrapped
-	// ControllerRegister: every BeforeRouter filter inserted above — including
+	// full HTTP surface. routers.App is the fully-wrapped native router:
+	// every BeforeRouter filter inserted above — including
 	// the balance gate (BalanceGateFilter) and all auth/tenant filters — runs on
 	// the bridged request before the route dispatches. Purely additive; the
 	// :8000 HTTP path and the existing ZAP handlers (MsgType 100/200) are
 	// untouched. Gated by ZAP_ENABLED via object.GetZapNode() returning nil.
-	controllers.InitForwardBridge(beego.BeeApp.Handlers)
+	controllers.InitForwardBridge(routers.App)
 
 	go object.ClearThroughputPerSecond()
 
-	// Router self-probe: a slow, tagged trickle of real auto-routed requests
-	// against our own /v1 so the enso training ledger accumulates continuously.
-	// Off unless ROUTER_PROBE_RPH + ROUTER_PROBE_TOKEN are set.
-	controllers.StartRouterProbe()
+	// The Enso router flywheel (probe + trainer) is launched inside ai.Bootstrap (run
+	// above), the SINGLE shared boot sequence — so it is the ONE launch site and boots
+	// identically in this standalone and the embedded unified binary. Both self-gate on
+	// env and default OFF (ROUTER_TRAIN_ENABLED; ROUTER_PROBE_RPH+ROUTER_PROBE_TOKEN).
+	// See ai.Bootstrap (HIP-510).
 
-	// Router trainer: the flywheel's fit→gate→deploy→publish loop — reads the
-	// rewarded ledger, fits per-(task,model) reward, and on a passing gate writes
-	// the empirically-best models into the shared "*" router Prefer row (which the
-	// router already folds) and publishes the retrain meta. Off unless
-	// ROUTER_TRAIN_ENABLED=1.
-	controllers.StartRouterTrainer()
-
-	beego.Run(fmt.Sprintf(":%v", port))
+	// Serve the native router directly. The embedded cloud binary serves the
+	// same routers.App through zip; here the standalone owns the listener.
+	srv := &http.Server{Addr: fmt.Sprintf(":%v", port), Handler: routers.App}
+	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		log.Error("http server on :%v exited: %v", port, err)
+	}
 }

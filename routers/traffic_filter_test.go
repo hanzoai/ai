@@ -13,10 +13,10 @@ import (
 	"time"
 
 	"github.com/hanzoai/ai/object"
-	beegoctx "github.com/hanzoai/beego/context"
+	web "github.com/hanzoai/ai/web"
 )
 
-func tapCtx(method, path, country, region, ip string) *beegoctx.Context {
+func tapCtx(method, path, country, region, ip string) *web.Context {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(method, path, nil)
 	if country != "" {
@@ -29,7 +29,7 @@ func tapCtx(method, path, country, region, ip string) *beegoctx.Context {
 		req.Header.Set("CF-Connecting-IP", ip)
 		req.Header.Set("X-Forwarded-For", ip)
 	}
-	ctx := beegoctx.NewContext()
+	ctx := web.NewContext()
 	ctx.Reset(rec, req)
 	return ctx
 }

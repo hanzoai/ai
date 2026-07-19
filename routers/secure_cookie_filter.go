@@ -18,12 +18,12 @@ package routers
 import (
 	"strings"
 
-	"github.com/hanzoai/beego/context"
+	"github.com/hanzoai/ai/web"
 )
 
 // SecureCookieFilter ensures session cookies have the Secure flag set
 // This is necessary when running behind a reverse proxy that handles HTTPS
-func SecureCookieFilter(ctx *context.Context) {
+func SecureCookieFilter(ctx *web.Context) {
 	// This filter runs after the response is written
 	// It modifies the Set-Cookie header to add the Secure flag
 

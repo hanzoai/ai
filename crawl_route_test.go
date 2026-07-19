@@ -20,10 +20,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/controllers"
-	_ "github.com/hanzoai/ai/routers" // registers /v1/* routes (incl. /v1/crawl)
-	"github.com/hanzoai/beego"
-	_ "github.com/hanzoai/beego/session" // memory session provider registration
+	"github.com/hanzoai/ai/routers" // registers /v1/* routes (incl. /v1/crawl)
 	"github.com/zap-proto/zip"
 )
 
@@ -36,26 +35,19 @@ import (
 //     unauthenticated request BEFORE any crawl, i.e. fail-closed. Preview mode is
 //     forced off so the reject branch (not the dev-preview admin bypass) runs.
 func TestCrawlRouteIsRegisteredAndFailClosed(t *testing.T) {
-	beego.BConfig.CopyRequestBody = true
-	beego.BConfig.WebConfig.Session.SessionOn = true
-	beego.BConfig.WebConfig.Session.SessionName = "cloud_session_id"
-	beego.BConfig.WebConfig.Session.SessionProvider = "memory"
-	beego.BConfig.WebConfig.Session.SessionProviderConfig = ""
-	beego.GlobalSessions = nil
-	if err := initSessionManager(); err != nil {
-		t.Fatalf("initSessionManager: %v", err)
-	}
+	wireTestSessions()
 
 	// Force fail-closed: with preview mode on (the default), requireIndexAuth
 	// grants dev admin and would proceed to the crawl backend. Off, an
 	// unauthenticated caller must be rejected outright.
-	if beego.AppConfig != nil {
-		prev := beego.AppConfig.String("disablePreviewMode")
-		_ = beego.AppConfig.Set("disablePreviewMode", "true")
-		defer beego.AppConfig.Set("disablePreviewMode", prev)
+	if conf.AppConfig != nil {
+		prev := conf.AppConfig.String("disablePreviewMode")
+		_ = conf.AppConfig.Set("disablePreviewMode", "true")
+		defer conf.AppConfig.Set("disablePreviewMode", prev)
 	}
 
-	SetHandler(beego.BeeApp.Handlers)
+	routers.InstallFilters()
+	SetHandler(routers.App)
 	defer SetHandler(nil)
 
 	app := zip.New(zip.Config{DisableStartupMessage: true})
@@ -95,17 +87,10 @@ func TestCrawlRouteIsRegisteredAndFailClosed(t *testing.T) {
 // (Meilisearch, SearchDocs) remains wired after the crawl consolidation — NOT
 // 404, and fail-closed (error body) for an unauthenticated caller.
 func TestSearchRouteStillRegistered(t *testing.T) {
-	beego.BConfig.CopyRequestBody = true
-	beego.BConfig.WebConfig.Session.SessionOn = true
-	beego.BConfig.WebConfig.Session.SessionName = "cloud_session_id"
-	beego.BConfig.WebConfig.Session.SessionProvider = "memory"
-	beego.BConfig.WebConfig.Session.SessionProviderConfig = ""
-	beego.GlobalSessions = nil
-	if err := initSessionManager(); err != nil {
-		t.Fatalf("initSessionManager: %v", err)
-	}
+	wireTestSessions()
 
-	SetHandler(beego.BeeApp.Handlers)
+	routers.InstallFilters()
+	SetHandler(routers.App)
 	defer SetHandler(nil)
 
 	app := zip.New(zip.Config{DisableStartupMessage: true})

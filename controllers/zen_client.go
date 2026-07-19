@@ -40,9 +40,9 @@ import (
 	"time"
 
 	"github.com/hanzoai/ai/conf"
+	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
-	beegoLogs "github.com/hanzoai/beego/logs"
 	"github.com/hanzoai/decimal"
 	iam "github.com/hanzoai/iam"
 	"github.com/hanzoai/money"
@@ -201,6 +201,7 @@ type zenModel struct {
 	MaxCtx  int
 	Vision  bool
 	Access  string    // "" = generally available; "waitlist" = access-gated (limited preview) — ai enforces the grant
+	MinTier string    // "" | "free" | "trial" | "paid" — min subscription tier the family advertises for this SKU; ai enforces it (Seams A/B). "" ⇒ free (all tiers). Orthogonal to Access.
 	Base    zenTier   // headline price (the in-window tier)
 	Tiers   []zenTier // full ladder, ascending by MaxCtx — the billing contract
 }
@@ -209,6 +210,17 @@ type zenModel struct {
 // that is LISTED but callable only with a granted ModelAccess row). ai learns this
 // from discovery (the family's advertised access), never a hardcode.
 func (m zenModel) gated() bool { return m.Access == "waitlist" }
+
+// minTier is the SKU's advertised minimum subscription tier on the enso ladder,
+// normalized: "" ⇒ "free" (every tier may use it). One of "free" | "trial" | "paid".
+// ai learns this from discovery (the family's advertised min_tier), never a hardcode;
+// the tier gate (familyTierAllowed, Seams A/B) enforces it.
+func (m zenModel) minTier() string {
+	if t := strings.ToLower(strings.TrimSpace(m.MinTier)); t != "" {
+		return t
+	}
+	return "free"
+}
 
 // tierFor picks the tier that serves promptTokens: the smallest whose context covers
 // the prompt, else the largest. This is the family's Tier rule (hip-00NN) — cost keys
@@ -262,7 +274,8 @@ func (m zenModel) price() (modelPrice, bool) {
 type zenWireModel struct {
 	ID            string `json:"id"`
 	OwnedBy       string `json:"owned_by"`
-	Access        string `json:"access"` // "" | "waitlist" — access gating advertised by the family
+	Access        string `json:"access"`   // "" | "waitlist" — access gating advertised by the family
+	MinTier       string `json:"min_tier"` // "" | "free" | "trial" | "paid" — min subscription tier advertised for this SKU (Seams A/B)
 	ContextWindow int    `json:"context_window"`
 	Pricing       struct {
 		Input  decimal.Decimal `json:"input"`
@@ -280,7 +293,7 @@ type zenWireModel struct {
 
 func (w zenWireModel) model() zenModel {
 	zm := zenModel{
-		ID: w.ID, OwnedBy: w.OwnedBy, MaxCtx: w.ContextWindow, Vision: w.Capabilities.Vision, Access: w.Access,
+		ID: w.ID, OwnedBy: w.OwnedBy, MaxCtx: w.ContextWindow, Vision: w.Capabilities.Vision, Access: w.Access, MinTier: w.MinTier,
 		Base: zenTier{MaxCtx: w.ContextWindow, In: w.Pricing.Input, Out: w.Pricing.Output},
 	}
 	for _, t := range w.PricingTiers {
@@ -355,7 +368,7 @@ func (f *modelFamily) fresh() {
 	f.mu.RUnlock()
 	if stale {
 		if err := f.refresh(); err != nil {
-			beegoLogs.Warning("%s catalog refresh failed: %v", f.name, err)
+			log.Warning("%s catalog refresh failed: %v", f.name, err)
 		}
 	}
 }
@@ -483,6 +496,30 @@ var (
 	zenDataPrefix = []byte("data:")
 )
 
+// withModel returns body with its top-level "model" field set to model, preserving
+// every other field. It reconciles the forwarded body with the model ai resolved: an
+// `auto`/`zen-router` request rewrites request.Model to a concrete SKU while the raw
+// body still says "auto", and the family serves by the body's model field. RawMessage
+// preserves all sibling fields losslessly; on any parse/marshal error the body is
+// returned unchanged so the rewrite never drops a request (the family then surfaces a
+// precise error on the original body).
+func withModel(body []byte, model string) []byte {
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(body, &m); err != nil || m == nil {
+		return body
+	}
+	mb, err := json.Marshal(model)
+	if err != nil {
+		return body
+	}
+	m["model"] = mb
+	out, err := json.Marshal(m)
+	if err != nil {
+		return body
+	}
+	return out
+}
+
 // pipeToFamily forwards the caller's request to the family service verbatim and relays
 // the response back unchanged — the family owns identity, reasoning, upstream, and
 // dialect; ai only authenticates, meters, and forwards. apiPath is "messages"
@@ -504,6 +541,13 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		c.zenError(dialect, gatedAccessMessage(model), http.StatusForbidden)
 		return
 	}
+	// Forward the model ai RESOLVED, not the caller's raw model id. An
+	// `auto`/`zen-router` request rewrote request.Model to a concrete family SKU, but
+	// the raw body still carries "model":"auto" — and the family serves by the body's
+	// model field, so it 404s on the unknown id "auto" while a direct request for the
+	// same SKU (body model == SKU) serves. Reconcile the forwarded body's model with
+	// the resolved SKU; byte-identical for a direct request (model already matches).
+	rawBody = withModel(rawBody, model)
 	reqID := util.GenerateUUID()
 	url := prov.ProviderUrl + "/v1/" + apiPath
 	req, err := http.NewRequestWithContext(c.Ctx.Request.Context(), http.MethodPost, url, bytes.NewReader(rawBody))

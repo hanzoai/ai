@@ -19,11 +19,10 @@ import (
 	"net/http/httptest"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/hanzoai/ai/controllers"
-	"github.com/hanzoai/beego"
-	beegoctx "github.com/hanzoai/beego/context"
-	"github.com/hanzoai/beego/session"
+	web "github.com/hanzoai/ai/web"
 	iam "github.com/hanzoai/iam"
 )
 
@@ -43,10 +42,10 @@ func (s *fakeSession) Flush() error {
 
 // newFilterCtx builds a beego context with a session optionally carrying user as
 // the authenticated principal.
-func newFilterCtx(method, path string, user *iam.User) (*beegoctx.Context, *httptest.ResponseRecorder) {
+func newFilterCtx(method, path string, user *iam.User) (*web.Context, *httptest.ResponseRecorder) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(method, path, nil)
-	ctx := beegoctx.NewContext()
+	ctx := web.NewContext()
 	ctx.Reset(rec, req)
 	sess := &fakeSession{data: map[interface{}]interface{}{}}
 	if user != nil {
@@ -123,13 +122,13 @@ func TestDenyRequestForbidden403(t *testing.T) {
 
 // newFilterCtxAuth builds a filter context with a Bearer header (no session), so
 // the credential-presence gate can be exercised.
-func newFilterCtxAuth(method, path, bearer string) (*beegoctx.Context, *httptest.ResponseRecorder) {
+func newFilterCtxAuth(method, path, bearer string) (*web.Context, *httptest.ResponseRecorder) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(method, path, nil)
 	if bearer != "" {
 		req.Header.Set("Authorization", "Bearer "+bearer)
 	}
-	ctx := beegoctx.NewContext()
+	ctx := web.NewContext()
 	ctx.Reset(rec, req)
 	sess := &fakeSession{data: map[interface{}]interface{}{}}
 	ctx.Input.CruSession = sess
@@ -424,39 +423,28 @@ func TestLegacyGetUsagesStillAdminGated(t *testing.T) {
 	}
 }
 
-// roundTripOnce wires the real router + filter + a memory session manager exactly
-// once (Beego router/session state is process-global; re-registering leaks).
+// roundTripRouter is the wired router used by the round-trip tests.
+var roundTripRouter *web.Router
+
+// roundTripOnce wires the real router + filter + a memory session manager exactly once.
 var roundTripOnce sync.Once
 
 func setupRoundTripRouter(t *testing.T) {
 	t.Helper()
 	roundTripOnce.Do(func() {
-		beego.BConfig.RunMode = "prod"
-		// Match prod (bootstrap.go): sessions ON with the in-memory provider, so an
-		// unauthenticated request yields a nil session user cleanly (Session("user")
-		// == nil) instead of panicking on a nil CruSession. This is what lets the
-		// gate return a real 401 end-to-end.
-		beego.BConfig.WebConfig.Session.SessionOn = true
-		beego.BConfig.WebConfig.Session.SessionName = "cloud_session_id"
-		beego.BConfig.WebConfig.Session.SessionProvider = "memory"
-		beego.BConfig.WebConfig.Session.SessionGCMaxLifetime = 3600
-		if beego.GlobalSessions == nil {
-			mgr, err := session.NewManager("memory", &session.ManagerConfig{
-				CookieName:      "cloud_session_id",
-				EnableSetCookie: true,
-				Gclifetime:      3600,
-			})
-			if err != nil {
-				t.Fatalf("session.NewManager: %v", err)
-			}
-			beego.GlobalSessions = mgr
-			go mgr.GC()
-		}
+		web.RunMode = web.ModeProd
+		// Sessions ON with the in-memory provider (as in bootstrap.go) so an
+		// unauthenticated request yields a nil session user cleanly
+		// (Session("user") == nil) instead of panicking on a nil CruSession.
+		// This is what lets the gate return a real 401 end-to-end.
 		// Register the REAL admin routes + the REAL filter — production wiring, not a stub.
-		beego.InsertFilter("*", beego.BeforeRouter, AuthzFilter)
-		beego.Router("/v1/admin/providers", &controllers.ApiController{}, "GET:GetAdminProviders")
-		beego.Router("/v1/admin/providers/toggle", &controllers.ApiController{}, "POST:ToggleAdminProvider")
-		beego.Router("/v1/admin/providers/primary", &controllers.ApiController{}, "POST:SetPrimaryAdminProvider")
+		r := web.NewRouter()
+		r.UseSessions(web.NewMemorySessions("cloud_session_id", time.Hour))
+		r.InsertFilter("*", web.BeforeRouter, AuthzFilter)
+		r.Router("/v1/admin/providers", &controllers.ApiController{}, "GET:GetAdminProviders")
+		r.Router("/v1/admin/providers/toggle", &controllers.ApiController{}, "POST:ToggleAdminProvider")
+		r.Router("/v1/admin/providers/primary", &controllers.ApiController{}, "POST:SetPrimaryAdminProvider")
+		roundTripRouter = r
 	})
 }
 
@@ -483,7 +471,7 @@ func TestRouterRoundTrip_BypassBlocked(t *testing.T) {
 	} {
 		req := httptest.NewRequest(v.method, "http://api.hanzo.ai"+v.path, nil)
 		rec := httptest.NewRecorder()
-		beego.BeeApp.Handlers.ServeHTTP(rec, req)
+		roundTripRouter.ServeHTTP(rec, req)
 		// Unauthenticated → the gate denies before dispatch (401). Must NOT be 200
 		// (bypass reaching the controller). 401 or 403 are both acceptable denials.
 		if rec.Code != http.StatusUnauthorized && rec.Code != http.StatusForbidden {

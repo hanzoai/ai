@@ -28,9 +28,9 @@ import (
 	"github.com/hanzoai/account"
 
 	"github.com/hanzoai/ai/conf"
+	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/object"
-	"github.com/hanzoai/beego/context"
-	"github.com/hanzoai/beego/logs"
+	"github.com/hanzoai/ai/web"
 )
 
 // ── Balance gate configuration ──────────────────────────────────────────────
@@ -110,7 +110,7 @@ var balanceGate *BalanceGate
 func InitBalanceGate() {
 	endpoint := conf.GetConfigString("commerceEndpoint")
 	if endpoint == "" {
-		logs.Info("balance_gate: commerceEndpoint not configured, balance enforcement disabled")
+		log.Info("balance_gate: commerceEndpoint not configured, balance enforcement disabled")
 		return
 	}
 	endpoint = strings.TrimRight(endpoint, "/")
@@ -138,7 +138,7 @@ func InitBalanceGate() {
 	go bg.cleanupLoop()
 
 	balanceGate = bg
-	logs.Info("balance_gate: initialized (endpoint=%s, ttl=%v)", endpoint, balanceCacheTTL)
+	log.Info("balance_gate: initialized (endpoint=%s, ttl=%v)", endpoint, balanceCacheTTL)
 }
 
 // ── Filter function ─────────────────────────────────────────────────────────
@@ -152,7 +152,7 @@ func InitBalanceGate() {
 // Design: fail-open. If Commerce is unreachable or the user cannot be
 // identified, the request is allowed through. The controller-level balance
 // check in resolveProviderForUser remains as a defense-in-depth backstop.
-func BalanceGateFilter(ctx *context.Context) {
+func BalanceGateFilter(ctx *web.Context) {
 	if balanceGate == nil {
 		return
 	}
@@ -193,7 +193,7 @@ func BalanceGateFilter(ctx *context.Context) {
 		return
 	}
 
-	logs.Info("balance_gate: insufficient balance subject=%s namespace=%s balance_cents=%d path=%s",
+	log.Info("balance_gate: insufficient balance subject=%s namespace=%s balance_cents=%d path=%s",
 		subject, namespace, balance, path)
 
 	ctx.ResponseWriter.Header().Set("Content-Type", "application/json")
@@ -312,7 +312,7 @@ func isBalanceExempt(path string) bool {
 // skips). The userKey is the exact "owner/name" identity used for per-user
 // exemption matching (mirrors the controller backstop), independent of whether
 // the billing subject collapses to the org slug for a pooled org.
-func resolveBillingKey(ctx *context.Context) (subject, namespace, userKey string) {
+func resolveBillingKey(ctx *web.Context) (subject, namespace, userKey string) {
 	// Balance enforcement disabled ⇒ balanceGate is nil (InitBalanceGate returns
 	// early when commerceEndpoint is unconfigured). RateLimitFilter calls this on
 	// EVERY authenticated /v1 request BEFORE BalanceGateFilter's own nil guard, so
@@ -436,7 +436,7 @@ func (bg *BalanceGate) checkBalance(subject, namespace, userKey string) (suffici
 	if err != nil {
 		// Balance unknown → DENY. A Commerce outage must never become an
 		// unmetered bleed, and there is no exempt/fail-open escape.
-		logs.Warning("balance_gate: Commerce lookup failed for cold subject=%s: %v (fail-CLOSED)", subject, err)
+		log.Warning("balance_gate: Commerce lookup failed for cold subject=%s: %v (fail-CLOSED)", subject, err)
 		return false, 0
 	}
 
@@ -465,7 +465,7 @@ func (bg *BalanceGate) refreshAsync(subject, namespace string) {
 
 		balance, err := bg.fetchBalance(subject, namespace)
 		if err != nil {
-			logs.Warning("balance_gate: async refresh failed for user=%s: %v", subject, err)
+			log.Warning("balance_gate: async refresh failed for user=%s: %v", subject, err)
 			return
 		}
 
@@ -577,13 +577,13 @@ func (bg *BalanceGate) resolveIAMKeySubject(apiKey string) (subject, namespace, 
 
 	req, err := http.NewRequest(http.MethodGet, iamURL, nil)
 	if err != nil {
-		logs.Warning("balance_gate: IAM request build failed for key=%s: %v", maskKey(apiKey), err)
+		log.Warning("balance_gate: IAM request build failed for key=%s: %v", maskKey(apiKey), err)
 		return "", "", ""
 	}
 
 	resp, err := bg.client.Do(req)
 	if err != nil {
-		logs.Warning("balance_gate: IAM request failed for key=%s: %v", maskKey(apiKey), err)
+		log.Warning("balance_gate: IAM request failed for key=%s: %v", maskKey(apiKey), err)
 		return "", "", ""
 	}
 	defer func() {
@@ -592,13 +592,13 @@ func (bg *BalanceGate) resolveIAMKeySubject(apiKey string) (subject, namespace, 
 	}()
 
 	if resp.StatusCode != http.StatusOK {
-		logs.Warning("balance_gate: IAM returned %d for key=%s", resp.StatusCode, maskKey(apiKey))
+		log.Warning("balance_gate: IAM returned %d for key=%s", resp.StatusCode, maskKey(apiKey))
 		return "", "", ""
 	}
 
 	var result iamUserResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		logs.Warning("balance_gate: IAM response decode failed for key=%s: %v", maskKey(apiKey), err)
+		log.Warning("balance_gate: IAM response decode failed for key=%s: %v", maskKey(apiKey), err)
 		return "", "", ""
 	}
 

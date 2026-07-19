@@ -24,7 +24,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/sashabaranov/go-openai"
+	"github.com/hanzoai/go-openai"
 )
 
 func extractImagesURL(message string) ([]string, string) {
@@ -99,20 +99,6 @@ func IsVisionModel(subType string) bool {
 		"qwen3-vl-30b-a3b-instruct": true, "qwen3-vl-30b-a3b-thinking": true,
 	}
 	return upstreamVision[subType]
-}
-
-// hasImageContent reports whether any message in the request carries image content.
-// OpenAI format: MultiContent with ChatMessagePartTypeImageURL parts.
-// Anthropic format: messages with "image" content blocks.
-func HasImageContent(req *openai.ChatCompletionRequest) bool {
-	for _, m := range req.Messages {
-		for _, part := range m.MultiContent {
-			if part.Type == openai.ChatMessagePartTypeImageURL {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 // VisionModelForImages is the model to rewrite to when a request carries images
