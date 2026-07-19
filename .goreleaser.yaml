@@ -20,16 +20,19 @@ builds:
     binary: aid
     env:
       - CGO_ENABLED=0
+    # No windows: the daemon transitively imports github.com/hanzoai/cloud/cek,
+    # whose keystore lock uses Unix-only syscall.Flock/LOCK_EX, so the windows
+    # cross-compile cannot build ("undefined: syscall.Flock"). aid is a server
+    # daemon — linux is the deployment target, darwin covers local dev; both build.
     goos:
       - linux
-      - windows
       - darwin
     goarch:
       - amd64
       - arm64
 
 archives:
-  - format: tar.gz
+  - formats: [tar.gz]
     # this name template makes the OS and Arch compatible with the results of `uname`.
     name_template: >-
       {{ .ProjectName }}_
@@ -38,13 +41,11 @@ archives:
       {{- else if eq .Arch "386" }}i386
       {{- else }}{{ .Arch }}{{ end }}
       {{- if .Arm }}v{{ .Arm }}{{ end }}
-    # use zip for windows archives
-    format_overrides:
-      - goos: windows
-        format: zip
+    # web/ (the console SPA) is built ONLY by the Dockerfile's `front` stage — a
+    # pnpm build in this Go release job OOM-killed the runner (heap >8GB), so it is
+    # intentionally absent here. The binary tarball ships the daemon + its runtime
+    # config/data; the full web-serving artifact is the Docker image.
     files:
-      - src: 'web/build'
-        dst: './web/build'
       - src: 'conf/app.conf'
         dst: './conf/app.conf'
       - src: 'data'
