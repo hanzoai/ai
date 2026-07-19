@@ -73,3 +73,24 @@ func (p Policy) pick(key string, known func(string) bool) string {
 	}
 	return ""
 }
+
+// Candidates returns every servable arm for a task in preference order (index 0 is
+// the champion ForTask would pick) — the set the exploration floor samples from.
+// Falls back to the "default" bucket when the task has none, empty when nothing is
+// servable.
+func (p Policy) Candidates(task Task, known func(string) bool) []string {
+	if c := p.candidates(string(task), known); len(c) > 0 {
+		return c
+	}
+	return p.candidates(DefaultTaskKey, known)
+}
+
+func (p Policy) candidates(key string, known func(string) bool) []string {
+	var out []string
+	for _, id := range p.Prefer[key] {
+		if known == nil || known(id) {
+			out = append(out, id)
+		}
+	}
+	return out
+}
