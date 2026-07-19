@@ -255,3 +255,35 @@ func TestTrainScopeAppendsRetrainLog(t *testing.T) {
 		t.Errorf("retrain row not populated from the fit: %+v", rows[0])
 	}
 }
+
+// TestSeedInternalTrainingConsent proves the boot seed flips OUR OWN reserved orgs
+// to EXPLICIT training-contribution consent (so the EU per-request judge guard never
+// suppresses internal traffic), is idempotent, and NEVER bulk-enables customer orgs.
+func TestSeedInternalTrainingConsent(t *testing.T) {
+	t.Setenv("ROUTER_TRAIN_INTERNAL_ORGS", "")
+	restore, err := object.UseMemoryDB("file:seed_internal_consent_test?mode=memory&cache=shared", &object.OrgSettings{})
+	if err != nil {
+		t.Fatalf("UseMemoryDB: %v", err)
+	}
+	t.Cleanup(restore)
+
+	SeedInternalTrainingConsent()
+
+	// Every reserved internal org is now EXPLICITLY enabled (not merely opt-out default).
+	for _, org := range reservedInternalOrgs() {
+		if got := object.GetCachedOrgTrainingContribution(org); got != object.TrainingContributionEnabled {
+			t.Fatalf("internal org %q contribution = %q, want %q", org, got, object.TrainingContributionEnabled)
+		}
+	}
+
+	// A customer org is untouched — the seed never bulk-enables anyone else.
+	if got := object.GetCachedOrgTrainingContribution("some-customer-org"); got != object.TrainingContributionUnset {
+		t.Fatalf("customer org contribution = %q, want unset (never bulk-enabled)", got)
+	}
+
+	// Idempotent: a second run is a clean no-op and leaves the state enabled.
+	SeedInternalTrainingConsent()
+	if got := object.GetCachedOrgTrainingContribution("hanzo"); got != object.TrainingContributionEnabled {
+		t.Fatalf("after re-seed: hanzo = %q, want %q", got, object.TrainingContributionEnabled)
+	}
+}
