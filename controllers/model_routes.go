@@ -39,6 +39,9 @@ type modelRoute struct {
 	hidden        bool                 // If true, excluded from /api/models listing (still callable)
 	ownedBy       string               // Override for owned_by in model listing (default: providerName)
 	contextWindow int                  // Max context tokens as THIS provider serves it; 0 = undeclared (caller uses the floor)
+	maxOutput     int                  // Max completion tokens (from the upstream catalog); 0 = undeclared
+	vision        bool                 // Accepts image input (OpenAI image_url parts) — set only from a live probe
+	tools         bool                 // Supports function/tool calling — set only from a live probe
 }
 
 // modelRoutes is the static routing table. Keys are user-facing model names
@@ -61,6 +64,9 @@ var modelRoutes = map[string]modelRoute{
 	"gpt-5.4-nano":                 {providerName: "do-ai", upstreamModel: "openai-gpt-5.4-nano"},
 	"gpt-5.4-pro":                  {providerName: "do-ai", upstreamModel: "openai-gpt-5.4-pro"},
 	"gpt-5.5":                      {providerName: "do-ai", upstreamModel: "openai-gpt-5.5"},
+	"gpt-5.6-luna":                 {providerName: "do-ai", upstreamModel: "openai-gpt-5.6-luna"},
+	"gpt-5.6-sol":                  {providerName: "do-ai", upstreamModel: "openai-gpt-5.6-sol"},
+	"gpt-5.6-terra":                {providerName: "do-ai", upstreamModel: "openai-gpt-5.6-terra"},
 	"gpt-oss-120b":                 {providerName: "do-ai", upstreamModel: "openai-gpt-oss-120b"},
 	"gpt-oss-20b":                  {providerName: "do-ai", upstreamModel: "openai-gpt-oss-20b"},
 	"o1":                           {providerName: "do-ai", upstreamModel: "openai-o1"},
@@ -77,7 +83,9 @@ var modelRoutes = map[string]modelRoute{
 	"claude-opus-4-8":              {providerName: "do-ai", upstreamModel: "anthropic-claude-opus-4.8"},
 	"claude-sonnet-4":              {providerName: "do-ai", upstreamModel: "anthropic-claude-sonnet-4"},
 	"claude-sonnet-4-5":            {providerName: "do-ai", upstreamModel: "anthropic-claude-4.5-sonnet"},
-	"claude-sonnet-4-6":            {providerName: "do-ai", upstreamModel: "anthropic-claude-4.5-sonnet"}, // was "anthropic-claude-sonnet-4.6" (not in catalog → 404); 4.6-sonnet is catalog-listed but 403 on this account, so route to the working latest Sonnet (matches conf/models.yaml)
+	"claude-sonnet-4-6":            {providerName: "do-ai", upstreamModel: "anthropic-claude-4.6-sonnet"}, // real 4.6 upstream — now served on this account (verified live 2xx chat+vision+tools); earlier fell back to 4.5 while 4.6 403'd
+	"claude-sonnet-5":              {providerName: "do-ai", upstreamModel: "anthropic-claude-5-sonnet"},
+	"claude-fable-5":               {providerName: "do-ai", upstreamModel: "anthropic-claude-fable-5"},
 	"deepseek-3.2":                 {providerName: "do-ai", upstreamModel: "deepseek-3.2"},
 	"deepseek-chat":                {providerName: "do-ai", upstreamModel: "deepseek-v4-pro"},
 	"deepseek-v4-flash":            {providerName: "do-ai", upstreamModel: "deepseek-4-flash"},
@@ -151,7 +159,7 @@ var modelRoutes = map[string]modelRoute{
 	"anthropic/claude-haiku-4-5-20251001":  {providerName: "do-ai", upstreamModel: "anthropic-claude-haiku-4.5", hidden: true},
 	"anthropic/claude-opus-4-6":            {providerName: "do-ai", upstreamModel: "anthropic-claude-opus-4.6", hidden: true},
 	"anthropic/claude-sonnet-4-5-20250929": {providerName: "do-ai", upstreamModel: "anthropic-claude-4.5-sonnet", hidden: true},
-	"anthropic/claude-sonnet-4-6":          {providerName: "do-ai", upstreamModel: "anthropic-claude-4.5-sonnet", hidden: true}, // 4.6-sonnet 403s on this account; route to working latest Sonnet (matches claude-sonnet-4-6)
+	"anthropic/claude-sonnet-4-6":          {providerName: "do-ai", upstreamModel: "anthropic-claude-4.6-sonnet", hidden: true}, // real 4.6 upstream — now served on this account (matches claude-sonnet-4-6)
 
 	// ── Fireworks premium models (17) ── hidden from listing, still callable ──
 	"fireworks/cogito-671b":           {providerName: "fireworks", upstreamModel: "accounts/cogito/models/cogito-671b-v2-p1", premium: true, hidden: true},
@@ -355,10 +363,13 @@ type modelInfo struct {
 	Premium bool   `json:"premium"`
 
 	// Additive enrichment (omitempty — present only when ai has the datum).
-	Provider      string            `json:"provider,omitempty"`       // serving provider, surfaced for unbranded passthroughs; omitted for branded models (owned_by already carries the public owner — see hip-00NN)
-	ContextWindow int               `json:"context_window,omitempty"` // max tokens the SKU is served at; surfaced from family discovery and pinned for the flagship SKUs (enso/zen5 = 1,000,000) so clients (Codex, Claude Code) size context honestly
-	Pricing       *modelPricingInfo `json:"pricing,omitempty"`        // USD per 1M tokens; only when ai holds real pricing
-	Access        *modelAccessInfo  `json:"access,omitempty"`         // present only for a gated (limited-preview) SKU; carries the caller's standing (waitlist|requested|granted)
+	Provider        string            `json:"provider,omitempty"`          // serving provider, surfaced for unbranded passthroughs; omitted for branded models (owned_by already carries the public owner — see hip-00NN)
+	ContextWindow   int               `json:"context_window,omitempty"`    // max tokens the SKU is served at; surfaced from family discovery and pinned for the flagship SKUs (enso/zen5 = 1,000,000) so clients (Codex, Claude Code) size context honestly
+	MaxOutputTokens int               `json:"max_output_tokens,omitempty"` // max completion tokens (upstream catalog); lets clients cap output honestly
+	SupportsVision  bool              `json:"supports_vision,omitempty"`   // model accepts image input (verified via a live probe); absent ⇒ not advertised, never a fabricated yes
+	SupportsTools   bool              `json:"supports_tools,omitempty"`    // model supports function/tool calling (verified via a live probe)
+	Pricing         *modelPricingInfo `json:"pricing,omitempty"`           // USD per 1M tokens; only when ai holds real pricing
+	Access          *modelAccessInfo  `json:"access,omitempty"`            // present only for a gated (limited-preview) SKU; carries the caller's standing (waitlist|requested|granted)
 }
 
 // publicProvider returns the provider name to surface in /v1/models, or "" to
@@ -396,13 +407,17 @@ func listAvailableModels() []modelInfo {
 			owner = route.providerName
 		}
 		models = append(models, modelInfo{
-			ID:       name,
-			Object:   "model",
-			Created:  now,
-			OwnedBy:  owner,
-			Premium:  route.premium,
-			Provider: publicProvider(route),
-			Pricing:  pricingInfo(staticModelPrice(name)),
+			ID:              name,
+			Object:          "model",
+			Created:         now,
+			OwnedBy:         owner,
+			Premium:         route.premium,
+			Provider:        publicProvider(route),
+			ContextWindow:   route.contextWindow,
+			MaxOutputTokens: route.maxOutput,
+			SupportsVision:  route.vision,
+			SupportsTools:   route.tools,
+			Pricing:         pricingInfo(staticModelPrice(name)),
 		})
 	}
 
