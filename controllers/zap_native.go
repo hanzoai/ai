@@ -59,7 +59,15 @@ func InitZapHandlers() {
 	log.Info("ZAP: registered handlers (cloud=%d, gateway=%d)", object.MsgTypeCloud, object.MsgTypeHTTPRequest)
 }
 
-func handleCloudService(ctx context.Context, from string, msg *zap.Message) (*zap.Message, error) {
+func handleCloudService(ctx context.Context, from string, msg *zap.Message) (resp *zap.Message, err error) {
+	// Beego parity: a handler panic (e.g. util.ParseInt on garbage input) must
+	// surface as a 500 response, never escape the dispatch seam.
+	defer func() {
+		if r := recover(); r != nil {
+			log.Error("zap cloud handler panic: %v", r)
+			resp, err = object.BuildCloudResponse(500, nil, fmt.Sprintf("internal error: %v", r))
+		}
+	}()
 	root := msg.Root()
 	method := root.Text(object.CloudReqMethod)
 	auth := root.Text(object.CloudReqAuth)
@@ -76,9 +84,14 @@ func handleCloudService(ctx context.Context, from string, msg *zap.Message) (*za
 		return zapBalanceHandler(auth, body)
 	case "chat.completions", "chat.messages":
 		return zapChatHandler(ctx, auth, body)
-	default:
-		return object.BuildCloudResponse(404, nil, "unknown method: "+method)
 	}
+	// Migrated route-groups self-register their native-cloud methods into the
+	// dispatch registry (zap_registry.go). Un-migrated methods are unknown here —
+	// the caller reaches the full beego route table over the forward bridge / HTTP.
+	if h, ok := lookupCloudHandler(method); ok {
+		return h(ctx, auth, body)
+	}
+	return object.BuildCloudResponse(404, nil, "unknown method: "+method)
 }
 
 // ── Gateway HTTP-over-ZAP (MsgType 200) ─────────────────────────────────
@@ -87,9 +100,20 @@ func handleCloudService(ctx context.Context, from string, msg *zap.Message) (*za
 // to the same handlers used by native cloud service, then return a gateway
 // response (status + body + headers).
 
-func handleGatewayHTTPRequest(ctx context.Context, from string, msg *zap.Message) (*zap.Message, error) {
+func handleGatewayHTTPRequest(ctx context.Context, from string, msg *zap.Message) (resp *zap.Message, err error) {
+	// Beego parity: a handler panic must surface as a 500 response, never
+	// escape the dispatch seam.
+	defer func() {
+		if r := recover(); r != nil {
+			log.Error("zap gateway handler panic: %v", r)
+			errBody, _ := json.Marshal(map[string]string{"error": fmt.Sprintf("internal error: %v", r)})
+			resp, err = object.BuildGatewayResponse(500, errBody, nil)
+		}
+	}()
 	root := msg.Root()
+	method := root.Text(0)
 	path := root.Text(8)
+	query := root.Text(32)
 	body := root.Bytes(24)
 
 	// Extract auth from headers JSON: {"Authorization":"Bearer xxx", ...}
@@ -113,10 +137,33 @@ func handleGatewayHTTPRequest(ctx context.Context, from string, msg *zap.Message
 		return zapListModelsHandler()
 	case strings.HasPrefix(path, "/v1/balance"):
 		return zapBalanceHandler(auth, body)
-	default:
-		errBody, _ := json.Marshal(map[string]string{"error": "not found: " + path})
-		return object.BuildGatewayResponse(404, errBody, nil)
 	}
+	// Migrated route-groups self-register their gateway path prefixes into the
+	// dispatch registry (zap_registry.go). A miss is not a hole: the same request
+	// served over the forward bridge (MsgTypeForward) reaches the full beego route
+	// table, so un-migrated routes still serve (strangler fallback).
+	if msg, handled, err := dispatchGateway(ctx, method, path, query, auth, body); handled {
+		return msg, err
+	}
+	errBody, _ := json.Marshal(map[string]string{"error": "not found: " + path})
+	return object.BuildGatewayResponse(404, errBody, nil)
+}
+
+// dispatchGateway routes an HTTP-over-ZAP request to a migrated group's native
+// handler, reporting whether any group claimed the path. HTTP-shaped routes
+// (method/path/query aware) are tried first, then body-only routes. handled ==
+// false means no group owns the path — the caller falls through to its 404 (and,
+// in production, the same request reaches beego over the forward bridge).
+func dispatchGateway(ctx context.Context, method, path, query, auth string, body []byte) (*zap.Message, bool, error) {
+	if h, ok := lookupGatewayRoute(path); ok {
+		msg, err := h(ctx, method, path, query, auth, body)
+		return msg, true, err
+	}
+	if h, ok := lookupGatewayHandler(path); ok {
+		msg, err := h(ctx, auth, body)
+		return msg, true, err
+	}
+	return nil, false, nil
 }
 
 // extractAuthFromHeaders parses the Authorization header from a JSON-encoded
