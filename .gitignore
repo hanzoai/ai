@@ -40,3 +40,7 @@ dist/
 conf/app.local.conf
 casibase
 web/.yarn/
+
+# test-artifact SQLite DBs
+object/*.db
+*.db
