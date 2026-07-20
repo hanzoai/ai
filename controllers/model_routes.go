@@ -338,8 +338,18 @@ func resolveModelRouteForOrg(model string, orgId string) *modelRoute {
 	// call path (which resolves its authoritative route with orgId "" ⇒ empty subject ⇒
 	// admit) is never degraded here; it reaches the family pipe and the 403 access gate
 	// (Seam A). Only the auto path, which carries the real orgId, degrades.
-	if _, ok := familyServing(model); ok && !familyTierAllowed(subjectFromOrg(orgId), model) {
-		return nil
+	// The funding floor joins the tier floor here, but ONLY for a caller we can name.
+	// This is route SELECTION, not authorization: an empty subject means the direct path
+	// resolving its authoritative route, where dropping to nil would leave the request
+	// with no route at all rather than deferring to the access gate. Refusing to SPEND is
+	// the serve gate's job (familyAccessAllowed, which fails closed on exactly this
+	// uncertainty); refusing to PREFER is this one's. With a real subject both floors
+	// degrade `auto` away from a SKU the serve path would refuse anyway.
+	if subject := subjectFromOrg(orgId); subject != "" {
+		if _, ok := familyServing(model); ok &&
+			(!familyTierAllowed(subject, model) || !familyFundingAllowed(subject, model)) {
+			return nil
+		}
 	}
 	return familyPassthroughRoute(model)
 }
