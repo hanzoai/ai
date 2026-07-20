@@ -58,7 +58,8 @@ func TestRequestHasMediaAnthropic(t *testing.T) {
 		return AnthropicMessage{Role: "user", Content: json.RawMessage(content)}
 	}
 	imageReq := AnthropicRequest{Messages: []AnthropicMessage{msg(
-		`[{"type":"text","text":"what is this?"},{"type":"image","source":{"type":"base64","media_type":"image/png","data":"iVBOR"}}]`)}}
+		`[{"type":"text","text":"what is this?"},{"type":"image","source":{"type":"base64","media_type":"image/png","data":"iVBOR"}}]`,
+	)}}
 	if !requestHasMediaAnthropic(&imageReq) {
 		t.Error("anthropic image block must be detected as media -> verbatim forward")
 	}
