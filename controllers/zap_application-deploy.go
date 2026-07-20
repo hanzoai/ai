@@ -1,0 +1,407 @@
+// Copyright 2023-2026 Hanzo AI Inc. All Rights Reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// Native ZAP handlers for the application-deploy route-group — the strangler
+// migration of application.go / template_deploy.go off beego.
+//
+// STRANGLER: each beego method (ApiController.GetApplications, GetApplication,
+// UpdateApplication, AddApplication, DeleteApplication, DeployApplication,
+// UndeployApplication, GetK8sStatus) is re-implemented here as a pure ZAP handler
+// against object/ + iam, mirroring zap_native.go:zapChatHandler. The beego routes
+// stay live in router.go until Integrate flips dispatch to these.
+//
+// Registration convention (recipe): this group exposes two group-local dispatch
+// tables (zapApplicationDeployCloud / …Gateway) keyed by native cloud method and
+// gateway path, via a private type ALIAS — mirroring zap_responses.go /
+// zap_router-policy-stats.go. It declares NO shared symbol and edits NO shared
+// file; Integrate ranges over these tables to wire the ONE canonical registry
+// (registerCloud / registerGatewayPath) when it flips native dispatch on.
+//
+// Identity/scope parity: these endpoints have NO session filter on the ZAP path
+// (there is no beego filter chain), so every handler fails closed — a verified
+// credential is required (STEP 1). Org scoping for GetApplications mirrors
+// GetScopedOwner EXACTLY (owner = principal.Owner; the reserved `admin` org may
+// target another owner). GetK8sStatus mirrors RequireSuperAdmin. There is no LLM
+// call and no meter on this group — these are infra CRUD, so STEP 6 does not
+// apply (the beego path meters nothing either). Query params (pageSize, p, field,
+// value, sortField, sortOrder, id, owner) are decoded from the JSON body — the
+// same pattern zapBalanceHandler uses — NEVER trusted for identity.
+
+package controllers
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"strings"
+
+	"github.com/luxfi/zap"
+
+	iam "github.com/hanzoai/iam"
+
+	"github.com/hanzoai/ai/object"
+	"github.com/hanzoai/ai/util"
+)
+
+// ── ZAP dispatch tables (group-local, collision-free) ────────────────────
+//
+// A type ALIAS (not a new named type) so no shared symbol is declared, mirroring
+// zap_router-policy-stats.go. Integrate ranges over the two tables below to wire
+// this group into the ONE canonical registry (registerCloud(method, h) /
+// registerGatewayPath(path, h)) when it flips native dispatch on.
+
+type zapApplicationDeployFn = func(ctx context.Context, auth string, body []byte) (*zap.Message, error)
+
+// zapApplicationDeployCloud maps native cloud method → handler (MsgType 100).
+// init self-registers this group's dispatch tables into the canonical registry.
+func init() {
+	for method, h := range zapApplicationDeployCloud {
+		registerCloud(method, h)
+	}
+	for path, h := range zapApplicationDeployGateway {
+		registerGatewayPath(path, h)
+	}
+}
+
+var zapApplicationDeployCloud = map[string]zapApplicationDeployFn{
+	"application.list":     zapGetApplicationsHandler,
+	"application.get":      zapGetApplicationHandler,
+	"application.update":   zapUpdateApplicationHandler,
+	"application.add":      zapAddApplicationHandler,
+	"application.delete":   zapDeleteApplicationHandler,
+	"application.deploy":   zapDeployApplicationHandler,
+	"application.undeploy": zapUndeployApplicationHandler,
+	"k8s.status":           zapGetK8sStatusHandler,
+}
+
+// zapApplicationDeployGateway maps gateway path → handler (MsgType 200).
+var zapApplicationDeployGateway = map[string]zapApplicationDeployFn{
+	"/v1/get-applications":     zapGetApplicationsHandler,
+	"/v1/get-application":      zapGetApplicationHandler,
+	"/v1/update-application":   zapUpdateApplicationHandler,
+	"/v1/add-application":      zapAddApplicationHandler,
+	"/v1/delete-application":   zapDeleteApplicationHandler,
+	"/v1/deploy-application":   zapDeployApplicationHandler,
+	"/v1/undeploy-application": zapUndeployApplicationHandler,
+	"/v1/get-k8s-status":       zapGetK8sStatusHandler,
+}
+
+// ── Shared seams (identity + response envelope parity) ───────────────────
+
+// zapAppPrincipal resolves the request principal STRICTLY from its verified
+// credential — the ZAP analogue of principalUser (there is no session cookie on
+// the ZAP path). hk-/pk- IAM keys route through getUserByAccessKey; JWTs through
+// object.ParseAndValidateJWT (signature + iss/aud, never raw iam.ParseJwtToken).
+// Returns nil for an empty/invalid/unsupported credential — fail-secure.
+func zapAppPrincipal(auth string) *iam.User {
+	token := strings.TrimSpace(strings.TrimPrefix(auth, "Bearer "))
+	if token == "" {
+		return nil
+	}
+	if isIAMApiKey(token) {
+		if user, err := getUserByAccessKey(token); err == nil && user != nil {
+			return user
+		}
+		return nil
+	}
+	if isJwtToken(token) {
+		if claims, err := object.ParseAndValidateJWT(token); err == nil && claims != nil {
+			u := claims.User
+			return &u
+		}
+	}
+	return nil
+}
+
+// zapAppOk renders the beego ResponseOk envelope ({status:"ok", data[, data2]}) as
+// a 200 cloud response, preserving the exact JSON shape the HTTP handlers return.
+// The variadic mirrors ResponseOk: a second arg becomes Data2 (the pagination
+// count for GetApplications).
+func zapAppOk(data ...interface{}) (*zap.Message, error) {
+	resp := Response{Status: "ok"}
+	switch len(data) {
+	case 2:
+		resp.Data2 = data[1]
+		fallthrough
+	case 1:
+		resp.Data = data[0]
+	}
+	b, _ := json.Marshal(resp)
+	return object.BuildCloudResponse(http.StatusOK, b, "")
+}
+
+// zapAppError renders the beego ResponseError envelope ({status:"error", msg}) at
+// the given status. Business errors mirror ResponseError (HTTP 200 body); auth
+// failures use 401/403 like ResponseUnauthorized / ResponseForbidden.
+func zapAppError(status int, msg string) (*zap.Message, error) {
+	b, _ := json.Marshal(Response{Status: "error", Msg: msg})
+	return object.BuildCloudResponse(uint32(status), b, "")
+}
+
+// ── get-applications (org-scoped, mirrors GetScopedOwner) ────────────────
+
+// zapListAppParams is the body-decoded projection of the beego query params.
+type zapListAppParams struct {
+	Owner     string `json:"owner"`
+	PageSize  string `json:"pageSize"`
+	P         string `json:"p"`
+	Field     string `json:"field"`
+	Value     string `json:"value"`
+	SortField string `json:"sortField"`
+	SortOrder string `json:"sortOrder"`
+}
+
+func zapGetApplicationsHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
+	user := zapAppPrincipal(auth)
+	if user == nil {
+		return zapAppError(http.StatusUnauthorized, "auth:Please sign in first")
+	}
+
+	var p zapListAppParams
+	if len(body) > 0 {
+		_ = json.Unmarshal(body, &p)
+	}
+
+	// GetScopedOwner parity: non-admin is scoped to its own org; the reserved
+	// `admin` org may target a specific owner. The scope decision derives ONLY
+	// from the verified principal, never from a client owner field for a tenant.
+	owner := user.Owner
+	if user.Owner == "admin" && strings.TrimSpace(p.Owner) != "" {
+		owner = strings.TrimSpace(p.Owner)
+	}
+
+	if p.PageSize == "" || p.P == "" {
+		applications, err := object.GetApplications(owner)
+		if err != nil {
+			return zapAppError(http.StatusOK, err.Error())
+		}
+		object.AddDetails(applications, "en")
+		return zapAppOk(applications)
+	}
+
+	limit := util.ParseInt(p.PageSize)
+	page := util.ParseInt(p.P)
+	count, err := object.GetApplicationCount(owner, p.Field, p.Value)
+	if err != nil {
+		return zapAppError(http.StatusOK, err.Error())
+	}
+	offset := (page - 1) * limit
+	applications, err := object.GetPaginationApplications(owner, offset, limit, p.Field, p.Value, p.SortField, p.SortOrder)
+	if err != nil {
+		return zapAppError(http.StatusOK, err.Error())
+	}
+	object.AddDetails(applications, "en")
+	return zapAppOk(applications, count)
+}
+
+// ── get-application ──────────────────────────────────────────────────────
+
+func zapGetApplicationHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
+	if zapAppPrincipal(auth) == nil {
+		return zapAppError(http.StatusUnauthorized, "auth:Please sign in first")
+	}
+	var p struct {
+		Id string `json:"id"`
+	}
+	if len(body) > 0 {
+		_ = json.Unmarshal(body, &p)
+	}
+
+	res, err := object.GetApplication(p.Id)
+	if err != nil {
+		return zapAppError(http.StatusOK, err.Error())
+	}
+	if res != nil {
+		object.AddDetails([]*object.Application{res}, "en")
+	}
+	return zapAppOk(res)
+}
+
+// ── update-application ───────────────────────────────────────────────────
+
+// zapAppPayload decodes the id (beego query param) alongside the Application body.
+// A body-supplied id wins; else it is derived from the payload owner/name (the
+// same owner/name key UpdateApplication uses).
+func zapAppPayload(body []byte) (string, *object.Application, error) {
+	var application object.Application
+	if err := json.Unmarshal(body, &application); err != nil {
+		return "", nil, err
+	}
+	var idHolder struct {
+		Id string `json:"id"`
+	}
+	_ = json.Unmarshal(body, &idHolder)
+	id := idHolder.Id
+	if id == "" {
+		id = util.GetIdFromOwnerAndName(application.Owner, application.Name)
+	}
+	return id, &application, nil
+}
+
+func zapUpdateApplicationHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
+	if zapAppPrincipal(auth) == nil {
+		return zapAppError(http.StatusUnauthorized, "auth:Please sign in first")
+	}
+	id, application, err := zapAppPayload(body)
+	if err != nil {
+		return zapAppError(http.StatusOK, err.Error())
+	}
+
+	success, err := object.UpdateApplication(id, application, "en")
+	if err != nil {
+		return zapAppError(http.StatusOK, err.Error())
+	}
+	return zapAppOk(success)
+}
+
+// ── add-application ──────────────────────────────────────────────────────
+
+func zapAddApplicationHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
+	if zapAppPrincipal(auth) == nil {
+		return zapAppError(http.StatusUnauthorized, "auth:Please sign in first")
+	}
+	var application object.Application
+	if err := json.Unmarshal(body, &application); err != nil {
+		return zapAppError(http.StatusOK, err.Error())
+	}
+
+	if application.Template == "" {
+		return zapAppError(http.StatusOK, "application:Missing required parameters")
+	}
+
+	template, err := object.GetTemplate(util.GetIdFromOwnerAndName(application.Owner, application.Template))
+	if err != nil {
+		return zapAppError(http.StatusOK, err.Error())
+	}
+	if template == nil {
+		return zapAppError(http.StatusOK, "application:The Template not found")
+	}
+
+	success, err := object.AddApplication(&application)
+	if err != nil {
+		return zapAppError(http.StatusOK, err.Error())
+	}
+	return zapAppOk(success)
+}
+
+// ── delete-application ───────────────────────────────────────────────────
+
+func zapDeleteApplicationHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
+	if zapAppPrincipal(auth) == nil {
+		return zapAppError(http.StatusUnauthorized, "auth:Please sign in first")
+	}
+	var application object.Application
+	if err := json.Unmarshal(body, &application); err != nil {
+		return zapAppError(http.StatusOK, err.Error())
+	}
+
+	success, err := object.DeleteApplication(&application, "en")
+	if err != nil {
+		return zapAppError(http.StatusOK, err.Error())
+	}
+	return zapAppOk(success)
+}
+
+// ── deploy-application (update + synchronous deploy) ─────────────────────
+
+func zapDeployApplicationHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
+	if zapAppPrincipal(auth) == nil {
+		return zapAppError(http.StatusUnauthorized, "auth:Please sign in first")
+	}
+	id, application, err := zapAppPayload(body)
+	if err != nil {
+		return zapAppError(http.StatusOK, err.Error())
+	}
+
+	originalApplication, err := object.GetApplication(id)
+	if err != nil {
+		return zapAppError(http.StatusOK, err.Error())
+	}
+	if originalApplication == nil {
+		return zapAppError(http.StatusOK, fmt.Sprintf("The application: %s is not found", id))
+	}
+
+	success, err := object.UpdateApplication(id, application, "en")
+	if err != nil {
+		return zapAppError(http.StatusOK, err.Error())
+	}
+	if !success {
+		return zapAppError(http.StatusOK, "application:Failed to update application")
+	}
+
+	// Parity with UpdateApplication: only the error is checked (the sync deploy's
+	// bool is advisory there too).
+	_, err = object.DeployApplicationSync(application, "en")
+	if err != nil {
+		return zapAppError(http.StatusOK, err.Error())
+	}
+
+	updatedApplication, err := object.GetApplication(id)
+	if err != nil {
+		return zapAppError(http.StatusOK, err.Error())
+	}
+	return zapAppOk(updatedApplication)
+}
+
+// ── undeploy-application (synchronous undeploy) ──────────────────────────
+
+func zapUndeployApplicationHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
+	if zapAppPrincipal(auth) == nil {
+		return zapAppError(http.StatusUnauthorized, "auth:Please sign in first")
+	}
+	var p struct {
+		Id string `json:"id"`
+	}
+	if len(body) > 0 {
+		_ = json.Unmarshal(body, &p)
+	}
+
+	application, err := object.GetApplication(p.Id)
+	if err != nil {
+		return zapAppError(http.StatusOK, err.Error())
+	}
+	if application == nil {
+		return zapAppError(http.StatusOK, fmt.Sprintf("The application: %s is not found", p.Id))
+	}
+
+	owner, name, err := util.GetOwnerAndNameFromIdWithError(p.Id)
+	if err != nil {
+		return zapAppError(http.StatusOK, err.Error())
+	}
+
+	success, err := object.UndeployApplicationSync(owner, name, application.Namespace, "en")
+	if err != nil {
+		return zapAppError(http.StatusOK, err.Error())
+	}
+	return zapAppOk(success)
+}
+
+// ── get-k8s-status (super admin, mirrors RequireSuperAdmin) ──────────────
+
+func zapGetK8sStatusHandler(_ context.Context, auth string, _ []byte) (*zap.Message, error) {
+	user := zapAppPrincipal(auth)
+	if user == nil {
+		return zapAppError(http.StatusUnauthorized, "auth:Please sign in first")
+	}
+	if !util.IsSuperAdmin(user) {
+		return zapAppError(http.StatusForbidden, "auth:this operation requires super admin privilege")
+	}
+
+	status, err := object.GetK8sStatus("en")
+	if err != nil {
+		return zapAppError(http.StatusOK, err.Error())
+	}
+	return zapAppOk(status)
+}
