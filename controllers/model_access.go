@@ -88,12 +88,19 @@ func grantAllows(zm zenModel, ok bool, orgId string, authUser *iam.User) bool {
 }
 
 // familyAccessAllowed is the enforcement predicate at the family pipe: a family SKU is
-// servable only when BOTH gates pass — the per-tier gate (Seam A: enso-flash free, enso
-// trial+, enso-ultra paid; fail-safe on any commerce uncertainty) AND the waitlist/grant
-// gate (grantAllows). Unknown-to-discovery is treated as non-gated (fail-open only for
-// models the family does not advertise as gated).
+// servable only when ALL THREE gates pass — the subscription floor (Seam A: enso-flash
+// free, enso trial+, enso-ultra paid; fail-SAFE on commerce uncertainty), the FUNDING
+// floor (prepaid upstreams require a confirmed paying subscriber; fail-CLOSED on the same
+// uncertainty), and the waitlist/grant gate (grantAllows).
+//
+// The subscription and funding floors deliberately fail in opposite directions: one
+// guards revenue, the other guards our cash. See familyFundingAllowed.
 func (c *ApiController) familyAccessAllowed(fam *modelFamily, model, orgId string, authUser *iam.User) bool {
-	if !familyTierAllowed(familyAccessSubject(orgId, authUser), model) {
+	subject := familyAccessSubject(orgId, authUser)
+	if !familyTierAllowed(subject, model) {
+		return false
+	}
+	if !familyFundingAllowed(subject, model) {
 		return false
 	}
 	zm, ok := fam.lookup(model)
@@ -106,7 +113,11 @@ func (c *ApiController) familyAccessAllowed(fam *modelFamily, model, orgId strin
 // is known. The auto-router folds this into its `known` predicate so `auto` never routes
 // a caller to a family SKU their tier or grant would make the serve path refuse.
 func modelServable(model, orgId string, authUser *iam.User) bool {
-	if !familyTierAllowed(familyAccessSubject(orgId, authUser), model) {
+	subject := familyAccessSubject(orgId, authUser)
+	if !familyTierAllowed(subject, model) {
+		return false
+	}
+	if !familyFundingAllowed(subject, model) {
 		return false
 	}
 	zm, ok := familyLookupFresh(model)
