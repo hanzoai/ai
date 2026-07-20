@@ -39,10 +39,19 @@ func emptyRouterConfig() *ModelConfig {
 func TestAutoRoutingPrecedenceMatrix(t *testing.T) {
 	prevCfg := globalModelConfig
 	prevLookup := orgAutoRoutingLookup
+	prevSink := routingEventSink
 	defer func() {
 		globalModelConfig = prevCfg
 		orgAutoRoutingLookup = prevLookup
+		routingEventSink = prevSink
 	}()
+
+	// Capture routing events synchronously. The default sink is a DETACHED goroutine
+	// writing to the process-wide adapter, which outlives this test and races the
+	// in-memory-DB teardown of whichever test runs next (object.UseMemoryDB's restore
+	// reinstates the previous adapter). Every other test that resolves a route swaps
+	// the sink for exactly this reason; this one routes successfully six times.
+	routingEventSink = func(object.RoutingEvent) {}
 
 	const org = "acme"
 
