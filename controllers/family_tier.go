@@ -249,3 +249,48 @@ func tierNamespace(subject string) string {
 	}
 	return subject
 }
+
+// ── the funding gate: solvency, not upsell ───────────────────────────────────
+
+// familyFundingAllowed reports whether the caller may spend a PREPAID (real-cash)
+// upstream. It is the mirror image of familyTierAllowed above, and deliberately so.
+//
+// The two gates answer different questions and therefore fail in opposite directions:
+//
+//	familyTierAllowed  — "does this caller's PLAN include this SKU?" A commercial
+//	    upsell. Being wrong costs one free taste, so uncertainty ADMITS: a commerce
+//	    blip must never lock out a caller who already had the SKU.
+//	familyFundingAllowed — "may this caller spend our CASH?" Solvency. Being wrong
+//	    spends real money on someone who is not paying us, and a prepaid balance that
+//	    hits zero takes the SKU down for every paying customer. So uncertainty REFUSES.
+//
+// A gate that opens on a timeout is not a gate on money. These were one fused value
+// (min_tier) until the family began advertising `funding` separately, which is what let
+// the funding floor silently inherit the upsell floor's fail-open behavior.
+//
+// Credit-funded SKUs (DigitalOcean, AWS grants) are unaffected: they carry no funding
+// class, so this gate admits them and only the subscription floor applies.
+func familyFundingAllowed(subject, model string) bool {
+	if _, served := familyServing(model); !served {
+		// Not a family SKU at all. ai's own providers carry their own commercial terms;
+		// this gate speaks only for the model families, so it has no opinion here.
+		return true
+	}
+	zm, ok := familyLookupFresh(model)
+	if !ok {
+		// A family claims this id BY PREFIX, but discovery cannot describe it — so we
+		// cannot say what it costs us to serve. The subscription gate treats undescribed
+		// as "not gated" and admits; a funding gate must refuse, because the prefix router
+		// will still route it to the family and something will pay for it.
+		return false
+	}
+	if !strings.EqualFold(strings.TrimSpace(zm.Funding), "prepaid") {
+		return true // credit-funded — the subscription floor is the only gate that applies
+	}
+	// Prepaid from here on: the caller must be a CONFIRMED paying subscriber.
+	name := familyTier(subject)
+	if strings.TrimSpace(name) == "" {
+		return false // commerce could not name the tier → refuse to spend cash on a guess
+	}
+	return ensoTierRank(commerceTierToLadder(name)) >= ensoTierRank("paid")
+}
