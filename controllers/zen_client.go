@@ -84,6 +84,14 @@ type modelFamily struct {
 	providerFn func() *object.Provider // the virtual provider ai forwards through
 	pins       []pinnedSKU             // SKUs ai guarantees at a known window (applied only when enabled())
 
+	// decode turns a family's raw GET /v1/models body into discovered SKUs. nil means
+	// the Hanzo family wire shape (zenWireModel), which already carries every field ai
+	// needs. A family that publishes a DIFFERENT catalog dialect — OpenRouter states
+	// price per TOKEN and never states a tier or a funding class — supplies its own
+	// translation here, so the dialect is the ONLY thing that varies and discovery,
+	// TTL, listing, routing, and gating stay one implementation.
+	decode func([]byte) ([]zenModel, error)
+
 	// discovered catalog — a read-mostly snapshot; discovery failure keeps the last
 	// good snapshot so a transient blip never empties ai's model list.
 	mu        sync.RWMutex
@@ -113,8 +121,9 @@ var (
 		},
 	}
 	// modelFamilies is the discovery/route/merge iteration order — the ONE list every
-	// generic family helper walks.
-	modelFamilies = []*modelFamily{zenFam, ensoFam}
+	// generic family helper walks. openrouter is last: the first-party families claim
+	// their own SKUs first, and the resale catalog answers for what is left.
+	modelFamilies = []*modelFamily{zenFam, ensoFam, openrouterFam}
 )
 
 // pinnedWindow returns the context window ai guarantees when listing and routing a
@@ -248,8 +257,16 @@ type zenModel struct {
 	// can take spends a real-cash balance; "" means credits. It is a different KIND of
 	// floor from MinTier and is enforced differently — see familyFundingAllowed.
 	Funding string
-	Base    zenTier   // headline price (the in-window tier)
+	Base    zenTier   // headline RETAIL price (the in-window tier)
 	Tiers   []zenTier // full ladder, ascending by MaxCtx — the billing contract
+
+	// CostIn/CostOut are the upstream COGS ($/MTok) behind Base, when the family
+	// discloses what the SKU costs us. Zero means undisclosed, which modelPrice
+	// already reads as cost == price (zero margin) — so a family that states only a
+	// price behaves exactly as before. A resale family (OpenRouter) states both, and
+	// the retail it publishes is this cost times a margin, never below it.
+	CostIn  decimal.Decimal
+	CostOut decimal.Decimal
 }
 
 // gated reports whether the family SKU is access-controlled (a limited-preview SKU
@@ -311,7 +328,12 @@ func (m zenModel) price() (modelPrice, bool) {
 	if in <= 0 && out <= 0 {
 		return modelPrice{}, false
 	}
-	return modelPrice{InputPerMillion: in, OutputPerMillion: out}, true
+	costIn, _ := strconv.ParseFloat(m.CostIn.String(), 64)
+	costOut, _ := strconv.ParseFloat(m.CostOut.String(), 64)
+	return modelPrice{
+		InputPerMillion: in, OutputPerMillion: out,
+		CostInPerMillion: costIn, CostOutPerMillion: costOut,
+	}, true
 }
 
 // zenWireModel is the /v1/models item shape a family serves. Prices are JSON strings
@@ -352,6 +374,25 @@ func (w zenWireModel) model() zenModel {
 	return zm
 }
 
+// decodeCatalog translates a family's raw /v1/models body into discovered SKUs using
+// the family's own dialect, defaulting to the Hanzo family wire shape.
+func (f *modelFamily) decodeCatalog(body []byte) ([]zenModel, error) {
+	if f.decode != nil {
+		return f.decode(body)
+	}
+	var out struct {
+		Data []zenWireModel `json:"data"`
+	}
+	if err := json.Unmarshal(body, &out); err != nil {
+		return nil, err
+	}
+	models := make([]zenModel, 0, len(out.Data))
+	for _, w := range out.Data {
+		models = append(models, w.model())
+	}
+	return models, nil
+}
+
 const zenCatalogTTL = 5 * time.Minute
 
 var zenDiscoveryClient = &http.Client{Timeout: 15 * time.Second}
@@ -380,20 +421,22 @@ func (f *modelFamily) refresh() error {
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("%s /v1/models: status %d", f.name, resp.StatusCode)
 	}
-	var out struct {
-		Data []zenWireModel `json:"data"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
 		return err
 	}
-	byID := make(map[string]zenModel, len(out.Data))
-	ids := make([]string, 0, len(out.Data))
-	for _, w := range out.Data {
-		if strings.TrimSpace(w.ID) == "" {
+	models, err := f.decodeCatalog(body)
+	if err != nil {
+		return err
+	}
+	byID := make(map[string]zenModel, len(models))
+	ids := make([]string, 0, len(models))
+	for _, m := range models {
+		if strings.TrimSpace(m.ID) == "" {
 			continue
 		}
-		byID[strings.ToLower(w.ID)] = w.model()
-		ids = append(ids, w.ID)
+		byID[strings.ToLower(m.ID)] = m
+		ids = append(ids, m.ID)
 	}
 	f.mu.Lock()
 	f.byID = byID
