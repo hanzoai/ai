@@ -242,8 +242,8 @@ type zenModel struct {
 	OwnedBy string
 	MaxCtx  int
 	Vision  bool
-	Access  string    // "" = generally available; "waitlist" = access-gated (limited preview) — ai enforces the grant
-	MinTier string    // "" | "free" | "trial" | "paid" — min subscription tier the family advertises for this SKU; ai enforces it (Seams A/B). "" ⇒ free (all tiers). Orthogonal to Access.
+	Access  string // "" = generally available; "waitlist" = access-gated (limited preview) — ai enforces the grant
+	MinTier string // "" | "free" | "trial" | "paid" — min subscription tier the family advertises for this SKU; ai enforces it (Seams A/B). "" ⇒ free (all tiers). Orthogonal to Access.
 	// Funding is how the SKU's usage is PAID FOR upstream: "prepaid" means every path it
 	// can take spends a real-cash balance; "" means credits. It is a different KIND of
 	// floor from MinTier and is enforced differently — see familyFundingAllowed.
