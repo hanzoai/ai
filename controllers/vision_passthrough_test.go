@@ -29,7 +29,8 @@ func TestRequestHasMedia_OpenAI(t *testing.T) {
 		MultiContent: []openai.ChatMessagePart{
 			{Type: openai.ChatMessagePartTypeText, Text: "what is this?"},
 			{Type: openai.ChatMessagePartTypeImageURL, ImageURL: &openai.ChatMessageImageURL{
-				URL: "data:image/png;base64,iVBORw0KGgo="}},
+				URL: "data:image/png;base64,iVBORw0KGgo=",
+			}},
 		},
 	}}}
 	if !requestHasMedia(&img) {
