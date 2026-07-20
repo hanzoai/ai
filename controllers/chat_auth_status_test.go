@@ -129,6 +129,15 @@ func setupChatMoneyPath(t *testing.T) {
 	// never a nil-pointer panic. Mirrors prod, which always has an iam client.
 	iam.InitConfig("", "", "", "", "", "")
 
+	// Record routing decisions synchronously for the duration. These tests drive the
+	// REAL ChatCompletions handler, whose default routing sink is a detached goroutine
+	// writing to the process-wide adapter — it outlives the test and races the
+	// in-memory-DB teardown below (and any later test's). Swapping the sink is the
+	// established way to keep a routing decision from escaping the test that made it.
+	prevSink := routingEventSink
+	routingEventSink = func(object.RoutingEvent) {}
+	t.Cleanup(func() { routingEventSink = prevSink })
+
 	n := atomic.AddInt64(&chatAuthSeq, 1)
 	dsn := fmt.Sprintf("file:chatauth_%d?mode=memory&cache=shared", n)
 	restore, err := object.UseMemoryDB(dsn, &object.Provider{})
