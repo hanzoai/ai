@@ -60,10 +60,31 @@ type UsageEvent struct {
 // commerce blip never locks a paying caller out of a SKU they already had.
 type TierReaderFunc func(ctx context.Context, subject, namespace string) (name string, err error)
 
+// RollingCapReaderFunc reports whether the subject has EXCEEDED its plan's rolling
+// AI-spend cap within the trailing window — the Anthropic-style burst limit that
+// resets continuously (usage older than the window falls out of the sum, so there is
+// no fixed reset boundary). The HOST (hanzoai/cloud) implements it: resolve the
+// subject's plan tier → its ai.rolling_cap_usd + ai.rolling_window_hours (canonical
+// @hanzo/plans entitlements) → sum the subject's AI spend over the trailing window
+// from the in-process finance ledger → return over = (windowSpend >= cap). A plan
+// with no cap configured returns over=false.
+//
+// This is a THIRD gate, orthogonal to the two the family SKU gates answer (does the
+// PLAN include this model / may we spend our CASH on a prepaid upstream): it bounds
+// how fast a caller may burn their OWN budget, per plan. It is a subscription-shaped
+// limit, so it FAILS SAFE like the tier gate, not like the funding gate: on ANY
+// uncertainty the host returns (false, err) and the caller here treats a non-nil err
+// as ALLOW — a finance/commerce blip must never 429 a paying caller whose plan and
+// balance already admit the call. The hard money bounds remain the per-request
+// balance gate (below) and the monthly ai.spend_percent ceiling (commerce). nil (the
+// default, standalone ai) → no rolling cap, behavior unchanged.
+type RollingCapReaderFunc func(ctx context.Context, subject, namespace string) (over bool, err error)
+
 var (
-	balanceReader BalanceReaderFunc
-	usageRecorder UsageRecorderFunc
-	tierReader    TierReaderFunc
+	balanceReader    BalanceReaderFunc
+	usageRecorder    UsageRecorderFunc
+	tierReader       TierReaderFunc
+	rollingCapReader RollingCapReaderFunc
 )
 
 // SetBalanceReader installs the host's native balance reader (nil clears it).
@@ -75,6 +96,9 @@ func SetUsageRecorder(f UsageRecorderFunc) { usageRecorder = f }
 // SetTierReader installs the host's native subscription-tier reader (nil clears it).
 func SetTierReader(f TierReaderFunc) { tierReader = f }
 
+// SetRollingCapReader installs the host's native rolling-window cap reader (nil clears it).
+func SetRollingCapReader(f RollingCapReaderFunc) { rollingCapReader = f }
+
 // BalanceReader returns the installed native reader, or nil when unset (standalone).
 func BalanceReader() BalanceReaderFunc { return balanceReader }
 
@@ -83,3 +107,6 @@ func UsageRecorder() UsageRecorderFunc { return usageRecorder }
 
 // TierReader returns the installed native tier reader, or nil when unset (standalone).
 func TierReader() TierReaderFunc { return tierReader }
+
+// RollingCapReader returns the installed native rolling-cap reader, or nil when unset.
+func RollingCapReader() RollingCapReaderFunc { return rollingCapReader }
