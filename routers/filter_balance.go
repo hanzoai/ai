@@ -190,6 +190,23 @@ func BalanceGateFilter(ctx *web.Context) {
 
 	sufficient, balance := balanceGate.checkBalance(subject, namespace, userKey)
 	if sufficient {
+		// Balance covers the call — but a plan also bounds how FAST a caller may burn
+		// its budget: the rolling-window AI-spend cap (Anthropic-style, resets
+		// continuously). This is distinct from insufficient_balance — the caller HAS
+		// money; their plan's trailing-window budget is momentarily spent. Fails OPEN on
+		// any error (see RollingCapReaderFunc): a finance blip must never 429 a paying
+		// caller. Only a positively-computed over-cap denies, as HTTP 429.
+		if reader := object.RollingCapReader(); reader != nil {
+			if over, err := reader(ctx.Request.Context(), subject, namespace); err == nil && over {
+				log.Info("rolling_cap: window cap exceeded subject=%s namespace=%s path=%s",
+					subject, namespace, path)
+				ctx.ResponseWriter.Header().Set("Content-Type", "application/json")
+				ctx.ResponseWriter.WriteHeader(http.StatusTooManyRequests)
+				body := `{"error":{"message":"You've reached your plan's usage limit for the moment. It resets shortly — or upgrade at https://hanzo.ai/pricing for a higher limit.","type":"rate_limit_error","code":"usage_cap_exceeded"}}`
+				ctx.ResponseWriter.Write([]byte(body))
+				return
+			}
+		}
 		return
 	}
 
