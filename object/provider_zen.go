@@ -49,3 +49,11 @@ func ZenProvider() *Provider { return familyProvider("zen", "Zen", "ZEN_URL", "Z
 // EnsoProvider is the proprietary Enso family's virtual provider (ENSO_URL /
 // ENSO_API_KEY) — the SAME zen serving binary run with ZEN_FAMILY=enso.
 func EnsoProvider() *Provider { return familyProvider("enso", "Enso", "ENSO_URL", "ENSO_API_KEY") }
+
+// OpenRouterProvider is the OpenRouter catalog's provider (OPENROUTER_URL /
+// OPENROUTER_API_KEY). Type "OpenRouter" already resolves to the OpenAI-compatible
+// upstream in resolveEndpointForPath, so serving needs nothing new — the catalog is a
+// discovered family, and the relay that carries it is the one ai already had.
+func OpenRouterProvider() *Provider {
+	return familyProvider("openrouter", "OpenRouter", "OPENROUTER_URL", "OPENROUTER_API_KEY")
+}
