@@ -244,6 +244,10 @@ type zenModel struct {
 	Vision  bool
 	Access  string    // "" = generally available; "waitlist" = access-gated (limited preview) — ai enforces the grant
 	MinTier string    // "" | "free" | "trial" | "paid" — min subscription tier the family advertises for this SKU; ai enforces it (Seams A/B). "" ⇒ free (all tiers). Orthogonal to Access.
+	// Funding is how the SKU's usage is PAID FOR upstream: "prepaid" means every path it
+	// can take spends a real-cash balance; "" means credits. It is a different KIND of
+	// floor from MinTier and is enforced differently — see familyFundingAllowed.
+	Funding string
 	Base    zenTier   // headline price (the in-window tier)
 	Tiers   []zenTier // full ladder, ascending by MaxCtx — the billing contract
 }
@@ -318,6 +322,7 @@ type zenWireModel struct {
 	OwnedBy       string `json:"owned_by"`
 	Access        string `json:"access"`   // "" | "waitlist" — access gating advertised by the family
 	MinTier       string `json:"min_tier"` // "" | "free" | "trial" | "paid" — min subscription tier advertised for this SKU (Seams A/B)
+	Funding       string `json:"funding"`  // "prepaid" = every path this SKU can take spends a real-cash balance
 	ContextWindow int    `json:"context_window"`
 	Pricing       struct {
 		Input  decimal.Decimal `json:"input"`
@@ -335,7 +340,7 @@ type zenWireModel struct {
 
 func (w zenWireModel) model() zenModel {
 	zm := zenModel{
-		ID: w.ID, OwnedBy: w.OwnedBy, MaxCtx: w.ContextWindow, Vision: w.Capabilities.Vision, Access: w.Access, MinTier: w.MinTier,
+		ID: w.ID, OwnedBy: w.OwnedBy, MaxCtx: w.ContextWindow, Vision: w.Capabilities.Vision, Access: w.Access, MinTier: w.MinTier, Funding: w.Funding,
 		Base: zenTier{MaxCtx: w.ContextWindow, In: w.Pricing.Input, Out: w.Pricing.Output},
 	}
 	for _, t := range w.PricingTiers {
