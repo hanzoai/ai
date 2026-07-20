@@ -76,7 +76,8 @@ type pinnedSKU struct {
 // TTL. All of zen's original machinery is a method on this value; zen and enso are
 // two instances.
 type modelFamily struct {
-	name       string                  // "zen" | "enso" — the Provider label + brand
+	name       string                  // "zen" | "enso" | "openrouter" — the brand label
+	provider   string                  // the object.Provider Type this family serves ("Zen" | "Enso" | "OpenRouter")
 	prefix     string                  // public brand prefix for cold-start ownership (before first discovery)
 	owner      string                  // public /v1/models owned_by: "zenlm" (Zen LM) | "hanzo" (Hanzo)
 	urlKey     string                  // config key for the base URL ("ZEN_URL" | "ENSO_URL")
@@ -103,7 +104,7 @@ type modelFamily struct {
 
 var (
 	zenFam = &modelFamily{
-		name: "zen", prefix: "zen", owner: "zenlm", urlKey: "ZEN_URL", keyKey: "ZEN_API_KEY",
+		name: "zen", provider: "Zen", prefix: "zen", owner: "zenlm", urlKey: "ZEN_URL", keyKey: "ZEN_API_KEY",
 		providerFn: object.ZenProvider,
 		pins: []pinnedSKU{
 			{id: "zen5", contextWindow: flagshipWindow},
@@ -112,7 +113,7 @@ var (
 		},
 	}
 	ensoFam = &modelFamily{
-		name: "enso", prefix: "enso", owner: "hanzo", urlKey: "ENSO_URL", keyKey: "ENSO_API_KEY",
+		name: "enso", provider: "Enso", prefix: "enso", owner: "hanzo", urlKey: "ENSO_URL", keyKey: "ENSO_API_KEY",
 		providerFn: object.EnsoProvider,
 		pins: []pinnedSKU{
 			{id: "enso", contextWindow: flagshipWindow},
@@ -154,15 +155,23 @@ func (f *modelFamily) serviceKey() string {
 // no model of that family (serves is false) and it is simply absent from /v1/models.
 func (f *modelFamily) enabled() bool { return f.baseURL() != "" }
 
-// familyForProviderType maps a virtual provider Type ("Zen" | "Enso") to its family,
-// or nil for a non-family provider. The completion dispatch uses this to pipe to the
-// right family with no per-family branch.
+// familyForProviderType maps a virtual provider Type onto its family, resolved from the
+// SAME modelFamilies list that discovery, listing and routing all read.
+//
+// It used to be a hand-written switch, which is a second list that must be kept in step
+// with the first — and it was not. OpenRouter was added to modelFamilies, so its 338
+// prepaid models were discovered, listed and routable, but the switch never named it. Every
+// dispatch site guards on `if fam := familyForProviderType(...); fam != nil`, so a nil sent
+// those requests down the generic relay — around pipeToFamily, which is where the funding
+// gate lives. Listed, served, and ungated, on real cash.
+//
+// Deriving the lookup from the one list makes that shape unrepresentable: a family that
+// exists is a family this resolves, and adding one cannot silently skip the gate.
 func familyForProviderType(t string) *modelFamily {
-	switch t {
-	case "Zen":
-		return zenFam
-	case "Enso":
-		return ensoFam
+	for _, f := range modelFamilies {
+		if f.provider == t {
+			return f
+		}
 	}
 	return nil
 }
