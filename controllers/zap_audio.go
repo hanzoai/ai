@@ -47,13 +47,11 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/url"
-	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/hanzoai/account"
-	"github.com/hanzoai/beego/logs"
+	"github.com/hanzoai/ai/log"
 	iam "github.com/hanzoai/iam"
 	"github.com/luxfi/zap"
 
@@ -62,69 +60,9 @@ import (
 	"github.com/hanzoai/ai/util"
 )
 
-// ── ZAP handler registry ────────────────────────────────────────────────────
-//
-// Per the migration convention each route-group self-registers from its OWN file
-// into these maps rather than editing the hard switch in zap_native.go, so no two
-// groups ever contend on a shared registration file. The Integrate step wires
-// handleCloudService / handleGatewayHTTPRequest to consult lookupCloudHandler /
-// lookupGatewayHandler (their existing chat/models/balance switch arms stay as
-// the fallback) when it flips a group's dispatch off beego.
-//
-// These primitives live in this file because it is the first migrated group; a
-// later group only CALLS registerCloud / registerGatewayPath from its own init().
-// If the assembly ever carries a second copy (parallel branches), Integrate keeps
-// exactly one definition — the API (names + signature) is identical everywhere.
-
-type zapHandler func(ctx context.Context, auth string, body []byte) (*zap.Message, error)
-
-var (
-	zapRegistryMu      sync.RWMutex
-	zapCloudRegistry   = map[string]zapHandler{}
-	zapGatewayRegistry = map[string]zapHandler{}
-)
-
-// registerCloud maps a native-cloud (MsgType 100) method name to its handler.
-func registerCloud(method string, h zapHandler) {
-	zapRegistryMu.Lock()
-	defer zapRegistryMu.Unlock()
-	zapCloudRegistry[method] = h
-}
-
-// registerGatewayPath maps a gateway (MsgType 200) HTTP path PREFIX to its
-// handler. lookupGatewayHandler resolves a request path by longest matching
-// prefix so `/v1/audio/voice/…` reaches the `/v1/audio/voice` handler.
-func registerGatewayPath(prefix string, h zapHandler) {
-	zapRegistryMu.Lock()
-	defer zapRegistryMu.Unlock()
-	zapGatewayRegistry[prefix] = h
-}
-
-// lookupCloudHandler returns the handler registered for a native-cloud method.
-func lookupCloudHandler(method string) (zapHandler, bool) {
-	zapRegistryMu.RLock()
-	defer zapRegistryMu.RUnlock()
-	h, ok := zapCloudRegistry[method]
-	return h, ok
-}
-
-// lookupGatewayHandler returns the handler whose registered prefix is the
-// longest match for path (deterministic: prefixes are sorted longest-first).
-func lookupGatewayHandler(path string) (zapHandler, bool) {
-	zapRegistryMu.RLock()
-	defer zapRegistryMu.RUnlock()
-	prefixes := make([]string, 0, len(zapGatewayRegistry))
-	for p := range zapGatewayRegistry {
-		prefixes = append(prefixes, p)
-	}
-	sort.Slice(prefixes, func(i, j int) bool { return len(prefixes[i]) > len(prefixes[j]) })
-	for _, p := range prefixes {
-		if path == p || strings.HasPrefix(path, p+"/") {
-			return zapGatewayRegistry[p], true
-		}
-	}
-	return nil, false
-}
+// The canonical ZAP dispatch registry (registerCloud / registerGatewayPath /
+// registerGatewayRoute + the lookups) lives in zap_registry.go. This group only
+// self-registers from its own init().
 
 func init() {
 	registerZapAudio()
@@ -190,7 +128,7 @@ func zapAudioSpeechHandler(ctx context.Context, auth string, body []byte) (*zap.
 
 	// KMS secret + upstream-model/voice binding (STEP 4/5), mirroring the HTTP path.
 	if err := object.ResolveProviderSecret(provider); err != nil {
-		logs.Error("ZAP: KMS resolve %s: %v", provider.Name, err)
+		log.Error("ZAP: KMS resolve %s: %v", provider.Name, err)
 	}
 	if upstreamModel != "" {
 		provider.SubType = upstreamModel
@@ -424,7 +362,7 @@ func zapLegacyTTSStreamHandler(ctx context.Context, auth string, body []byte) (*
 	}
 	// UpdateChatStats failure is non-fatal in the HTTP path (logged), keep parity.
 	if err := object.UpdateChatStats(chat, ttsResult); err != nil {
-		logs.Error("ZAP: tts stream UpdateChatStats: %v", err)
+		log.Error("ZAP: tts stream UpdateChatStats: %v", err)
 	}
 	zapRecordLegacyTTSUsage(ctx, chat, "", ttsResult, startTime)
 	return object.BuildCloudResponse(200, buf.Bytes(), "")
