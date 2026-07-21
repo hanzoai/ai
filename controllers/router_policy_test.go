@@ -226,6 +226,11 @@ func TestEffectiveRouterQualityBiasFold(t *testing.T) {
 	if got := effectiveRouterQualityBias("nobody"); got != DefaultRouterQualityBias {
 		t.Fatalf("unset bias = %v, want %v (default)", got, DefaultRouterQualityBias)
 	}
+	// OPT-IN INVARIANT: an unset dial MUST be inert (>= 1), so an org that never touches
+	// it routes exactly as before — the dial is never a fleet-wide behavior change.
+	if got := effectiveRouterQualityBias("nobody"); got < 1 {
+		t.Fatalf("unset dial = %v, must be >= 1 (inert / opt-in)", got)
+	}
 	stubEnabledBias(t, nil, map[string]*float64{"hi": f(9), "lo": f(-3)})
 	if got := effectiveRouterQualityBias("hi"); got != 1 {
 		t.Fatalf("bias 9 → %v, want 1 (clamped)", got)

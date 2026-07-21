@@ -99,8 +99,9 @@ type OrgSettings struct {
 
 	// RouterQualityBias is this org's SAVINGS-vs-QUALITY dial in [0,1]: 0 = maximize
 	// savings (route to the cheapest eligible model), 1 = maximize quality (best model
-	// regardless of cost), 0.5 = balanced. nil = unset → "*" row then the balanced
-	// default. It tilts the router's per-request cost budget: a lower bias tightens the
+	// regardless of cost), 0.5 = balanced. nil = unset → "*" row then the default 1.0
+	// (INERT — an org that never sets the dial routes exactly as before; the dial is
+	// strictly opt-in). It tilts the router's per-request cost budget: a lower bias tightens the
 	// effective SLO MaxCost toward the cheapest eligible model, a higher bias loosens it
 	// toward the priciest — orthogonal to RouterCostCeiling (a hard cap the dial can only
 	// tighten WITHIN, never exceed) and to an explicit X-Max-Cost (which always wins). A
