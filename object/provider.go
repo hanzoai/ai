@@ -28,7 +28,7 @@ import (
 	"github.com/hanzoai/ai/tts"
 	"github.com/hanzoai/ai/util"
 	"github.com/hanzoai/dbx"
-	iam "github.com/hanzoai/iam"
+	iam "github.com/hanzoai/iam-v1"
 )
 
 type Provider struct {

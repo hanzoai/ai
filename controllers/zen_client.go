@@ -44,7 +44,7 @@ import (
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
 	"github.com/hanzoai/decimal"
-	iam "github.com/hanzoai/iam"
+	iam "github.com/hanzoai/iam-v1"
 	"github.com/hanzoai/money"
 )
 

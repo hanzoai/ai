@@ -13,7 +13,7 @@ import (
 	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/model"
 	"github.com/hanzoai/ai/object"
-	iam "github.com/hanzoai/iam"
+	iam "github.com/hanzoai/iam-v1"
 )
 
 // retrievalOwner returns the IAM org whose search index should be queried. The
