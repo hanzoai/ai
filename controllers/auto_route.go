@@ -159,8 +159,16 @@ func resolveAutoModel(requested, orgId, userId, requestId string, authUser *iam.
 	if !cfg.AutoRoutingActive(effectiveAutoRouting(orgId)) {
 		return "", "", false
 	}
+	// Eligibility = servable for this org (route + tier/grant), then narrowed by the
+	// org's ENABLED-MODELS allowlist (empty = all servable). This IS the `Known`
+	// predicate the heuristic ForTask AND the engine-decision guard (routeEngine) both
+	// honor, so a disabled model is never routed to on either path.
+	allow := effectiveRouterEnabledModels(orgId)
 	client := cfg.RouterClient(func(id string) bool {
-		return resolveModelRouteForOrg(id, orgId) != nil && modelServable(id, orgId, authUser)
+		if resolveModelRouteForOrg(id, orgId) == nil || !modelServable(id, orgId, authUser) {
+			return false
+		}
+		return len(allow) == 0 || allow[strings.ToLower(strings.TrimSpace(id))]
 	})
 	// Fold the per-org router policy (org > "*" > conf) into this decision: the
 	// org's own Prefer table wins per task key, and its cost ceiling fills the
@@ -172,6 +180,11 @@ func resolveAutoModel(requested, orgId, userId, requestId string, authUser *iam.
 	// models) instead of collapsing onto the champion. 0 (unset) = pure exploit.
 	client.Explore = envFloat("ROUTER_EXPLORE_EPSILON", 0)
 	slo = mergeCostCeiling(slo, client.Policy.CostCeiling)
+	// The SAVINGS-vs-QUALITY dial: below max-quality it narrows eligibility to models
+	// within a per-request cost budget (so the heuristic picks the cheapest PREFERRED
+	// model that fits) AND tightens the SLO for the engine path. Only ever tightens —
+	// never loosens past the resolved ceiling or an explicit X-Max-Cost.
+	client.Known, slo = applyRouterQualityBias(client.Known, slo, blendedPriceForOrg(orgId), effectiveRouterQualityBias(orgId), cfg)
 	rreq := router.Request{
 		Text:         lastUserText(req),
 		ApproxTokens: estimatePromptTokens(req),
@@ -223,6 +236,55 @@ func resolveAutoModel(requested, orgId, userId, requestId string, authUser *iam.
 	})
 
 	return routedModel, string(dec.Task), true
+}
+
+// applyRouterQualityBias tilts routing by the org's savings-vs-quality dial (bias in
+// [0,1]: 0 = cheapest, 1 = best). It returns a (possibly narrowed) eligibility predicate
+// and a (possibly tightened) SLO. At bias >= 1 (max quality) nothing changes. Below 1 it
+// derives a per-request cost BUDGET = cheapest + bias·(priciest − cheapest) across the
+// org's eligible models (injected blended $/1M price) and (a) drops models pricier than
+// the budget from eligibility — so the heuristic ForTask picks the cheapest PREFERRED
+// model that fits — and (b) tightens slo.MaxCost to that budget (per-1k) for the engine
+// path. It can only TIGHTEN: an explicit X-Max-Cost or the resolved cost ceiling still
+// wins when lower. An unpriced model (price ≤ 0) is never dropped and never bounds the
+// range, so a missing price can neither exclude a model nor skew the dial.
+func applyRouterQualityBias(base func(string) bool, slo router.Slo, price priceIndexFn, bias float64, cfg *ModelConfig) (func(string) bool, router.Slo) {
+	if bias >= 1 || cfg == nil || base == nil || price == nil {
+		return base, slo
+	}
+	var minP, maxP float64
+	seen := false
+	for _, m := range cfg.ListModels() {
+		if !base(m.ID) {
+			continue
+		}
+		p := price(m.ID)
+		if p <= 0 {
+			continue
+		}
+		if !seen || p < minP {
+			minP = p
+		}
+		if !seen || p > maxP {
+			maxP = p
+		}
+		seen = true
+	}
+	if !seen || maxP <= minP {
+		return base, slo // one price point (or none priced): nothing to tilt
+	}
+	budget := minP + bias*(maxP-minP) // blended $/1M
+	eligible := func(id string) bool {
+		if !base(id) {
+			return false
+		}
+		p := price(id)
+		return p <= 0 || p <= budget*(1+1e-9)
+	}
+	if per1k := router.PerMillionToPerThousand(budget); slo.MaxCost <= 0 || per1k < slo.MaxCost {
+		slo.MaxCost = per1k
+	}
+	return eligible, slo
 }
 
 // SourceExplicit marks a routing event for a request whose model the CALLER chose
