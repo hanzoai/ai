@@ -20,7 +20,7 @@ import (
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
-	iam "github.com/hanzoai/iam"
+	iam "github.com/hanzoai/iam-v1"
 )
 
 // credentialUser resolves the request principal STRICTLY from its verified

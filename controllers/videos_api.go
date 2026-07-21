@@ -29,7 +29,7 @@ import (
 	"github.com/hanzoai/ai/model"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
-	iam "github.com/hanzoai/iam"
+	iam "github.com/hanzoai/iam-v1"
 )
 
 // This file completes the OpenAI-compatible surface alongside chat, embeddings,

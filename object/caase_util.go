@@ -15,7 +15,7 @@
 package object
 
 import (
-	iam "github.com/hanzoai/iam"
+	iam "github.com/hanzoai/iam-v1"
 )
 
 func FilterCaasesByUser(user *iam.User, caases []*Caase) []*Caase {
