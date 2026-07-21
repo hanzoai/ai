@@ -456,41 +456,11 @@ func (c *ApiController) GetRouterStats() {
 	c.ResponseOk(stats)
 }
 
-// PublishRouterArtifactMeta records the outcome of a retrain run for a scope — the
-// nightly job POSTs this after fitting + gating (whether it published the new
-// artifact or kept the incumbent). Super-admin only: it is a platform-control
-// write, exactly like the ledger export. Owner defaults to "*" (the shared base
-// heads) when the body omits it.
-//
-// @Title PublishRouterArtifactMeta
-// @Tag Router API
-// @Description record a retrain run's published-state + gate verdict for a scope (super admin only)
-// @Param body body object.RouterArtifactMeta true "the retrain outcome"
-// @Success 200 {object} object.RouterArtifactMeta The stored row
-// @router /router/publish-artifact-meta [post]
-func (c *ApiController) PublishRouterArtifactMeta() {
-	if !c.RequireSuperAdmin() {
-		return
-	}
-	var meta object.RouterArtifactMeta
-	if err := json.Unmarshal(c.Ctx.Input.RequestBody, &meta); err != nil {
-		c.ResponseError(err.Error())
-		return
-	}
-	if meta.Owner == "" {
-		meta.Owner = object.GlobalDefaultOwner
-	}
-	if err := object.UpsertRouterArtifactMeta(&meta); err != nil {
-		c.ResponseError(err.Error())
-		return
-	}
-	// Also append to the IMMUTABLE retrain timeline (best-effort). The upsert above is
-	// the source of truth for "latest per scope"; this append is the history the
-	// world.hanzo.ai Model-Improvement panel plots. Same shared projection the in-process
-	// trainer uses, so the two paths can't drift. A log failure must never fail the publish.
-	_ = object.AppendRouterTrainingLog(object.NewRouterTrainingLog(&meta))
-	c.ResponseOk(meta)
-}
+// PublishRouterArtifactMeta (POST /v1/router/artifact-meta) is served ZAP-native —
+// the ONE implementation — by zapPublishRouterArtifactMetaHandler in
+// zap_router-policy-stats.go: super-admin gated, UpsertRouterArtifactMeta + the
+// best-effort AppendRouterTrainingLog timeline append (world.hanzo.ai Model-Improvement
+// panel). No beego twin.
 
 // trainingContributionBody is the wire shape for the opt-in read + write.
 type trainingContributionBody struct {

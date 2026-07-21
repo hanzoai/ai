@@ -12,27 +12,30 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Native ZAP handlers for the router-policy / router-stats / routing group.
+// Native ZAP handlers for the router-policy / router-stats / routing group — the
+// ONE and ONLY implementation of these routes. The beego twins (router.go
+// registrations + the Get/UpdateRouterPolicy, GetRoutingDefaults, ExportRouting*,
+// PublishRouterArtifactMeta controller methods) were DELETED: one route, one
+// handler, no split-brain, no drift. Each handler works against object/ + iam
+// directly, mirroring zap_native.go:zapChatHandler.
 //
-// STRANGLER: each beego method (ApiController.Get/UpdateRouterPolicy,
-// GetRouterStats, PublishRouterArtifactMeta, GetRoutingDefaults,
-// ExportRoutingLedger, AddRoutingReward, ExportRoutingRewards, GetTrafficGlobe,
-// Get/UpdateTrainingContribution) is re-implemented here as a pure ZAP handler
-// against object/ + iam, mirroring zap_native.go:zapChatHandler. The beego
-// routes stay live in router.go until Integrate flips dispatch to these.
+// Routes are RESTful nouns (method-aware where a noun carries several verbs):
+//   GET|PUT /v1/router/policy        — read the effective policy / upsert the org override
+//   GET     /v1/router/defaults      — the caller's resolved routing defaults
+//   GET     /v1/router/rewards       — rewarded training tuples (JSONL, admin/token)
+//   GET     /v1/router/ledger        — the routing-decision ledger (JSONL, admin/token)
+//   POST    /v1/router/artifact-meta — record a retrain run (super admin)
+//   GET     /v1/router/stats · POST /v1/feedback · GET /v1/traffic/globe (unchanged)
+// The group self-registers into the ONE canonical registry (zap_registry.go) from
+// init(): the multi-verb policy noun as an HTTP-shaped ROUTE (method/path/query
+// aware, registerGatewayRoute), the single-verb nouns as body-only PATHS
+// (registerGatewayPath). It declares NO shared symbol and edits NO shared file.
 //
-// Registration convention (recipe): this group exposes two group-local dispatch
-// tables (zapRouterPolicyStatsCloud / …Gateway) keyed by native cloud method and
-// gateway path, via a private type ALIAS — mirroring zap_responses.go. It declares
-// NO shared symbol and edits NO shared file; Integrate ranges over these tables to
-// wire the ONE canonical registry when it flips native dispatch on.
-//
-// Query/context parity: the beego handlers read query params (scope, org, hours,
-// since, window) and the request principal. Both native cloud (MsgType 100) and
-// the gateway convention (registerGatewayPath's zapHandler) carry only
-// method+auth+body, so these params are decoded from the JSON body — the same
-// pattern zapBalanceHandler uses to read params.User from the body. Identity is
-// ALWAYS the resolved credential (auth), NEVER a body field.
+// Query/context parity: params (scope, org, hours, since, window) are decoded from
+// the JSON body — native cloud (MsgType 100) and the body-only gateway path carry
+// only method+auth+body (the zapBalanceHandler pattern); the HTTP-shaped policy
+// route additionally has the real HTTP method. Identity is ALWAYS the resolved
+// credential (auth), NEVER a body field.
 
 package controllers
 
@@ -55,58 +58,40 @@ import (
 	"github.com/hanzoai/ai/util"
 )
 
-// ── ZAP dispatch tables (group-local, collision-free) ────────────────────
+// ── ZAP dispatch registration ────────────────────────────────────────────
 //
-// A type ALIAS (not a new named type) so no shared symbol is declared, mirroring
-// zap_responses.go. Integrate ranges over the two tables below to wire this
-// group into the ONE canonical registry (registerCloud(method, h) /
-// registerGatewayPath(path, h)) when it flips native dispatch on — no group edits
-// a shared registration file. /v1/feedback aliases /v1/add-routing-reward onto
-// the ONE reward handler (parity with router.go), and the gateway paths are full
-// and non-overlapping so a prefix-match dispatcher is unambiguous.
-
-type zapRouterPolicyStatsFn = func(ctx context.Context, auth string, body []byte) (*zap.Message, error)
-
-// zapRouterPolicyStatsCloud maps native cloud method → handler (MsgType 100).
-// init self-registers this group's dispatch tables into the canonical registry.
+// Self-registers into the ONE canonical registry (zap_registry.go) from init():
+//   - the multi-verb policy noun (/v1/router/policy) as an HTTP-shaped ROUTE
+//     (registerGatewayRoute → zapGatewayHandler: method/path/query aware, so GET-read
+//     and PUT-write share the one noun), and
+//   - the single-verb nouns as body-only PATHS (registerGatewayPath → zapHandler).
+//
+// The gateway paths are full and non-overlapping so the longest-prefix dispatcher is
+// unambiguous. The native-cloud (MsgType 100) method names are internal RPC only (no
+// HTTP client calls them) — kept for parity with the sibling ZAP groups.
 func init() {
-	for method, h := range zapRouterPolicyStatsCloud {
-		registerCloud(method, h)
-	}
-	for path, h := range zapRouterPolicyStatsGateway {
-		registerGatewayPath(path, h)
-	}
-}
+	// Native cloud (MsgType 100) — internal RPC names.
+	registerCloud("router.stats", zapGetRouterStatsHandler)
+	registerCloud("router.defaults", zapGetRoutingDefaultsHandler)
+	registerCloud("router.ledger", zapExportRoutingLedgerHandler)
+	registerCloud("router.rewards", zapExportRoutingRewardsHandler)
+	registerCloud("router.artifact-meta", zapPublishRouterArtifactMetaHandler)
+	registerCloud("feedback", zapAddRoutingRewardHandler)
+	registerCloud("traffic.globe", zapGetTrafficGlobeHandler)
+	registerCloud("training.get-contribution", zapGetTrainingContributionHandler)
+	registerCloud("training.update-contribution", zapUpdateTrainingContributionHandler)
 
-var zapRouterPolicyStatsCloud = map[string]zapRouterPolicyStatsFn{
-	"router.get-policy":            zapGetRouterPolicyHandler,
-	"router.update-policy":         zapUpdateRouterPolicyHandler,
-	"router.stats":                 zapGetRouterStatsHandler,
-	"router.publish-artifact-meta": zapPublishRouterArtifactMetaHandler,
-	"routing.get-defaults":         zapGetRoutingDefaultsHandler,
-	"routing.export-ledger":        zapExportRoutingLedgerHandler,
-	"routing.add-reward":           zapAddRoutingRewardHandler,
-	"routing.feedback":             zapAddRoutingRewardHandler,
-	"routing.export-rewards":       zapExportRoutingRewardsHandler,
-	"traffic.globe":                zapGetTrafficGlobeHandler,
-	"training.get-contribution":    zapGetTrainingContributionHandler,
-	"training.update-contribution": zapUpdateTrainingContributionHandler,
-}
-
-// zapRouterPolicyStatsGateway maps gateway path → handler (MsgType 200).
-var zapRouterPolicyStatsGateway = map[string]zapRouterPolicyStatsFn{
-	"/v1/get-router-policy":            zapGetRouterPolicyHandler,
-	"/v1/update-router-policy":         zapUpdateRouterPolicyHandler,
-	"/v1/router/stats":                 zapGetRouterStatsHandler,
-	"/v1/router/publish-artifact-meta": zapPublishRouterArtifactMetaHandler,
-	"/v1/get-routing-defaults":         zapGetRoutingDefaultsHandler,
-	"/v1/export-routing-ledger":        zapExportRoutingLedgerHandler,
-	"/v1/add-routing-reward":           zapAddRoutingRewardHandler,
-	"/v1/feedback":                     zapAddRoutingRewardHandler,
-	"/v1/export-routing-rewards":       zapExportRoutingRewardsHandler,
-	"/v1/traffic/globe":                zapGetTrafficGlobeHandler,
-	"/v1/get-training-contribution":    zapGetTrainingContributionHandler,
-	"/v1/update-training-contribution": zapUpdateTrainingContributionHandler,
+	// Gateway (MsgType 200) — RESTful nouns. Method-aware policy route first.
+	registerGatewayRoute("/v1/router/policy", zapRouterPolicyHandler)
+	registerGatewayPath("/v1/router/stats", zapGetRouterStatsHandler)
+	registerGatewayPath("/v1/router/defaults", zapGetRoutingDefaultsHandler)
+	registerGatewayPath("/v1/router/ledger", zapExportRoutingLedgerHandler)
+	registerGatewayPath("/v1/router/rewards", zapExportRoutingRewardsHandler)
+	registerGatewayPath("/v1/router/artifact-meta", zapPublishRouterArtifactMetaHandler)
+	registerGatewayPath("/v1/feedback", zapAddRoutingRewardHandler)
+	registerGatewayPath("/v1/traffic/globe", zapGetTrafficGlobeHandler)
+	registerGatewayPath("/v1/get-training-contribution", zapGetTrainingContributionHandler)
+	registerGatewayPath("/v1/update-training-contribution", zapUpdateTrainingContributionHandler)
 }
 
 // ── Shared seams (identity + response envelope parity) ───────────────────
@@ -277,6 +262,20 @@ func zapUpdateRouterPolicyHandler(_ context.Context, auth string, body []byte) (
 	return zapRPSOk(policy)
 }
 
+// zapRouterPolicyHandler is the HTTP-shaped entrypoint for /v1/router/policy: GET
+// reads the effective policy, PUT upserts the caller's own org override. One noun,
+// two verbs — the reason this route is method-aware (registerGatewayRoute) rather
+// than body-only. Both delegate to the same read/write logic beego and ZAP shared.
+func zapRouterPolicyHandler(ctx context.Context, method, _, _, auth string, body []byte) (*zap.Message, error) {
+	switch strings.ToUpper(method) {
+	case http.MethodGet:
+		return zapGetRouterPolicyHandler(ctx, auth, body)
+	case http.MethodPut:
+		return zapUpdateRouterPolicyHandler(ctx, auth, body)
+	}
+	return zapRPSError(http.StatusMethodNotAllowed, "method not allowed: "+method)
+}
+
 // ── router stats + artifact meta ─────────────────────────────────────────
 
 // zapRouterStatsParams is the body-decoded projection of the beego query params.
@@ -366,6 +365,11 @@ func zapPublishRouterArtifactMetaHandler(_ context.Context, auth string, body []
 	if err := object.UpsertRouterArtifactMeta(&meta); err != nil {
 		return zapRPSError(http.StatusOK, err.Error())
 	}
+	// Parity with the (deleted) beego PublishRouterArtifactMeta: also append to the
+	// IMMUTABLE retrain timeline the world.hanzo.ai Model-Improvement panel plots. The
+	// upsert above is the source of truth for "latest per scope"; this append is the
+	// history. Best-effort — a log failure must never fail the publish.
+	_ = object.AppendRouterTrainingLog(object.NewRouterTrainingLog(&meta))
 	return zapRPSOk(meta)
 }
 
