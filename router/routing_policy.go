@@ -124,11 +124,13 @@ func (c Client) RouteDecisionFor(ctx context.Context, req Request, slo Slo, rp R
 		}
 	}
 
-	// 4. heuristic floor — servability-first then relaxed so a listed-but-unservable
-	// model still beats an empty id.
+	// 4. heuristic floor — servability-first, then relaxed to ec.Allow (the HARD
+	// enabled-models allowlist) so a listed-but-unservable model still beats an empty
+	// id WITHOUT ever routing to a model the org DISABLED. ec.Allow == nil (no
+	// allowlist) relaxes to all, the historical last-resort behavior.
 	m := ec.Policy.ForTask(task, ec.Known)
 	if m == "" {
-		m = ec.Policy.ForTask(task, nil)
+		m = ec.Policy.ForTask(task, ec.Allow)
 	}
 	return Decision{Model: m, Task: task, Source: SourceHeuristic}
 }
