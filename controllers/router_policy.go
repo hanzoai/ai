@@ -358,9 +358,12 @@ func mergeCostCeiling(slo router.Slo, policyCeiling float64) router.Slo {
 	return slo
 }
 
-// DefaultRouterQualityBias is the balanced savings-vs-quality dial applied when an org
-// AND the "*" row both leave it unset — neither cheap-biased nor quality-biased.
-const DefaultRouterQualityBias = 0.5
+// DefaultRouterQualityBias is the dial applied when an org AND the "*" row both leave it
+// unset. It is 1.0 (max quality) on purpose: at bias ≥ 1 applyRouterQualityBias is INERT,
+// so an org that never touches the dial routes EXACTLY as before (the bandit's quality-
+// leaning pick within the cost ceiling) — the dial is strictly opt-in, never a fleet-wide
+// behavior change. An org dials toward savings by explicitly lowering it.
+const DefaultRouterQualityBias = 1.0
 
 // orgRouterEnabledModelsLookup returns an org's own model allowlist (nil = no override,
 // meaning all servable models are eligible). Same 60s-cached row the rest of the fold uses.
