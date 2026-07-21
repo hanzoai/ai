@@ -172,9 +172,9 @@ untouched — no `X-Routed-Model` header, exactly its pre-routing behavior. Set 
 org's preference with, e.g.:
 
 ```bash
-curl -X POST "$CLOUD_ADMIN/v1/update-org-settings?owner=<org>" \
+curl -X PUT "$CLOUD_ADMIN/v1/org/settings?owner=<org>" \
   -H "Content-Type: application/json" -b "$ADMIN_SESSION" \
-  -d '{"owner":"<org>","autoRouting":"disabled"}'
+  -d '{"autoRouting":"disabled"}'
 ```
 
 - **Transparency**: the `X-Routed-Model` response header (and the `model` field

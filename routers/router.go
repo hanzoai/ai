@@ -391,43 +391,24 @@ func initAPI() {
 	App.Router("/v1/update-model-route", &controllers.ApiController{}, "POST:UpdateModelRoute")
 	App.Router("/v1/delete-model-route", &controllers.ApiController{}, "POST:DeleteModelRoute")
 
-	// Per-org feature settings (auto-routing enable/disable, …). Admin-gated like
-	// the model-route endpoints; not gateway-exposed (direct api.cloud.hanzo.ai).
-	App.Router("/v1/get-org-settings-list", &controllers.ApiController{}, "GET:GetOrgSettingsList")
-	App.Router("/v1/get-org-settings", &controllers.ApiController{}, "GET:GetOrgSettings")
-	App.Router("/v1/add-org-settings", &controllers.ApiController{}, "POST:AddOrgSettings")
-	App.Router("/v1/update-org-settings", &controllers.ApiController{}, "POST:UpdateOrgSettings")
-	App.Router("/v1/delete-org-settings", &controllers.ApiController{}, "POST:DeleteOrgSettings")
-
-	// Routing defaults read surface (any authenticated user) + the training-ledger
-	// export (super admin). get-routing-defaults resolves org > "*" > conf for the
-	// caller's own org; export-routing-ledger streams the privacy-preserving
-	// decision ledger as JSONL.
-	App.Router("/v1/get-routing-defaults", &controllers.ApiController{}, "GET:GetRoutingDefaults")
-	App.Router("/v1/export-routing-ledger", &controllers.ApiController{}, "GET:ExportRoutingLedger")
+	// The router-config surface — per-org settings (/v1/org/settings + /list), routing
+	// defaults (/v1/router/defaults), the policy noun (GET|PUT /v1/router/policy), the
+	// artifact-meta write (/v1/router/artifact-meta), and the ledger/rewards exports
+	// (/v1/router/{ledger,rewards}) — is served ZAP-native, the ONE implementation
+	// (controllers/zap_router-policy-stats.go + zap_verticals-and-misc.go). No beego
+	// twin here: the twin split-brain is exactly what silently dropped customer data.
 
 	// Per-request reward signal for the enso training loop: clients POST an outcome
-	// (0..1, or a 1..5 rating) keyed by the request_id they already hold, scoped to
-	// their own org; the super-admin export streams the rewarded (features, model,
-	// reward) tuples as JSONL for fit_base/observe.
-	App.Router("/v1/add-routing-reward", &controllers.ApiController{}, "POST:AddRoutingReward")
-	// /v1/feedback is the signal-typed front door onto the SAME reward join:
-	// {request_id, signal: up|down|regenerate|switch|…}. One handler, one canonical
-	// stored reward; the engine's online LinUCB observe is driven from here.
+	// keyed by the request_id they hold, scoped to their own org. /v1/feedback is the
+	// signal-typed front door ({request_id, signal: up|down|regenerate|switch|…}) onto
+	// the ONE reward join; the engine's online LinUCB observe is driven from here.
 	App.Router("/v1/feedback", &controllers.ApiController{}, "POST:AddRoutingReward")
-	App.Router("/v1/export-routing-rewards", &controllers.ApiController{}, "GET:ExportRoutingRewards")
 
 	// Self-scoped data ownership (org-admin, own org only): export or delete the
 	// caller's OWN content-free routing ledger — the customer-facing right-to-
 	// access + right-to-be-forgotten that pairs with the training opt-in.
 	App.Router("/v1/export-my-routing-data", &controllers.ApiController{}, "GET:ExportMyRoutingData")
 	App.Router("/v1/delete-my-routing-data", &controllers.ApiController{}, "POST:DeleteMyRoutingData")
-
-	// Per-org router policy (prefer table + cost ceiling). Org-admin-gated and
-	// self-scoped to the caller's own org — an org's own admins configure their
-	// own router, never another tenant's. Not super-admin: customer-configurable.
-	App.Router("/v1/get-router-policy", &controllers.ApiController{}, "GET:GetRouterPolicy")
-	App.Router("/v1/update-router-policy", &controllers.ApiController{}, "POST:UpdateRouterPolicy")
 
 	// Router observability aggregate (aggregates only, never raw events): the
 	// admin savings-vs-perf panel reads the org-scoped form; world.hanzo.ai polls
@@ -439,7 +420,6 @@ func initAPI() {
 	// markers) — the world.hanzo.ai flywheel view. PUBLIC ?scope=platform, aggregates
 	// only (task mix, never model ids). Balance+auth-exempt like /v1/router/stats.
 	App.Router("/v1/router/history", &controllers.ApiController{}, "GET:GetRouterHistory")
-	App.Router("/v1/router/publish-artifact-meta", &controllers.ApiController{}, "POST:PublishRouterArtifactMeta")
 	// Live Mean-Field Judge Panel state for the world.hanzo.ai dashboard. PUBLIC,
 	// platform-global (model ids + scalars only, no org/user rows), balance+auth-exempt
 	// like /v1/router/stats — the world widget polls it the same way.
