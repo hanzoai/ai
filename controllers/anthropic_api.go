@@ -31,7 +31,7 @@ import (
 	"github.com/hanzoai/ai/util"
 	"github.com/hanzoai/ai/web"
 	"github.com/hanzoai/go-openai"
-	iam "github.com/hanzoai/iam"
+	iam "github.com/hanzoai/iam-v1"
 )
 
 // ── Anthropic Messages API types ────────────────────────────────────────────
