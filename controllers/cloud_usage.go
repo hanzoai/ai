@@ -20,7 +20,7 @@ import (
 	"strings"
 	"time"
 
-	iam "github.com/hanzoai/iam-v1"
+	iam "github.com/hanzoai/ai/internal/iam"
 
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"

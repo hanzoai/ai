@@ -15,7 +15,7 @@
 
 package controllers
 
-import iam "github.com/hanzoai/iam-v1"
+import iam "github.com/hanzoai/ai/internal/iam"
 
 func getStorageProviders() ([]*iam.Provider, error) {
 	providers, err := iam.GetProviders()

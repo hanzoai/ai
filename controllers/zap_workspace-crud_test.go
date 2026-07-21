@@ -20,7 +20,7 @@ import (
 	"net/url"
 	"testing"
 
-	iam "github.com/hanzoai/iam-v1"
+	iam "github.com/hanzoai/ai/internal/iam"
 )
 
 // TestZapWorkspaceRegistered proves the group binds every migrated route from its

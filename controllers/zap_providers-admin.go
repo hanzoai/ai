@@ -40,7 +40,7 @@ import (
 	"encoding/json"
 	"strings"
 
-	iam "github.com/hanzoai/iam-v1"
+	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/luxfi/zap"
 
 	"github.com/hanzoai/ai/object"
