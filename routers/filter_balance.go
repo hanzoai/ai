@@ -285,24 +285,15 @@ func isBalanceExempt(path string) bool {
 	// caller must be able to score a past request even at $0 balance (the outcome
 	// label is exactly how the enso loop learns). Auth still required (the handler
 	// self-auths); only the balance 402 is skipped.
-	case path == "/v1/feedback" || path == "/v1/add-routing-reward":
+	case path == "/v1/feedback":
 		return true
-	// Routing configuration is metadata, not metered inference — same class as
-	// /v1/models. Every client fetches its org's effective defaults on boot, so
-	// gating the READ 402s an unfunded org's apps before any priced request
-	// exists; the org-settings CRUD + ledger export are platform administration
-	// (RequireGlobalAdmin-gated) — an operator flipping routing must never
-	// depend on a wallet balance. Auth filters still apply to all of them.
-	case path == "/v1/get-routing-defaults" ||
-		path == "/v1/get-org-settings" ||
-		path == "/v1/add-org-settings" ||
-		path == "/v1/update-org-settings" ||
-		path == "/v1/delete-org-settings" ||
-		path == "/v1/export-routing-ledger":
-		return true
+	// The router-config surface (/v1/router/{policy,defaults,ledger,rewards,artifact-meta}
+	// + /v1/org/settings) is served ZAP-native — the gateway dispatch bypasses this beego
+	// BeforeRouter filter entirely, so those routing-metadata reads/writes are inherently
+	// balance-exempt with no entry here.
 	// Router observability READS — the savings/quality aggregate + the improvement
 	// time-series. Marketing/metadata, not metered inference (same class as
-	// /v1/get-routing-defaults): the public platform scope is unauthenticated (the
+	// /v1/router/defaults): the public platform scope is unauthenticated (the
 	// no-subject path already passes), and an authenticated org-scope read must not
 	// 402 a $0-balance org either.
 	case path == "/v1/router/stats" || path == "/v1/router/history" || path == "/v1/router/judge-panel":

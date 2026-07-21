@@ -15,13 +15,9 @@
 package controllers
 
 import (
-	"crypto/subtle"
 	"encoding/json"
 	"io"
-	"os"
-	"strings"
 
-	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/object"
 )
 
@@ -29,25 +25,11 @@ import (
 // contract can be tested without a live DB. Production reads the DB.
 var getRoutingEvents = object.GetRoutingEvents
 
-// routerAdminAuthorized gates the training-data exports for EITHER a platform super
-// admin (the console) OR a service holding ROUTER_ADMIN_TOKEN (spark's nightly retrain
-// script) — mirroring the commerceToken service-auth pattern. The token is a
-// KMS-provisioned secret (env or config); when unset, only super-admin works, so there
-// is no accidental open door. On failure it writes the super-admin 401/403 response.
-func (c *ApiController) routerAdminAuthorized() bool {
-	tok := strings.TrimSpace(os.Getenv("ROUTER_ADMIN_TOKEN"))
-	if tok == "" {
-		tok = strings.TrimSpace(conf.GetConfigString("ROUTER_ADMIN_TOKEN"))
-	}
-	if tok != "" {
-		auth := c.Ctx.Request.Header.Get("Authorization")
-		bearer := strings.TrimSpace(strings.TrimPrefix(auth, "Bearer "))
-		if bearer != "" && subtle.ConstantTimeCompare([]byte(bearer), []byte(tok)) == 1 {
-			return true
-		}
-	}
-	return c.RequireSuperAdmin()
-}
+// The routing-defaults read (GET /v1/router/defaults) and the training-data exports
+// (GET /v1/router/{ledger,rewards}) are served ZAP-native — the ONE implementation —
+// in controllers/zap_router-policy-stats.go (zapGetRoutingDefaultsHandler,
+// zapExportRouting{Ledger,Rewards}Handler); the exports enforce the SAME super-admin-OR-
+// ROUTER_ADMIN_TOKEN gate via zapRPSRouterAdminAuthorized. No beego twin.
 
 // routingDefaults is the resolved-for-the-caller routing default surface read by
 // console/chat/app/desktop. Both fields are resolved with org > "*" > conf
@@ -55,71 +37,6 @@ func (c *ApiController) routerAdminAuthorized() bool {
 type routingDefaults struct {
 	AutoRoutingActive     bool `json:"auto_routing_active"`
 	DefaultSessionRouting bool `json:"default_session_routing"`
-}
-
-// GetRoutingDefaults returns the routing defaults resolved for the CALLER's org.
-// Unlike the org-settings CRUD it is NOT admin-gated — every authenticated user
-// may read it — but it exposes only booleans, never provider or topology config.
-// Resolution is cached exactly like org settings (60s TTL, via the shared
-// OrgSettings cache the effective* helpers read).
-//
-// @Title GetRoutingDefaults
-// @Tag Router API
-// @Description get the auto-routing / default-session-routing defaults resolved for the caller's org
-// @Success 200 {object} controllers.routingDefaults The Response object
-// @router /get-routing-defaults [get]
-func (c *ApiController) GetRoutingDefaults() {
-	org := c.GetOrg()
-
-	autoActive := false
-	if cfg := GetModelConfig(); cfg != nil {
-		autoActive = cfg.AutoRoutingActive(effectiveAutoRouting(org))
-	}
-
-	c.ResponseOk(routingDefaults{
-		AutoRoutingActive:     autoActive,
-		DefaultSessionRouting: effectiveSessionRouting(org) == object.AutoRoutingEnabled,
-	})
-}
-
-// ExportRoutingLedger streams the privacy-preserving routing-decision ledger as
-// JSONL (one event per line) for router training. RequireSuperAdmin — it is a
-// platform-wide export.
-//
-// The line schema matches the keys zen-router training/build_dataset.py --ledger
-// reads (model, task) and adds the ledger's native fields plus the engine
-// feature vector. It deliberately carries NO prompt text: build_dataset's
-// prompt-keyed SFT join therefore skips these rows (its `if row.get("prompt")`
-// guard). This export instead feeds the reward-join / heads-fit training stage,
-// which keys on the feature vector + routed model, not prompt text — the privacy
-// design in universe/docs/architecture/personal-router-training.md.
-//
-// Filters: ?org= (owner) and ?since= (RFC3339, created_time >= since).
-//
-// @Title ExportRoutingLedger
-// @Tag Router API
-// @Description stream the routing-decision ledger as JSONL for training (super admin only)
-// @Param org query string false "filter to one org"
-// @Param since query string false "only events at/after this RFC3339 timestamp"
-// @Success 200 {string} string "JSONL, one routing event per line"
-// @router /export-routing-ledger [get]
-func (c *ApiController) ExportRoutingLedger() {
-	if !c.routerAdminAuthorized() {
-		return
-	}
-
-	org := c.Input().Get("org")
-	since := c.Input().Get("since")
-
-	events, err := getRoutingEvents(org, since)
-	if err != nil {
-		c.ResponseError(err.Error())
-		return
-	}
-
-	c.Ctx.Output.Header("Content-Type", "application/x-ndjson")
-	_ = writeRoutingLedgerJSONL(c.Ctx.ResponseWriter, events)
-	c.EnableRender = false
 }
 
 // ExportMyRoutingData streams the CALLER'S OWN org routing events as JSONL. Org-
