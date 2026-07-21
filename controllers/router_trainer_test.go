@@ -287,3 +287,48 @@ func TestSeedInternalTrainingConsent(t *testing.T) {
 		t.Fatalf("after re-seed: hanzo = %q, want %q", got, object.TrainingContributionEnabled)
 	}
 }
+
+// TestDeployRouterPreferPreservesFields pins the F1-2 fix: the trainer's auto-deploy
+// (deployRouterPreferTo) merges into RouterPrefer WITHOUT nulling any other field. dbx
+// Update writes all columns, so the old fresh-row + preserve-list wiped the org's
+// allowlist / dial / training consent on every gated deploy — silently re-opening the
+// disabled-model set and resetting the cost dial.
+func TestDeployRouterPreferPreservesFields(t *testing.T) {
+	restore, err := object.UseMemoryDB("file:deploy_prefer_preserve_test?mode=memory&cache=shared", &object.OrgSettings{})
+	if err != nil {
+		t.Fatalf("UseMemoryDB: %v", err)
+	}
+	defer restore()
+
+	bias := 0.3
+	if _, err := object.AddOrgSettings(&object.OrgSettings{
+		Owner:                "acme",
+		RouterPrefer:         object.JSONMap[[]string]{"default": {"a"}},
+		RouterEnabledModels:  object.JSONMap[bool]{"gpt-4o": true},
+		RouterQualityBias:    &bias,
+		TrainingContribution: object.TrainingContributionEnabled,
+	}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	if err := deployRouterPreferTo("acme", map[string][]string{"code": {"b"}}); err != nil {
+		t.Fatalf("deploy: %v", err)
+	}
+
+	got, err := object.GetOrgSettings("acme")
+	if err != nil || got == nil {
+		t.Fatalf("read: %v (nil=%v)", err, got == nil)
+	}
+	if !got.RouterEnabledModels["gpt-4o"] {
+		t.Fatalf("allowlist WIPED by deploy: %v", got.RouterEnabledModels)
+	}
+	if got.RouterQualityBias == nil || *got.RouterQualityBias != 0.3 {
+		t.Fatalf("dial WIPED by deploy: %v", got.RouterQualityBias)
+	}
+	if got.TrainingContribution != object.TrainingContributionEnabled {
+		t.Fatalf("training consent WIPED by deploy: %q", got.TrainingContribution)
+	}
+	if got.RouterPrefer["default"][0] != "a" || got.RouterPrefer["code"][0] != "b" {
+		t.Fatalf("prefer merge wrong (want default:[a]+code:[b]): %v", got.RouterPrefer)
+	}
+}

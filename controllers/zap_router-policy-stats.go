@@ -239,20 +239,33 @@ func zapUpdateRouterPolicyHandler(_ context.Context, auth string, body []byte) (
 	if err != nil {
 		return zapRPSError(http.StatusOK, err.Error())
 	}
-	row := object.OrgSettings{
-		Owner:             org,
-		RouterPrefer:      object.JSONMap[[]string](reqBody.Prefer),
-		RouterCostCeiling: reqBody.CostCeiling,
-	}
+	// The FOUR router-policy fields this endpoint owns (empty/nil CLEARS that override).
+	prefer := object.JSONMap[[]string](reqBody.Prefer)
+	enabled := enabledModelsSet(reqBody.EnabledModels)
 	if existing == nil {
+		row := object.OrgSettings{
+			Owner:               org,
+			RouterPrefer:        prefer,
+			RouterCostCeiling:   reqBody.CostCeiling,
+			RouterEnabledModels: enabled,
+			RouterQualityBias:   reqBody.QualityBias,
+		}
 		if _, err := object.AddOrgSettings(&row); err != nil {
 			return zapRPSError(http.StatusOK, err.Error())
 		}
 	} else {
-		row.AutoRouting = existing.AutoRouting
-		row.DefaultSessionRouting = existing.DefaultSessionRouting
-		row.CreatedTime = existing.CreatedTime
-		if _, err := object.UpdateOrgSettings(org, &row); err != nil {
+		// MUTATE the existing row — touch ONLY the four owned fields, so every OTHER
+		// OrgSettings field is preserved. dbx Model(s).Update() writes ALL columns
+		// (including nil), so a fresh-row + preserve-list — as this handler used to do —
+		// silently NULLs the fields it forgets: RouterEnabledModels, RouterQualityBias,
+		// RouterStrategy, RouterOverrides, TrainingContribution. This IS the live gateway
+		// path (served natively over ZAP), so that bug dropped the allowlist/dial on every
+		// customer save. Mirrors the beego UpdateRouterPolicy.
+		existing.RouterPrefer = prefer
+		existing.RouterCostCeiling = reqBody.CostCeiling
+		existing.RouterEnabledModels = enabled
+		existing.RouterQualityBias = reqBody.QualityBias
+		if _, err := object.UpdateOrgSettings(org, existing); err != nil {
 			return zapRPSError(http.StatusOK, err.Error())
 		}
 	}
