@@ -179,3 +179,74 @@ func TestRouterPolicyBodyJSON(t *testing.T) {
 		t.Errorf("round-trip lost data: %+v", back)
 	}
 }
+
+// stubEnabledBias installs per-org + "*" lookups for the enabled-models allowlist and
+// the savings-vs-quality dial, backed by in-memory maps. Returns via t.Cleanup.
+func stubEnabledBias(t *testing.T, enabled map[string]map[string]bool, bias map[string]*float64) {
+	t.Helper()
+	prevE, prevB := orgRouterEnabledModelsLookup, orgRouterQualityBiasLookup
+	orgRouterEnabledModelsLookup = func(owner string) map[string]bool { return enabled[owner] }
+	orgRouterQualityBiasLookup = func(owner string) *float64 { return bias[owner] }
+	t.Cleanup(func() {
+		orgRouterEnabledModelsLookup = prevE
+		orgRouterQualityBiasLookup = prevB
+	})
+}
+
+// TestEffectiveRouterEnabledModelsFold: the org's own allowlist wins, else the "*" row,
+// else nil (nil = no restriction, every servable model eligible).
+func TestEffectiveRouterEnabledModelsFold(t *testing.T) {
+	stubEnabledBias(t, map[string]map[string]bool{
+		"acme": {"gpt-4o": true},
+		"*":    {"enso": true},
+	}, nil)
+	if got := effectiveRouterEnabledModels("acme"); len(got) != 1 || !got["gpt-4o"] {
+		t.Fatalf("acme allowlist = %v, want {gpt-4o} (own row wins)", got)
+	}
+	if got := effectiveRouterEnabledModels("other"); len(got) != 1 || !got["enso"] {
+		t.Fatalf("other allowlist = %v, want {enso} (star row)", got)
+	}
+	stubEnabledBias(t, nil, nil)
+	if got := effectiveRouterEnabledModels("nobody"); got != nil {
+		t.Fatalf("no-override allowlist = %v, want nil (all allowed)", got)
+	}
+}
+
+// TestEffectiveRouterQualityBiasFold: org > "*" > balanced default, clamped to [0,1].
+func TestEffectiveRouterQualityBiasFold(t *testing.T) {
+	f := func(v float64) *float64 { return &v }
+	stubEnabledBias(t, nil, map[string]*float64{"acme": f(0.2), "*": f(0.7)})
+	if got := effectiveRouterQualityBias("acme"); got != 0.2 {
+		t.Fatalf("acme bias = %v, want 0.2", got)
+	}
+	if got := effectiveRouterQualityBias("other"); got != 0.7 {
+		t.Fatalf("other bias = %v, want 0.7 (star row)", got)
+	}
+	stubEnabledBias(t, nil, nil)
+	if got := effectiveRouterQualityBias("nobody"); got != DefaultRouterQualityBias {
+		t.Fatalf("unset bias = %v, want %v (default)", got, DefaultRouterQualityBias)
+	}
+	stubEnabledBias(t, nil, map[string]*float64{"hi": f(9), "lo": f(-3)})
+	if got := effectiveRouterQualityBias("hi"); got != 1 {
+		t.Fatalf("bias 9 → %v, want 1 (clamped)", got)
+	}
+	if got := effectiveRouterQualityBias("lo"); got != 0 {
+		t.Fatalf("bias -3 → %v, want 0 (clamped)", got)
+	}
+}
+
+// TestEnabledModelsRoundTrip: the write-shape id slice ↔ persisted set, lowercased,
+// blanks dropped, empty → nil (clears the allowlist), read back sorted.
+func TestEnabledModelsRoundTrip(t *testing.T) {
+	set := enabledModelsSet([]string{"GPT-4o", " enso ", ""})
+	if len(set) != 2 || !set["gpt-4o"] || !set["enso"] {
+		t.Fatalf("enabledModelsSet = %v, want {gpt-4o, enso}", set)
+	}
+	ids := enabledModelIDs(set)
+	if len(ids) != 2 || ids[0] != "enso" || ids[1] != "gpt-4o" {
+		t.Fatalf("enabledModelIDs = %v, want sorted [enso gpt-4o]", ids)
+	}
+	if enabledModelsSet(nil) != nil {
+		t.Fatalf("empty ids must clear the allowlist (nil set)")
+	}
+}
