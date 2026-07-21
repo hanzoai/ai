@@ -149,9 +149,13 @@ func InitBalanceGate() {
 // users for legacy auth paths) and handles its own user resolution for
 // JWT and IAM API key auth paths.
 //
-// Design: fail-open. If Commerce is unreachable or the user cannot be
-// identified, the request is allowed through. The controller-level balance
-// check in resolveProviderForUser remains as a defense-in-depth backstop.
+// Posture: fail-CLOSED on balance, never on money. When billing is unconfigured
+// (no gate) or the billing subject cannot be identified, the request passes to the
+// downstream auth/controller layer, which re-checks (identity is that layer's job).
+// When the subject IS identified, a positive spendable balance is REQUIRED: a
+// known-insufficient balance is denied 402 (add credits), and a balance that cannot
+// be verified is denied 503 (retry) — both deny. AI is prepaid; a billing-backend
+// outage becomes a retryable 503, never free inference.
 func BalanceGateFilter(ctx *web.Context) {
 	if balanceGate == nil {
 		return
@@ -188,7 +192,7 @@ func BalanceGateFilter(ctx *web.Context) {
 		return
 	}
 
-	sufficient, balance := balanceGate.checkBalance(subject, namespace, userKey)
+	sufficient, deny, balance := balanceGate.checkBalance(subject, namespace, userKey)
 	if sufficient {
 		// Balance covers the call — but a plan also bounds how FAST a caller may burn
 		// its budget: the rolling-window AI-spend cap (Anthropic-style, resets
@@ -210,14 +214,14 @@ func BalanceGateFilter(ctx *web.Context) {
 		return
 	}
 
-	log.Info("balance_gate: insufficient balance subject=%s namespace=%s balance_cents=%d path=%s",
-		subject, namespace, balance, path)
+	// Denied. checkBalance decided WHICH denial: a known-insufficient balance (402,
+	// add credits) or a balance it could not verify (503, retry) — both fail-CLOSED.
+	log.Info("balance_gate: deny subject=%s namespace=%s balance_cents=%d code=%s status=%d path=%s",
+		subject, namespace, balance, deny.Code, deny.Status, path)
 
 	ctx.ResponseWriter.Header().Set("Content-Type", "application/json")
-	ctx.ResponseWriter.WriteHeader(http.StatusPaymentRequired)
-
-	body := `{"error":{"message":"Insufficient balance. Please add credits to your wallet at https://pay.hanzo.ai","type":"billing_error","code":"insufficient_balance"}}`
-	ctx.ResponseWriter.Write([]byte(body))
+	ctx.ResponseWriter.WriteHeader(deny.Status)
+	ctx.ResponseWriter.Write(deny.ErrorJSON())
 }
 
 // isReadMethod reports whether an HTTP method only READS — it lists or fetches a
@@ -423,20 +427,28 @@ func isJwtTokenLike(token string) bool {
 
 // ── Balance checking ────────────────────────────────────────────────────────
 
-// checkBalance returns whether the subject has a positive SPENDABLE balance
-// (ledger balance minus outstanding reservations). On a fresh ledger entry it
-// returns immediately; on a stale entry it serves the (settle-adjusted) stale
-// value and refreshes asynchronously; on a cold subject it fetches synchronously
-// and seeds the ledger.
+// checkBalance reports whether the subject has a positive SPENDABLE balance
+// (ledger balance minus outstanding reservations). When it does NOT, deny carries
+// the ready-to-emit BillingNotice distinguishing the two denial reasons — because a
+// funded caller behind a transient billing blip must never be told to add credits:
 //
-// Reading the ledger (not a private cache) makes the gate reservation-aware and
-// reflects every local settle, so the cache window can never serve a
-// stale-positive balance once the funds are spent.
+//   - KNOWN balance ≤ 0 (or fully reserved): genuine insufficiency → object.InsufficientBalance
+//     (402, "add credits"). Applies to a fresh/stale ledger entry AND a cold subject
+//     whose lookup SUCCEEDED with no spendable funds.
+//   - COLD subject whose lookup ERRORS: the balance could not be verified →
+//     object.BalanceUnavailable (503, "retry"). Still fail-CLOSED — the request is
+//     denied — only the message/code/status differ.
 //
-// Fail posture on a COLD subject whose Commerce lookup errors: fail CLOSED,
-// always — an outage must never become an unmetered bleed, and there is no
-// exempt or fail-open escape. userKey is retained for caller-signature parity.
-func (bg *BalanceGate) checkBalance(subject, namespace, userKey string) (sufficient bool, balanceCents int64) {
+// On a fresh ledger entry it returns immediately; on a stale entry it serves the
+// (settle-adjusted) stale value and refreshes asynchronously; on a cold subject it
+// fetches synchronously and seeds the ledger. Reading the ledger (not a private
+// cache) makes the gate reservation-aware and reflects every local settle, so the
+// cache window can never serve a stale-positive balance once the funds are spent.
+//
+// Fail posture is fail-CLOSED for BOTH denial reasons — an outage never becomes an
+// unmetered bleed, and there is no exempt or fail-open escape. deny is the zero
+// BillingNotice when sufficient. userKey is retained for caller-signature parity.
+func (bg *BalanceGate) checkBalance(subject, namespace, userKey string) (sufficient bool, deny object.BillingNotice, balanceCents int64) {
 	_ = userKey
 	bal, reserved, fresh, known := bg.ledger.Snapshot(subject)
 	if known {
@@ -445,21 +457,29 @@ func (bg *BalanceGate) checkBalance(subject, namespace, userKey string) (suffici
 			bg.refreshAsync(subject, namespace)
 		}
 		avail := bal - reserved
-		return avail > 0, avail
+		if avail > 0 {
+			return true, object.BillingNotice{}, avail
+		}
+		return false, object.InsufficientBalance(namespace, ""), avail
 	}
 
 	// Cold subject: fetch synchronously so the first request gets a real check.
 	balance, err := bg.fetchBalance(subject, namespace)
 	if err != nil {
-		// Balance unknown → DENY. A Commerce outage must never become an
-		// unmetered bleed, and there is no exempt/fail-open escape.
-		log.Warning("balance_gate: Commerce lookup failed for cold subject=%s: %v (fail-CLOSED)", subject, err)
-		return false, 0
+		// Balance UNVERIFIABLE (transient billing-backend failure) → DENY, fail-CLOSED:
+		// a balance we cannot read is never spent, and there is no exempt/fail-open
+		// escape. DISTINCT from insufficiency — the caller is asked to retry (503), not
+		// told to add credits, so a funded caller behind a blip is not misdirected.
+		log.Warning("balance_gate: balance unverifiable for cold subject=%s: %v (fail-CLOSED, retryable)", subject, err)
+		return false, object.BalanceUnavailable(), 0
 	}
 
 	bg.ledger.SetBalance(subject, balance)
 	avail, _ := bg.ledger.Available(subject)
-	return avail > 0, avail
+	if avail > 0 {
+		return true, object.BillingNotice{}, avail
+	}
+	return false, object.InsufficientBalance(namespace, ""), avail
 }
 
 // refreshAsync kicks off a background goroutine to refresh the ledger balance
