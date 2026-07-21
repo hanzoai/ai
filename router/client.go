@@ -60,6 +60,13 @@ type Client struct {
 	// Known, if set, restricts choices to models the caller can serve; a choice
 	// it rejects is skipped. nil accepts all.
 	Known func(string) bool
+	// Allow, if set, is the HARD allowlist (the org's enabled-models set) — a
+	// constraint the heuristic's last-resort fallback must NOT relax, unlike Known
+	// (servability), which it does relax to avoid dead-ending `auto`. So a model the
+	// org has DISABLED is never routed to, even when no servable preferred model
+	// remains; only servability is relaxed as a last resort, never the allowlist.
+	// nil = no allowlist (the last resort relaxes everything, the historical behavior).
+	Allow func(string) bool
 	// Explore is the epsilon exploration floor in [0,1]: the probability the
 	// heuristic samples a RANDOM servable NON-champion arm instead of the champion,
 	// so the bandit keeps collecting reward on the whole pool (and reacts to newly
