@@ -121,3 +121,24 @@ func TestRoutingPolicy_ZeroPolicyMatchesRouteDecision(t *testing.T) {
 		t.Fatalf("unexpected zero-policy decision: %+v", got)
 	}
 }
+
+// TestLastResortRespectsAllowlist pins the enabled-models allowlist as a HARD constraint
+// the heuristic's last-resort fallback must not relax. Prefer offers "dear" first then
+// "cheap"; the org disabled "dear" (Allow admits only "cheap"); Known rejects everything
+// (nothing "servable"). The last resort must relax servability but NEVER the allowlist —
+// so it routes to "cheap", never the disabled "dear". With no allowlist (Allow nil) it
+// relaxes to all, the historical behavior.
+func TestLastResortRespectsAllowlist(t *testing.T) {
+	c := Client{
+		Policy: Policy{Prefer: map[string][]string{DefaultTaskKey: {"dear", "cheap"}}},
+		Known:  func(string) bool { return false },              // nothing servable
+		Allow:  func(id string) bool { return id == "cheap" },   // only cheap allowed
+	}
+	if d := c.RouteDecisionFor(context.Background(), Request{Text: "hi"}, Slo{}, RoutingPolicy{}); d.Model != "cheap" {
+		t.Fatalf("last resort routed to %q, want cheap (relax servability, NEVER the allowlist)", d.Model)
+	}
+	c.Allow = nil // no allowlist → last resort relaxes to all, historical behavior.
+	if d := c.RouteDecisionFor(context.Background(), Request{Text: "hi"}, Slo{}, RoutingPolicy{}); d.Model != "dear" {
+		t.Fatalf("no allowlist → last resort = %q, want dear (relax-all)", d.Model)
+	}
+}
