@@ -22,7 +22,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/hanzoai/iam-v1"
+	"github.com/hanzoai/ai/internal/iam"
 )
 
 // fakeCommerceBalance stands up a stub of commerce GET /v1/billing/balance that
