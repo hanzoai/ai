@@ -15,7 +15,7 @@
 package object
 
 import (
-	iam "github.com/hanzoai/iam-v1"
+	iam "github.com/hanzoai/ai/internal/iam"
 )
 
 func IsAdmin(user *iam.User) bool {
