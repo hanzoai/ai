@@ -20,7 +20,7 @@ import (
 
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/i18n"
-	iam "github.com/hanzoai/iam-v1"
+	iam "github.com/hanzoai/ai/internal/iam"
 )
 
 type IamProvider struct {

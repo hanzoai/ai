@@ -20,7 +20,7 @@ import (
 	"testing"
 
 	"github.com/hanzoai/ai/object"
-	iam "github.com/hanzoai/iam-v1"
+	iam "github.com/hanzoai/ai/internal/iam"
 )
 
 const rawConnKey = "sk-raw-super-secret-do-not-persist-1234567890"
