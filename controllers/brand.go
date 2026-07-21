@@ -21,7 +21,7 @@ import (
 	"sync"
 
 	"github.com/hanzoai/ai/conf"
-	iam "github.com/hanzoai/iam-v1"
+	iam "github.com/hanzoai/ai/internal/iam"
 	"golang.org/x/oauth2"
 )
 

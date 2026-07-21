@@ -1,0 +1,96 @@
+// Copyright 2023-2026 Hanzo AI Inc. All Rights Reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package iam
+
+import (
+	"crypto/x509"
+	"encoding/pem"
+	"errors"
+	"fmt"
+
+	"github.com/golang-jwt/jwt/v4"
+)
+
+// OrgRef is one entry of the signed `orgs` membership-set claim: an org the
+// subject may act in, plus a coarse role there.
+type OrgRef struct {
+	Org  string `json:"org"`
+	Role string `json:"role,omitempty"`
+}
+
+// Claims is the verified access-token claim set. It embeds the User (so a token
+// carries the subject's profile) plus the standard registered claims and the
+// Hanzo-specific token/org/billing claims. Shape matches the IAM server so the
+// /get-account response promotes every field identically.
+type Claims struct {
+	User
+	AccessToken string `json:"accessToken"`
+	jwt.RegisteredClaims
+	TokenType        string   `json:"tokenType"`
+	RefreshTokenType string   `json:"TokenType"`
+	SigninMethod     string   `json:"signinMethod"`
+	Orgs             []OrgRef `json:"orgs,omitempty"`
+	// BillingAccount is the signed `billing_account` claim: WHO PAYS for this
+	// credential, stated by IAM at mint time. Wire is "<kind>:<subject>"
+	// (e.g. "org:acme"). Empty when IAM could not attribute; a reader must fall
+	// back rather than bill a guess.
+	BillingAccount string `json:"billing_account,omitempty"`
+}
+
+// ParseJwtToken verifies a JWT's signature against the IAM server's published
+// JWKS (proper OIDC) and returns its claims. RS256/RS512/ES256/ES512 only.
+func ParseJwtToken(token string) (*Claims, error) { return ensureClient().ParseJwtToken(token) }
+
+// ParseJwtToken verifies token against this client's IAM endpoint JWKS, falling
+// back to a configured certificate PEM only when JWKS is unreachable.
+func (c *Client) ParseJwtToken(token string) (*Claims, error) {
+	t, err := jwt.ParseWithClaims(token, &Claims{}, func(token *jwt.Token) (interface{}, error) {
+		switch token.Method.Alg() {
+		case jwt.SigningMethodES256.Alg(), jwt.SigningMethodES512.Alg(),
+			jwt.SigningMethodRS256.Alg(), jwt.SigningMethodRS512.Alg():
+			// Prefer JWKS (canonical, public keys) over any configured cert PEM.
+			if endpoint := c.endpoint(); endpoint != "" {
+				kid, _ := token.Header["kid"].(string)
+				if pk, jwksErr := jwksPublicKey(endpoint, kid); jwksErr == nil {
+					return pk, nil
+				}
+			}
+			return publicKeyFromPEM([]byte(c.Certificate))
+		default:
+			return nil, fmt.Errorf("iam: unsupported signing method: %v", token.Header["alg"])
+		}
+	})
+	if t != nil {
+		if claims, ok := t.Claims.(*Claims); ok && t.Valid {
+			return claims, nil
+		}
+	}
+	return nil, err
+}
+
+func publicKeyFromPEM(pemBytes []byte) (interface{}, error) {
+	block, _ := pem.Decode(pemBytes)
+	if block == nil {
+		return nil, errors.New("iam: not valid PEM")
+	}
+	if block.Type == "CERTIFICATE" {
+		cert, err := x509.ParseCertificate(block.Bytes)
+		if err != nil {
+			return nil, fmt.Errorf("iam: parse certificate: %w", err)
+		}
+		return cert.PublicKey, nil
+	}
+	return x509.ParsePKIXPublicKey(block.Bytes)
+}
