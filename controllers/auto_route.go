@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -170,6 +171,14 @@ func resolveAutoModel(requested, orgId, userId, requestId string, authUser *iam.
 		}
 		return len(allow) == 0 || allow[strings.ToLower(strings.TrimSpace(id))]
 	})
+	// The HARD allowlist floor: the heuristic's last-resort fallback relaxes servability
+	// but must NEVER relax this, so a DISABLED model is never routed to even when no
+	// servable preferred model remains. Left nil when the org set no allowlist (the
+	// last resort then relaxes to all, unchanged). Set BEFORE the dial narrows Known, so
+	// it is the pure allowlist — the soft cost budget is relaxable, the allowlist is not.
+	if len(allow) > 0 {
+		client.Allow = func(id string) bool { return allow[strings.ToLower(strings.TrimSpace(id))] }
+	}
 	// Fold the per-org router policy (org > "*" > conf) into this decision: the
 	// org's own Prefer table wins per task key, and its cost ceiling fills the
 	// SLO when the caller didn't send X-Max-Cost (an explicit header wins).
@@ -200,7 +209,16 @@ func resolveAutoModel(requested, orgId, userId, requestId string, authUser *iam.
 	}
 	dec := client.RouteDecisionFor(context.Background(), rreq, slo, rp)
 	if dec.Model == "" {
-		return "", "", false
+		// The org's allowlist admitted no model its prefer table offers for this task.
+		// Rather than dead-end `auto`, route to a deterministic ALLOWED + servable model
+		// (the org restricted routing to these, so any is a valid answer) — an allowlist
+		// always resolves to one of ITS OWN, never a disabled model and never empty. dec.Task
+		// is already the classified task. When there is no allowlist, behavior is unchanged.
+		if m := firstAllowedServableModel(allow, orgId, authUser, cfg); m != "" {
+			dec.Model = m
+		} else {
+			return "", "", false
+		}
 	}
 
 	// Congestion-aware mean-field layer — GATED, default OFF (meanFieldRoute returns the
@@ -236,6 +254,29 @@ func resolveAutoModel(requested, orgId, userId, requestId string, authUser *iam.
 	})
 
 	return routedModel, string(dec.Task), true
+}
+
+// firstAllowedServableModel returns the lexicographically-first model in the org's
+// enabled-models allowlist that this org can actually serve (has a route AND passes the
+// tier/grant check), or "" if none is. Deterministic, so the same org+allowlist always
+// resolves identically. Consulted ONLY as the allowlist's fallback of last resort — when
+// the heuristic table offered no allowed model for the task — so `auto` still resolves to
+// one of the org's OWN chosen models instead of dead-ending.
+func firstAllowedServableModel(allow map[string]bool, orgId string, authUser *iam.User, cfg *ModelConfig) string {
+	if len(allow) == 0 || cfg == nil {
+		return ""
+	}
+	ids := make([]string, 0, len(allow))
+	for id := range allow {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	for _, id := range ids {
+		if resolveModelRouteForOrg(id, orgId) != nil && modelServable(id, orgId, authUser) {
+			return id
+		}
+	}
+	return ""
 }
 
 // applyRouterQualityBias tilts routing by the org's savings-vs-quality dial (bias in
