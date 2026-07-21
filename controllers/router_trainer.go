@@ -31,7 +31,7 @@ import (
 // This CLOSES the router flywheel end-to-end using ONLY shipped mechanisms and
 // real reward data — no separate ML engine, no fabricated model:
 //
-//	feedback → reward:  clients (and the self-probe) POST /v1/add-routing-reward,
+//	feedback → reward:  clients (and the self-probe) POST /v1/feedback,
 //	                    which lands on the RoutingEvent row (object.AttachRoutingReward).
 //	fit:                per (task, model) empirical mean reward over the rewarded
 //	                    ledger — the honest bandit statistic (fitRouterHeads, pure).

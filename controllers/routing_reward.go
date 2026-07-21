@@ -44,8 +44,8 @@ var (
 //	{request_id, signal:"dismiss"}                 (NO reward — analytics only)
 //
 // Reward (an explicit 0..1) stays accepted as an internal override. No prompt text is
-// ever accepted or stored. `/v1/feedback` is canonical; `/v1/add-routing-reward` is a
-// thin alias on the same handler — one endpoint, one server-owned reward mapping.
+// ever accepted or stored. `/v1/feedback` is the ONE reward endpoint (the old
+// `/v1/add-routing-reward` alias was dropped) — one endpoint, one server-owned reward mapping.
 type routingRewardRequest struct {
 	RequestId string   `json:"request_id"`
 	Signal    string   `json:"signal,omitempty"`
@@ -250,33 +250,10 @@ type rewardTuple struct {
 	At       string          `json:"at"`
 }
 
-// ExportRoutingRewards streams the LABELED training tuples — the rewarded slice of
-// the routing ledger — as JSONL for the enso loop's fit_base/observe. Each line is
-// the dumb tuple {features, model, task?, reward, at}: the engine feature vector,
-// the routed model, the outcome reward, and the decision time (createdTime, when
-// the features were produced — the reward is the label attached later). Super-admin
-// only (platform-wide), like the raw ledger export. Filters: ?org= and ?since=.
-//
-// @Title ExportRoutingRewards
-// @Tag Router API
-// @Description stream rewarded routing tuples (features, model, reward) as JSONL for enso training (super admin only)
-// @Param org query string false "filter to one org"
-// @Param since query string false "only events at/after this RFC3339 timestamp"
-// @Success 200 {string} string "JSONL, one training tuple per line"
-// @router /export-routing-rewards [get]
-func (c *ApiController) ExportRoutingRewards() {
-	if !c.routerAdminAuthorized() {
-		return
-	}
-	events, err := getRewardedRoutingEvents(c.Input().Get("org"), c.Input().Get("since"))
-	if err != nil {
-		c.ResponseError(err.Error())
-		return
-	}
-	c.Ctx.Output.Header("Content-Type", "application/x-ndjson")
-	_ = writeRoutingRewardsJSONL(c.Ctx.ResponseWriter, events)
-	c.EnableRender = false
-}
+// The rewarded-tuple export (GET /v1/router/rewards) is served ZAP-native — the ONE
+// implementation — by zapExportRoutingRewardsHandler in zap_router-policy-stats.go
+// (same super-admin-OR-ROUTER_ADMIN_TOKEN gate, same getRewardedRoutingEvents +
+// writeRoutingRewardsJSONL below). No beego twin.
 
 // writeRoutingRewardsJSONL streams rewarded events as JSONL, one training tuple
 // per line. Pure in its inputs, so the export contract is unit-testable without a

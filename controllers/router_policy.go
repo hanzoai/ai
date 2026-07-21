@@ -15,7 +15,6 @@
 package controllers
 
 import (
-	"encoding/json"
 	"sort"
 	"strings"
 
@@ -123,107 +122,11 @@ func confRouterPolicy() (map[string][]string, float64) {
 	return cfg.ConfRouterPolicy()
 }
 
-// GetRouterPolicy returns the effective router policy resolved for the CALLER's
-// own org (org > "*" > conf), plus whether the org has its own override. Org
-// admin-gated (not super-admin): an org's own admins configure its own router,
-// never another org's. Self-scoped via c.GetOrg() — the owner is never taken from
-// the request body, so a caller cannot read or write another tenant's policy.
-//
-// @Title GetRouterPolicy
-// @Tag Router API
-// @Description get the effective router policy (prefer + cost ceiling) resolved for the caller's org
-// @Success 200 {object} controllers.routerPolicyBody The Response object
-// @router /get-router-policy [get]
-func (c *ApiController) GetRouterPolicy() {
-	if !c.RequireAdmin() {
-		return
-	}
-	policy, err := resolvedRouterPolicy(c.GetOrg())
-	if err != nil {
-		c.ResponseError(err.Error())
-		return
-	}
-	c.ResponseOk(policy)
-}
-
-// UpdateRouterPolicy upserts the caller's OWN org router policy (RouterPrefer +
-// RouterCostCeiling on the OrgSettings row). The owner is forced to c.GetOrg();
-// any owner in the body is ignored. An empty Prefer + 0 CostCeiling clears the
-// override (writes nil/0, reverting that org to "*" then conf) while preserving
-// the org's AutoRouting / DefaultSessionRouting — the router policy is an
-// orthogonal concern. Always upsert, never delete: an all-empty row is a
-// harmless no-op (all fields unset read as unset), and deleting would clobber
-// AutoRouting. Org admin-gated.
-//
-// @Title UpdateRouterPolicy
-// @Tag Router API
-// @Description upsert the caller's own org router policy (prefer + cost ceiling)
-// @Param body body controllers.routerPolicyBody true "The router policy"
-// @Success 200 {object} controllers.routerPolicyBody The resolved policy
-// @router /update-router-policy [post]
-func (c *ApiController) UpdateRouterPolicy() {
-	if !c.RequireAdmin() {
-		return
-	}
-	org := c.GetOrg()
-	if org == "" {
-		c.ResponseError(c.T("auth:Please sign in first"))
-		return
-	}
-
-	var body routerPolicyBody
-	if err := json.Unmarshal(c.Ctx.Input.RequestBody, &body); err != nil {
-		c.ResponseError(err.Error())
-		return
-	}
-
-	existing, err := object.GetOrgSettings(org)
-	if err != nil {
-		c.ResponseError(err.Error())
-		return
-	}
-	// The FOUR router-policy fields this endpoint owns. An empty/nil value CLEARS that
-	// override (reverts the org to "*" then conf).
-	prefer := object.JSONMap[[]string](body.Prefer)
-	enabled := enabledModelsSet(body.EnabledModels)
-	if existing == nil {
-		// New row. AutoRouting/SessionRouting stay unset until set on their own endpoint;
-		// AddOrgSettings stamps CreatedTime/UpdatedTime.
-		row := object.OrgSettings{
-			Owner:               org,
-			RouterPrefer:        prefer,
-			RouterCostCeiling:   body.CostCeiling,
-			RouterEnabledModels: enabled,
-			RouterQualityBias:   body.QualityBias,
-		}
-		if _, err := object.AddOrgSettings(&row); err != nil {
-			c.ResponseError(err.Error())
-			return
-		}
-	} else {
-		// MUTATE the existing row, touching ONLY the four owned fields — so every other
-		// OrgSettings field (AutoRouting, DefaultSessionRouting, TrainingContribution,
-		// RouterOverrides, the Judge* dense-reward config, …) is preserved by construction,
-		// and a field newly added to OrgSettings can never be silently zeroed by a
-		// router-policy write (the fresh-row + explicit-preserve-list approach used to miss
-		// exactly those newer fields).
-		existing.RouterPrefer = prefer
-		existing.RouterCostCeiling = body.CostCeiling
-		existing.RouterEnabledModels = enabled
-		existing.RouterQualityBias = body.QualityBias
-		if _, err := object.UpdateOrgSettings(org, existing); err != nil {
-			c.ResponseError(err.Error())
-			return
-		}
-	}
-
-	policy, err := resolvedRouterPolicy(org)
-	if err != nil {
-		c.ResponseError(err.Error())
-		return
-	}
-	c.ResponseOk(policy)
-}
+// The router-policy read/write endpoints (GET|PUT /v1/router/policy) are served
+// ZAP-native — the ONE implementation — by zapGet/UpdateRouterPolicyHandler in
+// controllers/zap_router-policy-stats.go, which call the shared resolvedRouterPolicy
+// + enabledModelsSet + the fold helpers below. There is deliberately no beego twin:
+// the twin's mutate-vs-replace drift is what silently NULLed the org allowlist/dial.
 
 // ── Per-org fold ────────────────────────────────────────────────────────
 //
