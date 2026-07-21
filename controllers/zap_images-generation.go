@@ -129,7 +129,7 @@ func zapImagesHandler(ctx context.Context, auth string, body []byte) (*zap.Messa
 		subject := account.Payer(account.Credential{Owner: authUser.Owner, Name: authUser.Name}).Subject()
 		var ok bool
 		if hold, ok = reserveBudget(subject, imageCostCents(req.Model, n)); !ok {
-			return object.BuildCloudResponse(402, nil, "Insufficient balance for the estimated image cost. add credits to your wallet at https://pay.hanzo.ai")
+			return object.BuildCloudResponse(402, nil, object.InsufficientBalance(authUser.Owner, "image cost").Message)
 		}
 	}
 	defer hold.settle(0)
