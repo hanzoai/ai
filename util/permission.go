@@ -18,7 +18,7 @@ package util
 import (
 	"strings"
 
-	iam "github.com/hanzoai/iam"
+	iam "github.com/hanzoai/iam-v1"
 )
 
 const (

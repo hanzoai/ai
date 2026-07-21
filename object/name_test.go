@@ -23,7 +23,7 @@ import (
 
 	"github.com/hanzoai/ai/controllers"
 	"github.com/hanzoai/ai/object"
-	iam "github.com/hanzoai/iam"
+	iam "github.com/hanzoai/iam-v1"
 )
 
 var userTag = "user"

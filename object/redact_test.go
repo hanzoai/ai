@@ -19,7 +19,7 @@ import (
 	"strings"
 	"testing"
 
-	iam "github.com/hanzoai/iam"
+	iam "github.com/hanzoai/iam-v1"
 )
 
 // TestRedactUserSecrets asserts every credential field is zeroed and that none

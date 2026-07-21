@@ -23,7 +23,7 @@ import (
 
 	"github.com/hanzoai/ai/controllers"
 	web "github.com/hanzoai/ai/web"
-	iam "github.com/hanzoai/iam"
+	iam "github.com/hanzoai/iam-v1"
 )
 
 // fakeSession is a minimal in-memory session.Store for filter tests (the real
