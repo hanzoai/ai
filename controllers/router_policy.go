@@ -182,31 +182,36 @@ func (c *ApiController) UpdateRouterPolicy() {
 		c.ResponseError(err.Error())
 		return
 	}
-	row := object.OrgSettings{
-		Owner:               org,
-		RouterPrefer:        object.JSONMap[[]string](body.Prefer),
-		RouterCostCeiling:   body.CostCeiling,
-		RouterEnabledModels: enabledModelsSet(body.EnabledModels),
-		RouterQualityBias:   body.QualityBias,
-	}
+	// The FOUR router-policy fields this endpoint owns. An empty/nil value CLEARS that
+	// override (reverts the org to "*" then conf).
+	prefer := object.JSONMap[[]string](body.Prefer)
+	enabled := enabledModelsSet(body.EnabledModels)
 	if existing == nil {
-		// New row: AutoRouting/SessionRouting stay unset until set on their own
-		// endpoint. AddOrgSettings stamps CreatedTime/UpdatedTime.
+		// New row. AutoRouting/SessionRouting stay unset until set on their own endpoint;
+		// AddOrgSettings stamps CreatedTime/UpdatedTime.
+		row := object.OrgSettings{
+			Owner:               org,
+			RouterPrefer:        prefer,
+			RouterCostCeiling:   body.CostCeiling,
+			RouterEnabledModels: enabled,
+			RouterQualityBias:   body.QualityBias,
+		}
 		if _, err := object.AddOrgSettings(&row); err != nil {
 			c.ResponseError(err.Error())
 			return
 		}
 	} else {
-		// Preserve the orthogonal concerns this endpoint does NOT own — AutoRouting /
-		// DefaultSessionRouting / TrainingContribution / CreatedTime — so a router-policy
-		// write never clobbers them. The four router-policy fields (Prefer / Ceiling /
-		// EnabledModels / QualityBias) ARE owned here and set from the body above; an
-		// empty/nil value clears that override (reverts the org to "*" then conf).
-		row.AutoRouting = existing.AutoRouting
-		row.DefaultSessionRouting = existing.DefaultSessionRouting
-		row.TrainingContribution = existing.TrainingContribution
-		row.CreatedTime = existing.CreatedTime
-		if _, err := object.UpdateOrgSettings(org, &row); err != nil {
+		// MUTATE the existing row, touching ONLY the four owned fields — so every other
+		// OrgSettings field (AutoRouting, DefaultSessionRouting, TrainingContribution,
+		// RouterOverrides, the Judge* dense-reward config, …) is preserved by construction,
+		// and a field newly added to OrgSettings can never be silently zeroed by a
+		// router-policy write (the fresh-row + explicit-preserve-list approach used to miss
+		// exactly those newer fields).
+		existing.RouterPrefer = prefer
+		existing.RouterCostCeiling = body.CostCeiling
+		existing.RouterEnabledModels = enabled
+		existing.RouterQualityBias = body.QualityBias
+		if _, err := object.UpdateOrgSettings(org, existing); err != nil {
 			c.ResponseError(err.Error())
 			return
 		}
