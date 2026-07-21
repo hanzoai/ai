@@ -17,7 +17,7 @@ package controllers
 import (
 	"testing"
 
-	iam "github.com/hanzoai/iam"
+	iam "github.com/hanzoai/iam-v1"
 )
 
 // TestRetrievalOwnerBindsToKeyNotOrigin proves the RAG tenant is bound to the

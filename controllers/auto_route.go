@@ -26,7 +26,7 @@ import (
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/router"
 	"github.com/hanzoai/go-openai"
-	iam "github.com/hanzoai/iam"
+	iam "github.com/hanzoai/iam-v1"
 )
 
 // orgAutoRoutingLookup resolves an org's own auto-routing preference ("",

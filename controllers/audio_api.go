@@ -22,7 +22,7 @@ import (
 
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
-	iam "github.com/hanzoai/iam"
+	iam "github.com/hanzoai/iam-v1"
 )
 
 // audioSpeechRequest is the OpenAI /v1/audio/speech body: synthesize `input` with

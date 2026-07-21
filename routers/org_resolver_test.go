@@ -17,7 +17,7 @@ package routers
 import (
 	"testing"
 
-	iam "github.com/hanzoai/iam"
+	iam "github.com/hanzoai/iam-v1"
 )
 
 // TestGetOrgIgnoresSpoofedHeaderWhenUnauth is the core #8 assertion: an

@@ -38,7 +38,7 @@ import (
 	"strings"
 
 	"github.com/hanzoai/account"
-	iam "github.com/hanzoai/iam"
+	iam "github.com/hanzoai/iam-v1"
 	"github.com/luxfi/zap"
 
 	"github.com/hanzoai/ai/object"
