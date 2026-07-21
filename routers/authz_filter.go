@@ -88,9 +88,8 @@ var superAdminEndpoints = map[string]struct{}{
 	"admin/reload-model-config": {}, "admin/refresh-model-pricing": {},
 	// DO usage backfill — writes the platform-wide financial ledger (cloud_usage).
 	"admin/usage/backfill-do": {},
-	// Per-org feature settings (auto-routing enable/disable, …).
-	"get-org-settings-list": {}, "get-org-settings": {},
-	"add-org-settings": {}, "update-org-settings": {}, "delete-org-settings": {},
+	// Per-org settings is served ZAP-native (/v1/org/settings, super-admin gated in the
+	// handler) — no beego route, so no filter entry.
 	// Routing-decision + reward training exports are NOT hard super-admin-gated here:
 	// they accept EITHER a super admin OR a KMS-provisioned ROUTER_ADMIN_TOKEN service
 	// token (spark's retrain). The handler (routerAdminAuthorized) is authoritative;
@@ -123,13 +122,10 @@ var authRequiredEndpoints = map[string]struct{}{
 	"index": {}, "search": {}, "search/stats": {}, // doc index write + search
 	"docs/ingest": {},                                    // unified RAG ingest (github/crawl/s3)
 	"embed":       {}, "query": {}, "query_multiple": {}, // librechat-compat RAG
-	"documents":            {}, // librechat-compat DELETE documents
-	"get-routing-defaults": {}, // per-caller routing defaults — any authenticated user, never anonymous
-	// Training-data exports: a present credential is required at the filter (anonymous
-	// → 401); the handler (routerAdminAuthorized) enforces super-admin OR ROUTER_ADMIN_TOKEN.
-	"export-routing-ledger": {}, "export-routing-rewards": {},
-	"get-router-policy":      {}, // per-org router policy read — org-admin gated in controller, never anonymous
-	"update-router-policy":   {}, // per-org router policy write — org-admin gated in controller, never anonymous
+	"documents": {}, // librechat-compat DELETE documents
+	// The routing-defaults read (/v1/router/defaults), the router-policy read/write
+	// (/v1/router/policy), and the training-data exports (/v1/router/{ledger,rewards})
+	// are ZAP-native now — self-authing in their handlers, no beego route to gate here.
 	"export-my-routing-data": {}, // self-scoped routing-data export — org-admin gated in controller, never anonymous
 	"delete-my-routing-data": {}, // self-scoped routing-data delete — org-admin gated in controller, never anonymous
 }

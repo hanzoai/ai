@@ -67,6 +67,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strings"
 
@@ -148,11 +149,8 @@ func registerZapVerticalsAndMisc() {
 	registerCloud("prometheus.metrics", zapGetMetricsHandler)
 	registerCloud("activities.list", zapGetActivitiesHandler)
 
-	registerCloud("org-settings.list", zapGetOrgSettingsListHandler)
-	registerCloud("org-settings.get", zapGetOrgSettingsHandler)
-	registerCloud("org-settings.add", zapAddOrgSettingsHandler)
-	registerCloud("org-settings.update", zapUpdateOrgSettingsHandler)
-	registerCloud("org-settings.delete", zapDeleteOrgSettingsHandler)
+	// Per-org settings is now the method-aware HTTP-shaped route registered below
+	// (GET/PUT/DELETE on one noun) — no native-cloud method table for it.
 
 	registerCloud("agents.dashboard-url", zapGetAgentsDashboardUrlHandler)
 
@@ -221,11 +219,11 @@ func registerZapVerticalsAndMisc() {
 	registerGatewayPath("/v1/metrics", zapGetMetricsHandler)
 	registerGatewayPath("/v1/get-activities", zapGetActivitiesHandler)
 
-	registerGatewayPath("/v1/get-org-settings-list", zapGetOrgSettingsListHandler)
-	registerGatewayPath("/v1/get-org-settings", zapGetOrgSettingsHandler)
-	registerGatewayPath("/v1/add-org-settings", zapAddOrgSettingsHandler)
-	registerGatewayPath("/v1/update-org-settings", zapUpdateOrgSettingsHandler)
-	registerGatewayPath("/v1/delete-org-settings", zapDeleteOrgSettingsHandler)
+	// Per-org settings (super-admin) — ONE RESTful noun, method-aware: GET/PUT/DELETE
+	// /v1/org/settings + GET /v1/org/settings/list. HTTP-shaped (registerGatewayRoute)
+	// so the one prefix carries every verb; the handler dispatches by method + the
+	// /list sub-path. The /v1/org/settings prefix also matches /v1/org/settings/list.
+	registerGatewayRoute("/v1/org/settings", zapOrgSettingsHandler)
 
 	registerGatewayPath("/v1/get-agents-dashboard-url", zapGetAgentsDashboardUrlHandler)
 }
@@ -263,8 +261,7 @@ func zapMiscError(status uint32, msg string) (*zap.Message, error) {
 // zapMiscSuperAdmin is the group's slice of routers/authz_filter.go
 // superAdminEndpoints — always super-admin gated, never relaxed by preview mode.
 var zapMiscSuperAdmin = map[string]struct{}{
-	"get-org-settings-list": {}, "get-org-settings": {},
-	"add-org-settings": {}, "update-org-settings": {}, "delete-org-settings": {},
+	"org/settings": {}, // the RESTful per-org settings noun (GET/PUT/DELETE + /list)
 }
 
 // zapMiscExempt is the group's slice of permissionFilter's benign-read/self-scoped
@@ -1370,119 +1367,114 @@ func zapGetActivitiesHandler(_ context.Context, auth string, body []byte) (*zap.
 	return zapMiscOk(activities)
 }
 
-// ── org_settings.go parity (super-admin gated, upsert on update) ────────────────
+// ── org_settings.go parity (super-admin gated, PATCH-merge upsert) ──────────────
+//
+// ONE RESTful noun, method-aware — the SOLE implementation of the per-org settings
+// surface (the beego org_settings.go controller was deleted). GET/PUT/DELETE
+// /v1/org/settings + GET /v1/org/settings/list. Super-admin gated ONCE at the top.
+// Owner is the ?owner= query param (the beego handlers read ?owner; a bare
+// OrgSettings body carries it as a fallback), never an identity source.
+//
+// PUT is a PATCH-MERGE upsert (mirrors the deleted beego UpdateOrgSettings): the body
+// is unmarshaled ONTO the existing row (or a fresh one keyed by owner), so a field
+// ABSENT from the body keeps its current value. dbx Model(s).Update() writes ALL
+// columns, so a replace would NULL every field the body didn't restate — a partial
+// write (e.g. just autoRouting from the admin toggle) must never wipe the org's
+// RouterPrefer/RouterEnabledModels/RouterQualityBias/…. To CLEAR a field, send it
+// explicitly ({"routerPrefer":{}}). This is the fix the old body-only ZAP twin lacked
+// (it could not even see ?owner — the reason this route is now HTTP-shaped).
+func zapOrgSettingsHandler(_ context.Context, method, path, query, auth string, body []byte) (*zap.Message, error) {
+	if deny := zapMiscAuthz("org/settings", zapPrincipalUser(auth)); deny != nil {
+		return deny, nil
+	}
 
-func zapGetOrgSettingsListHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if deny := zapMiscAuthz("get-org-settings-list", zapPrincipalUser(auth)); deny != nil {
-		return deny, nil
+	// /v1/org/settings/list — every row for an owner (default "admin").
+	if strings.HasPrefix(path, "/v1/org/settings/list") {
+		if strings.ToUpper(method) != http.MethodGet {
+			return zapMiscError(http.StatusMethodNotAllowed, "method not allowed: "+method)
+		}
+		owner := zapOrgSettingsOwner(query, nil)
+		if owner == "" {
+			owner = "admin"
+		}
+		settings, err := object.GetOrgSettingsList(owner)
+		if err != nil {
+			return zapMiscError(200, err.Error())
+		}
+		return zapMiscOk(settings)
 	}
-	req, deny := zapMiscDecodeList(body)
-	if deny != nil {
-		return deny, nil
+
+	switch strings.ToUpper(method) {
+	case http.MethodGet:
+		owner := zapOrgSettingsOwner(query, nil)
+		if owner == "" {
+			return zapMiscError(200, "owner is required")
+		}
+		settings, err := object.GetOrgSettings(owner)
+		if err != nil {
+			return zapMiscError(200, err.Error())
+		}
+		return zapMiscOk(settings)
+
+	case http.MethodPut:
+		owner := zapOrgSettingsOwner(query, body)
+		if owner == "" {
+			return zapMiscError(200, "owner is required")
+		}
+		// Upsert keys on owner only, so a never-configured org still takes effect.
+		existing, err := object.GetOrgSettings(owner)
+		if err != nil {
+			return zapMiscError(200, err.Error())
+		}
+		target := existing
+		if target == nil {
+			target = &object.OrgSettings{Owner: owner}
+		}
+		if err := json.Unmarshal(body, target); err != nil { // PATCH-merge onto the row
+			return zapMiscError(400, "invalid request: "+err.Error())
+		}
+		target.Owner = owner
+		var success bool
+		if existing == nil {
+			success, err = object.AddOrgSettings(target)
+		} else {
+			success, err = object.UpdateOrgSettings(owner, target)
+		}
+		if err != nil {
+			return zapMiscError(200, err.Error())
+		}
+		return zapMiscOk(success)
+
+	case http.MethodDelete:
+		owner := zapOrgSettingsOwner(query, body)
+		if owner == "" {
+			return zapMiscError(200, "owner is required")
+		}
+		success, err := object.DeleteOrgSettings(&object.OrgSettings{Owner: owner})
+		if err != nil {
+			return zapMiscError(200, err.Error())
+		}
+		return zapMiscOk(success)
 	}
-	owner := req.Owner
-	if owner == "" {
-		owner = "admin"
-	}
-	settings, err := object.GetOrgSettingsList(owner)
-	if err != nil {
-		return zapMiscError(200, err.Error())
-	}
-	return zapMiscOk(settings)
+	return zapMiscError(http.StatusMethodNotAllowed, "method not allowed: "+method)
 }
 
-func zapGetOrgSettingsHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if deny := zapMiscAuthz("get-org-settings", zapPrincipalUser(auth)); deny != nil {
-		return deny, nil
+// zapOrgSettingsOwner resolves the target org from the ?owner= query, falling back to
+// the body's own Owner field (a bare OrgSettings body carries it). Never an identity
+// source — the super-admin gate above is the authz.
+func zapOrgSettingsOwner(query string, body []byte) string {
+	if q, err := url.ParseQuery(query); err == nil {
+		if owner := q.Get("owner"); owner != "" {
+			return owner
+		}
 	}
-	req, deny := zapMiscDecodeList(body)
-	if deny != nil {
-		return deny, nil
+	if len(body) > 0 {
+		var probe object.OrgSettings
+		if json.Unmarshal(body, &probe) == nil && probe.Owner != "" {
+			return probe.Owner
+		}
 	}
-	if req.Owner == "" {
-		return zapMiscError(200, "owner is required")
-	}
-	settings, err := object.GetOrgSettings(req.Owner)
-	if err != nil {
-		return zapMiscError(200, err.Error())
-	}
-	return zapMiscOk(settings)
-}
-
-func zapAddOrgSettingsHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if deny := zapMiscAuthz("add-org-settings", zapPrincipalUser(auth)); deny != nil {
-		return deny, nil
-	}
-	var settings object.OrgSettings
-	if err := json.Unmarshal(body, &settings); err != nil {
-		return zapMiscError(400, "invalid request: "+err.Error())
-	}
-	if settings.Owner == "" {
-		return zapMiscError(200, "owner is required")
-	}
-	success, err := object.AddOrgSettings(&settings)
-	if err != nil {
-		return zapMiscError(200, err.Error())
-	}
-	return zapMiscOk(success)
-}
-
-// zapUpdateOrgSettingsRequest carries the owner (URL query in HTTP) plus the settings
-// payload; the beego handler reads ?owner and the JSON body separately.
-type zapUpdateOrgSettingsRequest struct {
-	Owner    string             `json:"owner"`
-	Settings object.OrgSettings `json:"settings"`
-}
-
-func zapUpdateOrgSettingsHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if deny := zapMiscAuthz("update-org-settings", zapPrincipalUser(auth)); deny != nil {
-		return deny, nil
-	}
-	// Accept both the {owner, settings} envelope and a bare OrgSettings body (whose
-	// own Owner field then supplies the key), so either caller shape upserts.
-	var req zapUpdateOrgSettingsRequest
-	if err := json.Unmarshal(body, &req); err != nil {
-		return zapMiscError(400, "invalid request: "+err.Error())
-	}
-	settings := req.Settings
-	owner := req.Owner
-	if owner == "" {
-		owner = settings.Owner
-	}
-	if owner == "" {
-		return zapMiscError(200, "owner is required")
-	}
-
-	existing, err := object.GetOrgSettings(owner)
-	if err != nil {
-		return zapMiscError(200, err.Error())
-	}
-	var success bool
-	if existing == nil {
-		settings.Owner = owner
-		success, err = object.AddOrgSettings(&settings)
-	} else {
-		success, err = object.UpdateOrgSettings(owner, &settings)
-	}
-	if err != nil {
-		return zapMiscError(200, err.Error())
-	}
-	return zapMiscOk(success)
-}
-
-func zapDeleteOrgSettingsHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if deny := zapMiscAuthz("delete-org-settings", zapPrincipalUser(auth)); deny != nil {
-		return deny, nil
-	}
-	var settings object.OrgSettings
-	if err := json.Unmarshal(body, &settings); err != nil {
-		return zapMiscError(400, "invalid request: "+err.Error())
-	}
-	success, err := object.DeleteOrgSettings(&settings)
-	if err != nil {
-		return zapMiscError(200, err.Error())
-	}
-	return zapMiscOk(success)
+	return ""
 }
 
 // ── agent.go parity ────────────────────────────────────────────────────────────
