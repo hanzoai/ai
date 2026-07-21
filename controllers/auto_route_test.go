@@ -270,3 +270,42 @@ func TestRecordExplicitRoutingCapturesSelection(t *testing.T) {
 		t.Errorf("owner: got %q", got.Owner)
 	}
 }
+
+// TestApplyRouterQualityBias proves the savings-vs-quality dial: below max-quality it
+// narrows eligibility to a cost budget = min + bias·(max−min) over the eligible models
+// (injected blended $/1M price) AND tightens the SLO to that budget (per-1k), only ever
+// tightening past a lower ceiling. Blended prices here: cheap=1, mid=4, dear=20.
+func TestApplyRouterQualityBias(t *testing.T) {
+	cfg := &ModelConfig{routes: map[string]modelRoute{
+		"cheap": {providerName: "p", upstreamModel: "cheap"},
+		"mid":   {providerName: "p", upstreamModel: "mid"},
+		"dear":  {providerName: "p", upstreamModel: "dear"},
+	}}
+	price := func(m string) float64 { return map[string]float64{"cheap": 1, "mid": 4, "dear": 20}[m] }
+	base := func(id string) bool { _, ok := cfg.routes[id]; return ok }
+
+	// bias=1 (max quality): no tilt — every model eligible, SLO untouched.
+	if e, slo := applyRouterQualityBias(base, router.Slo{}, price, 1, cfg); !e("dear") || slo.MaxCost != 0 {
+		t.Fatalf("bias=1 must not tilt: dear=%v maxCost=%v", e("dear"), slo.MaxCost)
+	}
+	// bias=0 (max savings): budget=min=1 → only cheap eligible; SLO=1/1M → per-1k.
+	e, slo := applyRouterQualityBias(base, router.Slo{}, price, 0, cfg)
+	if !e("cheap") || e("mid") || e("dear") {
+		t.Fatalf("bias=0 keeps only cheapest: cheap=%v mid=%v dear=%v", e("cheap"), e("mid"), e("dear"))
+	}
+	if want := router.PerMillionToPerThousand(1); slo.MaxCost != want {
+		t.Fatalf("bias=0 SLO=%v, want %v", slo.MaxCost, want)
+	}
+	// bias=0.5: budget = 1 + 0.5*(20−1) = 10.5 → cheap+mid eligible, dear out.
+	if em, _ := applyRouterQualityBias(base, router.Slo{}, price, 0.5, cfg); !em("cheap") || !em("mid") || em("dear") {
+		t.Fatalf("bias=0.5 (budget 10.5): cheap=%v mid=%v dear=%v", em("cheap"), em("mid"), em("dear"))
+	}
+	// tighten-only: a lower existing ceiling wins over the dial budget.
+	if _, s := applyRouterQualityBias(base, router.Slo{MaxCost: 0.0005}, price, 0.5, cfg); s.MaxCost != 0.0005 {
+		t.Fatalf("dial must not loosen a tighter ceiling: %v", s.MaxCost)
+	}
+	// nil price → no-op (an unpriced deployment can't tilt).
+	if e2, s2 := applyRouterQualityBias(base, router.Slo{}, nil, 0, cfg); !e2("dear") || s2.MaxCost != 0 {
+		t.Fatalf("nil price must be a no-op")
+	}
+}
