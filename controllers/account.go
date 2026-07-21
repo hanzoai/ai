@@ -27,7 +27,7 @@ import (
 	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
-	iam "github.com/hanzoai/iam"
+	iam "github.com/hanzoai/iam-v1"
 )
 
 // iamTokenCookieName carries the caller's VERIFIED IAM access token (RS256 JWT)
