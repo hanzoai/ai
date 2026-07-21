@@ -356,37 +356,34 @@ func trainScope(scopeOwner string, events []*object.RoutingEvent, minEvents int,
 
 // deployRouterPreferTo merges the gated best-arm table into a scope's
 // OrgSettings.RouterPrefer row (the SAME rows resolveAutoModel folds org > "*" >
-// conf) — preserving any task the fit did not touch and the row's
-// AutoRouting/session/ceiling fields. The auto-deploy: the router prefers the new
-// models on the next request, no reload. scopeOwner is "*" for the shared base or
-// a concrete org for a per-org policy.
+// conf) — preserving any task the fit did not touch and EVERY other field on the row.
+// The auto-deploy: the router prefers the new models on the next request, no reload.
+// scopeOwner is "*" for the shared base or a concrete org for a per-org policy.
 func deployRouterPreferTo(scopeOwner string, prefer map[string][]string) error {
 	existing, err := object.GetOrgSettings(scopeOwner)
 	if err != nil {
 		return err
 	}
+	if existing == nil {
+		row := object.OrgSettings{Owner: scopeOwner, RouterPrefer: object.JSONMap[[]string](prefer)}
+		_, err = object.AddOrgSettings(&row)
+		return err
+	}
+	// MUTATE the existing row — merge the fit into RouterPrefer and touch ONLY that
+	// field, so every OTHER field is preserved. dbx Model(s).Update() writes ALL columns
+	// (including nil), so the old fresh-row + preserve-list NULLed the fields it forgot on
+	// EVERY gated deploy: RouterEnabledModels, RouterQualityBias, RouterStrategy,
+	// RouterOverrides, TrainingContribution — and on the "*" row the Judge*/MeanField*
+	// config. That silently re-opened an org's disabled-model set and reset its cost dial.
 	merged := map[string][]string{}
-	if existing != nil {
-		for k, v := range existing.RouterPrefer {
-			merged[k] = v
-		}
+	for k, v := range existing.RouterPrefer {
+		merged[k] = v
 	}
 	for task, models := range prefer {
 		merged[task] = models
 	}
-	row := object.OrgSettings{
-		Owner:        scopeOwner,
-		RouterPrefer: object.JSONMap[[]string](merged),
-	}
-	if existing == nil {
-		_, err = object.AddOrgSettings(&row)
-		return err
-	}
-	row.RouterCostCeiling = existing.RouterCostCeiling
-	row.AutoRouting = existing.AutoRouting
-	row.DefaultSessionRouting = existing.DefaultSessionRouting
-	row.CreatedTime = existing.CreatedTime
-	_, err = object.UpdateOrgSettings(scopeOwner, &row)
+	existing.RouterPrefer = object.JSONMap[[]string](merged)
+	_, err = object.UpdateOrgSettings(scopeOwner, existing)
 	return err
 }
 

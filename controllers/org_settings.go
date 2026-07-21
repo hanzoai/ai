@@ -117,28 +117,35 @@ func (c *ApiController) UpdateOrgSettings() {
 		return
 	}
 
-	var settings object.OrgSettings
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &settings)
-	if err != nil {
-		c.ResponseError(err.Error())
-		return
-	}
-
-	// Upsert: the settings row keys only on owner, so if none exists yet, create
-	// it — an admin PUT for an org that has never been configured must still take
-	// effect (one settings row per org, created on first write).
+	// Upsert: the settings row keys only on owner, so if none exists yet, create it — an
+	// admin write for an org that has never been configured must still take effect.
 	existing, err := object.GetOrgSettings(owner)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
 	}
 
+	// PATCH-MERGE, not replace: unmarshal the body ONTO the existing row (or a fresh one
+	// keyed by owner), so a field ABSENT from the body keeps its current value. dbx
+	// Model(s).Update() writes ALL columns, so replacing the row would NULL every field the
+	// body didn't restate — a partial write (e.g. just autoRouting from the admin toggle)
+	// must never wipe the org's RouterPrefer/RouterEnabledModels/RouterQualityBias/… To
+	// CLEAR a field, send it explicitly (e.g. {"routerPrefer":{}}).
+	target := existing
+	if target == nil {
+		target = &object.OrgSettings{Owner: owner}
+	}
+	if err := json.Unmarshal(c.Ctx.Input.RequestBody, target); err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+	target.Owner = owner
+
 	var success bool
 	if existing == nil {
-		settings.Owner = owner
-		success, err = object.AddOrgSettings(&settings)
+		success, err = object.AddOrgSettings(target)
 	} else {
-		success, err = object.UpdateOrgSettings(owner, &settings)
+		success, err = object.UpdateOrgSettings(owner, target)
 	}
 	if err != nil {
 		c.ResponseError(err.Error())
