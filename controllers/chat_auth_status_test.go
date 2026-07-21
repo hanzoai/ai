@@ -27,7 +27,7 @@ import (
 
 	"github.com/hanzoai/ai/object"
 	web "github.com/hanzoai/ai/web"
-	iam "github.com/hanzoai/iam-v1"
+	iam "github.com/hanzoai/ai/internal/iam"
 )
 
 // This suite pins the money-path auth boundary for POST /v1/chat/completions.
