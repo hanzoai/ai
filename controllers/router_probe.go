@@ -37,7 +37,7 @@ import (
 // with model=auto against our own listen address — so every layer that real
 // traffic crosses (authz, routing, provider, billing, usage row, o11y span,
 // RoutingEvent) fires exactly as in production, then scores the outcome via
-// POST /v1/add-routing-reward. Nothing is simulated; the data is real by
+// POST /v1/feedback. Nothing is simulated; the data is real by
 // construction and HONESTLY TAGGED so it can be filtered anywhere:
 //   - the credential is a dedicated service key (the probe's own identity —
 //     spend lands on the internal org that owns the key, never a customer),
@@ -152,7 +152,7 @@ func probeOnce(hc *http.Client, base, token, prompt string) error {
 		return fmt.Errorf("chat status %d, no response id", resp.StatusCode)
 	}
 	rb, _ := json.Marshal(map[string]any{"requestId": requestID, "outcome": reward})
-	rreq, err := http.NewRequest(http.MethodPost, base+"/v1/add-routing-reward", bytes.NewReader(rb))
+	rreq, err := http.NewRequest(http.MethodPost, base+"/v1/feedback", bytes.NewReader(rb))
 	if err != nil {
 		return err
 	}

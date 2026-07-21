@@ -263,12 +263,12 @@ func TestBalanceExemptPaths(t *testing.T) {
 		// Public marketing aggregate (router flywheel stats) — 200 on both the anon
 		// and authed path, same class as /v1/traffic/.
 		"/v1/router/stats",
-		// Routing configuration is metadata (clients read defaults on boot;
-		// operators flip them) — never wallet-gated. Auth still applies.
-		"/v1/get-routing-defaults",
-		"/v1/get-org-settings", "/v1/add-org-settings",
-		"/v1/update-org-settings", "/v1/delete-org-settings",
-		"/v1/export-routing-ledger",
+		// Feedback (the reward signal) is training metadata, not metered inference — a
+		// $0-balance caller (and the internal self-probe on :8000) must still score a past
+		// request. The REST of the router-config surface (/v1/router/{policy,defaults,
+		// ledger,rewards,artifact-meta}, /v1/org/settings) is ZAP-native — served off this
+		// beego BeforeRouter filter entirely — so it needs no isBalanceExempt entry.
+		"/v1/feedback",
 	}
 	for _, p := range exempt {
 		if !isBalanceExempt(p) {

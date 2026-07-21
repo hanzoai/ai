@@ -16,6 +16,7 @@ package controllers
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http/httptest"
 	"strings"
@@ -197,7 +198,7 @@ func TestAddRoutingRewardStatus(t *testing.T) {
 
 	// 401: no credential at all.
 	attachRoutingReward = mustNotCall
-	c, rec := newRewardController("POST", "/v1/add-routing-reward", `{"request_id":"r","reward":0.5}`, nil)
+	c, rec := newRewardController("POST", "/v1/feedback", `{"request_id":"r","reward":0.5}`, nil)
 	c.AddRoutingReward()
 	if rec.Code != 401 {
 		t.Errorf("no principal → %d, want 401", rec.Code)
@@ -206,7 +207,7 @@ func TestAddRoutingRewardStatus(t *testing.T) {
 	// 400: malformed body, missing request_id, out-of-range reward.
 	for _, body := range []string{`{`, `{"reward":0.5}`, `{"request_id":"r","reward":1.5}`} {
 		attachRoutingReward = mustNotCall
-		c, rec := newRewardController("POST", "/v1/add-routing-reward", body, acme)
+		c, rec := newRewardController("POST", "/v1/feedback", body, acme)
 		c.AddRoutingReward()
 		if rec.Code != 400 {
 			t.Errorf("body %q → %d, want 400", body, rec.Code)
@@ -221,7 +222,7 @@ func TestAddRoutingRewardStatus(t *testing.T) {
 		gotOrg, gotReq, gotReward = org, requestId, reward
 		return false, nil
 	}
-	c, rec = newRewardController("POST", "/v1/add-routing-reward", `{"request_id":"chatcmpl-abc","reward":0.5}`, acme)
+	c, rec = newRewardController("POST", "/v1/feedback", `{"request_id":"chatcmpl-abc","reward":0.5}`, acme)
 	c.AddRoutingReward()
 	if rec.Code != 404 {
 		t.Errorf("unknown request_id → %d, want 404", rec.Code)
@@ -275,35 +276,35 @@ func TestAddRoutingRewardStatus(t *testing.T) {
 	}
 }
 
-// TestExportRoutingRewardsStatus proves the training export is super-admin gated: a
-// tenant is 403, a super admin streams the rewarded tuples as JSONL.
+// TestExportRoutingRewardsStatus proves the training export is gated and streams the
+// rewarded tuples as JSONL — over the ZAP-native handler, the ONE implementation. The
+// gate is super-admin OR the ROUTER_ADMIN_TOKEN service token (zapRPSRouterAdminAuthorized).
 func TestExportRoutingRewardsStatus(t *testing.T) {
 	prev := getRewardedRoutingEvents
 	t.Cleanup(func() { getRewardedRoutingEvents = prev })
 
-	// 403: an authenticated tenant is not a platform super admin.
+	// Gated: no credential → 401 (ZAP-native RequireSuperAdmin), the export never runs.
 	getRewardedRoutingEvents = func(string, string) ([]*object.RoutingEvent, error) {
-		t.Fatalf("export ran for a non-super-admin")
+		t.Fatalf("export ran for an unauthenticated caller")
 		return nil, nil
 	}
-	c, rec := newRewardController("GET", "/v1/export-routing-rewards", "", &iam.User{Owner: "acme", Name: "alice"})
-	c.ExportRoutingRewards()
-	if rec.Code != 403 {
-		t.Errorf("tenant → %d, want 403", rec.Code)
+	msg := okMsg(zapExportRoutingRewardsHandler(context.Background(), "", nil))
+	if st := msg.Root().Uint32(object.CloudRespStatus); st != 401 {
+		t.Errorf("no credential → %d, want 401", st)
 	}
 
-	// 200: a super admin (member of the reserved admin org) gets the JSONL stream.
+	// Authorized via the ROUTER_ADMIN_TOKEN service token → 200 + the JSONL tuple stream.
+	t.Setenv("ROUTER_ADMIN_TOKEN", "svc-tok")
 	getRewardedRoutingEvents = func(string, string) ([]*object.RoutingEvent, error) {
 		return []*object.RoutingEvent{
 			{RoutedModel: "glm-5.2", Task: "code", Features: "[0.1]", Reward: 0.9, CreatedTime: "2026-07-07T00:00:00Z", RewardedTime: "2026-07-07T01:00:00Z"},
 		}, nil
 	}
-	c, rec = newRewardController("GET", "/v1/export-routing-rewards", "", &iam.User{Owner: "admin", Name: "z"})
-	c.ExportRoutingRewards()
-	if rec.Code != 200 {
-		t.Fatalf("super admin → %d, want 200", rec.Code)
+	msg = okMsg(zapExportRoutingRewardsHandler(context.Background(), "Bearer svc-tok", nil))
+	if st := msg.Root().Uint32(object.CloudRespStatus); st != 200 {
+		t.Fatalf("service token → %d, want 200", st)
 	}
-	line := strings.TrimSpace(rec.Body.String())
+	line := strings.TrimSpace(string(msg.Root().Bytes(object.CloudRespBody)))
 	var tup map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(line), &tup); err != nil {
 		t.Fatalf("export line not JSON: %v (line %q)", err, line)
