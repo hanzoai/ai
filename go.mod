@@ -40,7 +40,6 @@ require (
 	github.com/hanzoai/go-cosyvoice v1.0.0
 	github.com/hanzoai/go-openai v1.41.0
 	github.com/hanzoai/go-openrouter v1.0.0
-	github.com/hanzoai/iam-v1 v1.31.36
 	github.com/hanzoai/money v0.2.1
 	github.com/hanzoai/pdf v1.2.0
 	github.com/hanzoai/search-go v0.36.0
