@@ -55,7 +55,7 @@ import (
 
 	"github.com/luxfi/zap"
 
-	iam "github.com/hanzoai/iam"
+	iam "github.com/hanzoai/iam-v1"
 
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"

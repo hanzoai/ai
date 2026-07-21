@@ -17,7 +17,7 @@ package util
 import (
 	"testing"
 
-	iam "github.com/hanzoai/iam"
+	iam "github.com/hanzoai/iam-v1"
 )
 
 // TestIsSuperAdminVsOrgAdmin pins the ONE super-admin rule: membership in the
