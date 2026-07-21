@@ -64,29 +64,27 @@ func TestZapMiscWriteGateRejection(t *testing.T) {
 	}
 }
 
-// vmiscSuperAdminMethods are the per-org-settings routes: super-admin gated first, so
-// an anonymous caller is denied 401 before any DB access (parity with the filter's
-// superAdminEndpoints + the beego RequireSuperAdmin self-guard).
-var vmiscSuperAdminMethods = []string{
-	"org-settings.list", "org-settings.get",
-	"org-settings.add", "org-settings.update", "org-settings.delete",
-}
-
-// TestZapMiscSuperAdminGateRejection asserts the org-settings surface fails closed
-// with 401 for an anonymous caller.
+// TestZapMiscSuperAdminGateRejection asserts the RESTful org-settings surface
+// (/v1/org/settings + /list) fails closed with 401 for an anonymous caller on EVERY
+// verb, before any DB access — the ZAP-native super-admin gate. It also proves the one
+// noun dispatches through the canonical registry as an HTTP-shaped (method-aware) route.
 func TestZapMiscSuperAdminGateRejection(t *testing.T) {
-	for _, method := range vmiscSuperAdminMethods {
-		h, ok := lookupCloudHandler(method)
-		if !ok {
-			t.Fatalf("method %q not registered", method)
-		}
-		msg, err := h(context.Background(), "", []byte("{}"))
+	for _, tc := range []struct{ method, path string }{
+		{"GET", "/v1/org/settings"},
+		{"PUT", "/v1/org/settings"},
+		{"DELETE", "/v1/org/settings"},
+		{"GET", "/v1/org/settings/list"},
+	} {
+		msg, err := zapOrgSettingsHandler(context.Background(), tc.method, tc.path, "owner=acme", "", []byte("{}"))
 		if err != nil {
-			t.Fatalf("%s: unexpected err: %v", method, err)
+			t.Fatalf("%s %s: unexpected err: %v", tc.method, tc.path, err)
 		}
 		if got := vmiscStatus(msg); got != 401 {
-			t.Errorf("%s: empty auth status = %d, want 401", method, got)
+			t.Errorf("%s %s: empty auth status = %d, want 401", tc.method, tc.path, got)
 		}
+	}
+	if _, ok := lookupGatewayRoute("/v1/org/settings"); !ok {
+		t.Error("/v1/org/settings not registered as an HTTP-shaped gateway route")
 	}
 }
 
@@ -97,14 +95,15 @@ func TestZapMiscAuthz(t *testing.T) {
 	orgAdmin := &iam.User{Owner: "acme", Name: "boss", IsAdmin: true}
 	plain := &iam.User{Owner: "acme", Name: "alice"}
 
-	// Super-admin endpoint: nil → 401, org-admin (not super) → 403, super → open.
-	if deny := zapMiscAuthz("get-org-settings-list", nil); deny == nil || vmiscStatus(deny) != 401 {
+	// Super-admin endpoint (the RESTful /v1/org/settings noun): nil → 401, org-admin
+	// (not super) → 403, super → open.
+	if deny := zapMiscAuthz("org/settings", nil); deny == nil || vmiscStatus(deny) != 401 {
 		t.Errorf("org-settings nil principal not 401")
 	}
-	if deny := zapMiscAuthz("get-org-settings-list", orgAdmin); deny == nil || vmiscStatus(deny) != 403 {
+	if deny := zapMiscAuthz("org/settings", orgAdmin); deny == nil || vmiscStatus(deny) != 403 {
 		t.Errorf("org-settings org-admin (non-super) not 403")
 	}
-	if deny := zapMiscAuthz("get-org-settings-list", superAdmin); deny != nil {
+	if deny := zapMiscAuthz("org/settings", superAdmin); deny != nil {
 		t.Errorf("org-settings super-admin gated: status=%d", vmiscStatus(deny))
 	}
 
