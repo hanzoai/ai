@@ -118,7 +118,7 @@ func TestCheckBalanceGatesOnInsufficientFunds(t *testing.T) {
 			defer srv.Close()
 
 			bg := newTestGate(srv.URL, "", balanceCacheTTL)
-			sufficient, cents := bg.checkBalance("hanzo/user-"+tc.name, "hanzo", "hanzo/user-"+tc.name)
+			sufficient, _, cents := bg.checkBalance("hanzo/user-"+tc.name, "hanzo", "hanzo/user-"+tc.name)
 			if sufficient != tc.wantSufficient {
 				t.Errorf("sufficient=%v, want %v", sufficient, tc.wantSufficient)
 			}
@@ -138,7 +138,7 @@ func TestCheckBalanceReservationAware(t *testing.T) {
 	if !bg.ledger.Reserve("hanzo/acct", 100) {
 		t.Fatal("reserve of the full balance must succeed")
 	}
-	sufficient, cents := bg.checkBalance("hanzo/acct", "hanzo", "hanzo/acct")
+	sufficient, _, cents := bg.checkBalance("hanzo/acct", "hanzo", "hanzo/acct")
 	if sufficient {
 		t.Error("fully-reserved balance must gate (no spendable funds)")
 	}
@@ -157,7 +157,7 @@ func TestCheckBalanceStaleWindowReflectsSettle(t *testing.T) {
 		t.Fatal("reserve must pass")
 	}
 	bg.ledger.Settle("hanzo/acct", 100, 100)
-	if sufficient, cents := bg.checkBalance("hanzo/acct", "hanzo", "hanzo/acct"); sufficient || cents != 0 {
+	if sufficient, _, cents := bg.checkBalance("hanzo/acct", "hanzo", "hanzo/acct"); sufficient || cents != 0 {
 		t.Errorf("drained balance must gate within the cache window, got sufficient=%v cents=%d", sufficient, cents)
 	}
 }
@@ -171,7 +171,7 @@ func TestCheckBalanceFailsClosedOnColdNonExemptOrg(t *testing.T) {
 	defer srv.Close()
 
 	bg := newTestGate(srv.URL, "", balanceCacheTTL)
-	sufficient, cents := bg.checkBalance("acme", "acme", "acme/user")
+	sufficient, _, cents := bg.checkBalance("acme", "acme", "acme/user")
 	if sufficient {
 		t.Error("expected fail-CLOSED for a cold non-exempt org when Commerce errors")
 	}
@@ -199,7 +199,7 @@ func TestCheckBalanceNoExemption(t *testing.T) {
 		{"house", "house", "house/anyone"},                  // formerly a whole-org exemption
 		{"acme", "acme", "acme/user"},                       // never exempt
 	} {
-		if sufficient, cents := bg.checkBalance(s.subject, s.ns, s.key); sufficient || cents != 0 {
+		if sufficient, _, cents := bg.checkBalance(s.subject, s.ns, s.key); sufficient || cents != 0 {
 			t.Errorf("%s must fail-CLOSED (no exemption), got sufficient=%v cents=%d", s.subject, sufficient, cents)
 		}
 	}
@@ -216,7 +216,7 @@ func TestCheckBalanceServesStaleOnErrorForActiveOrg(t *testing.T) {
 
 	bg := newTestGate(srv.URL, "", 0) // ttl=0 => any entry is immediately stale
 	bg.ledger.SetBalance("acme", 500)
-	sufficient, cents := bg.checkBalance("acme", "acme", "acme/user")
+	sufficient, _, cents := bg.checkBalance("acme", "acme", "acme/user")
 	if !sufficient || cents != 500 {
 		t.Errorf("expected stale-serve (sufficient=true, cents=500) on a blip, got (%v, %d)", sufficient, cents)
 	}
@@ -233,10 +233,10 @@ func TestCheckBalanceCachesWithinTTL(t *testing.T) {
 	defer srv.Close()
 
 	bg := newTestGate(srv.URL, "", balanceCacheTTL)
-	if s, _ := bg.checkBalance("hanzo/cacheme", "hanzo", "hanzo/cacheme"); !s {
+	if s, _, _ := bg.checkBalance("hanzo/cacheme", "hanzo", "hanzo/cacheme"); !s {
 		t.Fatal("first check should pass")
 	}
-	if s, _ := bg.checkBalance("hanzo/cacheme", "hanzo", "hanzo/cacheme"); !s {
+	if s, _, _ := bg.checkBalance("hanzo/cacheme", "hanzo", "hanzo/cacheme"); !s {
 		t.Fatal("second check should pass from cache")
 	}
 	if calls != 1 {
@@ -373,5 +373,90 @@ func TestIsJwtTokenLike(t *testing.T) {
 		if isJwtTokenLike(notJwt) {
 			t.Errorf("token %q should not be JWT-like", notJwt)
 		}
+	}
+}
+
+// TestCheckBalanceDenialReason proves the funded-wallet-402 fix at its source: a
+// COLD subject whose lookup ERRORS is denied as balance_unavailable (503, retry),
+// NOT insufficient_balance — so a transient billing blip never tells a caller to add
+// credits — while a KNOWN empty balance is denied as insufficient_balance (402, add
+// credits). Both DENY (fail-CLOSED); only the reason differs.
+func TestCheckBalanceDenialReason(t *testing.T) {
+	// Cold subject, Commerce errors → unverifiable → 503 balance_unavailable.
+	errSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer errSrv.Close()
+	bg := newTestGate(errSrv.URL, "", balanceCacheTTL)
+	sufficient, deny, _ := bg.checkBalance("acme", "acme", "acme/user")
+	if sufficient {
+		t.Fatal("unverifiable balance must DENY (fail-CLOSED)")
+	}
+	if deny.Code != object.CodeBalanceUnavailable {
+		t.Errorf("transient lookup failure: code=%q, want %q", deny.Code, object.CodeBalanceUnavailable)
+	}
+	if deny.Status != http.StatusServiceUnavailable {
+		t.Errorf("transient lookup failure: status=%d, want 503 (retryable)", deny.Status)
+	}
+	if strings.Contains(strings.ToLower(deny.Message), "add credits") {
+		t.Errorf("a funded caller behind a blip must NOT be told to add credits, got %q", deny.Message)
+	}
+
+	// Known empty balance → genuine insufficiency → 402 insufficient_balance + link.
+	bg2 := newTestGate("http://unused", "", balanceCacheTTL)
+	bg2.ledger.SetBalance("acme", 0)
+	sufficient2, deny2, _ := bg2.checkBalance("acme", "acme", "acme/user")
+	if sufficient2 {
+		t.Fatal("a zero known balance must DENY")
+	}
+	if deny2.Code != object.CodeInsufficientBalance {
+		t.Errorf("empty balance: code=%q, want %q", deny2.Code, object.CodeInsufficientBalance)
+	}
+	if deny2.Status != http.StatusPaymentRequired {
+		t.Errorf("empty balance: status=%d, want 402", deny2.Status)
+	}
+	if !strings.Contains(strings.ToLower(deny2.Message), "add credits") || !strings.Contains(deny2.Message, object.PayURL("acme")) {
+		t.Errorf("insufficient message must invite adding credits at the wallet link, got %q", deny2.Message)
+	}
+}
+
+// TestBalanceGateFilterTransientReturns503 is the end-to-end regression for the
+// funded-wallet-402 incident: with a configured gate and a cold subject whose
+// Commerce lookup errors, a metered WRITE is denied 503 balance_unavailable (retry) —
+// NOT 402 "add credits". The deny stays (fail-CLOSED); only the code/status/copy move.
+func TestBalanceGateFilterTransientReturns503(t *testing.T) {
+	errSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer errSrv.Close()
+
+	bg := newTestGate(errSrv.URL, "", balanceCacheTTL)
+	bg.setUserKeyCache("tok", "acme", "acme", "acme/user") // resolveBillingKey → "acme", no network
+	// No ledger seed → the subject is COLD → checkBalance does a synchronous fetch,
+	// which errors → balance_unavailable.
+
+	prev := balanceGate
+	balanceGate = bg
+	t.Cleanup(func() { balanceGate = prev })
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	req.Header.Set("Authorization", "Bearer tok")
+	rec := httptest.NewRecorder()
+	ctx := web.NewContext()
+	ctx.Reset(rec, req)
+	BalanceGateFilter(ctx)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("transient billing failure on a metered write: status=%d, want 503", rec.Code)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `"code":"balance_unavailable"`) {
+		t.Errorf("body must carry code balance_unavailable, got %s", body)
+	}
+	if !strings.Contains(body, `"type":"billing_error"`) {
+		t.Errorf("wire type must remain billing_error (shape unchanged), got %s", body)
+	}
+	if strings.Contains(strings.ToLower(body), "add credits") {
+		t.Errorf("transient denial must not say add credits, got %s", body)
 	}
 }
