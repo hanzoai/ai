@@ -42,7 +42,7 @@ import (
 	"github.com/hanzoai/account"
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/object"
-	iam "github.com/hanzoai/iam-v1"
+	iam "github.com/hanzoai/ai/internal/iam"
 )
 
 // ── the enso ladder (values, not places) ─────────────────────────────────────
