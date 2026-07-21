@@ -90,6 +90,23 @@ type OrgSettings struct {
 	// nightly base-refresh job includes only "enabled" orgs.
 	TrainingContribution string `json:"trainingContribution"`
 
+	// RouterEnabledModels is this org's ALLOWLIST of model ids the auto-router may
+	// select — the "which models does MY router use" control. nil/empty = unset = ALL
+	// servable models are eligible (no restriction). A non-empty set restricts the
+	// router's candidate pool to exactly these ids (still intersected with what the
+	// deployment can actually serve for the org). Persisted as a JSON set (id → true).
+	RouterEnabledModels JSONMap[bool] `json:"routerEnabledModels"`
+
+	// RouterQualityBias is this org's SAVINGS-vs-QUALITY dial in [0,1]: 0 = maximize
+	// savings (route to the cheapest eligible model), 1 = maximize quality (best model
+	// regardless of cost), 0.5 = balanced. nil = unset → "*" row then the balanced
+	// default. It tilts the router's per-request cost budget: a lower bias tightens the
+	// effective SLO MaxCost toward the cheapest eligible model, a higher bias loosens it
+	// toward the priciest — orthogonal to RouterCostCeiling (a hard cap the dial can only
+	// tighten WITHIN, never exceed) and to an explicit X-Max-Cost (which always wins). A
+	// pointer so an unset dial is distinct from a deliberate 0 (max savings).
+	RouterQualityBias *float64 `json:"routerQualityBias"`
+
 	// Judge* configure the LLM-as-a-judge dense-reward path (the Mean-Field Judge
 	// Panel). They are PLATFORM-GLOBAL, not per-org: read ONLY from the "*"
 	// GlobalDefaultOwner row (like the trainer's "*" RouterPrefer), live-tunable at
