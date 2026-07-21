@@ -50,7 +50,7 @@ import (
 	"github.com/hanzoai/ai/txt"
 	"github.com/hanzoai/ai/util"
 	"github.com/hanzoai/ai/video"
-	iam "github.com/hanzoai/iam-v1"
+	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/luxfi/zap"
 )
 

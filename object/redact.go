@@ -18,7 +18,7 @@ import (
 	"reflect"
 	"strings"
 
-	iam "github.com/hanzoai/iam-v1"
+	iam "github.com/hanzoai/ai/internal/iam"
 )
 
 // exposableUserFields is the ALLOWLIST of iam.User json tags (string and []string

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	iam "github.com/hanzoai/iam-v1"
+	iam "github.com/hanzoai/ai/internal/iam"
 )
 
 // A family SKU that advertises access:"waitlist" is parsed as gated.
