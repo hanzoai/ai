@@ -17,6 +17,7 @@ package controllers
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"testing"
 	"time"
 
@@ -39,37 +40,66 @@ func decodeCloudRPS(t *testing.T, msg *zap.Message) (uint32, Response) {
 	return status, env
 }
 
-// TestZapRPSRegistered proves the group exposes its native cloud methods and
-// gateway paths from its own dispatch tables (the strangler wiring seam).
-func TestZapRPSRegistered(t *testing.T) {
-	cloud := []string{
-		"router.get-policy", "router.update-policy", "router.stats",
-		"router.publish-artifact-meta", "routing.get-defaults",
-		"routing.export-ledger", "routing.add-reward", "routing.feedback",
-		"routing.export-rewards", "traffic.globe",
-		"training.get-contribution", "training.update-contribution",
+// TestZapRPSRoutesRegistered proves the RESTful nouns dispatch through the ONE
+// canonical registry: the multi-verb policy noun as an HTTP-shaped ROUTE (method
+// aware), the single-verb nouns as body-only PATHS, and the native cloud methods.
+func TestZapRPSRoutesRegistered(t *testing.T) {
+	if _, ok := lookupGatewayRoute("/v1/router/policy"); !ok {
+		t.Error("/v1/router/policy not registered as an HTTP-shaped gateway route")
 	}
-	for _, m := range cloud {
-		if zapRouterPolicyStatsCloud[m] == nil {
-			t.Errorf("cloud method %q not registered", m)
-		}
-	}
-	gw := []string{
-		"/v1/get-router-policy", "/v1/update-router-policy", "/v1/router/stats",
-		"/v1/router/publish-artifact-meta", "/v1/get-routing-defaults",
-		"/v1/export-routing-ledger", "/v1/add-routing-reward", "/v1/feedback",
-		"/v1/export-routing-rewards", "/v1/traffic/globe",
-		"/v1/get-training-contribution", "/v1/update-training-contribution",
-	}
-	for _, p := range gw {
-		if zapRouterPolicyStatsGateway[p] == nil {
+	for _, p := range []string{
+		"/v1/router/stats", "/v1/router/defaults", "/v1/router/ledger",
+		"/v1/router/rewards", "/v1/router/artifact-meta", "/v1/feedback",
+		"/v1/traffic/globe",
+	} {
+		if _, ok := lookupGatewayHandler(p); !ok {
 			t.Errorf("gateway path %q not registered", p)
 		}
 	}
-	// /v1/feedback aliases the ONE reward handler (parity with router.go).
-	if zapRouterPolicyStatsCloud["routing.feedback"] == nil ||
-		zapRouterPolicyStatsGateway["/v1/feedback"] == nil {
-		t.Fatal("feedback alias missing")
+	for _, m := range []string{
+		"router.stats", "router.defaults", "router.ledger", "router.rewards",
+		"router.artifact-meta", "feedback", "traffic.globe",
+		"training.get-contribution", "training.update-contribution",
+	} {
+		if _, ok := lookupCloudHandler(m); !ok {
+			t.Errorf("cloud method %q not registered", m)
+		}
+	}
+}
+
+// TestZapRPSOldCompoundPathsGone is the guard: every OLD compound-verb path this
+// refactor retired must dispatch NOWHERE — neither an HTTP-shaped route nor a
+// body-only path claims it — so the gateway 404s it. No backwards-compat alias
+// survives, and no route carries both a beego and a ZAP registration.
+func TestZapRPSOldCompoundPathsGone(t *testing.T) {
+	for _, p := range []string{
+		"/v1/get-router-policy", "/v1/update-router-policy",
+		"/v1/get-routing-defaults", "/v1/export-routing-ledger",
+		"/v1/export-routing-rewards", "/v1/router/publish-artifact-meta",
+		"/v1/add-routing-reward",
+		"/v1/get-org-settings", "/v1/update-org-settings", "/v1/delete-org-settings",
+		"/v1/add-org-settings", "/v1/get-org-settings-list",
+	} {
+		if _, ok := lookupGatewayRoute(p); ok {
+			t.Errorf("retired path %q still resolves an HTTP-shaped route", p)
+		}
+		if _, ok := lookupGatewayHandler(p); ok {
+			t.Errorf("retired path %q still resolves a body-only handler", p)
+		}
+	}
+}
+
+// TestZapRouterPolicyMethodAware proves the one /v1/router/policy noun dispatches by
+// method: GET → the read (admin-gated, so 403 for a non-admin under non-preview),
+// and any unsupported verb → 405.
+func TestZapRouterPolicyMethodAware(t *testing.T) {
+	if st, _ := decodeCloudRPS(t, okMsg(zapRouterPolicyHandler(context.Background(), http.MethodPatch, "/v1/router/policy", "", "", nil))); st != http.StatusMethodNotAllowed {
+		t.Errorf("PATCH /v1/router/policy: status = %d, want 405", st)
+	}
+	if !conf.IsPreviewMode() {
+		if st, _ := decodeCloudRPS(t, okMsg(zapRouterPolicyHandler(context.Background(), http.MethodGet, "/v1/router/policy", "", "", nil))); st != http.StatusForbidden {
+			t.Errorf("GET /v1/router/policy non-admin: status = %d, want 403", st)
+		}
 	}
 }
 
