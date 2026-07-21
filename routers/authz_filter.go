@@ -24,7 +24,7 @@ import (
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
 	"github.com/hanzoai/ai/web"
-	iam "github.com/hanzoai/iam"
+	iam "github.com/hanzoai/iam-v1"
 )
 
 func AuthzFilter(ctx *web.Context) {

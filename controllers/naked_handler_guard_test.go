@@ -18,7 +18,7 @@ import (
 	"net/http"
 	"testing"
 
-	iam "github.com/hanzoai/iam"
+	iam "github.com/hanzoai/iam-v1"
 )
 
 // TestNakedHandlersRequireSuperAdmin asserts that every platform-sensitive handler

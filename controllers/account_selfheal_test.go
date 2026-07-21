@@ -19,7 +19,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	iam "github.com/hanzoai/iam"
+	iam "github.com/hanzoai/iam-v1"
 )
 
 // TestResolveAccountAction pins the get-account identity policy: a resolved
