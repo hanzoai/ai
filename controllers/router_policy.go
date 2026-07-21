@@ -16,6 +16,8 @@ package controllers
 
 import (
 	"encoding/json"
+	"sort"
+	"strings"
 
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/router"
@@ -29,22 +31,86 @@ import (
 type routerPolicyBody struct {
 	Prefer      map[string][]string `json:"prefer"`
 	CostCeiling float64             `json:"costCeiling"` // USD per 1k tokens (per-1k)
-	HasOverride bool                `json:"hasOverride,omitempty"`
+	// EnabledModels is the org's ALLOWLIST of model ids the router may select; empty
+	// (on write) clears it (all servable models eligible). On read it is the RESOLVED
+	// allowlist (org > "*"), sorted.
+	EnabledModels []string `json:"enabledModels"`
+	// QualityBias is the savings-vs-quality dial in [0,1] (0 = cheapest, 1 = best,
+	// 0.5 = balanced). On read it is the RESOLVED value (never nil). On write, nil
+	// leaves the org's dial unset (fall through to "*" then the balanced default).
+	QualityBias *float64 `json:"qualityBias,omitempty"`
+	// Available is the read-only catalog of every servable model id for the caller's
+	// org — what the allowlist picker offers. Omitted on write.
+	Available   []routerModelItem `json:"available,omitempty"`
+	HasOverride bool              `json:"hasOverride,omitempty"`
 }
 
-// resolvedRouterPolicy folds the effective table + ceiling for an org and reports
-// whether the org has its own override row. The conf baseline is the live
-// ModelConfig router block (read under its lock via ConfRouterPolicy).
+// routerModelItem is one entry in the allowlist picker: the model id plus a display
+// label (the id doubles as the label; ownedBy qualifies it).
+type routerModelItem struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	OwnedBy string `json:"ownedBy,omitempty"`
+}
+
+// resolvedRouterPolicy folds the effective table + ceiling + allowlist + dial for an
+// org and reports whether the org has its own override row. The conf baseline is the
+// live ModelConfig router block (read under its lock via ConfRouterPolicy).
 func resolvedRouterPolicy(org string) (routerPolicyBody, error) {
 	hasPrefer := orgRouterPreferLookup(org) != nil
 	hasCeiling := orgRouterCostCeilingLookup(org) > 0
+	hasModels := org != "" && orgRouterEnabledModelsLookup(org) != nil
+	hasBias := org != "" && orgRouterQualityBiasLookup(org) != nil
 
 	confPrefer, confCeiling := confRouterPolicy()
+	bias := effectiveRouterQualityBias(org)
 	return routerPolicyBody{
-		Prefer:      effectiveRouterPrefer(org, confPrefer),
-		CostCeiling: effectiveRouterCostCeiling(org, confCeiling),
-		HasOverride: hasPrefer || hasCeiling,
+		Prefer:        effectiveRouterPrefer(org, confPrefer),
+		CostCeiling:   effectiveRouterCostCeiling(org, confCeiling),
+		EnabledModels: enabledModelIDs(effectiveRouterEnabledModels(org)),
+		QualityBias:   &bias,
+		Available:     availableRouterModels(),
+		HasOverride:   hasPrefer || hasCeiling || hasModels || hasBias,
 	}, nil
+}
+
+// enabledModelIDs renders an allowlist set as a sorted id slice (only the enabled
+// entries), so the read shape is deterministic. nil/empty set → empty slice.
+func enabledModelIDs(set map[string]bool) []string {
+	ids := make([]string, 0, len(set))
+	for id, on := range set {
+		if on {
+			ids = append(ids, id)
+		}
+	}
+	sort.Strings(ids)
+	return ids
+}
+
+// enabledModelsSet turns the write-shape id slice into the persisted set (id → true).
+// An empty slice → nil (clears the allowlist: all servable models eligible).
+func enabledModelsSet(ids []string) object.JSONMap[bool] {
+	if len(ids) == 0 {
+		return nil
+	}
+	set := make(object.JSONMap[bool], len(ids))
+	for _, id := range ids {
+		if id = strings.ToLower(strings.TrimSpace(id)); id != "" {
+			set[id] = true
+		}
+	}
+	return set
+}
+
+// availableRouterModels is the allowlist picker's catalog: every servable model id
+// (the same list /v1/models surfaces), each as {id, name, ownedBy}.
+func availableRouterModels() []routerModelItem {
+	models := listAvailableModels()
+	out := make([]routerModelItem, 0, len(models))
+	for _, m := range models {
+		out = append(out, routerModelItem{ID: m.ID, Name: m.ID, OwnedBy: m.OwnedBy})
+	}
+	return out
 }
 
 // confRouterPolicy returns the live conf router Prefer + CostCeiling under the
@@ -117,9 +183,11 @@ func (c *ApiController) UpdateRouterPolicy() {
 		return
 	}
 	row := object.OrgSettings{
-		Owner:             org,
-		RouterPrefer:      object.JSONMap[[]string](body.Prefer),
-		RouterCostCeiling: body.CostCeiling,
+		Owner:               org,
+		RouterPrefer:        object.JSONMap[[]string](body.Prefer),
+		RouterCostCeiling:   body.CostCeiling,
+		RouterEnabledModels: enabledModelsSet(body.EnabledModels),
+		RouterQualityBias:   body.QualityBias,
 	}
 	if existing == nil {
 		// New row: AutoRouting/SessionRouting stay unset until set on their own
@@ -129,11 +197,14 @@ func (c *ApiController) UpdateRouterPolicy() {
 			return
 		}
 	} else {
-		// Preserve AutoRouting / DefaultSessionRouting / CreatedTime: the router
-		// policy is an orthogonal concern updated on its own endpoint. Zeroing
-		// Prefer/Ceiling here clears the override without touching them.
+		// Preserve the orthogonal concerns this endpoint does NOT own — AutoRouting /
+		// DefaultSessionRouting / TrainingContribution / CreatedTime — so a router-policy
+		// write never clobbers them. The four router-policy fields (Prefer / Ceiling /
+		// EnabledModels / QualityBias) ARE owned here and set from the body above; an
+		// empty/nil value clears that override (reverts the org to "*" then conf).
 		row.AutoRouting = existing.AutoRouting
 		row.DefaultSessionRouting = existing.DefaultSessionRouting
+		row.TrainingContribution = existing.TrainingContribution
 		row.CreatedTime = existing.CreatedTime
 		if _, err := object.UpdateOrgSettings(org, &row); err != nil {
 			c.ResponseError(err.Error())
@@ -285,4 +356,57 @@ func mergeCostCeiling(slo router.Slo, policyCeiling float64) router.Slo {
 		slo.MaxCost = policyCeiling
 	}
 	return slo
+}
+
+// DefaultRouterQualityBias is the balanced savings-vs-quality dial applied when an org
+// AND the "*" row both leave it unset — neither cheap-biased nor quality-biased.
+const DefaultRouterQualityBias = 0.5
+
+// orgRouterEnabledModelsLookup returns an org's own model allowlist (nil = no override,
+// meaning all servable models are eligible). Same 60s-cached row the rest of the fold uses.
+var orgRouterEnabledModelsLookup = func(owner string) map[string]bool {
+	if owner == "" {
+		return nil
+	}
+	s, err := object.GetCachedOrgSettings(owner)
+	if err != nil || s == nil || len(s.RouterEnabledModels) == 0 {
+		return nil
+	}
+	return s.RouterEnabledModels
+}
+
+// orgRouterQualityBiasLookup returns an org's own savings-vs-quality dial (nil = unset).
+var orgRouterQualityBiasLookup = func(owner string) *float64 {
+	if owner == "" {
+		return nil
+	}
+	s, err := object.GetCachedOrgSettings(owner)
+	if err != nil || s == nil {
+		return nil
+	}
+	return s.RouterQualityBias
+}
+
+// effectiveRouterEnabledModels folds org > "*" for the allowlist; the org's own set wins
+// when present. nil = no restriction (every servable model is eligible for the router).
+func effectiveRouterEnabledModels(org string) map[string]bool {
+	if org != "" {
+		if a := orgRouterEnabledModelsLookup(org); a != nil {
+			return a
+		}
+	}
+	return orgRouterEnabledModelsLookup(object.GlobalDefaultOwner)
+}
+
+// effectiveRouterQualityBias folds org > "*" > balanced default, clamped to [0,1].
+func effectiveRouterQualityBias(org string) float64 {
+	for _, owner := range []string{org, object.GlobalDefaultOwner} {
+		if owner == "" {
+			continue
+		}
+		if b := orgRouterQualityBiasLookup(owner); b != nil {
+			return clamp01(*b)
+		}
+	}
+	return DefaultRouterQualityBias
 }
