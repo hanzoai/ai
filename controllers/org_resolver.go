@@ -18,9 +18,9 @@ import (
 	"strings"
 
 	"github.com/hanzoai/ai/conf"
+	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
-	iam "github.com/hanzoai/ai/internal/iam"
 )
 
 // credentialUser resolves the request principal STRICTLY from its verified

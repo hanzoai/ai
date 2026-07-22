@@ -32,12 +32,12 @@ import (
 	"github.com/hanzoai/account"
 
 	"github.com/hanzoai/ai/conf"
+	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/model"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
 	"github.com/hanzoai/go-openai"
-	iam "github.com/hanzoai/ai/internal/iam"
 )
 
 // getUserBalance returns the current balance for a user by fetching from Commerce.
