@@ -265,10 +265,17 @@ func TestBalanceExemptPaths(t *testing.T) {
 		"/v1/router/stats",
 		// Feedback (the reward signal) is training metadata, not metered inference — a
 		// $0-balance caller (and the internal self-probe on :8000) must still score a past
-		// request. The REST of the router-config surface (/v1/router/{policy,defaults,
-		// ledger,rewards,artifact-meta}, /v1/org/settings) is ZAP-native — served off this
-		// beego BeforeRouter filter entirely — so it needs no isBalanceExempt entry.
+		// request.
 		"/v1/feedback",
+		// The REST of the router-config surface — per-org policy/defaults/exports + org
+		// settings — is served over beego via RouterConfigBridge (→ the ONE native ZAP
+		// handler), so it DOES traverse this filter and MUST be exempt: config metadata,
+		// not metered inference. A $0-balance org has to read/write its own router config
+		// from the console; without these entries every unfunded org's Router → Policy tab
+		// 402s. /v1/org/settings is HasPrefix so /list is covered too.
+		"/v1/router/policy", "/v1/router/defaults", "/v1/router/ledger",
+		"/v1/router/rewards", "/v1/router/artifact-meta",
+		"/v1/org/settings", "/v1/org/settings/list",
 	}
 	for _, p := range exempt {
 		if !isBalanceExempt(p) {
