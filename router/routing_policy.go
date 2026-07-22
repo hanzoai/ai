@@ -95,7 +95,18 @@ func (c Client) RouteDecisionFor(ctx context.Context, req Request, slo Slo, rp R
 	// uniformly. Explore/Rand carry over from the Client unchanged.
 	ec := c
 	if rp.Enabled != nil {
-		ec.Known = rp.Enabled
+		// Servability and enablement are DIFFERENT sets. rp.Enabled is the org's
+		// allowlist (what it toggled on in console); c.Known is what the process can
+		// actually serve right now (a connected provider / deployed model). A model
+		// can be enabled but unserved — e.g. still in the allowlist after its provider
+		// was disconnected. Route only within their INTERSECTION so the exploration
+		// floor and the servable-first heuristic never pick an enabled-but-unserved
+		// model (which 404s downstream). Keep rp.Enabled as the HARD allowlist
+		// (ec.Allow) so the last-resort fallback may relax SERVABILITY to a listed
+		// model (beats an empty id) but NEVER routes outside the org's allowlist.
+		base := c.Known
+		ec.Known = func(m string) bool { return rp.Enabled(m) && (base == nil || base(m)) }
+		ec.Allow = rp.Enabled
 	}
 	if len(rp.Prefer.Prefer) > 0 {
 		ec.Policy = rp.Prefer
