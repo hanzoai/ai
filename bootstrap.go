@@ -127,6 +127,13 @@ func doBootstrap() (err error) {
 	// InitDatastore. See object.InitTelemetry.
 	object.InitTelemetry()
 
+	// Cross-pod cache-invalidation bus: broadcast org-settings (router policy /
+	// savings↔quality dial) writes over Valkey pub/sub so a console change converges
+	// sub-second fleet-wide. Opt-in via KV_URL; connects in the background and is a
+	// no-op when unset, so boot never blocks on Valkey and the per-pod TTL still
+	// backstops. Mirrors InitDatastore/InitTelemetry. See object.InitCacheBus.
+	object.InitCacheBus()
+
 	// Model routing/pricing config from YAML. Non-fatal: static fallback.
 	configPath := conf.GetConfigString("modelConfigPath")
 	if configPath == "" {
