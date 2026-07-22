@@ -18,8 +18,8 @@ package controllers
 import (
 	"encoding/json"
 
-	"github.com/hanzoai/ai/util"
 	iam "github.com/hanzoai/ai/internal/iam"
+	"github.com/hanzoai/ai/util"
 )
 
 // GetPermissions

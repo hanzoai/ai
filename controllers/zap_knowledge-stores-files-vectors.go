@@ -59,8 +59,8 @@ import (
 
 	"github.com/luxfi/zap"
 
-	"github.com/hanzoai/ai/log"
 	iam "github.com/hanzoai/ai/internal/iam"
+	"github.com/hanzoai/ai/log"
 
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/object"

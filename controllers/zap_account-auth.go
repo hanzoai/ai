@@ -45,9 +45,9 @@ import (
 	"fmt"
 	"strings"
 
+	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
-	iam "github.com/hanzoai/ai/internal/iam"
 
 	"github.com/luxfi/zap"
 )
