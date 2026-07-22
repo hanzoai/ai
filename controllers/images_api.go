@@ -23,10 +23,10 @@ import (
 
 	"github.com/hanzoai/account"
 
+	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/model"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
-	iam "github.com/hanzoai/ai/internal/iam"
 )
 
 // This file completes the OpenAI-compatible surface alongside chat and

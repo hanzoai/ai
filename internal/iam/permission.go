@@ -114,9 +114,11 @@ func GetPermissions() ([]*Permission, error)         { return ensureClient().Get
 func AddPermission(permission *Permission) (bool, error) {
 	return ensureClient().AddPermission(permission)
 }
+
 func UpdatePermission(permission *Permission) (bool, error) {
 	return ensureClient().UpdatePermission(permission)
 }
+
 func DeletePermission(permission *Permission) (bool, error) {
 	return ensureClient().DeletePermission(permission)
 }

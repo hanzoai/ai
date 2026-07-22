@@ -21,10 +21,10 @@ import (
 
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/controllers"
+	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
 	"github.com/hanzoai/ai/web"
-	iam "github.com/hanzoai/ai/internal/iam"
 )
 
 func AuthzFilter(ctx *web.Context) {

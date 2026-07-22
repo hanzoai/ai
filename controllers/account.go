@@ -24,10 +24,10 @@ import (
 	"time"
 
 	"github.com/hanzoai/ai/conf"
+	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
-	iam "github.com/hanzoai/ai/internal/iam"
 )
 
 // iamTokenCookieName carries the caller's VERIFIED IAM access token (RS256 JWT)

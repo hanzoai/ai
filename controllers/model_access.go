@@ -27,8 +27,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/hanzoai/ai/object"
 	iam "github.com/hanzoai/ai/internal/iam"
+	"github.com/hanzoai/ai/object"
 )
 
 // modelAccessInfo is the additive /v1/models annotation for a gated SKU: the caller's
