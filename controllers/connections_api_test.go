@@ -19,8 +19,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hanzoai/ai/object"
 	iam "github.com/hanzoai/ai/internal/iam"
+	"github.com/hanzoai/ai/object"
 )
 
 const rawConnKey = "sk-raw-super-secret-do-not-persist-1234567890"
@@ -32,6 +32,13 @@ func TestConnectionSpecs(t *testing.T) {
 		"openai":    {"OpenAI", "openai"},
 		"anthropic": {"Claude", "anthropic"},
 		"google":    {"Gemini", "google"},
+		// OpenAI-compatible providers all type as "OpenAI" pointed at their own URL.
+		"mistral":     {"OpenAI", "mistral"},
+		"together":    {"OpenAI", "together"},
+		"fireworks":   {"OpenAI", "fireworks"},
+		"xai":         {"OpenAI", "xai"},
+		"cohere":      {"OpenAI", "cohere"},
+		"huggingface": {"OpenAI", "huggingface"},
 	}
 	for slug, w := range want {
 		spec, ok := aiConnSpecFor(slug)
@@ -42,8 +49,13 @@ func TestConnectionSpecs(t *testing.T) {
 			t.Errorf("spec %q = {type:%q name:%q}, want {type:%q name:%q}", slug, spec.typ, spec.name, w.typ, w.name)
 		}
 	}
-	if _, ok := aiConnSpecFor("cohere"); ok {
-		t.Error("aiConnSpecFor(cohere) = ok, want rejected (not in allow-list)")
+	// replicate is deliberately NOT in the allow-list — its predictions API is not
+	// OpenAI-compatible, so it cannot back an "OpenAI"-typed BYOK override row.
+	if _, ok := aiConnSpecFor("replicate"); ok {
+		t.Error("aiConnSpecFor(replicate) = ok, want rejected (not OpenAI-compatible)")
+	}
+	if _, ok := aiConnSpecFor("notaprovider"); ok {
+		t.Error("aiConnSpecFor(notaprovider) = ok, want rejected (unknown)")
 	}
 	if _, ok := aiConnSpecFor("OpenAI"); !ok {
 		t.Error("aiConnSpecFor is not case-insensitive")
