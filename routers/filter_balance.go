@@ -292,9 +292,20 @@ func isBalanceExempt(path string) bool {
 	case path == "/v1/feedback":
 		return true
 	// The router-config surface (/v1/router/{policy,defaults,ledger,rewards,artifact-meta}
-	// + /v1/org/settings) is served ZAP-native — the gateway dispatch bypasses this beego
-	// BeforeRouter filter entirely, so those routing-metadata reads/writes are inherently
-	// balance-exempt with no entry here.
+	// + /v1/org/settings) is routing METADATA — per-org policy/allowlist/dial, the export
+	// endpoints, the org settings — NOT metered inference. It is served over beego via
+	// RouterConfigBridge → the ONE native ZAP handler, so it DOES traverse this filter and
+	// must be balance-exempt exactly like /v1/router/stats + /v1/feedback: a $0-balance org
+	// has to read/write its own router config from the console (auth is still enforced — the
+	// handler self-auths). Dropping these from the exempt list would 402 every unfunded
+	// org's Router → Policy tab.
+	case path == "/v1/router/policy" ||
+		path == "/v1/router/defaults" ||
+		path == "/v1/router/ledger" ||
+		path == "/v1/router/rewards" ||
+		path == "/v1/router/artifact-meta" ||
+		strings.HasPrefix(path, "/v1/org/settings"):
+		return true
 	// Router observability READS — the savings/quality aggregate + the improvement
 	// time-series. Marketing/metadata, not metered inference (same class as
 	// /v1/router/defaults): the public platform scope is unauthenticated (the
