@@ -51,8 +51,8 @@ import (
 	"time"
 
 	"github.com/hanzoai/account"
-	"github.com/hanzoai/ai/log"
 	iam "github.com/hanzoai/ai/internal/iam"
+	"github.com/hanzoai/ai/log"
 	"github.com/luxfi/zap"
 
 	"github.com/hanzoai/ai/object"
