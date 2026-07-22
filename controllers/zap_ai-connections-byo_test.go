@@ -158,7 +158,7 @@ func TestConnListCore_NoLeak(t *testing.T) {
 // TestConnAddCore_Validation covers the reject paths: an off-allow-list provider is
 // 400, and an empty key is 400 — before any seal is attempted.
 func TestConnAddCore_Validation(t *testing.T) {
-	if o := connAddCore("acme", "cohere", "sk-x"); o.status != 400 {
+	if o := connAddCore("acme", "notaprovider", "sk-x"); o.status != 400 {
 		t.Errorf("unknown provider status = %d, want 400", o.status)
 	}
 	if o := connAddCore("acme", "openai", "   "); o.status != 400 {
