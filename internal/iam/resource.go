@@ -110,9 +110,11 @@ func (c *Client) DeleteResourceWithTag(resource *Resource, tag string) (bool, er
 func UploadResource(user, tag, parent, fullFilePath string, fileBytes []byte) (string, string, error) {
 	return ensureClient().UploadResource(user, tag, parent, fullFilePath, fileBytes)
 }
+
 func GetResources(owner, user, field, value, sortField, sortOrder string) ([]*Resource, error) {
 	return ensureClient().GetResources(owner, user, field, value, sortField, sortOrder)
 }
+
 func DeleteResourceWithTag(resource *Resource, tag string) (bool, error) {
 	return ensureClient().DeleteResourceWithTag(resource, tag)
 }

@@ -19,8 +19,8 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/hanzoai/ai/object"
 	iam "github.com/hanzoai/ai/internal/iam"
+	"github.com/hanzoai/ai/object"
 	"github.com/luxfi/zap"
 )
 

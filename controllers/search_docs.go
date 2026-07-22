@@ -25,9 +25,9 @@ import (
 	"time"
 
 	"github.com/hanzoai/ai/conf"
+	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/object"
-	iam "github.com/hanzoai/ai/internal/iam"
 )
 
 // searchAuth holds the validated identity for a search API request.

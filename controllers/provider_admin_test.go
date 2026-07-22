@@ -21,9 +21,9 @@ import (
 	"strings"
 	"testing"
 
+	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/object"
 	web "github.com/hanzoai/ai/web"
-	iam "github.com/hanzoai/ai/internal/iam"
 )
 
 // ── adminProviderView projection ────────────────────────────────────────────

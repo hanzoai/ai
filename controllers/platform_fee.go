@@ -15,8 +15,8 @@
 package controllers
 
 import (
-	"github.com/hanzoai/ai/object"
 	iam "github.com/hanzoai/ai/internal/iam"
+	"github.com/hanzoai/ai/object"
 )
 
 // globalProviderOwner is the sentinel Owner of the built-in (Hanzo-served)

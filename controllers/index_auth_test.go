@@ -23,9 +23,9 @@ import (
 	"github.com/hanzoai/account"
 
 	"github.com/hanzoai/ai/conf"
+	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/object"
 	web "github.com/hanzoai/ai/web"
-	iam "github.com/hanzoai/ai/internal/iam"
 )
 
 // ctrlFakeSession is a minimal session.Store for controller auth tests — beego's

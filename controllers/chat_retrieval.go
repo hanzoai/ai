@@ -10,10 +10,10 @@ import (
 	"os"
 	"strings"
 
+	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/model"
 	"github.com/hanzoai/ai/object"
-	iam "github.com/hanzoai/ai/internal/iam"
 )
 
 // retrievalOwner returns the IAM org whose search index should be queried. The
