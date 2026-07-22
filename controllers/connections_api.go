@@ -49,19 +49,29 @@ type aiConnSpec struct {
 	label       string // human display name
 }
 
-// aiConnSpecs is the closed allow-list of connectable consumer providers. Groq is
-// OpenAI-compatible so its row is typed "OpenAI" pointed at Groq's base URL.
+// aiConnSpecs is the closed allow-list of connectable consumer providers. An
+// OpenAI-compatible provider (groq, mistral, together, fireworks, xai, cohere,
+// huggingface) is typed "OpenAI" pointed at its own base URL — the same row shape
+// drives BYOK override (GetModelProviderByNameForOrg) and the 1% BYO fee. subType
+// is only the default model; the router overwrites it per request.
 var aiConnSpecs = map[string]aiConnSpec{
-	"openai":     {name: "openai", typ: "OpenAI", subType: "gpt-5", providerURL: "https://api.openai.com/v1", label: "OpenAI"},
-	"anthropic":  {name: "anthropic", typ: "Claude", subType: "claude-opus-4-8", providerURL: "https://api.anthropic.com", label: "Anthropic"},
-	"google":     {name: "google", typ: "Gemini", subType: "gemini-2.5-pro", providerURL: "https://generativelanguage.googleapis.com/v1beta/openai", label: "Google Gemini"},
-	"openrouter": {name: "openrouter", typ: "OpenRouter", subType: "openrouter/auto", providerURL: "https://openrouter.ai/api/v1", label: "OpenRouter"},
-	"deepseek":   {name: "deepseek", typ: "DeepSeek", subType: "deepseek-chat", providerURL: "https://api.deepseek.com/v1", label: "DeepSeek"},
-	"groq":       {name: "groq", typ: "OpenAI", subType: "llama-3.3-70b-versatile", providerURL: "https://api.groq.com/openai/v1", label: "Groq"},
+	"openai":      {name: "openai", typ: "OpenAI", subType: "gpt-5", providerURL: "https://api.openai.com/v1", label: "OpenAI"},
+	"anthropic":   {name: "anthropic", typ: "Claude", subType: "claude-opus-4-8", providerURL: "https://api.anthropic.com", label: "Anthropic"},
+	"google":      {name: "google", typ: "Gemini", subType: "gemini-2.5-pro", providerURL: "https://generativelanguage.googleapis.com/v1beta/openai", label: "Google Gemini"},
+	"openrouter":  {name: "openrouter", typ: "OpenRouter", subType: "openrouter/auto", providerURL: "https://openrouter.ai/api/v1", label: "OpenRouter"},
+	"deepseek":    {name: "deepseek", typ: "DeepSeek", subType: "deepseek-chat", providerURL: "https://api.deepseek.com/v1", label: "DeepSeek"},
+	"groq":        {name: "groq", typ: "OpenAI", subType: "llama-3.3-70b-versatile", providerURL: "https://api.groq.com/openai/v1", label: "Groq"},
+	"mistral":     {name: "mistral", typ: "OpenAI", subType: "mistral-large-latest", providerURL: "https://api.mistral.ai/v1", label: "Mistral"},
+	"together":    {name: "together", typ: "OpenAI", subType: "meta-llama/Llama-3.3-70B-Instruct-Turbo", providerURL: "https://api.together.xyz/v1", label: "Together"},
+	"fireworks":   {name: "fireworks", typ: "OpenAI", subType: "accounts/fireworks/models/llama-v3p3-70b-instruct", providerURL: "https://api.fireworks.ai/inference/v1", label: "Fireworks"},
+	"xai":         {name: "xai", typ: "OpenAI", subType: "grok-3", providerURL: "https://api.x.ai/v1", label: "xAI"},
+	"cohere":      {name: "cohere", typ: "OpenAI", subType: "command-r-plus", providerURL: "https://api.cohere.ai/compatibility/v1", label: "Cohere"},
+	"huggingface": {name: "huggingface", typ: "OpenAI", subType: "meta-llama/Llama-3.3-70B-Instruct", providerURL: "https://router.huggingface.co/v1", label: "Hugging Face"},
 }
 
-// aiConnOrder fixes the listing order so GetAIConnections is deterministic.
-var aiConnOrder = []string{"openai", "anthropic", "google", "openrouter", "deepseek", "groq"}
+// aiConnOrder fixes the listing order so GetAIConnections is deterministic. Kept
+// in sync with aiConnSpecs (a data-driven test asserts len parity).
+var aiConnOrder = []string{"openai", "anthropic", "google", "openrouter", "deepseek", "groq", "mistral", "together", "fireworks", "xai", "cohere", "huggingface"}
 
 // aiConnSpecFor resolves a provider slug to its spec, case-insensitively. ok is
 // false for any provider outside the allow-list.
