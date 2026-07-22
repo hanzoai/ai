@@ -20,9 +20,9 @@ import (
 	"net/http"
 	"time"
 
+	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
-	iam "github.com/hanzoai/ai/internal/iam"
 )
 
 // audioSpeechRequest is the OpenAI /v1/audio/speech body: synthesize `input` with

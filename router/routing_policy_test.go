@@ -131,8 +131,8 @@ func TestRoutingPolicy_ZeroPolicyMatchesRouteDecision(t *testing.T) {
 func TestLastResortRespectsAllowlist(t *testing.T) {
 	c := Client{
 		Policy: Policy{Prefer: map[string][]string{DefaultTaskKey: {"dear", "cheap"}}},
-		Known:  func(string) bool { return false },              // nothing servable
-		Allow:  func(id string) bool { return id == "cheap" },   // only cheap allowed
+		Known:  func(string) bool { return false },            // nothing servable
+		Allow:  func(id string) bool { return id == "cheap" }, // only cheap allowed
 	}
 	if d := c.RouteDecisionFor(context.Background(), Request{Text: "hi"}, Slo{}, RoutingPolicy{}); d.Model != "cheap" {
 		t.Fatalf("last resort routed to %q, want cheap (relax servability, NEVER the allowlist)", d.Model)

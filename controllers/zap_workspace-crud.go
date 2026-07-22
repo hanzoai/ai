@@ -45,12 +45,12 @@ import (
 	"strings"
 
 	"github.com/hanzoai/ai/conf"
+	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/txt"
 	"github.com/hanzoai/ai/util"
 	"github.com/hanzoai/ai/video"
-	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/luxfi/zap"
 )
 

@@ -22,8 +22,8 @@ import (
 	"testing"
 
 	"github.com/hanzoai/ai/controllers"
-	"github.com/hanzoai/ai/object"
 	iam "github.com/hanzoai/ai/internal/iam"
+	"github.com/hanzoai/ai/object"
 )
 
 var userTag = "user"
