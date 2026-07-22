@@ -185,7 +185,7 @@ func zapAnthropicMessages(ctx context.Context, auth string, reqBody []byte) (int
 		est := estimateRequestCostCents(request.Model, len(request.Messages)*500, request.MaxTokens)
 		var ok bool
 		if hold, ok = reserveBudget(subject, est); !ok {
-			return anthropicErr("billing_error", "Insufficient balance for the estimated request cost. add credits to your wallet at https://pay.hanzo.ai", http.StatusPaymentRequired)
+			return anthropicErr("billing_error", object.InsufficientBalance(authUser.Owner, "request cost").Message, http.StatusPaymentRequired)
 		}
 	}
 	defer hold.settle(0)
