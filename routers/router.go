@@ -396,7 +396,19 @@ func initAPI() {
 	// artifact-meta write (/v1/router/artifact-meta), and the ledger/rewards exports
 	// (/v1/router/{ledger,rewards}) — is served ZAP-native, the ONE implementation
 	// (controllers/zap_router-policy-stats.go + zap_verticals-and-misc.go). No beego
-	// twin here: the twin split-brain is exactly what silently dropped customer data.
+	// twin: RouterConfigBridge is only the HTTP transport binding — it dispatches
+	// in-process through the SAME gateway registry, so there is one handler, no
+	// split-brain (the twin drift is exactly what silently dropped customer data).
+	// "*": the native handler is method-aware (GET/PUT policy, GET/PUT/DELETE settings)
+	// and returns 405 for a verb it does not own. /list is a distinct path segment, so
+	// it needs its own route (the matcher keys on exact segment count).
+	App.Router("/v1/router/policy", &controllers.ApiController{}, "*:RouterConfigBridge")
+	App.Router("/v1/router/defaults", &controllers.ApiController{}, "*:RouterConfigBridge")
+	App.Router("/v1/router/ledger", &controllers.ApiController{}, "*:RouterConfigBridge")
+	App.Router("/v1/router/rewards", &controllers.ApiController{}, "*:RouterConfigBridge")
+	App.Router("/v1/router/artifact-meta", &controllers.ApiController{}, "*:RouterConfigBridge")
+	App.Router("/v1/org/settings", &controllers.ApiController{}, "*:RouterConfigBridge")
+	App.Router("/v1/org/settings/list", &controllers.ApiController{}, "*:RouterConfigBridge")
 
 	// Per-request reward signal for the enso training loop: clients POST an outcome
 	// keyed by the request_id they hold, scoped to their own org. /v1/feedback is the
