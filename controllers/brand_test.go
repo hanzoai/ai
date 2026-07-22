@@ -74,7 +74,7 @@ func TestResolveBrandIAM(t *testing.T) {
 		// admin.* consoles redeem as the ONE admin app (org "admin"), regardless of
 		// brand -- this is the console/admin-login P0 fix. admin.hanzo.ai must NOT
 		// resolve to hanzo-cloud (suffix hanzo.ai) but to admin-console.
-		"admin.hanzo.ai": {"admin-console", "https://hanzo.id", "admin", "admin-secret"},
+		"admin.hanzo.ai":  {"admin-console", "https://hanzo.id", "admin", "admin-secret"},
 		"admin.lux.cloud": {"admin-console", "https://hanzo.id", "admin", "admin-secret"},
 	}
 	for host, w := range cases {
