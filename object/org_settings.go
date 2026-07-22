@@ -14,6 +14,8 @@
 package object
 
 import (
+	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -321,6 +323,20 @@ func DeleteOrgSettings(s *OrgSettings) (bool, error) {
 // Mirrors the ModelRoute cache: org settings are read on every chat request
 // that carries a virtual `auto` model, so a short-TTL cache keeps that path off
 // the DB while still picking up admin changes within one TTL window.
+//
+// This row also carries the live router controls tuned self-service in console
+// (Router → Policy): the savings↔quality dial (RouterQualityBias), the enabled-
+// models allowlist, cost ceiling, strategy, and the platform-global "*" Judge /
+// mean-field knobs. A write flushes the WRITING pod's cache instantly
+// (invalidateOrgSettingsCache), so the operator sees their own change on the next
+// request; the TTL is the ONLY thing gating cross-pod convergence. It is a single-
+// row PK lookup keyed per owner, so a short window is cheap — 5s makes a dial
+// change fleet-wide within 5s (was 60s) with negligible extra read load. It is
+// overridable via ROUTER_SETTINGS_CACHE_TTL_SECONDS for deployments that want to
+// trade freshness against read volume. When KV_URL is set, the cache bus
+// (cache_bus.go) ADDITIONALLY broadcasts each write over Valkey pub/sub, dropping
+// the stale entry on every pod within the round-trip (sub-second fleet-wide); the
+// TTL then only backstops a missed message or a down bus.
 type orgSettingsCacheEntry struct {
 	settings  *OrgSettings // nil = no row for this owner
 	fetchedAt time.Time
@@ -329,10 +345,34 @@ type orgSettingsCacheEntry struct {
 var (
 	orgSettingsCache    = make(map[string]*orgSettingsCacheEntry)
 	orgSettingsCacheMu  sync.RWMutex
-	orgSettingsCacheTTL = 60 * time.Second
+	orgSettingsCacheTTL = orgSettingsTTL()
 )
 
+// orgSettingsTTL resolves the org-settings cache TTL: ROUTER_SETTINGS_CACHE_TTL_SECONDS
+// when set to a positive integer, else the 5s default (near-real-time cross-pod
+// convergence for the console-tuned router controls).
+func orgSettingsTTL() time.Duration {
+	if v := strings.TrimSpace(os.Getenv("ROUTER_SETTINGS_CACHE_TTL_SECONDS")); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return time.Duration(n) * time.Second
+		}
+	}
+	return 5 * time.Second
+}
+
+// invalidateOrgSettingsCache flushes THIS pod's cache and broadcasts the
+// invalidation to the fleet (when the KV_URL cache bus is enabled, cache_bus.go)
+// so a console router-policy change — e.g. the savings↔quality dial — converges
+// sub-second across pods instead of within the TTL window.
 func invalidateOrgSettingsCache() {
+	invalidateOrgSettingsCacheLocal()
+	broadcastInvalidate("org_settings")
+}
+
+// invalidateOrgSettingsCacheLocal drops this pod's cached settings only — the
+// action a received broadcast triggers. It never re-broadcasts, so there is no
+// fan-out loop.
+func invalidateOrgSettingsCacheLocal() {
 	orgSettingsCacheMu.Lock()
 	orgSettingsCache = make(map[string]*orgSettingsCacheEntry)
 	orgSettingsCacheMu.Unlock()
