@@ -235,7 +235,7 @@ func zapServeZenMedia(apiPath, mdl string, rawBody []byte, units int, authUser *
 			subject := account.Payer(account.Credential{Owner: authUser.Owner, Name: authUser.Name}).Subject()
 			var ok2 bool
 			if hold, ok2 = reserveBudget(subject, zm.unitCostCents(units)); !ok2 {
-				return object.BuildCloudResponse(402, nil, "Insufficient balance for the estimated cost. add credits to your wallet at https://pay.hanzo.ai")
+				return object.BuildCloudResponse(402, nil, object.InsufficientBalance(authUser.Owner, "cost").Message)
 			}
 		}
 	}
