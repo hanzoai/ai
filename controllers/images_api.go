@@ -149,7 +149,7 @@ func (c *ApiController) ImagesGenerations() {
 		subject := account.Payer(account.Credential{Owner: authUser.Owner, Name: authUser.Name}).Subject()
 		var ok bool
 		if hold, ok = reserveBudget(subject, imageCostCents(req.Model, n)); !ok {
-			c.ResponseAuthError(billingError("Insufficient balance for the estimated image cost. add credits to your wallet at https://pay.hanzo.ai"))
+			c.ResponseAuthError(billingError("%s", object.InsufficientBalance(authUser.Owner, "image cost").Message))
 			return
 		}
 	}
