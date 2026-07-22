@@ -23,11 +23,11 @@ import (
 	"strings"
 	"sync"
 
+	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/router"
 	"github.com/hanzoai/go-openai"
-	iam "github.com/hanzoai/ai/internal/iam"
 )
 
 // orgAutoRoutingLookup resolves an org's own auto-routing preference ("",
@@ -194,6 +194,17 @@ func resolveAutoModel(requested, orgId, userId, requestId string, authUser *iam.
 	// model that fits) AND tightens the SLO for the engine path. Only ever tightens —
 	// never loosens past the resolved ceiling or an explicit X-Max-Cost.
 	client.Known, slo = applyRouterQualityBias(client.Known, slo, blendedPriceForOrg(orgId), effectiveRouterQualityBias(orgId), cfg)
+	// FREE-TIER FLASH CAP: an org that commerce CONFIDENTLY reports as free tier has `auto`
+	// confined to the flash pool — the router may select only models whose blended price is
+	// within the flash ceiling, so a non-paying caller is never routed to a premium/expensive
+	// model (which the balance gate would then 402 anyway, breaking the request). It reuses the
+	// SAME cost-narrowing primitive as the savings dial and composes AFTER it, so it can only
+	// TIGHTEN: a paid/trial org is untouched, an UNKNOWN tier (a commerce blip) is untouched —
+	// uncertainty NEVER caps, so a paying caller is never degraded on a hiccup — and an explicit
+	// X-Max-Cost still wins when lower. Reversible: ROUTER_FREE_TIER_CEILING_PER_MILLION=0 disables it.
+	if freeTierFlashCapActive(orgId, authUser) {
+		client.Known, slo = capKnownToBudget(client.Known, slo, blendedPriceForOrg(orgId), freeTierFlashCeilingPerMillion())
+	}
 	rreq := router.Request{
 		Text:         lastUserText(req),
 		ApproxTokens: estimatePromptTokens(req),
@@ -315,17 +326,69 @@ func applyRouterQualityBias(base func(string) bool, slo router.Slo, price priceI
 		return base, slo // one price point (or none priced): nothing to tilt
 	}
 	budget := minP + bias*(maxP-minP) // blended $/1M
+	return capKnownToBudget(base, slo, price, budget)
+}
+
+// capKnownToBudget narrows an eligibility predicate to models whose blended $/1M price is
+// within budgetPerMillion, and tightens slo.MaxCost to the same budget (per-1k) for the engine
+// path. It only ever TIGHTENS: it never re-admits a model `base` already rejected, an UNPRICED
+// model (price ≤ 0) is never dropped (a missing price can neither exclude a model nor be read as
+// free), and slo.MaxCost is lowered only when the budget is lower (an explicit X-Max-Cost or an
+// already-tighter ceiling still wins). It is the ONE cost-narrowing primitive shared by the
+// savings-vs-quality dial and the free-tier flash cap. A non-positive budget or a nil base/price
+// is a no-op, so a disabled cap can never dead-end routing.
+func capKnownToBudget(base func(string) bool, slo router.Slo, price priceIndexFn, budgetPerMillion float64) (func(string) bool, router.Slo) {
+	if base == nil || price == nil || budgetPerMillion <= 0 {
+		return base, slo
+	}
 	eligible := func(id string) bool {
 		if !base(id) {
 			return false
 		}
 		p := price(id)
-		return p <= 0 || p <= budget*(1+1e-9)
+		return p <= 0 || p <= budgetPerMillion*(1+1e-9)
 	}
-	if per1k := router.PerMillionToPerThousand(budget); slo.MaxCost <= 0 || per1k < slo.MaxCost {
+	if per1k := router.PerMillionToPerThousand(budgetPerMillion); slo.MaxCost <= 0 || per1k < slo.MaxCost {
 		slo.MaxCost = per1k
 	}
 	return eligible, slo
+}
+
+// DefaultFreeTierFlashCeilingPerMillion caps the FREE tier's `auto` routing to the flash pool.
+// It is a BLENDED $/1M bound ((input+output)/2 — the blendedPriceForOrg unit). It sits
+// deliberately ABOVE the synthesized default price (default_pricing 1/4 ⇒ blended 2.50), so a
+// servable model with no explicit price (a zen champion, enso-flash) is treated as flash and
+// never dropped, while EVERY premium model sits far above it (glm-5.2 ~6.3, gpt-5.x ~10, o3 ~25,
+// opus/fable ~45) and is excluded with wide margin — as are the pricey non-premium ids
+// (qwen3-coder ~3.6, kimi ~5, deepseek-reasoner ~5.5). The cheap pool (gpt-4o-mini ~0.38, the
+// gemma/mistral/nemotron/llama pool ~0.1–0.35, deepseek-v3.2 ~0.69) is well within it. The
+// family-tier gate already keeps free callers off the enso ladder above enso-flash; this ceiling
+// is the complementary bound that keeps them off the do-ai premium models (not family SKUs).
+const DefaultFreeTierFlashCeilingPerMillion = 3.00
+
+// freeTierFlashCeilingPerMillion resolves the live flash ceiling — the
+// ROUTER_FREE_TIER_CEILING_PER_MILLION env override or the built-in default. 0 (env set to 0)
+// disables the free-tier cap entirely: the reversible kill switch, no rebuild.
+func freeTierFlashCeilingPerMillion() float64 {
+	return envFloat("ROUTER_FREE_TIER_CEILING_PER_MILLION", DefaultFreeTierFlashCeilingPerMillion)
+}
+
+// freeTierFlashCapActive reports whether the caller's commerce tier is CONFIDENTLY free — the
+// only case the flash cap fires. It reuses the SAME tier source (familyTier) and subject rule
+// (familyAccessSubject) the family-SKU gate uses, so it keys on the identical subject the balance
+// read and usage debit do. Its fail-safe direction is deliberately that of familyTierAllowed, NOT
+// the funding gate: an UNKNOWN tier (commerce unconfigured, a blip, or no subject → familyTier "")
+// does NOT cap, so a paying caller is never degraded to the flash pool on a commerce hiccup. Only a
+// confident "free" (enso rank 0) caps; trial/paid never do. A disabled ceiling (env 0) is false.
+func freeTierFlashCapActive(orgId string, authUser *iam.User) bool {
+	if freeTierFlashCeilingPerMillion() <= 0 {
+		return false
+	}
+	name := familyTier(familyAccessSubject(orgId, authUser))
+	if strings.TrimSpace(name) == "" {
+		return false // unknown → do NOT cap (never degrade a paying caller on a blip)
+	}
+	return ensoTierRank(commerceTierToLadder(name)) == ensoTierRank("free")
 }
 
 // SourceExplicit marks a routing event for a request whose model the CALLER chose
