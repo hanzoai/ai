@@ -44,9 +44,9 @@ import (
 
 	"github.com/hanzoai/account"
 
+	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/log"
 	openai "github.com/hanzoai/go-openai"
-	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/luxfi/zap"
 
 	"github.com/hanzoai/ai/model"
