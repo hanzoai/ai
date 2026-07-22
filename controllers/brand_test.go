@@ -55,6 +55,7 @@ func TestResolveBrandIAM(t *testing.T) {
 	t.Setenv("LUX_CLOUD_CLIENT_SECRET", "lux-secret")
 	t.Setenv("ZOO_CLOUD_CLIENT_SECRET", "zoo-secret")
 	t.Setenv("PARS_CLOUD_CLIENT_SECRET", "")
+	t.Setenv("ADMIN_CONSOLE_CLIENT_SECRET", "admin-secret")
 	// Ensure the hanzo default is not overridden by a stray env in this process.
 	t.Setenv("IAM_CLIENT_ID", "")
 	t.Setenv("IAM_APP_NAME", "")
@@ -70,6 +71,11 @@ func TestResolveBrandIAM(t *testing.T) {
 		"console.zoo.cloud":  {"zoo-cloud", "https://zoolabs.id", "zoo", "zoo-secret"},
 		"console.pars.cloud": {"pars-cloud", "https://pars.id", "pars", ""},
 		"unknown.example":    {"hanzo-cloud", "https://hanzo.id", "hanzo", "hanzo-secret"}, // default
+		// admin.* consoles redeem as the ONE admin app (org "admin"), regardless of
+		// brand -- this is the console/admin-login P0 fix. admin.hanzo.ai must NOT
+		// resolve to hanzo-cloud (suffix hanzo.ai) but to admin-console.
+		"admin.hanzo.ai": {"admin-console", "https://hanzo.id", "admin", "admin-secret"},
+		"admin.lux.cloud": {"admin-console", "https://hanzo.id", "admin", "admin-secret"},
 	}
 	for host, w := range cases {
 		b := resolveBrandIAM(host)
@@ -135,6 +141,41 @@ func TestBrandAuthClient_FailClosed(t *testing.T) {
 	t.Setenv("LUX_CLOUD_CLIENT_SECRET", "lux-secret")
 	if c, err := brandAuthClient(resolveBrandIAM("console.lux.cloud")); err != nil || c == nil {
 		t.Fatalf("configured lux must return a client, got client=%v err=%v", c, err)
+	}
+}
+
+// TestIsAdminHost proves admin.* hosts are detected (case/port-insensitive) and
+// nothing else is -- so only the global-admin consoles redeem as admin-console.
+func TestIsAdminHost(t *testing.T) {
+	admin := []string{"admin.hanzo.ai", "admin.lux.cloud", "ADMIN.HANZO.AI", "admin.hanzo.ai:443", "admin.zoo.cloud"}
+	notAdmin := []string{"console.hanzo.ai", "cloud.hanzo.ai", "hanzo.ai", "administrator.hanzo.ai", "myadmin.hanzo.ai", "", "admin"}
+	for _, h := range admin {
+		if !isAdminHost(h) {
+			t.Errorf("isAdminHost(%q) = false, want true", h)
+		}
+	}
+	for _, h := range notAdmin {
+		if isAdminHost(h) {
+			t.Errorf("isAdminHost(%q) = true, want false", h)
+		}
+	}
+}
+
+// TestBrandAuthClient_Admin proves the admin host builds a dedicated confidential
+// client for admin-console (org "admin") and fails closed when its secret is unset
+// -- never silently reusing hanzo's global (which is the "wrong application" bug).
+func TestBrandAuthClient_Admin(t *testing.T) {
+	t.Setenv("ADMIN_CONSOLE_CLIENT_SECRET", "")
+	if _, err := brandAuthClient(resolveBrandIAM("admin.hanzo.ai")); err == nil {
+		t.Fatal("admin with no ADMIN_CONSOLE_CLIENT_SECRET must fail closed, got nil error")
+	}
+	t.Setenv("ADMIN_CONSOLE_CLIENT_SECRET", "admin-secret")
+	b := resolveBrandIAM("admin.hanzo.ai")
+	if b.Brand != adminBrand || b.ClientID != "admin-console" || b.Org != "admin" {
+		t.Fatalf("admin resolve: brand=%q clientID=%q org=%q", b.Brand, b.ClientID, b.Org)
+	}
+	if c, err := brandAuthClient(b); err != nil || c == nil {
+		t.Fatalf("configured admin must return a per-brand client, got client=%v err=%v", c, err)
 	}
 }
 
