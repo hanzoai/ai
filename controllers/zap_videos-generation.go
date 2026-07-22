@@ -133,7 +133,7 @@ func zapVideosGenerateHandler(ctx context.Context, auth string, body []byte) (*z
 	// (no authUser, empty subject) has no subject to own or bill the job by —
 	// reject rather than create an unownable, unbillable job.
 	if authUser == nil {
-		return object.BuildCloudResponse(401, nil, "Video generation requires an authenticated Hanzo Cloud account. Sign in and add credits to your wallet at https://pay.hanzo.ai")
+		return object.BuildCloudResponse(401, nil, "Video generation requires an authenticated Hanzo Cloud account. Sign in and add credits to your wallet at "+object.PayURL(""))
 	}
 	subject := account.Payer(account.Credential{Owner: authUser.Owner, Name: authUser.Name}).Subject()
 	if subject == "" {
@@ -178,7 +178,7 @@ func zapVideosGenerateHandler(ctx context.Context, auth string, body []byte) (*z
 	// any early error below or by the reaper if the job is abandoned.
 	hold, okReserve := reserveBudget(subject, videoCostCents(req.Model, 1))
 	if !okReserve {
-		return object.BuildCloudResponse(402, nil, "Insufficient balance for the estimated video cost. add credits to your wallet at https://pay.hanzo.ai")
+		return object.BuildCloudResponse(402, nil, object.InsufficientBalance(authUser.Owner, "video cost").Message)
 	}
 
 	// Create the upstream job — FAST: the async API returns a queued job id
@@ -437,7 +437,7 @@ func zapVideoServeZen(mdl string, rawBody []byte, authUser *iam.User, isPremium 
 			subject := account.Payer(account.Credential{Owner: authUser.Owner, Name: authUser.Name}).Subject()
 			var ok2 bool
 			if hold, ok2 = reserveBudget(subject, zm.unitCostCents(units)); !ok2 {
-				return object.BuildCloudResponse(402, nil, "Insufficient balance for the estimated cost. add credits to your wallet at https://pay.hanzo.ai")
+				return object.BuildCloudResponse(402, nil, object.InsufficientBalance(authUser.Owner, "cost").Message)
 			}
 		}
 	}
