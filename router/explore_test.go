@@ -85,3 +85,56 @@ func TestExploreRateIsApproximatelyEpsilon(t *testing.T) {
 		t.Fatalf("explore rate %.3f not ~0.2", rate)
 	}
 }
+
+// TestExploreStaysServableUnderPolicy: an org may ENABLE a model that the process
+// cannot currently SERVE (e.g. its provider was disconnected). Exploration must
+// never sample such an enabled-but-unserved arm — doing so 404s the request. Here
+// the org enables {served-champ, unserved-alt} but the process serves only
+// served-champ, so with Explore=1 the router must stay on the served set (exploit
+// the lone served arm) rather than dead-end on the unservable explore pick.
+// Pre-fix (ec.Known = rp.Enabled) this sampled "unserved-alt" and 404'd.
+func TestExploreStaysServableUnderPolicy(t *testing.T) {
+	c := Client{
+		Policy:  Policy{Prefer: map[string][]string{DefaultTaskKey: {"served-champ", "unserved-alt"}}},
+		Known:   func(m string) bool { return m == "served-champ" }, // process serves only champ
+		Explore: 1.0,
+		Rand:    rand.New(rand.NewSource(1)),
+	}
+	rp := RoutingPolicy{Enabled: rpEnabled("served-champ", "unserved-alt")} // org enabled both
+	for i := 0; i < 200; i++ {
+		d := c.RouteDecisionFor(context.Background(), Request{Text: "hi"}, Slo{}, rp)
+		if d.Model == "unserved-alt" {
+			t.Fatalf("exploration routed to an enabled-but-UNSERVED model (would 404): %+v", d)
+		}
+		if d.Model != "served-champ" {
+			t.Fatalf("expected the served champ, got %+v", d)
+		}
+	}
+}
+
+// TestExploreSamplesOnlyServedAlternatives: with multiple SERVED arms plus an
+// enabled-but-UNSERVED arm, exploration must cover the served alternatives yet
+// never sample the unserved one. Proves the fix filters the explore pool by
+// servability (served ∩ enabled), not merely by the org allowlist.
+func TestExploreSamplesOnlyServedAlternatives(t *testing.T) {
+	c := Client{
+		Policy:  Policy{Prefer: map[string][]string{DefaultTaskKey: {"champ", "alt", "unserved"}}},
+		Known:   func(m string) bool { return m != "unserved" }, // process serves champ + alt
+		Explore: 1.0,
+		Rand:    rand.New(rand.NewSource(1)),
+	}
+	rp := RoutingPolicy{Enabled: rpEnabled("champ", "alt", "unserved")} // org enabled all three
+	seenAlt := false
+	for i := 0; i < 200; i++ {
+		d := c.RouteDecisionFor(context.Background(), Request{Text: "hi"}, Slo{}, rp)
+		if d.Model == "unserved" {
+			t.Fatalf("explore sampled the enabled-but-unserved arm: %+v", d)
+		}
+		if d.Source == SourceExplore && d.Model == "alt" {
+			seenAlt = true
+		}
+	}
+	if !seenAlt {
+		t.Fatalf("explore never sampled the served alternative 'alt'")
+	}
+}
