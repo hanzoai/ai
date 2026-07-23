@@ -531,6 +531,10 @@ type usageRecord struct {
 	// Session is the conversation/session id. Emitted as gen_ai.conversation.id +
 	// session.id, which is what turns the o11y sessions view on for this org.
 	Session string `json:"session,omitempty"`
+	// Environment is the caller's logical environment label (X-Environment). Emitted
+	// as deployment.environment on the span so Observe narrows by environment instead
+	// of defaulting to "default". Empty emits no attribute (honest, never fabricated).
+	Environment string `json:"environment,omitempty"`
 	// Project is the caller's org SUB-SCOPE (X-Project-Id). It is stamped on the
 	// cloud_usage ledger row + the gen_ai span, so cost/tokens/latency narrow WITHIN
 	// an org by project. Empty is the org's default project (whole-org view).
@@ -756,11 +760,20 @@ func recordTrace(ctx context.Context, record *usageRecord, startTime time.Time) 
 	// value (an explicit producer) is left untouched.
 	if record != nil {
 		attr := object.GenAIAttributionFromContext(ctx)
+		// Org fallback: stamp the VERIFIED tenant org only when a producer set neither
+		// Organization nor Owner, so real tenant traffic always carries its org (the
+		// o11y llmobs views drop empty-org spans) without overriding an explicit value.
+		if record.Organization == "" && record.Owner == "" {
+			record.Organization = attr.Org
+		}
 		if record.Project == "" {
 			record.Project = attr.Project
 		}
 		if record.Session == "" {
 			record.Session = attr.Session
+		}
+		if record.Environment == "" {
+			record.Environment = attr.Environment
 		}
 		if record.APIKeyHash == "" {
 			record.APIKeyHash = attr.APIKeyHash
