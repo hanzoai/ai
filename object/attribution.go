@@ -29,18 +29,29 @@ type genAIAttrKey struct{}
 // GenAIAttribution is the per-request attribution the gen_ai span + cloud_usage
 // ledger stamp. Every field is optional; an empty field emits/stores nothing.
 type GenAIAttribution struct {
+	// Org is the caller's VERIFIED tenant org (GetOrg — the principal's real org, not
+	// the raw X-Org-Id header). recordTrace stamps it onto the gen_ai span's
+	// gen_ai.hanzo.org_id ONLY as a fallback when a producer left the record's
+	// org/owner empty, so real tenant traffic always carries its org even on a code
+	// path that forgot to set it. The o11y llmobs views apply a mandatory org filter
+	// that silently drops empty-org spans — this closes that hole.
+	Org string
 	// Project is the caller's org SUB-SCOPE (X-Project-Id); "" is the default project.
 	Project string
 	// Session is the client-supplied session/conversation id (X-Session-Id). It turns
 	// the o11y sessions view on for this org (emitted as session.id + gen_ai.conversation.id).
 	Session string
+	// Environment is the caller's logical environment label (X-Environment, e.g.
+	// "staging"/"production"). Stamped onto the span's deployment.environment so
+	// Observe stops defaulting to "default". "" emits nothing.
+	Environment string
 	// APIKeyHash is a SHA-256 hex ref of the caller credential — NEVER the plaintext key.
 	APIKeyHash string
 }
 
 // empty reports whether a carries nothing worth threading.
 func (a GenAIAttribution) empty() bool {
-	return a.Project == "" && a.Session == "" && a.APIKeyHash == ""
+	return a.Org == "" && a.Project == "" && a.Session == "" && a.Environment == "" && a.APIKeyHash == ""
 }
 
 // WithGenAIAttribution returns ctx carrying a. When a is empty it returns ctx

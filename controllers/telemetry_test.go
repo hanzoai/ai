@@ -162,6 +162,48 @@ func TestBuildGenAISpanFields_ErrorAndFallbacks(t *testing.T) {
 	}
 }
 
+// TestBuildGenAISpanFields_OrgSystemFallback pins the MANDATORY org invariant: o11y's
+// llmobs views hard-filter on gen_ai.hanzo.org_id and drop empty-org spans, so a span
+// must ALWAYS carry an org. When an internal system caller sets neither Organization
+// nor Owner, org falls back to the reserved system org — never empty.
+func TestBuildGenAISpanFields_OrgSystemFallback(t *testing.T) {
+	rec := &usageRecord{Model: "zen5", Status: "success"} // no Organization, no Owner
+
+	m := attrMap(buildGenAISpanFields(rec, 0, 0, 0, 0, nil, false).attrs)
+
+	got, ok := m["gen_ai.hanzo.org_id"]
+	if !ok {
+		t.Fatal("gen_ai.hanzo.org_id must ALWAYS be present (o11y drops empty-org spans)")
+	}
+	if got.AsString() != orgSystemDefault {
+		t.Errorf("gen_ai.hanzo.org_id = %q, want %q (system fallback)", got.AsString(), orgSystemDefault)
+	}
+	if got.AsString() == "" {
+		t.Error("gen_ai.hanzo.org_id must never be empty")
+	}
+}
+
+// TestBuildGenAISpanFields_Environment pins the environment attribution: a record
+// carrying the caller's X-Environment emits deployment.environment so Observe narrows
+// by environment instead of defaulting to "default"; absent when the caller sent none.
+func TestBuildGenAISpanFields_Environment(t *testing.T) {
+	withEnv := attrMap(buildGenAISpanFields(
+		&usageRecord{Owner: "acme", Model: "zen5", Status: "success", Environment: "staging"},
+		0, 0, 0, 0, nil, false,
+	).attrs)
+	if got := withEnv["deployment.environment"].AsString(); got != "staging" {
+		t.Errorf("deployment.environment = %q, want \"staging\"", got)
+	}
+
+	noEnv := attrMap(buildGenAISpanFields(
+		&usageRecord{Owner: "acme", Model: "zen5", Status: "success"},
+		0, 0, 0, 0, nil, false,
+	).attrs)
+	if _, ok := noEnv["deployment.environment"]; ok {
+		t.Error("deployment.environment must be absent when the caller set no X-Environment")
+	}
+}
+
 // TestBuildGenAISpanFields_ProjectAndKeyHash pins the per-project + credential-ref
 // attribution: when the record carries a project and a hashed key ref, the span
 // emits gen_ai.hanzo.project + gen_ai.hanzo.api_key_hash — and the hash is a ref,

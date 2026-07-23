@@ -33,6 +33,7 @@ import (
 
 	"github.com/hanzoai/cloud"
 	luxlog "github.com/luxfi/log"
+	"github.com/zap-proto/fiber/v3/middleware/adaptor"
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/ai/conf"
@@ -113,7 +114,18 @@ func Mount(app *zip.App, deps cloud.Deps) error {
 // /v1/<name>/health routes (registered before MountAll) likewise win over this
 // glob, so liveness is unaffected.
 func mountRoutes(app *zip.App) {
-	app.All("/v1/*", zip.AdaptNetHTTP(handlerAdapter{}))
+	// Carry the request context ACROSS the zip→net/http boundary so the OTel SERVER
+	// span cloud stashed on the request (TracingMiddleware → zip SetContext, the Fiber
+	// user-context) reaches the ai handler. The plain zip.AdaptNetHTTP path uses
+	// adaptor.HTTPHandler, which DROPS the Fiber user-context at the fasthttp→net/http
+	// conversion — so controllers.emitGenAISpan started the gen_ai generation span from
+	// a span-less context and it ORPHANED a fresh trace root instead of nesting under
+	// the request span. o11y Observe then rendered every LLM call as an empty,
+	// observation-less trace. HTTPHandlerWithContext stows c.Context() on the request;
+	// handlerAdapter.ServeHTTP restores it onto r.Context() (below), so the generation
+	// span nests as a CHILD of the request server span. One boundary, one carry.
+	wrapped := adaptor.HTTPHandlerWithContext(handlerAdapter{})
+	app.All("/v1/*", func(c *zip.Ctx) error { return wrapped(c.Fiber()) })
 }
 
 // handlerAdapter forwards each request under /v1/* to the registered runtime
@@ -128,6 +140,15 @@ func (handlerAdapter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if h == nil {
 		http.Error(w, "ai runtime not initialized", http.StatusServiceUnavailable)
 		return
+	}
+	// Restore the caller's request context — carrying cloud's OTel SERVER span —
+	// that adaptor.HTTPHandlerWithContext stowed on the request (mountRoutes), so the
+	// gen_ai generation span emitted downstream (controllers.emitGenAISpan) nests
+	// under the request span instead of orphaning a new trace root. Absent (a
+	// non-adapted caller, or a request that never opened a server span) leaves r
+	// untouched — never a panic, never a regression.
+	if ctx, ok := adaptor.LocalContextFromHTTPRequest(r); ok && ctx != nil {
+		r = r.WithContext(ctx)
 	}
 	h.ServeHTTP(w, r)
 }
