@@ -24,6 +24,7 @@ func TestTenantContextFilter_ThreadsAttribution(t *testing.T) {
 	req := httptest.NewRequest("POST", "/v1/chat/completions", nil)
 	req.Header.Set("X-Project-Id", "research")
 	req.Header.Set("X-Session-Id", "conv-42")
+	req.Header.Set("X-Environment", "staging")
 	req.Header.Set("Authorization", "Bearer hk-secret-key")
 
 	ctx := web.NewContext()
@@ -37,6 +38,9 @@ func TestTenantContextFilter_ThreadsAttribution(t *testing.T) {
 	}
 	if attr.Session != "conv-42" {
 		t.Fatalf("session not threaded onto request context: %q", attr.Session)
+	}
+	if attr.Environment != "staging" {
+		t.Fatalf("environment not threaded onto request context: %q", attr.Environment)
 	}
 	want := sha256.Sum256([]byte("hk-secret-key"))
 	if attr.APIKeyHash != hex.EncodeToString(want[:]) {
@@ -59,6 +63,25 @@ func TestTenantContextFilter_NoAttributionWhenBare(t *testing.T) {
 
 	if got := object.GenAIAttributionFromContext(ctx.Request.Context()); got != (object.GenAIAttribution{}) {
 		t.Fatalf("bare request must carry no attribution, got %+v", got)
+	}
+}
+
+// TestTenantContextFilter_SessionAliasConversationID proves the session id is honored
+// under the OpenAI/librechat-style X-Conversation-Id header when X-Session-Id is absent,
+// so either client convention turns the o11y sessions view on.
+func TestTenantContextFilter_SessionAliasConversationID(t *testing.T) {
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/v1/chat/completions", nil)
+	req.Header.Set("X-Conversation-Id", "thread-7")
+	req.Header.Set("Authorization", "Bearer hk-secret-key")
+
+	ctx := web.NewContext()
+	ctx.Reset(rec, req)
+
+	TenantContextFilter(ctx)
+
+	if attr := object.GenAIAttributionFromContext(ctx.Request.Context()); attr.Session != "thread-7" {
+		t.Fatalf("session via X-Conversation-Id = %q, want \"thread-7\"", attr.Session)
 	}
 }
 
