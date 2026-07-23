@@ -15,12 +15,15 @@
 package ai
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/zap-proto/zip"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // These tests exercise the route-adapter concern (bare /v1/* forwarding and the
@@ -76,6 +79,50 @@ func TestMountRoutesForwardsBarePathUnchanged(t *testing.T) {
 	}
 	if sawPath != "/v1/chat/completions" {
 		t.Fatalf("sawPath=%q want /v1/chat/completions (no rewrite)", sawPath)
+	}
+}
+
+// TestMountRoutesPropagatesTraceContext proves the mount adapter carries the request
+// context ACROSS the zip→net/http boundary, so the OTel SERVER span cloud stashes via
+// zip SetContext reaches the ai handler's r.Context(). Without this the gen_ai
+// generation span (emitGenAISpan) starts parent-less and ORPHANS a fresh trace root —
+// the exact defect (empty, observation-less traces in o11y Observe) this fix closes.
+// It asserts the handler sees the SAME trace id as the upstream span, i.e. a child the
+// generation span would nest under, mirroring how the in-process agent path already nests.
+func TestMountRoutesPropagatesTraceContext(t *testing.T) {
+	tp := sdktrace.NewTracerProvider()
+	_, parent := tp.Tracer("test").Start(context.Background(), "POST /v1/chat/completions")
+	parentSC := parent.SpanContext()
+	parentCtx := trace.ContextWithSpan(context.Background(), parent)
+
+	app := zip.New(zip.Config{DisableStartupMessage: true})
+	// Simulate cloud's TracingMiddleware: stash the server-span context on the request
+	// BEFORE the /v1/* mount runs.
+	app.Use(func(c *zip.Ctx) error {
+		c.SetContext(parentCtx)
+		return c.Continue()
+	})
+	mountRoutes(app)
+
+	var gotSC trace.SpanContext
+	SetHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotSC = trace.SpanContextFromContext(r.Context())
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer SetHandler(nil)
+
+	resp, err := app.Fiber().Test(httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil))
+	if err != nil {
+		t.Fatalf("Test: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status=%d want 200", resp.StatusCode)
+	}
+	if !gotSC.IsValid() {
+		t.Fatal("handler saw NO span context — the parent span did not propagate (generation span would orphan a new trace)")
+	}
+	if gotSC.TraceID() != parentSC.TraceID() {
+		t.Fatalf("handler trace id = %s, want parent %s (context severed at the mount boundary)", gotSC.TraceID(), parentSC.TraceID())
 	}
 }
 
