@@ -76,9 +76,21 @@ const (
 	attrInputMessages  = "gen_ai.input.messages"
 	attrOutputMessages = "gen_ai.output.messages"
 
+	// attrDeploymentEnv is the standard OTel key o11y reads for Environment. Emitted
+	// per-request from record.Environment (the caller's X-Environment) so Observe
+	// narrows by environment instead of defaulting to "default".
+	attrDeploymentEnv = "deployment.environment"
+
 	// servedByDefault labels a call served by Hanzo cloud (the majority). BYO
 	// provider/GPU paths override it via record.ServedBy.
 	servedByDefault = "hanzo"
+
+	// orgSystemDefault is the reserved system org stamped on a span when an internal
+	// system caller (router probe/judge, warmups) carries NEITHER Organization nor
+	// Owner. o11y's llmobs views apply a mandatory gen_ai.hanzo.org_id filter that
+	// silently drops empty-org spans, so a last-resort org keeps internal traffic
+	// visible. Real tenant traffic always resolves its own org before this fallback.
+	orgSystemDefault = "hanzo"
 )
 
 // genAISpanFields is the pure projection of a usageRecord onto OTel GenAI
@@ -159,8 +171,15 @@ func buildGenAISpanFields(record *usageRecord, totalCostUSD, billedCostUSD, prov
 	if record.User != "" {
 		attrs = append(attrs, attribute.String(attrUserID, record.User))
 	}
-	if org := firstNonEmptyStr(record.Organization, record.Owner); org != "" {
-		attrs = append(attrs, attribute.String(attrOrgID, org))
+	// org_id is MANDATORY: o11y's llmobs views hard-filter on gen_ai.hanzo.org_id and
+	// drop empty-org spans. Resolve from the record (Organization → Owner) and fall
+	// back to the reserved system org for internal system callers that carry neither,
+	// so every ai-emitted span stays visible. Always emitted (never conditionally).
+	org := firstNonEmptyStr(record.Organization, record.Owner, orgSystemDefault)
+	attrs = append(attrs, attribute.String(attrOrgID, org))
+	// Environment (X-Environment) → deployment.environment, when the caller set one.
+	if record.Environment != "" {
+		attrs = append(attrs, attribute.String(attrDeploymentEnv, record.Environment))
 	}
 	// Project is the org SUB-SCOPE (the caller's X-Project-Id). Emitting it lets the
 	// o11y views + the cloud metrics board narrow WITHIN an org by project; empty
