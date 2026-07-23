@@ -142,6 +142,11 @@ func initTelemetry() {
 		sdktrace.WithBatcher(exporter),
 		sdktrace.WithResource(resource.NewSchemaless(
 			attribute.String("service.name", telemetryServiceName()),
+			// deployment.environment on the resource so o11y's Environment column
+			// resolves instead of defaulting to "default". Env-overridable; a
+			// telemetry-emitting binary is a real deployment, so "production" is the
+			// honest default (local dev never emits — the exporter is unset).
+			attribute.String("deployment.environment", deploymentEnvironment()),
 		)),
 	)
 	otel.SetTracerProvider(tp)
@@ -190,6 +195,17 @@ func telemetryServiceName() string {
 		return v
 	}
 	return "hanzo-ai"
+}
+
+// deploymentEnvironment resolves the process deployment environment for the OTel
+// resource. Env-overridable (DEPLOYMENT_ENVIRONMENT / OTEL_DEPLOYMENT_ENVIRONMENT /
+// ENVIRONMENT); defaults to "production" because telemetry only emits when an
+// exporter/sink is configured — i.e. a real deployment, never local dev.
+func deploymentEnvironment() string {
+	if v := firstNonEmptyEnv("DEPLOYMENT_ENVIRONMENT", "OTEL_DEPLOYMENT_ENVIRONMENT", "ENVIRONMENT"); v != "" {
+		return v
+	}
+	return "production"
 }
 
 func firstNonEmptyEnv(keys ...string) string {
