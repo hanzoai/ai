@@ -1,13 +1,40 @@
-# Hanzo Cloud - Claude Code Guide
+# ai — agent guide
 
-## Project Overview
+`hanzoai/ai` is the canonical **AI control plane** for the Hanzo platform: model
+hub, native Go model routing, RAG, and MCP/A2A management. It speaks the
+OpenAI-compatible `/v1` API, routes 66+ models to upstream providers, and meters
+every request. Renamed from `hanzoai/cloud` (HIP-0106); mounts as the `ai`
+subsystem inside `hanzoai/cloud`. In prod it runs as `cloud-api` on `hanzo-k8s`,
+fronted by `hanzoai/gateway` at `api.hanzo.ai`.
 
-Hanzo Cloud is an enterprise-level AI knowledge base and MCP (Model Context Protocol) / A2A (Agent-to-Agent) management platform. It supports 30+ AI model providers (OpenAI, Claude, Gemini, Ollama, etc.) with admin UI, user management, and SSO via Hanzo IAM.
+**Canonical role.** This is a Hanzo *service/infra* repo — one impl, one place.
+It is NOT an SDK; SDKs link out to it. Completeness order across languages is
+Python → Rust → C++ → Go. Canonical spec: `~/work/hanzo/SDK-ARCHITECTURE.md`.
+
+**Brand rules (hard — enforce in every edit).**
+- Never call this an "LLM gateway" and never position it against LiteLLM — it is
+  a full AI cloud / control plane, not a proxy.
+- `/v1/` only, never an `/api/` prefix.
+- Zen models are Hanzo's own family (`owned_by: hanzo`) — never name upstream models.
+- Voice: "Hanzo — the Open AI Cloud." Modern, crisp, developer-first.
+
+**Install / run.**
+```bash
+go build -race -ldflags "-extldflags '-static'"   # build
+./cloud-api-server                                 # run (env-configured)
+go test -v $(go list ./...) -tags skipCi           # test (requires MySQL)
+docker compose up                                  # local stack
+```
+
+**Key entry points.** `main.go` (entry) · `bootstrap.go` (boot + replica
+assertion) · `routers/router.go` (all `/v1` routes) · `controllers/` (HTTP
+handlers) · `object/init.go` (init + LLM provider seeding) · `model/` (provider
+integrations) · `object/kms.go` (secret resolution) · `web/` (React admin UI).
 
 ## Architecture
 
 Full-stack application:
-- **Backend:** Go 1.23.6 + Beego framework (MVC), MySQL/MariaDB
+- **Backend:** Go 1.26 + native web router (`github.com/hanzoai/ai/web`, served as `routers.App`; upstream beego dropped), MySQL/MariaDB/PostgreSQL
 - **Frontend:** React + Ant Design v5, located in `web/`
 - **Auth:** Hanzo IAM SSO integration
 
