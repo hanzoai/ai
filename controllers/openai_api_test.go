@@ -143,6 +143,10 @@ func TestGetUserByAccessKeyUsesCanonicalPath(t *testing.T) {
 
 	os.Setenv("IAM_URL", srv.URL)
 	defer os.Unsetenv("IAM_URL")
+	// The resolver authenticates as a confidential app (client_secret_basic) and
+	// fails closed without a credential — see TestGetUserByAccessKeyUsesClientSecretBasic.
+	t.Setenv("IAM_CLIENT_ID", "hanzo-cloud")
+	t.Setenv("IAM_CLIENT_SECRET", "s3cr3t")
 
 	user, err := getUserByAccessKey("hk-canonical-test")
 	if err != nil {
