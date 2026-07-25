@@ -199,11 +199,15 @@ func resolveProviderFromWidgetKey(token string, requestedModel string, lang stri
 		)
 	}
 
-	// Widget keys can only access explicitly allowed models
-	if !widgetAllowedModels[strings.ToLower(requestedModel)] {
+	// Model allowlist. A widget key may declare an EXPLICIT per-key allowlist
+	// (WIDGET_KEY_MODELS) that binds it to exactly the models its owner
+	// provisioned — the docs key to `enso` only — so a leaked key cannot reach
+	// arbitrary or expensive models the coarse global allowlist permits. A key
+	// with no explicit binding falls back to the global cheap-model allowlist.
+	if !widgetKeyModelAllowed(token, requestedModel) {
 		return nil, "", fmt.Errorf(
-			"model %q is not available for widget access. Allowed models: %s",
-			requestedModel, widgetAllowedModelsList(),
+			"model %q is not available for this widget key. Allowed models: %s",
+			requestedModel, widgetKeyAllowedList(token),
 		)
 	}
 
@@ -226,6 +230,35 @@ func widgetAllowedModelsList() string {
 	}
 	sort.Strings(models)
 	return strings.Join(models, ", ")
+}
+
+// widgetKeyModelAllowed reports whether a widget key may call requestedModel. A key
+// with an explicit per-key allowlist (object.WidgetKeyModels, from WIDGET_KEY_MODELS)
+// is bound to EXACTLY that set — the tightest, per-tenant guardrail (the docs key to
+// `enso` only). A key with no explicit binding falls back to the global cheap-model
+// allowlist (widgetAllowedModels). Matching is case-insensitive.
+func widgetKeyModelAllowed(token, requestedModel string) bool {
+	m := strings.ToLower(strings.TrimSpace(requestedModel))
+	if allowed := object.WidgetKeyModels(token); len(allowed) > 0 {
+		for _, a := range allowed {
+			if a == m {
+				return true
+			}
+		}
+		return false
+	}
+	return widgetAllowedModels[m]
+}
+
+// widgetKeyAllowedList is the human-readable allowlist for a widget key — its
+// explicit per-key binding if it has one, else the global widget allowlist. Used
+// only to build the 4xx rejection message.
+func widgetKeyAllowedList(token string) string {
+	if allowed := object.WidgetKeyModels(token); len(allowed) > 0 {
+		sort.Strings(allowed)
+		return strings.Join(allowed, ", ")
+	}
+	return widgetAllowedModelsList()
 }
 
 // resolveProviderFromJwt validates a hanzo.id JWT token and returns the
