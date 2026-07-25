@@ -28,6 +28,7 @@ import (
 	"github.com/hanzoai/account"
 
 	"github.com/hanzoai/ai/conf"
+	"github.com/hanzoai/ai/controllers"
 	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/web"
@@ -85,10 +86,6 @@ type BalanceGate struct {
 	endpoint string       // Commerce base URL (e.g. "http://commerce:8001")
 	token    string       // Bearer token for Commerce API
 	client   *http.Client // shared HTTP client
-
-	iamEndpoint  string // IAM base URL for hk- key resolution
-	clientId     string // IAM application client ID
-	clientSecret string // IAM application client secret
 }
 
 // userKeyCacheEntry maps an API token to the resolved billing identity: the
@@ -104,9 +101,11 @@ type userKeyCacheEntry struct {
 // balanceGate is the package-level singleton, initialized by InitBalanceGate.
 var balanceGate *BalanceGate
 
-// InitBalanceGate reads Commerce and IAM connection parameters from app config
-// and creates the balance gate. Must be called once during startup. If Commerce
+// InitBalanceGate reads Commerce connection parameters from app config and
+// creates the balance gate. Must be called once during startup. If Commerce
 // is not configured, the gate is not created and BalanceGateFilter is a no-op.
+// IAM connection parameters are NOT read here: hk- resolution goes through the
+// one resolver (controllers.GetUserByAccessKey), which owns that config.
 func InitBalanceGate() {
 	endpoint := conf.GetConfigString("commerceEndpoint")
 	if endpoint == "" {
@@ -116,13 +115,6 @@ func InitBalanceGate() {
 	endpoint = strings.TrimRight(endpoint, "/")
 	token := conf.GetConfigString("commerceToken")
 
-	iamEndpoint := conf.GetConfigString("IAM_URL")
-	if iamEndpoint != "" {
-		iamEndpoint = strings.TrimRight(iamEndpoint, "/")
-	}
-	clientId := conf.GetConfigString("IAM_CLIENT_ID")
-	clientSecret := conf.GetConfigString("IAM_CLIENT_SECRET")
-
 	bg := &BalanceGate{
 		ledger:       object.GlobalBalanceLedger,
 		userKeyCache: make(map[string]*userKeyCacheEntry),
@@ -130,9 +122,6 @@ func InitBalanceGate() {
 		endpoint:     endpoint,
 		token:        token,
 		client:       &http.Client{Timeout: balanceHTTPTimeout},
-		iamEndpoint:  iamEndpoint,
-		clientId:     clientId,
-		clientSecret: clientSecret,
 	}
 
 	go bg.cleanupLoop()
@@ -589,67 +578,28 @@ func (bg *BalanceGate) setUserKeyCache(token, subject, namespace, userKey string
 
 // ── IAM key resolution ──────────────────────────────────────────────────────
 
-// iamUserResponse matches the IAM API response shape for get-user.
-type iamUserResponse struct {
-	Status string `json:"status"`
-	Msg    string `json:"msg"`
-	Data   *struct {
-		Owner string `json:"owner"`
-		Name  string `json:"name"`
-	} `json:"data"`
-}
-
-// resolveIAMKeySubject calls IAM to resolve an hk- API key to its billing
-// identity: (subject, namespace, userKey). The namespace is the org `owner`; the
-// subject is account.Payer(account.Credential{Owner: owner, Name: name}).Subject() — so a personal-org key bills
-// per-user; the userKey is the exact "owner/name" for exemption matching.
-// Returns ("", "", "") on any error (fail-open).
+// resolveIAMKeySubject resolves an hk- API key to its billing identity:
+// (subject, namespace, userKey). The namespace is the org `owner`; the subject
+// is account.Payer(account.Credential{Owner: owner, Name: name}).Subject() — so a
+// personal-org key bills per-user; the userKey is the exact "owner/name" for
+// exemption matching. Returns ("", "", "") on any error (fail-open).
+//
+// The lookup itself is controllers.GetUserByAccessKey — the ONE hk- resolver, so
+// the billing subject and the authz principal are by construction the same
+// identity resolved over the same authenticated IAM transport. This file used to
+// carry a second copy that passed clientId/clientSecret as QUERY PARAMS; IAM
+// derives no principal from those, so it 401'd and this gate silently fail-opened
+// on every hk- key. One resolver means that cannot drift again.
 func (bg *BalanceGate) resolveIAMKeySubject(apiKey string) (subject, namespace, userKey string) {
-	if bg.iamEndpoint == "" {
-		return "", "", ""
-	}
-
-	iamURL := fmt.Sprintf("%s/v1/iam/get-user?accessKey=%s", bg.iamEndpoint, url.QueryEscape(apiKey))
-	if bg.clientId != "" && bg.clientSecret != "" {
-		iamURL += "&clientId=" + url.QueryEscape(bg.clientId) + "&clientSecret=" + url.QueryEscape(bg.clientSecret)
-	}
-
-	req, err := http.NewRequest(http.MethodGet, iamURL, nil)
+	u, err := controllers.GetUserByAccessKey(apiKey)
 	if err != nil {
-		log.Warning("balance_gate: IAM request build failed for key=%s: %v", maskKey(apiKey), err)
+		log.Warning("balance_gate: IAM key resolve failed for key=%s: %v", maskKey(apiKey), err)
 		return "", "", ""
 	}
-
-	resp, err := bg.client.Do(req)
-	if err != nil {
-		log.Warning("balance_gate: IAM request failed for key=%s: %v", maskKey(apiKey), err)
+	if u == nil || u.Owner == "" {
 		return "", "", ""
 	}
-	defer func() {
-		io.Copy(io.Discard, resp.Body)
-		resp.Body.Close()
-	}()
-
-	if resp.StatusCode != http.StatusOK {
-		log.Warning("balance_gate: IAM returned %d for key=%s", resp.StatusCode, maskKey(apiKey))
-		return "", "", ""
-	}
-
-	var result iamUserResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		log.Warning("balance_gate: IAM response decode failed for key=%s: %v", maskKey(apiKey), err)
-		return "", "", ""
-	}
-
-	if result.Status != "ok" || result.Data == nil {
-		return "", "", ""
-	}
-
-	if result.Data.Owner == "" {
-		return "", "", ""
-	}
-
-	return account.Payer(account.Credential{Owner: result.Data.Owner, Name: result.Data.Name}).Subject(), result.Data.Owner, result.Data.Owner + "/" + result.Data.Name
+	return account.Payer(account.Credential{Owner: u.Owner, Name: u.Name}).Subject(), u.Owner, u.Owner + "/" + u.Name
 }
 
 // ── Cleanup ─────────────────────────────────────────────────────────────────
