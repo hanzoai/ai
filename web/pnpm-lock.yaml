@@ -35,6 +35,9 @@ importers:
       '@dnd-kit/utilities':
         specifier: ^3.2.2
         version: 3.2.2(react@18.3.1)
+      '@hanzo/event':
+        specifier: ^0.3.1
+        version: 0.3.1(react@18.3.1)
       '@hanzo/iam-js-sdk':
         specifier: ^0.19.1
         version: 0.19.1
@@ -1357,6 +1360,14 @@ packages:
   '@eslint/eslintrc@1.4.1':
     resolution: {integrity: sha512-XXrH9Uarn0stsyldqDYq8r++mROmWRI1xKMXa640Bb//SY1+ECYX6VzT6Lcx5frD0V30XieqJ0oX9I2Xj5aoMA==}
     engines: {node: ^12.22.0 || ^14.17.0 || >=16.0.0}
+
+  '@hanzo/event@0.3.1':
+    resolution: {integrity: sha512-FAA6C/+hP8woUdle9VxRZXreCpCa+K1zlZAVOT8HTYHu6QH37LJIG2KS5NXutx80haSwNPGooJJlZRvx9x07ug==}
+    peerDependencies:
+      react: ^18.0.0 || ^19.0.0
+    peerDependenciesMeta:
+      react:
+        optional: true
 
   '@hanzo/iam-js-sdk@0.19.1':
     resolution: {integrity: sha512-TlIbm/8a5toE5VYFGGyki0UHxgeFJhPnh+Ezzee5aCvTfR3SmlqKRYoIPG4iQpJCF3m9H2/F3lE8V7kF53kWeA==}
@@ -10126,6 +10137,10 @@ snapshots:
       strip-json-comments: 3.1.1
     transitivePeerDependencies:
       - supports-color
+
+  '@hanzo/event@0.3.1(react@18.3.1)':
+    optionalDependencies:
+      react: 18.3.1
 
   '@hanzo/iam-js-sdk@0.19.1':
     dependencies:
