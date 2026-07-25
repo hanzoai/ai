@@ -93,6 +93,41 @@ func TestWidgetMaxTokens(t *testing.T) {
 	}
 }
 
+// TestWidgetKeyModelAllowed pins the per-key model allowlist. A key BOUND via
+// WIDGET_KEY_MODELS is restricted to EXACTLY its set (the docs key answers only on
+// `enso`, and cannot fall through to the coarser global allowlist); an UNBOUND key
+// falls back to the global cheap-model allowlist. This is the guardrail that keeps a
+// leaked docs key from calling arbitrary or expensive models.
+func TestWidgetKeyModelAllowed(t *testing.T) {
+	t.Setenv("WIDGET_KEY_MODELS", `{"hz_docs":"enso"}`)
+
+	// Bound docs key: enso only.
+	if !widgetKeyModelAllowed("hz_docs", "enso") {
+		t.Error("bound docs key must allow enso")
+	}
+	if !widgetKeyModelAllowed("hz_docs", "ENSO") {
+		t.Error("model match must be case-insensitive")
+	}
+	// Bound key does NOT inherit the global allowlist, and cannot reach premium models.
+	if widgetKeyModelAllowed("hz_docs", "claude-haiku-4-5") {
+		t.Error("bound docs key must NOT allow a global-allowlist model it was not bound to")
+	}
+	if widgetKeyModelAllowed("hz_docs", "gpt-5") {
+		t.Error("bound docs key must NOT allow an expensive/premium model")
+	}
+
+	// Unbound key: falls back to the global cheap-model allowlist.
+	if !widgetKeyModelAllowed("hz_other", "claude-haiku-4-5") {
+		t.Error("unbound key must fall back to the global allowlist")
+	}
+	if widgetKeyModelAllowed("hz_other", "enso") {
+		t.Error("unbound key must not reach enso (not in the global allowlist)")
+	}
+	if widgetKeyModelAllowed("hz_other", "gpt-5") {
+		t.Error("unbound key must not reach a premium model")
+	}
+}
+
 func TestValidateWidgetKey(t *testing.T) {
 	// Set env var with comma-separated valid keys
 	os.Setenv("WIDGET_KEYS", "hz_widget_public,hz_test_key")

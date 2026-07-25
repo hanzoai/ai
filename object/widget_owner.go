@@ -33,18 +33,48 @@ import (
 // per-org billing of widget inference) and the router balance gate, so a widget
 // key means exactly the same org everywhere.
 func WidgetKeyOwner(token string) string {
-	if o, ok := loadWidgetKeyOwners()[token]; ok && o != "" {
+	if o, ok := loadKeyMap("WIDGET_KEY_OWNERS")[token]; ok && o != "" {
 		return o
 	}
 	return strings.TrimSpace(os.Getenv("WIDGET_DEFAULT_OWNER"))
 }
 
-// loadWidgetKeyOwners parses WIDGET_KEY_OWNERS (env first, then KMS) into a
-// key->owner map. Accepts a JSON object or a comma-separated key=value list.
-func loadWidgetKeyOwners() map[string]string {
-	raw := os.Getenv("WIDGET_KEY_OWNERS")
+// WidgetKeyModels resolves a widget key (hz_*) to the EXPLICIT set of model ids it
+// may call, from the WIDGET_KEY_MODELS config (KMS first, env fallback) mapping
+// key->model list. It is the per-key model allowlist: it binds a public widget key
+// to exactly the models its owner provisioned — the docs key to `enso` only — so a
+// leaked key cannot reach arbitrary (or expensive) models the coarse global widget
+// allowlist happens to permit. Model ids are separated by space or comma and
+// lowercased for case-insensitive matching (mirrors resolveModelRoute). An empty
+// return means the key declares NO explicit binding: the caller falls back to the
+// global widget allowlist. Values are the SAME map shape as WIDGET_KEY_OWNERS, so a
+// key is configured the one way everywhere.
+func WidgetKeyModels(token string) []string {
+	raw := strings.TrimSpace(loadKeyMap("WIDGET_KEY_MODELS")[token])
 	if raw == "" {
-		if v, err := GetKMSSecret("WIDGET_KEY_OWNERS"); err == nil {
+		return nil
+	}
+	fields := strings.FieldsFunc(raw, func(r rune) bool {
+		return r == ' ' || r == ',' || r == '\t' || r == '\n'
+	})
+	out := make([]string, 0, len(fields))
+	for _, f := range fields {
+		if m := strings.ToLower(strings.TrimSpace(f)); m != "" {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// loadKeyMap parses a per-widget-key binding (env first, then KMS under the same
+// name) into a key->value map. Accepts a JSON object or a comma-separated
+// key=value list. It is the ONE parser shared by every widget-key binding
+// (WIDGET_KEY_OWNERS owner, WIDGET_KEY_MODELS allowlist), so a key is expressed the
+// same way for each dimension it carries.
+func loadKeyMap(name string) map[string]string {
+	raw := os.Getenv(name)
+	if raw == "" {
+		if v, err := GetKMSSecret(name); err == nil {
 			raw = v
 		}
 	}
