@@ -27,7 +27,6 @@ import (
 	"os"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/hanzoai/account"
@@ -394,95 +393,10 @@ func iamClientCreds() (string, string) {
 	return clientId, clientSecret
 }
 
-var (
-	iamTokenMu  sync.Mutex
-	iamTokenVal string
-	iamTokenExp time.Time
-)
-
-// iamServiceToken returns a cached client_credentials bearer for this service's
-// confidential-app identity.
-//
-// IAM's key-resolve gate (authz.CapKeyResolve) requires an authenticated APP
-// principal — `p.App != ""` — because resolving an opaque key to its owner is a
-// credential-disclosure boundary, never an arbitrary authenticated call. Passing
-// clientId/clientSecret as QUERY PARAMS produces no principal at all, so it can
-// never satisfy that gate; it is also a credential in a URL, which lands in access
-// logs. A bearer from the token endpoint is the one way this service authenticates.
-//
-// The token is cached until shortly before expiry so a hot inference path does not
-// mint one per request; a failure to mint is returned, never swallowed, so key
-// resolution fails CLOSED rather than falling back to an unauthenticated call.
-func iamServiceToken() (string, error) {
-	iamTokenMu.Lock()
-	defer iamTokenMu.Unlock()
-
-	if iamTokenVal != "" && time.Now().Before(iamTokenExp) {
-		return iamTokenVal, nil
-	}
-
-	clientId, clientSecret := iamClientCreds()
-	if clientId == "" || clientSecret == "" {
-		return "", fmt.Errorf("IAM client credentials are not configured")
-	}
-
-	tokenURL := conf.GetConfigString("CLOUD_AI_IAM_TOKEN_URL")
-	if tokenURL == "" {
-		base := strings.TrimRight(conf.GetConfigString("IAM_URL"), "/")
-		if base == "" {
-			return "", fmt.Errorf("IAM_URL is not configured")
-		}
-		tokenURL = base + "/v1/iam/oauth/token"
-	}
-
-	form := url.Values{
-		"grant_type":    {"client_credentials"},
-		"client_id":     {clientId},
-		"client_secret": {clientSecret},
-	}
-	req, err := http.NewRequest(http.MethodPost, tokenURL, strings.NewReader(form.Encode()))
-	if err != nil {
-		return "", fmt.Errorf("IAM token request build failed: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-
-	resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
-	if err != nil {
-		return "", fmt.Errorf("IAM token request failed: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		// Never echo the body: it may quote the submitted credential.
-		return "", fmt.Errorf("IAM token endpoint returned status %d", resp.StatusCode)
-	}
-
-	var tok struct {
-		AccessToken string `json:"access_token"`
-		ExpiresIn   int    `json:"expires_in"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&tok); err != nil {
-		return "", fmt.Errorf("IAM token decode failed: %w", err)
-	}
-	if tok.AccessToken == "" {
-		return "", fmt.Errorf("IAM token endpoint returned no access_token")
-	}
-
-	ttl := time.Duration(tok.ExpiresIn) * time.Second
-	if ttl <= 0 {
-		ttl = 5 * time.Minute
-	}
-	// Refresh a minute early so an in-flight request never races expiry.
-	if ttl > time.Minute {
-		ttl -= time.Minute
-	}
-	iamTokenVal, iamTokenExp = tok.AccessToken, time.Now().Add(ttl)
-	return iamTokenVal, nil
-}
-
 // GetUserByAccessKey resolves an hk- IAM API key to its owning user via Hanzo
-// IAM. Exported so the authz filter (package routers) resolves the key path to
-// the same verified principal as the JWT path — one credential resolver, one
-// tenant, one billing subject.
+// IAM. Exported so the authz filter and the balance gate (package routers)
+// resolve the key path to the same verified principal as the JWT path — ONE
+// credential resolver, one tenant, one billing subject, one IAM transport.
 func GetUserByAccessKey(accessKey string) (*iam.User, error) {
 	return getUserByAccessKey(accessKey)
 }
@@ -500,15 +414,19 @@ func getUserByAccessKey(accessKey string) (*iam.User, error) {
 	// The legacy /api/get-user path is intercepted by the @hanzo/id SPA ingress
 	// and returns HTML, which broke hk- API-key resolution ("invalid character
 	// '<'").
-	//
-	// Auth is a client_credentials BEARER, not query-param credentials. IAM gates
-	// accessKey resolution on an authenticated app principal holding
-	// CapKeyResolve; query params yield no principal, so every hk- key 401'd.
 	reqURL := fmt.Sprintf("%s/v1/iam/get-user?accessKey=%s", iamEndpoint, url.QueryEscape(accessKey))
 
-	token, err := iamServiceToken()
-	if err != nil {
-		return nil, fmt.Errorf("IAM service auth failed: %w", err)
+	// Auth is client_secret_basic (RFC 6749 §2.3.1) — the ONE transport IAM reads
+	// to establish a confidential-APP principal. Key resolution is a
+	// credential-disclosure boundary gated on `p.App != ""` holding CapKeyResolve,
+	// and IAM derives p.App ONLY from Basic credentials: query params yield no
+	// principal at all (401 "authentication required"), and a client_credentials
+	// bearer resolves to a plain org-scoped principal with an EMPTY App, which the
+	// gate refuses with "auth:Unauthorized operation". Basic is also why no token
+	// cache is needed — there is no token.
+	clientId, clientSecret := iamClientCreds()
+	if clientId == "" || clientSecret == "" {
+		return nil, fmt.Errorf("IAM client credentials are not configured")
 	}
 
 	client := &http.Client{Timeout: 10 * time.Second}
@@ -516,7 +434,7 @@ func getUserByAccessKey(accessKey string) (*iam.User, error) {
 	if err != nil {
 		return nil, fmt.Errorf("IAM request build failed: %w", err)
 	}
-	req.Header.Set("Authorization", "Bearer "+token)
+	req.SetBasicAuth(clientId, clientSecret)
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("IAM request failed: %w", err)
