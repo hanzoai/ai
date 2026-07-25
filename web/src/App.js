@@ -17,6 +17,7 @@ import React, {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {Link, Redirect, Route, Switch, useHistory, useLocation} from "react-router-dom";
 import {Helmet} from "react-helmet";
 import {Toaster} from "sonner";
+import {useAnalytics} from "@hanzo/event/react";
 import i18next from "i18next";
 import {Bot, ChevronDown, ChevronLeft, Cloud, Home, LayoutGrid, Lightbulb, Lock, LogIn, LogOut, Menu, MessageSquare, Monitor, Settings, User, Video, Wallet, X} from "lucide-react";
 import * as Setting from "./Setting";
@@ -191,6 +192,7 @@ function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const previewInterceptorRef = useRef(null);
+  const analytics = useAnalytics();
 
   // Initialize config
   useEffect(() => {
@@ -257,6 +259,13 @@ function App() {
     getForms();
     getStoreTheme();
   }, [getAccount, getForms, getStoreTheme]);
+
+  // Bind telemetry to the signed-in user by stable id, never email/PII.
+  useEffect(() => {
+    if (account?.id) {
+      analytics.identify(account.id);
+    }
+  }, [account?.id, analytics]);
 
   // Close mobile sidebar on navigation
   useEffect(() => {
