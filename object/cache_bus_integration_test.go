@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
-	redis "github.com/hanzokv/go/v9"
+	kv "github.com/hanzokv/go/v9"
 )
 
 // TestCacheBus_CrossPodInvalidation proves the FULL pub/sub loop end-to-end against
@@ -16,8 +16,9 @@ import (
 func TestCacheBus_CrossPodInvalidation(t *testing.T) {
 	mr := miniredis.RunT(t) // in-process Redis w/ pub-sub; auto-closed by t.Cleanup
 
-	// Bring up THIS pod's bus (subscriber) pointed at the broker.
-	t.Setenv("KV_URL", "redis://"+mr.Addr())
+	// Bring up THIS pod's bus (subscriber) pointed at the broker. kv-go v9.22.0
+	// accepts ONLY the kv:// (and kvs://, unix://) scheme — redis:// was dropped.
+	t.Setenv("KV_URL", "kv://"+mr.Addr())
 	InitCacheBus()
 	t.Cleanup(func() {
 		cacheBusMu.Lock()
@@ -37,7 +38,7 @@ func TestCacheBus_CrossPodInvalidation(t *testing.T) {
 	// A SEPARATE pod publishes an org_settings write. Retry until it lands — pub/sub
 	// is lossy until this pod's subscriber has attached — or time out. A live pod
 	// subscribes at boot, long before any write, so it needs no retry in production.
-	pub := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	pub := kv.NewClient(&kv.Options{Addr: mr.Addr()})
 	defer pub.Close()
 
 	deadline := time.Now().Add(5 * time.Second)
