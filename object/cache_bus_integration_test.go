@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
-	redis "github.com/hanzoai/kv-go/v9"
+	redis "github.com/hanzokv/go/v9"
 )
 
 // TestCacheBus_CrossPodInvalidation proves the FULL pub/sub loop end-to-end against
