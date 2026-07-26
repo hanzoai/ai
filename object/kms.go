@@ -37,13 +37,14 @@ import (
 //
 // Environment variables:
 //   - KMS_ENDPOINT:      Base URL (default: http://kms.hanzo.svc)
-//     External: https://kms-api.hanzo.ai (no /api prefix)
+//     External: https://api.hanzo.ai (paths are /v1/kms/*)
 //   - KMS_SERVICE_TOKEN:  Service token for direct auth
 //   - HANZO_API_KEY:      Unified service token (fallback for KMS_SERVICE_TOKEN)
 //   - KMS_CLIENT_ID:      Universal Auth client ID
 //   - KMS_CLIENT_SECRET:  Universal Auth client secret
 //   - KMS_PROJECT_ID:     Default project ID for system (admin-owned) secrets
 //   - KMS_ENVIRONMENT:    Environment slug (default: prod)
+//   - KMS_ORG:            Org scoping the secret path (default: hanzo)
 //
 // Multi-tenant model:
 //   - Admin-owned providers use KMS_PROJECT_ID (system secrets)
@@ -51,6 +52,7 @@ import (
 //   - Convention: store "kms://SECRET_NAME" in provider.ClientSecret
 type kmsClient struct {
 	endpoint    string
+	org         string // KMS org that scopes every secret path
 	environment string
 	projectID   string // default project for admin-owned secrets
 	httpClient  *http.Client
@@ -101,8 +103,13 @@ func initKMS() {
 		if environment == "" {
 			environment = "prod"
 		}
+		org := os.Getenv("KMS_ORG")
+		if org == "" {
+			org = "hanzo"
+		}
 		kms = &kmsClient{
 			endpoint:     endpoint,
+			org:          org,
 			environment:  environment,
 			projectID:    projectID,
 			serviceToken: serviceToken,
@@ -150,7 +157,7 @@ func (c *kmsClient) getAuthToken() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("kms: failed to marshal login request: %w", err)
 	}
-	url := c.endpoint + "/api/v1/auth/universal-auth/login"
+	url := c.endpoint + "/v1/kms/auth/login"
 	resp, err := c.httpClient.Post(url, "application/json", bytes.NewReader(body))
 	if err != nil {
 		return "", fmt.Errorf("kms: universal auth login failed: %w", err)
@@ -174,11 +181,11 @@ func (c *kmsClient) getAuthToken() (string, error) {
 }
 
 // ── Secret fetching ─────────────────────────────────────────────────────────
-// kmsSecretResponse is the JSON envelope from KMS V4 GET /api/v4/secrets/:name
+// kmsSecretResponse is the envelope from
+// GET /v1/kms/orgs/{org}/secrets/{path}/{name}.
 type kmsSecretResponse struct {
 	Secret struct {
-		SecretKey   string `json:"secretKey"`
-		SecretValue string `json:"secretValue"`
+		Value string `json:"value"`
 	} `json:"secret"`
 }
 
@@ -210,8 +217,8 @@ func (c *kmsClient) getSecret(name string, projectID string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	url := fmt.Sprintf("%s/api/v4/secrets/%s?projectId=%s&environment=%s",
-		c.endpoint, name, projectID, c.environment)
+	url := fmt.Sprintf("%s/v1/kms/orgs/%s/secrets/%s/%s?env=%s",
+		c.endpoint, c.org, projectID, name, c.environment)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return "", fmt.Errorf("kms: failed to create request: %w", err)
@@ -234,7 +241,7 @@ func (c *kmsClient) getSecret(name string, projectID string) (string, error) {
 	if err := json.Unmarshal(body, &kmsResp); err != nil {
 		return "", fmt.Errorf("kms: failed to parse response for secret %q: %w", name, err)
 	}
-	value := kmsResp.Secret.SecretValue
+	value := kmsResp.Secret.Value
 	// Populate L1 in-memory cache.
 	kmsSecMu.Lock()
 	kmsSecrets[cacheKey] = &kmsSecretEntry{value: value, fetchedAt: time.Now()}
@@ -407,15 +414,15 @@ func (c *kmsClient) putSecret(name, projectID, value string) error {
 		return err
 	}
 	payload, err := json.Marshal(map[string]string{
-		"projectId":   projectID,
-		"environment": c.environment,
-		"secretValue": value,
-		"type":        "shared",
+		"path":  projectID,
+		"name":  name,
+		"env":   c.environment,
+		"value": value,
 	})
 	if err != nil {
 		return fmt.Errorf("kms: failed to marshal put for %q: %w", name, err)
 	}
-	url := fmt.Sprintf("%s/api/v4/secrets/%s", c.endpoint, name)
+	url := fmt.Sprintf("%s/v1/kms/orgs/%s/secrets", c.endpoint, c.org)
 	req, err := http.NewRequest("POST", url, bytes.NewReader(payload))
 	if err != nil {
 		return fmt.Errorf("kms: failed to create put request for %q: %w", name, err)
