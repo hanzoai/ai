@@ -32,7 +32,7 @@ import (
 	"sync"
 	"time"
 
-	redis "github.com/hanzoai/kv-go/v9"
+	redis "github.com/hanzokv/go/v9"
 
 	"github.com/hanzoai/ai/log"
 )
