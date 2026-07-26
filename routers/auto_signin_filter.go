@@ -22,6 +22,31 @@ import (
 )
 
 // isJwtLike returns true if the token looks like a JWT (three dot-separated segments).
+// apiKeyPrefixes are the opaque Hanzo credential prefixes.
+//
+// pk- is the publishable lookup handle and sk- is the secret half — those are
+// the only two a credential can be, and the only two IAM mints.
+//
+// hk- is LEGACY-ACCEPTED, never minted. IAM stopped issuing it in v1.33.9, when
+// the third prefix was retired. Keys handed out before that are still live, and
+// resolution is an exact-value lookup rather than a prefix match, so they keep
+// authenticating. Do NOT drop hk- from this list to "finish the migration" —
+// that silently 401s every key issued before v1.33.9. It comes out only once no
+// hk- key remains in the store.
+var apiKeyPrefixes = []string{"pk-", "sk-", "hk-"}
+
+// isOpaqueAPIKey reports whether token is one of our opaque API keys, as opposed
+// to a JWT or a legacy MD5 access token. Named and shared so the rule lives in
+// ONE place rather than as an inline prefix-OR at each call site.
+func isOpaqueAPIKey(token string) bool {
+	for _, p := range apiKeyPrefixes {
+		if strings.HasPrefix(token, p) {
+			return true
+		}
+	}
+	return false
+}
+
 func isJwtLike(token string) bool {
 	parts := strings.Split(token, ".")
 	return len(parts) == 3 && len(parts[0]) > 10 && len(parts[1]) > 10
@@ -32,11 +57,7 @@ func AutoSigninFilter(ctx *web.Context) {
 
 	// Skip endpoints that handle their own auth (chat completions, models,
 	// search/index/scrape, and /v1/ routes). These controllers validate
-	// hk-*/pk-*/sk-* keys and JWTs directly, so the legacy MD5-based
-	// access-token check here would incorrectly reject them.
-	// Skip endpoints that handle their own auth (chat completions,
-	// search/index/scrape, and /v1/ routes). These controllers validate
-	// hk-*/pk-*/sk-* keys and JWTs directly, so the legacy MD5-based
+	// pk-/sk- keys (and legacy hk-) and JWTs directly, so the legacy MD5-based
 	// access-token check here would incorrectly reject them.
 	//
 	// NOTE: /api/models was removed from this skip list (R-04 fix).
@@ -66,13 +87,9 @@ func AutoSigninFilter(ctx *web.Context) {
 		accessToken = parseBearerToken(ctx)
 	}
 	if accessToken != "" {
-		// IAM API keys (hk-*), publishable keys (pk-*), secret keys (sk-*),
-		// and JWT tokens are validated by each controller's own auth logic.
-		// Only legacy MD5-based access tokens should be handled here.
-		if strings.HasPrefix(accessToken, "hk-") ||
-			strings.HasPrefix(accessToken, "pk-") ||
-			strings.HasPrefix(accessToken, "sk-") ||
-			isJwtLike(accessToken) {
+		// Opaque Hanzo keys and JWTs are validated by each controller's own auth
+		// logic. Only legacy MD5-based access tokens are handled here.
+		if isOpaqueAPIKey(accessToken) || isJwtLike(accessToken) {
 			return
 		}
 
