@@ -33,7 +33,6 @@ require (
 	github.com/hanzo-ds/go v1.0.1
 	github.com/hanzoai/account v0.2.0
 	github.com/hanzoai/cloud v1.801.63
-	github.com/hanzoai/dashscope-go-sdk v0.0.2
 	github.com/hanzoai/dashscopego v0.6.0
 	github.com/hanzoai/dbx v1.16.0
 	github.com/hanzoai/decimal v0.1.1
