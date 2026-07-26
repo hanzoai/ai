@@ -32,7 +32,7 @@ import (
 	"sync"
 	"time"
 
-	redis "github.com/hanzokv/go/v9"
+	kv "github.com/hanzokv/go/v9"
 
 	"github.com/hanzoai/ai/log"
 )
@@ -44,7 +44,7 @@ const cacheBusChannel = "ai:cache:invalidate"
 
 var (
 	cacheBusMu     sync.RWMutex
-	cacheBusClient *redis.Client // nil = bus disabled (KV_URL unset / not connected)
+	cacheBusClient *kv.Client // nil = bus disabled (KV_URL unset / not connected)
 )
 
 // InitCacheBus enables the fleet-wide invalidation bus when KV_URL is set,
@@ -61,15 +61,15 @@ func InitCacheBus() {
 }
 
 // runCacheBus latches the publish client, then subscribes and flushes on every
-// broadcast. The go-redis PubSub channel reconnects internally, so the range ends
+// broadcast. The kv-go PubSub channel reconnects internally, so the range ends
 // only when the client is closed (process shutdown).
 func runCacheBus(url string) {
-	opts, err := redis.ParseURL(url)
+	opts, err := kv.ParseURL(url)
 	if err != nil {
 		log.Error("cache bus: invalid KV_URL, staying on per-pod TTL: %v", err)
 		return
 	}
-	client := redis.NewClient(opts)
+	client := kv.NewClient(opts)
 	cacheBusMu.Lock()
 	cacheBusClient = client
 	cacheBusMu.Unlock()
