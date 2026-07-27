@@ -348,7 +348,7 @@ func zapChatHandler(ctx context.Context, auth string, body []byte) (*zap.Message
 	// (enforceBalanceGate): a strictly positive balance is required for ANY model,
 	// premium or not. $0 → 402; an unverifiable balance → 500 (fail-closed). This
 	// closes the old ZAP-only hole where non-premium models ran ungated at $0.
-	if gateErr := enforceBalanceGate(authUser, request.Model); gateErr != nil {
+	if gateErr := enforceBalanceGate(authUser, "", request.Model); gateErr != nil {
 		return object.BuildCloudResponse(uint32(statusOf(gateErr)), nil, gateErr.Error())
 	}
 	isPremium := false
@@ -515,7 +515,7 @@ func zapResolveAuth(auth string, requestModel string) (*object.Provider, *iam.Us
 		return resolveProviderFromIAMKey(token, requestModel, "en")
 	}
 	if isJwtToken(token) {
-		return resolveProviderFromJwt(token, requestModel, "en")
+		return resolveProviderFromJwt(token, "", requestModel, "en")
 	}
 
 	// Direct provider key (sk-...).
