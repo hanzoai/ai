@@ -171,9 +171,9 @@ func (a *Adapter) createTable() {
 	// both a fresh embedded SQLite store and an existing DB. No external SQL.
 	models := []interface{}{
 		&Application{}, &Article{}, &Asset{}, &Caase{}, &Chat{}, &Connection{},
-		&Consultation{}, &Container{}, &Doctor{}, &File{}, &Form{}, &Graph{},
-		&Hospital{}, &Image{}, &Machine{}, &Message{}, &ModelRoute{}, &Node{},
-		&Patient{}, &Pod{}, &Provider{}, &Record{}, &Scale{}, &Scan{},
+		&Consultation{}, &Doctor{}, &File{}, &Form{}, &Graph{},
+		&Hospital{}, &Message{}, &ModelRoute{}, &Node{},
+		&Patient{}, &Provider{}, &Record{}, &Scale{}, &Scan{},
 		&Session{}, &Store{}, &Task{}, &Template{}, &Vector{}, &Video{},
 		&Workflow{},
 		&Memory{},             // cloud memory backend (per-user scoped)
