@@ -11,9 +11,11 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package object
+package cluster
 
 import (
+	"github.com/hanzoai/ai/object"
+
 	"context"
 	"encoding/json"
 	"fmt"
@@ -28,12 +30,12 @@ import (
 )
 
 // finetune_k8s.go is the data plane: it renders a schema-valid `trainer.kubeflow.org`
-// TrainJob CR for a FinetuneJob and submits it through the SAME generic apply path
+// TrainJob CR for a object.FinetuneJob and submits it through the SAME generic apply path
 // every other Hanzo k8s resource uses (object/template_deploy.go deployResource via
 // the default Kubernetes provider's kubeconfig). It provisions an in-namespace
 // HF-token Secret so the operator's model/dataset initializers can pull PRIVATE or
 // gated `hf://…` repos, passes the efficient hyperparameters to the trainer as env,
-// and reads the live CR status back into the FinetuneJob.
+// and reads the live CR status back into the object.FinetuneJob.
 //
 // The TrainJob references a ClusterTrainingRuntime (RuntimeFor) that must be
 // installed in the cluster (hanzo-ml/trainer chart) and a GPU pool that can
@@ -81,7 +83,7 @@ func ensureHfTokenSecret(namespace, token, lang string) (string, error) {
 	if token == "" {
 		return "", nil
 	}
-	if err := ensureK8sClient(lang); err != nil {
+	if err := ensure(lang); err != nil {
 		return "", err
 	}
 	secret := map[string]interface{}{
@@ -103,7 +105,7 @@ func ensureHfTokenSecret(namespace, token, lang string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if err := k8sClient.deployResource(string(b), namespace, lang); err != nil {
+	if err := client.deployResource(string(b), namespace, lang); err != nil {
 		return "", err
 	}
 	return hfTokenSecretName, nil
@@ -113,7 +115,7 @@ func ensureHfTokenSecret(namespace, token, lang string) (string, error) {
 // env vars. This is the universal config channel the Hanzo runtimes read (works
 // for the generic transformers+PEFT runtime and the optimized per-family runtimes
 // alike), so it is robust to a runtime's exact entrypoint.
-func trainerEnv(job *FinetuneJob, hp Hyperparams, hasToken bool) []interface{} {
+func trainerEnv(job *object.FinetuneJob, hp object.Hyperparams, hasToken bool) []interface{} {
 	outputDir := job.OutputUri
 	if outputDir == "" {
 		outputDir = "/workspace/output"
@@ -156,7 +158,7 @@ func trainerEnv(job *FinetuneJob, hp Hyperparams, hasToken bool) []interface{} {
 // deployResource decoder). It references the runtime, overrides the model/dataset
 // initializers (with secretRef for private repos), and sets the trainer GPU
 // resources + hyperparameter env.
-func buildTrainJobObject(job *FinetuneJob, hp Hyperparams, secretName string) map[string]interface{} {
+func buildTrainJobObject(job *object.FinetuneJob, hp object.Hyperparams, secretName string) map[string]interface{} {
 	modelUri := normalizeStorageUri(job.BaseModel)
 	datasetUri := normalizeStorageUri(job.Dataset)
 
@@ -214,14 +216,14 @@ func buildTrainJobObject(job *FinetuneJob, hp Hyperparams, secretName string) ma
 	}
 }
 
-// SubmitFinetuneTrainJob provisions the namespace + HF-token Secret and applies the
+// SubmitTrainJob provisions the namespace + HF-token Secret and applies the
 // TrainJob CR. token may be "" (public repos only). Returns the namespace + CR name
 // it used (already set on job before the call).
-func SubmitFinetuneTrainJob(job *FinetuneJob, hp Hyperparams, token, lang string) error {
-	if err := ensureK8sClient(lang); err != nil {
+func SubmitTrainJob(job *object.FinetuneJob, hp object.Hyperparams, token, lang string) error {
+	if err := ensure(lang); err != nil {
 		return err
 	}
-	if err := k8sClient.createNamespaceIfNotExists(job.Namespace); err != nil {
+	if err := client.createNamespaceIfNotExists(job.Namespace); err != nil {
 		return fmt.Errorf("failed to ensure namespace %s: %w", job.Namespace, err)
 	}
 	secretName, err := ensureHfTokenSecret(job.Namespace, token, lang)
@@ -233,14 +235,14 @@ func SubmitFinetuneTrainJob(job *FinetuneJob, hp Hyperparams, token, lang string
 	if err != nil {
 		return fmt.Errorf("failed to render TrainJob: %w", err)
 	}
-	if err := k8sClient.deployResource(string(b), job.Namespace, lang); err != nil {
+	if err := client.deployResource(string(b), job.Namespace, lang); err != nil {
 		return fmt.Errorf("failed to submit TrainJob: %w", err)
 	}
 	return nil
 }
 
-// FinetuneTrainJobStatus is the live status read back from a TrainJob CR.
-type FinetuneTrainJobStatus struct {
+// TrainJob is the live status read back from a TrainJob CR.
+type TrainJob struct {
 	Status   string // pending|queued|running|succeeded|failed|cancelled
 	Progress int    // 0..100 (best-effort)
 	Message  string
@@ -249,28 +251,28 @@ type FinetuneTrainJobStatus struct {
 	Found    bool   // false when the CR no longer exists in the cluster
 }
 
-// GetFinetuneTrainJobStatus reads the TrainJob CR and maps its conditions to a
-// FinetuneJob status. Found=false (no error) when the CR is gone.
-func GetFinetuneTrainJobStatus(job *FinetuneJob, lang string) (*FinetuneTrainJobStatus, error) {
-	if err := ensureK8sClient(lang); err != nil {
+// TrainJobStatus reads the TrainJob CR and maps its conditions to a
+// object.FinetuneJob status. Found=false (no error) when the CR is gone.
+func TrainJobStatus(job *object.FinetuneJob, lang string) (*TrainJob, error) {
+	if err := ensure(lang); err != nil {
 		return nil, err
 	}
-	u, err := k8sClient.dynamicClient.Resource(trainJobGVR).Namespace(job.Namespace).
+	u, err := client.dynamicClient.Resource(trainJobGVR).Namespace(job.Namespace).
 		Get(context.TODO(), job.CrName, metav1.GetOptions{})
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			return &FinetuneTrainJobStatus{Found: false}, nil
+			return &TrainJob{Found: false}, nil
 		}
 		return nil, err
 	}
-	return interpretTrainJobStatus(u), nil
+	return interpretTrainJob(u), nil
 }
 
-// interpretTrainJobStatus maps a TrainJob's status.conditions to a FinetuneJob
+// interpretTrainJob maps a TrainJob's status.conditions to a object.FinetuneJob
 // status. TrainJob conditions use types Created / Complete / Failed / Suspended
 // with metav1.Condition shape.
-func interpretTrainJobStatus(u *unstructured.Unstructured) *FinetuneTrainJobStatus {
-	out := &FinetuneTrainJobStatus{Status: "pending", Found: true}
+func interpretTrainJob(u *unstructured.Unstructured) *TrainJob {
+	out := &TrainJob{Status: "pending", Found: true}
 	conditions, _, _ := unstructured.NestedSlice(u.Object, "status", "conditions")
 
 	condTrue := func(name string) (bool, string, string) {
@@ -317,13 +319,13 @@ func interpretTrainJobStatus(u *unstructured.Unstructured) *FinetuneTrainJobStat
 	return out
 }
 
-// DeleteFinetuneTrainJob deletes the TrainJob CR (used for cancel). NotFound is
+// DeleteTrainJob deletes the TrainJob CR (used for cancel). NotFound is
 // not an error — the desired end state (gone) is already met.
-func DeleteFinetuneTrainJob(job *FinetuneJob, lang string) error {
-	if err := ensureK8sClient(lang); err != nil {
+func DeleteTrainJob(job *object.FinetuneJob, lang string) error {
+	if err := ensure(lang); err != nil {
 		return err
 	}
-	err := k8sClient.dynamicClient.Resource(trainJobGVR).Namespace(job.Namespace).
+	err := client.dynamicClient.Resource(trainJobGVR).Namespace(job.Namespace).
 		Delete(context.TODO(), job.CrName, metav1.DeleteOptions{})
 	if err != nil && !apierrors.IsNotFound(err) {
 		return err
