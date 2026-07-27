@@ -20,7 +20,7 @@ export function getUsages(serverUrl, storeName, selectedUser, days) {
     serverUrl = Setting.ServerUrl;
   }
 
-  return fetch(`${serverUrl}/v1/get-usages?days=${days}&store=${storeName}&selectedUser=${selectedUser}`, {
+  return fetch(`${serverUrl}/v1/ops/usages?days=${days}&store=${storeName}&selectedUser=${selectedUser}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -34,7 +34,7 @@ export function getRangeUsages(serverUrl, rangeType, count, storeName, selectedU
     serverUrl = Setting.ServerUrl;
   }
 
-  return fetch(`${serverUrl}/v1/get-range-usages?rangeType=${rangeType}&count=${count}&store=${storeName}&user=${selectedUser}`, {
+  return fetch(`${serverUrl}/v1/ops/usages/range?rangeType=${rangeType}&count=${count}&store=${storeName}&user=${selectedUser}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -48,7 +48,7 @@ export function getUsers(serverUrl, user, storeName = "") {
     serverUrl = Setting.ServerUrl;
   }
 
-  return fetch(`${serverUrl}/v1/get-users?user=${user}&store=${storeName}`, {
+  return fetch(`${serverUrl}/v1/auth/users?user=${user}&store=${storeName}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -61,7 +61,7 @@ export function getUserTableInfos(serverUrl, storeName, user) {
   if (serverUrl === "") {
     serverUrl = Setting.ServerUrl;
   }
-  return fetch(`${serverUrl}/v1/get-user-table-infos?user=${user}&store=${storeName}`, {
+  return fetch(`${serverUrl}/v1/auth/users/table-infos?user=${user}&store=${storeName}`, {
     method: "GET",
     credentials: "include",
     headers: {

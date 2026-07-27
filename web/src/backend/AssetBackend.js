@@ -16,7 +16,7 @@
 import * as Setting from "../Setting";
 
 export function getAssets(owner, page = "", pageSize = "", field = "", value = "", sortField = "", sortOrder = "") {
-  return fetch(`${Setting.ServerUrl}/v1/get-assets?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
+  return fetch(`${Setting.ServerUrl}/v1/content/assets?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -26,7 +26,7 @@ export function getAssets(owner, page = "", pageSize = "", field = "", value = "
 }
 
 export function getAsset(owner, name) {
-  return fetch(`${Setting.ServerUrl}/v1/get-asset?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/content/assets/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -37,8 +37,8 @@ export function getAsset(owner, name) {
 
 export function updateAsset(owner, name, asset) {
   const newAsset = Setting.deepCopy(asset);
-  return fetch(`${Setting.ServerUrl}/v1/update-asset?id=${owner}/${encodeURIComponent(name)}`, {
-    method: "POST",
+  return fetch(`${Setting.ServerUrl}/v1/content/assets/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`, {
+    method: "PATCH",
     credentials: "include",
     body: JSON.stringify(newAsset),
     headers: {
@@ -49,7 +49,7 @@ export function updateAsset(owner, name, asset) {
 
 export function addAsset(asset) {
   const newAsset = Setting.deepCopy(asset);
-  return fetch(`${Setting.ServerUrl}/v1/add-asset`, {
+  return fetch(`${Setting.ServerUrl}/v1/content/assets`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newAsset),
@@ -61,8 +61,8 @@ export function addAsset(asset) {
 
 export function deleteAsset(asset) {
   const newAsset = Setting.deepCopy(asset);
-  return fetch(`${Setting.ServerUrl}/v1/delete-asset`, {
-    method: "POST",
+  return fetch(`${Setting.ServerUrl}/v1/content/assets/${encodeURIComponent(asset.owner)}/${encodeURIComponent(asset.name)}`, {
+    method: "DELETE",
     credentials: "include",
     body: JSON.stringify(newAsset),
     headers: {
@@ -72,7 +72,7 @@ export function deleteAsset(asset) {
 }
 
 export function scanAssets(owner, provider) {
-  return fetch(`${Setting.ServerUrl}/v1/scan-assets?owner=${owner}&provider=${provider}`, {
+  return fetch(`${Setting.ServerUrl}/v1/content/assets/scan?owner=${owner}&provider=${provider}`, {
     method: "POST",
     credentials: "include",
     headers: {

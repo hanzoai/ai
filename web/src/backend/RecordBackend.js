@@ -15,14 +15,14 @@
 import * as Setting from "../Setting";
 
 export function getRecords(owner, page = "", pageSize = "", field = "", value = "", sortField = "", sortOrder = "") {
-  return fetch(`${Setting.ServerUrl}/v1/get-records?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
+  return fetch(`${Setting.ServerUrl}/v1/ops/records?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
     method: "GET",
     credentials: "include",
   }).then(res => res.json());
 }
 
 export function getRecord(owner, name) {
-  return fetch(`${Setting.ServerUrl}/v1/get-record?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/ops/records/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`, {
     method: "GET",
     credentials: "include",
   }).then(res => res.json());
@@ -30,8 +30,8 @@ export function getRecord(owner, name) {
 
 export function updateRecord(owner, name, record) {
   const newRecord = Setting.deepCopy(record);
-  return fetch(`${Setting.ServerUrl}/v1/update-record?id=${owner}/${encodeURIComponent(name)}`, {
-    method: "POST",
+  return fetch(`${Setting.ServerUrl}/v1/ops/records/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`, {
+    method: "PATCH",
     credentials: "include",
     body: JSON.stringify(newRecord),
   }).then(res => res.json());
@@ -39,7 +39,7 @@ export function updateRecord(owner, name, record) {
 
 export function addRecord(record) {
   const newRecord = Setting.deepCopy(record);
-  return fetch(`${Setting.ServerUrl}/v1/add-record`, {
+  return fetch(`${Setting.ServerUrl}/v1/ops/records`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newRecord),
@@ -48,8 +48,8 @@ export function addRecord(record) {
 
 export function deleteRecord(record) {
   const newRecord = Setting.deepCopy(record);
-  return fetch(`${Setting.ServerUrl}/v1/delete-record`, {
-    method: "POST",
+  return fetch(`${Setting.ServerUrl}/v1/ops/records/${encodeURIComponent(record.owner)}/${encodeURIComponent(record.name)}`, {
+    method: "DELETE",
     credentials: "include",
     body: JSON.stringify(newRecord),
   }).then(res => res.json());
@@ -57,7 +57,7 @@ export function deleteRecord(record) {
 
 export function commitRecord(record) {
   const newRecord = Setting.deepCopy(record);
-  return fetch(`${Setting.ServerUrl}/v1/commit-record`, {
+  return fetch(`${Setting.ServerUrl}/v1/ops/records/commit`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newRecord),
@@ -66,7 +66,7 @@ export function commitRecord(record) {
 
 export function commitRecordSecond(record) {
   const newRecord = Setting.deepCopy(record);
-  return fetch(`${Setting.ServerUrl}/v1/commit-record-second`, {
+  return fetch(`${Setting.ServerUrl}/v1/ops/records/commit-second`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newRecord),
@@ -74,14 +74,14 @@ export function commitRecordSecond(record) {
 }
 
 export function queryRecord(owner, name) {
-  return fetch(`${Setting.ServerUrl}/v1/query-record?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/ops/records/query?id=${owner}/${encodeURIComponent(name)}`, {
     method: "GET",
     credentials: "include",
   }).then(res => res.json());
 }
 
 export function queryRecordSecond(owner, name) {
-  return fetch(`${Setting.ServerUrl}/v1/query-record-second?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/ops/records/query-second?id=${owner}/${encodeURIComponent(name)}`, {
     method: "GET",
     credentials: "include",
   }).then(res => res.json());
