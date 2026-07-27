@@ -28,11 +28,11 @@ func TestSuperAdminGateSurvivesTheMove(t *testing.T) {
 	cases := []struct{ path, method string }{
 		{"/v1/ai/providers", "GET"},
 		{"/v1/ai/providers/global", "GET"},
-		{"/v1/ai/providers/someid", "GET"},
+		{"/v1/ai/providers/acme/thing", "GET"},
 		{"/v1/ai/providers", "POST"},
-		{"/v1/ai/providers/someid", "PATCH"},
-		{"/v1/ai/providers/someid", "PUT"},
-		{"/v1/ai/providers/someid", "DELETE"},
+		{"/v1/ai/providers/acme/thing", "PATCH"},
+		{"/v1/ai/providers/acme/thing", "PUT"},
+		{"/v1/ai/providers/acme/thing", "DELETE"},
 		{"/v1/ai/providers/mcp-tools", "POST"},
 	}
 	for _, c := range cases {
@@ -54,14 +54,14 @@ func TestSuperAdminGateSurvivesTheMove(t *testing.T) {
 // resource in the system.
 func TestDemoModeBlocksNonPostWrites(t *testing.T) {
 	blocked := []struct{ method, path string }{
-		{"DELETE", "/v1/ai/providers/someid"},
-		{"PATCH", "/v1/ai/providers/someid"},
-		{"PUT", "/v1/ai/providers/someid"},
-		{"DELETE", "/v1/iam/applications/someid"},
-		{"PATCH", "/v1/iam/users/someid"},
-		{"DELETE", "/v1/rag/stores/someid"},
+		{"DELETE", "/v1/ai/providers/acme/thing"},
+		{"PATCH", "/v1/ai/providers/acme/thing"},
+		{"PUT", "/v1/ai/providers/acme/thing"},
+		{"DELETE", "/v1/auth/applications/acme/thing"},
+		{"PATCH", "/v1/auth/users/acme/thing"},
+		{"DELETE", "/v1/rag/stores/acme/thing"},
 		{"POST", "/v1/rag/stores"},
-		{"DELETE", "/v1/compute/nodes/someid"},
+		{"DELETE", "/v1/compute/nodes/acme/thing"},
 	}
 	for _, c := range blocked {
 		if isAllowedInDemoMode(c.method, c.path) {
@@ -73,12 +73,12 @@ func TestDemoModeBlocksNonPostWrites(t *testing.T) {
 	// The conversation itself stays usable, or it is not a demo.
 	allowed := []struct{ method, path string }{
 		{"POST", "/v1/chat/chats"},
-		{"PATCH", "/v1/chat/chats/someid"},
-		{"DELETE", "/v1/chat/chats/someid"},
+		{"PATCH", "/v1/chat/chats/acme/thing"},
+		{"DELETE", "/v1/chat/chats/acme/thing"},
 		{"POST", "/v1/chat/messages"},
-		{"PATCH", "/v1/chat/messages/someid"},
-		{"POST", "/v1/iam/signin"},
-		{"POST", "/v1/iam/signin/oauth"},
+		{"PATCH", "/v1/chat/messages/acme/thing"},
+		{"POST", "/v1/auth/signin"},
+		{"POST", "/v1/auth/signin/oauth"},
 		// Reads are never restricted.
 		{"GET", "/v1/ai/providers"},
 		{"HEAD", "/v1/rag/stores"},
