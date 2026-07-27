@@ -16,7 +16,7 @@
 import * as Setting from "../Setting";
 
 export function getGlobalWorkflows() {
-  return fetch(`${Setting.ServerUrl}/v1/get-global-workflows`, {
+  return fetch(`${Setting.ServerUrl}/v1/work/workflows/global`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -26,7 +26,7 @@ export function getGlobalWorkflows() {
 }
 
 export function getWorkflows(owner, page = "", pageSize = "", field = "", value = "", sortField = "", sortOrder = "") {
-  return fetch(`${Setting.ServerUrl}/v1/get-workflows?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
+  return fetch(`${Setting.ServerUrl}/v1/work/workflows?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -36,7 +36,7 @@ export function getWorkflows(owner, page = "", pageSize = "", field = "", value 
 }
 
 export function getWorkflow(owner, name) {
-  return fetch(`${Setting.ServerUrl}/v1/get-workflow?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/work/workflows/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -47,8 +47,8 @@ export function getWorkflow(owner, name) {
 
 export function updateWorkflow(owner, name, workflow) {
   const newWorkflow = Setting.deepCopy(workflow);
-  return fetch(`${Setting.ServerUrl}/v1/update-workflow?id=${owner}/${encodeURIComponent(name)}`, {
-    method: "POST",
+  return fetch(`${Setting.ServerUrl}/v1/work/workflows/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`, {
+    method: "PATCH",
     credentials: "include",
     headers: {
       "Accept-Language": Setting.getAcceptLanguage(),
@@ -59,7 +59,7 @@ export function updateWorkflow(owner, name, workflow) {
 
 export function addWorkflow(workflow) {
   const newWorkflow = Setting.deepCopy(workflow);
-  return fetch(`${Setting.ServerUrl}/v1/add-workflow`, {
+  return fetch(`${Setting.ServerUrl}/v1/work/workflows`, {
     method: "POST",
     credentials: "include",
     headers: {
@@ -71,8 +71,8 @@ export function addWorkflow(workflow) {
 
 export function deleteWorkflow(workflow) {
   const newWorkflow = Setting.deepCopy(workflow);
-  return fetch(`${Setting.ServerUrl}/v1/delete-workflow`, {
-    method: "POST",
+  return fetch(`${Setting.ServerUrl}/v1/work/workflows/${encodeURIComponent(workflow.owner)}/${encodeURIComponent(workflow.name)}`, {
+    method: "DELETE",
     credentials: "include",
     headers: {
       "Accept-Language": Setting.getAcceptLanguage(),

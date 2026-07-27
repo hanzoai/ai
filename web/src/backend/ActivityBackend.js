@@ -20,7 +20,7 @@ export function getActivities(serverUrl, selectedUser, days, fields) {
     serverUrl = Setting.ServerUrl;
   }
 
-  return fetch(`${serverUrl}/v1/get-activities?days=${days}&selectedUser=${selectedUser}&field=${fields}`, {
+  return fetch(`${serverUrl}/v1/ops/activities?days=${days}&selectedUser=${selectedUser}&field=${fields}`, {
     method: "GET",
     credentials: "include",
     headers: {

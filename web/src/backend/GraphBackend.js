@@ -16,7 +16,7 @@
 import * as Setting from "../Setting";
 
 export function getGlobalGraphs() {
-  return fetch(`${Setting.ServerUrl}/v1/get-global-graphs`, {
+  return fetch(`${Setting.ServerUrl}/v1/content/graphs/global`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -26,7 +26,7 @@ export function getGlobalGraphs() {
 }
 
 export function getGraphs(owner, page = "", pageSize = "", field = "", value = "", sortField = "", sortOrder = "") {
-  return fetch(`${Setting.ServerUrl}/v1/get-graphs?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
+  return fetch(`${Setting.ServerUrl}/v1/content/graphs?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -36,7 +36,7 @@ export function getGraphs(owner, page = "", pageSize = "", field = "", value = "
 }
 
 export function getGraph(owner, name) {
-  return fetch(`${Setting.ServerUrl}/v1/get-graph?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/content/graphs/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -47,8 +47,8 @@ export function getGraph(owner, name) {
 
 export function updateGraph(owner, name, graph) {
   const newGraph = Setting.deepCopy(graph);
-  return fetch(`${Setting.ServerUrl}/v1/update-graph?id=${owner}/${encodeURIComponent(name)}`, {
-    method: "POST",
+  return fetch(`${Setting.ServerUrl}/v1/content/graphs/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`, {
+    method: "PATCH",
     credentials: "include",
     headers: {
       "Accept-Language": Setting.getAcceptLanguage(),
@@ -59,7 +59,7 @@ export function updateGraph(owner, name, graph) {
 
 export function addGraph(graph) {
   const newGraph = Setting.deepCopy(graph);
-  return fetch(`${Setting.ServerUrl}/v1/add-graph`, {
+  return fetch(`${Setting.ServerUrl}/v1/content/graphs`, {
     method: "POST",
     credentials: "include",
     headers: {
@@ -71,8 +71,8 @@ export function addGraph(graph) {
 
 export function deleteGraph(graph) {
   const newGraph = Setting.deepCopy(graph);
-  return fetch(`${Setting.ServerUrl}/v1/delete-graph`, {
-    method: "POST",
+  return fetch(`${Setting.ServerUrl}/v1/content/graphs/${encodeURIComponent(graph.owner)}/${encodeURIComponent(graph.name)}`, {
+    method: "DELETE",
     credentials: "include",
     headers: {
       "Accept-Language": Setting.getAcceptLanguage(),

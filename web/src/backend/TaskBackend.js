@@ -16,7 +16,7 @@
 import * as Setting from "../Setting";
 
 export function getGlobalTasks() {
-  return fetch(`${Setting.ServerUrl}/v1/get-global-tasks`, {
+  return fetch(`${Setting.ServerUrl}/v1/work/tasks/global`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -38,7 +38,7 @@ export function getTaskTemplates() {
 }
 
 export function getTasks(owner, page = "", pageSize = "", field = "", value = "", sortField = "", sortOrder = "") {
-  return fetch(`${Setting.ServerUrl}/v1/get-tasks?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
+  return fetch(`${Setting.ServerUrl}/v1/work/tasks?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -48,7 +48,7 @@ export function getTasks(owner, page = "", pageSize = "", field = "", value = ""
 }
 
 export function getTask(owner, name) {
-  return fetch(`${Setting.ServerUrl}/v1/get-task?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/work/tasks/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -59,8 +59,8 @@ export function getTask(owner, name) {
 
 export function updateTask(owner, name, task) {
   const newTask = Setting.deepCopy(task);
-  return fetch(`${Setting.ServerUrl}/v1/update-task?id=${owner}/${encodeURIComponent(name)}`, {
-    method: "POST",
+  return fetch(`${Setting.ServerUrl}/v1/work/tasks/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`, {
+    method: "PATCH",
     credentials: "include",
     headers: {
       "Accept-Language": Setting.getAcceptLanguage(),
@@ -71,7 +71,7 @@ export function updateTask(owner, name, task) {
 
 export function addTask(task) {
   const newTask = Setting.deepCopy(task);
-  return fetch(`${Setting.ServerUrl}/v1/add-task`, {
+  return fetch(`${Setting.ServerUrl}/v1/work/tasks`, {
     method: "POST",
     credentials: "include",
     headers: {
@@ -83,8 +83,8 @@ export function addTask(task) {
 
 export function deleteTask(task) {
   const newTask = Setting.deepCopy(task);
-  return fetch(`${Setting.ServerUrl}/v1/delete-task`, {
-    method: "POST",
+  return fetch(`${Setting.ServerUrl}/v1/work/tasks/${encodeURIComponent(task.owner)}/${encodeURIComponent(task.name)}`, {
+    method: "DELETE",
     credentials: "include",
     headers: {
       "Accept-Language": Setting.getAcceptLanguage(),
@@ -98,7 +98,7 @@ export function uploadTaskDocument(taskId, base64, filename, filetype) {
   formData.append("file", base64);
   formData.append("name", filename);
   formData.append("type", filetype);
-  return fetch(`${Setting.ServerUrl}/v1/upload-task-document?id=${taskId}`, {
+  return fetch(`${Setting.ServerUrl}/v1/work/tasks/${taskId}/document`, {
     method: "POST",
     credentials: "include",
     headers: {
@@ -109,7 +109,7 @@ export function uploadTaskDocument(taskId, base64, filename, filetype) {
 }
 
 export function analyzeTask(owner, name) {
-  return fetch(`${Setting.ServerUrl}/v1/analyze-task?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/work/tasks/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/analyze`, {
     method: "POST",
     credentials: "include",
     headers: {

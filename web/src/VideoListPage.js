@@ -103,7 +103,7 @@ class VideoListPage extends BaseListPage {
       name: "file",
       accept: ".mp4",
       method: "post",
-      action: `${Setting.ServerUrl}/v1/upload-video`,
+      action: `${Setting.ServerUrl}/v1/content/videos/upload`,
       disabled: isDisabled,
       withCredentials: true,
       progress: {
