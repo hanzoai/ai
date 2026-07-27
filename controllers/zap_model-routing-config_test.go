@@ -15,7 +15,6 @@
 package controllers
 
 import (
-	"context"
 	"encoding/json"
 	"testing"
 
@@ -59,51 +58,6 @@ func TestZapModelRoutingRegistered(t *testing.T) {
 		if !found {
 			t.Errorf("gateway prefix %q not registered", p)
 		}
-	}
-}
-
-// TestZapModelRoutingAuthRejected pins the ONE authz seam, mirroring the beego
-// RequireSuperAdmin / principalUser gates: an empty or unverifiable credential is
-// refused BEFORE any object work — 401 (no principal) for the admin routes, and
-// 401 for a self-scoped access route with no principal. A bogus bearer that
-// resolves to no user is treated identically (fail-closed).
-func TestZapModelRoutingAuthRejected(t *testing.T) {
-	ctx := context.Background()
-	cases := []struct {
-		name   string
-		fn     func() (*zap.Message, error)
-		status uint32
-	}{
-		{"routes-empty-auth", func() (*zap.Message, error) {
-			return zapModelRouteHandler(ctx, "GET", "/v1/get-model-routes", "owner=admin", "", nil)
-		}, 401},
-		{"routes-bogus-bearer", func() (*zap.Message, error) {
-			return zapModelRouteHandler(ctx, "GET", "/v1/get-model-routes", "", "Bearer nonsense", nil)
-		}, 401},
-		{"admin-access-empty-auth", func() (*zap.Message, error) {
-			return zapAdminModelAccessHandler(ctx, "GET", "/v1/admin/model-access", "", "", nil)
-		}, 401},
-		{"reload-config-empty-auth", func() (*zap.Message, error) {
-			return zapModelConfigAdminHandler(ctx, "POST", "/v1/admin/reload-model-config", "", "", nil)
-		}, 401},
-		{"self-access-empty-auth", func() (*zap.Message, error) {
-			return zapModelAccessSelfHandler(ctx, "GET", "/v1/models/enso/access", "", "", nil)
-		}, 401},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			msg, err := c.fn()
-			if err != nil {
-				t.Fatalf("handler err: %v", err)
-			}
-			status, body := gwResp(t, msg)
-			if status != c.status {
-				t.Fatalf("got status %d want %d", status, c.status)
-			}
-			if body.Status != "error" {
-				t.Fatalf("got envelope status %q want \"error\"", body.Status)
-			}
-		})
 	}
 }
 

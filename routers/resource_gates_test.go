@@ -14,7 +14,10 @@
 
 package routers
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // Moving the CRUD surface to /v1/<ns>/<resource> changed two things that the
 // authz and balance gates had quietly depended on: the PATH they matched, and
@@ -109,4 +112,78 @@ func TestUsageReadsStayBalanceExempt(t *testing.T) {
 	if isBalanceExempt("/v1/chat/completions", "POST") {
 		t.Error("/v1/chat/completions must NOT be balance-exempt — it is metered inference")
 	}
+}
+
+// TestPolicyKeysKeepTheirVerbPrefix guards the single most dangerous edit anyone
+// could make to policyKey.
+//
+// permissionFilter does not read the HTTP method. It infers the verb from the
+// POLICY KEY's prefix:
+//
+//	isUpdateRequest := HasPrefix(name, "update-"|"add-"|"delete-"|"refresh-"|"deploy-")
+//	isGetRequest    := HasPrefix(name, "get-")
+//	if !isGetRequest && !isUpdateRequest { return }   // <- NO GATE AT ALL
+//
+// and only then falls through to the coarse `util.IsAdmin` deny. So a key that
+// carries neither prefix takes the early return and reaches the controller with
+// NO central authorization — and the workspace controllers (AddTemplate,
+// AddWorkflow, DeleteVideo, …) perform no check of their own.
+//
+// That is exactly what would have happened had the policy keys been "modernised"
+// alongside the routes: rename them to "content/templates" and every write in the
+// system silently loses its admin gate, with no test failing and no error logged.
+// The keys stay in the old flat spelling for this reason, and this test says so
+// out loud so nobody tidies it away.
+func TestPolicyKeysKeepTheirVerbPrefix(t *testing.T) {
+	writes := []struct{ path, method string }{
+		{"/v1/content/templates", "POST"},
+		{"/v1/content/templates/acme/thing", "PATCH"},
+		{"/v1/content/templates/acme/thing", "DELETE"},
+		{"/v1/content/videos", "POST"},
+		{"/v1/content/videos/acme/thing", "DELETE"},
+		{"/v1/work/workflows", "POST"},
+		{"/v1/work/workflows/acme/thing", "PATCH"},
+		{"/v1/work/workflows/acme/thing", "DELETE"},
+		{"/v1/rag/stores", "POST"},
+		{"/v1/rag/stores/acme/thing", "DELETE"},
+	}
+	for _, w := range writes {
+		name, ok := normalizedControllerName(w.path, w.method)
+		if !ok {
+			t.Fatalf("%s %s: not a /v1 path", w.method, w.path)
+		}
+		if !hasWriteVerbPrefix(name) {
+			t.Errorf("%s %s -> %q carries no write-verb prefix — permissionFilter would take its "+
+				"early return and apply NO admin gate", w.method, w.path, name)
+		}
+	}
+
+	reads := []struct{ path, method string }{
+		{"/v1/content/templates", "GET"},
+		{"/v1/content/templates/acme/thing", "GET"},
+		{"/v1/rag/stores", "GET"},
+		{"/v1/rag/stores/global", "GET"},
+	}
+	for _, r := range reads {
+		name, ok := normalizedControllerName(r.path, r.method)
+		if !ok {
+			t.Fatalf("%s %s: not a /v1 path", r.method, r.path)
+		}
+		if !strings.HasPrefix(name, "get-") {
+			t.Errorf("%s %s -> %q carries no get- prefix — the preview-mode read rule "+
+				"would not recognise it as a read", r.method, r.path, name)
+		}
+	}
+}
+
+// hasWriteVerbPrefix mirrors permissionFilter's isUpdateRequest EXACTLY. It is
+// duplicated here on purpose: if the filter's list changes, this test should be
+// updated deliberately rather than silently agreeing with a weakened gate.
+func hasWriteVerbPrefix(name string) bool {
+	for _, p := range []string{"update-", "add-", "delete-", "refresh-", "deploy-"} {
+		if strings.HasPrefix(name, p) {
+			return true
+		}
+	}
+	return false
 }

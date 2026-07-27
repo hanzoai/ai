@@ -31,7 +31,6 @@
 package controllers
 
 import (
-	"context"
 	"encoding/json"
 	"net/url"
 	"strings"
@@ -93,27 +92,6 @@ func zapRequirePrincipal(auth string) (*iam.User, *zap.Message) {
 func zapGwAction(resp *Response) (*zap.Message, error) {
 	b, _ := json.Marshal(resp)
 	return object.BuildGatewayResponse(200, b, nil)
-}
-
-// ── Sessions (session.go) ───────────────────────────────────────────────────────
-
-func zapSessionsHandler(ctx context.Context, method, path, query, auth string, body []byte) (*zap.Message, error) {
-	q, _ := url.ParseQuery(query)
-	switch path {
-	case "/v1/get-sessions":
-		return zapGetSessions(auth, q)
-	case "/v1/get-session":
-		return zapGetSingleSession(auth, q)
-	case "/v1/update-session":
-		return zapUpdateSession(auth, body)
-	case "/v1/add-session":
-		return zapAddSession(auth, body)
-	case "/v1/delete-session":
-		return zapDeleteSession(auth, body)
-	case "/v1/is-session-duplicated":
-		return zapIsSessionDuplicated(auth, q)
-	}
-	return zapGwError(404, "not found: "+path)
 }
 
 func zapGetSessions(auth string, q url.Values) (*zap.Message, error) {
@@ -204,29 +182,6 @@ func zapIsSessionDuplicated(auth string, q url.Values) (*zap.Message, error) {
 		return zapGwError(200, err.Error())
 	}
 	return zapGwOk(dup)
-}
-
-// ── Connections (connection.go) ─────────────────────────────────────────────────
-
-func zapConnectionsHandler(ctx context.Context, method, path, query, auth string, body []byte) (*zap.Message, error) {
-	q, _ := url.ParseQuery(query)
-	switch path {
-	case "/v1/get-connections":
-		return zapGetConnections(auth, q)
-	case "/v1/get-connection":
-		return zapGetConnection(auth, q)
-	case "/v1/update-connection":
-		return zapUpdateConnection(auth, q, body)
-	case "/v1/add-connection":
-		return zapAddConnection(auth, body)
-	case "/v1/delete-connection":
-		return zapDeleteConnection(auth, body)
-	case "/v1/start-connection":
-		return zapStartConnection(auth, q)
-	case "/v1/stop-connection":
-		return zapStopConnection(auth, q)
-	}
-	return zapGwError(404, "not found: "+path)
 }
 
 func zapGetConnections(auth string, q url.Values) (*zap.Message, error) {
@@ -332,35 +287,6 @@ func zapStopConnection(auth string, q url.Values) (*zap.Message, error) {
 		return zapGwError(200, err.Error())
 	}
 	return zapGwOk()
-}
-
-// ── Records (record.go + record_chain.go) ───────────────────────────────────────
-
-func zapRecordsHandler(ctx context.Context, method, path, query, auth string, body []byte) (*zap.Message, error) {
-	q, _ := url.ParseQuery(query)
-	switch path {
-	case "/v1/get-records":
-		return zapGetRecords(auth, q)
-	case "/v1/get-record":
-		return zapGetRecord(auth, q)
-	case "/v1/update-record":
-		return zapUpdateRecord(auth, q, body)
-	case "/v1/add-record":
-		return zapAddRecord(auth, body)
-	case "/v1/add-records":
-		return zapAddRecords(auth, q, body)
-	case "/v1/delete-record":
-		return zapDeleteRecord(auth, body)
-	case "/v1/commit-record":
-		return zapCommitRecord(auth, body)
-	case "/v1/commit-record-second":
-		return zapCommitRecordSecond(auth, body)
-	case "/v1/query-record":
-		return zapQueryRecord(auth, q)
-	case "/v1/query-record-second":
-		return zapQueryRecordSecond(auth, q)
-	}
-	return zapGwError(404, "not found: "+path)
 }
 
 func zapGetRecords(auth string, q url.Values) (*zap.Message, error) {

@@ -15,10 +15,7 @@
 package controllers
 
 import (
-	"context"
 	"testing"
-
-	"github.com/luxfi/zap"
 )
 
 // gwResp (status@0, body@4) is shared with zap_model-routing-config_test.go — one
@@ -44,95 +41,6 @@ func TestZapRecordsSessionsConnectionsRegistered(t *testing.T) {
 		if !found {
 			t.Errorf("gateway prefix %q not registered", p)
 		}
-	}
-}
-
-// TestZapRecordsSessionsConnectionsAuthRejected pins the ONE authz seam, mirroring
-// the beego GetScopedOwner / RequireSignedInUser gates: an empty or unverifiable
-// credential is refused with 401 BEFORE any object/DB work — fail-closed. Covers a
-// scoped-list route, a by-id fetch, and a body write across all three sub-handlers.
-func TestZapRecordsSessionsConnectionsAuthRejected(t *testing.T) {
-	ctx := context.Background()
-	cases := []struct {
-		name string
-		fn   func() (*zap.Message, error)
-	}{
-		{"sessions-list-empty-auth", func() (*zap.Message, error) {
-			return zapSessionsHandler(ctx, "GET", "/v1/get-sessions", "", "", nil)
-		}},
-		{"sessions-list-bogus-bearer", func() (*zap.Message, error) {
-			return zapSessionsHandler(ctx, "GET", "/v1/get-sessions", "", "Bearer nonsense", nil)
-		}},
-		{"session-get-empty-auth", func() (*zap.Message, error) {
-			return zapSessionsHandler(ctx, "GET", "/v1/get-session", "sessionId=admin/x", "", nil)
-		}},
-		{"session-add-empty-auth", func() (*zap.Message, error) {
-			return zapSessionsHandler(ctx, "POST", "/v1/add-session", "", "", []byte(`{"owner":"admin","name":"x"}`))
-		}},
-		{"connections-list-empty-auth", func() (*zap.Message, error) {
-			return zapConnectionsHandler(ctx, "GET", "/v1/get-connections", "", "", nil)
-		}},
-		{"connection-stop-empty-auth", func() (*zap.Message, error) {
-			return zapConnectionsHandler(ctx, "POST", "/v1/stop-connection", "id=admin/x", "", nil)
-		}},
-		{"records-list-empty-auth", func() (*zap.Message, error) {
-			return zapRecordsHandler(ctx, "GET", "/v1/get-records", "", "", nil)
-		}},
-		{"record-add-empty-auth", func() (*zap.Message, error) {
-			return zapRecordsHandler(ctx, "POST", "/v1/add-record", "", "", []byte(`{"owner":"admin"}`))
-		}},
-		{"commit-record-empty-auth", func() (*zap.Message, error) {
-			return zapRecordsHandler(ctx, "POST", "/v1/commit-record", "", "", []byte(`{"owner":"admin"}`))
-		}},
-		{"query-record-empty-auth", func() (*zap.Message, error) {
-			return zapRecordsHandler(ctx, "GET", "/v1/query-record", "id=admin/x", "", nil)
-		}},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			msg, err := c.fn()
-			if err != nil {
-				t.Fatalf("handler err: %v", err)
-			}
-			status, body := gwResp(t, msg)
-			if status != 401 {
-				t.Fatalf("got status %d want 401", status)
-			}
-			if body.Status != "error" {
-				t.Fatalf("got envelope status %q want \"error\"", body.Status)
-			}
-		})
-	}
-}
-
-// TestZapRecordsSessionsConnectionsUnknownPath pins that each group dispatcher
-// returns a 404 error envelope for a path it does not own (parity with the shared
-// builders' not-found shape) — a registered prefix that reaches the wrong handler
-// never silently 200s.
-func TestZapRecordsSessionsConnectionsUnknownPath(t *testing.T) {
-	ctx := context.Background()
-	handlers := map[string]func() (*zap.Message, error){
-		"sessions": func() (*zap.Message, error) {
-			return zapSessionsHandler(ctx, "GET", "/v1/nope", "", "", nil)
-		},
-		"connections": func() (*zap.Message, error) {
-			return zapConnectionsHandler(ctx, "GET", "/v1/nope", "", "", nil)
-		},
-		"records": func() (*zap.Message, error) {
-			return zapRecordsHandler(ctx, "GET", "/v1/nope", "", "", nil)
-		},
-	}
-	for name, fn := range handlers {
-		t.Run(name, func(t *testing.T) {
-			msg, err := fn()
-			if err != nil {
-				t.Fatalf("handler err: %v", err)
-			}
-			status, body := gwResp(t, msg)
-			if status != 404 || body.Status != "error" {
-				t.Fatalf("got status=%d envelope=%q want 404/error", status, body.Status)
-			}
-		})
 	}
 }
 
