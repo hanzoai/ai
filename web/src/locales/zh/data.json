@@ -54,10 +54,6 @@
     "Scan": "扫描",
     "Successfully scanned assets": "成功扫描资产"
   },
-  "caase": {
-    "Edit Caase": "编辑病例",
-    "New Caase": "新建病例"
-  },
   "cert": {
     "Sign cert": "签名证书",
     "Sign cert - Tooltip": "用于签名操作的证书",
@@ -110,10 +106,6 @@
     "Your chat text involves sensitive content. This chat has been forcibly terminated.": "您的聊天信息涉及敏感内容。此会话已被强制终止。",
     "click to stop...": "点击停止..."
   },
-  "consultation": {
-    "Edit Consultation": "编辑咨询",
-    "New Consultation": "新建咨询"
-  },
   "container": {
     "Command": "命令",
     "Command - Tooltip": "容器启动命令",
@@ -127,10 +119,6 @@
     "Size RW - Tooltip": "可写层存储大小（单位：MB）",
     "Size root FS": "根文件系统大小",
     "Size root FS - Tooltip": "根文件系统大小（单位：MB）"
-  },
-  "doctor": {
-    "Edit Doctor": "编辑医生",
-    "New Doctor": "新建医生"
   },
   "file": {
     "Edit File": "编辑文件",
@@ -476,10 +464,6 @@
     "Tree": "树形",
     "Word Cloud": "词云"
   },
-  "hospital": {
-    "Edit Hospital": "编辑医院",
-    "New Hospital": "新建医院"
-  },
   "image": {
     "Arch": "架构",
     "Arch - Tooltip": "系统架构",
@@ -520,59 +504,9 @@
     "Public IP - Tooltip": "公网IP地址（可访问互联网）"
   },
   "med": {
-    "Access level": "访问级别",
-    "Access level - Tooltip": "访问医疗记录的权限级别",
-    "Address": "地址",
-    "Address - Tooltip": "地址",
-    "Allergies": "过敏史",
-    "Allergies - Tooltip": "过敏史",
-    "Blood type": "血型",
-    "Blood type - Tooltip": "血型",
-    "Caases": "病例",
-    "Consultations": "咨询",
-    "Department": "科室",
-    "Department - Tooltip": "医疗科室或专科",
-    "Diagnosis": "诊断",
-    "Diagnosis - Tooltip": "医疗诊断",
-    "Diagnosis date": "诊断日期",
-    "Diagnosis date - Tooltip": "诊断日期",
-    "Doctor": "医生",
-    "Doctor - Tooltip": "主治医生",
-    "Doctors": "医生",
-    "Doctors - Tooltip": "与此实体关联的医生列表",
-    "Email": "邮箱",
-    "Email - Tooltip": "邮箱",
-    "Expired time": "过期时间",
-    "Expired time - Tooltip": "咨询过期时间",
-    "Female": "女",
-    "Follow up": "随访",
-    "Follow up - Tooltip": "随访护理说明",
-    "Gender": "性别",
-    "Gender - Tooltip": "性别",
-    "HIS interface info": "HIS接口信息",
-    "HIS interface info - Tooltip": "医院信息系统接口详情",
-    "Hospital": "医院",
-    "Hospital - Tooltip": "医院",
-    "Hospitals": "医院",
-    "Integrated care organization Id": "综合医疗组织Id",
-    "Integrated care organization Id - Tooltip": "综合医疗组织标识符",
-    "Male": "男",
     "Medical Image Analysis": "医学影像分析",
     "Other": "其他",
-    "Owners": "负责医生",
-    "Owners - Tooltip": "有权管理此患者的医生",
-    "Patient": "患者",
-    "Patient - Tooltip": "患者",
-    "Patients": "患者",
-    "Prescription": "处方",
-    "Prescription - Tooltip": "处方药物或治疗",
-    "Primary care physician": "主治医生",
-    "Primary care physician - Tooltip": "主治医生姓名",
-    "Specialist alliance Id": "专家联盟Id",
-    "Specialist alliance Id - Tooltip": "专家联盟标识符",
-    "Super Resolution": "图像超分",
-    "Symptoms": "症状",
-    "Symptoms - Tooltip": "患者症状"
+    "Super Resolution": "图像超分"
   },
   "message": {
     "Author": "作者",
@@ -606,11 +540,6 @@
     "Remote Apps - Tooltip": "发布的远程应用程序列表（如 Excel/Chrome）",
     "Services": "服务",
     "Services - Tooltip": "节点运行的服务监控配置（端口/进程）"
-  },
-  "patient": {
-    "Edit Patient": "编辑患者",
-    "New Patient": "新建患者",
-    "View Patient": "查看患者"
   },
   "pod": {
     "Edit Pod": "编辑Pod",

@@ -34,8 +34,8 @@ func newRecorderController() (*ApiController, *httptest.ResponseRecorder) {
 
 // TestResponseForbiddenAndUnauthorizedStatus is the R5 mechanism assertion: the
 // controller auth-deny helpers emit REAL 403/401 statuses (not Beego's default
-// 200). The 9 controller deny sites (chat/message/patient/scale) were converted
-// from c.ResponseError (HTTP 200) to these helpers.
+// 200). The controller deny sites (chat/message/scale) were converted from
+// c.ResponseError (HTTP 200) to these helpers.
 func TestResponseForbiddenAndUnauthorizedStatus(t *testing.T) {
 	c, rec := newRecorderController()
 	c.ResponseForbidden("auth:Unauthorized operation")
