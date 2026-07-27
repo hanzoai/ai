@@ -280,3 +280,39 @@ func TestNoResourceClaimsForeignNamespace(t *testing.T) {
 		}
 	}
 }
+
+// TestIdlessActionsAreOnTheCollection pins a class the table cannot check for
+// itself: an action placed on the MEMBER URL requires the caller to have an
+// (owner, name) to put in the path. If the handler does not actually read an id,
+// no caller has one, and the route can never match — it fails as a 404, with
+// nothing in the table looking wrong.
+//
+// The file cache (controllers/file_cache.go) is the real instance: ActivateFile
+// reads key+filename and GetActiveFile reads prefix. Neither touches an id, so
+// both belong on the collection. This was a genuine bug in the first cut of the
+// table, caught only by tracing an actual caller's query string.
+func TestIdlessActionsAreOnTheCollection(t *testing.T) {
+	// method name -> must be a collection action, because it takes no id.
+	idless := map[string]bool{
+		"ActivateFile":  true,
+		"GetActiveFile": true,
+	}
+	seen := map[string]bool{}
+	for _, r := range resources {
+		for _, a := range r.actions {
+			if !idless[a.method] {
+				continue
+			}
+			seen[a.method] = true
+			if !a.collection {
+				t.Errorf("%s/%s action %q -> %s is a MEMBER action, but the handler reads no id "+
+					"— its route can never match", r.ns, r.path, a.name, a.method)
+			}
+		}
+	}
+	for m := range idless {
+		if !seen[m] {
+			t.Errorf("%s is no longer in the table — drop it from this guard, or it is silently vacuous", m)
+		}
+	}
+}
