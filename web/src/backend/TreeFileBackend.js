@@ -51,7 +51,7 @@ export function deleteFile(storeId, key, isLeaf) {
 }
 
 export function activateFile(key, filename) {
-  return fetch(`${Setting.ServerUrl}/v1/activate-file?key=${key}&filename=${filename}`, {
+  return fetch(`${Setting.ServerUrl}/v1/rag/files/activate?key=${key}&filename=${filename}`, {
     method: "POST",
     credentials: "include",
     headers: {
