@@ -90,16 +90,6 @@ import ApplicationEditPage from "./ApplicationEditPage";
 import ApplicationStorePage from "./ApplicationStorePage";
 import StoreSelect from "./StoreSelect";
 import ApplicationDetailsPage from "./ApplicationViewPage";
-import HospitalListPage from "./HospitalListPage";
-import HospitalEditPage from "./HospitalEditPage";
-import DoctorListPage from "./DoctorListPage";
-import DoctorEditPage from "./DoctorEditPage";
-import PatientListPage from "./PatientListPage";
-import PatientEditPage from "./PatientEditPage";
-import CaaseListPage from "./CaaseListPage";
-import CaaseEditPage from "./CaaseEditPage";
-import ConsultationListPage from "./ConsultationListPage";
-import ConsultationEditPage from "./ConsultationEditPage";
 import AgentsPage from "./AgentsPage";
 import VmPage from "./VmPage";
 import LanguageSelect from "./LanguageSelect";
@@ -420,11 +410,6 @@ function App() {
           <NavItem to="/tasks">{i18next.t("general:Tasks")}</NavItem>
           <NavItem to="/forms">{i18next.t("general:Forms")}</NavItem>
           <NavItem to="/workflows">{i18next.t("general:Workflows")}</NavItem>
-          <NavItem to="/hospitals">{i18next.t("med:Hospitals")}</NavItem>
-          <NavItem to="/doctors">{i18next.t("med:Doctors")}</NavItem>
-          <NavItem to="/patients">{i18next.t("med:Patients")}</NavItem>
-          <NavItem to="/caases">{i18next.t("med:Caases")}</NavItem>
-          <NavItem to="/consultations">{i18next.t("med:Consultations")}</NavItem>
           <NavItem to="/audit">{i18next.t("general:Audit")}</NavItem>
           <NavItem to="/articles">{i18next.t("general:Articles")}</NavItem>
           <NavItem to="/graphs">{i18next.t("general:Graphs")}</NavItem>
@@ -640,16 +625,6 @@ function App() {
         <Route exact path="/forms/:formName/data" render={(props) => renderSigninIfNotSignedIn(<FormDataPage key={props.match.params.formName} account={account} {...props} />)} />
         <Route exact path="/articles" render={(props) => renderSigninIfNotSignedIn(<ArticleListPage account={account} {...props} />)} />
         <Route exact path="/articles/:articleName" render={(props) => renderSigninIfNotSignedIn(<ArticleEditPage account={account} {...props} />)} />
-        <Route exact path="/hospitals" render={(props) => renderSigninIfNotSignedIn(<HospitalListPage account={account} {...props} />)} />
-        <Route exact path="/hospitals/:hospitalName" render={(props) => renderSigninIfNotSignedIn(<HospitalEditPage account={account} {...props} />)} />
-        <Route exact path="/doctors" render={(props) => renderSigninIfNotSignedIn(<DoctorListPage account={account} {...props} />)} />
-        <Route exact path="/doctors/:doctorName" render={(props) => renderSigninIfNotSignedIn(<DoctorEditPage account={account} {...props} />)} />
-        <Route exact path="/patients" render={(props) => renderSigninIfNotSignedIn(<PatientListPage account={account} {...props} />)} />
-        <Route exact path="/patients/:patientName" render={(props) => renderSigninIfNotSignedIn(<PatientEditPage account={account} {...props} />)} />
-        <Route exact path="/caases" render={(props) => renderSigninIfNotSignedIn(<CaaseListPage account={account} {...props} />)} />
-        <Route exact path="/caases/:caaseName" render={(props) => renderSigninIfNotSignedIn(<CaaseEditPage account={account} {...props} />)} />
-        <Route exact path="/consultations" render={(props) => renderSigninIfNotSignedIn(<ConsultationListPage account={account} {...props} />)} />
-        <Route exact path="/consultations/:consultationName" render={(props) => renderSigninIfNotSignedIn(<ConsultationEditPage account={account} {...props} />)} />
         <Route exact path="/chat" render={(props) => renderSigninIfNotSignedIn(<ChatPage account={account} {...props} />)} />
         <Route exact path="/chat/:chatName" render={(props) => renderSigninIfNotSignedIn(<ChatPage account={account} {...props} />)} />
         <Route exact path="/stores/:owner/:storeName/chat" render={(props) => renderSigninIfNotSignedIn(<ChatPage account={account} {...props} />)} />
