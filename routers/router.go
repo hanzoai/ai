@@ -229,12 +229,6 @@ func initAPI() {
 	App.Router("/v1/add-node", &controllers.ApiController{}, "POST:AddNode")
 	App.Router("/v1/delete-node", &controllers.ApiController{}, "POST:DeleteNode")
 
-	App.Router("/v1/get-machines", &controllers.ApiController{}, "GET:GetMachines")
-	App.Router("/v1/get-machine", &controllers.ApiController{}, "GET:GetMachine")
-	App.Router("/v1/update-machine", &controllers.ApiController{}, "POST:UpdateMachine")
-	App.Router("/v1/add-machine", &controllers.ApiController{}, "POST:AddMachine")
-	App.Router("/v1/delete-machine", &controllers.ApiController{}, "POST:DeleteMachine")
-
 	App.Router("/v1/get-assets", &controllers.ApiController{}, "GET:GetAssets")
 	App.Router("/v1/get-asset", &controllers.ApiController{}, "GET:GetAsset")
 	App.Router("/v1/update-asset", &controllers.ApiController{}, "POST:UpdateAsset")
@@ -250,24 +244,6 @@ func initAPI() {
 	App.Router("/v1/delete-scan", &controllers.ApiController{}, "POST:DeleteScan")
 
 	App.Router("/v1/install-patch", &controllers.ApiController{}, "POST:InstallPatch")
-
-	App.Router("/v1/get-images", &controllers.ApiController{}, "GET:GetImages")
-	App.Router("/v1/get-image", &controllers.ApiController{}, "GET:GetImage")
-	App.Router("/v1/update-image", &controllers.ApiController{}, "POST:UpdateImage")
-	App.Router("/v1/add-image", &controllers.ApiController{}, "POST:AddImage")
-	App.Router("/v1/delete-image", &controllers.ApiController{}, "POST:DeleteImage")
-
-	App.Router("/v1/get-containers", &controllers.ApiController{}, "GET:GetContainers")
-	App.Router("/v1/get-container", &controllers.ApiController{}, "GET:GetContainer")
-	App.Router("/v1/update-container", &controllers.ApiController{}, "POST:UpdateContainer")
-	App.Router("/v1/add-container", &controllers.ApiController{}, "POST:AddContainer")
-	App.Router("/v1/delete-container", &controllers.ApiController{}, "POST:DeleteContainer")
-
-	App.Router("/v1/get-pods", &controllers.ApiController{}, "GET:GetPods")
-	App.Router("/v1/get-pod", &controllers.ApiController{}, "GET:GetPod")
-	App.Router("/v1/update-pod", &controllers.ApiController{}, "POST:UpdatePod")
-	App.Router("/v1/add-pod", &controllers.ApiController{}, "POST:AddPod")
-	App.Router("/v1/delete-pod", &controllers.ApiController{}, "POST:DeletePod")
 
 	App.Router("/v1/add-node-tunnel", &controllers.ApiController{}, "POST:AddNodeTunnel")
 	App.Router("/v1/get-node-tunnel", &controllers.ApiController{}, "GET:GetNodeTunnel")
