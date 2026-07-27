@@ -261,8 +261,15 @@ func TestKebab(t *testing.T) {
 // wrong answer rather than an error, which is the worst way for it to fail —
 // putting ai's signin under /v1/iam would have taken ai's login down with no
 // build error and no failing test anywhere.
+// Enumerated by grepping cloud for wholesale proxies:
+//
+//	grep -E 'Group\("/v1/[a-z-]+"\)\.(All|Use)' --include='*.go'
+//
+// which finds exactly two today. Re-run it when adding a namespace; a third
+// proxy appearing upstream is invisible from this repo until something 404s.
 var foreignNamespaces = map[string]string{
 	"iam": "the IAM service (cloud/iam_edge.go proxies the whole /v1/iam subtree)",
+	"dns": "the DNS service (cloud/clients/dns/dns.go forwards the whole /v1/dns subtree)",
 }
 
 // TestNoResourceClaimsForeignNamespace holds that line for the generated surface.
