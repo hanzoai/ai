@@ -26,7 +26,7 @@ export function getGlobalPermissions() {
 }
 
 export function getPermissions(owner) {
-  return fetch(`${Setting.ServerUrl}/v1/get-permissions?owner=${owner}`, {
+  return fetch(`${Setting.ServerUrl}/v1/auth/permissions?owner=${owner}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -36,7 +36,7 @@ export function getPermissions(owner) {
 }
 
 export function getPermission(owner, name) {
-  return fetch(`${Setting.ServerUrl}/v1/get-permission?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/auth/permissions/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -47,8 +47,8 @@ export function getPermission(owner, name) {
 
 export function updatePermission(owner, name, permission) {
   const newPermission = Setting.deepCopy(permission);
-  return fetch(`${Setting.ServerUrl}/v1/update-permission?id=${owner}/${encodeURIComponent(name)}`, {
-    method: "POST",
+  return fetch(`${Setting.ServerUrl}/v1/auth/permissions/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`, {
+    method: "PATCH",
     credentials: "include",
     headers: {
       "Accept-Language": Setting.getAcceptLanguage(),
@@ -59,7 +59,7 @@ export function updatePermission(owner, name, permission) {
 
 export function addPermission(permission) {
   const newPermission = Setting.deepCopy(permission);
-  return fetch(`${Setting.ServerUrl}/v1/add-permission`, {
+  return fetch(`${Setting.ServerUrl}/v1/auth/permissions`, {
     method: "POST",
     credentials: "include",
     headers: {
@@ -71,8 +71,8 @@ export function addPermission(permission) {
 
 export function deletePermission(permission) {
   const newPermission = Setting.deepCopy(permission);
-  return fetch(`${Setting.ServerUrl}/v1/delete-permission`, {
-    method: "POST",
+  return fetch(`${Setting.ServerUrl}/v1/auth/permissions/${encodeURIComponent(permission.owner)}/${encodeURIComponent(permission.name)}`, {
+    method: "DELETE",
     credentials: "include",
     headers: {
       "Accept-Language": Setting.getAcceptLanguage(),

@@ -16,7 +16,7 @@
 import * as Setting from "../Setting";
 
 export function getGlobalArticles() {
-  return fetch(`${Setting.ServerUrl}/v1/get-global-articles`, {
+  return fetch(`${Setting.ServerUrl}/v1/content/articles/global`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -26,7 +26,7 @@ export function getGlobalArticles() {
 }
 
 export function getArticles(owner, page = "", pageSize = "", field = "", value = "", sortField = "", sortOrder = "") {
-  return fetch(`${Setting.ServerUrl}/v1/get-articles?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
+  return fetch(`${Setting.ServerUrl}/v1/content/articles?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -36,7 +36,7 @@ export function getArticles(owner, page = "", pageSize = "", field = "", value =
 }
 
 export function getArticle(owner, name) {
-  return fetch(`${Setting.ServerUrl}/v1/get-article?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/content/articles/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -47,8 +47,8 @@ export function getArticle(owner, name) {
 
 export function updateArticle(owner, name, article) {
   const newArticle = Setting.deepCopy(article);
-  return fetch(`${Setting.ServerUrl}/v1/update-article?id=${owner}/${encodeURIComponent(name)}`, {
-    method: "POST",
+  return fetch(`${Setting.ServerUrl}/v1/content/articles/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`, {
+    method: "PATCH",
     credentials: "include",
     headers: {
       "Accept-Language": Setting.getAcceptLanguage(),
@@ -59,7 +59,7 @@ export function updateArticle(owner, name, article) {
 
 export function addArticle(article) {
   const newArticle = Setting.deepCopy(article);
-  return fetch(`${Setting.ServerUrl}/v1/add-article`, {
+  return fetch(`${Setting.ServerUrl}/v1/content/articles`, {
     method: "POST",
     credentials: "include",
     headers: {
@@ -71,8 +71,8 @@ export function addArticle(article) {
 
 export function deleteArticle(article) {
   const newArticle = Setting.deepCopy(article);
-  return fetch(`${Setting.ServerUrl}/v1/delete-article`, {
-    method: "POST",
+  return fetch(`${Setting.ServerUrl}/v1/content/articles/${encodeURIComponent(article.owner)}/${encodeURIComponent(article.name)}`, {
+    method: "DELETE",
     credentials: "include",
     headers: {
       "Accept-Language": Setting.getAcceptLanguage(),
