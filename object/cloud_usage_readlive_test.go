@@ -6,6 +6,7 @@ package object
 
 import (
 	"context"
+	"github.com/hanzoai/types"
 	"os"
 	"testing"
 	"time"
@@ -32,12 +33,12 @@ func TestCloudUsageOverviewLive(t *testing.T) {
 		org = "maxpower"
 	}
 	now := time.Now()
-	start, end, interval, err := ResolveCloudUsageWindow("24h", "", "", now)
+	w, err := types.ParseWindow("24h", "", "", now)
 	if err != nil {
 		t.Fatal(err)
 	}
 	ov, err := GetCloudUsageOverview(context.Background(), CloudUsageParams{
-		RangeLabel: "24h", Start: start, End: end, Interval: interval,
+		RangeLabel: w.Label, Start: w.Start, End: w.End, Interval: w.Interval,
 		Org: org, AllOrgs: false, TopModels: 6, ActivityType: "all", ActivityLimit: 20,
 	})
 	if err != nil {
