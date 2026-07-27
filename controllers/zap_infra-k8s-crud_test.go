@@ -35,14 +35,6 @@ func infraCrudMethods() map[string]zapHandler {
 	return map[string]zapHandler{
 		"get-nodes": zapGetNodesHandler, "get-node": zapGetNodeHandler,
 		"add-node": zapAddNodeHandler, "update-node": zapUpdateNodeHandler, "delete-node": zapDeleteNodeHandler,
-		"get-machines": zapGetMachinesHandler, "get-machine": zapGetMachineHandler,
-		"add-machine": zapAddMachineHandler, "update-machine": zapUpdateMachineHandler, "delete-machine": zapDeleteMachineHandler,
-		"get-containers": zapGetContainersHandler, "get-container": zapGetContainerHandler,
-		"add-container": zapAddContainerHandler, "update-container": zapUpdateContainerHandler, "delete-container": zapDeleteContainerHandler,
-		"get-pods": zapGetPodsHandler, "get-pod": zapGetPodHandler,
-		"add-pod": zapAddPodHandler, "update-pod": zapUpdatePodHandler, "delete-pod": zapDeletePodHandler,
-		"get-images": zapGetImagesHandler, "get-image": zapGetImageHandler,
-		"add-image": zapAddImageHandler, "update-image": zapUpdateImageHandler, "delete-image": zapDeleteImageHandler,
 		"add-node-tunnel":      zapAddNodeTunnelHandler,
 		"get-vm-dashboard-url": zapGetVmDashboardUrlHandler,
 	}
