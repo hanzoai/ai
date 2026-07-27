@@ -72,10 +72,6 @@ func registerZapAccountAuth() {
 	registerCloud("account.get", zapGetAccountHandler)
 	registerCloud("account.preferences", zapUpdatePreferencesHandler)
 
-	registerGatewayPath("/v1/signin", zapSigninHandler)
-	registerGatewayPath("/v1/signout", zapSignoutHandler)
-	registerGatewayPath("/v1/get-account", zapGetAccountHandler)
-	registerGatewayPath("/v1/update-preferences", zapUpdatePreferencesHandler)
 }
 
 // ── envelope helpers ────────────────────────────────────────────────────────

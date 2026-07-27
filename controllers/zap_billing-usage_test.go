@@ -50,11 +50,6 @@ func gwStatusMsg(t *testing.T, m *zap.Message) (status uint32, envStatus, envMsg
 // group so no handler can silently drift open.
 func TestZapUsageHandlers_RejectEmptyAuth(t *testing.T) {
 	handlers := map[string]zapGatewayHandler{
-		"/v1/get-usages":              zapGetUsagesHandler,
-		"/v1/get-range-usages":        zapGetRangeUsagesHandler,
-		"/v1/get-users":               zapGetUsersHandler,
-		"/v1/get-user-table-infos":    zapGetUserTableInfosHandler,
-		"/v1/get-cloud-usages":        zapGetCloudUsagesHandler,
 		"/v1/admin/usage/backfill-do": zapPostBackfillDOUsageHandler,
 	}
 

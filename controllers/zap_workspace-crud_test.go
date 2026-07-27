@@ -26,12 +26,7 @@ import (
 // TestZapWorkspaceRegistered proves the group binds every migrated route from its
 // own init() into the shared gateway registry — the strangler wiring seam.
 func TestZapWorkspaceRegistered(t *testing.T) {
-	want := []string{
-		"/v1/get-templates", "/v1/get-template", "/v1/update-template", "/v1/add-template", "/v1/delete-template",
-		"/v1/get-global-workflows", "/v1/get-workflows", "/v1/get-workflow", "/v1/update-workflow", "/v1/add-workflow", "/v1/delete-workflow",
-		"/v1/get-global-tasks", "/v1/get-tasks", "/v1/get-task", "/v1/update-task", "/v1/add-task", "/v1/delete-task", "/v1/upload-task-document", "/v1/analyze-task",
-		"/v1/get-global-videos", "/v1/get-videos", "/v1/get-video", "/v1/update-video", "/v1/add-video", "/v1/delete-video", "/v1/upload-video",
-	}
+	want := []string{}
 	registered := map[string]bool{}
 	for _, r := range zapGatewayRoutes {
 		registered[r.prefix] = true

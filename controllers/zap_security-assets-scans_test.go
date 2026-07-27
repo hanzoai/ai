@@ -17,7 +17,6 @@ package controllers
 import (
 	"context"
 	"encoding/json"
-	"reflect"
 	"testing"
 
 	"github.com/hanzoai/ai/object"
@@ -101,12 +100,7 @@ func TestZapSecurityRegistry(t *testing.T) {
 	}
 
 	gatewayPaths := []string{
-		"/v1/get-assets", "/v1/get-asset", "/v1/update-asset", "/v1/add-asset",
-		"/v1/delete-asset", "/v1/scan-asset", "/v1/scan-assets",
-		"/v1/get-scans", "/v1/get-scan", "/v1/update-scan", "/v1/add-scan",
-		"/v1/delete-scan", "/v1/install-patch",
-		"/v1/get-permissions", "/v1/get-permission", "/v1/update-permission",
-		"/v1/add-permission", "/v1/delete-permission",
+		"/v1/install-patch",
 	}
 	for _, path := range gatewayPaths {
 		if _, ok := lookupGatewayHandler(path); !ok {
@@ -114,24 +108,8 @@ func TestZapSecurityRegistry(t *testing.T) {
 		}
 	}
 
-	// Longest-prefix disambiguation: the plural/singular pairs must each resolve
-	// to their OWN handler, never the look-alike sibling.
-	assertResolves(t, "/v1/scan-assets", zapScanAssetsHandler)
-	assertResolves(t, "/v1/scan-asset", zapScanAssetHandler)
-	assertResolves(t, "/v1/get-assets", zapGetAssetsHandler)
-	assertResolves(t, "/v1/get-asset", zapGetAssetHandler)
-	assertResolves(t, "/v1/get-scans", zapGetScansHandler)
-	assertResolves(t, "/v1/get-scan", zapGetScanHandler)
-}
-
-// assertResolves checks lookupGatewayHandler(path) returns exactly want.
-func assertResolves(t *testing.T, path string, want zapHandler) {
-	t.Helper()
-	got, ok := lookupGatewayHandler(path)
-	if !ok {
-		t.Fatalf("gateway path %q not registered", path)
-	}
-	if reflect.ValueOf(got).Pointer() != reflect.ValueOf(want).Pointer() {
-		t.Errorf("gateway path %q resolved to the wrong handler", path)
-	}
+	// The plural/singular longest-prefix hazard this used to guard is gone with the
+	// compound names that caused it: /v1/content/assets and its member URL differ
+	// structurally, and the native router tells them apart by shape, not by which
+	// literal happens to be longer.
 }

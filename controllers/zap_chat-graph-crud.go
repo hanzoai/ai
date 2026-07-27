@@ -96,27 +96,7 @@ func registerZapChatGraphCrud() {
 	// /v1/get-message ⊂ /v1/get-messages) route correctly. /v1/get-message-answer
 	// (the streaming answer group's route) is longer than /v1/get-message and is
 	// registered by THAT group, so once it migrates its longer prefix wins here.
-	registerGatewayPath("/v1/get-global-chats", zapGetGlobalChatsHandler)
-	registerGatewayPath("/v1/get-chats", zapGetChatsHandler)
-	registerGatewayPath("/v1/get-chat", zapGetChatHandler)
-	registerGatewayPath("/v1/update-chat", zapUpdateChatHandler)
-	registerGatewayPath("/v1/add-chat", zapAddChatHandler)
-	registerGatewayPath("/v1/delete-chat", zapDeleteChatHandler)
 
-	registerGatewayPath("/v1/get-global-messages", zapGetGlobalMessagesHandler)
-	registerGatewayPath("/v1/get-messages", zapGetMessagesHandler)
-	registerGatewayPath("/v1/get-message", zapGetMessageHandler)
-	registerGatewayPath("/v1/update-message", zapUpdateMessageHandler)
-	registerGatewayPath("/v1/add-message", zapAddMessageHandler)
-	registerGatewayPath("/v1/delete-welcome-message", zapDeleteWelcomeMessageHandler)
-	registerGatewayPath("/v1/delete-message", zapDeleteMessageHandler)
-
-	registerGatewayPath("/v1/get-global-graphs", zapGetGlobalGraphsHandler)
-	registerGatewayPath("/v1/get-graphs", zapGetGraphsHandler)
-	registerGatewayPath("/v1/get-graph", zapGetGraphHandler)
-	registerGatewayPath("/v1/update-graph", zapUpdateGraphHandler)
-	registerGatewayPath("/v1/add-graph", zapAddGraphHandler)
-	registerGatewayPath("/v1/delete-graph", zapDeleteGraphHandler)
 }
 
 // ── Shared gates (parity with routers/authz_filter.go + base controller) ─────
