@@ -81,20 +81,13 @@ func TestZapKnowledgeRegistry(t *testing.T) {
 		}
 	}
 
-	for _, path := range []string{
-		"/v1/get-global-stores", "/v1/get-stores", "/v1/get-store",
-		"/v1/update-store", "/v1/add-store", "/v1/delete-store",
-		"/v1/refresh-store-vectors", "/v1/get-store-names", "/v1/get-storage-providers",
-		"/v1/get-global-files", "/v1/get-files", "/v1/get-file", "/v1/update-file",
-		"/v1/add-file", "/v1/delete-file", "/v1/refresh-file-vectors", "/v1/upload-file",
-		"/v1/activate-file", "/v1/get-active-file",
-		"/v1/update-tree-file", "/v1/add-tree-file", "/v1/delete-tree-file",
-		"/v1/get-global-vectors", "/v1/get-vectors", "/v1/get-vector",
-		"/v1/update-vector", "/v1/add-vector", "/v1/delete-vector", "/v1/delete-all-vectors",
-	} {
-		if h, ok := zapKnowledgeGateway[path]; !ok || h == nil {
-			t.Errorf("gateway path %q not registered", path)
-		}
+	// The gateway table is deliberately EMPTY. Its entries were a second router
+	// keyed on path alone, which cannot express a RESTful surface (one path,
+	// several verbs, and id segments to capture). Those paths are served by the
+	// native router via the MsgType 200 fallback — see zap_gateway_fallback.go.
+	if len(zapKnowledgeGateway) != 0 {
+		t.Errorf("gateway table has %d entries, want 0 — a second router is back",
+			len(zapKnowledgeGateway))
 	}
 }
 

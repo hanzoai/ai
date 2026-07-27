@@ -108,6 +108,9 @@ func main() {
 	// :8000 HTTP path and the existing ZAP handlers (MsgType 100/200) are
 	// untouched. Gated by ZAP_ENABLED via object.GetZapNode() returning nil.
 	controllers.InitForwardBridge(routers.App)
+	// MsgType 200 requests no ad-hoc registry entry claims are served by the same
+	// router, so the ZAP gateway reaches every route the HTTP surface exposes.
+	controllers.SetGatewayFallback(routers.App)
 
 	go object.ClearThroughputPerSecond()
 

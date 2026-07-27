@@ -95,27 +95,9 @@ func registerZapSecurityAssetsScans() {
 	// lookupGatewayHandler resolves by longest matching prefix with a "+/" guard,
 	// so "/v1/scan-asset" never shadows "/v1/scan-assets" and "/v1/get-asset"
 	// never shadows "/v1/get-assets".
-	registerGatewayPath("/v1/get-assets", zapGetAssetsHandler)
-	registerGatewayPath("/v1/get-asset", zapGetAssetHandler)
-	registerGatewayPath("/v1/update-asset", zapUpdateAssetHandler)
-	registerGatewayPath("/v1/add-asset", zapAddAssetHandler)
-	registerGatewayPath("/v1/delete-asset", zapDeleteAssetHandler)
-	registerGatewayPath("/v1/scan-assets", zapScanAssetsHandler)
-	registerGatewayPath("/v1/scan-asset", zapScanAssetHandler)
-
-	registerGatewayPath("/v1/get-scans", zapGetScansHandler)
-	registerGatewayPath("/v1/get-scan", zapGetScanHandler)
-	registerGatewayPath("/v1/update-scan", zapUpdateScanHandler)
-	registerGatewayPath("/v1/add-scan", zapAddScanHandler)
-	registerGatewayPath("/v1/delete-scan", zapDeleteScanHandler)
 
 	registerGatewayPath("/v1/install-patch", zapInstallPatchHandler)
 
-	registerGatewayPath("/v1/get-permissions", zapGetPermissionsHandler)
-	registerGatewayPath("/v1/get-permission", zapGetPermissionHandler)
-	registerGatewayPath("/v1/update-permission", zapUpdatePermissionHandler)
-	registerGatewayPath("/v1/add-permission", zapAddPermissionHandler)
-	registerGatewayPath("/v1/delete-permission", zapDeletePermissionHandler)
 }
 
 // ── Shared seams (group-local: identity + response envelope parity) ──────────

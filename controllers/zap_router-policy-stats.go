@@ -90,8 +90,6 @@ func init() {
 	registerGatewayPath("/v1/router/artifact-meta", zapPublishRouterArtifactMetaHandler)
 	registerGatewayPath("/v1/feedback", zapAddRoutingRewardHandler)
 	registerGatewayPath("/v1/traffic/globe", zapGetTrafficGlobeHandler)
-	registerGatewayPath("/v1/get-training-contribution", zapGetTrainingContributionHandler)
-	registerGatewayPath("/v1/update-training-contribution", zapUpdateTrainingContributionHandler)
 }
 
 // ── Shared seams (identity + response envelope parity) ───────────────────
