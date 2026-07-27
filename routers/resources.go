@@ -320,16 +320,28 @@ func registerResources(app *web.Router) {
 		if r.global {
 			app.Router(r.collection()+"/global", &controllers.ApiController{}, "GET:GetGlobal"+r.plural())
 		}
+		// Actions that share a URL must be registered as ONE pattern with several
+		// verb:method pairs. Registering the same pattern twice leaves the second
+		// registration unreachable — GET and POST on /nodes/:id/tunnel are the
+		// live example — and it fails as a 405, not an error, so nothing complains.
+		order := []string{}
+		byPath := map[string][]string{}
 		for _, a := range r.actions {
 			verb := a.verb
 			if verb == "" {
 				verb = "POST"
 			}
-			path := r.member() + "/" + a.name
+			p := r.member() + "/" + a.name
 			if a.collection {
-				path = r.collection() + "/" + a.name
+				p = r.collection() + "/" + a.name
 			}
-			app.Router(path, &controllers.ApiController{}, verb+":"+a.method)
+			if _, seen := byPath[p]; !seen {
+				order = append(order, p)
+			}
+			byPath[p] = append(byPath[p], verb+":"+a.method)
+		}
+		for _, p := range order {
+			app.Router(p, &controllers.ApiController{}, strings.Join(byPath[p], ";"))
 		}
 	}
 	for _, s := range singletons {
