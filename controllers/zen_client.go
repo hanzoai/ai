@@ -59,17 +59,6 @@ import (
 // flagship Zen/Enso SKUs, independent of what a given discovery snapshot advertises.
 const flagshipWindow = 1_000_000
 
-// pinnedSKU is a family SKU ai guarantees in /v1/models at a known context window.
-// When the family already serves the SKU, the pin fixes its listed window; when the
-// family does not advertise it yet — a SKU ai routes ahead of discovery (e.g.
-// enso-pro) — the pin also synthesizes the listing entry. Pins apply only to a
-// CONFIGURED family (enabled()), so an unconfigured family lists nothing. See
-// hip-00NN.
-type pinnedSKU struct {
-	id            string
-	contextWindow int
-}
-
 // modelFamily is one serving family as a value: its public name/brand + cold-start
 // ownership prefix, the config keys that hold its address, the provider record ai
 // forwards through, and a discovered-catalog snapshot refreshed from the family on a
@@ -83,7 +72,14 @@ type modelFamily struct {
 	urlKey     string                  // config key for the base URL ("ZEN_URL" | "ENSO_URL")
 	keyKey     string                  // config key for the service key ("ZEN_API_KEY" | "ENSO_API_KEY")
 	providerFn func() *object.Provider // the virtual provider ai forwards through
-	pins       []pinnedSKU             // SKUs ai guarantees at a known window (applied only when enabled())
+	// windows is the served context window ai guarantees for a DISCOVERED SKU,
+	// keyed by SKU id — a flagship reports its real 1M window even when a given
+	// discovery snapshot advertises less. It cannot add a SKU: a model appears in
+	// /v1/models iff the family serves it. A map (not a list ai could iterate into
+	// the listing) is what makes an unservable entry unrepresentable — the previous
+	// list synthesized a listing for any SKU the family "would" serve, which is how
+	// enso-pro was advertised, unpriced, for a family that answers 404 for it.
+	windows map[string]int
 
 	// decode turns a family's raw GET /v1/models body into discovered SKUs. nil means
 	// the Hanzo family wire shape (zenWireModel), which already carries every field ai
@@ -106,19 +102,21 @@ var (
 	zenFam = &modelFamily{
 		name: "zen", provider: "Zen", prefix: "zen", owner: "zenlm", urlKey: "ZEN_URL", keyKey: "ZEN_API_KEY",
 		providerFn: object.ZenProvider,
-		pins: []pinnedSKU{
-			{id: "zen5", contextWindow: flagshipWindow},
-			{id: "zen5-coder", contextWindow: flagshipWindow},
-			{id: "zen5-pro", contextWindow: flagshipWindow},
+		windows: map[string]int{
+			"zen5":       flagshipWindow,
+			"zen5-coder": flagshipWindow,
+			"zen5-pro":   flagshipWindow,
 		},
 	}
 	ensoFam = &modelFamily{
 		name: "enso", provider: "Enso", prefix: "enso", owner: "hanzo", urlKey: "ENSO_URL", keyKey: "ENSO_API_KEY",
 		providerFn: object.EnsoProvider,
-		pins: []pinnedSKU{
-			{id: "enso", contextWindow: flagshipWindow},
-			{id: "enso-pro", contextWindow: flagshipWindow},
-			{id: "enso-ultra", contextWindow: flagshipWindow},
+		// enso-pro is deliberately absent: the enso service serves enso, enso-flash
+		// and enso-ultra and answers 404 for enso-pro (probed directly — the balance
+		// gate returns 402 before model resolution, so only a direct probe can tell).
+		windows: map[string]int{
+			"enso":       flagshipWindow,
+			"enso-ultra": flagshipWindow,
 		},
 	}
 	// modelFamilies is the discovery/route/merge iteration order — the ONE list every
@@ -127,20 +125,14 @@ var (
 	modelFamilies = []*modelFamily{zenFam, ensoFam, openrouterFam}
 )
 
-// pinnedWindow returns the context window ai guarantees when listing and routing a
-// SKU, or 0 when the family pins none. Pins apply only to a configured family, so a
-// bare or unconfigured family reports no pinned window (and synthesizes no SKU).
-func (f *modelFamily) pinnedWindow(model string) int {
+// window returns the context window ai guarantees when listing and routing a SKU,
+// or 0 when the family guarantees none. It applies only to a configured family, so
+// a bare or unconfigured family reports no guaranteed window.
+func (f *modelFamily) window(model string) int {
 	if !f.enabled() {
 		return 0
 	}
-	m := strings.ToLower(strings.TrimSpace(model))
-	for _, p := range f.pins {
-		if strings.ToLower(p.id) == m {
-			return p.contextWindow
-		}
-	}
-	return 0
+	return f.windows[strings.ToLower(strings.TrimSpace(model))]
 }
 
 func (f *modelFamily) baseURL() string {
@@ -531,8 +523,8 @@ func (f *modelFamily) passthroughRoute(model string) *modelRoute {
 	if m, ok := f.lookup(model); ok {
 		ctx = m.MaxCtx
 	}
-	if w := f.pinnedWindow(model); w > 0 {
-		ctx = w // guarantee the flagship served window (and give enso-pro a window before discovery advertises it)
+	if w := f.window(model); w > 0 {
+		ctx = w // guarantee the flagship served window
 	}
 	return &modelRoute{
 		providerName:  f.name,
@@ -543,20 +535,17 @@ func (f *modelFamily) passthroughRoute(model string) *modelRoute {
 	}
 }
 
-// mergeModels overlays this family's discovered lineup onto the base /v1/models list:
+// mergeModels overlays this family's DISCOVERED lineup onto the base /v1/models list:
 // a discovered SKU wins over any same-named base entry, new SKUs are appended, and
-// each carries its served context window (from discovery, overridden by a pinned
-// window for the flagship SKUs). A configured family also lists its pinned SKUs that
-// discovery has not advertised yet (e.g. enso-pro) so clients see the real window.
+// each carries its served context window (from discovery, raised to the guaranteed
+// window for the flagship SKUs).
+//
+// Discovery is the only source of a listing. ai never adds a SKU the family does not
+// serve: a listed model that 404s upstream is worse than an absent one, and it is how
+// enso-pro reached /v1/models with no price at all.
 func (f *modelFamily) mergeModels(base []modelInfo) []modelInfo {
 	zs := f.snapshot()
-	// Pinned SKUs are synthesized only for a CONFIGURED family, so a bare or
-	// unconfigured family lists nothing it cannot serve.
-	pins := f.pins
-	if !f.enabled() {
-		pins = nil
-	}
-	if len(zs) == 0 && len(pins) == 0 {
+	if len(zs) == 0 {
 		return base
 	}
 	now := time.Now().Unix()
@@ -579,7 +568,7 @@ func (f *modelFamily) mergeModels(base []modelInfo) []modelInfo {
 			owner = f.owner // public branding default: enso→"hanzo", zen→"zenlm"
 		}
 		window := z.MaxCtx
-		if w := f.pinnedWindow(z.ID); w > 0 {
+		if w := f.window(z.ID); w > 0 {
 			window = w // flagship SKUs report their guaranteed served window
 		}
 		info := modelInfo{
@@ -592,17 +581,6 @@ func (f *modelFamily) mergeModels(base []modelInfo) []modelInfo {
 			info.Access = &modelAccessInfo{State: "waitlist"}
 		}
 		upsert(info)
-	}
-	// List any pinned SKU discovery has not advertised (a SKU ai routes ahead of the
-	// family serving it, e.g. enso-pro) with its guaranteed window.
-	for _, p := range pins {
-		if _, ok := idx[strings.ToLower(p.id)]; ok {
-			continue // already listed from discovery (window pinned above)
-		}
-		upsert(modelInfo{
-			ID: p.id, Object: "model", Created: now, OwnedBy: f.owner,
-			Premium: true, ContextWindow: p.contextWindow,
-		})
 	}
 	sort.Slice(base, func(i, j int) bool { return base[i].ID < base[j].ID })
 	return base
