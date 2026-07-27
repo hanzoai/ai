@@ -77,7 +77,7 @@ func isAllowedInDemoMode(method string, urlPath string) bool {
 		return true
 	}
 	// Sign-in carries its own suffixes (provider callbacks) — prefix-matched.
-	if strings.HasPrefix(path.Clean(urlPath), "/v1/auth/signin") {
+	if strings.HasPrefix(path.Clean(urlPath), "/v1/ai/signin") {
 		return true
 	}
 	name, ok := normalizedControllerName(urlPath, method)
@@ -159,7 +159,7 @@ var authRequiredEndpoints = map[string]struct{}{
 
 // requiresPresentCredential reports whether controllerName is a write/ingest/
 // scrape/RAG endpoint that must fail closed for an anonymous caller. It matches
-// the explicit set plus the native /v1/rag/* family, the librechat-compat
+// the explicit set plus the native /v1/ai/* family, the librechat-compat
 // /v1/documents/{id}/context read, and the AI login-manager /v1/ai/connections*
 // family (org-scoped: a present credential is required at the filter; the
 // controller does the authoritative per-org check — NOT a super-admin gate).
