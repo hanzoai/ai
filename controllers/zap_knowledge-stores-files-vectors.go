@@ -121,40 +121,7 @@ var zapKnowledgeCloud = map[string]zapKnowledgeHandlerFn{
 
 // zapKnowledgeGateway maps gateway path → handler (MsgType 200). Longest-prefix
 // wins (see PARITY NOTES).
-var zapKnowledgeGateway = map[string]zapKnowledgeHandlerFn{
-	"/v1/get-global-stores":     zapGetGlobalStoresHandler,
-	"/v1/get-store-names":       zapGetStoreNamesHandler,
-	"/v1/get-stores":            zapGetStoresHandler,
-	"/v1/get-store":             zapGetStoreHandler,
-	"/v1/update-store":          zapUpdateStoreHandler,
-	"/v1/add-store":             zapAddStoreHandler,
-	"/v1/delete-store":          zapDeleteStoreHandler,
-	"/v1/refresh-store-vectors": zapRefreshStoreVectorsHandler,
-	"/v1/get-storage-providers": zapGetStorageProvidersHandler,
-
-	"/v1/get-global-files":     zapGetGlobalFilesHandler,
-	"/v1/get-files":            zapGetFilesHandler,
-	"/v1/get-file":             zapGetFileHandler,
-	"/v1/update-file":          zapUpdateFileHandler,
-	"/v1/add-file":             zapAddFileHandler,
-	"/v1/delete-file":          zapDeleteFileHandler,
-	"/v1/refresh-file-vectors": zapRefreshFileVectorsHandler,
-	"/v1/upload-file":          zapUploadFileHandler,
-	"/v1/activate-file":        zapActivateFileHandler,
-	"/v1/get-active-file":      zapGetActiveFileHandler,
-
-	"/v1/update-tree-file": zapUpdateTreeFileHandler,
-	"/v1/add-tree-file":    zapAddTreeFileHandler,
-	"/v1/delete-tree-file": zapDeleteTreeFileHandler,
-
-	"/v1/get-global-vectors": zapGetGlobalVectorsHandler,
-	"/v1/get-vectors":        zapGetVectorsHandler,
-	"/v1/get-vector":         zapGetVectorHandler,
-	"/v1/update-vector":      zapUpdateVectorHandler,
-	"/v1/add-vector":         zapAddVectorHandler,
-	"/v1/delete-vector":      zapDeleteVectorHandler,
-	"/v1/delete-all-vectors": zapDeleteAllVectorsHandler,
-}
+var zapKnowledgeGateway = map[string]zapKnowledgeHandlerFn{}
 
 // ── Shared seams (identity + response envelope + param parity) ───────────
 

@@ -163,7 +163,10 @@ func dispatchGateway(ctx context.Context, method, path, query, auth string, body
 		msg, err := h(ctx, auth, body)
 		return msg, true, err
 	}
-	return nil, false, nil
+	// No registry entry owns this path — serve it through the native router,
+	// which resolves method + path parameters and runs every filter. See
+	// zap_gateway_fallback.go for why a second router is not taught to do that.
+	return serveGatewayViaRouter(ctx, method, path, query, auth, body)
 }
 
 // extractAuthFromHeaders parses the Authorization header from a JSON-encoded

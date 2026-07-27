@@ -55,19 +55,16 @@ func TestZapApplicationDeployRegistered(t *testing.T) {
 			t.Errorf("cloud method %q not registered", m)
 		}
 	}
-	gw := []string{
-		"/v1/get-applications", "/v1/get-application", "/v1/update-application",
-		"/v1/add-application", "/v1/delete-application", "/v1/deploy-application",
-		"/v1/undeploy-application", "/v1/get-k8s-status",
+	// The gateway table is deliberately EMPTY. Its entries were a second
+	// router keyed on path alone, which cannot express a RESTful surface
+	// (one path, several verbs, and id segments to capture). Those paths are
+	// served by the native router via the MsgType 200 fallback instead —
+	// see zap_gateway_fallback.go.
+	if len(zapApplicationDeployGateway) != 0 {
+		t.Errorf("gateway table has %d entries, want 0 — a second router is back", len(zapApplicationDeployGateway))
 	}
-	for _, p := range gw {
-		if zapApplicationDeployGateway[p] == nil {
-			t.Errorf("gateway path %q not registered", p)
-		}
-	}
-	if len(zapApplicationDeployCloud) != len(cloud) || len(zapApplicationDeployGateway) != len(gw) {
-		t.Errorf("table size mismatch: cloud=%d gateway=%d, want %d/%d",
-			len(zapApplicationDeployCloud), len(zapApplicationDeployGateway), len(cloud), len(gw))
+	if len(zapApplicationDeployCloud) != len(cloud) {
+		t.Errorf("cloud table = %d, want %d", len(zapApplicationDeployCloud), len(cloud))
 	}
 }
 

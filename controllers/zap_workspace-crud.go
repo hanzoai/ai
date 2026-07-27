@@ -56,39 +56,13 @@ import (
 
 func init() {
 	// Templates.
-	registerGatewayRoute("/v1/get-templates", zapTemplatesHandler)
-	registerGatewayRoute("/v1/get-template", zapTemplatesHandler)
-	registerGatewayRoute("/v1/update-template", zapTemplatesHandler)
-	registerGatewayRoute("/v1/add-template", zapTemplatesHandler)
-	registerGatewayRoute("/v1/delete-template", zapTemplatesHandler)
 
 	// Workflows.
-	registerGatewayRoute("/v1/get-global-workflows", zapWorkflowsHandler)
-	registerGatewayRoute("/v1/get-workflows", zapWorkflowsHandler)
-	registerGatewayRoute("/v1/get-workflow", zapWorkflowsHandler)
-	registerGatewayRoute("/v1/update-workflow", zapWorkflowsHandler)
-	registerGatewayRoute("/v1/add-workflow", zapWorkflowsHandler)
-	registerGatewayRoute("/v1/delete-workflow", zapWorkflowsHandler)
 
 	// Tasks.
-	registerGatewayRoute("/v1/get-global-tasks", zapTasksHandler)
-	registerGatewayRoute("/v1/get-tasks", zapTasksHandler)
-	registerGatewayRoute("/v1/get-task", zapTasksHandler)
-	registerGatewayRoute("/v1/update-task", zapTasksHandler)
-	registerGatewayRoute("/v1/add-task", zapTasksHandler)
-	registerGatewayRoute("/v1/delete-task", zapTasksHandler)
-	registerGatewayRoute("/v1/upload-task-document", zapTasksHandler)
-	registerGatewayRoute("/v1/analyze-task", zapTasksHandler)
 
 	// Videos (workspace CRUD + upload — NOT the async /v1/videos/generations family,
 	// which is a separate group in zap_videos-generation.go).
-	registerGatewayRoute("/v1/get-global-videos", zapVideosCrudHandler)
-	registerGatewayRoute("/v1/get-videos", zapVideosCrudHandler)
-	registerGatewayRoute("/v1/get-video", zapVideosCrudHandler)
-	registerGatewayRoute("/v1/update-video", zapVideosCrudHandler)
-	registerGatewayRoute("/v1/add-video", zapVideosCrudHandler)
-	registerGatewayRoute("/v1/delete-video", zapVideosCrudHandler)
-	registerGatewayRoute("/v1/upload-video", zapVideosCrudHandler)
 }
 
 // ── Shared authz + identity for this group ─────────────────────────────────────

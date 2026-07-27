@@ -60,11 +60,6 @@ import (
 // arm. Every route is HTTP-over-ZAP (MsgType 200) — there is no native cloud
 // method for these HTTP/query-driven admin reads.
 func registerZapBillingUsage() {
-	registerGatewayRoute("/v1/get-usages", zapGetUsagesHandler)
-	registerGatewayRoute("/v1/get-range-usages", zapGetRangeUsagesHandler)
-	registerGatewayRoute("/v1/get-users", zapGetUsersHandler)
-	registerGatewayRoute("/v1/get-user-table-infos", zapGetUserTableInfosHandler)
-	registerGatewayRoute("/v1/get-cloud-usages", zapGetCloudUsagesHandler)
 	registerGatewayRoute("/v1/admin/usage/backfill-do", zapPostBackfillDOUsageHandler)
 }
 

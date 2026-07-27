@@ -30,17 +30,8 @@ import (
 func TestZapRecordsSessionsConnectionsRegistered(t *testing.T) {
 	want := []string{
 		// Sessions.
-		"/v1/get-sessions", "/v1/get-session", "/v1/update-session",
-		"/v1/add-session", "/v1/delete-session", "/v1/is-session-duplicated",
 		// Connections.
-		"/v1/get-connections", "/v1/get-connection", "/v1/update-connection",
-		"/v1/add-connection", "/v1/delete-connection", "/v1/start-connection",
-		"/v1/stop-connection",
 		// Records.
-		"/v1/get-records", "/v1/get-record", "/v1/update-record",
-		"/v1/add-records", "/v1/add-record", "/v1/delete-record",
-		"/v1/commit-record", "/v1/commit-record-second",
-		"/v1/query-record", "/v1/query-record-second",
 	}
 	for _, p := range want {
 		found := false

@@ -128,35 +128,9 @@ func registerZapVerticalsAndMisc() {
 	// so the singular/plural pairs that share a stem (get-form ⊂ get-forms ⊂
 	// get-form-data, get-scale ⊂ get-scales, …) never shadow each other — each
 	// registers as its own distinct exact prefix.
-	registerGatewayPath("/v1/get-global-forms", zapGetGlobalFormsHandler)
-	registerGatewayPath("/v1/get-forms", zapGetFormsHandler)
-	registerGatewayPath("/v1/get-form-data", zapGetFormDataHandler)
-	registerGatewayPath("/v1/get-form", zapGetFormHandler)
-	registerGatewayPath("/v1/update-form", zapUpdateFormHandler)
-	registerGatewayPath("/v1/add-form", zapAddFormHandler)
-	registerGatewayPath("/v1/delete-form", zapDeleteFormHandler)
 
-	registerGatewayPath("/v1/get-global-articles", zapGetGlobalArticlesHandler)
-	registerGatewayPath("/v1/get-articles", zapGetArticlesHandler)
-	registerGatewayPath("/v1/get-article", zapGetArticleHandler)
-	registerGatewayPath("/v1/update-article", zapUpdateArticleHandler)
-	registerGatewayPath("/v1/add-article", zapAddArticleHandler)
-	registerGatewayPath("/v1/delete-article", zapDeleteArticleHandler)
-
-	registerGatewayPath("/v1/get-global-scales", zapGetGlobalScalesHandler)
-	registerGatewayPath("/v1/get-public-scales", zapGetPublicScalesHandler)
-	registerGatewayPath("/v1/get-scales", zapGetScalesHandler)
-	registerGatewayPath("/v1/get-scale", zapGetScaleHandler)
-	registerGatewayPath("/v1/update-scale", zapUpdateScaleHandler)
-	registerGatewayPath("/v1/add-scale", zapAddScaleHandler)
-	registerGatewayPath("/v1/delete-scale", zapDeleteScaleHandler)
-
-	registerGatewayPath("/v1/get-system-info", zapGetSystemInfoHandler)
-	registerGatewayPath("/v1/get-version-info", zapGetVersionInfoHandler)
 	registerGatewayPath("/v1/health", zapHealthHandler)
-	registerGatewayPath("/v1/get-prometheus-info", zapGetPrometheusInfoHandler)
 	registerGatewayPath("/v1/metrics", zapGetMetricsHandler)
-	registerGatewayPath("/v1/get-activities", zapGetActivitiesHandler)
 
 	// Per-org settings (super-admin) — ONE RESTful noun, method-aware: GET/PUT/DELETE
 	// /v1/org/settings + GET /v1/org/settings/list. HTTP-shaped (registerGatewayRoute)
@@ -164,7 +138,6 @@ func registerZapVerticalsAndMisc() {
 	// /list sub-path. The /v1/org/settings prefix also matches /v1/org/settings/list.
 	registerGatewayRoute("/v1/org/settings", zapOrgSettingsHandler)
 
-	registerGatewayPath("/v1/get-agents-dashboard-url", zapGetAgentsDashboardUrlHandler)
 }
 
 // ── Shared envelope + gates (parity with util.go + routers/authz_filter.go) ─────
