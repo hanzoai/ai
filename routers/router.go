@@ -207,16 +207,16 @@ func initAPI() {
 	// the retired standalone chat-rag-api). Embed a file under a file_id, then
 	// retrieve chunks scoped to that file (or a set of files) over the SAME
 	// Search+Vector index as doc RAG.
-	App.Router("/v1/rag/embed", &controllers.ApiController{}, "POST:RagEmbed")
-	App.Router("/v1/rag/query", &controllers.ApiController{}, "POST:RagQuery")
-	App.Router("/v1/rag/query-multiple", &controllers.ApiController{}, "POST:RagQueryMultiple")
-	App.Router("/v1/rag/delete", &controllers.ApiController{}, "POST:RagDelete")
-	App.Router("/v1/rag/context", &controllers.ApiController{}, "GET:RagContext")
+	App.Router("/v1/ai/embed", &controllers.ApiController{}, "POST:RagEmbed")
+	App.Router("/v1/ai/query", &controllers.ApiController{}, "POST:RagQuery")
+	App.Router("/v1/ai/query-multiple", &controllers.ApiController{}, "POST:RagQueryMultiple")
+	App.Router("/v1/ai/delete", &controllers.ApiController{}, "POST:RagDelete")
+	App.Router("/v1/ai/context", &controllers.ApiController{}, "GET:RagContext")
 
 	// LibreChat-compat RAG — the FIXED contract hanzo.chat's RAG client calls at
 	// RAG_API_URL. Pointing RAG_API_URL=https://api.hanzo.ai/v1 retires the
 	// standalone chat-rag-api with no chat-repo change. Thin projection over the
-	// same object.Rag* logic as /v1/rag/*.
+	// same object.Rag* logic as /v1/ai/*.
 	App.Router("/v1/embed", &controllers.ApiController{}, "POST:RagEmbedMultipart")
 	App.Router("/v1/query", &controllers.ApiController{}, "POST:RagQueryCompat")
 	App.Router("/v1/query_multiple", &controllers.ApiController{}, "POST:RagQueryMultipleCompat")
