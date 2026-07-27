@@ -45,8 +45,6 @@ func gwResp(t *testing.T, msg *zap.Message) (uint32, Response) {
 // onto. Registration is by longest-prefix, so every migrated path resolves here.
 func TestZapModelRoutingRegistered(t *testing.T) {
 	want := []string{
-		"/v1/get-model-routes", "/v1/get-model-route", "/v1/add-model-route",
-		"/v1/update-model-route", "/v1/delete-model-route",
 		"/v1/models/", "/v1/admin/model-access",
 		"/v1/admin/reload-model-config", "/v1/admin/refresh-model-pricing",
 	}

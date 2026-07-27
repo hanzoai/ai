@@ -46,11 +46,6 @@ import (
 
 func init() {
 	// Model routing (SuperAdmin) — one handler for the five *-model-route paths.
-	registerGatewayRoute("/v1/get-model-routes", zapModelRouteHandler)
-	registerGatewayRoute("/v1/get-model-route", zapModelRouteHandler)
-	registerGatewayRoute("/v1/add-model-route", zapModelRouteHandler)
-	registerGatewayRoute("/v1/update-model-route", zapModelRouteHandler)
-	registerGatewayRoute("/v1/delete-model-route", zapModelRouteHandler)
 
 	// Per-model access (self-scoped) and admin access grants (SuperAdmin).
 	registerGatewayRoute("/v1/models/", zapModelAccessSelfHandler) // /v1/models/{model}/access

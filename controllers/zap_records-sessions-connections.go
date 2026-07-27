@@ -49,33 +49,10 @@ func init() { registerZapRecordsSessionsConnections() }
 // ever needs pinning — InitZapHandlers gains no per-group switch arm.
 func registerZapRecordsSessionsConnections() {
 	// Sessions.
-	registerGatewayRoute("/v1/get-sessions", zapSessionsHandler)
-	registerGatewayRoute("/v1/get-session", zapSessionsHandler)
-	registerGatewayRoute("/v1/update-session", zapSessionsHandler)
-	registerGatewayRoute("/v1/add-session", zapSessionsHandler)
-	registerGatewayRoute("/v1/delete-session", zapSessionsHandler)
-	registerGatewayRoute("/v1/is-session-duplicated", zapSessionsHandler)
 
 	// Connections.
-	registerGatewayRoute("/v1/get-connections", zapConnectionsHandler)
-	registerGatewayRoute("/v1/get-connection", zapConnectionsHandler)
-	registerGatewayRoute("/v1/update-connection", zapConnectionsHandler)
-	registerGatewayRoute("/v1/add-connection", zapConnectionsHandler)
-	registerGatewayRoute("/v1/delete-connection", zapConnectionsHandler)
-	registerGatewayRoute("/v1/start-connection", zapConnectionsHandler)
-	registerGatewayRoute("/v1/stop-connection", zapConnectionsHandler)
 
 	// Records.
-	registerGatewayRoute("/v1/get-records", zapRecordsHandler)
-	registerGatewayRoute("/v1/get-record", zapRecordsHandler)
-	registerGatewayRoute("/v1/update-record", zapRecordsHandler)
-	registerGatewayRoute("/v1/add-records", zapRecordsHandler)
-	registerGatewayRoute("/v1/add-record", zapRecordsHandler)
-	registerGatewayRoute("/v1/delete-record", zapRecordsHandler)
-	registerGatewayRoute("/v1/commit-record-second", zapRecordsHandler)
-	registerGatewayRoute("/v1/commit-record", zapRecordsHandler)
-	registerGatewayRoute("/v1/query-record-second", zapRecordsHandler)
-	registerGatewayRoute("/v1/query-record", zapRecordsHandler)
 }
 
 // ── Org scoping: the ONE tenant seam, mirroring ApiController.GetScopedOwner ─────
