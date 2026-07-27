@@ -127,6 +127,16 @@ func (a *Adapter) CreateDatabase() error {
 	defer db.Close()
 	var stmt string
 	switch a.driverName {
+	case "sqlite", "sqlite3":
+		// SQLite has no CREATE DATABASE. The database IS the file, and it
+		// exists the moment it is opened — there is nothing to create, so the
+		// correct statement is no statement.
+		//
+		// Without this branch sqlite fell through to default, which emits
+		// MySQL DDL, and every caller got `near "DATABASE": syntax error`. A
+		// default that assumes one dialect is wrong for every dialect it has
+		// not met; the ones that need a database created now say so by name.
+		return nil
 	case "postgres":
 		stmt = fmt.Sprintf(`
 			DO $$

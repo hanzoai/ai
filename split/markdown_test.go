@@ -18,8 +18,6 @@
 package split
 
 import (
-	"fmt"
-	"reflect"
 	"testing"
 )
 
@@ -68,20 +66,38 @@ There is also an HTML table:
 
 	textSections, err := p.SplitText(text)
 	if err != nil {
-		panic(err)
+		t.Fatalf("SplitText: %v", err)
 	}
+	// Every chunk carries its heading as context — that is what
+	// ExtractTablesWithContext is for, and a bare table is not retrievable
+	// without knowing which section it came from. Order is the document's.
 	targetSections := []string{
+		"# Section 1\n\n| Header1 | Header2 | Header3 |\n|---------|---------|---------|\n| A1      | B1      | C1      |\n| A2      | B2      | C2      |",
 		"# Section 1\n\nHere is a standard Markdown table:",
 		"# Section 2\n\nThis is the content of the second section.",
 		"1. **The first point**\n\nThis is the first sentence of the content below the first point.",
+		"2. **The second point**\n\nData1 | Data2\n:-----|:-----\nMore data1 | More data2",
+		"2. **The second point**\n\n<table>\n<tr>\n<td>Cell 1</td>\n<td>Cell 2</td>\n</tr>\n</table>",
 		"2. **The second point**\n\nThis is the first sentence of the content below the second point.\nA borderless Markdown table:\nSome text before\nThere is also an HTML table:",
-		"| Header1 | Header2 | Header3 |\n|---------|---------|---------|\n| A1      | B1      | C1      |\n| A2      | B2      | C2      |",
-		"Data1 | Data2\n:-----|:-----\nMore data1 | More data2",
-		"<table>\n    <tr>\n        <td>Cell 1</td>\n        <td>Cell 2</td>\n    </tr>\n</table>",
 	}
 
-	if !reflect.DeepEqual(textSections, targetSections) {
-		panic(fmt.Errorf("markdown test failed: did not get the expected result"))
+	// Report WHICH section differs. "did not get the expected result" names
+	// nothing, so a failure here used to mean re-deriving the split by hand
+	// before you could even tell whether the code or the expectation was wrong.
+	if len(textSections) != len(targetSections) {
+		t.Errorf("got %d sections, want %d", len(textSections), len(targetSections))
+	}
+	for i := range targetSections {
+		if i >= len(textSections) {
+			t.Errorf("section %d missing, want %q", i, targetSections[i])
+			continue
+		}
+		if textSections[i] != targetSections[i] {
+			t.Errorf("section %d:\n  got  %q\n  want %q", i, textSections[i], targetSections[i])
+		}
+	}
+	for i := len(targetSections); i < len(textSections); i++ {
+		t.Errorf("section %d unexpected: %q", i, textSections[i])
 	}
 }
 
@@ -124,8 +140,15 @@ This is the content of the another sub title.
 		"# another main title > ## another sub title":       "This is the content of the another sub title.",
 	}
 
+	// Name the difference. A bare count told you the shape was wrong and
+	// nothing about which heading appeared or vanished.
+	for key := range headingsMap {
+		if _, want := expectedMap[key]; !want {
+			t.Errorf("unexpected heading %q = %q", key, headingsMap[key])
+		}
+	}
 	if len(headingsMap) != len(expectedMap) {
-		t.Fatalf("Expected %d headings, got %d", len(expectedMap), len(headingsMap))
+		t.Errorf("got %d headings, want %d", len(headingsMap), len(expectedMap))
 	}
 
 	for key, expectedValue := range expectedMap {
