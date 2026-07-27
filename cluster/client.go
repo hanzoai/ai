@@ -12,9 +12,11 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package object
+package cluster
 
 import (
+	"github.com/hanzoai/ai/object"
+
 	"context"
 	"fmt"
 	"strings"
@@ -36,7 +38,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 )
 
-type K8sClient struct {
+type Client struct {
 	clientSet     *kubernetes.Clientset
 	dynamicClient dynamic.Interface
 	restMapper    meta.RESTMapper
@@ -46,16 +48,16 @@ type K8sClient struct {
 }
 
 var (
-	k8sClient      *K8sClient
-	k8sClientMutex sync.Mutex
+	client      *Client
+	clientMutex sync.Mutex
 )
 
 func init() {
-	k8sClient = nil
+	client = nil
 }
 
 // Create K8s client from provider's ConfigText
-func createK8sClientFromProvider(provider *Provider, lang string) (*K8sClient, error) {
+func clientFromProvider(provider *object.Provider, lang string) (*Client, error) {
 	if provider.ConfigText == "" {
 		return nil, fmt.Errorf("%s", i18n.Translate(lang, "object:provider kubeconfig content is empty"))
 	}
@@ -64,10 +66,10 @@ func createK8sClientFromProvider(provider *Provider, lang string) (*K8sClient, e
 	if err != nil {
 		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:failed to parse kubeconfig from provider: %v"), err))
 	}
-	return createK8sClient(config, provider.ConfigText, lang)
+	return newClient(config, provider.ConfigText, lang)
 }
 
-func createK8sClient(config *rest.Config, configText string, lang string) (*K8sClient, error) {
+func newClient(config *rest.Config, configText string, lang string) (*Client, error) {
 	config.Timeout = 30 * time.Second // Default timeout
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
@@ -86,7 +88,7 @@ func createK8sClient(config *rest.Config, configText string, lang string) (*K8sC
 		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:failed to get API group resources: %v"), err))
 	}
 	restMapper := restmapper.NewDiscoveryRESTMapper(groupResources)
-	client := &K8sClient{
+	client := &Client{
 		clientSet:     clientset,
 		dynamicClient: dynamicClient,
 		restMapper:    restMapper,
@@ -101,7 +103,7 @@ func createK8sClient(config *rest.Config, configText string, lang string) (*K8sC
 	return client, nil
 }
 
-func (k *K8sClient) testConnection() error {
+func (k *Client) testConnection() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	_, err := k.clientSet.CoreV1().Namespaces().List(ctx, metav1.ListOptions{Limit: 1})
@@ -109,62 +111,62 @@ func (k *K8sClient) testConnection() error {
 }
 
 // Ensure k8s client is initialized, try to initialize if not
-func ensureK8sClient(lang string) error {
+func ensure(lang string) error {
 	// Quick check if client is already ready
-	if k8sClient != nil && k8sClient.connected {
+	if client != nil && client.connected {
 		return nil
 	}
-	k8sClientMutex.Lock()
-	defer k8sClientMutex.Unlock()
-	if k8sClient != nil && k8sClient.connected {
+	clientMutex.Lock()
+	defer clientMutex.Unlock()
+	if client != nil && client.connected {
 		return nil
 	}
-	provider, err := GetDefaultKubernetesProvider(lang)
+	provider, err := object.GetDefaultKubernetesProvider(lang)
 	if err != nil {
 		return fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:failed to get default Kubernetes provider: %v"), err))
 	}
 	// Only recreate if config changed or client doesn't exist
-	if k8sClient == nil || k8sClient.configText != provider.ConfigText {
-		if cacheManager != nil {
-			cacheManager.Stop()
-			cacheManager = nil
+	if client == nil || client.configText != provider.ConfigText {
+		if mirror != nil {
+			mirror.Stop()
+			mirror = nil
 		}
-		client, err := createK8sClientFromProvider(provider, lang)
+		c, err := clientFromProvider(provider, lang)
 		if err != nil {
 			return err
 		}
-		k8sClient = client
-		host, parseErr := parseK8sHost(provider.ConfigText, lang)
+		client = c
+		host, parseErr := parseHost(provider.ConfigText, lang)
 		if parseErr != nil {
-			cachedK8sHost = ""
+			cachedHost = ""
 		} else {
-			cachedK8sHost = host
+			cachedHost = host
 		}
 		// Initialize cache manager
-		if err := initCacheManager(); err != nil {
+		if err := initMirror(); err != nil {
 			return fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:failed to initialize cache manager: %v"), err))
 		}
-		if err := startCacheManager(lang); err != nil {
+		if err := startMirror(lang); err != nil {
 			return fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:failed to start cache manager: %v"), err))
 		}
 	}
 	return nil
 }
 
-func GetK8sStatus(lang string) (string, error) {
-	if err := ensureK8sClient(lang); err != nil {
+func Status(lang string) (string, error) {
+	if err := ensure(lang); err != nil {
 		return "Disconnected", err
 	}
-	err := k8sClient.testConnection()
+	err := client.testConnection()
 	if err != nil {
-		k8sClient.connected = false
+		client.connected = false
 		return "Disconnected", err
 	}
-	k8sClient.connected = true
+	client.connected = true
 	return "Connected", nil
 }
 
-func (k *K8sClient) createNamespaceIfNotExists(name string) error {
+func (k *Client) createNamespaceIfNotExists(name string) error {
 	_, err := k.clientSet.CoreV1().Namespaces().Get(
 		context.TODO(),
 		name,
@@ -205,7 +207,7 @@ func (k *K8sClient) createNamespaceIfNotExists(name string) error {
 	return nil
 }
 
-func (k *K8sClient) deployResource(yamlContent, namespace string, lang string) error {
+func (k *Client) deployResource(yamlContent, namespace string, lang string) error {
 	// Parse YAML to unstructured object
 	decoder := yaml.NewYAMLToJSONDecoder(strings.NewReader(yamlContent))
 	var obj unstructured.Unstructured

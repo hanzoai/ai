@@ -46,9 +46,55 @@ type Client struct {
 	CustomHeaders map[string]string
 }
 
+// Status is the IAM envelope's status field.
+//
+// The server has emitted it BOTH as a string ("ok") and — since iam v1.33.x — as a
+// JSON number (200). A plain `string` field fails the ENTIRE decode on the numeric
+// form, and the one caller that matters treats a decode failure as "IAM unreachable"
+// and continues with auth features switched off. The pod still passes its probes, so
+// nothing crashes and nothing reverts: the binary just serves 401 to every
+// authenticated call. One field's wire drift silently disarms authentication.
+//
+// Accepting both shapes removes that failure mode at the only place it can occur.
+type Status string
+
+// UnmarshalJSON accepts the string form, the numeric form, or null, and normalizes to
+// the string the callers compare against. A 2xx number IS the success code, so it
+// normalizes to "ok"; any other number keeps its digits so a real error still reads as
+// one rather than being laundered into success. Unknown shapes are an error, not a
+// guess — silently accepting them is what caused this.
+func (s *Status) UnmarshalJSON(b []byte) error {
+	if string(b) == "null" {
+		*s = ""
+		return nil
+	}
+	if len(b) > 0 && b[0] == '"' {
+		var str string
+		if err := json.Unmarshal(b, &str); err != nil {
+			return err
+		}
+		*s = Status(str)
+		return nil
+	}
+	var n json.Number
+	if err := json.Unmarshal(b, &n); err != nil {
+		return fmt.Errorf("iam: status is neither string nor number: %s", b)
+	}
+	code, err := n.Int64()
+	if err != nil {
+		return fmt.Errorf("iam: status %q is not an integer: %w", n, err)
+	}
+	if code >= 200 && code < 300 {
+		*s = "ok"
+		return nil
+	}
+	*s = Status(n.String())
+	return nil
+}
+
 // Response is the IAM JSON envelope: {status, msg, data, data2}.
 type Response struct {
-	Status string      `json:"status"`
+	Status Status      `json:"status"`
 	Msg    string      `json:"msg"`
 	Data   interface{} `json:"data"`
 	Data2  interface{} `json:"data2"`

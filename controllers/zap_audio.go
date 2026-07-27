@@ -113,7 +113,7 @@ func zapAudioSpeechHandler(ctx context.Context, auth string, body []byte) (*zap.
 	}
 
 	// Prepaid-balance gate — the ONE shared gate (STEP 4).
-	if gateErr := enforceBalanceGate(authUser, req.Model); gateErr != nil {
+	if gateErr := enforceBalanceGate(authUser, "", req.Model); gateErr != nil {
 		return object.BuildCloudResponse(uint32(statusOf(gateErr)), nil, gateErr.Error())
 	}
 	isPremium := false

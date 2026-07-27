@@ -18,9 +18,20 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/hanzoai/ai/i18n"
 	"github.com/hanzoai/ai/util"
 	"github.com/hanzoai/dbx"
+)
+
+// Application.Status values. The four middle ones are the pod phases a
+// deployed application reports back.
+const (
+	StatusNotDeployed = "Not Deployed"
+	StatusPending     = "Pending"
+	StatusRunning     = "Running"
+	StatusUnknown     = "Unknown"
+	StatusFailed      = "Failed"
+	StatusTerminating = "Terminating"
+	NamespaceFormat   = "hanzo-cloud-%s"
 )
 
 type Application struct {
@@ -89,37 +100,20 @@ func GetApplication(id string) (*Application, error) {
 	return getApplication(owner, name)
 }
 
-func UpdateApplication(id string, application *Application, lang string) (bool, error) {
+// UpdateApplication writes the record. The Manifest field is rendered from the
+// template by cluster.Manifest, which the caller applies before saving.
+func UpdateApplication(id string, application *Application) (bool, error) {
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
-	if err != nil {
-		return false, err
-	}
-	application.UpdatedTime = util.GetCurrentTime()
-	_, err = getApplication(owner, name)
 	if err != nil {
 		return false, err
 	}
 	if application == nil {
 		return false, nil
 	}
-	template, err := getTemplate(application.Owner, application.Template)
+	application.UpdatedTime = util.GetCurrentTime()
+	_, err = getApplication(owner, name)
 	if err != nil {
 		return false, err
-	}
-	if template.EnableBasicConfig {
-		// Initialize the manifest using the basic configuration options
-		application.Manifest, err = application.generateManifestWithBasicConfig(template)
-		if err != nil {
-			return false, err
-		}
-	} else {
-		// Initialize the manifest using the template
-		application.Manifest = template.Manifest
-	}
-	// Apply Kustomize overlays
-	application.Manifest, err = generateManifestWithKustomize(application.Manifest, application.Parameters, lang)
-	if err != nil {
-		return false, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:failed to generate manifest: %v"), err))
 	}
 	application.Owner = owner
 	application.Name = name
@@ -154,36 +148,12 @@ func AddApplication(application *Application) (bool, error) {
 	return affected != 0, nil
 }
 
-func DeleteApplication(application *Application, lang string) (bool, error) {
-	owner, name, namespace := application.Owner, application.Name, application.Namespace
-	// First, delete the deployment if it exists
-	go func() {
-		_, err := UndeployApplication(owner, name, namespace, lang)
-		if err != nil {
-			return
-		}
-	}()
-	// Then delete the application record
-	affected, err := deleteByPK(adapter.db, "application", pk2(owner, name))
+// DeleteApplication removes the record. Tearing down what the record deployed is
+// cluster.Undeploy, which the caller runs first.
+func DeleteApplication(application *Application) (bool, error) {
+	affected, err := deleteByPK(adapter.db, "application", pk2(application.Owner, application.Name))
 	if err != nil {
 		return false, err
 	}
 	return affected != 0, nil
-}
-
-// generateManifestWithBasicConfig generates the manifest from the basic configuration options using the provided template.
-func (a *Application) generateManifestWithBasicConfig(template *Template) (string, error) {
-	app := map[string]interface{}{
-		"name":      toK8sMetadataName(a.Name),
-		"namespace": a.Namespace,
-	}
-	options := make(map[string]interface{}, len(a.BasicConfigOptions))
-	for _, option := range a.BasicConfigOptions {
-		options[option.Parameter] = option.Setting
-	}
-	data := map[string]interface{}{
-		"application": app,
-		"options":     options,
-	}
-	return template.Render(data)
 }
