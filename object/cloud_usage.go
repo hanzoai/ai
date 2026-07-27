@@ -103,6 +103,7 @@ const cloudUsageTableDDL = `
 // GetCloudUsageOverview reads dedup by id at query time (GROUP BY id), so a
 // duplicate is never double-counted in the window between EXCHANGE and the first
 // background merge — independently of this engine change.
+
 // cloudUsageColumnMigrations bring an ALREADY-EXISTING table up to the current
 // schema: CREATE TABLE IF NOT EXISTS is a no-op on a table created before these
 // columns were added, so each additive column also needs an idempotent
