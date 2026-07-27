@@ -158,7 +158,7 @@ require (
 	github.com/hanzoai/go-openai-realtime/contrib/ws-gorilla v1.0.0 // indirect
 	github.com/hanzoai/ha v0.1.1 // indirect
 	github.com/hanzoai/iam v1.33.8 // indirect
-	github.com/hanzoai/orm v0.6.8 // indirect
+	github.com/hanzoai/orm v0.6.10 // indirect
 	github.com/hanzoai/s3-go v1.0.0 // indirect
 	github.com/hanzoai/sqlcipher v0.1.0 // indirect
 	github.com/hanzoai/vfs v0.6.6 // indirect
