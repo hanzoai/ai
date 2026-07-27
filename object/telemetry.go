@@ -23,7 +23,7 @@
 // tracer provider (wired to the embedded o11y in-process trace sink) and calls
 // AdoptHostTracerProvider; ai then emits every gen_ai span through that provider —
 // one provider, one wire — and does NOT install its own. Standalone (cmd/aid) is
-// opt-in via OTEL_EXPORTER_OTLP_ENDPOINT (or OTEL_EXPORTER_OTLP_TRACES_ENDPOINT),
+// opt-in via O11Y_ENDPOINT (or O11Y_TRACES_ENDPOINT),
 // mirroring InitDatastore's env-gated, background, non-fatal posture: with no
 // endpoint the emitter stays honest-off (TelemetryEnabled() == false) and the
 // span emit is a no-op, so local dev never ships to a nonexistent collector. The
@@ -40,7 +40,7 @@ import (
 	"github.com/hanzoai/ai/log"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	luxtrace "github.com/luxfi/trace"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
@@ -107,7 +107,7 @@ func captureGenAITracer() {
 //     its own — that would win the global slot for the GenAI tracer created
 //     afterward and split the wire, stranding gen_ai spans off the host's sink.
 //   - Standalone (cmd/aid): ai owns the provider. Opt-in via
-//     OTEL_EXPORTER_OTLP_ENDPOINT (or the traces-specific variant); it builds in the
+//     O11Y_ENDPOINT (or the traces-specific variant); it builds in the
 //     background and only latches ready once the provider is set. With no endpoint
 //     the emitter stays honest-off (TelemetryEnabled() == false) and the emit is a
 //     no-op, so local dev never ships to a nonexistent collector.
@@ -118,23 +118,27 @@ func InitTelemetry() {
 	// Host already owns the global provider (AdoptHostTracerProvider was called by
 	// the composition root before this mount): emit through it, never fork.
 	if telemetryReady.Load() {
-		log.Info("telemetry: OTel GenAI spans -> host global tracer provider")
+		log.Info("telemetry: GenAI spans -> host global tracer provider")
 		return
 	}
-	endpoint := firstNonEmptyEnv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "OTEL_EXPORTER_OTLP_ENDPOINT")
+	endpoint := firstNonEmptyEnv("O11Y_TRACES_ENDPOINT", "O11Y_ENDPOINT")
 	if endpoint == "" {
-		log.Info("telemetry: disabled (no host provider adopted; set OTEL_EXPORTER_OTLP_ENDPOINT to emit OTel GenAI spans to o11y)")
+		log.Info("telemetry: disabled (no host provider adopted; set O11Y_ENDPOINT to emit GenAI spans to o11y)")
 		return
 	}
 	go initTelemetry()
 }
 
 func initTelemetry() {
-	// otlptracehttp self-configures from the standard OTEL_EXPORTER_OTLP_* env
-	// vars (endpoint, headers, insecure-by-scheme, timeout).
-	exporter, err := otlptracehttp.New(context.Background())
+	// ZAP carries a JSON SpanBatch to o11y/pkg/zapreceiver. luxtrace.New installs
+	// its own provider, so this keeps the sdktrace one for the resource attributes
+	// the o11y columns depend on and feeds it the ZAP exporter.
+	exporter, err := luxtrace.NewZAPExporter(
+		luxtrace.ExporterConfig{Type: luxtrace.ZAP, Endpoint: firstNonEmptyEnv("O11Y_TRACES_ENDPOINT", "O11Y_ENDPOINT")},
+		telemetryServiceName(), "",
+	)
 	if err != nil {
-		log.Error("telemetry: create OTLP exporter: %v", err)
+		log.Error("telemetry: create ZAP exporter: %v", err)
 		return
 	}
 
@@ -153,7 +157,7 @@ func initTelemetry() {
 	captureGenAITracer()
 	telemetryProvider = tp
 	telemetryReady.Store(true)
-	log.Info("telemetry: OTel GenAI spans -> o11y via OTLP (service.name=%s)", telemetryServiceName())
+	log.Info("telemetry: GenAI spans -> o11y via OTLP (service.name=%s)", telemetryServiceName())
 }
 
 // TelemetryEnabled reports whether the OTLP trace exporter is live. The emit
