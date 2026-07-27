@@ -233,7 +233,7 @@ func isReadMethod(method string) bool {
 // for the reason the comment below spells out: a $0-balance org must be able to
 // see the usage panel that tells it to add credit. Keying those on literal
 // paths is what caused that outage once already, and moving the routes to
-// /v1/ops/usages would have caused it again.
+// /v1/ai/usages would have caused it again.
 var balanceExemptNames = map[string]struct{}{
 	"get-usages": {}, "get-range-usages": {}, "get-cloud-usages": {},
 }
@@ -272,13 +272,13 @@ func isBalanceExempt(path, method string) bool {
 	// "402 on free /v1/models" console-wide outage class.
 	case path == "/v1/models" || strings.HasPrefix(path, "/v1/models/"):
 		return true
-	case path == "/v1/ops/version" || path == "/v1/ops/system":
+	case path == "/v1/ai/version" || path == "/v1/ai/system":
 		return true
-	case strings.HasPrefix(path, "/v1/auth/signin"):
+	case strings.HasPrefix(path, "/v1/ai/signin"):
 		return true
-	case path == "/v1/auth/signout":
+	case path == "/v1/ai/signout":
 		return true
-	case path == "/v1/auth/account":
+	case path == "/v1/ai/account":
 		return true
 	// Usage/spend READS are account metadata, not metered inference. A caller
 	// must ALWAYS be able to SEE its own usage — especially to learn it needs
