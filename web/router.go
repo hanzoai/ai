@@ -182,6 +182,21 @@ func (p *Router) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 				r.Form.Set(k, v)
 			}
 		}
+		// A route that captures :owner and :name declares a COMPOSITE identity —
+		// which is what every object in this system actually has (object.GetStore
+		// and its siblings all begin by splitting an "owner/name" id). Compose it
+		// once, here, so ~200 handlers keep reading their id the single way they
+		// always have: c.Input().Get("id").
+		//
+		// This is why the member URL is /:owner/:name rather than /:id — a single
+		// segment cannot carry a value containing a slash, since Go decodes %2F
+		// back into URL.Path before the router ever sees it.
+		if r.Form != nil && r.Form.Get("id") == "" {
+			if owner, name := params["owner"], params["name"]; owner != "" && name != "" {
+				r.Form.Set("id", owner+"/"+name)
+				ctx.Input.SetParam("id", owner+"/"+name)
+			}
+		}
 	}
 
 	handler, ok := rt.methods[strings.ToUpper(r.Method)]

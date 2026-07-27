@@ -159,17 +159,17 @@ func TestEveryEmittedPatternIsUniqueAndComplete(t *testing.T) {
 // case below is a real key those maps contain.
 func TestPolicyKeyRoundTrip(t *testing.T) {
 	cases := []struct{ path, method, want string }{
-		{"/v1/iam/users", "GET", "get-users"},
-		{"/v1/iam/applications", "GET", "get-applications"},
-		{"/v1/iam/applications", "POST", "add-application"},
-		{"/v1/iam/applications/abc", "GET", "get-application"},
-		{"/v1/iam/applications/abc", "PATCH", "update-application"},
-		{"/v1/iam/applications/abc", "PUT", "update-application"},
-		{"/v1/iam/applications/abc", "DELETE", "delete-application"},
+		{"/v1/auth/users", "GET", "get-users"},
+		{"/v1/auth/applications", "GET", "get-applications"},
+		{"/v1/auth/applications", "POST", "add-application"},
+		{"/v1/auth/applications/acme/thing", "GET", "get-application"},
+		{"/v1/auth/applications/acme/thing", "PATCH", "update-application"},
+		{"/v1/auth/applications/acme/thing", "PUT", "update-application"},
+		{"/v1/auth/applications/acme/thing", "DELETE", "delete-application"},
 		{"/v1/chat/chats", "POST", "add-chat"},
-		{"/v1/chat/chats/x", "DELETE", "delete-chat"},
+		{"/v1/chat/chats/acme/thing", "DELETE", "delete-chat"},
 		{"/v1/chat/messages", "POST", "add-message"},
-		{"/v1/chat/messages/x", "PATCH", "update-message"},
+		{"/v1/chat/messages/acme/thing", "PATCH", "update-message"},
 		{"/v1/chat/chats/global", "GET", "get-global-chats"},
 		{"/v1/rag/stores/global", "GET", "get-global-stores"},
 		{"/v1/rag/files/global", "GET", "get-global-files"},
@@ -178,12 +178,12 @@ func TestPolicyKeyRoundTrip(t *testing.T) {
 		// The URL noun and the flat noun differ here — the table says so.
 		{"/v1/ai/routes", "GET", "get-model-routes"},
 		{"/v1/ai/routes", "POST", "add-model-route"},
-		{"/v1/ai/routes/x", "DELETE", "delete-model-route"},
+		{"/v1/ai/routes/acme/thing", "DELETE", "delete-model-route"},
 		// Actions keep the exact spelling their flat route had.
-		{"/v1/ops/connections/x/start", "POST", "start-connection"},
-		{"/v1/ops/connections/x/stop", "POST", "stop-connection"},
-		{"/v1/rag/stores/x/vectors", "POST", "refresh-store-vectors"},
-		{"/v1/compute/nodes/x/tunnel", "POST", "add-node-tunnel"},
+		{"/v1/ops/connections/acme/thing/start", "POST", "start-connection"},
+		{"/v1/ops/connections/acme/thing/stop", "POST", "stop-connection"},
+		{"/v1/rag/stores/acme/thing/vectors", "POST", "refresh-store-vectors"},
+		{"/v1/compute/nodes/acme/thing/tunnel", "POST", "add-node-tunnel"},
 		{"/v1/rag/files/upload", "POST", "upload-file"},
 		{"/v1/ops/records/commit", "POST", "commit-record"},
 		// Not a table route — the caller must fall back to its own rule.
@@ -211,7 +211,7 @@ func TestEveryTableKeyIsDerivable(t *testing.T) {
 		if !r.noCreate && policyKey(r.collection(), "POST") == "" {
 			t.Errorf("%s: create route emits no policy key", r.collection())
 		}
-		member := r.collection() + "/someid"
+		member := r.collection() + "/acme/thing"
 		if !r.noRead && policyKey(member, "GET") == "" {
 			t.Errorf("%s: read route emits no policy key", member)
 		}
@@ -248,6 +248,35 @@ func TestKebab(t *testing.T) {
 	} {
 		if got := kebab(in); got != want {
 			t.Errorf("kebab(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// foreignNamespaces are /v1 prefixes that ANOTHER service owns. cloud proxies
+// each subtree away before ai ever sees it — `/v1/iam/*` goes to the IAM service
+// (cloud/iam_edge.go: `app.Group("/v1/iam").All("/*", e.pass)`).
+//
+// A route registered under one of these is not merely redundant, it is DEAD: the
+// proxy answers first, and ai's handler is unreachable. It fails silently, as a
+// wrong answer rather than an error, which is the worst way for it to fail —
+// putting ai's signin under /v1/iam would have taken ai's login down with no
+// build error and no failing test anywhere.
+var foreignNamespaces = map[string]string{
+	"iam": "the IAM service (cloud/iam_edge.go proxies the whole /v1/iam subtree)",
+}
+
+// TestNoResourceClaimsForeignNamespace holds that line for the generated surface.
+func TestNoResourceClaimsForeignNamespace(t *testing.T) {
+	for _, r := range resources {
+		if owner, taken := foreignNamespaces[r.ns]; taken {
+			t.Errorf("%s is owned by %s — a route registered here is unreachable",
+				r.collection(), owner)
+		}
+	}
+	for _, s := range singletons {
+		if owner, taken := foreignNamespaces[s.ns]; taken {
+			t.Errorf("%s is owned by %s — a route registered here is unreachable",
+				s.url(), owner)
 		}
 	}
 }
