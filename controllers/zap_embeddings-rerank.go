@@ -82,7 +82,7 @@ func zapEmbeddingsHandler(ctx context.Context, auth string, body []byte) (*zap.M
 	}
 
 	// The ONE prepaid-balance gate, shared verbatim with the HTTP path.
-	if gateErr := enforceBalanceGate(authUser, head.Model); gateErr != nil {
+	if gateErr := enforceBalanceGate(authUser, "", head.Model); gateErr != nil {
 		return object.BuildCloudResponse(uint32(statusOf(gateErr)), nil, gateErr.Error())
 	}
 	isPremium := false
@@ -151,7 +151,7 @@ func zapRerankHandler(ctx context.Context, auth string, body []byte) (*zap.Messa
 		return object.BuildCloudResponse(401, nil, err.Error())
 	}
 
-	if gateErr := enforceBalanceGate(authUser, raw.Model); gateErr != nil {
+	if gateErr := enforceBalanceGate(authUser, "", raw.Model); gateErr != nil {
 		return object.BuildCloudResponse(uint32(statusOf(gateErr)), nil, gateErr.Error())
 	}
 	isPremium := false
