@@ -44,3 +44,6 @@ web/.yarn/
 # test-artifact SQLite DBs
 object/*.db
 *.db
+
+# the cmd/openapi binary
+/openapi

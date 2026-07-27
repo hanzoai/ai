@@ -153,6 +153,23 @@ cd web && yarn lint
 
 ## The /v1 resource surface — ONE table, no compound routes
 
+The published OpenAPI description is GENERATED from that same table:
+
+    go run ./cmd/openapi -spec ../openapi/ai/openapi.yaml
+
+It writes only the region between the `# BEGIN/END generated` markers in the
+canonical spec (hanzoai/openapi, OpenAPI 3.1) — the inference paths above it are
+hand-authored with real OpenAI request/response schemas and stay that way.
+`cmd/openapi -verify` and `TestSpecMatchesTheTable` fail when the spec drifts from
+the table, so the contract customers and SDKs read cannot describe a surface this
+service does not serve.
+
+The old `swagger/` directory is DELETED. It was a second description, and it was
+wrong: `basePath: /api` with 135 `/<verb>-<noun>` paths, a base path this service
+has never served. Nothing referenced it, nothing embedded it, and no test noticed
+when it stopped being true — which is the argument for generating the replacement
+rather than hand-maintaining it.
+
 Every CRUD route is generated from `routers/resources.go`. There is no second
 registration path, and no route is written by hand.
 
