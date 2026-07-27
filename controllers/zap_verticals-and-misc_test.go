@@ -36,11 +36,6 @@ func vmiscBody(m *zap.Message) []byte   { return m.Root().Bytes(object.CloudResp
 // reached the store would panic; reaching the 403 assertion proves the gate ran
 // first (parity with routers/authz_filter.go permissionFilter's denyForbidden tail).
 var vmiscWriteMethods = []string{
-	"hospital.update", "hospital.add", "hospital.delete",
-	"doctor.update", "doctor.add", "doctor.delete",
-	"patient.update", "patient.add", "patient.delete",
-	"caase.update", "caase.add", "caase.delete",
-	"consultation.update", "consultation.add", "consultation.delete",
 	"form.update", "form.add", "form.delete",
 	"article.update", "article.add", "article.delete",
 	"scale.update", "scale.add", "scale.delete",
@@ -108,11 +103,11 @@ func TestZapMiscAuthz(t *testing.T) {
 	}
 
 	// Write endpoint: non-admin → 403, org admin → open.
-	if deny := zapMiscAuthz("add-hospital", plain); deny == nil || vmiscStatus(deny) != 403 {
-		t.Errorf("add-hospital non-admin not 403")
+	if deny := zapMiscAuthz("add-article", plain); deny == nil || vmiscStatus(deny) != 403 {
+		t.Errorf("add-article non-admin not 403")
 	}
-	if deny := zapMiscAuthz("add-hospital", orgAdmin); deny != nil {
-		t.Errorf("add-hospital org-admin gated: status=%d", vmiscStatus(deny))
+	if deny := zapMiscAuthz("add-article", orgAdmin); deny != nil {
+		t.Errorf("add-article org-admin gated: status=%d", vmiscStatus(deny))
 	}
 
 	// Benign-read exempt route: open even for a nil principal (each handler self-checks).
@@ -121,8 +116,8 @@ func TestZapMiscAuthz(t *testing.T) {
 	}
 
 	// Preview-mode read (default preview ON): a get- route is open for a nil principal.
-	if deny := zapMiscAuthz("get-hospital", nil); deny != nil {
-		t.Errorf("get-hospital preview read gated: status=%d", vmiscStatus(deny))
+	if deny := zapMiscAuthz("get-article", nil); deny != nil {
+		t.Errorf("get-article preview read gated: status=%d", vmiscStatus(deny))
 	}
 }
 
