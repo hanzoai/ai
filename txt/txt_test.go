@@ -27,7 +27,17 @@ import (
 )
 
 func TestProcessFiles(t *testing.T) {
-	inputDir := "inputdir"   // Specify input file directory
+	// A relative fixture directory that this repository does not contain, so
+	// the test could only fail. Skip unless someone points it at real files:
+	//
+	//	TXT_INPUT_DIR=/path/to/docs go test ./txt/ -run TestProcessFiles -v
+	inputDir := os.Getenv("TXT_INPUT_DIR")
+	if inputDir == "" {
+		inputDir = "inputdir"
+	}
+	if _, err := os.Stat(inputDir); err != nil {
+		t.Skipf("input directory %q not present — set TXT_INPUT_DIR to run", inputDir)
+	}
 	outputDir := "outputdir" // Specify output directory
 
 	if _, err := os.Stat(outputDir); os.IsNotExist(err) {
