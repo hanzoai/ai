@@ -75,7 +75,11 @@ func (c *ApiController) GetSessions() {
 // @Success 200 {array} string The Response object
 // @router /get-session [get]
 func (c *ApiController) GetSingleSession() {
-	id := c.Input().Get("sessionId")
+	// "id", like every other member read: the router composes it from the
+	// :owner/:name segments of the member URL (web/router.go). Reading a
+	// differently-named parameter would leave this handler the only one in the
+	// surface that its own route cannot address.
+	id := c.Input().Get("id")
 
 	session, err := object.GetSession(id)
 	if err != nil {

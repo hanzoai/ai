@@ -160,13 +160,18 @@ func TestEveryEmittedPatternIsUniqueAndComplete(t *testing.T) {
 // case below is a real key those maps contain.
 func TestPolicyKeyRoundTrip(t *testing.T) {
 	cases := []struct{ path, method, want string }{
-		{"/v1/ai/users", "GET", "get-users"},
-		{"/v1/ai/applications", "GET", "get-applications"},
-		{"/v1/ai/applications", "POST", "add-application"},
-		{"/v1/ai/applications/acme/thing", "GET", "get-application"},
-		{"/v1/ai/applications/acme/thing", "PATCH", "update-application"},
-		{"/v1/ai/applications/acme/thing", "PUT", "update-application"},
-		{"/v1/ai/applications/acme/thing", "DELETE", "delete-application"},
+		// The URL noun moved away from IAM's words; the policy key must not move
+		// with it, or every rule keyed on the old name silently stops matching.
+		{"/v1/ai/usages/user-names", "GET", "get-users"},
+		{"/v1/ai/deployments", "GET", "get-applications"},
+		{"/v1/ai/deployments", "POST", "add-application"},
+		{"/v1/ai/deployments/acme/thing", "GET", "get-application"},
+		{"/v1/ai/deployments/acme/thing", "PATCH", "update-application"},
+		{"/v1/ai/deployments/acme/thing", "PUT", "update-application"},
+		{"/v1/ai/deployments/acme/thing", "DELETE", "delete-application"},
+		{"/v1/ai/deployments/acme/thing/deploy", "POST", "deploy-application"},
+		{"/v1/ai/signin-sessions", "GET", "get-sessions"},
+		{"/v1/ai/signin-sessions/acme/thing", "DELETE", "delete-session"},
 		{"/v1/ai/chats", "POST", "add-chat"},
 		{"/v1/ai/chats/acme/thing", "DELETE", "delete-chat"},
 		{"/v1/ai/messages", "POST", "add-message"},
