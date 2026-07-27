@@ -18,6 +18,7 @@ package split
 import (
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -37,6 +38,28 @@ func ExtractMarkdownTree(markdownText string) map[string]string {
 	var currentKey string
 	var currentContent []string
 	var path []string
+
+	// flush records the section that just ended.
+	//
+	// A document opening with a heading has no preamble, and the old code still
+	// wrote result["root"] = "" — a key for content that does not exist. It
+	// showed up as a phantom section with no text and made the heading count
+	// wrong. A named heading is kept even when its body is empty, because the
+	// heading itself is content; "root" is not a heading, it is the absence of
+	// one, so with no body there is nothing to record.
+	//
+	// Also the only copy: these five lines were written twice, once in the loop
+	// and once after it.
+	flush := func() {
+		body := strings.TrimSpace(strings.Join(currentContent, "\n"))
+		if currentKey != "" {
+			result[currentKey] = body
+			return
+		}
+		if body != "" {
+			result["root"] = body
+		}
+	}
 
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
@@ -59,11 +82,7 @@ func ExtractMarkdownTree(markdownText string) map[string]string {
 		}
 
 		if isHeading {
-			if currentKey != "" {
-				result[currentKey] = strings.TrimSpace(strings.Join(currentContent, "\n"))
-			} else {
-				result["root"] = strings.TrimSpace(strings.Join(currentContent, "\n"))
-			}
+			flush()
 
 			// update path by level
 			if level == len(path)+1 {
@@ -87,17 +106,27 @@ func ExtractMarkdownTree(markdownText string) map[string]string {
 		}
 	}
 
-	if currentKey != "" {
-		result[currentKey] = strings.TrimSpace(strings.Join(currentContent, "\n"))
-	} else {
-		result["root"] = strings.TrimSpace(strings.Join(currentContent, "\n"))
-	}
+	flush()
 
 	return result
 }
 
 func ExtractTablesAndRemainder(markdownText string) (string, []string, error) {
 	tables := []string{}
+
+	// Every row pattern below ends in \n, so a table that runs to the end of
+	// the input loses its LAST ROW: the row fails to match, stays in the
+	// remainder, and comes back out glued to the neighbouring prose chunk. That
+	// is how "| A2 | B2 | C2 |" ended up appended to "Here is a standard
+	// Markdown table:" — a table silently split across two chunks, which is
+	// worse than not splitting it at all.
+	//
+	// Sections are sliced per heading, so ending without a trailing newline is
+	// the common case, not the edge case. One newline makes the last row look
+	// like every other row.
+	if !strings.HasSuffix(markdownText, "\n") {
+		markdownText += "\n"
+	}
 	remainder := markdownText
 
 	if strings.Contains(markdownText, "|") {
@@ -132,7 +161,9 @@ func ExtractTablesWithContext(markdownText string, contextKey string) (string, [
 
 	tablesWithContext := make([]string, len(tables))
 	for i, table := range tables {
-		tablesWithContext[i] = contextKey + "\n\n" + table
+		// Trim before joining: the table patterns capture their leading
+		// newline, so joining with "\n\n" produced three in a row.
+		tablesWithContext[i] = contextKey + "\n\n" + strings.TrimSpace(table)
 	}
 
 	return remainder, tablesWithContext, nil
@@ -141,9 +172,27 @@ func ExtractTablesWithContext(markdownText string, contextKey string) (string, [
 func (p *MarkdownSplitProvider) SplitText(text string) ([]string, error) {
 	headingsMap := ExtractMarkdownTree(text)
 
+	// Ranging the map directly made the section ORDER random between runs —
+	// Go randomises map iteration, so the same document produced the same
+	// chunks in a different sequence every time. For a splitter that is not
+	// cosmetic: chunks are reassembled into context downstream, and document
+	// order is the only order that means anything.
+	//
+	// Sorted by where each heading appears in the source, so the result is the
+	// document's own order rather than the map's or the alphabet's ("Section
+	// 10" must not sort before "Section 9").
+	keys := make([]string, 0, len(headingsMap))
+	for key := range headingsMap {
+		keys = append(keys, key)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		return strings.Index(text, keys[i]) < strings.Index(text, keys[j])
+	})
+
 	var sections []string
 
-	for key, content := range headingsMap {
+	for _, key := range keys {
+		content := headingsMap[key]
 		remainder, tables, err := ExtractTablesWithContext(content, key)
 		if err != nil {
 			return nil, err

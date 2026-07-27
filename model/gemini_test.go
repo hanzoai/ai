@@ -20,6 +20,7 @@ package model
 import (
 	"context"
 	"fmt"
+	"os"
 	"testing"
 
 	"github.com/hanzoai/ai/conf"
@@ -28,14 +29,25 @@ import (
 )
 
 func TestListGeminiModels(t *testing.T) {
-	err := conf.LoadAppConfig("ini", "../conf/app.conf")
-	if err != nil {
-		panic(err)
+	// The key was blanked in source — correctly, it does not belong here — but
+	// the test stayed, so it could only ever panic with "api key is required".
+	// Read it from the environment and skip without one, the same shape
+	// TestGenerateImageDOAI_Live already uses:
+	//
+	//	GEMINI_API_KEY=… go test ./model/ -run TestListGeminiModels -v
+	apiKey := os.Getenv("GEMINI_API_KEY")
+	if apiKey == "" {
+		apiKey = os.Getenv("GOOGLE_API_KEY")
+	}
+	if apiKey == "" {
+		t.Skip("GEMINI_API_KEY not set — skipping live Gemini model listing")
+	}
+
+	if err := conf.LoadAppConfig("ini", "../conf/app.conf"); err != nil {
+		t.Fatalf("load config: %v", err)
 	}
 
 	proxy.InitHttpClient()
-
-	apiKey := ""
 
 	ctx := context.Background()
 
