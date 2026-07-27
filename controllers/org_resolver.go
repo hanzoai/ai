@@ -90,29 +90,84 @@ func (c *ApiController) principalIsOwnBrand() bool {
 	return object.TokenIsOwnBrand(token)
 }
 
-// GetOrg resolves the organization for data-scoping and pricing from
-// the VERIFIED request principal — never a raw client header.
+// principalOrgs returns the SIGNED `orgs` membership set of the request's bearer
+// JWT: the orgs IAM states this subject may act in. It is the ONLY admissible
+// proof of membership — see iam.EffectiveOrg.
 //
-// X-Org-Id is honored ONLY when it matches the authenticated principal's own
-// org, or the principal is a super admin (cross-org platform access). A
-// non-admin can never act as another org via a spoofed header; an
-// unauthenticated caller's header is ignored. Behind the gateway the injected
-// header equals the JWT owner, so the gateway path resolves identically.
+// nil for every credential that carries no such claim: a cookie session, an hk-
+// IAM key, a widget (hz_) or provider (sk-) key, and any token minted before the
+// claim shipped. nil names no org, so all of those stay in their home org exactly
+// as they did before the claim existed.
 //
-// Note: chat/embeddings BILLING is keyed on the validated authUser.Owner, not on
-// this value — this governs routing, pricing, usage reads, and record
-// attribution, all of which must also be tenant-safe.
+// Called ONLY on the switch path (a request that asked for an org other than its
+// own), so the dominant no-switch request never pays for this parse.
+func (c *ApiController) principalOrgs() []iam.OrgRef {
+	token := bearerTokenFromRequest(c.Ctx.Request)
+	if token == "" || !isJwtToken(token) {
+		return nil
+	}
+	claims, err := object.ParseAndValidateJWT(token)
+	if err != nil {
+		return nil
+	}
+	return claims.Orgs
+}
+
+// GetOrg resolves the organization a request ACTS IN — data scoping, routing,
+// pricing, usage reads, record attribution — from the VERIFIED request
+// principal, never a raw client header.
+//
+// X-Org-Id is honored when it names the principal's own org, an org the SIGNED
+// `orgs` claim says the principal belongs to (the org switcher), or any org at
+// all for a super admin (cross-tenant platform access). A non-member's request
+// is silently answered with its home org: a spoofed header can never widen
+// scope, and the refusal discloses nothing.
+//
+// This is the SCOPE answer, not the MONEY answer. What a request SPENDS FROM is
+// billingOrg, which differs for exactly one principal — a super admin acting
+// inside a customer tenant scopes to the customer and spends its own ledger.
 func (c *ApiController) GetOrg() string {
 	requested := strings.TrimSpace(c.Ctx.Input.Header("X-Org-Id"))
 
 	user := c.principalUser()
 	if user != nil && user.Owner != "" {
-		if requested != "" && (requested == user.Owner || util.IsSuperAdmin(user)) {
+		if requested == "" || requested == user.Owner {
+			return user.Owner
+		}
+		if util.IsSuperAdmin(user) {
 			return requested
 		}
-		return user.Owner
+		return iam.EffectiveOrg(user.Owner, c.principalOrgs(), requested)
 	}
 
 	// No verified principal: never trust a client-supplied org header.
 	return conf.GetConfigString("IAM_ORG")
+}
+
+// billingOrg resolves the org `user` SPENDS FROM on this request: the ledger the
+// balance gate reads, the budget reservation holds, and the usage debit lands on.
+// It is iam.LedgerOrg over this request's own credential.
+//
+// It is a function OF THE BILLED USER, not of the request alone. A provider (sk-)
+// or widget (hz_) key bills the org that MINTED it, which is not the request's
+// JWT principal; those credentials carry no membership claim, so principalOrgs
+// returns nil for them and they always resolve to their own owner.
+//
+// Returns "" only for a nil user — a request with nobody to bill, which every
+// caller already refuses rather than serving free.
+func (c *ApiController) billingOrg(user *iam.User) string {
+	if user == nil {
+		return ""
+	}
+	requested := strings.TrimSpace(c.Ctx.Input.Header("X-Org-Id"))
+	if requested == "" || requested == user.Owner {
+		// Dominant path: no switch asked for. Byte-identical to keying on
+		// user.Owner, and it never touches the claim.
+		return user.Owner
+	}
+	return iam.LedgerOrg(
+		iam.EffectiveOrg(user.Owner, c.principalOrgs(), requested),
+		user.Owner,
+		util.IsSuperAdmin(user),
+	)
 }

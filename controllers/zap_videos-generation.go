@@ -141,7 +141,7 @@ func zapVideosGenerateHandler(ctx context.Context, auth string, body []byte) (*z
 	}
 
 	// The ONE prepaid-balance gate, shared verbatim with the HTTP path.
-	if gateErr := enforceBalanceGate(authUser, req.Model); gateErr != nil {
+	if gateErr := enforceBalanceGate(authUser, "", req.Model); gateErr != nil {
 		return object.BuildCloudResponse(uint32(statusOf(gateErr)), nil, gateErr.Error())
 	}
 	isPremium := false
