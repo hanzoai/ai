@@ -55,11 +55,15 @@ func wiredStatus(t *testing.T, method, path, body string) int {
 // handler rather than 404-ing.
 func TestWiredResourceRouteDispatches(t *testing.T) {
 	for _, c := range []struct{ method, path string }{
-		{"GET", "/v1/iam/account"},
-		{"GET", "/v1/iam/applications"},
+		{"GET", "/v1/auth/account"},
+		{"GET", "/v1/auth/applications"},
+		{"GET", "/v1/rag/stores/acme/thing"},
 		{"GET", "/v1/rag/stores"},
 		{"GET", "/v1/ops/version"},
-		{"POST", "/v1/iam/signin"},
+		// NB: /v1/auth/signin is deliberately not probed here — its handler makes a
+		// live OAuth call, so a pass would depend on the network. Its registration
+		// is covered by the table tests instead.
+		{"GET", "/v1/auth/sessions"},
 	} {
 		if code := wiredStatus(t, c.method, c.path, "{}"); code == http.StatusNotFound {
 			t.Errorf("%s %s must dispatch, got 404", c.method, c.path)
@@ -69,7 +73,7 @@ func TestWiredResourceRouteDispatches(t *testing.T) {
 
 // TestOldAddressesAreGone is the "one way" guarantee, stated as a test. Every
 // endpoint used to be reachable at up to THREE URLs — the flat compound route,
-// the same route under /v1/cloud/*, and (for auth) under /v1/iam/*. Each extra
+// the same route under /v1/cloud/*, and (for auth) under /v1/auth/*. Each extra
 // address was a place a policy could be applied inconsistently. They must 404.
 func TestOldAddressesAreGone(t *testing.T) {
 	for _, c := range []struct{ method, path string }{
@@ -81,7 +85,7 @@ func TestOldAddressesAreGone(t *testing.T) {
 		{"POST", "/v1/signin"},
 		{"GET", "/v1/cloud/get-account"},
 		{"GET", "/v1/cloud/get-providers"},
-		{"GET", "/v1/iam/get-account"},
+		{"GET", "/v1/auth/get-account"},
 	} {
 		// "Gone" means NO HANDLER RUNS. Usually that shows up as a 404 from the
 		// router. For a path whose name is still in the super-admin policy set

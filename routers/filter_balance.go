@@ -274,11 +274,11 @@ func isBalanceExempt(path, method string) bool {
 		return true
 	case path == "/v1/ops/version" || path == "/v1/ops/system":
 		return true
-	case strings.HasPrefix(path, "/v1/iam/signin"):
+	case strings.HasPrefix(path, "/v1/auth/signin"):
 		return true
-	case path == "/v1/iam/signout":
+	case path == "/v1/auth/signout":
 		return true
-	case path == "/v1/iam/account":
+	case path == "/v1/auth/account":
 		return true
 	// Usage/spend READS are account metadata, not metered inference. A caller
 	// must ALWAYS be able to SEE its own usage — especially to learn it needs

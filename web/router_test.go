@@ -390,3 +390,31 @@ func TestMatchPrefersLiteralOverParam(t *testing.T) {
 		}
 	}
 }
+
+// TestCompositeIdIsBoundForHandlers proves the /:owner/:name member URL reaches a
+// handler the way every handler already reads its id: c.Input().Get("id"), i.e.
+// Request.Form. Every object in this system is keyed by the PAIR (owner, name),
+// so the two segments must compose back into "owner/name" — a single :id segment
+// could not carry it, because Go decodes %2F back into URL.Path before routing.
+func TestCompositeIdIsBoundForHandlers(t *testing.T) {
+	r := NewRouter()
+	r.Router("/v1/rag/stores/:owner/:name", &probeController{}, "GET:Get")
+
+	req := httptest.NewRequest("GET", "/v1/rag/stores/acme/my-store", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if got := req.Form.Get("id"); got != "acme/my-store" {
+		t.Errorf(`Form["id"] = %q, want "acme/my-store"`, got)
+	}
+	if got := req.Form.Get("owner"); got != "acme" {
+		t.Errorf(`Form["owner"] = %q, want "acme"`, got)
+	}
+
+	// An explicit ?id= still wins — the composition only FILLS an absent id.
+	req2 := httptest.NewRequest("GET", "/v1/rag/stores/acme/my-store?id=other/thing", nil)
+	r.ServeHTTP(httptest.NewRecorder(), req2)
+	if got := req2.Form.Get("id"); got != "other/thing" {
+		t.Errorf(`explicit ?id= should win, got %q`, got)
+	}
+}

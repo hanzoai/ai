@@ -77,7 +77,7 @@ func isAllowedInDemoMode(method string, urlPath string) bool {
 		return true
 	}
 	// Sign-in carries its own suffixes (provider callbacks) — prefix-matched.
-	if strings.HasPrefix(path.Clean(urlPath), "/v1/iam/signin") {
+	if strings.HasPrefix(path.Clean(urlPath), "/v1/auth/signin") {
 		return true
 	}
 	name, ok := normalizedControllerName(urlPath, method)
