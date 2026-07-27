@@ -159,33 +159,33 @@ func TestEveryEmittedPatternIsUniqueAndComplete(t *testing.T) {
 // case below is a real key those maps contain.
 func TestPolicyKeyRoundTrip(t *testing.T) {
 	cases := []struct{ path, method, want string }{
-		{"/v1/auth/users", "GET", "get-users"},
-		{"/v1/auth/applications", "GET", "get-applications"},
-		{"/v1/auth/applications", "POST", "add-application"},
-		{"/v1/auth/applications/acme/thing", "GET", "get-application"},
-		{"/v1/auth/applications/acme/thing", "PATCH", "update-application"},
-		{"/v1/auth/applications/acme/thing", "PUT", "update-application"},
-		{"/v1/auth/applications/acme/thing", "DELETE", "delete-application"},
-		{"/v1/chat/chats", "POST", "add-chat"},
-		{"/v1/chat/chats/acme/thing", "DELETE", "delete-chat"},
-		{"/v1/chat/messages", "POST", "add-message"},
-		{"/v1/chat/messages/acme/thing", "PATCH", "update-message"},
-		{"/v1/chat/chats/global", "GET", "get-global-chats"},
-		{"/v1/rag/stores/global", "GET", "get-global-stores"},
-		{"/v1/rag/files/global", "GET", "get-global-files"},
+		{"/v1/ai/users", "GET", "get-users"},
+		{"/v1/ai/applications", "GET", "get-applications"},
+		{"/v1/ai/applications", "POST", "add-application"},
+		{"/v1/ai/applications/acme/thing", "GET", "get-application"},
+		{"/v1/ai/applications/acme/thing", "PATCH", "update-application"},
+		{"/v1/ai/applications/acme/thing", "PUT", "update-application"},
+		{"/v1/ai/applications/acme/thing", "DELETE", "delete-application"},
+		{"/v1/ai/chats", "POST", "add-chat"},
+		{"/v1/ai/chats/acme/thing", "DELETE", "delete-chat"},
+		{"/v1/ai/messages", "POST", "add-message"},
+		{"/v1/ai/messages/acme/thing", "PATCH", "update-message"},
+		{"/v1/ai/chats/global", "GET", "get-global-chats"},
+		{"/v1/ai/stores/global", "GET", "get-global-stores"},
+		{"/v1/ai/files/global", "GET", "get-global-files"},
 		// Irregular plural: activities, not activitys.
-		{"/v1/ops/activities", "GET", "get-activities"},
+		{"/v1/ai/activities", "GET", "get-activities"},
 		// The URL noun and the flat noun differ here — the table says so.
 		{"/v1/ai/routes", "GET", "get-model-routes"},
 		{"/v1/ai/routes", "POST", "add-model-route"},
 		{"/v1/ai/routes/acme/thing", "DELETE", "delete-model-route"},
 		// Actions keep the exact spelling their flat route had.
-		{"/v1/ops/connections/acme/thing/start", "POST", "start-connection"},
-		{"/v1/ops/connections/acme/thing/stop", "POST", "stop-connection"},
-		{"/v1/rag/stores/acme/thing/vectors", "POST", "refresh-store-vectors"},
-		{"/v1/compute/nodes/acme/thing/tunnel", "POST", "add-node-tunnel"},
-		{"/v1/rag/files/upload", "POST", "upload-file"},
-		{"/v1/ops/records/commit", "POST", "commit-record"},
+		{"/v1/ai/connections/acme/thing/start", "POST", "start-connection"},
+		{"/v1/ai/connections/acme/thing/stop", "POST", "stop-connection"},
+		{"/v1/ai/stores/acme/thing/vectors", "POST", "refresh-store-vectors"},
+		{"/v1/ai/nodes/acme/thing/tunnel", "POST", "add-node-tunnel"},
+		{"/v1/ai/files/upload", "POST", "upload-file"},
+		{"/v1/ai/records/commit", "POST", "commit-record"},
 		// Not a table route — the caller must fall back to its own rule.
 		{"/v1/chat/completions", "POST", ""},
 		{"/v1/models", "GET", ""},
@@ -270,6 +270,11 @@ func TestKebab(t *testing.T) {
 var foreignNamespaces = map[string]string{
 	"iam": "the IAM service (cloud/iam_edge.go proxies the whole /v1/iam subtree)",
 	"dns": "the DNS service (cloud/clients/dns/dns.go forwards the whole /v1/dns subtree)",
+	// Not a cloud proxy — a GATEWAY route. configs/hanzo/gateway.json sends
+	// GET|POST /v1/chat/{path} to chat.hanzo.svc, so a resource registered under
+	// /v1/chat here is shadowed at the edge before cloud ever sees it. The failure
+	// looks identical to the /v1/iam one: a wrong answer, never an error.
+	"chat": "the chat service (gateway routes /v1/chat/{path} to chat.hanzo.svc)",
 }
 
 // TestNoResourceClaimsForeignNamespace holds that line for the generated surface.

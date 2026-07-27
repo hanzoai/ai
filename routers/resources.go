@@ -134,27 +134,27 @@ var resources = []resource{
 	// delete them from ai and let IAM own identity — but that is a deletion to
 	// make deliberately, with the same evidence the medical vertical got, not a
 	// side effect of a rename. Namespaced honestly here until then.
-	{ns: "auth", path: "users", one: "User", noRead: true, noCreate: true, noUpdate: true, noDelete: true,
+	{ns: "ai", path: "users", one: "User", noRead: true, noCreate: true, noUpdate: true, noDelete: true,
 		actions: []action{{name: "table-infos", method: "GetUserTableInfos", verb: "GET", collection: true}}},
-	{ns: "auth", path: "applications", one: "Application", actions: []action{
+	{ns: "ai", path: "applications", one: "Application", actions: []action{
 		{name: "deploy", method: "DeployApplication"},
 		{name: "undeploy", method: "UndeployApplication"},
 	}},
-	{ns: "auth", path: "permissions", one: "Permission"},
-	{ns: "auth", path: "sessions", one: "Session", actions: []action{
+	{ns: "ai", path: "permissions", one: "Permission"},
+	{ns: "ai", path: "sessions", one: "Session", actions: []action{
 		{name: "duplicated", method: "IsSessionDuplicated", verb: "GET", collection: true},
 	}},
 
 	// ── rag ── retrieval: stores, their vectors, and the files indexed into them.
-	{ns: "rag", path: "stores", one: "Store", global: true, actions: []action{
+	{ns: "ai", path: "stores", one: "Store", global: true, actions: []action{
 		{name: "vectors", method: "RefreshStoreVectors"},
 		{name: "names", method: "GetStoreNames", verb: "GET", collection: true},
 		{name: "providers", method: "GetStorageProviders", verb: "GET", collection: true},
 	}},
-	{ns: "rag", path: "vectors", one: "Vector", global: true, actions: []action{
+	{ns: "ai", path: "vectors", one: "Vector", global: true, actions: []action{
 		{name: "all", method: "DeleteAllVectors", verb: "DELETE", collection: true},
 	}},
-	{ns: "rag", path: "files", one: "File", readMethod: "GetFileMy", global: true, actions: []action{
+	{ns: "ai", path: "files", one: "File", readMethod: "GetFileMy", global: true, actions: []action{
 		{name: "vectors", method: "RefreshFileVectors"},
 		{name: "upload", method: "UploadFile", collection: true},
 		// activate/active are a FILE CACHE (controllers/file_cache.go), keyed by
@@ -164,11 +164,11 @@ var resources = []resource{
 		{name: "activate", method: "ActivateFile", collection: true},
 		{name: "active", method: "GetActiveFile", verb: "GET", collection: true},
 	}},
-	{ns: "rag", path: "tree-files", one: "TreeFile", noList: true, noRead: true},
+	{ns: "ai", path: "tree-files", one: "TreeFile", noList: true, noRead: true},
 
 	// ── chat ── conversations and messages.
-	{ns: "chat", path: "chats", one: "Chat", global: true},
-	{ns: "chat", path: "messages", one: "Message", global: true, actions: []action{
+	{ns: "ai", path: "chats", one: "Chat", global: true},
+	{ns: "ai", path: "messages", one: "Message", global: true, actions: []action{
 		{name: "answer", method: "GetMessageAnswer", verb: "GET"},
 		{name: "welcome", method: "DeleteWelcomeMessage", verb: "DELETE", collection: true},
 	}},
@@ -180,52 +180,52 @@ var resources = []resource{
 	{ns: "ai", path: "routes", one: "ModelRoute", key: "model-route", keyPlural: "model-routes"},
 
 	// ── content ── authored things.
-	{ns: "content", path: "articles", one: "Article", global: true},
-	{ns: "content", path: "videos", one: "Video", global: true, actions: []action{
+	{ns: "ai", path: "articles", one: "Article", global: true},
+	{ns: "ai", path: "videos", one: "Video", global: true, actions: []action{
 		{name: "upload", method: "UploadVideo", collection: true},
 	}},
-	{ns: "content", path: "assets", one: "Asset", actions: []action{
+	{ns: "ai", path: "assets", one: "Asset", actions: []action{
 		{name: "scan", method: "ScanAsset"},
 		{name: "scan", method: "ScanAssets", collection: true},
 	}},
-	{ns: "content", path: "forms", one: "Form", global: true, actions: []action{
+	{ns: "ai", path: "forms", one: "Form", global: true, actions: []action{
 		{name: "data", method: "GetFormData", verb: "GET", collection: true},
 	}},
-	{ns: "content", path: "templates", one: "Template"},
-	{ns: "content", path: "graphs", one: "Graph", global: true},
+	{ns: "ai", path: "templates", one: "Template"},
+	{ns: "ai", path: "graphs", one: "Graph", global: true},
 
 	// ── compute ── machines and what runs on them.
-	{ns: "compute", path: "nodes", one: "Node", actions: []action{
+	{ns: "ai", path: "nodes", one: "Node", actions: []action{
 		{name: "tunnel", method: "AddNodeTunnel"},
 		{name: "tunnel", method: "GetNodeTunnel", verb: "GET"},
 	}},
-	{ns: "compute", path: "scans", one: "Scan"},
+	{ns: "ai", path: "scans", one: "Scan"},
 
 	// ── work ── tasks, workflows, scales.
-	{ns: "work", path: "tasks", one: "Task", global: true, actions: []action{
+	{ns: "ai", path: "tasks", one: "Task", global: true, actions: []action{
 		{name: "document", method: "UploadTaskDocument"},
 		{name: "analyze", method: "AnalyzeTask"},
 	}},
-	{ns: "work", path: "workflows", one: "Workflow", global: true},
-	{ns: "work", path: "scales", one: "Scale", global: true, actions: []action{
+	{ns: "ai", path: "workflows", one: "Workflow", global: true},
+	{ns: "ai", path: "scales", one: "Scale", global: true, actions: []action{
 		{name: "public", method: "GetPublicScales", verb: "GET", collection: true},
 	}},
 
 	// ── ops ── the operational record.
-	{ns: "ops", path: "records", one: "Record", actions: []action{
+	{ns: "ai", path: "records", one: "Record", actions: []action{
 		{name: "batch", method: "AddRecords", collection: true},
 		{name: "commit", method: "CommitRecord", collection: true},
 		{name: "commit-second", method: "CommitRecordSecond", collection: true},
 		{name: "query", method: "QueryRecord", verb: "GET", collection: true},
 		{name: "query-second", method: "QueryRecordSecond", verb: "GET", collection: true},
 	}},
-	{ns: "ops", path: "connections", one: "Connection", actions: []action{
+	{ns: "ai", path: "connections", one: "Connection", actions: []action{
 		{name: "start", method: "StartConnection"},
 		{name: "stop", method: "StopConnection"},
 	}},
-	{ns: "ops", path: "activities", one: "Activity", many: "Activities",
+	{ns: "ai", path: "activities", one: "Activity", many: "Activities",
 		noRead: true, noCreate: true, noUpdate: true, noDelete: true},
-	{ns: "ops", path: "usages", one: "Usage", noRead: true, noCreate: true, noUpdate: true, noDelete: true,
+	{ns: "ai", path: "usages", one: "Usage", noRead: true, noCreate: true, noUpdate: true, noDelete: true,
 		actions: []action{
 			{name: "range", method: "GetRangeUsages", verb: "GET", collection: true},
 			{name: "cloud", method: "GetCloudUsages", verb: "GET", collection: true},
@@ -252,41 +252,41 @@ type singleton struct {
 var singletons = []singleton{
 	// ai's own auth singletons — under /v1/auth for the reason above: /v1/iam is
 	// proxied wholesale to the IAM service, so signin registered there is dead.
-	{ns: "auth", path: "signin",
+	{ns: "ai", path: "signin",
 		verbs: map[string]string{"POST": "Signin"},
 		keys:  map[string]string{"POST": "signin"}},
-	{ns: "auth", path: "signout",
+	{ns: "ai", path: "signout",
 		verbs: map[string]string{"POST": "Signout"},
 		keys:  map[string]string{"POST": "signout"}},
-	{ns: "auth", path: "account",
+	{ns: "ai", path: "account",
 		verbs: map[string]string{"GET": "GetAccount"},
 		keys:  map[string]string{"GET": "get-account"}},
-	{ns: "auth", path: "preferences",
+	{ns: "ai", path: "preferences",
 		verbs: map[string]string{"PATCH": "UpdatePreferences", "PUT": "UpdatePreferences"},
 		keys:  map[string]string{"PATCH": "update-preferences", "PUT": "update-preferences"}},
 
-	{ns: "chat", path: "answer",
+	{ns: "ai", path: "answer",
 		verbs: map[string]string{"GET": "GetAnswer"},
 		keys:  map[string]string{"GET": "get-answer"}},
 
 	// Operational readouts about the deployment itself.
-	{ns: "ops", path: "system",
+	{ns: "ai", path: "system",
 		verbs: map[string]string{"GET": "GetSystemInfo"},
 		keys:  map[string]string{"GET": "get-system-info"}},
-	{ns: "ops", path: "version",
+	{ns: "ai", path: "version",
 		verbs: map[string]string{"GET": "GetVersionInfo"},
 		keys:  map[string]string{"GET": "get-version-info"}},
-	{ns: "ops", path: "prometheus",
+	{ns: "ai", path: "prometheus",
 		verbs: map[string]string{"GET": "GetPrometheusInfo"},
 		keys:  map[string]string{"GET": "get-prometheus-info"}},
 
-	{ns: "compute", path: "k8s",
+	{ns: "ai", path: "k8s-status",
 		verbs: map[string]string{"GET": "GetK8sStatus"},
 		keys:  map[string]string{"GET": "get-k8s-status"}},
-	{ns: "compute", path: "vm-dashboard",
+	{ns: "ai", path: "dashboards/vm",
 		verbs: map[string]string{"GET": "GetVmDashboardUrl"},
 		keys:  map[string]string{"GET": "get-vm-dashboard-url"}},
-	{ns: "agents", path: "dashboard",
+	{ns: "ai", path: "dashboards/agents",
 		verbs: map[string]string{"GET": "GetAgentsDashboardUrl"},
 		keys:  map[string]string{"GET": "get-agents-dashboard-url"}},
 

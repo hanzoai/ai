@@ -60,11 +60,11 @@ func TestDemoModeBlocksNonPostWrites(t *testing.T) {
 		{"DELETE", "/v1/ai/providers/acme/thing"},
 		{"PATCH", "/v1/ai/providers/acme/thing"},
 		{"PUT", "/v1/ai/providers/acme/thing"},
-		{"DELETE", "/v1/auth/applications/acme/thing"},
-		{"PATCH", "/v1/auth/users/acme/thing"},
-		{"DELETE", "/v1/rag/stores/acme/thing"},
-		{"POST", "/v1/rag/stores"},
-		{"DELETE", "/v1/compute/nodes/acme/thing"},
+		{"DELETE", "/v1/ai/applications/acme/thing"},
+		{"PATCH", "/v1/ai/users/acme/thing"},
+		{"DELETE", "/v1/ai/stores/acme/thing"},
+		{"POST", "/v1/ai/stores"},
+		{"DELETE", "/v1/ai/nodes/acme/thing"},
 	}
 	for _, c := range blocked {
 		if isAllowedInDemoMode(c.method, c.path) {
@@ -75,16 +75,16 @@ func TestDemoModeBlocksNonPostWrites(t *testing.T) {
 
 	// The conversation itself stays usable, or it is not a demo.
 	allowed := []struct{ method, path string }{
-		{"POST", "/v1/chat/chats"},
-		{"PATCH", "/v1/chat/chats/acme/thing"},
-		{"DELETE", "/v1/chat/chats/acme/thing"},
-		{"POST", "/v1/chat/messages"},
-		{"PATCH", "/v1/chat/messages/acme/thing"},
-		{"POST", "/v1/auth/signin"},
-		{"POST", "/v1/auth/signin/oauth"},
+		{"POST", "/v1/ai/chats"},
+		{"PATCH", "/v1/ai/chats/acme/thing"},
+		{"DELETE", "/v1/ai/chats/acme/thing"},
+		{"POST", "/v1/ai/messages"},
+		{"PATCH", "/v1/ai/messages/acme/thing"},
+		{"POST", "/v1/ai/signin"},
+		{"POST", "/v1/ai/signin/oauth"},
 		// Reads are never restricted.
 		{"GET", "/v1/ai/providers"},
-		{"HEAD", "/v1/rag/stores"},
+		{"HEAD", "/v1/ai/stores"},
 	}
 	for _, c := range allowed {
 		if !isAllowedInDemoMode(c.method, c.path) {
@@ -95,13 +95,13 @@ func TestDemoModeBlocksNonPostWrites(t *testing.T) {
 
 // TestUsageReadsStayBalanceExempt is the outage that already happened once: a
 // $0-balance org 402s on the very panel that tells it to add credit. The
-// exemption used to be a literal path list, so moving usage to /v1/ops/usages
+// exemption used to be a literal path list, so moving usage to /v1/ai/usages
 // would have silently reintroduced it.
 func TestUsageReadsStayBalanceExempt(t *testing.T) {
 	for _, p := range []string{
-		"/v1/ops/usages",
-		"/v1/ops/usages/range",
-		"/v1/ops/usages/cloud",
+		"/v1/ai/usages",
+		"/v1/ai/usages/range",
+		"/v1/ai/usages/cloud",
 	} {
 		if !isBalanceExempt(p, "GET") {
 			t.Errorf("%s is NOT balance-exempt — a $0 org would 402 on its own usage panel", p)
@@ -136,16 +136,16 @@ func TestUsageReadsStayBalanceExempt(t *testing.T) {
 // out loud so nobody tidies it away.
 func TestPolicyKeysKeepTheirVerbPrefix(t *testing.T) {
 	writes := []struct{ path, method string }{
-		{"/v1/content/templates", "POST"},
-		{"/v1/content/templates/acme/thing", "PATCH"},
-		{"/v1/content/templates/acme/thing", "DELETE"},
-		{"/v1/content/videos", "POST"},
-		{"/v1/content/videos/acme/thing", "DELETE"},
-		{"/v1/work/workflows", "POST"},
-		{"/v1/work/workflows/acme/thing", "PATCH"},
-		{"/v1/work/workflows/acme/thing", "DELETE"},
-		{"/v1/rag/stores", "POST"},
-		{"/v1/rag/stores/acme/thing", "DELETE"},
+		{"/v1/ai/templates", "POST"},
+		{"/v1/ai/templates/acme/thing", "PATCH"},
+		{"/v1/ai/templates/acme/thing", "DELETE"},
+		{"/v1/ai/videos", "POST"},
+		{"/v1/ai/videos/acme/thing", "DELETE"},
+		{"/v1/ai/workflows", "POST"},
+		{"/v1/ai/workflows/acme/thing", "PATCH"},
+		{"/v1/ai/workflows/acme/thing", "DELETE"},
+		{"/v1/ai/stores", "POST"},
+		{"/v1/ai/stores/acme/thing", "DELETE"},
 	}
 	for _, w := range writes {
 		name, ok := normalizedControllerName(w.path, w.method)
@@ -159,10 +159,10 @@ func TestPolicyKeysKeepTheirVerbPrefix(t *testing.T) {
 	}
 
 	reads := []struct{ path, method string }{
-		{"/v1/content/templates", "GET"},
-		{"/v1/content/templates/acme/thing", "GET"},
-		{"/v1/rag/stores", "GET"},
-		{"/v1/rag/stores/global", "GET"},
+		{"/v1/ai/templates", "GET"},
+		{"/v1/ai/templates/acme/thing", "GET"},
+		{"/v1/ai/stores", "GET"},
+		{"/v1/ai/stores/global", "GET"},
 	}
 	for _, r := range reads {
 		name, ok := normalizedControllerName(r.path, r.method)

@@ -39,7 +39,7 @@ func TestGatewayFallbackCarriesMethodAndPathParams(t *testing.T) {
 	// A member URL: three things the registry could not have distinguished —
 	// the DELETE verb, the two id segments, and the query.
 	_, handled, err := serveGatewayViaRouter(context.Background(),
-		"DELETE", "/v1/rag/stores/acme/my-store", "force=1", "Bearer t", nil)
+		"DELETE", "/v1/ai/stores/acme/my-store", "force=1", "Bearer t", nil)
 	if err != nil {
 		t.Fatalf("serve: %v", err)
 	}
@@ -49,7 +49,7 @@ func TestGatewayFallbackCarriesMethodAndPathParams(t *testing.T) {
 	if gotMethod != "DELETE" {
 		t.Errorf("method = %q, want DELETE — the verb is lost", gotMethod)
 	}
-	if gotPath != "/v1/rag/stores/acme/my-store" {
+	if gotPath != "/v1/ai/stores/acme/my-store" {
 		t.Errorf("path = %q, want the full member path — the id segments are lost", gotPath)
 	}
 	if gotQuery != "force=1" {
@@ -69,7 +69,7 @@ func TestGatewayFallbackPreservesStatus(t *testing.T) {
 	}))
 	defer SetGatewayFallback(nil)
 
-	msg, handled, err := serveGatewayViaRouter(context.Background(), "GET", "/v1/rag/stores", "", "", nil)
+	msg, handled, err := serveGatewayViaRouter(context.Background(), "GET", "/v1/ai/stores", "", "", nil)
 	if err != nil || !handled || msg == nil {
 		t.Fatalf("serve: handled=%v err=%v msg=%v", handled, err, msg)
 	}
@@ -82,7 +82,7 @@ func TestGatewayFallbackPreservesStatus(t *testing.T) {
 // fallback is what turns a miss into a served request, and nothing else changes.
 func TestGatewayFallbackAbsentIsNotHandled(t *testing.T) {
 	SetGatewayFallback(nil)
-	_, handled, err := serveGatewayViaRouter(context.Background(), "GET", "/v1/rag/stores", "", "", nil)
+	_, handled, err := serveGatewayViaRouter(context.Background(), "GET", "/v1/ai/stores", "", "", nil)
 	if err != nil {
 		t.Fatalf("serve: %v", err)
 	}
