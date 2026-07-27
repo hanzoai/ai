@@ -38,9 +38,9 @@ import (
 	"sync/atomic"
 
 	"github.com/hanzoai/ai/log"
+	luxtrace "github.com/luxfi/trace"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	luxtrace "github.com/luxfi/trace"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
