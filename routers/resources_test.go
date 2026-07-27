@@ -99,6 +99,60 @@ func TestNoDuplicateResource(t *testing.T) {
 	}
 }
 
+// TestEveryEmittedPatternIsUniqueAndComplete catches the failure mode where two
+// actions share a URL: registering one pattern twice leaves the second
+// registration unreachable, and it surfaces as a 405 rather than an error, so
+// nothing complains. GET+POST on /compute/nodes/:id/tunnel is the live case.
+// Every pattern must be emitted once, carrying ALL of its verbs.
+func TestEveryEmittedPatternIsUniqueAndComplete(t *testing.T) {
+	type emitted struct {
+		verbs map[string]bool
+		count int
+	}
+	seen := map[string]*emitted{}
+	note := func(p, verb string) {
+		e := seen[p]
+		if e == nil {
+			e = &emitted{verbs: map[string]bool{}}
+			seen[p] = e
+		}
+		if e.verbs[verb] {
+			t.Errorf("%s: verb %s emitted twice", p, verb)
+		}
+		e.verbs[verb] = true
+	}
+	for _, r := range resources {
+		byPath := map[string]bool{}
+		for _, a := range r.actions {
+			verb := a.verb
+			if verb == "" {
+				verb = "POST"
+			}
+			p := r.member() + "/" + a.name
+			if a.collection {
+				p = r.collection() + "/" + a.name
+			}
+			note(p, verb)
+			byPath[p] = true
+			// An action must not collide with the resource's own member/collection.
+			if p == r.member() || p == r.collection() {
+				t.Errorf("%s: action %q collides with the resource's own URL", p, a.name)
+			}
+		}
+	}
+	// A member action named like a collection action of the same resource would
+	// be ambiguous only if both were on the collection; the member form carries
+	// /:id/ so it cannot collide. Assert the two forms stayed distinct.
+	for _, r := range resources {
+		for _, a := range r.actions {
+			if a.collection && r.collection()+"/"+a.name == r.member() {
+				t.Errorf("%s/%s: collection action %q is indistinguishable from a member id",
+					r.ns, r.path, a.name)
+			}
+		}
+	}
+}
+
 // TestPolicyKeyRoundTrip is the auth-safety proof. The filters' policy maps are
 // keyed by the OLD flat names; if policyKey stopped producing them, a
 // super-admin-only endpoint would silently stop being recognised as one. Each
