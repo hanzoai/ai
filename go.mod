@@ -67,6 +67,7 @@ require (
 	github.com/workweixin/weworkapi_golang v0.0.0-20200831071321-c1fdfd3d6e7d
 	github.com/zap-proto/fiber/v3 v3.2.1
 	go.opentelemetry.io/otel/sdk v1.44.0
+	go.yaml.in/yaml/v3 v3.0.4
 	golang.org/x/net v0.57.0
 	golang.org/x/text v0.40.0
 	golang.org/x/time v0.15.0
@@ -145,7 +146,7 @@ require (
 	github.com/hanzoai/go-openai-realtime/contrib/ws-gorilla v1.0.0 // indirect
 	github.com/hanzoai/ha v0.1.1 // indirect
 	github.com/hanzoai/iam v1.33.8 // indirect
-	github.com/hanzoai/orm v0.6.14 // indirect
+	github.com/hanzoai/orm v0.6.15 // indirect
 	github.com/hanzoai/s3-go v1.0.0 // indirect
 	github.com/hanzoai/sqlcipher v0.1.0 // indirect
 	github.com/hanzoai/vfs v0.6.6 // indirect
@@ -209,12 +210,11 @@ require (
 	github.com/xlab/treeprint v1.2.0 // indirect
 	github.com/yuin/gopher-lua v1.1.1 // indirect
 	github.com/zap-proto/go v1.3.0 // indirect
-	github.com/zap-proto/http v0.2.0 // indirect
+	github.com/zap-proto/http v0.2.2 // indirect
 	github.com/zap-proto/md v0.1.0 // indirect
 	go.mongodb.org/mongo-driver v1.17.9 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.4 // indirect
-	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/image v0.41.0 // indirect
 	gonum.org/v1/gonum v0.17.0 // indirect
 	google.golang.org/api v0.275.0 // indirect
@@ -313,7 +313,7 @@ require (
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
-	github.com/zap-proto/zip v1.8.3
+	github.com/zap-proto/zip v1.9.0
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.68.0 // indirect
 	go.opentelemetry.io/otel v1.44.0
