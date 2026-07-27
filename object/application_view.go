@@ -84,4 +84,3 @@ type ApplicationEvent struct {
 	FirstTime      string `json:"firstTime"`      // First occurrence time
 	LastTime       string `json:"lastTime"`       // Last occurrence time
 }
-
