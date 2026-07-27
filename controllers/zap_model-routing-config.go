@@ -125,29 +125,6 @@ func zapRequireSuperAdmin(auth string) (*iam.User, *zap.Message) {
 	return user, nil
 }
 
-// ── Model routes (model_route.go) ──────────────────────────────────────────────
-
-func zapModelRouteHandler(ctx context.Context, method, path, query, auth string, body []byte) (*zap.Message, error) {
-	if _, refuse := zapRequireSuperAdmin(auth); refuse != nil {
-		return refuse, nil
-	}
-	q, _ := url.ParseQuery(query)
-
-	switch {
-	case strings.HasPrefix(path, "/v1/get-model-routes"):
-		return zapGetModelRoutes(q)
-	case strings.HasPrefix(path, "/v1/get-model-route"):
-		return zapGetModelRoute(q)
-	case strings.HasPrefix(path, "/v1/add-model-route"):
-		return zapAddModelRoute(body)
-	case strings.HasPrefix(path, "/v1/update-model-route"):
-		return zapUpdateModelRoute(q, body)
-	case strings.HasPrefix(path, "/v1/delete-model-route"):
-		return zapDeleteModelRoute(body)
-	}
-	return zapGwError(404, "not found: "+path)
-}
-
 func zapGetModelRoutes(q url.Values) (*zap.Message, error) {
 	owner := q.Get("owner")
 	if owner == "" {
