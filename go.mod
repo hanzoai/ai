@@ -146,7 +146,7 @@ require (
 	github.com/hanzoai/go-openai-realtime/contrib/ws-gorilla v1.0.0 // indirect
 	github.com/hanzoai/ha v0.1.1 // indirect
 	github.com/hanzoai/iam v1.33.8 // indirect
-	github.com/hanzoai/orm v0.6.15 // indirect
+	github.com/hanzoai/orm v0.6.16 // indirect
 	github.com/hanzoai/s3-go v1.0.0 // indirect
 	github.com/hanzoai/sqlcipher v0.1.0 // indirect
 	github.com/hanzoai/vfs v0.6.6 // indirect
@@ -210,7 +210,7 @@ require (
 	github.com/xlab/treeprint v1.2.0 // indirect
 	github.com/yuin/gopher-lua v1.1.1 // indirect
 	github.com/zap-proto/go v1.3.0 // indirect
-	github.com/zap-proto/http v0.2.2 // indirect
+	github.com/zap-proto/http v0.3.0 // indirect
 	github.com/zap-proto/md v0.1.0 // indirect
 	go.mongodb.org/mongo-driver v1.17.9 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
@@ -313,7 +313,7 @@ require (
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
-	github.com/zap-proto/zip v1.9.0
+	github.com/zap-proto/zip v1.10.0
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.68.0 // indirect
 	go.opentelemetry.io/otel v1.44.0
