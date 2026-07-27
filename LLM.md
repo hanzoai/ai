@@ -110,7 +110,7 @@ cd web && yarn lint
 - Framework: native web router (`github.com/hanzoai/ai/web`, served as `routers.App`) — controllers handle HTTP, objects contain business logic; upstream beego is dropped (no direct import — routing, config, logging, pagination are all native)
 - New AI providers go in `model/` (implement the provider interface)
 - Database access via the native store in `object/`
-- Route registration in `routers/router.go`
+- Route registration: CRUD resources are GENERATED from the one table in `routers/resources.go`; `routers/router.go` holds only what is NOT a resource (the OpenAI-compatible surface and a few singletons). See "The /v1 resource surface" below.
 - i18n strings: avoid duplicate keys across frontend and backend
 
 ### Frontend (React)
@@ -150,6 +150,47 @@ cd web && yarn lint
 | `conf/app.conf` | Runtime configuration |
 | `web/src/App.js` | Frontend root component |
 | `web/src/backend/` | API client helpers |
+
+## The /v1 resource surface — ONE table, no compound routes
+
+Every CRUD route is generated from `routers/resources.go`. There is no second
+registration path, and no route is written by hand.
+
+    GET    /v1/<ns>/<resource>                 list      POST   /v1/<ns>/<resource>          create
+    GET    /v1/<ns>/<resource>/<owner>/<name>  read      PATCH  …/<owner>/<name>            update
+                                                         DELETE …/<owner>/<name>            delete
+    GET    /v1/<ns>/<resource>/global          cross-tenant list (where a resource has one)
+
+Namespaces are the subsystems that own the data, so a reader can tell what a route
+touches from its prefix: `auth` (this backend's own account/session objects),
+`rag`, `chat`, `ai`, `content`, `compute`, `work`, `ops`.
+
+Three things about this that are easy to get wrong:
+
+**The member key is `<owner>/<name>` — two path segments, not one.** Every object
+is keyed by that pair (`util.GetOwnerAndNameFromIdWithError` requires EXACTLY two
+tokens, so a name containing a slash was never valid — the two-segment URL is
+lossless, not a narrowing). They are recomposed into `id` in the one place route
+params are bound (`web.Router.ServeHTTP`), so handlers keep reading
+`c.Input().Get("id")` unchanged. A single `:id` segment cannot work: Go decodes
+`%2F` back into a separator before routing.
+
+**`/v1/iam` belongs to the IAM service, not to this one.** cloud proxies that whole
+subtree away (`cloud/iam_edge.go`). Anything registered there is shadowed and
+unreachable — it fails as a wrong answer, not an error.
+`TestNoResourceClaimsForeignNamespace` holds that line.
+
+**The policy filters key on names, not paths.** `authz_filter` and `filter_balance`
+hold hand-curated sets (super-admin endpoints, balance exemptions, demo-mode
+allowances). Those names are DERIVED from the same table by `policyKey`, never
+restated — so a policy entry cannot drift from the route it governs. Do not
+hand-edit a path into those maps.
+
+Adding a resource is one table entry. The tests will tell you if you got it wrong:
+every controller method the table names is checked to exist by reflection, every
+route must emit a policy key, no path may contain a verb, and an action whose
+handler reads no id must sit on the collection (a member action's route could never
+match).
 
 ## LLM serving path (OpenAI-compatible /v1) — READ THIS
 
