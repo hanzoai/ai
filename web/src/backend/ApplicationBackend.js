@@ -16,7 +16,7 @@
 import * as Setting from "../Setting";
 
 export function getApplications(owner, page = "", pageSize = "", field = "", value = "", sortField = "", sortOrder = "") {
-  return fetch(`${Setting.ServerUrl}/v1/auth/applications?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
+  return fetch(`${Setting.ServerUrl}/v1/ai/deployments?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -26,7 +26,7 @@ export function getApplications(owner, page = "", pageSize = "", field = "", val
 }
 
 export function getApplication(owner, name) {
-  return fetch(`${Setting.ServerUrl}/v1/auth/applications/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/ai/deployments/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -37,7 +37,7 @@ export function getApplication(owner, name) {
 
 export function updateApplication(owner, name, application) {
   const newApplication = Setting.deepCopy(application);
-  return fetch(`${Setting.ServerUrl}/v1/auth/applications/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/ai/deployments/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`, {
     method: "PATCH",
     credentials: "include",
     headers: {
@@ -49,7 +49,7 @@ export function updateApplication(owner, name, application) {
 
 export function addApplication(application) {
   const newApplication = Setting.deepCopy(application);
-  return fetch(`${Setting.ServerUrl}/v1/auth/applications`, {
+  return fetch(`${Setting.ServerUrl}/v1/ai/deployments`, {
     method: "POST",
     credentials: "include",
     headers: {
@@ -60,7 +60,7 @@ export function addApplication(application) {
 }
 
 export function deleteApplication(application) {
-  return fetch(`${Setting.ServerUrl}/v1/auth/applications/${encodeURIComponent(application.owner)}/${encodeURIComponent(application.name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/ai/deployments/${encodeURIComponent(application.owner)}/${encodeURIComponent(application.name)}`, {
     method: "DELETE",
     credentials: "include",
     headers: {
@@ -72,7 +72,7 @@ export function deleteApplication(application) {
 
 export function deployApplication(application) {
   const newApplication = Setting.deepCopy(application);
-  return fetch(`${Setting.ServerUrl}/v1/auth/applications/${encodeURIComponent(application.owner)}/${encodeURIComponent(application.name)}/deploy`, {
+  return fetch(`${Setting.ServerUrl}/v1/ai/deployments/${encodeURIComponent(application.owner)}/${encodeURIComponent(application.name)}/deploy`, {
     method: "POST",
     credentials: "include",
     headers: {
@@ -83,7 +83,7 @@ export function deployApplication(application) {
 }
 
 export function undeployApplication(owner, name) {
-  return fetch(`${Setting.ServerUrl}/v1/auth/applications/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/undeploy`, {
+  return fetch(`${Setting.ServerUrl}/v1/ai/deployments/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/undeploy`, {
     method: "POST",
     credentials: "include",
     headers: {
