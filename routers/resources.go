@@ -111,7 +111,7 @@ type action struct {
 // Namespaces are the subsystems that own the data, so a reader can tell what a
 // route touches from its prefix alone:
 //
-//	iam      identity: who exists, what they may do
+//	auth     ai's OWN account/session surface — see the note below
 //	rag      retrieval: the knowledge stores and what is indexed in them
 //	chat     conversations and their messages
 //	ai       model plumbing: providers and routes
@@ -120,15 +120,28 @@ type action struct {
 //	work     tasks, workflows and their scales
 //	ops      the operational record: audit, connections, activity, usage
 var resources = []resource{
-	// ── iam ── identity and access.
-	{ns: "iam", path: "users", one: "User", noRead: true, noCreate: true, noUpdate: true, noDelete: true,
+	// ── auth ── ai's OWN account/application/permission/session objects.
+	//
+	// NOT /v1/iam. That namespace belongs to the IAM service: cloud proxies the
+	// WHOLE subtree to it (cloud/iam_edge.go — `app.Group("/v1/iam").All("/*")`),
+	// so anything registered here under /v1/iam would be shadowed and never
+	// reached. Registering ai's signin there would have broken ai's login
+	// outright.
+	//
+	// Worth stating plainly: these ARE duplicates. hanzoai/iam already serves
+	// applications, permissions, sessions and users as the real identity service,
+	// and none of ai's copies has a first-party caller. The one-way answer is to
+	// delete them from ai and let IAM own identity — but that is a deletion to
+	// make deliberately, with the same evidence the medical vertical got, not a
+	// side effect of a rename. Namespaced honestly here until then.
+	{ns: "auth", path: "users", one: "User", noRead: true, noCreate: true, noUpdate: true, noDelete: true,
 		actions: []action{{name: "table-infos", method: "GetUserTableInfos", verb: "GET", collection: true}}},
-	{ns: "iam", path: "applications", one: "Application", actions: []action{
+	{ns: "auth", path: "applications", one: "Application", actions: []action{
 		{name: "deploy", method: "DeployApplication"},
 		{name: "undeploy", method: "UndeployApplication"},
 	}},
-	{ns: "iam", path: "permissions", one: "Permission"},
-	{ns: "iam", path: "sessions", one: "Session", actions: []action{
+	{ns: "auth", path: "permissions", one: "Permission"},
+	{ns: "auth", path: "sessions", one: "Session", actions: []action{
 		{name: "duplicated", method: "IsSessionDuplicated", verb: "GET", collection: true},
 	}},
 
@@ -233,18 +246,18 @@ type singleton struct {
 // compound form. Same rule as resources: the noun is in the path, the verb is
 // the HTTP method, and the subsystem owns the namespace.
 var singletons = []singleton{
-	// Auth/account. These already answered at /v1/iam/* via a rewrite filter;
-	// now they simply live there, and the rewrite is gone.
-	{ns: "iam", path: "signin",
+	// ai's own auth singletons — under /v1/auth for the reason above: /v1/iam is
+	// proxied wholesale to the IAM service, so signin registered there is dead.
+	{ns: "auth", path: "signin",
 		verbs: map[string]string{"POST": "Signin"},
 		keys:  map[string]string{"POST": "signin"}},
-	{ns: "iam", path: "signout",
+	{ns: "auth", path: "signout",
 		verbs: map[string]string{"POST": "Signout"},
 		keys:  map[string]string{"POST": "signout"}},
-	{ns: "iam", path: "account",
+	{ns: "auth", path: "account",
 		verbs: map[string]string{"GET": "GetAccount"},
 		keys:  map[string]string{"GET": "get-account"}},
-	{ns: "iam", path: "preferences",
+	{ns: "auth", path: "preferences",
 		verbs: map[string]string{"PATCH": "UpdatePreferences", "PUT": "UpdatePreferences"},
 		keys:  map[string]string{"PATCH": "update-preferences", "PUT": "update-preferences"}},
 
@@ -300,8 +313,19 @@ func (r resource) plural() string {
 // collection is the resource's collection URL, /v1/<ns>/<path>.
 func (r resource) collection() string { return "/v1/" + r.ns + "/" + r.path }
 
-// member is the resource's member URL, /v1/<ns>/<path>/:id.
-func (r resource) member() string { return r.collection() + "/:id" }
+// member is the resource's member URL, /v1/<ns>/<path>/:owner/:name.
+//
+// The identity of every object in this system is the PAIR (owner, name) —
+// object.GetStore and its siblings all begin by splitting a composite "owner/name"
+// id. So the member URL carries both, which is both the honest REST spelling of a
+// composite key and the only one that works: a single :id segment cannot hold a
+// value with a slash in it (Go decodes %2F in URL.Path, so escaping does not
+// help).
+//
+// It also makes the path shape unambiguous, which policyKey relies on: after
+// /v1/<ns>/<path>, exactly two segments is a member, one segment is a
+// collection action, and three is a member action. Nothing has to guess.
+func (r resource) member() string { return r.collection() + "/:owner/:name" }
 
 // registerResources binds every resource in the table. This is the only place
 // CRUD routes are registered.
@@ -411,46 +435,32 @@ func policyKey(path, method string) string {
 	if len(seg) < 2 {
 		return ""
 	}
-	for _, s := range singletons {
-		if s.ns == seg[0] && s.path == seg[1] && len(seg) == 2 {
-			return s.keys[strings.ToUpper(method)]
+	for _, sg := range singletons {
+		if sg.ns == seg[0] && sg.path == seg[1] && len(seg) == 2 {
+			return sg.keys[strings.ToUpper(method)]
 		}
 	}
 	r, ok := lookup(seg[0], seg[1])
 	if !ok {
 		return ""
 	}
-	// /v1/<ns>/<path>/<tail>… — an action, or a member verb.
-	tail := seg[2:]
-	if len(tail) == 0 {
+	// A member is exactly (owner, name), so the tail length says which shape this
+	// is with no guessing: 0 = collection, 1 = collection action, 2 = member,
+	// 3 = member action.
+	switch tail := seg[2:]; len(tail) {
+	case 0:
 		return collectionKey(r, method)
-	}
-	if r.global && len(tail) == 1 && tail[0] == "global" && strings.EqualFold(method, "GET") {
-		return "get-global-" + pluralNoun(r)
-	}
-	// A member action is /:id/<name>; a collection action is /<name>.
-	if name := tail[len(tail)-1]; len(tail) > 1 || !isMemberVerb(method) {
-		if key := actionKey(r, name, method); key != "" {
-			return key
+	case 1:
+		if r.global && tail[0] == "global" && strings.EqualFold(method, "GET") {
+			return "get-global-" + pluralNoun(r)
 		}
-	}
-	if len(tail) == 1 {
-		if key := actionKey(r, tail[0], method); key != "" {
-			return key
-		}
+		return actionKey(r, tail[0], method, true)
+	case 2:
 		return memberKey(r, method)
+	case 3:
+		return actionKey(r, tail[2], method, false)
 	}
 	return ""
-}
-
-// isMemberVerb reports whether the method addresses a member (…/:id) rather than
-// naming an action on the collection.
-func isMemberVerb(method string) bool {
-	switch strings.ToUpper(method) {
-	case "GET", "PATCH", "PUT", "DELETE":
-		return true
-	}
-	return false
 }
 
 func collectionKey(r resource, method string) string {
@@ -477,13 +487,13 @@ func memberKey(r resource, method string) string {
 
 // actionKey names an action with the same shape the old flat route used, so a
 // policy entry like "start-connection" keeps matching.
-func actionKey(r resource, name, method string) string {
+func actionKey(r resource, name, method string, onCollection bool) string {
 	for _, a := range r.actions {
 		verb := a.verb
 		if verb == "" {
 			verb = "POST"
 		}
-		if a.name == name && strings.EqualFold(verb, method) {
+		if a.name == name && a.collection == onCollection && strings.EqualFold(verb, method) {
 			return kebab(a.method)
 		}
 	}
