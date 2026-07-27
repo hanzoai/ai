@@ -26,8 +26,8 @@ import (
 // self-guards with c.RequireSuperAdmin() as its first statement (defense in depth,
 // matching the provider_admin handlers). Even if the filter is ever bypassed (the
 // path-normalization class this PR also closes), provider / model-route mutation and
-// cluster (node/pod/container/image/machine/k8s) introspection can no longer be
-// reached unauthenticated (=> 401) or by a mere org admin (=> 403).
+// cluster (node/k8s) introspection can no longer be reached unauthenticated
+// (=> 401) or by a mere org admin (=> 403).
 //
 // Only the DENY paths are exercised: RequireSuperAdmin() is the FIRST statement in
 // each handler and returns before any request-body parse or datastore/object call, so
@@ -49,10 +49,6 @@ func TestNakedHandlersRequireSuperAdmin(t *testing.T) {
 		{"DeleteModelRoute", (*ApiController).DeleteModelRoute},
 		{"ReloadModelConfig", (*ApiController).ReloadModelConfig},
 		{"GetNodes", (*ApiController).GetNodes},
-		{"GetPods", (*ApiController).GetPods},
-		{"GetContainers", (*ApiController).GetContainers},
-		{"GetImages", (*ApiController).GetImages},
-		{"GetMachines", (*ApiController).GetMachines},
 		{"GetK8sStatus", (*ApiController).GetK8sStatus},
 	}
 

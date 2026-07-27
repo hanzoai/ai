@@ -277,66 +277,6 @@ routeManager.registerApp("applications", {
   ],
 });
 
-routeManager.registerApp("machines", {
-  title: "Machines",
-  gradient: "linear-gradient(135deg, rgb(81 167 200) 0%, rgb(245 251 255) 100%)",
-  routes: [
-    {
-      path: "/machines",
-      component: () => import("../MachineListPage"),
-    },
-    {
-      path: "/machines/:organizationName/:machineName",
-      component: () => import("../MachineEditPage"),
-    },
-  ],
-});
-
-routeManager.registerApp("images", {
-  title: "Images",
-  gradient: "linear-gradient(135deg,rgb(156, 176, 230) 90%,rgb(151, 151, 151) 100%)",
-  routes: [
-    {
-      path: "/images",
-      component: () => import("../ImageListPage"),
-    },
-    {
-      path: "/images/:organizationName/:imageName",
-      component: () => import("../ImageEditPage"),
-    },
-  ],
-});
-
-routeManager.registerApp("containers", {
-  title: "Containers",
-  gradient: "linear-gradient(135deg,rgb(66, 194, 236) 0%,rgb(20, 148, 190) 100%)",
-  routes: [
-    {
-      path: "/containers",
-      component: () => import("../ContainerListPage"),
-    },
-    {
-      path: "/containers/:organizationName/:containerName",
-      component: () => import("../ContainerEditPage"),
-    },
-  ],
-});
-
-routeManager.registerApp("pods", {
-  title: "Pods",
-  gradient: "linear-gradient(135deg,rgb(77, 131, 240) 0%,rgb(255, 255, 255) 100%)",
-  routes: [
-    {
-      path: "/pods",
-      component: () => import("../PodListPage"),
-    },
-    {
-      path: "/pods/:organizationName/:podName",
-      component: () => import("../PodEditPage"),
-    },
-  ],
-});
-
 routeManager.registerApp("workbench", {
   title: "Workbench",
   gradient: "linear-gradient(135deg, #ACCBFB 0%, #71DF9E 100%)",

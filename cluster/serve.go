@@ -11,14 +11,15 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package object
+package cluster
 
 import (
+	"github.com/hanzoai/ai/object"
+
 	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
-	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -44,8 +45,8 @@ var inferenceServiceGVR = schema.GroupVersionResource{
 	Resource: "inferenceservices",
 }
 
-// FinetuneDeployResult is what a deploy returns to the controller.
-type FinetuneDeployResult struct {
+// Serving is what a deploy returns to the controller.
+type Serving struct {
 	ModelId   string `json:"modelId"`   // public model id (use in /v1/chat/completions)
 	Provider  string `json:"provider"`  // the registered provider name
 	Service   string `json:"service"`   // InferenceService name
@@ -54,7 +55,7 @@ type FinetuneDeployResult struct {
 }
 
 // finetuneServiceName is the InferenceService (and registered-model id) name for a job.
-func finetuneServiceName(job *FinetuneJob) string {
+func finetuneServiceName(job *object.FinetuneJob) string {
 	n := strings.ToLower(job.Name)
 	n = strings.NewReplacer("/", "-", "_", "-", " ", "-", ".", "-").Replace(n)
 	return "ft-" + n
@@ -63,7 +64,7 @@ func finetuneServiceName(job *FinetuneJob) string {
 // buildInferenceServiceObject renders the InferenceService CR. The HuggingFace
 // model format auto-selects the vLLM/transformers serving runtime; storageUri is
 // the org's S3 checkpoint dir.
-func buildInferenceServiceObject(job *FinetuneJob, name string) map[string]interface{} {
+func buildInferenceServiceObject(job *object.FinetuneJob, name string) map[string]interface{} {
 	return map[string]interface{}{
 		"apiVersion": "serving.kserve.io/v1beta1",
 		"kind":       "InferenceService",
@@ -89,20 +90,20 @@ func buildInferenceServiceObject(job *FinetuneJob, name string) map[string]inter
 	}
 }
 
-// DeployFinetuneJob serves a completed job's checkpoints and registers the result
+// DeployFinetune serves a completed job's checkpoints and registers the result
 // as a routable model. Requires a succeeded job with an OutputUri. Idempotent:
 // re-deploying updates the InferenceService + model records in place.
-func DeployFinetuneJob(job *FinetuneJob, lang string) (*FinetuneDeployResult, error) {
+func DeployFinetune(job *object.FinetuneJob, lang string) (*Serving, error) {
 	if job.Status != "succeeded" {
 		return nil, fmt.Errorf("job %s is not complete (status %q) — only succeeded jobs can be deployed", job.Name, job.Status)
 	}
 	if strings.TrimSpace(job.OutputUri) == "" {
 		return nil, fmt.Errorf("job %s has no checkpoint output URI to serve", job.Name)
 	}
-	if err := ensureK8sClient(lang); err != nil {
+	if err := ensure(lang); err != nil {
 		return nil, err
 	}
-	if err := k8sClient.createNamespaceIfNotExists(job.Namespace); err != nil {
+	if err := client.createNamespaceIfNotExists(job.Namespace); err != nil {
 		return nil, fmt.Errorf("failed to ensure namespace %s: %w", job.Namespace, err)
 	}
 
@@ -112,18 +113,18 @@ func DeployFinetuneJob(job *FinetuneJob, lang string) (*FinetuneDeployResult, er
 	if err != nil {
 		return nil, fmt.Errorf("failed to render InferenceService: %w", err)
 	}
-	if err := k8sClient.deployResource(string(b), job.Namespace, lang); err != nil {
+	if err := client.deployResource(string(b), job.Namespace, lang); err != nil {
 		return nil, fmt.Errorf("failed to deploy InferenceService: %w", err)
 	}
 
 	url := getInferenceServiceUrl(job.Namespace, name)
 	modelId := job.Name // public model id, keyed per-org by the ModelRoute PK
 
-	if err := registerServedModel(job, name, modelId, url); err != nil {
+	if err := object.RegisterServedModel(job, name, modelId, url); err != nil {
 		return nil, fmt.Errorf("served the model but failed to register it: %w", err)
 	}
 
-	return &FinetuneDeployResult{
+	return &Serving{
 		ModelId:   modelId,
 		Provider:  name,
 		Service:   name,
@@ -135,7 +136,7 @@ func DeployFinetuneJob(job *FinetuneJob, lang string) (*FinetuneDeployResult, er
 // getInferenceServiceUrl best-effort reads status.url from a freshly-created
 // InferenceService (usually empty until the predictor is Ready).
 func getInferenceServiceUrl(namespace, name string) string {
-	u, err := k8sClient.dynamicClient.Resource(inferenceServiceGVR).Namespace(namespace).
+	u, err := client.dynamicClient.Resource(inferenceServiceGVR).Namespace(namespace).
 		Get(context.TODO(), name, metav1.GetOptions{})
 	if err != nil {
 		return ""
@@ -144,90 +145,21 @@ func getInferenceServiceUrl(namespace, name string) string {
 	return url
 }
 
-// registerServedModel writes the Provider + ModelRoute so the fine-tune is callable
-// via /v1/chat/completions and routed per-org. The in-cluster predictor exposes an
-// OpenAI-compatible API (KServe HuggingFace runtime → `/openai/v1`), so the provider
-// is Type "Local" with compatibleProvider "openai". Idempotent upsert.
-func registerServedModel(job *FinetuneJob, serviceName, modelId, statusUrl string) error {
-	// Predictor OpenAI base. Prefer the resolved status.url; otherwise the stable
-	// in-cluster predictor DNS (the actual host suffix is cluster-resolved).
-	base := strings.TrimRight(statusUrl, "/")
-	if base == "" {
-		base = fmt.Sprintf("http://%s-predictor.%s.svc.cluster.local", serviceName, job.Namespace)
-	}
-	providerUrl := base + "/openai/v1"
-
-	provider := &Provider{
-		Owner:              job.Owner,
-		Name:               serviceName,
-		CreatedTime:        time.Now().Format(time.RFC3339),
-		DisplayName:        firstNonEmpty(job.DisplayName, job.Name) + " (fine-tune)",
-		Category:           "Model",
-		Type:               "Local",
-		SubType:            serviceName, // the served-model name the predictor answers to
-		CompatibleProvider: "openai",
-		ProviderUrl:        providerUrl,
-		ClientSecret:       "", // in-cluster, unauthenticated predictor
-		State:              "Active",
-	}
-	if err := upsertProvider(provider); err != nil {
-		return err
-	}
-
-	route := &ModelRoute{
-		Owner:     job.Owner,
-		ModelName: modelId,
-		Provider:  serviceName,
-		Upstream:  serviceName,
-		OwnedBy:   job.Owner,
-		Enabled:   true,
-	}
-	return upsertModelRoute(route)
-}
-
-func upsertProvider(p *Provider) error {
-	existing, _ := GetModelProviderByNameForOrg(p.Owner, p.Name)
-	if existing != nil {
-		return adapter.db.Model(p).Update()
-	}
-	_, err := AddProvider(p)
-	return err
-}
-
-func upsertModelRoute(r *ModelRoute) error {
-	existing, _ := GetModelRoute(r.Owner, r.ModelName)
-	if existing != nil {
-		_, err := UpdateModelRoute(r.Owner, r.ModelName, r)
-		return err
-	}
-	_, err := AddModelRoute(r)
-	return err
-}
-
-// UndeployFinetuneModel deletes the InferenceService and the model registration.
-func UndeployFinetuneModel(job *FinetuneJob, lang string) error {
-	if err := ensureK8sClient(lang); err != nil {
+// UndeployFinetune deletes the InferenceService and the model registration.
+func UndeployFinetune(job *object.FinetuneJob, lang string) error {
+	if err := ensure(lang); err != nil {
 		return err
 	}
 	name := finetuneServiceName(job)
-	err := k8sClient.dynamicClient.Resource(inferenceServiceGVR).Namespace(job.Namespace).
+	err := client.dynamicClient.Resource(inferenceServiceGVR).Namespace(job.Namespace).
 		Delete(context.TODO(), name, metav1.DeleteOptions{})
 	if err != nil && !apierrors.IsNotFound(err) {
 		return err
 	}
 	if job.DeployedModel != "" {
-		if r, _ := GetModelRoute(job.Owner, job.DeployedModel); r != nil {
-			_, _ = DeleteModelRoute(r)
+		if r, _ := object.GetModelRoute(job.Owner, job.DeployedModel); r != nil {
+			_, _ = object.DeleteModelRoute(r)
 		}
 	}
 	return nil
-}
-
-func firstNonEmpty(vs ...string) string {
-	for _, v := range vs {
-		if strings.TrimSpace(v) != "" {
-			return v
-		}
-	}
-	return ""
 }
