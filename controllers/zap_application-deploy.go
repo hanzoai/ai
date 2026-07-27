@@ -88,16 +88,7 @@ var zapApplicationDeployCloud = map[string]zapApplicationDeployFn{
 }
 
 // zapApplicationDeployGateway maps gateway path → handler (MsgType 200).
-var zapApplicationDeployGateway = map[string]zapApplicationDeployFn{
-	"/v1/get-applications":     zapGetApplicationsHandler,
-	"/v1/get-application":      zapGetApplicationHandler,
-	"/v1/update-application":   zapUpdateApplicationHandler,
-	"/v1/add-application":      zapAddApplicationHandler,
-	"/v1/delete-application":   zapDeleteApplicationHandler,
-	"/v1/deploy-application":   zapDeployApplicationHandler,
-	"/v1/undeploy-application": zapUndeployApplicationHandler,
-	"/v1/get-k8s-status":       zapGetK8sStatusHandler,
-}
+var zapApplicationDeployGateway = map[string]zapApplicationDeployFn{}
 
 // ── Shared seams (identity + response envelope parity) ───────────────────
 

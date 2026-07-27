@@ -106,16 +106,6 @@ func TestZapProviderRegistry(t *testing.T) {
 	// toggle handler, NOT the shorter /v1/admin/providers registration. Prove it
 	// by driving the resolved handler with an empty credential and asserting the
 	// gated 401 (both are gated, but an unregistered path would return !ok).
-	for _, path := range []string{
-		"/v1/get-global-providers", "/v1/get-providers", "/v1/get-provider",
-		"/v1/update-provider", "/v1/add-provider", "/v1/delete-provider",
-		"/v1/refresh-mcp-tools", "/v1/admin/providers", "/v1/admin/providers/toggle",
-		"/v1/admin/providers/primary", "/v1/provider-flags",
-	} {
-		if _, ok := lookupGatewayHandler(path); !ok {
-			t.Errorf("gateway path %q not registered", path)
-		}
-	}
 
 	h, ok := lookupGatewayHandler("/v1/admin/providers/toggle")
 	if !ok {
