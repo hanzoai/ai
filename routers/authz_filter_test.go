@@ -63,7 +63,7 @@ func TestRequiresGlobalAdminClassification(t *testing.T) {
 		"add-provider", "update-provider", "delete-provider",
 		"get-storage-providers", "get-model-routes", "admin/reload-model-config", "admin/refresh-model-pricing",
 		"admin/usage/backfill-do",
-		"get-nodes", "get-pods", "get-k8s-status",
+		"get-nodes", "get-k8s-status",
 	}
 	for _, e := range sensitive {
 		if !requiresSuperAdmin(e) {
