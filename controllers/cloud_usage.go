@@ -24,6 +24,7 @@ import (
 
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
+	"github.com/hanzoai/types"
 )
 
 // GetCloudUsages
@@ -73,7 +74,7 @@ func (c *ApiController) GetCloudUsages() {
 
 	org, allOrgs := c.resolveCloudUsageScope(user)
 
-	start, end, interval, err := object.ResolveCloudUsageWindow(
+	w, err := types.ParseWindow(
 		c.Input().Get("range"), c.Input().Get("start"), c.Input().Get("end"), time.Now(),
 	)
 	if err != nil {
@@ -83,9 +84,9 @@ func (c *ApiController) GetCloudUsages() {
 
 	params := object.CloudUsageParams{
 		RangeLabel:     cloudUsageRangeLabel(c.Input().Get("range")),
-		Start:          start,
-		End:            end,
-		Interval:       interval,
+		Start:          w.Start,
+		End:            w.End,
+		Interval:       w.Interval,
 		Org:            org,
 		AllOrgs:        allOrgs,
 		TopModels:      cloudUsageIntParam(c.Input().Get("topModels"), 6, 1, 50),

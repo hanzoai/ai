@@ -121,7 +121,7 @@ func zapResponsesHandler(ctx context.Context, auth string, body []byte) (*zap.Me
 	}
 
 	// STEP 4 — the ONE prepaid-balance gate, shared verbatim with the HTTP path.
-	if gateErr := enforceBalanceGate(authUser, chatRequest.Model); gateErr != nil {
+	if gateErr := enforceBalanceGate(authUser, "", chatRequest.Model); gateErr != nil {
 		return object.BuildCloudResponse(uint32(statusOf(gateErr)), nil, gateErr.Error())
 	}
 	isPremium := false

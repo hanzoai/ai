@@ -58,10 +58,11 @@ func (c *ApiController) serveZenMedia(apiPath, model string, rawBody []byte, uni
 	var hold *budgetHold
 	if authUser != nil {
 		if zm, ok := zenFam.lookup(model); ok {
-			subject := account.Payer(account.Credential{Owner: authUser.Owner, Name: authUser.Name}).Subject()
+			ledger := c.billingOrg(authUser)
+			subject := account.Payer(account.Credential{Owner: ledger, Name: authUser.Name}).Subject()
 			var ok2 bool
 			if hold, ok2 = reserveBudget(subject, zm.unitCostCents(units)); !ok2 {
-				c.ResponseAuthError(billingError("%s", object.InsufficientBalance(authUser.Owner, "cost").Message))
+				c.ResponseAuthError(billingError("%s", object.InsufficientBalance(ledger, "cost").Message))
 				return
 			}
 		}
@@ -143,7 +144,7 @@ func (c *ApiController) recordZenMediaUsage(model string, authUser *iam.User, is
 		return
 	}
 	rec := &usageRecord{
-		Owner: authUser.Owner, User: authUser.Owner + "/" + authUser.Name, Organization: authUser.Owner,
+		Owner: c.billingOrg(authUser), User: authUser.Owner + "/" + authUser.Name, Organization: authUser.Owner,
 		Model: model, Provider: "zen",
 		Cost: float64(cents) / 100.0, Currency: "USD",
 		Premium: isPremium, Status: status, ErrorMsg: errMsg,
