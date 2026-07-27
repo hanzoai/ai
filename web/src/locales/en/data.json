@@ -54,10 +54,6 @@
     "Scan": "Scan",
     "Successfully scanned assets": "Successfully scanned assets"
   },
-  "caase": {
-    "Edit Caase": "Edit Case",
-    "New Caase": "New Case"
-  },
   "cert": {
     "Sign cert": "Sign cert",
     "Sign cert - Tooltip": "Certificate used for signing operations",
@@ -110,10 +106,6 @@
     "Your chat text involves sensitive content. This chat has been forcibly terminated.": "Your chat text involves sensitive content. This chat has been forcibly terminated.",
     "click to stop...": "click to stop..."
   },
-  "consultation": {
-    "Edit Consultation": "Edit Consultation",
-    "New Consultation": "New Consultation"
-  },
   "container": {
     "Command": "Command",
     "Command - Tooltip": "Container entrypoint command",
@@ -127,10 +119,6 @@
     "Size RW - Tooltip": "Writable layer storage size (MB)",
     "Size root FS": "Size root FS",
     "Size root FS - Tooltip": "Root filesystem size (MB)"
-  },
-  "doctor": {
-    "Edit Doctor": "Edit Doctor",
-    "New Doctor": "New Doctor"
   },
   "file": {
     "Edit File": "Edit File",
@@ -476,10 +464,6 @@
     "Tree": "Tree",
     "Word Cloud": "Word Cloud"
   },
-  "hospital": {
-    "Edit Hospital": "Edit Hospital",
-    "New Hospital": "New Hospital"
-  },
   "image": {
     "Arch": "Arch",
     "Arch - Tooltip": "CPU architecture compatibility",
@@ -520,59 +504,9 @@
     "Public IP - Tooltip": "Internet-facing IP address"
   },
   "med": {
-    "Access level": "Access level",
-    "Access level - Tooltip": "Permission level for accessing medical records",
-    "Address": "Address",
-    "Address - Tooltip": "Address",
-    "Allergies": "Allergies",
-    "Allergies - Tooltip": "Allergies",
-    "Blood type": "Blood type",
-    "Blood type - Tooltip": "Blood type",
-    "Caases": "Cases",
-    "Consultations": "Consultations",
-    "Department": "Department",
-    "Department - Tooltip": "Medical department or specialty",
-    "Diagnosis": "Diagnosis",
-    "Diagnosis - Tooltip": "Medical diagnosis",
-    "Diagnosis date": "Diagnosis date",
-    "Diagnosis date - Tooltip": "Date of diagnosis",
-    "Doctor": "Doctor",
-    "Doctor - Tooltip": "Attending doctor",
-    "Doctors": "Doctors",
-    "Doctors - Tooltip": "List of doctors associated with this entity",
-    "Email": "Email",
-    "Email - Tooltip": "Email",
-    "Expired time": "Expired time",
-    "Expired time - Tooltip": "Consultation expiration time",
-    "Female": "Female",
-    "Follow up": "Follow up",
-    "Follow up - Tooltip": "Follow-up care instructions",
-    "Gender": "Gender",
-    "Gender - Tooltip": "Gender",
-    "HIS interface info": "HIS interface info",
-    "HIS interface info - Tooltip": "Hospital Information System interface details",
-    "Hospital": "Hospital",
-    "Hospital - Tooltip": "Hospital",
-    "Hospitals": "Hospitals",
-    "Integrated care organization Id": "Integrated care organization Id",
-    "Integrated care organization Id - Tooltip": "Integrated care organization identifier",
-    "Male": "Male",
     "Medical Image Analysis": "Medical Image Analysis",
     "Other": "Other",
-    "Owners": "Owners",
-    "Owners - Tooltip": "Doctors who have permission to manage this patient",
-    "Patient": "Patient",
-    "Patient - Tooltip": "Patient",
-    "Patients": "Patients",
-    "Prescription": "Prescription",
-    "Prescription - Tooltip": "Prescribed medication or treatment",
-    "Primary care physician": "Primary care physician",
-    "Primary care physician - Tooltip": "Primary care physician name",
-    "Specialist alliance Id": "Specialist alliance Id",
-    "Specialist alliance Id - Tooltip": "Specialist alliance identifier",
-    "Super Resolution": "Super Resolution",
-    "Symptoms": "Symptoms",
-    "Symptoms - Tooltip": "Patient symptoms"
+    "Super Resolution": "Super Resolution"
   },
   "message": {
     "Author": "Author",
@@ -606,11 +540,6 @@
     "Remote Apps - Tooltip": "Published RemoteApp applications",
     "Services": "Services",
     "Services - Tooltip": "Service monitoring configurations"
-  },
-  "patient": {
-    "Edit Patient": "Edit Patient",
-    "New Patient": "New Patient",
-    "View Patient": "View Patient"
   },
   "pod": {
     "Edit Pod": "Edit Pod",
