@@ -35,8 +35,8 @@ import (
 // 429 a paying caller.
 func TestRollingCapGate(t *testing.T) {
 	bg := newTestGate("http://unused", "", balanceCacheTTL)
-	bg.setUserKeyCache("tok", "acme", "acme", "acme/user") // resolveBillingKey → subject "acme"
-	bg.ledger.SetBalance("acme", 100000)                   // $1000 spendable ⇒ balance is SUFFICIENT
+	bg.setUserKeyCache("tok", "", "acme", "acme", "acme/user") // resolveBillingKey → subject "acme"
+	bg.ledger.SetBalance("acme", 100000)                       // $1000 spendable ⇒ balance is SUFFICIENT
 
 	prev := balanceGate
 	balanceGate = bg

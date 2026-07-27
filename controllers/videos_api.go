@@ -179,7 +179,8 @@ func (c *ApiController) VideosGenerations() {
 		c.ResponseAuthError(billingError("Video generation requires an authenticated Hanzo Cloud account. Sign in and add credits to your wallet at %s", object.PayURL("")))
 		return
 	}
-	subject := account.Payer(account.Credential{Owner: authUser.Owner, Name: authUser.Name}).Subject()
+	ledger := c.billingOrg(authUser)
+	subject := account.Payer(account.Credential{Owner: ledger, Name: authUser.Name}).Subject()
 	if subject == "" {
 		c.ResponseAuthError(billingError("Video generation requires an authenticated Hanzo Cloud account."))
 		return
@@ -215,7 +216,7 @@ func (c *ApiController) VideosGenerations() {
 	// the job is abandoned.
 	hold, okReserve := reserveBudget(subject, videoCostCents(req.Model, 1))
 	if !okReserve {
-		c.ResponseAuthError(billingError("%s", object.InsufficientBalance(authUser.Owner, "video cost").Message))
+		c.ResponseAuthError(billingError("%s", object.InsufficientBalance(ledger, "video cost").Message))
 		return
 	}
 
@@ -242,7 +243,7 @@ func (c *ApiController) VideosGenerations() {
 		id:         "video_" + util.GenerateUUID(),
 		upstreamID: upstreamID,
 		subject:    subject,
-		owner:      authUser.Owner,
+		owner:      ledger,
 		name:       authUser.Name,
 		userModel:  req.Model,
 		isPremium:  isPremium,
@@ -413,7 +414,7 @@ func (c *ApiController) resolveOwnedVideoJob(token, id string) (*videoJob, *obje
 
 	subject := ""
 	if authUser != nil {
-		subject = account.Payer(account.Credential{Owner: authUser.Owner, Name: authUser.Name}).Subject()
+		subject = account.Payer(account.Credential{Owner: c.billingOrg(authUser), Name: authUser.Name}).Subject()
 	}
 	// Ownership: a non-empty subject that matches the job's. An empty subject
 	// (anonymous/exempt) owns nothing. A mismatch is a 404 (never reveal the job).
@@ -480,7 +481,7 @@ func (c *ApiController) recordVideoUsage(authUser *iam.User, provider *object.Pr
 		return
 	}
 	rec := &usageRecord{
-		Owner:        authUser.Owner,
+		Owner:        c.billingOrg(authUser),
 		User:         authUser.Owner + "/" + authUser.Name,
 		Organization: authUser.Owner,
 		Model:        userModel,
