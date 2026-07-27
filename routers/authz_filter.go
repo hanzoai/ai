@@ -45,16 +45,47 @@ func AuthzFilter(ctx *web.Context) {
 	permissionFilter(ctx)
 }
 
+// demoModeAllowed is what a demo visitor may change: talk to the assistant, and
+// drive the few things a conversation needs. Everything else that WRITES is
+// denied.
+//
+// Keys are policy names, not URLs, so they are the same strings the super-admin
+// gate uses and they follow a resource when its route changes.
+var demoModeAllowed = map[string]struct{}{
+	"signout": {},
+	// A conversation and its messages.
+	"add-chat": {}, "update-chat": {}, "delete-chat": {},
+	"add-message": {}, "update-message": {}, "delete-welcome-message": {},
+	// Retrieval and speech used by that conversation.
+	"search-docs": {}, "chat-docs": {}, "generate-text-to-speech-audio": {},
+	// Session plumbing a live demo needs.
+	"add-node-tunnel": {}, "start-connection": {}, "stop-connection": {},
+	"commit-record": {}, "commit-record-second": {},
+}
+
+// isAllowedInDemoMode reports whether a demo visitor may make this request.
+//
+// EVERY mutating method is checked, not just POST. That distinction used to be
+// invisible because every write was a POST; once updates became PATCH and
+// deletes became DELETE, a "POST-only" check would have waved through the delete
+// of any resource in the system — a demo visitor emptying the provider list.
+// Reads stay open, which is the point of a demo.
 func isAllowedInDemoMode(method string, urlPath string) bool {
-	if method != "POST" {
+	switch strings.ToUpper(method) {
+	case "POST", "PUT", "PATCH", "DELETE":
+	default:
 		return true
 	}
-
-	if strings.HasPrefix(urlPath, "/v1/signin") || urlPath == "/v1/signout" || urlPath == "/v1/add-chat" || urlPath == "/v1/add-message" || urlPath == "/v1/update-message" || urlPath == "/v1/delete-welcome-message" || urlPath == "/v1/generate-text-to-speech-audio" || urlPath == "/v1/add-node-tunnel" || urlPath == "/v1/start-connection" || urlPath == "/v1/stop-connection" || urlPath == "/v1/commit-record" || urlPath == "/v1/commit-record-second" || urlPath == "/v1/update-chat" || urlPath == "/v1/delete-chat" || urlPath == "/v1/search-docs" || urlPath == "/v1/chat-docs" {
+	// Sign-in carries its own suffixes (provider callbacks) — prefix-matched.
+	if strings.HasPrefix(path.Clean(urlPath), "/v1/iam/signin") {
 		return true
 	}
-
-	return false
+	name, ok := normalizedControllerName(urlPath, method)
+	if !ok {
+		return true
+	}
+	_, allowed := demoModeAllowed[name]
+	return allowed
 }
 
 // superAdminEndpoints are platform-sensitive operations — they expose or mutate
@@ -216,8 +247,16 @@ func sessionOrBearerUser(ctx *web.Context) *iam.User {
 // ONE canonical name, closing the entire slash/dot variant set for every gated
 // endpoint (admin/providers*, the get-*/*-provider CRUD, topology reads).
 //
+// A REST resource route resolves to the name its flat predecessor had:
+// GET /v1/iam/users keys on "get-users", DELETE /v1/iam/applications/:id on
+// "delete-application". That mapping is derived from the SAME table that
+// registers the routes (routers/resources.go), not restated here — so the
+// policy sets below, which are keyed by those names, cannot drift out of sync
+// with the surface they govern. Had the names been rewritten by hand across
+// these maps instead, one missed line would be an ungated admin endpoint.
+//
 // Returns ok=false only for non-/v1 paths (which the caller lets pass, unchanged).
-func normalizedControllerName(rawPath string) (name string, ok bool) {
+func normalizedControllerName(rawPath, method string) (name string, ok bool) {
 	// path.Clean resolves ".", ".." and duplicate slashes on the absolute request
 	// path exactly as Beego does before dispatch. path.Clean("/v1/admin/providers/")
 	// == "/v1/admin/providers"; path.Clean("/v1//admin/providers") == "/v1/admin/providers".
@@ -225,11 +264,14 @@ func normalizedControllerName(rawPath string) (name string, ok bool) {
 	if !strings.HasPrefix(cleaned, "/v1/") {
 		return "", false
 	}
+	if key := policyKey(cleaned, method); key != "" {
+		return key, true
+	}
 	return strings.TrimPrefix(cleaned, "/v1/"), true
 }
 
 func permissionFilter(ctx *web.Context) {
-	controllerName, ok := normalizedControllerName(ctx.Request.URL.Path)
+	controllerName, ok := normalizedControllerName(ctx.Request.URL.Path, ctx.Request.Method)
 	if !ok {
 		return
 	}

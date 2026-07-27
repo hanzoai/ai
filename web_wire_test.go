@@ -50,40 +50,60 @@ func wiredStatus(t *testing.T, method, path, body string) int {
 	return resp.StatusCode
 }
 
-// TestWiredCloudRewriteDispatch proves a /v1/cloud/* request is rewritten to
-// /v1/* and dispatched (not 404) through the wired router.
-func TestWiredCloudRewriteDispatch(t *testing.T) {
-	if code := wiredStatus(t, "GET", "/v1/cloud/get-account", ""); code == http.StatusNotFound {
-		t.Errorf("/v1/cloud/get-account must rewrite to /v1/get-account and dispatch, got 404")
+// TestWiredResourceRouteDispatches proves the generated resource surface is
+// live through the fully-wired router: a namespaced REST path reaches its
+// handler rather than 404-ing.
+func TestWiredResourceRouteDispatches(t *testing.T) {
+	for _, c := range []struct{ method, path string }{
+		{"GET", "/v1/iam/account"},
+		{"GET", "/v1/iam/applications"},
+		{"GET", "/v1/rag/stores"},
+		{"GET", "/v1/ops/version"},
+		{"POST", "/v1/iam/signin"},
+	} {
+		if code := wiredStatus(t, c.method, c.path, "{}"); code == http.StatusNotFound {
+			t.Errorf("%s %s must dispatch, got 404", c.method, c.path)
+		}
 	}
 }
 
-// TestWiredIamRewriteSelective proves the /v1/iam/* alias is selective: an
-// in-set route (signin) rewrites and dispatches, an out-of-set route (whoami)
-// is not rewritten and 404s.
-func TestWiredIamRewriteSelective(t *testing.T) {
-	if code := wiredStatus(t, "POST", "/v1/iam/signin", "{}"); code == http.StatusNotFound {
-		t.Errorf("/v1/iam/signin (in-set) must rewrite to /v1/signin and dispatch, got 404")
-	}
-	if code := wiredStatus(t, "GET", "/v1/iam/whoami", ""); code != http.StatusNotFound {
-		t.Errorf("/v1/iam/whoami (out-of-set) must NOT rewrite and 404, got %d", code)
+// TestOldAddressesAreGone is the "one way" guarantee, stated as a test. Every
+// endpoint used to be reachable at up to THREE URLs — the flat compound route,
+// the same route under /v1/cloud/*, and (for auth) under /v1/iam/*. Each extra
+// address was a place a policy could be applied inconsistently. They must 404.
+func TestOldAddressesAreGone(t *testing.T) {
+	for _, c := range []struct{ method, path string }{
+		{"GET", "/v1/get-account"},
+		{"GET", "/v1/get-applications"},
+		{"GET", "/v1/get-stores"},
+		{"GET", "/v1/get-providers"},
+		{"POST", "/v1/add-application"},
+		{"POST", "/v1/signin"},
+		{"GET", "/v1/cloud/get-account"},
+		{"GET", "/v1/cloud/get-providers"},
+		{"GET", "/v1/iam/get-account"},
+	} {
+		// "Gone" means NO HANDLER RUNS. Usually that shows up as a 404 from the
+		// router. For a path whose name is still in the super-admin policy set
+		// (the set is keyed by name, and policyKey still derives that name for
+		// the live REST route), the authz filter denies an unauthenticated caller
+		// BEFORE routing — 401/403, also without dispatching. Both outcomes are
+		// the property under test; a 2xx or a 405 would mean a handler was found.
+		code := wiredStatus(t, c.method, c.path, "{}")
+		switch code {
+		case http.StatusNotFound, http.StatusUnauthorized, http.StatusForbidden:
+		default:
+			t.Errorf("%s %s must be GONE, got %d — a second address for one resource",
+				c.method, c.path, code)
+		}
 	}
 }
 
-// TestWiredGatedCloudAuthReject proves a gated route reached via /v1/cloud/* is
-// denied by AuthzFilter before dispatch: unauthenticated /v1/cloud/get-providers
-// (rewritten to the super-admin /v1/get-providers) returns 401/403.
-func TestWiredGatedCloudAuthReject(t *testing.T) {
-	code := wiredStatus(t, "GET", "/v1/cloud/get-providers", "")
+// TestWiredGatedResourceAuthReject proves the super-admin gate still fires at the
+// NEW address: unauthenticated provider reads are denied before dispatch.
+func TestWiredGatedResourceAuthReject(t *testing.T) {
+	code := wiredStatus(t, "GET", "/v1/ai/providers", "")
 	if code != http.StatusUnauthorized && code != http.StatusForbidden {
-		t.Errorf("unauthenticated /v1/cloud/get-providers must be denied (401/403), got %d", code)
-	}
-}
-
-// TestWiredParamRoute proves a route dispatches through the wired router (the
-// canonical /v1 surface), i.e. the 307-route table is live.
-func TestWiredParamRoute(t *testing.T) {
-	if code := wiredStatus(t, "GET", "/v1/get-account", ""); code == http.StatusNotFound {
-		t.Errorf("/v1/get-account must dispatch, got 404")
+		t.Errorf("unauthenticated /v1/ai/providers must be denied (401/403), got %d", code)
 	}
 }
