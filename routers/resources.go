@@ -219,7 +219,11 @@ var resources = []resource{
 		{name: "query", method: "QueryRecord", verb: "GET", collection: true},
 		{name: "query-second", method: "QueryRecordSecond", verb: "GET", collection: true},
 	}},
-	{ns: "ai", path: "connections", one: "Connection", actions: []action{
+	// NOT "connections": /v1/ai/connections is the AI Login Manager (org-scoped
+	// logins to third-party AI accounts, router.go). These are the remote-access
+	// connections the Guacamole surface drives — a different thing that happens to
+	// share casibase's noun.
+	{ns: "ai", path: "remote-connections", one: "Connection", key: "connection", keyPlural: "connections", actions: []action{
 		{name: "start", method: "StartConnection"},
 		{name: "stop", method: "StopConnection"},
 	}},
