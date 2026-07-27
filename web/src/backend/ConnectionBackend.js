@@ -17,14 +17,14 @@ import * as Setting from "../Setting";
 import {Connected} from "../ConnectionListPage";
 
 export function getConnections(owner, page = "", pageSize = "", field = "", value = "", sortField = "", sortOrder = "", status = Connected) {
-  return fetch(`${Setting.ServerUrl}/v1/get-connections?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}&status=${status}`, {
+  return fetch(`${Setting.ServerUrl}/v1/ops/connections?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}&status=${status}`, {
     method: "GET",
     credentials: "include",
   }).then(res => res.json());
 }
 
 export function getConnection(owner, name) {
-  return fetch(`${Setting.ServerUrl}/v1/get-connection?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/ops/connections/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`, {
     method: "GET",
     credentials: "include",
   }).then(res => res.json());
@@ -32,15 +32,15 @@ export function getConnection(owner, name) {
 
 export function updateConnection(owner, name, connection) {
   const newConnection = Setting.deepCopy(connection);
-  return fetch(`${Setting.ServerUrl}/v1/update-connection?id=${owner}/${encodeURIComponent(name)}`, {
-    method: "POST",
+  return fetch(`${Setting.ServerUrl}/v1/ops/connections/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`, {
+    method: "PATCH",
     credentials: "include",
     body: JSON.stringify(newConnection),
   }).then(res => res.json());
 }
 
 export function addNodeTunnel(nodeId, mode = "guacd") {
-  return fetch(`${Setting.ServerUrl}/v1/add-node-tunnel?nodeId=${nodeId}&mode=${mode}`, {
+  return fetch(`${Setting.ServerUrl}/v1/compute/nodes/${nodeId}/tunnel?nodeId=${nodeId}&mode=${mode}`, {
     method: "POST",
     credentials: "include",
   }).then(res => res.json());
@@ -48,22 +48,22 @@ export function addNodeTunnel(nodeId, mode = "guacd") {
 
 export function deleteConnection(connection) {
   const newConnection = Setting.deepCopy(connection);
-  return fetch(`${Setting.ServerUrl}/v1/delete-connection`, {
-    method: "POST",
+  return fetch(`${Setting.ServerUrl}/v1/ops/connections/${encodeURIComponent(connection.owner)}/${encodeURIComponent(connection.name)}`, {
+    method: "DELETE",
     credentials: "include",
     body: JSON.stringify(newConnection),
   }).then(res => res.json());
 }
 
 export function connect(connectionId) {
-  return fetch(`${Setting.ServerUrl}/v1/start-connection?id=${connectionId}`, {
+  return fetch(`${Setting.ServerUrl}/v1/ops/connections/${connectionId}/start`, {
     method: "POST",
     credentials: "include",
   }).then(res => res.json());
 }
 
 export function disconnect(connectionId) {
-  return fetch(`${Setting.ServerUrl}/v1/stop-connection?id=${connectionId}`, {
+  return fetch(`${Setting.ServerUrl}/v1/ops/connections/${connectionId}/stop`, {
     method: "POST",
     credentials: "include",
   }).then(res => res.json());

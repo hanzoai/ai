@@ -16,7 +16,7 @@
 import * as Setting from "../Setting";
 
 export function getGlobalMessages(page = "", pageSize = "", field = "", value = "", sortField = "", sortOrder = "", store = "") {
-  return fetch(`${Setting.ServerUrl}/v1/get-global-messages?p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}&store=${store}`, {
+  return fetch(`${Setting.ServerUrl}/v1/chat/messages/global?p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}&store=${store}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -26,7 +26,7 @@ export function getGlobalMessages(page = "", pageSize = "", field = "", value = 
 }
 
 export function getMessages(user, selectedUser = "") {
-  return fetch(`${Setting.ServerUrl}/v1/get-messages?user=${user}&selectedUser=${selectedUser}`, {
+  return fetch(`${Setting.ServerUrl}/v1/chat/messages?user=${user}&selectedUser=${selectedUser}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -36,7 +36,7 @@ export function getMessages(user, selectedUser = "") {
 }
 
 export function getChatMessages(owner, chat) {
-  return fetch(`${Setting.ServerUrl}/v1/get-messages?owner=${owner}&chat=${chat}`, {
+  return fetch(`${Setting.ServerUrl}/v1/chat/messages?owner=${owner}&chat=${chat}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -51,7 +51,7 @@ export function getMessageAnswer(owner, name, onMessage, onReason, onTool, onSea
   if (eventSourceMap.has(`${owner}/${name}`)) {
     return;
   }
-  const eventSource = new EventSource(`${Setting.ServerUrl}/v1/get-message-answer?id=${owner}/${encodeURIComponent(name)}`, {
+  const eventSource = new EventSource(`${Setting.ServerUrl}/v1/chat/messages/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/answer`, {
     withCredentials: true,
   });
   eventSourceMap.set(`${owner}/${name}`, eventSource);
@@ -102,7 +102,7 @@ export function getMessageAnswer(owner, name, onMessage, onReason, onTool, onSea
 }
 
 export function getAnswer(provider, question, framework, video) {
-  return fetch(`${Setting.ServerUrl}/v1/get-answer?provider=${provider}&question=${encodeURIComponent(question)}&framework=${encodeURIComponent(framework)}&video=${encodeURIComponent(video)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/chat/answer?provider=${provider}&question=${encodeURIComponent(question)}&framework=${encodeURIComponent(framework)}&video=${encodeURIComponent(video)}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -112,7 +112,7 @@ export function getAnswer(provider, question, framework, video) {
 }
 
 export function getMessage(owner, name) {
-  return fetch(`${Setting.ServerUrl}/v1/get-message?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/chat/messages/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -123,8 +123,8 @@ export function getMessage(owner, name) {
 
 export function updateMessage(owner, name, message, isHitOnly = false) {
   const newMessage = Setting.deepCopy(message);
-  return fetch(`${Setting.ServerUrl}/v1/update-message?id=${owner}/${encodeURIComponent(name)}&isHitOnly=${isHitOnly}`, {
-    method: "POST",
+  return fetch(`${Setting.ServerUrl}/v1/chat/messages/${encodeURIComponent(owner)}/${encodeURIComponent(name)}?isHitOnly=${isHitOnly}`, {
+    method: "PATCH",
     credentials: "include",
     headers: {
       "Accept-Language": Setting.getAcceptLanguage(),
@@ -146,7 +146,7 @@ export function closeMessageEventSource(owner, name) {
 
 export function addMessage(message) {
   const newMessage = Setting.deepCopy(message);
-  return fetch(`${Setting.ServerUrl}/v1/add-message`, {
+  return fetch(`${Setting.ServerUrl}/v1/chat/messages`, {
     method: "POST",
     credentials: "include",
     headers: {
@@ -158,8 +158,8 @@ export function addMessage(message) {
 
 export function deleteMessage(message) {
   const newMessage = Setting.deepCopy(message);
-  return fetch(`${Setting.ServerUrl}/v1/delete-message`, {
-    method: "POST",
+  return fetch(`${Setting.ServerUrl}/v1/chat/messages/${encodeURIComponent(message.owner)}/${encodeURIComponent(message.name)}`, {
+    method: "DELETE",
     credentials: "include",
     headers: {
       "Accept-Language": Setting.getAcceptLanguage(),
@@ -170,8 +170,8 @@ export function deleteMessage(message) {
 
 export function deleteWelcomeMessage(message) {
   const newMessage = Setting.deepCopy(message);
-  return fetch(`${Setting.ServerUrl}/v1/delete-welcome-message`, {
-    method: "POST",
+  return fetch(`${Setting.ServerUrl}/v1/chat/messages/welcome`, {
+    method: "DELETE",
     credentials: "include",
     headers: {
       "Accept-Language": Setting.getAcceptLanguage(),

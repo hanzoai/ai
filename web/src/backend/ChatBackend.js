@@ -16,7 +16,7 @@
 import * as Setting from "../Setting";
 
 export function getGlobalChats(page = "", pageSize = "", field = "", value = "", sortField = "", sortOrder = "", store = "") {
-  return fetch(`${Setting.ServerUrl}/v1/get-global-chats?p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}&store=${store}`, {
+  return fetch(`${Setting.ServerUrl}/v1/chat/chats/global?p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}&store=${store}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -26,7 +26,7 @@ export function getGlobalChats(page = "", pageSize = "", field = "", value = "",
 }
 
 export function getChats(user, storeName = "", page = "", pageSize = "", field = "", value = "", sortField = "", sortOrder = "", selectedUser = "", startTime = "", endTime = "") {
-  return fetch(`${Setting.ServerUrl}/v1/get-chats?user=${user}&selectedUser=${selectedUser}&store=${storeName}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}&startTime=${startTime}&endTime=${endTime}`, {
+  return fetch(`${Setting.ServerUrl}/v1/chat/chats?user=${user}&selectedUser=${selectedUser}&store=${storeName}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}&startTime=${startTime}&endTime=${endTime}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -36,7 +36,7 @@ export function getChats(user, storeName = "", page = "", pageSize = "", field =
 }
 
 export function getChat(owner, name) {
-  return fetch(`${Setting.ServerUrl}/v1/get-chat?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/chat/chats/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -47,8 +47,8 @@ export function getChat(owner, name) {
 
 export function updateChat(owner, name, chat) {
   const newChat = Setting.deepCopy(chat);
-  return fetch(`${Setting.ServerUrl}/v1/update-chat?id=${owner}/${encodeURIComponent(name)}`, {
-    method: "POST",
+  return fetch(`${Setting.ServerUrl}/v1/chat/chats/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`, {
+    method: "PATCH",
     credentials: "include",
     headers: {
       "Accept-Language": Setting.getAcceptLanguage(),
@@ -59,7 +59,7 @@ export function updateChat(owner, name, chat) {
 
 export function addChat(chat) {
   const newChat = Setting.deepCopy(chat);
-  return fetch(`${Setting.ServerUrl}/v1/add-chat`, {
+  return fetch(`${Setting.ServerUrl}/v1/chat/chats`, {
     method: "POST",
     credentials: "include",
     headers: {
@@ -71,8 +71,8 @@ export function addChat(chat) {
 
 export function deleteChat(chat) {
   const newChat = Setting.deepCopy(chat);
-  return fetch(`${Setting.ServerUrl}/v1/delete-chat`, {
-    method: "POST",
+  return fetch(`${Setting.ServerUrl}/v1/chat/chats/${encodeURIComponent(chat.owner)}/${encodeURIComponent(chat.name)}`, {
+    method: "DELETE",
     credentials: "include",
     headers: {
       "Accept-Language": Setting.getAcceptLanguage(),

@@ -16,7 +16,7 @@
 import * as Setting from "../Setting";
 
 export function getGlobalStores(name = "", page = "", pageSize = "", field = "", value = "", sortField = "", sortOrder = "") {
-  return fetch(`${Setting.ServerUrl}/v1/get-global-stores?name=${name}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
+  return fetch(`${Setting.ServerUrl}/v1/rag/stores/global?name=${name}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -26,7 +26,7 @@ export function getGlobalStores(name = "", page = "", pageSize = "", field = "",
 }
 
 export function getStores(owner) {
-  return fetch(`${Setting.ServerUrl}/v1/get-stores?owner=${owner}`, {
+  return fetch(`${Setting.ServerUrl}/v1/rag/stores?owner=${owner}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -36,7 +36,7 @@ export function getStores(owner) {
 }
 
 export function getStore(owner, name) {
-  return fetch(`${Setting.ServerUrl}/v1/get-store?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/rag/stores/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -46,7 +46,7 @@ export function getStore(owner, name) {
 }
 
 export function getStoreNames(owner) {
-  return fetch(`${Setting.ServerUrl}/v1/get-store-names?owner=${owner}`, {
+  return fetch(`${Setting.ServerUrl}/v1/rag/stores/names?owner=${owner}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -57,8 +57,8 @@ export function getStoreNames(owner) {
 
 export function updateStore(owner, name, store) {
   const newStore = Setting.deepCopy(store);
-  return fetch(`${Setting.ServerUrl}/v1/update-store?id=${owner}/${encodeURIComponent(name)}`, {
-    method: "POST",
+  return fetch(`${Setting.ServerUrl}/v1/rag/stores/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`, {
+    method: "PATCH",
     credentials: "include",
     headers: {
       "Accept-Language": Setting.getAcceptLanguage(),
@@ -69,7 +69,7 @@ export function updateStore(owner, name, store) {
 
 export function addStore(store) {
   const newStore = Setting.deepCopy(store);
-  return fetch(`${Setting.ServerUrl}/v1/add-store`, {
+  return fetch(`${Setting.ServerUrl}/v1/rag/stores`, {
     method: "POST",
     credentials: "include",
     headers: {
@@ -81,8 +81,8 @@ export function addStore(store) {
 
 export function deleteStore(store) {
   const newStore = Setting.deepCopy(store);
-  return fetch(`${Setting.ServerUrl}/v1/delete-store`, {
-    method: "POST",
+  return fetch(`${Setting.ServerUrl}/v1/rag/stores/${encodeURIComponent(store.owner)}/${encodeURIComponent(store.name)}`, {
+    method: "DELETE",
     credentials: "include",
     headers: {
       "Accept-Language": Setting.getAcceptLanguage(),
@@ -93,7 +93,7 @@ export function deleteStore(store) {
 
 export function refreshStoreVectors(store) {
   const newStore = Setting.deepCopy(store);
-  return fetch(`${Setting.ServerUrl}/v1/refresh-store-vectors`, {
+  return fetch(`${Setting.ServerUrl}/v1/rag/stores/${encodeURIComponent(store.owner)}/${encodeURIComponent(store.name)}/vectors`, {
     method: "POST",
     credentials: "include",
     headers: {
