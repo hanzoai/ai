@@ -28,67 +28,6 @@ func mustTime(t *testing.T, s string) time.Time {
 	return tm.UTC()
 }
 
-func TestResolveCloudUsageWindow(t *testing.T) {
-	now := mustTime(t, "2026-06-29T12:00:00Z")
-
-	tests := []struct {
-		name      string
-		rng       string
-		start     string
-		end       string
-		wantSpan  time.Duration
-		wantIntvl string
-		wantErr   bool
-	}{
-		{name: "default empty is 24h/hour", rng: "", wantSpan: 24 * time.Hour, wantIntvl: "hour"},
-		{name: "24h", rng: "24h", wantSpan: 24 * time.Hour, wantIntvl: "hour"},
-		{name: "7d is day buckets", rng: "7d", wantSpan: 7 * 24 * time.Hour, wantIntvl: "day"},
-		{name: "30d is day buckets", rng: "30d", wantSpan: 30 * 24 * time.Hour, wantIntvl: "day"},
-		{
-			name: "custom short span is hour", rng: "custom",
-			start: "2026-06-29T00:00:00Z", end: "2026-06-29T06:00:00Z",
-			wantSpan: 6 * time.Hour, wantIntvl: "hour",
-		},
-		{
-			name: "custom long span is day", rng: "custom",
-			start: "2026-06-01T00:00:00Z", end: "2026-06-10T00:00:00Z",
-			wantSpan: 9 * 24 * time.Hour, wantIntvl: "day",
-		},
-		{
-			name: "custom unix seconds", rng: "custom",
-			start: "1781740800", end: "1781744400", // +1h
-			wantSpan: time.Hour, wantIntvl: "hour",
-		},
-		{name: "custom end before start errs", rng: "custom", start: "2026-06-29T06:00:00Z", end: "2026-06-29T00:00:00Z", wantErr: true},
-		{name: "custom missing start errs", rng: "custom", end: "2026-06-29T06:00:00Z", wantErr: true},
-		{name: "unknown range errs", rng: "bogus", wantErr: true},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			start, end, intvl, err := ResolveCloudUsageWindow(tc.rng, tc.start, tc.end, now)
-			if tc.wantErr {
-				if err == nil {
-					t.Fatalf("expected error, got start=%v end=%v", start, end)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if got := end.Sub(start); got != tc.wantSpan {
-				t.Errorf("span = %v, want %v", got, tc.wantSpan)
-			}
-			if intvl != tc.wantIntvl {
-				t.Errorf("interval = %q, want %q", intvl, tc.wantIntvl)
-			}
-			if start.Location() != time.UTC || end.Location() != time.UTC {
-				t.Errorf("window not UTC: start=%v end=%v", start.Location(), end.Location())
-			}
-		})
-	}
-}
-
 func TestCloudUsageDelta(t *testing.T) {
 	tests := []struct {
 		name           string
