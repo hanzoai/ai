@@ -170,12 +170,11 @@ func (a *Adapter) createTable() {
 	// COLUMN for fields added since the table was created — so this is safe on
 	// both a fresh embedded SQLite store and an existing DB. No external SQL.
 	models := []interface{}{
-		&Application{}, &Article{}, &Asset{}, &Caase{}, &Chat{}, &Connection{},
-		&Consultation{}, &Container{}, &Doctor{}, &File{}, &Form{}, &Graph{},
-		&Hospital{}, &Image{}, &Machine{}, &Message{}, &ModelRoute{}, &Node{},
-		&Patient{}, &Pod{}, &Provider{}, &Record{}, &Scale{}, &Scan{},
-		&Session{}, &Store{}, &Task{}, &Template{}, &Vector{}, &Video{},
-		&Workflow{},
+		&Application{}, &Article{}, &Asset{}, &Chat{}, &Connection{}, &Container{},
+		&File{}, &Form{}, &Graph{}, &Image{}, &Machine{}, &Message{},
+		&ModelRoute{}, &Node{}, &Pod{}, &Provider{}, &Record{}, &Scale{},
+		&Scan{}, &Session{}, &Store{}, &Task{}, &Template{}, &Vector{},
+		&Video{}, &Workflow{},
 		&Memory{},             // cloud memory backend (per-user scoped)
 		&OrgSettings{},        // per-org feature overrides (auto-routing, …)
 		&RoutingEvent{},       // privacy-preserving auto-routing decision ledger (training)

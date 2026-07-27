@@ -300,36 +300,6 @@ func initAPI() {
 	App.Router("/v1/query-record", &controllers.ApiController{}, "GET:QueryRecord")
 	App.Router("/v1/query-record-second", &controllers.ApiController{}, "GET:QueryRecordSecond")
 
-	App.Router("/v1/get-hospitals", &controllers.ApiController{}, "GET:GetHospitals")
-	App.Router("/v1/get-hospital", &controllers.ApiController{}, "GET:GetHospital")
-	App.Router("/v1/update-hospital", &controllers.ApiController{}, "POST:UpdateHospital")
-	App.Router("/v1/add-hospital", &controllers.ApiController{}, "POST:AddHospital")
-	App.Router("/v1/delete-hospital", &controllers.ApiController{}, "POST:DeleteHospital")
-
-	App.Router("/v1/get-doctors", &controllers.ApiController{}, "GET:GetDoctors")
-	App.Router("/v1/get-doctor", &controllers.ApiController{}, "GET:GetDoctor")
-	App.Router("/v1/update-doctor", &controllers.ApiController{}, "POST:UpdateDoctor")
-	App.Router("/v1/add-doctor", &controllers.ApiController{}, "POST:AddDoctor")
-	App.Router("/v1/delete-doctor", &controllers.ApiController{}, "POST:DeleteDoctor")
-
-	App.Router("/v1/get-patients", &controllers.ApiController{}, "GET:GetPatients")
-	App.Router("/v1/get-patient", &controllers.ApiController{}, "GET:GetPatient")
-	App.Router("/v1/update-patient", &controllers.ApiController{}, "POST:UpdatePatient")
-	App.Router("/v1/add-patient", &controllers.ApiController{}, "POST:AddPatient")
-	App.Router("/v1/delete-patient", &controllers.ApiController{}, "POST:DeletePatient")
-
-	App.Router("/v1/get-caases", &controllers.ApiController{}, "GET:GetCaases")
-	App.Router("/v1/get-caase", &controllers.ApiController{}, "GET:GetCaase")
-	App.Router("/v1/update-caase", &controllers.ApiController{}, "POST:UpdateCaase")
-	App.Router("/v1/add-caase", &controllers.ApiController{}, "POST:AddCaase")
-	App.Router("/v1/delete-caase", &controllers.ApiController{}, "POST:DeleteCaase")
-
-	App.Router("/v1/get-consultations", &controllers.ApiController{}, "GET:GetConsultations")
-	App.Router("/v1/get-consultation", &controllers.ApiController{}, "GET:GetConsultation")
-	App.Router("/v1/update-consultation", &controllers.ApiController{}, "POST:UpdateConsultation")
-	App.Router("/v1/add-consultation", &controllers.ApiController{}, "POST:AddConsultation")
-	App.Router("/v1/delete-consultation", &controllers.ApiController{}, "POST:DeleteConsultation")
-
 	App.Router("/v1/get-system-info", &controllers.ApiController{}, "GET:GetSystemInfo")
 	App.Router("/v1/get-version-info", &controllers.ApiController{}, "GET:GetVersionInfo")
 	App.Router("/v1/health", &controllers.ApiController{}, "GET:Health")
