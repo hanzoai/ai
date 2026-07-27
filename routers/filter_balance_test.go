@@ -249,8 +249,8 @@ func TestBalanceExemptPaths(t *testing.T) {
 	exempt := []string{
 		"/v1/health", "/health",
 		"/v1/metrics", "/metrics",
-		"/v1/get-version-info", "/v1/get-system-info",
-		"/v1/signin", "/v1/signout", "/v1/get-account",
+		"/v1/ops/version", "/v1/ops/system",
+		"/v1/iam/signin", "/v1/iam/signout", "/v1/iam/account",
 		// The model catalog is metadata, not metered inference: reading the
 		// available-models list must never require a positive balance (gating it
 		// 402s a funded-but-zero / M2M caller browsing the catalog). Still
@@ -278,7 +278,7 @@ func TestBalanceExemptPaths(t *testing.T) {
 		"/v1/org/settings", "/v1/org/settings/list",
 	}
 	for _, p := range exempt {
-		if !isBalanceExempt(p) {
+		if !isBalanceExempt(p, "GET") {
 			t.Errorf("path %q should be balance-exempt", p)
 		}
 	}
@@ -287,7 +287,7 @@ func TestBalanceExemptPaths(t *testing.T) {
 		"/v1/embeddings", "/v1/images/generations",
 	}
 	for _, p := range gated {
-		if isBalanceExempt(p) {
+		if isBalanceExempt(p, "GET") {
 			t.Errorf("paid path %q must NOT be balance-exempt", p)
 		}
 	}

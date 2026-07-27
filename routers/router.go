@@ -39,36 +39,10 @@ func init() {
 }
 
 func initAPI() {
-	App.Router("/v1/signin", &controllers.ApiController{}, "POST:Signin")
-	App.Router("/v1/signout", &controllers.ApiController{}, "POST:Signout")
-	App.Router("/v1/get-account", &controllers.ApiController{}, "GET:GetAccount")
-	App.Router("/v1/update-preferences", &controllers.ApiController{}, "POST:UpdatePreferences")
-
-	App.Router("/v1/get-global-videos", &controllers.ApiController{}, "GET:GetGlobalVideos")
-	App.Router("/v1/get-videos", &controllers.ApiController{}, "GET:GetVideos")
-	App.Router("/v1/get-video", &controllers.ApiController{}, "GET:GetVideo")
-	App.Router("/v1/update-video", &controllers.ApiController{}, "POST:UpdateVideo")
-	App.Router("/v1/add-video", &controllers.ApiController{}, "POST:AddVideo")
-	App.Router("/v1/delete-video", &controllers.ApiController{}, "POST:DeleteVideo")
-	App.Router("/v1/upload-video", &controllers.ApiController{}, "POST:UploadVideo")
-
-	App.Router("/v1/get-global-stores", &controllers.ApiController{}, "GET:GetGlobalStores")
-	App.Router("/v1/get-stores", &controllers.ApiController{}, "GET:GetStores")
-	App.Router("/v1/get-store", &controllers.ApiController{}, "GET:GetStore")
-	App.Router("/v1/update-store", &controllers.ApiController{}, "POST:UpdateStore")
-	App.Router("/v1/add-store", &controllers.ApiController{}, "POST:AddStore")
-	App.Router("/v1/delete-store", &controllers.ApiController{}, "POST:DeleteStore")
-	App.Router("/v1/refresh-store-vectors", &controllers.ApiController{}, "POST:RefreshStoreVectors")
-	App.Router("/v1/get-storage-providers", &controllers.ApiController{}, "GET:GetStorageProviders")
-	App.Router("/v1/get-store-names", &controllers.ApiController{}, "GET:GetStoreNames")
-
-	App.Router("/v1/get-global-providers", &controllers.ApiController{}, "GET:GetGlobalProviders")
-	App.Router("/v1/get-providers", &controllers.ApiController{}, "GET:GetProviders")
-	App.Router("/v1/get-provider", &controllers.ApiController{}, "GET:GetProvider")
-	App.Router("/v1/update-provider", &controllers.ApiController{}, "POST:UpdateProvider")
-	App.Router("/v1/add-provider", &controllers.ApiController{}, "POST:AddProvider")
-	App.Router("/v1/delete-provider", &controllers.ApiController{}, "POST:DeleteProvider")
-	App.Router("/v1/refresh-mcp-tools", &controllers.ApiController{}, "POST:RefreshMcpTools")
+	// Every CRUD resource — /v1/<subsystem>/<resource> — is generated from the
+	// one table in resources.go. The routes written out below are the endpoints
+	// that are NOT resources: the OpenAI-compatible surface, auth, and singletons.
+	registerResources(App)
 
 	// Provider-admin management surface (super-admin gated in authz_filter.go).
 	// Reads/writes the SAME object.Provider records as the CRUD routes above.
@@ -93,188 +67,24 @@ func initAPI() {
 	// controllers/connections_usage.go.
 	App.Router("/v1/ai/connections/:provider/usage", &controllers.ApiController{}, "GET:GetAIConnectionUsage")
 
-	App.Router("/v1/get-global-files", &controllers.ApiController{}, "GET:GetGlobalFiles")
-	App.Router("/v1/get-files", &controllers.ApiController{}, "GET:GetFiles")
-	App.Router("/v1/get-file", &controllers.ApiController{}, "GET:GetFileMy")
-	App.Router("/v1/update-file", &controllers.ApiController{}, "POST:UpdateFile")
-	App.Router("/v1/add-file", &controllers.ApiController{}, "POST:AddFile")
-	App.Router("/v1/delete-file", &controllers.ApiController{}, "POST:DeleteFile")
-	App.Router("/v1/refresh-file-vectors", &controllers.ApiController{}, "POST:RefreshFileVectors")
 	// Unified RAG ingest (upload | github | crawl | s3) → parse + chunk + embed into
 	// {owner}-{store}-docs (Hanzo Vector + Search). Handler exists (docs_ingest.go);
 	// this is its only route — the swagger @router annotation alone does not register it.
 	App.Router("/v1/docs/ingest", &controllers.ApiController{}, "POST:IngestDocs")
 
-	App.Router("/v1/get-global-vectors", &controllers.ApiController{}, "GET:GetGlobalVectors")
-	App.Router("/v1/get-vectors", &controllers.ApiController{}, "GET:GetVectors")
-	App.Router("/v1/get-vector", &controllers.ApiController{}, "GET:GetVector")
-	App.Router("/v1/update-vector", &controllers.ApiController{}, "POST:UpdateVector")
-	App.Router("/v1/add-vector", &controllers.ApiController{}, "POST:AddVector")
-	App.Router("/v1/delete-vector", &controllers.ApiController{}, "POST:DeleteVector")
-	App.Router("/v1/delete-all-vectors", &controllers.ApiController{}, "POST:DeleteAllVectors")
-
 	App.Router("/v1/generate-text-to-speech-audio", &controllers.ApiController{}, "POST:GenerateTextToSpeechAudio")
 	App.Router("/v1/generate-text-to-speech-audio-stream", &controllers.ApiController{}, "GET:GenerateTextToSpeechAudioStream")
 	App.Router("/v1/process-speech-to-text", &controllers.ApiController{}, "POST:ProcessSpeechToText")
 
-	App.Router("/v1/get-global-chats", &controllers.ApiController{}, "GET:GetGlobalChats")
-	App.Router("/v1/get-chats", &controllers.ApiController{}, "GET:GetChats")
-	App.Router("/v1/get-chat", &controllers.ApiController{}, "GET:GetChat")
-	App.Router("/v1/update-chat", &controllers.ApiController{}, "POST:UpdateChat")
-	App.Router("/v1/add-chat", &controllers.ApiController{}, "POST:AddChat")
-	App.Router("/v1/delete-chat", &controllers.ApiController{}, "POST:DeleteChat")
-
-	App.Router("/v1/get-global-messages", &controllers.ApiController{}, "GET:GetGlobalMessages")
-	App.Router("/v1/get-messages", &controllers.ApiController{}, "GET:GetMessages")
-	App.Router("/v1/get-message", &controllers.ApiController{}, "GET:GetMessage")
-	App.Router("/v1/get-message-answer", &controllers.ApiController{}, "GET:GetMessageAnswer")
-	App.Router("/v1/get-answer", &controllers.ApiController{}, "GET:GetAnswer")
-	App.Router("/v1/update-message", &controllers.ApiController{}, "POST:UpdateMessage")
-	App.Router("/v1/add-message", &controllers.ApiController{}, "POST:AddMessage")
-	App.Router("/v1/delete-message", &controllers.ApiController{}, "POST:DeleteMessage")
-	App.Router("/v1/delete-welcome-message", &controllers.ApiController{}, "POST:DeleteWelcomeMessage")
-
-	App.Router("/v1/get-global-graphs", &controllers.ApiController{}, "GET:GetGlobalGraphs")
-	App.Router("/v1/get-graphs", &controllers.ApiController{}, "GET:GetGraphs")
-	App.Router("/v1/get-graph", &controllers.ApiController{}, "GET:GetGraph")
-	App.Router("/v1/update-graph", &controllers.ApiController{}, "POST:UpdateGraph")
-	App.Router("/v1/add-graph", &controllers.ApiController{}, "POST:AddGraph")
-	App.Router("/v1/delete-graph", &controllers.ApiController{}, "POST:DeleteGraph")
-
-	App.Router("/v1/get-templates", &controllers.ApiController{}, "GET:GetTemplates")
-	App.Router("/v1/get-template", &controllers.ApiController{}, "GET:GetTemplate")
-	App.Router("/v1/update-template", &controllers.ApiController{}, "POST:UpdateTemplate")
-	App.Router("/v1/add-template", &controllers.ApiController{}, "POST:AddTemplate")
-	App.Router("/v1/delete-template", &controllers.ApiController{}, "POST:DeleteTemplate")
-	App.Router("/v1/get-k8s-status", &controllers.ApiController{}, "GET:GetK8sStatus")
-
-	App.Router("/v1/get-applications", &controllers.ApiController{}, "GET:GetApplications")
-	App.Router("/v1/get-application", &controllers.ApiController{}, "GET:GetApplication")
-	App.Router("/v1/update-application", &controllers.ApiController{}, "POST:UpdateApplication")
-	App.Router("/v1/add-application", &controllers.ApiController{}, "POST:AddApplication")
-	App.Router("/v1/delete-application", &controllers.ApiController{}, "POST:DeleteApplication")
-
-	App.Router("/v1/deploy-application", &controllers.ApiController{}, "POST:DeployApplication")
-	App.Router("/v1/undeploy-application", &controllers.ApiController{}, "POST:UndeployApplication")
-
-	App.Router("/v1/get-usages", &controllers.ApiController{}, "GET:GetUsages")
-	App.Router("/v1/get-range-usages", &controllers.ApiController{}, "GET:GetRangeUsages")
-	App.Router("/v1/get-users", &controllers.ApiController{}, "GET:GetUsers")
-	App.Router("/v1/get-user-table-infos", &controllers.ApiController{}, "GET:GetUserTableInfos")
-	App.Router("/v1/get-cloud-usages", &controllers.ApiController{}, "GET:GetCloudUsages")
 	// Super-admin (authz_filter.go superAdminEndpoints): backfill the usage ledger
 	// from DigitalOcean billing for windows native metering missed. Dry-run by default.
 	App.Router("/v1/admin/usage/backfill-do", &controllers.ApiController{}, "POST:PostBackfillDOUsage")
 
-	App.Router("/v1/get-activities", &controllers.ApiController{}, "GET:GetActivities")
 	// App.Router("/v1/get-range-activities", &controllers.ApiController{}, "GET:GetRangeActivities")
-
-	App.Router("/v1/get-global-workflows", &controllers.ApiController{}, "GET:GetGlobalWorkflows")
-	App.Router("/v1/get-workflows", &controllers.ApiController{}, "GET:GetWorkflows")
-	App.Router("/v1/get-workflow", &controllers.ApiController{}, "GET:GetWorkflow")
-	App.Router("/v1/update-workflow", &controllers.ApiController{}, "POST:UpdateWorkflow")
-	App.Router("/v1/add-workflow", &controllers.ApiController{}, "POST:AddWorkflow")
-	App.Router("/v1/delete-workflow", &controllers.ApiController{}, "POST:DeleteWorkflow")
-
-	App.Router("/v1/get-global-tasks", &controllers.ApiController{}, "GET:GetGlobalTasks")
-	App.Router("/v1/get-tasks", &controllers.ApiController{}, "GET:GetTasks")
-	App.Router("/v1/get-task", &controllers.ApiController{}, "GET:GetTask")
-	App.Router("/v1/update-task", &controllers.ApiController{}, "POST:UpdateTask")
-	App.Router("/v1/add-task", &controllers.ApiController{}, "POST:AddTask")
-	App.Router("/v1/delete-task", &controllers.ApiController{}, "POST:DeleteTask")
-	App.Router("/v1/upload-task-document", &controllers.ApiController{}, "POST:UploadTaskDocument")
-	App.Router("/v1/analyze-task", &controllers.ApiController{}, "POST:AnalyzeTask")
-
-	App.Router("/v1/get-global-scales", &controllers.ApiController{}, "GET:GetGlobalScales")
-	App.Router("/v1/get-scales", &controllers.ApiController{}, "GET:GetScales")
-	App.Router("/v1/get-scale", &controllers.ApiController{}, "GET:GetScale")
-	App.Router("/v1/get-public-scales", &controllers.ApiController{}, "GET:GetPublicScales")
-	App.Router("/v1/update-scale", &controllers.ApiController{}, "POST:UpdateScale")
-	App.Router("/v1/add-scale", &controllers.ApiController{}, "POST:AddScale")
-	App.Router("/v1/delete-scale", &controllers.ApiController{}, "POST:DeleteScale")
-
-	App.Router("/v1/get-global-forms", &controllers.ApiController{}, "GET:GetGlobalForms")
-	App.Router("/v1/get-forms", &controllers.ApiController{}, "GET:GetForms")
-	App.Router("/v1/get-form", &controllers.ApiController{}, "GET:GetForm")
-	App.Router("/v1/update-form", &controllers.ApiController{}, "POST:UpdateForm")
-	App.Router("/v1/add-form", &controllers.ApiController{}, "POST:AddForm")
-	App.Router("/v1/delete-form", &controllers.ApiController{}, "POST:DeleteForm")
-
-	App.Router("/v1/get-form-data", &controllers.ApiController{}, "GET:GetFormData")
-
-	App.Router("/v1/get-global-articles", &controllers.ApiController{}, "GET:GetGlobalArticles")
-	App.Router("/v1/get-articles", &controllers.ApiController{}, "GET:GetArticles")
-	App.Router("/v1/get-article", &controllers.ApiController{}, "GET:GetArticle")
-	App.Router("/v1/update-article", &controllers.ApiController{}, "POST:UpdateArticle")
-	App.Router("/v1/add-article", &controllers.ApiController{}, "POST:AddArticle")
-	App.Router("/v1/delete-article", &controllers.ApiController{}, "POST:DeleteArticle")
-
-	App.Router("/v1/update-tree-file", &controllers.ApiController{}, "POST:UpdateTreeFile")
-	App.Router("/v1/add-tree-file", &controllers.ApiController{}, "POST:AddTreeFile")
-	App.Router("/v1/delete-tree-file", &controllers.ApiController{}, "POST:DeleteTreeFile")
-	App.Router("/v1/activate-file", &controllers.ApiController{}, "POST:ActivateFile")
-	App.Router("/v1/get-active-file", &controllers.ApiController{}, "GET:GetActiveFile")
-
-	App.Router("/v1/upload-file", &controllers.ApiController{}, "POST:UploadFile")
-
-	App.Router("/v1/get-permissions", &controllers.ApiController{}, "GET:GetPermissions")
-	App.Router("/v1/get-permission", &controllers.ApiController{}, "GET:GetPermission")
-	App.Router("/v1/update-permission", &controllers.ApiController{}, "POST:UpdatePermission")
-	App.Router("/v1/add-permission", &controllers.ApiController{}, "POST:AddPermission")
-	App.Router("/v1/delete-permission", &controllers.ApiController{}, "POST:DeletePermission")
-
-	App.Router("/v1/get-nodes", &controllers.ApiController{}, "GET:GetNodes")
-	App.Router("/v1/get-node", &controllers.ApiController{}, "GET:GetNode")
-	App.Router("/v1/update-node", &controllers.ApiController{}, "POST:UpdateNode")
-	App.Router("/v1/add-node", &controllers.ApiController{}, "POST:AddNode")
-	App.Router("/v1/delete-node", &controllers.ApiController{}, "POST:DeleteNode")
-
-	App.Router("/v1/get-assets", &controllers.ApiController{}, "GET:GetAssets")
-	App.Router("/v1/get-asset", &controllers.ApiController{}, "GET:GetAsset")
-	App.Router("/v1/update-asset", &controllers.ApiController{}, "POST:UpdateAsset")
-	App.Router("/v1/add-asset", &controllers.ApiController{}, "POST:AddAsset")
-	App.Router("/v1/delete-asset", &controllers.ApiController{}, "POST:DeleteAsset")
-	App.Router("/v1/scan-asset", &controllers.ApiController{}, "POST:ScanAsset")
-	App.Router("/v1/scan-assets", &controllers.ApiController{}, "POST:ScanAssets")
-
-	App.Router("/v1/get-scans", &controllers.ApiController{}, "GET:GetScans")
-	App.Router("/v1/get-scan", &controllers.ApiController{}, "GET:GetScan")
-	App.Router("/v1/update-scan", &controllers.ApiController{}, "POST:UpdateScan")
-	App.Router("/v1/add-scan", &controllers.ApiController{}, "POST:AddScan")
-	App.Router("/v1/delete-scan", &controllers.ApiController{}, "POST:DeleteScan")
 
 	App.Router("/v1/install-patch", &controllers.ApiController{}, "POST:InstallPatch")
 
-	App.Router("/v1/add-node-tunnel", &controllers.ApiController{}, "POST:AddNodeTunnel")
-	App.Router("/v1/get-node-tunnel", &controllers.ApiController{}, "GET:GetNodeTunnel")
 	App.Router("/v1/dev-bridge", &controllers.ApiController{}, "GET:DevBridge")
-
-	App.Router("/v1/get-sessions", &controllers.ApiController{}, "GET:GetSessions")
-	App.Router("/v1/get-session", &controllers.ApiController{}, "GET:GetSession")
-	App.Router("/v1/update-session", &controllers.ApiController{}, "POST:UpdateSession")
-	App.Router("/v1/add-session", &controllers.ApiController{}, "POST:AddSession")
-	App.Router("/v1/delete-session", &controllers.ApiController{}, "POST:DeleteSession")
-	App.Router("/v1/is-session-duplicated", &controllers.ApiController{}, "GET:IsSessionDuplicated")
-
-	App.Router("/v1/get-connections", &controllers.ApiController{}, "GET:GetConnections")
-	App.Router("/v1/get-connection", &controllers.ApiController{}, "GET:GetConnection")
-	App.Router("/v1/update-connection", &controllers.ApiController{}, "POST:UpdateConnection")
-	App.Router("/v1/add-connection", &controllers.ApiController{}, "POST:AddConnection")
-	App.Router("/v1/delete-connection", &controllers.ApiController{}, "POST:DeleteConnection")
-	App.Router("/v1/start-connection", &controllers.ApiController{}, "POST:StartConnection")
-	App.Router("/v1/stop-connection", &controllers.ApiController{}, "POST:StopConnection")
-
-	App.Router("/v1/get-records", &controllers.ApiController{}, "GET:GetRecords")
-	App.Router("/v1/get-record", &controllers.ApiController{}, "GET:GetRecord")
-	App.Router("/v1/update-record", &controllers.ApiController{}, "POST:UpdateRecord")
-	App.Router("/v1/add-record", &controllers.ApiController{}, "POST:AddRecord")
-	App.Router("/v1/add-records", &controllers.ApiController{}, "POST:AddRecords")
-	App.Router("/v1/delete-record", &controllers.ApiController{}, "POST:DeleteRecord")
-
-	App.Router("/v1/commit-record", &controllers.ApiController{}, "POST:CommitRecord")
-	App.Router("/v1/commit-record-second", &controllers.ApiController{}, "POST:CommitRecordSecond")
-	App.Router("/v1/query-record", &controllers.ApiController{}, "GET:QueryRecord")
-	App.Router("/v1/query-record-second", &controllers.ApiController{}, "GET:QueryRecordSecond")
 
 	App.Router("/v1/get-hospitals", &controllers.ApiController{}, "GET:GetHospitals")
 	App.Router("/v1/get-hospital", &controllers.ApiController{}, "GET:GetHospital")
@@ -306,10 +116,7 @@ func initAPI() {
 	App.Router("/v1/add-consultation", &controllers.ApiController{}, "POST:AddConsultation")
 	App.Router("/v1/delete-consultation", &controllers.ApiController{}, "POST:DeleteConsultation")
 
-	App.Router("/v1/get-system-info", &controllers.ApiController{}, "GET:GetSystemInfo")
-	App.Router("/v1/get-version-info", &controllers.ApiController{}, "GET:GetVersionInfo")
 	App.Router("/v1/health", &controllers.ApiController{}, "GET:Health")
-	App.Router("/v1/get-prometheus-info", &controllers.ApiController{}, "GET:GetPrometheusInfo")
 	App.Router("/v1/metrics", &controllers.ApiController{}, "GET:GetMetrics")
 
 	// Unified chat — OpenAI-compatible completions with optional RAG.
@@ -361,12 +168,6 @@ func initAPI() {
 	App.Router("/v1/audio/music", &controllers.ApiController{}, "POST:AudioMedia")
 	App.Router("/v1/audio/foley", &controllers.ApiController{}, "POST:AudioMedia")
 
-	App.Router("/v1/get-model-routes", &controllers.ApiController{}, "GET:GetModelRoutes")
-	App.Router("/v1/get-model-route", &controllers.ApiController{}, "GET:GetModelRoute")
-	App.Router("/v1/add-model-route", &controllers.ApiController{}, "POST:AddModelRoute")
-	App.Router("/v1/update-model-route", &controllers.ApiController{}, "POST:UpdateModelRoute")
-	App.Router("/v1/delete-model-route", &controllers.ApiController{}, "POST:DeleteModelRoute")
-
 	// The router-config surface — per-org settings (/v1/org/settings + /list), routing
 	// defaults (/v1/router/defaults), the policy noun (GET|PUT /v1/router/policy), the
 	// artifact-meta write (/v1/router/artifact-meta), and the ledger/rewards exports
@@ -395,8 +196,6 @@ func initAPI() {
 	// Self-scoped data ownership (org-admin, own org only): export or delete the
 	// caller's OWN content-free routing ledger — the customer-facing right-to-
 	// access + right-to-be-forgotten that pairs with the training opt-in.
-	App.Router("/v1/export-my-routing-data", &controllers.ApiController{}, "GET:ExportMyRoutingData")
-	App.Router("/v1/delete-my-routing-data", &controllers.ApiController{}, "POST:DeleteMyRoutingData")
 
 	// Router observability aggregate (aggregates only, never raw events): the
 	// admin savings-vs-perf panel reads the org-scoped form; world.hanzo.ai polls
@@ -418,17 +217,12 @@ func initAPI() {
 	// Balance-exempt via isBalanceExempt; the authz filter passes it through as a
 	// non get-/update- controller name (same class as /v1/router/stats).
 	App.Router("/v1/traffic/globe", &controllers.ApiController{}, "GET:GetTrafficGlobe")
-	App.Router("/v1/get-training-contribution", &controllers.ApiController{}, "GET:GetTrainingContribution")
-	App.Router("/v1/update-training-contribution", &controllers.ApiController{}, "POST:UpdateTrainingContribution")
 
 	// Anthropic Messages API compatible endpoints
 	App.Router("/v1/messages", &controllers.ApiController{}, "POST:AnthropicMessages")
 	App.Router("/v1/messages/count_tokens", &controllers.ApiController{}, "POST:AnthropicCountTokens")
 
 	App.Router("/v1/wecom-bot/callback/:botId", &controllers.ApiController{}, "GET:WecomBotVerifyUrl;POST:WecomBotHandleMessage")
-
-	App.Router("/v1/get-agents-dashboard-url", &controllers.ApiController{}, "GET:GetAgentsDashboardUrl")
-	App.Router("/v1/get-vm-dashboard-url", &controllers.ApiController{}, "GET:GetVmDashboardUrl")
 
 	// Normalised document APIs (public).
 	// Retrieval / RAG lives on /v1/chat itself — no separate chat-docs route.

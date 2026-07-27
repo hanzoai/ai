@@ -154,7 +154,7 @@ func BalanceGateFilter(ctx *web.Context) {
 
 	path := ctx.Request.URL.Path
 
-	if isBalanceExempt(path) {
+	if isBalanceExempt(path, ctx.Request.Method) {
 		return
 	}
 
@@ -228,9 +228,24 @@ func isReadMethod(method string) bool {
 	return false
 }
 
-// isBalanceExempt returns true for paths that should bypass balance checking
-// (free/public endpoints, health checks, etc.).
-func isBalanceExempt(path string) bool {
+// balanceExemptNames are exemptions stated as POLICY NAMES rather than URLs, so
+// they survive a resource moving to a different route. The usage reads are here
+// for the reason the comment below spells out: a $0-balance org must be able to
+// see the usage panel that tells it to add credit. Keying those on literal
+// paths is what caused that outage once already, and moving the routes to
+// /v1/ops/usages would have caused it again.
+var balanceExemptNames = map[string]struct{}{
+	"get-usages": {}, "get-range-usages": {}, "get-cloud-usages": {},
+}
+
+// isBalanceExempt returns true for requests that should bypass balance checking
+// (free/public endpoints, health checks, account + usage metadata).
+func isBalanceExempt(path, method string) bool {
+	if name, ok := normalizedControllerName(path, method); ok {
+		if _, exempt := balanceExemptNames[name]; exempt {
+			return true
+		}
+	}
 	switch {
 	case path == "/v1/health" || path == "/health":
 		return true
@@ -257,25 +272,19 @@ func isBalanceExempt(path string) bool {
 	// "402 on free /v1/models" console-wide outage class.
 	case path == "/v1/models" || strings.HasPrefix(path, "/v1/models/"):
 		return true
-	case strings.HasPrefix(path, "/v1/get-version-info"):
+	case path == "/v1/ops/version" || path == "/v1/ops/system":
 		return true
-	case strings.HasPrefix(path, "/v1/get-system-info"):
+	case strings.HasPrefix(path, "/v1/iam/signin"):
 		return true
-	case strings.HasPrefix(path, "/v1/signin"):
+	case path == "/v1/iam/signout":
 		return true
-	case path == "/v1/signout":
-		return true
-	case path == "/v1/get-account":
+	case path == "/v1/iam/account":
 		return true
 	// Usage/spend READS are account metadata, not metered inference. A caller
 	// must ALWAYS be able to SEE its own usage — especially to learn it needs
 	// credits — so a $0-balance org never 402s on the usage view (same class as
 	// /v1/models + /v1/get-account; the auth filters still require a principal).
 	// Gating these was the "insufficient balance on the usage panel" outage.
-	case path == "/v1/get-cloud-usages" ||
-		path == "/v1/get-usages" ||
-		path == "/v1/get-range-usages":
-		return true
 	// The reward/feedback signal is training metadata, not metered inference: a
 	// caller must be able to score a past request even at $0 balance (the outcome
 	// label is exactly how the enso loop learns). Auth still required (the handler
