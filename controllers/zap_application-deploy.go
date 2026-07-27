@@ -51,6 +51,7 @@ import (
 
 	iam "github.com/hanzoai/ai/internal/iam"
 
+	"github.com/hanzoai/ai/cluster"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
 )
@@ -187,7 +188,7 @@ func zapGetApplicationsHandler(_ context.Context, auth string, body []byte) (*za
 		if err != nil {
 			return zapAppError(http.StatusOK, err.Error())
 		}
-		object.AddDetails(applications, "en")
+		cluster.Describe(applications, "en")
 		return zapAppOk(applications)
 	}
 
@@ -202,7 +203,7 @@ func zapGetApplicationsHandler(_ context.Context, auth string, body []byte) (*za
 	if err != nil {
 		return zapAppError(http.StatusOK, err.Error())
 	}
-	object.AddDetails(applications, "en")
+	cluster.Describe(applications, "en")
 	return zapAppOk(applications, count)
 }
 
@@ -224,7 +225,7 @@ func zapGetApplicationHandler(_ context.Context, auth string, body []byte) (*zap
 		return zapAppError(http.StatusOK, err.Error())
 	}
 	if res != nil {
-		object.AddDetails([]*object.Application{res}, "en")
+		cluster.Describe([]*object.Application{res}, "en")
 	}
 	return zapAppOk(res)
 }
@@ -259,7 +260,12 @@ func zapUpdateApplicationHandler(_ context.Context, auth string, body []byte) (*
 		return zapAppError(http.StatusOK, err.Error())
 	}
 
-	success, err := object.UpdateApplication(id, application, "en")
+	application.Manifest, err = cluster.Manifest(application, "en")
+	if err != nil {
+		return zapAppError(http.StatusOK, err.Error())
+	}
+
+	success, err := object.UpdateApplication(id, application)
 	if err != nil {
 		return zapAppError(http.StatusOK, err.Error())
 	}
@@ -307,7 +313,11 @@ func zapDeleteApplicationHandler(_ context.Context, auth string, body []byte) (*
 		return zapAppError(http.StatusOK, err.Error())
 	}
 
-	success, err := object.DeleteApplication(&application, "en")
+	// Best-effort teardown of what the record deployed, then drop the record. An
+	// org with no Kubernetes provider still deletes its applications.
+	_, _ = cluster.Undeploy(application.Owner, application.Name, application.Namespace, "en")
+
+	success, err := object.DeleteApplication(&application)
 	if err != nil {
 		return zapAppError(http.StatusOK, err.Error())
 	}
@@ -333,7 +343,12 @@ func zapDeployApplicationHandler(_ context.Context, auth string, body []byte) (*
 		return zapAppError(http.StatusOK, fmt.Sprintf("The application: %s is not found", id))
 	}
 
-	success, err := object.UpdateApplication(id, application, "en")
+	application.Manifest, err = cluster.Manifest(application, "en")
+	if err != nil {
+		return zapAppError(http.StatusOK, err.Error())
+	}
+
+	success, err := object.UpdateApplication(id, application)
 	if err != nil {
 		return zapAppError(http.StatusOK, err.Error())
 	}
@@ -343,7 +358,7 @@ func zapDeployApplicationHandler(_ context.Context, auth string, body []byte) (*
 
 	// Parity with UpdateApplication: only the error is checked (the sync deploy's
 	// bool is advisory there too).
-	_, err = object.DeployApplicationSync(application, "en")
+	_, err = cluster.DeploySync(application, "en")
 	if err != nil {
 		return zapAppError(http.StatusOK, err.Error())
 	}
@@ -381,7 +396,7 @@ func zapUndeployApplicationHandler(_ context.Context, auth string, body []byte) 
 		return zapAppError(http.StatusOK, err.Error())
 	}
 
-	success, err := object.UndeployApplicationSync(owner, name, application.Namespace, "en")
+	success, err := cluster.UndeploySync(owner, name, application.Namespace, "en")
 	if err != nil {
 		return zapAppError(http.StatusOK, err.Error())
 	}
@@ -399,7 +414,7 @@ func zapGetK8sStatusHandler(_ context.Context, auth string, _ []byte) (*zap.Mess
 		return zapAppError(http.StatusForbidden, "auth:this operation requires super admin privilege")
 	}
 
-	status, err := object.GetK8sStatus("en")
+	status, err := cluster.Status("en")
 	if err != nil {
 		return zapAppError(http.StatusOK, err.Error())
 	}
