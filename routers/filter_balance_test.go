@@ -249,8 +249,8 @@ func TestBalanceExemptPaths(t *testing.T) {
 	exempt := []string{
 		"/v1/health", "/health",
 		"/v1/metrics", "/metrics",
-		"/v1/ops/version", "/v1/ops/system",
-		"/v1/auth/signin", "/v1/auth/signout", "/v1/auth/account",
+		"/v1/ai/version", "/v1/ai/system",
+		"/v1/ai/signin", "/v1/ai/signout", "/v1/ai/account",
 		// The model catalog is metadata, not metered inference: reading the
 		// available-models list must never require a positive balance (gating it
 		// 402s a funded-but-zero / M2M caller browsing the catalog). Still
