@@ -354,3 +354,22 @@ func matchFilterPattern(pattern, path string) bool {
 	}
 	return pattern == path
 }
+
+// Patterns returns every registered route pattern, in registration order, with
+// its methods — e.g. "/v1/ai/stores" -> ["GET","POST"].
+//
+// Exported so a caller can assert things ABOUT its own route table that the table
+// cannot see from the inside: most usefully, that a generated route never lands on
+// a pattern a hand-written one already claimed. Two registrations of one pattern
+// do not error here — the more specific, or the earlier, simply wins — so without
+// a check like that the loser is silently unreachable.
+func (p *Router) Patterns() map[string][]string {
+	out := make(map[string][]string, len(p.routes))
+	for _, rt := range p.routes {
+		pat := "/" + strings.Join(rt.segments, "/")
+		for m := range rt.methods {
+			out[pat] = append(out[pat], m)
+		}
+	}
+	return out
+}
