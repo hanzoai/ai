@@ -146,10 +146,11 @@ func (c *ApiController) ImagesGenerations() {
 	// image cost, not a token estimate.
 	var hold *budgetHold
 	if authUser != nil {
-		subject := account.Payer(account.Credential{Owner: authUser.Owner, Name: authUser.Name}).Subject()
+		ledger := c.billingOrg(authUser)
+		subject := account.Payer(account.Credential{Owner: ledger, Name: authUser.Name}).Subject()
 		var ok bool
 		if hold, ok = reserveBudget(subject, imageCostCents(req.Model, n)); !ok {
-			c.ResponseAuthError(billingError("%s", object.InsufficientBalance(authUser.Owner, "image cost").Message))
+			c.ResponseAuthError(billingError("%s", object.InsufficientBalance(ledger, "image cost").Message))
 			return
 		}
 	}
@@ -238,7 +239,7 @@ func (c *ApiController) recordImageUsage(authUser *iam.User, provider *object.Pr
 		return
 	}
 	rec := &usageRecord{
-		Owner:        authUser.Owner,
+		Owner:        c.billingOrg(authUser),
 		User:         authUser.Owner + "/" + authUser.Name,
 		Organization: authUser.Owner,
 		Model:        userModel,
