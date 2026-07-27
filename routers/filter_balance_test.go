@@ -315,8 +315,8 @@ func TestReadMethodExemption(t *testing.T) {
 // WITHOUT freeing metered inference.
 func TestBalanceGateFilterExemptsReads(t *testing.T) {
 	bg := newTestGate("http://unused", "", balanceCacheTTL)
-	bg.setUserKeyCache("tok", "acme", "acme", "acme/user") // resolveBillingKey → "acme", no network
-	bg.ledger.SetBalance("acme", 0)                        // known + zero spendable ⇒ insufficient
+	bg.setUserKeyCache("tok", "", "acme", "acme", "acme/user") // resolveBillingKey → "acme", no network
+	bg.ledger.SetBalance("acme", 0)                            // known + zero spendable ⇒ insufficient
 
 	prev := balanceGate
 	balanceGate = bg
@@ -354,18 +354,18 @@ func TestBalanceGateFilterExemptsReads(t *testing.T) {
 // and expires entries per userKeyCacheTTL.
 func TestUserKeyCacheRoundTrip(t *testing.T) {
 	bg := newTestGate("http://unused", "", balanceCacheTTL)
-	if s, ns, uk, ok := bg.getUserKeyCached("tok"); ok || s != "" || ns != "" || uk != "" {
+	if s, ns, uk, ok := bg.getUserKeyCached("tok", ""); ok || s != "" || ns != "" || uk != "" {
 		t.Errorf("expected empty on cache miss, got (%q,%q,%q,%v)", s, ns, uk, ok)
 	}
-	bg.setUserKeyCache("tok", "hanzo/carol", "hanzo", "hanzo/carol")
-	if s, ns, uk, ok := bg.getUserKeyCached("tok"); !ok || s != "hanzo/carol" || ns != "hanzo" || uk != "hanzo/carol" {
+	bg.setUserKeyCache("tok", "", "hanzo/carol", "hanzo", "hanzo/carol")
+	if s, ns, uk, ok := bg.getUserKeyCached("tok", ""); !ok || s != "hanzo/carol" || ns != "hanzo" || uk != "hanzo/carol" {
 		t.Errorf("expected (hanzo/carol,hanzo,hanzo/carol,true) from cache, got (%q,%q,%q,%v)", s, ns, uk, ok)
 	}
 	// Force staleness.
 	bg.userKeyMu.Lock()
-	bg.userKeyCache["tok"].fetchedAt = time.Now().Add(-2 * userKeyCacheTTL)
+	bg.userKeyCache[userKeyCacheKey("tok", "")].fetchedAt = time.Now().Add(-2 * userKeyCacheTTL)
 	bg.userKeyMu.Unlock()
-	if _, _, _, ok := bg.getUserKeyCached("tok"); ok {
+	if _, _, _, ok := bg.getUserKeyCached("tok", ""); ok {
 		t.Error("expected miss on stale entry")
 	}
 }
@@ -438,7 +438,7 @@ func TestBalanceGateFilterTransientReturns503(t *testing.T) {
 	defer errSrv.Close()
 
 	bg := newTestGate(errSrv.URL, "", balanceCacheTTL)
-	bg.setUserKeyCache("tok", "acme", "acme", "acme/user") // resolveBillingKey → "acme", no network
+	bg.setUserKeyCache("tok", "", "acme", "acme", "acme/user") // resolveBillingKey → "acme", no network
 	// No ledger seed → the subject is COLD → checkBalance does a synchronous fetch,
 	// which errors → balance_unavailable.
 

@@ -449,11 +449,12 @@ func (c *ApiController) AnthropicMessages() {
 	request.MaxTokens = clampMaxTokens(request.MaxTokens)
 	var hold *budgetHold
 	if authUser != nil {
-		subject := account.Payer(account.Credential{Owner: authUser.Owner, Name: authUser.Name}).Subject()
+		ledger := c.billingOrg(authUser)
+		subject := account.Payer(account.Credential{Owner: ledger, Name: authUser.Name}).Subject()
 		est := estimateRequestCostCents(request.Model, len(request.Messages)*500, request.MaxTokens)
 		var ok bool
 		if hold, ok = reserveBudget(subject, est); !ok {
-			c.respondAnthropicError("billing_error", object.InsufficientBalance(authUser.Owner, "request cost").Message, http.StatusPaymentRequired)
+			c.respondAnthropicError("billing_error", object.InsufficientBalance(ledger, "request cost").Message, http.StatusPaymentRequired)
 			return
 		}
 	}
@@ -597,7 +598,7 @@ func (c *ApiController) AnthropicMessages() {
 	if err != nil {
 		if authUser != nil {
 			errRecord := &usageRecord{
-				Owner:     authUser.Owner,
+				Owner:     c.billingOrg(authUser),
 				User:      authUser.Owner + "/" + authUser.Name,
 				Model:     request.Model,
 				Provider:  actualProvider,
@@ -623,7 +624,7 @@ func (c *ApiController) AnthropicMessages() {
 	// Record successful usage (actualProvider reflects which provider served the request).
 	if authUser != nil {
 		successRecord := &usageRecord{
-			Owner:            authUser.Owner,
+			Owner:            c.billingOrg(authUser),
 			User:             authUser.Owner + "/" + authUser.Name,
 			Organization:     authUser.Owner,
 			Model:            request.Model,
@@ -775,7 +776,7 @@ func (c *ApiController) proxyAnthropicToolRequest(
 		)
 		if authUser != nil {
 			rec := &usageRecord{
-				Owner: authUser.Owner, User: authUser.Owner + "/" + authUser.Name,
+				Owner: c.billingOrg(authUser), User: authUser.Owner + "/" + authUser.Name,
 				Organization: authUser.Owner, Model: request.Model, Provider: provider.Name,
 				PromptTokens: capPrompt, CompletionTokens: capCompletion,
 				TotalTokens: capPrompt + capCompletion, Currency: "USD",
@@ -800,7 +801,7 @@ func (c *ApiController) proxyAnthropicToolRequest(
 		prompt, completion := usage.Usage.InputTokens, usage.Usage.OutputTokens
 		if authUser != nil {
 			rec := &usageRecord{
-				Owner: authUser.Owner, User: authUser.Owner + "/" + authUser.Name,
+				Owner: c.billingOrg(authUser), User: authUser.Owner + "/" + authUser.Name,
 				Organization: authUser.Owner, Model: request.Model, Provider: provider.Name,
 				PromptTokens: prompt, CompletionTokens: completion,
 				TotalTokens: prompt + completion, Currency: "USD",
@@ -868,7 +869,7 @@ func (c *ApiController) proxyAnthropicViaOpenAI(
 	if err != nil {
 		if authUser != nil {
 			errRecord := &usageRecord{
-				Owner: authUser.Owner, User: authUser.Owner + "/" + authUser.Name,
+				Owner: c.billingOrg(authUser), User: authUser.Owner + "/" + authUser.Name,
 				Model: request.Model, Provider: provider.Name, Premium: isPremium,
 				Stream: request.Stream, Status: "error", ErrorMsg: err.Error(),
 				ClientIP: c.Ctx.Request.RemoteAddr, RequestID: requestId,
@@ -949,7 +950,7 @@ func (c *ApiController) recordAnthropicToolUsage(
 	actualCents := calculateCostCentsWithCache(request.Model, prompt, completion, 0, 0)
 	if authUser != nil {
 		rec := &usageRecord{
-			Owner: authUser.Owner, User: authUser.Owner + "/" + authUser.Name,
+			Owner: c.billingOrg(authUser), User: authUser.Owner + "/" + authUser.Name,
 			Organization: authUser.Owner, Model: request.Model, Provider: provider.Name,
 			PromptTokens: prompt, CompletionTokens: completion, TotalTokens: prompt + completion,
 			Currency: "USD", Premium: isPremium, Stream: stream, Status: "success",

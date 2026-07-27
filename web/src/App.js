@@ -54,18 +54,10 @@ import GraphListPage from "./GraphListPage";
 import GraphEditPage from "./GraphEditPage";
 import NodeListPage from "./NodeListPage";
 import NodeEditPage from "./NodeEditPage";
-import MachineListPage from "./MachineListPage";
-import MachineEditPage from "./MachineEditPage";
 import AssetListPage from "./AssetListPage";
 import AssetEditPage from "./AssetEditPage";
 import ScanListPage from "./ScanListPage";
 import ScanEditPage from "./ScanEditPage";
-import ImageListPage from "./ImageListPage";
-import ImageEditPage from "./ImageEditPage";
-import ContainerListPage from "./ContainerListPage";
-import ContainerEditPage from "./ContainerEditPage";
-import PodListPage from "./PodListPage";
-import PodEditPage from "./PodEditPage";
 import SessionListPage from "./SessionListPage";
 import ConnectionListPage from "./ConnectionListPage";
 import RecordListPage from "./RecordListPage";
@@ -418,11 +410,7 @@ function App() {
           <NavItem to="/application-store">{i18next.t("general:Application Store")}</NavItem>
           <NavItem to="/applications">{i18next.t("general:Applications")}</NavItem>
           <NavItem to="/nodes">{i18next.t("general:Nodes")}</NavItem>
-          <NavItem to="/machines">{i18next.t("general:Machines")}</NavItem>
           <NavItem to="/assets">{i18next.t("general:Assets")}</NavItem>
-          <NavItem to="/images">{i18next.t("general:Images")}</NavItem>
-          <NavItem to="/containers">{i18next.t("general:Containers")}</NavItem>
-          <NavItem to="/pods">{i18next.t("general:Pods")}</NavItem>
           <NavItem to="/workbench" external>{i18next.t("general:Workbench")}</NavItem>
         </NavGroup>
 
@@ -636,18 +624,10 @@ function App() {
         <Route exact path="/records" render={(props) => renderSigninIfNotSignedIn(<RecordListPage account={account} {...props} />)} />
         <Route exact path="/records/:organizationName/:recordName" render={(props) => renderSigninIfNotSignedIn(<RecordEditPage account={account} {...props} />)} />
         <Route exact path="/workbench" render={(props) => renderSigninIfNotSignedIn(<NodeWorkbench account={account} {...props} />)} />
-        <Route exact path="/machines" render={(props) => renderSigninIfNotSignedIn(<MachineListPage account={account} {...props} />)} />
-        <Route exact path="/machines/:organizationName/:machineName" render={(props) => renderSigninIfNotSignedIn(<MachineEditPage account={account} {...props} />)} />
         <Route exact path="/assets" render={(props) => renderSigninIfNotSignedIn(<AssetListPage account={account} {...props} />)} />
         <Route exact path="/assets/:assetName" render={(props) => renderSigninIfNotSignedIn(<AssetEditPage account={account} {...props} />)} />
         <Route exact path="/scans" render={(props) => renderSigninIfNotSignedIn(<ScanListPage account={account} {...props} />)} />
         <Route exact path="/scans/:scanName" render={(props) => renderSigninIfNotSignedIn(<ScanEditPage account={account} {...props} />)} />
-        <Route exact path="/images" render={(props) => renderSigninIfNotSignedIn(<ImageListPage account={account} {...props} />)} />
-        <Route exact path="/images/:organizationName/:imageName" render={(props) => renderSigninIfNotSignedIn(<ImageEditPage account={account} {...props} />)} />
-        <Route exact path="/containers" render={(props) => renderSigninIfNotSignedIn(<ContainerListPage account={account} {...props} />)} />
-        <Route exact path="/containers/:organizationName/:containerName" render={(props) => renderSigninIfNotSignedIn(<ContainerEditPage account={account} {...props} />)} />
-        <Route exact path="/pods" render={(props) => renderSigninIfNotSignedIn(<PodListPage account={account} {...props} />)} />
-        <Route exact path="/pods/:organizationName/:podName" render={(props) => renderSigninIfNotSignedIn(<PodEditPage account={account} {...props} />)} />
         <Route exact path="/workflows" render={(props) => renderSigninIfNotSignedIn(<WorkflowListPage account={account} {...props} />)} />
         <Route exact path="/workflows/:workflowName" render={(props) => renderSigninIfNotSignedIn(<WorkflowEditPage account={account} {...props} />)} />
         <Route exact path="/audit" render={(props) => renderSigninIfNotSignedIn(<AuditPage account={account} {...props} />)} />

@@ -29,8 +29,10 @@ import (
 
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/controllers"
+	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/object"
+	"github.com/hanzoai/ai/util"
 	"github.com/hanzoai/ai/web"
 )
 
@@ -337,7 +339,8 @@ func resolveBillingKey(ctx *web.Context) (subject, namespace, userKey string) {
 		return "", "", ""
 	}
 
-	// Source 1: session user from AutoSigninFilter.
+	// Source 1: session user from AutoSigninFilter. A cookie session carries no
+	// signed `orgs` claim, so it can never switch org — it always bills its home.
 	user := GetSessionUser(ctx)
 	if user != nil && user.Owner != "" {
 		return account.Payer(account.Credential{Owner: user.Owner, Name: user.Name, Machine: account.IsMachine(user.Type)}).Subject(), user.Owner, user.Owner + "/" + user.Name
@@ -348,6 +351,13 @@ func resolveBillingKey(ctx *web.Context) (subject, namespace, userKey string) {
 	if token == "" {
 		return "", "", ""
 	}
+
+	// The org the caller asked to act in. Unvalidated here — only the JWT branch
+	// below, which holds the signed membership set, may honor it. It scopes the
+	// cache because the SAME token resolves to a DIFFERENT wallet in a different
+	// org: keying the cache on the token alone would serve one org's billing
+	// identity to a request made in another.
+	requested := strings.TrimSpace(ctx.Input.Header("X-Org-Id"))
 
 	// Widget keys (hz_) bill the OWNER ORG that minted the key (mirrors the
 	// controller's authResolveProvider): resolve that org here so the router
@@ -371,7 +381,7 @@ func resolveBillingKey(ctx *web.Context) (subject, namespace, userKey string) {
 	}
 
 	// Check key cache first.
-	if s, ns, uk, ok := balanceGate.getUserKeyCached(token); ok {
+	if s, ns, uk, ok := balanceGate.getUserKeyCached(token, requested); ok {
 		return s, ns, uk
 	}
 
@@ -384,25 +394,41 @@ func resolveBillingKey(ctx *web.Context) (subject, namespace, userKey string) {
 			return "", "", ""
 		}
 		if claims.User.Owner != "" {
+			// This is the ONE auth path that can honor an org switch, because it is
+			// the only one holding the signed `orgs` claim that proves membership. The
+			// gate must read the wallet the controller's debit will land on, so it
+			// resolves the ledger by the same two rules (iam.EffectiveOrg, then
+			// iam.LedgerOrg) the controller applies — check one balance and drain
+			// another and a funded org 402s while an unfunded one runs free.
+			ledger := iam.LedgerOrg(
+				iam.EffectiveOrg(claims.User.Owner, claims.Orgs, requested),
+				claims.User.Owner,
+				util.IsSuperAdmin(&claims.User),
+			)
 			// The token NAMES its payer: IAM signs `billing_account` from the real
 			// grant context, so the gate reads who pays instead of inferring it from
 			// User.Type — a field the user can set on themselves. Machine stays as the
 			// fallback for tokens minted before the claim shipped; when the claim is
 			// present Payer ignores it, so a forged Type can no longer point this gate
-			// at the signup org's pooled balance.
-			subject = account.Payer(account.Credential{Owner: claims.User.Owner, Name: claims.User.Name, Account: claims.BillingAccount, Machine: account.IsMachine(claims.User.Type)}).Subject()
+			// at the signup org's pooled balance. A claim naming the home org is
+			// discarded on a switched request (Payer honors it only within the
+			// credential's own org), which is right: the selected org's wallet pays.
+			subject = account.Payer(account.Credential{Owner: ledger, Name: claims.User.Name, Account: claims.BillingAccount, Machine: account.IsMachine(claims.User.Type)}).Subject()
+			// userKey stays the caller's IDENTITY ("<home>/<name>"), never the ledger:
+			// it keys per-user exemption matching, not money.
 			userKey = claims.User.Owner + "/" + claims.User.Name
-			balanceGate.setUserKeyCache(token, subject, claims.User.Owner, userKey)
-			return subject, claims.User.Owner, userKey
+			balanceGate.setUserKeyCache(token, requested, subject, ledger, userKey)
+			return subject, ledger, userKey
 		}
 		return "", "", ""
 	}
 
-	// IAM API key (hk- prefix): resolve via IAM (cached).
+	// IAM API key (hk- prefix): resolve via IAM (cached). An hk- key carries no
+	// signed membership set, so it never switches — it bills the org that owns it.
 	if strings.HasPrefix(token, "hk-") {
 		subject, namespace, userKey = balanceGate.resolveIAMKeySubject(token)
 		if subject != "" {
-			balanceGate.setUserKeyCache(token, subject, namespace, userKey)
+			balanceGate.setUserKeyCache(token, requested, subject, namespace, userKey)
 		}
 		return subject, namespace, userKey
 	}
@@ -556,11 +582,18 @@ func (bg *BalanceGate) fetchBalance(subject, namespace string) (int64, error) {
 
 // ── User key cache ──────────────────────────────────────────────────────────
 
-// getUserKeyCached returns the cached (subject, namespace, userKey) for a token.
-// The bool is false on miss/stale.
-func (bg *BalanceGate) getUserKeyCached(token string) (subject, namespace, userKey string, ok bool) {
+// userKeyCacheKey is the identity of a cached billing answer: the bearer token
+// AND the org the request asked to act in. One token resolves to one billing
+// identity PER ORG, so the token alone is not a key — caching by it would serve
+// one org's wallet to a request made in another. The cache composes the key
+// itself so no caller can forget the org half.
+func userKeyCacheKey(token, org string) string { return token + "\x00" + org }
+
+// getUserKeyCached returns the cached (subject, namespace, userKey) for a token
+// acting in org. The bool is false on miss/stale.
+func (bg *BalanceGate) getUserKeyCached(token, org string) (subject, namespace, userKey string, ok bool) {
 	bg.userKeyMu.RLock()
-	entry, found := bg.userKeyCache[token]
+	entry, found := bg.userKeyCache[userKeyCacheKey(token, org)]
 	bg.userKeyMu.RUnlock()
 
 	if !found || time.Since(entry.fetchedAt) > userKeyCacheTTL {
@@ -569,10 +602,10 @@ func (bg *BalanceGate) getUserKeyCached(token string) (subject, namespace, userK
 	return entry.subject, entry.namespace, entry.userKey, true
 }
 
-// setUserKeyCache stores a token -> (subject, namespace, userKey) mapping.
-func (bg *BalanceGate) setUserKeyCache(token, subject, namespace, userKey string) {
+// setUserKeyCache stores a (token, org) -> (subject, namespace, userKey) mapping.
+func (bg *BalanceGate) setUserKeyCache(token, org, subject, namespace, userKey string) {
 	bg.userKeyMu.Lock()
-	bg.userKeyCache[token] = &userKeyCacheEntry{subject: subject, namespace: namespace, userKey: userKey, fetchedAt: time.Now()}
+	bg.userKeyCache[userKeyCacheKey(token, org)] = &userKeyCacheEntry{subject: subject, namespace: namespace, userKey: userKey, fetchedAt: time.Now()}
 	bg.userKeyMu.Unlock()
 }
 

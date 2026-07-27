@@ -98,10 +98,6 @@ var superAdminEndpoints = map[string]struct{}{
 	"get-storage-providers": {},
 	// Cluster topology / infrastructure.
 	"get-nodes": {}, "get-node": {}, "add-node": {}, "update-node": {}, "delete-node": {},
-	"get-machines": {}, "get-machine": {}, "add-machine": {}, "update-machine": {}, "delete-machine": {},
-	"get-pods": {}, "get-pod": {}, "add-pod": {}, "update-pod": {}, "delete-pod": {},
-	"get-containers": {}, "get-container": {}, "add-container": {}, "update-container": {}, "delete-container": {},
-	"get-images": {}, "get-image": {}, "add-image": {}, "update-image": {}, "delete-image": {},
 	"get-k8s-status": {},
 }
 
