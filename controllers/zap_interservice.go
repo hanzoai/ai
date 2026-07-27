@@ -33,6 +33,7 @@ import (
 	"github.com/hanzoai/ai/log"
 	"github.com/luxfi/zap"
 
+	"github.com/hanzoai/ai/cluster"
 	"github.com/hanzoai/ai/object"
 )
 
@@ -117,7 +118,7 @@ func opsDeployHandler(body []byte) (*zap.Message, error) {
 		return buildOpsResponse(404, nil, "application not found: "+params.ID)
 	}
 
-	ok, err := object.DeployApplicationSync(app, "en")
+	ok, err := cluster.DeploySync(app, "en")
 	if err != nil {
 		return buildOpsResponse(500, nil, "deploy failed: "+err.Error())
 	}
@@ -149,7 +150,7 @@ func opsUndeployHandler(body []byte) (*zap.Message, error) {
 		return buildOpsResponse(400, nil, "owner and name required")
 	}
 
-	ok, err := object.UndeployApplicationSync(params.Owner, params.Name, params.Namespace, "en")
+	ok, err := cluster.UndeploySync(params.Owner, params.Name, params.Namespace, "en")
 	if err != nil {
 		return buildOpsResponse(500, nil, "undeploy failed: "+err.Error())
 	}
@@ -164,7 +165,7 @@ func opsUndeployHandler(body []byte) (*zap.Message, error) {
 // ── status ──────────────────────────────────────────────────────────────
 
 func opsStatusHandler() (*zap.Message, error) {
-	status, err := object.GetK8sStatus("en")
+	status, err := cluster.Status("en")
 	if err != nil {
 		return buildOpsResponse(500, nil, err.Error())
 	}
