@@ -38,10 +38,10 @@ GET  /api/models             # List with routing metadata
 ### Auth (via Hanzo IAM)
 
 ```
-GET  /api/get-user?accessKey=hk-...   # Resolve API key to user
-POST /api/add-usage-record            # Record usage (async)
-GET  /api/get-usage-summary           # Aggregated billing
-GET  /api/get-usage-records           # Detailed usage log
+GET  /v1/iam/get-user?accessKey=hk-...   # Resolve API key to user
+POST /v1/iam/add-usage-record            # Record usage (async)
+GET  /v1/iam/get-usage-summary           # Aggregated billing
+GET  /v1/iam/get-usage-records           # Detailed usage log
 ```
 
 ## Authentication
@@ -58,13 +58,13 @@ ZAP supports three auth modes via `Authorization: Bearer <token>`:
 
 ```
 1. Client sends: Authorization: Bearer hk-abc123...
-2. Gateway calls: IAM GET /api/get-user?accessKey=hk-abc123
+2. Gateway calls: IAM GET /v1/iam/get-user?accessKey=hk-abc123
 3. IAM returns: { user, organization, balance }
 4. Gateway checks: balance > 0 (if premium model)
 5. Gateway routes: model → provider via static map
 6. Gateway resolves: provider API key via KMS
 7. Gateway proxies: request to upstream with translated model name
-8. Gateway records: usage async to IAM POST /api/add-usage-record
+8. Gateway records: usage async to IAM POST /v1/iam/add-usage-record
 ```
 
 ## Model Routing
