@@ -22,16 +22,20 @@ import (
 
 var installFiltersOnce sync.Once
 
-// InstallFilters inserts the request filter chain on App in order: fourteen
-// BeforeRouter filters (the /v1/cloud and /v1/iam rewrites, then CORS, the
-// traffic tap, security headers, rate limit, auto-signin, the balance gate,
-// static, tenant, authz, prometheus and message recording) and two AfterExec
-// filters (message recording and the secure-cookie writer). It is idempotent,
-// so the runtime and the route tests share one wiring.
+// InstallFilters inserts the request filter chain on App in order: twelve
+// BeforeRouter filters (CORS, the traffic tap, security headers, rate limit,
+// auto-signin, the balance gate, static, tenant, authz, prometheus and message
+// recording) and two AfterExec filters (message recording and the secure-cookie
+// writer). It is idempotent, so the runtime and the route tests share one wiring.
+//
+// There are no path-rewriting filters here any more. Two used to lead the chain:
+// /v1/cloud/* → /v1/* rewrote EVERY route into a second address, and /v1/iam/*
+// did the same for the four account endpoints. Between them a single endpoint
+// answered at three URLs, each one a place a policy could be applied
+// inconsistently. Resources now live at exactly one address, generated from the
+// table in resources.go — so there is nothing left to rewrite.
 func InstallFilters() {
 	installFiltersOnce.Do(func() {
-		App.InsertFilter("/v1/cloud/*", web.BeforeRouter, V1CloudRewriteFilter)
-		App.InsertFilter("/v1/iam/*", web.BeforeRouter, V1IamRewriteFilter)
 		App.InsertFilter("*", web.BeforeRouter, CorsFilter)
 		// Live request-geo tap: folds each inbound /v1 API hit into the
 		// in-process traffic aggregate (edge country/region + service class
