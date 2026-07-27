@@ -12,7 +12,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package object
+package cluster
 
 import (
 	"context"
@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/hanzoai/ai/i18n"
+	"github.com/hanzoai/ai/object"
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
@@ -29,23 +30,23 @@ import (
 	metricsclientset "k8s.io/metrics/pkg/client/clientset/versioned"
 )
 
-func AddDetails(apps []*Application, lang string) {
+func Describe(apps []*object.Application, lang string) {
 	if len(apps) == 0 {
 		return
 	}
-	if ensureK8sClient(lang) != nil {
+	if ensure(lang) != nil {
 		return
 	}
 	var wg sync.WaitGroup
 	for _, app := range apps {
 		wg.Add(1)
-		go func(app *Application) {
+		go func(app *object.Application) {
 			defer wg.Done()
-			if details, err := GetApplicationView(app.Namespace, lang); err == nil {
+			if details, err := View(app.Namespace, lang); err == nil {
 				app.Status = details.Status
 				app.Details = details
 				if app.URL == "" {
-					if url, err := GetURL(app.Namespace, lang); err == nil && url != "" {
+					if url, err := URL(app.Namespace, lang); err == nil && url != "" {
 						app.URL = url
 					}
 				}
@@ -55,8 +56,8 @@ func AddDetails(apps []*Application, lang string) {
 	wg.Wait()
 }
 
-// GetURL retrieves the access URL for an application
-func GetURL(namespace string, lang string) (string, error) {
+// URL retrieves the access URL for an application
+func URL(namespace string, lang string) (string, error) {
 	nodeIPs := getNodeIPsFromCache()
 	services := getServicesFromCache(namespace, nodeIPs)
 	// Find first available access URL from services
@@ -160,7 +161,7 @@ func formatMemoryUsage(quantity resource.Quantity) string {
 	}
 }
 
-func calculateNamespaceMetrics(ctx context.Context, metricsClient *metricsclientset.Clientset, namespace string, deployCache map[string]map[string]*appsv1.Deployment, mu *sync.RWMutex, lang string) (*CachedMetrics, error) {
+func calculateNamespaceMetrics(ctx context.Context, metricsClient *metricsclientset.Clientset, namespace string, deployCache map[string]map[string]*appsv1.Deployment, mu *sync.RWMutex, lang string) (*cachedMetrics, error) {
 	if metricsClient == nil {
 		return nil, fmt.Errorf("%s", i18n.Translate(lang, "object:metrics client not available"))
 	}
@@ -217,7 +218,7 @@ func calculateNamespaceMetrics(ctx context.Context, metricsClient *metricsclient
 		}
 		mu.RUnlock()
 	}
-	return &CachedMetrics{
+	return &cachedMetrics{
 		TotalCPU:         *totalCPU,
 		TotalMemory:      *totalMemory,
 		PodCount:         len(podMetricsList.Items),
