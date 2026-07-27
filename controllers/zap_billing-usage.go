@@ -51,6 +51,7 @@ import (
 
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
+	"github.com/hanzoai/types"
 )
 
 // registerZapBillingUsage wires this group's gateway routes into the shared
@@ -207,7 +208,7 @@ func zapGetCloudUsagesHandler(ctx context.Context, _, _, query, auth string, _ [
 	org, allOrgs := zapResolveCloudUsageScope(user, usageTokenOwnBrand(auth), query)
 
 	q, _ := url.ParseQuery(query)
-	start, end, interval, err := object.ResolveCloudUsageWindow(
+	w, err := types.ParseWindow(
 		q.Get("range"), q.Get("start"), q.Get("end"), time.Now(),
 	)
 	if err != nil {
@@ -216,9 +217,9 @@ func zapGetCloudUsagesHandler(ctx context.Context, _, _, query, auth string, _ [
 
 	params := object.CloudUsageParams{
 		RangeLabel:     cloudUsageRangeLabel(q.Get("range")),
-		Start:          start,
-		End:            end,
-		Interval:       interval,
+		Start:          w.Start,
+		End:            w.End,
+		Interval:       w.Interval,
 		Org:            org,
 		AllOrgs:        allOrgs,
 		TopModels:      cloudUsageIntParam(q.Get("topModels"), 6, 1, 50),
