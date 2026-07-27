@@ -157,7 +157,11 @@ var resources = []resource{
 	{ns: "rag", path: "files", one: "File", readMethod: "GetFileMy", global: true, actions: []action{
 		{name: "vectors", method: "RefreshFileVectors"},
 		{name: "upload", method: "UploadFile", collection: true},
-		{name: "activate", method: "ActivateFile"},
+		// activate/active are a FILE CACHE (controllers/file_cache.go), keyed by
+		// key+filename and prefix — not by a file's (owner, name). They take no id,
+		// so they are collection actions; as member actions their route could never
+		// match, because no caller has an id to put in it.
+		{name: "activate", method: "ActivateFile", collection: true},
 		{name: "active", method: "GetActiveFile", verb: "GET", collection: true},
 	}},
 	{ns: "rag", path: "tree-files", one: "TreeFile", noList: true, noRead: true},
