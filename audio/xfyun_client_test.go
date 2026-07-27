@@ -13,7 +13,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !skipCi
+// These are operator SCRIPTS, not tests: they assert nothing, print results
+// with fmt.Printf, panic instead of failing, and need a populated database,
+// live provider credentials or local fixture files this repository does not
+// contain. Run one deliberately:
+//
+//	go test -tags ai_scripts ./<pkg>/ -run TestName -v
+//
+// Behind a tag because a panicking test aborts the whole test binary, so one
+// missing fixture took every real test in the package down with it. Several
+// also WRITE to whatever database they find, which `go test ./...` must not.
+//go:build !skipCi && ai_scripts
 
 package audio
 

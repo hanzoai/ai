@@ -17,6 +17,7 @@ package video
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"time"
 
@@ -25,14 +26,32 @@ import (
 	"github.com/hanzoai/ai/util"
 )
 
+// errNoVodClient is returned instead of dereferencing a nil VodClient.
+//
+// VodClient is package-level and stays nil until SetVodClient runs, so on any
+// deployment where the Aliyun VOD provider is not configured, every function
+// below called straight through nil and panicked. These run inside request
+// handlers, so an unconfigured optional provider took the whole process down —
+// and the trigger could be as ordinary as a video record with no id.
+//
+// One check, named once, used by all four entry points.
+var errNoVodClient = errors.New("video: VOD client not configured (SetVodClient was never called)")
+
 func GetVideoPlayAuth(videoId string) (string, error) {
 	request := &vod20170321.GetVideoPlayAuthRequest{
 		VideoId: tea.String(videoId),
 	}
 
+	if VodClient == nil {
+		return "", errNoVodClient
+	}
+
 	resp, err := VodClient.GetVideoPlayAuth(request)
 	if err != nil {
 		return "", err
+	}
+	if resp == nil || resp.Body == nil {
+		return "", errNoVodClient
 	}
 
 	playAuth := tea.StringValue(resp.Body.PlayAuth)
@@ -61,6 +80,10 @@ func UploadVideo(fileId string, filename string, fileBuffer *bytes.Buffer) (stri
 		FileName: tea.String(filename),
 		Title:    tea.String(fileId),
 	}
+	if VodClient == nil {
+		return "", errNoVodClient
+	}
+
 	resp, err := VodClient.CreateUploadVideo(request)
 	if err != nil {
 		return "", nil
@@ -103,10 +126,19 @@ func GetVideoCoverUrl(videoId string) string {
 		VideoId: tea.String(videoId),
 	}
 
+	if VodClient == nil {
+		return errNoVodClient.Error()
+	}
+
 	resp, err := VodClient.GetVideoInfo(request)
 	if err != nil {
 		fmt.Println(err)
 		return err.Error()
+	}
+	// resp.Body.Video is three dereferences on a response we do not control;
+	// a nil anywhere in that chain is a panic, not a missing cover image.
+	if resp == nil || resp.Body == nil || resp.Body.Video == nil {
+		return ""
 	}
 
 	return tea.StringValue(resp.Body.Video.CoverURL)
@@ -117,10 +149,17 @@ func GetVideoFileUrl(videoId string) string {
 		VideoId: tea.String(videoId),
 	}
 
+	if VodClient == nil {
+		return errNoVodClient.Error()
+	}
+
 	resp, err := VodClient.GetMezzanineInfo(request)
 	if err != nil {
 		fmt.Println(err)
 		return err.Error()
+	}
+	if resp == nil || resp.Body == nil || resp.Body.Mezzanine == nil {
+		return ""
 	}
 
 	downloadUrl := tea.StringValue(resp.Body.Mezzanine.FileURL)
