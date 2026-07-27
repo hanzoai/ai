@@ -162,8 +162,26 @@ func (p *Router) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		http.NotFound(ctx.ResponseWriter, r)
 		return
 	}
-	for k, v := range params {
-		ctx.Input.SetParam(k, v)
+	// A route parameter is readable through EVERY accessor, not just Input.Param.
+	// Handlers overwhelmingly read identifiers as `c.Input().Get("id")`, which is
+	// Request.Form — so a `:id` captured from the path must land there too, or a
+	// REST route silently hands the handler an empty id while the same handler
+	// works fine when the id arrives as ?id=. Merging here, in the ONE place route
+	// params are bound, is what lets a resource live at /v1/iam/users/:id without
+	// every handler learning a second way to read its own id.
+	//
+	// ParseForm first (it would otherwise overwrite this), and only fill keys the
+	// request did not already carry, so an explicit query value still wins.
+	if len(params) > 0 {
+		if r.Form == nil {
+			r.ParseForm()
+		}
+		for k, v := range params {
+			ctx.Input.SetParam(k, v)
+			if r.Form != nil && r.Form.Get(k) == "" {
+				r.Form.Set(k, v)
+			}
+		}
 	}
 
 	handler, ok := rt.methods[strings.ToUpper(r.Method)]
@@ -231,29 +249,54 @@ func (p *Router) dispatch(ctx *Context, rt *route, handler string) {
 	execController.Finish()
 }
 
-// match finds the first route whose segments match the path and returns its
-// captured route parameters.
+// match finds the route that best matches the path and returns its captured
+// route parameters.
+//
+// "Best" is the MOST SPECIFIC match — the one with the fewest parameter
+// segments — not the first one registered. Both /v1/rag/stores/:id and
+// /v1/rag/stores/names match "/v1/rag/stores/names"; the literal is what the
+// author meant, and it wins here no matter which was registered first.
+//
+// This is deliberate. First-match-wins makes routing depend on registration
+// ORDER, so adding a resource can silently swallow an existing sibling route
+// with no error anywhere — the shadowed endpoint simply starts answering with
+// the wrong handler, and its id parameter quietly becomes the literal segment.
+// Specificity ordering makes that class of bug impossible to introduce, which
+// matters most for the generated resource surface (see routers/resources.go),
+// where routes are emitted by a loop and nobody is choosing their order.
 func (p *Router) match(urlPath string) (*route, map[string]string, bool) {
 	segs := splitPath(urlPath)
+	var (
+		best       *route
+		bestParams map[string]string
+		bestScore  = -1
+	)
 	for _, rt := range p.routes {
 		if len(rt.segments) != len(segs) {
 			continue
 		}
 		params := map[string]string{}
 		ok := true
+		// score = count of literal segments; higher is more specific.
+		score := 0
 		for i, seg := range rt.segments {
 			if strings.HasPrefix(seg, ":") {
 				params[seg[1:]] = segs[i]
 			} else if seg != segs[i] {
 				ok = false
 				break
+			} else {
+				score++
 			}
 		}
-		if ok {
-			return rt, params, true
+		if ok && score > bestScore {
+			best, bestParams, bestScore = rt, params, score
 		}
 	}
-	return nil, nil, false
+	if best == nil {
+		return nil, nil, false
+	}
+	return best, bestParams, true
 }
 
 // splitPath cleans a URL path (resolving "", ".", ".." and empty segments the

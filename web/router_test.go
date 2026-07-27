@@ -352,3 +352,41 @@ func TestNoSessionManagerLeavesStoreNil(t *testing.T) {
 		t.Fatalf("no session manager must yield empty session read; got %q", rec.Body.String())
 	}
 }
+
+// TestMatchPrefersLiteralOverParam pins the specificity rule. Both
+// /v1/rag/stores/:id and /v1/rag/stores/names match "/v1/rag/stores/names"; the
+// literal must win REGARDLESS of registration order, or adding a resource can
+// silently swallow a sibling route and start answering with the wrong handler.
+func TestMatchPrefersLiteralOverParam(t *testing.T) {
+	// Both orders, because order-independence is the whole property.
+	for _, paramFirst := range []bool{true, false} {
+		r := NewRouter()
+		reg := func(p string) { r.Router(p, &probeController{}, "GET:Get") }
+		if paramFirst {
+			reg("/v1/rag/stores/:id")
+			reg("/v1/rag/stores/names")
+		} else {
+			reg("/v1/rag/stores/names")
+			reg("/v1/rag/stores/:id")
+		}
+
+		rt, params, ok := r.match("/v1/rag/stores/names")
+		if !ok {
+			t.Fatalf("paramFirst=%v: no match for the literal path", paramFirst)
+		}
+		if len(params) != 0 {
+			t.Errorf("paramFirst=%v: literal route matched but captured params %v — the param route won",
+				paramFirst, params)
+		}
+		if got := strings.Join(rt.segments, "/"); got != "v1/rag/stores/names" {
+			t.Errorf("paramFirst=%v: matched %q, want the literal route", paramFirst, got)
+		}
+
+		// A real id still reaches the param route and is captured.
+		rt, params, ok = r.match("/v1/rag/stores/abc123")
+		if !ok || strings.Join(rt.segments, "/") != "v1/rag/stores/:id" || params["id"] != "abc123" {
+			t.Errorf("paramFirst=%v: id path matched %v (params %v), want the :id route with id=abc123",
+				paramFirst, ok, params)
+		}
+	}
+}
