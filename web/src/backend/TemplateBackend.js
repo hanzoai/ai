@@ -16,7 +16,7 @@
 import * as Setting from "../Setting";
 
 export function getTemplates(owner, page = "", pageSize = "", field = "", value = "", sortField = "", sortOrder = "") {
-  return fetch(`${Setting.ServerUrl}/v1/get-templates?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
+  return fetch(`${Setting.ServerUrl}/v1/content/templates?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -26,7 +26,7 @@ export function getTemplates(owner, page = "", pageSize = "", field = "", value 
 }
 
 export function getTemplate(owner, name) {
-  return fetch(`${Setting.ServerUrl}/v1/get-template?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/content/templates/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -37,8 +37,8 @@ export function getTemplate(owner, name) {
 
 export function updateTemplate(owner, name, template) {
   const newTemplate = Setting.deepCopy(template);
-  return fetch(`${Setting.ServerUrl}/v1/update-template?id=${owner}/${encodeURIComponent(name)}`, {
-    method: "POST",
+  return fetch(`${Setting.ServerUrl}/v1/content/templates/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`, {
+    method: "PATCH",
     credentials: "include",
     headers: {
       "Accept-Language": Setting.getAcceptLanguage(),
@@ -49,7 +49,7 @@ export function updateTemplate(owner, name, template) {
 
 export function addTemplate(template) {
   const newTemplate = Setting.deepCopy(template);
-  return fetch(`${Setting.ServerUrl}/v1/add-template`, {
+  return fetch(`${Setting.ServerUrl}/v1/content/templates`, {
     method: "POST",
     credentials: "include",
     headers: {
@@ -61,8 +61,8 @@ export function addTemplate(template) {
 
 export function deleteTemplate(template) {
   const newTemplate = Setting.deepCopy(template);
-  return fetch(`${Setting.ServerUrl}/v1/delete-template`, {
-    method: "POST",
+  return fetch(`${Setting.ServerUrl}/v1/content/templates/${encodeURIComponent(template.owner)}/${encodeURIComponent(template.name)}`, {
+    method: "DELETE",
     credentials: "include",
     headers: {
       "Accept-Language": Setting.getAcceptLanguage(),
@@ -72,7 +72,7 @@ export function deleteTemplate(template) {
 }
 
 export function getK8sStatus() {
-  return fetch(`${Setting.ServerUrl}/v1/get-k8s-status`, {
+  return fetch(`${Setting.ServerUrl}/v1/compute/k8s`, {
     method: "GET",
     credentials: "include",
     headers: {

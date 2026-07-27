@@ -16,14 +16,14 @@
 import * as Setting from "../Setting";
 
 export function getNodes(page = "", pageSize = "", field = "", value = "", sortField = "", sortOrder = "") {
-  return fetch(`${Setting.ServerUrl}/v1/get-nodes?p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
+  return fetch(`${Setting.ServerUrl}/v1/compute/nodes?p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
     method: "GET",
     credentials: "include",
   }).then(res => res.json());
 }
 
 export function getNode(owner, name) {
-  return fetch(`${Setting.ServerUrl}/v1/get-node?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/compute/nodes/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`, {
     method: "GET",
     credentials: "include",
   }).then(res => res.json());
@@ -32,8 +32,8 @@ export function getNode(owner, name) {
 export function updateNode(owner, name, node) {
   const newNode = Setting.deepCopy(node);
   newNode.remotePort = parseInt(newNode.remotePort, 10);
-  return fetch(`${Setting.ServerUrl}/v1/update-node?id=${owner}/${encodeURIComponent(name)}`, {
-    method: "POST",
+  return fetch(`${Setting.ServerUrl}/v1/compute/nodes/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`, {
+    method: "PATCH",
     credentials: "include",
     body: JSON.stringify(newNode),
   }).then(res => res.json());
@@ -41,7 +41,7 @@ export function updateNode(owner, name, node) {
 
 export function addNode(node) {
   const newNode = Setting.deepCopy(node);
-  return fetch(`${Setting.ServerUrl}/v1/add-node`, {
+  return fetch(`${Setting.ServerUrl}/v1/compute/nodes`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newNode),
@@ -50,8 +50,8 @@ export function addNode(node) {
 
 export function deleteNode(node) {
   const newNode = Setting.deepCopy(node);
-  return fetch(`${Setting.ServerUrl}/v1/delete-node`, {
-    method: "POST",
+  return fetch(`${Setting.ServerUrl}/v1/compute/nodes/${encodeURIComponent(node.owner)}/${encodeURIComponent(node.name)}`, {
+    method: "DELETE",
     credentials: "include",
     body: JSON.stringify(newNode),
   }).then(res => res.json());
