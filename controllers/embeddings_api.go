@@ -103,14 +103,15 @@ func (c *ApiController) Embeddings() {
 	if fam := familyForProviderType(provider.Type); fam != nil {
 		var hold *budgetHold
 		if authUser != nil {
-			subject := account.Payer(account.Credential{Owner: authUser.Owner, Name: authUser.Name}).Subject()
+			ledger := c.billingOrg(authUser)
+			subject := account.Payer(account.Credential{Owner: ledger, Name: authUser.Name}).Subject()
 			est := int64(1)
 			if zm, ok := fam.lookup(head.Model); ok {
 				est = zm.costCents(coarseTokenEstimate(c.Ctx.Input.RequestBody), 0)
 			}
 			var ok2 bool
 			if hold, ok2 = reserveBudget(subject, est); !ok2 {
-				c.ResponseAuthError(billingError("%s", object.InsufficientBalance(authUser.Owner, "cost").Message))
+				c.ResponseAuthError(billingError("%s", object.InsufficientBalance(ledger, "cost").Message))
 				return
 			}
 		}
@@ -254,7 +255,7 @@ func (c *ApiController) Rerank() {
 
 	if authUser != nil {
 		rec := &usageRecord{
-			Owner:        authUser.Owner,
+			Owner:        c.billingOrg(authUser),
 			User:         authUser.Owner + "/" + authUser.Name,
 			Organization: authUser.Owner,
 			Model:        raw.Model,
@@ -342,7 +343,7 @@ func (c *ApiController) proxyJSON(provider *object.Provider, apiPath string, bod
 	if err != nil {
 		if authUser != nil {
 			errRecord := &usageRecord{
-				Owner:     authUser.Owner,
+				Owner:     c.billingOrg(authUser),
 				User:      authUser.Owner + "/" + authUser.Name,
 				Model:     userModel,
 				Provider:  provider.Name,
@@ -381,7 +382,7 @@ func (c *ApiController) proxyJSON(provider *object.Provider, apiPath string, bod
 			status = "error"
 		}
 		rec := &usageRecord{
-			Owner:        authUser.Owner,
+			Owner:        c.billingOrg(authUser),
 			User:         authUser.Owner + "/" + authUser.Name,
 			Organization: authUser.Owner,
 			Model:        userModel,

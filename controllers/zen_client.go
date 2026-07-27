@@ -899,7 +899,7 @@ func (c *ApiController) recordFamilyUsage(fam *modelFamily, model string, authUs
 		return cents
 	}
 	rec := &usageRecord{
-		Owner: authUser.Owner, User: authUser.Owner + "/" + authUser.Name, Organization: authUser.Owner,
+		Owner: c.billingOrg(authUser), User: authUser.Owner + "/" + authUser.Name, Organization: authUser.Owner,
 		Model: model, Provider: fam.name,
 		PromptTokens: prompt, CompletionTokens: completion, TotalTokens: prompt + completion,
 		Cost: float64(cents) / 100.0, Currency: "USD",
