@@ -888,6 +888,8 @@ github.com/hanzoai/sqlite v0.3.2/go.mod h1:a3llsefKbu2Iq/0rJ1mlWCaU2t2cXh+aze85x
 github.com/hanzoai/tasks v1.51.4 h1:qMx80ZfiJPQIDd9lpxxJhDywKYnHOmKxL2IfhZfExgk=
 github.com/hanzoai/tasks v1.51.4/go.mod h1:+Oqq+L3nY4uKeLyPanimlbcym/HoIUDaBezgIs6v4Hk=
 github.com/hanzoai/thinking v0.1.1/go.mod h1:2lkNDDi+7mAipRhZZ57uqoqrzLKGBdoU5Rb6fGSOoR4=
+github.com/hanzoai/types v0.1.0 h1:hxPueqy2QnVF3CbvAZ9CJE26pibT/Cb8ZYPhH/CNPwA=
+github.com/hanzoai/types v0.1.0/go.mod h1:3SEt7J/c5X3C/Uv9n9a+/U9+FGkMQwDSiHwENPFxQW4=
 github.com/hanzoai/vfs v0.6.6 h1:+4qrHjDOIqgUN1wryU9b5xphDKzTVyBa4CEwbhFSlYw=
 github.com/hanzoai/vfs v0.6.6/go.mod h1:OiiFWLgrTCMAJimUEgoSy1b/qXHpN34PN3RQwE49e1U=
 github.com/hanzoai/xorm v1.4.4 h1:2VRwh5BtOgbED+CAzHQ47sPZBgljBlKnJw1Ar6V6il0=
