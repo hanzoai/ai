@@ -39,6 +39,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/hanzoai/types"
 )
 
 // cloudUsageTableDDL is the ONE definition of the hanzo.cloud_usage schema.
@@ -130,18 +132,18 @@ func EnsureCloudUsageTable(ctx context.Context) error {
 // CloudUsageParams is the resolved, already-authorized query for one Overview.
 // The controller fills Org/AllOrgs from the session (a tenant is pinned to its
 // own org; a super admin may target one org or omit for all orgs). Start/End/
-// Interval come from ResolveCloudUsageWindow. The only field that reaches SQL
-// un-parameterized is Interval, a closed server-chosen enum ("hour"|"day");
-// Org is always passed as a bound parameter.
+// Interval come from types.ParseWindow. The only field that reaches SQL
+// un-parameterized is Interval, whose type admits only "hour" or "day"; Org is
+// always passed as a bound parameter.
 type CloudUsageParams struct {
 	RangeLabel     string // echoed back ("24h"|"7d"|"30d"|"custom")
 	Start          time.Time
 	End            time.Time
-	Interval       string // "hour" | "day" — time-series bucket width
-	Org            string // organization slug; ignored when AllOrgs is true
-	AllOrgs        bool   // super-admin all-orgs view (no organization filter)
-	TopModels      int    // spend-by-model: keep top N, fold the rest into "other"
-	ActivityType   string // "all" | "inference" (others → honest-empty feed)
+	Interval       types.Interval // time-series bucket width
+	Org            string         // organization slug; ignored when AllOrgs is true
+	AllOrgs        bool           // super-admin all-orgs view (no organization filter)
+	TopModels      int            // spend-by-model: keep top N, fold the rest into "other"
+	ActivityType   string         // "all" | "inference" (others → honest-empty feed)
 	ActivityLimit  int
 	ActivityOffset int
 }
@@ -241,58 +243,6 @@ type CloudUsageOverview struct {
 	Activity CloudUsageActivity         `json:"activity"`
 }
 
-// ── Window resolution (pure) ──────────────────────────────────────────────────
-
-// ResolveCloudUsageWindow maps a range label (plus optional custom start/end)
-// to an absolute [start, end) window and a bucket interval. Pure: `now` is
-// injected so the test is deterministic.
-func ResolveCloudUsageWindow(rangeLabel, startStr, endStr string, now time.Time) (start, end time.Time, interval string, err error) {
-	now = now.UTC()
-	switch strings.ToLower(strings.TrimSpace(rangeLabel)) {
-	case "", "24h", "1d", "day", "today":
-		return now.Add(-24 * time.Hour), now, "hour", nil
-	case "7d", "week":
-		return now.Add(-7 * 24 * time.Hour), now, "day", nil
-	case "30d", "month":
-		return now.Add(-30 * 24 * time.Hour), now, "day", nil
-	case "custom":
-		start, err = parseCloudUsageTimeParam(startStr)
-		if err != nil {
-			return time.Time{}, time.Time{}, "", fmt.Errorf("custom range requires a valid start: %w", err)
-		}
-		if strings.TrimSpace(endStr) == "" {
-			end = now
-		} else if end, err = parseCloudUsageTimeParam(endStr); err != nil {
-			return time.Time{}, time.Time{}, "", fmt.Errorf("custom range has an invalid end: %w", err)
-		}
-		if !end.After(start) {
-			return time.Time{}, time.Time{}, "", fmt.Errorf("custom range end must be after start")
-		}
-		interval = "hour"
-		if end.Sub(start) > 48*time.Hour {
-			interval = "day"
-		}
-		return start.UTC(), end.UTC(), interval, nil
-	default:
-		return time.Time{}, time.Time{}, "", fmt.Errorf("unknown range %q", rangeLabel)
-	}
-}
-
-// parseCloudUsageTimeParam accepts RFC3339 or a unix-seconds string.
-func parseCloudUsageTimeParam(s string) (time.Time, error) {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return time.Time{}, fmt.Errorf("empty time")
-	}
-	if t, err := time.Parse(time.RFC3339, s); err == nil {
-		return t.UTC(), nil
-	}
-	if secs, err := strconv.ParseInt(s, 10, 64); err == nil && secs > 0 {
-		return time.Unix(secs, 0).UTC(), nil
-	}
-	return time.Time{}, fmt.Errorf("not RFC3339 or unix seconds: %q", s)
-}
-
 // ── Live orchestration ────────────────────────────────────────────────────────
 
 const cloudUsageTotalsSelect = "SELECT count() AS requests, sum(total_tokens) AS tokens, " +
@@ -324,8 +274,10 @@ func GetCloudUsageOverview(ctx context.Context, p CloudUsageParams) (*CloudUsage
 		return nil, fmt.Errorf("usage prior totals: %w", err)
 	}
 
+	// Interval admits only Hour or Day, so the bucket function this interpolates
+	// cannot be widened by a request.
 	bucketFn := "Hour"
-	if p.Interval == "day" {
+	if p.Interval == types.Day {
 		bucketFn = "Day"
 	}
 	seriesSQL := fmt.Sprintf("SELECT toStartOf%s(timestamp, 'UTC') AS bucket, sum(total_tokens) AS tokens, "+
@@ -437,7 +389,7 @@ func buildCloudUsageOverview(
 		Range:    p.RangeLabel,
 		Start:    p.Start.UTC().Format(time.RFC3339),
 		End:      p.End.UTC().Format(time.RFC3339),
-		Interval: p.Interval,
+		Interval: string(p.Interval),
 		Scope:    scope,
 		Totals:   totals,
 		Deltas: map[string]CloudUsageDelta{
@@ -479,8 +431,8 @@ func cloudUsageDelta(current, prior int64) CloudUsageDelta {
 // gap-filled series so the client charts a continuous line. Bucket alignment
 // matches toStartOf{Hour,Day}(…, 'UTC'): Go's Truncate over the chosen step
 // lands on the same UTC boundaries.
-func buildCloudUsageSeries(start, end time.Time, interval string, rows []map[string]interface{}) []CloudUsageSeriesPoint {
-	step := cloudUsageStep(interval)
+func buildCloudUsageSeries(start, end time.Time, interval types.Interval, rows []map[string]interface{}) []CloudUsageSeriesPoint {
+	step := interval.Step()
 
 	type agg struct{ tokens, spend, requests, models int64 }
 	idx := make(map[int64]agg, len(rows))
@@ -506,13 +458,6 @@ func buildCloudUsageSeries(start, end time.Time, interval string, rows []map[str
 		})
 	}
 	return out
-}
-
-func cloudUsageStep(interval string) time.Duration {
-	if strings.EqualFold(interval, "day") {
-		return 24 * time.Hour
-	}
-	return time.Hour
 }
 
 // foldCloudUsageModels keeps the top-N models by spend and folds the rest into a
