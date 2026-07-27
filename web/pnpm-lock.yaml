@@ -36,8 +36,8 @@ importers:
         specifier: ^3.2.2
         version: 3.2.2(react@18.3.1)
       '@hanzo/event':
-        specifier: ^0.3.1
-        version: 0.3.1(react@18.3.1)
+        specifier: ^0.3.3
+        version: 0.3.3(react@18.3.1)
       '@hanzo/iam-js-sdk':
         specifier: ^0.19.1
         version: 0.19.1
@@ -1361,8 +1361,8 @@ packages:
     resolution: {integrity: sha512-XXrH9Uarn0stsyldqDYq8r++mROmWRI1xKMXa640Bb//SY1+ECYX6VzT6Lcx5frD0V30XieqJ0oX9I2Xj5aoMA==}
     engines: {node: ^12.22.0 || ^14.17.0 || >=16.0.0}
 
-  '@hanzo/event@0.3.1':
-    resolution: {integrity: sha512-FAA6C/+hP8woUdle9VxRZXreCpCa+K1zlZAVOT8HTYHu6QH37LJIG2KS5NXutx80haSwNPGooJJlZRvx9x07ug==}
+  '@hanzo/event@0.3.3':
+    resolution: {integrity: sha512-faooSLA2UR4N8B0hOcSuQk3yi48Dahp5IMTrQn/WdKQc4JkKGx0lmdASp7os80ita48VQUNheqF6lpdXIj6ZYQ==}
     peerDependencies:
       react: ^18.0.0 || ^19.0.0
     peerDependenciesMeta:
@@ -7887,7 +7887,7 @@ packages:
     resolution: {integrity: sha512-RVZSIV5IG10Hk3enotrhvz0T9em6cyHBLkH/YAZuKqd8hRkKhSfCGIcP2KUY0EPxndzANBmNllzWPwak+bheSw==}
 
   three-bmfont-text@https://codeload.github.com/dmarcos/three-bmfont-text/tar.gz/eed4878795be9b3e38cf6aec6b903f56acd1f695:
-    resolution: {tarball: https://codeload.github.com/dmarcos/three-bmfont-text/tar.gz/eed4878795be9b3e38cf6aec6b903f56acd1f695}
+    resolution: {gitHosted: true, integrity: sha512-iYdv5kZmgr+mugaLGsTV28QDwh31DWgalwL/U/ZX68ZLL27jXIiqKzbJ4Y6HEQLc/bqPQHE62eHqu3R0+Ioc4g==, tarball: https://codeload.github.com/dmarcos/three-bmfont-text/tar.gz/eed4878795be9b3e38cf6aec6b903f56acd1f695}
     version: 3.0.0
 
   three-forcegraph@1.43.1:
@@ -10138,7 +10138,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@hanzo/event@0.3.1(react@18.3.1)':
+  '@hanzo/event@0.3.3(react@18.3.1)':
     optionalDependencies:
       react: 18.3.1
 
