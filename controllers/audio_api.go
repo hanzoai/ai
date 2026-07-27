@@ -154,7 +154,7 @@ func (c *ApiController) recordAudioUsage(authUser *iam.User, provider *object.Pr
 		return
 	}
 	rec := &usageRecord{
-		Owner:        authUser.Owner,
+		Owner:        c.billingOrg(authUser),
 		User:         authUser.Owner + "/" + authUser.Name,
 		Organization: authUser.Owner,
 		Model:        userModel,
