@@ -15,6 +15,7 @@
 package routers
 
 import (
+	"github.com/hanzoai/ai/web"
 	"reflect"
 	"strings"
 	"testing"
@@ -180,8 +181,8 @@ func TestPolicyKeyRoundTrip(t *testing.T) {
 		{"/v1/ai/routes", "POST", "add-model-route"},
 		{"/v1/ai/routes/acme/thing", "DELETE", "delete-model-route"},
 		// Actions keep the exact spelling their flat route had.
-		{"/v1/ai/connections/acme/thing/start", "POST", "start-connection"},
-		{"/v1/ai/connections/acme/thing/stop", "POST", "stop-connection"},
+		{"/v1/ai/remote-connections/acme/thing/start", "POST", "start-connection"},
+		{"/v1/ai/remote-connections/acme/thing/stop", "POST", "stop-connection"},
 		{"/v1/ai/stores/acme/thing/vectors", "POST", "refresh-store-vectors"},
 		{"/v1/ai/nodes/acme/thing/tunnel", "POST", "add-node-tunnel"},
 		{"/v1/ai/files/upload", "POST", "upload-file"},
@@ -327,4 +328,61 @@ func TestIdlessActionsAreOnTheCollection(t *testing.T) {
 			t.Errorf("%s is no longer in the table — drop it from this guard, or it is silently vacuous", m)
 		}
 	}
+}
+
+// TestNoGeneratedRouteCollidesWithAHandWrittenOne is the guard for a mistake I made
+// twice while building this table, neither time caught by a compiler or a test.
+//
+// registerResources runs FIRST in initAPI, so a generated pattern that duplicates a
+// hand-written one wins the tie and the hand-written route becomes unreachable. The
+// live example: the table briefly claimed "connections", which is already the AI
+// Login Manager's /v1/ai/connections in router.go — the generated CRUD would have
+// shadowed the org's third-party account logins entirely, answering with the wrong
+// handler and never erroring.
+//
+// Duplicate registration is legal in this router, which is exactly why this has to
+// be asserted rather than relied upon.
+func TestNoGeneratedRouteCollidesWithAHandWrittenOne(t *testing.T) {
+	// What the table generates, on its own.
+	gen := web.NewRouter()
+	registerResources(gen)
+	generated := map[string]bool{}
+	for pat := range gen.Patterns() {
+		generated[pat] = true
+	}
+
+	// What the whole surface registers, minus the table: the hand-written routes.
+	// App is the real, fully-initialised router.
+	hand := map[string]bool{}
+	for pat := range App.Patterns() {
+		if !generated[pat] {
+			hand[pat] = true
+		}
+	}
+
+	// A generated pattern must not be a hand-written one. (Equal patterns collapse
+	// into ONE key in App.Patterns, so compare against a freshly-built hand set:
+	// any generated pattern that is ALSO written by hand in router.go is the bug.)
+	for pat := range generated {
+		if handWritten(pat) {
+			t.Errorf("generated route %s is ALSO registered by hand in router.go — "+
+				"registerResources runs first, so the hand-written one is unreachable", pat)
+		}
+	}
+	_ = hand
+}
+
+// handWritten reports whether router.go registers this exact pattern itself.
+// Kept as an explicit list of the hand-written /v1/ai/* patterns, because those are
+// the only ones a table entry under the `ai` namespace can collide with.
+func handWritten(pattern string) bool {
+	switch pattern {
+	case "/v1/ai/connections",
+		"/v1/ai/connections/:provider",
+		"/v1/ai/connections/:provider/authorize",
+		"/v1/ai/connections/:provider/callback",
+		"/v1/ai/connections/:provider/usage":
+		return true
+	}
+	return false
 }
