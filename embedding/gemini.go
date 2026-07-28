@@ -18,8 +18,8 @@ package embedding
 import (
 	"context"
 
+	"github.com/hanzoai/ai/internal/gemini"
 	"github.com/hanzoai/ai/proxy"
-	"google.golang.org/genai"
 )
 
 type GeminiEmbeddingProvider struct {
@@ -55,22 +55,8 @@ func (p *GeminiEmbeddingProvider) calculatePrice(res *EmbeddingResult) error {
 }
 
 func (p *GeminiEmbeddingProvider) QueryVector(text string, ctx context.Context, lang string) ([]float32, *EmbeddingResult, error) {
-	// Access your API key as an environment variable (see "Set up your API key" above)
-	client, err := genai.NewClient(ctx, &genai.ClientConfig{
-		APIKey:     p.secretKey,
-		Backend:    genai.BackendGeminiAPI,
-		HTTPClient: proxy.ProxyHttpClient,
-	})
-	if err != nil {
-		return nil, nil, err
-	}
-
-	contents := []*genai.Content{
-		genai.NewContentFromText(text, genai.RoleUser),
-	}
-
-	em := client
-	res, err := em.Models.EmbedContent(ctx, p.subType, contents, nil)
+	vectors, err := gemini.New(p.secretKey, proxy.ProxyHttpClient).
+		Embed(ctx, p.subType, []*gemini.Content{gemini.Text(text, gemini.RoleUser)})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -81,6 +67,5 @@ func (p *GeminiEmbeddingProvider) QueryVector(text string, ctx context.Context, 
 		return nil, nil, err
 	}
 
-	vector := res.Embeddings[0].Values
-	return vector, embeddingResult, nil
+	return vectors[0], embeddingResult, nil
 }

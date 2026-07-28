@@ -23,9 +23,19 @@ import (
 	"strings"
 
 	"github.com/hanzoai/ai/i18n"
+	"github.com/hanzoai/ai/internal/gemini"
 	"github.com/hanzoai/ai/proxy"
-	"google.golang.org/genai"
 )
+
+// geminiContents renders the conversation as Gemini contents: the prior turns
+// keep their authors, the new question is the trailing user turn.
+func geminiContents(question string, history []*RawMessage) []*gemini.Content {
+	contents := make([]*gemini.Content, 0, len(history)+1)
+	for _, message := range history {
+		contents = append(contents, gemini.Text(message.Text, message.Author))
+	}
+	return append(contents, gemini.Text(question, gemini.RoleUser))
+}
 
 type GeminiModelProvider struct {
 	subType     string
@@ -206,17 +216,8 @@ func (p *GeminiModelProvider) calculatePrice(modelResult *ModelResult, lang stri
 
 func (p *GeminiModelProvider) QueryText(question string, writer io.Writer, history []*RawMessage, prompt string, knowledgeMessages []*RawMessage, agentInfo *AgentInfo, lang string) (*ModelResult, error) {
 	ctx := context.Background()
-	// Access your API key as an environment variable (see "Set up your API key" above)
-	client, err := genai.NewClient(ctx,
-		&genai.ClientConfig{
-			APIKey:     p.secretKey,
-			Backend:    genai.BackendGeminiAPI,
-			HTTPClient: proxy.ProxyHttpClient,
-		})
-	if err != nil {
-		return nil, err
-	}
 
+	// The dry run only prices the prompt, so it answers before any client exists.
 	if strings.HasPrefix(question, "$CloudDryRun$") {
 		modelResult, err := getDefaultModelResult(p.subType, question, "")
 		if err != nil {
@@ -229,20 +230,18 @@ func (p *GeminiModelProvider) QueryText(question string, writer io.Writer, histo
 		}
 	}
 
-	model := client.Models
+	client := gemini.New(p.secretKey, proxy.ProxyHttpClient)
 
-	// https://cloud.google.com/vertex-ai/generative-ai/docs/multimodal/get-token-count#gemini-get-token-count-samples-drest
-	// has to use CountToken() to get
-	contents := []*genai.Content{
-		genai.NewContentFromText(question, genai.RoleUser),
-	}
-	promptTokenCountResp, err := client.Models.CountTokens(ctx, p.subType, contents, nil)
+	// generateContent does not report the prompt token count, so the price of
+	// the input can only be known by asking countTokens for it.
+	promptTokenCount, err := client.CountTokens(ctx, p.subType, []*gemini.Content{
+		gemini.Text(question, gemini.RoleUser),
+	})
 	if err != nil {
 		return nil, err
 	}
 
-	messages := GenaiRawMessagesToMessages(question, history)
-	resp, err := model.GenerateContent(ctx, p.subType, messages, nil)
+	resp, err := client.GenerateContent(ctx, p.subType, geminiContents(question, history))
 	if err != nil {
 		return nil, err
 	}
@@ -252,23 +251,14 @@ func (p *GeminiModelProvider) QueryText(question string, writer io.Writer, histo
 		return nil, fmt.Errorf("%s", i18n.Translate(lang, "model:writer does not implement http.Flusher"))
 	}
 
-	flushData := func(data []*genai.Part) error {
-		for _, message := range data {
-			if _, err := fmt.Fprintf(writer, "event: message\ndata: %s\n\n", message.Text); err != nil {
-				return err
-			}
-			flusher.Flush()
+	for _, part := range resp.Candidates[0].Content.Parts {
+		if _, err := fmt.Fprintf(writer, "event: message\ndata: %s\n\n", part.Text); err != nil {
+			return nil, err
 		}
-		return nil
+		flusher.Flush()
 	}
 
-	err = flushData(resp.Candidates[0].Content.Parts)
-	if err != nil {
-		return nil, err
-	}
-
-	respTokenCount := int(resp.Candidates[0].TokenCount)
-	promptTokenCount := int(promptTokenCountResp.TotalTokens)
+	respTokenCount := resp.Candidates[0].TokenCount
 	modelResult := &ModelResult{
 		PromptTokenCount:   promptTokenCount,
 		ResponseTokenCount: respTokenCount,
