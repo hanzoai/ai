@@ -21,7 +21,7 @@ WORKDIR /go/src/hanzo-cloud
 # holds each version immutably; GONOSUMDB skips the transparency log (whose stale
 # pre-re-tag hashes would mismatch), and go.sum still verifies the download.
 ENV GOPRIVATE=github.com/hanzoai/*,github.com/zap-proto/* \
-    GONOSUMDB=github.com/hanzoai/*,github.com/luxfi/*,github.com/zap-proto/*
+    GONOSUMDB=github.com/hanzoai/*,github.com/lux-private/*,github.com/zap-proto/*
 COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=secret,id=gh_token \
