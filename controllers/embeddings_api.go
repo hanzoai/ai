@@ -25,7 +25,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hanzoai/account"
 
 	iam "github.com/hanzoai/ai/internal/iam"
 
@@ -104,7 +103,7 @@ func (c *ApiController) Embeddings() {
 		var hold *budgetHold
 		if authUser != nil {
 			ledger := c.billingOrg(authUser)
-			subject := account.Payer(account.Credential{Owner: ledger, Name: authUser.Name}).Subject()
+			subject := authUser.PayerSubject(ledger)
 			est := int64(1)
 			if zm, ok := fam.lookup(head.Model); ok {
 				est = zm.costCents(coarseTokenEstimate(c.Ctx.Input.RequestBody), 0)

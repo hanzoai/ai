@@ -21,7 +21,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/hanzoai/account"
 
 	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/model"
@@ -147,7 +146,7 @@ func (c *ApiController) ImagesGenerations() {
 	var hold *budgetHold
 	if authUser != nil {
 		ledger := c.billingOrg(authUser)
-		subject := account.Payer(account.Credential{Owner: ledger, Name: authUser.Name}).Subject()
+		subject := authUser.PayerSubject(ledger)
 		var ok bool
 		if hold, ok = reserveBudget(subject, imageCostCents(req.Model, n)); !ok {
 			c.ResponseAuthError(billingError("%s", object.InsufficientBalance(ledger, "image cost").Message))

@@ -42,7 +42,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hanzoai/account"
 
 	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/log"
@@ -181,7 +180,7 @@ func zapAnthropicMessages(ctx context.Context, auth string, reqBody []byte) (int
 	request.MaxTokens = clampMaxTokens(request.MaxTokens)
 	var hold *budgetHold
 	if authUser != nil {
-		subject := account.Payer(account.Credential{Owner: authUser.Owner, Name: authUser.Name}).Subject()
+		subject := authUser.PayerSubject("")
 		est := estimateRequestCostCents(request.Model, len(request.Messages)*500, request.MaxTokens)
 		var ok bool
 		if hold, ok = reserveBudget(subject, est); !ok {

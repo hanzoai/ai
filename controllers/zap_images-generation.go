@@ -32,7 +32,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/hanzoai/account"
 
 	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/log"
@@ -126,7 +125,7 @@ func zapImagesHandler(ctx context.Context, auth string, body []byte) (*zap.Messa
 	// subject can't double-spend. Settled with the ACTUAL produced-image cost.
 	var hold *budgetHold
 	if authUser != nil {
-		subject := account.Payer(account.Credential{Owner: authUser.Owner, Name: authUser.Name}).Subject()
+		subject := authUser.PayerSubject("")
 		var ok bool
 		if hold, ok = reserveBudget(subject, imageCostCents(req.Model, n)); !ok {
 			return object.BuildCloudResponse(402, nil, object.InsufficientBalance(authUser.Owner, "image cost").Message)
