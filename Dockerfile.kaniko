@@ -31,7 +31,7 @@ ARG GH_TOKEN=""
 # Private cross-org modules are fetched via authenticated git, bypassing the
 # public proxy. Unconditional insteadOf (vs the BuildKit Dockerfile's guarded
 # block) because kaniko provides the token as a build-arg, not a secret file.
-ENV GOPRIVATE=github.com/hanzoai/*,github.com/luxfi/*,github.com/zap-proto/*
+ENV GOPRIVATE=github.com/hanzoai/*,github.com/lux-private/*,github.com/zap-proto/*
 COPY go.mod go.sum ./
 RUN if [ -n "$GH_TOKEN" ]; then \
       git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"; \
