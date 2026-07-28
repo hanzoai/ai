@@ -30,8 +30,12 @@ import (
 )
 
 const (
-	crawlStorageDefaultBucket   = "hanzo-crawl"
-	crawlStorageDefaultEndpoint = "http://minio.hanzo.svc.cluster.local:9000"
+	crawlStorageDefaultBucket = "hanzo-crawl"
+	// s3.hanzo.svc is the SeaweedFS S3 gateway, and it is what the other fifteen
+	// call sites in the estate already name. The default here was
+	// minio.hanzo.svc.cluster.local — a Service that no longer exists, so a
+	// deployment that did not override the endpoint had no storage at all.
+	crawlStorageDefaultEndpoint = "http://s3.hanzo.svc:9000"
 	crawlStorageHTTPTimeout     = 30 * time.Second
 )
 
