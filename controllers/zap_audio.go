@@ -50,7 +50,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hanzoai/account"
 	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/log"
 	"github.com/luxfi/zap"
@@ -232,7 +231,7 @@ func zapServeZenMedia(apiPath, mdl string, rawBody []byte, units int, authUser *
 	var hold *budgetHold
 	if authUser != nil {
 		if zm, ok := zenFam.lookup(mdl); ok {
-			subject := account.Payer(account.Credential{Owner: authUser.Owner, Name: authUser.Name}).Subject()
+			subject := authUser.PayerSubject("")
 			var ok2 bool
 			if hold, ok2 = reserveBudget(subject, zm.unitCostCents(units)); !ok2 {
 				return object.BuildCloudResponse(402, nil, object.InsufficientBalance(authUser.Owner, "cost").Message)

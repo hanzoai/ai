@@ -379,7 +379,7 @@ func enforceBalanceGate(user *iam.User, ledger string, requestedModel string) er
 		ledger = user.Owner
 	}
 	orgKey := ledger // namespace (X-Org-Id): the org tenant whose ledger pays
-	subject := account.Payer(account.Credential{Owner: ledger, Name: user.Name, Machine: account.IsMachine(user.Type)}).Subject()
+	subject := user.PayerSubject(ledger)
 
 	balance, err := getUserBalance(subject, orgKey)
 	if err != nil {
@@ -1163,7 +1163,7 @@ func (c *ApiController) ChatCompletions() {
 	// the ACTUAL cost when the request completes (deferred fail-safe release).
 	var hold *budgetHold
 	if authUser != nil {
-		subject := account.Payer(account.Credential{Owner: ledger, Name: authUser.Name}).Subject()
+		subject := authUser.PayerSubject(ledger)
 		// Clamp the upstream completion ceiling BEFORE reserving so the proxied
 		// (tool/stream) upstream can never emit more than we reserve — the actual
 		// settle can never exceed the hold (R1b). reserveCompletionTokens also
