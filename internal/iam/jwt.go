@@ -42,12 +42,19 @@ type Claims struct {
 	RefreshTokenType string   `json:"TokenType"`
 	SigninMethod     string   `json:"signinMethod"`
 	Orgs             []OrgRef `json:"orgs,omitempty"`
-	// BillingAccount is the signed `billing_account` claim: WHO PAYS for this
-	// credential, stated by IAM at mint time. Wire is "<kind>:<subject>"
-	// (e.g. "org:acme"). Empty when IAM could not attribute; a reader must fall
-	// back rather than bill a guess.
-	BillingAccount string `json:"billing_account,omitempty"`
 }
+
+// NOTE: `billing_account` is deliberately NOT declared here. It lives on the
+// embedded User (see user.go), because WHO PAYS is a property of the identity,
+// not of the token envelope that happened to carry it. Every spend site holds a
+// *User — not a *Claims — so a field here is one only the auth layer can read,
+// which is exactly how 27 of the 28 account.Payer call sites came to ignore it.
+// Field promotion keeps `claims.BillingAccount` reading the same as before, and
+// encoding/json still unmarshals the claim into the promoted field.
+//
+// Do not re-add it to Claims: an outer field SHADOWS the embedded one, so the
+// claim would silently land here and leave User.BillingAccount empty — the
+// failure would be invisible and would bill the wrong account.
 
 // ParseJwtToken verifies a JWT's signature against the IAM server's published
 // JWKS (proper OIDC) and returns its claims. RS256/RS512/ES256/ES512 only.
