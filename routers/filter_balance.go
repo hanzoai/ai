@@ -352,7 +352,7 @@ func resolveBillingKey(ctx *web.Context) (subject, namespace, userKey string) {
 	// signed `orgs` claim, so it can never switch org — it always bills its home.
 	user := GetSessionUser(ctx)
 	if user != nil && user.Owner != "" {
-		return account.Payer(account.Credential{Owner: user.Owner, Name: user.Name, Machine: account.IsMachine(user.Type)}).Subject(), user.Owner, user.Owner + "/" + user.Name
+		return user.PayerSubject(""), user.Owner, user.Owner + "/" + user.Name
 	}
 
 	// Source 2/3: Bearer token.
@@ -422,7 +422,7 @@ func resolveBillingKey(ctx *web.Context) (subject, namespace, userKey string) {
 			// at the signup org's pooled balance. A claim naming the home org is
 			// discarded on a switched request (Payer honors it only within the
 			// credential's own org), which is right: the selected org's wallet pays.
-			subject = account.Payer(account.Credential{Owner: ledger, Name: claims.User.Name, Account: claims.BillingAccount, Machine: account.IsMachine(claims.User.Type)}).Subject()
+			subject = claims.User.PayerSubject(ledger)
 			// userKey stays the caller's IDENTITY ("<home>/<name>"), never the ledger:
 			// it keys per-user exemption matching, not money.
 			userKey = claims.User.Owner + "/" + claims.User.Name
@@ -641,7 +641,7 @@ func (bg *BalanceGate) resolveIAMKeySubject(apiKey string) (subject, namespace, 
 	if u == nil || u.Owner == "" {
 		return "", "", ""
 	}
-	return account.Payer(account.Credential{Owner: u.Owner, Name: u.Name}).Subject(), u.Owner, u.Owner + "/" + u.Name
+	return u.PayerSubject(""), u.Owner, u.Owner + "/" + u.Name
 }
 
 // ── Cleanup ─────────────────────────────────────────────────────────────────

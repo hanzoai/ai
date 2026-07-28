@@ -214,6 +214,20 @@ type User struct {
 	MfaRememberDeadline string           `json:"mfaRememberDeadline"`
 	NeedUpdatePassword  bool             `json:"needUpdatePassword"`
 	IpWhitelist         string           `json:"ipWhitelist"`
+
+	// BillingAccount is the signed `billing_account` claim: WHO PAYS for this
+	// credential, stated by IAM at mint time. Wire is "<kind>:<subject>" (e.g.
+	// "org:acme"); empty when IAM could not attribute one, in which case a reader
+	// must fall back to Payer's shape rule rather than bill a guess.
+	//
+	// It lives HERE, on the identity, and not on the Claims envelope that carries
+	// it, because every place that spends money holds a *User. When this field sat
+	// on Claims it was structurally unreachable from 27 of the 28 account.Payer
+	// call sites, so they all silently billed the shape-rule fallback: an org admin
+	// paid from their own empty wallet while the company pool sat funded and
+	// unused, and no layer could report an error because each one was doing exactly
+	// what it was told. Prefer u.Payer(ledger) over reading this directly.
+	BillingAccount string `json:"billing_account,omitempty"`
 }
 
 // GetId returns "<owner>/<name>", the IAM user identifier.

@@ -54,7 +54,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hanzoai/account"
 
 	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/log"
@@ -135,7 +134,7 @@ func zapVideosGenerateHandler(ctx context.Context, auth string, body []byte) (*z
 	if authUser == nil {
 		return object.BuildCloudResponse(401, nil, "Video generation requires an authenticated Hanzo Cloud account. Sign in and add credits to your wallet at "+object.PayURL(""))
 	}
-	subject := account.Payer(account.Credential{Owner: authUser.Owner, Name: authUser.Name}).Subject()
+	subject := authUser.PayerSubject("")
 	if subject == "" {
 		return object.BuildCloudResponse(401, nil, "Video generation requires an authenticated Hanzo Cloud account.")
 	}
@@ -378,7 +377,7 @@ func zapResolveOwnedVideoJob(auth, id string) (*videoJob, *object.Provider, *iam
 
 	subject := ""
 	if authUser != nil {
-		subject = account.Payer(account.Credential{Owner: authUser.Owner, Name: authUser.Name}).Subject()
+		subject = authUser.PayerSubject("")
 	}
 	// Ownership: a non-empty subject that matches the job's. An empty subject
 	// (anonymous/exempt) owns nothing. A mismatch is a 404 (never reveal the job).
@@ -434,7 +433,7 @@ func zapVideoServeZen(mdl string, rawBody []byte, authUser *iam.User, isPremium 
 	var hold *budgetHold
 	if authUser != nil {
 		if zm, ok := zenFam.lookup(mdl); ok {
-			subject := account.Payer(account.Credential{Owner: authUser.Owner, Name: authUser.Name}).Subject()
+			subject := authUser.PayerSubject("")
 			var ok2 bool
 			if hold, ok2 = reserveBudget(subject, zm.unitCostCents(units)); !ok2 {
 				return object.BuildCloudResponse(402, nil, object.InsufficientBalance(authUser.Owner, "cost").Message)

@@ -22,7 +22,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hanzoai/account"
 
 	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/object"
@@ -59,7 +58,7 @@ func (c *ApiController) serveZenMedia(apiPath, model string, rawBody []byte, uni
 	if authUser != nil {
 		if zm, ok := zenFam.lookup(model); ok {
 			ledger := c.billingOrg(authUser)
-			subject := account.Payer(account.Credential{Owner: ledger, Name: authUser.Name}).Subject()
+			subject := authUser.PayerSubject(ledger)
 			var ok2 bool
 			if hold, ok2 = reserveBudget(subject, zm.unitCostCents(units)); !ok2 {
 				c.ResponseAuthError(billingError("%s", object.InsufficientBalance(ledger, "cost").Message))
