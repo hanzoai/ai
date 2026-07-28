@@ -24,8 +24,8 @@ import (
 	"testing"
 
 	"github.com/hanzoai/ai/conf"
+	"github.com/hanzoai/ai/internal/gemini"
 	"github.com/hanzoai/ai/proxy"
-	"google.golang.org/genai"
 )
 
 func TestListGeminiModels(t *testing.T) {
@@ -50,15 +50,7 @@ func TestListGeminiModels(t *testing.T) {
 	proxy.InitHttpClient()
 
 	ctx := context.Background()
-
-	client, err := genai.NewClient(ctx, &genai.ClientConfig{
-		APIKey:     apiKey,
-		Backend:    genai.BackendGeminiAPI,
-		HTTPClient: proxy.ProxyHttpClient,
-	})
-	if err != nil {
-		panic(err)
-	}
+	client := gemini.New(apiKey, proxy.ProxyHttpClient)
 
 	fmt.Println("Available Gemini Models:")
 	fmt.Println("========================")
@@ -66,24 +58,41 @@ func TestListGeminiModels(t *testing.T) {
 	pageToken := ""
 	count := 1
 	for {
-		listOpts := &genai.ListModelsConfig{
-			PageSize:  50,
-			PageToken: pageToken,
-		}
-
-		resp, err := client.Models.List(ctx, listOpts)
+		page, err := client.ListModels(ctx, 50, pageToken)
 		if err != nil {
 			t.Fatalf("Error listing models: %v", err)
 		}
 
-		for _, model := range resp.Items {
+		for _, model := range page.Models {
 			fmt.Printf("[%d] %s\n", count, model.Name)
 			count++
 		}
 
-		if resp.NextPageToken == "" {
+		if page.NextPageToken == "" {
 			break
 		}
-		pageToken = resp.NextPageToken
+		pageToken = page.NextPageToken
+	}
+}
+
+func TestGeminiContents(t *testing.T) {
+	contents := geminiContents("now", []*RawMessage{
+		{Text: "before", Author: "user"},
+		{Text: "reply", Author: "model"},
+	})
+
+	if len(contents) != 3 {
+		t.Fatalf("got %d contents, want 3", len(contents))
+	}
+	want := []struct{ text, role string }{
+		{"before", "user"}, {"reply", "model"}, {"now", gemini.RoleUser},
+	}
+	for i, w := range want {
+		if got := contents[i].Parts[0].Text; got != w.text {
+			t.Errorf("contents[%d].text = %q, want %q", i, got, w.text)
+		}
+		if got := contents[i].Role; got != w.role {
+			t.Errorf("contents[%d].role = %q, want %q", i, got, w.role)
+		}
 	}
 }
