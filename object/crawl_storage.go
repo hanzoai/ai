@@ -19,14 +19,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/url"
 	"sync"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/credentials"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/log"
+	hs3 "github.com/hanzos3/go"
+	"github.com/hanzos3/go/pkg/credentials"
 )
 
 const (
@@ -47,17 +47,24 @@ type CrawlArchive struct {
 }
 
 var (
-	crawlStorageClient *s3.Client
+	crawlStorageClient *hs3.Client
 	crawlStorageOnce   sync.Once
 )
 
-// getCrawlStorageEndpoint returns the Hanzo Storage endpoint from config.
-func getCrawlStorageEndpoint() string {
+// getCrawlStorageEndpoint returns the Hanzo Storage host and whether to reach
+// it over TLS. The config carries a full URL but the SDK takes the two apart.
+func getCrawlStorageEndpoint() (host string, secure bool) {
 	endpoint := conf.GetConfigString("crawlStorageEndpoint")
 	if endpoint == "" {
 		endpoint = crawlStorageDefaultEndpoint
 	}
-	return endpoint
+	parsed, err := url.Parse(endpoint)
+	if err != nil || parsed.Host == "" {
+		// A bare "host:port" parses with an empty Host; TLS is the safe default
+		// for anything that did not explicitly ask for plaintext.
+		return endpoint, true
+	}
+	return parsed.Host, parsed.Scheme != "http"
 }
 
 // getCrawlStorageBucket returns the Hanzo Storage bucket name from config.
@@ -69,24 +76,29 @@ func getCrawlStorageBucket() string {
 	return bucket
 }
 
-// getCrawlStorageClient returns a singleton S3 client configured for Hanzo Storage.
-func getCrawlStorageClient() *s3.Client {
+// getCrawlStorageClient returns a singleton Hanzo Storage client.
+func getCrawlStorageClient() *hs3.Client {
 	crawlStorageOnce.Do(func() {
-		endpoint := getCrawlStorageEndpoint()
-		accessKey := conf.GetConfigString("crawlStorageAccessKey")
-		secretKey := conf.GetConfigString("crawlStorageSecretKey")
+		host, secure := getCrawlStorageEndpoint()
 		region := conf.GetConfigString("crawlStorageRegion")
 		if region == "" {
 			region = "us-east-1"
 		}
-		cfg := aws.Config{
-			Region:      region,
-			Credentials: credentials.NewStaticCredentialsProvider(accessKey, secretKey, ""),
-		}
-		crawlStorageClient = s3.NewFromConfig(cfg, func(o *s3.Options) {
-			o.BaseEndpoint = aws.String(endpoint)
-			o.UsePathStyle = true
+		client, err := hs3.New(host, &hs3.Options{
+			Creds: credentials.NewStaticV4(
+				conf.GetConfigString("crawlStorageAccessKey"),
+				conf.GetConfigString("crawlStorageSecretKey"), ""),
+			Secure: secure,
+			Region: region,
+			// The endpoint is a service name, never a bucket-addressable host,
+			// so buckets have to go in the path.
+			BucketLookup: hs3.BucketLookupPath,
 		})
+		if err != nil {
+			log.Error("crawl archive: Hanzo Storage client: %v", err)
+			return
+		}
+		crawlStorageClient = client
 	})
 	return crawlStorageClient
 }
@@ -118,12 +130,8 @@ func ArchiveCrawlResult(owner, jobID string, results []ScrapeResult, rawResults 
 	key := crawlArchiveKey(owner, jobID)
 	ctx, cancel := context.WithTimeout(context.Background(), crawlStorageHTTPTimeout)
 	defer cancel()
-	_, err = client.PutObject(ctx, &s3.PutObjectInput{
-		Bucket:      aws.String(bucket),
-		Key:         aws.String(key),
-		Body:        bytes.NewReader(data),
-		ContentType: aws.String("application/json"),
-	})
+	_, err = client.PutObject(ctx, bucket, key, bytes.NewReader(data), int64(len(data)),
+		hs3.PutObjectOptions{ContentType: "application/json"})
 	if err != nil {
 		return fmt.Errorf("Hanzo Storage PutObject failed for %s: %w", key, err)
 	}
@@ -141,17 +149,16 @@ func GetArchivedCrawlResult(owner, jobID string) (*CrawlArchive, error) {
 	key := crawlArchiveKey(owner, jobID)
 	ctx, cancel := context.WithTimeout(context.Background(), crawlStorageHTTPTimeout)
 	defer cancel()
-	output, err := client.GetObject(ctx, &s3.GetObjectInput{
-		Bucket: aws.String(bucket),
-		Key:    aws.String(key),
-	})
+	object, err := client.GetObject(ctx, bucket, key, hs3.GetObjectOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("Hanzo Storage GetObject failed for %s: %w", key, err)
 	}
-	defer output.Body.Close()
-	data, err := io.ReadAll(output.Body)
+	defer object.Close()
+	// The SDK defers the request to the first read, so a missing object or an
+	// unreachable endpoint surfaces here rather than above.
+	data, err := io.ReadAll(object)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read crawl archive body for %s: %w", key, err)
+		return nil, fmt.Errorf("Hanzo Storage GetObject failed for %s: %w", key, err)
 	}
 	var archive CrawlArchive
 	if err := json.Unmarshal(data, &archive); err != nil {
