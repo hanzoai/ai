@@ -20,8 +20,14 @@ import "testing"
 // TLS endpoint or the reverse.
 func TestCrawlStorageEndpoint(t *testing.T) {
 	// No crawlStorageEndpoint is configured under test, so the default applies.
+	//
+	// The default is Hanzo Storage (s3.hanzo.svc), NOT minio: MinIO was retired in
+	// favour of hanzoai/s3, and this test was still asserting the old Service —
+	// which is exactly the bug main fixed in "crawl storage defaulted to a Service
+	// that does not exist". Pin it to the constant so the test cannot drift from
+	// the default it is meant to guard.
 	host, secure := getCrawlStorageEndpoint()
-	if want := "minio.hanzo.svc.cluster.local:9000"; host != want {
+	if want := "s3.hanzo.svc:9000"; host != want {
 		t.Errorf("host = %q, want %q", host, want)
 	}
 	if secure {
