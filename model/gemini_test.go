@@ -20,33 +20,37 @@ package model
 import (
 	"context"
 	"fmt"
+	"os"
 	"testing"
 
 	"github.com/hanzoai/ai/conf"
+	"github.com/hanzoai/ai/internal/gemini"
 	"github.com/hanzoai/ai/proxy"
-	"google.golang.org/genai"
 )
 
 func TestListGeminiModels(t *testing.T) {
-	err := conf.LoadAppConfig("ini", "../conf/app.conf")
-	if err != nil {
-		panic(err)
+	// The key was blanked in source — correctly, it does not belong here — but
+	// the test stayed, so it could only ever panic with "api key is required".
+	// Read it from the environment and skip without one, the same shape
+	// TestGenerateImageDOAI_Live already uses:
+	//
+	//	GEMINI_API_KEY=… go test ./model/ -run TestListGeminiModels -v
+	apiKey := os.Getenv("GEMINI_API_KEY")
+	if apiKey == "" {
+		apiKey = os.Getenv("GOOGLE_API_KEY")
+	}
+	if apiKey == "" {
+		t.Skip("GEMINI_API_KEY not set — skipping live Gemini model listing")
+	}
+
+	if err := conf.LoadAppConfig("ini", "../conf/app.conf"); err != nil {
+		t.Fatalf("load config: %v", err)
 	}
 
 	proxy.InitHttpClient()
 
-	apiKey := ""
-
 	ctx := context.Background()
-
-	client, err := genai.NewClient(ctx, &genai.ClientConfig{
-		APIKey:     apiKey,
-		Backend:    genai.BackendGeminiAPI,
-		HTTPClient: proxy.ProxyHttpClient,
-	})
-	if err != nil {
-		panic(err)
-	}
+	client := gemini.New(apiKey, proxy.ProxyHttpClient)
 
 	fmt.Println("Available Gemini Models:")
 	fmt.Println("========================")
@@ -54,24 +58,41 @@ func TestListGeminiModels(t *testing.T) {
 	pageToken := ""
 	count := 1
 	for {
-		listOpts := &genai.ListModelsConfig{
-			PageSize:  50,
-			PageToken: pageToken,
-		}
-
-		resp, err := client.Models.List(ctx, listOpts)
+		page, err := client.ListModels(ctx, 50, pageToken)
 		if err != nil {
 			t.Fatalf("Error listing models: %v", err)
 		}
 
-		for _, model := range resp.Items {
+		for _, model := range page.Models {
 			fmt.Printf("[%d] %s\n", count, model.Name)
 			count++
 		}
 
-		if resp.NextPageToken == "" {
+		if page.NextPageToken == "" {
 			break
 		}
-		pageToken = resp.NextPageToken
+		pageToken = page.NextPageToken
+	}
+}
+
+func TestGeminiContents(t *testing.T) {
+	contents := geminiContents("now", []*RawMessage{
+		{Text: "before", Author: "user"},
+		{Text: "reply", Author: "model"},
+	})
+
+	if len(contents) != 3 {
+		t.Fatalf("got %d contents, want 3", len(contents))
+	}
+	want := []struct{ text, role string }{
+		{"before", "user"}, {"reply", "model"}, {"now", gemini.RoleUser},
+	}
+	for i, w := range want {
+		if got := contents[i].Parts[0].Text; got != w.text {
+			t.Errorf("contents[%d].text = %q, want %q", i, got, w.text)
+		}
+		if got := contents[i].Role; got != w.role {
+			t.Errorf("contents[%d].role = %q, want %q", i, got, w.role)
+		}
 	}
 }
