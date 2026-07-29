@@ -32,7 +32,7 @@ import (
 	"github.com/hanzoai/account"
 
 	"github.com/hanzoai/ai/conf"
-	"github.com/hanzoai/ai/internal/funding"
+	"github.com/hanzoai/ai/funding"
 	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/model"
