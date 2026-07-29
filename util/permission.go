@@ -28,7 +28,7 @@ const (
 
 // AdminOrg is the reserved IAM organization whose members are Hanzo SUPER admins
 // (platform / cross-tenant). Membership in this ONE org — not a configurable
-// list, not the casdoor "built-in" org — is the SOLE definition of super admin
+// list, not a "built-in" org — is the SOLE definition of super admin
 // across the stack. It matches IAM's conf.AdminOrg (user.IsGlobalAdmin: owner ==
 // AdminOrg) and the console super-admin gate (isSuperAdminAccount: owner ==
 // 'admin'). It is deliberately NOT a TENANT org: a hanzo-org admin (e.g.

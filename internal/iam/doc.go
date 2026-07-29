@@ -13,13 +13,13 @@
 // limitations under the License.
 
 // Package iam is ai's INTERNAL IAM client: the small, clean OIDC+REST surface
-// ai needs to talk to Hanzo IAM (hanzo.id), decoupled from the retired Casdoor
-// SDK module github.com/hanzoai/iam-v1.
+// ai needs to talk to Hanzo IAM (hanzo.id), decoupled from the retired SDK
+// module github.com/hanzoai/iam-v1.
 //
 // It is NOT a published SDK. It exists so ai links only against standard OIDC
 // (JWKS token verification) and the IAM server's JSON REST API (/v1/iam/...),
-// instead of pulling in the whole Casdoor server module (beego, xorm, ldap,
-// aliyun/aws SDKs, …) that iam-v1 dragged into ai's build for code ai never ran.
+// instead of pulling in the whole iam-v1 server module (beego, xorm, ldap,
+// aliyun/aws SDKs, …) that it dragged into ai's build for code ai never ran.
 //
 // The wire types (User, Claims, Permission, Resource, …) mirror the IAM
 // server's JSON models so requests round-trip losslessly — in particular the
