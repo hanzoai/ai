@@ -166,7 +166,7 @@ func ensureClient() *Client {
 func (c *Client) endpoint() string { return resolveEndpoint(c.Endpoint) }
 
 // GetUrl builds a /v1/iam/<action> URL with the given query params. Hanzo IAM
-// serves its JSON API under /v1/iam/ only (the Casdoor /api/ prefix is retired).
+// serves its JSON API under /v1/iam/ only (the iam-v1 /api/ prefix is retired).
 func (c *Client) GetUrl(action string, queryMap map[string]string) string {
 	query := ""
 	for k, v := range queryMap {

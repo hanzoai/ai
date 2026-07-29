@@ -97,7 +97,7 @@ func TestResolveBrandIAM(t *testing.T) {
 		}
 	}
 
-	// IAM_URL wins as the endpoint for every brand (the in-cluster Casdoor).
+	// IAM_URL wins as the endpoint for every brand (the in-cluster IAM).
 	t.Setenv("IAM_URL", "http://iam.hanzo.svc")
 	if got := resolveBrandIAM("console.lux.cloud").Endpoint; got != "http://iam.hanzo.svc" {
 		t.Errorf("lux endpoint with IAM_URL set = %q, want http://iam.hanzo.svc", got)

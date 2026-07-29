@@ -16,8 +16,8 @@ Changes made by Hanzo AI, Inc. relative to upstream Casibase:
 
 - Repackaged from github.com/casbin/casbase (later Casibase) to the Go module
   github.com/hanzoai/ai; product rebranded to Hanzo AI across README, docs, and UI.
-- Identity and authentication moved from Casdoor to Hanzo IAM (github.com/hanzoai/iam;
-  web SDK @hanzo/iam-js-sdk, which aliases casdoor-js-sdk).
+- Identity and authentication replaced with Hanzo IAM (github.com/hanzoai/iam;
+  web SDK @hanzo/iam-js-sdk).
 - Web framework forked to github.com/hanzoai/beego.
 - Datastore dropped mattn/go-sqlite3 and standardized on github.com/hanzo-ds/go with
   github.com/hanzoai/sqlite.
