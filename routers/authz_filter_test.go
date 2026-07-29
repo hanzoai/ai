@@ -145,8 +145,6 @@ func TestWriteEndpointsRequireCredential(t *testing.T) {
 		{"POST", "/v1/rag/query"},
 		{"POST", "/v1/rag/delete"},
 		{"GET", "/v1/rag/context"},
-		{"POST", "/v1/scrape"},
-		{"POST", "/v1/scrape/preview"},
 		{"POST", "/v1/index"},
 		{"POST", "/v1/search"},
 		{"GET", "/v1/search/stats"},
@@ -211,7 +209,7 @@ func TestBenignPathsNotCredentialGated(t *testing.T) {
 // NOT be caught by the "query" entry).
 func TestRequiresPresentCredentialClassification(t *testing.T) {
 	gated := []string{
-		"scrape", "scrape/preview", "index", "search", "search/stats",
+		"index", "search", "search/stats",
 		"docs/ingest", "embed", "query", "query_multiple", "documents",
 		"rag/embed", "rag/query", "rag/query-multiple", "rag/delete", "rag/context",
 		"documents/file-123/context",
