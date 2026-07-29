@@ -32,6 +32,7 @@ import (
 	"github.com/hanzoai/account"
 
 	"github.com/hanzoai/ai/conf"
+	"github.com/hanzoai/ai/internal/funding"
 	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/model"
@@ -380,6 +381,19 @@ func enforceBalanceGate(user *iam.User, ledger string, requestedModel string) er
 	}
 	orgKey := ledger // namespace (X-Org-Id): the org tenant whose ledger pays
 	subject := user.PayerSubject(ledger)
+
+	// Cash circuit-breaker (internal/funding). Checked BEFORE the balance read
+	// because it is a property of OUR bank account, not of the caller's wallet: a
+	// caller with a perfectly good platform balance is exactly who spends our cash
+	// once upstream promo credit is gone. Disarmed unless a ceiling is configured,
+	// so this is a no-op until someone deliberately arms it.
+	if cash := funding.Current(); cash.Refuse() {
+		return billingError(
+			"daily upstream spend ceiling reached ($%.2f of $%.2f). "+
+				"Paid inference resumes at 00:00 UTC, or raise CLOUD_DAILY_CASH_CEILING_CENTS.",
+			float64(cash.TodayCents)/100, float64(cash.CeilingCents)/100,
+		)
+	}
 
 	balance, err := getUserBalance(subject, orgKey)
 	if err != nil {
