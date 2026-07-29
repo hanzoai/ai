@@ -1,6 +1,6 @@
 module github.com/hanzoai/ai
 
-go 1.26.4
+go 1.26.5
 
 require (
 	github.com/ThinkInAIXYZ/go-mcp v0.2.24
