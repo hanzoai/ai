@@ -169,7 +169,7 @@ func isAdminHost(host string) bool {
 
 // iamEndpoint is the IAM base the code exchange + userinfo target. In cluster the
 // deployment sets IAM_URL to the internal service (http://iam.hanzo.svc), a single
-// Casdoor that serves every brand host -- so ONE endpoint validates/exchanges all
+// IAM that serves every brand host -- so ONE endpoint validates/exchanges all
 // brands (the token still carries the per-brand public issuer). Falls back to the
 // brand's public issuer host when IAM_URL is unset (dev / direct).
 func iamEndpoint(issuer string) string {

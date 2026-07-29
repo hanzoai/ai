@@ -27,7 +27,7 @@ import (
 // social-login ids, custom1..10, …) to zero it before a user is returned to a
 // client. A slim User would silently narrow that control and break its test.
 // The json tags are therefore load-bearing and match the server verbatim; the
-// Casdoor xorm/db tags are dropped (ai has no ORM).
+// server's xorm/db tags are dropped (ai has no ORM).
 type User struct {
 	Owner       string `json:"owner"`
 	Name        string `json:"name"`

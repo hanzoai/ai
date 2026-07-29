@@ -34,7 +34,7 @@ import (
 // because our idea of what IAM returns is exactly what was wrong. Note the first two
 // carry `status` as a NUMBER while the third carries it as a STRING: IAM serves two
 // different envelopes on one surface (the zip framework's error body from the authz
-// Guard, and the Casdoor-compat body from the handler), and the client's
+// Guard, and the string-status body from the handler), and the client's
 // Response.Status is a string. That type flip is what produced
 //
 //	json: cannot unmarshal number into Go struct field Response.status of type string
@@ -46,7 +46,7 @@ import (
 var liveIAMBodies = map[string]string{
 	"authz Guard forbade the read (the outage)": `{"status":403,"error":"forbidden"}`,
 	"unauthenticated read":                      `{"status":401,"error":"authentication required"}`,
-	"Casdoor-compat handler error":              `{"status":"error","msg":"please sign in first"}`,
+	"string-status handler error":               `{"status":"error","msg":"please sign in first"}`,
 	"empty body":                                ``,
 	"HTML error page from a proxy":              `<html><body>502 Bad Gateway</body></html>`,
 }
