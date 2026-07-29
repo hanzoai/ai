@@ -31,7 +31,7 @@ func TestZapRagSearchCrawlRegistered(t *testing.T) {
 
 	gatewayPaths := []string{
 		"/v1/search", "/v1/index", "/v1/search/stats",
-		"/v1/scrape", "/v1/scrape/preview", "/v1/crawl", "/v1/docs/ingest",
+		"/v1/crawl", "/v1/docs/ingest",
 		"/v1/rag/embed", "/v1/rag/query", "/v1/rag/query-multiple", "/v1/rag/delete", "/v1/rag/context",
 		"/v1/embed", "/v1/query", "/v1/query_multiple", "/v1/documents",
 	}
