@@ -199,8 +199,6 @@ func initAPI() {
 	App.Router("/v1/search", &controllers.ApiController{}, "POST:SearchDocs")
 	App.Router("/v1/index", &controllers.ApiController{}, "POST:IndexDocs")
 	App.Router("/v1/search/stats", &controllers.ApiController{}, "GET:SearchDocsStats")
-	App.Router("/v1/scrape", &controllers.ApiController{}, "POST:ScrapeDocs")
-	App.Router("/v1/scrape/preview", &controllers.ApiController{}, "POST:ScrapePreview")
 	App.Router("/v1/crawl", &controllers.ApiController{}, "POST:Crawl")
 
 	// File-scoped RAG — the ONE canonical uploaded-file RAG surface (consolidates

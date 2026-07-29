@@ -145,7 +145,6 @@ func requiresSuperAdmin(controllerName string) bool {
 // benign self-authing or intentionally-anonymous paths (chat, models, memory,
 // health, metrics, wecom) are unaffected. Names are the path minus "/v1/".
 var authRequiredEndpoints = map[string]struct{}{
-	"scrape": {}, "scrape/preview": {}, // browser/crawl engine (SSRF + cost)
 	"index": {}, "search": {}, "search/stats": {}, // doc index write + search
 	"docs/ingest": {},                                    // unified RAG ingest (github/crawl/s3)
 	"embed":       {}, "query": {}, "query_multiple": {}, // librechat-compat RAG

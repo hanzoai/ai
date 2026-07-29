@@ -97,8 +97,6 @@ var zapRagSearchCrawlGateway = map[string]zapRSCHandler{
 	"/v1/search/stats":       zapSearchStatsHandler,
 	"/v1/search":             zapSearchHandler,
 	"/v1/index":              zapIndexHandler,
-	"/v1/scrape/preview":     zapCrawlHandler,
-	"/v1/scrape":             zapScrapeHandler,
 	"/v1/crawl":              zapCrawlHandler,
 	"/v1/docs/ingest":        zapIngestHandler,
 	"/v1/rag/embed":          zapRagEmbedHandler,
@@ -343,7 +341,7 @@ func zapScrapeHandler(_ context.Context, auth string, body []byte) (*zap.Message
 	return zapOk(stats)
 }
 
-// ── /v1/crawl (and deprecated /v1/scrape/preview alias) ─────────────────
+// ── /v1/crawl ──────────────────────────────────────────────────────────
 
 func zapCrawlHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
 	sa, aerr := zapRequireIndexAuth(auth)
