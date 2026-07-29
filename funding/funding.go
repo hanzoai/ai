@@ -1,5 +1,11 @@
 // Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
+// Package funding is the cash circuit-breaker. It is deliberately NOT under
+// internal/: the HOST publishes into it (hanzoai/cloud computes upstream credit
+// and burn, ai enforces the ceiling), so the seam has to cross the module
+// boundary. Policy lives here with the enforcement it guards; the numbers arrive
+// from whoever can see the vendor.
+//
 // Package funding is the cash circuit-breaker: the one place that answers
 // "may this request spend REAL money right now, and how much is left today".
 //
