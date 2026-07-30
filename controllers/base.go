@@ -266,13 +266,16 @@ func (c *ApiController) errorLogFilter() {
 			path := c.Ctx.Input.URL()
 			query := ""
 			if c.Ctx.Request != nil && c.Ctx.Request.URL != nil {
-				query = c.Ctx.Request.URL.RawQuery
+				query = redactQuery(c.Ctx.Request.URL.RawQuery)
 			}
-			body := string(c.Ctx.Input.RequestBody)
+			body := redactBody(string(c.Ctx.Input.RequestBody))
 			if len(body) > 4096 {
 				body = body[:4096] + "...(truncated)"
 			}
-			token := c.Ctx.Request.Header.Get("Authorization")
+			// Never the raw header: this logged 417 replayable user JWTs in
+			// production. A fingerprint still correlates repeated failures from
+			// one credential without being usable. See logredact.go.
+			token := redactCredential(c.Ctx.Request.Header.Get("Authorization"))
 			respJSON, _ := json.Marshal(v)
 			respStr := string(respJSON)
 			if len(respStr) > 4096 {
