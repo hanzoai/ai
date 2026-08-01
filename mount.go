@@ -37,6 +37,7 @@ import (
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/ai/conf"
+	"github.com/hanzoai/ai/routers"
 )
 
 // Mount registers AI's HTTP surface per HIP-0106 AND initializes the AI
@@ -125,7 +126,63 @@ func mountRoutes(app *zip.App) {
 	// handlerAdapter.ServeHTTP restores it onto r.Context() (below), so the generation
 	// span nests as a CHILD of the request server span. One boundary, one carry.
 	wrapped := adaptor.HTTPHandlerWithContext(handlerAdapter{})
-	app.All("/v1/*", func(c *zip.Ctx) error { return wrapped(c.Fiber()) })
+	relay := func(c *zip.Ctx) error { return wrapped(c.Fiber()) }
+
+	// NAME what the glob would otherwise swallow. Each promoted address is
+	// registered on the HOST's router at its real pattern, pointing at the SAME
+	// relay the glob below uses — so the request takes the identical path through
+	// the identical handler and only the host's ability to DESCRIBE it changes.
+	//
+	// This is the seam that lets an address be described without being
+	// reimplemented. A glob tells the host a prefix and nothing under it, so the
+	// fleet document printed `/v1/{wildcard1}` where the model catalogue and the
+	// limited-preview access flow are: three operations that were authenticated,
+	// reachable and answering in production while no generated SDK, no MCP tool and
+	// no CLI command existed for any of them, and while nothing said who served
+	// them. One address, one owner, one implementation — and now one description.
+	register := map[string]func(string, ...zip.Handler) zip.Router{
+		http.MethodGet:    app.Get,
+		http.MethodPost:   app.Post,
+		http.MethodPut:    app.Put,
+		http.MethodPatch:  app.Patch,
+		http.MethodDelete: app.Delete,
+	}
+	patterns := routers.App.Patterns()
+	for _, pattern := range promoted {
+		for _, method := range patterns[pattern] {
+			if add, ok := register[method]; ok {
+				add(pattern, relay)
+			}
+			// A verb with no host registrar keeps reaching the glob, exactly as it
+			// did before. Promotion is additive: it can leave an address as
+			// undescribed as it already was, never less served than it already was.
+		}
+	}
+
+	app.All("/v1/*", relay)
+}
+
+// promoted is the subset of this service's route table whose addresses the host
+// names on its own router. The methods are NOT listed: they are read from
+// [routers.App.Patterns], the live table, so this can never claim a verb the
+// service does not serve — and an entry naming a pattern the table does not hold
+// registers nothing and fails TestPromotedAddressesExistInTheRouteTable.
+//
+// WHY A SUBSET, and it is a safety boundary rather than a backlog. This service
+// registers ~190 addresses at BARE /v1/ paths, and the host mounts ~110 other
+// subsystems in the same namespace. Today the glob is registered LAST and is the
+// broadest pattern, so every one of those subsystems wins its own addresses by
+// specificity. Promoting an address turns it into a SPECIFIC route, and a
+// specific route that another subsystem also claims is decided by registration
+// order — silently. Promoting the whole table would need the host to refuse a
+// duplicate address at compose time, and it cannot yet.
+//
+// So an address joins this list when it is known not to be claimed elsewhere.
+// These three are: nothing else in the fleet registers /v1/models or anything
+// under it.
+var promoted = []string{
+	"/v1/models",
+	"/v1/models/:model/access",
 }
 
 // handlerAdapter forwards each request under /v1/* to the registered runtime
