@@ -626,7 +626,8 @@ func (mc *ModelConfig) RouterClient(known func(string) bool) router.Client {
 
 // ── Admin endpoint ──────────────────────────────────────────────────────
 
-// ReloadModelConfig handles POST /api/reload-model-config.
+// ReloadModelConfig reloads the model configuration from YAML and refreshes live
+// pricing, so a catalogue change takes effect without a restart.
 // @Title ReloadModelConfig
 // @Tag Admin
 // @Description Reload model configuration from YAML and refresh live pricing.
@@ -650,7 +651,8 @@ func (c *ApiController) ReloadModelConfig() {
 	c.ResponseOk()
 }
 
-// RefreshModelPricing handles POST /v1/admin/refresh-model-pricing.
+// RefreshModelPricing forces a live pricing refresh from the configured pricing
+// service, so the catalogue's rates match the source without waiting for the cycle.
 // @Title RefreshModelPricing
 // @Tag Admin
 // @Description Force a live pricing refresh from the configured pricing service.
