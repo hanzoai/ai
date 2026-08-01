@@ -18,7 +18,6 @@ package controllers
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -490,6 +489,7 @@ func getUserByAccessKey(accessKey string) (*iam.User, error) {
 	var result struct {
 		Status string    `json:"status"`
 		Msg    string    `json:"msg"`
+		Code   string    `json:"code"` // WHY, when IAM refused (iam store.KeyFailure)
 		Data   *iam.User `json:"data"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -497,10 +497,56 @@ func getUserByAccessKey(accessKey string) (*iam.User, error) {
 	}
 
 	if result.Status != "ok" {
-		return nil, fmt.Errorf("IAM error: %s", result.Msg)
+		return nil, keyRefusal(result.Code, result.Msg, accessKey)
 	}
 
 	return result.Data, nil
+}
+
+// keyRefusal turns IAM's refusal into something the holder can ACT on.
+//
+// IAM answers every unresolvable key with one sentence — "the entity does not exist"
+// — and this function used to relay it verbatim, so a user whose key had simply been
+// revoked was told their entity was gone and went looking for a deleted organization
+// instead of minting a new key. The reason now rides beside that sentence as a code
+// (iam internal/store/apikey.go), and each code has exactly one cure.
+//
+// The key is named by PREFIX only. A holder needs to know WHICH of their keys failed;
+// nobody needs the rest of it, and this string reaches logs and error bodies.
+func keyRefusal(code, msg, key string) error {
+	switch code {
+	case "key_unknown":
+		return fmt.Errorf("API key %s is not recognized — it was revoked or replaced. "+
+			"Mint a new one at https://cloud.hanzo.ai/keys", keyHint(key))
+	case "key_wrong_door":
+		return fmt.Errorf("API key %s is not a secret key. A publishable pk- key "+
+			"identifies an org for ingest and cannot authenticate a request; "+
+			"use your secret (sk-) key", keyHint(key))
+	case "key_expired":
+		return fmt.Errorf("API key %s has expired — mint a new one at "+
+			"https://cloud.hanzo.ai/keys", keyHint(key))
+	case "key_not_publishable":
+		return fmt.Errorf("API key %s is not a publishable key", keyHint(key))
+	case "key_foreign_user", "key_dangling_user":
+		// Not the holder's doing, and not something they can fix. Say only that it
+		// was refused; the code carries the detail to whoever reads the logs.
+		return fmt.Errorf("API key %s was refused (%s)", keyHint(key), code)
+	}
+	// An IAM that sent no code, or one this build does not know: relay what it said
+	// rather than inventing a cause.
+	return fmt.Errorf("IAM error: %s", msg)
+}
+
+// keyHint names a key by its prefix and nothing else — enough to tell WHICH key
+// failed, useless to anyone who reads it. The ONE way a key is rendered outside its
+// own use.
+func keyHint(key string) string {
+	key = strings.TrimSpace(key)
+	const shown = 9 // "hk-" + 6
+	if len(key) <= shown {
+		return "…"
+	}
+	return key[:shown] + "…"
 }
 
 // ── Usage tracking ──────────────────────────────────────────────────────────
@@ -1426,71 +1472,50 @@ func (c *ApiController) ChatCompletions() {
 }
 
 // ListModels returns the list of available models from the routing table.
-// Requires a valid Bearer token (JWT, hk-, pk-, sk-, or hz_ key).
+//
+// PUBLIC BY DESIGN, AND IT DOES NOT AUTHENTICATE — that is the whole contract, so it
+// is stated here rather than left to be inferred. The catalogue is the same for
+// everyone (listAvailableModels takes no principal), docs.hanzo.ai fetches it from
+// the browser, and every policy layer around it already says so out loud: the authz
+// filter lists "models" as public, filter_balance refuses to gate it (a 402 here was
+// a console-wide outage), the rate limiter excludes it, and cloud's spend.Reachable
+// carries /v1/models/ as "the model catalog the shell reads for discovery".
+//
+// SO THE Authorization HEADER IS NOT AN ADMISSION CHECK HERE. It is read for ONE
+// thing — annotating gated SKUs with the caller's own access standing — and
+// annotation degrades to nothing when there is no verified principal.
+//
+// It used to hold a "require authentication" gate that authenticated nobody: it
+// rejected an ABSENT credential and a MALFORMED one, then accepted any string that
+// merely looked like a key. `Bearer hk-` followed by 36 zeroes returned 200 in
+// production; so did a JWT three days expired. It was a shape check wearing an auth
+// check's clothes, and its cost was diagnostic: /v1/models is the natural "is my auth
+// working?" probe, and answering 200 to a dead credential sent people debugging the
+// wrong system. A public endpoint must not appear to validate. Either check the
+// credential or ignore it — this one ignores it, deliberately and visibly.
+//
+// Removing that gate discloses nothing new: the catalogue was already reachable by
+// anyone willing to type three characters, so there is no confidentiality delta, only
+// an honesty one.
+//
 // @Title ListModels
 // @Tag OpenAI Compatible API
-// @Description Returns a list of all available models. Requires authentication.
-// @Param Authorization header string true "Bearer token"
+// @Description Returns a list of all available models. Public — no authentication.
 // @Success 200 {object} object
-// @Failure 401 {object} object "Unauthorized"
 // @router /models [get]
 func (c *ApiController) ListModels() {
-	// R-04 fix: require authentication for model listing.
-	// Accept any valid token type (JWT, IAM key, publishable key, widget key).
-	authHeader := c.Ctx.Request.Header.Get("Authorization")
-	token := ""
-	if strings.HasPrefix(authHeader, "Bearer ") {
-		token = strings.TrimPrefix(authHeader, "Bearer ")
-	}
-	hasSession := c.GetSessionUsername() != ""
-	if token == "" && !hasSession {
-		c.Ctx.Output.Header("Content-Type", "application/json")
-		c.Ctx.ResponseWriter.WriteHeader(401)
-		c.Ctx.Output.Body([]byte(`{"error":{"message":"Authentication required. Provide a Bearer token.","type":"authentication_error","code":"unauthorized"}}`))
-		c.EnableRender = false
-		return
-	}
-
-	// R-RED-03: Validate token format — reject obviously invalid bearer values.
-	// Accepted prefixes: hk- (IAM key), sk- (secret key), pk- (publishable key),
-	// hz_ (Hanzo token). JWTs must have 3 base64url-encoded parts.
-	if token != "" {
-		isKnownPrefix := strings.HasPrefix(token, "hk-") ||
-			strings.HasPrefix(token, "sk-") ||
-			strings.HasPrefix(token, "pk-") ||
-			strings.HasPrefix(token, "hz_")
-		isValidJWT := false
-		if !isKnownPrefix {
-			// JWT must have exactly 3 dot-separated parts, each valid base64url
-			parts := strings.Split(token, ".")
-			if len(parts) == 3 {
-				isValidJWT = true
-				for _, part := range parts {
-					if len(part) == 0 {
-						isValidJWT = false
-						break
-					}
-					if _, err := base64.RawURLEncoding.DecodeString(part); err != nil {
-						isValidJWT = false
-						break
-					}
-				}
-			}
-		}
-		if !isKnownPrefix && !isValidJWT {
-			c.Ctx.Output.Header("Content-Type", "application/json")
-			c.Ctx.ResponseWriter.WriteHeader(401)
-			c.Ctx.Output.Body([]byte(`{"error":{"message":"Invalid token format.","type":"authentication_error","code":"unauthorized"}}`))
-			c.EnableRender = false
-			return
-		}
-	}
-
 	models := listAvailableModels()
 
-	// Annotate gated (limited-preview) SKUs with the authenticated caller's access
-	// standing (waitlist|requested|granted), so the client can show "request access"
-	// vs "granted" without a second call.
+	// Annotate gated (limited-preview) SKUs with the caller's access standing
+	// (waitlist|requested|granted), so the client can show "request access" vs
+	// "granted" without a second call.
+	//
+	// The ONLY use of the credential on this route, and it is best-effort:
+	// principalUser returns nil unless the request carries a VERIFIED principal (a
+	// session, a signature-checked JWT, or a key IAM resolved), and
+	// annotateModelAccess returns immediately on nil. So an absent, expired or forged
+	// credential simply yields the un-annotated public catalogue — never a 401, and
+	// never another caller's standing.
 	annotateModelAccess(models, c.principalUser())
 
 	response := modelListEnvelope(models)

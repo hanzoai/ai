@@ -165,3 +165,130 @@ func TestGetUserByAccessKeyUsesCanonicalPath(t *testing.T) {
 		t.Errorf("resolved user owner = %+v, want owner=maxpower (the billing org)", user)
 	}
 }
+
+// ── /v1/models is PUBLIC, and does not pretend otherwise ─────────────────────
+
+// The catalogue answers every caller, including one carrying no credential at all.
+//
+// It used to hold a gate that authenticated NOBODY: it 401'd an absent credential and
+// a malformed one, then admitted any string shaped like a key. Verified against
+// production before this change: `Bearer hk-` + 36 zeroes returned 200, a 3.8-day
+// expired JWT returned 200, and only `Bearer totally-bogus` and a missing header were
+// refused. That is a shape check, not authentication — and because /v1/models is the
+// natural "is my auth working?" probe, answering 200 to a dead credential sent people
+// debugging the wrong system.
+//
+// A public endpoint must not APPEAR to validate. These cases pin that it no longer
+// does: same status, same catalogue, whatever the header says.
+func TestListModels_IsPublicAndNeverValidates(t *testing.T) {
+	for _, tc := range []struct{ name, auth string }{
+		{"no credential at all", ""},
+		{"a key that was never minted", "Bearer hk-000000000000000000000000000000000000"},
+		{"a syntactically broken token", "Bearer totally-bogus"},
+		{"an expired JWT", "Bearer eyJhbGciOiJIUzI1NiJ9.eyJleHAiOjF9.c2ln"},
+		{"not even a Bearer", "Basic dXNlcjpwYXNz"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, rec := newAuthController(http.MethodGet, "/v1/models", tc.auth, nil)
+			c.ListModels()
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200 — the catalogue is public: %s", rec.Code, rec.Body.String())
+			}
+			body := rec.Body.String()
+			if strings.Contains(body, "authentication_error") || strings.Contains(body, "unauthorized") {
+				t.Fatalf("a public catalogue answered with an auth error: %s", body)
+			}
+			if !strings.Contains(body, `"data"`) {
+				t.Fatalf("no catalogue in the response: %s", body)
+			}
+		})
+	}
+}
+
+// ── a refusal a holder can act on ────────────────────────────────────────────
+
+// IAM answers every unresolvable key with "the entity does not exist". Relaying that
+// verbatim told a user whose key had been REVOKED that their entity was gone, sending
+// them after a deleted organization instead of minting a new key. Each reason now has
+// exactly one cure — and none of them echoes the credential.
+func TestKeyRefusal_NamesTheCauseAndTheCure(t *testing.T) {
+	const key = "hk-902abd8e-dead-beef-cafe-000000000000"
+
+	for _, tc := range []struct {
+		code  string
+		wants []string
+	}{
+		{"key_unknown", []string{"not recognized", "revoked or replaced", "mint a new one"}},
+		{"key_wrong_door", []string{"not a secret key", "sk-"}},
+		{"key_expired", []string{"expired", "mint a new one"}},
+		{"key_not_publishable", []string{"not a publishable key"}},
+		{"key_foreign_user", []string{"refused", "key_foreign_user"}},
+	} {
+		err := keyRefusal(tc.code, "the entity does not exist", key)
+		if err == nil {
+			t.Fatalf("%s: no error", tc.code)
+		}
+		got := err.Error()
+		for _, want := range tc.wants {
+			// Case-insensitive: these assert the SUBSTANCE of the advice, not its
+			// sentence position.
+			if !strings.Contains(strings.ToLower(got), strings.ToLower(want)) {
+				t.Errorf("%s: %q does not mention %q", tc.code, got, want)
+			}
+		}
+		// The generic sentence must be GONE, not merely decorated.
+		if strings.Contains(got, "the entity does not exist") {
+			t.Errorf("%s: still relays IAM's generic sentence: %q", tc.code, got)
+		}
+		// NEVER the credential — only its prefix.
+		if strings.Contains(got, key) || strings.Contains(got, "dead-beef") {
+			t.Fatalf("%s: SECRET LEAK — the refusal echoed the key: %q", tc.code, got)
+		}
+		if !strings.Contains(got, "hk-902abd…") {
+			t.Errorf("%s: %q does not name WHICH key failed", tc.code, got)
+		}
+	}
+
+	// An IAM that sends no code (older build) still relays what it said, rather than
+	// this build inventing a cause it cannot know.
+	if got := keyRefusal("", "the entity does not exist", key).Error(); got != "IAM error: the entity does not exist" {
+		t.Errorf("no-code refusal = %q, want the relayed IAM message", got)
+	}
+}
+
+// The reason reaches keyRefusal from IAM's envelope — the field cloud and ai both
+// used to drop on the floor.
+func TestGetUserByAccessKey_SurfacesTheRefusalCode(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"error","msg":"the entity does not exist","code":"key_unknown"}`))
+	}))
+	defer srv.Close()
+
+	t.Setenv("IAM_URL", srv.URL)
+	t.Setenv("IAM_CLIENT_ID", "hanzo-cloud")
+	t.Setenv("IAM_CLIENT_SECRET", "s3cr3t")
+
+	_, err := getUserByAccessKey("hk-902abd8e-dead-beef-cafe-000000000000")
+	if err == nil {
+		t.Fatal("an unresolvable key must still fail")
+	}
+	if !strings.Contains(err.Error(), "not recognized") || !strings.Contains(err.Error(), "Mint a new one") {
+		t.Fatalf("error = %q, want the actionable revoked-key message", err)
+	}
+	if strings.Contains(err.Error(), "dead-beef") {
+		t.Fatalf("SECRET LEAK: %q", err)
+	}
+}
+
+// KeyHint discloses a prefix and nothing more.
+func TestKeyHint_Redacts(t *testing.T) {
+	if got := keyHint("hk-902abd8e-dead-beef-cafe-000000000000"); got != "hk-902abd…" {
+		t.Fatalf("keyHint = %q, want hk-902abd…", got)
+	}
+	for _, short := range []string{"", "hk-", "hk-abc"} {
+		if got := keyHint(short); got != "…" {
+			t.Errorf("keyHint(%q) = %q, want …", short, got)
+		}
+	}
+}
