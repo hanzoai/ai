@@ -6,7 +6,6 @@
 each request to a model, meters it, and carries the RAG and model-hub surfaces alongside.
 Pure Go.
 
-[![Build](https://github.com/hanzoai/ai/actions/workflows/build.yml/badge.svg)](https://github.com/hanzoai/ai/actions/workflows/build.yml)
 [![Release](https://img.shields.io/github/v/release/hanzoai/ai.svg)](https://github.com/hanzoai/ai/releases/latest)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
