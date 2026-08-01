@@ -153,9 +153,9 @@ func annotateModelAccess(models []modelInfo, user *iam.User) {
 
 // ── endpoints ────────────────────────────────────────────────────────────────
 
-// RequestModelAccess (POST /v1/models/:model/access) records the caller's waitlist
-// request for a gated model. Authed, idempotent, and self-scoped (the row is keyed to
-// the caller's own org/identity — never a body-supplied owner). Returns the status.
+// RequestModelAccess records the caller's waitlist request for a gated model and
+// answers their new standing. Authed, idempotent, and self-scoped: the row is keyed
+// to the caller's own org and identity, never to a body-supplied owner.
 func (c *ApiController) RequestModelAccess() {
 	user := c.principalUser()
 	if user == nil {
@@ -176,8 +176,8 @@ func (c *ApiController) RequestModelAccess() {
 	c.ResponseOk(row)
 }
 
-// GetModelAccessStatus (GET /v1/models/:model/access) returns the caller's standing
-// for a gated model ("granted" | "requested" | "" none).
+// GetModelAccessStatus returns the caller's own standing for a gated model:
+// "granted", "requested", or empty when they have never asked.
 func (c *ApiController) GetModelAccessStatus() {
 	user := c.principalUser()
 	if user == nil {
@@ -192,10 +192,10 @@ func (c *ApiController) GetModelAccessStatus() {
 	})
 }
 
-// AdminGrantModelAccess (POST /v1/admin/model-access) grants (or requests) access for
-// any org/user/model. SuperAdmin only — mirrors the router_policy admin pattern but
-// at platform scope. Body: {owner, user, email?, model, status?}. user "" grants the
-// whole org; status defaults to "granted".
+// AdminGrantModelAccess grants — or records a request for — one org or user's access
+// to a gated model. SuperAdmin only, at platform scope. The body is {owner, user,
+// email?, model, status?}: an empty user grants the whole org, and status defaults to
+// "granted".
 func (c *ApiController) AdminGrantModelAccess() {
 	if !c.RequireSuperAdmin() {
 		return
@@ -227,8 +227,8 @@ func (c *ApiController) AdminGrantModelAccess() {
 	c.ResponseOk(row)
 }
 
-// AdminListModelAccess (GET /v1/admin/model-access[?owner=]) lists access rows.
-// SuperAdmin only; without ?owner it returns every org's rows.
+// AdminListModelAccess lists the gated-model access rows, filtered to one org by
+// ?owner. SuperAdmin only; without ?owner it returns every org's rows.
 func (c *ApiController) AdminListModelAccess() {
 	if !c.RequireSuperAdmin() {
 		return
