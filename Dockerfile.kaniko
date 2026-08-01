@@ -24,7 +24,11 @@ ENV NODE_OPTIONS="--max-old-space-size=4096"
 RUN pnpm install --frozen-lockfile && pnpm build
 
 
-FROM golang:1.26.4-alpine AS back
+FROM golang:1.26.5-alpine AS back
+# go.mod pins the toolchain. The golang base image sets GOTOOLCHAIN=local,
+# which turns a `go` directive newer than the image into a hard build
+# failure instead of a download.
+ENV GOTOOLCHAIN=auto
 RUN apk add --no-cache git
 WORKDIR /go/src/hanzo-cloud
 ARG GH_TOKEN=""

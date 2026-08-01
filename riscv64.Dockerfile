@@ -7,7 +7,11 @@ COPY ./web .
 ENV NODE_OPTIONS="--max-old-space-size=4144"
 RUN pnpm install --frozen-lockfile && pnpm build
 
-FROM --platform=$BUILDPLATFORM riscv64/golang:1.23.11-alpine3.21 AS BACK
+FROM --platform=$BUILDPLATFORM riscv64/golang:1.26.5-alpine AS BACK
+# go.mod pins the toolchain. The golang base image sets GOTOOLCHAIN=local,
+# which turns a `go` directive newer than the image into a hard build
+# failure instead of a download.
+ENV GOTOOLCHAIN=auto
 WORKDIR /go/src/cloud
 COPY . .
 RUN chmod +x ./build.sh
