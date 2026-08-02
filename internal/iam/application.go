@@ -31,9 +31,19 @@ type Application struct {
 }
 
 // GetApplication fetches an application by name (owned by admin).
+// PlatformOwner is the reserved org that holds cross-tenant configuration:
+// applications, organizations and the signing certs applications point at. It is
+// not a tenant and nothing customer-facing lives in it.
+//
+// It is a constant, and named, because these reads MUST agree. An application
+// addressed in one partition and its certificate in another resolves an app and
+// then fails to resolve the key that app's tokens are signed with — which reads
+// as a missing cert rather than as a mis-addressed one.
+const PlatformOwner = "admin"
+
 func (c *Client) GetApplication(name string) (*Application, error) {
 	url := c.GetUrl("get-application", map[string]string{
-		"id": fmt.Sprintf("admin/%s", name),
+		"id": fmt.Sprintf("%s/%s", PlatformOwner, name),
 	})
 	bytes, err := c.DoGetBytes(url)
 	if err != nil {
