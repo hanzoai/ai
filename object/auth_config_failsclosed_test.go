@@ -1,4 +1,4 @@
-package controllers
+package object
 
 import (
 	"bytes"
@@ -10,13 +10,19 @@ import (
 	iam "github.com/hanzoai/ai/internal/iam"
 )
 
-// account_authinit_test.go proves the auth boundary fails CLOSED.
+// This file proves the auth boundary fails CLOSED, against responses the live IAM
+// actually emitted.
 //
-// THE BUG THIS LOCKS OUT. InitAuthConfig used to warn and return on any failure to
-// read the IAM application or its signing cert. With no cert the process still
-// served, but every bearer failed to validate, so every authenticated route
-// answered 401 — including free ones like /v1/models. The pod stayed Running and
-// passed its probes, so no crashloop, no failed rollout, nothing caught it.
+// THE BUG THIS LOCKS OUT. Resolution used to warn and return on any failure to read
+// the IAM application or its signing cert. With no cert the process still served,
+// but every bearer failed to validate, so every authenticated route answered 401 —
+// including free ones like /v1/models. The pod stayed Running and passed its
+// probes, so no crashloop, no failed rollout, nothing caught it.
+//
+// The cure was a panic in an init(), which traded that for an outage of everything
+// in the process whenever IAM blinked (twice in production — see auth_config.go).
+// Resolution is now lazy and retrying, and the door answers 503. What must NOT
+// change, and is what this file holds, is that none of these bodies ever resolves.
 //
 // WHY THESE FIXTURES ARE REAL. Each body below is the VERBATIM response the live
 // IAM emitted, captured 2026-07-27 against the in-cluster service:
@@ -65,7 +71,7 @@ func (r replay) Do(*http.Request) (*http.Response, error) {
 // TestInitAuthConfigFailsClosed proves that every way the IAM application read can
 // fail produces an ERROR rather than a silently unconfigured auth boundary. Before
 // the fix each of these returned cleanly and the process served with auth off.
-func TestInitAuthConfigFailsClosed(t *testing.T) {
+func TestResolveAuthConfigFailsClosed(t *testing.T) {
 	t.Setenv("IAM_URL", "http://iam.hanzo.svc")
 	t.Setenv("IAM_CLIENT_ID", "hanzo-cloud")
 	t.Setenv("IAM_CLIENT_SECRET", "test-secret")
@@ -77,9 +83,10 @@ func TestInitAuthConfigFailsClosed(t *testing.T) {
 			iam.SetHttpClient(replay{body: body})
 			t.Cleanup(func() { iam.SetHttpClient(&http.Client{}) })
 
-			err := initAuthConfig()
+			ResetAuthReady()
+			err := resolveAuthConfig()
 			if err == nil {
-				t.Fatalf("initAuthConfig returned nil for %s (body %q) — "+
+				t.Fatalf("resolveAuthConfig returned nil for %s (body %q) — "+
 					"auth would be silently disabled and every bearer would 401", name, body)
 			}
 			// The operator has to be able to act on this without a debugger.
@@ -90,35 +97,44 @@ func TestInitAuthConfigFailsClosed(t *testing.T) {
 	}
 }
 
-// TestInitAuthConfigPanicsRatherThanServing proves the exported entry point ends the
-// process instead of returning to a caller that would go on to serve traffic. A
-// crashloop is the signal we want: the operator reverts on it, and it cannot be
-// mistaken for a healthy pod the way "Running and 401ing everything" was.
-func TestInitAuthConfigPanicsRatherThanServing(t *testing.T) {
+// AuthReady REPORTS the failure rather than ending the process, and keeps
+// reporting it — so the caller (the door, which answers 503) decides what an
+// unreachable identity costs.
+//
+// This replaces a test that asserted a panic. The panic was the right answer to the
+// fail-open and the wrong answer to everything else: it ran in an init(), before any
+// subsystem mounted, so a momentary IAM outage killed the whole process and it did
+// not come back on its own once IAM did. What must hold is that the failure is never
+// swallowed — not that it is fatal.
+func TestAuthReadyReportsRatherThanEndingTheProcess(t *testing.T) {
+	ResetAuthReady()
 	t.Setenv("IAM_URL", "http://iam.hanzo.svc")
 	t.Setenv("IAM_APP_NAME", "hanzo-cloud")
 	iam.SetHttpClient(replay{body: liveIAMBodies["authz Guard forbade the read (the outage)"]})
 	t.Cleanup(func() { iam.SetHttpClient(&http.Client{}) })
 
-	defer func() {
-		r := recover()
-		if r == nil {
-			t.Fatal("InitAuthConfig returned instead of panicking — the process would serve with auth off")
-		}
-		if !strings.Contains(strings.ToLower(r.(string)), "refusing to start") {
-			t.Errorf("panic must say the process is refusing to start, got: %v", r)
-		}
-	}()
-	InitAuthConfig()
+	err := AuthReady()
+	if err == nil {
+		t.Fatal("AuthReady resolved on the outage body — the process would serve with auth off")
+	}
+	if !strings.Contains(err.Error(), "hanzo-cloud") {
+		t.Errorf("the failure must name the application it could not establish, got: %v", err)
+	}
+	// And it stays unresolved: a later caller must not be told everything is fine
+	// because an earlier one already asked.
+	if AuthReady() == nil {
+		t.Fatal("a second caller was told auth was ready while the cert is still unestablished")
+	}
 }
 
 // TestInitAuthConfigAllowsNoIAM keeps the legitimate no-auth deployment (dev, tests,
 // any build with no IAM_URL) booting. This is the ONLY path that may leave auth
 // unconfigured, and it is chosen explicitly by configuration rather than reached by
 // swallowing an error.
-func TestInitAuthConfigAllowsNoIAM(t *testing.T) {
+func TestResolveAuthConfigAllowsNoIAM(t *testing.T) {
+	ResetAuthReady()
 	t.Setenv("IAM_URL", "")
-	if err := initAuthConfig(); err != nil {
+	if err := resolveAuthConfig(); err != nil {
 		t.Fatalf("no IAM_URL must boot cleanly (deliberate no-auth deployment), got: %v", err)
 	}
 }
