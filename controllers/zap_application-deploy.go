@@ -94,7 +94,7 @@ var zapApplicationDeployGateway = map[string]zapApplicationDeployFn{}
 
 // zapAppPrincipal resolves the request principal STRICTLY from its verified
 // credential — the ZAP analogue of principalUser (there is no session cookie on
-// the ZAP path). hk-/pk- IAM keys route through getUserByAccessKey; JWTs through
+// the ZAP path). pk-/sk- IAM keys route through getUserByAccessKey; JWTs through
 // object.ParseAndValidateJWT (signature + iss/aud, never raw iam.ParseJwtToken).
 // Returns nil for an empty/invalid/unsupported credential — fail-secure.
 func zapAppPrincipal(auth string) *iam.User {

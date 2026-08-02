@@ -87,7 +87,7 @@ func registerZapMemory() {
 // ── Identity (the ONE auth seam) ─────────────────────────────────────────
 
 // zapMemoryIdentity resolves the trusted (org, userID) from the auth token.
-// zapResolveUser routes pk-/hk- IAM keys through getUserByAccessKey and JWTs
+// zapResolveUser routes pk-/sk- IAM keys through getUserByAccessKey and JWTs
 // through object.ParseAndValidateJWT (sig + iss/aud), returning "owner/name":
 // org = owner (== gateway X-Org-Id / JWT owner), userID = name (== X-User-Id /
 // JWT sub). Empty auth or a missing half → 401, matching requireMemoryIdentity.

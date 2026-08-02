@@ -24,7 +24,7 @@ func TestRateLimiterAllow(t *testing.T) {
 	rl := NewRateLimiter(func(string) Tier { return TierZenFree }, time.Hour)
 	defer rl.Stop()
 
-	key := "hk-test-key-free"
+	key := "sk-test-key-free"
 
 	// Burst of 12 should all succeed.
 	for i := 0; i < 12; i++ {
@@ -75,7 +75,7 @@ func TestRateLimiterTierLimits(t *testing.T) {
 			rl := NewRateLimiter(func(string) Tier { return tier }, time.Hour)
 			defer rl.Stop()
 
-			key := "hk-tier-test"
+			key := "sk-tier-test"
 
 			// All burst requests should succeed.
 			for i := 0; i < testBurst; i++ {
@@ -99,7 +99,7 @@ func TestRateLimiterMetrics(t *testing.T) {
 	rl := NewRateLimiter(func(string) Tier { return TierZenFree }, time.Hour)
 	defer rl.Stop()
 
-	key := "hk-metrics-test"
+	key := "sk-metrics-test"
 
 	// 12 allowed (burst), then 1 denied.
 	for i := 0; i < 12; i++ {
@@ -120,7 +120,7 @@ func TestRateLimiterRetryAfter(t *testing.T) {
 	rl := NewRateLimiter(func(string) Tier { return TierZenFree }, time.Hour)
 	defer rl.Stop()
 
-	key := "hk-retry-test"
+	key := "sk-retry-test"
 
 	// Exhaust burst (12 for zen-free) plus 1 more to trigger denial.
 	for i := 0; i < 13; i++ {
@@ -138,7 +138,7 @@ func TestRateLimiterUnknownKeyRetryAfter(t *testing.T) {
 	defer rl.Stop()
 
 	// Key that was never seen should return 1.
-	retryAfter := rl.RetryAfter("hk-unknown")
+	retryAfter := rl.RetryAfter("sk-unknown")
 	if retryAfter != 1 {
 		t.Errorf("expected retry_after=1 for unknown key, got %d", retryAfter)
 	}
@@ -148,7 +148,7 @@ func TestRateLimiterCleanup(t *testing.T) {
 	rl := NewRateLimiter(func(string) Tier { return TierZenFree }, 50*time.Millisecond)
 	defer rl.Stop()
 
-	key := "hk-cleanup-test"
+	key := "sk-cleanup-test"
 	rl.Allow(key)
 
 	// Manually set lastSeen to the past so cleanup will evict it.
@@ -172,8 +172,8 @@ func TestRateLimiterSeparateKeys(t *testing.T) {
 	rl := NewRateLimiter(func(string) Tier { return TierZenFree }, time.Hour)
 	defer rl.Stop()
 
-	keyA := "hk-user-a"
-	keyB := "hk-user-b"
+	keyA := "sk-user-a"
+	keyB := "sk-user-b"
 
 	// Exhaust key A's burst (12 for zen-free) plus 1 more.
 	for i := 0; i < 13; i++ {
@@ -217,7 +217,7 @@ func TestIsRateLimitExempt(t *testing.T) {
 
 func TestDefaultTierFuncUnset(t *testing.T) {
 	// With no RATE_LIMIT_TIERS set, everything should be zen-free tier.
-	tier := DefaultTierFunc("hk-anything")
+	tier := DefaultTierFunc("sk-anything")
 	if tier != TierZenFree {
 		t.Errorf("expected TierZenFree, got %q", tier)
 	}
@@ -231,7 +231,7 @@ func TestRateLimiterConcurrent(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		go func() {
 			for j := 0; j < 100; j++ {
-				rl.Allow("hk-concurrent")
+				rl.Allow("sk-concurrent")
 			}
 			done <- struct{}{}
 		}()

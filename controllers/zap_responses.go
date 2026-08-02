@@ -115,7 +115,7 @@ func zapResponsesHandler(ctx context.Context, auth string, body []byte) (*zap.Me
 	}
 
 	// STEP 1/2 — identity + org scoping + per-org provider + upstream model.
-	// The ONE auth seam (routes pk-/hk- IAM keys, JWTs, and sk- direct keys).
+	// The ONE auth seam (routes pk-/sk- IAM keys, JWTs, and sk- direct keys).
 	provider, authUser, upstreamModel, err := zapResolveAuth(auth, chatRequest.Model)
 	if err != nil {
 		return object.BuildCloudResponse(401, nil, err.Error())

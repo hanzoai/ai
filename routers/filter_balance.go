@@ -105,7 +105,7 @@ var balanceGate *BalanceGate
 // InitBalanceGate reads Commerce connection parameters from app config and
 // creates the balance gate. Must be called once during startup. If Commerce
 // is not configured, the gate is not created and BalanceGateFilter is a no-op.
-// IAM connection parameters are NOT read here: hk- resolution goes through the
+// IAM connection parameters are NOT read here: key resolution goes through the
 // one resolver (controllers.GetUserByAccessKey), which owns that config.
 func InitBalanceGate() {
 	endpoint := conf.GetConfigString("commerceEndpoint")
@@ -328,7 +328,7 @@ func isBalanceExempt(path, method string) bool {
 // It checks three sources in order:
 //  1. Session user (set by AutoSigninFilter for legacy auth)
 //  2. JWT Bearer token (parsed locally, no network call)
-//  3. IAM API key (hk- prefix, resolved via cached IAM lookup)
+//  3. IAM API key (sk- prefix, resolved via cached IAM lookup)
 //
 // Returns ("", "", "") if the subject cannot be identified (fail-open: filter
 // skips). The userKey is the exact "owner/name" identity used for per-user
@@ -381,10 +381,9 @@ func resolveBillingKey(ctx *web.Context) (subject, namespace, userKey string) {
 		return account.Payer(account.Credential{Owner: owner, Name: "", Machine: account.IsMachine("application")}).Subject(), owner, owner + "/widget"
 	}
 
-	// Provider keys (sk-) and publishable keys (pk-) don't map to IAM orgs with
-	// Commerce balances here — the controller attributes sk- to its provider
-	// owner; pk- is read-only. Skip in the router gate.
-	if strings.HasPrefix(token, "sk-") || strings.HasPrefix(token, "pk-") {
+	// A publishable key identifies an org for ingest and authenticates nobody, so
+	// there is no principal here to bill. Skip it in the router gate.
+	if strings.HasPrefix(token, "pk-") {
 		return "", "", ""
 	}
 
@@ -431,13 +430,17 @@ func resolveBillingKey(ctx *web.Context) (subject, namespace, userKey string) {
 		return "", "", ""
 	}
 
-	// IAM API key (hk- prefix): resolve via IAM (cached). An hk- key carries no
+	// IAM API key (sk- prefix): resolve via IAM (cached). An API key carries no
 	// signed membership set, so it never switches — it bills the org that owns it.
-	if strings.HasPrefix(token, "hk-") {
+	//
+	// The MISS is cached too, and deliberately: an upstream vendor key wears the
+	// same sk- spelling and IAM will never own it, so caching only the hit would
+	// buy a fresh IAM round-trip on every request such a caller makes. A miss
+	// resolves no subject, which is the fail-open this gate already takes — the
+	// controller still bills that call against its provider row.
+	if strings.HasPrefix(token, "sk-") {
 		subject, namespace, userKey = balanceGate.resolveIAMKeySubject(token)
-		if subject != "" {
-			balanceGate.setUserKeyCache(token, requested, subject, namespace, userKey)
-		}
+		balanceGate.setUserKeyCache(token, requested, subject, namespace, userKey)
 		return subject, namespace, userKey
 	}
 
@@ -619,18 +622,18 @@ func (bg *BalanceGate) setUserKeyCache(token, org, subject, namespace, userKey s
 
 // ── IAM key resolution ──────────────────────────────────────────────────────
 
-// resolveIAMKeySubject resolves an hk- API key to its billing identity:
+// resolveIAMKeySubject resolves an sk- API key to its billing identity:
 // (subject, namespace, userKey). The namespace is the org `owner`; the subject
 // is account.Payer(account.Credential{Owner: owner, Name: name}).Subject() — so a
 // personal-org key bills per-user; the userKey is the exact "owner/name" for
 // exemption matching. Returns ("", "", "") on any error (fail-open).
 //
-// The lookup itself is controllers.GetUserByAccessKey — the ONE hk- resolver, so
+// The lookup itself is controllers.GetUserByAccessKey — the ONE key resolver, so
 // the billing subject and the authz principal are by construction the same
 // identity resolved over the same authenticated IAM transport. This file used to
 // carry a second copy that passed clientId/clientSecret as QUERY PARAMS; IAM
 // derives no principal from those, so it 401'd and this gate silently fail-opened
-// on every hk- key. One resolver means that cannot drift again.
+// on every key. One resolver means that cannot drift again.
 func (bg *BalanceGate) resolveIAMKeySubject(apiKey string) (subject, namespace, userKey string) {
 	u, err := controllers.GetUserByAccessKey(apiKey)
 	if err != nil {

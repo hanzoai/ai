@@ -82,7 +82,7 @@ func registerZapAIConnections() {
 // ── identity / org scoping (the ONE auth seam) ──────────────────────────────
 
 // zapConnectionOrg resolves the caller's org from the VERIFIED ZAP principal,
-// never from the body. It reuses zapResolveUser (pk-/hk- IAM keys via
+// never from the body. It reuses zapResolveUser (pk-/sk- IAM keys via
 // getUserByAccessKey, JWTs via object.ParseAndValidateJWT) and takes the Owner half
 // of "owner/name" — the exact tenant GetOrg defaults to for a non-admin, so a caller
 // can only ever manage its OWN org's connections.

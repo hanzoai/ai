@@ -25,7 +25,7 @@ func TestTenantContextFilter_ThreadsAttribution(t *testing.T) {
 	req.Header.Set("X-Project-Id", "research")
 	req.Header.Set("X-Session-Id", "conv-42")
 	req.Header.Set("X-Environment", "staging")
-	req.Header.Set("Authorization", "Bearer hk-secret-key")
+	req.Header.Set("Authorization", "Bearer sk-secret-key")
 
 	ctx := web.NewContext()
 	ctx.Reset(rec, req)
@@ -42,11 +42,11 @@ func TestTenantContextFilter_ThreadsAttribution(t *testing.T) {
 	if attr.Environment != "staging" {
 		t.Fatalf("environment not threaded onto request context: %q", attr.Environment)
 	}
-	want := sha256.Sum256([]byte("hk-secret-key"))
+	want := sha256.Sum256([]byte("sk-secret-key"))
 	if attr.APIKeyHash != hex.EncodeToString(want[:]) {
 		t.Fatalf("api key hash = %q, want the SHA-256 ref", attr.APIKeyHash)
 	}
-	if strings.Contains(attr.APIKeyHash, "hk-secret-key") {
+	if strings.Contains(attr.APIKeyHash, "sk-secret-key") {
 		t.Fatal("plaintext credential must NEVER appear in the ref")
 	}
 }
@@ -73,7 +73,7 @@ func TestTenantContextFilter_SessionAliasConversationID(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("POST", "/v1/chat/completions", nil)
 	req.Header.Set("X-Conversation-Id", "thread-7")
-	req.Header.Set("Authorization", "Bearer hk-secret-key")
+	req.Header.Set("Authorization", "Bearer sk-secret-key")
 
 	ctx := web.NewContext()
 	ctx.Reset(rec, req)
@@ -92,11 +92,11 @@ func TestHashBearer(t *testing.T) {
 	if got := hashBearer("   "); got != "" {
 		t.Fatalf("blank → %q, want \"\"", got)
 	}
-	want := sha256.Sum256([]byte("hk-abc"))
-	if got := hashBearer("Bearer hk-abc"); got != hex.EncodeToString(want[:]) {
-		t.Fatalf("hashBearer(Bearer hk-abc) = %q", got)
+	want := sha256.Sum256([]byte("sk-abc"))
+	if got := hashBearer("Bearer sk-abc"); got != hex.EncodeToString(want[:]) {
+		t.Fatalf("hashBearer(Bearer sk-abc) = %q", got)
 	}
-	if hashBearer("hk-abc") != hashBearer("Bearer hk-abc") {
+	if hashBearer("sk-abc") != hashBearer("Bearer sk-abc") {
 		t.Fatal("raw and Bearer-prefixed tokens must hash identically")
 	}
 }

@@ -360,7 +360,7 @@ func anthropicErrorType(err error) string {
 // @Title AnthropicMessages
 // @Tag Anthropic Compatible API
 // @Description Anthropic compatible messages API. Accepts:
-//   - IAM API key (hk-...)  via x-api-key or Authorization header
+//   - IAM API key (sk-...)  via x-api-key or Authorization header
 //   - hanzo.id JWT token    via Authorization header
 //   - Provider API key      via Authorization header
 //

@@ -181,7 +181,7 @@ func TestChatCompletionsUnattributedNever500(t *testing.T) {
 		{"garbage-opaque-token", "Bearer zzzzzzzzzzzzzzzzzzzz", goodBody, http.StatusUnauthorized},
 		{"malformed-jwt", "Bearer aaaaaaaaaaaaa.bbbbbbbbbbbbb.cccccccccccc", goodBody, http.StatusUnauthorized},
 		{"expired-jwt", "Bearer eyJhbGciOiJSUzI1NiJ9.eyJpc3MiOiJodHRwczovL2hhbnpvLmlkIiwiZXhwIjoxMDAwfQ.badsig", goodBody, http.StatusUnauthorized},
-		{"unknown-iam-key", "Bearer hk-nonexistent-000000", goodBody, http.StatusUnauthorized},
+		{"unknown-iam-key", "Bearer sk-nonexistent-000000", goodBody, http.StatusUnauthorized},
 		{"malformed-body-no-credential", "Bearer ", `{not json`, http.StatusUnauthorized},
 		{"malformed-body-valid-widget", "Bearer " + chatWidgetKey, `{not json`, http.StatusBadRequest},
 	}

@@ -42,9 +42,9 @@ func (c *ApiController) credentialUser() *iam.User {
 		}
 		return &claims.User
 	}
-	// Non-JWT Bearer: an hk- IAM API key. Resolve it to its owning user via IAM so
+	// Non-JWT Bearer: an sk- IAM API key. Resolve it to its owning user via IAM so
 	// GetOrg yields the caller's real tenant (routing, pricing, usage reads, record
-	// attribution) instead of the IAM_ORG default. Without this, an hk- chat call
+	// attribution) instead of the IAM_ORG default. Without this, a keyed chat call
 	// resolved orgId="" and relied solely on the separately-resolved authUser.Owner
 	// for tenant attribution to zen — a split that 402'd whenever that fallback was
 	// absent. Fail-secure: an unknown key (IAM data:null) yields nil, never a
@@ -95,7 +95,7 @@ func (c *ApiController) principalIsOwnBrand() bool {
 // JWT: the orgs IAM states this subject may act in. It is the ONLY admissible
 // proof of membership — see account.EffectiveOrg.
 //
-// nil for every credential that carries no such claim: a cookie session, an hk-
+// nil for every credential that carries no such claim: a cookie session, an sk-
 // IAM key, a widget (hz_) or provider (sk-) key, and any token minted before the
 // claim shipped. nil names no org, so all of those stay in their home org exactly
 // as they did before the claim existed.

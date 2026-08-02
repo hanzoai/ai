@@ -30,7 +30,7 @@
 // in-controller check (ownership via zapIsCurrentUser, store isolation via
 // zapEnforceStoreIsolation, admin-only reads). The principal is resolved from the
 // Bearer credential through the ONE shared seam (zapPrincipalUser: verified JWT
-// via object.ParseAndValidateJWT / hk- IAM key via getUserByAccessKey) — identity
+// via object.ParseAndValidateJWT / sk- IAM key via getUserByAccessKey) — identity
 // is never taken from the body; org scope is always the resolved user's Owner.
 //
 // Envelope parity: success/error use the SAME {status,data,data2,msg} Response the

@@ -87,7 +87,7 @@ func zapGwError(status uint32, msg string) (*zap.Message, error) {
 // zapResolveUser (zap_native.go) returns only "owner/name"; the authz checks here
 // need the whole *iam.User (IsSuperAdmin, name/email for access keying). This
 // composes the SAME verified resolvers — object.ParseAndValidateJWT (signature +
-// iss/aud) for JWTs, getUserByAccessKey for hk-/pk- IAM keys — and never trusts
+// iss/aud) for JWTs, getUserByAccessKey for pk-/sk- IAM keys — and never trusts
 // the body. Mirrors credentialUser (org_resolver.go) for the Bearer-only path.
 func zapPrincipalUser(auth string) *iam.User {
 	token := strings.TrimPrefix(auth, "Bearer ")

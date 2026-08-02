@@ -65,7 +65,7 @@ func TestZapVideosPollDownloadMissingID(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			msg, err := tc.fn(context.Background(), "Bearer hk-whatever", []byte(tc.body))
+			msg, err := tc.fn(context.Background(), "Bearer sk-whatever", []byte(tc.body))
 			if err != nil {
 				t.Fatalf("handler error: %v", err)
 			}

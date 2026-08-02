@@ -23,7 +23,7 @@
 // SUPER ADMIN (util.IsSuperAdmin, owner == "admin") — the SAME policy the beego
 // authz filter applies (routers/authz_filter.go superAdminEndpoints). The native
 // ZAP path never runs that filter, so the gate is re-enforced verbatim here via
-// the shared zapResolvePrincipal identity seam (JWT → ParseAndValidateJWT, hk- →
+// the shared zapResolvePrincipal identity seam (JWT → ParseAndValidateJWT, sk- →
 // getUserByAccessKey). One verified principal; the body is never trusted for
 // identity. /v1/provider-flags is the public, secret-free enabled-name feed the
 // filter deliberately leaves ungated.

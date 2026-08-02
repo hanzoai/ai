@@ -21,19 +21,13 @@ import (
 	"github.com/hanzoai/ai/web"
 )
 
-// isJwtLike returns true if the token looks like a JWT (three dot-separated segments).
 // apiKeyPrefixes are the opaque Hanzo credential prefixes.
 //
 // pk- is the publishable lookup handle and sk- is the secret half — those are
-// the only two a credential can be, and the only two IAM mints.
-//
-// hk- is LEGACY-ACCEPTED, never minted. IAM stopped issuing it in v1.33.9, when
-// the third prefix was retired. Keys handed out before that are still live, and
-// resolution is an exact-value lookup rather than a prefix match, so they keep
-// authenticating. Do NOT drop hk- from this list to "finish the migration" —
-// that silently 401s every key issued before v1.33.9. It comes out only once no
-// hk- key remains in the store.
-var apiKeyPrefixes = []string{"pk-", "sk-", "hk-"}
+// the only two a credential can be, and the only two IAM mints. A token wearing
+// any other prefix is not a key, and admitting one here would only widen what
+// counts as a credential.
+var apiKeyPrefixes = []string{"pk-", "sk-"}
 
 // isOpaqueAPIKey reports whether token is one of our opaque API keys, as opposed
 // to a JWT or a legacy MD5 access token. Named and shared so the rule lives in
@@ -47,6 +41,7 @@ func isOpaqueAPIKey(token string) bool {
 	return false
 }
 
+// isJwtLike returns true if the token looks like a JWT (three dot-separated segments).
 func isJwtLike(token string) bool {
 	parts := strings.Split(token, ".")
 	return len(parts) == 3 && len(parts[0]) > 10 && len(parts[1]) > 10
@@ -57,8 +52,8 @@ func AutoSigninFilter(ctx *web.Context) {
 
 	// Skip endpoints that handle their own auth (chat completions, models,
 	// search/index/scrape, and /v1/ routes). These controllers validate
-	// pk-/sk- keys (and legacy hk-) and JWTs directly, so the legacy MD5-based
-	// access-token check here would incorrectly reject them.
+	// pk-/sk- keys and JWTs directly, so the legacy MD5-based access-token
+	// check here would incorrectly reject them.
 	//
 	// NOTE: /api/models was removed from this skip list (R-04 fix).
 	// It now runs through AutoSigninFilter so session-based users are
