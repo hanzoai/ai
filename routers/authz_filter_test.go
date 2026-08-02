@@ -169,7 +169,7 @@ func TestWriteEndpointsRequireCredential(t *testing.T) {
 // the coarse presence gate must never reject a credential-bearing request.
 func TestWriteEndpointWithCredentialPassesFilter(t *testing.T) {
 	// Bearer present (validity is the controller's job).
-	ctx, rec := newFilterCtxAuth("POST", "/v1/rag/embed", "hk-some-key")
+	ctx, rec := newFilterCtxAuth("POST", "/v1/rag/embed", "sk-some-key")
 	permissionFilter(ctx)
 	if rec.Code != http.StatusOK || rec.Body.Len() != 0 {
 		t.Errorf("credentialed /v1/rag/embed wrote a denial (code=%d, body=%q); want filter pass-through", rec.Code, rec.Body.String())

@@ -376,7 +376,7 @@ func TestIsJwtTokenLike(t *testing.T) {
 	if !isJwtTokenLike(jwt) {
 		t.Error("expected a 3-segment JWT-like token to be recognized")
 	}
-	for _, notJwt := range []string{"hk-abcdef", "sk-xyz", "", "a.b", "a.b.c.d"} {
+	for _, notJwt := range []string{"sk-abcdef", "sk-xyz", "", "a.b", "a.b.c.d"} {
 		if isJwtTokenLike(notJwt) {
 			t.Errorf("token %q should not be JWT-like", notJwt)
 		}

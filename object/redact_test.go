@@ -31,7 +31,7 @@ func TestRedactUserSecrets(t *testing.T) {
 		Password:             "argon2id$hashbits",
 		PasswordSalt:         "saltsaltsalt",
 		PasswordType:         "argon2id",
-		AccessKey:            "hk-accesskey",
+		AccessKey:            "sk-accesskey",
 		AccessSecret:         "accesssecretvalue",
 		AccessToken:          "access.token.jwt",
 		OriginalToken:        "orig.token.jwt",
@@ -75,7 +75,7 @@ func TestRedactUserSecrets(t *testing.T) {
 		t.Fatalf("marshal: %v", err)
 	}
 	for _, secret := range []string{
-		"argon2id$hashbits", "saltsaltsalt", "hk-accesskey",
+		"argon2id$hashbits", "saltsaltsalt", "sk-accesskey",
 		"accesssecretvalue", "access.token.jwt", "orig.token.jwt",
 		"orig.refresh.jwt", "TOTPSEED1234", "rc-1", "rc-2", "mfa-secret", "mrc-1",
 	} {

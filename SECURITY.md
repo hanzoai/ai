@@ -12,6 +12,6 @@ This policy covers code in this repository. For the broader Hanzo platform threa
 
 ## Sandbox boundary
 
-`ai` validates every request against Hanzo IAM (API key `hk-*` or JWT) and scopes routing, usage, and billing per the JWT-validated `X-Org-Id`. Provider API keys (OpenAI, Anthropic, Fireworks, DO-AI, ...) are resolved from `kms` per-org and never leave the binary; nothing about a tenant's prompt, response, or provider mapping is exposed across org boundaries.
+`ai` validates every request against Hanzo IAM (API key `sk-*` or JWT) and scopes routing, usage, and billing per the JWT-validated `X-Org-Id`. Provider API keys (OpenAI, Anthropic, Fireworks, DO-AI, ...) are resolved from `kms` per-org and never leave the binary; nothing about a tenant's prompt, response, or provider mapping is exposed across org boundaries.
 
 For runtime sandbox guarantees, see HIP-0105 (in-process extension runtimes).

@@ -515,17 +515,19 @@ func zapResolveUser(auth string) (string, error) {
 func zapResolveAuth(auth string, requestModel string) (*object.Provider, *iam.User, string, error) {
 	token := strings.TrimPrefix(auth, "Bearer ")
 
-	if isIAMApiKey(token) {
-		return resolveProviderFromIAMKey(token, requestModel, "en")
-	}
 	if isJwtToken(token) {
 		return resolveProviderFromJwt(token, "", requestModel, "en")
 	}
 
-	// Direct provider key (sk-...).
+	// A secret key: the STORE that owns it decides what it is, exactly as
+	// ApiController.authResolveProvider does it. A vendor key lives in the
+	// provider table; anything else answers to IAM, whose refusal names the cure.
 	provider, err := object.GetProviderByProviderKey(token, "en")
-	if err != nil || provider == nil {
+	if err != nil {
 		return nil, nil, "", fmt.Errorf("invalid auth token")
+	}
+	if provider == nil {
+		return resolveProviderFromIAMKey(token, requestModel, "en")
 	}
 
 	upstreamModel := ""

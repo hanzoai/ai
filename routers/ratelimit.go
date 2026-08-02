@@ -331,7 +331,7 @@ func extractAPIKey(ctx *web.Context) string {
 //
 //  1. Static env-var overrides (RATE_LIMIT_TIERS) -- highest priority, for
 //     operator-managed mappings. Supports exact and prefix matching (works for
-//     both org slugs like "acme=zen-enterprise" and key prefixes like "hk-0d2eb").
+//     both org slugs like "acme=zen-enterprise" and key prefixes like "sk-0d2eb").
 //  2. Commerce tier cache -- backed by async lookups to Commerce billing API
 //     (GET /v1/billing/tier?user=<org>). On cache hit, the cached tier is
 //     returned immediately. On cache miss, TierZenFree is returned and a
@@ -350,7 +350,7 @@ func DefaultTierFunc(key string) Tier {
 		if t, ok := tierMap[key]; ok {
 			return t
 		}
-		// Prefix match: "hk-0d2eb=zen-enterprise" matches "hk-0d2eb9cfafd0...".
+		// Prefix match: "sk-0d2eb=zen-enterprise" matches "sk-0d2eb9cfafd0...".
 		for prefix, t := range tierMap {
 			if strings.HasPrefix(key, prefix) {
 				return t
