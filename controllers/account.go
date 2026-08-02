@@ -104,75 +104,22 @@ func (c *ApiController) setIamTokenCookie(accessToken string, expiry time.Time) 
 	})
 }
 
-func init() {
-	InitAuthConfig()
-}
-
 // InitAuthConfig establishes the IAM signing cert this process validates every
-// bearer token against. It PANICS when IAM is configured but the cert cannot be
-// established.
+// bearer token against, eagerly. It is retained for callers that WANT to resolve
+// up front — a CLI, a test — and returns the failure rather than ending the
+// process.
 //
-// It used to warn and return. That is a fail-open on the security boundary of the
-// whole platform, and it cost us a full day: IAM tightened authorization on the
-// application read, GetApplication started coming back 403, this function printed
-// "(auth features disabled)" and let the process serve anyway. With no cert, every
-// bearer failed to validate, so EVERY authenticated route answered 401 — including
-// free ones like /v1/models. The pod stayed Running and passed its probes the whole
-// time, so nothing caught it: no crashloop, no failed rollout, no alert. A pod that
-// is up and 401ing everything is strictly worse than a pod that is visibly down.
+// It is deliberately NOT called from an init(). It was, and the cert was fetched
+// over the network before any subsystem mounted, so a momentary IAM outage was a
+// hard outage of everything in this process with no path back: it panicked, the
+// pod crashlooped, and it did not recover on its own once IAM returned. That shape
+// reached production twice (see object.AuthReady for both).
 //
-// Refusing to boot is the honest signal. It surfaces as a crashloop, which the
-// operator already knows how to revert, and Kubernetes backoff absorbs a transient
-// IAM blip on the way up. The one thing it must never do is serve traffic with
-// authentication silently switched off.
-//
-// A deployment with no IAM_URL is a legitimate no-auth configuration (dev, tests)
-// and returns cleanly — that is the ONLY path that leaves auth unconfigured.
-func InitAuthConfig() {
-	if err := initAuthConfig(); err != nil {
-		panic(fmt.Sprintf("iam: refusing to start with authentication unconfigured: %v", err))
-	}
-}
-
-// initAuthConfig is InitAuthConfig's testable half: it returns the failure instead
-// of ending the process, so a test can prove each way the cert can fail to resolve
-// is reported rather than swallowed.
-func initAuthConfig() error {
-	iamEndpoint := conf.GetConfigString("IAM_URL")
-	clientId := conf.GetConfigString("IAM_CLIENT_ID")
-	clientSecret := conf.GetConfigString("IAM_CLIENT_SECRET")
-	iamOrganization := conf.GetConfigString("IAM_ORG")
-	iamApplication := conf.GetConfigString("IAM_APP_NAME")
-
-	// No IAM configured: this deployment is deliberately running without auth.
-	if iamEndpoint == "" {
-		return nil
-	}
-
-	iam.InitConfig(iamEndpoint, clientId, clientSecret, "", iamOrganization, iamApplication)
-	application, err := iam.GetApplication(iamApplication)
-	if err != nil {
-		return fmt.Errorf("read IAM application %q from %s: %w", iamApplication, iamEndpoint, err)
-	}
-	if application == nil {
-		return fmt.Errorf("IAM application %q does not exist at %s", iamApplication, iamEndpoint)
-	}
-
-	cert, err := iam.GetCert(application.Cert)
-	if err != nil {
-		return fmt.Errorf("read cert %q for application %q: %w", application.Cert, iamApplication, err)
-	}
-	if cert == nil {
-		return fmt.Errorf("cert %q for application %q does not exist", application.Cert, iamApplication)
-	}
-	if strings.TrimSpace(cert.Certificate) == "" {
-		return fmt.Errorf("cert %q for application %q is empty — every bearer would fail to validate",
-			application.Cert, iamApplication)
-	}
-
-	iam.InitConfig(iamEndpoint, clientId, clientSecret, cert.Certificate, iamOrganization, iamApplication)
-	return nil
-}
+// Resolution now happens on first use and retries, and a request that cannot be
+// authenticated is refused with 503 at the door rather than served without
+// authentication. The security property is unchanged; only the cost of an IAM blip
+// is — the requests during it, instead of the process.
+func InitAuthConfig() error { return object.AuthReady() }
 
 // Signin
 // @Title Signin
