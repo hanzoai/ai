@@ -106,24 +106,58 @@ func TestDeriveDOModel(t *testing.T) {
 	}
 }
 
-// ── dollar → cents ──────────────────────────────────────────────────────────────────
+// ── dollar → cents, at the boundary that survives ───────────────────────────────────
 
-func TestDoDollarsToCents(t *testing.T) {
+// TestDoAmountToCandidateCents pins how an invoice AMOUNT becomes ledger cents. The
+// conversion itself now lives in money.ParseCents and is tested there; what is ai's
+// own contract, and what is tested here, is which amounts become a usage row.
+//
+// The first case is a REGRESSION the local ParseFloat converter had: DO writes a
+// thousands separator once a month's spend passes $1000, "1,234.56" is not a Go
+// float literal, so the old converter returned its 0 fallback and the positive-spend
+// test dropped the line item entirely. The largest invoices were the ones lost.
+func TestDoAmountToCandidateCents(t *testing.T) {
 	cases := []struct {
-		in   string
-		want int64
+		name   string
+		amount string
+		want   int64 // 0 means "not a candidate"
 	}{
-		{"12.34", 1234},
-		{"0.005", 1}, // rounds to the nearest cent
-		{"-5.00", -500},
-		{"100", 10000},
-		{"", 0},
-		{"bogus", 0},
+		{"grouped thousands — was dropped entirely", "1,234.56", 123456},
+		{"grouped millions", "1,234,567.89", 123456789},
+		{"ordinary amount", "12.34", 1234},
+		{"cent-precise price does not lose its cent", "19.99", 1999},
+		{"whole dollars", "100", 10000},
+		{"rounds to the nearest cent", "0.005", 1},
+
+		// Not usage. A backfill importer writes SPEND; a credit, a zero and an
+		// unreadable amount are all "no row", and never a fabricated one.
+		{"credit is not usage", "-5.00", 0},
+		{"grouped credit is not usage", "-1,234.56", 0},
+		{"zero is not usage", "0.00", 0},
+		{"empty amount is not usage", "", 0},
+		{"unreadable amount is not usage", "bogus", 0},
+		{"malformed sign is not usage", "--5.00", 0},
 	}
 	for _, tc := range cases {
-		if got := doDollarsToCents(tc.in); got != tc.want {
-			t.Errorf("doDollarsToCents(%q) = %d, want %d", tc.in, got, tc.want)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			it := doInvoiceItem{
+				Product: "GenAI Platform", Description: "GenAI Serverless Inference",
+				Amount: tc.amount, StartTime: time.Date(2026, 1, 5, 0, 0, 0, 0, time.UTC),
+			}
+			got, ok := doInvoiceItemToCandidate(it, "2026-01")
+			if tc.want == 0 {
+				if ok {
+					t.Fatalf("amount %q became a candidate for %d cents, want no row", tc.amount, got.cents)
+				}
+				return
+			}
+			if !ok {
+				t.Fatalf("amount %q produced no candidate, want %d cents", tc.amount, tc.want)
+			}
+			if got.cents != tc.want {
+				t.Fatalf("amount %q = %d cents, want %d", tc.amount, got.cents, tc.want)
+			}
+		})
 	}
 }
 

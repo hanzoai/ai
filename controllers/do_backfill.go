@@ -61,7 +61,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
-	"math"
 	"net/url"
 	"os"
 	"sort"
@@ -70,6 +69,7 @@ import (
 	"time"
 
 	"github.com/hanzoai/ai/log"
+	"github.com/hanzoai/money"
 
 	"github.com/hanzoai/ai/object"
 )
@@ -287,13 +287,19 @@ func doItemDay(it doInvoiceItem, period string) string {
 
 // doInvoiceItemToCandidate maps ONE line item to a candidate, or ok=false when it is not
 // AI spend, carries no positive dollar amount (credits/adjustments/refunds are not
-// usage), or cannot be dated. Pure.
+// usage), cannot have its amount read at all, or cannot be dated. Pure.
+//
+// The amount is converted by money.ParseCents — the one exact decimal→cents
+// conversion — and not by a local ParseFloat. The local one dropped whole invoices:
+// DO writes a thousands separator once a month's spend passes $1000, "1,234.56" did
+// not parse as a float, the fallback was 0, and 0 fails the positive-spend test
+// below. The biggest months were the ones silently skipped.
 func doInvoiceItemToCandidate(it doInvoiceItem, period string) (doBackfillCandidate, bool) {
 	if !isDOAILineItem(it) {
 		return doBackfillCandidate{}, false
 	}
-	cents := doDollarsToCents(it.Amount)
-	if cents <= 0 {
+	cents, err := money.ParseCents(it.Amount)
+	if err != nil || cents <= 0 {
 		return doBackfillCandidate{}, false
 	}
 	day := doItemDay(it, period)
@@ -378,21 +384,6 @@ func planDOBackfill(folded []doBackfillCandidate, nativeDays, existingKeys map[s
 	plan.Days = len(days)
 	plan.Models = len(models)
 	return plan
-}
-
-// doDollarsToCents parses a DO decimal-dollar string ("12.34", "-5.00") to integer
-// cents, rounding to the nearest cent. Blank/invalid → 0 (the honest fallback — never a
-// fabricated amount). Mirrors the cloud finance client's edge conversion.
-func doDollarsToCents(s string) int64 {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return 0
-	}
-	f, err := strconv.ParseFloat(s, 64)
-	if err != nil {
-		return 0
-	}
-	return int64(math.Round(f * 100))
 }
 
 // ── DO fetch + candidate collection (HTTP only — unit-testable via the fake doer) ────
