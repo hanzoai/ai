@@ -19,10 +19,10 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/google/uuid"
 	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/model"
 	"github.com/hanzoai/ai/object"
-	"github.com/hanzoai/ai/util"
 	"github.com/workweixin/weworkapi_golang/json_callback/wxbizjsonmsgcrypt"
 )
 
@@ -119,7 +119,7 @@ func (c *ApiController) handleTextMessage(message *object.WecomBotMessage, wxcpt
 	if message.Stream != nil && message.Stream.Id != "" {
 		streamId = message.Stream.Id
 	} else {
-		streamId = util.GenerateId()
+		streamId = uuid.NewString()
 	}
 
 	answer := ""

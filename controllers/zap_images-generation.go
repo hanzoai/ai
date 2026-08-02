@@ -32,14 +32,13 @@ import (
 	"fmt"
 	"time"
 
-
+	"github.com/google/uuid"
 	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/log"
 	"github.com/luxfi/zap"
 
 	"github.com/hanzoai/ai/model"
 	"github.com/hanzoai/ai/object"
-	"github.com/hanzoai/ai/util"
 )
 
 // ── Group self-registration ───────────────────────────────────────────────
@@ -187,7 +186,7 @@ func zapRecordImageUsage(ctx context.Context, authUser *iam.User, provider *obje
 		Premium:      isPremium,
 		Status:       status,
 		ErrorMsg:     errMsg,
-		RequestID:    util.GenerateUUID(),
+		RequestID:    uuid.NewString(),
 	}
 	recordUsage(rec)
 	recordTrace(ctx, rec, startTime)

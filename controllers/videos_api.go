@@ -24,11 +24,10 @@ import (
 	"strings"
 	"time"
 
-
+	"github.com/google/uuid"
 	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/model"
 	"github.com/hanzoai/ai/object"
-	"github.com/hanzoai/ai/util"
 )
 
 // This file completes the OpenAI-compatible surface alongside chat, embeddings,
@@ -239,7 +238,7 @@ func (c *ApiController) VideosGenerations() {
 	}
 
 	job := &videoJob{
-		id:         "video_" + util.GenerateUUID(),
+		id:         "video_" + uuid.NewString(),
 		upstreamID: upstreamID,
 		subject:    subject,
 		owner:      ledger,
@@ -491,7 +490,7 @@ func (c *ApiController) recordVideoUsage(authUser *iam.User, provider *object.Pr
 		Status:       status,
 		ErrorMsg:     errMsg,
 		ClientIP:     c.Ctx.Request.RemoteAddr,
-		RequestID:    util.GenerateUUID(),
+		RequestID:    uuid.NewString(),
 	}
 	recordUsage(rec)
 	recordTrace(c.Ctx.Request.Context(), rec, startTime)

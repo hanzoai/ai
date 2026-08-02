@@ -41,6 +41,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/hanzoai/ai/log"
 	openai "github.com/hanzoai/go-openai"
 	"github.com/luxfi/zap"
@@ -157,7 +158,7 @@ func zapResponsesHandler(ctx context.Context, auth string, body []byte) (*zap.Me
 
 	// STEP 5 — execute against the object/model layer, buffered (no HTTP writer).
 	requestStartTime := time.Now().UTC()
-	requestId := util.GenerateUUID()
+	requestId := uuid.NewString()
 	var buf bytes.Buffer
 
 	modelResult, err := modelProvider.QueryText(question, &buf, history, "", nil, nil, "en")
