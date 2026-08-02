@@ -21,14 +21,8 @@ import (
 	"fmt"
 
 	"github.com/golang-jwt/jwt/v4"
+	"github.com/hanzoai/account"
 )
-
-// OrgRef is one entry of the signed `orgs` membership-set claim: an org the
-// subject may act in, plus a coarse role there.
-type OrgRef struct {
-	Org  string `json:"org"`
-	Role string `json:"role,omitempty"`
-}
 
 // Claims is the verified access-token claim set. It embeds the User (so a token
 // carries the subject's profile) plus the standard registered claims and the
@@ -38,10 +32,15 @@ type Claims struct {
 	User
 	AccessToken string `json:"accessToken"`
 	jwt.RegisteredClaims
-	TokenType        string   `json:"tokenType"`
-	RefreshTokenType string   `json:"TokenType"`
-	SigninMethod     string   `json:"signinMethod"`
-	Orgs             []OrgRef `json:"orgs,omitempty"`
+	TokenType        string `json:"tokenType"`
+	RefreshTokenType string `json:"TokenType"`
+	SigninMethod     string `json:"signinMethod"`
+	// Orgs is the signed membership set. The type is account's, not a local
+	// re-declaration: the JSON tags are a wire contract with IAM, and a copy of
+	// them here is a copy that can drift one field at a time. If it did, every
+	// membership would decode empty and every org switch would fail closed to
+	// home — presenting as "the switcher does nothing".
+	Orgs []account.OrgRef `json:"orgs,omitempty"`
 }
 
 // NOTE: `billing_account` is deliberately NOT declared here. It lives on the
