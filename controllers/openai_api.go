@@ -245,8 +245,8 @@ func resolveProviderFromJwt(token string, requested string, requestedModel strin
 	}
 
 	user := &claims.User
-	ledger := iam.LedgerOrg(
-		iam.EffectiveOrg(user.Owner, claims.Orgs, requested),
+	ledger := account.LedgerOrg(
+		account.EffectiveOrg(user.Owner, claims.Orgs, requested),
 		user.Owner,
 		util.IsSuperAdmin(user),
 	)

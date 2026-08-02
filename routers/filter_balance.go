@@ -29,7 +29,6 @@ import (
 
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/controllers"
-	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
@@ -406,11 +405,11 @@ func resolveBillingKey(ctx *web.Context) (subject, namespace, userKey string) {
 			// This is the ONE auth path that can honor an org switch, because it is
 			// the only one holding the signed `orgs` claim that proves membership. The
 			// gate must read the wallet the controller's debit will land on, so it
-			// resolves the ledger by the same two rules (iam.EffectiveOrg, then
-			// iam.LedgerOrg) the controller applies — check one balance and drain
+			// resolves the ledger by the same two rules (account.EffectiveOrg, then
+			// account.LedgerOrg) the controller applies — check one balance and drain
 			// another and a funded org 402s while an unfunded one runs free.
-			ledger := iam.LedgerOrg(
-				iam.EffectiveOrg(claims.User.Owner, claims.Orgs, requested),
+			ledger := account.LedgerOrg(
+				account.EffectiveOrg(claims.User.Owner, claims.Orgs, requested),
 				claims.User.Owner,
 				util.IsSuperAdmin(&claims.User),
 			)
