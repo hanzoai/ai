@@ -17,6 +17,7 @@ package controllers
 import (
 	"strings"
 
+	"github.com/hanzoai/account"
 	"github.com/hanzoai/ai/conf"
 	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/object"
@@ -101,7 +102,7 @@ func (c *ApiController) principalIsOwnBrand() bool {
 //
 // Called ONLY on the switch path (a request that asked for an org other than its
 // own), so the dominant no-switch request never pays for this parse.
-func (c *ApiController) principalOrgs() []iam.OrgRef {
+func (c *ApiController) principalOrgs() []account.OrgRef {
 	token := bearerTokenFromRequest(c.Ctx.Request)
 	if token == "" || !isJwtToken(token) {
 		return nil
@@ -137,7 +138,7 @@ func (c *ApiController) GetOrg() string {
 		if util.IsSuperAdmin(user) {
 			return requested
 		}
-		return iam.EffectiveOrg(user.Owner, c.principalOrgs(), requested)
+		return account.EffectiveOrg(user.Owner, c.principalOrgs(), requested)
 	}
 
 	// No verified principal: never trust a client-supplied org header.
@@ -165,8 +166,8 @@ func (c *ApiController) billingOrg(user *iam.User) string {
 		// user.Owner, and it never touches the claim.
 		return user.Owner
 	}
-	return iam.LedgerOrg(
-		iam.EffectiveOrg(user.Owner, c.principalOrgs(), requested),
+	return account.LedgerOrg(
+		account.EffectiveOrg(user.Owner, c.principalOrgs(), requested),
 		user.Owner,
 		util.IsSuperAdmin(user),
 	)
