@@ -31,7 +31,7 @@ type Organization struct {
 // GetOrganization fetches an organization by name.
 func (c *Client) GetOrganization(name string) (*Organization, error) {
 	url := c.GetUrl("get-organization", map[string]string{
-		"id": fmt.Sprintf("admin/%s", name),
+		"id": fmt.Sprintf("%s/%s", PlatformOwner, name),
 	})
 	bytes, err := c.DoGetBytes(url)
 	if err != nil {
