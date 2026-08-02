@@ -1102,7 +1102,7 @@ func (c *ApiController) ChatCompletions() {
 	if isPublishableKey(token) {
 		c.Ctx.Output.SetStatus(403)
 		c.Ctx.Output.Header("Content-Type", "application/json")
-		c.Ctx.Output.Body([]byte(`{"error":{"message":"Publishable keys (pk-) can only access read-only endpoints (/api/models, /health). Use a secret key (sk-) for completions.","type":"auth_error","code":403}}`))
+		c.Ctx.Output.Body([]byte(`{"error":{"message":"Publishable keys (pk-) can only access read-only endpoints (/v1/models, /health). Use a secret key (sk-) for completions.","type":"auth_error","code":403}}`))
 		c.EnableRender = false
 		return
 	}
