@@ -93,7 +93,7 @@ func (c *ApiController) principalIsOwnBrand() bool {
 
 // principalOrgs returns the SIGNED `orgs` membership set of the request's bearer
 // JWT: the orgs IAM states this subject may act in. It is the ONLY admissible
-// proof of membership — see iam.EffectiveOrg.
+// proof of membership — see account.EffectiveOrg.
 //
 // nil for every credential that carries no such claim: a cookie session, an hk-
 // IAM key, a widget (hz_) or provider (sk-) key, and any token minted before the
@@ -147,7 +147,7 @@ func (c *ApiController) GetOrg() string {
 
 // billingOrg resolves the org `user` SPENDS FROM on this request: the ledger the
 // balance gate reads, the budget reservation holds, and the usage debit lands on.
-// It is iam.LedgerOrg over this request's own credential.
+// It is account.LedgerOrg over this request's own credential.
 //
 // It is a function OF THE BILLED USER, not of the request alone. A provider (sk-)
 // or widget (hz_) key bills the org that MINTED it, which is not the request's
