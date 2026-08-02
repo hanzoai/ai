@@ -46,6 +46,11 @@ func InstallFilters() {
 		App.InsertFilter("*", web.BeforeRouter, HstsFilter)
 		App.InsertFilter("*", web.BeforeRouter, CacheControlFilter)
 		App.InsertFilter("*", web.BeforeRouter, RateLimitFilter)
+		// Ahead of every filter that reads a token. Below this line a token that
+		// does not parse means the TOKEN is bad; above it, it could also mean no
+		// signing cert was ever established — and the two are indistinguishable at
+		// the parse. Refusing here with 503 keeps that ambiguity out of the chain.
+		App.InsertFilter("*", web.BeforeRouter, AuthAvailableFilter)
 		App.InsertFilter("*", web.BeforeRouter, AutoSigninFilter)
 		App.InsertFilter("*", web.BeforeRouter, BalanceGateFilter)
 		App.InsertFilter("*", web.BeforeRouter, StaticFilter)
