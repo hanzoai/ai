@@ -29,7 +29,7 @@ func TestIsWidgetKey(t *testing.T) {
 	}{
 		{"hz_widget_public", true},
 		{"hz_custom_key_123", true},
-		{"hk-some-iam-key", false},
+		{"sk-some-iam-key", false},
 		{"sk-openai-key", false},
 		{"pk-publishable", false},
 		{"random.jwt.token", false},
@@ -105,7 +105,7 @@ func TestValidateWidgetKey(t *testing.T) {
 		{"hz_widget_public", true},
 		{"hz_test_key", true},
 		{"hz_unknown_key", false},
-		{"hk-not-widget", false},
+		{"sk-not-widget", false},
 		{"", false},
 	}
 	for _, tt := range tests {
@@ -125,7 +125,7 @@ func TestValidateWidgetKeyNoConfig(t *testing.T) {
 	}
 }
 
-// TestGetUserByAccessKeyUsesCanonicalPath locks the regression that broke hk-
+// TestGetUserByAccessKeyUsesCanonicalPath locks the regression that broke
 // API-key resolution: the lookup MUST hit IAM's canonical /v1/iam/get-user,
 // never the legacy /api/get-user (which the @hanzo/id SPA ingress serves as
 // HTML, producing "invalid character '<'" on JSON decode). It also asserts the
@@ -148,7 +148,7 @@ func TestGetUserByAccessKeyUsesCanonicalPath(t *testing.T) {
 	t.Setenv("IAM_CLIENT_ID", "hanzo-cloud")
 	t.Setenv("IAM_CLIENT_SECRET", "s3cr3t")
 
-	user, err := getUserByAccessKey("hk-canonical-test")
+	user, err := getUserByAccessKey("sk-canonical-test")
 	if err != nil {
 		t.Fatalf("getUserByAccessKey returned error: %v", err)
 	}
@@ -156,10 +156,10 @@ func TestGetUserByAccessKeyUsesCanonicalPath(t *testing.T) {
 		t.Errorf("IAM path = %q, want /v1/iam/get-user (must NOT use legacy /api/get-user)", gotPath)
 	}
 	if strings.HasPrefix(gotPath, "/api/") {
-		t.Errorf("IAM path %q uses the legacy /api/ alias — forbidden, breaks hk- resolution via SPA ingress", gotPath)
+		t.Errorf("IAM path %q uses the legacy /api/ alias — forbidden, breaks key resolution via SPA ingress", gotPath)
 	}
-	if gotAccessKey != "hk-canonical-test" {
-		t.Errorf("accessKey query = %q, want hk-canonical-test", gotAccessKey)
+	if gotAccessKey != "sk-canonical-test" {
+		t.Errorf("accessKey query = %q, want sk-canonical-test", gotAccessKey)
 	}
 	if user == nil || user.Owner != "maxpower" {
 		t.Errorf("resolved user owner = %+v, want owner=maxpower (the billing org)", user)
@@ -172,7 +172,7 @@ func TestGetUserByAccessKeyUsesCanonicalPath(t *testing.T) {
 //
 // It used to hold a gate that authenticated NOBODY: it 401'd an absent credential and
 // a malformed one, then admitted any string shaped like a key. Verified against
-// production before this change: `Bearer hk-` + 36 zeroes returned 200, a 3.8-day
+// production before this change: `Bearer sk-` + 36 zeroes returned 200, a 3.8-day
 // expired JWT returned 200, and only `Bearer totally-bogus` and a missing header were
 // refused. That is a shape check, not authentication — and because /v1/models is the
 // natural "is my auth working?" probe, answering 200 to a dead credential sent people
@@ -183,7 +183,7 @@ func TestGetUserByAccessKeyUsesCanonicalPath(t *testing.T) {
 func TestListModels_IsPublicAndNeverValidates(t *testing.T) {
 	for _, tc := range []struct{ name, auth string }{
 		{"no credential at all", ""},
-		{"a key that was never minted", "Bearer hk-000000000000000000000000000000000000"},
+		{"a key that was never minted", "Bearer sk-000000000000000000000000000000000000"},
 		{"a syntactically broken token", "Bearer totally-bogus"},
 		{"an expired JWT", "Bearer eyJhbGciOiJIUzI1NiJ9.eyJleHAiOjF9.c2ln"},
 		{"not even a Bearer", "Basic dXNlcjpwYXNz"},
@@ -212,7 +212,7 @@ func TestListModels_IsPublicAndNeverValidates(t *testing.T) {
 // them after a deleted organization instead of minting a new key. Each reason now has
 // exactly one cure — and none of them echoes the credential.
 func TestKeyRefusal_NamesTheCauseAndTheCure(t *testing.T) {
-	const key = "hk-902abd8e-dead-beef-cafe-000000000000"
+	const key = "sk-902abd8e-dead-beef-cafe-000000000000"
 
 	for _, tc := range []struct {
 		code  string
@@ -244,7 +244,7 @@ func TestKeyRefusal_NamesTheCauseAndTheCure(t *testing.T) {
 		if strings.Contains(got, key) || strings.Contains(got, "dead-beef") {
 			t.Fatalf("%s: SECRET LEAK — the refusal echoed the key: %q", tc.code, got)
 		}
-		if !strings.Contains(got, "hk-902abd…") {
+		if !strings.Contains(got, "sk-902abd…") {
 			t.Errorf("%s: %q does not name WHICH key failed", tc.code, got)
 		}
 	}
@@ -269,7 +269,7 @@ func TestGetUserByAccessKey_SurfacesTheRefusalCode(t *testing.T) {
 	t.Setenv("IAM_CLIENT_ID", "hanzo-cloud")
 	t.Setenv("IAM_CLIENT_SECRET", "s3cr3t")
 
-	_, err := getUserByAccessKey("hk-902abd8e-dead-beef-cafe-000000000000")
+	_, err := getUserByAccessKey("sk-902abd8e-dead-beef-cafe-000000000000")
 	if err == nil {
 		t.Fatal("an unresolvable key must still fail")
 	}
@@ -281,12 +281,65 @@ func TestGetUserByAccessKey_SurfacesTheRefusalCode(t *testing.T) {
 	}
 }
 
+// A key wearing a prefix this estate does not mint gets the SAME answer as one that
+// was revoked, and that is the point.
+//
+// Two shapes exist: pk-, which identifies an org and authenticates nobody, and sk-,
+// which authenticates. Everything else — a retired prefix, a typo, a key from another
+// vendor — answers to no live credential, so IAM refuses it as key_unknown rather than
+// inventing a family for each spelling. What the holder needs is not a taxonomy of how
+// their string is wrong; it is the one sentence that ends the problem: mint a new key.
+//
+// This pins that the retired hk- spelling gets exactly that sentence, and NOT the bare
+// "IAM error: the entity does not exist" relay, which sent people looking for a deleted
+// organization.
+func TestGetUserByAccessKey_RetiredPrefixGetsTheActionableRefusal(t *testing.T) {
+	const key = "hk-2ff139c7-4dd5-4f23-9de1-df7b67331b6e"
+
+	var gotAccessKey string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAccessKey = r.URL.Query().Get("accessKey")
+		w.Header().Set("Content-Type", "application/json")
+		// What IAM answers for any shape it does not mint (store.UserByAccessKey).
+		_, _ = w.Write([]byte(`{"status":"error","msg":"the entity does not exist","code":"key_unknown"}`))
+	}))
+	defer srv.Close()
+
+	t.Setenv("IAM_URL", srv.URL)
+	t.Setenv("IAM_CLIENT_ID", "hanzo-cloud")
+	t.Setenv("IAM_CLIENT_SECRET", "s3cr3t")
+
+	user, err := getUserByAccessKey(key)
+	if err == nil || user != nil {
+		t.Fatalf("getUserByAccessKey(%q) = (%v, %v); a retired prefix must never resolve", keyHint(key), user, err)
+	}
+	if gotAccessKey != key {
+		t.Fatalf("IAM was asked for %q, want the presented key — the refusal must come from IAM, not a local shape test", gotAccessKey)
+	}
+
+	got := err.Error()
+	for _, want := range []string{"not recognized", "Mint a new one"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("refusal %q does not say %q — the holder is left without the cure", got, want)
+		}
+	}
+	// The generic relay is what this replaced; seeing it again means the code fell
+	// through to the unknown-code branch instead of naming the cause.
+	if strings.Contains(got, "IAM error:") || strings.Contains(got, "the entity does not exist") {
+		t.Errorf("refusal %q is the generic IAM relay, not an actionable message", got)
+	}
+	// Only the prefix, never the key.
+	if strings.Contains(got, key) || strings.Contains(got, "2ff139c7") {
+		t.Fatalf("SECRET LEAK — the refusal echoed the key: %q", got)
+	}
+}
+
 // KeyHint discloses a prefix and nothing more.
 func TestKeyHint_Redacts(t *testing.T) {
-	if got := keyHint("hk-902abd8e-dead-beef-cafe-000000000000"); got != "hk-902abd…" {
-		t.Fatalf("keyHint = %q, want hk-902abd…", got)
+	if got := keyHint("sk-902abd8e-dead-beef-cafe-000000000000"); got != "sk-902abd…" {
+		t.Fatalf("keyHint = %q, want sk-902abd…", got)
 	}
-	for _, short := range []string{"", "hk-", "hk-abc"} {
+	for _, short := range []string{"", "sk-", "sk-abc"} {
 		if got := keyHint(short); got != "…" {
 			t.Errorf("keyHint(%q) = %q, want …", short, got)
 		}

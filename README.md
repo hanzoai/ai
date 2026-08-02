@@ -18,14 +18,14 @@ That is why the root of this repository is `package ai`, a library, and not a `m
 The hosted instance is `api.hanzo.ai`. Get a key at [hanzo.ai](https://hanzo.ai):
 
 ```bash
-curl -H "Authorization: Bearer hk-YOUR-API-KEY" \
+curl -H "Authorization: Bearer sk-YOUR-API-KEY" \
   https://api.hanzo.ai/v1/chat/completions \
   -d '{"model":"zen5","messages":[{"role":"user","content":"Hello"}]}'
 ```
 
-Three auth modes are accepted: an IAM API key (`hk-*`), a JWT from hanzo.id OAuth, or your
-own provider key (`sk-*`), in which case the request is routed with your account rather
-than metered on ours.
+Three auth modes are accepted: a Hanzo API key (`sk-*`), a JWT from hanzo.id OAuth, or a
+provider key you already hold, in which case the request is routed with your account
+rather than metered on ours.
 
 ## Run it yourself
 
@@ -48,7 +48,7 @@ CGO_ENABLED=0 go build -o aid ./cmd/aid
 The gateway owns the catalog; this service does not keep a second list. Ask it:
 
 ```bash
-curl -H "Authorization: Bearer hk-YOUR-API-KEY" https://api.hanzo.ai/v1/models
+curl -H "Authorization: Bearer sk-YOUR-API-KEY" https://api.hanzo.ai/v1/models
 ```
 
 `https://catalog.hanzo.ai/v1/models` answers the same question without a key. Zen is our
@@ -80,7 +80,7 @@ router:
 ```
 
 ```bash
-curl -H "Authorization: Bearer hk-YOUR-API-KEY" \
+curl -H "Authorization: Bearer sk-YOUR-API-KEY" \
   -H "X-Max-Cost: 2.0" -H "X-Max-Latency-Ms: 800" \
   https://api.hanzo.ai/v1/chat/completions \
   -d '{"model":"auto","messages":[{"role":"user","content":"refactor this function"}]}'

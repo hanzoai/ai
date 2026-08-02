@@ -115,9 +115,10 @@ func isJwtToken(token string) bool {
 	return len(parts) == 3 && len(parts[0]) > 10 && len(parts[1]) > 10
 }
 
-// isIAMApiKey checks if a token is an IAM-issued API key (hk- prefix).
+// isIAMApiKey checks if a token is an IAM-issued API key (sk- prefix) — the
+// confidential half of the pair IAM mints, and the only one that authenticates.
 func isIAMApiKey(token string) bool {
-	return strings.HasPrefix(token, "hk-")
+	return strings.HasPrefix(token, "sk-")
 }
 
 // isPublishableKey checks if a token is a publishable API key (pk- prefix).
@@ -254,15 +255,14 @@ func resolveProviderFromJwt(token string, requested string, requestedModel strin
 	return resolveProviderForUser(user, ledger, requestedModel, lang)
 }
 
-// resolveProviderFromIAMKey validates an IAM API key (hk-{accessKey})
+// resolveProviderFromIAMKey validates an IAM API key (sk-{accessKey})
 // and returns the model provider + user, same as JWT path.
 //
-// An hk- key carries no signed `orgs` claim, so it can never switch org: it bills
+// An IAM key carries no signed `orgs` claim, so it can never switch org: it bills
 // the org that owns the key, which is its home org.
 func resolveProviderFromIAMKey(apiKey string, requestedModel string, lang string) (*object.Provider, *iam.User, string, error) {
-	// IAM API key format: hk-{uuid}
-	// Look up user by accessKey via IAM API
-	accessKey := apiKey // the full token including hk- prefix is the accessKey
+	// The whole token, prefix included, IS the accessKey IAM resolves.
+	accessKey := apiKey
 
 	user, err := getUserByAccessKey(accessKey)
 	if err != nil {
@@ -435,7 +435,7 @@ func iamClientCreds() (string, string) {
 	return clientId, clientSecret
 }
 
-// GetUserByAccessKey resolves an hk- IAM API key to its owning user via Hanzo
+// GetUserByAccessKey resolves an sk- IAM API key to its owning user via Hanzo
 // IAM. Exported so the authz filter and the balance gate (package routers)
 // resolve the key path to the same verified principal as the JWT path — ONE
 // credential resolver, one tenant, one billing subject, one IAM transport.
@@ -454,7 +454,7 @@ func getUserByAccessKey(accessKey string) (*iam.User, error) {
 
 	// Per global rule: /v1/ only, never /api/. IAM serves at /v1/iam/get-user.
 	// The legacy /api/get-user path is intercepted by the @hanzo/id SPA ingress
-	// and returns HTML, which broke hk- API-key resolution ("invalid character
+	// and returns HTML, which broke API-key resolution ("invalid character
 	// '<'").
 	reqURL := fmt.Sprintf("%s/v1/iam/get-user?accessKey=%s", iamEndpoint, url.QueryEscape(accessKey))
 
@@ -543,7 +543,7 @@ func keyRefusal(code, msg, key string) error {
 // own use.
 func keyHint(key string) string {
 	key = strings.TrimSpace(key)
-	const shown = 9 // "hk-" + 6
+	const shown = 9 // "sk-" + 6
 	if len(key) <= shown {
 		return "…"
 	}
@@ -887,31 +887,13 @@ func recordTrace(ctx context.Context, record *usageRecord, startTime time.Time) 
 // body validity: a malformed (or field-incomplete) body from an unauthenticated
 // caller must never return 200/400 that confirms the endpoint or lets it be
 // probed. It is invoked only on the error path, so the happy path keeps a single
-// validation (authResolveProvider). It mirrors authResolveProvider's four auth
+// validation (authResolveProvider). It mirrors authResolveProvider's auth
 // branches EXACTLY and never grants on an unknown key (fail-secure).
 func (c *ApiController) authenticate(token string) error {
 	switch {
 	case isWidgetKey(token):
 		if !validateWidgetKey(token) {
 			return authError("Widget authentication failed: invalid widget key")
-		}
-		return nil
-	case isIAMApiKey(token):
-		// getUserByAccessKey returns (nil, nil) for an unknown key (IAM 200 +
-		// data:null), so check BOTH the error AND a nil user — exactly as
-		// resolveProviderFromIAMKey does. Missing the nil-user case let an invalid
-		// hk- key fall through to a 400 parse error instead of a 401.
-		user, err := getUserByAccessKey(token)
-		if err != nil {
-			// Same cloud-agent service-key fallback as resolveProviderFromIAMKey,
-			// so a valid service key is not falsely rejected here.
-			if tryCloudAgentKeyFallback(token) != nil {
-				return nil
-			}
-			return authError("API key validation failed: %s", err.Error())
-		}
-		if user == nil {
-			return authError("invalid API key")
 		}
 		return nil
 	case isJwtToken(token):
@@ -922,12 +904,29 @@ func (c *ApiController) authenticate(token string) error {
 		}
 		return nil
 	default:
-		// Provider API key (sk-...). An unresolvable key is a 401.
+		// A secret key — see authResolveProvider for why the STORE that owns it,
+		// not its spelling, decides what it is.
 		provider, err := object.GetProviderByProviderKey(token, c.GetAcceptLanguage())
 		if err != nil {
 			return authError("invalid API key: %s", err.Error())
 		}
-		if provider == nil {
+		if provider != nil {
+			return nil
+		}
+		// getUserByAccessKey returns (nil, nil) for an unknown key (IAM 200 +
+		// data:null), so check BOTH the error AND a nil user — exactly as
+		// resolveProviderFromIAMKey does. Missing the nil-user case let an invalid
+		// key fall through to a 400 parse error instead of a 401.
+		user, err := getUserByAccessKey(token)
+		if err != nil {
+			// Same cloud-agent service-key fallback as resolveProviderFromIAMKey,
+			// so a valid service key is not falsely rejected here.
+			if tryCloudAgentKeyFallback(token) != nil {
+				return nil
+			}
+			return authError("API key validation failed: %s", err.Error())
+		}
+		if user == nil {
 			return authError("invalid API key")
 		}
 		return nil
@@ -993,16 +992,6 @@ func (c *ApiController) authResolveProvider(token, requestedModel, orgId string)
 		log.Info("Widget key access: owner=%s, model=%s, upstream=%s", owner, requestedModel, upstreamModel)
 		return
 
-	case isIAMApiKey(token):
-		// IAM API key (hk-...) — full model routing + billing. resolveProviderFromIAMKey
-		// returns a typed apiError (401 invalid key / 400 bad model / 402 balance /
-		// 500 misconfig); wrapAuth preserves it and 401s any untyped error.
-		provider, authUser, upstreamModel, err = resolveProviderFromIAMKey(token, requestedModel, lang)
-		if err != nil {
-			err = wrapAuth(err)
-			return
-		}
-
 	case isJwtToken(token):
 		// hanzo.id JWT token — full model routing + billing. Same typed-status
 		// contract as the IAM key path. The raw X-Org-Id goes in unvalidated: the
@@ -1015,18 +1004,31 @@ func (c *ApiController) authResolveProvider(token, requestedModel, orgId string)
 		}
 
 	default:
-		// Provider API key (sk-...) — direct provider access. An unresolvable key
-		// is an auth failure (401).
+		// A secret key, and the STORE that owns it decides what it is. Two
+		// families share the sk- spelling: an upstream vendor key, which lives in
+		// the provider table, and the key this estate mints, which lives in IAM.
+		// Both lookups are exact, so neither can claim the other's key; the order
+		// decides only who answers when NEITHER owns it, and IAM's refusal is the
+		// one that names the cure ("mint a new one at cloud.hanzo.ai/keys") where
+		// a provider miss can only say "invalid".
 		provider, err = object.GetProviderByProviderKey(token, lang)
 		if err != nil {
 			err = authError("invalid API key: %s", err.Error())
 			return
 		}
 		if provider == nil {
-			err = authError("invalid API key")
-			return
+			// Not a vendor key — full model routing + billing off the IAM
+			// principal. resolveProviderFromIAMKey returns a typed apiError (401
+			// invalid key / 400 bad model / 402 balance / 500 misconfig); wrapAuth
+			// preserves it and 401s any untyped error.
+			provider, authUser, upstreamModel, err = resolveProviderFromIAMKey(token, requestedModel, lang)
+			if err != nil {
+				err = wrapAuth(err)
+				return
+			}
+			break
 		}
-		// Attribute + bill this sk- call to the org that OWNS the provider row
+		// Attribute + bill this vendor-key call to the org that OWNS the provider row
 		// (and thus minted this key). Without an authUser, BOTH reserveBudget and
 		// recordUsage are skipped (they gate on authUser != nil) — so an sk- key
 		// spending the SHARED upstream (do-ai) ran at ZERO cost and bypassed the
@@ -1079,7 +1081,7 @@ func (c *ApiController) authResolveProvider(token, requestedModel, orgId string)
 // @Tag OpenAI Compatible API
 // @Description OpenAI compatible chat completions API. Accepts:
 //   - Widget key (hz_...)   — restricted models, no balance check, token-capped
-//   - IAM API key (hk-...)  — full model routing + billing
+//   - IAM API key (sk-...)  — full model routing + billing
 //   - hanzo.id JWT token    — full model routing + billing
 //   - Provider API key      — direct provider access
 //
@@ -1488,7 +1490,7 @@ func (c *ApiController) ChatCompletions() {
 //
 // It used to hold a "require authentication" gate that authenticated nobody: it
 // rejected an ABSENT credential and a MALFORMED one, then accepted any string that
-// merely looked like a key. `Bearer hk-` followed by 36 zeroes returned 200 in
+// merely looked like a key. `Bearer sk-` followed by 36 zeroes returned 200 in
 // production; so did a JWT three days expired. It was a shape check wearing an auth
 // check's clothes, and its cost was diagnostic: /v1/models is the natural "is my auth
 // working?" probe, and answering 200 to a dead credential sent people debugging the

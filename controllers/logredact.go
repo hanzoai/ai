@@ -24,7 +24,7 @@ import (
 // prefix truncation is actively WRONG for a bearer JWT: every RS256 token begins
 // with the same encoded header, so "eyJhbG..." is identical for every user in the
 // fleet — it discriminates nothing while still emitting real key material. It
-// remains the right tool where it is used, on short opaque `hk-` API keys. Two
+// remains the right tool where it is used, on short opaque `sk-` API keys. Two
 // credential shapes, two correct treatments; a single helper here would have to
 // branch on shape anyway, and hiding that branch is what makes a leak subtle.
 

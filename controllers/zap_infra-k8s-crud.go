@@ -95,7 +95,7 @@ func registerZapInfraK8s() {
 // ── Identity + policy seam (STEP 1 / STEP 2 / STEP 4) ────────────────────────
 
 // zapInfraSuperAdmin resolves the principal STRICTLY from the auth token via the
-// shared zapResolveUser seam (pk-/hk- IAM keys → getUserByAccessKey, JWTs →
+// shared zapResolveUser seam (pk-/sk- IAM keys → getUserByAccessKey, JWTs →
 // object.ParseAndValidateJWT), then enforces util.IsSuperAdmin — the SAME
 // predicate the routers authz_filter applies to every infra CRUD endpoint. It is
 // the controller-side RequireSuperAdmin twin for the stateless ZAP wire:

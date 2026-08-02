@@ -67,11 +67,11 @@ func (c *ApiController) resolveSearchAuth() *searchAuth {
 		return nil
 	}
 
-	// 3. IAM API key (hk-*) -- validate via IAM and resolve owner
+	// 3. IAM API key (sk-*) -- validate via IAM and resolve owner
 	if isIAMApiKey(token) {
 		iamUser, err := getUserByAccessKey(token)
 		if err != nil {
-			log.Warning("search auth: hk-* key validation failed: %s", err.Error())
+			log.Warning("search auth: sk-* key validation failed: %s", err.Error())
 			c.ResponseUnauthorized("API key validation failed")
 			return nil
 		}
@@ -137,7 +137,7 @@ func (c *ApiController) resolveSearchAuth() *searchAuth {
 		}
 	}
 
-	c.ResponseUnauthorized("unrecognized token format: expected hk-*, pk-*, or JWT")
+	c.ResponseUnauthorized("unrecognized token format: expected pk-*, sk-*, or JWT")
 	return nil
 }
 
@@ -170,11 +170,11 @@ func (c *ApiController) requireIndexAuth() *searchAuth {
 	if authHeader != "" {
 		token := strings.TrimPrefix(authHeader, "Bearer ")
 
-		// hk-* API keys: validate via IAM
+		// sk-* API keys: validate via IAM
 		if isIAMApiKey(token) {
 			iamUser, err := getUserByAccessKey(token)
 			if err != nil {
-				log.Warning("index auth: hk-* key validation failed: %s", err.Error())
+				log.Warning("index auth: sk-* key validation failed: %s", err.Error())
 				c.ResponseUnauthorized("API key validation failed")
 				return nil
 			}
