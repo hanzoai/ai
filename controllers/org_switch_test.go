@@ -239,7 +239,7 @@ func TestGateAndDebitAddressOneWallet(t *testing.T) {
 // cross-tenant read even where no money moves.
 func TestGetOrgScopeHoldsWithoutAClaim(t *testing.T) {
 	// Non-member switch attempt with a non-JWT credential: nil membership set.
-	if got := iam.EffectiveOrg("hanzo", nil, "acme"); got != "hanzo" {
+	if got := account.EffectiveOrg("hanzo", nil, "acme"); got != "hanzo" {
 		t.Fatalf("EffectiveOrg admitted a switch with no claim: %q", got)
 	}
 	// And the controller path agrees for the same shape.
