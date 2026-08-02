@@ -25,11 +25,10 @@ import (
 	"strings"
 	"time"
 
-
+	"github.com/google/uuid"
 	iam "github.com/hanzoai/ai/internal/iam"
 
 	"github.com/hanzoai/ai/object"
-	"github.com/hanzoai/ai/util"
 )
 
 // This file completes the OpenAI-compatible surface alongside chat: the
@@ -263,7 +262,7 @@ func (c *ApiController) Rerank() {
 			Premium:      isPremium,
 			Status:       "success",
 			ClientIP:     c.Ctx.Request.RemoteAddr,
-			RequestID:    util.GenerateUUID(),
+			RequestID:    uuid.NewString(),
 		}
 		recordUsage(rec)
 		recordTrace(c.Ctx.Request.Context(), rec, startTime)
@@ -317,7 +316,7 @@ func (c *ApiController) jsonResponse(v interface{}) {
 // verbatim, recording usage for billing. It is the non-streaming twin of
 // proxyToolRequest, used by Embeddings and the native branch of Rerank.
 func (c *ApiController) proxyJSON(provider *object.Provider, apiPath string, body []byte, userModel string, authUser *iam.User, isPremium bool, startTime time.Time) {
-	requestId := util.GenerateUUID()
+	requestId := uuid.NewString()
 
 	upstreamURL, apiKey, authHeader := resolveEndpointForPath(provider, apiPath)
 	if upstreamURL == "" {

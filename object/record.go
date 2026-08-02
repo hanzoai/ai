@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/i18n"
 	"github.com/hanzoai/ai/util"
@@ -185,7 +186,7 @@ func prepareRecord(record *Record, providerFirst, providerSecond *Provider) (boo
 		}
 	}
 	record.Id = 0
-	record.Name = util.GenerateId()
+	record.Name = uuid.NewString()
 	record.Owner = record.Organization
 	// Set default count to 1 if not set
 	if record.Count == 0 {
@@ -279,7 +280,7 @@ func NewRecord(ctx *web.Context) (*Record, error) {
 	region := locationInfo.Country
 	city := locationInfo.City
 	record := Record{
-		Name:        util.GenerateId(),
+		Name:        uuid.NewString(),
 		CreatedTime: util.GetCurrentTimeWithMilli(),
 		ClientIp:    ip,
 		User:        "",

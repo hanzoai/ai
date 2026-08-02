@@ -16,9 +16,8 @@ package object
 import (
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/hanzoai/dbx"
-
-	"github.com/hanzoai/ai/util"
 )
 
 // RouterTrainingLog is the APPEND-ONLY history of retrain runs — one immutable row
@@ -55,7 +54,7 @@ func AppendRouterTrainingLog(row *RouterTrainingLog) error {
 		return nil
 	}
 	if row.Id == "" {
-		row.Id = util.GenerateId()
+		row.Id = uuid.NewString()
 	}
 	if row.LoggedTime == "" {
 		row.LoggedTime = time.Now().UTC().Format(time.RFC3339)

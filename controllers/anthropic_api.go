@@ -24,11 +24,10 @@ import (
 	"strings"
 	"time"
 
-
+	"github.com/google/uuid"
 	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/model"
 	"github.com/hanzoai/ai/object"
-	"github.com/hanzoai/ai/util"
 	"github.com/hanzoai/ai/web"
 	"github.com/hanzoai/go-openai"
 )
@@ -534,7 +533,7 @@ func (c *ApiController) AnthropicMessages() {
 	}
 
 	// ── Call model provider ─────────────────────────────────────────────
-	requestId := util.GenerateUUID()
+	requestId := uuid.NewString()
 
 	if request.Stream {
 		c.Ctx.ResponseWriter.Header().Set("Content-Type", "text/event-stream")
@@ -761,7 +760,7 @@ func (c *ApiController) proxyAnthropicToolRequest(
 		}
 	}
 
-	requestId := util.GenerateUUID()
+	requestId := uuid.NewString()
 
 	if request.Stream {
 		c.Ctx.ResponseWriter.Header().Set("Content-Type", "text/event-stream")
@@ -830,7 +829,7 @@ func (c *ApiController) proxyAnthropicViaOpenAI(
 	isPremium bool,
 	hold *budgetHold,
 ) {
-	requestId := util.GenerateUUID()
+	requestId := uuid.NewString()
 
 	// Force a final usage chunk on the streaming path so tool calls bill for real
 	// token counts (a funded key must never get free premium inference via

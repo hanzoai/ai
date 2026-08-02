@@ -18,7 +18,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/hanzoai/ai/util"
+	"github.com/google/uuid"
 )
 
 // ServedUsage is the trace input for a request that was BILLED ELSEWHERE — a
@@ -53,7 +53,7 @@ func TraceServedUsage(ctx context.Context, in ServedUsage) {
 		in.StartTime = time.Now().UTC()
 	}
 	if in.RequestID == "" {
-		in.RequestID = util.GenerateUUID()
+		in.RequestID = uuid.NewString()
 	}
 	rec := &usageRecord{
 		Owner:            in.Owner,

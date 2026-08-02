@@ -37,12 +37,12 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/google/uuid"
 	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/log"
 	"github.com/luxfi/zap"
 
 	"github.com/hanzoai/ai/object"
-	"github.com/hanzoai/ai/util"
 )
 
 // ── Group self-registration ───────────────────────────────────────────────
@@ -223,7 +223,7 @@ func zapRerankHandler(ctx context.Context, auth string, body []byte) (*zap.Messa
 			Currency:     "USD",
 			Premium:      isPremium,
 			Status:       "success",
-			RequestID:    util.GenerateUUID(),
+			RequestID:    uuid.NewString(),
 		}
 		go recordUsage(rec)
 		recordTrace(ctx, rec, startTime)
@@ -245,7 +245,7 @@ func zapRerankHandler(ctx context.Context, auth string, body []byte) (*zap.Messa
 // verbatim as a cloud response, and meters the call exactly once (success or
 // error). It is the no-http-writer twin of ApiController.proxyJSON.
 func zapProxyJSON(ctx context.Context, provider *object.Provider, apiPath string, body []byte, userModel string, authUser *iam.User, isPremium bool, startTime time.Time) (*zap.Message, error) {
-	requestId := util.GenerateUUID()
+	requestId := uuid.NewString()
 
 	upstreamURL, apiKey, authHeader := resolveEndpointForPath(provider, apiPath)
 	if upstreamURL == "" {

@@ -20,7 +20,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hanzoai/ai/util"
+	"github.com/google/uuid"
 	"github.com/hanzoai/go-openai"
 	"github.com/klauspost/compress/zstd"
 )
@@ -558,7 +558,7 @@ type responsesStreamTranslator struct {
 func newResponsesStreamTranslator(emit func(string, interface{}) error, request *OpenAIResponsesRequest, toolKinds map[string]string) *responsesStreamTranslator {
 	return &responsesStreamTranslator{
 		emit: emit, request: request, toolKinds: toolKinds,
-		responseID: "resp_" + util.GenerateUUID(), messageID: "msg_" + util.GenerateUUID(),
+		responseID: "resp_" + uuid.NewString(), messageID: "msg_" + uuid.NewString(),
 		createdAt: time.Now().Unix(), calls: map[int]*responsesToolCallState{},
 	}
 }
@@ -646,7 +646,7 @@ func (t *responsesStreamTranslator) handleChunk(chunk *openaiStreamChunk) error 
 			if !call.Started && (call.CallID != "" || call.Name != "") {
 				call.Started = true
 				if call.ID == "" {
-					call.ID = "fc_" + util.GenerateUUID()
+					call.ID = "fc_" + uuid.NewString()
 				}
 				if call.CallID == "" {
 					call.CallID = call.ID
@@ -748,7 +748,7 @@ func (t *responsesStreamTranslator) finish() error {
 		if !call.Started {
 			call.Started = true
 			if call.ID == "" {
-				call.ID = "fc_" + util.GenerateUUID()
+				call.ID = "fc_" + uuid.NewString()
 			}
 			if call.CallID == "" {
 				call.CallID = call.ID

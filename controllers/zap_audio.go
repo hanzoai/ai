@@ -50,13 +50,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/log"
 	"github.com/luxfi/zap"
 
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/tts"
-	"github.com/hanzoai/ai/util"
 )
 
 // The canonical ZAP dispatch registry (registerCloud / registerGatewayPath /
@@ -179,7 +179,7 @@ func zapRecordAudioUsage(ctx context.Context, authUser *iam.User, provider *obje
 		Status:       status,
 		ErrorMsg:     errMsg,
 		Unpriced:     true,
-		RequestID:    util.GenerateUUID(),
+		RequestID:    uuid.NewString(),
 	}
 	recordUsage(rec)
 	recordTrace(ctx, rec, startTime)
@@ -244,7 +244,7 @@ func zapServeZenMedia(apiPath, mdl string, rawBody []byte, units int, authUser *
 	if prov == nil {
 		return object.BuildCloudResponse(503, nil, "zen service is not configured")
 	}
-	reqID := util.GenerateUUID()
+	reqID := uuid.NewString()
 
 	hctx, cancel := context.WithTimeout(context.Background(), 130*time.Second)
 	defer cancel()
@@ -414,7 +414,7 @@ func zapRecordLegacyTTSUsage(ctx context.Context, chat *object.Chat, providerId 
 		Cost:         ttsResult.Price,
 		Currency:     ttsResult.Currency,
 		Status:       "success",
-		RequestID:    util.GenerateUUID(),
+		RequestID:    uuid.NewString(),
 	}
 	if rec.Currency == "" || rec.Currency == "USD" {
 		rec.Currency = "USD"
@@ -531,7 +531,7 @@ func zapRecordLegacySTTUsage(ctx context.Context, store *object.Store, provider 
 		Status:       status,
 		ErrorMsg:     errMsg,
 		Unpriced:     true,
-		RequestID:    util.GenerateUUID(),
+		RequestID:    uuid.NewString(),
 	}
 	recordUsage(rec)
 	recordTrace(ctx, rec, startTime)
