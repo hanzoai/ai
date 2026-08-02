@@ -555,7 +555,7 @@ func existingBackfillKeys(ctx context.Context, from, to time.Time) (map[string]b
 
 // writeDOBackfillRows appends the planned rows to hanzo.cloud_usage. It writes ONLY the
 // columns it owns (source='do-backfill', tokens 0, the DO cost, provenance identity) and
-// omits the rest — Datastore fills them with their column defaults, so this writer is
+// omits the rest — the datastore fills them with their column defaults, so this writer is
 // independent of the native writer's margin/fee columns. Returns the number written.
 func writeDOBackfillRows(ctx context.Context, rows []DOBackfillRow) (int, error) {
 	written := 0
