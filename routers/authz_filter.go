@@ -247,12 +247,13 @@ func sessionOrBearerUser(ctx *web.Context) *iam.User {
 // endpoint (admin/providers*, the get-*/*-provider CRUD, topology reads).
 //
 // A REST resource route resolves to the name its flat predecessor had:
-// GET /v1/iam/users keys on "get-users", DELETE /v1/iam/applications/:id on
-// "delete-application". That mapping is derived from the SAME table that
-// registers the routes (routers/resources.go), not restated here — so the
-// policy sets below, which are keyed by those names, cannot drift out of sync
-// with the surface they govern. Had the names been rewritten by hand across
-// these maps instead, one missed line would be an ungated admin endpoint.
+// GET /v1/ai/usages/user-names keys on "get-users", DELETE
+// /v1/ai/deployments/:owner/:name on "delete-application". That mapping is
+// derived from the SAME table that registers the routes (routers/resources.go),
+// not restated here — so the policy sets below, which are keyed by those names,
+// cannot drift out of sync with the surface they govern. Had the names been
+// rewritten by hand across these maps instead, one missed line would be an
+// ungated admin endpoint.
 //
 // Returns ok=false only for non-/v1 paths (which the caller lets pass, unchanged).
 func normalizedControllerName(rawPath, method string) (name string, ok bool) {

@@ -37,9 +37,9 @@ import (
 // The surface is now the resource, and the verb is the HTTP method where it
 // belongs:
 //
-//	GET    /v1/iam/users        list        POST   /v1/iam/users       create
-//	GET    /v1/iam/users/:id    read        PATCH  /v1/iam/users/:id   update
-//	                                        DELETE /v1/iam/users/:id   delete
+//	GET    /v1/ai/stores              list    POST   /v1/ai/stores              create
+//	GET    /v1/ai/stores/:owner/:name  read    PATCH  /v1/ai/stores/:owner/:name update
+//	                                           DELETE /v1/ai/stores/:owner/:name delete
 //
 // and every resource is namespaced by the subsystem that owns it, so the top
 // level stays the small set of genuinely global endpoints (/v1/chat/completions,
@@ -108,44 +108,59 @@ type action struct {
 // resources is the whole CRUD surface. Adding a resource here is the only way to
 // add one; there is no second registration path.
 //
-// Namespaces are the subsystems that own the data, so a reader can tell what a
-// route touches from its prefix alone:
+// The namespace is the SERVICE — `ai` — for every entry, per the canonical rule
+// that a route is /v1/<service>/<resource>. The groupings below are how the
+// table is read, not a second prefix:
 //
-//	auth     ai's OWN account/session surface — see the note below
-//	rag      retrieval: the knowledge stores and what is indexed in them
-//	chat     conversations and their messages
-//	ai       model plumbing: providers and routes
-//	content  authored things: articles, media, forms, templates
-//	compute  the machines and what runs on them
-//	work     tasks, workflows and their scales
-//	ops      the operational record: audit, connections, activity, usage
+//	identity   ai's own rows that inherited an identity noun from casibase
+//	retrieval  the knowledge stores and what is indexed in them
+//	chat       conversations and their messages
+//	models     provider and route plumbing
+//	content    authored things: articles, media, forms, templates
+//	compute    the machines and what runs on them
+//	work       tasks, workflows and their scales
+//	ops        the operational record: audit, connections, activity, usage
 var resources = []resource{
-	// ── auth ── ai's OWN account/application/permission/session objects.
+	// ── identity ── ai's own rows that inherited an identity noun from casibase.
 	//
-	// NOT /v1/iam. That namespace belongs to the IAM service: cloud proxies the
-	// WHOLE subtree to it (cloud/iam_edge.go — `app.Group("/v1/iam").All("/*")`),
-	// so anything registered here under /v1/iam would be shadowed and never
-	// reached. Registering ai's signin there would have broken ai's login
-	// outright.
+	// hanzoai/iam is the identity service and serves users, applications,
+	// permissions, providers and sessions at /v1/iam/*; cloud proxies that WHOLE
+	// subtree to it (cloud/iam_edge.go — `app.Group("/v1/iam").All("/*")`). ai
+	// inherited the same five words for its own things, so each one had to be
+	// answered separately: is this IAM's row reached through a second door, or
+	// ai's own row wearing IAM's word?
 	//
-	// Worth stating plainly: these ARE duplicates. hanzoai/iam already serves
-	// applications, permissions, sessions and users as the real identity service,
-	// and none of ai's copies has a first-party caller. The one-way answer is to
-	// delete them from ai and let IAM own identity — but that is a deletion to
-	// make deliberately, with the same evidence the medical vertical got, not a
-	// side effect of a rename. Namespaced honestly here until then.
-	{ns: "ai", path: "users", one: "User", noRead: true, noCreate: true, noUpdate: true, noDelete: true,
-		actions: []action{{name: "table-infos", method: "GetUserTableInfos", verb: "GET", collection: true}}},
-	{ns: "ai", path: "applications", one: "Application", actions: []action{
-		{name: "deploy", method: "DeployApplication"},
-		{name: "undeploy", method: "UndeployApplication"},
-	}},
-	{ns: "ai", path: "permissions", one: "Permission"},
-	{ns: "ai", path: "sessions", one: "Session", actions: []action{
-		{name: "duplicated", method: "IsSessionDuplicated", verb: "GET", collection: true},
-	}},
+	// permissions was the first. Every handler in controllers/permission.go is an
+	// iam.* call — the REST client in internal/iam, straight to the IAM server —
+	// so /v1/ai/permissions was a second ADDRESS for /v1/iam/permissions, holding
+	// no data of its own. It is gone; IAM's is the address.
+	//
+	// The others are ai's own rows in ai's own tables. They keep their routes
+	// under a word that cannot be read as IAM's.
 
-	// ── rag ── retrieval: stores, their vectors, and the files indexed into them.
+	// object.Application is a TEMPLATE rendered through kustomize into a manifest
+	// and applied to a namespace, with a pod phase for Status and a service URL —
+	// a deployment. It was never an OAuth client; only the word was IAM's.
+	{ns: "ai", path: "deployments", one: "Application", key: "application", keyPlural: "applications",
+		actions: []action{
+			{name: "deploy", method: "DeployApplication"},
+			{name: "undeploy", method: "UndeployApplication"},
+		}},
+	// ai's OWN cookie sessions: Signin writes the beego session id and Signout
+	// deletes it (controllers/account.go). IAM cannot see them, so /v1/iam/sessions
+	// is a different set of rows — which is exactly why the bare noun was wrong.
+	//
+	// readMethod is load-bearing: without it the member GET resolves to
+	// "GetSession", which the embedded web.Controller ALSO defines as its
+	// session-value getter. Reflection finds that one, so the table test passes,
+	// and dispatch then calls a one-argument method with no arguments and panics.
+	{ns: "ai", path: "signin-sessions", one: "Session", key: "session", keyPlural: "sessions",
+		readMethod: "GetSingleSession",
+		actions: []action{
+			{name: "duplicated", method: "IsSessionDuplicated", verb: "GET", collection: true},
+		}},
+
+	// ── retrieval ── stores, their vectors, and the files indexed into them.
 	{ns: "ai", path: "stores", one: "Store", global: true, actions: []action{
 		{name: "vectors", method: "RefreshStoreVectors"},
 		{name: "names", method: "GetStoreNames", verb: "GET", collection: true},
@@ -173,7 +188,7 @@ var resources = []resource{
 		{name: "welcome", method: "DeleteWelcomeMessage", verb: "DELETE", collection: true},
 	}},
 
-	// ── ai ── model plumbing.
+	// ── models ── provider and route plumbing.
 	{ns: "ai", path: "providers", one: "Provider", global: true, actions: []action{
 		{name: "mcp-tools", method: "RefreshMcpTools", collection: true},
 	}},
@@ -233,6 +248,13 @@ var resources = []resource{
 		actions: []action{
 			{name: "range", method: "GetRangeUsages", verb: "GET", collection: true},
 			{name: "cloud", method: "GetCloudUsages", verb: "GET", collection: true},
+			// Two cuts of this same record, both keyed by user, and neither one a
+			// user directory: object.GetUsers reads the store's MESSAGES and returns
+			// the distinct senders, GetUserTableInfos rolls those messages up into
+			// per-user message/token/price rows. They were /v1/ai/users — a name that
+			// promised IAM's users and delivered the usage panel's filter axis.
+			{name: "user-names", method: "GetUsers", verb: "GET", collection: true},
+			{name: "by-user", method: "GetUserTableInfos", verb: "GET", collection: true},
 		}},
 }
 
@@ -254,8 +276,10 @@ type singleton struct {
 // compound form. Same rule as resources: the noun is in the path, the verb is
 // the HTTP method, and the subsystem owns the namespace.
 var singletons = []singleton{
-	// ai's own auth singletons — under /v1/auth for the reason above: /v1/iam is
+	// ai's own auth singletons. Under /v1/ai for the reason above: /v1/iam is
 	// proxied wholesale to the IAM service, so signin registered there is dead.
+	// These sign in TO ai — the OIDC exchange and the cookie session that
+	// /v1/ai/signin-sessions records — and are ai's, not IAM's.
 	{ns: "ai", path: "signin",
 		verbs: map[string]string{"POST": "Signin"},
 		keys:  map[string]string{"POST": "signin"}},
