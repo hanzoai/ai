@@ -19,10 +19,10 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/tts"
-	"github.com/hanzoai/ai/util"
 )
 
 type TextToSpeechRequest struct {
@@ -141,7 +141,7 @@ func (c *ApiController) recordLegacyTTSUsage(chat *object.Chat, providerId strin
 		Currency:     ttsResult.Currency,
 		Status:       "success",
 		ClientIP:     c.Ctx.Request.RemoteAddr,
-		RequestID:    util.GenerateUUID(),
+		RequestID:    uuid.NewString(),
 	}
 	if rec.Currency == "" || rec.Currency == "USD" {
 		rec.Currency = "USD"

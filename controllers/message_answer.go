@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/hanzoai/ai/agent"
 	"github.com/hanzoai/ai/embedding"
 
@@ -575,7 +576,7 @@ func (c *ApiController) recordCasibaseChatUsage(chat *object.Chat, provider *obj
 		Status:           "success",
 		Unpriced:         !usd,
 		ClientIP:         c.Ctx.Request.RemoteAddr,
-		RequestID:        util.GenerateUUID(),
+		RequestID:        uuid.NewString(),
 	}
 	if usd {
 		recordUsage(rec)

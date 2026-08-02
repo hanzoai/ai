@@ -54,14 +54,13 @@ import (
 	"strings"
 	"time"
 
-
+	"github.com/google/uuid"
 	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/log"
 	"github.com/luxfi/zap"
 
 	"github.com/hanzoai/ai/model"
 	"github.com/hanzoai/ai/object"
-	"github.com/hanzoai/ai/util"
 )
 
 // ── Group self-registration ───────────────────────────────────────────────
@@ -198,7 +197,7 @@ func zapVideosGenerateHandler(ctx context.Context, auth string, body []byte) (*z
 	}
 
 	job := &videoJob{
-		id:         "video_" + util.GenerateUUID(),
+		id:         "video_" + uuid.NewString(),
 		upstreamID: upstreamID,
 		subject:    subject,
 		owner:      authUser.Owner,
@@ -413,7 +412,7 @@ func zapRecordVideoUsage(ctx context.Context, authUser *iam.User, provider *obje
 		Premium:      isPremium,
 		Status:       status,
 		ErrorMsg:     errMsg,
-		RequestID:    util.GenerateUUID(),
+		RequestID:    uuid.NewString(),
 	}
 	recordUsage(rec)
 	recordTrace(ctx, rec, startTime)
@@ -446,7 +445,7 @@ func zapVideoServeZen(mdl string, rawBody []byte, authUser *iam.User, isPremium 
 	if prov == nil {
 		return object.BuildCloudResponse(503, nil, "zen service is not configured")
 	}
-	reqID := util.GenerateUUID()
+	reqID := uuid.NewString()
 
 	hctx, cancel := context.WithTimeout(context.Background(), 130*time.Second)
 	defer cancel()
