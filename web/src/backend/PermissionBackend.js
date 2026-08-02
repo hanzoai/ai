@@ -15,64 +15,25 @@
 
 import * as Setting from "../Setting";
 
-export function getGlobalPermissions() {
-  return fetch(`${Setting.ServerUrl}/v1/get-global-permissions`, {
-    method: "GET",
-    credentials: "include",
-    headers: {
-      "Accept-Language": Setting.getAcceptLanguage(),
-    },
-  }).then(res => res.json());
-}
+// Permissions belong to the IAM service, so these go to /v1/iam/permissions —
+// its published surface, and the same place PermissionUtil sends the user to
+// review what it just created. ai used to re-serve them from its own address by
+// proxying every call to IAM; that door is gone, and there is only this one.
 
 export function getPermissions(owner) {
-  return fetch(`${Setting.ServerUrl}/v1/auth/permissions?owner=${owner}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/permissions?owner=${owner}`, {
     method: "GET",
     credentials: "include",
     headers: {
       "Accept-Language": Setting.getAcceptLanguage(),
     },
-  }).then(res => res.json());
-}
-
-export function getPermission(owner, name) {
-  return fetch(`${Setting.ServerUrl}/v1/auth/permissions/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`, {
-    method: "GET",
-    credentials: "include",
-    headers: {
-      "Accept-Language": Setting.getAcceptLanguage(),
-    },
-  }).then(res => res.json());
-}
-
-export function updatePermission(owner, name, permission) {
-  const newPermission = Setting.deepCopy(permission);
-  return fetch(`${Setting.ServerUrl}/v1/auth/permissions/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`, {
-    method: "PATCH",
-    credentials: "include",
-    headers: {
-      "Accept-Language": Setting.getAcceptLanguage(),
-    },
-    body: JSON.stringify(newPermission),
   }).then(res => res.json());
 }
 
 export function addPermission(permission) {
   const newPermission = Setting.deepCopy(permission);
-  return fetch(`${Setting.ServerUrl}/v1/auth/permissions`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/permissions`, {
     method: "POST",
-    credentials: "include",
-    headers: {
-      "Accept-Language": Setting.getAcceptLanguage(),
-    },
-    body: JSON.stringify(newPermission),
-  }).then(res => res.json());
-}
-
-export function deletePermission(permission) {
-  const newPermission = Setting.deepCopy(permission);
-  return fetch(`${Setting.ServerUrl}/v1/auth/permissions/${encodeURIComponent(permission.owner)}/${encodeURIComponent(permission.name)}`, {
-    method: "DELETE",
     credentials: "include",
     headers: {
       "Accept-Language": Setting.getAcceptLanguage(),
