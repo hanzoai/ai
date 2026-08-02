@@ -29,11 +29,11 @@ require (
 	github.com/hanzoai/cloud v1.801.360
 	github.com/hanzoai/dashscopego v0.6.0
 	github.com/hanzoai/dbx v1.17.2
-	github.com/hanzoai/decimal v0.1.1
+	github.com/hanzoai/decimal v0.1.2
 	github.com/hanzoai/go-cosyvoice v1.0.0
 	github.com/hanzoai/go-openai v1.41.0
 	github.com/hanzoai/go-openrouter v1.0.0
-	github.com/hanzoai/money v0.2.1
+	github.com/hanzoai/money v0.2.2
 	github.com/hanzoai/pdf v1.2.0
 	github.com/hanzoai/search-go v0.36.0
 	github.com/hanzoai/sqlite v0.4.0
@@ -103,11 +103,8 @@ require (
 	github.com/deckarep/golang-set/v2 v2.9.0 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.1 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
-	github.com/dlclark/regexp2/v2 v2.2.1 // indirect
-	github.com/dop251/goja v0.0.0-20260627200808-0b76000cabdb // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/ethereum/c-kzg-4844/v2 v2.1.7 // indirect
-	github.com/evanw/esbuild v0.28.1 // indirect
 	github.com/fasthttp/websocket v1.5.12 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.1 // indirect
 	github.com/go-errors/errors v1.5.1 // indirect
@@ -126,13 +123,11 @@ require (
 	github.com/go-openapi/swag/stringutils v0.25.5 // indirect
 	github.com/go-openapi/swag/typeutils v0.25.5 // indirect
 	github.com/go-openapi/swag/yamlutils v0.25.5 // indirect
-	github.com/go-sourcemap/sourcemap v2.1.4+incompatible // indirect
 	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
 	github.com/gofiber/schema v1.7.1 // indirect
 	github.com/gofiber/utils/v2 v2.0.4 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
 	github.com/golang-sql/sqlexp v0.1.0 // indirect
-	github.com/google/pprof v0.0.0-20260402051712-545e8a4df936 // indirect
 	github.com/gorilla/rpc v1.2.1 // indirect
 	github.com/grandcat/zeroconf v1.0.0 // indirect
 	github.com/hanzo-ds/native v0.72.0 // indirect
@@ -259,7 +254,6 @@ require (
 	github.com/golang-sql/civil v0.0.0-20220223132316-b832511892a9 // indirect
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8 // indirect
 	github.com/google/gnostic-models v0.7.1 // indirect
-	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/hanzoai/types v0.1.0
 	github.com/hanzokv/go/v9 v9.22.0
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
