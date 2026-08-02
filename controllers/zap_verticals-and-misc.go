@@ -20,7 +20,7 @@
 // template in controllers/zap_chat-graph-crud.go.
 //
 // Identity is resolved from the Bearer credential through the ONE shared seam
-// (zapPrincipalUser: verified JWT via object.ParseAndValidateJWT / hk-/pk- IAM key
+// (zapPrincipalUser: verified JWT via object.ParseAndValidateJWT / pk-/sk- IAM key
 // via getUserByAccessKey) — never from the body. Org scope is always the resolved
 // user's Owner (zapMiscScopedOwner mirrors ApiController.GetScopedOwner: a member of
 // the admin org may target a specific ?owner, everyone else is pinned to their own).

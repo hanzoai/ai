@@ -38,7 +38,7 @@ GET  /api/models             # List with routing metadata
 ### Auth (via Hanzo IAM)
 
 ```
-GET  /v1/iam/get-user?accessKey=hk-...   # Resolve API key to user
+GET  /v1/iam/get-user?accessKey=sk-...   # Resolve API key to user
 POST /v1/iam/add-usage-record            # Record usage (async)
 GET  /v1/iam/get-usage-summary           # Aggregated billing
 GET  /v1/iam/get-usage-records           # Detailed usage log
@@ -50,15 +50,19 @@ ZAP supports three auth modes via `Authorization: Bearer <token>`:
 
 | Mode | Token Format | Resolution | Use Case |
 |------|-------------|------------|----------|
-| **IAM API Key** | `hk-{uuid}` | IAM `GetUserByAccessKey` → user/org → model routing | Console users, SDK |
+| **IAM API Key** | `sk-...` | IAM `GetUserByAccessKey` → user/org → model routing | Console users, SDK |
 | **JWT** | `eyJ...` | IAM JWT validation → user/org → model routing | Web apps, OAuth |
-| **Provider Key** | `sk-...` | Direct provider lookup → bypass routing | Power users |
+| **Provider Key** | vendor-issued | Direct provider lookup → bypass routing | Power users |
+
+The first and third share the `sk-` spelling, so the STORE that owns the key decides
+which it is: the provider table is asked first (an exact lookup), and anything it does
+not hold is put to IAM, whose refusal names the cure.
 
 ### IAM API Key Flow
 
 ```
-1. Client sends: Authorization: Bearer hk-abc123...
-2. Gateway calls: IAM GET /v1/iam/get-user?accessKey=hk-abc123
+1. Client sends: Authorization: Bearer sk-abc123...
+2. Gateway calls: IAM GET /v1/iam/get-user?accessKey=sk-abc123
 3. IAM returns: { user, organization, balance }
 4. Gateway checks: balance > 0 (if premium model)
 5. Gateway routes: model → provider via static map
@@ -145,7 +149,7 @@ Engine exposes an MCP server on `--mcp-port`. Node connects to Engine as MCP cli
                     ┌─────────────────────────┐
                     │     Client / SDK        │
                     │  Authorization: Bearer  │
-                    │  hk-... / eyJ... / sk-  │
+                    │      sk-... / eyJ...    │
                     └───────────┬─────────────┘
                                 │ ZAP (HTTP JSON)
                     ┌───────────▼─────────────┐

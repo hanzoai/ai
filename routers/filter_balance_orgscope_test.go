@@ -62,7 +62,7 @@ func TestUserKeyCacheIsScopedToTheOrg(t *testing.T) {
 }
 
 // TestResolveBillingKeyIgnoresAnUnbackedOrgHeader is the NO-OP proof for the
-// router gate: an hk- IAM key carries no signed `orgs` claim, so the X-Org-Id a
+// router gate: an sk- IAM key carries no signed `orgs` claim, so the X-Org-Id a
 // client stamps on it moves nothing. The cached home answer is returned for the
 // home request, and the switch attempt does NOT reuse it — it misses, resolves
 // nothing (no IAM configured in test), and bills no one.
@@ -73,18 +73,18 @@ func TestResolveBillingKeyIgnoresAnUnbackedOrgHeader(t *testing.T) {
 	t.Cleanup(func() { balanceGate = prev })
 
 	// The home answer, as the gate would have cached it on a first request.
-	bg.setUserKeyCache("hk-abc", "", "acme", "acme", "acme/user")
+	bg.setUserKeyCache("sk-abc", "", "acme", "acme", "acme/user")
 
-	subject, namespace, _ := resolveBillingKey(billingCtx("Bearer hk-abc", ""))
+	subject, namespace, _ := resolveBillingKey(billingCtx("Bearer sk-abc", ""))
 	if subject != "acme" || namespace != "acme" {
 		t.Fatalf("home request = (%q, %q), want (acme, acme)", subject, namespace)
 	}
 
 	// Same token, a client-asserted org. It must NOT be served the home entry as
 	// if it were the switched org's, and it must not be served the switched org's
-	// wallet either — an hk- key has no membership proof, so it can only ever
+	// wallet either — an sk- key has no membership proof, so it can only ever
 	// resolve its own owner.
-	subject, namespace, _ = resolveBillingKey(billingCtx("Bearer hk-abc", "zoo"))
+	subject, namespace, _ = resolveBillingKey(billingCtx("Bearer sk-abc", "zoo"))
 	if namespace == "zoo" {
 		t.Fatalf("an unbacked X-Org-Id moved the ledger to %q", namespace)
 	}

@@ -104,7 +104,7 @@ func registerZapSecurityAssetsScans() {
 
 // zapSecPrincipal resolves the request principal STRICTLY from its verified
 // credential — the ZAP analogue of the session/GetScopedOwner principal (there
-// is no session cookie on the ZAP path). hk-/pk- IAM keys route through
+// is no session cookie on the ZAP path). pk-/sk- IAM keys route through
 // getUserByAccessKey; JWTs through object.ParseAndValidateJWT (signature +
 // iss/aud, never raw iam.ParseJwtToken). Returns nil for an empty / invalid /
 // unsupported credential — fail-secure.

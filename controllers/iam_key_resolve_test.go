@@ -21,7 +21,7 @@ import (
 	"testing"
 )
 
-// TestGetUserByAccessKeyUsesClientSecretBasic pins the ONE transport hk- key
+// TestGetUserByAccessKeyUsesClientSecretBasic pins the ONE transport sk- key
 // resolution may use.
 //
 // IAM gates get-user?accessKey= on an authenticated confidential-APP principal
@@ -42,7 +42,7 @@ func TestGetUserByAccessKeyUsesClientSecretBasic(t *testing.T) {
 	const (
 		clientID     = "hanzo-cloud"
 		clientSecret = "s3cr3t"
-		accessKey    = "hk-testkey"
+		accessKey    = "sk-testkey"
 	)
 
 	var gotQuery url.Values
@@ -104,7 +104,7 @@ func TestGetUserByAccessKeyRefusalIsAnError(t *testing.T) {
 	t.Setenv("IAM_CLIENT_ID", "hanzo-cloud")
 	t.Setenv("IAM_CLIENT_SECRET", "s3cr3t")
 
-	if _, err := GetUserByAccessKey("hk-testkey"); err == nil {
+	if _, err := GetUserByAccessKey("sk-testkey"); err == nil {
 		t.Fatal("a refused resolution must be an error, got nil")
 	}
 }
@@ -127,7 +127,7 @@ func TestGetUserByAccessKeyRequiresCredentials(t *testing.T) {
 		t.Skip("a client credential is configured out-of-band; nothing to fail closed on")
 	}
 
-	if _, err := GetUserByAccessKey("hk-testkey"); err == nil {
+	if _, err := GetUserByAccessKey("sk-testkey"); err == nil {
 		t.Fatal("missing client credentials must be an error, got nil")
 	}
 }

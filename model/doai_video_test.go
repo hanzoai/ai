@@ -293,7 +293,7 @@ func TestDownloadVideoBytesDOAI_ContentTypeAllowlist(t *testing.T) {
 }
 
 // TestVideoSafeReason_ScrubsSecrets proves credential-shaped substrings an
-// upstream error body might echo (Authorization header, Bearer token, sk-/hk- API
+// upstream error body might echo (Authorization header, Bearer token, sk-/sk- API
 // key) are redacted before they can reach the client, while a benign reason is
 // passed through unchanged (no over-redaction).
 func TestVideoSafeReason_ScrubsSecrets(t *testing.T) {
@@ -301,7 +301,7 @@ func TestVideoSafeReason_ScrubsSecrets(t *testing.T) {
 		{"bearer-token", `{"error":"bad key: Bearer sk-live-ABCDEF123456"}`, "sk-live-ABCDEF123456"},
 		{"authorization-header", `unexpected: Authorization: Bearer zzzTOKENzzz here`, "zzzTOKENzzz"},
 		{"sk-key-inline", `invalid api key sk-proj-DEADBEEFcafe1234 rejected`, "sk-proj-DEADBEEFcafe1234"},
-		{"hk-key-inline", `bad hanzo key hk-abcdef012345 nope`, "hk-abcdef012345"},
+		{"sk-key-inline", `bad hanzo key sk-abcdef012345 nope`, "sk-abcdef012345"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

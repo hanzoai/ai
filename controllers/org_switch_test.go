@@ -153,7 +153,7 @@ func orgController(auth, requested string) *ApiController {
 // org, whatever X-Org-Id says.
 //
 // Only a JWT carries the signed `orgs` claim, so only a JWT can switch. Every
-// other credential — an hk- IAM key, an sk- provider key, an hz_ widget key, a
+// other credential — an sk- IAM key, an sk- provider key, an hz_ widget key, a
 // cookie session, no credential at all — resolves nil membership, and nil admits
 // nothing. That is what makes the raw header unspoofable here: a client that
 // stamps X-Org-Id on an API-key request moves no money.
@@ -164,9 +164,9 @@ func TestBillingOrgHoldsUnlessTheClaimSaysOtherwise(t *testing.T) {
 		auth      string
 		requested string
 	}{
-		{"no org header", "Bearer hk-abc", ""},
-		{"header names the home org", "Bearer hk-abc", "hanzo"},
-		{"hk- IAM key cannot switch", "Bearer hk-abc", "acme"},
+		{"no org header", "Bearer sk-abc", ""},
+		{"header names the home org", "Bearer sk-abc", "hanzo"},
+		{"sk- IAM key cannot switch", "Bearer sk-abc", "acme"},
 		{"sk- provider key cannot switch", "Bearer sk-abc", "acme"},
 		{"hz_ widget key cannot switch", "Bearer hz_abc", "acme"},
 		{"no credential at all cannot switch", "", "acme"},
@@ -186,7 +186,7 @@ func TestBillingOrgHoldsUnlessTheClaimSaysOtherwise(t *testing.T) {
 // refuse such a request rather than serve it free, and an empty string is what
 // says so — never a defaulted org that would silently bill a real tenant.
 func TestBillingOrgNilUser(t *testing.T) {
-	if got := orgController("Bearer hk-abc", "acme").billingOrg(nil); got != "" {
+	if got := orgController("Bearer sk-abc", "acme").billingOrg(nil); got != "" {
 		t.Fatalf("billingOrg(nil) = %q, want \"\"", got)
 	}
 }
@@ -243,7 +243,7 @@ func TestGetOrgScopeHoldsWithoutAClaim(t *testing.T) {
 		t.Fatalf("EffectiveOrg admitted a switch with no claim: %q", got)
 	}
 	// And the controller path agrees for the same shape.
-	c := orgController("Bearer hk-abc", "acme")
+	c := orgController("Bearer sk-abc", "acme")
 	if orgs := c.principalOrgs(); orgs != nil {
 		t.Fatalf("principalOrgs = %v for a non-JWT credential, want nil", orgs)
 	}

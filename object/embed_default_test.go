@@ -82,10 +82,10 @@ func TestForceGatewayEmbedder(t *testing.T) {
 	}
 
 	// Key env SET → resolve it in place (env-first), not a bare kms:// ref.
-	t.Setenv("CLOUD_AI_API_KEY", "hk-test-embed-key")
+	t.Setenv("CLOUD_AI_API_KEY", "sk-test-embed-key")
 	p = &Provider{Type: "OpenAI", ProviderUrl: "", ClientSecret: "kms://OPENAI_API_KEY"}
 	forceGatewayEmbedder(p)
-	if p.ClientSecret != "hk-test-embed-key" {
+	if p.ClientSecret != "sk-test-embed-key" {
 		t.Fatalf("broken default (key env set): want resolved key, got %q", p.ClientSecret)
 	}
 	t.Setenv("CLOUD_AI_API_KEY", "")

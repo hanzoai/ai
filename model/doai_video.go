@@ -269,7 +269,7 @@ func doaiVideoDo(ctx context.Context, client *http.Client, method, url, apiKey s
 }
 
 // secretLikePattern matches credential-shaped substrings an upstream error body
-// might echo back: an Authorization header, a Bearer token, or an sk-/hk- API key.
+// might echo back: an Authorization header, a Bearer token, or an sk- API key.
 // They are redacted before any upstream reason is embedded in an error we surface
 // to the caller, so a misbehaving upstream can never turn our error path into a
 // key-disclosure oracle.

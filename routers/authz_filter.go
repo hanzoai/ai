@@ -183,7 +183,7 @@ func requiresPresentCredential(controllerName string) bool {
 // session user (cookie auth) or a Bearer token. It is a coarse presence check
 // (defense in depth); the controller validates the credential. It deliberately
 // does not parse/verify, so it never rejects a valid credential type
-// (hk-/pk-/sk-/hz_/JWT/session) and never adds an IAM round-trip to the filter.
+// (pk-/sk-/hz_/JWT/session) and never adds an IAM round-trip to the filter.
 func hasPresentCredential(ctx *web.Context) bool {
 	if GetSessionUser(ctx) != nil {
 		return true
@@ -199,9 +199,9 @@ func hasPresentCredential(ctx *web.Context) bool {
 //   - a JWT is signature- AND issuer/audience-validated via
 //     object.ParseAndValidateJWT (never raw iam.ParseJwtToken), so a forged token
 //     cannot pose as an admin.
-//   - an hk- IAM API key is resolved to its owning user via IAM (getUserByAccessKey,
+//   - an sk- IAM API key is resolved to its owning user via IAM (getUserByAccessKey,
 //     the same get-user?accessKey= lookup the balance gate bills against). Without
-//     this, an hk- key authenticated (e.g. /v1/models) but GetOrg saw no principal,
+//     this, an API key authenticated (e.g. /v1/models) but GetOrg saw no principal,
 //     fell back to the empty IAM_ORG default, and every chat call 402'd at zen with
 //     "a billable tenant is required" — the `hanzo code` failure.
 //
@@ -222,7 +222,7 @@ func sessionOrBearerUser(ctx *web.Context) *iam.User {
 		}
 		return &claims.User
 	}
-	// Non-JWT Bearer: an hk- IAM API key. Resolve it to its owner via IAM so the
+	// Non-JWT Bearer: an sk- IAM API key. Resolve it to its owner via IAM so the
 	// key path carries the same verified principal (and thus the same tenant) as
 	// the JWT path. GetUserByAccessKey returns (nil, nil) for an unknown key (IAM
 	// 200 + data:null), so guard BOTH the error and a nil user — fail-secure, no

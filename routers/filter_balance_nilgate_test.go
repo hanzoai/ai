@@ -26,10 +26,10 @@ func TestResolveBillingKey_NilGateNoPanic(t *testing.T) {
 	balanceGate = nil
 	defer func() { balanceGate = saved }()
 
-	// hk- IAM key: the exact token class that reached the nil deref in prod.
+	// sk- IAM key: the exact token class that reached the nil deref in prod.
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
-	req.Header.Set("Authorization", "Bearer hk-deadbeefcafe")
+	req.Header.Set("Authorization", "Bearer sk-deadbeefcafe")
 	ctx := web.NewContext()
 	ctx.Reset(rec, req)
 

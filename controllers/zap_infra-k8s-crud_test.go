@@ -55,7 +55,7 @@ func zapInfraStatus(t *testing.T, msg *zap.Message, err error) uint32 {
 // auth token ONLY, never the body, and every handler rejects an unauthenticated
 // caller BEFORE any object-layer call. A body that smuggles an owner is still
 // rejected. zapResolveUser rejects these tokens by shape alone (no network / DB):
-// "" and "Bearer " are empty; "Bearer not-a-real-token" is neither an hk-/pk- key
+// "" and "Bearer " are empty; "Bearer not-a-real-token" is neither an sk-/pk- key
 // nor a JWT, so it never reaches IAM. All 25 super-admin CRUD endpoints therefore
 // fail closed with 401; add-node-tunnel and get-vm-dashboard-url likewise 401
 // without a resolvable principal.

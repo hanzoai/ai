@@ -27,7 +27,7 @@
 //   POST /v1/admin/usage/backfill-do
 //
 // Identity is derived ONLY from the Bearer token (never the body) via the shared
-// zapPrincipalUser seam (zap_model-routing-config.go): hk- IAM keys through
+// zapPrincipalUser seam (zap_model-routing-config.go): sk- IAM keys through
 // getUserByAccessKey, JWTs through object.ParseAndValidateJWT (signature +
 // iss/aud). Org scope is the principal's own Owner; only a same-brand super admin
 // can widen scope, and only across orgs the god-view already exposes.
@@ -84,7 +84,7 @@ func zapRequireUsageAdmin(auth string) (*iam.User, *zap.Message) {
 
 // usageTokenOwnBrand mirrors ApiController.principalIsOwnBrand for the Bearer
 // path (ZAP has no cookie session): own-brand ONLY when the token is a JWT minted
-// by THIS deployment's own issuer. hk- keys and foreign-brand JWTs are NOT
+// by THIS deployment's own issuer. sk- keys and foreign-brand JWTs are NOT
 // own-brand, so a sibling-brand super admin is pinned to its own org.
 func usageTokenOwnBrand(auth string) bool {
 	token := strings.TrimPrefix(auth, "Bearer ")

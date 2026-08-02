@@ -154,7 +154,7 @@ func zapBodyStore(body []byte, def string) string {
 
 // zapResolveSearchAuth mirrors ApiController.resolveSearchAuth for the ZAP
 // transport: identity from the Bearer token ONLY (no session cookie exists over
-// ZAP). Read-level: hk-*/pk-* IAM keys, hz_* widget keys, and iss/aud-validated
+// ZAP). Read-level: pk-*/sk-* IAM keys, hz_* widget keys, and iss/aud-validated
 // JWTs are all accepted; pk-* is read-only but valid here.
 func zapResolveSearchAuth(auth string) (*searchAuth, *zapAuthErr) {
 	token := strings.TrimPrefix(auth, "Bearer ")
@@ -187,11 +187,11 @@ func zapResolveSearchAuth(auth string) (*searchAuth, *zapAuthErr) {
 		return &searchAuth{Owner: u.Owner, UserID: u.Owner + "/" + u.Name, User: u}, nil
 	}
 
-	return nil, &zapAuthErr{http.StatusUnauthorized, "unrecognized token format: expected hk-*, pk-*, or JWT"}
+	return nil, &zapAuthErr{http.StatusUnauthorized, "unrecognized token format: expected pk-*, sk-*, or JWT"}
 }
 
 // zapRequireIndexAuth mirrors ApiController.requireIndexAuth for ZAP: write-level
-// auth for index/scrape/crawl/ingest/delete. hk-*/JWT are permitted; pk-* is a
+// auth for index/scrape/crawl/ingest/delete. sk-*/JWT are permitted; pk-* is a
 // valid credential but read-only (403); widget/unknown are denied. There is no
 // session-admin or preview-mode fallback over ZAP — a no-credential caller must
 // never reach the admin tenant's index.
