@@ -56,14 +56,15 @@ func wiredStatus(t *testing.T, method, path, body string) int {
 func TestWiredResourceRouteDispatches(t *testing.T) {
 	for _, c := range []struct{ method, path string }{
 		{"GET", "/v1/ai/account"},
-		{"GET", "/v1/ai/applications"},
+		{"GET", "/v1/ai/deployments"},
 		{"GET", "/v1/ai/stores/acme/thing"},
 		{"GET", "/v1/ai/stores"},
 		{"GET", "/v1/ai/version"},
 		// NB: /v1/ai/signin is deliberately not probed here — its handler makes a
 		// live OAuth call, so a pass would depend on the network. Its registration
 		// is covered by the table tests instead.
-		{"GET", "/v1/ai/sessions"},
+		{"GET", "/v1/ai/signin-sessions"},
+		{"GET", "/v1/ai/usages/user-names"},
 	} {
 		if code := wiredStatus(t, c.method, c.path, "{}"); code == http.StatusNotFound {
 			t.Errorf("%s %s must dispatch, got 404", c.method, c.path)
@@ -86,6 +87,13 @@ func TestOldAddressesAreGone(t *testing.T) {
 		{"GET", "/v1/cloud/get-account"},
 		{"GET", "/v1/cloud/get-providers"},
 		{"GET", "/v1/ai/get-account"},
+		// The identity nouns ai borrowed from casibase. /v1/ai/permissions was a
+		// second address for the IAM service's permissions and has no successor
+		// here; the other three moved to names that say what ai actually serves.
+		{"GET", "/v1/ai/permissions"},
+		{"GET", "/v1/ai/users"},
+		{"GET", "/v1/ai/applications"},
+		{"GET", "/v1/ai/sessions"},
 	} {
 		// "Gone" means NO HANDLER RUNS. Usually that shows up as a 404 from the
 		// router. For a path whose name is still in the super-admin policy set
