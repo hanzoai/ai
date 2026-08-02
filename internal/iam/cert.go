@@ -31,10 +31,22 @@ type Cert struct {
 	Certificate     string `json:"certificate"`
 }
 
-// GetCert fetches a certificate by name within the client's organization.
+// GetCert fetches a signing certificate by name from the PLATFORM partition,
+// which is where certs live — the same partition GetApplication reads from.
+//
+// It used to qualify the id with c.OrganizationName, the caller's own tenant.
+// That is the wrong owner and it was silent: the application read resolves
+// admin/<app>, the application's `cert` field is a bare name, and the cert row
+// is written owner=admin — so a deployment whose IAM_ORG was anything but
+// "admin" asked for <tenant>/<cert>, got "the entity does not exist", and could
+// not establish the key every bearer token is validated against. The store had
+// the cert the whole time; only the question was addressed to the wrong tenant.
+//
+// Both reads now name the partition through one constant, so an application and
+// its own certificate can no longer be looked up in two different places.
 func (c *Client) GetCert(name string) (*Cert, error) {
 	url := c.GetUrl("get-cert", map[string]string{
-		"id": fmt.Sprintf("%s/%s", c.OrganizationName, name),
+		"id": fmt.Sprintf("%s/%s", PlatformOwner, name),
 	})
 	bytes, err := c.DoGetBytes(url)
 	if err != nil {
