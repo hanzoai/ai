@@ -16,7 +16,7 @@ package object
 import (
 	"time"
 
-	"github.com/hanzoai/ai/util"
+	"github.com/google/uuid"
 	"github.com/hanzoai/dbx"
 )
 
@@ -65,7 +65,7 @@ func AddRoutingEvent(e *RoutingEvent) error {
 		return nil
 	}
 	if e.Id == "" {
-		e.Id = util.GenerateId()
+		e.Id = uuid.NewString()
 	}
 	if e.CreatedTime == "" {
 		e.CreatedTime = time.Now().UTC().Format(time.RFC3339)

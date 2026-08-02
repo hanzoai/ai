@@ -28,6 +28,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/hanzoai/account"
 
 	"github.com/hanzoai/ai/conf"
@@ -1143,7 +1144,7 @@ func (c *ApiController) ChatCompletions() {
 	// the usage-ledger request_id, AND the routing-event join key, so a later reward
 	// (POST /v1/feedback) can be tied back to THIS decision. Generated
 	// before routing so resolveAutoModel can stamp it on the RoutingEvent.
-	requestId := util.GenerateUUID()
+	requestId := uuid.NewString()
 
 	// Virtual `auto`/`zen-router` model → resolve to a concrete servable model id
 	// BEFORE any provider/pricing/billing resolution, so the ENTIRE existing path
@@ -1544,7 +1545,7 @@ func (c *ApiController) proxyToolRequest(
 	orgId string,
 	hold *budgetHold,
 ) {
-	requestId := util.GenerateUUID()
+	requestId := uuid.NewString()
 
 	// The wallet this request spends from — the same value ChatCompletions gated
 	// and reserved on, re-derived from the same credential rather than threaded,

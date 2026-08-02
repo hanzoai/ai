@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/log"
@@ -274,7 +275,7 @@ func (c *ApiController) TunnelMonitor() {
 		guacamole.Disconnect(ws, ConnectionNotFound, "Failed to obtain guacamole session")
 		return
 	}
-	guacSession.Id = util.GenerateId()
+	guacSession.Id = uuid.NewString()
 	forObsGuacSession.Observer.Add(guacSession)
 
 	guacamoleHandler := NewGuacamoleHandler(ws, tunnel)

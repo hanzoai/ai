@@ -26,8 +26,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/google/uuid"
 )
 
 func ParseInt(s string) int {
@@ -77,10 +75,6 @@ func GetOwnerAndNameFromIdWithError(id string) (string, string, error) {
 
 func GetIdFromOwnerAndName(owner string, name string) string {
 	return fmt.Sprintf("%s/%s", owner, name)
-}
-
-func GenerateId() string {
-	return uuid.NewString()
 }
 
 func ReadStringFromPath(path string) string {
@@ -165,8 +159,4 @@ func GetRandomString(length int) string {
 		result[i] = charset[rand.Intn(len(charset))]
 	}
 	return string(result)
-}
-
-func GenerateUUID() string {
-	return uuid.New().String()
 }

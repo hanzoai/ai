@@ -42,7 +42,7 @@ import (
 	"strings"
 	"time"
 
-
+	"github.com/google/uuid"
 	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/log"
 	openai "github.com/hanzoai/go-openai"
@@ -50,7 +50,6 @@ import (
 
 	"github.com/hanzoai/ai/model"
 	"github.com/hanzoai/ai/object"
-	"github.com/hanzoai/ai/util"
 )
 
 // ── Registration (recipe per-group convention) ───────────────────────────────
@@ -230,7 +229,7 @@ func zapAnthropicMessages(ctx context.Context, auth string, reqBody []byte) (int
 		question = fmt.Sprintf("System: %s\n\nUser: %s", systemPrompt, question)
 	}
 
-	requestId := util.GenerateUUID()
+	requestId := uuid.NewString()
 
 	// STEP 5 — execute against object/ + model/ directly (buffer, no HTTP writer).
 	modelProvider, err := provider.GetModelProvider("en")
@@ -322,7 +321,7 @@ func zapAnthropicToolRequest(
 	isPremium bool,
 	hold *budgetHold,
 ) (int, []byte, string) {
-	requestId := util.GenerateUUID()
+	requestId := uuid.NewString()
 
 	// Native Anthropic upstream: forward the raw request verbatim (non-stream).
 	if provider.Type == "Claude" || provider.Type == "Anthropic" {

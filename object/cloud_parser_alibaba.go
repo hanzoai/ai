@@ -23,6 +23,7 @@ import (
 	resourcecenter20221201 "github.com/alibabacloud-go/resourcecenter-20221201/client"
 	util2 "github.com/alibabacloud-go/tea-utils/v2/service"
 	"github.com/alibabacloud-go/tea/tea"
+	"github.com/google/uuid"
 	"github.com/hanzoai/ai/util"
 )
 
@@ -179,7 +180,7 @@ func (p *AlibabaCloudParser) convertResourceToAsset(owner string, provider *Prov
 	displayResourceType := p.getDisplayResourceType(resourceType)
 	asset := &Asset{
 		Owner:       owner,
-		Name:        util.GenerateId(),
+		Name:        uuid.NewString(),
 		CreatedTime: util.GetCurrentTime(),
 		UpdatedTime: util.GetCurrentTime(),
 		DisplayName: tea.StringValue(resource.ResourceName),

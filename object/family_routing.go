@@ -29,9 +29,9 @@ import (
 	"encoding/json"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/router"
-	"github.com/hanzoai/ai/util"
 )
 
 // NormalizeRequestId trims the id and strips the response-object "chatcmpl-" prefix,
@@ -76,7 +76,7 @@ type FamilyRoutingInput struct {
 func RecordFamilyRouting(in FamilyRoutingInput) {
 	joinID := NormalizeRequestId(in.ResponseId)
 	if joinID == "" {
-		joinID = util.GenerateUUID()
+		joinID = uuid.NewString()
 	}
 	routed := strings.TrimSpace(in.RoutedModel)
 	if routed == "" {

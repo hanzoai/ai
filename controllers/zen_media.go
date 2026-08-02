@@ -22,10 +22,9 @@ import (
 	"strings"
 	"time"
 
-
+	"github.com/google/uuid"
 	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/object"
-	"github.com/hanzoai/ai/util"
 	"github.com/hanzoai/decimal"
 	"github.com/hanzoai/money"
 )
@@ -79,7 +78,7 @@ func (c *ApiController) pipeZenMedia(apiPath, model string, rawBody []byte, unit
 		c.zenError("openai", "zen service is not configured", http.StatusServiceUnavailable)
 		return
 	}
-	reqID := util.GenerateUUID()
+	reqID := uuid.NewString()
 	req, err := http.NewRequestWithContext(c.Ctx.Request.Context(), http.MethodPost, prov.ProviderUrl+"/v1/"+apiPath, bytes.NewReader(rawBody))
 	if err != nil {
 		c.zenError("openai", "build zen request: "+err.Error(), http.StatusInternalServerError)

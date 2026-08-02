@@ -20,9 +20,9 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/google/uuid"
 	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/object"
-	"github.com/hanzoai/ai/util"
 )
 
 // audioSpeechRequest is the OpenAI /v1/audio/speech body: synthesize `input` with
@@ -165,7 +165,7 @@ func (c *ApiController) recordAudioUsage(authUser *iam.User, provider *object.Pr
 		ErrorMsg:     errMsg,
 		Unpriced:     true,
 		ClientIP:     c.Ctx.Request.RemoteAddr,
-		RequestID:    util.GenerateUUID(),
+		RequestID:    uuid.NewString(),
 	}
 	recordUsage(rec)
 	recordTrace(c.Ctx.Request.Context(), rec, startTime)

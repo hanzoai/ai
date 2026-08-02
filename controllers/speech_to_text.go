@@ -20,8 +20,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/hanzoai/ai/object"
-	"github.com/hanzoai/ai/util"
 )
 
 // ProcessSpeechToText
@@ -112,7 +112,7 @@ func (c *ApiController) recordLegacySTTUsage(store *object.Store, provider *obje
 		ErrorMsg:     errMsg,
 		Unpriced:     true,
 		ClientIP:     c.Ctx.Request.RemoteAddr,
-		RequestID:    util.GenerateUUID(),
+		RequestID:    uuid.NewString(),
 	}
 	recordUsage(rec)
 	recordTrace(c.Ctx.Request.Context(), rec, startTime)

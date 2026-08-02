@@ -35,6 +35,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/hanzoai/account"
 
 	iam "github.com/hanzoai/ai/internal/iam"
@@ -405,7 +406,7 @@ func zapChatHandler(ctx context.Context, auth string, body []byte) (*zap.Message
 
 	// Call the model provider. Use a buffer — no HTTP writer.
 	requestStartTime := time.Now().UTC()
-	requestId := util.GenerateUUID()
+	requestId := uuid.NewString()
 	var buf bytes.Buffer
 
 	modelResult, err := modelProvider.QueryText(question, &buf, history, "", nil, nil, "en")

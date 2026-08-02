@@ -39,11 +39,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/hanzoai/ai/conf"
 	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/object"
-	"github.com/hanzoai/ai/util"
 	"github.com/hanzoai/decimal"
 	"github.com/hanzoai/money"
 )
@@ -655,7 +655,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	// same SKU (body model == SKU) serves. Reconcile the forwarded body's model with
 	// the resolved SKU; byte-identical for a direct request (model already matches).
 	rawBody = withModel(rawBody, model)
-	reqID := util.GenerateUUID()
+	reqID := uuid.NewString()
 	url := prov.ProviderUrl + "/v1/" + apiPath
 	req, err := http.NewRequestWithContext(c.Ctx.Request.Context(), http.MethodPost, url, bytes.NewReader(rawBody))
 	if err != nil {

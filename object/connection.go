@@ -18,6 +18,7 @@ import (
 	"strconv"
 	"sync"
 
+	"github.com/google/uuid"
 	"github.com/hanzoai/ai/util"
 	"github.com/hanzoai/ai/util/guacamole"
 	"github.com/hanzoai/dbx"
@@ -191,7 +192,7 @@ func CreateConnection(connection *Connection, nodeId string, mode string) (*Conn
 		return nil, nil
 	}
 	connection.Owner = node.Owner
-	connection.Name = util.GenerateId()
+	connection.Name = uuid.NewString()
 	connection.CreatedTime = util.GetCurrentTime()
 	connection.Protocol = node.RemoteProtocol
 	connection.Node = nodeId
