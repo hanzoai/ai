@@ -314,7 +314,7 @@ func tryCloudAgentKeyFallback(apiKey string) *iam.User {
 // resolveProviderForUser is the shared logic for JWT and API key auth paths.
 // Given a validated user, resolves the model route and provider.
 //
-// ledger is the org that PAYS for this request (iam.LedgerOrg). It selects both
+// ledger is the org that PAYS for this request (account.LedgerOrg). It selects both
 // the org's own BYOK provider and the wallet the balance gate reads, so a request
 // billed to an org is served with that org's connected key — the two cannot name
 // different tenants.
@@ -365,7 +365,7 @@ func resolveProviderForUser(user *iam.User, ledger string, requestedModel string
 // balance. subject is the per-namespace billing account the gate read, the budget
 // reservation, and the usage debit all key on.
 //
-// ledger is the org this request SPENDS FROM — iam.LedgerOrg, via c.billingOrg or
+// ledger is the org this request SPENDS FROM — account.LedgerOrg, via c.billingOrg or
 // the claims the JWT resolver already holds. It is passed rather than derived
 // from user.Owner so the gate reads the SAME wallet the debit writes: keying the
 // gate on the selected org and the debit on the home org would check one balance
