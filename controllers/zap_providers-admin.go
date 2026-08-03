@@ -19,14 +19,14 @@
 // controllers/zap_native.go:zapChatHandler and the shared seam in
 // controllers/zap_account-auth.go (the registry + zapOk/zapErr + zapResolvePrincipal).
 //
-// Auth parity: every route in this group EXCEPT /v1/provider-flags is gated at
+// Auth parity: every route in this group EXCEPT /v1/models/providers is gated at
 // SUPER ADMIN (util.IsSuperAdmin, owner == "admin") — the SAME policy the beego
 // authz filter applies (routers/authz_filter.go superAdminEndpoints). The native
 // ZAP path never runs that filter, so the gate is re-enforced verbatim here via
 // the shared zapResolvePrincipal identity seam (JWT → ParseAndValidateJWT, sk- →
 // getUserByAccessKey). One verified principal; the body is never trusted for
-// identity. /v1/provider-flags is the public, secret-free enabled-name feed the
-// filter deliberately leaves ungated.
+// identity. /v1/models/providers is the public, secret-free projection of the
+// served catalog that the filter deliberately leaves ungated.
 //
 // Registration: this file self-registers its routes into the shared registry
 // (registerCloud / registerGatewayPath, defined once in zap_account-auth.go) from
@@ -59,7 +59,7 @@ func init() {
 	registerCloud("admin.providers.list", zapGetAdminProvidersHandler)
 	registerCloud("admin.providers.toggle", zapToggleAdminProviderHandler)
 	registerCloud("admin.providers.primary", zapSetPrimaryAdminProviderHandler)
-	registerCloud("provider-flags", zapGetProviderFlagsHandler)
+	registerCloud("models.providers", zapGetModelProvidersHandler)
 
 	// Gateway (MsgType 200) — /v1 path prefixes routing to the SAME handlers.
 	// lookupGatewayHandler resolves by longest matching prefix, so the shorter
@@ -67,7 +67,7 @@ func init() {
 	registerGatewayPath("/v1/admin/providers/toggle", zapToggleAdminProviderHandler)
 	registerGatewayPath("/v1/admin/providers/primary", zapSetPrimaryAdminProviderHandler)
 	registerGatewayPath("/v1/admin/providers", zapGetAdminProvidersHandler)
-	registerGatewayPath("/v1/provider-flags", zapGetProviderFlagsHandler)
+	registerGatewayPath("/v1/models/providers", zapGetModelProvidersHandler)
 }
 
 // ── auth gate ────────────────────────────────────────────────────────────────
@@ -371,15 +371,11 @@ func zapSetPrimaryAdminProviderHandler(_ context.Context, auth string, body []by
 	return zapProviderOk(views)
 }
 
-// ── provider_flags.go parity ─────────────────────────────────────────────────
+// ── models_providers.go parity ───────────────────────────────────────────────
 
-// zapGetProviderFlagsHandler mirrors ApiController.GetProviderFlags. PUBLIC:
-// secret-free enabled-name feed, deliberately ungated (parity with the beego
-// route the authz filter leaves out of superAdminEndpoints).
-func zapGetProviderFlagsHandler(_ context.Context, _ string, _ []byte) (*zap.Message, error) {
-	names, err := enabledModelProviderNames()
-	if err != nil {
-		return zapProviderError(200, err.Error())
-	}
-	return zapProviderOk(providerFlags{EnabledProviders: names})
+// zapGetModelProvidersHandler mirrors ApiController.GetModelProviders. PUBLIC:
+// secret-free name set projected from the served catalog, deliberately ungated
+// (parity with the route the authz filter leaves out of superAdminEndpoints).
+func zapGetModelProvidersHandler(_ context.Context, _ string, _ []byte) (*zap.Message, error) {
+	return zapProviderOk(modelProviders{Providers: listRouteProviders()})
 }
