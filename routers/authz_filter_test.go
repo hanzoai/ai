@@ -342,11 +342,11 @@ func TestAdminRoutesGlobalAdminPass_Canonical(t *testing.T) {
 	}
 }
 
-// TestPublicProviderFlagsNotGated: /v1/provider-flags is the public secret-free
+// TestPublicModelProvidersNotGated: /v1/models/providers is the public secret-free
 // enabled-name feed — it must NOT require super admin (the pricing sync reads it
 // unauthenticated). Guards against accidentally gating the public feed.
-func TestPublicProviderFlagsNotGated(t *testing.T) {
-	for _, raw := range []string{"/v1/provider-flags", "/v1/provider-flags/"} {
+func TestPublicModelProvidersNotGated(t *testing.T) {
+	for _, raw := range []string{"/v1/models/providers", "/v1/models/providers/"} {
 		name, ok := normalizedControllerName(raw, "GET")
 		if !ok {
 			t.Fatalf("%s should be a /v1 path", raw)

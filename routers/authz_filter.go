@@ -110,8 +110,8 @@ var superAdminEndpoints = map[string]struct{}{
 	// primary state (which governs routing to upstream keys), so they are gated
 	// exactly like the CRUD routes above. Keys are the controllerName produced by
 	// TrimPrefix(path,"/v1/"), so multi-segment paths appear verbatim. NOTE:
-	// "provider-flags" is deliberately NOT here — it is the public, secret-free
-	// enabled-name feed for the pricing sync (get-models-style public read).
+	// "models/providers" is deliberately NOT here — it is the public, secret-free
+	// projection of the served catalog (a get-models-style public read).
 	"admin/providers": {}, "admin/providers/toggle": {}, "admin/providers/primary": {},
 	// Model routing config.
 	"get-model-routes": {}, "get-model-route": {},
