@@ -25,12 +25,21 @@ import (
 	"github.com/hanzoai/ai/util"
 )
 
+// TestTranslateArticle drives the real translation path: it reads an article
+// row, asks the configured model to translate each English block, and writes the
+// result back. It therefore needs BOTH a configured database and a live model
+// endpoint, so it skips rather than fails when either is absent — with no
+// database it read nothing and dereferenced a nil article, and a panic in a test
+// takes the whole package binary down with it, hiding every other result in it.
 func TestTranslateArticle(t *testing.T) {
 	InitConfig()
 	proxy.InitHttpClient()
 	article, err := getArticle("admin", "pml")
 	if err != nil {
-		panic(err)
+		t.Skipf("no article store configured: %v", err)
+	}
+	if article == nil {
+		t.Skip("article admin/pml is not present; this test needs a seeded database")
 	}
 	glossary := util.StructToJsonNoIndent(article.Glossary)
 	for i, block := range article.Content {
@@ -41,13 +50,12 @@ func TestTranslateArticle(t *testing.T) {
 		var answer string
 		answer, _, err = GetAnswer("", question, "en")
 		if err != nil {
-			panic(err)
+			t.Skipf("no model endpoint configured: %v", err)
 		}
 		block.Text = answer
 		fmt.Printf("[%d/%d] block type: %s, text EN: %s, text: %s\n", i+1, len(article.Content), block.Type, block.TextEn, block.Text)
-		_, err = UpdateArticle(article.GetId(), article)
-		if err != nil {
-			panic(err)
+		if _, err = UpdateArticle(article.GetId(), article); err != nil {
+			t.Fatalf("write back translated block %d: %v", i+1, err)
 		}
 	}
 }
