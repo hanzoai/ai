@@ -47,7 +47,26 @@ func GetDbQuery(owner string, offset, limit int, field, value, sortField, sortOr
 			q = q.AndWhere(dbx.Like(col, value))
 		}
 	}
-	if sortField == "" || sortOrder == "" {
+	// The sort column is whitelisted exactly like the filter column above, and
+	// for the same reason: both are caller-supplied and both land in an
+	// IDENTIFIER position, where a bound parameter cannot protect them.
+	//
+	// It is not protected by the quoting underneath either. dbx.QuoteColumnName
+	// returns its argument UNQUOTED when it contains "(", "{{" or "[[", so a
+	// value carrying a parenthesis is concatenated into ORDER BY verbatim. And
+	// SnakeString does not sanitize — it only lowercases and inserts "_" before
+	// capitals — so an ALL-LOWERCASE payload passes through it byte for byte.
+	// "case when (select 1)=1 then name else id end" survived both steps intact,
+	// which is an oracle that reads any column one bit at a time by watching the
+	// row order. Every paginated list endpoint takes this parameter.
+	//
+	// A rejected value falls back to the default rather than erroring: the sort
+	// order is presentation, and no caller sending a real column is affected —
+	// the UI sends Ant Design dataIndex names ("createdTime", "displayName"),
+	// which are alphanumeric and pass. The default is a literal, so it is set
+	// AFTER the check and never has to satisfy it (it contains "_", which the
+	// whitelist deliberately excludes).
+	if sortField == "" || sortOrder == "" || !util.FilterField(sortField) {
 		sortField = "created_time"
 	}
 	col := util.SnakeString(sortField)
