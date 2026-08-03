@@ -135,16 +135,39 @@ func (f *modelFamily) window(model string) int {
 	return f.windows[strings.ToLower(strings.TrimSpace(model))]
 }
 
+// baseURL and serviceKey resolve through the family's OWN provider constructor —
+// the same one pipeToFamily forwards through — so the address that gates listing
+// is the address that serves. That constructor reads the admin row first and
+// falls back to deployment config, which is what makes admin.hanzo.ai the one
+// control: disabling a family there makes baseURL empty, so enabled() goes false
+// and its models leave /v1/models on the next resolution.
+//
+// Reading conf directly here (which is what these did) meant the console toggle
+// moved a row that listing never consulted: a family could be disabled in the
+// admin UI and still be listed and served.
 func (f *modelFamily) baseURL() string {
+	if f.providerFn != nil {
+		if p := f.providerFn(); p != nil {
+			return strings.TrimRight(strings.TrimSpace(p.ProviderUrl), "/")
+		}
+		return ""
+	}
 	return strings.TrimRight(strings.TrimSpace(conf.GetConfigString(f.urlKey)), "/")
 }
 
 func (f *modelFamily) serviceKey() string {
+	if f.providerFn != nil {
+		if p := f.providerFn(); p != nil {
+			return strings.TrimSpace(p.ClientSecret)
+		}
+		return ""
+	}
 	return strings.TrimSpace(conf.GetConfigString(f.keyKey))
 }
 
-// enabled reports whether the family service is configured. When it is not, ai serves
-// no model of that family (serves is false) and it is simply absent from /v1/models.
+// enabled reports whether the family service is configured AND admin-enabled. When
+// it is not, ai serves no model of that family (serves is false) and it is simply
+// absent from /v1/models.
 func (f *modelFamily) enabled() bool { return f.baseURL() != "" }
 
 // familyForProviderType maps a virtual provider Type onto its family, resolved from the

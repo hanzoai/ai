@@ -354,14 +354,19 @@ func ModelProviderUsable(p *Provider) bool {
 // provider as "not configured" and fails/falls-back uniformly. See
 // ModelProviderUsable for the single-point policy.
 func GetModelProviderByName(name string) (*Provider, error) {
-	// Zen is a virtual, config-backed provider (not a DB row): resolve it directly
-	// so every name→provider path serves the zen family with no special case
-	// elsewhere. Absent config → nil, exactly like a missing provider (hip-00NN).
-	if name == "zen" {
-		return ZenProvider(), nil
-	}
-	if name == "enso" {
-		return EnsoProvider(), nil
+	// A model family resolves through its own constructor (admin row first,
+	// deployment config as the bootstrap default), so every name→provider path
+	// serves a family with no special case elsewhere. Not configured and not
+	// rowed → nil, exactly like a missing provider (hip-00NN).
+	//
+	// Derived from ONE table rather than a hand-written ladder. The ladder here
+	// named zen and enso and never named openrouter, so `openrouter` fell through
+	// to the DB and resolved against the seed row instead of its family — the
+	// SAME second-list bug familyForProviderType was rewritten to remove, in a
+	// second place. A family that exists is a family this resolves, and adding
+	// one cannot silently skip it.
+	if fn, ok := familyProviderFns[name]; ok {
+		return fn(), nil
 	}
 
 	providerByNameCacheMu.RLock()
