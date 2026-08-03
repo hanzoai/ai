@@ -19,7 +19,6 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -94,12 +93,7 @@ func WriteStringToPath(s string, path string) {
 }
 
 func WriteBytesToPath(b []byte, path string) error {
-	err := ioutil.WriteFile(path, b, 0o644)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return os.WriteFile(path, b, 0o644)
 }
 
 func DecodeBase64(s string) string {
@@ -130,6 +124,15 @@ func GetId(owner, name string) string {
 }
 
 // SnakeString transform XxYy to xx_yy
+//
+// The output names a SQL column (see the ORDER BY and LIKE call sites in
+// object/), so it is schema, not cosmetics. Two rules are load-bearing and both
+// have a test in string_test.go:
+//
+//   - Every capital gets its own separator, acronyms included: "OrgID" is
+//     "org_i_d", not "org_id". That is how the live columns were named.
+//   - A leading underscore already separates, so no second one is emitted:
+//     "_Foo" is "_foo", not "__foo".
 func SnakeString(s string) string {
 	data := make([]byte, 0, len(s)*2)
 	j := false
