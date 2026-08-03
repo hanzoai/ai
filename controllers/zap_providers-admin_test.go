@@ -23,7 +23,7 @@ import (
 )
 
 // gatedProviderMethods are the group's super-admin-gated native methods
-// (everything except the public provider-flags feed). Each MUST reject an
+// (everything except the public models/providers projection). Each MUST reject an
 // anonymous request with a 401 BEFORE touching the DB — the native-path
 // re-enforcement of the beego authz filter's superAdminEndpoints gate.
 var gatedProviderMethods = []string{
@@ -96,7 +96,7 @@ func TestZapProviderOkEnvelopeParity(t *testing.T) {
 // into both shared registries and that the gateway longest-prefix match keeps the
 // multi-segment admin paths from being shadowed.
 func TestZapProviderRegistry(t *testing.T) {
-	for _, method := range append(gatedProviderMethods, "provider-flags") {
+	for _, method := range append(gatedProviderMethods, "models.providers") {
 		if _, ok := lookupCloudHandler(method); !ok {
 			t.Errorf("cloud method %q not registered", method)
 		}

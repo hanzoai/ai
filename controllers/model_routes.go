@@ -396,6 +396,49 @@ func publicProvider(route modelRoute) string {
 	return route.providerName
 }
 
+// listRouteProviders returns the distinct providers actually serving the LISTED
+// catalog, sorted. It takes the SAME branch as listAvailableModels — config when
+// one is loaded, the static table otherwise, plus the configured families — so
+// the provider set and the model list are two projections of one fact and cannot
+// disagree. That is the whole point: the previous endpoint answered from the
+// provider DB instead, which is a second list, and it drifted (it named a family
+// whose models were not listed, and named none of the families' own).
+//
+// Secret-free by construction: it projects only names. It does NOT say which
+// provider serves which model — publicProvider deliberately withholds that, and
+// this returns a set, not a mapping.
+func listRouteProviders() []string {
+	seen := map[string]struct{}{}
+
+	if cfg := GetModelConfig(); cfg != nil {
+		for _, p := range cfg.ListRouteProviders() {
+			seen[p] = struct{}{}
+		}
+	} else {
+		for _, route := range modelRoutes {
+			if route.hidden || route.providerName == "" {
+				continue
+			}
+			seen[route.providerName] = struct{}{}
+		}
+	}
+
+	// A configured family serves models of its own (discovered, so absent from
+	// both tables above). An unconfigured one serves nothing and must not appear.
+	for _, f := range modelFamilies {
+		if f.enabled() {
+			seen[f.name] = struct{}{}
+		}
+	}
+
+	names := make([]string, 0, len(seen))
+	for n := range seen {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	return names
+}
+
 // listAvailableModels returns listed models from the routing table, sorted by name.
 // Hidden models (provider-prefixed aliases, upstream-named routes) are excluded
 // from the listing but remain callable via the completions endpoint.

@@ -531,6 +531,28 @@ func (mc *ModelConfig) ListModels() []modelInfo {
 }
 
 // ListModelsWithUpstream returns all models including upstream IDs (for ZAP).
+// ListRouteProviders returns the distinct providers behind the LISTED routes.
+// Same hidden-exclusion rule as ListModels, so the two agree by construction.
+func (mc *ModelConfig) ListRouteProviders() []string {
+	mc.mu.RLock()
+	defer mc.mu.RUnlock()
+
+	seen := map[string]struct{}{}
+	for _, route := range mc.routes {
+		if route.hidden || route.providerName == "" {
+			continue
+		}
+		seen[route.providerName] = struct{}{}
+	}
+
+	names := make([]string, 0, len(seen))
+	for n := range seen {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	return names
+}
+
 func (mc *ModelConfig) ListModelsWithUpstream() []zapModelEntry {
 	mc.mu.RLock()
 	defer mc.mu.RUnlock()

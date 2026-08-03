@@ -49,8 +49,8 @@ func initAPI() {
 	App.Router("/v1/admin/providers", &controllers.ApiController{}, "GET:GetAdminProviders")
 	App.Router("/v1/admin/providers/toggle", &controllers.ApiController{}, "POST:ToggleAdminProvider")
 	App.Router("/v1/admin/providers/primary", &controllers.ApiController{}, "POST:SetPrimaryAdminProvider")
-	// Public, secret-free enabled-provider-name feed for the pricing catalog sync.
-	App.Router("/v1/provider-flags", &controllers.ApiController{}, "GET:GetProviderFlags")
+	// Public, secret-free projection of /v1/models: who serves the listed catalog.
+	// Registered beside the model routes below, not here — see /v1/models.
 
 	// AI login-manager: org-scoped connections to third-party AI accounts. Curated
 	// surface over object.Provider — authenticated org user (NOT super-admin);
@@ -100,6 +100,12 @@ func initAPI() {
 	// failover remain one policy path.
 	App.Router("/v1/responses", &controllers.ApiController{}, "POST:Responses")
 	App.Router("/v1/models", &controllers.ApiController{}, "GET:ListModels")
+	// Who serves the catalog above — the same source, projected to a set of names.
+	// Public and secret-free like the listing itself. A literal segment, so it
+	// outscores no param route here (there is no /v1/models/:model) and cannot be
+	// captured as a model id. Replaces the old top-level /v1/provider-flags, which
+	// answered from the provider DB and drifted from what was actually served.
+	App.Router("/v1/models/providers", &controllers.ApiController{}, "GET:GetModelProviders")
 	// Access gating for limited-preview SKUs (enso): a caller requests/reads their own
 	// standing; a SuperAdmin grants and lists. Registered as a deeper path than
 	// /v1/models so the literal segment is not captured as a :param.
