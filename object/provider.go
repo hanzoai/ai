@@ -523,16 +523,11 @@ func GetPaginationProviders(owner, storeName string, offset, limit int, field, v
 		if err != nil {
 			return providers, err
 		}
-		// Apply same sort order to remote providers
-		sortFieldToUse := sortField
-		if sortFieldToUse == "" {
-			sortFieldToUse = "created_time"
-		}
-		if sortOrder == "ascend" {
-			session2 = session2.OrderBy(util.SnakeString(sortFieldToUse) + " ASC")
-		} else {
-			session2 = session2.OrderBy(util.SnakeString(sortFieldToUse) + " DESC")
-		}
+		// Same sort as the local half above, through the same whitelist. These
+		// two result sets are concatenated, so they must agree on the column as
+		// well as on the direction — and this half reads a DIFFERENT database,
+		// which is what an unchecked ORDER BY here would let a caller walk.
+		session2 = session2.OrderBy(sortColumn(sortField, sortOrder) + sortDirection(sortOrder))
 		err = queryFind(session2, "provider", &providers2)
 		if err != nil {
 			return providers, err

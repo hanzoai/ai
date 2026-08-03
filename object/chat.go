@@ -181,15 +181,10 @@ func getPaginationChatsByMessages(owner string, offset, limit int, value, sortFi
 	if store != "" {
 		q = q.AndWhere(dbx.NewExp("chat.store = {:store}", dbx.Params{"store": store}))
 	}
-	if sortField == "" || sortOrder == "" {
-		sortField = "created_time"
-	}
-	col := fmt.Sprintf("chat.%s", util.SnakeString(sortField))
-	if sortOrder == "ascend" {
-		q = q.OrderBy(col + " ASC")
-	} else {
-		q = q.OrderBy(col + " DESC")
-	}
+	// Same whitelist as GetDbQuery — the join only changes which table the
+	// column is qualified against, not who supplies it. The "chat." prefix is
+	// not itself a guard: a comma opens a second ORDER BY term.
+	q = q.OrderBy("chat." + sortColumn(sortField, sortOrder) + sortDirection(sortOrder))
 	if offset != -1 && limit != -1 {
 		q = q.Offset(int64(offset)).Limit(int64(limit))
 	}
