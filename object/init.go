@@ -409,7 +409,13 @@ func initLLMProviders() {
 			Category:     "Model",
 			Type:         "OpenRouter",
 			SubType:      "openrouter/auto",
-			ProviderUrl:  "https://openrouter.ai/api/v1",
+			// NO trailing /v1 — openrouter is a model FAMILY, and both family paths
+			// append it themselves (discovery does base+"/v1/models", pipeToFamily
+			// does ProviderUrl+"/v1/"+apiPath). The direct-relay providers above
+			// carry /v1 because nothing appends it for them. Seeded with /v1 here,
+			// every call would go to .../api/v1/v1/... and 404 — invisible until the
+			// row was toggled on, since nothing read it before.
+			ProviderUrl:  "https://openrouter.ai/api",
 			ClientSecret: "kms://OPENROUTER_API_KEY",
 			State:        "Disabled", // DO-first: off by default, toggleable
 			IsDefault:    false,
