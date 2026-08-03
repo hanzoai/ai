@@ -345,3 +345,41 @@ func TestKeyHint_Redacts(t *testing.T) {
 		}
 	}
 }
+
+// IAM can answer "ok" and name nobody. That used to return (nil, nil) — no error
+// and no principal — so the caller fell through to a bare "invalid API key" with
+// nothing behind it: the one message a holder cannot act on and an operator
+// cannot trace, identical whether the key was deleted, the envelope changed, or
+// the owner was removed. A key that resolves to nobody is unusable, so it must be
+// refused with a reason and the redacted prefix that names which credential.
+func TestOkWithNoUserIsAnActionableRefusal(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"ok","msg":"","data":null}`))
+	}))
+	defer srv.Close()
+
+	os.Setenv("IAM_URL", srv.URL)
+	defer os.Unsetenv("IAM_URL")
+	t.Setenv("IAM_CLIENT_ID", "hanzo-cloud")
+	t.Setenv("IAM_CLIENT_SECRET", "s3cr3t")
+
+	user, err := getUserByAccessKey("sk-live-abcdef0123456789")
+	if user != nil {
+		t.Fatalf("user = %+v, want nil", user)
+	}
+	if err == nil {
+		t.Fatal("err = nil; ok-with-no-user must refuse, not return a nil user with no error")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "cloud.hanzo.ai/keys") {
+		t.Errorf("refusal does not say what to do: %q", msg)
+	}
+	if !strings.Contains(msg, "resolved to no user") {
+		t.Errorf("refusal does not say what happened: %q", msg)
+	}
+	// The credential is named by prefix, never in full.
+	if strings.Contains(msg, "abcdef0123456789") {
+		t.Errorf("refusal leaked the key: %q", msg)
+	}
+}
