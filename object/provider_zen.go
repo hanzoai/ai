@@ -15,20 +15,53 @@
 package object
 
 import (
+	"sort"
 	"strings"
 
 	"github.com/hanzoai/ai/conf"
 )
 
-// familyProvider synthesizes a virtual model-family provider from deployment
-// configuration (a base-URL key + a service-key key), or nil when the family is not
-// configured. A family is not a database row: its address is configuration, so this
-// repository carries no routing detail and reads as open source. Because it resolves
-// the same way a real Model provider does — a name, a URL, a key — every path that
-// looks a provider up by name serves the family without a special case beyond the one
-// lookup in GetModelProviderByName. Zen and Enso are two instances. See hip-00NN.
+// familyProvider resolves a model family's provider. The ADMIN ROW IS THE ONE
+// CONTROL: if an admin-owned row exists for this family, it decides — its State
+// gates the family, and its ProviderUrl/ClientSecret address it, so an operator
+// turns a family on or off, or repoints it, from admin.hanzo.ai like any other
+// Model provider. Deployment configuration (a base-URL key + a service-key key)
+// is the BOOTSTRAP default, used only when no row has been written yet.
+//
+// It used to read configuration and nothing else, on the reasoning that "a family
+// is not a database row: its address is configuration, so this repository carries
+// no routing detail". The second half still holds — a row is runtime data and
+// never lands in the repo, so nothing is disclosed by reading one — but the first
+// half cost us the admin surface. /v1/admin/providers listed `openrouter` and
+// offered a toggle that flipped a row this function never read, so enabling a
+// family from the console did nothing and reported success. A control that
+// silently does nothing is worse than no control.
+//
+// Returns nil when the family is neither configured nor rowed, and nil when its
+// row is disabled — the same shape as a missing provider, which is what every
+// caller already handles. Zen, Enso and OpenRouter are the three instances.
 func familyProvider(name, typ, urlKey, keyKey string) *Provider {
 	base := strings.TrimRight(strings.TrimSpace(conf.GetConfigString(urlKey)), "/")
+	key := strings.TrimSpace(conf.GetConfigString(keyKey))
+
+	// The admin row wins where it speaks. getProvider is the direct store read,
+	// NOT GetModelProviderByName — which resolves families through here and would
+	// recurse. The store may not exist yet: this runs during boot and in tests, so
+	// an absent adapter falls through to configuration rather than panicking.
+	if adapter != nil && adapter.db != nil {
+		if row, err := getProvider("admin", name); err == nil && row != nil && row.Name == name {
+			if row.Category == "Model" && row.State != "" && row.State != "Active" {
+				return nil // disabled from the console: the family serves nothing
+			}
+			if u := strings.TrimRight(strings.TrimSpace(row.ProviderUrl), "/"); u != "" {
+				base = u
+			}
+			if s := strings.TrimSpace(row.ClientSecret); s != "" {
+				key = s
+			}
+		}
+	}
+
 	if base == "" {
 		return nil
 	}
@@ -39,8 +72,31 @@ func familyProvider(name, typ, urlKey, keyKey string) *Provider {
 		Type:         typ,
 		State:        "Active",
 		ProviderUrl:  base,
-		ClientSecret: strings.TrimSpace(conf.GetConfigString(keyKey)),
+		ClientSecret: key,
 	}
+}
+
+// familyProviderFns is the ONE list of model families known to provider
+// resolution, keyed by the family's provider name. GetModelProviderByName reads
+// it instead of hand-writing the names, so a family added here is resolvable
+// everywhere by construction. Keep it in step with controllers.modelFamilies —
+// TestFamilyProviderFnsCoverEveryFamily fails when it is not.
+var familyProviderFns = map[string]func() *Provider{
+	"zen":        ZenProvider,
+	"enso":       EnsoProvider,
+	"openrouter": OpenRouterProvider,
+}
+
+// FamilyProviderNames returns the family names provider resolution knows about.
+// Exported so the controllers package — which owns the modelFamilies list and
+// cannot be imported from here — can assert the two agree.
+func FamilyProviderNames() []string {
+	names := make([]string, 0, len(familyProviderFns))
+	for n := range familyProviderFns {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // ZenProvider is the open Zen family's virtual provider (ZEN_URL / ZEN_API_KEY).
