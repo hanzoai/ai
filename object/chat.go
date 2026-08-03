@@ -144,18 +144,31 @@ func (chat *Chat) GetId() string {
 	return fmt.Sprintf("%s/%s", chat.Owner, chat.Name)
 }
 
-func getChatCountByMessages(owner string, value string, store string) (int64, error) {
-	q := adapter.db.Select("COUNT(DISTINCT chat.owner, chat.name)").From("chat").
-		InnerJoin("message", dbx.NewExp("chat.owner = message.owner AND chat.name = message.chat")).
-		Where(dbx.Like("message.text", value))
+// chatsMatchingMessages selects the chats holding at least one message whose
+// text matches, and is the one predicate both the count and the page are taken
+// from. EXISTS rather than a join because a join multiplies a chat by each of
+// its matching messages and then every caller has to undo that: the page did it
+// with DISTINCT and the count with COUNT(DISTINCT chat.owner, chat.name), a
+// two-column form only MySQL accepts. With EXISTS a chat appears once by
+// construction, so neither caller de-duplicates and the SQL is the same on every
+// driver. The pattern is bound, and "%"+value+"%" is what dbx.Like builds — it
+// escapes nothing, so this matches byte for byte.
+func chatsMatchingMessages(owner, value, store string) *dbx.SelectQuery {
+	q := adapter.db.Select("chat.*").From("chat").Where(dbx.Exists(dbx.NewExp(
+		"SELECT 1 FROM message WHERE message.owner = chat.owner AND message.chat = chat.name AND message.text LIKE {:text}",
+		dbx.Params{"text": "%" + value + "%"})))
 	if owner != "" {
 		q = q.AndWhere(dbx.NewExp("chat.owner = {:owner}", dbx.Params{"owner": owner}))
 	}
 	if store != "" {
 		q = q.AndWhere(dbx.NewExp("chat.store = {:store}", dbx.Params{"store": store}))
 	}
+	return q
+}
+
+func getChatCountByMessages(owner string, value string, store string) (int64, error) {
 	var count int64
-	err := q.Row(&count)
+	err := chatsMatchingMessages(owner, value, store).Select("COUNT(*)").Row(&count)
 	return count, err
 }
 
@@ -172,19 +185,11 @@ func GetChatCount(owner string, field string, value string, store string) (int64
 
 func getPaginationChatsByMessages(owner string, offset, limit int, value, sortField, sortOrder, store string) ([]*Chat, error) {
 	chats := []*Chat{}
-	q := adapter.db.Select("DISTINCT chat.*").From("chat").
-		InnerJoin("message", dbx.NewExp("chat.owner = message.owner AND chat.name = message.chat")).
-		Where(dbx.Like("message.text", value))
-	if owner != "" {
-		q = q.AndWhere(dbx.NewExp("chat.owner = {:owner}", dbx.Params{"owner": owner}))
-	}
-	if store != "" {
-		q = q.AndWhere(dbx.NewExp("chat.store = {:store}", dbx.Params{"store": store}))
-	}
-	// Same whitelist as GetDbQuery — the join only changes which table the
-	// column is qualified against, not who supplies it. The "chat." prefix is
+	// Same whitelist as GetDbQuery — searching by message text changes which
+	// chats come back, not who supplies the sort column. The "chat." prefix is
 	// not itself a guard: a comma opens a second ORDER BY term.
-	q = q.OrderBy("chat." + sortColumn(sortField, sortOrder) + sortDirection(sortOrder))
+	q := chatsMatchingMessages(owner, value, store).
+		OrderBy("chat." + sortColumn(sortField, sortOrder) + sortDirection(sortOrder))
 	if offset != -1 && limit != -1 {
 		q = q.Offset(int64(offset)).Limit(int64(limit))
 	}
