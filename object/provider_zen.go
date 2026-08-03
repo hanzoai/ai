@@ -65,7 +65,7 @@ func familyProvider(name, typ, urlKey, keyKey string) *Provider {
 	if base == "" {
 		return nil
 	}
-	return &Provider{
+	p := &Provider{
 		Owner:        "admin",
 		Name:         name,
 		Category:     "Model",
@@ -74,6 +74,22 @@ func familyProvider(name, typ, urlKey, keyKey string) *Provider {
 		ProviderUrl:  base,
 		ClientSecret: key,
 	}
+
+	// An operator stores the key as a kms:// reference (secrets live in KMS, never
+	// in a row), and the family relay sends ClientSecret STRAIGHT into an
+	// Authorization header. Resolve here, in the one constructor, so no caller can
+	// forget: an unresolved reference would authenticate as the literal string
+	// "kms://…" — a guaranteed upstream 401 that also puts the reference on the
+	// wire. A no-op for a plain key, which is what deployment config supplies.
+	// Fails CLOSED: a family whose key cannot be resolved serves nothing rather
+	// than leaking the reference.
+	if err := ResolveProviderSecret(p); err != nil {
+		return nil
+	}
+	if strings.HasPrefix(p.ClientSecret, "kms://") {
+		return nil
+	}
+	return p
 }
 
 // familyProviderFns is the ONE list of model families known to provider
