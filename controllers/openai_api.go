@@ -501,6 +501,21 @@ func getUserByAccessKey(accessKey string) (*iam.User, error) {
 		return nil, keyRefusal(result.Code, result.Msg, accessKey)
 	}
 
+	// ok-with-nobody. IAM said the request succeeded and named no user, which this
+	// used to relay as (nil, nil) — no error, no principal — so the caller fell to
+	// its bare "invalid API key" with nothing behind it. That message is the one
+	// shape a holder cannot act on and an operator cannot trace: it looks identical
+	// whether the key is wrong, the envelope changed, or IAM answered about someone
+	// who no longer exists. A key that resolves to nobody IS unusable, so refuse it
+	// — but say which of the two things happened, and keep the redacted prefix so
+	// the line names the credential without disclosing it.
+	if result.Data == nil {
+		return nil, authError(
+			"API key %s resolved to no user — IAM accepted the lookup and returned nothing. "+
+				"The key may have been deleted, or its owner removed. Mint a new one at https://cloud.hanzo.ai/keys",
+			keyHint(accessKey))
+	}
+
 	return result.Data, nil
 }
 
