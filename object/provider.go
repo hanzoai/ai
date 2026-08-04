@@ -82,6 +82,14 @@ type Provider struct {
 	BrowserUrl    string `json:"browserUrl"`
 }
 
+// SecretMask is what the admin API returns in place of a stored secret, and
+// therefore what the console posts back when an operator saves a form without
+// touching the key field. Every site that hides a secret or recognises the
+// placeholder on the way back in uses THIS — a masked value that one site writes
+// and another fails to recognise is a value written into the store as if it were
+// a key.
+const SecretMask = "***"
+
 func GetMaskedProvider(provider *Provider, isMaskEnabled bool, user *iam.User) *Provider {
 	if !isMaskEnabled {
 		return provider
@@ -90,20 +98,20 @@ func GetMaskedProvider(provider *Provider, isMaskEnabled bool, user *iam.User) *
 		return nil
 	}
 	if provider.ClientSecret != "" {
-		provider.ClientSecret = "***"
+		provider.ClientSecret = SecretMask
 	}
 	if !util.IsAdmin(user) {
 		if provider.ProviderKey != "" {
-			provider.ProviderKey = "***"
+			provider.ProviderKey = SecretMask
 		}
 		if provider.UserKey != "" {
-			provider.UserKey = "***"
+			provider.UserKey = SecretMask
 		}
 		if provider.ConfigText != "" {
-			provider.ConfigText = "***"
+			provider.ConfigText = SecretMask
 		}
 		if provider.SignKey != "" {
-			provider.SignKey = "***"
+			provider.SignKey = SecretMask
 		}
 	}
 	return provider
@@ -572,13 +580,13 @@ func RefreshMcpTools(provider *Provider) error {
 }
 
 func (p *Provider) processProviderParams(providerDb *Provider) {
-	if p.ClientSecret == "***" {
+	if p.ClientSecret == SecretMask {
 		p.ClientSecret = providerDb.ClientSecret
 	}
-	if p.UserKey == "***" {
+	if p.UserKey == SecretMask {
 		p.UserKey = providerDb.UserKey
 	}
-	if p.SignKey == "***" {
+	if p.SignKey == SecretMask {
 		p.SignKey = providerDb.SignKey
 	}
 	if p.ProviderKey == "" && p.Category == "Model" {

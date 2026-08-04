@@ -135,7 +135,7 @@ func GetMaskedNode(node *Node, errs ...error) (*Node, error) {
 		return nil, nil
 	}
 	if node.RemotePassword != "" {
-		node.RemotePassword = "***"
+		node.RemotePassword = SecretMask
 	}
 	return node, nil
 }
@@ -165,7 +165,7 @@ func UpdateNode(id string, node *Node) (bool, error) {
 	} else if p == nil {
 		return false, nil
 	}
-	if node.RemotePassword == "***" {
+	if node.RemotePassword == SecretMask {
 		node.RemotePassword = p.RemotePassword
 	}
 	node.Owner = owner
