@@ -185,8 +185,15 @@ func (c *ApiController) UpdateProvider() {
 // raw key reach the database.
 func sealPastedKey(id string, incoming *object.Provider) error {
 	raw := incoming.ClientSecret
-	if raw == "" || strings.HasPrefix(raw, "kms://") {
-		return nil // nothing pasted, or already a reference
+	if raw == "" || raw == object.SecretMask || strings.HasPrefix(raw, "kms://") {
+		// Nothing pasted, already a reference, or the MASK. The admin API returns
+		// ClientSecret as "***" (GetMaskedProvider), so an operator who opens a
+		// provider and saves it without touching the key field posts the mask back.
+		// object.UpdateProvider restores it from the row — but that runs AFTER this,
+		// and only when the value is still the mask, so sealing here first would
+		// write the literal "***" into KMS as the key and destroy the real one.
+		// Every re-save of an untouched form would break the provider.
+		return nil
 	}
 
 	name := ""
