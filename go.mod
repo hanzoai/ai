@@ -41,18 +41,18 @@ require (
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674
 	github.com/hanzo-ds/go v1.0.1
 	github.com/hanzoai/account v0.2.1
-	github.com/hanzoai/cloud v1.801.360
+	github.com/hanzoai/cloud v1.801.413
 	github.com/hanzoai/dashscopego v0.6.0
 	github.com/hanzoai/dbx v1.17.2
 	github.com/hanzoai/decimal v0.1.2
 	github.com/hanzoai/go-cosyvoice v1.0.0
 	github.com/hanzoai/go-openai v1.41.0
 	github.com/hanzoai/go-openrouter v1.0.0
-	github.com/hanzoai/money v0.2.2
+	github.com/hanzoai/money v0.2.5
 	github.com/hanzoai/pdf v1.2.0
 	github.com/hanzoai/search-go v0.36.0
-	github.com/hanzoai/sqlite v0.4.0
-	github.com/hanzoai/tasks v1.52.4
+	github.com/hanzoai/sqlite v0.5.0
+	github.com/hanzoai/tasks v1.52.9
 	github.com/hanzos3/go v1.0.0
 	github.com/henomis/lingoose v0.1.0
 	github.com/hupe1980/go-huggingface v0.0.15
@@ -147,15 +147,16 @@ require (
 	github.com/grandcat/zeroconf v1.0.0 // indirect
 	github.com/hanzo-ds/native v0.72.0 // indirect
 	github.com/hanzoai/authz v1.10.29 // indirect
-	github.com/hanzoai/commerce v1.49.36 // indirect
+	github.com/hanzoai/cek v0.2.3 // indirect
+	github.com/hanzoai/commerce v1.49.61 // indirect
 	github.com/hanzoai/csqlite v0.1.0 // indirect
 	github.com/hanzoai/go-openai-realtime v1.0.0 // indirect
 	github.com/hanzoai/go-openai-realtime/contrib/ws-gorilla v1.0.0 // indirect
 	github.com/hanzoai/ha v0.1.1 // indirect
-	github.com/hanzoai/iam v1.34.0 // indirect
+	github.com/hanzoai/iam v1.34.12 // indirect
 	github.com/hanzoai/metrics v1.110.2 // indirect
-	github.com/hanzoai/namespace v1.1.0 // indirect
-	github.com/hanzoai/orm v0.6.18 // indirect
+	github.com/hanzoai/namespace v1.2.0 // indirect
+	github.com/hanzoai/orm v0.6.21 // indirect
 	github.com/hanzoai/s3-go v1.0.0 // indirect
 	github.com/hanzoai/sqlcipher v0.1.1 // indirect
 	github.com/hanzoai/vfs v0.6.6 // indirect
@@ -307,7 +308,7 @@ require (
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
-	github.com/zap-proto/zip v1.18.22
+	github.com/zap-proto/zip v1.24.1
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/otel v1.44.0
 	go.opentelemetry.io/otel/metric v1.44.0 // indirect
