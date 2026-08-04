@@ -61,10 +61,21 @@ func finetuneServiceName(job *object.FinetuneJob) string {
 	return "ft-" + n
 }
 
+// servingAccelerators is how many accelerators ONE served replica asks for.
+//
+// It is a per-replica default, not a fact about the finished job: a training
+// topology (GpuCount × NumNodes, chosen for gradient and optimizer memory) does not
+// tell you what the merged weights need in order to SERVE, so deriving one from the
+// other would be a guess dressed as arithmetic. One is the KServe norm; a model that
+// needs more needs a serving requirement of its own on the job, stated by whoever
+// knows it.
+const servingAccelerators = 1
+
 // buildInferenceServiceObject renders the InferenceService CR. The HuggingFace
 // model format auto-selects the vLLM/transformers serving runtime; storageUri is
-// the org's S3 checkpoint dir.
-func buildInferenceServiceObject(job *object.FinetuneJob, name string) map[string]interface{} {
+// the org's S3 checkpoint dir. limits carries the accelerator request the CLUSTER
+// can satisfy (see accelerator.go) — this renderer never names a vendor.
+func buildInferenceServiceObject(job *object.FinetuneJob, name string, limits map[string]interface{}) map[string]interface{} {
 	return map[string]interface{}{
 		"apiVersion": "serving.kserve.io/v1beta1",
 		"kind":       "InferenceService",
@@ -82,7 +93,7 @@ func buildInferenceServiceObject(job *object.FinetuneJob, name string) map[strin
 					"modelFormat": map[string]interface{}{"name": "huggingface"},
 					"storageUri":  job.OutputUri,
 					"resources": map[string]interface{}{
-						"limits": map[string]interface{}{"nvidia.com/gpu": "1"},
+						"limits": limits,
 					},
 				},
 			},
@@ -103,12 +114,22 @@ func DeployFinetune(job *object.FinetuneJob, lang string) (*Serving, error) {
 	if err := ensure(lang); err != nil {
 		return nil, err
 	}
+	// Ask for accelerators the CLUSTER advertises, and refuse before creating
+	// anything when it advertises none. The InferenceService CRD exists and its
+	// controller runs, so a create with a resource name no node offers SUCCEEDS and
+	// leaves a predictor that can never be scheduled — plus a model registered on
+	// api.hanzo.ai whose every inference call fails. Refusing here is the loud
+	// failure that silence was hiding.
+	limits, err := acceleratorRequest(servingAccelerators)
+	if err != nil {
+		return nil, fmt.Errorf("cannot serve %s: %w", job.Name, err)
+	}
 	if err := client.createNamespaceIfNotExists(job.Namespace); err != nil {
 		return nil, fmt.Errorf("failed to ensure namespace %s: %w", job.Namespace, err)
 	}
 
 	name := finetuneServiceName(job)
-	obj := buildInferenceServiceObject(job, name)
+	obj := buildInferenceServiceObject(job, name, limits)
 	b, err := json.Marshal(obj)
 	if err != nil {
 		return nil, fmt.Errorf("failed to render InferenceService: %w", err)
