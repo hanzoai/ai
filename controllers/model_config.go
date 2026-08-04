@@ -424,6 +424,37 @@ func (mc *ModelConfig) contextWindowLocked(key string) int {
 	return 0
 }
 
+// MaxOutput returns the most COMPLETION tokens `model` can produce, from
+// models.yaml max_output_tokens, following the alias chain exactly as
+// ContextWindow does (`zen5` inherits its upstream's ceiling without
+// redeclaring it). 0 means the model declares none.
+//
+// It is the honest ceiling for anyone who must bound a completion BEFORE it
+// runs — a prepaid gate reserving what a call could cost, a client capping its
+// own request. The alternative is a constant, and a constant is wrong per model
+// by construction: it caps a 1M-context model at whatever number was typed, and
+// it is always one release out of date. Same lesson as
+// model.GetContextLength's deleted name-matching table — declare it in
+// models.yaml, resolve it here.
+func (mc *ModelConfig) MaxOutput(model string) int {
+	mc.mu.RLock()
+	defer mc.mu.RUnlock()
+	key := strings.ToLower(model)
+	route, ok := mc.routes[key]
+	if !ok {
+		return 0
+	}
+	if route.maxOutput > 0 {
+		return route.maxOutput
+	}
+	if route.upstreamModel != "" && route.upstreamModel != key {
+		if up, ok := mc.routes[strings.ToLower(route.upstreamModel)]; ok && up.maxOutput > 0 {
+			return up.maxOutput
+		}
+	}
+	return 0
+}
+
 // RouteForContext picks a route for `model` that can actually serve a prompt of
 // `tokens`, returning the provider and upstream to call.
 //
