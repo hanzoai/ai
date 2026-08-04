@@ -5,6 +5,8 @@
 *.so
 *.dylib
 cloud
+# `make build` output (bin/aid).
+/bin/
 
 # Test binary, built with `go test -c`
 *.test
