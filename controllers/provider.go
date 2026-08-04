@@ -151,6 +151,11 @@ func (c *ApiController) UpdateProvider() {
 		return
 	}
 
+	if err := sealPastedKey(id, &provider); err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+
 	success, err := object.UpdateProvider(id, &provider)
 	if err != nil {
 		c.ResponseError(err.Error())
@@ -158,6 +163,54 @@ func (c *ApiController) UpdateProvider() {
 	}
 
 	c.ResponseOk(success)
+}
+
+// sealPastedKey puts a key typed into the admin UI into KMS and leaves the row
+// holding only the reference. Without it a provider key pasted at
+// admin.hanzo.ai was written to the database as PLAINTEXT — and then erased.
+//
+// Erased because ClientSecret is in the boot self-heal set (object/init.go): the
+// seed rewrites it from the canonical table on every restart. So a raw value
+// survives only until the next pod roll, and a reference minted under some OTHER
+// name is overwritten too, orphaning the secret it points at. That is why this
+// seals under the name the EXISTING reference already declares
+// (kms://OPENROUTER_API_KEY -> "OPENROUTER_API_KEY") and returns the reference
+// unchanged: the row keeps saying exactly what the seed will say, so the write
+// is durable across restarts and the self-heal is a no-op instead of a wipe.
+//
+// A row with no declared reference (a provider added by hand) falls back to the
+// BYOK naming, which the seed does not manage and therefore does not clobber.
+//
+// Fails closed: with no KMS bound, StoreProviderSecret errors rather than let a
+// raw key reach the database.
+func sealPastedKey(id string, incoming *object.Provider) error {
+	raw := incoming.ClientSecret
+	if raw == "" || strings.HasPrefix(raw, "kms://") {
+		return nil // nothing pasted, or already a reference
+	}
+
+	name := ""
+	if existing, err := object.GetProvider(id); err == nil && existing != nil {
+		if strings.HasPrefix(existing.ClientSecret, "kms://") {
+			name = strings.TrimPrefix(existing.ClientSecret, "kms://")
+		}
+		if incoming.Owner == "" {
+			incoming.Owner = existing.Owner
+		}
+		if incoming.Name == "" {
+			incoming.Name = existing.Name
+		}
+	}
+	if name == "" {
+		name = byokSecretName(incoming.Owner, incoming.Name)
+	}
+
+	ref, err := object.StoreProviderSecret(name, raw)
+	if err != nil {
+		return err
+	}
+	incoming.ClientSecret = ref
+	return nil
 }
 
 // AddProvider
