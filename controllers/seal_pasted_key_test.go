@@ -34,6 +34,28 @@ func TestSealPastedKey_LeavesAReferenceAlone(t *testing.T) {
 	}
 }
 
+// TestSealPastedKey_MaskIsNotAKey is the regression for the way this feature
+// destroys a working provider if it is written naively.
+//
+// The admin API returns ClientSecret as object.SecretMask ("***"), so an operator
+// who opens a provider and saves it WITHOUT touching the key field posts the mask
+// back. object.UpdateProvider restores the real value from the row — but only
+// while the value is still the mask, and that restore runs AFTER sealing. So a
+// seal that did not recognise the mask would write the literal "***" into KMS as
+// the key, and then hand UpdateProvider a kms:// ref it has no reason to touch.
+// Every re-save of an untouched form would silently destroy the provider's key.
+func TestSealPastedKey_MaskIsNotAKey(t *testing.T) {
+	object.SetSecretStore(nil) // seal would ERROR if it ran — proves it did not
+
+	p := &object.Provider{Owner: "admin", Name: "openrouter", ClientSecret: object.SecretMask}
+	if err := sealPastedKey("admin/openrouter", p); err != nil {
+		t.Fatalf("the mask must be a no-op, got: %v", err)
+	}
+	if p.ClientSecret != object.SecretMask {
+		t.Errorf("ClientSecret = %q, want the mask left for UpdateProvider to restore", p.ClientSecret)
+	}
+}
+
 // TestSealPastedKey_EmptyIsNoop: an empty key field means "leave it as it is",
 // not "erase the key".
 func TestSealPastedKey_EmptyIsNoop(t *testing.T) {
