@@ -49,7 +49,7 @@ func GetMaskedAsset(asset *Asset, isMaskEnabled bool) *Asset {
 	// Create a copy to avoid modifying the original
 	maskedAsset := *asset
 	if maskedAsset.Password != "" {
-		maskedAsset.Password = "***"
+		maskedAsset.Password = SecretMask
 	}
 	return &maskedAsset
 }
@@ -175,7 +175,7 @@ func deleteAssets(owner string) (bool, error) {
 }
 
 func (a *Asset) processAssetParams(assetDb *Asset) {
-	if a.Password == "***" {
+	if a.Password == SecretMask {
 		a.Password = assetDb.Password
 	}
 }
