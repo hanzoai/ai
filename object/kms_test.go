@@ -198,6 +198,43 @@ func TestKeyPresent_AgreesWithResolution(t *testing.T) {
 	}
 }
 
+// TestKmsGet_CachesFailures is a hot-path guard, not a nicety. cloud ALWAYS
+// hands over a non-nil client — when KMS is not mounted it is a fail-closed stub
+// whose every read errors — so an uncached failure would re-probe and re-log on
+// every provider resolution, i.e. every completion request. The failure is cached
+// briefly instead, which bounds both.
+func TestKmsGet_CachesFailures(t *testing.T) {
+	fs := &fakeStore{err: errors.New("store down")}
+	bind(t, fs)
+
+	for i := 0; i < 5; i++ {
+		if _, err := kmsGet("K"); err == nil {
+			t.Fatal("want an error from a failing store")
+		}
+	}
+	if fs.gets != 1 {
+		t.Errorf("store probes = %d, want 1 (failure cached)", fs.gets)
+	}
+}
+
+// TestResolve_FailureCacheStillFallsBack: caching the failure must not turn into
+// caching an empty answer — the env fallback has to keep working while the store
+// is down, or an outage takes the env-fed providers with it.
+func TestResolve_FailureCacheStillFallsBack(t *testing.T) {
+	bind(t, &fakeStore{err: errors.New("store down")})
+	t.Setenv("DO_AI_API_KEY", "env-only")
+
+	for i := 0; i < 3; i++ {
+		p := &Provider{Name: "do-ai", ClientSecret: "kms://DO_AI_API_KEY"}
+		if err := ResolveProviderSecret(p); err != nil {
+			t.Fatalf("resolve %d: %v", i, err)
+		}
+		if p.ClientSecret != "env-only" {
+			t.Fatalf("resolve %d = %q, want %q", i, p.ClientSecret, "env-only")
+		}
+	}
+}
+
 // TestKmsGet_CachesReads keeps the hot path off the store for the TTL.
 func TestKmsGet_CachesReads(t *testing.T) {
 	fs := &fakeStore{vals: map[string]string{"K": "v"}}
