@@ -98,10 +98,10 @@ func TestMountRoutesPropagatesTraceContext(t *testing.T) {
 	app := zip.New(zip.Config{DisableStartupMessage: true})
 	// Simulate cloud's TracingMiddleware: stash the server-span context on the request
 	// BEFORE the /v1/* mount runs.
-	app.Use(func(c *zip.Ctx) error {
+	app.Use(zip.H(func(c *zip.Ctx) error {
 		c.SetContext(parentCtx)
 		return c.Continue()
-	})
+	}))
 	mountRoutes(app)
 
 	var gotSC trace.SpanContext
