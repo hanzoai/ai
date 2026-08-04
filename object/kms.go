@@ -95,6 +95,21 @@ var (
 // and we are not re-probing until the failure entry expires.
 var errStoreUnavailable = errors.New("kms: store unavailable (cached)")
 
+// isNotFound reports whether a store error means "no such secret" rather than
+// "the store could not answer". The two are opposite operator signals: the first
+// is the normal state of a key that has not migrated yet, the second is a fault.
+//
+// Matched on the sentinel's TEXT rather than with errors.Is, because the sentinel
+// lives in luxfi/kms/pkg/store and ai does not depend on luxfi/kms — the seam
+// above is declared structurally precisely so this package needs no KMS library.
+// Importing an entire key-management module to compare one error value would cost
+// more than this costs. If the match ever goes stale the failure is benign and
+// bounded: absence degrades into the cached-failure path, which still falls back
+// to the env var and merely logs.
+func isNotFound(err error) bool {
+	return err != nil && strings.Contains(strings.ToLower(err.Error()), "not found")
+}
+
 type kmsSecretEntry struct {
 	value     string
 	fetchedAt time.Time
@@ -158,6 +173,18 @@ func kmsGet(ref string) (string, error) {
 	defer cancel()
 	b, err := store.GetSecret(ctx, ref)
 	if err != nil {
+		// ABSENT is not FAILED. The store reports a missing secret as an error, and
+		// during the migration off env vars most secrets ARE missing — so treating
+		// absence as failure would warn on every provider resolution, i.e. every
+		// completion request, about the expected state of the world. Absence caches
+		// as an ordinary empty value and says nothing; the caller falls through to
+		// the env var, which is exactly right.
+		if isNotFound(err) {
+			kmsSecMu.Lock()
+			kmsSecrets[ref] = &kmsSecretEntry{fetchedAt: time.Now()}
+			kmsSecMu.Unlock()
+			return "", nil
+		}
 		kmsSecMu.Lock()
 		kmsSecrets[ref] = &kmsSecretEntry{fetchedAt: time.Now(), failed: true}
 		kmsSecMu.Unlock()
