@@ -48,6 +48,7 @@ package object
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -81,11 +82,32 @@ var (
 	kmsSecrets = make(map[string]*kmsSecretEntry)
 	kmsSecMu   sync.RWMutex
 	kmsSecTTL  = 5 * time.Minute
+	// Failures are cached too, briefly. cloud ALWAYS hands over a non-nil client:
+	// when KMS is not mounted it is a fail-closed stub whose every read errors. An
+	// uncached failure would therefore re-probe and re-log on every provider
+	// resolution — which is every completion request — so a deployment without KMS
+	// would drown its own logs on the hot path. Short so a store coming back is
+	// picked up in seconds, not minutes.
+	kmsFailTTL = 30 * time.Second
 )
+
+// errStoreUnavailable is the cached-failure sentinel: the store errored recently
+// and we are not re-probing until the failure entry expires.
+var errStoreUnavailable = errors.New("kms: store unavailable (cached)")
 
 type kmsSecretEntry struct {
 	value     string
 	fetchedAt time.Time
+	failed    bool // the read errored; value is meaningless
+}
+
+// live reports whether this cache entry is still usable.
+func (e *kmsSecretEntry) live() bool {
+	ttl := kmsSecTTL
+	if e.failed {
+		ttl = kmsFailTTL
+	}
+	return time.Since(e.fetchedAt) < ttl
 }
 
 // SetSecretStore injects the embedded KMS. cloud calls this when it mounts ai,
@@ -114,7 +136,8 @@ func KMSConfigured() bool { return secretStore() != nil }
 // kmsGet reads one secret by ref, through a short TTL cache. An absent or empty
 // secret is ("", nil) — "no value here", which is not an error and is what lets
 // the caller fall through to the env var. A real failure (store error) is
-// returned so a caller that must fail closed can.
+// returned so a caller that must fail closed can, and is cached briefly so a
+// KMS-less deployment does not re-probe on every request.
 func kmsGet(ref string) (string, error) {
 	store := secretStore()
 	if store == nil {
@@ -124,7 +147,10 @@ func kmsGet(ref string) (string, error) {
 	kmsSecMu.RLock()
 	entry, ok := kmsSecrets[ref]
 	kmsSecMu.RUnlock()
-	if ok && time.Since(entry.fetchedAt) < kmsSecTTL {
+	if ok && entry.live() {
+		if entry.failed {
+			return "", errStoreUnavailable
+		}
 		return entry.value, nil
 	}
 
@@ -132,6 +158,14 @@ func kmsGet(ref string) (string, error) {
 	defer cancel()
 	b, err := store.GetSecret(ctx, ref)
 	if err != nil {
+		kmsSecMu.Lock()
+		kmsSecrets[ref] = &kmsSecretEntry{fetchedAt: time.Now(), failed: true}
+		kmsSecMu.Unlock()
+		// Logged HERE, on the probe, not at the call site: the failure is cached, so
+		// this fires at most once per kmsFailTTL per secret instead of once per
+		// request. A store that cannot open a sealed key is an operator problem even
+		// when resolution degrades gracefully to the env var.
+		log.Warn("kms: read failed, falling back to env", "secret", ref, "error", err)
 		return "", fmt.Errorf("kms: read %q: %w", ref, err)
 	}
 	value := string(b)
@@ -164,12 +198,11 @@ func kmsPut(ref, value string) error {
 // caller goes through it so keyPresent can never disagree with what a
 // completion would actually use.
 func resolveSecretName(name string) string {
+	// A store error is not fatal here — it must not take down a provider whose key
+	// is still env-fed. kmsGet does the logging, on the probe rather than the call,
+	// so this stays silent on the hot path.
 	if v, err := kmsGet(name); err == nil && strings.TrimSpace(v) != "" {
 		return v
-	} else if err != nil {
-		// A store that errors must not silently look like an absent secret, but
-		// it must not take down a provider whose key is still env-fed either.
-		log.Warn("kms: read failed, falling back to env", "secret", name, "error", err)
 	}
 	return os.Getenv(name)
 }
