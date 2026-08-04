@@ -37,6 +37,7 @@ import (
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/ai/conf"
+	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/routers"
 )
 
@@ -63,6 +64,15 @@ func Mount(app *zip.App, deps cloud.Deps) error {
 		log = luxlog.New("module", "ai")
 	}
 	log.Info("ai: mounting routes", "prefix", "/v1/ai")
+
+	// Bind the EMBEDDED KMS. cloud holds luxfi/kms in-process (apps/kms), so a
+	// provider's "kms://NAME" resolves through a function call against the store
+	// this binary already has open — no HTTP, no hostname, no standalone
+	// deployment. deps.KMS was already being handed to us and thrown away, while
+	// ai kept its own HTTP client pointed at kms.hanzo.ai; that client 404'd on
+	// the path it used and 401'd on the correct one, so every kms:// reference
+	// was resolving from an env var instead. See object/kms.go.
+	object.SetSecretStore(deps.KMS)
 
 	// Route wiring is a pure, dependency-free concern (separately tested).
 	mountRoutes(app)

@@ -76,13 +76,10 @@ func TestProviderKeyPresent_EmptyAbsent(t *testing.T) {
 }
 
 func TestProviderKeyPresent_KmsRefWithoutKMSIsAbsent(t *testing.T) {
-	// With KMS not configured (no KMS_CLIENT_ID / KMS_SERVICE_TOKEN in the unit
-	// env) and no matching env var, a "kms://…" reference cannot be confirmed and
-	// is fail-closed reported as NOT present — the operator sees the key is
-	// unavailable rather than a false positive. It also must not leak the ref.
-	t.Setenv("KMS_CLIENT_ID", "")
-	t.Setenv("KMS_SERVICE_TOKEN", "")
-	t.Setenv("HANZO_API_KEY", "")
+	// With no secret store bound (the unit env binds none) and no matching env
+	// var, a "kms://…" reference cannot be confirmed and is fail-closed reported
+	// as NOT present — the operator sees the key is unavailable rather than a
+	// false positive. It also must not leak the ref.
 	p := &Provider{Name: "do-ai", Category: "Model", ClientSecret: "kms://DO_AI_API_KEY_TEST_ABSENT"}
 	if ProviderKeyPresent(p) {
 		t.Error("ProviderKeyPresent = true for an unresolved kms:// ref (KMS disabled), want false")
