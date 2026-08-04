@@ -47,6 +47,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/object"
 )
 
@@ -268,7 +269,14 @@ func unsealConnectionKey(row *object.Provider) (string, error) {
 	}
 	cp := *row
 	if err := object.ResolveProviderSecret(&cp); err != nil {
-		return "", err
+		// A reference we cannot unseal is, to this caller, the same fact as no
+		// connection: there is no key to import usage with. It renders the honest
+		// empty state ("connected, unavailable") rather than a 500 or — far worse
+		// — a bare reference sent to a provider API. Logged because a store that
+		// cannot resolve a sealed key is an operator problem even when the UI
+		// degrades gracefully.
+		log.Warn("connections: could not unseal provider key", "provider", row.Name, "error", err)
+		return "", nil
 	}
 	key := strings.TrimSpace(cp.ClientSecret)
 	if key == "" || strings.HasPrefix(key, "kms://") {
