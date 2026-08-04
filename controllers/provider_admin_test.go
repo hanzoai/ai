@@ -33,8 +33,6 @@ import (
 // model count from the supplied map.
 func TestToAdminProviderView_FieldsAndFlags(t *testing.T) {
 	// KMS disabled + no env key → a kms:// ref is fail-closed absent.
-	t.Setenv("KMS_CLIENT_ID", "")
-	t.Setenv("KMS_SERVICE_TOKEN", "")
 	t.Setenv("HANZO_API_KEY", "")
 
 	p := &object.Provider{
