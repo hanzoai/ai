@@ -233,6 +233,13 @@ func zapUpdateProviderHandler(_ context.Context, auth string, body []byte) (*zap
 	if err := json.Unmarshal(body, &req); err != nil {
 		return zapProviderError(400, "invalid request: "+err.Error())
 	}
+	// Same sealing as the beego twin — a key typed into the admin UI goes to KMS
+	// under the name the row's existing reference declares, never to the database
+	// as plaintext. Shared function, so the two transports cannot drift on the
+	// question of where a secret lives.
+	if err := sealPastedKey(req.ID, &req.Provider); err != nil {
+		return zapProviderError(200, err.Error())
+	}
 	success, err := object.UpdateProvider(req.ID, &req.Provider)
 	if err != nil {
 		return zapProviderError(200, err.Error())
