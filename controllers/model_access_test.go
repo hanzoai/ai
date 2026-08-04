@@ -21,9 +21,10 @@ func TestZenModelGatedParse(t *testing.T) {
 	}
 }
 
-// familyAccessAllowed is the enforcement decision: a non-gated model is always
-// allowed; a gated model with no grant (no DB / no row) is denied — closed by default.
-func TestFamilyAccessAllowedDecision(t *testing.T) {
+// familyRefusalFor is the enforcement decision AND its reason: a non-gated model is
+// always allowed; a gated model with no grant (no DB / no row) is refused as a waitlist,
+// closed by default.
+func TestFamilyRefusalForDecision(t *testing.T) {
 	fam := &modelFamily{name: "enso", prefix: "enso"}
 	fam.byID = map[string]zenModel{
 		"enso": {ID: "enso", Access: "waitlist"},
@@ -32,16 +33,44 @@ func TestFamilyAccessAllowedDecision(t *testing.T) {
 	c := &ApiController{}
 
 	// Non-gated model → allowed regardless of caller.
-	if !c.familyAccessAllowed(fam, "open", "acme", nil) {
-		t.Fatal("non-gated model must be allowed")
+	if r := c.familyRefusalFor(fam, "open", "acme", nil); r != refusalNone {
+		t.Fatalf("non-gated model must be allowed, got refusal %q", r)
 	}
 	// Model unknown to discovery → treated as non-gated (allowed).
-	if !c.familyAccessAllowed(fam, "mystery", "acme", nil) {
-		t.Fatal("model unknown to discovery must be allowed (not gated)")
+	if r := c.familyRefusalFor(fam, "mystery", "acme", nil); r != refusalNone {
+		t.Fatalf("model unknown to discovery must be allowed (not gated), got refusal %q", r)
 	}
-	// Gated model, no grant row (no DB in test) → denied.
-	if c.familyAccessAllowed(fam, "enso", "acme", &iam.User{Owner: "acme", Name: "bob"}) {
-		t.Fatal("gated model without a grant must be denied")
+	// Gated model, no grant row (no DB in test) → refused, AS A WAITLIST: the remedy is
+	// to request access, and only this reason may say so.
+	if r := c.familyRefusalFor(fam, "enso", "acme", &iam.User{Owner: "acme", Name: "bob"}); r != refusalWaitlist {
+		t.Fatalf("gated model without a grant must be refused as %q, got %q", refusalWaitlist, r)
+	}
+}
+
+// A refusal names the remedy that actually clears IT. The waitlist refusal tells the
+// caller how to request access; the PLAN refusal must not — a caller whose subscription
+// does not include the SKU can request access forever and never be unblocked, which is
+// how enso-ultra (min_tier "paid", no waitlist at all) answered an unsubscribed caller
+// on api.hanzo.ai. It points at the plan page instead, and never at the wallet: credits
+// cannot buy a rung on the ladder.
+func TestFamilyRefusalMessageNamesItsOwnRemedy(t *testing.T) {
+	wait := refusalWaitlist.message("enso")
+	if !strings.Contains(wait, "limited preview") || !strings.Contains(wait, "POST /v1/models/enso/access") {
+		t.Fatalf("waitlist refusal missing the request-access instruction: %q", wait)
+	}
+
+	plan := refusalPlan.message("enso-ultra")
+	if strings.Contains(plan, "limited preview") || strings.Contains(plan, "/access") {
+		t.Fatalf("plan refusal must NOT send the caller to the waitlist — that remedy can never clear it: %q", plan)
+	}
+	if !strings.Contains(plan, "enso-ultra") || !strings.Contains(plan, "plan") {
+		t.Fatalf("plan refusal must name the model and the plan: %q", plan)
+	}
+	if !strings.Contains(plan, "console.hanzo.ai/billing/subscriptions") {
+		t.Fatalf("plan refusal must carry the page where a plan is actually changed: %q", plan)
+	}
+	if strings.Contains(plan, "pay.hanzo.ai") {
+		t.Fatalf("plan refusal must not point at the wallet — credits cannot clear it: %q", plan)
 	}
 }
 
@@ -59,14 +88,6 @@ func TestFamilyModelGatedDecision(t *testing.T) {
 	}
 	if FamilyModelGated("zen5") {
 		t.Fatal("zen5 is not gated")
-	}
-}
-
-// The gated denial message tells the caller exactly how to request access.
-func TestGatedAccessMessage(t *testing.T) {
-	msg := gatedAccessMessage("enso")
-	if !strings.Contains(msg, "limited preview") || !strings.Contains(msg, "POST /v1/models/enso/access") {
-		t.Fatalf("gated message missing the request-access instruction: %q", msg)
 	}
 }
 

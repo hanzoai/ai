@@ -38,6 +38,11 @@ const (
 	// read is never spent — but it is retryable and must NOT tell a funded caller to
 	// add credits. HTTP 503.
 	CodeBalanceUnavailable = "balance_unavailable"
+	// CodePlanRequired: the caller's SUBSCRIPTION does not include the model they
+	// asked for (the family SKU ladder: enso-flash free, enso trial+, enso-ultra
+	// paid). Distinct from insufficient_balance — credits cannot clear it, only a
+	// plan can — so the remedy is the plan page, never the wallet. HTTP 403.
+	CodePlanRequired = "plan_required"
 )
 
 // BillingNotice is the ONE description of a spend-gate denial: the caller-facing
@@ -78,6 +83,24 @@ func BalanceUnavailable() BillingNotice {
 		Message: "Unable to verify your balance right now. Please retry in a moment.",
 		Code:    CodeBalanceUnavailable,
 		Status:  http.StatusServiceUnavailable,
+	}
+}
+
+// planURL is the hosted page where a caller actually CHANGES their plan — the console's
+// billing-center Subscriptions tab. It is the plan twin of payBaseURL, and it is a
+// different page on purpose: a plan refusal is not cleared by adding credits, so
+// pointing it at the wallet would be a paywall with no way through.
+const planURL = "https://console.hanzo.ai/billing/subscriptions"
+
+// PlanRequired is the refusal for a model the caller's SUBSCRIPTION does not include —
+// the family SKU ladder's subscription floor and its prepaid-funding floor, which refuse
+// for the same caller-facing reason. It carries the PLAN link, not the wallet link:
+// credits cannot buy a rung on the ladder.
+func PlanRequired(model string) BillingNotice {
+	return BillingNotice{
+		Message: model + " is not included in your plan. Upgrade at " + planURL,
+		Code:    CodePlanRequired,
+		Status:  http.StatusForbidden,
 	}
 }
 

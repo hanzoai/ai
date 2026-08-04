@@ -53,10 +53,31 @@ func principalAccessIdentity(u *iam.User) (owner, key, email string) {
 	return u.Owner, key, email
 }
 
-// gatedAccessMessage is the 403 body for a gated model the caller may not use — it
-// tells the caller exactly how to request access.
-func gatedAccessMessage(model string) string {
-	return fmt.Sprintf("%s is in limited preview — request access: POST /v1/models/%s/access", model, model)
+// familyRefusal is WHY a family SKU is refused — the value the serve pipe turns into a
+// message. Three gates refuse for three different reasons and each has a DIFFERENT
+// remedy, so one refusal string for all of them is a dead end with a number on it: a
+// caller whose PLAN does not include the SKU was told to join a waitlist that will
+// never unblock them (measured on api.hanzo.ai: enso-ultra, min_tier "paid" and no
+// waitlist at all, answered "is in limited preview — request access" to an
+// unsubscribed caller). The reason is resolved once, at the gate, and rendered once,
+// at the pipe.
+type familyRefusal string
+
+const (
+	refusalNone     familyRefusal = ""         // allowed
+	refusalPlan     familyRefusal = "plan"     // the subscription floor (min_tier) or the funding floor
+	refusalWaitlist familyRefusal = "waitlist" // a limited-preview SKU with no granted ModelAccess row
+)
+
+// message is the caller-facing 403 body for a refusal — each one naming the remedy that
+// actually clears it. The plan refusal reads its copy from the ONE place ai describes a
+// billing denial (object.PlanRequired), beside the insufficient-balance notice, so the
+// paywall says the same thing wherever a caller meets it.
+func (r familyRefusal) message(model string) string {
+	if r == refusalWaitlist {
+		return fmt.Sprintf("%s is in limited preview — request access: POST /v1/models/%s/access", model, model)
+	}
+	return object.PlanRequired(model).Message
 }
 
 // modelAccessGrantedFn resolves whether a caller holds a grant for a gated SKU
@@ -87,31 +108,34 @@ func grantAllows(zm zenModel, ok bool, orgId string, authUser *iam.User) bool {
 	return modelAccessGrantedFn(owner, name, email, zm.ID)
 }
 
-// familyAccessAllowed is the enforcement predicate at the family pipe: a family SKU is
-// servable only when ALL THREE gates pass — the subscription floor (Seam A: enso-flash
-// free, enso trial+, enso-ultra paid; fail-SAFE on commerce uncertainty), the FUNDING
-// floor (prepaid upstreams require a confirmed paying subscriber; fail-CLOSED on the same
-// uncertainty), and the waitlist/grant gate (grantAllows).
+// familyRefusalFor is the enforcement rule at the family pipe: a family SKU is servable
+// only when ALL THREE gates pass — the subscription floor (Seam A: enso-flash free, enso
+// trial+, enso-ultra paid; fail-SAFE on commerce uncertainty), the FUNDING floor (prepaid
+// upstreams require a confirmed paying subscriber; fail-CLOSED on the same uncertainty),
+// and the waitlist/grant gate (grantAllows). It returns refusalNone when the SKU is
+// servable, else the reason — so the pipe can name the remedy that actually clears it.
 //
 // The subscription and funding floors deliberately fail in opposite directions: one
-// guards revenue, the other guards our cash. See familyFundingAllowed.
-func (c *ApiController) familyAccessAllowed(fam *modelFamily, model, orgId string, authUser *iam.User) bool {
+// guards revenue, the other guards our cash. See familyFundingAllowed. Both refuse for
+// the same caller-facing reason — the plan does not include this model — so they share
+// refusalPlan; the waitlist is a different remedy and keeps its own.
+func (c *ApiController) familyRefusalFor(fam *modelFamily, model, orgId string, authUser *iam.User) familyRefusal {
 	subject := familyAccessSubject(orgId, authUser)
-	if !familyTierAllowed(subject, model) {
-		return false
-	}
-	if !familyFundingAllowed(subject, model) {
-		return false
+	if !familyTierAllowed(subject, model) || !familyFundingAllowed(subject, model) {
+		return refusalPlan
 	}
 	zm, ok := fam.lookup(model)
-	return grantAllows(zm, ok, orgId, authUser)
+	if !grantAllows(zm, ok, orgId, authUser) {
+		return refusalWaitlist
+	}
+	return refusalNone
 }
 
-// modelServable reports whether the caller can actually serve a model id — the SAME two
-// gates the serve pipe (familyAccessAllowed) enforces, tier AND grant, resolved via
-// cross-family discovery (familyLookupFresh, as FamilyModelGated does) since only the id
-// is known. The auto-router folds this into its `known` predicate so `auto` never routes
-// a caller to a family SKU their tier or grant would make the serve path refuse.
+// modelServable reports whether the caller can actually serve a model id — the SAME
+// gates the serve pipe (familyRefusalFor) enforces, tier AND funding AND grant, resolved
+// via cross-family discovery (familyLookupFresh, as FamilyModelGated does) since only the
+// id is known. The auto-router folds this into its `known` predicate so `auto` never
+// routes a caller to a family SKU their tier or grant would make the serve path refuse.
 func modelServable(model, orgId string, authUser *iam.User) bool {
 	subject := familyAccessSubject(orgId, authUser)
 	if !familyTierAllowed(subject, model) {

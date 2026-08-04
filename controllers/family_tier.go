@@ -42,6 +42,7 @@ import (
 	"github.com/hanzoai/account"
 	"github.com/hanzoai/ai/conf"
 	iam "github.com/hanzoai/ai/internal/iam"
+	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/object"
 )
 
@@ -170,11 +171,44 @@ func cachedFamilyTier(subject string) string {
 	familyTierMu.Unlock()
 
 	name := commerceFamilyTier(subject)
+	if strings.TrimSpace(name) == "" {
+		noteTierUnknown(subject)
+	}
 
 	familyTierMu.Lock()
 	familyTierCache[subject] = familyTierCacheEntry{name: name, at: now}
 	familyTierMu.Unlock()
 	return name
+}
+
+// tierUnknownLogEvery throttles the unknown-tier warning to one line per interval across
+// all subjects — enough to see a broken tier read, never enough to flood a busy gateway.
+const tierUnknownLogEvery = time.Minute
+
+var (
+	tierUnknownMu   sync.Mutex
+	tierUnknownAt   time.Time
+	tierUnknownSeen int
+)
+
+// noteTierUnknown records that commerce could not name a caller's tier. An unknown tier
+// is this gate's fail-safe ALLOW and the funding gate's fail-CLOSED refusal, so a tier
+// read that is quietly broken disables the enso ladder and the free-tier routing cap
+// while refusing every prepaid SKU — with no symptom anywhere. That is exactly how the
+// nil-org 500 on GET /v1/billing/tier went unnoticed: the gate swallowed every error and
+// said nothing. A silent gate is an unverifiable gate, so it says something now.
+func noteTierUnknown(subject string) {
+	tierUnknownMu.Lock()
+	tierUnknownSeen++
+	if since := time.Since(tierUnknownAt); since < tierUnknownLogEvery && !tierUnknownAt.IsZero() {
+		tierUnknownMu.Unlock()
+		return
+	}
+	n := tierUnknownSeen
+	tierUnknownSeen = 0
+	tierUnknownAt = time.Now()
+	tierUnknownMu.Unlock()
+	log.Warning("family_tier: commerce could not name the tier for %q (%d unknown reads since the last line) — the SKU ladder and the free-tier routing cap ADMIT on an unknown tier, and the prepaid funding gate REFUSES on it", subject, n)
 }
 
 // commerceFamilyTier performs the un-cached lookup of the plan NAME at tier.name.

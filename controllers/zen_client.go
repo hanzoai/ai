@@ -667,8 +667,8 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	// are gated (zenModel.gated), so this is policy learned from data, not a hardcode.
 	// The deferred hold.settle(0) at the call site releases the reservation on this
 	// early return, so a denied request is never billed.
-	if !c.familyAccessAllowed(fam, model, orgId, authUser) {
-		c.zenError(dialect, gatedAccessMessage(model), http.StatusForbidden)
+	if r := c.familyRefusalFor(fam, model, orgId, authUser); r != refusalNone {
+		c.zenError(dialect, r.message(model), http.StatusForbidden)
 		return
 	}
 	// Forward the model ai RESOLVED, not the caller's raw model id. An
