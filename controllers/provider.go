@@ -165,21 +165,31 @@ func (c *ApiController) UpdateProvider() {
 	c.ResponseOk(success)
 }
 
-// sealPastedKey puts a key typed into the admin UI into KMS and leaves the row
-// holding only the reference. Without it a provider key pasted at
-// admin.hanzo.ai was written to the database as PLAINTEXT — and then erased.
+// sealPastedKey puts a raw provider key into KMS and leaves the row holding only
+// the reference. It is the ONE seal, used by add and update on both transports —
+// the beego controllers and their ZAP twins — because four call sites each
+// deciding when a secret may touch the database is how three of them ended up
+// deciding differently.
 //
-// Erased because ClientSecret is in the boot self-heal set (object/init.go): the
-// seed rewrites it from the canonical table on every restart. So a raw value
-// survives only until the next pod roll, and a reference minted under some OTHER
-// name is overwritten too, orphaning the secret it points at. That is why this
-// seals under the name the EXISTING reference already declares
-// (kms://OPENROUTER_API_KEY -> "OPENROUTER_API_KEY") and returns the reference
-// unchanged: the row keeps saying exactly what the seed will say, so the write
-// is durable across restarts and the self-heal is a no-op instead of a wipe.
+// `id` is the existing row's "owner/name", or "" when there is no row yet (add).
 //
-// A row with no declared reference (a provider added by hand) falls back to the
-// BYOK naming, which the seed does not manage and therefore does not clobber.
+// It applies to the PLATFORM's own providers as much as a tenant's. The rule used
+// to exempt owner=="admin", which put the highest-value keys we hold — the global
+// upstream accounts every customer's traffic runs through — in the one place the
+// rule was written to keep them out of.
+//
+// Without this a key pasted at admin.hanzo.ai was written to the database as
+// PLAINTEXT — and then erased. Erased because ClientSecret is in the boot
+// self-heal set (object/init.go): the seed rewrites it from the canonical table on
+// every restart. So a raw value survives only until the next pod roll, and a
+// reference minted under some OTHER name is overwritten too, orphaning the secret
+// it points at. That is why this seals under the name the EXISTING reference
+// already declares (kms://OPENROUTER_API_KEY -> "OPENROUTER_API_KEY") and returns
+// the reference unchanged: the row keeps saying exactly what the seed will say, so
+// the write is durable across restarts and the self-heal is a no-op, not a wipe.
+//
+// A row with no declared reference falls back to BYOK naming, which the seed does
+// not manage and therefore does not clobber.
 //
 // Fails closed: with no KMS bound, StoreProviderSecret errors rather than let a
 // raw key reach the database.
@@ -197,15 +207,17 @@ func sealPastedKey(id string, incoming *object.Provider) error {
 	}
 
 	name := ""
-	if existing, err := object.GetProvider(id); err == nil && existing != nil {
-		if strings.HasPrefix(existing.ClientSecret, "kms://") {
-			name = strings.TrimPrefix(existing.ClientSecret, "kms://")
-		}
-		if incoming.Owner == "" {
-			incoming.Owner = existing.Owner
-		}
-		if incoming.Name == "" {
-			incoming.Name = existing.Name
+	if id != "" {
+		if existing, err := object.GetProvider(id); err == nil && existing != nil {
+			if strings.HasPrefix(existing.ClientSecret, "kms://") {
+				name = strings.TrimPrefix(existing.ClientSecret, "kms://")
+			}
+			if incoming.Owner == "" {
+				incoming.Owner = existing.Owner
+			}
+			if incoming.Name == "" {
+				incoming.Name = existing.Name
+			}
 		}
 	}
 	if name == "" {
@@ -241,17 +253,10 @@ func (c *ApiController) AddProvider() {
 	}
 	provider.Owner = owner
 
-	// BYOK: a tenant-supplied provider key must land in KMS, never the DB as
-	// plaintext. Mint a kms:// ref for any org-owned RAW secret; fails closed when
-	// KMS is unavailable (StoreProviderSecret errors rather than store plaintext).
-	// An admin-owned global provider, or a value already a kms:// ref, is untouched.
-	if owner != "admin" && provider.ClientSecret != "" && !strings.HasPrefix(provider.ClientSecret, "kms://") {
-		ref, err := object.StoreProviderSecret(byokSecretName(owner, provider.Name), provider.ClientSecret)
-		if err != nil {
-			c.ResponseError(err.Error())
-			return
-		}
-		provider.ClientSecret = ref
+	// No row yet, so no existing reference to seal under: "" id.
+	if err := sealPastedKey("", &provider); err != nil {
+		c.ResponseError(err.Error())
+		return
 	}
 
 	success, err := object.AddProvider(&provider)
