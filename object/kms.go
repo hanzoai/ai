@@ -1,4 +1,4 @@
-// Copyright 2023-2025 Hanzo AI Inc. All Rights Reserved.
+// Copyright 2023-2026 Hanzo AI Inc. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -11,15 +11,44 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+
+// Secret resolution for provider credentials.
+//
+// ai runs INSIDE the unified cloud binary, which embeds luxfi/kms in-process
+// (hanzoai/cloud apps/kms). So a secret read is a function call against the
+// embedded SecretStore — never a network hop, never HTTP, never a hostname.
+//
+// This file used to hold a bespoke HTTP client that dialled the STANDALONE KMS
+// deployment. It was wrong three ways at once and had never worked in
+// production:
+//
+//   - Transport. It spoke HTTP to `kms.hanzo.ai` from a process that already
+//     holds the store in memory — a round trip to itself, out through the
+//     internet edge and back, to read a value that was one map lookup away.
+//   - Path. KMS_ENDPOINT carried an `/api` prefix, so every call went to
+//     `/api/v1/kms/...`. Measured from the running pod: **404**. On the correct
+//     `/v1/...` path the universal-auth credentials came back **401**. Both
+//     doors shut.
+//   - Target. The standalone deployment it aimed at reports
+//     `secrets plane disabled` at boot and has its ZAP port closed, while the
+//     embedded KMS in this very binary answers `{"ready":true}`.
+//
+// Nothing noticed because resolution fell back to the environment, and every
+// working provider key happened to be an env var from a K8s Secret. That
+// fallback is the thing being retired: a `kms://` reference that silently means
+// "read an env var" is not key management, and it is why a key can be stored in
+// KMS and still be unavailable to the service that needs it.
+//
+// Order is now KMS-FIRST, env-fallback. A non-empty value from the store wins;
+// anything else (absent, empty, error, or no store injected at all — the
+// standalone `cmd/aid` case) falls through to the env var, so the providers that
+// are still env-fed keep serving while their keys migrate into KMS. When the
+// last key has moved, the fallback goes.
 package object
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
 	"strings"
 	"sync"
@@ -28,48 +57,27 @@ import (
 	"github.com/hanzoai/ai/log"
 )
 
-// kmsClient fetches secrets from Hanzo KMS.
+// SecretStore is the in-process KMS seam: the read/write subset of
+// cloud.KMSClient that ai actually needs. Declared here, structurally, rather
+// than imported — object must not depend on cloud (cloud mounts ai, so the
+// import would be a cycle), and a two-method interface is a smaller contract to
+// honour than the whole client.
 //
-// Authentication modes (checked in order):
-//  1. Service Token: set KMS_SERVICE_TOKEN (format: "st.{id}.{secret}")
-//     OR set HANZO_API_KEY as the unified service token.
-//  2. Universal Auth: set KMS_CLIENT_ID + KMS_CLIENT_SECRET (machine identity)
+// `ref` is cloud's flat secret reference, parsed by apps/kms parseRef:
 //
-// Environment variables:
-//   - KMS_ENDPOINT:      Base URL (default: http://kms.hanzo.svc)
-//     External: https://api.hanzo.ai (paths are /v1/kms/*)
-//   - KMS_SERVICE_TOKEN:  Service token for direct auth
-//   - HANZO_API_KEY:      Unified service token (fallback for KMS_SERVICE_TOKEN)
-//   - KMS_CLIENT_ID:      Universal Auth client ID
-//   - KMS_CLIENT_SECRET:  Universal Auth client secret
-//   - KMS_PROJECT_ID:     Default project ID for system (admin-owned) secrets
-//   - KMS_ENVIRONMENT:    Environment slug (default: prod)
-//   - KMS_ORG:            Org scoping the secret path (default: hanzo)
-//
-// Multi-tenant model:
-//   - Admin-owned providers use KMS_PROJECT_ID (system secrets)
-//   - Org-owned providers store "kms-project:{projectId}" in ConfigText
-//   - Convention: store "kms://SECRET_NAME" in provider.ClientSecret
-type kmsClient struct {
-	endpoint    string
-	org         string // KMS org that scopes every secret path
-	environment string
-	projectID   string // default project for admin-owned secrets
-	httpClient  *http.Client
-	// Auth: exactly one of these is set
-	serviceToken string // st.{id}.{secret} — used directly in Authorization header
-	clientID     string // Universal Auth client ID
-	clientSecret string // Universal Auth client secret
-	// Universal Auth token cache
-	accessToken    string
-	tokenExpiresAt time.Time
-	tokenMu        sync.Mutex
+//	"OPENROUTER_API_KEY"        → path "/",          name, env "default"
+//	"myservice/DATABASE_URL"    → path "/myservice", name, env "default"
+//	"myservice/DB@main"         → path "/myservice", name, env "main"
+type SecretStore interface {
+	GetSecret(ctx context.Context, ref string) ([]byte, error)
+	PutSecret(ctx context.Context, ref string, value []byte) error
 }
 
 var (
-	kms     *kmsClient
-	kmsOnce sync.Once
-	// Secret value cache: key = "projectID/secretName"
+	secretsMu sync.RWMutex
+	secrets   SecretStore
+
+	// Secret value cache: key = ref.
 	kmsSecrets = make(map[string]*kmsSecretEntry)
 	kmsSecMu   sync.RWMutex
 	kmsSecTTL  = 5 * time.Minute
@@ -80,225 +88,105 @@ type kmsSecretEntry struct {
 	fetchedAt time.Time
 }
 
-// initKMS initializes the KMS client from environment variables.
-func initKMS() {
-	kmsOnce.Do(func() {
-		serviceToken := os.Getenv("KMS_SERVICE_TOKEN")
-		if serviceToken == "" {
-			serviceToken = os.Getenv("HANZO_API_KEY")
-		}
-		clientID := os.Getenv("KMS_CLIENT_ID")
-		clientSecret := os.Getenv("KMS_CLIENT_SECRET")
-		if serviceToken == "" && clientID == "" {
-			log.Info("KMS not configured (no KMS_SERVICE_TOKEN or KMS_CLIENT_ID) — using DB secrets")
-			return
-		}
-		endpoint := os.Getenv("KMS_ENDPOINT")
-		if endpoint == "" {
-			endpoint = "http://kms.hanzo.svc"
-		}
-		endpoint = strings.TrimRight(endpoint, "/")
-		projectID := os.Getenv("KMS_PROJECT_ID")
-		environment := os.Getenv("KMS_ENVIRONMENT")
-		if environment == "" {
-			environment = "prod"
-		}
-		org := os.Getenv("KMS_ORG")
-		if org == "" {
-			org = "hanzo"
-		}
-		kms = &kmsClient{
-			endpoint:     endpoint,
-			org:          org,
-			environment:  environment,
-			projectID:    projectID,
-			serviceToken: serviceToken,
-			clientID:     clientID,
-			clientSecret: clientSecret,
-			httpClient: &http.Client{
-				Timeout: 10 * time.Second,
-			},
-		}
-		authMode := "service-token"
-		if serviceToken == "" {
-			authMode = "universal-auth"
-		}
-		log.Info("KMS client initialized: endpoint=%s project=%s env=%s auth=%s",
-			endpoint, projectID, environment, authMode)
-	})
+// SetSecretStore injects the embedded KMS. cloud calls this when it mounts ai,
+// handing over the SAME in-process client every other subsystem uses. Called
+// with nil (or never called — standalone cmd/aid) leaves ai on the env
+// fallback rather than failing: a deployment with no KMS is a valid deployment,
+// it just has no key management.
+func SetSecretStore(s SecretStore) {
+	secretsMu.Lock()
+	defer secretsMu.Unlock()
+	secrets = s
+	if s != nil {
+		log.Info("kms: secret store bound (embedded, in-process)")
+	}
 }
 
-// ── Universal Auth token management ─────────────────────────────────────────
-type universalAuthResponse struct {
-	AccessToken       string `json:"accessToken"`
-	ExpiresIn         int    `json:"expiresIn"`
-	AccessTokenMaxTTL int    `json:"accessTokenMaxTTL"`
-	TokenType         string `json:"tokenType"`
+func secretStore() SecretStore {
+	secretsMu.RLock()
+	defer secretsMu.RUnlock()
+	return secrets
 }
 
-// getAuthToken returns the token to use in the Authorization header.
-// For service tokens, returns the token directly.
-// For Universal Auth, manages the token lifecycle (login + refresh).
-func (c *kmsClient) getAuthToken() (string, error) {
-	if c.serviceToken != "" {
-		return c.serviceToken, nil
-	}
-	c.tokenMu.Lock()
-	defer c.tokenMu.Unlock()
-	// Return cached token if still valid (with 30s buffer)
-	if c.accessToken != "" && time.Now().Add(30*time.Second).Before(c.tokenExpiresAt) {
-		return c.accessToken, nil
-	}
-	// Login via Universal Auth
-	body, err := json.Marshal(map[string]string{
-		"clientId":     c.clientID,
-		"clientSecret": c.clientSecret,
-	})
-	if err != nil {
-		return "", fmt.Errorf("kms: failed to marshal login request: %w", err)
-	}
-	url := c.endpoint + "/v1/kms/auth/login"
-	resp, err := c.httpClient.Post(url, "application/json", bytes.NewReader(body))
-	if err != nil {
-		return "", fmt.Errorf("kms: universal auth login failed: %w", err)
-	}
-	defer resp.Body.Close()
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("kms: failed to read login response: %w", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("kms: universal auth login returned %d: %s", resp.StatusCode, string(respBody))
-	}
-	var authResp universalAuthResponse
-	if err := json.Unmarshal(respBody, &authResp); err != nil {
-		return "", fmt.Errorf("kms: failed to parse login response: %w", err)
-	}
-	c.accessToken = authResp.AccessToken
-	c.tokenExpiresAt = time.Now().Add(time.Duration(authResp.ExpiresIn) * time.Second)
-	log.Info("KMS: universal auth token acquired, expires in %ds", authResp.ExpiresIn)
-	return c.accessToken, nil
-}
+// KMSConfigured reports whether an embedded store is available.
+func KMSConfigured() bool { return secretStore() != nil }
 
-// ── Secret fetching ─────────────────────────────────────────────────────────
-// kmsSecretResponse is the envelope from
-// GET /v1/kms/orgs/{org}/secrets/{path}/{name}.
-type kmsSecretResponse struct {
-	Secret struct {
-		Value string `json:"value"`
-	} `json:"secret"`
-}
+// kmsGet reads one secret by ref, through a short TTL cache. An absent or empty
+// secret is ("", nil) — "no value here", which is not an error and is what lets
+// the caller fall through to the env var. A real failure (store error) is
+// returned so a caller that must fail closed can.
+func kmsGet(ref string) (string, error) {
+	store := secretStore()
+	if store == nil {
+		return "", nil
+	}
 
-// getSecret fetches a secret value by name from KMS, scoped to a project.
-// Cache hierarchy: ZAP→KV (distributed, survives restarts) → in-memory (5 min TTL).
-// On cache miss, fetches from KMS API and populates both caches.
-func (c *kmsClient) getSecret(name string, projectID string) (string, error) {
-	cacheKey := projectID + "/" + name
-	// L1: in-memory cache
 	kmsSecMu.RLock()
-	entry, ok := kmsSecrets[cacheKey]
+	entry, ok := kmsSecrets[ref]
 	kmsSecMu.RUnlock()
 	if ok && time.Since(entry.fetchedAt) < kmsSecTTL {
 		return entry.value, nil
 	}
-	// L2: distributed KV cache via ZAP (survives pod restarts)
-	if ZapEnabled() {
-		kvKey := "kms:" + cacheKey
-		val, err := ZapKVGet(context.Background(), kvKey)
-		if err == nil && val != "" {
-			// Populate L1 from L2 hit
-			kmsSecMu.Lock()
-			kmsSecrets[cacheKey] = &kmsSecretEntry{value: val, fetchedAt: time.Now()}
-			kmsSecMu.Unlock()
-			return val, nil
-		}
-	}
-	token, err := c.getAuthToken()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	b, err := store.GetSecret(ctx, ref)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("kms: read %q: %w", ref, err)
 	}
-	url := fmt.Sprintf("%s/v1/kms/orgs/%s/secrets/%s/%s?env=%s",
-		c.endpoint, c.org, projectID, name, c.environment)
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return "", fmt.Errorf("kms: failed to create request: %w", err)
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("kms: request failed for secret %q: %w", name, err)
-	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("kms: failed to read response for secret %q: %w", name, err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("kms: secret %q (project=%s) returned status %d: %s",
-			name, projectID, resp.StatusCode, string(body))
-	}
-	var kmsResp kmsSecretResponse
-	if err := json.Unmarshal(body, &kmsResp); err != nil {
-		return "", fmt.Errorf("kms: failed to parse response for secret %q: %w", name, err)
-	}
-	value := kmsResp.Secret.Value
-	// Populate L1 in-memory cache.
+	value := string(b)
+
 	kmsSecMu.Lock()
-	kmsSecrets[cacheKey] = &kmsSecretEntry{value: value, fetchedAt: time.Now()}
+	kmsSecrets[ref] = &kmsSecretEntry{value: value, fetchedAt: time.Now()}
 	kmsSecMu.Unlock()
-	// Populate L2 distributed KV cache via ZAP (5 min TTL).
-	if ZapEnabled() {
-		kvKey := "kms:" + cacheKey
-		_ = ZapKVSetEx(context.Background(), kvKey, value, int(kmsSecTTL.Seconds()))
-	}
 	return value, nil
 }
 
-// ── Public API ──────────────────────────────────────────────────────────────
-// ResolveProviderSecret resolves KMS-backed secret fields for a provider.
-// If KMS is configured and provider fields start with "kms://", each secret
-// is fetched from KMS. Otherwise, DB values are used as-is.
+// kmsPut writes one secret by ref and invalidates the read cache.
+func kmsPut(ref, value string) error {
+	store := secretStore()
+	if store == nil {
+		return fmt.Errorf("kms: no secret store bound")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := store.PutSecret(ctx, ref, []byte(value)); err != nil {
+		return fmt.Errorf("kms: write %q: %w", ref, err)
+	}
+	kmsSecMu.Lock()
+	delete(kmsSecrets, ref)
+	kmsSecMu.Unlock()
+	return nil
+}
+
+// resolveSecretName returns the value behind a bare secret NAME: the embedded
+// store first, then the environment. This is the one precedence rule; every
+// caller goes through it so keyPresent can never disagree with what a
+// completion would actually use.
+func resolveSecretName(name string) string {
+	if v, err := kmsGet(name); err == nil && strings.TrimSpace(v) != "" {
+		return v
+	} else if err != nil {
+		// A store that errors must not silently look like an absent secret, but
+		// it must not take down a provider whose key is still env-fed either.
+		log.Warn("kms: read failed, falling back to env", "secret", name, "error", err)
+	}
+	return os.Getenv(name)
+}
+
+// ResolveProviderSecret resolves "kms://NAME" references on a provider record
+// in place. A non-reference value is left exactly as it is (an operator may set
+// a key directly on the admin row; that is a deliberate, visible choice and not
+// this function's business).
 //
-// Supported provider fields:
-//   - ClientSecret
-//   - UserKey
-//   - SignKey
-//
-// Convention: store "kms://SECRET_NAME" in these fields in the database.
-// At runtime, they are resolved to actual secret values.
-//
-// Multi-tenant scoping:
-//   - Admin-owned providers use the default KMS_PROJECT_ID
-//   - Org-owned providers can set "kms-project:{projectId}" in ConfigText
-//     to scope secrets to the org's own KMS project
+// An unresolvable reference is an ERROR, not a pass-through. Returning the
+// literal "kms://NAME" would authenticate upstream as that string — a
+// guaranteed 401 that also puts the reference on the wire.
 func ResolveProviderSecret(provider *Provider) error {
-	initKMS()
-	if kms == nil || provider == nil {
-		return nil // KMS disabled, use DB value as-is
+	if provider == nil {
+		return nil
 	}
-	hasKmsRef := strings.HasPrefix(provider.ClientSecret, "kms://") ||
-		strings.HasPrefix(provider.UserKey, "kms://") ||
-		strings.HasPrefix(provider.SignKey, "kms://")
-	if !hasKmsRef {
-		return nil // Not a KMS reference
-	}
-	// Determine project ID: org-specific or system default.
-	// Org-owned providers can store "kms-project:{id}" in ConfigText
-	// to scope secrets to the org's KMS project.
-	projectID := kms.projectID
-	if provider.ConfigText != "" {
-		for _, line := range strings.Split(provider.ConfigText, "\n") {
-			line = strings.TrimSpace(line)
-			if strings.HasPrefix(line, "kms-project:") {
-				projectID = strings.TrimPrefix(line, "kms-project:")
-				break
-			}
-		}
-	}
-	if projectID == "" {
-		return fmt.Errorf("kms: no project ID for provider %q (set KMS_PROJECT_ID or provider ConfigText 'kms-project:{id}')", provider.Name)
-	}
-	resolveField := func(fieldName string, currentValue string) (string, error) {
+	resolveField := func(fieldName, currentValue string) (string, error) {
 		if !strings.HasPrefix(currentValue, "kms://") {
 			return currentValue, nil
 		}
@@ -306,16 +194,12 @@ func ResolveProviderSecret(provider *Provider) error {
 		if secretName == "" {
 			return "", fmt.Errorf("kms: empty secret reference for provider %q field %s", provider.Name, fieldName)
 		}
-		// Try env var first (e.g. FIREWORKS_API_KEY from cloud-search-config K8s Secret).
-		if envValue := os.Getenv(secretName); envValue != "" {
-			return envValue, nil
+		if v := resolveSecretName(secretName); v != "" {
+			return v, nil
 		}
-		value, err := kms.getSecret(secretName, projectID)
-		if err != nil {
-			return "", fmt.Errorf("failed to resolve KMS secret for provider %q field %s: %w", provider.Name, fieldName, err)
-		}
-		return value, nil
+		return "", fmt.Errorf("kms: no value for %q (provider %q field %s)", secretName, provider.Name, fieldName)
 	}
+
 	clientSecret, err := resolveField("clientSecret", provider.ClientSecret)
 	if err != nil {
 		return err
@@ -335,17 +219,11 @@ func ResolveProviderSecret(provider *Provider) error {
 }
 
 // ProviderKeyPresent reports whether a provider's ClientSecret resolves to a
-// non-empty value — WITHOUT ever returning the value itself. It resolves on a
-// COPY so the caller's provider is never mutated (the raw/resolved key must not
-// leak into a response object). A "kms://…" reference that resolves to a real
-// secret (via env-first or a live KMS fetch) counts as present; an empty or
-// unresolved reference counts as absent. This is the ONLY key signal the admin
-// management view is allowed to expose (keyPresent boolean).
+// non-empty value — WITHOUT ever returning the value itself. This is the ONLY
+// key signal the admin management view is allowed to expose (keyPresent).
 //
-// Fail-closed for the admin view: if KMS is not configured, a "kms://…" ref
-// cannot be confirmed and is reported as NOT present (so the operator sees the
-// key is unavailable rather than a false-positive). A plaintext/non-kms value
-// (dev only) is reported present when non-empty.
+// It resolves through resolveSecretName, the same precedence a completion uses,
+// so the admin view cannot claim a key the hot path would fail to find.
 func ProviderKeyPresent(provider *Provider) bool {
 	if provider == nil {
 		return false
@@ -356,115 +234,51 @@ func ProviderKeyPresent(provider *Provider) bool {
 		if secretName == "" {
 			return false
 		}
-		// Env-var-first — mirror ResolveProviderSecret's precedence exactly (the
-		// prod hot path resolves DO_AI_API_KEY/etc. from the env before any live
-		// KMS call, and does so even before the KMS client is initialized). This
-		// check is independent of kms != nil so keyPresent is truthful about the
-		// env-provided key on the same path a completion would use.
-		if strings.TrimSpace(os.Getenv(secretName)) != "" {
-			return true
-		}
-		// Otherwise confirm via a live KMS resolve on a COPY (never mutate the
-		// caller's record — the resolved value must not leak into a response).
-		cp := *provider
-		if err := ResolveProviderSecret(&cp); err != nil {
-			return false
-		}
-		// If still a kms:// ref, resolution was a no-op (KMS disabled) → absent.
-		if strings.HasPrefix(cp.ClientSecret, "kms://") {
-			return false
-		}
-		return strings.TrimSpace(cp.ClientSecret) != ""
+		return strings.TrimSpace(resolveSecretName(secretName)) != ""
 	}
-	// Non-kms (dev) plaintext value: present iff non-empty.
+	// A value set directly on the row (dev, or an operator's deliberate choice):
+	// present iff non-empty.
 	return strings.TrimSpace(secret) != ""
 }
 
-// GetKMSSecret fetches a secret by name from KMS using the default system project.
-// This is a convenience function for non-provider secrets.
+// GetKMSSecret fetches a secret by name for non-provider callers.
 func GetKMSSecret(name string) (string, error) {
-	initKMS()
-	if kms == nil {
-		return "", fmt.Errorf("kms: not configured")
+	if v := resolveSecretName(name); v != "" {
+		return v, nil
 	}
-	if kms.projectID == "" {
-		return "", fmt.Errorf("kms: KMS_PROJECT_ID not set")
-	}
-	return kms.getSecret(name, kms.projectID)
+	return "", fmt.Errorf("kms: no value for %q", name)
 }
 
-// GetOrgKMSSecret fetches a secret scoped to an organization's KMS project.
-func GetOrgKMSSecret(name string, orgProjectID string) (string, error) {
-	initKMS()
-	if kms == nil {
-		return "", fmt.Errorf("kms: not configured")
+// GetOrgKMSSecret fetches a secret scoped to one org's path. The org is a path
+// segment in the ref, which is the store's isolation partition — the same role
+// the `org` column plays in every table.
+func GetOrgKMSSecret(name, orgPath string) (string, error) {
+	if orgPath == "" {
+		return "", fmt.Errorf("kms: org path is empty")
 	}
-	if orgProjectID == "" {
-		return "", fmt.Errorf("kms: org project ID is empty")
+	ref := strings.TrimSuffix(orgPath, "/") + "/" + name
+	v, err := kmsGet(ref)
+	if err != nil {
+		return "", err
 	}
-	return kms.getSecret(name, orgProjectID)
+	if strings.TrimSpace(v) == "" {
+		return "", fmt.Errorf("kms: no value for %q", ref)
+	}
+	return v, nil
 }
 
-// putSecret upserts a secret value by name into KMS, scoped to a project, and
-// invalidates the read caches so the next resolve sees the new value. Mirrors
-// getSecret's V4 path/param shape.
-func (c *kmsClient) putSecret(name, projectID, value string) error {
-	token, err := c.getAuthToken()
-	if err != nil {
-		return err
-	}
-	payload, err := json.Marshal(map[string]string{
-		"path":  projectID,
-		"name":  name,
-		"env":   c.environment,
-		"value": value,
-	})
-	if err != nil {
-		return fmt.Errorf("kms: failed to marshal put for %q: %w", name, err)
-	}
-	url := fmt.Sprintf("%s/v1/kms/orgs/%s/secrets", c.endpoint, c.org)
-	req, err := http.NewRequest("POST", url, bytes.NewReader(payload))
-	if err != nil {
-		return fmt.Errorf("kms: failed to create put request for %q: %w", name, err)
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("kms: put request failed for secret %q: %w", name, err)
-	}
-	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		return fmt.Errorf("kms: put secret %q (project=%s) returned status %d: %s",
-			name, projectID, resp.StatusCode, string(body))
-	}
-	// Invalidate caches so a subsequent resolve fetches the new value.
-	cacheKey := projectID + "/" + name
-	kmsSecMu.Lock()
-	delete(kmsSecrets, cacheKey)
-	kmsSecMu.Unlock()
-	if ZapEnabled() {
-		_ = ZapKVSetEx(context.Background(), "kms:"+cacheKey, value, int(kmsSecTTL.Seconds()))
-	}
-	return nil
-}
-
-// StoreProviderSecret securely stores a tenant-supplied (BYOK) provider key in
-// KMS under the default project and returns the "kms://NAME" reference to persist
-// in the provider record — so a raw key NEVER lands in the database as plaintext.
-// FAILS CLOSED: if KMS is not configured, it errors rather than letting the caller
-// store the raw key. The secret name is caller-namespaced (e.g. by org) to avoid
-// cross-tenant collision.
+// StoreProviderSecret seals a tenant-supplied (BYOK) provider key into the
+// embedded KMS and returns the "kms://NAME" reference to persist on the provider
+// record — so a raw key NEVER lands in the database as plaintext.
+//
+// FAILS CLOSED: with no store bound it errors rather than letting the caller
+// fall back to storing the raw key. The name is caller-namespaced (e.g. by org)
+// to avoid cross-tenant collision.
 func StoreProviderSecret(name, value string) (string, error) {
-	initKMS()
-	if kms == nil {
-		return "", fmt.Errorf("kms: not configured — custom provider keys require KMS (refusing to store plaintext)")
+	if !KMSConfigured() {
+		return "", fmt.Errorf("kms: no secret store — refusing to store a provider key as plaintext")
 	}
-	if kms.projectID == "" {
-		return "", fmt.Errorf("kms: KMS_PROJECT_ID not set — cannot store custom provider key")
-	}
-	if err := kms.putSecret(name, kms.projectID, value); err != nil {
+	if err := kmsPut(name, value); err != nil {
 		return "", err
 	}
 	return "kms://" + name, nil
