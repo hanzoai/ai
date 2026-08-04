@@ -156,9 +156,10 @@ func trainerEnv(job *object.FinetuneJob, hp object.Hyperparams, hasToken bool) [
 
 // buildTrainJobObject renders the TrainJob CR as a JSON object (valid YAML for the
 // deployResource decoder). It references the runtime, overrides the model/dataset
-// initializers (with secretRef for private repos), and sets the trainer GPU
-// resources + hyperparameter env.
-func buildTrainJobObject(job *object.FinetuneJob, hp object.Hyperparams, secretName string) map[string]interface{} {
+// initializers (with secretRef for private repos), and sets the trainer accelerator
+// resources + hyperparameter env. limits carries the accelerator request the CLUSTER
+// can satisfy (see accelerator.go) — this renderer never names a vendor.
+func buildTrainJobObject(job *object.FinetuneJob, hp object.Hyperparams, secretName string, limits map[string]interface{}) map[string]interface{} {
 	modelUri := normalizeStorageUri(job.BaseModel)
 	datasetUri := normalizeStorageUri(job.Dataset)
 
@@ -170,10 +171,6 @@ func buildTrainJobObject(job *object.FinetuneJob, hp object.Hyperparams, secretN
 		datasetInit["secretRef"] = ref
 	}
 
-	gpuCount := job.GpuCount
-	if gpuCount < 1 {
-		gpuCount = 1
-	}
 	numNodes := job.NumNodes
 	if numNodes < 1 {
 		numNodes = 1
@@ -182,9 +179,7 @@ func buildTrainJobObject(job *object.FinetuneJob, hp object.Hyperparams, secretN
 	trainer := map[string]interface{}{
 		"numNodes": numNodes,
 		"resourcesPerNode": map[string]interface{}{
-			"limits": map[string]interface{}{
-				"nvidia.com/gpu": strconv.Itoa(gpuCount),
-			},
+			"limits": limits,
 		},
 		"env": trainerEnv(job, hp, secretName != ""),
 	}
@@ -223,6 +218,16 @@ func SubmitTrainJob(job *object.FinetuneJob, hp object.Hyperparams, token, lang 
 	if err := ensure(lang); err != nil {
 		return err
 	}
+	// Ask for accelerators the CLUSTER advertises, and refuse before creating a
+	// namespace or a secret when it advertises none.
+	gpuCount := job.GpuCount
+	if gpuCount < 1 {
+		gpuCount = 1
+	}
+	limits, err := acceleratorRequest(gpuCount)
+	if err != nil {
+		return fmt.Errorf("cannot train %s: %w", job.Name, err)
+	}
 	if err := client.createNamespaceIfNotExists(job.Namespace); err != nil {
 		return fmt.Errorf("failed to ensure namespace %s: %w", job.Namespace, err)
 	}
@@ -230,7 +235,7 @@ func SubmitTrainJob(job *object.FinetuneJob, hp object.Hyperparams, token, lang 
 	if err != nil {
 		return fmt.Errorf("failed to provision HF token secret: %w", err)
 	}
-	obj := buildTrainJobObject(job, hp, secretName)
+	obj := buildTrainJobObject(job, hp, secretName, limits)
 	b, err := json.Marshal(obj)
 	if err != nil {
 		return fmt.Errorf("failed to render TrainJob: %w", err)
