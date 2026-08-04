@@ -38,7 +38,6 @@ package controllers
 import (
 	"context"
 	"encoding/json"
-	"strings"
 
 	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/luxfi/zap"
@@ -262,12 +261,9 @@ func zapAddProviderHandler(_ context.Context, auth string, body []byte) (*zap.Me
 	}
 	provider.Owner = user.Owner
 
-	if user.Owner != "admin" && provider.ClientSecret != "" && !strings.HasPrefix(provider.ClientSecret, "kms://") {
-		ref, err := object.StoreProviderSecret(byokSecretName(user.Owner, provider.Name), provider.ClientSecret)
-		if err != nil {
-			return zapProviderError(200, err.Error())
-		}
-		provider.ClientSecret = ref
+	// One seal, shared with the beego twin — no row yet, so "" id.
+	if err := sealPastedKey("", &provider); err != nil {
+		return zapProviderError(200, err.Error())
 	}
 
 	success, err := object.AddProvider(&provider)
