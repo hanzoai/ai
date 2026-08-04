@@ -2,6 +2,21 @@ module github.com/hanzoai/ai
 
 go 1.26.5
 
+// v1.832.18 seals the SECRET MASK as a provider key.
+//
+// It carries sealPastedKey without the guard that recognises object.SecretMask
+// ("***"), which is what the admin API returns for a stored secret and therefore
+// what the console posts back when an operator saves a provider form WITHOUT
+// touching the key field. On that save the literal "***" is sealed into KMS under
+// the provider's own secret name, and because resolution is KMS-first the store
+// then answers "***" for every subsequent read — outranking the environment
+// variable that was serving the real key. The provider stops authenticating
+// upstream, and the row looks correct while it does.
+//
+// Fixed in the next release. Nothing shipped this version: cloud was pinned to
+// v1.832.10 throughout.
+retract v1.832.18
+
 require (
 	github.com/ThinkInAIXYZ/go-mcp v0.2.24
 	github.com/alibabacloud-go/darabonba-openapi v0.1.18
