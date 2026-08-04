@@ -198,6 +198,49 @@ func TestKeyPresent_AgreesWithResolution(t *testing.T) {
 	}
 }
 
+// TestKmsGet_AbsentIsNotAFailure: the store reports a missing secret as an
+// error, and during the migration off env vars MOST secrets are missing. Absence
+// must therefore be silent and cache as an ordinary empty value — treating it as
+// a fault would warn about the expected state of the world on every request, and
+// would make a real store outage indistinguishable from a key that simply has not
+// moved yet.
+func TestKmsGet_AbsentIsNotAFailure(t *testing.T) {
+	fs := &fakeStore{err: errors.New("store: secret not found")}
+	bind(t, fs)
+
+	v, err := kmsGet("MISSING")
+	if err != nil {
+		t.Fatalf("absent secret returned an error: %v", err)
+	}
+	if v != "" {
+		t.Fatalf("value = %q, want empty", v)
+	}
+
+	// Cached as a value, not as a failure: a second read does not re-probe.
+	if _, err := kmsGet("MISSING"); err != nil {
+		t.Fatalf("second read errored: %v", err)
+	}
+	if fs.gets != 1 {
+		t.Errorf("store probes = %d, want 1 (absence cached as a value)", fs.gets)
+	}
+}
+
+// TestResolve_AbsentFallsBackToEnvSilently is the migration path itself: a key
+// that has not moved into KMS yet resolves from the environment, with the store
+// bound and answering "not found".
+func TestResolve_AbsentFallsBackToEnvSilently(t *testing.T) {
+	bind(t, &fakeStore{err: errors.New("store: secret not found")})
+	t.Setenv("DO_AI_API_KEY", "env-only")
+
+	p := &Provider{Name: "do-ai", ClientSecret: "kms://DO_AI_API_KEY"}
+	if err := ResolveProviderSecret(p); err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if p.ClientSecret != "env-only" {
+		t.Errorf("ClientSecret = %q, want %q", p.ClientSecret, "env-only")
+	}
+}
+
 // TestKmsGet_CachesFailures is a hot-path guard, not a nicety. cloud ALWAYS
 // hands over a non-nil client — when KMS is not mounted it is a fail-closed stub
 // whose every read errors — so an uncached failure would re-probe and re-log on
