@@ -162,6 +162,14 @@ func GetProviders(owner string) ([]*Provider, error) {
 }
 
 func getProvider(owner string, name string) (*Provider, error) {
+	// No store is "I cannot answer", not a crash. This reads adapter.db, which is
+	// nil before the DB is initialised — during boot, in the standalone runtime
+	// with no driverName, and in every unit test — so an unguarded read turns a
+	// missing dependency into a SIGSEGV at whatever call site happened to ask
+	// first. Callers already handle (nil, err).
+	if adapter == nil || adapter.db == nil {
+		return nil, fmt.Errorf("provider store is not initialised")
+	}
 	provider := Provider{Owner: owner, Name: name}
 	existed, err := getOne(adapter.db, "provider", &provider, pk2(provider.Owner, provider.Name))
 	if err != nil {
