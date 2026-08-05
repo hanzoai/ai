@@ -69,13 +69,24 @@ func TestFreeTierFlashCapActive(t *testing.T) {
 		tier string
 		want bool
 	}{
-		{"free", true},        // enso rank 0 → cap
-		{"developer", true},   // maps to free → cap
-		{"zen-free", true},    // legacy free → cap
-		{"starter", false},    // → trial → no cap
-		{"pro", false},        // → paid → no cap
-		{"enterprise", false}, // → paid → no cap
-		{"", false},           // unknown → NO cap (never degrade a paying caller on a blip)
+		{"free", true},     // enso rank 0 → cap
+		{"zen-free", true}, // legacy free (a -free suffix) → cap
+		{"starter", false}, // → trial → no cap
+		{"", false},        // unknown → NO cap (never degrade a paying caller on a blip)
+
+		// The plans commerce actually SELLS are go, dev, pro, max, team and
+		// business. Every one of them is paying, so none may be capped. This
+		// list used to score `developer` as free, which is what the shipped
+		// mapping did to go/dev/max/team/business as well — we throttled and
+		// refused customers who were already paying us.
+		{"go", false},
+		{"dev", false},
+		{"developer", false},
+		{"pro", false},
+		{"max", false},
+		{"team", false},
+		{"business", false},
+		{"enterprise", false},
 	}
 	for _, tc := range cases {
 		familyTier = func(string) string { return tc.tier }
