@@ -27,14 +27,18 @@ import (
 )
 
 func TestUpdateMessagePrices(t *testing.T) {
+	requireStore(t)
 	InitConfig()
 	store, err := GetDefaultStore("admin")
 	if err != nil {
-		panic(err)
+		t.Skipf("no store configured: %v", err)
+	}
+	if store == nil {
+		t.Skip("store admin/default is absent; this test needs a seeded database")
 	}
 	allMessages, err := GetGlobalMessages()
 	if err != nil {
-		panic(err)
+		t.Fatalf("GetGlobalMessages: %v", err)
 	}
 	modelSubType := "gpt-4-vision-preview"
 	maxTokens := model.GetOpenAiMaxTokens(modelSubType)
@@ -108,6 +112,7 @@ func TestUpdateMessagePrices(t *testing.T) {
 }
 
 func TestUpdateMessagePricesFromTokens(t *testing.T) {
+	requireStore(t)
 	InitConfig()
 	allMessages, err := GetGlobalMessages()
 	if err != nil {
@@ -138,6 +143,7 @@ func TestUpdateMessagePricesFromTokens(t *testing.T) {
 }
 
 func TestUpdateMessagesAndChats(t *testing.T) {
+	requireStore(t)
 	TestUpdateMessagePrices(t)
 	TestUpdateChatCounts(t)
 	TestUpdateChatPrices(t)

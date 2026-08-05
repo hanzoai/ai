@@ -23,6 +23,7 @@ import (
 )
 
 func TestGetUsage(t *testing.T) {
+	requireStore(t)
 	InitConfig()
 	usage, err := GetUsage("")
 	if err != nil {
@@ -32,6 +33,7 @@ func TestGetUsage(t *testing.T) {
 }
 
 func TestGetUsages(t *testing.T) {
+	requireStore(t)
 	InitConfig()
 	usages, err := GetUsages(30, "admin", "")
 	if err != nil {
@@ -44,6 +46,7 @@ func TestGetUsages(t *testing.T) {
 }
 
 func TestGetRangeUsages(t *testing.T) {
+	requireStore(t)
 	InitConfig()
 	// usages, err := GetRangeUsages("Month", 6)
 	usages, err := GetRangeUsages("Week", 12, "admin", "", "en")
