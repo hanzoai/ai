@@ -328,20 +328,117 @@ func forceGatewayEmbedder(p *Provider) {
 	}
 }
 
-// initLLMProviders bootstraps the LLM provider records needed by the
-// model routing table (see controllers/model_routes.go). Each provider
-// maps to an upstream service with its own API key and base URL.
-//
-// Provider secrets can use KMS references ("kms://SECRET_NAME") which
-// are resolved at runtime via ResolveProviderSecret().
+// seededLLMProviders is the LLM provider seed table: the records the model
+// routing table needs (see controllers/model_routes.go), each mapping to an
+// upstream service with its own API key and base URL. Secrets may be KMS
+// references ("kms://SECRET_NAME"), resolved at call time by
+// ResolveProviderSecret.
 //
 // DO-first defaults: do-ai is the primary (State Active, IsDefault true) —
 // the universal DigitalOcean GenAI router that backs OpenAI/Anthropic/Llama/
 // DeepSeek/Qwen/GLM/Kimi. fireworks and openai-direct ship DISABLED (an admin
-// opts in via /v1/admin/providers/toggle). zen stays Active: it is the branded
-// first-party family served over do-ai (same key, no GPU) and must keep working.
-// openrouter ships DISABLED (toggleable), keeping "DO-first" the default while
-// making the catalog manageable in the same table.
+// opts in via /v1/admin/providers/toggle). openrouter ships DISABLED
+// (toggleable), keeping "DO-first" the default while making the catalog
+// manageable in the same table. zen is deliberately absent: it is a model
+// FAMILY whose address is deployment config (ZEN_URL), exactly like its sibling
+// enso — see pruneStaleZenSeed for what a row here does to it.
+//
+// It lives at package scope so the invariants it must satisfy are testable: a
+// seeded FAMILY row carrying a trailing /v1 is the defect that broke zen, and it
+// is invisible at runtime, so it is asserted in a test instead (see
+// SeededModelProviders and controllers/provider_seed_test.go).
+var seededLLMProviders = []Provider{
+	{
+		Owner:        "admin",
+		Name:         "do-ai",
+		DisplayName:  "DigitalOcean AI (GenAI)",
+		Category:     "Model",
+		Type:         "DigitalOcean",
+		SubType:      "gpt-4o",
+		ProviderUrl:  "https://inference.do-ai.run/v1",
+		ClientSecret: "kms://DO_AI_API_KEY",
+		State:        "Active",
+		IsDefault:    true, // primary router (DO-first)
+	},
+	{
+		Owner:        "admin",
+		Name:         "fireworks",
+		DisplayName:  "Fireworks AI",
+		Category:     "Model",
+		Type:         "Fireworks",
+		SubType:      "accounts/fireworks/models/deepseek-v3p2",
+		ProviderUrl:  "https://api.fireworks.ai/inference/v1",
+		ClientSecret: "kms://FIREWORKS_API_KEY",
+		State:        "Disabled", // opt-in via /v1/admin/providers/toggle
+		IsDefault:    false,
+	},
+	{
+		Owner:        "admin",
+		Name:         "openai-direct",
+		DisplayName:  "OpenAI Direct",
+		Category:     "Model",
+		Type:         "OpenAI",
+		SubType:      "gpt-5",
+		ProviderUrl:  "https://api.openai.com/v1",
+		ClientSecret: "kms://OPENAI_API_KEY",
+		State:        "Disabled", // opt-in via /v1/admin/providers/toggle
+		IsDefault:    false,
+	},
+	{
+		Owner:       "admin",
+		Name:        "openrouter",
+		DisplayName: "OpenRouter",
+		Category:    "Model",
+		Type:        "OpenRouter",
+		SubType:     "openrouter/auto",
+		// NO trailing /v1 — openrouter is a model FAMILY, and both family paths
+		// append it themselves (discovery does base+"/v1/models", pipeToFamily
+		// does ProviderUrl+"/v1/"+apiPath). The direct-relay providers above
+		// carry /v1 because nothing appends it for them. Seeded with /v1 here,
+		// every call would go to .../api/v1/v1/... and 404 — invisible until the
+		// row was toggled on, since nothing read it before.
+		ProviderUrl:  "https://openrouter.ai/api",
+		ClientSecret: "kms://OPENROUTER_API_KEY",
+		State:        "Disabled", // DO-first: off by default, toggleable
+		IsDefault:    false,
+	},
+	{
+		// Zen video served on OUR GB10 (spark) via Hanzo Studio. The
+		// zen3-video* routes (controllers/model_routes.go) resolve to this row;
+		// videos_api.go drives the SAME OpenAI Sora-style async /v1/videos API
+		// as do-ai (create → poll → download) against ProviderUrl. Type
+		// DigitalOcean reuses the custom-URL branch in resolveEndpointForPath so
+		// videoUpstreamBase yields the clean /v1 base. The zen3-video family is
+		// owned_by hanzo; the public owner travels in owned_by (hip-00NN).
+		Owner:        "admin",
+		Name:         "spark-video",
+		DisplayName:  "Hanzo Spark Video (GB10)",
+		Category:     "Model",
+		Type:         "DigitalOcean",
+		SubType:      "wan2-2-t2v-a14b",
+		ProviderUrl:  "https://spark-video.hanzo.ai/v1",
+		ClientSecret: "kms://SPARK_VIDEO_API_KEY",
+		State:        "Active", // first-party video family — keep on
+		IsDefault:    false,
+	},
+}
+
+// SeededModelProviders returns the seed table projected to name→ProviderUrl.
+//
+// Exported for the SAME reason FamilyProviderNames is: so the invariants this
+// table must satisfy can be asserted from a package whose suite actually runs.
+// object's own TestMain exits before m.Run() when no seeded database is present,
+// so a guard living here would be inert — false assurance, which is worse than
+// no guard. See controllers/provider_seed_test.go.
+func SeededModelProviders() map[string]string {
+	m := make(map[string]string, len(seededLLMProviders))
+	for _, p := range seededLLMProviders {
+		m[p.Name] = p.ProviderUrl
+	}
+	return m
+}
+
+// initLLMProviders applies seededLLMProviders to the store on every boot.
 //
 // State / IsDefault INVARIANT (admin-owned runtime toggles):
 //
@@ -352,95 +449,13 @@ func forceGatewayEmbedder(p *Provider) {
 //	boot (so a stale upstream URL or KMS reference is corrected automatically);
 //	State and IsDefault are deliberately excluded from that self-heal because
 //	they are operator decisions, not canonical facts about the upstream.
+//
+// That self-heal is also why a bad seed cannot be fixed in the database: editing
+// the row is reverted on the next boot, and deleting it is re-created. A row this
+// table should not hold has to be dropped from the table AND pruned — which is
+// what pruneStaleZenSeed does for zen.
 func initLLMProviders() {
-	providers := []Provider{
-		{
-			Owner:        "admin",
-			Name:         "do-ai",
-			DisplayName:  "DigitalOcean AI (GenAI)",
-			Category:     "Model",
-			Type:         "DigitalOcean",
-			SubType:      "gpt-4o",
-			ProviderUrl:  "https://inference.do-ai.run/v1",
-			ClientSecret: "kms://DO_AI_API_KEY",
-			State:        "Active",
-			IsDefault:    true, // primary router (DO-first)
-		},
-		{
-			Owner:        "admin",
-			Name:         "fireworks",
-			DisplayName:  "Fireworks AI",
-			Category:     "Model",
-			Type:         "Fireworks",
-			SubType:      "accounts/fireworks/models/deepseek-v3p2",
-			ProviderUrl:  "https://api.fireworks.ai/inference/v1",
-			ClientSecret: "kms://FIREWORKS_API_KEY",
-			State:        "Disabled", // opt-in via /v1/admin/providers/toggle
-			IsDefault:    false,
-		},
-		{
-			Owner:        "admin",
-			Name:         "openai-direct",
-			DisplayName:  "OpenAI Direct",
-			Category:     "Model",
-			Type:         "OpenAI",
-			SubType:      "gpt-5",
-			ProviderUrl:  "https://api.openai.com/v1",
-			ClientSecret: "kms://OPENAI_API_KEY",
-			State:        "Disabled", // opt-in via /v1/admin/providers/toggle
-			IsDefault:    false,
-		},
-		{
-			Owner:        "admin",
-			Name:         "zen",
-			DisplayName:  "Zen LM (Hanzo)",
-			Category:     "Model",
-			Type:         "DigitalOcean",
-			SubType:      "glm-5",
-			ProviderUrl:  "https://inference.do-ai.run/v1",
-			ClientSecret: "kms://DO_AI_API_KEY",
-			State:        "Active", // branded first-party family over do-ai — keep on
-			IsDefault:    false,
-		},
-		{
-			Owner:        "admin",
-			Name:         "openrouter",
-			DisplayName:  "OpenRouter",
-			Category:     "Model",
-			Type:         "OpenRouter",
-			SubType:      "openrouter/auto",
-			// NO trailing /v1 — openrouter is a model FAMILY, and both family paths
-			// append it themselves (discovery does base+"/v1/models", pipeToFamily
-			// does ProviderUrl+"/v1/"+apiPath). The direct-relay providers above
-			// carry /v1 because nothing appends it for them. Seeded with /v1 here,
-			// every call would go to .../api/v1/v1/... and 404 — invisible until the
-			// row was toggled on, since nothing read it before.
-			ProviderUrl:  "https://openrouter.ai/api",
-			ClientSecret: "kms://OPENROUTER_API_KEY",
-			State:        "Disabled", // DO-first: off by default, toggleable
-			IsDefault:    false,
-		},
-		{
-			// Zen video served on OUR GB10 (spark) via Hanzo Studio. The
-			// zen3-video* routes (controllers/model_routes.go) resolve to this row;
-			// videos_api.go drives the SAME OpenAI Sora-style async /v1/videos API
-			// as do-ai (create → poll → download) against ProviderUrl. Type
-			// DigitalOcean reuses the custom-URL branch in resolveEndpointForPath so
-			// videoUpstreamBase yields the clean /v1 base. The zen3-video family is
-			// owned_by hanzo; the public owner travels in owned_by (hip-00NN).
-			Owner:        "admin",
-			Name:         "spark-video",
-			DisplayName:  "Hanzo Spark Video (GB10)",
-			Category:     "Model",
-			Type:         "DigitalOcean",
-			SubType:      "wan2-2-t2v-a14b",
-			ProviderUrl:  "https://spark-video.hanzo.ai/v1",
-			ClientSecret: "kms://SPARK_VIDEO_API_KEY",
-			State:        "Active", // first-party video family — keep on
-			IsDefault:    false,
-		},
-	}
-	for _, p := range providers {
+	for _, p := range seededLLMProviders {
 		existing, err := getProvider("admin", p.Name)
 		if err != nil {
 			fmt.Printf("[init] WARNING: failed to check provider %q: %v\n", p.Name, err)
@@ -500,6 +515,44 @@ func initLLMProviders() {
 			fmt.Printf("[init] Created LLM provider: %s (%s)\n", p.Name, p.DisplayName)
 		}
 	}
+	pruneStaleZenSeed()
+}
+
+// pruneStaleZenSeed deletes the `zen` provider row an earlier seed created.
+//
+// A model FAMILY's address is deployment config; familyProvider treats an admin
+// row of the family's name as an operator OVERRIDE that wins over it. So seeding
+// one hijacks the family — which is what happened. `zen` was seeded at do-ai's
+// base "https://inference.do-ai.run/v1", and the family paths append their own
+// /v1 (discovery does base+"/v1/models"), so every catalog refresh hit
+// .../v1/v1/models, 404'd, and NO zen model was listed or served. Sibling `enso`
+// — same serving binary, same family shape — was never seeded and never broke.
+// That A/B is the entire diagnosis.
+//
+// The openrouter seed above carries the same lesson and was fixed by dropping the
+// /v1. zen needs the row GONE rather than repointed: no route targets it (see
+// modelCountByProvider), so it holds nothing, and merely dropping the /v1 would
+// aim the family at DigitalOcean's catalog instead of the zen service that
+// actually serves zen SKUs.
+//
+// Removing the seed entry is necessary but NOT sufficient: the loop above only
+// visits names it seeds, so an already-created row would survive every restart
+// and keep hijacking the family. Scoped to the exact stale shape, so a row an
+// operator writes on purpose is never touched.
+func pruneStaleZenSeed() {
+	row, err := getProvider("admin", "zen")
+	if err != nil {
+		fmt.Printf("[init] WARNING: failed to check provider %q: %v\n", "zen", err)
+		return
+	}
+	if row == nil || row.Type != "DigitalOcean" || row.ProviderUrl != "https://inference.do-ai.run/v1" {
+		return // absent, or an operator's own override — leave it alone
+	}
+	if _, err := DeleteProvider(row); err != nil {
+		fmt.Printf("[init] WARNING: failed to delete stale %q provider row: %v\n", "zen", err)
+		return
+	}
+	fmt.Printf("[init] Removed stale %q family provider row — zen now resolves from ZEN_URL\n", "zen")
 }
 
 // isDuplicateKeyErr reports whether err is a unique-constraint violation
