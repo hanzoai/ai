@@ -15,6 +15,7 @@
 package ai
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"sync"
@@ -23,6 +24,7 @@ import (
 	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/web"
 
+	webtools "github.com/hanzoai/ai/agent/builtin_tool/web"
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/controllers"
 	"github.com/hanzoai/ai/model"
@@ -173,6 +175,30 @@ func doBootstrap() (err error) {
 		panic("cloud-api: in-pod balance ledger requires a single replica (CLOUD_API_REPLICAS>1)")
 	}
 	log.Info("balance ledger: single-pod invariant active (reservation ledger requires replicas=1, strategy=Recreate, HPA min=max=1)")
+
+	// The page fetcher behind the fetch_url builtin tool. Installed HERE rather than
+	// called directly because agent/builtin_tool/web must stay a leaf: `object`
+	// imports `agent`, and `agent` imports the tool registry, so a tool reaching into
+	// object for Crawl closes the loop and the module stops compiling. The root
+	// package imports both and can hand one to the other.
+	//
+	// Search and deep research are the HOST's (hanzoai/cloud serves /v1/websearch and
+	// /v1/ask); it installs those at mount time. Until it does, those two tools answer
+	// that they are unavailable in this deployment — never an empty result, which an
+	// agent would read as "the web holds nothing on this" and answer from memory.
+	webtools.SetFetch(func(_ context.Context, urls []string) ([]webtools.FetchResult, error) {
+		results, err := object.Crawl(urls)
+		if err != nil {
+			return nil, err
+		}
+		out := make([]webtools.FetchResult, 0, len(results))
+		for _, r := range results {
+			out = append(out, webtools.FetchResult{
+				URL: r.URL, Title: r.Title, Markdown: r.Markdown, Success: r.Success,
+			})
+		}
+		return out, nil
+	})
 
 	// Commerce balance gate (pre-request balance enforcement).
 	routers.InitBalanceGate()
