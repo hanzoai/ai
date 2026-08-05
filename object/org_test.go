@@ -28,6 +28,7 @@ import (
 var organization = "hanzo"
 
 func TestUpdateMessagesForOrg(t *testing.T) {
+	requireStore(t)
 	InitConfig()
 	messages, err := GetGlobalMessages()
 	if err != nil {
@@ -55,6 +56,7 @@ func TestUpdateMessagesForOrg(t *testing.T) {
 }
 
 func TestUpdateChatsForOrg(t *testing.T) {
+	requireStore(t)
 	InitConfig()
 	chats, err := GetGlobalChats()
 	if err != nil {
@@ -77,6 +79,7 @@ func TestUpdateChatsForOrg(t *testing.T) {
 }
 
 func TestUpdateMessagesAndChatsForOrg(t *testing.T) {
+	requireStore(t)
 	TestUpdateMessagesForOrg(t)
 	TestUpdateChatsForOrg(t)
 }

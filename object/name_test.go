@@ -29,6 +29,7 @@ import (
 var userTag = "user"
 
 func TestUpdateMessagesForName(t *testing.T) {
+	requireStore(t)
 	object.InitConfig()
 	controllers.InitAuthConfig()
 	users, err := iam.GetUsers()
@@ -66,6 +67,7 @@ func TestUpdateMessagesForName(t *testing.T) {
 }
 
 func TestUpdateChatsForName(t *testing.T) {
+	requireStore(t)
 	object.InitConfig()
 	controllers.InitAuthConfig()
 	users, err := iam.GetUsers()
@@ -101,6 +103,7 @@ func TestUpdateChatsForName(t *testing.T) {
 }
 
 func TestUpdateMessagesAndChatsForName(t *testing.T) {
+	requireStore(t)
 	TestUpdateMessagesForName(t)
 	TestUpdateChatsForName(t)
 }

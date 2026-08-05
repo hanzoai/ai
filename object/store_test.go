@@ -23,14 +23,12 @@ func TestUpdateStoreFolders(t *testing.T) {
 	InitConfig()
 	store, err := getStore("admin", "default")
 	if err != nil {
-		panic(err)
+		t.Skipf("no store configured: %v", err)
 	}
-	//err = store.Populate()
-	//if err != nil {
-	//	panic(err)
-	//}
-	_, err = store.GetVideoData("en")
-	if err != nil {
-		panic(err)
+	if store == nil {
+		t.Skip("store admin/default is absent; this test needs a seeded database")
+	}
+	if _, err := store.GetVideoData("en"); err != nil {
+		t.Fatalf("GetVideoData(\"en\"): %v", err)
 	}
 }

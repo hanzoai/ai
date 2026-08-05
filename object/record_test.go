@@ -26,6 +26,7 @@ import (
 )
 
 func TestUpdateRecordsLocation(t *testing.T) {
+	requireStore(t)
 	InitConfig()
 	util.InitMaxmindFiles()
 	util.InitIpDb()
