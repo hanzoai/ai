@@ -24,6 +24,7 @@ import (
 )
 
 func TestUpdateVectors(t *testing.T) {
+	requireStore(t)
 	InitConfig()
 	vectors, err := GetGlobalVectors()
 	if err != nil {

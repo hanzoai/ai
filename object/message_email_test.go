@@ -25,6 +25,7 @@ import (
 )
 
 func TestSendErrorEmail(t *testing.T) {
+	requireStore(t)
 	object.InitConfig()
 	controllers.InitAuthConfig()
 	message, err := object.GetMessage("admin/message_cyqn30")

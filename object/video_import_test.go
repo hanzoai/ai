@@ -20,6 +20,7 @@ package object
 import "testing"
 
 func TestImportVideos(t *testing.T) {
+	requireStore(t)
 	InitConfig()
 	path := ""
 	err := importVideos(path)
@@ -29,6 +30,7 @@ func TestImportVideos(t *testing.T) {
 }
 
 func TestImportVideos2(t *testing.T) {
+	requireStore(t)
 	InitConfig()
 	path := ""
 	err := importVideos2(path, "en")
