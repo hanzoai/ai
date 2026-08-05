@@ -177,7 +177,7 @@ require (
 	github.com/hanzoai/authz v1.10.29 // indirect
 	github.com/hanzoai/base v1.5.11 // indirect
 	github.com/hanzoai/cek v0.2.3 // indirect
-	github.com/hanzoai/commerce v1.49.63 // indirect
+	github.com/hanzoai/commerce v1.50.0 // indirect
 	github.com/hanzoai/csqlite v0.1.0 // indirect
 	github.com/hanzoai/go-openai-realtime v1.0.0 // indirect
 	github.com/hanzoai/go-openai-realtime/contrib/ws-gorilla v1.0.0 // indirect
