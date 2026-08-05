@@ -21,6 +21,7 @@ import (
 
 	"github.com/ThinkInAIXYZ/go-mcp/protocol"
 	"github.com/hanzoai/ai/agent/builtin_tool/time"
+	webtools "github.com/hanzoai/ai/agent/builtin_tool/web"
 )
 
 type BuiltinTool interface {
@@ -44,6 +45,15 @@ func NewToolRegistry() *ToolRegistry {
 	registry.RegisterTool(&timetools.TimestampToLocalTimeTool{}) // timestamp to local time
 	registry.RegisterTool(&timetools.TimezoneConversionTool{})   // timezone conversion
 	registry.RegisterTool(&timetools.WeekdayTool{})              // weekday calculator
+
+	// The web. Registered unconditionally: a tool is DECLARED here and its backend
+	// is installed by the host, so an agent's tool list does not change shape with
+	// deployment. A capability the host did not install answers that it is
+	// unavailable rather than returning nothing — an agent told "no results" would
+	// conclude the web is empty on the subject and answer from memory instead.
+	registry.RegisterTool(&webtools.SearchTool{})   // web_search
+	registry.RegisterTool(&webtools.FetchTool{})    // fetch_url  (native crawl)
+	registry.RegisterTool(&webtools.ResearchTool{}) // deep_research
 
 	return registry
 }
