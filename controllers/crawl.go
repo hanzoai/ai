@@ -22,9 +22,8 @@ import (
 	"github.com/hanzoai/ai/object"
 )
 
-// maxCrawlURLs bounds a single /v1/crawl request. Each URL is a headless-browser
-// render on the self-hosted Hanzo Crawl service, so the batch is capped to keep
-// latency and cost bounded.
+// maxCrawlURLs bounds a single /v1/crawl request. Each URL is an outbound fetch,
+// so the batch is capped to keep latency and cost bounded.
 const maxCrawlURLs = 10
 
 // crawlRequest is the POST /v1/crawl body. A caller may pass a single `url` or a
@@ -37,9 +36,9 @@ type crawlRequest struct {
 // Crawl
 // @Title Crawl
 // @Tag Crawl API
-// @Description crawl one or more URLs via the self-hosted Hanzo Crawl (Crawl4AI)
-// @Description service and return clean, LLM-ready markdown. The single canonical
-// @Description "crawl a URL, get content back" endpoint.
+// @Description crawl one or more URLs through the native crawl and return clean,
+// @Description LLM-ready markdown. The single canonical "crawl a URL, get content
+// @Description back" endpoint.
 // @Param body body controllers.crawlRequest true "Crawl request ({url} or {urls})"
 // @Success 200 {object} controllers.Response "{results: []object.CrawlResult}"
 // @router /crawl [post]
@@ -93,12 +92,12 @@ func (c *ApiController) Crawl() {
 
 	results, err := object.Crawl(urls)
 	if err != nil {
-		recordSearchUsage(auth, "crawl", "crawl4ai", "error", 0, c.Ctx.Request.RemoteAddr)
+		recordSearchUsage(auth, "crawl", "crawl", "error", 0, c.Ctx.Request.RemoteAddr)
 		c.ResponseError(err.Error())
 		return
 	}
 
-	recordSearchUsage(auth, "crawl", "crawl4ai", "success", len(results), c.Ctx.Request.RemoteAddr)
+	recordSearchUsage(auth, "crawl", "crawl", "success", len(results), c.Ctx.Request.RemoteAddr)
 
 	c.Data["json"] = map[string]interface{}{"results": results}
 	c.ServeJSON()
