@@ -27,6 +27,7 @@ import (
 )
 
 func TestUpdateChatCounts(t *testing.T) {
+	requireStore(t)
 	InitConfig()
 	chats, err := GetGlobalChats()
 	if err != nil {
@@ -56,6 +57,7 @@ func TestUpdateChatCounts(t *testing.T) {
 }
 
 func TestUpdateChatPrices(t *testing.T) {
+	requireStore(t)
 	InitConfig()
 	chats, err := GetGlobalChats()
 	if err != nil {
@@ -88,6 +90,7 @@ func TestUpdateChatPrices(t *testing.T) {
 }
 
 func TestDeleteEmptyChats(t *testing.T) {
+	requireStore(t)
 	InitConfig()
 	chats, err := GetGlobalChats()
 	if err != nil {
@@ -105,6 +108,7 @@ func TestDeleteEmptyChats(t *testing.T) {
 }
 
 func TestUpdateChatDescs(t *testing.T) {
+	requireStore(t)
 	InitConfig()
 	util.InitIpDb()
 	util.InitParser()
@@ -129,6 +133,7 @@ func TestUpdateChatDescs(t *testing.T) {
 }
 
 func TestPrintChatUsers(t *testing.T) {
+	requireStore(t)
 	InitConfig()
 	chats, err := GetGlobalChats()
 	if err != nil {
