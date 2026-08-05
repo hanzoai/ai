@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	iam "github.com/hanzoai/ai/internal/iam"
+	"github.com/hanzoai/ai/object"
 )
 
 // A family SKU that advertises access:"waitlist" is parsed as gated.
@@ -95,5 +96,59 @@ func TestAnnotateModelAccessNilUser(t *testing.T) {
 	annotateModelAccess(models, nil)
 	if models[0].Access.State != "waitlist" {
 		t.Fatal("annotate with nil user must not change the default standing")
+	}
+}
+
+// The refusal names the gate that refused: a plan-refused caller is told to
+// upgrade, a funding-refused caller is told the capacity is paid-only, and only
+// a grant-refused caller is sent to the access waitlist. The old shared message
+// sent all three there — including callers whose plan was the blocker, for whom
+// that door cannot open.
+func TestFamilyRefusalNamesTheGate(t *testing.T) {
+	catalog := map[string]zenModel{
+		"enso":      {ID: "enso", MinTier: "trial"},
+		"enso-pre":  {ID: "enso-pre", Funding: "prepaid"},
+		"enso-prev": {ID: "enso-prev", Access: "waitlist"},
+	}
+	fam := &modelFamily{name: "enso", prefix: "enso"}
+	fam.byID = catalog
+	savedByID := ensoFam.byID
+	ensoFam.byID = catalog
+	t.Cleanup(func() { ensoFam.byID = savedByID })
+
+	// The funding gate only speaks for models a family SERVES, and serving
+	// requires a configured provider — point the family at one for the test.
+	savedProv := ensoFam.providerFn
+	ensoFam.providerFn = func() *object.Provider { return &object.Provider{ProviderUrl: "http://enso.test"} }
+	t.Cleanup(func() { ensoFam.providerFn = savedProv })
+
+	savedTier := familyTier
+	familyTier = func(string) string { return "free" }
+	t.Cleanup(func() { familyTier = savedTier })
+
+	c := &ApiController{}
+
+	// Plan below the floor → the upgrade sentence, naming the floor, never the waitlist.
+	msg := c.familyRefusal(fam, "enso", "acme", nil)
+	if !strings.Contains(msg, "trial") || strings.Contains(msg, "limited preview") {
+		t.Fatalf("tier refusal = %q, want the upgrade sentence naming trial", msg)
+	}
+
+	// Prepaid capacity, unconfirmed subscriber → the prepaid sentence.
+	msg = c.familyRefusal(fam, "enso-pre", "acme", nil)
+	if !strings.Contains(msg, "prepaid") || strings.Contains(msg, "limited preview") {
+		t.Fatalf("funding refusal = %q, want the prepaid sentence", msg)
+	}
+
+	// Gated SKU without a grant → the request-access sentence, unchanged.
+	msg = c.familyRefusal(fam, "enso-prev", "acme", &iam.User{Owner: "acme", Name: "bob"})
+	if !strings.Contains(msg, "limited preview") || !strings.Contains(msg, "POST /v1/models/enso-prev/access") {
+		t.Fatalf("grant refusal = %q, want the request-access sentence", msg)
+	}
+
+	// A servable SKU refuses nothing: paid caller, no gate in the way.
+	familyTier = func(string) string { return "pro" }
+	if msg := c.familyRefusal(fam, "enso", "acme", nil); msg != "" {
+		t.Fatalf("paid caller refusal = %q, want none", msg)
 	}
 }
