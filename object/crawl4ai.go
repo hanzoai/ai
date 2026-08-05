@@ -110,19 +110,6 @@ type Crawl4AIResult struct {
 	Metadata map[string]interface{}              `json:"metadata,omitempty"`
 }
 
-// CrawlResult is the canonical, clean output of POST /v1/crawl for one URL: the
-// fetched page as LLM-ready markdown plus lightweight metadata. It is the ONE
-// crawl result shape — distinct from ScrapeResult (docs-structured, for search
-// ingest) and from the raw upstream Crawl4AIResult.
-type CrawlResult struct {
-	URL         string                 `json:"url"`
-	Title       string                 `json:"title,omitempty"`
-	Description string                 `json:"description,omitempty"`
-	Markdown    string                 `json:"markdown"`
-	Success     bool                   `json:"success"`
-	Metadata    map[string]interface{} `json:"metadata,omitempty"`
-}
-
 // getCrawlEndpoint returns the Hanzo Crawl service base URL from config.
 func getCrawlEndpoint() string {
 	host := conf.GetConfigString("crawlHost")
@@ -211,43 +198,6 @@ func CrawlWithCrawl4AI(urls []string) ([]Crawl4AIResult, error) {
 		return nil, fmt.Errorf("Hanzo Crawl returned no task_id and no results")
 	}
 	return pollCrawl4AITask(endpoint, apiToken, crawlResp.TaskID)
-}
-
-// Crawl is the canonical crawl operation backing POST /v1/crawl: it fetches each
-// URL via the self-hosted Hanzo Crawl (Crawl4AI) service and returns clean,
-// LLM-ready markdown. It is the single "crawl a URL, get content back" path;
-// /v1/scrape (crawl-and-index) and the cloud websearch firecrawl leg reuse the
-// SAME Crawl4AI backend through CrawlWithCrawl4AI, never a parallel client.
-func Crawl(urls []string) ([]CrawlResult, error) {
-	raw, err := CrawlWithCrawl4AI(urls)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]CrawlResult, 0, len(raw))
-	for _, r := range raw {
-		out = append(out, crawl4AIResultToCrawlResult(r))
-	}
-	return out, nil
-}
-
-// crawl4AIResultToCrawlResult projects an upstream Crawl4AI result onto the clean
-// CrawlResult shape, lifting title/description out of the page metadata.
-func crawl4AIResultToCrawlResult(r Crawl4AIResult) CrawlResult {
-	cr := CrawlResult{
-		URL:      r.URL,
-		Markdown: string(r.Markdown),
-		Success:  r.Success,
-		Metadata: r.Metadata,
-	}
-	if r.Metadata != nil {
-		if title, ok := r.Metadata["title"].(string); ok {
-			cr.Title = title
-		}
-		if desc, ok := r.Metadata["description"].(string); ok {
-			cr.Description = desc
-		}
-	}
-	return cr
 }
 
 // pollCrawl4AITask polls the Hanzo Crawl /task/{id} endpoint until the job completes or times out.
