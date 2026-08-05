@@ -87,24 +87,59 @@ func grantAllows(zm zenModel, ok bool, orgId string, authUser *iam.User) bool {
 	return modelAccessGrantedFn(owner, name, email, zm.ID)
 }
 
-// familyAccessAllowed is the enforcement predicate at the family pipe: a family SKU is
-// servable only when ALL THREE gates pass — the subscription floor (Seam A: enso-flash
-// free, enso trial+, enso-ultra paid; fail-SAFE on commerce uncertainty), the FUNDING
-// floor (prepaid upstreams require a confirmed paying subscriber; fail-CLOSED on the same
-// uncertainty), and the waitlist/grant gate (grantAllows).
+// tierMessage is the refusal for a caller whose PLAN does not include the SKU.
+// It names the floor and the cure — upgrading — because the old shared message
+// sent every refused caller to the access waitlist, a door that cannot open for
+// someone whose plan is the blocker.
+func tierMessage(model, need string) string {
+	if need == "" {
+		need = "a higher"
+	} else {
+		need = "the " + need
+	}
+	return fmt.Sprintf("%s is included from %s plan up — upgrade this workspace to use it", model, need)
+}
+
+// fundingMessage is the refusal when the SKU spends prepaid capacity and the
+// workspace is not a confirmed paying subscriber — solvency, not upsell, but
+// the caller's cure is the same and the sentence says so.
+func fundingMessage(model string) string {
+	return fmt.Sprintf("%s runs on prepaid capacity reserved for paid workspaces — upgrade this workspace to use it", model)
+}
+
+// familyRefusal is the enforcement decision at the family pipe, and the ONE
+// statement of its order: the subscription floor (Seam A: enso-flash free, enso
+// trial+, enso-ultra paid; fail-SAFE on commerce uncertainty), then the FUNDING
+// floor (prepaid upstreams require a confirmed paying subscriber; fail-CLOSED on
+// the same uncertainty), then the waitlist/grant gate (grantAllows). It returns
+// "" when the SKU is servable, else the sentence naming the gate that refused —
+// each gate has a different cure, so they cannot share one message.
 //
-// The subscription and funding floors deliberately fail in opposite directions: one
-// guards revenue, the other guards our cash. See familyFundingAllowed.
-func (c *ApiController) familyAccessAllowed(fam *modelFamily, model, orgId string, authUser *iam.User) bool {
+// The subscription and funding floors deliberately fail in opposite directions:
+// one guards revenue, the other guards our cash. See familyFundingAllowed.
+func (c *ApiController) familyRefusal(fam *modelFamily, model, orgId string, authUser *iam.User) string {
 	subject := familyAccessSubject(orgId, authUser)
 	if !familyTierAllowed(subject, model) {
-		return false
+		need := ""
+		if zm, ok := familyLookupFresh(model); ok {
+			need = zm.minTier()
+		}
+		return tierMessage(model, need)
 	}
 	if !familyFundingAllowed(subject, model) {
-		return false
+		return fundingMessage(model)
 	}
 	zm, ok := fam.lookup(model)
-	return grantAllows(zm, ok, orgId, authUser)
+	if !grantAllows(zm, ok, orgId, authUser) {
+		return gatedAccessMessage(model)
+	}
+	return ""
+}
+
+// familyAccessAllowed is familyRefusal as a predicate — same gates, same order,
+// derived so the two can never disagree.
+func (c *ApiController) familyAccessAllowed(fam *modelFamily, model, orgId string, authUser *iam.User) bool {
+	return c.familyRefusal(fam, model, orgId, authUser) == ""
 }
 
 // modelServable reports whether the caller can actually serve a model id — the SAME two
