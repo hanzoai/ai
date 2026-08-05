@@ -62,17 +62,30 @@ func ensoTierRank(tier string) int {
 }
 
 // commerceTierToLadder maps a commerce plan NAME — the tier.name in GET /v1/billing/tier
-// (free | starter | pro | enterprise) — onto the enso ladder: free→free, starter→trial,
-// pro/enterprise→paid. It is only ever called with a CONFIDENT (non-empty) name; an
-// unrecognized name folds to free (reached only when commerce answered, so never a blip).
+// — onto the enso ladder (free | trial | paid).
+//
+// It used to allow-list `starter`→trial and `pro`/`enterprise`→paid and fold EVERYTHING
+// ELSE to free. That allow-list did not match the plans commerce actually sells: the
+// paid tiers are go, dev, pro, max, team and business, so a subscriber on any of
+// go/dev/max/team/business was scored FREE and refused every SKU carrying a trial or
+// paid floor. We rejected customers who were already paying us — the money was in the
+// account and the door was shut.
+//
+// So the default is inverted: a plan is PAID unless it is explicitly free. That is the
+// safe direction here, because a tier is not a payment. The balance gate
+// (routers/filter_balance.go) has NO exemptions and fails CLOSED, so a caller who
+// reaches "paid" on an unrecognized plan name still cannot spend a cent they have not
+// funded — whereas the old default silently cost revenue on every new plan slug anyone
+// added. Add a plan, it works; that is the property this needs to have.
 func commerceTierToLadder(name string) string {
-	switch strings.ToLower(strings.TrimSpace(name)) {
-	case "starter":
-		return "trial"
-	case "pro", "enterprise":
-		return "paid"
-	default: // "free", "developer", legacy "zen-free", …
+	n := strings.ToLower(strings.TrimSpace(name))
+	switch {
+	case n == "" || n == "free" || strings.HasSuffix(n, "-free"):
 		return "free"
+	case n == "starter" || n == "trial":
+		return "trial"
+	default:
+		return "paid"
 	}
 }
 

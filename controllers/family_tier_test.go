@@ -124,9 +124,17 @@ func TestEnsoLadderMappers(t *testing.T) {
 		t.Error("paid must rank 2")
 	}
 
+	// A plan is PAID unless it is explicitly free. The old allow-list scored every
+	// unrecognized name free, and the names it did not recognize were go, dev, max,
+	// team and business — i.e. most of what commerce sells — so paying subscribers
+	// were refused SKUs they had funded. An unknown name erring toward paid cannot
+	// give anything away: filter_balance.go has no exemptions and fails closed.
 	for name, want := range map[string]string{
-		"free": "free", "starter": "trial", "pro": "paid", "enterprise": "paid",
-		"FREE": "free", " Pro ": "paid", "mystery": "free",
+		"free": "free", "zen-free": "free", "world-free": "free", "": "free",
+		"starter": "trial", "trial": "trial",
+		"go": "paid", "dev": "paid", "pro": "paid", "max": "paid",
+		"team": "paid", "business": "paid", "enterprise": "paid",
+		"FREE": "free", " Pro ": "paid", "mystery": "paid",
 	} {
 		if got := commerceTierToLadder(name); got != want {
 			t.Errorf("commerceTierToLadder(%q) = %q, want %q", name, got, want)
