@@ -66,7 +66,15 @@ type Record struct {
 	// For cross-chain records
 	Count       int  `json:"count"`
 	IsTriggered bool `json:"isTriggered"`
-	NeedCommit  bool `db:"index" json:"needCommit"`
+	// NO `db:"index"`. dbx's `db` tag is the COLUMN NAME, not a directive —
+	// parseTag (dbx struct.go:229) special-cases only "pk" and "pk,<name>" and
+	// returns everything else verbatim as the name. So `db:"index"` did not
+	// index anything; it named this column `index` (a reserved SQL word), while
+	// ScanNeedCommitRecords queries `need_commit`. Live effect: every 5 minutes,
+	// forever, `no such column: need_commit` — the record-chain commit task has
+	// never committed a record. Untagged, the name is DefaultFieldMapFunc's
+	// snake_case, which is the `need_commit` the query already asks for.
+	NeedCommit bool `json:"needCommit"`
 }
 type Response struct {
 	Status string `json:"status"`
