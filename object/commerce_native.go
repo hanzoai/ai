@@ -40,11 +40,20 @@ type UsageEvent struct {
 	// USD is the EXACT amount to debit as a decimal USD string ("0.00132"), never a
 	// rounded cent. The host parses it to atto-USD (1e-18) so a sub-cent AI call bills
 	// precisely and is never floored to zero. Empty or "0" debits nothing.
-	USD       string
-	Currency  string // default "usd"
-	Model     string
-	Provider  string
-	RequestID string // idempotency key
+	USD      string
+	Currency string // default "usd"
+	Model    string
+	Provider string
+	// RequestID names the metered call so a warehouse row, a span and a support
+	// question can be tied back to it.
+	//
+	// IT IS NOT A DEDUP KEY, and nothing downstream reads it as one. The host that
+	// owns the ledger mints each entry's own id server-side and drops this field at
+	// the seam — deliberately, because a caller who could pick the ledger's key
+	// could be billed once for every completion after the first. So a debit sent
+	// twice under one RequestID is charged twice. A caller that must not double
+	// charge has to make the call once itself; there is no dedup to fall back on.
+	RequestID string
 }
 
 // TierReaderFunc returns the subject's commerce subscription-plan NAME
