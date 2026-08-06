@@ -175,6 +175,7 @@ func zapResponsesHandler(ctx context.Context, auth string, body []byte) (*zap.Me
 				ErrorMsg:     err.Error(),
 				RequestID:    requestId,
 			}
+			errRec.stampPayer(authUser)
 			go recordUsage(errRec)
 			recordTrace(context.Background(), errRec, requestStartTime)
 		}
@@ -199,6 +200,7 @@ func zapResponsesHandler(ctx context.Context, auth string, body []byte) (*zap.Me
 				Status:           "success",
 				RequestID:        requestId,
 			}
+			record.stampPayer(authUser)
 			recordUsage(record)
 			recordTrace(ctx, record, requestStartTime)
 		}()

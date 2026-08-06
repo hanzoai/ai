@@ -187,6 +187,7 @@ func zapRecordImageUsage(ctx context.Context, authUser *iam.User, provider *obje
 		ErrorMsg:     errMsg,
 		RequestID:    uuid.NewString(),
 	}
+	rec.stampPayer(authUser)
 	recordUsage(rec)
 	recordTrace(ctx, rec, startTime)
 }
