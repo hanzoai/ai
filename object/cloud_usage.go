@@ -273,8 +273,16 @@ type CloudUsageOverview struct {
 // duplicate row (a ZAP frame replay or an app retry) is counted exactly once at
 // query time, without waiting for the ReplacingMergeTree background merge. any()
 // is exact because rows sharing an id are byte-identical (id = the per-completion
-// request UUID). The org+time predicate stays inside so the (organization,
-// timestamp, id) sort order still prunes the scan.
+// request UUID).
+//
+// The predicate lives in its OWN inner scan, one level below the aggregation.
+// It cannot share a SELECT with the any() aliases: each alias deliberately
+// reuses its column's name, and ClickHouse resolves a WHERE identifier against
+// the same query's SELECT aliases — so `WHERE timestamp >= ?` beside
+// `any(timestamp) AS timestamp` reads the AGGREGATE and refuses with
+// ILLEGAL_AGGREGATION (code 184). The scan is still a plain filter over the
+// base table, so the (timestamp, organization) primary index prunes it as
+// before.
 func cloudUsageDedupedSource(where string) string {
 	return "(SELECT id, any(timestamp) AS timestamp, any(owner) AS owner, " +
 		"any(user_id) AS user_id, any(organization) AS organization, any(model) AS model, " +
@@ -282,7 +290,7 @@ func cloudUsageDedupedSource(where string) string {
 		"any(prompt_tokens) AS prompt_tokens, any(completion_tokens) AS completion_tokens, " +
 		"any(total_tokens) AS total_tokens, any(cost_cents) AS cost_cents, " +
 		"any(status) AS status, any(is_stream) AS is_stream, any(is_premium) AS is_premium " +
-		"FROM hanzo.cloud_usage WHERE " + where + " GROUP BY id)"
+		"FROM (SELECT * FROM hanzo.cloud_usage WHERE " + where + ") GROUP BY id)"
 }
 
 // cloudUsageTotalsSQL is the id-deduplicated totals aggregation over one window.
