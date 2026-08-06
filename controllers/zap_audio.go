@@ -181,6 +181,7 @@ func zapRecordAudioUsage(ctx context.Context, authUser *iam.User, provider *obje
 		Unpriced:     true,
 		RequestID:    uuid.NewString(),
 	}
+	rec.stampPayer(authUser)
 	recordUsage(rec)
 	recordTrace(ctx, rec, startTime)
 }
@@ -304,6 +305,7 @@ func zapRecordZenMediaUsage(mdl string, authUser *iam.User, isPremium bool, reqI
 		Premium: isPremium, Status: status, ErrorMsg: errMsg,
 		RequestID: reqID, Account: "hanzo",
 	}
+	rec.stampPayer(authUser)
 	recordUsage(rec)
 	recordTrace(context.Background(), rec, start)
 }

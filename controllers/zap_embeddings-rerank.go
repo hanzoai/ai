@@ -223,6 +223,7 @@ func zapRerankHandler(ctx context.Context, auth string, body []byte) (*zap.Messa
 			Status:       "success",
 			RequestID:    uuid.NewString(),
 		}
+		rec.stampPayer(authUser)
 		go recordUsage(rec)
 		recordTrace(ctx, rec, startTime)
 	}
@@ -276,6 +277,7 @@ func zapProxyJSON(ctx context.Context, provider *object.Provider, apiPath string
 				ErrorMsg:     err.Error(),
 				RequestID:    requestId,
 			}
+			errRec.stampPayer(authUser)
 			go recordUsage(errRec)
 			recordTrace(context.Background(), errRec, startTime)
 		}
@@ -315,6 +317,7 @@ func zapProxyJSON(ctx context.Context, provider *object.Provider, apiPath string
 			Status:       status,
 			RequestID:    requestId,
 		}
+		rec.stampPayer(authUser)
 		go recordUsage(rec)
 		recordTrace(ctx, rec, startTime)
 	}
