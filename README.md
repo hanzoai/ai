@@ -149,7 +149,6 @@ conventions that apply here. [`ZAP.md`](ZAP.md) covers the transport.
 
 ## Lineage
 
-Forked from [Casibase](https://github.com/casibase/casibase), Apache-2.0. See
 [`NOTICE`](NOTICE). The routing, auth, billing and model surfaces are ours; the admin UI
 and knowledge-base scaffolding started there.
 
