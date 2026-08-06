@@ -132,11 +132,13 @@ func initAPI() {
 	App.Router("/v1/videos/:id", &controllers.ApiController{}, "GET:RetrieveVideo")
 	App.Router("/v1/videos/:id/content", &controllers.ApiController{}, "GET:VideoContent")
 
-	// OpenAI-compatible text-to-speech (/v1/audio/speech). Same auth + model-route
-	// resolution as chat/images/video → a BYO TTS provider works transparently.
-	// Completes native audio+image+video: /v1/audio/speech, /v1/images/generations,
+	// OpenAI-compatible text-to-speech (/v1/audio/speech) and speech-to-text
+	// (/v1/audio/transcriptions). Same auth + model-route resolution as
+	// chat/images/video → a BYO TTS/STT provider works transparently.
+	// Completes native audio+image+video: /v1/audio/*, /v1/images/generations,
 	// /v1/videos/generations all OpenAI-shaped on the one router.
 	App.Router("/v1/audio/speech", &controllers.ApiController{}, "POST:AudioSpeech")
+	App.Router("/v1/audio/transcriptions", &controllers.ApiController{}, "POST:AudioTranscriptions")
 	// Zen-native generative audio verbs: voice (TTS), music, foley.
 	App.Router("/v1/audio/voice", &controllers.ApiController{}, "POST:AudioMedia")
 	App.Router("/v1/audio/music", &controllers.ApiController{}, "POST:AudioMedia")
