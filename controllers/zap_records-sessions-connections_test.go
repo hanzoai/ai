@@ -22,8 +22,9 @@ import (
 // helper per package, not redefined here.
 
 // TestZapRecordsSessionsConnectionsRegistered proves the group self-registers ALL
-// its gateway path prefixes from init() — the strangler seam Integrate flips
-// handleGatewayHTTPRequest onto. Every migrated beego route must resolve here.
+// its gateway path prefixes from init(), which handleGatewayHTTPRequest consults.
+// A prefix missing here is not a 404 — the request falls through to the router —
+// but it is a fast path silently lost, which is why the list is pinned.
 func TestZapRecordsSessionsConnectionsRegistered(t *testing.T) {
 	want := []string{
 		// Sessions.

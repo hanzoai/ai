@@ -40,8 +40,8 @@ func gwResp(t *testing.T, msg *zap.Message) (uint32, Response) {
 }
 
 // TestZapModelRoutingRegistered proves the group self-registers its gateway path
-// prefixes via init() — the strangler seam Integrate flips handleGatewayHTTPRequest
-// onto. Registration is by longest-prefix, so every migrated path resolves here.
+// prefixes via init(), which handleGatewayHTTPRequest consults. Registration is by
+// longest-prefix, so every path in this group resolves here.
 func TestZapModelRoutingRegistered(t *testing.T) {
 	want := []string{
 		"/v1/models/", "/v1/admin/model-access",

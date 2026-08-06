@@ -13,9 +13,9 @@ import (
 )
 
 // TestZapRagSearchCrawlRegistered proves every route in the group self-registers
-// its native cloud method AND its gateway path from THIS file's tables (the
-// strangler dispatch seam Integrate wires). Missing a route here means the
-// native surface silently loses parity with the beego router.
+// its native cloud method AND its gateway path from THIS file's tables, which its
+// init() ranges over into the canonical registry. A route missing here is not a
+// 404 — it falls through to the router — but it is a fast path silently lost.
 func TestZapRagSearchCrawlRegistered(t *testing.T) {
 	cloudMethods := []string{
 		"search", "search.index", "search.stats",

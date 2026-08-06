@@ -17,6 +17,7 @@ package controllers
 import (
 	"context"
 	"net/http"
+	"strings"
 	"testing"
 )
 
@@ -75,6 +76,37 @@ func TestGatewayFallbackPreservesStatus(t *testing.T) {
 	}
 	if got := msg.Root().Uint32(0); got != http.StatusUnauthorized {
 		t.Errorf("status = %d, want 401", got)
+	}
+}
+
+// The /v1/ai namespace is where routers/resources.go generates the RESTful CRUD
+// surface: a collection at /v1/ai/<path> and a member at /v1/ai/<path>/:owner/:name
+// answering GET, PATCH, PUT and DELETE. A prefix registered anywhere in there
+// cannot pick the right handler — /v1/ai/stores/acme/thing prefix-matches
+// /v1/ai/stores and would reach the LIST handler with the id dropped — so the
+// whole namespace belongs to the router.
+//
+// This is the executable form of that. It fails the moment someone registers a
+// gateway prefix under /v1/ai, which is the one edit that would turn a correct
+// answer into a plausible wrong one with nothing else going red.
+func TestNoGatewayPrefixOverTheResourceNamespace(t *testing.T) {
+	const ns = "/v1/ai"
+	owns := func(p string) bool { return p == ns || strings.HasPrefix(p, ns+"/") }
+
+	zapRegistryMu.RLock()
+	defer zapRegistryMu.RUnlock()
+	for p := range zapGatewayRegistry {
+		if owns(p) {
+			t.Errorf("gateway prefix %q sits over the generated resource surface; "+
+				"a path-only match cannot tell its verbs or its :owner/:name apart. "+
+				"Leave it to the router — see the file comment above", p)
+		}
+	}
+	for _, r := range zapGatewayRoutes {
+		if owns(r.prefix) {
+			t.Errorf("gateway route %q sits over the generated resource surface; "+
+				"the router already resolves method + path params there", r.prefix)
+		}
 	}
 }
 

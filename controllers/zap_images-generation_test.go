@@ -80,7 +80,7 @@ func TestZapImagesHandler_BadRequest(t *testing.T) {
 
 // TestZapImagesHandler_Registered proves the handler self-registers under both
 // the native cloud method and the gateway path prefix (the per-group convention),
-// so Integrate's dispatch lookups find it.
+// so the dispatch lookups in zap_native.go find it.
 func TestZapImagesHandler_Registered(t *testing.T) {
 	if _, ok := lookupCloudHandler("images.generations"); !ok {
 		t.Error("registerCloud(\"images.generations\") not registered")

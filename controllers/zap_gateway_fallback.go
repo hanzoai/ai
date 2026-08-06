@@ -47,8 +47,15 @@ import (
 // same thing InitForwardBridge does for MsgTypeForward, and the same thing cloud's
 // zapface dispatcher does for its own ZAP surface. One router, one answer.
 //
-// The registry keeps working for what it is actually good at: the handful of hot
-// inference paths that skip the HTTP machinery on purpose.
+// So the registry is an OPT-IN, not a migration ladder. A group registers a
+// prefix when skipping the HTTP machinery buys something — the hot inference
+// paths — and every path it does not register is the router's, permanently.
+// Nothing here is waiting to be "flipped" from one dispatcher to the other, and
+// the RESTful families could not be flipped even if something were: a resource
+// answers four verbs at /v1/<ns>/<path>/:owner/:name, which is one prefix.
+//
+// This is the invariant the whole file exists to state. Read it before adding a
+// prefix, and cite it instead of restating it.
 
 var (
 	gatewayFallbackMu sync.RWMutex
