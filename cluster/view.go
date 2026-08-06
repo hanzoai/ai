@@ -16,11 +16,10 @@ package cluster
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"net/url"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/hanzoai/ai/object"
@@ -29,140 +28,47 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/tools/clientcmd"
-	metricsclientset "k8s.io/metrics/pkg/client/clientset/versioned"
 )
 
-var (
-	metricsClient *metricsclientset.Clientset
-	metricsOnce   sync.Once
-)
+// readTimeout bounds one cluster read. The view is assembled for a UI request,
+// so a wedged API server must surface as a partial view rather than a hung
+// handler.
+const readTimeout = 5 * time.Second
 
-// initMetricsClient init metrics client
-func initMetricsClient(lang string) error {
-	if client == nil || client.config == nil {
-		return fmt.Errorf("%s", i18n.Translate(lang, "object:k8s client not initialized"))
-	}
-	var err error
-	metricsOnce.Do(func() {
-		metricsClient, err = metricsclientset.NewForConfig(client.config)
-	})
-	return err
-}
-
-// getNamespaceMetrics retrieves namespace metrics from cache with API fallback
-func getNamespaceMetrics(namespace string, lang string) (*object.ResourceMetrics, error) {
-	if mirror != nil && mirror.started {
-		if cachedMetrics, found := mirror.getNamespaceMetricsFromCache(namespace); found {
-			if time.Since(cachedMetrics.LastUpdated) < 5*time.Minute {
-				return &object.ResourceMetrics{
-					CPUUsage:         formatCPUUsage(cachedMetrics.TotalCPU),
-					CPUPercentage:    cachedMetrics.CPUPercentage,
-					MemoryUsage:      formatMemoryUsage(cachedMetrics.TotalMemory),
-					MemoryPercentage: cachedMetrics.MemoryPercentage,
-					PodCount:         cachedMetrics.PodCount,
-				}, nil
-			}
-		}
-	}
-	if err := initMetricsClient(lang); err != nil {
-		return nil, err
-	}
-	ctx, cancel := context.WithTimeout(context.TODO(), 5*time.Second)
-	defer cancel()
-	var metrics *cachedMetrics
-	var err error
-	if mirror != nil && mirror.started {
-		metrics, err = calculateNamespaceMetrics(ctx, metricsClient, namespace, mirror.deployCache, &mirror.mu, lang)
-	} else {
-		metrics, err = calculateNamespaceMetrics(ctx, metricsClient, namespace, nil, nil, lang)
-	}
-	if err != nil {
-		if errors.IsNotFound(err) || strings.Contains(err.Error(), "metrics.k8s.io") {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:failed to get pod metrics: %v"), err))
-	}
-	if metrics == nil {
-		return nil, nil
-	}
-	return &object.ResourceMetrics{
-		CPUUsage:         formatCPUUsage(metrics.TotalCPU),
-		CPUPercentage:    metrics.CPUPercentage,
-		MemoryUsage:      formatMemoryUsage(metrics.TotalMemory),
-		MemoryPercentage: metrics.MemoryPercentage,
-		PodCount:         metrics.PodCount,
-	}, nil
-}
-
-// getExternalHost attempts to get k8s server IP first, then falls back to provided host
-func getExternalHost(fallbackHost string) string {
-	if cachedHost != "" {
-		return cachedHost
+// getExternalHost prefers the cluster API server's host — the address a caller
+// outside the cluster can actually reach — and falls back to the per-service
+// host when it is unknown.
+func getExternalHost(c K8sClient, fallbackHost string) string {
+	if host := c.Host(); host != "" {
+		return host
 	}
 	return fallbackHost
 }
 
-// parseHost extracts server host from kubeconfig content
-func parseHost(configText string, lang string) (string, error) {
-	if strings.TrimSpace(configText) == "" {
-		return "", fmt.Errorf("%s", i18n.Translate(lang, "object:kubeconfig content is empty"))
-	}
-	config, err := clientcmd.RESTConfigFromKubeConfig([]byte(configText))
-	if err != nil {
-		return "", fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:failed to parse kubeconfig: %v"), err))
-	}
-	if config.Host == "" {
-		return "", fmt.Errorf("%s", i18n.Translate(lang, "object:server address not found"))
-	}
-	serverURL, err := url.Parse(config.Host)
-	if err != nil {
-		return "", fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:failed to parse server URL: %v"), err))
-	}
-	host := serverURL.Hostname()
-	if host == "" {
-		return "", fmt.Errorf("%s", i18n.Translate(lang, "object:unable to extract host"))
-	}
-	return host, nil
-}
-
-// View retrieves application view from cache with fallback
+// View assembles the live picture of one application's namespace.
 func View(namespace string, lang string) (*object.ApplicationView, error) {
-	if err := ensure(lang); err != nil {
+	c, err := ensure(lang)
+	if err != nil {
 		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:failed to initialize k8s client: %v"), err))
 	}
-	if !client.connected {
-		return nil, fmt.Errorf("%s", i18n.Translate(lang, "object:k8s client not connected"))
-	}
-	// Try to get namespace from cache first
-	var ns *v1.Namespace
-	var nsFound bool
-	if mirror != nil && mirror.started {
-		ns = mirror.getNamespace(namespace)
-		nsFound = (ns != nil)
-	}
-	// Fallback to API call with timeout if not in cache
-	if !nsFound {
-		ctx, cancel := context.WithTimeout(context.TODO(), 5*time.Second)
-		defer cancel()
-		apiNs, err := client.clientSet.CoreV1().Namespaces().Get(ctx, namespace, metav1.GetOptions{})
-		if err != nil {
-			if errors.IsNotFound(err) {
-				return &object.ApplicationView{
-					Services:    []object.ServiceDetail{},
-					Credentials: []object.EnvVariable{},
-					Deployments: []object.DeploymentDetail{},
-					Events:      []object.ApplicationEvent{},
-					Status:      object.StatusNotDeployed,
-					Namespace:   namespace,
-				}, nil
-			}
-			return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:failed to get namespace: %v"), err))
+	ctx, cancel := context.WithTimeout(context.Background(), readTimeout)
+	defer cancel()
+
+	var ns v1.Namespace
+	if err := getInto(ctx, c, namespacesGVR, "", namespace, &ns); err != nil {
+		if errors.Is(err, ErrK8sNotFound) {
+			return &object.ApplicationView{
+				Services:    []object.ServiceDetail{},
+				Credentials: []object.EnvVariable{},
+				Deployments: []object.DeploymentDetail{},
+				Events:      []object.ApplicationEvent{},
+				Status:      object.StatusNotDeployed,
+				Namespace:   namespace,
+			}, nil
 		}
-		ns = apiNs
+		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:failed to get namespace: %v"), err))
 	}
+
 	details := &object.ApplicationView{
 		Services:    []object.ServiceDetail{},
 		Credentials: []object.EnvVariable{},
@@ -172,24 +78,27 @@ func View(namespace string, lang string) (*object.ApplicationView, error) {
 		CreatedTime: ns.CreationTimestamp.Format("2006-01-02 15:04:05"),
 		Namespace:   namespace,
 	}
-	// Get data from cache with fallback to API
-	nodeIPs := getNodeIPsFromCache()
-	details.Services = getServicesFromCache(namespace, nodeIPs)
-	details.Deployments = getDeploymentsFromCache(namespace)
-	details.Credentials = getCredentialsFromCache(namespace)
-	details.Events = getEventsFromCache(namespace) // Added event retrieval
-	if metrics, err := getNamespaceMetrics(namespace, lang); err == nil && metrics != nil {
+
+	// One read of the namespace's workloads serves both the deployment view and
+	// the credential projection, so the view is internally consistent.
+	deployments, _ := listInto[appsv1.Deployment](ctx, c, deploymentsGVR, namespace)
+
+	details.Services = getServices(ctx, c, namespace, getNodeIPs(ctx, c))
+	details.Deployments = describeDeployments(deployments)
+	details.Credentials = describeCredentials(deployments)
+	details.Events = getEvents(ctx, c, namespace)
+	if metrics, err := getNamespaceMetrics(ctx, c, namespace, deployments, lang); err == nil && metrics != nil {
 		details.Metrics = metrics
 	}
 	return details, nil
 }
 
-// getNodeIPsFromCache retrieves node IPs from cache or fallback to API
-func getNodeIPsFromCache() []string {
-	var nodes []*v1.Node
-	// Try cache first
-	if mirror != nil && mirror.started {
-		nodes = mirror.getNodes()
+// getNodeIPs returns the externally reachable node addresses, preferring
+// external IPs and falling back to internal ones.
+func getNodeIPs(ctx context.Context, c K8sClient) []string {
+	nodes, err := listInto[v1.Node](ctx, c, nodesGVR, "")
+	if err != nil {
+		return nil
 	}
 	var nodeIPs []string
 	for _, node := range nodes {
@@ -213,14 +122,15 @@ func getNodeIPsFromCache() []string {
 	return nodeIPs
 }
 
-// getServicesFromCache retrieves services from cache or fallback to API
-func getServicesFromCache(namespace string, nodeIPs []string) []object.ServiceDetail {
-	var services []*v1.Service
-	// Try cache first
-	if mirror != nil && mirror.started {
-		services = mirror.getServices(namespace)
+// getServices projects the namespace's services, resolving each port's
+// externally reachable URL through an Ingress rule when one covers it.
+func getServices(ctx context.Context, c K8sClient, namespace string, nodeIPs []string) []object.ServiceDetail {
+	services, err := listInto[v1.Service](ctx, c, servicesGVR, namespace)
+	if err != nil {
+		return nil
 	}
-	ingresses := getIngressFromCache(namespace)
+	ingresses, _ := listInto[networkingv1.Ingress](ctx, c, ingressesGVR, namespace)
+
 	var serviceDetails []object.ServiceDetail
 	for _, svc := range services {
 		detail := object.ServiceDetail{
@@ -249,9 +159,9 @@ func getServicesFromCache(namespace string, nodeIPs []string) []object.ServiceDe
 				host = nodeIPs[0]
 			}
 		case v1.ServiceTypeClusterIP:
-			host = getExternalHost("")
+			host = getExternalHost(c, "")
 		}
-		detail.ExternalHost = getExternalHost(host)
+		detail.ExternalHost = getExternalHost(c, host)
 		for _, port := range svc.Spec.Ports {
 			servicePort := object.ServicePort{
 				Name:     port.Name,
@@ -275,41 +185,18 @@ func getServicesFromCache(namespace string, nodeIPs []string) []object.ServiceDe
 	return serviceDetails
 }
 
-func getIngressFromCache(namespace string) []*networkingv1.Ingress {
-	var ingresses []*networkingv1.Ingress
-	// First, try to get from the cache
-	if mirror != nil && mirror.started {
-		ingresses = mirror.getIngresses(namespace)
-	}
-	// If the cache is empty, try to fetch from the API
-	if len(ingresses) == 0 {
-		ctx, cancel := context.WithTimeout(context.TODO(), 5*time.Second)
-		defer cancel()
-		ingressList, err := client.clientSet.NetworkingV1().Ingresses(namespace).List(ctx, metav1.ListOptions{})
-		if err == nil {
-			for i := range ingressList.Items {
-				ingresses = append(ingresses, &ingressList.Items[i])
-			}
-		}
-	}
-	return ingresses
-}
-
-// getDeploymentsFromCache retrieves deployments from cache or fallback to API
-func getDeploymentsFromCache(namespace string) []object.DeploymentDetail {
-	var deployments []*appsv1.Deployment
-	// Try cache first
-	if mirror != nil && mirror.started {
-		deployments = mirror.getDeployments(namespace)
-	}
+// describeDeployments projects deployments into the view shape. Pure.
+func describeDeployments(deployments []appsv1.Deployment) []object.DeploymentDetail {
 	var deploymentDetails []object.DeploymentDetail
 	for _, deployment := range deployments {
 		detail := object.DeploymentDetail{
 			Name:          deployment.Name,
-			Replicas:      *deployment.Spec.Replicas,
 			ReadyReplicas: deployment.Status.ReadyReplicas,
 			Containers:    []object.ContainerDetail{},
 			CreatedTime:   deployment.CreationTimestamp.Format("2006-01-02 15:04:05"),
+		}
+		if deployment.Spec.Replicas != nil {
+			detail.Replicas = *deployment.Spec.Replicas
 		}
 		// Determine deployment status
 		if detail.ReadyReplicas == detail.Replicas {
@@ -339,18 +226,18 @@ func getDeploymentsFromCache(namespace string) []object.DeploymentDetail {
 	return deploymentDetails
 }
 
-// getCredentialsFromCache extracts environment variables containing sensitive information
-func getCredentialsFromCache(namespace string) []object.EnvVariable {
-	var deployments []*appsv1.Deployment
-	// Try cache first
-	if mirror != nil && mirror.started {
-		deployments = mirror.getDeployments(namespace)
-	}
-	credentialKeywords := []string{
-		"PASSWORD", "PASS", "SECRET", "KEY", "TOKEN", "AUTH",
-		"USER", "USERNAME", "LOGIN", "CREDENTIAL", "DATABASE_URL",
-		"DB_PASSWORD", "DB_USER", "ADMIN_PASSWORD", "ROOT_PASSWORD",
-	}
+// credentialKeywords name the env vars the view surfaces as credentials. A
+// value sourced from a Secret or ConfigMap is reported as its REFERENCE, never
+// resolved — the view names where a credential comes from, it never reads one.
+var credentialKeywords = []string{
+	"PASSWORD", "PASS", "SECRET", "KEY", "TOKEN", "AUTH",
+	"USER", "USERNAME", "LOGIN", "CREDENTIAL", "DATABASE_URL",
+	"DB_PASSWORD", "DB_USER", "ADMIN_PASSWORD", "ROOT_PASSWORD",
+}
+
+// describeCredentials extracts environment variables containing sensitive
+// information. Pure.
+func describeCredentials(deployments []appsv1.Deployment) []object.EnvVariable {
 	var credentials []object.EnvVariable
 	for _, deployment := range deployments {
 		for _, container := range deployment.Spec.Template.Spec.Containers {
@@ -383,29 +270,18 @@ func getCredentialsFromCache(namespace string) []object.EnvVariable {
 	return credentials
 }
 
-// getEventsFromCache retrieves namespace-related events from cache or API
-func getEventsFromCache(namespace string) []object.ApplicationEvent {
-	var events []*v1.Event
-	// Try cache first
-	if mirror != nil && mirror.started {
-		events = mirror.getEvents(namespace)
-	}
-	// If cache is empty, get from API
-	if len(events) == 0 {
-		ctx, cancel := context.WithTimeout(context.TODO(), 5*time.Second)
-		defer cancel()
-		eventList, err := client.clientSet.CoreV1().Events(namespace).List(ctx, metav1.ListOptions{})
-		if err == nil {
-			for i := range eventList.Items {
-				events = append(events, &eventList.Items[i])
-			}
-		}
+// getEvents retrieves namespace-related events.
+func getEvents(ctx context.Context, c K8sClient, namespace string) []object.ApplicationEvent {
+	events, err := listInto[v1.Event](ctx, c, eventsGVR, namespace)
+	if err != nil {
+		return []object.ApplicationEvent{}
 	}
 	return convertEventsToApplicationEvents(events)
 }
 
-// convertEventsToDetails converts Kubernetes Events to EventDetail
-func convertEventsToApplicationEvents(events []*v1.Event) []object.ApplicationEvent {
+// convertEventsToApplicationEvents converts Kubernetes Events to
+// ApplicationEvent, newest first, capped at 50. Pure.
+func convertEventsToApplicationEvents(events []v1.Event) []object.ApplicationEvent {
 	eventDetails := make([]object.ApplicationEvent, 0)
 	for _, event := range events {
 		// Format involved object information
