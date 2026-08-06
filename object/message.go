@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/model"
 	"github.com/hanzoai/ai/util"
 	"github.com/hanzoai/dbx"
@@ -68,6 +69,75 @@ type Message struct {
 	ToolCalls         JSONList[model.ToolCall]     `json:"toolCalls"`
 	SearchResults     JSONList[model.SearchResult] `json:"searchResults"`
 	TransactionId     string                       `json:"transactionId"`
+	// ClaimedTime is when some request took the right to generate this answer, and
+	// it is empty on a message nobody is answering. See ClaimMessageAnswer.
+	ClaimedTime string `json:"claimedTime"`
+}
+
+// answerLease bounds how long ONE claim on a message's answer is honored. It exists
+// for the generator that dies without releasing: past the lease the answer is
+// claimable again, so a crash costs a delay rather than a message nobody can ever
+// answer. It has to outlast a slow answer — reason models and agent flows stream for
+// minutes — because a lease that expires mid-generation lets a second request in and
+// that is the whole thing this prevents.
+const answerLease = 15 * time.Minute
+
+// ClaimMessageAnswer takes the exclusive right to generate this message's answer and
+// reports whether this caller got it.
+//
+// It is ONE conditional UPDATE, so the database decides the winner. The condition is
+// the same fact the handler used to test in memory — the answer is not written yet —
+// but tested and acted on in a single statement, because between a read and a write
+// two concurrent requests both see an unanswered message and both generate it.
+//
+// This is the module's ONLY exactly-once guarantee for an answer, and the debit rides
+// on it: the ledger has none. It mints its own entry id per debit and reads no key we
+// send (see AddTransactionForMessage), so two generations of one message are two
+// completions AND two charges — an SSE reconnect was enough.
+//
+// A NULL claim is treated as unclaimed. Rows that predate the column hold SQL NULL
+// until the boot repair reaches them (backfillNullField), and a row nobody can claim
+// is a message nobody can answer.
+func ClaimMessageAnswer(message *Message) (bool, error) {
+	now := util.GetCurrentTime()
+	affected, err := updateCols(adapter.db, "message",
+		dbx.And(
+			pk2(message.Owner, message.Name),
+			dbx.NewExp("text = {:unanswered}", dbx.Params{"unanswered": ""}),
+			dbx.Or(
+				dbx.NewExp("claimed_time IS NULL"),
+				dbx.NewExp("claimed_time = {:unclaimed}", dbx.Params{"unclaimed": ""}),
+				dbx.NewExp("claimed_time < {:stale}", dbx.Params{"stale": util.GetTimeAgo(answerLease)}),
+			),
+		),
+		dbx.Params{"claimed_time": now},
+	)
+	if err != nil {
+		return false, err
+	}
+	if affected == 0 {
+		return false, nil
+	}
+	message.ClaimedTime = now
+	return true, nil
+}
+
+// ReleaseMessageAnswer drops a claim that produced no answer, so a generation that
+// failed is retryable at once instead of at the end of the lease. Safe to call on
+// every exit path: it is conditional on the answer still being empty, so it cannot
+// disturb a generation that landed. The lease, not this call, is the guarantee — a
+// process that dies never reaches it.
+func ReleaseMessageAnswer(message *Message) {
+	_, err := updateCols(adapter.db, "message",
+		dbx.And(
+			pk2(message.Owner, message.Name),
+			dbx.NewExp("text = {:unanswered}", dbx.Params{"unanswered": ""}),
+		),
+		dbx.Params{"claimed_time": ""},
+	)
+	if err != nil {
+		log.Warning("release answer claim %s: %v", message.GetId(), err)
+	}
 }
 
 func GetGlobalMessages() ([]*Message, error) {
