@@ -156,6 +156,13 @@ func usageMargin(record *usageRecord) costMargin {
 	return costMargin{CostNano: cost, BilledNano: billed, MarginNano: billed - cost}
 }
 
+// usdToNano converts a decimal-USD amount to integer nano-USD — the inverse of
+// nanoToUSD, for a caller that already knows the exact dollars it billed and needs
+// to report them on the nano money ledger.
+func usdToNano(usd float64) int64 {
+	return int64(math.Round(usd * 1_000_000_000))
+}
+
 // nanoToUSD renders a signed nano-USD amount as an EXACT decimal USD string ("0.00132"),
 // the value carried across the billing seam.
 func nanoToUSD(nano int64) string {
