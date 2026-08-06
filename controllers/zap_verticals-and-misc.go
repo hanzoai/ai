@@ -36,25 +36,24 @@
 // Envelope parity: success/error use the SAME {status,msg,data,data2} Response the
 // beego ResponseOk / ResponseError emit (the console frontend contract), via the
 // group-local zapMiscOk / zapMiscError builders (kept group-local, unique names, so
-// they never collide with another group's envelope helpers at Integrate).
+// they never collide with another group's envelope helpers).
 //
 // Metering: none of these are billable terminal paths (no recordUsage in any beego
 // controller in the group), so STEP 6 (meter-once) does not apply here — there is
 // deliberately no meter call, exactly like the chat/graph CRUD group.
 //
 // Registration: this file OWNS its wiring. init() self-registers each route into the
-// package-level registries (registerCloud / registerGatewayPath) born in
-// zap_audio.go; it never edits a shared registration file. The beego routes in
-// router.go stay live in parallel (strangler) until Integrate flips
-// handleCloudService / handleGatewayHTTPRequest to consult the registries.
+// package-level registries (registerCloud / registerGatewayPath) defined in
+// zap_registry.go; it never edits a shared registration file. The same routes stay
+// live on routers.App, which also backs the gateway fallback.
 //
 // wecom_bot.go is intentionally NOT migrated here: /v1/wecom-bot/callback/:botId is
 // a public external WeChat-Work webhook whose inputs are a :botId PATH segment and
 // msg_signature/timestamp/nonce/echostr QUERY params carrying an encrypted body —
 // none of which the canonical zapHandler(ctx, auth, body) signature can carry, and
-// there is no native ZAP client for a WeChat webhook. It stays on beego (the correct
-// strangler posture) until a path/query-carrying gateway seam exists (Integrate owns
-// that); re-implementing its crypto here uncalled would be dead code.
+// there is no native ZAP client for a WeChat webhook. It stays on routers.App, which
+// resolves the :botId segment and the query; re-implementing its crypto here uncalled
+// would be dead code.
 
 package controllers
 

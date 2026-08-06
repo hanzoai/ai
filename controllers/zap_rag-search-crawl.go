@@ -25,9 +25,9 @@
 // returns.
 //
 // Registration is self-contained in THIS file (per-group convention, zero
-// shared-file write contention): the package-level registry maps + init() below
-// register every method/path. The beego routes in router.go stay live in
-// parallel until Integrate flips the dispatch (strangler).
+// shared-file write contention): the group's tables + init() below register every
+// method/path into the shared registry (zap_registry.go). The same routes stay
+// live on routers.App, which also backs the gateway fallback.
 
 package controllers
 
@@ -47,17 +47,16 @@ import (
 // ── Per-group registration tables (collision-free, own file) ────────────
 //
 // Each ZAP group publishes its OWN uniquely-named method→handler and
-// path→handler tables as data (never calling a shared registerCloud, which does
-// not exist yet). Integrate ranges over these to wire registerCloud /
-// registerGatewayPath into handleCloudService / handleGatewayHTTPRequest — no
-// group edits a shared registration file, and every group's file compiles
-// standalone in the strangler hybrid. The handler shape is an anonymous func
-// alias so no shared symbol is declared here.
+// path→handler tables as data; this group's init() below ranges over them into
+// registerCloud / registerGatewayPath (zap_registry.go), which handleCloudService
+// and the gateway dispatch consult. No group edits a shared registration file.
+// The handler shape is an anonymous func alias so no shared symbol is declared
+// here.
 
 type zapRSCHandler = func(ctx context.Context, auth string, body []byte) (*zap.Message, error)
 
 // zapRagSearchCrawlCloud maps native cloud method → handler (MsgType 100).
-// Integrate ranges over this to registerCloud(method, h).
+// init below ranges over this to registerCloud(method, h).
 // init self-registers this group's dispatch tables into the canonical registry.
 func init() {
 	for method, h := range zapRagSearchCrawlCloud {
@@ -89,8 +88,8 @@ var zapRagSearchCrawlCloud = map[string]zapRSCHandler{
 	"documents.context": zapDocumentContextHandler,
 }
 
-// zapRagSearchCrawlGateway maps gateway path → handler (MsgType 200). Integrate
-// ranges over this to registerGatewayPath(path, h); it matches longest-prefix so
+// zapRagSearchCrawlGateway maps gateway path → handler (MsgType 200). init ranges
+// over this to registerGatewayPath(path, h); lookup matches longest-prefix so
 // "/v1/search/stats" wins over "/v1/search" and "/v1/rag/query-multiple" over
 // "/v1/rag/query".
 var zapRagSearchCrawlGateway = map[string]zapRSCHandler{
@@ -441,9 +440,9 @@ func zapIngestHandler(ctx context.Context, auth string, body []byte) (*zap.Messa
 // ── /v1/rag/embed  +  /v1/embed (native JSON body) ──────────────────────
 //
 // The native/JSON embed path: file_id + inline content or a url to fetch+parse.
-// (The LibreChat multipart-file upload used by hanzo.chat stays on the beego
-// route until Integrate wires a gateway multipart seam — this handler serves the
-// JSON contract; a multipart body carries no JSON file_id and returns 400.)
+// (The LibreChat multipart-file upload used by hanzo.chat is served by routers.App;
+// the gateway registry carries no multipart seam. This handler serves the JSON
+// contract; a multipart body carries no JSON file_id and returns 400.)
 
 func zapRagEmbedHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
 	sa, aerr := zapRequireIndexAuth(auth)
@@ -641,9 +640,9 @@ func zapDocumentContextHandler(_ context.Context, auth string, body []byte) (*za
 // "/v1/documents/{id}/context" sub-path is the full-context read. The gateway
 // carries the request method/path, but this file's handler signature is
 // body-only, so we disambiguate by body shape (a JSON array → delete; a JSON
-// object with file_id → context). Integrate's path-aware dispatch may bypass
-// this by registering the two concrete methods (documents.delete /
-// documents.context) directly.
+// object with file_id → context). Registering the two concrete methods
+// (documents.delete / documents.context) on the HTTP-shaped registry
+// (registerGatewayRoute) would make the body sniff unnecessary.
 func zapDocumentsGatewayHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
 	trimmed := strings.TrimSpace(string(body))
 	if strings.HasPrefix(trimmed, "[") {

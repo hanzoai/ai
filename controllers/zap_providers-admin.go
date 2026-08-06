@@ -29,9 +29,9 @@
 // served catalog that the filter deliberately leaves ungated.
 //
 // Registration: this file self-registers its routes into the shared registry
-// (registerCloud / registerGatewayPath, defined once in zap_account-auth.go) from
-// its OWN init() — it never edits a shared file. The beego routes in router.go
-// stay live in parallel (strangler) until Integrate flips the dispatch.
+// (registerCloud / registerGatewayPath, defined once in zap_registry.go) from
+// its OWN init() — it never edits a shared file. The same routes stay live on
+// routers.App, which also backs the gateway fallback.
 
 package controllers
 

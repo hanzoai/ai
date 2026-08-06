@@ -38,11 +38,10 @@
 // shared zapProviderOk / zapProviderError builders.
 //
 // Registration: this file OWNS its wiring. init() self-registers each route into
-// the package-level registries (registerCloud / registerGatewayPath) born in
-// zap_providers-admin.go; it never edits a shared registration file. Integrate
-// flips handleCloudService / handleGatewayHTTPRequest to consult the registries
-// once this group's handlers are proven; the beego routes in router.go stay live
-// in parallel until then.
+// the package-level registries (registerCloud / registerGatewayPath) defined in
+// zap_registry.go; it never edits a shared registration file. handleCloudService
+// and the gateway dispatch consult those registries; the same routes stay live on
+// routers.App, which also backs the gateway fallback.
 
 package controllers
 
