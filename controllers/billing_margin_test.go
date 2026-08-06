@@ -104,11 +104,11 @@ func TestUsageMargin(t *testing.T) {
 			if m.BilledNano != tc.wantBilled {
 				t.Errorf("BilledNano = %d, want %d", m.BilledNano, tc.wantBilled)
 			}
-			if m.MarginNano != tc.wantMargin {
+			if m.MarginNano == nil || *m.MarginNano != tc.wantMargin {
 				t.Errorf("MarginNano = %d, want %d", m.MarginNano, tc.wantMargin)
 			}
 			// Invariant: margin is always billed − cost, by construction.
-			if m.MarginNano != m.BilledNano-m.CostNano {
+			if m.MarginNano == nil || *m.MarginNano != m.BilledNano-m.CostNano {
 				t.Errorf("MarginNano %d != BilledNano %d − CostNano %d", m.MarginNano, m.BilledNano, m.CostNano)
 			}
 			// BYO never charges COGS; the billed amount stays the fee path's output.

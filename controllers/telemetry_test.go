@@ -21,6 +21,10 @@ import (
 	"go.opentelemetry.io/otel/codes"
 )
 
+// usdPtr is the *float64 the span margin now takes: presence, so an uncomputable
+// margin can be absent rather than reported as zero.
+func usdPtr(v float64) *float64 { return &v }
+
 func attrMap(attrs []attribute.KeyValue) map[string]attribute.Value {
 	m := make(map[string]attribute.Value, len(attrs))
 	for _, a := range attrs {
@@ -45,7 +49,7 @@ func TestBuildGenAISpanFields_ChatSuccess(t *testing.T) {
 	br := &costBreakdown{Input: 0.0012, Output: 0.0009, CacheRead: 0.00003, CacheWrite: 0.0001, Total: 0.00223}
 
 	// Hanzo-served (not BYO): billed == total. Provider COGS 0.0015 < billed ⇒ margin 0.0007.
-	f := buildGenAISpanFields(rec, 0.0022, 0.0022, 0.0015, 0.0007, br, false)
+	f := buildGenAISpanFields(rec, 0.0022, 0.0022, 0.0015, usdPtr(0.0007), br, false)
 
 	if f.name != "chat zen5" {
 		t.Fatalf("span name = %q, want %q", f.name, "chat zen5")
@@ -124,7 +128,7 @@ func TestBuildGenAISpanFields_ErrorAndFallbacks(t *testing.T) {
 		Model: "", Status: "error", ErrorMsg: "upstream 500",
 	}
 
-	f := buildGenAISpanFields(rec, 0, 0, 0, 0, nil, false)
+	f := buildGenAISpanFields(rec, 0, 0, 0, usdPtr(0), nil, false)
 
 	if f.name != "chat unknown" {
 		t.Fatalf("span name = %q, want %q", f.name, "chat unknown")
@@ -169,7 +173,7 @@ func TestBuildGenAISpanFields_ErrorAndFallbacks(t *testing.T) {
 func TestBuildGenAISpanFields_OrgSystemFallback(t *testing.T) {
 	rec := &usageRecord{Model: "zen5", Status: "success"} // no Organization, no Owner
 
-	m := attrMap(buildGenAISpanFields(rec, 0, 0, 0, 0, nil, false).attrs)
+	m := attrMap(buildGenAISpanFields(rec, 0, 0, 0, usdPtr(0), nil, false).attrs)
 
 	got, ok := m["gen_ai.hanzo.org_id"]
 	if !ok {
@@ -189,7 +193,7 @@ func TestBuildGenAISpanFields_OrgSystemFallback(t *testing.T) {
 func TestBuildGenAISpanFields_Environment(t *testing.T) {
 	withEnv := attrMap(buildGenAISpanFields(
 		&usageRecord{Owner: "acme", Model: "zen5", Status: "success", Environment: "staging"},
-		0, 0, 0, 0, nil, false,
+		0, 0, 0, usdPtr(0), nil, false,
 	).attrs)
 	if got := withEnv["deployment.environment"].AsString(); got != "staging" {
 		t.Errorf("deployment.environment = %q, want \"staging\"", got)
@@ -197,7 +201,7 @@ func TestBuildGenAISpanFields_Environment(t *testing.T) {
 
 	noEnv := attrMap(buildGenAISpanFields(
 		&usageRecord{Owner: "acme", Model: "zen5", Status: "success"},
-		0, 0, 0, 0, nil, false,
+		0, 0, 0, usdPtr(0), nil, false,
 	).attrs)
 	if _, ok := noEnv["deployment.environment"]; ok {
 		t.Error("deployment.environment must be absent when the caller set no X-Environment")
@@ -213,7 +217,7 @@ func TestBuildGenAISpanFields_ProjectAndKeyHash(t *testing.T) {
 		Owner: "acme", Organization: "acme", Model: "zen5", Status: "success",
 		Project: "research", APIKeyHash: "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
 	}
-	m := attrMap(buildGenAISpanFields(rec, 0, 0, 0, 0, nil, false).attrs)
+	m := attrMap(buildGenAISpanFields(rec, 0, 0, 0, usdPtr(0), nil, false).attrs)
 
 	if got := m["gen_ai.hanzo.project"].AsString(); got != "research" {
 		t.Errorf("gen_ai.hanzo.project = %q, want \"research\"", got)
@@ -232,7 +236,7 @@ func TestBuildGenAISpanFields_MessageRedaction(t *testing.T) {
 	}
 
 	// Gate off: bodies must NOT appear.
-	off := attrMap(buildGenAISpanFields(rec, 0, 0, 0, 0, nil, false).attrs)
+	off := attrMap(buildGenAISpanFields(rec, 0, 0, 0, usdPtr(0), nil, false).attrs)
 	if _, ok := off["gen_ai.input.messages"]; ok {
 		t.Error("gen_ai.input.messages leaked with capture disabled")
 	}
@@ -241,7 +245,7 @@ func TestBuildGenAISpanFields_MessageRedaction(t *testing.T) {
 	}
 
 	// Gate on: bodies appear verbatim.
-	on := attrMap(buildGenAISpanFields(rec, 0, 0, 0, 0, nil, true).attrs)
+	on := attrMap(buildGenAISpanFields(rec, 0, 0, 0, usdPtr(0), nil, true).attrs)
 	if got := on["gen_ai.input.messages"].AsString(); got != rec.InputMessages {
 		t.Errorf("gen_ai.input.messages = %q, want %q", got, rec.InputMessages)
 	}
@@ -281,7 +285,7 @@ func TestUsageCostCents_MatchesSpanTotal(t *testing.T) {
 	rec := &usageRecord{Model: "zen5", PromptTokens: 1000, CompletionTokens: 500}
 	cents := usageCostCents(rec)
 	spanTotalUSD := float64(cents) / 100.0
-	m := attrMap(buildGenAISpanFields(rec, spanTotalUSD, spanTotalUSD, 0, 0, nil, false).attrs)
+	m := attrMap(buildGenAISpanFields(rec, spanTotalUSD, spanTotalUSD, 0, usdPtr(0), nil, false).attrs)
 	if got := m["_o11y.gen_ai.total_cost"].AsFloat64(); got != spanTotalUSD {
 		t.Errorf("span total_cost = %v, want %v (== usageCostCents/100)", got, spanTotalUSD)
 	}
@@ -321,7 +325,7 @@ func TestUsageBilledCents_BYOReconcilesInvoice(t *testing.T) {
 	// BYO provider COGS is 0 (customer paid the upstream), so margin == the billed fee.
 	totalUSD := float64(cost) / 100.0
 	billedUSD := float64(fee) / 100.0
-	m := attrMap(buildGenAISpanFields(&byo, totalUSD, billedUSD, 0, billedUSD, nil, false).attrs)
+	m := attrMap(buildGenAISpanFields(&byo, totalUSD, billedUSD, 0, usdPtr(billedUSD), nil, false).attrs)
 	if got := m["_o11y.gen_ai.total_cost"].AsFloat64(); got != totalUSD {
 		t.Errorf("BYO span total_cost = %v, want full %v", got, totalUSD)
 	}
