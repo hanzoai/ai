@@ -87,10 +87,15 @@ func (c *ApiController) GetMessageAnswer() {
 		return
 	}
 
-	//if chat == nil || chat.Organization != message.Organization {
-	//	c.ResponseErrorStream(message, fmt.Sprintf("The chat: %s is not found", chatId))
-	//	return
-	//}
+	// GetChat answers (nil, nil) for an id no row matches, so the miss arrives here
+	// as a nil chat and not as an error. Reading chat.Type off it panics the process.
+	// A message can outlive its chat — DeleteChat cascades the message delete on the
+	// chat's own owner, so a message stored under a different owner survives as an
+	// orphan — and the answer for that orphan is a request away.
+	if chat == nil {
+		c.ResponseErrorStream(message, fmt.Sprintf("The chat: %s is not found", chatId))
+		return
+	}
 
 	if chat.Type != "AI" {
 		c.ResponseErrorStream(message, "The chat type must be \"AI\"")
