@@ -12,10 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Canonical ZAP native dispatch registry — the ONE seam every migrated
-// route-group self-registers into from its own init(). Populated by the
-// zap_<group>.go files; consulted by handleCloudService (MsgType 100) and
-// handleGatewayHTTPRequest (MsgType 200) in zap_native.go.
+// Canonical ZAP native dispatch registry — the ONE seam every route-group
+// self-registers into from its own init(). Populated by the zap_<group>.go
+// files; consulted by handleCloudService (MsgType 100) and the gateway handler
+// (MsgType 200) in zap_native.go.
 //
 // Two protocols; the gateway carries two handler shapes:
 //
@@ -31,14 +31,18 @@
 //
 // Both gateway registries resolve by LONGEST matching prefix, so a specific
 // route ("/v1/admin/providers/toggle") always beats a broader sibling
-// ("/v1/admin/providers"). handleGatewayHTTPRequest consults the HTTP-shaped
-// registry first, then the body-only one.
+// ("/v1/admin/providers"). The gateway handler consults the HTTP-shaped registry
+// first, then the body-only one.
 //
-// The strangler fallback for any route NOT registered here stays beego: the
-// HTTP :8000 surface (mount.go) and the HTTP-over-ZAP forward bridge
-// (zap_forward.go, MsgTypeForward) both dispatch the full beego route table
-// unchanged. A lookup miss in handleGatewayHTTPRequest is not a hole — the same
-// request served over the forward bridge reaches beego.
+// A gateway path no group claims is not a hole. Both lookups missing sends the
+// request to serveGatewayViaRouter (zap_gateway_fallback.go), which replays it
+// in-process through routers.App — the one router that resolves method + path
+// parameters and runs every filter. A miss becomes a 404 only when no router is
+// available to fall back to.
+//
+// The cloud registry has no such fallback, and cannot: a MsgType 100 method name
+// is not a URL, so there is no route for a router to resolve. An unregistered
+// method is a 404.
 
 package controllers
 

@@ -30,20 +30,17 @@
 //     the shared zapOk; failures use the shared zapErr (the sibling group's
 //     established convention for this migration).
 //
-// Registration reuses the per-group registry defined by the sibling group in
-// zap_rag-search-crawl.go (registerCloud / registerGatewayPath). This file only
-// self-registers the memory group's methods + path prefixes from its own init();
-// the dispatcher wiring (handleCloudService / handleGatewayHTTPRequest consulting
-// LookupZapCloudHandler / LookupZapGatewayHandler) and the beego-route flip in
-// router.go are the Integrate step. Until then beego keeps serving /v1/memory/*
-// in parallel (strangler hybrid).
+// Registration uses the shared registry (registerCloud / registerGatewayPath,
+// zap_registry.go). This file only self-registers the memory group's methods +
+// path prefixes from its own init(); handleCloudService and the gateway dispatch
+// consult that registry via lookupCloudHandler / lookupGatewayHandler.
 //
 // READ-PARAM NOTE: read endpoints (search/list/recall/facts) take q/kind/limit.
-// The registry handler signature carries only (ctx, auth, body), so these are
-// read from the JSON body — the native-ZAP shape. The gateway (MsgType 200) GET
-// surface must therefore have Integrate fold the HTTP query string into the body
-// it hands the handler (a generic one-liner in the dispatcher it owns), or callers
-// pass the params as a JSON body. Org scoping + envelope are unaffected.
+// The body-only handler signature carries (ctx, auth, body) and no query string,
+// so these are read from the JSON body — the native-ZAP shape. The seven exact
+// /v1/memory/* paths below are registered body-only, so a gateway GET carrying
+// ?q= reaches the handler with the query dropped: callers pass the params as a
+// JSON body. Org scoping + envelope are unaffected.
 
 package controllers
 
@@ -73,7 +70,7 @@ func registerZapMemory() {
 	registerCloud("memory.update", zapMemoryUpdateHandler)
 	registerCloud("memory.delete", zapMemoryDeleteHandler)
 
-	// Longest-prefix wins in LookupZapGatewayHandler, so the seven exact paths
+	// Longest-prefix wins in lookupGatewayHandler, so the seven exact paths
 	// each resolve to their own handler.
 	registerGatewayPath("/v1/memory/remember", zapMemoryRememberHandler)
 	registerGatewayPath("/v1/memory/search", zapMemorySearchHandler)

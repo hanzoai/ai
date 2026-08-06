@@ -224,8 +224,8 @@ func zapAudioVerbHandler(verb string) zapHandler {
 // The pure-ZAP mirror of serveZenMedia/pipeZenMedia (zen_media.go): reserve the
 // per-unit cost, forward to zen, relay the upstream bytes, settle at the
 // discovered price. Media is one buffered response — no writer to hold. This is
-// the ONE zen-media meter every media group (audio, images, …) reuses; when the
-// image group's identical copy is assembled, Integrate keeps a single definition.
+// the ONE zen-media meter every media group (audio, images, …) reuses; the image
+// group's near-identical copy (zapVideoServeZen) is still to be folded in.
 
 func zapServeZenMedia(apiPath, mdl string, rawBody []byte, units int, authUser *iam.User, isPremium bool, start time.Time) (*zap.Message, error) {
 	var hold *budgetHold

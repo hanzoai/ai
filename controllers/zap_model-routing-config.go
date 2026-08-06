@@ -22,8 +22,8 @@
 // GET vs POST), so they ride the gateway HTTP-over-ZAP projection (MsgType 200):
 // method(0) + path(8) + headers(16) + body(24) + query(32). The group
 // self-registers its path prefixes from THIS file's init() — no edit to
-// zap_native.go or any shared registration file. The beego routes in router.go
-// keep serving in parallel until Integrate flips the gateway dispatch here.
+// zap_native.go or any shared registration file. The same routes stay live on
+// routers.App, which also backs the gateway fallback.
 
 package controllers
 
