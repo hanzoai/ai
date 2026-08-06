@@ -22,7 +22,7 @@ import (
 // helper per package, not redefined here.
 
 // TestZapRecordsSessionsConnectionsRegistered proves the group self-registers ALL
-// its gateway path prefixes from init(), which handleGatewayHTTPRequest consults.
+// its gateway path prefixes from init(), which the MsgType 200 gateway handler consults.
 // A prefix missing here is not a 404 — the request falls through to the router —
 // but it is a fast path silently lost, which is why the list is pinned.
 func TestZapRecordsSessionsConnectionsRegistered(t *testing.T) {

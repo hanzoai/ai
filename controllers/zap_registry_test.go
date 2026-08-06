@@ -45,7 +45,7 @@ import (
 // in production. With the decline seam the access handler steps aside and the
 // providers handler answers.
 func TestGatewayDeclineReachesSibling(t *testing.T) {
-	msg, handled, err := dispatchGateway(context.Background(), "GET", "/v1/models/providers", "", "", nil)
+	msg, handled, err := dispatchGateway(context.Background(), nil, "GET", "/v1/models/providers", "", "", nil)
 	if err != nil {
 		t.Fatalf("dispatch: %v", err)
 	}
@@ -80,7 +80,7 @@ func TestGatewayDeclineReachesSibling(t *testing.T) {
 // a 401 from its own auth gate is proof the handler ran rather than stepped aside.
 func TestGatewayDeclineKeepsOwnRoutes(t *testing.T) {
 	for _, method := range []string{"GET", "POST"} {
-		msg, handled, err := dispatchGateway(context.Background(), method, "/v1/models/enso/access", "", "", nil)
+		msg, handled, err := dispatchGateway(context.Background(), nil, method, "/v1/models/enso/access", "", "", nil)
 		if err != nil {
 			t.Fatalf("%s: dispatch: %v", method, err)
 		}
@@ -100,21 +100,19 @@ func TestGatewayDeclineKeepsOwnRoutes(t *testing.T) {
 func TestGatewayDeclineFallsThroughToRouter(t *testing.T) {
 	const orphan = "/v1/models/enso/nope"
 
-	SetGatewayFallback(nil)
-	if _, handled, err := dispatchGateway(context.Background(), "GET", orphan, "", "", nil); err != nil || handled {
-		t.Fatalf("no router installed: handled=%v err=%v, want false/nil — the decline was swallowed", handled, err)
+	if _, handled, err := dispatchGateway(context.Background(), nil, "GET", orphan, "", "", nil); err != nil || handled {
+		t.Fatalf("no router supplied: handled=%v err=%v, want false/nil — the decline was swallowed", handled, err)
 	}
 
 	var served string
-	SetGatewayFallback(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	router := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		served = r.Method + " " + r.URL.Path
 		w.WriteHeader(http.StatusTeapot)
-	}))
-	defer SetGatewayFallback(nil)
+	})
 
-	_, handled, err := dispatchGateway(context.Background(), "GET", orphan, "", "", nil)
+	_, handled, err := dispatchGateway(context.Background(), router, "GET", orphan, "", "", nil)
 	if err != nil || !handled {
-		t.Fatalf("router installed: handled=%v err=%v, want true/nil", handled, err)
+		t.Fatalf("router supplied: handled=%v err=%v, want true/nil", handled, err)
 	}
 	if served != "GET "+orphan {
 		t.Errorf("router saw %q, want %q — the declined path never reached it", served, "GET "+orphan)
