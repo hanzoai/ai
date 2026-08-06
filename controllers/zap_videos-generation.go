@@ -22,9 +22,8 @@
 // authority in video_jobs.go / videos_api.go — this file reuses it verbatim so
 // there is one job store and one billing ledger across both transports.
 //
-// Beego keeps serving POST /v1/videos/generations, GET /v1/videos/:id and
-// GET /v1/videos/:id/content via router.go in parallel (strangler) until
-// Integrate flips the native dispatch and deletes the beego lines.
+// POST /v1/videos/generations, GET /v1/videos/:id and GET /v1/videos/:id/content
+// stay live on routers.App, which also backs the gateway fallback.
 //
 // Registration convention (recipe): this group self-registers from its OWN
 // init(); it never redefines the registry primitives (registerCloud /
@@ -36,11 +35,11 @@
 // for poll/download. The HTTP-over-ZAP (MsgType 200) path dispatches by prefix
 // through a handler that only receives (ctx, auth, body): that is sufficient for
 // the POST create (registered here), but the two GET routes carry their id in
-// the URL PATH — which the current shared registry handler signature does not
-// forward. Wiring the gateway GET routes therefore rides on Integrate extending
-// the gateway dispatch to pass the request path/method to the handler; the
-// complete logic is already here (zapVideoRetrieve / zapVideoContent, reached
-// today via the native-cloud methods) and needs no change when that lands.
+// the URL PATH — which a body-only handler does not receive. Registering them on
+// the HTTP-shaped registry (registerGatewayRoute, which does carry method/path)
+// is what wires them; the complete logic is already here (zapVideoRetrieve /
+// zapVideoContent, reached today via the native-cloud methods and over the
+// gateway through routers.App) and needs no change when that lands.
 
 package controllers
 
@@ -295,8 +294,8 @@ func zapVideosContentHandler(ctx context.Context, auth string, body []byte) (*za
 // bytes. A successful download also bills the job once (idempotent with the poll
 // path via job.markCompleted). The raw video bytes are returned in the response
 // body; the native-cloud response has no header channel, so a gateway projection
-// (with Content-Type/Content-Disposition) rides on Integrate's path-aware
-// gateway wiring.
+// (with Content-Type/Content-Disposition) needs an HTTP-shaped registration
+// (registerGatewayRoute).
 func zapVideoContent(ctx context.Context, auth, id string) (*zap.Message, error) {
 	job, provider, authUser, errMsg, ok := zapResolveOwnedVideoJob(auth, id)
 	if !ok {
@@ -425,7 +424,7 @@ func zapRecordVideoUsage(ctx context.Context, authUser *iam.User, provider *obje
 // settle at the discovered price. One buffered response — no writer to hold. A
 // uniquely-named helper (not the shared zapServeZenMedia) so this group's file is
 // self-contained; consolidating the per-verb Zen forwards into one shared helper
-// is an Integrate reconciliation once the in-flight media groups land.
+// is still open.
 func zapVideoServeZen(mdl string, rawBody []byte, authUser *iam.User, isPremium bool, start time.Time) (*zap.Message, error) {
 	const units = 1 // the async /videos API is one-video-per-job
 

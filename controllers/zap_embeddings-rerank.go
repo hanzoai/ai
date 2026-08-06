@@ -16,15 +16,13 @@
 // twin of the beego ApiController.Embeddings / .Rerank methods
 // (embeddings_api.go). These re-implement the SAME auth → provider-resolution →
 // balance-gate → upstream → meter pipeline against object/ + model/ directly,
-// with no http.ResponseWriter and no beego controller. Beego keeps serving
-// POST /v1/embeddings and POST /v1/rerank via router.go in parallel (strangler)
-// until Integrate flips the native dispatch and deletes the beego lines.
+// with no http.ResponseWriter and no beego controller. POST /v1/embeddings and
+// POST /v1/rerank stay live on routers.App, which also backs the gateway fallback.
 //
 // Registration convention (recipe): this group self-registers from its own
 // file via init() → registerCloud / registerGatewayPath. The registry
-// primitives (the two maps + register/lookup funcs) are the ONE shared home
-// established by the first-mover group (zap_images-generation.go) — this group
-// reuses them, never redefines them.
+// primitives (the two maps + register/lookup funcs) are the ONE shared home,
+// zap_registry.go — this group reuses them, never redefines them.
 
 package controllers
 
