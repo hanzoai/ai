@@ -48,6 +48,10 @@ func init() {
 	// Model routing (SuperAdmin) — one handler for the five *-model-route paths.
 
 	// Per-model access (self-scoped) and admin access grants (SuperAdmin).
+	// The prefix has to be the whole subtree — the {model} segment sits in the
+	// MIDDLE of the pattern, so no narrower prefix expresses it. The handler
+	// declines (errDecline) every path under it that is not {model}/access, which
+	// is what lets siblings like /v1/models/providers keep their own handler.
 	registerGatewayRoute("/v1/models/", zapModelAccessSelfHandler) // /v1/models/{model}/access
 	registerGatewayRoute("/v1/admin/model-access", zapAdminModelAccessHandler)
 
@@ -232,8 +236,11 @@ func zapDeleteModelRoute(body []byte) (*zap.Message, error) {
 func zapModelAccessSelfHandler(ctx context.Context, method, path, query, auth string, body []byte) (*zap.Message, error) {
 	model := zapModelFromAccessPath(path)
 	if model == "" {
-		// Not an access sub-path — let the caller fall through (e.g. /v1/models list).
-		return zapGwError(404, "not found: "+path)
+		// "/v1/models/" is a claim on the whole subtree, and the subtree holds
+		// endpoints this handler does not serve — /v1/models/providers is registered
+		// by the provider group. Decline so dispatch keeps looking; answering 404
+		// here is what made that sibling unreachable in production.
+		return nil, errDecline
 	}
 	user := zapPrincipalUser(auth)
 	if user == nil {

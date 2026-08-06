@@ -85,6 +85,7 @@ func TestPromotedAddressesAreRoutesOnTheHostRouter(t *testing.T) {
 	// method, an MCP tool and a CLI command.
 	for _, want := range []string{
 		"GET /v1/models",
+		"GET /v1/models/providers",
 		"GET /v1/models/:model/access",
 		"POST /v1/models/:model/access",
 	} {
@@ -112,6 +113,7 @@ func TestPromotedAddressesReachTheSameHandler(t *testing.T) {
 
 	for _, tc := range []struct{ method, url string }{
 		{http.MethodGet, "/v1/models"},
+		{http.MethodGet, "/v1/models/providers"},
 		{http.MethodGet, "/v1/models/enso/access"},
 		{http.MethodPost, "/v1/models/enso/access"},
 		// The glob still carries everything that is not promoted.

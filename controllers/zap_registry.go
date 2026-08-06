@@ -27,12 +27,19 @@
 //   - Gateway HTTP-over-ZAP (MsgType 200), HTTP-shaped groups: path-prefix →
 //     zapGatewayHandler(ctx, method, path, query, auth, body). Admin/self routes
 //     that need query strings, :param paths, and GET-vs-POST.
-//     registerGatewayRoute / lookupGatewayRoute.
+//     registerGatewayRoute / lookupGatewayRoutes.
 //
 // Both gateway registries resolve by LONGEST matching prefix, so a specific
 // route ("/v1/admin/providers/toggle") always beats a broader sibling
 // ("/v1/admin/providers"). The gateway handler consults the HTTP-shaped registry
 // first, then the body-only one.
+//
+// A prefix is a claim on a SUBTREE, though, and a subtree holds siblings that
+// belong to other registrations — "/v1/models/" carries the {model}/access
+// routes while "/v1/models/providers" is its own endpoint. So the rule is the
+// longest match that CLAIMS the path: an HTTP-shaped handler returns errDecline
+// for a path inside its prefix it does not serve, and dispatch keeps looking
+// (next candidate, then the body-only registry, then the router below).
 //
 // A gateway path no group claims is not a hole. Both lookups missing sends the
 // request to serveGatewayViaRouter (zap_gateway_fallback.go), which replays it
@@ -48,12 +55,23 @@ package controllers
 
 import (
 	"context"
+	"errors"
 	"sort"
 	"strings"
 	"sync"
 
 	"github.com/luxfi/zap"
 )
+
+// errDecline is the "not mine" answer an HTTP-shaped gateway handler returns for
+// a path that fell inside its registered prefix but is not one of the routes it
+// serves. dispatchGateway then keeps looking instead of answering 404, which is
+// what makes a broad prefix safe to register: it costs nothing it does not
+// actually serve.
+//
+// Only the HTTP-shaped shape can decline — a body-only handler is never told the
+// path, so it has nothing to decline on.
+var errDecline = errors.New("zap: handler declines path")
 
 // zapHandler is a native-cloud (MsgType 100) or body-only gateway handler.
 type zapHandler func(ctx context.Context, auth string, body []byte) (*zap.Message, error)
@@ -132,18 +150,21 @@ func lookupGatewayHandler(path string) (zapHandler, bool) {
 	return nil, false
 }
 
-// lookupGatewayRoute returns the HTTP-shaped handler whose registered prefix is
-// the longest match for path.
-func lookupGatewayRoute(path string) (zapGatewayHandler, bool) {
+// lookupGatewayRoutes returns every HTTP-shaped handler whose registered prefix
+// matches path, longest prefix first. Dispatch runs them in that order and the
+// first that does not return errDecline answers — so the winner is the longest
+// prefix that CLAIMS the path, not merely the longest that contains it.
+func lookupGatewayRoutes(path string) []zapGatewayHandler {
 	zapRegistryMu.RLock()
 	defer zapRegistryMu.RUnlock()
 	routes := make([]zapGatewayRoute, len(zapGatewayRoutes))
 	copy(routes, zapGatewayRoutes)
 	sort.Slice(routes, func(i, j int) bool { return len(routes[i].prefix) > len(routes[j].prefix) })
+	var out []zapGatewayHandler
 	for _, r := range routes {
 		if prefixMatch(r.prefix, path) {
-			return r.handle, true
+			out = append(out, r.handle)
 		}
 	}
-	return nil, false
+	return out
 }
