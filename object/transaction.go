@@ -136,7 +136,14 @@ func AddTransactionForMessage(message *Message) error {
 	// Native path: debit the usage DIRECTLY to the host's in-process finance ledger
 	// (cloud), no HTTP. The price (dollars) is carried EXACTLY as a decimal-USD string
 	// to nano precision — never floored to cents — so a sub-cent message bills precisely.
-	// Idempotent on the message id.
+	//
+	// This charge is NOT idempotent, on the message id or on anything else. The
+	// ledger mints its own entry id per debit and never reads the RequestID we send,
+	// so calling this twice for one completion charges twice. Whoever calls it owes
+	// the once — see the claim GetMessageAnswer takes on the message before it
+	// generates. That is also why the failed-transaction retry below is HTTP-only:
+	// re-driving a native debit whose first attempt may have landed would double
+	// charge, with nothing downstream to collapse the pair.
 	if usageRecorder != nil {
 		return usageRecorder(context.Background(), UsageEvent{
 			Subject:   userId,

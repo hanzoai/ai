@@ -571,9 +571,10 @@ func (c *ApiController) GetAnswer() {
 // recordCasibaseChatUsage traces a casibase chat turn (store/session-scoped, not
 // bearer-authed) into the ONE usage warehouse + o11y span plane. It TRACES ONLY.
 // The turn's single commerce debit is AddTransactionForMessage, which charges this
-// same completion's message.Price keyed on the message id. recordUsage would reach
-// the SAME object.UsageRecorder hook under a fresh uuid the ledger cannot dedupe,
-// so calling it here charged one completion twice.
+// same completion's message.Price. recordUsage would reach the SAME
+// object.UsageRecorder hook a second time, and that hook is not idempotent — the
+// ledger mints its own entry id per debit and reads no key we send — so calling it
+// here charged one completion twice.
 //
 // A USD turn reports its billed amount EXACTLY (BilledNanoExact = the dollars
 // AddTransactionForMessage debits), so the warehouse's billed_nano reconciles with
