@@ -30,13 +30,6 @@ import (
 	"github.com/hanzoai/ai/util"
 )
 
-// answerOwner is the single tenant every chat-plane row lives under: a chat, its
-// messages and its store are all keyed on it, and the chat plane reads it back
-// verbatim (GetChats, the reply-to lookup, the provider and knowledge lookups all
-// name it). It is therefore also the ledger NAMESPACE an answer's debit lands in,
-// which is why it is a server-side constant and never a value a request may carry.
-const answerOwner = "admin"
-
 // GetMessageAnswer
 // @Title GetMessageAnswer
 // @Tag Message API
@@ -442,7 +435,7 @@ func (c *ApiController) GetAnswer() {
 
 	// Resolve the provider ONCE: the gate below estimates against it and the
 	// completion runs on it, so the call this gate prices is the call it admits.
-	modelProvider, modelProviderObj, err := object.GetModelProviderFromContext(answerOwner, provider, c.GetAcceptLanguage())
+	modelProvider, modelProviderObj, err := object.GetModelProviderFromContext(chatOwner, provider, c.GetAcceptLanguage())
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -451,13 +444,13 @@ func (c *ApiController) GetAnswer() {
 	// Refuse before spending upstream when the payer cannot cover the estimate — the
 	// same pre-flight gate every chat answer runs. `provider` is a client-named model,
 	// so an ungated caller here picks the priciest one and runs it on credit.
-	err = gateBalance(answerOwner, userName, question, nil, object.AnswerPrompt, modelProvider, modelProviderObj, c.GetAcceptLanguage())
+	err = gateBalance(chatOwner, userName, question, nil, object.AnswerPrompt, modelProvider, modelProviderObj, c.GetAcceptLanguage())
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
 	}
 
-	chat, err := object.GetChat(util.GetId(answerOwner, chatName))
+	chat, err := object.GetChat(util.GetId(chatOwner, chatName))
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -466,7 +459,7 @@ func (c *ApiController) GetAnswer() {
 		org := c.GetOrg()
 		currentTime := util.GetCurrentTime()
 		chat = &object.Chat{
-			Owner:         answerOwner,
+			Owner:         chatOwner,
 			Name:          chatName,
 			CreatedTime:   currentTime,
 			UpdatedTime:   currentTime,
@@ -503,7 +496,7 @@ func (c *ApiController) GetAnswer() {
 	}
 
 	questionMessage := &object.Message{
-		Owner:        answerOwner,
+		Owner:        chatOwner,
 		Name:         fmt.Sprintf("message_%s", util.GetRandomName()),
 		CreatedTime:  util.GetCurrentTimeEx(chat.CreatedTime),
 		Organization: chat.Organization,
@@ -524,7 +517,7 @@ func (c *ApiController) GetAnswer() {
 	}
 
 	answerMessage := &object.Message{
-		Owner:         answerOwner,
+		Owner:         chatOwner,
 		Name:          fmt.Sprintf("message_%s", util.GetRandomName()),
 		CreatedTime:   util.GetCurrentTimeEx(chat.CreatedTime),
 		Organization:  chat.Organization,
