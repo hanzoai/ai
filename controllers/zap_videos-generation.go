@@ -413,6 +413,7 @@ func zapRecordVideoUsage(ctx context.Context, authUser *iam.User, provider *obje
 		ErrorMsg:     errMsg,
 		RequestID:    uuid.NewString(),
 	}
+	rec.stampPayer(authUser)
 	recordUsage(rec)
 	recordTrace(ctx, rec, startTime)
 }
@@ -505,6 +506,7 @@ func zapRecordVideoZenUsage(mdl string, authUser *iam.User, isPremium bool, reqI
 		Premium: isPremium, Status: status, ErrorMsg: errMsg,
 		RequestID: reqID, Account: "hanzo",
 	}
+	rec.stampPayer(authUser)
 	recordUsage(rec)
 	recordTrace(context.Background(), rec, start)
 }

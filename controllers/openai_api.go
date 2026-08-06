@@ -669,6 +669,42 @@ type usageRecord struct {
 	// (default off = redacted). Never logged, never billed — telemetry only.
 	InputMessages  string `json:"inputMessages,omitempty"`
 	OutputMessages string `json:"outputMessages,omitempty"`
+
+	// Payer is the money address this call spends from — the account the balance
+	// gate READ, carried here rather than re-derived, so the debit cannot land
+	// somewhere else. Not serialized: an Account's fields are unexported by design
+	// (it is money; an account whose owner disagrees with its key must not exist),
+	// and the wire already carries the subject it resolves to.
+	Payer account.Account `json:"-"`
+}
+
+// payer answers who pays for this call. ONE rule, and it prefers the answer the gate
+// already computed over deriving a second one.
+//
+// The fallback is for a record with no authenticated principal behind it — the
+// session-scoped and self-billing surfaces. It is account.PayerOf, which is what
+// every debit used to do, and it is exactly why this field exists: PayerOf sees two
+// strings, so it cannot see the signed billing_account claim naming a personal
+// wallet, and it cannot see that a credential is a machine. Both are inputs to who
+// pays. Missing them, it confidently answers the pre-claim default — a different
+// account from the one the gate read a moment earlier, on the same request.
+func (r *usageRecord) payer() account.Account {
+	if !r.Payer.Zero() {
+		return r.Payer
+	}
+	return account.PayerOf(r.Owner, r.User)
+}
+
+// stampPayer records the money address a principal spends from in this record's own
+// ledger. It is the SAME single expression the balance gate resolves with
+// (iam.User.Payer), which is the whole point: one identity, one rule, one address,
+// so gate and debit cannot answer differently. Nil-safe — a surface with no
+// principal leaves the field unset and falls back.
+func (r *usageRecord) stampPayer(u *iam.User) {
+	if r == nil || u == nil {
+		return
+	}
+	r.Payer = u.Payer(r.Owner)
 }
 
 // billingQueue is the singleton usage record delivery queue. Initialized by
@@ -761,13 +797,13 @@ func recordUsage(record *usageRecord) {
 	record.FeeCents = feeCents
 	amount := usageBilledCents(record, costCents)
 
-	// The debit MUST hit the same account the balance gate reads and the starter
+	// The debit MUST hit the same account the balance gate read and the starter
 	// credit funded: the billing SUBJECT within the org NAMESPACE.
 	//   namespace (X-Org-Id) = record.Owner (the org)
-	//   subject   (?user=)      = account.Payer(account.Credential{Owner: owner, Name: name}).Subject()
-	// For a personal-billing org that is "owner/name" (per-user); for a pooled
-	// org it is the org slug. record.Owner is the IAM `owner`; fall back to
-	// deriving owner+name from "owner/name" if Owner was not populated upstream.
+	//   subject   (?user=)   = the payer the emit site carried from the principal
+	// For a personal-billing org that is "owner/name" (per-user); for a pooled org
+	// it is the org slug. record.Owner is the IAM `owner`; fall back to deriving
+	// owner+name from "owner/name" if Owner was not populated upstream.
 	org := record.Owner
 	if org == "" {
 		if i := strings.IndexByte(record.User, '/'); i > 0 {
@@ -776,7 +812,7 @@ func recordUsage(record *usageRecord) {
 			org = record.User
 		}
 	}
-	subject := account.PayerOf(record.Owner, record.User).Subject()
+	subject := record.payer().Subject()
 
 	// Native in-proc finance debit — the ONE money path when co-resident with the
 	// finance ledger (hanzoai/cloud unified binary). The debit lands DIRECTLY on the
@@ -1398,6 +1434,7 @@ func (c *ApiController) ChatCompletions() {
 				ClientIP:  c.Ctx.Request.RemoteAddr,
 				RequestID: requestId,
 			}
+			errRecord.stampPayer(authUser)
 			errRecord.BYO, errRecord.Account = providerBYO(provider, authUser)
 			recordUsage(errRecord)
 			recordTrace(c.Ctx.Request.Context(), errRecord, requestStartTime)
@@ -1424,6 +1461,7 @@ func (c *ApiController) ChatCompletions() {
 			ClientIP:         c.Ctx.Request.RemoteAddr,
 			RequestID:        requestId,
 		}
+		successRecord.stampPayer(authUser)
 		successRecord.BYO, successRecord.Account = providerBYO(provider, authUser)
 		recordUsage(successRecord)
 		recordTrace(c.Ctx.Request.Context(), successRecord, requestStartTime)
@@ -1633,6 +1671,7 @@ func (c *ApiController) proxyToolRequest(
 				ClientIP:  c.Ctx.Request.RemoteAddr,
 				RequestID: requestId,
 			}
+			errRecord.stampPayer(authUser)
 			errRecord.BYO, errRecord.Account = providerBYO(provider, authUser)
 			recordUsage(errRecord)
 			recordTrace(c.Ctx.Request.Context(), errRecord, requestStartTime)
@@ -1701,6 +1740,7 @@ func (c *ApiController) proxyToolRequest(
 				ClientIP:         c.Ctx.Request.RemoteAddr,
 				RequestID:        requestId,
 			}
+			successRecord.stampPayer(authUser)
 			successRecord.BYO, successRecord.Account = providerBYO(provider, authUser)
 			recordUsage(successRecord)
 			recordTrace(c.Ctx.Request.Context(), successRecord, requestStartTime)
@@ -1757,6 +1797,7 @@ func (c *ApiController) proxyToolRequest(
 				ClientIP:         c.Ctx.Request.RemoteAddr,
 				RequestID:        requestId,
 			}
+			successRecord.stampPayer(authUser)
 			successRecord.BYO, successRecord.Account = providerBYO(provider, authUser)
 			recordUsage(successRecord)
 			recordTrace(c.Ctx.Request.Context(), successRecord, requestStartTime)
@@ -2119,6 +2160,7 @@ func (c *ApiController) proxyToolRequestAnthropic(
 			ClientIP:         c.Ctx.Request.RemoteAddr,
 			RequestID:        requestId,
 		}
+		successRecord.stampPayer(authUser)
 		successRecord.BYO, successRecord.Account = providerBYO(provider, authUser)
 		recordUsage(successRecord)
 		recordTrace(c.Ctx.Request.Context(), successRecord, requestStartTime)

@@ -907,6 +907,7 @@ func (c *ApiController) recordFamilyUsage(fam *modelFamily, model string, authUs
 		Premium: isPremium, Stream: stream, Status: status, ErrorMsg: errMsg,
 		ClientIP: c.Ctx.Request.RemoteAddr, RequestID: reqID, Account: "hanzo",
 	}
+	rec.stampPayer(authUser)
 	recordUsage(rec)
 	recordTrace(c.Ctx.Request.Context(), rec, start)
 	return cents

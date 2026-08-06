@@ -452,6 +452,7 @@ func zapChatHandler(ctx context.Context, auth string, body []byte) (*zap.Message
 				ErrorMsg:     err.Error(),
 				RequestID:    requestId,
 			}
+			errRec.stampPayer(authUser)
 			go recordUsage(errRec)
 			// recordUsage drops non-success records — trace the error too so a
 			// failing ZAP chat is visible in the warehouse/o11y like the HTTP paths.
@@ -503,6 +504,7 @@ func zapChatHandler(ctx context.Context, auth string, body []byte) (*zap.Message
 				Status:           "success",
 				RequestID:        requestId,
 			}
+			record.stampPayer(authUser)
 			recordUsage(record)
 			recordTrace(ctx, record, requestStartTime)
 		}()

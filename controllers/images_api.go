@@ -250,6 +250,7 @@ func (c *ApiController) recordImageUsage(authUser *iam.User, provider *object.Pr
 		ClientIP:     c.Ctx.Request.RemoteAddr,
 		RequestID:    uuid.NewString(),
 	}
+	rec.stampPayer(authUser)
 	recordUsage(rec)
 	recordTrace(c.Ctx.Request.Context(), rec, startTime)
 }

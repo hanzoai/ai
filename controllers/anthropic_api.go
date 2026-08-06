@@ -607,6 +607,7 @@ func (c *ApiController) AnthropicMessages() {
 				ClientIP:  c.Ctx.Request.RemoteAddr,
 				RequestID: requestId,
 			}
+			errRecord.stampPayer(authUser)
 			errRecord.BYO, errRecord.Account = providerBYO(provider, authUser)
 			recordUsage(errRecord)
 			recordTrace(c.Ctx.Request.Context(), errRecord, requestStartTime)
@@ -637,6 +638,7 @@ func (c *ApiController) AnthropicMessages() {
 			ClientIP:         c.Ctx.Request.RemoteAddr,
 			RequestID:        requestId,
 		}
+		successRecord.stampPayer(authUser)
 		successRecord.BYO, successRecord.Account = providerBYO(provider, authUser)
 		recordUsage(successRecord)
 		recordTrace(c.Ctx.Request.Context(), successRecord, requestStartTime)
@@ -781,6 +783,7 @@ func (c *ApiController) proxyAnthropicToolRequest(
 				Premium: isPremium, Stream: true, Status: "success",
 				ClientIP: c.Ctx.Request.RemoteAddr, RequestID: requestId,
 			}
+			rec.stampPayer(authUser)
 			rec.BYO, rec.Account = providerBYO(provider, authUser)
 			recordUsage(rec)
 			recordTrace(c.Ctx.Request.Context(), rec, requestStartTime)
@@ -806,6 +809,7 @@ func (c *ApiController) proxyAnthropicToolRequest(
 				Premium: isPremium, Stream: false, Status: "success",
 				ClientIP: c.Ctx.Request.RemoteAddr, RequestID: requestId,
 			}
+			rec.stampPayer(authUser)
 			rec.BYO, rec.Account = providerBYO(provider, authUser)
 			recordUsage(rec)
 			recordTrace(c.Ctx.Request.Context(), rec, requestStartTime)
@@ -872,6 +876,7 @@ func (c *ApiController) proxyAnthropicViaOpenAI(
 				Stream: request.Stream, Status: "error", ErrorMsg: err.Error(),
 				ClientIP: c.Ctx.Request.RemoteAddr, RequestID: requestId,
 			}
+			errRecord.stampPayer(authUser)
 			errRecord.BYO, errRecord.Account = providerBYO(provider, authUser)
 			recordUsage(errRecord)
 			recordTrace(c.Ctx.Request.Context(), errRecord, requestStartTime)
@@ -954,6 +959,7 @@ func (c *ApiController) recordAnthropicToolUsage(
 			Currency: "USD", Premium: isPremium, Stream: stream, Status: "success",
 			ClientIP: c.Ctx.Request.RemoteAddr, RequestID: requestId,
 		}
+		rec.stampPayer(authUser)
 		rec.BYO, rec.Account = providerBYO(provider, authUser)
 		recordUsage(rec)
 		recordTrace(c.Ctx.Request.Context(), rec, requestStartTime)
