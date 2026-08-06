@@ -95,13 +95,14 @@ func TestForwardBridgeServesBeegoHandler(t *testing.T) {
 	}
 }
 
-// TestInitForwardBridgeNoNode asserts the wiring is a safe no-op when ZAP is
-// off (object.GetZapNode() == nil) — InitForwardBridge must not panic and ai's
-// HTTP behavior is unchanged. ZAP_ENABLED is unset in the test environment, so
-// the node is never created.
-func TestInitForwardBridgeNoNode(t *testing.T) {
-	// healthHandler() is non-nil; the guard must short-circuit on the nil node.
+// TestZapWiringNoNode asserts both node-registration entry points are safe no-ops
+// when ZAP is off (object.GetZapNode() == nil) — neither may panic and ai's HTTP
+// behavior is unchanged. ZAP_ENABLED is unset in the test environment, so the node
+// is never created.
+func TestZapWiringNoNode(t *testing.T) {
+	// healthHandler() is non-nil; both guards must short-circuit on the nil node.
 	InitForwardBridge(healthHandler())
+	InitZapHandlers(healthHandler())
 }
 
 func freePort(t *testing.T) int {
