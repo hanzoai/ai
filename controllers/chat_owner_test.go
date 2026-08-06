@@ -271,3 +271,70 @@ func isSelector(n ast.Node, x, field string) bool {
 	ident, ok := sel.X.(*ast.Ident)
 	return ok && ident.Name == x
 }
+
+// TestStoreOwnerIsServerScoped pins the store create to the same rule its own read
+// uses. GetStores answers through GetScopedOwner — the caller's own org, overridable
+// only by a super admin — while AddStore took the owner off the request body, so an
+// admin of ANY org could file a store into a tenant it does not belong to. A store
+// filed into the chat plane's tenant is reachable as a default store, and a default
+// store names the model every chat answer runs and bills.
+func TestStoreOwnerIsServerScoped(t *testing.T) {
+	body := handlerBody(t, "store.go", "AddStore")
+
+	stamp := scopedOwnerStamp(body, "store")
+	if stamp == token.NoPos {
+		t.Fatal("AddStore never scopes store.Owner to GetScopedOwner; the request body chooses the tenant")
+	}
+	for _, use := range ownerUses(body, "store", stamp) {
+		if use < stamp {
+			t.Errorf("AddStore reads store.Owner at pos %d before scoping it at pos %d", use, stamp)
+		}
+	}
+	if reached := firstObjectCallWith(body, "store"); reached != token.NoPos && reached < stamp {
+		t.Errorf("AddStore hands store to the object layer at pos %d, before scoping its owner at pos %d", reached, stamp)
+	}
+	// GetStores must still read through the same rule, or the two halves drift apart.
+	if !usesScopedOwner(handlerBody(t, "store.go", "GetStores")) {
+		t.Error("GetStores no longer reads through GetScopedOwner; the create and the read must share one rule")
+	}
+}
+
+// scopedOwnerStamp reports the position of `row.Owner = owner` where owner came from
+// c.GetScopedOwner().
+func scopedOwnerStamp(n ast.Node, row string) token.Pos {
+	if !usesScopedOwner(n) {
+		return token.NoPos
+	}
+	found := token.NoPos
+	ast.Inspect(n, func(node ast.Node) bool {
+		if found != token.NoPos {
+			return false
+		}
+		assign, ok := node.(*ast.AssignStmt)
+		if !ok || len(assign.Lhs) != 1 || len(assign.Rhs) != 1 {
+			return true
+		}
+		if !isSelector(assign.Lhs[0], row, "Owner") {
+			return true
+		}
+		if rhs, ok := assign.Rhs[0].(*ast.Ident); ok && rhs.Name == "owner" {
+			found = assign.Pos()
+			return false
+		}
+		return true
+	})
+	return found
+}
+
+// usesScopedOwner reports whether the node calls c.GetScopedOwner().
+func usesScopedOwner(n ast.Node) bool {
+	found := false
+	ast.Inspect(n, func(node ast.Node) bool {
+		if sel, ok := node.(*ast.SelectorExpr); ok && sel.Sel.Name == "GetScopedOwner" {
+			found = true
+			return false
+		}
+		return true
+	})
+	return found
+}
