@@ -145,13 +145,14 @@ func usageMargin(record *usageRecord) costMargin {
 	billed := usageBilledNano(record, usageCostNano(record))
 	cost := providerCostNano(record)
 	// A self-billing subsystem (zen's commerce Meter) knows its EXACT billed
-	// amount + upstream COGS per served tier; prefer those over the table
-	// recompute so the warehouse margin is true, not approximated.
-	if record.BilledNanoExact > 0 {
-		billed = record.BilledNanoExact
+	// amount + upstream COGS per served tier; those ARE the numbers, so the table
+	// recompute is not consulted. Presence, not positivity: a turn that billed
+	// exactly nothing said so, and must not be handed a price it never charged.
+	if record.BilledNanoExact != nil {
+		billed = *record.BilledNanoExact
 	}
-	if record.CostNanoExact > 0 {
-		cost = record.CostNanoExact
+	if record.CostNanoExact != nil {
+		cost = *record.CostNanoExact
 	}
 	return costMargin{CostNano: cost, BilledNano: billed, MarginNano: billed - cost}
 }
@@ -183,7 +184,11 @@ func nanoToUSD(nano int64) string {
 	return s
 }
 
-// usageBilledUSD is the exact decimal-USD amount for the native finance debit.
+// usageBilledUSD is the exact decimal-USD amount for the native finance debit. It
+// reads usageMargin — the ONE billed path — rather than recomputing the table leg of
+// it, so a caller that knows its exact billed amount is debited THAT and not a
+// rate-table guess, and the invoice, the warehouse row and the span all carry one
+// number.
 func usageBilledUSD(record *usageRecord) string {
-	return nanoToUSD(usageBilledNano(record, usageCostNano(record)))
+	return nanoToUSD(usageMargin(record).BilledNano)
 }

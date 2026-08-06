@@ -170,11 +170,12 @@ func TestMessageAnswerIsBilledOnce(t *testing.T) {
 // an unpriced name would invent the conservative default and disagree with the
 // invoice.
 func TestCasibaseChatTraceCarriesExactBilledAmount(t *testing.T) {
+	billed := usdToNano(0.00132)
 	rec := &usageRecord{
 		Model:            "openai-gpt4",
 		PromptTokens:     100,
 		CompletionTokens: 200,
-		BilledNanoExact:  usdToNano(0.00132),
+		BilledNanoExact:  &billed,
 	}
 	if got, want := usageMargin(rec).BilledNano, int64(1_320_000); got != want {
 		t.Fatalf("traced billed_nano = %d, want the charged %d", got, want)
