@@ -218,6 +218,87 @@ func TestGetMessageAnswerHandlerIsOneCompletionOneDebit(t *testing.T) {
 	}
 }
 
+// TestGetMessageAnswerClaimsBeforeItGenerates pins the wiring of the atomic claim
+// into the handler. object.ClaimMessageAnswer is what makes one message one
+// completion and one debit under concurrency (its own tests prove that), but only
+// if the handler takes it, and takes it BEFORE it spends anything: the pre-flight
+// gate's dry run, the embedding behind GetNearestKnowledge and the completion itself
+// all cost, and all of them come after.
+//
+// Unwire the claim and this sees 0. Move it below the gate and the ordering check
+// fails.
+func TestGetMessageAnswerClaimsBeforeItGenerates(t *testing.T) {
+	body := handlerBody(t, "message_answer.go", "GetMessageAnswer")
+
+	claim := firstCallPos(body, "object", "ClaimMessageAnswer")
+	if claim == token.NoPos {
+		t.Fatal("GetMessageAnswer never claims the message; two concurrent requests both generate and both charge")
+	}
+	if n := countSelectorCalls(body, "object", "ReleaseMessageAnswer"); n != 1 {
+		t.Errorf("GetMessageAnswer releases the claim %d times, want exactly 1 (a failed generation must be retryable before the lease runs out)", n)
+	}
+
+	for _, spend := range []struct{ what, pkg, fn string }{
+		{"the pre-flight dry run", "", "validateTransactionBeforeAIGeneration"},
+		{"the knowledge embedding", "object", "GetNearestKnowledge"},
+		{"the debit", "object", "AddTransactionForMessage"},
+	} {
+		var at token.Pos
+		if spend.pkg == "" {
+			at = firstIdentCallPos(body, spend.fn)
+		} else {
+			at = firstCallPos(body, spend.pkg, spend.fn)
+		}
+		if at != token.NoPos && at < claim {
+			t.Errorf("GetMessageAnswer reaches %s at pos %d, before claiming the message at pos %d", spend.what, at, claim)
+		}
+	}
+}
+
+// firstCallPos reports the position of the first pkg.Name(...) call.
+func firstCallPos(n ast.Node, pkg, name string) token.Pos {
+	found := token.NoPos
+	ast.Inspect(n, func(node ast.Node) bool {
+		if found != token.NoPos {
+			return false
+		}
+		call, ok := node.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || sel.Sel.Name != name {
+			return true
+		}
+		if ident, ok := sel.X.(*ast.Ident); ok && ident.Name == pkg {
+			found = call.Pos()
+			return false
+		}
+		return true
+	})
+	return found
+}
+
+// firstIdentCallPos reports the position of the first call to a package-local func.
+func firstIdentCallPos(n ast.Node, name string) token.Pos {
+	found := token.NoPos
+	ast.Inspect(n, func(node ast.Node) bool {
+		if found != token.NoPos {
+			return false
+		}
+		call, ok := node.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		if ident, ok := call.Fun.(*ast.Ident); ok && ident.Name == name {
+			found = call.Pos()
+			return false
+		}
+		return true
+	})
+	return found
+}
+
 // handlerBody returns the body of a named function in a package source file.
 func handlerBody(t *testing.T, file, name string) *ast.BlockStmt {
 	t.Helper()

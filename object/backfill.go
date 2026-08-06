@@ -69,10 +69,45 @@ func backfillNullScalars(db *dbx.DB, table string, model interface{}) {
 		if !ok {
 			continue
 		}
-		stmt := fmt.Sprintf("UPDATE %s SET %s = %s WHERE %s IS NULL", table, col, zero, col)
-		if _, err := db.NewQuery(stmt).Execute(); err != nil {
-			log.Warning("backfill %s.%s: %v", table, col, err)
-		}
+		backfillNullColumn(db, table, col, zero)
+	}
+}
+
+// backfillNullField repairs ONE named field's pre-existing NULLs — the same repair
+// backfillNullScalars does, for a table too big to sweep whole.
+//
+// `WHERE col IS NULL` has no index to use, so every column costs a full scan, and a
+// sweep pays that per column at every boot. On the largest tables here (message) that
+// is worth avoiding, and only the columns added since rows existed can hold NULL
+// anyway. The column name and zero literal still come from the struct field via the
+// same resolvers Sync used, so naming one field cannot drift from the schema.
+func backfillNullField(db *dbx.DB, table string, model interface{}, field string) {
+	t := reflect.TypeOf(model)
+	if t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+	f, ok := t.FieldByName(field)
+	if !ok {
+		log.Warning("backfill %s.%s: no such field on %T", table, field, model)
+		return
+	}
+	col, ok := backfillColumn(f)
+	if !ok {
+		return
+	}
+	zero, ok := zeroLiteral(f.Type)
+	if !ok {
+		return
+	}
+	backfillNullColumn(db, table, col, zero)
+}
+
+// backfillNullColumn is the repair itself: one idempotent UPDATE, a no-op once the
+// rows are clean. Best-effort — a failure logs and never blocks boot.
+func backfillNullColumn(db *dbx.DB, table, col, zero string) {
+	stmt := fmt.Sprintf("UPDATE %s SET %s = %s WHERE %s IS NULL", table, col, zero, col)
+	if _, err := db.NewQuery(stmt).Execute(); err != nil {
+		log.Warning("backfill %s.%s: %v", table, col, err)
 	}
 }
 
