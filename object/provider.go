@@ -346,7 +346,7 @@ func (p *Provider) GetTextToSpeechProvider(lang string) (tts.TextToSpeechProvide
 }
 
 func (p *Provider) GetSpeechToTextProvider(lang string) (stt.SpeechToTextProvider, error) {
-	pProvider, err := stt.GetSpeechToTextProvider(p.Type, p.SubType, p.ClientSecret, p.ProviderUrl)
+	pProvider, err := stt.GetSpeechToTextProvider(p.Type, p.SubType, p.ClientSecret, p.ProviderUrl, p.Flavor)
 	if err != nil {
 		return nil, err
 	}
