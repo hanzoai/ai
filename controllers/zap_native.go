@@ -33,6 +33,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -49,15 +50,23 @@ import (
 	"github.com/hanzoai/ai/util"
 )
 
-// InitZapHandlers registers native ZAP service handlers on the node.
-func InitZapHandlers() {
+// InitZapHandlers registers native ZAP service handlers on the node. router is
+// the fully-wrapped native router (routers.App) that serves every MsgType 200
+// path the fast-path switch and the registry do not claim.
+//
+// The router is an ARGUMENT, not a later setter call, because the two are not
+// separable: a gateway handler registered without a router answers 404 to the
+// entire RESTful surface — silently, with the handler present and the node
+// healthy. As a parameter the broken pairing is not expressible; the only way to
+// reach that mode is to write nil, in one visible place.
+func InitZapHandlers(router http.Handler) {
 	node := object.GetZapNode()
 	if node == nil {
 		return
 	}
 
 	node.Handle(object.MsgTypeCloud, handleCloudService)
-	node.Handle(object.MsgTypeHTTPRequest, handleGatewayHTTPRequest)
+	node.Handle(object.MsgTypeHTTPRequest, gateway(router))
 	log.Info("ZAP: registered handlers (cloud=%d, gateway=%d)", object.MsgTypeCloud, object.MsgTypeHTTPRequest)
 }
 
@@ -102,53 +111,59 @@ func handleCloudService(ctx context.Context, from string, msg *zap.Message) (res
 // to the same handlers used by native cloud service, then return a gateway
 // response (status + body + headers).
 
-func handleGatewayHTTPRequest(ctx context.Context, from string, msg *zap.Message) (resp *zap.Message, err error) {
-	// Beego parity: a handler panic must surface as a 500 response, never
-	// escape the dispatch seam.
-	defer func() {
-		if r := recover(); r != nil {
-			log.Error("zap gateway handler panic: %v", r)
-			errBody, _ := json.Marshal(map[string]string{"error": fmt.Sprintf("internal error: %v", r)})
-			resp, err = object.BuildGatewayResponse(500, errBody, nil)
-		}
-	}()
-	root := msg.Root()
-	method := root.Text(0)
-	path := root.Text(8)
-	query := root.Text(32)
-	body := root.Bytes(24)
+// gateway builds the MsgType 200 handler bound to the router that serves what the
+// fast paths and the registry do not claim. Constructing it WITH the router —
+// rather than registering it and installing the router from another line, in
+// another file — is what makes the 404-to-everything mode unreachable by omission.
+func gateway(router http.Handler) zap.Handler {
+	return func(ctx context.Context, from string, msg *zap.Message) (resp *zap.Message, err error) {
+		// Beego parity: a handler panic must surface as a 500 response, never
+		// escape the dispatch seam.
+		defer func() {
+			if r := recover(); r != nil {
+				log.Error("zap gateway handler panic: %v", r)
+				errBody, _ := json.Marshal(map[string]string{"error": fmt.Sprintf("internal error: %v", r)})
+				resp, err = object.BuildGatewayResponse(500, errBody, nil)
+			}
+		}()
+		root := msg.Root()
+		method := root.Text(0)
+		path := root.Text(8)
+		query := root.Text(32)
+		body := root.Bytes(24)
 
-	// Extract auth from headers JSON: {"Authorization":"Bearer xxx", ...}
-	auth := extractAuthFromHeaders(root.Bytes(16))
+		// Extract auth from headers JSON: {"Authorization":"Bearer xxx", ...}
+		auth := extractAuthFromHeaders(root.Bytes(16))
 
-	switch {
-	case path == "/v1/chat" || path == "/v1/chat/completions" || path == "/v1/completions":
-		return zapChatHandler(ctx, auth, body)
-	case path == "/v1/models":
-		// R-04: require auth for model listing
-		if auth == "" {
-			errBody, _ := json.Marshal(map[string]interface{}{
-				"error": map[string]string{
-					"message": "Authentication required. Provide a Bearer token.",
-					"type":    "authentication_error",
-					"code":    "unauthorized",
-				},
-			})
-			return object.BuildGatewayResponse(401, errBody, nil)
+		switch {
+		case path == "/v1/chat" || path == "/v1/chat/completions" || path == "/v1/completions":
+			return zapChatHandler(ctx, auth, body)
+		case path == "/v1/models":
+			// R-04: require auth for model listing
+			if auth == "" {
+				errBody, _ := json.Marshal(map[string]interface{}{
+					"error": map[string]string{
+						"message": "Authentication required. Provide a Bearer token.",
+						"type":    "authentication_error",
+						"code":    "unauthorized",
+					},
+				})
+				return object.BuildGatewayResponse(401, errBody, nil)
+			}
+			return zapListModelsHandler()
+		case strings.HasPrefix(path, "/v1/balance"):
+			return zapBalanceHandler(auth, body)
 		}
-		return zapListModelsHandler()
-	case strings.HasPrefix(path, "/v1/balance"):
-		return zapBalanceHandler(auth, body)
+		// Migrated route-groups self-register their gateway path prefixes into the
+		// dispatch registry (zap_registry.go). A miss is not a hole: the same request
+		// served over the forward bridge (MsgTypeForward) reaches the full beego route
+		// table, so un-migrated routes still serve (strangler fallback).
+		if msg, handled, err := dispatchGateway(ctx, router, method, path, query, auth, body); handled {
+			return msg, err
+		}
+		errBody, _ := json.Marshal(map[string]string{"error": "not found: " + path})
+		return object.BuildGatewayResponse(404, errBody, nil)
 	}
-	// Migrated route-groups self-register their gateway path prefixes into the
-	// dispatch registry (zap_registry.go). A miss is not a hole: the same request
-	// served over the forward bridge (MsgTypeForward) reaches the full beego route
-	// table, so un-migrated routes still serve (strangler fallback).
-	if msg, handled, err := dispatchGateway(ctx, method, path, query, auth, body); handled {
-		return msg, err
-	}
-	errBody, _ := json.Marshal(map[string]string{"error": "not found: " + path})
-	return object.BuildGatewayResponse(404, errBody, nil)
 }
 
 // dispatchGateway routes an HTTP-over-ZAP request to a migrated group's native
@@ -158,8 +173,14 @@ func handleGatewayHTTPRequest(ctx context.Context, from string, msg *zap.Message
 // that returns errDecline says the path is inside its prefix but not one it
 // serves, so the walk continues — that is what keeps a broad prefix like
 // "/v1/models/" from swallowing a sibling ("/v1/models/providers") that another
-// registration owns. handled == false means nothing claimed the path.
-func dispatchGateway(ctx context.Context, method, path, query, auth string, body []byte) (*zap.Message, bool, error) {
+// registration owns. handled == false means nothing claimed the path and no
+// router was supplied.
+//
+// router is the last candidate in that chain, and it is whatever the caller can
+// honestly fall back to: the transport handler passes routers.App; a caller that
+// is ALREADY inside routers.App passes nil, because falling back there would
+// re-enter itself.
+func dispatchGateway(ctx context.Context, router http.Handler, method, path, query, auth string, body []byte) (*zap.Message, bool, error) {
 	for _, h := range lookupGatewayRoutes(path) {
 		msg, err := h(ctx, method, path, query, auth, body)
 		if errors.Is(err, errDecline) {
@@ -174,7 +195,7 @@ func dispatchGateway(ctx context.Context, method, path, query, auth string, body
 	// No registry entry owns this path — serve it through the native router,
 	// which resolves method + path parameters and runs every filter. See
 	// zap_gateway_fallback.go for why a second router is not taught to do that.
-	return serveGatewayViaRouter(ctx, method, path, query, auth, body)
+	return serveGatewayViaRouter(ctx, router, method, path, query, auth, body)
 }
 
 // extractAuthFromHeaders parses the Authorization header from a JSON-encoded
