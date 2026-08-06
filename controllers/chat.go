@@ -199,17 +199,29 @@ func (c *ApiController) UpdateChat() {
 	}
 	id = util.GetIdFromOwnerAndName(chatOwner, name)
 
-	if conf.IsDemoMode() {
-		originalChat, err := object.GetChat(id)
-		if err != nil {
-			c.ResponseError(err.Error())
-			return
-		}
-		if originalChat == nil {
-			c.ResponseError(fmt.Sprintf("The chat: %s is not found", id))
-			return
-		}
+	// The STORED row says whose chat this is. `chat.User` above is a value the request
+	// CARRIES, so a caller that writes its own name there and someone else's chat in
+	// ?id= passes that check and overwrites their row.
+	originalChat, err := object.GetChat(id)
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+	if originalChat == nil {
+		c.ResponseError(fmt.Sprintf("The chat: %s is not found", id))
+		return
+	}
+	if ok = c.IsCurrentUser(originalChat.User); !ok {
+		return
+	}
 
+	// Organization is the org the usage plane books this chat's turns to
+	// (recordCasibaseChatUsage and the TTS recorders read it, falling back to Owner),
+	// so an update may no more move the row to another tenant's books than it may
+	// change its owner.
+	chat.Organization = originalChat.Organization
+
+	if conf.IsDemoMode() {
 		originalChat.ModelProvider = chat.ModelProvider
 		chat = *originalChat
 	}
@@ -244,6 +256,9 @@ func (c *ApiController) AddChat() {
 	}
 
 	chat.Owner = chatOwner
+	// Organization is the org the usage plane books this chat's turns to. Like the
+	// owner it is a fact about the caller, not a field the caller fills in.
+	chat.Organization = c.GetOrg()
 
 	currentTime := util.GetCurrentTime()
 	chat.CreatedTime = currentTime
@@ -298,6 +313,23 @@ func (c *ApiController) DeleteChat() {
 	}
 
 	chat.Owner = chatOwner
+
+	// Authorize against the row being destroyed. The body names only WHICH chat
+	// (owner + name); its `user` is another value the caller chose, so writing its own
+	// name there and a victim's chat name in `name` satisfies the check above and
+	// deletes the victim's chat and every message in it.
+	storedChat, err := object.GetChat(chat.GetId())
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+	if storedChat == nil {
+		c.ResponseError(fmt.Sprintf("The chat: %s is not found", chat.GetId()))
+		return
+	}
+	if ok = c.IsCurrentUser(storedChat.User); !ok {
+		return
+	}
 
 	success, err := object.DeleteChat(&chat)
 	if err != nil {

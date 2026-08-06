@@ -33,6 +33,13 @@
 // via object.ParseAndValidateJWT / sk- IAM key via getUserByAccessKey) — identity
 // is never taken from the body; org scope is always the resolved user's Owner.
 //
+// Tenancy parity: a chat-plane row's Owner and Organization are the ledger the
+// answer's debit lands in and the org the usage plane books it to, so this plane
+// stamps them from the server side exactly as chat.go / message.go do — Owner from
+// the chatOwner constant, Organization from the resolved principal — and re-derives
+// the owner half of any caller-supplied id. A write that names a STORED row is
+// authorized against THAT row's user, never against the user the request carries.
+//
 // Envelope parity: success/error use the SAME {status,data,data2,msg} Response the
 // beego ResponseOk/ResponseError emit (the console frontend contract), via the
 // shared zapProviderOk / zapProviderError builders.
@@ -148,15 +155,25 @@ func hasAnyPrefix(s string, prefixes ...string) bool {
 	return false
 }
 
-// zapIsCurrentUser mirrors ApiController.IsCurrentUser: an org admin may act on any
-// user's row; a non-admin may act only on its own (username == input). Returns a
-// 403 denial to return as-is, or nil to proceed. The anonymous (u-<hash>) fallback
-// of the beego path is unavailable natively (no client IP / user-agent), so a
-// native caller is always its verified Bearer principal.
+// zapIsCurrentUser mirrors ApiController.IsCurrentUser: it answers for NAMES on both
+// sides, then lets an org admin act on any user's row and a non-admin only on its own
+// (username == input). Returns a 403 denial to return as-is, or nil to proceed. The
+// anonymous (u-<hash>) fallback of the beego path is unavailable natively (no client
+// IP / user-agent), so a native caller is always its verified Bearer principal.
+//
+// The name test is the load-bearing half here. This plane's writes are on the beego
+// filter's benign-read exempt list, so an UNAUTHENTICATED caller reaches them:
+// zapPrincipalUser("") is nil, which left username "" — and "" != "" is false, so the
+// guard returned "allowed" and the caller acted as the empty user. A chat-plane row
+// with no user bills `admin/`, the admin ORG's own pool wallet.
 func zapIsCurrentUser(user *iam.User, input string) *zap.Message {
 	username := ""
 	if user != nil {
 		username = user.Name
+	}
+	if !isName(username) || !isName(input) {
+		msg, _ := zapProviderError(403, "Unauthorized operation")
+		return msg
 	}
 	if !util.IsAdmin(user) && username != input {
 		msg, _ := zapProviderError(403, "Unauthorized operation")
@@ -356,19 +373,30 @@ func zapUpdateChatHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 		return deny, nil
 	}
 
+	_, name, err := util.GetOwnerAndNameFromIdWithError(req.ID)
+	if err != nil {
+		return zapProviderError(200, err.Error())
+	}
+	id := util.GetIdFromOwnerAndName(chatOwner, name)
+
+	originalChat, err := object.GetChat(id)
+	if err != nil {
+		return zapProviderError(200, err.Error())
+	}
+	if originalChat == nil {
+		return zapProviderError(200, "The chat: "+id+" is not found")
+	}
+	if deny := zapIsCurrentUser(user, originalChat.User); deny != nil {
+		return deny, nil
+	}
+	chat.Organization = originalChat.Organization
+
 	if conf.IsDemoMode() {
-		originalChat, err := object.GetChat(req.ID)
-		if err != nil {
-			return zapProviderError(200, err.Error())
-		}
-		if originalChat == nil {
-			return zapProviderError(200, "The chat: "+req.ID+" is not found")
-		}
 		originalChat.ModelProvider = chat.ModelProvider
 		chat = *originalChat
 	}
 
-	success, err := object.UpdateChat(req.ID, &chat)
+	success, err := object.UpdateChat(id, &chat)
 	if err != nil {
 		return zapProviderError(200, err.Error())
 	}
@@ -390,6 +418,9 @@ func zapAddChatHandler(_ context.Context, auth string, body []byte) (*zap.Messag
 	if deny := zapIsCurrentUser(user, chat.User); deny != nil {
 		return deny, nil
 	}
+
+	chat.Owner = chatOwner
+	chat.Organization = user.Owner
 
 	currentTime := util.GetCurrentTime()
 	chat.CreatedTime = currentTime
@@ -427,6 +458,19 @@ func zapDeleteChatHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 		return zapProviderError(400, "invalid request: "+err.Error())
 	}
 	if deny := zapIsCurrentUser(user, chat.User); deny != nil {
+		return deny, nil
+	}
+
+	chat.Owner = chatOwner
+
+	storedChat, err := object.GetChat(chat.GetId())
+	if err != nil {
+		return zapProviderError(200, err.Error())
+	}
+	if storedChat == nil {
+		return zapProviderError(200, "The chat: "+chat.GetId()+" is not found")
+	}
+	if deny := zapIsCurrentUser(user, storedChat.User); deny != nil {
 		return deny, nil
 	}
 
@@ -599,18 +643,33 @@ func zapUpdateMessageHandler(_ context.Context, auth string, body []byte) (*zap.
 		return deny, nil
 	}
 
+	_, name, err := util.GetOwnerAndNameFromIdWithError(req.ID)
+	if err != nil {
+		return zapProviderError(200, err.Error())
+	}
+	id := util.GetIdFromOwnerAndName(chatOwner, name)
+	message.Owner = chatOwner
+
+	storedMessage, err := object.GetMessage(id)
+	if err != nil {
+		return zapProviderError(200, err.Error())
+	}
+	if storedMessage == nil {
+		return zapProviderError(200, "The message: "+id+" is not found")
+	}
+	if deny := zapIsCurrentUser(user, storedMessage.User); deny != nil {
+		return deny, nil
+	}
+	message.Organization = storedMessage.Organization
+
 	if message.NeedNotify {
-		org := ""
-		if user != nil {
-			org = user.Owner
-		}
-		if err := message.SendEmail("en", org); err != nil {
+		if err := message.SendEmail("en", user.Owner); err != nil {
 			return zapProviderError(200, err.Error())
 		}
 		message.NeedNotify = false
 	}
 
-	success, err := object.UpdateMessage(req.ID, &message, req.IsHitOnly)
+	success, err := object.UpdateMessage(id, &message, req.IsHitOnly)
 	if err != nil {
 		return zapProviderError(200, err.Error())
 	}
@@ -638,13 +697,19 @@ func zapAddMessageHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 		return deny, nil
 	}
 
+	message.Owner = chatOwner
+
 	id := util.GetIdFromOwnerAndName(message.Owner, message.Name)
 	originMessage, err := object.GetMessage(id)
 	if err != nil {
 		return zapProviderError(200, err.Error())
 	}
-	// If originMessage is non-nil this is an edit — drop all later messages.
+	// If originMessage is non-nil this is an edit — drop all later messages. It
+	// rewrites a STORED turn, so that row's own user authorizes it.
 	if originMessage != nil {
+		if deny := zapIsCurrentUser(user, originMessage.User); deny != nil {
+			return deny, nil
+		}
 		if err = object.DeleteAllLaterMessages(id); err != nil {
 			return zapProviderError(200, err.Error())
 		}
@@ -697,11 +762,10 @@ func zapAddMessageHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 
 	var chat *object.Chat
 	if message.Chat == "" {
-		chat, err = zapAddInitialChat(message.Organization, message.User, message.Store)
+		chat, err = zapAddInitialChat(user.Owner, message.User, message.Store)
 		if err != nil {
 			return zapProviderError(200, err.Error())
 		}
-		message.Organization = chat.Organization
 		message.Chat = chat.Name
 	} else {
 		chatId := util.GetId(message.Owner, message.Chat)
@@ -713,6 +777,8 @@ func zapAddMessageHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 			return zapProviderError(200, "chat:The chat: "+chatId+" is not found")
 		}
 	}
+	// A turn's org is its CHAT's org — the row the usage plane reads.
+	message.Organization = chat.Organization
 
 	if err = object.RefineMessageFiles(&message, "", "en"); err != nil {
 		return zapProviderError(200, err.Error())
@@ -795,6 +861,12 @@ func zapDeleteMessageHandler(_ context.Context, auth string, body []byte) (*zap.
 	if err := json.Unmarshal(body, &message); err != nil {
 		return zapProviderError(400, "invalid request: "+err.Error())
 	}
+	if deny := zapIsCurrentUser(user, message.User); deny != nil {
+		return deny, nil
+	}
+
+	message.Owner = chatOwner
+
 	success, err := object.DeleteMessage(&message)
 	if err != nil {
 		return zapProviderError(200, err.Error())
@@ -816,7 +888,7 @@ func zapDeleteWelcomeMessageHandler(_ context.Context, auth string, body []byte)
 		return zapProviderError(400, "invalid request: "+err.Error())
 	}
 
-	id := util.GetIdFromOwnerAndName(reqMessage.Owner, reqMessage.Name)
+	id := util.GetIdFromOwnerAndName(chatOwner, reqMessage.Name)
 	message, err := object.GetMessage(id)
 	if err != nil {
 		return zapProviderError(200, err.Error())
