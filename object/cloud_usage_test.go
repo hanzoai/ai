@@ -15,9 +15,23 @@
 package object
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
+
+// The dedup aliases deliberately reuse their column names (any(timestamp) AS
+// timestamp), and ClickHouse resolves a WHERE identifier in the same SELECT
+// against those aliases — reading the AGGREGATE and refusing with
+// ILLEGAL_AGGREGATION (code 184). The predicate must therefore live one level
+// below, on a plain scan of the base table.
+func TestCloudUsageDedupedSourceFiltersBelowTheAliases(t *testing.T) {
+	src := cloudUsageDedupedSource("timestamp >= ? AND timestamp < ? AND organization = ?")
+	want := "FROM (SELECT * FROM hanzo.cloud_usage WHERE timestamp >= ? AND timestamp < ? AND organization = ?) GROUP BY id)"
+	if !strings.HasSuffix(src, want) {
+		t.Fatalf("dedup predicate must be an inner plain scan, got: %s", src)
+	}
+}
 
 func mustTime(t *testing.T, s string) time.Time {
 	t.Helper()
