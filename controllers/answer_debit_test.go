@@ -100,7 +100,7 @@ func TestAnswerIsOneCompletionOneDebit(t *testing.T) {
 	}
 
 	answerMessage := &object.Message{
-		Owner:         answerOwner,
+		Owner:         chatOwner,
 		Name:          "message_x",
 		User:          "alice",
 		Author:        "AI",
@@ -127,8 +127,8 @@ func TestAnswerIsOneCompletionOneDebit(t *testing.T) {
 	if want := answerMessage.GetId(); d.requestID != want {
 		t.Errorf("debit request id = %q, want the answer message id %q", d.requestID, want)
 	}
-	if d.namespace != answerOwner || d.subject != answerOwner+"/alice" {
-		t.Errorf("debit landed on %q/%q, want namespace %q subject %q", d.namespace, d.subject, answerOwner, answerOwner+"/alice")
+	if d.namespace != chatOwner || d.subject != chatOwner+"/alice" {
+		t.Errorf("debit landed on %q/%q, want namespace %q subject %q", d.namespace, d.subject, chatOwner, chatOwner+"/alice")
 	}
 }
 
@@ -141,7 +141,7 @@ func TestAnswerGateRefusesUnfundedPayer(t *testing.T) {
 
 	provider := &countingProvider{answer: "42", price: 1.50}
 
-	err := gateBalance(answerOwner, "alice", "what is six times seven?", nil, object.AnswerPrompt, answerProvider(), provider, "en")
+	err := gateBalance(chatOwner, "alice", "what is six times seven?", nil, object.AnswerPrompt, answerProvider(), provider, "en")
 	if err == nil {
 		t.Fatal("an unfunded payer must be refused before the model runs, got nil error")
 	}
@@ -158,8 +158,8 @@ func TestAnswerGateRefusesUnfundedPayer(t *testing.T) {
 	if len(*got) != 0 {
 		t.Errorf("a refused answer must charge nothing, got %+v", *got)
 	}
-	if len(*reads) != 1 || (*reads)[0].subject != answerOwner+"/alice" || (*reads)[0].namespace != answerOwner {
-		t.Errorf("gate read %+v, want one read of subject %q in namespace %q", *reads, answerOwner+"/alice", answerOwner)
+	if len(*reads) != 1 || (*reads)[0].subject != chatOwner+"/alice" || (*reads)[0].namespace != chatOwner {
+		t.Errorf("gate read %+v, want one read of subject %q in namespace %q", *reads, chatOwner+"/alice", chatOwner)
 	}
 }
 
@@ -170,7 +170,7 @@ func TestAnswerGateAdmitsFundedPayer(t *testing.T) {
 	balanceOf(t, 100_00)
 
 	provider := &countingProvider{answer: "42", price: 1.50}
-	if err := gateBalance(answerOwner, "alice", "q", nil, object.AnswerPrompt, answerProvider(), provider, "en"); err != nil {
+	if err := gateBalance(chatOwner, "alice", "q", nil, object.AnswerPrompt, answerProvider(), provider, "en"); err != nil {
 		t.Fatalf("a funded payer must be admitted, got %v", err)
 	}
 	if len(*got) != 0 {
