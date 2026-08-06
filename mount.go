@@ -145,12 +145,22 @@ func mountRoutes(app *zip.App) {
 	//
 	// This is the seam that lets an address be described without being
 	// reimplemented. A glob tells the host a prefix and nothing under it, so the
-	// fleet document printed `/v1/{wildcard1}` where the model catalogue, the
-	// providers projection and the limited-preview access flow are: four operations
-	// that were authenticated, reachable and answering in production while no
-	// generated SDK, no MCP tool and no CLI command existed for any of them, and
-	// while nothing said who served them. One address, one owner, one
-	// implementation — and now one description.
+	// fleet document printed `/v1/{wildcard1}` where the model catalogue and the
+	// limited-preview access flow are: three operations that were authenticated,
+	// reachable and answering in production while no generated SDK, no MCP tool and
+	// no CLI command existed for any of them, and while nothing said who served
+	// them. One address, one owner, one implementation — and now one description.
+	//
+	// /v1/models/providers joined them later and for the weaker of the two
+	// reasons — OWNERSHIP, not absence. Measured on the live document, it was
+	// already published: the emitter picks a path up either way, and an
+	// unpromoted one is attributed to the module path
+	// (`x-app: github.com/hanzoai/ai`, 314 operations) rather than to the app
+	// (`x-app: ai`). Promoting it puts the providers projection under the same
+	// owner as the catalogue it projects, which is the whole point of it being a
+	// sub-resource of /v1/models. Do NOT read this list as "these would 404
+	// otherwise" — promotion has never changed what is served, only who the
+	// document says serves it.
 	register := map[string]func(string, ...zip.Handler) zip.Router{
 		http.MethodGet:    app.Get,
 		http.MethodPost:   app.Post,
