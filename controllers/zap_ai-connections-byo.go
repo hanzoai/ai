@@ -34,18 +34,16 @@
 // NOT migrated here — the OAuth pair ConnectAIProvider / CallbackAIProvider
 // (GET .../authorize, GET .../callback). Those are browser-redirect (302) flows
 // with no native-ZAP caller: authorize sends a browser to the provider and callback
-// is hit BY the provider's redirect. They stay on beego (strangler) and can only be
-// projected onto the gateway (MsgType 200) once Integrate settles the registry on a
-// PATH-CARRYING gateway handler signature (the group's DELETE/usage/authorize/callback
-// routes all need the request path + query, which the 3-arg gateway variant cannot
-// supply). Until then registerGatewayPath is intentionally not called from this file.
+// is hit BY the provider's redirect. They stay on routers.App, and can only be
+// projected onto the gateway (MsgType 200) through the PATH-CARRYING registry
+// (registerGatewayRoute — the group's DELETE/usage/authorize/callback routes all
+// need the request path + query, which the body-only variant cannot supply).
+// registerGatewayPath is therefore intentionally not called from this file.
 //
 // Registration convention (recipe): this group self-registers from its own file via
-// init() → registerCloud. The registry primitives are the ONE shared home Integrate
-// reconciles across the mid-flight groups; this file never redefines them and only
-// depends on registerCloud, whose (method, func(ctx,auth,body)) shape every registry
-// variant agrees on. Beego keeps serving these routes in parallel until Integrate
-// flips native dispatch.
+// init() → registerCloud. The registry primitives live once in zap_registry.go;
+// this file never redefines them and only depends on registerCloud. The same routes
+// stay live on routers.App, which also backs the gateway fallback.
 
 package controllers
 

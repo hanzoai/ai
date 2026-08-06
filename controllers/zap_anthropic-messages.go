@@ -25,10 +25,9 @@
 // choice zapChatHandler makes. The `stream` flag is still carried on the usage
 // record for metering parity.
 //
-// Registration convention (recipe): this file OWNS the per-group registry seam and
-// self-registers from its own init() — no edit to zap_native.go. The dispatch flip
-// (making handleCloudService/handleGatewayHTTPRequest consult these maps) is the
-// Integrate step; until then beego keeps serving /v1/messages (working hybrid).
+// Registration convention (recipe): this file self-registers from its own init()
+// — no edit to zap_native.go. handleCloudService and the gateway dispatch consult
+// the shared registry (zap_registry.go) these registrations land in.
 
 package controllers
 
@@ -55,11 +54,9 @@ import (
 // ── Registration (recipe per-group convention) ───────────────────────────────
 //
 // The registry primitives (registerCloud / registerGatewayPath + their maps and
-// the lookup consulted by handleCloudService / handleGatewayHTTPRequest) live ONCE
-// in the shared dispatch (the zap_native.go refactor Integrate owns). This group
-// file only CALLS them from its own init(), so no two groups edit a shared
-// registration file. The dispatch flip that consults the maps is the Integrate
-// step; until then beego keeps serving /v1/messages (working hybrid).
+// the lookups consulted by handleCloudService / the gateway dispatch) live ONCE
+// in zap_registry.go. This group file only CALLS them from its own init(), so no
+// two groups edit a shared registration file.
 
 func init() { registerZapAnthropic() }
 
@@ -119,7 +116,7 @@ func anthropicErr(errType, message string, status int) (int, []byte, string) {
 func zapAnthropicMessages(ctx context.Context, auth string, reqBody []byte) (int, []byte, string) {
 	// STEP 1 — identity: the ONE auth seam. `auth` is the raw credential (optionally
 	// "Bearer …"); x-api-key parity for the gateway path is a follow-on in
-	// extractAuthFromHeaders (Integrate's file), not a second seam here.
+	// extractAuthFromHeaders (zap_native.go), not a second seam here.
 	token := strings.TrimPrefix(auth, "Bearer ")
 	if token == "" {
 		return anthropicErr("authentication_error", "Missing API key. Provide x-api-key header or Authorization: Bearer header.", 401)

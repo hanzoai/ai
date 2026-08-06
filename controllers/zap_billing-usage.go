@@ -15,8 +15,8 @@
 // zap_billing-usage.go — native ZAP handlers for the billing/usage route group,
 // migrated STRANGLER-style off beego (controllers/usage.go, cloud_usage.go,
 // do_backfill.go). Each handler re-implements its beego twin against object/ +
-// iam directly — it never wraps or transforms the beego controller. The beego
-// routes stay live in router.go until Integrate flips native dispatch on.
+// iam directly — it never wraps or transforms the beego controller. The same
+// routes stay live on routers.App, which also backs the gateway fallback.
 //
 // Group routes (all HTTP-over-ZAP, gateway MsgType 200):
 //   GET  /v1/get-usages

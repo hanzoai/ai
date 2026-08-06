@@ -18,15 +18,15 @@
 // STRANGLER: each beego method (ApiController.GetApplications, GetApplication,
 // UpdateApplication, AddApplication, DeleteApplication, DeployApplication,
 // UndeployApplication, GetK8sStatus) is re-implemented here as a pure ZAP handler
-// against object/ + iam, mirroring zap_native.go:zapChatHandler. The beego routes
-// stay live in router.go until Integrate flips dispatch to these.
+// against object/ + iam, mirroring zap_native.go:zapChatHandler. The same routes
+// stay live on routers.App, which also backs the gateway fallback.
 //
 // Registration convention (recipe): this group exposes two group-local dispatch
 // tables (zapApplicationDeployCloud / …Gateway) keyed by native cloud method and
 // gateway path, via a private type ALIAS — mirroring zap_responses.go /
 // zap_router-policy-stats.go. It declares NO shared symbol and edits NO shared
-// file; Integrate ranges over these tables to wire the ONE canonical registry
-// (registerCloud / registerGatewayPath) when it flips native dispatch on.
+// file; this file's init() ranges over these tables into the ONE canonical
+// registry (registerCloud / registerGatewayPath, zap_registry.go).
 //
 // Identity/scope parity: these endpoints have NO session filter on the ZAP path
 // (there is no beego filter chain), so every handler fails closed — a verified
@@ -59,9 +59,9 @@ import (
 // ── ZAP dispatch tables (group-local, collision-free) ────────────────────
 //
 // A type ALIAS (not a new named type) so no shared symbol is declared, mirroring
-// zap_router-policy-stats.go. Integrate ranges over the two tables below to wire
-// this group into the ONE canonical registry (registerCloud(method, h) /
-// registerGatewayPath(path, h)) when it flips native dispatch on.
+// zap_router-policy-stats.go. init ranges over the two tables below to wire this
+// group into the ONE canonical registry (registerCloud(method, h) /
+// registerGatewayPath(path, h), zap_registry.go).
 
 type zapApplicationDeployFn = func(ctx context.Context, auth string, body []byte) (*zap.Message, error)
 
