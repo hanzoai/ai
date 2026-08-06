@@ -41,9 +41,51 @@ func shouldPerformDryRun(providerType string, modelSubType string, hasAgentClien
 	return providerType != "Dummy" && !isReasonModel(modelSubType) && !hasAgentClients
 }
 
-// validateTransactionBeforeAIGeneration performs a dry run to estimate cost and validates
-// the user has sufficient balance before proceeding with AI generation.
-// This avoids expensive operations if the user cannot afford the transaction.
+// gateBalance refuses an AI generation BEFORE it spends upstream when the payer
+// cannot cover what that generation is estimated to cost. It is the ONE pre-flight
+// money gate every answer surface runs, so no surface can generate for free.
+//
+// The estimate is the provider's OWN dry run over the same question, history and
+// prompt the real call will carry, so the number gated on is the number billed —
+// never a rate-table guess keyed on a provider name. A provider with no dry run
+// (Dummy, reason models) has nothing to estimate and is not gated.
+//
+// owner/user name the payer, and they are the SAME pair AddTransactionForMessage
+// debits: a call this gate admits depletes the account this gate read.
+func gateBalance(
+	owner string,
+	user string,
+	question string,
+	history []*model.RawMessage,
+	prompt string,
+	modelProvider *object.Provider,
+	modelProviderObj model.ModelProvider,
+	acceptLanguage string,
+) error {
+	if !shouldPerformDryRun(modelProvider.Type, modelProvider.SubType, false) {
+		return nil
+	}
+
+	// The dry run marker makes the provider estimate the call instead of running it.
+	// dryRunWriter is an io.Writer AND an http.Flusher — some providers require both
+	// even when they answer nothing.
+	estimate, err := modelProviderObj.QueryText(model.DryRunPrefix+question, &dryRunWriter{}, history, prompt, nil, nil, acceptLanguage)
+	if err != nil {
+		return fmt.Errorf("failed to estimate token count: %s", err.Error())
+	}
+
+	return object.ValidateTransactionForMessage(&object.Message{
+		Owner:         owner,
+		User:          user,
+		ModelProvider: modelProvider.Name,
+		Price:         estimate.TotalPrice,
+		Currency:      estimate.Currency,
+	})
+}
+
+// validateTransactionBeforeAIGeneration runs gateBalance for a chat turn, whose
+// history is the chat's own recent messages and whose prompt is the store's. It
+// reports refusal on the message's event stream rather than as a bare error.
 func validateTransactionBeforeAIGeneration(
 	message *object.Message,
 	chat *object.Chat,
@@ -58,38 +100,13 @@ func validateTransactionBeforeAIGeneration(
 		return nil
 	}
 
-	// Get recent messages for context in estimation
 	history, err := object.GetRecentRawMessages(chat.Name, message.CreatedTime, store.MemoryLimit)
 	if err != nil {
 		responseErrorFunc(message, err.Error())
 		return err
 	}
 
-	// Prefix question with dry run marker to trigger estimation without actual AI call
-	dryRunQuestion := model.DryRunPrefix + question
-
-	// Use dryRunWriter which implements both io.Writer and http.Flusher
-	// Some model providers require http.Flusher even for dry run
-	dryRunResult, err := modelProviderObj.QueryText(dryRunQuestion, &dryRunWriter{}, history, store.Prompt, nil, nil, acceptLanguage)
-	if err != nil {
-		responseErrorFunc(message, fmt.Sprintf("failed to estimate token count: %s", err.Error()))
-		return err
-	}
-
-	// Create a temporary message with estimated price for dry run validation
-	tempMessage := &object.Message{
-		Owner:         message.Owner,
-		CreatedTime:   message.CreatedTime,
-		Chat:          message.Chat,
-		Name:          message.Name,
-		ModelProvider: modelProvider.Name,
-		User:          message.User,
-		Price:         dryRunResult.TotalPrice,
-		Currency:      dryRunResult.Currency,
-	}
-
-	// Validate transaction in dry run mode before AI generation
-	err = object.ValidateTransactionForMessage(tempMessage)
+	err = gateBalance(message.Owner, message.User, question, history, store.Prompt, modelProvider, modelProviderObj, acceptLanguage)
 	if err != nil {
 		responseErrorFunc(message, err.Error())
 		return err
