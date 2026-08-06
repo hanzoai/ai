@@ -26,6 +26,7 @@
 // only CALLS registerCloud/registerGatewayPath from its own init()):
 //
 //   POST /v1/audio/speech                         -> audio.speech            (OpenAI TTS)
+//   POST /v1/audio/transcriptions                 -> audio.transcribe        (OpenAI STT)
 //   POST /v1/audio/voice                          -> audio.voice             (Zen)
 //   POST /v1/audio/music                          -> audio.music             (Zen)
 //   POST /v1/audio/foley                          -> audio.foley             (Zen)
@@ -70,6 +71,7 @@ func init() {
 // registerZapAudio wires the audio group's handlers into the shared registry.
 func registerZapAudio() {
 	registerCloud("audio.speech", zapAudioSpeechHandler)
+	registerCloud("audio.transcribe", zapAudioTranscribeHandler)
 	registerCloud("audio.voice", zapAudioVerbHandler("voice"))
 	registerCloud("audio.music", zapAudioVerbHandler("music"))
 	registerCloud("audio.foley", zapAudioVerbHandler("foley"))
@@ -78,6 +80,7 @@ func registerZapAudio() {
 	registerCloud("stt.process", zapSTTHandler)
 
 	registerGatewayPath("/v1/audio/speech", zapAudioSpeechHandler)
+	registerGatewayPath("/v1/audio/transcriptions", zapAudioTranscribeHandler)
 	registerGatewayPath("/v1/audio/voice", zapAudioVerbHandler("voice"))
 	registerGatewayPath("/v1/audio/music", zapAudioVerbHandler("music"))
 	registerGatewayPath("/v1/audio/foley", zapAudioVerbHandler("foley"))
@@ -183,6 +186,127 @@ func zapRecordAudioUsage(ctx context.Context, authUser *iam.User, provider *obje
 	}
 	recordUsage(rec)
 	recordTrace(ctx, rec, startTime)
+}
+
+// ── audio.transcribe — OpenAI-compatible STT (mirrors AudioTranscriptions) ──
+
+func zapAudioTranscribeHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+	if auth == "" {
+		return object.BuildCloudResponse(401, nil, "authentication required")
+	}
+	form, err := parseTranscribeForm(body)
+	if err != nil {
+		return object.BuildCloudResponse(400, nil, err.Error())
+	}
+
+	// Identity + provider from the ONE auth seam (STEP 1). Auth is validated
+	// before the body-field checks, so an invalid credential is 401 regardless of
+	// body validity (never a probe-able 400), matching the HTTP handler.
+	provider, authUser, upstreamModel, err := zapResolveAuth(auth, form.model)
+	if err != nil {
+		return object.BuildCloudResponse(401, nil, err.Error())
+	}
+	if form.audio == nil {
+		return object.BuildCloudResponse(400, nil, "audio request requires a \"file\" part")
+	}
+	if form.model == "" {
+		return object.BuildCloudResponse(400, nil, "audio request requires a \"model\" field")
+	}
+
+	// Prepaid-balance gate — the ONE shared gate (STEP 4).
+	if gateErr := enforceBalanceGate(authUser, "", form.model); gateErr != nil {
+		return object.BuildCloudResponse(uint32(statusOf(gateErr)), nil, gateErr.Error())
+	}
+	isPremium := false
+	if route := resolveModelRoute(form.model); route != nil {
+		isPremium = route.premium
+	}
+
+	// No Zen STT verb exists; a Zen-routed model cannot serve this endpoint.
+	if provider.Type == "Zen" {
+		return object.BuildCloudResponse(400, nil, "model \""+form.model+"\" does not serve the /v1/audio/transcriptions endpoint")
+	}
+
+	// KMS secret + upstream-model/language binding (STEP 4/5), mirroring the HTTP path.
+	if err := object.ResolveProviderSecret(provider); err != nil {
+		log.Error("ZAP: KMS resolve %s: %v", provider.Name, err)
+	}
+	if upstreamModel != "" {
+		provider.SubType = upstreamModel
+	} else {
+		provider.SubType = form.model
+	}
+	if form.language != "" {
+		provider.Flavor = form.language
+	}
+
+	sttProvider, err := provider.GetSpeechToTextProvider("en")
+	if err != nil {
+		return object.BuildCloudResponse(502, nil, err.Error())
+	}
+
+	startTime := time.Now().UTC()
+	text, _, err := sttProvider.ProcessAudio(form.audio, ctx, "en")
+	if err != nil {
+		zapRecordAudioUsage(ctx, authUser, provider, form.model, isPremium, "error", err.Error(), startTime)
+		return object.BuildCloudResponse(502, nil, err.Error())
+	}
+	zapRecordAudioUsage(ctx, authUser, provider, form.model, isPremium, "success", "", startTime)
+
+	if form.responseFormat == "text" {
+		return object.BuildCloudResponse(200, []byte(text), "")
+	}
+	data, _ := json.Marshal(transcriptionResponse{Text: text})
+	return object.BuildCloudResponse(200, data, "")
+}
+
+// transcribeForm is the decoded OpenAI transcription multipart body.
+type transcribeForm struct {
+	model          string
+	language       string
+	responseFormat string
+	audio          *bytes.Reader
+}
+
+// parseTranscribeForm reconstructs the OpenAI multipart form (file + model
+// [+ language + response_format]) from the raw body, recovering the boundary
+// from the body's own opening line exactly as parseSTTForm does — the handler
+// stays on the shared (ctx, auth, body) signature. A missing "file" part is not
+// an error here: auth is resolved first, so the handler reports it as a 400
+// only to an authenticated caller.
+func parseTranscribeForm(body []byte) (*transcribeForm, error) {
+	boundary := multipartBoundary(body)
+	if boundary == "" {
+		return nil, fmt.Errorf("audio request requires a multipart form body")
+	}
+	mr := multipart.NewReader(bytes.NewReader(body), boundary)
+	form, err := mr.ReadForm(64 << 20)
+	if err != nil {
+		return nil, fmt.Errorf("read multipart form: %s", err.Error())
+	}
+	f := &transcribeForm{}
+	first := func(key string) string {
+		if v := form.Value[key]; len(v) > 0 {
+			return v[0]
+		}
+		return ""
+	}
+	f.model = first("model")
+	f.language = first("language")
+	f.responseFormat = first("response_format")
+	if files := form.File["file"]; len(files) > 0 {
+		fh, err := files[0].Open()
+		if err != nil {
+			return nil, fmt.Errorf("open \"file\" part: %s", err.Error())
+		}
+		defer fh.Close()
+		data, err := io.ReadAll(fh)
+		if err != nil {
+			return nil, fmt.Errorf("read \"file\" part: %s", err.Error())
+		}
+		f.audio = bytes.NewReader(data)
+	}
+	return f, nil
 }
 
 // ── audio.voice / .music / .foley — Zen-native (mirrors AudioMedia) ─────────
