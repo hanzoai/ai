@@ -27,7 +27,7 @@ import (
 
 	"github.com/hanzoai/account"
 
-	iam "github.com/hanzoai/ai/internal/iam"
+	iam "github.com/hanzoai/iam"
 
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
@@ -103,15 +103,14 @@ func (c *ApiController) Embeddings() {
 	if fam := familyForProviderType(provider.Type); fam != nil {
 		var hold *budgetHold
 		if authUser != nil {
-			ledger := c.billingOrg(authUser)
-			subject := account.Payer(account.Credential{Owner: ledger, Name: authUser.Name}).Subject()
+			subject := account.Payer(account.Credential{Owner: authUser.Owner, Name: authUser.Name}).Subject()
 			est := int64(1)
 			if zm, ok := fam.lookup(head.Model); ok {
 				est = zm.costCents(coarseTokenEstimate(c.Ctx.Input.RequestBody), 0)
 			}
 			var ok2 bool
 			if hold, ok2 = reserveBudget(subject, est); !ok2 {
-				c.ResponseAuthError(billingError("%s", object.InsufficientBalance(ledger, "cost").Message))
+				c.ResponseAuthError(billingError("Insufficient balance for the estimated cost. add credits to your wallet at https://pay.hanzo.ai"))
 				return
 			}
 		}
@@ -255,7 +254,7 @@ func (c *ApiController) Rerank() {
 
 	if authUser != nil {
 		rec := &usageRecord{
-			Owner:        c.billingOrg(authUser),
+			Owner:        authUser.Owner,
 			User:         authUser.Owner + "/" + authUser.Name,
 			Organization: authUser.Owner,
 			Model:        raw.Model,
@@ -343,7 +342,7 @@ func (c *ApiController) proxyJSON(provider *object.Provider, apiPath string, bod
 	if err != nil {
 		if authUser != nil {
 			errRecord := &usageRecord{
-				Owner:     c.billingOrg(authUser),
+				Owner:     authUser.Owner,
 				User:      authUser.Owner + "/" + authUser.Name,
 				Model:     userModel,
 				Provider:  provider.Name,
@@ -382,7 +381,7 @@ func (c *ApiController) proxyJSON(provider *object.Provider, apiPath string, bod
 			status = "error"
 		}
 		rec := &usageRecord{
-			Owner:        c.billingOrg(authUser),
+			Owner:        authUser.Owner,
 			User:         authUser.Owner + "/" + authUser.Name,
 			Organization: authUser.Owner,
 			Model:        userModel,

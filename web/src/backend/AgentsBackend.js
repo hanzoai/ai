@@ -15,7 +15,7 @@
 import * as Setting from "../Setting";
 
 export function getAgentsDashboardUrl() {
-  return fetch(`${Setting.ServerUrl}/v1/agents/dashboard`, {
+  return fetch(`${Setting.ServerUrl}/v1/get-agents-dashboard-url`, {
     method: "GET",
     credentials: "include",
     headers: {

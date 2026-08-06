@@ -40,11 +40,11 @@ import (
 	"time"
 
 	"github.com/hanzoai/ai/conf"
-	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
 	"github.com/hanzoai/decimal"
+	iam "github.com/hanzoai/iam"
 	"github.com/hanzoai/money"
 )
 
@@ -59,35 +59,30 @@ import (
 // flagship Zen/Enso SKUs, independent of what a given discovery snapshot advertises.
 const flagshipWindow = 1_000_000
 
+// pinnedSKU is a family SKU ai guarantees in /v1/models at a known context window.
+// When the family already serves the SKU, the pin fixes its listed window; when the
+// family does not advertise it yet — a SKU ai routes ahead of discovery (e.g.
+// enso-pro) — the pin also synthesizes the listing entry. Pins apply only to a
+// CONFIGURED family (enabled()), so an unconfigured family lists nothing. See
+// hip-00NN.
+type pinnedSKU struct {
+	id            string
+	contextWindow int
+}
+
 // modelFamily is one serving family as a value: its public name/brand + cold-start
 // ownership prefix, the config keys that hold its address, the provider record ai
 // forwards through, and a discovered-catalog snapshot refreshed from the family on a
 // TTL. All of zen's original machinery is a method on this value; zen and enso are
 // two instances.
 type modelFamily struct {
-	name       string                  // "zen" | "enso" | "openrouter" — the brand label
-	provider   string                  // the object.Provider Type this family serves ("Zen" | "Enso" | "OpenRouter")
+	name       string                  // "zen" | "enso" — the Provider label + brand
 	prefix     string                  // public brand prefix for cold-start ownership (before first discovery)
 	owner      string                  // public /v1/models owned_by: "zenlm" (Zen LM) | "hanzo" (Hanzo)
 	urlKey     string                  // config key for the base URL ("ZEN_URL" | "ENSO_URL")
 	keyKey     string                  // config key for the service key ("ZEN_API_KEY" | "ENSO_API_KEY")
 	providerFn func() *object.Provider // the virtual provider ai forwards through
-	// windows is the served context window ai guarantees for a DISCOVERED SKU,
-	// keyed by SKU id — a flagship reports its real 1M window even when a given
-	// discovery snapshot advertises less. It cannot add a SKU: a model appears in
-	// /v1/models iff the family serves it. A map (not a list ai could iterate into
-	// the listing) is what makes an unservable entry unrepresentable — the previous
-	// list synthesized a listing for any SKU the family "would" serve, which is how
-	// enso-pro was advertised, unpriced, for a family that answers 404 for it.
-	windows map[string]int
-
-	// decode turns a family's raw GET /v1/models body into discovered SKUs. nil means
-	// the Hanzo family wire shape (zenWireModel), which already carries every field ai
-	// needs. A family that publishes a DIFFERENT catalog dialect — OpenRouter states
-	// price per TOKEN and never states a tier or a funding class — supplies its own
-	// translation here, so the dialect is the ONLY thing that varies and discovery,
-	// TTL, listing, routing, and gating stay one implementation.
-	decode func([]byte) ([]zenModel, error)
+	pins       []pinnedSKU             // SKUs ai guarantees at a known window (applied only when enabled())
 
 	// discovered catalog — a read-mostly snapshot; discovery failure keeps the last
 	// good snapshot so a transient blip never empties ai's model list.
@@ -100,39 +95,42 @@ type modelFamily struct {
 
 var (
 	zenFam = &modelFamily{
-		name: "zen", provider: "Zen", prefix: "zen", owner: "zenlm", urlKey: "ZEN_URL", keyKey: "ZEN_API_KEY",
+		name: "zen", prefix: "zen", owner: "zenlm", urlKey: "ZEN_URL", keyKey: "ZEN_API_KEY",
 		providerFn: object.ZenProvider,
-		windows: map[string]int{
-			"zen5":       flagshipWindow,
-			"zen5-coder": flagshipWindow,
-			"zen5-pro":   flagshipWindow,
+		pins: []pinnedSKU{
+			{id: "zen5", contextWindow: flagshipWindow},
+			{id: "zen5-coder", contextWindow: flagshipWindow},
+			{id: "zen5-pro", contextWindow: flagshipWindow},
 		},
 	}
 	ensoFam = &modelFamily{
-		name: "enso", provider: "Enso", prefix: "enso", owner: "hanzo", urlKey: "ENSO_URL", keyKey: "ENSO_API_KEY",
+		name: "enso", prefix: "enso", owner: "hanzo", urlKey: "ENSO_URL", keyKey: "ENSO_API_KEY",
 		providerFn: object.EnsoProvider,
-		// enso-pro is deliberately absent: the enso service serves enso, enso-flash
-		// and enso-ultra and answers 404 for enso-pro (probed directly — the balance
-		// gate returns 402 before model resolution, so only a direct probe can tell).
-		windows: map[string]int{
-			"enso":       flagshipWindow,
-			"enso-ultra": flagshipWindow,
+		pins: []pinnedSKU{
+			{id: "enso", contextWindow: flagshipWindow},
+			{id: "enso-pro", contextWindow: flagshipWindow},
+			{id: "enso-ultra", contextWindow: flagshipWindow},
 		},
 	}
 	// modelFamilies is the discovery/route/merge iteration order — the ONE list every
-	// generic family helper walks. openrouter is last: the first-party families claim
-	// their own SKUs first, and the resale catalog answers for what is left.
-	modelFamilies = []*modelFamily{zenFam, ensoFam, openrouterFam}
+	// generic family helper walks.
+	modelFamilies = []*modelFamily{zenFam, ensoFam}
 )
 
-// window returns the context window ai guarantees when listing and routing a SKU,
-// or 0 when the family guarantees none. It applies only to a configured family, so
-// a bare or unconfigured family reports no guaranteed window.
-func (f *modelFamily) window(model string) int {
+// pinnedWindow returns the context window ai guarantees when listing and routing a
+// SKU, or 0 when the family pins none. Pins apply only to a configured family, so a
+// bare or unconfigured family reports no pinned window (and synthesizes no SKU).
+func (f *modelFamily) pinnedWindow(model string) int {
 	if !f.enabled() {
 		return 0
 	}
-	return f.windows[strings.ToLower(strings.TrimSpace(model))]
+	m := strings.ToLower(strings.TrimSpace(model))
+	for _, p := range f.pins {
+		if strings.ToLower(p.id) == m {
+			return p.contextWindow
+		}
+	}
+	return 0
 }
 
 func (f *modelFamily) baseURL() string {
@@ -147,23 +145,15 @@ func (f *modelFamily) serviceKey() string {
 // no model of that family (serves is false) and it is simply absent from /v1/models.
 func (f *modelFamily) enabled() bool { return f.baseURL() != "" }
 
-// familyForProviderType maps a virtual provider Type onto its family, resolved from the
-// SAME modelFamilies list that discovery, listing and routing all read.
-//
-// It used to be a hand-written switch, which is a second list that must be kept in step
-// with the first — and it was not. OpenRouter was added to modelFamilies, so its 338
-// prepaid models were discovered, listed and routable, but the switch never named it. Every
-// dispatch site guards on `if fam := familyForProviderType(...); fam != nil`, so a nil sent
-// those requests down the generic relay — around pipeToFamily, which is where the funding
-// gate lives. Listed, served, and ungated, on real cash.
-//
-// Deriving the lookup from the one list makes that shape unrepresentable: a family that
-// exists is a family this resolves, and adding one cannot silently skip the gate.
+// familyForProviderType maps a virtual provider Type ("Zen" | "Enso") to its family,
+// or nil for a non-family provider. The completion dispatch uses this to pipe to the
+// right family with no per-family branch.
 func familyForProviderType(t string) *modelFamily {
-	for _, f := range modelFamilies {
-		if f.provider == t {
-			return f
-		}
+	switch t {
+	case "Zen":
+		return zenFam
+	case "Enso":
+		return ensoFam
 	}
 	return nil
 }
@@ -252,22 +242,10 @@ type zenModel struct {
 	OwnedBy string
 	MaxCtx  int
 	Vision  bool
-	Access  string // "" = generally available; "waitlist" = access-gated (limited preview) — ai enforces the grant
-	MinTier string // "" | "free" | "trial" | "paid" — min subscription tier the family advertises for this SKU; ai enforces it (Seams A/B). "" ⇒ free (all tiers). Orthogonal to Access.
-	// Funding is how the SKU's usage is PAID FOR upstream: "prepaid" means every path it
-	// can take spends a real-cash balance; "" means credits. It is a different KIND of
-	// floor from MinTier and is enforced differently — see familyFundingAllowed.
-	Funding string
-	Base    zenTier   // headline RETAIL price (the in-window tier)
+	Access  string    // "" = generally available; "waitlist" = access-gated (limited preview) — ai enforces the grant
+	MinTier string    // "" | "free" | "trial" | "paid" — min subscription tier the family advertises for this SKU; ai enforces it (Seams A/B). "" ⇒ free (all tiers). Orthogonal to Access.
+	Base    zenTier   // headline price (the in-window tier)
 	Tiers   []zenTier // full ladder, ascending by MaxCtx — the billing contract
-
-	// CostIn/CostOut are the upstream COGS ($/MTok) behind Base, when the family
-	// discloses what the SKU costs us. Zero means undisclosed, which modelPrice
-	// already reads as cost == price (zero margin) — so a family that states only a
-	// price behaves exactly as before. A resale family (OpenRouter) states both, and
-	// the retail it publishes is this cost times a margin, never below it.
-	CostIn  decimal.Decimal
-	CostOut decimal.Decimal
 }
 
 // gated reports whether the family SKU is access-controlled (a limited-preview SKU
@@ -329,12 +307,7 @@ func (m zenModel) price() (modelPrice, bool) {
 	if in <= 0 && out <= 0 {
 		return modelPrice{}, false
 	}
-	costIn, _ := strconv.ParseFloat(m.CostIn.String(), 64)
-	costOut, _ := strconv.ParseFloat(m.CostOut.String(), 64)
-	return modelPrice{
-		InputPerMillion: in, OutputPerMillion: out,
-		CostInPerMillion: costIn, CostOutPerMillion: costOut,
-	}, true
+	return modelPrice{InputPerMillion: in, OutputPerMillion: out}, true
 }
 
 // zenWireModel is the /v1/models item shape a family serves. Prices are JSON strings
@@ -345,7 +318,6 @@ type zenWireModel struct {
 	OwnedBy       string `json:"owned_by"`
 	Access        string `json:"access"`   // "" | "waitlist" — access gating advertised by the family
 	MinTier       string `json:"min_tier"` // "" | "free" | "trial" | "paid" — min subscription tier advertised for this SKU (Seams A/B)
-	Funding       string `json:"funding"`  // "prepaid" = every path this SKU can take spends a real-cash balance
 	ContextWindow int    `json:"context_window"`
 	Pricing       struct {
 		Input  decimal.Decimal `json:"input"`
@@ -363,7 +335,7 @@ type zenWireModel struct {
 
 func (w zenWireModel) model() zenModel {
 	zm := zenModel{
-		ID: w.ID, OwnedBy: w.OwnedBy, MaxCtx: w.ContextWindow, Vision: w.Capabilities.Vision, Access: w.Access, MinTier: w.MinTier, Funding: w.Funding,
+		ID: w.ID, OwnedBy: w.OwnedBy, MaxCtx: w.ContextWindow, Vision: w.Capabilities.Vision, Access: w.Access, MinTier: w.MinTier,
 		Base: zenTier{MaxCtx: w.ContextWindow, In: w.Pricing.Input, Out: w.Pricing.Output},
 	}
 	for _, t := range w.PricingTiers {
@@ -373,25 +345,6 @@ func (w zenWireModel) model() zenModel {
 		zm.Tiers = []zenTier{zm.Base}
 	}
 	return zm
-}
-
-// decodeCatalog translates a family's raw /v1/models body into discovered SKUs using
-// the family's own dialect, defaulting to the Hanzo family wire shape.
-func (f *modelFamily) decodeCatalog(body []byte) ([]zenModel, error) {
-	if f.decode != nil {
-		return f.decode(body)
-	}
-	var out struct {
-		Data []zenWireModel `json:"data"`
-	}
-	if err := json.Unmarshal(body, &out); err != nil {
-		return nil, err
-	}
-	models := make([]zenModel, 0, len(out.Data))
-	for _, w := range out.Data {
-		models = append(models, w.model())
-	}
-	return models, nil
 }
 
 const zenCatalogTTL = 5 * time.Minute
@@ -422,22 +375,20 @@ func (f *modelFamily) refresh() error {
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("%s /v1/models: status %d", f.name, resp.StatusCode)
 	}
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
+	var out struct {
+		Data []zenWireModel `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		return err
 	}
-	models, err := f.decodeCatalog(body)
-	if err != nil {
-		return err
-	}
-	byID := make(map[string]zenModel, len(models))
-	ids := make([]string, 0, len(models))
-	for _, m := range models {
-		if strings.TrimSpace(m.ID) == "" {
+	byID := make(map[string]zenModel, len(out.Data))
+	ids := make([]string, 0, len(out.Data))
+	for _, w := range out.Data {
+		if strings.TrimSpace(w.ID) == "" {
 			continue
 		}
-		byID[strings.ToLower(m.ID)] = m
-		ids = append(ids, m.ID)
+		byID[strings.ToLower(w.ID)] = w.model()
+		ids = append(ids, w.ID)
 	}
 	f.mu.Lock()
 	f.byID = byID
@@ -523,8 +474,8 @@ func (f *modelFamily) passthroughRoute(model string) *modelRoute {
 	if m, ok := f.lookup(model); ok {
 		ctx = m.MaxCtx
 	}
-	if w := f.window(model); w > 0 {
-		ctx = w // guarantee the flagship served window
+	if w := f.pinnedWindow(model); w > 0 {
+		ctx = w // guarantee the flagship served window (and give enso-pro a window before discovery advertises it)
 	}
 	return &modelRoute{
 		providerName:  f.name,
@@ -535,17 +486,20 @@ func (f *modelFamily) passthroughRoute(model string) *modelRoute {
 	}
 }
 
-// mergeModels overlays this family's DISCOVERED lineup onto the base /v1/models list:
+// mergeModels overlays this family's discovered lineup onto the base /v1/models list:
 // a discovered SKU wins over any same-named base entry, new SKUs are appended, and
-// each carries its served context window (from discovery, raised to the guaranteed
-// window for the flagship SKUs).
-//
-// Discovery is the only source of a listing. ai never adds a SKU the family does not
-// serve: a listed model that 404s upstream is worse than an absent one, and it is how
-// enso-pro reached /v1/models with no price at all.
+// each carries its served context window (from discovery, overridden by a pinned
+// window for the flagship SKUs). A configured family also lists its pinned SKUs that
+// discovery has not advertised yet (e.g. enso-pro) so clients see the real window.
 func (f *modelFamily) mergeModels(base []modelInfo) []modelInfo {
 	zs := f.snapshot()
-	if len(zs) == 0 {
+	// Pinned SKUs are synthesized only for a CONFIGURED family, so a bare or
+	// unconfigured family lists nothing it cannot serve.
+	pins := f.pins
+	if !f.enabled() {
+		pins = nil
+	}
+	if len(zs) == 0 && len(pins) == 0 {
 		return base
 	}
 	now := time.Now().Unix()
@@ -568,7 +522,7 @@ func (f *modelFamily) mergeModels(base []modelInfo) []modelInfo {
 			owner = f.owner // public branding default: enso→"hanzo", zen→"zenlm"
 		}
 		window := z.MaxCtx
-		if w := f.window(z.ID); w > 0 {
+		if w := f.pinnedWindow(z.ID); w > 0 {
 			window = w // flagship SKUs report their guaranteed served window
 		}
 		info := modelInfo{
@@ -581,6 +535,17 @@ func (f *modelFamily) mergeModels(base []modelInfo) []modelInfo {
 			info.Access = &modelAccessInfo{State: "waitlist"}
 		}
 		upsert(info)
+	}
+	// List any pinned SKU discovery has not advertised (a SKU ai routes ahead of the
+	// family serving it, e.g. enso-pro) with its guaranteed window.
+	for _, p := range pins {
+		if _, ok := idx[strings.ToLower(p.id)]; ok {
+			continue // already listed from discovery (window pinned above)
+		}
+		upsert(modelInfo{
+			ID: p.id, Object: "model", Created: now, OwnedBy: f.owner,
+			Premium: true, ContextWindow: p.contextWindow,
+		})
 	}
 	sort.Slice(base, func(i, j int) bool { return base[i].ID < base[j].ID })
 	return base
@@ -877,7 +842,7 @@ func (c *ApiController) recordFamilyUsage(fam *modelFamily, model string, authUs
 		return cents
 	}
 	rec := &usageRecord{
-		Owner: c.billingOrg(authUser), User: authUser.Owner + "/" + authUser.Name, Organization: authUser.Owner,
+		Owner: authUser.Owner, User: authUser.Owner + "/" + authUser.Name, Organization: authUser.Owner,
 		Model: model, Provider: fam.name,
 		PromptTokens: prompt, CompletionTokens: completion, TotalTokens: prompt + completion,
 		Cost: float64(cents) / 100.0, Currency: "USD",

@@ -16,7 +16,7 @@
 import * as Setting from "../Setting";
 
 export function getAccount() {
-  return fetch(`${Setting.ServerUrl}/v1/auth/account`, {
+  return fetch(`${Setting.ServerUrl}/v1/get-account`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -26,7 +26,7 @@ export function getAccount() {
 }
 
 export function signin(code, state) {
-  return fetch(`${Setting.ServerUrl}/v1/auth/signin?code=${code}&state=${state}`, {
+  return fetch(`${Setting.ServerUrl}/v1/signin?code=${code}&state=${state}`, {
     method: "POST",
     credentials: "include",
     headers: {
@@ -36,7 +36,7 @@ export function signin(code, state) {
 }
 
 export function signout() {
-  return fetch(`${Setting.ServerUrl}/v1/auth/signout`, {
+  return fetch(`${Setting.ServerUrl}/v1/signout`, {
     method: "POST",
     credentials: "include",
     headers: {

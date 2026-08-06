@@ -34,19 +34,6 @@ func getTenantHeader(ctx *web.Context, name string) string {
 	return strings.TrimSpace(ctx.Input.Header(name))
 }
 
-// firstNonEmptyHeader returns the first non-empty value among the named headers.
-// A session id may arrive under either X-Session-Id (Hanzo convention) or the
-// OpenAI/librechat-style X-Conversation-Id — honor both so a client that sends
-// either turns the o11y sessions view on.
-func firstNonEmptyHeader(ctx *web.Context, names ...string) string {
-	for _, n := range names {
-		if v := getTenantHeader(ctx, n); v != "" {
-			return v
-		}
-	}
-	return ""
-}
-
 // TenantContextFilter captures IAM identity context for downstream scoping and
 // observability. The org is taken from the VERIFIED principal (GetOrg),
 // NOT the raw X-Org-Id header: on the direct ingress that header is
@@ -84,11 +71,9 @@ func TenantContextFilter(ctx *web.Context) {
 	// the plaintext key). Replacing ctx.Request propagates to the handler's
 	// c.Ctx.Request.Context().
 	attr := object.GenAIAttribution{
-		Org:         orgID,
-		Project:     projectID,
-		Session:     firstNonEmptyHeader(ctx, "X-Session-Id", "X-Conversation-Id"),
-		Environment: env,
-		APIKeyHash:  hashBearer(getTenantHeader(ctx, "Authorization")),
+		Project:    projectID,
+		Session:    getTenantHeader(ctx, "X-Session-Id"),
+		APIKeyHash: hashBearer(getTenantHeader(ctx, "Authorization")),
 	}
 	if ctx.Request != nil {
 		ctx.Request = ctx.Request.WithContext(object.WithGenAIAttribution(ctx.Request.Context(), attr))

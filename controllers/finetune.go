@@ -21,7 +21,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hanzoai/ai/cluster"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
 )
@@ -285,7 +284,7 @@ func (c *ApiController) CreateFinetuneJob() {
 
 	name := slugify(lastSegment(req.BaseModel)) + "-" + strings.ToLower(util.GetRandomName())
 	name = strings.Trim(name, "-")
-	ns := cluster.FinetuneNamespace(org)
+	ns := object.FinetuneNamespace(org)
 	outputUri := fmt.Sprintf("%s/%s/%s/", finetuneOutputBase(), slugify(org), name)
 
 	job := &object.FinetuneJob{
@@ -318,7 +317,7 @@ func (c *ApiController) CreateFinetuneJob() {
 	// base models/datasets pull.
 	token := object.ResolveHfToken(c.orgKMSProject())
 	lang := c.GetAcceptLanguage()
-	if err := cluster.SubmitTrainJob(job, hp, token, lang); err != nil {
+	if err := object.SubmitFinetuneTrainJob(job, hp, token, lang); err != nil {
 		job.Status = "failed"
 		job.Error = err.Error()
 		_, _ = object.UpdateFinetuneJob(job.Owner, job.Name, job)
@@ -349,7 +348,7 @@ func (c *ApiController) CancelFinetuneJob() {
 	}
 	lang := c.GetAcceptLanguage()
 	if job.CrName != "" {
-		if derr := cluster.DeleteTrainJob(job, lang); derr != nil {
+		if derr := object.DeleteFinetuneTrainJob(job, lang); derr != nil {
 			c.ResponseError(derr.Error())
 			return
 		}
@@ -377,7 +376,7 @@ func (c *ApiController) DeployFinetuneJob() {
 		c.ResponseError(fmt.Sprintf("fine-tune job %q not found", name))
 		return
 	}
-	res, derr := cluster.DeployFinetune(job, c.GetAcceptLanguage())
+	res, derr := object.DeployFinetuneJob(job, c.GetAcceptLanguage())
 	if derr != nil {
 		c.ResponseError(derr.Error())
 		return
@@ -397,7 +396,7 @@ func (c *ApiController) DeployFinetuneJob() {
 // the first transition to a terminal state, and persists any change. Best-effort:
 // a cluster error leaves the last-known status untouched (no fabrication).
 func (c *ApiController) refreshFinetuneJob(job *object.FinetuneJob, lang string) {
-	st, err := cluster.TrainJobStatus(job, lang)
+	st, err := object.GetFinetuneTrainJobStatus(job, lang)
 	if err != nil || st == nil {
 		return
 	}

@@ -22,8 +22,8 @@ import (
 	"time"
 
 	"github.com/hanzoai/ai/controllers"
-	iam "github.com/hanzoai/ai/internal/iam"
 	web "github.com/hanzoai/ai/web"
+	iam "github.com/hanzoai/iam"
 )
 
 // fakeSession is a minimal in-memory session.Store for filter tests (the real
@@ -63,7 +63,7 @@ func TestRequiresGlobalAdminClassification(t *testing.T) {
 		"add-provider", "update-provider", "delete-provider",
 		"get-storage-providers", "get-model-routes", "admin/reload-model-config", "admin/refresh-model-pricing",
 		"admin/usage/backfill-do",
-		"get-nodes", "get-k8s-status",
+		"get-nodes", "get-pods", "get-k8s-status",
 	}
 	for _, e := range sensitive {
 		if !requiresSuperAdmin(e) {
@@ -274,17 +274,11 @@ func TestNormalizedControllerName_CollapsesVariants(t *testing.T) {
 		{"/v1/admin/../admin/providers", "admin/providers"},
 		{"/v1/admin/providers/toggle/", "admin/providers/toggle"},
 		{"/v1/admin/providers/primary/", "admin/providers/primary"},
-		// The provider CRUD moved to the namespaced REST surface; the gate keys on
-		// the same name as before because policyKey derives it from the resource
-		// table. These are the cases that would have opened the gate if the rename
-		// had been done by hand in the policy maps instead.
-		{"/v1/ai/providers", "get-providers"},
-		{"/v1/ai/providers/", "get-providers"},
-		{"/v1//ai/providers", "get-providers"},
-		{"/v1/ai/./providers", "get-providers"},
+		{"/v1/get-providers/", "get-providers"},
+		{"/v1//get-providers", "get-providers"},
 	}
 	for _, c := range cases {
-		got, ok := normalizedControllerName(c.raw, "GET")
+		got, ok := normalizedControllerName(c.raw)
 		if !ok || got != c.want {
 			t.Errorf("normalizedControllerName(%q) = (%q, %v), want (%q, true)", c.raw, got, ok, c.want)
 		}
@@ -294,7 +288,7 @@ func TestNormalizedControllerName_CollapsesVariants(t *testing.T) {
 		}
 	}
 	// Non-/v1 paths are correctly reported as pass-through.
-	if _, ok := normalizedControllerName("/healthz", "GET"); ok {
+	if _, ok := normalizedControllerName("/healthz"); ok {
 		t.Error("/healthz must be reported non-/v1 (ok=false)")
 	}
 }
@@ -349,7 +343,7 @@ func TestAdminRoutesGlobalAdminPass_Canonical(t *testing.T) {
 // unauthenticated). Guards against accidentally gating the public feed.
 func TestPublicProviderFlagsNotGated(t *testing.T) {
 	for _, raw := range []string{"/v1/provider-flags", "/v1/provider-flags/"} {
-		name, ok := normalizedControllerName(raw, "GET")
+		name, ok := normalizedControllerName(raw)
 		if !ok {
 			t.Fatalf("%s should be a /v1 path", raw)
 		}

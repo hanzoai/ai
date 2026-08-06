@@ -20,8 +20,8 @@ import (
 
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/i18n"
-	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/model"
+	iam "github.com/hanzoai/iam"
 )
 
 type Usage struct {

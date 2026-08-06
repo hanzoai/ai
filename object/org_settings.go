@@ -14,8 +14,6 @@
 package object
 
 import (
-	"os"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -54,7 +52,7 @@ type OrgSettings struct {
 
 	// DefaultSessionRouting is the admin-settable default for whether new chat
 	// sessions default to auto-routing in the client (console/chat/app/desktop
-	// read it via /v1/router/defaults). Same three-state as AutoRouting:
+	// read it via /v1/get-routing-defaults). Same three-state as AutoRouting:
 	// "" (unset) → "*" row then conf default (disabled), "enabled", "disabled".
 	DefaultSessionRouting string `json:"defaultSessionRouting"`
 
@@ -92,28 +90,10 @@ type OrgSettings struct {
 	// nightly base-refresh job includes only "enabled" orgs.
 	TrainingContribution string `json:"trainingContribution"`
 
-	// RouterEnabledModels is this org's ALLOWLIST of model ids the auto-router may
-	// select — the "which models does MY router use" control. nil/empty = unset = ALL
-	// servable models are eligible (no restriction). A non-empty set restricts the
-	// router's candidate pool to exactly these ids (still intersected with what the
-	// deployment can actually serve for the org). Persisted as a JSON set (id → true).
-	RouterEnabledModels JSONMap[bool] `json:"routerEnabledModels"`
-
-	// RouterQualityBias is this org's SAVINGS-vs-QUALITY dial in [0,1]: 0 = maximize
-	// savings (route to the cheapest eligible model), 1 = maximize quality (best model
-	// regardless of cost), 0.5 = balanced. nil = unset → "*" row then the default 1.0
-	// (INERT — an org that never sets the dial routes exactly as before; the dial is
-	// strictly opt-in). It tilts the router's per-request cost budget: a lower bias tightens the
-	// effective SLO MaxCost toward the cheapest eligible model, a higher bias loosens it
-	// toward the priciest — orthogonal to RouterCostCeiling (a hard cap the dial can only
-	// tighten WITHIN, never exceed) and to an explicit X-Max-Cost (which always wins). A
-	// pointer so an unset dial is distinct from a deliberate 0 (max savings).
-	RouterQualityBias *float64 `json:"routerQualityBias"`
-
 	// Judge* configure the LLM-as-a-judge dense-reward path (the Mean-Field Judge
 	// Panel). They are PLATFORM-GLOBAL, not per-org: read ONLY from the "*"
 	// GlobalDefaultOwner row (like the trainer's "*" RouterPrefer), live-tunable at
-	// admin.hanzo.ai via /v1/org/settings — no env, no restart. NO secret
+	// admin.hanzo.ai via /v1/update-org-settings — no env, no restart. NO secret
 	// lives here: the judge presents the gateway's existing internal service bearer
 	// (ROUTER_PROBE_TOKEN, env/KMS), never a DB value. Every field is fail-safe to
 	// the built-in default when unset (GetCachedJudgeConfig):
@@ -129,7 +109,7 @@ type OrgSettings struct {
 	// RouterMeanField* configure the congestion-aware mean-field routing LAYER
 	// (controllers/router_meanfield.go). PLATFORM-GLOBAL like the Judge* knobs: read
 	// ONLY from the "*" GlobalDefaultOwner row, live-tunable at admin.hanzo.ai via
-	// /v1/org/settings — no env, no restart. The layer is a pure best-response
+	// /v1/update-org-settings — no env, no restart. The layer is a pure best-response
 	// equilibrium that spreads `auto` load across near-equal-preference models instead
 	// of stampeding the single champion. It is DISABLED by default so live routing is
 	// byte-identical until an admin opts in (GetCachedMeanFieldConfig):
@@ -323,20 +303,6 @@ func DeleteOrgSettings(s *OrgSettings) (bool, error) {
 // Mirrors the ModelRoute cache: org settings are read on every chat request
 // that carries a virtual `auto` model, so a short-TTL cache keeps that path off
 // the DB while still picking up admin changes within one TTL window.
-//
-// This row also carries the live router controls tuned self-service in console
-// (Router → Policy): the savings↔quality dial (RouterQualityBias), the enabled-
-// models allowlist, cost ceiling, strategy, and the platform-global "*" Judge /
-// mean-field knobs. A write flushes the WRITING pod's cache instantly
-// (invalidateOrgSettingsCache), so the operator sees their own change on the next
-// request; the TTL is the ONLY thing gating cross-pod convergence. It is a single-
-// row PK lookup keyed per owner, so a short window is cheap — 5s makes a dial
-// change fleet-wide within 5s (was 60s) with negligible extra read load. It is
-// overridable via ROUTER_SETTINGS_CACHE_TTL_SECONDS for deployments that want to
-// trade freshness against read volume. When KV_URL is set, the cache bus
-// (cache_bus.go) ADDITIONALLY broadcasts each write over Valkey pub/sub, dropping
-// the stale entry on every pod within the round-trip (sub-second fleet-wide); the
-// TTL then only backstops a missed message or a down bus.
 type orgSettingsCacheEntry struct {
 	settings  *OrgSettings // nil = no row for this owner
 	fetchedAt time.Time
@@ -345,34 +311,10 @@ type orgSettingsCacheEntry struct {
 var (
 	orgSettingsCache    = make(map[string]*orgSettingsCacheEntry)
 	orgSettingsCacheMu  sync.RWMutex
-	orgSettingsCacheTTL = orgSettingsTTL()
+	orgSettingsCacheTTL = 60 * time.Second
 )
 
-// orgSettingsTTL resolves the org-settings cache TTL: ROUTER_SETTINGS_CACHE_TTL_SECONDS
-// when set to a positive integer, else the 5s default (near-real-time cross-pod
-// convergence for the console-tuned router controls).
-func orgSettingsTTL() time.Duration {
-	if v := strings.TrimSpace(os.Getenv("ROUTER_SETTINGS_CACHE_TTL_SECONDS")); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			return time.Duration(n) * time.Second
-		}
-	}
-	return 5 * time.Second
-}
-
-// invalidateOrgSettingsCache flushes THIS pod's cache and broadcasts the
-// invalidation to the fleet (when the KV_URL cache bus is enabled, cache_bus.go)
-// so a console router-policy change — e.g. the savings↔quality dial — converges
-// sub-second across pods instead of within the TTL window.
 func invalidateOrgSettingsCache() {
-	invalidateOrgSettingsCacheLocal()
-	broadcastInvalidate("org_settings")
-}
-
-// invalidateOrgSettingsCacheLocal drops this pod's cached settings only — the
-// action a received broadcast triggers. It never re-broadcasts, so there is no
-// fan-out loop.
-func invalidateOrgSettingsCacheLocal() {
 	orgSettingsCacheMu.Lock()
 	orgSettingsCache = make(map[string]*orgSettingsCacheEntry)
 	orgSettingsCacheMu.Unlock()

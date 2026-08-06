@@ -21,7 +21,6 @@ import (
 	"github.com/hanzoai/ai/agent"
 	"github.com/hanzoai/ai/embedding"
 	"github.com/hanzoai/ai/i18n"
-	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/model"
 	"github.com/hanzoai/ai/scan"
 	"github.com/hanzoai/ai/storage"
@@ -29,6 +28,7 @@ import (
 	"github.com/hanzoai/ai/tts"
 	"github.com/hanzoai/ai/util"
 	"github.com/hanzoai/dbx"
+	iam "github.com/hanzoai/iam"
 )
 
 type Provider struct {

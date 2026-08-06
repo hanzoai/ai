@@ -9,8 +9,6 @@ import (
 	"os"
 	"testing"
 	"time"
-
-	"github.com/hanzoai/types"
 )
 
 // TestCloudUsageOverviewLive exercises the REAL read path (GetCloudUsageOverview)
@@ -34,12 +32,12 @@ func TestCloudUsageOverviewLive(t *testing.T) {
 		org = "maxpower"
 	}
 	now := time.Now()
-	w, err := types.ParseWindow("24h", "", "", now)
+	start, end, interval, err := ResolveCloudUsageWindow("24h", "", "", now)
 	if err != nil {
 		t.Fatal(err)
 	}
 	ov, err := GetCloudUsageOverview(context.Background(), CloudUsageParams{
-		RangeLabel: w.Label, Start: w.Start, End: w.End, Interval: w.Interval,
+		RangeLabel: "24h", Start: start, End: end, Interval: interval,
 		Org: org, AllOrgs: false, TopModels: 6, ActivityType: "all", ActivityLimit: 20,
 	})
 	if err != nil {

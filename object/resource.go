@@ -17,7 +17,7 @@ package object
 import (
 	"time"
 
-	iam "github.com/hanzoai/ai/internal/iam"
+	iam "github.com/hanzoai/iam"
 )
 
 func UploadFileToStorageSafe(user string, tag string, parent string, fullFilePath string, fileBytes []byte) (string, error) {

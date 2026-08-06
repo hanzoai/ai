@@ -17,7 +17,6 @@ import React, {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {Link, Redirect, Route, Switch, useHistory, useLocation} from "react-router-dom";
 import {Helmet} from "react-helmet";
 import {Toaster} from "sonner";
-import {useAnalytics} from "@hanzo/event/react";
 import i18next from "i18next";
 import {Bot, ChevronDown, ChevronLeft, Cloud, Home, LayoutGrid, Lightbulb, Lock, LogIn, LogOut, Menu, MessageSquare, Monitor, Settings, User, Video, Wallet, X} from "lucide-react";
 import * as Setting from "./Setting";
@@ -54,10 +53,18 @@ import GraphListPage from "./GraphListPage";
 import GraphEditPage from "./GraphEditPage";
 import NodeListPage from "./NodeListPage";
 import NodeEditPage from "./NodeEditPage";
+import MachineListPage from "./MachineListPage";
+import MachineEditPage from "./MachineEditPage";
 import AssetListPage from "./AssetListPage";
 import AssetEditPage from "./AssetEditPage";
 import ScanListPage from "./ScanListPage";
 import ScanEditPage from "./ScanEditPage";
+import ImageListPage from "./ImageListPage";
+import ImageEditPage from "./ImageEditPage";
+import ContainerListPage from "./ContainerListPage";
+import ContainerEditPage from "./ContainerEditPage";
+import PodListPage from "./PodListPage";
+import PodEditPage from "./PodEditPage";
 import SessionListPage from "./SessionListPage";
 import ConnectionListPage from "./ConnectionListPage";
 import RecordListPage from "./RecordListPage";
@@ -90,6 +97,16 @@ import ApplicationEditPage from "./ApplicationEditPage";
 import ApplicationStorePage from "./ApplicationStorePage";
 import StoreSelect from "./StoreSelect";
 import ApplicationDetailsPage from "./ApplicationViewPage";
+import HospitalListPage from "./HospitalListPage";
+import HospitalEditPage from "./HospitalEditPage";
+import DoctorListPage from "./DoctorListPage";
+import DoctorEditPage from "./DoctorEditPage";
+import PatientListPage from "./PatientListPage";
+import PatientEditPage from "./PatientEditPage";
+import CaaseListPage from "./CaaseListPage";
+import CaaseEditPage from "./CaaseEditPage";
+import ConsultationListPage from "./ConsultationListPage";
+import ConsultationEditPage from "./ConsultationEditPage";
 import AgentsPage from "./AgentsPage";
 import VmPage from "./VmPage";
 import LanguageSelect from "./LanguageSelect";
@@ -174,7 +191,6 @@ function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const previewInterceptorRef = useRef(null);
-  const analytics = useAnalytics();
 
   // Initialize config
   useEffect(() => {
@@ -241,13 +257,6 @@ function App() {
     getForms();
     getStoreTheme();
   }, [getAccount, getForms, getStoreTheme]);
-
-  // Bind telemetry to the signed-in user by stable id, never email/PII.
-  useEffect(() => {
-    if (account?.id) {
-      analytics.identify(account.id);
-    }
-  }, [account?.id, analytics]);
 
   // Close mobile sidebar on navigation
   useEffect(() => {
@@ -400,7 +409,11 @@ function App() {
           <NavItem to="/application-store">{i18next.t("general:Application Store")}</NavItem>
           <NavItem to="/applications">{i18next.t("general:Applications")}</NavItem>
           <NavItem to="/nodes">{i18next.t("general:Nodes")}</NavItem>
+          <NavItem to="/machines">{i18next.t("general:Machines")}</NavItem>
           <NavItem to="/assets">{i18next.t("general:Assets")}</NavItem>
+          <NavItem to="/images">{i18next.t("general:Images")}</NavItem>
+          <NavItem to="/containers">{i18next.t("general:Containers")}</NavItem>
+          <NavItem to="/pods">{i18next.t("general:Pods")}</NavItem>
           <NavItem to="/workbench" external>{i18next.t("general:Workbench")}</NavItem>
         </NavGroup>
 
@@ -410,6 +423,11 @@ function App() {
           <NavItem to="/tasks">{i18next.t("general:Tasks")}</NavItem>
           <NavItem to="/forms">{i18next.t("general:Forms")}</NavItem>
           <NavItem to="/workflows">{i18next.t("general:Workflows")}</NavItem>
+          <NavItem to="/hospitals">{i18next.t("med:Hospitals")}</NavItem>
+          <NavItem to="/doctors">{i18next.t("med:Doctors")}</NavItem>
+          <NavItem to="/patients">{i18next.t("med:Patients")}</NavItem>
+          <NavItem to="/caases">{i18next.t("med:Caases")}</NavItem>
+          <NavItem to="/consultations">{i18next.t("med:Consultations")}</NavItem>
           <NavItem to="/audit">{i18next.t("general:Audit")}</NavItem>
           <NavItem to="/articles">{i18next.t("general:Articles")}</NavItem>
           <NavItem to="/graphs">{i18next.t("general:Graphs")}</NavItem>
@@ -609,10 +627,18 @@ function App() {
         <Route exact path="/records" render={(props) => renderSigninIfNotSignedIn(<RecordListPage account={account} {...props} />)} />
         <Route exact path="/records/:organizationName/:recordName" render={(props) => renderSigninIfNotSignedIn(<RecordEditPage account={account} {...props} />)} />
         <Route exact path="/workbench" render={(props) => renderSigninIfNotSignedIn(<NodeWorkbench account={account} {...props} />)} />
+        <Route exact path="/machines" render={(props) => renderSigninIfNotSignedIn(<MachineListPage account={account} {...props} />)} />
+        <Route exact path="/machines/:organizationName/:machineName" render={(props) => renderSigninIfNotSignedIn(<MachineEditPage account={account} {...props} />)} />
         <Route exact path="/assets" render={(props) => renderSigninIfNotSignedIn(<AssetListPage account={account} {...props} />)} />
         <Route exact path="/assets/:assetName" render={(props) => renderSigninIfNotSignedIn(<AssetEditPage account={account} {...props} />)} />
         <Route exact path="/scans" render={(props) => renderSigninIfNotSignedIn(<ScanListPage account={account} {...props} />)} />
         <Route exact path="/scans/:scanName" render={(props) => renderSigninIfNotSignedIn(<ScanEditPage account={account} {...props} />)} />
+        <Route exact path="/images" render={(props) => renderSigninIfNotSignedIn(<ImageListPage account={account} {...props} />)} />
+        <Route exact path="/images/:organizationName/:imageName" render={(props) => renderSigninIfNotSignedIn(<ImageEditPage account={account} {...props} />)} />
+        <Route exact path="/containers" render={(props) => renderSigninIfNotSignedIn(<ContainerListPage account={account} {...props} />)} />
+        <Route exact path="/containers/:organizationName/:containerName" render={(props) => renderSigninIfNotSignedIn(<ContainerEditPage account={account} {...props} />)} />
+        <Route exact path="/pods" render={(props) => renderSigninIfNotSignedIn(<PodListPage account={account} {...props} />)} />
+        <Route exact path="/pods/:organizationName/:podName" render={(props) => renderSigninIfNotSignedIn(<PodEditPage account={account} {...props} />)} />
         <Route exact path="/workflows" render={(props) => renderSigninIfNotSignedIn(<WorkflowListPage account={account} {...props} />)} />
         <Route exact path="/workflows/:workflowName" render={(props) => renderSigninIfNotSignedIn(<WorkflowEditPage account={account} {...props} />)} />
         <Route exact path="/audit" render={(props) => renderSigninIfNotSignedIn(<AuditPage account={account} {...props} />)} />
@@ -625,6 +651,16 @@ function App() {
         <Route exact path="/forms/:formName/data" render={(props) => renderSigninIfNotSignedIn(<FormDataPage key={props.match.params.formName} account={account} {...props} />)} />
         <Route exact path="/articles" render={(props) => renderSigninIfNotSignedIn(<ArticleListPage account={account} {...props} />)} />
         <Route exact path="/articles/:articleName" render={(props) => renderSigninIfNotSignedIn(<ArticleEditPage account={account} {...props} />)} />
+        <Route exact path="/hospitals" render={(props) => renderSigninIfNotSignedIn(<HospitalListPage account={account} {...props} />)} />
+        <Route exact path="/hospitals/:hospitalName" render={(props) => renderSigninIfNotSignedIn(<HospitalEditPage account={account} {...props} />)} />
+        <Route exact path="/doctors" render={(props) => renderSigninIfNotSignedIn(<DoctorListPage account={account} {...props} />)} />
+        <Route exact path="/doctors/:doctorName" render={(props) => renderSigninIfNotSignedIn(<DoctorEditPage account={account} {...props} />)} />
+        <Route exact path="/patients" render={(props) => renderSigninIfNotSignedIn(<PatientListPage account={account} {...props} />)} />
+        <Route exact path="/patients/:patientName" render={(props) => renderSigninIfNotSignedIn(<PatientEditPage account={account} {...props} />)} />
+        <Route exact path="/caases" render={(props) => renderSigninIfNotSignedIn(<CaaseListPage account={account} {...props} />)} />
+        <Route exact path="/caases/:caaseName" render={(props) => renderSigninIfNotSignedIn(<CaaseEditPage account={account} {...props} />)} />
+        <Route exact path="/consultations" render={(props) => renderSigninIfNotSignedIn(<ConsultationListPage account={account} {...props} />)} />
+        <Route exact path="/consultations/:consultationName" render={(props) => renderSigninIfNotSignedIn(<ConsultationEditPage account={account} {...props} />)} />
         <Route exact path="/chat" render={(props) => renderSigninIfNotSignedIn(<ChatPage account={account} {...props} />)} />
         <Route exact path="/chat/:chatName" render={(props) => renderSigninIfNotSignedIn(<ChatPage account={account} {...props} />)} />
         <Route exact path="/stores/:owner/:storeName/chat" render={(props) => renderSigninIfNotSignedIn(<ChatPage account={account} {...props} />)} />

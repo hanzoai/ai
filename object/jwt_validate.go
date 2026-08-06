@@ -22,7 +22,7 @@ import (
 	"strings"
 
 	"github.com/hanzoai/ai/conf"
-	iam "github.com/hanzoai/ai/internal/iam"
+	iam "github.com/hanzoai/iam"
 )
 
 // defaultJWTIssuer is the canonical hanzo.id issuer. cloud-api only honors

@@ -16,7 +16,7 @@
 import * as Setting from "../Setting";
 
 export function getGlobalForms() {
-  return fetch(`${Setting.ServerUrl}/v1/content/forms/global`, {
+  return fetch(`${Setting.ServerUrl}/v1/get-global-forms`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -26,7 +26,7 @@ export function getGlobalForms() {
 }
 
 export function getForms(owner, page = "", pageSize = "", field = "", value = "", sortField = "", sortOrder = "") {
-  return fetch(`${Setting.ServerUrl}/v1/content/forms?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
+  return fetch(`${Setting.ServerUrl}/v1/get-forms?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -36,7 +36,7 @@ export function getForms(owner, page = "", pageSize = "", field = "", value = ""
 }
 
 export function getForm(owner, name) {
-  return fetch(`${Setting.ServerUrl}/v1/content/forms/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/get-form?id=${owner}/${encodeURIComponent(name)}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -47,8 +47,8 @@ export function getForm(owner, name) {
 
 export function updateForm(owner, name, form) {
   const newForm = Setting.deepCopy(form);
-  return fetch(`${Setting.ServerUrl}/v1/content/forms/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`, {
-    method: "PATCH",
+  return fetch(`${Setting.ServerUrl}/v1/update-form?id=${owner}/${encodeURIComponent(name)}`, {
+    method: "POST",
     credentials: "include",
     headers: {
       "Accept-Language": Setting.getAcceptLanguage(),
@@ -59,7 +59,7 @@ export function updateForm(owner, name, form) {
 
 export function addForm(form) {
   const newForm = Setting.deepCopy(form);
-  return fetch(`${Setting.ServerUrl}/v1/content/forms`, {
+  return fetch(`${Setting.ServerUrl}/v1/add-form`, {
     method: "POST",
     credentials: "include",
     headers: {
@@ -71,8 +71,8 @@ export function addForm(form) {
 
 export function deleteForm(form) {
   const newForm = Setting.deepCopy(form);
-  return fetch(`${Setting.ServerUrl}/v1/content/forms/${encodeURIComponent(form.owner)}/${encodeURIComponent(form.name)}`, {
-    method: "DELETE",
+  return fetch(`${Setting.ServerUrl}/v1/delete-form`, {
+    method: "POST",
     credentials: "include",
     headers: {
       "Accept-Language": Setting.getAcceptLanguage(),

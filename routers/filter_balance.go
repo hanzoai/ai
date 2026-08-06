@@ -28,11 +28,8 @@ import (
 	"github.com/hanzoai/account"
 
 	"github.com/hanzoai/ai/conf"
-	"github.com/hanzoai/ai/controllers"
-	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/object"
-	"github.com/hanzoai/ai/util"
 	"github.com/hanzoai/ai/web"
 )
 
@@ -88,6 +85,10 @@ type BalanceGate struct {
 	endpoint string       // Commerce base URL (e.g. "http://commerce:8001")
 	token    string       // Bearer token for Commerce API
 	client   *http.Client // shared HTTP client
+
+	iamEndpoint  string // IAM base URL for hk- key resolution
+	clientId     string // IAM application client ID
+	clientSecret string // IAM application client secret
 }
 
 // userKeyCacheEntry maps an API token to the resolved billing identity: the
@@ -103,11 +104,9 @@ type userKeyCacheEntry struct {
 // balanceGate is the package-level singleton, initialized by InitBalanceGate.
 var balanceGate *BalanceGate
 
-// InitBalanceGate reads Commerce connection parameters from app config and
-// creates the balance gate. Must be called once during startup. If Commerce
+// InitBalanceGate reads Commerce and IAM connection parameters from app config
+// and creates the balance gate. Must be called once during startup. If Commerce
 // is not configured, the gate is not created and BalanceGateFilter is a no-op.
-// IAM connection parameters are NOT read here: hk- resolution goes through the
-// one resolver (controllers.GetUserByAccessKey), which owns that config.
 func InitBalanceGate() {
 	endpoint := conf.GetConfigString("commerceEndpoint")
 	if endpoint == "" {
@@ -117,6 +116,13 @@ func InitBalanceGate() {
 	endpoint = strings.TrimRight(endpoint, "/")
 	token := conf.GetConfigString("commerceToken")
 
+	iamEndpoint := conf.GetConfigString("IAM_URL")
+	if iamEndpoint != "" {
+		iamEndpoint = strings.TrimRight(iamEndpoint, "/")
+	}
+	clientId := conf.GetConfigString("IAM_CLIENT_ID")
+	clientSecret := conf.GetConfigString("IAM_CLIENT_SECRET")
+
 	bg := &BalanceGate{
 		ledger:       object.GlobalBalanceLedger,
 		userKeyCache: make(map[string]*userKeyCacheEntry),
@@ -124,6 +130,9 @@ func InitBalanceGate() {
 		endpoint:     endpoint,
 		token:        token,
 		client:       &http.Client{Timeout: balanceHTTPTimeout},
+		iamEndpoint:  iamEndpoint,
+		clientId:     clientId,
+		clientSecret: clientSecret,
 	}
 
 	go bg.cleanupLoop()
@@ -140,13 +149,9 @@ func InitBalanceGate() {
 // users for legacy auth paths) and handles its own user resolution for
 // JWT and IAM API key auth paths.
 //
-// Posture: fail-CLOSED on balance, never on money. When billing is unconfigured
-// (no gate) or the billing subject cannot be identified, the request passes to the
-// downstream auth/controller layer, which re-checks (identity is that layer's job).
-// When the subject IS identified, a positive spendable balance is REQUIRED: a
-// known-insufficient balance is denied 402 (add credits), and a balance that cannot
-// be verified is denied 503 (retry) — both deny. AI is prepaid; a billing-backend
-// outage becomes a retryable 503, never free inference.
+// Design: fail-open. If Commerce is unreachable or the user cannot be
+// identified, the request is allowed through. The controller-level balance
+// check in resolveProviderForUser remains as a defense-in-depth backstop.
 func BalanceGateFilter(ctx *web.Context) {
 	if balanceGate == nil {
 		return
@@ -154,7 +159,7 @@ func BalanceGateFilter(ctx *web.Context) {
 
 	path := ctx.Request.URL.Path
 
-	if isBalanceExempt(path, ctx.Request.Method) {
+	if isBalanceExempt(path) {
 		return
 	}
 
@@ -183,36 +188,19 @@ func BalanceGateFilter(ctx *web.Context) {
 		return
 	}
 
-	sufficient, deny, balance := balanceGate.checkBalance(subject, namespace, userKey)
+	sufficient, balance := balanceGate.checkBalance(subject, namespace, userKey)
 	if sufficient {
-		// Balance covers the call — but a plan also bounds how FAST a caller may burn
-		// its budget: the rolling-window AI-spend cap (Anthropic-style, resets
-		// continuously). This is distinct from insufficient_balance — the caller HAS
-		// money; their plan's trailing-window budget is momentarily spent. Fails OPEN on
-		// any error (see RollingCapReaderFunc): a finance blip must never 429 a paying
-		// caller. Only a positively-computed over-cap denies, as HTTP 429.
-		if reader := object.RollingCapReader(); reader != nil {
-			if over, err := reader(ctx.Request.Context(), subject, namespace); err == nil && over {
-				log.Info("rolling_cap: window cap exceeded subject=%s namespace=%s path=%s",
-					subject, namespace, path)
-				ctx.ResponseWriter.Header().Set("Content-Type", "application/json")
-				ctx.ResponseWriter.WriteHeader(http.StatusTooManyRequests)
-				body := `{"error":{"message":"You've reached your plan's usage limit for the moment. It resets shortly — or upgrade at https://hanzo.ai/pricing for a higher limit.","type":"rate_limit_error","code":"usage_cap_exceeded"}}`
-				ctx.ResponseWriter.Write([]byte(body))
-				return
-			}
-		}
 		return
 	}
 
-	// Denied. checkBalance decided WHICH denial: a known-insufficient balance (402,
-	// add credits) or a balance it could not verify (503, retry) — both fail-CLOSED.
-	log.Info("balance_gate: deny subject=%s namespace=%s balance_cents=%d code=%s status=%d path=%s",
-		subject, namespace, balance, deny.Code, deny.Status, path)
+	log.Info("balance_gate: insufficient balance subject=%s namespace=%s balance_cents=%d path=%s",
+		subject, namespace, balance, path)
 
 	ctx.ResponseWriter.Header().Set("Content-Type", "application/json")
-	ctx.ResponseWriter.WriteHeader(deny.Status)
-	ctx.ResponseWriter.Write(deny.ErrorJSON())
+	ctx.ResponseWriter.WriteHeader(http.StatusPaymentRequired)
+
+	body := `{"error":{"message":"Insufficient balance. Please add credits to your wallet at https://pay.hanzo.ai","type":"billing_error","code":"insufficient_balance"}}`
+	ctx.ResponseWriter.Write([]byte(body))
 }
 
 // isReadMethod reports whether an HTTP method only READS — it lists or fetches a
@@ -228,24 +216,9 @@ func isReadMethod(method string) bool {
 	return false
 }
 
-// balanceExemptNames are exemptions stated as POLICY NAMES rather than URLs, so
-// they survive a resource moving to a different route. The usage reads are here
-// for the reason the comment below spells out: a $0-balance org must be able to
-// see the usage panel that tells it to add credit. Keying those on literal
-// paths is what caused that outage once already, and moving the routes to
-// /v1/ai/usages would have caused it again.
-var balanceExemptNames = map[string]struct{}{
-	"get-usages": {}, "get-range-usages": {}, "get-cloud-usages": {},
-}
-
-// isBalanceExempt returns true for requests that should bypass balance checking
-// (free/public endpoints, health checks, account + usage metadata).
-func isBalanceExempt(path, method string) bool {
-	if name, ok := normalizedControllerName(path, method); ok {
-		if _, exempt := balanceExemptNames[name]; exempt {
-			return true
-		}
-	}
+// isBalanceExempt returns true for paths that should bypass balance checking
+// (free/public endpoints, health checks, etc.).
+func isBalanceExempt(path string) bool {
 	switch {
 	case path == "/v1/health" || path == "/health":
 		return true
@@ -272,43 +245,47 @@ func isBalanceExempt(path, method string) bool {
 	// "402 on free /v1/models" console-wide outage class.
 	case path == "/v1/models" || strings.HasPrefix(path, "/v1/models/"):
 		return true
-	case path == "/v1/ai/version" || path == "/v1/ai/system":
+	case strings.HasPrefix(path, "/v1/get-version-info"):
 		return true
-	case strings.HasPrefix(path, "/v1/ai/signin"):
+	case strings.HasPrefix(path, "/v1/get-system-info"):
 		return true
-	case path == "/v1/ai/signout":
+	case strings.HasPrefix(path, "/v1/signin"):
 		return true
-	case path == "/v1/ai/account":
+	case path == "/v1/signout":
+		return true
+	case path == "/v1/get-account":
 		return true
 	// Usage/spend READS are account metadata, not metered inference. A caller
 	// must ALWAYS be able to SEE its own usage — especially to learn it needs
 	// credits — so a $0-balance org never 402s on the usage view (same class as
 	// /v1/models + /v1/get-account; the auth filters still require a principal).
 	// Gating these was the "insufficient balance on the usage panel" outage.
+	case path == "/v1/get-cloud-usages" ||
+		path == "/v1/get-usages" ||
+		path == "/v1/get-range-usages":
+		return true
 	// The reward/feedback signal is training metadata, not metered inference: a
 	// caller must be able to score a past request even at $0 balance (the outcome
 	// label is exactly how the enso loop learns). Auth still required (the handler
 	// self-auths); only the balance 402 is skipped.
-	case path == "/v1/feedback":
+	case path == "/v1/feedback" || path == "/v1/add-routing-reward":
 		return true
-	// The router-config surface (/v1/router/{policy,defaults,ledger,rewards,artifact-meta}
-	// + /v1/org/settings) is routing METADATA — per-org policy/allowlist/dial, the export
-	// endpoints, the org settings — NOT metered inference. It is served over beego via
-	// RouterConfigBridge → the ONE native ZAP handler, so it DOES traverse this filter and
-	// must be balance-exempt exactly like /v1/router/stats + /v1/feedback: a $0-balance org
-	// has to read/write its own router config from the console (auth is still enforced — the
-	// handler self-auths). Dropping these from the exempt list would 402 every unfunded
-	// org's Router → Policy tab.
-	case path == "/v1/router/policy" ||
-		path == "/v1/router/defaults" ||
-		path == "/v1/router/ledger" ||
-		path == "/v1/router/rewards" ||
-		path == "/v1/router/artifact-meta" ||
-		strings.HasPrefix(path, "/v1/org/settings"):
+	// Routing configuration is metadata, not metered inference — same class as
+	// /v1/models. Every client fetches its org's effective defaults on boot, so
+	// gating the READ 402s an unfunded org's apps before any priced request
+	// exists; the org-settings CRUD + ledger export are platform administration
+	// (RequireGlobalAdmin-gated) — an operator flipping routing must never
+	// depend on a wallet balance. Auth filters still apply to all of them.
+	case path == "/v1/get-routing-defaults" ||
+		path == "/v1/get-org-settings" ||
+		path == "/v1/add-org-settings" ||
+		path == "/v1/update-org-settings" ||
+		path == "/v1/delete-org-settings" ||
+		path == "/v1/export-routing-ledger":
 		return true
 	// Router observability READS — the savings/quality aggregate + the improvement
 	// time-series. Marketing/metadata, not metered inference (same class as
-	// /v1/router/defaults): the public platform scope is unauthenticated (the
+	// /v1/get-routing-defaults): the public platform scope is unauthenticated (the
 	// no-subject path already passes), and an authenticated org-scope read must not
 	// 402 a $0-balance org either.
 	case path == "/v1/router/stats" || path == "/v1/router/history" || path == "/v1/router/judge-panel":
@@ -348,8 +325,7 @@ func resolveBillingKey(ctx *web.Context) (subject, namespace, userKey string) {
 		return "", "", ""
 	}
 
-	// Source 1: session user from AutoSigninFilter. A cookie session carries no
-	// signed `orgs` claim, so it can never switch org — it always bills its home.
+	// Source 1: session user from AutoSigninFilter.
 	user := GetSessionUser(ctx)
 	if user != nil && user.Owner != "" {
 		return account.Payer(account.Credential{Owner: user.Owner, Name: user.Name, Machine: account.IsMachine(user.Type)}).Subject(), user.Owner, user.Owner + "/" + user.Name
@@ -360,13 +336,6 @@ func resolveBillingKey(ctx *web.Context) (subject, namespace, userKey string) {
 	if token == "" {
 		return "", "", ""
 	}
-
-	// The org the caller asked to act in. Unvalidated here — only the JWT branch
-	// below, which holds the signed membership set, may honor it. It scopes the
-	// cache because the SAME token resolves to a DIFFERENT wallet in a different
-	// org: keying the cache on the token alone would serve one org's billing
-	// identity to a request made in another.
-	requested := strings.TrimSpace(ctx.Input.Header("X-Org-Id"))
 
 	// Widget keys (hz_) bill the OWNER ORG that minted the key (mirrors the
 	// controller's authResolveProvider): resolve that org here so the router
@@ -390,7 +359,7 @@ func resolveBillingKey(ctx *web.Context) (subject, namespace, userKey string) {
 	}
 
 	// Check key cache first.
-	if s, ns, uk, ok := balanceGate.getUserKeyCached(token, requested); ok {
+	if s, ns, uk, ok := balanceGate.getUserKeyCached(token); ok {
 		return s, ns, uk
 	}
 
@@ -403,41 +372,25 @@ func resolveBillingKey(ctx *web.Context) (subject, namespace, userKey string) {
 			return "", "", ""
 		}
 		if claims.User.Owner != "" {
-			// This is the ONE auth path that can honor an org switch, because it is
-			// the only one holding the signed `orgs` claim that proves membership. The
-			// gate must read the wallet the controller's debit will land on, so it
-			// resolves the ledger by the same two rules (iam.EffectiveOrg, then
-			// iam.LedgerOrg) the controller applies — check one balance and drain
-			// another and a funded org 402s while an unfunded one runs free.
-			ledger := iam.LedgerOrg(
-				iam.EffectiveOrg(claims.User.Owner, claims.Orgs, requested),
-				claims.User.Owner,
-				util.IsSuperAdmin(&claims.User),
-			)
 			// The token NAMES its payer: IAM signs `billing_account` from the real
 			// grant context, so the gate reads who pays instead of inferring it from
 			// User.Type — a field the user can set on themselves. Machine stays as the
 			// fallback for tokens minted before the claim shipped; when the claim is
 			// present Payer ignores it, so a forged Type can no longer point this gate
-			// at the signup org's pooled balance. A claim naming the home org is
-			// discarded on a switched request (Payer honors it only within the
-			// credential's own org), which is right: the selected org's wallet pays.
-			subject = account.Payer(account.Credential{Owner: ledger, Name: claims.User.Name, Account: claims.BillingAccount, Machine: account.IsMachine(claims.User.Type)}).Subject()
-			// userKey stays the caller's IDENTITY ("<home>/<name>"), never the ledger:
-			// it keys per-user exemption matching, not money.
+			// at the signup org's pooled balance.
+			subject = account.Payer(account.Credential{Owner: claims.User.Owner, Name: claims.User.Name, Account: claims.BillingAccount, Machine: account.IsMachine(claims.User.Type)}).Subject()
 			userKey = claims.User.Owner + "/" + claims.User.Name
-			balanceGate.setUserKeyCache(token, requested, subject, ledger, userKey)
-			return subject, ledger, userKey
+			balanceGate.setUserKeyCache(token, subject, claims.User.Owner, userKey)
+			return subject, claims.User.Owner, userKey
 		}
 		return "", "", ""
 	}
 
-	// IAM API key (hk- prefix): resolve via IAM (cached). An hk- key carries no
-	// signed membership set, so it never switches — it bills the org that owns it.
+	// IAM API key (hk- prefix): resolve via IAM (cached).
 	if strings.HasPrefix(token, "hk-") {
 		subject, namespace, userKey = balanceGate.resolveIAMKeySubject(token)
 		if subject != "" {
-			balanceGate.setUserKeyCache(token, requested, subject, namespace, userKey)
+			balanceGate.setUserKeyCache(token, subject, namespace, userKey)
 		}
 		return subject, namespace, userKey
 	}
@@ -453,28 +406,20 @@ func isJwtTokenLike(token string) bool {
 
 // ── Balance checking ────────────────────────────────────────────────────────
 
-// checkBalance reports whether the subject has a positive SPENDABLE balance
-// (ledger balance minus outstanding reservations). When it does NOT, deny carries
-// the ready-to-emit BillingNotice distinguishing the two denial reasons — because a
-// funded caller behind a transient billing blip must never be told to add credits:
+// checkBalance returns whether the subject has a positive SPENDABLE balance
+// (ledger balance minus outstanding reservations). On a fresh ledger entry it
+// returns immediately; on a stale entry it serves the (settle-adjusted) stale
+// value and refreshes asynchronously; on a cold subject it fetches synchronously
+// and seeds the ledger.
 //
-//   - KNOWN balance ≤ 0 (or fully reserved): genuine insufficiency → object.InsufficientBalance
-//     (402, "add credits"). Applies to a fresh/stale ledger entry AND a cold subject
-//     whose lookup SUCCEEDED with no spendable funds.
-//   - COLD subject whose lookup ERRORS: the balance could not be verified →
-//     object.BalanceUnavailable (503, "retry"). Still fail-CLOSED — the request is
-//     denied — only the message/code/status differ.
+// Reading the ledger (not a private cache) makes the gate reservation-aware and
+// reflects every local settle, so the cache window can never serve a
+// stale-positive balance once the funds are spent.
 //
-// On a fresh ledger entry it returns immediately; on a stale entry it serves the
-// (settle-adjusted) stale value and refreshes asynchronously; on a cold subject it
-// fetches synchronously and seeds the ledger. Reading the ledger (not a private
-// cache) makes the gate reservation-aware and reflects every local settle, so the
-// cache window can never serve a stale-positive balance once the funds are spent.
-//
-// Fail posture is fail-CLOSED for BOTH denial reasons — an outage never becomes an
-// unmetered bleed, and there is no exempt or fail-open escape. deny is the zero
-// BillingNotice when sufficient. userKey is retained for caller-signature parity.
-func (bg *BalanceGate) checkBalance(subject, namespace, userKey string) (sufficient bool, deny object.BillingNotice, balanceCents int64) {
+// Fail posture on a COLD subject whose Commerce lookup errors: fail CLOSED,
+// always — an outage must never become an unmetered bleed, and there is no
+// exempt or fail-open escape. userKey is retained for caller-signature parity.
+func (bg *BalanceGate) checkBalance(subject, namespace, userKey string) (sufficient bool, balanceCents int64) {
 	_ = userKey
 	bal, reserved, fresh, known := bg.ledger.Snapshot(subject)
 	if known {
@@ -483,29 +428,21 @@ func (bg *BalanceGate) checkBalance(subject, namespace, userKey string) (suffici
 			bg.refreshAsync(subject, namespace)
 		}
 		avail := bal - reserved
-		if avail > 0 {
-			return true, object.BillingNotice{}, avail
-		}
-		return false, object.InsufficientBalance(namespace, ""), avail
+		return avail > 0, avail
 	}
 
 	// Cold subject: fetch synchronously so the first request gets a real check.
 	balance, err := bg.fetchBalance(subject, namespace)
 	if err != nil {
-		// Balance UNVERIFIABLE (transient billing-backend failure) → DENY, fail-CLOSED:
-		// a balance we cannot read is never spent, and there is no exempt/fail-open
-		// escape. DISTINCT from insufficiency — the caller is asked to retry (503), not
-		// told to add credits, so a funded caller behind a blip is not misdirected.
-		log.Warning("balance_gate: balance unverifiable for cold subject=%s: %v (fail-CLOSED, retryable)", subject, err)
-		return false, object.BalanceUnavailable(), 0
+		// Balance unknown → DENY. A Commerce outage must never become an
+		// unmetered bleed, and there is no exempt/fail-open escape.
+		log.Warning("balance_gate: Commerce lookup failed for cold subject=%s: %v (fail-CLOSED)", subject, err)
+		return false, 0
 	}
 
 	bg.ledger.SetBalance(subject, balance)
 	avail, _ := bg.ledger.Available(subject)
-	if avail > 0 {
-		return true, object.BillingNotice{}, avail
-	}
-	return false, object.InsufficientBalance(namespace, ""), avail
+	return avail > 0, avail
 }
 
 // refreshAsync kicks off a background goroutine to refresh the ledger balance
@@ -591,18 +528,11 @@ func (bg *BalanceGate) fetchBalance(subject, namespace string) (int64, error) {
 
 // ── User key cache ──────────────────────────────────────────────────────────
 
-// userKeyCacheKey is the identity of a cached billing answer: the bearer token
-// AND the org the request asked to act in. One token resolves to one billing
-// identity PER ORG, so the token alone is not a key — caching by it would serve
-// one org's wallet to a request made in another. The cache composes the key
-// itself so no caller can forget the org half.
-func userKeyCacheKey(token, org string) string { return token + "\x00" + org }
-
-// getUserKeyCached returns the cached (subject, namespace, userKey) for a token
-// acting in org. The bool is false on miss/stale.
-func (bg *BalanceGate) getUserKeyCached(token, org string) (subject, namespace, userKey string, ok bool) {
+// getUserKeyCached returns the cached (subject, namespace, userKey) for a token.
+// The bool is false on miss/stale.
+func (bg *BalanceGate) getUserKeyCached(token string) (subject, namespace, userKey string, ok bool) {
 	bg.userKeyMu.RLock()
-	entry, found := bg.userKeyCache[userKeyCacheKey(token, org)]
+	entry, found := bg.userKeyCache[token]
 	bg.userKeyMu.RUnlock()
 
 	if !found || time.Since(entry.fetchedAt) > userKeyCacheTTL {
@@ -611,37 +541,76 @@ func (bg *BalanceGate) getUserKeyCached(token, org string) (subject, namespace, 
 	return entry.subject, entry.namespace, entry.userKey, true
 }
 
-// setUserKeyCache stores a (token, org) -> (subject, namespace, userKey) mapping.
-func (bg *BalanceGate) setUserKeyCache(token, org, subject, namespace, userKey string) {
+// setUserKeyCache stores a token -> (subject, namespace, userKey) mapping.
+func (bg *BalanceGate) setUserKeyCache(token, subject, namespace, userKey string) {
 	bg.userKeyMu.Lock()
-	bg.userKeyCache[userKeyCacheKey(token, org)] = &userKeyCacheEntry{subject: subject, namespace: namespace, userKey: userKey, fetchedAt: time.Now()}
+	bg.userKeyCache[token] = &userKeyCacheEntry{subject: subject, namespace: namespace, userKey: userKey, fetchedAt: time.Now()}
 	bg.userKeyMu.Unlock()
 }
 
 // ── IAM key resolution ──────────────────────────────────────────────────────
 
-// resolveIAMKeySubject resolves an hk- API key to its billing identity:
-// (subject, namespace, userKey). The namespace is the org `owner`; the subject
-// is account.Payer(account.Credential{Owner: owner, Name: name}).Subject() — so a
-// personal-org key bills per-user; the userKey is the exact "owner/name" for
-// exemption matching. Returns ("", "", "") on any error (fail-open).
-//
-// The lookup itself is controllers.GetUserByAccessKey — the ONE hk- resolver, so
-// the billing subject and the authz principal are by construction the same
-// identity resolved over the same authenticated IAM transport. This file used to
-// carry a second copy that passed clientId/clientSecret as QUERY PARAMS; IAM
-// derives no principal from those, so it 401'd and this gate silently fail-opened
-// on every hk- key. One resolver means that cannot drift again.
+// iamUserResponse matches the IAM API response shape for get-user.
+type iamUserResponse struct {
+	Status string `json:"status"`
+	Msg    string `json:"msg"`
+	Data   *struct {
+		Owner string `json:"owner"`
+		Name  string `json:"name"`
+	} `json:"data"`
+}
+
+// resolveIAMKeySubject calls IAM to resolve an hk- API key to its billing
+// identity: (subject, namespace, userKey). The namespace is the org `owner`; the
+// subject is account.Payer(account.Credential{Owner: owner, Name: name}).Subject() — so a personal-org key bills
+// per-user; the userKey is the exact "owner/name" for exemption matching.
+// Returns ("", "", "") on any error (fail-open).
 func (bg *BalanceGate) resolveIAMKeySubject(apiKey string) (subject, namespace, userKey string) {
-	u, err := controllers.GetUserByAccessKey(apiKey)
+	if bg.iamEndpoint == "" {
+		return "", "", ""
+	}
+
+	iamURL := fmt.Sprintf("%s/v1/iam/get-user?accessKey=%s", bg.iamEndpoint, url.QueryEscape(apiKey))
+	if bg.clientId != "" && bg.clientSecret != "" {
+		iamURL += "&clientId=" + url.QueryEscape(bg.clientId) + "&clientSecret=" + url.QueryEscape(bg.clientSecret)
+	}
+
+	req, err := http.NewRequest(http.MethodGet, iamURL, nil)
 	if err != nil {
-		log.Warning("balance_gate: IAM key resolve failed for key=%s: %v", maskKey(apiKey), err)
+		log.Warning("balance_gate: IAM request build failed for key=%s: %v", maskKey(apiKey), err)
 		return "", "", ""
 	}
-	if u == nil || u.Owner == "" {
+
+	resp, err := bg.client.Do(req)
+	if err != nil {
+		log.Warning("balance_gate: IAM request failed for key=%s: %v", maskKey(apiKey), err)
 		return "", "", ""
 	}
-	return account.Payer(account.Credential{Owner: u.Owner, Name: u.Name}).Subject(), u.Owner, u.Owner + "/" + u.Name
+	defer func() {
+		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+	}()
+
+	if resp.StatusCode != http.StatusOK {
+		log.Warning("balance_gate: IAM returned %d for key=%s", resp.StatusCode, maskKey(apiKey))
+		return "", "", ""
+	}
+
+	var result iamUserResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		log.Warning("balance_gate: IAM response decode failed for key=%s: %v", maskKey(apiKey), err)
+		return "", "", ""
+	}
+
+	if result.Status != "ok" || result.Data == nil {
+		return "", "", ""
+	}
+
+	if result.Data.Owner == "" {
+		return "", "", ""
+	}
+
+	return account.Payer(account.Credential{Owner: result.Data.Owner, Name: result.Data.Name}).Subject(), result.Data.Owner, result.Data.Owner + "/" + result.Data.Name
 }
 
 // ── Cleanup ─────────────────────────────────────────────────────────────────

@@ -24,10 +24,10 @@ import (
 
 	"github.com/hanzoai/account"
 
-	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
 	"github.com/hanzoai/decimal"
+	iam "github.com/hanzoai/iam"
 	"github.com/hanzoai/money"
 )
 
@@ -58,11 +58,10 @@ func (c *ApiController) serveZenMedia(apiPath, model string, rawBody []byte, uni
 	var hold *budgetHold
 	if authUser != nil {
 		if zm, ok := zenFam.lookup(model); ok {
-			ledger := c.billingOrg(authUser)
-			subject := account.Payer(account.Credential{Owner: ledger, Name: authUser.Name}).Subject()
+			subject := account.Payer(account.Credential{Owner: authUser.Owner, Name: authUser.Name}).Subject()
 			var ok2 bool
 			if hold, ok2 = reserveBudget(subject, zm.unitCostCents(units)); !ok2 {
-				c.ResponseAuthError(billingError("%s", object.InsufficientBalance(ledger, "cost").Message))
+				c.ResponseAuthError(billingError("Insufficient balance for the estimated cost. add credits to your wallet at https://pay.hanzo.ai"))
 				return
 			}
 		}
@@ -144,7 +143,7 @@ func (c *ApiController) recordZenMediaUsage(model string, authUser *iam.User, is
 		return
 	}
 	rec := &usageRecord{
-		Owner: c.billingOrg(authUser), User: authUser.Owner + "/" + authUser.Name, Organization: authUser.Owner,
+		Owner: authUser.Owner, User: authUser.Owner + "/" + authUser.Name, Organization: authUser.Owner,
 		Model: model, Provider: "zen",
 		Cost: float64(cents) / 100.0, Currency: "USD",
 		Premium: isPremium, Status: status, ErrorMsg: errMsg,

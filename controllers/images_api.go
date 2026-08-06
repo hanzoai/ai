@@ -23,10 +23,10 @@ import (
 
 	"github.com/hanzoai/account"
 
-	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/model"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
+	iam "github.com/hanzoai/iam"
 )
 
 // This file completes the OpenAI-compatible surface alongside chat and
@@ -146,11 +146,10 @@ func (c *ApiController) ImagesGenerations() {
 	// image cost, not a token estimate.
 	var hold *budgetHold
 	if authUser != nil {
-		ledger := c.billingOrg(authUser)
-		subject := account.Payer(account.Credential{Owner: ledger, Name: authUser.Name}).Subject()
+		subject := account.Payer(account.Credential{Owner: authUser.Owner, Name: authUser.Name}).Subject()
 		var ok bool
 		if hold, ok = reserveBudget(subject, imageCostCents(req.Model, n)); !ok {
-			c.ResponseAuthError(billingError("%s", object.InsufficientBalance(ledger, "image cost").Message))
+			c.ResponseAuthError(billingError("Insufficient balance for the estimated image cost. add credits to your wallet at https://pay.hanzo.ai"))
 			return
 		}
 	}
@@ -239,7 +238,7 @@ func (c *ApiController) recordImageUsage(authUser *iam.User, provider *object.Pr
 		return
 	}
 	rec := &usageRecord{
-		Owner:        c.billingOrg(authUser),
+		Owner:        authUser.Owner,
 		User:         authUser.Owner + "/" + authUser.Name,
 		Organization: authUser.Owner,
 		Model:        userModel,

@@ -20,9 +20,9 @@ import (
 	"net/http"
 	"time"
 
-	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
+	iam "github.com/hanzoai/iam"
 )
 
 // audioSpeechRequest is the OpenAI /v1/audio/speech body: synthesize `input` with
@@ -154,7 +154,7 @@ func (c *ApiController) recordAudioUsage(authUser *iam.User, provider *object.Pr
 		return
 	}
 	rec := &usageRecord{
-		Owner:        c.billingOrg(authUser),
+		Owner:        authUser.Owner,
 		User:         authUser.Owner + "/" + authUser.Name,
 		Organization: authUser.Owner,
 		Model:        userModel,

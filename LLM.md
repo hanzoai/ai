@@ -1,40 +1,13 @@
-# ai — agent guide
+# Hanzo Cloud - Claude Code Guide
 
-`hanzoai/ai` is the canonical **AI control plane** for the Hanzo platform: model
-hub, native Go model routing, RAG, and MCP/A2A management. It speaks the
-OpenAI-compatible `/v1` API, routes 66+ models to upstream providers, and meters
-every request. Renamed from `hanzoai/cloud` (HIP-0106); mounts as the `ai`
-subsystem inside `hanzoai/cloud`. In prod it runs as `cloud-api` on `hanzo-k8s`,
-fronted by `hanzoai/gateway` at `api.hanzo.ai`.
+## Project Overview
 
-**Canonical role.** This is a Hanzo *service/infra* repo — one impl, one place.
-It is NOT an SDK; SDKs link out to it. Completeness order across languages is
-Python → Rust → C++ → Go. Canonical spec: `~/work/hanzo/SDK-ARCHITECTURE.md`.
-
-**Brand rules (hard — enforce in every edit).**
-- Never call this an "LLM gateway" and never position it against LiteLLM — it is
-  a full AI cloud / control plane, not a proxy.
-- `/v1/` only, never an `/api/` prefix.
-- Zen models are Hanzo's own family (`owned_by: hanzo`) — never name upstream models.
-- Voice: "Hanzo — the Open AI Cloud." Modern, crisp, developer-first.
-
-**Install / run.**
-```bash
-go build -race -ldflags "-extldflags '-static'"   # build
-./cloud-api-server                                 # run (env-configured)
-go test -v $(go list ./...) -tags skipCi           # test (requires MySQL)
-docker compose up                                  # local stack
-```
-
-**Key entry points.** `main.go` (entry) · `bootstrap.go` (boot + replica
-assertion) · `routers/router.go` (all `/v1` routes) · `controllers/` (HTTP
-handlers) · `object/init.go` (init + LLM provider seeding) · `model/` (provider
-integrations) · `object/kms.go` (secret resolution) · `web/` (React admin UI).
+Hanzo Cloud is an enterprise-level AI knowledge base and MCP (Model Context Protocol) / A2A (Agent-to-Agent) management platform. It supports 30+ AI model providers (OpenAI, Claude, Gemini, Ollama, etc.) with admin UI, user management, and SSO via Hanzo IAM.
 
 ## Architecture
 
 Full-stack application:
-- **Backend:** Go 1.26 + native web router (`github.com/hanzoai/ai/web`, served as `routers.App`; upstream beego dropped), MySQL/MariaDB/PostgreSQL
+- **Backend:** Go 1.23.6 + Beego framework (MVC), MySQL/MariaDB
 - **Frontend:** React + Ant Design v5, located in `web/`
 - **Auth:** Hanzo IAM SSO integration
 
@@ -110,7 +83,7 @@ cd web && yarn lint
 - Framework: native web router (`github.com/hanzoai/ai/web`, served as `routers.App`) — controllers handle HTTP, objects contain business logic; upstream beego is dropped (no direct import — routing, config, logging, pagination are all native)
 - New AI providers go in `model/` (implement the provider interface)
 - Database access via the native store in `object/`
-- Route registration: CRUD resources are GENERATED from the one table in `routers/resources.go`; `routers/router.go` holds only what is NOT a resource (the OpenAI-compatible surface and a few singletons). See "The /v1 resource surface" below.
+- Route registration in `routers/router.go`
 - i18n strings: avoid duplicate keys across frontend and backend
 
 ### Frontend (React)
@@ -150,64 +123,6 @@ cd web && yarn lint
 | `conf/app.conf` | Runtime configuration |
 | `web/src/App.js` | Frontend root component |
 | `web/src/backend/` | API client helpers |
-
-## The /v1 resource surface — ONE table, no compound routes
-
-The published OpenAPI description is GENERATED from that same table:
-
-    go run ./cmd/openapi -spec ../openapi/ai/openapi.yaml
-
-It writes only the region between the `# BEGIN/END generated` markers in the
-canonical spec (hanzoai/openapi, OpenAPI 3.1) — the inference paths above it are
-hand-authored with real OpenAI request/response schemas and stay that way.
-`cmd/openapi -verify` and `TestSpecMatchesTheTable` fail when the spec drifts from
-the table, so the contract customers and SDKs read cannot describe a surface this
-service does not serve.
-
-The old `swagger/` directory is DELETED. It was a second description, and it was
-wrong: `basePath: /api` with 135 `/<verb>-<noun>` paths, a base path this service
-has never served. Nothing referenced it, nothing embedded it, and no test noticed
-when it stopped being true — which is the argument for generating the replacement
-rather than hand-maintaining it.
-
-Every CRUD route is generated from `routers/resources.go`. There is no second
-registration path, and no route is written by hand.
-
-    GET    /v1/<ns>/<resource>                 list      POST   /v1/<ns>/<resource>          create
-    GET    /v1/<ns>/<resource>/<owner>/<name>  read      PATCH  …/<owner>/<name>            update
-                                                         DELETE …/<owner>/<name>            delete
-    GET    /v1/<ns>/<resource>/global          cross-tenant list (where a resource has one)
-
-Namespaces are the subsystems that own the data, so a reader can tell what a route
-touches from its prefix: `auth` (this backend's own account/session objects),
-`rag`, `chat`, `ai`, `content`, `compute`, `work`, `ops`.
-
-Three things about this that are easy to get wrong:
-
-**The member key is `<owner>/<name>` — two path segments, not one.** Every object
-is keyed by that pair (`util.GetOwnerAndNameFromIdWithError` requires EXACTLY two
-tokens, so a name containing a slash was never valid — the two-segment URL is
-lossless, not a narrowing). They are recomposed into `id` in the one place route
-params are bound (`web.Router.ServeHTTP`), so handlers keep reading
-`c.Input().Get("id")` unchanged. A single `:id` segment cannot work: Go decodes
-`%2F` back into a separator before routing.
-
-**`/v1/iam` belongs to the IAM service, not to this one.** cloud proxies that whole
-subtree away (`cloud/iam_edge.go`). Anything registered there is shadowed and
-unreachable — it fails as a wrong answer, not an error.
-`TestNoResourceClaimsForeignNamespace` holds that line.
-
-**The policy filters key on names, not paths.** `authz_filter` and `filter_balance`
-hold hand-curated sets (super-admin endpoints, balance exemptions, demo-mode
-allowances). Those names are DERIVED from the same table by `policyKey`, never
-restated — so a policy entry cannot drift from the route it governs. Do not
-hand-edit a path into those maps.
-
-Adding a resource is one table entry. The tests will tell you if you got it wrong:
-every controller method the table names is checked to exist by reflection, every
-route must emit a policy key, no path may contain a verb, and an action whose
-handler reads no id must sit on the collection (a member action's route could never
-match).
 
 ## LLM serving path (OpenAI-compatible /v1) — READ THIS
 

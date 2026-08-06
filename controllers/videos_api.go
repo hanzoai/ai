@@ -26,10 +26,10 @@ import (
 
 	"github.com/hanzoai/account"
 
-	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/model"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
+	iam "github.com/hanzoai/iam"
 )
 
 // This file completes the OpenAI-compatible surface alongside chat, embeddings,
@@ -176,11 +176,10 @@ func (c *ApiController) VideosGenerations() {
 	// no subject to own or bill the job by. Reject it rather than create an
 	// unownable, unbillable job.
 	if authUser == nil {
-		c.ResponseAuthError(billingError("Video generation requires an authenticated Hanzo Cloud account. Sign in and add credits to your wallet at %s", object.PayURL("")))
+		c.ResponseAuthError(billingError("Video generation requires an authenticated Hanzo Cloud account. Sign in and add credits to your wallet at https://pay.hanzo.ai"))
 		return
 	}
-	ledger := c.billingOrg(authUser)
-	subject := account.Payer(account.Credential{Owner: ledger, Name: authUser.Name}).Subject()
+	subject := account.Payer(account.Credential{Owner: authUser.Owner, Name: authUser.Name}).Subject()
 	if subject == "" {
 		c.ResponseAuthError(billingError("Video generation requires an authenticated Hanzo Cloud account."))
 		return
@@ -216,7 +215,7 @@ func (c *ApiController) VideosGenerations() {
 	// the job is abandoned.
 	hold, okReserve := reserveBudget(subject, videoCostCents(req.Model, 1))
 	if !okReserve {
-		c.ResponseAuthError(billingError("%s", object.InsufficientBalance(ledger, "video cost").Message))
+		c.ResponseAuthError(billingError("Insufficient balance for the estimated video cost. add credits to your wallet at https://pay.hanzo.ai"))
 		return
 	}
 
@@ -243,7 +242,7 @@ func (c *ApiController) VideosGenerations() {
 		id:         "video_" + util.GenerateUUID(),
 		upstreamID: upstreamID,
 		subject:    subject,
-		owner:      ledger,
+		owner:      authUser.Owner,
 		name:       authUser.Name,
 		userModel:  req.Model,
 		isPremium:  isPremium,
@@ -414,7 +413,7 @@ func (c *ApiController) resolveOwnedVideoJob(token, id string) (*videoJob, *obje
 
 	subject := ""
 	if authUser != nil {
-		subject = account.Payer(account.Credential{Owner: c.billingOrg(authUser), Name: authUser.Name}).Subject()
+		subject = account.Payer(account.Credential{Owner: authUser.Owner, Name: authUser.Name}).Subject()
 	}
 	// Ownership: a non-empty subject that matches the job's. An empty subject
 	// (anonymous/exempt) owns nothing. A mismatch is a 404 (never reveal the job).
@@ -481,7 +480,7 @@ func (c *ApiController) recordVideoUsage(authUser *iam.User, provider *object.Pr
 		return
 	}
 	rec := &usageRecord{
-		Owner:        c.billingOrg(authUser),
+		Owner:        authUser.Owner,
 		User:         authUser.Owner + "/" + authUser.Name,
 		Organization: authUser.Owner,
 		Model:        userModel,

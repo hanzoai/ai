@@ -14,8 +14,9 @@
 
 // ZAP inter-service transport for cloud operations.
 //
-// Listens on CLOUD_ZAP_PORT (default 9320) and serves the deploy, undeploy
-// and status opcodes over ZAP rather than HTTP.
+// Listens on CLOUD_ZAP_PORT (default 9320) and handles operational
+// opcodes used by Console, Platform, and Gateway to manage deployments,
+// check status, and stream logs without going through HTTP.
 //
 // Message type 110 (cloud ops):
 //   Request:  method(0:Text) + auth(8:Text) + body(16:Bytes)
@@ -33,7 +34,6 @@ import (
 	"github.com/hanzoai/ai/log"
 	"github.com/luxfi/zap"
 
-	"github.com/hanzoai/ai/cluster"
 	"github.com/hanzoai/ai/object"
 )
 
@@ -88,6 +88,12 @@ func handleCloudOps(ctx context.Context, from string, msg *zap.Message) (*zap.Me
 		return opsUndeployHandler(body)
 	case "status":
 		return opsStatusHandler()
+	case "logs":
+		return opsLogsHandler(body)
+	case "pods":
+		return opsPodsHandler(body)
+	case "containers":
+		return opsContainersHandler(body)
 	default:
 		return buildOpsResponse(404, nil, "unknown op: "+method)
 	}
@@ -118,7 +124,7 @@ func opsDeployHandler(body []byte) (*zap.Message, error) {
 		return buildOpsResponse(404, nil, "application not found: "+params.ID)
 	}
 
-	ok, err := cluster.DeploySync(app, "en")
+	ok, err := object.DeployApplicationSync(app, "en")
 	if err != nil {
 		return buildOpsResponse(500, nil, "deploy failed: "+err.Error())
 	}
@@ -150,7 +156,7 @@ func opsUndeployHandler(body []byte) (*zap.Message, error) {
 		return buildOpsResponse(400, nil, "owner and name required")
 	}
 
-	ok, err := cluster.UndeploySync(params.Owner, params.Name, params.Namespace, "en")
+	ok, err := object.UndeployApplicationSync(params.Owner, params.Name, params.Namespace, "en")
 	if err != nil {
 		return buildOpsResponse(500, nil, "undeploy failed: "+err.Error())
 	}
@@ -165,11 +171,85 @@ func opsUndeployHandler(body []byte) (*zap.Message, error) {
 // ── status ──────────────────────────────────────────────────────────────
 
 func opsStatusHandler() (*zap.Message, error) {
-	status, err := cluster.Status("en")
+	status, err := object.GetK8sStatus("en")
 	if err != nil {
 		return buildOpsResponse(500, nil, err.Error())
 	}
 
 	data, _ := json.Marshal(map[string]interface{}{"k8s": status})
+	return buildOpsResponse(200, data, "")
+}
+
+// ── logs ────────────────────────────────────────────────────────────────
+
+func opsLogsHandler(body []byte) (*zap.Message, error) {
+	var params struct {
+		Owner     string `json:"owner"`
+		Name      string `json:"name"`
+		Namespace string `json:"namespace"`
+		TailLines int    `json:"tailLines"`
+	}
+	if err := json.Unmarshal(body, &params); err != nil {
+		return buildOpsResponse(400, nil, "invalid body: "+err.Error())
+	}
+
+	id := params.Owner + "/" + params.Name
+	if id == "/" {
+		return buildOpsResponse(400, nil, "owner and name required")
+	}
+
+	pod, err := object.GetPod(id)
+	if err != nil {
+		return buildOpsResponse(500, nil, err.Error())
+	}
+	if pod == nil {
+		return buildOpsResponse(404, nil, "pod not found: "+id)
+	}
+
+	data, _ := json.Marshal(pod)
+	return buildOpsResponse(200, data, "")
+}
+
+// ── pods ────────────────────────────────────────────────────────────────
+
+func opsPodsHandler(body []byte) (*zap.Message, error) {
+	var params struct {
+		Owner string `json:"owner"`
+	}
+	if err := json.Unmarshal(body, &params); err != nil {
+		return buildOpsResponse(400, nil, "invalid body: "+err.Error())
+	}
+	if params.Owner == "" {
+		return buildOpsResponse(400, nil, "owner required")
+	}
+
+	pods, err := object.GetPods(params.Owner)
+	if err != nil {
+		return buildOpsResponse(500, nil, err.Error())
+	}
+
+	data, _ := json.Marshal(pods)
+	return buildOpsResponse(200, data, "")
+}
+
+// ── containers ──────────────────────────────────────────────────────────
+
+func opsContainersHandler(body []byte) (*zap.Message, error) {
+	var params struct {
+		Owner string `json:"owner"`
+	}
+	if err := json.Unmarshal(body, &params); err != nil {
+		return buildOpsResponse(400, nil, "invalid body: "+err.Error())
+	}
+	if params.Owner == "" {
+		return buildOpsResponse(400, nil, "owner required")
+	}
+
+	containers, err := object.GetContainers(params.Owner)
+	if err != nil {
+		return buildOpsResponse(500, nil, err.Error())
+	}
+
+	data, _ := json.Marshal(containers)
 	return buildOpsResponse(200, data, "")
 }

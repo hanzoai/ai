@@ -26,12 +26,12 @@ import (
 
 	"github.com/hanzoai/account"
 
-	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/model"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
 	"github.com/hanzoai/ai/web"
 	"github.com/hanzoai/go-openai"
+	iam "github.com/hanzoai/iam"
 )
 
 // ── Anthropic Messages API types ────────────────────────────────────────────
@@ -86,30 +86,6 @@ func (m *AnthropicMessage) ContentText() string {
 type AnthropicContentBlock struct {
 	Type string `json:"type"`
 	Text string `json:"text"`
-}
-
-// requestHasMediaAnthropic reports whether any message carries a non-text content
-// block (image, document). String content is text-only; an array with any block whose
-// type is not "text" is multimodal and must be forwarded verbatim, not text-flattened.
-func requestHasMediaAnthropic(req *AnthropicRequest) bool {
-	for _, m := range req.Messages {
-		s := strings.TrimSpace(string(m.Content))
-		if s == "" || s[0] != '[' {
-			continue
-		}
-		var blocks []struct {
-			Type string `json:"type"`
-		}
-		if json.Unmarshal(m.Content, &blocks) != nil {
-			continue
-		}
-		for _, b := range blocks {
-			if b.Type != "" && b.Type != "text" {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 // rawContentToText converts a json.RawMessage that is either a JSON string
@@ -449,12 +425,11 @@ func (c *ApiController) AnthropicMessages() {
 	request.MaxTokens = clampMaxTokens(request.MaxTokens)
 	var hold *budgetHold
 	if authUser != nil {
-		ledger := c.billingOrg(authUser)
-		subject := account.Payer(account.Credential{Owner: ledger, Name: authUser.Name}).Subject()
+		subject := account.Payer(account.Credential{Owner: authUser.Owner, Name: authUser.Name}).Subject()
 		est := estimateRequestCostCents(request.Model, len(request.Messages)*500, request.MaxTokens)
 		var ok bool
 		if hold, ok = reserveBudget(subject, est); !ok {
-			c.respondAnthropicError("billing_error", object.InsufficientBalance(ledger, "request cost").Message, http.StatusPaymentRequired)
+			c.respondAnthropicError("billing_error", "Insufficient balance for the estimated request cost. add credits to your wallet at https://pay.hanzo.ai", http.StatusPaymentRequired)
 			return
 		}
 	}
@@ -474,14 +449,6 @@ func (c *ApiController) AnthropicMessages() {
 	// pipeline cannot handle structured tool_use blocks. Proxy the raw Anthropic
 	// request directly to the upstream and stream/return the raw response.
 	if len(request.Tools) > 0 {
-		c.proxyAnthropicToolRequest(provider, &request, requestStartTime, authUser, isPremium, hold)
-		return
-	}
-
-	// Multimodal (vision): the QueryText path below is text-only and would drop image
-	// blocks. Forward multimodal requests verbatim to the upstream (same path as tools),
-	// so vision-capable models receive the images. Symmetric with the OpenAI endpoint.
-	if requestHasMediaAnthropic(&request) {
 		c.proxyAnthropicToolRequest(provider, &request, requestStartTime, authUser, isPremium, hold)
 		return
 	}
@@ -598,7 +565,7 @@ func (c *ApiController) AnthropicMessages() {
 	if err != nil {
 		if authUser != nil {
 			errRecord := &usageRecord{
-				Owner:     c.billingOrg(authUser),
+				Owner:     authUser.Owner,
 				User:      authUser.Owner + "/" + authUser.Name,
 				Model:     request.Model,
 				Provider:  actualProvider,
@@ -624,7 +591,7 @@ func (c *ApiController) AnthropicMessages() {
 	// Record successful usage (actualProvider reflects which provider served the request).
 	if authUser != nil {
 		successRecord := &usageRecord{
-			Owner:            c.billingOrg(authUser),
+			Owner:            authUser.Owner,
 			User:             authUser.Owner + "/" + authUser.Name,
 			Organization:     authUser.Owner,
 			Model:            request.Model,
@@ -776,7 +743,7 @@ func (c *ApiController) proxyAnthropicToolRequest(
 		)
 		if authUser != nil {
 			rec := &usageRecord{
-				Owner: c.billingOrg(authUser), User: authUser.Owner + "/" + authUser.Name,
+				Owner: authUser.Owner, User: authUser.Owner + "/" + authUser.Name,
 				Organization: authUser.Owner, Model: request.Model, Provider: provider.Name,
 				PromptTokens: capPrompt, CompletionTokens: capCompletion,
 				TotalTokens: capPrompt + capCompletion, Currency: "USD",
@@ -801,7 +768,7 @@ func (c *ApiController) proxyAnthropicToolRequest(
 		prompt, completion := usage.Usage.InputTokens, usage.Usage.OutputTokens
 		if authUser != nil {
 			rec := &usageRecord{
-				Owner: c.billingOrg(authUser), User: authUser.Owner + "/" + authUser.Name,
+				Owner: authUser.Owner, User: authUser.Owner + "/" + authUser.Name,
 				Organization: authUser.Owner, Model: request.Model, Provider: provider.Name,
 				PromptTokens: prompt, CompletionTokens: completion,
 				TotalTokens: prompt + completion, Currency: "USD",
@@ -869,7 +836,7 @@ func (c *ApiController) proxyAnthropicViaOpenAI(
 	if err != nil {
 		if authUser != nil {
 			errRecord := &usageRecord{
-				Owner: c.billingOrg(authUser), User: authUser.Owner + "/" + authUser.Name,
+				Owner: authUser.Owner, User: authUser.Owner + "/" + authUser.Name,
 				Model: request.Model, Provider: provider.Name, Premium: isPremium,
 				Stream: request.Stream, Status: "error", ErrorMsg: err.Error(),
 				ClientIP: c.Ctx.Request.RemoteAddr, RequestID: requestId,
@@ -950,7 +917,7 @@ func (c *ApiController) recordAnthropicToolUsage(
 	actualCents := calculateCostCentsWithCache(request.Model, prompt, completion, 0, 0)
 	if authUser != nil {
 		rec := &usageRecord{
-			Owner: c.billingOrg(authUser), User: authUser.Owner + "/" + authUser.Name,
+			Owner: authUser.Owner, User: authUser.Owner + "/" + authUser.Name,
 			Organization: authUser.Owner, Model: request.Model, Provider: provider.Name,
 			PromptTokens: prompt, CompletionTokens: completion, TotalTokens: prompt + completion,
 			Currency: "USD", Premium: isPremium, Stream: stream, Status: "success",

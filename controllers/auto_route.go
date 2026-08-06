@@ -18,16 +18,15 @@ import (
 	"context"
 	"encoding/json"
 	"os"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
 
-	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/router"
 	"github.com/hanzoai/go-openai"
+	iam "github.com/hanzoai/iam"
 )
 
 // orgAutoRoutingLookup resolves an org's own auto-routing preference ("",
@@ -45,7 +44,7 @@ var sessionRoutingLookup = object.GetCachedOrgSessionRouting
 //
 //  1. the org's own OrgSettings row (if set) wins;
 //  2. else the reserved "*" GlobalDefaultOwner row — the SINGLE source of truth
-//     for the platform-wide routing default, edited via /v1/org/settings
+//     for the platform-wide routing default, edited via /v1/update-org-settings
 //     from admin.hanzo.ai;
 //  3. else the DEPRECATED ROUTER_ENABLED env, honored only while the global row
 //     is unset (see deprecatedGlobalRouterEnv).
@@ -79,7 +78,7 @@ func deprecatedGlobalRouterEnv() string {
 		return object.AutoRoutingUnset
 	}
 	routerEnabledEnvOnce.Do(func() {
-		log.Warning("ROUTER_ENABLED env is DEPRECATED: set the GlobalDefaultOwner (%q) OrgSettings.AutoRouting row via /v1/org/settings (admin.hanzo.ai); env honored as a fallback only because the global row is unset", object.GlobalDefaultOwner)
+		log.Warning("ROUTER_ENABLED env is DEPRECATED: set the GlobalDefaultOwner (%q) OrgSettings.AutoRouting row via /v1/update-org-settings (admin.hanzo.ai); env honored as a fallback only because the global row is unset", object.GlobalDefaultOwner)
 	})
 	return object.AutoRoutingEnabled
 }
@@ -160,25 +159,9 @@ func resolveAutoModel(requested, orgId, userId, requestId string, authUser *iam.
 	if !cfg.AutoRoutingActive(effectiveAutoRouting(orgId)) {
 		return "", "", false
 	}
-	// Eligibility = servable for this org (route + tier/grant), then narrowed by the
-	// org's ENABLED-MODELS allowlist (empty = all servable). This IS the `Known`
-	// predicate the heuristic ForTask AND the engine-decision guard (routeEngine) both
-	// honor, so a disabled model is never routed to on either path.
-	allow := effectiveRouterEnabledModels(orgId)
 	client := cfg.RouterClient(func(id string) bool {
-		if resolveModelRouteForOrg(id, orgId) == nil || !modelServable(id, orgId, authUser) {
-			return false
-		}
-		return len(allow) == 0 || allow[strings.ToLower(strings.TrimSpace(id))]
+		return resolveModelRouteForOrg(id, orgId) != nil && modelServable(id, orgId, authUser)
 	})
-	// The HARD allowlist floor: the heuristic's last-resort fallback relaxes servability
-	// but must NEVER relax this, so a DISABLED model is never routed to even when no
-	// servable preferred model remains. Left nil when the org set no allowlist (the
-	// last resort then relaxes to all, unchanged). Set BEFORE the dial narrows Known, so
-	// it is the pure allowlist — the soft cost budget is relaxable, the allowlist is not.
-	if len(allow) > 0 {
-		client.Allow = func(id string) bool { return allow[strings.ToLower(strings.TrimSpace(id))] }
-	}
 	// Fold the per-org router policy (org > "*" > conf) into this decision: the
 	// org's own Prefer table wins per task key, and its cost ceiling fills the
 	// SLO when the caller didn't send X-Max-Cost (an explicit header wins).
@@ -189,22 +172,6 @@ func resolveAutoModel(requested, orgId, userId, requestId string, authUser *iam.
 	// models) instead of collapsing onto the champion. 0 (unset) = pure exploit.
 	client.Explore = envFloat("ROUTER_EXPLORE_EPSILON", 0)
 	slo = mergeCostCeiling(slo, client.Policy.CostCeiling)
-	// The SAVINGS-vs-QUALITY dial: below max-quality it narrows eligibility to models
-	// within a per-request cost budget (so the heuristic picks the cheapest PREFERRED
-	// model that fits) AND tightens the SLO for the engine path. Only ever tightens —
-	// never loosens past the resolved ceiling or an explicit X-Max-Cost.
-	client.Known, slo = applyRouterQualityBias(client.Known, slo, blendedPriceForOrg(orgId), effectiveRouterQualityBias(orgId), cfg)
-	// FREE-TIER FLASH CAP: an org that commerce CONFIDENTLY reports as free tier has `auto`
-	// confined to the flash pool — the router may select only models whose blended price is
-	// within the flash ceiling, so a non-paying caller is never routed to a premium/expensive
-	// model (which the balance gate would then 402 anyway, breaking the request). It reuses the
-	// SAME cost-narrowing primitive as the savings dial and composes AFTER it, so it can only
-	// TIGHTEN: a paid/trial org is untouched, an UNKNOWN tier (a commerce blip) is untouched —
-	// uncertainty NEVER caps, so a paying caller is never degraded on a hiccup — and an explicit
-	// X-Max-Cost still wins when lower. Reversible: ROUTER_FREE_TIER_CEILING_PER_MILLION=0 disables it.
-	if freeTierFlashCapActive(orgId, authUser) {
-		client.Known, slo = capKnownToBudget(client.Known, slo, blendedPriceForOrg(orgId), freeTierFlashCeilingPerMillion())
-	}
 	rreq := router.Request{
 		Text:         lastUserText(req),
 		ApproxTokens: estimatePromptTokens(req),
@@ -220,16 +187,7 @@ func resolveAutoModel(requested, orgId, userId, requestId string, authUser *iam.
 	}
 	dec := client.RouteDecisionFor(context.Background(), rreq, slo, rp)
 	if dec.Model == "" {
-		// The org's allowlist admitted no model its prefer table offers for this task.
-		// Rather than dead-end `auto`, route to a deterministic ALLOWED + servable model
-		// (the org restricted routing to these, so any is a valid answer) — an allowlist
-		// always resolves to one of ITS OWN, never a disabled model and never empty. dec.Task
-		// is already the classified task. When there is no allowlist, behavior is unchanged.
-		if m := firstAllowedServableModel(allow, orgId, authUser, cfg); m != "" {
-			dec.Model = m
-		} else {
-			return "", "", false
-		}
+		return "", "", false
 	}
 
 	// Congestion-aware mean-field layer — GATED, default OFF (meanFieldRoute returns the
@@ -265,130 +223,6 @@ func resolveAutoModel(requested, orgId, userId, requestId string, authUser *iam.
 	})
 
 	return routedModel, string(dec.Task), true
-}
-
-// firstAllowedServableModel returns the lexicographically-first model in the org's
-// enabled-models allowlist that this org can actually serve (has a route AND passes the
-// tier/grant check), or "" if none is. Deterministic, so the same org+allowlist always
-// resolves identically. Consulted ONLY as the allowlist's fallback of last resort — when
-// the heuristic table offered no allowed model for the task — so `auto` still resolves to
-// one of the org's OWN chosen models instead of dead-ending.
-func firstAllowedServableModel(allow map[string]bool, orgId string, authUser *iam.User, cfg *ModelConfig) string {
-	if len(allow) == 0 || cfg == nil {
-		return ""
-	}
-	ids := make([]string, 0, len(allow))
-	for id := range allow {
-		ids = append(ids, id)
-	}
-	sort.Strings(ids)
-	for _, id := range ids {
-		if resolveModelRouteForOrg(id, orgId) != nil && modelServable(id, orgId, authUser) {
-			return id
-		}
-	}
-	return ""
-}
-
-// applyRouterQualityBias tilts routing by the org's savings-vs-quality dial (bias in
-// [0,1]: 0 = cheapest, 1 = best). It returns a (possibly narrowed) eligibility predicate
-// and a (possibly tightened) SLO. At bias >= 1 (max quality) nothing changes. Below 1 it
-// derives a per-request cost BUDGET = cheapest + bias·(priciest − cheapest) across the
-// org's eligible models (injected blended $/1M price) and (a) drops models pricier than
-// the budget from eligibility — so the heuristic ForTask picks the cheapest PREFERRED
-// model that fits — and (b) tightens slo.MaxCost to that budget (per-1k) for the engine
-// path. It can only TIGHTEN: an explicit X-Max-Cost or the resolved cost ceiling still
-// wins when lower. An unpriced model (price ≤ 0) is never dropped and never bounds the
-// range, so a missing price can neither exclude a model nor skew the dial.
-func applyRouterQualityBias(base func(string) bool, slo router.Slo, price priceIndexFn, bias float64, cfg *ModelConfig) (func(string) bool, router.Slo) {
-	if bias >= 1 || cfg == nil || base == nil || price == nil {
-		return base, slo
-	}
-	var minP, maxP float64
-	seen := false
-	for _, m := range cfg.ListModels() {
-		if !base(m.ID) {
-			continue
-		}
-		p := price(m.ID)
-		if p <= 0 {
-			continue
-		}
-		if !seen || p < minP {
-			minP = p
-		}
-		if !seen || p > maxP {
-			maxP = p
-		}
-		seen = true
-	}
-	if !seen || maxP <= minP {
-		return base, slo // one price point (or none priced): nothing to tilt
-	}
-	budget := minP + bias*(maxP-minP) // blended $/1M
-	return capKnownToBudget(base, slo, price, budget)
-}
-
-// capKnownToBudget narrows an eligibility predicate to models whose blended $/1M price is
-// within budgetPerMillion, and tightens slo.MaxCost to the same budget (per-1k) for the engine
-// path. It only ever TIGHTENS: it never re-admits a model `base` already rejected, an UNPRICED
-// model (price ≤ 0) is never dropped (a missing price can neither exclude a model nor be read as
-// free), and slo.MaxCost is lowered only when the budget is lower (an explicit X-Max-Cost or an
-// already-tighter ceiling still wins). It is the ONE cost-narrowing primitive shared by the
-// savings-vs-quality dial and the free-tier flash cap. A non-positive budget or a nil base/price
-// is a no-op, so a disabled cap can never dead-end routing.
-func capKnownToBudget(base func(string) bool, slo router.Slo, price priceIndexFn, budgetPerMillion float64) (func(string) bool, router.Slo) {
-	if base == nil || price == nil || budgetPerMillion <= 0 {
-		return base, slo
-	}
-	eligible := func(id string) bool {
-		if !base(id) {
-			return false
-		}
-		p := price(id)
-		return p <= 0 || p <= budgetPerMillion*(1+1e-9)
-	}
-	if per1k := router.PerMillionToPerThousand(budgetPerMillion); slo.MaxCost <= 0 || per1k < slo.MaxCost {
-		slo.MaxCost = per1k
-	}
-	return eligible, slo
-}
-
-// DefaultFreeTierFlashCeilingPerMillion caps the FREE tier's `auto` routing to the flash pool.
-// It is a BLENDED $/1M bound ((input+output)/2 — the blendedPriceForOrg unit). It sits
-// deliberately ABOVE the synthesized default price (default_pricing 1/4 ⇒ blended 2.50), so a
-// servable model with no explicit price (a zen champion, enso-flash) is treated as flash and
-// never dropped, while EVERY premium model sits far above it (glm-5.2 ~6.3, gpt-5.x ~10, o3 ~25,
-// opus/fable ~45) and is excluded with wide margin — as are the pricey non-premium ids
-// (qwen3-coder ~3.6, kimi ~5, deepseek-reasoner ~5.5). The cheap pool (gpt-4o-mini ~0.38, the
-// gemma/mistral/nemotron/llama pool ~0.1–0.35, deepseek-v3.2 ~0.69) is well within it. The
-// family-tier gate already keeps free callers off the enso ladder above enso-flash; this ceiling
-// is the complementary bound that keeps them off the do-ai premium models (not family SKUs).
-const DefaultFreeTierFlashCeilingPerMillion = 3.00
-
-// freeTierFlashCeilingPerMillion resolves the live flash ceiling — the
-// ROUTER_FREE_TIER_CEILING_PER_MILLION env override or the built-in default. 0 (env set to 0)
-// disables the free-tier cap entirely: the reversible kill switch, no rebuild.
-func freeTierFlashCeilingPerMillion() float64 {
-	return envFloat("ROUTER_FREE_TIER_CEILING_PER_MILLION", DefaultFreeTierFlashCeilingPerMillion)
-}
-
-// freeTierFlashCapActive reports whether the caller's commerce tier is CONFIDENTLY free — the
-// only case the flash cap fires. It reuses the SAME tier source (familyTier) and subject rule
-// (familyAccessSubject) the family-SKU gate uses, so it keys on the identical subject the balance
-// read and usage debit do. Its fail-safe direction is deliberately that of familyTierAllowed, NOT
-// the funding gate: an UNKNOWN tier (commerce unconfigured, a blip, or no subject → familyTier "")
-// does NOT cap, so a paying caller is never degraded to the flash pool on a commerce hiccup. Only a
-// confident "free" (enso rank 0) caps; trial/paid never do. A disabled ceiling (env 0) is false.
-func freeTierFlashCapActive(orgId string, authUser *iam.User) bool {
-	if freeTierFlashCeilingPerMillion() <= 0 {
-		return false
-	}
-	name := familyTier(familyAccessSubject(orgId, authUser))
-	if strings.TrimSpace(name) == "" {
-		return false // unknown → do NOT cap (never degrade a paying caller on a blip)
-	}
-	return ensoTierRank(commerceTierToLadder(name)) == ensoTierRank("free")
 }
 
 // SourceExplicit marks a routing event for a request whose model the CALLER chose

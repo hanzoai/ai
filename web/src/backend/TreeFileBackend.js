@@ -17,8 +17,8 @@ import * as Setting from "../Setting";
 
 export function updateFile(storeId, name, file) {
   const newFile = Setting.deepCopy(file);
-  return fetch(`${Setting.ServerUrl}/v1/rag/tree-files/${storeId}?store=${storeId}&name=${name}`, {
-    method: "PATCH",
+  return fetch(`${Setting.ServerUrl}/v1/update-tree-file?store=${storeId}&name=${name}`, {
+    method: "POST",
     credentials: "include",
     headers: {
       "Accept-Language": Setting.getAcceptLanguage(),
@@ -30,7 +30,7 @@ export function updateFile(storeId, name, file) {
 export function addFile(storeId, key, isLeaf, filename, file) {
   const formData = new FormData();
   formData.append("file", file);
-  return fetch(`${Setting.ServerUrl}/v1/rag/tree-files?store=${storeId}&key=${key}&isLeaf=${isLeaf ? 1 : 0}&filename=${filename}`, {
+  return fetch(`${Setting.ServerUrl}/v1/add-tree-file?store=${storeId}&key=${key}&isLeaf=${isLeaf ? 1 : 0}&filename=${filename}`, {
     method: "POST",
     credentials: "include",
     headers: {
@@ -41,8 +41,8 @@ export function addFile(storeId, key, isLeaf, filename, file) {
 }
 
 export function deleteFile(storeId, key, isLeaf) {
-  return fetch(`${Setting.ServerUrl}/v1/rag/tree-files/${storeId}?store=${storeId}&key=${key}&isLeaf=${isLeaf ? 1 : 0}`, {
-    method: "DELETE",
+  return fetch(`${Setting.ServerUrl}/v1/delete-tree-file?store=${storeId}&key=${key}&isLeaf=${isLeaf ? 1 : 0}`, {
+    method: "POST",
     credentials: "include",
     headers: {
       "Accept-Language": Setting.getAcceptLanguage(),
@@ -51,7 +51,7 @@ export function deleteFile(storeId, key, isLeaf) {
 }
 
 export function activateFile(key, filename) {
-  return fetch(`${Setting.ServerUrl}/v1/rag/files/activate?key=${key}&filename=${filename}`, {
+  return fetch(`${Setting.ServerUrl}/v1/activate-file?key=${key}&filename=${filename}`, {
     method: "POST",
     credentials: "include",
     headers: {
@@ -65,7 +65,7 @@ export function uploadFile(base64, filename, filetype) {
   formData.append("file", base64);
   formData.append("name", filename);
   formData.append("type", filetype);
-  return fetch(`${Setting.ServerUrl}/v1/rag/files/upload`, {
+  return fetch(`${Setting.ServerUrl}/v1/upload-file`, {
     method: "POST",
     credentials: "include",
     headers: {

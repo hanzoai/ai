@@ -21,7 +21,6 @@ import {createRoot} from "react-dom/client";
 import "./globals.css";
 import "./font.css";
 import App from "./App";
-import {Analytics} from "./Analytics";
 import * as serviceWorker from "./serviceWorker";
 import {BrowserRouter} from "react-router-dom";
 import "./i18n";
@@ -33,9 +32,7 @@ const app = createRoot(container);
 
 app.render(
   <BrowserRouter>
-    <Analytics>
-      <App />
-    </Analytics>
+    <App />
   </BrowserRouter>
 );
 

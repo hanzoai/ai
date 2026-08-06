@@ -32,12 +32,12 @@ import (
 	"github.com/hanzoai/account"
 
 	"github.com/hanzoai/ai/conf"
-	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/model"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
 	"github.com/hanzoai/go-openai"
+	iam "github.com/hanzoai/iam"
 )
 
 // getUserBalance returns the current balance for a user by fetching from Commerce.
@@ -231,12 +231,7 @@ func widgetAllowedModelsList() string {
 // resolveProviderFromJwt validates a hanzo.id JWT token and returns the
 // appropriate model provider for the requested model, plus the translated
 // upstream model name.
-//
-// requested is the raw X-Org-Id the caller asked to act in ("" for none). This is
-// the ONE auth path that can honor an org switch, because it is the one that
-// holds the signed `orgs` claim proving membership — the ledger is resolved here,
-// from those claims, rather than re-parsing the token downstream.
-func resolveProviderFromJwt(token string, requested string, requestedModel string, lang string) (*object.Provider, *iam.User, string, error) {
+func resolveProviderFromJwt(token string, requestedModel string, lang string) (*object.Provider, *iam.User, string, error) {
 	// Signature + issuer/audience validation (never raw iam.ParseJwtToken), so a
 	// token minted for a foreign app/issuer cannot authenticate a paid request.
 	claims, err := object.ParseAndValidateJWT(token)
@@ -245,19 +240,11 @@ func resolveProviderFromJwt(token string, requested string, requestedModel strin
 	}
 
 	user := &claims.User
-	ledger := iam.LedgerOrg(
-		iam.EffectiveOrg(user.Owner, claims.Orgs, requested),
-		user.Owner,
-		util.IsSuperAdmin(user),
-	)
-	return resolveProviderForUser(user, ledger, requestedModel, lang)
+	return resolveProviderForUser(user, requestedModel, lang)
 }
 
 // resolveProviderFromIAMKey validates an IAM API key (hk-{accessKey})
 // and returns the model provider + user, same as JWT path.
-//
-// An hk- key carries no signed `orgs` claim, so it can never switch org: it bills
-// the org that owns the key, which is its home org.
 func resolveProviderFromIAMKey(apiKey string, requestedModel string, lang string) (*object.Provider, *iam.User, string, error) {
 	// IAM API key format: hk-{uuid}
 	// Look up user by accessKey via IAM API
@@ -277,7 +264,7 @@ func resolveProviderFromIAMKey(apiKey string, requestedModel string, lang string
 			// fallback identity for debugging without leaking the credential.
 			log.Warn("[iam-fallback] IAM returned %q; using cloud-agent fallback identity (owner=%s name=%s)",
 				err.Error(), fallbackUser.Owner, fallbackUser.Name)
-			return resolveProviderForUser(fallbackUser, fallbackUser.Owner, requestedModel, lang)
+			return resolveProviderForUser(fallbackUser, requestedModel, lang)
 		}
 		return nil, nil, "", authError("API key validation failed: %s", err.Error())
 	}
@@ -285,7 +272,7 @@ func resolveProviderFromIAMKey(apiKey string, requestedModel string, lang string
 		return nil, nil, "", authError("invalid API key")
 	}
 
-	return resolveProviderForUser(user, user.Owner, requestedModel, lang)
+	return resolveProviderForUser(user, requestedModel, lang)
 }
 
 // tryCloudAgentKeyFallback checks whether apiKey matches the known cloud-agent
@@ -313,12 +300,7 @@ func tryCloudAgentKeyFallback(apiKey string) *iam.User {
 
 // resolveProviderForUser is the shared logic for JWT and API key auth paths.
 // Given a validated user, resolves the model route and provider.
-//
-// ledger is the org that PAYS for this request (iam.LedgerOrg). It selects both
-// the org's own BYOK provider and the wallet the balance gate reads, so a request
-// billed to an org is served with that org's connected key — the two cannot name
-// different tenants.
-func resolveProviderForUser(user *iam.User, ledger string, requestedModel string, lang string) (*object.Provider, *iam.User, string, error) {
+func resolveProviderForUser(user *iam.User, requestedModel string, lang string) (*object.Provider, *iam.User, string, error) {
 	// Look up the model in the static routing table. A valid caller asking for
 	// an unknown model is a client error (400), not an auth failure.
 	route := resolveModelRoute(requestedModel)
@@ -333,7 +315,7 @@ func resolveProviderForUser(user *iam.User, ledger string, requestedModel string
 	// the org's OWN custom provider (BYOK) if it configured one, else the global
 	// built-in provider on api.hanzo.ai. Returns a shallow copy, safe to mutate. A
 	// missing/unconfigured provider is a server-side misconfiguration (500).
-	provider, err := object.GetModelProviderByNameForOrg(ledger, route.providerName)
+	provider, err := object.GetModelProviderByNameForOrg(user.Owner, route.providerName)
 	if err != nil {
 		return nil, user, "", serverError("failed to get provider %q: %s", route.providerName, err.Error())
 	}
@@ -344,7 +326,7 @@ func resolveProviderForUser(user *iam.User, ledger string, requestedModel string
 	// Prepaid-balance gate. Extracted into enforceBalanceGate so the provider-key
 	// (sk-) path in authResolveProvider enforces the IDENTICAL policy — no auth
 	// path can drift (M1).
-	if gateErr := enforceBalanceGate(user, ledger, requestedModel); gateErr != nil {
+	if gateErr := enforceBalanceGate(user, requestedModel); gateErr != nil {
 		return nil, user, "", gateErr
 	}
 
@@ -364,22 +346,12 @@ func resolveProviderForUser(user *iam.User, ledger string, requestedModel string
 // (M1). There is NO exempt path: every principal is gated on a positive prepaid
 // balance. subject is the per-namespace billing account the gate read, the budget
 // reservation, and the usage debit all key on.
-//
-// ledger is the org this request SPENDS FROM — iam.LedgerOrg, via c.billingOrg or
-// the claims the JWT resolver already holds. It is passed rather than derived
-// from user.Owner so the gate reads the SAME wallet the debit writes: keying the
-// gate on the selected org and the debit on the home org would check one balance
-// and drain another. An empty ledger means the caller could not resolve one, and
-// falls back to the home org — the behavior before the org switch existed.
-func enforceBalanceGate(user *iam.User, ledger string, requestedModel string) error {
+func enforceBalanceGate(user *iam.User, requestedModel string) error {
 	if user == nil {
 		return nil
 	}
-	if ledger == "" {
-		ledger = user.Owner
-	}
-	orgKey := ledger // namespace (X-Org-Id): the org tenant whose ledger pays
-	subject := account.Payer(account.Credential{Owner: ledger, Name: user.Name, Machine: account.IsMachine(user.Type)}).Subject()
+	orgKey := user.Owner // namespace (X-Org-Id): the org tenant
+	subject := account.Payer(account.Credential{Owner: user.Owner, Name: user.Name, Machine: account.IsMachine(user.Type)}).Subject()
 
 	balance, err := getUserBalance(subject, orgKey)
 	if err != nil {
@@ -401,9 +373,10 @@ func enforceBalanceGate(user *iam.User, ledger string, requestedModel string) er
 	return nil
 }
 
-// iamClientCreds resolves this service's confidential-app credentials, in order:
-// env vars (IAM_CLIENT_ID/IAM_CLIENT_SECRET), KMS secrets, then Beego config.
-func iamClientCreds() (string, string) {
+// iamAuthQuery returns the clientId/clientSecret query string for IAM API auth.
+// Credentials are resolved in order: env vars (IAM_CLIENT_ID/IAM_CLIENT_SECRET),
+// KMS secrets, then Beego config (for local dev).
+func iamAuthQuery() string {
 	clientId := conf.GetConfigString("IAM_CLIENT_ID")
 	clientSecret := conf.GetConfigString("IAM_CLIENT_SECRET")
 
@@ -418,13 +391,17 @@ func iamClientCreds() (string, string) {
 			clientSecret = v
 		}
 	}
-	return clientId, clientSecret
+
+	if clientId != "" && clientSecret != "" {
+		return "&clientId=" + url.QueryEscape(clientId) + "&clientSecret=" + url.QueryEscape(clientSecret)
+	}
+	return ""
 }
 
 // GetUserByAccessKey resolves an hk- IAM API key to its owning user via Hanzo
-// IAM. Exported so the authz filter and the balance gate (package routers)
-// resolve the key path to the same verified principal as the JWT path — ONE
-// credential resolver, one tenant, one billing subject, one IAM transport.
+// IAM. Exported so the authz filter (package routers) resolves the key path to
+// the same verified principal as the JWT path — one credential resolver, one
+// tenant, one billing subject.
 func GetUserByAccessKey(accessKey string) (*iam.User, error) {
 	return getUserByAccessKey(accessKey)
 }
@@ -441,28 +418,16 @@ func getUserByAccessKey(accessKey string) (*iam.User, error) {
 	// Per global rule: /v1/ only, never /api/. IAM serves at /v1/iam/get-user.
 	// The legacy /api/get-user path is intercepted by the @hanzo/id SPA ingress
 	// and returns HTML, which broke hk- API-key resolution ("invalid character
-	// '<'").
-	reqURL := fmt.Sprintf("%s/v1/iam/get-user?accessKey=%s", iamEndpoint, url.QueryEscape(accessKey))
-
-	// Auth is client_secret_basic (RFC 6749 §2.3.1) — the ONE transport IAM reads
-	// to establish a confidential-APP principal. Key resolution is a
-	// credential-disclosure boundary gated on `p.App != ""` holding CapKeyResolve,
-	// and IAM derives p.App ONLY from Basic credentials: query params yield no
-	// principal at all (401 "authentication required"), and a client_credentials
-	// bearer resolves to a plain org-scoped principal with an EMPTY App, which the
-	// gate refuses with "auth:Unauthorized operation". Basic is also why no token
-	// cache is needed — there is no token.
-	clientId, clientSecret := iamClientCreds()
-	if clientId == "" || clientSecret == "" {
-		return nil, fmt.Errorf("IAM client credentials are not configured")
-	}
+	// '<'"). iamAuthQuery() appends clientId/clientSecret so the IAM
+	// AutoSigninFilter authenticates this service call (the accessKey lookup
+	// requires an authenticated caller).
+	reqURL := fmt.Sprintf("%s/v1/iam/get-user?accessKey=%s%s", iamEndpoint, url.QueryEscape(accessKey), iamAuthQuery())
 
 	client := &http.Client{Timeout: 10 * time.Second}
 	req, err := http.NewRequest(http.MethodGet, reqURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("IAM request build failed: %w", err)
 	}
-	req.SetBasicAuth(clientId, clientSecret)
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("IAM request failed: %w", err)
@@ -566,10 +531,6 @@ type usageRecord struct {
 	// Session is the conversation/session id. Emitted as gen_ai.conversation.id +
 	// session.id, which is what turns the o11y sessions view on for this org.
 	Session string `json:"session,omitempty"`
-	// Environment is the caller's logical environment label (X-Environment). Emitted
-	// as deployment.environment on the span so Observe narrows by environment instead
-	// of defaulting to "default". Empty emits no attribute (honest, never fabricated).
-	Environment string `json:"environment,omitempty"`
 	// Project is the caller's org SUB-SCOPE (X-Project-Id). It is stamped on the
 	// cloud_usage ledger row + the gen_ai span, so cost/tokens/latency narrow WITHIN
 	// an org by project. Empty is the org's default project (whole-org view).
@@ -795,20 +756,11 @@ func recordTrace(ctx context.Context, record *usageRecord, startTime time.Time) 
 	// value (an explicit producer) is left untouched.
 	if record != nil {
 		attr := object.GenAIAttributionFromContext(ctx)
-		// Org fallback: stamp the VERIFIED tenant org only when a producer set neither
-		// Organization nor Owner, so real tenant traffic always carries its org (the
-		// o11y llmobs views drop empty-org spans) without overriding an explicit value.
-		if record.Organization == "" && record.Owner == "" {
-			record.Organization = attr.Org
-		}
 		if record.Project == "" {
 			record.Project = attr.Project
 		}
 		if record.Session == "" {
 			record.Session = attr.Session
-		}
-		if record.Environment == "" {
-			record.Environment = attr.Environment
 		}
 		if record.APIKeyHash == "" {
 			record.APIKeyHash = attr.APIKeyHash
@@ -944,10 +896,8 @@ func (c *ApiController) authResolveProvider(token, requestedModel, orgId string)
 
 	case isJwtToken(token):
 		// hanzo.id JWT token — full model routing + billing. Same typed-status
-		// contract as the IAM key path. The raw X-Org-Id goes in unvalidated: the
-		// resolver holds the signed `orgs` claim and is the only place allowed to
-		// decide whether the request may act — and pay — in that org.
-		provider, authUser, upstreamModel, err = resolveProviderFromJwt(token, strings.TrimSpace(c.Ctx.Input.Header("X-Org-Id")), requestedModel, lang)
+		// contract as the IAM key path.
+		provider, authUser, upstreamModel, err = resolveProviderFromJwt(token, requestedModel, lang)
 		if err != nil {
 			err = wrapAuth(err)
 			return
@@ -993,9 +943,8 @@ func (c *ApiController) authResolveProvider(token, requestedModel, orgId string)
 		// M1: apply the SAME prepaid-balance gate the JWT/IAM paths enforce
 		// (resolveProviderForUser), so an sk- provider key can never reach paid
 		// upstreams without a positive balance. The billed owner is authUser (the
-		// provider-row owner resolved just above), and a provider key carries no
-		// membership claim — it always bills the org that minted it.
-		if gateErr := enforceBalanceGate(authUser, authUser.Owner, requestedModel); gateErr != nil {
+		// provider-row owner resolved just above).
+		if gateErr := enforceBalanceGate(authUser, requestedModel); gateErr != nil {
 			err = gateErr
 			return
 		}
@@ -1081,7 +1030,7 @@ func (c *ApiController) ChatCompletions() {
 
 	// One request id, generated once here — it is the response id (`chatcmpl-<id>`),
 	// the usage-ledger request_id, AND the routing-event join key, so a later reward
-	// (POST /v1/feedback) can be tied back to THIS decision. Generated
+	// (POST /v1/add-routing-reward) can be tied back to THIS decision. Generated
 	// before routing so resolveAutoModel can stamp it on the RoutingEvent.
 	requestId := util.GenerateUUID()
 
@@ -1129,11 +1078,6 @@ func (c *ApiController) ChatCompletions() {
 		c.ResponseAuthError(err)
 		return
 	}
-	// The ledger this request spends from — the org the switcher selected when the
-	// signed membership claim proves it, else the caller's home org. Resolved ONCE
-	// here so the reservation below and every usage record at the tail of this
-	// handler key on the SAME wallet the gate inside authResolveProvider just read.
-	ledger := c.billingOrg(authUser)
 	if isWidget {
 		// Cap max_tokens for anonymous widget requests.
 		if request.MaxTokens == 0 || request.MaxTokens > widgetMaxTokens {
@@ -1163,7 +1107,7 @@ func (c *ApiController) ChatCompletions() {
 	// the ACTUAL cost when the request completes (deferred fail-safe release).
 	var hold *budgetHold
 	if authUser != nil {
-		subject := account.Payer(account.Credential{Owner: ledger, Name: authUser.Name}).Subject()
+		subject := account.Payer(account.Credential{Owner: authUser.Owner, Name: authUser.Name}).Subject()
 		// Clamp the upstream completion ceiling BEFORE reserving so the proxied
 		// (tool/stream) upstream can never emit more than we reserve — the actual
 		// settle can never exceed the hold (R1b). reserveCompletionTokens also
@@ -1172,7 +1116,7 @@ func (c *ApiController) ChatCompletions() {
 		est := estimateRequestCostCents(request.Model, estimatePromptTokens(&request), request.MaxTokens)
 		var ok bool
 		if hold, ok = reserveBudget(subject, est); !ok {
-			c.ResponseAuthError(billingError("%s", object.InsufficientBalance(ledger, "request cost").Message))
+			c.ResponseAuthError(billingError("Insufficient balance for the estimated request cost. add credits to your wallet at https://pay.hanzo.ai"))
 			return
 		}
 	}
@@ -1193,14 +1137,6 @@ func (c *ApiController) ChatCompletions() {
 	// to the upstream provider's OpenAI-compatible endpoint so the LLM
 	// receives tool definitions and can return tool_calls in the response.
 	if len(request.Tools) > 0 || request.ToolChoice != nil {
-		c.proxyToolRequest(provider, &request, requestStartTime, authUser, isPremium, orgId, hold)
-		return
-	}
-
-	// Multimodal (vision): the QueryText pipeline below is text-only and would drop
-	// image parts. Forward multimodal requests verbatim to the upstream (the same path
-	// tool-calls take), so vision-capable models actually receive the images.
-	if requestHasMedia(&request) {
 		c.proxyToolRequest(provider, &request, requestStartTime, authUser, isPremium, orgId, hold)
 		return
 	}
@@ -1309,7 +1245,7 @@ func (c *ApiController) ChatCompletions() {
 		// Record failed usage
 		if authUser != nil {
 			errRecord := &usageRecord{
-				Owner:     ledger,
+				Owner:     authUser.Owner,
 				User:      authUser.Owner + "/" + authUser.Name,
 				Model:     request.Model,
 				Provider:  actualProvider,
@@ -1331,7 +1267,7 @@ func (c *ApiController) ChatCompletions() {
 	// Record successful usage (actualProvider reflects which provider served the request)
 	if authUser != nil {
 		successRecord := &usageRecord{
-			Owner:            ledger,
+			Owner:            authUser.Owner,
 			User:             authUser.Owner + "/" + authUser.Name,
 			Organization:     authUser.Owner,
 			Model:            request.Model,
@@ -1507,11 +1443,6 @@ func (c *ApiController) proxyToolRequest(
 ) {
 	requestId := util.GenerateUUID()
 
-	// The wallet this request spends from — the same value ChatCompletions gated
-	// and reserved on, re-derived from the same credential rather than threaded,
-	// so the two can never be given different arguments.
-	ledger := c.billingOrg(authUser)
-
 	// Rewrite model to upstream model name
 	request.Model = provider.SubType
 
@@ -1565,7 +1496,7 @@ func (c *ApiController) proxyToolRequest(
 	if err != nil {
 		if authUser != nil {
 			errRecord := &usageRecord{
-				Owner:     ledger,
+				Owner:     authUser.Owner,
 				User:      authUser.Owner + "/" + authUser.Name,
 				Model:     request.Model,
 				Provider:  provider.Name,
@@ -1629,7 +1560,7 @@ func (c *ApiController) proxyToolRequest(
 		actualCents := calculateCostCentsWithCache(request.Model, prompt, completion, 0, 0)
 		if authUser != nil {
 			successRecord := &usageRecord{
-				Owner:            ledger,
+				Owner:            authUser.Owner,
 				User:             authUser.Owner + "/" + authUser.Name,
 				Organization:     authUser.Owner,
 				Model:            request.Model,
@@ -1685,7 +1616,7 @@ func (c *ApiController) proxyToolRequest(
 
 		if authUser != nil {
 			successRecord := &usageRecord{
-				Owner:            ledger,
+				Owner:            authUser.Owner,
 				User:             authUser.Owner + "/" + authUser.Name,
 				Organization:     authUser.Owner,
 				Model:            request.Model,
@@ -1813,9 +1744,6 @@ func (c *ApiController) proxyToolRequestAnthropic(
 	requestId string,
 	hold *budgetHold,
 ) {
-	// See proxyToolRequest: the same wallet ChatCompletions gated and reserved on.
-	ledger := c.billingOrg(authUser)
-
 	apiKey := provider.ClientSecret
 	baseURL := provider.ProviderUrl
 	if baseURL == "" {
@@ -2047,7 +1975,7 @@ func (c *ApiController) proxyToolRequestAnthropic(
 	// Record usage
 	if authUser != nil {
 		successRecord := &usageRecord{
-			Owner:            ledger,
+			Owner:            authUser.Owner,
 			User:             authUser.Owner + "/" + authUser.Name,
 			Organization:     authUser.Owner,
 			Model:            request.Model,

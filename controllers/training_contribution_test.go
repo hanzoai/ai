@@ -19,7 +19,7 @@ import (
 	"net/http"
 	"testing"
 
-	iam "github.com/hanzoai/ai/internal/iam"
+	iam "github.com/hanzoai/iam"
 )
 
 // The model-improvement consent endpoints (get-/update-training-contribution) are

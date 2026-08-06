@@ -16,7 +16,7 @@
 package controllers
 
 import (
-	"github.com/hanzoai/ai/cluster"
+	"github.com/hanzoai/ai/object"
 )
 
 // GetK8sStatus
@@ -29,7 +29,7 @@ func (c *ApiController) GetK8sStatus() {
 	if !c.RequireSuperAdmin() {
 		return
 	}
-	status, err := cluster.Status(c.GetAcceptLanguage())
+	status, err := object.GetK8sStatus(c.GetAcceptLanguage())
 	if err != nil {
 		c.ResponseError(err.Error())
 		return

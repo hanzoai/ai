@@ -19,7 +19,6 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/hanzoai/ai/cluster"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
 )
@@ -49,7 +48,7 @@ func (c *ApiController) GetApplications() {
 			c.ResponseError(err.Error())
 			return
 		}
-		cluster.Describe(applications, c.GetAcceptLanguage())
+		object.AddDetails(applications, c.GetAcceptLanguage())
 		c.ResponseOk(applications)
 	} else {
 		limit := util.ParseInt(limit)
@@ -66,7 +65,7 @@ func (c *ApiController) GetApplications() {
 			return
 		}
 
-		cluster.Describe(applications, c.GetAcceptLanguage())
+		object.AddDetails(applications, c.GetAcceptLanguage())
 		c.ResponseOk(applications, paginator.Nums())
 	}
 }
@@ -88,7 +87,7 @@ func (c *ApiController) GetApplication() {
 	}
 
 	if res != nil {
-		cluster.Describe([]*object.Application{res}, c.GetAcceptLanguage())
+		object.AddDetails([]*object.Application{res}, c.GetAcceptLanguage())
 	}
 
 	c.ResponseOk(res)
@@ -112,13 +111,7 @@ func (c *ApiController) UpdateApplication() {
 		return
 	}
 
-	application.Manifest, err = cluster.Manifest(&application, c.GetAcceptLanguage())
-	if err != nil {
-		c.ResponseError(err.Error())
-		return
-	}
-
-	success, err := object.UpdateApplication(id, &application)
+	success, err := object.UpdateApplication(id, &application, c.GetAcceptLanguage())
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -183,11 +176,7 @@ func (c *ApiController) DeleteApplication() {
 		return
 	}
 
-	// Best-effort teardown of what the record deployed, then drop the record. An
-	// org with no Kubernetes provider still deletes its applications.
-	_, _ = cluster.Undeploy(application.Owner, application.Name, application.Namespace, c.GetAcceptLanguage())
-
-	success, err := object.DeleteApplication(&application)
+	success, err := object.DeleteApplication(&application, c.GetAcceptLanguage())
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -224,13 +213,7 @@ func (c *ApiController) DeployApplication() {
 		return
 	}
 
-	application.Manifest, err = cluster.Manifest(&application, c.GetAcceptLanguage())
-	if err != nil {
-		c.ResponseError(err.Error())
-		return
-	}
-
-	success, err := object.UpdateApplication(id, &application)
+	success, err := object.UpdateApplication(id, &application, c.GetAcceptLanguage())
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -241,7 +224,7 @@ func (c *ApiController) DeployApplication() {
 	}
 
 	// Deploy the application synchronously and wait for completion
-	success, err = cluster.DeploySync(&application, c.GetAcceptLanguage())
+	success, err = object.DeployApplicationSync(&application, c.GetAcceptLanguage())
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -284,7 +267,7 @@ func (c *ApiController) UndeployApplication() {
 	}
 
 	// Undeploy the application synchronously and wait for completion
-	success, err := cluster.UndeploySync(owner, name, application.Namespace, c.GetAcceptLanguage())
+	success, err := object.UndeployApplicationSync(owner, name, application.Namespace, c.GetAcceptLanguage())
 	if err != nil {
 		c.ResponseError(err.Error())
 		return

@@ -24,10 +24,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hanzoai/dashscopego"
+	dashscopego "github.com/hanzoai/dashscope-go-sdk"
 
 	"github.com/hanzoai/ai/i18n"
-	"github.com/hanzoai/dashscopego/paraformer"
+	"github.com/hanzoai/dashscope-go-sdk/paraformer"
 )
 
 type AlibabacloudSpeechToTextProvider struct {

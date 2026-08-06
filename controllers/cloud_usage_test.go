@@ -27,8 +27,8 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v4"
-	iam "github.com/hanzoai/ai/internal/iam"
 	web "github.com/hanzoai/ai/web"
+	iam "github.com/hanzoai/iam"
 )
 
 // newUsageController builds an ApiController for GetCloudUsages auth+scope tests:
