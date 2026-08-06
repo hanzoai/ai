@@ -15,16 +15,13 @@ package cluster
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/hanzoai/ai/object"
 
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 // finetune_deploy.go closes the loop: it serves a completed fine-tune's weights as
@@ -37,13 +34,6 @@ import (
 // ResolveModelRouteFromDB). The training runtime writes a SERVABLE HuggingFace-format
 // directory (LoRA adapters merged into the base) to OutputUri, so one serving path
 // works for lora/qlora/full alike.
-
-// inferenceServiceGVR is the GVR for KServe InferenceService (serving.kserve.io/v1beta1).
-var inferenceServiceGVR = schema.GroupVersionResource{
-	Group:    "serving.kserve.io",
-	Version:  "v1beta1",
-	Resource: "inferenceservices",
-}
 
 // Serving is what a deploy returns to the controller.
 type Serving struct {
@@ -111,34 +101,31 @@ func DeployFinetune(job *object.FinetuneJob, lang string) (*Serving, error) {
 	if strings.TrimSpace(job.OutputUri) == "" {
 		return nil, fmt.Errorf("job %s has no checkpoint output URI to serve", job.Name)
 	}
-	if err := ensure(lang); err != nil {
+	c, err := ensure(lang)
+	if err != nil {
 		return nil, err
 	}
+	ctx := context.TODO()
 	// Ask for accelerators the CLUSTER advertises, and refuse before creating
 	// anything when it advertises none. The InferenceService CRD exists and its
 	// controller runs, so a create with a resource name no node offers SUCCEEDS and
 	// leaves a predictor that can never be scheduled — plus a model registered on
 	// api.hanzo.ai whose every inference call fails. Refusing here is the loud
 	// failure that silence was hiding.
-	limits, err := acceleratorRequest(servingAccelerators)
+	limits, err := acceleratorRequest(ctx, c, servingAccelerators)
 	if err != nil {
 		return nil, fmt.Errorf("cannot serve %s: %w", job.Name, err)
 	}
-	if err := client.createNamespaceIfNotExists(job.Namespace); err != nil {
+	if err := createNamespaceIfNotExists(ctx, c, job.Namespace); err != nil {
 		return nil, fmt.Errorf("failed to ensure namespace %s: %w", job.Namespace, err)
 	}
 
 	name := finetuneServiceName(job)
-	obj := buildInferenceServiceObject(job, name, limits)
-	b, err := json.Marshal(obj)
-	if err != nil {
-		return nil, fmt.Errorf("failed to render InferenceService: %w", err)
-	}
-	if err := client.deployResource(string(b), job.Namespace, lang); err != nil {
+	if err := c.Apply(ctx, job.Namespace, buildInferenceServiceObject(job, name, limits)); err != nil {
 		return nil, fmt.Errorf("failed to deploy InferenceService: %w", err)
 	}
 
-	url := getInferenceServiceUrl(job.Namespace, name)
+	url := getInferenceServiceUrl(ctx, c, job.Namespace, name)
 	modelId := job.Name // public model id, keyed per-org by the ModelRoute PK
 
 	if err := object.RegisterServedModel(job, name, modelId, url); err != nil {
@@ -156,25 +143,26 @@ func DeployFinetune(job *object.FinetuneJob, lang string) (*Serving, error) {
 
 // getInferenceServiceUrl best-effort reads status.url from a freshly-created
 // InferenceService (usually empty until the predictor is Ready).
-func getInferenceServiceUrl(namespace, name string) string {
-	u, err := client.dynamicClient.Resource(inferenceServiceGVR).Namespace(namespace).
-		Get(context.TODO(), name, metav1.GetOptions{})
+func getInferenceServiceUrl(ctx context.Context, c K8sClient, namespace, name string) string {
+	obj, err := c.Get(ctx, inferenceServiceGVR.group, inferenceServiceGVR.version,
+		inferenceServiceGVR.resource, namespace, name)
 	if err != nil {
 		return ""
 	}
-	url, _, _ := unstructured.NestedString(u.Object, "status", "url")
+	url, _, _ := unstructured.NestedString(obj, "status", "url")
 	return url
 }
 
 // UndeployFinetune deletes the InferenceService and the model registration.
 func UndeployFinetune(job *object.FinetuneJob, lang string) error {
-	if err := ensure(lang); err != nil {
+	c, err := ensure(lang)
+	if err != nil {
 		return err
 	}
 	name := finetuneServiceName(job)
-	err := client.dynamicClient.Resource(inferenceServiceGVR).Namespace(job.Namespace).
-		Delete(context.TODO(), name, metav1.DeleteOptions{})
-	if err != nil && !apierrors.IsNotFound(err) {
+	err = c.Delete(context.TODO(), inferenceServiceGVR.group, inferenceServiceGVR.version,
+		inferenceServiceGVR.resource, job.Namespace, name)
+	if err != nil && !errors.Is(err, ErrK8sNotFound) {
 		return err
 	}
 	if job.DeployedModel != "" {

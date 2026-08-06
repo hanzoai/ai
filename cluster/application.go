@@ -16,6 +16,7 @@ package cluster
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -24,9 +25,8 @@ import (
 
 	"github.com/hanzoai/ai/i18n"
 	"github.com/hanzoai/ai/util"
+	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func setStatus(owner string, name string, status string, lang string) error {
@@ -47,20 +47,17 @@ func setStatus(owner string, name string, status string, lang string) error {
 }
 
 func Deploy(application *object.Application, lang string) (bool, error) {
-	if err := ensure(lang); err != nil {
+	c, err := ensure(lang)
+	if err != nil {
 		return false, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:failed to initialize k8s client: %v"), err))
 	}
-	if !client.connected {
-		return false, fmt.Errorf("%s", i18n.Translate(lang, "object:k8s client not connected to cluster"))
-	}
+	ctx := context.TODO()
 	// Create namespace if it doesn't exist
-	err := client.createNamespaceIfNotExists(application.Namespace)
-	if err != nil {
+	if err := createNamespaceIfNotExists(ctx, c, application.Namespace); err != nil {
 		return false, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:failed to create namespace: %v"), err))
 	}
 	// Deploy the manifest
-	err = deployManifest(application.Manifest, application.Namespace, lang)
-	if err != nil {
+	if err := applyManifest(ctx, c, application.Manifest, application.Namespace, lang); err != nil {
 		return false, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:failed to deploy manifest: %v"), err))
 	}
 	err = setStatus(application.Owner, application.Name, object.StatusPending, lang)
@@ -71,19 +68,13 @@ func Deploy(application *object.Application, lang string) (bool, error) {
 }
 
 func Undeploy(owner, name, namespace string, lang string) (bool, error) {
-	if err := ensure(lang); err != nil {
+	c, err := ensure(lang)
+	if err != nil {
 		return false, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:failed to initialize k8s client: %v"), err))
 	}
-	if !client.connected {
-		return false, fmt.Errorf("%s", i18n.Translate(lang, "object:k8s client not connected to cluster"))
-	}
 	// Delete the entire namespace
-	err := client.clientSet.CoreV1().Namespaces().Delete(
-		context.TODO(),
-		namespace,
-		metav1.DeleteOptions{},
-	)
-	if err != nil && !errors.IsNotFound(err) {
+	err = c.Delete(context.TODO(), namespacesGVR.group, namespacesGVR.version, namespacesGVR.resource, "", namespace)
+	if err != nil && !errors.Is(err, ErrK8sNotFound) {
 		return false, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:failed to delete namespace: %v"), err))
 	}
 	err = setStatus(owner, name, object.StatusTerminating, lang)
@@ -185,23 +176,21 @@ func FailureReason(namespace string, lang string) (string, error) {
 	if namespace == "" {
 		return "", fmt.Errorf("%s", i18n.Translate(lang, "object:namespace cannot be empty"))
 	}
-	if err := ensure(lang); err != nil {
+	c, err := ensure(lang)
+	if err != nil {
 		return "", err
 	}
-	if !client.connected {
-		return "", fmt.Errorf("%s", i18n.Translate(lang, "object:k8s client is not connected to the cluster"))
-	}
-	pods, err := client.clientSet.CoreV1().Pods(namespace).List(context.TODO(), metav1.ListOptions{})
+	pods, err := listInto[v1.Pod](context.TODO(), c, podsGVR, namespace)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if errors.Is(err, ErrK8sNotFound) {
 			return "namespace or pods not found", nil
 		}
 		return "", fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:failed to list pods in namespace %s: %w"), namespace, err))
 	}
-	if len(pods.Items) == 0 {
+	if len(pods) == 0 {
 		return "no pods were found in the application namespace to inspect", nil
 	}
-	reasons := analyzePodFailures(pods.Items)
+	reasons := analyzePodFailures(pods)
 	if len(reasons) > 0 {
 		return strings.Join(reasons, "; "), nil
 	}
@@ -256,19 +245,14 @@ func analyzeContainerStatus(podName, containerName, containerType string, state 
 
 // Phase returns application status as string
 func Phase(owner, name, namespace string, lang string) (string, error) {
-	if err := ensure(lang); err != nil {
+	c, err := ensure(lang)
+	if err != nil {
 		return object.StatusUnknown, err
 	}
-	if !client.connected {
-		return object.StatusUnknown, nil
-	}
-	ns, err := client.clientSet.CoreV1().Namespaces().Get(
-		context.TODO(),
-		namespace,
-		metav1.GetOptions{},
-	)
-	if err != nil {
-		if errors.IsNotFound(err) {
+	ctx := context.TODO()
+	var ns v1.Namespace
+	if err := getInto(ctx, c, namespacesGVR, "", namespace, &ns); err != nil {
+		if errors.Is(err, ErrK8sNotFound) {
 			err = setStatus(owner, name, object.StatusNotDeployed, lang)
 			if err != nil {
 				return "", err
@@ -278,10 +262,10 @@ func Phase(owner, name, namespace string, lang string) (string, error) {
 		return object.StatusUnknown, err
 	}
 	if ns.Status.Phase == v1.NamespaceTerminating {
-		pods, _ := client.clientSet.CoreV1().Pods(namespace).List(context.TODO(), metav1.ListOptions{})
-		services, _ := client.clientSet.CoreV1().Services(namespace).List(context.TODO(), metav1.ListOptions{})
-		deployments, _ := client.clientSet.AppsV1().Deployments(namespace).List(context.TODO(), metav1.ListOptions{})
-		if len(pods.Items) == 0 && len(services.Items) == 0 && len(deployments.Items) == 0 {
+		pods, _ := listInto[v1.Pod](ctx, c, podsGVR, namespace)
+		services, _ := listInto[v1.Service](ctx, c, servicesGVR, namespace)
+		deployments, _ := listInto[appsv1.Deployment](ctx, c, deploymentsGVR, namespace)
+		if len(pods) == 0 && len(services) == 0 && len(deployments) == 0 {
 			err = setStatus(owner, name, object.StatusNotDeployed, lang)
 			if err != nil {
 				return "", err
@@ -294,21 +278,15 @@ func Phase(owner, name, namespace string, lang string) (string, error) {
 		}
 		return object.StatusTerminating, nil
 	}
-	deployments, err := client.clientSet.AppsV1().Deployments(namespace).List(
-		context.TODO(),
-		metav1.ListOptions{},
-	)
+	deployments, err := listInto[appsv1.Deployment](ctx, c, deploymentsGVR, namespace)
 	if err != nil {
 		return object.StatusUnknown, err
 	}
-	statefulSets, err := client.clientSet.AppsV1().StatefulSets(namespace).List(
-		context.TODO(),
-		metav1.ListOptions{},
-	)
+	statefulSets, err := listInto[appsv1.StatefulSet](ctx, c, statefulSetsGVR, namespace)
 	if err != nil {
 		return object.StatusUnknown, err
 	}
-	if len(deployments.Items) == 0 && len(statefulSets.Items) == 0 {
+	if len(deployments) == 0 && len(statefulSets) == 0 {
 		err = setStatus(owner, name, object.StatusNotDeployed, lang)
 		if err != nil {
 			return "", err
@@ -316,7 +294,7 @@ func Phase(owner, name, namespace string, lang string) (string, error) {
 		return object.StatusNotDeployed, nil
 	}
 	// Check if all deployments are ready
-	for _, deployment := range deployments.Items {
+	for _, deployment := range deployments {
 		if deployment.Status.ReadyReplicas < deployment.Status.Replicas {
 			err = setStatus(owner, name, object.StatusPending, lang)
 			if err != nil {
@@ -326,7 +304,7 @@ func Phase(owner, name, namespace string, lang string) (string, error) {
 		}
 	}
 	// Check if all statefulsets are ready
-	for _, statefulSet := range statefulSets.Items {
+	for _, statefulSet := range statefulSets {
 		if statefulSet.Status.ReadyReplicas < statefulSet.Status.Replicas {
 			err = setStatus(owner, name, object.StatusPending, lang)
 			if err != nil {
@@ -340,21 +318,4 @@ func Phase(owner, name, namespace string, lang string) (string, error) {
 		return "", err
 	}
 	return object.StatusRunning, nil
-}
-
-// Helper function to deploy manifest (refactored from existing code)
-func deployManifest(manifest, namespace string, lang string) error {
-	// Split manifest by "---" separator
-	docs := strings.Split(manifest, "---")
-	for _, doc := range docs {
-		doc = strings.TrimSpace(doc)
-		if doc == "" {
-			continue
-		}
-		err := client.deployResource(doc, namespace, lang)
-		if err != nil {
-			return fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:failed to deploy resource: %v"), err))
-		}
-	}
-	return nil
 }

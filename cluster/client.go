@@ -16,251 +16,167 @@ package cluster
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"sync"
-	"time"
-
-	"github.com/hanzoai/ai/object"
 
 	"github.com/hanzoai/ai/i18n"
-	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/meta"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"github.com/hanzoai/ai/object"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/util/yaml"
-	"k8s.io/client-go/discovery"
-	"k8s.io/client-go/dynamic"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
-	"k8s.io/client-go/restmapper"
-	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/apimachinery/pkg/runtime"
+	utilyaml "k8s.io/apimachinery/pkg/util/yaml"
 )
 
-type Client struct {
-	clientSet     *kubernetes.Clientset
-	dynamicClient dynamic.Interface
-	restMapper    meta.RESTMapper
-	config        *rest.Config
-	connected     bool
-	configText    string
-}
-
+// The active cluster, keyed by the kubeconfig it was built from. A tenant edits
+// its Kubernetes provider and the next call rebuilds against the new config;
+// nothing else in the package holds a connection.
 var (
-	client      *Client
-	clientMutex sync.Mutex
+	clientMu     sync.Mutex
+	client       K8sClient
+	clientConfig string
 )
 
-func init() {
-	client = nil
-}
-
-// Create K8s client from provider's ConfigText
-func clientFromProvider(provider *object.Provider, lang string) (*Client, error) {
+// ensure returns a ready cluster client for the default Kubernetes provider,
+// rebuilding it when the provider's kubeconfig has changed. It fails when no
+// cluster is reachable, so every caller below can assume a live cluster instead
+// of re-checking a connected flag.
+func ensure(lang string) (K8sClient, error) {
+	provider, err := object.GetDefaultKubernetesProvider(lang)
+	if err != nil {
+		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:failed to get default Kubernetes provider: %v"), err))
+	}
 	if provider.ConfigText == "" {
 		return nil, fmt.Errorf("%s", i18n.Translate(lang, "object:provider kubeconfig content is empty"))
 	}
-	// Parse kubeconfig from provider.ConfigText
-	config, err := clientcmd.RESTConfigFromKubeConfig([]byte(provider.ConfigText))
-	if err != nil {
-		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:failed to parse kubeconfig from provider: %v"), err))
-	}
-	return newClient(config, provider.ConfigText, lang)
-}
 
-func newClient(config *rest.Config, configText string, lang string) (*Client, error) {
-	config.Timeout = 30 * time.Second // Default timeout
-	clientset, err := kubernetes.NewForConfig(config)
-	if err != nil {
-		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:failed to create kubernetes clientSet: %v"), err))
+	clientMu.Lock()
+	defer clientMu.Unlock()
+	if client != nil && clientConfig == provider.ConfigText {
+		return client, nil
 	}
-	dynamicClient, err := dynamic.NewForConfig(config)
-	if err != nil {
-		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:failed to create dynamic client: %v"), err))
+	c := BuildK8sClient(provider.ConfigText)
+	if ok, reason := c.Ready(); !ok {
+		return nil, errors.New(reason)
 	}
-	discoveryClient, err := discovery.NewDiscoveryClientForConfig(config)
-	if err != nil {
-		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:failed to create discovery client: %v"), err))
-	}
-	groupResources, err := restmapper.GetAPIGroupResources(discoveryClient)
-	if err != nil {
-		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:failed to get API group resources: %v"), err))
-	}
-	restMapper := restmapper.NewDiscoveryRESTMapper(groupResources)
-	client := &Client{
-		clientSet:     clientset,
-		dynamicClient: dynamicClient,
-		restMapper:    restMapper,
-		config:        config,
-		connected:     false,
-		configText:    configText,
-	}
-	if err := client.testConnection(); err != nil {
-		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:failed to connect to kubernetes cluster: %v"), err))
-	}
-	client.connected = true
+	client, clientConfig = c, provider.ConfigText
 	return client, nil
 }
 
-func (k *Client) testConnection() error {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	_, err := k.clientSet.CoreV1().Namespaces().List(ctx, metav1.ListOptions{Limit: 1})
-	return err
-}
-
-// Ensure k8s client is initialized, try to initialize if not
-func ensure(lang string) error {
-	// Quick check if client is already ready
-	if client != nil && client.connected {
-		return nil
-	}
-	clientMutex.Lock()
-	defer clientMutex.Unlock()
-	if client != nil && client.connected {
-		return nil
-	}
-	provider, err := object.GetDefaultKubernetesProvider(lang)
-	if err != nil {
-		return fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:failed to get default Kubernetes provider: %v"), err))
-	}
-	// Only recreate if config changed or client doesn't exist
-	if client == nil || client.configText != provider.ConfigText {
-		if mirror != nil {
-			mirror.Stop()
-			mirror = nil
-		}
-		c, err := clientFromProvider(provider, lang)
-		if err != nil {
-			return err
-		}
-		client = c
-		host, parseErr := parseHost(provider.ConfigText, lang)
-		if parseErr != nil {
-			cachedHost = ""
-		} else {
-			cachedHost = host
-		}
-		// Initialize cache manager
-		if err := initMirror(); err != nil {
-			return fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:failed to initialize cache manager: %v"), err))
-		}
-		if err := startMirror(lang); err != nil {
-			return fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:failed to start cache manager: %v"), err))
-		}
-	}
-	return nil
-}
-
+// Status reports whether the configured cluster is reachable.
 func Status(lang string) (string, error) {
-	if err := ensure(lang); err != nil {
-		return "Disconnected", err
-	}
-	err := client.testConnection()
+	c, err := ensure(lang)
 	if err != nil {
-		client.connected = false
 		return "Disconnected", err
 	}
-	client.connected = true
+	if ok, reason := c.Ready(); !ok {
+		clientMu.Lock()
+		client, clientConfig = nil, ""
+		clientMu.Unlock()
+		return "Disconnected", errors.New(reason)
+	}
 	return "Connected", nil
 }
 
-func (k *Client) createNamespaceIfNotExists(name string) error {
-	_, err := k.clientSet.CoreV1().Namespaces().Get(
-		context.TODO(),
-		name,
-		metav1.GetOptions{},
-	)
+// createNamespaceIfNotExists is the idempotent namespace create every deploy
+// path starts from.
+func createNamespaceIfNotExists(ctx context.Context, c K8sClient, name string) error {
+	_, err := c.Get(ctx, namespacesGVR.group, namespacesGVR.version, namespacesGVR.resource, "", name)
+	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, ErrK8sNotFound) {
+		return err
+	}
+	ns := map[string]any{
+		"apiVersion": "v1",
+		"kind":       "Namespace",
+		"metadata": map[string]any{
+			"name":   name,
+			"labels": map[string]any{"managed-by": "hanzo-cloud"},
+		},
+	}
+	err = c.Create(ctx, namespacesGVR.group, namespacesGVR.version, namespacesGVR.resource, "", ns)
+	if err != nil && !errors.Is(err, ErrK8sAlreadyExists) {
+		return err
+	}
+	return nil
+}
+
+// applyManifest applies a rendered multi-document YAML manifest, defaulting
+// namespaced objects into namespace and stamping the management label. Kind →
+// resource resolution belongs to the cluster (it owns discovery), so each
+// document goes over the seam whole.
+func applyManifest(ctx context.Context, c K8sClient, manifest, namespace, lang string) error {
+	docs, err := splitManifest(manifest)
 	if err != nil {
-		if errors.IsNotFound(err) {
-			// Create namespace
-			namespace := &unstructured.Unstructured{
-				Object: map[string]interface{}{
-					"apiVersion": "v1",
-					"kind":       "Namespace",
-					"metadata": map[string]interface{}{
-						"name": name,
-						"labels": map[string]interface{}{
-							"managed-by": "hanzo-cloud",
-						},
-					},
-				},
-			}
-			gvr := schema.GroupVersionResource{
-				Group:    "",
-				Version:  "v1",
-				Resource: "namespaces",
-			}
-			_, err = k.dynamicClient.Resource(gvr).Create(
-				context.TODO(),
-				namespace,
-				metav1.CreateOptions{},
-			)
-			if err != nil {
-				return err
-			}
-		} else {
-			return err
+		return fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:failed to decode YAML: %v"), err))
+	}
+	for _, doc := range docs {
+		if err := c.Apply(ctx, namespace, doc); err != nil {
+			return fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:failed to deploy resource: %v"), err))
 		}
 	}
 	return nil
 }
 
-func (k *Client) deployResource(yamlContent, namespace string, lang string) error {
-	// Parse YAML to unstructured object
-	decoder := yaml.NewYAMLToJSONDecoder(strings.NewReader(yamlContent))
-	var obj unstructured.Unstructured
-	err := decoder.Decode(&obj)
-	if err != nil {
-		return fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:failed to decode YAML: %v"), err))
-	}
-	// Skip empty objects
-	if obj.GetKind() == "" {
-		return nil
-	}
-	// Set namespace if not specified and resource is namespaced
-	if obj.GetNamespace() == "" && obj.GetKind() != "Namespace" {
-		obj.SetNamespace(namespace)
-	}
-	// Add labels for management
-	labels := obj.GetLabels()
-	if labels == nil {
-		labels = make(map[string]string)
-	}
-	labels["managed-by"] = "hanzo-cloud"
-	obj.SetLabels(labels)
-	// Get GVR for the resource
-	gvk := obj.GetObjectKind().GroupVersionKind()
-	mapping, err := k.restMapper.RESTMapping(gvk.GroupKind(), gvk.Version)
-	if err != nil {
-		return fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:failed to get REST mapping for %s: %v"), gvk, err))
-	}
-	var dr dynamic.ResourceInterface
-	if mapping.Scope.Name() == meta.RESTScopeNameNamespace {
-		dr = k.dynamicClient.Resource(mapping.Resource).Namespace(obj.GetNamespace())
-	} else {
-		dr = k.dynamicClient.Resource(mapping.Resource)
-	}
-	// Try to get existing resource
-	existing, err := dr.Get(context.TODO(), obj.GetName(), metav1.GetOptions{})
-	if err != nil {
-		if errors.IsNotFound(err) {
-			// Create new resource
-			_, err = dr.Create(context.TODO(), &obj, metav1.CreateOptions{})
-			if err != nil {
-				return fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:failed to create resource %s/%s: %v"), obj.GetKind(), obj.GetName(), err))
-			}
-		} else {
-			return fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:failed to get existing resource %s/%s: %v"), obj.GetKind(), obj.GetName(), err))
+// splitManifest decodes a multi-document YAML manifest into objects, skipping
+// empty documents and stamping the management label on each. Kept separate from
+// the apply loop so it is a pure, testable function.
+func splitManifest(manifest string) ([]map[string]any, error) {
+	var out []map[string]any
+	for _, doc := range strings.Split(manifest, "\n---") {
+		if strings.TrimSpace(doc) == "" {
+			continue
 		}
-	} else {
-		// Update existing resource
-		obj.SetResourceVersion(existing.GetResourceVersion())
-		_, err = dr.Update(context.TODO(), &obj, metav1.UpdateOptions{})
+		obj, err := decodeYAMLObject(doc)
 		if err != nil {
-			return fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:failed to update resource %s/%s: %v"), obj.GetKind(), obj.GetName(), err))
+			return nil, err
 		}
+		if obj == nil {
+			continue
+		}
+		if kind, _ := obj["kind"].(string); kind == "" {
+			continue
+		}
+		labelObject(obj, "managed-by", "hanzo-cloud")
+		out = append(out, obj)
 	}
-	return nil
+	return out, nil
+}
+
+// decodeYAMLObject decodes one YAML document into a cluster object. It returns
+// (nil, nil) for a document that carries no kind — an empty or comment-only
+// document is a normal part of a rendered manifest, not an error. Decoding goes
+// through unstructured's JSON path so integers land as int64, which is what the
+// dynamic client requires.
+func decodeYAMLObject(doc string) (map[string]any, error) {
+	jsonBytes, err := utilyaml.ToJSON([]byte(doc))
+	if err != nil {
+		return nil, err
+	}
+	var u unstructured.Unstructured
+	if err := u.UnmarshalJSON(jsonBytes); err != nil {
+		if runtime.IsMissingKind(err) || errors.Is(err, io.EOF) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return u.Object, nil
+}
+
+// labelObject sets one metadata label, creating the maps it needs.
+func labelObject(obj map[string]any, key, value string) {
+	meta, ok := obj["metadata"].(map[string]any)
+	if !ok {
+		meta = map[string]any{}
+		obj["metadata"] = meta
+	}
+	labels, ok := meta["labels"].(map[string]any)
+	if !ok {
+		labels = map[string]any{}
+		meta["labels"] = labels
+	}
+	labels[key] = value
 }
