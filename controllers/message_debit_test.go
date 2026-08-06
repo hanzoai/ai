@@ -69,9 +69,10 @@ func newAnswerController() *ApiController {
 // GetMessageAnswer meters the turn at two points — the trace
 // (recordCasibaseChatUsage) and the charge (AddTransactionForMessage) — and both
 // reach object.UsageRecorder. This drives that exact pair in handler order and
-// asserts a SINGLE charge, of the completion's own TotalPrice, keyed on the message
-// id (the idempotency key a retry can dedupe). Restoring the recordUsage call in
-// recordCasibaseChatUsage makes this see 2 debits and fail.
+// asserts a SINGLE charge, of the completion's own TotalPrice, carrying the message
+// id as its correlation ref. Restoring the recordUsage call in
+// recordCasibaseChatUsage makes this see 2 debits and fail — and there is no dedup
+// downstream to collapse them, so 2 debits is 2 charges.
 func TestCasibaseChatAnswerIsOneDebit(t *testing.T) {
 	got := captureDebits(t)
 
@@ -110,7 +111,7 @@ func TestCasibaseChatAnswerIsOneDebit(t *testing.T) {
 		t.Errorf("debit usd = %q, want the completion's TotalPrice %q", d.usd, want)
 	}
 	if want := message.GetId(); d.requestID != want {
-		t.Errorf("debit request id = %q, want the message id %q (the dedupe key)", d.requestID, want)
+		t.Errorf("debit request id = %q, want the message id %q (the call's correlation ref)", d.requestID, want)
 	}
 	if d.namespace != "acme" || d.subject != "acme/alice" {
 		t.Errorf("debit landed on %q/%q, want namespace acme subject acme/alice", d.namespace, d.subject)
