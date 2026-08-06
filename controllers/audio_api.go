@@ -143,6 +143,105 @@ func audioFormat(format string) (contentType, filename string) {
 	}
 }
 
+// AudioTranscriptions is the OpenAI-compatible STT endpoint
+// (POST /v1/audio/transcriptions, multipart: file + model [+ language +
+// response_format]). It mirrors AudioSpeech exactly: authenticate the caller,
+// resolve `model` to its STT provider through the SAME model-route resolution
+// (so the in-cluster speech service — or any BYO node registered as an STT
+// provider — works transparently), transcribe, and return the OpenAI body.
+// One code path, OpenAI-shaped, no store coupling (unlike the legacy
+// /v1/process-speech-to-text, which is bound to a chat store).
+//
+// @Title AudioTranscriptions
+// @Tag Audio API
+// @Description OpenAI-compatible speech-to-text
+// @Param file formData file true "the audio to transcribe"
+// @Param model formData string true "STT model (whisper family)"
+// @Success 200 {object} controllers.transcriptionResponse "transcription"
+// @router /audio/transcriptions [post]
+func (c *ApiController) AudioTranscriptions() {
+	token, ok := c.bearerToken()
+	if !ok {
+		return
+	}
+	if isPublishableKey(token) {
+		c.rejectPublishableKey()
+		return
+	}
+
+	model := c.GetString("model")
+	audioFile, _, fileErr := c.GetFile("file")
+	badReq := ""
+	if fileErr != nil {
+		badReq = "audio request requires a \"file\" part"
+	} else if model == "" {
+		badReq = "audio request requires a \"model\" field"
+	}
+	if badReq != "" {
+		// Authenticate before reporting the client error: an invalid credential is 401
+		// regardless of body validity (never a probe-able 200/400), matching speech.
+		if authErr := c.authenticate(token); authErr != nil {
+			c.ResponseAuthError(authErr)
+			return
+		}
+		c.ResponseErrorWithStatus(http.StatusBadRequest, badReq)
+		return
+	}
+	defer audioFile.Close()
+
+	orgId := c.GetOrg()
+	provider, authUser, upstreamModel, isPremium, _, err := c.authResolveProvider(token, model, orgId)
+	if err != nil {
+		c.ResponseAuthError(err)
+		return
+	}
+	// No Zen STT verb exists; a Zen-routed model cannot serve this endpoint.
+	if provider.Type == "Zen" {
+		c.ResponseErrorWithStatus(http.StatusBadRequest, "model \""+model+"\" does not serve the /v1/audio/transcriptions endpoint")
+		return
+	}
+	// Bind the resolved upstream model + the audio language hint onto the provider
+	// before constructing the STT client (model in SubType, language in Flavor —
+	// the STT mirror of speech's voice-in-Flavor binding).
+	if upstreamModel != "" {
+		provider.SubType = upstreamModel
+	} else {
+		provider.SubType = model
+	}
+	if language := c.GetString("language"); language != "" {
+		provider.Flavor = language
+	}
+
+	sttProvider, err := provider.GetSpeechToTextProvider(c.GetAcceptLanguage())
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+
+	startTime := time.Now().UTC()
+	text, _, err := sttProvider.ProcessAudio(audioFile, c.Ctx.Request.Context(), c.GetAcceptLanguage())
+	if err != nil {
+		c.recordAudioUsage(authUser, provider, model, isPremium, "error", err.Error(), startTime)
+		c.ResponseError(err.Error())
+		return
+	}
+	c.recordAudioUsage(authUser, provider, model, isPremium, "success", "", startTime)
+
+	if c.GetString("response_format") == "text" {
+		c.Ctx.Output.Header("Content-Type", "text/plain; charset=utf-8")
+		c.Ctx.Output.Body([]byte(text))
+		return
+	}
+	body, _ := json.Marshal(transcriptionResponse{Text: text})
+	c.Ctx.Output.Header("Content-Type", "application/json")
+	c.Ctx.Output.Body(body)
+}
+
+// transcriptionResponse is the OpenAI /v1/audio/transcriptions `json` body.
+type transcriptionResponse struct {
+	Text string `json:"text"`
+}
+
 // recordAudioUsage records a direct-provider TTS call for billing +
 // observability, mirroring recordImageUsage. There is no direct-provider audio
 // price table yet (the Zen "audio/voice" SKU prices itself in serveZenMedia),

@@ -31,13 +31,17 @@ type SpeechToTextProvider interface {
 	ProcessAudio(audioData io.Reader, ctx context.Context, lang string) (string, *SpeechToTextResult, error)
 }
 
-// GetSpeechToTextProvider creates a new provider instance based on the provider type
-func GetSpeechToTextProvider(typ string, subType string, clientSecret string, providerUrl string) (SpeechToTextProvider, error) {
+// GetSpeechToTextProvider creates a new provider instance based on the provider
+// type. flavor mirrors the TTS factory's parameter: for STT it is the audio's
+// language hint (ISO-639-1), bound onto the provider row by the caller.
+func GetSpeechToTextProvider(typ string, subType string, clientSecret string, providerUrl string, flavor string) (SpeechToTextProvider, error) {
 	var p SpeechToTextProvider
 	var err error
 
 	if typ == "Alibaba Cloud" {
 		p, err = NewAlibabacloudSpeechToTextProvider(typ, subType, clientSecret)
+	} else if typ == "OpenAI" {
+		p, err = NewOpenAISpeechToTextProvider(subType, clientSecret, providerUrl, flavor)
 	}
 
 	if err != nil {

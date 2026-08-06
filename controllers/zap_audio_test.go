@@ -43,7 +43,7 @@ func cloudStatus(t *testing.T, msg *zap.Message, err error) (uint32, string) {
 // longest-prefix gateway lookup routes each verb to its own handler.
 func TestZapAudioRegistration(t *testing.T) {
 	cloudMethods := []string{
-		"audio.speech", "audio.voice", "audio.music", "audio.foley",
+		"audio.speech", "audio.transcribe", "audio.voice", "audio.music", "audio.foley",
 		"tts.generate", "tts.generate.stream", "stt.process",
 	}
 	for _, m := range cloudMethods {
@@ -52,7 +52,8 @@ func TestZapAudioRegistration(t *testing.T) {
 		}
 	}
 	gatewayPaths := []string{
-		"/v1/audio/speech", "/v1/audio/voice", "/v1/audio/music", "/v1/audio/foley",
+		"/v1/audio/speech", "/v1/audio/transcriptions", "/v1/audio/voice",
+		"/v1/audio/music", "/v1/audio/foley",
 		"/v1/generate-text-to-speech-audio", "/v1/generate-text-to-speech-audio-stream",
 		"/v1/process-speech-to-text",
 	}
@@ -90,6 +91,9 @@ func TestZapAudioAuthRejection(t *testing.T) {
 		}},
 		{"stt.process", func() (*zap.Message, error) {
 			return zapSTTHandler(ctx, "", []byte("multipart"))
+		}},
+		{"audio.transcribe", func() (*zap.Message, error) {
+			return zapAudioTranscribeHandler(ctx, "", []byte("multipart"))
 		}},
 	}
 	for _, tc := range cases {
@@ -149,6 +153,65 @@ func TestParseSTTForm(t *testing.T) {
 	// A non-multipart body is a clean 400-shaped error, not a panic.
 	if _, _, err := parseSTTForm([]byte(`{"not":"multipart"}`)); err == nil {
 		t.Error("parseSTTForm accepted a non-multipart body")
+	}
+}
+
+// TestParseTranscribeForm is the OpenAI STT decode happy path (stubbed multipart
+// body, no DB): the file part + model/language/response_format values are
+// recovered from a self-describing multipart body without any Content-Type
+// header, and a body with no "file" part decodes cleanly (auth reports the 400).
+func TestParseTranscribeForm(t *testing.T) {
+	var buf bytes.Buffer
+	w := multipart.NewWriter(&buf)
+	if err := w.WriteField("model", "whisper"); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.WriteField("language", "de"); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.WriteField("response_format", "text"); err != nil {
+		t.Fatal(err)
+	}
+	fw, err := w.CreateFormFile("file", "clip.webm")
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := []byte("\x1aE\xdf\xa3....webm")
+	if _, err := fw.Write(payload); err != nil {
+		t.Fatal(err)
+	}
+	w.Close()
+
+	form, err := parseTranscribeForm(buf.Bytes())
+	if err != nil {
+		t.Fatalf("parseTranscribeForm: %v", err)
+	}
+	if form.model != "whisper" || form.language != "de" || form.responseFormat != "text" {
+		t.Errorf("fields = (%q,%q,%q), want (whisper,de,text)", form.model, form.language, form.responseFormat)
+	}
+	got, _ := io.ReadAll(form.audio)
+	if !bytes.Equal(got, payload) {
+		t.Errorf("audio payload = %q, want %q", got, payload)
+	}
+
+	// No "file" part is not a parse error — the handler 400s it after auth.
+	var noFile bytes.Buffer
+	w2 := multipart.NewWriter(&noFile)
+	if err := w2.WriteField("model", "whisper"); err != nil {
+		t.Fatal(err)
+	}
+	w2.Close()
+	form, err = parseTranscribeForm(noFile.Bytes())
+	if err != nil {
+		t.Fatalf("parseTranscribeForm(no file): %v", err)
+	}
+	if form.audio != nil {
+		t.Error("no-file body decoded a reader")
+	}
+
+	// A non-multipart body is a clean 400-shaped error, not a panic.
+	if _, err := parseTranscribeForm([]byte(`{"not":"multipart"}`)); err == nil {
+		t.Error("parseTranscribeForm accepted a non-multipart body")
 	}
 }
 
