@@ -221,7 +221,7 @@ func TestConnUsageCore_HonestEmpty(t *testing.T) {
 }
 
 // TestZapConnections_Registered proves the group self-registered its native cloud
-// methods into the shared registry (the seam Integrate points the dispatcher at).
+// methods into the shared registry that handleCloudService consults.
 func TestZapConnections_Registered(t *testing.T) {
 	for _, m := range []string{"ai.connections.list", "ai.connections.add", "ai.connections.delete", "ai.connections.usage"} {
 		if _, ok := lookupCloudHandler(m); !ok {

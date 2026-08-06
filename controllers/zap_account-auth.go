@@ -18,12 +18,19 @@
 // (zapAccountPrincipal), exactly like zapChatHandler. The same routes stay live
 // on routers.App, which also backs the gateway fallback.
 //
-// Routes migrated (behavior preserved 1:1, minus the browser-only session/cookie
-// plumbing that has no meaning on the stateless ZAP wire):
-//   POST /v1/signin             -> zapSigninHandler            (method "account.signin")
-//   POST /v1/signout            -> zapSignoutHandler           (method "account.signout")
-//   GET  /v1/get-account        -> zapGetAccountHandler        (method "account.get")
-//   POST /v1/update-preferences -> zapUpdatePreferencesHandler (method "account.preferences")
+// The four handlers, and the HTTP endpoint each answers for (behavior preserved
+// 1:1, minus the browser-only session/cookie plumbing that has no meaning on the
+// stateless ZAP wire). The paths are the ones routers/resources.go generates —
+// the flat /v1/signin, /v1/get-account and /v1/update-preferences this list used
+// to name have not existed since the resources became nouns:
+//   POST  /v1/ai/signin      -> zapSigninHandler            (method "account.signin")
+//   POST  /v1/ai/signout     -> zapSignoutHandler           (method "account.signout")
+//   GET   /v1/ai/account     -> zapGetAccountHandler        (method "account.get")
+//   PATCH /v1/ai/preferences -> zapUpdatePreferencesHandler (method "account.preferences")
+//
+// Only the METHOD names are registered. No gateway prefix is: these four sit in
+// the /v1/ai namespace the resource table generates, where a path-only matcher
+// cannot be trusted to pick the right handler.
 //
 // REGISTRATION: this file self-registers from its own init() via the shared
 // registerCloud / registerGatewayPath seam (the ONE registry, zap_registry.go).

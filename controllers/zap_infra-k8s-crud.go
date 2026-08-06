@@ -35,8 +35,17 @@
 // Registration reuses the shared per-group registry (registerCloud /
 // registerGatewayPath in zap_audio.go, zapOk/zapErr in zap_rag-search-crawl.go):
 // this file only self-registers its own methods + path prefixes from its own
-// init(); handleCloudService and the gateway dispatch consult that registry. The
-// same routes stay live on routers.App, which also backs the gateway fallback.
+// init(); handleCloudService and the gateway dispatch consult that registry.
+//
+// TWO SPELLINGS, and this is the honest record of it: the prefixes registered
+// below are the OLD flat names — /v1/get-nodes, /v1/add-node, /v1/add-node-tunnel,
+// /v1/get-vm-dashboard-url. routers.App does not have those any more. The same
+// surface is /v1/ai/nodes (and /:owner/:name, and /:owner/:name/tunnel) plus
+// /v1/ai/dashboards/vm, generated from routers/resources.go. So a gateway caller
+// and an HTTP caller reach these handlers by different names today. One noun,
+// two spellings — a defect, not a design. It is written down rather than quietly
+// normalised because dropping a prefix removes surface some caller may hold, and
+// that is a decision with its own change, not a side effect of a comment.
 //
 // NOT migrated (deliberately): the duplex WebSocket tunnels — GetNodeTunnel and
 // TunnelMonitor (tunnel.go, guacamole) and DevBridge (dev_bridge.go). A ZAP
