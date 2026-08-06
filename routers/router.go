@@ -80,8 +80,6 @@ func initAPI() {
 	// from DigitalOcean billing for windows native metering missed. Dry-run by default.
 	App.Router("/v1/admin/usage/backfill-do", &controllers.ApiController{}, "POST:PostBackfillDOUsage")
 
-	// App.Router("/v1/get-range-activities", &controllers.ApiController{}, "GET:GetRangeActivities")
-
 	App.Router("/v1/install-patch", &controllers.ApiController{}, "POST:InstallPatch")
 
 	App.Router("/v1/dev-bridge", &controllers.ApiController{}, "GET:DevBridge")
