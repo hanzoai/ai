@@ -180,6 +180,14 @@ func (c *ApiController) UpdateMessage() {
 		return
 	}
 
+	_, name, err := util.GetOwnerAndNameFromIdWithError(id)
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+	id = util.GetIdFromOwnerAndName(chatOwner, name)
+	message.Owner = chatOwner
+
 	if message.NeedNotify {
 		err = message.SendEmail(c.GetAcceptLanguage(), c.GetOrg())
 		if err != nil {
@@ -218,6 +226,8 @@ func (c *ApiController) AddMessage() {
 	if !ok {
 		return
 	}
+
+	message.Owner = chatOwner
 
 	id := util.GetIdFromOwnerAndName(message.Owner, message.Name)
 	originMessage, err := object.GetMessage(id)
@@ -401,6 +411,8 @@ func (c *ApiController) DeleteMessage() {
 		return
 	}
 
+	message.Owner = chatOwner
+
 	success, err := object.DeleteMessage(&message)
 	if err != nil {
 		c.ResponseError(err.Error())
@@ -418,7 +430,7 @@ func (c *ApiController) DeleteWelcomeMessage() {
 		return
 	}
 
-	id := util.GetIdFromOwnerAndName(message.Owner, message.Name)
+	id := util.GetIdFromOwnerAndName(chatOwner, message.Name)
 	message, err = object.GetMessage(id)
 	if err != nil {
 		c.ResponseError(err.Error())
