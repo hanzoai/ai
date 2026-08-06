@@ -78,7 +78,7 @@ func TestZapMiscSuperAdminGateRejection(t *testing.T) {
 			t.Errorf("%s %s: empty auth status = %d, want 401", tc.method, tc.path, got)
 		}
 	}
-	if _, ok := lookupGatewayRoute("/v1/org/settings"); !ok {
+	if len(lookupGatewayRoutes("/v1/org/settings")) == 0 {
 		t.Error("/v1/org/settings not registered as an HTTP-shaped gateway route")
 	}
 }

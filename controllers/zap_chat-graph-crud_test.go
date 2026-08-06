@@ -89,7 +89,7 @@ func TestZapChatGraphRegistry(t *testing.T) {
 	// singular get routes registered for the same family.
 	cases := map[string]string{}
 	for path := range cases {
-		_, rich := lookupGatewayRoute(path)
+		rich := len(lookupGatewayRoutes(path)) > 0
 		_, simple := lookupGatewayHandler(path)
 		if !rich && !simple {
 			t.Errorf("gateway path %s not registered", path)
@@ -97,7 +97,7 @@ func TestZapChatGraphRegistry(t *testing.T) {
 	}
 
 	// Unknown path resolves to no group (falls back to the legacy switch / beego).
-	if _, rich := lookupGatewayRoute("/v1/nope"); rich {
+	if len(lookupGatewayRoutes("/v1/nope")) > 0 {
 		t.Errorf("/v1/nope unexpectedly registered (rich)")
 	}
 	if _, simple := lookupGatewayHandler("/v1/nope"); simple {
