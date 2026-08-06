@@ -24,6 +24,17 @@ import (
 	"github.com/hanzoai/ai/util"
 )
 
+// chatOwner is the single tenant every chat-plane row lives under. A chat, its
+// messages and its store are all keyed on it, and the plane reads it back verbatim:
+// addInitialChat stamps it, GetChats queries it, the reply-to lookup and the
+// provider and knowledge lookups all name it, and GetAnswer writes it. A row under
+// any other owner is unreachable by the code that would answer it.
+//
+// It is also the ledger NAMESPACE an answer's debit lands in, and the first half of
+// its billing SUBJECT. That is why it is a server-side constant: a request that
+// could name it would be naming which tenant's wallet pays.
+const chatOwner = "admin"
+
 // GetGlobalChats
 // @Title GetGlobalChats
 // @Tag Chat API
@@ -181,6 +192,13 @@ func (c *ApiController) UpdateChat() {
 		return
 	}
 
+	_, name, err := util.GetOwnerAndNameFromIdWithError(id)
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+	id = util.GetIdFromOwnerAndName(chatOwner, name)
+
 	if conf.IsDemoMode() {
 		originalChat, err := object.GetChat(id)
 		if err != nil {
@@ -224,6 +242,8 @@ func (c *ApiController) AddChat() {
 	if !ok {
 		return
 	}
+
+	chat.Owner = chatOwner
 
 	currentTime := util.GetCurrentTime()
 	chat.CreatedTime = currentTime
@@ -276,6 +296,8 @@ func (c *ApiController) DeleteChat() {
 	if !ok {
 		return
 	}
+
+	chat.Owner = chatOwner
 
 	success, err := object.DeleteChat(&chat)
 	if err != nil {
