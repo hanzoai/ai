@@ -16,9 +16,10 @@ package cluster
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 	"sync"
-	"time"
 
 	"github.com/hanzoai/ai/i18n"
 	"github.com/hanzoai/ai/object"
@@ -26,15 +27,14 @@ import (
 	v1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	metricsclientset "k8s.io/metrics/pkg/client/clientset/versioned"
+	metricsv1beta1 "k8s.io/metrics/pkg/apis/metrics/v1beta1"
 )
 
 func Describe(apps []*object.Application, lang string) {
 	if len(apps) == 0 {
 		return
 	}
-	if ensure(lang) != nil {
+	if _, err := ensure(lang); err != nil {
 		return
 	}
 	var wg sync.WaitGroup
@@ -46,7 +46,7 @@ func Describe(apps []*object.Application, lang string) {
 				app.Status = details.Status
 				app.Details = details
 				if app.URL == "" {
-					if url, err := URL(app.Namespace, lang); err == nil && url != "" {
+					if url := firstServiceURL(details.Services); url != "" {
 						app.URL = url
 					}
 				}
@@ -56,23 +56,36 @@ func Describe(apps []*object.Application, lang string) {
 	wg.Wait()
 }
 
-// URL retrieves the access URL for an application
+// URL retrieves the access URL for an application.
 func URL(namespace string, lang string) (string, error) {
-	nodeIPs := getNodeIPsFromCache()
-	services := getServicesFromCache(namespace, nodeIPs)
-	// Find first available access URL from services
-	for _, service := range services {
-		for _, port := range service.Ports {
-			if port.URL != "" {
-				return port.URL, nil
-			}
-		}
+	c, err := ensure(lang)
+	if err != nil {
+		return "", err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), readTimeout)
+	defer cancel()
+	if url := firstServiceURL(getServices(ctx, c, namespace, getNodeIPs(ctx, c))); url != "" {
+		return url, nil
 	}
 	return "", fmt.Errorf("%s", i18n.Translate(lang, "object:no accessible URL found for application"))
 }
 
+// firstServiceURL returns the first externally reachable service URL in the
+// view, or "" when nothing is reachable. Pure — Describe reuses the view it has
+// already assembled rather than re-reading the cluster per application.
+func firstServiceURL(services []object.ServiceDetail) string {
+	for _, service := range services {
+		for _, port := range service.Ports {
+			if port.URL != "" {
+				return port.URL
+			}
+		}
+	}
+	return ""
+}
+
 // findIngressURL finds the external access URL for a service in Ingress rules.
-func findIngressURL(serviceName string, servicePort int32, ingresses []*networkingv1.Ingress) string {
+func findIngressURL(serviceName string, servicePort int32, ingresses []networkingv1.Ingress) string {
 	for _, ingress := range ingresses {
 		// Iterate through Ingress rules
 		for _, rule := range ingress.Spec.Rules {
@@ -113,7 +126,7 @@ func findIngressURL(serviceName string, servicePort int32, ingresses []*networki
 }
 
 // hasTLSForHost examine if the ingress has TLS configured for the given host
-func hasTLSForHost(ingress *networkingv1.Ingress, host string) bool {
+func hasTLSForHost(ingress networkingv1.Ingress, host string) bool {
 	for _, tls := range ingress.Spec.TLS {
 		for _, tlsHost := range tls.Hosts {
 			if tlsHost == host {
@@ -161,19 +174,27 @@ func formatMemoryUsage(quantity resource.Quantity) string {
 	}
 }
 
-func calculateNamespaceMetrics(ctx context.Context, metricsClient *metricsclientset.Clientset, namespace string, deployCache map[string]map[string]*appsv1.Deployment, mu *sync.RWMutex, lang string) (*cachedMetrics, error) {
-	if metricsClient == nil {
-		return nil, fmt.Errorf("%s", i18n.Translate(lang, "object:metrics client not available"))
-	}
-	podMetricsList, err := metricsClient.MetricsV1beta1().PodMetricses(namespace).List(ctx, metav1.ListOptions{})
+// getNamespaceMetrics aggregates live pod usage for a namespace and expresses it
+// as a percentage of what the namespace's deployments are allowed to use.
+//
+// The metrics API is an OPTIONAL aggregated API: a cluster without
+// metrics-server serves no metrics.k8s.io at all. That is a missing capability,
+// not a failure, so it returns (nil, nil) and the view simply carries no metrics
+// block rather than failing the whole read.
+func getNamespaceMetrics(ctx context.Context, c K8sClient, namespace string, deployments []appsv1.Deployment, lang string) (*object.ResourceMetrics, error) {
+	podMetrics, err := listInto[metricsv1beta1.PodMetrics](ctx, c, podMetricsGVR, namespace)
 	if err != nil {
-		return nil, err
+		if errors.Is(err, ErrK8sNotFound) || strings.Contains(err.Error(), "metrics.k8s.io") {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:failed to get pod metrics: %v"), err))
 	}
+
 	totalCPU := resource.NewQuantity(0, resource.DecimalSI)
 	totalMemory := resource.NewQuantity(0, resource.BinarySI)
 	// Aggregate resource usage from all pods
-	for _, podMetrics := range podMetricsList.Items {
-		for _, container := range podMetrics.Containers {
+	for _, pod := range podMetrics {
+		for _, container := range pod.Containers {
 			if cpuUsage, ok := container.Usage[v1.ResourceCPU]; ok {
 				totalCPU.Add(cpuUsage)
 			}
@@ -182,48 +203,49 @@ func calculateNamespaceMetrics(ctx context.Context, metricsClient *metricsclient
 			}
 		}
 	}
-	var cpuPercentage, memPercentage float64
-	// Calculate percentages if deployment cache and mutex are provided
-	if deployCache != nil && mu != nil {
-		mu.RLock()
-		if deploys, exists := deployCache[namespace]; exists {
-			totalCPULimits := resource.NewQuantity(0, resource.DecimalSI)
-			totalMemoryLimits := resource.NewQuantity(0, resource.BinarySI)
-			for _, deploy := range deploys {
-				replicas := int32(1)
-				if deploy.Spec.Replicas != nil {
-					replicas = *deploy.Spec.Replicas
-				}
-				for _, container := range deploy.Spec.Template.Spec.Containers {
-					if container.Resources.Limits != nil {
-						if cpuLimit, ok := container.Resources.Limits[v1.ResourceCPU]; ok {
-							for i := int32(0); i < replicas; i++ {
-								totalCPULimits.Add(cpuLimit)
-							}
-						}
-						if memLimit, ok := container.Resources.Limits[v1.ResourceMemory]; ok {
-							for i := int32(0); i < replicas; i++ {
-								totalMemoryLimits.Add(memLimit)
-							}
-						}
-					}
+
+	cpuPercentage, memPercentage := usageAgainstLimits(*totalCPU, *totalMemory, deployments)
+	return &object.ResourceMetrics{
+		CPUUsage:         formatCPUUsage(*totalCPU),
+		CPUPercentage:    cpuPercentage,
+		MemoryUsage:      formatMemoryUsage(*totalMemory),
+		MemoryPercentage: memPercentage,
+		PodCount:         len(podMetrics),
+	}, nil
+}
+
+// usageAgainstLimits expresses usage as a percentage of the namespace's declared
+// limits (summed per replica). Pure. A workload that declares no limits has no
+// denominator, so its percentage stays zero rather than becoming a made-up number.
+func usageAgainstLimits(cpu, memory resource.Quantity, deployments []appsv1.Deployment) (cpuPct, memPct float64) {
+	totalCPULimits := resource.NewQuantity(0, resource.DecimalSI)
+	totalMemoryLimits := resource.NewQuantity(0, resource.BinarySI)
+	for _, deploy := range deployments {
+		replicas := int32(1)
+		if deploy.Spec.Replicas != nil {
+			replicas = *deploy.Spec.Replicas
+		}
+		for _, container := range deploy.Spec.Template.Spec.Containers {
+			if container.Resources.Limits == nil {
+				continue
+			}
+			if cpuLimit, ok := container.Resources.Limits[v1.ResourceCPU]; ok {
+				for i := int32(0); i < replicas; i++ {
+					totalCPULimits.Add(cpuLimit)
 				}
 			}
-			if totalCPULimits.MilliValue() > 0 {
-				cpuPercentage = float64(totalCPU.MilliValue()) / float64(totalCPULimits.MilliValue()) * 100
-			}
-			if totalMemoryLimits.Value() > 0 {
-				memPercentage = float64(totalMemory.Value()) / float64(totalMemoryLimits.Value()) * 100
+			if memLimit, ok := container.Resources.Limits[v1.ResourceMemory]; ok {
+				for i := int32(0); i < replicas; i++ {
+					totalMemoryLimits.Add(memLimit)
+				}
 			}
 		}
-		mu.RUnlock()
 	}
-	return &cachedMetrics{
-		TotalCPU:         *totalCPU,
-		TotalMemory:      *totalMemory,
-		PodCount:         len(podMetricsList.Items),
-		CPUPercentage:    cpuPercentage,
-		MemoryPercentage: memPercentage,
-		LastUpdated:      time.Now(),
-	}, nil
+	if totalCPULimits.MilliValue() > 0 {
+		cpuPct = float64(cpu.MilliValue()) / float64(totalCPULimits.MilliValue()) * 100
+	}
+	if totalMemoryLimits.Value() > 0 {
+		memPct = float64(memory.Value()) / float64(totalMemoryLimits.Value()) * 100
+	}
+	return cpuPct, memPct
 }
