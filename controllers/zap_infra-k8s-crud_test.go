@@ -73,8 +73,8 @@ func TestZapInfraAuthRejection(t *testing.T) {
 }
 
 // TestZapInfraRegistered proves each migrated method self-registered into the
-// shared cloud registry AND its gateway path prefix, so the Integrate dispatcher
-// resolves them — the ZAP twin of the beego route table staying in parallel.
+// shared cloud registry AND its gateway path prefix, so handleCloudService and
+// handleGatewayHTTPRequest resolve them.
 func TestZapInfraRegistered(t *testing.T) {
 	for name := range infraCrudMethods() {
 		if _, ok := lookupCloudHandler(name); !ok {

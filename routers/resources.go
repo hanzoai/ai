@@ -362,9 +362,19 @@ func (r resource) member() string { return r.collection() + "/:owner/:name" }
 // registerResources binds every resource in the table. This is the only place
 // CRUD routes are registered.
 //
-// Beego dispatches one pattern to several methods via "VERB:Method" pairs, so a
+// One pattern dispatches to several methods via "VERB:Method" pairs, so a
 // collection is one registration and a member is another — five routes per
 // resource collapse to two patterns.
+//
+// These patterns are the router's, and they stay the router's. A ZAP caller
+// reaches them through this same table: a gateway request that no fast-path
+// prefix claims is replayed through the router with its method and its
+// :owner/:name intact. Putting a prefix in front of a resource instead is not an
+// optimisation that is available — a matcher that sees only the path cannot tell
+// a member's four verbs apart, nor a member from its collection.
+// controllers/zap_gateway_fallback.go carries that argument in full; this is the
+// note for anyone who counts the handlers, finds no prefix for the resources,
+// and reads the absence as unfinished work. It is the design.
 func registerResources(app *web.Router) {
 	for _, r := range resources {
 		if spec := collectionSpec(r); spec != "" {

@@ -41,9 +41,9 @@ func decodeCloudApp(t *testing.T, msg *zap.Message, err error) (uint32, Response
 }
 
 // TestZapApplicationDeployRegistered proves the group exposes every native cloud
-// method and gateway path from its own dispatch tables (the strangler wiring
-// seam Integrate ranges over), and that a route's cloud + gateway entry point at
-// the SAME handler.
+// method and gateway path from its own dispatch tables — the ones its init()
+// ranges over into the canonical registry — and that a route's cloud + gateway
+// entry point at the SAME handler.
 func TestZapApplicationDeployRegistered(t *testing.T) {
 	cloud := []string{
 		"application.list", "application.get", "application.update",
