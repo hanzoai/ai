@@ -19,17 +19,16 @@
 // zapChatHandler (zap_native.go) exactly — identity, org scoping, the ONE
 // prepaid-balance gate, per-org provider selection, KMS secret resolution, and
 // a single terminal meter. It NEVER wraps or drives the beego controller and
-// never holds an http.ResponseWriter. The beego route in router.go stays live
-// in parallel until Integrate flips the gateway/native dispatch to consult the
-// registry below.
+// never holds an http.ResponseWriter. The same route stays live on routers.App,
+// which also backs the gateway fallback.
 //
 // REGISTRATION: this file declares NO shared registry symbol (so it compiles
 // standalone in the strangler hybrid and never collides with a sibling group).
 // It exposes its native-method and gateway-path tables as uniquely-named data
-// (zapResponsesCloud / zapResponsesGateway) keyed to the ONE handler. Integrate
-// ranges over these to wire registerCloud / registerGatewayPath into
-// handleCloudService / handleGatewayHTTPRequest (falling back to the existing
-// chat/models/balance cases) when it flips native dispatch on. No group edits a
+// (zapResponsesCloud / zapResponsesGateway) keyed to the ONE handler. This file's
+// init() ranges over these into registerCloud / registerGatewayPath
+// (zap_registry.go), which handleCloudService and the gateway dispatch consult
+// after their fast-path chat/models/balance cases. No group edits a
 // shared registration file.
 
 package controllers
@@ -53,7 +52,7 @@ import (
 
 // ── ZAP dispatch tables (group-local, collision-free) ───────────────────
 //
-// A type ALIAS (not a new named type) so no shared symbol is declared. Integrate
+// A type ALIAS (not a new named type) so no shared symbol is declared. init
 // ranges over the two tables below to registerCloud(method, h) /
 // registerGatewayPath(path, h).
 

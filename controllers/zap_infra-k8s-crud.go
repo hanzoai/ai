@@ -35,10 +35,8 @@
 // Registration reuses the shared per-group registry (registerCloud /
 // registerGatewayPath in zap_audio.go, zapOk/zapErr in zap_rag-search-crawl.go):
 // this file only self-registers its own methods + path prefixes from its own
-// init(); the dispatcher wiring (handleCloudService / handleGatewayHTTPRequest
-// consulting the registry) and the beego-route flip in router.go are the
-// Integrate step. Until then beego keeps serving these routes in parallel
-// (strangler hybrid).
+// init(); handleCloudService and the gateway dispatch consult that registry. The
+// same routes stay live on routers.App, which also backs the gateway fallback.
 //
 // NOT migrated (deliberately): the duplex WebSocket tunnels — GetNodeTunnel and
 // TunnelMonitor (tunnel.go, guacamole) and DevBridge (dev_bridge.go). A ZAP

@@ -25,8 +25,7 @@
 // Registration follows the per-group convention: this file self-registers its
 // path prefixes from its OWN init() (registerZapRecordsSessionsConnections) into
 // the shared registry — no edit to zap_native.go or any shared registration file.
-// The beego routes in router.go keep serving in parallel until Integrate flips the
-// gateway dispatch to consult the registry.
+// The same routes stay live on routers.App, which also backs the gateway fallback.
 
 package controllers
 
