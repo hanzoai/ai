@@ -31,6 +31,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -151,13 +152,19 @@ func handleGatewayHTTPRequest(ctx context.Context, from string, msg *zap.Message
 }
 
 // dispatchGateway routes an HTTP-over-ZAP request to a migrated group's native
-// handler, reporting whether any group claimed the path. HTTP-shaped routes
-// (method/path/query aware) are tried first, then body-only routes. handled ==
-// false means no group owns the path — the caller falls through to its 404 (and,
-// in production, the same request reaches beego over the forward bridge).
+// handler, reporting whether any group claimed the path. It walks one ordered
+// chain of candidates: the HTTP-shaped routes (method/path/query aware) longest
+// prefix first, then the body-only routes, then the native router. A candidate
+// that returns errDecline says the path is inside its prefix but not one it
+// serves, so the walk continues — that is what keeps a broad prefix like
+// "/v1/models/" from swallowing a sibling ("/v1/models/providers") that another
+// registration owns. handled == false means nothing claimed the path.
 func dispatchGateway(ctx context.Context, method, path, query, auth string, body []byte) (*zap.Message, bool, error) {
-	if h, ok := lookupGatewayRoute(path); ok {
+	for _, h := range lookupGatewayRoutes(path) {
 		msg, err := h(ctx, method, path, query, auth, body)
+		if errors.Is(err, errDecline) {
+			continue
+		}
 		return msg, true, err
 	}
 	if h, ok := lookupGatewayHandler(path); ok {

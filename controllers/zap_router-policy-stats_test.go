@@ -44,7 +44,7 @@ func decodeCloudRPS(t *testing.T, msg *zap.Message) (uint32, Response) {
 // canonical registry: the multi-verb policy noun as an HTTP-shaped ROUTE (method
 // aware), the single-verb nouns as body-only PATHS, and the native cloud methods.
 func TestZapRPSRoutesRegistered(t *testing.T) {
-	if _, ok := lookupGatewayRoute("/v1/router/policy"); !ok {
+	if len(lookupGatewayRoutes("/v1/router/policy")) == 0 {
 		t.Error("/v1/router/policy not registered as an HTTP-shaped gateway route")
 	}
 	for _, p := range []string{
@@ -80,7 +80,7 @@ func TestZapRPSOldCompoundPathsGone(t *testing.T) {
 		"/v1/get-org-settings", "/v1/update-org-settings", "/v1/delete-org-settings",
 		"/v1/add-org-settings", "/v1/get-org-settings-list",
 	} {
-		if _, ok := lookupGatewayRoute(p); ok {
+		if len(lookupGatewayRoutes(p)) > 0 {
 			t.Errorf("retired path %q still resolves an HTTP-shaped route", p)
 		}
 		if _, ok := lookupGatewayHandler(p); ok {

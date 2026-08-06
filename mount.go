@@ -145,11 +145,12 @@ func mountRoutes(app *zip.App) {
 	//
 	// This is the seam that lets an address be described without being
 	// reimplemented. A glob tells the host a prefix and nothing under it, so the
-	// fleet document printed `/v1/{wildcard1}` where the model catalogue and the
-	// limited-preview access flow are: three operations that were authenticated,
-	// reachable and answering in production while no generated SDK, no MCP tool and
-	// no CLI command existed for any of them, and while nothing said who served
-	// them. One address, one owner, one implementation — and now one description.
+	// fleet document printed `/v1/{wildcard1}` where the model catalogue, the
+	// providers projection and the limited-preview access flow are: four operations
+	// that were authenticated, reachable and answering in production while no
+	// generated SDK, no MCP tool and no CLI command existed for any of them, and
+	// while nothing said who served them. One address, one owner, one
+	// implementation — and now one description.
 	register := map[string]func(string, ...zip.Handler) zip.Router{
 		http.MethodGet:    app.Get,
 		http.MethodPost:   app.Post,
@@ -188,10 +189,10 @@ func mountRoutes(app *zip.App) {
 // duplicate address at compose time, and it cannot yet.
 //
 // So an address joins this list when it is known not to be claimed elsewhere.
-// These three are: nothing else in the fleet registers /v1/models or anything
-// under it.
+// These are: nothing else in the fleet registers /v1/models or anything under it.
 var promoted = []string{
 	"/v1/models",
+	"/v1/models/providers",
 	"/v1/models/:model/access",
 }
 
