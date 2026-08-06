@@ -148,6 +148,7 @@ func (c *ApiController) recordZenMediaUsage(model string, authUser *iam.User, is
 		Premium: isPremium, Status: status, ErrorMsg: errMsg,
 		ClientIP: c.Ctx.Request.RemoteAddr, RequestID: reqID, Account: "hanzo",
 	}
+	rec.stampPayer(authUser)
 	recordUsage(rec)
 	recordTrace(c.Ctx.Request.Context(), rec, start)
 }

@@ -250,6 +250,7 @@ func zapAnthropicMessages(ctx context.Context, auth string, reqBody []byte) (int
 				ErrorMsg:  err.Error(),
 				RequestID: requestId,
 			}
+			errRecord.stampPayer(authUser)
 			errRecord.BYO, errRecord.Account = providerBYO(provider, authUser)
 			recordUsage(errRecord)
 			recordTrace(ctx, errRecord, requestStartTime)
@@ -275,6 +276,7 @@ func zapAnthropicMessages(ctx context.Context, auth string, reqBody []byte) (int
 			Status:           "success",
 			RequestID:        requestId,
 		}
+		successRecord.stampPayer(authUser)
 		successRecord.BYO, successRecord.Account = providerBYO(provider, authUser)
 		recordUsage(successRecord)
 		recordTrace(ctx, successRecord, requestStartTime)
@@ -450,6 +452,7 @@ func zapMeterAnthropic(
 			ErrorMsg:         errMsg,
 			RequestID:        requestId,
 		}
+		rec.stampPayer(authUser)
 		rec.BYO, rec.Account = providerBYO(provider, authUser)
 		recordUsage(rec)
 		recordTrace(ctx, rec, requestStartTime)

@@ -264,6 +264,7 @@ func (c *ApiController) Rerank() {
 			ClientIP:     c.Ctx.Request.RemoteAddr,
 			RequestID:    uuid.NewString(),
 		}
+		rec.stampPayer(authUser)
 		recordUsage(rec)
 		recordTrace(c.Ctx.Request.Context(), rec, startTime)
 	}
@@ -351,6 +352,7 @@ func (c *ApiController) proxyJSON(provider *object.Provider, apiPath string, bod
 				ClientIP:  c.Ctx.Request.RemoteAddr,
 				RequestID: requestId,
 			}
+			errRecord.stampPayer(authUser)
 			recordUsage(errRecord)
 			recordTrace(c.Ctx.Request.Context(), errRecord, startTime)
 		}
@@ -393,6 +395,7 @@ func (c *ApiController) proxyJSON(provider *object.Provider, apiPath string, bod
 			ClientIP:     c.Ctx.Request.RemoteAddr,
 			RequestID:    requestId,
 		}
+		rec.stampPayer(authUser)
 		recordUsage(rec)
 		recordTrace(c.Ctx.Request.Context(), rec, startTime)
 	}
