@@ -64,7 +64,7 @@ func TestUnpricedBillingUnchanged(t *testing.T) {
 // row is flagged unpriced, and omits it otherwise (priced assumed true).
 func TestUnpricedSpanAttr(t *testing.T) {
 	flagged := &usageRecord{Owner: "acme", Model: "ghost-model", Status: "success", Unpriced: true}
-	m := attrMap(buildGenAISpanFields(flagged, 0, 0, 0, 0, nil, false).attrs)
+	m := attrMap(buildGenAISpanFields(flagged, 0, 0, 0, usdPtr(0), nil, false).attrs)
 	got, ok := m["gen_ai.hanzo.priced"]
 	if !ok {
 		t.Fatal("gen_ai.hanzo.priced missing on an unpriced row")
@@ -74,7 +74,7 @@ func TestUnpricedSpanAttr(t *testing.T) {
 	}
 
 	priced := &usageRecord{Owner: "acme", Model: "marginmodel", Status: "success"}
-	m = attrMap(buildGenAISpanFields(priced, 0, 0, 0, 0, nil, false).attrs)
+	m = attrMap(buildGenAISpanFields(priced, 0, 0, 0, usdPtr(0), nil, false).attrs)
 	if _, ok := m["gen_ai.hanzo.priced"]; ok {
 		t.Error("gen_ai.hanzo.priced must be absent for a normally-priced row")
 	}
