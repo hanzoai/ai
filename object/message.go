@@ -347,6 +347,12 @@ func (w *MyWriter) Write(p []byte) (n int, err error) {
 	return w.Buffer.Write(p)
 }
 
+// AnswerPrompt is the system prompt an answer runs under when its caller names
+// none. It is a value rather than a literal inside the query so a caller that must
+// PRICE an answer before making it estimates against the same prompt the answer
+// will actually carry.
+const AnswerPrompt = "You are an expert in your field and you specialize in using your knowledge to answer or solve people's problems."
+
 func GetAnswer(provider string, question string, lang string) (string, *model.ModelResult, error) {
 	history := []*model.RawMessage{}
 	knowledge := []*model.RawMessage{}
@@ -358,8 +364,17 @@ func GetAnswerWithContext(provider string, question string, history []*model.Raw
 	if err != nil {
 		return "", nil, err
 	}
+	return QueryAnswer(modelProviderObj, question, history, knowledge, prompt, lang)
+}
+
+// QueryAnswer runs ONE completion against an ALREADY-RESOLVED provider. Resolving a
+// provider by name and running a completion on it are two things, and a caller that
+// gates on price needs the first before it may do the second: it resolves once, dry
+// runs to estimate, and — if the payer can cover it — answers on that same provider.
+// Braided together (as GetAnswerWithContext alone) that caller has to resolve twice.
+func QueryAnswer(modelProviderObj model.ModelProvider, question string, history []*model.RawMessage, knowledge []*model.RawMessage, prompt string, lang string) (string, *model.ModelResult, error) {
 	if prompt == "" {
-		prompt = "You are an expert in your field and you specialize in using your knowledge to answer or solve people's problems."
+		prompt = AnswerPrompt
 	}
 	var writer MyWriter
 	modelResult, err := modelProviderObj.QueryText(question, &writer, history, prompt, knowledge, nil, lang)

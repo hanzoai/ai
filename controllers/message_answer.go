@@ -30,6 +30,13 @@ import (
 	"github.com/hanzoai/ai/util"
 )
 
+// answerOwner is the single tenant every chat-plane row lives under: a chat, its
+// messages and its store are all keyed on it, and the chat plane reads it back
+// verbatim (GetChats, the reply-to lookup, the provider and knowledge lookups all
+// name it). It is therefore also the ledger NAMESPACE an answer's debit lands in,
+// which is why it is a server-side constant and never a value a request may carry.
+const answerOwner = "admin"
+
 // GetMessageAnswer
 // @Title GetMessageAnswer
 // @Tag Message API
@@ -428,13 +435,24 @@ func (c *ApiController) GetAnswer() {
 		}
 	}
 
-	answer, modelResult, err := object.GetAnswer(provider, question, c.GetAcceptLanguage())
+	// Resolve the provider ONCE: the gate below estimates against it and the
+	// completion runs on it, so the call this gate prices is the call it admits.
+	modelProvider, modelProviderObj, err := object.GetModelProviderFromContext(answerOwner, provider, c.GetAcceptLanguage())
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
 	}
 
-	chat, err := object.GetChat(util.GetId("admin", chatName))
+	// Refuse before spending upstream when the payer cannot cover the estimate — the
+	// same pre-flight gate every chat answer runs. `provider` is a client-named model,
+	// so an ungated caller here picks the priciest one and runs it on credit.
+	err = gateBalance(answerOwner, userName, question, nil, object.AnswerPrompt, modelProvider, modelProviderObj, c.GetAcceptLanguage())
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+
+	chat, err := object.GetChat(util.GetId(answerOwner, chatName))
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -443,7 +461,7 @@ func (c *ApiController) GetAnswer() {
 		org := c.GetOrg()
 		currentTime := util.GetCurrentTime()
 		chat = &object.Chat{
-			Owner:         "admin",
+			Owner:         answerOwner,
 			Name:          chatName,
 			CreatedTime:   currentTime,
 			UpdatedTime:   currentTime,
@@ -473,14 +491,14 @@ func (c *ApiController) GetAnswer() {
 		}
 	}
 
-	answer, modelResult, err = object.GetAnswer(provider, question, c.GetAcceptLanguage())
+	answer, modelResult, err := object.QueryAnswer(modelProviderObj, question, nil, nil, object.AnswerPrompt, c.GetAcceptLanguage())
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
 	}
 
 	questionMessage := &object.Message{
-		Owner:        "admin",
+		Owner:        answerOwner,
 		Name:         fmt.Sprintf("message_%s", util.GetRandomName()),
 		CreatedTime:  util.GetCurrentTimeEx(chat.CreatedTime),
 		Organization: chat.Organization,
@@ -501,7 +519,7 @@ func (c *ApiController) GetAnswer() {
 	}
 
 	answerMessage := &object.Message{
-		Owner:         "admin",
+		Owner:         answerOwner,
 		Name:          fmt.Sprintf("message_%s", util.GetRandomName()),
 		CreatedTime:   util.GetCurrentTimeEx(chat.CreatedTime),
 		Organization:  chat.Organization,
@@ -515,10 +533,20 @@ func (c *ApiController) GetAnswer() {
 	}
 
 	answerMessage.TokenCount = modelResult.TotalTokenCount
-	answerMessage.Price = modelResult.TotalPrice
+	answerMessage.Price = model.AddPrices(modelResult.TotalPrice, 0)
 	answerMessage.Currency = modelResult.Currency
 
 	_, err = object.AddMessage(answerMessage)
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+
+	// The ONE debit for this ONE completion: the answer's own price, keyed on the
+	// answer message — the same charge every other message answer takes. The row is
+	// persisted first so a failed debit leaves something the retry cron can find
+	// (AddTransactionForMessage stamps ErrorText on it).
+	err = object.AddTransactionForMessage(answerMessage)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
