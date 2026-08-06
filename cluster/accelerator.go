@@ -21,7 +21,6 @@ import (
 	"time"
 
 	v1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // accelerator.go answers ONE question for the two paths that submit a workload to a
@@ -111,34 +110,19 @@ func acceleratorLimits(resource string, n int) map[string]interface{} {
 }
 
 // advertisedAccelerators reads what this cluster's nodes advertise as allocatable,
-// counting the nodes offering a non-zero amount of each resource. Prefers the
-// informer cache every other read in this package uses; falls back to a live list
-// when the cache is cold, because an unsynced informer must never be mistaken for a
-// cluster without accelerators. Requires ensure() to have run.
-func advertisedAccelerators() (map[string]int, error) {
-	var nodes []*v1.Node
-	if mirror != nil && mirror.started {
-		nodes = mirror.getNodes()
-	}
-	if len(nodes) == 0 {
-		if client == nil {
-			return nil, fmt.Errorf("no Kubernetes client to read the cluster's accelerators from")
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-		list, err := client.clientSet.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
-		if err != nil {
-			return nil, fmt.Errorf("failed to read the cluster's nodes to find an accelerator: %w", err)
-		}
-		for i := range list.Items {
-			nodes = append(nodes, &list.Items[i])
-		}
+// counting the nodes offering a non-zero amount of each resource. A read failure
+// is returned rather than swallowed: an unreachable cluster must never be
+// mistaken for a cluster without accelerators, because that mistake refuses a
+// job the hardware could have run.
+func advertisedAccelerators(ctx context.Context, c K8sClient) (map[string]int, error) {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	nodes, err := listInto[v1.Node](ctx, c, nodesGVR, "")
+	if err != nil {
+		return nil, fmt.Errorf("failed to read the cluster's nodes to find an accelerator: %w", err)
 	}
 	advertised := make(map[string]int)
 	for _, node := range nodes {
-		if node == nil {
-			continue
-		}
 		for name, quantity := range node.Status.Allocatable {
 			if quantity.IsZero() {
 				continue
@@ -152,8 +136,8 @@ func advertisedAccelerators() (map[string]int, error) {
 // acceleratorRequest is the ONE call a workload renderer makes to turn "I need n
 // accelerators" into a scheduler contract this cluster can actually satisfy. It
 // refuses — loudly, before anything is created — when no node advertises one.
-func acceleratorRequest(n int) (map[string]interface{}, error) {
-	advertised, err := advertisedAccelerators()
+func acceleratorRequest(ctx context.Context, c K8sClient, n int) (map[string]interface{}, error) {
+	advertised, err := advertisedAccelerators(ctx, c)
 	if err != nil {
 		return nil, err
 	}

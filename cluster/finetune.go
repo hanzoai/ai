@@ -15,7 +15,7 @@ package cluster
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -23,10 +23,7 @@ import (
 
 	"github.com/hanzoai/ai/object"
 
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 // finetune_k8s.go is the data plane: it renders a schema-valid `trainer.kubeflow.org`
@@ -41,13 +38,6 @@ import (
 // installed in the cluster (hanzo-ml/trainer chart) and a GPU pool that can
 // satisfy resourcesPerNode — those are the cluster prerequisites; the CR itself is
 // complete and correct here.
-
-// trainJobGVR is the GroupVersionResource for TrainJob (trainer.kubeflow.org/v1alpha1).
-var trainJobGVR = schema.GroupVersionResource{
-	Group:    "trainer.kubeflow.org",
-	Version:  "v1alpha1",
-	Resource: "trainjobs",
-}
 
 const hfTokenSecretName = "hf-token"
 
@@ -79,12 +69,9 @@ func normalizeStorageUri(ref string) string {
 // ensureHfTokenSecret creates/updates the in-namespace HF-token Secret (key
 // HF_TOKEN) the initializers reference to pull private/gated repos. No-op (returns
 // "", nil) when no token is configured — public repos still pull.
-func ensureHfTokenSecret(namespace, token, lang string) (string, error) {
+func ensureHfTokenSecret(ctx context.Context, c K8sClient, namespace, token string) (string, error) {
 	if token == "" {
 		return "", nil
-	}
-	if err := ensure(lang); err != nil {
-		return "", err
 	}
 	secret := map[string]interface{}{
 		"apiVersion": "v1",
@@ -101,11 +88,7 @@ func ensureHfTokenSecret(namespace, token, lang string) (string, error) {
 			"HUGGINGFACE_HUB_TOKEN":  token,
 		},
 	}
-	b, err := json.Marshal(secret)
-	if err != nil {
-		return "", err
-	}
-	if err := client.deployResource(string(b), namespace, lang); err != nil {
+	if err := c.Apply(ctx, namespace, secret); err != nil {
 		return "", err
 	}
 	return hfTokenSecretName, nil
@@ -215,32 +198,29 @@ func buildTrainJobObject(job *object.FinetuneJob, hp object.Hyperparams, secretN
 // TrainJob CR. token may be "" (public repos only). Returns the namespace + CR name
 // it used (already set on job before the call).
 func SubmitTrainJob(job *object.FinetuneJob, hp object.Hyperparams, token, lang string) error {
-	if err := ensure(lang); err != nil {
+	c, err := ensure(lang)
+	if err != nil {
 		return err
 	}
+	ctx := context.TODO()
 	// Ask for accelerators the CLUSTER advertises, and refuse before creating a
 	// namespace or a secret when it advertises none.
 	gpuCount := job.GpuCount
 	if gpuCount < 1 {
 		gpuCount = 1
 	}
-	limits, err := acceleratorRequest(gpuCount)
+	limits, err := acceleratorRequest(ctx, c, gpuCount)
 	if err != nil {
 		return fmt.Errorf("cannot train %s: %w", job.Name, err)
 	}
-	if err := client.createNamespaceIfNotExists(job.Namespace); err != nil {
+	if err := createNamespaceIfNotExists(ctx, c, job.Namespace); err != nil {
 		return fmt.Errorf("failed to ensure namespace %s: %w", job.Namespace, err)
 	}
-	secretName, err := ensureHfTokenSecret(job.Namespace, token, lang)
+	secretName, err := ensureHfTokenSecret(ctx, c, job.Namespace, token)
 	if err != nil {
 		return fmt.Errorf("failed to provision HF token secret: %w", err)
 	}
-	obj := buildTrainJobObject(job, hp, secretName, limits)
-	b, err := json.Marshal(obj)
-	if err != nil {
-		return fmt.Errorf("failed to render TrainJob: %w", err)
-	}
-	if err := client.deployResource(string(b), job.Namespace, lang); err != nil {
+	if err := c.Apply(ctx, job.Namespace, buildTrainJobObject(job, hp, secretName, limits)); err != nil {
 		return fmt.Errorf("failed to submit TrainJob: %w", err)
 	}
 	return nil
@@ -259,18 +239,19 @@ type TrainJob struct {
 // TrainJobStatus reads the TrainJob CR and maps its conditions to a
 // object.FinetuneJob status. Found=false (no error) when the CR is gone.
 func TrainJobStatus(job *object.FinetuneJob, lang string) (*TrainJob, error) {
-	if err := ensure(lang); err != nil {
+	c, err := ensure(lang)
+	if err != nil {
 		return nil, err
 	}
-	u, err := client.dynamicClient.Resource(trainJobGVR).Namespace(job.Namespace).
-		Get(context.TODO(), job.CrName, metav1.GetOptions{})
+	obj, err := c.Get(context.TODO(), trainJobGVR.group, trainJobGVR.version, trainJobGVR.resource,
+		job.Namespace, job.CrName)
 	if err != nil {
-		if apierrors.IsNotFound(err) {
+		if errors.Is(err, ErrK8sNotFound) {
 			return &TrainJob{Found: false}, nil
 		}
 		return nil, err
 	}
-	return interpretTrainJob(u), nil
+	return interpretTrainJob(&unstructured.Unstructured{Object: obj}), nil
 }
 
 // interpretTrainJob maps a TrainJob's status.conditions to a object.FinetuneJob
@@ -327,12 +308,13 @@ func interpretTrainJob(u *unstructured.Unstructured) *TrainJob {
 // DeleteTrainJob deletes the TrainJob CR (used for cancel). NotFound is
 // not an error — the desired end state (gone) is already met.
 func DeleteTrainJob(job *object.FinetuneJob, lang string) error {
-	if err := ensure(lang); err != nil {
+	c, err := ensure(lang)
+	if err != nil {
 		return err
 	}
-	err := client.dynamicClient.Resource(trainJobGVR).Namespace(job.Namespace).
-		Delete(context.TODO(), job.CrName, metav1.DeleteOptions{})
-	if err != nil && !apierrors.IsNotFound(err) {
+	err = c.Delete(context.TODO(), trainJobGVR.group, trainJobGVR.version, trainJobGVR.resource,
+		job.Namespace, job.CrName)
+	if err != nil && !errors.Is(err, ErrK8sNotFound) {
 		return err
 	}
 	return nil
