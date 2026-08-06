@@ -206,10 +206,12 @@ func (a *Adapter) createTable() {
 	// cadence; idempotent, so it is a no-op once the rows are clean.
 	backfillNullScalars(a.db, "org_settings", &OrgSettings{})
 	// The message table is the largest here and a whole-model sweep costs a scan per
-	// column, so it is repaired one field at a time. claimed_time is the only column
-	// added since message rows existed, and a NULL there would make its row
-	// unclaimable — a message nobody can answer.
+	// column, so it is repaired one field at a time. These are the columns added since
+	// message rows existed: a NULL claimed_time would make its row unclaimable — a
+	// message nobody can answer — and a NULL in either fails the scan into a string
+	// field before any handler sees the row.
 	backfillNullField(a.db, "message", &Message{}, "ClaimedTime")
+	backfillNullField(a.db, "message", &Message{}, "AnsweredTime")
 }
 
 // RawDB returns the underlying *sql.DB for direct access when needed.
