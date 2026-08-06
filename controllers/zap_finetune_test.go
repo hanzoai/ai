@@ -64,7 +64,7 @@ var finetuneOps = []struct {
 // the recorded reasoning silently false.
 func TestFinetuneHasNoNativeZapClaim(t *testing.T) {
 	for _, op := range finetuneOps {
-		if _, ok := lookupGatewayRoute(op.path); ok {
+		if len(lookupGatewayRoutes(op.path)) > 0 {
 			t.Errorf("%s: an HTTP-shaped registry entry now claims it — the refusal recorded in routers/finetune_router.go is stale", op.path)
 		}
 		if _, ok := lookupGatewayHandler(op.path); ok {
