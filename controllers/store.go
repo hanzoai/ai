@@ -211,6 +211,16 @@ func (c *ApiController) AddStore() {
 		return
 	}
 
+	// A store is created into the same org GetStores reads back, and no other. The
+	// owner arrived on the request body, so an admin of ANY org could file a store
+	// into the chat plane's own tenant — where it is reachable as a default store,
+	// and a default store names the model every chat answer runs and bills.
+	owner, allowed := c.GetScopedOwner()
+	if !allowed {
+		return
+	}
+	store.Owner = owner
+
 	err = object.SyncDefaultProvidersToStore(&store)
 	if err != nil {
 		c.ResponseError(err.Error())
