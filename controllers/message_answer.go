@@ -633,7 +633,8 @@ func (c *ApiController) recordCasibaseChatUsage(chat *object.Chat, provider *obj
 		RequestID:        uuid.NewString(),
 	}
 	if usd {
-		rec.BilledNanoExact = usdToNano(r.TotalPrice)
+		billed := usdToNano(r.TotalPrice)
+		rec.BilledNanoExact = &billed
 	}
 	recordTrace(c.Ctx.Request.Context(), rec, time.Now().UTC())
 }

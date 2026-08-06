@@ -264,6 +264,33 @@ func genAICaptureMessages() bool {
 // any in-flight parent span and inherits its trace/baggage rather than orphaning at
 // a fresh root. No-op when telemetry is disabled (exporter unset); span export is
 // batched/async, so this never blocks the request.
+// genAIMoney is the money view of one call as the o11y span reports it, in USD.
+type genAIMoney struct {
+	total    float64 // the FULL provider cost of the call (analytics)
+	billed   float64 // what the ledger actually charged
+	provider float64 // Hanzo's COGS to serve it
+	margin   float64 // billed − provider
+}
+
+// spanMoney derives that view from usageMargin — the ONE billed path, the same trio
+// stamped on the cloud_usage row and taken by the debit, so the span, the warehouse
+// and the invoice carry one number each.
+//
+// billed used to be recomputed here from the cent-precision rate table while margin
+// beside it came from usageMargin, so a span reported a billed amount and a margin
+// derived from two DIFFERENT figures whenever a caller knew its exact one. For a
+// model with no configured price the table invents the conservative default, so the
+// span could show several times what the invoice charged.
+func spanMoney(record *usageRecord) genAIMoney {
+	mg := usageMargin(record)
+	return genAIMoney{
+		total:    float64(usageCostCents(record)) / 100.0,
+		billed:   float64(mg.BilledNano) / 1e9,
+		provider: float64(mg.CostNano) / 1e9,
+		margin:   float64(mg.MarginNano) / 1e9,
+	}
+}
+
 func emitGenAISpan(ctx context.Context, record *usageRecord, startTime time.Time) {
 	if record == nil || !object.TelemetryEnabled() {
 		return
@@ -272,17 +299,9 @@ func emitGenAISpan(ctx context.Context, record *usageRecord, startTime time.Time
 		ctx = context.Background()
 	}
 
-	// Full provider cost (total, analytics) and the billed amount (what the ledger
-	// charged — == total for Hanzo-served, ~1% platform fee for BYO). Both derive
-	// from the ONE usageCostCents, so the span and the invoice never diverge.
-	costCents := usageCostCents(record)
-	totalCostUSD := float64(costCents) / 100.0
-	billedCostUSD := float64(usageBilledCents(record, costCents)) / 100.0
-	// Provider COGS + margin from the exact nano ledger (usageMargin) — the same trio
-	// stamped on the cloud_usage row, so span and warehouse agree. Rendered as USD.
-	mg := usageMargin(record)
-	providerCostUSD := float64(mg.CostNano) / 1e9
-	marginUSD := float64(mg.MarginNano) / 1e9
+	money := spanMoney(record)
+	totalCostUSD, billedCostUSD := money.total, money.billed
+	providerCostUSD, marginUSD := money.provider, money.margin
 	var breakdown *costBreakdown
 	if record.ImageCount == 0 && record.VideoCount == 0 {
 		b := modelCostBreakdown(record.Model, record.PromptTokens, record.CompletionTokens, record.CacheReadTokens, record.CacheWriteTokens)

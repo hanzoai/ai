@@ -357,3 +357,115 @@ func countIdentCalls(n ast.Node, name string) int {
 	})
 	return count
 }
+
+// nano is a *int64 literal — the shape "this caller knows its exact amount" takes.
+func nano(v int64) *int64 { return &v }
+
+// TestBilledAmountHasOneSource pins the money view of a call to a single number.
+//
+// A caller that knows what it billed says so (BilledNanoExact), and three places
+// report that call: the debit, the warehouse row and the o11y span. They used to
+// read it two ways — the debit and the span's billed_cost recomputed it from the
+// cent-precision rate table while the margin beside them used the exact value — so a
+// model with no configured price billed at the conservative $1/$4 default and the
+// span reported several times what the invoice charged.
+func TestBilledAmountHasOneSource(t *testing.T) {
+	// A completion whose real price is 0.00132 USD, on a model the table has no
+	// price for — so the table leg would invent the conservative default.
+	const price = 0.00132
+	rec := &usageRecord{
+		Model:            "a-model-with-no-configured-price",
+		PromptTokens:     100_000,
+		CompletionTokens: 100_000,
+		Status:           "success",
+		BilledNanoExact:  nano(usdToNano(price)),
+	}
+
+	table := usageBilledNano(rec, usageCostNano(rec))
+	if table == usdToNano(price) {
+		t.Skip("the table happens to agree here; this test needs an unpriced model to be meaningful")
+	}
+
+	if got, want := usageMargin(rec).BilledNano, usdToNano(price); got != want {
+		t.Errorf("warehouse billed_nano = %d, want the exact %d", got, want)
+	}
+	if got, want := usageBilledUSD(rec), nanoToUSD(usdToNano(price)); got != want {
+		t.Errorf("the debit charges %q, want the exact %q (the table would charge %q)", got, want, nanoToUSD(table))
+	}
+}
+
+// TestExactZeroIsAnAmountNotAnAbsence pins exactness as PRESENCE. A turn that billed
+// exactly nothing knows its amount as precisely as any other; read as "unset" it went
+// back to the table, which invents a price for a call that had none.
+func TestExactZeroIsAnAmountNotAnAbsence(t *testing.T) {
+	free := &usageRecord{
+		Model:            "a-model-with-no-configured-price",
+		PromptTokens:     100_000,
+		CompletionTokens: 100_000,
+		Status:           "success",
+		BilledNanoExact:  nano(0),
+	}
+
+	if got := usageMargin(free).BilledNano; got != 0 {
+		t.Errorf("a turn billed exactly nothing reports %d nano, want 0", got)
+	}
+	if got := usageBilledUSD(free); got != "0" {
+		t.Errorf("a turn billed exactly nothing debits %q, want \"0\"", got)
+	}
+}
+
+// TestUnsetExactnessStillUsesTheTable is the other side: a record that names no exact
+// amount resolves exactly as it always did.
+func TestUnsetExactnessStillUsesTheTable(t *testing.T) {
+	rec := &usageRecord{Model: "gpt-4", PromptTokens: 1000, CompletionTokens: 1000, Status: "success"}
+	if got, want := usageMargin(rec).BilledNano, usageBilledNano(rec, usageCostNano(rec)); got != want {
+		t.Errorf("an unstamped record bills %d, want the unchanged table value %d", got, want)
+	}
+}
+
+// TestSpanReportsWhatTheInvoiceCharged pins the o11y span's billed_cost to the same
+// number the ledger took. The span recomputed it from the cent-precision rate table
+// while the margin beside it used the exact value, so one span carried two different
+// billed amounts — and on a model with no configured price the table's is the
+// conservative $1/$4 default, several times the invoice.
+func TestSpanReportsWhatTheInvoiceCharged(t *testing.T) {
+	const price = 0.00132
+	rec := &usageRecord{
+		Model:            "a-model-with-no-configured-price",
+		PromptTokens:     100_000,
+		CompletionTokens: 100_000,
+		Status:           "success",
+		BilledNanoExact:  nano(usdToNano(price)),
+	}
+
+	money := spanMoney(rec)
+	if money.billed != price {
+		t.Errorf("span billed_cost = %v, want the charged %v", money.billed, price)
+	}
+	// The debit, the warehouse row and the span: one number.
+	if got, want := usageBilledUSD(rec), nanoToUSD(usdToNano(price)); got != want {
+		t.Errorf("the debit charges %q while the span reports %v", got, money.billed)
+	}
+	if got := float64(usageMargin(rec).BilledNano) / 1e9; got != money.billed {
+		t.Errorf("warehouse billed_nano = %v, span billed_cost = %v; one call, one number", got, money.billed)
+	}
+	// Margin must be derived from the SAME billed figure, not a second one.
+	if got, want := money.margin, money.billed-money.provider; got != want {
+		t.Errorf("span margin = %v, want billed − provider = %v", got, want)
+	}
+}
+
+// TestSpanReportsNothingForAFreeTurn: a turn that billed exactly nothing must not
+// appear on the span as having cost the caller anything.
+func TestSpanReportsNothingForAFreeTurn(t *testing.T) {
+	free := &usageRecord{
+		Model:            "a-model-with-no-configured-price",
+		PromptTokens:     100_000,
+		CompletionTokens: 100_000,
+		Status:           "success",
+		BilledNanoExact:  nano(0),
+	}
+	if got := spanMoney(free).billed; got != 0 {
+		t.Errorf("span billed_cost = %v for a turn that billed nothing, want 0", got)
+	}
+}
