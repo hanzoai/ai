@@ -318,10 +318,11 @@ func (c *ApiController) GetMessageAnswer() {
 	message.Price = modelResult.TotalPrice
 	message.Currency = modelResult.Currency
 
-	// Land the casibase chat turn in the ONE usage warehouse + o11y span plane
-	// (recordTrace) beside its legacy chat.Price accumulation, so this surface is
-	// no longer warehouse/o11y-blind. Attribution is the chat's own org (the store
-	// owner), not a bearer principal — this path is session/store-scoped.
+	// Land the casibase chat turn in the ONE usage warehouse + o11y span plane, so
+	// this surface is no longer warehouse/o11y-blind. Attribution is the chat's own
+	// org (the store owner), not a bearer principal — this path is session/store-
+	// scoped. Trace only: this completion's ONE debit is AddTransactionForMessage
+	// below.
 	c.recordCasibaseChatUsage(chat, modelProvider, modelResult)
 
 	textAnswer := answer
@@ -541,14 +542,19 @@ func (c *ApiController) GetAnswer() {
 	c.ResponseOk(answer)
 }
 
-// recordCasibaseChatUsage traces a legacy casibase chat turn (store/session-scoped,
-// not bearer-authed) into the ONE usage warehouse + o11y span plane. recordTrace is
-// unconditional (the turn is visible incl. its provider/tokens); recordUsage (the
-// commerce debit) runs only when the legacy price is USD — a non-USD float
-// (message.Currency can be CNY on some providers) must not be debited as dollars, so
-// it is traced-but-not-debited and flagged Unpriced until the legacy-price rip folds
-// currency. The casibase surface already bills via chat.Price/AddTransactionForMessage;
-// this adds observability + the unified ledger row, never a second debit of USD spend.
+// recordCasibaseChatUsage traces a casibase chat turn (store/session-scoped, not
+// bearer-authed) into the ONE usage warehouse + o11y span plane. It TRACES ONLY.
+// The turn's single commerce debit is AddTransactionForMessage, which charges this
+// same completion's message.Price keyed on the message id. recordUsage would reach
+// the SAME object.UsageRecorder hook under a fresh uuid the ledger cannot dedupe,
+// so calling it here charged one completion twice.
+//
+// A USD turn reports its billed amount EXACTLY (BilledNanoExact = the dollars
+// AddTransactionForMessage debits), so the warehouse's billed_nano reconciles with
+// the invoice rather than re-deriving a rate-table guess keyed on a provider name.
+// A non-USD legacy float (message.Currency can be CNY on some providers) is not a
+// dollar amount, so it is left to the recompute and flagged Unpriced until the
+// legacy-price rip folds currency.
 func (c *ApiController) recordCasibaseChatUsage(chat *object.Chat, provider *object.Provider, r *model.ModelResult) {
 	if chat == nil || r == nil {
 		return
@@ -579,7 +585,7 @@ func (c *ApiController) recordCasibaseChatUsage(chat *object.Chat, provider *obj
 		RequestID:        uuid.NewString(),
 	}
 	if usd {
-		recordUsage(rec)
+		rec.BilledNanoExact = usdToNano(r.TotalPrice)
 	}
 	recordTrace(c.Ctx.Request.Context(), rec, time.Now().UTC())
 }
