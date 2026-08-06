@@ -21,18 +21,16 @@
 // ActivateFile, GetActiveFile, Get/Update/Add/DeleteVector, DeleteAllVectors)
 // is re-implemented here as a pure ZAP handler against object/ + iam, mirroring
 // zap_native.go:zapChatHandler. It NEVER wraps or drives the beego controller
-// and never holds an http.ResponseWriter. The beego routes in router.go stay
-// live in parallel until Integrate flips the gateway/native dispatch to consult
-// the tables below.
+// and never holds an http.ResponseWriter. The same routes stay live on
+// routers.App, which also backs the gateway fallback.
 //
 // REGISTRATION (recipe, collision-free — mirrors zap_responses.go): this file
 // declares NO shared registry symbol, so it compiles standalone in the strangler
 // hybrid and never collides with a sibling group's registerCloud/registerGateway
 // definition. It exposes its native-method and gateway-path tables as
 // uniquely-named data (zapKnowledgeCloud / zapKnowledgeGateway) keyed to this
-// group's handlers. Integrate ranges over these to registerCloud(method, h) /
-// registerGatewayPath(path, h) when it flips native dispatch on. No group edits
-// a shared registration file.
+// group's handlers. This file's init() ranges over these to registerCloud(method,
+// h) / registerGatewayPath(path, h). No group edits a shared registration file.
 //
 // PARITY NOTES:
 //   - Query params (owner, id, store, pageSize, p, field, value, sortField,
@@ -42,7 +40,8 @@
 //     Identity is ALWAYS the resolved credential (auth), NEVER a body field.
 //   - Gateway prefixes below overlap (/v1/get-store ⊂ /v1/get-stores ⊂
 //     /v1/get-store-names; likewise get-file/get-files, get-vector/get-vectors).
-//     Integrate MUST match longest-prefix-wins when wiring registerGatewayPath.
+//     lookupGatewayHandler resolves longest-prefix-wins, so each resolves to its
+//     own handler.
 
 package controllers
 

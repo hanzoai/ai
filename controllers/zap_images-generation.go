@@ -20,9 +20,8 @@
 // against object/ + model/ directly, with no http.ResponseWriter. It mirrors
 // zapChatHandler (zap_native.go) exactly; it never wraps the beego controller.
 //
-// The beego route stays live in parallel (strangler). Integrate flips the
-// gateway/native dispatch to consult the registry below, then deletes the beego
-// line once this handler is proven.
+// Both dispatch paths consult the registry below: registerCloud for the native
+// cloud method, registerGatewayPath for the gateway path prefix.
 
 package controllers
 
@@ -43,9 +42,9 @@ import (
 
 // ── Group self-registration ───────────────────────────────────────────────
 //
-// The registry (registerCloud / registerGatewayPath + the lookups Integrate's
-// dispatch consults) is the shared ONE-TIME infra defined in
-// zap_embeddings-rerank.go. This group only self-registers from its own init().
+// The registry (registerCloud / registerGatewayPath and the lookups the dispatch
+// consults) is defined once in zap_registry.go. This group only self-registers
+// from its own init().
 
 func init() {
 	registerCloud("images.generations", zapImagesHandler)

@@ -22,8 +22,8 @@
 // UpdatePermission, AddPermission, DeletePermission) is re-implemented here as a
 // pure ZAP handler against object/ + iam directly — never wrapping the beego
 // controller — mirroring zap_native.go:zapChatHandler and the app-deploy group
-// (zap_application-deploy.go). The beego routes in router.go stay live in
-// parallel (strangler) until Integrate flips native dispatch to these.
+// (zap_application-deploy.go). The same routes stay live on routers.App, which
+// also backs the gateway fallback.
 //
 // Identity/scope parity: these endpoints have NO session filter on the ZAP path
 // (there is no beego filter chain), so every handler fails closed — a verified

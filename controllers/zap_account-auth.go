@@ -15,8 +15,8 @@
 // Native ZAP handlers for the account/auth route-group (strangler migration of
 // controllers/account.go). Pure ZAP handlers — no beego controller, no session,
 // no cookie, no http.ResponseWriter. Identity is the bearer `auth` seam
-// (zapAccountPrincipal), exactly like zapChatHandler. The beego routes in
-// router.go stay live in parallel until Integrate flips dispatch to these.
+// (zapAccountPrincipal), exactly like zapChatHandler. The same routes stay live
+// on routers.App, which also backs the gateway fallback.
 //
 // Routes migrated (behavior preserved 1:1, minus the browser-only session/cookie
 // plumbing that has no meaning on the stateless ZAP wire):
@@ -26,10 +26,9 @@
 //   POST /v1/update-preferences -> zapUpdatePreferencesHandler (method "account.preferences")
 //
 // REGISTRATION: this file self-registers from its own init() via the shared
-// registerCloud / registerGatewayPath seam (the ONE registry that Integrate
-// refactors zap_native.go's hard switch into). This group defines NONE of the
-// registry primitives — it only registers into them — so it never contends with
-// another group's file. Handlers use the canonical native handler signature
+// registerCloud / registerGatewayPath seam (the ONE registry, zap_registry.go).
+// This group defines NONE of the registry primitives — it only registers into
+// them — so it never contends with another group's file. Handlers use the canonical native handler signature
 // func(ctx, auth string, body []byte) (*zap.Message, error).
 //
 // The account endpoints return the beego {status,msg,data,data2} envelope (unlike
