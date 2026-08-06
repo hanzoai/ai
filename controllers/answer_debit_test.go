@@ -449,9 +449,68 @@ func TestSpanReportsWhatTheInvoiceCharged(t *testing.T) {
 	if got := float64(usageMargin(rec).BilledNano) / 1e9; got != money.billed {
 		t.Errorf("warehouse billed_nano = %v, span billed_cost = %v; one call, one number", got, money.billed)
 	}
-	// Margin must be derived from the SAME billed figure, not a second one.
-	if got, want := money.margin, money.billed-money.provider; got != want {
-		t.Errorf("span margin = %v, want billed − provider = %v", got, want)
+}
+
+// TestUnpricedTurnReportsNoMargin: on a model with no configured price the COGS leg
+// is the conservative default, so billed − COGS is a loss nobody took. It was
+// reported as a number. Now there is no number.
+func TestUnpricedTurnReportsNoMargin(t *testing.T) {
+	unpriced := &usageRecord{
+		Model:            "a-model-with-no-configured-price",
+		PromptTokens:     100_000,
+		CompletionTokens: 100_000,
+		Status:           "success",
+		BilledNanoExact:  nano(usdToNano(0.00132)),
+	}
+	if !recordUnpriced(unpriced) {
+		t.Skip("the model gained a configured price; this test needs an unpriced one")
+	}
+	if m := usageMargin(unpriced).MarginNano; m != nil {
+		t.Errorf("warehouse margin_nano = %d on an unpriced turn, want none (billed − an invented COGS is not a margin)", *m)
+	}
+	if m := spanMoney(unpriced).margin; m != nil {
+		t.Errorf("span margin = %v on an unpriced turn, want the attribute omitted", *m)
+	}
+}
+
+// TestStatedCogsIsAMarginEvenOnAnUnpricedModel: a caller that STATED its COGS has a
+// real one, so the subtraction means something and the margin is reported.
+func TestStatedCogsIsAMarginEvenOnAnUnpricedModel(t *testing.T) {
+	rec := &usageRecord{
+		Model:            "a-model-with-no-configured-price",
+		PromptTokens:     100_000,
+		CompletionTokens: 100_000,
+		Status:           "success",
+		BilledNanoExact:  nano(usdToNano(0.00132)),
+		CostNanoExact:    nano(usdToNano(0.0005)),
+	}
+	m := usageMargin(rec).MarginNano
+	if m == nil {
+		t.Fatal("a stated COGS is a real one; the margin must be reported")
+	}
+	if want := usdToNano(0.00132) - usdToNano(0.0005); *m != want {
+		t.Errorf("margin = %d, want %d", *m, want)
+	}
+}
+
+// TestPricedTurnStillReportsItsMargin is the unchanged majority: a model with a
+// configured price has a real COGS, so the subtraction means something.
+func TestPricedTurnStillReportsItsMargin(t *testing.T) {
+	withMarginPricing(t)
+
+	rec := &usageRecord{Model: "marginmodel", PromptTokens: 1000, CompletionTokens: 500, Status: "success"}
+	if recordUnpriced(rec) {
+		t.Fatal("withMarginPricing must make marginmodel priced")
+	}
+	mg := usageMargin(rec)
+	if mg.MarginNano == nil {
+		t.Fatal("a priced turn must still report its margin")
+	}
+	if want := mg.BilledNano - mg.CostNano; *mg.MarginNano != want {
+		t.Errorf("margin = %d, want billed − cost = %d", *mg.MarginNano, want)
+	}
+	if sm := spanMoney(rec).margin; sm == nil {
+		t.Error("a priced turn must still carry the span margin attribute")
 	}
 }
 

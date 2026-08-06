@@ -279,6 +279,14 @@ func zapWriteUsage(record *usageRecord, startTime time.Time) {
 	// margin_nano = billed − cost. Derived here (self-contained, like feeCents) from
 	// the ONE usageMargin so the warehouse row matches the debit and the o11y span.
 	m := usageMargin(record)
+	// An unpriced turn has no computable margin (usageMargin leaves it nil), and the
+	// column is Int64. Write 0, which contributes nothing to a margin sum, rather
+	// than the fabricated loss the invented COGS would produce — the `unpriced` flag
+	// on this same row is what says the money here is a guess.
+	marginNano := int64(0)
+	if m.MarginNano != nil {
+		marginNano = *m.MarginNano
+	}
 	// Honest "priced?" flag — self-contained (this writer runs independent of
 	// recordUsage's stamp): 1 when the model billed at the conservative default.
 	unpriced := uint8(0)
@@ -301,7 +309,7 @@ func zapWriteUsage(record *usageRecord, startTime time.Time) {
 		record.Status, record.ErrorMsg,
 		premium, stream, record.ClientIP,
 		byo, feeCents, record.Account,
-		m.CostNano, m.BilledNano, m.MarginNano, unpriced,
+		m.CostNano, m.BilledNano, marginNano, unpriced,
 	)
 	if err != nil {
 		log.Warn("ZAP: usage write failed: %v", err)

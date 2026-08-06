@@ -113,7 +113,12 @@ func usageBilledNano(record *usageRecord, costNano int64) int64 {
 type costMargin struct {
 	CostNano   int64 // provider COGS to Hanzo (0 for BYO — the customer paid the upstream)
 	BilledNano int64 // what Hanzo debits the org (full for served, 1% platform fee for BYO)
-	MarginNano int64 // BilledNano − CostNano
+	// MarginNano is BilledNano − CostNano, and it is NIL when that subtraction has
+	// no meaning. An unpriced model has no configured rate, so the COGS leg is the
+	// conservative default rather than a cost anyone paid; subtracting an invented
+	// number from a real billed amount yields a figure that reads as a heavy loss
+	// and is not one. Better to report no margin than a fabricated one.
+	MarginNano *int64
 }
 
 // providerCostNano is Hanzo's cost of goods sold for a call, in nano-USD. A BYO call is
@@ -154,7 +159,13 @@ func usageMargin(record *usageRecord) costMargin {
 	if record.CostNanoExact != nil {
 		cost = *record.CostNanoExact
 	}
-	return costMargin{CostNano: cost, BilledNano: billed, MarginNano: billed - cost}
+	m := costMargin{CostNano: cost, BilledNano: billed}
+	// A caller that STATED its COGS has a real one, unpriced model or not.
+	if record.CostNanoExact != nil || !recordUnpriced(record) {
+		margin := billed - cost
+		m.MarginNano = &margin
+	}
+	return m
 }
 
 // usdToNano converts a decimal-USD amount to integer nano-USD — the inverse of
