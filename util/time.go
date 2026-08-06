@@ -23,6 +23,15 @@ func GetCurrentTime() string {
 	return tm.Format(time.RFC3339)
 }
 
+// GetTimeAgo renders the instant d before now in the SAME format as GetCurrentTime.
+// A stored timestamp is compared against a cutoff as a STRING — that is what the
+// database does with these columns — so the two have to be formatted identically or
+// the comparison means nothing.
+func GetTimeAgo(d time.Duration) string {
+	timestamp := time.Now().Add(-d).Unix()
+	return time.Unix(timestamp, 0).Format(time.RFC3339)
+}
+
 func GetCurrentTimeWithMilli() string {
 	tm := time.Now()
 	return tm.Format("2006-01-02T15:04:05.999Z07:00")

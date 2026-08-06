@@ -63,10 +63,27 @@ func (c *ApiController) GetMessageAnswer() {
 		c.ResponseErrorStream(message, "The message is invalid, message replyTo should not be empty")
 		return
 	}
-	if message.Text != "" {
-		c.ResponseErrorStream(message, fmt.Sprintf("The message is invalid, message text should be empty, but got \"%s\"", message.Text))
+	// Take the message before generating anything for it. This replaces the in-memory
+	// `message.Text != ""` test that stood here: that read the answer and acted on it
+	// as two steps, so two concurrent requests for one message — a second tab, an SSE
+	// reconnect — both saw an unanswered message and both generated AND billed it.
+	// The claim tests and acts in one statement, so the database picks one winner.
+	claimed, err := object.ClaimMessageAnswer(message)
+	if err != nil {
+		c.ResponseErrorStream(message, err.Error())
 		return
 	}
+	if !claimed {
+		// A nil message deliberately: ResponseErrorStream PERSISTS the one it is
+		// given, and this request's copy was read before the winner wrote its answer.
+		// Writing it back would erase the answer we refused to duplicate.
+		c.ResponseErrorStream(nil, fmt.Sprintf("The message: %s is already answered or being answered", id))
+		return
+	}
+	// A generation that ends without an answer releases at once, so a failure is
+	// retryable now rather than when the lease runs out. A process that dies never
+	// gets here — that is what the lease is for.
+	defer object.ReleaseMessageAnswer(message)
 
 	if strings.HasPrefix(message.ErrorText, "error, status code: 400, message: The response was filtered due to the prompt triggering") {
 		c.ResponseErrorStream(message, message.ErrorText)
@@ -343,6 +360,10 @@ func (c *ApiController) GetMessageAnswer() {
 	if message.Text != "" {
 		message.ErrorText = ""
 		message.IsAlerted = false
+		// The answer settles the claim: from here the row itself says it is answered,
+		// which is the condition every claim tests. Clearing it keeps the persisted
+		// row honest rather than leaving it looking perpetually in flight.
+		message.ClaimedTime = ""
 	}
 
 	message.Suggestions = textSuggestions
