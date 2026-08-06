@@ -205,6 +205,11 @@ func (a *Adapter) createTable() {
 	// table whose per-org router/judge config the trainer reads at boot and on
 	// cadence; idempotent, so it is a no-op once the rows are clean.
 	backfillNullScalars(a.db, "org_settings", &OrgSettings{})
+	// The message table is the largest here and a whole-model sweep costs a scan per
+	// column, so it is repaired one field at a time. claimed_time is the only column
+	// added since message rows existed, and a NULL there would make its row
+	// unclaimable — a message nobody can answer.
+	backfillNullField(a.db, "message", &Message{}, "ClaimedTime")
 }
 
 // RawDB returns the underlying *sql.DB for direct access when needed.
