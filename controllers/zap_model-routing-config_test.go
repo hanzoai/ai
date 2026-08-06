@@ -40,7 +40,7 @@ func gwResp(t *testing.T, msg *zap.Message) (uint32, Response) {
 }
 
 // TestZapModelRoutingRegistered proves the group self-registers its gateway path
-// prefixes via init(), which handleGatewayHTTPRequest consults. Registration is by
+// prefixes via init(), which the MsgType 200 gateway handler consults. Registration is by
 // longest-prefix, so every path in this group resolves here.
 func TestZapModelRoutingRegistered(t *testing.T) {
 	want := []string{

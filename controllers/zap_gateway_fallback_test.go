@@ -19,6 +19,10 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/luxfi/zap"
+
+	"github.com/hanzoai/ai/object"
 )
 
 // These pin the reason the fallback exists: the ad-hoc MsgType 200 registry
@@ -28,24 +32,23 @@ import (
 
 func TestGatewayFallbackCarriesMethodAndPathParams(t *testing.T) {
 	var gotMethod, gotPath, gotQuery, gotAuth string
-	SetGatewayFallback(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	router := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotMethod, gotPath, gotQuery = r.Method, r.URL.Path, r.URL.RawQuery
 		gotAuth = r.Header.Get("Authorization")
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
-	}))
-	defer SetGatewayFallback(nil)
+	})
 
 	// A member URL: three things the registry could not have distinguished —
 	// the DELETE verb, the two id segments, and the query.
-	_, handled, err := serveGatewayViaRouter(context.Background(),
+	_, handled, err := serveGatewayViaRouter(context.Background(), router,
 		"DELETE", "/v1/ai/stores/acme/my-store", "force=1", "Bearer t", nil)
 	if err != nil {
 		t.Fatalf("serve: %v", err)
 	}
 	if !handled {
-		t.Fatal("a request must be handled when a fallback is installed")
+		t.Fatal("a request must be handled when a router is supplied")
 	}
 	if gotMethod != "DELETE" {
 		t.Errorf("method = %q, want DELETE — the verb is lost", gotMethod)
@@ -64,13 +67,12 @@ func TestGatewayFallbackCarriesMethodAndPathParams(t *testing.T) {
 // A non-2xx from the router must reach the caller as that status, not be
 // flattened into a generic failure — a 401 has to stay a 401.
 func TestGatewayFallbackPreservesStatus(t *testing.T) {
-	SetGatewayFallback(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	router := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write([]byte(`{"status":"error","msg":"nope"}`))
-	}))
-	defer SetGatewayFallback(nil)
+	})
 
-	msg, handled, err := serveGatewayViaRouter(context.Background(), "GET", "/v1/ai/stores", "", "", nil)
+	msg, handled, err := serveGatewayViaRouter(context.Background(), router, "GET", "/v1/ai/stores", "", "", nil)
 	if err != nil || !handled || msg == nil {
 		t.Fatalf("serve: handled=%v err=%v msg=%v", handled, err, msg)
 	}
@@ -110,15 +112,77 @@ func TestNoGatewayPrefixOverTheResourceNamespace(t *testing.T) {
 	}
 }
 
-// With no fallback installed the caller keeps its own 404 — installing the
-// fallback is what turns a miss into a served request, and nothing else changes.
+// A nil router keeps the caller's own 404. That mode now costs an explicit nil at
+// a call site — it is what RouterConfigBridge passes, because it is already inside
+// routers.App and replaying there would re-enter itself.
 func TestGatewayFallbackAbsentIsNotHandled(t *testing.T) {
-	SetGatewayFallback(nil)
-	_, handled, err := serveGatewayViaRouter(context.Background(), "GET", "/v1/ai/stores", "", "", nil)
+	_, handled, err := serveGatewayViaRouter(context.Background(), nil, "GET", "/v1/ai/stores", "", "", nil)
 	if err != nil {
 		t.Fatalf("serve: %v", err)
 	}
 	if handled {
-		t.Error("with no fallback installed the request must NOT be reported handled")
+		t.Error("with a nil router the request must NOT be reported handled")
+	}
+}
+
+// gatewayRequest builds a MsgType 200 message the way the ZAP gateway sends one:
+// method(0:Text) path(8:Text) headers(16:Bytes) body(24:Bytes) query(32:Text).
+func gatewayRequest(t *testing.T, method, path, query string) *zap.Message {
+	t.Helper()
+	b := zap.NewBuilder(256)
+	obj := b.StartObject(40)
+	obj.SetText(0, method)
+	obj.SetText(8, path)
+	obj.SetText(32, query)
+	obj.FinishAsRoot()
+	msg, err := zap.Parse(b.FinishWithFlags(object.MsgTypeHTTPRequest << 8))
+	if err != nil {
+		t.Fatalf("build gateway request: %v", err)
+	}
+	return msg
+}
+
+// The registered MsgType 200 handler is BUILT AROUND its router, so an unclaimed
+// path reaches that router with its verb and its id segments intact. Hand the same
+// constructor nil and the identical request is a 404 — that is the mode the old
+// two-call wiring shipped whenever the second call was missing, and the only way to
+// reach it now is to write the nil.
+func TestGatewayHandlerCarriesItsRouter(t *testing.T) {
+	const path = "/v1/zap-fallback-probe/acme/thing"
+	if len(lookupGatewayRoutes(path)) > 0 {
+		t.Fatalf("%s is claimed by the HTTP-shaped registry — pick a probe path no group owns", path)
+	}
+	if _, ok := lookupGatewayHandler(path); ok {
+		t.Fatalf("%s is claimed by the body-only registry — pick a probe path no group owns", path)
+	}
+
+	var seen *http.Request
+	router := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = r
+		w.WriteHeader(http.StatusTeapot)
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	})
+
+	msg, err := gateway(router)(context.Background(), "gw", gatewayRequest(t, "DELETE", path, "force=1"))
+	if err != nil {
+		t.Fatalf("gateway(router): %v", err)
+	}
+	if seen == nil {
+		t.Fatal("the registered handler never reached its router")
+	}
+	if seen.Method != "DELETE" || seen.URL.Path != path || seen.URL.RawQuery != "force=1" {
+		t.Errorf("router saw %s %s?%s, want DELETE %s?force=1",
+			seen.Method, seen.URL.Path, seen.URL.RawQuery, path)
+	}
+	if got := msg.Root().Uint32(0); got != http.StatusTeapot {
+		t.Errorf("status = %d, want %d — the router's answer must be the caller's answer", got, http.StatusTeapot)
+	}
+
+	msg, err = gateway(nil)(context.Background(), "gw", gatewayRequest(t, "DELETE", path, "force=1"))
+	if err != nil {
+		t.Fatalf("gateway(nil): %v", err)
+	}
+	if got := msg.Root().Uint32(0); got != http.StatusNotFound {
+		t.Errorf("status = %d, want 404 — with no router the gateway can only 404", got)
 	}
 }

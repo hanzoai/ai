@@ -89,8 +89,15 @@ func main() {
 
 	// Initialize ZAP node for native binary protocol.
 	// Listens on port 9999, connects to KV/SQL peers.
+	//
+	// routers.App is the fully-wrapped native router (its filters were installed by
+	// ai.Bootstrap above). The MsgType 200 gateway handler is BUILT around it, so
+	// every path the ad-hoc registry does not claim reaches the same route table the
+	// :8000 surface serves — with its verb and its path parameters intact. It is an
+	// argument, not a follow-up call: without it the gateway 404s everything and
+	// says nothing.
 	object.InitZap()
-	controllers.InitZapHandlers()
+	controllers.InitZapHandlers(routers.App)
 
 	// Inter-service ZAP transport for cloud operations (deploy, status, logs).
 	// Listens on CLOUD_ZAP_PORT (default 9320), separate from inference node.
@@ -108,9 +115,6 @@ func main() {
 	// :8000 HTTP path and the existing ZAP handlers (MsgType 100/200) are
 	// untouched. Gated by ZAP_ENABLED via object.GetZapNode() returning nil.
 	controllers.InitForwardBridge(routers.App)
-	// MsgType 200 requests no ad-hoc registry entry claims are served by the same
-	// router, so the ZAP gateway reaches every route the HTTP surface exposes.
-	controllers.SetGatewayFallback(routers.App)
 
 	go object.ClearThroughputPerSecond()
 
