@@ -627,11 +627,15 @@ type usageRecord struct {
 
 	// BilledNanoExact / CostNanoExact carry an EXACT nano-USD billed amount and
 	// provider COGS when the biller knows them (zen's commerce Meter computes both
-	// per served tier). When > 0 they override usageMargin's table recompute, so a
-	// self-billing subsystem's warehouse row and span carry its true margin instead
-	// of a rate-table approximation. 0 = unset → the table path (unchanged).
-	BilledNanoExact int64 `json:"billedNanoExact,omitempty"`
-	CostNanoExact   int64 `json:"costNanoExact,omitempty"`
+	// per served tier). Set, they are what the call billed and cost, and the table
+	// recompute is not consulted.
+	//
+	// Pointers because exactness is PRESENCE, not positivity. A turn that billed
+	// exactly nothing — a free tier, a zero-price model — knows its amount as
+	// precisely as any other, and a plain int64 could not say so: 0 read as "unset"
+	// sent it back to the table, which invents a price for a call that had none.
+	BilledNanoExact *int64 `json:"billedNanoExact,omitempty"`
+	CostNanoExact   *int64 `json:"costNanoExact,omitempty"`
 
 	// ── o11y gen_ai span enrichment (all optional, best-effort) ──────────────
 	// These carry the observation-of-record attribution the o11y span plane reads

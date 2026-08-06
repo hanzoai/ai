@@ -68,8 +68,8 @@ func TraceServedUsage(ctx context.Context, in ServedUsage) {
 		Status:           in.Status,
 		ErrorMsg:         in.ErrorMsg,
 		RequestID:        in.RequestID,
-		BilledNanoExact:  in.BilledNano,
-		CostNanoExact:    in.CostNano,
+		BilledNanoExact:  &in.BilledNano,
+		CostNanoExact:    &in.CostNano,
 	}
 	recordTrace(ctx, rec, in.StartTime)
 }
