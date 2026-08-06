@@ -326,13 +326,23 @@ func scopedOwnerStamp(n ast.Node, row string) token.Pos {
 	return found
 }
 
-// usesScopedOwner reports whether the node calls c.GetScopedOwner().
+// usesScopedOwner reports whether the node resolves scope through the scoped-owner
+// seam — c.GetScopedOwner() on the beego plane, zapKSFVScopedOwner on its ZAP twin.
+// One rule, named once per plane, so a handler on either satisfies the same pin.
 func usesScopedOwner(n ast.Node) bool {
 	found := false
 	ast.Inspect(n, func(node ast.Node) bool {
-		if sel, ok := node.(*ast.SelectorExpr); ok && sel.Sel.Name == "GetScopedOwner" {
-			found = true
-			return false
+		switch v := node.(type) {
+		case *ast.SelectorExpr:
+			if v.Sel.Name == "GetScopedOwner" {
+				found = true
+				return false
+			}
+		case *ast.Ident:
+			if v.Name == "zapKSFVScopedOwner" {
+				found = true
+				return false
+			}
 		}
 		return true
 	})

@@ -364,10 +364,37 @@ func (c *ApiController) getUserAgent() string {
 	return res
 }
 
+// isName reports whether s is a NAME: the half of an id (`owner/name`) that names a
+// row inside its owner, and the half of a billing subject that names a payer inside
+// its org. Neither half may be empty and neither may carry the separator.
+//
+// On the chat plane that makes it a predicate about money. AddTransactionForMessage
+// builds the subject it debits by joining a row's Owner to its User — but only when
+// the User carries no "/", so "victim/bob" is passed through whole and names another
+// tenant's wallet directly. An empty User leaves the subject "admin/", which is the
+// admin ORG's own pool wallet: Hanzo's platform account, not any customer's.
+func isName(s string) bool {
+	return s != "" && !strings.Contains(s, "/")
+}
+
+// IsCurrentUser reports whether this request may act as usernameInput, and refuses
+// the request when it may not.
+//
+// It answers for NAMES, on both sides, and only for names. Empty used to pass: an
+// unauthenticated request has no session username, so the comparison below read
+// "" != "" and every anonymous caller was the current user of the empty user. The
+// chat plane then wrote that onto a row whose answer bills `admin/` — the admin org's
+// own pool wallet. A usernameInput carrying "/" is not a user either but a whole
+// billing subject, and the admin branch below would wave it through.
 func (c *ApiController) IsCurrentUser(usernameInput string) bool {
 	username := c.GetSessionUsername()
 	if username == "" && c.getAnonymousUsername() == usernameInput {
 		username = c.getAnonymousUsername()
+	}
+
+	if !isName(username) || !isName(usernameInput) {
+		c.ResponseForbidden(c.T("auth:Unauthorized operation"))
+		return false
 	}
 
 	if !c.IsAdmin() && username != usernameInput {
