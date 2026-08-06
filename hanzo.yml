@@ -1,0 +1,24 @@
+# hanzoai/ai — the AI gateway/console service (Go, ~34 packages).
+#
+# Gate only, no `images:`. The Dockerfile here is built by the release lane, and
+# a second producer behind one image name means two builds can disagree about
+# what ghcr.io/hanzoai/ai is.
+#
+# COMPILE AND VET, NOT `go test ./...`, and that is a deliberate line. The
+# suites under object/ open an ORM against a live database (see the ormer setup
+# in object/*_test.go); running them here would paint the gate red for a missing
+# Postgres rather than for broken code, and a gate that is red for reasons no
+# commit can fix gets read as broken CI and then ignored. Standing up the
+# database belongs in an integration lane with a service container, not in the
+# gate every push has to pass.
+#
+# What is left is not nothing: `go build ./...` compiles all 34 packages plus
+# cmd/, so any type error, bad import or broken signature anywhere in the tree
+# fails here, and `go vet` catches the class the compiler allows — printf
+# mismatches, lost cancel funcs, struct tags that silently stop marshalling.
+test:
+  - name: build-and-vet
+    run: |
+      set -e
+      go build ./...
+      go vet ./...
