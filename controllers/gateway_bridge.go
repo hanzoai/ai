@@ -24,8 +24,8 @@ import (
 // RouterConfigBridge is the HTTP transport binding for the RESTful router-config
 // nouns (/v1/router/{policy,defaults,ledger,rewards,artifact-meta} and
 // /v1/org/settings[/list]). It dispatches IN-PROCESS through dispatchGateway —
-// the SAME canonical ZAP gateway registry (zap_registry.go) that
-// handleGatewayHTTPRequest serves over the gateway transport. The native ZAP
+// the SAME canonical ZAP gateway registry (zap_registry.go) that the MsgType 200
+// handler serves over the gateway transport. The native ZAP
 // handler is the ONE and ONLY implementation of these routes; this is purely the
 // api.hanzo.ai HTTP binding, so there is NO beego twin to drift from and the
 // split-brain the router refactor removed stays removed.
@@ -48,8 +48,13 @@ func (c *ApiController) RouterConfigBridge() {
 	c.EnableRender = false
 	req := c.Ctx.Request
 
+	// nil router: this method IS a route inside routers.App, so it has nothing to
+	// fall back to — replaying an unclaimed path through the router would dispatch
+	// straight back here, forever. The registry is the only answer available at this
+	// seam, which is exactly what the !handled arm below reports.
 	msg, handled, err := dispatchGateway(
 		req.Context(),
+		nil,
 		req.Method,
 		req.URL.Path,
 		req.URL.RawQuery,

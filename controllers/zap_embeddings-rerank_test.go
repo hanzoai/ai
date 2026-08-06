@@ -40,7 +40,7 @@ func cloudRespStatus(t *testing.T, msg *zap.Message) (uint32, []byte, string) {
 
 // TestZapEmbeddingsRerankRegistered proves the group self-registers its native
 // method names and gateway path prefixes via init(), which handleCloudService and
-// handleGatewayHTTPRequest consult.
+// the MsgType 200 gateway handler consult.
 func TestZapEmbeddingsRerankRegistered(t *testing.T) {
 	if _, ok := lookupCloudHandler("embeddings"); !ok {
 		t.Fatal("cloud method \"embeddings\" not registered")
