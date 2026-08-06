@@ -188,6 +188,23 @@ func (c *ApiController) UpdateMessage() {
 	id = util.GetIdFromOwnerAndName(chatOwner, name)
 	message.Owner = chatOwner
 
+	// The STORED row says whose turn this is. `message.User` above is a value the
+	// request CARRIES, so it cannot be what authorizes writing over someone else's.
+	storedMessage, err := object.GetMessage(id)
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+	if storedMessage == nil {
+		c.ResponseError(fmt.Sprintf("The message: %s is not found", id))
+		return
+	}
+	if ok = c.IsCurrentUser(storedMessage.User); !ok {
+		return
+	}
+	// A turn's org is the org the usage plane books it to; an update does not move it.
+	message.Organization = storedMessage.Organization
+
 	if message.NeedNotify {
 		err = message.SendEmail(c.GetAcceptLanguage(), c.GetOrg())
 		if err != nil {
@@ -237,6 +254,11 @@ func (c *ApiController) AddMessage() {
 	}
 	// if originMessage not nil, means edit message, delete all later messages
 	if originMessage != nil {
+		// An edit rewrites a STORED turn and drops every turn after it, so the row's
+		// own user authorizes it — not the user this request carries.
+		if ok = c.IsCurrentUser(originMessage.User); !ok {
+			return
+		}
 		err = object.DeleteAllLaterMessages(id)
 		if err != nil {
 			c.ResponseError(err.Error())
@@ -295,13 +317,12 @@ func (c *ApiController) AddMessage() {
 	}
 	var chat *object.Chat
 	if message.Chat == "" {
-		chat, err = c.addInitialChat(message.Organization, message.User, message.Store)
+		chat, err = c.addInitialChat(c.GetOrg(), message.User, message.Store)
 		if err != nil {
 			c.ResponseError(err.Error())
 			return
 		}
 
-		message.Organization = chat.Organization
 		message.Chat = chat.Name
 	} else {
 		chatId := util.GetId(message.Owner, message.Chat)
@@ -316,6 +337,9 @@ func (c *ApiController) AddMessage() {
 			return
 		}
 	}
+	// A turn's org is its CHAT's org — the chat is the row the usage plane reads, and
+	// a turn cannot be booked to a different tenant than the conversation it is in.
+	message.Organization = chat.Organization
 
 	host := c.Ctx.Request.Host
 	origin := getOriginFromHost(host)
@@ -434,6 +458,13 @@ func (c *ApiController) DeleteWelcomeMessage() {
 	message, err = object.GetMessage(id)
 	if err != nil {
 		c.ResponseError(err.Error())
+		return
+	}
+	// GetMessage answers (nil, nil) for an id no row matches, so a miss arrives here as
+	// a nil message rather than as an error. Reading message.User off it panics the
+	// process, and this route serves callers with no session at all.
+	if message == nil {
+		c.ResponseError(fmt.Sprintf("The message: %s is not found", id))
 		return
 	}
 

@@ -360,10 +360,6 @@ func (c *ApiController) GetMessageAnswer() {
 	if message.Text != "" {
 		message.ErrorText = ""
 		message.IsAlerted = false
-		// The answer settles the claim: from here the row itself says it is answered,
-		// which is the condition every claim tests. Clearing it keeps the persisted
-		// row honest rather than leaving it looking perpetually in flight.
-		message.ClaimedTime = ""
 	}
 
 	message.Suggestions = textSuggestions
@@ -372,6 +368,16 @@ func (c *ApiController) GetMessageAnswer() {
 
 	// Normalize price precision before persisting or creating transactions
 	message.Price = model.AddPrices(message.Price, 0)
+
+	// The generation has TERMINATED. Record that before the charge, because it is what
+	// stops this turn being generated and charged a second time — and neither the text
+	// nor the claim can say it: an empty completion leaves `text = ''`, which is the
+	// condition every claim tests, and the claim itself lapses at the end of its lease.
+	// Settling first also covers a persist below that fails after the debit landed.
+	if err = object.SettleMessageAnswer(message); err != nil {
+		c.ResponseErrorStream(message, err.Error())
+		return
+	}
 
 	// Add transaction for message with price
 	err = object.AddTransactionForMessage(message)

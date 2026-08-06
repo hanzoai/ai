@@ -464,13 +464,22 @@ func zapUpdateStoreHandler(_ context.Context, auth string, body []byte) (*zap.Me
 }
 
 func zapAddStoreHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if _, deny := zapKSFVRequireSignedIn(auth); deny != nil {
-		return deny, nil
-	}
 	var store object.Store
 	if err := json.Unmarshal(body, &store); err != nil {
 		return zapKSFVError(err.Error())
 	}
+
+	// A store is created into the same org GetStores reads back, and no other. The
+	// owner arrived on the request body, so a member of ANY org could file a store
+	// into the chat plane's own tenant — where it is reachable as a default store,
+	// and a default store names the model every chat answer runs and bills. This is
+	// the scope the beego twin resolves (AddStore, store.go); only the admin org may
+	// name an owner, and it names it through this seam rather than on the row.
+	owner, _, deny := zapKSFVScopedOwner(auth, store.Owner)
+	if deny != nil {
+		return deny, nil
+	}
+	store.Owner = owner
 
 	if err := object.SyncDefaultProvidersToStore(&store); err != nil {
 		return zapKSFVError(err.Error())

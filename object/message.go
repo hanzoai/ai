@@ -72,6 +72,9 @@ type Message struct {
 	// ClaimedTime is when some request took the right to generate this answer, and
 	// it is empty on a message nobody is answering. See ClaimMessageAnswer.
 	ClaimedTime string `json:"claimedTime"`
+	// AnsweredTime is when a generation TERMINATED on this message, and it is empty
+	// on a message no generation has finished. See SettleMessageAnswer.
+	AnsweredTime string `json:"answeredTime"`
 }
 
 // answerLease bounds how long ONE claim on a message's answer is honored. It exists
@@ -98,12 +101,24 @@ const answerLease = 15 * time.Minute
 // A NULL claim is treated as unclaimed. Rows that predate the column hold SQL NULL
 // until the boot repair reaches them (backfillNullField), and a row nobody can claim
 // is a message nobody can answer.
+//
+// "Unanswered" is two facts, not one. An empty text column alone is what an EMPTY
+// completion leaves behind — a tool-call-only turn, a filtered response, a carrier
+// parse that strips everything — so on its own it would hand that message to the next
+// request to generate AND charge again, forever. answered_time is the other half: it says a
+// generation terminated here, whatever it produced. Both are required because they
+// are independently true — an ordinary UpdateMessage writes text without ever running
+// a generation — and requiring both can only ever refuse a claim, never grant one.
 func ClaimMessageAnswer(message *Message) (bool, error) {
 	now := util.GetCurrentTime()
 	affected, err := updateCols(adapter.db, "message",
 		dbx.And(
 			pk2(message.Owner, message.Name),
 			dbx.NewExp("text = {:unanswered}", dbx.Params{"unanswered": ""}),
+			dbx.Or(
+				dbx.NewExp("answered_time IS NULL"),
+				dbx.NewExp("answered_time = {:unsettled}", dbx.Params{"unsettled": ""}),
+			),
 			dbx.Or(
 				dbx.NewExp("claimed_time IS NULL"),
 				dbx.NewExp("claimed_time = {:unclaimed}", dbx.Params{"unclaimed": ""}),
@@ -120,6 +135,34 @@ func ClaimMessageAnswer(message *Message) (bool, error) {
 	}
 	message.ClaimedTime = now
 	return true, nil
+}
+
+// SettleMessageAnswer records that a generation TERMINATED on this message, so no
+// later request generates it again — whether or not it produced any text.
+//
+// The claim cannot say this by itself. It is held for answerLease and then abandoned,
+// which is right for a generator that died mid-answer and wrong for one that finished
+// empty: the row's text is still empty, so the next request wins the claim, runs the
+// model again and takes a second debit. The debit is not idempotent — the ledger mints
+// its own entry per call (AddTransactionForMessage) — so every repeat is another
+// invoice for one turn.
+//
+// It is its own write, taken BEFORE the charge rather than folded into the row the
+// handler persists afterwards, because a persist that failed after the charge landed
+// would leave the message unanswered and chargeable again. Settling also drops the
+// claim: the generation is over, so the row should not read as in flight.
+func SettleMessageAnswer(message *Message) error {
+	now := util.GetCurrentTime()
+	_, err := updateCols(adapter.db, "message",
+		pk2(message.Owner, message.Name),
+		dbx.Params{"answered_time": now, "claimed_time": ""},
+	)
+	if err != nil {
+		return err
+	}
+	message.AnsweredTime = now
+	message.ClaimedTime = ""
+	return nil
 }
 
 // ReleaseMessageAnswer drops a claim that produced no answer, so a generation that
@@ -227,7 +270,10 @@ func UpdateMessage(id string, message *Message, isHitOnly bool) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	if message == nil {
+	// getMessage answers (nil, nil) for an id no row matches, so a miss arrives here as
+	// a nil origin and not as an error — and reading TextTokenCount off it panics the
+	// process. There is nothing to update, which is what false says.
+	if originMessage == nil || message == nil {
 		return false, nil
 	}
 	if originMessage.TextTokenCount == 0 || originMessage.Text != message.Text {
