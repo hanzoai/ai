@@ -303,23 +303,21 @@ func anthropicToolChoiceToOpenAI(raw json.RawMessage) interface{} {
 // EFFORT ordinal — but the ordinals DIFFER by provider, so the functor is
 // parameterized by the target vocabulary (the codomain category). The shapes
 // are not isomorphic, so this is a lossy, monotone collapse: deeper budget →
-// harder effort. "" means "don't set reasoning_effort" — disabled/absent
-// thinking leaves the upstream at its native default (glm-5.2 / ds4-pro / kimi
-// all reason by default, so this is never a correctness break, only a lost
-// budget hint). Models that ignore the field are unaffected.
+// harder effort. "" means "don't set reasoning_effort" — disabled or absent
+// thinking leaves the target at its native default, and every vocabulary below
+// reasons by default, so omitting the field is never a correctness break, only a
+// lost budget hint. Targets that ignore the field are unaffected.
 //
-// Vocabularies (verified against each model's docs, 2026-07-13):
-//   - glm (glm-5.2, deepseek-v4-pro via DO-AI "DigitalOcean" provider): "max"|"high".
-//     GLM-5.2 defaults to Max; "high" is the half-token ~98%-intelligence tier.
-//     "low"/"medium" are NOT valid GLM values and would be rejected — which is
-//     exactly the kind of upstream error the 429 surfacing fix exists to surface,
-//     so we must never emit them here.
-//   - openai (gpt-5.3-codex etc via the "OpenAI" provider): "low"|"medium"|"high".
+// Two vocabularies, each the exact value set its targets accept:
+//   - "glm": "max"|"high". Emitting "low"/"medium" here would be REJECTED
+//     upstream, so this vocabulary must never produce them.
+//   - "openai": "low"|"medium"|"high".
 //
-// Kimi K2.6 (also via DO-AI) takes a thinking OBJECT, not a reasoning_effort
-// string; the fork's ChatCompletionRequest has no such field, so Kimi keeps its
-// native default (reasons on). Wiring Kimi's object form is a follow-on; the 99%
-// path for `hanzo code claude` is zen5=glm-5.2, which this serves correctly.
+// Which vocabulary a SKU takes is a property of the catalog (HIP-0039), resolved
+// at the call site rather than listed here. A target whose thinking control is an
+// OBJECT rather than a reasoning_effort string is served by neither vocabulary:
+// the fork's ChatCompletionRequest carries no such field, so it keeps its native
+// default and reasons on. Carrying the object form is a follow-on.
 func anthropicThinkingToReasoningEffort(raw json.RawMessage, vocab string) string {
 	if len(raw) == 0 {
 		return ""
