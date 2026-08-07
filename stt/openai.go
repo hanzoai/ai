@@ -88,7 +88,13 @@ func (p *OpenAISpeechToTextProvider) ProcessAudio(audioData io.Reader, ctx conte
 			return "", nil, err
 		}
 	}
-	if err := w.WriteField("response_format", "json"); err != nil {
+	// verbose_json, not json: `duration` rides ONLY on the verbose body, and that
+	// duration is what meters the call (transcription is billed per minute of
+	// audio). Asking for the plain body was the first of two reasons audio billed
+	// nothing. The response is a superset — `text` is present either way — so the
+	// decode below is unchanged and an upstream that ignores the request and
+	// answers plain json still transcribes, it just meters 0.
+	if err := w.WriteField("response_format", "verbose_json"); err != nil {
 		return "", nil, err
 	}
 	if err := w.Close(); err != nil {

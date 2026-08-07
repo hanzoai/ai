@@ -141,7 +141,7 @@ func PrepareTextToSpeech(storeId, providerId, messageId, text string, lang strin
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
-	ttsProvider, err := provider.GetTextToSpeechProvider(lang)
+	ttsProvider, err := provider.GetTextToSpeechProvider(lang, "")
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}

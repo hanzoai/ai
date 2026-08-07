@@ -153,7 +153,7 @@ func zapAudioSpeechHandler(ctx context.Context, auth string, body []byte) (*zap.
 		provider.Flavor = req.Voice
 	}
 
-	ttsProvider, err := provider.GetTextToSpeechProvider("en")
+	ttsProvider, err := provider.GetTextToSpeechProvider("en", req.ResponseFormat)
 	if err != nil {
 		return object.BuildCloudResponse(502, nil, err.Error())
 	}
@@ -168,16 +168,17 @@ func zapAudioSpeechHandler(ctx context.Context, auth string, body []byte) (*zap.
 	}
 	defer release()
 
-	audioData, _, err := ttsProvider.QueryAudio(req.Input, ctx, "en")
+	audioData, ttsResult, err := ttsProvider.QueryAudio(req.Input, ctx, "en")
+	spoken := audioQuantity{chars: ttsCharsOf(ttsResult, req.Input)}
 	if err != nil {
-		zapRecordAudioUsage(ctx, authUser, provider, req.Model, isPremium, "error", err.Error(), startTime)
+		zapRecordAudioUsage(ctx, authUser, provider, req.Model, isPremium, audioQuantity{}, "error", err.Error(), startTime)
 		return object.BuildCloudResponse(502, nil, err.Error())
 	}
 	if len(audioData) == 0 {
-		zapRecordAudioUsage(ctx, authUser, provider, req.Model, isPremium, "error", "empty audio data", startTime)
+		zapRecordAudioUsage(ctx, authUser, provider, req.Model, isPremium, audioQuantity{}, "error", "empty audio data", startTime)
 		return object.BuildCloudResponse(502, nil, "the audio data is nil")
 	}
-	zapRecordAudioUsage(ctx, authUser, provider, req.Model, isPremium, "success", "", startTime)
+	zapRecordAudioUsage(ctx, authUser, provider, req.Model, isPremium, spoken, "success", "", startTime)
 
 	// The native wire carries the audio bytes in the body; the requested format is
 	// the provider's, so no transcode. (audioFormat's content-type hint is applied
@@ -185,10 +186,11 @@ func zapAudioSpeechHandler(ctx context.Context, auth string, body []byte) (*zap.
 	return object.BuildCloudResponse(200, audioData, "")
 }
 
-// zapRecordAudioUsage mirrors ApiController.recordAudioUsage (STEP 6): direct
-// TTS has no price table, so the row bills 0 + Unpriced and stays visible;
-// errors trace either way.
-func zapRecordAudioUsage(ctx context.Context, authUser *iam.User, provider *object.Provider, userModel string, isPremium bool, status, errMsg string, startTime time.Time) {
+// zapRecordAudioUsage mirrors ApiController.recordAudioUsage (STEP 6), quantity
+// and all: the ZAP transport meters the same units through the same cost
+// switches, so a call bills identically whichever door it arrived by. Errors
+// trace either way.
+func zapRecordAudioUsage(ctx context.Context, authUser *iam.User, provider *object.Provider, userModel string, isPremium bool, qty audioQuantity, status, errMsg string, startTime time.Time) {
 	if authUser == nil {
 		return
 	}
@@ -202,7 +204,8 @@ func zapRecordAudioUsage(ctx context.Context, authUser *iam.User, provider *obje
 		Premium:      isPremium,
 		Status:       status,
 		ErrorMsg:     errMsg,
-		Unpriced:     true,
+		AudioSeconds: qty.seconds,
+		AudioChars:   qty.chars,
 		RequestID:    uuid.NewString(),
 	}
 	rec.stampPayer(authUser)
@@ -284,12 +287,12 @@ func zapAudioTranscribeHandler(ctx context.Context, auth string, body []byte) (*
 	}
 	defer release()
 
-	text, _, err := sttProvider.ProcessAudio(form.audio, ctx, "en")
+	text, sttResult, err := sttProvider.ProcessAudio(form.audio, ctx, "en")
 	if err != nil {
-		zapRecordAudioUsage(ctx, authUser, provider, form.model, isPremium, "error", err.Error(), startTime)
+		zapRecordAudioUsage(ctx, authUser, provider, form.model, isPremium, audioQuantity{}, "error", err.Error(), startTime)
 		return object.BuildCloudResponse(502, nil, err.Error())
 	}
-	zapRecordAudioUsage(ctx, authUser, provider, form.model, isPremium, "success", "", startTime)
+	zapRecordAudioUsage(ctx, authUser, provider, form.model, isPremium, audioQuantity{seconds: sttSecondsOf(sttResult)}, "success", "", startTime)
 
 	if form.responseFormat == "text" {
 		return object.BuildCloudResponse(200, []byte(text), "")
@@ -618,8 +621,8 @@ func zapSTTHandler(ctx context.Context, auth string, body []byte) (*zap.Message,
 		return object.BuildCloudResponse(502, nil, err.Error())
 	}
 	startTime := time.Now().UTC()
-	text, _, err := providerObj.ProcessAudio(audioReader, ctx, "en")
-	zapRecordLegacySTTUsage(ctx, store, provider, startTime, err)
+	text, legacyResult, err := providerObj.ProcessAudio(audioReader, ctx, "en")
+	zapRecordLegacySTTUsage(ctx, store, provider, sttSecondsOf(legacyResult), startTime, err)
 	if err != nil {
 		return object.BuildCloudResponse(502, nil, err.Error())
 	}
@@ -675,9 +678,11 @@ func multipartBoundary(body []byte) string {
 	return strings.TrimPrefix(first, "--")
 }
 
-// zapRecordLegacySTTUsage mirrors recordLegacySTTUsage (STEP 6): unpriced row,
-// trace always emitted (errors stay visible).
-func zapRecordLegacySTTUsage(ctx context.Context, store *object.Store, provider *object.Provider, startTime time.Time, callErr error) {
+// zapRecordLegacySTTUsage mirrors recordLegacySTTUsage (STEP 6): the store-bound
+// path meters the same audio seconds as the OpenAI-shaped one, so legacy traffic
+// is measured rather than merely counted. Trace always emitted (errors stay
+// visible).
+func zapRecordLegacySTTUsage(ctx context.Context, store *object.Store, provider *object.Provider, seconds float64, startTime time.Time, callErr error) {
 	if store == nil || provider == nil {
 		return
 	}
@@ -693,7 +698,7 @@ func zapRecordLegacySTTUsage(ctx context.Context, store *object.Store, provider 
 		Currency:     "USD",
 		Status:       status,
 		ErrorMsg:     errMsg,
-		Unpriced:     true,
+		AudioSeconds: seconds,
 		RequestID:    uuid.NewString(),
 	}
 	recordUsage(rec)

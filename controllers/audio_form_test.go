@@ -149,3 +149,33 @@ func TestReadTranscribeRequestNonMultipart(t *testing.T) {
 		t.Errorf("model = %q, want empty", form.model)
 	}
 }
+
+// TestAudioResponseLabelTellsTheTruth is the regression guard for the API
+// lying about what it produced. /v1/audio/speech answered
+// `Content-Type: audio/opus` carrying an MP3, because the relay hardcoded a
+// request for mp3 while the handler labelled the response from the caller's
+// REQUEST. Measured against production before the fix.
+func TestAudioResponseLabelTellsTheTruth(t *testing.T) {
+	// The exact production case: caller asked opus, upstream made mp3.
+	ct, name := audioResponseLabel("audio/mpeg", "opus")
+	if ct != "audio/mpeg" {
+		t.Errorf("content type = %q, want audio/mpeg — the bytes are an MP3 whatever was asked for", ct)
+	}
+	if name != "speech.mp3" {
+		t.Errorf("filename = %q, want speech.mp3", name)
+	}
+
+	// An upstream that honours the request is reported as itself.
+	if ct, _ := audioResponseLabel("audio/wav", "wav"); ct != "audio/wav" {
+		t.Errorf("content type = %q, want audio/wav", ct)
+	}
+
+	// A provider that reports nothing falls back to the requested format: it is
+	// the only information available, and it was the whole contract before.
+	if ct, _ := audioResponseLabel("", "wav"); ct != "audio/wav" {
+		t.Errorf("fallback content type = %q, want audio/wav", ct)
+	}
+	if ct, _ := audioResponseLabel("", ""); ct != "audio/mpeg" {
+		t.Errorf("default content type = %q, want audio/mpeg", ct)
+	}
+}

@@ -334,8 +334,8 @@ func (p *Provider) GetAgentProvider(lang string) (agent.AgentProvider, error) {
 	return pProvider, nil
 }
 
-func (p *Provider) GetTextToSpeechProvider(lang string) (tts.TextToSpeechProvider, error) {
-	pProvider, err := tts.GetTextToSpeechProvider(p.Type, p.SubType, p.ClientId, p.ClientSecret, p.ProviderUrl, p.ApiVersion, p.InputPricePerThousandTokens, p.Currency, p.Flavor, lang)
+func (p *Provider) GetTextToSpeechProvider(lang string, format string) (tts.TextToSpeechProvider, error) {
+	pProvider, err := tts.GetTextToSpeechProvider(p.Type, p.SubType, p.ClientId, p.ClientSecret, p.ProviderUrl, p.ApiVersion, p.InputPricePerThousandTokens, p.Currency, p.Flavor, format, lang)
 	if err != nil {
 		return nil, err
 	}
