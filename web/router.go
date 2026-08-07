@@ -38,9 +38,21 @@ const (
 	FinishRouter
 )
 
-// defaultMaxMemory bounds the request body CopyBody reads (64MB), matching
-// the historical MaxMemory default.
-const defaultMaxMemory int64 = 1 << 26
+// MaxBody bounds what one request body may occupy in this process, in bytes.
+//
+// It is the DECOMPRESSED size — the bytes a handler is handed — because that is
+// the only reading that holds for a compressed body. It is exported so every
+// decoder in the tree bounds itself by the SAME number: a body buys the same
+// allowance whether it arrives gzipped, zstd-framed, or plain, and there is one
+// limit to reason about instead of one per encoding.
+//
+// 64 MiB is the bound plain bodies have always had here, so nothing legitimate
+// is newly refused: the largest real /v1 payloads are an audio upload (25 MiB,
+// bounded again at MaxTranscribeUpload) and a max-context chat prompt (~4 MB of
+// JSON). It is also far under any pod's memory, which is what a bound has to be
+// to mean anything — the read happens above the filter chain, so whatever it
+// admits, an unauthenticated caller can ask for.
+const MaxBody int64 = 1 << 26
 
 // FilterFunc runs against a request context at a filter position.
 type FilterFunc func(*Context)
@@ -78,7 +90,7 @@ type Router struct {
 
 // NewRouter returns an empty Router.
 func NewRouter() *Router {
-	return &Router{maxMemory: defaultMaxMemory}
+	return &Router{maxMemory: MaxBody}
 }
 
 // UseSessions binds a session manager. When set, ServeHTTP starts a session
