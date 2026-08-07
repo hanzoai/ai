@@ -421,19 +421,49 @@ var seededLLMProviders = []Provider{
 		State:        "Active", // first-party video family — keep on
 		IsDefault:    false,
 	},
+	{
+		// Speech served in-cluster by the speech service (ghcr.io/hanzoai/speech):
+		// faster-whisper for STT, kokoro for TTS, both on the OpenAI audio shape.
+		// The whisper/kokoro routes (controllers/model_routes.go) resolve to this
+		// row. Type OpenAI selects the OpenAI-compatible relay in BOTH audio
+		// factories (stt/openai.go, tts/openai.go), which append
+		// /audio/transcriptions and /audio/speech to this /v1 root.
+		//
+		// No ClientSecret: the upstream is a ClusterIP with no ingress and no
+		// authentication, so there is no key to hold. Both relays send an
+		// Authorization header only when the secret is non-empty, so an empty
+		// value is the accurate description, not a missing one — and
+		// ResolveProviderSecret passes a non-"kms://" value through untouched.
+		Owner:        "admin",
+		Name:         "speech",
+		DisplayName:  "Hanzo Speech",
+		Category:     "Model",
+		Type:         "OpenAI",
+		SubType:      "whisper",
+		ProviderUrl:  "http://speech.hanzo.svc/v1",
+		ClientSecret: "",
+		State:        "Active", // first-party speech service — keep on
+		IsDefault:    false,
+	},
 }
 
-// SeededModelProviders returns the seed table projected to name→ProviderUrl.
+// SeededModelProviders returns the seed table keyed by name, each row a value
+// copy so a caller cannot reach back into the table.
+//
+// It projects the WHOLE row rather than one field: the invariants this table
+// must satisfy are not all about the URL (the audio routes need the Type the
+// stt/tts factories switch on), and one complete accessor keeps them assertable
+// without a second parallel projection drifting alongside the first.
 //
 // Exported for the SAME reason FamilyProviderNames is: so the invariants this
 // table must satisfy can be asserted from a package whose suite actually runs.
 // object's own TestMain exits before m.Run() when no seeded database is present,
 // so a guard living here would be inert — false assurance, which is worse than
 // no guard. See controllers/provider_seed_test.go.
-func SeededModelProviders() map[string]string {
-	m := make(map[string]string, len(seededLLMProviders))
+func SeededModelProviders() map[string]Provider {
+	m := make(map[string]Provider, len(seededLLMProviders))
 	for _, p := range seededLLMProviders {
-		m[p.Name] = p.ProviderUrl
+		m[p.Name] = p
 	}
 	return m
 }

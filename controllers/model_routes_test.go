@@ -17,6 +17,8 @@ package controllers
 import (
 	"strings"
 	"testing"
+
+	"github.com/hanzoai/ai/object"
 )
 
 // ── resolveModelRoute ────────────────────────────────────────────────────────
@@ -142,12 +144,23 @@ func TestModelRoutes_NoEmptyFields(t *testing.T) {
 	}
 }
 
+// TestModelRoutes_ProviderNamesAreKnown asserts every route names a provider
+// something actually creates: a seeded row (initLLMProviders) or a model family
+// (whose address is deployment config, so it has no row).
+//
+// The set is DERIVED from those two sources rather than hand-listed. A
+// hand-written copy of the seed table is the second-list bug this package has
+// already paid for twice — familyForProviderType and GetModelProviderByName were
+// both rewritten to remove one — and it fails backwards: seeding a provider
+// correctly makes the copy stale, so the test reports a WORKING route as unknown
+// and the cure looks like deleting the route.
 func TestModelRoutes_ProviderNamesAreKnown(t *testing.T) {
-	known := map[string]bool{
-		"do-ai":         true,
-		"fireworks":     true,
-		"openai-direct": true,
-		"spark-video":   true, // zen3-video* family, seeded in initLLMProviders
+	known := map[string]bool{}
+	for name := range object.SeededModelProviders() {
+		known[name] = true
+	}
+	for _, name := range object.FamilyProviderNames() {
+		known[name] = true
 	}
 	for name, route := range modelRoutes {
 		if !known[route.providerName] {
