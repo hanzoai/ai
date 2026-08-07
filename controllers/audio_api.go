@@ -16,6 +16,7 @@ package controllers
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"mime/multipart"
 	"net/http"
@@ -26,11 +27,28 @@ import (
 	"github.com/hanzoai/ai/object"
 )
 
-// audioFormMaxMemory is how much of a multipart audio body is held in memory
-// before Go spills the rest to a temp file. It matches the bound the ZAP reader
-// gives the same wire shape (parseTranscribeForm), so the two transports accept
-// the same requests.
-const audioFormMaxMemory = 64 << 20
+// MaxTranscribeUpload bounds the audio one transcription request may carry. It
+// is OpenAI's own /v1/audio/transcriptions limit, so every OpenAI-compatible
+// client already chunks below it and none has to learn a Hanzo-specific number.
+//
+// It is also the multipart parser's memory bound, deliberately the SAME number:
+// a form that cannot exceed this can never spill a temp file, so the disk never
+// participates in an upload at all and there is one limit to reason about
+// instead of a wire limit and a spill limit that can drift apart.
+//
+// Size is not the whole bound. Bytes do not determine how much AUDIO they carry
+// — the same 25 MiB is ~13 min of 16 kHz PCM or hours of low-bitrate Opus — so
+// the work a request can buy is bounded by the concurrency ceiling and the rate
+// limit, not by this. See maxSpeechConcurrency.
+const MaxTranscribeUpload = 25 << 20
+
+// MaxSpeechInput bounds the text one synthesis request may carry, in bytes of
+// UTF-8. It is OpenAI's /v1/audio/speech limit, for the same reason.
+//
+// Synthesis cost is LINEAR in input length and the length is known before any
+// work starts, so unlike transcription this bound is exact: it caps the work,
+// not merely the bytes.
+const MaxSpeechInput = 4096
 
 // transcribeRequest is the OpenAI /v1/audio/transcriptions multipart request as
 // read from an HTTP request: the audio part, plus the fields beside it.
@@ -60,22 +78,40 @@ type transcribeRequest struct {
 // A body that will not parse leaves the fields empty and returns the file error,
 // which the caller reports as the 400 it is.
 //
+// The upload bound is installed on the BODY, before the parse, so the bytes are
+// refused as they arrive rather than measured after they have been accepted: a
+// length checked afterwards has already cost the memory it was meant to
+// prevent, and a multipart body has no trustworthy length to check anyway
+// (Content-Length is the client's claim, and a chunked body states none).
+// oversize reports that the reader hit the bound, which the caller answers 413.
+//
 // The ZAP transport reads the same wire shape from a raw body in
-// parseTranscribeForm; both readers are tested against the OpenAI form.
-func readTranscribeRequest(r *http.Request) (transcribeRequest, error) {
-	_ = r.ParseMultipartForm(audioFormMaxMemory)
+// parseTranscribeForm; both readers are tested against the OpenAI form and both
+// enforce MaxTranscribeUpload.
+func readTranscribeRequest(r *http.Request) (req transcribeRequest, oversize bool, err error) {
+	r.Body = http.MaxBytesReader(nil, r.Body, MaxTranscribeUpload)
+	parseErr := r.ParseMultipartForm(MaxTranscribeUpload)
 
-	req := transcribeRequest{
+	req = transcribeRequest{
 		model:          r.Form.Get("model"),
 		language:       r.Form.Get("language"),
 		responseFormat: r.Form.Get("response_format"),
 	}
+	var tooLarge *http.MaxBytesError
+	if errors.As(parseErr, &tooLarge) {
+		return req, true, parseErr
+	}
 	file, _, err := r.FormFile("file")
 	if err != nil {
-		return req, err
+		// FormFile re-parses on a body the bound already cut, so the overflow can
+		// surface here instead of above.
+		if errors.As(err, &tooLarge) {
+			return req, true, err
+		}
+		return req, false, err
 	}
 	req.file = file
-	return req, nil
+	return req, false, nil
 }
 
 // audioSpeechRequest is the OpenAI /v1/audio/speech body: synthesize `input` with
@@ -112,6 +148,7 @@ func (c *ApiController) AudioSpeech() {
 	}
 
 	var req audioSpeechRequest
+	oversize := ""
 	badReq := ""
 	if err := json.Unmarshal(c.Ctx.Input.RequestBody, &req); err != nil {
 		badReq = fmt.Sprintf("Failed to parse request: %s", err.Error())
@@ -119,6 +156,17 @@ func (c *ApiController) AudioSpeech() {
 		badReq = "audio request requires a \"model\" field"
 	} else if req.Input == "" {
 		badReq = "audio request requires an \"input\" field"
+	} else if len(req.Input) > MaxSpeechInput {
+		oversize = fmt.Sprintf("\"input\" exceeds the %d character limit", MaxSpeechInput)
+	}
+	if oversize != "" {
+		// Authenticate before reporting the size, for the reason the 400 below gives.
+		if authErr := c.authenticate(token); authErr != nil {
+			c.ResponseAuthError(authErr)
+			return
+		}
+		c.ResponseErrorWithStatus(http.StatusRequestEntityTooLarge, oversize)
+		return
 	}
 	if badReq != "" {
 		// Authenticate before reporting the client error: an invalid credential is 401
@@ -159,6 +207,15 @@ func (c *ApiController) AudioSpeech() {
 		c.ResponseError(err.Error())
 		return
 	}
+
+	// Admission is taken around the UPSTREAM CALL only — the work — so a slot is
+	// never held across authentication or provider resolution.
+	release, ok := admitSpeech()
+	if !ok {
+		c.ResponseErrorWithStatus(http.StatusTooManyRequests, speechBusyMessage)
+		return
+	}
+	defer release()
 
 	startTime := time.Now().UTC()
 	audioData, _, err := ttsProvider.QueryAudio(req.Input, c.Ctx.Request.Context(), c.GetAcceptLanguage())
@@ -222,8 +279,19 @@ func (c *ApiController) AudioTranscriptions() {
 		return
 	}
 
-	form, fileErr := readTranscribeRequest(c.Ctx.Request)
+	form, oversize, fileErr := readTranscribeRequest(c.Ctx.Request)
 	model := form.model
+	if oversize {
+		// Authenticate first, for the same reason the 400s below do: the size of a
+		// body is not something an unauthenticated caller gets to learn.
+		if authErr := c.authenticate(token); authErr != nil {
+			c.ResponseAuthError(authErr)
+			return
+		}
+		c.ResponseErrorWithStatus(http.StatusRequestEntityTooLarge, fmt.Sprintf(
+			"audio upload exceeds the %d MiB limit", MaxTranscribeUpload>>20))
+		return
+	}
 	badReq := ""
 	if fileErr != nil {
 		badReq = "audio request requires a \"file\" part"
@@ -270,6 +338,14 @@ func (c *ApiController) AudioTranscriptions() {
 		c.ResponseError(err.Error())
 		return
 	}
+
+	// Admission is taken around the UPSTREAM CALL only — see AudioSpeech.
+	release, ok := admitSpeech()
+	if !ok {
+		c.ResponseErrorWithStatus(http.StatusTooManyRequests, speechBusyMessage)
+		return
+	}
+	defer release()
 
 	startTime := time.Now().UTC()
 	text, _, err := sttProvider.ProcessAudio(form.file, c.Ctx.Request.Context(), c.GetAcceptLanguage())

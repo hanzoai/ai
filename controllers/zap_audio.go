@@ -99,6 +99,18 @@ func zapAudioSpeechHandler(ctx context.Context, auth string, body []byte) (*zap.
 	if err := json.Unmarshal(body, &req); err != nil {
 		return object.BuildCloudResponse(400, nil, "invalid request: "+err.Error())
 	}
+	// The SAME bound the HTTP handler applies (MaxSpeechInput): one wire shape,
+	// one limit, so neither transport is the cheap way in.
+	//
+	// Checked with the body's other shape checks, before identity is resolved,
+	// for the reason the transcribe twin below refuses an unparseable body there:
+	// a size is not a credential oracle — it says nothing about the credential —
+	// and every byte of work after this point is work the caller has not yet
+	// earned the right to buy.
+	if len(req.Input) > MaxSpeechInput {
+		return object.BuildCloudResponse(413, nil, fmt.Sprintf(
+			"\"input\" exceeds the %d character limit", MaxSpeechInput))
+	}
 
 	// Identity + provider from the ONE auth seam (STEP 1). Auth is validated
 	// before the body-field checks, so an invalid credential is 401 regardless of
@@ -147,6 +159,15 @@ func zapAudioSpeechHandler(ctx context.Context, auth string, body []byte) (*zap.
 	}
 
 	startTime := time.Now().UTC()
+	// Admission around the UPSTREAM CALL — the SAME ceiling the HTTP handler
+	// takes, and the same channel, so the two transports share one budget rather
+	// than each getting their own.
+	release, ok := admitSpeech()
+	if !ok {
+		return object.BuildCloudResponse(429, nil, speechBusyMessage)
+	}
+	defer release()
+
 	audioData, _, err := ttsProvider.QueryAudio(req.Input, ctx, "en")
 	if err != nil {
 		zapRecordAudioUsage(ctx, authUser, provider, req.Model, isPremium, "error", err.Error(), startTime)
@@ -194,6 +215,15 @@ func zapRecordAudioUsage(ctx context.Context, authUser *iam.User, provider *obje
 func zapAudioTranscribeHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
 	if auth == "" {
 		return object.BuildCloudResponse(401, nil, "authentication required")
+	}
+	// The SAME bound the HTTP handler applies (MaxTranscribeUpload). This
+	// transport is handed the body as one slice, so the bound is checked on the
+	// slice rather than installed on a reader — the bytes are already here, and
+	// the check that matters is the one that keeps them from being PARSED into
+	// three more copies and sent upstream.
+	if len(body) > MaxTranscribeUpload {
+		return object.BuildCloudResponse(413, nil, fmt.Sprintf(
+			"audio upload exceeds the %d MiB limit", MaxTranscribeUpload>>20))
 	}
 	form, err := parseTranscribeForm(body)
 	if err != nil {
@@ -247,6 +277,13 @@ func zapAudioTranscribeHandler(ctx context.Context, auth string, body []byte) (*
 	}
 
 	startTime := time.Now().UTC()
+	// Admission around the UPSTREAM CALL — see the speech handler above.
+	release, ok := admitSpeech()
+	if !ok {
+		return object.BuildCloudResponse(429, nil, speechBusyMessage)
+	}
+	defer release()
+
 	text, _, err := sttProvider.ProcessAudio(form.audio, ctx, "en")
 	if err != nil {
 		zapRecordAudioUsage(ctx, authUser, provider, form.model, isPremium, "error", err.Error(), startTime)
@@ -281,7 +318,7 @@ func parseTranscribeForm(body []byte) (*transcribeForm, error) {
 		return nil, fmt.Errorf("audio request requires a multipart form body")
 	}
 	mr := multipart.NewReader(bytes.NewReader(body), boundary)
-	form, err := mr.ReadForm(64 << 20)
+	form, err := mr.ReadForm(MaxTranscribeUpload)
 	if err != nil {
 		return nil, fmt.Errorf("read multipart form: %s", err.Error())
 	}
@@ -600,7 +637,7 @@ func parseSTTForm(body []byte) (string, *bytes.Reader, error) {
 		return "", nil, fmt.Errorf("Error getting audio audioFile: body is not a multipart form")
 	}
 	mr := multipart.NewReader(bytes.NewReader(body), boundary)
-	form, err := mr.ReadForm(64 << 20)
+	form, err := mr.ReadForm(MaxTranscribeUpload)
 	if err != nil {
 		return "", nil, fmt.Errorf("read multipart form: %s", err.Error())
 	}
