@@ -260,6 +260,94 @@ var videoPricePerVideoCents = map[string]int64{
 	"wan2-2-t2v-a14b": 40,
 }
 
+// ── Audio ── transcription bills per MINUTE, synthesis per MILLION CHARACTERS ─
+//
+// Two maps, not one, because the two directions are priced in different units by
+// every vendor that sells them: transcription per minute of audio (OpenAI's
+// Whisper API, AWS Transcribe, Deepgram) and synthesis per million characters
+// (OpenAI tts, AWS Polly, ElevenLabs). Collapsing them would force one of the two
+// into a unit its market does not quote.
+//
+// Rates are deliberately EMPTY. The metering is the part that was broken — the
+// quantity never reached the record — and it is fixed independently of what we
+// decide to charge. An empty map means no configured rate, which makes
+// recordUnpriced flag the row rather than invent a number, so audio traffic is
+// visible and honest while priced at nothing.
+//
+// TODO(pricing): set sell rates. sttPricePerMinuteCents is CENTS PER MINUTE of
+// audio submitted; ttsPricePerMillionCharsCents is CENTS PER 1,000,000
+// CHARACTERS synthesized. Both are Hanzo sell prices, not COGS — speech runs on
+// our own hardware, so there is no upstream invoice to pass through.
+var sttPricePerMinuteCents = map[string]int64{}
+
+var ttsPricePerMillionCharsCents = map[string]int64{}
+
+// sttCostCents prices a transcription from the audio duration it consumed,
+// rounding UP to the cent so a sub-cent call is never free once a rate is set.
+// No configured rate costs nothing (and the row is flagged Unpriced) rather than
+// falling back to an invented floor: unlike an unknown image model, audio here is
+// OUR service, so an absent rate is a decision not yet made, not a gap to paper
+// over.
+func sttCostCents(model string, seconds float64) int64 {
+	if seconds <= 0 {
+		return 0
+	}
+	perMinute, ok := sttPricePerMinuteCents[strings.ToLower(model)]
+	if !ok || perMinute <= 0 {
+		return 0
+	}
+	minutes := seconds / 60.0
+	return int64(math.Ceil(minutes * float64(perMinute)))
+}
+
+// ttsCostCents prices a synthesis from the characters it spoke, rounding UP to
+// the cent. Same absent-rate rule as sttCostCents.
+func ttsCostCents(model string, chars int) int64 {
+	if chars <= 0 {
+		return 0
+	}
+	perMillion, ok := ttsPricePerMillionCharsCents[strings.ToLower(model)]
+	if !ok || perMillion <= 0 {
+		return 0
+	}
+	return int64(math.Ceil(float64(chars) * float64(perMillion) / 1_000_000.0))
+}
+
+// audioPriced reports whether a configured rate exists for the model in the
+// direction the record measured. It is what keeps the Unpriced flag HONEST
+// without a second hardcoded `Unpriced: true` at every audio emit site: the flag
+// follows the rate table, so setting a rate prices the traffic with no further
+// edit at the call sites.
+func audioPriced(model string, seconds float64, chars int) bool {
+	m := strings.ToLower(model)
+	if seconds > 0 {
+		if rate, ok := sttPricePerMinuteCents[m]; ok && rate > 0 {
+			return true
+		}
+	}
+	if chars > 0 {
+		if rate, ok := ttsPricePerMillionCharsCents[m]; ok && rate > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// recordIsAudio reports whether the record measured an audio quantity, in either
+// direction. The ONE predicate the cost switches and the Unpriced detector share,
+// so they can never disagree about what an audio row is.
+func recordIsAudio(record *usageRecord) bool {
+	return record.AudioSeconds > 0 || record.AudioChars > 0
+}
+
+// audioCostCents prices an audio record from whichever quantity it carries. A
+// record carries at most one direction (a call either transcribes or
+// synthesizes), so the two are summed rather than branched.
+func audioCostCents(record *usageRecord) int64 {
+	return sttCostCents(record.Model, record.AudioSeconds) +
+		ttsCostCents(record.Model, record.AudioChars)
+}
+
 // videoDefaultCostCents is the conservative per-video floor for an unknown video
 // model, so a video call is never silently free. Set to the known real rate.
 const videoDefaultCostCents int64 = 40
@@ -371,6 +459,15 @@ func warnUnpricedOnce(model string) {
 func recordUnpriced(record *usageRecord) bool {
 	if record.ImageCount > 0 || record.VideoCount > 0 {
 		return false
+	}
+	// Audio is priced per minute / per million characters, not per token, so the
+	// token table cannot answer for it. The flag follows the audio rate table:
+	// while no rate is configured the row is honestly Unpriced, and setting one
+	// prices the traffic without touching a single emit site. This replaced a
+	// hardcoded `Unpriced: true` at each audio emitter, which said "no price"
+	// even after a price existed.
+	if recordIsAudio(record) {
+		return !audioPriced(record.Model, record.AudioSeconds, record.AudioChars)
 	}
 	_, ok := getModelPriceForOrgOK(record.Model, "")
 	return !ok

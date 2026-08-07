@@ -81,8 +81,8 @@ func (c *ApiController) ProcessSpeechToText() {
 	// Process the audio data and get the transcription
 	ctx := context.Background()
 	startTime := time.Now().UTC()
-	text, _, err := providerObj.ProcessAudio(audioFile, ctx, c.GetAcceptLanguage())
-	c.recordLegacySTTUsage(store, provider, startTime, err)
+	text, sttResult, err := providerObj.ProcessAudio(audioFile, ctx, c.GetAcceptLanguage())
+	c.recordLegacySTTUsage(store, provider, sttSecondsOf(sttResult), startTime, err)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -93,11 +93,10 @@ func (c *ApiController) ProcessSpeechToText() {
 }
 
 // recordLegacySTTUsage traces the legacy store-bound STT handler into the one
-// usage/o11y plane. The provider result exposes no price surface here, so the
-// row bills 0 and is flagged Unpriced — the paid transcription traffic becomes
-// visible (and errors stay visible: recordTrace is unconditional) instead of
-// invisible. Pricing is the legacy-price rip, tracked separately.
-func (c *ApiController) recordLegacySTTUsage(store *object.Store, provider *object.Provider, startTime time.Time, callErr error) {
+// usage/o11y plane, carrying the SAME audio seconds the OpenAI-shaped path
+// meters — so legacy traffic is measured, not merely counted, and prices itself
+// the moment a rate exists. Errors stay visible: recordTrace is unconditional.
+func (c *ApiController) recordLegacySTTUsage(store *object.Store, provider *object.Provider, seconds float64, startTime time.Time, callErr error) {
 	if store == nil || provider == nil {
 		return
 	}
@@ -113,7 +112,7 @@ func (c *ApiController) recordLegacySTTUsage(store *object.Store, provider *obje
 		Currency:     "USD",
 		Status:       status,
 		ErrorMsg:     errMsg,
-		Unpriced:     true,
+		AudioSeconds: seconds,
 		ClientIP:     c.Ctx.Request.RemoteAddr,
 		RequestID:    uuid.NewString(),
 	}
