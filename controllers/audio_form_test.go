@@ -67,7 +67,7 @@ func TestReadTranscribeRequestReadsFormFields(t *testing.T) {
 	r := httptest.NewRequest("POST", "/v1/audio/transcriptions", body)
 	r.Header.Set("Content-Type", ct)
 
-	form, err := readTranscribeRequest(r)
+	form, _, err := readTranscribeRequest(r)
 	if err != nil {
 		t.Fatalf("readTranscribeRequest: %v", err)
 	}
@@ -98,7 +98,7 @@ func TestReadTranscribeRequestReadsQueryFields(t *testing.T) {
 	r := httptest.NewRequest("POST", "/v1/audio/transcriptions?model=whisper&language=fr", body)
 	r.Header.Set("Content-Type", ct)
 
-	form, err := readTranscribeRequest(r)
+	form, _, err := readTranscribeRequest(r)
 	if err != nil {
 		t.Fatalf("readTranscribeRequest: %v", err)
 	}
@@ -126,7 +126,7 @@ func TestReadTranscribeRequestFieldsSurviveMissingFile(t *testing.T) {
 	r := httptest.NewRequest("POST", "/v1/audio/transcriptions", body)
 	r.Header.Set("Content-Type", w.FormDataContentType())
 
-	form, err := readTranscribeRequest(r)
+	form, _, err := readTranscribeRequest(r)
 	if err == nil {
 		t.Fatal("a body with no file part returned no error")
 	}
@@ -141,7 +141,7 @@ func TestReadTranscribeRequestNonMultipart(t *testing.T) {
 	r := httptest.NewRequest("POST", "/v1/audio/transcriptions", strings.NewReader(`{"model":"whisper"}`))
 	r.Header.Set("Content-Type", "application/json")
 
-	form, err := readTranscribeRequest(r)
+	form, _, err := readTranscribeRequest(r)
 	if err == nil {
 		t.Fatal("a JSON body was accepted as a transcription form")
 	}

@@ -32,6 +32,11 @@ type Input struct {
 	data        map[interface{}]interface{}
 	dataLock    sync.RWMutex
 	RequestBody []byte
+
+	// BodyTooLarge reports that the request carried more body than CopyBody was
+	// allowed to read. It is the difference between a body AT the bound and one
+	// OVER it, which a truncated read cannot express on its own — see CopyBody.
+	BodyTooLarge bool
 }
 
 // NewInput returns an empty Input.
@@ -53,6 +58,7 @@ func (input *Input) Reset(ctx *Context) {
 	input.data = nil
 	input.dataLock.Unlock()
 	input.RequestBody = []byte{}
+	input.BodyTooLarge = false
 }
 
 // URL returns the request path without query string or fragment.
@@ -142,23 +148,39 @@ func (input *Input) Session(key interface{}) interface{} {
 
 // CopyBody reads the request body once (up to maxMemory, transparently
 // gunzipping a gzip-encoded body), caches it on RequestBody, and rewinds
-// Request.Body from the cache so later readers see the same bytes.
+// Request.Body from the cache so later readers see the same bytes. It sets
+// BodyTooLarge when the body exceeded maxMemory.
+//
+// The bound is on the bytes the HANDLER SEES, which is the only reading of a
+// body limit that holds for a compressed body: a gzip stream costs what it
+// EXPANDS to, not what it costs to send. Bounding the compressed stream alone
+// bounds nothing — DEFLATE's ratio ceiling is ~1030:1, so 255 KiB on the wire
+// becomes 256 MiB in this process, and the read runs before any filter and so
+// before authentication. The limit therefore sits on the DECOMPRESSED reader.
+//
+// One byte past the bound is read on purpose: a body that is exactly at the
+// limit and one that runs past it are otherwise the same length here, and
+// telling them apart is what lets the router answer 413 rather than truncate
+// the body silently and let it fail later as an unintelligible parse error.
 func (input *Input) CopyBody(maxMemory int64) []byte {
 	if input.Context.Request.Body == nil {
 		return []byte{}
 	}
-	safe := &io.LimitedReader{R: input.Context.Request.Body, N: maxMemory}
-	var requestbody []byte
+	// +1 so a body at exactly maxMemory is not mistaken for one over it.
+	src := io.Reader(&io.LimitedReader{R: input.Context.Request.Body, N: maxMemory + 1})
 	if input.Header("Content-Encoding") == "gzip" {
-		reader, err := gzip.NewReader(safe)
+		reader, err := gzip.NewReader(src)
 		if err != nil {
 			return nil
 		}
-		requestbody, _ = io.ReadAll(reader)
-	} else {
-		requestbody, _ = io.ReadAll(safe)
+		src = &io.LimitedReader{R: reader, N: maxMemory + 1}
 	}
+	requestbody, _ := io.ReadAll(src)
 	input.Context.Request.Body.Close()
+	if int64(len(requestbody)) > maxMemory {
+		input.BodyTooLarge = true
+		requestbody = requestbody[:maxMemory]
+	}
 	bf := bytes.NewBuffer(requestbody)
 	input.Context.Request.Body = http.MaxBytesReader(input.Context.ResponseWriter, io.NopCloser(bf), maxMemory)
 	input.RequestBody = requestbody

@@ -16,6 +16,7 @@ package web
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"path"
 	"reflect"
@@ -120,10 +121,24 @@ func (p *Router) InsertFilter(pattern string, pos int, filter FilterFunc, params
 // ServeHTTP builds the request context, caches the body, runs the filter
 // chain around the matched controller method, and recovers a StopRun abort or
 // a handler panic.
+//
+// A body over the bound is refused here, above the filter chain and above the
+// router, because that is where the body was read: every handler below this
+// line is entitled to assume the bytes it was handed are all the bytes that
+// were sent. Answering 413 with the bound named is also the only answer that
+// tells a caller what to do — a truncated body reaches the handler as a
+// half-parsed form and is reported as whatever field went missing.
 func (p *Router) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	ctx := NewContext()
 	ctx.Reset(rw, r)
 	ctx.Input.CopyBody(p.maxMemory)
+	if ctx.Input.BodyTooLarge {
+		ctx.Output.SetStatus(http.StatusRequestEntityTooLarge)
+		ctx.Output.Header("Content-Type", "application/json; charset=utf-8")
+		ctx.Output.Body([]byte(fmt.Sprintf(
+			`{"status":"error","msg":"request body exceeds the %d MiB limit"}`, p.maxMemory>>20)))
+		return
+	}
 
 	defer func() {
 		if err := recover(); err != nil {
