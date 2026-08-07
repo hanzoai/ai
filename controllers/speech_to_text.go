@@ -33,20 +33,23 @@ import (
 // @Success 200 {object} controllers.SpeechToTextResponse The transcribed text
 // @router /process-speech-to-text [post]
 func (c *ApiController) ProcessSpeechToText() {
-	// Get parameters from form data
-	storeId := c.GetString("storeId")
-	if storeId == "" {
-		c.ResponseError(c.T("stt:Missing required parameter: storeId"))
-		return
-	}
-
-	// Get the audio audioFile from the request
+	// Read the audio part FIRST: doing so parses the multipart body, and until
+	// something does, beego resolves GetString against an r.Form that Go has not
+	// filled yet — so storeId, a form field here, read empty and this handler
+	// refused every request that carried one. Same ordering hazard the OpenAI
+	// transcription endpoint carried; see readTranscribeRequest.
 	audioFile, _, err := c.GetFile("audio")
 	if err != nil {
 		c.ResponseError(fmt.Sprintf("Error getting audio audioFile: %s", err.Error()))
 		return
 	}
 	defer audioFile.Close()
+
+	storeId := c.GetString("storeId")
+	if storeId == "" {
+		c.ResponseError(c.T("stt:Missing required parameter: storeId"))
+		return
+	}
 
 	store, err := object.GetStore(storeId)
 	if err != nil {
