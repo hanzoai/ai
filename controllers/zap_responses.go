@@ -37,17 +37,20 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/hanzoai/ai/log"
 	openai "github.com/hanzoai/go-openai"
+	"github.com/klauspost/compress/zstd"
 	"github.com/luxfi/zap"
 
 	"github.com/hanzoai/ai/model"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
+	"github.com/hanzoai/ai/web"
 )
 
 // ── ZAP dispatch tables (group-local, collision-free) ───────────────────
@@ -94,6 +97,13 @@ func zapResponsesHandler(ctx context.Context, auth string, body []byte) (*zap.Me
 	if responsesBodyIsZstd(body) {
 		decoded, err := decodeResponsesZstd(body)
 		if err != nil {
+			// Over the bound is 413, not 400 — the body is too big, not malformed,
+			// and only one of those tells the caller to send less. Same bound and
+			// same answer as the HTTP transport.
+			if errors.Is(err, zstd.ErrDecoderSizeExceeded) {
+				return object.BuildCloudResponse(413, nil, fmt.Sprintf(
+					"request body exceeds the %d MiB limit", web.MaxBody>>20))
+			}
 			return object.BuildCloudResponse(400, nil, "Failed to decompress zstd request: "+err.Error())
 		}
 		body = decoded
