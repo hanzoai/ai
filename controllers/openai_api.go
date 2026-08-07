@@ -600,6 +600,23 @@ type usageRecord struct {
 	// either an image or a video generation, never both).
 	VideoCount int `json:"videoCount,omitempty"`
 
+	// AudioSeconds is the DURATION of audio a speech-to-text call consumed, and
+	// AudioChars the number of characters a text-to-speech call synthesized.
+	// Audio bills per unit like images and video, but the unit differs by
+	// DIRECTION — the market prices transcription per minute and synthesis per
+	// million characters — so the two travel separately rather than collapsing
+	// into one "audio units" field that means different things per row.
+	//
+	// A speech model that bills TOKENS instead (an ASR pipeline decoding through
+	// an LM) needs no field here: it fills PromptTokens/CompletionTokens like any
+	// other token-billed call. The record carries what was actually consumed.
+	//
+	// Both were previously discarded at the emit sites, which is why audio rows
+	// billed 0: the quantity never reached the record, so the token math it fell
+	// through to had nothing to multiply.
+	AudioSeconds float64 `json:"audioSeconds,omitempty"`
+	AudioChars   int     `json:"audioChars,omitempty"`
+
 	// BYO marks a call executed against a customer-connected third-party account
 	// (the caller's org supplied its own provider key via /v1/ai/connections),
 	// rather than a Hanzo-served provider bought with Hanzo credits. When true the
@@ -741,6 +758,8 @@ func usageCostCents(record *usageRecord) int64 {
 		return videoCostCents(record.Model, record.VideoCount)
 	case record.ImageCount > 0:
 		return imageCostCents(record.Model, record.ImageCount)
+	case recordIsAudio(record):
+		return audioCostCents(record)
 	default:
 		return calculateCostCentsWithCache(
 			record.Model, record.PromptTokens, record.CompletionTokens,
@@ -857,6 +876,8 @@ func recordUsage(record *usageRecord) {
 		"cacheWriteTokens": record.CacheWriteTokens,
 		"imageCount":       record.ImageCount,
 		"videoCount":       record.VideoCount,
+		"audioSeconds":     record.AudioSeconds,
+		"audioChars":       record.AudioChars,
 		"requestId":        record.RequestID,
 		"premium":          record.Premium,
 		"stream":           record.Stream,

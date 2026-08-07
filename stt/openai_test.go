@@ -45,8 +45,10 @@ func TestOpenAIProcessAudio(t *testing.T) {
 		if got := r.FormValue("language"); got != "de" {
 			t.Errorf("language = %q, want de", got)
 		}
-		if got := r.FormValue("response_format"); got != "json" {
-			t.Errorf("response_format = %q, want json", got)
+		// verbose_json, not json: `duration` rides only on the verbose body, and
+		// that duration is what meters the call (transcription bills per minute).
+		if got := r.FormValue("response_format"); got != "verbose_json" {
+			t.Errorf("response_format = %q, want verbose_json", got)
 		}
 		f, _, err := r.FormFile("file")
 		if err != nil {

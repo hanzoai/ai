@@ -87,6 +87,8 @@ func usageCostNano(record *usageRecord) int64 {
 		return videoCostCents(record.Model, record.VideoCount) * 10_000_000 // 1¢ = 1e7 nano
 	case record.ImageCount > 0:
 		return imageCostCents(record.Model, record.ImageCount) * 10_000_000
+	case recordIsAudio(record):
+		return audioCostCents(record) * 10_000_000
 	default:
 		return tokenCostNano(record.Model, record.PromptTokens, record.CompletionTokens,
 			record.CacheReadTokens, record.CacheWriteTokens)
@@ -135,6 +137,13 @@ func providerCostNano(record *usageRecord) int64 {
 		return videoCostCents(record.Model, record.VideoCount) * 10_000_000 // 1¢ = 1e7 nano
 	case record.ImageCount > 0:
 		return imageCostCents(record.Model, record.ImageCount) * 10_000_000
+	case recordIsAudio(record):
+		// Speech runs on hardware we already own, so there is no upstream invoice
+		// to pass through: COGS is 0 and the margin on an audio call is the whole
+		// price. Stated explicitly rather than reached by falling through to token
+		// math that happens to yield 0 on a record with no tokens — the two agree
+		// today by accident, and only one of them is the reason.
+		return 0
 	default:
 		return tokenProviderCostNano(record.Model, record.PromptTokens, record.CompletionTokens,
 			record.CacheReadTokens, record.CacheWriteTokens)

@@ -36,17 +36,22 @@ type OpenAITextToSpeechProvider struct {
 	secret  string
 	url     string
 	voice   string
+	format  string
 }
 
-func NewOpenAITextToSpeechProvider(subType string, clientSecret string, providerUrl string, voice string) (*OpenAITextToSpeechProvider, error) {
+func NewOpenAITextToSpeechProvider(subType string, clientSecret string, providerUrl string, voice string, format string) (*OpenAITextToSpeechProvider, error) {
 	if providerUrl == "" {
 		return nil, fmt.Errorf("tts: OpenAI provider requires a provider URL")
+	}
+	if format == "" {
+		format = "mp3" // OpenAI's default, and the one every browser plays
 	}
 	return &OpenAITextToSpeechProvider{
 		subType: subType,
 		secret:  clientSecret,
 		url:     strings.TrimRight(providerUrl, "/") + "/audio/speech",
 		voice:   voice,
+		format:  format,
 	}, nil
 }
 
@@ -56,11 +61,13 @@ func (p *OpenAITextToSpeechProvider) GetPricing() string {
 Billed by the upstream per synthesized character; unpriced here (the usage row is flagged Unpriced).`
 }
 
-// speechRequest is the OpenAI /v1/audio/speech body. response_format is fixed to
-// mp3: the format the caller asked for reaches the HANDLER, not the provider
-// (TextToSpeechProvider carries no format argument), and mp3 is what the
-// handler's audioFormat labels the bytes with by default — so requesting it
-// keeps the synthesized bytes and the declared content type in agreement.
+// speechRequest is the OpenAI /v1/audio/speech body. response_format carries the
+// caller's requested container: it used to be hardcoded to mp3 here while the
+// handler labelled the response from the REQUEST, so asking for opus returned
+// `Content-Type: audio/opus` wrapping an MP3. The request is forwarded, and what
+// the upstream actually produced is reported back on the result — an upstream
+// that ignores the field is then described truthfully rather than taken at its
+// word.
 type speechRequest struct {
 	Model          string `json:"model"`
 	Input          string `json:"input"`
@@ -78,7 +85,7 @@ func (p *OpenAITextToSpeechProvider) QueryAudio(text string, ctx context.Context
 		Model:          p.subType,
 		Input:          text,
 		Voice:          p.voice,
-		ResponseFormat: "mp3",
+		ResponseFormat: p.format,
 	})
 	if err != nil {
 		return nil, res, err
@@ -110,6 +117,8 @@ func (p *OpenAITextToSpeechProvider) QueryAudio(text string, ctx context.Context
 	if len(audio) == 0 {
 		return nil, res, fmt.Errorf("tts: upstream returned no audio")
 	}
+	// What it IS, not what we asked for.
+	res.ContentType = strings.TrimSpace(strings.Split(resp.Header.Get("Content-Type"), ";")[0])
 	return audio, res, nil
 }
 

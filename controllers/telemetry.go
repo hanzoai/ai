@@ -316,7 +316,10 @@ func emitGenAISpan(ctx context.Context, record *usageRecord, startTime time.Time
 	totalCostUSD, billedCostUSD := money.total, money.billed
 	providerCostUSD, marginUSD := money.provider, money.margin
 	var breakdown *costBreakdown
-	if record.ImageCount == 0 && record.VideoCount == 0 {
+	// A token breakdown describes a token-billed call. Image, video and audio all
+	// bill per unit and carry no tokens, so computing one would report a cost
+	// structure the call does not have.
+	if record.ImageCount == 0 && record.VideoCount == 0 && !recordIsAudio(record) {
 		b := modelCostBreakdown(record.Model, record.PromptTokens, record.CompletionTokens, record.CacheReadTokens, record.CacheWriteTokens)
 		breakdown = &b
 	}
