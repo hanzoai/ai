@@ -37,10 +37,11 @@ import (
 func TestSeededFamilyProvidersDoNotCarryV1(t *testing.T) {
 	seeded := object.SeededModelProviders()
 	for _, name := range object.FamilyProviderNames() {
-		url, isSeeded := seeded[name]
+		row, isSeeded := seeded[name]
 		if !isSeeded {
 			continue
 		}
+		url := row.ProviderUrl
 		if strings.HasSuffix(strings.TrimRight(url, "/"), "/v1") {
 			t.Errorf("seeded family provider %q has ProviderUrl %q ending in /v1; "+
 				"the family paths append /v1 themselves, so every call would 404",
@@ -58,8 +59,8 @@ func TestSeededFamilyProvidersDoNotCarryV1(t *testing.T) {
 // would merely aim zen at DigitalOcean's catalog instead of the service that
 // actually serves zen SKUs.
 func TestZenIsNotSeeded(t *testing.T) {
-	if url, ok := object.SeededModelProviders()["zen"]; ok {
+	if row, ok := object.SeededModelProviders()["zen"]; ok {
 		t.Fatalf("zen must not be seeded: its address is ZEN_URL and a seeded row "+
-			"overrides it (got ProviderUrl %q)", url)
+			"overrides it (got ProviderUrl %q)", row.ProviderUrl)
 	}
 }
