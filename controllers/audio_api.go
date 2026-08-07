@@ -25,6 +25,8 @@ import (
 	"github.com/google/uuid"
 	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/object"
+	"github.com/hanzoai/ai/stt"
+	"github.com/hanzoai/ai/tts"
 )
 
 // MaxTranscribeUpload bounds the audio one transcription request may carry. It
@@ -202,7 +204,7 @@ func (c *ApiController) AudioSpeech() {
 		provider.Flavor = req.Voice
 	}
 
-	ttsProvider, err := provider.GetTextToSpeechProvider(c.GetAcceptLanguage())
+	ttsProvider, err := provider.GetTextToSpeechProvider(c.GetAcceptLanguage(), req.ResponseFormat)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -218,28 +220,45 @@ func (c *ApiController) AudioSpeech() {
 	defer release()
 
 	startTime := time.Now().UTC()
-	audioData, _, err := ttsProvider.QueryAudio(req.Input, c.Ctx.Request.Context(), c.GetAcceptLanguage())
+	audioData, ttsResult, err := ttsProvider.QueryAudio(req.Input, c.Ctx.Request.Context(), c.GetAcceptLanguage())
+	spoken := audioQuantity{chars: ttsCharsOf(ttsResult, req.Input)}
 	if err != nil {
-		c.recordAudioUsage(authUser, provider, req.Model, isPremium, "error", err.Error(), startTime)
+		c.recordAudioUsage(authUser, provider, req.Model, isPremium, audioQuantity{}, "error", err.Error(), startTime)
 		c.ResponseError(err.Error())
 		return
 	}
 	if len(audioData) == 0 {
-		c.recordAudioUsage(authUser, provider, req.Model, isPremium, "error", "empty audio data", startTime)
+		c.recordAudioUsage(authUser, provider, req.Model, isPremium, audioQuantity{}, "error", "empty audio data", startTime)
 		c.ResponseError(c.T("tts:The audio data is nil"))
 		return
 	}
-	c.recordAudioUsage(authUser, provider, req.Model, isPremium, "success", "", startTime)
+	c.recordAudioUsage(authUser, provider, req.Model, isPremium, spoken, "success", "", startTime)
 
-	contentType, filename := audioFormat(req.ResponseFormat)
+	contentType, filename := audioResponseLabel(ttsResult.ContentType, req.ResponseFormat)
 	c.ResponseAudio(audioData, contentType, filename)
 }
 
-// audioFormat maps the OpenAI response_format to a content type + filename. Defaults
-// to mp3 (OpenAI's default); the synthesis format is the provider's, so this is the
-// wire content-type hint, not a transcode.
-func audioFormat(format string) (contentType, filename string) {
-	switch format {
+// audioResponseLabel names the bytes that were actually synthesized.
+//
+// The provider's REPORTED media type wins, and the requested format is only the
+// fallback for a provider that did not say. Labelling from the request is how
+// /v1/audio/speech came to answer `Content-Type: audio/opus` carrying an MP3:
+// the upstream silently substitutes its default for a container it cannot make,
+// and the gateway repeated the request back as though it were a fact. A player
+// handed the wrong container is entitled to refuse it, so this is a correctness
+// bug and not a cosmetic one.
+// It is the ONLY way to label an audio response, deliberately: the request-only
+// mapping used to be a callable function of its own, so the wrong answer stayed
+// one edit away and a test could not stop someone reaching for it again. Folding
+// it in as the unreachable-by-itself fallback makes labelling from the request
+// alone not something the code can express.
+func audioResponseLabel(actual, requested string) (contentType, filename string) {
+	if actual != "" {
+		return actual, "speech" + audioExtension(actual)
+	}
+	// No media type from the provider: the request is the only information
+	// there is, and it was the entire contract before this.
+	switch requested {
 	case "wav":
 		return "audio/wav", "speech.wav"
 	case "opus":
@@ -249,7 +268,28 @@ func audioFormat(format string) (contentType, filename string) {
 	case "flac":
 		return "audio/flac", "speech.flac"
 	default:
-		return "audio/mpeg", "speech.mp3"
+		return "audio/mpeg", "speech.mp3" // OpenAI's default
+	}
+}
+
+// audioExtension maps a media type to the file extension a browser download
+// should carry. Unknown types get no extension rather than a guessed one.
+func audioExtension(contentType string) string {
+	switch contentType {
+	case "audio/mpeg", "audio/mp3":
+		return ".mp3"
+	case "audio/wav", "audio/x-wav", "audio/wave":
+		return ".wav"
+	case "audio/opus", "audio/ogg":
+		return ".opus"
+	case "audio/aac":
+		return ".aac"
+	case "audio/flac", "audio/x-flac":
+		return ".flac"
+	case "audio/pcm", "application/octet-stream":
+		return ".pcm"
+	default:
+		return ""
 	}
 }
 
@@ -348,13 +388,13 @@ func (c *ApiController) AudioTranscriptions() {
 	defer release()
 
 	startTime := time.Now().UTC()
-	text, _, err := sttProvider.ProcessAudio(form.file, c.Ctx.Request.Context(), c.GetAcceptLanguage())
+	text, sttResult, err := sttProvider.ProcessAudio(form.file, c.Ctx.Request.Context(), c.GetAcceptLanguage())
 	if err != nil {
-		c.recordAudioUsage(authUser, provider, model, isPremium, "error", err.Error(), startTime)
+		c.recordAudioUsage(authUser, provider, model, isPremium, audioQuantity{}, "error", err.Error(), startTime)
 		c.ResponseError(err.Error())
 		return
 	}
-	c.recordAudioUsage(authUser, provider, model, isPremium, "success", "", startTime)
+	c.recordAudioUsage(authUser, provider, model, isPremium, audioQuantity{seconds: sttSecondsOf(sttResult)}, "success", "", startTime)
 
 	if form.responseFormat == "text" {
 		c.Ctx.Output.Header("Content-Type", "text/plain; charset=utf-8")
@@ -371,13 +411,53 @@ type transcriptionResponse struct {
 	Text string `json:"text"`
 }
 
-// recordAudioUsage records a direct-provider TTS call for billing +
-// observability, mirroring recordImageUsage. There is no direct-provider audio
-// price table yet (the Zen "audio/voice" SKU prices itself in serveZenMedia),
-// so the row bills 0 and is flagged Unpriced — the traffic is VISIBLE in the
-// warehouse/o11y and flagged for pricing instead of invisible. recordUsage
-// filters error rows; the trace is emitted either way.
-func (c *ApiController) recordAudioUsage(authUser *iam.User, provider *object.Provider, userModel string, isPremium bool, status, errMsg string, startTime time.Time) {
+// audioQuantity is what an audio call actually consumed: seconds of audio for a
+// transcription, characters for a synthesis. A call is one direction or the
+// other, never both, and the zero value is what an ERROR consumed — nothing
+// was delivered, so nothing is billed, while the row and its trace still appear.
+//
+// It travels as one value rather than two positional arguments so that adding
+// the quantity to an emit site cannot silently pass a duration where a character
+// count belongs; the two are both numbers and mean entirely different money.
+type audioQuantity struct {
+	seconds float64
+	chars   int
+}
+
+// sttSecondsOf reads the transcribed duration from a provider result, or 0 when
+// the upstream did not report one. 0 meters nothing rather than guessing: bytes
+// do not imply duration (the same megabyte is minutes of PCM or hours of Opus),
+// so an unreported duration is a gap to see in the data, not a number to invent.
+func sttSecondsOf(result *stt.SpeechToTextResult) float64 {
+	if result == nil {
+		return 0
+	}
+	return result.AudioDurationSeconds
+}
+
+// ttsCharsOf reads the synthesized character count from a provider result,
+// falling back to the length of the text we ASKED it to speak. The fallback is
+// sound where the STT one would not be: synthesis cost is linear in the input,
+// and the input is known before the call — so this is the quantity, not an
+// estimate of it.
+func ttsCharsOf(result *tts.TextToSpeechResult, input string) int {
+	if result != nil && result.TokenCount > 0 {
+		return result.TokenCount
+	}
+	return len([]rune(input))
+}
+
+// recordAudioUsage records a direct-provider audio call for billing +
+// observability, mirroring recordImageUsage.
+//
+// The quantity is the whole point. Every emit site used to discard the provider
+// result (`text, _, err :=`) and hardcode `Unpriced: true`, so the record reached
+// the cost switches carrying nothing to multiply and audio billed 0 no matter
+// what it consumed. The record now carries what was used, and the Unpriced flag
+// is DERIVED from whether a rate is configured (recordUnpriced → audioPriced)
+// rather than asserted here — so the day a rate is set, this function does not
+// change. recordUsage filters error rows; the trace is emitted either way.
+func (c *ApiController) recordAudioUsage(authUser *iam.User, provider *object.Provider, userModel string, isPremium bool, qty audioQuantity, status, errMsg string, startTime time.Time) {
 	if authUser == nil {
 		return
 	}
@@ -391,7 +471,8 @@ func (c *ApiController) recordAudioUsage(authUser *iam.User, provider *object.Pr
 		Premium:      isPremium,
 		Status:       status,
 		ErrorMsg:     errMsg,
-		Unpriced:     true,
+		AudioSeconds: qty.seconds,
+		AudioChars:   qty.chars,
 		ClientIP:     c.Ctx.Request.RemoteAddr,
 		RequestID:    uuid.NewString(),
 	}

@@ -111,7 +111,7 @@ func TestAudioProviderTypeIsServedByBothFactories(t *testing.T) {
 
 	for _, name := range ttsModels {
 		row := seeded[modelRoutes[name].providerName]
-		p, err := tts.GetTextToSpeechProvider(row.Type, modelRoutes[name].upstreamModel, row.ClientId, row.ClientSecret, row.ProviderUrl, row.ApiVersion, 0, row.Currency, row.Flavor, "en")
+		p, err := tts.GetTextToSpeechProvider(row.Type, modelRoutes[name].upstreamModel, row.ClientId, row.ClientSecret, row.ProviderUrl, row.ApiVersion, 0, row.Currency, row.Flavor, "mp3", "en")
 		if err != nil {
 			t.Errorf("tts factory for %q (type %q): %v", name, row.Type, err)
 			continue

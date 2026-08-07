@@ -63,7 +63,7 @@ func TestOpenAIQueryAudio(t *testing.T) {
 
 	// The provider URL is the /v1 root; the provider appends the path. The
 	// trailing slash must not double.
-	p, err := NewOpenAITextToSpeechProvider("kokoro", "sk-test", srv.URL+"/", "af_heart")
+	p, err := NewOpenAITextToSpeechProvider("kokoro", "sk-test", srv.URL+"/", "af_heart", "mp3")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +91,7 @@ func TestOpenAIQueryAudioNoSecret(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	p, err := NewOpenAITextToSpeechProvider("kokoro", "", srv.URL, "")
+	p, err := NewOpenAITextToSpeechProvider("kokoro", "", srv.URL, "", "mp3")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +108,7 @@ func TestOpenAIQueryAudioUpstreamError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	p, err := NewOpenAITextToSpeechProvider("kokoro", "", srv.URL, "")
+	p, err := NewOpenAITextToSpeechProvider("kokoro", "", srv.URL, "", "mp3")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +130,7 @@ func TestOpenAIQueryAudioEmptyBody(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	p, _ := NewOpenAITextToSpeechProvider("kokoro", "", srv.URL, "")
+	p, _ := NewOpenAITextToSpeechProvider("kokoro", "", srv.URL, "", "mp3")
 	if _, _, err := p.QueryAudio("hi", context.Background(), "en"); err == nil {
 		t.Fatal("empty 200 body returned no error")
 	}
@@ -145,7 +145,7 @@ func TestOpenAIQueryAudioStream(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	p, _ := NewOpenAITextToSpeechProvider("kokoro", "", srv.URL, "")
+	p, _ := NewOpenAITextToSpeechProvider("kokoro", "", srv.URL, "", "mp3")
 	var buf bytes.Buffer
 	if _, err := p.QueryAudioStream("hi", context.Background(), io.Writer(&buf), "en"); err != nil {
 		t.Fatalf("QueryAudioStream: %v", err)
@@ -158,7 +158,7 @@ func TestOpenAIQueryAudioStream(t *testing.T) {
 // TestOpenAIRequiresURL asserts a provider row with no URL is refused at
 // construction (a misconfigured row must fail loudly, not at first use).
 func TestOpenAIRequiresURL(t *testing.T) {
-	if _, err := NewOpenAITextToSpeechProvider("kokoro", "sk", "", ""); err == nil {
+	if _, err := NewOpenAITextToSpeechProvider("kokoro", "sk", "", "", "mp3"); err == nil {
 		t.Fatal("empty provider URL accepted")
 	}
 }
@@ -169,11 +169,79 @@ func TestOpenAIRequiresURL(t *testing.T) {
 // the caller reported "the TTS provider type: X is not supported". STT had its
 // OpenAI branch; TTS did not.
 func TestFactoryServesOpenAIType(t *testing.T) {
-	p, err := GetTextToSpeechProvider("OpenAI", "kokoro", "", "", "http://speech.hanzo.svc/v1", "", 0, "USD", "af_heart", "en")
+	p, err := GetTextToSpeechProvider("OpenAI", "kokoro", "", "", "http://speech.hanzo.svc/v1", "", 0, "USD", "af_heart", "mp3", "en")
 	if err != nil {
 		t.Fatalf("GetTextToSpeechProvider(OpenAI): %v", err)
 	}
 	if p == nil {
 		t.Fatal("GetTextToSpeechProvider(OpenAI) returned nil — the OpenAI-compatible upstream is unreachable")
+	}
+}
+
+// TestOpenAIForwardsRequestedFormat asserts the caller's container reaches the
+// upstream instead of a hardcoded "mp3", and that what came BACK is reported.
+// Hardcoding the request while labelling from it is how audio/opus came to carry
+// an MP3.
+func TestOpenAIForwardsRequestedFormat(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req speechRequest
+		json.NewDecoder(r.Body).Decode(&req)
+		if req.ResponseFormat != "wav" {
+			t.Errorf("response_format = %q, want wav (the caller's request, forwarded)", req.ResponseFormat)
+		}
+		w.Header().Set("Content-Type", "audio/wav")
+		w.Write([]byte("RIFFxxxxWAVE"))
+	}))
+	defer srv.Close()
+
+	p, err := NewOpenAITextToSpeechProvider("kokoro", "", srv.URL, "af_heart", "wav")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, res, err := p.QueryAudio("hi", context.Background(), "en")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.ContentType != "audio/wav" {
+		t.Errorf("ContentType = %q, want audio/wav", res.ContentType)
+	}
+}
+
+// TestOpenAIReportsSubstitutedFormat is the case that bit production: the caller
+// asks for a container the upstream cannot make, the upstream quietly answers in
+// its default, and the provider must report what ARRIVED so the handler does not
+// label an MP3 as opus.
+func TestOpenAIReportsSubstitutedFormat(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "audio/mpeg") // ignored the opus request
+		w.Write([]byte("ID3\x04mp3"))
+	}))
+	defer srv.Close()
+
+	p, _ := NewOpenAITextToSpeechProvider("kokoro", "", srv.URL, "", "opus")
+	_, res, err := p.QueryAudio("hi", context.Background(), "en")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.ContentType != "audio/mpeg" {
+		t.Errorf("ContentType = %q, want audio/mpeg — report what arrived, not what was asked", res.ContentType)
+	}
+}
+
+// TestOpenAIDefaultsToMP3 pins the default container: OpenAI's own, and the one
+// every browser plays without a codec negotiation.
+func TestOpenAIDefaultsToMP3(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req speechRequest
+		json.NewDecoder(r.Body).Decode(&req)
+		if req.ResponseFormat != "mp3" {
+			t.Errorf("response_format = %q, want mp3 for an unset format", req.ResponseFormat)
+		}
+		w.Write([]byte("ID3\x04"))
+	}))
+	defer srv.Close()
+	p, _ := NewOpenAITextToSpeechProvider("kokoro", "", srv.URL, "", "")
+	if _, _, err := p.QueryAudio("hi", context.Background(), "en"); err != nil {
+		t.Fatal(err)
 	}
 }
