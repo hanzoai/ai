@@ -132,6 +132,17 @@ var modelRoutes = map[string]modelRoute{
 	"all-mini-lm-l6-v2":          {providerName: "do-ai", upstreamModel: "all-mini-lm-l6-v2"},          // 384-dim
 	"multi-qa-mpnet-base-dot-v1": {providerName: "do-ai", upstreamModel: "multi-qa-mpnet-base-dot-v1"}, // 768-dim
 
+	// ── Hanzo Speech ── STT at /v1/audio/transcriptions, TTS at /v1/audio/speech ─
+	// Our own speech service (ghcr.io/hanzoai/speech) on CPU nodes in-cluster:
+	// faster-whisper transcribes, kokoro synthesizes. User-facing name == upstream
+	// id (already clean public names, like the embeddings passthroughs), so there
+	// is no translation to keep in sync. owned_by hanzo: first-party models on
+	// first-party infrastructure. Not premium — CPU inference on nodes we already
+	// run, so it carries no per-call upstream cost to gate on.
+	"whisper":       {providerName: "speech", upstreamModel: "whisper", ownedBy: "hanzo"},
+	"whisper-small": {providerName: "speech", upstreamModel: "whisper-small", ownedBy: "hanzo"},
+	"kokoro":        {providerName: "speech", upstreamModel: "kokoro", ownedBy: "hanzo"},
+
 	// ── DO-AI image (diffusion) ── Stable Diffusion 3.5 Large ────────────
 	// Unlike the fal FLUX/SDXL models (async-invoke), SD 3.5 Large is served on
 	// the SYNCHRONOUS OpenAI /images/generations shape (isDOAIImageModel==false
