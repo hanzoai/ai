@@ -18,15 +18,18 @@ import "strings"
 
 // Reasoning normalization across heterogeneous upstreams.
 //
-// Zen aliases front models that expose chain-of-thought differently: GLM (zen5,
-// zen5-coder) returns it in the separate reasoning_content field, but DeepSeek
-// (zen5-pro → deepseek-v4-pro, zen5-flash → deepseek-4-flash) inlines it into
-// content as `<reasoning></think><answer>` — the opening <think> consumed by its
-// chat template. Presented through one Anthropic/OpenAI-shaped surface with no
-// normalization, DeepSeek's closing </think> and its reasoning text leak into the
-// visible answer. These helpers strip that leading block so every upstream reads
-// identically: clean content, no template artifacts. Lives in package model so
-// both the relay (controllers) and the QueryText providers share one definition.
+// Zen SKUs front models that expose chain-of-thought two different ways. Some
+// return it in the separate reasoning_content field; others INLINE it at the head
+// of content as `<reasoning></think><answer>`, the opening <think> having been
+// consumed by the chat template. Presented through one Anthropic/OpenAI-shaped
+// surface with no normalization, the inlined form's closing </think> and its
+// reasoning text land in the visible answer.
+//
+// These helpers strip that leading block so every SKU reads identically: clean
+// content, no template artifacts. Which SKU behaves which way is a property of
+// the catalog (HIP-0039), read at run time — never a list here. Lives in package
+// model so both the relay (controllers) and the QueryText providers share one
+// definition.
 
 const thinkClose = "</think>"
 
