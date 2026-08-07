@@ -32,12 +32,17 @@ type TextToSpeechProvider interface {
 	QueryAudioStream(text string, ctx context.Context, writer io.Writer, lang string) (*TextToSpeechResult, error)
 }
 
+// GetTextToSpeechProvider creates a new provider instance based on the provider
+// type. flavor mirrors the STT factory's parameter: for TTS it is the synthesis
+// voice, bound onto the provider row by the caller.
 func GetTextToSpeechProvider(typ string, subType string, clientId string, clientSecret string, providerUrl string, apiVersion string, pricePerThousandChars float64, currency string, flavor string, lang string) (TextToSpeechProvider, error) {
 	var p TextToSpeechProvider
 	var err error
 
 	if typ == "Alibaba Cloud" {
 		p, err = NewAlibabacloudTextToSpeechProvider(typ, subType, clientSecret, flavor)
+	} else if typ == "OpenAI" {
+		p, err = NewOpenAITextToSpeechProvider(subType, clientSecret, providerUrl, flavor)
 	}
 
 	if err != nil {

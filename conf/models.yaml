@@ -1023,11 +1023,31 @@ models:
 
   # virtual SKUs with no HF weights and no working upstream — removed
 
+  # ── Hanzo Speech ── the in-cluster speech service (ghcr.io/hanzoai/speech) ──
+  # faster-whisper transcribes at /v1/audio/transcriptions, kokoro synthesizes at
+  # /v1/audio/speech. User-facing name == upstream id, so nothing translates.
+  # pricing 0: the audio handlers meter every call Unpriced (there is no upstream
+  # per-call cost — this runs on CPU nodes we already run), and a declared zero is
+  # the honest figure rather than inheriting default_pricing's chat rate.
+
   # Speech recognition (ASR)
+  whisper:
+    provider: speech
+    upstream: whisper
+    owned_by: hanzo
+    pricing: {input: 0.00, output: 0.00}
+  whisper-small:
+    provider: speech
+    upstream: whisper-small
+    owned_by: hanzo
+    pricing: {input: 0.00, output: 0.00}
 
   # Text-to-speech (TTS)
-
-  # no working upstream — removed 2026-05-30.
+  kokoro:
+    provider: speech
+    upstream: kokoro
+    owned_by: hanzo
+    pricing: {input: 0.00, output: 0.00}
 
   # ── DO upstream leaves ──────────────────────────────────────────────
   # Declared so every alias can inherit its upstream's REAL served window
