@@ -14,6 +14,7 @@ package controllers
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -21,6 +22,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/hanzoai/ai/web"
 	"github.com/hanzoai/go-openai"
 	"github.com/klauspost/compress/zstd"
 )
@@ -91,8 +93,16 @@ func (c *ApiController) Responses() {
 	if strings.EqualFold(strings.TrimSpace(c.Ctx.Request.Header.Get("Content-Encoding")), "zstd") {
 		decoded, err := decodeResponsesZstd(body)
 		if err != nil {
+			// Authenticate before reporting, for the reason the 400 below gives.
 			if authErr := c.authenticate(token); authErr != nil {
 				c.ResponseAuthError(authErr)
+				return
+			}
+			// A body over the bound is 413, not 400: it is not malformed, it is
+			// too big, and only one of those tells the caller to send less.
+			if errors.Is(err, zstd.ErrDecoderSizeExceeded) {
+				c.ResponseErrorWithStatus(http.StatusRequestEntityTooLarge, fmt.Sprintf(
+					"request body exceeds the %d MiB limit", web.MaxBody>>20))
 				return
 			}
 			c.ResponseErrorWithStatus(http.StatusBadRequest, "Failed to decompress zstd request: "+err.Error())
@@ -140,11 +150,23 @@ func (c *ApiController) Responses() {
 	c.EnableRender = false
 }
 
-// decodeResponsesZstd uses a pure-Go decoder because Cloud release binaries
-// are built with CGO_ENABLED=0. Current Codex clients compress large Responses
-// requests with zstd.
+// decodeResponsesZstd expands a zstd-framed Responses body, bounded by what it
+// expands to. It uses a pure-Go decoder because Cloud release binaries are built
+// with CGO_ENABLED=0. Current Codex clients compress large requests with zstd.
+//
+// The bound is web.MaxBody, the same ceiling every other body gets, and it has
+// to be stated: the decoder's own default is 64 GiB. Capping the COMPRESSED
+// input caps nothing that costs memory here — zstd's ratio on repetitive input
+// runs to thousands to one, so the 64 MiB that reaches this function is already
+// enough to ask for more heap than any pod has. The decode also runs before the
+// token is validated, so whatever it allocates, a caller holding nothing but a
+// syntactically-valid Bearer string can make it allocate.
+//
+// Overflow returns zstd.ErrDecoderSizeExceeded, which callers answer 413 —
+// naming the limit, rather than letting a half-expanded body fail later as an
+// unintelligible parse error.
 func decodeResponsesZstd(body []byte) ([]byte, error) {
-	decoder, err := zstd.NewReader(nil)
+	decoder, err := zstd.NewReader(nil, zstd.WithDecoderMaxMemory(uint64(web.MaxBody)))
 	if err != nil {
 		return nil, err
 	}
