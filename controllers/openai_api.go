@@ -1017,6 +1017,20 @@ func (c *ApiController) authResolveProvider(token, requestedModel, orgId string)
 	lang := c.GetAcceptLanguage()
 
 	switch {
+	case isRunKey(token):
+		// Run key (hrun_...) — an autonomous run buying inference on the ledger of
+		// the org that started it. It resolves to a machine principal and to NO
+		// user, so it authenticates nobody and opens no other door; see run.go.
+		// The org rides the TOKEN, never orgId, so a run cannot be pointed at
+		// another tenant's balance by a header.
+		provider, authUser, upstreamModel, err = resolveProviderFromRunKey(token, requestedModel, lang)
+		if err != nil {
+			err = wrapAuth(err)
+			return
+		}
+		c.Ctx.Input.SetParam("recordUserId", authUser.Owner+"/run")
+		return
+
 	case isWidgetKey(token):
 		// Widget key (hz_...) — restricted, token-capped model access (isWidget
 		// caps MaxTokens to widgetMaxTokens downstream). It is NOT free: like an

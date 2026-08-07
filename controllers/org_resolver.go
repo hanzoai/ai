@@ -54,6 +54,22 @@ func (c *ApiController) credentialUser() *iam.User {
 			return user
 		}
 	}
+	// A run key names the org that pays for the run (run.go). It is resolved here
+	// for exactly the reason the sk- branch above is: authResolveProvider settles
+	// the PROVIDER and the payer, but GetOrg asks THIS function who the tenant is,
+	// and a tenant it cannot name falls back to the IAM_ORG default — which is
+	// empty, so the call reaches zen with no tenant and 402s "a billable tenant is
+	// required". Authenticating and then failing to bill is the same split that
+	// bug was, arriving by a different door.
+	//
+	// It resolves to a machine and never to a person: there is no user record
+	// behind a run key, so nothing here can be logged in as, and Type
+	// "application" is what makes the billing subject the ORG account.
+	if isRunKey(token) {
+		if r, ok := resolveRun(token); ok {
+			return &iam.User{Owner: r.Org, Type: "application", Name: "run"}
+		}
+	}
 	return nil
 }
 
