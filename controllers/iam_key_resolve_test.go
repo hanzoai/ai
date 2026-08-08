@@ -18,6 +18,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 )
 
@@ -106,6 +107,37 @@ func TestGetUserByAccessKeyRefusalIsAnError(t *testing.T) {
 
 	if _, err := GetUserByAccessKey("sk-testkey"); err == nil {
 		t.Fatal("a refused resolution must be an error, got nil")
+	}
+}
+
+// TestGetUserByAccessKeyRelaysReasonOnNon200 pins the distinction that cost a
+// day of triage: IAM answers an absent key with HTTP 400 AND a body naming
+// `key_unknown`. Reading only the status line turns "this key is not there" into
+// "IAM returned status 400", which reads like key validation is broken and sends
+// the search to the wrong layer. The reason is in the body on non-200 too.
+func TestGetUserByAccessKeyRelaysReasonOnNon200(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"status":"error","code":"key_unknown","msg":"the entity does not exist","data":null}`))
+	}))
+	defer srv.Close()
+
+	t.Setenv("IAM_URL", srv.URL)
+	t.Setenv("IAM_CLIENT_ID", "hanzo-cloud")
+	t.Setenv("IAM_CLIENT_SECRET", "s3cr3t")
+
+	_, err := GetUserByAccessKey("sk-testkey")
+	if err == nil {
+		t.Fatal("an unknown key must be an error, got nil")
+	}
+	// The holder must be told what to DO. keyRefusal turns key_unknown into
+	// "not recognized … mint a new one"; a bare status number tells them nothing.
+	if !strings.Contains(err.Error(), "not recognized") {
+		t.Errorf("non-200 dropped IAM's reason — want the key_unknown refusal, got: %v", err)
+	}
+	if strings.Contains(err.Error(), "returned status") {
+		t.Errorf("relayed the status line instead of the named reason: %v", err)
 	}
 }
 

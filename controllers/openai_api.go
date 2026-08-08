@@ -483,22 +483,31 @@ func getUserByAccessKey(accessKey string) (*iam.User, error) {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("IAM returned status %d", resp.StatusCode)
-	}
-
+	// IAM states its reason in the BODY (code + msg), not the status line. This
+	// used to return on a non-200 before reading it, so `key_unknown` — "the
+	// entity does not exist" — reached the caller as a bare "IAM returned status
+	// 400". Those read alike and mean opposite things: one says this key is not
+	// there, the other says key validation itself is broken. Every gateway key in
+	// the cluster once failed this way, and the bare status sent the search
+	// toward a contract break for hours when IAM had named the cause in the first
+	// reply. Decode first, judge second.
 	var result struct {
 		Status string    `json:"status"`
 		Msg    string    `json:"msg"`
 		Code   string    `json:"code"` // WHY, when IAM refused (iam store.KeyFailure)
 		Data   *iam.User `json:"data"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to parse IAM response: %w", err)
-	}
+	decodeErr := json.NewDecoder(resp.Body).Decode(&result)
 
-	if result.Status != "ok" {
+	// A refusal IAM named is a refusal we can relay, whatever the status line.
+	if decodeErr == nil && (result.Code != "" || result.Status != "ok") {
 		return nil, keyRefusal(result.Code, result.Msg, accessKey)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("IAM returned status %d and named no reason", resp.StatusCode)
+	}
+	if decodeErr != nil {
+		return nil, fmt.Errorf("failed to parse IAM response: %w", decodeErr)
 	}
 
 	// ok-with-nobody. IAM said the request succeeded and named no user, which this
