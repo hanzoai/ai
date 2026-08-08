@@ -62,7 +62,7 @@ func balReader(cents int64, err error) object.BalanceReaderFunc {
 	return func(_ context.Context, _, _, _ string) (int64, error) { return cents, err }
 }
 
-// newChatController wires an ApiController to a recorder with a NON-nil beego
+// newChatController wires an ApiController to a recorder with a NON-nil router
 // session (prod runs SessionOn=true, so CruSession is normally populated) plus the
 // given Authorization header and body — the faithful shape of a gateway-forwarded
 // chat request.
@@ -71,10 +71,10 @@ func newChatController(authHeader, body string) (*ApiController, *httptest.Respo
 }
 
 // newChatControllerSession is newChatController with an explicit knob for whether
-// the beego session store (CruSession) is populated. withSession=false reproduces
-// the embedded-cloud failure mode the bootstrap comment describes: beego's
+// the the router session store (CruSession) is populated. withSession=false reproduces
+// the embedded-cloud failure mode the bootstrap comment describes: the router's
 // SessionStart hook did not run, so CruSession is nil and any session read
-// dereferences nil — the pre-model panic beego renders as a 500.
+// dereferences nil — the pre-model panic the router renders as a 500.
 func newChatControllerSession(authHeader, body string, withSession bool) (*ApiController, *httptest.ResponseRecorder) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(body))
@@ -93,7 +93,7 @@ func newChatControllerSession(authHeader, body string, withSession bool) (*ApiCo
 }
 
 // driveChat runs the real ChatCompletions handler and returns its HTTP status. A
-// panic (which beego's recover renders as 500) is converted to 500 so a regression
+// panic (which the router's recover renders as 500) is converted to 500 so a regression
 // that reintroduces the pre-model panic fails LOUD as "got 500, want 401" rather
 // than crashing the suite.
 func driveChat(t *testing.T, authHeader, body string) int {
@@ -113,7 +113,7 @@ func driveChatSession(t *testing.T, authHeader, body string, withSession bool) i
 		c.ChatCompletions()
 	}()
 	if rec.Code == 0 {
-		return http.StatusOK // beego default when no explicit status was set
+		return http.StatusOK // the router default when no explicit status was set
 	}
 	return rec.Code
 }
@@ -200,7 +200,7 @@ func TestChatCompletionsUnattributedNever500(t *testing.T) {
 }
 
 // TestChatCompletionsNilSessionNever500 reproduces the exact prod failure mode:
-// the embedded cloud binary serves these routes without beego having populated the
+// the embedded cloud binary serves these routes without the router having populated the
 // session store, so CruSession is nil. GetOrg/routingUserId read the session
 // BEFORE auth resolution (pre-model), so a nil store used to panic → a fast 500 for
 // EVERY request, unattributed ones included. The contract still holds with no

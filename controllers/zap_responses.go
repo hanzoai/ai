@@ -18,7 +18,7 @@
 // as a pure ZAP handler against object/ + model/ + iam, mirroring
 // zapChatHandler (zap_native.go) exactly — identity, org scoping, the ONE
 // prepaid-balance gate, per-org provider selection, KMS secret resolution, and
-// a single terminal meter. It NEVER wraps or drives the beego controller and
+// a single terminal meter. It NEVER wraps or drives the controller and
 // never holds an http.ResponseWriter. The same route stays live on routers.App,
 // which also backs the gateway fallback.
 //

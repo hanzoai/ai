@@ -16,7 +16,7 @@
 //
 // Re-implements POST /v1/messages and POST /v1/messages/count_tokens against the
 // shared object/ + iam layer, mirroring zap_native.go:zapChatHandler. It NEVER
-// wraps the beego ApiController — same identity seam (zapResolveAuth/zapResolveUser),
+// wraps the ApiController — same identity seam (zapResolveAuth/zapResolveUser),
 // same per-org billing (reserveBudget → settle actual), same metering
 // (recordUsage + recordTrace), same Anthropic error shapes.
 //
@@ -121,7 +121,7 @@ func zapAnthropicMessages(ctx context.Context, auth string, reqBody []byte) (int
 	if token == "" {
 		return anthropicErr("authentication_error", "Missing API key. Provide x-api-key header or Authorization: Bearer header.", 401)
 	}
-	// pk- publishable keys can never reach messages (parity with the beego path).
+	// pk- publishable keys can never reach messages (parity with the router path).
 	if isPublishableKey(token) {
 		return anthropicErr("auth_error", "Publishable keys (pk-) can only access read-only endpoints. Use a secret key (sk-) for messages.", 403)
 	}

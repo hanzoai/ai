@@ -28,7 +28,7 @@ func TestHstsFilter(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "https://example.com/v1/health", nil)
 	resp := httptest.NewRecorder()
 
-	// Create a Beego context
+	// Create a router context
 	ctx := web.NewContext()
 	ctx.Reset(resp, req)
 
@@ -82,7 +82,7 @@ func TestHstsFilterNotSetOnHTTP(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "http://example.com/v1/health", nil)
 	resp := httptest.NewRecorder()
 
-	// Create a Beego context
+	// Create a router context
 	ctx := web.NewContext()
 	ctx.Reset(resp, req)
 
@@ -102,7 +102,7 @@ func TestHstsFilterWithXForwardedProto(t *testing.T) {
 	req.Header.Set("X-Forwarded-Proto", "https")
 	resp := httptest.NewRecorder()
 
-	// Create a Beego context
+	// Create a router context
 	ctx := web.NewContext()
 	ctx.Reset(resp, req)
 

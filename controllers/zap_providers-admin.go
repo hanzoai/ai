@@ -14,13 +14,13 @@
 
 // Native ZAP handlers for the provider-config route group (strangler migration
 // of provider.go / provider_admin.go / provider_flags.go). Each handler
-// re-implements the beego controller logic against object/ + iam directly —
-// never wrapping the beego controller — mirroring
+// re-implements the controller logic against object/ + iam directly —
+// never wrapping the controller — mirroring
 // controllers/zap_native.go:zapChatHandler and the shared seam in
 // controllers/zap_account-auth.go (the registry + zapOk/zapErr + zapResolvePrincipal).
 //
 // Auth parity: every route in this group EXCEPT /v1/models/providers is gated at
-// SUPER ADMIN (util.IsSuperAdmin, owner == "admin") — the SAME policy the beego
+// SUPER ADMIN (util.IsSuperAdmin, owner == "admin") — the SAME policy the the controller layer
 // authz filter applies (routers/authz_filter.go superAdminEndpoints). The native
 // ZAP path never runs that filter, so the gate is re-enforced verbatim here via
 // the shared zapResolvePrincipal identity seam (JWT → ParseAndValidateJWT, sk- →
@@ -72,7 +72,7 @@ func init() {
 // ── auth gate ────────────────────────────────────────────────────────────────
 
 // zapProviderSuperAdmin resolves the Bearer principal (shared zapResolvePrincipal)
-// and enforces the super-admin gate (util.IsSuperAdmin) exactly like the beego
+// and enforces the super-admin gate (util.IsSuperAdmin) exactly like the the controller layer
 // authz filter's superAdminEndpoints path. Returns (user, nil) on success, or
 // (nil, denial) with a fail-closed 401 (no/invalid credential) or 403
 // (authenticated non-super-admin) response to return as-is.
@@ -89,7 +89,7 @@ func zapProviderSuperAdmin(auth string) (*iam.User, *zap.Message) {
 	return user, nil
 }
 
-// zapProviderOk emits the beego {status:"ok",data[,data2]} envelope (ResponseOk
+// zapProviderOk emits the the router {status:"ok",data[,data2]} envelope (ResponseOk
 // and its paginated ResponseOk(list, count) form). Shared by the provider and
 // chat-graph groups — one provider envelope, not a per-group fork.
 func zapProviderOk(data ...interface{}) (*zap.Message, error) {
@@ -104,7 +104,7 @@ func zapProviderOk(data ...interface{}) (*zap.Message, error) {
 	return object.BuildCloudResponse(200, body, "")
 }
 
-// zapProviderError emits {status:"error",msg} at an explicit status (beego
+// zapProviderError emits {status:"error",msg} at an explicit status (controller
 // ResponseError is 200-with-error-body; auth denials use real 401/403).
 func zapProviderError(status uint32, msg string) (*zap.Message, error) {
 	body, _ := json.Marshal(Response{Status: "error", Msg: msg})
@@ -232,7 +232,7 @@ func zapUpdateProviderHandler(_ context.Context, auth string, body []byte) (*zap
 	if err := json.Unmarshal(body, &req); err != nil {
 		return zapProviderError(400, "invalid request: "+err.Error())
 	}
-	// Same sealing as the beego twin — a key typed into the admin UI goes to KMS
+	// Same sealing as the controller twin — a key typed into the admin UI goes to KMS
 	// under the name the row's existing reference declares, never to the database
 	// as plaintext. Shared function, so the two transports cannot drift on the
 	// question of where a secret lives.
@@ -249,7 +249,7 @@ func zapUpdateProviderHandler(_ context.Context, auth string, body []byte) (*zap
 // zapAddProviderHandler mirrors ApiController.AddProvider: the org owner is the
 // resolved principal's Owner (never client-supplied), and a tenant-supplied RAW
 // key is sealed into KMS as a kms:// ref (fails closed) before persistence — the
-// same BYOK seam as the beego path.
+// same BYOK seam as the router path.
 func zapAddProviderHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
 	user, deny := zapProviderSuperAdmin(auth)
 	if deny != nil {
@@ -261,7 +261,7 @@ func zapAddProviderHandler(_ context.Context, auth string, body []byte) (*zap.Me
 	}
 	provider.Owner = user.Owner
 
-	// One seal, shared with the beego twin — no row yet, so "" id.
+	// One seal, shared with the controller twin — no row yet, so "" id.
 	if err := sealPastedKey("", &provider); err != nil {
 		return zapProviderError(200, err.Error())
 	}

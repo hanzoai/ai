@@ -14,8 +14,8 @@
 
 // Native ZAP handlers for the chat/message/graph CRUD route group (strangler
 // migration of chat.go / message.go / graph.go / graph_chat.go). These
-// re-implement the beego controller logic against object/ + iam directly — never
-// wrapping the beego controller — mirroring controllers/zap_native.go:zapChatHandler
+// re-implement the controller logic against object/ + iam directly — never
+// wrapping the controller — mirroring controllers/zap_native.go:zapChatHandler
 // and the first-migrated provider group (zap_providers-admin.go).
 //
 // Scope: this group is the CRUD surface only. The streaming answer-generation
@@ -41,7 +41,7 @@
 // authorized against THAT row's user, never against the user the request carries.
 //
 // Envelope parity: success/error use the SAME {status,data,data2,msg} Response the
-// beego ResponseOk/ResponseError emit (the console frontend contract), via the
+// ResponseOk/ResponseError emit (the console frontend contract), via the
 // shared zapProviderOk / zapProviderError builders.
 //
 // Registration: this file OWNS its wiring. init() self-registers each route into
@@ -107,12 +107,12 @@ func registerZapChatGraphCrud() {
 
 // ── Shared gates (parity with routers/authz_filter.go + base controller) ─────
 
-// zapChatGraphAuthz re-enforces the beego authz filter's decision for this
+// zapChatGraphAuthz re-enforces the the router authz filter's decision for this
 // group's routes (none of which are super-admin or present-credential endpoints):
 // a preview-mode read is open, a benign-read exempt route is open, and every other
 // write route requires an ORG admin (util.IsAdmin) — a non-admin is denied 403,
 // exactly like permissionFilter's denyForbidden tail. name is the controllerName
-// (the beego path minus "/v1/"). Returns a denial message to return as-is, or nil
+// (the router path minus "/v1/"). Returns a denial message to return as-is, or nil
 // to proceed to the handler's own in-controller check.
 func zapChatGraphAuthz(name string, user *iam.User) *zap.Message {
 	isGet := len(name) >= 4 && name[:4] == "get-"
@@ -158,10 +158,10 @@ func hasAnyPrefix(s string, prefixes ...string) bool {
 // zapIsCurrentUser mirrors ApiController.IsCurrentUser: it answers for NAMES on both
 // sides, then lets an org admin act on any user's row and a non-admin only on its own
 // (username == input). Returns a 403 denial to return as-is, or nil to proceed. The
-// anonymous (u-<hash>) fallback of the beego path is unavailable natively (no client
+// anonymous (u-<hash>) fallback of the router path is unavailable natively (no client
 // IP / user-agent), so a native caller is always its verified Bearer principal.
 //
-// The name test is the load-bearing half here. This plane's writes are on the beego
+// The name test is the load-bearing half here. This plane's writes are on the the controller layer
 // filter's benign-read exempt list, so an UNAUTHENTICATED caller reaches them:
 // zapPrincipalUser("") is nil, which left username "" — and "" != "" is false, so the
 // guard returned "allowed" and the caller acted as the empty user. A chat-plane row
@@ -200,7 +200,7 @@ func zapEnforceStoreIsolation(user *iam.User, requested string) (string, *zap.Me
 	return requested, nil
 }
 
-// paginationOffset computes the DB offset the beego pagination.SetPaginator would,
+// paginationOffset computes the DB offset the pagination.SetPaginator would,
 // from the 1-based page and page size carried on the native body (the native
 // contract has no URL query or response headers). Guards a non-positive page.
 func paginationOffset(page, limit int) int {
@@ -213,7 +213,7 @@ func paginationOffset(page, limit int) int {
 
 // ── chat.go parity ───────────────────────────────────────────────────────────
 
-// zapListChatsRequest carries the list/pagination + filter params the beego GET
+// zapListChatsRequest carries the list/pagination + filter params the GET
 // handlers read from the URL query.
 type zapListChatsRequest struct {
 	PageSize     string `json:"pageSize"`
@@ -312,7 +312,7 @@ func zapGetChatsHandler(_ context.Context, auth string, body []byte) (*zap.Messa
 	return zapProviderOk(chats)
 }
 
-// zapIDRequest carries a single id (URL query in the beego GET handlers).
+// zapIDRequest carries a single id (URL query in the GET handlers).
 type zapIDRequest struct {
 	ID string `json:"id"`
 }
@@ -681,7 +681,7 @@ func zapUpdateMessageHandler(_ context.Context, auth string, body []byte) (*zap.
 // or creates the parent chat, refines embedded files, enforces the store's
 // forbidden-word list, persists the message, and — for an AI chat — seeds the
 // empty AI answer placeholder the streaming answer route later fills. Returns the
-// parent chat, exactly like the beego handler. lang is "en" and origin is empty
+// parent chat, exactly like the controller handler. lang is "en" and origin is empty
 // natively (no http host) — file-URL refinement only rewrites base64-embedded
 // images, which the native CRUD path does not carry.
 func zapAddMessageHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
@@ -851,7 +851,7 @@ func zapAddMessageHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 // initial-chat seeder, not a second copy.
 
 // zapDeleteMessageHandler mirrors ApiController.DeleteMessage. This route is NOT
-// on the beego filter's exempt list, so the outer gate requires an org admin.
+// on the filter's exempt list, so the outer gate requires an org admin.
 func zapDeleteMessageHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
 	user := zapPrincipalUser(auth)
 	if deny := zapChatGraphAuthz("delete-message", user); deny != nil {
@@ -876,7 +876,7 @@ func zapDeleteMessageHandler(_ context.Context, auth string, body []byte) (*zap.
 
 // zapDeleteWelcomeMessageHandler mirrors ApiController.DeleteWelcomeMessage: only
 // the message's own (signed-in) user may delete it, and only if it is the AI
-// "Welcome" turn. The beego anonymous (u-<hash>) branch is unavailable natively
+// "Welcome" turn. The the router anonymous (u-<hash>) branch is unavailable natively
 // (no client IP / user-agent) — a native caller is its verified Bearer principal.
 func zapDeleteWelcomeMessageHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
 	user := zapPrincipalUser(auth)

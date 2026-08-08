@@ -195,7 +195,7 @@ func TestEffectiveSessionRoutingStarFold(t *testing.T) {
 // returns are resolved exactly as the endpoint composes them: auto_routing_active
 // blends the "*"-folded AutoRouting pref with the global router flag, and
 // default_session_routing is the "*"-folded session pref. This exercises the same
-// code path the controller runs, minus beego plumbing.
+// code path the controller runs, minus the router plumbing.
 func TestRoutingDefaultsResolution(t *testing.T) {
 	prev := globalModelConfig
 	t.Cleanup(func() { globalModelConfig = prev })

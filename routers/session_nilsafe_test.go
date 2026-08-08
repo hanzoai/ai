@@ -23,8 +23,8 @@ import (
 
 // GetSessionUser is the session-read funnel the BeforeRouter filters (RateLimit,
 // BalanceGate, Authz) reach via resolveBillingKey — BEFORE the controller. If the
-// embedded cloud binary serves a request without beego's SessionStart having run,
-// CruSession is nil; the pre-fix code dereferenced it and beego rendered the
+// embedded cloud binary serves a request without the router's SessionStart having run,
+// CruSession is nil; the pre-fix code dereferenced it and the router rendered the
 // nil-deref as a 500 on EVERY /v1 request. These lock the fail-secure contract: a
 // nil (or foreign-typed) session store resolves to "no session user", never a
 // panic — so the filters fall through to raw-key limiting and the controller does

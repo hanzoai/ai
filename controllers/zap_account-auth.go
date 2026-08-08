@@ -13,7 +13,7 @@
 // limitations under the License.
 
 // Native ZAP handlers for the account/auth route-group (strangler migration of
-// controllers/account.go). Pure ZAP handlers — no beego controller, no session,
+// controllers/account.go). Pure ZAP handlers — no controller, no session,
 // no cookie, no http.ResponseWriter. Identity is the bearer `auth` seam
 // (zapAccountPrincipal), exactly like zapChatHandler. The same routes stay live
 // on routers.App, which also backs the gateway fallback.
@@ -38,7 +38,7 @@
 // them — so it never contends with another group's file. Handlers use the canonical native handler signature
 // func(ctx, auth string, body []byte) (*zap.Message, error).
 //
-// The account endpoints return the beego {status,msg,data,data2} envelope (unlike
+// The account endpoints return the {status,msg,data,data2} envelope (unlike
 // the OpenAI-compat chat surface, which returns a raw payload), so these handlers
 // marshal the SAME Response envelope their HTTP counterparts do — a client reading
 // /v1/get-account gets a byte-identical body shape.
@@ -82,9 +82,9 @@ func registerZapAccountAuth() {
 
 // ── envelope helpers ────────────────────────────────────────────────────────
 //
-// The account surface speaks the beego {status,msg,data,data2} envelope, so
+// The account surface speaks the {status,msg,data,data2} envelope, so
 // these mirror ResponseOk / ResponseError into the ZAP body. Status codes match
-// the HTTP handlers: ResponseUnauthorized -> 401; ResponseError -> 200 (beego's
+// the HTTP handlers: ResponseUnauthorized -> 401; ResponseError -> 200 (the router's
 // default, with the error carried in the body's status:"error").
 
 func zapAccountOk(httpStatus uint32, data interface{}) (*zap.Message, error) {
@@ -136,7 +136,7 @@ func zapAccountPrincipal(auth string) (*iam.User, error) {
 // from query params, plus an optional {host} so a white-label console still
 // exchanges its code against the right brand IAM (resolveBrandIAM); absent host
 // => the hanzo default, byte-unchanged. On the stateless ZAP wire there is no
-// beego session to bind or cookie to set — the caller keeps the returned
+// the router session to bind or cookie to set — the caller keeps the returned
 // accessToken. The initial chat/message seeding is preserved verbatim.
 func zapSigninHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
 	var req struct {
@@ -171,7 +171,7 @@ func zapSigninHandler(ctx context.Context, auth string, body []byte) (*zap.Messa
 		return zapAccountErr(401, err.Error())
 	}
 
-	// Same downgrade rule as the beego path: a bare/loosely-typed principal that
+	// Same downgrade rule as the router path: a bare/loosely-typed principal that
 	// is not an admin is scoped to chat-user.
 	if strings.Count(claims.Type, "-") <= 1 {
 		if !util.IsAdmin(&claims.User) {
@@ -189,11 +189,11 @@ func zapSigninHandler(ctx context.Context, auth string, body []byte) (*zap.Messa
 
 // ── POST /v1/signout ────────────────────────────────────────────────────────
 //
-// Idempotent, matching the beego path (which no-ops when there is no session
-// user). The ZAP wire is sessionless — there is no server-side beego session id
+// Idempotent, matching the router path (which no-ops when there is no session
+// user). The ZAP wire is sessionless — there is no server-side the router session id
 // to delete — so sign-out is purely the client discarding its bearer. An
 // absent/invalid token still returns OK (never a 500), exactly like the hardened
-// beego handler.
+// controller handler.
 func zapSignoutHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
 	return zapAccountOk(200, nil)
 }
@@ -312,7 +312,7 @@ func zapUpdatePreferencesHandler(ctx context.Context, auth string, body []byte) 
 
 // ── initial-chat seeding (standalone twins of the controller methods) ───────
 //
-// The beego addInitialChat* methods reach into c.getClientIp/getUserAgent for
+// The the router addInitialChat* methods reach into c.getClientIp/getUserAgent for
 // the seeded chat's telemetry; on the ZAP wire those request-scoped values do
 // not exist, so the seeded chat carries empty client metadata. Everything else
 // is identical to account.go so a native sign-in leaves the same first

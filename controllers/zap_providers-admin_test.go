@@ -25,7 +25,7 @@ import (
 // gatedProviderMethods are the group's super-admin-gated native methods
 // (everything except the public models/providers projection). Each MUST reject an
 // anonymous request with a 401 BEFORE touching the DB — the native-path
-// re-enforcement of the beego authz filter's superAdminEndpoints gate.
+// re-enforcement of the the router authz filter's superAdminEndpoints gate.
 var gatedProviderMethods = []string{
 	"providers.global.list",
 	"providers.list",
@@ -68,7 +68,7 @@ func TestZapProviderBogusTokenRejected(t *testing.T) {
 	}
 }
 
-// TestZapProviderOkEnvelopeParity asserts the success encoding matches the beego
+// TestZapProviderOkEnvelopeParity asserts the success encoding matches the controller
 // ResponseOk envelope ({status:"ok",data}) and the paginated two-value form sets
 // data2 — the console frontend contract the native path must preserve.
 func TestZapProviderOkEnvelopeParity(t *testing.T) {

@@ -28,7 +28,7 @@ import (
 	web "github.com/hanzoai/ai/web"
 )
 
-// ctrlFakeSession is a minimal session.Store for controller auth tests — beego's
+// ctrlFakeSession is a minimal session.Store for controller auth tests — the router's
 // GetSession reads c.Ctx.Input.CruSession, so this lets GetSessionUser resolve
 // without a live session manager.
 type ctrlFakeSession struct{ data map[interface{}]interface{} }

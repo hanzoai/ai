@@ -419,7 +419,7 @@ func enforceBalanceGate(user *iam.User, ledger string, requestedModel string) er
 }
 
 // iamClientCreds resolves this service's confidential-app credentials, in order:
-// env vars (IAM_CLIENT_ID/IAM_CLIENT_SECRET), KMS secrets, then Beego config.
+// env vars (IAM_CLIENT_ID/IAM_CLIENT_SECRET), KMS secrets, then the router config.
 func iamClientCreds() (string, string) {
 	clientId := conf.GetConfigString("IAM_CLIENT_ID")
 	clientSecret := conf.GetConfigString("IAM_CLIENT_SECRET")

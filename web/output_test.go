@@ -24,7 +24,7 @@ import (
 
 // TestOutputBodySetsContentLength proves the ×24 Output.Body path: it writes
 // the bytes, sets Content-Length, and defaults to 200 when no status was set
-// — byte-for-byte with beego.
+// — byte-for-byte with the upstream this package forked.
 func TestOutputBodySetsContentLength(t *testing.T) {
 	content := []byte("pong")
 

@@ -13,7 +13,7 @@
 // limitations under the License.
 
 // Native ZAP handlers for the router-policy / router-stats / routing group — the
-// ONE and ONLY implementation of these routes. The beego twins (router.go
+// ONE and ONLY implementation of these routes. The controller twins (router.go
 // registrations + the Get/UpdateRouterPolicy, GetRoutingDefaults, ExportRouting*,
 // PublishRouterArtifactMeta controller methods) were DELETED: one route, one
 // handler, no split-brain, no drift. Each handler works against object/ + iam
@@ -129,14 +129,14 @@ func zapRPSOrg(user *iam.User) string {
 	return conf.GetConfigString("IAM_ORG")
 }
 
-// zapRPSOk renders the beego ResponseOk envelope ({status:"ok", data}) as a 200
+// zapRPSOk renders the ResponseOk envelope ({status:"ok", data}) as a 200
 // cloud response, preserving the exact JSON shape the HTTP handlers return.
 func zapRPSOk(data interface{}) (*zap.Message, error) {
 	b, _ := json.Marshal(Response{Status: "ok", Data: data})
 	return object.BuildCloudResponse(http.StatusOK, b, "")
 }
 
-// zapRPSError renders the beego ResponseError envelope ({status:"error", msg}) at
+// zapRPSError renders the ResponseError envelope ({status:"error", msg}) at
 // the given status, mirroring ResponseError / ResponseErrorWithStatus body shape.
 func zapRPSError(status int, msg string) (*zap.Message, error) {
 	b, _ := json.Marshal(Response{Status: "error", Msg: msg})
@@ -243,7 +243,7 @@ func zapUpdateRouterPolicyHandler(_ context.Context, auth string, body []byte) (
 		// silently NULLs the fields it forgets: RouterEnabledModels, RouterQualityBias,
 		// RouterStrategy, RouterOverrides, TrainingContribution. This IS the live gateway
 		// path (served natively over ZAP), so that bug dropped the allowlist/dial on every
-		// customer save. Mirrors the beego UpdateRouterPolicy.
+		// customer save. Mirrors the the router UpdateRouterPolicy.
 		existing.RouterPrefer = prefer
 		existing.RouterCostCeiling = reqBody.CostCeiling
 		existing.RouterEnabledModels = enabled
@@ -263,7 +263,7 @@ func zapUpdateRouterPolicyHandler(_ context.Context, auth string, body []byte) (
 // zapRouterPolicyHandler is the HTTP-shaped entrypoint for /v1/router/policy: GET
 // reads the effective policy, PUT upserts the caller's own org override. One noun,
 // two verbs — the reason this route is method-aware (registerGatewayRoute) rather
-// than body-only. Both delegate to the same read/write logic beego and ZAP shared.
+// than body-only. Both delegate to the same read/write logic the router and ZAP shared.
 func zapRouterPolicyHandler(ctx context.Context, method, _, _, auth string, body []byte) (*zap.Message, error) {
 	switch strings.ToUpper(method) {
 	case http.MethodGet:
@@ -276,7 +276,7 @@ func zapRouterPolicyHandler(ctx context.Context, method, _, _, auth string, body
 
 // ── router stats + artifact meta ─────────────────────────────────────────
 
-// zapRouterStatsParams is the body-decoded projection of the beego query params.
+// zapRouterStatsParams is the body-decoded projection of the query params.
 type zapRouterStatsParams struct {
 	Scope  string `json:"scope"`
 	Org    string `json:"org"`
@@ -363,7 +363,7 @@ func zapPublishRouterArtifactMetaHandler(_ context.Context, auth string, body []
 	if err := object.UpsertRouterArtifactMeta(&meta); err != nil {
 		return zapRPSError(http.StatusOK, err.Error())
 	}
-	// Parity with the (deleted) beego PublishRouterArtifactMeta: also append to the
+	// Parity with the (deleted) the router PublishRouterArtifactMeta: also append to the
 	// IMMUTABLE retrain timeline the world.hanzo.ai Model-Improvement panel plots. The
 	// upsert above is the source of truth for "latest per scope"; this append is the
 	// history. Best-effort — a log failure must never fail the publish.
@@ -404,7 +404,7 @@ func zapExportRoutingLedgerHandler(_ context.Context, auth string, body []byte) 
 	if err := writeRoutingLedgerJSONL(&buf, events); err != nil {
 		return zapRPSError(http.StatusInternalServerError, err.Error())
 	}
-	// Raw JSONL stream (not the {status:ok} envelope), matching the beego export.
+	// Raw JSONL stream (not the {status:ok} envelope), matching the the router export.
 	return object.BuildCloudResponse(http.StatusOK, buf.Bytes(), "")
 }
 

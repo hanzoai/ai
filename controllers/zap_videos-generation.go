@@ -13,10 +13,10 @@
 // limitations under the License.
 
 // Native ZAP handlers for the async video route-group — the pure-ZAP twin of the
-// beego ApiController.VideosGenerations / .RetrieveVideo / .VideoContent methods
+// ApiController.VideosGenerations / .RetrieveVideo / .VideoContent methods
 // (videos_api.go). They re-implement the SAME auth → provider-resolution →
 // balance-gate → reservation → upstream → meter pipeline against object/ +
-// model/ directly, with NO http.ResponseWriter and NO beego controller. The
+// model/ directly, with NO http.ResponseWriter and NO controller. The
 // async lifecycle (create → poll → download), the in-pod videoJobStore, the
 // per-video reservation and the EXACTLY-ONCE completion debit are the shared
 // authority in video_jobs.go / videos_api.go — this file reuses it verbatim so

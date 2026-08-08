@@ -23,7 +23,7 @@ import (
 	luxlog "github.com/luxfi/log"
 )
 
-// reference reproduces beego/logs.formatLog verbatim. format must agree with
+// reference reproduces the controller layer/logs.formatLog verbatim. format must agree with
 // it on every input so the migrated call sites render identically.
 func reference(f interface{}, v ...interface{}) string {
 	var msg string
@@ -48,7 +48,7 @@ func reference(f interface{}, v ...interface{}) string {
 	return fmt.Sprintf(msg, v...)
 }
 
-func TestFormatMatchesBeego(t *testing.T) {
+func TestFormatMatchesUpstream(t *testing.T) {
 	err := errors.New("boom")
 	cases := []struct {
 		f interface{}
@@ -73,7 +73,7 @@ func TestFormatMatchesBeego(t *testing.T) {
 		got := format(c.f, c.v...)
 		want := reference(c.f, c.v...)
 		if got != want {
-			t.Errorf("format(%v, %v) = %q, beego reference = %q", c.f, c.v, got, want)
+			t.Errorf("format(%v, %v) = %q, the router reference = %q", c.f, c.v, got, want)
 		}
 	}
 }

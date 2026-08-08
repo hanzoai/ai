@@ -26,7 +26,7 @@ import (
 )
 
 // gwStatusMsg decodes a gateway (MsgType 200) response into its HTTP status and
-// the beego {status,msg} envelope — the exact shape the console/app parse.
+// the the router {status,msg} envelope — the exact shape the console/app parse.
 func gwStatusMsg(t *testing.T, m *zap.Message) (status uint32, envStatus, envMsg string) {
 	t.Helper()
 	if m == nil {
@@ -45,7 +45,7 @@ func gwStatusMsg(t *testing.T, m *zap.Message) (status uint32, envStatus, envMsg
 }
 
 // The core auth parity: every usage handler rejects an empty Bearer with a 401
-// error envelope (never a 200, never leaking data) — the same refusal the beego
+// error envelope (never a 200, never leaking data) — the same refusal the the controller layer
 // RequireSignedIn/RequirePrincipal guard produces. Table-driven across the whole
 // group so no handler can silently drift open.
 func TestZapUsageHandlers_RejectEmptyAuth(t *testing.T) {
@@ -76,7 +76,7 @@ func TestZapUsageHandlers_RejectEmptyAuth(t *testing.T) {
 
 // The backfill endpoint is a WRITE to the financial ledger: a wrong HTTP method
 // must never execute it. A GET (with any auth) is refused at the method gate
-// before principal resolution — parity with beego's POST-only route.
+// before principal resolution — parity with the router's POST-only route.
 func TestZapBackfill_RejectsNonPost(t *testing.T) {
 	msg, err := zapPostBackfillDOUsageHandler(context.Background(), "GET", "/v1/admin/usage/backfill-do", "", "Bearer whatever", nil)
 	if err != nil {
@@ -95,7 +95,7 @@ func TestZapBackfill_RejectsNonPost(t *testing.T) {
 // pinned to its own org, and request hints (?org=, ?owner=) are ignored — it can
 // never read another org's spend. A same-brand super admin may target one org or
 // take the all-orgs god-view. This is the resolveCloudUsageScope policy the
-// beego twin runs; it is exercised directly (no JWT needed) via the ownBrand arg.
+// controller twin runs; it is exercised directly (no JWT needed) via the ownBrand arg.
 func TestZapResolveCloudUsageScope(t *testing.T) {
 	tenant := &iam.User{Owner: "maxpower", Name: "dave"}
 	super := &iam.User{Owner: "admin", Name: "z"}
