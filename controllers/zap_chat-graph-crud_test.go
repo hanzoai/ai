@@ -24,7 +24,7 @@ import (
 	"github.com/hanzoai/ai/object"
 )
 
-// chatGraphWriteMethods are the group's write routes NOT on the beego filter's
+// chatGraphWriteMethods are the group's write routes NOT on the filter's
 // benign-read exempt list — every one requires an ORG admin at the outer gate, so
 // an anonymous (no-principal) caller must be denied 403 BEFORE any DB access. No
 // ORM adapter is initialized in this unit test, so a handler that reached the
@@ -37,7 +37,7 @@ var chatGraphWriteMethods = []string{
 }
 
 // TestZapChatGraphAdminGateRejection asserts every admin-gated write handler fails
-// closed with 403 on an empty Bearer credential (parity with the beego authz
+// closed with 403 on an empty Bearer credential (parity with the the router authz
 // filter's org-admin denyForbidden tail for the non-exempt write routes).
 func TestZapChatGraphAdminGateRejection(t *testing.T) {
 	for _, method := range chatGraphWriteMethods {
@@ -96,7 +96,7 @@ func TestZapChatGraphRegistry(t *testing.T) {
 		}
 	}
 
-	// Unknown path resolves to no group (falls back to the legacy switch / beego).
+	// Unknown path resolves to no group (falls back to the legacy switch / the controller layer).
 	if len(lookupGatewayRoutes("/v1/nope")) > 0 {
 		t.Errorf("/v1/nope unexpectedly registered (rich)")
 	}
@@ -164,7 +164,7 @@ func TestZapChatGraphDecodeError(t *testing.T) {
 	}
 }
 
-// TestZapProviderOkEnvelopeReuse asserts this group reuses the shared beego-parity
+// TestZapProviderOkEnvelopeReuse asserts this group reuses the shared the controller layer-parity
 // envelope: a list payload round-trips as {status:"ok",data:…}.
 func TestZapProviderOkEnvelopeReuse(t *testing.T) {
 	data := []string{"a", "b"}

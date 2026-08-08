@@ -13,10 +13,10 @@
 // limitations under the License.
 
 // Native ZAP handlers for the embeddings/rerank route-group — the pure-ZAP
-// twin of the beego ApiController.Embeddings / .Rerank methods
+// twin of the ApiController.Embeddings / .Rerank methods
 // (embeddings_api.go). These re-implement the SAME auth → provider-resolution →
 // balance-gate → upstream → meter pipeline against object/ + model/ directly,
-// with no http.ResponseWriter and no beego controller. POST /v1/embeddings and
+// with no http.ResponseWriter and no controller. POST /v1/embeddings and
 // POST /v1/rerank stay live on routers.App, which also backs the gateway fallback.
 //
 // Registration convention (recipe): this group self-registers from its own

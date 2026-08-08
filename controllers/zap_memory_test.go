@@ -24,7 +24,7 @@ import (
 )
 
 // zapMemoryHandlers is the set migrated from controllers/memory.go — the same
-// seven routes the beego router serves, keyed by their native cloud method.
+// seven routes the controller router serves, keyed by their native cloud method.
 func zapMemoryHandlers() map[string]func(context.Context, string, []byte) (*zap.Message, error) {
 	return map[string]func(context.Context, string, []byte) (*zap.Message, error){
 		"memory.remember": zapMemoryRememberHandler,
@@ -53,7 +53,7 @@ func zapMemoryStatus(t *testing.T, msg *zap.Message, err error) uint32 {
 // rejects an unauthenticated caller BEFORE any body decode or storage call, on
 // every one of the seven handlers. Identity is never taken from the body, so a
 // well-formed body with an empty (or unrecognized) token is still 401 — mirroring
-// requireMemoryIdentity's "Please sign in first" on the beego path. This path
+// requireMemoryIdentity's "Please sign in first" on the router path. This path
 // touches no database: zapResolveUser rejects the token by shape alone.
 func TestZapMemoryAuthRejection(t *testing.T) {
 	// A body that both (a) is valid for the write routes and (b) tries to smuggle
@@ -72,7 +72,7 @@ func TestZapMemoryAuthRejection(t *testing.T) {
 }
 
 // TestZapMemoryReadParamDefaults proves the read-endpoint parameter parsing
-// mirrors the beego memoryLimit/query semantics: q is trimmed, and an empty or
+// mirrors the the router memoryLimit/query semantics: q is trimmed, and an empty or
 // non-positive limit falls back to the per-endpoint default (20/100) while a
 // valid positive limit is honored.
 func TestZapMemoryReadParamDefaults(t *testing.T) {
@@ -101,7 +101,7 @@ func TestZapMemoryReadParamDefaults(t *testing.T) {
 // TestZapMemoryIdentityNeverFromBody proves the end-to-end identity chokepoint of
 // the migrated handlers: a memoryRequest decoded from a body that tries to set
 // owner/userId carries no such fields, and applyMemoryIdentity force-scopes the
-// stored memory to the authenticated (org, userID) — exactly like the beego path.
+// stored memory to the authenticated (org, userID) — exactly like the router path.
 func TestZapMemoryIdentityNeverFromBody(t *testing.T) {
 	req, err := decodeMemoryRequest([]byte(`{"content":"c","kind":"note","owner":"attacker","userId":"evil"}`))
 	if err != nil {

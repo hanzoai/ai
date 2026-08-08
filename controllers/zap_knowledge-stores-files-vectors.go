@@ -15,12 +15,12 @@
 // Native ZAP handlers for the knowledge group: stores, storage-providers,
 // files, tree-files, the file activation cache, and vectors.
 //
-// STRANGLER: each beego method (ApiController.Get/Update/Add/DeleteStore,
+// STRANGLER: each controller method (ApiController.Get/Update/Add/DeleteStore,
 // RefreshStoreVectors, GetStoreNames, GetStorageProviders, Get/Update/Add/
 // DeleteFile, RefreshFileVectors, UploadFile, Update/Add/DeleteTreeFile,
 // ActivateFile, GetActiveFile, Get/Update/Add/DeleteVector, DeleteAllVectors)
 // is re-implemented here as a pure ZAP handler against object/ + iam, mirroring
-// zap_native.go:zapChatHandler. It NEVER wraps or drives the beego controller
+// zap_native.go:zapChatHandler. It NEVER wraps or drives the controller
 // and never holds an http.ResponseWriter. The same routes stay live on
 // routers.App, which also backs the gateway fallback.
 //
@@ -153,7 +153,7 @@ func zapKSFVPrincipal(auth string) *iam.User {
 	return nil
 }
 
-// zapKSFVOk renders the beego ResponseOk envelope ({status:"ok", data}) as a 200
+// zapKSFVOk renders the ResponseOk envelope ({status:"ok", data}) as a 200
 // cloud response, preserving the exact JSON shape the HTTP handlers return.
 func zapKSFVOk(data interface{}) (*zap.Message, error) {
 	b, _ := json.Marshal(Response{Status: "ok", Data: data})
@@ -275,7 +275,7 @@ func zapDecodeParams(body []byte) zapKnowledgeParams {
 	return p
 }
 
-// zapPaginated reports whether both pageSize and p are present (the beego branch
+// zapPaginated reports whether both pageSize and p are present (the the router branch
 // that pages + admin-gates) and computes offset/limit like pagination.SetPaginator.
 func zapPaginated(p zapKnowledgeParams) (bool, int, int) {
 	if p.PageSize == "" || p.P == "" {
@@ -473,7 +473,7 @@ func zapAddStoreHandler(_ context.Context, auth string, body []byte) (*zap.Messa
 	// owner arrived on the request body, so a member of ANY org could file a store
 	// into the chat plane's own tenant — where it is reachable as a default store,
 	// and a default store names the model every chat answer runs and bills. This is
-	// the scope the beego twin resolves (AddStore, store.go); only the admin org may
+	// the scope the controller twin resolves (AddStore, store.go); only the admin org may
 	// name an owner, and it names it through this seam rather than on the row.
 	owner, _, deny := zapKSFVScopedOwner(auth, store.Owner)
 	if deny != nil {

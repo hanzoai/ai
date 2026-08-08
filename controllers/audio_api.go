@@ -65,7 +65,7 @@ type transcribeRequest struct {
 // from it in one place.
 //
 // The parse has to come first, and putting all the reads behind it is the point.
-// beego resolves GetString through r.Form, and for multipart/form-data Go fills
+// the router resolves GetString through r.Form, and for multipart/form-data Go fills
 // r.Form only inside ParseMultipartForm. Nothing had called it, so a field read
 // came back empty unless something else had already parsed the body — and
 // reading the FILE was that something. `model` was read one line above the file

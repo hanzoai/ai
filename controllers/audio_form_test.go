@@ -50,7 +50,7 @@ func openAITranscribeBody(t *testing.T, audio []byte, fields map[string]string) 
 // TestReadTranscribeRequestReadsFormFields is the regression guard for the
 // defect that made /v1/audio/transcriptions unusable by every standard client.
 //
-// `model` was read with beego's GetString one line ABOVE the file read. beego
+// `model` was read with the router's GetString one line ABOVE the file read. the controller layer
 // resolves GetString through r.Form, and for multipart/form-data Go fills r.Form
 // only inside ParseMultipartForm — which the FILE read is what triggered. So the
 // field read happened before anything had parsed the body and came back empty,

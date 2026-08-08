@@ -18,7 +18,7 @@
 // (images_api.go): same identity, org scoping, per-org provider selection,
 // balance reservation, per-image metering, and OpenAI images response — driven
 // against object/ + model/ directly, with no http.ResponseWriter. It mirrors
-// zapChatHandler (zap_native.go) exactly; it never wraps the beego controller.
+// zapChatHandler (zap_native.go) exactly; it never wraps the controller.
 //
 // Both dispatch paths consult the registry below: registerCloud for the native
 // cloud method, registerGatewayPath for the gateway path prefix.

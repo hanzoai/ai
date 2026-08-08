@@ -59,7 +59,7 @@ func TestZapAccountPrincipal_RejectsEmptyAndUnknown(t *testing.T) {
 }
 
 // get-account on a protected wire with no credential fails LOUD (401), never a
-// synthesized anonymous guest — the security invariant the beego self-heal path
+// synthesized anonymous guest — the security invariant the the router self-heal path
 // preserves.
 func TestZapGetAccountHandler_NoAuthIs401(t *testing.T) {
 	msg, err := zapGetAccountHandler(context.Background(), "", nil)
@@ -92,7 +92,7 @@ func TestZapUpdatePreferencesHandler_NoAuthIs401(t *testing.T) {
 }
 
 // Sign-out is idempotent and dependency-free: it always returns a 200 ok
-// envelope, exactly like the hardened beego handler (no nil-deref, no 500).
+// envelope, exactly like the hardened controller handler (no nil-deref, no 500).
 func TestZapSignoutHandler_IdempotentOk(t *testing.T) {
 	for _, auth := range []string{"", "Bearer whatever"} {
 		msg, err := zapSignoutHandler(context.Background(), auth, nil)

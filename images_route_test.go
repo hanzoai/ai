@@ -60,8 +60,8 @@ func TestImagesGenerationsRouteIsRegistered(t *testing.T) {
 	if resp.StatusCode == http.StatusInternalServerError {
 		t.Fatalf("POST /v1/images/generations: 500 (session panic). body=%q", body)
 	}
-	if bs := string(body); strings.Contains(bs, "beego application error") || strings.Contains(bs, "nil pointer") {
-		t.Fatalf("beego panic page returned: %q", bs)
+	if bs := string(body); strings.Contains(bs, "nil pointer") {
+		t.Fatalf("a nil dereference reached the body: %q", bs)
 	}
 	// The handler ran and rejected the unauthenticated request.
 	if resp.StatusCode != http.StatusUnauthorized {

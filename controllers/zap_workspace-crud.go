@@ -14,7 +14,7 @@
 
 // Native ZAP handlers for the workspace-CRUD group (strangler migration of
 // template.go, workflow.go, task.go, task_upload.go, video.go). Pure ZAP — no
-// beego controller, no HTTP writer. Each handler re-implements the beego method's
+// controller, no HTTP writer. Each handler re-implements the controller method's
 // logic against object/ + iam, preserving identity, authz, and response shape
 // EXACTLY.
 //
@@ -72,7 +72,7 @@ func init() {
 // keys on controllerName (the path minus "/v1/") and honors conf.DisablePreviewMode
 // so the native gate is identical to the HTTP gate. Returns a refusal message to
 // return verbatim, or nil when the coarse gate allows the request through (the
-// per-controller ownership/sign-in checks then run, exactly as in beego).
+// per-controller ownership/sign-in checks then run, exactly as in the controller layer).
 func zapWorkspaceGate(user *iam.User, name string) *zap.Message {
 	disablePreview := conf.DisablePreviewMode()
 	isUpdate := strings.HasPrefix(name, "update-") || strings.HasPrefix(name, "add-") ||
@@ -137,7 +137,7 @@ func zapScopedOwner(user *iam.User, q url.Values) (string, bool, *zap.Message) {
 }
 
 // zapSessionUsername mirrors ApiController.GetSessionUsername: the bare user.Name
-// (NOT owner/name) — the value the beego ownership checks compare against.
+// (NOT owner/name) — the value the the router ownership checks compare against.
 func zapSessionUsername(user *iam.User) string {
 	if user == nil {
 		return ""
@@ -334,7 +334,7 @@ func zapUploadTaskDocument(user *iam.User, q url.Values, body []byte) (*zap.Mess
 }
 
 func zapGetVideos(q url.Values) (*zap.Message, error) {
-	// Parity with beego GetVideos: owner is forced to "" (list is global-scoped).
+	// Parity with the router GetVideos: owner is forced to "" (list is global-scoped).
 	owner := ""
 	limit := q.Get("pageSize")
 	page := q.Get("p")
@@ -495,7 +495,7 @@ func zapMultipartFile(body []byte, field string) (*zapFilePart, bool) {
 }
 
 // zapFormValues decodes non-file form fields from either a multipart body or a
-// urlencoded body, matching beego c.GetString across both content types.
+// urlencoded body, matching the router c.GetString across both content types.
 func zapFormValues(body []byte) url.Values {
 	values := url.Values{}
 	if mr, ok := zapMultipartReader(body); ok {

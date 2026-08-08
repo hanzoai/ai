@@ -32,7 +32,7 @@ import (
 // (DB, providers, billing); its runtime-init behavior needs a backend, so the
 // adapter tests deliberately use mountRoutes.
 //
-// AI mounts the beego handler at BARE /v1/* (no prefix, no rewrite) because the
+// AI mounts the controller handler at BARE /v1/* (no prefix, no rewrite) because the
 // production gateway forwards the bare /v1 routes unchanged (/v1/chat/completions,
 // /v1/models, …). See mountRoutes for why this is collision-safe.
 
@@ -64,7 +64,7 @@ func TestMountRoutesForwardsBarePathUnchanged(t *testing.T) {
 	}))
 	defer SetHandler(nil)
 
-	// Bare gateway path must reach beego UNCHANGED — no /v1/ai rewrite.
+	// Bare gateway path must reach the router UNCHANGED — no /v1/ai rewrite.
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
 	resp, err := app.Fiber().Test(req)
 	if err != nil {

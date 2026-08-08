@@ -27,11 +27,11 @@ import (
 // the SAME canonical ZAP gateway registry (zap_registry.go) that the MsgType 200
 // handler serves over the gateway transport. The native ZAP
 // handler is the ONE and ONLY implementation of these routes; this is purely the
-// api.hanzo.ai HTTP binding, so there is NO beego twin to drift from and the
+// api.hanzo.ai HTTP binding, so there is NO controller twin to drift from and the
 // split-brain the router refactor removed stays removed.
 //
 // Why a bridge and not a twin controller method: every other migrated route
-// (get-records, get-connections, …) carries BOTH a beego controller method and a
+// (get-records, get-connections, …) carries BOTH a controller method and a
 // ZAP handler — the exact dual-impl drift that silently NULLed customer router
 // settings (the update-router-policy data-wipe). Routing these nouns through the
 // ZAP handler over one adapter keeps a single source of truth.

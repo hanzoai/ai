@@ -13,9 +13,9 @@
 // limitations under the License.
 
 // Native ZAP handlers for the audio route-group — the strangler migration of
-// audio_api.go / zen_media.go / text_to_speech.go / speech_to_text.go off beego.
+// audio_api.go / zen_media.go / text_to_speech.go / speech_to_text.go off the controller layer.
 //
-// Pure ZAP handlers (no beego ApiController, no http.ResponseWriter): they
+// Pure ZAP handlers (no ApiController, no http.ResponseWriter): they
 // re-implement each HTTP handler against object/ + iam, mirroring zapChatHandler
 // exactly — identity from the auth seam (STEP 1), org = authUser.Owner (STEP 2),
 // the SAME request structs (STEP 3), the SAME balance/KMS gates (STEP 4), the
@@ -478,7 +478,7 @@ func zapRecordZenMediaUsage(mdl string, authUser *iam.User, isPremium bool, reqI
 
 func zapLegacyTTSHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
 	// The legacy handler bills the STORE owner, but a caller identity is still
-	// required — over ZAP there is no beego filter chain, so enforce auth here
+	// required — over ZAP there is no filter chain, so enforce auth here
 	// (STEP 1). Empty/invalid auth -> 401.
 	if _, err := zapResolveUser(auth); err != nil {
 		return object.BuildCloudResponse(401, nil, err.Error())

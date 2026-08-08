@@ -68,7 +68,7 @@ func (c *ApiController) ResponseError(error string, data ...interface{}) {
 // ResponseErrorWithStatus writes the standard error envelope with an explicit
 // HTTP status code. Plain ResponseError emits HTTP 200, which is wrong for auth
 // failures; the OpenAI-compatible /v1 handlers use this so a missing or invalid
-// Bearer token returns 401, matching /v1/models. Beego's Output.Body honors a
+// Bearer token returns 401, matching /v1/models. The router's Output.Body honors a
 // status set via SetStatus, so the body shape is unchanged.
 func (c *ApiController) ResponseErrorWithStatus(status int, error string, data ...interface{}) {
 	c.Ctx.Output.SetStatus(status)
@@ -77,7 +77,7 @@ func (c *ApiController) ResponseErrorWithStatus(status int, error string, data .
 
 // apiError carries an HTTP status alongside the message so the OpenAI-compatible
 // handlers map auth / billing / validation failures to the right code instead of
-// Beego's default 200 (ServeJSON never sets a status). The shared auth+routing
+// The router's default 200 (ServeJSON never sets a status). The shared auth+routing
 // policy (authResolveProvider and the resolveProvider* functions it composes)
 // returns exactly one category per failure, so the status is unambiguous:
 //
@@ -156,13 +156,13 @@ func (c *ApiController) ResponseAuthError(err error) {
 }
 
 // ResponseUnauthorized renders an authentication denial (no/invalid session or
-// credential) as a real HTTP 401 — never Beego's default 200. Same body shape.
+// credential) as a real HTTP 401 — never The router's default 200. Same body shape.
 func (c *ApiController) ResponseUnauthorized(error string, data ...interface{}) {
 	c.ResponseErrorWithStatus(http.StatusUnauthorized, error, data...)
 }
 
 // ResponseForbidden renders an authorization denial (authenticated but not
-// permitted) as a real HTTP 403 — never Beego's default 200. Same body shape.
+// permitted) as a real HTTP 403 — never The router's default 200. Same body shape.
 func (c *ApiController) ResponseForbidden(error string, data ...interface{}) {
 	c.ResponseErrorWithStatus(http.StatusForbidden, error, data...)
 }

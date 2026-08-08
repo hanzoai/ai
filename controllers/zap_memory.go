@@ -13,20 +13,20 @@
 // limitations under the License.
 
 // Native ZAP handlers for the /v1/memory/* route group (strangler migration of
-// controllers/memory.go). Pure ZAP: no beego controller, no http writer. The
+// controllers/memory.go). Pure ZAP: no controller, no http writer. The
 // logic is re-implemented against object/ + the shared ZAP auth seam, mirroring
 // controllers.ApiController's Memory* methods EXACTLY:
 //
 //   - identity is resolved from the auth token via zapResolveUser (the ONE auth
 //     seam), NEVER from the request body. "owner/name" splits to (org, userID),
-//     the same pair the beego path derives from the gateway-minted X-Org-Id
+//     the same pair the router path derives from the gateway-minted X-Org-Id
 //     (JWT owner) / X-User-Id (JWT sub) headers.
 //   - every storage call is scoped by (org, userID); applyMemoryIdentity force-
 //     sets identity so a body-supplied owner/userId can never be honored.
-//   - memory is NOT an LLM path: the beego controller runs no balance gate and
+//   - memory is NOT an LLM path: the controller runs no balance gate and
 //     records no usage, so neither does this handler (behavior parity — there is
 //     no meter to extend and no gate to enforce for a memory read/write).
-//   - success returns the beego Response{status:"ok",data} envelope verbatim via
+//   - success returns the Response{status:"ok",data} envelope verbatim via
 //     the shared zapOk; failures use the shared zapErr (the sibling group's
 //     established convention for this migration).
 //

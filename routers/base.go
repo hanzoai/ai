@@ -39,7 +39,7 @@ type Response struct {
 func GetSessionUser(ctx *web.Context) *iam.User {
 	// Twin of controllers.GetSessionClaims: a nil session store resolves to "no
 	// session user", never a panic. ctx.Input.Session dereferences CruSession
-	// directly, and CruSession is only populated by beego's SessionStart — which
+	// directly, and CruSession is only populated by the router's SessionStart — which
 	// does NOT run when the embedded cloud binary serves these routes without the
 	// session hook. This function runs in the BeforeRouter filters (RateLimit,
 	// BalanceGate, Authz) via resolveBillingKey — BEFORE the controller — so a nil
@@ -103,7 +103,7 @@ func responseError(ctx *web.Context, error string, data ...interface{}) {
 }
 
 // responseErrorStatus writes the standard error envelope with an explicit HTTP
-// status. Filters use it so an auth/authz denial is a real 401/403, not Beego's
+// status. Filters use it so an auth/authz denial is a real 401/403, not The router's
 // default 200 — a denial must never look like success to a client. The body
 // shape is unchanged; only the status differs.
 func responseErrorStatus(ctx *web.Context, status int, error string, data ...interface{}) {

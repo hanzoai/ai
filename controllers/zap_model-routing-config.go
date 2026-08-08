@@ -14,8 +14,8 @@
 
 // Native ZAP handlers for the model-routing / model-config / model-access group
 // (strangler migration of model_route.go, model_config.go, model_config_live.go,
-// model_pricing.go, model_access.go). Pure ZAP — no beego controller, no HTTP
-// writer. Each handler re-implements the beego method's logic against object/ +
+// model_pricing.go, model_access.go). Pure ZAP — no controller, no HTTP
+// writer. Each handler re-implements the controller method's logic against object/ +
 // iam, preserving identity, authz, and response shape EXACTLY.
 //
 // These are HTTP-shaped admin/self routes (query strings, a :model path param,
@@ -60,9 +60,9 @@ func init() {
 	registerGatewayRoute("/v1/admin/refresh-model-pricing", zapModelConfigAdminHandler)
 }
 
-// ── Response helpers: the SAME Response envelope the beego path returns ────────
+// ── Response helpers: the SAME Response envelope the router path returns ────────
 //
-// beego ResponseOk → HTTP 200 {status:"ok",data,data2}; beego ResponseError →
+// ResponseOk → HTTP 200 {status:"ok",data,data2}; ResponseError →
 // HTTP 200 {status:"error",msg} (a logic error is 200-with-error-body); auth
 // denials → real 401/403. These mirror that exactly over the gateway projection.
 
@@ -80,7 +80,7 @@ func zapGwOk(data ...interface{}) (*zap.Message, error) {
 }
 
 // zapGwError renders {status:"error",msg} at an explicit HTTP status. Logic errors
-// use 200 (beego ResponseError parity); auth denials use 401/403.
+// use 200 (ResponseError parity); auth denials use 401/403.
 func zapGwError(status uint32, msg string) (*zap.Message, error) {
 	b, _ := json.Marshal(Response{Status: "error", Msg: msg})
 	return object.BuildGatewayResponse(status, b, nil)
@@ -162,7 +162,7 @@ func zapGetModelRoutes(q url.Values) (*zap.Message, error) {
 	return zapGwOk(routes, count)
 }
 
-// zapPageOffset mirrors beego pagination.SetPaginator().Offset(): page is 1-based,
+// zapPageOffset mirrors pagination.SetPaginator().Offset(): page is 1-based,
 // clamped to >= 1 (unset or garbage → 1), and the offset is (page-1)*perPage.
 func zapPageOffset(page string, perPage int) int {
 	p, err := util.ParseIntWithError(page)

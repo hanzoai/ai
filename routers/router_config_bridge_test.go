@@ -23,7 +23,7 @@ import (
 // TestRouterConfigRoutesServeOverHTTP is the regression guard the router refactor
 // was missing: it drives the REAL App router (the api.hanzo.ai :8000 transport),
 // not the ZAP registry in isolation. The refactor moved the router-config surface
-// to ZAP-native handlers and DELETED the beego routes, on the false premise that
+// to ZAP-native handlers and DELETED the controller routes, on the false premise that
 // ZAP-native serves HTTP. It does not — :8000 is the custom web.Router, and a
 // request only reaches a handler if a route is registered here. So every one of
 // these nouns 404'd in production while the ZAP-registry unit tests stayed green.
@@ -63,7 +63,7 @@ func TestRouterConfigRoutesServeOverHTTP(t *testing.T) {
 	}
 
 	// The retired compound-verb paths must be gone from the HTTP transport too —
-	// no beego twin, no backwards-compat alias.
+	// no controller twin, no backwards-compat alias.
 	for _, p := range []string{
 		"/v1/get-router-policy", "/v1/update-router-policy",
 		"/v1/get-routing-defaults", "/v1/export-routing-ledger",
@@ -73,7 +73,7 @@ func TestRouterConfigRoutesServeOverHTTP(t *testing.T) {
 		"/v1/add-org-settings", "/v1/get-org-settings-list",
 	} {
 		if code := serve(http.MethodGet, p); code != http.StatusNotFound {
-			t.Errorf("retired compound path %s: status %d, want 404 (no beego twin, no alias)", p, code)
+			t.Errorf("retired compound path %s: status %d, want 404 (no controller twin, no alias)", p, code)
 		}
 	}
 }

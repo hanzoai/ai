@@ -125,7 +125,7 @@ func confRouterPolicy() (map[string][]string, float64) {
 // The router-policy read/write endpoints (GET|PUT /v1/router/policy) are served
 // ZAP-native — the ONE implementation — by zapGet/UpdateRouterPolicyHandler in
 // controllers/zap_router-policy-stats.go, which call the shared resolvedRouterPolicy
-// + enabledModelsSet + the fold helpers below. There is deliberately no beego twin:
+// + enabledModelsSet + the fold helpers below. There is deliberately no controller twin:
 // the twin's mutate-vs-replace drift is what silently NULLed the org allowlist/dial.
 
 // ── Per-org fold ────────────────────────────────────────────────────────

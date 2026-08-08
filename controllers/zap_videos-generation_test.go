@@ -23,7 +23,7 @@ func zapVideoStatus(t *testing.T, msg *zap.Message) uint32 {
 }
 
 // TestZapVideosAuthRejection asserts the auth seam on create: no token → 401 and
-// a publishable (read-only) key → 403, exactly like the beego VideosGenerations
+// a publishable (read-only) key → 403, exactly like the the router VideosGenerations
 // path. These short-circuit before any provider/upstream call, so they are fully
 // deterministic.
 func TestZapVideosAuthRejection(t *testing.T) {
@@ -97,7 +97,7 @@ func TestZapVideosUnknownJobAuthFirst(t *testing.T) {
 
 // TestZapVideoJobResponseParity is the terminal-encode/lifecycle parity test:
 // the OpenAI Sora video object a native poll/download returns must project the
-// job's status and progress exactly like the beego path (videoJobResponse is the
+// job's status and progress exactly like the router path (videoJobResponse is the
 // shared projection). This is the billing/lifecycle surface the client sees.
 func TestZapVideoJobResponseParity(t *testing.T) {
 	completed := &videoJob{

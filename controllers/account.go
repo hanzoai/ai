@@ -32,7 +32,7 @@ import (
 
 // iamTokenCookieName carries the caller's VERIFIED IAM access token (RS256 JWT)
 // to the browser as an HttpOnly, Secure, SameSite=Lax first-party cookie. It is
-// the self-healing identity credential: the beego session that backs the cookie
+// the self-healing identity credential: the the router session that backs the cookie
 // login is the process-local in-memory store, so it is lost on pod restart / GC /
 // a request that lands without it — after which get-account used to synthesize an
 // anonymous `u-<hash>` user (owner=the real tenant, isAdmin=false), the bug that
@@ -42,7 +42,7 @@ import (
 // authenticated subject is NEVER downgraded to a guest.
 const iamTokenCookieName = "hanzo_iam_token"
 
-// accountAction is get-account's identity decision, decoupled from the beego
+// accountAction is get-account's identity decision, decoupled from the controller
 // controller plumbing so the policy is unit-testable in isolation.
 type accountAction int
 
@@ -173,7 +173,7 @@ func (c *ApiController) Signin() {
 	claims.AccessToken = token.AccessToken
 	c.SetSessionClaims(claims)
 	// Persist the verified access token so identity survives an in-memory session
-	// loss: a later get-account whose beego session is gone self-heals from this
+	// loss: a later get-account whose the router session is gone self-heals from this
 	// cookie to the canonical identity instead of falling back to an anonymous
 	// u-<hash> user. See iamTokenCookieName + GetAccount.
 	c.setIamTokenCookie(token.AccessToken, token.Expiry)
@@ -431,7 +431,7 @@ func (c *ApiController) isSafePassword() (bool, error) {
 func (c *ApiController) GetAccount() {
 	// Route through the env-first accessor (conf.DisablePreviewMode) so the
 	// DISABLE_PREVIEW_MODE lever governs GetAccount too — matching the authz filter
-	// and RequireAdmin. Reading beego.AppConfig directly bypassed that lever.
+	// and RequireAdmin. Reading web.AppConfig directly bypassed that lever.
 	disablePreviewMode := conf.DisablePreviewMode()
 	err := util.AppendWebConfigCookie(c.Ctx)
 	if err != nil {
@@ -440,7 +440,7 @@ func (c *ApiController) GetAccount() {
 
 	// Self-heal the session identity from a verified IAM credential (the
 	// hanzo_iam_token cookie or an Authorization Bearer JWT) BEFORE deciding
-	// identity. The cookie login is backed by the process-local beego session, so
+	// identity. The cookie login is backed by the process-local the router session, so
 	// two failure modes downgrade a real subject to an anonymous u-<hash> record:
 	//   (1) the session was dropped (pod restart / GC) — GetSessionUser() == nil;
 	//   (2) an earlier anonymousSignin already bound a guest INTO the session, so

@@ -299,7 +299,7 @@ func (c *ApiController) rejectPublishableKey() {
 	c.EnableRender = false
 }
 
-// jsonResponse writes v as a 200 JSON body and disables beego's auto-render.
+// jsonResponse writes v as a 200 JSON body and disables the router's auto-render.
 func (c *ApiController) jsonResponse(v interface{}) {
 	b, err := json.Marshal(v)
 	if err != nil {

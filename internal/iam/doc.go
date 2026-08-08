@@ -18,7 +18,7 @@
 //
 // It is NOT a published SDK. It exists so ai links only against standard OIDC
 // (JWKS token verification) and the IAM server's JSON REST API (/v1/iam/...),
-// instead of pulling in the whole iam-v1 server module (beego, xorm, ldap,
+// instead of pulling in the whole iam-v1 server module (the retired framework, xorm, ldap,
 // aliyun/aws SDKs, …) that it dragged into ai's build for code ai never ran.
 //
 // The wire types (User, Claims, Permission, Resource, …) mirror the IAM

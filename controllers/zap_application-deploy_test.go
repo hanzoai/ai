@@ -71,7 +71,7 @@ func TestZapApplicationDeployRegistered(t *testing.T) {
 // TestZapApplicationDeployAuthRejection asserts the ONE identity seam refuses an
 // unauthenticated caller on EVERY handler, before any object/DB call — an empty
 // credential resolves to a nil principal, so each handler returns 401 with the
-// {status:"error"} envelope the beego ResponseUnauthorized returns. The k8s.status
+// {status:"error"} envelope the the router ResponseUnauthorized returns. The k8s.status
 // super-admin gate also fails closed at 401 for no principal (403 is reserved for
 // an authenticated non-super-admin).
 func TestZapApplicationDeployAuthRejection(t *testing.T) {

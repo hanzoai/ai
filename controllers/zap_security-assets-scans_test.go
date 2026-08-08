@@ -24,7 +24,7 @@ import (
 
 // securityGroupMethods are the group's native cloud methods. Every one fails
 // closed with 401 on an anonymous request BEFORE touching the DB — the native
-// path re-enforcement of the beego sign-in requirement (there is no filter chain
+// path re-enforcement of the the router sign-in requirement (there is no filter chain
 // on the ZAP wire). No adapter is initialized in this unit test, so a handler
 // that reached the store would panic; reaching the 401 assertion proves the gate
 // ran first.
@@ -64,7 +64,7 @@ func TestZapSecurityBogusTokenRejected(t *testing.T) {
 	}
 }
 
-// TestZapSecurityOkEnvelopeParity asserts the success encoding matches the beego
+// TestZapSecurityOkEnvelopeParity asserts the success encoding matches the controller
 // ResponseOk envelope ({status:"ok",data}) and the paginated two-value form sets
 // data2 — the console frontend contract the native path must preserve.
 func TestZapSecurityOkEnvelopeParity(t *testing.T) {

@@ -14,27 +14,27 @@
 
 // Native ZAP handlers for the security assets / scans / patch / permission
 // route-group — the strangler migration of asset.go, scan.go, patch.go and
-// permission.go off beego.
+// permission.go off the controller layer.
 //
-// STRANGLER: each beego method (ApiController.GetAssets, GetAsset, UpdateAsset,
+// STRANGLER: each controller method (ApiController.GetAssets, GetAsset, UpdateAsset,
 // AddAsset, DeleteAsset, ScanAsset, ScanAssets, GetScans, GetScan, UpdateScan,
 // AddScan, DeleteScan, InstallPatch, GetPermissions, GetPermission,
 // UpdatePermission, AddPermission, DeletePermission) is re-implemented here as a
-// pure ZAP handler against object/ + iam directly — never wrapping the beego
+// pure ZAP handler against object/ + iam directly — never wrapping the the controller layer
 // controller — mirroring zap_native.go:zapChatHandler and the app-deploy group
 // (zap_application-deploy.go). The same routes stay live on routers.App, which
 // also backs the gateway fallback.
 //
 // Identity/scope parity: these endpoints have NO session filter on the ZAP path
-// (there is no beego filter chain), so every handler fails closed — a verified
+// (there is no filter chain), so every handler fails closed — a verified
 // credential is required (STEP 1). None of these routes is a super-admin or
 // balance-gated endpoint (they are absent from authz_filter.go
-// superAdminEndpoints / authRequiredEndpoints), and the beego controllers only
+// superAdminEndpoints / authRequiredEndpoints), and the controllers only
 // require sign-in: the list handlers scope by owner via GetScopedOwner (owner =
 // principal.Owner; the reserved `admin` org may target another owner), the rest
 // require a verified principal and pass through 1:1. There is no LLM call and no
 // meter on this group — these are security/infra CRUD, so STEP 6 does not apply
-// (the beego path meters nothing either). Query params (pageSize, p, field,
+// (the router path meters nothing either). Query params (pageSize, p, field,
 // value, sortField, sortOrder, id, owner, provider, …) are decoded from the JSON
 // body — the same pattern zapBalanceHandler / zap_application-deploy.go use —
 // NEVER trusted for identity.
@@ -128,7 +128,7 @@ func zapSecPrincipal(auth string) *iam.User {
 	return nil
 }
 
-// zapSecOk renders the beego ResponseOk envelope ({status:"ok", data[, data2]})
+// zapSecOk renders the ResponseOk envelope ({status:"ok", data[, data2]})
 // as a 200 cloud response, preserving the exact JSON shape the HTTP handlers
 // return. The variadic mirrors ResponseOk: a second arg becomes Data2 (the
 // pagination count for the list handlers).
@@ -145,7 +145,7 @@ func zapSecOk(data ...interface{}) (*zap.Message, error) {
 	return object.BuildCloudResponse(http.StatusOK, b, "")
 }
 
-// zapSecErr renders the beego ResponseError envelope ({status:"error", msg}) at
+// zapSecErr renders the ResponseError envelope ({status:"error", msg}) at
 // the given status. Business errors mirror ResponseError (HTTP 200 body); auth
 // failures use 401 like ResponseUnauthorized.
 func zapSecErr(status int, msg string) (*zap.Message, error) {
@@ -168,7 +168,7 @@ func zapSecScopedOwner(user *iam.User, requestedOwner string) string {
 
 // ── asset.go parity ──────────────────────────────────────────────────────────
 
-// zapListParams is the body-decoded projection of the beego query params shared
+// zapListParams is the body-decoded projection of the query params shared
 // by the asset/scan list handlers.
 type zapListParams struct {
 	Owner     string `json:"owner"`
@@ -222,7 +222,7 @@ func zapGetAssetsHandler(_ context.Context, auth string, body []byte) (*zap.Mess
 }
 
 // zapSecIDRequest carries a single `id` (owner/name) over the native body — the
-// ZAP twin of the beego URL query param.
+// ZAP twin of the the router URL query param.
 type zapSecIDRequest struct {
 	ID string `json:"id"`
 }
@@ -300,7 +300,7 @@ func zapDeleteAssetHandler(_ context.Context, auth string, body []byte) (*zap.Me
 	return zapSecOk(success)
 }
 
-// zapScanAssetRequest carries the ScanAsset params (beego URL query) over the
+// zapScanAssetRequest carries the ScanAsset params (the router URL query) over the
 // native body.
 type zapScanAssetRequest struct {
 	Provider   string `json:"provider"`
@@ -492,7 +492,7 @@ type zapInstallPatchRequest struct {
 
 // zapInstallPatchHandler mirrors ApiController.InstallPatch: validates the OS
 // Patch provider, loads the scan, stamps the async install command + Pending
-// state (clearing prior results), and persists it — 1:1 with the beego path.
+// state (clearing prior results), and persists it — 1:1 with the router path.
 func zapInstallPatchHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
 	if zapSecPrincipal(auth) == nil {
 		return zapSecErr(http.StatusUnauthorized, "auth:Please sign in first")
