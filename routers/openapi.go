@@ -14,14 +14,10 @@
 
 package routers
 
-import (
-	"fmt"
-	"sort"
-	"strings"
-)
+import "strings"
 
-// The published API description of the resource surface is DERIVED from the same
-// table that registers it — never written a second time.
+// The published API description of this service is DERIVED from the router that
+// serves it — never written a second time.
 //
 // A hand-maintained spec beside a route table is two sources for one fact, and
 // they drift in the direction that hurts: the spec is what customers and every
@@ -29,21 +25,117 @@ import (
 // checked-in swagger.json in this repo is the standing proof — it still describes
 // `/api/<verb>-<noun>`, a base path this service has never served.
 //
-// So OpenAPIPaths is the ONE accessor: cmd/openapi renders it into the canonical
-// spec (hanzoai/openapi ai/openapi.yaml) between generated markers, and
-// TestOpenAPISpecMatchesTheTable re-renders and fails on any difference. Adding a
-// resource to the table publishes it; nothing else to remember.
+// So [Document] is the ONE accessor, and it is a whole document rather than a
+// fragment somebody else completes. hanzoai/cloud reaches this surface through a
+// single `/v1/*` door and publishes what comes back as the fleet's contract, so
+// what it asks for is everything an operation owes a reader: the address, the
+// verb, the sentence, and — where this service declares one — the body.
 //
-// It owns PATHS only. The shared components (the response envelope, the reusable
-// error responses) are stable and hand-authored in the spec, because they do not
-// vary per resource — one is generated, the other is not, and the boundary is
-// exactly where the repetition is.
+// Membership comes from [App.Patterns], the live route table, because that is
+// the only thing that knows what answers. Detail comes from wherever it is
+// already written: the resource table for the half it generates, the doc comment
+// on the handler for the rest. Nothing is copied.
 
-// OpenAPIPaths returns the OpenAPI 3.1 Path Item Objects for every route the
-// resource table generates, keyed by path. The result is deterministic: maps are
-// emitted in sorted order by the caller, and nothing here reads the clock, the
-// environment, or a random source.
-func OpenAPIPaths() map[string]any {
+// Document is everything this service serves, as one OpenAPI 3.1 document.
+//
+// The result is deterministic: it reads the route table and two package-level
+// tables, and nothing here reads the clock, the environment, or a random source.
+func Document() map[string]any {
+	described := items()
+	said := map[string]Doc{}
+	for _, w := range wired {
+		said[w.Method+" "+openAPIPath(w.Path)] = Doc{Summary: w.Summary, Description: w.Description}
+	}
+
+	paths := map[string]any{}
+	for pattern, methods := range App.Patterns() {
+		path := openAPIPath(pattern)
+		for _, registered := range methods {
+			for _, verb := range expand(registered) {
+				item, ok := paths[path].(map[string]any)
+				if !ok {
+					item = map[string]any{}
+					paths[path] = item
+				}
+				generated, _ := described[path].(map[string]any)
+				o, _ := generated[strings.ToLower(verb)].(map[string]any)
+				if o == nil {
+					// A hand-written route. Its body is the OpenAI wire format or a
+					// stream, not this service's envelope, so the only honest thing
+					// to say about it is what its handler says.
+					o = map[string]any{}
+				}
+				d, ok := said[verb+" "+path]
+				if !ok {
+					// One handler answering every verb says one thing about all of
+					// them, and the table keeps the star it was registered under.
+					d = said["* "+path]
+				}
+				if d.Summary != "" {
+					o["summary"] = d.Summary
+				}
+				if d.Description != "" {
+					o["description"] = d.Description
+				}
+				item[strings.ToLower(verb)] = o
+			}
+		}
+	}
+
+	return map[string]any{
+		"openapi": "3.1.0",
+		"info":    map[string]any{"title": "Hanzo AI", "version": "v1"},
+		"paths":   paths,
+		"components": map[string]any{"schemas": map[string]any{
+			"Envelope": envelope(),
+		}},
+	}
+}
+
+// expand is the verbs one registration publishes.
+//
+// A route registered "*" is ONE handler answering every method, so the document
+// has to choose which of them to name. It names the five a client calls. TRACE
+// echoes the request back and is the Cross-Site Tracing vector; OPTIONS is CORS
+// preflight, which a browser sends and a person never does — advertising either
+// puts a method in every generated SDK, CLI and tool list that nobody should
+// reach for.
+func expand(registered string) []string {
+	all := []string{"DELETE", "GET", "PATCH", "POST", "PUT"}
+	if registered == "*" {
+		return all
+	}
+	registered = strings.ToUpper(registered)
+	for _, v := range all {
+		if v == registered {
+			return []string{registered}
+		}
+	}
+	return nil
+}
+
+// envelope is the one body this service returns from its resource surface.
+//
+// `data` carries no type because it genuinely has none: every resource answers
+// through this shape, so what is inside it depends on the operation. Asserting
+// an object there would be a lie in every generated client.
+func envelope() map[string]any {
+	return map[string]any{
+		"type":     "object",
+		"required": []any{"status", "msg"},
+		"description": "The resource surface's response. `status` is the verdict, not the HTTP code: " +
+			"a handled failure is still 200.",
+		"properties": map[string]any{
+			"status": map[string]any{"type": "string", "enum": []any{"ok", "error"}},
+			"msg":    map[string]any{"type": "string", "description": "Empty on success, the reason on failure."},
+			"data":   map[string]any{"description": "The operation's own result."},
+			"data2":  map[string]any{"description": "A second result the operation defines, when it has one."},
+		},
+	}
+}
+
+// items are the Path Item Objects the resource table generates, keyed by path.
+func items() map[string]any {
 	out := map[string]any{}
 
 	add := func(path, method string, op map[string]any) {
@@ -57,44 +149,35 @@ func OpenAPIPaths() map[string]any {
 	}
 
 	for _, r := range resources {
-		tag := titleCase(r.path)
 		coll, member := r.collection(), r.member()
 
 		if !r.noList {
-			add(coll, "GET", op(tag, "List "+r.path, "Get"+r.plural(),
+			add(coll, "GET", op("List "+r.path,
 				"List the caller's "+r.path+".", nil, false))
 		}
 		if !r.noCreate {
-			add(coll, "POST", op(tag, "Create a "+singularNoun(r), "Add"+r.one,
+			add(coll, "POST", op("Create a "+singularNoun(r),
 				"Create one "+singularNoun(r)+".", nil, true))
 		}
 		if r.global {
-			add(coll+"/global", "GET", op(tag, "List "+r.path+" across tenants",
-				"GetGlobal"+r.plural(),
+			add(coll+"/global", "GET", op("List "+r.path+" across tenants",
 				"Cross-tenant listing. Admin-only; a tenant caller is refused.", nil, false))
 		}
 
 		mp := memberParams()
 		if !r.noRead {
-			read := r.readMethod
-			if read == "" {
-				read = "Get" + r.one
-			}
-			add(member, "GET", op(tag, "Retrieve a "+singularNoun(r), read,
+			add(member, "GET", op("Retrieve a "+singularNoun(r),
 				"Read one "+singularNoun(r)+" by its (owner, name) key.", mp, false))
 		}
 		if !r.noUpdate {
-			// One handler, two verbs — so two operations, and they MUST NOT share an
-			// operationId (a code generator would emit one method name twice and most
-			// keep only the last).
-			add(member, "PATCH", op(tag, "Update a "+singularNoun(r), "Update"+r.one,
+			add(member, "PATCH", op("Update a "+singularNoun(r),
 				"Update one "+singularNoun(r)+". PATCH and PUT reach the same handler, "+
 					"which has always taken a whole object.", mp, true))
-			add(member, "PUT", op(tag, "Replace a "+singularNoun(r), "Replace"+r.one,
+			add(member, "PUT", op("Replace a "+singularNoun(r),
 				"Identical to PATCH — the handler takes a whole object either way.", mp, true))
 		}
 		if !r.noDelete {
-			add(member, "DELETE", op(tag, "Delete a "+singularNoun(r), "Delete"+r.one,
+			add(member, "DELETE", op("Delete a "+singularNoun(r),
 				"Delete one "+singularNoun(r)+".", mp, false))
 		}
 
@@ -108,53 +191,23 @@ func OpenAPIPaths() map[string]any {
 				p, params = member+"/"+a.name, mp
 			}
 			body := verb == "POST" || verb == "PUT" || verb == "PATCH"
-			add(p, verb, op(tag, actionSummary(a.name, singularNoun(r)), a.method,
-				"", params, body))
+			add(p, verb, op(actionSummary(a.name, singularNoun(r)), "", params, body))
 		}
 	}
 
 	for _, s := range singletons {
-		tag := titleCase(strings.ReplaceAll(s.path, "/", "-"))
-		// Iterate a FIXED verb order, not the map: Go randomizes map order, and a
-		// generator whose output reorders between runs cannot be diffed for drift.
+		// Iterate a FIXED verb order, not the map: Go randomizes map order, and an
+		// accessor whose output reorders between runs cannot be diffed for drift.
 		for _, verb := range []string{"GET", "POST", "PUT", "PATCH", "DELETE"} {
-			method, ok := s.verbs[verb]
-			if !ok {
+			if _, ok := s.verbs[verb]; !ok {
 				continue
 			}
 			body := verb == "POST" || verb == "PUT" || verb == "PATCH"
-			// A singleton may map two verbs to ONE handler (PATCH+PUT -> Update…),
-			// which would emit one operationId twice. The verb disambiguates.
-			stem := method
-			if dup := countVerbsFor(s, method); dup > 1 && verb != primaryVerbFor(s, method) {
-				stem = titleCase(strings.ToLower(verb)) + method
-			}
-			add(s.url(), verb, op(tag, actionSummary(s.path, ""), stem, "", nil, body))
+			add(s.url(), verb, op(actionSummary(s.path, ""), "", nil, body))
 		}
 	}
+
 	return out
-}
-
-// countVerbsFor reports how many verbs of this singleton map to one handler.
-func countVerbsFor(s singleton, method string) int {
-	n := 0
-	for _, m := range s.verbs {
-		if m == method {
-			n++
-		}
-	}
-	return n
-}
-
-// primaryVerbFor picks the ONE verb that keeps the bare operationId when several
-// share a handler — deterministic, so the emitted spec is stable.
-func primaryVerbFor(s singleton, method string) string {
-	for _, verb := range []string{"GET", "POST", "PATCH", "PUT", "DELETE"} {
-		if s.verbs[verb] == method {
-			return verb
-		}
-	}
-	return ""
 }
 
 // op builds one Operation Object.
@@ -164,11 +217,14 @@ func primaryVerbFor(s singleton, method string) string {
 // does. That is a property of the backend, not a description choice, and saying so
 // here is the difference between a spec a client can trust and one that quietly
 // misleads.
-func op(tag, summary, operation, description string, params []any, body bool) map[string]any {
+//
+// The refusals are written out rather than pointed at a shared Response Object,
+// because a $ref binds this document to component definitions it does not carry:
+// the two it used to name lived in a hand-authored spec, and when that spec was
+// deleted every operation here kept pointing at nothing.
+func op(summary, description string, params []any, body bool) map[string]any {
 	o := map[string]any{
-		"tags":        []any{tag},
-		"summary":     summary,
-		"operationId": lowerFirst(operation),
+		"summary": summary,
 		"responses": map[string]any{
 			"200": map[string]any{
 				"description": "Envelope. `status` is \"ok\" or \"error\" — check it; a handled " +
@@ -179,8 +235,8 @@ func op(tag, summary, operation, description string, params []any, body bool) ma
 					},
 				},
 			},
-			"401": map[string]any{"$ref": "#/components/responses/Unauthorized"},
-			"403": map[string]any{"$ref": "#/components/responses/Forbidden"},
+			"401": map[string]any{"description": "No credential, or one this service does not accept."},
+			"403": map[string]any{"description": "A valid credential that may not do this."},
 		},
 	}
 	if description != "" {
@@ -256,46 +312,4 @@ func titleCase(s string) string {
 		parts[i] = strings.ToUpper(p[:1]) + p[1:]
 	}
 	return strings.Join(parts, " ")
-}
-
-func lowerFirst(s string) string {
-	if s == "" {
-		return s
-	}
-	return strings.ToLower(s[:1]) + s[1:]
-}
-
-// OpenAPIPathsSorted returns the paths in a stable order, so a re-render produces
-// byte-identical output and the drift test compares cleanly.
-func OpenAPIPathsSorted() []string {
-	p := OpenAPIPaths()
-	keys := make([]string, 0, len(p))
-	for k := range p {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
-// AssertOperationIDsUnique reports a duplicate operationId, which every code
-// generator turns into a duplicate method name and most turn into a silent
-// overwrite.
-func AssertOperationIDsUnique() error {
-	seen := map[string]string{}
-	for _, path := range OpenAPIPathsSorted() {
-		item := OpenAPIPaths()[path].(map[string]any)
-		methods := make([]string, 0, len(item))
-		for m := range item {
-			methods = append(methods, m)
-		}
-		sort.Strings(methods)
-		for _, m := range methods {
-			id, _ := item[m].(map[string]any)["operationId"].(string)
-			if prev, dup := seen[id]; dup {
-				return fmt.Errorf("operationId %q is used by both %s and %s %s", id, prev, strings.ToUpper(m), path)
-			}
-			seen[id] = strings.ToUpper(m) + " " + path
-		}
-	}
-	return nil
 }
