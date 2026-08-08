@@ -140,30 +140,32 @@ func TestPromotedAddressesReachTheSameHandler(t *testing.T) {
 }
 
 // TestPromotedAddressesCarryTheirSentence proves a promoted address has the third
-// thing a published operation owes a reader. Address and verb come from
-// [routers.App.Patterns]; the sentence comes from the handler's own doc comment
-// through [routers.Prose]. Promoting an address with no sentence would publish an
-// operation no generated client can explain.
+// thing a published operation owes a reader. Address, verb and sentence all come
+// from [routers.Document], the one accessor: it reads the live router for
+// membership and lays the handler's own doc comment over it. Promoting an address
+// with no sentence would publish an operation no generated client can explain.
 func TestPromotedAddressesCarryTheirSentence(t *testing.T) {
-	prose := routers.Prose()
-	patterns := routers.App.Patterns()
+	paths, _ := routers.Document()["paths"].(map[string]any)
 	for _, pattern := range promoted {
-		// Prose keys the path in OpenAPI's {name} spelling.
+		// The document keys the path in OpenAPI's {name} spelling.
 		open := pattern
 		for _, seg := range strings.Split(pattern, "/") {
 			if strings.HasPrefix(seg, ":") {
 				open = strings.Replace(open, seg, "{"+seg[1:]+"}", 1)
 			}
 		}
-		for _, method := range patterns[pattern] {
-			if _, ok := prose[method+" "+open]; ok {
+		item, ok := paths[open].(map[string]any)
+		if !ok {
+			t.Errorf("%s is promoted and the document does not carry it", open)
+			continue
+		}
+		for verb, o := range item {
+			op, _ := o.(map[string]any)
+			if s, _ := op["summary"].(string); s != "" {
 				continue
 			}
-			if _, ok := prose["* "+open]; ok {
-				continue
-			}
-			t.Errorf("%s %s is promoted and routers.Prose has no sentence for it — "+
-				"a published operation nobody can explain", method, open)
+			t.Errorf("%s %s is promoted and the document has no sentence for it — "+
+				"a published operation nobody can explain", strings.ToUpper(verb), open)
 		}
 	}
 }
