@@ -83,6 +83,7 @@ func (c *ApiController) ResponseErrorWithStatus(status int, error string, data .
 //
 //	authError    401  unknown / invalid key, bad JWT, IAM lookup failure
 //	billingError 402  valid key, insufficient / starter-only balance
+//	forbiddenError 403  valid principal, org selection they may not bill
 //	modelError   400  valid key, model not in the routing table
 //	serverError  500  provider misconfig or balance lookup transport failure
 //
@@ -101,6 +102,16 @@ func authError(format string, a ...interface{}) error {
 
 func billingError(format string, a ...interface{}) error {
 	return &apiError{http.StatusPaymentRequired, fmt.Sprintf(format, a...)}
+}
+
+// forbiddenError is 403: the credential is VALID and the caller is known — they
+// simply may not act in the org they asked for. Distinct from authError (401,
+// "who are you") and billingError (402, "you owe money"), because answering an
+// unauthorized org selection with either of those tells the caller something
+// untrue about their own credential. Unauthorized and nonexistent orgs share
+// this one status so the ask cannot enumerate orgs.
+func forbiddenError(format string, a ...interface{}) error {
+	return &apiError{http.StatusForbidden, fmt.Sprintf(format, a...)}
 }
 
 func modelError(format string, a ...interface{}) error {

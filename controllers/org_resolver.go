@@ -154,7 +154,16 @@ func (c *ApiController) GetOrg() string {
 		if util.IsSuperAdmin(user) {
 			return requested
 		}
-		return account.EffectiveOrg(user.Owner, c.principalOrgs(), requested)
+		// SCOPE, not money: a refused selection answers with the principal's own
+		// org. Falling back here NARROWS what the request can see, so it is
+		// genuinely fail-closed — unlike the same fallback on the billing path,
+		// which would charge a different account. account.EffectiveOrg refuses
+		// now, and this is the one caller for which home is the right answer.
+		org, err := account.EffectiveOrg(user.Owner, c.principalOrgs(), requested)
+		if err != nil {
+			return user.Owner
+		}
+		return org
 	}
 
 	// No verified principal: never trust a client-supplied org header.
@@ -182,9 +191,25 @@ func (c *ApiController) billingOrg(user *iam.User) string {
 		// user.Owner, and it never touches the claim.
 		return user.Owner
 	}
-	return account.LedgerOrg(
-		account.EffectiveOrg(user.Owner, c.principalOrgs(), requested),
-		user.Owner,
-		util.IsSuperAdmin(user),
-	)
+	// A credential that carries NO membership set — sk- IAM key, sk- provider key,
+	// hz- widget key, no credential at all — cannot switch by construction. Its
+	// ask is not a bid for someone else's wallet; there is no other wallet it
+	// could name. Billing its own owner is the only possible answer and the one
+	// it has always given, so an unrelated X-Org-Id header must not start
+	// rejecting these requests.
+	orgs := c.principalOrgs()
+	if len(orgs) == 0 {
+		return user.Owner
+	}
+
+	// MONEY, and the case that matters: this principal DOES carry a signed
+	// membership set and asked for an org outside it. Refuse — never redirect the
+	// bill to their personal wallet. "" is the existing "nobody to bill" answer
+	// that every caller already rejects rather than serving free, so a refusal
+	// cannot be spent, only refused.
+	effective, err := account.EffectiveOrg(user.Owner, orgs, requested)
+	if err != nil {
+		return ""
+	}
+	return account.LedgerOrg(effective, user.Owner, util.IsSuperAdmin(user))
 }

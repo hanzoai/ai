@@ -407,8 +407,18 @@ func resolveBillingKey(ctx *web.Context) (subject, namespace, userKey string) {
 			// resolves the ledger by the same two rules (account.EffectiveOrg, then
 			// account.LedgerOrg) the controller applies — check one balance and drain
 			// another and a funded org 402s while an unfunded one runs free.
+			// An org the signed claim does not cover is REFUSED here, not resolved
+			// to the caller's home wallet. Falling back would make this gate read a
+			// balance nobody selected and then let the controller debit it — the
+			// gate and the debit would agree, and both would be wrong. "" is this
+			// function's existing "no billing subject", which the controller
+			// rejects rather than serving free.
+			effective, orgErr := account.EffectiveOrg(claims.User.Owner, claims.Orgs, requested)
+			if orgErr != nil {
+				return "", "", ""
+			}
 			ledger := account.LedgerOrg(
-				account.EffectiveOrg(claims.User.Owner, claims.Orgs, requested),
+				effective,
 				claims.User.Owner,
 				util.IsSuperAdmin(&claims.User),
 			)
