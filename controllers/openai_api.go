@@ -962,6 +962,7 @@ func recordTrace(ctx context.Context, record *usageRecord, startTime time.Time) 
 	}
 	go zapWriteUsage(record, startTime)
 	emitGenAISpan(ctx, record, startTime)
+	emitGenAIEvent(ctx, record, startTime)
 }
 
 // ── API handlers ────────────────────────────────────────────────────────────
