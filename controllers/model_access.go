@@ -107,28 +107,15 @@ func fundingMessage(model string) string {
 	return fmt.Sprintf("%s runs on prepaid capacity reserved for paid workspaces — upgrade this workspace to use it", model)
 }
 
-// familyRefusal is the enforcement decision at the family pipe, and the ONE
-// statement of its order: the subscription floor (Seam A: enso-flash free, enso
-// trial+, enso-ultra paid; fail-SAFE on commerce uncertainty), then the FUNDING
-// floor (prepaid upstreams require a confirmed paying subscriber; fail-CLOSED on
-// the same uncertainty), then the waitlist/grant gate (grantAllows). It returns
-// "" when the SKU is servable, else the sentence naming the gate that refused —
-// each gate has a different cure, so they cannot share one message.
-//
-// The subscription and funding floors deliberately fail in opposite directions:
-// one guards revenue, the other guards our cash. See familyFundingAllowed.
+// familyRefusal is the enforcement decision at the family pipe. Access is by
+// MONEY, not by plan: enforceBalanceGate runs on every serve path and refuses a
+// caller without a positive balance, so a funded caller may use ANY model —
+// pay-as-you-go and subscription both buy access. A plan governs USAGE LIMITS
+// (how much a tier includes before it draws on pay-as-you-go), never which
+// models you can reach. The only family gate that remains here is the
+// waitlist/grant gate for preview SKUs, which is access-to-unreleased, not a
+// paywall. Returns "" when servable, else the grant refusal sentence.
 func (c *ApiController) familyRefusal(fam *modelFamily, model, orgId string, authUser *iam.User) string {
-	subject := familyAccessSubject(orgId, authUser)
-	if !familyTierAllowed(subject, model) {
-		need := ""
-		if zm, ok := familyLookupFresh(model); ok {
-			need = zm.minTier()
-		}
-		return tierMessage(model, need)
-	}
-	if !familyFundingAllowed(subject, model) {
-		return fundingMessage(model)
-	}
 	zm, ok := fam.lookup(model)
 	if !grantAllows(zm, ok, orgId, authUser) {
 		return gatedAccessMessage(model)
@@ -142,19 +129,12 @@ func (c *ApiController) familyAccessAllowed(fam *modelFamily, model, orgId strin
 	return c.familyRefusal(fam, model, orgId, authUser) == ""
 }
 
-// modelServable reports whether the caller can actually serve a model id — the SAME two
-// gates the serve pipe (familyAccessAllowed) enforces, tier AND grant, resolved via
-// cross-family discovery (familyLookupFresh, as FamilyModelGated does) since only the id
-// is known. The auto-router folds this into its `known` predicate so `auto` never routes
-// a caller to a family SKU their tier or grant would make the serve path refuse.
+// modelServable reports whether the caller can actually serve a model id — the SAME
+// gate the serve pipe (familyAccessAllowed) enforces: money (enforceBalanceGate, on
+// every serve path) plus the waitlist grant, resolved via cross-family discovery
+// (familyLookupFresh) since only the id is known. Not tier-gated: a funded caller can
+// reach any model, so `auto` routes on grant + balance, never on plan.
 func modelServable(model, orgId string, authUser *iam.User) bool {
-	subject := familyAccessSubject(orgId, authUser)
-	if !familyTierAllowed(subject, model) {
-		return false
-	}
-	if !familyFundingAllowed(subject, model) {
-		return false
-	}
 	zm, ok := familyLookupFresh(model)
 	return grantAllows(zm, ok, orgId, authUser)
 }

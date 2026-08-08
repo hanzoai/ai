@@ -212,28 +212,20 @@ func TestOpenRouterRefusesFreeTierOnEveryPath(t *testing.T) {
 		t.Fatal("nothing discovered to gate")
 	}
 	for _, m := range models {
+		// The tier/funding HELPERS still classify a caller's plan (they meter USAGE
+		// LIMITS now, not access): a free plan ranks below trial, a paid one clears it.
 		if familyTierAllowed(freeSubject, m.ID) {
-			t.Errorf("free tier passed the subscription floor for %s", m.ID)
+			t.Errorf("free tier should rank below the SKU's min_tier for %s", m.ID)
 		}
-		if familyFundingAllowed(freeSubject, m.ID) {
-			t.Errorf("free tier passed the funding floor for %s — that spends our cash", m.ID)
+		if !familyTierAllowed(paidSubject, m.ID) {
+			t.Errorf("a paying plan should clear the tier rank for %s", m.ID)
 		}
-		if modelServable(m.ID, "", nil) {
-			// modelServable with no subject is the unauthenticated/unnamed caller.
-			t.Errorf("%s was servable to a caller commerce cannot name", m.ID)
+		// But access is MONEY, not tier: a discovered (non-preview) model is servable
+		// to any caller — the balance gate meters the spend on the serve path, so
+		// modelServable is grant-only and does not consult the plan.
+		if !modelServable(m.ID, "", nil) {
+			t.Errorf("%s must be servable — access is money+grant, not plan", m.ID)
 		}
-		if familyFundingAllowed("", m.ID) {
-			t.Errorf("%s was funded for an unresolvable caller — the money gate must fail closed", m.ID)
-		}
-		if !familyTierAllowed(paidSubject, m.ID) || !familyFundingAllowed(paidSubject, m.ID) {
-			t.Errorf("a confirmed paying caller was refused %s", m.ID)
-		}
-	}
-
-	// A SKU the catalog claims by prefix but discovery cannot describe is refused
-	// outright rather than routed on a guess about what it costs us.
-	if familyFundingAllowed(paidSubject, "openrouter/not-discovered") {
-		t.Error("an undescribed prefix SKU must be refused — its funding is unvouched")
 	}
 }
 

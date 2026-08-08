@@ -99,11 +99,10 @@ func TestAnnotateModelAccessNilUser(t *testing.T) {
 	}
 }
 
-// The refusal names the gate that refused: a plan-refused caller is told to
-// upgrade, a funding-refused caller is told the capacity is paid-only, and only
-// a grant-refused caller is sent to the access waitlist. The old shared message
-// sent all three there — including callers whose plan was the blocker, for whom
-// that door cannot open.
+// Money buys access, so plan and prepaid tier no longer gate the family pipe:
+// a funded caller (enforceBalanceGate, every serve path) may use any model, and
+// a plan only meters USAGE. The one refusal familyRefusal still names is the
+// preview waitlist — access to an unreleased SKU, not a paywall.
 func TestFamilyRefusalNamesTheGate(t *testing.T) {
 	catalog := map[string]zenModel{
 		"enso":      {ID: "enso", MinTier: "trial"},
@@ -116,8 +115,6 @@ func TestFamilyRefusalNamesTheGate(t *testing.T) {
 	ensoFam.byID = catalog
 	t.Cleanup(func() { ensoFam.byID = savedByID })
 
-	// The funding gate only speaks for models a family SERVES, and serving
-	// requires a configured provider — point the family at one for the test.
 	savedProv := ensoFam.providerFn
 	ensoFam.providerFn = func() *object.Provider { return &object.Provider{ProviderUrl: "http://enso.test"} }
 	t.Cleanup(func() { ensoFam.providerFn = savedProv })
@@ -128,20 +125,19 @@ func TestFamilyRefusalNamesTheGate(t *testing.T) {
 
 	c := &ApiController{}
 
-	// Plan below the floor → the upgrade sentence, naming the floor, never the waitlist.
-	msg := c.familyRefusal(fam, "enso", "acme", nil)
-	if !strings.Contains(msg, "trial") || strings.Contains(msg, "limited preview") {
-		t.Fatalf("tier refusal = %q, want the upgrade sentence naming trial", msg)
+	// A plan below the SKU's old min_tier no longer refuses — money is the gate,
+	// and it lives on the balance path, not here.
+	if msg := c.familyRefusal(fam, "enso", "acme", nil); msg != "" {
+		t.Fatalf("tier refusal = %q, want no refusal (money buys access)", msg)
 	}
 
-	// Prepaid capacity, unconfirmed subscriber → the prepaid sentence.
-	msg = c.familyRefusal(fam, "enso-pre", "acme", nil)
-	if !strings.Contains(msg, "prepaid") || strings.Contains(msg, "limited preview") {
-		t.Fatalf("funding refusal = %q, want the prepaid sentence", msg)
+	// Prepaid capacity is likewise not plan-gated at the family pipe.
+	if msg := c.familyRefusal(fam, "enso-pre", "acme", nil); msg != "" {
+		t.Fatalf("funding refusal = %q, want no refusal (money buys access)", msg)
 	}
 
-	// Gated SKU without a grant → the request-access sentence, unchanged.
-	msg = c.familyRefusal(fam, "enso-prev", "acme", &iam.User{Owner: "acme", Name: "bob"})
+	// A preview SKU without a grant → the request-access sentence, unchanged.
+	msg := c.familyRefusal(fam, "enso-prev", "acme", &iam.User{Owner: "acme", Name: "bob"})
 	if !strings.Contains(msg, "limited preview") || !strings.Contains(msg, "POST /v1/models/enso-prev/access") {
 		t.Fatalf("grant refusal = %q, want the request-access sentence", msg)
 	}
