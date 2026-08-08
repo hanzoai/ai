@@ -133,7 +133,7 @@ func InitBalanceGate() {
 
 // ── Filter function ─────────────────────────────────────────────────────────
 
-// BalanceGateFilter is a Beego BeforeRouter filter that checks whether the
+// BalanceGateFilter is a BeforeRouter filter that checks whether the
 // requesting user has a positive Commerce balance before allowing paid API
 // requests to proceed. It runs after AutoSigninFilter (which sets session
 // users for legacy auth paths) and handles its own user resolution for
@@ -292,7 +292,7 @@ func isBalanceExempt(path, method string) bool {
 		return true
 	// The router-config surface (/v1/router/{policy,defaults,ledger,rewards,artifact-meta}
 	// + /v1/org/settings) is routing METADATA — per-org policy/allowlist/dial, the export
-	// endpoints, the org settings — NOT metered inference. It is served over beego via
+	// endpoints, the org settings — NOT metered inference. It is served over the router via
 	// RouterConfigBridge → the ONE native ZAP handler, so it DOES traverse this filter and
 	// must be balance-exempt exactly like /v1/router/stats + /v1/feedback: a $0-balance org
 	// has to read/write its own router config from the console (auth is still enforced — the

@@ -921,7 +921,7 @@ func (c *ApiController) recordFamilyUsage(fam *modelFamily, model string, authUs
 // the engine's own opaque feature vector + counterfactual model.
 //
 // The request-derived routing inputs (last user text, media flag) are extracted
-// synchronously from rawBody before the goroutine spawns, so nothing reads the beego
+// synchronously from rawBody before the goroutine spawns, so nothing reads the router
 // context off-thread. The shadow /v1/route call is hard-capped by router.DefaultTimeout.
 func (c *ApiController) recordFamilyRouting(model, served, respID, reqID string, rawBody []byte, orgId string, authUser *iam.User, prompt, completion int, cents int64, start time.Time) {
 	owner := orgId

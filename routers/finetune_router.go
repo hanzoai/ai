@@ -19,7 +19,7 @@ import (
 
 // init registers the /v1/finetune/* fine-tuning broker routes. They live in their
 // OWN file (not router.go) on purpose: Go runs every init() in the `routers`
-// package before Beego serves, so these registrations compose with the main route
+// package before the router serves, so these registrations compose with the main route
 // table additively — the finetune surface is added without editing the shared
 // router.go. Verb:method pairs are semicolon-separated, exactly like the wecom-bot
 // route in router.go.

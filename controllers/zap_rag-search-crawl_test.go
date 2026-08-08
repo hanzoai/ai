@@ -42,7 +42,7 @@ func TestZapRagSearchCrawlRegistered(t *testing.T) {
 	}
 }
 
-// TestZapRagSearchCrawlAuthRejection asserts the ONE auth seam mirrors the beego
+// TestZapRagSearchCrawlAuthRejection asserts the ONE auth seam mirrors the the controller layer
 // controllers exactly: no credential → 401 on every handler; a publishable
 // (read-only) pk-* key → 403 on write handlers (index/scrape/crawl/ingest/embed/
 // delete) but is ACCEPTED past the auth gate on read handlers. Identity is never

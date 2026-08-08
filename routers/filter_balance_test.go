@@ -268,7 +268,7 @@ func TestBalanceExemptPaths(t *testing.T) {
 		// request.
 		"/v1/feedback",
 		// The REST of the router-config surface — per-org policy/defaults/exports + org
-		// settings — is served over beego via RouterConfigBridge (→ the ONE native ZAP
+		// settings — is served over the router via RouterConfigBridge (→ the ONE native ZAP
 		// handler), so it DOES traverse this filter and MUST be exempt: config metadata,
 		// not metered inference. A $0-balance org has to read/write its own router config
 		// from the console; without these entries every unfunded org's Router → Policy tab

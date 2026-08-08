@@ -14,8 +14,8 @@
 
 // Native ZAP handlers for the "verticals + misc" route group (strangler migration
 // of form.go / form_data.go / article.go / scale.go / system_info.go /
-// prometheus.go / activity.go / org_settings.go / agent.go). Each re-implements its beego
-// controller's logic against object/ + iam directly — it NEVER wraps the beego
+// prometheus.go / activity.go / org_settings.go / agent.go). Each re-implements its the controller layer
+// controller's logic against object/ + iam directly — it NEVER wraps the the controller layer
 // controller — mirroring controllers/zap_native.go:zapChatHandler and the CRUD
 // template in controllers/zap_chat-graph-crud.go.
 //
@@ -34,11 +34,11 @@
 // mirrors the exact belt-and-suspenders the HTTP path applies.
 //
 // Envelope parity: success/error use the SAME {status,msg,data,data2} Response the
-// beego ResponseOk / ResponseError emit (the console frontend contract), via the
+// ResponseOk / ResponseError emit (the console frontend contract), via the
 // group-local zapMiscOk / zapMiscError builders (kept group-local, unique names, so
 // they never collide with another group's envelope helpers).
 //
-// Metering: none of these are billable terminal paths (no recordUsage in any beego
+// Metering: none of these are billable terminal paths (no recordUsage in any the controller layer
 // controller in the group), so STEP 6 (meter-once) does not apply here — there is
 // deliberately no meter call, exactly like the chat/graph CRUD group.
 //
@@ -187,7 +187,7 @@ var zapMiscExempt = map[string]struct{}{
 // exempt read is open, a route that is neither a read nor a write is open, and every
 // other read/write requires an ORG admin (util.IsAdmin) — a non-admin is 403,
 // exactly like permissionFilter's denyForbidden tail. name is the controllerName
-// (the beego path minus "/v1/"). Returns a denial to return as-is, or nil to proceed
+// (the router path minus "/v1/"). Returns a denial to return as-is, or nil to proceed
 // to the handler's own in-controller check.
 func zapMiscAuthz(name string, user *iam.User) *zap.Message {
 	if _, ok := zapMiscSuperAdmin[name]; ok {
@@ -248,7 +248,7 @@ func zapMiscScopedOwner(user *iam.User, requestedOwner string) (string, *zap.Mes
 	return user.Owner, nil
 }
 
-// zapMiscListRequest carries the list/pagination + filter params the beego GET
+// zapMiscListRequest carries the list/pagination + filter params the GET
 // handlers read from the URL query (the native contract has no URL query or response
 // headers — the console sends these as JSON, the pagination count rides data2).
 type zapMiscListRequest struct {
@@ -436,7 +436,7 @@ func zapGetFormDataHandler(_ context.Context, auth string, body []byte) (*zap.Me
 		return zapMiscError(200, "Failed to read response body: "+err.Error())
 	}
 	// The chainserver already returns the {status,data,...} JSON the console expects;
-	// pass it through verbatim (the beego handler writes it to the body directly).
+	// pass it through verbatim (the controller handler writes it to the body directly).
 	return object.BuildCloudResponse(200, respBody, "")
 }
 
@@ -638,7 +638,7 @@ func zapGetPublicScalesHandler(_ context.Context, auth string, _ []byte) (*zap.M
 	if deny := zapMiscAuthz("get-public-scales", user); deny != nil {
 		return deny, nil
 	}
-	// The beego controller requires a signed-in username (GetSessionUsername != "").
+	// The controller requires a signed-in username (GetSessionUsername != "").
 	if user == nil || user.Name == "" {
 		return zapMiscError(401, "Please sign in first")
 	}
@@ -798,7 +798,7 @@ func zapGetPrometheusInfoHandler(_ context.Context, auth string, _ []byte) (*zap
 // zapGetMetricsHandler mirrors ApiController.GetMetrics: the Prometheus text
 // exposition. It drives object.MetricsHandler() through an in-memory recorder (no
 // http.ResponseWriter held) and returns the raw exposition body — the console/
-// scraper reads it verbatim, exactly like the beego ServeHTTP path.
+// scraper reads it verbatim, exactly like the the router ServeHTTP path.
 func zapGetMetricsHandler(_ context.Context, auth string, _ []byte) (*zap.Message, error) {
 	if deny := zapMiscRequireAdmin(zapPrincipalUser(auth)); deny != nil {
 		return deny, nil
@@ -831,12 +831,12 @@ func zapGetActivitiesHandler(_ context.Context, auth string, body []byte) (*zap.
 // ── org_settings.go parity (super-admin gated, PATCH-merge upsert) ──────────────
 //
 // ONE RESTful noun, method-aware — the SOLE implementation of the per-org settings
-// surface (the beego org_settings.go controller was deleted). GET/PUT/DELETE
+// surface (the the router org_settings.go controller was deleted). GET/PUT/DELETE
 // /v1/org/settings + GET /v1/org/settings/list. Super-admin gated ONCE at the top.
-// Owner is the ?owner= query param (the beego handlers read ?owner; a bare
+// Owner is the ?owner= query param (the controller handlers read ?owner; a bare
 // OrgSettings body carries it as a fallback), never an identity source.
 //
-// PUT is a PATCH-MERGE upsert (mirrors the deleted beego UpdateOrgSettings): the body
+// PUT is a PATCH-MERGE upsert (mirrors the deleted the router UpdateOrgSettings): the body
 // is unmarshaled ONTO the existing row (or a fresh one keyed by owner), so a field
 // ABSENT from the body keeps its current value. dbx Model(s).Update() writes ALL
 // columns, so a replace would NULL every field the body didn't restate — a partial

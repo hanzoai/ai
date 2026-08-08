@@ -167,7 +167,7 @@ func (c *ApiController) UpdateProvider() {
 
 // sealPastedKey puts a raw provider key into KMS and leaves the row holding only
 // the reference. It is the ONE seal, used by add and update on both transports —
-// the beego controllers and their ZAP twins — because four call sites each
+// the controllers and their ZAP twins — because four call sites each
 // deciding when a secret may touch the database is how three of them ended up
 // deciding differently.
 //

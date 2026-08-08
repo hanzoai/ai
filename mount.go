@@ -16,7 +16,7 @@
 // model hub, MCP management) into the unified cloud binary per HIP-0106.
 //
 // The legacy entry point at ~/work/hanzo/ai/main.go registers the
-// existing beego ControllerRegister tree. Mount adapts that same
+// existing the router ControllerRegister tree. Mount adapts that same
 // ControllerRegister onto a zip.App via zip.AdaptNetHTTP so the routes
 // continue to operate unchanged while running under the canonical
 // zip-driven cloud entry.
@@ -45,11 +45,11 @@ import (
 // runtime so those routes actually serve.
 //
 // Routes under /v1/ai/* are forwarded to the registered handler (the
-// beego ControllerRegister built by routers/router.go). The MountSpec
+// the router ControllerRegister built by routers/router.go). The MountSpec
 // contract (cloud.MountAll) gives each subsystem exactly one hook —
 // Mount — and it owns BOTH route wiring and runtime initialization. So
 // Mount calls Bootstrap(), the single shared boot sequence (DB, model
-// config, balance/tier/rate-limit, beego filters, billing queue) that
+// config, balance/tier/rate-limit, filters, billing queue) that
 // ends by publishing the handler via SetHandler. Without that call the
 // adapter's getHandler() stays nil and every /v1/ai/* request 503s with
 // "ai runtime not initialized" — the exact defect this fixes.
@@ -113,7 +113,7 @@ func Mount(app *zip.App, deps cloud.Deps) error {
 // the production api.hanzo.ai gateway forwards: every cloud-api backend uses an
 // unchanged url_pattern (/v1/chat/completions → cloud-api:8000/v1/chat/completions),
 // and even its /v1/ai/{path} endpoint rewrites to BARE /v1/{path}. Mounting only
-// under a /v1/ai/* prefix would 404 every real request. So AI mounts the beego
+// under a /v1/ai/* prefix would 404 every real request. So AI mounts the controller
 // handler at /v1/* with no path rewrite.
 //
 // This is collision-safe BECAUSE AI registers LAST (priority 150, after kms=10 …
@@ -207,8 +207,8 @@ var promoted = []string{
 }
 
 // handlerAdapter forwards each request under /v1/* to the registered runtime
-// handler (the beego ControllerRegister) or returns 503 if none. The path is
-// passed through unchanged: beego's routes are registered at the same bare /v1/*
+// handler (the the router ControllerRegister) or returns 503 if none. The path is
+// passed through unchanged: the router's routes are registered at the same bare /v1/*
 // paths the gateway forwards, so no rewrite is needed (and none must happen —
 // rewriting would desync from the /v1 route table).
 type handlerAdapter struct{}
@@ -237,7 +237,7 @@ var (
 )
 
 // SetHandler registers the ai runtime's public HTTP handler (typically
-// beego.BeeApp.Handlers after routers/router.go init). Safe for
+// web.BeeApp.Handlers after routers/router.go init). Safe for
 // concurrent use; pass nil to deactivate.
 func SetHandler(h http.Handler) {
 	hmu.Lock()

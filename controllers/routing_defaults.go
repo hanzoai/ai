@@ -29,7 +29,7 @@ var getRoutingEvents = object.GetRoutingEvents
 // (GET /v1/router/{ledger,rewards}) are served ZAP-native — the ONE implementation —
 // in controllers/zap_router-policy-stats.go (zapGetRoutingDefaultsHandler,
 // zapExportRouting{Ledger,Rewards}Handler); the exports enforce the SAME super-admin-OR-
-// ROUTER_ADMIN_TOKEN gate via zapRPSRouterAdminAuthorized. No beego twin.
+// ROUTER_ADMIN_TOKEN gate via zapRPSRouterAdminAuthorized. No controller twin.
 
 // routingDefaults is the resolved-for-the-caller routing default surface read by
 // console/chat/app/desktop. Both fields are resolved with org > "*" > conf
@@ -96,7 +96,7 @@ func (c *ApiController) DeleteMyRoutingData() {
 
 // writeRoutingLedgerJSONL streams events as JSONL (one per line). It is a pure
 // function of its inputs so the export contract is unit-testable without a DB or
-// beego context. A write error stops the stream (a truncated download is better
+// router context. A write error stops the stream (a truncated download is better
 // than a partial-then-error line).
 func writeRoutingLedgerJSONL(w io.Writer, events []*object.RoutingEvent) error {
 	enc := json.NewEncoder(w)

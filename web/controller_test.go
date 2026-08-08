@@ -112,7 +112,7 @@ func TestSessionMethods(t *testing.T) {
 
 // TestSessionNilSafe proves the accessors are fail-secure with no store bound:
 // GetSession returns nil and SetSession/DelSession no-op rather than panicking
-// (beego dereferences a nil store here — a documented crash this avoids).
+// (the router dereferences a nil store here — a documented crash this avoids).
 func TestSessionNilSafe(t *testing.T) {
 	c, _ := initController(httptest.NewRequest("GET", "/", nil))
 	if v := c.GetSession("user"); v != nil {

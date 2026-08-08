@@ -30,11 +30,11 @@ import (
 )
 
 // healthHandler builds the same fully-wrapped surface ai bridges in
-// production — a *beego.ControllerRegister (which is an http.Handler) — but
+// production — a *web.Router (which is an http.Handler) — but
 // scoped to the one always-present, auth-exempt route used here: GET
 // /v1/health → ApiController.Health → 200 + {"status":"ok",...}. Using the
 // real ControllerRegister + real controller method proves the bridge drives
-// beego routing and controller dispatch over ZAP, without booting ai's full
+// the router routing and controller dispatch over ZAP, without booting ai's full
 // DB/adapter/filter stack (the production handle is the same type).
 func healthHandler() http.Handler {
 	r := web.NewRouter()
@@ -42,12 +42,12 @@ func healthHandler() http.Handler {
 	return r
 }
 
-// TestForwardBridgeServesBeegoHandler stands up two live ZAP nodes, registers
+// TestForwardBridgeServesControllerHandler stands up two live ZAP nodes, registers
 // the canonical HTTP-over-ZAP terminal (forward.Serve) on the backend with a
-// real beego handler, and asserts GET /v1/health round-trips through the
+// real controller handler, and asserts GET /v1/health round-trips through the
 // bridge with status 200 and a JSON body. This exercises exactly what
 // InitForwardBridge wires in cmd/aid/main.go.
-func TestForwardBridgeServesBeegoHandler(t *testing.T) {
+func TestForwardBridgeServesControllerHandler(t *testing.T) {
 	gwPort := freePort(t)
 	bePort := freePort(t)
 
@@ -63,7 +63,7 @@ func TestForwardBridgeServesBeegoHandler(t *testing.T) {
 	defer be.Stop()
 
 	// Register the Forward terminal on the backend node — the same call
-	// InitForwardBridge makes, with the same kind of beego http.Handler.
+	// InitForwardBridge makes, with the same kind of the router http.Handler.
 	forward.Serve(be, healthHandler())
 
 	// Gateway dials the backend, then waits until the peer is visible.

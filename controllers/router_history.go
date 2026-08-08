@@ -120,7 +120,7 @@ func dayKey(rfc3339 string) string {
 }
 
 // computeRouterHistory folds a window of routing events + retrain-log rows into the
-// daily improvement series. Pure over its inputs (no DB, no beego) so the whole
+// daily improvement series. Pure over its inputs (no DB, no router) so the whole
 // contract is unit-testable. `now` bounds the window; events are assumed already
 // filtered to created_time >= windowStart; retrains are oldest-first. The baseline for
 // cost-saved is the WHOLE-WINDOW priciest served model (stable, so the cumulative

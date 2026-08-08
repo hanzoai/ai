@@ -62,7 +62,7 @@ func TestZapModelRoutingRegistered(t *testing.T) {
 }
 
 // TestZapModelFromAccessPath pins the :model path-param extraction that replaces
-// beego's c.Ctx.Input.Param(":model"): only "/v1/models/{model}/access" yields a
+// the router's c.Ctx.Input.Param(":model"): only "/v1/models/{model}/access" yields a
 // model; the bare list path and malformed shapes yield "" (so they fall through).
 func TestZapModelFromAccessPath(t *testing.T) {
 	cases := map[string]string{
@@ -81,7 +81,7 @@ func TestZapModelFromAccessPath(t *testing.T) {
 	}
 }
 
-// TestZapPageOffset pins parity with beego pagination.SetPaginator().Offset():
+// TestZapPageOffset pins parity with pagination.SetPaginator().Offset():
 // 1-based page, clamped to >= 1, offset == (page-1)*perPage.
 func TestZapPageOffset(t *testing.T) {
 	cases := []struct {
@@ -103,10 +103,10 @@ func TestZapPageOffset(t *testing.T) {
 	}
 }
 
-// TestZapGatewayEnvelope pins STEP 7 encoding parity: zapGwOk emits the beego
+// TestZapGatewayEnvelope pins STEP 7 encoding parity: zapGwOk emits the controller
 // {status:"ok",data,data2} envelope at HTTP 200, and zapGwError emits
 // {status:"error",msg} at the given status — byte-shape identical to what the
-// beego ResponseOk/ResponseError path returns.
+// ResponseOk/ResponseError path returns.
 func TestZapGatewayEnvelope(t *testing.T) {
 	msg, err := zapGwOk([]string{"a", "b"}, int64(7))
 	if err != nil {

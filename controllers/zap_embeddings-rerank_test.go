@@ -57,7 +57,7 @@ func TestZapEmbeddingsRerankRegistered(t *testing.T) {
 }
 
 // TestZapEmbeddingsAuthRejected asserts the ONE auth seam: an empty credential
-// is 401 before any body work, matching the beego path's credential-first rule.
+// is 401 before any body work, matching the router path's credential-first rule.
 func TestZapEmbeddingsAuthRejected(t *testing.T) {
 	msg, err := zapEmbeddingsHandler(context.Background(), "", []byte(`{"model":"m","input":"x"}`))
 	if err != nil {

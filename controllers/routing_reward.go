@@ -253,11 +253,11 @@ type rewardTuple struct {
 // The rewarded-tuple export (GET /v1/router/rewards) is served ZAP-native — the ONE
 // implementation — by zapExportRoutingRewardsHandler in zap_router-policy-stats.go
 // (same super-admin-OR-ROUTER_ADMIN_TOKEN gate, same getRewardedRoutingEvents +
-// writeRoutingRewardsJSONL below). No beego twin.
+// writeRoutingRewardsJSONL below). No controller twin.
 
 // writeRoutingRewardsJSONL streams rewarded events as JSONL, one training tuple
 // per line. Pure in its inputs, so the export contract is unit-testable without a
-// DB or beego context. A write error stops the stream (a truncated download beats
+// DB or router context. A write error stops the stream (a truncated download beats
 // a partial-then-error line).
 func writeRoutingRewardsJSONL(w io.Writer, events []*object.RoutingEvent) error {
 	enc := json.NewEncoder(w)

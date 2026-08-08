@@ -19,8 +19,8 @@
 // owner scoping via the authenticated principal), so — like the model-routing
 // group — they ride the gateway HTTP-over-ZAP projection (MsgType 200):
 // method(0) + path(8) + headers(16) + body(24) + query(32). The handlers here
-// re-implement the beego controllers' logic against object/ + iam directly; they
-// NEVER wrap or transform the beego controller.
+// re-implement the controllers' logic against object/ + iam directly; they
+// NEVER wrap or transform the controller.
 //
 // Registration follows the per-group convention: this file self-registers its
 // path prefixes from its OWN init() (registerZapRecordsSessionsConnections) into
@@ -86,7 +86,7 @@ func zapRequirePrincipal(auth string) (*iam.User, *zap.Message) {
 }
 
 // zapGwAction renders a *Response (wrapActionResponse / wrapActionResponse2 output)
-// as a gateway 200 body — the beego action path is HTTP 200 with the status inside
+// as a gateway 200 body — the the router action path is HTTP 200 with the status inside
 // the envelope, so this mirrors ServeJSON exactly.
 func zapGwAction(resp *Response) (*zap.Message, error) {
 	b, _ := json.Marshal(resp)
@@ -354,7 +354,7 @@ func zapAddRecord(auth string, body []byte) (*zap.Message, error) {
 		return zapGwError(200, err.Error())
 	}
 	// Native path has no *http.Request; ClientIp/UserAgent come only from the body
-	// (the beego path fills them from the request). Count defaults to 1 as in beego.
+	// (the router path fills them from the request). Count defaults to 1 as in the controller layer.
 	if record.Count == 0 {
 		record.Count = 1
 	}

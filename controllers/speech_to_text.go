@@ -34,7 +34,7 @@ import (
 // @router /process-speech-to-text [post]
 func (c *ApiController) ProcessSpeechToText() {
 	// Read the audio part FIRST: doing so parses the multipart body, and until
-	// something does, beego resolves GetString against an r.Form that Go has not
+	// something does, the router resolves GetString against an r.Form that Go has not
 	// filled yet — so storeId, a form field here, read empty and this handler
 	// refused every request that carried one. Same ordering hazard the OpenAI
 	// transcription endpoint carried; see readTranscribeRequest.

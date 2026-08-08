@@ -13,7 +13,7 @@
 // limitations under the License.
 
 // connections_oauth_test.go — pure/httptest coverage for the AI login-manager
-// OAuth flow. Like connections_api_test.go we avoid a live Beego/xorm/KMS: the
+// OAuth flow. Like connections_api_test.go we avoid a live controller/xorm/KMS: the
 // decomposed pure functions (state, config, authorize URL, code exchange) are
 // driven directly, and the seal path is exercised through the sealProviderSecret
 // seam so the two hard invariants are provable — (1) the authorize redirect binds

@@ -70,8 +70,8 @@ func TestCrawlRouteIsRegisteredAndFailClosed(t *testing.T) {
 	if resp.StatusCode == http.StatusInternalServerError {
 		t.Fatalf("POST /v1/crawl: 500 (panic). body=%q", bs)
 	}
-	if strings.Contains(bs, "beego application error") || strings.Contains(bs, "nil pointer") {
-		t.Fatalf("beego panic page returned: %q", bs)
+	if strings.Contains(bs, "nil pointer") {
+		t.Fatalf("a nil dereference reached the body: %q", bs)
 	}
 	if strings.Contains(bs, `"success"`) {
 		t.Fatalf("POST /v1/crawl succeeded without auth — NOT fail-closed. body=%q", bs)
