@@ -75,3 +75,35 @@ func TestNilUserIsUnattributable(t *testing.T) {
 		t.Fatalf("nil user resolved to %q, want the zero account", got)
 	}
 }
+
+// TestServiceAccountKeySpendsThePool is the whole sk- thread in one assertion.
+//
+// A JWT carries `billing_account` and needs no shape rule. An API key carries no
+// claim at all: IAM's get-user?accessKey= answers with the user ROW, and its Type
+// is the only thing left that says machine-or-person. IAM writes "service-account"
+// there (internal/oidc/provision.go, /v1/iam/service-accounts), so a payer that
+// knows only "application" reads a service credential as a person — and in the
+// signup org a person pays personally, which for a service account is a wallet no
+// funding path can name.
+//
+// Measured on hanzo/guest, the anonymous chat free tier: /v1/audio/speech and
+// /v1/audio/transcriptions both answered 402 insufficient_balance against a pool
+// holding ~$149k, because the gate read hanzo/guest and the money was in hanzo.
+func TestServiceAccountKeySpendsThePool(t *testing.T) {
+	guest := &User{Owner: "hanzo", Name: "guest", Type: "service-account"}
+	if got := guest.PayerSubject(""); got != "hanzo" {
+		t.Fatalf("service-account key pays %q, want the org pool %q", got, "hanzo")
+	}
+	// The OIDC client shape still resolves the same way — one predicate, two
+	// spellings, not two rules.
+	app := &User{Owner: "hanzo", Name: "svc", Type: "application"}
+	if got := app.PayerSubject(""); got != "hanzo" {
+		t.Fatalf("application key pays %q, want the org pool %q", got, "hanzo")
+	}
+	// And a PERSON in the same org still pays personally: the pool is not opened
+	// to strangers, which is the only reason the signup org is special.
+	human := &User{Owner: "hanzo", Name: "alice"}
+	if got := human.PayerSubject(""); got != "hanzo/alice" {
+		t.Fatalf("person pays %q, want %q", got, "hanzo/alice")
+	}
+}
