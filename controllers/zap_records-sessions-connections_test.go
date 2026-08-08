@@ -23,7 +23,7 @@ import (
 
 // TestZapRecordsSessionsConnectionsRegistered proves the group self-registers ALL
 // its gateway path prefixes from init() — the strangler seam Integrate flips
-// handleGatewayHTTPRequest onto. Every migrated beego route must resolve here.
+// the gateway handler onto. Every migrated beego route must resolve here.
 func TestZapRecordsSessionsConnectionsRegistered(t *testing.T) {
 	want := []string{
 		// Sessions.

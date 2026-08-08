@@ -21,7 +21,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"sync"
 
 	"github.com/luxfi/zap"
 
@@ -50,34 +49,21 @@ import (
 // The registry keeps working for what it is actually good at: the handful of hot
 // inference paths that skip the HTTP machinery on purpose.
 
-var (
-	gatewayFallbackMu sync.RWMutex
-	gatewayFallback   http.Handler
-)
-
-// SetGatewayFallback installs the HTTP handler that serves MsgType 200 requests
-// no registry entry claims. Pass routers.App — the fully-wrapped native router.
+// serveGatewayViaRouter replays a MsgType 200 request through router and packs
+// the response back into a ZAP message.
 //
-// Injected rather than imported because routers imports controllers; this is the
-// same seam InitForwardBridge uses.
-func SetGatewayFallback(h http.Handler) {
-	gatewayFallbackMu.Lock()
-	defer gatewayFallbackMu.Unlock()
-	gatewayFallback = h
-}
-
-func gatewayFallbackHandler() http.Handler {
-	gatewayFallbackMu.RLock()
-	defer gatewayFallbackMu.RUnlock()
-	return gatewayFallback
-}
-
-// serveGatewayViaRouter replays a MsgType 200 request through the native router
-// and packs the response back into a ZAP message. Reports handled=false only when
-// no fallback is installed, so a caller with no router configured keeps its 404.
-func serveGatewayViaRouter(ctx context.Context, method, path, query, auth string, body []byte) (*zap.Message, bool, error) {
-	h := gatewayFallbackHandler()
-	if h == nil {
+// router arrives as an argument, threaded down from InitZapHandlers. It used to
+// be package state installed by a SetGatewayFallback call that lived in another
+// file and was made from another line of main — so a gateway registered without
+// one 404'd the entire RESTful surface, and nothing said so. Passing it means the
+// registration and the router are one act. Injected rather than imported because
+// routers imports controllers; this is the same seam InitForwardBridge uses.
+//
+// A nil router reports handled=false and the caller keeps its 404. That is for
+// the ONE caller with nothing to fall back to: RouterConfigBridge already runs
+// inside routers.App, so replaying there would re-enter itself forever.
+func serveGatewayViaRouter(ctx context.Context, router http.Handler, method, path, query, auth string, body []byte) (*zap.Message, bool, error) {
+	if router == nil {
 		return nil, false, nil
 	}
 	if method == "" {
@@ -97,7 +83,7 @@ func serveGatewayViaRouter(ctx context.Context, method, path, query, auth string
 	req.Header.Set("Accept", "application/json")
 
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
+	router.ServeHTTP(rec, req)
 	res := rec.Result()
 	out, _ := io.ReadAll(res.Body)
 	_ = res.Body.Close()
