@@ -239,12 +239,42 @@ func TestGateAndDebitAddressOneWallet(t *testing.T) {
 // cross-tenant read even where no money moves.
 func TestGetOrgScopeHoldsWithoutAClaim(t *testing.T) {
 	// Non-member switch attempt with a non-JWT credential: nil membership set.
-	if got := account.EffectiveOrg("hanzo", nil, "acme"); got != "hanzo" {
-		t.Fatalf("EffectiveOrg admitted a switch with no claim: %q", got)
+	// With no membership claim the selection is REFUSED (account >= v0.3.0); the
+	// old contract answered "hanzo". Either way no switch is admitted — what
+	// changed is that the money path can no longer be silently redirected. GetOrg
+	// still answers home for scope, which the controller check below covers.
+	if got, err := account.EffectiveOrg("hanzo", nil, "acme"); err == nil || got != "" {
+		t.Fatalf("EffectiveOrg admitted a switch with no claim: got %q err %v", got, err)
 	}
 	// And the controller path agrees for the same shape.
 	c := orgController("Bearer sk-abc", "acme")
 	if orgs := c.principalOrgs(); orgs != nil {
 		t.Fatalf("principalOrgs = %v for a non-JWT credential, want nil", orgs)
+	}
+}
+
+// TestBillingOrgHomeForCredentialsThatCannotSwitch pins the branch added when
+// account.EffectiveOrg began REFUSING an unauthorized org selection instead of
+// answering with the caller's home org (account v0.3.0).
+//
+// That refusal is right for a principal holding a signed membership set: falling
+// back there does not fail, it succeeds against a different economic principal —
+// the request runs, the meter records, and the wrong wallet pays with no error
+// anywhere. (Proven in account's own suite: TestEffectiveOrg_UnauthorizedOrgRefused.)
+//
+// But an sk-/hz- credential carries no membership set BY CONSTRUCTION. Its ask is
+// not a bid for another wallet, because there is no other wallet it could name;
+// billing its own owner is the only possible answer. Passing those through
+// EffectiveOrg would refuse them too, and a stray X-Org-Id header would start
+// 401-ing every API-key caller while protecting nobody. Hence the len(orgs)==0
+// branch, and hence this test.
+func TestBillingOrgHomeForCredentialsThatCannotSwitch(t *testing.T) {
+	user := &iam.User{Owner: "hanzo", Name: "z"}
+
+	for _, auth := range []string{"Bearer sk-abc", "Bearer hz-widget", ""} {
+		c := orgController(auth, "initech")
+		if got := c.billingOrg(user); got != "hanzo" {
+			t.Fatalf("billingOrg = %q for credential %q; want home org — a credential with no claim set cannot switch and must still be billable", got, auth)
+		}
 	}
 }
