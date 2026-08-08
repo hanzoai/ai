@@ -54,7 +54,7 @@ func TestPromotedAddressesExistInTheRouteTable(t *testing.T) {
 
 // TestPromotedAddressesAreRoutesOnTheHostRouter proves the host router holds each
 // promoted address at its own pattern, which is what makes it describable. Before
-// this they existed only inside the beego handler and the host could publish
+// this they existed only inside the controller handler and the host could publish
 // nothing but /v1/{wildcard1}.
 func TestPromotedAddressesAreRoutesOnTheHostRouter(t *testing.T) {
 	app := zip.New(zip.Config{DisableStartupMessage: true})
@@ -96,7 +96,7 @@ func TestPromotedAddressesAreRoutesOnTheHostRouter(t *testing.T) {
 }
 
 // TestPromotedAddressesReachTheSameHandler proves promotion changed the
-// DESCRIPTION and nothing else: the request arrives at the beego handler at its
+// DESCRIPTION and nothing else: the request arrives at the controller handler at its
 // original path and verb, exactly as the glob delivered it. A promoted route that
 // took its own path would be a second implementation — the defect, not the fix.
 func TestPromotedAddressesReachTheSameHandler(t *testing.T) {

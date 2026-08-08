@@ -40,7 +40,7 @@ func (s *fakeSession) Flush() error {
 	return nil
 }
 
-// newFilterCtx builds a beego context with a session optionally carrying user as
+// newFilterCtx builds a router context with a session optionally carrying user as
 // the authenticated principal.
 func newFilterCtx(method, path string, user *iam.User) (*web.Context, *httptest.ResponseRecorder) {
 	rec := httptest.NewRecorder()
@@ -233,7 +233,7 @@ func TestRequiresPresentCredentialClassification(t *testing.T) {
 
 // ── C-1: path-normalization bypass regression ───────────────────────────────
 //
-// Beego path.Cleans the request path before dispatch, so slash/dot variants of a
+// the router path.Cleans the request path before dispatch, so slash/dot variants of a
 // gated multi-segment route (admin/providers*) still reach the controller. The
 // gate must key on the SAME normalized name, or every variant falls through to the
 // fully-open default — an UNAUTHENTICATED takeover of provider routing. These tests
@@ -242,7 +242,7 @@ func TestRequiresPresentCredentialClassification(t *testing.T) {
 // forms in URL.Path (verified), so the filter sees exactly what a real server
 // delivers to a BeforeRouter filter.
 
-// c1BypassVariants are the request paths that Beego dispatches to a gated admin
+// c1BypassVariants are the request paths that the router dispatches to a gated admin
 // controller but that the un-normalized gate missed. Canonical form is first.
 var c1BypassVariants = []struct{ method, path, note string }{
 	{"GET", "/v1/admin/providers", "canonical read"},
@@ -452,7 +452,7 @@ func setupRoundTripRouter(t *testing.T) {
 	})
 }
 
-// TestRouterRoundTrip_BypassBlocked drives requests through the REAL Beego router +
+// TestRouterRoundTrip_BypassBlocked drives requests through the REAL controller router +
 // the REAL AuthzFilter (BeforeRouter) + a real memory session — exactly as red's
 // harness did — asserting every slash/dot variant of the admin routes is blocked
 // (401) end-to-end and NEVER reaches the controller (which would 200 or, unseeded,

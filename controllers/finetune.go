@@ -31,7 +31,7 @@ import (
 // operator (hanzo-ml/trainer) and inference (hanzo-ml/kserve): browse/search
 // HuggingFace, recommend efficient defaults, submit a real TrainJob, stream status,
 // meter GPU-hours to commerce, and deploy a finished checkpoint to inference. All
-// business logic lives in object/finetune_*.go; these handlers are the thin Beego
+// business logic lives in object/finetune_*.go; these handlers are the thin controller
 // MVC layer (mirror controllers/model_route.go): read the request, resolve the
 // authed org, delegate, return the {status,msg,data} envelope.
 //

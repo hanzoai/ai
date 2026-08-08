@@ -25,7 +25,7 @@ import (
 
 // gatedKnowledgeMethods are this group's native methods that require an
 // authenticated principal. Each MUST reject an anonymous request with a 401/403
-// BEFORE touching the DB — the native-path re-enforcement of the beego
+// BEFORE touching the DB — the native-path re-enforcement of the the controller layer
 // RequireSignedIn / RequireAdmin gates. No DB adapter is initialized in this
 // unit test, so a handler that reached the store would panic; reaching the auth
 // assertion proves the gate ran first. The public read methods (get-global-*,
@@ -91,7 +91,7 @@ func TestZapKnowledgeRegistry(t *testing.T) {
 	}
 }
 
-// TestZapKnowledgeOkEnvelopeParity asserts the success encoding matches the beego
+// TestZapKnowledgeOkEnvelopeParity asserts the success encoding matches the controller
 // ResponseOk envelope ({status:"ok",data}) and the two-value form sets data2 —
 // the console frontend contract the native path must preserve byte-for-byte.
 func TestZapKnowledgeOkEnvelopeParity(t *testing.T) {

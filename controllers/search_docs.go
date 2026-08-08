@@ -53,7 +53,7 @@ func (c *ApiController) resolveSearchAuth() *searchAuth {
 	}
 
 	// 2. Bearer token auth. Every failure below is an authentication failure and
-	// MUST be a real HTTP 401 (ResponseUnauthorized), never Beego's default 200
+	// MUST be a real HTTP 401 (ResponseUnauthorized), never The router's default 200
 	// (plain ResponseError) — a denial must be unambiguous to the caller.
 	authHeader := c.Ctx.Request.Header.Get("Authorization")
 	if authHeader == "" {

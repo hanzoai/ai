@@ -13,9 +13,9 @@
 // limitations under the License.
 
 // Native ZAP handlers for the application-deploy route-group — the strangler
-// migration of application.go / template_deploy.go off beego.
+// migration of application.go / template_deploy.go off the controller layer.
 //
-// STRANGLER: each beego method (ApiController.GetApplications, GetApplication,
+// STRANGLER: each controller method (ApiController.GetApplications, GetApplication,
 // UpdateApplication, AddApplication, DeleteApplication, DeployApplication,
 // UndeployApplication, GetK8sStatus) is re-implemented here as a pure ZAP handler
 // against object/ + iam, mirroring zap_native.go:zapChatHandler. The same routes
@@ -29,12 +29,12 @@
 // registry (registerCloud / registerGatewayPath, zap_registry.go).
 //
 // Identity/scope parity: these endpoints have NO session filter on the ZAP path
-// (there is no beego filter chain), so every handler fails closed — a verified
+// (there is no filter chain), so every handler fails closed — a verified
 // credential is required (STEP 1). Org scoping for GetApplications mirrors
 // GetScopedOwner EXACTLY (owner = principal.Owner; the reserved `admin` org may
 // target another owner). GetK8sStatus mirrors RequireSuperAdmin. There is no LLM
 // call and no meter on this group — these are infra CRUD, so STEP 6 does not
-// apply (the beego path meters nothing either). Query params (pageSize, p, field,
+// apply (the router path meters nothing either). Query params (pageSize, p, field,
 // value, sortField, sortOrder, id, owner) are decoded from the JSON body — the
 // same pattern zapBalanceHandler uses — NEVER trusted for identity.
 
@@ -117,7 +117,7 @@ func zapAppPrincipal(auth string) *iam.User {
 	return nil
 }
 
-// zapAppOk renders the beego ResponseOk envelope ({status:"ok", data[, data2]}) as
+// zapAppOk renders the ResponseOk envelope ({status:"ok", data[, data2]}) as
 // a 200 cloud response, preserving the exact JSON shape the HTTP handlers return.
 // The variadic mirrors ResponseOk: a second arg becomes Data2 (the pagination
 // count for GetApplications).
@@ -134,7 +134,7 @@ func zapAppOk(data ...interface{}) (*zap.Message, error) {
 	return object.BuildCloudResponse(http.StatusOK, b, "")
 }
 
-// zapAppError renders the beego ResponseError envelope ({status:"error", msg}) at
+// zapAppError renders the ResponseError envelope ({status:"error", msg}) at
 // the given status. Business errors mirror ResponseError (HTTP 200 body); auth
 // failures use 401/403 like ResponseUnauthorized / ResponseForbidden.
 func zapAppError(status int, msg string) (*zap.Message, error) {
@@ -144,7 +144,7 @@ func zapAppError(status int, msg string) (*zap.Message, error) {
 
 // ── get-applications (org-scoped, mirrors GetScopedOwner) ────────────────
 
-// zapListAppParams is the body-decoded projection of the beego query params.
+// zapListAppParams is the body-decoded projection of the query params.
 type zapListAppParams struct {
 	Owner     string `json:"owner"`
 	PageSize  string `json:"pageSize"`
@@ -223,7 +223,7 @@ func zapGetApplicationHandler(_ context.Context, auth string, body []byte) (*zap
 
 // ── update-application ───────────────────────────────────────────────────
 
-// zapAppPayload decodes the id (beego query param) alongside the Application body.
+// zapAppPayload decodes the id (the router query param) alongside the Application body.
 // A body-supplied id wins; else it is derived from the payload owner/name (the
 // same owner/name key UpdateApplication uses).
 func zapAppPayload(body []byte) (string, *object.Application, error) {

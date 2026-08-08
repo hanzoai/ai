@@ -14,10 +14,10 @@
 
 // Native ZAP handlers for the infra / k8s CRUD route-group — the strangler
 // migration of node.go / vm.go / the request-response leg of tunnel.go off
-// beego. Cloud machine, image, container and pod provisioning is served by
+// the controller layer. Cloud machine, image, container and pod provisioning is served by
 // hanzoai/visor, which owns the compute domain.
 //
-// Pure ZAP handlers (no beego ApiController, no http.ResponseWriter): each
+// Pure ZAP handlers (no ApiController, no http.ResponseWriter): each
 // re-implements its HTTP handler against object/ + iam, mirroring the recipe:
 //   STEP 1 identity   — from the auth seam (zapResolveUser), NEVER the body.
 //   STEP 2 org scope   — super admins target owner via the body's "owner"
@@ -27,7 +27,7 @@
 //   STEP 4 policy gate — the SAME util.IsSuperAdmin gate the routers authz_filter
 //                        applies to every infra CRUD endpoint (superAdminEndpoints).
 //   STEP 5 execute     — the object-layer primitives (GetMasked*, Sync*, Add/Update/Delete).
-//   STEP 6 meter       — none: infra CRUD is not an LLM/billing path, so the beego
+//   STEP 6 meter       — none: infra CRUD is not an LLM/billing path, so the the controller layer
 //                        controllers record no usage and neither do these (parity).
 //   STEP 7 encode      — the SAME Response envelope the c.ResponseOk / wrapActionResponse
 //                        HTTP path returns.
@@ -51,7 +51,7 @@
 // TunnelMonitor (tunnel.go, guacamole) and DevBridge (dev_bridge.go). A ZAP
 // registry handler returns a SINGLE *zap.Message and holds no upgrade / duplex
 // stream, so a persistent bidirectional tunnel cannot be expressed on it. Those
-// stay on beego; only the request-response session-create leg AddNodeTunnel
+// stay on the controller layer; only the request-response session-create leg AddNodeTunnel
 // migrates here. tunnel_handler.go (the guacamole pump) is likewise untouched.
 
 package controllers
@@ -175,7 +175,7 @@ func infraId(body []byte) string {
 }
 
 // paged reports whether the list handler should paginate (both pageSize + p set,
-// mirroring the beego `limit == "" || page == ""` branch), and the derived
+// mirroring the the router `limit == "" || page == ""` branch), and the derived
 // (offset, limit) — offset = (page-1)*limit, the pagination.SetPaginator.Offset()
 // value the HTTP path computes from the request.
 func (p infraListParams) paged() (offset, limit int, ok bool) {
@@ -290,7 +290,7 @@ func zapDeleteNodeHandler(ctx context.Context, auth string, body []byte) (*zap.M
 // endpoints it is NOT super-admin gated (the authz_filter lists it as a
 // signed-in-user endpoint) — it requires only a resolvable principal. The
 // duplex GetNodeTunnel WebSocket that consumes the returned session stays on
-// beego. ClientIp/UserAgent are unset on the ZAP wire (no HTTP request context);
+// the controller layer. ClientIp/UserAgent are unset on the ZAP wire (no HTTP request context);
 // Creator is the authenticated user, never a body-supplied field.
 func zapAddNodeTunnelHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
 	id, err := zapResolveUser(auth)

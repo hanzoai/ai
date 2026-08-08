@@ -26,7 +26,7 @@ func TestZapResponsesRegistered(t *testing.T) {
 }
 
 // TestZapResponsesAuthRejection asserts the auth seam: no token → 401, and a
-// publishable (read-only) key → 403, exactly like the beego Responses path.
+// publishable (read-only) key → 403, exactly like the the router Responses path.
 func TestZapResponsesAuthRejection(t *testing.T) {
 	cases := []struct {
 		name string

@@ -29,7 +29,7 @@ import (
 func vmiscStatus(m *zap.Message) uint32 { return m.Root().Uint32(object.CloudRespStatus) }
 func vmiscBody(m *zap.Message) []byte   { return m.Root().Bytes(object.CloudRespBody) }
 
-// vmiscWriteMethods are the group's write routes that are NEITHER on the beego
+// vmiscWriteMethods are the group's write routes that are NEITHER on the controller
 // filter's benign-read exempt list NOR super-admin — every one requires an ORG admin
 // at the outer gate, so an anonymous (no-principal) caller must be denied 403 BEFORE
 // any DB access. No ORM adapter is initialized in this unit test, so a handler that
@@ -188,7 +188,7 @@ func TestZapMiscAgentsDashboardHappyPath(t *testing.T) {
 }
 
 // TestZapMiscOkEnvelope asserts the group's success builder emits the SAME
-// {status:"ok",data,data2} Response the beego ResponseOk produces (the console
+// {status:"ok",data,data2} Response the ResponseOk produces (the console
 // contract), including the two-value paginated form.
 func TestZapMiscOkEnvelope(t *testing.T) {
 	data := []string{"a", "b"}

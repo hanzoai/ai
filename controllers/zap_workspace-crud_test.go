@@ -140,7 +140,7 @@ func TestZapWorkspaceMultipartDecode(t *testing.T) {
 }
 
 // TestZapWorkspaceFormValuesUrlencoded proves the decoder also handles a urlencoded
-// body (beego c.GetString reads both content types).
+// body (the router c.GetString reads both content types).
 func TestZapWorkspaceFormValuesUrlencoded(t *testing.T) {
 	values := zapFormValues([]byte("type=.pdf&name=report.pdf"))
 	if values.Get("type") != ".pdf" || values.Get("name") != "report.pdf" {

@@ -204,20 +204,20 @@ func (rl *RateLimiter) cleanup(interval time.Duration) {
 	}
 }
 
-// ── Beego filter ────────────────────────────────────────────────────────────
+// ── the router filter ────────────────────────────────────────────────────────────
 
 // rateLimiterInstance is the singleton initialized by InitRateLimiter.
 var rateLimiterInstance *RateLimiter
 
 // InitRateLimiter creates the global rate limiter. Must be called once during
-// startup (before beego.Run). Returns the instance so the caller can call
+// startup (before web.Run). Returns the instance so the caller can call
 // Stop() on shutdown.
 func InitRateLimiter(tierFunc func(string) Tier) *RateLimiter {
 	rateLimiterInstance = NewRateLimiter(tierFunc, 10*time.Minute)
 	return rateLimiterInstance
 }
 
-// RateLimitFilter is a Beego BeforeRouter filter that enforces per-key rate
+// RateLimitFilter is a BeforeRouter filter that enforces per-key rate
 // limits on API endpoints. It extracts the API key from the Authorization
 // header (Bearer token) or X-API-Key header.
 //
@@ -371,7 +371,7 @@ func DefaultTierFunc(key string) Tier {
 	return TierZenFree
 }
 
-// parseTierConfig reads RATE_LIMIT_TIERS from env (or Beego app.conf).
+// parseTierConfig reads RATE_LIMIT_TIERS from env (or the router app.conf).
 // Format: "prefix1=tier1,prefix2=tier2"
 // Accepts both canonical zen-* names and legacy names (mapped automatically).
 func parseTierConfig() map[string]Tier {

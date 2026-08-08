@@ -75,7 +75,7 @@ func post(t *testing.T, path, body string, user *iam.User) *ApiController {
 
 // ── RED-2: the empty user is not a user ──────────────────────────────────────
 
-// TestIsCurrentUserRefusesANonName is the beego half of the empty-user hole. An
+// TestIsCurrentUserRefusesANonName is the the router half of the empty-user hole. An
 // unauthenticated request has no session username, so the ownership guard compared
 // "" against the body's "" and returned ALLOWED — every anonymous caller was the
 // current user of the empty user.
@@ -201,7 +201,7 @@ func TestZapChatWriteCannotReachAForeignLedger(t *testing.T) {
 // authenticated tenant passes its own name in `user` and any owner it likes in
 // `owner`, so the ownership check admits it and only the server's stamp decides the
 // tenant. This pins that the stamp is there and that nothing reads the body's owner
-// before it — the same assertion chat_owner_test.go makes for the beego twins,
+// before it — the same assertion chat_owner_test.go makes for the controller twins,
 // against the ZAP file that mirrors them.
 func TestZapChatPlaneOwnerIsServerStamped(t *testing.T) {
 	const file = "zap_chat-graph-crud.go"
@@ -249,7 +249,7 @@ func TestZapChatPlaneOwnerIsServerStamped(t *testing.T) {
 
 // ── RED-4: Organization is the usage plane's org key ─────────────────────────
 
-// TestAddChatPinsOwnerAndOrganization drives the real beego AddChat and reads back
+// TestAddChatPinsOwnerAndOrganization drives the real the router AddChat and reads back
 // what landed. Owner selects the ledger an answer's debit lands in; Organization is
 // the org the usage plane books that turn to (recordCasibaseChatUsage and both TTS
 // recorders read it, falling back to Owner). Both were the caller's to choose.
@@ -382,7 +382,7 @@ func TestTheClaimSettlesBeforeTheDebit(t *testing.T) {
 	}
 }
 
-// TestDeleteWelcomeMessageSurvivesAMissingRow is the beego half of the unauthenticated
+// TestDeleteWelcomeMessageSurvivesAMissingRow is the the router half of the unauthenticated
 // nil-deref class. GetMessage answers (nil, nil) for an id no row matches, so a miss
 // arrives as a nil message and not as an error, and this handler then read message.User
 // off it. The route serves callers with no session at all, so that is a crash anyone
@@ -425,7 +425,7 @@ func firstCall(n ast.Node, pkg, name string) token.Pos {
 // ── registerCloud audit: the one other twin carrying this same drift ─────────
 
 // TestZapAddStoreScopesTheOwnerToThePrincipal covers the single remaining DRIFT the
-// registerCloud sweep found: the beego AddStore was hardened to resolve the owner
+// registerCloud sweep found: the the router AddStore was hardened to resolve the owner
 // through GetScopedOwner, and its ZAP twin still took it from the body. It is the
 // same cross-tenant drain as the chat plane and reachable by ANY signed-in tenant —
 // a store filed into the chat plane's own org is reachable as a DEFAULT store, and a

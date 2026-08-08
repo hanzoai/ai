@@ -148,7 +148,7 @@ func initAPI() {
 	// defaults (/v1/router/defaults), the policy noun (GET|PUT /v1/router/policy), the
 	// artifact-meta write (/v1/router/artifact-meta), and the ledger/rewards exports
 	// (/v1/router/{ledger,rewards}) — is served ZAP-native, the ONE implementation
-	// (controllers/zap_router-policy-stats.go + zap_verticals-and-misc.go). No beego
+	// (controllers/zap_router-policy-stats.go + zap_verticals-and-misc.go). No controller
 	// twin: RouterConfigBridge is only the HTTP transport binding — it dispatches
 	// in-process through the SAME gateway registry, so there is one handler, no
 	// split-brain (the twin drift is exactly what silently dropped customer data).

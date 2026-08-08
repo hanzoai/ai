@@ -71,7 +71,7 @@ func InitZapHandlers(router http.Handler) {
 }
 
 func handleCloudService(ctx context.Context, from string, msg *zap.Message) (resp *zap.Message, err error) {
-	// Beego parity: a handler panic (e.g. util.ParseInt on garbage input) must
+	// controller parity: a handler panic (e.g. util.ParseInt on garbage input) must
 	// surface as a 500 response, never escape the dispatch seam.
 	defer func() {
 		if r := recover(); r != nil {
@@ -98,7 +98,7 @@ func handleCloudService(ctx context.Context, from string, msg *zap.Message) (res
 	}
 	// Migrated route-groups self-register their native-cloud methods into the
 	// dispatch registry (zap_registry.go). Un-migrated methods are unknown here —
-	// the caller reaches the full beego route table over the forward bridge / HTTP.
+	// the caller reaches the full controller route table over the forward bridge / HTTP.
 	if h, ok := lookupCloudHandler(method); ok {
 		return h(ctx, auth, body)
 	}
@@ -117,7 +117,7 @@ func handleCloudService(ctx context.Context, from string, msg *zap.Message) (res
 // another file — is what makes the 404-to-everything mode unreachable by omission.
 func gateway(router http.Handler) zap.Handler {
 	return func(ctx context.Context, from string, msg *zap.Message) (resp *zap.Message, err error) {
-		// Beego parity: a handler panic must surface as a 500 response, never
+		// controller parity: a handler panic must surface as a 500 response, never
 		// escape the dispatch seam.
 		defer func() {
 			if r := recover(); r != nil {
@@ -156,7 +156,7 @@ func gateway(router http.Handler) zap.Handler {
 		}
 		// Migrated route-groups self-register their gateway path prefixes into the
 		// dispatch registry (zap_registry.go). A miss is not a hole: the same request
-		// served over the forward bridge (MsgTypeForward) reaches the full beego route
+		// served over the forward bridge (MsgTypeForward) reaches the full controller route
 		// table, so un-migrated routes still serve (strangler fallback).
 		if msg, handled, err := dispatchGateway(ctx, router, method, path, query, auth, body); handled {
 			return msg, err

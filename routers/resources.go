@@ -146,7 +146,7 @@ var resources = []resource{
 			{name: "deploy", method: "DeployApplication"},
 			{name: "undeploy", method: "UndeployApplication"},
 		}},
-	// ai's OWN cookie sessions: Signin writes the beego session id and Signout
+	// ai's OWN cookie sessions: Signin writes the the router session id and Signout
 	// deletes it (controllers/account.go). IAM cannot see them, so /v1/iam/sessions
 	// is a different set of rows — which is exactly why the bare noun was wrong.
 	//

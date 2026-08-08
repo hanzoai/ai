@@ -30,7 +30,7 @@ import (
 func funcPtr(h zapHandler) uintptr { return reflect.ValueOf(h).Pointer() }
 
 // infraCrudMethods are the CRUD + node-tunnel + vm-dashboard-url endpoints this
-// group migrated off beego, keyed by their native cloud method name.
+// group migrated off the controller layer, keyed by their native cloud method name.
 func infraCrudMethods() map[string]zapHandler {
 	return map[string]zapHandler{
 		"get-nodes": zapGetNodesHandler, "get-node": zapGetNodeHandler,
@@ -129,7 +129,7 @@ func TestZapScopedOwner(t *testing.T) {
 	}
 }
 
-// TestZapInfraPaged proves the pagination branch + offset math mirror the beego
+// TestZapInfraPaged proves the pagination branch + offset math mirror the controller
 // pagination.SetPaginator path (offset = (page-1)*pageSize; both params required).
 func TestZapInfraPaged(t *testing.T) {
 	if _, _, ok := (infraListParams{PageSize: "10"}).paged(); ok {

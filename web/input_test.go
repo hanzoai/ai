@@ -83,7 +83,7 @@ func TestCopyBodyNilBody(t *testing.T) {
 }
 
 // TestQueryPrefersParam proves Query returns a route parameter first, then
-// falls back to the form/query value — matching beego.
+// falls back to the form/query value — matching the upstream this package forked.
 func TestQueryPrefersParam(t *testing.T) {
 	r := httptest.NewRequest("GET", "/?id=fromquery&only=q", nil)
 	ctx := webContext(r)

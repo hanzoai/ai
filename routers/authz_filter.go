@@ -120,7 +120,7 @@ var superAdminEndpoints = map[string]struct{}{
 	// DO usage backfill — writes the platform-wide financial ledger (cloud_usage).
 	"admin/usage/backfill-do": {},
 	// Per-org settings is served ZAP-native (/v1/org/settings, super-admin gated in the
-	// handler) — no beego route, so no filter entry.
+	// handler) — no controller route, so no filter entry.
 	// Routing-decision + reward training exports are NOT hard super-admin-gated here:
 	// they accept EITHER a super admin OR a KMS-provisioned ROUTER_ADMIN_TOKEN service
 	// token (spark's retrain). The handler (routerAdminAuthorized) is authoritative;
@@ -151,7 +151,7 @@ var authRequiredEndpoints = map[string]struct{}{
 	"documents": {}, // librechat-compat DELETE documents
 	// The routing-defaults read (/v1/router/defaults), the router-policy read/write
 	// (/v1/router/policy), and the training-data exports (/v1/router/{ledger,rewards})
-	// are ZAP-native now — self-authing in their handlers, no beego route to gate here.
+	// are ZAP-native now — self-authing in their handlers, no controller route to gate here.
 	"export-my-routing-data": {}, // self-scoped routing-data export — org-admin gated in controller, never anonymous
 	"delete-my-routing-data": {}, // self-scoped routing-data delete — org-admin gated in controller, never anonymous
 }
@@ -235,7 +235,7 @@ func sessionOrBearerUser(ctx *web.Context) *iam.User {
 }
 
 // normalizedControllerName derives the controllerName the gate keys on from the
-// SAME normalized path Beego dispatches to. Beego path.Cleans the request path
+// SAME normalized path the router dispatches to. the router path.Cleans the request path
 // before router matching (collapsing "//", "/./", "/../" and a trailing slash),
 // so a filter that keyed on the RAW path (strings.TrimPrefix of ctx.Request.URL.Path)
 // disagreed with the router: variants like "/v1/admin/providers/",
@@ -258,7 +258,7 @@ func sessionOrBearerUser(ctx *web.Context) *iam.User {
 // Returns ok=false only for non-/v1 paths (which the caller lets pass, unchanged).
 func normalizedControllerName(rawPath, method string) (name string, ok bool) {
 	// path.Clean resolves ".", ".." and duplicate slashes on the absolute request
-	// path exactly as Beego does before dispatch. path.Clean("/v1/admin/providers/")
+	// path exactly as the router does before dispatch. path.Clean("/v1/admin/providers/")
 	// == "/v1/admin/providers"; path.Clean("/v1//admin/providers") == "/v1/admin/providers".
 	cleaned := path.Clean(rawPath)
 	if !strings.HasPrefix(cleaned, "/v1/") {

@@ -26,7 +26,7 @@ import (
 
 // credentialUser resolves the request principal STRICTLY from its verified
 // bearer credential (Authorization: Bearer JWT, or the hanzo_iam_token cookie
-// fallback), BYPASSING the beego session. Unlike principalUser it never consults
+// fallback), BYPASSING the the router session. Unlike principalUser it never consults
 // GetSessionUser, so get-account can re-derive the canonical identity even when
 // the process-local session already holds a stale anonymous guest that would
 // otherwise shadow it. Returns nil when no valid JWT credential is present.

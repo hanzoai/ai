@@ -70,7 +70,7 @@ func TestZapRPSRoutesRegistered(t *testing.T) {
 // TestZapRPSOldCompoundPathsGone is the guard: every OLD compound-verb path this
 // refactor retired must dispatch NOWHERE — neither an HTTP-shaped route nor a
 // body-only path claims it — so the gateway 404s it. No backwards-compat alias
-// survives, and no route carries both a beego and a ZAP registration.
+// survives, and no route carries both a the router and a ZAP registration.
 func TestZapRPSOldCompoundPathsGone(t *testing.T) {
 	for _, p := range []string{
 		"/v1/get-router-policy", "/v1/update-router-policy",
@@ -104,7 +104,7 @@ func TestZapRouterPolicyMethodAware(t *testing.T) {
 }
 
 // TestZapRPSAuthRejection asserts the ONE identity seam refuses an unauthenticated
-// caller on every gated handler, with the SAME status shape the beego path returns:
+// caller on every gated handler, with the SAME status shape the router path returns:
 // principal-required endpoints → 401, and the admin CRUD → 403 (non-admin).
 func TestZapRPSAuthRejection(t *testing.T) {
 	// feedback / add-routing-reward: no principal → 401.
@@ -129,7 +129,7 @@ func TestZapRPSAuthRejection(t *testing.T) {
 }
 
 // TestZapRPSTrafficGlobePublic asserts the public, auth-exempt traffic globe
-// returns a 200 ok envelope with no credential — parity with the beego handler.
+// returns a 200 ok envelope with no credential — parity with the controller handler.
 func TestZapRPSTrafficGlobePublic(t *testing.T) {
 	st, env := decodeCloudRPS(t, okMsg(zapGetTrafficGlobeHandler(context.Background(), "", nil)))
 	if st != 200 {

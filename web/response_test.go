@@ -48,7 +48,7 @@ func TestResponseWriteMarksStarted(t *testing.T) {
 }
 
 // TestResponseWriteHeaderOnce proves a second WriteHeader is ignored so the
-// handler chain cannot emit two status lines — matching beego's Response.
+// handler chain cannot emit two status lines — matching the router's Response.
 func TestResponseWriteHeaderOnce(t *testing.T) {
 	rec := httptest.NewRecorder()
 	r := newResponse(rec)

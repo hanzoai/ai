@@ -152,7 +152,7 @@ func attachRetrainMeta(stats *routerStats, owner string) {
 type priceIndexFn func(model string) float64
 
 // computeRouterStats folds a window of routing events into the aggregate. Pure over
-// its inputs (no DB, no beego) so the whole contract is unit-testable. `now` bounds
+// its inputs (no DB, no router) so the whole contract is unit-testable. `now` bounds
 // the throughput buckets; `windowStart` is the oldest included instant;
 // `includeAbsoluteCost` keeps the absolute $/MTok levels (org scope) vs dropping
 // them (public platform scope). Real model ids surface in EVERY scope — the
@@ -460,7 +460,7 @@ func (c *ApiController) GetRouterStats() {
 // the ONE implementation — by zapPublishRouterArtifactMetaHandler in
 // zap_router-policy-stats.go: super-admin gated, UpsertRouterArtifactMeta + the
 // best-effort AppendRouterTrainingLog timeline append (world.hanzo.ai Model-Improvement
-// panel). No beego twin.
+// panel). No controller twin.
 
 // trainingContributionBody is the wire shape for the opt-in read + write.
 type trainingContributionBody struct {

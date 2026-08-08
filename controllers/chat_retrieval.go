@@ -105,7 +105,7 @@ func bearerTokenFromRequest(r *http.Request) string {
 	// First-party cookie fallback: a browser cookie session carries no
 	// Authorization header, but Signin persisted the verified IAM access token as
 	// the hanzo_iam_token cookie so the stateless validator can re-derive identity
-	// when the in-memory beego session is gone (self-heal). See iamTokenCookieName.
+	// when the in-memory the router session is gone (self-heal). See iamTokenCookieName.
 	if ck, err := r.Cookie(iamTokenCookieName); err == nil && ck != nil && ck.Value != "" {
 		return ck.Value
 	}

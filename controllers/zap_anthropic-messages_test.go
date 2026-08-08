@@ -86,7 +86,7 @@ func TestZapAnthropicMessages_PublishableKeyRejected(t *testing.T) {
 }
 
 // A bad body from an UNRESOLVABLE credential must be 401 (auth first), never a
-// probe-able 400 — parity with the beego handler's ordering. An sk-shaped token is
+// probe-able 400 — parity with the controller handler's ordering. An sk-shaped token is
 // neither an sk- key nor a JWT, so zapResolveUser rejects it without any DB call.
 func TestZapAnthropicMessages_AuthBeforeBadBody(t *testing.T) {
 	msg, err := zapAnthropicMessagesGateway(context.Background(), "Bearer sk-not-a-real-key", []byte(`{not json`))

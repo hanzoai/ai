@@ -13,12 +13,12 @@
 // limitations under the License.
 
 // Native ZAP handlers for the RAG / Search / Crawl route-group (strangler
-// migration off beego). Each handler is a pure ZAP handler
+// migration off the controller layer). Each handler is a pure ZAP handler
 //
 //	func(ctx context.Context, auth string, body []byte) (*zap.Message, error)
 //
-// that re-implements the beego controller's logic against object/ + iam — it
-// NEVER wraps or transforms the beego controller. It mirrors zapChatHandler
+// that re-implements the controller's logic against object/ + iam — it
+// NEVER wraps or transforms the controller. It mirrors zapChatHandler
 // exactly: identity is derived ONLY from the auth token (never the body), org
 // scoping is the resolved principal's Owner, billing runs through the ONE
 // recordSearchUsage meter, and responses marshal the SAME shape the HTTP path
@@ -120,7 +120,7 @@ type zapAuthErr struct {
 	msg    string
 }
 
-// zapOk marshals the beego Response{status:"ok",data:…} envelope the c.ResponseOk
+// zapOk marshals the Response{status:"ok",data:…} envelope the c.ResponseOk
 // HTTP path returns.
 func zapOk(data interface{}) (*zap.Message, error) {
 	b, _ := json.Marshal(Response{Status: "ok", Data: data})
@@ -354,7 +354,7 @@ func zapCrawlHandler(_ context.Context, auth string, body []byte) (*zap.Message,
 	}
 
 	// Merge single `url` and batch `urls` into one deduplicated, non-empty list
-	// (identical policy to the beego Crawl handler).
+	// (identical policy to the the router Crawl handler).
 	urls := make([]string, 0, len(req.Urls)+1)
 	seen := map[string]struct{}{}
 	for _, u := range append([]string{req.URL}, req.Urls...) {
@@ -402,7 +402,7 @@ func zapIngestHandler(ctx context.Context, auth string, body []byte) (*zap.Messa
 	}
 
 	// Gate external/bulk sources (github/crawl/s3) on balance; pure inline
-	// "upload" is ungated, matching the beego IngestDocs handler.
+	// "upload" is ungated, matching the the router IngestDocs handler.
 	if req.Source != "" && req.Source != "upload" {
 		if gerr := zapBalanceGate(sa); gerr != nil {
 			return zapErr(gerr.status, gerr.msg)

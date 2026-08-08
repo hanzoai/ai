@@ -13,9 +13,9 @@
 // limitations under the License.
 //
 // zap_billing-usage.go — native ZAP handlers for the billing/usage route group,
-// migrated STRANGLER-style off beego (controllers/usage.go, cloud_usage.go,
-// do_backfill.go). Each handler re-implements its beego twin against object/ +
-// iam directly — it never wraps or transforms the beego controller. The same
+// migrated STRANGLER-style off the router (controllers/usage.go, cloud_usage.go,
+// do_backfill.go). Each handler re-implements its controller twin against object/ +
+// iam directly — it never wraps or transforms the controller. The same
 // routes stay live on routers.App, which also backs the gateway fallback.
 //
 // Group routes (all HTTP-over-ZAP, gateway MsgType 200):
@@ -64,7 +64,7 @@ func registerZapBillingUsage() {
 
 func init() { registerZapBillingUsage() }
 
-// zapRequireUsageAdmin mirrors the beego usage endpoints' guard: no verified
+// zapRequireUsageAdmin mirrors the the router usage endpoints' guard: no verified
 // principal → 401 (ResponseUnauthorized), authenticated non-admin → the
 // admin-privilege refusal at HTTP 200 (ResponseError parity). Returns the user
 // when authorized, else the refusal message to return verbatim. Admin here is
@@ -100,7 +100,7 @@ func usageTokenOwnBrand(auth string) bool {
 // targets one org via ?org= / ?owner=, or gets the all-orgs god-view (omitted,
 // empty, "all", or "*"). ownBrand is passed in (computed from the token by the
 // handler) so the policy is unit-testable without a real JWT. The X-Org-Id
-// header fallback of the beego twin is intentionally absent: the gateway dispatch
+// header fallback of the controller twin is intentionally absent: the gateway dispatch
 // signature carries no headers, so on this wire super-admin targeting is by query
 // only (the token owner is always the tenant floor).
 func zapResolveCloudUsageScope(user *iam.User, ownBrand bool, query string) (org string, allOrgs bool) {
@@ -122,7 +122,7 @@ func zapResolveCloudUsageScope(user *iam.User, ownBrand bool, query string) (org
 
 func zapPostBackfillDOUsageHandler(ctx context.Context, method, _, query, auth string, _ []byte) (*zap.Message, error) {
 	// A WRITE to the platform-wide financial ledger — restrict to POST like the
-	// beego route, then re-check super admin (defense in depth, mirrors the
+	// controller route, then re-check super admin (defense in depth, mirrors the
 	// controller self-guard). Fail-closed: no principal → 401, non-super → 403.
 	if method != "" && !strings.EqualFold(method, "POST") {
 		return zapGwError(404, "not found")
