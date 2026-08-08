@@ -630,6 +630,8 @@ github.com/hanzoai/account v0.2.1 h1:OpODtK/N+qcUy83yUj6br+yTTBoItJWneDtOZ3NlyFU
 github.com/hanzoai/account v0.2.1/go.mod h1:8OzIGRphAhlabOI74O4GoL3RM0y8mbUV0pQUKgXLjkw=
 github.com/hanzoai/account v0.3.0 h1:jwZKYXuGu49HM2Y0ActAdmjE1d4FW6np/OH4harJeqY=
 github.com/hanzoai/account v0.3.0/go.mod h1:8OzIGRphAhlabOI74O4GoL3RM0y8mbUV0pQUKgXLjkw=
+github.com/hanzoai/account v0.3.1 h1:4YMVe0EdoudbskP9TzDv7rNj5ACvno+7jh7p1fm6Ahw=
+github.com/hanzoai/account v0.3.1/go.mod h1:8OzIGRphAhlabOI74O4GoL3RM0y8mbUV0pQUKgXLjkw=
 github.com/hanzoai/authz v1.10.29 h1:b4vWtI9g4Mvay1zizW7cwly/hDk06r+oAdA/y+317Do=
 github.com/hanzoai/authz v1.10.29/go.mod h1:xkzFdiIFx4UQMlU0NkmSRz0dgRQYqSXpKgVjn8ijn3E=
 github.com/hanzoai/base v1.5.15 h1:IWPoiNpAyEdrRgvwm03LCPEyWaaqkpuahmCnTvSNyZU=
