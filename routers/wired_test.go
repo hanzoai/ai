@@ -20,49 +20,53 @@ import (
 	"testing"
 )
 
-// THE BIJECTION: every route this router serves has a sentence, and every
-// sentence is about a route this router serves.
+// EVERY PUBLISHED OPERATION SAYS SOMETHING ABOUT ITSELF.
 //
-// Both halves fail the same way from the caller's side — an address with nothing
-// said about it, or a promise about an address nobody can call — so both are one
-// test. It is the whole contract [Prose] owes hanzoai/cloud, which relays this
-// surface through a single `/v1/*` door and publishes what comes back as the
-// fleet's document: a missing sentence there is an operation no generated SDK, MCP
-// tool or CLI command can describe, and an extra one is a phantom.
-func TestEveryRouteHasASentenceAndEverySentenceHasARoute(t *testing.T) {
-	said := Prose()
+// [Document] is what hanzoai/cloud relays through a single `/v1/*` door and
+// publishes as the fleet's contract, so an operation with no sentence there is one
+// no generated SDK, MCP tool or CLI command can describe, and nothing downstream
+// can supply it. The other half of the old bijection — prose about a route nobody
+// serves — is gone as a class rather than tested: the document is built FROM the
+// route table, so there is no longer anywhere for a phantom to be written.
+func TestEveryPublishedOperationHasASentence(t *testing.T) {
+	paths, _ := Document()["paths"].(map[string]any)
 
 	var mute []string
-	live := map[string]bool{}
-	for pattern, methods := range App.Patterns() {
-		for _, m := range methods {
-			key := strings.ToUpper(m) + " " + openAPIPath(pattern)
-			live[key] = true
-			if strings.TrimSpace(said[key].Summary) == "" {
-				mute = append(mute, key)
+	for path, item := range paths {
+		for method, o := range item.(map[string]any) {
+			op, _ := o.(map[string]any)
+			if summary, _ := op["summary"].(string); strings.TrimSpace(summary) == "" {
+				mute = append(mute, strings.ToUpper(method)+" "+path)
 			}
 		}
 	}
 	if len(mute) > 0 {
 		sort.Strings(mute)
-		t.Errorf("%d served route(s) say nothing about themselves:\n  %s\n\n"+
+		t.Errorf("%d published operation(s) say nothing about themselves:\n  %s\n\n"+
 			"The sentence is the Go doc comment on the handler the registration names; "+
 			"`go generate ./routers` lifts it. Nothing downstream can supply it.",
 			len(mute), strings.Join(mute, "\n  "))
 	}
+}
 
-	var phantom []string
-	for key := range said {
-		if !live[key] {
-			phantom = append(phantom, key)
+// THE DESCRIBED SURFACE IS THE SERVED ONE. A resource row whose generated address
+// is not registered describes an operation nobody can call — the same phantom the
+// deleted swagger.json was, arrived at from the other direction.
+func TestEveryDescribedAddressIsServed(t *testing.T) {
+	live := map[string]bool{}
+	for pattern, methods := range App.Patterns() {
+		for _, m := range methods {
+			for _, verb := range expand(m) {
+				live[verb+" "+openAPIPath(pattern)] = true
+			}
 		}
 	}
-	if len(phantom) > 0 {
-		sort.Strings(phantom)
-		t.Errorf("%d sentence(s) describe a route this router does not serve:\n  %s\n\n"+
-			"Prose for an address nobody can call is published as an operation and read as a "+
-			"promise. Key it to the route as the router registers it, or delete it with the route.",
-			len(phantom), strings.Join(phantom, "\n  "))
+	for path, item := range items() {
+		for method := range item.(map[string]any) {
+			if at := strings.ToUpper(method) + " " + path; !live[at] {
+				t.Errorf("the resource table describes %s, which App does not register", at)
+			}
+		}
 	}
 }
 
