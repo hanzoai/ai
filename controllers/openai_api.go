@@ -247,11 +247,14 @@ func resolveProviderFromJwt(token string, requested string, requestedModel strin
 	}
 
 	user := &claims.User
-	ledger := account.LedgerOrg(
-		account.EffectiveOrg(user.Owner, claims.Orgs, requested),
-		user.Owner,
-		util.IsSuperAdmin(user),
-	)
+	// An explicit org the signed claim does not cover is refused, not silently
+	// billed to the caller's personal wallet. Unauthorized and nonexistent are one
+	// answer so the header cannot be used to enumerate orgs.
+	effective, orgErr := account.EffectiveOrg(user.Owner, claims.Orgs, requested)
+	if orgErr != nil {
+		return nil, nil, "", forbiddenError("organization %q is not available to this principal", requested)
+	}
+	ledger := account.LedgerOrg(effective, user.Owner, util.IsSuperAdmin(user))
 	return resolveProviderForUser(user, ledger, requestedModel, lang)
 }
 
@@ -962,6 +965,7 @@ func recordTrace(ctx context.Context, record *usageRecord, startTime time.Time) 
 	}
 	go zapWriteUsage(record, startTime)
 	emitGenAISpan(ctx, record, startTime)
+	emitGenAIEvent(ctx, record, startTime)
 }
 
 // ── API handlers ────────────────────────────────────────────────────────────
