@@ -196,7 +196,7 @@ func transcriptOpen(ctx context.Context, auth string, body []byte) (*zap.Message
 	if provider.Type == "Zen" {
 		return object.BuildCloudResponse(400, nil, "model \""+req.Model+"\" does not serve the /v1/audio/transcript endpoint")
 	}
-	release, refused := admitSpeech(authUser.Owner)
+	release, refused := admitSession(authUser.Owner)
 	if refused != nil {
 		return object.BuildCloudResponse(uint32(statusOf(refused)), nil, refused.Error())
 	}
@@ -241,7 +241,6 @@ func transcriptOpen(ctx context.Context, auth string, body []byte) (*zap.Message
 		isPremium = route.premium
 	}
 	liveMu.Lock()
-	sweepTranscripts(time.Now())
 	live[id] = &session{
 		org: authUser.Owner, user: authUser.Owner + "/" + authUser.Name,
 		model: req.Model, premium: isPremium, provider: provider.Name,
@@ -256,6 +255,22 @@ func transcriptOpen(ctx context.Context, auth string, body []byte) (*zap.Message
 	delete(out, "at")
 	answer, _ := json.Marshal(out)
 	return object.BuildCloudResponse(201, answer, "")
+}
+
+// admitSession collects abandoned sessions, then takes a slot for a new one.
+//
+// ONE function, because the ORDER is the property. An abandoned session holds its
+// slot until the sweep runs, and the sweep runs on open — so a sweep placed AFTER
+// admission can never run once the ceiling is full of abandoned sessions: every
+// open is refused before reaching it, and the door stays shut for good with
+// nothing running and no way back but a restart. Written as two steps at the call
+// site, that ordering is a comment; written here, it is a function a test can
+// call.
+func admitSession(org string) (func(), error) {
+	liveMu.Lock()
+	sweepTranscripts(time.Now())
+	liveMu.Unlock()
+	return admitSpeech(org)
 }
 
 // pinned is the address the rest of a session goes to: the pod `open` named, or
