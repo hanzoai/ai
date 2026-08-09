@@ -784,12 +784,22 @@ func TestAdmissionKeyComesFromTheCredential(t *testing.T) {
 	//   orgOf(who)             — the owner half of the identity zapResolveUser
 	//                            returns, which it produces only from a validated
 	//                            API key or a signature-checked JWT.
+	//   org                    — the pass-through parameter of admitSession, which
+	//                            is the streaming door's entry point (it sweeps
+	//                            abandoned sessions first, and that ORDER is why it
+	//                            exists). Its own call sites are walked below, so
+	//                            this weakens nothing: the value still has to be
+	//                            attested where it enters.
 	attested := map[string]bool{
 		"c.billingOrg(authUser)": true,
 		"authUser.Owner":         true,
 		"c.GetOrg()":             true,
 		"orgOf(who)":             true,
+		"org":                    true,
 	}
+	// Both entry points, because a wrapper that was not walked would be a way in
+	// with no attested key at all.
+	doors := map[string]bool{"admitSpeech": true, "admitSession": true}
 
 	fset, files := speechSource(t)
 	keys := 0
@@ -800,7 +810,7 @@ func TestAdmissionKeyComesFromTheCredential(t *testing.T) {
 				return true
 			}
 			id, ok := call.Fun.(*ast.Ident)
-			if !ok || id.Name != "admitSpeech" || len(call.Args) != 1 {
+			if !ok || !doors[id.Name] || len(call.Args) != 1 {
 				return true
 			}
 			keys++
@@ -816,6 +826,6 @@ func TestAdmissionKeyComesFromTheCredential(t *testing.T) {
 		})
 	}
 	if keys == 0 {
-		t.Fatal("no admitSpeech call was found anywhere; the walk is broken, not the code")
+		t.Fatal("no admission call was found anywhere; the walk is broken, not the code")
 	}
 }
