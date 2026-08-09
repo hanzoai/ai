@@ -280,18 +280,25 @@ var videoPricePerVideoCents = map[string]int64{
 // on our own hardware, so there is no upstream invoice to pass through and the
 // number is a margin choice rather than a markup.
 //
-// What the cost side measures, on a 4-core CPU pod (distil-small.en, int8):
+// What the cost side measures, on four idle cores (distil-small.en, int8):
 //
-//   - a decode pass costs 1.535 s fixed + 0.0756 s per audio-second, so BATCH
-//     transcription of a 60 s file is ~6.1 CPU-seconds — about 0.10 CPU-seconds
-//     per audio-second;
-//   - STREAMING costs 5-10x that, because a growing window is re-decoded as it
-//     fills: 0.98 CPU-seconds per audio-second at one session, 0.55 at two.
+//   - STREAMING re-decodes its window as it fills, so it does SEVERAL times the
+//     decoding a batch call does for the same audio. Measured, audio-seconds
+//     decoded per audio-second submitted: 6.04 at one concurrent session, 2.64 at
+//     four, 1.79 at eight — the amplification falls as load rises, because a busy
+//     pod completes fewer re-decodes of the same window. Batch is 1.0 by
+//     definition.
+//   - At the operating point (four concurrent, the largest count whose backlog
+//     does not grow) that is 0.91 CPU-seconds per audio-second, and 2.83 at one.
 //
-// So the two are not one product priced by one number. A per-minute rate that is
-// right for batch is roughly an order of magnitude under water for the streaming
-// door, and the same rate applied to both would sell live transcription below
-// what it costs to serve while leaving batch overpriced.
+// So the two are not one product priced by one number, and the direction is worth
+// stating plainly: the SAME audio costs multiples more through the streaming door,
+// and costs LESS per second the busier the pod is. A single per-minute rate would
+// sell live transcription under water while leaving batch overpriced.
+//
+// The batch side has no clean CPU-second figure yet — the earlier one was measured
+// against a contended box and is withdrawn rather than quoted. Setting a rate needs
+// it, and it is a short measurement, not a research project.
 //
 // What the market quotes per audio-minute, for the shape of the band rather than
 // as a rate to copy: OpenAI Whisper 0.6 cents, Deepgram ~0.43 cents, AWS
