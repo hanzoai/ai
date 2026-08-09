@@ -262,3 +262,19 @@ func sanitizeID(s string) string {
 	}
 	return b.String()
 }
+
+// product is the noun a path belongs to: the segment after the version.
+//
+// /v1/ai/stores is "ai", /v1/chat/completions is "chat". It is the same cut
+// hanzoai/cloud makes when it groups the fleet, and stating it here is what lets
+// an operation of ours be counted under the product it actually serves.
+func product(path string) string {
+	seg := strings.Split(strings.TrimPrefix(path, "/"), "/")
+	if len(seg) >= 2 && strings.HasPrefix(seg[0], "v") {
+		return seg[1]
+	}
+	if len(seg) >= 1 {
+		return seg[0]
+	}
+	return ""
+}
