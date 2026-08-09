@@ -195,3 +195,44 @@ func listOf(t reflect.Type) map[string]any {
 func oneOf(t reflect.Type) map[string]any {
 	return map[string]any{"$ref": "#/components/schemas/" + component(t)}
 }
+
+// operationID is the name a client calls this operation by, and it must be the
+// SAME name every other app in the fleet would give the same address.
+//
+// hanzoai/cloud composes this document with ~180 others and refuses duplicates,
+// so an operation with no id is not merely unnamed — it collides with every
+// other unnamed one and takes the whole composition down. Cloud derives ids for
+// the apps it routes with zip.ID(method, path); this reproduces that rule rather
+// than inventing a second one, because two spellings of one operation's name is
+// exactly the drift this document exists to prevent.
+func operationID(method, path string) string {
+	var b strings.Builder
+	b.WriteString(strings.ToLower(method))
+	for _, seg := range strings.Split(path, "/") {
+		if seg == "" {
+			continue
+		}
+		b.WriteByte('_')
+		if strings.HasPrefix(seg, "{") {
+			b.WriteString("by_")
+			seg = strings.Trim(seg, "{}")
+		}
+		b.WriteString(sanitizeID(seg))
+	}
+	return b.String()
+}
+
+// sanitizeID reduces a segment to the characters legal in an operationId and
+// distinguishable from the '_' that separates segments.
+func sanitizeID(s string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(s) {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '-', r == '.':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('_')
+		}
+	}
+	return b.String()
+}
