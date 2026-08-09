@@ -80,6 +80,10 @@ func Document() map[string]any {
 				if d.Description != "" {
 					o["description"] = d.Description
 				}
+				// Named HERE because this is the one place that knows both the verb
+				// and the address. items() builds operations before it knows which
+				// verbs the router actually registered for them.
+				o["operationId"] = operationID(verb, path)
 				item[strings.ToLower(verb)] = o
 			}
 		}
