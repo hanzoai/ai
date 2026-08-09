@@ -22,6 +22,7 @@ package controllers
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math"
 	"net/http"
 	"strings"
@@ -290,4 +291,57 @@ func TestTranscriptDoesNotSwallowTranscriptions(t *testing.T) {
 			t.Fatalf("%s is claimed by nobody — the streaming door is not registered", path)
 		}
 	}
+}
+
+// TestAbandonedSessionsDoNotShutTheDoorForGood is the deadlock.
+//
+// An abandoned session holds its admission slot until the sweep runs, and the
+// sweep runs on open. Order it after admission and the failure is permanent: once
+// the ceiling is full of abandoned sessions every open is refused BEFORE reaching
+// the sweep that would free them, so the door stays shut with nothing running and
+// no way back except a restart.
+//
+// The control is that the same ceiling refuses when the sessions are LIVE, so this
+// is about abandonment and not about the ceiling being absent.
+func TestAbandonedSessionsDoNotShutTheDoorForGood(t *testing.T) {
+	speechIdle(t)
+	var ids []string
+	t.Cleanup(func() {
+		for _, id := range ids {
+			forget(id)
+		}
+	})
+
+	fill := func(age time.Duration) {
+		for i := 0; i < speechCeiling; i++ {
+			release, refused := admitSpeech("acme")
+			if refused != nil {
+				t.Fatalf("could not fill the ceiling: %v", refused)
+			}
+			id := fmt.Sprintf("ats_%s_held-%d-%s", here, i, age)
+			ids = append(ids, id)
+			liveMu.Lock()
+			live[id] = &session{org: "acme", touched: time.Now().Add(-age), release: release}
+			liveMu.Unlock()
+		}
+	}
+
+	// LIVE sessions: the ceiling is full and must stay full.
+	fill(0)
+	if _, refused := admitSession("acme"); refused == nil {
+		t.Fatal("the ceiling admitted past itself while every session was live")
+	}
+	for _, id := range ids {
+		forget(id)
+	}
+	ids = nil
+
+	// ABANDONED sessions: the sweep is what gives the capacity back, and it has to
+	// run where an open can still reach it.
+	fill(2 * transcriptIdle)
+	release, refused := admitSession("acme")
+	if refused != nil {
+		t.Fatalf("the ceiling is still full of sessions nobody is using: %v — the door never reopens", refused)
+	}
+	release()
 }
