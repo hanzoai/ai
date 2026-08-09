@@ -14,7 +14,10 @@
 
 package routers
 
-import "strings"
+import (
+	"reflect"
+	"strings"
+)
 
 // The published API description of this service is DERIVED from the router that
 // serves it — never written a second time.
@@ -82,13 +85,23 @@ func Document() map[string]any {
 		}
 	}
 
+	// Every type the resource table names, closed over what those types refer to.
+	// The roots come from the table rather than a list beside it, so a resource
+	// cannot publish a shape the document does not carry.
+	var roots []reflect.Type
+	for _, r := range resources {
+		if r.shape != nil {
+			roots = append(roots, reflect.TypeOf(r.shape))
+		}
+	}
+	schemas := components(roots)
+	schemas["Envelope"] = envelope()
+
 	return map[string]any{
-		"openapi": "3.1.0",
-		"info":    map[string]any{"title": "Hanzo AI", "version": "v1"},
-		"paths":   paths,
-		"components": map[string]any{"schemas": map[string]any{
-			"Envelope": envelope(),
-		}},
+		"openapi":    "3.1.0",
+		"info":       map[string]any{"title": "Hanzo AI", "version": "v1"},
+		"paths":      paths,
+		"components": map[string]any{"schemas": schemas},
 	}
 }
 
@@ -116,9 +129,10 @@ func expand(registered string) []string {
 
 // envelope is the one body this service returns from its resource surface.
 //
-// `data` carries no type because it genuinely has none: every resource answers
-// through this shape, so what is inside it depends on the operation. Asserting
-// an object there would be a lie in every generated client.
+// `data` is left open HERE because the envelope belongs to the surface and the
+// result belongs to the operation: what comes back from listing stores is not
+// what comes back from reading one. Each operation narrows it — see [result] —
+// so the two facts compose instead of one of them having to be vague.
 func envelope() map[string]any {
 	return map[string]any{
 		"type":     "object",
@@ -150,35 +164,42 @@ func items() map[string]any {
 
 	for _, r := range resources {
 		coll, member := r.collection(), r.member()
+		// What this resource IS, read off its own row. A row with no shape has not
+		// said, and its operations publish the bare envelope as before.
+		var list, one map[string]any
+		if r.shape != nil {
+			t := reflect.TypeOf(r.shape)
+			list, one = listOf(t), oneOf(t)
+		}
 
 		if !r.noList {
 			add(coll, "GET", op("List "+r.path,
-				"List the caller's "+r.path+".", nil, false))
+				"List the caller's "+r.path+".", nil, false, list))
 		}
 		if !r.noCreate {
 			add(coll, "POST", op("Create a "+singularNoun(r),
-				"Create one "+singularNoun(r)+".", nil, true))
+				"Create one "+singularNoun(r)+".", nil, true, one))
 		}
 		if r.global {
 			add(coll+"/global", "GET", op("List "+r.path+" across tenants",
-				"Cross-tenant listing. Admin-only; a tenant caller is refused.", nil, false))
+				"Cross-tenant listing. Admin-only; a tenant caller is refused.", nil, false, list))
 		}
 
 		mp := memberParams()
 		if !r.noRead {
 			add(member, "GET", op("Retrieve a "+singularNoun(r),
-				"Read one "+singularNoun(r)+" by its (owner, name) key.", mp, false))
+				"Read one "+singularNoun(r)+" by its (owner, name) key.", mp, false, one))
 		}
 		if !r.noUpdate {
 			add(member, "PATCH", op("Update a "+singularNoun(r),
 				"Update one "+singularNoun(r)+". PATCH and PUT reach the same handler, "+
-					"which has always taken a whole object.", mp, true))
+					"which has always taken a whole object.", mp, true, one))
 			add(member, "PUT", op("Replace a "+singularNoun(r),
-				"Identical to PATCH — the handler takes a whole object either way.", mp, true))
+				"Identical to PATCH — the handler takes a whole object either way.", mp, true, one))
 		}
 		if !r.noDelete {
 			add(member, "DELETE", op("Delete a "+singularNoun(r),
-				"Delete one "+singularNoun(r)+".", mp, false))
+				"Delete one "+singularNoun(r)+".", mp, false, one))
 		}
 
 		for _, a := range r.actions {
@@ -191,7 +212,7 @@ func items() map[string]any {
 				p, params = member+"/"+a.name, mp
 			}
 			body := verb == "POST" || verb == "PUT" || verb == "PATCH"
-			add(p, verb, op(actionSummary(a.name, singularNoun(r)), "", params, body))
+			add(p, verb, op(actionSummary(a.name, singularNoun(r)), "", params, body, nil))
 		}
 	}
 
@@ -203,7 +224,7 @@ func items() map[string]any {
 				continue
 			}
 			body := verb == "POST" || verb == "PUT" || verb == "PATCH"
-			add(s.url(), verb, op(actionSummary(s.path, ""), "", nil, body))
+			add(s.url(), verb, op(actionSummary(s.path, ""), "", nil, body, nil))
 		}
 	}
 
@@ -222,7 +243,14 @@ func items() map[string]any {
 // because a $ref binds this document to component definitions it does not carry:
 // the two it used to name lived in a hand-authored spec, and when that spec was
 // deleted every operation here kept pointing at nothing.
-func op(summary, description string, params []any, body bool) map[string]any {
+// The `data` argument is what THIS operation puts in the envelope's data field.
+// Nil means the operation has not said — the envelope alone, which is what every
+// operation used to publish.
+func op(summary, description string, params []any, body bool, data map[string]any) map[string]any {
+	schema := map[string]any{"$ref": "#/components/schemas/Envelope"}
+	if data != nil {
+		schema = result(data)
+	}
 	o := map[string]any{
 		"summary": summary,
 		"responses": map[string]any{
@@ -230,9 +258,7 @@ func op(summary, description string, params []any, body bool) map[string]any {
 				"description": "Envelope. `status` is \"ok\" or \"error\" — check it; a handled " +
 					"failure is still HTTP 200.",
 				"content": map[string]any{
-					"application/json": map[string]any{
-						"schema": map[string]any{"$ref": "#/components/schemas/Envelope"},
-					},
+					"application/json": map[string]any{"schema": schema},
 				},
 			},
 			"401": map[string]any{"description": "No credential, or one this service does not accept."},

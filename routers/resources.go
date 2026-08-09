@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"github.com/hanzoai/ai/controllers"
+	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/web"
 )
 
@@ -66,6 +67,13 @@ type resource struct {
 	path string
 	// one is the singular controller method stem: "User" → GetUser/AddUser/…
 	one string
+	// shape is a zero value of what this resource IS, and it is the only place
+	// the published response schema comes from. A collection answers a list of
+	// it, a member answers one — [Document] reads the Go type's json tags rather
+	// than restating them, so adding a field to the struct changes the contract
+	// in the same commit. It sits beside `one` because they are two facts about
+	// the same noun: what its handlers are called, and what it holds.
+	shape any
 	// many is the plural stem: "Users" → GetUsers. Set only when it is not
 	// one+"s" (English is irregular: Activity→Activities).
 	many string
@@ -141,7 +149,7 @@ var resources = []resource{
 	// object.Application is a TEMPLATE rendered through kustomize into a manifest
 	// and applied to a namespace, with a pod phase for Status and a service URL —
 	// a deployment. It was never an OAuth client; only the word was IAM's.
-	{ns: "ai", path: "deployments", one: "Application", key: "application", keyPlural: "applications",
+	{ns: "ai", path: "deployments", one: "Application", shape: object.Application{}, key: "application", keyPlural: "applications",
 		actions: []action{
 			{name: "deploy", method: "DeployApplication"},
 			{name: "undeploy", method: "UndeployApplication"},
@@ -154,22 +162,22 @@ var resources = []resource{
 	// "GetSession", which the embedded web.Controller ALSO defines as its
 	// session-value getter. Reflection finds that one, so the table test passes,
 	// and dispatch then calls a one-argument method with no arguments and panics.
-	{ns: "ai", path: "signin-sessions", one: "Session", key: "session", keyPlural: "sessions",
+	{ns: "ai", path: "signin-sessions", one: "Session", shape: object.Session{}, key: "session", keyPlural: "sessions",
 		readMethod: "GetSingleSession",
 		actions: []action{
 			{name: "duplicated", method: "IsSessionDuplicated", verb: "GET", collection: true},
 		}},
 
 	// ── retrieval ── stores, their vectors, and the files indexed into them.
-	{ns: "ai", path: "stores", one: "Store", global: true, actions: []action{
+	{ns: "ai", path: "stores", one: "Store", shape: object.Store{}, global: true, actions: []action{
 		{name: "vectors", method: "RefreshStoreVectors"},
 		{name: "names", method: "GetStoreNames", verb: "GET", collection: true},
 		{name: "providers", method: "GetStorageProviders", verb: "GET", collection: true},
 	}},
-	{ns: "ai", path: "vectors", one: "Vector", global: true, actions: []action{
+	{ns: "ai", path: "vectors", one: "Vector", shape: object.Vector{}, global: true, actions: []action{
 		{name: "all", method: "DeleteAllVectors", verb: "DELETE", collection: true},
 	}},
-	{ns: "ai", path: "files", one: "File", readMethod: "GetFileMy", global: true, actions: []action{
+	{ns: "ai", path: "files", one: "File", shape: object.File{}, readMethod: "GetFileMy", global: true, actions: []action{
 		{name: "vectors", method: "RefreshFileVectors"},
 		{name: "upload", method: "UploadFile", collection: true},
 		// activate/active are a FILE CACHE (controllers/file_cache.go), keyed by
@@ -179,55 +187,55 @@ var resources = []resource{
 		{name: "activate", method: "ActivateFile", collection: true},
 		{name: "active", method: "GetActiveFile", verb: "GET", collection: true},
 	}},
-	{ns: "ai", path: "tree-files", one: "TreeFile", noList: true, noRead: true},
+	{ns: "ai", path: "tree-files", one: "TreeFile", shape: object.TreeFile{}, noList: true, noRead: true},
 
 	// ── chat ── conversations and messages.
-	{ns: "ai", path: "chats", one: "Chat", global: true},
-	{ns: "ai", path: "messages", one: "Message", global: true, actions: []action{
+	{ns: "ai", path: "chats", one: "Chat", shape: object.Chat{}, global: true},
+	{ns: "ai", path: "messages", one: "Message", shape: object.Message{}, global: true, actions: []action{
 		{name: "answer", method: "GetMessageAnswer", verb: "GET"},
 		{name: "welcome", method: "DeleteWelcomeMessage", verb: "DELETE", collection: true},
 	}},
 
 	// ── models ── provider and route plumbing.
-	{ns: "ai", path: "providers", one: "Provider", global: true, actions: []action{
+	{ns: "ai", path: "providers", one: "Provider", shape: object.Provider{}, global: true, actions: []action{
 		{name: "mcp-tools", method: "RefreshMcpTools", collection: true},
 	}},
-	{ns: "ai", path: "routes", one: "ModelRoute", key: "model-route", keyPlural: "model-routes"},
+	{ns: "ai", path: "routes", one: "ModelRoute", shape: object.ModelRoute{}, key: "model-route", keyPlural: "model-routes"},
 
 	// ── content ── authored things.
-	{ns: "ai", path: "articles", one: "Article", global: true},
-	{ns: "ai", path: "videos", one: "Video", global: true, actions: []action{
+	{ns: "ai", path: "articles", one: "Article", shape: object.Article{}, global: true},
+	{ns: "ai", path: "videos", one: "Video", shape: object.Video{}, global: true, actions: []action{
 		{name: "upload", method: "UploadVideo", collection: true},
 	}},
-	{ns: "ai", path: "assets", one: "Asset", actions: []action{
+	{ns: "ai", path: "assets", one: "Asset", shape: object.Asset{}, actions: []action{
 		{name: "scan", method: "ScanAsset"},
 		{name: "scan", method: "ScanAssets", collection: true},
 	}},
-	{ns: "ai", path: "forms", one: "Form", global: true, actions: []action{
+	{ns: "ai", path: "forms", one: "Form", shape: object.Form{}, global: true, actions: []action{
 		{name: "data", method: "GetFormData", verb: "GET", collection: true},
 	}},
-	{ns: "ai", path: "templates", one: "Template"},
-	{ns: "ai", path: "graphs", one: "Graph", global: true},
+	{ns: "ai", path: "templates", one: "Template", shape: object.Template{}},
+	{ns: "ai", path: "graphs", one: "Graph", shape: object.Graph{}, global: true},
 
 	// ── compute ── machines and what runs on them.
-	{ns: "ai", path: "nodes", one: "Node", actions: []action{
+	{ns: "ai", path: "nodes", one: "Node", shape: object.Node{}, actions: []action{
 		{name: "tunnel", method: "AddNodeTunnel"},
 		{name: "tunnel", method: "GetNodeTunnel", verb: "GET"},
 	}},
-	{ns: "ai", path: "scans", one: "Scan"},
+	{ns: "ai", path: "scans", one: "Scan", shape: object.Scan{}},
 
 	// ── work ── tasks, workflows, scales.
-	{ns: "ai", path: "tasks", one: "Task", global: true, actions: []action{
+	{ns: "ai", path: "tasks", one: "Task", shape: object.Task{}, global: true, actions: []action{
 		{name: "document", method: "UploadTaskDocument"},
 		{name: "analyze", method: "AnalyzeTask"},
 	}},
-	{ns: "ai", path: "workflows", one: "Workflow", global: true},
-	{ns: "ai", path: "scales", one: "Scale", global: true, actions: []action{
+	{ns: "ai", path: "workflows", one: "Workflow", shape: object.Workflow{}, global: true},
+	{ns: "ai", path: "scales", one: "Scale", shape: object.Scale{}, global: true, actions: []action{
 		{name: "public", method: "GetPublicScales", verb: "GET", collection: true},
 	}},
 
 	// ── ops ── the operational record.
-	{ns: "ai", path: "records", one: "Record", actions: []action{
+	{ns: "ai", path: "records", one: "Record", shape: object.Record{}, actions: []action{
 		{name: "batch", method: "AddRecords", collection: true},
 		{name: "commit", method: "CommitRecord", collection: true},
 		{name: "commit-second", method: "CommitRecordSecond", collection: true},
@@ -238,13 +246,13 @@ var resources = []resource{
 	// logins to third-party AI accounts, router.go). These are the remote-access
 	// connections the Guacamole surface drives — a different thing that happens to
 	// share casibase's noun.
-	{ns: "ai", path: "remote-connections", one: "Connection", key: "connection", keyPlural: "connections", actions: []action{
+	{ns: "ai", path: "remote-connections", one: "Connection", shape: object.Connection{}, key: "connection", keyPlural: "connections", actions: []action{
 		{name: "start", method: "StartConnection"},
 		{name: "stop", method: "StopConnection"},
 	}},
-	{ns: "ai", path: "activities", one: "Activity", many: "Activities",
+	{ns: "ai", path: "activities", one: "Activity", shape: object.Activity{}, many: "Activities",
 		noRead: true, noCreate: true, noUpdate: true, noDelete: true},
-	{ns: "ai", path: "usages", one: "Usage", noRead: true, noCreate: true, noUpdate: true, noDelete: true,
+	{ns: "ai", path: "usages", one: "Usage", shape: object.Usage{}, noRead: true, noCreate: true, noUpdate: true, noDelete: true,
 		actions: []action{
 			{name: "range", method: "GetRangeUsages", verb: "GET", collection: true},
 			{name: "cloud", method: "GetCloudUsages", verb: "GET", collection: true},
