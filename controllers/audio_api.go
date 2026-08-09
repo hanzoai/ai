@@ -40,8 +40,8 @@ import (
 //
 // Size is not the whole bound. Bytes do not determine how much AUDIO they carry
 // — the same 25 MiB is ~13 min of 16 kHz PCM or hours of low-bitrate Opus — so
-// the work a request can buy is bounded by the concurrency ceiling and the rate
-// limit, not by this. See maxSpeechConcurrency.
+// the work a request can buy is bounded by the per-org share of the speech
+// ceiling, not by this. See admitSpeech.
 const MaxTranscribeUpload = 25 << 20
 
 // MaxSpeechInput bounds the text one synthesis request may carry, in bytes of
@@ -211,10 +211,12 @@ func (c *ApiController) AudioSpeech() {
 	}
 
 	// Admission is taken around the UPSTREAM CALL only — the work — so a slot is
-	// never held across authentication or provider resolution.
-	release, ok := admitSpeech()
-	if !ok {
-		c.ResponseErrorWithStatus(http.StatusTooManyRequests, speechBusyMessage)
+	// never held across authentication or provider resolution. It is keyed on the
+	// org that PAYS for this call, which is the same expression recordAudioUsage
+	// bills below: the tenant whose share is spent is the tenant who is charged.
+	release, refused := admitSpeech(c.billingOrg(authUser))
+	if refused != nil {
+		c.ResponseErrorWithStatus(statusOf(refused), refused.Error())
 		return
 	}
 	defer release()
@@ -380,9 +382,9 @@ func (c *ApiController) AudioTranscriptions() {
 	}
 
 	// Admission is taken around the UPSTREAM CALL only — see AudioSpeech.
-	release, ok := admitSpeech()
-	if !ok {
-		c.ResponseErrorWithStatus(http.StatusTooManyRequests, speechBusyMessage)
+	release, refused := admitSpeech(c.billingOrg(authUser))
+	if refused != nil {
+		c.ResponseErrorWithStatus(statusOf(refused), refused.Error())
 		return
 	}
 	defer release()

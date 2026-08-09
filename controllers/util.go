@@ -87,6 +87,10 @@ func (c *ApiController) ResponseErrorWithStatus(status int, error string, data .
 //	modelError   400  valid key, model not in the routing table
 //	serverError  500  provider misconfig or balance lookup transport failure
 //
+// busyError (429) also travels this way but is not an auth outcome: it is raised
+// AFTER the policy has admitted the caller, by the capacity check that stands
+// between a valid request and work the service cannot currently do.
+//
 // Fail-secure: an untyped error reaching statusOf defaults to 401 (deny), never
 // 200 (grant).
 type apiError struct {
@@ -120,6 +124,16 @@ func modelError(format string, a ...interface{}) error {
 
 func serverError(format string, a ...interface{}) error {
 	return &apiError{http.StatusInternalServerError, fmt.Sprintf(format, a...)}
+}
+
+// busyError is 429: the credential is valid, the request is well formed, and
+// there is simply no capacity for it right now. Distinct from billingError (402,
+// "you owe money") because the caller owes nothing, and from serverError (500)
+// because nothing is broken — the condition is transient and, for a caller at its
+// own share, one the caller itself can clear. The message names which of those
+// two it is (speech_admission.go).
+func busyError(format string, a ...interface{}) error {
+	return &apiError{http.StatusTooManyRequests, fmt.Sprintf(format, a...)}
 }
 
 // statusOf returns the HTTP status carried by an apiError, or 401 for an untyped
