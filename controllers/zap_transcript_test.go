@@ -20,7 +20,10 @@ package controllers
 // audio received — once, and all of it.
 
 import (
+	"context"
+	"errors"
 	"math"
+	"net/http"
 	"strings"
 	"sync"
 	"testing"
@@ -258,5 +261,33 @@ func TestAFreshSessionSurvivesTheSweep(t *testing.T) {
 	t.Cleanup(func() { forget(id) })
 	if !still {
 		t.Fatal("the sweep dropped a session that is in use")
+	}
+}
+
+// ── routing ─────────────────────────────────────────────────────────────────
+
+// TestTranscriptDoesNotSwallowTranscriptions. "/v1/audio/transcript" is a literal
+// prefix of "/v1/audio/transcriptions", and the gateway consults the HTTP-shaped
+// registry FIRST — so a prefix rule that matched on characters rather than on path
+// segments would route every batch transcription into the streaming door, where it
+// is a session id nobody opened. The batch endpoint is the one paying customers
+// already use.
+func TestTranscriptDoesNotSwallowTranscriptions(t *testing.T) {
+	for _, path := range []string{
+		"/v1/audio/transcriptions",
+		"/v1/audio/transcriptions/",
+	} {
+		for _, h := range lookupGatewayRoutes(path) {
+			if _, err := h(context.Background(), http.MethodPost, path, "", "", nil); err == nil || !errors.Is(err, errDecline) {
+				t.Fatalf("%s is claimed by an HTTP-shaped route — the batch endpoint is being swallowed", path)
+			}
+		}
+	}
+	// The control: the streaming paths ARE claimed, so the check above is about
+	// segment boundaries and not about the registry being empty.
+	for _, path := range []string{"/v1/audio/transcript", "/v1/audio/transcript/ats_x"} {
+		if len(lookupGatewayRoutes(path)) == 0 {
+			t.Fatalf("%s is claimed by nobody — the streaming door is not registered", path)
+		}
 	}
 }
