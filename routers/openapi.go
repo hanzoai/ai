@@ -84,6 +84,14 @@ func Document() map[string]any {
 				// and the address. items() builds operations before it knows which
 				// verbs the router actually registered for them.
 				o["operationId"] = operationID(verb, path)
+				// The PRODUCT this operation belongs to. hanzoai/cloud counts a
+				// product by the tags its operations carry, so an untagged operation
+				// belongs to nothing: it reaches the composed document and then
+				// disappears from every per-product total, which is how a surface
+				// loses whole products with the path count unchanged.
+				if t := product(path); t != "" {
+					o["tags"] = []any{t}
+				}
 				item[strings.ToLower(verb)] = o
 			}
 		}
