@@ -142,9 +142,35 @@ func component(t reflect.Type) string {
 		pkg = pkg[i+1:]
 	}
 	if pkg == "" || pkg == "object" {
+		if n, ok := published[t.Name()]; ok {
+			return n
+		}
 		return t.Name()
 	}
 	return pkg + "." + t.Name()
+}
+
+// published is the wire name for a type whose Go name is a word another product
+// in the fleet already means something else by.
+//
+// hanzoai/cloud composes this document with ~180 others into ONE flat set of
+// schema names and refuses a name that carries two shapes, so a word here is
+// claimed fleet-wide, not per-service. Both of these lose the argument on
+// accuracy rather than seniority:
+//
+//	Record is {name, type, value} in platform and projects — a DNS record, which
+//	is exactly what that word means. This one is {id, owner, organization,
+//	clientIp}: who reached what, from where. That is an audit trail.
+//
+//	Usage is {cpuNs, rssBytes, threads, fds} in the plugin supervisor — what a
+//	process is consuming right now. This one is {date, userCount, chatCount,
+//	tokenCount, price}: a day's counts, priced. That is a tally.
+//
+// Only the WIRE name moves. object.Record and object.Usage keep their Go names,
+// because renaming a Go type to settle a document is the tail wagging the dog.
+var published = map[string]string{
+	"Record": "Audit",
+	"Usage":  "Tally",
 }
 
 // components is every schema the document refers to, closed over its own
