@@ -52,6 +52,20 @@ func (c *ApiController) GenerateTextToSpeechAudio() {
 		return
 	}
 
+	// The same per-org ceiling the OpenAI-shaped door takes (speech_admission.go).
+	// This route reaches the same models, so leaving it out would not be a smaller
+	// limit — it would be no limit, one URL away.
+	//
+	// It is keyed on the org the CALLER acts in, not the store's owner that the
+	// record below bills: the caller names the store, and capacity is refused on
+	// what the credential proves rather than on what the body asks for.
+	release, refused := admitSpeech(c.GetOrg())
+	if refused != nil {
+		c.ResponseErrorWithStatus(statusOf(refused), refused.Error())
+		return
+	}
+	defer release()
+
 	startTime := time.Now().UTC()
 	audioData, ttsResult, err := providerObj.QueryAudio(message.Text, ctx, c.GetAcceptLanguage())
 	if err != nil {

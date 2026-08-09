@@ -78,6 +78,17 @@ func (c *ApiController) ProcessSpeechToText() {
 		c.ResponseError(err.Error())
 		return
 	}
+	// The same per-org ceiling the OpenAI-shaped door takes (speech_admission.go),
+	// keyed on the org the CALLER acts in rather than the store owner the record
+	// bills: the caller names the store, and capacity is refused on what the
+	// credential proves rather than on what the body asks for.
+	release, refused := admitSpeech(c.GetOrg())
+	if refused != nil {
+		c.ResponseErrorWithStatus(statusOf(refused), refused.Error())
+		return
+	}
+	defer release()
+
 	// Process the audio data and get the transcription
 	ctx := context.Background()
 	startTime := time.Now().UTC()

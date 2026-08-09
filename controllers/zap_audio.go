@@ -160,11 +160,13 @@ func zapAudioSpeechHandler(ctx context.Context, auth string, body []byte) (*zap.
 
 	startTime := time.Now().UTC()
 	// Admission around the UPSTREAM CALL — the SAME ceiling the HTTP handler
-	// takes, and the same channel, so the two transports share one budget rather
-	// than each getting their own.
-	release, ok := admitSpeech()
-	if !ok {
-		return object.BuildCloudResponse(429, nil, speechBusyMessage)
+	// takes, and the same per-org shares of it, so the two transports divide one
+	// capacity rather than each getting a private copy. The key is the org
+	// zapRecordAudioUsage bills below; this transport carries no header, so there
+	// is nothing here that could name a different one.
+	release, refused := admitSpeech(authUser.Owner)
+	if refused != nil {
+		return object.BuildCloudResponse(uint32(statusOf(refused)), nil, refused.Error())
 	}
 	defer release()
 
@@ -281,9 +283,9 @@ func zapAudioTranscribeHandler(ctx context.Context, auth string, body []byte) (*
 
 	startTime := time.Now().UTC()
 	// Admission around the UPSTREAM CALL — see the speech handler above.
-	release, ok := admitSpeech()
-	if !ok {
-		return object.BuildCloudResponse(429, nil, speechBusyMessage)
+	release, refused := admitSpeech(authUser.Owner)
+	if refused != nil {
+		return object.BuildCloudResponse(uint32(statusOf(refused)), nil, refused.Error())
 	}
 	defer release()
 
@@ -480,7 +482,8 @@ func zapLegacyTTSHandler(ctx context.Context, auth string, body []byte) (*zap.Me
 	// The legacy handler bills the STORE owner, but a caller identity is still
 	// required — over ZAP there is no filter chain, so enforce auth here
 	// (STEP 1). Empty/invalid auth -> 401.
-	if _, err := zapResolveUser(auth); err != nil {
+	who, err := zapResolveUser(auth)
+	if err != nil {
 		return object.BuildCloudResponse(401, nil, err.Error())
 	}
 	var req TextToSpeechRequest
@@ -491,6 +494,18 @@ func zapLegacyTTSHandler(ctx context.Context, auth string, body []byte) (*zap.Me
 	if err != nil {
 		return object.BuildCloudResponse(400, nil, err.Error())
 	}
+
+	// The same per-org ceiling the OpenAI-shaped door takes — this route reaches
+	// the same models, so leaving it out would not be a smaller limit but no limit,
+	// one path away. Keyed on the caller's own org rather than the store owner it
+	// bills: the caller names the store, so the store cannot be what decides whose
+	// capacity is spent.
+	release, refused := admitSpeech(orgOf(who))
+	if refused != nil {
+		return object.BuildCloudResponse(uint32(statusOf(refused)), nil, refused.Error())
+	}
+	defer release()
+
 	startTime := time.Now().UTC()
 	audioData, ttsResult, err := providerObj.QueryAudio(message.Text, pctx, "en")
 	if err != nil {
@@ -592,7 +607,8 @@ func zapRecordLegacyTTSUsage(ctx context.Context, chat *object.Chat, providerId 
 // ── Legacy store-bound STT (mirrors ProcessSpeechToText) ────────────────────
 
 func zapSTTHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
-	if _, err := zapResolveUser(auth); err != nil {
+	who, err := zapResolveUser(auth)
+	if err != nil {
 		return object.BuildCloudResponse(401, nil, err.Error())
 	}
 	storeId, audioReader, err := parseSTTForm(body)
@@ -620,6 +636,15 @@ func zapSTTHandler(ctx context.Context, auth string, body []byte) (*zap.Message,
 	if err != nil {
 		return object.BuildCloudResponse(502, nil, err.Error())
 	}
+
+	// The same per-org ceiling every other speech door takes — see the legacy TTS
+	// twin above for why the key is the caller's org and not the store's.
+	release, refused := admitSpeech(orgOf(who))
+	if refused != nil {
+		return object.BuildCloudResponse(uint32(statusOf(refused)), nil, refused.Error())
+	}
+	defer release()
+
 	startTime := time.Now().UTC()
 	text, legacyResult, err := providerObj.ProcessAudio(audioReader, ctx, "en")
 	zapRecordLegacySTTUsage(ctx, store, provider, sttSecondsOf(legacyResult), startTime, err)
