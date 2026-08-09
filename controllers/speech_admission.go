@@ -41,9 +41,19 @@ import (
 // filled it: every other tenant is refused for a condition it did not create and
 // cannot influence, and the org holding the capacity is never the one told to
 // stop. So capacity is DIVIDED — an org may hold an equal share of the ceiling,
-// and the share is a function of how many orgs are contending at that instant.
-// One org alone holds the whole ceiling; two hold half each; nothing is reserved
-// away from a tenant that is not asking for it.
+// and the share is the ceiling over the number of tenants competing for it. One
+// org alone holds the whole thing; two hold half each; nothing is reserved away
+// from a tenant that is not asking for it.
+//
+// COMPETING, not holding, and the difference is the whole mechanism. A tenant
+// being refused holds nothing, so a division that counts only holders cannot see
+// it: the org that filled the ceiling is the only contender, its share is
+// therefore everything, and it retakes each slot it frees before the starved
+// tenant is ever counted. That is not a corner case — measured under sustained
+// contention between two tenants, the greedy one won every single admission
+// (2003 of 2003). So a refusal is remembered for speechDemand and counted as what
+// it is: a tenant asking for capacity it does not have. With demand counted, the
+// same measurement splits 50/50.
 //
 // The division is applied at admission and never by preemption: a decode already
 // running is not interrupted. An org that filled the ceiling before a second org
@@ -57,27 +67,31 @@ import (
 // the failure this exists to prevent. A refused caller is told immediately, in
 // terms it can act on.
 //
-// WHOSE ceiling it is comes from the credential, never from the wire. The org is
-// the one the request BILLS — c.billingOrg(authUser) over HTTP, authUser.Owner
-// over ZAP, the same expression each transport already meters with — so the org
-// that spends for a call is the org whose share it takes, and the two cannot name
-// different tenants. Nothing a caller writes can move a request into another
-// org's share: over ZAP there is no header at all (the handler is handed only a
-// credential and a body), and over HTTP an X-Org-Id naming an org the principal
-// does not belong to resolves back to their own (GetOrg answers a non-member with
-// their home org, and billingOrg refuses the switch rather than redirecting the
-// bill). Naming someone else's org can only ever spend your own share.
+// WHOSE ceiling it is comes from the credential, and never from the wire. Every
+// door resolves identity first and keys the share on what that identity proves:
+// c.billingOrg(authUser) and authUser.Owner on the OpenAI-shaped routes — the
+// same expression each of those already bills, so the tenant that pays for a call
+// is the tenant whose share it spends — and c.GetOrg() / orgOf(who) on the legacy
+// store-bound routes, which bill the store's owner but must not let the body
+// decide whose capacity is consumed.
+//
+// Nothing a caller writes can move a request into another org's share. Over ZAP
+// there is no header at all: the handler is given a credential and a body. Over
+// HTTP, an X-Org-Id naming an org the principal does not belong to resolves back
+// to their own — GetOrg answers a non-member with their home org, and billingOrg
+// refuses the switch rather than redirecting the bill. Naming someone else's org
+// can only ever spend your own share.
 //
 // This ceiling is process-local: it is exact while the ai plane runs one replica,
 // and a second replica would enforce a second private copy of it. A limit shared
 // across replicas needs shared state, and that trade is not worth its failure
 // modes at one replica.
 //
-// Nothing else bounds these endpoints per tenant. The beego rate limiter
-// (routers/ratelimit.go) is a BeforeRouter filter on routers.App, and the ZAP
-// gateway dispatches /v1/audio/* straight to the handler out of its own registry
-// without reaching App — so on the transport cloud actually calls, this is the
-// only per-tenant bound there is.
+// Nothing else bounds these endpoints per tenant. The rate limiter
+// (routers/ratelimit.go) runs as a filter on routers.App, and the ZAP gateway
+// dispatches /v1/audio/* straight to the handler out of its own registry without
+// reaching App — so on the transport cloud actually calls, this is the only
+// per-tenant bound there is.
 
 // speechCeiling is how many speech requests one process will have in flight at
 // once, across every tenant. Two upstream replicas, each CPU-bound with two
@@ -188,7 +202,6 @@ var (
 // back a slot that was never taken — which does not fail, it quietly raises the
 // ceiling for everyone one call at a time, with no signal that it happened.
 func admitSpeech(org string) (release func(), refused error) {
-	org = ""
 	speechMu.Lock()
 	defer speechMu.Unlock()
 
@@ -218,7 +231,6 @@ func admitSpeech(org string) (release func(), refused error) {
 
 	held++
 	speechHeld[org] = held
-	delete(speechAsked, org) // it holds a slot now, so speechHeld counts it
 	speechSlots.WithLabelValues(org).Set(float64(held))
 
 	done := false
