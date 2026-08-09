@@ -274,10 +274,34 @@ var videoPricePerVideoCents = map[string]int64{
 // recordUnpriced flag the row rather than invent a number, so audio traffic is
 // visible and honest while priced at nothing.
 //
-// TODO(pricing): set sell rates. sttPricePerMinuteCents is CENTS PER MINUTE of
-// audio submitted; ttsPricePerMillionCharsCents is CENTS PER 1,000,000
-// CHARACTERS synthesized. Both are Hanzo sell prices, not COGS — speech runs on
-// our own hardware, so there is no upstream invoice to pass through.
+// THE DECISION THAT IS OPEN, and the numbers it needs. sttPricePerMinuteCents is
+// CENTS PER MINUTE of audio submitted; ttsPricePerMillionCharsCents is CENTS PER
+// 1,000,000 CHARACTERS synthesized. Both are sell prices, not COGS — speech runs
+// on our own hardware, so there is no upstream invoice to pass through and the
+// number is a margin choice rather than a markup.
+//
+// What the cost side measures, on a 4-core CPU pod (distil-small.en, int8):
+//
+//   - a decode pass costs 1.535 s fixed + 0.0756 s per audio-second, so BATCH
+//     transcription of a 60 s file is ~6.1 CPU-seconds — about 0.10 CPU-seconds
+//     per audio-second;
+//   - STREAMING costs 5-10x that, because a growing window is re-decoded as it
+//     fills: 0.98 CPU-seconds per audio-second at one session, 0.55 at two.
+//
+// So the two are not one product priced by one number. A per-minute rate that is
+// right for batch is roughly an order of magnitude under water for the streaming
+// door, and the same rate applied to both would sell live transcription below
+// what it costs to serve while leaving batch overpriced.
+//
+// What the market quotes per audio-minute, for the shape of the band rather than
+// as a rate to copy: OpenAI Whisper 0.6 cents, Deepgram ~0.43 cents, AWS
+// Transcribe 2.4 cents. Synthesis is quoted per million characters: AWS Polly
+// $4 standard / $16 neural, OpenAI tts $15.
+//
+// Until the choice is made, an empty map is the honest state: seconds and
+// characters ARE recorded, the row is flagged Unpriced, and the traffic is
+// therefore visible and back-billable. Setting a rate here is a revenue decision,
+// not a code change waiting to be finished.
 var sttPricePerMinuteCents = map[string]int64{}
 
 var ttsPricePerMillionCharsCents = map[string]int64{}

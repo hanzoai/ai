@@ -14,11 +14,12 @@
 
 package controllers
 
-// The bounds on the speech endpoints, asserted where they BITE.
+// The SIZE bounds on the speech endpoints, asserted where they BITE: an upload
+// that outgrows the pod, and a synthesis request that buys unbounded CPU with one
+// string. Each test states the abuse it refuses, not the branch it covers.
 //
-// Each test states the abuse it refuses, not the branch it covers: an upload
-// that outgrows the pod, a synthesis request that buys unbounded CPU with one
-// string, and a burst that takes every worker the two-replica upstream has.
+// The bound on the WORK — who may run how much of it at once — is a different
+// question and lives with the mechanism, in speech_admission_test.go.
 
 import (
 	"bytes"
@@ -27,9 +28,7 @@ import (
 	"mime/multipart"
 	"net/http/httptest"
 	"strings"
-	"sync"
 	"testing"
-	"time"
 
 	"github.com/hanzoai/ai/object"
 )
@@ -180,118 +179,5 @@ func TestZapTranscribeOverLimitRefused(t *testing.T) {
 	}
 	if !strings.Contains(msg, "25") {
 		t.Errorf("refusal %q does not name the limit", msg)
-	}
-}
-
-// TestSpeechAdmissionCeiling proves the concurrency ceiling bites: exactly
-// maxSpeechConcurrency requests are admitted, the next is refused rather than
-// queued, and a released slot is reusable.
-//
-// This is the bound that protects the two-replica upstream, because the size
-// bound cannot: bytes do not determine audio seconds.
-func TestSpeechAdmissionCeiling(t *testing.T) {
-	held := make([]func(), 0, maxSpeechConcurrency)
-	for i := 0; i < maxSpeechConcurrency; i++ {
-		release, ok := admitSpeech()
-		if !ok {
-			t.Fatalf("request %d of %d was refused while the ceiling was not yet reached", i+1, maxSpeechConcurrency)
-		}
-		held = append(held, release)
-	}
-
-	if _, ok := admitSpeech(); ok {
-		t.Fatalf("request %d was ADMITTED past the ceiling of %d — the bound does not bite",
-			maxSpeechConcurrency+1, maxSpeechConcurrency)
-	}
-
-	// A returned slot is immediately reusable: the ceiling throttles, it does not
-	// leak away capacity one request at a time.
-	held[0]()
-	release, ok := admitSpeech()
-	if !ok {
-		t.Fatal("a released slot was not reusable — the ceiling leaks capacity")
-	}
-	held[0] = release
-
-	for _, r := range held {
-		r()
-	}
-}
-
-// TestSpeechAdmissionIsNotBlocking proves a refused caller is refused NOW. A
-// ceiling that queues converts a burst into latency for every caller and holds
-// each waiting body's memory while it does — the failure the ceiling exists to
-// prevent.
-func TestSpeechAdmissionIsNotBlocking(t *testing.T) {
-	held := make([]func(), 0, maxSpeechConcurrency)
-	for i := 0; i < maxSpeechConcurrency; i++ {
-		release, ok := admitSpeech()
-		if !ok {
-			t.Fatalf("could not fill the ceiling: request %d refused", i+1)
-		}
-		held = append(held, release)
-	}
-	defer func() {
-		for _, r := range held {
-			r()
-		}
-	}()
-
-	done := make(chan bool, 1)
-	go func() {
-		_, ok := admitSpeech()
-		done <- ok
-	}()
-	select {
-	case ok := <-done:
-		if ok {
-			t.Fatal("admitted past the ceiling")
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("admitSpeech BLOCKED when full; it must refuse immediately")
-	}
-}
-
-// TestSpeechAdmissionReleasesUnderConcurrency proves the ceiling holds under
-// real concurrent traffic and returns every slot — a leak would silently reduce
-// capacity to zero over time and take the endpoint down without an attacker.
-func TestSpeechAdmissionReleasesUnderConcurrency(t *testing.T) {
-	var wg sync.WaitGroup
-	var mu sync.Mutex
-	inFlight, peak := 0, 0
-
-	for i := 0; i < 200; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			release, ok := admitSpeech()
-			if !ok {
-				return
-			}
-			mu.Lock()
-			inFlight++
-			if inFlight > peak {
-				peak = inFlight
-			}
-			mu.Unlock()
-
-			mu.Lock()
-			inFlight--
-			mu.Unlock()
-			release()
-		}()
-	}
-	wg.Wait()
-
-	if peak > maxSpeechConcurrency {
-		t.Fatalf("peak in-flight was %d, over the ceiling of %d", peak, maxSpeechConcurrency)
-	}
-	// Every slot must be back: the ceiling is fully available again.
-	for i := 0; i < maxSpeechConcurrency; i++ {
-		release, ok := admitSpeech()
-		if !ok {
-			t.Fatalf("only %d of %d slots were returned — the ceiling leaks", i, maxSpeechConcurrency)
-		}
-		defer release()
 	}
 }
