@@ -16,7 +16,7 @@ package object
 
 // crawl.go — POST /v1/crawl: fetch a URL, get its content back.
 //
-// It reads through the ONE crawl, github.com/hanzoai/cloud/apps/crawl, which is
+// It reads through the ONE crawl the HOST supplies (SetFetcher), which is
 // the same code the answer engine's read stage grounds on. There is no crawl
 // SERVICE to call: this used to dial crawl.hanzo.svc.cluster.local:11235, a name
 // that does not resolve, so every request returned success:false and the endpoint
@@ -34,7 +34,6 @@ import (
 	"sync"
 	"time"
 
-	crawlpkg "github.com/hanzoai/cloud/apps/crawl"
 )
 
 // errNoURLs is the only way Crawl fails as a whole: it was handed nothing to do.
@@ -90,7 +89,11 @@ func Crawl(urls []string) ([]CrawlResult, error) {
 // match on exactly the pages that redirect. Where the page actually came from is
 // in Metadata["sourceURL"].
 func crawlOne(ctx context.Context, url string) CrawlResult {
-	page, err := crawlpkg.Fetch(ctx, url)
+	fetch := Fetcher()
+	if fetch == nil {
+		return CrawlResult{URL: url, Metadata: map[string]interface{}{"error": "crawl: no fetcher bound by the host"}}
+	}
+	page, err := fetch(ctx, url)
 	if err != nil {
 		return CrawlResult{URL: url, Metadata: map[string]interface{}{"error": err.Error()}}
 	}
@@ -99,4 +102,37 @@ func crawlOne(ctx context.Context, url string) CrawlResult {
 		r.Description = desc
 	}
 	return r
+}
+
+// Page is what a fetch returns: a subsystem states the shape it needs rather
+// than importing its host to borrow one.
+type Page struct {
+	Title    string
+	Markdown string
+	Metadata map[string]interface{}
+}
+
+// Fetch reads one URL and returns its content.
+type Fetch func(ctx context.Context, url string) (*Page, error)
+
+var (
+	fetchMu sync.RWMutex
+	fetcher Fetch
+)
+
+// SetFetcher binds the crawl the host holds. ai does not fetch the web itself —
+// it asks whoever mounted it — so the dependency points from the host INTO the
+// subsystem, which is the direction that lets two different hosts mount one ai.
+func SetFetcher(f Fetch) {
+	fetchMu.Lock()
+	defer fetchMu.Unlock()
+	fetcher = f
+}
+
+// Fetcher returns the bound fetch, or nil when the host bound none. nil is an
+// honest answer — a crawl result carrying the reason, never a silent empty page.
+func Fetcher() Fetch {
+	fetchMu.RLock()
+	defer fetchMu.RUnlock()
+	return fetcher
 }
