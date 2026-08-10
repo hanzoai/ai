@@ -40,7 +40,7 @@ func TestVideosGenerationsRouteIsRegistered(t *testing.T) {
 	defer SetHandler(nil)
 
 	app := zip.New(zip.Config{DisableStartupMessage: true})
-	mountRoutes(app)
+	routes(app)
 
 	// No Authorization header → the handler's bearerToken() rejects with 401.
 	// A 404 would mean the route never registered; a 500 a session panic.

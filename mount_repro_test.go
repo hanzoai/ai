@@ -65,7 +65,7 @@ func TestMountForwardsNestedOpenAIRoutes(t *testing.T) {
 	defer SetHandler(nil)
 
 	app := zip.New(zip.Config{DisableStartupMessage: true})
-	mountRoutes(app)
+	routes(app)
 
 	cases := []struct {
 		name, method, path string
@@ -99,7 +99,7 @@ func TestChatCompletionsReceivesRequestBody(t *testing.T) {
 	defer SetHandler(nil)
 
 	app := zip.New(zip.Config{DisableStartupMessage: true})
-	mountRoutes(app)
+	routes(app)
 
 	const payload = `{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hi"}]}`
 	req := httptest.NewRequest(http.MethodPost, "/v1/repro-body-echo", strings.NewReader(payload))

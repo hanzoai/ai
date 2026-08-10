@@ -38,7 +38,7 @@ import (
 
 func TestMountRoutesWithoutHandlerReturns503(t *testing.T) {
 	app := zip.New(zip.Config{DisableStartupMessage: true})
-	mountRoutes(app)
+	routes(app)
 	SetHandler(nil)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
@@ -53,7 +53,7 @@ func TestMountRoutesWithoutHandlerReturns503(t *testing.T) {
 
 func TestMountRoutesForwardsBarePathUnchanged(t *testing.T) {
 	app := zip.New(zip.Config{DisableStartupMessage: true})
-	mountRoutes(app)
+	routes(app)
 
 	var sawPath string
 	SetHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -102,7 +102,7 @@ func TestMountRoutesPropagatesTraceContext(t *testing.T) {
 		c.SetContext(parentCtx)
 		return c.Continue()
 	}))
-	mountRoutes(app)
+	routes(app)
 
 	var gotSC trace.SpanContext
 	SetHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -128,7 +128,7 @@ func TestMountRoutesPropagatesTraceContext(t *testing.T) {
 
 func TestMountRoutesForwardsNestedAndSingleSegment(t *testing.T) {
 	app := zip.New(zip.Config{DisableStartupMessage: true})
-	mountRoutes(app)
+	routes(app)
 
 	var sawPath string
 	SetHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
