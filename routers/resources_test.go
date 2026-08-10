@@ -15,10 +15,11 @@
 package routers
 
 import (
-	"github.com/hanzoai/ai/web"
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/hanzoai/ai/web"
 
 	"github.com/hanzoai/ai/controllers"
 )

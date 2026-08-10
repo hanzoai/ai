@@ -59,7 +59,7 @@ import (
 // Bootstrap is sync.Once-guarded, so calling it here is safe even if the
 // process also calls it elsewhere.
 func Mount(app *zip.App, deps cloud.Deps) error {
-	log := deps.Logger
+	log := luxlog.Default()
 	if log == nil {
 		log = luxlog.New("module", "ai")
 	}
