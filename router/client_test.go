@@ -122,3 +122,62 @@ func TestRouteEngineUnservableModelFallsBack(t *testing.T) {
 		t.Fatalf("unservable fallback got (%q,%q), want (zen4-coder,code)", model, task)
 	}
 }
+
+// TestMissesCountEveryFallback proves the failure that hid an unconfigured engine
+// for fourteen days is now COUNTED. Each engine exit — non-200, unreachable, and an
+// unservable choice — must bump Misses, so a share stuck at zero can be told apart
+// from a strategy that never ran at all.
+func TestMissesCountEveryFallback(t *testing.T) {
+	down := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "boom", http.StatusInternalServerError)
+	}))
+	defer down.Close()
+	phantom := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(engineResponse{Model: "phantom-model"})
+	}))
+	defer phantom.Close()
+
+	unreachable := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	unreachableURL := unreachable.URL
+	unreachable.Close() // nothing is listening now → transport error
+
+	cases := []struct {
+		name string
+		c    Client
+	}{
+		{"non-200", Client{Endpoint: down.URL, Policy: testPolicy()}},
+		{"transport", Client{Endpoint: unreachableURL, Policy: testPolicy()}},
+		{"unservable choice", Client{
+			Endpoint: phantom.URL,
+			Policy:   testPolicy(),
+			Known:    func(id string) bool { return id == "zen4" },
+		}},
+	}
+	for _, tc := range cases {
+		before := Misses()
+		if model, _ := tc.c.Route(context.Background(), Request{Text: "hi", ApproxTokens: 2}, Slo{}); model == "" {
+			t.Fatalf("%s: routing must still resolve via the heuristic", tc.name)
+		}
+		if got := Misses(); got != before+1 {
+			t.Fatalf("%s: Misses = %d, want %d — a silent fallback is exactly the bug", tc.name, got, before+1)
+		}
+	}
+}
+
+// TestNoMissOnSuccess: a healthy engine must NOT be counted as a miss, or the
+// counter cannot be trusted to mean "the engine is dead".
+func TestNoMissOnSuccess(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(engineResponse{Model: "zen5-max", Task: "reasoning"})
+	}))
+	defer srv.Close()
+
+	before := Misses()
+	c := Client{Endpoint: srv.URL, Policy: testPolicy()}
+	if model, _ := c.Route(context.Background(), Request{Text: "hello", ApproxTokens: 2}, Slo{}); model != "zen5-max" {
+		t.Fatalf("engine pick = %q, want zen5-max", model)
+	}
+	if got := Misses(); got != before {
+		t.Fatalf("Misses moved on a healthy engine: %d → %d", before, got)
+	}
+}

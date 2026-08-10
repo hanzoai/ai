@@ -323,3 +323,41 @@ func TestTruncateForJudge(t *testing.T) {
 		t.Fatal("content not truncated")
 	}
 }
+
+// TestJudgeMissesCountSilentFailures proves the judge no longer starves the trainer
+// in silence. A judge with no service bearer answers 401 on EVERY call — the exact
+// production state that left the reward ledger empty and the retrain gate unclearable
+// — so each failed score must be counted, and a healthy score must not be.
+func TestJudgeMissesCountSilentFailures(t *testing.T) {
+	prev := judgeDo
+	t.Cleanup(func() { judgeDo = prev })
+
+	cfg := &judgeConfig{url: "http://x", model: "judge", sample: 1}
+
+	for _, tc := range []struct {
+		name string
+		do   func(*http.Request) (*http.Response, error)
+	}{
+		{"401 no service token", func(*http.Request) (*http.Response, error) { return judgeResp(401, ""), nil }},
+		{"transport error", func(*http.Request) (*http.Response, error) { return nil, fmt.Errorf("dial refused") }},
+		{"unparseable verdict", func(*http.Request) (*http.Response, error) { return judgeResp(200, "I decline to score"), nil }},
+	} {
+		judgeDo = tc.do
+		before := JudgeMisses()
+		if _, ok := judgeScore(cfg, "code", "p", "r"); ok {
+			t.Fatalf("%s: judge must abstain", tc.name)
+		}
+		if got := JudgeMisses(); got != before+1 {
+			t.Fatalf("%s: JudgeMisses = %d, want %d — an invisible judge is the bug", tc.name, got, before+1)
+		}
+	}
+
+	judgeDo = func(*http.Request) (*http.Response, error) { return judgeResp(200, `{"score":0.5}`), nil }
+	before := JudgeMisses()
+	if _, ok := judgeScore(cfg, "code", "p", "r"); !ok {
+		t.Fatal("a healthy judge must score")
+	}
+	if got := JudgeMisses(); got != before {
+		t.Fatalf("JudgeMisses moved on a healthy judge: %d → %d", before, got)
+	}
+}

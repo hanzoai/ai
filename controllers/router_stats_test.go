@@ -54,6 +54,10 @@ func ev(minsAgo int, task, model, source string, conf float64, reward *float64) 
 
 func f(v float64) *float64 { return &v }
 
+// testTuned is a stand-in for the trainer-published prefer table: the picks the
+// flywheel has LEARNED, against which learned_share is measured.
+var testTuned = map[string][]string{"code": {"mini"}, "chat": {"mid"}}
+
 func TestComputeRouterStats_Distributions(t *testing.T) {
 	now := time.Now().UTC()
 	start := now.Add(-24 * time.Hour)
@@ -63,7 +67,7 @@ func TestComputeRouterStats_Distributions(t *testing.T) {
 		ev(30, "chat", "mini", "engine", 0.8, f(0)),
 		ev(40, "chat", "mid", "engine", 0.7, nil),
 	}
-	s := computeRouterStats(events, fixedPrices, start, now, scopeOrg, "acme", true)
+	s := computeRouterStats(events, fixedPrices, start, now, scopeOrg, "acme", true, testTuned)
 
 	if s.Window.Events != 4 {
 		t.Fatalf("events = %d, want 4", s.Window.Events)
@@ -74,9 +78,15 @@ func TestComputeRouterStats_Distributions(t *testing.T) {
 	if s.ByTask["code"].Events != 2 || s.ByTask["code"].Models["mini"] != 1 || s.ByTask["code"].Models["opus"] != 1 {
 		t.Fatalf("by_task code wrong: %+v", s.ByTask["code"])
 	}
-	// engine share = 3/4
-	if s.Quality.EngineShare != 0.75 {
-		t.Fatalf("engine_share = %v, want 0.75", s.Quality.EngineShare)
+	// learned share = the 2 events served by testTuned's pick for their task
+	// (code→mini, chat→mid) out of 4; "opus" on code and "mini" on chat are not the
+	// tuned pick, so they do not count.
+	if s.Quality.LearnedShare != 0.5 {
+		t.Fatalf("learned_share = %v, want 0.5", s.Quality.LearnedShare)
+	}
+	// by_source is the honest provenance histogram behind that ratio.
+	if s.BySource["engine"] != 3 || s.BySource["heuristic"] != 1 {
+		t.Fatalf("by_source wrong: %+v", s.BySource)
 	}
 	// reward rate = mean(1, 0) over the two rewarded events = 0.5
 	if s.Quality.RewardedEvents != 2 || s.Quality.RewardRate != 0.5 {
@@ -98,7 +108,7 @@ func TestComputeRouterStats_CostSaved(t *testing.T) {
 		ev(3, "reasoning", "opus", "heuristic", 0, nil),
 		ev(4, "chat", "local", "engine", 0.9, nil), // unpriced → excluded
 	}
-	s := computeRouterStats(events, fixedPrices, start, now, scopeOrg, "acme", true)
+	s := computeRouterStats(events, fixedPrices, start, now, scopeOrg, "acme", true, testTuned)
 	if s.Cost == nil {
 		t.Fatal("cost should be present")
 	}
@@ -133,7 +143,7 @@ func TestComputeRouterStats_PublicScopeRedaction(t *testing.T) {
 		ev(1, "chat", "mini", "engine", 0.9, nil),
 		ev(2, "reasoning", "opus", "heuristic", 0, nil),
 	}
-	s := computeRouterStats(events, fixedPrices, start, now, scopePlatform, "acme", false)
+	s := computeRouterStats(events, fixedPrices, start, now, scopePlatform, "acme", false, testTuned)
 
 	if s.Org != "" {
 		t.Fatalf("platform scope must not leak org, got %q", s.Org)
@@ -186,7 +196,7 @@ func TestComputeRouterStats_Throughput(t *testing.T) {
 		ev(20, "chat", "mini", "engine", 0.9, nil),
 		ev(12*60, "chat", "mid", "engine", 0.9, nil),
 	}
-	s := computeRouterStats(events, fixedPrices, start, now, scopeOrg, "acme", true)
+	s := computeRouterStats(events, fixedPrices, start, now, scopeOrg, "acme", true, testTuned)
 	if len(s.Throughput.PerHour) != routerStatsBuckets {
 		t.Fatalf("per_hour len = %d, want %d", len(s.Throughput.PerHour), routerStatsBuckets)
 	}
@@ -209,11 +219,11 @@ func TestComputeRouterStats_Throughput(t *testing.T) {
 func TestComputeRouterStats_Empty(t *testing.T) {
 	now := time.Now().UTC()
 	start := now.Add(-24 * time.Hour)
-	s := computeRouterStats(nil, fixedPrices, start, now, scopeOrg, "acme", true)
+	s := computeRouterStats(nil, fixedPrices, start, now, scopeOrg, "acme", true, testTuned)
 	if s.Cost != nil {
 		t.Fatalf("no priced events → cost nil, got %+v", s.Cost)
 	}
-	if s.Window.Events != 0 || s.Quality.RewardRate != 0 || s.Quality.EngineShare != 0 {
+	if s.Window.Events != 0 || s.Quality.RewardRate != 0 || s.Quality.LearnedShare != 0 {
 		t.Fatalf("empty aggregate should be all-zero, got %+v", s)
 	}
 }
