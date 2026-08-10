@@ -146,6 +146,23 @@ var orgRouterPreferLookup = func(owner string) map[string][]string {
 	return s.RouterPrefer
 }
 
+// tunedRouterPrefer folds ONLY the rows a human or the trainer wrote — "*" then the
+// org — deliberately EXCLUDING the conf seed. effectiveRouterPrefer answers "what
+// will route"; this answers "what did we LEARN", which is the difference the stats
+// surface reports as learned_share. Nil when nothing has been tuned yet.
+func tunedRouterPrefer(org string) map[string][]string {
+	var out map[string][]string
+	for _, owner := range []string{object.GlobalDefaultOwner, org} {
+		for k, v := range orgRouterPreferLookup(owner) {
+			if out == nil {
+				out = map[string][]string{}
+			}
+			out[k] = v
+		}
+	}
+	return out
+}
+
 // orgRouterCostCeilingLookup returns an org's own cost ceiling (0 = unset).
 var orgRouterCostCeilingLookup = func(owner string) float64 {
 	if owner == "" {
