@@ -57,7 +57,7 @@ func gzipBomb(t *testing.T, plainBytes int) []byte {
 // returns exactly what a body never read past the bound returns. The whole
 // vulnerability is the memory committed in between, so that is what is measured.
 func TestCopyBodyBoundsDecompressed(t *testing.T) {
-	const limit = 1 << 20  // 1 MiB
+	const limit = 1 << 20   // 1 MiB
 	const plain = 256 << 20 // what the bomb expands to
 	bomb := gzipBomb(t, plain)
 
