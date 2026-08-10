@@ -22,6 +22,7 @@ import (
 	"math/rand"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -90,9 +91,9 @@ import (
 // REWARD SOURCE — noted, not a column. A judge reward is INDISTINGUISHABLE at the
 // row level from a human reward: the schema stores only {reward, rewarded_time}
 // (object.RoutingEvent), which IS the anonymity property — the ledger cannot tell
-// who or what scored a request. router/stats' engine_share is the routing-decision
-// origin (engine|heuristic), not the reward origin, and reward_rate counts a judge
-// reward exactly like a human one. Operationally the three automated/human sources
+// who or what scored a request. router/stats' by_source is the routing-decision
+// origin (heuristic|explore|override|…), not the reward origin, and reward_rate
+// counts a judge reward exactly like a human one. The three automated/human sources
 // separate by seam: the probe posts liveness over /v1/feedback under a
 // service key + User-Agent hanzo-router-probe/1; the judge scores organic turns
 // in-process (this file) for consenting orgs at the sample rate; humans POST
@@ -201,9 +202,12 @@ var lastJudgeSig string
 // logJudgeConfig logs the judge posture ONLY when it changes from the last tick, so
 // the periodic refresh does not spam the log. A nil config logs the disabled line.
 func logJudgeConfig(cfg *judgeConfig) {
+	// The credential is part of the posture: an armed judge with no token scores
+	// NOTHING, so it belongs in the signature (the line re-fires when one appears).
+	armed := internalServiceToken() != ""
 	sig := "disabled"
 	if cfg != nil {
-		sig = fmt.Sprintf("%s@%s×%.2f", strings.Join(cfg.models, ","), cfg.url, cfg.sample)
+		sig = fmt.Sprintf("%s@%s×%.2f/%t", strings.Join(cfg.models, ","), cfg.url, cfg.sample, armed)
 	}
 	if sig == lastJudgeSig {
 		return
@@ -216,6 +220,12 @@ func logJudgeConfig(cfg *judgeConfig) {
 		log.Info("router judge: enabled — MEAN-FIELD PANEL of %d judges %v, sample %.2f, endpoint %s", len(cfg.models), cfg.models, cfg.sample, cfg.url)
 	default:
 		log.Info("router judge: enabled — model %s, sample %.2f, endpoint %s (set judge.url at admin.hanzo.ai to an attested TEE endpoint for confidential inference)", cfg.models[0], cfg.sample, cfg.url)
+	}
+	// An enabled judge without the service bearer is the silent-starvation case: every
+	// call answers 401, every score abstains, the reward ledger stays empty and the
+	// trainer's gate never clears. Say so ONCE, loudly, at the point of arming.
+	if cfg != nil && !armed {
+		log.Warning("router judge: NO internal service token — set ROUTER_PROBE_TOKEN (env or KMS-synced conf) or every judge call to %s answers 401, no reward is ever recorded, and the trainer cannot clear its gate", cfg.url)
 	}
 }
 
@@ -330,9 +340,40 @@ func runJudge(cfg *judgeConfig, org, requestId, model, task, prompt, response st
 	log.Info("router judge: scored %s → reward %.2f (model %s, task %s)", requestId, score, model, task)
 }
 
+// judgeMissLogEvery bounds how often a failing judge writes a line — a judge that
+// 401s on every call must be VISIBLE without one line per scored turn.
+const judgeMissLogEvery = time.Minute
+
+// judgeMisses counts judge scoring calls that failed since boot; lastJudgeMissLog
+// is the unix-nano stamp of the last line written.
+var (
+	judgeMisses      atomic.Uint64
+	lastJudgeMissLog atomic.Int64
+)
+
+// JudgeMisses is the number of judge scoring calls that failed since boot. Read it
+// beside rewarded_events: a count that climbs while rewards stay flat means the
+// judge is BROKEN, not merely sampling — the signal that a silently abstaining
+// judge starved the trainer of the rewards its gate needs.
+func JudgeMisses() uint64 { return judgeMisses.Load() }
+
+// judgeMiss records a failed judge call and returns the abstain result, so every
+// failure path reads `return judgeMiss(...)`. reason is always CONTENT-FREE (status
+// codes and transport errors only) — the judge's no-retention guarantee extends to
+// its own logs. Counting is unconditional; logging is rate-limited.
+func judgeMiss(model, reason string) (float64, bool) {
+	n := judgeMisses.Add(1)
+	now := time.Now().UnixNano()
+	if prev := lastJudgeMissLog.Load(); now-prev >= int64(judgeMissLogEvery) && lastJudgeMissLog.CompareAndSwap(prev, now) {
+		log.Warning("router judge: %s could not score (%s) — NO reward recorded; %d judge failures since boot", model, reason, n)
+	}
+	return 0, false
+}
+
 // judgeScore performs the judge completion and returns the parsed score. Bounded by
 // construction: small max_tokens, temperature 0, an X-Max-Cost ceiling, and a
-// capped response read. Returns ok=false on any transport/shape failure.
+// capped response read. Returns ok=false on any transport/shape failure, always via
+// judgeMiss so the failure is counted and periodically logged.
 func judgeScore(cfg *judgeConfig, task, prompt, response string) (float64, bool) {
 	body, _ := json.Marshal(map[string]any{
 		"model":       cfg.model,
@@ -342,7 +383,7 @@ func judgeScore(cfg *judgeConfig, task, prompt, response string) (float64, bool)
 	})
 	req, err := http.NewRequest(http.MethodPost, cfg.url+"/v1/chat/completions", bytes.NewReader(body))
 	if err != nil {
-		return 0, false
+		return judgeMiss(cfg.model, "build request: "+err.Error())
 	}
 	req.Header.Set("Authorization", "Bearer "+internalServiceToken())
 	req.Header.Set("Content-Type", "application/json")
@@ -351,12 +392,16 @@ func judgeScore(cfg *judgeConfig, task, prompt, response string) (float64, bool)
 
 	resp, err := judgeDo(req)
 	if err != nil {
-		return 0, false
+		return judgeMiss(cfg.model, "transport: "+err.Error())
 	}
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return 0, false
+		reason := "HTTP " + strconv.Itoa(resp.StatusCode) + " from " + cfg.url
+		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+			reason += " — the internal service token is missing or rejected (ROUTER_PROBE_TOKEN)"
+		}
+		return judgeMiss(cfg.model, reason)
 	}
 	var out struct {
 		Choices []struct {
@@ -366,9 +411,13 @@ func judgeScore(cfg *judgeConfig, task, prompt, response string) (float64, bool)
 		} `json:"choices"`
 	}
 	if json.Unmarshal(raw, &out) != nil || len(out.Choices) == 0 {
-		return 0, false
+		return judgeMiss(cfg.model, "reply carried no choices")
 	}
-	return parseJudgeScore(out.Choices[0].Message.Content)
+	score, ok := parseJudgeScore(out.Choices[0].Message.Content)
+	if !ok {
+		return judgeMiss(cfg.model, "verdict was not a parseable 0..1 score")
+	}
+	return score, true
 }
 
 // judgeRubric builds the judge messages. Pure in (task, prompt, response) so the

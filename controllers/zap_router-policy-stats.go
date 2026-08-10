@@ -316,7 +316,7 @@ func zapGetRouterStatsHandler(_ context.Context, auth string, body []byte) (*zap
 		if err != nil {
 			return zapRPSError(http.StatusOK, err.Error())
 		}
-		stats := computeRouterStats(events, blendedPriceForOrg(""), windowStart, now, scopePlatform, "", false)
+		stats := computeRouterStats(events, blendedPriceForOrg(""), windowStart, now, scopePlatform, "", false, tunedRouterPrefer(""))
 		attachRetrainMeta(&stats, object.GlobalDefaultOwner)
 		return zapRPSOk(stats)
 	}
@@ -337,7 +337,7 @@ func zapGetRouterStatsHandler(_ context.Context, auth string, body []byte) (*zap
 	if err != nil {
 		return zapRPSError(http.StatusOK, err.Error())
 	}
-	stats := computeRouterStats(events, blendedPriceForOrg(org), windowStart, now, scopeOrg, org, true)
+	stats := computeRouterStats(events, blendedPriceForOrg(org), windowStart, now, scopeOrg, org, true, tunedRouterPrefer(org))
 	metaOwner := org
 	if org == "" {
 		metaOwner = object.GlobalDefaultOwner
