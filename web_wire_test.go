@@ -35,7 +35,7 @@ func wiredStatus(t *testing.T, method, path, body string) int {
 	defer SetHandler(nil)
 
 	app := zip.New(zip.Config{DisableStartupMessage: true})
-	mountRoutes(app)
+	routes(app)
 
 	var r io.Reader
 	if body != "" {

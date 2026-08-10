@@ -58,7 +58,7 @@ func TestPromotedAddressesExistInTheRouteTable(t *testing.T) {
 // nothing but /v1/{wildcard1}.
 func TestPromotedAddressesAreRoutesOnTheHostRouter(t *testing.T) {
 	app := zip.New(zip.Config{DisableStartupMessage: true})
-	mountRoutes(app)
+	routes(app)
 
 	held := map[string]bool{}
 	for _, r := range app.Fiber().GetRoutes(true) {
@@ -101,7 +101,7 @@ func TestPromotedAddressesAreRoutesOnTheHostRouter(t *testing.T) {
 // took its own path would be a second implementation — the defect, not the fix.
 func TestPromotedAddressesReachTheSameHandler(t *testing.T) {
 	app := zip.New(zip.Config{DisableStartupMessage: true})
-	mountRoutes(app)
+	routes(app)
 
 	var sawPath, sawMethod string
 	SetHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

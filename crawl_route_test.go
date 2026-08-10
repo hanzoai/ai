@@ -51,7 +51,7 @@ func TestCrawlRouteIsRegisteredAndFailClosed(t *testing.T) {
 	defer SetHandler(nil)
 
 	app := zip.New(zip.Config{DisableStartupMessage: true})
-	mountRoutes(app)
+	routes(app)
 
 	req, _ := http.NewRequest(http.MethodPost, "http://example.com/v1/crawl",
 		strings.NewReader(`{"url":"https://example.com"}`))
@@ -94,7 +94,7 @@ func TestSearchRouteStillRegistered(t *testing.T) {
 	defer SetHandler(nil)
 
 	app := zip.New(zip.Config{DisableStartupMessage: true})
-	mountRoutes(app)
+	routes(app)
 
 	req, _ := http.NewRequest(http.MethodPost, "http://example.com/v1/search",
 		strings.NewReader(`{"query":"hello"}`))
