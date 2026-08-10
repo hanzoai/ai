@@ -31,7 +31,6 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/hanzoai/cloud"
 	luxlog "github.com/luxfi/log"
 	"github.com/zap-proto/fiber/v3/middleware/adaptor"
 	"github.com/zap-proto/zip"
@@ -58,7 +57,19 @@ import (
 // runtime is defined ONCE and behaves identically embedded or standalone.
 // Bootstrap is sync.Once-guarded, so calling it here is safe even if the
 // process also calls it elsewhere.
-func Mount(app *zip.App, deps cloud.Deps) error {
+// SECRETS ARRIVE AS AN INTERFACE, NOT AS THE HOST'S Deps. ai is a SUBSYSTEM: it
+// is mounted by a host, and a subsystem that imports its host cannot be mounted
+// by a second one — which is exactly what happened. hanzoai/cloud has two
+// editions, and because this package took cloud.Deps, the private edition's
+// cloud.Deps and the OSS edition's were different types with the same name and
+// neither could mount ai.
+//
+// object.SetSecretStore already took ai's OWN interface (object.SecretStore:
+// GetSecret/PutSecret), so cloud.Deps was carried across the boundary to reach
+// one field and then discarded. Taking the interface directly costs the host one
+// argument and removes the whole dependency: ai now imports zip and nothing of
+// its host's.
+func Mount(app *zip.App, secrets object.SecretStore) error {
 	log := luxlog.Default()
 	if log == nil {
 		log = luxlog.New("module", "ai")
@@ -72,7 +83,7 @@ func Mount(app *zip.App, deps cloud.Deps) error {
 	// ai kept its own HTTP client pointed at kms.hanzo.ai; that client 404'd on
 	// the path it used and 401'd on the correct one, so every kms:// reference
 	// was resolving from an env var instead. See object/kms.go.
-	object.SetSecretStore(deps.KMS)
+	object.SetSecretStore(secrets)
 
 	// Route wiring is a pure, dependency-free concern (separately tested).
 	mountRoutes(app)
