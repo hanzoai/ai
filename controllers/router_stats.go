@@ -68,13 +68,18 @@ type costStats struct {
 }
 
 // qualityStats is the quality-proxy surface: outcome reward rate (where scored),
-// the learned-engine share vs the heuristic fallback, mean engine confidence, and
+// the share of decisions the LEARNED table accounts for, mean engine confidence, and
 // shadow-vs-served agreement when the ledger carries a shadow pick (nil until that
 // field lands — the reader stays tolerant of both old and new rows).
+//
+// LearnedShare tracks the one component that learns. The flywheel has no separate
+// ML engine to route through — router_trainer.go retrains the prefer table instead —
+// so the honest measure of learning is how much traffic that TUNED table accounts
+// for, not how often some external decision service was consulted.
 type qualityStats struct {
 	RewardRate      float64  `json:"reward_rate"`
 	RewardedEvents  int      `json:"rewarded_events"`
-	EngineShare     float64  `json:"engine_share"`
+	LearnedShare    float64  `json:"learned_share"`
 	AvgConfidence   float64  `json:"avg_confidence"`
 	ShadowAgreement *float64 `json:"shadow_agreement"`
 }
@@ -112,15 +117,20 @@ type retrainMeta struct {
 // scope can drop it entirely if no event was priceable; Org is omitted publicly.
 // Retrain is nil until the nightly job has published a status for the scope.
 type routerStats struct {
-	Scope      string               `json:"scope"`
-	Org        string               `json:"org,omitempty"`
-	Window     statsWindow          `json:"window"`
-	Cost       *costStats           `json:"cost,omitempty"`
-	Quality    qualityStats         `json:"quality"`
-	ByTask     map[string]taskStats `json:"by_task"`
-	ByModel    map[string]int       `json:"by_model"`
-	Throughput throughputStats      `json:"throughput"`
-	Retrain    *retrainMeta         `json:"retrain,omitempty"`
+	Scope   string               `json:"scope"`
+	Org     string               `json:"org,omitempty"`
+	Window  statsWindow          `json:"window"`
+	Cost    *costStats           `json:"cost,omitempty"`
+	Quality qualityStats         `json:"quality"`
+	ByTask  map[string]taskStats `json:"by_task"`
+	ByModel map[string]int       `json:"by_model"`
+	// BySource is the decision-provenance histogram (heuristic, explore, override,
+	// explicit, family, …) — the honest distribution behind LearnedShare's single
+	// ratio. It is the surface that makes a strategy which NEVER fires visible at a
+	// glance, instead of leaving it to be inferred from a share stuck at zero.
+	BySource   map[string]int  `json:"by_source"`
+	Throughput throughputStats `json:"throughput"`
+	Retrain    *retrainMeta    `json:"retrain,omitempty"`
 }
 
 // getRouterArtifactMeta is indirected through a var so the stats contract is
@@ -160,14 +170,19 @@ type priceIndexFn func(model string) float64
 // benchmark (owner product decision); only absolute $ and org identity are redacted
 // on the public platform scope. Events are assumed already filtered to the window by
 // the caller (the DB query does `created_time >= since`).
-func computeRouterStats(events []*object.RoutingEvent, price priceIndexFn, windowStart, now time.Time, scope string, org string, includeAbsoluteCost bool) routerStats {
+// `tuned` is the scope's prefer table ABOVE the static conf seed (tunedRouterPrefer)
+// — trainer-published arms plus any admin pins. An event counts as learned when the
+// model that served it is what `tuned` names for its task, so the ratio is 0 until
+// the trainer's gate first publishes and climbs as its picks take traffic.
+func computeRouterStats(events []*object.RoutingEvent, price priceIndexFn, windowStart, now time.Time, scope string, org string, includeAbsoluteCost bool, tuned map[string][]string) routerStats {
 	byModel := map[string]int{}
 	byTask := map[string]taskStats{}
+	bySource := map[string]int{}
 	perHour := make([]int, routerStatsBuckets)
 
 	var rewardSum float64
 	var rewardedN int
-	var engineN int
+	var learnedN int
 	var confSum float64
 	var confN int
 	// Shadow-vs-served agreement: over family rows carrying a shadow pick, the share
@@ -198,8 +213,11 @@ func computeRouterStats(events []*object.RoutingEvent, price priceIndexFn, windo
 			ts.Models[e.RoutedModel]++
 			byTask[e.Task] = ts
 		}
-		if e.Source == "engine" {
-			engineN++
+		if e.Source != "" {
+			bySource[e.Source]++
+		}
+		if e.RoutedModel != "" && firstOf(tuned[e.Task]) == e.RoutedModel {
+			learnedN++
 		}
 		if e.Confidence > 0 {
 			confSum += e.Confidence
@@ -244,18 +262,19 @@ func computeRouterStats(events []*object.RoutingEvent, price priceIndexFn, windo
 	}
 	q.RewardedEvents = rewardedN
 	if total > 0 {
-		q.EngineShare = float64(engineN) / float64(total)
+		q.LearnedShare = float64(learnedN) / float64(total)
 	}
 	if confN > 0 {
 		q.AvgConfidence = confSum / float64(confN)
 	}
 
 	out := routerStats{
-		Scope:   scope,
-		Window:  statsWindow{Since: windowStart.UTC().Format(time.RFC3339), Until: now.UTC().Format(time.RFC3339), Events: total},
-		Quality: q,
-		ByTask:  byTask,
-		ByModel: byModel,
+		Scope:    scope,
+		Window:   statsWindow{Since: windowStart.UTC().Format(time.RFC3339), Until: now.UTC().Format(time.RFC3339), Events: total},
+		Quality:  q,
+		ByTask:   byTask,
+		ByModel:  byModel,
+		BySource: bySource,
 		Throughput: throughputStats{
 			PerHour:     perHour,
 			TotalWindow: total,
@@ -413,7 +432,7 @@ func (c *ApiController) GetRouterStats() {
 		// anonymously and now sees the REAL model roster (owner product decision: show
 		// which models win per benchmark, not opaque arm-N). Only absolute $ levels and
 		// org identity are redacted here (includeAbsoluteCost=false); ids are never masked.
-		stats := computeRouterStats(events, blendedPriceForOrg(""), windowStart, now, scopePlatform, "", false)
+		stats := computeRouterStats(events, blendedPriceForOrg(""), windowStart, now, scopePlatform, "", false, tunedRouterPrefer(""))
 		// The shared base heads are scope "*"; the world widget shows the base's
 		// last retrain + gate verdict (version/time/metric only — never weights).
 		attachRetrainMeta(&stats, object.GlobalDefaultOwner)
@@ -442,7 +461,7 @@ func (c *ApiController) GetRouterStats() {
 		return
 	}
 	// Org scope shows the tenant's own real ids (unchanged).
-	stats := computeRouterStats(events, blendedPriceForOrg(org), windowStart, now, scopeOrg, org, true)
+	stats := computeRouterStats(events, blendedPriceForOrg(org), windowStart, now, scopeOrg, org, true, tunedRouterPrefer(org))
 	// Show the org's own heads retrain status, falling back to the shared base
 	// ("*") when the org has no personal-heads job (the common case today).
 	metaOwner := org

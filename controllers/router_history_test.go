@@ -53,7 +53,7 @@ func TestComputeRouterHistory(t *testing.T) {
 		{Owner: "*", Version: "router-2026-07-15", TrainedTime: "2026-07-15T04:20:00Z", Events: 200, GatePassed: true, Published: false, GateMetric: "holdout_reward", GateValue: 0.33, GateBase: 0.30},
 	}
 
-	h := computeRouterHistory(events, retrains, fixedPrices, histNow, 7, scopePlatform)
+	h := computeRouterHistory(events, retrains, fixedPrices, histNow, 7, scopePlatform, testTuned)
 
 	if h.Scope != scopePlatform || h.Window.Days != 7 {
 		t.Fatalf("scope/window wrong: %+v", h.Window)
@@ -119,7 +119,7 @@ func TestComputeRouterHistory(t *testing.T) {
 // TestComputeRouterHistory_EmptyHonest: with no data the series is all zeros — never
 // fabricated — so the flywheel charts start flat and grow with real events.
 func TestComputeRouterHistory_EmptyHonest(t *testing.T) {
-	h := computeRouterHistory(nil, nil, fixedPrices, histNow, 14, scopePlatform)
+	h := computeRouterHistory(nil, nil, fixedPrices, histNow, 14, scopePlatform, testTuned)
 	if len(h.Daily) != 14 {
 		t.Fatalf("daily = %d, want 14 zero rows", len(h.Daily))
 	}
@@ -135,10 +135,10 @@ func TestComputeRouterHistory_EmptyHonest(t *testing.T) {
 
 // TestComputeRouterHistory_DaysClamp bounds the window.
 func TestComputeRouterHistory_DaysClamp(t *testing.T) {
-	if h := computeRouterHistory(nil, nil, fixedPrices, histNow, 9999, scopePlatform); h.Window.Days != routerHistoryMaxDays || len(h.Daily) != routerHistoryMaxDays {
+	if h := computeRouterHistory(nil, nil, fixedPrices, histNow, 9999, scopePlatform, testTuned); h.Window.Days != routerHistoryMaxDays || len(h.Daily) != routerHistoryMaxDays {
 		t.Errorf("days not capped: %d / %d rows", h.Window.Days, len(h.Daily))
 	}
-	if h := computeRouterHistory(nil, nil, fixedPrices, histNow, 0, scopePlatform); h.Window.Days != routerHistoryDefaultDays {
+	if h := computeRouterHistory(nil, nil, fixedPrices, histNow, 0, scopePlatform, testTuned); h.Window.Days != routerHistoryDefaultDays {
 		t.Errorf("zero days not defaulted: %d", h.Window.Days)
 	}
 }

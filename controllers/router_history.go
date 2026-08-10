@@ -57,7 +57,7 @@ type historyDay struct {
 	RewardedEvents      int            `json:"rewarded_events"`
 	CostSavedIndex      float64        `json:"cost_saved_index"`
 	CumulativeCostSaved float64        `json:"cumulative_cost_saved"`
-	EngineShare         float64        `json:"engine_share"`
+	LearnedShare        float64        `json:"learned_share"`
 	ByTask              map[string]int `json:"by_task"`
 }
 
@@ -125,7 +125,7 @@ func dayKey(rfc3339 string) string {
 // filtered to created_time >= windowStart; retrains are oldest-first. The baseline for
 // cost-saved is the WHOLE-WINDOW priciest served model (stable, so the cumulative
 // curve doesn't jump when a day's mix shifts) — same proxy as computeRouterStats.
-func computeRouterHistory(events []*object.RoutingEvent, retrains []*object.RouterTrainingLog, price priceIndexFn, now time.Time, days int, scope string) routerHistory {
+func computeRouterHistory(events []*object.RoutingEvent, retrains []*object.RouterTrainingLog, price priceIndexFn, now time.Time, days int, scope string, tuned map[string][]string) routerHistory {
 	if days <= 0 {
 		days = routerHistoryDefaultDays
 	}
@@ -151,7 +151,7 @@ func computeRouterHistory(events []*object.RoutingEvent, retrains []*object.Rout
 		events    int
 		rewardSum float64
 		rewardedN int
-		engineN   int
+		learnedN  int
 		byTask    map[string]int
 		routedSum float64
 		cfSum     float64
@@ -170,8 +170,8 @@ func computeRouterHistory(events []*object.RoutingEvent, retrains []*object.Rout
 			continue // outside the window (or unparseable)
 		}
 		da.events++
-		if e.Source == "engine" {
-			da.engineN++
+		if e.RoutedModel != "" && firstOf(tuned[e.Task]) == e.RoutedModel {
+			da.learnedN++
 		}
 		if e.RewardedTime != "" {
 			da.rewardSum += e.Reward
@@ -203,7 +203,7 @@ func computeRouterHistory(events []*object.RoutingEvent, retrains []*object.Rout
 		}
 		es := 0.0
 		if da.events > 0 {
-			es = round4(float64(da.engineN) / float64(da.events))
+			es = round4(float64(da.learnedN) / float64(da.events))
 			daysActive++
 		}
 		totalEvents += da.events
@@ -216,7 +216,7 @@ func computeRouterHistory(events []*object.RoutingEvent, retrains []*object.Rout
 			RewardedEvents:      da.rewardedN,
 			CostSavedIndex:      daySaved,
 			CumulativeCostSaved: cumulative,
-			EngineShare:         es,
+			LearnedShare:        es,
 			ByTask:              da.byTask,
 		})
 	}
@@ -304,7 +304,7 @@ func (c *ApiController) GetRouterHistory() {
 			return
 		}
 		retrains, _ := object.ListRouterTrainingLog(object.GlobalDefaultOwner, since, routerHistoryMaxRetrains)
-		c.ResponseOk(computeRouterHistory(events, retrains, blendedPriceForOrg(""), now, days, scopePlatform))
+		c.ResponseOk(computeRouterHistory(events, retrains, blendedPriceForOrg(""), now, days, scopePlatform, tunedRouterPrefer("")))
 		return
 	}
 
@@ -328,5 +328,5 @@ func (c *ApiController) GetRouterHistory() {
 		metaOwner = object.GlobalDefaultOwner
 	}
 	retrains, _ := object.ListRouterTrainingLog(metaOwner, since, routerHistoryMaxRetrains)
-	c.ResponseOk(computeRouterHistory(events, retrains, blendedPriceForOrg(org), now, days, scopeOrg))
+	c.ResponseOk(computeRouterHistory(events, retrains, blendedPriceForOrg(org), now, days, scopeOrg, tunedRouterPrefer(org)))
 }

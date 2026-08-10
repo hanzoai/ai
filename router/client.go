@@ -21,8 +21,12 @@ import (
 	"io"
 	"math/rand"
 	"net/http"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
+
+	"github.com/hanzoai/ai/log"
 )
 
 // DefaultTimeout is the hard cap on the engine round-trip. Routing must add
@@ -202,8 +206,37 @@ func (c Client) Observe(ctx context.Context, obs ObserveRequest) {
 	_ = resp.Body.Close()
 }
 
+// missLogEvery bounds how often a failing engine writes a line: an endpoint that
+// is down for a week must stay VISIBLE without logging once per request.
+const missLogEvery = time.Minute
+
+// misses counts engine calls that fell through to the heuristic since boot, and
+// lastMissLog is the unix-nano stamp of the last line written.
+var (
+	misses      atomic.Uint64
+	lastMissLog atomic.Int64
+)
+
+// Misses is the number of engine calls that fell through to the heuristic since
+// boot. Read it beside the routed volume: a count that tracks total traffic means
+// the engine is unreachable or misconfigured, not merely losing on the merits.
+func Misses() uint64 { return misses.Load() }
+
+// miss records an engine call that could not be used and returns the zero
+// Decision, so every failure path reads `return c.miss(...)`. Counting is
+// unconditional; logging is rate-limited to one line per missLogEvery.
+func (c Client) miss(reason string) (Decision, bool) {
+	n := misses.Add(1)
+	now := time.Now().UnixNano()
+	if prev := lastMissLog.Load(); now-prev >= int64(missLogEvery) && lastMissLog.CompareAndSwap(prev, now) {
+		log.Warning("router: engine %q unusable (%s) — serving the heuristic instead; %d fallbacks since boot", c.Endpoint, reason, n)
+	}
+	return Decision{}, false
+}
+
 // routeEngine performs the constrained /route call. Returns ok=false on any
-// error so the caller falls back to the heuristic.
+// error so the caller falls back to the heuristic — every such exit goes through
+// c.miss, which counts it and periodically says so.
 func (c Client) routeEngine(ctx context.Context, req Request, slo Slo) (Decision, bool) {
 	timeout := c.Timeout
 	if timeout <= 0 {
@@ -214,12 +247,12 @@ func (c Client) routeEngine(ctx context.Context, req Request, slo Slo) (Decision
 
 	body, err := json.Marshal(engineRequest{Prompt: req.Text, Slo: slo})
 	if err != nil {
-		return Decision{}, false
+		return c.miss("encode request: " + err.Error())
 	}
 	url := strings.TrimRight(c.Endpoint, "/") + "/route"
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
-		return Decision{}, false
+		return c.miss("build request: " + err.Error())
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 
@@ -229,15 +262,15 @@ func (c Client) routeEngine(ctx context.Context, req Request, slo Slo) (Decision
 	}
 	resp, err := cli.Do(httpReq)
 	if err != nil {
-		return Decision{}, false
+		return c.miss("transport: " + err.Error())
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return Decision{}, false
+		return c.miss("HTTP " + strconv.Itoa(resp.StatusCode) + " from " + url)
 	}
 	var out engineResponse
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<16)).Decode(&out); err != nil {
-		return Decision{}, false
+		return c.miss("decode reply: " + err.Error())
 	}
 
 	// Prefer an explicit, servable model; else map the returned task via the
@@ -250,5 +283,5 @@ func (c Client) routeEngine(ctx context.Context, req Request, slo Slo) (Decision
 			return Decision{Model: m, Task: Task(out.Task), Confidence: out.Confidence, Source: SourceEngine, Features: out.Features}, true
 		}
 	}
-	return Decision{}, false
+	return c.miss("engine chose model " + strconv.Quote(out.Model) + " / task " + strconv.Quote(out.Task) + ", neither servable")
 }
