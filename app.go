@@ -69,12 +69,13 @@ import (
 // one field and then discarded. Taking the interface directly costs the host one
 // argument and removes the whole dependency: ai now imports zip and nothing of
 // its host's.
-func Mount(app *zip.App, secrets object.SecretStore) error {
+func App(secrets object.SecretStore) (*zip.App, error) {
+	app := zip.New(zip.Config{AppName: "ai"})
 	log := luxlog.Default()
 	if log == nil {
 		log = luxlog.New("module", "ai")
 	}
-	log.Info("ai: mounting routes", "prefix", "/v1/ai")
+	log.Info("ai: building routes", "prefix", "/v1/ai")
 
 	// Bind the EMBEDDED KMS. cloud holds luxfi/kms in-process (apps/kms), so a
 	// provider's "kms://NAME" resolves through a function call against the store
@@ -86,7 +87,7 @@ func Mount(app *zip.App, secrets object.SecretStore) error {
 	object.SetSecretStore(secrets)
 
 	// Route wiring is a pure, dependency-free concern (separately tested).
-	mountRoutes(app)
+	routes(app)
 
 	// Runtime init (DB, providers, filters, billing) — the side that needs
 	// real infrastructure. A failure here is fatal for the AI surface, so it
@@ -99,11 +100,11 @@ func Mount(app *zip.App, secrets object.SecretStore) error {
 	// A configured DB that then fails to init stays fatal (real misconfig).
 	if conf.GetConfigString("driverName") == "" {
 		log.Warn("ai: no DB configured (driverName empty); serving fail-closed (503)")
-		return nil
+		return app, nil
 	}
 	log.Info("ai: initializing runtime")
 	if err := Bootstrap(); err != nil {
-		return err
+		return nil, err
 	}
 	log.Info("ai: runtime initialized")
 
@@ -111,12 +112,12 @@ func Mount(app *zip.App, secrets object.SecretStore) error {
 	// ONE shared boot sequence both this Mount and cmd/aid run — so it boots identically
 	// embedded or standalone (HIP-510). No launch here: it would double-start the
 	// goroutines, since Bootstrap already did it above.
-	return nil
+	return app, nil
 }
 
-// mountRoutes wires AI's HTTP surface onto the zip app. It has no
-// infrastructure dependencies (no DB, no providers) and is what the route
-// adapter tests exercise; Mount adds runtime init on top.
+// routes wires AI's HTTP surface onto the app. It has no infrastructure
+// dependencies (no DB, no providers) and is what the route adapter tests
+// exercise; App adds runtime init on top.
 //
 // AI owns the legacy /v1 route table, which lives at BARE /v1/* paths
 // (/v1/chat/completions, /v1/chat, /v1/completions, /v1/models, /v1/messages,
@@ -135,7 +136,7 @@ func Mount(app *zip.App, secrets object.SecretStore) error {
 // is the fallback for the rest of /v1/*. The composition root's
 // /v1/<name>/health routes (registered before MountAll) likewise win over this
 // glob, so liveness is unaffected.
-func mountRoutes(app *zip.App) {
+func routes(app *zip.App) {
 	// Carry the request context ACROSS the zip→net/http boundary so the OTel SERVER
 	// span cloud stashed on the request (TracingMiddleware → zip SetContext, the Fiber
 	// user-context) reaches the ai handler. The plain zip.AdaptNetHTTP path uses

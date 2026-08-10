@@ -33,7 +33,6 @@ import (
 	"errors"
 	"sync"
 	"time"
-
 )
 
 // errNoURLs is the only way Crawl fails as a whole: it was handed nothing to do.
