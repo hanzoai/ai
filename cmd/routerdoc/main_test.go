@@ -62,8 +62,8 @@ func TestProse(t *testing.T) {
 			description: "Check if the system is live",
 		},
 		{
-			name: "an indented annotation continuation belongs to the annotation",
-			in: "GetAdminProviders\n@Title GetAdminProviders\n@Description List admin-owned Model providers\n\n\t(enabled/primary). Never returns secret material.\n\n@router /admin/providers [get]\n",
+			name:        "an indented annotation continuation belongs to the annotation",
+			in:          "GetAdminProviders\n@Title GetAdminProviders\n@Description List admin-owned Model providers\n\n\t(enabled/primary). Never returns secret material.\n\n@router /admin/providers [get]\n",
 			summary:     "List admin-owned Model providers (enabled/primary).",
 			description: "List admin-owned Model providers\n(enabled/primary). Never returns secret material.",
 		},
