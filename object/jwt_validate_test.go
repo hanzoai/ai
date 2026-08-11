@@ -18,6 +18,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -251,24 +252,41 @@ func TestJwtAudienceAllowlistFromEnv(t *testing.T) {
 	t.Setenv("AUTH_AUDIENCE", "https://api.hanzo.ai")
 	got := jwtAudienceAllowlist()
 
-	// The 4 env-derived entries PLUS the always-folded brand auds (hanzo-cloud is
-	// already in the env set, so it dedupes; lux/zoo/pars-cloud are added).
-	want := map[string]bool{
-		"hanzo-app": true, "hanzo-console": true, "hanzo-cloud": true, "https://api.hanzo.ai": true,
-		"lux-cloud": true, "zoo-cloud": true, "pars-cloud": true,
-	}
-	if len(got) != len(want) {
-		t.Fatalf("allowlist=%v, want %d unique entries", got, len(want))
-	}
+	// Every env-derived entry survives, whitespace trimmed. The bare host is carried
+	// through as written — it names no brand, so it is not a brand audience.
 	seen := map[string]int{}
 	for _, a := range got {
-		if !want[a] {
-			t.Errorf("unexpected audience %q in allowlist", a)
-		}
 		seen[a]++
 	}
-	if seen["hanzo-cloud"] != 1 {
-		t.Errorf("hanzo-cloud (in GATEWAY_ALLOWED_AUDIENCES, IAM_AUDIENCE AND brandAudienceList) must be deduped, count=%d", seen["hanzo-cloud"])
+	for _, want := range []string{"hanzo-app", "hanzo-console", "hanzo-cloud", "https://api.hanzo.ai"} {
+		if seen[want] != 1 {
+			t.Errorf("env audience %q must appear exactly once, count=%d in %v", want, seen[want], got)
+		}
+	}
+
+	// Each env app is mirrored onto every sibling brand, and nothing else appears:
+	// an entry is legitimate only if the env named it or it is a known brand's
+	// spelling of an app the env named.
+	allowed := map[string]bool{}
+	for _, e := range []string{"hanzo-app", "hanzo-console", "hanzo-cloud", "https://api.hanzo.ai"} {
+		allowed[e] = true
+		if _, app, ok := splitBrandApp(e); ok {
+			for _, b := range brandNames {
+				allowed[b+"-"+app] = true
+				if seen[b+"-"+app] != 1 {
+					t.Errorf("app %q must be allowed for brand %q exactly once, count=%d in %v",
+						app, b, seen[b+"-"+app], got)
+				}
+			}
+		}
+	}
+	for a, n := range seen {
+		if !allowed[a] {
+			t.Errorf("unexpected audience %q in allowlist %v", a, got)
+		}
+		if n != 1 {
+			t.Errorf("audience %q must be deduped, count=%d", a, n)
+		}
 	}
 }
 
@@ -361,5 +379,98 @@ func TestValidateJWTIssAud_LuxToken(t *testing.T) {
 	attackerTok := makeJWT(t, map[string]interface{}{"iss": "https://attacker.id", "aud": "lux-cloud"})
 	if err := ValidateJWTIssAud(attackerTok); err != ErrJWTBadIssuer {
 		t.Fatalf("attacker-issuer token must be rejected on iss, got %v", err)
+	}
+}
+
+// deployedAudiences is the GATEWAY_ALLOWED_AUDIENCES value hanzo-k8s deploy/cloud
+// actually carried when lux.chat went dark (read 2026-08-10). It enumerates this
+// deployment's OWN brand app-by-app but names only <brand>-cloud for the siblings —
+// the exact shape that made a correctly-issued lux.chat token fail on audience.
+const deployedAudiences = "hanzo-app,hanzo-console,hanzo-chat,hanzo-commerce,hanzo-bot," +
+	"hanzo-bothub,hanzo-team,hanzo-id,hanzo-cloud,hanzo-dao,hanzo-world,hanzo-platform," +
+	"hanzo-insights,lux-cloud,zoo-cloud,pars-cloud,admin-console,hanzo-admin-guard," +
+	"hanzo-studio,hanzo-browser,https://api.hanzo.ai"
+
+// TestValidateJWTIssAud_BrandChatToken is the lux.chat outage, frozen. Every brand
+// runs the same chat app, so a session token from any of them must authenticate
+// against an allowlist that happens to name only this deployment's own brand.
+func TestValidateJWTIssAud_BrandChatToken(t *testing.T) {
+	t.Setenv("JWT_ISSUER", "https://hanzo.id")
+	t.Setenv("WHITELABEL_ISSUERS", "")
+	t.Setenv("GATEWAY_ALLOWED_AUDIENCES", deployedAudiences)
+	t.Setenv("IAM_AUDIENCE", "hanzo-cloud")
+
+	for _, tc := range []struct{ brand, iss, aud string }{
+		{"hanzo", "https://hanzo.id", "hanzo-chat"},
+		{"lux", "https://lux.id", "lux-chat"},
+		{"zoo", "https://zoolabs.id", "zoo-chat"},
+		{"pars", "https://pars.id", "pars-chat"},
+	} {
+		tok := makeJWT(t, map[string]interface{}{"iss": tc.iss, "aud": tc.aud, "owner": tc.brand})
+		if err := ValidateJWTIssAud(tok); err != nil {
+			t.Errorf("%s.chat token (iss=%s aud=%s) MUST authenticate: %v", tc.brand, tc.iss, tc.aud, err)
+		}
+	}
+
+	// The mirror follows the app set, not just chat: every app the deployment allows
+	// for its own brand is allowed for a sibling brand, including a hyphenated one.
+	for _, aud := range []string{"lux-app", "zoo-console", "pars-studio", "lux-admin-guard"} {
+		tok := makeJWT(t, map[string]interface{}{"iss": "https://lux.id", "aud": aud})
+		if err := ValidateJWTIssAud(tok); err != nil {
+			t.Errorf("brand app %q must be mirrored from the allowed hanzo app set: %v", aud, err)
+		}
+	}
+}
+
+// TestWithBrandAudiences_FailSecure holds the line the mirror must not cross: it
+// widens the allowlist only along the brand axis, for apps already approved.
+func TestWithBrandAudiences_FailSecure(t *testing.T) {
+	if got := withBrandAudiences(nil); len(got) != 0 {
+		t.Fatalf("an empty allowlist must stay empty (empty => audience not enforced), got %v", got)
+	}
+
+	got := withBrandAudiences([]string{"hanzo-chat", "https://api.hanzo.ai", "evil-app"})
+	has := func(v string) bool {
+		for _, s := range got {
+			if s == v {
+				return true
+			}
+		}
+		return false
+	}
+	if !has("lux-chat") {
+		t.Errorf("an approved app must mirror onto a trusted brand, got %v", got)
+	}
+	// An entry naming no known brand is not a brand audience: it is carried through
+	// verbatim and never expanded into one.
+	for _, never := range []string{"lux-app", "hanzo-evil-app", "lux-evil-app", "lux-https://api.hanzo.ai"} {
+		if has(never) {
+			t.Errorf("mirror must not invent %q from a non-brand entry, got %v", never, got)
+		}
+	}
+	if !has("evil-app") || !has("https://api.hanzo.ai") {
+		t.Errorf("non-brand entries must survive unchanged, got %v", got)
+	}
+}
+
+// TestBrandNamesCoverBrandIssuers keeps the two brand lists in step. They are stated
+// separately because an audience is keyed on the brand (zoo) and an issuer on its host
+// (zoolabs.id), so neither derives from the other; adding a brand to one list without
+// the other silently half-trusts it.
+func TestBrandNamesCoverBrandIssuers(t *testing.T) {
+	if len(brandNames) != len(brandIssuerList) {
+		t.Fatalf("brandNames %v and brandIssuerList %v must describe the same brands", brandNames, brandIssuerList)
+	}
+	for _, iss := range brandIssuerList {
+		matched := false
+		for _, b := range brandNames {
+			if strings.Contains(iss, b) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			t.Errorf("issuer %q has no brand in brandNames %v — its tokens would pass iss and fail aud", iss, brandNames)
+		}
 	}
 }
