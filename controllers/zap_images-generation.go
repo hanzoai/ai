@@ -126,7 +126,7 @@ func zapImagesHandler(ctx context.Context, auth string, body []byte) (*zap.Messa
 		subject := authUser.PayerSubject("")
 		var ok bool
 		if hold, ok = reserveBudget(subject, imageCostCents(req.Model, n)); !ok {
-			return object.BuildCloudResponse(402, nil, object.InsufficientBalance(authUser.Owner, "image cost").Message)
+			return object.BuildCloudResponse(402, nil, object.InsufficientBalance(zapBrandHost, authUser.Owner, "image cost").Message)
 		}
 	}
 	defer hold.settle(0)

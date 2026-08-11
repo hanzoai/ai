@@ -17,6 +17,7 @@ package object
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 )
 
 // payBaseURL is the hosted prepaid-wallet page a spend-gate denial points the caller
@@ -26,6 +27,26 @@ import (
 // (pay/src/main.tsx routes: / /amount /confirm /success), so PayURL returns this bare
 // root; see PayURL for the per-org deep-link seam.
 const payBaseURL = "https://pay.hanzo.ai"
+
+// payHosts maps a request host to the wallet that serves ITS brand. One cloud origin
+// answers every brand and reads the brand off the Host, so a denial built without the
+// Host can only ever name one brand's wallet -- which is what sent a Lux caller to
+// Hanzo's page while pay.lux.cloud was live and white-labelled by hostname.
+//
+// A brand absent here has no wallet of its own and falls back to payBaseURL: pars has
+// no pay host at any of its domains, and naming one that does not resolve would be a
+// worse answer than naming somebody else's that does. Suffix-matched so a subdomain
+// resolves with its parent, and longest match is not needed because no suffix here is
+// a suffix of another.
+var payHosts = []struct{ suffix, url string }{
+	{"lux.cloud", "https://pay.lux.cloud"},
+	{"lux.network", "https://pay.lux.cloud"},
+	{"lux.id", "https://pay.lux.cloud"},
+	{"zoo.cloud", "https://pay.zoo.cloud"},
+	{"zoo.ngo", "https://pay.zoo.cloud"},
+	{"zoo.network", "https://pay.zoo.cloud"},
+	{"zoolabs.id", "https://pay.zoo.cloud"},
+}
 
 // Billing-denial codes. Clients (SDKs, the hanzo CLI) switch on Code, never on the
 // human-readable Message.
@@ -59,12 +80,12 @@ type BillingNotice struct {
 // quantity ("request cost", "image cost", "video cost", "cost"); "" yields the plain
 // form the router balance filter uses. org is the billing owner the gate resolved,
 // carried for the wallet link (see PayURL).
-func InsufficientBalance(org, noun string) BillingNotice {
+func InsufficientBalance(host, org, noun string) BillingNotice {
 	msg := "Insufficient balance"
 	if noun != "" {
 		msg += " for the estimated " + noun
 	}
-	msg += ". Add credits to your wallet at " + PayURL(org)
+	msg += ". Add credits to your wallet at " + PayURL(host, org)
 	return BillingNotice{Message: msg, Code: CodeInsufficientBalance, Status: http.StatusPaymentRequired}
 }
 
@@ -87,7 +108,16 @@ func BalanceUnavailable() BillingNotice {
 // wallet root and the caller lands on their own wallet on sign-in. org is threaded from
 // every denial site so a pay.<brand>/<org> deep-link, once the pay SPA serves one, is a
 // one-line change here (return payBaseURL + "/" + url.PathEscape(org)).
-func PayURL(org string) string {
+func PayURL(host, org string) string {
+	h := strings.ToLower(strings.TrimSpace(host))
+	if i := strings.IndexByte(h, ':'); i >= 0 {
+		h = h[:i] // strip :port
+	}
+	for _, e := range payHosts {
+		if h == e.suffix || strings.HasSuffix(h, "."+e.suffix) {
+			return e.url
+		}
+	}
 	return payBaseURL
 }
 
