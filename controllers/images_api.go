@@ -148,7 +148,7 @@ func (c *ApiController) ImagesGenerations() {
 		subject := authUser.PayerSubject(ledger)
 		var ok bool
 		if hold, ok = reserveBudget(subject, imageCostCents(req.Model, n)); !ok {
-			c.ResponseAuthError(billingError("%s", object.InsufficientBalance(ledger, "image cost").Message))
+			c.ResponseAuthError(billingError("%s", object.InsufficientBalance(c.Ctx.Request.Host, ledger, "image cost").Message))
 			return
 		}
 	}
