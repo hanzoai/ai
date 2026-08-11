@@ -182,7 +182,7 @@ func BalanceGateFilter(ctx *web.Context) {
 		return
 	}
 
-	sufficient, deny, balance := balanceGate.checkBalance(subject, namespace, userKey)
+	sufficient, deny, balance := balanceGate.checkBalance(ctx.Request.Host, subject, namespace, userKey)
 	if sufficient {
 		// Balance covers the call — but a plan also bounds how FAST a caller may burn
 		// its budget: the rolling-window AI-spend cap (Anthropic-style, resets
@@ -486,7 +486,7 @@ func isJwtTokenLike(token string) bool {
 // Fail posture is fail-CLOSED for BOTH denial reasons — an outage never becomes an
 // unmetered bleed, and there is no exempt or fail-open escape. deny is the zero
 // BillingNotice when sufficient. userKey is retained for caller-signature parity.
-func (bg *BalanceGate) checkBalance(subject, namespace, userKey string) (sufficient bool, deny object.BillingNotice, balanceCents int64) {
+func (bg *BalanceGate) checkBalance(host, subject, namespace, userKey string) (sufficient bool, deny object.BillingNotice, balanceCents int64) {
 	_ = userKey
 	bal, reserved, fresh, known := bg.ledger.Snapshot(subject)
 	if known {
@@ -498,7 +498,7 @@ func (bg *BalanceGate) checkBalance(subject, namespace, userKey string) (suffici
 		if avail > 0 {
 			return true, object.BillingNotice{}, avail
 		}
-		return false, object.InsufficientBalance(namespace, ""), avail
+		return false, object.InsufficientBalance(host, namespace, ""), avail
 	}
 
 	// Cold subject: fetch synchronously so the first request gets a real check.
@@ -517,7 +517,7 @@ func (bg *BalanceGate) checkBalance(subject, namespace, userKey string) (suffici
 	if avail > 0 {
 		return true, object.BillingNotice{}, avail
 	}
-	return false, object.InsufficientBalance(namespace, ""), avail
+	return false, object.InsufficientBalance(host, namespace, ""), avail
 }
 
 // refreshAsync kicks off a background goroutine to refresh the ledger balance
