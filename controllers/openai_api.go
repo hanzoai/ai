@@ -243,7 +243,7 @@ func resolveProviderFromJwt(token string, requested string, requestedModel strin
 	// token minted for a foreign app/issuer cannot authenticate a paid request.
 	claims, err := object.ParseAndValidateJWT(token)
 	if err != nil {
-		return nil, nil, "", authError("invalid hanzo.id token: %s", err.Error())
+		return nil, nil, "", authError("invalid access token: %s", err.Error())
 	}
 
 	user := &claims.User
@@ -989,7 +989,7 @@ func (c *ApiController) authenticate(token string) error {
 		// Signature + issuer/audience validation (R3): a foreign-aud or
 		// wrong-issuer token is rejected here, not just signature-checked.
 		if _, err := object.ParseAndValidateJWT(token); err != nil {
-			return authError("invalid hanzo.id token: %s", err.Error())
+			return authError("invalid access token: %s", err.Error())
 		}
 		return nil
 	default:
