@@ -452,7 +452,7 @@ func (c *ApiController) AnthropicMessages() {
 		est := estimateRequestCostCents(request.Model, len(request.Messages)*500, request.MaxTokens)
 		var ok bool
 		if hold, ok = reserveBudget(subject, est); !ok {
-			c.respondAnthropicError("billing_error", object.InsufficientBalance(ledger, "request cost").Message, http.StatusPaymentRequired)
+			c.respondAnthropicError("billing_error", object.InsufficientBalance(c.Ctx.Request.Host, ledger, "request cost").Message, http.StatusPaymentRequired)
 			return
 		}
 	}
