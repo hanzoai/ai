@@ -174,7 +174,7 @@ func (c *ApiController) VideosGenerations() {
 	// no subject to own or bill the job by. Reject it rather than create an
 	// unownable, unbillable job.
 	if authUser == nil {
-		c.ResponseAuthError(billingError("Video generation requires an authenticated Hanzo Cloud account. Sign in and add credits to your wallet at %s", object.PayURL("")))
+		c.ResponseAuthError(billingError("Video generation requires an authenticated Hanzo Cloud account. Sign in and add credits to your wallet at %s", object.PayURL(c.Ctx.Request.Host, "")))
 		return
 	}
 	ledger := c.billingOrg(authUser)
@@ -214,7 +214,7 @@ func (c *ApiController) VideosGenerations() {
 	// the job is abandoned.
 	hold, okReserve := reserveBudget(subject, videoCostCents(req.Model, 1))
 	if !okReserve {
-		c.ResponseAuthError(billingError("%s", object.InsufficientBalance(ledger, "video cost").Message))
+		c.ResponseAuthError(billingError("%s", object.InsufficientBalance(c.Ctx.Request.Host, ledger, "video cost").Message))
 		return
 	}
 

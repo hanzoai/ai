@@ -118,7 +118,7 @@ func TestCheckBalanceGatesOnInsufficientFunds(t *testing.T) {
 			defer srv.Close()
 
 			bg := newTestGate(srv.URL, "", balanceCacheTTL)
-			sufficient, _, cents := bg.checkBalance("hanzo/user-"+tc.name, "hanzo", "hanzo/user-"+tc.name)
+			sufficient, _, cents := bg.checkBalance("api.hanzo.ai", "hanzo/user-"+tc.name, "hanzo", "hanzo/user-"+tc.name)
 			if sufficient != tc.wantSufficient {
 				t.Errorf("sufficient=%v, want %v", sufficient, tc.wantSufficient)
 			}
@@ -138,7 +138,7 @@ func TestCheckBalanceReservationAware(t *testing.T) {
 	if !bg.ledger.Reserve("hanzo/acct", 100) {
 		t.Fatal("reserve of the full balance must succeed")
 	}
-	sufficient, _, cents := bg.checkBalance("hanzo/acct", "hanzo", "hanzo/acct")
+	sufficient, _, cents := bg.checkBalance("api.hanzo.ai", "hanzo/acct", "hanzo", "hanzo/acct")
 	if sufficient {
 		t.Error("fully-reserved balance must gate (no spendable funds)")
 	}
@@ -157,7 +157,7 @@ func TestCheckBalanceStaleWindowReflectsSettle(t *testing.T) {
 		t.Fatal("reserve must pass")
 	}
 	bg.ledger.Settle("hanzo/acct", 100, 100)
-	if sufficient, _, cents := bg.checkBalance("hanzo/acct", "hanzo", "hanzo/acct"); sufficient || cents != 0 {
+	if sufficient, _, cents := bg.checkBalance("api.hanzo.ai", "hanzo/acct", "hanzo", "hanzo/acct"); sufficient || cents != 0 {
 		t.Errorf("drained balance must gate within the cache window, got sufficient=%v cents=%d", sufficient, cents)
 	}
 }
@@ -171,7 +171,7 @@ func TestCheckBalanceFailsClosedOnColdNonExemptOrg(t *testing.T) {
 	defer srv.Close()
 
 	bg := newTestGate(srv.URL, "", balanceCacheTTL)
-	sufficient, _, cents := bg.checkBalance("acme", "acme", "acme/user")
+	sufficient, _, cents := bg.checkBalance("api.hanzo.ai", "acme", "acme", "acme/user")
 	if sufficient {
 		t.Error("expected fail-CLOSED for a cold non-exempt org when Commerce errors")
 	}
@@ -199,7 +199,7 @@ func TestCheckBalanceNoExemption(t *testing.T) {
 		{"house", "house", "house/anyone"},                  // formerly a whole-org exemption
 		{"acme", "acme", "acme/user"},                       // never exempt
 	} {
-		if sufficient, _, cents := bg.checkBalance(s.subject, s.ns, s.key); sufficient || cents != 0 {
+		if sufficient, _, cents := bg.checkBalance("api.hanzo.ai", s.subject, s.ns, s.key); sufficient || cents != 0 {
 			t.Errorf("%s must fail-CLOSED (no exemption), got sufficient=%v cents=%d", s.subject, sufficient, cents)
 		}
 	}
@@ -216,7 +216,7 @@ func TestCheckBalanceServesStaleOnErrorForActiveOrg(t *testing.T) {
 
 	bg := newTestGate(srv.URL, "", 0) // ttl=0 => any entry is immediately stale
 	bg.ledger.SetBalance("acme", 500)
-	sufficient, _, cents := bg.checkBalance("acme", "acme", "acme/user")
+	sufficient, _, cents := bg.checkBalance("api.hanzo.ai", "acme", "acme", "acme/user")
 	if !sufficient || cents != 500 {
 		t.Errorf("expected stale-serve (sufficient=true, cents=500) on a blip, got (%v, %d)", sufficient, cents)
 	}
@@ -233,10 +233,10 @@ func TestCheckBalanceCachesWithinTTL(t *testing.T) {
 	defer srv.Close()
 
 	bg := newTestGate(srv.URL, "", balanceCacheTTL)
-	if s, _, _ := bg.checkBalance("hanzo/cacheme", "hanzo", "hanzo/cacheme"); !s {
+	if s, _, _ := bg.checkBalance("api.hanzo.ai", "hanzo/cacheme", "hanzo", "hanzo/cacheme"); !s {
 		t.Fatal("first check should pass")
 	}
-	if s, _, _ := bg.checkBalance("hanzo/cacheme", "hanzo", "hanzo/cacheme"); !s {
+	if s, _, _ := bg.checkBalance("api.hanzo.ai", "hanzo/cacheme", "hanzo", "hanzo/cacheme"); !s {
 		t.Fatal("second check should pass from cache")
 	}
 	if calls != 1 {
@@ -395,7 +395,7 @@ func TestCheckBalanceDenialReason(t *testing.T) {
 	}))
 	defer errSrv.Close()
 	bg := newTestGate(errSrv.URL, "", balanceCacheTTL)
-	sufficient, deny, _ := bg.checkBalance("acme", "acme", "acme/user")
+	sufficient, deny, _ := bg.checkBalance("api.hanzo.ai", "acme", "acme", "acme/user")
 	if sufficient {
 		t.Fatal("unverifiable balance must DENY (fail-CLOSED)")
 	}
@@ -412,7 +412,7 @@ func TestCheckBalanceDenialReason(t *testing.T) {
 	// Known empty balance → genuine insufficiency → 402 insufficient_balance + link.
 	bg2 := newTestGate("http://unused", "", balanceCacheTTL)
 	bg2.ledger.SetBalance("acme", 0)
-	sufficient2, deny2, _ := bg2.checkBalance("acme", "acme", "acme/user")
+	sufficient2, deny2, _ := bg2.checkBalance("api.hanzo.ai", "acme", "acme", "acme/user")
 	if sufficient2 {
 		t.Fatal("a zero known balance must DENY")
 	}
@@ -422,7 +422,7 @@ func TestCheckBalanceDenialReason(t *testing.T) {
 	if deny2.Status != http.StatusPaymentRequired {
 		t.Errorf("empty balance: status=%d, want 402", deny2.Status)
 	}
-	if !strings.Contains(strings.ToLower(deny2.Message), "add credits") || !strings.Contains(deny2.Message, object.PayURL("acme")) {
+	if !strings.Contains(strings.ToLower(deny2.Message), "add credits") || !strings.Contains(deny2.Message, object.PayURL("api.hanzo.ai", "acme")) {
 		t.Errorf("insufficient message must invite adding credits at the wallet link, got %q", deny2.Message)
 	}
 }

@@ -180,7 +180,7 @@ func zapAnthropicMessages(ctx context.Context, auth string, reqBody []byte) (int
 		est := estimateRequestCostCents(request.Model, len(request.Messages)*500, request.MaxTokens)
 		var ok bool
 		if hold, ok = reserveBudget(subject, est); !ok {
-			return anthropicErr("billing_error", object.InsufficientBalance(authUser.Owner, "request cost").Message, http.StatusPaymentRequired)
+			return anthropicErr("billing_error", object.InsufficientBalance(zapBrandHost, authUser.Owner, "request cost").Message, http.StatusPaymentRequired)
 		}
 	}
 	defer hold.settle(0)

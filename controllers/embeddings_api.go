@@ -109,7 +109,7 @@ func (c *ApiController) Embeddings() {
 			}
 			var ok2 bool
 			if hold, ok2 = reserveBudget(subject, est); !ok2 {
-				c.ResponseAuthError(billingError("%s", object.InsufficientBalance(ledger, "cost").Message))
+				c.ResponseAuthError(billingError("%s", object.InsufficientBalance(c.Ctx.Request.Host, ledger, "cost").Message))
 				return
 			}
 		}
