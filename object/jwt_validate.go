@@ -76,20 +76,12 @@ var brandIssuerList = []string{
 	"https://pars.id",
 }
 
-// brandAudienceList is the set of white-label brand cloud audiences (== IAM
-// client_id == app name: <brand>-cloud) a single binary accepts. A brand's session
-// token carries aud=<brand>-cloud (HIP-0111: client_id == app == aud), so the
-// audience allowlist must include each or a valid lux/zoo/pars bearer 401s on the
-// request-auth path even after the brand issuer passes. Mirrors brandIssuerList
-// and the cloud binary's BrandAudiences() (kept in sync by hand -- the same public
-// HIP-0111 brand set). Always folded into jwtAudienceAllowlist so the check does
-// not depend on the deployed GATEWAY_ALLOWED_AUDIENCES listing the brand auds.
-var brandAudienceList = []string{
-	"hanzo-cloud",
-	"lux-cloud",
-	"zoo-cloud",
-	"pars-cloud",
-}
+// brandNames is the set of white-label brands one binary serves. It mirrors
+// brandIssuerList, but by BRAND rather than by issuer, because that is what an
+// audience is keyed on: HIP-0111 makes client_id == <brand>-<app> == aud. The brand
+// cannot be read off the issuer host — zoolabs.id's brand is `zoo` — so the two
+// lists are stated separately and kept in step by TestBrandNamesCoverBrandIssuers.
+var brandNames = []string{"hanzo", "lux", "zoo", "pars"}
 
 // trustedJWTIssuers returns EVERY issuer the request-auth policy accepts: the
 // primary (expectedJWTIssuer, which honors the pinned config/env) UNIONED with the
@@ -132,33 +124,73 @@ func trustedJWTIssuers() []string {
 // always sets GATEWAY_ALLOWED_AUDIENCES, so the check is enforced.
 func jwtAudienceAllowlist() []string {
 	if v := splitCSV(conf.GetConfigString("jwtAudiences")); len(v) > 0 {
-		// A pinned allowlist folds in the brand auds — one binary must accept every
-		// brand's <brand>-cloud bearer (fail-secure: only ADDS known brands).
+		// A pinned allowlist is mirrored across the brands too — one binary must accept
+		// every brand's bearer for an app it already allows (fail-secure: only ADDS).
 		return withBrandAudiences(v)
 	}
 	var out []string
 	out = appendUniqueCSV(out, os.Getenv("GATEWAY_ALLOWED_AUDIENCES"))
 	out = appendUniqueCSV(out, os.Getenv("IAM_AUDIENCE"))
 	out = appendUniqueCSV(out, os.Getenv("AUTH_AUDIENCE"))
-	// White-label: widen a NON-EMPTY allowlist with every brand's cloud audience
-	// (<brand>-cloud), so a lux/zoo/pars bearer validates even when the deployed
-	// GATEWAY_ALLOWED_AUDIENCES predates the brands. Fail-secure — only the
-	// known-good brand client_ids are added. An EMPTY allowlist is left empty so
+	// White-label: mirror a NON-EMPTY allowlist's app set across every brand, so a
+	// lux/zoo/pars bearer validates even when the deployed GATEWAY_ALLOWED_AUDIENCES
+	// names only this deployment's own brand. Fail-secure — an app is mirrored only
+	// onto brands already trusted as issuers. An EMPTY allowlist is left empty so
 	// the "no allowlist => audience not enforced (issuer-only)" contract is
 	// preserved (dev/test with no audience env stays issuer-only, not suddenly
 	// enforcing on the brand set); live always sets GATEWAY_ALLOWED_AUDIENCES.
 	return withBrandAudiences(out)
 }
 
-// withBrandAudiences folds the white-label brand cloud auds into a non-empty
-// allowlist; an empty allowlist is returned unchanged (preserving the
-// empty-means-not-enforced contract). Fail-secure: only the known-good brand
-// client_ids are added, deduped.
+// withBrandAudiences mirrors the allowlist's APP set across every white-label brand.
+// The deployment enumerates the apps once, for its own brand (hanzo-app, hanzo-chat,
+// hanzo-console, …). A sibling brand runs the SAME apps under the SAME names, and
+// HIP-0111 makes the app name the audience — so for every <brand>-<app> already
+// allowed, every other brand's <app> is allowed too. One list to maintain, and it is
+// the one the deployment already maintains.
+//
+// This is the predicate that took lux.chat down. The fold used to add only
+// <brand>-cloud, so a lux.chat session token (aud=lux-chat) — correctly issued,
+// correctly signed, issuer already trusted — was refused on audience alone while the
+// byte-identical hanzo.chat case passed, because the deployed allowlist happened to
+// name hanzo-chat and no other brand's chat.
+//
+// Fail-secure. It only ever mirrors an app the deployment ALREADY approved onto a
+// brand this binary ALREADY trusts the issuer of; an unrecognized entry (a bare host
+// like https://api.hanzo.ai, or an app under an unknown brand) is passed through
+// untouched and never expanded. An empty allowlist is returned unchanged, preserving
+// the "empty => audience not enforced" contract.
 func withBrandAudiences(list []string) []string {
 	if len(list) == 0 {
 		return list
 	}
-	return appendUniqueCSV(list, strings.Join(brandAudienceList, ","))
+	out := make([]string, len(list))
+	copy(out, list)
+	for _, entry := range list {
+		brand, app, ok := splitBrandApp(entry)
+		if !ok {
+			continue
+		}
+		for _, b := range brandNames {
+			if b != brand {
+				out = appendUniqueCSV(out, b+"-"+app)
+			}
+		}
+	}
+	return out
+}
+
+// splitBrandApp splits a <brand>-<app> audience whose brand is one this binary
+// serves. The FIRST hyphen divides them, so a multi-word app survives the round trip
+// (hanzo-admin-guard => brand hanzo, app admin-guard) and mirrors as lux-admin-guard.
+// An audience that names no known brand is not a brand audience: ok is false.
+func splitBrandApp(aud string) (brand, app string, ok bool) {
+	for _, b := range brandNames {
+		if rest, found := strings.CutPrefix(aud, b+"-"); found && rest != "" {
+			return b, rest, true
+		}
+	}
+	return "", "", false
 }
 
 // appendUniqueCSV splits a comma-separated raw value and appends each non-empty,
