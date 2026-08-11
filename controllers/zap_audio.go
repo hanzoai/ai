@@ -401,7 +401,7 @@ func zapServeZenMedia(apiPath, mdl string, rawBody []byte, units int, authUser *
 			subject := authUser.PayerSubject("")
 			var ok2 bool
 			if hold, ok2 = reserveBudget(subject, zm.unitCostCents(units)); !ok2 {
-				return object.BuildCloudResponse(402, nil, object.InsufficientBalance(authUser.Owner, "cost").Message)
+				return object.BuildCloudResponse(402, nil, object.InsufficientBalance(zapBrandHost, authUser.Owner, "cost").Message)
 			}
 		}
 	}

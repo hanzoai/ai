@@ -25,7 +25,7 @@ import (
 // wallet link, embeds the per-modality noun, and carries the 402/insufficient_balance
 // verdict. The plain form (noun "") is the router-filter copy.
 func TestInsufficientBalanceMessage(t *testing.T) {
-	n := InsufficientBalance("hanzo", "image cost")
+	n := InsufficientBalance("api.hanzo.ai", "hanzo", "image cost")
 	if n.Code != CodeInsufficientBalance {
 		t.Errorf("code=%q, want %q", n.Code, CodeInsufficientBalance)
 	}
@@ -35,11 +35,11 @@ func TestInsufficientBalanceMessage(t *testing.T) {
 	if !strings.Contains(n.Message, "image cost") {
 		t.Errorf("message must carry the noun, got %q", n.Message)
 	}
-	if !strings.Contains(n.Message, "Add credits") || !strings.Contains(n.Message, PayURL("hanzo")) {
+	if !strings.Contains(n.Message, "Add credits") || !strings.Contains(n.Message, PayURL("api.hanzo.ai", "hanzo")) {
 		t.Errorf("message must invite adding credits at the wallet link, got %q", n.Message)
 	}
 
-	plain := InsufficientBalance("hanzo", "")
+	plain := InsufficientBalance("api.hanzo.ai", "hanzo", "")
 	if strings.Contains(plain.Message, "estimated") {
 		t.Errorf("plain form must omit the noun clause, got %q", plain.Message)
 	}
@@ -77,7 +77,7 @@ func TestBalanceUnavailableMessage(t *testing.T) {
 // same bare link.
 func TestPayURL(t *testing.T) {
 	for _, org := range []string{"hanzo", "acme", "", "weird/slug with spaces", "a?b#c"} {
-		if got := PayURL(org); got != payBaseURL {
+		if got := PayURL("api.hanzo.ai", org); got != payBaseURL {
 			t.Errorf("PayURL(%q)=%q, want the bare wallet root %q (no /<org> route exists yet)", org, got, payBaseURL)
 		}
 	}
@@ -88,7 +88,7 @@ func TestPayURL(t *testing.T) {
 // "code", so the keys and the always-"billing_error" type must not drift. The message
 // is JSON-marshaled (never string-concatenated), so it stays correctly escaped.
 func TestErrorJSONShape(t *testing.T) {
-	for _, n := range []BillingNotice{InsufficientBalance("hanzo", "cost"), BalanceUnavailable()} {
+	for _, n := range []BillingNotice{InsufficientBalance("api.hanzo.ai", "hanzo", "cost"), BalanceUnavailable()} {
 		var parsed struct {
 			Error struct {
 				Message string `json:"message"`

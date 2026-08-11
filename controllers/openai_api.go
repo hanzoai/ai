@@ -1338,7 +1338,7 @@ func (c *ApiController) ChatCompletions() {
 		est := estimateRequestCostCents(request.Model, estimatePromptTokens(&request), request.MaxTokens)
 		var ok bool
 		if hold, ok = reserveBudget(subject, est); !ok {
-			c.ResponseAuthError(billingError("%s", object.InsufficientBalance(ledger, "request cost").Message))
+			c.ResponseAuthError(billingError("%s", object.InsufficientBalance(c.Ctx.Request.Host, ledger, "request cost").Message))
 			return
 		}
 	}
