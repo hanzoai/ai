@@ -676,6 +676,15 @@ type usageRecord struct {
 	// Session is the conversation/session id. Emitted as gen_ai.conversation.id +
 	// session.id, which is what turns the o11y sessions view on for this org.
 	Session string `json:"session,omitempty"`
+	// TraceID is the gen_ai span's OWN trace id, stamped by emitGenAISpan.
+	//
+	// The span plane and the spend ledger answer different questions about one call
+	// — what happened, and what it cost — and joining them needs an id BOTH sides
+	// observed. Deriving one independently on each side would produce two ids that
+	// merely describe the same request, which is not the same thing and cannot be
+	// joined on. Empty when telemetry is off: there was no span, so there is no
+	// trace, and saying so is better than inventing an id nothing else will carry.
+	TraceID string `json:"traceId,omitempty"`
 	// Environment is the caller's logical environment label (X-Environment). Emitted
 	// as deployment.environment on the span so Observe narrows by environment instead
 	// of defaulting to "default". Empty emits no attribute (honest, never fabricated).
@@ -1031,8 +1040,13 @@ func recordTrace(ctx context.Context, record *usageRecord, startTime time.Time) 
 			record.APIKeyHash = attr.APIKeyHash
 		}
 	}
-	go zapWriteUsage(record, startTime)
+	// The span is emitted BEFORE the ledger write, because emitting it is what
+	// decides the trace id and the row has to carry it. The write is the async half
+	// (a goroutine, off the request path); the span emit is already batched and
+	// non-blocking, so leading with it costs the caller nothing and is the only
+	// order in which the two planes can share an id.
 	emitGenAISpan(ctx, record, startTime)
+	go zapWriteUsage(record, startTime)
 	emitGenAIEvent(ctx, record, startTime)
 }
 
