@@ -80,10 +80,47 @@ func (c *Client) ParseJwtToken(token string) (*Claims, error) {
 	})
 	if t != nil {
 		if claims, ok := t.Claims.(*Claims); ok && t.Valid {
+			claims.typeMachine()
 			return claims, nil
 		}
 	}
 	return nil, err
+}
+
+// machineType is the User.Type a program carries. It is one of the two spellings
+// account.IsMachine reads; IAM writes the other ("service-account") on the rows
+// behind API keys.
+const machineType = "application"
+
+// typeMachine fills in what the token leaves unsaid: that its principal is a
+// program.
+//
+// A client-credentials token carries no `type`. Measured on a live hanzo.id token,
+// the whole payload is iss/sub/aud/exp/nbf/iat/jti, owner, organization, name,
+// preferred_username, billing_account, azp, tokenType — and nothing that says
+// machine. So account.IsMachine, which reads User.Type, answered "person" for every
+// principal that authenticates by token, and the only credentials it ever
+// recognised were the API keys, whose Type comes off the user row instead.
+//
+// The token does say it, in the one way this grant can: the client is its own
+// subject. A person's token is minted FOR an application and names a person, so the
+// two differ; a machine's token names the application itself, so the principal's
+// name IS its audience. A human token cannot reach that equality, because a person
+// is not an application.
+//
+// Stamped here, at the single parse, so every layer below reads the one field with
+// the one predicate rather than each re-deriving the answer from claims. An explicit
+// type from IAM is left exactly as it came.
+func (c *Claims) typeMachine() {
+	if c == nil || c.User.Type != "" || c.User.Name == "" {
+		return
+	}
+	for _, aud := range c.Audience {
+		if aud == c.User.Name {
+			c.User.Type = machineType
+			return
+		}
+	}
 }
 
 func publicKeyFromPEM(pemBytes []byte) (interface{}, error) {
