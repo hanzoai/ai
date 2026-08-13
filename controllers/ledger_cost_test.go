@@ -30,10 +30,19 @@ func TestLedgerCostAuthority(t *testing.T) {
 		t.Fatalf("video ledger cost: got %d, want %d (>0)", got, want)
 	}
 
-	// Text is unchanged: usageCostCents' default case delegates to the exact same
-	// token calc zapWriteUsage used before, so text rows record an identical cost.
+	// Text is the exact token cost rounded to the cent — the SAME money the nano
+	// ledger carries, said less precisely, never a second computation of it.
 	txt := &usageRecord{Model: "gpt-4o-mini", PromptTokens: 1000, CompletionTokens: 500}
-	if got, want := usageCostCents(txt), calculateCostCentsWithCache(txt.Model, txt.PromptTokens, txt.CompletionTokens, txt.CacheReadTokens, txt.CacheWriteTokens); got != want {
-		t.Fatalf("text ledger cost changed: got %d, want %d", got, want)
+	if got, want := usageCostCents(txt), nanoToCents(usageCostNano(txt)); got != want {
+		t.Fatalf("text ledger cost: got %d, want %d", got, want)
+	}
+
+	// And a call worth less than half a cent reports no cents, because it cost none.
+	// The old cents path raised it to a whole cent — the same money, fifty times over,
+	// in the column every spend view reads. The exact amount is on the same row.
+	if cents, nano := usageCostCents(txt), usageCostNano(txt); nano <= 0 || nano >= 5_000_000 {
+		t.Fatalf("precondition: this call should cost under half a cent, got %d nano", nano)
+	} else if cents != 0 {
+		t.Errorf("a %d-nano call reported %d cents; a cent nobody was charged is not a cost", nano, cents)
 	}
 }
