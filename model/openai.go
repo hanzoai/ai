@@ -451,6 +451,7 @@ func (p *OpenAiModelProvider) QueryText(question string, writer io.Writer, histo
 				modelResult.ResponseTokenCount = int(variant.Response.Usage.OutputTokens)
 				modelResult.PromptTokenCount = int(variant.Response.Usage.InputTokens)
 				modelResult.TotalTokenCount = int(variant.Response.Usage.TotalTokens)
+				modelResult.CacheReadTokenCount = int(variant.Response.Usage.InputTokensDetails.CachedTokens)
 				break
 			}
 		}
@@ -544,6 +545,7 @@ func (p *OpenAiModelProvider) QueryText(question string, writer io.Writer, histo
 					modelResult.PromptTokenCount = int(completion.Usage.PromptTokens)
 					modelResult.ResponseTokenCount = int(completion.Usage.CompletionTokens)
 					modelResult.TotalTokenCount = int(completion.Usage.TotalTokens)
+					modelResult.CacheReadTokenCount = int(completion.Usage.PromptTokensDetails.CachedTokens)
 					modelResult.Currency = "USD"
 				} else {
 					modelResult, err = getDefaultModelResult(model, question, response.String())

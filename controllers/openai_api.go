@@ -1504,6 +1504,8 @@ func (c *ApiController) ChatCompletions() {
 			Model:            request.Model,
 			Provider:         actualProvider,
 			PromptTokens:     modelResult.PromptTokenCount,
+			CacheReadTokens:  modelResult.CacheReadTokenCount,
+			CacheWriteTokens: modelResult.CacheWriteTokenCount,
 			CompletionTokens: modelResult.ResponseTokenCount,
 			TotalTokens:      modelResult.TotalTokenCount,
 			Currency:         "USD",
