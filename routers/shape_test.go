@@ -15,6 +15,7 @@
 package routers
 
 import (
+	"github.com/zap-proto/zip"
 	"reflect"
 	"strings"
 	"testing"
@@ -127,4 +128,66 @@ func dataSchema(t *testing.T, paths map[string]any, path, verb string) map[strin
 	props, _ := narrowed["properties"].(map[string]any)
 	data, _ := props["data"].(map[string]any)
 	return data
+}
+
+// The id a caller uses is derived by ONE rule, and this document does not own a
+// copy of it.
+//
+// It used to: an operationID here reproduced zip.ID's encoding "rather than
+// inventing a second one". A copy of a rule is a second one the moment the
+// original moves, and it moved — zip stopped spelling the version every address
+// shares, this copy did not, and 307 operations went out under a name no other
+// app in the fleet would have given the same address. The composition did not
+// refuse them, because two spellings of one name are not a duplicate.
+//
+// So the derivation is called, not reproduced, and this asserts the property
+// that makes that worth doing: what the document publishes is what zip.ID says,
+// for every address in it.
+func TestOperationIDsAreZipsRuleAndNotACopy(t *testing.T) {
+	for path, item := range docPaths(t) {
+		methods, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		for verb, raw := range methods {
+			op, ok := raw.(map[string]any)
+			if !ok {
+				continue
+			}
+			got, _ := op["operationId"].(string)
+			if want := zip.ID(verb, path); got != want {
+				t.Errorf("%s %s publishes %q, zip.ID says %q", verb, path, got, want)
+			}
+		}
+	}
+}
+
+// The version every address here shares is not in the name it publishes, which
+// is the half of zip's rule this document most depends on: /v1 is on all of it,
+// so carrying it would spend a token on every name to say nothing.
+func TestPublishedIDsDropTheSharedVersion(t *testing.T) {
+	for path, item := range docPaths(t) {
+		methods, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		for _, raw := range methods {
+			op, _ := raw.(map[string]any)
+			id, _ := op["operationId"].(string)
+			if strings.Contains(id, "_v1_") && !strings.Contains(path[3:], "/v1/") {
+				t.Errorf("%s publishes %q — the leading version is not part of a name", path, id)
+			}
+		}
+	}
+}
+
+// docPaths is the published document's path map, which is what a consumer reads.
+func docPaths(t *testing.T) map[string]any {
+	t.Helper()
+	doc := Document()
+	paths, ok := doc["paths"].(map[string]any)
+	if !ok {
+		t.Fatalf("the document publishes no paths: %T", doc["paths"])
+	}
+	return paths
 }
