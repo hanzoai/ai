@@ -198,7 +198,6 @@ func zapRecordAudioUsage(ctx context.Context, authUser *iam.User, provider *obje
 	}
 	rec := &usageRecord{
 		Owner:        authUser.Owner,
-		User:         authUser.Owner + "/" + authUser.Name,
 		Organization: authUser.Owner,
 		Model:        userModel,
 		Provider:     provider.Name,
@@ -210,7 +209,7 @@ func zapRecordAudioUsage(ctx context.Context, authUser *iam.User, provider *obje
 		AudioChars:   qty.chars,
 		RequestID:    uuid.NewString(),
 	}
-	rec.stampPayer(authUser)
+	rec.bind(ctx, authUser)
 	recordUsage(rec)
 	recordTrace(ctx, rec, startTime)
 }
@@ -465,13 +464,13 @@ func zapRecordZenMediaUsage(mdl string, authUser *iam.User, isPremium bool, reqI
 		return
 	}
 	rec := &usageRecord{
-		Owner: authUser.Owner, User: authUser.Owner + "/" + authUser.Name, Organization: authUser.Owner,
+		Owner: authUser.Owner, Organization: authUser.Owner,
 		Model: mdl, Provider: "zen",
 		Cost: float64(cents) / 100.0, Currency: "USD",
 		Premium: isPremium, Status: status, ErrorMsg: errMsg,
 		RequestID: reqID, Account: "hanzo",
 	}
-	rec.stampPayer(authUser)
+	rec.bind(context.Background(), authUser)
 	recordUsage(rec)
 	recordTrace(context.Background(), rec, start)
 }

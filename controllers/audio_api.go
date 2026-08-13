@@ -465,7 +465,6 @@ func (c *ApiController) recordAudioUsage(authUser *iam.User, provider *object.Pr
 	}
 	rec := &usageRecord{
 		Owner:        c.billingOrg(authUser),
-		User:         authUser.Owner + "/" + authUser.Name,
 		Organization: authUser.Owner,
 		Model:        userModel,
 		Provider:     provider.Name,
@@ -478,7 +477,7 @@ func (c *ApiController) recordAudioUsage(authUser *iam.User, provider *object.Pr
 		ClientIP:     c.Ctx.Request.RemoteAddr,
 		RequestID:    uuid.NewString(),
 	}
-	rec.stampPayer(authUser)
+	rec.bind(c.Ctx.Request.Context(), authUser)
 	recordUsage(rec)
 	recordTrace(c.Ctx.Request.Context(), rec, startTime)
 }

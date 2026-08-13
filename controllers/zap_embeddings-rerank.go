@@ -214,7 +214,6 @@ func zapRerankHandler(ctx context.Context, auth string, body []byte) (*zap.Messa
 	if authUser != nil {
 		rec := &usageRecord{
 			Owner:        authUser.Owner,
-			User:         authUser.Owner + "/" + authUser.Name,
 			Organization: authUser.Owner,
 			Model:        raw.Model,
 			Provider:     provider.Name,
@@ -223,7 +222,7 @@ func zapRerankHandler(ctx context.Context, auth string, body []byte) (*zap.Messa
 			Status:       "success",
 			RequestID:    uuid.NewString(),
 		}
-		rec.stampPayer(authUser)
+		rec.bind(ctx, authUser)
 		go recordUsage(rec)
 		recordTrace(ctx, rec, startTime)
 	}
@@ -268,7 +267,6 @@ func zapProxyJSON(ctx context.Context, provider *object.Provider, apiPath string
 		if authUser != nil {
 			errRec := &usageRecord{
 				Owner:        authUser.Owner,
-				User:         authUser.Owner + "/" + authUser.Name,
 				Organization: authUser.Owner,
 				Model:        userModel,
 				Provider:     provider.Name,
@@ -277,7 +275,7 @@ func zapProxyJSON(ctx context.Context, provider *object.Provider, apiPath string
 				ErrorMsg:     err.Error(),
 				RequestID:    requestId,
 			}
-			errRec.stampPayer(authUser)
+			errRec.bind(context.Background(), authUser)
 			go recordUsage(errRec)
 			recordTrace(context.Background(), errRec, startTime)
 		}
@@ -306,7 +304,6 @@ func zapProxyJSON(ctx context.Context, provider *object.Provider, apiPath string
 		}
 		rec := &usageRecord{
 			Owner:        authUser.Owner,
-			User:         authUser.Owner + "/" + authUser.Name,
 			Organization: authUser.Owner,
 			Model:        userModel,
 			Provider:     provider.Name,
@@ -317,7 +314,7 @@ func zapProxyJSON(ctx context.Context, provider *object.Provider, apiPath string
 			Status:       status,
 			RequestID:    requestId,
 		}
-		rec.stampPayer(authUser)
+		rec.bind(ctx, authUser)
 		go recordUsage(rec)
 		recordTrace(ctx, rec, startTime)
 	}

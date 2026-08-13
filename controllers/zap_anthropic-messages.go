@@ -241,7 +241,6 @@ func zapAnthropicMessages(ctx context.Context, auth string, reqBody []byte) (int
 		if authUser != nil {
 			errRecord := &usageRecord{
 				Owner:     authUser.Owner,
-				User:      authUser.Owner + "/" + authUser.Name,
 				Model:     request.Model,
 				Provider:  provider.Name,
 				Premium:   isPremium,
@@ -250,7 +249,7 @@ func zapAnthropicMessages(ctx context.Context, auth string, reqBody []byte) (int
 				ErrorMsg:  err.Error(),
 				RequestID: requestId,
 			}
-			errRecord.stampPayer(authUser)
+			errRecord.bind(ctx, authUser)
 			errRecord.BYO, errRecord.Account = providerBYO(provider, authUser)
 			recordUsage(errRecord)
 			recordTrace(ctx, errRecord, requestStartTime)
@@ -263,10 +262,10 @@ func zapAnthropicMessages(ctx context.Context, auth string, reqBody []byte) (int
 	if authUser != nil {
 		successRecord := &usageRecord{
 			Owner:            authUser.Owner,
-			User:             authUser.Owner + "/" + authUser.Name,
 			Organization:     authUser.Owner,
 			Model:            request.Model,
 			Provider:         provider.Name,
+			Origin:           provider.Origin(),
 			PromptTokens:     modelResult.PromptTokenCount,
 			CacheReadTokens:  modelResult.CacheReadTokenCount,
 			CacheWriteTokens: modelResult.CacheWriteTokenCount,
@@ -278,7 +277,7 @@ func zapAnthropicMessages(ctx context.Context, auth string, reqBody []byte) (int
 			Status:           "success",
 			RequestID:        requestId,
 		}
-		successRecord.stampPayer(authUser)
+		successRecord.bind(ctx, authUser)
 		successRecord.BYO, successRecord.Account = providerBYO(provider, authUser)
 		recordUsage(successRecord)
 		recordTrace(ctx, successRecord, requestStartTime)
@@ -440,7 +439,6 @@ func zapMeterAnthropic(
 	if authUser != nil {
 		rec := &usageRecord{
 			Owner:            authUser.Owner,
-			User:             authUser.Owner + "/" + authUser.Name,
 			Organization:     authUser.Owner,
 			Model:            modelName,
 			Provider:         provider.Name,
@@ -454,7 +452,7 @@ func zapMeterAnthropic(
 			ErrorMsg:         errMsg,
 			RequestID:        requestId,
 		}
-		rec.stampPayer(authUser)
+		rec.bind(ctx, authUser)
 		rec.BYO, rec.Account = providerBYO(provider, authUser)
 		recordUsage(rec)
 		recordTrace(ctx, rec, requestStartTime)

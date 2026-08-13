@@ -26,6 +26,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -703,6 +704,20 @@ type usageRecord struct {
 	InputMessages  string `json:"inputMessages,omitempty"`
 	OutputMessages string `json:"outputMessages,omitempty"`
 
+	// Agent is the machine credential that authorized this call, "<org>/<name>",
+	// when the caller was not a person. An IAM application is a route, not a
+	// customer: it answers "which program placed the call" and never "whose spend
+	// is this", so it is recorded HERE and User is left to the person the
+	// application acts for. A row carrying an Agent and no User is a call nobody
+	// owns — visible as such, rather than presented as the application's own spend.
+	Agent string `json:"agent,omitempty"`
+
+	// Origin is the host that answered — the hostname of the serving provider's
+	// URL (object.Provider.Origin). Provider is our route label for the same call;
+	// carrying both lets a row be asked whether the label still matches the address
+	// the bytes went to. Empty when the serving provider declares no URL.
+	Origin string `json:"-"`
+
 	// Payer is the money address this call spends from — the account the balance
 	// gate READ, carried here rather than re-derived, so the debit cannot land
 	// somewhere else. Not serialized: an Account's fields are unexported by design
@@ -728,16 +743,72 @@ func (r *usageRecord) payer() account.Account {
 	return account.PayerOf(r.Owner, r.User)
 }
 
-// stampPayer records the money address a principal spends from in this record's own
-// ledger. It is the SAME single expression the balance gate resolves with
-// (iam.User.Payer), which is the whole point: one identity, one rule, one address,
-// so gate and debit cannot answer differently. Nil-safe — a surface with no
-// principal leaves the field unset and falls back.
-func (r *usageRecord) stampPayer(u *iam.User) {
+// bind ties this record to the credential that authorized the call: the money
+// address it spends from, and the name its spend is attributed to. It is the ONE
+// place a record learns its principal, so the two answers are read from one
+// identity and cannot disagree.
+//
+// THE MONEY is unchanged and is the same single expression the balance gate
+// resolves with (iam.User.Payer) — one identity, one rule, one address, so gate and
+// debit cannot answer differently. Nil-safe: a surface with no principal leaves the
+// field unset and falls back.
+//
+// THE NAME follows one rule: only a person may be named, because only a person can
+// owe money.
+//
+//   - A person's credential names itself, and nothing on the request can move that.
+//     Otherwise any caller could send a header and put their bill on a colleague.
+//
+//   - A machine credential names no person, because there is none behind it. It is
+//     recorded as the Agent, and the User becomes whoever the identity boundary
+//     authenticated before the machine placed the call (X-User-Id, qualified
+//     "<org>/<name>"). A bare name is not an identity and is refused rather than
+//     guessed at.
+//
+//   - A machine that names nobody leaves User empty and says so at once. An empty
+//     column is a call a query can find; the application's own name in that column
+//     reads as attributed and is not, which is how spend with no owner reaches an
+//     invoice unnoticed.
+//
+// Naming a person never moves money: for a machine the payer resolves to the org
+// whatever name the row carries, and a person's payer comes from their own
+// credential. Attribution and settlement stay separate answers to separate questions.
+func (r *usageRecord) bind(ctx context.Context, u *iam.User) {
 	if r == nil || u == nil {
 		return
 	}
 	r.Payer = u.Payer(r.Owner)
+
+	self := u.Owner + "/" + u.Name
+	// account.IsMachine is the ONE predicate for "is this credential a program",
+	// shared with the payer rule above.
+	if !account.IsMachine(u.Type) {
+		r.User = self
+		return
+	}
+
+	r.Agent = self
+	if named := strings.TrimSpace(object.GenAIAttributionFromContext(ctx).User); strings.Contains(named, "/") {
+		r.User = named
+		return
+	}
+	r.User = ""
+	warnUnownedOnce(self)
+}
+
+// unownedWarned dedupes the unowned-spend report to once per agent, so a busy
+// application logs one actionable line instead of one per request.
+var unownedWarned sync.Map
+
+// warnUnownedOnce reports spend that no person owns: an application bought
+// inference and named nobody it was buying for, so the row bills the org with an
+// empty user column. The fix is upstream — the caller sends X-User-Id with the
+// person it authenticated — and this is the only moment the evidence still exists.
+func warnUnownedOnce(agent string) {
+	if _, seen := unownedWarned.LoadOrStore(agent, struct{}{}); seen {
+		return
+	}
+	log.Error("usage: application %q is buying inference for nobody — its rows carry no user. Send X-User-Id with the person it authenticated, as \"<org>/<name>\".", agent)
 }
 
 // billingQueue is the singleton usage record delivery queue. Initialized by
@@ -1451,7 +1522,7 @@ func (c *ApiController) ChatCompletions() {
 
 	// Call the model provider with failover support
 	var modelResult *model.ModelResult
-	var actualProvider string
+	var actualProvider served
 
 	if route != nil && len(route.fallbacks) > 0 {
 		modelResult, actualProvider, err = failoverQueryText(
@@ -1468,7 +1539,7 @@ func (c *ApiController) ChatCompletions() {
 			return
 		}
 		modelResult, err = modelProvider.QueryText(question, writer, history, "", knowledge, nil, c.GetAcceptLanguage())
-		actualProvider = provider.Name
+		actualProvider = served{provider.Name, provider.Origin()}
 	}
 
 	if err != nil {
@@ -1476,9 +1547,9 @@ func (c *ApiController) ChatCompletions() {
 		if authUser != nil {
 			errRecord := &usageRecord{
 				Owner:     ledger,
-				User:      authUser.Owner + "/" + authUser.Name,
 				Model:     request.Model,
-				Provider:  actualProvider,
+				Provider:  actualProvider.name,
+				Origin:    actualProvider.origin,
 				Premium:   isPremium,
 				Stream:    request.Stream,
 				Status:    "error",
@@ -1486,7 +1557,7 @@ func (c *ApiController) ChatCompletions() {
 				ClientIP:  c.Ctx.Request.RemoteAddr,
 				RequestID: requestId,
 			}
-			errRecord.stampPayer(authUser)
+			errRecord.bind(c.Ctx.Request.Context(), authUser)
 			errRecord.BYO, errRecord.Account = providerBYO(provider, authUser)
 			recordUsage(errRecord)
 			recordTrace(c.Ctx.Request.Context(), errRecord, requestStartTime)
@@ -1499,10 +1570,10 @@ func (c *ApiController) ChatCompletions() {
 	if authUser != nil {
 		successRecord := &usageRecord{
 			Owner:            ledger,
-			User:             authUser.Owner + "/" + authUser.Name,
 			Organization:     authUser.Owner,
 			Model:            request.Model,
-			Provider:         actualProvider,
+			Provider:         actualProvider.name,
+			Origin:           actualProvider.origin,
 			PromptTokens:     modelResult.PromptTokenCount,
 			CacheReadTokens:  modelResult.CacheReadTokenCount,
 			CacheWriteTokens: modelResult.CacheWriteTokenCount,
@@ -1515,7 +1586,7 @@ func (c *ApiController) ChatCompletions() {
 			ClientIP:         c.Ctx.Request.RemoteAddr,
 			RequestID:        requestId,
 		}
-		successRecord.stampPayer(authUser)
+		successRecord.bind(c.Ctx.Request.Context(), authUser)
 		successRecord.BYO, successRecord.Account = providerBYO(provider, authUser)
 		recordUsage(successRecord)
 		recordTrace(c.Ctx.Request.Context(), successRecord, requestStartTime)
@@ -1715,7 +1786,6 @@ func (c *ApiController) proxyToolRequest(
 		if authUser != nil {
 			errRecord := &usageRecord{
 				Owner:     ledger,
-				User:      authUser.Owner + "/" + authUser.Name,
 				Model:     request.Model,
 				Provider:  provider.Name,
 				Premium:   isPremium,
@@ -1725,7 +1795,7 @@ func (c *ApiController) proxyToolRequest(
 				ClientIP:  c.Ctx.Request.RemoteAddr,
 				RequestID: requestId,
 			}
-			errRecord.stampPayer(authUser)
+			errRecord.bind(c.Ctx.Request.Context(), authUser)
 			errRecord.BYO, errRecord.Account = providerBYO(provider, authUser)
 			recordUsage(errRecord)
 			recordTrace(c.Ctx.Request.Context(), errRecord, requestStartTime)
@@ -1780,7 +1850,6 @@ func (c *ApiController) proxyToolRequest(
 		if authUser != nil {
 			successRecord := &usageRecord{
 				Owner:            ledger,
-				User:             authUser.Owner + "/" + authUser.Name,
 				Organization:     authUser.Owner,
 				Model:            request.Model,
 				Provider:         provider.Name,
@@ -1794,7 +1863,7 @@ func (c *ApiController) proxyToolRequest(
 				ClientIP:         c.Ctx.Request.RemoteAddr,
 				RequestID:        requestId,
 			}
-			successRecord.stampPayer(authUser)
+			successRecord.bind(c.Ctx.Request.Context(), authUser)
 			successRecord.BYO, successRecord.Account = providerBYO(provider, authUser)
 			recordUsage(successRecord)
 			recordTrace(c.Ctx.Request.Context(), successRecord, requestStartTime)
@@ -1837,7 +1906,6 @@ func (c *ApiController) proxyToolRequest(
 		if authUser != nil {
 			successRecord := &usageRecord{
 				Owner:            ledger,
-				User:             authUser.Owner + "/" + authUser.Name,
 				Organization:     authUser.Owner,
 				Model:            request.Model,
 				Provider:         provider.Name,
@@ -1851,7 +1919,7 @@ func (c *ApiController) proxyToolRequest(
 				ClientIP:         c.Ctx.Request.RemoteAddr,
 				RequestID:        requestId,
 			}
-			successRecord.stampPayer(authUser)
+			successRecord.bind(c.Ctx.Request.Context(), authUser)
 			successRecord.BYO, successRecord.Account = providerBYO(provider, authUser)
 			recordUsage(successRecord)
 			recordTrace(c.Ctx.Request.Context(), successRecord, requestStartTime)
@@ -2200,7 +2268,6 @@ func (c *ApiController) proxyToolRequestAnthropic(
 	if authUser != nil {
 		successRecord := &usageRecord{
 			Owner:            ledger,
-			User:             authUser.Owner + "/" + authUser.Name,
 			Organization:     authUser.Owner,
 			Model:            request.Model,
 			Provider:         provider.Name,
@@ -2214,7 +2281,7 @@ func (c *ApiController) proxyToolRequestAnthropic(
 			ClientIP:         c.Ctx.Request.RemoteAddr,
 			RequestID:        requestId,
 		}
-		successRecord.stampPayer(authUser)
+		successRecord.bind(c.Ctx.Request.Context(), authUser)
 		successRecord.BYO, successRecord.Account = providerBYO(provider, authUser)
 		recordUsage(successRecord)
 		recordTrace(c.Ctx.Request.Context(), successRecord, requestStartTime)
