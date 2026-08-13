@@ -332,6 +332,13 @@ func emitGenAISpan(ctx context.Context, record *usageRecord, startTime time.Time
 		trace.WithAttributes(fields.attrs...),
 	)
 	span.SetStatus(fields.statusCode, fields.statusMsg)
+	// Hand the span's own trace id back to the record so the ledger row and this
+	// span carry the SAME id and can be joined. Read from the started span rather
+	// than from ctx: when the request arrives with no parent span this one begins a
+	// new trace, and ctx has never heard of it.
+	if sc := span.SpanContext(); sc.HasTraceID() {
+		record.TraceID = sc.TraceID().String()
+	}
 	span.End(trace.WithTimestamp(time.Now().UTC()))
 }
 
