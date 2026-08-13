@@ -100,7 +100,11 @@ func normRoutingCost(r *usageRecord) float64 {
 	if tokens <= 0 {
 		return 0
 	}
-	centsPer1k := float64(usageCostCents(r)) / float64(tokens) * 1000.0
+	// Read the EXACT cost, not the cent. Nearly every request costs a fraction of a
+	// cent, so a cent-rounded price gives the comparison no resolution at all: the
+	// arms the router is choosing between all read as the same number, and the
+	// gradient it is supposed to descend is flat.
+	centsPer1k := float64(usageCostNano(r)) / 1e7 / float64(tokens) * 1000.0
 	ref := envFloat("ROUTER_AUTOREWARD_COST_REF_CENTS_PER_1K", autoRewardDefaultRefCentsPer1k)
 	if ref <= 0 {
 		return 0
