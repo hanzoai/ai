@@ -44,7 +44,7 @@ func TestUsageRowCarriesAttribution(t *testing.T) {
 	rec := &usageRecord{
 		Owner: "acme", User: "acme/alice", Agent: "hanzo/hanzo-cloud",
 		Provider: "hanzo", Origin: "openrouter.ai",
-		APIKeyHash: "sha256ref", Session: "sess-1",
+		APIKeyHash: "sha256ref", Session: "sess-1", TraceID: "4bf92f3577b34da6a3ce929d0e0e4736",
 		Model: "zen5", Status: "success",
 	}
 	row := cloudUsageValues(rec, time.Now())
@@ -64,6 +64,7 @@ func TestUsageRowCarriesAttribution(t *testing.T) {
 		{"origin", "openrouter.ai"},
 		{"api_key_hash", "sha256ref"},
 		{"session_id", "sess-1"},
+		{"trace_id", "4bf92f3577b34da6a3ce929d0e0e4736"},
 	} {
 		if got, _ := at[c.column].(string); got != c.want {
 			t.Errorf("%s = %q, want %q", c.column, got, c.want)

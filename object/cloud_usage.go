@@ -60,6 +60,7 @@ const cloudUsageTableDDL = `
 		agent String,
 		api_key_hash String,
 		session_id String,
+		trace_id String,
 		request_id String,
 		prompt_tokens UInt32,
 		completion_tokens UInt32,
@@ -150,6 +151,10 @@ var cloudUsageColumnMigrations = []string{
 	// conversation spent the money meant joining two stores on a column only one
 	// of them had. Here it is a GROUP BY.
 	`ALTER TABLE hanzo.cloud_usage ADD COLUMN IF NOT EXISTS session_id String`,
+	// trace_id is the gen_ai span's own id, so a row and the span describing the
+	// same call join on an id both observed rather than on two ids that merely
+	// describe the same request.
+	`ALTER TABLE hanzo.cloud_usage ADD COLUMN IF NOT EXISTS trace_id String`,
 }
 
 // CloudUsageColumns is the write order for a usage row, and the ONLY place it is
@@ -162,7 +167,7 @@ var cloudUsageColumnMigrations = []string{
 // documented here, populated on the record, and written by nothing.
 var CloudUsageColumns = []string{
 	"id", "timestamp", "owner", "user_id", "organization", "project",
-	"model", "provider", "origin", "agent", "api_key_hash", "session_id",
+	"model", "provider", "origin", "agent", "api_key_hash", "session_id", "trace_id",
 	"request_id",
 	"prompt_tokens", "completion_tokens", "total_tokens",
 	"cache_read_tokens", "cache_write_tokens",
