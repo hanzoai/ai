@@ -142,13 +142,13 @@ func (c *ApiController) recordZenMediaUsage(model string, authUser *iam.User, is
 		return
 	}
 	rec := &usageRecord{
-		Owner: c.billingOrg(authUser), User: authUser.Owner + "/" + authUser.Name, Organization: authUser.Owner,
+		Owner: c.billingOrg(authUser), Organization: authUser.Owner,
 		Model: model, Provider: "zen",
 		Cost: float64(cents) / 100.0, Currency: "USD",
 		Premium: isPremium, Status: status, ErrorMsg: errMsg,
 		ClientIP: c.Ctx.Request.RemoteAddr, RequestID: reqID, Account: "hanzo",
 	}
-	rec.stampPayer(authUser)
+	rec.bind(c.Ctx.Request.Context(), authUser)
 	recordUsage(rec)
 	recordTrace(c.Ctx.Request.Context(), rec, start)
 }

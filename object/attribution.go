@@ -47,11 +47,19 @@ type GenAIAttribution struct {
 	Environment string
 	// APIKeyHash is a SHA-256 hex ref of the caller credential — NEVER the plaintext key.
 	APIKeyHash string
+	// User is the person the caller is acting for (X-User-Id), as "<org>/<name>".
+	// A service credential authenticates a human and then buys inference on that
+	// human's behalf, so the credential names itself and this names the person. It
+	// is honored ONLY for a machine credential (usageRecord.bind): a person's own
+	// credential already names a person, and letting it name a different one would
+	// let anyone move their spend onto a colleague.
+	User string
 }
 
 // empty reports whether a carries nothing worth threading.
 func (a GenAIAttribution) empty() bool {
-	return a.Org == "" && a.Project == "" && a.Session == "" && a.Environment == "" && a.APIKeyHash == ""
+	return a.Org == "" && a.Project == "" && a.Session == "" && a.Environment == "" &&
+		a.APIKeyHash == "" && a.User == ""
 }
 
 // WithGenAIAttribution returns ctx carrying a. When a is empty it returns ctx

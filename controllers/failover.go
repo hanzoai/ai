@@ -80,9 +80,20 @@ func isRetryableError(err error) bool {
 	return false
 }
 
+// served names the provider that answered: our route label for it, and the host it
+// answered from. Two projections of ONE fact — the provider row the call landed on —
+// travelling together, so a caller cannot record the label while losing the address.
+// A failed attempt carries a name and no origin: nothing answered, and saying
+// nothing is the honest form of that.
+type served struct {
+	name   string
+	origin string
+}
+
 // failoverQueryText tries the primary provider, then each fallback in order.
 // It returns the first successful result. If all providers fail, it returns
-// the last error. The providerName output indicates which provider succeeded.
+// the last error. The served output indicates which provider answered, and from
+// where.
 //
 // The writer is only usable for one attempt (streaming writes are one-shot),
 // so failover is only attempted when the primary fails before writing any
@@ -97,7 +108,7 @@ func failoverQueryText(
 	knowledge []*model.RawMessage,
 	lang string,
 	writerHasData func() bool,
-) (*model.ModelResult, string, error) {
+) (*model.ModelResult, served, error) {
 	// callWithRetry calls one provider, riding out a transient refusal (a 429
 	// "Platform overloaded", a 503, a timeout) instead of giving up on it.
 	//
@@ -111,27 +122,28 @@ func failoverQueryText(
 	// Only safe while nothing has been written: once tokens are on the wire the
 	// request is committed and cannot be replayed. Hence the writerHasData guard
 	// before every retry, the same rule cascading already obeys.
-	callWithRetry := func(provider, upstream string) (*model.ModelResult, error) {
+	callWithRetry := func(provider, upstream string) (*model.ModelResult, string, error) {
 		var res *model.ModelResult
+		var origin string
 		err := retryTransient(context.Background(), currentRetryPolicy(), func() error {
 			if writerHasData != nil && writerHasData() {
 				// Partially streamed: not replayable. Surface the last error.
 				return errPartiallyWritten
 			}
 			var e error
-			res, e = callProvider(provider, upstream, question, writer, history, knowledge, lang)
+			res, origin, e = callProvider(provider, upstream, question, writer, history, knowledge, lang)
 			if e != nil && isTransientError(e) {
 				log.Warn("retry: provider=%s is busy (%v) — holding the request rather than bouncing it to the client", provider, e)
 			}
 			return e
 		})
-		return res, err
+		return res, origin, err
 	}
 
 	// Try primary provider
-	result, err := callWithRetry(route.providerName, route.upstreamModel)
+	result, origin, err := callWithRetry(route.providerName, route.upstreamModel)
 	if err == nil {
-		return result, route.providerName, nil
+		return result, served{route.providerName, origin}, nil
 	}
 
 	// If the writer already sent data to the client (streaming), we cannot
@@ -139,18 +151,18 @@ func failoverQueryText(
 	if writerHasData != nil && writerHasData() {
 		log.Warn("failover: primary provider %s failed after partial write, cannot retry: %v",
 			route.providerName, err)
-		return nil, route.providerName, err
+		return nil, served{name: route.providerName}, err
 	}
 
 	// Check if the error is retryable
 	if !isRetryableError(err) {
 		log.Warn("failover: primary provider %s failed with non-retryable error: %v",
 			route.providerName, err)
-		return nil, route.providerName, err
+		return nil, served{name: route.providerName}, err
 	}
 
 	if len(route.fallbacks) == 0 {
-		return nil, route.providerName, err
+		return nil, served{name: route.providerName}, err
 	}
 
 	log.Warn("failover: primary provider %s failed (%v), trying %d fallback(s)",
@@ -161,10 +173,10 @@ func failoverQueryText(
 		log.Info("failover: attempting fallback[%d] provider=%s upstream=%s",
 			i, fb.providerName, fb.upstreamModel)
 
-		result, fbErr := callWithRetry(fb.providerName, fb.upstreamModel)
+		result, fbOrigin, fbErr := callWithRetry(fb.providerName, fb.upstreamModel)
 		if fbErr == nil {
 			log.Info("failover: fallback[%d] provider=%s succeeded", i, fb.providerName)
-			return result, fb.providerName, nil
+			return result, served{fb.providerName, fbOrigin}, nil
 		}
 
 		log.Warn("failover: fallback[%d] provider=%s failed: %v", i, fb.providerName, fbErr)
@@ -181,12 +193,17 @@ func failoverQueryText(
 		}
 	}
 
-	return nil, route.providerName, lastErr
+	return nil, served{name: route.providerName}, lastErr
 }
 
 // callProvider creates a model provider from the DB-stored provider entry and
 // calls QueryText. This is the same flow as the existing code in the OpenAI
 // and Anthropic handlers, extracted for reuse by the failover loop.
+//
+// It also reports the row's origin — the host the call goes to. This is the only
+// frame that holds the row, so a caller that wants to record where the bytes went
+// has to be handed it from here; resolving the name a second time later would
+// report the provider as it is THEN, not as it was when it answered.
 func callProvider(
 	providerName string,
 	upstreamModel string,
@@ -195,10 +212,10 @@ func callProvider(
 	history []*model.RawMessage,
 	knowledge []*model.RawMessage,
 	lang string,
-) (*model.ModelResult, error) {
+) (*model.ModelResult, string, error) {
 	provider, err := object.GetModelProviderByName(providerName)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if provider == nil {
 		// GetModelProviderByName returns nil for BOTH a missing provider and a
@@ -206,15 +223,16 @@ func callProvider(
 		// so isRetryableError classifies it retryable and the failover loop tries
 		// the next fallback — this is how route.fallbacks stays honored when the
 		// primary provider is toggled off via /v1/admin/providers.
-		return nil, fmt.Errorf("provider %q is unavailable (disabled or not configured)", providerName)
+		return nil, "", fmt.Errorf("provider %q is unavailable (disabled or not configured)", providerName)
 	}
 
 	provider.SubType = upstreamModel
 
 	modelProvider, err := provider.GetModelProvider(lang)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
-	return modelProvider.QueryText(question, writer, history, "", knowledge, nil, lang)
+	result, err := modelProvider.QueryText(question, writer, history, "", knowledge, nil, lang)
+	return result, provider.Origin(), err
 }
