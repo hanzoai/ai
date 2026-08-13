@@ -900,14 +900,14 @@ func (c *ApiController) recordFamilyUsage(fam *modelFamily, model string, authUs
 		return cents
 	}
 	rec := &usageRecord{
-		Owner: c.billingOrg(authUser), User: authUser.Owner + "/" + authUser.Name, Organization: authUser.Owner,
+		Owner: c.billingOrg(authUser), Organization: authUser.Owner,
 		Model: model, Provider: fam.name,
 		PromptTokens: prompt, CompletionTokens: completion, TotalTokens: prompt + completion,
 		Cost: float64(cents) / 100.0, Currency: "USD",
 		Premium: isPremium, Stream: stream, Status: status, ErrorMsg: errMsg,
 		ClientIP: c.Ctx.Request.RemoteAddr, RequestID: reqID, Account: "hanzo",
 	}
-	rec.stampPayer(authUser)
+	rec.bind(c.Ctx.Request.Context(), authUser)
 	recordUsage(rec)
 	recordTrace(c.Ctx.Request.Context(), rec, start)
 	return cents

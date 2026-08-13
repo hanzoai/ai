@@ -175,7 +175,6 @@ func zapResponsesHandler(ctx context.Context, auth string, body []byte) (*zap.Me
 		if authUser != nil {
 			errRec := &usageRecord{
 				Owner:        authUser.Owner,
-				User:         authUser.Owner + "/" + authUser.Name,
 				Organization: authUser.Owner,
 				Model:        chatRequest.Model,
 				Provider:     provider.Name,
@@ -185,7 +184,7 @@ func zapResponsesHandler(ctx context.Context, auth string, body []byte) (*zap.Me
 				ErrorMsg:     err.Error(),
 				RequestID:    requestId,
 			}
-			errRec.stampPayer(authUser)
+			errRec.bind(context.Background(), authUser)
 			go recordUsage(errRec)
 			recordTrace(context.Background(), errRec, requestStartTime)
 		}
@@ -197,10 +196,10 @@ func zapResponsesHandler(ctx context.Context, auth string, body []byte) (*zap.Me
 		go func() {
 			record := &usageRecord{
 				Owner:            authUser.Owner,
-				User:             authUser.Owner + "/" + authUser.Name,
 				Organization:     authUser.Owner,
 				Model:            chatRequest.Model,
 				Provider:         provider.Name,
+				Origin:           provider.Origin(),
 				PromptTokens:     modelResult.PromptTokenCount,
 				CacheReadTokens:  modelResult.CacheReadTokenCount,
 				CacheWriteTokens: modelResult.CacheWriteTokenCount,
@@ -212,7 +211,7 @@ func zapResponsesHandler(ctx context.Context, auth string, body []byte) (*zap.Me
 				Status:           "success",
 				RequestID:        requestId,
 			}
-			record.stampPayer(authUser)
+			record.bind(ctx, authUser)
 			recordUsage(record)
 			recordTrace(ctx, record, requestStartTime)
 		}()

@@ -57,7 +57,6 @@ func gateAndDebit(t *testing.T, user *iam.User, ledger string) (gated, debited s
 	}
 	rec := &usageRecord{
 		Owner:            org,
-		User:             user.Owner + "/" + user.Name,
 		Organization:     user.Owner,
 		Model:            "gpt-4",
 		Provider:         "openai",
@@ -68,7 +67,10 @@ func gateAndDebit(t *testing.T, user *iam.User, ledger string) (gated, debited s
 		Status:           "success",
 		RequestID:        "req-1",
 	}
-	rec.stampPayer(user)
+	// No name is written above: bind is the one place a record learns its principal,
+	// so a literal that also spelled one out would be a second answer to the same
+	// question — and the second answer is the one that used to be wrong.
+	rec.bind(context.Background(), user)
 	recordUsage(rec)
 
 	return gated, debited
@@ -169,15 +171,87 @@ func TestUnattributedRecordFallsBackUnchanged(t *testing.T) {
 	}
 }
 
-// TestStampPayerIsNilSafe: a surface that has no principal must leave the field
+// TestBindIsNilSafe: a surface that has no principal must leave the field
 // unset rather than stamping a zero account, which the ledger would refuse.
-func TestStampPayerIsNilSafe(t *testing.T) {
+func TestBindIsNilSafe(t *testing.T) {
 	rec := &usageRecord{Owner: "acme", User: "acme/alice"}
-	rec.stampPayer(nil)
+	rec.bind(context.Background(), nil)
 	if !rec.Payer.Zero() {
 		t.Error("a nil principal must leave the payer unset so the fallback applies")
 	}
 	if got := rec.payer().Subject(); got != "acme" {
-		t.Errorf("after a nil stamp the fallback must still answer, got %q", got)
+		t.Errorf("after a nil bind the fallback must still answer, got %q", got)
+	}
+}
+
+// TestBindNamesOnlyAPerson is the attribution invariant, and it is the one that was
+// costing money: a spend row may name a person or nobody, never a program.
+//
+// An application in the User column reads as attributed spend and is not. It is how
+// 52% of a month's inference arrived on an invoice with a service account's name on
+// it and no way to ask which human caused it — the query for unattributed spend
+// found nothing, because every row was "attributed" to hanzo-cloud.
+func TestBindNamesOnlyAPerson(t *testing.T) {
+	person := &iam.User{Owner: "acme", Name: "alice"}
+	machine := &iam.User{Owner: "hanzo", Name: "hanzo-cloud", Type: "application"}
+
+	// A header naming someone else, present on every case, so each one answers the
+	// same question: may THIS credential move its spend onto that name?
+	onBehalf := object.WithGenAIAttribution(context.Background(),
+		object.GenAIAttribution{User: "acme/bob"})
+
+	for _, c := range []struct {
+		name        string
+		user        *iam.User
+		ctx         context.Context
+		wantUser    string
+		wantAgent   string
+		explanation string
+	}{
+		{
+			name: "a person names themselves", user: person, ctx: context.Background(),
+			wantUser: "acme/alice",
+		},
+		{
+			name: "a header cannot move a person's spend", user: person, ctx: onBehalf,
+			wantUser:    "acme/alice",
+			explanation: "otherwise anyone could bill a colleague by sending a header",
+		},
+		{
+			name: "a machine is an agent, and names the person it acts for",
+			user: machine, ctx: onBehalf,
+			wantUser: "acme/bob", wantAgent: "hanzo/hanzo-cloud",
+		},
+		{
+			name: "a machine naming nobody says so", user: machine, ctx: context.Background(),
+			wantUser: "", wantAgent: "hanzo/hanzo-cloud",
+			explanation: "an empty column is a call a query can find",
+		},
+		{
+			name: "a bare name is not an identity",
+			user: machine,
+			ctx: object.WithGenAIAttribution(context.Background(),
+				object.GenAIAttribution{User: "bob"}),
+			wantUser: "", wantAgent: "hanzo/hanzo-cloud",
+			explanation: "'bob' in which org? refused rather than guessed at",
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			rec := &usageRecord{Owner: c.user.Owner}
+			rec.bind(c.ctx, c.user)
+
+			if rec.User != c.wantUser {
+				t.Errorf("named %q, want %q — %s", rec.User, c.wantUser, c.explanation)
+			}
+			if rec.Agent != c.wantAgent {
+				t.Errorf("agent %q, want %q", rec.Agent, c.wantAgent)
+			}
+			// The whole point of separating the two columns: naming a person never
+			// moves money. A machine's payer is its org no matter whose name it carries.
+			if c.wantAgent != "" && rec.payer().Subject() != c.user.Owner {
+				t.Errorf("a machine's payer moved to %q; attribution must not settle",
+					rec.payer().Subject())
+			}
+		})
 	}
 }

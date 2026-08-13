@@ -556,7 +556,7 @@ func (c *ApiController) AnthropicMessages() {
 	route := resolveModelRouteForOrg(request.Model, orgId)
 
 	var modelResult *model.ModelResult
-	var actualProvider string
+	var actualProvider served
 
 	if route != nil {
 		// ONE execute path. failoverQueryText rides out a transient upstream
@@ -590,16 +590,16 @@ func (c *ApiController) AnthropicMessages() {
 			modelResult = res
 			return nil
 		})
-		actualProvider = provider.Name
+		actualProvider = served{provider.Name, provider.Origin()}
 	}
 
 	if err != nil {
 		if authUser != nil {
 			errRecord := &usageRecord{
 				Owner:     c.billingOrg(authUser),
-				User:      authUser.Owner + "/" + authUser.Name,
 				Model:     request.Model,
-				Provider:  actualProvider,
+				Provider:  actualProvider.name,
+				Origin:    actualProvider.origin,
 				Premium:   isPremium,
 				Stream:    request.Stream,
 				Status:    "error",
@@ -607,7 +607,7 @@ func (c *ApiController) AnthropicMessages() {
 				ClientIP:  c.Ctx.Request.RemoteAddr,
 				RequestID: requestId,
 			}
-			errRecord.stampPayer(authUser)
+			errRecord.bind(c.Ctx.Request.Context(), authUser)
 			errRecord.BYO, errRecord.Account = providerBYO(provider, authUser)
 			recordUsage(errRecord)
 			recordTrace(c.Ctx.Request.Context(), errRecord, requestStartTime)
@@ -624,10 +624,10 @@ func (c *ApiController) AnthropicMessages() {
 	if authUser != nil {
 		successRecord := &usageRecord{
 			Owner:            c.billingOrg(authUser),
-			User:             authUser.Owner + "/" + authUser.Name,
 			Organization:     authUser.Owner,
 			Model:            request.Model,
-			Provider:         actualProvider,
+			Provider:         actualProvider.name,
+			Origin:           actualProvider.origin,
 			PromptTokens:     modelResult.PromptTokenCount,
 			CacheReadTokens:  modelResult.CacheReadTokenCount,
 			CacheWriteTokens: modelResult.CacheWriteTokenCount,
@@ -640,7 +640,7 @@ func (c *ApiController) AnthropicMessages() {
 			ClientIP:         c.Ctx.Request.RemoteAddr,
 			RequestID:        requestId,
 		}
-		successRecord.stampPayer(authUser)
+		successRecord.bind(c.Ctx.Request.Context(), authUser)
 		successRecord.BYO, successRecord.Account = providerBYO(provider, authUser)
 		recordUsage(successRecord)
 		recordTrace(c.Ctx.Request.Context(), successRecord, requestStartTime)
@@ -778,14 +778,13 @@ func (c *ApiController) proxyAnthropicToolRequest(
 		)
 		if authUser != nil {
 			rec := &usageRecord{
-				Owner: c.billingOrg(authUser), User: authUser.Owner + "/" + authUser.Name,
-				Organization: authUser.Owner, Model: request.Model, Provider: provider.Name,
+				Owner: c.billingOrg(authUser), Organization: authUser.Owner, Model: request.Model, Provider: provider.Name,
 				PromptTokens: capPrompt, CompletionTokens: capCompletion,
 				TotalTokens: capPrompt + capCompletion, Currency: "USD",
 				Premium: isPremium, Stream: true, Status: "success",
 				ClientIP: c.Ctx.Request.RemoteAddr, RequestID: requestId,
 			}
-			rec.stampPayer(authUser)
+			rec.bind(c.Ctx.Request.Context(), authUser)
 			rec.BYO, rec.Account = providerBYO(provider, authUser)
 			recordUsage(rec)
 			recordTrace(c.Ctx.Request.Context(), rec, requestStartTime)
@@ -804,14 +803,13 @@ func (c *ApiController) proxyAnthropicToolRequest(
 		prompt, completion := usage.Usage.InputTokens, usage.Usage.OutputTokens
 		if authUser != nil {
 			rec := &usageRecord{
-				Owner: c.billingOrg(authUser), User: authUser.Owner + "/" + authUser.Name,
-				Organization: authUser.Owner, Model: request.Model, Provider: provider.Name,
+				Owner: c.billingOrg(authUser), Organization: authUser.Owner, Model: request.Model, Provider: provider.Name,
 				PromptTokens: prompt, CompletionTokens: completion,
 				TotalTokens: prompt + completion, Currency: "USD",
 				Premium: isPremium, Stream: false, Status: "success",
 				ClientIP: c.Ctx.Request.RemoteAddr, RequestID: requestId,
 			}
-			rec.stampPayer(authUser)
+			rec.bind(c.Ctx.Request.Context(), authUser)
 			rec.BYO, rec.Account = providerBYO(provider, authUser)
 			recordUsage(rec)
 			recordTrace(c.Ctx.Request.Context(), rec, requestStartTime)
@@ -873,12 +871,11 @@ func (c *ApiController) proxyAnthropicViaOpenAI(
 	if err != nil {
 		if authUser != nil {
 			errRecord := &usageRecord{
-				Owner: c.billingOrg(authUser), User: authUser.Owner + "/" + authUser.Name,
-				Model: request.Model, Provider: provider.Name, Premium: isPremium,
+				Owner: c.billingOrg(authUser), Model: request.Model, Provider: provider.Name, Premium: isPremium,
 				Stream: request.Stream, Status: "error", ErrorMsg: err.Error(),
 				ClientIP: c.Ctx.Request.RemoteAddr, RequestID: requestId,
 			}
-			errRecord.stampPayer(authUser)
+			errRecord.bind(c.Ctx.Request.Context(), authUser)
 			errRecord.BYO, errRecord.Account = providerBYO(provider, authUser)
 			recordUsage(errRecord)
 			recordTrace(c.Ctx.Request.Context(), errRecord, requestStartTime)
@@ -955,13 +952,12 @@ func (c *ApiController) recordAnthropicToolUsage(
 	actualCents := calculateCostCentsWithCache(request.Model, prompt, completion, 0, 0)
 	if authUser != nil {
 		rec := &usageRecord{
-			Owner: c.billingOrg(authUser), User: authUser.Owner + "/" + authUser.Name,
-			Organization: authUser.Owner, Model: request.Model, Provider: provider.Name,
+			Owner: c.billingOrg(authUser), Organization: authUser.Owner, Model: request.Model, Provider: provider.Name,
 			PromptTokens: prompt, CompletionTokens: completion, TotalTokens: prompt + completion,
 			Currency: "USD", Premium: isPremium, Stream: stream, Status: "success",
 			ClientIP: c.Ctx.Request.RemoteAddr, RequestID: requestId,
 		}
-		rec.stampPayer(authUser)
+		rec.bind(c.Ctx.Request.Context(), authUser)
 		rec.BYO, rec.Account = providerBYO(provider, authUser)
 		recordUsage(rec)
 		recordTrace(c.Ctx.Request.Context(), rec, requestStartTime)
