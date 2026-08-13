@@ -202,6 +202,8 @@ func zapResponsesHandler(ctx context.Context, auth string, body []byte) (*zap.Me
 				Model:            chatRequest.Model,
 				Provider:         provider.Name,
 				PromptTokens:     modelResult.PromptTokenCount,
+				CacheReadTokens:  modelResult.CacheReadTokenCount,
+				CacheWriteTokens: modelResult.CacheWriteTokenCount,
 				CompletionTokens: modelResult.ResponseTokenCount,
 				TotalTokens:      modelResult.TotalTokenCount,
 				Currency:         "USD",
