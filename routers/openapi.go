@@ -17,6 +17,8 @@ package routers
 import (
 	"reflect"
 	"strings"
+
+	"github.com/zap-proto/zip"
 )
 
 // The published API description of this service is DERIVED from the router that
@@ -83,7 +85,7 @@ func Document() map[string]any {
 				// Named HERE because this is the one place that knows both the verb
 				// and the address. items() builds operations before it knows which
 				// verbs the router actually registered for them.
-				o["operationId"] = operationID(verb, path)
+				o["operationId"] = zip.ID(verb, path)
 				// The PRODUCT this operation belongs to. hanzoai/cloud counts a
 				// product by the tags its operations carry, so an untagged operation
 				// belongs to nothing: it reaches the composed document and then
