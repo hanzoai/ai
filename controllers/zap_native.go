@@ -504,6 +504,8 @@ func zapChatHandler(ctx context.Context, auth string, body []byte) (*zap.Message
 				Model:            request.Model,
 				Provider:         provider.Name,
 				PromptTokens:     modelResult.PromptTokenCount,
+				CacheReadTokens:  modelResult.CacheReadTokenCount,
+				CacheWriteTokens: modelResult.CacheWriteTokenCount,
 				CompletionTokens: modelResult.ResponseTokenCount,
 				TotalTokens:      modelResult.TotalTokenCount,
 				Currency:         "USD",

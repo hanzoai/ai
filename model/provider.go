@@ -30,6 +30,24 @@ type ModelResult struct {
 	ImageCount         int
 	TotalPrice         float64
 	Currency           string
+
+	// CacheReadTokenCount and CacheWriteTokenCount are the prompt tokens a
+	// provider served from, and wrote to, its prompt cache.
+	//
+	// They are part of PromptTokenCount, not additional to it — a provider
+	// reports the cached portion of the prompt it already charged for, at a
+	// different rate (a read is typically a tenth of the input price, a write
+	// a quarter more). So they price the SAME tokens differently; adding them
+	// to a total would count those tokens twice.
+	//
+	// Everything downstream of here was already built to carry them — the
+	// usage record, the ClickHouse columns, the per-rate pricing, the gen_ai
+	// span attributes. This struct was the one place they had nowhere to sit,
+	// so every request reported zero reads and zero writes however well the
+	// provider cached, and the saving was invisible to billing and to o11y
+	// alike. Reading them is the whole fix.
+	CacheReadTokenCount  int
+	CacheWriteTokenCount int
 }
 
 func newModelResult(promptTokenCount int, responseTokenCount int, totalTokenCount int) *ModelResult {
