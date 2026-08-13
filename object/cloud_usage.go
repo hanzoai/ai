@@ -56,6 +56,10 @@ const cloudUsageTableDDL = `
 		project String,
 		model String,
 		provider String,
+		origin String,
+		agent String,
+		api_key_hash String,
+		session_id String,
 		request_id String,
 		prompt_tokens UInt32,
 		completion_tokens UInt32,
@@ -127,7 +131,51 @@ var cloudUsageColumnMigrations = []string{
 	// metrics board narrow WITHIN an org by project. Additive: a pre-existing row
 	// carries '' (the org's default project == whole-org view).
 	`ALTER TABLE hanzo.cloud_usage ADD COLUMN IF NOT EXISTS project String`,
+	// origin is the HOST that answered (object.Provider.Origin), beside provider,
+	// which is our route label for the same call. A label cannot disagree with
+	// itself however far the thing it names drifts; two columns can, and that
+	// disagreement is the measurement.
+	`ALTER TABLE hanzo.cloud_usage ADD COLUMN IF NOT EXISTS origin String`,
+	// agent is the machine credential that placed the call when no person did.
+	// Rows with an agent and an empty user_id are spend nobody owns — the query
+	// that finds them is the point of the column.
+	`ALTER TABLE hanzo.cloud_usage ADD COLUMN IF NOT EXISTS agent String`,
+	// api_key_hash is the SHA-256 ref of the caller credential the gen_ai span
+	// already carries — never the key. On the ledger it answers "what did this
+	// key spend", which is what a revocation decision needs and could not ask.
+	`ALTER TABLE hanzo.cloud_usage ADD COLUMN IF NOT EXISTS api_key_hash String`,
+	// session_id is the conversation the call belongs to. The gen_ai span has
+	// carried it all along, but a span plane and a spend ledger answer different
+	// questions: "what happened" versus "what did it cost". Asking which
+	// conversation spent the money meant joining two stores on a column only one
+	// of them had. Here it is a GROUP BY.
+	`ALTER TABLE hanzo.cloud_usage ADD COLUMN IF NOT EXISTS session_id String`,
 }
+
+// CloudUsageColumns is the write order for a usage row, and the ONLY place it is
+// written down. CloudUsageInsert is derived from it, so the column list and the
+// placeholder count cannot disagree — the shift-by-one that silently lands every
+// value after a newly inserted column in its neighbour's field is not expressible.
+//
+// It lives beside the DDL because a schema and the statement that fills it are one
+// fact. Split across two packages, they drifted: four columns were declared here,
+// documented here, populated on the record, and written by nothing.
+var CloudUsageColumns = []string{
+	"id", "timestamp", "owner", "user_id", "organization", "project",
+	"model", "provider", "origin", "agent", "api_key_hash", "session_id",
+	"request_id",
+	"prompt_tokens", "completion_tokens", "total_tokens",
+	"cache_read_tokens", "cache_write_tokens",
+	"cost_cents", "currency", "status", "error_msg",
+	"is_premium", "is_stream", "client_ip",
+	"byo", "fee_cents", "account",
+	"cost_nano", "billed_nano", "margin_nano", "unpriced",
+}
+
+// CloudUsageInsert is the usage-row INSERT, derived from CloudUsageColumns.
+var CloudUsageInsert = "INSERT INTO hanzo.cloud_usage (" +
+	strings.Join(CloudUsageColumns, ", ") + ") VALUES (" +
+	strings.TrimSuffix(strings.Repeat("?, ", len(CloudUsageColumns)), ", ") + ")"
 
 var cloudUsageTableReady atomic.Bool
 

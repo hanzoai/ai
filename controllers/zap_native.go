@@ -244,6 +244,24 @@ func zapWriteUsage(record *usageRecord, startTime time.Time) {
 		cancel()
 	}
 
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := object.DatastoreExec(ctx, object.CloudUsageInsert, cloudUsageValues(record, startTime)...); err != nil {
+		log.Warn("ZAP: usage write failed: %v", err)
+	}
+}
+
+// cloudUsageValues renders a record as one warehouse row, in
+// object.CloudUsageColumns order. Grouped to match that list line for line so the
+// alignment can be checked by eye; the count is pinned by test, which is what
+// catches a column added in the middle — the change that shifts every value after
+// it into its neighbour's field while still compiling and still writing rows.
+//
+// It derives the money itself rather than reading recordUsage's stamps: that path
+// early-returns when the billing queue is off, and this warehouse write is
+// independent of it. Same inputs, same functions, same answers.
+func cloudUsageValues(record *usageRecord, startTime time.Time) []any {
 	org := record.Organization
 	if org == "" {
 		org = record.Owner
@@ -294,15 +312,15 @@ func zapWriteUsage(record *usageRecord, startTime time.Time) {
 		unpriced = 1
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	err := object.DatastoreExec(
-		ctx,
-		`INSERT INTO hanzo.cloud_usage (id, timestamp, owner, user_id, organization, project, model, provider, request_id, prompt_tokens, completion_tokens, total_tokens, cache_read_tokens, cache_write_tokens, cost_cents, currency, status, error_msg, is_premium, is_stream, client_ip, byo, fee_cents, account, cost_nano, billed_nano, margin_nano, unpriced) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	return []any{
 		record.RequestID, startTime.UTC(),
 		record.Owner, record.User, org, record.Project,
-		record.Model, record.Provider, record.RequestID,
+		record.Model, record.Provider, record.Origin, record.Agent, record.APIKeyHash,
+		// The conversation this call belongs to. The span has always carried it; the
+		// ledger has not, so "which session spent the money" was a join against a
+		// store that holds no money.
+		record.Session,
+		record.RequestID,
 		record.PromptTokens, record.CompletionTokens, record.TotalTokens,
 		record.CacheReadTokens, record.CacheWriteTokens,
 		costCents, "usd",
@@ -310,9 +328,6 @@ func zapWriteUsage(record *usageRecord, startTime time.Time) {
 		premium, stream, record.ClientIP,
 		byo, feeCents, record.Account,
 		m.CostNano, m.BilledNano, marginNano, unpriced,
-	)
-	if err != nil {
-		log.Warn("ZAP: usage write failed: %v", err)
 	}
 }
 
@@ -450,7 +465,6 @@ func zapChatHandler(ctx context.Context, auth string, body []byte) (*zap.Message
 		if authUser != nil {
 			errRec := &usageRecord{
 				Owner:        authUser.Owner,
-				User:         authUser.Owner + "/" + authUser.Name,
 				Organization: authUser.Owner,
 				Model:        request.Model,
 				Provider:     provider.Name,
@@ -460,7 +474,7 @@ func zapChatHandler(ctx context.Context, auth string, body []byte) (*zap.Message
 				ErrorMsg:     err.Error(),
 				RequestID:    requestId,
 			}
-			errRec.stampPayer(authUser)
+			errRec.bind(context.Background(), authUser)
 			go recordUsage(errRec)
 			// recordUsage drops non-success records — trace the error too so a
 			// failing ZAP chat is visible in the warehouse/o11y like the HTTP paths.
@@ -499,10 +513,10 @@ func zapChatHandler(ctx context.Context, auth string, body []byte) (*zap.Message
 		go func() {
 			record := &usageRecord{
 				Owner:            authUser.Owner,
-				User:             authUser.Owner + "/" + authUser.Name,
 				Organization:     authUser.Owner,
 				Model:            request.Model,
 				Provider:         provider.Name,
+				Origin:           provider.Origin(),
 				PromptTokens:     modelResult.PromptTokenCount,
 				CacheReadTokens:  modelResult.CacheReadTokenCount,
 				CacheWriteTokens: modelResult.CacheWriteTokenCount,
@@ -514,7 +528,7 @@ func zapChatHandler(ctx context.Context, auth string, body []byte) (*zap.Message
 				Status:           "success",
 				RequestID:        requestId,
 			}
-			record.stampPayer(authUser)
+			record.bind(ctx, authUser)
 			recordUsage(record)
 			recordTrace(ctx, record, requestStartTime)
 		}()

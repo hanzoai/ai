@@ -176,7 +176,6 @@ func zapRecordImageUsage(ctx context.Context, authUser *iam.User, provider *obje
 	}
 	rec := &usageRecord{
 		Owner:        authUser.Owner,
-		User:         authUser.Owner + "/" + authUser.Name,
 		Organization: authUser.Owner,
 		Model:        userModel,
 		Provider:     provider.Name,
@@ -187,7 +186,7 @@ func zapRecordImageUsage(ctx context.Context, authUser *iam.User, provider *obje
 		ErrorMsg:     errMsg,
 		RequestID:    uuid.NewString(),
 	}
-	rec.stampPayer(authUser)
+	rec.bind(ctx, authUser)
 	recordUsage(rec)
 	recordTrace(ctx, rec, startTime)
 }

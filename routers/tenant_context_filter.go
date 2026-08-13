@@ -89,6 +89,11 @@ func TenantContextFilter(ctx *web.Context) {
 		Session:     firstNonEmptyHeader(ctx, "X-Session-Id", "X-Conversation-Id"),
 		Environment: env,
 		APIKeyHash:  hashBearer(getTenantHeader(ctx, "Authorization")),
+		// The person a service credential is acting for. Already read above for the
+		// router state; carrying it here is what lets a spend row name a human when
+		// the only credential on the call is an application's. Trusted only for a
+		// machine credential — usageRecord.bind is where that rule lives.
+		User: userID,
 	}
 	if ctx.Request != nil {
 		ctx.Request = ctx.Request.WithContext(object.WithGenAIAttribution(ctx.Request.Context(), attr))
