@@ -830,25 +830,22 @@ func InitBillingQueue() *util.BillingQueue {
 	return billingQueue
 }
 
-// usageCostCents is the authoritative billable cost of a call, in cents. Image and
-// video generations bill per unit (token counts are 0 on those paths); everything
-// else bills from the cache-aware token table. A record carries at most one of
-// ImageCount/VideoCount. This is the ONE cost of record: recordUsage debits it and
-// emitGenAISpan reports it, so the ledger and the span never diverge.
+// usageCostCents is the cost of a call in cents: the exact nano cost (usageCostNano
+// — per unit for image, video and audio, per token otherwise) rounded to the nearest
+// cent. ONE money, reported at two precisions, rather than a second arithmetic over
+// the same inputs that can reach a different answer.
+//
+// It could, and did. The cents path rounded a float and then raised anything left at
+// zero to a whole cent, so a call the ledger charged $0.0002 for was reported as $0.01
+// — the same money, fifty times over, in the column every spend view reads. Measured
+// on ten days of hanzo.cloud_usage: 867 of 1477 rows carried a cent that was invented
+// rather than charged, and the totals differed by $8.03 on $34.69.
+//
+// A call that costs less than half a cent now reports zero cents, which is what it
+// costs. Nothing is lost by saying so: cost_nano and billed_nano on the same row carry
+// the exact amount, and they are what the debit and the invoice read.
 func usageCostCents(record *usageRecord) int64 {
-	switch {
-	case record.VideoCount > 0:
-		return videoCostCents(record.Model, record.VideoCount)
-	case record.ImageCount > 0:
-		return imageCostCents(record.Model, record.ImageCount)
-	case recordIsAudio(record):
-		return audioCostCents(record)
-	default:
-		return calculateCostCentsWithCache(
-			record.Model, record.PromptTokens, record.CompletionTokens,
-			record.CacheReadTokens, record.CacheWriteTokens,
-		)
-	}
+	return nanoToCents(usageCostNano(record))
 }
 
 // usageBilledCents is what Hanzo actually DEBITS the org ledger for a call, in

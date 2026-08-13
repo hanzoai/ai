@@ -177,6 +177,17 @@ func usageMargin(record *usageRecord) costMargin {
 	return m
 }
 
+// nanoToCents rounds a nano-USD amount to the nearest cent (1¢ = 1e7 nano). It is how
+// the cent-precision surfaces — the analytics ledger, the span's total, the standalone
+// billing queue — read the exact money, so none of them computes a cost of its own.
+// Half a cent rounds up; a negative amount has no meaning as a cost and reads as zero.
+func nanoToCents(nano int64) int64 {
+	if nano <= 0 {
+		return 0
+	}
+	return (nano + 5_000_000) / 10_000_000
+}
+
 // usdToNano converts a decimal-USD amount to integer nano-USD — the inverse of
 // nanoToUSD, for a caller that already knows the exact dollars it billed and needs
 // to report them on the nano money ledger.
