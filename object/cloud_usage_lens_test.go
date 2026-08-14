@@ -142,10 +142,40 @@ func TestAdminLensEmitsUpstream(t *testing.T) {
 // serving the response. This is the layer that holds even if the assembly is later
 // rewritten.
 func TestUpstreamColumnIsLensed(t *testing.T) {
-	if got := cloudUsageUpstreamColumn(CloudUsageParams{}); got != "" {
-		t.Errorf("customer SELECT fragment = %q, want \"\" — origin must not be selected", got)
+	if inner, outer := cloudUsageUpstreamColumns(CloudUsageParams{}); inner != "" || outer != "" {
+		t.Errorf("customer fragments = (%q, %q), want (\"\", \"\") — origin must not be selected", inner, outer)
 	}
-	if got := cloudUsageUpstreamColumn(CloudUsageParams{Admin: true}); got != ", origin" {
-		t.Errorf("admin SELECT fragment = %q, want \", origin\"", got)
+	inner, outer := cloudUsageUpstreamColumns(CloudUsageParams{Admin: true})
+	if outer != ", origin" {
+		t.Errorf("admin outer fragment = %q, want \", origin\"", outer)
+	}
+	if inner != ", any(origin) AS origin" {
+		t.Errorf("admin inner fragment = %q, want \", any(origin) AS origin\"", inner)
+	}
+}
+
+// TestActivitySQLProjectsOnlyAliasedColumns is the invariant that a pure-assembler
+// test cannot reach, and it is not hypothetical: the first cut of this lens added
+// `origin` to the OUTER select while the id-dedup subquery below it still listed
+// its columns explicitly and produced no such alias. Every customer read passed —
+// they never name the column — and every admin read would have failed against the
+// warehouse with UNKNOWN_IDENTIFIER. The assembler tests could not see it because
+// they are handed rows and never render SQL.
+//
+// So: whatever the outer projection names, the subquery must produce.
+func TestActivitySQLProjectsOnlyAliasedColumns(t *testing.T) {
+	for _, p := range []CloudUsageParams{{}, {Admin: true}} {
+		inner, outer := cloudUsageUpstreamColumns(p)
+		source := cloudUsageDedupedSource("1", inner)
+
+		for _, col := range strings.Split(strings.TrimPrefix(outer, ", "), ", ") {
+			if col == "" {
+				continue
+			}
+			if !strings.Contains(source, " AS "+col) {
+				t.Errorf("admin=%v: outer SELECT projects %q, but the dedup subquery aliases no such column — the query cannot run:\n%s",
+					p.Admin, col, source)
+			}
+		}
 	}
 }

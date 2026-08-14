@@ -26,7 +26,7 @@ import (
 // ILLEGAL_AGGREGATION (code 184). The predicate must therefore live one level
 // below, on a plain scan of the base table.
 func TestCloudUsageDedupedSourceFiltersBelowTheAliases(t *testing.T) {
-	src := cloudUsageDedupedSource("timestamp >= ? AND timestamp < ? AND organization = ?")
+	src := cloudUsageDedupedSource("timestamp >= ? AND timestamp < ? AND organization = ?", "")
 	want := "FROM (SELECT * FROM hanzo.cloud_usage WHERE timestamp >= ? AND timestamp < ? AND organization = ?) GROUP BY id)"
 	if !strings.HasSuffix(src, want) {
 		t.Fatalf("dedup predicate must be an inner plain scan, got: %s", src)
