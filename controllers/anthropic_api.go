@@ -779,6 +779,7 @@ func (c *ApiController) proxyAnthropicToolRequest(
 		if authUser != nil {
 			rec := &usageRecord{
 				Owner: c.billingOrg(authUser), Organization: authUser.Owner, Model: request.Model, Provider: provider.Name,
+				Origin:       provider.Origin(),
 				PromptTokens: capPrompt, CompletionTokens: capCompletion,
 				TotalTokens: capPrompt + capCompletion, Currency: "USD",
 				Premium: isPremium, Stream: true, Status: "success",
@@ -804,6 +805,7 @@ func (c *ApiController) proxyAnthropicToolRequest(
 		if authUser != nil {
 			rec := &usageRecord{
 				Owner: c.billingOrg(authUser), Organization: authUser.Owner, Model: request.Model, Provider: provider.Name,
+				Origin:       provider.Origin(),
 				PromptTokens: prompt, CompletionTokens: completion,
 				TotalTokens: prompt + completion, Currency: "USD",
 				Premium: isPremium, Stream: false, Status: "success",
@@ -872,6 +874,7 @@ func (c *ApiController) proxyAnthropicViaOpenAI(
 		if authUser != nil {
 			errRecord := &usageRecord{
 				Owner: c.billingOrg(authUser), Model: request.Model, Provider: provider.Name, Premium: isPremium,
+				Origin: provider.Origin(),
 				Stream: request.Stream, Status: "error", ErrorMsg: err.Error(),
 				ClientIP: c.Ctx.Request.RemoteAddr, RequestID: requestId,
 			}
@@ -953,6 +956,7 @@ func (c *ApiController) recordAnthropicToolUsage(
 	if authUser != nil {
 		rec := &usageRecord{
 			Owner: c.billingOrg(authUser), Organization: authUser.Owner, Model: request.Model, Provider: provider.Name,
+			Origin:       provider.Origin(),
 			PromptTokens: prompt, CompletionTokens: completion, TotalTokens: prompt + completion,
 			Currency: "USD", Premium: isPremium, Stream: stream, Status: "success",
 			ClientIP: c.Ctx.Request.RemoteAddr, RequestID: requestId,

@@ -483,6 +483,7 @@ func (c *ApiController) recordVideoUsage(authUser *iam.User, provider *object.Pr
 		Organization: authUser.Owner,
 		Model:        userModel,
 		Provider:     provider.Name,
+		Origin:       provider.Origin(),
 		VideoCount:   videoCount,
 		Currency:     "USD",
 		Premium:      isPremium,

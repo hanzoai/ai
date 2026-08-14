@@ -213,14 +213,29 @@ func EnsureCloudUsageTable(ctx context.Context) error {
 // un-parameterized is Interval, whose type admits only "hour" or "day"; Org is
 // always passed as a bound parameter.
 type CloudUsageParams struct {
-	RangeLabel     string // echoed back ("24h"|"7d"|"30d"|"custom")
-	Start          time.Time
-	End            time.Time
-	Interval       types.Interval // time-series bucket width
-	Org            string         // organization slug; ignored when AllOrgs is true
-	AllOrgs        bool           // super-admin all-orgs view (no organization filter)
-	TopModels      int            // spend-by-model: keep top N, fold the rest into "other"
-	ActivityType   string         // "all" | "inference" (others → honest-empty feed)
+	RangeLabel string // echoed back ("24h"|"7d"|"30d"|"custom")
+	Start      time.Time
+	End        time.Time
+	Interval   types.Interval // time-series bucket width
+	Org        string         // organization slug; ignored when AllOrgs is true
+	AllOrgs    bool           // super-admin all-orgs view (no organization filter)
+	// Admin selects which of the two lenses the ONE ledger row is read through.
+	// It is not a second permission check: the controller sets it from the SAME
+	// evaluation of the SAME predicate (util.IsSuperAdmin + own brand) that already
+	// decided Org/AllOrgs, so a reader's scope and a reader's columns can never
+	// disagree about who is asking.
+	//
+	// false — the CUSTOMER lens, and the zero value on purpose. `provider` is the
+	// SKU it has always been ("hanzo", "enso"); `origin` is neither selected nor
+	// assigned. A caller that asks for nothing gets the customer shape, so the
+	// upstream cannot be disclosed by forgetting to hide it — only by proving the
+	// predicate.
+	//
+	// true — the ADMIN lens: the same row additionally carries the host that
+	// actually answered.
+	Admin          bool
+	TopModels      int    // spend-by-model: keep top N, fold the rest into "other"
+	ActivityType   string // "all" | "inference" (others → honest-empty feed)
 	ActivityLimit  int
 	ActivityOffset int
 }
@@ -292,6 +307,17 @@ type CloudUsageActivityRow struct {
 	RequestID        string `json:"requestId"`
 	Org              string `json:"org"`
 	User             string `json:"user"`
+
+	// Upstream is the host that ANSWERED this call — the hostname of the serving
+	// provider's URL, observed at the moment of the call rather than copied from a
+	// route's configured name. Present only under the admin lens; omitempty, so a
+	// customer read does not carry the key at all.
+	//
+	// Provider and Upstream are two different facts about one call: what we sold
+	// and where it was served. Keeping them in one row is what lets them be asked
+	// whether they still agree — a reroute or a fallback moves the second while the
+	// first keeps reading correct. Two stores would answer that question twice.
+	Upstream string `json:"upstream,omitempty"`
 }
 
 type CloudUsageActivity struct {
@@ -415,8 +441,9 @@ func GetCloudUsageOverview(ctx context.Context, p CloudUsageParams) (*CloudUsage
 			offset = 0
 		}
 		activitySQL := fmt.Sprintf("SELECT timestamp, model, provider, status, total_tokens, prompt_tokens, "+
-			"completion_tokens, cost_cents, is_stream, is_premium, request_id, user_id, organization "+
-			"FROM %s ORDER BY timestamp DESC LIMIT %d OFFSET %d", cloudUsageDedupedSource(where), limit, offset)
+			"completion_tokens, cost_cents, is_stream, is_premium, request_id, user_id, organization%s "+
+			"FROM %s ORDER BY timestamp DESC LIMIT %d OFFSET %d",
+			cloudUsageUpstreamColumn(p), cloudUsageDedupedSource(where), limit, offset)
 		if activityRows, err = DatastoreQuery(ctx, activitySQL, args...); err != nil {
 			return nil, fmt.Errorf("usage activity: %w", err)
 		}
@@ -613,10 +640,39 @@ func foldCloudUsageModels(rows []map[string]interface{}, topN int, totalCents in
 	return items, nil
 }
 
+// cloudUsageUpstreamColumn is the FIRST of the two places the lens applies: under
+// the customer lens `origin` is never selected, so the host is not in the process
+// that serves the response and cannot be disclosed by any later mistake in
+// shaping it. Returns a leading ", origin" for the admin lens, "" otherwise.
+//
+// It is a constant fragment chosen by a bool — no caller input reaches the SQL.
+func cloudUsageUpstreamColumn(p CloudUsageParams) string {
+	if !p.Admin {
+		return ""
+	}
+	return ", origin"
+}
+
+// cloudUsageUpstream is the SECOND place the lens applies, and the ONLY writer of
+// CloudUsageActivityRow.Upstream. Assignment goes through this function so the
+// question "may this reader see the host?" has exactly one answer in exactly one
+// place, and the customer lens returns "" even if the column were somehow present.
+//
+// Two layers rather than one because they fail differently: the first keeps the
+// value out of memory, the second keeps it out of the payload. Either alone is
+// correct; together, being wrong takes two mistakes instead of one.
+func cloudUsageUpstream(p CloudUsageParams, r map[string]interface{}) string {
+	if !p.Admin {
+		return ""
+	}
+	return cuString(r["origin"])
+}
+
 func buildCloudUsageActivity(p CloudUsageParams, rows []map[string]interface{}, total int64) CloudUsageActivity {
 	items := make([]CloudUsageActivityRow, 0, len(rows))
 	for _, r := range rows {
 		items = append(items, CloudUsageActivityRow{
+			Upstream:         cloudUsageUpstream(p, r),
 			Time:             cuTime(r["timestamp"]).Format(time.RFC3339),
 			Model:            cuString(r["model"]),
 			Provider:         cuString(r["provider"]),

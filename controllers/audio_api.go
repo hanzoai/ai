@@ -468,6 +468,7 @@ func (c *ApiController) recordAudioUsage(authUser *iam.User, provider *object.Pr
 		Organization: authUser.Owner,
 		Model:        userModel,
 		Provider:     provider.Name,
+		Origin:       provider.Origin(),
 		Currency:     "USD",
 		Premium:      isPremium,
 		Status:       status,

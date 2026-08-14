@@ -120,6 +120,7 @@ func (c *ApiController) recordLegacySTTUsage(store *object.Store, provider *obje
 		Organization: store.Owner,
 		Model:        provider.Name,
 		Provider:     provider.Name,
+		Origin:       provider.Origin(),
 		Currency:     "USD",
 		Status:       status,
 		ErrorMsg:     errMsg,
