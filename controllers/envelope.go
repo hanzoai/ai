@@ -50,6 +50,13 @@ var (
 		"content_filter_results")
 	messageFields = fields("role", "content", "reasoning_content", "refusal", "name",
 		"function_call", "tool_calls", "tool_call_id")
+	// usageFields is what the CUSTOMER consumed. An aggregator hangs our side of
+	// the trade on the same object — what we paid for the call (`cost`,
+	// `cost_details.upstream_inference_cost`), whose account it ran on
+	// (`is_byok`), and who we bought it from (`provider_name`) — and our buy
+	// price is not a number a customer gets to read off their own receipt.
+	usageFields = fields("prompt_tokens", "completion_tokens", "total_tokens",
+		"prompt_tokens_details", "completion_tokens_details")
 )
 
 func fields(names ...string) map[string]bool {
@@ -70,6 +77,12 @@ type mark struct {
 	model    string
 	seller   string
 	upstream string
+	// cost is what this call cost US to buy, in nano-USD, when the envelope
+	// stated it. A pointer because exactness is PRESENCE, not positivity: a call
+	// that cost exactly nothing — a free tier, a customer's own connected
+	// account — knows its price as precisely as any other, and 0-as-unset would
+	// send the ledger back to inventing one for a call that had a real one.
+	cost *int64
 }
 
 // seller names who SOLD the inference. Our keys sell as Hanzo, whatever they route
@@ -107,8 +120,7 @@ func originOf(provider *object.Provider, m *mark) string {
 }
 
 // stamp rewrites one chat-completion envelope — a whole body, or one SSE data
-// payload — as ours, and remembers the upstream it removed. `usage` passes through
-// untouched: those are the customer's own numbers. A payload that is not a JSON
+// payload — as ours, and remembers what it removed. A payload that is not a JSON
 // object (an SSE `[DONE]`, anything we did not produce) is returned unchanged, and a
 // nil mark stamps nothing, which is how a dialect we relay verbatim opts out.
 func (m *mark) stamp(payload []byte) []byte {
@@ -129,11 +141,59 @@ func (m *mark) stamp(payload []byte) []byte {
 	if choices, ok := env["choices"]; ok {
 		env["choices"] = stampChoices(choices)
 	}
+	// Read before pruning, exactly as the upstream name is: this is the last place
+	// the price we paid exists, and after this line it is out of the answer.
+	if usage, ok := env["usage"]; ok {
+		m.take(usage)
+		env["usage"] = prune(usage, usageFields)
+	}
 	out, err := encode(env)
 	if err != nil {
 		return payload
 	}
 	return out
+}
+
+// take keeps the price the envelope stated for this call, so the ledger gains it as
+// the customer loses it. It is the COGS the business could not see: the answer
+// carried it all the way to the customer and nothing on our side ever read it.
+//
+// First statement wins. One completion has one price, and a stream restates it on
+// the chunk that carries usage.
+func (m *mark) take(usage json.RawMessage) {
+	if m.cost != nil {
+		return
+	}
+	var u struct {
+		Cost    *float64 `json:"cost"`
+		Details struct {
+			Upstream *float64 `json:"upstream_inference_cost"`
+		} `json:"cost_details"`
+	}
+	if json.Unmarshal(usage, &u) != nil {
+		return
+	}
+	// `cost` is what WE were billed, which is our COGS. The upstream's own COGS is
+	// the fallback: an aggregator that states only what it paid still tells us more
+	// than nothing.
+	usd := u.Cost
+	if usd == nil {
+		usd = u.Details.Upstream
+	}
+	if usd == nil {
+		return
+	}
+	nano := usdToNano(*usd)
+	m.cost = &nano
+}
+
+// cogs is what this call cost us to buy, or nil when nothing stated a price — in
+// which case the ledger prices it the way it always has.
+func (m *mark) cogs() *int64 {
+	if m == nil {
+		return nil
+	}
+	return m.cost
 }
 
 // stampChoices drops what our schema does not publish from each choice and from its
