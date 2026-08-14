@@ -488,6 +488,12 @@ func warnUnpricedOnce(model string) {
 // have their own per-unit pricing and are never "unpriced" here. The ONE detector, read
 // by recordUsage (warn + row flag) and zapWriteUsage (warehouse column).
 func recordUnpriced(record *usageRecord) bool {
+	// A free route has a price and it is zero. Reading "the table has no rate for
+	// this SKU" as "we guessed" would file the one honest number in the ledger as
+	// an invented one.
+	if record.Free {
+		return false
+	}
 	if record.ImageCount > 0 || record.VideoCount > 0 {
 		return false
 	}

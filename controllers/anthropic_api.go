@@ -16,7 +16,6 @@ package controllers
 
 import (
 	"bytes"
-	ctx "context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -257,14 +256,26 @@ func (w *AnthropicWriter) Write(p []byte) (n int, err error) {
 	if err := w.writeSSE("content_block_delta", delta); err != nil {
 		return 0, err
 	}
-
-	w.StreamSent = true
 	return len(p), nil
 }
 
 // MessageString returns the full accumulated message text.
 func (w *AnthropicWriter) MessageString() string {
 	return string(w.MessageBuf)
+}
+
+// Reset discards what a failed attempt accumulated, so the next provider's
+// answer is not served glued to the dead one's half-sentence. Same contract as
+// OpenAIWriter.Reset, and for the same reason: Write appends, and one writer is
+// shared across every failover attempt.
+//
+// StreamSent and headerSent are NOT cleared. Both record that bytes reached the
+// CLIENT — a fact about the wire that cannot be undone, and the one that
+// forbids the retry this prepares for.
+func (w *AnthropicWriter) Reset() {
+	w.Buffer = w.Buffer[:0]
+	w.MessageBuf = w.MessageBuf[:0]
+	w.Cleaner = *NewCleaner(w.Cleaner.bufferSize)
 }
 
 // Close finalizes the streaming response with stop events.
@@ -314,12 +325,26 @@ func (w *AnthropicWriter) Close(promptTokens, completionTokens, totalTokens int)
 }
 
 // writeSSE writes a single SSE event with the given event name and JSON data.
+//
+// It is also the ONE place StreamSent is set, because it is the one place bytes
+// reach the client and that is precisely what StreamSent means. Setting it at the
+// end of Write instead meant message_start and content_block_start — 185 measured
+// bytes — were on the wire while the flag still said the request was movable. The
+// failover loop reads that flag to decide whether it may offer this request to
+// another vendor, so the window was one where it would have: the client gets the
+// opening of one vendor's answer followed by the whole of another's, which is
+// indistinguishable from a model losing its mind and detectable nowhere.
+//
+// n > 0 rather than err == nil, because a partial write is still bytes delivered.
 func (w *AnthropicWriter) writeSSE(event string, data interface{}) error {
 	jsonData, err := json.Marshal(data)
 	if err != nil {
 		return err
 	}
-	_, err = w.ResponseWriter.Write([]byte(fmt.Sprintf("event: %s\ndata: %s\n\n", event, jsonData)))
+	n, err := w.ResponseWriter.Write([]byte(fmt.Sprintf("event: %s\ndata: %s\n\n", event, jsonData)))
+	if n > 0 {
+		w.StreamSent = true
+	}
 	if err != nil {
 		return err
 	}
@@ -458,20 +483,42 @@ func (c *ApiController) AnthropicMessages() {
 	}
 	defer hold.settle(0)
 
+	// One request id for the whole request — the response id, the usage-ledger
+	// key, and the id every refusal along the way is filed under, so a failover
+	// reads back as one story rather than as unrelated rows.
+	requestId := uuid.NewString()
+
 	// ── Model families (Zen, Enso) ─────────────────────
 	// A family model is served by its family service, which owns identity, reasoning,
 	// the 1M ladder, vision, the fan-out, and the upstream. ai forwards verbatim and
 	// meters the result; it holds no family routing of its own (hip-00NN).
+	//
+	// A family is one provider among several: when it refuses for a reason of
+	// its own it writes nothing and hands back the reason, and the request
+	// carries on to the route's declared alternates below.
+	var familyRefused []attempt
 	if fam := familyForProviderType(provider.Type); fam != nil {
-		c.pipeToFamily(fam, "messages", "anthropic", request.Model, c.Ctx.Input.RequestBody, request.Stream, orgId, authUser, isPremium, hold, requestStartTime)
-		return
+		familyRefused = c.pipeToFamily(fam, "messages", "anthropic", request.Model, c.Ctx.Input.RequestBody, request.Stream, orgId, authUser, isPremium, hold, requestStartTime)
+		if familyRefused == nil {
+			return
+		}
+		c.recordRefusals(request.Model, familyRefused, authUser, isPremium, request.Stream, requestId, requestStartTime)
 	}
 
 	// ── Tool-calling proxy ────────────────────────────────────────────────
 	// When the request carries tools (Claude Code, agents, etc.) the QueryText
 	// pipeline cannot handle structured tool_use blocks. Proxy the raw Anthropic
 	// request directly to the upstream and stream/return the raw response.
+	//
+	// A tool request the family refused stops here: the pipeline below is
+	// text-only, and answering a tool call with prose is worse than an honest
+	// refusal that names the vendor and the reason.
 	if len(request.Tools) > 0 {
+		if familyRefused != nil {
+			err := exhausted(request.Model, familyRefused)
+			c.respondAnthropicError("api_error", err.Error(), statusOf(err))
+			return
+		}
 		c.proxyAnthropicToolRequest(provider, &request, requestStartTime, authUser, isPremium, hold)
 		return
 	}
@@ -480,6 +527,13 @@ func (c *ApiController) AnthropicMessages() {
 	// blocks. Forward multimodal requests verbatim to the upstream (same path as tools),
 	// so vision-capable models receive the images. Symmetric with the OpenAI endpoint.
 	if requestHasMediaAnthropic(&request) {
+		// Same stop as tools: cascading a request whose images the pipeline
+		// would discard produces an answer about nothing.
+		if familyRefused != nil {
+			err := exhausted(request.Model, familyRefused)
+			c.respondAnthropicError("api_error", err.Error(), statusOf(err))
+			return
+		}
 		c.proxyAnthropicToolRequest(provider, &request, requestStartTime, authUser, isPremium, hold)
 		return
 	}
@@ -532,9 +586,6 @@ func (c *ApiController) AnthropicMessages() {
 		question = fmt.Sprintf("System: %s\n\nUser: %s", systemPrompt, question)
 	}
 
-	// ── Call model provider ─────────────────────────────────────────────
-	requestId := uuid.NewString()
-
 	if request.Stream {
 		c.Ctx.ResponseWriter.Header().Set("Content-Type", "text/event-stream")
 		c.Ctx.ResponseWriter.Header().Set("Cache-Control", "no-cache")
@@ -557,19 +608,29 @@ func (c *ApiController) AnthropicMessages() {
 
 	var modelResult *model.ModelResult
 	var actualProvider served
+	var tried []attempt
 
 	if route != nil {
-		// ONE execute path. failoverQueryText rides out a transient upstream
-		// refusal (429 / 5xx) with the shared retry policy, then cascades through
-		// the route's fallbacks if any. A model with no fallbacks still gets the
-		// retry — the cascade is just the identity case — so there is no longer a
-		// second, retry-less path that silently turns a 429 into a hard client
-		// 500 (the failure behind "it stops in ours").
-		modelResult, actualProvider, err = failoverQueryText(
-			route, question, writer, history, knowledge,
-			c.GetAcceptLanguage(),
-			func() bool { return writer.StreamSent },
-		)
+		// ONE execute path. ask.serve rides out a transient upstream refusal
+		// (429 / 5xx) with the shared retry policy, then cascades through the
+		// route's alternates. A model with no alternate still gets the retry,
+		// the demotion, and the honest exhausted error — the cascade is just the
+		// identity case — so there is no second, retry-less path that silently
+		// turns a 429 into a hard client 500.
+		modelResult, actualProvider, tried, err = ask{
+			ctx:       c.Ctx.Request.Context(),
+			route:     route,
+			org:       c.billingOrg(authUser),
+			model:     request.Model,
+			primary:   provider,
+			question:  question,
+			history:   history,
+			knowledge: knowledge,
+			lang:      c.GetAcceptLanguage(),
+			writer:    writer,
+			sent:      func() bool { return writer.StreamSent },
+			prior:     familyRefused,
+		}.serve()
 	} else {
 		// Model not in the route table: call the resolved provider directly, on
 		// the SAME retry policy failover uses, typing the error at the boundary.
@@ -579,10 +640,11 @@ func (c *ApiController) AnthropicMessages() {
 			c.respondAnthropicError("api_error", fmt.Sprintf("Failed to get model provider: %s", err.Error()), 500)
 			return
 		}
-		err = retryTransient(ctx.Background(), currentRetryPolicy(), func() error {
+		err = retryTransient(c.Ctx.Request.Context(), currentRetryPolicy(), func() error {
 			if writer.StreamSent {
 				return errPartiallyWritten
 			}
+			writer.Reset()
 			res, e := modelProvider.QueryText(question, writer, history, "", knowledge, nil, c.GetAcceptLanguage())
 			if e != nil {
 				return wrapUpstreamError(e)
@@ -590,7 +652,13 @@ func (c *ApiController) AnthropicMessages() {
 			modelResult = res
 			return nil
 		})
-		actualProvider = served{provider.Name, provider.Origin()}
+		actualProvider = served{provider.Name, provider.Origin(), provider}
+	}
+
+	// Every vendor that refused goes in the ledger, whether or not one of them
+	// eventually served. The family's own refusal is already recorded above.
+	if n := len(familyRefused); len(tried) > n {
+		c.recordRefusals(request.Model, tried[n:], authUser, isPremium, request.Stream, requestId, requestStartTime)
 	}
 
 	if err != nil {
@@ -641,7 +709,9 @@ func (c *ApiController) AnthropicMessages() {
 			RequestID:        requestId,
 		}
 		successRecord.bind(c.Ctx.Request.Context(), authUser)
-		successRecord.BYO, successRecord.Account = providerBYO(provider, authUser)
+		// The row that SPENT a credential decides whether this was the customer's
+		// own key — not the row auth resolved before failover moved the request.
+		successRecord.BYO, successRecord.Account = providerBYO(actualProvider.row, authUser)
 		recordUsage(successRecord)
 		recordTrace(c.Ctx.Request.Context(), successRecord, requestStartTime)
 		hold.settle(calculateCostCentsWithCache(request.Model, modelResult.PromptTokenCount, modelResult.ResponseTokenCount, 0, 0))
@@ -987,21 +1057,71 @@ func anthropicErrorTypeForStatus(status int) string {
 	}
 }
 
-// upstreamErrorMessage extracts a readable message from an OpenAI-shaped error
-// body ({"error":{"message":...}}), falling back to the raw body.
+// upstreamErrorMessage is the readable reason inside an upstream's error body, in
+// the shapes upstreams actually write.
+//
+// It NEVER returns the body. Every one of its callers is answering a customer —
+// zenError, respondAnthropicError, and the attempt that exhausted() ends up
+// quoting — so falling back to the raw body published whatever the vendor happened
+// to put in it. Measured on the way out that way: `provider`, `cost` and
+// `upstream_inference_cost`, which is exactly the disclosure the envelope removes
+// from every SUCCESSFUL answer. A refusal is not a hole in that.
+//
+// It also never repeats a sentence that NAMES an upstream. A served answer does
+// not say which one produced it, and a refusal carries the same obligation: the
+// sentence a vendor writes for its own billing says who they are and links their
+// console, which is a remedy the caller has no access to perform. It is dropped
+// WHOLE rather than edited, because a partial redaction leaves the shape of the
+// name behind. A complaint about the REQUEST keeps its words — those are the
+// caller's to act on, and dropping them would make every upstream failure opaque.
+//
+// A body in none of these shapes is one we have not read, and "upstream error" is
+// the honest thing to say about it. It is deliberately not logged either: an error
+// body is where a vendor echoes the request that provoked it, so it is the last
+// place a prompt should be copied to.
 func upstreamErrorMessage(body []byte) string {
-	var e struct {
+	// error.message — OpenAI, Anthropic, and everyone who copied them.
+	var nested struct {
 		Error struct {
 			Message string `json:"message"`
 		} `json:"error"`
 	}
-	if json.Unmarshal(body, &e) == nil && e.Error.Message != "" {
-		return e.Error.Message
+	if json.Unmarshal(body, &nested) == nil && repeatable(nested.Error.Message) {
+		return nested.Error.Message
 	}
-	if len(body) > 0 {
-		return string(body)
+	// The flatter shapes: {"error":"..."} , {"message":"..."} , {"detail":"..."}.
+	var flat struct {
+		Error   string `json:"error"`
+		Message string `json:"message"`
+		Detail  string `json:"detail"`
+	}
+	if json.Unmarshal(body, &flat) == nil {
+		for _, said := range []string{flat.Error, flat.Message, flat.Detail} {
+			if repeatable(said) {
+				return said
+			}
+		}
 	}
 	return "upstream error"
+}
+
+// repeatable reports whether a sentence is one we may hand a caller: non-empty,
+// and naming no provider we buy from — by name, or by a link into their console.
+func repeatable(msg string) bool {
+	s := strings.ToLower(strings.TrimSpace(msg))
+	if s == "" {
+		return false
+	}
+	if strings.Contains(s, "http://") || strings.Contains(s, "https://") {
+		return false
+	}
+	for _, vendor := range []string{"openrouter", "openai", "anthropic", "together",
+		"fireworks", "groq", "deepseek", "digitalocean"} {
+		if strings.Contains(s, vendor) {
+			return false
+		}
+	}
+	return true
 }
 
 // AnthropicCountTokens implements POST /v1/messages/count_tokens. Claude Code

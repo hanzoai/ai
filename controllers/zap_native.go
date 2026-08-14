@@ -315,7 +315,7 @@ func cloudUsageValues(record *usageRecord, startTime time.Time) []any {
 	return []any{
 		record.RequestID, startTime.UTC(),
 		record.Owner, record.User, org, record.Project,
-		record.Model, record.Provider, record.Origin, record.Agent, record.APIKeyHash,
+		record.Model, record.Requested, record.Provider, record.Origin, record.Agent, record.APIKeyHash,
 		// The conversation this call belongs to. The span has always carried it; the
 		// ledger has not, so "which session spent the money" was a join against a
 		// store that holds no money.

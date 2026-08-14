@@ -55,6 +55,7 @@ const cloudUsageTableDDL = `
 		organization String,
 		project String,
 		model String,
+		requested String,
 		provider String,
 		origin String,
 		agent String,
@@ -155,6 +156,13 @@ var cloudUsageColumnMigrations = []string{
 	// same call join on an id both observed rather than on two ids that merely
 	// describe the same request.
 	`ALTER TABLE hanzo.cloud_usage ADD COLUMN IF NOT EXISTS trace_id String`,
+	// requested is the model the caller ASKED for, written only when a different
+	// route answered — when a vendor's account was spent and it served the request
+	// from a route it charges nothing for. Empty on every ordinary row, so
+	// `WHERE requested != ''` IS the query for "which generations were downgraded,
+	// and what did the customer actually want". Beside `model` (what answered) it
+	// makes a fallback a fact in the ledger rather than an inference from two rows.
+	`ALTER TABLE hanzo.cloud_usage ADD COLUMN IF NOT EXISTS requested String`,
 }
 
 // CloudUsageColumns is the write order for a usage row, and the ONLY place it is
@@ -167,7 +175,7 @@ var cloudUsageColumnMigrations = []string{
 // documented here, populated on the record, and written by nothing.
 var CloudUsageColumns = []string{
 	"id", "timestamp", "owner", "user_id", "organization", "project",
-	"model", "provider", "origin", "agent", "api_key_hash", "session_id", "trace_id",
+	"model", "requested", "provider", "origin", "agent", "api_key_hash", "session_id", "trace_id",
 	"request_id",
 	"prompt_tokens", "completion_tokens", "total_tokens",
 	"cache_read_tokens", "cache_write_tokens",
