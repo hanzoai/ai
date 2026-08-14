@@ -362,14 +362,20 @@ type CloudUsageOverview struct {
 // ILLEGAL_AGGREGATION (code 184). The scan is still a plain filter over the
 // base table, so the (timestamp, organization) primary index prunes it as
 // before.
-func cloudUsageDedupedSource(where string) string {
+// extra carries any ADDITIONAL any() aliases the caller needs up through the
+// dedup, as a leading-comma fragment. The subquery names its columns explicitly,
+// so a column the outer SELECT projects must be aliased here or the query does
+// not run; only the activity read passes anything (the lensed upstream), and the
+// aggregates pass "".
+func cloudUsageDedupedSource(where, extra string) string {
 	return "(SELECT id, any(timestamp) AS timestamp, any(owner) AS owner, " +
 		"any(user_id) AS user_id, any(organization) AS organization, any(model) AS model, " +
 		"any(provider) AS provider, any(request_id) AS request_id, " +
 		"any(prompt_tokens) AS prompt_tokens, any(completion_tokens) AS completion_tokens, " +
 		"any(total_tokens) AS total_tokens, any(cost_cents) AS cost_cents, " +
-		"any(status) AS status, any(is_stream) AS is_stream, any(is_premium) AS is_premium " +
-		"FROM (SELECT * FROM hanzo.cloud_usage WHERE " + where + ") GROUP BY id)"
+		"any(status) AS status, any(is_stream) AS is_stream, any(is_premium) AS is_premium" +
+		extra +
+		" FROM (SELECT * FROM hanzo.cloud_usage WHERE " + where + ") GROUP BY id)"
 }
 
 // cloudUsageTotalsSQL is the id-deduplicated totals aggregation over one window.
@@ -377,7 +383,7 @@ func cloudUsageTotalsSQL(where string) string {
 	return "SELECT count() AS requests, sum(total_tokens) AS tokens, " +
 		"sum(prompt_tokens) AS prompt_tokens, sum(completion_tokens) AS completion_tokens, " +
 		"sum(cost_cents) AS cost_cents, uniqExact(model) AS models, uniqExact(provider) AS providers " +
-		"FROM " + cloudUsageDedupedSource(where)
+		"FROM " + cloudUsageDedupedSource(where, "")
 }
 
 // GetCloudUsageOverview runs the aggregate queries against the datastore ledger
@@ -412,14 +418,14 @@ func GetCloudUsageOverview(ctx context.Context, p CloudUsageParams) (*CloudUsage
 	}
 	seriesSQL := fmt.Sprintf("SELECT toStartOf%s(timestamp, 'UTC') AS bucket, sum(total_tokens) AS tokens, "+
 		"sum(cost_cents) AS cost_cents, count() AS requests, uniqExact(model) AS models "+
-		"FROM %s GROUP BY bucket ORDER BY bucket", bucketFn, cloudUsageDedupedSource(where))
+		"FROM %s GROUP BY bucket ORDER BY bucket", bucketFn, cloudUsageDedupedSource(where, ""))
 	seriesRows, err := DatastoreQuery(ctx, seriesSQL, args...)
 	if err != nil {
 		return nil, fmt.Errorf("usage series: %w", err)
 	}
 
 	modelSQL := "SELECT model, any(provider) AS provider, sum(cost_cents) AS cost_cents, " +
-		"sum(total_tokens) AS tokens, count() AS requests FROM " + cloudUsageDedupedSource(where) +
+		"sum(total_tokens) AS tokens, count() AS requests FROM " + cloudUsageDedupedSource(where, "") +
 		" GROUP BY model ORDER BY cost_cents DESC LIMIT 100"
 	modelRows, err := DatastoreQuery(ctx, modelSQL, args...)
 	if err != nil {
@@ -440,10 +446,11 @@ func GetCloudUsageOverview(ctx context.Context, p CloudUsageParams) (*CloudUsage
 		if offset < 0 {
 			offset = 0
 		}
+		inner, outer := cloudUsageUpstreamColumns(p)
 		activitySQL := fmt.Sprintf("SELECT timestamp, model, provider, status, total_tokens, prompt_tokens, "+
 			"completion_tokens, cost_cents, is_stream, is_premium, request_id, user_id, organization%s "+
 			"FROM %s ORDER BY timestamp DESC LIMIT %d OFFSET %d",
-			cloudUsageUpstreamColumn(p), cloudUsageDedupedSource(where), limit, offset)
+			outer, cloudUsageDedupedSource(where, inner), limit, offset)
 		if activityRows, err = DatastoreQuery(ctx, activitySQL, args...); err != nil {
 			return nil, fmt.Errorf("usage activity: %w", err)
 		}
@@ -640,17 +647,24 @@ func foldCloudUsageModels(rows []map[string]interface{}, topN int, totalCents in
 	return items, nil
 }
 
-// cloudUsageUpstreamColumn is the FIRST of the two places the lens applies: under
+// cloudUsageUpstreamColumns is the FIRST of the two places the lens applies: under
 // the customer lens `origin` is never selected, so the host is not in the process
 // that serves the response and cannot be disclosed by any later mistake in
-// shaping it. Returns a leading ", origin" for the admin lens, "" otherwise.
+// shaping it.
 //
-// It is a constant fragment chosen by a bool — no caller input reaches the SQL.
-func cloudUsageUpstreamColumn(p CloudUsageParams) string {
+// It returns BOTH fragments the activity query needs, because they are one
+// decision: `inner` carries origin up through the id-dedup subquery, and `outer`
+// projects it. The subquery lists its columns explicitly, so an outer column
+// without its inner alias is not a leak — it is a query that does not run
+// (UNKNOWN_IDENTIFIER). Returning them together is what makes that pairing
+// unforgettable; two functions could be called one at a time.
+//
+// Both are constant fragments chosen by a bool — no caller input reaches the SQL.
+func cloudUsageUpstreamColumns(p CloudUsageParams) (inner, outer string) {
 	if !p.Admin {
-		return ""
+		return "", ""
 	}
-	return ", origin"
+	return ", any(origin) AS origin", ", origin"
 }
 
 // cloudUsageUpstream is the SECOND place the lens applies, and the ONLY writer of
