@@ -679,9 +679,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 			c.EnableRender = false
 			return nil
 		}
-		if d := cooldownFor(err); d > 0 {
-			cooled.demote(fam.name, d)
-		}
+		cooled.rest(orgId, fam.name, err)
 		at := attempt{
 			provider: fam.name,
 			upstream: model,

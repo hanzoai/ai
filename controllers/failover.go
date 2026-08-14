@@ -98,7 +98,7 @@ type ask struct {
 // account that caused it stays empty.
 func (a ask) serve() (*model.ModelResult, served, []attempt, error) {
 	tried := a.prior
-	for _, c := range candidates(a.route, a.prior) {
+	for _, c := range candidates(a.org, a.route, a.prior) {
 		// The caller hung up. Offering the request to another vendor would spend
 		// money answering an empty room, and would file a healthy vendor's name
 		// against the client's disconnect.
@@ -131,9 +131,8 @@ func (a ask) serve() (*model.ModelResult, served, []attempt, error) {
 		tried = append(tried, at)
 		announce(a.model, at)
 
-		if d := cooldownFor(err); d > 0 {
+		if d := cooled.rest(a.org, c.provider, err); d > 0 {
 			log.Warn("failover: demoting provider=%s for %s after status=%d", c.provider, d, at.status)
-			cooled.demote(c.provider, d)
 		}
 
 		// The request is wrong, not the vendor. Every other vendor refuses it

@@ -18,12 +18,15 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/hanzoai/ai/model"
 	"github.com/hanzoai/ai/object"
+	"github.com/hanzoai/ai/web"
 )
 
 // fleet scripts a set of providers: each name answers with an error, or serves.
@@ -170,7 +173,7 @@ func TestUnauthorizedDoesNotFailOver(t *testing.T) {
 	if len(f.asked) != 1 {
 		t.Errorf("asked %v — a bad key of ours must not be hidden behind somebody else's", f.asked)
 	}
-	if cooled.cooling("do-ai") {
+	if cooled.cooling(credential{"", "do-ai"}) {
 		t.Error("a 401 is our fault, not the vendor's — demoting it would blame the wrong party")
 	}
 }
@@ -189,7 +192,7 @@ func TestDemotedProviderIsSkippedWhileCoolingDown(t *testing.T) {
 	if _, _, _, err := newAsk(route("enso", "do-ai"), &w1, nil).serve(); err != nil {
 		t.Fatalf("first request: %v", err)
 	}
-	if !cooled.cooling("enso") {
+	if !cooled.cooling(credential{"", "enso"}) {
 		t.Fatal("a vendor that answered 402 must be demoted")
 	}
 
@@ -208,6 +211,113 @@ func TestDemotedProviderIsSkippedWhileCoolingDown(t *testing.T) {
 	}
 }
 
+// The loop must file its demotion against the account that earned it.
+//
+// This is the WRITE side of the property TestOneTenantsEmptyAccountIsNotAnothersOutage
+// asserts on the READ side. Both are needed: with only one, dropping the org at
+// the other end restores the cross-tenant leak with every other test still green.
+func TestTheLoopDemotesTheAccountNotTheVendor(t *testing.T) {
+	cooled.forget()
+	t.Cleanup(cooled.forget)
+	quick(t)
+
+	f := &fleet{answer: map[string]error{"enso": apiErr(402, "Insufficient credits.")}}
+	f.install(t)
+
+	var w buffer
+	a := newAsk(route("enso", "do-ai"), &w, nil)
+	a.org = "org-a"
+	if _, _, _, err := a.serve(); err != nil {
+		t.Fatalf("serve: %v", err)
+	}
+
+	if !cooled.cooling(credential{"org-a", "enso"}) {
+		t.Error("the org whose key answered 402 must be resting — otherwise its next request " +
+			"pays the empty account's round trip all over again")
+	}
+	if cooled.cooling(credential{"org-b", "enso"}) {
+		t.Error("another tenant inherited the penalty; its request spends a different credential")
+	}
+	if cooled.cooling(credential{"", "enso"}) {
+		t.Error("the refusal was filed against the VENDOR rather than the account that earned it, " +
+			"which is the whole cross-tenant leak")
+	}
+}
+
+// Both sites that learn from a refusal learn the same thing, so both are asked
+// the same question here. A refusal rests the ACCOUNT that answered it; no other
+// tenant and no other vendor inherits anything.
+func TestARefusalRestsOneAccount(t *testing.T) {
+	cooled.forget()
+	t.Cleanup(cooled.forget)
+
+	if d := cooled.rest("org-a", "enso", apiErr(402, "Insufficient credits.")); d != coolBroke {
+		t.Fatalf("an empty account rests %v, want %v", d, coolBroke)
+	}
+	if !cooled.cooling(credential{"org-a", "enso"}) {
+		t.Error("the account that refused must be resting")
+	}
+	if cooled.cooling(credential{"org-b", "enso"}) {
+		t.Error("another tenant inherited it")
+	}
+	if cooled.cooling(credential{"org-a", "do-ai"}) {
+		t.Error("another vendor inherited it")
+	}
+
+	// A refusal that is OUR fault says nothing about the vendor's account.
+	if d := cooled.rest("org-a", "do-ai", apiErr(401, "invalid api key")); d != 0 {
+		t.Errorf("a 401 rested the vendor for %v — that is our dead key, not their problem", d)
+	}
+	if cooled.cooling(credential{"org-a", "do-ai"}) {
+		t.Error("a 401 must not demote the vendor it was sent to")
+	}
+}
+
+// The family pipe is the OTHER site that learns from a refusal, and it is the
+// one that served the outage. Driven end to end against a family answering the
+// measured 402, so the org has to survive the whole call rather than only the
+// helper it eventually reaches.
+func TestTheFamilyPipeRestsTheCallersAccount(t *testing.T) {
+	cooled.forget()
+	t.Cleanup(cooled.forget)
+
+	family := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusPaymentRequired)
+		_, _ = w.Write([]byte(`{"error":{"message":"Insufficient credits."}}`))
+	}))
+	defer family.Close()
+
+	fam := &modelFamily{
+		name: "enso", prefix: "enso",
+		providerFn: func() *object.Provider {
+			return &object.Provider{Owner: "admin", Name: "enso", Type: "Enso", ProviderUrl: family.URL}
+		},
+	}
+
+	body := []byte(`{"model":"enso-flash","messages":[{"role":"user","content":"hi"}]}`)
+	rec := httptest.NewRecorder()
+	ctx := web.NewContext()
+	ctx.Reset(rec, httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(string(body))))
+	c := &ApiController{}
+	c.Init(ctx, "ApiController", "X", nil)
+
+	refused := c.pipeToFamily(fam, "chat/completions", "openai", "enso-flash", body, false,
+		"org-a", nil, false, nil, time.Now())
+
+	if len(refused) != 1 || refused[0].status != 402 {
+		t.Fatalf("the pipe must hand back the refusal so the request can move, got %+v", refused)
+	}
+	if !cooled.cooling(credential{"org-a", "enso"}) {
+		t.Error("the calling org's account must be resting after its 402")
+	}
+	if cooled.cooling(credential{"org-b", "enso"}) {
+		t.Error("a different tenant inherited the family's 402 — it spends a different credential")
+	}
+	if cooled.cooling(credential{"", "enso"}) {
+		t.Error("the 402 was filed against the family rather than against the account that earned it")
+	}
+}
+
 // Demotion is a preference, never a veto: a model whose only vendor is resting
 // must still be attempted rather than refused.
 func TestCoolingProviderIsStillTriedWhenItIsTheOnlyOne(t *testing.T) {
@@ -215,7 +325,7 @@ func TestCoolingProviderIsStillTriedWhenItIsTheOnlyOne(t *testing.T) {
 	t.Cleanup(cooled.forget)
 	quick(t)
 
-	cooled.demote("do-ai", time.Minute)
+	cooled.demote(credential{"", "do-ai"}, time.Minute)
 	f := &fleet{}
 	f.install(t)
 
