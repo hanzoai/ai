@@ -70,6 +70,37 @@ const upstreamRefusal = `{"id":"` + upstreamID + `","provider":"` + subProvider 
 	`"metadata":{"provider_name":"` + subProvider + `","raw":"upstream said 402"}},` +
 	`"choices":[]}`
 
+// The Anthropic dialect as an aggregator relays it — the shape Claude Code and
+// every agent on that SDK reads. Same tells as the chat envelope, in that dialect's
+// own vocabulary, plus its own name for reasoning text.
+const anthropicBody = `{"id":"` + upstreamID + `","type":"message","role":"assistant",` +
+	`"provider":"` + subProvider + `","model":"qwen/qwen3-235b-a22b",` +
+	`"content":[{"type":"text","text":"2 + 2 = 4","reasoning_details":[{"text":"add"}]}],` +
+	`"stop_reason":"end_turn","native_finish_reason":"stop","x_groq":{"id":"req_01jabc"},` +
+	`"usage":{"input_tokens":14,"output_tokens":7,"cost":0.00123,` +
+	`"cost_details":{"upstream_inference_cost":0.00098},"provider_name":"` + subProvider + `"}}`
+
+var anthropicStream = strings.Join([]string{
+	`data: {"type":"message_start","message":{"id":"` + upstreamID + `","type":"message","role":"assistant","provider":"` + subProvider + `","model":"qwen/qwen3-235b-a22b","content":[],"x_groq":{"id":"req_01jabc"},"usage":{"input_tokens":14,"output_tokens":0,"cost":0.00123}}}`,
+	``,
+	`data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":"","native_finish_reason":null}}`,
+	``,
+	`data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"2 + 2 = 4","reasoning_details":[{"text":"add"}]}}`,
+	``,
+	`data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":7,"cost":0.00123,"provider_name":"` + subProvider + `"}}`,
+	``,
+	`data: {"type":"message_stop"}`,
+	``,
+}, "\n")
+
+// The embeddings dialect: an object list whose model used to be the upstream's own
+// name for it, carrying the same trade on its usage.
+const embeddingsBody = `{"object":"list","provider":"` + subProvider + `",` +
+	`"model":"qwen/qwen3-embedding","x_groq":{"id":"req_01jabc"},` +
+	`"data":[{"object":"embedding","index":0,"embedding":[0.1,0.2],"native_finish_reason":"stop"}],` +
+	`"usage":{"prompt_tokens":14,"total_tokens":14,"cost":0.00123,"is_byok":false,` +
+	`"provider_name":"` + subProvider + `"}}`
+
 // upstreamStream is the same completion as SSE — most traffic is this one.
 var upstreamStream = strings.Join([]string{
 	`data: {"id":"` + upstreamID + `","provider":"` + subProvider + `","model":"` + sku + `","object":"chat.completion.chunk","created":1786649556,"x_groq":{"id":"req_01jabc"},"choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null,"native_finish_reason":null}]}`,
@@ -280,6 +311,183 @@ func TestARefusalIsPrunedWithoutBeingGutted(t *testing.T) {
 	}
 	if got := field(t, kept, "code"); got != "context_length_exceeded" {
 		t.Errorf("code = %q, want the string code kept — that is the one an SDK switches on", got)
+	}
+}
+
+// B1. The Anthropic dialect had no door at all — it was relayed verbatim, which
+// means every tell the chat path stopped publishing kept going out on the
+// endpoint agents actually use.
+func TestTheAnthropicDialectIsOurs(t *testing.T) {
+	ourMsg := "msg_6f2b5e2a"
+
+	t.Run("buffered", func(t *testing.T) {
+		mk := &mark{id: ourMsg, model: sku, seller: "hanzo", speaks: messageShape}
+		out := mk.stamp([]byte(anthropicBody))
+		discloses(t, "anthropic message", out)
+
+		var msg map[string]json.RawMessage
+		if err := json.Unmarshal(out, &msg); err != nil {
+			t.Fatalf("not JSON: %v\n%s", err, out)
+		}
+		for key := range msg {
+			if !bodyFields[key] {
+				t.Errorf("message carries unpublished field %q", key)
+			}
+		}
+		if got := field(t, msg, "id"); got != ourMsg {
+			t.Errorf("id = %q, want ours — a gen- id is not an id we can be asked about", got)
+		}
+		if got := field(t, msg, "model"); got != sku {
+			t.Errorf("model = %q, want the SKU the caller asked for", got)
+		}
+		if got := field(t, msg, "stop_reason"); got != "end_turn" {
+			t.Errorf("stop_reason = %q, want it kept — it is the dialect's own field", got)
+		}
+		if !strings.Contains(string(out), "2 + 2 = 4") {
+			t.Errorf("the answer itself was lost:\n%s", out)
+		}
+		// The price is taken on the way past here too.
+		if mk.cost == nil || *mk.cost != buyPriceNano {
+			t.Errorf("mark.cost = %v, want %d — the COGS is stated in every dialect", mk.cost, buyPriceNano)
+		}
+		// Token counts survive under this dialect's own names.
+		usage := map[string]json.RawMessage{}
+		if err := json.Unmarshal(msg["usage"], &usage); err != nil {
+			t.Fatalf("usage unreadable: %v", err)
+		}
+		if string(usage["input_tokens"]) != "14" || string(usage["output_tokens"]) != "7" {
+			t.Errorf("usage = %s, want the counts kept", msg["usage"])
+		}
+		for key := range usage {
+			if !tokenFields[key] {
+				t.Errorf("usage carries %q — our buy price, in the other dialect", key)
+			}
+		}
+	})
+
+	t.Run("streamed", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		ctx := web.NewContext()
+		ctx.Reset(rec, httptest.NewRequest("POST", "/v1/messages", nil))
+		c := &ApiController{}
+		c.Init(ctx, "ApiController", "X", nil)
+
+		mk := &mark{id: ourMsg, model: sku, seller: "hanzo", speaks: messageShape}
+		c.relayZenStream(strings.NewReader(anthropicStream), mk)
+
+		out := rec.Body.String()
+		discloses(t, "anthropic stream", []byte(out))
+		if !strings.Contains(out, "2 + 2 = 4") {
+			t.Errorf("the streamed answer was lost:\n%s", out)
+		}
+		if !strings.Contains(out, ourMsg) {
+			t.Errorf("message_start never carried our id:\n%s", out)
+		}
+		if mk.upstream != subProvider {
+			t.Errorf("mark.upstream = %q, want %q kept for metering", mk.upstream, subProvider)
+		}
+		for _, event := range chunks(t, out) {
+			for key := range event {
+				if !eventFields[key] && !bodyFields[key] {
+					t.Errorf("event carries unpublished field %q", key)
+				}
+			}
+		}
+	})
+}
+
+// The door has to be REACHED, not just be correct. Both dialects were already
+// normalisable before this: what was missing was that pipeToFamily minted no mark
+// for either, so every assertion above would have gone on passing while the wire
+// carried the upstream whole. This drives the real relay for all three dialects.
+func TestEveryRelayedDialectReachesTheDoor(t *testing.T) {
+	for _, relay := range []struct {
+		name    string
+		apiPath string
+		dialect string
+		stream  bool
+		answer  string
+	}{
+		{"chat buffered", "chat/completions", "openai", false, upstreamBody},
+		{"chat streamed", "chat/completions", "openai", true, upstreamStream},
+		{"anthropic buffered", "messages", "anthropic", false, anthropicBody},
+		{"anthropic streamed", "messages", "anthropic", true, anthropicStream},
+		{"embeddings", "embeddings", "openai", false, embeddingsBody},
+	} {
+		t.Run(relay.name, func(t *testing.T) {
+			family := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if relay.stream {
+					w.Header().Set("Content-Type", "text/event-stream")
+				} else {
+					w.Header().Set("Content-Type", "application/json")
+				}
+				_, _ = w.Write([]byte(relay.answer))
+			}))
+			defer family.Close()
+
+			fam := &modelFamily{
+				name: "enso", prefix: "enso",
+				providerFn: func() *object.Provider {
+					return &object.Provider{Owner: "admin", Name: "enso", Type: "Enso", ProviderUrl: family.URL}
+				},
+			}
+
+			body := []byte(`{"model":"` + sku + `","messages":[{"role":"user","content":"2+2?"}]}`)
+			rec := httptest.NewRecorder()
+			ctx := web.NewContext()
+			ctx.Reset(rec, httptest.NewRequest("POST", "/v1/x", strings.NewReader(string(body))))
+			c := &ApiController{}
+			c.Init(ctx, "ApiController", "X", nil)
+
+			c.pipeToFamily(fam, relay.apiPath, relay.dialect, sku, body, relay.stream,
+				"", nil, false, nil, time.Now())
+
+			out := rec.Body.String()
+			if out == "" {
+				t.Fatal("nothing was relayed")
+			}
+			discloses(t, relay.name+" through the pipe", []byte(out))
+			if strings.Contains(out, "qwen/qwen3-235b-a22b") || strings.Contains(out, "qwen/qwen3-embedding") {
+				t.Errorf("%s relays the upstream's own model id:\n%s", relay.name, out)
+			}
+		})
+	}
+}
+
+// B2. Embeddings had no door either, and its `model` was whatever the upstream
+// called the model rather than the SKU the caller asked for.
+func TestTheEmbeddingsDialectIsOurs(t *testing.T) {
+	mk := &mark{model: "enso-embed", seller: "hanzo", speaks: listShape}
+	out := mk.stamp([]byte(embeddingsBody))
+	discloses(t, "embeddings list", out)
+
+	var env map[string]json.RawMessage
+	if err := json.Unmarshal(out, &env); err != nil {
+		t.Fatalf("not JSON: %v\n%s", err, out)
+	}
+	for key := range env {
+		if !listFields[key] {
+			t.Errorf("list carries unpublished field %q", key)
+		}
+	}
+	if got := field(t, env, "model"); got != "enso-embed" {
+		t.Errorf("model = %q, want the SKU asked for — the caller never named the upstream's", got)
+	}
+	// The vectors are the answer and must survive intact.
+	var data []map[string]json.RawMessage
+	if err := json.Unmarshal(env["data"], &data); err != nil {
+		t.Fatalf("data unreadable: %v", err)
+	}
+	if len(data) != 1 || string(data[0]["embedding"]) != "[0.1,0.2]" {
+		t.Fatalf("the vectors changed: %s", env["data"])
+	}
+	for key := range data[0] {
+		if !vectorFields[key] {
+			t.Errorf("vector carries unpublished field %q", key)
+		}
+	}
+	if mk.cost == nil || *mk.cost != buyPriceNano {
+		t.Errorf("mark.cost = %v, want %d", mk.cost, buyPriceNano)
 	}
 }
 
