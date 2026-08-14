@@ -179,6 +179,7 @@ func zapRecordImageUsage(ctx context.Context, authUser *iam.User, provider *obje
 		Organization: authUser.Owner,
 		Model:        userModel,
 		Provider:     provider.Name,
+		Origin:       provider.Origin(),
 		ImageCount:   imageCount,
 		Currency:     "USD",
 		Premium:      isPremium,

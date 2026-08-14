@@ -241,6 +241,7 @@ func (c *ApiController) recordImageUsage(authUser *iam.User, provider *object.Pr
 		Organization: authUser.Owner,
 		Model:        userModel,
 		Provider:     provider.Name,
+		Origin:       provider.Origin(),
 		ImageCount:   imageCount,
 		Currency:     "USD",
 		Premium:      isPremium,

@@ -72,7 +72,7 @@ func (c *ApiController) GetCloudUsages() {
 		return
 	}
 
-	org, allOrgs := c.resolveCloudUsageScope(user)
+	org, allOrgs, admin := c.resolveCloudUsageScope(user)
 
 	w, err := types.ParseWindow(
 		c.Input().Get("range"), c.Input().Get("start"), c.Input().Get("end"), time.Now(),
@@ -89,6 +89,7 @@ func (c *ApiController) GetCloudUsages() {
 		Interval:       w.Interval,
 		Org:            org,
 		AllOrgs:        allOrgs,
+		Admin:          admin,
 		TopModels:      cloudUsageIntParam(c.Input().Get("topModels"), 6, 1, 50),
 		ActivityType:   strings.ToLower(strings.TrimSpace(c.Input().Get("activityType"))),
 		ActivityLimit:  cloudUsageIntParam(c.Input().Get("activityLimit"), 20, 1, 200),
@@ -111,7 +112,11 @@ func (c *ApiController) GetCloudUsages() {
 // admins are pinned to their authenticated org (header/param hints ignored).
 // Super admins may target one org (?org= / ?owner=, else the X-Org-Id header
 // console2 sends) or get the all-orgs view (omitted, empty, "all", or "*").
-func (c *ApiController) resolveCloudUsageScope(user *iam.User) (org string, allOrgs bool) {
+// It also reports the LENS the row is read through (admin). Scope and lens come
+// from ONE evaluation of one predicate rather than two, so "whose rows" and
+// "which columns" cannot answer differently about the same caller — the shape of
+// bug where a tenant keeps its own scope but inherits an admin column.
+func (c *ApiController) resolveCloudUsageScope(user *iam.User) (org string, allOrgs bool, admin bool) {
 	// The all-orgs god-view and cross-org targeting expose EVERY customer's spend,
 	// so they require a SAME-BRAND super admin: a member of the reserved admin org
 	// (util.IsSuperAdmin) whose principal was minted by THIS deployment's own IAM
@@ -122,7 +127,7 @@ func (c *ApiController) resolveCloudUsageScope(user *iam.User) (org string, allO
 	// later configured to VERIFY (today the cross-brand path is also shut by
 	// signature, but this closes it by POLICY regardless — see brand.go SDK-bump note).
 	if !util.IsSuperAdmin(user) || !c.principalIsOwnBrand() {
-		return user.Owner, false
+		return user.Owner, false, false
 	}
 
 	target := strings.TrimSpace(c.Input().Get("org"))
@@ -133,9 +138,11 @@ func (c *ApiController) resolveCloudUsageScope(user *iam.User) (org string, allO
 		target = strings.TrimSpace(c.GetRequestTenantOrgID()) // X-Org-Id header
 	}
 	if target == "" || strings.EqualFold(target, "all") || target == "*" {
-		return "", true
+		return "", true, true
 	}
-	return target, false
+	// A super admin narrowed to ONE org still reads through the admin lens: the
+	// lens follows the principal, not the width of the window.
+	return target, false, true
 }
 
 // cloudUsageRangeLabel normalizes the echoed range label.
