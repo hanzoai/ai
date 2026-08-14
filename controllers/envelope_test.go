@@ -61,6 +61,15 @@ const (
 		upstreamUsage + `}`
 )
 
+// upstreamRefusal is the other 200: an aggregator answers HTTP 200 and puts the
+// refusal in the body, naming the sub-provider in metadata, quoting the upstream's
+// raw error, and restating the upstream HTTP status as the code.
+const upstreamRefusal = `{"id":"` + upstreamID + `","provider":"` + subProvider + `",` +
+	`"model":"` + sku + `","object":"chat.completion","created":1786649556,` +
+	`"error":{"message":"Insufficient credits.","type":"payment_error","code":402,` +
+	`"metadata":{"provider_name":"` + subProvider + `","raw":"upstream said 402"}},` +
+	`"choices":[]}`
+
 // upstreamStream is the same completion as SSE — most traffic is this one.
 var upstreamStream = strings.Join([]string{
 	`data: {"id":"` + upstreamID + `","provider":"` + subProvider + `","model":"` + sku + `","object":"chat.completion.chunk","created":1786649556,"x_groq":{"id":"req_01jabc"},"choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null,"native_finish_reason":null}]}`,
@@ -210,6 +219,67 @@ func TestFamilyStreamIsOurs(t *testing.T) {
 					"nearly every chat, so a buffered-only prune leaks on almost all of them", key)
 			}
 		}
+	}
+}
+
+// B3. A refusal is an answer, so `error` is published — and it was published
+// WHOLE, which made it the one field where everything the rest of the envelope
+// removes could still walk out.
+//
+// The envelope then said provider:"hanzo" while error.metadata.provider_name said
+// otherwise, which is worse than either alone: the answer contradicts itself and
+// the customer is the one holding both halves.
+func TestARefusalIsPrunedWithoutBeingGutted(t *testing.T) {
+	mk := ourMark()
+	out := mk.stamp([]byte(upstreamRefusal))
+	discloses(t, "refusal inside a 200", out)
+
+	var env map[string]json.RawMessage
+	if err := json.Unmarshal(out, &env); err != nil {
+		t.Fatalf("stamped refusal is not JSON: %v", err)
+	}
+	if got := field(t, env, "provider"); got != "hanzo" {
+		t.Errorf("provider = %q, want hanzo", got)
+	}
+
+	refusal := map[string]json.RawMessage{}
+	if err := json.Unmarshal(env["error"], &refusal); err != nil {
+		t.Fatalf("error unreadable: %v", err)
+	}
+	for key := range refusal {
+		if !errorFields[key] {
+			t.Errorf("the refusal carries %q — the envelope says one thing about who "+
+				"served this and its error says another", key)
+		}
+	}
+
+	// Not gutted: the diagnostic is the whole point of publishing it.
+	if got := field(t, refusal, "message"); got != "Insufficient credits." {
+		t.Errorf("message = %q — a refusal a customer cannot read helps nobody", got)
+	}
+	if got := field(t, refusal, "type"); got != "payment_error" {
+		t.Errorf("type = %q, want it kept", got)
+	}
+
+	// The upstream status must not come back inside the body after the status line
+	// declined to say it. 402 tells the customer THEY owe money; our account is the
+	// empty one.
+	if raw, ok := refusal["code"]; ok {
+		t.Errorf("code = %s — a numeric code restates the upstream HTTP status, and this "+
+			"one bills the customer for our empty vendor account", raw)
+	}
+
+	// A string code is a machine-readable diagnostic in our own schema and stays.
+	kept := map[string]json.RawMessage{}
+	textCode := mk.stamp([]byte(`{"error":{"message":"too long","code":"context_length_exceeded"}}`))
+	if err := json.Unmarshal(textCode, &env); err != nil {
+		t.Fatalf("not JSON: %v", err)
+	}
+	if err := json.Unmarshal(env["error"], &kept); err != nil {
+		t.Fatalf("error unreadable: %v", err)
+	}
+	if got := field(t, kept, "code"); got != "context_length_exceeded" {
+		t.Errorf("code = %q, want the string code kept — that is the one an SDK switches on", got)
 	}
 }
 
@@ -602,13 +672,16 @@ func TestStampLeavesWhatIsNotOursAlone(t *testing.T) {
 			t.Errorf("stamp rewrote non-envelope %q to %q", payload, got)
 		}
 	}
-	// A refusal is an answer: the error survives, it does not get allowlisted away.
+	// A refusal is an answer: the error survives rather than being allowlisted away.
+	// Its INTERIOR is normalised like every other level — see
+	// TestARefusalIsPrunedWithoutBeingGutted, which is where "relayed whole" turned
+	// out to mean "relayed with the vendor's name and the upstream's status in it".
 	refusal := `{"error":{"code":429,"message":"rate limited"}}`
 	var env map[string]json.RawMessage
 	if err := json.Unmarshal(mk.stamp([]byte(refusal)), &env); err != nil {
 		t.Fatalf("stamped refusal is not JSON: %v", err)
 	}
-	if string(env["error"]) != `{"code":429,"message":"rate limited"}` {
-		t.Errorf("error = %s, want it relayed whole", env["error"])
+	if string(env["error"]) != `{"message":"rate limited"}` {
+		t.Errorf("error = %s, want the message kept and the restated HTTP status dropped", env["error"])
 	}
 }
