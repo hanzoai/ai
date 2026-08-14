@@ -1067,6 +1067,14 @@ func anthropicErrorTypeForStatus(status int) string {
 // `upstream_inference_cost`, which is exactly the disclosure the envelope removes
 // from every SUCCESSFUL answer. A refusal is not a hole in that.
 //
+// It also never repeats a sentence that NAMES an upstream. A served answer does
+// not say which one produced it, and a refusal carries the same obligation: the
+// sentence a vendor writes for its own billing says who they are and links their
+// console, which is a remedy the caller has no access to perform. It is dropped
+// WHOLE rather than edited, because a partial redaction leaves the shape of the
+// name behind. A complaint about the REQUEST keeps its words — those are the
+// caller's to act on, and dropping them would make every upstream failure opaque.
+//
 // A body in none of these shapes is one we have not read, and "upstream error" is
 // the honest thing to say about it. It is deliberately not logged either: an error
 // body is where a vendor echoes the request that provoked it, so it is the last
@@ -1078,7 +1086,7 @@ func upstreamErrorMessage(body []byte) string {
 			Message string `json:"message"`
 		} `json:"error"`
 	}
-	if json.Unmarshal(body, &nested) == nil && nested.Error.Message != "" {
+	if json.Unmarshal(body, &nested) == nil && repeatable(nested.Error.Message) {
 		return nested.Error.Message
 	}
 	// The flatter shapes: {"error":"..."} , {"message":"..."} , {"detail":"..."}.
@@ -1089,12 +1097,31 @@ func upstreamErrorMessage(body []byte) string {
 	}
 	if json.Unmarshal(body, &flat) == nil {
 		for _, said := range []string{flat.Error, flat.Message, flat.Detail} {
-			if said != "" {
+			if repeatable(said) {
 				return said
 			}
 		}
 	}
 	return "upstream error"
+}
+
+// repeatable reports whether a sentence is one we may hand a caller: non-empty,
+// and naming no provider we buy from — by name, or by a link into their console.
+func repeatable(msg string) bool {
+	s := strings.ToLower(strings.TrimSpace(msg))
+	if s == "" {
+		return false
+	}
+	if strings.Contains(s, "http://") || strings.Contains(s, "https://") {
+		return false
+	}
+	for _, vendor := range []string{"openrouter", "openai", "anthropic", "together",
+		"fireworks", "groq", "deepseek", "digitalocean"} {
+		if strings.Contains(s, vendor) {
+			return false
+		}
+	}
+	return true
 }
 
 // AnthropicCountTokens implements POST /v1/messages/count_tokens. Claude Code
