@@ -38,27 +38,52 @@ const spareListing = `{"data":[
  {"id":"vendor/silent:free","context_length":999999,"pricing":{"prompt":"0","completion":"0"}}
 ]}`
 
-// The catalog and the spare routes are two readings of ONE listing, and the whole
-// safety of the fallback rests on them being disjoint: a route that is for sale
-// must never be reachable as a free downgrade, and a free route must never appear
-// in a lineup as something a customer can choose and be billed for.
-func TestSpareRoutesAreExactlyWhatTheCatalogDeclines(t *testing.T) {
+// The catalog is the vendor's whole listing, and the spare routes are a reading of
+// the same body — so what we publish is what they serve, and the floors a SKU
+// carries are decided by the one fact that matters: its price. A priced SKU takes
+// both floors and can never be handed out as a remedy; a free one takes neither and
+// bills nothing however a request reaches it.
+func TestTheCatalogIsTheListingAndPriceDecidesTheFloors(t *testing.T) {
 	catalog, err := openrouterCatalog([]byte(spareListing))
 	if err != nil {
 		t.Fatalf("catalog: %v", err)
 	}
 	spares := openrouterSpare([]byte(spareListing))
 
-	sold := map[string]bool{}
+	listed := map[string]zenModel{}
 	for _, m := range catalog {
-		sold[m.ID] = true
+		listed[m.ID] = m
 	}
-	if len(sold) != 2 || !sold["vendor/paid-a"] || !sold["vendor/paid-b"] {
-		t.Errorf("catalog = %v, want exactly the priced SKUs", sold)
+	for _, id := range []string{
+		"vendor/paid-a", "vendor/paid-b",
+		"vendor/small:free", "vendor/big:free", "vendor/music:free", "vendor/silent:free",
+	} {
+		if _, ok := listed[id]; !ok {
+			t.Errorf("%q is advertised by the vendor and absent from the catalog", id)
+		}
 	}
+	if len(listed) != 6 {
+		t.Errorf("catalog holds %d SKUs, want the whole listing", len(listed))
+	}
+
+	for id, m := range listed {
+		free := m.Base.In.IsZero() && m.Base.Out.IsZero()
+		switch {
+		case free && (m.MinTier != "" || m.Funding != ""):
+			t.Errorf("%q costs nothing and carries floors (tier=%q funding=%q) — it would refuse a caller over money never spent", id, m.MinTier, m.Funding)
+		case !free && (m.MinTier != "paid" || m.Funding != "prepaid"):
+			t.Errorf("%q spends real cash and carries tier=%q funding=%q", id, m.MinTier, m.Funding)
+		}
+	}
+
 	for _, s := range spares {
-		if sold[s] {
-			t.Errorf("%q is both for sale and a spare — a downgrade that bills is not a downgrade", s)
+		m, ok := listed[s]
+		if !ok {
+			t.Errorf("%q is a spare the catalog does not hold — two discoveries, not two readings", s)
+			continue
+		}
+		if !m.Base.In.IsZero() || !m.Base.Out.IsZero() {
+			t.Errorf("%q is a spare with a price — a downgrade that bills is not a downgrade", s)
 		}
 	}
 
@@ -140,10 +165,17 @@ func TestDiscoveryCarriesTheSpareRoutes(t *testing.T) {
 	if fam.isSpare("vendor/paid-a") {
 		t.Error("a priced SKU reads as a spare — it would bill at nothing")
 	}
-	// A spare is not a catalog entry, so it is not listed and not routable by
-	// name. It is reachable only because a route the caller DID name was refused.
-	if _, ok := fam.lookup("vendor/big:free"); ok {
-		t.Error("a spare route is listed — it is a fallback, not a product")
+	// A spare is a catalog entry the vendor prices at nothing, so a caller may name
+	// it and a refusal for money may land on it, and both bill the same zero.
+	spare, ok := fam.lookup("vendor/big:free")
+	if !ok {
+		t.Fatal("a free route the vendor advertises is missing from the catalog")
+	}
+	if !spare.Base.In.IsZero() || !spare.Base.Out.IsZero() {
+		t.Error("a spare route carries a price")
+	}
+	if spare.MinTier != "" || spare.Funding != "" {
+		t.Errorf("a free route carries floors (tier=%q funding=%q) — a free plan cannot reach it", spare.MinTier, spare.Funding)
 	}
 }
 

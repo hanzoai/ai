@@ -337,11 +337,14 @@ func forceGatewayEmbedder(p *Provider) {
 // DO-first defaults: do-ai is the primary (State Active, IsDefault true) —
 // the universal DigitalOcean GenAI router that backs OpenAI/Anthropic/Llama/
 // DeepSeek/Qwen/GLM/Kimi. fireworks and openai-direct ship DISABLED (an admin
-// opts in via /v1/admin/providers/toggle). openrouter ships DISABLED
-// (toggleable), keeping "DO-first" the default while making the catalog
-// manageable in the same table. zen is deliberately absent: it is a model
-// FAMILY whose address is deployment config (ZEN_URL), exactly like its sibling
-// enso — see pruneStaleZenSeed for what a row here does to it.
+// opts in via /v1/admin/providers/toggle).
+//
+// EVERY ROW HERE IS A DIRECT RELAY. A model FAMILY — zen, enso, openrouter — is
+// addressed by deployment config (ZEN_URL, ENSO_URL, OPENROUTER_URL) and never
+// appears in this table: familyProvider reads a row of the family's name as an
+// operator override that WINS over that config, so seeding one hands the family's
+// address and its on/off to a record the family never asked for. pruneFamilySeeds
+// removes the rows earlier seeds wrote.
 //
 // It lives at package scope so the invariants it must satisfy are testable: a
 // seeded FAMILY row carrying a trailing /v1 is the defect that broke zen, and it
@@ -382,24 +385,6 @@ var seededLLMProviders = []Provider{
 		ProviderUrl:  "https://api.openai.com/v1",
 		ClientSecret: "kms://OPENAI_API_KEY",
 		State:        "Disabled", // opt-in via /v1/admin/providers/toggle
-		IsDefault:    false,
-	},
-	{
-		Owner:       "admin",
-		Name:        "openrouter",
-		DisplayName: "OpenRouter",
-		Category:    "Model",
-		Type:        "OpenRouter",
-		SubType:     "openrouter/auto",
-		// NO trailing /v1 — openrouter is a model FAMILY, and both family paths
-		// append it themselves (discovery does base+"/v1/models", pipeToFamily
-		// does ProviderUrl+"/v1/"+apiPath). The direct-relay providers above
-		// carry /v1 because nothing appends it for them. Seeded with /v1 here,
-		// every call would go to .../api/v1/v1/... and 404 — invisible until the
-		// row was toggled on, since nothing read it before.
-		ProviderUrl:  "https://openrouter.ai/api",
-		ClientSecret: "kms://OPENROUTER_API_KEY",
-		State:        "Disabled", // DO-first: off by default, toggleable
 		IsDefault:    false,
 	},
 	{
@@ -483,7 +468,7 @@ func SeededModelProviders() map[string]Provider {
 // That self-heal is also why a bad seed cannot be fixed in the database: editing
 // the row is reverted on the next boot, and deleting it is re-created. A row this
 // table should not hold has to be dropped from the table AND pruned — which is
-// what pruneStaleZenSeed does for zen.
+// what pruneFamilySeeds does for the family rows.
 func initLLMProviders() {
 	for _, p := range seededLLMProviders {
 		existing, err := getProvider("admin", p.Name)
@@ -545,44 +530,52 @@ func initLLMProviders() {
 			fmt.Printf("[init] Created LLM provider: %s (%s)\n", p.Name, p.DisplayName)
 		}
 	}
-	pruneStaleZenSeed()
+	pruneFamilySeeds()
 }
 
-// pruneStaleZenSeed deletes the `zen` provider row an earlier seed created.
+// familySeedRows is the exact shape each family row was seeded with, keyed by
+// family name. A row that matches one is the seed's own record; anything else at
+// that name is an operator's override and stays.
+var familySeedRows = map[string]struct{ typ, url string }{
+	"zen":        {"DigitalOcean", "https://inference.do-ai.run/v1"},
+	"openrouter": {"OpenRouter", "https://openrouter.ai/api"},
+}
+
+// pruneFamilySeeds deletes the provider rows earlier seeds wrote for model
+// families, so a family resolves from its configured address again.
 //
-// A model FAMILY's address is deployment config; familyProvider treats an admin
-// row of the family's name as an operator OVERRIDE that wins over it. So seeding
-// one hijacks the family — which is what happened. `zen` was seeded at do-ai's
-// base "https://inference.do-ai.run/v1", and the family paths append their own
-// /v1 (discovery does base+"/v1/models"), so every catalog refresh hit
-// .../v1/v1/models, 404'd, and NO zen model was listed or served. Sibling `enso`
-// — same serving binary, same family shape — was never seeded and never broke.
-// That A/B is the entire diagnosis.
+// A row of a family's name is read by familyProvider as an operator override that
+// WINS over configuration — it supplies the address AND the on/off. Seeding one
+// therefore takes the family over, and both seeded rows show a way that goes
+// wrong. `zen` was seeded at do-ai's base "https://inference.do-ai.run/v1" while
+// the family paths append their own /v1, so every refresh asked
+// .../v1/v1/models and no zen SKU was listed or served. `openrouter` was seeded
+// State "Disabled", which familyProvider answers with nil no matter what
+// OPENROUTER_URL says, so the whole OpenRouter catalog stayed dark and the one
+// control that could have lifted it was a database row rather than the config
+// every other family reads. Sibling `enso` — same serving binary, same family
+// shape, never seeded — never had either problem.
 //
-// The openrouter seed above carries the same lesson and was fixed by dropping the
-// /v1. zen needs the row GONE rather than repointed: no route targets it (see
-// modelCountByProvider), so it holds nothing, and merely dropping the /v1 would
-// aim the family at DigitalOcean's catalog instead of the zen service that
-// actually serves zen SKUs.
-//
-// Removing the seed entry is necessary but NOT sufficient: the loop above only
-// visits names it seeds, so an already-created row would survive every restart
-// and keep hijacking the family. Scoped to the exact stale shape, so a row an
+// Dropping the entries from the seed table is necessary but not sufficient: the
+// loop above only visits names it seeds, so an already-created row survives every
+// restart and keeps the family. Scoped to the exact seeded shape, so a row an
 // operator writes on purpose is never touched.
-func pruneStaleZenSeed() {
-	row, err := getProvider("admin", "zen")
-	if err != nil {
-		fmt.Printf("[init] WARNING: failed to check provider %q: %v\n", "zen", err)
-		return
+func pruneFamilySeeds() {
+	for name, seed := range familySeedRows {
+		row, err := getProvider("admin", name)
+		if err != nil {
+			fmt.Printf("[init] WARNING: failed to check provider %q: %v\n", name, err)
+			continue
+		}
+		if row == nil || row.Type != seed.typ || row.ProviderUrl != seed.url {
+			continue // absent, or an operator's own override — leave it alone
+		}
+		if _, err := DeleteProvider(row); err != nil {
+			fmt.Printf("[init] WARNING: failed to delete stale %q provider row: %v\n", name, err)
+			continue
+		}
+		fmt.Printf("[init] Removed stale %q family provider row — %s now resolves from configuration\n", name, name)
 	}
-	if row == nil || row.Type != "DigitalOcean" || row.ProviderUrl != "https://inference.do-ai.run/v1" {
-		return // absent, or an operator's own override — leave it alone
-	}
-	if _, err := DeleteProvider(row); err != nil {
-		fmt.Printf("[init] WARNING: failed to delete stale %q provider row: %v\n", "zen", err)
-		return
-	}
-	fmt.Printf("[init] Removed stale %q family provider row — zen now resolves from ZEN_URL\n", "zen")
 }
 
 // isDuplicateKeyErr reports whether err is a unique-constraint violation
