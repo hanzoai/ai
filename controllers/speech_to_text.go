@@ -92,7 +92,7 @@ func (c *ApiController) ProcessSpeechToText() {
 	// Process the audio data and get the transcription
 	ctx := context.Background()
 	startTime := time.Now().UTC()
-	text, sttResult, err := providerObj.ProcessAudio(audioFile, ctx, c.GetAcceptLanguage())
+	heard, sttResult, err := providerObj.ProcessAudio(audioFile, ctx, c.GetAcceptLanguage(), nil)
 	c.recordLegacySTTUsage(store, provider, sttSecondsOf(sttResult), startTime, err)
 	if err != nil {
 		c.ResponseError(err.Error())
@@ -100,7 +100,7 @@ func (c *ApiController) ProcessSpeechToText() {
 	}
 
 	// Return the transcribed text
-	c.ResponseOk(text)
+	c.ResponseOk(heard.Text)
 }
 
 // recordLegacySTTUsage traces the legacy store-bound STT handler into the one
