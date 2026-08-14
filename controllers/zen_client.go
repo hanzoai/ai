@@ -665,9 +665,27 @@ func withModel(body []byte, model string) []byte {
 // one provider among several, and a 402 from it is a fact about that vendor's
 // balance, not about the request.
 //
-// Nothing on the fall-through path settles the budget hold. settle is one-shot,
-// so releasing it here would leave the eventual real cost unbilled.
+// The two answers differ in what they owe the reservation, and it follows from
+// what they mean:
+//
+//	nil       — the request is over, so the hold is RELEASED. Nothing downstream
+//	            is going to run and settle it.
+//	a refusal — the request is still moving, so the hold is UNTOUCHED. settle is
+//	            one-shot, and releasing it here would leave whatever provider
+//	            eventually serves this request unbilled.
+//
+// So: returning nil settles, always, via done. The success path has already
+// settled the real cost by then and settle is idempotent, which is what lets one
+// rule cover every ending rather than each ending remembering for itself — which
+// is how a 400 from an embeddings family came to hold a customer's cents with
+// nothing left running that would ever give them back.
 func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model string, rawBody []byte, stream bool, orgId string, authUser *iam.User, isPremium bool, hold *budgetHold, start time.Time) []attempt {
+	// done ends the request here: the client has its answer, or has gone.
+	done := func() []attempt {
+		hold.settle(0)
+		return nil
+	}
+
 	// refused reports a provider-side failure with nothing written: the request
 	// is still movable, so hand the reason back rather than spending it on an
 	// error page.
@@ -677,7 +695,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		// and would blame a healthy vendor for the client's disconnect.
 		if c.Ctx.Request.Context().Err() != nil {
 			c.EnableRender = false
-			return nil
+			return done()
 		}
 		cooled.rest(orgId, fam.name, err)
 		at := attempt{
@@ -707,7 +725,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		// OUR gate, not the vendor's: this caller may not have this SKU. No other
 		// provider changes that, so answer it here.
 		c.zenError(dialect, msg, http.StatusForbidden)
-		return nil
+		return done()
 	}
 	// Forward the model ai RESOLVED, not the caller's raw model id. An
 	// `auto`/`zen-router` request rewrote request.Model to a concrete family SKU, but
@@ -733,7 +751,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	if err != nil {
 		// Our own request is malformed. Another vendor would not fix that.
 		c.zenError(dialect, "build "+fam.name+" request: "+err.Error(), http.StatusInternalServerError)
-		return nil
+		return done()
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if a := c.Ctx.Request.Header.Get("Accept"); a != "" {
@@ -776,7 +794,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 				return refused(err)
 			}
 			c.zenError(dialect, upstreamErrorMessage(b), resp.StatusCode)
-			return nil
+			return done()
 		}
 		c.Ctx.ResponseWriter.Header().Set("Content-Type", "text/event-stream")
 		c.Ctx.ResponseWriter.Header().Set("Cache-Control", "no-cache")
@@ -795,7 +813,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 				return refused(err)
 			}
 			c.zenError(dialect, upstreamErrorMessage(b), resp.StatusCode)
-			return nil
+			return done()
 		}
 		sniffZenUsage(b, &prompt, &completion)
 		served = sniffZenModel(b)
@@ -824,7 +842,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	// to the internal reqID when the family did not disclose one. See object.RoutingEvent.
 	c.recordFamilyRouting(model, served, respID, reqID, rawBody, orgId, authUser, prompt, completion, cents, start)
 	c.EnableRender = false
-	return nil
+	return done()
 }
 
 // relayZenStream copies a family's SSE response to the client and captures the final
