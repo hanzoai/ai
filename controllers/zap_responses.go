@@ -178,6 +178,7 @@ func zapResponsesHandler(ctx context.Context, auth string, body []byte) (*zap.Me
 				Organization: authUser.Owner,
 				Model:        chatRequest.Model,
 				Provider:     provider.Name,
+				Origin:       provider.Origin(),
 				Premium:      isPremium,
 				Stream:       request.Stream,
 				Status:       "error",

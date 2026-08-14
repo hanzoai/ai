@@ -127,29 +127,33 @@ func TestResolveCloudUsageScope(t *testing.T) {
 		user       *iam.User
 		wantOrg    string
 		wantAllOrg bool
+		wantAdmin  bool
 	}{
-		// A non-super-admin can never escape its own org, whatever it asks for.
-		{"non-admin + ?org=all -> pinned", "/x?org=all", "", nonAdmin, "maxpower", false},
-		{"non-admin + ?org=hanzo (other) -> pinned", "/x?org=hanzo", "", nonAdmin, "maxpower", false},
-		{"non-admin + ?org=* -> pinned", "/x?org=*", "", nonAdmin, "maxpower", false},
-		{"non-admin + ?owner=hanzo -> pinned", "/x?owner=hanzo", "", nonAdmin, "maxpower", false},
-		{"non-admin + X-Org-Id: hanzo -> pinned", "/x", "hanzo", nonAdmin, "maxpower", false},
-		{"non-admin + ?org=all + X-Org-Id: hanzo -> pinned", "/x?org=all", "hanzo", nonAdmin, "maxpower", false},
-		// A super-admin drives the god-view / targeting.
-		{"super + ?org=all -> god-view", "/x?org=all", "", superAdmin, "", true},
-		{"super + no scope -> god-view", "/x", "", superAdmin, "", true},
-		{"super + ?org=maxpower -> targeted", "/x?org=maxpower", "", superAdmin, "maxpower", false},
-		{"super + ?owner=zoo -> targeted", "/x?owner=zoo", "", superAdmin, "zoo", false},
-		{"super + X-Org-Id: maxpower -> targeted", "/x", "maxpower", superAdmin, "maxpower", false},
+		// A non-super-admin can never escape its own org, whatever it asks for —
+		// and never reads through the admin lens, whatever it asks for.
+		{"non-admin + ?org=all -> pinned", "/x?org=all", "", nonAdmin, "maxpower", false, false},
+		{"non-admin + ?org=hanzo (other) -> pinned", "/x?org=hanzo", "", nonAdmin, "maxpower", false, false},
+		{"non-admin + ?org=* -> pinned", "/x?org=*", "", nonAdmin, "maxpower", false, false},
+		{"non-admin + ?owner=hanzo -> pinned", "/x?owner=hanzo", "", nonAdmin, "maxpower", false, false},
+		{"non-admin + X-Org-Id: hanzo -> pinned", "/x", "hanzo", nonAdmin, "maxpower", false, false},
+		{"non-admin + ?org=all + X-Org-Id: hanzo -> pinned", "/x?org=all", "hanzo", nonAdmin, "maxpower", false, false},
+		// A super-admin drives the god-view / targeting, and carries the admin lens
+		// in BOTH — narrowing the window does not narrow the principal.
+		{"super + ?org=all -> god-view", "/x?org=all", "", superAdmin, "", true, true},
+		{"super + no scope -> god-view", "/x", "", superAdmin, "", true, true},
+		{"super + ?org=maxpower -> targeted", "/x?org=maxpower", "", superAdmin, "maxpower", false, true},
+		{"super + ?owner=zoo -> targeted", "/x?owner=zoo", "", superAdmin, "zoo", false, true},
+		{"super + X-Org-Id: maxpower -> targeted", "/x", "maxpower", superAdmin, "maxpower", false, true},
 	}
 	for _, tc := range cases {
 		// Seed the principal as a SESSION user: a session is own-brand, so the scope
 		// mapping is exercised for a same-brand principal (the brand gate is proved
 		// separately in TestResolveCloudUsageScope_BrandScopedGodView).
 		c, _ := newUsageController(tc.url, "", tc.orgHeader, tc.user)
-		gotOrg, gotAll := c.resolveCloudUsageScope(tc.user)
-		if gotOrg != tc.wantOrg || gotAll != tc.wantAllOrg {
-			t.Errorf("%s: scope = (%q, %v), want (%q, %v)", tc.name, gotOrg, gotAll, tc.wantOrg, tc.wantAllOrg)
+		gotOrg, gotAll, gotAdmin := c.resolveCloudUsageScope(tc.user)
+		if gotOrg != tc.wantOrg || gotAll != tc.wantAllOrg || gotAdmin != tc.wantAdmin {
+			t.Errorf("%s: scope = (%q, %v, admin=%v), want (%q, %v, admin=%v)",
+				tc.name, gotOrg, gotAll, gotAdmin, tc.wantOrg, tc.wantAllOrg, tc.wantAdmin)
 		}
 	}
 }
@@ -184,8 +188,8 @@ func TestRequirePrincipal_SessionUnchanged(t *testing.T) {
 	if rec.Body.Len() != 0 {
 		t.Errorf("session pass wrote a body %q, want none", rec.Body.String())
 	}
-	if org, allOrgs := c.resolveCloudUsageScope(user); org != "maxpower" || allOrgs {
-		t.Errorf("session non-admin + ?org=all scope = (%q, %v), want (maxpower, false)", org, allOrgs)
+	if org, allOrgs, admin := c.resolveCloudUsageScope(user); org != "maxpower" || allOrgs || admin {
+		t.Errorf("session non-admin + ?org=all scope = (%q, %v, admin=%v), want (maxpower, false, admin=false)", org, allOrgs, admin)
 	}
 }
 
@@ -215,9 +219,9 @@ func TestGetCloudUsagesBearerScope(t *testing.T) {
 		if user.Owner != "maxpower" {
 			t.Fatalf("bearer resolved Owner = %q, want maxpower (from the token, not the X-Org-Id header)", user.Owner)
 		}
-		org, allOrgs := c.resolveCloudUsageScope(user)
-		if org != "maxpower" || allOrgs {
-			t.Errorf("non-admin bearer scope = (%q, %v), want (maxpower, false) — a tenant must never reach ?org=all", org, allOrgs)
+		org, allOrgs, admin := c.resolveCloudUsageScope(user)
+		if org != "maxpower" || allOrgs || admin {
+			t.Errorf("non-admin bearer scope = (%q, %v, admin=%v), want (maxpower, false, admin=false) — a tenant must never reach ?org=all", org, allOrgs, admin)
 		}
 	})
 
@@ -229,8 +233,8 @@ func TestGetCloudUsagesBearerScope(t *testing.T) {
 		if !ok || user == nil || user.Owner != "admin" {
 			t.Fatalf("RequirePrincipal(super bearer) = (%+v, %v), want Owner=admin", user, ok)
 		}
-		if org, allOrgs := c.resolveCloudUsageScope(user); org != "" || !allOrgs {
-			t.Errorf("super-admin bearer + ?org=all scope = (%q, %v), want (\"\", true) god-view", org, allOrgs)
+		if org, allOrgs, admin := c.resolveCloudUsageScope(user); org != "" || !allOrgs || !admin {
+			t.Errorf("super-admin bearer + ?org=all scope = (%q, %v, admin=%v), want (\"\", true, admin=true) god-view", org, allOrgs, admin)
 		}
 	})
 
@@ -242,8 +246,8 @@ func TestGetCloudUsagesBearerScope(t *testing.T) {
 		if !ok || user == nil {
 			t.Fatalf("RequirePrincipal(super bearer) failed")
 		}
-		if org, allOrgs := c.resolveCloudUsageScope(user); org != "maxpower" || allOrgs {
-			t.Errorf("super-admin bearer + ?org=maxpower scope = (%q, %v), want (maxpower, false)", org, allOrgs)
+		if org, allOrgs, admin := c.resolveCloudUsageScope(user); org != "maxpower" || allOrgs || !admin {
+			t.Errorf("super-admin bearer + ?org=maxpower scope = (%q, %v, admin=%v), want (maxpower, false, admin=true)", org, allOrgs, admin)
 		}
 	})
 }
@@ -295,8 +299,8 @@ func TestResolveCloudUsageScope_BrandScopedGodView(t *testing.T) {
 	t.Run("same-brand super-admin SESSION -> god-view", func(t *testing.T) {
 		superAdmin := &iam.User{Owner: "admin", Name: "z"}
 		c, _ := newUsageController("/v1/get-cloud-usages?org=all", "", "", superAdmin)
-		if org, allOrgs := c.resolveCloudUsageScope(superAdmin); org != "" || !allOrgs {
-			t.Errorf("same-brand session super-admin scope = (%q, %v), want (\"\", true)", org, allOrgs)
+		if org, allOrgs, admin := c.resolveCloudUsageScope(superAdmin); org != "" || !allOrgs || !admin {
+			t.Errorf("same-brand session super-admin scope = (%q, %v, admin=%v), want (\"\", true, admin=true)", org, allOrgs, admin)
 		}
 	})
 
@@ -307,8 +311,8 @@ func TestResolveCloudUsageScope_BrandScopedGodView(t *testing.T) {
 		if !ok || user == nil {
 			t.Fatalf("own-brand super-admin bearer not accepted")
 		}
-		if org, allOrgs := c.resolveCloudUsageScope(user); org != "" || !allOrgs {
-			t.Errorf("same-brand bearer super-admin scope = (%q, %v), want (\"\", true)", org, allOrgs)
+		if org, allOrgs, admin := c.resolveCloudUsageScope(user); org != "" || !allOrgs || !admin {
+			t.Errorf("same-brand bearer super-admin scope = (%q, %v, admin=%v), want (\"\", true, admin=true)", org, allOrgs, admin)
 		}
 	})
 
@@ -327,8 +331,10 @@ func TestResolveCloudUsageScope_BrandScopedGodView(t *testing.T) {
 			t.Fatalf("cross-brand admin bearer = (%+v, %v); expected it to authenticate as owner=admin (the whole point: auth trusts it, scope must not)", user, ok)
 		}
 		// ...but it is NOT own-brand, so the god-view is denied and it is pinned.
-		if org, allOrgs := c.resolveCloudUsageScope(user); org != "admin" || allOrgs {
-			t.Errorf("cross-brand admin scope = (%q, %v), want (\"admin\", false) — sibling brand admin MUST NOT reach the all-orgs god-view", org, allOrgs)
+		// ...and the lens is pinned with the scope: a sibling brand's admin reads the
+		// CUSTOMER shape, so it cannot see which upstream served another brand's calls.
+		if org, allOrgs, admin := c.resolveCloudUsageScope(user); org != "admin" || allOrgs || admin {
+			t.Errorf("cross-brand admin scope = (%q, %v, admin=%v), want (\"admin\", false, admin=false) — sibling brand admin MUST NOT reach the all-orgs god-view or the admin lens", org, allOrgs, admin)
 		}
 	})
 
@@ -341,8 +347,8 @@ func TestResolveCloudUsageScope_BrandScopedGodView(t *testing.T) {
 		}
 		c, _ := newUsageController("/v1/get-cloud-usages?org=maxpower", "Bearer "+tok, "", nil)
 		user, _ := c.RequirePrincipal()
-		if org, allOrgs := c.resolveCloudUsageScope(user); org != "admin" || allOrgs {
-			t.Errorf("cross-brand admin + ?org=maxpower scope = (%q, %v), want (\"admin\", false) — cannot target another tenant", org, allOrgs)
+		if org, allOrgs, admin := c.resolveCloudUsageScope(user); org != "admin" || allOrgs || admin {
+			t.Errorf("cross-brand admin + ?org=maxpower scope = (%q, %v, admin=%v), want (\"admin\", false, admin=false) — cannot target another tenant", org, allOrgs, admin)
 		}
 	})
 }
@@ -354,8 +360,8 @@ func TestResolveCloudUsageScope_BrandScopedGodView(t *testing.T) {
 func TestResolveCloudUsageScope_EmptyOwner(t *testing.T) {
 	ghost := &iam.User{Owner: "", Name: "ghost"}
 	c, _ := newUsageController("/v1/get-cloud-usages?org=all", "", "", ghost)
-	if org, allOrgs := c.resolveCloudUsageScope(ghost); org != "" || allOrgs {
-		t.Errorf("empty-Owner scope = (%q, %v), want (\"\", false) — empty org filter, NOT all-orgs", org, allOrgs)
+	if org, allOrgs, admin := c.resolveCloudUsageScope(ghost); org != "" || allOrgs || admin {
+		t.Errorf("empty-Owner scope = (%q, %v, admin=%v), want (\"\", false, admin=false) — empty org filter, NOT all-orgs", org, allOrgs, admin)
 	}
 }
 
