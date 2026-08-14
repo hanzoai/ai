@@ -37,15 +37,28 @@
 // telemetry push could halt all paid inference fleet-wide, which is a worse
 // failure than one extra day of spend against a ceiling someone is already
 // watching.
+//
+// A READING EXPIRES. The paragraph above always named two unknowns, but only one
+// of them could be seen: a State that was never published, and a State that has
+// stopped being refreshed, are the same fact — nobody can currently say what is
+// left — yet the second went on being the answer forever, because nothing here
+// aged it. That is the gap that made arming the ceiling unsafe rather than merely
+// ineffective: a reading captured at the ceiling would keep refusing every paid
+// request long after the day it described had ended, and only a restart would
+// clear it. State.Until closes it, so "we knew, once" decays into "we do not
+// know" and lands on ALLOW like every other unknown.
 package funding
 
 import (
 	"sync/atomic"
+	"time"
 )
 
-// State is what cloud knows about upstream funding, pushed in. It is a VALUE:
-// the breaker never reads a clock, a ledger or a vendor API, so the decision is a
-// pure function of what it was told and is trivially testable.
+// State is what cloud knows about upstream funding, pushed in. It is a VALUE: the
+// breaker reads no ledger and no vendor API, so the DECISION below is a pure
+// function of what it was told and is trivially testable. Only freshness consults
+// a clock, and it does so in Current — the accessor that already answers "what do
+// we know", which is the question staleness changes the answer to.
 type State struct {
 	// OnCash reports that upstream promotional credit is exhausted, so spend is
 	// now real money. False while a grant still covers usage.
@@ -54,6 +67,22 @@ type State struct {
 	TodayCents int64
 	// CeilingCents caps cash per UTC day. Zero (or negative) DISABLES the breaker.
 	CeilingCents int64
+	// Until is when this reading stops being believable: the publisher's next
+	// refresh plus enough slack to survive one missed round, and never later than
+	// the UTC midnight that ends the day TodayCents counts — past that boundary the
+	// figure is not slightly wrong, it is a different day's.
+	//
+	// Zero means the reading never expires, which is what a publisher that cannot
+	// say gets. That is the conservative default in the ALLOW direction only
+	// because a publisher that sets no expiry is also the publisher that existed
+	// before this field did; a publisher that CAN say must say.
+	Until time.Time
+}
+
+// Stale reports whether this reading has outlived its Until. A reading with no
+// Until never goes stale.
+func (s State) Stale(now time.Time) bool {
+	return !s.Until.IsZero() && now.After(s.Until)
 }
 
 // Refuse reports whether this request must be turned away to protect the bank.
@@ -94,9 +123,15 @@ func Publish(s State) { current.Store(&s) }
 // Current returns the last published State, or the zero State (breaker disarmed)
 // when cloud has never pushed one — the standalone-ai case, and the reason a
 // missing publisher cannot halt inference.
+//
+// A reading past its Until is returned as the zero State too, for the same reason
+// and by the same rule: both are "nobody can say", and this package answers that
+// with ALLOW. Handling it here rather than in Refuse keeps the policy pure and
+// puts the clock in the one place that already decides what is known.
 func Current() State {
-	if p := current.Load(); p != nil {
-		return *p
+	p := current.Load()
+	if p == nil || p.Stale(time.Now()) {
+		return State{}
 	}
-	return State{}
+	return *p
 }
