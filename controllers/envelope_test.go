@@ -314,6 +314,99 @@ func TestARefusalIsPrunedWithoutBeingGutted(t *testing.T) {
 	}
 }
 
+// A tool call as it arrives, with everything a client actually acts on: the
+// function it wants called, the arguments, the id it will answer under, and the
+// finish_reason that tells an SDK to go and run it.
+const toolBody = `{"id":"` + upstreamID + `","provider":"` + subProvider + `",` +
+	`"model":"` + sku + `","object":"chat.completion","created":1786649556,` +
+	`"system_fingerprint":"fp_01","x_groq":{"id":"req_01jabc"},` +
+	`"choices":[{"index":0,"finish_reason":"tool_calls","native_finish_reason":"tool_calls",` +
+	`"logprobs":{"content":[]},"content_filter_results":{"hate":{"filtered":false}},` +
+	`"message":{"role":"assistant","content":null,"refusal":null,` +
+	`"reasoning_content":"the user wants weather","reasoning_details":[{"text":"x"}],` +
+	`"tool_calls":[{"id":"call_1","type":"function",` +
+	`"function":{"name":"get_weather","arguments":"{\"city\":\"SF\"}"}}]}}]}`
+
+const toolStream = `data: {"id":"` + upstreamID + `","provider":"` + subProvider + `","model":"` + sku +
+	`","object":"chat.completion.chunk","created":1,"choices":[{"index":0,"native_finish_reason":null,` +
+	`"delta":{"role":"assistant","tool_calls":[{"index":0,"id":"call_1","type":"function",` +
+	`"function":{"name":"get_weather","arguments":"{\"city\":\"SF\"}"}}]}}]}`
+
+// The allowlist tests elsewhere in this file walk the OUTPUT and check each key
+// against the same set the door filtered by. That answers "did the door apply its
+// list", which it always did — it cannot answer "is the list right", because
+// narrowing the list narrows the output and the check with it.
+//
+// Measured: delete "tool_calls" from messageFields and every one of those tests
+// stays green while function calling stops working for every relayed response.
+//
+// So this one names what must SURVIVE, and asserts the values, not just the keys.
+func TestTheDoorKeepsWhatAClientActsOn(t *testing.T) {
+	t.Run("buffered", func(t *testing.T) {
+		mk := ourMark()
+		out := mk.stamp([]byte(toolBody))
+		discloses(t, "tool call", out)
+
+		var env map[string]json.RawMessage
+		if err := json.Unmarshal(out, &env); err != nil {
+			t.Fatalf("not JSON: %v", err)
+		}
+		for _, need := range []string{"id", "object", "created", "model", "provider", "choices",
+			"system_fingerprint"} {
+			if _, ok := env[need]; !ok {
+				t.Errorf("the envelope lost %q", need)
+			}
+		}
+		var choices []map[string]json.RawMessage
+		if err := json.Unmarshal(env["choices"], &choices); err != nil || len(choices) != 1 {
+			t.Fatalf("choices unreadable: %v", err)
+		}
+		for _, need := range []string{"index", "message", "finish_reason", "logprobs",
+			"content_filter_results"} {
+			if _, ok := choices[0][need]; !ok {
+				t.Errorf("the choice lost %q", need)
+			}
+		}
+		if got := field(t, choices[0], "finish_reason"); got != "tool_calls" {
+			t.Errorf("finish_reason = %q — an SDK reads this to decide whether to run the tool", got)
+		}
+		var message map[string]json.RawMessage
+		if err := json.Unmarshal(choices[0]["message"], &message); err != nil {
+			t.Fatalf("message unreadable: %v", err)
+		}
+		for _, need := range []string{"role", "content", "refusal", "reasoning_content", "tool_calls"} {
+			if _, ok := message[need]; !ok {
+				t.Errorf("the message lost %q", need)
+			}
+		}
+		// The values, not just the key: a tool_calls array that survived as an empty
+		// shape is the same outage as one that did not survive.
+		call := string(message["tool_calls"])
+		for _, need := range []string{`"id":"call_1"`, `"name":"get_weather"`, `"city\":\"SF`} {
+			if !strings.Contains(call, need) {
+				t.Errorf("tool_calls lost %s: %s", need, call)
+			}
+		}
+	})
+
+	t.Run("streamed delta", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		ctx := web.NewContext()
+		ctx.Reset(rec, httptest.NewRequest("POST", "/v1/chat/completions", nil))
+		c := &ApiController{}
+		c.Init(ctx, "ApiController", "X", nil)
+
+		c.relayZenStream(strings.NewReader(toolStream+"\n\ndata: [DONE]\n\n"), ourMark())
+		out := rec.Body.String()
+		discloses(t, "streamed tool call", []byte(out))
+		for _, need := range []string{`"name":"get_weather"`, `"id":"call_1"`, `"tool_calls"`} {
+			if !strings.Contains(out, need) {
+				t.Errorf("the streamed delta lost %s:\n%s", need, out)
+			}
+		}
+	})
+}
+
 // B1. The Anthropic dialect had no door at all — it was relayed verbatim, which
 // means every tell the chat path stopped publishing kept going out on the
 // endpoint agents actually use.
