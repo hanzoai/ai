@@ -1430,9 +1430,19 @@ func (c *ApiController) ChatCompletions() {
 	// A family model is served by its family service, which owns identity, reasoning,
 	// the 1M ladder, vision, the fan-out, and the upstream. ai forwards verbatim and
 	// meters the result; it holds no family routing of its own (hip-00NN).
+	//
+	// A family is one provider among several. When it refuses for a reason of its
+	// own — its account is empty, it is rate limited, it is down — it writes
+	// nothing and hands back the reason, and the request carries on to the
+	// route's declared alternates below. That is the difference between a vendor
+	// running out of money and the product going dark.
+	var familyRefused []attempt
 	if fam := familyForProviderType(provider.Type); fam != nil {
-		c.pipeToFamily(fam, "chat/completions", "openai", request.Model, c.Ctx.Input.RequestBody, request.Stream, orgId, authUser, isPremium, hold, requestStartTime)
-		return
+		familyRefused = c.pipeToFamily(fam, "chat/completions", "openai", request.Model, c.Ctx.Input.RequestBody, request.Stream, orgId, authUser, isPremium, hold, requestStartTime)
+		if familyRefused == nil {
+			return
+		}
+		c.recordRefusals(request.Model, familyRefused, authUser, isPremium, request.Stream, requestId, requestStartTime)
 	}
 
 	// ── Tool-calling pass-through ──────────────────────────────────────
@@ -1440,7 +1450,16 @@ func (c *ApiController) ChatCompletions() {
 	// cannot handle structured tool calls. Proxy the raw request directly
 	// to the upstream provider's OpenAI-compatible endpoint so the LLM
 	// receives tool definitions and can return tool_calls in the response.
+	//
+	// A tool request the family refused stops here. The pipeline below is
+	// text-only, so cascading it to an alternate would answer a tool call with
+	// prose — an answer shaped wrongly is worse than an honest refusal, and the
+	// refusal names the vendor and the reason.
 	if len(request.Tools) > 0 || request.ToolChoice != nil {
+		if familyRefused != nil {
+			c.ResponseError(exhausted(request.Model, familyRefused).Error())
+			return
+		}
 		c.proxyToolRequest(provider, &request, requestStartTime, authUser, isPremium, orgId, hold)
 		return
 	}
@@ -1448,7 +1467,15 @@ func (c *ApiController) ChatCompletions() {
 	// Multimodal (vision): the QueryText pipeline below is text-only and would drop
 	// image parts. Forward multimodal requests verbatim to the upstream (the same path
 	// tool-calls take), so vision-capable models actually receive the images.
+	//
+	// Same stop as tool calls, for the same reason: cascading a request whose
+	// images the pipeline would silently discard produces an answer about
+	// nothing.
 	if requestHasMedia(&request) {
+		if familyRefused != nil {
+			c.ResponseError(exhausted(request.Model, familyRefused).Error())
+			return
+		}
 		c.proxyToolRequest(provider, &request, requestStartTime, authUser, isPremium, orgId, hold)
 		return
 	}
@@ -1531,18 +1558,36 @@ func (c *ApiController) ChatCompletions() {
 	promptTokens, _ := model.GetTokenSize(request.Model, question)
 	route := routeForPrompt(request.Model, orgId, promptTokens)
 
-	// Call the model provider with failover support
+	// Call the model provider, cascading to the route's alternates on a refusal
+	// that is about the vendor rather than about this request.
+	//
+	// Every routed model takes this path, not just the ones with fallbacks
+	// declared. A single-provider model has no alternate to move to, but it
+	// still earns the rest: its vendor gets demoted when it refuses, the refusal
+	// is recorded where someone reads it, and "everyone refused" comes back as
+	// an honest 503 naming the reason instead of an upstream 402 telling the
+	// customer THEY are out of money.
 	var modelResult *model.ModelResult
 	var actualProvider served
+	var tried []attempt
 
-	if route != nil && len(route.fallbacks) > 0 {
-		modelResult, actualProvider, err = failoverQueryText(
-			route, question, writer, history, knowledge,
-			c.GetAcceptLanguage(),
-			func() bool { return writer.StreamSent },
-		)
+	if route != nil {
+		modelResult, actualProvider, tried, err = ask{
+			ctx:       c.Ctx.Request.Context(),
+			route:     route,
+			org:       ledger,
+			model:     request.Model,
+			primary:   provider,
+			question:  question,
+			history:   history,
+			knowledge: knowledge,
+			lang:      c.GetAcceptLanguage(),
+			writer:    writer,
+			sent:      func() bool { return writer.StreamSent },
+			prior:     familyRefused,
+		}.serve()
 	} else {
-		// No fallbacks configured — direct call (original path)
+		// Model absent from the route table: call the provider auth resolved.
 		var modelProvider model.ModelProvider
 		modelProvider, err = provider.GetModelProvider(c.GetAcceptLanguage())
 		if err != nil {
@@ -1550,7 +1595,14 @@ func (c *ApiController) ChatCompletions() {
 			return
 		}
 		modelResult, err = modelProvider.QueryText(question, writer, history, "", knowledge, nil, c.GetAcceptLanguage())
-		actualProvider = served{provider.Name, provider.Origin()}
+		actualProvider = served{provider.Name, provider.Origin(), provider}
+	}
+
+	// Every vendor that refused goes in the ledger, whether or not one of them
+	// eventually served. A failover nobody can see leaves the empty account
+	// empty. The family's own refusal is already recorded above, so skip it here.
+	if n := len(familyRefused); len(tried) > n {
+		c.recordRefusals(request.Model, tried[n:], authUser, isPremium, request.Stream, requestId, requestStartTime)
 	}
 
 	if err != nil {
@@ -1598,7 +1650,12 @@ func (c *ApiController) ChatCompletions() {
 			RequestID:        requestId,
 		}
 		successRecord.bind(c.Ctx.Request.Context(), authUser)
-		successRecord.BYO, successRecord.Account = providerBYO(provider, authUser)
+		// Whether this call was "bring your own key" is a property of the row
+		// that SPENT a credential, not of the row auth resolved before failover
+		// moved the request. Reading the latter is how a call served on the
+		// platform's key gets billed as BYO — 1% instead of the token cost, with
+		// the platform eating the upstream.
+		successRecord.BYO, successRecord.Account = providerBYO(actualProvider.row, authUser)
 		recordUsage(successRecord)
 		recordTrace(c.Ctx.Request.Context(), successRecord, requestStartTime)
 		// Settle the reservation with the ACTUAL cost (this works identically for

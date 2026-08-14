@@ -16,7 +16,6 @@ package controllers
 
 import (
 	"bytes"
-	ctx "context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -267,6 +266,20 @@ func (w *AnthropicWriter) MessageString() string {
 	return string(w.MessageBuf)
 }
 
+// Reset discards what a failed attempt accumulated, so the next provider's
+// answer is not served glued to the dead one's half-sentence. Same contract as
+// OpenAIWriter.Reset, and for the same reason: Write appends, and one writer is
+// shared across every failover attempt.
+//
+// StreamSent and headerSent are NOT cleared. Both record that bytes reached the
+// CLIENT — a fact about the wire that cannot be undone, and the one that
+// forbids the retry this prepares for.
+func (w *AnthropicWriter) Reset() {
+	w.Buffer = w.Buffer[:0]
+	w.MessageBuf = w.MessageBuf[:0]
+	w.Cleaner = *NewCleaner(w.Cleaner.bufferSize)
+}
+
 // Close finalizes the streaming response with stop events.
 func (w *AnthropicWriter) Close(promptTokens, completionTokens, totalTokens int) error {
 	if !w.Stream {
@@ -458,20 +471,42 @@ func (c *ApiController) AnthropicMessages() {
 	}
 	defer hold.settle(0)
 
+	// One request id for the whole request — the response id, the usage-ledger
+	// key, and the id every refusal along the way is filed under, so a failover
+	// reads back as one story rather than as unrelated rows.
+	requestId := uuid.NewString()
+
 	// ── Model families (Zen, Enso) ─────────────────────
 	// A family model is served by its family service, which owns identity, reasoning,
 	// the 1M ladder, vision, the fan-out, and the upstream. ai forwards verbatim and
 	// meters the result; it holds no family routing of its own (hip-00NN).
+	//
+	// A family is one provider among several: when it refuses for a reason of
+	// its own it writes nothing and hands back the reason, and the request
+	// carries on to the route's declared alternates below.
+	var familyRefused []attempt
 	if fam := familyForProviderType(provider.Type); fam != nil {
-		c.pipeToFamily(fam, "messages", "anthropic", request.Model, c.Ctx.Input.RequestBody, request.Stream, orgId, authUser, isPremium, hold, requestStartTime)
-		return
+		familyRefused = c.pipeToFamily(fam, "messages", "anthropic", request.Model, c.Ctx.Input.RequestBody, request.Stream, orgId, authUser, isPremium, hold, requestStartTime)
+		if familyRefused == nil {
+			return
+		}
+		c.recordRefusals(request.Model, familyRefused, authUser, isPremium, request.Stream, requestId, requestStartTime)
 	}
 
 	// ── Tool-calling proxy ────────────────────────────────────────────────
 	// When the request carries tools (Claude Code, agents, etc.) the QueryText
 	// pipeline cannot handle structured tool_use blocks. Proxy the raw Anthropic
 	// request directly to the upstream and stream/return the raw response.
+	//
+	// A tool request the family refused stops here: the pipeline below is
+	// text-only, and answering a tool call with prose is worse than an honest
+	// refusal that names the vendor and the reason.
 	if len(request.Tools) > 0 {
+		if familyRefused != nil {
+			err := exhausted(request.Model, familyRefused)
+			c.respondAnthropicError("api_error", err.Error(), statusOf(err))
+			return
+		}
 		c.proxyAnthropicToolRequest(provider, &request, requestStartTime, authUser, isPremium, hold)
 		return
 	}
@@ -480,6 +515,13 @@ func (c *ApiController) AnthropicMessages() {
 	// blocks. Forward multimodal requests verbatim to the upstream (same path as tools),
 	// so vision-capable models receive the images. Symmetric with the OpenAI endpoint.
 	if requestHasMediaAnthropic(&request) {
+		// Same stop as tools: cascading a request whose images the pipeline
+		// would discard produces an answer about nothing.
+		if familyRefused != nil {
+			err := exhausted(request.Model, familyRefused)
+			c.respondAnthropicError("api_error", err.Error(), statusOf(err))
+			return
+		}
 		c.proxyAnthropicToolRequest(provider, &request, requestStartTime, authUser, isPremium, hold)
 		return
 	}
@@ -532,9 +574,6 @@ func (c *ApiController) AnthropicMessages() {
 		question = fmt.Sprintf("System: %s\n\nUser: %s", systemPrompt, question)
 	}
 
-	// ── Call model provider ─────────────────────────────────────────────
-	requestId := uuid.NewString()
-
 	if request.Stream {
 		c.Ctx.ResponseWriter.Header().Set("Content-Type", "text/event-stream")
 		c.Ctx.ResponseWriter.Header().Set("Cache-Control", "no-cache")
@@ -557,19 +596,29 @@ func (c *ApiController) AnthropicMessages() {
 
 	var modelResult *model.ModelResult
 	var actualProvider served
+	var tried []attempt
 
 	if route != nil {
-		// ONE execute path. failoverQueryText rides out a transient upstream
-		// refusal (429 / 5xx) with the shared retry policy, then cascades through
-		// the route's fallbacks if any. A model with no fallbacks still gets the
-		// retry — the cascade is just the identity case — so there is no longer a
-		// second, retry-less path that silently turns a 429 into a hard client
-		// 500 (the failure behind "it stops in ours").
-		modelResult, actualProvider, err = failoverQueryText(
-			route, question, writer, history, knowledge,
-			c.GetAcceptLanguage(),
-			func() bool { return writer.StreamSent },
-		)
+		// ONE execute path. ask.serve rides out a transient upstream refusal
+		// (429 / 5xx) with the shared retry policy, then cascades through the
+		// route's alternates. A model with no alternate still gets the retry,
+		// the demotion, and the honest exhausted error — the cascade is just the
+		// identity case — so there is no second, retry-less path that silently
+		// turns a 429 into a hard client 500.
+		modelResult, actualProvider, tried, err = ask{
+			ctx:       c.Ctx.Request.Context(),
+			route:     route,
+			org:       c.billingOrg(authUser),
+			model:     request.Model,
+			primary:   provider,
+			question:  question,
+			history:   history,
+			knowledge: knowledge,
+			lang:      c.GetAcceptLanguage(),
+			writer:    writer,
+			sent:      func() bool { return writer.StreamSent },
+			prior:     familyRefused,
+		}.serve()
 	} else {
 		// Model not in the route table: call the resolved provider directly, on
 		// the SAME retry policy failover uses, typing the error at the boundary.
@@ -579,10 +628,11 @@ func (c *ApiController) AnthropicMessages() {
 			c.respondAnthropicError("api_error", fmt.Sprintf("Failed to get model provider: %s", err.Error()), 500)
 			return
 		}
-		err = retryTransient(ctx.Background(), currentRetryPolicy(), func() error {
+		err = retryTransient(c.Ctx.Request.Context(), currentRetryPolicy(), func() error {
 			if writer.StreamSent {
 				return errPartiallyWritten
 			}
+			writer.Reset()
 			res, e := modelProvider.QueryText(question, writer, history, "", knowledge, nil, c.GetAcceptLanguage())
 			if e != nil {
 				return wrapUpstreamError(e)
@@ -590,7 +640,13 @@ func (c *ApiController) AnthropicMessages() {
 			modelResult = res
 			return nil
 		})
-		actualProvider = served{provider.Name, provider.Origin()}
+		actualProvider = served{provider.Name, provider.Origin(), provider}
+	}
+
+	// Every vendor that refused goes in the ledger, whether or not one of them
+	// eventually served. The family's own refusal is already recorded above.
+	if n := len(familyRefused); len(tried) > n {
+		c.recordRefusals(request.Model, tried[n:], authUser, isPremium, request.Stream, requestId, requestStartTime)
 	}
 
 	if err != nil {
@@ -641,7 +697,9 @@ func (c *ApiController) AnthropicMessages() {
 			RequestID:        requestId,
 		}
 		successRecord.bind(c.Ctx.Request.Context(), authUser)
-		successRecord.BYO, successRecord.Account = providerBYO(provider, authUser)
+		// The row that SPENT a credential decides whether this was the customer's
+		// own key — not the row auth resolved before failover moved the request.
+		successRecord.BYO, successRecord.Account = providerBYO(actualProvider.row, authUser)
 		recordUsage(successRecord)
 		recordTrace(c.Ctx.Request.Context(), successRecord, requestStartTime)
 		hold.settle(calculateCostCentsWithCache(request.Model, modelResult.PromptTokenCount, modelResult.ResponseTokenCount, 0, 0))

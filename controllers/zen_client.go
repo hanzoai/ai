@@ -656,11 +656,49 @@ func withModel(body []byte, model string) []byte {
 // (Anthropic) or "chat/completions" (OpenAI). Billing settles from the response usage
 // at the discovered exact retail price; the settle is idempotent with any deferred
 // fail-safe settle at the call site.
-func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model string, rawBody []byte, stream bool, orgId string, authUser *iam.User, isPremium bool, hold *budgetHold, start time.Time) {
+// It returns nil when the request is finished with — served, or refused for a
+// reason no other vendor would fix, in which case the client already has the
+// answer. It returns the refusal when the FAMILY could not serve it and NOTHING
+// has been written to the client, so the caller is free to offer the same
+// request to the route's declared alternates. That distinction is the whole
+// reason a vendor running out of money stopped being an outage: the family is
+// one provider among several, and a 402 from it is a fact about that vendor's
+// balance, not about the request.
+//
+// Nothing on the fall-through path settles the budget hold. settle is one-shot,
+// so releasing it here would leave the eventual real cost unbilled.
+func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model string, rawBody []byte, stream bool, orgId string, authUser *iam.User, isPremium bool, hold *budgetHold, start time.Time) []attempt {
+	// refused reports a provider-side failure with nothing written: the request
+	// is still movable, so hand the reason back rather than spending it on an
+	// error page.
+	refused := func(err error) []attempt {
+		// The caller hung up. There is nobody left to serve, so offering the
+		// request to a second vendor would spend money answering an empty room —
+		// and would blame a healthy vendor for the client's disconnect.
+		if c.Ctx.Request.Context().Err() != nil {
+			c.EnableRender = false
+			return nil
+		}
+		if d := cooldownFor(err); d > 0 {
+			cooled.demote(fam.name, d)
+		}
+		at := attempt{
+			provider: fam.name,
+			upstream: model,
+			origin:   fam.name,
+			status:   upstreamHTTPStatus(err),
+			fault:    faultProvider,
+			err:      err,
+		}
+		announce(model, at)
+		return []attempt{at}
+	}
+
 	prov := fam.providerFn()
 	if prov == nil {
-		c.zenError(dialect, fam.name+" service is not configured", http.StatusServiceUnavailable)
-		return
+		// Unconfigured or switched off. From the request's point of view that is
+		// a provider that cannot serve, so try the alternates before saying no.
+		return refused(&apiError{http.StatusServiceUnavailable, fam.name + " service is not configured"})
 	}
 	// Access gate (the ONE choke point): a gated SKU (enso limited preview) is
 	// callable only with a granted ModelAccess row. Discovery tells us which models
@@ -668,8 +706,10 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	// The deferred hold.settle(0) at the call site releases the reservation on this
 	// early return, so a denied request is never billed.
 	if msg := c.familyRefusal(fam, model, orgId, authUser); msg != "" {
+		// OUR gate, not the vendor's: this caller may not have this SKU. No other
+		// provider changes that, so answer it here.
 		c.zenError(dialect, msg, http.StatusForbidden)
-		return
+		return nil
 	}
 	// Forward the model ai RESOLVED, not the caller's raw model id. An
 	// `auto`/`zen-router` request rewrote request.Model to a concrete family SKU, but
@@ -682,8 +722,9 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	url := prov.ProviderUrl + "/v1/" + apiPath
 	req, err := http.NewRequestWithContext(c.Ctx.Request.Context(), http.MethodPost, url, bytes.NewReader(rawBody))
 	if err != nil {
+		// Our own request is malformed. Another vendor would not fix that.
 		c.zenError(dialect, "build "+fam.name+" request: "+err.Error(), http.StatusInternalServerError)
-		return
+		return nil
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if a := c.Ctx.Request.Header.Get("Accept"); a != "" {
@@ -704,19 +745,29 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 
 	resp, err := zenPipeClient.Do(req)
 	if err != nil {
-		c.recordFamilyUsage(fam, model, authUser, isPremium, stream, reqID, 0, 0, start, hold, "error", err.Error())
-		c.zenError(dialect, fam.name+" request failed: "+err.Error(), http.StatusBadGateway)
-		return
+		// Never reached the family at all. Nothing is written and nothing is
+		// billed — deliberately no recordFamilyUsage here, because its
+		// hold.settle would release the reservation one-shot and leave the cost
+		// of whichever provider ends up serving this request uncharged.
+		return refused(err)
 	}
 	defer resp.Body.Close()
 
 	prompt, completion := 0, 0
 	served, respID := "", ""
 	if stream {
+		// The status arrives BEFORE any byte of the stream is written — the
+		// WriteHeader below is still ahead of us — so a streaming request is
+		// just as movable here as a buffered one. This is the only window in
+		// which that is true, and it is why the failover decision lives at the
+		// status and not somewhere down in the relay.
 		if resp.StatusCode != http.StatusOK {
 			b, _ := io.ReadAll(resp.Body)
+			if err := (&apiError{resp.StatusCode, upstreamErrorMessage(b)}); faultOf(err) == faultProvider {
+				return refused(err)
+			}
 			c.zenError(dialect, upstreamErrorMessage(b), resp.StatusCode)
-			return
+			return nil
 		}
 		c.Ctx.ResponseWriter.Header().Set("Content-Type", "text/event-stream")
 		c.Ctx.ResponseWriter.Header().Set("Cache-Control", "no-cache")
@@ -726,12 +777,16 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	} else {
 		b, rErr := io.ReadAll(resp.Body)
 		if rErr != nil {
-			c.zenError(dialect, "read "+fam.name+" response: "+rErr.Error(), http.StatusBadGateway)
-			return
+			// The family's answer was truncated on the way to us. Nothing has
+			// reached the client, so this is still movable.
+			return refused(rErr)
 		}
 		if resp.StatusCode != http.StatusOK {
+			if err := (&apiError{resp.StatusCode, upstreamErrorMessage(b)}); faultOf(err) == faultProvider {
+				return refused(err)
+			}
 			c.zenError(dialect, upstreamErrorMessage(b), resp.StatusCode)
-			return
+			return nil
 		}
 		sniffZenUsage(b, &prompt, &completion)
 		served = sniffZenModel(b)
@@ -755,6 +810,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	// to the internal reqID when the family did not disclose one. See object.RoutingEvent.
 	c.recordFamilyRouting(model, served, respID, reqID, rawBody, orgId, authUser, prompt, completion, cents, start)
 	c.EnableRender = false
+	return nil
 }
 
 // relayZenStream copies a family's SSE response to the client verbatim and captures the
