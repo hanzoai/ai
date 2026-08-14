@@ -372,7 +372,7 @@ func TestOkWithNoUserIsAnActionableRefusal(t *testing.T) {
 		t.Fatal("err = nil; ok-with-no-user must refuse, not return a nil user with no error")
 	}
 	msg := err.Error()
-	if !strings.Contains(msg, "cloud.hanzo.ai/keys") {
+	if !strings.Contains(msg, keysURL) {
 		t.Errorf("refusal does not say what to do: %q", msg)
 	}
 	if !strings.Contains(msg, "resolved to no user") {
@@ -381,5 +381,22 @@ func TestOkWithNoUserIsAnActionableRefusal(t *testing.T) {
 	// The credential is named by prefix, never in full.
 	if strings.Contains(msg, "abcdef0123456789") {
 		t.Errorf("refusal leaked the key: %q", msg)
+	}
+}
+
+// Every key refusal names a cure, and the cure has to be a page that answers. These
+// messages used to send holders to cloud.hanzo.ai/keys — measured 404, because
+// cloud.hanzo.ai is the product site and the console is its own host with the key
+// surface at /api-keys. One spelling, checked here, so the three refusals that quote
+// it cannot drift apart again.
+func TestKeysURL_isTheConsoleKeyPage(t *testing.T) {
+	if keysURL != "https://console.hanzo.ai/api-keys" {
+		t.Fatalf("keysURL = %q, which is not the console's key page", keysURL)
+	}
+	for _, code := range []string{"key_unknown", "key_expired"} {
+		msg := keyRefusal(code, "the entity does not exist", "sk-live-abcdef123456").Error()
+		if !strings.Contains(msg, keysURL) {
+			t.Errorf("%s refusal does not name where to mint a key: %q", code, msg)
+		}
 	}
 }
