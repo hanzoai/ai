@@ -125,6 +125,32 @@ func (c *Claims) typeMachine() {
 	if c == nil || c.User.Type != "" || c.User.Name == "" {
 		return
 	}
+	// A PRINCIPAL WITH MEMBERSHIPS IS A PERSON, and that is signed, so it outranks
+	// the shape below.
+	//
+	// The reading this function performs — the client is its own subject, so its
+	// name IS its audience — assumed a person could never reach that equality. A
+	// person can: IAM's audience is the app's client id, its client ids are its app
+	// names (`hanzo-cloud`), and its usernames are `^[a-z0-9][a-z0-9._-]{0,62}$`
+	// with no reserved list, so signing up as `hanzo-cloud` makes name == aud on a
+	// perfectly ordinary person's token. That token then types as a machine, and
+	// account.Payer's machine branch pays from the ORG rather than the person —
+	// which in the signup org is the difference between a wallet that starts at
+	// zero and the platform pool.
+	//
+	// IAM already distinguishes the two, in a claim it signs and this package
+	// already parses: it seeds every person's membership set with their home org
+	// (store.MemberOrgRefs, "member" for a plain member, so never empty) and leaves
+	// it nil for a client-credentials token, which has no memberships to state.
+	// hanzoai/cloud reads exactly this to answer the same question
+	// (authz.Claims.Machine is len(Orgs) == 0), so deferring to it here is not a
+	// third rule — it is the two readers finally agreeing.
+	//
+	// Only the INFERENCE defers. A type IAM stated outright is still honored above,
+	// so a machine that somehow carried memberships would keep its stated class.
+	if len(c.Orgs) > 0 {
+		return
+	}
 	for _, aud := range c.Audience {
 		if aud == c.User.Name {
 			c.User.Type = Machine
