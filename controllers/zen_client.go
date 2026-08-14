@@ -94,10 +94,11 @@ type modelFamily struct {
 	// /v1/models body decode reads, in the family's own dialect, because what "free"
 	// looks like on the wire is exactly as dialect-specific as what a price is.
 	//
-	// It is deliberately NOT the catalog. A spare is not for sale: it is not listed,
-	// not priced, not routable by name, and a request only ever lands on one because
-	// the route it asked for was refused for money. Keeping the two lists disjoint is
-	// what stops a downgrade from quietly becoming a product.
+	// It is a SUBSET of the catalog, not a second one: the routes the vendor charges
+	// nothing for AND answers in text with. Price is what qualifies a route as a
+	// spare, so a spare bills nothing whether a caller named it or a refusal for
+	// money landed on it — a downgrade can never quietly become something we charge
+	// for, and a route we charge for can never be handed out as a remedy.
 	//
 	// nil means the family has none, and a refusal for money from it is final.
 	spare func([]byte) []string
