@@ -382,6 +382,55 @@ func TestExhausted(t *testing.T) {
 	}
 }
 
+// A7-chain. exhausted() quotes the last refusal verbatim, so whatever
+// upstreamErrorMessage returns is published to the customer. It used to return the
+// whole raw body when it could not find error.message — which put the vendor's
+// name and our buy price back into an answer, through the one path the envelope
+// door does not sit on.
+func TestARefusalDoesNotQuoteTheUpstreamsBodyBack(t *testing.T) {
+	// An aggregator's 402, in a shape upstreamErrorMessage cannot read, carrying
+	// exactly what envelope.go strips from a successful answer.
+	body := []byte(`{"errors":[{"reason":"Insufficient credits."}],` +
+		`"provider":"GMICloud","usage":{"cost":0.00123,` +
+		`"cost_details":{"upstream_inference_cost":0.00098},"is_byok":false}}`)
+
+	said := upstreamErrorMessage(body)
+	for _, tell := range []string{"GMICloud", "cost", "0.00123", "upstream_inference_cost", "is_byok"} {
+		if strings.Contains(said, tell) {
+			t.Errorf("upstreamErrorMessage discloses %q: %s", tell, said)
+		}
+	}
+
+	// And the whole way out: the refusal a customer actually reads.
+	err := exhausted("enso-flash", []attempt{
+		{provider: "enso", status: 402, err: &apiError{402, said}},
+	})
+	for _, tell := range []string{"GMICloud", "0.00123", "upstream_inference_cost", "is_byok"} {
+		if strings.Contains(err.Error(), tell) {
+			t.Errorf("the 503 a customer reads discloses %q:\n%s", tell, err.Error())
+		}
+	}
+	if statusOf(err) != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want 503", statusOf(err))
+	}
+
+	// Still diagnostic where the upstream said something we can read.
+	for _, shape := range []string{
+		`{"error":{"message":"Insufficient credits."}}`,
+		`{"error":"Insufficient credits."}`,
+		`{"message":"Insufficient credits."}`,
+		`{"detail":"Insufficient credits."}`,
+	} {
+		if got := upstreamErrorMessage([]byte(shape)); got != "Insufficient credits." {
+			t.Errorf("upstreamErrorMessage(%s) = %q, want the reason — dropping the body must "+
+				"not cost the diagnostic", shape, got)
+		}
+	}
+	if got := upstreamErrorMessage(nil); got != "upstream error" {
+		t.Errorf("upstreamErrorMessage(nil) = %q", got)
+	}
+}
+
 func TestExhaustedWithNobodyToAsk(t *testing.T) {
 	err := exhausted("ghost-model", nil)
 	if got := statusOf(err); got != http.StatusServiceUnavailable {
