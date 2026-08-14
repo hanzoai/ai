@@ -1045,19 +1045,42 @@ func anthropicErrorTypeForStatus(status int) string {
 	}
 }
 
-// upstreamErrorMessage extracts a readable message from an OpenAI-shaped error
-// body ({"error":{"message":...}}), falling back to the raw body.
+// upstreamErrorMessage is the readable reason inside an upstream's error body, in
+// the shapes upstreams actually write.
+//
+// It NEVER returns the body. Every one of its callers is answering a customer —
+// zenError, respondAnthropicError, and the attempt that exhausted() ends up
+// quoting — so falling back to the raw body published whatever the vendor happened
+// to put in it. Measured on the way out that way: `provider`, `cost` and
+// `upstream_inference_cost`, which is exactly the disclosure the envelope removes
+// from every SUCCESSFUL answer. A refusal is not a hole in that.
+//
+// A body in none of these shapes is one we have not read, and "upstream error" is
+// the honest thing to say about it. It is deliberately not logged either: an error
+// body is where a vendor echoes the request that provoked it, so it is the last
+// place a prompt should be copied to.
 func upstreamErrorMessage(body []byte) string {
-	var e struct {
+	// error.message — OpenAI, Anthropic, and everyone who copied them.
+	var nested struct {
 		Error struct {
 			Message string `json:"message"`
 		} `json:"error"`
 	}
-	if json.Unmarshal(body, &e) == nil && e.Error.Message != "" {
-		return e.Error.Message
+	if json.Unmarshal(body, &nested) == nil && nested.Error.Message != "" {
+		return nested.Error.Message
 	}
-	if len(body) > 0 {
-		return string(body)
+	// The flatter shapes: {"error":"..."} , {"message":"..."} , {"detail":"..."}.
+	var flat struct {
+		Error   string `json:"error"`
+		Message string `json:"message"`
+		Detail  string `json:"detail"`
+	}
+	if json.Unmarshal(body, &flat) == nil {
+		for _, said := range []string{flat.Error, flat.Message, flat.Detail} {
+			if said != "" {
+				return said
+			}
+		}
 	}
 	return "upstream error"
 }
