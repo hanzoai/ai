@@ -565,14 +565,20 @@ func writeDOBackfillRows(ctx context.Context, rows []DOBackfillRow) (int, error)
 			continue
 		}
 		ts := day.Add(12 * time.Hour) // noon UTC — unambiguously inside the day for toDate()
+		// The nano columns are the money of record — every spend read sums cost_nano
+		// and rounds once — so a row that writes only cents reads as ZERO SPEND. An
+		// invoice line is already whole cents, so the conversion is exact rather than
+		// a reconstruction: 1 cent is 10,000,000 nano-USD. billed_nano equals it
+		// because a backfilled invoice is what was charged, with no margin to split.
+		nano := row.CostCents * 10_000_000
 		if err := object.DatastoreExec(
 			ctx,
 			"INSERT INTO hanzo.cloud_usage "+
 				"(id, timestamp, owner, user_id, organization, model, provider, request_id, "+
-				"prompt_tokens, completion_tokens, total_tokens, cost_cents, currency, status, source) "+
-				"VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, 'usd', ?, ?)",
+				"prompt_tokens, completion_tokens, total_tokens, cost_cents, cost_nano, billed_nano, currency, status, source) "+
+				"VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?, ?, 'usd', ?, ?)",
 			row.ID, ts, doBackfillOwner, "", doBackfillOwner, row.Model, doBackfillProvider, row.ID,
-			uint64(row.CostCents), doBackfillStatus, doBackfillSource,
+			uint64(row.CostCents), nano, nano, doBackfillStatus, doBackfillSource,
 		); err != nil {
 			return written, fmt.Errorf("write backfill row %s: %w", row.ID, err)
 		}
