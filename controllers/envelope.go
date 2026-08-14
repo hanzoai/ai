@@ -57,6 +57,11 @@ var (
 	// price is not a number a customer gets to read off their own receipt.
 	usageFields = fields("prompt_tokens", "completion_tokens", "total_tokens",
 		"prompt_tokens_details", "completion_tokens_details")
+	// errorFields is what a refusal may say. A refusal IS an answer, so `error` is
+	// published — but it was published whole, and an aggregator hangs the same
+	// things on a refusal it hangs on a success: who it bought from
+	// (error.metadata.provider_name) and the upstream's own raw body.
+	errorFields = fields("message", "type", "param", "code")
 )
 
 func fields(names ...string) map[string]bool {
@@ -147,9 +152,41 @@ func (m *mark) stamp(payload []byte) []byte {
 		m.take(usage)
 		env["usage"] = prune(usage, usageFields)
 	}
+	if refusal, ok := env["error"]; ok {
+		env["error"] = stampError(refusal)
+	}
 	out, err := encode(env)
 	if err != nil {
 		return payload
+	}
+	return out
+}
+
+// stampError keeps a refusal diagnostic and stops it carrying two things it must not.
+//
+// `metadata` is where an aggregator names the sub-provider and quotes the upstream's
+// raw body, so it goes the way every other unpublished field goes. The message stays:
+// a refusal a customer cannot read is not a kindness to anybody.
+//
+// A NUMERIC `code` goes too. In our schema code is a string an SDK switches on —
+// "insufficient_quota", "context_length_exceeded". An upstream that writes 402 there
+// is restating an HTTP status, and that status says the CUSTOMER owes money when what
+// happened is that OUR account with a vendor is empty. It sends them to fix a bill
+// that is not theirs, which is the same reason an exhausted request answers 503 and
+// never the upstream's own status. A 200 carrying a refusal must not smuggle back
+// what the status line already refused to say.
+func stampError(raw json.RawMessage) json.RawMessage {
+	var refusal map[string]json.RawMessage
+	if json.Unmarshal(raw, &refusal) != nil || refusal == nil {
+		return raw
+	}
+	keep(refusal, errorFields)
+	if _, isText := name(refusal["code"]); !isText {
+		delete(refusal, "code")
+	}
+	out, err := encode(refusal)
+	if err != nil {
+		return raw
 	}
 	return out
 }
