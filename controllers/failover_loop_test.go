@@ -273,6 +273,135 @@ func TestARefusalRestsOneAccount(t *testing.T) {
 	}
 }
 
+// pipeFamily drives the real family pipe against a family answering `status`,
+// with a funded reservation, and reports what came back and what the ledger says.
+func pipeFamily(t *testing.T, subject string, status int, body string) (refused []attempt, avail int64) {
+	t.Helper()
+	family := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(status)
+		_, _ = w.Write([]byte(body))
+	}))
+	defer family.Close()
+
+	fam := &modelFamily{
+		name: "enso", prefix: "enso",
+		providerFn: func() *object.Provider {
+			return &object.Provider{Owner: "admin", Name: "enso", Type: "Enso", ProviderUrl: family.URL}
+		},
+	}
+
+	object.GlobalBalanceLedger.SetBalance(subject, 1000)
+	hold, ok := reserveBudget(subject, 100)
+	if !ok {
+		t.Fatal("reserve against a funded subject must succeed")
+	}
+	if a, _ := object.GlobalBalanceLedger.Available(subject); a != 900 {
+		t.Fatalf("available after reserve = %d, want 900", a)
+	}
+
+	req := []byte(`{"model":"enso-flash","messages":[{"role":"user","content":"hi"}]}`)
+	rec := httptest.NewRecorder()
+	ctx := web.NewContext()
+	ctx.Reset(rec, httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(string(req))))
+	c := &ApiController{}
+	c.Init(ctx, "ApiController", "X", nil)
+
+	refused = c.pipeToFamily(fam, "chat/completions", "openai", "enso-flash", req, false,
+		"org-a", nil, false, hold, time.Now())
+	avail, _ = object.GlobalBalanceLedger.Available(subject)
+	return refused, avail
+}
+
+// A1. What the pipe returns and what it owes the reservation are the same fact,
+// so they are asserted together.
+//
+// nil means the request is OVER: nothing downstream will run, so the cents must
+// be back. A refusal means the request is still MOVING: the cents must still be
+// held, because whichever provider ends up serving it has to be billed and
+// settle only fires once.
+//
+// The leak this pins: a 400 from an embeddings family returned nil, and nothing
+// anywhere released the hold. The customer's balance simply stayed short.
+func TestTheHoldFollowsTheAnswer(t *testing.T) {
+	cooled.forget()
+	t.Cleanup(cooled.forget)
+
+	t.Run("a refusal nobody else can fix ends the request and gives the cents back", func(t *testing.T) {
+		refused, avail := pipeFamily(t, "holdtest/req-fault", http.StatusBadRequest,
+			`{"error":{"message":"invalid 'messages': empty"}}`)
+		if refused != nil {
+			t.Fatalf("a 400 is the request's fault; no other vendor changes it, got %+v", refused)
+		}
+		if avail != 1000 {
+			t.Errorf("available = %d, want 1000 — the request is over and nothing downstream "+
+				"will ever settle this hold, so the customer is short by the reservation", avail)
+		}
+	})
+
+	t.Run("a refusal somebody else can fix keeps the cents held", func(t *testing.T) {
+		refused, avail := pipeFamily(t, "holdtest/provider-fault", http.StatusPaymentRequired,
+			`{"error":{"message":"Insufficient credits."}}`)
+		if len(refused) != 1 {
+			t.Fatalf("a 402 is the vendor's fault and the request must stay movable, got %+v", refused)
+		}
+		if avail != 900 {
+			t.Errorf("available = %d, want 900 — releasing here is one-shot, and whichever "+
+				"provider serves this next would then be billed nothing", avail)
+		}
+	})
+
+	// A caller who hangs up is also an ending — there is nobody left to serve, so
+	// the request is not offered anywhere else. That makes it a nil, and a nil
+	// owes the cents back. It is the one ending that reaches nil through the
+	// refusal path rather than around it, which is exactly how it was missed.
+	t.Run("a caller who hung up ends the request and gives the cents back", func(t *testing.T) {
+		const subject = "holdtest/hangup"
+		fam := &modelFamily{
+			name: "enso", prefix: "enso",
+			providerFn: func() *object.Provider {
+				// Nothing listens here: the dial fails and the pipe reaches the
+				// refusal path, where it finds the caller already gone.
+				return &object.Provider{Owner: "admin", Name: "enso", Type: "Enso", ProviderUrl: "http://127.0.0.1:1"}
+			},
+		}
+		object.GlobalBalanceLedger.SetBalance(subject, 1000)
+		hold, ok := reserveBudget(subject, 100)
+		if !ok {
+			t.Fatal("reserve must succeed")
+		}
+
+		gone, hangUp := context.WithCancel(context.Background())
+		hangUp()
+		req := []byte(`{"model":"enso-flash","messages":[{"role":"user","content":"hi"}]}`)
+		rec := httptest.NewRecorder()
+		ctx := web.NewContext()
+		ctx.Reset(rec, httptest.NewRequest("POST", "/v1/chat/completions",
+			strings.NewReader(string(req))).WithContext(gone))
+		c := &ApiController{}
+		c.Init(ctx, "ApiController", "X", nil)
+
+		if refused := c.pipeToFamily(fam, "chat/completions", "openai", "enso-flash", req, false,
+			"org-a", nil, false, hold, time.Now()); refused != nil {
+			t.Fatalf("nobody is listening; the request must not be offered elsewhere, got %+v", refused)
+		}
+		if avail, _ := object.GlobalBalanceLedger.Available(subject); avail != 1000 {
+			t.Errorf("available = %d, want 1000 — the request is over and nothing will settle "+
+				"this hold, so a client that disconnects leaves its own balance short", avail)
+		}
+	})
+
+	t.Run("a served request settles its real cost", func(t *testing.T) {
+		refused, avail := pipeFamily(t, "holdtest/served", http.StatusOK,
+			`{"id":"x","object":"chat.completion","choices":[],"usage":{"prompt_tokens":1,"completion_tokens":1}}`)
+		if refused != nil {
+			t.Fatalf("a 200 is served, got %+v", refused)
+		}
+		if avail < 900 || avail > 1000 {
+			t.Errorf("available = %d, want the hold released and the real cost debited", avail)
+		}
+	})
+}
+
 // The family pipe is the OTHER site that learns from a refusal, and it is the
 // one that served the outage. Driven end to end against a family answering the
 // measured 402, so the org has to survive the whole call rather than only the
