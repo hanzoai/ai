@@ -70,11 +70,22 @@ const (
 	attrServedBy       = "gen_ai.hanzo.served_by"
 	attrClusterID      = "gen_ai.hanzo.cluster_id"
 	attrRoutePolicy    = "gen_ai.hanzo.route_policy"
+	// attrFallback is emitted ONLY when the caller did not get the route they
+	// named, and it says WHY. Present ⇒ this generation is a downgrade; absent ⇒
+	// it is not, which is what makes it a filter and not a thing to interpret.
+	// The two model attributes say what the swap WAS; this one says what caused
+	// it, because "response.model differs from request.model" will one day have
+	// more than one cause and a reader should not have to guess which.
+	attrFallback = "gen_ai.hanzo.fallback"
 	// attrPriced is emitted (=false) ONLY when the model had no configured price and
 	// billed at the default — so o11y can flag the row. Absent ⇒ priced normally.
 	attrPriced         = "gen_ai.hanzo.priced"
 	attrInputMessages  = "gen_ai.input.messages"
 	attrOutputMessages = "gen_ai.output.messages"
+
+	// fallbackSpent is the one cause there is today: the vendor's account with us
+	// was empty, and it served the request from a route it charges nothing for.
+	fallbackSpent = "upstream_spent"
 
 	// attrDeploymentEnv is the standard OTel key o11y reads for Environment. Emitted
 	// per-request from record.Environment (the caller's X-Environment) so Observe
@@ -120,11 +131,21 @@ func buildGenAISpanFields(record *usageRecord, totalCostUSD, billedCostUSD, prov
 	if model == "" {
 		model = "unknown"
 	}
+	// The two model attributes have always been the same string, because until a
+	// request could be moved they described one thing. They stop agreeing exactly
+	// when the caller did not get what they asked for: request.model is the SKU
+	// they named, response.model the one that answered. Reading them apart is how
+	// a downgrade shows up in the plane a bad answer is investigated from, and it
+	// needs no vocabulary of ours — this is what the two attributes are FOR.
+	requested := model
+	if record.Requested != "" {
+		requested = record.Requested
+	}
 
 	attrs := []attribute.KeyValue{
 		attribute.String(attrGenAISystem, "hanzo"),
 		attribute.String(attrGenAIOperation, "chat"),
-		attribute.String(attrGenAIRequestModel, model),
+		attribute.String(attrGenAIRequestModel, requested),
 		attribute.String(attrGenAIResponseModel, model),
 		attribute.Int(attrGenAIInputTokens, record.PromptTokens),
 		attribute.Int(attrGenAIOutputTokens, record.CompletionTokens),
@@ -201,6 +222,9 @@ func buildGenAISpanFields(record *usageRecord, totalCostUSD, billedCostUSD, prov
 	}
 	if record.Provider != "" {
 		attrs = append(attrs, attribute.String(attrProvider, record.Provider))
+	}
+	if record.Requested != "" {
+		attrs = append(attrs, attribute.String(attrFallback, fallbackSpent))
 	}
 	if record.RequestID != "" {
 		attrs = append(attrs, attribute.String(attrRequestID, record.RequestID))
@@ -318,8 +342,10 @@ func emitGenAISpan(ctx context.Context, record *usageRecord, startTime time.Time
 	var breakdown *costBreakdown
 	// A token breakdown describes a token-billed call. Image, video and audio all
 	// bill per unit and carry no tokens, so computing one would report a cost
-	// structure the call does not have.
-	if record.ImageCount == 0 && record.VideoCount == 0 && !recordIsAudio(record) {
+	// structure the call does not have — and a FREE route has no cost structure at
+	// all, so pricing its tokens would publish components that sum to more than the
+	// zero total beside them.
+	if !record.Free && record.ImageCount == 0 && record.VideoCount == 0 && !recordIsAudio(record) {
 		b := modelCostBreakdown(record.Model, record.PromptTokens, record.CompletionTokens, record.CacheReadTokens, record.CacheWriteTokens)
 		breakdown = &b
 	}

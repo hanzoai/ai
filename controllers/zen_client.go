@@ -89,11 +89,25 @@ type modelFamily struct {
 	// TTL, listing, routing, and gating stay one implementation.
 	decode func([]byte) ([]zenModel, error)
 
+	// spare names the routes this family still serves once its account with the
+	// vendor is spent — the SKUs the vendor charges nothing for. It reads the same
+	// /v1/models body decode reads, in the family's own dialect, because what "free"
+	// looks like on the wire is exactly as dialect-specific as what a price is.
+	//
+	// It is deliberately NOT the catalog. A spare is not for sale: it is not listed,
+	// not priced, not routable by name, and a request only ever lands on one because
+	// the route it asked for was refused for money. Keeping the two lists disjoint is
+	// what stops a downgrade from quietly becoming a product.
+	//
+	// nil means the family has none, and a refusal for money from it is final.
+	spare func([]byte) []string
+
 	// discovered catalog — a read-mostly snapshot; discovery failure keeps the last
 	// good snapshot so a transient blip never empties ai's model list.
 	mu        sync.RWMutex
 	byID      map[string]zenModel
 	ids       []string
+	spares    []string
 	fetchedAt time.Time
 	loaded    bool
 }
@@ -419,6 +433,12 @@ func (f *modelFamily) decodeCatalog(body []byte) ([]zenModel, error) {
 
 const zenCatalogTTL = 5 * time.Minute
 
+// spareTries bounds how many of a vendor's free routes one refused request may be
+// offered to. Three, the same number of attempts the failover loop allows across
+// vendors (maxProviders) and for the same reason: worst-case latency has to be a
+// property of a constant here rather than of a catalogue an operator does not own.
+const spareTries = 3
+
 var zenDiscoveryClient = &http.Client{Timeout: 15 * time.Second}
 
 // refresh fetches GET <family>/v1/models and swaps in a fresh snapshot. Best-effort:
@@ -462,13 +482,44 @@ func (f *modelFamily) refresh() error {
 		byID[strings.ToLower(m.ID)] = m
 		ids = append(ids, m.ID)
 	}
+	var spares []string
+	if f.spare != nil {
+		spares = f.spare(body)
+	}
 	f.mu.Lock()
 	f.byID = byID
 	f.ids = ids
+	f.spares = spares
 	f.fetchedAt = time.Now()
 	f.loaded = true
 	f.mu.Unlock()
 	return nil
+}
+
+// spareRoutes are the routes this family serves once its account is spent, best
+// first. Empty for a family that declared none, and for one whose discovery has
+// never succeeded — an unknown vendor gets no fallback invented for it.
+func (f *modelFamily) spareRoutes() []string {
+	f.fresh()
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	return f.spares
+}
+
+// isSpare reports whether a SKU is one of the free routes rather than a catalog
+// entry. It is what prices a spare at nothing: the vendor charges us nothing for
+// it — that is the whole reason it can answer at all when the account is empty —
+// so billing a customer retail for one would be charging for a downgrade.
+func (f *modelFamily) isSpare(model string) bool {
+	model = strings.ToLower(strings.TrimSpace(model))
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	for _, s := range f.spares {
+		if strings.ToLower(s) == model {
+			return true
+		}
+	}
+	return false
 }
 
 // fresh refreshes the snapshot if stale (or never loaded) and the family is
@@ -656,11 +707,78 @@ func withModel(body []byte, model string) []byte {
 // (Anthropic) or "chat/completions" (OpenAI). Billing settles from the response usage
 // at the discovered exact retail price; the settle is idempotent with any deferred
 // fail-safe settle at the call site.
-func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model string, rawBody []byte, stream bool, orgId string, authUser *iam.User, isPremium bool, hold *budgetHold, start time.Time) {
+// It returns nil when the request is finished with — served, or refused for a
+// reason no other vendor would fix, in which case the client already has the
+// answer. It returns the refusal when the FAMILY could not serve it and NOTHING
+// has been written to the client, so the caller is free to offer the same
+// request to the route's declared alternates. That distinction is the whole
+// reason a vendor running out of money stopped being an outage: the family is
+// one provider among several, and a 402 from it is a fact about that vendor's
+// balance, not about the request.
+//
+// The two answers differ in what they owe the reservation, and it follows from
+// what they mean:
+//
+//	nil       — the request is over, so the hold is RELEASED. Nothing downstream
+//	            is going to run and settle it.
+//	a refusal — the request is still moving, so the hold is UNTOUCHED. settle is
+//	            one-shot, and releasing it here would leave whatever provider
+//	            eventually serves this request unbilled.
+//
+// So: returning nil settles, always, via done. The success path has already
+// settled the real cost by then and settle is idempotent, which is what lets one
+// rule cover every ending rather than each ending remembering for itself — which
+// is how a 400 from an embeddings family came to hold a customer's cents with
+// nothing left running that would ever give them back.
+func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model string, rawBody []byte, stream bool, orgId string, authUser *iam.User, isPremium bool, hold *budgetHold, start time.Time) []attempt {
+	// done ends the request here: the client has its answer, or has gone.
+	done := func() []attempt {
+		hold.settle(0)
+		return nil
+	}
+
+	// sku is the route being asked for. requested is what the CALLER named, and is
+	// set only when a different route ends up answering — so it is both the tag on
+	// the served generation and the test for whether this was a fallback at all.
+	sku, requested := model, ""
+
+	// note records what one refusal says about the account that answered it: the
+	// account rests, and somebody is told. Separate from refused because a refusal
+	// the request RECOVERS from is still a refusal — an empty account nobody logs
+	// is an empty account nobody tops up.
+	note := func(err error) attempt {
+		cooled.rest(orgId, fam.name, err)
+		at := attempt{
+			provider: fam.name,
+			upstream: sku,
+			origin:   fam.name,
+			status:   upstreamHTTPStatus(err),
+			fault:    faultProvider,
+			err:      err,
+		}
+		announce(model, at)
+		return at
+	}
+
+	// refused reports a provider-side failure with nothing written: the request
+	// is still movable, so hand the reason back rather than spending it on an
+	// error page.
+	refused := func(err error) []attempt {
+		// The caller hung up. There is nobody left to serve, so offering the
+		// request to a second vendor would spend money answering an empty room —
+		// and would blame a healthy vendor for the client's disconnect.
+		if c.Ctx.Request.Context().Err() != nil {
+			c.EnableRender = false
+			return done()
+		}
+		return []attempt{note(err)}
+	}
+
 	prov := fam.providerFn()
 	if prov == nil {
-		c.zenError(dialect, fam.name+" service is not configured", http.StatusServiceUnavailable)
-		return
+		// Unconfigured or switched off. From the request's point of view that is
+		// a provider that cannot serve, so try the alternates before saying no.
+		return refused(&apiError{http.StatusServiceUnavailable, fam.name + " service is not configured"})
 	}
 	// Access gate (the ONE choke point): a gated SKU (enso limited preview) is
 	// callable only with a granted ModelAccess row. Discovery tells us which models
@@ -668,8 +786,10 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	// The deferred hold.settle(0) at the call site releases the reservation on this
 	// early return, so a denied request is never billed.
 	if msg := c.familyRefusal(fam, model, orgId, authUser); msg != "" {
+		// OUR gate, not the vendor's: this caller may not have this SKU. No other
+		// provider changes that, so answer it here.
 		c.zenError(dialect, msg, http.StatusForbidden)
-		return
+		return done()
 	}
 	// Forward the model ai RESOLVED, not the caller's raw model id. An
 	// `auto`/`zen-router` request rewrote request.Model to a concrete family SKU, but
@@ -679,11 +799,35 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	// the resolved SKU; byte-identical for a direct request (model already matches).
 	rawBody = withModel(rawBody, model)
 	reqID := uuid.NewString()
+	// The family relays whoever it bought the inference from, so the answer leaves
+	// through our door wearing our id, the SKU asked for, and the seller (see
+	// envelope.go). The id is the one this call is already metered under, which is
+	// also what the reward join keys on, so the customer, the ledger and the routing
+	// event all name this completion the same way.
+	//
+	// EVERY relayed dialect gets a mark. Only chat had one, so the Anthropic
+	// dialect — which is what Claude Code and every agent on that SDK speaks — and
+	// the embeddings shape went on publishing the sub-provider's name, `gen-` ids
+	// and a finish reason we do not define, long after the chat path stopped. The
+	// id shape differs because the dialects do: a message is msg_, a completion is
+	// chatcmpl-, and an embeddings list has no id at all.
+	mk := &mark{model: model, seller: seller(prov, authUser)}
+	switch {
+	case dialect == "anthropic":
+		mk.speaks, mk.id = messageShape, "msg_"+reqID
+	case apiPath == "embeddings":
+		mk.speaks = listShape
+	default:
+		mk.speaks, mk.id = chatShape, "chatcmpl-"+reqID
+	}
 	url := prov.ProviderUrl + "/v1/" + apiPath
-	req, err := http.NewRequestWithContext(c.Ctx.Request.Context(), http.MethodPost, url, bytes.NewReader(rawBody))
+	// One build, one place to fail: the method, the URL and the headers do not vary
+	// by SKU, so a request that cannot be built cannot be built for any of them.
+	req, err := http.NewRequestWithContext(c.Ctx.Request.Context(), http.MethodPost, url, nil)
 	if err != nil {
+		// Our own request is malformed. Another vendor would not fix that.
 		c.zenError(dialect, "build "+fam.name+" request: "+err.Error(), http.StatusInternalServerError)
-		return
+		return done()
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if a := c.Ctx.Request.Header.Get("Accept"); a != "" {
@@ -702,36 +846,125 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	}
 	req.Header.Set("X-Hanzo-Fronted-By", "ai")
 
-	resp, err := zenPipeClient.Do(req)
-	if err != nil {
-		c.recordFamilyUsage(fam, model, authUser, isPremium, stream, reqID, 0, 0, start, hold, "error", err.Error())
-		c.zenError(dialect, fam.name+" request failed: "+err.Error(), http.StatusBadGateway)
-		return
+	// send offers this request to ONE of the family's routes. The SKU is the only
+	// thing that varies, which is what makes a spare route a different address for
+	// the same request rather than a different request.
+	send := func(s string) (*http.Response, error) {
+		r := req.Clone(c.Ctx.Request.Context())
+		b := withModel(rawBody, s)
+		r.Body = io.NopCloser(bytes.NewReader(b))
+		r.ContentLength = int64(len(b))
+		// GetBody is what http.NewRequest sets for a bytes.Reader and what the
+		// transport needs to replay a body across a redirect or an HTTP/2 refusal.
+		// Setting the body by hand without it silently drops that.
+		r.GetBody = func() (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader(b)), nil }
+		return zenPipeClient.Do(r)
 	}
-	defer resp.Body.Close()
+
+	// spared offers the SAME request to a route this vendor still serves once its
+	// account is spent, and reports the route that answered.
+	//
+	// It fires on the vendor being out of money and on NOTHING else. `broke` is the
+	// predicate the cooldown already decides with: it reads the STATUS first, because
+	// a 402 is a fact, and consults text only where there is no status to read — and
+	// then only a narrow list of phrases measured from real upstreams. A malformed
+	// body (400), a model this vendor has not got (404), refused content (422), a
+	// rate limit (429), a timeout and a 5xx all miss it, so none of them can quietly
+	// hand the caller a smaller model in place of an error. Our OWN balance gate
+	// cannot reach here either — it refuses before a vendor is dialled — so a 402 at
+	// this point is a statement about our account with the vendor, never about the
+	// customer's.
+	//
+	// A SHORT walk, not the whole list. More than one try because a free tier is
+	// rate limited by design — the first route is about as likely to answer 429 as
+	// to answer — and bounded because every try is a round trip the caller waits
+	// through, so worst-case latency stays a property of spareTries rather than of
+	// how many free routes a vendor happens to advertise.
+	spared := func(err error, body []byte) (*http.Response, string) {
+		// Our own spend gate, relayed by a service that fronts for us, wears the
+		// same 402 and means the opposite thing: the CUSTOMER owes money. That has
+		// to reach them. Answering it with a free model would tell somebody their
+		// payment problem had fixed itself.
+		if billingNotice(body) {
+			return nil, ""
+		}
+		if !broke(err, strings.ToLower(err.Error())) || c.Ctx.Request.Context().Err() != nil {
+			return nil, ""
+		}
+		tried := 0
+		for _, alt := range fam.spareRoutes() {
+			if strings.EqualFold(alt, sku) {
+				continue
+			}
+			if tried == spareTries || c.Ctx.Request.Context().Err() != nil {
+				return nil, ""
+			}
+			tried++
+			r, e := send(alt)
+			if e != nil {
+				continue
+			}
+			if r.StatusCode == http.StatusOK {
+				return r, alt
+			}
+			r.Body.Close()
+		}
+		return nil, ""
+	}
+
+	resp, err := send(sku)
+	if err != nil {
+		// Never reached the family at all. Nothing is written and nothing is
+		// billed — deliberately no recordFamilyUsage here, because its
+		// hold.settle would release the reservation one-shot and leave the cost
+		// of whichever provider ends up serving this request uncharged.
+		return refused(err)
+	}
+	defer func() { resp.Body.Close() }()
+
+	// ONE status decision, ahead of the split, because the answer to "can this
+	// request still be moved" is the same for both shapes. The status arrives
+	// BEFORE any byte of a stream is written — the WriteHeader below is still
+	// ahead of us — so a streaming request is exactly as movable here as a
+	// buffered one. This is the only window in which that is true, which is why
+	// the decision lives at the status and not somewhere down in the relay.
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		err := &apiError{resp.StatusCode, upstreamErrorMessage(b)}
+		r, alt := spared(err, b)
+		if r == nil {
+			if faultOf(err) == faultProvider {
+				return refused(err)
+			}
+			c.zenError(dialect, upstreamErrorMessage(b), resp.StatusCode)
+			return done()
+		}
+		// The account is empty and this vendor still serves that route for
+		// nothing. The refusal is recorded anyway — it is why the caller is about
+		// to get a different model, and the account it names does not top itself
+		// up — and the answer leaves wearing the SKU that actually made it.
+		note(err)
+		resp.Body.Close()
+		resp, requested, sku = r, model, alt
+		mk.model = alt
+		log.Warn("family=%s is out of money (402) — %s served by the free route %s; the client is told which",
+			fam.name, model, alt)
+	}
 
 	prompt, completion := 0, 0
 	served, respID := "", ""
 	if stream {
-		if resp.StatusCode != http.StatusOK {
-			b, _ := io.ReadAll(resp.Body)
-			c.zenError(dialect, upstreamErrorMessage(b), resp.StatusCode)
-			return
-		}
 		c.Ctx.ResponseWriter.Header().Set("Content-Type", "text/event-stream")
 		c.Ctx.ResponseWriter.Header().Set("Cache-Control", "no-cache")
 		c.Ctx.ResponseWriter.Header().Set("Connection", "keep-alive")
 		c.Ctx.ResponseWriter.WriteHeader(http.StatusOK)
-		prompt, completion, served, respID = c.relayZenStream(resp.Body)
+		prompt, completion, served, respID = c.relayZenStream(resp.Body, mk)
 	} else {
 		b, rErr := io.ReadAll(resp.Body)
 		if rErr != nil {
-			c.zenError(dialect, "read "+fam.name+" response: "+rErr.Error(), http.StatusBadGateway)
-			return
-		}
-		if resp.StatusCode != http.StatusOK {
-			c.zenError(dialect, upstreamErrorMessage(b), resp.StatusCode)
-			return
+			// The family's answer was truncated on the way to us. Nothing has
+			// reached the client, so this is still movable.
+			return refused(rErr)
 		}
 		sniffZenUsage(b, &prompt, &completion)
 		served = sniffZenModel(b)
@@ -741,13 +974,21 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 			ct = "application/json"
 		}
 		c.Ctx.Output.Header("Content-Type", ct)
-		c.Ctx.Output.Body(b)
+		c.Ctx.Output.Body(mk.stamp(b))
 	}
 
+	// A stamped answer carries OUR id, so that is the id the client will thread back
+	// to /v1/feedback and the id the reward has to join on.
+	// An embeddings list has no id of its own, so nothing is stamped and the join
+	// falls back to the internal reqID — which is honest: the client was handed no
+	// id to correlate on.
+	if mk.id != "" {
+		respID = mk.id
+	}
 	if prompt == 0 {
 		prompt = coarseTokenEstimate(rawBody)
 	}
-	cents := c.recordFamilyUsage(fam, model, authUser, isPremium, stream, reqID, prompt, completion, start, hold, "success", "")
+	cents := c.recordFamilyUsage(fam, sku, requested, prov, mk, authUser, isPremium, stream, reqID, prompt, completion, start, hold, "success", "")
 	// Learning ledger: record this served family call (source="family") and, when the
 	// engine endpoint is configured, the shadow A/B pick — off the hot path, no prompt
 	// text ever stored (the ledger holds none). The join key is the response id the
@@ -755,20 +996,21 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	// to the internal reqID when the family did not disclose one. See object.RoutingEvent.
 	c.recordFamilyRouting(model, served, respID, reqID, rawBody, orgId, authUser, prompt, completion, cents, start)
 	c.EnableRender = false
+	return done()
 }
 
-// relayZenStream copies a family's SSE response to the client verbatim and captures the
-// final usage for billing. The family already emits correct dialect SSE, so ai forwards
-// bytes unchanged — no translation — and only reads usage as it passes.
-func (c *ApiController) relayZenStream(body io.Reader) (prompt, completion int, served, respID string) {
+// relayZenStream copies a family's SSE response to the client and captures the final
+// usage for billing. The family already emits correct dialect SSE, so ai does not
+// translate — it reads usage as it passes and, for the one dialect whose envelope is
+// ours (a non-nil mark), stamps each event before it goes out. Every chunk of one
+// completion is stamped from the same mark, so the id a client correlates on holds
+// for the whole stream.
+func (c *ApiController) relayZenStream(body io.Reader, mk *mark) (prompt, completion int, served, respID string) {
 	w := c.Ctx.ResponseWriter
 	sc := bufio.NewScanner(body)
 	sc.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
 	for sc.Scan() {
 		line := sc.Bytes()
-		_, _ = w.Write(line)
-		_, _ = w.Write(zenNewline)
-		w.Flush()
 		if bytes.HasPrefix(line, zenDataPrefix) {
 			payload := bytes.TrimSpace(line[len(zenDataPrefix):])
 			if len(payload) > 0 && payload[0] == '{' {
@@ -779,8 +1021,14 @@ func (c *ApiController) relayZenStream(body io.Reader) (prompt, completion int, 
 				if respID == "" {
 					respID = sniffZenId(payload)
 				}
+				if mk != nil {
+					line = append([]byte("data: "), mk.stamp(payload)...)
+				}
 			}
 		}
+		_, _ = w.Write(line)
+		_, _ = w.Write(zenNewline)
+		w.Flush()
 	}
 	return
 }
@@ -885,10 +1133,21 @@ func coarseTokenEstimate(body []byte) int {
 
 // recordFamilyUsage settles the budget hold at the exact discovered price and records
 // the usage + trace. Billing lives in one place for both stream and buffered paths and
-// for every family.
-func (c *ApiController) recordFamilyUsage(fam *modelFamily, model string, authUser *iam.User, isPremium, stream bool, reqID string, prompt, completion int, start time.Time, hold *budgetHold, status, errMsg string) int64 {
+// for every family. origin is who actually served the call (originOf) — the row's
+// answer to a question the response no longer answers.
+// model is the SKU that ANSWERED and requested the one the caller named, set only
+// when a spare route answered in its place. Both travel because the ledger is
+// answering two questions — what did we serve, and was it what was asked for — and
+// a row that can only answer the first cannot be read as a downgrade at all.
+func (c *ApiController) recordFamilyUsage(fam *modelFamily, model, requested string, prov *object.Provider, mk *mark, authUser *iam.User, isPremium, stream bool, reqID string, prompt, completion int, start time.Time, hold *budgetHold, status, errMsg string) int64 {
+	// The vendor charges nothing for a spare route — that is the whole reason it can
+	// answer while the account is empty — so it is billed at nothing. Charging
+	// retail for a downgrade the customer did not choose would be taking money for
+	// the outage. Stated once, on the record, so the hold, the debit, the warehouse
+	// row and the span all read the same zero (see usageCostNano).
+	free := fam.isSpare(model)
 	var cents int64
-	if status == "success" {
+	if status == "success" && !free {
 		if zm, ok := fam.lookup(model); ok {
 			cents = zm.costCents(prompt, completion)
 		} else {
@@ -901,11 +1160,15 @@ func (c *ApiController) recordFamilyUsage(fam *modelFamily, model string, authUs
 	}
 	rec := &usageRecord{
 		Owner: c.billingOrg(authUser), Organization: authUser.Owner,
-		Model: model, Provider: fam.name,
+		Model: model, Requested: requested, Free: free, Provider: fam.name, Origin: originOf(prov, mk),
 		PromptTokens: prompt, CompletionTokens: completion, TotalTokens: prompt + completion,
 		Cost: float64(cents) / 100.0, Currency: "USD",
 		Premium: isPremium, Stream: stream, Status: status, ErrorMsg: errMsg,
 		ClientIP: c.Ctx.Request.RemoteAddr, RequestID: reqID, Account: "hanzo",
+		// What the call cost us to buy, when the answer stated it, beside what we
+		// charged for it. usageMargin reads this as the COGS, so the margin on a
+		// relayed call stops being a guess.
+		CostNanoExact: mk.cogs(),
 	}
 	rec.bind(c.Ctx.Request.Context(), authUser)
 	recordUsage(rec)
