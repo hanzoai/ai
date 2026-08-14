@@ -316,22 +316,40 @@ func TestCandidatesOrder(t *testing.T) {
 		}
 	})
 
-	t.Run("the cap holds", func(t *testing.T) {
+	// The numbers here are literal on purpose. Asserting against maxProviders
+	// asserts nothing: the constant is on both sides, so it survives being
+	// changed to any value and the bound stops being pinned at all.
+	t.Run("a route longer than the cap is cut to three", func(t *testing.T) {
 		cooled.forget()
-		got := candidates("", route("p1", "p2", "p3", "p4", "p5"), nil)
-		if len(got) != maxProviders {
-			t.Errorf("offered %d vendors, want at most %d — an unbounded walk turns one "+
-				"slow afternoon into %d upstream calls", len(got), maxProviders, 5*3)
+		got := names(candidates("", route("p1", "p2", "p3", "p4", "p5"), nil))
+		want := []string{"p1", "p2", "p3"}
+		if strings.Join(got, ",") != strings.Join(want, ",") {
+			t.Errorf("offered %v, want %v — three is the width of a declared route, and an "+
+				"unbounded walk turns one slow afternoon into 15 upstream calls", got, want)
 		}
 	})
 
-	t.Run("the cap counts vendors already asked elsewhere", func(t *testing.T) {
+	// A7: the family pipe is not part of the declared route, so its refusal must
+	// not cost the route one of its own places. It used to, which meant a model
+	// served by the family could never reach Fallback2 — the operator declared
+	// three alternates and got two, on exactly the requests the alternates existed for.
+	t.Run("a refusal from outside the route does not spend a place in it", func(t *testing.T) {
 		cooled.forget()
 		prior := []attempt{{provider: "enso", err: errors.New("402")}}
-		got := candidates("", route("p1", "p2", "p3", "p4"), prior)
-		if len(got) != maxProviders-1 {
-			t.Errorf("offered %d more vendors after 1 prior refusal, want %d — the bound is on "+
-				"the REQUEST, not on each loop", len(got), maxProviders-1)
+		got := names(candidates("", route("p1", "p2", "p3"), prior))
+		want := []string{"p1", "p2", "p3"}
+		if strings.Join(got, ",") != strings.Join(want, ",") {
+			t.Errorf("offered %v after the family refused, want %v — a declared route is exactly "+
+				"as wide as the cap, so charging the family to it deletes the last alternate", got, want)
+		}
+	})
+
+	t.Run("the cap still holds when something refused outside the route", func(t *testing.T) {
+		cooled.forget()
+		prior := []attempt{{provider: "enso", err: errors.New("402")}}
+		got := names(candidates("", route("p1", "p2", "p3", "p4", "p5"), prior))
+		if len(got) != 3 {
+			t.Errorf("offered %v, want 3 — the route walk stays bounded whatever happened before it", got)
 		}
 	})
 
