@@ -62,6 +62,32 @@ var (
 	// things on a refusal it hangs on a success: who it bought from
 	// (error.metadata.provider_name) and the upstream's own raw body.
 	errorFields = fields("message", "type", "param", "code")
+
+	// The Anthropic dialect — /v1/messages, which is what Claude Code and every
+	// agent built on that SDK speaks. Identity lives on the MESSAGE object: the
+	// whole body when buffered, nested under `message` on a message_start event.
+	bodyFields = fields("id", "type", "role", "model", "content",
+		"stop_reason", "stop_sequence", "usage", "error")
+	eventFields = fields("type", "index", "message", "content_block", "delta",
+		"usage", "error")
+	blockFields = fields("type", "text", "thinking", "signature", "citations",
+		"id", "name", "input", "partial_json", "stop_reason", "stop_sequence")
+	tokenFields = fields("input_tokens", "output_tokens",
+		"cache_creation_input_tokens", "cache_read_input_tokens")
+
+	// The embeddings dialect — an object list, no id of its own.
+	listFields   = fields("object", "data", "model", "usage")
+	vectorFields = fields("object", "index", "embedding")
+)
+
+// shape is the envelope a relay speaks. A mark is minted for exactly one, at the
+// door it belongs to, because the dialect is decided there and nowhere else.
+type shape int
+
+const (
+	chatShape    shape = iota // OpenAI chat completion, buffered and chunked
+	messageShape              // Anthropic /v1/messages and its SSE events
+	listShape                 // OpenAI embeddings
 )
 
 func fields(names ...string) map[string]bool {
@@ -88,6 +114,11 @@ type mark struct {
 	// account — knows its price as precisely as any other, and 0-as-unset would
 	// send the ledger back to inventing one for a call that had a real one.
 	cost *int64
+	// speaks is the envelope shape this relay carries. Every relayed dialect has
+	// one; a dialect with no mark is a dialect with no door, which is how the
+	// Anthropic path and the embeddings path went on publishing `provider`,
+	// `gen-` ids and `native_finish_reason` after the chat path stopped.
+	speaks shape
 }
 
 // seller names who SOLD the inference. Our keys sell as Hanzo, whatever they route
@@ -136,9 +167,146 @@ func (m *mark) stamp(payload []byte) []byte {
 	if json.Unmarshal(payload, &env) != nil || env == nil {
 		return payload
 	}
+	// Whatever the shape, an aggregator names its sub-provider the same way, and
+	// we keep it the same way: read here, gone by the time this returns.
 	if name, ok := name(env["provider"]); ok && m.upstream == "" {
 		m.upstream = name
 	}
+	switch m.speaks {
+	case messageShape:
+		return or(m.stampMessage(env), payload)
+	case listShape:
+		return or(m.stampList(env), payload)
+	}
+	return or(m.stampChat(env), payload)
+}
+
+// or falls back to the payload as it arrived when an envelope could not be
+// re-encoded. Relaying an upstream's own bytes beats inventing a shape for them.
+func or(out []byte, payload []byte) []byte {
+	if out == nil {
+		return payload
+	}
+	return out
+}
+
+// stampMessage normalises the Anthropic dialect. The identity fields live on the
+// MESSAGE object — the whole body when buffered, nested under `message` on a
+// message_start event — and every other event carries deltas only.
+func (m *mark) stampMessage(env map[string]json.RawMessage) []byte {
+	if inner, ok := env["message"]; ok { // message_start
+		var msg map[string]json.RawMessage
+		if json.Unmarshal(inner, &msg) == nil && msg != nil {
+			if body := m.body(msg); body != nil {
+				keep(env, eventFields)
+				env["message"] = body
+				m.trim(env)
+				return wire(env)
+			}
+		}
+		return nil
+	}
+	if _, whole := env["content"]; whole { // the buffered answer
+		return m.body(env)
+	}
+	keep(env, eventFields) // content_block_*, message_delta, ping, stops
+	if block, ok := env["content_block"]; ok {
+		env["content_block"] = prune(block, blockFields)
+	}
+	if delta, ok := env["delta"]; ok {
+		env["delta"] = prune(delta, blockFields)
+	}
+	m.trim(env)
+	return wire(env)
+}
+
+// body stamps one Anthropic message object: our id, the SKU asked for, and
+// nothing the dialect does not publish. nil when it cannot be re-encoded.
+func (m *mark) body(msg map[string]json.RawMessage) []byte {
+	if name, ok := name(msg["provider"]); ok && m.upstream == "" {
+		m.upstream = name
+	}
+	keep(msg, bodyFields)
+	msg["id"] = text(m.id)
+	msg["model"] = text(m.model)
+	if content, ok := msg["content"]; ok {
+		msg["content"] = stampBlocks(content)
+	}
+	m.trim(msg)
+	return wire(msg)
+}
+
+// stampBlocks drops what the dialect does not publish from each content block —
+// where an aggregator hangs its own name for reasoning text.
+func stampBlocks(raw json.RawMessage) json.RawMessage {
+	var blocks []map[string]json.RawMessage
+	if json.Unmarshal(raw, &blocks) != nil {
+		return raw
+	}
+	for _, block := range blocks {
+		keep(block, blockFields)
+	}
+	if out := wire(blocks); out != nil {
+		return out
+	}
+	return raw
+}
+
+// stampList normalises the embeddings dialect: an object list with no id of its
+// own, whose model used to be whatever the upstream called it.
+func (m *mark) stampList(env map[string]json.RawMessage) []byte {
+	keep(env, listFields)
+	env["model"] = text(m.model)
+	if data, ok := env["data"]; ok {
+		env["data"] = prune(data, vectorFields)
+		var vectors []map[string]json.RawMessage
+		if json.Unmarshal(data, &vectors) == nil {
+			for _, v := range vectors {
+				keep(v, vectorFields)
+			}
+			if out := wire(vectors); out != nil {
+				env["data"] = out
+			}
+		}
+	}
+	m.trim(env)
+	return wire(env)
+}
+
+// trim takes the price and the refusal detail out of any envelope that carries
+// them. Every dialect states both the same way, so every dialect loses them the
+// same way — and the ledger gains the price at the same moment.
+func (m *mark) trim(env map[string]json.RawMessage) {
+	if usage, ok := env["usage"]; ok {
+		m.take(usage)
+		env["usage"] = prune(usage, m.tokens())
+	}
+	if refusal, ok := env["error"]; ok {
+		env["error"] = stampError(refusal)
+	}
+}
+
+// tokens is the token-count vocabulary of this dialect. The two shapes count the
+// same things under different names, which is a fact about the dialects and not
+// about what a customer may read.
+func (m *mark) tokens() map[string]bool {
+	if m.speaks == messageShape {
+		return tokenFields
+	}
+	return usageFields
+}
+
+// wire re-encodes an envelope, or nil when it cannot be encoded.
+func wire(v any) []byte {
+	out, err := encode(v)
+	if err != nil {
+		return nil
+	}
+	return out
+}
+
+// stampChat normalises the OpenAI chat dialect, buffered and chunked.
+func (m *mark) stampChat(env map[string]json.RawMessage) []byte {
 	keep(env, chatFields)
 	env["id"] = text(m.id)
 	env["model"] = text(m.model)
@@ -148,18 +316,8 @@ func (m *mark) stamp(payload []byte) []byte {
 	}
 	// Read before pruning, exactly as the upstream name is: this is the last place
 	// the price we paid exists, and after this line it is out of the answer.
-	if usage, ok := env["usage"]; ok {
-		m.take(usage)
-		env["usage"] = prune(usage, usageFields)
-	}
-	if refusal, ok := env["error"]; ok {
-		env["error"] = stampError(refusal)
-	}
-	out, err := encode(env)
-	if err != nil {
-		return payload
-	}
-	return out
+	m.trim(env)
+	return wire(env)
 }
 
 // stampError keeps a refusal diagnostic and stops it carrying two things it must not.
