@@ -59,6 +59,7 @@ type transcribeRequest struct {
 	model          string
 	language       string
 	responseFormat string
+	timings        []stt.Timing
 }
 
 // readTranscribeRequest parses the multipart body ONCE and reads every field
@@ -98,6 +99,9 @@ func readTranscribeRequest(r *http.Request) (req transcribeRequest, oversize boo
 		model:          r.Form.Get("model"),
 		language:       r.Form.Get("language"),
 		responseFormat: r.Form.Get("response_format"),
+	}
+	if req.timings, err = timingsOf(r.Form); err != nil {
+		return req, false, err
 	}
 	var tooLarge *http.MaxBytesError
 	if errors.As(parseErr, &tooLarge) {
@@ -390,7 +394,7 @@ func (c *ApiController) AudioTranscriptions() {
 	defer release()
 
 	startTime := time.Now().UTC()
-	text, sttResult, err := sttProvider.ProcessAudio(form.file, c.Ctx.Request.Context(), c.GetAcceptLanguage())
+	heard, sttResult, err := sttProvider.ProcessAudio(form.file, c.Ctx.Request.Context(), c.GetAcceptLanguage(), form.timings)
 	if err != nil {
 		c.recordAudioUsage(authUser, provider, model, isPremium, audioQuantity{}, "error", err.Error(), startTime)
 		c.ResponseError(err.Error())
@@ -400,17 +404,60 @@ func (c *ApiController) AudioTranscriptions() {
 
 	if form.responseFormat == "text" {
 		c.Ctx.Output.Header("Content-Type", "text/plain; charset=utf-8")
-		c.Ctx.Output.Body([]byte(text))
+		c.Ctx.Output.Body([]byte(heard.Text))
 		return
 	}
-	body, _ := json.Marshal(transcriptionResponse{Text: text})
 	c.Ctx.Output.Header("Content-Type", "application/json")
-	c.Ctx.Output.Body(body)
+	c.Ctx.Output.Body(transcriptionBody(form.responseFormat, heard, sttSecondsOf(sttResult)))
 }
 
-// transcriptionResponse is the OpenAI /v1/audio/transcriptions `json` body.
+// transcriptionResponse is the OpenAI /v1/audio/transcriptions body. `json`
+// carries the text alone; `verbose_json` adds what the decode measured — the
+// duration that meters the call, and the timings the caller asked for. The
+// omitempty tags are what keep the plain body exactly {"text"}.
 type transcriptionResponse struct {
-	Text string `json:"text"`
+	Task     string             `json:"task,omitempty"`
+	Duration float64            `json:"duration,omitempty"`
+	Text     string             `json:"text"`
+	Words    []stt.TimedWord    `json:"words,omitempty"`
+	Segments []stt.TimedSegment `json:"segments,omitempty"`
+}
+
+// transcriptionBody renders a transcript in the format the caller asked for.
+// Both transports answer with this, so there is one definition of the shape.
+func transcriptionBody(format string, t *stt.Transcript, seconds float64) []byte {
+	res := transcriptionResponse{Text: t.Text}
+	if format == "verbose_json" {
+		res.Task = "transcribe"
+		res.Duration = seconds
+		res.Words = t.Words
+		res.Segments = t.Segments
+	}
+	body, _ := json.Marshal(res)
+	return body
+}
+
+// timingsOf reads OpenAI's timestamp_granularities out of a parsed form, in
+// either spelling — the OpenAI SDKs bracket a multipart array name and
+// hand-rolled clients send it bare, and reading only one leaves half the
+// callers silently untimed. Both transports parse the same wire shape, so both
+// read it here.
+func timingsOf(form map[string][]string) ([]stt.Timing, error) {
+	var want []stt.Timing
+	seen := map[stt.Timing]bool{}
+	for _, key := range [...]string{"timestamp_granularities[]", "timestamp_granularities"} {
+		for _, v := range form[key] {
+			t := stt.Timing(v)
+			if t != stt.Word && t != stt.Segment {
+				return nil, fmt.Errorf("unknown timestamp_granularities %q; supported: %s, %s", v, stt.Segment, stt.Word)
+			}
+			if !seen[t] {
+				seen[t] = true
+				want = append(want, t)
+			}
+		}
+	}
+	return want, nil
 }
 
 // audioQuantity is what an audio call actually consumed: seconds of audio for a
