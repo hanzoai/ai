@@ -112,8 +112,24 @@ func (c *ApiController) Embeddings() {
 				c.ResponseAuthError(billingError("%s", object.InsufficientBalance(c.Ctx.Request.Host, ledger, "cost").Message))
 				return
 			}
+			// The fail-safe every other reserving surface already has: whatever
+			// way this request ends, the reservation is released. settle is
+			// one-shot, so a real settle downstream still wins and this becomes a
+			// no-op. Without it a refusal the pipe answers itself — a 400, or a
+			// caller who hung up — leaves the cents held with nothing left
+			// running that would ever release them.
+			defer hold.settle(0)
 		}
-		c.pipeToFamily(fam, "embeddings", "openai", head.Model, c.Ctx.Input.RequestBody, false, orgId, authUser, isPremium, hold, startTime)
+		refused := c.pipeToFamily(fam, "embeddings", "openai", head.Model, c.Ctx.Input.RequestBody, false, orgId, authUser, isPremium, hold, startTime)
+		if refused == nil {
+			return
+		}
+		// Embeddings have no alternate to move to — the chat pipeline's route
+		// table does not describe them — so the honest answer is the refusal
+		// itself, naming the vendor and the reason rather than forwarding an
+		// upstream 402 that tells the customer THEY are out of money.
+		c.recordRefusals(head.Model, refused, authUser, isPremium, false, uuid.NewString(), startTime)
+		c.ResponseError(exhausted(head.Model, refused).Error())
 		return
 	}
 

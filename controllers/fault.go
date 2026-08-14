@@ -1,0 +1,533 @@
+// Copyright 2023-2025 Hanzo AI Inc. All Rights Reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package controllers
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/hanzoai/ai/object"
+)
+
+// A refused completion has exactly one interesting property: whose fault it is.
+// Every other decision — cascade or stop, demote or not, what the client is
+// told — follows from that one value, which is why it is one value and not a
+// substring check re-derived at each branch.
+//
+//	provider — the request is fine; THIS vendor cannot serve it right now.
+//	           Out of money, rate limited, broken, unreachable. Somebody else
+//	           can serve it, so ask somebody else.
+//	request  — the request itself is wrong. Malformed body, unknown model, our
+//	           credential rejected, content refused. Every vendor refuses it
+//	           identically, so asking four more buys four more round trips,
+//	           four more log lines, four more bills on anything metered at
+//	           input, and the same answer. Stop.
+type fault int
+
+const (
+	faultRequest fault = iota
+	faultProvider
+)
+
+func (f fault) String() string {
+	if f == faultProvider {
+		return "provider"
+	}
+	return "request"
+}
+
+// maxProviders bounds how many vendors one completion may be offered to.
+//
+// Three, because three is the width of a declared route: object.ModelRoute
+// carries a primary plus Fallback1 and Fallback2, so the bound is the schema's
+// own shape rather than a number picked from the air. It matters because the
+// per-provider retry budget (retryPolicy.attempts, 3 by default with backoff)
+// multiplies: without a cap, a model configured with six fallbacks turns one
+// slow afternoon into eighteen upstream calls and a minute of held request. The
+// cap makes worst-case latency a property of this constant instead of a
+// property of whatever an operator typed into models.yaml.
+const maxProviders = 3
+
+// How long a vendor that just refused is sorted to the back of the queue.
+//
+// Two values, because there are two kinds of refusal and they heal on different
+// clocks. A 429 or a 503 clears in seconds — the vendor is busy, not broken.
+// An empty account clears when a human notices and tops it up, which is minutes
+// at best; re-asking it every request in the meantime means every request pays
+// its round trip before getting a real answer, which is precisely the tax this
+// exists to avoid.
+const (
+	coolBusy  = 15 * time.Second
+	coolBroke = 5 * time.Minute
+)
+
+// credential is the thing whose health is being remembered: ONE tenant's account
+// with one vendor.
+//
+// Not the vendor. "openai is out of money" is not a fact anybody can state —
+// only "THIS account at openai is out of money" is, and which account a request
+// spends is decided by its org, because that is what selects the row: an org
+// that connected its own key spends its own key, everyone else spends ours.
+// Keyed by vendor alone, one customer's empty connected account teaches this
+// process that the vendor is unwell and every other tenant inherits the
+// penalty — a lesson about a credential they do not hold and cannot top up.
+//
+// The org is therefore part of the key rather than a filter applied to it,
+// which makes the leak unrepresentable instead of merely unlikely.
+type credential struct {
+	org      string
+	provider string
+}
+
+// cooldown remembers, per credential, the instant it is worth asking again.
+//
+// In memory on purpose: it describes THIS process's recent experience of an
+// upstream, it is worthless after a restart, and sharing it through a store
+// would buy consistency nobody needs at the cost of a dependency on the request
+// path. Each org learns its own lesson within one request of its own.
+type cooldown struct {
+	mu    sync.Mutex
+	until map[credential]time.Time
+}
+
+var cooled = &cooldown{until: map[credential]time.Time{}}
+
+// demote sorts one org's account with a provider to the back of its queue for d.
+func (c *cooldown) demote(a credential, d time.Duration) {
+	if a.provider == "" || d <= 0 {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.until[a] = time.Now().Add(d)
+}
+
+// cooling reports whether this org's account with a provider refused recently
+// enough that another provider should be preferred.
+func (c *cooldown) cooling(a credential) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	t, ok := c.until[a]
+	if !ok {
+		return false
+	}
+	if time.Now().Before(t) {
+		return true
+	}
+	delete(c.until, a) // expired: forget it rather than grow forever
+	return false
+}
+
+// rest records what one refusal says about the account that answered it, and
+// reports how long that account now rests — 0 for a refusal that says nothing
+// about it.
+//
+// One function because the failover loop and the family pipe ask the identical
+// question, and two spellings of it are two places for the org to go missing.
+// That is exactly how the penalty came to be filed against a vendor instead of
+// against an account: the second copy simply did not mention the tenant.
+func (c *cooldown) rest(org, provider string, err error) time.Duration {
+	d := cooldownFor(err)
+	c.demote(credential{org, provider}, d)
+	return d
+}
+
+// forget clears the whole penalty box. Tests use it to start from a known
+// state; nothing on the request path calls it.
+func (c *cooldown) forget() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.until = map[credential]time.Time{}
+}
+
+// faultOf attributes a failed upstream call.
+//
+// The status the vendor answered with is the evidence, read from the TYPED
+// error — go-openai returns *openai.APIError carrying HTTPStatusCode, and
+// wrapUpstreamError restates it as *apiError. The text is consulted only for
+// failures that never reached HTTP and so have no status to read: a dial error,
+// a reset, a deadline. That ordering is the whole point — a status is a fact,
+// a substring is a guess, and the guess is only allowed where the fact is
+// absent.
+func faultOf(err error) fault {
+	if err == nil {
+		return faultRequest
+	}
+	// Bytes are already on the wire. Whatever went wrong, this request can no
+	// longer be moved, so the only honest answer is to stop.
+	if errors.Is(err, errPartiallyWritten) {
+		return faultRequest
+	}
+	if status := upstreamHTTPStatus(err); status != 0 {
+		return faultOfStatus(status, err)
+	}
+	return faultOfText(err.Error())
+}
+
+// faultOfStatus attributes a refusal that arrived with an HTTP status.
+func faultOfStatus(status int, err error) fault {
+	switch status {
+	case http.StatusPaymentRequired, // 402 — this account is out of money
+		http.StatusRequestTimeout,  // 408 — the vendor gave up waiting on itself
+		http.StatusTooManyRequests: // 429 — busy
+		return faultProvider
+
+	case http.StatusUnauthorized: // 401
+		// OUR credential for this vendor is bad, revoked, or wrong-scoped.
+		// Cascading would paper over it: traffic silently drains onto whichever
+		// vendor still works, the dead key is never noticed, and the first
+		// person to find out is whoever reads the bill. A revoked key and a
+		// stolen key look identical from here, which is the other reason this
+		// must surface rather than route around.
+		return faultRequest
+
+	case http.StatusForbidden: // 403
+		// 403 splits, and the split is not cosmetic.
+		//
+		// "you may not use this key" is our misconfiguration — request fault,
+		// same argument as 401.
+		//
+		// "this account may not use this MODEL" is a fact about the VENDOR's
+		// catalogue, not about our credential. DigitalOcean answers exactly
+		// this for the agreement-gated Anthropic models, and it is the reason
+		// the do-ai -> anthropic fallback exists at all. The key is fine; the
+		// shop does not stock the item. Provider fault.
+		if lacksModel(strings.ToLower(err.Error())) {
+			return faultProvider
+		}
+		return faultRequest
+
+	case http.StatusBadRequest, // 400 — malformed; every vendor says the same
+		http.StatusNotFound,              // 404 — the route names a model this vendor has not got
+		http.StatusRequestEntityTooLarge, // 413
+		http.StatusUnprocessableEntity:   // 422 — content refused
+		return faultRequest
+	}
+
+	if status >= 500 {
+		return faultProvider
+	}
+
+	// An unrecognised 4xx. Fail closed on cascading: we do not know what this
+	// is, and finding out by paying four more vendors to tell us the same thing
+	// is the expensive way to learn.
+	return faultRequest
+}
+
+// moneyText, busyText and reachText are the refusals that arrive with no HTTP
+// status to read — a vendor whose client stringifies its errors, or a transport
+// failure that never got a response at all.
+//
+// Kept narrow and literal, because a substring is a guess and a wide guess is
+// how "insufficient" comes to match "insufficient permissions" and quietly
+// converts an authorization bug into a five-vendor spending spree. Each entry
+// below is a phrase actually observed from an upstream, not a family of things
+// one might say.
+var (
+	moneyText = []string{
+		"402", "payment required",
+		"insufficient credit",  // OpenRouter: "Insufficient credits."
+		"insufficient balance", // DeepSeek
+		"insufficient_quota",   // OpenAI
+		"exceeded your current quota",
+		"billing hard limit",
+	}
+	busyText = []string{
+		"429", "rate limit", "too many requests", "overloaded",
+		"500", "internal server error",
+		"502", "bad gateway",
+		"503", "service unavailable",
+		"504", "gateway timeout",
+	}
+	reachText = []string{
+		"connection refused", "connection reset", "no such host",
+		"timeout", "deadline exceeded",
+		"eof", // upstream closed mid-response
+	}
+	// absentText is "this vendor does not carry this model for this account", as
+	// distinct from "this credential is not welcome". Measured phrasings only.
+	absentText = []string{
+		"not available for your account",
+		"model is not available",
+		"does not have access to model",
+	}
+)
+
+// has reports whether msg contains one of the phrases AS a phrase, rather than
+// as a run of characters that happens to lie inside a longer word or number.
+//
+// A phrase must begin where a token begins. A phrase ending in a DIGIT must also
+// end where the token ends, because a status code is an exact identifier — where
+// a word is not, and a vendor that says "rate limited" is saying "rate limit".
+//
+// Plain substring matching is not a smaller version of this, it is a wrong one,
+// and all three of these were measured:
+//
+//	"402" inside claude-3-sonnet-2024*022*9  -> a typo'd model id read as an
+//	                                            empty account: 3 vendors x 3
+//	                                            retries, plus a 5-minute
+//	                                            demotion of a healthy vendor
+//	"503" inside "you requested *850*3 tokens" -> a request-size error read as
+//	                                            a broken vendor
+//	"eof" inside "g*eof*ence"                 -> anything at all read as a
+//	                                            dropped connection
+//
+// msg must already be lowercased.
+func has(msg string, phrases []string) bool {
+	for _, p := range phrases {
+		for i := 0; i+len(p) <= len(msg); i++ {
+			if msg[i:i+len(p)] != p || !boundary(msg, i-1) {
+				continue
+			}
+			if digit(p[len(p)-1]) && !boundary(msg, i+len(p)) {
+				continue
+			}
+			return true
+		}
+	}
+	return false
+}
+
+// boundary reports whether i falls outside msg or on a character that cannot be
+// part of a word or a number.
+func boundary(msg string, i int) bool {
+	if i < 0 || i >= len(msg) {
+		return true
+	}
+	c := msg[i]
+	return !(c >= 'a' && c <= 'z' || digit(c))
+}
+
+func digit(c byte) bool { return c >= '0' && c <= '9' }
+
+// faultOfText attributes a refusal that carries no status.
+//
+// The default is faultRequest: an error nobody here recognises does not get to
+// spend money at three vendors on the theory that it might be transient.
+func faultOfText(msg string) fault {
+	msg = strings.ToLower(msg)
+	// A vendor that does not carry the model says so in prose as often as it
+	// says so with a status — DigitalOcean's agreement gate reaches us both
+	// ways — so the same question is asked here as in the 403 branch, from the
+	// same definition.
+	if lacksModel(msg) {
+		return faultProvider
+	}
+	for _, set := range [][]string{moneyText, busyText, reachText} {
+		if has(msg, set) {
+			return faultProvider
+		}
+	}
+	return faultRequest
+}
+
+// lacksModel reports the narrow refusal that means "this vendor does not carry
+// this model for this account", as opposed to "this credential is not welcome".
+// msg must already be lowercased.
+func lacksModel(msg string) bool { return has(msg, absentText) }
+
+// cooldownFor says how long the provider that answered this way should be
+// sorted to the back, or 0 to leave it where it is.
+//
+// Separate from faultOf on purpose, because "should I ask somebody else THIS
+// time" and "is this vendor unwell" are different questions with different
+// answers. A vendor that does not stock a model is perfectly healthy: cascade
+// this request, but do not push it down the queue for every other model it
+// serves fine. A vendor that is out of money is unwell for everything.
+func cooldownFor(err error) time.Duration {
+	if faultOf(err) != faultProvider {
+		return 0 // not the provider's fault; nothing to hold against it
+	}
+	msg := strings.ToLower(err.Error())
+	if lacksModel(msg) {
+		return 0 // healthy vendor, absent item
+	}
+	if broke(err, msg) {
+		return coolBroke
+	}
+	return coolBusy
+}
+
+// broke reports the refusal that only a human with a credit card clears, as
+// opposed to the one that clears itself in seconds.
+//
+// Same ordering as faultOf: the status is the evidence, the text is a guess, and
+// the guess is consulted only where the fact is absent — or where the fact is
+// genuinely two-valued. 429 is the one such status: a vendor answers it both for
+// a busy platform and for an exhausted account, and OpenAI's exhausted account
+// says so only in words.
+//
+// Everywhere else the status decides alone, and that is not tidiness. An
+// upstream's error text can quote the request that provoked it, so a caller who
+// asks a question about insufficient credit would otherwise be able to rest
+// their own vendor for five minutes by asking it.
+func broke(err error, msg string) bool {
+	switch upstreamHTTPStatus(err) {
+	case http.StatusPaymentRequired:
+		return true
+	case 0, http.StatusTooManyRequests:
+		return has(msg, moneyText)
+	}
+	return false
+}
+
+// billingNotice reports that a refusal is OUR OWN spend gate speaking, relayed
+// back to us by a service that fronts for us.
+//
+// "The customer is out of credit" and "our account with the vendor is out of
+// credit" arrive as the same status and are opposite facts. One is the customer's
+// to fix and has to reach them; the other is ours and must never be shown to them
+// as a bill — and must never be answered by quietly serving a smaller model,
+// which would tell somebody their payment problem had solved itself.
+//
+// The CODE is what tells them apart, and it is a fact rather than a phrase:
+// object.BillingNotice stamps one on every denial we make, and no vendor writes
+// it. Read as a raw value because ours is a string where a vendor's is the status
+// number repeated, so decoding into a string would simply fail on theirs.
+func billingNotice(body []byte) bool {
+	var e struct {
+		Error struct {
+			Code json.RawMessage `json:"code"`
+		} `json:"error"`
+	}
+	if json.Unmarshal(body, &e) != nil {
+		return false
+	}
+	switch string(e.Error.Code) {
+	case `"` + object.CodeInsufficientBalance + `"`, `"` + object.CodeBalanceUnavailable + `"`:
+		return true
+	}
+	return false
+}
+
+// candidate is one provider that could serve this model, and the id to ask it
+// for.
+type candidate struct {
+	provider string
+	upstream string
+}
+
+// attempt is what one provider answered. status is 0 when the failure never
+// reached HTTP.
+type attempt struct {
+	provider string
+	upstream string
+	origin   string
+	status   int
+	fault    fault
+	err      error
+}
+
+// candidates orders the providers a route may be offered to, best first, and
+// caps the queue.
+//
+// Two rules, in order:
+//
+//  1. A provider that already refused THIS request is dropped. It answered once;
+//     asking it again inside the same request is the definition of waste.
+//  2. A provider still cooling is moved to the BACK, not removed. Removing it
+//     would mean a model whose only vendor is cooling gets refused outright,
+//     trading a slow answer for no answer — and nothing would ever re-probe a
+//     recovered vendor. Demotion is a latency preference, never an
+//     authorization.
+//
+// The relative order of the declared route is otherwise preserved, so an
+// operator's intent survives.
+//
+// org is whose queue this is. It selects which account's recent experience the
+// resting rule reads, so a customer's own empty account never reorders anybody
+// else's request.
+func candidates(org string, route *modelRoute, prior []attempt) []candidate {
+	if route == nil {
+		return nil
+	}
+	refused := make(map[string]bool, len(prior))
+	for _, a := range prior {
+		refused[a.provider] = true
+	}
+
+	var ready, resting []candidate
+	add := func(provider, upstream string) {
+		if provider == "" || refused[provider] {
+			return
+		}
+		c := candidate{provider, upstream}
+		if cooled.cooling(credential{org, provider}) {
+			resting = append(resting, c)
+			return
+		}
+		ready = append(ready, c)
+	}
+	add(route.providerName, route.upstreamModel)
+	for _, fb := range route.fallbacks {
+		add(fb.providerName, fb.upstreamModel)
+	}
+
+	queue := append(ready, resting...)
+
+	// The cap bounds THIS route, and a refusal from outside the route does not
+	// spend one of its places.
+	//
+	// The two are different quantities and the arithmetic used to conflate them.
+	// A declared route is exactly as wide as the cap — primary, Fallback1,
+	// Fallback2 — so subtracting the family pipe's one refusal meant a model
+	// served by the family could never reach its own last alternate: an operator
+	// declared three and got two, silently, and only on the requests where the
+	// alternates were the entire point.
+	//
+	// Nothing is unbounded by this. What the cap exists to bound is a route an
+	// operator can lengthen by typing into models.yaml; the family is one fixed
+	// provider that no configuration can multiply. Worst case is its one attempt
+	// plus this queue, which is a constant.
+	if len(queue) > maxProviders {
+		queue = queue[:maxProviders]
+	}
+	return queue
+}
+
+// exhausted is what the client is told when every capable provider refused.
+//
+// It names each vendor asked and quotes the last reason, because "the model is
+// unavailable" sends whoever reads it to the wrong place, and a bare 500 sends
+// them nowhere.
+//
+// The status is 503 and deliberately NOT the upstream's own. An upstream 402
+// means OUR account with that vendor is empty; forwarding a 402 to the customer
+// tells them THEY owe money, which is false, and clients that act on 402 will
+// go and try to fix a bill that is not theirs. 503 is the true statement: we
+// could not serve this, it is our problem, try again.
+func exhausted(model string, tried []attempt) error {
+	if len(tried) == 0 {
+		return &apiError{http.StatusServiceUnavailable,
+			fmt.Sprintf("model %q: no provider is configured to serve it", model)}
+	}
+	names := make([]string, 0, len(tried))
+	for _, a := range tried {
+		if a.status != 0 {
+			names = append(names, fmt.Sprintf("%s (%d)", a.provider, a.status))
+			continue
+		}
+		names = append(names, a.provider)
+	}
+	last := tried[len(tried)-1]
+	return &apiError{http.StatusServiceUnavailable, fmt.Sprintf(
+		"model %q: every provider refused — tried %s; last was %s: %s",
+		model, strings.Join(names, ", "), last.provider, last.err)}
+}
