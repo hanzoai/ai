@@ -127,7 +127,8 @@ func TestStreamCaptureUsageStripsReasoning(t *testing.T) {
 
 	var out strings.Builder
 	_, completion, total, completionText := streamCaptureUsage(
-		strings.NewReader(sse), &out, nil, true, "req", "zen5-pro", &model.ReasoningStripper{},
+		strings.NewReader(sse), &out, nil, true, &model.ReasoningStripper{},
+		&mark{id: "chatcmpl-req", model: "zen5-pro", seller: "hanzo"},
 	)
 
 	// Billing sees the ORIGINAL content (reasoning + answer) and the usage chunk.

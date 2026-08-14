@@ -1800,6 +1800,12 @@ func (c *ApiController) proxyToolRequest(
 	// so the two can never be given different arguments.
 	ledger := c.billingOrg(authUser)
 
+	// The answer leaves through our door (envelope.go): our id, the SKU the caller
+	// asked for, the seller. The SKU has to be read BEFORE the line below, which
+	// replaces it with the upstream's own name for the model — that name is what the
+	// upstream needs and what this path used to hand back to the caller.
+	mk := &mark{id: "chatcmpl-" + requestId, model: request.Model, seller: seller(provider, authUser)}
+
 	// Rewrite model to upstream model name
 	request.Model = provider.SubType
 
@@ -1899,7 +1905,7 @@ func (c *ApiController) proxyToolRequest(
 		}
 		capPrompt, capCompletion, capTotal, completionText := streamCaptureUsage(
 			resp.Body, c.Ctx.ResponseWriter, c.Ctx.ResponseWriter.Flush,
-			clientWantsUsage, requestId, request.Model, strip,
+			clientWantsUsage, strip, mk,
 		)
 
 		// Settle billing with the REAL token usage — captured from the forced
@@ -1922,7 +1928,7 @@ func (c *ApiController) proxyToolRequest(
 				Organization:     authUser.Owner,
 				Model:            request.Model,
 				Provider:         provider.Name,
-				Origin:           provider.Origin(),
+				Origin:           originOf(provider, mk),
 				PromptTokens:     prompt,
 				CompletionTokens: completion,
 				TotalTokens:      total,
@@ -1946,6 +1952,12 @@ func (c *ApiController) proxyToolRequest(
 			c.ResponseError(fmt.Sprintf("Failed to read upstream response: %s", err.Error()))
 			return
 		}
+
+		// What goes out is ours (envelope.go); what came in is what the billing below
+		// reads. Stamping is a disclosure decision, never a pricing one, so the two
+		// bodies stay separate — and it happens here so the usage row can record the
+		// upstream the stamp just took out of the answer.
+		out := mk.stamp(respBody)
 
 		// Try to extract usage for billing
 		var upstreamResp struct {
@@ -1979,7 +1991,7 @@ func (c *ApiController) proxyToolRequest(
 				Organization:     authUser.Owner,
 				Model:            request.Model,
 				Provider:         provider.Name,
-				Origin:           provider.Origin(),
+				Origin:           originOf(provider, mk),
 				PromptTokens:     prompt,
 				CompletionTokens: completion,
 				TotalTokens:      total,
@@ -2000,10 +2012,10 @@ func (c *ApiController) proxyToolRequest(
 		// Strip a reasoning-inlining upstream's leading <think></think> block from
 		// the forwarded body (billing above already tokenized the original).
 		if model.InlinesReasoning(request.Model) {
-			respBody = stripReasoningBody(respBody)
+			out = stripReasoningBody(out)
 		}
 		c.Ctx.ResponseWriter.WriteHeader(resp.StatusCode)
-		c.Ctx.Output.Body(respBody)
+		c.Ctx.Output.Body(out)
 	}
 	c.EnableRender = false
 }

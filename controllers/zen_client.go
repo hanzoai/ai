@@ -719,6 +719,17 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	// the resolved SKU; byte-identical for a direct request (model already matches).
 	rawBody = withModel(rawBody, model)
 	reqID := uuid.NewString()
+	// The family relays whoever it bought the inference from, so the answer leaves
+	// through our door wearing our id, the SKU asked for, and the seller (see
+	// envelope.go). The id is the one this call is already metered under, which is
+	// also what the reward join keys on, so the customer, the ledger and the routing
+	// event all name this completion the same way. Only the OpenAI chat envelope is
+	// ours to rewrite — the Anthropic dialect and the embeddings shape are relayed as
+	// they arrive, and a nil mark stamps nothing.
+	var mk *mark
+	if dialect == "openai" && apiPath == "chat/completions" {
+		mk = &mark{id: "chatcmpl-" + reqID, model: model, seller: seller(prov, authUser)}
+	}
 	url := prov.ProviderUrl + "/v1/" + apiPath
 	req, err := http.NewRequestWithContext(c.Ctx.Request.Context(), http.MethodPost, url, bytes.NewReader(rawBody))
 	if err != nil {
@@ -773,7 +784,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		c.Ctx.ResponseWriter.Header().Set("Cache-Control", "no-cache")
 		c.Ctx.ResponseWriter.Header().Set("Connection", "keep-alive")
 		c.Ctx.ResponseWriter.WriteHeader(http.StatusOK)
-		prompt, completion, served, respID = c.relayZenStream(resp.Body)
+		prompt, completion, served, respID = c.relayZenStream(resp.Body, mk)
 	} else {
 		b, rErr := io.ReadAll(resp.Body)
 		if rErr != nil {
@@ -796,13 +807,18 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 			ct = "application/json"
 		}
 		c.Ctx.Output.Header("Content-Type", ct)
-		c.Ctx.Output.Body(b)
+		c.Ctx.Output.Body(mk.stamp(b))
 	}
 
+	// A stamped answer carries OUR id, so that is the id the client will thread back
+	// to /v1/feedback and the id the reward has to join on.
+	if mk != nil {
+		respID = mk.id
+	}
 	if prompt == 0 {
 		prompt = coarseTokenEstimate(rawBody)
 	}
-	cents := c.recordFamilyUsage(fam, model, authUser, isPremium, stream, reqID, prompt, completion, start, hold, "success", "")
+	cents := c.recordFamilyUsage(fam, model, originOf(prov, mk), authUser, isPremium, stream, reqID, prompt, completion, start, hold, "success", "")
 	// Learning ledger: record this served family call (source="family") and, when the
 	// engine endpoint is configured, the shadow A/B pick — off the hot path, no prompt
 	// text ever stored (the ledger holds none). The join key is the response id the
@@ -813,18 +829,18 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	return nil
 }
 
-// relayZenStream copies a family's SSE response to the client verbatim and captures the
-// final usage for billing. The family already emits correct dialect SSE, so ai forwards
-// bytes unchanged — no translation — and only reads usage as it passes.
-func (c *ApiController) relayZenStream(body io.Reader) (prompt, completion int, served, respID string) {
+// relayZenStream copies a family's SSE response to the client and captures the final
+// usage for billing. The family already emits correct dialect SSE, so ai does not
+// translate — it reads usage as it passes and, for the one dialect whose envelope is
+// ours (a non-nil mark), stamps each event before it goes out. Every chunk of one
+// completion is stamped from the same mark, so the id a client correlates on holds
+// for the whole stream.
+func (c *ApiController) relayZenStream(body io.Reader, mk *mark) (prompt, completion int, served, respID string) {
 	w := c.Ctx.ResponseWriter
 	sc := bufio.NewScanner(body)
 	sc.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
 	for sc.Scan() {
 		line := sc.Bytes()
-		_, _ = w.Write(line)
-		_, _ = w.Write(zenNewline)
-		w.Flush()
 		if bytes.HasPrefix(line, zenDataPrefix) {
 			payload := bytes.TrimSpace(line[len(zenDataPrefix):])
 			if len(payload) > 0 && payload[0] == '{' {
@@ -835,8 +851,14 @@ func (c *ApiController) relayZenStream(body io.Reader) (prompt, completion int, 
 				if respID == "" {
 					respID = sniffZenId(payload)
 				}
+				if mk != nil {
+					line = append([]byte("data: "), mk.stamp(payload)...)
+				}
 			}
 		}
+		_, _ = w.Write(line)
+		_, _ = w.Write(zenNewline)
+		w.Flush()
 	}
 	return
 }
@@ -941,8 +963,9 @@ func coarseTokenEstimate(body []byte) int {
 
 // recordFamilyUsage settles the budget hold at the exact discovered price and records
 // the usage + trace. Billing lives in one place for both stream and buffered paths and
-// for every family.
-func (c *ApiController) recordFamilyUsage(fam *modelFamily, model string, authUser *iam.User, isPremium, stream bool, reqID string, prompt, completion int, start time.Time, hold *budgetHold, status, errMsg string) int64 {
+// for every family. origin is who actually served the call (originOf) — the row's
+// answer to a question the response no longer answers.
+func (c *ApiController) recordFamilyUsage(fam *modelFamily, model, origin string, authUser *iam.User, isPremium, stream bool, reqID string, prompt, completion int, start time.Time, hold *budgetHold, status, errMsg string) int64 {
 	var cents int64
 	if status == "success" {
 		if zm, ok := fam.lookup(model); ok {
@@ -957,7 +980,7 @@ func (c *ApiController) recordFamilyUsage(fam *modelFamily, model string, authUs
 	}
 	rec := &usageRecord{
 		Owner: c.billingOrg(authUser), Organization: authUser.Owner,
-		Model: model, Provider: fam.name,
+		Model: model, Provider: fam.name, Origin: origin,
 		PromptTokens: prompt, CompletionTokens: completion, TotalTokens: prompt + completion,
 		Cost: float64(cents) / 100.0, Currency: "USD",
 		Premium: isPremium, Stream: stream, Status: status, ErrorMsg: errMsg,
