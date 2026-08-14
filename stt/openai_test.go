@@ -70,12 +70,12 @@ func TestOpenAIProcessAudio(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	text, result, err := p.ProcessAudio(bytes.NewReader(payload), context.Background(), "en")
+	heard, result, err := p.ProcessAudio(bytes.NewReader(payload), context.Background(), "en", nil)
 	if err != nil {
 		t.Fatalf("ProcessAudio: %v", err)
 	}
-	if text != "guten tag" {
-		t.Errorf("text = %q, want guten tag", text)
+	if heard.Text != "guten tag" {
+		t.Errorf("text = %q, want guten tag", heard.Text)
 	}
 	if result == nil || result.AudioDurationSeconds != 1.5 {
 		t.Errorf("result = %+v, want duration 1.5", result)
@@ -94,7 +94,7 @@ func TestOpenAIProcessAudioUpstreamError(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _, err = p.ProcessAudio(strings.NewReader("x"), context.Background(), "en")
+	_, _, err = p.ProcessAudio(strings.NewReader("x"), context.Background(), "en", nil)
 	if err == nil {
 		t.Fatal("upstream 503 returned no error")
 	}
@@ -108,5 +108,70 @@ func TestOpenAIProcessAudioUpstreamError(t *testing.T) {
 func TestOpenAIRequiresURL(t *testing.T) {
 	if _, err := NewOpenAISpeechToTextProvider("whisper", "sk", "", ""); err == nil {
 		t.Fatal("empty provider URL accepted")
+	}
+}
+
+// TestOpenAIAsksForTheTimingsRequested asserts the granularities a caller wants
+// are forwarded to the upstream, and that asking for none forwards none — the
+// alignment pass is real work and is bought only when someone wants it.
+func TestOpenAIAsksForTheTimingsRequested(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		want []Timing
+		sent []string
+	}{
+		{"none", nil, nil},
+		{"words", []Timing{Word}, []string{"word"}},
+		{"both", []Timing{Word, Segment}, []string{"word", "segment"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var got []string
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if err := r.ParseMultipartForm(1 << 20); err != nil {
+					t.Fatalf("parse multipart: %v", err)
+				}
+				got = r.MultipartForm.Value["timestamp_granularities[]"]
+				io.WriteString(w, `{"text":"hi"}`)
+			}))
+			defer srv.Close()
+
+			p, err := NewOpenAISpeechToTextProvider("whisper", "", srv.URL, "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, _, err := p.ProcessAudio(strings.NewReader("x"), context.Background(), "en", tc.want); err != nil {
+				t.Fatal(err)
+			}
+			if strings.Join(got, ",") != strings.Join(tc.sent, ",") {
+				t.Errorf("timestamp_granularities[] = %v, want %v", got, tc.sent)
+			}
+		})
+	}
+}
+
+// TestOpenAICarriesTheTimingsBack is the defect: the upstream measured every
+// word boundary and this decode kept only the text, so nothing downstream could
+// cut a caption on a word.
+func TestOpenAICarriesTheTimingsBack(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, `{"text":"the fox","duration":1.3,
+			"words":[{"word":"the","start":0,"end":0.24},{"word":"fox","start":0.24,"end":0.58}],
+			"segments":[{"id":1,"start":0,"end":0.58,"text":"the fox","no_speech_prob":0.01}]}`)
+	}))
+	defer srv.Close()
+
+	p, err := NewOpenAISpeechToTextProvider("whisper", "", srv.URL, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	heard, _, err := p.ProcessAudio(strings.NewReader("x"), context.Background(), "en", []Timing{Word, Segment})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(heard.Words) != 2 || heard.Words[1].Word != "fox" || heard.Words[1].Start != 0.24 {
+		t.Fatalf("words = %+v, want the/fox with timings", heard.Words)
+	}
+	if len(heard.Segments) != 1 || heard.Segments[0].End != 0.58 || heard.Segments[0].NoSpeechProb != 0.01 {
+		t.Fatalf("segments = %+v, want one segment with its timings", heard.Segments)
 	}
 }

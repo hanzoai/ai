@@ -26,9 +26,53 @@ type SpeechToTextResult struct {
 	Currency             string
 }
 
+// Timing is a timestamp granularity a caller may ask a transcription for. The
+// two OpenAI defines, and the only two an upstream is asked for.
+type Timing string
+
+const (
+	Word    Timing = "word"
+	Segment Timing = "segment"
+)
+
+// TimedWord is one word and when it was said. This is what a caption cuts on:
+// without it a consumer has to place word boundaries by dividing a line's span
+// by its letters, and the error compounds down the line.
+type TimedWord struct {
+	Word  string  `json:"word"`
+	Start float64 `json:"start"`
+	End   float64 `json:"end"`
+}
+
+// TimedSegment is one decoded span, and what the decoder thought of it.
+type TimedSegment struct {
+	Id               int     `json:"id"`
+	Seek             int     `json:"seek"`
+	Start            float64 `json:"start"`
+	End              float64 `json:"end"`
+	Text             string  `json:"text"`
+	Tokens           []int   `json:"tokens"`
+	Temperature      float64 `json:"temperature"`
+	AvgLogprob       float64 `json:"avg_logprob"`
+	CompressionRatio float64 `json:"compression_ratio"`
+	NoSpeechProb     float64 `json:"no_speech_prob"`
+}
+
+// Transcript is what was heard — the text, and the timings the caller asked
+// for. The text used to be the whole return, which is why no caption anywhere
+// downstream could be timed to a word: the upstream measured every boundary
+// and this plane had nowhere to put them.
+type Transcript struct {
+	Text     string
+	Words    []TimedWord
+	Segments []TimedSegment
+}
+
 type SpeechToTextProvider interface {
 	GetPricing() string
-	ProcessAudio(audioData io.Reader, ctx context.Context, lang string) (string, *SpeechToTextResult, error)
+	// want names the timings to ask the upstream for. Nil asks for none, and a
+	// provider that cannot produce them returns a Transcript of text alone.
+	ProcessAudio(audioData io.Reader, ctx context.Context, lang string, want []Timing) (*Transcript, *SpeechToTextResult, error)
 }
 
 // GetSpeechToTextProvider creates a new provider instance based on the provider

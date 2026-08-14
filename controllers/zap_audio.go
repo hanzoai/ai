@@ -57,6 +57,7 @@ import (
 	"github.com/luxfi/zap"
 
 	"github.com/hanzoai/ai/object"
+	"github.com/hanzoai/ai/stt"
 	"github.com/hanzoai/ai/tts"
 )
 
@@ -289,7 +290,7 @@ func zapAudioTranscribeHandler(ctx context.Context, auth string, body []byte) (*
 	}
 	defer release()
 
-	text, sttResult, err := sttProvider.ProcessAudio(form.audio, ctx, "en")
+	heard, sttResult, err := sttProvider.ProcessAudio(form.audio, ctx, "en", form.timings)
 	if err != nil {
 		zapRecordAudioUsage(ctx, authUser, provider, form.model, isPremium, audioQuantity{}, "error", err.Error(), startTime)
 		return object.BuildCloudResponse(502, nil, err.Error())
@@ -297,10 +298,9 @@ func zapAudioTranscribeHandler(ctx context.Context, auth string, body []byte) (*
 	zapRecordAudioUsage(ctx, authUser, provider, form.model, isPremium, audioQuantity{seconds: sttSecondsOf(sttResult)}, "success", "", startTime)
 
 	if form.responseFormat == "text" {
-		return object.BuildCloudResponse(200, []byte(text), "")
+		return object.BuildCloudResponse(200, []byte(heard.Text), "")
 	}
-	data, _ := json.Marshal(transcriptionResponse{Text: text})
-	return object.BuildCloudResponse(200, data, "")
+	return object.BuildCloudResponse(200, transcriptionBody(form.responseFormat, heard, sttSecondsOf(sttResult)), "")
 }
 
 // transcribeForm is the decoded OpenAI transcription multipart body.
@@ -308,6 +308,7 @@ type transcribeForm struct {
 	model          string
 	language       string
 	responseFormat string
+	timings        []stt.Timing
 	audio          *bytes.Reader
 }
 
@@ -337,6 +338,10 @@ func parseTranscribeForm(body []byte) (*transcribeForm, error) {
 	f.model = first("model")
 	f.language = first("language")
 	f.responseFormat = first("response_format")
+	f.timings, err = timingsOf(form.Value)
+	if err != nil {
+		return nil, err
+	}
 	if files := form.File["file"]; len(files) > 0 {
 		fh, err := files[0].Open()
 		if err != nil {
@@ -646,12 +651,12 @@ func zapSTTHandler(ctx context.Context, auth string, body []byte) (*zap.Message,
 	defer release()
 
 	startTime := time.Now().UTC()
-	text, legacyResult, err := providerObj.ProcessAudio(audioReader, ctx, "en")
+	heard, legacyResult, err := providerObj.ProcessAudio(audioReader, ctx, "en", nil)
 	zapRecordLegacySTTUsage(ctx, store, provider, sttSecondsOf(legacyResult), startTime, err)
 	if err != nil {
 		return object.BuildCloudResponse(502, nil, err.Error())
 	}
-	data, _ := json.Marshal(Response{Status: "ok", Data: text})
+	data, _ := json.Marshal(Response{Status: "ok", Data: heard.Text})
 	return object.BuildCloudResponse(200, data, "")
 }
 
