@@ -65,8 +65,26 @@ func TestFaultOf(t *testing.T) {
 		{"no such host", errors.New("lookup api.example.com: no such host"), faultProvider, "never resolved"},
 		{"deadline exceeded", errors.New("context deadline exceeded"), faultProvider, "never answered"},
 		{"unexpected EOF", errors.New("unexpected EOF"), faultProvider, "closed mid-response"},
-		{"provider disabled", errors.New(`provider "do-ai" is unavailable (disabled or not configured)`), faultProvider,
-			"an admin switched it off; the alternates must still be honoured"},
+		{"provider disabled", unavailable("do-ai"), faultProvider,
+			"an admin switched it off; the alternates must still be honoured. The VALUE the loop " +
+				"raises, not a string resembling it — it carries a 503 so nothing has to read our own prose"},
+
+		// ── a substring of an unrelated token must not classify ──────────
+		// Every one of these was measured against the old substring matcher.
+		{"a date in a model id is not a payment code", errors.New("model claude-3-sonnet-20240229 not found"), faultRequest,
+			`"402" lies inside "2024_022_9", so a typo'd model id read as an empty account: three ` +
+				"vendors times three retries is nine upstream calls, plus a five-minute demotion of a healthy vendor"},
+		{"a token count is not a status", errors.New("you requested 8503 tokens, which exceeds the limit"), faultRequest,
+			`"503" lies inside "8503" — a request-size fact read as a broken vendor`},
+		{"a longer number that STARTS with a status is not that status", errors.New("request 402913 was rejected"), faultRequest,
+			`"402" begins a token here, so only checking the LEFT edge still reads an id as an empty account. ` +
+				"A status code is exact at both ends"},
+		{"geofence is not an eof", errors.New("request blocked by geofence policy"), faultRequest,
+			`"eof" lies inside "geofence", which would read any policy refusal as a dropped connection`},
+		{"a tier refusal is not our own switched-off row", errors.New("this model is unavailable for your account tier"), faultRequest,
+			`"unavailable" was in the transport list only because our OWN disabled-row error used the word. ` +
+				"If a vendor is observed using this phrasing for a catalogue gate it belongs in absentText — " +
+				"a deliberate data change, not an accident of overlap"},
 
 		// ── the vendor does not stock the item ───────────────────────────
 		{"403 agreement gate typed", apiErr(403, "this model is not available for your account"), faultProvider,
@@ -142,6 +160,12 @@ func TestCooldownFor(t *testing.T) {
 		{"absent model does NOT rest", apiErr(403, "this model is not available for your account"), 0},
 		{"401 does NOT rest", apiErr(401, "invalid api key"), 0},
 		{"400 does NOT rest", apiErr(400, "bad request"), 0},
+
+		// The status is the evidence; the text is read only where the status is
+		// absent or genuinely two-valued.
+		{"429 saying quota rests long", apiErr(429, "You exceeded your current quota"), coolBroke},
+		{"a 503 quoting the caller does NOT rest long", apiErr(503, `upstream said: {"prompt":"what does insufficient balance mean?"}`), coolBusy},
+		{"a 500 quoting a payment code does NOT rest long", apiErr(500, "internal error handling invoice 402"), coolBusy},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
