@@ -89,8 +89,10 @@ func getFullTranscript(completedSegments []*SpeechSegment, currentSegment *Speec
 	return fullText
 }
 
-// ProcessAudio processes an audio stream and returns the transcribed text
-func (p *AlibabacloudSpeechToTextProvider) ProcessAudio(audioReader io.Reader, ctx context.Context, lang string) (string, *SpeechToTextResult, error) {
+// ProcessAudio processes an audio stream and returns the transcribed text.
+// want is ignored: this upstream reports no timestamps, so the transcript it
+// returns is text alone rather than timings invented to fill the shape.
+func (p *AlibabacloudSpeechToTextProvider) ProcessAudio(audioReader io.Reader, ctx context.Context, lang string, want []Timing) (*Transcript, *SpeechToTextResult, error) {
 	res := &SpeechToTextResult{
 		AudioDurationSeconds: 0,
 		Price:                0.0,
@@ -307,7 +309,7 @@ func (p *AlibabacloudSpeechToTextProvider) ProcessAudio(audioReader io.Reader, c
 
 			if isDone {
 				if currentError != nil {
-					return "", res, currentError
+					return nil, res, currentError
 				}
 
 				// Get the full transcript
@@ -318,15 +320,15 @@ func (p *AlibabacloudSpeechToTextProvider) ProcessAudio(audioReader io.Reader, c
 
 				// Calculate price
 				if err := p.calculatePrice(res); err != nil {
-					return fullTranscript, res, err
+					return &Transcript{Text: fullTranscript}, res, err
 				}
 
-				return fullTranscript, res, nil
+				return &Transcript{Text: fullTranscript}, res, nil
 			}
 
 		case err := <-apiCallDone:
 			if err != nil {
-				return "", res, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "stt:speech recognition API error: %v"), err))
+				return nil, res, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "stt:speech recognition API error: %v"), err))
 			}
 			apiCallCompleted = true
 			timeoutTimer.Reset(waitAfterAPICallTime)
@@ -346,10 +348,10 @@ func (p *AlibabacloudSpeechToTextProvider) ProcessAudio(audioReader io.Reader, c
 
 				// Calculate price
 				if err := p.calculatePrice(res); err != nil {
-					return fullTranscript, res, err
+					return &Transcript{Text: fullTranscript}, res, err
 				}
 
-				return fullTranscript, res, nil
+				return &Transcript{Text: fullTranscript}, res, nil
 			}
 
 			if fullTranscript != "" {
@@ -362,13 +364,13 @@ func (p *AlibabacloudSpeechToTextProvider) ProcessAudio(audioReader io.Reader, c
 
 				// Calculate price
 				if err := p.calculatePrice(res); err != nil {
-					return fullTranscript, res, err
+					return &Transcript{Text: fullTranscript}, res, err
 				}
 
-				return fullTranscript, res, nil
+				return &Transcript{Text: fullTranscript}, res, nil
 			}
 
-			return "", res, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "stt:speech recognition timed out after %v seconds"), timeout.Seconds()))
+			return nil, res, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "stt:speech recognition timed out after %v seconds"), timeout.Seconds()))
 		}
 	}
 }
