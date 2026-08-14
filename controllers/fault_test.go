@@ -156,16 +156,76 @@ func TestCooldownExpires(t *testing.T) {
 	cooled.forget()
 	t.Cleanup(cooled.forget)
 
-	if cooled.cooling("do-ai") {
+	if cooled.cooling(credential{"", "do-ai"}) {
 		t.Fatal("a provider nobody demoted must not be cooling")
 	}
-	cooled.demote("do-ai", 50*time.Millisecond)
-	if !cooled.cooling("do-ai") {
+	cooled.demote(credential{"", "do-ai"}, 50*time.Millisecond)
+	if !cooled.cooling(credential{"", "do-ai"}) {
 		t.Fatal("a demoted provider must be cooling")
 	}
 	time.Sleep(60 * time.Millisecond)
-	if cooled.cooling("do-ai") {
+	if cooled.cooling(credential{"", "do-ai"}) {
 		t.Error("the cooldown must expire on its own — nothing else re-probes a recovered vendor")
+	}
+}
+
+// One tenant's empty account must not cost another tenant a vendor.
+//
+// The measured leak: tenant A connected its own openai key, that key answered
+// 402, and openai was demoted for EVERYONE. Because the queue is also capped,
+// the demotion did not merely reorder tenant B's queue — it pushed openai past
+// the cap and REMOVED a vendor B's own healthy key could have served from.
+//
+// The assertion is on B's queue rather than on the map, so it survives any
+// future change to how the penalty is stored.
+func TestOneTenantsEmptyAccountIsNotAnothersOutage(t *testing.T) {
+	cooled.forget()
+	t.Cleanup(cooled.forget)
+
+	r := route("openai", "anthropic", "fireworks")
+
+	// Tenant A's own connected openai account is empty.
+	cooled.demote(credential{"org-a", "openai"}, coolBroke)
+
+	got := names(candidates("org-b", r, nil))
+	want := []string{"openai", "anthropic", "fireworks"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("tenant B's queue = %v, want %v — A's empty BYO account is a fact about "+
+			"A's credential, not about the vendor, and B does not hold it", got, want)
+	}
+	if len(got) == 0 || got[0] != "openai" {
+		t.Errorf("openai is not first for B (queue %v): a tenant that never refused anything "+
+			"must see its declared route untouched", got)
+	}
+
+	// The penalty is real for the tenant that earned it — otherwise this test
+	// would also pass against a cooldown that simply stopped working.
+	if a := names(candidates("org-a", r, nil)); len(a) == 0 || a[0] == "openai" {
+		t.Errorf("tenant A's queue = %v, want openai sorted back — A's own key IS empty", a)
+	}
+}
+
+// The mirror: our platform key is what every org without its own key spends, so
+// a refusal on it is scoped to the org that observed it and each org pays at
+// most one round trip to learn the same thing. What must never happen is the
+// lesson jumping to a tenant whose request would spend a DIFFERENT credential.
+func TestACooldownNamesTheOrgThatEarnedIt(t *testing.T) {
+	cooled.forget()
+	t.Cleanup(cooled.forget)
+
+	cooled.demote(credential{"org-a", "openai"}, time.Minute)
+
+	if !cooled.cooling(credential{"org-a", "openai"}) {
+		t.Error("the org that refused must be cooling")
+	}
+	if cooled.cooling(credential{"org-b", "openai"}) {
+		t.Error("a different org must NOT inherit it")
+	}
+	if cooled.cooling(credential{"org-a", "anthropic"}) {
+		t.Error("a different vendor must NOT inherit it")
+	}
+	if cooled.cooling(credential{"", "openai"}) {
+		t.Error("the org-less bucket must NOT inherit it")
 	}
 }
 
@@ -191,7 +251,7 @@ func TestCandidatesOrder(t *testing.T) {
 
 	t.Run("declared order is preserved when everyone is healthy", func(t *testing.T) {
 		cooled.forget()
-		got := names(candidates(route("do-ai", "anthropic", "fireworks"), nil))
+		got := names(candidates("", route("do-ai", "anthropic", "fireworks"), nil))
 		want := []string{"do-ai", "anthropic", "fireworks"}
 		if strings.Join(got, ",") != strings.Join(want, ",") {
 			t.Errorf("order = %v, want %v — an operator's intent must survive", got, want)
@@ -200,8 +260,8 @@ func TestCandidatesOrder(t *testing.T) {
 
 	t.Run("a cooling provider sorts to the back, it is not removed", func(t *testing.T) {
 		cooled.forget()
-		cooled.demote("do-ai", time.Minute)
-		got := names(candidates(route("do-ai", "anthropic", "fireworks"), nil))
+		cooled.demote(credential{"", "do-ai"}, time.Minute)
+		got := names(candidates("", route("do-ai", "anthropic", "fireworks"), nil))
 		want := []string{"anthropic", "fireworks", "do-ai"}
 		if strings.Join(got, ",") != strings.Join(want, ",") {
 			t.Errorf("order = %v, want %v", got, want)
@@ -211,9 +271,9 @@ func TestCandidatesOrder(t *testing.T) {
 	t.Run("when everyone is cooling the queue is still offered", func(t *testing.T) {
 		cooled.forget()
 		for _, p := range []string{"do-ai", "anthropic"} {
-			cooled.demote(p, time.Minute)
+			cooled.demote(credential{"", p}, time.Minute)
 		}
-		got := names(candidates(route("do-ai", "anthropic"), nil))
+		got := names(candidates("", route("do-ai", "anthropic"), nil))
 		if len(got) != 2 {
 			t.Fatalf("got %v — a model whose every vendor is resting must still be attempted; "+
 				"demotion is a latency preference, never an authorization", got)
@@ -226,7 +286,7 @@ func TestCandidatesOrder(t *testing.T) {
 	t.Run("a provider that already refused this request is dropped", func(t *testing.T) {
 		cooled.forget()
 		prior := []attempt{{provider: "enso", err: errors.New("402")}}
-		got := names(candidates(route("enso", "do-ai"), prior))
+		got := names(candidates("", route("enso", "do-ai"), prior))
 		if strings.Join(got, ",") != "do-ai" {
 			t.Errorf("got %v, want [do-ai] — asking a vendor twice in one request is waste", got)
 		}
@@ -234,7 +294,7 @@ func TestCandidatesOrder(t *testing.T) {
 
 	t.Run("the cap holds", func(t *testing.T) {
 		cooled.forget()
-		got := candidates(route("p1", "p2", "p3", "p4", "p5"), nil)
+		got := candidates("", route("p1", "p2", "p3", "p4", "p5"), nil)
 		if len(got) != maxProviders {
 			t.Errorf("offered %d vendors, want at most %d — an unbounded walk turns one "+
 				"slow afternoon into %d upstream calls", len(got), maxProviders, 5*3)
@@ -244,7 +304,7 @@ func TestCandidatesOrder(t *testing.T) {
 	t.Run("the cap counts vendors already asked elsewhere", func(t *testing.T) {
 		cooled.forget()
 		prior := []attempt{{provider: "enso", err: errors.New("402")}}
-		got := candidates(route("p1", "p2", "p3", "p4"), prior)
+		got := candidates("", route("p1", "p2", "p3", "p4"), prior)
 		if len(got) != maxProviders-1 {
 			t.Errorf("offered %d more vendors after 1 prior refusal, want %d — the bound is on "+
 				"the REQUEST, not on each loop", len(got), maxProviders-1)
@@ -252,7 +312,7 @@ func TestCandidatesOrder(t *testing.T) {
 	})
 
 	t.Run("no route means no candidates", func(t *testing.T) {
-		if got := candidates(nil, nil); got != nil {
+		if got := candidates("", nil, nil); got != nil {
 			t.Errorf("candidates(nil) = %v, want nil", got)
 		}
 	})

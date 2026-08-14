@@ -75,43 +75,75 @@ const (
 	coolBroke = 5 * time.Minute
 )
 
-// cooldown remembers, per provider, the instant it is worth asking again.
+// credential is the thing whose health is being remembered: ONE tenant's account
+// with one vendor.
+//
+// Not the vendor. "openai is out of money" is not a fact anybody can state —
+// only "THIS account at openai is out of money" is, and which account a request
+// spends is decided by its org, because that is what selects the row: an org
+// that connected its own key spends its own key, everyone else spends ours.
+// Keyed by vendor alone, one customer's empty connected account teaches this
+// process that the vendor is unwell and every other tenant inherits the
+// penalty — a lesson about a credential they do not hold and cannot top up.
+//
+// The org is therefore part of the key rather than a filter applied to it,
+// which makes the leak unrepresentable instead of merely unlikely.
+type credential struct {
+	org      string
+	provider string
+}
+
+// cooldown remembers, per credential, the instant it is worth asking again.
 //
 // In memory on purpose: it describes THIS process's recent experience of an
 // upstream, it is worthless after a restart, and sharing it through a store
 // would buy consistency nobody needs at the cost of a dependency on the request
-// path. Every replica learns the same lesson within one request of its own.
+// path. Each org learns its own lesson within one request of its own.
 type cooldown struct {
 	mu    sync.Mutex
-	until map[string]time.Time
+	until map[credential]time.Time
 }
 
-var cooled = &cooldown{until: map[string]time.Time{}}
+var cooled = &cooldown{until: map[credential]time.Time{}}
 
-// demote sorts a provider to the back of the queue for d.
-func (c *cooldown) demote(provider string, d time.Duration) {
-	if provider == "" || d <= 0 {
+// demote sorts one org's account with a provider to the back of its queue for d.
+func (c *cooldown) demote(a credential, d time.Duration) {
+	if a.provider == "" || d <= 0 {
 		return
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.until[provider] = time.Now().Add(d)
+	c.until[a] = time.Now().Add(d)
 }
 
-// cooling reports whether a provider refused recently enough that another one
-// should be preferred.
-func (c *cooldown) cooling(provider string) bool {
+// cooling reports whether this org's account with a provider refused recently
+// enough that another provider should be preferred.
+func (c *cooldown) cooling(a credential) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	t, ok := c.until[provider]
+	t, ok := c.until[a]
 	if !ok {
 		return false
 	}
 	if time.Now().Before(t) {
 		return true
 	}
-	delete(c.until, provider) // expired: forget it rather than grow forever
+	delete(c.until, a) // expired: forget it rather than grow forever
 	return false
+}
+
+// rest records what one refusal says about the account that answered it, and
+// reports how long that account now rests — 0 for a refusal that says nothing
+// about it.
+//
+// One function because the failover loop and the family pipe ask the identical
+// question, and two spellings of it are two places for the org to go missing.
+// That is exactly how the penalty came to be filed against a vendor instead of
+// against an account: the second copy simply did not mention the tenant.
+func (c *cooldown) rest(org, provider string, err error) time.Duration {
+	d := cooldownFor(err)
+	c.demote(credential{org, provider}, d)
+	return d
 }
 
 // forget clears the whole penalty box. Tests use it to start from a known
@@ -119,7 +151,7 @@ func (c *cooldown) cooling(provider string) bool {
 func (c *cooldown) forget() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.until = map[string]time.Time{}
+	c.until = map[credential]time.Time{}
 }
 
 // faultOf attributes a failed upstream call.
@@ -323,7 +355,11 @@ type attempt struct {
 //
 // The relative order of the declared route is otherwise preserved, so an
 // operator's intent survives.
-func candidates(route *modelRoute, prior []attempt) []candidate {
+//
+// org is whose queue this is. It selects which account's recent experience the
+// resting rule reads, so a customer's own empty account never reorders anybody
+// else's request.
+func candidates(org string, route *modelRoute, prior []attempt) []candidate {
 	if route == nil {
 		return nil
 	}
@@ -338,7 +374,7 @@ func candidates(route *modelRoute, prior []attempt) []candidate {
 			return
 		}
 		c := candidate{provider, upstream}
-		if cooled.cooling(provider) {
+		if cooled.cooling(credential{org, provider}) {
 			resting = append(resting, c)
 			return
 		}
