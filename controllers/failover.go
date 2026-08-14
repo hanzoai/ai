@@ -114,13 +114,16 @@ func (a ask) serve() (*model.ModelResult, served, []attempt, error) {
 			// The row travels with the answer because it is the row whose
 			// credential was spent, and that is what decides whether this call
 			// was the customer's own key or ours.
-			return res, served{c.provider, originOf(row), row}, tried, nil
+			// No mark: this path builds the answer from the provider SDK rather
+			// than relaying an envelope, so nothing disclosed an upstream and the
+			// host we dialled is the whole answer.
+			return res, served{c.provider, originOf(row, nil), row}, tried, nil
 		}
 
 		at := attempt{
 			provider: c.provider,
 			upstream: c.upstream,
-			origin:   originOf(row),
+			origin:   originOf(row, nil),
 			status:   upstreamHTTPStatus(err),
 			fault:    faultOf(err),
 			err:      err,
@@ -180,15 +183,6 @@ func (a ask) call(c candidate) (*model.ModelResult, *object.Provider, error) {
 		return wrapUpstreamError(e)
 	})
 	return res, row, err
-}
-
-// originOf reports the host a provider row answers from, or "" when there is no
-// row — nothing answered, and saying nothing is the honest form of that.
-func originOf(row *object.Provider) string {
-	if row == nil {
-		return ""
-	}
-	return row.Origin()
 }
 
 // context returns the caller's context, so a retry never outlives the request
