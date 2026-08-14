@@ -525,12 +525,20 @@ func getUserByAccessKey(accessKey string) (*iam.User, error) {
 	if result.Data == nil {
 		return nil, authError(
 			"API key %s resolved to no user — IAM accepted the lookup and returned nothing. "+
-				"The key may have been deleted, or its owner removed. Mint a new one at https://cloud.hanzo.ai/keys",
+				"The key may have been deleted, or its owner removed. Mint a new one at "+keysURL,
 			keyHint(accessKey))
 	}
 
 	return result.Data, nil
 }
+
+// keysURL is where a holder mints a replacement key — the console page that serves
+// it, spelled ONCE because every refusal below names it and three copies of an
+// address drift the moment the page moves. It moved already: these messages sent
+// people to cloud.hanzo.ai/keys, which answers 404 (cloud.hanzo.ai is the product
+// site; the console is its own host, and its key surface is /api-keys). A refusal
+// that names a cure the holder cannot reach is worse than one that names none.
+const keysURL = "https://console.hanzo.ai/api-keys"
 
 // keyRefusal turns IAM's refusal into something the holder can ACT on.
 //
@@ -546,14 +554,14 @@ func keyRefusal(code, msg, key string) error {
 	switch code {
 	case "key_unknown":
 		return fmt.Errorf("API key %s is not recognized — it was revoked or replaced. "+
-			"Mint a new one at https://cloud.hanzo.ai/keys", keyHint(key))
+			"Mint a new one at "+keysURL, keyHint(key))
 	case "key_wrong_door":
 		return fmt.Errorf("API key %s is not a secret key. A publishable pk- key "+
 			"identifies an org for ingest and cannot authenticate a request; "+
 			"use your secret (sk-) key", keyHint(key))
 	case "key_expired":
 		return fmt.Errorf("API key %s has expired — mint a new one at "+
-			"https://cloud.hanzo.ai/keys", keyHint(key))
+			keysURL, keyHint(key))
 	case "key_not_publishable":
 		return fmt.Errorf("API key %s is not a publishable key", keyHint(key))
 	case "key_foreign_user", "key_dangling_user":
@@ -1194,7 +1202,7 @@ func (c *ApiController) authResolveProvider(token, requestedModel, orgId string)
 		// the provider table, and the key this estate mints, which lives in IAM.
 		// Both lookups are exact, so neither can claim the other's key; the order
 		// decides only who answers when NEITHER owns it, and IAM's refusal is the
-		// one that names the cure ("mint a new one at cloud.hanzo.ai/keys") where
+		// one that names the cure ("mint a new one at" + keysURL) where
 		// a provider miss can only say "invalid".
 		provider, err = object.GetProviderByProviderKey(token, lang)
 		if err != nil {
