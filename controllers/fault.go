@@ -450,14 +450,22 @@ func candidates(org string, route *modelRoute, prior []attempt) []candidate {
 
 	queue := append(ready, resting...)
 
-	// The cap counts vendors asked across the WHOLE request, so a family pipe
-	// that already refused spends one of the three.
-	budget := maxProviders - len(prior)
-	if budget < 0 {
-		budget = 0
-	}
-	if len(queue) > budget {
-		queue = queue[:budget]
+	// The cap bounds THIS route, and a refusal from outside the route does not
+	// spend one of its places.
+	//
+	// The two are different quantities and the arithmetic used to conflate them.
+	// A declared route is exactly as wide as the cap — primary, Fallback1,
+	// Fallback2 — so subtracting the family pipe's one refusal meant a model
+	// served by the family could never reach its own last alternate: an operator
+	// declared three and got two, silently, and only on the requests where the
+	// alternates were the entire point.
+	//
+	// Nothing is unbounded by this. What the cap exists to bound is a route an
+	// operator can lengthen by typing into models.yaml; the family is one fixed
+	// provider that no configuration can multiply. Worst case is its one attempt
+	// plus this queue, which is a constant.
+	if len(queue) > maxProviders {
+		queue = queue[:maxProviders]
 	}
 	return queue
 }
