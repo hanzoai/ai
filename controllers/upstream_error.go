@@ -36,10 +36,26 @@ import (
 
 // upstreamHTTPStatus returns the HTTP status carried by a provider/SDK error, or
 // 0 for a transport/decode error that carries none.
+//
+// It reads both spellings of the same fact — the SDK's *openai.APIError and the
+// *apiError wrapUpstreamError restates it as — so a status survives being
+// wrapped and every reader gets the same answer whichever side of the wrapper it
+// stands on.
+//
+// Distinct from statusOf, which answers a different question ("what should the
+// CLIENT see") and therefore defaults to 401 for an unrecognised error. That
+// default is correct for rendering and catastrophic for attribution: it would
+// file every connection reset as an auth failure, and faultOf would refuse to
+// fail over. Absence is reported as 0 here so the caller can tell "no status"
+// from "some status".
 func upstreamHTTPStatus(err error) int {
 	var oe *openai.APIError
 	if errors.As(err, &oe) {
 		return oe.HTTPStatusCode
+	}
+	var ae *apiError
+	if errors.As(err, &ae) {
+		return ae.status
 	}
 	return 0
 }

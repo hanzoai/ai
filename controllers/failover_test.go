@@ -15,58 +15,12 @@
 package controllers
 
 import (
-	"fmt"
 	"os"
 	"testing"
 )
 
-func TestIsRetryableError(t *testing.T) {
-	cases := []struct {
-		name string
-		err  error
-		want bool
-	}{
-		{"nil error", nil, false},
-		{"401 unauthorized", fmt.Errorf("HTTP 401 Unauthorized"), true},
-		{"429 rate limit", fmt.Errorf("HTTP 429 Too Many Requests"), true},
-		{"rate limit text", fmt.Errorf("rate limit exceeded"), true},
-		{"500 internal", fmt.Errorf("HTTP 500 Internal Server Error"), true},
-		{"502 bad gateway", fmt.Errorf("502 bad gateway"), true},
-		{"503 unavailable", fmt.Errorf("service unavailable"), true},
-		{"504 gateway timeout", fmt.Errorf("504 gateway timeout"), true},
-		{"timeout", fmt.Errorf("request timeout exceeded"), true},
-		{"deadline exceeded", fmt.Errorf("context deadline exceeded"), true},
-		{"connection refused", fmt.Errorf("dial tcp: connection refused"), true},
-		{"connection reset", fmt.Errorf("connection reset by peer"), true},
-		{"eof", fmt.Errorf("unexpected EOF"), true},
-		{"model not found", fmt.Errorf("model not found: gpt-99"), false},
-		{"invalid request", fmt.Errorf("invalid request body"), false},
-		{"auth error different", fmt.Errorf("invalid API key format"), false},
-		{"empty error", fmt.Errorf(""), false},
-		// Credit-first -> paid cascade: credit/quota exhaustion + agreement gates
-		// MUST be retryable so the fallback chain advances to the next provider.
-		{"402 payment required", fmt.Errorf("HTTP 402 Payment Required"), true},
-		{"403 agreement gate (DO)", fmt.Errorf("error, status code: 403, message: this model is not available for your account"), true},
-		{"insufficient_quota (openai credit spent)", fmt.Errorf("You exceeded your current quota, code: insufficient_quota"), true},
-		{"out of credit", fmt.Errorf("provider credit exhausted for this account"), true},
-		{"billing hard limit", fmt.Errorf("Billing hard limit has been reached"), true},
-		// Guard: a REQUEST-size error must NOT cascade (every provider fails it the
-		// same way) — locks the deliberate exclusion of bare "exceeded".
-		{"context length exceeded (not retryable)", fmt.Errorf("This model's maximum context length is 8192 tokens"), false},
-		// A disabled/unconfigured primary provider is surfaced by callProvider as
-		// "... is unavailable ..." so the failover loop advances to the fallback.
-		{"provider unavailable (disabled primary)", fmt.Errorf("provider \"do-ai\" is unavailable (disabled or not configured)"), true},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got := isRetryableError(tc.err)
-			if got != tc.want {
-				t.Errorf("isRetryableError(%v) = %v, want %v", tc.err, got, tc.want)
-			}
-		})
-	}
-}
+// The status taxonomy lives in fault_test.go — faultOf's table is the single
+// place it is asserted, so it cannot drift between two half-copies.
 
 func TestFallbacksInModelConfig(t *testing.T) {
 	yaml := `

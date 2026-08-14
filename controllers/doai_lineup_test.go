@@ -206,8 +206,8 @@ func TestBestVirtualModelCascade(t *testing.T) {
 		"insufficient_quota",
 		"provider \"do-ai\" is unavailable (disabled or not configured)",
 	} {
-		if !isRetryableError(errors.New(msg)) {
-			t.Errorf("best cascade would NOT fire on %q (isRetryableError=false)", msg)
+		if faultOf(errors.New(msg)) != faultProvider {
+			t.Errorf("best cascade would NOT fire on %q (faultOf said request, not provider)", msg)
 		}
 	}
 }

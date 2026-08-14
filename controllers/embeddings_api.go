@@ -113,7 +113,18 @@ func (c *ApiController) Embeddings() {
 				return
 			}
 		}
-		c.pipeToFamily(fam, "embeddings", "openai", head.Model, c.Ctx.Input.RequestBody, false, orgId, authUser, isPremium, hold, startTime)
+		refused := c.pipeToFamily(fam, "embeddings", "openai", head.Model, c.Ctx.Input.RequestBody, false, orgId, authUser, isPremium, hold, startTime)
+		if refused == nil {
+			return
+		}
+		// Embeddings have no alternate to move to — the chat pipeline's route
+		// table does not describe them — so the honest answer is the refusal
+		// itself, naming the vendor and the reason rather than forwarding an
+		// upstream 402 that tells the customer THEY are out of money. The
+		// reservation is released here because nothing downstream will settle it.
+		c.recordRefusals(head.Model, refused, authUser, isPremium, false, uuid.NewString(), startTime)
+		hold.settle(0)
+		c.ResponseError(exhausted(head.Model, refused).Error())
 		return
 	}
 
