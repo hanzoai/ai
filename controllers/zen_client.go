@@ -739,12 +739,22 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	// through our door wearing our id, the SKU asked for, and the seller (see
 	// envelope.go). The id is the one this call is already metered under, which is
 	// also what the reward join keys on, so the customer, the ledger and the routing
-	// event all name this completion the same way. Only the OpenAI chat envelope is
-	// ours to rewrite — the Anthropic dialect and the embeddings shape are relayed as
-	// they arrive, and a nil mark stamps nothing.
-	var mk *mark
-	if dialect == "openai" && apiPath == "chat/completions" {
-		mk = &mark{id: "chatcmpl-" + reqID, model: model, seller: seller(prov, authUser)}
+	// event all name this completion the same way.
+	//
+	// EVERY relayed dialect gets a mark. Only chat had one, so the Anthropic
+	// dialect — which is what Claude Code and every agent on that SDK speaks — and
+	// the embeddings shape went on publishing the sub-provider's name, `gen-` ids
+	// and a finish reason we do not define, long after the chat path stopped. The
+	// id shape differs because the dialects do: a message is msg_, a completion is
+	// chatcmpl-, and an embeddings list has no id at all.
+	mk := &mark{model: model, seller: seller(prov, authUser)}
+	switch {
+	case dialect == "anthropic":
+		mk.speaks, mk.id = messageShape, "msg_"+reqID
+	case apiPath == "embeddings":
+		mk.speaks = listShape
+	default:
+		mk.speaks, mk.id = chatShape, "chatcmpl-"+reqID
 	}
 	url := prov.ProviderUrl + "/v1/" + apiPath
 	req, err := http.NewRequestWithContext(c.Ctx.Request.Context(), http.MethodPost, url, bytes.NewReader(rawBody))
@@ -828,7 +838,10 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 
 	// A stamped answer carries OUR id, so that is the id the client will thread back
 	// to /v1/feedback and the id the reward has to join on.
-	if mk != nil {
+	// An embeddings list has no id of its own, so nothing is stamped and the join
+	// falls back to the internal reqID — which is honest: the client was handed no
+	// id to correlate on.
+	if mk.id != "" {
 		respID = mk.id
 	}
 	if prompt == 0 {
