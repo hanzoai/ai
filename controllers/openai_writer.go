@@ -126,6 +126,24 @@ func (w *OpenAIWriter) MessageString() string {
 	return string(w.MessageBuf)
 }
 
+// Reset discards what a failed attempt accumulated, so the next provider's
+// answer is not served glued to the dead one's half-sentence.
+//
+// Write APPENDS to Buffer and MessageBuf, and one writer is shared across every
+// failover attempt. A provider that emitted three tokens and then died leaves
+// those three tokens in the buffer; without this the client is handed them
+// followed by a complete answer from somebody else, which is indistinguishable
+// from a model losing its mind and is not detectable downstream.
+//
+// StreamSent is NOT cleared. It records that bytes reached the CLIENT, which is
+// a fact about the wire and cannot be undone — it is precisely the flag that
+// forbids the retry this method prepares for.
+func (w *OpenAIWriter) Reset() {
+	w.Buffer = w.Buffer[:0]
+	w.MessageBuf = w.MessageBuf[:0]
+	w.Cleaner = *NewCleaner(w.Cleaner.bufferSize)
+}
+
 // Close finalizes the stream by sending completion message and DONE marker
 func (w *OpenAIWriter) Close(promptTokens, completionTokens, totalTokens int) error {
 	if !w.Stream {
