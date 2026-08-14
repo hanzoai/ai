@@ -256,10 +256,63 @@ var (
 	reachText = []string{
 		"connection refused", "connection reset", "no such host",
 		"timeout", "deadline exceeded",
-		"eof",         // upstream closed mid-response
-		"unavailable", // callProvider's own word for a disabled or unconfigured row
+		"eof", // upstream closed mid-response
+	}
+	// absentText is "this vendor does not carry this model for this account", as
+	// distinct from "this credential is not welcome". Measured phrasings only.
+	absentText = []string{
+		"not available for your account",
+		"model is not available",
+		"does not have access to model",
 	}
 )
+
+// has reports whether msg contains one of the phrases AS a phrase, rather than
+// as a run of characters that happens to lie inside a longer word or number.
+//
+// A phrase must begin where a token begins. A phrase ending in a DIGIT must also
+// end where the token ends, because a status code is an exact identifier — where
+// a word is not, and a vendor that says "rate limited" is saying "rate limit".
+//
+// Plain substring matching is not a smaller version of this, it is a wrong one,
+// and all three of these were measured:
+//
+//	"402" inside claude-3-sonnet-2024*022*9  -> a typo'd model id read as an
+//	                                            empty account: 3 vendors x 3
+//	                                            retries, plus a 5-minute
+//	                                            demotion of a healthy vendor
+//	"503" inside "you requested *850*3 tokens" -> a request-size error read as
+//	                                            a broken vendor
+//	"eof" inside "g*eof*ence"                 -> anything at all read as a
+//	                                            dropped connection
+//
+// msg must already be lowercased.
+func has(msg string, phrases []string) bool {
+	for _, p := range phrases {
+		for i := 0; i+len(p) <= len(msg); i++ {
+			if msg[i:i+len(p)] != p || !boundary(msg, i-1) {
+				continue
+			}
+			if digit(p[len(p)-1]) && !boundary(msg, i+len(p)) {
+				continue
+			}
+			return true
+		}
+	}
+	return false
+}
+
+// boundary reports whether i falls outside msg or on a character that cannot be
+// part of a word or a number.
+func boundary(msg string, i int) bool {
+	if i < 0 || i >= len(msg) {
+		return true
+	}
+	c := msg[i]
+	return !(c >= 'a' && c <= 'z' || digit(c))
+}
+
+func digit(c byte) bool { return c >= '0' && c <= '9' }
 
 // faultOfText attributes a refusal that carries no status.
 //
@@ -275,7 +328,7 @@ func faultOfText(msg string) fault {
 		return faultProvider
 	}
 	for _, set := range [][]string{moneyText, busyText, reachText} {
-		if containsAny(msg, set) {
+		if has(msg, set) {
 			return faultProvider
 		}
 	}
@@ -284,12 +337,8 @@ func faultOfText(msg string) fault {
 
 // lacksModel reports the narrow refusal that means "this vendor does not carry
 // this model for this account", as opposed to "this credential is not welcome".
-// Measured phrasings only; msg must already be lowercased.
-func lacksModel(msg string) bool {
-	return strings.Contains(msg, "not available for your account") ||
-		strings.Contains(msg, "model is not available") ||
-		strings.Contains(msg, "does not have access to model")
-}
+// msg must already be lowercased.
+func lacksModel(msg string) bool { return has(msg, absentText) }
 
 // cooldownFor says how long the provider that answered this way should be
 // sorted to the back, or 0 to leave it where it is.
@@ -307,17 +356,31 @@ func cooldownFor(err error) time.Duration {
 	if lacksModel(msg) {
 		return 0 // healthy vendor, absent item
 	}
-	if upstreamHTTPStatus(err) == http.StatusPaymentRequired || containsAny(msg, moneyText) {
+	if broke(err, msg) {
 		return coolBroke
 	}
 	return coolBusy
 }
 
-func containsAny(msg string, set []string) bool {
-	for _, s := range set {
-		if strings.Contains(msg, s) {
-			return true
-		}
+// broke reports the refusal that only a human with a credit card clears, as
+// opposed to the one that clears itself in seconds.
+//
+// Same ordering as faultOf: the status is the evidence, the text is a guess, and
+// the guess is consulted only where the fact is absent — or where the fact is
+// genuinely two-valued. 429 is the one such status: a vendor answers it both for
+// a busy platform and for an exhausted account, and OpenAI's exhausted account
+// says so only in words.
+//
+// Everywhere else the status decides alone, and that is not tidiness. An
+// upstream's error text can quote the request that provoked it, so a caller who
+// asks a question about insufficient credit would otherwise be able to rest
+// their own vendor for five minutes by asking it.
+func broke(err error, msg string) bool {
+	switch upstreamHTTPStatus(err) {
+	case http.StatusPaymentRequired:
+		return true
+	case 0, http.StatusTooManyRequests:
+		return has(msg, moneyText)
 	}
 	return false
 }
