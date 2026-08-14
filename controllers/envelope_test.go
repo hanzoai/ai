@@ -37,19 +37,28 @@ import (
 )
 
 // The upstream chain as it arrives: aggregator id, the sub-provider it picked this
-// second, and its own invented finish reason and name for reasoning text.
+// second, its own invented finish reason and name for reasoning text — and, on the
+// usage object, OUR side of the trade. What we were billed for the call, what the
+// aggregator paid under us, whose account it ran on, and who it bought from.
 const (
-	upstreamID   = "gen-1786649556-XzO5kn4LGTuTXJkWC0FO"
-	subProvider  = "GMICloud"
-	sku          = "enso-flash"
-	ourID        = "chatcmpl-6f2b5e2a-0d1c-4f39-9c4a-8d5f7b1e2a30"
+	upstreamID  = "gen-1786649556-XzO5kn4LGTuTXJkWC0FO"
+	subProvider = "GMICloud"
+	sku         = "enso-flash"
+	ourID       = "chatcmpl-6f2b5e2a-0d1c-4f39-9c4a-8d5f7b1e2a30"
+	// buyPrice is what this call cost US. It reaches the customer today.
+	buyPrice      = 0.00123
+	buyPriceNano  = int64(1_230_000)
+	upstreamUsage = `"usage":{"prompt_tokens":14,"completion_tokens":7,"total_tokens":21,` +
+		`"cost":0.00123,"is_byok":false,"provider_name":"` + subProvider + `",` +
+		`"cost_details":{"upstream_inference_cost":0.00098},` +
+		`"prompt_tokens_details":{"cached_tokens":2},"completion_tokens_details":{"reasoning_tokens":3}}`
 	upstreamBody = `{"id":"` + upstreamID + `","provider":"` + subProvider + `",` +
 		`"model":"` + sku + `","object":"chat.completion","created":1786649556,` +
 		`"x_groq":{"id":"req_01jabc"},"citations":["https://example.com"],` +
 		`"choices":[{"index":0,"finish_reason":"stop","native_finish_reason":"stop","logprobs":null,` +
 		`"message":{"role":"assistant","content":"2 + 2 = 4","refusal":null,` +
 		`"reasoning":"the user wants arithmetic","reasoning_details":[{"text":"add"}]}}],` +
-		`"usage":{"prompt_tokens":14,"completion_tokens":7,"total_tokens":21}}`
+		upstreamUsage + `}`
 )
 
 // upstreamStream is the same completion as SSE — most traffic is this one.
@@ -62,7 +71,7 @@ var upstreamStream = strings.Join([]string{
 	``,
 	`data: {"id":"` + upstreamID + `","provider":"` + subProvider + `","model":"` + sku + `","object":"chat.completion.chunk","created":1786649556,"x_groq":{"id":"req_01jabc"},"choices":[{"index":0,"delta":{},"finish_reason":"stop","native_finish_reason":"stop"}]}`,
 	``,
-	`data: {"id":"` + upstreamID + `","provider":"` + subProvider + `","model":"` + sku + `","object":"chat.completion.chunk","created":1786649556,"x_groq":{"id":"req_01jabc"},"choices":[],"usage":{"prompt_tokens":14,"completion_tokens":7,"total_tokens":21}}`,
+	`data: {"id":"` + upstreamID + `","provider":"` + subProvider + `","model":"` + sku + `","object":"chat.completion.chunk","created":1786649556,"x_groq":{"id":"req_01jabc"},"choices":[],` + upstreamUsage + `}`,
 	``,
 	`data: [DONE]`,
 	``,
@@ -76,7 +85,11 @@ func ourMark() *mark { return &mark{id: ourID, model: sku, seller: "hanzo"} }
 func discloses(t *testing.T, what string, out []byte) {
 	t.Helper()
 	for _, tell := range []string{subProvider, "gen-1786649556", "native_finish_reason",
-		"x_groq", "req_01jabc", "citations", "reasoning_details"} {
+		"x_groq", "req_01jabc", "citations", "reasoning_details",
+		// Our side of the trade. A customer reading their own receipt must not be
+		// able to read what we paid for it.
+		`"cost"`, "cost_details", "upstream_inference_cost", "is_byok", "provider_name",
+		"0.00123", "0.00098"} {
 		if strings.Contains(string(out), tell) {
 			t.Errorf("%s discloses %q:\n%s", what, tell, out)
 		}
@@ -178,6 +191,26 @@ func TestFamilyStreamIsOurs(t *testing.T) {
 	if mk.upstream != subProvider {
 		t.Errorf("mark.upstream = %q, want %q kept for metering", mk.upstream, subProvider)
 	}
+	// Streaming is where usage actually arrives — on the last chunk — so it is the
+	// path the capture has to work on.
+	if mk.cost == nil || *mk.cost != buyPriceNano {
+		t.Errorf("mark.cost = %v, want %d nano-USD off the usage chunk", mk.cost, buyPriceNano)
+	}
+	for _, event := range chunks(t, out) {
+		usage := map[string]json.RawMessage{}
+		if len(event["usage"]) == 0 {
+			continue
+		}
+		if err := json.Unmarshal(event["usage"], &usage); err != nil {
+			t.Fatalf("usage unreadable: %v", err)
+		}
+		for key := range usage {
+			if !usageFields[key] {
+				t.Errorf("streamed usage carries %q — our buy price rides the last chunk of "+
+					"nearly every chat, so a buffered-only prune leaks on almost all of them", key)
+			}
+		}
+	}
 }
 
 // TestFamilyBodyIsOurs covers the buffered path — the exact bytes measured in
@@ -200,8 +233,32 @@ func TestFamilyBodyIsOurs(t *testing.T) {
 	if got := field(t, env, "model"); got != sku {
 		t.Errorf("model = %q, want the SKU %q", got, sku)
 	}
-	if got := string(env["usage"]); got != `{"prompt_tokens":14,"completion_tokens":7,"total_tokens":21}` {
-		t.Errorf("usage = %s, want it unchanged", got)
+	// The customer's own numbers survive; our trade does not travel with them.
+	usage := map[string]json.RawMessage{}
+	if err := json.Unmarshal(env["usage"], &usage); err != nil {
+		t.Fatalf("usage unreadable: %v", err)
+	}
+	for key := range usage {
+		if !usageFields[key] {
+			t.Errorf("usage carries %q — that is our side of the trade, not theirs", key)
+		}
+	}
+	for _, want := range []string{"prompt_tokens", "completion_tokens", "total_tokens",
+		"prompt_tokens_details", "completion_tokens_details"} {
+		if _, ok := usage[want]; !ok {
+			t.Errorf("usage lost %q — a customer bills, caches and budgets on these", want)
+		}
+	}
+	if got := string(usage["prompt_tokens"]); got != "14" {
+		t.Errorf("prompt_tokens = %s, want 14 — pruning must not touch the counts", got)
+	}
+	// Captured on the way past: the price we paid is what the ledger was missing.
+	if mk.cost == nil {
+		t.Fatal("the buy price was dropped without being kept — the COGS the business " +
+			"cannot see is exactly this number, and it was in the answer all along")
+	}
+	if *mk.cost != buyPriceNano {
+		t.Errorf("mark.cost = %d nano-USD, want %d (%v USD)", *mk.cost, buyPriceNano, buyPrice)
 	}
 	if got := string(env["object"]); got != `"chat.completion"` {
 		t.Errorf("object = %s, want it unchanged", got)
@@ -359,6 +416,10 @@ func TestToolStreamIsOurs(t *testing.T) {
 	}
 	if mk.upstream != subProvider {
 		t.Errorf("mark.upstream = %q, want %q kept for metering", mk.upstream, subProvider)
+	}
+	if mk.cost == nil || *mk.cost != buyPriceNano {
+		t.Errorf("mark.cost = %v, want %d nano-USD — the tool relay meters from the same mark",
+			mk.cost, buyPriceNano)
 	}
 }
 

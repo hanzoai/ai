@@ -834,7 +834,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	if prompt == 0 {
 		prompt = coarseTokenEstimate(rawBody)
 	}
-	cents := c.recordFamilyUsage(fam, model, originOf(prov, mk), authUser, isPremium, stream, reqID, prompt, completion, start, hold, "success", "")
+	cents := c.recordFamilyUsage(fam, model, prov, mk, authUser, isPremium, stream, reqID, prompt, completion, start, hold, "success", "")
 	// Learning ledger: record this served family call (source="family") and, when the
 	// engine endpoint is configured, the shadow A/B pick — off the hot path, no prompt
 	// text ever stored (the ledger holds none). The join key is the response id the
@@ -981,7 +981,7 @@ func coarseTokenEstimate(body []byte) int {
 // the usage + trace. Billing lives in one place for both stream and buffered paths and
 // for every family. origin is who actually served the call (originOf) — the row's
 // answer to a question the response no longer answers.
-func (c *ApiController) recordFamilyUsage(fam *modelFamily, model, origin string, authUser *iam.User, isPremium, stream bool, reqID string, prompt, completion int, start time.Time, hold *budgetHold, status, errMsg string) int64 {
+func (c *ApiController) recordFamilyUsage(fam *modelFamily, model string, prov *object.Provider, mk *mark, authUser *iam.User, isPremium, stream bool, reqID string, prompt, completion int, start time.Time, hold *budgetHold, status, errMsg string) int64 {
 	var cents int64
 	if status == "success" {
 		if zm, ok := fam.lookup(model); ok {
@@ -996,11 +996,15 @@ func (c *ApiController) recordFamilyUsage(fam *modelFamily, model, origin string
 	}
 	rec := &usageRecord{
 		Owner: c.billingOrg(authUser), Organization: authUser.Owner,
-		Model: model, Provider: fam.name, Origin: origin,
+		Model: model, Provider: fam.name, Origin: originOf(prov, mk),
 		PromptTokens: prompt, CompletionTokens: completion, TotalTokens: prompt + completion,
 		Cost: float64(cents) / 100.0, Currency: "USD",
 		Premium: isPremium, Stream: stream, Status: status, ErrorMsg: errMsg,
 		ClientIP: c.Ctx.Request.RemoteAddr, RequestID: reqID, Account: "hanzo",
+		// What the call cost us to buy, when the answer stated it, beside what we
+		// charged for it. usageMargin reads this as the COGS, so the margin on a
+		// relayed call stops being a guess.
+		CostNanoExact: mk.cogs(),
 	}
 	rec.bind(c.Ctx.Request.Context(), authUser)
 	recordUsage(rec)
