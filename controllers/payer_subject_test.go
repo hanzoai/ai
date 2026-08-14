@@ -228,6 +228,21 @@ func TestBindNamesOnlyAPerson(t *testing.T) {
 			explanation: "an empty column is a call a query can find",
 		},
 		{
+			// THE LIVE SHAPE, and the reason typing the credential was not enough on
+			// its own. A machine reaching us through the identity boundary never
+			// chooses this header: the boundary deletes what arrived and rewrites it
+			// from the presenting credential's own claims, so the machine is handed
+			// ITS OWN subject and hands it straight back. The org halves differ —
+			// `sub` is qualified by the registration's owner, the `owner` claim by the
+			// org it serves — so only the name identifies the principal across them.
+			name: "the boundary hands a machine its own subject",
+			user: machine,
+			ctx: object.WithGenAIAttribution(context.Background(),
+				object.GenAIAttribution{User: "admin/hanzo-cloud"}),
+			wantUser: "", wantAgent: "hanzo/hanzo-cloud",
+			explanation: "a credential naming ITSELF has named no person; the application would be back in the user column one hop later",
+		},
+		{
 			name: "a bare name is not an identity",
 			user: machine,
 			ctx: object.WithGenAIAttribution(context.Background(),
@@ -251,6 +266,66 @@ func TestBindNamesOnlyAPerson(t *testing.T) {
 			if c.wantAgent != "" && rec.payer().Subject() != c.user.Owner {
 				t.Errorf("a machine's payer moved to %q; attribution must not settle",
 					rec.payer().Subject())
+			}
+		})
+	}
+}
+
+// TestCloudAgentKeyIsAMachine covers the one credential this process ASSEMBLES
+// rather than reads from IAM, so nothing upstream can type it and nothing
+// downstream can tell it was not typed.
+//
+// Untyped it read as a person, and both halves went wrong at once. Attribution put
+// the application in the user column. Money was worse: account.Payer's shape rule
+// hands a person in the SIGNUP org a personal wallet, and "hanzo" is the signup
+// org — so every call on this key addressed hanzo/cloud-agent, a wallet no funding
+// path can name. It reads $0 forever while the org's balance sits one key away.
+//
+// It runs the REAL constructor (the key it accepts is the one it is given) and the
+// REAL rules, so what is pinned is the identity this process actually hands the
+// gate, not a literal that agrees with it today.
+func TestCloudAgentKeyIsAMachine(t *testing.T) {
+	t.Setenv("CLOUD_AGENT_KEY", "test-cloud-agent-key")
+
+	agent := tryCloudAgentKeyFallback("test-cloud-agent-key")
+	if agent == nil {
+		t.Fatal("the fallback refused its own key; the rest of this test proves nothing")
+	}
+	if tryCloudAgentKeyFallback("some-other-key") != nil {
+		t.Fatal("the fallback accepted a key it was not given")
+	}
+
+	for _, c := range []struct {
+		name      string
+		user      *iam.User
+		wantUser  string
+		wantAgent string
+		wantPayer string
+		why       string
+	}{
+		{
+			name: "the cloud-agent key", user: agent,
+			wantUser: "", wantAgent: "hanzo/cloud-agent", wantPayer: "hanzo",
+			why: "a program's spend is nobody's, and it comes out of the org pool",
+		},
+		{
+			name: "a person in the same org", user: &iam.User{Owner: "hanzo", Name: "alice"},
+			wantUser: "hanzo/alice", wantAgent: "", wantPayer: "hanzo/alice",
+			why: "the signup org's per-person wallet is right for the person it was written for",
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			rec := &usageRecord{Owner: c.user.Owner}
+			rec.bind(context.Background(), c.user)
+
+			if rec.User != c.wantUser {
+				t.Errorf("user = %q, want %q — %s", rec.User, c.wantUser, c.why)
+			}
+			if rec.Agent != c.wantAgent {
+				t.Errorf("agent = %q, want %q", rec.Agent, c.wantAgent)
+			}
+			if got := rec.payer().Subject(); got != c.wantPayer {
+				t.Errorf("payer = %q, want %q — %s", got, c.wantPayer, c.why)
 			}
 		})
 	}
