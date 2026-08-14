@@ -83,6 +83,12 @@ func tokenProviderCostNano(model string, promptTokens, completionTokens, cacheRe
 // everything else bills exactly per token.
 func usageCostNano(record *usageRecord) int64 {
 	switch {
+	// A route the vendor charges nothing for costs nothing, whatever a price table
+	// would guess for a model id it has never seen. It is stated HERE because every
+	// reader of the money — the ledger debit, the warehouse row and the gen_ai span —
+	// asks this one function, which is what keeps them agreeing.
+	case record.Free:
+		return 0
 	case record.VideoCount > 0:
 		return videoCostCents(record.Model, record.VideoCount) * 10_000_000 // 1¢ = 1e7 nano
 	case record.ImageCount > 0:
@@ -129,7 +135,7 @@ type costMargin struct {
 // image/video (whose COGS equals their price today ⇒ zero margin) or the token cost at
 // COGS rates otherwise (which default to price ⇒ zero margin unless a real COGS is set).
 func providerCostNano(record *usageRecord) int64 {
-	if record.BYO {
+	if record.BYO || record.Free {
 		return 0
 	}
 	switch {

@@ -609,6 +609,29 @@ type usageRecord struct {
 	ClientIP         string  `json:"clientIp"`
 	RequestID        string  `json:"requestId"`
 
+	// Requested is the model the caller ASKED for, set only when a different route
+	// answered — today, when a vendor's account was spent and it served the request
+	// from a route it charges nothing for. Empty on every ordinary call, so
+	// non-empty IS the fallback flag, and the pair (Requested, Model) says both what
+	// was wanted and what arrived.
+	//
+	// It exists because a downgrade nobody can see is a lie about what the user got:
+	// the answer is real, it is just not the model they picked, and every reader of
+	// this record — the ledger, the span, whoever is looking at a bad answer — needs
+	// to be able to tell those two situations apart.
+	Requested string `json:"requested,omitempty"`
+
+	// Free states that the route that answered is priced at nothing BY THE VENDOR
+	// — a spare route, the kind that keeps answering while an account is empty.
+	//
+	// It is a separate fact from Requested, and keeping them apart is the point:
+	// one says the caller did not get what they asked for, the other says what the
+	// answer cost. A price table asked about a SKU it has never seen answers with
+	// its conservative default, which is the right guess for an unknown model and
+	// exactly the wrong one here — it would bill a customer for the fallback they
+	// were given because a vendor of ours ran out of money.
+	Free bool `json:"free,omitempty"`
+
 	// ImageCount is the number of images generated. Image models bill per image,
 	// not per token: when > 0, recordUsage bills via imageCostCents instead of
 	// the token-based cost. Placed last so the token-field alignment above is

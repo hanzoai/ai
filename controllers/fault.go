@@ -15,12 +15,15 @@
 package controllers
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/hanzoai/ai/object"
 )
 
 // A refused completion has exactly one interesting property: whose fault it is.
@@ -381,6 +384,35 @@ func broke(err error, msg string) bool {
 		return true
 	case 0, http.StatusTooManyRequests:
 		return has(msg, moneyText)
+	}
+	return false
+}
+
+// billingNotice reports that a refusal is OUR OWN spend gate speaking, relayed
+// back to us by a service that fronts for us.
+//
+// "The customer is out of credit" and "our account with the vendor is out of
+// credit" arrive as the same status and are opposite facts. One is the customer's
+// to fix and has to reach them; the other is ours and must never be shown to them
+// as a bill — and must never be answered by quietly serving a smaller model,
+// which would tell somebody their payment problem had solved itself.
+//
+// The CODE is what tells them apart, and it is a fact rather than a phrase:
+// object.BillingNotice stamps one on every denial we make, and no vendor writes
+// it. Read as a raw value because ours is a string where a vendor's is the status
+// number repeated, so decoding into a string would simply fail on theirs.
+func billingNotice(body []byte) bool {
+	var e struct {
+		Error struct {
+			Code json.RawMessage `json:"code"`
+		} `json:"error"`
+	}
+	if json.Unmarshal(body, &e) != nil {
+		return false
+	}
+	switch string(e.Error.Code) {
+	case `"` + object.CodeInsufficientBalance + `"`, `"` + object.CodeBalanceUnavailable + `"`:
+		return true
 	}
 	return false
 }
