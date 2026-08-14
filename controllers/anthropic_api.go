@@ -256,8 +256,6 @@ func (w *AnthropicWriter) Write(p []byte) (n int, err error) {
 	if err := w.writeSSE("content_block_delta", delta); err != nil {
 		return 0, err
 	}
-
-	w.StreamSent = true
 	return len(p), nil
 }
 
@@ -327,12 +325,26 @@ func (w *AnthropicWriter) Close(promptTokens, completionTokens, totalTokens int)
 }
 
 // writeSSE writes a single SSE event with the given event name and JSON data.
+//
+// It is also the ONE place StreamSent is set, because it is the one place bytes
+// reach the client and that is precisely what StreamSent means. Setting it at the
+// end of Write instead meant message_start and content_block_start — 185 measured
+// bytes — were on the wire while the flag still said the request was movable. The
+// failover loop reads that flag to decide whether it may offer this request to
+// another vendor, so the window was one where it would have: the client gets the
+// opening of one vendor's answer followed by the whole of another's, which is
+// indistinguishable from a model losing its mind and detectable nowhere.
+//
+// n > 0 rather than err == nil, because a partial write is still bytes delivered.
 func (w *AnthropicWriter) writeSSE(event string, data interface{}) error {
 	jsonData, err := json.Marshal(data)
 	if err != nil {
 		return err
 	}
-	_, err = w.ResponseWriter.Write([]byte(fmt.Sprintf("event: %s\ndata: %s\n\n", event, jsonData)))
+	n, err := w.ResponseWriter.Write([]byte(fmt.Sprintf("event: %s\ndata: %s\n\n", event, jsonData)))
+	if n > 0 {
+		w.StreamSent = true
+	}
 	if err != nil {
 		return err
 	}
