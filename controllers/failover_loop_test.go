@@ -273,6 +273,115 @@ func TestARefusalRestsOneAccount(t *testing.T) {
 	}
 }
 
+// breaks is an http.ResponseWriter that delivers `ok` writes and then fails —
+// the shape of an upstream dying mid-answer, after the client already has bytes.
+type breaks struct {
+	*httptest.ResponseRecorder
+	ok int
+}
+
+func breaksAfter(ok int) *breaks { return &breaks{httptest.NewRecorder(), ok} }
+
+// tears delivers PART of a write and then reports the failure — a connection that
+// broke mid-event. n > 0 with a non-nil error is the case the flag has to get
+// right: those bytes are on the wire whatever the error says about the rest.
+type tears struct{ *httptest.ResponseRecorder }
+
+func (t *tears) Write(p []byte) (int, error) {
+	n, _ := t.ResponseRecorder.Write(p[:len(p)/2])
+	return n, errors.New("connection reset by peer")
+}
+
+func (b *breaks) Write(p []byte) (int, error) {
+	if b.ok <= 0 {
+		return 0, errors.New("connection reset by peer")
+	}
+	b.ok--
+	return b.ResponseRecorder.Write(p)
+}
+
+// A8. StreamSent is the whole movability decision, and it was set at the END of
+// Write — after message_start and content_block_start had already gone out.
+//
+// So there was a window, 185 measured bytes wide, in which the client held the
+// opening of one vendor's answer and the loop still believed the request could be
+// offered to another. It would then have received the whole of a second vendor's
+// answer glued to the first one's first breath.
+func TestTheAnthropicWriterSaysSentAsSoonAsBytesGoOut(t *testing.T) {
+	// Deliver message_start and content_block_start, then fail — exactly the gap.
+	rec := breaksAfter(2)
+	w := &AnthropicWriter{
+		Response:  web.Response{ResponseWriter: rec},
+		RequestID: "req-1",
+		Stream:    true,
+		Cleaner:   *NewCleaner(6),
+		Model:     "claude-x",
+	}
+
+	_, err := w.Write([]byte("2 + 2 = 4"))
+	if err == nil {
+		t.Fatal("the scripted writer must fail on the delta")
+	}
+	if rec.Body.Len() == 0 {
+		t.Fatal("nothing was written; this test proves nothing")
+	}
+	if !w.StreamSent {
+		t.Errorf("%d bytes reached the client and StreamSent is false — the loop would move "+
+			"this request and the customer would read two vendors' answers spliced together",
+			rec.Body.Len())
+	}
+	if !strings.Contains(rec.Body.String(), "message_start") {
+		t.Errorf("expected the header events on the wire, got:\n%s", rec.Body.String())
+	}
+}
+
+// A half-written event is still a written event. The bytes are gone; whether the
+// call that sent them also returned an error changes nothing about that.
+func TestAPartialWriteCountsAsSent(t *testing.T) {
+	rec := &tears{httptest.NewRecorder()}
+	w := &AnthropicWriter{
+		Response:  web.Response{ResponseWriter: rec},
+		RequestID: "req-1",
+		Stream:    true,
+		Cleaner:   *NewCleaner(6),
+		Model:     "claude-x",
+	}
+	if _, err := w.Write([]byte("2 + 2 = 4")); err == nil {
+		t.Fatal("the scripted writer must report the break")
+	}
+	if rec.Body.Len() == 0 {
+		t.Fatal("the scripted writer delivered nothing; this test proves nothing")
+	}
+	if !w.StreamSent {
+		t.Errorf("%d bytes are on the wire after a failed write and StreamSent is false — "+
+			"reading the error instead of the byte count is how a half-sent answer "+
+			"gets a second vendor's answer appended to it", rec.Body.Len())
+	}
+}
+
+// The other half: a writer that has sent nothing is still movable, or a single
+// transient failure on the first byte would strand every request it touched.
+func TestTheAnthropicWriterIsMovableUntilItWrites(t *testing.T) {
+	rec := breaksAfter(0)
+	w := &AnthropicWriter{
+		Response:  web.Response{ResponseWriter: rec},
+		RequestID: "req-1",
+		Stream:    true,
+		Cleaner:   *NewCleaner(6),
+		Model:     "claude-x",
+	}
+	if _, err := w.Write([]byte("2 + 2 = 4")); err == nil {
+		t.Fatal("the scripted writer must fail on the first event")
+	}
+	if rec.Body.Len() != 0 {
+		t.Fatalf("the scripted writer delivered %d bytes; it must deliver none", rec.Body.Len())
+	}
+	if w.StreamSent {
+		t.Error("nothing reached the client, so this request is still movable — saying " +
+			"otherwise turns one transient failure into a refusal we could have routed around")
+	}
+}
+
 // pipeFamily drives the real family pipe against a family answering `status`,
 // with a funded reservation, and reports what came back and what the ledger says.
 func pipeFamily(t *testing.T, subject string, status int, body string) (refused []attempt, avail int64) {
