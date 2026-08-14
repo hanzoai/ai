@@ -310,9 +310,16 @@ func tryCloudAgentKeyFallback(apiKey string) *iam.User {
 	if knownKey == "" || apiKey != knownKey {
 		return nil
 	}
+	// Typed, because this identity is assembled here rather than read from IAM and
+	// nothing downstream can tell the difference. Left unsaid it read as a PERSON:
+	// account.Payer's shape rule hands a person in the signup org a personal
+	// wallet, and "hanzo" IS the signup org — so every call on this key addressed
+	// hanzo/cloud-agent, a wallet no funding path can name, which reads $0 while
+	// the org's balance sits one key away.
 	return &iam.User{
 		Owner: "hanzo",
 		Name:  "cloud-agent",
+		Type:  iam.Machine,
 	}
 }
 
@@ -829,8 +836,20 @@ func (r *usageRecord) bind(ctx context.Context, u *iam.User) {
 
 	r.Agent = self
 	if named := strings.TrimSpace(object.GenAIAttributionFromContext(ctx).User); strings.Contains(named, "/") {
-		r.User = named
-		return
+		// …and the name must be SOMEONE ELSE. A caller reaching us through the
+		// identity boundary never chooses this header: the boundary deletes what
+		// arrived and rewrites it from the presenting credential's own claims, so a
+		// machine that came that way is handed ITS OWN subject. Copying that into
+		// the person column puts the application back where this whole rule exists
+		// to keep it out of, one hop later and harder to see.
+		//
+		// The two spellings differ in the org half — a token's `sub` is qualified by
+		// the registration's owner and the `owner` claim by the org it serves — so
+		// the NAME is what identifies the principal across them.
+		if _, name, _ := strings.Cut(named, "/"); !strings.EqualFold(name, u.Name) {
+			r.User = named
+			return
+		}
 	}
 	r.User = ""
 	warnUnownedOnce(self)
