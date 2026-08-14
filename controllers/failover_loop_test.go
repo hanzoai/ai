@@ -714,7 +714,7 @@ func TestNoFailoverOnceTheStreamHasOpened(t *testing.T) {
 
 	// The writer reports that bytes are on the wire as soon as it holds any —
 	// exactly what OpenAIWriter.StreamSent means.
-	_, _, _, err := newAsk(route("do-ai", "anthropic"), &w, func() bool { return w.text != "" }).serve()
+	_, _, tried, err := newAsk(route("do-ai", "anthropic"), &w, func() bool { return w.text != "" }).serve()
 	if err == nil {
 		t.Fatal("want the failure surfaced, not a second answer stitched on")
 	}
@@ -724,6 +724,23 @@ func TestNoFailoverOnceTheStreamHasOpened(t *testing.T) {
 	}
 	if strings.Contains(strings.Join(f.asked, ","), "anthropic") {
 		t.Error("the alternate must NOT be asked once the client is already reading")
+	}
+
+	// The two assertions above are not enough on their own, and this test used to
+	// stop there. Removing the guard in serve() leaves them BOTH green, because the
+	// guard inside call() still refuses to dial a second vendor — but the loop has
+	// already entered that iteration, so it records an attempt against a vendor
+	// nobody contacted, and recordRefusals then writes a ledger row blaming it. It
+	// also replaces the real reason with our own "cannot retry".
+	if len(tried) != 1 || tried[0].provider != "do-ai" {
+		t.Errorf("tried = %+v, want exactly the one vendor that actually answered — "+
+			"a refusal recorded against a vendor we never dialled is a ledger row "+
+			"accusing an innocent party", tried)
+	}
+	if !strings.Contains(err.Error(), "died mid-answer") {
+		t.Errorf("err = %v, want the upstream's real reason. Once it reads as our own "+
+			"\"response partially written\", whoever debugs this is looking at us "+
+			"instead of at the vendor that died", err)
 	}
 }
 

@@ -174,6 +174,24 @@ func TestCooldownFor(t *testing.T) {
 			}
 		})
 	}
+
+	// The table above names the constants on BOTH sides, so it survives either of
+	// them being changed to anything at all — including to each other, which would
+	// silently delete the distinction the two exist to draw. The magnitudes are
+	// therefore pinned here, and the ordering with them: two clocks, because a busy
+	// vendor clears itself in seconds and an empty account waits for a human with a
+	// credit card.
+	if coolBusy != 15*time.Second {
+		t.Errorf("coolBusy = %v, want 15s — long enough to matter, short enough that a "+
+			"vendor which recovers is re-probed on the next request", coolBusy)
+	}
+	if coolBroke != 5*time.Minute {
+		t.Errorf("coolBroke = %v, want 5m — an empty account does not refill itself", coolBroke)
+	}
+	if coolBroke <= coolBusy {
+		t.Errorf("coolBroke (%v) must outlast coolBusy (%v), or the two kinds of refusal "+
+			"are one kind and the distinction buys nothing", coolBroke, coolBusy)
+	}
 }
 
 func TestCooldownExpires(t *testing.T) {
