@@ -525,12 +525,20 @@ func getUserByAccessKey(accessKey string) (*iam.User, error) {
 	if result.Data == nil {
 		return nil, authError(
 			"API key %s resolved to no user — IAM accepted the lookup and returned nothing. "+
-				"The key may have been deleted, or its owner removed. Mint a new one at https://cloud.hanzo.ai/keys",
+				"The key may have been deleted, or its owner removed. Mint a new one at "+keysURL,
 			keyHint(accessKey))
 	}
 
 	return result.Data, nil
 }
+
+// keysURL is where a holder mints a replacement key — the console page that serves
+// it, spelled ONCE because every refusal below names it and three copies of an
+// address drift the moment the page moves. It moved already: these messages sent
+// people to cloud.hanzo.ai/keys, which answers 404 (cloud.hanzo.ai is the product
+// site; the console is its own host, and its key surface is /api-keys). A refusal
+// that names a cure the holder cannot reach is worse than one that names none.
+const keysURL = "https://console.hanzo.ai/api-keys"
 
 // keyRefusal turns IAM's refusal into something the holder can ACT on.
 //
@@ -546,14 +554,14 @@ func keyRefusal(code, msg, key string) error {
 	switch code {
 	case "key_unknown":
 		return fmt.Errorf("API key %s is not recognized — it was revoked or replaced. "+
-			"Mint a new one at https://cloud.hanzo.ai/keys", keyHint(key))
+			"Mint a new one at "+keysURL, keyHint(key))
 	case "key_wrong_door":
 		return fmt.Errorf("API key %s is not a secret key. A publishable pk- key "+
 			"identifies an org for ingest and cannot authenticate a request; "+
 			"use your secret (sk-) key", keyHint(key))
 	case "key_expired":
 		return fmt.Errorf("API key %s has expired — mint a new one at "+
-			"https://cloud.hanzo.ai/keys", keyHint(key))
+			keysURL, keyHint(key))
 	case "key_not_publishable":
 		return fmt.Errorf("API key %s is not a publishable key", keyHint(key))
 	case "key_foreign_user", "key_dangling_user":
@@ -600,6 +608,29 @@ type usageRecord struct {
 	ErrorMsg         string  `json:"errorMsg"`
 	ClientIP         string  `json:"clientIp"`
 	RequestID        string  `json:"requestId"`
+
+	// Requested is the model the caller ASKED for, set only when a different route
+	// answered — today, when a vendor's account was spent and it served the request
+	// from a route it charges nothing for. Empty on every ordinary call, so
+	// non-empty IS the fallback flag, and the pair (Requested, Model) says both what
+	// was wanted and what arrived.
+	//
+	// It exists because a downgrade nobody can see is a lie about what the user got:
+	// the answer is real, it is just not the model they picked, and every reader of
+	// this record — the ledger, the span, whoever is looking at a bad answer — needs
+	// to be able to tell those two situations apart.
+	Requested string `json:"requested,omitempty"`
+
+	// Free states that the route that answered is priced at nothing BY THE VENDOR
+	// — a spare route, the kind that keeps answering while an account is empty.
+	//
+	// It is a separate fact from Requested, and keeping them apart is the point:
+	// one says the caller did not get what they asked for, the other says what the
+	// answer cost. A price table asked about a SKU it has never seen answers with
+	// its conservative default, which is the right guess for an unknown model and
+	// exactly the wrong one here — it would bill a customer for the fallback they
+	// were given because a vendor of ours ran out of money.
+	Free bool `json:"free,omitempty"`
 
 	// ImageCount is the number of images generated. Image models bill per image,
 	// not per token: when > 0, recordUsage bills via imageCostCents instead of
@@ -1194,7 +1225,7 @@ func (c *ApiController) authResolveProvider(token, requestedModel, orgId string)
 		// the provider table, and the key this estate mints, which lives in IAM.
 		// Both lookups are exact, so neither can claim the other's key; the order
 		// decides only who answers when NEITHER owns it, and IAM's refusal is the
-		// one that names the cure ("mint a new one at cloud.hanzo.ai/keys") where
+		// one that names the cure ("mint a new one at" + keysURL) where
 		// a provider miss can only say "invalid".
 		provider, err = object.GetProviderByProviderKey(token, lang)
 		if err != nil {
@@ -1430,9 +1461,19 @@ func (c *ApiController) ChatCompletions() {
 	// A family model is served by its family service, which owns identity, reasoning,
 	// the 1M ladder, vision, the fan-out, and the upstream. ai forwards verbatim and
 	// meters the result; it holds no family routing of its own (hip-00NN).
+	//
+	// A family is one provider among several. When it refuses for a reason of its
+	// own — its account is empty, it is rate limited, it is down — it writes
+	// nothing and hands back the reason, and the request carries on to the
+	// route's declared alternates below. That is the difference between a vendor
+	// running out of money and the product going dark.
+	var familyRefused []attempt
 	if fam := familyForProviderType(provider.Type); fam != nil {
-		c.pipeToFamily(fam, "chat/completions", "openai", request.Model, c.Ctx.Input.RequestBody, request.Stream, orgId, authUser, isPremium, hold, requestStartTime)
-		return
+		familyRefused = c.pipeToFamily(fam, "chat/completions", "openai", request.Model, c.Ctx.Input.RequestBody, request.Stream, orgId, authUser, isPremium, hold, requestStartTime)
+		if familyRefused == nil {
+			return
+		}
+		c.recordRefusals(request.Model, familyRefused, authUser, isPremium, request.Stream, requestId, requestStartTime)
 	}
 
 	// ── Tool-calling pass-through ──────────────────────────────────────
@@ -1440,7 +1481,16 @@ func (c *ApiController) ChatCompletions() {
 	// cannot handle structured tool calls. Proxy the raw request directly
 	// to the upstream provider's OpenAI-compatible endpoint so the LLM
 	// receives tool definitions and can return tool_calls in the response.
+	//
+	// A tool request the family refused stops here. The pipeline below is
+	// text-only, so cascading it to an alternate would answer a tool call with
+	// prose — an answer shaped wrongly is worse than an honest refusal, and the
+	// refusal names the vendor and the reason.
 	if len(request.Tools) > 0 || request.ToolChoice != nil {
+		if familyRefused != nil {
+			c.ResponseError(exhausted(request.Model, familyRefused).Error())
+			return
+		}
 		c.proxyToolRequest(provider, &request, requestStartTime, authUser, isPremium, orgId, hold)
 		return
 	}
@@ -1448,7 +1498,15 @@ func (c *ApiController) ChatCompletions() {
 	// Multimodal (vision): the QueryText pipeline below is text-only and would drop
 	// image parts. Forward multimodal requests verbatim to the upstream (the same path
 	// tool-calls take), so vision-capable models actually receive the images.
+	//
+	// Same stop as tool calls, for the same reason: cascading a request whose
+	// images the pipeline would silently discard produces an answer about
+	// nothing.
 	if requestHasMedia(&request) {
+		if familyRefused != nil {
+			c.ResponseError(exhausted(request.Model, familyRefused).Error())
+			return
+		}
 		c.proxyToolRequest(provider, &request, requestStartTime, authUser, isPremium, orgId, hold)
 		return
 	}
@@ -1531,18 +1589,36 @@ func (c *ApiController) ChatCompletions() {
 	promptTokens, _ := model.GetTokenSize(request.Model, question)
 	route := routeForPrompt(request.Model, orgId, promptTokens)
 
-	// Call the model provider with failover support
+	// Call the model provider, cascading to the route's alternates on a refusal
+	// that is about the vendor rather than about this request.
+	//
+	// Every routed model takes this path, not just the ones with fallbacks
+	// declared. A single-provider model has no alternate to move to, but it
+	// still earns the rest: its vendor gets demoted when it refuses, the refusal
+	// is recorded where someone reads it, and "everyone refused" comes back as
+	// an honest 503 naming the reason instead of an upstream 402 telling the
+	// customer THEY are out of money.
 	var modelResult *model.ModelResult
 	var actualProvider served
+	var tried []attempt
 
-	if route != nil && len(route.fallbacks) > 0 {
-		modelResult, actualProvider, err = failoverQueryText(
-			route, question, writer, history, knowledge,
-			c.GetAcceptLanguage(),
-			func() bool { return writer.StreamSent },
-		)
+	if route != nil {
+		modelResult, actualProvider, tried, err = ask{
+			ctx:       c.Ctx.Request.Context(),
+			route:     route,
+			org:       ledger,
+			model:     request.Model,
+			primary:   provider,
+			question:  question,
+			history:   history,
+			knowledge: knowledge,
+			lang:      c.GetAcceptLanguage(),
+			writer:    writer,
+			sent:      func() bool { return writer.StreamSent },
+			prior:     familyRefused,
+		}.serve()
 	} else {
-		// No fallbacks configured — direct call (original path)
+		// Model absent from the route table: call the provider auth resolved.
 		var modelProvider model.ModelProvider
 		modelProvider, err = provider.GetModelProvider(c.GetAcceptLanguage())
 		if err != nil {
@@ -1550,7 +1626,14 @@ func (c *ApiController) ChatCompletions() {
 			return
 		}
 		modelResult, err = modelProvider.QueryText(question, writer, history, "", knowledge, nil, c.GetAcceptLanguage())
-		actualProvider = served{provider.Name, provider.Origin()}
+		actualProvider = served{provider.Name, provider.Origin(), provider}
+	}
+
+	// Every vendor that refused goes in the ledger, whether or not one of them
+	// eventually served. A failover nobody can see leaves the empty account
+	// empty. The family's own refusal is already recorded above, so skip it here.
+	if n := len(familyRefused); len(tried) > n {
+		c.recordRefusals(request.Model, tried[n:], authUser, isPremium, request.Stream, requestId, requestStartTime)
 	}
 
 	if err != nil {
@@ -1598,7 +1681,12 @@ func (c *ApiController) ChatCompletions() {
 			RequestID:        requestId,
 		}
 		successRecord.bind(c.Ctx.Request.Context(), authUser)
-		successRecord.BYO, successRecord.Account = providerBYO(provider, authUser)
+		// Whether this call was "bring your own key" is a property of the row
+		// that SPENT a credential, not of the row auth resolved before failover
+		// moved the request. Reading the latter is how a call served on the
+		// platform's key gets billed as BYO — 1% instead of the token cost, with
+		// the platform eating the upstream.
+		successRecord.BYO, successRecord.Account = providerBYO(actualProvider.row, authUser)
 		recordUsage(successRecord)
 		recordTrace(c.Ctx.Request.Context(), successRecord, requestStartTime)
 		// Settle the reservation with the ACTUAL cost (this works identically for
@@ -1743,6 +1831,12 @@ func (c *ApiController) proxyToolRequest(
 	// so the two can never be given different arguments.
 	ledger := c.billingOrg(authUser)
 
+	// The answer leaves through our door (envelope.go): our id, the SKU the caller
+	// asked for, the seller. The SKU has to be read BEFORE the line below, which
+	// replaces it with the upstream's own name for the model — that name is what the
+	// upstream needs and what this path used to hand back to the caller.
+	mk := &mark{id: "chatcmpl-" + requestId, model: request.Model, seller: seller(provider, authUser)}
+
 	// Rewrite model to upstream model name
 	request.Model = provider.SubType
 
@@ -1842,7 +1936,7 @@ func (c *ApiController) proxyToolRequest(
 		}
 		capPrompt, capCompletion, capTotal, completionText := streamCaptureUsage(
 			resp.Body, c.Ctx.ResponseWriter, c.Ctx.ResponseWriter.Flush,
-			clientWantsUsage, requestId, request.Model, strip,
+			clientWantsUsage, strip, mk,
 		)
 
 		// Settle billing with the REAL token usage — captured from the forced
@@ -1865,7 +1959,8 @@ func (c *ApiController) proxyToolRequest(
 				Organization:     authUser.Owner,
 				Model:            request.Model,
 				Provider:         provider.Name,
-				Origin:           provider.Origin(),
+				Origin:           originOf(provider, mk),
+				CostNanoExact:    mk.cogs(),
 				PromptTokens:     prompt,
 				CompletionTokens: completion,
 				TotalTokens:      total,
@@ -1889,6 +1984,12 @@ func (c *ApiController) proxyToolRequest(
 			c.ResponseError(fmt.Sprintf("Failed to read upstream response: %s", err.Error()))
 			return
 		}
+
+		// What goes out is ours (envelope.go); what came in is what the billing below
+		// reads. Stamping is a disclosure decision, never a pricing one, so the two
+		// bodies stay separate — and it happens here so the usage row can record the
+		// upstream the stamp just took out of the answer.
+		out := mk.stamp(respBody)
 
 		// Try to extract usage for billing
 		var upstreamResp struct {
@@ -1922,7 +2023,8 @@ func (c *ApiController) proxyToolRequest(
 				Organization:     authUser.Owner,
 				Model:            request.Model,
 				Provider:         provider.Name,
-				Origin:           provider.Origin(),
+				Origin:           originOf(provider, mk),
+				CostNanoExact:    mk.cogs(),
 				PromptTokens:     prompt,
 				CompletionTokens: completion,
 				TotalTokens:      total,
@@ -1943,10 +2045,10 @@ func (c *ApiController) proxyToolRequest(
 		// Strip a reasoning-inlining upstream's leading <think></think> block from
 		// the forwarded body (billing above already tokenized the original).
 		if model.InlinesReasoning(request.Model) {
-			respBody = stripReasoningBody(respBody)
+			out = stripReasoningBody(out)
 		}
 		c.Ctx.ResponseWriter.WriteHeader(resp.StatusCode)
-		c.Ctx.Output.Body(respBody)
+		c.Ctx.Output.Body(out)
 	}
 	c.EnableRender = false
 }

@@ -19,220 +19,310 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"strings"
+	"net/http"
+	"time"
 
+	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/model"
 	"github.com/hanzoai/ai/object"
 )
 
-// errPartiallyWritten stops a retry that can no longer be made safely: bytes
-// are already on the wire, so replaying the call would duplicate or corrupt the
-// client's stream. It is deliberately NOT transient — retryTransient sees a
-// permanent error and stops immediately rather than sleeping first.
+// errPartiallyWritten stops a retry that can no longer be made safely: bytes are
+// already on the wire, so replaying the call would duplicate the client's
+// output. Deliberately NOT transient — retryTransient sees a permanent error and
+// stops immediately rather than sleeping first.
 var errPartiallyWritten = errors.New("response partially written; cannot retry")
 
-// isRetryableError returns true if the error message indicates a transient or
-// provider-side failure that warrants trying a fallback provider.
-func isRetryableError(err error) bool {
-	if err == nil {
-		return false
-	}
-	msg := strings.ToLower(err.Error())
-
-	// HTTP status codes embedded in error messages from upstream providers
-	retryableSubstrings := []string{
-		// Auth / access on THIS provider — cascade to the next provider's key.
-		"401", "unauthorized",
-		"402", "payment required",
-		// 403 / agreement-gated: a model the provider won't serve this account
-		// (DO GenAI returns 403 "this model is not available for your account" for
-		// upstream-agreement models). Cascading is what makes the do-ai -> anthropic
-		// opus fallback actually fire instead of hard-failing on the DO 403.
-		"403", "forbidden", "not available for your account",
-		"429", "rate limit", "too many requests",
-		"500", "internal server error",
-		"502", "bad gateway",
-		"503", "service unavailable",
-		"504", "gateway timeout",
-		"timeout", "deadline exceeded",
-		"connection refused", "connection reset",
-		"eof", // unexpected connection close
-		// A disabled (admin-toggled-off) or unconfigured primary provider is,
-		// from the caller's perspective, a service-unavailable condition that a
-		// fallback provider should transparently handle. callProvider surfaces it
-		// as "... is unavailable ..." (see below) so the failover loop advances to
-		// the next fallback instead of hard-failing on a disabled primary.
-		"unavailable",
-		// Credit / quota exhaustion: a provider whose FREE CREDIT or paid quota is
-		// spent must cascade to the next provider in the fallback chain, so
-		// credit-first routing degrades to paid / paid-only instead of a hard fail
-		// (OpenAI "insufficient_quota", generic "quota"/"credit"/"billing limit").
-		// Deliberately NOT bare "exceeded" — that also matches request-size errors
-		// ("maximum context length ... exceeded") which must NOT cascade.
-		"quota", "insufficient", "credit", "billing",
-	}
-	for _, sub := range retryableSubstrings {
-		if strings.Contains(msg, sub) {
-			return true
-		}
-	}
-	return false
-}
-
-// served names the provider that answered: our route label for it, and the host it
-// answered from. Two projections of ONE fact — the provider row the call landed on —
-// travelling together, so a caller cannot record the label while losing the address.
-// A failed attempt carries a name and no origin: nothing answered, and saying
+// served names the provider that answered: our route label for it, the host it
+// answered from, and the row whose credential was spent. Three projections of
+// ONE fact travelling together, so a caller cannot record the label while losing
+// the address — or, worse, bill against a row that did not serve.
+//
+// A failed attempt carries a name and nothing else: nothing answered, and saying
 // nothing is the honest form of that.
 type served struct {
 	name   string
 	origin string
+	// row is the provider that actually spent a credential. providerBYO must
+	// read THIS and not the row auth resolved before the request moved: a
+	// customer's own key is only "bring your own" if it is the key that paid.
+	row *object.Provider
 }
 
-// failoverQueryText tries the primary provider, then each fallback in order.
-// It returns the first successful result. If all providers fail, it returns
-// the last error. The served output indicates which provider answered, and from
-// where.
+// ask is one text completion waiting to be served: what to send, where the
+// answer goes, and who has already refused it.
 //
-// The writer is only usable for one attempt (streaming writes are one-shot),
-// so failover is only attempted when the primary fails before writing any
-// response data. For non-streaming, the writer buffers internally and a fresh
-// writer is created per attempt by the caller. For streaming, failover is
-// only possible if no bytes have been flushed to the client yet.
-func failoverQueryText(
-	route *modelRoute,
+// A struct rather than eleven positional arguments because two of them are
+// []*model.RawMessage — history and knowledge — and in money code a silent
+// argument swap between two same-typed slices is not a hazard worth keeping for
+// the sake of a shorter call.
+type ask struct {
+	ctx   context.Context
+	route *modelRoute
+	org   string // ledger org, so a customer's own provider row wins where it exists
+	model string // caller-facing model name, for the honest error
+
+	// primary is the row auth already resolved for route.providerName. Reusing
+	// it keeps the first attempt on exactly the credential the auth path chose;
+	// re-resolving by name would quietly swap a customer's connected key for
+	// the platform's.
+	primary *object.Provider
+
+	question  string
+	history   []*model.RawMessage
+	knowledge []*model.RawMessage
+	lang      string
+
+	writer io.Writer
+	// sent reports whether any byte has reached the client. Once it has, this
+	// request is committed and can never be moved.
+	sent func() bool
+	// prior are providers that already refused this request elsewhere — the
+	// family pipe, typically. They are not asked again and they count against
+	// the attempt cap.
+	prior []attempt
+}
+
+// serve offers the completion to each capable provider in turn and returns the
+// first real answer.
+//
+// The loop is the whole failover policy in one place:
+//
+//	provider fault -> record it, demote the vendor, offer it to the next one
+//	request fault  -> stop; every vendor refuses this identically
+//	nobody left    -> exhausted(), which names who was asked and why they said no
+//
+// It returns every attempt made, successful or not, so the caller can record
+// the ones that failed. A failover nobody can see is half a fix: the empty
+// account that caused it stays empty.
+func (a ask) serve() (*model.ModelResult, served, []attempt, error) {
+	tried := a.prior
+	for _, c := range candidates(a.org, a.route, a.prior) {
+		// The caller hung up. Offering the request to another vendor would spend
+		// money answering an empty room, and would file a healthy vendor's name
+		// against the client's disconnect.
+		if err := a.context().Err(); err != nil {
+			return nil, served{}, tried, err
+		}
+		res, row, err := a.call(c)
+		if err == nil {
+			if len(tried) > 0 {
+				log.Warn("failover: model=%s served by %s after %d refusal(s) — %s",
+					a.model, c.provider, len(tried), reasons(tried))
+			}
+			// The row travels with the answer because it is the row whose
+			// credential was spent, and that is what decides whether this call
+			// was the customer's own key or ours.
+			// No mark: this path builds the answer from the provider SDK rather
+			// than relaying an envelope, so nothing disclosed an upstream and the
+			// host we dialled is the whole answer.
+			return res, served{c.provider, originOf(row, nil), row}, tried, nil
+		}
+
+		at := attempt{
+			provider: c.provider,
+			upstream: c.upstream,
+			origin:   originOf(row, nil),
+			status:   upstreamHTTPStatus(err),
+			fault:    faultOf(err),
+			err:      err,
+		}
+		tried = append(tried, at)
+		announce(a.model, at)
+
+		if d := cooled.rest(a.org, c.provider, err); d > 0 {
+			log.Warn("failover: demoting provider=%s for %s after status=%d", c.provider, d, at.status)
+		}
+
+		// The request is wrong, not the vendor. Every other vendor refuses it
+		// the same way, so stop and hand the caller the real reason.
+		if at.fault == faultRequest {
+			return nil, served{name: c.provider}, tried, err
+		}
+
+		// Bytes reached the client during that attempt. Nothing can be replayed
+		// now; report what we have rather than duplicating output.
+		if a.sent != nil && a.sent() {
+			log.Warn("failover: model=%s provider=%s failed after the stream opened — cannot move: %v",
+				a.model, c.provider, err)
+			return nil, served{name: c.provider}, tried, err
+		}
+	}
+	return nil, served{}, tried, exhausted(a.model, tried)
+}
+
+// call offers the completion to ONE provider, riding out a transient refusal
+// (a 429 "overloaded", a 503, a timeout) rather than giving up on it.
+//
+// A 429 does not mean "this cannot be served", it means "ask again shortly" —
+// and we are better placed to do that than a client who can neither pick a
+// different vendor nor stagger itself against every other client doing the
+// same. We wait it out here; when waiting stops helping, serve() moves on.
+func (a ask) call(c candidate) (*model.ModelResult, *object.Provider, error) {
+	var res *model.ModelResult
+	var row *object.Provider
+	err := retryTransient(a.context(), currentRetryPolicy(), func() error {
+		// Committed: bytes are on the wire and this can no longer be replayed.
+		if a.sent != nil && a.sent() {
+			return errPartiallyWritten
+		}
+		// Discard whatever a failed attempt left in the writer. Both writers
+		// APPEND to an internal buffer, so without this the next provider's
+		// answer is served glued to the dead one's half-sentence — a silent
+		// corruption that reads like a model going mad.
+		if r, ok := a.writer.(interface{ Reset() }); ok {
+			r.Reset()
+		}
+		var e error
+		res, row, e = callProvider(a.org, a.rowFor(c), c, a.question, a.writer, a.history, a.knowledge, a.lang)
+		if e != nil && isTransientError(e) {
+			log.Warn("retry: provider=%s is busy (%v) — holding the request rather than bouncing it to the client", c.provider, e)
+		}
+		return wrapUpstreamError(e)
+	})
+	return res, row, err
+}
+
+// context returns the caller's context, so a retry never outlives the request
+// that asked for it. Background would make retryPolicy.waitBeforeRetry's
+// deadline check vacuous and let a dead client's request keep sleeping.
+func (a ask) context() context.Context {
+	if a.ctx != nil {
+		return a.ctx
+	}
+	return context.Background()
+}
+
+// rowFor returns the pre-resolved provider row when the candidate IS the one
+// auth resolved, and nil otherwise so callProvider resolves it for the org.
+func (a ask) rowFor(c candidate) *object.Provider {
+	if a.primary != nil && a.route != nil && c.provider == a.route.providerName {
+		return a.primary
+	}
+	return nil
+}
+
+// announce puts a refusal where someone will see it. Level is chosen by who has
+// to act on it: a busy vendor is routine, an empty account needs a human with a
+// credit card, and a rejected credential needs one now.
+func announce(model string, a attempt) {
+	switch {
+	case a.status == http.StatusUnauthorized:
+		log.Error("provider=%s rejected our credential (401) serving model=%s — this key is dead or revoked, and the request was NOT sent elsewhere: %v",
+			a.provider, model, a.err)
+	case a.status == http.StatusPaymentRequired:
+		log.Error("provider=%s is out of money (402) serving model=%s — top it up; failing over: %v",
+			a.provider, model, a.err)
+	default:
+		log.Warn("failover: model=%s provider=%s refused status=%d fault=%s: %v",
+			model, a.provider, a.status, a.fault, a.err)
+	}
+}
+
+// reasons renders the refusals so far for one log line.
+func reasons(tried []attempt) string {
+	out := ""
+	for i, a := range tried {
+		if i > 0 {
+			out += "; "
+		}
+		out += fmt.Sprintf("%s status=%d", a.provider, a.status)
+	}
+	return out
+}
+
+// callProvider asks one provider row for a completion and reports the row that
+// answered. The row is resolved FOR THE ORG, so a customer that connected its
+// own key spends its own key — on a fallback exactly as on the primary.
+// Resolving globally here is how a request billed as "bring your own" comes to
+// be served on the platform's credential.
+//
+// Indirected through a var so the failover loop can be exercised against
+// scripted providers without a live DB or a live upstream, the same way
+// orgAutoRoutingLookup is.
+var callProvider = func(
+	org string,
+	row *object.Provider,
+	c candidate,
 	question string,
 	writer io.Writer,
 	history []*model.RawMessage,
 	knowledge []*model.RawMessage,
 	lang string,
-	writerHasData func() bool,
-) (*model.ModelResult, served, error) {
-	// callWithRetry calls one provider, riding out a transient refusal (a 429
-	// "Platform overloaded", a 503, a timeout) instead of giving up on it.
-	//
-	// A 429 does not mean "this request cannot be served" — it means "ask again
-	// shortly". Returning it to the client just relocates the retry to something
-	// that can neither pick a different provider nor stagger itself against
-	// every other client doing the same thing. So we wait it out here, and only
-	// give up on the provider once waiting has stopped helping — at which point
-	// the loop below moves to one that can serve the request.
-	//
-	// Only safe while nothing has been written: once tokens are on the wire the
-	// request is committed and cannot be replayed. Hence the writerHasData guard
-	// before every retry, the same rule cascading already obeys.
-	callWithRetry := func(provider, upstream string) (*model.ModelResult, string, error) {
-		var res *model.ModelResult
-		var origin string
-		err := retryTransient(context.Background(), currentRetryPolicy(), func() error {
-			if writerHasData != nil && writerHasData() {
-				// Partially streamed: not replayable. Surface the last error.
-				return errPartiallyWritten
-			}
-			var e error
-			res, origin, e = callProvider(provider, upstream, question, writer, history, knowledge, lang)
-			if e != nil && isTransientError(e) {
-				log.Warn("retry: provider=%s is busy (%v) — holding the request rather than bouncing it to the client", provider, e)
-			}
-			return e
-		})
-		return res, origin, err
-	}
-
-	// Try primary provider
-	result, origin, err := callWithRetry(route.providerName, route.upstreamModel)
-	if err == nil {
-		return result, served{route.providerName, origin}, nil
-	}
-
-	// If the writer already sent data to the client (streaming), we cannot
-	// retry — the response is partially committed.
-	if writerHasData != nil && writerHasData() {
-		log.Warn("failover: primary provider %s failed after partial write, cannot retry: %v",
-			route.providerName, err)
-		return nil, served{name: route.providerName}, err
-	}
-
-	// Check if the error is retryable
-	if !isRetryableError(err) {
-		log.Warn("failover: primary provider %s failed with non-retryable error: %v",
-			route.providerName, err)
-		return nil, served{name: route.providerName}, err
-	}
-
-	if len(route.fallbacks) == 0 {
-		return nil, served{name: route.providerName}, err
-	}
-
-	log.Warn("failover: primary provider %s failed (%v), trying %d fallback(s)",
-		route.providerName, err, len(route.fallbacks))
-
-	var lastErr error = err
-	for i, fb := range route.fallbacks {
-		log.Info("failover: attempting fallback[%d] provider=%s upstream=%s",
-			i, fb.providerName, fb.upstreamModel)
-
-		result, fbOrigin, fbErr := callWithRetry(fb.providerName, fb.upstreamModel)
-		if fbErr == nil {
-			log.Info("failover: fallback[%d] provider=%s succeeded", i, fb.providerName)
-			return result, served{fb.providerName, fbOrigin}, nil
-		}
-
-		log.Warn("failover: fallback[%d] provider=%s failed: %v", i, fb.providerName, fbErr)
-		lastErr = fbErr
-
-		// If this fallback also wrote partial data, stop trying
-		if writerHasData != nil && writerHasData() {
-			break
-		}
-
-		// Only retry on retryable errors
-		if !isRetryableError(fbErr) {
-			break
+) (*model.ModelResult, *object.Provider, error) {
+	if row == nil {
+		var err error
+		row, err = object.GetModelProviderByNameForOrg(org, c.provider)
+		if err != nil {
+			return nil, nil, err
 		}
 	}
+	if row == nil {
+		// GetModelProviderByNameForOrg returns nil for BOTH a missing provider
+		// and one an admin switched off. Either way this vendor cannot serve and
+		// the next candidate must be tried, which is how a route's fallbacks stay
+		// honoured when the primary is toggled off from /v1/admin/providers.
+		//
+		return nil, nil, unavailable(c.provider)
+	}
 
-	return nil, served{name: route.providerName}, lastErr
-}
+	p := *row // copy: SubType is per-request, the row may be shared
+	p.SubType = c.upstream
 
-// callProvider creates a model provider from the DB-stored provider entry and
-// calls QueryText. This is the same flow as the existing code in the OpenAI
-// and Anthropic handlers, extracted for reuse by the failover loop.
-//
-// It also reports the row's origin — the host the call goes to. This is the only
-// frame that holds the row, so a caller that wants to record where the bytes went
-// has to be handed it from here; resolving the name a second time later would
-// report the provider as it is THEN, not as it was when it answered.
-func callProvider(
-	providerName string,
-	upstreamModel string,
-	question string,
-	writer io.Writer,
-	history []*model.RawMessage,
-	knowledge []*model.RawMessage,
-	lang string,
-) (*model.ModelResult, string, error) {
-	provider, err := object.GetModelProviderByName(providerName)
+	modelProvider, err := p.GetModelProvider(lang)
 	if err != nil {
-		return nil, "", err
-	}
-	if provider == nil {
-		// GetModelProviderByName returns nil for BOTH a missing provider and a
-		// disabled (State != "Active") Model provider. Word this as "unavailable"
-		// so isRetryableError classifies it retryable and the failover loop tries
-		// the next fallback — this is how route.fallbacks stays honored when the
-		// primary provider is toggled off via /v1/admin/providers.
-		return nil, "", fmt.Errorf("provider %q is unavailable (disabled or not configured)", providerName)
-	}
-
-	provider.SubType = upstreamModel
-
-	modelProvider, err := provider.GetModelProvider(lang)
-	if err != nil {
-		return nil, "", err
+		return nil, &p, err
 	}
 
 	result, err := modelProvider.QueryText(question, writer, history, "", knowledge, nil, lang)
-	return result, provider.Origin(), err
+	return result, &p, err
+}
+
+// unavailable is how a provider row that is missing or switched off refuses.
+//
+// It carries a STATUS rather than a word for the classifier to find. This error
+// is ours: re-reading our own prose to recover what we already knew is how
+// "unavailable" came to be a substring the classifier trusted, where it also
+// matched a VENDOR saying "unavailable for your account tier" — a different
+// refusal with a different answer.
+//
+// Named so the cascade tests can assert the value production emits instead of a
+// string that merely resembles it.
+func unavailable(provider string) error {
+	return &apiError{http.StatusServiceUnavailable,
+		fmt.Sprintf("provider %q is unavailable (disabled or not configured)", provider)}
+}
+
+// recordRefusals writes one usage row per provider that refused, so a vendor
+// that stopped serving appears in the ledger the team already reads rather than
+// only in a log line nobody tails. That absence is the second half of the
+// outage this exists to prevent: the failover worked, nobody noticed, and the
+// account stayed empty.
+//
+// The rows bill nothing. recordUsage settles only "success" and is not called
+// here; no budget hold is touched. The status is its own word — "failover", not
+// "error" — so dashboards that count failures keep counting the same thing and
+// a refused ATTEMPT on a request that ultimately succeeded is not filed as a
+// failed request.
+func (c *ApiController) recordRefusals(model string, tried []attempt, user *iam.User, premium, stream bool, requestId string, start time.Time) {
+	if user == nil {
+		return
+	}
+	for _, a := range tried {
+		rec := &usageRecord{
+			Owner:     c.billingOrg(user),
+			Model:     model,
+			Provider:  a.provider,
+			Origin:    a.origin,
+			Premium:   premium,
+			Stream:    stream,
+			Status:    "failover",
+			ErrorMsg:  a.err.Error(),
+			ClientIP:  c.Ctx.Request.RemoteAddr,
+			RequestID: requestId,
+		}
+		rec.bind(c.Ctx.Request.Context(), user)
+		recordTrace(c.Ctx.Request.Context(), rec, start)
+	}
 }

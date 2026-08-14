@@ -42,7 +42,6 @@ func TestIsTransientError_SeparatesWaitFromCascade(t *testing.T) {
 	// They must cascade immediately; sleeping first only burns the deadline.
 	permanent := []string{
 		"403 this model is not available for your account",
-		"401 unauthorized",
 		"insufficient_quota",
 		"402 payment required",
 	}
@@ -52,9 +51,22 @@ func TestIsTransientError_SeparatesWaitFromCascade(t *testing.T) {
 			t.Errorf("must NOT be transient (waiting cannot help): %q", m)
 		}
 		// ...but they ARE worth trying a different provider for.
-		if !isRetryableError(err) {
+		if faultOf(err) != faultProvider {
 			t.Errorf("should still cascade to another provider: %q", m)
 		}
+	}
+
+	// 401 is the exception, and the exception is the point. Waiting cannot fix a
+	// rejected credential — and neither can a different vendor, because the
+	// broken thing is OUR key for THIS one. Cascading it would drain traffic onto
+	// whoever still works while the dead key goes unnoticed until the bill
+	// arrives, so it is a request fault: surfaced, never routed around.
+	unauthorized := errors.New("401 unauthorized")
+	if isTransientError(unauthorized) {
+		t.Error("401 must not be transient")
+	}
+	if faultOf(unauthorized) != faultRequest {
+		t.Error("401 must NOT cascade — a dead credential of ours has to surface, not hide behind another vendor's")
 	}
 }
 

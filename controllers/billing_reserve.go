@@ -31,8 +31,6 @@ import (
 // streamed tool-call response: token usage (from the forced include_usage chunk)
 // plus the delta content / tool-call arguments used for the tokenizer fallback.
 type sseStreamChunk struct {
-	ID      string `json:"id"`
-	Model   string `json:"model"`
 	Choices []struct {
 		Delta struct {
 			Content   string `json:"content"`
@@ -57,10 +55,12 @@ type sseStreamChunk struct {
 // client did not request usage; otherwise its envelope is fixed up for SDK
 // clients. This is the billing-critical core of the streaming tool path: it
 // guarantees a streamed tool call yields real token counts to bill.
-func streamCaptureUsage(r io.Reader, w io.Writer, flush func(), clientWantsUsage bool, requestID, fallbackModel string, strip *model.ReasoningStripper) (prompt, completion, total int, completionText string) {
+//
+// mk is the door every event leaves through (envelope.go): each chunk goes out in
+// our envelope, stamped from the one mark, so the id holds for the whole stream.
+func streamCaptureUsage(r io.Reader, w io.Writer, flush func(), clientWantsUsage bool, strip *model.ReasoningStripper, mk *mark) (prompt, completion, total int, completionText string) {
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 0, 256*1024), 256*1024)
-	var lastChunkID, lastChunkModel string
 	var sb strings.Builder
 
 	for scanner.Scan() {
@@ -95,30 +95,17 @@ func streamCaptureUsage(r io.Reader, w io.Writer, flush func(), clientWantsUsage
 					if strip != nil && len(chunk.Choices) > 0 {
 						line = "data: " + applyReasoningStrip(raw, strip)
 					}
-					if chunk.ID != "" {
-						lastChunkID = chunk.ID
-					}
-					if chunk.Model != "" {
-						lastChunkModel = chunk.Model
-					}
 					if chunk.Usage != nil && len(chunk.Choices) == 0 {
 						if !clientWantsUsage {
 							continue
 						}
+						// An SDK client reads a usage-only event as a chunk like any
+						// other, so give it the rest of the envelope. The id and the
+						// model are the stamp's to say, and it says them below.
 						var usageChunk map[string]interface{}
 						if json.Unmarshal([]byte(raw), &usageChunk) == nil {
-							id := lastChunkID
-							if id == "" {
-								id = "chatcmpl-" + requestID
-							}
-							m := lastChunkModel
-							if m == "" {
-								m = fallbackModel
-							}
-							usageChunk["id"] = id
 							usageChunk["object"] = "chat.completion.chunk"
 							usageChunk["created"] = time.Now().Unix()
-							usageChunk["model"] = m
 							usageChunk["choices"] = []interface{}{}
 							if fixed, err := json.Marshal(usageChunk); err == nil {
 								line = "data: " + string(fixed)
@@ -127,6 +114,9 @@ func streamCaptureUsage(r io.Reader, w io.Writer, flush func(), clientWantsUsage
 					}
 				}
 			}
+			// Last thing before the wire, so it covers the line whatever the rewrites
+			// above left it as. `[DONE]` is not an object and passes through untouched.
+			line = "data: " + string(mk.stamp([]byte(strings.TrimPrefix(line, "data: "))))
 		}
 
 		_, _ = fmt.Fprintf(w, "%s\n", line)

@@ -36,6 +36,7 @@ package controllers
 
 import (
 	"encoding/json"
+	"sort"
 	"strings"
 
 	"github.com/hanzoai/ai/conf"
@@ -57,6 +58,7 @@ var openrouterFam = &modelFamily{
 	keyKey:     "OPENROUTER_API_KEY",
 	providerFn: object.OpenRouterProvider,
 	decode:     openrouterCatalog,
+	spare:      openrouterSpare,
 }
 
 // openrouterMarginDefault is the retail multiple applied to the upstream price when
@@ -93,7 +95,8 @@ type openrouterWireModel struct {
 		Completion decimal.Decimal `json:"completion"`
 	} `json:"pricing"`
 	Architecture struct {
-		InputModalities []string `json:"input_modalities"`
+		InputModalities  []string `json:"input_modalities"`
+		OutputModalities []string `json:"output_modalities"`
 	} `json:"architecture"`
 }
 
@@ -144,25 +147,93 @@ func openrouterOwner(id string) string {
 	return "openrouter"
 }
 
-// openrouterCatalog decodes an OpenRouter /v1/models body into discovered SKUs. A SKU
-// OpenRouter prices at zero on both sides is dropped rather than published as free:
-// this catalog is prepaid resale, and a free-looking price here would be a lie about
-// what serving it costs.
-func openrouterCatalog(body []byte) ([]zenModel, error) {
+// openrouterWire reads the listing. One parse, because the catalog and the spare
+// routes below are two readings of the same body and a second unmarshal is a second
+// place for the wire shape to drift.
+func openrouterWire(body []byte) ([]openrouterWireModel, error) {
 	var out struct {
 		Data []openrouterWireModel `json:"data"`
 	}
 	if err := json.Unmarshal(body, &out); err != nil {
 		return nil, err
 	}
+	return out.Data, nil
+}
+
+// free reports the SKUs OpenRouter charges nothing for on either side.
+func (w openrouterWireModel) free() bool {
+	return w.Pricing.Prompt.IsZero() && w.Pricing.Completion.IsZero()
+}
+
+// writes reports that this SKU answers in text and in nothing else — the only
+// shape a completion request can use.
+//
+// Free is not the same question as usable, and the live listing is what taught
+// that: the two widest free routes OpenRouter advertises are `google/lyria-3-*`,
+// which declare `out: ["text","audio"]` because they are MUSIC models. Ordered by
+// context they sat at the top of the fallback list, so a chat request refused for
+// money would have been handed to a music generator — a wrong answer in place of
+// an honest error, which is worse than the outage.
+//
+// Undeclared modalities read as NOT usable, deliberately. This is the one place
+// that decides what a customer gets when their model is unavailable, and guessing
+// is not something to do there.
+func (w openrouterWireModel) writes() bool {
+	out := w.Architecture.OutputModalities
+	return len(out) == 1 && strings.EqualFold(strings.TrimSpace(out[0]), "text")
+}
+
+// openrouterCatalog decodes an OpenRouter /v1/models body into discovered SKUs. A SKU
+// OpenRouter prices at zero on both sides is dropped rather than published as free:
+// this catalog is prepaid resale, and a free-looking price here would be a lie about
+// what serving it costs.
+func openrouterCatalog(body []byte) ([]zenModel, error) {
+	wire, err := openrouterWire(body)
+	if err != nil {
+		return nil, err
+	}
 	margin := openrouterMargin()
-	models := make([]zenModel, 0, len(out.Data))
-	for _, w := range out.Data {
-		m := w.model(margin)
-		if m.Base.In.IsZero() && m.Base.Out.IsZero() {
+	models := make([]zenModel, 0, len(wire))
+	for _, w := range wire {
+		if w.free() {
 			continue
 		}
-		models = append(models, m)
+		models = append(models, w.model(margin))
 	}
 	return models, nil
+}
+
+// openrouterSpare names the routes OpenRouter still serves once its account is
+// spent: the SKUs it charges nothing for AND answers in text with, which are drawn
+// from the same listing the catalog above reads. Two readings of one body, so a
+// route cannot be sellable and spare at the same time, and neither list needs its
+// own discovery.
+//
+// Ordered by context window, widest first, then by id — a total order over the
+// listing, so which route answers is a property of what the vendor advertises and
+// not of the order it happened to serialize them in. Widest first because the
+// request was already sized for the SKU it asked for; a spare that cannot hold the
+// prompt is not a fallback, it is a second refusal.
+func openrouterSpare(body []byte) []string {
+	wire, err := openrouterWire(body)
+	if err != nil {
+		return nil
+	}
+	free := make([]openrouterWireModel, 0, 8)
+	for _, w := range wire {
+		if w.free() && w.writes() && strings.TrimSpace(w.ID) != "" {
+			free = append(free, w)
+		}
+	}
+	sort.Slice(free, func(i, j int) bool {
+		if free[i].ContextLength != free[j].ContextLength {
+			return free[i].ContextLength > free[j].ContextLength
+		}
+		return free[i].ID < free[j].ID
+	})
+	ids := make([]string, 0, len(free))
+	for _, w := range free {
+		ids = append(ids, w.ID)
+	}
+	return ids
 }

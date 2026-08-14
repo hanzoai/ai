@@ -199,15 +199,15 @@ func TestBestVirtualModelCascade(t *testing.T) {
 	// The ranking only degrades gracefully because the failover loop treats
 	// exactly these conditions as retryable (→ advance to the next rank). Pin the
 	// trigger set that makes `best` fall through instead of hard-failing.
-	for _, msg := range []string{
-		"error, status code: 429, status: 429 Too Many Requests", // glm-5.2 rate-limited (observed live)
-		"402 payment required",
-		"403 this model is not available for your account",
-		"insufficient_quota",
-		"provider \"do-ai\" is unavailable (disabled or not configured)",
+	for _, err := range []error{
+		errors.New("error, status code: 429, status: 429 Too Many Requests"), // glm-5.2 rate-limited (observed live)
+		errors.New("402 payment required"),
+		errors.New("403 this model is not available for your account"),
+		errors.New("insufficient_quota"),
+		unavailable("do-ai"), // the value the loop actually raises for a switched-off row
 	} {
-		if !isRetryableError(errors.New(msg)) {
-			t.Errorf("best cascade would NOT fire on %q (isRetryableError=false)", msg)
+		if faultOf(err) != faultProvider {
+			t.Errorf("best cascade would NOT fire on %q (faultOf said request, not provider)", err)
 		}
 	}
 }
