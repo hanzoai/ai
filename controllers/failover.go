@@ -260,11 +260,11 @@ var callProvider = func(
 	}
 	if row == nil {
 		// GetModelProviderByNameForOrg returns nil for BOTH a missing provider
-		// and one an admin switched off. Word it "unavailable" so faultOfText
-		// reads it as a provider fault and the next candidate is tried — this
-		// is how a route's fallbacks stay honoured when the primary is toggled
-		// off from /v1/admin/providers.
-		return nil, nil, fmt.Errorf("provider %q is unavailable (disabled or not configured)", c.provider)
+		// and one an admin switched off. Either way this vendor cannot serve and
+		// the next candidate must be tried, which is how a route's fallbacks stay
+		// honoured when the primary is toggled off from /v1/admin/providers.
+		//
+		return nil, nil, unavailable(c.provider)
 	}
 
 	p := *row // copy: SubType is per-request, the row may be shared
@@ -277,6 +277,21 @@ var callProvider = func(
 
 	result, err := modelProvider.QueryText(question, writer, history, "", knowledge, nil, lang)
 	return result, &p, err
+}
+
+// unavailable is how a provider row that is missing or switched off refuses.
+//
+// It carries a STATUS rather than a word for the classifier to find. This error
+// is ours: re-reading our own prose to recover what we already knew is how
+// "unavailable" came to be a substring the classifier trusted, where it also
+// matched a VENDOR saying "unavailable for your account tier" — a different
+// refusal with a different answer.
+//
+// Named so the cascade tests can assert the value production emits instead of a
+// string that merely resembles it.
+func unavailable(provider string) error {
+	return &apiError{http.StatusServiceUnavailable,
+		fmt.Sprintf("provider %q is unavailable (disabled or not configured)", provider)}
 }
 
 // recordRefusals writes one usage row per provider that refused, so a vendor
