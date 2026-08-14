@@ -87,10 +87,15 @@ func (c *Client) ParseJwtToken(token string) (*Claims, error) {
 	return nil, err
 }
 
-// machineType is the User.Type a program carries. It is one of the two spellings
-// account.IsMachine reads; IAM writes the other ("service-account") on the rows
-// behind API keys.
-const machineType = "application"
+// Machine is the User.Type a program carries — the word IAM's client_credentials
+// grant states in the token, and the word this package writes wherever it has to
+// answer the same question itself. Those two must agree: one principal typed two
+// ways is one principal a reader has to know the provenance of. IAM also writes
+// "service-account" on the rows behind API keys, and account.IsMachine reads both.
+//
+// Exported because a credential assembled in this process (the cloud-agent key)
+// has to say the same word rather than a second copy of it.
+const Machine = "application"
 
 // typeMachine fills in what the token leaves unsaid: that its principal is a
 // program.
@@ -110,14 +115,19 @@ const machineType = "application"
 //
 // Stamped here, at the single parse, so every layer below reads the one field with
 // the one predicate rather than each re-deriving the answer from claims. An explicit
-// type from IAM is left exactly as it came.
+// type from IAM is left exactly as it came — which is the case that matters now
+// that the grant states the class itself, because this inference cannot see a
+// SHARED app: IAM qualifies such an app's audience with its org, so `aud` and
+// `name` no longer match and a shared app's machine reads here as a person. The
+// inference remains for tokens minted before the claim shipped, and retires with
+// the last of them.
 func (c *Claims) typeMachine() {
 	if c == nil || c.User.Type != "" || c.User.Name == "" {
 		return
 	}
 	for _, aud := range c.Audience {
 		if aud == c.User.Name {
-			c.User.Type = machineType
+			c.User.Type = Machine
 			return
 		}
 	}
