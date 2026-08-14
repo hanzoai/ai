@@ -85,7 +85,6 @@ var modelRoutes = map[string]modelRoute{
 	"claude-sonnet-4-5":            {providerName: "do-ai", upstreamModel: "anthropic-claude-4.5-sonnet"},
 	"claude-sonnet-4-6":            {providerName: "do-ai", upstreamModel: "anthropic-claude-4.6-sonnet"}, // real 4.6 upstream — now served on this account (verified live 2xx chat+vision+tools); earlier fell back to 4.5 while 4.6 403'd
 	"claude-sonnet-5":              {providerName: "do-ai", upstreamModel: "anthropic-claude-5-sonnet"},
-	"claude-fable-5":               {providerName: "do-ai", upstreamModel: "anthropic-claude-fable-5"},
 	"deepseek-3.2":                 {providerName: "do-ai", upstreamModel: "deepseek-3.2"},
 	"deepseek-chat":                {providerName: "do-ai", upstreamModel: "deepseek-v4-pro"},
 	"deepseek-v4-flash":            {providerName: "do-ai", upstreamModel: "deepseek-4-flash"},

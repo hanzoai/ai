@@ -43,7 +43,7 @@ router:
     code: [zen4-coder, zen5-coder, qwen3-coder, gpt-5.3-codex, claude-opus-4-8, claude-sonnet-4-6, gpt-5.4, deepseek-v4-pro]
     reasoning: [zen4-thinking, deepseek-reasoner, zen4-ultra, o3, gpt-5.5, claude-opus-4-8, deepseek-v4-pro]
     math: [zen4-ultra, deepseek-reasoner, zen4-thinking, o3, gpt-5.5, deepseek-v4-pro]
-    creative: [zen4, zen4-max, claude-sonnet-4-5, claude-opus-4-8, claude-fable-5, gpt-5.5]
+    creative: [zen4, zen4-max, claude-sonnet-4-5, claude-opus-4-8, gpt-5.5]
     vision: [zen5-omni, zen3-omni, zen3-vl, claude-sonnet-4-6, gpt-4o, gpt-5.4, llama-4-maverick, nemotron-nano-vl]
     long_context: [zen4-max, gpt-5.4, claude-sonnet-4-5, gpt-5.5, gpt-5.6-luna, claude-opus-4-8, deepseek-v4-pro]
     cheap_chat: [zen4-mini, zen5-mini, gpt-4o-mini, claude-haiku-4-5]
@@ -411,19 +411,6 @@ models:
     tools: true             # verified live: emitted tool_calls
     premium: true
     pricing: {input: 3.00, output: 15.00}
-
-  # claude-fable-5: Anthropic frontier creative model, 1M context. Chat + vision +
-  # tools all verified live. Pricing mirrors the opus frontier tier (do-ai
-  # publishes no per-model rate); revisit if a published rate appears.
-  claude-fable-5:
-    provider: do-ai
-    upstream: anthropic-claude-fable-5
-    context_window: 1000000
-    max_output_tokens: 128000
-    vision: true            # verified live: answered image color
-    tools: true             # verified live: emitted tool_calls
-    premium: true
-    pricing: {input: 15.00, output: 75.00}
 
   # Open source via DO-AI
   deepseek-r1-distill-70b:
@@ -1238,11 +1225,6 @@ models:
 
   # Anthropic frontier leaf. Advertised (and, once entitled, served) at 1M.
   # 403 for this account today — present so the aliases above resolve.
-  anthropic-claude-fable-5:
-    provider: do-ai
-    upstream: anthropic-claude-fable-5
-    context_window: 1000000
-    hidden: true
   nemotron-3-nano-omni:
     provider: do-ai
     upstream: nemotron-3-nano-omni

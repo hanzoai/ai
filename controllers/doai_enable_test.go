@@ -49,7 +49,6 @@ var doaiEnabledModels = []struct {
 	{"claude-sonnet-5", "anthropic-claude-5-sonnet", false, true},
 	{"claude-sonnet-4-6", "anthropic-claude-4.6-sonnet", true, true},
 	{"claude-haiku-4-5", "anthropic-claude-haiku-4.5", true, true},
-	{"claude-fable-5", "anthropic-claude-fable-5", true, true},
 	{"gpt-5.6-luna", "openai-gpt-5.6-luna", true, false},
 	{"gpt-5.6-sol", "openai-gpt-5.6-sol", true, false},
 	{"gpt-5.6-terra", "openai-gpt-5.6-terra", true, false},
