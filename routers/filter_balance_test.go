@@ -467,3 +467,48 @@ func TestBalanceGateFilterTransientReturns503(t *testing.T) {
 		t.Errorf("transient denial must not say add credits, got %s", body)
 	}
 }
+
+// A GUEST WITH NO WALLET REACHES THE ROUTES THAT COST NOTHING.
+//
+// This gate runs before any controller, so the in-controller rule that a $0 model
+// needs no balance never got the chance to speak: a free route was refused here
+// first, and the caller a free tier exists for — a guest with no wallet at all —
+// could not reach the very routes published for them. Two gates asking one question
+// have to give one answer.
+//
+// The paywall is unchanged in the same breath: a PRICED model at $0 still 402s, and
+// so does anything this cannot price, because a gate that cannot read the price must
+// not assume it is free.
+func TestAZeroPricedModelIsNotRefusedByTheWalletGate(t *testing.T) {
+	bg := newTestGate("http://unused", "", balanceCacheTTL)
+	bg.setUserKeyCache("tok", "", "acme", "acme", "acme/user")
+	bg.ledger.SetBalance("acme", 0) // no wallet at all
+
+	prev := balanceGate
+	balanceGate = bg
+	t.Cleanup(func() { balanceGate = prev })
+
+	post := func(body string) int {
+		req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer tok")
+		rec := httptest.NewRecorder()
+		ctx := web.NewContext()
+		ctx.Reset(rec, req)
+		ctx.Input.RequestBody = []byte(body)
+		BalanceGateFilter(ctx)
+		return rec.Code
+	}
+
+	if code := post(`{"model":"enso-free","messages":[]}`); code == http.StatusPaymentRequired {
+		t.Error("a route priced at zero was 402'd at $0 balance — the free tier cannot reach the free routes")
+	}
+	if code := post(`{"model":"gpt-4o","messages":[]}`); code != http.StatusPaymentRequired {
+		t.Errorf("a PRICED model at $0 returned %d, want 402 — the paywall must hold", code)
+	}
+	if code := post(`{"model":"no-such-model-anywhere","messages":[]}`); code != http.StatusPaymentRequired {
+		t.Errorf("an unpriceable model returned %d, want 402 — a gate that cannot read a price must not assume free", code)
+	}
+	if code := post(`not json`); code != http.StatusPaymentRequired {
+		t.Errorf("an unreadable body returned %d, want 402 — fail closed", code)
+	}
+}
