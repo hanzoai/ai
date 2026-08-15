@@ -366,12 +366,14 @@ func (m zenModel) costCents(promptTokens, completionTokens int) int64 {
 // price projects the headline tier into ai's legacy per-model price struct (float,
 // used only for the balance-reservation estimate and the /v1/models display). The
 // exact debit path uses costCents, never this projection.
+//
+// A discovered SKU always HAS a price, and zero is one of them. "No price" is a
+// different fact — nobody stated one — and only a model discovery never saw can be
+// in that state. Reading zero as absent is what let a route the vendor charges
+// nothing for be listed without a price and gated as though it cost money.
 func (m zenModel) price() (modelPrice, bool) {
 	in, _ := strconv.ParseFloat(m.Base.In.String(), 64)
 	out, _ := strconv.ParseFloat(m.Base.Out.String(), 64)
-	if in <= 0 && out <= 0 {
-		return modelPrice{}, false
-	}
 	costIn, _ := strconv.ParseFloat(m.CostIn.String(), 64)
 	costOut, _ := strconv.ParseFloat(m.CostOut.String(), 64)
 	return modelPrice{
