@@ -228,6 +228,21 @@ func estimatePromptTokens(req *openai.ChatCompletionRequest) int {
 // reserves this so a request is admitted only when the spendable balance covers
 // its worst case, and (with the max_tokens clamp at the call site) the actual
 // settle can never exceed the reservation.
+//
+// A route priced at zero estimates zero, the same answer costsNothing gives the
+// two wallet gates. Without this the worst case is a cent that will never be
+// charged: calculateCostCents floors a non-zero token count at 1 cent so a real
+// call is never billed as free, and on a $0.00 wallet that invented cent is the
+// difference between admitted and refused — which put the free routes out of
+// reach of the free tier they are published for. The floor still governs
+// settlement, where it belongs.
+//
+// The price is read the way the arithmetic below reads it — no org, so the guard
+// and the sum it guards can never disagree — and it fails closed like its twins:
+// only a price that was FOUND and is zero estimates zero.
 func estimateRequestCostCents(modelName string, promptTokens, maxTokens int) int64 {
+	if costsNothing(modelName, "") {
+		return 0
+	}
 	return calculateCostCents(modelName, promptTokens, reserveCompletionTokens(maxTokens))
 }

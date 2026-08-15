@@ -135,6 +135,36 @@ func TestEstimateRequestCostMonotonic(t *testing.T) {
 	}
 }
 
+// TestFreeRouteEstimatesZero: a route priced at zero estimates zero, so an empty
+// wallet still reaches it. The 1-cent floor exists to keep a real call from
+// settling as free; charging it to an ESTIMATE refuses a call that will cost
+// $0.00, which is the free tier locked out of the free routes published for it.
+func TestFreeRouteEstimatesZero(t *testing.T) {
+	if est := estimateRequestCostCents("enso-free", 100, 8192); est != 0 {
+		t.Errorf("a zero-priced route must estimate zero, got %d", est)
+	}
+	const subject = "billtest/broke"
+	object.GlobalBalanceLedger.SetBalance(subject, 0)
+	if _, ok := reserveBudget(subject, estimateRequestCostCents("enso-free", 100, 8192)); !ok {
+		t.Error("an empty wallet must still reach a route that costs nothing")
+	}
+	// A priced route on the same empty wallet is still refused.
+	if _, ok := reserveBudget(subject, estimateRequestCostCents("gpt-4o", 100, 8192)); ok {
+		t.Error("an empty wallet must not reach a priced route")
+	}
+}
+
+// TestOverdrawnWalletStillRefused: zero is not a free pass. A NEGATIVE balance
+// fails `balance-reserved >= 0`, so an overdrawn wallet is refused even on a
+// route that costs nothing.
+func TestOverdrawnWalletStillRefused(t *testing.T) {
+	const subject = "billtest/overdrawn"
+	object.GlobalBalanceLedger.SetBalance(subject, -5)
+	if _, ok := reserveBudget(subject, estimateRequestCostCents("enso-free", 100, 8192)); ok {
+		t.Error("an overdrawn wallet must be refused even on a free route")
+	}
+}
+
 // TestClampMaxTokens locks the upstream completion ceiling: uncapped/absurd →
 // reserveCompletionFloor; a normal client cap is preserved unchanged (R1b).
 func TestClampMaxTokens(t *testing.T) {
