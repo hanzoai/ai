@@ -795,3 +795,28 @@ func TestTheFreeIdCostsNothingEverywhere(t *testing.T) {
 		t.Error("the free id routes as premium — it reads as a model a plan cannot afford")
 	}
 }
+
+// The pool holds routes that hold a conversation, so an embeddings request does not
+// walk it: a chat model does not embed, and asking three of them spends the caller's
+// time to be told so three times.
+func TestAnEmbeddingsRequestDoesNotWalkTheChatPool(t *testing.T) {
+	cooled.forget()
+	const free = "vendor/big:free"
+	fake := &refuses{status: 402, body: `{"error":{"message":"Insufficient credits."}}`, free: free}
+	vendor := fake.serve(t)
+	defer vendor.Close()
+	spareFamily(t, vendor.URL, free)
+	enso := otherFamily(t, vendor.URL)
+
+	body := []byte(`{"model":"enso-embed","input":"x"}`)
+	rec := httptest.NewRecorder()
+	ctx := web.NewContext()
+	ctx.Reset(rec, httptest.NewRequest("POST", "/v1/embeddings", strings.NewReader(string(body))))
+	c := &ApiController{}
+	c.Init(ctx, "ApiController", "X", nil)
+	c.pipeToFamily(enso, "embeddings", "openai", "enso-embed", body, false, "acme", nil, false, nil, time.Now())
+
+	if len(fake.asked) != 1 {
+		t.Errorf("asked=%v — an embeddings refusal walked the chat pool", fake.asked)
+	}
+}
