@@ -1347,23 +1347,42 @@ func (c *ApiController) authResolveProvider(token, requestedModel, orgId string)
 // @Param   body    body    openai.ChatCompletionRequest  true    "The OpenAI chat request"
 // @Success 200 {object} openai.ChatCompletionResponse
 // @router /chat [post]
-func (c *ApiController) ChatCompletions() {
-	// Extract Bearer token
-	authHeader := c.Ctx.Request.Header.Get("Authorization")
-	if !strings.HasPrefix(authHeader, "Bearer ") {
-		c.ResponseErrorWithStatus(401, c.T("openai:Invalid API key format. Expected 'Bearer API_KEY'"))
-		return
-	}
+func (c *ApiController) ChatCompletions() { c.chatCompletions(callerBearer) }
 
-	token := strings.TrimPrefix(authHeader, "Bearer ")
+// caller says which door a completion arrived at, and therefore what is taken from
+// the request and what is decided for it. It is an unexported type with no decoded
+// form, so no header, body or query can produce one: a request cannot elect its own
+// door. callerPublic is reachable only from ChatCompletionsPublic, after that lane's
+// ceiling has admitted the call.
+type caller int
 
-	// Publishable keys (pk-) cannot access completions — reject early
-	if isPublishableKey(token) {
-		c.Ctx.Output.SetStatus(403)
-		c.Ctx.Output.Header("Content-Type", "application/json")
-		c.Ctx.Output.Body([]byte(`{"error":{"message":"Publishable keys (pk-) can only access read-only endpoints (/v1/models, /health). Use a secret key (sk-) for completions.","type":"auth_error","code":403}}`))
-		c.EnableRender = false
-		return
+const (
+	callerBearer caller = iota // a credential is presented and decides everything
+	callerPublic               // no credential; the public lane decided everything
+)
+
+// chatCompletions is the one completion pipeline. Both doors run it; they differ only
+// in who the caller is, which is a value passed in rather than a fact re-derived here.
+func (c *ApiController) chatCompletions(from caller) {
+	var token string
+	if from == callerBearer {
+		// Extract Bearer token
+		authHeader := c.Ctx.Request.Header.Get("Authorization")
+		if !strings.HasPrefix(authHeader, "Bearer ") {
+			c.ResponseErrorWithStatus(401, c.T("openai:Invalid API key format. Expected 'Bearer API_KEY'"))
+			return
+		}
+
+		token = strings.TrimPrefix(authHeader, "Bearer ")
+
+		// Publishable keys (pk-) cannot access completions — reject early
+		if isPublishableKey(token) {
+			c.Ctx.Output.SetStatus(403)
+			c.Ctx.Output.Header("Content-Type", "application/json")
+			c.Ctx.Output.Body([]byte(`{"error":{"message":"Publishable keys (pk-) can only access read-only endpoints (/v1/models, /health). Use a secret key (sk-) for completions.","type":"auth_error","code":403}}`))
+			c.EnableRender = false
+			return
+		}
 	}
 
 	// Track timing for observability
@@ -1375,9 +1394,11 @@ func (c *ApiController) ChatCompletions() {
 	// a bad body gets 400 (not 200).
 	var request openai.ChatCompletionRequest
 	if err := json.Unmarshal(c.Ctx.Input.RequestBody, &request); err != nil {
-		if authErr := c.authenticate(token); authErr != nil {
-			c.ResponseAuthError(authErr)
-			return
+		if from == callerBearer {
+			if authErr := c.authenticate(token); authErr != nil {
+				c.ResponseAuthError(authErr)
+				return
+			}
 		}
 		c.ResponseErrorWithStatus(http.StatusBadRequest, fmt.Sprintf("Failed to parse request: %s", err.Error()))
 		return
@@ -1385,6 +1406,26 @@ func (c *ApiController) ChatCompletions() {
 
 	// Resolve org context for per-org model routing and pricing.
 	orgId := c.GetOrg()
+	if from == callerPublic {
+		// THE PUBLIC LANE READS NEITHER THE MODEL NOR THE ORG FROM THE REQUEST. Both
+		// are overwritten before anything downstream can consult them, so naming a
+		// paid model or another tenant's org is not refused — it is unrepresentable.
+		// The assignment is here rather than in the lane because this is the last
+		// point at which the body could still be read.
+		request.Model, orgId = freeID, publicOrg
+	}
+
+	// A PUBLIC CALL ACTS UNDER NO AMBIENT IDENTITY. The widget lives on our own
+	// pages, so a visitor may well be carrying a session for this estate; every
+	// helper that reads one would then attribute an anonymous call to whoever is
+	// signed in — the routing ledger would record their name, and the wallet
+	// resolver would try to switch them onto an org and answer "nobody to bill".
+	// The lane admitted a stranger, so a stranger is who the rest of this serves.
+	routingUser := c.routingUserId()
+	principal := c.principalUser()
+	if from == callerPublic {
+		routingUser, principal = "", nil
+	}
 
 	// `auto`/`zen-router` resolution (below) calls the router engine — an internal
 	// HTTP request carrying the caller's prompt — and records a RoutingEvent, BEFORE
@@ -1418,7 +1459,7 @@ func (c *ApiController) ChatCompletions() {
 	// that are actually in the routing ledger.
 	var routedTask string
 	var routingRecorded bool
-	if routed, task, ok := resolveAutoModel(request.Model, orgId, c.routingUserId(), requestId, c.principalUser(), &request, c.sloFromHeaders()); ok {
+	if routed, task, ok := resolveAutoModel(request.Model, orgId, routingUser, requestId, principal, &request, c.sloFromHeaders()); ok {
 		request.Model = routed
 		routedTask, routingRecorded = task, true
 		c.Ctx.ResponseWriter.Header().Set(RoutedModelHeader, routed)
@@ -1433,7 +1474,7 @@ func (c *ApiController) ChatCompletions() {
 		// NON-auto: record the caller's explicit model selection so EVERY request is
 		// a rateable, trainable data point — up/down feedback for all models, and the
 		// ledger captures which model served which task even when the caller picked.
-		task := recordExplicitRouting(request.Model, orgId, c.routingUserId(), requestId, &request)
+		task := recordExplicitRouting(request.Model, orgId, routingUser, requestId, &request)
 		routedTask, routingRecorded = task, true
 		object.GlobalTraffic.RecordTask(
 			c.Ctx.Request.Header.Get("CF-IPCountry"),
@@ -1446,7 +1487,21 @@ func (c *ApiController) ChatCompletions() {
 	// upstream provider, premium flag, and (for IAM/JWT auth) the billed user.
 	// This is the ONE auth+routing policy, shared with /v1/embeddings and
 	// /v1/rerank — see authResolveProvider.
-	provider, authUser, upstreamModel, isPremium, isWidget, err := c.authResolveProvider(token, request.Model, orgId)
+	var (
+		provider      *object.Provider
+		authUser      *iam.User
+		upstreamModel string
+		isPremium     bool
+		isWidget      bool
+		err           error
+	)
+	if from == callerPublic {
+		// No credential to authenticate. The lane already settled who is asking and
+		// what they may run; this settles only who runs it.
+		provider, authUser, upstreamModel, err = c.resolveProviderForPublic()
+	} else {
+		provider, authUser, upstreamModel, isPremium, isWidget, err = c.authResolveProvider(token, request.Model, orgId)
+	}
 	if err != nil {
 		c.ResponseAuthError(err)
 		return
@@ -1456,8 +1511,14 @@ func (c *ApiController) ChatCompletions() {
 	// here so the reservation below and every usage record at the tail of this
 	// handler key on the SAME wallet the gate inside authResolveProvider just read.
 	ledger := c.billingOrg(authUser)
-	if isWidget {
-		// Cap max_tokens for anonymous widget requests.
+	if from == callerPublic {
+		// The lane's own account, never a switch: billingOrg reads X-Org-Id, and a
+		// visitor sets that header as freely as any other.
+		ledger = publicOrg
+	}
+	if isWidget || from == callerPublic {
+		// Cap max_tokens for a caller nobody can be billed for — the widget's key
+		// holder and the public lane's visitor are the same case.
 		if request.MaxTokens == 0 || request.MaxTokens > widgetMaxTokens {
 			request.MaxTokens = widgetMaxTokens
 		}
