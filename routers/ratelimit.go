@@ -258,6 +258,21 @@ func RateLimitFilter(ctx *web.Context) {
 	if limitKey == "" {
 		limitKey = apiKey
 	}
+	// A PAGE KEY buckets on the key, not on the org that pays for it.
+	//
+	// It is public by construction — it ships in the source of a page anybody can
+	// view — so the traffic behind one is every visitor at once rather than one
+	// tenant. Bucketing it with the org means a single griefed page spends the
+	// whole org's ceiling, taking down that org's own API traffic and every other
+	// page it publishes. Keying on the credential contains it to the surface that
+	// holds it, and lets two surfaces carry two keys that fail independently.
+	//
+	// Billing is untouched: the org still pays for what its page serves. Who pays
+	// and who is throttled are different questions, and this is the only place they
+	// are allowed to differ.
+	if strings.HasPrefix(apiKey, "hz_") {
+		limitKey = apiKey
+	}
 
 	if rateLimiterInstance.Allow(limitKey) {
 		return
