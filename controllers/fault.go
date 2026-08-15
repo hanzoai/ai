@@ -514,6 +514,12 @@ func candidates(org string, route *modelRoute, prior []attempt) []candidate {
 	return queue
 }
 
+// codeExhausted is the machine name of "we could not serve this". It is OUR
+// failure, and a client must be able to tell it from the caller's own wallet
+// running out — both are refusals a person reads as "it did not work", and only
+// one of them is fixed by adding credits.
+const codeExhausted = "providers_exhausted"
+
 // exhausted is what the client is told when every capable provider refused.
 //
 // It names each vendor asked and quotes the last reason, because "the model is
@@ -527,8 +533,8 @@ func candidates(org string, route *modelRoute, prior []attempt) []candidate {
 // could not serve this, it is our problem, try again.
 func exhausted(model string, tried []attempt) error {
 	if len(tried) == 0 {
-		return &apiError{http.StatusServiceUnavailable,
-			fmt.Sprintf("model %q: no provider is configured to serve it", model)}
+		return &apiError{status: http.StatusServiceUnavailable, code: codeExhausted,
+			msg: fmt.Sprintf("model %q: no provider is configured to serve it", model)}
 	}
 	names := make([]string, 0, len(tried))
 	for _, a := range tried {
@@ -539,7 +545,7 @@ func exhausted(model string, tried []attempt) error {
 		names = append(names, a.provider)
 	}
 	last := tried[len(tried)-1]
-	return &apiError{http.StatusServiceUnavailable, fmt.Sprintf(
+	return &apiError{status: http.StatusServiceUnavailable, code: codeExhausted, msg: fmt.Sprintf(
 		"model %q: every provider refused — tried %s; last was %s: %s",
 		model, strings.Join(names, ", "), last.provider, last.err)}
 }
