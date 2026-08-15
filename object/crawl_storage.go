@@ -90,8 +90,8 @@ func getCrawlStorageClient() *hs3.Client {
 		}
 		client, err := hs3.New(host, &hs3.Options{
 			Creds: credentials.NewStaticV4(
-				conf.GetConfigString("crawlStorageAccessKey"),
-				conf.GetConfigString("crawlStorageSecretKey"), ""),
+				resolveSecretName("crawlStorageAccessKey"),
+				resolveSecretName("crawlStorageSecretKey"), ""),
 			Secure: secure,
 			Region: region,
 			// The endpoint is a service name, never a bucket-addressable host,
@@ -183,7 +183,7 @@ func archiveCrawlResultAsync(owner, jobID string, results []ScrapeResult, rawRes
 
 // IsCrawlStorageConfigured returns true if the crawl storage credentials are set.
 func IsCrawlStorageConfigured() bool {
-	accessKey := conf.GetConfigString("crawlStorageAccessKey")
-	secretKey := conf.GetConfigString("crawlStorageSecretKey")
+	accessKey := resolveSecretName("crawlStorageAccessKey")
+	secretKey := resolveSecretName("crawlStorageSecretKey")
 	return accessKey != "" && secretKey != ""
 }

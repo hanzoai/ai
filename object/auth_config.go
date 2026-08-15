@@ -111,7 +111,7 @@ func AuthAttempts() int {
 func resolveAuthConfig() error {
 	endpoint := conf.GetConfigString("IAM_URL")
 	clientID := conf.GetConfigString("IAM_CLIENT_ID")
-	clientSecret := conf.GetConfigString("IAM_CLIENT_SECRET")
+	clientSecret := resolveSecretName("IAM_CLIENT_SECRET")
 	organization := conf.GetConfigString("IAM_ORG")
 	application := conf.GetConfigString("IAM_APP_NAME")
 

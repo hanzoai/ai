@@ -125,7 +125,7 @@ func getCrawlEndpoint() string {
 
 // getCrawlAPIToken returns the optional API token for Hanzo Crawl authentication.
 func getCrawlAPIToken() string {
-	return conf.GetConfigString("crawlApiToken")
+	return resolveSecretName("crawlApiToken")
 }
 
 // IsCrawl4AIAvailable checks whether the Hanzo Crawl service is reachable.
