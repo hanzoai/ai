@@ -313,6 +313,11 @@ type zenModel struct {
 // from discovery (the family's advertised access), never a hardcode.
 func (m zenModel) gated() bool { return m.Access == "waitlist" }
 
+// priced reports whether the family charges for this SKU on either side. It is the
+// one reading of "costs money" the listing takes, so premium and free are answers to
+// the same question rather than two opinions of it.
+func (m zenModel) priced() bool { return !m.Base.In.IsZero() || !m.Base.Out.IsZero() }
+
 // minTier is the SKU's advertised minimum subscription tier on the enso ladder,
 // normalized: "" ⇒ "free" (every tier may use it). One of "free" | "trial" | "paid".
 // ai learns this from discovery (the family's advertised min_tier), never a hardcode;
@@ -647,7 +652,11 @@ func (f *modelFamily) mergeModels(base []modelInfo) []modelInfo {
 			window = w // flagship SKUs report their guaranteed served window
 		}
 		info := modelInfo{
-			ID: z.ID, Object: "model", Created: now, OwnedBy: owner, Premium: true,
+			// Premium is a statement about money, so the price is what makes it:
+			// a SKU the family charges for is premium, and one it charges nothing
+			// for is not. A free route reported as premium reads to a client as a
+			// SKU their plan cannot afford, which is the opposite of true.
+			ID: z.ID, Object: "model", Created: now, OwnedBy: owner, Premium: z.priced(),
 			Pricing: pricingInfo(z.price()), ContextWindow: window,
 		}
 		// A gated SKU is LISTED but access-controlled; advertise the default standing
