@@ -474,21 +474,23 @@ func TestAFamilyWithNoSpareIsUnchanged(t *testing.T) {
 	}
 }
 
-// OpenRouter's own free router leads, however wide the rest are.
+// The vendor's own free router gets no lift: width decides, and it takes its place
+// like any other free route.
 //
-// A spare has one question to answer — which free route is up right now — and the
-// vendor answers it from knowledge no listing carries. Measured on the live
-// account: a free route this order would otherwise put first answered 429
-// ("temporarily rate-limited upstream") in the same minute the router answered 200.
-// So width decides the rest of the order and never the head of it.
-func TestTheVendorsOwnFreeRouterLeadsTheSpares(t *testing.T) {
+// It always answers, which is a reason to want it first and the wrong one. What it
+// answers WITH is not knowable in advance — measured live, one request to it was
+// served by a coding model and the next by a content-safety classifier that replied
+// "User Safety: safe" to a chat prompt. That is the same hazard the text-only rule
+// exists for, and a wrong answer in place of an honest refusal is worse than the
+// refusal.
+func TestTheVendorsOwnFreeRouterGetsNoLift(t *testing.T) {
 	listing := `{"data":[
 	 {"id":"vendor/wide:free","context_length":1000000,"pricing":{"prompt":"0","completion":"0"},"architecture":{"output_modalities":["text"]}},
 	 {"id":"openrouter/free","context_length":200000,"pricing":{"prompt":"0","completion":"0"},"architecture":{"output_modalities":["text"]}},
 	 {"id":"vendor/narrow:free","context_length":8000,"pricing":{"prompt":"0","completion":"0"},"architecture":{"output_modalities":["text"]}}
 	]}`
 	got := openrouterSpare([]byte(listing))
-	want := []string{"openrouter/free", "vendor/wide:free", "vendor/narrow:free"}
+	want := []string{"vendor/wide:free", "openrouter/free", "vendor/narrow:free"}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Errorf("spares = %v, want %v", got, want)
 	}
