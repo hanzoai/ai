@@ -758,3 +758,40 @@ func TestThePoolHoldsOnlyRoutesAChatTurnCanGoTo(t *testing.T) {
 		t.Errorf("catalog = %d SKUs, want all 3 — curation narrows the FALLBACK, not the listing", len(cat))
 	}
 }
+
+// The family's free id costs nothing, and everything that reads a price agrees.
+//
+// It is served from the pool, which is the routes that cost nothing, so its price is
+// a stated zero rather than an absent one. That is what keeps the balance gate from
+// asking a caller to fund a call that bills nothing — the whole point of having a
+// free id — and what keeps it from listing as a model somebody's plan cannot afford.
+func TestTheFreeIdCostsNothingEverywhere(t *testing.T) {
+	fam := freeFamily()
+	saved := *fam
+	t.Cleanup(func() { *fam = saved })
+	fam.spares = []string{"vendor/a:free"}
+	fam.byID = map[string]zenModel{"vendor/a:free": {ID: "vendor/a:free", MaxCtx: 128000}}
+	fam.ids = []string{"vendor/a:free"}
+	fam.loaded, fam.fetchedAt = true, time.Now()
+
+	savedEnso := *ensoFam
+	t.Cleanup(func() { *ensoFam = savedEnso })
+	ensoFam.providerFn = func() *object.Provider {
+		return &object.Provider{Owner: "admin", Name: "enso", Type: "Enso", ProviderUrl: "http://enso.invalid"}
+	}
+	ensoFam.byID = map[string]zenModel{}
+	ensoFam.loaded, ensoFam.fetchedAt = true, time.Now()
+
+	p, ok := ensoFam.modelPrice("enso-free")
+	if !ok {
+		t.Fatal("the free id has no price — the balance gate would ask a caller to fund it")
+	}
+	if p.InputPerMillion != 0 || p.OutputPerMillion != 0 {
+		t.Errorf("the free id is priced %+v", p)
+	}
+	if r := ensoFam.passthroughRoute("enso-free"); r == nil {
+		t.Fatal("the free id does not route")
+	} else if r.premium {
+		t.Error("the free id routes as premium — it reads as a model a plan cannot afford")
+	}
+}
