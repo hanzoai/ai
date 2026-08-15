@@ -386,6 +386,7 @@ type modelInfo struct {
 	Provider        string            `json:"provider,omitempty"`          // serving provider, surfaced for unbranded passthroughs; omitted for branded models (owned_by already carries the public owner — see hip-00NN)
 	ContextWindow   int               `json:"context_window,omitempty"`    // max tokens the SKU is served at; surfaced from family discovery and pinned for the flagship SKUs (enso/zen5 = 1,000,000) so clients (Codex, Claude Code) size context honestly
 	MaxOutputTokens int               `json:"max_output_tokens,omitempty"` // max completion tokens (upstream catalog); lets clients cap output honestly
+	Outputs         []string          `json:"outputs,omitempty"`           // kinds of answer the model produces ("text", "audio", "image"); absent ⇒ not advertised. A caller choosing a model for a chat turn needs it: the free lineup carries music models and a classifier beside the chat models, and a price alone cannot tell them apart
 	SupportsVision  bool              `json:"supports_vision,omitempty"`   // model accepts image input (verified via a live probe); absent ⇒ not advertised, never a fabricated yes
 	SupportsTools   bool              `json:"supports_tools,omitempty"`    // model supports function/tool calling (verified via a live probe)
 	Pricing         *modelPricingInfo `json:"pricing,omitempty"`           // USD per 1M tokens; only when ai holds real pricing
