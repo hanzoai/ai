@@ -93,6 +93,13 @@ func initAPI() {
 	App.Router("/v1/chat", &controllers.ApiController{}, "POST:ChatCompletions")
 	App.Router("/v1/chat/completions", &controllers.ApiController{}, "POST:ChatCompletions")
 	App.Router("/v1/completions", &controllers.ApiController{}, "POST:ChatCompletions")
+	// The public lane — a completion for a visitor with no account. It is a route of
+	// its own rather than a mode of the one above, because the credentialed surface
+	// must keep answering 401 to a caller whose key failed to load: served as a mode,
+	// a missing Authorization header would silently become a free answer from a model
+	// the caller did not ask for, and an SDK would report neither. Closed unless
+	// PUBLIC_CHAT_DAILY is set.
+	App.Router("/v1/chat/public", &controllers.ApiController{}, "POST:ChatCompletionsPublic")
 	// OpenAI Responses API — the native wire protocol used by current Codex.
 	// The controller adapts onto ChatCompletions so auth, routing, billing and
 	// failover remain one policy path.
