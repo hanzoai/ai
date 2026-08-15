@@ -154,6 +154,16 @@ var (
 			"enso-ultra": flagshipWindow,
 		},
 	}
+	// engineFam is OUR OWN compute: the models this deployment serves itself, at no
+	// marginal cost to anybody's account. It publishes no catalog of its own here —
+	// it exists so the free pool has a route that cannot be taken away by a vendor's
+	// balance — so it is deliberately absent from modelFamilies below and is reached
+	// only through freeRoutes.
+	engineFam = &modelFamily{
+		name: "engine", provider: "Engine", prefix: "engine/", owner: "hanzo",
+		urlKey: "ENGINE_URL", keyKey: "ENGINE_API_KEY",
+	}
+
 	// modelFamilies is the discovery/route/merge iteration order — the ONE list every
 	// generic family helper walks. openrouter is last: the first-party families claim
 	// their own SKUs first, and the resale catalog answers for what is left.
@@ -226,16 +236,74 @@ func familyForProviderType(t string) *modelFamily {
 	return nil
 }
 
+// freeID is the platform's OWN name for the pool: one id every surface can send and
+// always get a free answer from, wearing no brand at all. enso-free and zen-free are
+// the same pool behind a brand; this is the same pool in front of all of them, so a
+// client that does not care which family answered has one id to remember.
+const freeID = "free"
+
+// frontDoor reports that this id is a name this family publishes for the pool — its
+// own branded one, and, for the family that HOLDS the pool, the platform's unbranded
+// one. A front door is not a model any vendor has: it is a name for a choice.
+func (f *modelFamily) frontDoor(model string) bool {
+	m := strings.ToLower(strings.TrimSpace(model))
+	if f.freeName != "" && m == strings.ToLower(f.freeName) {
+		return true
+	}
+	return f == freeFamily() && m == freeID
+}
+
+// freeNames are every id this family publishes for the pool, with the owner each is
+// branded to. The platform's own id is owned by us because it is our product, not the
+// vendor's, whichever vendor happens to answer it.
+func (f *modelFamily) freeNames() []struct{ id, owner string } {
+	var out []struct{ id, owner string }
+	if f.freeName != "" {
+		out = append(out, struct{ id, owner string }{f.freeName, f.owner})
+	}
+	if f == freeFamily() {
+		out = append(out, struct{ id, owner string }{freeID, "hanzo"})
+	}
+	return out
+}
+
 // freeFamily holds the platform's free routes: the family whose vendor publishes
 // routes it charges nothing for. Every family falls back to it, itself included,
 // because a route that costs nothing is not made different by whose refusal sent a
 // request to it.
 func freeFamily() *modelFamily { return openrouterFam }
 
+// spare is a route that can answer when the one asked for cannot: the family that
+// carries it and the id it is served under. A pair, because the vendor that ran out
+// of money is rarely the one still holding a free route.
+type spare struct {
+	fam *modelFamily
+	id  string
+}
+
 // freeRoutes are the routes that cost nothing and answer a chat turn, best first.
 // ONE pool for the whole platform: one list to curate, and every family falls back
 // to the same places.
-func freeRoutes() []string { return freeFamily().spareRoutes() }
+//
+// OUR OWN COMPUTE IS LAST, and last is the point of it. A route we serve ourselves
+// cannot run out of a vendor's money and cannot be rate limited by one, so it is the
+// answer that remains when every borrowed one is gone — which is exactly a last
+// resort and not a first choice. Measured: the engine serves one small model, and
+// asked to reply with a single word it answers with several sentences about editing
+// a sentence. Putting it first would spend that on every free answer to insure
+// against an outage that has not happened; putting it last insures against it for
+// nothing. Its place moves the day it serves a model that answers as well as the
+// borrowed ones, and only the order below changes.
+func freeRoutes() []spare {
+	var out []spare
+	for _, id := range freeFamily().spareRoutes() {
+		out = append(out, spare{freeFamily(), id})
+	}
+	if engineFam.enabled() {
+		out = append(out, spare{engineFam, engineModel})
+	}
+	return out
+}
 
 // servingFamily returns the family that will actually carry this sku — the free
 // family for a route out of the pool, whichever family claims it otherwise.
@@ -486,6 +554,11 @@ func (f *modelFamily) decodeCatalog(body []byte) ([]zenModel, error) {
 
 const zenCatalogTTL = 5 * time.Minute
 
+// engineModel is the id the engine answers to for whatever it currently has loaded.
+// It is an alias on the engine's side, so the pool names the ROLE rather than a
+// checkpoint that changes when the deployment loads a different one.
+const engineModel = "default"
+
 // spareTries bounds how many of a vendor's free routes one refused request may be
 // offered to. Three, the same number of attempts the failover loop allows across
 // vendors (maxProviders) and for the same reason: worst-case latency has to be a
@@ -632,7 +705,7 @@ func (f *modelFamily) serves(model string) bool {
 	// The family's own free id is served by choosing from the platform pool, so it
 	// belongs to this family whether or not its vendor has ever heard of it — but
 	// only while the pool actually holds something to choose.
-	if f.freeName != "" && strings.EqualFold(strings.TrimSpace(model), f.freeName) {
+	if f.frontDoor(model) {
 		return len(freeRoutes()) > 0
 	}
 	f.fresh()
@@ -649,7 +722,7 @@ func (f *modelFamily) modelPrice(model string) (modelPrice, bool) {
 	// The family's free id is served from the pool, and the pool is the routes that
 	// cost nothing. It is a stated price of zero, not an absent one — which is what
 	// keeps the balance gate from asking a caller to fund a call that bills nothing.
-	if f.freeName != "" && strings.EqualFold(strings.TrimSpace(model), f.freeName) {
+	if f.frontDoor(model) {
 		return modelPrice{}, true
 	}
 	m, ok := f.lookup(model)
@@ -700,8 +773,8 @@ func (f *modelFamily) mergeModels(base []modelInfo) []modelInfo {
 	if len(zs) == 0 {
 		// A family whose own lineup is empty still publishes its free id: that id is
 		// served from the platform pool, not from anything this family discovered.
-		if info, ok := f.freeInfo(now); ok {
-			base = append(base, info)
+		if infos := f.freeInfo(now); len(infos) > 0 {
+			base = append(base, infos...)
 			sort.Slice(base, func(i, j int) bool { return base[i].ID < base[j].ID })
 		}
 		return base
@@ -743,7 +816,7 @@ func (f *modelFamily) mergeModels(base []modelInfo) []modelInfo {
 		}
 		upsert(info)
 	}
-	if info, ok := f.freeInfo(now); ok {
+	for _, info := range f.freeInfo(now) {
 		upsert(info)
 	}
 	sort.Slice(base, func(i, j int) bool { return base[i].ID < base[j].ID })
@@ -755,14 +828,15 @@ func (f *modelFamily) mergeModels(base []modelInfo) []modelInfo {
 // worse than an absent one. Its context is the narrowest in the pool, because that
 // is the prompt every route in the pool can hold, and the widest would promise a
 // window the answer might not have.
-func (f *modelFamily) freeInfo(now int64) (modelInfo, bool) {
+func (f *modelFamily) freeInfo(now int64) []modelInfo {
+	names := f.freeNames()
 	routes := freeRoutes()
-	if f.freeName == "" || len(routes) == 0 {
-		return modelInfo{}, false
+	if len(names) == 0 || len(routes) == 0 {
+		return nil
 	}
 	window := 0
-	for _, id := range routes {
-		m, ok := freeFamily().lookup(id)
+	for _, r := range routes {
+		m, ok := r.fam.lookup(r.id)
 		if !ok {
 			continue
 		}
@@ -770,11 +844,15 @@ func (f *modelFamily) freeInfo(now int64) (modelInfo, bool) {
 			window = m.MaxCtx
 		}
 	}
-	return modelInfo{
-		ID: f.freeName, Object: "model", Created: now, OwnedBy: f.owner,
-		Premium: false, ContextWindow: window, Outputs: []string{"text"},
-		Pricing: &modelPricingInfo{Input: 0, Output: 0},
-	}, true
+	out := make([]modelInfo, 0, len(names))
+	for _, n := range names {
+		out = append(out, modelInfo{
+			ID: n.id, Object: "model", Created: now, OwnedBy: n.owner,
+			Premium: false, ContextWindow: window, Outputs: []string{"text"},
+			Pricing: &modelPricingInfo{Input: 0, Output: 0},
+		})
+	}
+	return out
 }
 
 // ── the pipe (IO edge) ────────────────────────────────────────────────────────
@@ -1018,19 +1096,19 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		}
 		tried := 0
 		for _, alt := range freeRoutes() {
-			if strings.EqualFold(alt, skip) {
+			if strings.EqualFold(alt.id, skip) {
 				continue
 			}
 			if tried == spareTries || c.Ctx.Request.Context().Err() != nil {
 				return nil, ""
 			}
 			tried++
-			r, e := dispatch(freeFamily(), alt)
+			r, e := dispatch(alt.fam, alt.id)
 			if e != nil {
 				continue
 			}
 			if r.StatusCode == http.StatusOK {
-				return r, alt
+				return r, alt.id
 			}
 			r.Body.Close()
 		}
@@ -1080,7 +1158,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	// "whichever free route answers" — so the pool decides, and the answer leaves
 	// wearing the route that actually wrote it.
 	var resp *http.Response
-	if fam.freeName != "" && strings.EqualFold(sku, fam.freeName) {
+	if fam.frontDoor(sku) {
 		r, alt := pool("")
 		if r == nil {
 			return refused(&apiError{status: http.StatusServiceUnavailable,
