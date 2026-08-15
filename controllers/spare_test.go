@@ -225,6 +225,35 @@ func (f *refuses) pipe(t *testing.T, fam *modelFamily, sku string) (*httptest.Re
 	return rec, out
 }
 
+// restore returns fam to the state it holds now once the test ends.
+//
+// It saves the FIELDS, not the family. A modelFamily carries the lock guarding its
+// discovery cache, and a lock may not be copied: `saved := *fam` duplicates it, so
+// the restored family would guard itself with a different lock than the one every
+// reader already holds a reference to. Maps and slices are carried by reference
+// here exactly as a struct copy carried them — a test that replaces one is undone,
+// a test that writes through one was never undone either.
+func restore(t *testing.T, fam *modelFamily) {
+	t.Helper()
+	fam.mu.RLock()
+	name, provider, prefix, owner := fam.name, fam.provider, fam.prefix, fam.owner
+	urlKey, keyKey, freeName := fam.urlKey, fam.keyKey, fam.freeName
+	providerFn, decode, spare, terms := fam.providerFn, fam.decode, fam.spare, fam.terms
+	windows, byID, ids, spares := fam.windows, fam.byID, fam.ids, fam.spares
+	fetchedAt, loaded := fam.fetchedAt, fam.loaded
+	fam.mu.RUnlock()
+
+	t.Cleanup(func() {
+		fam.mu.Lock()
+		defer fam.mu.Unlock()
+		fam.name, fam.provider, fam.prefix, fam.owner = name, provider, prefix, owner
+		fam.urlKey, fam.keyKey, fam.freeName = urlKey, keyKey, freeName
+		fam.providerFn, fam.decode, fam.spare, fam.terms = providerFn, decode, spare, terms
+		fam.windows, fam.byID, fam.ids, fam.spares = windows, byID, ids, spares
+		fam.fetchedAt, fam.loaded = fetchedAt, loaded
+	})
+}
+
 // spareFamily points the PLATFORM free pool at a test vendor and returns it as the
 // family under test. The pool is the real openrouter family — one pool for every
 // family is the whole design — so a test configures that one rather than a stand-in
@@ -236,8 +265,7 @@ func (f *refuses) pipe(t *testing.T, fam *modelFamily, sku string) (*httptest.Re
 func spareFamily(t *testing.T, url, free string) *modelFamily {
 	t.Helper()
 	fam := freeFamily()
-	saved := *fam
-	t.Cleanup(func() { *fam = saved })
+	restore(t, fam)
 	fam.providerFn = func() *object.Provider {
 		return &object.Provider{Owner: "admin", Name: "openrouter", Type: "OpenRouter", ProviderUrl: url}
 	}
@@ -711,8 +739,7 @@ func TestAFamilysFreeIdIsServedFromThePool(t *testing.T) {
 // listed model that answers nothing is worse than an absent one.
 func TestTheFreeIdIsListedOnlyWhileThePoolCanServeIt(t *testing.T) {
 	fam := freeFamily()
-	saved := *fam
-	t.Cleanup(func() { *fam = saved })
+	restore(t, fam)
 	fam.spares = []string{"vendor/a:free"}
 	fam.byID = map[string]zenModel{"vendor/a:free": {ID: "vendor/a:free", MaxCtx: 128000}}
 	fam.ids = []string{"vendor/a:free"}
@@ -767,15 +794,13 @@ func TestThePoolHoldsOnlyRoutesAChatTurnCanGoTo(t *testing.T) {
 // free id — and what keeps it from listing as a model somebody's plan cannot afford.
 func TestTheFreeIdCostsNothingEverywhere(t *testing.T) {
 	fam := freeFamily()
-	saved := *fam
-	t.Cleanup(func() { *fam = saved })
+	restore(t, fam)
 	fam.spares = []string{"vendor/a:free"}
 	fam.byID = map[string]zenModel{"vendor/a:free": {ID: "vendor/a:free", MaxCtx: 128000}}
 	fam.ids = []string{"vendor/a:free"}
 	fam.loaded, fam.fetchedAt = true, time.Now()
 
-	savedEnso := *ensoFam
-	t.Cleanup(func() { *ensoFam = savedEnso })
+	restore(t, ensoFam)
 	ensoFam.providerFn = func() *object.Provider {
 		return &object.Provider{Owner: "admin", Name: "enso", Type: "Enso", ProviderUrl: "http://enso.invalid"}
 	}
@@ -826,8 +851,7 @@ func TestAnEmbeddingsRequestDoesNotWalkTheChatPool(t *testing.T) {
 // are the same pool wearing a brand, this is the same pool wearing none.
 func TestThePlatformPublishesOneUnbrandedFreeId(t *testing.T) {
 	fam := freeFamily()
-	saved := *fam
-	t.Cleanup(func() { *fam = saved })
+	restore(t, fam)
 	fam.spares = []string{"vendor/a:free"}
 	fam.byID = map[string]zenModel{"vendor/a:free": {ID: "vendor/a:free", MaxCtx: 64000}}
 	fam.ids = []string{"vendor/a:free"}
@@ -869,13 +893,11 @@ func TestThePlatformPublishesOneUnbrandedFreeId(t *testing.T) {
 // money, which is why it is there; it is the weakest answer, which is why it is last.
 func TestOurOwnComputeIsThePoolsLastResort(t *testing.T) {
 	fam := freeFamily()
-	saved := *fam
-	t.Cleanup(func() { *fam = saved })
+	restore(t, fam)
 	fam.spares = []string{"vendor/a:free", "vendor/b:free"}
 	fam.loaded, fam.fetchedAt = true, time.Now()
 
-	savedEngine := *engineFam
-	t.Cleanup(func() { *engineFam = savedEngine })
+	restore(t, engineFam)
 
 	// Unconfigured: the pool is the borrowed routes and nothing else.
 	engineFam.urlKey = "TEST_ENGINE_URL_UNSET"
@@ -906,13 +928,11 @@ func TestOurOwnComputeIsThePoolsLastResort(t *testing.T) {
 // the pool now spans families.
 func TestEveryPoolRouteBillsNothing(t *testing.T) {
 	fam := freeFamily()
-	saved := *fam
-	t.Cleanup(func() { *fam = saved })
+	restore(t, fam)
 	fam.spares = []string{"vendor/a:free"}
 	fam.loaded, fam.fetchedAt = true, time.Now()
 
-	savedEngine := *engineFam
-	t.Cleanup(func() { *engineFam = savedEngine })
+	restore(t, engineFam)
 	t.Setenv("TEST_ENGINE_URL", "http://engine.invalid")
 	engineFam.urlKey = "TEST_ENGINE_URL"
 
@@ -938,10 +958,8 @@ func TestEveryPoolRouteBillsNothing(t *testing.T) {
 func TestTheBudgetBoundsBorrowedRoutesNotOurOwn(t *testing.T) {
 	cooled.forget()
 	fam := freeFamily()
-	saved := *fam
-	t.Cleanup(func() { *fam = saved })
-	savedEngine := *engineFam
-	t.Cleanup(func() { *engineFam = savedEngine })
+	restore(t, fam)
+	restore(t, engineFam)
 
 	// More borrowed routes than the budget, and every one of them refuses.
 	borrowed := []string{"v/a:free", "v/b:free", "v/c:free", "v/d:free", "v/e:free"}
@@ -1003,8 +1021,7 @@ func TestTheBudgetBoundsBorrowedRoutesNotOurOwn(t *testing.T) {
 // snapshot answers the same question without asking anybody.
 func TestBillingReadsTheSnapshotAndNeverTheVendor(t *testing.T) {
 	fam := freeFamily()
-	saved := *fam
-	t.Cleanup(func() { *fam = saved })
+	restore(t, fam)
 
 	asked := 0
 	vendor := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
