@@ -103,6 +103,13 @@ type modelFamily struct {
 	// nil means the family has none, and a refusal for money from it is final.
 	spare func([]byte) []string
 
+	// freeName is the one id this family publishes for the free pool: a route a
+	// caller can name, and the route a refusal from this family falls to. It is
+	// branded per family because that is where a caller looks for it, and it is
+	// served from the SAME pool for all of them, because a route that costs nothing
+	// is not made different by whose name is on the door.
+	freeName string
+
 	// terms states, in the family's own dialect, what the vendor may keep of an
 	// exchange. It is called with the outgoing body and whether the route being
 	// asked for is one the vendor charges nothing for, because that is the trade a
@@ -127,6 +134,7 @@ type modelFamily struct {
 var (
 	zenFam = &modelFamily{
 		name: "zen", provider: "Zen", prefix: "zen", owner: "zenlm", urlKey: "ZEN_URL", keyKey: "ZEN_API_KEY",
+		freeName:   "zen-free",
 		providerFn: object.ZenProvider,
 		windows: map[string]int{
 			"zen5":       flagshipWindow,
@@ -136,6 +144,7 @@ var (
 	}
 	ensoFam = &modelFamily{
 		name: "enso", provider: "Enso", prefix: "enso", owner: "hanzo", urlKey: "ENSO_URL", keyKey: "ENSO_API_KEY",
+		freeName:   "enso-free",
 		providerFn: object.EnsoProvider,
 		// enso-pro is deliberately absent: the enso service serves enso, enso-flash
 		// and enso-ultra and answers 404 for enso-pro (probed directly — the balance
@@ -215,6 +224,27 @@ func familyForProviderType(t string) *modelFamily {
 		}
 	}
 	return nil
+}
+
+// freeFamily holds the platform's free routes: the family whose vendor publishes
+// routes it charges nothing for. Every family falls back to it, itself included,
+// because a route that costs nothing is not made different by whose refusal sent a
+// request to it.
+func freeFamily() *modelFamily { return openrouterFam }
+
+// freeRoutes are the routes that cost nothing and answer a chat turn, best first.
+// ONE pool for the whole platform: one list to curate, and every family falls back
+// to the same places.
+func freeRoutes() []string { return freeFamily().spareRoutes() }
+
+// servingFamily returns the family that will actually carry this sku — the free
+// family for a route out of the pool, whichever family claims it otherwise.
+func servingFamily(sku string) *modelFamily {
+	if freeFamily().isSpare(sku) {
+		return freeFamily()
+	}
+	f, _ := familyServing(sku)
+	return f
 }
 
 // familyServing returns the family that owns a model, if any.
@@ -529,6 +559,14 @@ func (f *modelFamily) spareRoutes() []string {
 	return f.spares
 }
 
+// free reports that this family serves the named route for nothing. Read from the
+// discovered price, which is the same number the ledger bills, so what a call costs
+// and the terms it is served under are one fact.
+func (f *modelFamily) free(id string) bool {
+	m, ok := f.lookup(id)
+	return ok && !m.priced()
+}
+
 // isSpare reports whether a SKU is one of the free routes rather than a catalog
 // entry. It is what prices a spare at nothing: the vendor charges us nothing for
 // it — that is the whole reason it can answer at all when the account is empty —
@@ -591,6 +629,12 @@ func (f *modelFamily) serves(model string) bool {
 	if !f.enabled() {
 		return false
 	}
+	// The family's own free id is served by choosing from the platform pool, so it
+	// belongs to this family whether or not its vendor has ever heard of it — but
+	// only while the pool actually holds something to choose.
+	if f.freeName != "" && strings.EqualFold(strings.TrimSpace(model), f.freeName) {
+		return len(freeRoutes()) > 0
+	}
 	f.fresh()
 	if _, ok := f.lookup(model); ok {
 		return true
@@ -642,10 +686,16 @@ func (f *modelFamily) passthroughRoute(model string) *modelRoute {
 // enso-pro reached /v1/models with no price at all.
 func (f *modelFamily) mergeModels(base []modelInfo) []modelInfo {
 	zs := f.snapshot()
+	now := time.Now().Unix()
 	if len(zs) == 0 {
+		// A family whose own lineup is empty still publishes its free id: that id is
+		// served from the platform pool, not from anything this family discovered.
+		if info, ok := f.freeInfo(now); ok {
+			base = append(base, info)
+			sort.Slice(base, func(i, j int) bool { return base[i].ID < base[j].ID })
+		}
 		return base
 	}
-	now := time.Now().Unix()
 	idx := make(map[string]int, len(base))
 	for i, m := range base {
 		idx[strings.ToLower(m.ID)] = i
@@ -683,8 +733,38 @@ func (f *modelFamily) mergeModels(base []modelInfo) []modelInfo {
 		}
 		upsert(info)
 	}
+	if info, ok := f.freeInfo(now); ok {
+		upsert(info)
+	}
 	sort.Slice(base, func(i, j int) bool { return base[i].ID < base[j].ID })
 	return base
+}
+
+// freeInfo is the listing entry for this family's free router, present only while
+// the pool holds a route to serve it with — a listed model that answers nothing is
+// worse than an absent one. Its context is the narrowest in the pool, because that
+// is the prompt every route in the pool can hold, and the widest would promise a
+// window the answer might not have.
+func (f *modelFamily) freeInfo(now int64) (modelInfo, bool) {
+	routes := freeRoutes()
+	if f.freeName == "" || len(routes) == 0 {
+		return modelInfo{}, false
+	}
+	window := 0
+	for _, id := range routes {
+		m, ok := freeFamily().lookup(id)
+		if !ok {
+			continue
+		}
+		if window == 0 || (m.MaxCtx > 0 && m.MaxCtx < window) {
+			window = m.MaxCtx
+		}
+	}
+	return modelInfo{
+		ID: f.freeName, Object: "model", Created: now, OwnedBy: f.owner,
+		Premium: false, ContextWindow: window, Outputs: []string{"text"},
+		Pricing: &modelPricingInfo{Input: 0, Output: 0},
+	}, true
 }
 
 // ── the pipe (IO edge) ────────────────────────────────────────────────────────
@@ -873,22 +953,30 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	}
 	req.Header.Set("X-Hanzo-Fronted-By", "ai")
 
-	// send offers this request to ONE of the family's routes. The SKU is the only
-	// thing that varies, which is what makes a spare route a different address for
-	// the same request rather than a different request.
-	// free reports that this family serves the named route for nothing. Read from
-	// the discovered price, which is the same number the ledger bills, so what a
-	// call costs and the terms it is served under are one fact.
-	free := func(id string) bool {
-		m, ok := fam.lookup(id)
-		return ok && !m.priced()
-	}
-
-	send := func(s string) (*http.Response, error) {
-		r := req.Clone(c.Ctx.Request.Context())
+	// dispatch offers this request to ONE route of ONE family: the family decides the
+	// address and the credential, the sku decides the model, and every other part of
+	// the request is the caller's own. That is what lets a route on a DIFFERENT
+	// vendor answer a request this one cannot — the vendor that ran out of money is
+	// rarely the one still holding a free route.
+	dispatch := func(f *modelFamily, s string) (*http.Response, error) {
+		p := prov
+		if f != fam {
+			p = f.providerFn()
+			if p == nil {
+				return nil, &apiError{status: http.StatusServiceUnavailable, msg: f.name + " service is not configured"}
+			}
+		}
+		r, rErr := http.NewRequestWithContext(c.Ctx.Request.Context(), http.MethodPost, p.ProviderUrl+"/v1/"+apiPath, nil)
+		if rErr != nil {
+			return nil, rErr
+		}
+		r.Header = req.Header.Clone()
+		if p.ClientSecret != "" {
+			r.Header.Set("Authorization", "Bearer "+p.ClientSecret)
+		}
 		b := withModel(rawBody, s)
-		if fam.terms != nil {
-			b = fam.terms(b, free(s))
+		if f.terms != nil {
+			b = f.terms(b, f.free(s))
 		}
 		r.Body = io.NopCloser(bytes.NewReader(b))
 		r.ContentLength = int64(len(b))
@@ -899,8 +987,46 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		return zenPipeClient.Do(r)
 	}
 
-	// spared offers the SAME request to a route this vendor still serves once its
-	// account is spent, and reports the route that answered.
+	send := func(s string) (*http.Response, error) { return dispatch(fam, s) }
+
+	// pool walks the platform's free routes in order and reports the one that
+	// answered. It is the whole of what a free router does, and the whole of what a
+	// refusal falls back to, so both are one walk rather than two that can drift.
+	//
+	// A SHORT walk, not the whole list. More than one try because a free tier is rate
+	// limited by design — the first route is about as likely to answer 429 as to
+	// answer — and bounded because every try is a round trip the caller waits
+	// through, so worst-case latency is a property of spareTries rather than of how
+	// many free routes a vendor happens to advertise.
+	pool := func(skip string) (*http.Response, string) {
+		tried := 0
+		for _, alt := range freeRoutes() {
+			if strings.EqualFold(alt, skip) {
+				continue
+			}
+			if tried == spareTries || c.Ctx.Request.Context().Err() != nil {
+				return nil, ""
+			}
+			tried++
+			r, e := dispatch(freeFamily(), alt)
+			if e != nil {
+				continue
+			}
+			if r.StatusCode == http.StatusOK {
+				return r, alt
+			}
+			r.Body.Close()
+		}
+		return nil, ""
+	}
+
+	// spared offers the SAME request to a free route once this vendor cannot serve
+	// it, and reports the route that answered.
+	//
+	// The route need not be this vendor's. It used to have to be, which is why the
+	// two families whose vendor is reached through a service of their own — enso and
+	// zen — had no fallback at all: they declare no free route, so a refusal from
+	// either ended the request even while free routes elsewhere were answering.
 	//
 	// It fires on the vendor being unable to serve at all — its account with us spent,
 	// or its own failure — and on nothing else. `down` reads the STATUS first, because
@@ -929,29 +1055,22 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		if !down(err, strings.ToLower(err.Error())) || c.Ctx.Request.Context().Err() != nil {
 			return nil, ""
 		}
-		tried := 0
-		for _, alt := range fam.spareRoutes() {
-			if strings.EqualFold(alt, sku) {
-				continue
-			}
-			if tried == spareTries || c.Ctx.Request.Context().Err() != nil {
-				return nil, ""
-			}
-			tried++
-			r, e := send(alt)
-			if e != nil {
-				continue
-			}
-			if r.StatusCode == http.StatusOK {
-				return r, alt
-			}
-			r.Body.Close()
-		}
-		return nil, ""
+		return pool(sku)
 	}
 
-	resp, err := send(sku)
-	if err != nil {
+	// A free router is served by CHOOSING. The caller named the family's free id,
+	// which is not a model any vendor holds — it is this family's name for
+	// "whichever free route answers" — so the pool decides, and the answer leaves
+	// wearing the route that actually wrote it.
+	var resp *http.Response
+	if fam.freeName != "" && strings.EqualFold(sku, fam.freeName) {
+		r, alt := pool("")
+		if r == nil {
+			return refused(&apiError{status: http.StatusServiceUnavailable,
+				msg: fmt.Sprintf("model %q: no free route answered", model)})
+		}
+		mk.model, sku, resp = alt, alt, r
+	} else if resp, err = send(sku); err != nil {
 		// Never reached the family at all. Nothing is written and nothing is
 		// billed — deliberately no recordFamilyUsage here, because its
 		// hold.settle would release the reservation one-shot and leave the cost
@@ -993,8 +1112,8 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	// is free in exchange for what the vendor keeps and somebody has to be able to
 	// say so — in a consent notice, in a log, in a policy page. Set before any byte
 	// of a stream goes out, which is the last moment a header can be set at all.
-	if fam.terms != nil {
-		c.Ctx.Output.Header(headerCollection, collection(free(sku)))
+	if served := servingFamily(sku); served != nil && served.terms != nil {
+		c.Ctx.Output.Header(headerCollection, collection(served.free(sku)))
 	}
 
 	prompt, completion := 0, 0
@@ -1191,7 +1310,7 @@ func (c *ApiController) recordFamilyUsage(fam *modelFamily, model, requested str
 	// retail for a downgrade the customer did not choose would be taking money for
 	// the outage. Stated once, on the record, so the hold, the debit, the warehouse
 	// row and the span all read the same zero (see usageCostNano).
-	free := fam.isSpare(model)
+	free := fam.isSpare(model) || freeFamily().isSpare(model)
 	var cents int64
 	if status == "success" && !free {
 		if zm, ok := fam.lookup(model); ok {
