@@ -1516,7 +1516,7 @@ func (c *ApiController) ChatCompletions() {
 	// refusal names the vendor and the reason.
 	if len(request.Tools) > 0 || request.ToolChoice != nil {
 		if familyRefused != nil {
-			c.ResponseError(exhausted(request.Model, familyRefused).Error())
+			c.ResponseFailure(exhausted(request.Model, familyRefused))
 			return
 		}
 		c.proxyToolRequest(provider, &request, requestStartTime, authUser, isPremium, orgId, hold)
@@ -1532,7 +1532,7 @@ func (c *ApiController) ChatCompletions() {
 	// nothing.
 	if requestHasMedia(&request) {
 		if familyRefused != nil {
-			c.ResponseError(exhausted(request.Model, familyRefused).Error())
+			c.ResponseFailure(exhausted(request.Model, familyRefused))
 			return
 		}
 		c.proxyToolRequest(provider, &request, requestStartTime, authUser, isPremium, orgId, hold)
