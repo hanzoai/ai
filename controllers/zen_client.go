@@ -646,6 +646,12 @@ func (f *modelFamily) serves(model string) bool {
 // balance-reservation estimate and the model listing. The exact debit uses
 // zenModel.costCents (money/decimal), never this float projection.
 func (f *modelFamily) modelPrice(model string) (modelPrice, bool) {
+	// The family's free id is served from the pool, and the pool is the routes that
+	// cost nothing. It is a stated price of zero, not an absent one — which is what
+	// keeps the balance gate from asking a caller to fund a call that bills nothing.
+	if f.freeName != "" && strings.EqualFold(strings.TrimSpace(model), f.freeName) {
+		return modelPrice{}, true
+	}
 	m, ok := f.lookup(model)
 	if !ok {
 		return modelPrice{}, false
@@ -667,10 +673,14 @@ func (f *modelFamily) passthroughRoute(model string) *modelRoute {
 	if w := f.window(model); w > 0 {
 		ctx = w // guarantee the flagship served window
 	}
+	p, priced := f.modelPrice(model)
 	return &modelRoute{
 		providerName:  f.name,
 		upstreamModel: model, // identity: the family maps the SKU to its real upstream
-		premium:       true,
+		// Premium is a claim about money, so the price makes it — the free id and the
+		// free routes are not premium, and saying they were would read to a client as
+		// a model their plan cannot afford.
+		premium:       !priced || p.InputPerMillion > 0 || p.OutputPerMillion > 0,
 		ownedBy:       f.owner, // public branding: enso→"hanzo", zen→"zenlm"
 		contextWindow: ctx,
 	}
