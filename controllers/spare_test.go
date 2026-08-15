@@ -225,22 +225,42 @@ func (f *refuses) pipe(t *testing.T, fam *modelFamily, sku string) (*httptest.Re
 	return rec, out
 }
 
+// spareFamily points the PLATFORM free pool at a test vendor and returns it as the
+// family under test. The pool is the real openrouter family — one pool for every
+// family is the whole design — so a test configures that one rather than a stand-in
+// no production path would consult.
+//
+// The snapshot is set directly: what is under test is what the pipe DOES with a
+// spare, not how discovery found one (TestDiscoveryCarriesTheSpareRoutes covers
+// that), and refreshing would put a second round trip inside every case below.
 func spareFamily(t *testing.T, url, free string) *modelFamily {
 	t.Helper()
-	fam := &modelFamily{
-		name: "openrouter", prefix: "openrouter/",
-		providerFn: func() *object.Provider {
-			return &object.Provider{Owner: "admin", Name: "openrouter", Type: "OpenRouter", ProviderUrl: url}
-		},
+	fam := freeFamily()
+	saved := *fam
+	t.Cleanup(func() { *fam = saved })
+	fam.providerFn = func() *object.Provider {
+		return &object.Provider{Owner: "admin", Name: "openrouter", Type: "OpenRouter", ProviderUrl: url}
 	}
-	// Set the snapshot directly: what is under test here is what the pipe DOES
-	// with a spare, not how discovery found one (TestDiscoveryCarriesTheSpareRoutes
-	// covers that), and refreshing would put a second HTTP round trip inside every
-	// case of the table below.
 	fam.spares = []string{free}
+	fam.byID = map[string]zenModel{free: {ID: free}}
+	fam.ids = []string{free}
 	fam.loaded = true
 	fam.fetchedAt = time.Now()
 	return fam
+}
+
+// otherFamily is a family whose vendor is reached through a service of its own and
+// which declares no free route — enso and zen, the two the pool exists for. Its
+// refusals must reach the SAME pool as everyone else's.
+func otherFamily(t *testing.T, url string) *modelFamily {
+	t.Helper()
+	return &modelFamily{
+		name: "enso", prefix: "enso", owner: "hanzo", freeName: "enso-free",
+		providerFn: func() *object.Provider {
+			return &object.Provider{Owner: "admin", Name: "enso", Type: "Enso", ProviderUrl: url}
+		},
+		loaded: true, fetchedAt: time.Now(),
+	}
 }
 
 // THE DISCRIMINATION, which is the whole design. A vendor that cannot serve at all
@@ -474,23 +494,22 @@ func TestAFamilyWithNoSpareIsUnchanged(t *testing.T) {
 	}
 }
 
-// The vendor's own free router gets no lift: width decides, and it takes its place
-// like any other free route.
+// The vendor's own free router is not in the pool: the pool is the set of routes we
+// can say something about, and a router is precisely the one we cannot. Measured
+// live, one request to it was served by a coding model and the next by a
+// content-safety classifier that replied "User Safety: safe" to a chat prompt —
+// choosing it would delegate the choice the pool exists to make.
 //
-// It always answers, which is a reason to want it first and the wrong one. What it
-// answers WITH is not knowable in advance — measured live, one request to it was
-// served by a coding model and the next by a content-safety classifier that replied
-// "User Safety: safe" to a chat prompt. That is the same hazard the text-only rule
-// exists for, and a wrong answer in place of an honest refusal is worse than the
-// refusal.
-func TestTheVendorsOwnFreeRouterGetsNoLift(t *testing.T) {
+// It stays in the catalog: curation narrows what we fall back to, never what we
+// publish.
+func TestTheVendorsOwnFreeRouterIsNotInThePool(t *testing.T) {
 	listing := `{"data":[
 	 {"id":"vendor/wide:free","context_length":1000000,"pricing":{"prompt":"0","completion":"0"},"architecture":{"output_modalities":["text"]}},
 	 {"id":"openrouter/free","context_length":200000,"pricing":{"prompt":"0","completion":"0"},"architecture":{"output_modalities":["text"]}},
 	 {"id":"vendor/narrow:free","context_length":8000,"pricing":{"prompt":"0","completion":"0"},"architecture":{"output_modalities":["text"]}}
 	]}`
 	got := openrouterSpare([]byte(listing))
-	want := []string{"vendor/wide:free", "openrouter/free", "vendor/narrow:free"}
+	want := []string{"vendor/wide:free", "vendor/narrow:free"}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Errorf("spares = %v, want %v", got, want)
 	}
@@ -622,5 +641,120 @@ func TestOutputsComeFromTheVendorListing(t *testing.T) {
 	}
 	if got := by["vendor/silent:free"].Outputs; len(got) != 0 {
 		t.Errorf("a SKU advertising no modality carries %v, want none", got)
+	}
+}
+
+// THE CASE THE POOL EXISTS FOR. enso and zen reach their vendor through a service
+// of their own and declare no free route, so a refusal from either used to end the
+// request — a 402 with nowhere to go, while free routes elsewhere were answering.
+//
+// A spare is now a route AND the family that carries it, so the refusal crosses to
+// whoever still has one. The vendor that ran out of money is rarely the vendor
+// holding a free route.
+func TestARefusalCrossesToTheFamilyThatStillHasAFreeRoute(t *testing.T) {
+	cooled.forget()
+	const free = "vendor/big:free"
+	fake := &refuses{status: 402, body: `{"error":{"message":"Insufficient credits."}}`, free: free}
+	vendor := fake.serve(t)
+	defer vendor.Close()
+
+	// The pool lives on the free family and points at the same test vendor; the
+	// family under test is one that has no free route of its own.
+	spareFamily(t, vendor.URL, free)
+	enso := otherFamily(t, vendor.URL)
+
+	rec, refusedBy := fake.pipe(t, enso, "enso-flash")
+
+	if len(fake.asked) < 2 {
+		t.Fatalf("asked=%v — the refusal did not cross to the free family", fake.asked)
+	}
+	if fake.asked[0] != "enso-flash" {
+		t.Errorf("first ask was %q, want the SKU the caller named", fake.asked[0])
+	}
+	if fake.asked[1] != free {
+		t.Errorf("second ask was %q, want the pool's route", fake.asked[1])
+	}
+	if refusedBy != nil {
+		t.Errorf("the request was handed on after it had already been served: %v", refusedBy)
+	}
+	if !strings.Contains(rec.Body.String(), free) {
+		t.Errorf("the answer does not name the model that wrote it:\n%s", rec.Body.String())
+	}
+}
+
+// A family's free id is served by choosing from the pool, and it is a route the
+// caller may name outright rather than only reach by being refused.
+func TestAFamilysFreeIdIsServedFromThePool(t *testing.T) {
+	cooled.forget()
+	const free = "vendor/big:free"
+	fake := &refuses{status: 500, body: `{"error":{"message":"unused"}}`, free: free}
+	vendor := fake.serve(t)
+	defer vendor.Close()
+
+	spareFamily(t, vendor.URL, free)
+	enso := otherFamily(t, vendor.URL)
+
+	rec, refusedBy := fake.pipe(t, enso, "enso-free")
+
+	if len(fake.asked) != 1 || fake.asked[0] != free {
+		t.Fatalf("asked=%v, want exactly the pool's route — a free id is not a model any vendor holds", fake.asked)
+	}
+	if refusedBy != nil {
+		t.Errorf("serving a free id handed the request on: %v", refusedBy)
+	}
+	if !strings.Contains(rec.Body.String(), free) {
+		t.Errorf("the answer does not name the route that wrote it:\n%s", rec.Body.String())
+	}
+}
+
+// The free id is listed, priced at nothing, and absent when the pool is empty — a
+// listed model that answers nothing is worse than an absent one.
+func TestTheFreeIdIsListedOnlyWhileThePoolCanServeIt(t *testing.T) {
+	fam := freeFamily()
+	saved := *fam
+	t.Cleanup(func() { *fam = saved })
+	fam.spares = []string{"vendor/a:free"}
+	fam.byID = map[string]zenModel{"vendor/a:free": {ID: "vendor/a:free", MaxCtx: 128000}}
+	fam.ids = []string{"vendor/a:free"}
+	fam.loaded, fam.fetchedAt = true, time.Now()
+
+	enso := &modelFamily{name: "enso", prefix: "enso", owner: "hanzo", freeName: "enso-free", loaded: true, fetchedAt: time.Now()}
+	byID := indexModels(enso.mergeModels(nil))
+	got, ok := byID["enso-free"]
+	if !ok {
+		t.Fatal("the family's free id is not listed while the pool can serve it")
+	}
+	if got.Premium || got.Pricing == nil || got.Pricing.Input != 0 || got.Pricing.Output != 0 {
+		t.Errorf("the free id lists as premium=%v pricing=%+v", got.Premium, got.Pricing)
+	}
+	if got.ContextWindow != 128000 {
+		t.Errorf("context = %d, want the narrowest the pool can hold", got.ContextWindow)
+	}
+	if len(got.Outputs) != 1 || got.Outputs[0] != "text" {
+		t.Errorf("outputs = %v, want text", got.Outputs)
+	}
+
+	fam.spares = nil
+	if _, ok := indexModels(enso.mergeModels(nil))["enso-free"]; ok {
+		t.Error("the free id is listed with an empty pool — it would answer nothing")
+	}
+}
+
+// A classifier answers in text and does not hold a conversation. Measured live:
+// nemotron content-safety replied "User Safety: safe" to a chat turn.
+func TestThePoolHoldsOnlyRoutesAChatTurnCanGoTo(t *testing.T) {
+	listing := `{"data":[
+	 {"id":"nvidia/nemotron-3.5-content-safety:free","context_length":128000,"pricing":{"prompt":"0","completion":"0"},"architecture":{"output_modalities":["text"]}},
+	 {"id":"vendor/guard-2:free","context_length":128000,"pricing":{"prompt":"0","completion":"0"},"architecture":{"output_modalities":["text"]}},
+	 {"id":"vendor/chat:free","context_length":64000,"pricing":{"prompt":"0","completion":"0"},"architecture":{"output_modalities":["text"]}}
+	]}`
+	got := openrouterSpare([]byte(listing))
+	if len(got) != 1 || got[0] != "vendor/chat:free" {
+		t.Errorf("pool = %v, want only the route a chat turn can go to", got)
+	}
+	// The catalog still lists them: they are real models somebody may want by name.
+	cat, err := openrouterCatalog([]byte(listing))
+	if err != nil || len(cat) != 3 {
+		t.Errorf("catalog = %d SKUs, want all 3 — curation narrows the FALLBACK, not the listing", len(cat))
 	}
 }

@@ -76,13 +76,15 @@ const openrouterMarginDefault = "1.20"
 // openrouterAuto is the id OpenRouter gives its own free router: one request to it
 // is served by whichever free route the vendor has up at that moment.
 //
-// It takes its place in the order below by context width like any other free route,
-// and deliberately gets no lift for always answering. What it answers WITH is not
-// knowable in advance: measured live, one request to it was served by a coding model
-// and the next by a content-safety classifier, which replied "User Safety: safe" to a
-// chat prompt. A route whose output shape we cannot read is the same hazard the
-// text-only rule below exists for, and the same rule decides it — a wrong answer in
-// place of an honest refusal is worse than the refusal.
+// It is kept OUT of the pool below, and the reason is the pool's whole purpose. The
+// pool is the set of routes we can say something about; this one is a router, so what
+// it answers with is not knowable in advance. Measured live: one request to it was
+// served by a coding model and the next by a content-safety classifier, which replied
+// "User Safety: safe" to a chat prompt. Choosing it would be delegating the choice
+// the pool exists to make.
+//
+// It stays in the CATALOG — it is a real id a caller may name deliberately, and the
+// curation narrows what we fall back to, never what we publish.
 const openrouterAuto = "openrouter/free"
 
 var openrouterTokensPerMillion = decimal.New(1_000_000, 0)
@@ -214,6 +216,30 @@ func (w openrouterWireModel) writes() bool {
 	return len(out) == 1 && strings.EqualFold(strings.TrimSpace(out[0]), "text")
 }
 
+// notChat names the kinds of model that answer in text without holding a
+// conversation. A classifier does exactly what it was built to do and returns a
+// verdict — measured live, `nemotron-3.5-content-safety:free` answered a chat turn
+// with "User Safety: safe", which reaches a customer as a broken product rather
+// than as the refusal it stands in for.
+//
+// Matched on the vendor's own naming, and kept to the shapes actually seen rather
+// than every word that might one day mean this. The listing states a model's output
+// KIND but not its purpose, so purpose is read from the name or not at all — and a
+// name is a weaker signal than a modality, which is why this list stays short and
+// only ever removes routes from a fallback that has others.
+var notChat = []string{"content-safety", "guard", "moderation", "classifier"}
+
+// converses reports that a SKU is one a chat turn can be handed to.
+func (w openrouterWireModel) converses() bool {
+	id := strings.ToLower(w.ID)
+	for _, kind := range notChat {
+		if strings.Contains(id, kind) {
+			return false
+		}
+	}
+	return true
+}
+
 // openrouterCatalog decodes an OpenRouter /v1/models body into discovered SKUs — one
 // per SKU the vendor advertises, so what we list is what they serve. A price of zero
 // is published as zero and carries the floors that price implies (see model), which is
@@ -232,8 +258,8 @@ func openrouterCatalog(body []byte) ([]zenModel, error) {
 }
 
 // openrouterSpare names the routes OpenRouter still serves once its account is
-// spent: the SKUs it charges nothing for AND answers in text with, drawn from the
-// same listing the catalog above reads. Two readings of one body, so neither list
+// spent: the SKUs it charges nothing for, answers in TEXT with, and can be handed a
+// CONVERSATION — drawn from the same listing the catalog above reads. Two readings of one body, so neither list
 // needs its own discovery and a priced route can never be handed out as a spare —
 // a downgrade that bills is not a remedy.
 //
@@ -249,7 +275,10 @@ func openrouterSpare(body []byte) []string {
 	}
 	free := make([]openrouterWireModel, 0, 8)
 	for _, w := range wire {
-		if w.free() && w.writes() && strings.TrimSpace(w.ID) != "" {
+		if w.ID == openrouterAuto {
+			continue // a router, not a route — see openrouterAuto
+		}
+		if w.free() && w.writes() && w.converses() && strings.TrimSpace(w.ID) != "" {
 			free = append(free, w)
 		}
 	}
