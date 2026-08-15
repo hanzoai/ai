@@ -346,10 +346,9 @@ func forceGatewayEmbedder(p *Provider) {
 // address and its on/off to a record the family never asked for. pruneFamilySeeds
 // removes the rows earlier seeds wrote.
 //
-// It lives at package scope so the invariants it must satisfy are testable: a
-// seeded FAMILY row carrying a trailing /v1 is the defect that broke zen, and it
-// is invisible at runtime, so it is asserted in a test instead (see
-// SeededModelProviders and controllers/provider_seed_test.go).
+// It lives at package scope so that rule is testable rather than remembered: a
+// family taken by a row serves nothing and says nothing, so the absence is
+// asserted instead (SeededModelProviders, controllers/provider_seed_test.go).
 var seededLLMProviders = []Provider{
 	{
 		Owner:        "admin",
