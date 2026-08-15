@@ -16,9 +16,11 @@ package controllers
 
 import (
 	"testing"
+	"time"
 
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/router"
+	"github.com/hanzoai/decimal"
 )
 
 // TestCapKnownToBudget proves the shared cost-narrowing primitive (used by both the
@@ -151,5 +153,38 @@ func TestResolveAutoModelFreeTierFlashCap(t *testing.T) {
 	familyTier = func(string) string { return "free" }
 	if got := resolve(); got != "gpt-4o-mini" {
 		t.Fatalf("free: routed to %q, want gpt-4o-mini (premium must be capped to the flash pool)", got)
+	}
+}
+
+// A model priced at zero does not need a funded wallet.
+//
+// The balance gate stops a call that cannot be paid for, and a route billing zero
+// on both sides has nothing to pay: asking a customer to add funds for a $0.00
+// call is how a free plan came to be refused the free routes we publish for it.
+// It reads the same price the ledger bills from, and fails closed — a price it
+// cannot find, or one it had to synthesize, is not free.
+func TestAZeroPricedModelNeedsNoBalance(t *testing.T) {
+	fam := openrouterFam
+	saved := fam.byID
+	savedLoaded, savedAt := fam.loaded, fam.fetchedAt
+	t.Cleanup(func() { fam.byID, fam.loaded, fam.fetchedAt = saved, savedLoaded, savedAt })
+	fam.byID = map[string]zenModel{
+		"vendor/free": {ID: "vendor/free"},
+		"vendor/paid": {ID: "vendor/paid", Base: zenTier{In: decimal.New(3, 0), Out: decimal.New(15, 0)}},
+	}
+	fam.loaded = true
+	fam.fetchedAt = time.Now()
+
+	if !costsNothing("vendor/free", "acme") {
+		t.Error("a route the vendor charges nothing for is gated on balance")
+	}
+	if costsNothing("vendor/paid", "acme") {
+		t.Error("a priced route skips the balance gate")
+	}
+	if costsNothing("auto", "acme") {
+		t.Error("`auto` skips the gate before it has resolved to anything")
+	}
+	if costsNothing("no-such-model-anywhere", "acme") {
+		t.Error("a model with no price skips the gate — this must fail closed")
 	}
 }

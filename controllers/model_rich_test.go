@@ -134,14 +134,17 @@ func TestModelInfoContextWindowSurfaced(t *testing.T) {
 	}
 }
 
-// TestPricingInfoZeroOmitted proves the never-fabricate guard: a present but
-// all-zero price yields no pricing block.
-func TestPricingInfoZeroOmitted(t *testing.T) {
+// TestPricingInfoPublishesWhatWasFound proves the never-fabricate guard and the
+// fact it must not swallow: a price nobody stated yields no block, and a stated
+// price of zero yields zero — which is the one a caller most needs, since it says
+// the route is free.
+func TestPricingInfoPublishesWhatWasFound(t *testing.T) {
 	if pricingInfo(modelPrice{}, false) != nil {
 		t.Error("absent pricing must project to nil")
 	}
-	if pricingInfo(modelPrice{InputPerMillion: 0, OutputPerMillion: 0}, true) != nil {
-		t.Error("all-zero pricing must project to nil (no meaningless {0,0})")
+	free := pricingInfo(modelPrice{InputPerMillion: 0, OutputPerMillion: 0}, true)
+	if free == nil || free.Input != 0 || free.Output != 0 {
+		t.Errorf("a stated price of zero must project as zero, got %+v", free)
 	}
 	got := pricingInfo(modelPrice{InputPerMillion: 1.25, OutputPerMillion: 5.00}, true)
 	if got == nil || got.Input != 1.25 || got.Output != 5.00 {

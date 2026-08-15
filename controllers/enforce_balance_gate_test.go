@@ -16,6 +16,7 @@ package controllers
 
 import (
 	"fmt"
+	"github.com/hanzoai/decimal"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -146,7 +147,10 @@ func TestEnforceBalanceGate_NoAutoGrantOnFirstUse(t *testing.T) {
 // never makes the call free. Seeded gated so the SKU is genuinely limited-preview.
 func TestEnforceBalanceGate_GatedSKUIsPaid(t *testing.T) {
 	savedEnso := ensoFam.byID
-	ensoFam.byID = map[string]zenModel{"enso": {ID: "enso", Access: "waitlist"}}
+	// Priced, because that is what the SKU is: access-gating decides whether a
+	// caller may reach it, never whether the call costs anything.
+	ensoFam.byID = map[string]zenModel{"enso": {ID: "enso", Access: "waitlist",
+		Base: zenTier{In: decimal.New(3, 0), Out: decimal.New(15, 0)}}}
 	t.Cleanup(func() { ensoFam.byID = savedEnso })
 	if !FamilyModelGated("enso") {
 		t.Fatal("precondition: enso must be a gated SKU for this pin to be meaningful")
