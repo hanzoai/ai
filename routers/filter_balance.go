@@ -194,6 +194,25 @@ func BalanceGateFilter(ctx *web.Context) {
 	// is zero skips. A body we cannot read, a model we cannot name, or a price we had
 	// to synthesize all leave the gate in force.
 	if m := requestedModel(ctx); m != "" && controllers.ModelCostsNothing(m, namespace) {
+		// Free is not unbounded. The wallet has nothing to refuse at zero, so the
+		// plan's ALLOWANCE is what bounds this lane: a count of calls per subject per
+		// period, spent here and reported by the host. It is the one gate a free
+		// caller meets, and the moment to offer them a plan.
+		//
+		// Fails OPEN on error, and the direction is safe precisely here: this route
+		// costs nothing, so an unreadable allowance hands out our own compute and
+		// never a paid vendor call. A priced route never reaches this branch.
+		if spend := object.Allowance(); spend != nil {
+			if spent, err := spend(ctx.Request.Context(), subject, namespace); err == nil && spent {
+				log.Info("allowance: period allowance spent subject=%s namespace=%s path=%s",
+					subject, namespace, path)
+				ctx.ResponseWriter.Header().Set("Content-Type", "application/json")
+				ctx.ResponseWriter.WriteHeader(http.StatusPaymentRequired)
+				body := `{"error":{"message":"You've used your free messages for today. They reset at midnight UTC — or pick a plan at https://hanzo.ai/pricing to keep going now.","type":"insufficient_quota","code":"allowance_spent"}}`
+				ctx.ResponseWriter.Write([]byte(body))
+				return
+			}
+		}
 		return
 	}
 

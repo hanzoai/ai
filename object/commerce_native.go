@@ -89,11 +89,34 @@ type TierReaderFunc func(ctx context.Context, subject, namespace string) (name s
 // default, standalone ai) → no rolling cap, behavior unchanged.
 type RollingCapReaderFunc func(ctx context.Context, subject, namespace string) (over bool, err error)
 
+// AllowanceFunc counts ONE zero-priced call against the subject's plan allowance for
+// the current period and reports whether the subject has now spent it all.
+//
+// It is the bound on the ONE thing a wallet cannot bound. A route priced at zero
+// leaves the balance gate nothing to refuse (see BalanceGateFilter), so a caller on
+// the free pool is otherwise unlimited — and the free pool runs on our own compute.
+// The allowance is that ceiling: a COUNT of calls, per subject, per period, from the
+// caller's plan. Money and count never stand in for each other, so nothing here reads
+// a balance and nothing in the wallet reads a count.
+//
+// It COUNTS as it answers, in one call, so two requests racing cannot both be
+// admitted by the same last unit — a read followed by a separate increment can.
+// spent=true means this call took the subject past the limit; the caller refuses it.
+//
+// FAILS OPEN on error, and the direction is the safe one HERE precisely because the
+// route costs nothing: an unreadable allowance can only ever hand out our own free
+// compute, never a paid vendor call. The hard money bounds are untouched — a priced
+// route never reaches this branch. A plan with no limit configured, and any caller
+// whose plan is unlimited, returns spent=false. nil (the default, standalone ai) →
+// no allowance, behavior unchanged.
+type AllowanceFunc func(ctx context.Context, subject, namespace string) (spent bool, err error)
+
 var (
 	balanceReader    BalanceReaderFunc
 	usageRecorder    UsageRecorderFunc
 	tierReader       TierReaderFunc
 	rollingCapReader RollingCapReaderFunc
+	allowance        AllowanceFunc
 )
 
 // SetBalanceReader installs the host's native balance reader (nil clears it).
@@ -108,6 +131,9 @@ func SetTierReader(f TierReaderFunc) { tierReader = f }
 // SetRollingCapReader installs the host's native rolling-window cap reader (nil clears it).
 func SetRollingCapReader(f RollingCapReaderFunc) { rollingCapReader = f }
 
+// SetAllowance installs the host's native plan-allowance counter (nil clears it).
+func SetAllowance(f AllowanceFunc) { allowance = f }
+
 // BalanceReader returns the installed native reader, or nil when unset (standalone).
 func BalanceReader() BalanceReaderFunc { return balanceReader }
 
@@ -119,3 +145,6 @@ func TierReader() TierReaderFunc { return tierReader }
 
 // RollingCapReader returns the installed native rolling-cap reader, or nil when unset.
 func RollingCapReader() RollingCapReaderFunc { return rollingCapReader }
+
+// Allowance returns the installed native allowance counter, or nil when unset.
+func Allowance() AllowanceFunc { return allowance }
