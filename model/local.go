@@ -21,7 +21,9 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
+	"net"
 	"net/http"
+	neturl "net/url"
 	"strings"
 	"time"
 	"unicode"
@@ -65,16 +67,56 @@ func NewLocalModelProvider(typ string, subType string, secretKey string, tempera
 	return p, nil
 }
 
+// getLocalClientFromUrl builds a client for an OpenAI-shaped endpoint, and
+// VERIFIES the server's certificate.
+//
+// The name records the intent — a model server on this machine, whose
+// certificate is self-signed because nobody issues one for 127.0.0.1 — and the
+// exemption for that case is kept below. But the same client is handed to
+// DigitalOcean, Custom and Custom-think, which are vendors reached across the
+// internet, and it carries an API key to each of them. A connection that accepts
+// any certificate hands that key to whoever presents one, and the call still
+// succeeds, so nothing downstream can notice.
+//
+// Verification is therefore the default and the exemption is narrowed to
+// loopback, where no attacker can stand between the two ends.
 func getLocalClientFromUrl(authToken string, url string) *openai.Client {
 	config := openai.DefaultConfig(authToken)
 	config.BaseURL = url
 
-	transport := &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}
-	httpClient := http.Client{Transport: transport}
-	config.HTTPClient = &httpClient
+	if hc := localHTTPClient(url); hc != nil {
+		config.HTTPClient = hc
+	}
 
 	c := openai.NewClientWithConfig(config)
 	return c
+}
+
+// localHTTPClient returns the client to use for a base URL, or nil to take the
+// SDK's default — which verifies. A non-nil result is the self-signed exemption
+// and is returned ONLY for this machine.
+func localHTTPClient(url string) *http.Client {
+	if !isLoopbackURL(url) {
+		return nil
+	}
+	return &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
+}
+
+// isLoopbackURL reports whether a base URL names this machine. A hostname that
+// does not parse, or does not resolve to a loopback literal, is treated as
+// remote — the failure that matters is calling a vendor without verification,
+// so anything uncertain gets the verifying client.
+func isLoopbackURL(raw string) bool {
+	u, err := neturl.Parse(strings.TrimSpace(raw))
+	if err != nil || u.Host == "" {
+		return false
+	}
+	host := u.Hostname()
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func (p *LocalModelProvider) GetPricing() string {
