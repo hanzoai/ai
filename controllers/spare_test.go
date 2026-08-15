@@ -820,3 +820,82 @@ func TestAnEmbeddingsRequestDoesNotWalkTheChatPool(t *testing.T) {
 		t.Errorf("asked=%v — an embeddings refusal walked the chat pool", fake.asked)
 	}
 }
+
+// The platform's own name for the pool. Every surface can send `free` and get a free
+// answer without knowing or caring which family holds the routes — the branded names
+// are the same pool wearing a brand, this is the same pool wearing none.
+func TestThePlatformPublishesOneUnbrandedFreeId(t *testing.T) {
+	fam := freeFamily()
+	saved := *fam
+	t.Cleanup(func() { *fam = saved })
+	fam.spares = []string{"vendor/a:free"}
+	fam.byID = map[string]zenModel{"vendor/a:free": {ID: "vendor/a:free", MaxCtx: 64000}}
+	fam.ids = []string{"vendor/a:free"}
+	fam.loaded, fam.fetchedAt = true, time.Now()
+	fam.providerFn = func() *object.Provider {
+		return &object.Provider{Owner: "admin", Name: "openrouter", Type: "OpenRouter", ProviderUrl: "http://or.invalid"}
+	}
+
+	if !fam.frontDoor(freeID) {
+		t.Error("the family holding the pool does not answer to the platform's free id")
+	}
+	if !fam.serves(freeID) {
+		t.Error("the platform free id does not route")
+	}
+	if p, ok := fam.modelPrice(freeID); !ok || p.InputPerMillion != 0 || p.OutputPerMillion != 0 {
+		t.Errorf("the platform free id is priced %+v ok=%v", p, ok)
+	}
+
+	byID := indexModels(fam.mergeModels(nil))
+	got, ok := byID[freeID]
+	if !ok {
+		t.Fatal("the platform free id is not listed")
+	}
+	if got.OwnedBy != "hanzo" {
+		t.Errorf("owned_by = %q, want hanzo — it is our product, not the vendor's", got.OwnedBy)
+	}
+	if got.Premium || got.Pricing == nil || got.Pricing.Input != 0 {
+		t.Errorf("the platform free id lists premium=%v pricing=%+v", got.Premium, got.Pricing)
+	}
+
+	// A family that does not hold the pool publishes only its own brand.
+	enso := &modelFamily{name: "enso", owner: "hanzo", freeName: "enso-free"}
+	if enso.frontDoor(freeID) {
+		t.Error("a family that does not hold the pool answers to the platform free id")
+	}
+}
+
+// Our own compute is in the pool, and it is LAST. It cannot run out of a vendor's
+// money, which is why it is there; it is the weakest answer, which is why it is last.
+func TestOurOwnComputeIsThePoolsLastResort(t *testing.T) {
+	fam := freeFamily()
+	saved := *fam
+	t.Cleanup(func() { *fam = saved })
+	fam.spares = []string{"vendor/a:free", "vendor/b:free"}
+	fam.loaded, fam.fetchedAt = true, time.Now()
+
+	savedEngine := *engineFam
+	t.Cleanup(func() { *engineFam = savedEngine })
+
+	// Unconfigured: the pool is the borrowed routes and nothing else.
+	engineFam.urlKey = "TEST_ENGINE_URL_UNSET"
+	if got := freeRoutes(); len(got) != 2 {
+		t.Errorf("pool = %d routes with no engine configured, want the 2 borrowed ones", len(got))
+	}
+
+	// Configured: it joins, at the end.
+	t.Setenv("TEST_ENGINE_URL", "http://engine.invalid")
+	engineFam.urlKey = "TEST_ENGINE_URL"
+	got := freeRoutes()
+	if len(got) != 3 {
+		t.Fatalf("pool = %d routes, want the 2 borrowed plus our own", len(got))
+	}
+	if got[2].fam != engineFam || got[2].id != engineModel {
+		t.Errorf("last route = %v/%s, want our own compute", got[2].fam.name, got[2].id)
+	}
+	for _, r := range got[:2] {
+		if r.fam == engineFam {
+			t.Error("our own compute is ahead of a borrowed route — it is the weakest answer, not the first")
+		}
+	}
+}
