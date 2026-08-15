@@ -17,12 +17,11 @@ package embedding
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
-	"net/http"
 	"strings"
 
 	"github.com/hanzoai/ai/i18n"
+	"github.com/hanzoai/ai/proxy"
 	"github.com/hanzoai/go-openai"
 )
 
@@ -55,9 +54,9 @@ func getLocalClientFromUrl(authToken string, url string) *openai.Client {
 	config := openai.DefaultConfig(authToken)
 	config.BaseURL = url
 
-	transport := &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}
-	httpClient := http.Client{Transport: transport}
-	config.HTTPClient = &httpClient
+	if hc := proxy.Local(url); hc != nil {
+		config.HTTPClient = hc
+	}
 
 	c := openai.NewClientWithConfig(config)
 	return c
