@@ -305,6 +305,20 @@ func freeRoutes() []spare {
 	return out
 }
 
+// inPool reports that a route is one the pool serves, whichever family carries it.
+// It is what prices a pool answer at nothing: every route in the pool is there
+// BECAUSE it costs nothing, so billing one would charge for the thing that makes it
+// a fallback. Read from the pool itself rather than from any one family's list,
+// since the pool now spans families — our own compute among them.
+func inPool(id string) bool {
+	for _, r := range freeRoutes() {
+		if strings.EqualFold(r.id, id) {
+			return true
+		}
+	}
+	return false
+}
+
 // servingFamily returns the family that will actually carry this sku — the free
 // family for a route out of the pool, whichever family claims it otherwise.
 func servingFamily(sku string) *modelFamily {
@@ -1405,7 +1419,7 @@ func (c *ApiController) recordFamilyUsage(fam *modelFamily, model, requested str
 	// retail for a downgrade the customer did not choose would be taking money for
 	// the outage. Stated once, on the record, so the hold, the debit, the warehouse
 	// row and the span all read the same zero (see usageCostNano).
-	free := fam.isSpare(model) || freeFamily().isSpare(model)
+	free := fam.isSpare(model) || inPool(model)
 	var cents int64
 	if status == "success" && !free {
 		if zm, ok := fam.lookup(model); ok {
