@@ -94,6 +94,34 @@ func Document() map[string]any {
 				if t := product(path); t != "" {
 					o["tags"] = []any{t}
 				}
+				// A templated segment NAMES a parameter, and an operation that
+				// leaves it undeclared reaches a client with the value in its
+				// address and not in its signature — `get_videos_by_id(self)`
+				// took no id and requested the literal "{id}". Merged rather
+				// than assigned, so a hand-written list survives.
+				if names := pathParams(path); len(names) > 0 {
+					params, _ := o["parameters"].([]any)
+					have := map[string]bool{}
+					for _, p := range params {
+						m, ok := p.(map[string]any)
+						if !ok || m["in"] != "path" {
+							continue
+						}
+						if n, _ := m["name"].(string); n != "" {
+							have[n] = true
+						}
+					}
+					for _, n := range names {
+						if have[n] {
+							continue
+						}
+						params = append(params, map[string]any{
+							"name": n, "in": "path", "required": true,
+							"schema": map[string]any{"type": "string"},
+						})
+					}
+					o["parameters"] = params
+				}
 				item[strings.ToLower(verb)] = o
 			}
 		}
@@ -341,6 +369,20 @@ func openAPIPath(p string) string {
 		}
 	}
 	return strings.Join(segs, "/")
+}
+
+// pathParams names the templated segments of an OpenAPI path. Rewriting the
+// spelling is only half of what that comment above promises: a client also
+// needs the parameter DECLARED, or the generator emits a method that cannot be
+// given the value its own name asks for.
+func pathParams(p string) []string {
+	var names []string
+	for _, s := range strings.Split(p, "/") {
+		if len(s) > 2 && s[0] == '{' && s[len(s)-1] == '}' {
+			names = append(names, s[1:len(s)-1])
+		}
+	}
+	return names
 }
 
 func titleCase(s string) string {
