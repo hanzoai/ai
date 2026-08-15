@@ -494,7 +494,10 @@ func TestAZeroPricedModelIsNotRefusedByTheWalletGate(t *testing.T) {
 		rec := httptest.NewRecorder()
 		ctx := web.NewContext()
 		ctx.Reset(rec, req)
-		ctx.Input.RequestBody = []byte(body)
+		// The SAME call the router makes at the top of ServeHTTP, above the filter
+		// chain — so this proves the body is actually there when the gate looks,
+		// rather than assuming it by setting the field by hand.
+		ctx.Input.CopyBody(1 << 20)
 		BalanceGateFilter(ctx)
 		return rec.Code
 	}
