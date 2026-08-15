@@ -1063,10 +1063,15 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	dispatch := func(f *modelFamily, s string) (*http.Response, error) {
 		p := prov
 		if f != fam {
-			p = f.providerFn()
-			if p == nil {
+			// baseURL and serviceKey already encode the one address rule — the admin
+			// row where a family has one, configuration otherwise — so a family
+			// reached only by configuration (our own compute) resolves the same way
+			// as one with a provider row behind it.
+			base := f.baseURL()
+			if base == "" {
 				return nil, &apiError{status: http.StatusServiceUnavailable, msg: f.name + " service is not configured"}
 			}
+			p = &object.Provider{Owner: "admin", Name: f.name, ProviderUrl: base, ClientSecret: f.serviceKey()}
 		}
 		r, rErr := http.NewRequestWithContext(c.Ctx.Request.Context(), http.MethodPost, p.ProviderUrl+"/v1/"+apiPath, nil)
 		if rErr != nil {
@@ -1110,13 +1115,20 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		}
 		tried := 0
 		for _, alt := range freeRoutes() {
-			if strings.EqualFold(alt.id, skip) {
+			if strings.EqualFold(alt.id, skip) || c.Ctx.Request.Context().Err() != nil {
 				continue
 			}
-			if tried == spareTries || c.Ctx.Request.Context().Err() != nil {
-				return nil, ""
+			// The budget bounds how many BORROWED routes we ask, because each is a
+			// round trip spent waiting on somebody else. Our own is not borrowed and
+			// is the last thing asked, so it is always asked: one more local call is
+			// the difference between an answer and a refusal, and it is the only
+			// route here that cannot be withdrawn by a vendor.
+			if alt.fam != engineFam && tried == spareTries {
+				continue
 			}
-			tried++
+			if alt.fam != engineFam {
+				tried++
+			}
 			r, e := dispatch(alt.fam, alt.id)
 			if e != nil {
 				continue
