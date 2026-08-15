@@ -242,16 +242,19 @@ func spareFamily(t *testing.T, url, free string) *modelFamily {
 	return fam
 }
 
-// THE DISCRIMINATION, which is the whole design. A vendor out of money is the ONE
-// refusal that moves the request to a free route. Everything else — a malformed
-// body, a model this vendor has not got, refused content, a rate limit, a broken
-// vendor — must fail as itself, because silently handing the caller a smaller
-// model instead of an error hides a real failure and cannot be debugged later.
+// THE DISCRIMINATION, which is the whole design. A vendor that cannot serve at all
+// — its account with us spent, or its own failure — moves the request to a free
+// route, because a route it charges nothing for is subject to neither. Everything
+// else fails as itself: a malformed body, a model this vendor has not got, refused
+// content and a rate limit are all facts the caller needs, and answering any of
+// them with a smaller model hides a real failure that cannot be debugged later.
+// A rate limit is the near miss — it clears in seconds, so it is waited out rather
+// than downgraded.
 //
 // Each case drives the REAL relay against a real HTTP vendor, and the assertion
 // is on what the vendor was ASKED — so "it did not fall back" is a fact about the
 // wire, not about a branch nobody took.
-func TestOnlyASpentAccountMovesTheRequest(t *testing.T) {
+func TestOnlyAVendorThatCannotServeMovesTheRequest(t *testing.T) {
 	const free = "vendor/big:free"
 	const sku = "vendor/paid-a"
 
@@ -273,8 +276,10 @@ func TestOnlyASpentAccountMovesTheRequest(t *testing.T) {
 		{"credential rejected", 401, `{"error":{"message":"unauthorized"}}`, false},
 		{"forbidden", 403, `{"error":{"message":"forbidden"}}`, false},
 		{"rate limited", 429, `{"error":{"message":"rate limit exceeded"}}`, false},
-		{"vendor broken", 500, `{"error":{"message":"internal server error"}}`, false},
-		{"gateway timeout", 504, `{"error":{"message":"gateway timeout"}}`, false},
+
+		{"vendor broken", 500, `{"error":{"message":"internal server error"}}`, true},
+		{"bad gateway", 502, `{"error":{"message":"bad gateway"}}`, true},
+		{"gateway timeout", 504, `{"error":{"message":"gateway timeout"}}`, true},
 		// THE ONE THAT MATTERS MOST. The customer's own paywall, relayed by a
 		// service that fronts for us: same status, opposite fact. It is the
 		// customer who owes money, and serving them a free model instead would
@@ -465,5 +470,25 @@ func TestAFamilyWithNoSpareIsUnchanged(t *testing.T) {
 	// because "we could not serve this" is true and "you owe money" is not.
 	if s := upstreamHTTPStatus(exhausted("enso-4", refusedBy)); s != http.StatusServiceUnavailable {
 		t.Errorf("every-vendor-refused status = %d, want 503", s)
+	}
+}
+
+// OpenRouter's own free router leads, however wide the rest are.
+//
+// A spare has one question to answer — which free route is up right now — and the
+// vendor answers it from knowledge no listing carries. Measured on the live
+// account: a free route this order would otherwise put first answered 429
+// ("temporarily rate-limited upstream") in the same minute the router answered 200.
+// So width decides the rest of the order and never the head of it.
+func TestTheVendorsOwnFreeRouterLeadsTheSpares(t *testing.T) {
+	listing := `{"data":[
+	 {"id":"vendor/wide:free","context_length":1000000,"pricing":{"prompt":"0","completion":"0"},"architecture":{"output_modalities":["text"]}},
+	 {"id":"openrouter/free","context_length":200000,"pricing":{"prompt":"0","completion":"0"},"architecture":{"output_modalities":["text"]}},
+	 {"id":"vendor/narrow:free","context_length":8000,"pricing":{"prompt":"0","completion":"0"},"architecture":{"output_modalities":["text"]}}
+	]}`
+	got := openrouterSpare([]byte(listing))
+	want := []string{"openrouter/free", "vendor/wide:free", "vendor/narrow:free"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("spares = %v, want %v", got, want)
 	}
 }

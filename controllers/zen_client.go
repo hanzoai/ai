@@ -874,12 +874,12 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	// spared offers the SAME request to a route this vendor still serves once its
 	// account is spent, and reports the route that answered.
 	//
-	// It fires on the vendor being out of money and on NOTHING else. `broke` is the
-	// predicate the cooldown already decides with: it reads the STATUS first, because
-	// a 402 is a fact, and consults text only where there is no status to read — and
-	// then only a narrow list of phrases measured from real upstreams. A malformed
-	// body (400), a model this vendor has not got (404), refused content (422), a
-	// rate limit (429), a timeout and a 5xx all miss it, so none of them can quietly
+	// It fires on the vendor being unable to serve at all — its account with us spent,
+	// or its own failure — and on nothing else. `down` reads the STATUS first, because
+	// a 402 and a 5xx are facts, and consults text only where there is no status to
+	// read, and then only a narrow list of phrases measured from real upstreams. A
+	// malformed body (400), a model this vendor has not got (404), refused content
+	// (422), a rate limit (429) and a timeout all miss it, so none of them can quietly
 	// hand the caller a smaller model in place of an error. Our OWN balance gate
 	// cannot reach here either — it refuses before a vendor is dialled — so a 402 at
 	// this point is a statement about our account with the vendor, never about the
@@ -898,7 +898,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		if billingNotice(body) {
 			return nil, ""
 		}
-		if !broke(err, strings.ToLower(err.Error())) || c.Ctx.Request.Context().Err() != nil {
+		if !down(err, strings.ToLower(err.Error())) || c.Ctx.Request.Context().Err() != nil {
 			return nil, ""
 		}
 		tried := 0
