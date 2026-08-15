@@ -15,6 +15,10 @@
 package routers
 
 import (
+	"github.com/hanzoai/ai/web"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -283,5 +287,56 @@ func TestMapPlanToTier(t *testing.T) {
 				t.Errorf("mapPlanToTier(%q) = %q, want %q", tt.plan, got, tt.expected)
 			}
 		})
+	}
+}
+
+// A page key is throttled on the KEY, not on the org that pays for it.
+//
+// It is public by construction — it ships in the source of a page anybody can view
+// — so the traffic behind one is every visitor at once rather than one tenant.
+// Bucketed with the org, a single griefed page spends the whole org's ceiling and
+// takes down that org's own API traffic and every other page it publishes. Two
+// surfaces holding two keys must also fail independently, which is the entire
+// reason for issuing two.
+//
+// Who PAYS is unchanged — the org still does. Who is THROTTLED is a different
+// question, and this is the one place the two are allowed to differ.
+func TestAPageKeyIsThrottledOnItsOwnKey(t *testing.T) {
+	prev := rateLimiterInstance
+	t.Cleanup(func() { rateLimiterInstance = prev })
+	rateLimiterInstance = NewRateLimiter(func(string) Tier { return TierZenFree }, time.Hour)
+	t.Cleanup(rateLimiterInstance.Stop)
+
+	// The limiter admits a burst of a fifth of the per-minute allowance, then
+	// refills; the burst is what a page's visitors hit at once.
+	burst := tierLimits[TierZenFree] / 5
+
+	drive := func(key string) int {
+		served := 0
+		for i := 0; i < burst+5; i++ {
+			rec := httptest.NewRecorder()
+			ctx := web.NewContext()
+			req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(`{}`))
+			req.Header.Set("Authorization", "Bearer "+key)
+			ctx.Reset(rec, req)
+			RateLimitFilter(ctx)
+			if rec.Code != http.StatusTooManyRequests {
+				served++
+			}
+		}
+		return served
+	}
+
+	siteServed := drive("hz_site_key")
+	if siteServed != burst {
+		t.Errorf("site key served %d of %d before throttling", siteServed, burst)
+	}
+
+	// THE POINT: the second page key still has its whole budget. Exhausting one
+	// surface cannot take the other down, which is the only thing that makes
+	// issuing two keys mean anything.
+	cliServed := drive("hz_cli_key")
+	if cliServed != burst {
+		t.Errorf("a second page key served %d of %d — the two share a bucket", cliServed, burst)
 	}
 }
