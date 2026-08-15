@@ -15,52 +15,35 @@
 package controllers
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/hanzoai/ai/object"
 )
 
-// TestSeededFamilyProvidersDoNotCarryV1 guards the defect that silently took the
-// entire zen family off /v1/models.
+// A model FAMILY is never a seeded provider row, and this is the one rule that
+// keeps it so.
 //
-// A model FAMILY appends its own /v1: discovery does base+"/v1/models" and
-// pipeToFamily does ProviderUrl+"/v1/"+apiPath. So a seeded row whose
-// ProviderUrl ALREADY carries /v1 sends every call to .../v1/v1/... and 404s.
-// The direct-relay providers are the exact opposite — nothing appends for them,
-// so they MUST carry /v1. That inversion is why this is easy to get wrong twice,
-// and why it is asserted here rather than remembered: openrouter hit it and was
-// caught, zen hit it and shipped broken for weeks.
+// familyProvider reads a row of the family's name as an operator OVERRIDE that
+// wins over configuration: it supplies the address AND the on/off. So a seeded
+// row does not configure a family, it TAKES it — and both seeds that existed show
+// a different way that goes wrong. zen was seeded at a base already carrying /v1
+// while the family paths append their own, so every refresh asked
+// .../v1/v1/models and no zen SKU was listed or served. openrouter was seeded
+// State "Disabled", which familyProvider answers with nil no matter what
+// OPENROUTER_URL says, so its whole catalog stayed dark. Sibling enso — same
+// serving binary, same family shape, never seeded — never had either problem.
 //
-// The failure is invisible at runtime. The family just serves nothing, and the
-// only symptom is a once-a-minute "catalog refresh failed: status 404" warning.
-func TestSeededFamilyProvidersDoNotCarryV1(t *testing.T) {
+// Both failures are invisible at runtime: the family simply serves nothing. So the
+// rule is asserted here rather than remembered, and it is the general one, because
+// each time it was written as a special case the next family found a new way to
+// break.
+func TestNoFamilyIsSeeded(t *testing.T) {
 	seeded := object.SeededModelProviders()
 	for _, name := range object.FamilyProviderNames() {
-		row, isSeeded := seeded[name]
-		if !isSeeded {
-			continue
+		if row, ok := seeded[name]; ok {
+			t.Errorf("family %q is seeded as a provider row (ProviderUrl %q); "+
+				"a family is addressed by configuration, and a row of its name overrides that",
+				name, row.ProviderUrl)
 		}
-		url := row.ProviderUrl
-		if strings.HasSuffix(strings.TrimRight(url, "/"), "/v1") {
-			t.Errorf("seeded family provider %q has ProviderUrl %q ending in /v1; "+
-				"the family paths append /v1 themselves, so every call would 404",
-				name, url)
-		}
-	}
-}
-
-// TestZenIsNotSeeded pins the decision that zen has NO seed row at all.
-//
-// zen's address is deployment config (ZEN_URL → the in-cluster zen service),
-// exactly like its sibling enso — which was never seeded and never broke. A row
-// is read by familyProvider as an operator OVERRIDE and wins over that config,
-// so seeding one hijacks the family. Dropping the /v1 would NOT be enough: it
-// would merely aim zen at DigitalOcean's catalog instead of the service that
-// actually serves zen SKUs.
-func TestZenIsNotSeeded(t *testing.T) {
-	if row, ok := object.SeededModelProviders()["zen"]; ok {
-		t.Fatalf("zen must not be seeded: its address is ZEN_URL and a seeded row "+
-			"overrides it (got ProviderUrl %q)", row.ProviderUrl)
 	}
 }
