@@ -15,6 +15,7 @@
 package web
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -416,5 +417,73 @@ func TestCompositeIdIsBoundForHandlers(t *testing.T) {
 	r.ServeHTTP(httptest.NewRecorder(), req2)
 	if got := req2.Form.Get("id"); got != "other/thing" {
 		t.Errorf(`explicit ?id= should win, got %q`, got)
+	}
+}
+
+// A mount carries the protocols a controller cannot express. The router reaches
+// one only where no route matched, so these pin both halves: that a mount is
+// reached at all, and that adding one cannot take traffic from a controller.
+
+func TestMountServesItsSubtree(t *testing.T) {
+	r := NewRouter()
+	r.Handle("/v1/voice", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		w.WriteHeader(http.StatusTeapot)
+		_, _ = w.Write([]byte(req.URL.Path))
+	}))
+
+	for _, path := range []string{"/v1/voice", "/v1/voice/session", "/v1/voice/health"} {
+		rec := serve(r, "GET", path)
+		if rec.Code != http.StatusTeapot {
+			t.Errorf("%s: status %d, want %d", path, rec.Code, http.StatusTeapot)
+		}
+		if got := rec.Body.String(); got != path {
+			t.Errorf("%s: handler saw %q", path, got)
+		}
+	}
+}
+
+func TestMountDoesNotShadowARoute(t *testing.T) {
+	r := NewRouter()
+	r.Router("/v1/voice/session", &probeController{}, "GET:Hello")
+	r.Handle("/v1/voice", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusTeapot)
+	}))
+
+	// The controller owns this path and keeps it, mount or no mount.
+	if rec := serve(r, "GET", "/v1/voice/session"); rec.Body.String() != "hi" {
+		t.Errorf("the mount took a route's traffic: body %q status %d", rec.Body.String(), rec.Code)
+	}
+	// Everything else under the prefix is still the mount's.
+	if rec := serve(r, "GET", "/v1/voice/health"); rec.Code != http.StatusTeapot {
+		t.Errorf("mount not reached for an unclaimed path: status %d", rec.Code)
+	}
+}
+
+func TestUnmountedPathIsStillNotFound(t *testing.T) {
+	r := NewRouter()
+	r.Handle("/v1/voice", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusTeapot)
+	}))
+	// A neighbouring name is not the prefix. /v1/voiceover must not be swallowed.
+	for _, path := range []string{"/v1/audio/speech", "/v1/voiceover"} {
+		if rec := serve(r, "GET", path); rec.Code != http.StatusNotFound {
+			t.Errorf("%s: status %d, want 404", path, rec.Code)
+		}
+	}
+}
+
+func TestMountReadsTheRequestBody(t *testing.T) {
+	r := NewRouter()
+	var seen string
+	r.Handle("/v1/voice", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		b, _ := io.ReadAll(req.Body)
+		seen = string(b)
+	}))
+	rec := httptest.NewRecorder()
+	// CopyBody drains and replaces Request.Body before routing; a mount posting
+	// a session request has to still find it there.
+	r.ServeHTTP(rec, httptest.NewRequest("POST", "/v1/voice/session", strings.NewReader(`{"a":1}`)))
+	if seen != `{"a":1}` {
+		t.Errorf("mount read body %q, want the posted document", seen)
 	}
 }
