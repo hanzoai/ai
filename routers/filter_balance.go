@@ -298,6 +298,17 @@ func isBalanceExempt(path, method string) bool {
 		}
 	}
 	switch {
+	// The public lane bills nobody and bounds itself, so this gate has nothing to
+	// add and two ways to get it wrong. It resolves a billing subject from an
+	// AMBIENT SESSION as readily as from a bearer, and the visitor widget runs on
+	// our own pages — so a signed-in reader asking an anonymous question would have
+	// their plan allowance spent for a call they did not make as themselves, on top
+	// of the visitor count the lane spends: one request, charged twice, to two
+	// counters. It also reads the model from the BODY, which is the one thing that
+	// lane promises to ignore. Exempt from BALANCE, never from bounds — the ceiling
+	// lives in the handler and is taken there exactly once.
+	case path == "/v1/chat/public":
+		return true
 	case path == "/v1/health" || path == "/health":
 		return true
 	case path == "/v1/metrics" || path == "/metrics":
