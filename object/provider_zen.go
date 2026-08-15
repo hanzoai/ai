@@ -42,7 +42,15 @@ import (
 // caller already handles. Zen, Enso and OpenRouter are the three instances.
 func familyProvider(name, typ, urlKey, keyKey string) *Provider {
 	base := strings.TrimRight(strings.TrimSpace(conf.GetConfigString(urlKey)), "/")
-	key := strings.TrimSpace(conf.GetConfigString(keyKey))
+	// The credential resolves through the ONE precedence rule (resolveSecretName):
+	// the embedded KMS store first, the environment second. It read the
+	// environment alone, which is the one place a provider credential cannot be
+	// governed — a value in the process environment is readable by anything that
+	// can reach the process, is outside the per-secret policy KMS already keeps,
+	// and leaves no record of who read it. Sealing the key in KMS now moves it out
+	// of the environment without any further change here; leaving it in the
+	// environment keeps working, because absence in the store falls through.
+	key := strings.TrimSpace(resolveSecretName(keyKey))
 
 	// The admin row wins where it speaks. getProvider is the direct store read,
 	// NOT GetModelProviderByName — which resolves families through here and would
