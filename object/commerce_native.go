@@ -103,12 +103,16 @@ type RollingCapReaderFunc func(ctx context.Context, subject, namespace string) (
 // admitted by the same last unit — a read followed by a separate increment can.
 // spent=true means this call took the subject past the limit; the caller refuses it.
 //
-// FAILS OPEN on error, and the direction is the safe one HERE precisely because the
-// route costs nothing: an unreadable allowance can only ever hand out our own free
-// compute, never a paid vendor call. The hard money bounds are untouched — a priced
-// route never reaches this branch. A plan with no limit configured, and any caller
-// whose plan is unlimited, returns spent=false. nil (the default, standalone ai) →
-// no allowance, behavior unchanged.
+// AN ERROR IS ALLOWED THROUGH, and WHO gets that benefit is the host's call, not
+// this module's. A route stated at zero is not always served by our own compute — a
+// vendor can be behind it and bills us either way — so an unanswerable allowance is
+// not automatically safe. The host holds the tenancy vocabulary, so it answers
+// spent=true for a caller it cannot name and returns the error only for one it can,
+// where a blip must not take the free models from a paying customer.
+//
+// The hard money bounds are untouched: a priced route never reaches this branch. A
+// plan with no limit configured, and any caller whose plan is unlimited, returns
+// spent=false. nil (the default, standalone ai) → no allowance, behavior unchanged.
 type AllowanceFunc func(ctx context.Context, subject, namespace string) (spent bool, err error)
 
 var (
