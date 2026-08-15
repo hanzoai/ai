@@ -576,3 +576,51 @@ func TestAPageKeyMayAskForWhatCostsNothing(t *testing.T) {
 		t.Error("an explicitly allowed cheap id is refused")
 	}
 }
+
+// The listing says what a model answers WITH, because a price cannot.
+//
+// The free lineup carries music models and a content-safety classifier beside the
+// chat models, all at zero. A client choosing a free model for a chat turn filtering
+// on price alone eventually picks the music generator — the same mistake the spare
+// list makes structurally impossible for itself, made possible again one layer up
+// unless the catalog says what each route produces.
+func TestTheListingSaysWhatAModelAnswersWith(t *testing.T) {
+	fam := &modelFamily{name: "openrouter", prefix: "openrouter/", owner: "openrouter"}
+	fam.byID = map[string]zenModel{
+		"vendor/chat":  {ID: "vendor/chat", Outputs: []string{"text"}},
+		"vendor/music": {ID: "vendor/music", Outputs: []string{"text", "audio"}},
+		"vendor/mute":  {ID: "vendor/mute"},
+	}
+	fam.ids = []string{"vendor/chat", "vendor/music", "vendor/mute"}
+	fam.loaded = true
+	fam.fetchedAt = time.Now()
+
+	byID := indexModels(fam.mergeModels(nil))
+	if got := byID["vendor/chat"].Outputs; len(got) != 1 || got[0] != "text" {
+		t.Errorf("a text model lists outputs %v", got)
+	}
+	if got := byID["vendor/music"].Outputs; len(got) != 2 {
+		t.Errorf("a model that also answers in audio lists outputs %v — a chat client cannot avoid it", got)
+	}
+	if got := byID["vendor/mute"].Outputs; len(got) != 0 {
+		t.Errorf("a model advertising nothing lists outputs %v, want none rather than a guess", got)
+	}
+}
+
+// What the vendor advertises reaches the listing unchanged.
+func TestOutputsComeFromTheVendorListing(t *testing.T) {
+	cat, err := openrouterCatalog([]byte(spareListing))
+	if err != nil {
+		t.Fatal(err)
+	}
+	by := map[string]zenModel{}
+	for _, m := range cat {
+		by[m.ID] = m
+	}
+	if got := by["vendor/music:free"].Outputs; len(got) != 2 || got[1] != "audio" {
+		t.Errorf("music model outputs = %v, want the vendor's own [text audio]", got)
+	}
+	if got := by["vendor/silent:free"].Outputs; len(got) != 0 {
+		t.Errorf("a SKU advertising no modality carries %v, want none", got)
+	}
+}
