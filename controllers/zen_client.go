@@ -1009,6 +1009,13 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	// through, so worst-case latency is a property of spareTries rather than of how
 	// many free routes a vendor happens to advertise.
 	pool := func(skip string) (*http.Response, string) {
+		// The pool holds routes that hold a CONVERSATION. An embeddings request has
+		// no free chat route to fall to, and offering it three anyway spends three
+		// round trips of the caller's time to be told three times that a chat model
+		// does not embed.
+		if apiPath == "embeddings" {
+			return nil, ""
+		}
 		tried := 0
 		for _, alt := range freeRoutes() {
 			if strings.EqualFold(alt, skip) {
