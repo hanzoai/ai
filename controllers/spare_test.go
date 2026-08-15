@@ -993,3 +993,40 @@ func TestTheBudgetBoundsBorrowedRoutesNotOurOwn(t *testing.T) {
 		t.Errorf("asked %d borrowed routes, budget is %d", borrowedTries, spareTries)
 	}
 }
+
+// Settling a debit must not wait on a vendor.
+//
+// The free check walks the pool, and the pool refreshes itself from the vendor on
+// a TTL. Reading it that way on the BILLING path put a network round trip, with its
+// own timeout, between a request that had already succeeded and its debit — so a
+// slow vendor made every debit slow and an unreachable one stalled the ledger. The
+// snapshot answers the same question without asking anybody.
+func TestBillingReadsTheSnapshotAndNeverTheVendor(t *testing.T) {
+	fam := freeFamily()
+	saved := *fam
+	t.Cleanup(func() { *fam = saved })
+
+	asked := 0
+	vendor := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		asked++
+		_, _ = w.Write([]byte(`{"data":[]}`))
+	}))
+	defer vendor.Close()
+
+	fam.providerFn = func() *object.Provider {
+		return &object.Provider{Owner: "admin", Name: "openrouter", Type: "OpenRouter", ProviderUrl: vendor.URL}
+	}
+	fam.spares = []string{"vendor/a:free"}
+	fam.loaded = true
+	fam.fetchedAt = time.Now().Add(-time.Hour) // STALE: a refreshing read would dial out
+
+	if !inPool("vendor/a:free") {
+		t.Error("a route in the snapshot is not read as free")
+	}
+	if inPool("vendor/paid") {
+		t.Error("a route outside the pool reads as free")
+	}
+	if asked != 0 {
+		t.Errorf("the billing path dialled the vendor %d time(s) — a debit must not wait on one", asked)
+	}
+}

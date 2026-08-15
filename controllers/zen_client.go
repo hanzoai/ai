@@ -311,12 +311,15 @@ func freeRoutes() []spare {
 // a fallback. Read from the pool itself rather than from any one family's list,
 // since the pool now spans families — our own compute among them.
 func inPool(id string) bool {
-	for _, r := range freeRoutes() {
-		if strings.EqualFold(r.id, id) {
-			return true
-		}
+	// The SNAPSHOT, never a refresh. This is the billing path: discovery is a
+	// network round trip with its own timeout, and settling a debit must not wait
+	// on a vendor to answer — a slow vendor would otherwise make every debit slow,
+	// and an unreachable one would stall the ledger behind a request that already
+	// succeeded.
+	if freeFamily().isSpare(id) {
+		return true
 	}
-	return false
+	return engineFam.enabled() && strings.EqualFold(strings.TrimSpace(id), engineModel)
 }
 
 // servingFamily returns the family that will actually carry this sku — the free
