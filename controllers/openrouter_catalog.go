@@ -154,6 +154,7 @@ func (w openrouterWireModel) model(margin decimal.Decimal) zenModel {
 		OwnedBy: openrouterOwner(w.ID),
 		MaxCtx:  w.ContextLength,
 		Vision:  w.vision(),
+		Outputs: w.Architecture.OutputModalities,
 		Base:    retail,
 		Tiers:   []zenTier{retail},
 		CostIn:  costIn,
