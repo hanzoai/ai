@@ -28,6 +28,7 @@ import (
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/i18n"
 	iam "github.com/hanzoai/ai/internal/iam"
+	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
 	"github.com/hanzoai/ai/web"
 )
@@ -35,6 +36,7 @@ import (
 type Response struct {
 	Status string      `json:"status"`
 	Msg    string      `json:"msg"`
+	Code   string      `json:"code,omitempty"` // machine name of the failure; clients switch on this, never on Msg
 	Data   interface{} `json:"data"`
 	Data2  interface{} `json:"data2"`
 }
@@ -96,16 +98,22 @@ func (c *ApiController) ResponseErrorWithStatus(status int, error string, data .
 type apiError struct {
 	status int
 	msg    string
+	// code names the failure for a program. A message is written for a person and
+	// gets rewritten; a status answers several different questions at once (503 is
+	// both "our upstream refused" and "we could not read your balance"). Only this
+	// is safe to branch on, which is why the shapes that need telling apart carry
+	// one and the rest carry nothing rather than something invented.
+	code string
 }
 
 func (e *apiError) Error() string { return e.msg }
 
 func authError(format string, a ...interface{}) error {
-	return &apiError{http.StatusUnauthorized, fmt.Sprintf(format, a...)}
+	return &apiError{status: http.StatusUnauthorized, msg: fmt.Sprintf(format, a...)}
 }
 
 func billingError(format string, a ...interface{}) error {
-	return &apiError{http.StatusPaymentRequired, fmt.Sprintf(format, a...)}
+	return &apiError{status: http.StatusPaymentRequired, msg: fmt.Sprintf(format, a...), code: object.CodeInsufficientBalance}
 }
 
 // forbiddenError is 403: the credential is VALID and the caller is known — they
@@ -115,15 +123,15 @@ func billingError(format string, a ...interface{}) error {
 // untrue about their own credential. Unauthorized and nonexistent orgs share
 // this one status so the ask cannot enumerate orgs.
 func forbiddenError(format string, a ...interface{}) error {
-	return &apiError{http.StatusForbidden, fmt.Sprintf(format, a...)}
+	return &apiError{status: http.StatusForbidden, msg: fmt.Sprintf(format, a...)}
 }
 
 func modelError(format string, a ...interface{}) error {
-	return &apiError{http.StatusBadRequest, fmt.Sprintf(format, a...)}
+	return &apiError{status: http.StatusBadRequest, msg: fmt.Sprintf(format, a...)}
 }
 
 func serverError(format string, a ...interface{}) error {
-	return &apiError{http.StatusInternalServerError, fmt.Sprintf(format, a...)}
+	return &apiError{status: http.StatusInternalServerError, msg: fmt.Sprintf(format, a...)}
 }
 
 // busyError is 429: the credential is valid, the request is well formed, and
@@ -133,7 +141,7 @@ func serverError(format string, a ...interface{}) error {
 // own share, one the caller itself can clear. The message names which of those
 // two it is (speech_admission.go).
 func busyError(format string, a ...interface{}) error {
-	return &apiError{http.StatusTooManyRequests, fmt.Sprintf(format, a...)}
+	return &apiError{status: http.StatusTooManyRequests, msg: fmt.Sprintf(format, a...)}
 }
 
 // statusOf returns the HTTP status carried by an apiError, or 401 for an untyped
@@ -144,6 +152,15 @@ func statusOf(err error) int {
 		return ae.status
 	}
 	return http.StatusUnauthorized
+}
+
+// codeOf returns the machine name a failure carries, or "" for one that has none.
+func codeOf(err error) string {
+	var ae *apiError
+	if errors.As(err, &ae) {
+		return ae.code
+	}
+	return ""
 }
 
 // wrapAuth tags an untyped error as a 401 auth failure, but leaves an already
@@ -158,7 +175,7 @@ func wrapAuth(err error) error {
 	if errors.As(err, &ae) {
 		return err
 	}
-	return &apiError{http.StatusUnauthorized, err.Error()}
+	return &apiError{status: http.StatusUnauthorized, msg: err.Error()}
 }
 
 // ResponseAuthError renders an error from the auth / routing path with its
@@ -166,7 +183,17 @@ func wrapAuth(err error) error {
 // key, an empty balance, or a bad model is unambiguous to OpenAI-compatible
 // clients. This is the ONE renderer for that surface (chat, embeddings, rerank).
 func (c *ApiController) ResponseAuthError(err error) {
-	c.ResponseErrorWithStatus(statusOf(err), err.Error())
+	c.ResponseFailure(err)
+}
+
+// ResponseFailure renders a typed failure with the status AND the machine name it
+// carries. ResponseError writes neither: it answers 200 with a message, so a
+// completion that no provider could serve reached clients as a success whose body
+// had no choices in it.
+func (c *ApiController) ResponseFailure(err error) {
+	c.Ctx.Output.SetStatus(statusOf(err))
+	c.Data["json"] = Response{Status: "error", Msg: err.Error(), Code: codeOf(err)}
+	c.ServeJSON()
 }
 
 // ResponseUnauthorized renders an authentication denial (no/invalid session or

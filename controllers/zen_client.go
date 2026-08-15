@@ -103,6 +103,17 @@ type modelFamily struct {
 	// nil means the family has none, and a refusal for money from it is final.
 	spare func([]byte) []string
 
+	// terms states, in the family's own dialect, what the vendor may keep of an
+	// exchange. It is called with the outgoing body and whether the route being
+	// asked for is one the vendor charges nothing for, because that is the trade a
+	// free route IS: the vendor serves it for nothing and keeps what it carried.
+	// A priced route pays instead, and keeps nothing.
+	//
+	// nil for a family whose dialect states no such thing, and the body then goes
+	// out untouched — vendor-specific fields are never sent to a vendor that did
+	// not define them.
+	terms func(body []byte, free bool) []byte
+
 	// discovered catalog — a read-mostly snapshot; discovery failure keeps the last
 	// good snapshot so a transient blip never empties ai's model list.
 	mu        sync.RWMutex
@@ -790,7 +801,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	if prov == nil {
 		// Unconfigured or switched off. From the request's point of view that is
 		// a provider that cannot serve, so try the alternates before saying no.
-		return refused(&apiError{http.StatusServiceUnavailable, fam.name + " service is not configured"})
+		return refused(&apiError{status: http.StatusServiceUnavailable, msg: fam.name + " service is not configured"})
 	}
 	// Access gate (the ONE choke point): a gated SKU (enso limited preview) is
 	// callable only with a granted ModelAccess row. Discovery tells us which models
@@ -861,9 +872,20 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	// send offers this request to ONE of the family's routes. The SKU is the only
 	// thing that varies, which is what makes a spare route a different address for
 	// the same request rather than a different request.
+	// free reports that this family serves the named route for nothing. Read from
+	// the discovered price, which is the same number the ledger bills, so what a
+	// call costs and the terms it is served under are one fact.
+	free := func(id string) bool {
+		m, ok := fam.lookup(id)
+		return ok && !m.priced()
+	}
+
 	send := func(s string) (*http.Response, error) {
 		r := req.Clone(c.Ctx.Request.Context())
 		b := withModel(rawBody, s)
+		if fam.terms != nil {
+			b = fam.terms(b, free(s))
+		}
 		r.Body = io.NopCloser(bytes.NewReader(b))
 		r.ContentLength = int64(len(b))
 		// GetBody is what http.NewRequest sets for a bytes.Reader and what the
@@ -942,7 +964,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	// the decision lives at the status and not somewhere down in the relay.
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
-		err := &apiError{resp.StatusCode, upstreamErrorMessage(b)}
+		err := &apiError{status: resp.StatusCode, msg: upstreamErrorMessage(b)}
 		r, alt := spared(err, b)
 		if r == nil {
 			if faultOf(err) == faultProvider {
@@ -961,6 +983,14 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		mk.model = alt
 		log.Warn("family=%s is out of money (402) — %s served by the free route %s; the client is told which",
 			fam.name, model, alt)
+	}
+
+	// The client is told the terms its answer was served under, because a free route
+	// is free in exchange for what the vendor keeps and somebody has to be able to
+	// say so — in a consent notice, in a log, in a policy page. Set before any byte
+	// of a stream goes out, which is the last moment a header can be set at all.
+	if fam.terms != nil {
+		c.Ctx.Output.Header(headerCollection, collection(free(sku)))
 	}
 
 	prompt, completion := 0, 0

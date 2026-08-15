@@ -69,7 +69,7 @@ func wrapUpstreamError(err error) error {
 		return nil
 	}
 	if status := upstreamHTTPStatus(err); status != 0 {
-		return &apiError{status, err.Error()}
+		return &apiError{status: status, msg: err.Error()}
 	}
 	return err
 }

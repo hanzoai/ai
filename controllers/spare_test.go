@@ -492,3 +492,53 @@ func TestTheVendorsOwnFreeRouterLeadsTheSpares(t *testing.T) {
 		t.Errorf("spares = %v, want %v", got, want)
 	}
 }
+
+// A free route is free because the vendor keeps what it carried; a priced one pays
+// instead and keeps nothing. One fact, stated to the vendor in its own dialect and
+// reported to the caller in ours, so the two can never be different words about the
+// same call.
+func TestTermsFollowThePrice(t *testing.T) {
+	read := func(b []byte) string {
+		var m struct {
+			Provider struct {
+				DataCollection string   `json:"data_collection"`
+				Order          []string `json:"order"`
+			} `json:"provider"`
+			Model string `json:"model"`
+		}
+		if err := json.Unmarshal(b, &m); err != nil {
+			t.Fatalf("body is not JSON after terms: %v", err)
+		}
+		if m.Model != "vendor/x" {
+			t.Errorf("terms rewrote the model to %q", m.Model)
+		}
+		return m.Provider.DataCollection
+	}
+	body := []byte(`{"model":"vendor/x","messages":[]}`)
+	if got := read(openrouterTerms(body, true)); got != collectionAllow {
+		t.Errorf("free route data_collection = %q, want %q", got, collectionAllow)
+	}
+	if got := read(openrouterTerms(body, false)); got != collectionDeny {
+		t.Errorf("priced route data_collection = %q, want %q", got, collectionDeny)
+	}
+
+	// A caller's own vendor preferences survive: terms state one field, not the object.
+	kept := openrouterTerms([]byte(`{"model":"vendor/x","provider":{"order":["a","b"]}}`), true)
+	var m struct {
+		Provider struct {
+			DataCollection string   `json:"data_collection"`
+			Order          []string `json:"order"`
+		} `json:"provider"`
+	}
+	if err := json.Unmarshal(kept, &m); err != nil {
+		t.Fatal(err)
+	}
+	if len(m.Provider.Order) != 2 || m.Provider.DataCollection != collectionAllow {
+		t.Errorf("a caller's other vendor preferences were dropped: %+v", m.Provider)
+	}
+
+	// A body we cannot read goes out as it came in rather than mangled.
+	if got := string(openrouterTerms([]byte("not json"), true)); got != "not json" {
+		t.Errorf("unreadable body was rewritten to %q", got)
+	}
+}

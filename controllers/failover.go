@@ -290,8 +290,8 @@ var callProvider = func(
 // Named so the cascade tests can assert the value production emits instead of a
 // string that merely resembles it.
 func unavailable(provider string) error {
-	return &apiError{http.StatusServiceUnavailable,
-		fmt.Sprintf("provider %q is unavailable (disabled or not configured)", provider)}
+	return &apiError{status: http.StatusServiceUnavailable,
+		msg: fmt.Sprintf("provider %q is unavailable (disabled or not configured)", provider)}
 }
 
 // recordRefusals writes one usage row per provider that refused, so a vendor
