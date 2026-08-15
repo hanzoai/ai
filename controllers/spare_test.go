@@ -926,3 +926,70 @@ func TestEveryPoolRouteBillsNothing(t *testing.T) {
 		t.Error("a route outside the pool reads as free")
 	}
 }
+
+// The try budget bounds the BORROWED routes, not our own.
+//
+// Each borrowed try is a round trip spent waiting on somebody else, which is what
+// the budget is for. Our own compute is not borrowed and is last, so spending the
+// budget on borrowed routes must not make it unreachable — that would leave the one
+// route no vendor can withdraw as the one route never asked. Measured: a vendor whose
+// data policy refuses every free route answers 404 on all of them, and there are more
+// of them than the budget.
+func TestTheBudgetBoundsBorrowedRoutesNotOurOwn(t *testing.T) {
+	cooled.forget()
+	fam := freeFamily()
+	saved := *fam
+	t.Cleanup(func() { *fam = saved })
+	savedEngine := *engineFam
+	t.Cleanup(func() { *engineFam = savedEngine })
+
+	// More borrowed routes than the budget, and every one of them refuses.
+	borrowed := []string{"v/a:free", "v/b:free", "v/c:free", "v/d:free", "v/e:free"}
+	asked := map[string]int{}
+	vendor := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var in struct {
+			Model string `json:"model"`
+		}
+		b := make([]byte, r.ContentLength)
+		_, _ = r.Body.Read(b)
+		_ = json.Unmarshal(b, &in)
+		asked[in.Model]++
+		if in.Model == engineModel {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id":"1","model":"` + engineModel + `","choices":[{"index":0,"message":{"role":"assistant","content":"ok"}}]}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"error":{"message":"No endpoints available matching your data policy"}}`))
+	}))
+	defer vendor.Close()
+
+	fam.spares = borrowed
+	fam.loaded, fam.fetchedAt = true, time.Now()
+	fam.providerFn = func() *object.Provider {
+		return &object.Provider{Owner: "admin", Name: "openrouter", Type: "OpenRouter", ProviderUrl: vendor.URL}
+	}
+	t.Setenv("TEST_ENGINE_URL", vendor.URL)
+	engineFam.urlKey = "TEST_ENGINE_URL"
+	engineFam.providerFn = nil
+
+	enso := otherFamily(t, vendor.URL)
+	body := []byte(`{"model":"enso-free","messages":[{"role":"user","content":"hi"}]}`)
+	rec := httptest.NewRecorder()
+	ctx := web.NewContext()
+	ctx.Reset(rec, httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(string(body))))
+	c := &ApiController{}
+	c.Init(ctx, "ApiController", "X", nil)
+	c.pipeToFamily(enso, "chat/completions", "openai", "enso-free", body, false, "acme", nil, false, nil, time.Now())
+
+	if asked[engineModel] == 0 {
+		t.Fatalf("our own compute was never asked: %v — the budget made the one unwithdrawable route unreachable", asked)
+	}
+	borrowedTries := 0
+	for _, id := range borrowed {
+		borrowedTries += asked[id]
+	}
+	if borrowedTries > spareTries {
+		t.Errorf("asked %d borrowed routes, budget is %d", borrowedTries, spareTries)
+	}
+}
