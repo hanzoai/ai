@@ -65,6 +65,7 @@ var openrouterFam = &modelFamily{
 	keyKey:     "OPENROUTER_API_KEY",
 	providerFn: object.OpenRouterProvider,
 	decode:     openrouterCatalog,
+	terms:      openrouterTerms,
 	spare:      openrouterSpare,
 }
 
@@ -263,4 +264,59 @@ func openrouterSpare(body []byte) []string {
 		ids = append(ids, w.ID)
 	}
 	return ids
+}
+
+// The vendor's two words for what it may keep of an exchange, and the header the
+// answer carries so a client can say which applied without inferring it from a
+// price list.
+const (
+	collectionAllow  = "allow"
+	collectionDeny   = "deny"
+	headerCollection = "X-Hanzo-Data-Collection"
+)
+
+// collection is the word for a route served free or for money. One reading of one
+// fact, so the value sent to the vendor and the value reported to the caller can
+// never be different words about the same call.
+func collection(free bool) string {
+	if free {
+		return collectionAllow
+	}
+	return collectionDeny
+}
+
+// openrouterTerms states what OpenRouter may keep of this exchange, in its own
+// dialect: `provider.data_collection`.
+//
+// A free route is free BECAUSE the vendor keeps what it carried — that is the
+// trade, and asking for a free route while denying collection asks for the price
+// without the terms, which the vendor answers by having no endpoint to serve it.
+// A priced route pays instead and keeps nothing.
+//
+// Written over the caller's own `provider` object rather than replacing it, so a
+// caller who states other vendor preferences keeps them.
+func openrouterTerms(body []byte, free bool) []byte {
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(body, &m); err != nil || m == nil {
+		return body
+	}
+	prov := map[string]json.RawMessage{}
+	if raw, ok := m["provider"]; ok {
+		_ = json.Unmarshal(raw, &prov)
+	}
+	word, err := json.Marshal(collection(free))
+	if err != nil {
+		return body
+	}
+	prov["data_collection"] = word
+	pb, err := json.Marshal(prov)
+	if err != nil {
+		return body
+	}
+	m["provider"] = pb
+	out, err := json.Marshal(m)
+	if err != nil {
+		return body
+	}
+	return out
 }

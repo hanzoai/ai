@@ -129,7 +129,7 @@ func (c *ApiController) Embeddings() {
 		// itself, naming the vendor and the reason rather than forwarding an
 		// upstream 402 that tells the customer THEY are out of money.
 		c.recordRefusals(head.Model, refused, authUser, isPremium, false, uuid.NewString(), startTime)
-		c.ResponseError(exhausted(head.Model, refused).Error())
+		c.ResponseFailure(exhausted(head.Model, refused))
 		return
 	}
 

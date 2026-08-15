@@ -421,7 +421,7 @@ func TestARefusalDoesNotQuoteTheUpstreamsBodyBack(t *testing.T) {
 
 	// And the whole way out: the refusal a customer actually reads.
 	err := exhausted("enso-flash", []attempt{
-		{provider: "enso", status: 402, err: &apiError{402, said}},
+		{provider: "enso", status: 402, err: &apiError{status: 402, msg: said}},
 	})
 	for _, tell := range []string{"GMICloud", "0.00123", "upstream_inference_cost", "is_byok"} {
 		if strings.Contains(err.Error(), tell) {
