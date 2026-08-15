@@ -19,6 +19,7 @@ import (
 	"crypto/tls"
 	"net"
 	"net/http"
+	neturl "net/url"
 	"strings"
 	"time"
 
@@ -73,7 +74,7 @@ func getProxyHttpClient() *http.Client {
 		panic(err)
 	}
 
-	tr := &http.Transport{Dial: dialer.Dial, TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}
+	tr := &http.Transport{Dial: dialer.Dial}
 	return &http.Client{
 		Transport: tr,
 	}
@@ -85,4 +86,29 @@ func GetHttpClient(url string) *http.Client {
 	} else {
 		return DefaultHttpClient
 	}
+}
+
+// Local returns the client to use for a base URL, or nil to take the verifying
+// default. A non-nil result accepts any certificate and is returned ONLY for this
+// machine, where a model server's certificate is self-signed because nobody issues
+// one for 127.0.0.1. Anything that does not clearly name this machine — a
+// look-alike host, an unparseable URL — is remote and verifies.
+func Local(url string) *http.Client {
+	if !loopback(url) {
+		return nil
+	}
+	return &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
+}
+
+func loopback(raw string) bool {
+	u, err := neturl.Parse(strings.TrimSpace(raw))
+	if err != nil || u.Host == "" {
+		return false
+	}
+	host := u.Hostname()
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
