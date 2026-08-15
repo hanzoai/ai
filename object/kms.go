@@ -50,11 +50,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/log"
 )
 
@@ -221,9 +221,15 @@ func kmsPut(ref, value string) error {
 }
 
 // resolveSecretName returns the value behind a bare secret NAME: the embedded
-// store first, then the environment. This is the one precedence rule; every
+// store first, then configuration. This is the one precedence rule; every
 // caller goes through it so keyPresent can never disagree with what a
 // completion would actually use.
+//
+// The second leg is conf.GetConfigString rather than os.Getenv, so that this
+// reads everything a plain configuration read would — the environment first,
+// then app.conf. Reading only the environment meant a caller had to choose
+// between the store and its config file, which is why the credentials most
+// worth governing were the ones still bypassing this.
 func resolveSecretName(name string) string {
 	// A store error is not fatal here — it must not take down a provider whose key
 	// is still env-fed. kmsGet does the logging, on the probe rather than the call,
@@ -231,7 +237,7 @@ func resolveSecretName(name string) string {
 	if v, err := kmsGet(name); err == nil && strings.TrimSpace(v) != "" {
 		return v
 	}
-	return os.Getenv(name)
+	return conf.GetConfigString(name)
 }
 
 // ResolveProviderSecret resolves "kms://NAME" references on a provider record

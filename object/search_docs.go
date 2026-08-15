@@ -153,7 +153,7 @@ func getSearchClient() (meilisearch.ServiceManager, error) {
 	if port == "" {
 		port = "7700"
 	}
-	apiKey := conf.GetConfigString("searchApiKey")
+	apiKey := resolveSecretName("searchApiKey")
 	if apiKey == "" {
 		apiKey = os.Getenv("SEARCH_API_KEY")
 	}
@@ -174,7 +174,7 @@ func getVectorEndpoint() (string, string) {
 	if port == "" {
 		port = "6333"
 	}
-	apiKey := conf.GetConfigString("vectorApiKey")
+	apiKey := resolveSecretName("vectorApiKey")
 	url := host
 	if !strings.HasPrefix(host, "http") {
 		url = fmt.Sprintf("http://%s:%s", host, port)
