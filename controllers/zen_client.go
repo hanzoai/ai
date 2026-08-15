@@ -301,6 +301,10 @@ type zenModel struct {
 	OwnedBy string
 	MaxCtx  int
 	Vision  bool
+	// Outputs are the kinds of answer this SKU produces, as the family advertises
+	// them ("text", "audio", "image"). Empty when the family advertises none, which
+	// reads as unknown and never as text.
+	Outputs []string
 	Access  string // "" = generally available; "waitlist" = access-gated (limited preview) — ai enforces the grant
 	MinTier string // "" | "free" | "trial" | "paid" — min subscription tier the family advertises for this SKU; ai enforces it (Seams A/B). "" ⇒ free (all tiers). Orthogonal to Access.
 	// Funding is how the SKU's usage is PAID FOR upstream: "prepaid" means every path it
@@ -670,7 +674,7 @@ func (f *modelFamily) mergeModels(base []modelInfo) []modelInfo {
 			// for is not. A free route reported as premium reads to a client as a
 			// SKU their plan cannot afford, which is the opposite of true.
 			ID: z.ID, Object: "model", Created: now, OwnedBy: owner, Premium: z.priced(),
-			Pricing: pricingInfo(z.price()), ContextWindow: window,
+			Pricing: pricingInfo(z.price()), ContextWindow: window, Outputs: z.Outputs,
 		}
 		// A gated SKU is LISTED but access-controlled; advertise the default standing
 		// ("waitlist"). ListModels upgrades this to the caller's real status when authed.
