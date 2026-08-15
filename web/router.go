@@ -83,9 +83,16 @@ type SessionManager interface {
 // controller method, and is itself an http.Handler.
 type Router struct {
 	routes    []*route
+	mounts    []*mount
 	filters   [FinishRouter + 1][]*filterEntry
 	maxMemory int64
 	sessions  SessionManager
+}
+
+// A subtree served by a plain http.Handler rather than a controller.
+type mount struct {
+	prefix  string
+	handler http.Handler
 }
 
 // NewRouter returns an empty Router.
@@ -109,6 +116,28 @@ func (p *Router) Router(pattern string, c ControllerInterface, mapping string) {
 		ctrlType: reflect.Indirect(reflect.ValueOf(c)).Type(),
 		methods:  parseMapping(mapping),
 	})
+}
+
+// Handle serves everything under prefix with a plain http.Handler, for the
+// protocols a controller cannot express — a WebSocket has no request/response
+// pair to reflect a method onto, and its writer must survive as far as Hijack.
+//
+// A mount is consulted only where no controller claims the path, so adding one
+// cannot take traffic from an existing route. It runs after the BeforeRouter
+// filters, on the rewritten path and with the body already buffered and put
+// back, so auth and the /v1 rewrites apply exactly as they do elsewhere.
+func (p *Router) Handle(prefix string, h http.Handler) {
+	p.mounts = append(p.mounts, &mount{prefix: prefix, handler: h})
+}
+
+// mounted returns the handler serving path, if one does.
+func (p *Router) mounted(path string) http.Handler {
+	for _, m := range p.mounts {
+		if path == m.prefix || strings.HasPrefix(path, m.prefix+"/") {
+			return m.handler
+		}
+	}
+	return nil
 }
 
 // InsertFilter adds a filter at a position for a URL pattern. The optional
@@ -186,6 +215,15 @@ func (p *Router) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	// the context themselves.
 	rt, params, found := p.match(r.URL.Path)
 	if !found {
+		// No controller claims this path. A mounted handler may, and it is asked
+		// last so that registering one can never take traffic from a route.
+		// ctx.ResponseWriter rather than rw: it forwards Hijack to the writer
+		// underneath, which is what lets a mount upgrade to a WebSocket, and it
+		// keeps the status and Started bookkeeping the rest of the chain reads.
+		if h := p.mounted(r.URL.Path); h != nil {
+			h.ServeHTTP(ctx.ResponseWriter, r)
+			return
+		}
 		http.NotFound(ctx.ResponseWriter, r)
 		return
 	}
