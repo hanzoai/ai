@@ -522,6 +522,12 @@ func costsNothing(model, orgId string) bool {
 	return ok && p.InputPerMillion <= 0 && p.OutputPerMillion <= 0
 }
 
+// ModelCostsNothing is costsNothing for the router's balance filter, which runs
+// BEFORE any controller and therefore before the in-controller gate. Exported for
+// the same reason FamilyModelGated is: the filter must be able to ask what a model
+// costs without knowing how families and price tables are laid out.
+func ModelCostsNothing(model, orgId string) bool { return costsNothing(model, orgId) }
+
 // calculateCostCents computes the cost in cents for a model call.
 func calculateCostCents(model string, promptTokens, completionTokens int) int64 {
 	return calculateCostCentsWithCache(model, promptTokens, completionTokens, 0, 0)

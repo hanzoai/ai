@@ -182,6 +182,21 @@ func BalanceGateFilter(ctx *web.Context) {
 		return
 	}
 
+	// A model priced at zero has nothing for a WALLET gate to refuse.
+	//
+	// This gate runs before any controller, so the in-controller balance gate's
+	// identical rule never gets the chance to speak: a $0 route was refused here
+	// first, and a guest with no wallet at all — the caller a free tier exists for —
+	// could not reach the very routes published for them. Two gates asking one
+	// question have to give one answer.
+	//
+	// Fails closed the same way its twin does: only a model whose price is FOUND and
+	// is zero skips. A body we cannot read, a model we cannot name, or a price we had
+	// to synthesize all leave the gate in force.
+	if m := requestedModel(ctx); m != "" && controllers.ModelCostsNothing(m, namespace) {
+		return
+	}
+
 	sufficient, deny, balance := balanceGate.checkBalance(ctx.Request.Host, subject, namespace, userKey)
 	if sufficient {
 		// Balance covers the call — but a plan also bounds how FAST a caller may burn
@@ -235,6 +250,23 @@ func isReadMethod(method string) bool {
 // /v1/ai/usages would have caused it again.
 var balanceExemptNames = map[string]struct{}{
 	"get-usages": {}, "get-range-usages": {}, "get-cloud-usages": {},
+}
+
+// requestedModel reads the model a metered POST is asking for, or "" when the body
+// does not name one. The router caches the body, so this reads the cached copy and
+// never consumes the stream the handler is about to read.
+func requestedModel(ctx *web.Context) string {
+	body := ctx.Input.RequestBody
+	if len(body) == 0 {
+		return ""
+	}
+	var req struct {
+		Model string `json:"model"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(req.Model)
 }
 
 // isBalanceExempt returns true for requests that should bypass balance checking
