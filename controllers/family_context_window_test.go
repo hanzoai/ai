@@ -17,6 +17,8 @@ package controllers
 import (
 	"testing"
 	"time"
+
+	"github.com/hanzoai/decimal"
 )
 
 // The production families guarantee their flagship SKUs at the 1M served window.
@@ -114,5 +116,28 @@ func TestMergeModelsBareFamilyNoWindow(t *testing.T) {
 	// A bare family also guarantees no window (enabled() is false).
 	if out[0].ContextWindow != 0 {
 		t.Errorf("bare family must not guarantee a window, got %d", out[0].ContextWindow)
+	}
+}
+
+// Premium is a claim about money, so the listing takes it from the price. A route
+// the family charges nothing for reported as premium reads to a client as a SKU
+// their plan cannot afford — the opposite of what is true, and the reason a free
+// route would never be offered by a picker that filters on it.
+func TestMergeModelsReadsPremiumFromThePrice(t *testing.T) {
+	fam := &modelFamily{name: "openrouter", prefix: "openrouter/", owner: "openrouter"}
+	fam.byID = map[string]zenModel{
+		"vendor/paid": {ID: "vendor/paid", MaxCtx: 128000, Base: zenTier{In: decimal.New(3, 0), Out: decimal.New(15, 0)}},
+		"vendor/free": {ID: "vendor/free", MaxCtx: 128000},
+	}
+	fam.ids = []string{"vendor/paid", "vendor/free"}
+	fam.loaded = true
+	fam.fetchedAt = time.Now()
+
+	byID := indexModels(fam.mergeModels(nil))
+	if !byID["vendor/paid"].Premium {
+		t.Error("a SKU the family charges for is not premium")
+	}
+	if byID["vendor/free"].Premium {
+		t.Error("a SKU the family charges nothing for is premium")
 	}
 }
