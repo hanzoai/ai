@@ -388,6 +388,18 @@ func broke(err error, msg string) bool {
 	return false
 }
 
+// down reports that a vendor cannot serve this request at all: its account with
+// us is spent, or it answered with its own failure.
+//
+// Both are facts about the vendor, and a route it charges nothing for is subject
+// to neither — a spent account still serves what it never bills for, and a 5xx is
+// one shard of a fleet rather than the whole of it. Busy (429) is deliberately
+// outside this: it clears in seconds and is better waited out than answered with
+// a smaller model.
+func down(err error, msg string) bool {
+	return broke(err, msg) || upstreamHTTPStatus(err) >= 500
+}
+
 // billingNotice reports that a refusal is OUR OWN spend gate speaking, relayed
 // back to us by a service that fronts for us.
 //
