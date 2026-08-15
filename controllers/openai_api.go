@@ -174,6 +174,10 @@ const widgetMaxTokens = 800
 
 // widgetAllowedModels defines which models widget keys can access.
 // Only cheap DO-AI models are allowed to keep costs minimal.
+//
+// A route priced at zero is reachable too, without being listed — see
+// widgetMayServe. The list exists to bound what a page-embedded key can spend,
+// and a route that spends nothing is already inside that bound.
 var widgetAllowedModels = map[string]bool{
 	"llama-3.1-8b":            true,
 	"llama-3.3-70b":           true,
@@ -202,8 +206,7 @@ func resolveProviderFromWidgetKey(token string, requestedModel string, lang stri
 		)
 	}
 
-	// Widget keys can only access explicitly allowed models
-	if !widgetAllowedModels[strings.ToLower(requestedModel)] {
+	if !widgetMayServe(requestedModel) {
 		return nil, "", fmt.Errorf(
 			"model %q is not available for widget access. Allowed models: %s",
 			requestedModel, widgetAllowedModelsList(),
@@ -219,6 +222,18 @@ func resolveProviderFromWidgetKey(token string, requestedModel string, lang stri
 	}
 
 	return provider, route.upstreamModel, nil
+}
+
+// widgetMayServe reports whether a key embedded in a public page may ask for this
+// model: one of the cheap ids named above, or any route priced at zero.
+//
+// The list bounds what such a key can SPEND, and a route the vendor charges
+// nothing for spends nothing — so admitting it keeps the bound rather than
+// widening it, and a logged-out page can be answered without a wallet behind it.
+// Read from the same price the ledger bills, and false for a model whose price
+// cannot be read, so an unknown id is never admitted on a guess.
+func widgetMayServe(model string) bool {
+	return widgetAllowedModels[strings.ToLower(model)] || costsNothing(model, "")
 }
 
 // widgetAllowedModelsList returns a comma-separated list of widget-allowed models.
