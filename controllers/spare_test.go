@@ -899,3 +899,30 @@ func TestOurOwnComputeIsThePoolsLastResort(t *testing.T) {
 		}
 	}
 }
+
+// Every route in the pool bills nothing, including our own — a route is in the pool
+// BECAUSE it costs nothing, so charging for one would charge for the very thing that
+// makes it a fallback. Read from the pool, not from any one family's list, because
+// the pool now spans families.
+func TestEveryPoolRouteBillsNothing(t *testing.T) {
+	fam := freeFamily()
+	saved := *fam
+	t.Cleanup(func() { *fam = saved })
+	fam.spares = []string{"vendor/a:free"}
+	fam.loaded, fam.fetchedAt = true, time.Now()
+
+	savedEngine := *engineFam
+	t.Cleanup(func() { *engineFam = savedEngine })
+	t.Setenv("TEST_ENGINE_URL", "http://engine.invalid")
+	engineFam.urlKey = "TEST_ENGINE_URL"
+
+	if !inPool("vendor/a:free") {
+		t.Error("a borrowed free route is not read as free")
+	}
+	if !inPool(engineModel) {
+		t.Error("our own compute is not read as free — an answer from it would be billed")
+	}
+	if inPool("vendor/paid") {
+		t.Error("a route outside the pool reads as free")
+	}
+}
