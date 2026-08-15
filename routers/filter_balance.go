@@ -199,9 +199,10 @@ func BalanceGateFilter(ctx *web.Context) {
 		// period, spent here and reported by the host. It is the one gate a free
 		// caller meets, and the moment to offer them a plan.
 		//
-		// Fails OPEN on error, and the direction is safe precisely here: this route
-		// costs nothing, so an unreadable allowance hands out our own compute and
-		// never a paid vendor call. A priced route never reaches this branch.
+		// An error is allowed through, and WHO gets that benefit is the host's call:
+		// it holds the tenancy vocabulary, so it answers spent for a caller it cannot
+		// name and returns the error only for one it can. A priced route never
+		// reaches this branch, so nothing here can free a metered call.
 		if spend := object.Allowance(); spend != nil {
 			if spent, err := spend(ctx.Request.Context(), subject, namespace); err == nil && spent {
 				log.Info("allowance: period allowance spent subject=%s namespace=%s path=%s",
