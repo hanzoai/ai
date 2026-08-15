@@ -20,8 +20,6 @@ import (
 	"os"
 	"testing"
 
-	"github.com/hanzoai/account"
-
 	"github.com/hanzoai/ai/conf"
 	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/object"
@@ -179,19 +177,29 @@ func TestProviderKeyBillingUser(t *testing.T) {
 	if u.Type != "application" {
 		t.Errorf("billing user Type = %q, want %q (M2M provider-key credential)", u.Type, "application")
 	}
-	if got := account.Payer(account.Credential{Owner: u.Owner, Name: u.Name}).Subject(); got != "acme" {
-		t.Errorf("Payer(%q,%q).Subject() = %q, want %q (org-level ledger)", u.Owner, u.Name, got, "acme")
+	// Asked through PayerSubject, which is how the gate and the debit ask it. A
+	// hand-built account.Credential here would omit Machine — the field that
+	// carries "this is the org acting, not a person" — and answer a question
+	// production never poses.
+	if got := u.PayerSubject(""); got != "acme" {
+		t.Errorf("PayerSubject(%q,%q) = %q, want %q (org-level ledger)", u.Owner, u.Name, got, "acme")
 	}
 
-	// Personal-billing org ("hanzo" is the default): the empty Name still yields
-	// the ORG-level subject, NOT an unfunded per-user "hanzo/..." subject — so the
-	// shared-do-ai provider (owned by the platform org) bills the org, closing the
-	// zero-billing leak rather than 402-ing on a phantom subject.
+	// The signup org, where a missing name is otherwise read as "not a person" and
+	// REFUSED (account ≥ v0.3.2) so that a credential which failed to name anybody
+	// cannot spend the platform's balance. A provider key is not that: it is the
+	// org itself acting, said by Type "application", and a machine is answered by
+	// the org ledger before the nameless rule is ever reached. So the shared do-ai
+	// provider still bills the org — the zero-billing leak stays closed, and it
+	// does not 402 on a phantom per-user subject.
+	//
+	// This is exactly why the question is asked through PayerSubject: it carries
+	// Machine from Type, so the answer cannot depend on a caller remembering to.
 	uh, err := providerKeyBillingUser(&object.Provider{Owner: "hanzo", Name: "do-ai"})
 	if err != nil || uh == nil {
 		t.Fatalf("providerKeyBillingUser(owner=hanzo) = (%v, %v); want a user", uh, err)
 	}
-	if got := account.Payer(account.Credential{Owner: uh.Owner, Name: uh.Name}).Subject(); got != "hanzo" {
-		t.Errorf("Payer(hanzo, %q).Subject() = %q, want %q (org-level, not per-user)", uh.Name, got, "hanzo")
+	if got := uh.PayerSubject(""); got != "hanzo" {
+		t.Errorf("PayerSubject(hanzo, %q) = %q, want %q (org-level, not per-user)", uh.Name, got, "hanzo")
 	}
 }
