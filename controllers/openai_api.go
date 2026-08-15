@@ -393,6 +393,15 @@ func enforceBalanceGate(user *iam.User, ledger string, requestedModel string) er
 	orgKey := ledger // namespace (X-Org-Id): the org tenant whose ledger pays
 	subject := user.PayerSubject(ledger)
 
+	// A model priced at zero has nothing for this gate to refuse. Everything below
+	// stops a call that cannot be paid for — the caller's wallet, and our own cash
+	// behind it — and a route that bills zero on both sides spends neither. Refusing
+	// one asks somebody to add funds for a call that will cost $0.00, which is how a
+	// free plan came to be unable to reach the free routes we publish for it.
+	if costsNothing(requestedModel, ledger) {
+		return nil
+	}
+
 	// Cash circuit-breaker (internal/funding). Checked BEFORE the balance read
 	// because it is a property of OUR bank account, not of the caller's wallet: a
 	// caller with a perfectly good platform balance is exactly who spends our cash

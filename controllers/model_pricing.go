@@ -66,12 +66,12 @@ type modelPricingInfo struct {
 }
 
 // pricingInfo projects an internal modelPrice into the public pricing block, or
-// returns nil (→ dropped by omitempty) when there is no genuine pricing to
-// expose. ok reports whether a real per-model pricing entry was found; a
-// degenerate all-zero entry is treated as "no pricing" so the listing never
-// emits a meaningless {"input":0,"output":0}.
+// returns nil (→ dropped by omitempty) when nobody stated a price. ok is the whole
+// question: it reports that a real per-model entry was FOUND, and a found price of
+// zero is a price — the one a caller most needs to see, since it says the route is
+// free. Only a model no source names has its pricing block dropped.
 func pricingInfo(p modelPrice, ok bool) *modelPricingInfo {
-	if !ok || (p.InputPerMillion <= 0 && p.OutputPerMillion <= 0) {
+	if !ok {
 		return nil
 	}
 	return &modelPricingInfo{Input: p.InputPerMillion, Output: p.OutputPerMillion}
@@ -508,6 +508,18 @@ func recordUnpriced(record *usageRecord) bool {
 	}
 	_, ok := getModelPriceForOrgOK(record.Model, "")
 	return !ok
+}
+
+// costsNothing reports that a model's price is zero on both sides.
+//
+// It reads the price the LEDGER bills from, so "free" here and "$0.00" on the
+// invoice are one fact rather than two opinions that can drift. It fails closed
+// twice over: a model whose price is synthesized rather than found reads as not
+// free (ok is false), and so does one this cannot name at all — `auto` among them,
+// since what that resolves to is not yet decided.
+func costsNothing(model, orgId string) bool {
+	p, ok := getModelPriceForOrgOK(model, orgId)
+	return ok && p.InputPerMillion <= 0 && p.OutputPerMillion <= 0
 }
 
 // calculateCostCents computes the cost in cents for a model call.
