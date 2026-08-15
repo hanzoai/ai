@@ -76,10 +76,13 @@ const openrouterMarginDefault = "1.20"
 // openrouterAuto is the id OpenRouter gives its own free router: one request to it
 // is served by whichever free route the vendor has up at that moment.
 //
-// It leads the spare order because that is the only question a spare has to answer,
-// and the vendor answers it from knowledge no listing carries. Measured on the live
-// account: a free route this list would otherwise rank first answered 429
-// ("temporarily rate-limited upstream") in the same minute this one answered 200.
+// It takes its place in the order below by context width like any other free route,
+// and deliberately gets no lift for always answering. What it answers WITH is not
+// knowable in advance: measured live, one request to it was served by a coding model
+// and the next by a content-safety classifier, which replied "User Safety: safe" to a
+// chat prompt. A route whose output shape we cannot read is the same hazard the
+// text-only rule below exists for, and the same rule decides it — a wrong answer in
+// place of an honest refusal is worse than the refusal.
 const openrouterAuto = "openrouter/free"
 
 var openrouterTokensPerMillion = decimal.New(1_000_000, 0)
@@ -233,12 +236,11 @@ func openrouterCatalog(body []byte) ([]zenModel, error) {
 // needs its own discovery and a priced route can never be handed out as a spare —
 // a downgrade that bills is not a remedy.
 //
-// OpenRouter's own free router leads, and the rest follow by context window,
-// widest first, then by id — a total order over the listing, so which route answers
-// is a property of what the vendor advertises and not of the order it happened to
-// serialize them in. Widest first because the request was already sized for the SKU
-// it asked for; a spare that cannot hold the prompt is not a fallback, it is a
-// second refusal.
+// Ordered by context window, widest first, then by id — a total order over the
+// listing, so which route answers is a property of what the vendor advertises and
+// not of the order it happened to serialize them in. Widest first because the
+// request was already sized for the SKU it asked for; a spare that cannot hold the
+// prompt is not a fallback, it is a second refusal.
 func openrouterSpare(body []byte) []string {
 	wire, err := openrouterWire(body)
 	if err != nil {
@@ -251,9 +253,6 @@ func openrouterSpare(body []byte) []string {
 		}
 	}
 	sort.Slice(free, func(i, j int) bool {
-		if a, b := free[i].ID == openrouterAuto, free[j].ID == openrouterAuto; a != b {
-			return a
-		}
 		if free[i].ContextLength != free[j].ContextLength {
 			return free[i].ContextLength > free[j].ContextLength
 		}
