@@ -30,9 +30,6 @@
 //   POST /v1/audio/voice                          -> audio.voice             (Zen)
 //   POST /v1/audio/music                          -> audio.music             (Zen)
 //   POST /v1/audio/foley                          -> audio.foley             (Zen)
-//   POST /v1/generate-text-to-speech-audio        -> tts.generate            (legacy store-bound)
-//   GET  /v1/generate-text-to-speech-audio-stream -> tts.generate.stream     (legacy, SSE buffered)
-//   POST /v1/process-speech-to-text               -> stt.process             (legacy, multipart)
 //
 // The Zen media forward reuses the SHARED zapServeZenMedia/zapRecordZenMediaUsage
 // (zap_images-generation.go) so there is ONE zen-media meter, not a fork.
@@ -47,7 +44,6 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
@@ -58,7 +54,6 @@ import (
 
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/stt"
-	"github.com/hanzoai/ai/tts"
 )
 
 // The canonical ZAP dispatch registry (registerCloud / registerGatewayPath /
@@ -76,18 +71,12 @@ func registerZapAudio() {
 	registerCloud("audio.voice", zapAudioVerbHandler("voice"))
 	registerCloud("audio.music", zapAudioVerbHandler("music"))
 	registerCloud("audio.foley", zapAudioVerbHandler("foley"))
-	registerCloud("tts.generate", zapLegacyTTSHandler)
-	registerCloud("tts.generate.stream", zapLegacyTTSStreamHandler)
-	registerCloud("stt.process", zapSTTHandler)
 
 	registerGatewayPath("/v1/audio/speech", zapAudioSpeechHandler)
 	registerGatewayPath("/v1/audio/transcriptions", zapAudioTranscribeHandler)
 	registerGatewayPath("/v1/audio/voice", zapAudioVerbHandler("voice"))
 	registerGatewayPath("/v1/audio/music", zapAudioVerbHandler("music"))
 	registerGatewayPath("/v1/audio/foley", zapAudioVerbHandler("foley"))
-	registerGatewayPath("/v1/generate-text-to-speech-audio-stream", zapLegacyTTSStreamHandler)
-	registerGatewayPath("/v1/generate-text-to-speech-audio", zapLegacyTTSHandler)
-	registerGatewayPath("/v1/process-speech-to-text", zapSTTHandler)
 }
 
 // ── audio.speech — OpenAI-compatible TTS (mirrors ApiController.AudioSpeech) ─
@@ -481,221 +470,9 @@ func zapRecordZenMediaUsage(mdl string, authUser *iam.User, isPremium bool, reqI
 	recordTrace(context.Background(), rec, start)
 }
 
-// ── Legacy store-bound TTS (mirrors GenerateTextToSpeechAudio) ──────────────
-
-func zapLegacyTTSHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
-	// The legacy handler bills the STORE owner, but a caller identity is still
-	// required — over ZAP there is no filter chain, so enforce auth here
-	// (STEP 1). Empty/invalid auth -> 401.
-	who, err := zapResolveUser(auth)
-	if err != nil {
-		return object.BuildCloudResponse(401, nil, err.Error())
-	}
-	var req TextToSpeechRequest
-	if err := json.Unmarshal(body, &req); err != nil {
-		return object.BuildCloudResponse(400, nil, "invalid request: "+err.Error())
-	}
-	message, chat, providerObj, pctx, err := object.PrepareTextToSpeech(req.StoreId, req.ProviderId, req.MessageId, req.Text, "en")
-	if err != nil {
-		return object.BuildCloudResponse(400, nil, err.Error())
-	}
-
-	// The same per-org ceiling the OpenAI-shaped door takes — this route reaches
-	// the same models, so leaving it out would not be a smaller limit but no limit,
-	// one path away. Keyed on the caller's own org rather than the store owner it
-	// bills: the caller names the store, so the store cannot be what decides whose
-	// capacity is spent.
-	release, refused := admitSpeech(orgOf(who))
-	if refused != nil {
-		return object.BuildCloudResponse(uint32(statusOf(refused)), nil, refused.Error())
-	}
-	defer release()
-
-	startTime := time.Now().UTC()
-	audioData, ttsResult, err := providerObj.QueryAudio(message.Text, pctx, "en")
-	if err != nil {
-		return object.BuildCloudResponse(502, nil, err.Error())
-	}
-	if audioData == nil {
-		return object.BuildCloudResponse(502, nil, "the audio data is nil")
-	}
-	if err := object.UpdateChatStats(chat, ttsResult); err != nil {
-		return object.BuildCloudResponse(500, nil, err.Error())
-	}
-	zapRecordLegacyTTSUsage(ctx, chat, req.ProviderId, ttsResult, startTime)
-	return object.BuildCloudResponse(200, audioData, "")
-}
-
-// zapLegacyTTSStreamHandler buffers the SSE stream (no ResponseWriter over ZAP)
-// and returns it as one body, mirroring GenerateTextToSpeechAudioStream. The
-// store/message ids arrive as body JSON (native cloud) or, over the gateway,
-// packed from the request query into the same shape.
-func zapLegacyTTSStreamHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
-	if _, err := zapResolveUser(auth); err != nil {
-		return object.BuildCloudResponse(401, nil, err.Error())
-	}
-	storeId, messageId := ttsStreamParams(body)
-	message, chat, providerObj, pctx, err := object.PrepareTextToSpeech(storeId, "", messageId, "", "en")
-	if err != nil {
-		return object.BuildCloudResponse(400, nil, err.Error())
-	}
-	startTime := time.Now().UTC()
-	var buf bytes.Buffer
-	ttsResult, err := providerObj.QueryAudioStream(message.Text, pctx, &buf, "en")
-	if err != nil {
-		return object.BuildCloudResponse(502, nil, err.Error())
-	}
-	// UpdateChatStats failure is non-fatal in the HTTP path (logged), keep parity.
-	if err := object.UpdateChatStats(chat, ttsResult); err != nil {
-		log.Error("ZAP: tts stream UpdateChatStats: %v", err)
-	}
-	zapRecordLegacyTTSUsage(ctx, chat, "", ttsResult, startTime)
-	return object.BuildCloudResponse(200, buf.Bytes(), "")
-}
-
-// ttsStreamParams reads storeId/messageId from either a JSON body ({"storeId":…,
-// "messageId":…}) or a raw URL query string (storeId=…&messageId=…) — the GET
-// endpoint's params, however the caller packed them.
-func ttsStreamParams(body []byte) (storeId, messageId string) {
-	trimmed := bytes.TrimSpace(body)
-	if len(trimmed) > 0 && trimmed[0] == '{' {
-		var p struct {
-			StoreId   string `json:"storeId"`
-			MessageId string `json:"messageId"`
-		}
-		if json.Unmarshal(trimmed, &p) == nil {
-			return p.StoreId, p.MessageId
-		}
-	}
-	if q, err := url.ParseQuery(string(trimmed)); err == nil {
-		return q.Get("storeId"), q.Get("messageId")
-	}
-	return "", ""
-}
-
-// zapRecordLegacyTTSUsage mirrors recordLegacyTTSUsage (STEP 6): trace always,
-// debit only a USD-priced result (a non-USD float must not debit as dollars).
-func zapRecordLegacyTTSUsage(ctx context.Context, chat *object.Chat, providerId string, ttsResult *tts.TextToSpeechResult, startTime time.Time) {
-	if chat == nil || ttsResult == nil {
-		return
-	}
-	org := chat.Organization
-	if org == "" {
-		org = chat.Owner
-	}
-	model := providerId
-	if model == "" {
-		model = chat.ModelProvider
-	}
-	if model == "" {
-		model = "tts"
-	}
-	rec := &usageRecord{
-		Owner:        org,
-		Organization: org,
-		User:         chat.User,
-		Model:        model,
-		Provider:     model,
-		TotalTokens:  ttsResult.TokenCount,
-		Cost:         ttsResult.Price,
-		Currency:     ttsResult.Currency,
-		Status:       "success",
-		RequestID:    uuid.NewString(),
-	}
-	if rec.Currency == "" || rec.Currency == "USD" {
-		rec.Currency = "USD"
-		recordUsage(rec)
-	}
-	recordTrace(ctx, rec, startTime)
-}
-
-// ── Legacy store-bound STT (mirrors ProcessSpeechToText) ────────────────────
-
-func zapSTTHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
-	who, err := zapResolveUser(auth)
-	if err != nil {
-		return object.BuildCloudResponse(401, nil, err.Error())
-	}
-	storeId, audioReader, err := parseSTTForm(body)
-	if err != nil {
-		return object.BuildCloudResponse(400, nil, err.Error())
-	}
-	if storeId == "" {
-		return object.BuildCloudResponse(400, nil, "Missing required parameter: storeId")
-	}
-	store, err := object.GetStore(storeId)
-	if err != nil {
-		return object.BuildCloudResponse(400, nil, err.Error())
-	}
-	if store == nil {
-		return object.BuildCloudResponse(400, nil, fmt.Sprintf("The store: %s is not found", storeId))
-	}
-	provider, err := store.GetSpeechToTextProvider()
-	if err != nil {
-		return object.BuildCloudResponse(400, nil, err.Error())
-	}
-	if provider == nil {
-		return object.BuildCloudResponse(400, nil, fmt.Sprintf("The speech-to-text provider for store: %s is not found", store.GetId()))
-	}
-	providerObj, err := provider.GetSpeechToTextProvider("en")
-	if err != nil {
-		return object.BuildCloudResponse(502, nil, err.Error())
-	}
-
-	// The same per-org ceiling every other speech door takes — see the legacy TTS
-	// twin above for why the key is the caller's org and not the store's.
-	release, refused := admitSpeech(orgOf(who))
-	if refused != nil {
-		return object.BuildCloudResponse(uint32(statusOf(refused)), nil, refused.Error())
-	}
-	defer release()
-
-	startTime := time.Now().UTC()
-	heard, legacyResult, err := providerObj.ProcessAudio(audioReader, ctx, "en", nil)
-	zapRecordLegacySTTUsage(ctx, store, provider, sttSecondsOf(legacyResult), startTime, err)
-	if err != nil {
-		return object.BuildCloudResponse(502, nil, err.Error())
-	}
-	data, _ := json.Marshal(Response{Status: "ok", Data: heard.Text})
-	return object.BuildCloudResponse(200, data, "")
-}
-
-// parseSTTForm reconstructs the multipart form (audio file + storeId) from the
-// raw body. The multipart body is self-describing — its opening line is
-// `--<boundary>` — so the boundary is recovered without a Content-Type header,
-// keeping the handler on the shared (ctx, auth, body) signature.
-func parseSTTForm(body []byte) (string, *bytes.Reader, error) {
-	boundary := multipartBoundary(body)
-	if boundary == "" {
-		return "", nil, fmt.Errorf("Error getting audio audioFile: body is not a multipart form")
-	}
-	mr := multipart.NewReader(bytes.NewReader(body), boundary)
-	form, err := mr.ReadForm(MaxTranscribeUpload)
-	if err != nil {
-		return "", nil, fmt.Errorf("read multipart form: %s", err.Error())
-	}
-	storeId := ""
-	if v := form.Value["storeId"]; len(v) > 0 {
-		storeId = v[0]
-	}
-	files := form.File["audio"]
-	if len(files) == 0 {
-		return storeId, nil, fmt.Errorf("Error getting audio audioFile: no \"audio\" file part")
-	}
-	f, err := files[0].Open()
-	if err != nil {
-		return storeId, nil, fmt.Errorf("Error getting audio audioFile: %s", err.Error())
-	}
-	defer f.Close()
-	data, err := io.ReadAll(f)
-	if err != nil {
-		return storeId, nil, fmt.Errorf("Error getting audio audioFile: %s", err.Error())
-	}
-	return storeId, bytes.NewReader(data), nil
-}
-
-// multipartBoundary derives the boundary from the opening `--<boundary>` line of
-// a multipart body.
+// multipartBoundary reads the boundary token off the first line of a multipart
+// body. Over ZAP there is no http.Request to parse the Content-Type from, so the
+// body states its own boundary and audio.transcribe reads it here.
 func multipartBoundary(body []byte) string {
 	nl := bytes.IndexByte(body, '\n')
 	if nl < 0 {
@@ -706,32 +483,4 @@ func multipartBoundary(body []byte) string {
 		return ""
 	}
 	return strings.TrimPrefix(first, "--")
-}
-
-// zapRecordLegacySTTUsage mirrors recordLegacySTTUsage (STEP 6): the store-bound
-// path meters the same audio seconds as the OpenAI-shaped one, so legacy traffic
-// is measured rather than merely counted. Trace always emitted (errors stay
-// visible).
-func zapRecordLegacySTTUsage(ctx context.Context, store *object.Store, provider *object.Provider, seconds float64, startTime time.Time, callErr error) {
-	if store == nil || provider == nil {
-		return
-	}
-	status, errMsg := "success", ""
-	if callErr != nil {
-		status, errMsg = "error", callErr.Error()
-	}
-	rec := &usageRecord{
-		Owner:        store.Owner,
-		Organization: store.Owner,
-		Model:        provider.Name,
-		Provider:     provider.Name,
-		Origin:       provider.Origin(),
-		Currency:     "USD",
-		Status:       status,
-		ErrorMsg:     errMsg,
-		AudioSeconds: seconds,
-		RequestID:    uuid.NewString(),
-	}
-	recordUsage(rec)
-	recordTrace(ctx, rec, startTime)
 }

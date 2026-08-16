@@ -687,10 +687,11 @@ func TestSpeechWorkRunsUnderAdmission(t *testing.T) {
 			}
 		}
 	}
-	// Self-test the instrument against a known positive: eight doors reach these
-	// models today. A discovery that quietly finds nothing reads exactly like a
+	// Self-test the instrument against a known positive: four doors reach these
+	// models today — the OpenAI-shaped speech and transcribe handlers, over HTTP
+	// and over ZAP. A discovery that quietly finds nothing reads exactly like a
 	// rule that passed.
-	if doors < 8 {
+	if doors < 4 {
 		t.Fatalf("found only %d speech doors; the walk is broken, not the code", doors)
 	}
 }

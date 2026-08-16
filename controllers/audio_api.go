@@ -134,8 +134,8 @@ type audioSpeechRequest struct {
 // authenticates the caller, resolves `model` to its TTS provider (the SAME model-route
 // resolution the chat/images/video endpoints use — so a BYO node registered as a TTS
 // provider works transparently), synthesizes the audio, and streams the bytes back.
-// One code path, OpenAI-shaped, no store/message coupling (unlike the legacy
-// /v1/generate-text-to-speech-audio which is bound to a chat store).
+// This is the ONE way to synthesize speech: OpenAI-shaped, with no store or
+// message coupling, so a caller needs no chat to speak.
 //
 // @Title AudioSpeech
 // @Tag Audio API
@@ -305,8 +305,8 @@ func audioExtension(contentType string) string {
 // resolve `model` to its STT provider through the SAME model-route resolution
 // (so the in-cluster speech service — or any BYO node registered as an STT
 // provider — works transparently), transcribe, and return the OpenAI body.
-// One code path, OpenAI-shaped, no store coupling (unlike the legacy
-// /v1/process-speech-to-text, which is bound to a chat store).
+// This is the ONE way to transcribe: OpenAI-shaped, with no store coupling, so a
+// caller needs no chat to be heard.
 //
 // @Title AudioTranscriptions
 // @Tag Audio API
