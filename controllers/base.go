@@ -73,6 +73,51 @@ func (c *ApiController) GetSessionClaims() *iam.Claims {
 	return &claims
 }
 
+// adoptSession puts an identity on this request's session. It is the ONE way a
+// session becomes somebody, and it rotates the id before writing the claims.
+//
+// The two steps are one call because their ORDER is the security property, and an
+// order is exactly what a later edit drops without noticing. Rotate-then-write is
+// not a convention to remember here; it is the only shape this operation has.
+//
+// Use it wherever a session GAINS an identity — sign-in, and the self-heal that
+// turns a guest into the subject a credential proves. Refreshing the claims of a
+// session that already carries that identity is a different act and keeps using
+// SetSessionClaims: nothing is being granted, so nothing needs a new name.
+func (c *ApiController) adoptSession(claims *iam.Claims) {
+	c.rotateSession()
+	c.SetSessionClaims(claims)
+}
+
+// rotateSession moves this request onto a NEW session id, and must be called by
+// every path that is about to put an identity on a session that did not carry one.
+//
+// The id is the credential for the cookie flow, so a caller must not keep the one
+// they arrived with across the moment they become somebody. An attacker who can
+// plant a value in the browser would otherwise choose the id that their victim's
+// sign-in authenticates, and would need to steal nothing at all.
+//
+// It rebinds BOTH handles the controller can write through — Input.CruSession, which
+// StartSession copies from, and CruSession itself if the request already bound it —
+// so a claim written afterwards lands on the new session and never on the old one.
+//
+// Best effort by design: a deployment with no session manager (the API flow, which
+// authenticates per request and holds no session) has nothing to rotate, and a
+// failure to mint an id must not be the thing that stops a sign-in. Either way no
+// identity has been written yet, so the caller is never left worse than before.
+func (c *ApiController) rotateSession() {
+	if web.Sessions == nil {
+		return
+	}
+	s, err := web.Sessions.RegenerateID(c.Ctx.ResponseWriter, c.Ctx.Input.CruSession)
+	if err != nil || s == nil {
+		log.Warn("session rotate failed, keeping the current id: %v", err)
+		return
+	}
+	c.Ctx.Input.CruSession = s
+	c.CruSession = s
+}
+
 func (c *ApiController) SetSessionClaims(claims *iam.Claims) {
 	if claims == nil {
 		c.DelSession("user")
