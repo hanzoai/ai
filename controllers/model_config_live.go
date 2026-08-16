@@ -122,6 +122,7 @@ func (mc *ModelConfig) fetchLivePricing() {
 		}
 	}
 	mc.lastPricingAt = time.Now()
+	mc.changedAt = mc.lastPricingAt
 	mc.mu.Unlock()
 
 	log.Info("Live pricing refreshed: %d models updated from %s", updated, url)

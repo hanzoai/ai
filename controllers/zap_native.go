@@ -334,8 +334,10 @@ func cloudUsageValues(record *usageRecord, startTime time.Time) []any {
 // ── models.list ─────────────────────────────────────────────────────────
 
 func zapListModelsHandler() (*zap.Message, error) {
-	models := listAvailableModels()
-	data, _ := json.Marshal(modelListEnvelope(models))
+	data, err := modelListing(nil)
+	if err != nil {
+		return nil, err
+	}
 	return object.BuildCloudResponse(200, data, "")
 }
 

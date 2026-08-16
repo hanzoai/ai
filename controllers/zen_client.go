@@ -673,11 +673,16 @@ func (f *modelFamily) isSpare(model string) bool {
 	return false
 }
 
-// fresh refreshes the snapshot if stale (or never loaded) and the family is
-// configured. Errors are logged, not surfaced — a stale snapshot still serves.
-func (f *modelFamily) fresh() {
-	if !f.enabled() {
-		return
+// fresh refreshes the snapshot if stale (or never loaded) and reports the address
+// the family resolved to — empty when it is not configured. Errors are logged, not
+// surfaced: a stale snapshot still serves.
+//
+// The address is returned rather than left for the caller to ask for again, because
+// resolving it reads the family's admin row and one read answers both questions.
+func (f *modelFamily) fresh() string {
+	url := f.baseURL()
+	if url == "" {
+		return ""
 	}
 	f.mu.RLock()
 	stale := !f.loaded || time.Since(f.fetchedAt) > zenCatalogTTL
@@ -687,6 +692,7 @@ func (f *modelFamily) fresh() {
 			log.Warning("%s catalog refresh failed: %v", f.name, err)
 		}
 	}
+	return url
 }
 
 // lookup returns the discovered model for an id/alias, if any.
