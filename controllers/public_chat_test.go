@@ -347,3 +347,41 @@ func TestBearerOnThePublicLaneIsIgnored(t *testing.T) {
 		t.Fatalf("a bearer changed the lane's answer: %d/%s, want 402/public_allowance_spent", status, code)
 	}
 }
+
+// ---- route selection ------------------------------------------------------
+
+// THE DEFECT THIS CLOSES. The lane shipped resolving its route with orgId=$public.
+// resolveModelRouteForOrg degrades a route whenever the org yields a subject — that is
+// the AUTO-ROUTER's preference gate — and the free pool's id is a FRONT DOOR rather
+// than a discovered SKU, so the funding gate's catalog lookup misses and refuses an
+// id it cannot describe. The route came back nil and the armed lane answered "the free
+// pool has no route on this deployment" for every visitor.
+//
+// The direct path resolves its ONE authoritative route and must not be degraded, which
+// is what the resolver's own contract says. So: no org reaches route selection.
+func TestRouteSelectionIsNotGivenAnOrg(t *testing.T) {
+	var gotModel, gotOrg string
+	called := false
+	prev := resolveFreeRoute
+	resolveFreeRoute = func(model, org string) *modelRoute {
+		called, gotModel, gotOrg = true, model, org
+		return nil // the rest of the resolver is not what this test is about
+	}
+	t.Cleanup(func() { resolveFreeRoute = prev })
+
+	c := &ApiController{}
+	_, _, _, _ = c.resolveProviderForPublic()
+
+	if !called {
+		// Either the price gate refused first (no catalog in a unit test) or the call
+		// moved. Both are real, and neither lets this test claim the argument is right.
+		t.Skip("route selection was not reached — the price gate refused first")
+	}
+	if gotOrg != "" {
+		t.Fatalf("route selection was given org %q; an org degrades a direct-path route to nil "+
+			"and closes the lane for every visitor", gotOrg)
+	}
+	if gotModel != freeID {
+		t.Fatalf("route selection asked for model %q, want the free pool id %q", gotModel, freeID)
+	}
+}
