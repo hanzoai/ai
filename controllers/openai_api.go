@@ -1934,23 +1934,16 @@ func (c *ApiController) chatCompletions(from caller) {
 // @Success 200 {object} object
 // @router /models [get]
 func (c *ApiController) ListModels() {
-	models := listAvailableModels()
-
-	// Annotate gated (limited-preview) SKUs with the caller's access standing
+	// Gated (limited-preview) SKUs carry the caller's access standing
 	// (waitlist|requested|granted), so the client can show "request access" vs
 	// "granted" without a second call.
 	//
 	// The ONLY use of the credential on this route, and it is best-effort:
 	// principalUser returns nil unless the request carries a VERIFIED principal (a
-	// session, a signature-checked JWT, or a key IAM resolved), and
-	// annotateModelAccess returns immediately on nil. So an absent, expired or forged
-	// credential simply yields the un-annotated public catalogue — never a 401, and
-	// never another caller's standing.
-	annotateModelAccess(models, c.principalUser())
-
-	response := modelListEnvelope(models)
-
-	jsonResponse, err := json.Marshal(response)
+	// session, a signature-checked JWT, or a key IAM resolved). So an absent, expired
+	// or forged credential simply yields the un-annotated public catalogue — never a
+	// 401, and never another caller's standing.
+	jsonResponse, err := modelListing(c.principalUser())
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
