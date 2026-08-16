@@ -15,6 +15,7 @@
 package controllers
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -24,6 +25,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/web"
 )
 
@@ -303,6 +305,7 @@ func TestUncountableRequestIsRefused(t *testing.T) {
 // code — and the refusal happens in the lane, before any provider is resolved.
 func TestSpentVisitorIsRefusedByTheLane(t *testing.T) {
 	t.Setenv("PUBLIC_CHAT_DAILY", "2")
+	servablePool(t)
 	const peer = "203.0.113.77:9000"
 	visitor := publicVisitor(req(peer, ""))
 
@@ -324,6 +327,7 @@ func TestSpentVisitorIsRefusedByTheLane(t *testing.T) {
 // and a bearer here must not buy a different model or another org's ledger.
 func TestBearerOnThePublicLaneIsIgnored(t *testing.T) {
 	t.Setenv("PUBLIC_CHAT_DAILY", "2")
+	servablePool(t)
 	const peer = "203.0.113.78:9000"
 	visitor := publicVisitor(req(peer, ""))
 
@@ -384,4 +388,83 @@ func TestRouteSelectionIsNotGivenAnOrg(t *testing.T) {
 	if gotModel != freeID {
 		t.Fatalf("route selection asked for model %q, want the free pool id %q", gotModel, freeID)
 	}
+}
+
+// ---- nothing is charged for a call we cannot serve -------------------------
+
+// THE DEFECT THIS CLOSES. The lane took the visitor's call BEFORE it knew the pool
+// could answer one. A misconfigured pool therefore refused every caller AND spent
+// their day on the way out — the ceiling emptied without a model ever being reached,
+// and the host's half of that count PERSISTS, so a pod restart does not undo it.
+//
+// A day is spent on answers. A request that never reached a model must cost nothing.
+func TestAnUnservablePoolChargesNobody(t *testing.T) {
+	t.Setenv("PUBLIC_CHAT_DAILY", "5")
+
+	// The pool cannot answer.
+	prevRoute := resolveFreeRoute
+	resolveFreeRoute = func(string, string) *modelRoute { return nil }
+	t.Cleanup(func() { resolveFreeRoute = prevRoute })
+
+	// The host allowance must not even be asked — asking it is what writes the
+	// persistent count.
+	asked := false
+	object.SetAllowance(func(_ context.Context, _, _ string) (bool, error) {
+		asked = true
+		return false, nil
+	})
+	t.Cleanup(func() { object.SetAllowance(nil) })
+
+	saved := publicCount
+	publicCount = &dayCount{}
+	t.Cleanup(func() { publicCount = saved })
+
+	const peer = "203.0.113.90:9000"
+	visitor := publicVisitor(req(peer, ""))
+
+	status, code := refusalOf(t, publicCall(t, peer, ""))
+	if status != http.StatusServiceUnavailable || code != "public_pool_unavailable" {
+		t.Fatalf("unservable pool answered %d/%s, want 503/public_pool_unavailable", status, code)
+	}
+	if n := publicCount.seen[visitor]; n != 0 {
+		t.Fatalf("the visitor was charged %d for a call that reached no model; want 0", n)
+	}
+	if asked {
+		t.Fatal("the host allowance was taken for a call that reached no model — that count persists")
+	}
+}
+
+// The counters still work when the pool CAN answer: the pre-charge check must not
+// have become a way to skip the ceiling.
+func TestAServablePoolStillCharges(t *testing.T) {
+	t.Setenv("PUBLIC_CHAT_DAILY", "5")
+
+	prevRoute := resolveFreeRoute
+	resolveFreeRoute = func(string, string) *modelRoute { return &modelRoute{providerName: "nope"} }
+	t.Cleanup(func() { resolveFreeRoute = prevRoute })
+
+	saved := publicCount
+	publicCount = &dayCount{}
+	t.Cleanup(func() { publicCount = saved })
+
+	const peer = "203.0.113.91:9000"
+	visitor := publicVisitor(req(peer, ""))
+
+	// The call proceeds past the counters (and fails later, standing up no provider) —
+	// what matters here is that the day WAS spent for a servable pool.
+	publicCall(t, peer, "")
+	if n := publicCount.seen[visitor]; n != 1 {
+		t.Fatalf("a servable pool charged %d; want exactly 1 — the ceiling must still bind", n)
+	}
+}
+
+// servablePool stands up a pool that CAN answer, so a test whose subject is the
+// counter is not answered by the pre-charge check instead. The check runs before the
+// ceiling by design — nothing may be charged for a call we cannot serve — which means
+// every test about charging has to get past it first.
+func servablePool(t *testing.T) {
+	t.Helper()
+	prev := resolveFreeRoute
+	resolveFreeRoute = func(string, string) *modelRoute { return &modelRoute{providerName: "stub"} }
+	t.Cleanup(func() { resolveFreeRoute = prev })
 }
