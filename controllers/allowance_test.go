@@ -164,6 +164,10 @@ func TestThePublicLaneCountsTheVisitorItServed(t *testing.T) {
 
 // The lane's OWN count — the half kept in this process, so its ceiling holds while
 // the host is unreachable — rises at the same moment and nowhere else.
+//
+// It keys on the VISITOR the record carries, which only the lane can put there. The
+// org would be the obvious test and is the wrong one: it is resolved from X-Org-Id, so
+// a caller could name an org and step outside the count that bounds them.
 func TestThePublicLanesOwnCountRisesWhenTheCallIsServed(t *testing.T) {
 	t.Setenv("PUBLIC_CHAT_DAILY", "5")
 	const visitor = "visitor:1111111111111111111111111111111"
@@ -188,5 +192,17 @@ func TestThePublicLanesOwnCountRisesWhenTheCallIsServed(t *testing.T) {
 	counted(t, failed)
 	if n := publicCount.seen[visitor]; n != 1 {
 		t.Fatalf("a failed public call moved the lane's own count to %d, want it left at 1", n)
+	}
+
+	// A NAMED ORG DOES NOT STEP OUT OF THE LANE. The tool paths re-derive the ledger
+	// from X-Org-Id, so a visitor carrying a credential can put a real org on the
+	// record. The visitor is still the visitor, and the count still binds.
+	steered := free("acme", "acme/alice")
+	steered.bind(withVisitor(context.Background(), visitor),
+		&iam.User{Owner: publicOrg, Type: "application"})
+	counted(t, steered)
+	if n := publicCount.seen[visitor]; n != 2 {
+		t.Fatalf("a call recorded against a named org left the visitor's count at %d, want 2 — "+
+			"the lane's bound must not be steerable by a header", n)
 	}
 }

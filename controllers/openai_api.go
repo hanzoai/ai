@@ -1037,11 +1037,15 @@ func recordUsage(record *usageRecord) {
 	if usageFree(record) {
 		free = record.allowance()
 		// The public lane keeps its own count in this process so its ceiling holds
-		// while the host is unreachable. Both counts rise at this one moment: a lane
-		// that counted at the door and reported at the answer would publish a number
-		// its own refusals had already outrun.
-		if org == publicOrg {
-			publicCount.count(free, utcDay(time.Now()), publicChatDaily())
+		// while the host is unreachable. Both counts rise at this one moment.
+		//
+		// A VISITOR ON THE RECORD IS WHAT SAYS THIS IS THAT LANE. Only the lane puts
+		// one there, and nothing on the request can name one. The org would be the
+		// obvious test and is the wrong one: it is resolved from X-Org-Id, which any
+		// caller sets, so a bound that read it could be steered out of the lane it
+		// bounds.
+		if record.Allowance != "" {
+			publicCount.count(record.Allowance, utcDay(time.Now()), publicChatDaily())
 		}
 	}
 
