@@ -72,9 +72,6 @@ func initAPI() {
 	// this is its only route — the swagger @router annotation alone does not register it.
 	App.Router("/v1/docs/ingest", &controllers.ApiController{}, "POST:IngestDocs")
 
-	App.Router("/v1/generate-text-to-speech-audio", &controllers.ApiController{}, "POST:GenerateTextToSpeechAudio")
-	App.Router("/v1/generate-text-to-speech-audio-stream", &controllers.ApiController{}, "GET:GenerateTextToSpeechAudioStream")
-	App.Router("/v1/process-speech-to-text", &controllers.ApiController{}, "POST:ProcessSpeechToText")
 
 	// Super-admin (authz_filter.go superAdminEndpoints): backfill the usage ledger
 	// from DigitalOcean billing for windows native metering missed. Dry-run by default.

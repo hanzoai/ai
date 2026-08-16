@@ -57,7 +57,7 @@ var demoModeAllowed = map[string]struct{}{
 	"add-chat": {}, "update-chat": {}, "delete-chat": {},
 	"add-message": {}, "update-message": {}, "delete-welcome-message": {},
 	// Retrieval and speech used by that conversation.
-	"search-docs": {}, "chat-docs": {}, "generate-text-to-speech-audio": {},
+	"search-docs": {}, "chat-docs": {},
 	// Session plumbing a live demo needs.
 	"add-node-tunnel": {}, "start-connection": {}, "stop-connection": {},
 	"commit-record": {}, "commit-record-second": {},
