@@ -304,9 +304,9 @@ func isRateLimitExempt(path string) bool {
 		return true
 	case path == "/v1/metrics" || path == "/metrics":
 		return true
-	case strings.HasPrefix(path, "/v1/get-version-info"):
+	case strings.HasPrefix(path, "/v1/ai/version"):
 		return true
-	case strings.HasPrefix(path, "/v1/get-system-info"):
+	case strings.HasPrefix(path, "/v1/ai/system"):
 		return true
 	default:
 		return false
