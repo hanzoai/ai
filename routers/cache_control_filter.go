@@ -29,9 +29,9 @@ func CacheControlFilter(ctx *web.Context) {
 
 	// List of sensitive endpoints that should not be cached
 	sensitiveEndpoints := []string{
-		"/v1/get-node-tunnel", // Contains password parameters
-		"/v1/get-chats",       // Contains user sensitive data
-		"/v1/get-Messages",    // Contains user chat messages
+		"/v1/ai/nodes",    // a node's tunnel action carries its password
+		"/v1/ai/chats",    // a caller's own conversations
+		"/v1/ai/messages", // what was said in them
 	}
 
 	// Check if current path matches any sensitive endpoint

@@ -22,8 +22,15 @@ import (
 	"github.com/hanzoai/ai/web"
 )
 
+// unrecorded are the paths that carry no principal worth attributing: signing in
+// happens before there is one, and assets are static.
+var unrecorded = map[string]struct{}{
+	"/v1/ai/signin": {},
+	"/v1/ai/assets": {},
+}
+
 func RecordMessage(ctx *web.Context) {
-	if ctx.Request.URL.Path == "/v1/login" || ctx.Request.URL.Path == "/v1/signup" || ctx.Request.URL.Path == "/v1/get-assets" {
+	if _, skip := unrecorded[ctx.Request.URL.Path]; skip {
 		return
 	}
 
