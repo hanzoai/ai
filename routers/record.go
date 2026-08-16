@@ -32,6 +32,13 @@ func RecordMessage(ctx *web.Context) {
 }
 
 func AfterRecordMessage(ctx *web.Context) {
+	// Ask before composing. NewRecord geo-locates the client IP and AddRecord
+	// queries the blockchain providers, and under logPostOnly a GET is discarded
+	// after both — so every read paid for a row nothing kept.
+	if !object.Recorded(ctx.Request.Method) {
+		return
+	}
+
 	record, err := object.NewRecord(ctx)
 	if err != nil {
 		log.Error("AfterRecordMessage() error: %s", err.Error())
