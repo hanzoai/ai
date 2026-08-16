@@ -131,16 +131,30 @@ var modelRoutes = map[string]modelRoute{
 	"all-mini-lm-l6-v2":          {providerName: "do-ai", upstreamModel: "all-mini-lm-l6-v2"},          // 384-dim
 	"multi-qa-mpnet-base-dot-v1": {providerName: "do-ai", upstreamModel: "multi-qa-mpnet-base-dot-v1"}, // 768-dim
 
-	// ── Hanzo Speech ── STT at /v1/audio/transcriptions, TTS at /v1/audio/speech ─
-	// Our own speech service (ghcr.io/hanzoai/speech) on CPU nodes in-cluster:
-	// faster-whisper transcribes, kokoro synthesizes. User-facing name == upstream
-	// id (already clean public names, like the embeddings passthroughs), so there
-	// is no translation to keep in sync. owned_by hanzo: first-party models on
-	// first-party infrastructure. Not premium — CPU inference on nodes we already
-	// run, so it carries no per-call upstream cost to gate on.
-	"whisper":       {providerName: "speech", upstreamModel: "whisper", ownedBy: "hanzo"},
-	"whisper-small": {providerName: "speech", upstreamModel: "whisper-small", ownedBy: "hanzo"},
-	"kokoro":        {providerName: "speech", upstreamModel: "kokoro", ownedBy: "hanzo"},
+	// ── Hanzo Speech ── our own service (ghcr.io/hanzoai/speech) on CPU nodes ──
+	// A VOICE speaks and a SCRIBE writes down what is said. The DIRECTION is not
+	// in either name because the route already carries it — /v1/audio/speech
+	// synthesizes and /v1/audio/transcriptions transcribes — so a `-tts` or
+	// `-stt` suffix would state the same fact twice and leave two places to
+	// disagree. Same reason the chat models are not called `zen5-chat`.
+	//
+	// These used to be published under their UPSTREAM ids with owned_by hanzo,
+	// on the grounds that the name needed no translation. That is the one thing
+	// the house rule forbids: it puts somebody else's model name on our catalog
+	// AND claims it as ours. The embeddings it was reasoned from are not the same
+	// case — they carry owned_by do-ai, so they are attributed rather than
+	// claimed. Free, because it is CPU inference on nodes we already run.
+	"zen-voice-mini":  {providerName: "speech", upstreamModel: "kokoro", ownedBy: "hanzo"},
+	"zen-scribe":      {providerName: "speech", upstreamModel: "whisper", ownedBy: "hanzo"},
+	"zen-scribe-mini": {providerName: "speech", upstreamModel: "whisper-small", ownedBy: "hanzo"},
+
+	// The upstream ids stay CALLABLE and leave the listing, the same shape every
+	// other upstream-named route here takes. A rename that 404s the name people
+	// are already sending is a wire break; a rename that stops advertising it is
+	// not.
+	"kokoro":        {providerName: "speech", upstreamModel: "kokoro", ownedBy: "hanzo", hidden: true},
+	"whisper":       {providerName: "speech", upstreamModel: "whisper", ownedBy: "hanzo", hidden: true},
+	"whisper-small": {providerName: "speech", upstreamModel: "whisper-small", ownedBy: "hanzo", hidden: true},
 
 	// ── DO-AI image (diffusion) ── Stable Diffusion 3.5 Large ────────────
 	// Unlike the fal FLUX/SDXL models (async-invoke), SD 3.5 Large is served on
