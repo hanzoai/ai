@@ -75,24 +75,31 @@ func TestPublicChatRouteIsWiredAndClosedByDefault(t *testing.T) {
 	}
 }
 
-// Armed, the ceiling is enforced on the way in: the second call from one visitor at a
-// ceiling of one is refused by the lane, before any provider is resolved.
-func TestPublicChatCeilingHoldsThroughTheRouter(t *testing.T) {
+// Armed, a request traverses the REAL router and filter chain into this handler.
+//
+// What this test can prove is ROUTING, and it is the only test that can: the unit
+// tests call the handler directly, so none of them would notice the route being
+// unregistered, shadowed by a neighbour's prefix, or refused by a filter ahead of it.
+//
+// What it deliberately does NOT prove is the ceiling. A test binary stands up no model
+// catalog, so the pool cannot answer, and the pre-charge check refuses before the
+// counter is ever consulted — which is the correct order and the whole point of it.
+// Asserting a 402 here would mean weakening that order to suit a test. The ceiling is
+// held by the unit tests, which can stand up a servable pool, and by the mutation that
+// removes the bound.
+//
+// The typed code is the evidence either way: only this handler writes it, so reaching
+// it proves the request was routed here rather than 404ing as unregistered.
+func TestPublicChatRouteReachesTheHandlerWhenArmed(t *testing.T) {
 	wireTestSessions()
 	t.Setenv("PUBLIC_CHAT_DAILY", "1")
 
-	const visitor = "198.51.100.21"
-	// The first call spends the day. Whatever it answers (this test stands up no
-	// provider), the count was taken before the pipeline was entered.
-	askPublicly(t, visitor)
-
-	status, code := askPublicly(t, visitor)
-	if status != http.StatusPaymentRequired || code != "public_allowance_spent" {
-		t.Fatalf("second call answered %d/%q, want 402/public_allowance_spent", status, code)
+	status, code := askPublicly(t, "198.51.100.21")
+	if code != "public_pool_unavailable" {
+		t.Fatalf("armed lane answered %d/%q; want the handler's own public_pool_unavailable "+
+			"(an empty code means the request never reached it — the route is not wired)", status, code)
 	}
-
-	// A different visitor is untouched by the first's exhaustion.
-	if _, code := askPublicly(t, "198.51.100.22"); code == "public_allowance_spent" {
-		t.Fatal("one visitor's exhaustion refused another; the buckets are shared")
+	if status != http.StatusServiceUnavailable {
+		t.Fatalf("no-pool deployment answered %d, want 503 — and never a 500", status)
 	}
 }

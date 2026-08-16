@@ -211,6 +211,24 @@ func (c *ApiController) ChatCompletionsPublic() {
 		return
 	}
 
+	// NOTHING IS CHARGED FOR A CALL WE CANNOT SERVE.
+	//
+	// The counters below are the visitor's day, and a day is spent on answers. Taking
+	// first and resolving afterwards charges a stranger for our own outage: a
+	// misconfigured pool refused every caller AND consumed their allowance on the way
+	// out, so the ceiling emptied without a single model ever being reached. The host
+	// take is worse than the local one there, because it persists — a pod restart
+	// clears the count in this process, and nothing clears that.
+	//
+	// So the pool is asked whether it CAN answer before anyone is charged for one. It
+	// is two map lookups, and it is the same question resolveProviderForPublic asks
+	// again below, through the same function, so the two cannot drift.
+	if _, err := publicPoolRoute(); err != nil {
+		c.publicRefuse(http.StatusServiceUnavailable, "server_error", "public_pool_unavailable",
+			"The free pool is not available right now. Nothing was counted against you; try again.")
+		return
+	}
+
 	// OUR OWN BOUND FIRST, and it decides. It is counted in this process and asks
 	// nothing, so it holds while anything else is down.
 	if !publicCount.take(visitor, utcDay(time.Now()), publicChatDaily()) {
@@ -277,6 +295,37 @@ func publicErrorJSON(kind, code, message string) []byte {
 // being free — a catalog edit, a price that failed to load — closes the lane rather
 // than quietly spending on the house, which is the fail-closed rule the balance gate
 // already keeps one layer up.
+// publicPoolRoute answers whether the free pool can serve a call right now, and with
+// what. It is ONE definition asked twice — once before anyone is charged, once when the
+// call is actually resolved — so the question that gates the counter and the question
+// that picks the upstream can never drift apart.
+//
+// It fails closed on both halves. A price that is not FOUND to be zero closes the lane
+// rather than guessing, and a pool with no route closes it rather than reaching for
+// something billable.
+//
+// NO ORG GOES INTO ROUTE SELECTION, and the empty argument is the whole point.
+// resolveModelRouteForOrg degrades a route when the caller's org yields a subject: that
+// is the AUTO-ROUTER's preference gate, which walks a caller down to the next servable
+// SKU. This lane is the direct path resolving its ONE authoritative route, and the
+// resolver says so itself — "the direct call path (which resolves its authoritative
+// route with orgId "" ⇒ empty subject ⇒ admit) is never degraded here". Passing $public
+// degraded it to nil, and a direct path with no route left is not a downgrade, it is a
+// lane that answers nothing. It refused for a reason that cannot apply: the funding
+// gate asks the catalog what a family SKU costs, and the pool's id is a FRONT DOOR
+// rather than a discovered SKU, so the lookup misses and an undescribed id is refused
+// by design. The pool IS the routes that cost nothing; there is no spend to protect.
+func publicPoolRoute() (*modelRoute, error) {
+	if !ModelCostsNothing(freeID, publicOrg) {
+		return nil, authError("the free pool is not currently free, so the public lane is closed")
+	}
+	route := resolveFreeRoute(freeID, "")
+	if route == nil {
+		return nil, authError("the free pool has no route on this deployment")
+	}
+	return route, nil
+}
+
 // resolveFreeRoute is the route resolver, as a seam. The ARGUMENT is what this lane
 // shipped wrong, so the argument is the thing worth pinning — a test can hold "no org
 // reaches route selection" without standing up family discovery, which no unit test
@@ -284,28 +333,9 @@ func publicErrorJSON(kind, code, message string) []byte {
 var resolveFreeRoute = resolveModelRouteForOrg
 
 func (c *ApiController) resolveProviderForPublic() (provider *object.Provider, authUser *iam.User, upstream string, err error) {
-	if !ModelCostsNothing(freeID, publicOrg) {
-		return nil, nil, "", authError("the free pool is not currently free, so the public lane is closed")
-	}
-	// NO ORG GOES INTO ROUTE SELECTION HERE, and the empty argument is the whole point.
-	//
-	// resolveModelRouteForOrg degrades a route when the caller's org yields a subject:
-	// that is the AUTO-ROUTER's preference gate, which walks a caller down to the next
-	// servable SKU. This lane is the direct path resolving its ONE authoritative route,
-	// and the resolver says so itself — "the direct call path (which resolves its
-	// authoritative route with orgId "" ⇒ empty subject ⇒ admit) is never degraded
-	// here". Passing $public degraded it to nil, and a direct path with no route left
-	// is not a downgrade, it is a lane that answers nothing.
-	//
-	// It refused for a reason that cannot apply: the funding gate asks the catalog what
-	// a family SKU costs, and the free pool's id is a FRONT DOOR rather than a
-	// discovered SKU, so the lookup misses and an undescribed id is refused by design.
-	// The pool is the routes that cost nothing; there is no spend for that gate to
-	// protect. Selection is not authorization — ModelCostsNothing above already proved
-	// the price is zero, and the serve gate still refuses to spend.
-	route := resolveFreeRoute(freeID, "")
-	if route == nil {
-		return nil, nil, "", authError("the free pool has no route on this deployment")
+	route, err := publicPoolRoute()
+	if err != nil {
+		return nil, nil, "", err
 	}
 	provider, perr := object.GetModelProviderByName(route.providerName)
 	if perr != nil || provider == nil {
