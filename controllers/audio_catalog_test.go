@@ -28,9 +28,46 @@ import (
 // same set the route table must carry — adding a speech model to one without the
 // other fails a test rather than shipping a name nothing can serve.
 var (
-	sttModels = []string{"whisper", "whisper-small"}
-	ttsModels = []string{"kokoro"}
+	sttModels = []string{"zen-scribe", "zen-scribe-mini"}
+	ttsModels = []string{"zen-voice-mini"}
+	// The upstream ids these replaced. Still routed and still callable — a
+	// rename that 404s the name people already send is a wire break — but out
+	// of the listing, where a name we do not own must not appear.
+	retiredAudioModels = []string{"whisper", "whisper-small", "kokoro"}
 )
+
+// A LISTED speech model may not wear somebody else's name. Both halves are the
+// law: the upstream ids keep answering, and none of them is advertised.
+//
+// They were listed once, with owned_by hanzo — a model name we do not own,
+// claimed as ours, which is the one thing the brand rule forbids outright. The
+// reasoning at the time was that a name equal to its upstream needs no
+// translation to keep in sync; the embeddings it was drawn from are not the same
+// case, because they carry owned_by do-ai and are attributed rather than claimed.
+func TestARetiredAudioNameStillAnswersAndIsNotAdvertised(t *testing.T) {
+	listed := map[string]bool{}
+	for _, m := range listAvailableModels() {
+		listed[m.ID] = true
+	}
+	for _, name := range retiredAudioModels {
+		route, ok := modelRoutes[name]
+		if !ok {
+			t.Errorf("%q was removed rather than hidden — every caller sending it now gets 'model is not available'", name)
+			continue
+		}
+		if !route.hidden {
+			t.Errorf("%q is advertised: an upstream model name must not appear in our catalogue", name)
+		}
+		if listed[name] {
+			t.Errorf("%q reached /v1/models", name)
+		}
+	}
+	for _, name := range append(append([]string{}, sttModels...), ttsModels...) {
+		if r, ok := modelRoutes[name]; ok && r.hidden {
+			t.Errorf("%q is the name we publish and it is hidden", name)
+		}
+	}
+}
 
 // TestAudioModelsAreRouted is the regression guard for the gap that left
 // /v1/audio/transcriptions mounted, the speech service deployed and READY, and
