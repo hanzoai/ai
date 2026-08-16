@@ -229,3 +229,12 @@ func nanoToUSD(nano int64) string {
 func usageBilledUSD(record *usageRecord) string {
 	return nanoToUSD(usageMargin(record).BilledNano)
 }
+
+// usageFree reports whether a call debited nothing — the class of call a wallet has
+// nothing to refuse, and therefore the class the plan allowance counts.
+//
+// It reads the SAME billed amount usageBilledUSD renders, so "free" and "$0" are one
+// answer rather than two that can drift: a route stated at zero, a vendor's spare
+// route that cost us nothing, a self-billing subsystem that charged exactly nothing —
+// all of them are free by the only measure the ceiling is about.
+func usageFree(record *usageRecord) bool { return usageMargin(record).BilledNano == 0 }

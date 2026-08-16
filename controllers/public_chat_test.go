@@ -106,6 +106,18 @@ func TestVisitorIsHashedAndNeverTheAddress(t *testing.T) {
 	}
 }
 
+// serve is what the lane does with a call it answers: read the ceiling, and count the
+// call only where it was served. The two are separate verbs on purpose — a request
+// that dies between them costs the visitor nothing — so a test of the ceiling has to
+// perform both, exactly as the lane does.
+func serve(d *dayCount, visitor, day string, limit int) bool {
+	if d.spent(visitor, day, limit) {
+		return false
+	}
+	d.count(visitor, day, limit)
+	return true
+}
+
 // The ceiling holds, refusals do not count as usage, and each visitor has their own
 // bucket — one shared bucket would let a single caller starve every visitor.
 func TestCeilingHoldsPerVisitor(t *testing.T) {
@@ -113,15 +125,15 @@ func TestCeilingHoldsPerVisitor(t *testing.T) {
 	const day, limit = "2026-08-15", 3
 
 	for i := 1; i <= limit; i++ {
-		if !d.take("visitor:a", day, limit) {
+		if !serve(d, "visitor:a", day, limit) {
 			t.Fatalf("call %d of %d was refused; the ceiling admitted too few", i, limit)
 		}
 	}
-	if d.take("visitor:a", day, limit) {
+	if serve(d, "visitor:a", day, limit) {
 		t.Fatal("call 4 of 3 was admitted; the ceiling does not hold")
 	}
 	// A second visitor is untouched by the first's exhaustion.
-	if !d.take("visitor:b", day, limit) {
+	if !serve(d, "visitor:b", day, limit) {
 		t.Fatal("one visitor's exhaustion refused another; the buckets are shared")
 	}
 	// Refusals are not usage: the count stopped at the ceiling.
@@ -129,8 +141,40 @@ func TestCeilingHoldsPerVisitor(t *testing.T) {
 		t.Fatalf("count kept climbing past the ceiling: %d, want %d", got, limit)
 	}
 	// A ceiling of zero admits nothing at all.
-	if (&dayCount{}).take("visitor:a", day, 0) {
+	if serve(&dayCount{}, "visitor:a", day, 0) {
 		t.Fatal("a zero ceiling admitted a call")
+	}
+}
+
+// A CALL THAT WAS NOT SERVED COSTS NOTHING. Reading the ceiling is what the lane does
+// at the door, and reading it can never raise it — so a visitor refused by a route
+// that would not resolve, a vendor that never answered, or a pod mid-roll keeps every
+// call they arrived with.
+func TestReadingTheCeilingNeverRaisesIt(t *testing.T) {
+	d := &dayCount{}
+	const day, limit = "2026-08-15", 3
+
+	for i := 0; i < 20; i++ {
+		d.spent("visitor:a", day, limit)
+	}
+	if got := d.seen["visitor:a"]; got != 0 {
+		t.Fatalf("twenty reads left a count of %d; a read must cost a visitor nothing", got)
+	}
+	if d.spent("visitor:a", day, limit) {
+		t.Fatal("a visitor who was never served reads as spent")
+	}
+
+	// At the ceiling, a refusal leaves the count where it is.
+	for i := 0; i < limit; i++ {
+		serve(d, "visitor:a", day, limit)
+	}
+	for i := 0; i < 5; i++ {
+		if !d.spent("visitor:a", day, limit) {
+			t.Fatal("a visitor at the ceiling was admitted")
+		}
+	}
+	if got := d.seen["visitor:a"]; got != limit {
+		t.Fatalf("refusals raised the count to %d, want %d — refusals are not usage", got, limit)
 	}
 }
 
@@ -138,13 +182,13 @@ func TestCeilingHoldsPerVisitor(t *testing.T) {
 // with no sweep and no job.
 func TestTheDayTurnsOverForEveryone(t *testing.T) {
 	d := &dayCount{}
-	if !d.take("visitor:a", "2026-08-15", 1) {
+	if !serve(d, "visitor:a", "2026-08-15", 1) {
 		t.Fatal("first call refused")
 	}
-	if d.take("visitor:a", "2026-08-15", 1) {
+	if serve(d, "visitor:a", "2026-08-15", 1) {
 		t.Fatal("second call in the same day admitted")
 	}
-	if !d.take("visitor:a", "2026-08-16", 1) {
+	if !serve(d, "visitor:a", "2026-08-16", 1) {
 		t.Fatal("the new day did not start the count again")
 	}
 	if utcDay(time.Date(2026, 8, 15, 23, 59, 59, 0, time.FixedZone("east", 14*3600))) != "2026-08-15" {
@@ -159,8 +203,11 @@ func TestVisitorMapIsBounded(t *testing.T) {
 	for i := 0; i < publicVisitors; i++ {
 		d.seen[strconv.Itoa(i)] = 0
 	}
-	if d.take("visitor:newcomer", "2026-08-15", 10) {
+	if serve(d, "visitor:newcomer", "2026-08-15", 10) {
 		t.Fatal("a newcomer was admitted past the visitor bound; the map grows without limit")
+	}
+	if _, grew := d.seen["visitor:newcomer"]; grew {
+		t.Fatal("a refused newcomer was written into the map anyway")
 	}
 	// A visitor already in the map still gets their allowance.
 	known := ""
@@ -168,32 +215,38 @@ func TestVisitorMapIsBounded(t *testing.T) {
 		known = k
 		break
 	}
-	if !d.take(known, "2026-08-15", 10) {
+	if !serve(d, known, "2026-08-15", 10) {
 		t.Fatal("the bound refused a visitor already counted today")
 	}
 }
 
-// Two calls racing for the same last unit must not both be admitted.
-func TestCeilingIsNotRaceable(t *testing.T) {
+// THE COUNT NEVER RUNS PAST THE CEILING, however many calls are in flight. It is the
+// number a visitor is shown, and "51 of 50" is a lie about a limit that held.
+//
+// ADMISSION MAY OVERSHOOT, and that is the trade this lane makes deliberately. The
+// ceiling is read at the door and raised where the call was served, so calls in
+// flight for one visitor can all be admitted by the same last unit — a ceiling of
+// five occasionally serving six. Overshoot is generous and bounded by how many calls
+// one caller has open at once. The strict version — take at the door — charged a
+// visitor for a route that never resolved and a vendor that never answered, which is
+// a defect the visitor feels and we never see.
+func TestTheCountNeverRunsPastTheCeiling(t *testing.T) {
 	d := &dayCount{}
 	const limit = 50
 	var wg sync.WaitGroup
-	var mu sync.Mutex
-	admitted := 0
 	for i := 0; i < 500; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if d.take("visitor:a", "2026-08-15", limit) {
-				mu.Lock()
-				admitted++
-				mu.Unlock()
-			}
+			serve(d, "visitor:a", "2026-08-15", limit)
 		}()
 	}
 	wg.Wait()
-	if admitted != limit {
-		t.Fatalf("admitted %d of a %d ceiling under 500 concurrent calls", admitted, limit)
+	if got := d.seen["visitor:a"]; got != limit {
+		t.Fatalf("500 concurrent calls left a count of %d against a ceiling of %d", got, limit)
+	}
+	if !d.spent("visitor:a", "2026-08-15", limit) {
+		t.Fatal("the visitor is not spent after 500 calls against a ceiling of 50")
 	}
 }
 
@@ -392,76 +445,87 @@ func TestRouteSelectionIsNotGivenAnOrg(t *testing.T) {
 
 // ---- nothing is charged for a call we cannot serve -------------------------
 
-// THE DEFECT THIS CLOSES. The lane took the visitor's call BEFORE it knew the pool
-// could answer one. A misconfigured pool therefore refused every caller AND spent
-// their day on the way out — the ceiling emptied without a model ever being reached,
-// and the host's half of that count PERSISTS, so a pod restart does not undo it.
+// THE DEFECT THIS CLOSES. The lane took the visitor's call at the door, before it
+// knew anything could answer one. A misconfigured pool therefore refused every caller
+// AND spent their day on the way out — the ceiling emptied without a model ever being
+// reached, and the host's half of that count PERSISTS, so a pod restart does not
+// undo it.
 //
-// A day is spent on answers. A request that never reached a model must cost nothing.
-func TestAnUnservablePoolChargesNobody(t *testing.T) {
-	t.Setenv("PUBLIC_CHAT_DAILY", "5")
+// A day is spent on answers. Both ends of the lane are checked here: the pool with no
+// route, which is refused at the door, and the pool that HAS a route whose provider
+// then fails to stand up — the shape of every vendor outage. Neither costs a visitor
+// anything, because neither reaches the record of a served call, which is the only
+// thing that counts one.
+func TestACallThatReachesNoModelChargesNobody(t *testing.T) {
+	for _, c := range []struct {
+		name  string
+		route func(string, string) *modelRoute
+	}{
+		{"the pool has no route", func(string, string) *modelRoute { return nil }},
+		{"the route's provider is down", func(string, string) *modelRoute {
+			return &modelRoute{providerName: "a provider that does not exist"}
+		}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Setenv("PUBLIC_CHAT_DAILY", "5")
 
-	// The pool cannot answer.
-	prevRoute := resolveFreeRoute
-	resolveFreeRoute = func(string, string) *modelRoute { return nil }
-	t.Cleanup(func() { resolveFreeRoute = prevRoute })
+			prevRoute := resolveFreeRoute
+			resolveFreeRoute = c.route
+			t.Cleanup(func() { resolveFreeRoute = prevRoute })
 
-	// The host allowance must not even be asked — asking it is what writes the
-	// persistent count.
-	asked := false
-	object.SetAllowance(func(_ context.Context, _, _ string) (bool, error) {
-		asked = true
-		return false, nil
-	})
-	t.Cleanup(func() { object.SetAllowance(nil) })
+			// The host allowance may be READ — reading costs nothing. What must not
+			// happen is a usage record, which is what would raise the persistent count.
+			object.SetSpent(func(_ context.Context, _, _ string) (bool, error) { return false, nil })
+			t.Cleanup(func() { object.SetSpent(nil) })
 
-	saved := publicCount
-	publicCount = &dayCount{}
-	t.Cleanup(func() { publicCount = saved })
+			prevRec := object.UsageRecorder()
+			object.SetUsageRecorder(func(_ context.Context, u object.UsageEvent) error {
+				t.Errorf("a call that reached no model was recorded as usage: %+v", u)
+				return nil
+			})
+			t.Cleanup(func() { object.SetUsageRecorder(prevRec) })
 
-	const peer = "203.0.113.90:9000"
-	visitor := publicVisitor(req(peer, ""))
+			saved := publicCount
+			publicCount = &dayCount{}
+			t.Cleanup(func() { publicCount = saved })
 
-	status, code := refusalOf(t, publicCall(t, peer, ""))
-	if status != http.StatusServiceUnavailable || code != "public_pool_unavailable" {
-		t.Fatalf("unservable pool answered %d/%s, want 503/public_pool_unavailable", status, code)
-	}
-	if n := publicCount.seen[visitor]; n != 0 {
-		t.Fatalf("the visitor was charged %d for a call that reached no model; want 0", n)
-	}
-	if asked {
-		t.Fatal("the host allowance was taken for a call that reached no model — that count persists")
+			const peer = "203.0.113.90:9000"
+			visitor := publicVisitor(req(peer, ""))
+
+			publicCall(t, peer, "")
+			if n := publicCount.seen[visitor]; n != 0 {
+				t.Fatalf("the visitor was charged %d for a call that reached no model; want 0", n)
+			}
+		})
 	}
 }
 
-// The counters still work when the pool CAN answer: the pre-charge check must not
-// have become a way to skip the ceiling.
-func TestAServablePoolStillCharges(t *testing.T) {
+// The lane still REFUSES at the ceiling, and the refusal leaves the count alone.
+// Moving the count must not have removed the bound it moved.
+func TestTheLaneRefusesAtTheCeiling(t *testing.T) {
 	t.Setenv("PUBLIC_CHAT_DAILY", "5")
-
-	prevRoute := resolveFreeRoute
-	resolveFreeRoute = func(string, string) *modelRoute { return &modelRoute{providerName: "nope"} }
-	t.Cleanup(func() { resolveFreeRoute = prevRoute })
-
-	saved := publicCount
-	publicCount = &dayCount{}
-	t.Cleanup(func() { publicCount = saved })
+	servablePool(t)
 
 	const peer = "203.0.113.91:9000"
 	visitor := publicVisitor(req(peer, ""))
 
-	// The call proceeds past the counters (and fails later, standing up no provider) —
-	// what matters here is that the day WAS spent for a servable pool.
-	publicCall(t, peer, "")
-	if n := publicCount.seen[visitor]; n != 1 {
-		t.Fatalf("a servable pool charged %d; want exactly 1 — the ceiling must still bind", n)
+	saved := publicCount
+	publicCount = &dayCount{day: utcDay(time.Now()), seen: map[string]int{visitor: 5}}
+	t.Cleanup(func() { publicCount = saved })
+
+	status, code := refusalOf(t, publicCall(t, peer, ""))
+	if status != http.StatusPaymentRequired || code != "public_allowance_spent" {
+		t.Fatalf("a visitor at the ceiling got %d/%s, want 402/public_allowance_spent", status, code)
+	}
+	if n := publicCount.seen[visitor]; n != 5 {
+		t.Fatalf("the refusal moved the count to %d; refusals are not usage", n)
 	}
 }
 
 // servablePool stands up a pool that CAN answer, so a test whose subject is the
-// counter is not answered by the pre-charge check instead. The check runs before the
-// ceiling by design — nothing may be charged for a call we cannot serve — which means
-// every test about charging has to get past it first.
+// ceiling is not answered by the route check instead. That check runs first by design
+// — a lane that cannot answer says so plainly — which means every test about counting
+// has to get past it.
 func servablePool(t *testing.T) {
 	t.Helper()
 	prev := resolveFreeRoute
