@@ -319,12 +319,17 @@ func responsesInputToMessages(instructions string, raw json.RawMessage) ([]opena
 					}
 				}
 			}
+			// go-openai marshals exactly one of Content and MultiContent. A
+			// message with an image keeps the parts and drops the joined text;
+			// text-only messages go out as a plain string.
 			if len(msg.MultiContent) > 0 {
 				hasImage := false
 				for _, part := range msg.MultiContent {
 					hasImage = hasImage || part.Type == openai.ChatMessagePartTypeImageURL
 				}
-				if !hasImage {
+				if hasImage {
+					msg.Content = ""
+				} else {
 					msg.MultiContent = nil
 				}
 			}

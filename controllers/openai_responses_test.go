@@ -55,6 +55,28 @@ func TestResponsesInputToMessagesToolRoundTrip(t *testing.T) {
 	}
 }
 
+// A user message carrying a screenshot beside its text — what a coding agent's
+// browser tool sends after every capture. go-openai refuses to marshal a message
+// that sets both Content and MultiContent, so the parts must travel alone.
+func TestResponsesInputToMessagesImageMarshals(t *testing.T) {
+	input := json.RawMessage(`[
+		{"type":"message","role":"user","content":[
+			{"type":"input_text","text":"what is on screen?"},
+			{"type":"input_image","image_url":"data:image/png;base64,iVBORw0KGgo="}
+		]}
+	]`)
+	messages, err := responsesInputToMessages("", input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(messages) != 1 || len(messages[0].MultiContent) != 2 || messages[0].Content != "" {
+		t.Fatalf("message = %#v, want two parts and no joined text", messages[0])
+	}
+	if _, err := json.Marshal(messages[0]); err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+}
+
 func TestResponsesToChatRequestTools(t *testing.T) {
 	parallel := true
 	req := &OpenAIResponsesRequest{
