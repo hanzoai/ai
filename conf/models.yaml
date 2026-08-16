@@ -1012,29 +1012,52 @@ models:
 
   # ── Hanzo Speech ── the in-cluster speech service (ghcr.io/hanzoai/speech) ──
   # faster-whisper transcribes at /v1/audio/transcriptions, kokoro synthesizes at
-  # /v1/audio/speech. User-facing name == upstream id, so nothing translates.
+  # /v1/audio/speech. The SKU carries the Zen name it is sold under; `upstream` is
+  # the id the speech service answers to, so the engine behind it stays an
+  # implementation detail and can change without renaming the product.
   # pricing 0: the audio handlers meter every call Unpriced (there is no upstream
   # per-call cost — this runs on CPU nodes we already run), and a declared zero is
   # the honest figure rather than inheriting default_pricing's chat rate.
 
-  # Speech recognition (ASR)
-  whisper:
+  # Speech recognition (ASR) — scribe writes down what it hears
+  zen-scribe:
     provider: speech
     upstream: whisper
     owned_by: hanzo
     pricing: {input: 0.00, output: 0.00}
-  whisper-small:
+  zen-scribe-mini:
     provider: speech
     upstream: whisper-small
     owned_by: hanzo
     pricing: {input: 0.00, output: 0.00}
 
-  # Text-to-speech (TTS)
+  # Text-to-speech (TTS) — voice speaks
+  zen-voice-mini:
+    provider: speech
+    upstream: kokoro
+    owned_by: hanzo
+    pricing: {input: 0.00, output: 0.00}
+
+  # The upstream ids stay CALLABLE and leave the listing, so a caller already
+  # sending `whisper` keeps working while the catalog advertises the Zen name.
+  whisper:
+    provider: speech
+    upstream: whisper
+    owned_by: hanzo
+    pricing: {input: 0.00, output: 0.00}
+    hidden: true
+  whisper-small:
+    provider: speech
+    upstream: whisper-small
+    owned_by: hanzo
+    pricing: {input: 0.00, output: 0.00}
+    hidden: true
   kokoro:
     provider: speech
     upstream: kokoro
     owned_by: hanzo
     pricing: {input: 0.00, output: 0.00}
+    hidden: true
 
   # ── DO upstream leaves ──────────────────────────────────────────────
   # Declared so every alias can inherit its upstream's REAL served window
