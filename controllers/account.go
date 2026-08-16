@@ -28,6 +28,7 @@ import (
 	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
+	"github.com/hanzoai/ai/web"
 )
 
 // iamTokenCookieName carries the caller's VERIFIED IAM access token (RS256 JWT)
@@ -171,7 +172,9 @@ func (c *ApiController) Signin() {
 	}
 
 	claims.AccessToken = token.AccessToken
-	c.SetSessionClaims(claims)
+	// The session is becoming somebody, so it takes a new name on the way. adoptSession
+	// is what makes that one act rather than two a later edit could separate.
+	c.adoptSession(claims)
 	// Persist the verified access token so identity survives an in-memory session
 	// loss: a later get-account whose the router session is gone self-heals from this
 	// cookie to the canonical identity instead of falling back to an anonymous
@@ -215,6 +218,13 @@ func (c *ApiController) Signout() {
 	}
 
 	c.SetSessionClaims(nil)
+
+	// End the session AND stop the browser presenting its handle. Deleting the row
+	// is what makes the id answer nothing; expiring the cookie is what stops a dead
+	// handle riding along for the rest of its year. Sign-out owes both.
+	if web.Sessions != nil {
+		web.Sessions.ClearCookie(c.Ctx.ResponseWriter)
+	}
 
 	c.ResponseOk()
 }
@@ -453,7 +463,11 @@ func (c *ApiController) GetAccount() {
 	// keeps its guest session and flows to the anonymous branch below.
 	if sessionNeedsSelfHeal(c.GetSessionUser()) {
 		if p := c.credentialUser(); p != nil && !util.IsAnonymousUser(p) {
-			c.SetSessionClaims(&iam.Claims{User: *p})
+			// The second door onto the same grant: a guest id becomes a signed-in one.
+			// Rotating only at sign-in would leave a planted id to be authenticated
+			// here instead — the rule is the privilege change, not the route it
+			// arrives on.
+			c.adoptSession(&iam.Claims{User: *p})
 		}
 	}
 
