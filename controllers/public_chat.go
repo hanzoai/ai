@@ -211,6 +211,19 @@ func publicVisitor(r *http.Request) string {
 // publicAddr resolves the address to count by. See publicVisitor for why the peer
 // decides whether the forwarded header is believed.
 func publicAddr(r *http.Request) string {
+	// THE HOST ANSWERS THIS WHERE THERE IS ONE. Mounted in hanzoai/cloud, this
+	// module's routes are reached through an adapter and the peer does not survive
+	// the crossing, so everything below reads the same value for every caller — one
+	// bucket for the whole internet rather than one per visitor. cloud can see the
+	// connection and has already hardened the answer, so it gives it to us.
+	if host := object.ClientIP(); host != nil {
+		if addr := strings.TrimSpace(host(r)); addr != "" {
+			return addr
+		}
+	}
+
+	// Standalone from here: nothing is mounted in front, so the request is the only
+	// thing that knows.
 	peer := peerAddr(r)
 	if peer != "" && !internalAddr(peer) {
 		return peer
@@ -221,8 +234,13 @@ func publicAddr(r *http.Request) string {
 	if cf := strings.TrimSpace(r.Header.Get("CF-Connecting-IP")); cf != "" {
 		return cf
 	}
-	// No edge header. The peer is our own ingress, so every visitor shares one count
-	// and the lane closes early. That is the safe direction, and it is deliberate.
+	// Neither a routable peer nor an edge header: everyone who arrives this way
+	// shares one count, and the lane closes for all of them once it is spent. That is
+	// the safe direction, and it is the LAST resort rather than the usual one — when
+	// it was the usual one, this comment described the collapse correctly and blamed
+	// a cause that was never measured, which reads as considered and is worse than
+	// silence. If a deployment lands here for real traffic, the host resolver above
+	// is missing, not the header.
 	return peer
 }
 
