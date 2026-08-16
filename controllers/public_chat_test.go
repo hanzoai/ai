@@ -532,3 +532,47 @@ func servablePool(t *testing.T) {
 	resolveFreeRoute = func(string, string) *modelRoute { return &modelRoute{providerName: "stub"} }
 	t.Cleanup(func() { resolveFreeRoute = prev })
 }
+
+// ---- who is calling ---------------------------------------------------------
+
+// THE HOST'S ANSWER WINS, because this module cannot see the connection. Mounted
+// behind cloud's adapter, r.RemoteAddr is the same value for every caller, so a
+// visitor derived from it is one visitor for the whole internet. This asserts the
+// resolver is consulted and believed even when the request itself carries an
+// address that would otherwise be taken.
+func TestTheHostResolvesWhoIsCalling(t *testing.T) {
+	prev := object.ClientIP()
+	object.SetClientIP(func(*http.Request) string { return "198.51.100.7" })
+	t.Cleanup(func() { object.SetClientIP(prev) })
+
+	// A routable peer that the standalone path WOULD have taken.
+	if got := publicAddr(req("203.0.113.9:41000", "")); got != "198.51.100.7" {
+		t.Fatalf("publicAddr = %q; the host's answer must win over anything read off the request", got)
+	}
+	// Two callers the host distinguishes must be two visitors.
+	object.SetClientIP(func(r *http.Request) string { return r.Header.Get("X-Test-Who") })
+	a := req("203.0.113.9:1", "")
+	a.Header.Set("X-Test-Who", "198.51.100.1")
+	b := req("203.0.113.9:1", "")
+	b.Header.Set("X-Test-Who", "198.51.100.2")
+	if publicVisitor(a) == publicVisitor(b) {
+		t.Fatal("two callers the host told apart became one visitor")
+	}
+}
+
+// Standalone ai installs no resolver, and must keep reading the request itself —
+// otherwise a deployment with nothing in front of it has no visitor at all.
+func TestStandaloneStillReadsTheRequest(t *testing.T) {
+	prev := object.ClientIP()
+	object.SetClientIP(nil)
+	t.Cleanup(func() { object.SetClientIP(prev) })
+
+	if got := publicAddr(req("203.0.113.9:41000", "")); got != "203.0.113.9" {
+		t.Fatalf("standalone publicAddr = %q, want the socket peer 203.0.113.9", got)
+	}
+	// And an empty answer from a resolver must not blank the visitor out.
+	object.SetClientIP(func(*http.Request) string { return "" })
+	if got := publicAddr(req("203.0.113.9:41000", "")); got != "203.0.113.9" {
+		t.Fatalf("a resolver answering nothing left publicAddr = %q; want the fallback", got)
+	}
+}
