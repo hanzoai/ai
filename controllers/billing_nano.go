@@ -230,11 +230,32 @@ func usageBilledUSD(record *usageRecord) string {
 	return nanoToUSD(usageMargin(record).BilledNano)
 }
 
-// usageFree reports whether a call debited nothing — the class of call a wallet has
-// nothing to refuse, and therefore the class the plan allowance counts.
+// usageFree reports whether a call was served at a price of ZERO — the class a wallet
+// has nothing to refuse, and therefore the class the plan allowance counts.
 //
-// It reads the SAME billed amount usageBilledUSD renders, so "free" and "$0" are one
-// answer rather than two that can drift: a route stated at zero, a vendor's spare
-// route that cost us nothing, a self-billing subsystem that charged exactly nothing —
-// all of them are free by the only measure the ceiling is about.
-func usageFree(record *usageRecord) bool { return usageMargin(record).BilledNano == 0 }
+// "THE NUMBER CAME OUT ZERO" IS A DIFFERENT QUESTION AND GETS A DIFFERENT ANSWER, so
+// three things have to be true:
+//
+//   - It billed nothing. The wallet's question, read from the same margin
+//     usageBilledUSD renders, so free and $0 are one answer and not two that drift.
+//
+//   - The zero is a PRICE and not a missing one. A model whose rate is not set yet —
+//     transcription and synthesis are exactly that, deliberately (see
+//     sttPricePerMinuteCents) — computes zero and is UNPRICED, not free. Counting it
+//     would spend a customer's free calls on traffic we have simply not billed yet,
+//     and empty their day on the work they are paying for.
+//
+//   - The route is free by DECLARATION or by the TABLE. costsNothing is the same
+//     question the balance gate asks before the call, so the gate and the counter
+//     bound the same set of calls; record.Free is a route the vendor charges nothing
+//     for — the free pool and the spare routes — which states its own zero and
+//     appears in no table under the id that served it.
+//
+// The third is what keeps a vendor's failure from being read as a gift: an upstream
+// that answers an error carries no tokens, so a PRICED model can compute zero, and
+// only asking what the route costs tells the two apart.
+func usageFree(record *usageRecord) bool {
+	return usageMargin(record).BilledNano == 0 &&
+		!recordUnpriced(record) &&
+		(record.Free || costsNothing(record.Model, record.Owner))
+}

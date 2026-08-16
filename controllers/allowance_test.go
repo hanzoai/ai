@@ -54,16 +54,16 @@ func counted(t *testing.T, record *usageRecord) []string {
 	return subjects
 }
 
-// free builds a served call that billed exactly nothing — a zero-priced route, which
-// is the whole class the allowance bounds. The amount is STATED rather than derived
-// from a rate table no unit test has, so the record says what it billed as precisely
-// as production does.
+// free builds a served call on a route the VENDOR charges nothing for — the free pool
+// and the spare routes, which state their own zero (usageCostNano reads record.Free
+// first). It is the shape the public lane and every downgrade record carry, and it
+// needs no price table, which no unit test has.
 func free(owner, user string) *usageRecord {
 	zero := int64(0)
 	return &usageRecord{
 		Owner: owner, User: user, Model: "enso-free", Provider: "hanzo",
 		Currency: "USD", Status: "success", RequestID: "req-free",
-		BilledNanoExact: &zero,
+		Free: true, BilledNanoExact: &zero,
 	}
 }
 
@@ -123,16 +123,71 @@ func TestOneRequestCountsOnce(t *testing.T) {
 }
 
 // A PRICED CALL IS NEVER COUNTED. Money bounds those, and counting them as well would
-// refuse work a subscriber has already paid for. Free and priced are told apart by
-// the amount the call actually billed, which is the same number the debit carries —
-// so the two can never disagree about what a call was.
+// refuse work a subscriber has already paid for.
 func TestAPricedCallSpendsMoneyAndNoAllowance(t *testing.T) {
 	cent := int64(10_000_000) // $0.01 in nano
 	rec := free("acme", "acme/alice")
-	rec.Model, rec.BilledNanoExact = "gpt-4o", &cent
+	rec.Model, rec.Free, rec.BilledNanoExact = "gpt-4o", false, &cent
 
 	if got := counted(t, rec); len(got) != 0 {
 		t.Fatalf("a priced call counted %v against the free allowance; the wallet bounds those", got)
+	}
+}
+
+// A ZERO THAT IS NOT A PRICE IS NOT A FREE CALL.
+//
+// Transcription and synthesis carry no configured rate — that is a revenue decision
+// left open on purpose (sttPricePerMinuteCents) — so an audio call computes a cost of
+// zero while being neither free nor priced. Reading that zero as a free call would
+// spend a paying customer's daily allowance on the audio traffic they are paying for,
+// and empty their free tier by using the product normally.
+//
+// The same guard covers a vendor that answers an ERROR on a priced model: no tokens
+// come back, so the cost computes zero, and only asking what the ROUTE costs tells a
+// gift apart from a failure.
+func TestAZeroThatIsNotAPriceIsNotAFreeCall(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		of   func(*usageRecord)
+	}{
+		{
+			name: "a transcription with no rate set",
+			of:   func(r *usageRecord) { r.Model, r.AudioSeconds = "whisper-1", 42 },
+		},
+		{
+			name: "a synthesis with no rate set",
+			of:   func(r *usageRecord) { r.Model, r.AudioChars = "tts-1", 900 },
+		},
+		{
+			name: "a priced model whose vendor answered nothing",
+			of:   func(r *usageRecord) { r.Model, r.PromptTokens, r.CompletionTokens = "gpt-4o", 0, 0 },
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			rec := free("acme", "acme/alice")
+			rec.Free, rec.BilledNanoExact = false, nil // let the real tables answer
+			c.of(rec)
+
+			if usageFree(rec) {
+				t.Fatalf("%s reads as a free call; its zero is a missing price, not a price", c.name)
+			}
+			if got := counted(t, rec); len(got) != 0 {
+				t.Fatalf("%s counted %v against the caller's free calls", c.name, got)
+			}
+		})
+	}
+}
+
+// And the pool still counts. The guard above must not have taken the ceiling off the
+// one lane it exists for: the free pool's routes cost nothing BY DECLARATION and
+// appear in no table under the id that served them.
+func TestTheFreePoolStillCounts(t *testing.T) {
+	rec := free("acme", "acme/alice")
+	if !usageFree(rec) {
+		t.Fatal("a route the vendor charges nothing for does not read as a free call")
+	}
+	if got := counted(t, rec); len(got) != 1 {
+		t.Fatalf("the free pool counted %d times, want exactly 1: %v", len(got), got)
 	}
 }
 
