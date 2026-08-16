@@ -1024,8 +1024,9 @@ func recordUsage(record *usageRecord) {
 
 	// WHAT THIS CALL SPENT: money, or one of the caller's free calls. A call that
 	// debited nothing is exactly the call a wallet cannot bound, which is the whole
-	// job of the plan allowance — so the amount computed above decides it, and no
-	// second opinion about what a catalog charges can disagree with the debit.
+	// job of the plan allowance — so what the call BILLED decides it. usageFree reads
+	// the same margin usageBilledUSD renders below, so the debit and the count cannot
+	// hold different opinions about what this call was.
 	//
 	// IT IS COUNTED HERE BECAUSE HERE IS WHERE A CALL ANSWERED. The ceiling bounds
 	// SPEND; spend is incurred when a model is reached; and this function has already
