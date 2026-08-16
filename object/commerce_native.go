@@ -125,11 +125,14 @@ type RollingCapReaderFunc func(ctx context.Context, subject, namespace string) (
 // unresolvable route, a vendor that never answered, a deployment mid-roll — leaves
 // the caller exactly as many free calls as it found.
 //
-// The trade is deliberate. Two calls from one subject can both read "not spent" and
-// both be served, so a ceiling of five can admit six. Overshoot is generous, visible
-// and bounded by how many calls one caller has in flight. Undershoot is not: a caller
-// mysteriously short a call feels it and we never see it, so the direction of the
-// error is chosen rather than left to chance.
+// THE TRADE IS DELIBERATE, AND IT IS NOT A SMALL ONE. Every call a subject has in
+// flight reads the ceiling before any of them has been counted, so all of them are
+// admitted: the overshoot is the subject's CONCURRENCY, not one or two. What bounds it
+// is the edge's per-IP flood cap ahead of this, and how long an answer takes — not
+// this read. Undershoot is the error going the other way, and it is the one a caller
+// feels while we never see it: a day spent on a route that 404'd looks, from here,
+// exactly like a day spent on answers. The direction of the error is chosen rather
+// than left to chance, and the size of it is a number to watch.
 //
 // AN ERROR IS ALLOWED THROUGH, and WHO gets that benefit is the host's call, not
 // this module's. A route stated at zero is not always served by our own compute — a

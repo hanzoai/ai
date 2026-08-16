@@ -127,17 +127,25 @@ func (d *dayCount) spent(visitor, day string, limit int) bool {
 // count records one call the lane SERVED.
 //
 // At the ceiling the count stops climbing, so what a visitor is shown is "5 of 5" and
-// never "37 of 5". Two calls in flight for the same visitor can both have been
-// admitted by one last unit and both counted here: a ceiling of five occasionally
-// serving six is the generous direction, and generous is the direction to err in when
-// the alternative is a stranger short a call they never got.
+// never "37 of 5".
+//
+// WHICH ALSO MEANS THE COUNT DOES NOT REPORT AN OVERSHOOT. Calls in flight for one
+// visitor all read the ceiling before any of them is counted here, so all of them are
+// served — the excess is the visitor's concurrency, bounded by the edge's per-IP flood
+// cap ahead of this and by how long an answer takes. Generous is the direction to err
+// in when the alternative is a stranger short a call they never got, and the size of
+// the generosity is a number to watch rather than one this map can show.
 func (d *dayCount) count(visitor, day string, limit int) {
 	if limit <= 0 || visitor == "" {
 		return
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	if d.day != day || d.seen == nil {
+	if d.seen == nil || day > d.day {
+		// FORWARD ONLY. The day turns when a LATER one arrives, so a clock that steps
+		// backwards — two calls straddling midnight, an NTP correction — cannot drop a
+		// map every visitor is still counted in. Counting a late call into the day
+		// already open is the harmless direction; wiping the open day is not.
 		d.day, d.seen = day, make(map[string]int)
 	}
 	used, known := d.seen[visitor]

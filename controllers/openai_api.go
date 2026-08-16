@@ -1562,11 +1562,6 @@ func (c *ApiController) chatCompletions(from caller) {
 	// here so the reservation below and every usage record at the tail of this
 	// handler key on the SAME wallet the gate inside authResolveProvider just read.
 	ledger := c.billingOrg(authUser)
-	if from == callerPublic {
-		// The lane's own account, never a switch: billingOrg reads X-Org-Id, and a
-		// visitor sets that header as freely as any other.
-		ledger = publicOrg
-	}
 	if isWidget || from == callerPublic {
 		// Cap max_tokens for a caller nobody can be billed for — the widget's key
 		// holder and the public lane's visitor are the same case.

@@ -185,6 +185,17 @@ func (c *ApiController) billingOrg(user *iam.User) string {
 	if user == nil {
 		return ""
 	}
+	// THE PUBLIC LANE NEVER SWITCHES, and this is the one place that has to say so.
+	//
+	// A visitor presents no credential and the lane authenticates none, but the
+	// membership set below is read straight off the request — so a signed-in reader
+	// asking an anonymous question could name one of THEIR orgs and move an anonymous
+	// call onto a real tenant's books and a real tenant's ceiling. The reserved org
+	// holds no membership and there is no wallet a visitor could be switched to, so
+	// the lane's own account is the only answer.
+	if user.Owner == publicOrg {
+		return publicOrg
+	}
 	requested := strings.TrimSpace(c.Ctx.Input.Header("X-Org-Id"))
 	if requested == "" || requested == user.Owner {
 		// Dominant path: no switch asked for. Byte-identical to keying on
