@@ -214,6 +214,9 @@ var rateLimiterInstance *RateLimiter
 // Stop() on shutdown.
 func InitRateLimiter(tierFunc func(string) Tier) *RateLimiter {
 	rateLimiterInstance = NewRateLimiter(tierFunc, 10*time.Minute)
+	// The quota is armed from the same call, on the same tierFunc, so a caller's
+	// rate and their ceiling can never be resolved from two different tiers.
+	quotaInstance = NewQuota(tierFunc, time.Hour)
 	return rateLimiterInstance
 }
 
@@ -275,6 +278,7 @@ func RateLimitFilter(ctx *web.Context) {
 	}
 
 	if rateLimiterInstance.Allow(limitKey) {
+		charge(ctx, limitKey, path)
 		return
 	}
 
