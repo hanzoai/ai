@@ -277,11 +277,33 @@ func publicErrorJSON(kind, code, message string) []byte {
 // being free — a catalog edit, a price that failed to load — closes the lane rather
 // than quietly spending on the house, which is the fail-closed rule the balance gate
 // already keeps one layer up.
+// resolveFreeRoute is the route resolver, as a seam. The ARGUMENT is what this lane
+// shipped wrong, so the argument is the thing worth pinning — a test can hold "no org
+// reaches route selection" without standing up family discovery, which no unit test
+// has.
+var resolveFreeRoute = resolveModelRouteForOrg
+
 func (c *ApiController) resolveProviderForPublic() (provider *object.Provider, authUser *iam.User, upstream string, err error) {
 	if !ModelCostsNothing(freeID, publicOrg) {
 		return nil, nil, "", authError("the free pool is not currently free, so the public lane is closed")
 	}
-	route := resolveModelRouteForOrg(freeID, publicOrg)
+	// NO ORG GOES INTO ROUTE SELECTION HERE, and the empty argument is the whole point.
+	//
+	// resolveModelRouteForOrg degrades a route when the caller's org yields a subject:
+	// that is the AUTO-ROUTER's preference gate, which walks a caller down to the next
+	// servable SKU. This lane is the direct path resolving its ONE authoritative route,
+	// and the resolver says so itself — "the direct call path (which resolves its
+	// authoritative route with orgId "" ⇒ empty subject ⇒ admit) is never degraded
+	// here". Passing $public degraded it to nil, and a direct path with no route left
+	// is not a downgrade, it is a lane that answers nothing.
+	//
+	// It refused for a reason that cannot apply: the funding gate asks the catalog what
+	// a family SKU costs, and the free pool's id is a FRONT DOOR rather than a
+	// discovered SKU, so the lookup misses and an undescribed id is refused by design.
+	// The pool is the routes that cost nothing; there is no spend for that gate to
+	// protect. Selection is not authorization — ModelCostsNothing above already proved
+	// the price is zero, and the serve gate still refuses to spend.
+	route := resolveFreeRoute(freeID, "")
 	if route == nil {
 		return nil, nil, "", authError("the free pool has no route on this deployment")
 	}
