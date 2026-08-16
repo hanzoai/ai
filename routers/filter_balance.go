@@ -196,15 +196,22 @@ func BalanceGateFilter(ctx *web.Context) {
 	if m := requestedModel(ctx); m != "" && controllers.ModelCostsNothing(m, namespace) {
 		// Free is not unbounded. The wallet has nothing to refuse at zero, so the
 		// plan's ALLOWANCE is what bounds this lane: a count of calls per subject per
-		// period, spent here and reported by the host. It is the one gate a free
-		// caller meets, and the moment to offer them a plan.
+		// period, held by the host. It is the one gate a free caller meets, and the
+		// moment to offer them a plan.
+		//
+		// THIS ONLY READS IT. The ceiling bounds spend, and spend is incurred when a
+		// model is reached — so the call is counted where it is served (recordUsage,
+		// which runs for a success and nothing else) and this asks only whether the
+		// caller is already out. A request refused here costs nothing, and so does one
+		// that dies on an unresolvable route or a vendor that never answered: a caller
+		// pays for answers, never for an outage of ours.
 		//
 		// An error is allowed through, and WHO gets that benefit is the host's call:
 		// it holds the tenancy vocabulary, so it answers spent for a caller it cannot
 		// name and returns the error only for one it can. A priced route never
 		// reaches this branch, so nothing here can free a metered call.
-		if spend := object.Allowance(); spend != nil {
-			if spent, err := spend(ctx.Request.Context(), subject, namespace); err == nil && spent {
+		if spent := object.Spent(); spent != nil {
+			if out, err := spent(ctx.Request.Context(), subject, namespace); err == nil && out {
 				log.Info("allowance: period allowance spent subject=%s namespace=%s path=%s",
 					subject, namespace, path)
 				ctx.ResponseWriter.Header().Set("Content-Type", "application/json")

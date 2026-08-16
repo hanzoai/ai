@@ -27,9 +27,13 @@
 //
 // IT FAILS CLOSED, AND ALONE. The bound is counted in this process and depends on no
 // other service, because a bound that asks something else a question admits the call
-// whenever the answer does not arrive. The host's allowance is asked as well, so a
+// whenever the answer does not arrive. The host's allowance is read as well, so a
 // visitor's usage lands in the one counter that reports a free tier, but a lane that
 // admitted on its silence would be unbounded exactly when the host is down.
+//
+// A DAY IS SPENT ON ANSWERS. Both counts are read at the door and raised where the
+// call is served, so a visitor pays for what they got and never for a route that was
+// missing, a vendor that hung, or a pod being rolled.
 //
 // CORS is not decided here. The edge that fronts this binary owns which browser
 // origins may read it, and a second opinion in this file would be a second answer to
@@ -37,6 +41,7 @@
 package controllers
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -90,14 +95,45 @@ type dayCount struct {
 
 var publicCount = &dayCount{}
 
-// take counts one call for visitor and reports whether it is admitted.
+// spent reports whether visitor has already taken their day.
 //
-// The read and the increment are one critical section, because two calls racing for
-// the same last unit would otherwise both see it free. At the ceiling the count stops
-// climbing: refusals are not usage, and a counter that kept rising would say they were.
-func (d *dayCount) take(visitor, day string, limit int) bool {
+// IT READS. Asking costs a visitor nothing and a visitor at the ceiling keeps their
+// count where it is, because refusals are not usage. The call itself is counted where
+// it is served (recordUsage), so a request that dies short of a model leaves this
+// map untouched.
+//
+// A closed lane and a caller with no address are spent by definition: neither names a
+// visitor this count can hold.
+func (d *dayCount) spent(visitor, day string, limit int) bool {
 	if limit <= 0 || visitor == "" {
-		return false
+		return true
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.day != day || d.seen == nil {
+		return false // a count from another day is not this day's
+	}
+	used, known := d.seen[visitor]
+	if !known {
+		// At the bound there is no room for a newcomer, so the lane stops admitting
+		// visitors it has not already seen. Turning away a stranger is a failure this
+		// endpoint is allowed to have; growing without limit on an address a stranger
+		// picks is not.
+		return len(d.seen) >= publicVisitors
+	}
+	return used >= limit
+}
+
+// count records one call the lane SERVED.
+//
+// At the ceiling the count stops climbing, so what a visitor is shown is "5 of 5" and
+// never "37 of 5". Two calls in flight for the same visitor can both have been
+// admitted by one last unit and both counted here: a ceiling of five occasionally
+// serving six is the generous direction, and generous is the direction to err in when
+// the alternative is a stranger short a call they never got.
+func (d *dayCount) count(visitor, day string, limit int) {
+	if limit <= 0 || visitor == "" {
+		return
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -106,13 +142,35 @@ func (d *dayCount) take(visitor, day string, limit int) bool {
 	}
 	used, known := d.seen[visitor]
 	if !known && len(d.seen) >= publicVisitors {
-		return false
+		return
 	}
 	if used >= limit {
-		return false
+		return
 	}
 	d.seen[visitor] = used + 1
-	return true
+}
+
+// ---- whose day a call spends ----------------------------------------------
+
+// visitorKey addresses the visitor a public call is counted for. The lane is its only
+// writer, and the record of the call is its only reader (usageRecord.bind).
+type visitorKey struct{}
+
+// withVisitor returns ctx naming the visitor this call is counted for.
+func withVisitor(ctx context.Context, visitor string) context.Context {
+	return context.WithValue(ctx, visitorKey{}, visitor)
+}
+
+// visitorOf answers the visitor a call is counted for, or "" for a caller who counts
+// against their own payer — which is everyone except a stranger on this lane. The
+// lane needs its own subject because a visitor's payer collapses to the reserved org,
+// and counting every stranger there would spend one shared day.
+func visitorOf(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	visitor, _ := ctx.Value(visitorKey{}).(string)
+	return visitor
 }
 
 // utcDay is the period a count belongs to. One rule, one timezone — a period that
@@ -211,41 +269,44 @@ func (c *ApiController) ChatCompletionsPublic() {
 		return
 	}
 
-	// NOTHING IS CHARGED FOR A CALL WE CANNOT SERVE.
-	//
-	// The counters below are the visitor's day, and a day is spent on answers. Taking
-	// first and resolving afterwards charges a stranger for our own outage: a
-	// misconfigured pool refused every caller AND consumed their allowance on the way
-	// out, so the ceiling emptied without a single model ever being reached. The host
-	// take is worse than the local one there, because it persists — a pod restart
-	// clears the count in this process, and nothing clears that.
-	//
-	// So the pool is asked whether it CAN answer before anyone is charged for one. It
-	// is two map lookups, and it is the same question resolveProviderForPublic asks
-	// again below, through the same function, so the two cannot drift.
+	// A LANE THAT CANNOT ANSWER SAYS SO PLAINLY. The pool is asked whether it has a
+	// route before the call goes any further, so a visitor arriving during a
+	// misconfiguration reads "the free pool is down" rather than an authorization
+	// error thrown by provider setup. It is two map lookups, and it is the same
+	// question resolveProviderForPublic asks below, through the same function, so the
+	// two cannot drift.
 	if _, err := publicPoolRoute(); err != nil {
 		c.publicRefuse(http.StatusServiceUnavailable, "server_error", "public_pool_unavailable",
 			"The free pool is not available right now. Nothing was counted against you; try again.")
 		return
 	}
 
-	// OUR OWN BOUND FIRST, and it decides. It is counted in this process and asks
+	// BOTH COUNTS ARE READ HERE AND TAKEN NOWHERE. A day is spent on answers, so the
+	// call is counted where it is served — recordUsage, which runs only for a call
+	// that came back — and this asks only whether the visitor is already out. A
+	// request that dies short of a model leaves them every call they arrived with.
+	//
+	// OUR OWN BOUND FIRST, and it decides. It is kept in this process and asks
 	// nothing, so it holds while anything else is down.
-	if !publicCount.take(visitor, utcDay(time.Now()), publicChatDaily()) {
+	if publicCount.spent(visitor, utcDay(time.Now()), publicChatDaily()) {
 		c.publicSpent(visitor, "count")
 		return
 	}
 
-	// The host's allowance is the counter that REPORTS a free tier, so the visitor is
-	// counted there too, under a subject of their own — one shared subject would let a
-	// single caller starve every visitor's tier. It may refuse; it may not admit,
-	// which is why its silence is not consulted.
-	if spend := object.Allowance(); spend != nil {
-		if spent, err := spend(c.Ctx.Request.Context(), visitor, publicOrg); err == nil && spent {
+	// The host's allowance is the counter that REPORTS a free tier, read under a
+	// subject of the visitor's own — one shared subject would let a single caller
+	// starve every visitor's tier. It may refuse; it may not admit, which is why its
+	// silence is not consulted.
+	if spent := object.Spent(); spent != nil {
+		if out, err := spent(c.Ctx.Request.Context(), visitor, publicOrg); err == nil && out {
 			c.publicSpent(visitor, "allowance")
 			return
 		}
 	}
+
+	// The visitor rides on the request, because the record of the call is what counts
+	// it and the record has no other way to know which stranger this was.
+	c.Ctx.Request = c.Ctx.Request.WithContext(withVisitor(c.Ctx.Request.Context(), visitor))
 
 	c.chatCompletions(callerPublic)
 }
@@ -287,18 +348,10 @@ func publicErrorJSON(kind, code, message string) []byte {
 
 // ---- who serves it --------------------------------------------------------
 
-// resolveProviderForPublic settles the model, the upstream that runs it and the
-// account it is recorded against — with no credential, and without reading the request.
-//
-// THE MODEL IS ASSIGNED, NEVER CHOSEN. freeID is the platform's own name for the free
-// pool, and it is verified to cost nothing before it is served. A pool that stopped
-// being free — a catalog edit, a price that failed to load — closes the lane rather
-// than quietly spending on the house, which is the fail-closed rule the balance gate
-// already keeps one layer up.
 // publicPoolRoute answers whether the free pool can serve a call right now, and with
-// what. It is ONE definition asked twice — once before anyone is charged, once when the
-// call is actually resolved — so the question that gates the counter and the question
-// that picks the upstream can never drift apart.
+// what. It is ONE definition asked twice — once when the lane decides it can answer at
+// all, once when the call is actually resolved — so the question that opens the lane
+// and the question that picks the upstream can never drift apart.
 //
 // It fails closed on both halves. A price that is not FOUND to be zero closes the lane
 // rather than guessing, and a pool with no route closes it rather than reaching for
@@ -332,6 +385,14 @@ func publicPoolRoute() (*modelRoute, error) {
 // has.
 var resolveFreeRoute = resolveModelRouteForOrg
 
+// resolveProviderForPublic settles the model, the upstream that runs it and the
+// account it is recorded against — with no credential, and without reading the request.
+//
+// THE MODEL IS ASSIGNED, NEVER CHOSEN. freeID is the platform's own name for the free
+// pool, and publicPoolRoute has verified it costs nothing before it is served. A pool
+// that stopped being free — a catalog edit, a price that failed to load — closes the
+// lane rather than quietly spending on the house, which is the fail-closed rule the
+// balance gate already keeps one layer up.
 func (c *ApiController) resolveProviderForPublic() (provider *object.Provider, authUser *iam.User, upstream string, err error) {
 	route, err := publicPoolRoute()
 	if err != nil {

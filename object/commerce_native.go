@@ -44,6 +44,24 @@ type UsageEvent struct {
 	Currency string // default "usd"
 	Model    string
 	Provider string
+	// Allowance is the subject whose free-call allowance this call counts against.
+	// It is set only when the call debited nothing; empty says the call spent money
+	// instead.
+	//
+	// ONE EVENT SAYS WHAT A CALL SPENT — money, or one of a plan's free calls — so
+	// counting a free call and recording that a call happened are the same act and
+	// cannot come apart. recordUsage is its only producer, and it has already
+	// returned for anything that did not answer, which is what makes a count
+	// impossible without a model behind it.
+	//
+	// The allowance bounds exactly the calls a wallet cannot: the ones that cost
+	// nothing. So a zero amount IS the free call, said in the currency the bound is
+	// about, rather than as a second opinion about what the catalog charges.
+	//
+	// The subject is the payer's, except where the request named its own — the
+	// public lane counts a visitor, and one shared subject would let a single caller
+	// empty every visitor's day.
+	Allowance string
 	// RequestID names the metered call so a warehouse row, a span and a support
 	// question can be tied back to it.
 	//
@@ -89,8 +107,8 @@ type TierReaderFunc func(ctx context.Context, subject, namespace string) (name s
 // default, standalone ai) → no rolling cap, behavior unchanged.
 type RollingCapReaderFunc func(ctx context.Context, subject, namespace string) (over bool, err error)
 
-// AllowanceFunc counts ONE zero-priced call against the subject's plan allowance for
-// the current period and reports whether the subject has now spent it all.
+// SpentFunc reports whether subject has already used the free calls its plan allows
+// this period, within the org namespace.
 //
 // It is the bound on the ONE thing a wallet cannot bound. A route priced at zero
 // leaves the balance gate nothing to refuse (see BalanceGateFilter), so a caller on
@@ -99,9 +117,19 @@ type RollingCapReaderFunc func(ctx context.Context, subject, namespace string) (
 // caller's plan. Money and count never stand in for each other, so nothing here reads
 // a balance and nothing in the wallet reads a count.
 //
-// It COUNTS as it answers, in one call, so two requests racing cannot both be
-// admitted by the same last unit — a read followed by a separate increment can.
-// spent=true means this call took the subject past the limit; the caller refuses it.
+// IT ONLY READS, and that is the whole shape of the thing. A ceiling on SPEND is
+// reached when a model is reached, so the count belongs to the answer and not to the
+// attempt: it rides on UsageEvent.Allowance, a field on the record of a call that
+// served. Asking here therefore costs the caller nothing, a subject at the ceiling
+// keeps their count where it is, and a request that dies before any model — an
+// unresolvable route, a vendor that never answered, a deployment mid-roll — leaves
+// the caller exactly as many free calls as it found.
+//
+// The trade is deliberate. Two calls from one subject can both read "not spent" and
+// both be served, so a ceiling of five can admit six. Overshoot is generous, visible
+// and bounded by how many calls one caller has in flight. Undershoot is not: a caller
+// mysteriously short a call feels it and we never see it, so the direction of the
+// error is chosen rather than left to chance.
 //
 // AN ERROR IS ALLOWED THROUGH, and WHO gets that benefit is the host's call, not
 // this module's. A route stated at zero is not always served by our own compute — a
@@ -111,16 +139,16 @@ type RollingCapReaderFunc func(ctx context.Context, subject, namespace string) (
 // where a blip must not take the free models from a paying customer.
 //
 // The hard money bounds are untouched: a priced route never reaches this branch. A
-// plan with no limit configured, and any caller whose plan is unlimited, returns
-// spent=false. nil (the default, standalone ai) → no allowance, behavior unchanged.
-type AllowanceFunc func(ctx context.Context, subject, namespace string) (spent bool, err error)
+// plan with no limit configured, and any caller whose plan is unlimited, is never
+// spent. nil (the default, standalone ai) → no allowance, behavior unchanged.
+type SpentFunc func(ctx context.Context, subject, namespace string) (spent bool, err error)
 
 var (
 	balanceReader    BalanceReaderFunc
 	usageRecorder    UsageRecorderFunc
 	tierReader       TierReaderFunc
 	rollingCapReader RollingCapReaderFunc
-	allowance        AllowanceFunc
+	spent            SpentFunc
 )
 
 // SetBalanceReader installs the host's native balance reader (nil clears it).
@@ -135,8 +163,8 @@ func SetTierReader(f TierReaderFunc) { tierReader = f }
 // SetRollingCapReader installs the host's native rolling-window cap reader (nil clears it).
 func SetRollingCapReader(f RollingCapReaderFunc) { rollingCapReader = f }
 
-// SetAllowance installs the host's native plan-allowance counter (nil clears it).
-func SetAllowance(f AllowanceFunc) { allowance = f }
+// SetSpent installs the host's native plan-allowance read (nil clears it).
+func SetSpent(f SpentFunc) { spent = f }
 
 // BalanceReader returns the installed native reader, or nil when unset (standalone).
 func BalanceReader() BalanceReaderFunc { return balanceReader }
@@ -150,5 +178,5 @@ func TierReader() TierReaderFunc { return tierReader }
 // RollingCapReader returns the installed native rolling-cap reader, or nil when unset.
 func RollingCapReader() RollingCapReaderFunc { return rollingCapReader }
 
-// Allowance returns the installed native allowance counter, or nil when unset.
-func Allowance() AllowanceFunc { return allowance }
+// Spent returns the installed native allowance read, or nil when unset.
+func Spent() SpentFunc { return spent }

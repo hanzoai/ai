@@ -49,10 +49,10 @@ func TestPublicLaneIsCountedOnceAndOnlyByTheLane(t *testing.T) {
 	prev := balanceGate
 	balanceGate = bg
 	t.Cleanup(func() { balanceGate = prev })
-	t.Cleanup(func() { object.SetAllowance(nil) })
+	t.Cleanup(func() { object.SetSpent(nil) })
 
 	takes := 0
-	object.SetAllowance(func(_ stdcontext.Context, subject, namespace string) (bool, error) {
+	object.SetSpent(func(_ stdcontext.Context, subject, namespace string) (bool, error) {
 		takes++
 		return false, nil
 	})
