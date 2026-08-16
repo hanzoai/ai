@@ -113,16 +113,81 @@ func (m *MemorySessions) SessionStart(w http.ResponseWriter, r *http.Request) (S
 	m.mu.Lock()
 	m.stores[id] = s
 	m.mu.Unlock()
+	m.writeCookie(w, id, int(m.maxAge/time.Second))
+	return s, nil
+}
+
+// writeCookie is the ONE place this manager's cookie is described. Issuing,
+// rotating and clearing all go through it, so a cookie can never be replaced by
+// one carrying weaker attributes than the one it replaced — a rotation that
+// dropped HttpOnly would hand back exactly what rotation exists to protect.
+func (m *MemorySessions) writeCookie(w http.ResponseWriter, value string, maxAge int) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     m.cookieName,
-		Value:    id,
+		Value:    value,
 		Path:     "/",
 		HttpOnly: true,
 		Secure:   m.secure,
 		SameSite: m.sameSite,
-		MaxAge:   int(m.maxAge / time.Second),
+		MaxAge:   maxAge,
 	})
+}
+
+// RegenerateID moves a session onto a NEW identifier and writes the new cookie.
+//
+// THE ID A CALLER HELD BEFORE THEY PROVED WHO THEY ARE MUST NEVER BE THE ID THEY
+// HOLD AFTER. Anyone who can plant a value in the browser — one XSS on any host
+// under this cookie's scope is enough, and an estate this size runs many — would
+// otherwise be holding the very id that becomes authenticated the moment the
+// victim signs in: a session nobody had to steal, because the attacker chose it.
+//
+// The old row is DELETED rather than left to lapse. Rotation that leaves the old
+// id answering is not rotation; it is a second key to the same door.
+//
+// Values move across, because what rotates is the session's NAME and not its
+// contents. Callers that write claims should do so AFTER rotating, so the
+// credential only ever exists under the new id.
+func (m *MemorySessions) RegenerateID(w http.ResponseWriter, old Store) (Store, error) {
+	id, err := newSessionID()
+	if err != nil {
+		return nil, err
+	}
+	s := &memoryStore{id: id, data: map[interface{}]interface{}{}, accessed: time.Now()}
+
+	// A typed nil inside a non-nil interface is still nil to dereference, so the
+	// assertion is what makes "no previous session" safe rather than a panic on a
+	// path that runs during sign-in.
+	var prev *memoryStore
+	if old != nil {
+		prev, _ = old.(*memoryStore)
+	}
+	if prev != nil {
+		prev.mu.RLock()
+		for k, v := range prev.data {
+			s.data[k] = v
+		}
+		prev.mu.RUnlock()
+	}
+
+	m.mu.Lock()
+	m.stores[id] = s
+	if prev != nil {
+		delete(m.stores, prev.id)
+	}
+	m.mu.Unlock()
+
+	m.writeCookie(w, id, int(m.maxAge/time.Second))
 	return s, nil
+}
+
+// ClearCookie expires this manager's cookie in the browser.
+//
+// Destroying the server-side session already makes the id answer nothing, so this
+// is not what closes the door — it is what stops the browser carrying a dead
+// handle for a year afterwards. Sign-out should do both: end the session, and
+// stop telling the caller to keep presenting it.
+func (m *MemorySessions) ClearCookie(w http.ResponseWriter) {
+	m.writeCookie(w, "", -1)
 }
 
 // SessionDestroy removes a session by id (the logout path).
