@@ -703,9 +703,15 @@ func (f *modelFamily) lookup(model string) (zenModel, bool) {
 	return m, ok
 }
 
-// snapshot returns the discovered family (refreshing on a TTL).
+// snapshot returns the family as last discovered. It does not refresh: fresh is
+// what refreshes, and a caller that wants current data calls it first.
+//
+// The two were one call, and that put a 15-second discovery inside whatever lock
+// the caller held. The catalogue's build holds one, and every family is already
+// refreshed before it is taken, so the refresh in here only ever ran a SECOND
+// time — for a family that is failing, which is the one case where it costs the
+// full timeout and blocks every other reader for it.
 func (f *modelFamily) snapshot() []zenModel {
-	f.fresh()
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 	out := make([]zenModel, 0, len(f.ids))
