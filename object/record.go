@@ -33,6 +33,14 @@ func init() {
 	logPostOnly = conf.GetConfigBool("logPostOnly")
 }
 
+// Recorded reports whether a request with this method is kept. It is the one
+// place the logPostOnly rule is read, so a caller can ask before building a
+// record rather than after: under logPostOnly a GET is discarded, and composing
+// one costs a geo-IP lookup and a provider query that nothing then reads.
+func Recorded(method string) bool {
+	return !(logPostOnly && method == "GET")
+}
+
 type Record struct {
 	Id           int    `db:"pk" json:"id"`
 	Owner        string `json:"owner"`
@@ -173,7 +181,7 @@ func GetRecord(id string, lang string) (*Record, error) {
 }
 
 func prepareRecord(record *Record, providerFirst, providerSecond *Provider) (bool, error) {
-	if logPostOnly && record.Method == "GET" {
+	if !Recorded(record.Method) {
 		return false, nil
 	}
 	if strings.HasSuffix(record.Action, "-record") {

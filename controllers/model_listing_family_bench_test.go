@@ -26,8 +26,14 @@ func BenchmarkListWithFamily(b *testing.B) {
 	b.Setenv("OPENROUTER_URL", srv.URL)
 	b.Setenv("OPENROUTER_API_KEY", "bench")
 
-	if err := InitModelConfig("../conf/models.yaml"); err != nil {
-		b.Fatalf("load conf/models.yaml: %v", err)
+	// CATALOG points at the catalog to measure. Set it to a dump of the live
+	// ConfigMap to benchmark exactly what production renders.
+	cat := os.Getenv("CATALOG")
+	if cat == "" {
+		cat = "../conf/models.yaml"
+	}
+	if err := InitModelConfig(cat); err != nil {
+		b.Fatalf("load %s: %v", cat, err)
 	}
 
 	got := listAvailableModels()
