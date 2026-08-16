@@ -170,6 +170,11 @@ type ModelConfig struct {
 	router   RouterConfigDef
 	defaults modelPrice
 
+	// changedAt is when the routes or prices above last changed — a file load or a
+	// live pricing fetch. Anything derived from this config reads it to know whether
+	// what it derived still holds.
+	changedAt time.Time
+
 	// Live refresh state
 	configPath    string
 	pricingURL    string
@@ -206,6 +211,13 @@ func InitModelConfig(path string) error {
 // GetModelConfig returns the singleton. Returns nil if not initialized.
 func GetModelConfig() *ModelConfig {
 	return globalModelConfig
+}
+
+// ChangedAt returns when the routes or prices last changed.
+func (mc *ModelConfig) ChangedAt() time.Time {
+	mc.mu.RLock()
+	defer mc.mu.RUnlock()
+	return mc.changedAt
 }
 
 // ── Loading ─────────────────────────────────────────────────────────────
@@ -340,6 +352,7 @@ func (mc *ModelConfig) applyConfig(file *ModelConfigFile) error {
 	mc.defaults = defaults
 	mc.pricingURL = pricingURL
 	mc.pricingTTL = pricingTTL
+	mc.changedAt = time.Now()
 	mc.mu.Unlock()
 
 	log.Info("Model config loaded: %d routes, %d pricing entries",

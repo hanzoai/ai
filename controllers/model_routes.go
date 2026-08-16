@@ -15,10 +15,14 @@
 package controllers
 
 import (
+	"encoding/json"
+	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
+	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/object"
 )
@@ -464,11 +468,84 @@ func listRouteProviders() []string {
 	return names
 }
 
-// listAvailableModels returns listed models from the routing table, sorted by name.
-// Hidden models (provider-prefixed aliases, upstream-named routes) are excluded
-// from the listing but remain callable via the completions endpoint.
-func listAvailableModels() []modelInfo {
-	if cfg := GetModelConfig(); cfg != nil {
+// ── the listed catalogue ─────────────────────────────────────────────────────
+//
+// The catalogue is a function of two things: the loaded config, and what each family
+// last discovered. Both move on a five-minute scale and the endpoint is asked
+// thousands of times in between, so it is built when they move and held.
+//
+// Held, rather than rebuilt per caller, because a build is not cheap: it merges and
+// sorts every family's lineup into the routing table, marshals ~100 KB, and resolves
+// each SKU's serving address to report the window it is served at — one admin-row
+// read per listed model, measured at 531 for a 534-model catalogue. A request that
+// finds the inputs unmoved does one read per family and no work at all.
+
+// discovery is where a family is served from and when it last discovered its
+// lineup. Together with the loaded config it is everything the catalogue is built
+// from, so equal discoveries mean an equal catalogue.
+type discovery struct {
+	url string
+	at  time.Time
+}
+
+// discoveries reports every family's discovery, refreshing any snapshot past its
+// TTL. The refresh stays on the read path so a family keeps its own schedule and an
+// operator repointing one at admin.hanzo.ai is seen on the next request.
+func discoveries() []discovery {
+	out := make([]discovery, len(modelFamilies))
+	for i, f := range modelFamilies {
+		url := f.fresh()
+		f.mu.RLock()
+		out[i] = discovery{url: url, at: f.fetchedAt}
+		f.mu.RUnlock()
+	}
+	return out
+}
+
+// modelCatalog holds one build: the models, the public body, and the inputs they
+// came from.
+type modelCatalog struct {
+	mu     sync.Mutex
+	cfg    *ModelConfig
+	cfgAt  time.Time
+	fam    []discovery
+	models []modelInfo
+	body   []byte
+	err    error
+}
+
+// listing is the held catalogue every door answers from.
+var listing modelCatalog
+
+// get returns the held models, the public body, and the error from marshalling it.
+// All three come from one build, which runs when the config or a family's discovery
+// has moved since the last one. The build happens under the lock, so a burst of
+// callers arriving on a moved input does one build between them, not one each.
+func (c *modelCatalog) get() ([]modelInfo, []byte, error) {
+	cfg := GetModelConfig()
+	var cfgAt time.Time
+	if cfg != nil {
+		cfgAt = cfg.ChangedAt()
+	}
+	fam := discoveries()
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.models == nil || c.cfg != cfg || c.cfgAt != cfgAt || !slices.Equal(c.fam, fam) {
+		c.models = c.build(cfg)
+		c.body, c.err = json.Marshal(modelListEnvelope(c.models))
+		c.cfg, c.cfgAt, c.fam = cfg, cfgAt, fam
+	}
+	return c.models, c.body, c.err
+}
+
+// build renders the catalogue from the config's routing table, or from the static
+// table when no config is loaded, overlaid in both cases with every family's
+// discovered lineup and sorted by name. Hidden models (provider-prefixed aliases,
+// upstream-named routes) are excluded from the listing but remain callable via the
+// completions endpoint.
+func (c *modelCatalog) build(cfg *ModelConfig) []modelInfo {
+	if cfg != nil {
 		return mergeFamilyModels(cfg.ListModels())
 	}
 
@@ -504,6 +581,38 @@ func listAvailableModels() []modelInfo {
 	})
 
 	return models
+}
+
+// listAvailableModels returns the listed catalogue, sorted by name.
+//
+// It is a COPY, Access included — that field is the one thing a listing says about
+// its reader, and annotateModelAccess writes it. Handing out the held slice would
+// let one caller's standing be read by the next.
+func listAvailableModels() []modelInfo {
+	models, _, _ := listing.get()
+	out := slices.Clone(models)
+	for i := range out {
+		if a := out[i].Access; a != nil {
+			standing := *a
+			out[i].Access = &standing
+		}
+	}
+	return out
+}
+
+// modelListing is the /v1/models answer for a caller, as it goes on the wire.
+//
+// Without a verified principal that is the public body, marshalled once per build
+// and handed to everyone. With one it is a copy annotated with that caller's own
+// standing on the gated SKUs, which is theirs alone and so is marshalled for them.
+func modelListing(user *iam.User) ([]byte, error) {
+	if user == nil {
+		_, body, err := listing.get()
+		return body, err
+	}
+	models := listAvailableModels()
+	annotateModelAccess(models, user)
+	return json.Marshal(modelListEnvelope(models))
 }
 
 // modelListEnvelope preserves the standard OpenAI model-list response while
