@@ -45,7 +45,7 @@ func TestAllowanceBoundsTheFreeRoute(t *testing.T) {
 	prev := balanceGate
 	balanceGate = bg
 	t.Cleanup(func() { balanceGate = prev })
-	t.Cleanup(func() { object.SetAllowance(nil) }) // never leak the hook into other tests
+	t.Cleanup(func() { object.SetSpent(nil) }) // never leak the hook into other tests
 
 	post := func(body string) (int, string) {
 		req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body))
@@ -65,9 +65,9 @@ func TestAllowanceBoundsTheFreeRoute(t *testing.T) {
 		t.Error("no allowance installed refused a free route — the default must be unchanged behavior")
 	}
 
-	// 2. Allowance left: served, and the counter saw the right subject and org.
+	// 2. Allowance left: served, and the read saw the right subject and org.
 	var saw struct{ subject, namespace string }
-	object.SetAllowance(func(_ stdcontext.Context, subject, namespace string) (bool, error) {
+	object.SetSpent(func(_ stdcontext.Context, subject, namespace string) (bool, error) {
 		saw.subject, saw.namespace = subject, namespace
 		return false, nil
 	})
@@ -78,9 +78,25 @@ func TestAllowanceBoundsTheFreeRoute(t *testing.T) {
 		t.Errorf("allowance got subject=%q namespace=%q, want acme/acme", saw.subject, saw.namespace)
 	}
 
+	// THE GATE ASKS AND NEVER TAKES. A request that dies past this point — an
+	// unresolvable route, a vendor that never answered, a pod being rolled — must
+	// leave the caller every call they arrived with, so nothing the gate does may
+	// raise the count. The count is a field on the record of a SERVED call
+	// (object.UsageEvent.Allowance), and the only thing that writes one is the usage
+	// recorder, which no gate may reach.
+	t.Cleanup(func() { object.SetUsageRecorder(nil) })
+	object.SetUsageRecorder(func(_ stdcontext.Context, u object.UsageEvent) error {
+		t.Errorf("the balance gate recorded usage %+v; only a served call may be recorded", u)
+		return nil
+	})
+	if code, _ := post(free); code == http.StatusPaymentRequired {
+		t.Error("a caller with allowance left was refused")
+	}
+
 	// 3. Allowance spent: 402 with the distinct code, so the product can offer a plan
-	//    rather than a top-up.
-	object.SetAllowance(func(_ stdcontext.Context, _, _ string) (bool, error) { return true, nil })
+	//    rather than a top-up — and the refusal is NOT usage, which the recorder
+	//    installed above is standing by to catch.
+	object.SetSpent(func(_ stdcontext.Context, _, _ string) (bool, error) { return true, nil })
 	code, body := post(free)
 	if code != http.StatusPaymentRequired {
 		t.Fatalf("a spent allowance returned %d, want 402", code)
@@ -94,7 +110,7 @@ func TestAllowanceBoundsTheFreeRoute(t *testing.T) {
 
 	// 4. Reader error: fails OPEN. The route costs nothing, so an unreadable
 	//    allowance can only ever hand out our own compute.
-	object.SetAllowance(func(_ stdcontext.Context, _, _ string) (bool, error) {
+	object.SetSpent(func(_ stdcontext.Context, _, _ string) (bool, error) {
 		return true, errors.New("store unreachable")
 	})
 	if code, _ := post(free); code == http.StatusPaymentRequired {
@@ -114,10 +130,10 @@ func TestAllowanceLeavesThePaywallAlone(t *testing.T) {
 	prev := balanceGate
 	balanceGate = bg
 	t.Cleanup(func() { balanceGate = prev })
-	t.Cleanup(func() { object.SetAllowance(nil) })
+	t.Cleanup(func() { object.SetSpent(nil) })
 
 	called := false
-	object.SetAllowance(func(_ stdcontext.Context, _, _ string) (bool, error) {
+	object.SetSpent(func(_ stdcontext.Context, _, _ string) (bool, error) {
 		called = true
 		return false, nil // "allowance left" must not rescue a caller with no money
 	})
@@ -138,6 +154,6 @@ func TestAllowanceLeavesThePaywallAlone(t *testing.T) {
 		t.Errorf("refusal body %q is not the wallet's — a priced route must refuse as unpaid", rec.Body.String())
 	}
 	if called {
-		t.Error("the allowance was counted against a PRICED call — it bounds the free lane only")
+		t.Error("the allowance was read for a PRICED call — it bounds the free lane only")
 	}
 }

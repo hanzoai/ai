@@ -795,6 +795,23 @@ type usageRecord struct {
 	// (it is money; an account whose owner disagrees with its key must not exist),
 	// and the wire already carries the subject it resolves to.
 	Payer account.Account `json:"-"`
+
+	// Allowance is the subject whose free calls this one counts against, when the
+	// request named a subject of its own. The public lane does: it counts a visitor,
+	// and one shared subject would let a single caller empty every visitor's day.
+	// Everyone else counts against their payer, so this is empty on an ordinary
+	// call. Not serialized — it addresses the count, it does not describe the row.
+	Allowance string `json:"-"`
+}
+
+// allowance answers whose free calls this one counts against: the subject the request
+// named, or the payer. Free calls and money are bounded per subject, and this is the
+// one expression that says which subject, so the two counters cannot drift apart.
+func (r *usageRecord) allowance() string {
+	if r.Allowance != "" {
+		return r.Allowance
+	}
+	return r.payer().Subject()
 }
 
 // payer answers who pays for this call. ONE rule, and it prefers the answer the gate
@@ -849,6 +866,11 @@ func (r *usageRecord) bind(ctx context.Context, u *iam.User) {
 		return
 	}
 	r.Payer = u.Payer(r.Owner)
+	// Whose free calls this one counts against is the same question as whose money
+	// it spends, so it is answered here, from the same request, and not resolved a
+	// second time somewhere downstream. Only the public lane puts a subject on the
+	// request; every other caller counts against the payer just resolved.
+	r.Allowance = visitorOf(ctx)
 
 	self := u.Owner + "/" + u.Name
 	// account.IsMachine is the ONE predicate for "is this credential a program",
@@ -1000,6 +1022,29 @@ func recordUsage(record *usageRecord) {
 	}
 	subject := record.payer().Subject()
 
+	// WHAT THIS CALL SPENT: money, or one of the caller's free calls. A call that
+	// debited nothing is exactly the call a wallet cannot bound, which is the whole
+	// job of the plan allowance — so the amount computed above decides it, and no
+	// second opinion about what a catalog charges can disagree with the debit.
+	//
+	// IT IS COUNTED HERE BECAUSE HERE IS WHERE A CALL ANSWERED. The ceiling bounds
+	// SPEND; spend is incurred when a model is reached; and this function has already
+	// returned for anything that is not a success. A route that never resolved, a
+	// vendor that timed out, a pod mid-roll — none of them reach this line, so none of
+	// them costs a caller one of their calls. The gate upstream only READS the same
+	// count, so a refusal at the ceiling does not raise it either.
+	free := ""
+	if usageFree(record) {
+		free = record.allowance()
+		// The public lane keeps its own count in this process so its ceiling holds
+		// while the host is unreachable. Both counts rise at this one moment: a lane
+		// that counted at the door and reported at the answer would publish a number
+		// its own refusals had already outrun.
+		if org == publicOrg {
+			publicCount.count(free, utcDay(time.Now()), publicChatDaily())
+		}
+	}
+
 	// Native in-proc finance debit — the ONE money path when co-resident with the
 	// finance ledger (hanzoai/cloud unified binary). The debit lands DIRECTLY on the
 	// org's SQLite wallet, the SAME account the prepaid gate reads, so a funded
@@ -1014,6 +1059,7 @@ func recordUsage(record *usageRecord) {
 			Currency:  "usd",
 			Model:     record.Model,
 			Provider:  record.Provider,
+			Allowance: free,
 			RequestID: record.RequestID,
 		}); err != nil {
 			log.Error("billing: native usage record failed request_id=%s: %v", record.RequestID, err)
