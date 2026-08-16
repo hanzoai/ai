@@ -22,6 +22,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/golang-jwt/jwt/v4"
 	"github.com/hanzoai/account"
 
 	"github.com/hanzoai/ai/internal/iam"
@@ -180,6 +181,67 @@ func TestBillingOrgHoldsUnlessTheClaimSaysOtherwise(t *testing.T) {
 			}
 		})
 	}
+}
+
+// THE PUBLIC LANE NEVER SWITCHES, whatever the request carries.
+//
+// A visitor presents no credential and the lane authenticates none — but the
+// membership set is read straight off the request, so a signed-in reader asking an
+// anonymous question arrives carrying a real claim. Without this, an anonymous call
+// lands on a named tenant: their books, their usage rows, and their plan's ceiling
+// deciding how many free calls a stranger gets.
+//
+// It is pinned HERE, on the resolver, because every emit site asks it. The pipeline
+// used to force the lane's org at one call site and the family path re-derived it,
+// which is one question with two answers and the wrong one on the path the lane
+// actually takes.
+func TestThePublicLaneCannotBeSwitchedOntoATenant(t *testing.T) {
+	visitor := &iam.User{Owner: publicOrg, Type: "application"}
+
+	// The one that matters: a REAL signed membership in acme, which is exactly what a
+	// signed-in reader's browser sends, plus the header that asks for it. This is the
+	// only shape that could move the call, so it is the shape the rule has to refuse.
+	member := mintUsageJWTWithOrgs(t, "acme", "alice", "acme")
+	for _, tc := range []struct{ name, auth, requested string }{
+		{"no credential, no header", "", ""},
+		{"a header naming a real org", "", "acme"},
+		{"an api key and a header", "Bearer sk-abc", "acme"},
+		{"a signed membership in the org it asks for", "Bearer " + member, "acme"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := orgController(tc.auth, tc.requested).billingOrg(visitor); got != publicOrg {
+				t.Fatalf("billingOrg = %q, want %q — an anonymous call moved onto a named tenant's books and ceiling",
+					got, publicOrg)
+			}
+		})
+	}
+
+	// The premise: that same token DOES switch a real member, so the case above is
+	// refused by the lane's rule and not by a token nothing would have honored.
+	reader := &iam.User{Owner: "hanzo", Name: "alice"}
+	if got := orgController("Bearer "+member, "acme").billingOrg(reader); got != "acme" {
+		t.Fatalf("the switching token resolved %q for a real member, want acme — "+
+			"this test would prove nothing about a token that cannot switch", got)
+	}
+}
+
+// mintUsageJWTWithOrgs is mintUsageJWT plus a signed membership set — the claim that
+// lets a principal switch orgs, and therefore the only claim that could carry a
+// visitor onto a tenant's books.
+func mintUsageJWTWithOrgs(t *testing.T, owner, name string, orgs ...string) string {
+	t.Helper()
+	key := installUsageCert(t)
+	claims := usageClaims(owner, name, "https://hanzo.id", "hanzo-cloud")
+	refs := make([]map[string]string, 0, len(orgs))
+	for _, org := range orgs {
+		refs = append(refs, map[string]string{"org": org, "role": "member"})
+	}
+	claims["orgs"] = refs
+	tok, err := jwt.NewWithClaims(jwt.SigningMethodRS256, claims).SignedString(key)
+	if err != nil {
+		t.Fatalf("sign token: %v", err)
+	}
+	return tok
 }
 
 // TestBillingOrgNilUser pins the unattributable case: no user, no wallet. Callers
