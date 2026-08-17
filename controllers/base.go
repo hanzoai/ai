@@ -17,7 +17,6 @@ package controllers
 
 import (
 	"encoding/gob"
-	"encoding/json"
 	"strings"
 	"time"
 
@@ -261,43 +260,26 @@ func (c *ApiController) Finish() {
 		}
 	}
 	c.errorLogFilter()
-	c.Controller.Finish()
 }
 
 func (c *ApiController) errorLogFilter() {
-	if v, ok := c.Data["json"]; ok {
-		var status string
-		switch r := v.(type) {
-		case Response:
-			status = r.Status
-		case *Response:
-			if r != nil {
-				status = r.Status
-			}
-		default:
-			status = ""
+	if c.Fiber().Response().StatusCode() >= 400 {
+		method := c.Method()
+		path := c.Path()
+		query := redactQuery(string(c.Fiber().Request().URI().QueryString()))
+		body := redactBody(string(c.Body()))
+		if len(body) > 4096 {
+			body = body[:4096] + "...(truncated)"
 		}
-		if status == "error" {
-			method := c.Method()
-			path := c.Path()
-			query := ""
-			if c.Ctx.Request != nil && c.Ctx.Request.URL != nil {
-				query = redactQuery(string(c.Fiber().Request().URI().QueryString()))
-			}
-			body := redactBody(string(c.Body()))
-			if len(body) > 4096 {
-				body = body[:4096] + "...(truncated)"
-			}
-			// Never the raw header: this logged 417 replayable user JWTs in
-			// production. A fingerprint still correlates repeated failures from
-			// one credential without being usable. See logredact.go.
-			token := redactCredential(c.Header("Authorization"))
-			respJSON, _ := json.Marshal(v)
-			respStr := string(respJSON)
-			if len(respStr) > 4096 {
-				respStr = respStr[:4096] + "...(truncated)"
-			}
-			log.Error("API error: method=%s path=%s query=%s token=%s body=%s response=%s", method, path, query, token, body, respStr)
+		// Never the raw header: this logged 417 replayable user JWTs in
+		// production. A fingerprint still correlates repeated failures from
+		// one credential without being usable. See logredact.go.
+		token := redactCredential(c.Header("Authorization"))
+		// What went out, not a second rendering of it.
+		respStr := string(c.Fiber().Response().Body())
+		if len(respStr) > 4096 {
+			respStr = respStr[:4096] + "...(truncated)"
 		}
+		log.Error("API error: method=%s path=%s query=%s token=%s body=%s response=%s", method, path, query, token, body, respStr)
 	}
 }
