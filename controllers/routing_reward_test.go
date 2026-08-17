@@ -43,8 +43,7 @@ func newRewardController(method, url, body string, user *iam.User) (*ApiControll
 		sess.data["user"] = iam.Claims{User: *user}
 	}
 	ctx.Input.CruSession = sess
-	c := &ApiController{}
-	c.Init(ctx, "ApiController", "RoutingReward", nil)
+	c := visit("GET", "/v1/")
 	return c, rec
 }
 
