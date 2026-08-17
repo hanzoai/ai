@@ -87,6 +87,7 @@ func (c *ApiController) ResponseErrorWithStatus(status int, error string, data .
 //	billingError 402  valid key, insufficient / starter-only balance
 //	forbiddenError 403  valid principal, org selection they may not bill
 //	modelError   400  valid key, model not in the routing table
+//	supplyError  503  the caller is fine; WE cannot buy the inference right now
 //	serverError  500  provider misconfig or balance lookup transport failure
 //
 // busyError (429) also travels this way but is not an auth outcome: it is raised
@@ -114,6 +115,28 @@ func authError(format string, a ...interface{}) error {
 
 func billingError(format string, a ...interface{}) error {
 	return &apiError{status: http.StatusPaymentRequired, msg: fmt.Sprintf(format, a...), code: object.CodeInsufficientBalance}
+}
+
+// codeSupply names the refusal where WE cannot buy: our account with a vendor is
+// spent, or our own cash breaker is holding. The caller's wallet is untouched.
+//
+// It is a separate code from CodeInsufficientBalance rather than a separate status
+// alone, because the status is what a person sees and the code is what a program
+// acts on. A client that switches on insufficient_balance offers a top-up — which
+// is the right move for a caller who owes money and exactly the wrong one for a
+// caller who owes nothing and is being told to pay our bill.
+const codeSupply = "supply_unavailable"
+
+// supplyError is 503: the request is well formed, the credential is valid, the
+// balance is funded, and we still cannot serve it because OUR side cannot pay.
+//
+// Not 402. 402 says the caller owes money, which is false here, and a client that
+// acts on it goes and tops up a balance that is already funded — the expensive
+// half of this being wrong. Not 500 either: nothing is broken, the condition
+// clears on its own or when somebody tops an account up, and 503 is the status
+// that says "try again" rather than "file a bug".
+func supplyError(format string, a ...interface{}) error {
+	return &apiError{status: http.StatusServiceUnavailable, msg: fmt.Sprintf(format, a...), code: codeSupply}
 }
 
 // forbiddenError is 403: the credential is VALID and the caller is known — they
