@@ -1413,6 +1413,18 @@ type sink struct {
 	body func([]byte) error
 }
 
+// ChatCompletions implements the OpenAI-compatible chat completions API
+// @Title ChatCompletions
+// @Tag OpenAI Compatible API
+// @Description OpenAI compatible chat completions API. Accepts:
+//   - Widget key (hz_...)   — restricted models, no balance check, token-capped
+//   - IAM API key (sk-...)  — full model routing + billing
+//   - hanzo.id JWT token    — full model routing + billing
+//   - Provider API key      — direct provider access
+//
+// @Param   body    body    openai.ChatCompletionRequest  true    "The OpenAI chat request"
+// @Success 200 {object} openai.ChatCompletionResponse
+// @router /chat [post]
 func (c *ApiController) ChatCompletions() { c.chatCompletions(callerBearer, nil) }
 
 // caller says which door a completion arrived at, and therefore what is taken from
