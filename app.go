@@ -206,3 +206,20 @@ func Handler() http.Handler {
 		adaptor.FiberApp(app.Fiber())(w, r)
 	})
 }
+
+// Document is the OpenAPI projection of the app this process built, or nil before
+// there is one.
+//
+// It reads the SAME live app Handler serves, for the same reason Handler resolves
+// its router per request: the routes are a projection of the built app, so a
+// document taken from anything else can describe a surface this process is not
+// serving. A host that mounts this module (hanzoai/cloud publishes it into the
+// fleet document) has no app of its own to pass, and should not need one to ask
+// what we serve.
+func Document() map[string]any {
+	app := built.Load()
+	if app == nil {
+		return nil
+	}
+	return routers.Document(app)
+}
