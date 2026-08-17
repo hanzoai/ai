@@ -485,6 +485,57 @@ func GetUserByAccessKey(accessKey string) (*iam.User, error) {
 	return getUserByAccessKey(accessKey)
 }
 
+// resolveOrgFromPublishableKey resolves a publishable pk- to the ORG that holds
+// it, via IAM's publishable door (/v1/iam/resolve-key) — the exact dual of
+// getUserByAccessKey, which answers only for secret keys and refuses a pk- as
+// key_wrong_door. Same confidential Basic transport, same envelope, same typed
+// refusals; the answer is an org and never a person.
+func resolveOrgFromPublishableKey(accessKey string) (string, error) {
+	iamEndpoint := conf.GetConfigString("IAM_URL")
+	if iamEndpoint == "" {
+		return "", fmt.Errorf("IAM_URL is not configured")
+	}
+	iamEndpoint = strings.TrimRight(iamEndpoint, "/")
+	reqURL := fmt.Sprintf("%s/v1/iam/resolve-key?accessKey=%s", iamEndpoint, url.QueryEscape(accessKey))
+	clientId, clientSecret := iamClientCreds()
+	if clientId == "" || clientSecret == "" {
+		return "", fmt.Errorf("IAM client credentials are not configured")
+	}
+	client := &http.Client{Timeout: 10 * time.Second}
+	req, err := http.NewRequest(http.MethodGet, reqURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("IAM request build failed: %w", err)
+	}
+	req.SetBasicAuth(clientId, clientSecret)
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("IAM request failed: %w", err)
+	}
+	defer resp.Body.Close()
+	var result struct {
+		Status string `json:"status"`
+		Msg    string `json:"msg"`
+		Code   string `json:"code"`
+		Data   struct {
+			Org string `json:"org"`
+		} `json:"data"`
+	}
+	decodeErr := json.NewDecoder(resp.Body).Decode(&result)
+	if decodeErr == nil && (result.Code != "" || result.Status != "ok") {
+		return "", keyRefusal(result.Code, result.Msg, accessKey)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("IAM returned status %d and named no reason", resp.StatusCode)
+	}
+	if decodeErr != nil {
+		return "", fmt.Errorf("failed to parse IAM response: %w", decodeErr)
+	}
+	if result.Data.Org == "" {
+		return "", authError("publishable key resolved to no org")
+	}
+	return result.Data.Org, nil
+}
+
 // getUserByAccessKey looks up a user by their IAM API key via Hanzo IAM.
 func getUserByAccessKey(accessKey string) (*iam.User, error) {
 	// Call IAM's get-user endpoint with accessKey query parameter
@@ -1323,15 +1374,23 @@ func (c *ApiController) authResolveProvider(token, requestedModel, orgId string)
 	case isPublishableKey(token):
 		// Publishable key (pk-...) — the read-only credential class. It reaches
 		// only the surfaces that do not refuse it up front (embeddings; every
-		// generative handler rejects pk- before calling here), and it resolves
-		// and bills exactly as an IAM secret key: the org that minted the key
-		// pays. This is the credential the cloud deployment documents for its
-		// embed client — least privilege for a read-only endpoint.
-		provider, authUser, upstreamModel, err = resolveProviderFromIAMKey(token, requestedModel, lang)
+		// generative handler rejects pk- before calling here). IAM's publishable
+		// door answers with the ORG that holds the key and never a person, so
+		// the call bills that org as a machine — the same shape as a provider
+		// key. This is the credential the cloud deployment documents for its
+		// embed client: least privilege for a read-only endpoint.
+		org, kerr := resolveOrgFromPublishableKey(token)
+		if kerr != nil {
+			err = wrapAuth(kerr)
+			return
+		}
+		machine := &iam.User{Owner: org, Type: "application"}
+		provider, authUser, upstreamModel, err = resolveProviderForUser(machine, org, requestedModel, lang)
 		if err != nil {
 			err = wrapAuth(err)
 			return
 		}
+		c.Ctx.Input.SetParam("recordUserId", org+"/publishable")
 
 	default:
 		// A secret key, and the STORE that owns it decides what it is. Two
