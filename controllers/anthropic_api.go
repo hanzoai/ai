@@ -320,8 +320,7 @@ func (w *AnthropicWriter) Close(promptTokens, completionTokens, totalTokens int)
 		return err
 	}
 
-	w.Flush()
-	return nil
+	return w.Flush()
 }
 
 // writeSSE writes a single SSE event with the given event name and JSON data.
@@ -335,20 +334,37 @@ func (w *AnthropicWriter) Close(promptTokens, completionTokens, totalTokens int)
 // opening of one vendor's answer followed by the whole of another's, which is
 // indistinguishable from a model losing its mind and detectable nowhere.
 //
-// n > 0 rather than err == nil, because a partial write is still bytes delivered.
+// BYTES LEAVE AT THE FLUSH, NOT AT THE WRITE. The destination is buffered — in
+// production it is the writer the stream callback hands in — so a Write that returns
+// n > 0 has reached the buffer and nothing else. Read as delivery, that flag says an
+// answer reached a client it never reached, which is the failover loop's cue to stop
+// routing around a first-byte failure; and an unchecked Flush reports a connection
+// that broke as a success, so the relay carries on writing into a socket nobody is
+// reading. Both were true of this function the moment a bufio.Writer went in front.
+//
+// A partial write is still bytes delivered, so a flush that fails having moved SOME
+// of the buffer still sets the flag: what is left buffered afterwards is what did not
+// go out, which is how "some of it did" is known.
 func (w *AnthropicWriter) writeSSE(event string, data interface{}) error {
 	jsonData, err := json.Marshal(data)
 	if err != nil {
 		return err
 	}
-	n, err := w.Writer.Write([]byte(fmt.Sprintf("event: %s\ndata: %s\n\n", event, jsonData)))
-	if n > 0 {
-		w.StreamSent = true
-	}
-	if err != nil {
+	if n, err := w.Writer.Write([]byte(fmt.Sprintf("event: %s\ndata: %s\n\n", event, jsonData))); err != nil {
+		// A write that reaches past the buffer carries its own delivery.
+		if n > 0 && w.Buffered() == 0 {
+			w.StreamSent = true
+		}
 		return err
 	}
-	w.Flush()
+	pending := w.Buffered()
+	if err := w.Flush(); err != nil {
+		if w.Buffered() < pending {
+			w.StreamSent = true
+		}
+		return err
+	}
+	w.StreamSent = true
 	return nil
 }
 
