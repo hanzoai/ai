@@ -483,10 +483,15 @@ func TestTheHeaderStatesTheTermsThatServed(t *testing.T) {
 	}
 }
 
-// The answer wears the model that MADE it. A downgrade the client cannot see is a
-// lie about what they got, so the one thing the relay must not do is stamp the
-// SKU that was asked for onto an answer a different model wrote.
-func TestASpareAnswerSaysWhichModelMadeIt(t *testing.T) {
+// The answer wears the SKU that was ASKED for. A caller buys a model from us; which
+// upstream we bought it from to serve them is ours, and the `model` field is the
+// whole of what the envelope discloses.
+//
+// The substitution is not hidden, it is unpublished: it stays a fact in the ledger
+// (Requested against Model) and in the span, where the people who need to see it
+// look. What it stops being is a string the customer has to diff against their own
+// request to notice — which was never a disclosure so much as a puzzle.
+func TestAnAnswerWearsTheSkuThatWasAskedFor(t *testing.T) {
 	cooled.forget()
 	const free = "vendor/big:free"
 	const sku = "vendor/small:free"
@@ -500,11 +505,47 @@ func TestASpareAnswerSaysWhichModelMadeIt(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatalf("not JSON: %v\n%s", err, rec.Body.String())
 	}
-	if got["model"] != free {
-		t.Errorf("model = %v, want %q — the client is told which model answered", got["model"], free)
+	// The route really did answer — otherwise this asserts nothing about a
+	// substitution, only about a request that was served straight.
+	if len(fake.asked) != 2 || fake.asked[1] != free {
+		t.Fatalf("asked=%v — the spare did not serve this request", fake.asked)
 	}
-	if got["model"] == sku {
-		t.Error("the answer wears the SKU that was asked for, which no model wrote")
+	if got["model"] != sku {
+		t.Errorf("model = %v, want %q — the envelope names the SKU the caller asked for", got["model"], sku)
+	}
+	if got["model"] == free {
+		t.Errorf("the envelope names %q, the upstream that served it", free)
+	}
+}
+
+// The free front door is the same rule from the other side: the caller names an id
+// no vendor holds, the pool picks a route, and the answer comes back wearing the id
+// that was named rather than the route that was chosen.
+func TestTheFreeDoorAnswersInTheNameItWasCalledBy(t *testing.T) {
+	cooled.forget()
+	const free = "vendor/big:free"
+	const door = "enso-free"
+	fake := &refuses{status: 500, body: `{"error":{"message":"unused"}}`, free: free}
+	vendor := fake.serve(t)
+	defer vendor.Close()
+
+	spareFamily(t, vendor.URL, free)
+	enso := otherFamily(t, vendor.URL)
+
+	rec, _ := fake.pipe(t, enso, door)
+
+	if len(fake.asked) != 1 || fake.asked[0] != free {
+		t.Fatalf("asked=%v — the pool did not choose a route", fake.asked)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("not JSON: %v\n%s", err, rec.Body.String())
+	}
+	if got["model"] != door {
+		t.Errorf("model = %v, want %q — the id the caller called", got["model"], door)
+	}
+	if got["model"] == free {
+		t.Errorf("the envelope names %q, the route the pool chose", free)
 	}
 }
 
@@ -813,8 +854,12 @@ func TestARefusalCrossesToTheFamilyThatStillHasAFreeRoute(t *testing.T) {
 	if refusedBy != nil {
 		t.Errorf("the request was handed on after it had already been served: %v", refusedBy)
 	}
-	if !strings.Contains(rec.Body.String(), free) {
-		t.Errorf("the answer does not name the model that wrote it:\n%s", rec.Body.String())
+	// It crossed families and still came back as the SKU that was asked for.
+	if strings.Contains(rec.Body.String(), free) {
+		t.Errorf("the answer names the free family's route:\n%s", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "enso-flash") {
+		t.Errorf("the answer does not name the SKU the caller asked for:\n%s", rec.Body.String())
 	}
 }
 
@@ -838,8 +883,10 @@ func TestAFamilysFreeIdIsServedFromThePool(t *testing.T) {
 	if refusedBy != nil {
 		t.Errorf("serving a free id handed the request on: %v", refusedBy)
 	}
-	if !strings.Contains(rec.Body.String(), free) {
-		t.Errorf("the answer does not name the route that wrote it:\n%s", rec.Body.String())
+	// The pool's route wrote the answer and the answer does not name it — which id
+	// it DOES wear is TestTheFreeDoorAnswersInTheNameItWasCalledBy.
+	if strings.Contains(rec.Body.String(), free) {
+		t.Errorf("the answer names the route the pool chose:\n%s", rec.Body.String())
 	}
 }
 

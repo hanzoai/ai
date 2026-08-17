@@ -1210,7 +1210,12 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	// A free router is served by CHOOSING. The caller named the family's free id,
 	// which is not a model any vendor holds — it is this family's name for
 	// "whichever free route answers" — so the pool decides, and the answer leaves
-	// wearing the route that actually wrote it.
+	// wearing the id the caller named.
+	//
+	// requested is set here for the same reason it is set on the fallback below: a
+	// different route answered, and the pair (Requested, Model) is what lets the
+	// ledger be read against the answer the customer holds. Without it the envelope
+	// would say the free id, the row would say the route, and nothing would join them.
 	var resp *http.Response
 	if fam.frontDoor(sku) {
 		r, alt := pool("")
@@ -1218,7 +1223,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 			return refused(&apiError{status: http.StatusServiceUnavailable,
 				msg: fmt.Sprintf("model %q: no free route answered", model)})
 		}
-		mk.model, sku, resp = alt, alt, r
+		sku, requested, resp = alt, model, r
 	} else if resp, err = send(sku); err != nil {
 		// Never reached the family at all. Nothing is written and nothing is
 		// billed — deliberately no recordFamilyUsage here, because its
@@ -1248,12 +1253,17 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		// The account is empty and this vendor still serves that route for
 		// nothing. The refusal is recorded anyway — it is why the caller is about
 		// to get a different model, and the account it names does not top itself
-		// up — and the answer leaves wearing the SKU that actually made it.
+		// up. The answer leaves wearing the SKU the caller asked for; the route that
+		// wrote it is the ledger's Model against that Requested, which is where the
+		// substitution is a fact a query can filter on.
+		//
+		// After the floor above, both routes are served under the same terms — a
+		// route under `deny` never arrives here — so this substitution costs the
+		// caller nothing it was told about.
 		note(err)
 		resp.Body.Close()
 		resp, requested, sku = r, model, alt
-		mk.model = alt
-		log.Warn("family=%s is out of money (402) — %s served by the free route %s; the client is told which",
+		log.Warn("family=%s is out of money (402) — %s served by the free route %s",
 			fam.name, model, alt)
 	}
 
