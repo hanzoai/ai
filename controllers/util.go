@@ -31,6 +31,7 @@ import (
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
 	"github.com/hanzoai/ai/web"
+	"github.com/zap-proto/zip"
 )
 
 type Response struct {
@@ -332,9 +333,9 @@ func DenyRequest(ctx *web.Context) {
 	responseError(ctx, "auth:Unauthorized operation")
 }
 
-func responseError(ctx *web.Context, error string, data ...interface{}) {
+func responseError(ctx *zip.Ctx, error string, data ...interface{}) {
 	// Get language from Accept-Language header
-	language := ctx.Request.Header.Get("Accept-Language")
+	language := ctx.Header("Accept-Language")
 	if len(language) > 2 {
 		language = language[0:2]
 	}

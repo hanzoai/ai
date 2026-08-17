@@ -1585,5 +1585,5 @@ func (c *ApiController) zenError(dialect, msg string, status int) {
 	})
 	c.SetHeader("Content-Type", "application/json")
 	c.Status(status)
-	_, _ = c.Ctx.ResponseWriter.Write(body)
+	_ = c.Bytes(c.Fiber().Response().StatusCode(), body)
 }

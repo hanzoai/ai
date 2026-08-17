@@ -457,7 +457,7 @@ func (c *ApiController) GetAccount() {
 	// DISABLE_PREVIEW_MODE lever governs GetAccount too — matching the authz filter
 	// and RequireAdmin. Reading web.AppConfig directly bypassed that lever.
 	disablePreviewMode := conf.DisablePreviewMode()
-	err := util.AppendWebConfigCookie(c.Ctx)
+	err := util.AppendWebConfigCookie(func(name, value string) { c.Fiber().Cookie(&fiber.Cookie{Name: name, Value: value, Path: "/"}) })
 	if err != nil {
 		log.Error("AppendWebConfigCookie: %v", err)
 	}
