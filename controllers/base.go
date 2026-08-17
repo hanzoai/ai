@@ -32,7 +32,7 @@ import (
 //
 // Identity is NOT taken from the embedded context. zip's User/IsAdmin/Org read
 // gateway-set X-User-* headers; ai derives the same facts from a principal it
-// verified itself (GetSessionUser, and credentialUser -> ParseAndValidateJWT,
+// verified itself (GetSessionUser, and principalUser -> ParseAndValidateJWT,
 // which checks the signature and the iss/aud policy). The methods below shadow
 // the embedded ones deliberately: a verified principal is not interchangeable
 // with a header.

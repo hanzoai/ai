@@ -18,6 +18,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/hanzoai/ai/internal/authtest"
 	iam "github.com/hanzoai/ai/internal/iam"
 )
 
@@ -56,17 +57,17 @@ func TestNakedHandlersRequireSuperAdmin(t *testing.T) {
 
 	for _, h := range handlers {
 		// Anonymous → 401 (fail closed, before any body/DB read).
-		c, rec := newGuardController(nil)
+		c := toggling("")
 		h.call(c)
-		if rec.Code != http.StatusUnauthorized {
-			t.Errorf("%s anonymous = %d, want 401 (naked handler must self-auth)", h.name, rec.Code)
+		if answered(c) != http.StatusUnauthorized {
+			t.Errorf("%s anonymous = %d, want 401 (naked handler must self-auth)", h.name, answered(c))
 		}
 
 		// Org admin (not global) → 403 (no org-admin → platform-admin escalation).
-		c2, rec2 := newGuardController(orgAdmin)
+		c2 := toggling(authtest.Bearer(t, *orgAdmin))
 		h.call(c2)
-		if rec2.Code != http.StatusForbidden {
-			t.Errorf("%s org-admin = %d, want 403 (not a platform admin)", h.name, rec2.Code)
+		if answered(c2) != http.StatusForbidden {
+			t.Errorf("%s org-admin = %d, want 403 (not a platform admin)", h.name, answered(c2))
 		}
 	}
 }
