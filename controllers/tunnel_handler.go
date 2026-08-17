@@ -18,7 +18,7 @@ package controllers
 import (
 	"context"
 
-	"github.com/gorilla/websocket"
+	"github.com/fasthttp/websocket"
 	"github.com/hanzoai/ai/util/guacamole"
 )
 
