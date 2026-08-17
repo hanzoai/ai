@@ -886,13 +886,22 @@ func (f *modelFamily) freeInfo(now int64) []modelInfo {
 
 // ── the pipe (IO edge) ────────────────────────────────────────────────────────
 
-// zenPipeClient forwards inference to a family. No client-level timeout: a streamed 1M
-// request is long by design, and the request context (client disconnect) bounds it. A
-// response-header timeout guards against a dead family without cutting live streams.
+// zenPipeHeader bounds ONE attempt: how long a family may take to say it has begun.
+//
+// It is not a round number chosen for tidiness. On a buffered request the header does
+// not arrive until the whole answer does, so this ceiling is the generation ceiling,
+// and real whole-site builds through this path complete at ~112s — a shorter bound
+// would clip work that is doing exactly what it should. The body is deliberately not
+// bounded at all: a streamed 1M-token answer is long by design, and the caller
+// staying on the line is the only honest measure of whether it is still wanted.
+const zenPipeHeader = 120 * time.Second
+
+// zenPipeClient forwards inference to a family. No client-level timeout: that would
+// count the body, which is the part that is long on purpose.
 var zenPipeClient = &http.Client{
 	Transport: &http.Transport{
 		Proxy:                 http.ProxyFromEnvironment,
-		ResponseHeaderTimeout: 120 * time.Second,
+		ResponseHeaderTimeout: zenPipeHeader,
 	},
 }
 
@@ -1132,6 +1141,25 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 			if strings.EqualFold(alt.id, skip) || c.Context().Err() != nil {
 				continue
 			}
+			// A SECOND bound, on the caller's clock rather than on the count.
+			// zenPipeHeader bounds one attempt; spareTries bounds how many we
+			// borrow; neither bounds their PRODUCT, and the product is what a
+			// person waits through — five attempts of two minutes is ten minutes
+			// of a request that was expected to take twenty seconds.
+			//
+			// The walk is worth its cost because a free tier refuses FAST: a 429 is
+			// the answer arriving, not the answer being slow, so skipping past one
+			// is cheap. Once a request has already spent a whole attempt's worth of
+			// time, nothing here is cheap any more and the next try is just a
+			// longer wait before the same refusal.
+			//
+			// It bounds our own route too. spareTries deliberately does not — one
+			// more local call is the difference between an answer and a refusal —
+			// but that rule is about a SHORT walk, and this only fires where the
+			// walk has already stopped being short.
+			if time.Since(start) > zenPipeHeader {
+				break
+			}
 			// The budget bounds how many BORROWED routes we ask, because each is a
 			// round trip spent waiting on somebody else. Our own is not borrowed and
 			// is the last thing asked, so it is always asked: one more local call is
@@ -1190,13 +1218,31 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		if !down(err, strings.ToLower(err.Error())) || c.Context().Err() != nil {
 			return nil, ""
 		}
+		// THE FLOOR. A priced route is bought under `deny` — the vendor keeps
+		// nothing of what it carried — and every route in the pool is free, which
+		// is free BECAUSE the vendor keeps it. So this substitution would move a
+		// customer who chose and paid for the first term onto the second, and the
+		// whole notice of it is a header and an id they would have to remember
+		// their own request to compare against.
+		//
+		// The terms are not ours to trade for an answer. Refusing says the route is
+		// unavailable, which is true, and leaves the customer with the protection
+		// they bought.
+		if word, _ := fam.collection(sku); word == collectionDeny {
+			return nil, ""
+		}
 		return pool(sku)
 	}
 
 	// A free router is served by CHOOSING. The caller named the family's free id,
 	// which is not a model any vendor holds — it is this family's name for
 	// "whichever free route answers" — so the pool decides, and the answer leaves
-	// wearing the route that actually wrote it.
+	// wearing the id the caller named.
+	//
+	// requested is set here for the same reason it is set on the fallback below: a
+	// different route answered, and the pair (Requested, Model) is what lets the
+	// ledger be read against the answer the customer holds. Without it the envelope
+	// would say the free id, the row would say the route, and nothing would join them.
 	var resp *http.Response
 	if fam.frontDoor(sku) {
 		r, alt := pool("")
@@ -1204,7 +1250,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 			return refused(&apiError{status: http.StatusServiceUnavailable,
 				msg: fmt.Sprintf("model %q: no free route answered", model)})
 		}
-		mk.model, sku, resp = alt, alt, r
+		sku, requested, resp = alt, model, r
 	} else if resp, err = send(sku); err != nil {
 		// Never reached the family at all. Nothing is written and nothing is
 		// billed — deliberately no recordFamilyUsage here, because its
@@ -1241,12 +1287,17 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		// The account is empty and this vendor still serves that route for
 		// nothing. The refusal is recorded anyway — it is why the caller is about
 		// to get a different model, and the account it names does not top itself
-		// up — and the answer leaves wearing the SKU that actually made it.
+		// up. The answer leaves wearing the SKU the caller asked for; the route that
+		// wrote it is the ledger's Model against that Requested, which is where the
+		// substitution is a fact a query can filter on.
+		//
+		// After the floor above, both routes are served under the same terms — a
+		// route under `deny` never arrives here — so this substitution costs the
+		// caller nothing it was told about.
 		note(err)
 		resp.Body.Close()
 		resp, requested, sku = r, model, alt
-		mk.model = alt
-		log.Warn("family=%s is out of money (402) — %s served by the free route %s; the client is told which",
+		log.Warn("family=%s is out of money (402) — %s served by the free route %s",
 			fam.name, model, alt)
 	}
 
@@ -1254,8 +1305,8 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	// is free in exchange for what the vendor keeps and somebody has to be able to
 	// say so — in a consent notice, in a log, in a policy page. Set before any byte
 	// of a stream goes out, which is the last moment a header can be set at all.
-	if served := servingFamily(sku); served != nil && served.terms != nil {
-		c.SetHeader(headerCollection, collection(served.free(sku)))
+	if word, stated := servingFamily(sku).collection(sku); stated {
+		c.SetHeader(headerCollection, word)
 	}
 
 	// WHAT AN ANSWER COST IS KNOWN ONLY WHEN IT IS COMPLETE, so both shapes settle

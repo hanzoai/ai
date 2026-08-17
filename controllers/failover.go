@@ -22,6 +22,8 @@ import (
 	"net/http"
 	"time"
 
+	metric "github.com/luxfi/metric"
+
 	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/model"
@@ -203,18 +205,53 @@ func (a ask) rowFor(c candidate) *object.Provider {
 	return nil
 }
 
+// The conditions supplyRefused counts. They label the metric and name the branch
+// that records them, so the reason an operator reads and the reason the code
+// took are one value rather than two spellings of one.
+const (
+	reasonFunding    = "funding"    // 402 — this account with the vendor is spent
+	reasonCredential = "credential" // 401 — our key is dead or revoked
+	reasonCeiling    = "ceiling"    // our own cash breaker is holding
+	reasonRefused    = "refused"    // everything else a vendor answers
+)
+
+// supplyRefused counts the refusals that are OURS. The caller is told 503 and owes
+// nothing, so nobody on their side has a reason to report it: without this, an
+// empty vendor account is visible only to whoever thinks to tail a log, and a log
+// is read after somebody has already noticed.
+//
+// Labelled by provider and reason because "top this vendor up", "this key is dead"
+// and "our own ceiling is holding" are three different jobs, and a single number
+// cannot say which one is running. Both label sets are bounded — the providers are
+// the route table's, the reasons are the four above.
+//
+// It registers into the same DefaultRegistry that GET /v1/metrics serves
+// (object.MetricsHandler), which is the seam vmagent already scrapes. Alert on
+// rate(cloud_supply_refused[5m]) > 0.
+var supplyRefused = metric.NewCounterVec(metric.CounterOpts{
+	Name: "cloud_supply_refused",
+	Help: "Requests refused because our own supply could not serve them, by provider and reason",
+}, []string{"provider", "reason"})
+
 // announce puts a refusal where someone will see it. Level is chosen by who has
 // to act on it: a busy vendor is routine, an empty account needs a human with a
 // credit card, and a rejected credential needs one now.
+//
+// The counter carries the same fact for anything that watches rather than reads.
+// A log line is evidence after the fact and only for whoever thinks to look; the
+// metric is what can raise a hand before a customer does.
 func announce(model string, a attempt) {
 	switch {
 	case a.status == http.StatusUnauthorized:
+		supplyRefused.WithLabelValues(a.provider, reasonCredential).Inc()
 		log.Error("provider=%s rejected our credential (401) serving model=%s — this key is dead or revoked, and the request was NOT sent elsewhere: %v",
 			a.provider, model, a.err)
 	case a.status == http.StatusPaymentRequired:
+		supplyRefused.WithLabelValues(a.provider, reasonFunding).Inc()
 		log.Error("provider=%s is out of money (402) serving model=%s — top it up; failing over: %v",
 			a.provider, model, a.err)
 	default:
+		supplyRefused.WithLabelValues(a.provider, reasonRefused).Inc()
 		log.Warn("failover: model=%s provider=%s refused status=%d fault=%s: %v",
 			model, a.provider, a.status, a.fault, a.err)
 	}

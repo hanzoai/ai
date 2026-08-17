@@ -768,7 +768,7 @@ func TestChargingForSpeechRequiresAdmission(t *testing.T) {
 //
 // Every admissible key is listed here WITH the reason it is admissible, so adding
 // a third makes someone say why it cannot be spoofed instead of discovering later
-// that it can. Key the ceiling on c.Ctx.Input.Header("X-Org-Id"), or on any other
+// that it can. Key the ceiling on c.Header("X-Org-Id"), or on any other
 // value a caller writes, and this fails on the spot.
 //
 // TestNamingAnotherOrgSpendsYourOwn is the other half: this says the key is one of

@@ -56,10 +56,9 @@ func (c *ApiController) Embeddings() {
 	if !ok {
 		return
 	}
-	if isPublishableKey(token) {
-		c.rejectPublishableKey()
-		return
-	}
+	// Publishable (pk-) keys are ACCEPTED here: embeddings are read-only, and
+	// the pk- key is the documented least-privilege credential for this
+	// endpoint. authResolveProvider bills the key's own org.
 
 	var head struct {
 		Model string `json:"model"`
@@ -310,7 +309,7 @@ func (c *ApiController) bearerToken() (string, bool) {
 // when they hit a privileged endpoint.
 func (c *ApiController) rejectPublishableKey() {
 	c.SetHeader("Content-Type", "application/json")
-	c.Bytes(http.StatusForbidden, []byte(`{"error":{"message":"Publishable keys (pk-) can only access read-only endpoints (/v1/models, /health). Use a secret key (sk-) for this endpoint.","type":"auth_error","code":403}}`))
+	c.Bytes(http.StatusForbidden, []byte(`{"error":{"message":"Publishable keys (pk-) can only access read-only endpoints (/v1/models, /v1/embeddings, /health). Use a secret key (sk-) for this endpoint.","type":"auth_error","code":403}}`))
 }
 
 // jsonResponse writes v as a 200 JSON body and disables the router's auto-render.
@@ -379,6 +378,13 @@ func (c *ApiController) proxyJSON(provider *object.Provider, apiPath string, bod
 		return
 	}
 
+	// The same rule the family path above already states: a vendor whose account
+	// with us is spent must not be forwarded as the caller's own 402.
+	if resp.StatusCode != http.StatusOK {
+		c.ResponseFailure(relay(userModel, provider.Name, resp.StatusCode, respBody))
+		return
+	}
+
 	// Extract usage (prompt/total tokens) for billing when present.
 	var upstreamResp struct {
 		Usage struct {
@@ -417,8 +423,14 @@ func (c *ApiController) proxyJSON(provider *object.Provider, apiPath string, bod
 			c.Fiber().Response().Header.Add(k, v)
 		}
 	}
-	c.Status(resp.StatusCode)
-	c.Bytes(http.StatusOK, respBody)
+	// The request went upstream with its model rewritten to provider.SubType, and
+	// the answer comes back naming it. The caller asked for userModel, so that is
+	// the model the answer says it is — the same field, read back the way it was
+	// written. Everything else is the upstream's own bytes.
+	if out, err := setJSONModel(respBody, userModel); err == nil {
+		respBody = out
+	}
+	c.Bytes(resp.StatusCode, respBody)
 }
 
 // setJSONModel returns raw with its top-level "model" field replaced by model,

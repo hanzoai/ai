@@ -62,7 +62,7 @@ func TestZapModelRoutingRegistered(t *testing.T) {
 }
 
 // TestZapModelFromAccessPath pins the :model path-param extraction that replaces
-// the router's c.Ctx.Input.Param(":model"): only "/v1/models/{model}/access" yields a
+// the router's path parameter :model: only "/v1/models/{model}/access" yields a
 // model; the bare list path and malformed shapes yield "" (so they fall through).
 func TestZapModelFromAccessPath(t *testing.T) {
 	cases := map[string]string{

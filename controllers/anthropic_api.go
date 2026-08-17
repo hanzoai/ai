@@ -395,6 +395,15 @@ func anthropicErrorType(err error) string {
 	return anthropicErrorTypeForStatus(statusOf(err))
 }
 
+// respondAnthropicRefusal renders a typed refusal in the Anthropic dialect, reading
+// the status and wire type off the ONE error rather than off a status a caller
+// carried separately. It is the dialect twin of ResponseFailure, and it exists so
+// that "who does this refusal belong to" is decided once, by relay, and merely
+// rendered here.
+func (c *ApiController) respondAnthropicRefusal(err error) {
+	c.respondAnthropicError(anthropicErrorType(err), err.Error(), statusOf(err))
+}
+
 // AnthropicMessages implements the Anthropic Messages API.
 // @Title AnthropicMessages
 // @Tag Anthropic Compatible API
@@ -423,7 +432,7 @@ func (c *ApiController) AnthropicMessages() {
 
 	// Publishable keys (pk-) cannot access messages — reject early
 	if isPublishableKey(token) {
-		c.respondAnthropicError("auth_error", "Publishable keys (pk-) can only access read-only endpoints (/v1/models, /health). Use a secret key (sk-) for messages.", 403)
+		c.respondAnthropicError("auth_error", "Publishable keys (pk-) can only access read-only endpoints (/v1/models, /v1/embeddings, /health). Use a secret key (sk-) for messages.", 403)
 		return
 	}
 
@@ -858,6 +867,16 @@ func (c *ApiController) proxyAnthropicToolRequest(
 		}
 	}()
 
+	// ONE status decision, ahead of the stream/buffered split and ahead of the
+	// billing below, for the reason proxyToolRequest states: both branches write a
+	// status and both then bill, and neither question has a different answer for a
+	// stream than for a buffered response.
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		c.respondAnthropicRefusal(relay(request.Model, provider.Name, resp.StatusCode, b))
+		return
+	}
+
 	for k, vals := range resp.Header {
 		for _, v := range vals {
 			c.Fiber().Response().Header.Add(k, v)
@@ -870,7 +889,7 @@ func (c *ApiController) proxyAnthropicToolRequest(
 		c.SetHeader("Content-Type", "text/event-stream")
 		c.SetHeader("Cache-Control", "no-cache")
 		c.SetHeader("Connection", "keep-alive")
-		c.Status(resp.StatusCode)
+		c.Status(http.StatusOK)
 		// Native Anthropic SSE passes through verbatim; capture usage from the
 		// Anthropic events (message_start/message_delta), not the OpenAI shape.
 		//
@@ -904,7 +923,6 @@ func (c *ApiController) proxyAnthropicToolRequest(
 			hold.settle(calculateCostCentsWithCache(request.Model, prompt, completion, 0, 0))
 		})
 	} else {
-		c.Status(resp.StatusCode)
 		respBody, _ := io.ReadAll(resp.Body)
 		var usage struct {
 			Usage struct {
@@ -1008,7 +1026,7 @@ func (c *ApiController) proxyAnthropicViaOpenAI(
 	if request.Stream {
 		if resp.StatusCode != http.StatusOK {
 			respBody, _ := io.ReadAll(resp.Body)
-			c.respondAnthropicError(anthropicErrorTypeForStatus(resp.StatusCode), upstreamErrorMessage(respBody), resp.StatusCode)
+			c.respondAnthropicRefusal(relay(request.Model, provider.Name, resp.StatusCode, respBody))
 			return
 		}
 		c.SetHeader("Content-Type", "text/event-stream")
@@ -1053,7 +1071,7 @@ func (c *ApiController) proxyAnthropicViaOpenAI(
 		return
 	}
 	if resp.StatusCode != http.StatusOK {
-		c.respondAnthropicError(anthropicErrorTypeForStatus(resp.StatusCode), upstreamErrorMessage(respBody), resp.StatusCode)
+		c.respondAnthropicRefusal(relay(request.Model, provider.Name, resp.StatusCode, respBody))
 		return
 	}
 	antResp, prompt, completion := openAIResponseToAnthropic(respBody, request.Model, requestId)
@@ -1105,6 +1123,12 @@ func anthropicErrorTypeForStatus(status int) string {
 		return "not_found_error"
 	case http.StatusTooManyRequests:
 		return "rate_limit_error"
+	case http.StatusServiceUnavailable:
+		// What this service answers when OUR supply cannot serve the request —
+		// every provider refused, or our own cash breaker is holding. Anthropic's
+		// own word for "retry shortly"; api_error reads as "we are broken" and
+		// sends the caller to file a bug instead of trying again.
+		return "overloaded_error"
 	default:
 		return "api_error"
 	}
