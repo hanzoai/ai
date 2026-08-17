@@ -17,6 +17,7 @@ package controllers
 import (
 	"bufio"
 	"bytes"
+	"net"
 
 	"github.com/zap-proto/zip"
 )
@@ -38,6 +39,16 @@ func visit(method, path string) *ApiController {
 	return &ApiController{
 		Ctx: zip.New(zip.Config{DisableStartupMessage: true}).TestCtx(method, path),
 	}
+}
+
+// from sets the socket peer, the one address on a request nobody but the network
+// can set. The public lane counts by it, so a test that does not set it is testing
+// a visitor with no address.
+func from(c *ApiController, addr string) *ApiController {
+	if a, err := net.ResolveTCPAddr("tcp", addr); err == nil {
+		c.Fiber().RequestCtx().SetRemoteAddr(a)
+	}
+	return c
 }
 
 // sent is the body the controller wrote.

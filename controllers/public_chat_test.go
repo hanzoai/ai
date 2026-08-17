@@ -55,15 +55,15 @@ func TestPublicLaneIsClosedUnlessArmed(t *testing.T) {
 // would not exist, and an unauthenticated endpoint would sit in front of an
 // uncapped upstream key.
 func TestForwardedAddressIsIgnoredFromAPublicPeer(t *testing.T) {
-	forged := req("203.0.113.9:41000", "198.51.100.77") // routable peer: a stranger, not our ingress
-	if got := publicAddr(forged); got != "203.0.113.9" {
+	// A routable peer: a stranger, not our ingress.
+	if got := publicAddr("203.0.113.9", "198.51.100.77"); got != "203.0.113.9" {
 		t.Fatalf("publicAddr believed a forged header from a public peer: got %q, want the socket peer 203.0.113.9", got)
 	}
 
 	// Two requests from one stranger, each naming a different address, must be ONE
 	// visitor — otherwise the quota resets on demand.
-	a := publicVisitor(req("203.0.113.9:1", "1.1.1.1"))
-	b := publicVisitor(req("203.0.113.9:2", "2.2.2.2"))
+	a := publicVisitor(publicAddr("203.0.113.9", "1.1.1.1"))
+	b := publicVisitor(publicAddr("203.0.113.9", "2.2.2.2"))
 	if a != b {
 		t.Fatalf("one stranger became two visitors by rewriting a header: %q != %q", a, b)
 	}
@@ -72,8 +72,8 @@ func TestForwardedAddressIsIgnoredFromAPublicPeer(t *testing.T) {
 // Reached through our own ingress the peer is private, and the edge's header is the
 // only thing that names the visitor.
 func TestForwardedAddressIsBelievedFromOurOwnIngress(t *testing.T) {
-	viaIngress := func(cf string) *http.Request { return req("10.244.1.7:52000", cf) }
-	if got := publicAddr(viaIngress("198.51.100.77")); got != "198.51.100.77" {
+	viaIngress := func(cf string) string { return publicAddr("10.244.1.7", cf) }
+	if got := viaIngress("198.51.100.77"); got != "198.51.100.77" {
 		t.Fatalf("publicAddr = %q, want the edge-observed 198.51.100.77", got)
 	}
 	if publicVisitor(viaIngress("198.51.100.1")) == publicVisitor(viaIngress("198.51.100.2")) {
@@ -81,14 +81,14 @@ func TestForwardedAddressIsBelievedFromOurOwnIngress(t *testing.T) {
 	}
 	// No edge header behind the ingress: everyone shares the ingress's count. Safe
 	// direction — the lane closes early rather than becoming unbounded.
-	if got := publicAddr(req("10.244.1.7:1", "")); got != "10.244.1.7" {
+	if got := publicAddr("10.244.1.7", ""); got != "10.244.1.7" {
 		t.Fatalf("with no edge header the peer must be the key, got %q", got)
 	}
 }
 
 // The visitor id is a digest, so no address reaches a log line or a usage row.
 func TestVisitorIsHashedAndNeverTheAddress(t *testing.T) {
-	v := publicVisitor(req("203.0.113.9:1", ""))
+	v := publicVisitor(publicAddr("203.0.113.9", ""))
 	if v == "" {
 		t.Fatal("no visitor derived from a request that has an address")
 	}
@@ -100,7 +100,7 @@ func TestVisitorIsHashedAndNeverTheAddress(t *testing.T) {
 			t.Fatalf("visitor id %q carries the raw address %q", v, raw)
 		}
 	}
-	if publicVisitor(req("", "")) != "" {
+	if publicVisitor(publicAddr("", "")) != "" {
 		t.Fatal("a request with no address must yield no visitor, so the lane refuses it")
 	}
 }
@@ -288,41 +288,27 @@ func TestPublicAnswerIsCapped(t *testing.T) {
 	}
 }
 
-// req builds a request the way the server does — through Header.Set, so the key is
-// canonicalised exactly as net/http canonicalises a parsed one. A raw http.Header
-// literal is NOT equivalent: Get canonicalises its argument, so "CF-Connecting-IP"
-// written as a literal key is invisible to it and every header test silently passes.
-func req(remote, cf string) *http.Request {
-	r := &http.Request{RemoteAddr: remote, Header: http.Header{}}
-	if cf != "" {
-		r.Header.Set("CF-Connecting-IP", cf)
-	}
-	return r
-}
-
 // ---- the handler itself ---------------------------------------------------
 
 // publicCall drives the real ChatCompletionsPublic handler and returns the recorder.
-func publicCall(t *testing.T, remote, cf string) *httptest.ResponseRecorder {
+func publicCall(t *testing.T, remote, cf string) *ApiController {
 	t.Helper()
-	r := httptest.NewRequest(http.MethodPost, "/v1/chat/public",
-		strings.NewReader(`{"messages":[{"role":"user","content":"hi"}]}`))
-	r.RemoteAddr = remote
+	c := from(visit(http.MethodPost, "/v1/chat/public"), remote)
+	c.Fiber().Request().SetBody([]byte(`{"messages":[{"role":"user","content":"hi"}]}`))
 	if cf != "" {
-		r.Header.Set("CF-Connecting-IP", cf)
+		c.Fiber().Request().Header.Set("CF-Connecting-IP", cf)
 	}
-	c := visit("GET", "/v1/")
 	c.ChatCompletionsPublic()
-	return rec
+	return c
 }
 
 // refusalOf reads the house envelope off a recorded response.
-func refusalOf(t *testing.T, rec *httptest.ResponseRecorder) (status int, code string) {
+func refusalOf(t *testing.T, c *ApiController) (status int, code string) {
 	t.Helper()
 	var got struct {
 		Error struct{ Message, Type, Code string } `json:"error"`
 	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+	if err := json.Unmarshal([]byte(sent(c)), &got); err != nil {
 		t.Fatalf("response is not the house envelope: %v (%s)", err, sent(c))
 	}
 	return answered(c), got.Error.Code
