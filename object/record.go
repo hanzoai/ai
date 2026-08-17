@@ -15,16 +15,16 @@
 package object
 
 import (
-	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/google/uuid"
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/i18n"
 	"github.com/hanzoai/ai/util"
-	"github.com/hanzoai/ai/web"
 	"github.com/hanzoai/dbx"
+	"github.com/zap-proto/zip"
 )
 
 var logPostOnly bool
@@ -263,27 +263,22 @@ func UpdateRecordFields(id string, fields map[string]interface{}, lang string) (
 	return affected != 0, nil
 }
 
-func NewRecord(ctx *web.Context) (*Record, error) {
-	ip := strings.Replace(util.GetIPFromRequest(ctx.Request), ": ", "", -1)
-	action := strings.TrimPrefix(ctx.Request.URL.Path, "/v1/")
-	requestUri := util.FilterQuery(ctx.Request.RequestURI, []string{"accessToken"})
+func NewRecord(ctx *zip.Ctx) (*Record, error) {
+	ip := strings.Replace(util.GetIPInfo(ctx.Fiber().IP()), ": ", "", -1)
+	action := strings.TrimPrefix(ctx.Path(), "/v1/")
+	requestUri := util.FilterQuery(string(ctx.Fiber().Request().RequestURI()), []string{"accessToken"})
 	if len(requestUri) > 1000 {
 		requestUri = requestUri[0:1000]
 	}
 	object := ""
-	if len(ctx.Input.RequestBody) != 0 {
-		object = string(ctx.Input.RequestBody)
+	if body := ctx.Body(); len(body) != 0 {
+		object = string(body)
 	}
-	respBytes, err := json.Marshal(ctx.Input.Data()["json"])
-	if err != nil {
-		return nil, err
+	status, msg := "ok", ""
+	if code := ctx.Fiber().Response().StatusCode(); code >= 400 {
+		status, msg = "error", http.StatusText(code)
 	}
-	var resp Response
-	err = json.Unmarshal(respBytes, &resp)
-	if err != nil {
-		return nil, err
-	}
-	language := ctx.Request.Header.Get("Accept-Language")
+	language := ctx.Header("Accept-Language")
 	if len(language) > 2 {
 		language = language[0:2]
 	}
@@ -300,14 +295,14 @@ func NewRecord(ctx *web.Context) (*Record, error) {
 		CreatedTime: util.GetCurrentTimeWithMilli(),
 		ClientIp:    ip,
 		User:        "",
-		Method:      ctx.Request.Method,
+		Method:      ctx.Method(),
 		RequestUri:  requestUri,
 		Action:      action,
 		Language:    languageCode,
 		Region:      region,
 		City:        city,
 		Object:      object,
-		Response:    fmt.Sprintf("{\"status\":\"%s\",\"msg\":\"%s\"}", resp.Status, resp.Msg),
+		Response:    fmt.Sprintf("{\"status\":\"%s\",\"msg\":\"%s\"}", status, msg),
 		Count:       1,
 		IsTriggered: false,
 	}

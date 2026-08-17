@@ -19,10 +19,9 @@ import (
 	"encoding/json"
 
 	"github.com/hanzoai/ai/conf"
-	"github.com/hanzoai/ai/web"
 )
 
-func AppendWebConfigCookie(ctx *web.Context) error {
+func AppendWebConfigCookie(setCookie func(name, value string)) error {
 	webConfig := conf.GetWebConfig()
 
 	jsonWebConfig, err := json.Marshal(webConfig)
@@ -30,6 +29,6 @@ func AppendWebConfigCookie(ctx *web.Context) error {
 		return err
 	}
 
-	ctx.SetCookie("jsonWebConfig", string(jsonWebConfig))
+	setCookie("jsonWebConfig", string(jsonWebConfig))
 	return nil
 }
