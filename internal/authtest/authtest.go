@@ -78,6 +78,21 @@ func install() {
 	})), "admin", "ai")
 }
 
+// Signing is the key the verifier trusts, for a test that has to mint a credential
+// this package's own happy path cannot: another brand's issuer, a window that has
+// already closed, an algorithm nobody agreed to. Those claim sets are each a
+// different attack and belong at the test that names them — what must not be
+// duplicated is the INSTALL, because two installers race over one global and the
+// loser signs against a certificate that is no longer there.
+func Signing(t testing.TB) *rsa.PrivateKey {
+	t.Helper()
+	once.Do(install)
+	if fail != nil {
+		t.Fatalf("authtest: %v", fail)
+	}
+	return key
+}
+
 // Token is a bearer credential for u, signed so the service will accept it.
 func Token(t testing.TB, u iam.User) string {
 	t.Helper()

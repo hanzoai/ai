@@ -33,11 +33,22 @@ func init() {
 	logPostOnly = conf.GetConfigBool("logPostOnly")
 }
 
-// Recorded reports whether a request with this method is kept. It is the one
-// place the logPostOnly rule is read, so a caller can ask before building a
-// record rather than after: under logPostOnly a GET is discarded, and composing
-// one costs a geo-IP lookup and a provider query that nothing then reads.
+// Recorded reports whether a request with this method is kept. It is the one place
+// the logPostOnly rule is read, so a caller can ask before building a record rather
+// than after: under logPostOnly a GET is discarded, and composing one costs a geo-IP
+// lookup and a provider query that nothing then reads.
+//
+// It also answers no when there is nowhere to keep one. A record is written to the
+// store and the store is opened by boot, so a request served before boot — or in a
+// deployment configured without a database, which is a supported mode that answers
+// fail-closed — has nothing to write to. AddRecord queries the providers through
+// adapter.db on its way, so asking afterwards is a nil dereference on the way to
+// discovering there was no point: the request dies in a filter, after it was served,
+// over a log row.
 func Recorded(method string) bool {
+	if adapter == nil || adapter.db == nil {
+		return false
+	}
 	return !(logPostOnly && method == "GET")
 }
 

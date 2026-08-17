@@ -101,7 +101,7 @@ func zapAccountErr(httpStatus uint32, msg string) (*zap.Message, error) {
 
 // zapAccountPrincipal resolves the request principal STRICTLY from the bearer
 // `auth` string — the standalone (no-controller, no-session) twin of
-// credentialUser. JWTs go through object.ParseAndValidateJWT (signature +
+// principalUser. JWTs go through object.ParseAndValidateJWT (signature +
 // iss/aud, never raw iam.ParseJwtToken); pk-/sk- IAM keys through
 // getUserByAccessKey. This is the ONE identity source for the authed account
 // routes; the body is never trusted for identity.

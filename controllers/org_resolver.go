@@ -24,13 +24,17 @@ import (
 	"github.com/hanzoai/ai/util"
 )
 
-// credentialUser resolves the request principal STRICTLY from its verified
-// bearer credential (Authorization: Bearer JWT, or the hanzo_iam_token cookie
-// fallback), BYPASSING the the router session. Unlike principalUser it never consults
-// GetSessionUser, so get-account can re-derive the canonical identity even when
-// the process-local session already holds a stale anonymous guest that would
-// otherwise shadow it. Returns nil when no valid JWT credential is present.
-func (c *ApiController) credentialUser() *iam.User {
+// principalUser is who is calling, resolved from the credential the request
+// presents — Authorization: Bearer, or the hanzo_iam_token cookie. nil for a request
+// carrying nothing this process can verify, and nil for a widget or provider key,
+// neither of which names a person.
+//
+// ONE READ. This used to be two functions: a principalUser that asked for a session
+// first, and this one that deliberately BYPASSED the session because a stale
+// anonymous guest in the process-local store could shadow the real identity. There is
+// no such store any more — a session IS the verified token — so both were reading the
+// same credential and the order between them could not mean anything.
+func (c *ApiController) principalUser() *iam.User {
 	token := bearerToken(c.Header("Authorization"), c.Fiber().Cookies(iamTokenCookieName))
 	if token == "" {
 		return nil
@@ -73,17 +77,6 @@ func (c *ApiController) credentialUser() *iam.User {
 	return nil
 }
 
-// principalUser resolves the request principal: the session user (cookie auth)
-// if present, else the VERIFIED Bearer JWT user (see credentialUser). Returns
-// nil for an unauthenticated or provider/widget-key request. This is the one
-// identity source the org resolver trusts — never a raw client header.
-func (c *ApiController) principalUser() *iam.User {
-	if u := c.GetSessionUser(); u != nil {
-		return u
-	}
-	return c.credentialUser()
-}
-
 // principalIsOwnBrand reports whether the request principal was minted by THIS
 // deployment's OWN brand IAM. A cookie session is own-brand: sessions are minted
 // by this deployment's own hostname-resolved sign-in, so a lux/zoo/pars session
@@ -92,14 +85,19 @@ func (c *ApiController) principalUser() *iam.User {
 // sibling white-label brand's token (trusted for SIGN-IN via trustedJWTIssuers,
 // e.g. a lux.id bearer presented to api.hanzo.ai) is NOT own-brand.
 //
-// It mirrors principalUser's session-first order, so the SAME credential decides
-// both identity and brand. Callers gate cross-tenant / all-customer disclosure on
-// this AND util.IsSuperAdmin, decoupling that grant from the broader multi-brand
-// sign-in trust set — see resolveCloudUsageScope.
+// THE ISSUER IS THE ONLY THING THAT SAYS WHICH BRAND MINTED A CREDENTIAL, so it is
+// the only thing asked. There used to be a session branch answering yes by
+// construction — a cookie session could only exist on its own brand's host, so
+// holding one proved the brand. That stopped being true when a session became the
+// verified token itself: the same read now sees a sibling brand's bearer, and
+// answering yes for it hands a lux/zoo/pars admin THIS brand's all-customer view.
+// The cookie is covered either way, since the token it carries was minted here and
+// says so in its issuer.
+//
+// Callers gate cross-tenant / all-customer disclosure on this AND util.IsSuperAdmin,
+// which decouples that grant from the broader multi-brand sign-in trust set — see
+// resolveCloudUsageScope.
 func (c *ApiController) principalIsOwnBrand() bool {
-	if c.GetSessionUser() != nil {
-		return true
-	}
 	token := bearerToken(c.Header("Authorization"), c.Fiber().Cookies(iamTokenCookieName))
 	if token == "" || !isJwtToken(token) {
 		return false

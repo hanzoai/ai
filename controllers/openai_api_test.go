@@ -189,12 +189,12 @@ func TestListModels_IsPublicAndNeverValidates(t *testing.T) {
 		{"not even a Bearer", "Basic dXNlcjpwYXNz"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			c, rec := newAuthController(http.MethodGet, "/v1/models", tc.auth, nil)
+			c := presenting(visit(http.MethodGet, "/v1/models"), tc.auth)
 			c.ListModels()
-			if rec.Code != http.StatusOK {
-				t.Fatalf("status = %d, want 200 — the catalogue is public: %s", rec.Code, rec.Body.String())
+			if answered(c) != http.StatusOK {
+				t.Fatalf("status = %d, want 200 — the catalogue is public: %s", answered(c), sent(c))
 			}
-			body := rec.Body.String()
+			body := sent(c)
 			if strings.Contains(body, "authentication_error") || strings.Contains(body, "unauthorized") {
 				t.Fatalf("a public catalogue answered with an auth error: %s", body)
 			}

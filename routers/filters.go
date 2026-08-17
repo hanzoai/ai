@@ -15,15 +15,17 @@
 package routers
 
 import (
-	"sync"
-
 	"github.com/zap-proto/zip"
 )
 
-var installFiltersOnce sync.Once
-
 // InstallFilters puts the request chain in front of every route, in this order.
-// Idempotent, so the runtime and the route tests share one wiring.
+//
+// It installs onto the APP it is handed, and there is no once-guard. There was one,
+// and it was a leftover from the router being a package variable: guarding a
+// per-app installation with a process-wide Once means the SECOND app built in a
+// process gets no chain at all — no auth, no balance gate, and no recover. One
+// process only ever serves one app, so production never saw it; a test that builds
+// a second one did, as a panic escaping a chain that was never installed.
 //
 // EACH ONE DECIDES WHETHER TO CONTINUE, and says so by returning c.Continue() or
 // not. That used to be implied: a filter wrote a response and returned, and the
@@ -51,25 +53,26 @@ var installFiltersOnce sync.Once
 // at three URLs, each one a place a policy could be applied inconsistently.
 // Resources live at exactly one address, generated from the table in resources.go.
 func InstallFilters(app *zip.App) {
-	installFiltersOnce.Do(func() {
-		app.Use(zip.H(CorsFilter))
-		// Live request-geo tap: folds each inbound hit into the in-process traffic
-		// aggregate (edge country/region + service class only — never an IP). A pure
-		// side effect that never blocks or writes, so it rides high in the chain to
-		// count load-balancer hits honestly. Powers /v1/traffic/globe.
-		app.Use(zip.H(TrafficTapFilter))
-		app.Use(zip.H(HstsFilter))
-		app.Use(zip.H(CacheControlFilter))
-		app.Use(zip.H(RateLimitFilter))
-		// Ahead of every filter that reads a token. Below this line a token that does
-		// not parse means the TOKEN is bad; above it, it could also mean no signing
-		// cert was ever established — and the two are indistinguishable at the parse.
-		// Refusing here with 503 keeps that ambiguity out of the chain.
-		app.Use(zip.H(AuthAvailableFilter))
-		app.Use(zip.H(BalanceGateFilter))
-		app.Use(zip.H(TenantContextFilter))
-		app.Use(zip.H(AuthzFilter))
-		app.Use(zip.H(PrometheusFilter))
-		app.Use(zip.H(Record))
-	})
+	// FIRST, so it covers the filters below as well as the handlers. See
+	// recover.go for why this is a move rather than an addition.
+	app.Use(zip.H(Recovered))
+	app.Use(zip.H(CorsFilter))
+	// Live request-geo tap: folds each inbound hit into the in-process traffic
+	// aggregate (edge country/region + service class only — never an IP). A pure
+	// side effect that never blocks or writes, so it rides high in the chain to
+	// count load-balancer hits honestly. Powers /v1/traffic/globe.
+	app.Use(zip.H(TrafficTapFilter))
+	app.Use(zip.H(HstsFilter))
+	app.Use(zip.H(CacheControlFilter))
+	app.Use(zip.H(RateLimitFilter))
+	// Ahead of every filter that reads a token. Below this line a token that does
+	// not parse means the TOKEN is bad; above it, it could also mean no signing
+	// cert was ever established — and the two are indistinguishable at the parse.
+	// Refusing here with 503 keeps that ambiguity out of the chain.
+	app.Use(zip.H(AuthAvailableFilter))
+	app.Use(zip.H(BalanceGateFilter))
+	app.Use(zip.H(TenantContextFilter))
+	app.Use(zip.H(AuthzFilter))
+	app.Use(zip.H(PrometheusFilter))
+	app.Use(zip.H(Record))
 }

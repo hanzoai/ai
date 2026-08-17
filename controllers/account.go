@@ -471,12 +471,12 @@ func (c *ApiController) GetAccount() {
 	//       GetSessionUser() returns that guest and principalUser (session-first)
 	//       would keep serving it.
 	// In BOTH cases, resolve the principal DIRECTLY from the credential (via
-	// credentialUser, which bypasses the session) and, when it re-derives a
+	// principalUser) and, when it re-derives a
 	// canonical non-anonymous identity, OVERRIDE the session with it — a signed-in
 	// subject is never served a guest. A genuine anonymous caller (no credential)
 	// keeps its guest session and flows to the anonymous branch below.
 	if sessionNeedsSelfHeal(c.GetSessionUser()) {
-		if p := c.credentialUser(); p != nil && !util.IsAnonymousUser(p) {
+		if p := c.principalUser(); p != nil && !util.IsAnonymousUser(p) {
 			// The second door onto the same grant: a guest id becomes a signed-in one.
 			// Rotating only at sign-in would leave a planted id to be authenticated
 			// here instead — the rule is the privilege change, not the route it
