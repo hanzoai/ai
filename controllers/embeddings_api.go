@@ -309,9 +309,8 @@ func (c *ApiController) bearerToken() (string, bool) {
 // rejectPublishableKey writes the 403 that read-only publishable (pk-) keys get
 // when they hit a privileged endpoint.
 func (c *ApiController) rejectPublishableKey() {
-	c.Status(403)
 	c.SetHeader("Content-Type", "application/json")
-	c.Bytes(http.StatusOK, []byte(`{"error":{"message":"Publishable keys (pk-) can only access read-only endpoints (/v1/models, /health). Use a secret key (sk-) for this endpoint.","type":"auth_error","code":403}}`))
+	c.Bytes(http.StatusForbidden, []byte(`{"error":{"message":"Publishable keys (pk-) can only access read-only endpoints (/v1/models, /health). Use a secret key (sk-) for this endpoint.","type":"auth_error","code":403}}`))
 }
 
 // jsonResponse writes v as a 200 JSON body and disables the router's auto-render.
@@ -322,7 +321,6 @@ func (c *ApiController) jsonResponse(v interface{}) {
 		return
 	}
 	c.SetHeader("Content-Type", "application/json")
-	c.Status(http.StatusOK)
 	c.Bytes(http.StatusOK, b)
 }
 

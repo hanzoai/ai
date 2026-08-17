@@ -337,10 +337,9 @@ func (c *ApiController) publicSpent(visitor, by string) {
 // rolling cap and every auth refusal on this surface already answer with, so a client
 // reads one error and not a fourth dialect of one.
 func (c *ApiController) publicRefuse(status int, kind, code, message string) {
-	c.Status(status)
 	c.SetHeader("Content-Type", "application/json")
 	c.SetHeader("Cache-Control", "no-store")
-	c.Bytes(http.StatusOK, publicErrorJSON(kind, code, message))
+	c.Bytes(status, publicErrorJSON(kind, code, message))
 }
 
 // publicErrorJSON renders the house error envelope.

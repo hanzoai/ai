@@ -1588,6 +1588,5 @@ func (c *ApiController) zenError(dialect, msg string, status int) {
 		"error": map[string]any{"message": msg, "type": "api_error", "code": status},
 	})
 	c.SetHeader("Content-Type", "application/json")
-	c.Status(status)
-	_ = c.Bytes(c.Fiber().Response().StatusCode(), body)
+	_ = c.Bytes(status, body)
 }
