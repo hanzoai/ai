@@ -181,7 +181,7 @@ func (c *ApiController) Signin() {
 	// u-<hash> user. See iamTokenCookieName + GetAccount.
 	c.setIamTokenCookie(token.AccessToken, token.Expiry)
 	userId := claims.User.Owner + "/" + claims.User.Name
-	c.Ctx.Input.SetParam("recordUserId", userId)
+	c.Locals("recordUserId", userId)
 
 	// Record session ID
 	sessionId := c.Ctx.Input.CruSession.SessionID()

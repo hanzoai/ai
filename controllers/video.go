@@ -87,7 +87,7 @@ func (c *ApiController) GetVideos() {
 			return
 		}
 
-		paginator := util.NewPaginator(c.Ctx.Request, limit, count)
+		paginator := util.NewPaginator(c.PageAsked(), limit, count)
 		videos, err := object.GetPaginationVideos(owner, paginator.Offset(), limit, field, value, sortField, sortOrder, c.GetAcceptLanguage())
 		if err != nil {
 			c.ResponseError(err.Error())

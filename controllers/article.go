@@ -71,7 +71,7 @@ func (c *ApiController) GetArticles() {
 			c.ResponseError(err.Error())
 			return
 		}
-		paginator := util.NewPaginator(c.Ctx.Request, limit, count)
+		paginator := util.NewPaginator(c.PageAsked(), limit, count)
 		articles, err := object.GetPaginationArticles(owner, paginator.Offset(), limit, field, value, sortField, sortOrder)
 		if err != nil {
 			c.ResponseError(err.Error())

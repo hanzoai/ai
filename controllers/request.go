@@ -3,6 +3,7 @@ package controllers
 import (
 	"mime/multipart"
 	"net/url"
+	"strconv"
 )
 
 // How a handler reads what it was sent.
@@ -62,4 +63,22 @@ func (c *ApiController) GetFile(key string) (multipart.File, *multipart.FileHead
 		return nil, nil, err
 	}
 	return f, h, nil
+}
+
+// PageAsked is the page the caller asked for, from the "p" query parameter.
+// Zero when absent or unreadable, which the paginator clamps to the first page.
+func (c *ApiController) PageAsked() int {
+	return pageAsked(string(c.Fiber().Request().URI().QueryString()))
+}
+
+// pageAsked reads "p" out of a raw query string. It is separate from the method
+// so the parameter NAME and the not-a-number cases can be asserted without a
+// live request.
+func pageAsked(rawQuery string) int {
+	v, err := url.ParseQuery(rawQuery)
+	if err != nil {
+		return 0
+	}
+	n, _ := strconv.Atoi(v.Get("p"))
+	return n
 }
