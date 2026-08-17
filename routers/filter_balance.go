@@ -182,6 +182,23 @@ func BalanceGateFilter(ctx *web.Context) {
 		return
 	}
 
+	// An inline upload spends nothing: /v1/docs/ingest with source "upload" (or
+	// unset, its default) indexes bytes the caller already has into the caller's
+	// own store — no scrape, no crawl, no model. The controller's own gate prices
+	// exactly the sources that DO spend (github/crawl/s3) and deliberately admits
+	// upload; refusing it here made this gate and that one give different answers
+	// to the same question. Same cached body requestedModel reads.
+	if path == "/v1/docs/ingest" {
+		var req struct {
+			Source string `json:"source"`
+		}
+		if err := json.Unmarshal(ctx.Input.RequestBody, &req); err == nil {
+			if req.Source == "" || req.Source == "upload" {
+				return
+			}
+		}
+	}
+
 	// A model priced at zero has nothing for a WALLET gate to refuse.
 	//
 	// This gate runs before any controller, so the in-controller balance gate's
