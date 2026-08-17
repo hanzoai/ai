@@ -45,18 +45,18 @@ import (
 // splits GET (read) vs PUT (write), /v1/org/settings GET/PUT/DELETE, and returns
 // 405 for a verb it does not own.
 func (c *ApiController) RouterConfigBridge() {
-	req := c.Ctx.Request
+	path := c.Path()
 
 	// nil router: this method IS a route inside routers.App, so it has nothing to
 	// fall back to — replaying an unclaimed path through the router would dispatch
 	// straight back here, forever. The registry is the only answer available at this
 	// seam, which is exactly what the !handled arm below reports.
 	msg, handled, err := dispatchGateway(
-		req.Context(),
+		c.Context(),
 		nil,
-		req.Method,
-		req.URL.Path,
-		req.URL.RawQuery,
+		c.Method(),
+		path,
+		string(c.Fiber().Request().URI().QueryString()),
 		c.Header("Authorization"),
 		c.Body(),
 	)
@@ -67,7 +67,7 @@ func (c *ApiController) RouterConfigBridge() {
 	case !handled || msg == nil:
 		// dispatchGateway reporting no owner means the registry and this route table
 		// disagree — a wiring bug, not a client 404; surface it as 404 with the path.
-		c.writeBridgeJSON(http.StatusNotFound, Response{Status: "error", Msg: "not found: " + req.URL.Path})
+		c.writeBridgeJSON(http.StatusNotFound, Response{Status: "error", Msg: "not found: " + path})
 		return
 	}
 
