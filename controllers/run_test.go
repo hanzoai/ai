@@ -6,7 +6,6 @@ package controllers
 
 import (
 	"net/http"
-	"net/http/httptest"
 	"testing"
 )
 
@@ -172,11 +171,9 @@ func TestAnUnknownRunKeyNamesNoTenant(t *testing.T) {
 // client X-Org-Id, which is all these questions need.
 func runController(t *testing.T, token, orgHeader string) *ApiController {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
-	req.Header.Set("Authorization", "Bearer "+token)
+	c := presenting(visit(http.MethodPost, "/v1/chat/completions"), "Bearer "+token)
 	if orgHeader != "" {
-		req.Header.Set("X-Org-Id", orgHeader)
+		c.Fiber().Request().Header.Set("X-Org-Id", orgHeader)
 	}
-	c := visit("GET", "/v1/")
 	return c
 }
