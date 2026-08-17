@@ -15,6 +15,7 @@
 package controllers
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -27,7 +28,6 @@ import (
 	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/model"
 	"github.com/hanzoai/ai/object"
-	"github.com/hanzoai/ai/web"
 	"github.com/hanzoai/go-openai"
 )
 
@@ -166,7 +166,7 @@ type AnthropicErrorBody struct {
 // AnthropicWriter implements io.Writer, collecting output for non-streaming
 // and emitting SSE events in Anthropic format for streaming.
 type AnthropicWriter struct {
-	web.Response
+	*bufio.Writer
 	Cleaner    Cleaner
 	Buffer     []byte
 	MessageBuf []byte
@@ -341,7 +341,7 @@ func (w *AnthropicWriter) writeSSE(event string, data interface{}) error {
 	if err != nil {
 		return err
 	}
-	n, err := w.ResponseWriter.Write([]byte(fmt.Sprintf("event: %s\ndata: %s\n\n", event, jsonData)))
+	n, err := w.Writer.Write([]byte(fmt.Sprintf("event: %s\ndata: %s\n\n", event, jsonData)))
 	if n > 0 {
 		w.StreamSent = true
 	}
@@ -592,7 +592,7 @@ func (c *ApiController) AnthropicMessages() {
 	}
 
 	writer := &AnthropicWriter{
-		Response:  *c.Ctx.ResponseWriter,
+		Writer:    w,
 		Buffer:    []byte{},
 		RequestID: requestId,
 		Stream:    request.Stream,

@@ -220,7 +220,7 @@ func (c *ApiController) GetMessageAnswer() {
 		embeddingResult = &embedding.EmbeddingResult{}
 	}
 
-	writer := &RefinedWriter{*c.Ctx.ResponseWriter, *NewCleaner(6), []byte{}, []byte{}, []byte{}, []byte{}, []byte{}}
+	writer := &RefinedWriter{w, *NewCleaner(6), []byte{}, []byte{}, []byte{}, []byte{}, []byte{}}
 
 	if questionMessage != nil {
 		questionMessage.TokenCount = embeddingResult.TokenCount
@@ -292,7 +292,7 @@ func (c *ApiController) GetMessageAnswer() {
 	if len(vectorScores) > 0 {
 		bytes, err := json.Marshal(vectorScores)
 		if err == nil {
-			_, _ = c.Ctx.ResponseWriter.Write([]byte(fmt.Sprintf("event: vector\ndata: %s\n\n", string(bytes))))
+			_ = c.Bytes(c.Fiber().Response().StatusCode(), []byte(fmt.Sprintf("event: vector\ndata: %s\n\n", string(bytes))))
 		}
 	}
 
@@ -318,7 +318,7 @@ func (c *ApiController) GetMessageAnswer() {
 	fmt.Printf("]\n")
 
 	event := fmt.Sprintf("event: end\ndata: %s\n\n", "end")
-	_, err = c.Ctx.ResponseWriter.Write([]byte(event))
+	err = c.Bytes(c.Fiber().Response().StatusCode(), []byte(event))
 	if err != nil {
 		c.ResponseErrorStream(message, err.Error())
 		return
