@@ -1920,6 +1920,21 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 		answered = true
 	}
 
+	// LLM-as-a-judge: score THIS served (prompt, response) into a dense quality reward
+	// for the enso router. It reads the ANSWER, so it runs where the answer is finished
+	// — which for a stream is inside the callback, not after it: the callback has not
+	// run when SendStreamWriter returns, so out here MessageString() is still empty and
+	// every streamed turn would be scored on nothing. It never adds latency either way;
+	// the hook only spawns a goroutine after cheap gates, and is a no-op unless
+	// ROUTER_JUDGE_ENABLED. The prompt and response are passed transiently — never
+	// persisted (see router_judge.go).
+	agent, country := c.Header("User-Agent"), c.Header("CF-IPCountry")
+	judge := func() {
+		if answered && routingRecorded {
+			judgeRoutedResponse(agent, orgId, requestId, country, request.Model, routedTask, question, writer.MessageString())
+		}
+	}
+
 	if request.Stream {
 		// The headers go on before the callback: the first chunk commits the status
 		// line, and nothing can be added to it afterwards.
@@ -1932,21 +1947,15 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 				out = to.wrap(bw)
 			}
 			complete(out)
+			judge()
 		})
-	} else {
-		// Nothing is streamed: OpenAIWriter accumulates into MessageBuf and the one
-		// JSON body is written by complete itself, so there is no stream to name.
-		complete(io.Discard)
+		return
 	}
 
-	// LLM-as-a-judge: score THIS served (prompt, response) into a dense quality
-	// reward for the enso router. Placed AFTER the reply is fully written (both
-	// stream and non-stream), so it never adds latency; the hook only spawns a
-	// goroutine after cheap gates, and is a no-op unless ROUTER_JUDGE_ENABLED. The
-	// prompt/response are passed transiently — never persisted (see router_judge.go).
-	if answered && routingRecorded {
-		judgeRoutedResponse(c.Header("User-Agent"), orgId, requestId, c.Header("CF-IPCountry"), request.Model, routedTask, question, writer.MessageString())
-	}
+	// Nothing is streamed: OpenAIWriter accumulates into MessageBuf and the one JSON
+	// body is written by complete itself, so there is no stream to name.
+	complete(io.Discard)
+	judge()
 }
 
 // ListModels returns the list of available models from the routing table.
@@ -2099,13 +2108,54 @@ func (c *ApiController) proxyToolRequest(
 		c.ResponseError(fmt.Sprintf("Upstream request failed: %s", err.Error()))
 		return
 	}
-	defer resp.Body.Close()
+	// Closed by whoever reads it: this function for an answer read whole, and the
+	// stream callback for one relayed event by event — the callback outlives this call,
+	// so it takes the body and this defer stops seeing one.
+	defer func() {
+		if resp != nil {
+			resp.Body.Close()
+		}
+	}()
 
 	// Copy upstream response headers
 	for k, vals := range resp.Header {
 		for _, v := range vals {
 			c.Fiber().Response().Header.Add(k, v)
 		}
+	}
+
+	// WHAT AN ANSWER COST IS SETTLED IN ONE PLACE. Where the token counts come from
+	// differs between the two shapes; nothing after that does, and it used to be
+	// written out twice.
+	settle := func(streamed bool, prompt, completion, total int) {
+		if total == 0 {
+			total = prompt + completion
+		}
+		actualCents := calculateCostCentsWithCache(request.Model, prompt, completion, 0, 0)
+		if authUser != nil {
+			successRecord := &usageRecord{
+				Owner:            ledger,
+				Organization:     authUser.Owner,
+				Model:            request.Model,
+				Provider:         provider.Name,
+				Origin:           originOf(provider, mk),
+				CostNanoExact:    mk.cogs(),
+				PromptTokens:     prompt,
+				CompletionTokens: completion,
+				TotalTokens:      total,
+				Currency:         "USD",
+				Premium:          isPremium,
+				Stream:           streamed,
+				Status:           "success",
+				ClientIP:         c.Fiber().IP(),
+				RequestID:        requestId,
+			}
+			successRecord.bind(c.Context(), authUser)
+			successRecord.BYO, successRecord.Account = providerBYO(provider, authUser)
+			recordUsage(successRecord)
+			recordTrace(c.Context(), successRecord, requestStartTime)
+		}
+		hold.settle(actualCents)
 	}
 
 	if request.Stream {
@@ -2124,56 +2174,34 @@ func (c *ApiController) proxyToolRequest(
 		if model.InlinesReasoning(request.Model) {
 			strip = &model.ReasoningStripper{}
 		}
-		// The capture runs INSIDE the stream: zip owns the connection for the
-		// duration and hands the writer in, so the usage this settles on is the
-		// usage of the bytes the client actually received.
-		var capPrompt, capCompletion, capTotal int
-		var completionText string
+		// THE CAPTURE AND THE SETTLEMENT BOTH RUN INSIDE THE STREAM, and they have to.
+		// fasthttp produces a streamed body by draining this writer while it serialises
+		// the response, so the callback has not run when SendStreamWriter returns —
+		// measured, not assumed. Read outside, every count here is still zero, and a
+		// streamed answer would be billed its prompt and no completion at all.
+		//
+		// The upstream body travels in for the same reason: left to the defer above it
+		// would be closed before the relay read a byte, and the client would be sent
+		// nothing. The context is still the request's — fasthttp finishes writing the
+		// response before fiber releases it.
+		upstream := resp.Body
+		resp = nil
 		_ = c.SendStreamWriter(func(w *bufio.Writer) {
-			capPrompt, capCompletion, capTotal, completionText = streamCaptureUsage(
-				resp.Body, w, func() { _ = w.Flush() },
+			defer upstream.Close()
+			prompt, completion, total, text := streamCaptureUsage(
+				upstream, w, func() { _ = w.Flush() },
 				clientWantsUsage, strip, mk,
 			)
+			// Captured from the forced usage chunk, or tokenized as a fallback so a
+			// successful streamed response is never billed as zero.
+			if completion == 0 && total == 0 {
+				if pt, err := model.OpenaiNumTokensFromMessages(request.Messages, request.Model); err == nil {
+					prompt = pt
+				}
+				completion, _ = model.GetTokenSize(request.Model, text)
+			}
+			settle(true, prompt, completion, total)
 		})
-
-		// Settle billing with the REAL token usage — captured from the forced
-		// usage chunk, or tokenized as a fallback so a successful streamed
-		// response is never billed as zero.
-		prompt, completion, total := capPrompt, capCompletion, capTotal
-		if completion == 0 && total == 0 {
-			if pt, err := model.OpenaiNumTokensFromMessages(request.Messages, request.Model); err == nil {
-				prompt = pt
-			}
-			completion, _ = model.GetTokenSize(request.Model, completionText)
-		}
-		if total == 0 {
-			total = prompt + completion
-		}
-		actualCents := calculateCostCentsWithCache(request.Model, prompt, completion, 0, 0)
-		if authUser != nil {
-			successRecord := &usageRecord{
-				Owner:            ledger,
-				Organization:     authUser.Owner,
-				Model:            request.Model,
-				Provider:         provider.Name,
-				Origin:           originOf(provider, mk),
-				CostNanoExact:    mk.cogs(),
-				PromptTokens:     prompt,
-				CompletionTokens: completion,
-				TotalTokens:      total,
-				Currency:         "USD",
-				Premium:          isPremium,
-				Stream:           true,
-				Status:           "success",
-				ClientIP:         c.Fiber().IP(),
-				RequestID:        requestId,
-			}
-			successRecord.bind(c.Context(), authUser)
-			successRecord.BYO, successRecord.Account = providerBYO(provider, authUser)
-			recordUsage(successRecord)
-			recordTrace(c.Context(), successRecord, requestStartTime)
-		}
-		hold.settle(actualCents)
 	} else {
 		// Non-streaming: read full response, extract token counts, forward
 		respBody, err := io.ReadAll(resp.Body)
@@ -2209,35 +2237,7 @@ func (c *ApiController) proxyToolRequest(
 			}
 			completion, _ = model.GetTokenSize(request.Model, string(respBody))
 		}
-		if total == 0 {
-			total = prompt + completion
-		}
-		actualCents := calculateCostCentsWithCache(request.Model, prompt, completion, 0, 0)
-
-		if authUser != nil {
-			successRecord := &usageRecord{
-				Owner:            ledger,
-				Organization:     authUser.Owner,
-				Model:            request.Model,
-				Provider:         provider.Name,
-				Origin:           originOf(provider, mk),
-				CostNanoExact:    mk.cogs(),
-				PromptTokens:     prompt,
-				CompletionTokens: completion,
-				TotalTokens:      total,
-				Currency:         "USD",
-				Premium:          isPremium,
-				Stream:           false,
-				Status:           "success",
-				ClientIP:         c.Fiber().IP(),
-				RequestID:        requestId,
-			}
-			successRecord.bind(c.Context(), authUser)
-			successRecord.BYO, successRecord.Account = providerBYO(provider, authUser)
-			recordUsage(successRecord)
-			recordTrace(c.Context(), successRecord, requestStartTime)
-		}
-		hold.settle(actualCents)
+		settle(false, prompt, completion, total)
 
 		// Strip a reasoning-inlining upstream's leading <think></think> block from
 		// the forwarded body (billing above already tokenized the original).

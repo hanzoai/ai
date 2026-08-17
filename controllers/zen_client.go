@@ -1212,7 +1212,14 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		// of whichever provider ends up serving this request uncharged.
 		return refused(err)
 	}
-	defer func() { resp.Body.Close() }()
+	// Closed by whoever consumes it. That is this function for an answer read whole,
+	// and the stream callback for one that is relayed — the callback outlives this
+	// call, so it takes the body with it and this defer stops seeing one.
+	defer func() {
+		if resp != nil {
+			resp.Body.Close()
+		}
+	}()
 
 	// ONE status decision, ahead of the split, because the answer to "can this
 	// request still be moved" is the same for both shapes. The status arrives
@@ -1251,55 +1258,70 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		c.SetHeader(headerCollection, collection(served.free(sku)))
 	}
 
-	prompt, completion := 0, 0
-	served, respID := "", ""
+	// WHAT AN ANSWER COST IS KNOWN ONLY WHEN IT IS COMPLETE, so both shapes settle
+	// here and the streamed one settles from inside its own callback.
+	//
+	// A stamped answer carries OUR id, so that is the id the client will thread back
+	// to /v1/feedback and the id the reward has to join on. An embeddings list has no
+	// id of its own, so nothing is stamped and the join falls back to the internal
+	// reqID — which is honest: the client was handed no id to correlate on.
+	//
+	// The learning ledger records this served family call (source="family") and, when
+	// the engine endpoint is configured, the shadow A/B pick — off the hot path, no
+	// prompt text ever stored (the ledger holds none).
+	settle := func(prompt, completion int, served, respID string) {
+		if mk.id != "" {
+			respID = mk.id
+		}
+		if prompt == 0 {
+			prompt = coarseTokenEstimate(rawBody)
+		}
+		cents := c.recordFamilyUsage(fam, sku, requested, prov, mk, authUser, isPremium, stream, reqID, prompt, completion, start, hold, "success", "")
+		c.recordFamilyRouting(model, served, respID, reqID, rawBody, orgId, authUser, prompt, completion, cents, start)
+	}
+
 	if stream {
 		c.SetHeader("Content-Type", "text/event-stream")
 		c.SetHeader("Cache-Control", "no-cache")
 		c.SetHeader("Connection", "keep-alive")
 		c.Status(http.StatusOK)
-		// The relay writes into the stream callback's writer, which is the only
-		// writer there is: the body is produced after the handler has said what the
-		// response will be, so the headers and the status above go on first.
+		// THE CALLBACK RUNS AFTER THIS FUNCTION RETURNS. fasthttp produces a streamed
+		// body by draining a writer while it serialises the response, so the relay has
+		// not started when SendStreamWriter comes back — measured, not assumed.
+		//
+		// Two things follow. Everything the stream READS must outlive this call, so the
+		// upstream body travels into the callback and is closed there; left to the defer
+		// above it would be closed first and the client would be sent nothing.
+		//
+		// And everything the stream LEARNS has to be used in here. Settled outside,
+		// prompt and completion are still zero, so every streamed answer would be
+		// charged a token estimate for its prompt and nothing at all for its completion.
+		// The context is still the request's: fasthttp finishes writing the response
+		// before fiber releases it.
+		upstream := resp.Body
+		resp = nil
 		_ = c.SendStreamWriter(func(w *bufio.Writer) {
-			prompt, completion, served, respID = c.relayZenStream(w, resp.Body, mk)
+			defer upstream.Close()
+			settle(c.relayZenStream(w, upstream, mk))
 		})
-	} else {
-		b, rErr := io.ReadAll(resp.Body)
-		if rErr != nil {
-			// The family's answer was truncated on the way to us. Nothing has
-			// reached the client, so this is still movable.
-			return refused(rErr)
-		}
-		sniffZenUsage(b, &prompt, &completion)
-		served = sniffZenModel(b)
-		respID = sniffZenId(b)
-		ct := resp.Header.Get("Content-Type")
-		if ct == "" {
-			ct = "application/json"
-		}
-		c.SetHeader("Content-Type", ct)
-		c.Bytes(http.StatusOK, mk.stamp(b))
+		return done()
 	}
 
-	// A stamped answer carries OUR id, so that is the id the client will thread back
-	// to /v1/feedback and the id the reward has to join on.
-	// An embeddings list has no id of its own, so nothing is stamped and the join
-	// falls back to the internal reqID — which is honest: the client was handed no
-	// id to correlate on.
-	if mk.id != "" {
-		respID = mk.id
+	b, rErr := io.ReadAll(resp.Body)
+	if rErr != nil {
+		// The family's answer was truncated on the way to us. Nothing has reached the
+		// client, so this is still movable.
+		return refused(rErr)
 	}
-	if prompt == 0 {
-		prompt = coarseTokenEstimate(rawBody)
+	prompt, completion := 0, 0
+	sniffZenUsage(b, &prompt, &completion)
+	ct := resp.Header.Get("Content-Type")
+	if ct == "" {
+		ct = "application/json"
 	}
-	cents := c.recordFamilyUsage(fam, sku, requested, prov, mk, authUser, isPremium, stream, reqID, prompt, completion, start, hold, "success", "")
-	// Learning ledger: record this served family call (source="family") and, when the
-	// engine endpoint is configured, the shadow A/B pick — off the hot path, no prompt
-	// text ever stored (the ledger holds none). The join key is the response id the
-	// CLIENT sees (respID), which the client threads back to /v1/feedback; falls back
-	// to the internal reqID when the family did not disclose one. See object.RoutingEvent.
-	c.recordFamilyRouting(model, served, respID, reqID, rawBody, orgId, authUser, prompt, completion, cents, start)
+	c.SetHeader("Content-Type", ct)
+	c.Bytes(http.StatusOK, mk.stamp(b))
+	settle(prompt, completion, sniffZenModel(b), sniffZenId(b))
 	return done()
 }
 
