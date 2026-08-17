@@ -1443,9 +1443,7 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 
 		// Publishable keys (pk-) cannot access completions — reject early
 		if isPublishableKey(token) {
-			c.Status(403)
-			c.SetHeader("Content-Type", "application/json")
-			c.Bytes(http.StatusOK, []byte(`{"error":{"message":"Publishable keys (pk-) can only access read-only endpoints (/v1/models, /health). Use a secret key (sk-) for completions.","type":"auth_error","code":403}}`))
+			c.rejectPublishableKey()
 			return
 		}
 	}

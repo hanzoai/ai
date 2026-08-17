@@ -84,8 +84,7 @@ func (c *ApiController) RouterConfigBridge() {
 // render off) so the native handler's exact JSON/JSONL bytes reach the client.
 func (c *ApiController) writeBridgeRaw(status int, body []byte) {
 	c.SetHeader("Content-Type", "application/json; charset=utf-8")
-	c.Status(status)
-	_ = c.Bytes(http.StatusOK, body)
+	_ = c.Bytes(status, body)
 }
 
 // writeBridgeJSON encodes and relays a bridge-local envelope (the only responses

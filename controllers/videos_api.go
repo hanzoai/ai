@@ -378,7 +378,7 @@ func (c *ApiController) VideoContent() {
 	c.SetHeader("Content-Type", mime)
 	c.SetHeader("Content-Disposition", "inline; filename="+job.id+".mp4")
 	if err := c.Bytes(http.StatusOK, data); err != nil {
-		responseError(c.Ctx, err.Error())
+		responseError(c.Ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
 }
