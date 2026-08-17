@@ -29,7 +29,7 @@ import (
 // serves — is gone as a class rather than tested: the document is built FROM the
 // route table, so there is no longer anywhere for a phantom to be written.
 func TestEveryPublishedOperationHasASentence(t *testing.T) {
-	paths, _ := Document()["paths"].(map[string]any)
+	paths, _ := Document(built())["paths"].(map[string]any)
 
 	var mute []string
 	for path, item := range paths {
@@ -54,7 +54,7 @@ func TestEveryPublishedOperationHasASentence(t *testing.T) {
 // deleted swagger.json was, arrived at from the other direction.
 func TestEveryDescribedAddressIsServed(t *testing.T) {
 	live := map[string]bool{}
-	for pattern, methods := range App.Patterns() {
+	for pattern, methods := range Patterns(built()) {
 		for _, m := range methods {
 			for _, verb := range expand(m) {
 				live[verb+" "+openAPIPath(pattern)] = true
@@ -73,15 +73,26 @@ func TestEveryDescribedAddressIsServed(t *testing.T) {
 // The generated table is the ROUTER's, not a list beside it: every wired row must
 // be a live registration. The reverse direction is covered above.
 func TestWiredRowsAreRegisteredRoutes(t *testing.T) {
+	patterns := Patterns(built())
 	live := map[string]bool{}
-	for pattern, methods := range App.Patterns() {
+	for pattern, methods := range patterns {
 		for _, m := range methods {
 			live[strings.ToUpper(m)+" "+pattern] = true
 		}
 	}
 	for _, w := range wired {
+		// A "*" row is a mapping that claims EVERY verb, and the live table honestly
+		// lists them one by one — the router registers a handler per method, so there
+		// is no "*" entry to match against. The path being served is what "*" asserts.
+		if w.Method == "*" {
+			if len(patterns[w.Path]) == 0 {
+				t.Errorf("wired_gen.go carries * %s -> %s, and no verb is registered at that path — "+
+					"re-run `go generate ./routers`", w.Path, w.Handler)
+			}
+			continue
+		}
 		if !live[w.Method+" "+w.Path] {
-			t.Errorf("wired_gen.go carries %s %s -> %s, which App does not register — "+
+			t.Errorf("wired_gen.go carries %s %s -> %s, which is not registered — "+
 				"re-run `go generate ./routers`", w.Method, w.Path, w.Handler)
 		}
 	}

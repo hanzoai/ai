@@ -82,9 +82,18 @@ func App(secrets object.SecretStore) (*zip.App, error) {
 	// authenticates before it reports the size — the size of a body is not
 	// something an unauthenticated caller gets to learn. Past the ceiling there is
 	// nothing to be gained by reading further and the socket cuts it.
+	// AND THE HEADER CEILING, for the same reason and with the same failure. Unset,
+	// fasthttp's per-connection read buffer is 4 KiB, and that buffer caps the TOTAL
+	// request headers — so a request is refused at the socket before any handler when
+	// its headers do not fit. Every authenticated request here carries a signed IAM
+	// bearer, and the gateway adds its identity set beside it (X-Org-Id, X-User-Id,
+	// X-Project-Id, X-Environment, X-Session-Id) plus whatever the edge stamps. A
+	// token with a real claim set clears 4 KiB on its own, and the refusal names a
+	// buffer size rather than anything a caller could act on.
 	app := zip.New(zip.Config{
-		AppName:   "ai",
-		BodyLimit: controllers.MaxTranscribeUpload + (1 << 20),
+		AppName:        "ai",
+		BodyLimit:      controllers.MaxTranscribeUpload + (1 << 20),
+		ReadBufferSize: 32 << 10,
 	})
 	log := luxlog.Default()
 	if log == nil {

@@ -21,7 +21,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hanzoai/ai/routers" // registers /v1/* routes (incl. /v1/chat/public)
 	"github.com/zap-proto/zip"
 )
 
@@ -30,7 +29,7 @@ import (
 func askPublicly(t *testing.T, peer string) (int, string) {
 	t.Helper()
 
-	app := zip.New(zip.Config{DisableStartupMessage: true})
+	app := zip.New(zip.Config{DisableStartupMessage: true, ReadBufferSize: 32 << 10})
 	routes(app)
 
 	req, _ := http.NewRequest(http.MethodPost, "http://example.com/v1/chat/public",

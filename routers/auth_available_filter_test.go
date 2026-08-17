@@ -4,19 +4,17 @@ package routers
 
 import (
 	"net/http"
-	"net/http/httptest"
 	"testing"
 
 	"github.com/hanzoai/ai/object"
 )
 
 // filterProbe runs the filter over one request and reports what it wrote.
-func filterProbe(t *testing.T) *httptest.ResponseRecorder {
+func filterProbe(t *testing.T) probe {
 	t.Helper()
-	rec := httptest.NewRecorder()
 	p := ask(http.MethodGet, "/v1/models")
-	AuthAvailableFilter(p.Ctx)
-	return rec
+	p = p.through(AuthAvailableFilter)
+	return p
 }
 
 // Identity unreachable is 503 — never 401, and never a served request.
@@ -30,7 +28,7 @@ func TestAuthAvailableFilter_RefusesWith503WhenIdentityIsDown(t *testing.T) {
 	t.Setenv("IAM_URL", "http://127.0.0.1:1")
 	t.Setenv("IAM_APP_NAME", "hanzo-cloud")
 
-	rec := filterProbe(t)
+	p := filterProbe(t)
 	if p.status() != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want 503 — a 401 here blames the caller for our outage", p.status())
 	}
@@ -49,11 +47,11 @@ func TestAuthAvailableFilter_PassesWhenNoIAMIsConfigured(t *testing.T) {
 	object.ResetAuthReady()
 	t.Setenv("IAM_URL", "")
 
-	rec := filterProbe(t)
+	p := filterProbe(t)
 	if p.status() != http.StatusOK {
 		t.Fatalf("status = %d, want the request to pass untouched (200 is the recorder's default)", p.status())
 	}
-	if rec.Body.Len() != 0 {
+	if len(p.said()) != 0 {
 		t.Fatalf("the filter wrote a body on the pass path: %q", p.said())
 	}
 }

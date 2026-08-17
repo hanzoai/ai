@@ -41,7 +41,7 @@ func TestEveryResourceSaysWhatItHolds(t *testing.T) {
 // matters is what a CLIENT reads — a shape threaded correctly into items() and
 // then dropped on the way out would pass a narrower test.
 func TestCollectionListsWhatTheMemberReturns(t *testing.T) {
-	doc := Document()
+	doc := Document(built())
 	paths, _ := doc["paths"].(map[string]any)
 
 	for _, r := range resources {
@@ -80,7 +80,7 @@ func TestCollectionListsWhatTheMemberReturns(t *testing.T) {
 // behind: operations pointing at component definitions that no longer existed,
 // which every generator resolves to "unknown" without complaining.
 func TestEveryReferenceResolves(t *testing.T) {
-	doc := Document()
+	doc := Document(built())
 	comps, _ := doc["components"].(map[string]any)
 	schemas, _ := comps["schemas"].(map[string]any)
 
@@ -184,7 +184,7 @@ func TestPublishedIDsDropTheSharedVersion(t *testing.T) {
 // docPaths is the published document's path map, which is what a consumer reads.
 func docPaths(t *testing.T) map[string]any {
 	t.Helper()
-	doc := Document()
+	doc := Document(built())
 	paths, ok := doc["paths"].(map[string]any)
 	if !ok {
 		t.Fatalf("the document publishes no paths: %T", doc["paths"])

@@ -15,6 +15,8 @@
 package routers
 
 import (
+	"github.com/zap-proto/zip"
+
 	"reflect"
 	"strings"
 	"testing"
@@ -348,24 +350,23 @@ func TestIdlessActionsAreOnTheCollection(t *testing.T) {
 // be asserted rather than relied upon.
 func TestNoGeneratedRouteCollidesWithAHandWrittenOne(t *testing.T) {
 	// What the table generates, on its own.
-	gen := web.NewRouter()
+	gen := zip.New(zip.Config{DisableStartupMessage: true, ReadBufferSize: 32 << 10})
 	registerResources(gen)
 	generated := map[string]bool{}
-	for pat := range gen.Patterns() {
+	for pat := range Patterns(gen) {
 		generated[pat] = true
 	}
 
 	// What the whole surface registers, minus the table: the hand-written routes.
-	// App is the real, fully-initialised router.
 	hand := map[string]bool{}
-	for pat := range App.Patterns() {
+	for pat := range Patterns(built()) {
 		if !generated[pat] {
 			hand[pat] = true
 		}
 	}
 
 	// A generated pattern must not be a hand-written one. (Equal patterns collapse
-	// into ONE key in App.Patterns, so compare against a freshly-built hand set:
+	// into ONE key in the pattern map, so compare against a freshly-built hand set:
 	// any generated pattern that is ALSO written by hand in router.go is the bug.)
 	for pat := range generated {
 		if handWritten(pat) {
