@@ -1399,7 +1399,21 @@ func (c *ApiController) authResolveProvider(token, requestedModel, orgId string)
 // @Param   body    body    openai.ChatCompletionRequest  true    "The OpenAI chat request"
 // @Success 200 {object} openai.ChatCompletionResponse
 // @router /chat [post]
-func (c *ApiController) ChatCompletions() { c.chatCompletions(callerBearer) }
+// A completion renders itself to the client. A sink, when a caller supplies one,
+// renders it somewhere else instead: /v1/responses reads this same completion in a
+// second dialect, and used to do it by swapping the writer out of the request
+// context and reading what came back.
+//
+// Two functions, because a stream and a whole body are two different things and
+// collapsing them is what made the old version need a status machine. `wrap`
+// decorates the stream's destination as it is produced; `body` takes the
+// non-streaming answer entire.
+type sink struct {
+	wrap func(io.Writer) io.Writer
+	body func([]byte) error
+}
+
+func (c *ApiController) ChatCompletions() { c.chatCompletions(callerBearer, nil) }
 
 // caller says which door a completion arrived at, and therefore what is taken from
 // the request and what is decided for it. It is an unexported type with no decoded
@@ -1415,7 +1429,7 @@ const (
 
 // chatCompletions is the one completion pipeline. Both doors run it; they differ only
 // in who the caller is, which is a value passed in rather than a fact re-derived here.
-func (c *ApiController) chatCompletions(from caller) {
+func (c *ApiController) chatCompletions(from caller, to *sink) {
 	var token string
 	if from == callerBearer {
 		// Extract Bearer token
@@ -1882,8 +1896,18 @@ func (c *ApiController) chatCompletions(from caller) {
 				return
 			}
 
-			c.SetHeader("Content-Type", "application/json")
-			c.Bytes(http.StatusOK, jsonResponse)
+			// The whole answer, once. A sink takes it instead of the client, which is
+			// how /v1/responses translates a non-streaming completion — the status is
+			// still ours to send, and stays here.
+			if to != nil {
+				if err := to.body(jsonResponse); err != nil {
+					c.ResponseError(err.Error())
+					return
+				}
+			} else {
+				c.SetHeader("Content-Type", "application/json")
+				c.Bytes(http.StatusOK, jsonResponse)
+			}
 		} else {
 			err = writer.Close(
 				modelResult.PromptTokenCount,
@@ -1904,7 +1928,13 @@ func (c *ApiController) chatCompletions(from caller) {
 		c.SetHeader("Content-Type", "text/event-stream")
 		c.SetHeader("Cache-Control", "no-cache")
 		c.SetHeader("Connection", "keep-alive")
-		_ = c.SendStreamWriter(func(bw *bufio.Writer) { complete(bw) })
+		_ = c.SendStreamWriter(func(bw *bufio.Writer) {
+			out := io.Writer(bw)
+			if to != nil {
+				out = to.wrap(bw)
+			}
+			complete(out)
+		})
 	} else {
 		// Nothing is streamed: OpenAIWriter accumulates into MessageBuf and the one
 		// JSON body is written by complete itself, so there is no stream to name.

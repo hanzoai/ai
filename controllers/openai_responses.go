@@ -16,12 +16,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/web"
 	"github.com/hanzoai/go-openai"
 	"github.com/klauspost/compress/zstd"
@@ -74,9 +76,9 @@ type responsesContentPart struct {
 	ImageURL string `json:"image_url,omitempty"`
 }
 
-// Responses implements POST /v1/responses. The converted request is passed to
-// ChatCompletions and an installed ResponseWriter converts its OpenAI chat JSON
-// or SSE back into Responses JSON/SSE on the fly.
+// Responses implements POST /v1/responses. The converted request is completed by
+// the chat path, which is handed a sink saying where the answer goes: a stream is
+// translated as it is produced, a whole body is translated entire.
 func (c *ApiController) Responses() {
 	authHeader := c.Header("Authorization")
 	if !strings.HasPrefix(authHeader, "Bearer ") {
@@ -137,15 +139,43 @@ func (c *ApiController) Responses() {
 		return
 	}
 
-	original := c.Ctx.ResponseWriter.ResponseWriter
-	bridge := newResponsesBridgeWriter(original, &request, toolKinds)
-	c.Ctx.ResponseWriter.ResponseWriter = bridge
+	// This endpoint IS a chat completion, read in a second dialect. So it asks for
+	// one and says where the answer should go, rather than swapping the writer out
+	// of the request context and reading whatever came back through it.
+	//
+	// A stream is decorated as it is produced; a whole body is handed over entire.
+	// The bridge exists only on the streaming path, which is what `bridge != nil`
+	// means below.
+	var bridge *responsesBridge
+	to := &sink{
+		wrap: func(w io.Writer) io.Writer {
+			bridge = newResponsesBridge(w, &request, toolKinds)
+			return bridge
+		},
+		body: func(chat []byte) error {
+			out, err := openAIChatResponseToResponses(chat, &request, toolKinds)
+			if err != nil {
+				return err
+			}
+			c.SetHeader("Content-Type", "application/json")
+			return c.Bytes(http.StatusOK, out)
+		},
+	}
+
+	// The chat request on the wire, because the completion reads its own body. This
+	// is the request being made, not a place being patched.
 	c.Fiber().Request().SetBody(chatBody)
 	c.Fiber().Request().Header.Del("Content-Length")
 
-	c.ChatCompletions()
-	if err := bridge.Close(); err != nil && !c.Ctx.ResponseWriter.Started {
-		c.ResponseErrorWithStatus(http.StatusBadGateway, err.Error())
+	c.chatCompletions(callerBearer, to)
+
+	if bridge != nil {
+		// Logged, not answered: the events are already on the wire, so there is no
+		// status left to change. Losing it silently would leave a stream that simply
+		// stops with nothing to explain it.
+		if err := bridge.Close(); err != nil {
+			log.Error(fmt.Sprintf("Responses: closing the stream failed: %s", err.Error()))
+		}
 	}
 }
 
@@ -398,75 +428,42 @@ func responsesToolChoiceToChat(raw json.RawMessage) interface{} {
 	return nil
 }
 
-type responsesBridgeWriter struct {
-	dst        http.ResponseWriter
+// responsesBridge reads the chat completion this request was translated into and
+// writes it back out in the Responses dialect.
+//
+// It is handed BYTES, and that is the whole shape of it. The chat side used to
+// write through it as an http.ResponseWriter — status included — so it had to
+// intercept WriteHeader, withhold a success it was not ready to send, keep a
+// buffer of a body it meant to rewrite, and remember which of those it had done.
+// Every one of those existed to separate a body from a status arriving on the same
+// call. It now receives the two things it actually wants, separately: the stream's
+// chunks as they are produced, and — through the sink in openai_api.go — the
+// non-streaming body as one slice. The status is the handler's, and stays there.
+type responsesBridge struct {
+	out        io.Writer
 	request    *OpenAIResponsesRequest
 	toolKinds  map[string]string
-	status     int
-	stream     bool
-	buffer     bytes.Buffer
 	lineBuf    bytes.Buffer
 	translator *responsesStreamTranslator
 	mu         sync.Mutex
 	closed     bool
 }
 
-func newResponsesBridgeWriter(dst http.ResponseWriter, request *OpenAIResponsesRequest, toolKinds map[string]string) *responsesBridgeWriter {
-	return &responsesBridgeWriter{dst: dst, request: request, toolKinds: toolKinds, stream: request.Stream}
+func newResponsesBridge(out io.Writer, request *OpenAIResponsesRequest, toolKinds map[string]string) *responsesBridge {
+	return &responsesBridge{out: out, request: request, toolKinds: toolKinds}
 }
 
-func (w *responsesBridgeWriter) Header() http.Header { return w.dst.Header() }
-
-func (w *responsesBridgeWriter) WriteHeader(status int) {
+// Write takes the chat stream's SSE as it is produced and emits the Responses
+// events for it. Chunks arrive on no particular boundary, so a partial last line
+// is kept for the next call.
+func (w *responsesBridge) Write(p []byte) (int, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if w.status != 0 {
-		return
-	}
-	w.status = status
-	if status >= 200 && status < 300 && !w.stream {
-		// Delay the successful status and headers until Close translates the
-		// buffered Chat Completions JSON. In particular, do not send the chat
-		// body's Content-Length on the Responses body.
-		return
-	}
-	if status >= 200 && status < 300 && w.stream {
-		w.Header().Set("Content-Type", "text/event-stream")
-		w.Header().Set("Cache-Control", "no-cache")
-		w.Header().Set("Connection", "keep-alive")
-		w.Header().Del("Content-Length")
-		w.dst.WriteHeader(status)
-		w.translator = newResponsesStreamTranslator(w.emitLocked, w.request, w.toolKinds)
-		_ = w.translator.start()
-		return
-	}
-	w.dst.WriteHeader(status)
-}
-
-func (w *responsesBridgeWriter) Write(p []byte) (int, error) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	if w.status == 0 {
-		w.status = http.StatusOK
-		if !w.stream {
-			_, _ = w.buffer.Write(p)
-			return len(p), nil
-		}
-		w.Header().Set("Content-Type", "text/event-stream")
-		w.Header().Del("Content-Length")
-		w.dst.WriteHeader(w.status)
-	}
-	if w.status < 200 || w.status >= 300 {
-		_, err := w.dst.Write(p)
-		return len(p), err
-	}
-	if !w.stream {
-		_, _ = w.buffer.Write(p)
-		return len(p), nil
-	}
 	if w.translator == nil {
 		w.translator = newResponsesStreamTranslator(w.emitLocked, w.request, w.toolKinds)
-		_ = w.translator.start()
+		if err := w.translator.start(); err != nil {
+			return len(p), err
+		}
 	}
 	_, _ = w.lineBuf.Write(p)
 	for {
@@ -502,50 +499,41 @@ func (w *responsesBridgeWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-func (w *responsesBridgeWriter) Flush() {
-	if flusher, ok := w.dst.(http.Flusher); ok {
-		flusher.Flush()
+// Flush pushes each event as it is produced, which is what makes this a stream.
+// Two shapes, for the same reason OpenAIWriter takes both.
+func (w *responsesBridge) Flush() {
+	switch f := w.out.(type) {
+	case interface{ Flush() error }:
+		_ = f.Flush()
+	case interface{ Flush() }:
+		f.Flush()
 	}
 }
 
-func (w *responsesBridgeWriter) Close() error {
+// Close ends the event stream. Idempotent: the chat side sends [DONE], which
+// finishes the translator, and the handler closes again on the way out.
+func (w *responsesBridge) Close() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.closed {
 		return nil
 	}
 	w.closed = true
-	if w.status < 200 || w.status >= 300 {
+	if w.translator == nil {
 		return nil
 	}
-	if w.stream {
-		if w.translator != nil {
-			return w.translator.finish()
-		}
-		return nil
-	}
-	out, err := openAIChatResponseToResponses(w.buffer.Bytes(), w.request, w.toolKinds)
-	if err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(out)))
-	w.dst.WriteHeader(w.status)
-	_, err = w.dst.Write(out)
-	return err
+	return w.translator.finish()
 }
 
-func (w *responsesBridgeWriter) emitLocked(event string, data interface{}) error {
+func (w *responsesBridge) emitLocked(event string, data interface{}) error {
 	b, err := json.Marshal(data)
 	if err != nil {
 		return err
 	}
-	if _, err = fmt.Fprintf(w.dst, "event: %s\ndata: %s\n\n", event, b); err != nil {
+	if _, err = fmt.Fprintf(w.out, "event: %s\ndata: %s\n\n", event, b); err != nil {
 		return err
 	}
-	if flusher, ok := w.dst.(http.Flusher); ok {
-		flusher.Flush()
-	}
+	w.Flush()
 	return nil
 }
 

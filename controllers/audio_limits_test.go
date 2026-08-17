@@ -26,7 +26,6 @@ import (
 	"context"
 	"encoding/json"
 	"mime/multipart"
-	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -67,14 +66,10 @@ func transcribeBody(t *testing.T, fileBytes int) (body *bytes.Buffer, contentTyp
 // past MaxTranscribeUpload is reported as oversize, so the handler answers 413
 // instead of spending the parse, the copies and the upstream call on it.
 func TestTranscribeUploadOverLimitRefused(t *testing.T) {
-	body, ctype := transcribeBody(t, MaxTranscribeUpload+(1<<20))
-	r := httptest.NewRequest("POST", "/v1/audio/transcriptions", body)
-	r.Header.Set("Content-Type", ctype)
-
-	_, oversize, err := readTranscribeRequest(r)
-	if !oversize {
-		t.Fatalf("a %d MiB upload was accepted; the %d MiB bound did not bite (err=%v)",
-			(MaxTranscribeUpload+(1<<20))>>20, MaxTranscribeUpload>>20, err)
+	body, _ := transcribeBody(t, MaxTranscribeUpload+(1<<20))
+	if fits(body.Bytes()) {
+		t.Fatalf("a %d MiB upload was accepted; the %d MiB bound did not bite",
+			body.Len()>>20, MaxTranscribeUpload>>20)
 	}
 }
 
@@ -84,24 +79,26 @@ func TestTranscribeUploadOverLimitRefused(t *testing.T) {
 // one byte past the bound rather than exactly the bound.
 func TestTranscribeUploadAtLimitAccepted(t *testing.T) {
 	// A form whose TOTAL is just under the bound: audio plus the MIME framing.
-	body, ctype := transcribeBody(t, MaxTranscribeUpload-(1<<16))
+	body, _ := transcribeBody(t, MaxTranscribeUpload-(1<<16))
 	if body.Len() > MaxTranscribeUpload {
 		t.Fatalf("test fixture is %d bytes, over the %d bound", body.Len(), MaxTranscribeUpload)
 	}
-	r := httptest.NewRequest("POST", "/v1/audio/transcriptions", body)
-	r.Header.Set("Content-Type", ctype)
 
-	form, oversize, err := readTranscribeRequest(r)
-	if oversize {
+	if !fits(body.Bytes()) {
 		t.Fatal("an upload UNDER the bound was refused as oversize")
 	}
+	// And it parses, which is the half a bound alone does not prove: a ceiling that
+	// admits a body the reader then chokes on has moved the failure, not raised it.
+	form, err := parseTranscribeForm(body.Bytes())
 	if err != nil {
-		t.Fatalf("readTranscribeRequest: %v", err)
+		t.Fatalf("parseTranscribeForm: %v", err)
 	}
 	if form.model != "whisper" {
 		t.Errorf("model = %q, want whisper", form.model)
 	}
-	form.file.Close()
+	if form.audio == nil {
+		t.Error("the largest legitimate upload produced no audio")
+	}
 }
 
 // TestSpeechInputOverLimitRefused drives the real ZAP speech handler with an
