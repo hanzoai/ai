@@ -26,6 +26,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/model"
@@ -616,7 +618,11 @@ func writeDocsToVector(indexName string, docs []DocIndex, replace bool, lang str
 				continue
 			}
 			points = append(points, qdrantPoint{
-				ID:     doc.ID,
+				// Hanzo Vector accepts only unsigned-integer or UUID point ids;
+				// the chunk id is a hex hash, so it rides as a deterministic
+				// UUID (same id → same point → upsert stays an upsert) and the
+				// payload keeps the original for reads.
+				ID:     uuid.NewSHA1(uuid.NameSpaceOID, []byte(doc.ID)).String(),
 				Vector: vecs[j],
 				Payload: map[string]interface{}{
 					"id": doc.ID, "page_id": doc.PageID, "title": doc.Title,
