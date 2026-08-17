@@ -56,10 +56,9 @@ func (c *ApiController) Embeddings() {
 	if !ok {
 		return
 	}
-	if isPublishableKey(token) {
-		c.rejectPublishableKey()
-		return
-	}
+	// Publishable (pk-) keys are ACCEPTED here: embeddings are read-only, and
+	// the pk- key is the documented least-privilege credential for this
+	// endpoint. authResolveProvider bills the key's own org.
 
 	var head struct {
 		Model string `json:"model"`
@@ -311,7 +310,7 @@ func (c *ApiController) bearerToken() (string, bool) {
 func (c *ApiController) rejectPublishableKey() {
 	c.Ctx.Output.SetStatus(403)
 	c.Ctx.Output.Header("Content-Type", "application/json")
-	c.Ctx.Output.Body([]byte(`{"error":{"message":"Publishable keys (pk-) can only access read-only endpoints (/v1/models, /health). Use a secret key (sk-) for this endpoint.","type":"auth_error","code":403}}`))
+	c.Ctx.Output.Body([]byte(`{"error":{"message":"Publishable keys (pk-) can only access read-only endpoints (/v1/models, /v1/embeddings, /health). Use a secret key (sk-) for this endpoint.","type":"auth_error","code":403}}`))
 	c.EnableRender = false
 }
 
