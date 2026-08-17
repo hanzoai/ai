@@ -383,6 +383,13 @@ func (c *ApiController) proxyJSON(provider *object.Provider, apiPath string, bod
 		return
 	}
 
+	// The same rule the family path above already states: a vendor whose account
+	// with us is spent must not be forwarded as the caller's own 402.
+	if resp.StatusCode != http.StatusOK {
+		c.ResponseFailure(relay(userModel, provider.Name, resp.StatusCode, respBody))
+		return
+	}
+
 	// Extract usage (prompt/total tokens) for billing when present.
 	var upstreamResp struct {
 		Usage struct {

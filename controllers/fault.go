@@ -429,6 +429,53 @@ func billingNotice(body []byte) bool {
 	return false
 }
 
+// relay is the refusal a caller is answered with when a PROXIED upstream refuses,
+// and the point at which an operator learns the upstream refused at all.
+//
+// Three cases, two of which wear the same 402 and mean opposite things:
+//
+//	our own spend gate, relayed by a service that fronts for us — the CUSTOMER
+//	owes money. It is theirs to fix, so it reaches them with its status and its
+//	code intact.
+//
+//	the vendor refusing US — our account with them is spent, or they are down.
+//	The caller owes nothing and has no action that helps, so it answers 503 the
+//	way an exhausted route does. Forwarding the 402 tells a funded customer they
+//	are out of credit and sends every client that acts on one to fix a bill that
+//	is not theirs.
+//
+//	the request itself — malformed, unknown model, refused content. Every vendor
+//	answers it identically, so the vendor's own status is the honest one and the
+//	caller is the only party who can clear it.
+//
+// It is the rule the failover loop and the family pipe apply, asked here on behalf
+// of the surfaces that never reach them: a request carrying tools or images skips
+// the completion pipeline, because that pipeline is text-only and would drop both.
+//
+// The upstream's own body never travels — only the sentence read out of it — for
+// the same reason exhausted() quotes one line rather than the whole envelope.
+func relay(model, provider string, status int, body []byte) error {
+	err := &apiError{status: status, msg: upstreamErrorMessage(body)}
+
+	// Ours, spoken through a service that fronts for us. Nobody upstream refused,
+	// so there is nothing here for an operator to act on.
+	if billingNotice(body) {
+		err.code = object.CodeInsufficientBalance
+		return err
+	}
+
+	// Somebody upstream refused, whoever it turns out to be at fault. That is
+	// worth knowing before a customer reports it, so it is recorded first and
+	// the caller's answer is decided after.
+	at := attempt{provider: provider, status: status, fault: faultOf(err), err: err}
+	announce(model, at)
+
+	if at.fault != faultProvider {
+		return err
+	}
+	return exhausted(model, []attempt{at})
+}
+
 // candidate is one provider that could serve this model, and the id to ask it
 // for.
 type candidate struct {

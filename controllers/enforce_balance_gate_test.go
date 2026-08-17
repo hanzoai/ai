@@ -16,14 +16,17 @@ package controllers
 
 import (
 	"fmt"
-	"github.com/hanzoai/decimal"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
 
+	"github.com/hanzoai/decimal"
+
+	"github.com/hanzoai/ai/funding"
 	"github.com/hanzoai/ai/internal/iam"
+	"github.com/hanzoai/ai/object"
 )
 
 // fakeCommerceBalance stands up a stub of commerce GET /v1/billing/balance that
@@ -85,6 +88,80 @@ func TestEnforceBalanceGate(t *testing.T) {
 				t.Fatalf("status=%d, want %d (err=%v)", got, tc.want, err)
 			}
 		})
+	}
+}
+
+// armed publishes a breached cash ceiling for the duration of one test.
+func armed(t *testing.T) funding.State {
+	t.Helper()
+	s := funding.State{OnCash: true, TodayCents: 50000, CeilingCents: 50000}
+	funding.Publish(s)
+	t.Cleanup(func() { funding.Publish(funding.State{}) })
+	return s
+}
+
+// A ceiling that stops OUR spending is not a bill the caller can pay.
+//
+// funding.Refuse is a fact about the Hanzo bank account: upstream credit is gone
+// and today's cash has reached a ceiling an operator armed. The caller's wallet is
+// untouched, so 402 tells a funded customer they owe money — and its code sends
+// every client that switches on one straight to a billing prompt. The measured
+// shape is a wallet reading available: 14969935 alongside the refusal.
+func TestOurSpendCeilingIsNotTheCallersBill(t *testing.T) {
+	available := int64(14969935)
+	t.Setenv("commerceEndpoint", fakeCommerceBalance(t, &available))
+	t.Setenv("commerceToken", "test-svc-token")
+	cash := armed(t)
+
+	err := enforceBalanceGate(&iam.User{Owner: "funded-org", Type: "application"}, "", "glm-5.2")
+	if err == nil {
+		t.Fatal("an armed, breached ceiling must refuse — it is the whole point of the breaker")
+	}
+	if got := statusOf(err); got == http.StatusPaymentRequired {
+		t.Errorf("status=402 — our own supplier ceiling was billed to a caller holding $%.2f",
+			float64(available)/100)
+	}
+	if got := statusOf(err); got != http.StatusServiceUnavailable {
+		t.Errorf("status=%d, want 503 — the caller did nothing wrong and has no action that helps", got)
+	}
+	if got := codeOf(err); got == object.CodeInsufficientBalance {
+		t.Errorf("code=%q — a client switching on this shows a funded customer a billing prompt", got)
+	}
+	if codeOf(err) == "" {
+		t.Error("the refusal carries no code, so nothing downstream can tell it from a 503 that " +
+			"means every provider refused")
+	}
+	// Our cash position is what we pay to buy inference. The envelope door keeps it
+	// out of a served answer; a refusal must not carry it out the other way.
+	for _, tell := range []string{
+		fmt.Sprintf("%.2f", float64(cash.CeilingCents)/100),
+		fmt.Sprintf("%.2f", float64(cash.TodayCents)/100),
+		"CLOUD_DAILY_CASH_CEILING_CENTS",
+	} {
+		if strings.Contains(err.Error(), tell) {
+			t.Errorf("the refusal a customer reads discloses %q: %s", tell, err)
+		}
+	}
+}
+
+// The other half, and the one a fix to the above can silently eat: a caller who
+// genuinely IS out of credit still gets 402 and the code that says so. Collapsing
+// both conditions into 503 would hide a real bill as well as a false one.
+func TestAnEmptyWalletIsStillTheCallersBill(t *testing.T) {
+	available := int64(0)
+	t.Setenv("commerceEndpoint", fakeCommerceBalance(t, &available))
+	t.Setenv("commerceToken", "test-svc-token")
+
+	err := enforceBalanceGate(&iam.User{Owner: "broke-org", Type: "application"}, "", "glm-5.2")
+	if err == nil {
+		t.Fatal("a zero balance must be refused")
+	}
+	if got := statusOf(err); got != http.StatusPaymentRequired {
+		t.Errorf("status=%d, want 402 — this debt IS the caller's and has to reach them", got)
+	}
+	if got := codeOf(err); got != object.CodeInsufficientBalance {
+		t.Errorf("code=%q, want %q — the one code a client acts on by offering a top-up",
+			got, object.CodeInsufficientBalance)
 	}
 }
 
