@@ -82,20 +82,20 @@ func TestBearerTokenFromRequestCookieFallback(t *testing.T) {
 	r := httptest.NewRequest(http.MethodGet, "/v1/get-account", nil)
 	r.Header.Set("Authorization", "Bearer "+headerTok)
 	r.AddCookie(&http.Cookie{Name: iamTokenCookieName, Value: cookieTok})
-	if got := bearerTokenFromRequest(r); got != headerTok {
+	if got := bearerToken(r); got != headerTok {
 		t.Errorf("header precedence: got %q, want %q", got, headerTok)
 	}
 
 	// Cookie only (no Authorization header): the self-heal path must resolve it.
 	r2 := httptest.NewRequest(http.MethodGet, "/v1/get-account", nil)
 	r2.AddCookie(&http.Cookie{Name: iamTokenCookieName, Value: cookieTok})
-	if got := bearerTokenFromRequest(r2); got != cookieTok {
+	if got := bearerToken(r2); got != cookieTok {
 		t.Errorf("cookie fallback: got %q, want %q (a cookie-only browser must still carry a credential)", got, cookieTok)
 	}
 
 	// Neither: no credential.
 	r3 := httptest.NewRequest(http.MethodGet, "/v1/get-account", nil)
-	if got := bearerTokenFromRequest(r3); got != "" {
+	if got := bearerToken(r3); got != "" {
 		t.Errorf("no credential: got %q, want empty", got)
 	}
 }

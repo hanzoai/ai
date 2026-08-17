@@ -16,7 +16,7 @@ package controllers
 
 // The zstd bound on /v1/responses, asserted against the shape that defeats it.
 //
-// web.CopyBody bounds every body at web.MaxBody, so the input reaching this
+// The socket bounds every body at zip.Config.BodyLimit, so the input reaching this
 // decoder is already capped. That cap bounds nothing that costs memory: zstd's
 // ratio on repetitive input runs to thousands to one, and the decoder's own
 // default ceiling is 64 GiB. The bound has to be on the OUTPUT.
@@ -46,7 +46,7 @@ func zstdBomb(t *testing.T, plainBytes int) []byte {
 }
 
 // TestDecodeResponsesZstdBoundsOutput proves the decoder refuses a frame that
-// expands past web.MaxBody, and refuses it WITHOUT allocating what it would
+// expands past MaxDecoded, and refuses it WITHOUT allocating what it would
 // have expanded to.
 //
 // The assertion is on BYTES ALLOCATED, not on the error. An error returned
@@ -56,7 +56,7 @@ func TestDecodeResponsesZstdBoundsOutput(t *testing.T) {
 	// One byte past the bound is still over it, but building a bomb that big
 	// would cost the test what it is asserting nobody pays. 4x the bound is
 	// unambiguously over and cheap to construct.
-	plain := int(web.MaxBody) * 4
+	plain := int(MaxDecoded) * 4
 	bomb := zstdBomb(t, plain)
 
 	var before, after runtime.MemStats
@@ -67,7 +67,7 @@ func TestDecodeResponsesZstdBoundsOutput(t *testing.T) {
 
 	if err == nil {
 		t.Fatalf("a %d MiB expansion under a %d MiB bound was accepted (%d MiB returned)",
-			plain>>20, web.MaxBody>>20, len(got)>>20)
+			plain>>20, MaxDecoded>>20, len(got)>>20)
 	}
 	if !errors.Is(err, zstd.ErrDecoderSizeExceeded) {
 		t.Fatalf("err = %v, want ErrDecoderSizeExceeded — callers key 413 off that "+
@@ -76,11 +76,11 @@ func TestDecodeResponsesZstdBoundsOutput(t *testing.T) {
 	// Refusing costs the decoder's window and buffers, not the expansion. Reading
 	// the whole bomb costs at least the 256 MiB it expands to. Nothing lands
 	// between, so this ceiling separates the fix from the bug.
-	ceiling := uint64(web.MaxBody)
+	ceiling := uint64(MaxDecoded)
 	if allocated > ceiling {
 		t.Fatalf("decode allocated %d MiB refusing a %d KiB frame that expands to %d MiB "+
 			"under a %d MiB bound — the bound is not on the decoder's output",
-			allocated>>20, len(bomb)>>10, plain>>20, web.MaxBody>>20)
+			allocated>>20, len(bomb)>>10, plain>>20, MaxDecoded>>20)
 	}
 }
 
@@ -108,12 +108,12 @@ func TestDecodeResponsesZstdRoundTrips(t *testing.T) {
 // an off-by-one that refuses the largest legal body. This is the mutation a
 // `>=` would introduce.
 func TestDecodeResponsesZstdAtLimitAccepted(t *testing.T) {
-	got, err := decodeResponsesZstd(zstdBomb(t, int(web.MaxBody)))
+	got, err := decodeResponsesZstd(zstdBomb(t, int(MaxDecoded)))
 	if err != nil {
 		t.Fatalf("a body of EXACTLY the bound was refused (%v); the bound is off by one", err)
 	}
-	if int64(len(got)) != web.MaxBody {
-		t.Fatalf("decoded %d bytes, want the full %d", len(got), web.MaxBody)
+	if int64(len(got)) != MaxDecoded {
+		t.Fatalf("decoded %d bytes, want the full %d", len(got), MaxDecoded)
 	}
 }
 
