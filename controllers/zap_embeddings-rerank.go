@@ -322,5 +322,10 @@ func zapProxyJSON(ctx context.Context, provider *object.Provider, apiPath string
 		recordTrace(ctx, rec, startTime)
 	}
 
+	// The HTTP twin's rule, on the twin surface: the request went upstream with its
+	// model rewritten, so the answer names the model the caller asked for.
+	if out, err := setJSONModel(respBody, userModel); err == nil {
+		respBody = out
+	}
 	return object.BuildCloudResponse(uint32(resp.StatusCode), respBody, "")
 }

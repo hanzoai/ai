@@ -80,10 +80,18 @@ func wrapUpstreamError(err error) error {
 // failure FROM THE CLIENT'S PERSPECTIVE — its own credential was already
 // validated upstream — so statusOf's auth-fail-secure default (401) is mapped to
 // 500 here. This is the one place that distinction is made.
+//
+// 402 is the same argument about money instead of identity, and it is the more
+// expensive one to get wrong. A vendor's 402 says OUR account with that vendor is
+// spent; forwarded, it tells a funded customer they are out of credit and sends
+// every client that acts on a 402 to fix a bill that is not theirs. 503 is the
+// true statement, and the same one exhausted() makes.
 func statusForModelError(err error) int {
 	switch s := statusOf(err); s {
 	case http.StatusUnauthorized:
 		return http.StatusInternalServerError
+	case http.StatusPaymentRequired:
+		return http.StatusServiceUnavailable
 	default:
 		return s
 	}
