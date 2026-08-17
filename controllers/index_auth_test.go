@@ -23,7 +23,6 @@ import (
 	"github.com/hanzoai/ai/conf"
 	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/object"
-	web "github.com/hanzoai/ai/web"
 )
 
 // ctrlFakeSession is a minimal session.Store for controller auth tests — the router's
@@ -44,7 +43,6 @@ func (s *ctrlFakeSession) Flush() error {
 // newAuthController builds an ApiController wired to a recorder, an optional
 // session user, and an optional Authorization header.
 func newAuthController(method, path, authHeader string, user *iam.User) (*ApiController, *httptest.ResponseRecorder) {
-	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(method, path, nil)
 	if authHeader != "" {
 		req.Header.Set("Authorization", authHeader)
@@ -94,8 +92,8 @@ func TestRequireIndexAuthNoCredentialIsUnauthorized(t *testing.T) {
 	if auth != nil {
 		t.Fatalf("requireIndexAuth for a no-credential caller returned %+v; want nil (deny)", auth)
 	}
-	if rec.Code != http.StatusUnauthorized {
-		t.Errorf("no-credential requireIndexAuth status = %d, want 401", rec.Code)
+	if answered(c) != http.StatusUnauthorized {
+		t.Errorf("no-credential requireIndexAuth status = %d, want 401", answered(c))
 	}
 }
 
@@ -110,8 +108,8 @@ func TestRequireIndexAuthPublishableKeyForbidden(t *testing.T) {
 	if auth != nil {
 		t.Fatalf("requireIndexAuth for a pk- key returned %+v; want nil (deny)", auth)
 	}
-	if rec.Code != http.StatusForbidden {
-		t.Errorf("pk- write requireIndexAuth status = %d, want 403", rec.Code)
+	if answered(c) != http.StatusForbidden {
+		t.Errorf("pk- write requireIndexAuth status = %d, want 403", answered(c))
 	}
 }
 
@@ -144,8 +142,8 @@ func TestResolveSearchAuthNoCredentialIsUnauthorized(t *testing.T) {
 	if auth != nil {
 		t.Fatalf("resolveSearchAuth for a no-credential caller returned %+v; want nil", auth)
 	}
-	if rec.Code != http.StatusUnauthorized {
-		t.Errorf("no-credential resolveSearchAuth status = %d, want 401 (was 200 via plain ResponseError)", rec.Code)
+	if answered(c) != http.StatusUnauthorized {
+		t.Errorf("no-credential resolveSearchAuth status = %d, want 401 (was 200 via plain ResponseError)", answered(c))
 	}
 }
 

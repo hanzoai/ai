@@ -8,16 +8,14 @@ import (
 	"testing"
 
 	"github.com/hanzoai/ai/object"
-	"github.com/hanzoai/ai/web"
 )
 
 // filterProbe runs the filter over one request and reports what it wrote.
 func filterProbe(t *testing.T) *httptest.ResponseRecorder {
 	t.Helper()
 	rec := httptest.NewRecorder()
-	ctx := web.NewContext()
-	ctx.Reset(rec, httptest.NewRequest(http.MethodGet, "/v1/models", nil))
-	AuthAvailableFilter(ctx)
+	p := ask(http.MethodGet, "/v1/models")
+	AuthAvailableFilter(p.Ctx)
 	return rec
 }
 
@@ -33,13 +31,13 @@ func TestAuthAvailableFilter_RefusesWith503WhenIdentityIsDown(t *testing.T) {
 	t.Setenv("IAM_APP_NAME", "hanzo-cloud")
 
 	rec := filterProbe(t)
-	if rec.Code != http.StatusServiceUnavailable {
-		t.Fatalf("status = %d, want 503 — a 401 here blames the caller for our outage", rec.Code)
+	if p.status() != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503 — a 401 here blames the caller for our outage", p.status())
 	}
-	if got := rec.Header().Get("Retry-After"); got == "" {
+	if got := p.replied("Retry-After"); got == "" {
 		t.Error("no Retry-After: a client cannot tell a transient refusal from a permanent one")
 	}
-	if body := rec.Body.String(); body == "" {
+	if body := p.said(); body == "" {
 		t.Error("the refusal says nothing about why")
 	}
 }
@@ -52,10 +50,10 @@ func TestAuthAvailableFilter_PassesWhenNoIAMIsConfigured(t *testing.T) {
 	t.Setenv("IAM_URL", "")
 
 	rec := filterProbe(t)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want the request to pass untouched (200 is the recorder's default)", rec.Code)
+	if p.status() != http.StatusOK {
+		t.Fatalf("status = %d, want the request to pass untouched (200 is the recorder's default)", p.status())
 	}
 	if rec.Body.Len() != 0 {
-		t.Fatalf("the filter wrote a body on the pass path: %q", rec.Body.String())
+		t.Fatalf("the filter wrote a body on the pass path: %q", p.said())
 	}
 }

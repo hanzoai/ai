@@ -26,7 +26,6 @@ import (
 	"github.com/hanzoai/account"
 
 	"github.com/hanzoai/ai/internal/iam"
-	"github.com/hanzoai/ai/web"
 )
 
 // balanceProbe records the exact wire the balance gate puts on commerce: the
@@ -142,10 +141,7 @@ func orgController(auth, requested string) *ApiController {
 	if requested != "" {
 		req.Header.Set("X-Org-Id", requested)
 	}
-	ctx := web.NewContext()
-	ctx.Reset(httptest.NewRecorder(), req)
-	c := &ApiController{}
-	c.Init(ctx, "ApiController", "X", nil)
+	c := visit("GET", "/v1/")
 	return c
 }
 

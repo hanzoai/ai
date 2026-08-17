@@ -15,7 +15,6 @@
 package routers
 
 import (
-	"github.com/hanzoai/ai/web"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -314,12 +313,12 @@ func TestAPageKeyIsThrottledOnItsOwnKey(t *testing.T) {
 		served := 0
 		for i := 0; i < burst+5; i++ {
 			rec := httptest.NewRecorder()
-			ctx := web.NewContext()
+			p := web.NewContext()
 			req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(`{}`))
-			req.Header.Set("Authorization", "Bearer "+key)
+			p = p.with("Authorization", "Bearer "+key)
 			ctx.Reset(rec, req)
-			RateLimitFilter(ctx)
-			if rec.Code != http.StatusTooManyRequests {
+			RateLimitFilter(p.Ctx)
+			if p.status() != http.StatusTooManyRequests {
 				served++
 			}
 		}

@@ -324,12 +324,10 @@ func TestBalanceGateFilterExemptsReads(t *testing.T) {
 
 	status := func(method, path string) int {
 		req := httptest.NewRequest(method, path, nil)
-		req.Header.Set("Authorization", "Bearer tok")
+		p = p.with("Authorization", "Bearer tok")
 		rec := httptest.NewRecorder()
-		ctx := web.NewContext()
-		ctx.Reset(rec, req)
-		BalanceGateFilter(ctx)
-		return rec.Code
+		BalanceGateFilter(p.Ctx)
+		return p.status()
 	}
 
 	// Reads to gated paths (a metered path plus product-subsystem reads) must NOT 402
@@ -447,16 +445,14 @@ func TestBalanceGateFilterTransientReturns503(t *testing.T) {
 	t.Cleanup(func() { balanceGate = prev })
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
-	req.Header.Set("Authorization", "Bearer tok")
+	p = p.with("Authorization", "Bearer tok")
 	rec := httptest.NewRecorder()
-	ctx := web.NewContext()
-	ctx.Reset(rec, req)
-	BalanceGateFilter(ctx)
+	BalanceGateFilter(p.Ctx)
 
-	if rec.Code != http.StatusServiceUnavailable {
-		t.Fatalf("transient billing failure on a metered write: status=%d, want 503", rec.Code)
+	if p.status() != http.StatusServiceUnavailable {
+		t.Fatalf("transient billing failure on a metered write: status=%d, want 503", p.status())
 	}
-	body := rec.Body.String()
+	body := p.said()
 	if !strings.Contains(body, `"code":"balance_unavailable"`) {
 		t.Errorf("body must carry code balance_unavailable, got %s", body)
 	}
@@ -490,16 +486,14 @@ func TestAZeroPricedModelIsNotRefusedByTheWalletGate(t *testing.T) {
 
 	post := func(body string) int {
 		req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body))
-		req.Header.Set("Authorization", "Bearer tok")
+		p = p.with("Authorization", "Bearer tok")
 		rec := httptest.NewRecorder()
-		ctx := web.NewContext()
-		ctx.Reset(rec, req)
 		// The SAME call the router makes at the top of ServeHTTP, above the filter
 		// chain — so this proves the body is actually there when the gate looks,
 		// rather than assuming it by setting the field by hand.
 		ctx.Input.CopyBody(1 << 20)
-		BalanceGateFilter(ctx)
-		return rec.Code
+		BalanceGateFilter(p.Ctx)
+		return p.status()
 	}
 
 	if code := post(`{"model":"enso-free","messages":[]}`); code == http.StatusPaymentRequired {

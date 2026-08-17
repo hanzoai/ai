@@ -23,7 +23,6 @@ import (
 	"testing"
 
 	iam "github.com/hanzoai/ai/internal/iam"
-	web "github.com/hanzoai/ai/web"
 
 	"github.com/hanzoai/ai/object"
 )
@@ -35,7 +34,6 @@ func fptr(f float64) *float64 { return &f }
 // GetSessionUser resolves without a live session manager), for the reward
 // endpoints' status/scope tests.
 func newRewardController(method, url, body string, user *iam.User) (*ApiController, *httptest.ResponseRecorder) {
-	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(method, url, strings.NewReader(body))
 	ctx := web.NewContext()
 	ctx.Reset(rec, req)
@@ -200,8 +198,8 @@ func TestAddRoutingRewardStatus(t *testing.T) {
 	attachRoutingReward = mustNotCall
 	c, rec := newRewardController("POST", "/v1/feedback", `{"request_id":"r","reward":0.5}`, nil)
 	c.AddRoutingReward()
-	if rec.Code != 401 {
-		t.Errorf("no principal → %d, want 401", rec.Code)
+	if answered(c) != 401 {
+		t.Errorf("no principal → %d, want 401", answered(c))
 	}
 
 	// 400: malformed body, missing request_id, out-of-range reward.
@@ -209,8 +207,8 @@ func TestAddRoutingRewardStatus(t *testing.T) {
 		attachRoutingReward = mustNotCall
 		c, rec := newRewardController("POST", "/v1/feedback", body, acme)
 		c.AddRoutingReward()
-		if rec.Code != 400 {
-			t.Errorf("body %q → %d, want 400", body, rec.Code)
+		if answered(c) != 400 {
+			t.Errorf("body %q → %d, want 400", body, answered(c))
 		}
 	}
 
@@ -224,8 +222,8 @@ func TestAddRoutingRewardStatus(t *testing.T) {
 	}
 	c, rec = newRewardController("POST", "/v1/feedback", `{"request_id":"chatcmpl-abc","reward":0.5}`, acme)
 	c.AddRoutingReward()
-	if rec.Code != 404 {
-		t.Errorf("unknown request_id → %d, want 404", rec.Code)
+	if answered(c) != 404 {
+		t.Errorf("unknown request_id → %d, want 404", answered(c))
 	}
 	if gotOrg != "acme" || gotReq != "abc" || gotReward != 0.5 {
 		t.Errorf("attach args = (%q, %q, %v), want (acme, abc, 0.5)", gotOrg, gotReq, gotReward)
@@ -242,8 +240,8 @@ func TestAddRoutingRewardStatus(t *testing.T) {
 	}
 	c, rec = newRewardController("POST", "/v1/feedback", `{"request_id":"abc","signal":"rating","rating":3}`, acme)
 	c.AddRoutingReward()
-	if rec.Code != 200 {
-		t.Fatalf("found → %d, want 200 (body %s)", rec.Code, rec.Body.String())
+	if answered(c) != 200 {
+		t.Fatalf("found → %d, want 200 (body %s)", answered(c), sent(c))
 	}
 	if gotReward != 1 {
 		t.Errorf("rating 3 stored reward = %v, want 1", gotReward)
@@ -263,8 +261,8 @@ func TestAddRoutingRewardStatus(t *testing.T) {
 	attachRoutingReward = mustNotCall
 	c, rec = newRewardController("POST", "/v1/feedback", `{"request_id":"abc","signal":"dismiss"}`, acme)
 	c.AddRoutingReward()
-	if rec.Code != 200 {
-		t.Fatalf("dismiss → %d, want 200 (body %s)", rec.Code, rec.Body.String())
+	if answered(c) != 200 {
+		t.Fatalf("dismiss → %d, want 200 (body %s)", answered(c), sent(c))
 	}
 	env = struct {
 		Status string              `json:"status"`

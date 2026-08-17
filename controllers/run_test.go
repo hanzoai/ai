@@ -8,8 +8,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-
-	"github.com/hanzoai/ai/web"
 )
 
 // installRun installs a resolver for one test and takes it away afterwards, so no
@@ -179,10 +177,6 @@ func runController(t *testing.T, token, orgHeader string) *ApiController {
 	if orgHeader != "" {
 		req.Header.Set("X-Org-Id", orgHeader)
 	}
-	ctx := web.NewContext()
-	ctx.Reset(httptest.NewRecorder(), req)
-	ctx.Input.CruSession = &ctrlFakeSession{data: map[interface{}]interface{}{}}
-	c := &ApiController{}
-	c.Init(ctx, "ApiController", "ChatCompletions", nil)
+	c := visit("GET", "/v1/")
 	return c
 }

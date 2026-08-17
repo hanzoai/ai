@@ -20,18 +20,16 @@ func tapCtx(method, path, country, region, ip string) *web.Context {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(method, path, nil)
 	if country != "" {
-		req.Header.Set("CF-IPCountry", country)
+		p = p.with("CF-IPCountry", country)
 	}
 	if region != "" {
-		req.Header.Set("CF-Region-Code", region)
+		p = p.with("CF-Region-Code", region)
 	}
 	if ip != "" {
-		req.Header.Set("CF-Connecting-IP", ip)
-		req.Header.Set("X-Forwarded-For", ip)
+		p = p.with("CF-Connecting-IP", ip)
+		p = p.with("X-Forwarded-For", ip)
 	}
-	ctx := web.NewContext()
-	ctx.Reset(rec, req)
-	return ctx
+	return p.Ctx
 }
 
 // TestTrafficTapFilter_RecordsGeoNotIP proves the tap folds the edge COUNTRY/REGION
@@ -42,7 +40,7 @@ func TestTrafficTapFilter_RecordsGeoNotIP(t *testing.T) {
 	// Drive the exact records the filter would make (it reads only these two
 	// headers), into an isolated aggregate, and assert the IP never appears.
 	agg := object.NewTrafficAggregator()
-	ctx := tapCtx("POST", "/v1/chat/completions", "US", "CA", "203.0.113.7")
+	p := tapCtx("POST", "/v1/chat/completions", "US", "CA", "203.0.113.7")
 	agg.Record(
 		ctx.Request.Header.Get("CF-IPCountry"),
 		ctx.Request.Header.Get("CF-Region-Code"),
@@ -93,7 +91,7 @@ func TestTrafficTapFilter_SkipsNonProductTraffic(t *testing.T) {
 // request with no CF headers at all (local/dev, or an edge that strips them). It
 // records an unresolved hit (counted in totals, no point) and returns.
 func TestTrafficTapFilter_RunsCleanWithoutHeaders(t *testing.T) {
-	ctx := tapCtx("POST", "/v1/chat/completions", "", "", "")
+	p := tapCtx("POST", "/v1/chat/completions", "", "", "")
 	// Must not panic.
-	TrafficTapFilter(ctx)
+	TrafficTapFilter(p.Ctx)
 }

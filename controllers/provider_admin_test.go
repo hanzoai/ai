@@ -23,7 +23,6 @@ import (
 
 	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/object"
-	web "github.com/hanzoai/ai/web"
 )
 
 // ── adminProviderView projection ────────────────────────────────────────────
@@ -166,7 +165,6 @@ func TestAdminProviderView_NeverSerializesSecrets(t *testing.T) {
 // newGuardController builds an ApiController with an httptest recorder and a session
 // optionally carrying `user` as the principal.
 func newGuardController(user *iam.User) (*ApiController, *httptest.ResponseRecorder) {
-	rec := httptest.NewRecorder()
 	ctx := web.NewContext()
 	ctx.Reset(rec, httptest.NewRequest("POST", "/v1/admin/providers/toggle", nil))
 	sess := &ctrlFakeSession{data: map[interface{}]interface{}{}}
@@ -184,8 +182,8 @@ func TestRequireSuperAdmin_NoPrincipal401(t *testing.T) {
 	if c.RequireSuperAdmin() {
 		t.Error("RequireSuperAdmin() = true for no principal, want false (deny)")
 	}
-	if rec.Code != http.StatusUnauthorized {
-		t.Errorf("no-principal status = %d, want 401", rec.Code)
+	if answered(c) != http.StatusUnauthorized {
+		t.Errorf("no-principal status = %d, want 401", answered(c))
 	}
 }
 
@@ -195,8 +193,8 @@ func TestRequireSuperAdmin_OrgAdminForbidden403(t *testing.T) {
 	if c.RequireSuperAdmin() {
 		t.Error("RequireSuperAdmin() = true for an ORG admin, want false (not a platform admin)")
 	}
-	if rec.Code != http.StatusForbidden {
-		t.Errorf("org-admin status = %d, want 403", rec.Code)
+	if answered(c) != http.StatusForbidden {
+		t.Errorf("org-admin status = %d, want 403", answered(c))
 	}
 }
 
@@ -208,7 +206,7 @@ func TestRequireSuperAdmin_SuperAdminPasses(t *testing.T) {
 	}
 	// Pass path writes nothing (the handler continues).
 	if rec.Body.Len() != 0 {
-		t.Errorf("super-admin pass wrote a body %q, want none", rec.Body.String())
+		t.Errorf("super-admin pass wrote a body %q, want none", sent(c))
 	}
 }
 
