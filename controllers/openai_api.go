@@ -16,6 +16,7 @@
 package controllers
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -1269,7 +1270,7 @@ func (c *ApiController) authResolveProvider(token, requestedModel, orgId string)
 			err = wrapAuth(err)
 			return
 		}
-		c.Ctx.Input.SetParam("recordUserId", authUser.Owner+"/run")
+		c.Locals("recordUserId", authUser.Owner+"/run")
 		return
 
 	case isWidgetKey(token):
@@ -1298,7 +1299,7 @@ func (c *ApiController) authResolveProvider(token, requestedModel, orgId string)
 		}
 		authUser = &iam.User{Owner: owner, Type: "application"}
 		upstreamModel = widgetUpstream
-		c.Ctx.Input.SetParam("recordUserId", owner+"/widget")
+		c.Locals("recordUserId", owner+"/widget")
 		log.Info("Widget key access: owner=%s, model=%s, upstream=%s", owner, requestedModel, upstreamModel)
 		return
 
@@ -1350,7 +1351,7 @@ func (c *ApiController) authResolveProvider(token, requestedModel, orgId string)
 		if err != nil {
 			return
 		}
-		c.Ctx.Input.SetParam("recordUserId", authUser.Owner+"/provider-key")
+		c.Locals("recordUserId", authUser.Owner+"/provider-key")
 		// Apply model routing for sk- keys too. If the route points to a
 		// different provider than the one that owns the API key, switch to the
 		// route's provider so zen/fireworks models work with any key.
@@ -1378,7 +1379,7 @@ func (c *ApiController) authResolveProvider(token, requestedModel, orgId string)
 	// Shared post-resolution for IAM/JWT auth: record the billed user and the
 	// premium flag from the route table.
 	if authUser != nil {
-		c.Ctx.Input.SetParam("recordUserId", authUser.Owner+"/"+authUser.Name)
+		c.Locals("recordUserId", authUser.Owner+"/"+authUser.Name)
 	}
 	if route := resolveModelRouteForOrg(requestedModel, orgId); route != nil {
 		isPremium = route.premium
@@ -2074,10 +2075,17 @@ func (c *ApiController) proxyToolRequest(
 		if model.InlinesReasoning(request.Model) {
 			strip = &model.ReasoningStripper{}
 		}
-		capPrompt, capCompletion, capTotal, completionText := streamCaptureUsage(
-			resp.Body, c.Ctx.ResponseWriter, c.Ctx.ResponseWriter.Flush,
-			clientWantsUsage, strip, mk,
-		)
+		// The capture runs INSIDE the stream: zip owns the connection for the
+		// duration and hands the writer in, so the usage this settles on is the
+		// usage of the bytes the client actually received.
+		var capPrompt, capCompletion, capTotal int
+		var completionText string
+		_ = c.SendStreamWriter(func(w *bufio.Writer) {
+			capPrompt, capCompletion, capTotal, completionText = streamCaptureUsage(
+				resp.Body, w, func() { _ = w.Flush() },
+				clientWantsUsage, strip, mk,
+			)
+		})
 
 		// Settle billing with the REAL token usage — captured from the forced
 		// usage chunk, or tokenized as a fallback so a successful streamed
@@ -2571,11 +2579,15 @@ func (c *ApiController) proxyToolRequestAnthropic(
 				"finish_reason": finishReason,
 			}},
 		}
-		if chunkJSON, mErr := json.Marshal(chunk); mErr == nil {
-			_, _ = fmt.Fprintf(c.Ctx.ResponseWriter, "data: %s\n\n", string(chunkJSON))
-		}
-		_, _ = fmt.Fprint(c.Ctx.ResponseWriter, "data: [DONE]\n\n")
-		c.Ctx.ResponseWriter.Flush()
+		// The stream owns the connection from here: zip hands the handler a writer
+		// and flushes each frame as it is written, so a chunk reaches the client
+		// when it is produced rather than when the handler returns.
+		_ = c.SendStreamWriter(func(w *bufio.Writer) {
+			if chunkJSON, mErr := json.Marshal(chunk); mErr == nil {
+				_, _ = fmt.Fprintf(w, "data: %s\n\n", string(chunkJSON))
+			}
+			_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
+		})
 		return
 	}
 
