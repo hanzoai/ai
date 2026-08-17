@@ -188,7 +188,7 @@ func (c *ApiController) GetAIConnectionUsage() {
 	if !ok {
 		return
 	}
-	spec, ok := aiConnSpecFor(c.Ctx.Input.Param(":provider"))
+	spec, ok := aiConnSpecFor(c.Param("provider"))
 	if !ok {
 		c.ResponseError(c.T("openai:provider must be one of") + ": " + aiConnProviderList())
 		return

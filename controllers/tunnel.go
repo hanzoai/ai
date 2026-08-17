@@ -98,7 +98,6 @@ func (c *ApiController) AddNodeTunnel() {
 // @Success 200 {object} Response
 // @router /get-node-tunnel [get]
 func (c *ApiController) GetNodeTunnel() {
-	c.EnableRender = false
 	ctx := c.Ctx
 	ws, err := UpGrader.Upgrade(ctx.ResponseWriter, ctx.Request, nil)
 	if err != nil {

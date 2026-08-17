@@ -17,6 +17,7 @@ package controllers
 
 import (
 	"encoding/json"
+	"net/http"
 
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
@@ -105,8 +106,7 @@ func (c *ApiController) UpdateSession() {
 		return
 	}
 
-	c.Data["json"] = wrapActionResponse(object.UpdateSession(util.GetIdFromOwnerAndName(session.Owner, session.Name), &session))
-	c.ServeJSON()
+	c.JSON(http.StatusOK, wrapActionResponse(object.UpdateSession(util.GetIdFromOwnerAndName(session.Owner, session.Name), &session)))
 }
 
 // AddSession
@@ -125,8 +125,7 @@ func (c *ApiController) AddSession() {
 		return
 	}
 
-	c.Data["json"] = wrapActionResponse(object.AddSession(&session))
-	c.ServeJSON()
+	c.JSON(http.StatusOK, wrapActionResponse(object.AddSession(&session)))
 }
 
 // DeleteSession
@@ -149,8 +148,7 @@ func (c *ApiController) DeleteSession() {
 		return
 	}
 
-	c.Data["json"] = wrapActionResponse(object.DeleteSession(util.GetIdFromOwnerAndName(session.Owner, session.Name)))
-	c.ServeJSON()
+	c.JSON(http.StatusOK, wrapActionResponse(object.DeleteSession(util.GetIdFromOwnerAndName(session.Owner, session.Name))))
 }
 
 // IsSessionDuplicated

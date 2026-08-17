@@ -50,8 +50,7 @@ func (c *ApiController) ResponseOk(data ...interface{}) {
 	case 1:
 		resp.Data = data[0]
 	}
-	c.Data["json"] = resp
-	c.ServeJSON()
+	c.JSON(http.StatusOK, resp)
 }
 
 func (c *ApiController) ResponseError(error string, data ...interface{}) {
@@ -63,8 +62,7 @@ func (c *ApiController) ResponseError(error string, data ...interface{}) {
 	case 1:
 		resp.Data = data[0]
 	}
-	c.Data["json"] = resp
-	c.ServeJSON()
+	c.JSON(http.StatusOK, resp)
 }
 
 // ResponseErrorWithStatus writes the standard error envelope with an explicit
@@ -192,8 +190,7 @@ func (c *ApiController) ResponseAuthError(err error) {
 // had no choices in it.
 func (c *ApiController) ResponseFailure(err error) {
 	c.Status(statusOf(err))
-	c.Data["json"] = Response{Status: "error", Msg: err.Error(), Code: codeOf(err)}
-	c.ServeJSON()
+	c.JSON(http.StatusOK, Response{Status: "error", Msg: err.Error(), Code: codeOf(err)})
 }
 
 // ResponseUnauthorized renders an authentication denial (no/invalid session or
@@ -412,7 +409,7 @@ func (c *ApiController) getClientIp() string {
 }
 
 func (c *ApiController) getUserAgent() string {
-	res := c.Ctx.Request.UserAgent()
+	res := c.Header("User-Agent")
 	return res
 }
 

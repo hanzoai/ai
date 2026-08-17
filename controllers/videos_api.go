@@ -174,7 +174,7 @@ func (c *ApiController) VideosGenerations() {
 	// no subject to own or bill the job by. Reject it rather than create an
 	// unownable, unbillable job.
 	if authUser == nil {
-		c.ResponseAuthError(billingError("Video generation requires an authenticated Hanzo Cloud account. Sign in and add credits to your wallet at %s", object.PayURL(c.Ctx.Request.Host, "")))
+		c.ResponseAuthError(billingError("Video generation requires an authenticated Hanzo Cloud account. Sign in and add credits to your wallet at %s", object.PayURL(c.Host(), "")))
 		return
 	}
 	ledger := c.billingOrg(authUser)
@@ -214,7 +214,7 @@ func (c *ApiController) VideosGenerations() {
 	// the job is abandoned.
 	hold, okReserve := reserveBudget(subject, videoCostCents(req.Model, 1))
 	if !okReserve {
-		c.ResponseAuthError(billingError("%s", object.InsufficientBalance(c.Ctx.Request.Host, ledger, "video cost").Message))
+		c.ResponseAuthError(billingError("%s", object.InsufficientBalance(c.Host(), ledger, "video cost").Message))
 		return
 	}
 
@@ -277,7 +277,7 @@ func (c *ApiController) RetrieveVideo() {
 	if !ok {
 		return
 	}
-	id := c.Ctx.Input.Param(":id")
+	id := c.Param("id")
 
 	job, provider, authUser, ok := c.resolveOwnedVideoJob(token, id)
 	if !ok {
@@ -340,7 +340,7 @@ func (c *ApiController) VideoContent() {
 	if !ok {
 		return
 	}
-	id := c.Ctx.Input.Param(":id")
+	id := c.Param("id")
 
 	job, provider, authUser, ok := c.resolveOwnedVideoJob(token, id)
 	if !ok {
@@ -381,7 +381,6 @@ func (c *ApiController) VideoContent() {
 		responseError(c.Ctx, err.Error())
 		return
 	}
-	c.EnableRender = false
 }
 
 // resolveOwnedVideoJob looks up the job, authenticates the caller, and enforces
@@ -489,7 +488,7 @@ func (c *ApiController) recordVideoUsage(authUser *iam.User, provider *object.Pr
 		Premium:      isPremium,
 		Status:       status,
 		ErrorMsg:     errMsg,
-		ClientIP:     c.Ctx.Request.RemoteAddr,
+		ClientIP:     c.Fiber().IP(),
 		RequestID:    uuid.NewString(),
 	}
 	rec.bind(c.Context(), authUser)

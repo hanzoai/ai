@@ -352,7 +352,6 @@ func (c *ApiController) publicRefuse(status int, kind, code, message string) {
 	c.SetHeader("Content-Type", "application/json")
 	c.SetHeader("Cache-Control", "no-store")
 	c.Bytes(http.StatusOK, publicErrorJSON(kind, code, message))
-	c.EnableRender = false
 }
 
 // publicErrorJSON renders the house error envelope.
