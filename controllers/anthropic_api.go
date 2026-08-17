@@ -591,169 +591,180 @@ func (c *ApiController) AnthropicMessages() {
 		c.SetHeader("Connection", "keep-alive")
 	}
 
-	writer := &AnthropicWriter{
-		Writer:    w,
-		Buffer:    []byte{},
-		RequestID: requestId,
-		Stream:    request.Stream,
-		Cleaner:   *NewCleaner(6),
-		Model:     request.Model,
-	}
+	// The answer is produced once and delivered two ways. Streaming, zip holds
+	// the connection and hands the writer in; otherwise the writer only
+	// accumulates and the reply goes out whole at the end, so the sink it was
+	// given is never written to.
+	run := func(w *bufio.Writer) {
+		writer := &AnthropicWriter{
+			Writer:    w,
+			Buffer:    []byte{},
+			RequestID: requestId,
+			Stream:    request.Stream,
+			Cleaner:   *NewCleaner(6),
+			Model:     request.Model,
+		}
 
-	knowledge := []*model.RawMessage{}
+		knowledge := []*model.RawMessage{}
 
-	// Resolve the route for failover (may have fallback providers)
-	route := resolveModelRouteForOrg(request.Model, orgId)
+		// Resolve the route for failover (may have fallback providers)
+		route := resolveModelRouteForOrg(request.Model, orgId)
 
-	var modelResult *model.ModelResult
-	var actualProvider served
-	var tried []attempt
+		var modelResult *model.ModelResult
+		var actualProvider served
+		var tried []attempt
 
-	if route != nil {
-		// ONE execute path. ask.serve rides out a transient upstream refusal
-		// (429 / 5xx) with the shared retry policy, then cascades through the
-		// route's alternates. A model with no alternate still gets the retry,
-		// the demotion, and the honest exhausted error — the cascade is just the
-		// identity case — so there is no second, retry-less path that silently
-		// turns a 429 into a hard client 500.
-		modelResult, actualProvider, tried, err = ask{
-			ctx:       c.Context(),
-			route:     route,
-			org:       c.billingOrg(authUser),
-			model:     request.Model,
-			primary:   provider,
-			question:  question,
-			history:   history,
-			knowledge: knowledge,
-			lang:      c.GetAcceptLanguage(),
-			writer:    writer,
-			sent:      func() bool { return writer.StreamSent },
-			prior:     familyRefused,
-		}.serve()
-	} else {
-		// Model not in the route table: call the resolved provider directly, on
-		// the SAME retry policy failover uses, typing the error at the boundary.
-		var modelProvider model.ModelProvider
-		modelProvider, err = provider.GetModelProvider(c.GetAcceptLanguage())
+		if route != nil {
+			// ONE execute path. ask.serve rides out a transient upstream refusal
+			// (429 / 5xx) with the shared retry policy, then cascades through the
+			// route's alternates. A model with no alternate still gets the retry,
+			// the demotion, and the honest exhausted error — the cascade is just the
+			// identity case — so there is no second, retry-less path that silently
+			// turns a 429 into a hard client 500.
+			modelResult, actualProvider, tried, err = ask{
+				ctx:       c.Context(),
+				route:     route,
+				org:       c.billingOrg(authUser),
+				model:     request.Model,
+				primary:   provider,
+				question:  question,
+				history:   history,
+				knowledge: knowledge,
+				lang:      c.GetAcceptLanguage(),
+				writer:    writer,
+				sent:      func() bool { return writer.StreamSent },
+				prior:     familyRefused,
+			}.serve()
+		} else {
+			// Model not in the route table: call the resolved provider directly, on
+			// the SAME retry policy failover uses, typing the error at the boundary.
+			var modelProvider model.ModelProvider
+			modelProvider, err = provider.GetModelProvider(c.GetAcceptLanguage())
+			if err != nil {
+				c.respondAnthropicError("api_error", fmt.Sprintf("Failed to get model provider: %s", err.Error()), 500)
+				return
+			}
+			err = retryTransient(c.Context(), currentRetryPolicy(), func() error {
+				if writer.StreamSent {
+					return errPartiallyWritten
+				}
+				writer.Reset()
+				res, e := modelProvider.QueryText(question, writer, history, "", knowledge, nil, c.GetAcceptLanguage())
+				if e != nil {
+					return wrapUpstreamError(e)
+				}
+				modelResult = res
+				return nil
+			})
+			actualProvider = served{provider.Name, provider.Origin(), provider}
+		}
+
+		// Every vendor that refused goes in the ledger, whether or not one of them
+		// eventually served. The family's own refusal is already recorded above.
+		if n := len(familyRefused); len(tried) > n {
+			c.recordRefusals(request.Model, tried[n:], authUser, isPremium, request.Stream, requestId, requestStartTime)
+		}
+
 		if err != nil {
-			c.respondAnthropicError("api_error", fmt.Sprintf("Failed to get model provider: %s", err.Error()), 500)
+			if authUser != nil {
+				errRecord := &usageRecord{
+					Owner:     c.billingOrg(authUser),
+					Model:     request.Model,
+					Provider:  actualProvider.name,
+					Origin:    actualProvider.origin,
+					Premium:   isPremium,
+					Stream:    request.Stream,
+					Status:    "error",
+					ErrorMsg:  err.Error(),
+					ClientIP:  c.Fiber().IP(),
+					RequestID: requestId,
+				}
+				errRecord.bind(c.Context(), authUser)
+				errRecord.BYO, errRecord.Account = providerBYO(provider, authUser)
+				recordUsage(errRecord)
+				recordTrace(c.Context(), errRecord, requestStartTime)
+			}
+			// Surface the real upstream status: a 429 stays a 429 (rate_limit_error)
+			// so the client retries with backoff instead of treating it as a fatal
+			// 500 and stopping. Status typed at the provider boundary.
+			st := statusForModelError(err)
+			c.respondAnthropicError(anthropicErrorTypeForStatus(st), err.Error(), st)
 			return
 		}
-		err = retryTransient(c.Context(), currentRetryPolicy(), func() error {
-			if writer.StreamSent {
-				return errPartiallyWritten
-			}
-			writer.Reset()
-			res, e := modelProvider.QueryText(question, writer, history, "", knowledge, nil, c.GetAcceptLanguage())
-			if e != nil {
-				return wrapUpstreamError(e)
-			}
-			modelResult = res
-			return nil
-		})
-		actualProvider = served{provider.Name, provider.Origin(), provider}
-	}
 
-	// Every vendor that refused goes in the ledger, whether or not one of them
-	// eventually served. The family's own refusal is already recorded above.
-	if n := len(familyRefused); len(tried) > n {
-		c.recordRefusals(request.Model, tried[n:], authUser, isPremium, request.Stream, requestId, requestStartTime)
-	}
-
-	if err != nil {
+		// Record successful usage (actualProvider reflects which provider served the request).
 		if authUser != nil {
-			errRecord := &usageRecord{
-				Owner:     c.billingOrg(authUser),
-				Model:     request.Model,
-				Provider:  actualProvider.name,
-				Origin:    actualProvider.origin,
-				Premium:   isPremium,
-				Stream:    request.Stream,
-				Status:    "error",
-				ErrorMsg:  err.Error(),
-				ClientIP:  c.Fiber().IP(),
-				RequestID: requestId,
+			successRecord := &usageRecord{
+				Owner:            c.billingOrg(authUser),
+				Organization:     authUser.Owner,
+				Model:            request.Model,
+				Provider:         actualProvider.name,
+				Origin:           actualProvider.origin,
+				PromptTokens:     modelResult.PromptTokenCount,
+				CacheReadTokens:  modelResult.CacheReadTokenCount,
+				CacheWriteTokens: modelResult.CacheWriteTokenCount,
+				CompletionTokens: modelResult.ResponseTokenCount,
+				TotalTokens:      modelResult.TotalTokenCount,
+				Currency:         "USD",
+				Premium:          isPremium,
+				Stream:           request.Stream,
+				Status:           "success",
+				ClientIP:         c.Fiber().IP(),
+				RequestID:        requestId,
 			}
-			errRecord.bind(c.Context(), authUser)
-			errRecord.BYO, errRecord.Account = providerBYO(provider, authUser)
-			recordUsage(errRecord)
-			recordTrace(c.Context(), errRecord, requestStartTime)
+			successRecord.bind(c.Context(), authUser)
+			// The row that SPENT a credential decides whether this was the customer's
+			// own key — not the row auth resolved before failover moved the request.
+			successRecord.BYO, successRecord.Account = providerBYO(actualProvider.row, authUser)
+			recordUsage(successRecord)
+			recordTrace(c.Context(), successRecord, requestStartTime)
+			hold.settle(calculateCostCentsWithCache(request.Model, modelResult.PromptTokenCount, modelResult.ResponseTokenCount, 0, 0))
 		}
-		// Surface the real upstream status: a 429 stays a 429 (rate_limit_error)
-		// so the client retries with backoff instead of treating it as a fatal
-		// 500 and stopping. Status typed at the provider boundary.
-		st := statusForModelError(err)
-		c.respondAnthropicError(anthropicErrorTypeForStatus(st), err.Error(), st)
-		return
+
+		// ── Build response ──────────────────────────────────────────────────
+		if !request.Stream {
+			answer := writer.MessageString()
+
+			response := AnthropicResponse{
+				ID:   "msg_" + requestId,
+				Type: "message",
+				Role: "assistant",
+				Content: []AnthropicContentBlock{
+					{Type: "text", Text: answer},
+				},
+				Model:      request.Model,
+				StopReason: "end_turn",
+				Usage: AnthropicUsage{
+					InputTokens:  modelResult.PromptTokenCount,
+					OutputTokens: modelResult.ResponseTokenCount,
+				},
+			}
+
+			jsonResponse, err := json.Marshal(response)
+			if err != nil {
+				c.respondAnthropicError("api_error", err.Error(), 500)
+				return
+			}
+
+			c.SetHeader("Content-Type", "application/json")
+			c.Bytes(http.StatusOK, jsonResponse)
+		} else {
+			if err := writer.Close(
+				modelResult.PromptTokenCount,
+				modelResult.ResponseTokenCount,
+				modelResult.TotalTokenCount,
+			); err != nil {
+				c.respondAnthropicError("api_error", err.Error(), 500)
+				return
+			}
+		}
+
 	}
-
-	// Record successful usage (actualProvider reflects which provider served the request).
-	if authUser != nil {
-		successRecord := &usageRecord{
-			Owner:            c.billingOrg(authUser),
-			Organization:     authUser.Owner,
-			Model:            request.Model,
-			Provider:         actualProvider.name,
-			Origin:           actualProvider.origin,
-			PromptTokens:     modelResult.PromptTokenCount,
-			CacheReadTokens:  modelResult.CacheReadTokenCount,
-			CacheWriteTokens: modelResult.CacheWriteTokenCount,
-			CompletionTokens: modelResult.ResponseTokenCount,
-			TotalTokens:      modelResult.TotalTokenCount,
-			Currency:         "USD",
-			Premium:          isPremium,
-			Stream:           request.Stream,
-			Status:           "success",
-			ClientIP:         c.Fiber().IP(),
-			RequestID:        requestId,
-		}
-		successRecord.bind(c.Context(), authUser)
-		// The row that SPENT a credential decides whether this was the customer's
-		// own key — not the row auth resolved before failover moved the request.
-		successRecord.BYO, successRecord.Account = providerBYO(actualProvider.row, authUser)
-		recordUsage(successRecord)
-		recordTrace(c.Context(), successRecord, requestStartTime)
-		hold.settle(calculateCostCentsWithCache(request.Model, modelResult.PromptTokenCount, modelResult.ResponseTokenCount, 0, 0))
-	}
-
-	// ── Build response ──────────────────────────────────────────────────
-	if !request.Stream {
-		answer := writer.MessageString()
-
-		response := AnthropicResponse{
-			ID:   "msg_" + requestId,
-			Type: "message",
-			Role: "assistant",
-			Content: []AnthropicContentBlock{
-				{Type: "text", Text: answer},
-			},
-			Model:      request.Model,
-			StopReason: "end_turn",
-			Usage: AnthropicUsage{
-				InputTokens:  modelResult.PromptTokenCount,
-				OutputTokens: modelResult.ResponseTokenCount,
-			},
-		}
-
-		jsonResponse, err := json.Marshal(response)
-		if err != nil {
-			c.respondAnthropicError("api_error", err.Error(), 500)
-			return
-		}
-
-		c.SetHeader("Content-Type", "application/json")
-		c.Bytes(http.StatusOK, jsonResponse)
+	if request.Stream {
+		_ = c.SendStreamWriter(run)
 	} else {
-		if err := writer.Close(
-			modelResult.PromptTokenCount,
-			modelResult.ResponseTokenCount,
-			modelResult.TotalTokenCount,
-		); err != nil {
-			c.respondAnthropicError("api_error", err.Error(), 500)
-			return
-		}
+		run(bufio.NewWriter(io.Discard))
 	}
-
 }
 
 // proxyAnthropicToolRequest forwards a /v1/messages request that contains tools

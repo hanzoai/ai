@@ -16,6 +16,7 @@
 package controllers
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -220,206 +221,211 @@ func (c *ApiController) GetMessageAnswer() {
 		embeddingResult = &embedding.EmbeddingResult{}
 	}
 
-	writer := &RefinedWriter{w, *NewCleaner(6), []byte{}, []byte{}, []byte{}, []byte{}, []byte{}}
+	// The answer is streamed: zip holds the connection open and hands the
+	// writer in, so each event reaches the client as it is produced. Every
+	// return below ends the stream exactly where it used to end the reply.
+	_ = c.SendStreamWriter(func(w *bufio.Writer) {
+		writer := &RefinedWriter{w, *NewCleaner(6), []byte{}, []byte{}, []byte{}, []byte{}, []byte{}}
 
-	if questionMessage != nil {
-		questionMessage.TokenCount = embeddingResult.TokenCount
-		questionMessage.Price = embeddingResult.Price
-		questionMessage.Currency = embeddingResult.Currency
+		if questionMessage != nil {
+			questionMessage.TokenCount = embeddingResult.TokenCount
+			questionMessage.Price = embeddingResult.Price
+			questionMessage.Currency = embeddingResult.Currency
 
-		_, err = object.UpdateMessage(questionMessage.GetId(), questionMessage, false)
+			_, err = object.UpdateMessage(questionMessage.GetId(), questionMessage, false)
+			if err != nil {
+				c.ResponseErrorStream(message, err.Error())
+				return
+			}
+		}
+
+		history, err := object.GetRecentRawMessages(chat.Name, message.CreatedTime, store.MemoryLimit)
 		if err != nil {
 			c.ResponseErrorStream(message, err.Error())
 			return
 		}
-	}
 
-	history, err := object.GetRecentRawMessages(chat.Name, message.CreatedTime, store.MemoryLimit)
-	if err != nil {
-		c.ResponseErrorStream(message, err.Error())
-		return
-	}
+		fmt.Printf("Question: [%s]\n", question)
+		fmt.Printf("Knowledge: [\n")
+		for i, k := range knowledge {
+			fmt.Printf("Knowledge %d: [%s]\n", i, k.Text)
+		}
+		fmt.Printf("]\n")
+		// fmt.Printf("Refined Question: [%s]\n", realQuestion)
+		fmt.Printf("Answer: [")
 
-	fmt.Printf("Question: [%s]\n", question)
-	fmt.Printf("Knowledge: [\n")
-	for i, k := range knowledge {
-		fmt.Printf("Knowledge %d: [%s]\n", i, k.Text)
-	}
-	fmt.Printf("]\n")
-	// fmt.Printf("Refined Question: [%s]\n", realQuestion)
-	fmt.Printf("Answer: [")
+		prompt := store.Prompt
+		if modelProvider.Type != "Dummy" && !isReasonModel(modelProvider.SubType) {
+			if modelProvider.Type == "Alibaba Cloud" && webSearchEnabled {
+				prompt, err = getPromptWithCarrier(prompt, store.SuggestionCount, chat.NeedTitle)
+			} else {
+				question, err = getQuestionWithCarriers(question, store.SuggestionCount, chat.NeedTitle)
+			}
+			if err != nil {
+				c.ResponseErrorStream(message, err.Error())
+				return
+			}
+		}
 
-	prompt := store.Prompt
-	if modelProvider.Type != "Dummy" && !isReasonModel(modelProvider.SubType) {
-		if modelProvider.Type == "Alibaba Cloud" && webSearchEnabled {
-			prompt, err = getPromptWithCarrier(prompt, store.SuggestionCount, chat.NeedTitle)
+		var modelResult *model.ModelResult
+		if agentClients != nil {
+			messages := &model.AgentMessages{
+				Messages:  []*model.RawMessage{},
+				ToolCalls: nil,
+			}
+			agentInfo := &model.AgentInfo{
+				AgentClients:  agentClients,
+				AgentMessages: messages,
+			}
+			modelResult, err = model.QueryTextWithTools(modelProviderObj, question, writer, history, prompt, knowledge, agentInfo, c.GetAcceptLanguage())
 		} else {
-			question, err = getQuestionWithCarriers(question, store.SuggestionCount, chat.NeedTitle)
+			if isReasonModel(modelProvider.SubType) {
+				modelResult, err = QueryCarrierText(question, writer, history, prompt, knowledge, modelProviderObj, chat.NeedTitle, store.SuggestionCount, c.GetAcceptLanguage())
+			} else {
+				modelResult, err = modelProviderObj.QueryText(question, writer, history, prompt, knowledge, nil, c.GetAcceptLanguage())
+			}
 		}
 		if err != nil {
-			c.ResponseErrorStream(message, err.Error())
-			return
-		}
-	}
-
-	var modelResult *model.ModelResult
-	if agentClients != nil {
-		messages := &model.AgentMessages{
-			Messages:  []*model.RawMessage{},
-			ToolCalls: nil,
-		}
-		agentInfo := &model.AgentInfo{
-			AgentClients:  agentClients,
-			AgentMessages: messages,
-		}
-		modelResult, err = model.QueryTextWithTools(modelProviderObj, question, writer, history, prompt, knowledge, agentInfo, c.GetAcceptLanguage())
-	} else {
-		if isReasonModel(modelProvider.SubType) {
-			modelResult, err = QueryCarrierText(question, writer, history, prompt, knowledge, modelProviderObj, chat.NeedTitle, store.SuggestionCount, c.GetAcceptLanguage())
-		} else {
-			modelResult, err = modelProviderObj.QueryText(question, writer, history, prompt, knowledge, nil, c.GetAcceptLanguage())
-		}
-	}
-	if err != nil {
-		if strings.Contains(err.Error(), "write tcp") {
-			c.ResponseError(err.Error())
-			return
-		}
-		c.ResponseErrorStream(message, err.Error())
-		return
-	}
-
-	if len(vectorScores) > 0 {
-		bytes, err := json.Marshal(vectorScores)
-		if err == nil {
-			_ = c.Bytes(c.Fiber().Response().StatusCode(), []byte(fmt.Sprintf("event: vector\ndata: %s\n\n", string(bytes))))
-		}
-	}
-
-	if writer.writerCleaner.cleaned == false {
-		cleanedData := writer.writerCleaner.GetCleanedData()
-		writer.buf = append(writer.buf, []byte(cleanedData)...)
-		jsonData, err := ConvertMessageDataToJSON(cleanedData)
-		if err != nil {
+			if strings.Contains(err.Error(), "write tcp") {
+				c.ResponseError(err.Error())
+				return
+			}
 			c.ResponseErrorStream(message, err.Error())
 			return
 		}
 
-		_, err = writer.ResponseWriter.Write([]byte(fmt.Sprintf("event: message\ndata: %s\n\n", jsonData)))
+		if len(vectorScores) > 0 {
+			bytes, err := json.Marshal(vectorScores)
+			if err == nil {
+				_, _ = w.Write([]byte(fmt.Sprintf("event: vector\ndata: %s\n\n", string(bytes))))
+			}
+		}
+
+		if writer.writerCleaner.cleaned == false {
+			cleanedData := writer.writerCleaner.GetCleanedData()
+			writer.buf = append(writer.buf, []byte(cleanedData)...)
+			jsonData, err := ConvertMessageDataToJSON(cleanedData)
+			if err != nil {
+				c.ResponseErrorStream(message, err.Error())
+				return
+			}
+
+			_, err = writer.Writer.Write([]byte(fmt.Sprintf("event: message\ndata: %s\n\n", jsonData)))
+			if err != nil {
+				c.ResponseErrorStream(message, err.Error())
+				return
+			}
+
+			_ = writer.Writer.Flush()
+			fmt.Print(cleanedData)
+		}
+
+		fmt.Printf("]\n")
+
+		event := fmt.Sprintf("event: end\ndata: %s\n\n", "end")
+		_, err = w.Write([]byte(event))
 		if err != nil {
 			c.ResponseErrorStream(message, err.Error())
 			return
 		}
 
-		writer.Flush()
-		fmt.Print(cleanedData)
-	}
-
-	fmt.Printf("]\n")
-
-	event := fmt.Sprintf("event: end\ndata: %s\n\n", "end")
-	err = c.Bytes(c.Fiber().Response().StatusCode(), []byte(event))
-	if err != nil {
-		c.ResponseErrorStream(message, err.Error())
-		return
-	}
-
-	answer := writer.MessageString()
-	message.ReasonText = writer.ReasonString()
-	message.ToolCalls = model.GetToolCallsFromWriter(writer.ToolString())
-	searchString := writer.SearchString()
-	if searchString != "" {
-		var searchResults []model.SearchResult
-		err := json.Unmarshal([]byte(searchString), &searchResults)
-		if err == nil {
-			message.SearchResults = searchResults
+		answer := writer.MessageString()
+		message.ReasonText = writer.ReasonString()
+		message.ToolCalls = model.GetToolCallsFromWriter(writer.ToolString())
+		searchString := writer.SearchString()
+		if searchString != "" {
+			var searchResults []model.SearchResult
+			err := json.Unmarshal([]byte(searchString), &searchResults)
+			if err == nil {
+				message.SearchResults = searchResults
+			}
 		}
-	}
 
-	message.TokenCount = modelResult.TotalTokenCount
-	message.Price = modelResult.TotalPrice
-	message.Currency = modelResult.Currency
+		message.TokenCount = modelResult.TotalTokenCount
+		message.Price = modelResult.TotalPrice
+		message.Currency = modelResult.Currency
 
-	// Land the casibase chat turn in the ONE usage warehouse + o11y span plane, so
-	// this surface is no longer warehouse/o11y-blind. Attribution is the chat's own
-	// org (the store owner), not a bearer principal — this path is session/store-
-	// scoped. Trace only: this completion's ONE debit is AddTransactionForMessage
-	// below.
-	c.recordCasibaseChatUsage(chat, modelProvider, modelResult)
+		// Land the casibase chat turn in the ONE usage warehouse + o11y span plane, so
+		// this surface is no longer warehouse/o11y-blind. Attribution is the chat's own
+		// org (the store owner), not a bearer principal — this path is session/store-
+		// scoped. Trace only: this completion's ONE debit is AddTransactionForMessage
+		// below.
+		c.recordCasibaseChatUsage(chat, modelProvider, modelResult)
 
-	textAnswer := answer
-	textSuggestions := []object.Suggestion{}
-	textTitle := ""
-	textAnswer, textSuggestions, textTitle, err = parseAnswerWithCarriers(answer, store.SuggestionCount, chat.NeedTitle)
-	if err != nil {
-		c.ResponseErrorStream(message, err.Error())
-		return
-	}
-
-	message.Text = textAnswer
-	if message.Text != "" {
-		message.ErrorText = ""
-		message.IsAlerted = false
-	}
-
-	message.Suggestions = textSuggestions
-
-	message.VectorScores = vectorScores
-
-	// Normalize price precision before persisting or creating transactions
-	message.Price = model.AddPrices(message.Price, 0)
-
-	// The generation has TERMINATED. Record that before the charge, because it is what
-	// stops this turn being generated and charged a second time — and neither the text
-	// nor the claim can say it: an empty completion leaves `text = ''`, which is the
-	// condition every claim tests, and the claim itself lapses at the end of its lease.
-	// Settling first also covers a persist below that fails after the debit landed.
-	if err = object.SettleMessageAnswer(message); err != nil {
-		c.ResponseErrorStream(message, err.Error())
-		return
-	}
-
-	// Add transaction for message with price
-	err = object.AddTransactionForMessage(message)
-	if err != nil {
-		c.ResponseErrorStream(message, err.Error())
-		return
-	}
-
-	_, err = object.UpdateMessage(message.GetId(), message, false)
-	if err != nil {
-		c.ResponseErrorStream(message, err.Error())
-		return
-	}
-
-	chat.TokenCount += message.TokenCount
-	chat.Price += message.Price
-	if chat.Currency == "" {
-		chat.Currency = message.Currency
-	}
-
-	// Update chat's ModelProvider if not set
-	if chat.ModelProvider == "" {
-		chat.ModelProvider = modelProvider.Name
-	}
-
-	if chat.NeedTitle && textTitle != "" {
-		chat.DisplayName = textTitle
-		chat.NeedTitle = false
-	}
-
-	if questionMessage != nil {
-		if chat.Currency == questionMessage.Currency {
-			chat.TokenCount += questionMessage.TokenCount
-			chat.Price += questionMessage.Price
+		textAnswer := answer
+		textSuggestions := []object.Suggestion{}
+		textTitle := ""
+		textAnswer, textSuggestions, textTitle, err = parseAnswerWithCarriers(answer, store.SuggestionCount, chat.NeedTitle)
+		if err != nil {
+			c.ResponseErrorStream(message, err.Error())
+			return
 		}
-	}
 
-	_, err = object.UpdateChat(chat.GetId(), chat)
-	if err != nil {
-		c.ResponseErrorStream(message, err.Error())
-		return
-	}
+		message.Text = textAnswer
+		if message.Text != "" {
+			message.ErrorText = ""
+			message.IsAlerted = false
+		}
+
+		message.Suggestions = textSuggestions
+
+		message.VectorScores = vectorScores
+
+		// Normalize price precision before persisting or creating transactions
+		message.Price = model.AddPrices(message.Price, 0)
+
+		// The generation has TERMINATED. Record that before the charge, because it is what
+		// stops this turn being generated and charged a second time — and neither the text
+		// nor the claim can say it: an empty completion leaves `text = ''`, which is the
+		// condition every claim tests, and the claim itself lapses at the end of its lease.
+		// Settling first also covers a persist below that fails after the debit landed.
+		if err = object.SettleMessageAnswer(message); err != nil {
+			c.ResponseErrorStream(message, err.Error())
+			return
+		}
+
+		// Add transaction for message with price
+		err = object.AddTransactionForMessage(message)
+		if err != nil {
+			c.ResponseErrorStream(message, err.Error())
+			return
+		}
+
+		_, err = object.UpdateMessage(message.GetId(), message, false)
+		if err != nil {
+			c.ResponseErrorStream(message, err.Error())
+			return
+		}
+
+		chat.TokenCount += message.TokenCount
+		chat.Price += message.Price
+		if chat.Currency == "" {
+			chat.Currency = message.Currency
+		}
+
+		// Update chat's ModelProvider if not set
+		if chat.ModelProvider == "" {
+			chat.ModelProvider = modelProvider.Name
+		}
+
+		if chat.NeedTitle && textTitle != "" {
+			chat.DisplayName = textTitle
+			chat.NeedTitle = false
+		}
+
+		if questionMessage != nil {
+			if chat.Currency == questionMessage.Currency {
+				chat.TokenCount += questionMessage.TokenCount
+				chat.Price += questionMessage.Price
+			}
+		}
+
+		_, err = object.UpdateChat(chat.GetId(), chat)
+		if err != nil {
+			c.ResponseErrorStream(message, err.Error())
+			return
+		}
+	})
 }
 
 // GetAnswer
