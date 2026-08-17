@@ -292,11 +292,11 @@ func wrapActionResponse2(affected bool, data interface{}, e ...error) *Response 
 }
 
 func (c *ApiController) Finish() {
-	if strings.HasPrefix(c.Ctx.Input.URL(), "/api") {
+	if strings.HasPrefix(c.Path(), "/api") {
 		startTime := c.Ctx.Input.GetData("startTime")
 		if startTime != nil {
 			latency := time.Since(startTime.(time.Time)).Milliseconds()
-			object.ApiLatency.WithLabelValues(c.Ctx.Input.URL(), c.Method()).Observe(float64(latency))
+			object.ApiLatency.WithLabelValues(c.Path(), c.Method()).Observe(float64(latency))
 		}
 	}
 	c.errorLogFilter()
@@ -318,10 +318,10 @@ func (c *ApiController) errorLogFilter() {
 		}
 		if status == "error" {
 			method := c.Method()
-			path := c.Ctx.Input.URL()
+			path := c.Path()
 			query := ""
 			if c.Ctx.Request != nil && c.Ctx.Request.URL != nil {
-				query = redactQuery(c.Ctx.Request.URL.RawQuery)
+				query = redactQuery(string(c.Fiber().Request().URI().QueryString()))
 			}
 			body := redactBody(string(c.Body()))
 			if len(body) > 4096 {

@@ -992,7 +992,6 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		// request to a second vendor would spend money answering an empty room —
 		// and would blame a healthy vendor for the client's disconnect.
 		if c.Context().Err() != nil {
-			c.EnableRender = false
 			return done()
 		}
 		return []attempt{note(err)}
@@ -1255,10 +1254,10 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	prompt, completion := 0, 0
 	served, respID := "", ""
 	if stream {
-		c.Ctx.ResponseWriter.Header().Set("Content-Type", "text/event-stream")
-		c.Ctx.ResponseWriter.Header().Set("Cache-Control", "no-cache")
-		c.Ctx.ResponseWriter.Header().Set("Connection", "keep-alive")
-		c.Ctx.ResponseWriter.WriteHeader(http.StatusOK)
+		c.SetHeader("Content-Type", "text/event-stream")
+		c.SetHeader("Cache-Control", "no-cache")
+		c.SetHeader("Connection", "keep-alive")
+		c.Status(http.StatusOK)
 		prompt, completion, served, respID = c.relayZenStream(resp.Body, mk)
 	} else {
 		b, rErr := io.ReadAll(resp.Body)
@@ -1296,7 +1295,6 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	// CLIENT sees (respID), which the client threads back to /v1/feedback; falls back
 	// to the internal reqID when the family did not disclose one. See object.RoutingEvent.
 	c.recordFamilyRouting(model, served, respID, reqID, rawBody, orgId, authUser, prompt, completion, cents, start)
-	c.EnableRender = false
 	return done()
 }
 
@@ -1311,7 +1309,7 @@ func (c *ApiController) relayZenStream(body io.Reader, mk *mark) (prompt, comple
 	sc := bufio.NewScanner(body)
 	sc.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
 	for sc.Scan() {
-		line := sc.Bytes(http.StatusOK, )
+		line := sc.Bytes(http.StatusOK)
 		if bytes.HasPrefix(line, zenDataPrefix) {
 			payload := bytes.TrimSpace(line[len(zenDataPrefix):])
 			if len(payload) > 0 && payload[0] == '{' {
@@ -1465,7 +1463,7 @@ func (c *ApiController) recordFamilyUsage(fam *modelFamily, model, requested str
 		PromptTokens: prompt, CompletionTokens: completion, TotalTokens: prompt + completion,
 		Cost: float64(cents) / 100.0, Currency: "USD",
 		Premium: isPremium, Stream: stream, Status: status, ErrorMsg: errMsg,
-		ClientIP: c.Ctx.Request.RemoteAddr, RequestID: reqID, Account: "hanzo",
+		ClientIP: c.Fiber().IP(), RequestID: reqID, Account: "hanzo",
 		// What the call cost us to buy, when the answer stated it, beside what we
 		// charged for it. usageMargin reads this as the COGS, so the margin on a
 		// relayed call stops being a guess.
@@ -1585,8 +1583,7 @@ func (c *ApiController) zenError(dialect, msg string, status int) {
 	body, _ := json.Marshal(map[string]any{
 		"error": map[string]any{"message": msg, "type": "api_error", "code": status},
 	})
-	c.Ctx.ResponseWriter.Header().Set("Content-Type", "application/json")
-	c.Ctx.ResponseWriter.WriteHeader(status)
+	c.SetHeader("Content-Type", "application/json")
+	c.Status(status)
 	_, _ = c.Ctx.ResponseWriter.Write(body)
-	c.EnableRender = false
 }
