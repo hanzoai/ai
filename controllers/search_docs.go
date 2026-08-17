@@ -325,22 +325,21 @@ func (c *ApiController) SearchDocs() {
 
 	results, err := object.SearchDocuments(auth.Owner, store, &req, c.GetAcceptLanguage())
 	if err != nil {
-		recordSearchUsage(auth, "search-query", req.Mode, "error", 0, c.Ctx.Request.RemoteAddr)
+		recordSearchUsage(auth, "search-query", req.Mode, "error", 0, c.Fiber().IP())
 		c.ResponseError(err.Error())
 		return
 	}
 
-	recordSearchUsage(auth, "search-query", req.Mode, "success", len(results), c.Ctx.Request.RemoteAddr)
+	recordSearchUsage(auth, "search-query", req.Mode, "success", len(results), c.Fiber().IP())
 
 	// Cloudflare edge cache headers: 5 min browser cache, 24h edge cache.
 	indexName := object.GetSearchIndexName(auth.Owner, store)
-	c.Ctx.ResponseWriter.Header().Set("Cache-Control", "public, max-age=300, s-maxage=86400")
-	c.Ctx.ResponseWriter.Header().Set("CF-Cache-Tag", "search:"+indexName)
-	c.Ctx.ResponseWriter.Header().Set("Vary", "Accept-Encoding, Authorization")
+	c.SetHeader("Cache-Control", "public, max-age=300, s-maxage=86400")
+	c.SetHeader("CF-Cache-Tag", "search:"+indexName)
+	c.SetHeader("Vary", "Accept-Encoding, Authorization")
 
 	// Return {hits: [...]} envelope matching the TypeScript client's HanzoSearchResponse type.
-	c.Data["json"] = map[string]interface{}{"hits": results}
-	c.ServeJSON()
+	c.JSON(http.StatusOK, map[string]interface{}{"hits": results})
 }
 
 // IndexDocs
@@ -372,12 +371,12 @@ func (c *ApiController) IndexDocs() {
 
 	count, err := object.IndexDocuments(auth.Owner, store, &req, c.GetAcceptLanguage())
 	if err != nil {
-		recordSearchUsage(auth, "index-docs", "meilisearch", "error", 0, c.Ctx.Request.RemoteAddr)
+		recordSearchUsage(auth, "index-docs", "meilisearch", "error", 0, c.Fiber().IP())
 		c.ResponseError(err.Error())
 		return
 	}
 
-	recordSearchUsage(auth, "index-docs", "meilisearch", "success", count, c.Ctx.Request.RemoteAddr)
+	recordSearchUsage(auth, "index-docs", "meilisearch", "success", count, c.Fiber().IP())
 
 	// Purge Cloudflare edge cache for this search index so stale results
 	// are not served after re-indexing. Runs async to avoid blocking.

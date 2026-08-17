@@ -341,7 +341,7 @@ func (c *ApiController) AddMessage() {
 	// a turn cannot be booked to a different tenant than the conversation it is in.
 	message.Organization = chat.Organization
 
-	host := c.Ctx.Request.Host
+	host := c.Host()
 	origin := getOriginFromHost(host)
 	err = object.RefineMessageFiles(&message, origin, c.GetAcceptLanguage())
 	if err != nil {

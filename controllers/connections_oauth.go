@@ -338,7 +338,7 @@ func (c *ApiController) ConnectAIProvider() {
 	if !ok {
 		return
 	}
-	provider := strings.ToLower(c.Ctx.Input.Param(":provider"))
+	provider := strings.ToLower(c.Param("provider"))
 	spec, ok := aiConnSpecFor(provider)
 	if !ok {
 		c.ResponseError(c.T("openai:provider must be one of") + ": " + aiConnProviderList())
@@ -355,7 +355,7 @@ func (c *ApiController) ConnectAIProvider() {
 		c.ResponseErrorWithStatus(http.StatusServiceUnavailable, "connector state unavailable")
 		return
 	}
-	redirectURI := aiOAuthRedirectURI(getOriginFromHost(c.Ctx.Request.Host), spec.name)
+	redirectURI := aiOAuthRedirectURI(getOriginFromHost(c.Host()), spec.name)
 	authorizeURL := aiAuthorizeURL(app, redirectURI, state, spec.name)
 
 	if c.Query("format") == "json" {
@@ -380,10 +380,10 @@ func (c *ApiController) ConnectAIProvider() {
 // @Success 302 {string} string redirect back to the console
 // @router /ai/connections/:provider/callback [get]
 func (c *ApiController) CallbackAIProvider() {
-	origin := getOriginFromHost(c.Ctx.Request.Host)
+	origin := getOriginFromHost(c.Host())
 	successBase := aiOAuthSuccessBase(origin)
 
-	provider := strings.ToLower(c.Ctx.Input.Param(":provider"))
+	provider := strings.ToLower(c.Param("provider"))
 	spec, ok := aiConnSpecFor(provider)
 	if !ok {
 		c.ResponseError(c.T("openai:provider must be one of") + ": " + aiConnProviderList())

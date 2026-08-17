@@ -148,7 +148,7 @@ func (c *ApiController) ImagesGenerations() {
 		subject := authUser.PayerSubject(ledger)
 		var ok bool
 		if hold, ok = reserveBudget(subject, imageCostCents(req.Model, n)); !ok {
-			c.ResponseAuthError(billingError("%s", object.InsufficientBalance(c.Ctx.Request.Host, ledger, "image cost").Message))
+			c.ResponseAuthError(billingError("%s", object.InsufficientBalance(c.Host(), ledger, "image cost").Message))
 			return
 		}
 	}
@@ -247,7 +247,7 @@ func (c *ApiController) recordImageUsage(authUser *iam.User, provider *object.Pr
 		Premium:      isPremium,
 		Status:       status,
 		ErrorMsg:     errMsg,
-		ClientIP:     c.Ctx.Request.RemoteAddr,
+		ClientIP:     c.Fiber().IP(),
 		RequestID:    uuid.NewString(),
 	}
 	rec.bind(c.Context(), authUser)

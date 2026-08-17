@@ -52,7 +52,7 @@ type retrievalFlags struct {
 
 func (c *ApiController) bodyRetrieval() retrievalFlags {
 	var f retrievalFlags
-	_ = json.Unmarshal(c.Ctx.Input.RequestBody, &f)
+	_ = json.Unmarshal(c.Body(), &f)
 	return f
 }
 

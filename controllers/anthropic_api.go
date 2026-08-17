@@ -362,14 +362,13 @@ func (c *ApiController) respondAnthropicError(errType string, message string, st
 
 	jsonData, err := json.Marshal(body)
 	if err != nil {
-		c.Ctx.ResponseWriter.WriteHeader(500)
+		c.Status(500)
 		return
 	}
 
 	c.SetHeader("Content-Type", "application/json")
-	c.Ctx.ResponseWriter.WriteHeader(status)
+	c.Status(status)
 	c.Bytes(http.StatusOK, jsonData)
-	c.EnableRender = false
 }
 
 // anthropicErrorType maps an auth/routing/upstream error to its Anthropic wire
@@ -477,7 +476,7 @@ func (c *ApiController) AnthropicMessages() {
 		est := estimateRequestCostCents(request.Model, len(request.Messages)*500, request.MaxTokens)
 		var ok bool
 		if hold, ok = reserveBudget(subject, est); !ok {
-			c.respondAnthropicError("billing_error", object.InsufficientBalance(c.Ctx.Request.Host, ledger, "request cost").Message, http.StatusPaymentRequired)
+			c.respondAnthropicError("billing_error", object.InsufficientBalance(c.Host(), ledger, "request cost").Message, http.StatusPaymentRequired)
 			return
 		}
 	}
@@ -587,9 +586,9 @@ func (c *ApiController) AnthropicMessages() {
 	}
 
 	if request.Stream {
-		c.Ctx.ResponseWriter.Header().Set("Content-Type", "text/event-stream")
-		c.Ctx.ResponseWriter.Header().Set("Cache-Control", "no-cache")
-		c.Ctx.ResponseWriter.Header().Set("Connection", "keep-alive")
+		c.SetHeader("Content-Type", "text/event-stream")
+		c.SetHeader("Cache-Control", "no-cache")
+		c.SetHeader("Connection", "keep-alive")
 	}
 
 	writer := &AnthropicWriter{
@@ -672,7 +671,7 @@ func (c *ApiController) AnthropicMessages() {
 				Stream:    request.Stream,
 				Status:    "error",
 				ErrorMsg:  err.Error(),
-				ClientIP:  c.Ctx.Request.RemoteAddr,
+				ClientIP:  c.Fiber().IP(),
 				RequestID: requestId,
 			}
 			errRecord.bind(c.Context(), authUser)
@@ -705,7 +704,7 @@ func (c *ApiController) AnthropicMessages() {
 			Premium:          isPremium,
 			Stream:           request.Stream,
 			Status:           "success",
-			ClientIP:         c.Ctx.Request.RemoteAddr,
+			ClientIP:         c.Fiber().IP(),
 			RequestID:        requestId,
 		}
 		successRecord.bind(c.Context(), authUser)
@@ -755,7 +754,6 @@ func (c *ApiController) AnthropicMessages() {
 		}
 	}
 
-	c.EnableRender = false
 }
 
 // proxyAnthropicToolRequest forwards a /v1/messages request that contains tools
@@ -830,17 +828,17 @@ func (c *ApiController) proxyAnthropicToolRequest(
 
 	for k, vals := range resp.Header {
 		for _, v := range vals {
-			c.Ctx.ResponseWriter.Header().Add(k, v)
+			c.Fiber().Response().Header.Add(k, v)
 		}
 	}
 
 	requestId := uuid.NewString()
 
 	if request.Stream {
-		c.Ctx.ResponseWriter.Header().Set("Content-Type", "text/event-stream")
-		c.Ctx.ResponseWriter.Header().Set("Cache-Control", "no-cache")
-		c.Ctx.ResponseWriter.Header().Set("Connection", "keep-alive")
-		c.Ctx.ResponseWriter.WriteHeader(resp.StatusCode)
+		c.SetHeader("Content-Type", "text/event-stream")
+		c.SetHeader("Cache-Control", "no-cache")
+		c.SetHeader("Connection", "keep-alive")
+		c.Status(resp.StatusCode)
 		// Native Anthropic SSE passes through verbatim; capture usage from the
 		// Anthropic events (message_start/message_delta), not the OpenAI shape.
 		capPrompt, capCompletion := streamCaptureAnthropicUsage(
@@ -853,7 +851,7 @@ func (c *ApiController) proxyAnthropicToolRequest(
 				PromptTokens: capPrompt, CompletionTokens: capCompletion,
 				TotalTokens: capPrompt + capCompletion, Currency: "USD",
 				Premium: isPremium, Stream: true, Status: "success",
-				ClientIP: c.Ctx.Request.RemoteAddr, RequestID: requestId,
+				ClientIP: c.Fiber().IP(), RequestID: requestId,
 			}
 			rec.bind(c.Context(), authUser)
 			rec.BYO, rec.Account = providerBYO(provider, authUser)
@@ -862,7 +860,7 @@ func (c *ApiController) proxyAnthropicToolRequest(
 			hold.settle(calculateCostCentsWithCache(request.Model, capPrompt, capCompletion, 0, 0))
 		}
 	} else {
-		c.Ctx.ResponseWriter.WriteHeader(resp.StatusCode)
+		c.Status(resp.StatusCode)
 		respBody, _ := io.ReadAll(resp.Body)
 		var usage struct {
 			Usage struct {
@@ -879,7 +877,7 @@ func (c *ApiController) proxyAnthropicToolRequest(
 				PromptTokens: prompt, CompletionTokens: completion,
 				TotalTokens: prompt + completion, Currency: "USD",
 				Premium: isPremium, Stream: false, Status: "success",
-				ClientIP: c.Ctx.Request.RemoteAddr, RequestID: requestId,
+				ClientIP: c.Fiber().IP(), RequestID: requestId,
 			}
 			rec.bind(c.Context(), authUser)
 			rec.BYO, rec.Account = providerBYO(provider, authUser)
@@ -889,7 +887,6 @@ func (c *ApiController) proxyAnthropicToolRequest(
 		}
 		c.Bytes(http.StatusOK, respBody)
 	}
-	c.EnableRender = false
 }
 
 // proxyAnthropicViaOpenAI sends a translated OpenAI request to an OpenAI-compatible
@@ -946,7 +943,7 @@ func (c *ApiController) proxyAnthropicViaOpenAI(
 				Owner: c.billingOrg(authUser), Model: request.Model, Provider: provider.Name, Premium: isPremium,
 				Origin: provider.Origin(),
 				Stream: request.Stream, Status: "error", ErrorMsg: err.Error(),
-				ClientIP: c.Ctx.Request.RemoteAddr, RequestID: requestId,
+				ClientIP: c.Fiber().IP(), RequestID: requestId,
 			}
 			errRecord.bind(c.Context(), authUser)
 			errRecord.BYO, errRecord.Account = providerBYO(provider, authUser)
@@ -964,10 +961,10 @@ func (c *ApiController) proxyAnthropicViaOpenAI(
 			c.respondAnthropicError(anthropicErrorTypeForStatus(resp.StatusCode), upstreamErrorMessage(respBody), resp.StatusCode)
 			return
 		}
-		c.Ctx.ResponseWriter.Header().Set("Content-Type", "text/event-stream")
-		c.Ctx.ResponseWriter.Header().Set("Cache-Control", "no-cache")
-		c.Ctx.ResponseWriter.Header().Set("Connection", "keep-alive")
-		c.Ctx.ResponseWriter.WriteHeader(http.StatusOK)
+		c.SetHeader("Content-Type", "text/event-stream")
+		c.SetHeader("Cache-Control", "no-cache")
+		c.SetHeader("Connection", "keep-alive")
+		c.Status(http.StatusOK)
 
 		emit := func(event string, data interface{}) error {
 			jsonData, mErr := json.Marshal(data)
@@ -989,7 +986,6 @@ func (c *ApiController) proxyAnthropicViaOpenAI(
 			}
 		}
 		c.recordAnthropicToolUsage(request, provider, authUser, isPremium, true, requestId, prompt, completion, requestStartTime, hold)
-		c.EnableRender = false
 		return
 	}
 
@@ -1011,7 +1007,6 @@ func (c *ApiController) proxyAnthropicViaOpenAI(
 	c.SetHeader("Content-Type", "application/json")
 	c.Bytes(http.StatusOK, out)
 	c.recordAnthropicToolUsage(request, provider, authUser, isPremium, false, requestId, prompt, completion, requestStartTime, hold)
-	c.EnableRender = false
 }
 
 // recordAnthropicToolUsage settles the budget hold and records usage + trace for a
@@ -1029,7 +1024,7 @@ func (c *ApiController) recordAnthropicToolUsage(
 			Origin:       provider.Origin(),
 			PromptTokens: prompt, CompletionTokens: completion, TotalTokens: prompt + completion,
 			Currency: "USD", Premium: isPremium, Stream: stream, Status: "success",
-			ClientIP: c.Ctx.Request.RemoteAddr, RequestID: requestId,
+			ClientIP: c.Fiber().IP(), RequestID: requestId,
 		}
 		rec.bind(c.Context(), authUser)
 		rec.BYO, rec.Account = providerBYO(provider, authUser)
@@ -1185,5 +1180,4 @@ func (c *ApiController) AnthropicCountTokens() {
 	out, _ := json.Marshal(map[string]interface{}{"input_tokens": n})
 	c.SetHeader("Content-Type", "application/json")
 	c.Bytes(http.StatusOK, out)
-	c.EnableRender = false
 }

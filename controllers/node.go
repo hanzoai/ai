@@ -17,6 +17,7 @@ package controllers
 
 import (
 	"encoding/json"
+	"net/http"
 
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
@@ -109,8 +110,7 @@ func (c *ApiController) UpdateNode() {
 		return
 	}
 
-	c.Data["json"] = wrapActionResponse(object.UpdateNode(id, &node))
-	c.ServeJSON()
+	c.JSON(http.StatusOK, wrapActionResponse(object.UpdateNode(id, &node)))
 }
 
 // AddNode
@@ -128,8 +128,7 @@ func (c *ApiController) AddNode() {
 		return
 	}
 
-	c.Data["json"] = wrapActionResponse(object.AddNode(&node))
-	c.ServeJSON()
+	c.JSON(http.StatusOK, wrapActionResponse(object.AddNode(&node)))
 }
 
 // DeleteNode
@@ -147,6 +146,5 @@ func (c *ApiController) DeleteNode() {
 		return
 	}
 
-	c.Data["json"] = wrapActionResponse(object.DeleteNode(&node))
-	c.ServeJSON()
+	c.JSON(http.StatusOK, wrapActionResponse(object.DeleteNode(&node)))
 }

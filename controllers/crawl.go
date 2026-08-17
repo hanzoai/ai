@@ -16,6 +16,7 @@ package controllers
 
 import (
 	"encoding/json"
+	"net/http"
 
 	"github.com/hanzoai/account"
 
@@ -92,13 +93,12 @@ func (c *ApiController) Crawl() {
 
 	results, err := object.Crawl(urls)
 	if err != nil {
-		recordSearchUsage(auth, "crawl", "crawl", "error", 0, c.Ctx.Request.RemoteAddr)
+		recordSearchUsage(auth, "crawl", "crawl", "error", 0, c.Fiber().IP())
 		c.ResponseError(err.Error())
 		return
 	}
 
-	recordSearchUsage(auth, "crawl", "crawl", "success", len(results), c.Ctx.Request.RemoteAddr)
+	recordSearchUsage(auth, "crawl", "crawl", "success", len(results), c.Fiber().IP())
 
-	c.Data["json"] = map[string]interface{}{"results": results}
-	c.ServeJSON()
+	c.JSON(http.StatusOK, map[string]interface{}{"results": results})
 }

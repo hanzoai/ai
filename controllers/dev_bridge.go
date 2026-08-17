@@ -121,7 +121,6 @@ func validateCwd(raw string) (string, error) {
 // GET /api/dev-bridge?cwd=/path/to/project
 // GET /api/dev-bridge?remote=host:port&cwd=/path/to/project
 func (c *ApiController) DevBridge() {
-	c.EnableRender = false
 	ctx := c.Ctx
 
 	// --- auth: require authenticated session ---

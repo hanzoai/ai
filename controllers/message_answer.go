@@ -40,9 +40,9 @@ import (
 func (c *ApiController) GetMessageAnswer() {
 	id := c.Input().Get("id")
 
-	c.Ctx.ResponseWriter.Header().Set("Content-Type", "text/event-stream")
-	c.Ctx.ResponseWriter.Header().Set("Cache-Control", "no-cache")
-	c.Ctx.ResponseWriter.Header().Set("Connection", "keep-alive")
+	c.SetHeader("Content-Type", "text/event-stream")
+	c.SetHeader("Cache-Control", "no-cache")
+	c.SetHeader("Connection", "keep-alive")
 
 	message, err := object.GetMessage(id)
 	if err != nil {
@@ -635,7 +635,7 @@ func (c *ApiController) recordCasibaseChatUsage(chat *object.Chat, provider *obj
 		Currency:         "USD",
 		Status:           "success",
 		Unpriced:         !usd,
-		ClientIP:         c.Ctx.Request.RemoteAddr,
+		ClientIP:         c.Fiber().IP(),
 		RequestID:        uuid.NewString(),
 	}
 	if usd {

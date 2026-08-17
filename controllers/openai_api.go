@@ -1431,7 +1431,6 @@ func (c *ApiController) chatCompletions(from caller) {
 			c.Status(403)
 			c.SetHeader("Content-Type", "application/json")
 			c.Bytes(http.StatusOK, []byte(`{"error":{"message":"Publishable keys (pk-) can only access read-only endpoints (/v1/models, /health). Use a secret key (sk-) for completions.","type":"auth_error","code":403}}`))
-			c.EnableRender = false
 			return
 		}
 	}
@@ -1513,7 +1512,7 @@ func (c *ApiController) chatCompletions(from caller) {
 	if routed, task, ok := resolveAutoModel(request.Model, orgId, routingUser, requestId, principal, &request, c.sloFromHeaders()); ok {
 		request.Model = routed
 		routedTask, routingRecorded = task, true
-		c.Ctx.ResponseWriter.Header().Set(RoutedModelHeader, routed)
+		c.SetHeader(RoutedModelHeader, routed)
 		// Fold this request's TASK into the region's task-mix for the live-traffic
 		// globe — geo from the edge headers only (NO IP), aggregates only. Best-effort.
 		object.GlobalTraffic.RecordTask(
@@ -1601,7 +1600,7 @@ func (c *ApiController) chatCompletions(from caller) {
 		est := estimateRequestCostCents(request.Model, estimatePromptTokens(&request), request.MaxTokens)
 		var ok bool
 		if hold, ok = reserveBudget(subject, est); !ok {
-			c.ResponseAuthError(billingError("%s", object.InsufficientBalance(c.Ctx.Request.Host, ledger, "request cost").Message))
+			c.ResponseAuthError(billingError("%s", object.InsufficientBalance(c.Host(), ledger, "request cost").Message))
 			return
 		}
 	}
@@ -1703,9 +1702,9 @@ func (c *ApiController) chatCompletions(from caller) {
 
 	// Setup for streaming if enabled
 	if request.Stream {
-		c.Ctx.ResponseWriter.Header().Set("Content-Type", "text/event-stream")
-		c.Ctx.ResponseWriter.Header().Set("Cache-Control", "no-cache")
-		c.Ctx.ResponseWriter.Header().Set("Connection", "keep-alive")
+		c.SetHeader("Content-Type", "text/event-stream")
+		c.SetHeader("Cache-Control", "no-cache")
+		c.SetHeader("Connection", "keep-alive")
 	}
 
 	// Create custom writer for OpenAI format
@@ -1798,7 +1797,7 @@ func (c *ApiController) chatCompletions(from caller) {
 				Stream:    request.Stream,
 				Status:    "error",
 				ErrorMsg:  err.Error(),
-				ClientIP:  c.Ctx.Request.RemoteAddr,
+				ClientIP:  c.Fiber().IP(),
 				RequestID: requestId,
 			}
 			errRecord.bind(c.Context(), authUser)
@@ -1827,7 +1826,7 @@ func (c *ApiController) chatCompletions(from caller) {
 			Premium:          isPremium,
 			Stream:           request.Stream,
 			Status:           "success",
-			ClientIP:         c.Ctx.Request.RemoteAddr,
+			ClientIP:         c.Fiber().IP(),
 			RequestID:        requestId,
 		}
 		successRecord.bind(c.Context(), authUser)
@@ -1896,9 +1895,8 @@ func (c *ApiController) chatCompletions(from caller) {
 	// goroutine after cheap gates, and is a no-op unless ROUTER_JUDGE_ENABLED. The
 	// prompt/response are passed transiently — never persisted (see router_judge.go).
 	if routingRecorded {
-		judgeRoutedResponse(c.Ctx.Request.UserAgent(), orgId, requestId, c.Header("CF-IPCountry"), request.Model, routedTask, question, writer.MessageString())
+		judgeRoutedResponse(c.Header("User-Agent"), orgId, requestId, c.Header("CF-IPCountry"), request.Model, routedTask, question, writer.MessageString())
 	}
-	c.EnableRender = false
 }
 
 // ListModels returns the list of available models from the routing table.
@@ -1951,7 +1949,6 @@ func (c *ApiController) ListModels() {
 
 	c.SetHeader("Content-Type", "application/json")
 	c.Bytes(http.StatusOK, jsonResponse)
-	c.EnableRender = false
 }
 
 // proxyToolRequest forwards an OpenAI chat completion request that contains
@@ -2041,7 +2038,7 @@ func (c *ApiController) proxyToolRequest(
 				Stream:    request.Stream,
 				Status:    "error",
 				ErrorMsg:  err.Error(),
-				ClientIP:  c.Ctx.Request.RemoteAddr,
+				ClientIP:  c.Fiber().IP(),
 				RequestID: requestId,
 			}
 			errRecord.bind(c.Context(), authUser)
@@ -2057,16 +2054,16 @@ func (c *ApiController) proxyToolRequest(
 	// Copy upstream response headers
 	for k, vals := range resp.Header {
 		for _, v := range vals {
-			c.Ctx.ResponseWriter.Header().Add(k, v)
+			c.Fiber().Response().Header.Add(k, v)
 		}
 	}
 
 	if request.Stream {
 		// Stream: copy SSE events while capturing token usage for billing.
-		c.Ctx.ResponseWriter.Header().Set("Content-Type", "text/event-stream")
-		c.Ctx.ResponseWriter.Header().Set("Cache-Control", "no-cache")
-		c.Ctx.ResponseWriter.Header().Set("Connection", "keep-alive")
-		c.Ctx.ResponseWriter.WriteHeader(resp.StatusCode)
+		c.SetHeader("Content-Type", "text/event-stream")
+		c.SetHeader("Cache-Control", "no-cache")
+		c.SetHeader("Connection", "keep-alive")
+		c.Status(resp.StatusCode)
 
 		// Copy the SSE stream to the client while capturing token usage (and the
 		// output text for a tokenizer fallback). This is the billing-critical core
@@ -2111,7 +2108,7 @@ func (c *ApiController) proxyToolRequest(
 				Premium:          isPremium,
 				Stream:           true,
 				Status:           "success",
-				ClientIP:         c.Ctx.Request.RemoteAddr,
+				ClientIP:         c.Fiber().IP(),
 				RequestID:        requestId,
 			}
 			successRecord.bind(c.Context(), authUser)
@@ -2175,7 +2172,7 @@ func (c *ApiController) proxyToolRequest(
 				Premium:          isPremium,
 				Stream:           false,
 				Status:           "success",
-				ClientIP:         c.Ctx.Request.RemoteAddr,
+				ClientIP:         c.Fiber().IP(),
 				RequestID:        requestId,
 			}
 			successRecord.bind(c.Context(), authUser)
@@ -2190,10 +2187,9 @@ func (c *ApiController) proxyToolRequest(
 		if model.InlinesReasoning(request.Model) {
 			out = stripReasoningBody(out)
 		}
-		c.Ctx.ResponseWriter.WriteHeader(resp.StatusCode)
+		c.Status(resp.StatusCode)
 		c.Bytes(http.StatusOK, out)
 	}
-	c.EnableRender = false
 }
 
 // resolveUpstreamEndpoint returns the chat completions URL, API key, and
@@ -2444,9 +2440,8 @@ func (c *ApiController) proxyToolRequestAnthropic(
 
 	if resp.StatusCode != http.StatusOK {
 		log.Error("[proxyToolRequest] Anthropic error %d: %s", resp.StatusCode, string(respBody))
-		c.Ctx.ResponseWriter.WriteHeader(resp.StatusCode)
+		c.Status(resp.StatusCode)
 		c.Bytes(http.StatusOK, respBody)
-		c.EnableRender = false
 		return
 	}
 
@@ -2538,7 +2533,7 @@ func (c *ApiController) proxyToolRequestAnthropic(
 			Premium:          isPremium,
 			Stream:           false,
 			Status:           "success",
-			ClientIP:         c.Ctx.Request.RemoteAddr,
+			ClientIP:         c.Fiber().IP(),
 			RequestID:        requestId,
 		}
 		successRecord.bind(c.Context(), authUser)
@@ -2558,9 +2553,9 @@ func (c *ApiController) proxyToolRequestAnthropic(
 		// Client asked for streaming: emit the converted completion as a single
 		// SSE chunk followed by [DONE], so OpenAI SDK clients consuming a stream
 		// still work while billing used the real (full-response) token usage.
-		c.Ctx.ResponseWriter.Header().Set("Content-Type", "text/event-stream")
-		c.Ctx.ResponseWriter.Header().Set("Cache-Control", "no-cache")
-		c.Ctx.ResponseWriter.Header().Set("Connection", "keep-alive")
+		c.SetHeader("Content-Type", "text/event-stream")
+		c.SetHeader("Cache-Control", "no-cache")
+		c.SetHeader("Connection", "keep-alive")
 		chunk := map[string]interface{}{
 			"id":      openaiResp.ID,
 			"object":  "chat.completion.chunk",
@@ -2581,11 +2576,9 @@ func (c *ApiController) proxyToolRequestAnthropic(
 		}
 		_, _ = fmt.Fprint(c.Ctx.ResponseWriter, "data: [DONE]\n\n")
 		c.Ctx.ResponseWriter.Flush()
-		c.EnableRender = false
 		return
 	}
 
 	c.SetHeader("Content-Type", "application/json")
 	c.Bytes(http.StatusOK, jsonResponse)
-	c.EnableRender = false
 }

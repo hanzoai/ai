@@ -140,7 +140,7 @@ func (c *ApiController) Signin() {
 	// InitAuthConfig baked, so the hanzo exchange is byte-unchanged. Exchanging a
 	// lux code as `hanzo-cloud` is what IAM rejected with "token is for wrong
 	// application" -- resolving per-brand is the fix.
-	brand := resolveBrandIAM(c.Ctx.Request.Host)
+	brand := resolveBrandIAM(c.Host())
 	authClient, err := brandAuthClient(brand)
 	if err != nil {
 		c.ResponseError(err.Error())
@@ -401,12 +401,12 @@ func (c *ApiController) isPublicDomain() bool {
 	if strings.Contains(configPublicDomain, ",") {
 		configPublicDomains := strings.Split(configPublicDomain, ",")
 		for _, domain := range configPublicDomains {
-			if c.Ctx.Request.Host == domain {
+			if c.Host() == domain {
 				return true
 			}
 		}
 	} else {
-		if c.Ctx.Request.Host == configPublicDomain {
+		if c.Host() == configPublicDomain {
 			return true
 		}
 	}
@@ -489,7 +489,7 @@ func (c *ApiController) GetAccount() {
 	// Resolve by the SESSION's own owner (white-label: a lux session refreshes
 	// lux/z, not hanzo/z) — see refreshSessionUser. hanzo is byte-unchanged.
 	if claims.User.Type != "anonymous-user" {
-		user, err := refreshSessionUser(c.Ctx.Request.Host, &claims.User)
+		user, err := refreshSessionUser(c.Host(), &claims.User)
 		if err != nil {
 			c.ResponseError(err.Error())
 			return
@@ -584,7 +584,7 @@ func (c *ApiController) UpdatePreferences() {
 
 	// Always resolve the user from IAM by the SESSION identity, never the body —
 	// scoped to the session's own owner (white-label: lux/z, not hanzo/z).
-	user, err := refreshSessionUser(c.Ctx.Request.Host, &claims.User)
+	user, err := refreshSessionUser(c.Host(), &claims.User)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
