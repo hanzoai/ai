@@ -1727,7 +1727,7 @@ func (c *ApiController) chatCompletions(from caller) {
 	knowledge := c.retrieveKnowledgeIfEnabled(
 		question,
 		retrievalOwner(authUser, token),
-		c.Ctx.Request.Header.Get("X-Retrieval-Store"),
+		c.retrievalStore(),
 		c.GetAcceptLanguage(),
 	)
 
