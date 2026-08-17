@@ -50,7 +50,7 @@ func (c *ApiController) ResponseErrorStream(message *object.Message, errorText s
 	}
 
 	event := fmt.Sprintf("event: myerror\ndata: %s\n\n", errorText)
-	_, err = c.Ctx.ResponseWriter.Write([]byte(event))
+	err = c.Bytes(c.Fiber().Response().StatusCode(), []byte(event))
 	if err != nil {
 		c.ResponseError(err.Error())
 		return

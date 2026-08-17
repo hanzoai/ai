@@ -16,17 +16,15 @@
 package controllers
 
 import (
+	"bufio"
 	"bytes"
 	"fmt"
-	"net/http"
 	"regexp"
 	"strings"
-
-	"github.com/hanzoai/ai/web"
 )
 
 type RefinedWriter struct {
-	web.Response
+	*bufio.Writer
 	writerCleaner Cleaner
 	buf           []byte
 	messageBuf    []byte
@@ -35,7 +33,7 @@ type RefinedWriter struct {
 	searchBuf     []byte
 }
 
-func newRefinedWriter(w web.Response) *RefinedWriter {
+func newRefinedWriter(w *bufio.Writer) *RefinedWriter {
 	return &RefinedWriter{w, *NewCleaner(6), []byte{}, []byte{}, []byte{}, []byte{}, []byte{}}
 }
 
@@ -82,10 +80,8 @@ func (w *RefinedWriter) Write(p []byte) (n int, err error) {
 
 	if eventType == "tool" || eventType == "search" {
 		fmt.Print(data)
-		n, err := w.ResponseWriter.Write([]byte(fmt.Sprintf("event: %s\ndata: %s\n\n", eventType, data)))
-		if flusher, ok := w.ResponseWriter.(http.Flusher); ok {
-			flusher.Flush()
-		}
+		n, err := w.Writer.Write([]byte(fmt.Sprintf("event: %s\ndata: %s\n\n", eventType, data)))
+		_ = w.Writer.Flush()
 		return n, err
 	}
 
@@ -98,7 +94,7 @@ func (w *RefinedWriter) Write(p []byte) (n int, err error) {
 			if err != nil {
 				return 0, err
 			}
-			return w.ResponseWriter.Write([]byte(fmt.Sprintf("event: %s\ndata: %s\n\n", eventType, jsonData)))
+			return w.Writer.Write([]byte(fmt.Sprintf("event: %s\ndata: %s\n\n", eventType, jsonData)))
 		}
 		return 0, nil
 	}
@@ -108,7 +104,7 @@ func (w *RefinedWriter) Write(p []byte) (n int, err error) {
 	if err != nil {
 		return 0, err
 	}
-	return w.ResponseWriter.Write([]byte(fmt.Sprintf("event: %s\ndata: %s\n\n", eventType, jsonData)))
+	return w.Writer.Write([]byte(fmt.Sprintf("event: %s\ndata: %s\n\n", eventType, jsonData)))
 }
 
 func (w *RefinedWriter) String() string {
