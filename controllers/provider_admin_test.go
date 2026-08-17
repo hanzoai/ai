@@ -172,8 +172,7 @@ func newGuardController(user *iam.User) (*ApiController, *httptest.ResponseRecor
 		sess.data["user"] = iam.Claims{User: *user}
 	}
 	ctx.Input.CruSession = sess
-	c := &ApiController{}
-	c.Init(ctx, "ApiController", "ToggleAdminProvider", nil)
+	c := visit("GET", "/v1/")
 	return c, rec
 }
 

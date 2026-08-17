@@ -54,8 +54,7 @@ func newAuthController(method, path, authHeader string, user *iam.User) (*ApiCon
 		sess.data["user"] = iam.Claims{User: *user}
 	}
 	ctx.Input.CruSession = sess
-	c := &ApiController{}
-	c.Init(ctx, "ApiController", "X", nil)
+	c := visit("GET", "/v1/")
 	return c, rec
 }
 
