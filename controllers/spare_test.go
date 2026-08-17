@@ -215,13 +215,19 @@ func (f *refuses) serve(t *testing.T) *httptest.Server {
 // pipe drives the real relay against that family and returns what the client got.
 func (f *refuses) pipe(t *testing.T, fam *modelFamily, sku string) (*httptest.ResponseRecorder, []attempt) {
 	t.Helper()
+	return f.pipeSince(t, fam, sku, time.Now())
+}
+
+// pipeSince is pipe with the request's own clock, for the rules that read it.
+func (f *refuses) pipeSince(t *testing.T, fam *modelFamily, sku string, start time.Time) (*httptest.ResponseRecorder, []attempt) {
+	t.Helper()
 	body := []byte(`{"model":"` + sku + `","messages":[{"role":"user","content":"2+2?"}]}`)
 	rec := httptest.NewRecorder()
 	ctx := web.NewContext()
 	ctx.Reset(rec, httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(string(body))))
 	c := &ApiController{}
 	c.Init(ctx, "ApiController", "X", nil)
-	out := c.pipeToFamily(fam, "chat/completions", "openai", sku, body, false, "acme", nil, false, nil, time.Now())
+	out := c.pipeToFamily(fam, "chat/completions", "openai", sku, body, false, "acme", nil, false, nil, start)
 	return rec, out
 }
 
@@ -463,6 +469,46 @@ func TestTermsAreNotTradedForAnAnswer(t *testing.T) {
 			t.Errorf("asked=%v — a route already under %q was not offered the spare", fake.asked, collectionAllow)
 		}
 	})
+}
+
+// zenPipeHeader bounds ONE attempt and spareTries bounds how many we borrow.
+// Neither bounds their product, and the product is what a person waits through: a
+// request expected to take ~25s was measured at 237s, and one at 540s before the
+// connection was reset. A four-minute hang is indistinguishable from a hung browser,
+// and the person watching it cannot tell which.
+//
+// So the walk reads the caller's clock too. Once a request has already spent a whole
+// attempt's worth of time, the next try is a longer wait before the same refusal.
+func TestTheWalkIsBoundedByTheCallersClockAndNotOnlyByItsCount(t *testing.T) {
+	cooled.forget()
+	const free = "vendor/big:free"
+	const sku = "vendor/small:free"
+	fake := &refuses{status: 402, body: `{"error":{"message":"Insufficient credits."}}`, free: free}
+	vendor := fake.serve(t)
+	defer vendor.Close()
+
+	// A request that has already been running longer than one attempt is allowed to
+	// take. Nothing here is slow; what is under test is the rule, not the wait.
+	spent := time.Now().Add(-zenPipeHeader - time.Second)
+	rec, refusedBy := fake.pipeSince(t, spareFamily(t, vendor.URL, free, sku), sku, spent)
+
+	if len(fake.asked) != 1 {
+		t.Errorf("asked=%v — the walk started another attempt on a request that had already spent its time", fake.asked)
+	}
+	// And it is a refusal, not silence: the caller gets an answer they can act on.
+	if refusedBy == nil && rec.Body.Len() == 0 {
+		t.Error("the refusal vanished")
+	}
+
+	// The same request on a fresh clock still walks — otherwise this asserts that
+	// the fallback is broken rather than that it is bounded.
+	cooled.forget()
+	fresh := &refuses{status: 402, body: `{"error":{"message":"Insufficient credits."}}`, free: free}
+	freshVendor := fresh.serve(t)
+	defer freshVendor.Close()
+	if _, _ = fresh.pipe(t, spareFamily(t, freshVendor.URL, free, sku), sku); len(fresh.asked) != 2 {
+		t.Errorf("asked=%v — a request with time left did not walk the pool", fresh.asked)
+	}
 }
 
 // The terms the caller is told are the terms the answer was served under, and after

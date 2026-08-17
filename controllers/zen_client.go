@@ -886,13 +886,22 @@ func (f *modelFamily) freeInfo(now int64) []modelInfo {
 
 // ── the pipe (IO edge) ────────────────────────────────────────────────────────
 
-// zenPipeClient forwards inference to a family. No client-level timeout: a streamed 1M
-// request is long by design, and the request context (client disconnect) bounds it. A
-// response-header timeout guards against a dead family without cutting live streams.
+// zenPipeHeader bounds ONE attempt: how long a family may take to say it has begun.
+//
+// It is not a round number chosen for tidiness. On a buffered request the header does
+// not arrive until the whole answer does, so this ceiling is the generation ceiling,
+// and real whole-site builds through this path complete at ~112s — a shorter bound
+// would clip work that is doing exactly what it should. The body is deliberately not
+// bounded at all: a streamed 1M-token answer is long by design, and the caller
+// staying on the line is the only honest measure of whether it is still wanted.
+const zenPipeHeader = 120 * time.Second
+
+// zenPipeClient forwards inference to a family. No client-level timeout: that would
+// count the body, which is the part that is long on purpose.
 var zenPipeClient = &http.Client{
 	Transport: &http.Transport{
 		Proxy:                 http.ProxyFromEnvironment,
-		ResponseHeaderTimeout: 120 * time.Second,
+		ResponseHeaderTimeout: zenPipeHeader,
 	},
 }
 
@@ -1132,6 +1141,25 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		for _, alt := range freeRoutes() {
 			if strings.EqualFold(alt.id, skip) || c.Ctx.Request.Context().Err() != nil {
 				continue
+			}
+			// A SECOND bound, on the caller's clock rather than on the count.
+			// zenPipeHeader bounds one attempt; spareTries bounds how many we
+			// borrow; neither bounds their PRODUCT, and the product is what a
+			// person waits through — five attempts of two minutes is ten minutes
+			// of a request that was expected to take twenty seconds.
+			//
+			// The walk is worth its cost because a free tier refuses FAST: a 429 is
+			// the answer arriving, not the answer being slow, so skipping past one
+			// is cheap. Once a request has already spent a whole attempt's worth of
+			// time, nothing here is cheap any more and the next try is just a
+			// longer wait before the same refusal.
+			//
+			// It bounds our own route too. spareTries deliberately does not — one
+			// more local call is the difference between an answer and a refusal —
+			// but that rule is about a SHORT walk, and this only fires where the
+			// walk has already stopped being short.
+			if time.Since(start) > zenPipeHeader {
+				break
 			}
 			// The budget bounds how many BORROWED routes we ask, because each is a
 			// round trip spent waiting on somebody else. Our own is not borrowed and
