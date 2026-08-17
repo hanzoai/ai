@@ -15,6 +15,7 @@
 package controllers
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"io"
@@ -310,7 +311,7 @@ func TestTheAnthropicWriterSaysSentAsSoonAsBytesGoOut(t *testing.T) {
 	// Deliver message_start and content_block_start, then fail — exactly the gap.
 	rec := breaksAfter(2)
 	w := &AnthropicWriter{
-		Response:  web.Response{ResponseWriter: rec},
+		Writer:    bufio.NewWriter(rec),
 		RequestID: "req-1",
 		Stream:    true,
 		Cleaner:   *NewCleaner(6),
@@ -329,8 +330,8 @@ func TestTheAnthropicWriterSaysSentAsSoonAsBytesGoOut(t *testing.T) {
 			"this request and the customer would read two vendors' answers spliced together",
 			rec.Body.Len())
 	}
-	if !strings.Contains(sent(c), "message_start") {
-		t.Errorf("expected the header events on the wire, got:\n%s", sent(c))
+	if !strings.Contains(rec.Body.String(), "message_start") {
+		t.Errorf("expected the header events on the wire, got:\n%s", rec.Body.String())
 	}
 }
 
@@ -339,7 +340,7 @@ func TestTheAnthropicWriterSaysSentAsSoonAsBytesGoOut(t *testing.T) {
 func TestAPartialWriteCountsAsSent(t *testing.T) {
 	rec := &tears{httptest.NewRecorder()}
 	w := &AnthropicWriter{
-		Response:  web.Response{ResponseWriter: rec},
+		Writer:    bufio.NewWriter(rec),
 		RequestID: "req-1",
 		Stream:    true,
 		Cleaner:   *NewCleaner(6),
@@ -363,7 +364,7 @@ func TestAPartialWriteCountsAsSent(t *testing.T) {
 func TestTheAnthropicWriterIsMovableUntilItWrites(t *testing.T) {
 	rec := breaksAfter(0)
 	w := &AnthropicWriter{
-		Response:  web.Response{ResponseWriter: rec},
+		Writer:    bufio.NewWriter(rec),
 		RequestID: "req-1",
 		Stream:    true,
 		Cleaner:   *NewCleaner(6),
@@ -477,7 +478,10 @@ func TestTheHoldFollowsTheAnswer(t *testing.T) {
 		gone, hangUp := context.WithCancel(context.Background())
 		hangUp()
 		req := []byte(`{"model":"enso-flash","messages":[{"role":"user","content":"hi"}]}`)
-		c := visit("POST", "/v1/chat/completions")
+		c := visit(http.MethodPost, "/v1/chat/completions")
+		// Nobody is listening, and the handler learns that the way it does in
+		// production: off the request it was handed.
+		c.SetContext(gone)
 
 		if refused := c.pipeToFamily(fam, "chat/completions", "openai", "enso-flash", req, false,
 			"org-a", nil, false, hold, time.Now()); refused != nil {
