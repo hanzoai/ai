@@ -207,43 +207,43 @@ func publicVisitor(addr string) string {
 	return "visitor:" + hex.EncodeToString(sum[:])[:32]
 }
 
-// publicAddr resolves the address to count by. See publicVisitor for why the peer
-// decides whether the forwarded header is believed.
-// publicAddr is the address a public visitor arrived from: the peer, unless the
-// peer is one of our own and Cloudflare named the real one.
+// publicAddr is the address a public visitor arrived from: the peer, unless the peer
+// is one of our own and something in front of us named the real one.
 //
-// It takes the two values rather than a request because that is all it ever
-// read, and because the peer now survives: served natively, the connection is
-// right there. The host resolver this used to consult existed only to replace a
-// peer an adapter had thrown away.
-//
-// CF-Connecting-IP only. Cloudflare overwrites that at its edge, where
-// X-Forwarded-For merely gains an entry and keeps whatever the caller put in
-// front of it.
-func publicAddr(peer, cfConnecting string) string {
+// It takes the two values rather than a request because that is all it ever read.
+// THE PEER DECIDES WHETHER THE STATED ADDRESS IS BELIEVED, and that is the whole
+// safety property: a stranger who reached us directly has a routable peer, so their
+// own claim about their address is ignored. Only a peer of ours — a socket, an
+// in-cluster hop — means the address arrived from a layer entitled to state it.
+func publicAddr(peer, stated string) string {
 	peer = strings.TrimSpace(peer)
 	if peer != "" && !internalAddr(peer) {
 		return peer
 	}
-	if cf := strings.TrimSpace(cfConnecting); cf != "" {
-		return cf
+	if stated := strings.TrimSpace(stated); stated != "" {
+		return stated
 	}
-	// Neither a routable peer nor an edge header: everyone who arrives this way
+	// Neither a routable peer nor a stated address: everyone who arrives this way
 	// shares one count, and the lane closes for all of them once it is spent.
 	return peer
 }
 
-// peerAddr is the socket peer — the one address on the request nobody but the network
-// can set.
-func peerAddr(r *http.Request) string {
-	addr := strings.TrimSpace(r.RemoteAddr)
-	if addr == "" {
-		return ""
+// stated is who a layer in front of this process says is calling.
+//
+// TWO DEPLOYMENTS, ONE READ. As a subsystem the peer is the unix socket the host
+// reached us over — empty, and identical for everyone — so the host resolves the
+// caller and stamps it (object.ClientIPHeader). Served directly, nothing is in front
+// but Cloudflare, which overwrites CF-Connecting-IP at its edge; X-Forwarded-For
+// merely gains an entry and keeps whatever the caller put in front of it, so that
+// one is never read.
+//
+// The host's answer wins where both are present: it is the hardened one, derived
+// from the connection it can actually see.
+func (c *ApiController) stated() string {
+	if addr := c.Header(object.ClientIPHeader); addr != "" {
+		return addr
 	}
-	if host, _, err := net.SplitHostPort(addr); err == nil {
-		return host
-	}
-	return addr
+	return c.Header("CF-Connecting-IP")
 }
 
 // internalAddr reports whether addr is one of our own hops rather than a caller.
@@ -277,7 +277,7 @@ func (c *ApiController) ChatCompletionsPublic() {
 		return
 	}
 
-	visitor := publicVisitor(publicAddr(c.Fiber().IP(), c.Header("CF-Connecting-IP")))
+	visitor := publicVisitor(publicAddr(c.Fiber().IP(), c.stated()))
 	if visitor == "" {
 		c.publicRefuse(http.StatusForbidden, "invalid_request_error", "public_no_address",
 			"This request carries no address to count against.")
