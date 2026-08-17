@@ -2320,8 +2320,9 @@ func resolveEndpointForPath(provider *object.Provider, apiPath string) (url stri
 // providers by converting the OpenAI format to Anthropic Messages API format
 // and converting the response back.
 // sku is the model the CALLER named. request.Model already carries the upstream's
-// own id by the time this runs, and a refusal must name the SKU the caller can act
-// on rather than disclosing the id we buy under.
+// own id by the time this runs, so it is what the outbound Anthropic body is built
+// from and nothing else: the envelope, the usage row and the price all read sku,
+// which is the model this call was sold as.
 func (c *ApiController) proxyToolRequestAnthropic(
 	provider *object.Provider,
 	request *openai.ChatCompletionRequest,
@@ -2542,7 +2543,7 @@ func (c *ApiController) proxyToolRequestAnthropic(
 		ID:      "chatcmpl-" + requestId,
 		Object:  "chat.completion",
 		Created: util.GetCurrentUnixTime(),
-		Model:   request.Model,
+		Model:   sku,
 		Choices: []openai.ChatCompletionChoice{
 			{
 				Index: 0,
@@ -2566,7 +2567,7 @@ func (c *ApiController) proxyToolRequestAnthropic(
 		successRecord := &usageRecord{
 			Owner:            ledger,
 			Organization:     authUser.Owner,
-			Model:            request.Model,
+			Model:            sku,
 			Provider:         provider.Name,
 			Origin:           provider.Origin(),
 			PromptTokens:     anthropicResp.Usage.InputTokens,
@@ -2584,7 +2585,10 @@ func (c *ApiController) proxyToolRequestAnthropic(
 		recordUsage(successRecord)
 		recordTrace(c.Ctx.Request.Context(), successRecord, requestStartTime)
 	}
-	hold.settle(calculateCostCentsWithCache(request.Model, anthropicResp.Usage.InputTokens, anthropicResp.Usage.OutputTokens, 0, 0))
+	// The same model the usage row above is priced from. recordUsage debits what
+	// usageCostCents makes of record.Model, so a hold settled against a different
+	// model would hold one number and bill another.
+	hold.settle(calculateCostCentsWithCache(sku, anthropicResp.Usage.InputTokens, anthropicResp.Usage.OutputTokens, 0, 0))
 
 	jsonResponse, err := json.Marshal(openaiResp)
 	if err != nil {
