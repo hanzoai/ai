@@ -44,7 +44,10 @@ func healthHandler() http.Handler {
 		(&ApiController{Ctx: c}).Health()
 		return nil
 	})
-	return http.HandlerFunc(adaptor.FiberApp(app.Fiber()))
+
+	// Through target, because the terminal builds its request in this process and the
+	// adaptor reads the request line — the same wrap InitForwardBridge applies.
+	return target(http.HandlerFunc(adaptor.FiberApp(app.Fiber())))
 }
 
 // TestForwardBridgeServesControllerHandler stands up two live ZAP nodes, registers

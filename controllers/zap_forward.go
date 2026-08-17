@@ -41,11 +41,32 @@ import (
 //
 // No-op when the node is absent (ZAP_ENABLED != true) or h is nil, mirroring
 // InitZapHandlers; ai's :8000 HTTP behavior is unchanged either way.
+// target gives a request built in this process its request line.
+//
+// net/http sets RequestURI on the SERVER side only: a request a caller CONSTRUCTS
+// carries a URL and an empty RequestURI. The adaptor that hands a request to the
+// router reads exactly that field — so an in-process request reaches the router as
+// "/" and is answered 404 whatever it asked for.
+//
+// Every request that crosses ZAP is built that way, by the terminal below and by the
+// gateway in zap_native.go, so without this the whole ZAP plane answers 404 to
+// everything. The URL is what such a caller filled in, so that is what the line
+// becomes.
+func target(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.RequestURI == "" && r.URL != nil {
+			r = r.Clone(r.Context())
+			r.RequestURI = r.URL.RequestURI()
+		}
+		h.ServeHTTP(w, r)
+	})
+}
+
 func InitForwardBridge(h http.Handler) {
 	node := object.GetZapNode()
 	if node == nil || h == nil {
 		return
 	}
-	forward.Serve(node, h)
+	forward.Serve(node, target(h))
 	log.Info("forward_serve: ZAP HTTP terminal registered on node %s (msg_type=%d)", node.NodeID(), forward.MsgTypeForward)
 }

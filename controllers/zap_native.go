@@ -66,7 +66,7 @@ func InitZapHandlers(router http.Handler) {
 	}
 
 	node.Handle(object.MsgTypeCloud, handleCloudService)
-	node.Handle(object.MsgTypeHTTPRequest, gateway(router))
+	node.Handle(object.MsgTypeHTTPRequest, gateway(target(router)))
 	log.Info("ZAP: registered handlers (cloud=%d, gateway=%d)", object.MsgTypeCloud, object.MsgTypeHTTPRequest)
 }
 
