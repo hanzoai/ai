@@ -131,8 +131,12 @@ func render(dir string) ([]byte, error) {
 	return format.Source(b.Bytes())
 }
 
-// registrations reads every `X.Router("path", &pkg.Ctrl{}, "VERB:Handler;…")` whose
-// path and spec are literals, sorted by (path, method) so the output is stable.
+// registrations reads every `route(app, "path", "VERB:Handler;…")` whose path and
+// mapping are literals, sorted by (path, method) so the output is stable.
+//
+// The controller is not an argument to read: serve (routers/route.go) resolves every
+// mapped name as a method on controllers.ApiController, so there is exactly one
+// receiver, and naming it here reads the registration rather than guessing at it.
 //
 // Non-literal arguments are the resource table's, and are skipped rather than
 // approximated: routers/openapi.go already describes that half from the same table
@@ -154,11 +158,11 @@ func registrations(dir string) ([]route, error) {
 				if !ok || len(call.Args) != 3 {
 					return true
 				}
-				sel, ok := call.Fun.(*ast.SelectorExpr)
-				if !ok || sel.Sel.Name != "Router" {
+				fn, ok := call.Fun.(*ast.Ident)
+				if !ok || fn.Name != "route" {
 					return true
 				}
-				path, ok := literal(call.Args[0])
+				path, ok := literal(call.Args[1])
 				if !ok {
 					return true
 				}
@@ -166,10 +170,7 @@ func registrations(dir string) ([]route, error) {
 				if !ok {
 					return true
 				}
-				ctrl := controllerName(call.Args[1])
-				if ctrl == "" {
-					return true
-				}
+				const ctrl = "ApiController"
 				for _, pair := range strings.Split(spec, ";") {
 					verb, handler, found := strings.Cut(pair, ":")
 					if !found {
@@ -198,25 +199,6 @@ func literal(e ast.Expr) (string, bool) {
 	}
 	s, err := strconv.Unquote(lit.Value)
 	return s, err == nil
-}
-
-// controllerName is the type name in `&controllers.ApiController{}`.
-func controllerName(e ast.Expr) string {
-	unary, ok := e.(*ast.UnaryExpr)
-	if !ok || unary.Op != token.AND {
-		return ""
-	}
-	comp, ok := unary.X.(*ast.CompositeLit)
-	if !ok {
-		return ""
-	}
-	switch t := comp.Type.(type) {
-	case *ast.SelectorExpr:
-		return t.Sel.Name
-	case *ast.Ident:
-		return t.Name
-	}
-	return ""
 }
 
 // handlerDocs is every method's doc comment, keyed "Receiver.Method".
