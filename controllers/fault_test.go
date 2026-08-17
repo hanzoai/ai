@@ -18,11 +18,15 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
 	openai "github.com/hanzoai/go-openai"
+
+	"github.com/hanzoai/ai/object"
+	"github.com/hanzoai/ai/web"
 )
 
 // apiErr builds the typed error a provider HTTP failure arrives as, so these
@@ -473,5 +477,193 @@ func TestUpstreamPaymentIsNotTheCustomersProblem(t *testing.T) {
 func TestFaultString(t *testing.T) {
 	if fmt.Sprint(faultProvider) != "provider" || fmt.Sprint(faultRequest) != "request" {
 		t.Errorf("fault names must read plainly in logs, got %q and %q", faultProvider, faultRequest)
+	}
+}
+
+// ── the proxied surfaces ─────────────────────────────────────────────────────
+
+// proxied drives the real tool/vision proxy against an upstream answering status
+// with body, and reports what the caller was told plus whether the upstream was
+// actually dialled.
+//
+// The reach matters as much as the status: a proxy that refused before sending
+// anything would answer 503 too, and pass a test that only reads the code while
+// serving nobody.
+func proxied(t *testing.T, status int, body string) (rec *httptest.ResponseRecorder, asked bool) {
+	t.Helper()
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		asked = true
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		_, _ = w.Write([]byte(body))
+	}))
+	defer up.Close()
+
+	req := &openai.ChatCompletionRequest{
+		Model:    "glm-5.2",
+		Messages: []openai.ChatCompletionMessage{{Role: "user", Content: "hi"}},
+		Tools: []openai.Tool{{Type: openai.ToolTypeFunction,
+			Function: &openai.FunctionDefinition{Name: "now"}}},
+	}
+	prov := &object.Provider{Owner: "admin", Name: "do-ai", Type: "DigitalOcean",
+		ProviderUrl: up.URL, ClientSecret: "k", SubType: "glm-5.2-upstream"}
+
+	rec = httptest.NewRecorder()
+	ctx := web.NewContext()
+	ctx.Reset(rec, httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader("{}")))
+	c := &ApiController{}
+	c.Init(ctx, "ApiController", "X", nil)
+	c.proxyToolRequest(prov, req, time.Now(), nil, false, "org-a", nil)
+	return rec, asked
+}
+
+// A request carrying tools or images skips the failover pipeline — that pipeline is
+// text-only and would drop both — and is proxied to the vendor raw. The proxy
+// relayed whatever status came back, so the one rule exhausted() exists to hold
+// was simply absent on the surface hanzo.chat and @hanzo/dev use most.
+func TestAProxiedVendorRefusalIsNotTheCallersBill(t *testing.T) {
+	rec, asked := proxied(t, http.StatusPaymentRequired, `{"error":{"message":"Insufficient credits."}}`)
+	if !asked {
+		t.Fatal("the upstream was never dialled; this test would pass on a proxy that serves nobody")
+	}
+	if rec.Code == http.StatusPaymentRequired {
+		t.Errorf("the caller was handed the vendor's 402 — OUR account with that vendor is empty, " +
+			"and a client that acts on 402 goes to fix a bill that is not theirs")
+	}
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("status=%d, want 503 — the true statement is that we could not serve this", rec.Code)
+	}
+	if got := codeOf(exhausted("glm-5.2", nil)); !strings.Contains(rec.Body.String(), got) {
+		t.Errorf("body %q does not carry %q, so a client cannot tell this from its own empty wallet",
+			rec.Body.String(), got)
+	}
+}
+
+// A refused call is not a served one. The proxy read usage off the error body,
+// found none, tokenized it, and settled — so the customer paid for the round trip
+// that told them our vendor was broke.
+func TestAProxiedRefusalIsNotBilled(t *testing.T) {
+	const subject = "prox/refused"
+	object.GlobalBalanceLedger.SetBalance(subject, 1000)
+	hold, ok := reserveBudget(subject, 100)
+	if !ok {
+		t.Fatal("reserve against a funded subject must succeed")
+	}
+
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusPaymentRequired)
+		_, _ = w.Write([]byte(`{"error":{"message":"Insufficient credits."}}`))
+	}))
+	defer up.Close()
+
+	req := &openai.ChatCompletionRequest{
+		Model:    "glm-5.2",
+		Messages: []openai.ChatCompletionMessage{{Role: "user", Content: strings.Repeat("hi ", 200)}},
+		Tools: []openai.Tool{{Type: openai.ToolTypeFunction,
+			Function: &openai.FunctionDefinition{Name: "now"}}},
+	}
+	prov := &object.Provider{Owner: "admin", Name: "do-ai", Type: "DigitalOcean",
+		ProviderUrl: up.URL, ClientSecret: "k", SubType: "glm-5.2-upstream"}
+
+	rec := httptest.NewRecorder()
+	ctx := web.NewContext()
+	ctx.Reset(rec, httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader("{}")))
+	c := &ApiController{}
+	c.Init(ctx, "ApiController", "X", nil)
+	c.proxyToolRequest(prov, req, time.Now(), nil, false, "org-a", hold)
+
+	hold.settle(0) // the call site's fail-safe; a real settle already won if one happened
+	if avail, _ := object.GlobalBalanceLedger.Available(subject); avail != 1000 {
+		t.Errorf("available = %d, want 1000 — the customer was charged for a call our vendor refused", avail)
+	}
+}
+
+// The reverse case, and the one a fix here can silently eat: our OWN spend gate
+// relayed back by a service that fronts for us wears the same 402 and means the
+// opposite thing. It is the caller's debt and has to reach them.
+func TestAFrontedBillingNoticeStillReachesTheCaller(t *testing.T) {
+	notice := object.InsufficientBalance("api.hanzo.ai", "org-a", "request cost")
+	rec, asked := proxied(t, http.StatusPaymentRequired, string(notice.ErrorJSON()))
+	if !asked {
+		t.Fatal("the upstream was never dialled")
+	}
+	if rec.Code != http.StatusPaymentRequired {
+		t.Errorf("status=%d, want 402 — this refusal is our own gate speaking through a "+
+			"service that fronts for us, and the debt really is the caller's", rec.Code)
+	}
+}
+
+// scrape reads the text exposition through the SAME handler GET /v1/metrics
+// serves, so what this asserts is what a collector would actually pull — not
+// merely that a package variable moved.
+func scrape(t *testing.T) string {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	object.MetricsHandler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/metrics", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("metrics scrape = %d, want 200", rec.Code)
+	}
+	return rec.Body.String()
+}
+
+// reading is the value of one series in a text exposition, or 0 when it is absent.
+func reading(t *testing.T, body, series string) float64 {
+	t.Helper()
+	for _, line := range strings.Split(body, "\n") {
+		rest, ok := strings.CutPrefix(strings.TrimSpace(line), series)
+		if !ok || !strings.HasPrefix(rest, " ") {
+			continue
+		}
+		var v float64
+		if _, err := fmt.Sscanf(strings.TrimSpace(rest), "%g", &v); err != nil {
+			t.Fatalf("series %q has an unreadable value %q: %v", series, rest, err)
+		}
+		return v
+	}
+	return 0
+}
+
+// An empty vendor account is invisible from the outside: the caller is told 503
+// and owes nothing, so nobody on their side has a reason to report it. The only
+// evidence used to be a log line, and a log line is read after somebody already
+// noticed. This is the reading a collector can pull and an alert can watch.
+func TestAVendorOutOfMoneyReachesAnOperator(t *testing.T) {
+	// A counter is process-wide and every other test in this package feeds the same
+	// registry, so what is asserted is the DELTA this call produced.
+	const (
+		funding = `cloud_supply_refused{provider="do-ai",reason="funding"}`
+		generic = `cloud_supply_refused{provider="do-ai",reason="refused"}`
+	)
+	was := scrape(t)
+	wasFunding, wasGeneric := reading(t, was, funding), reading(t, was, generic)
+
+	if _, asked := proxied(t, http.StatusPaymentRequired,
+		`{"error":{"message":"Insufficient credits."}}`); !asked {
+		t.Fatal("the upstream was never dialled")
+	}
+
+	now := scrape(t)
+	if got := reading(t, now, funding) - wasFunding; got != 1 {
+		t.Errorf("%s moved by %v, want 1 — a vendor whose account is spent must be visible to a "+
+			"collector, not only to whoever thinks to tail the log", funding, got)
+	}
+	// The reason has to be the one an operator acts on. Counting this as a generic
+	// refusal buries "top this account up" among rate limits and timeouts.
+	if got := reading(t, now, generic) - wasGeneric; got != 0 {
+		t.Errorf("the 402 also moved %s by %v — the condition that needs a human with a card "+
+			"must not be filed as a busy afternoon", generic, got)
+	}
+}
+
+// A refusal the vendor is not to blame for keeps its own status: every vendor
+// answers a malformed body the same way, so 503 would send the caller to wait out
+// a condition only they can clear.
+func TestAProxiedRequestFaultKeepsItsStatus(t *testing.T) {
+	rec, asked := proxied(t, http.StatusBadRequest, `{"error":{"message":"invalid 'messages': empty"}}`)
+	if !asked {
+		t.Fatal("the upstream was never dialled")
+	}
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status=%d, want 400 — the request itself is wrong and the caller can fix it", rec.Code)
 	}
 }
