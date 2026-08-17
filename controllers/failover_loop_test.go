@@ -26,7 +26,6 @@ import (
 
 	"github.com/hanzoai/ai/model"
 	"github.com/hanzoai/ai/object"
-	"github.com/hanzoai/ai/web"
 )
 
 // fleet scripts a set of providers: each name answers with an error, or serves.
@@ -330,8 +329,8 @@ func TestTheAnthropicWriterSaysSentAsSoonAsBytesGoOut(t *testing.T) {
 			"this request and the customer would read two vendors' answers spliced together",
 			rec.Body.Len())
 	}
-	if !strings.Contains(rec.Body.String(), "message_start") {
-		t.Errorf("expected the header events on the wire, got:\n%s", rec.Body.String())
+	if !strings.Contains(sent(c), "message_start") {
+		t.Errorf("expected the header events on the wire, got:\n%s", sent(c))
 	}
 }
 
@@ -409,11 +408,7 @@ func pipeFamily(t *testing.T, subject string, status int, body string) (refused 
 	}
 
 	req := []byte(`{"model":"enso-flash","messages":[{"role":"user","content":"hi"}]}`)
-	rec := httptest.NewRecorder()
-	ctx := web.NewContext()
-	ctx.Reset(rec, httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(string(req))))
-	c := &ApiController{}
-	c.Init(ctx, "ApiController", "X", nil)
+	c := visit("POST", "/v1/chat/completions")
 
 	refused = c.pipeToFamily(fam, "chat/completions", "openai", "enso-flash", req, false,
 		"org-a", nil, false, hold, time.Now())
@@ -482,12 +477,7 @@ func TestTheHoldFollowsTheAnswer(t *testing.T) {
 		gone, hangUp := context.WithCancel(context.Background())
 		hangUp()
 		req := []byte(`{"model":"enso-flash","messages":[{"role":"user","content":"hi"}]}`)
-		rec := httptest.NewRecorder()
-		ctx := web.NewContext()
-		ctx.Reset(rec, httptest.NewRequest("POST", "/v1/chat/completions",
-			strings.NewReader(string(req))).WithContext(gone))
-		c := &ApiController{}
-		c.Init(ctx, "ApiController", "X", nil)
+		c := visit("POST", "/v1/chat/completions")
 
 		if refused := c.pipeToFamily(fam, "chat/completions", "openai", "enso-flash", req, false,
 			"org-a", nil, false, hold, time.Now()); refused != nil {
@@ -533,11 +523,7 @@ func TestTheFamilyPipeRestsTheCallersAccount(t *testing.T) {
 	}
 
 	body := []byte(`{"model":"enso-flash","messages":[{"role":"user","content":"hi"}]}`)
-	rec := httptest.NewRecorder()
-	ctx := web.NewContext()
-	ctx.Reset(rec, httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(string(body))))
-	c := &ApiController{}
-	c.Init(ctx, "ApiController", "X", nil)
+	c := visit("POST", "/v1/chat/completions")
 
 	refused := c.pipeToFamily(fam, "chat/completions", "openai", "enso-flash", body, false,
 		"org-a", nil, false, nil, time.Now())

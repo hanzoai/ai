@@ -19,8 +19,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hanzoai/ai/web"
-
 	"github.com/hanzoai/ai/controllers"
 )
 

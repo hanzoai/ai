@@ -20,17 +20,13 @@ import (
 // sub-scope and a NON-reversible credential ref onto the Go request context, so the
 // single telemetry funnel (recordTrace) can stamp the ledger + span from one place.
 func TestTenantContextFilter_ThreadsAttribution(t *testing.T) {
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest("POST", "/v1/chat/completions", nil)
-	req.Header.Set("X-Project-Id", "research")
-	req.Header.Set("X-Session-Id", "conv-42")
-	req.Header.Set("X-Environment", "staging")
-	req.Header.Set("Authorization", "Bearer sk-secret-key")
+	p := ask("POST", "/v1/chat/completions")
+	p = p.with("X-Project-Id", "research")
+	p = p.with("X-Session-Id", "conv-42")
+	p = p.with("X-Environment", "staging")
+	p = p.with("Authorization", "Bearer sk-secret-key")
 
-	ctx := web.NewContext()
-	ctx.Reset(rec, req)
-
-	TenantContextFilter(ctx)
+	TenantContextFilter(p.Ctx)
 
 	attr := object.GenAIAttributionFromContext(ctx.Request.Context())
 	if attr.Project != "research" {
@@ -54,12 +50,9 @@ func TestTenantContextFilter_ThreadsAttribution(t *testing.T) {
 // TestTenantContextFilter_NoAttributionWhenBare: with no project header and no
 // bearer, nothing is threaded (an honest zero, no wrapped context).
 func TestTenantContextFilter_NoAttributionWhenBare(t *testing.T) {
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest("GET", "/v1/models", nil)
-	ctx := web.NewContext()
-	ctx.Reset(rec, req)
+	p := ask("GET", "/v1/models")
 
-	TenantContextFilter(ctx)
+	TenantContextFilter(p.Ctx)
 
 	if got := object.GenAIAttributionFromContext(ctx.Request.Context()); got != (object.GenAIAttribution{}) {
 		t.Fatalf("bare request must carry no attribution, got %+v", got)
@@ -70,15 +63,11 @@ func TestTenantContextFilter_NoAttributionWhenBare(t *testing.T) {
 // under the OpenAI/librechat-style X-Conversation-Id header when X-Session-Id is absent,
 // so either client convention turns the o11y sessions view on.
 func TestTenantContextFilter_SessionAliasConversationID(t *testing.T) {
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest("POST", "/v1/chat/completions", nil)
-	req.Header.Set("X-Conversation-Id", "thread-7")
-	req.Header.Set("Authorization", "Bearer sk-secret-key")
+	p := ask("POST", "/v1/chat/completions")
+	p = p.with("X-Conversation-Id", "thread-7")
+	p = p.with("Authorization", "Bearer sk-secret-key")
 
-	ctx := web.NewContext()
-	ctx.Reset(rec, req)
-
-	TenantContextFilter(ctx)
+	TenantContextFilter(p.Ctx)
 
 	if attr := object.GenAIAttributionFromContext(ctx.Request.Context()); attr.Session != "thread-7" {
 		t.Fatalf("session via X-Conversation-Id = %q, want \"thread-7\"", attr.Session)

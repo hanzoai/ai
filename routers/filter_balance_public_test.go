@@ -60,14 +60,12 @@ func TestPublicLaneIsCountedOnceAndOnlyByTheLane(t *testing.T) {
 	post := func(path, body string, withCredential bool) int {
 		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
 		if withCredential {
-			req.Header.Set("Authorization", "Bearer tok")
+			p = p.with("Authorization", "Bearer tok")
 		}
 		rec := httptest.NewRecorder()
-		ctx := web.NewContext()
-		ctx.Reset(rec, req)
 		ctx.Input.CopyBody(1 << 20)
-		BalanceGateFilter(ctx)
-		return rec.Code
+		BalanceGateFilter(p.Ctx)
+		return p.status()
 	}
 
 	// A caller arriving at the public lane carrying a credential — the signed-in

@@ -45,12 +45,10 @@ func TestRollingCapGate(t *testing.T) {
 
 	post := func() (int, string) {
 		req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
-		req.Header.Set("Authorization", "Bearer tok")
+		p = p.with("Authorization", "Bearer tok")
 		rec := httptest.NewRecorder()
-		ctx := web.NewContext()
-		ctx.Reset(rec, req)
-		BalanceGateFilter(ctx)
-		return rec.Code, rec.Body.String()
+		BalanceGateFilter(p.Ctx)
+		return p.status(), p.said()
 	}
 
 	// 1. Over the cap (reader returns over=true, no error) ⇒ 429 usage_cap_exceeded,

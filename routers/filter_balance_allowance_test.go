@@ -49,13 +49,11 @@ func TestAllowanceBoundsTheFreeRoute(t *testing.T) {
 
 	post := func(body string) (int, string) {
 		req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body))
-		req.Header.Set("Authorization", "Bearer tok")
+		p = p.with("Authorization", "Bearer tok")
 		rec := httptest.NewRecorder()
-		ctx := web.NewContext()
-		ctx.Reset(rec, req)
 		ctx.Input.CopyBody(1 << 20)
-		BalanceGateFilter(ctx)
-		return rec.Code, rec.Body.String()
+		BalanceGateFilter(p.Ctx)
+		return p.status(), p.said()
 	}
 
 	free := `{"model":"enso-free","messages":[]}`
@@ -140,18 +138,16 @@ func TestAllowanceLeavesThePaywallAlone(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions",
 		strings.NewReader(`{"model":"gpt-4o","messages":[]}`))
-	req.Header.Set("Authorization", "Bearer tok")
+	p = p.with("Authorization", "Bearer tok")
 	rec := httptest.NewRecorder()
-	ctx := web.NewContext()
-	ctx.Reset(rec, req)
 	ctx.Input.CopyBody(1 << 20)
-	BalanceGateFilter(ctx)
+	BalanceGateFilter(p.Ctx)
 
-	if rec.Code != http.StatusPaymentRequired {
-		t.Fatalf("a priced model at $0 returned %d, want 402 — the paywall must hold", rec.Code)
+	if p.status() != http.StatusPaymentRequired {
+		t.Fatalf("a priced model at $0 returned %d, want 402 — the paywall must hold", p.status())
 	}
-	if !strings.Contains(rec.Body.String(), "insufficient_balance") {
-		t.Errorf("refusal body %q is not the wallet's — a priced route must refuse as unpaid", rec.Body.String())
+	if !strings.Contains(p.said(), "insufficient_balance") {
+		t.Errorf("refusal body %q is not the wallet's — a priced route must refuse as unpaid", p.said())
 	}
 	if called {
 		t.Error("the allowance was read for a PRICED call — it bounds the free lane only")

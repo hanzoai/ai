@@ -27,14 +27,11 @@ func TestResolveBillingKey_NilGateNoPanic(t *testing.T) {
 	defer func() { balanceGate = saved }()
 
 	// sk- IAM key: the exact token class that reached the nil deref in prod.
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
-	req.Header.Set("Authorization", "Bearer sk-deadbeefcafe")
-	ctx := web.NewContext()
-	ctx.Reset(rec, req)
+	p := ask(http.MethodGet, "/v1/models")
+	p = p.with("Authorization", "Bearer sk-deadbeefcafe")
 
 	// Must not panic; must resolve no subject (fail-open when billing disabled).
-	subject, namespace, userKey := resolveBillingKey(ctx)
+	subject, namespace, userKey := resolveBillingKey(p.Ctx)
 	if subject != "" || namespace != "" || userKey != "" {
 		t.Fatalf("nil balanceGate must resolve no billing subject, got (%q, %q, %q)", subject, namespace, userKey)
 	}

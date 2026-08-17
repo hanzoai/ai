@@ -62,7 +62,6 @@ func TestMountRoutesForwardsBarePathUnchanged(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"ok":true}`))
 	}))
-	defer SetHandler(nil)
 
 	// Bare gateway path must reach the router UNCHANGED — no /v1/ai rewrite.
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
@@ -109,7 +108,6 @@ func TestMountRoutesPropagatesTraceContext(t *testing.T) {
 		gotSC = trace.SpanContextFromContext(r.Context())
 		w.WriteHeader(http.StatusOK)
 	}))
-	defer SetHandler(nil)
 
 	resp, err := app.Fiber().Test(httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil))
 	if err != nil {
@@ -135,7 +133,6 @@ func TestMountRoutesForwardsNestedAndSingleSegment(t *testing.T) {
 		sawPath = r.URL.Path
 		w.WriteHeader(http.StatusOK)
 	}))
-	defer SetHandler(nil)
 
 	for _, path := range []string{"/v1/models", "/v1/chat/completions", "/v1/get-chats"} {
 		req := httptest.NewRequest(http.MethodGet, path, nil)

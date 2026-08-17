@@ -18,21 +18,19 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-
-	"github.com/hanzoai/ai/web"
 )
 
 func billingCtx(auth, requested string) *web.Context {
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
 	if auth != "" {
-		req.Header.Set("Authorization", auth)
+		p = p.with("Authorization", auth)
 	}
 	if requested != "" {
-		req.Header.Set("X-Org-Id", requested)
+		p = p.with("X-Org-Id", requested)
 	}
-	ctx := web.NewContext()
+	p := web.NewContext()
 	ctx.Reset(httptest.NewRecorder(), req)
-	return ctx
+	return p.Ctx
 }
 
 // TestUserKeyCacheIsScopedToTheOrg pins the reason the cache key grew an org

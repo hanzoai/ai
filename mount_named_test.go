@@ -109,7 +109,6 @@ func TestPromotedAddressesReachTheSameHandler(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"ok":true}`))
 	}))
-	defer SetHandler(nil)
 
 	for _, tc := range []struct{ method, url string }{
 		{http.MethodGet, "/v1/models"},
