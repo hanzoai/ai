@@ -216,7 +216,7 @@ func zapAudioTranscribeHandler(ctx context.Context, auth string, body []byte) (*
 	// slice rather than installed on a reader — the bytes are already here, and
 	// the check that matters is the one that keeps them from being PARSED into
 	// three more copies and sent upstream.
-	if len(body) > MaxTranscribeUpload {
+	if !fits(body) {
 		return object.BuildCloudResponse(413, nil, fmt.Sprintf(
 			"audio upload exceeds the %d MiB limit", MaxTranscribeUpload>>20))
 	}
