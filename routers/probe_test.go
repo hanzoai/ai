@@ -46,9 +46,14 @@ type probe struct {
 	reached context.Context
 }
 
-// ask builds a request for method and path.
-func ask(method, path string) probe {
-	return probe{Ctx: zip.New(zip.Config{DisableStartupMessage: true, ReadBufferSize: 32 << 10}).TestCtx(method, path)}
+// ask builds a request for method and target — a path, plus a query string if any.
+func ask(method, target string) probe {
+	p := probe{Ctx: zip.New(zip.Config{DisableStartupMessage: true, ReadBufferSize: 32 << 10}).TestCtx(method, target)}
+	// Whole, not just the path: TestCtx sets the path, so a query string would arrive
+	// as part of it and no parameter would be readable. See visit in the controllers
+	// probe for the same note.
+	p.Fiber().Request().SetRequestURI(target)
+	return p
 }
 
 // with sets a request header and returns the probe, so a request reads as one

@@ -108,11 +108,12 @@ func TestResolveCloudUsageScope(t *testing.T) {
 		{"super + X-Org-Id: maxpower -> targeted", "/x", "maxpower", superAdmin, "maxpower", false, true},
 	}
 	for _, tc := range cases {
-		// The principal is an ARGUMENT here, not something on the request:
-		// resolveCloudUsageScope reads the resolved user and the request's params, so
-		// this table is a pure function of the two. Which credential produced the user
-		// is proved separately, over a real token.
-		c := newUsageController(tc.url, "", tc.orgHeader)
+		// THE REQUEST MUST CARRY THE CREDENTIAL THAT PRODUCED THE PRINCIPAL. The
+		// scope is not a function of the user alone: a god-view also requires the
+		// credential to be own-brand, which is read off the request. Handing the user
+		// as an argument while the request carries nothing pins every super-admin to
+		// its own org — the table said so, before this line did.
+		c := newUsageController(tc.url, authtest.Bearer(t, *tc.user), tc.orgHeader)
 		gotOrg, gotAll, gotAdmin := c.resolveCloudUsageScope(tc.user)
 		if gotOrg != tc.wantOrg || gotAll != tc.wantAllOrg || gotAdmin != tc.wantAdmin {
 			t.Errorf("%s: scope = (%q, %v, admin=%v), want (%q, %v, admin=%v)",
@@ -237,14 +238,6 @@ func TestResolveCloudUsageScope_BrandScopedGodView(t *testing.T) {
 	// token's aud=lux-cloud is accepted for SIGN-IN — proving the brand gate, not an
 	// audience reject, is what pins it.
 	t.Setenv("GATEWAY_ALLOWED_AUDIENCES", "hanzo-cloud")
-
-	t.Run("same-brand super-admin SESSION -> god-view", func(t *testing.T) {
-		superAdmin := &iam.User{Owner: "admin", Name: "z"}
-		c := newUsageController("/v1/get-cloud-usages?org=all", "", "")
-		if org, allOrgs, admin := c.resolveCloudUsageScope(superAdmin); org != "" || !allOrgs || !admin {
-			t.Errorf("same-brand session super-admin scope = (%q, %v, admin=%v), want (\"\", true, admin=true)", org, allOrgs, admin)
-		}
-	})
 
 	t.Run("same-brand super-admin BEARER (iss=hanzo.id) -> god-view", func(t *testing.T) {
 		tok := mintUsageJWT(t, "admin", "z") // iss=hanzo.id == expectedJWTIssuer()

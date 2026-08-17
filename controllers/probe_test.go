@@ -34,11 +34,20 @@ import (
 // whose only purpose was to hand a handler somewhere to read from and write to.
 // Both live on the context now.
 
-// visit builds a controller for one request.
-func visit(method, path string) *ApiController {
-	return &ApiController{
-		Ctx: zip.New(zip.Config{DisableStartupMessage: true, ReadBufferSize: 32 << 10}).TestCtx(method, path),
+// visit builds a controller for one request at target — a path, and the query string
+// if it has one.
+//
+// THE TARGET IS SET WHOLE, because zip's TestCtx sets the PATH: hand it
+// "/x?org=maxpower" and the question mark lands in the path while Queries() stays
+// empty, so a handler reads no parameters at all. Tests written that way do not fail
+// — they quietly exercise the no-parameter case and agree with themselves. Setting
+// the request URI parses it where a request is parsed.
+func visit(method, target string) *ApiController {
+	c := &ApiController{
+		Ctx: zip.New(zip.Config{DisableStartupMessage: true, ReadBufferSize: 32 << 10}).TestCtx(method, target),
 	}
+	c.Fiber().Request().SetRequestURI(target)
+	return c
 }
 
 // from sets the socket peer, the one address on a request nobody but the network

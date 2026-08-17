@@ -834,7 +834,13 @@ func (c *ApiController) proxyAnthropicToolRequest(
 		c.respondAnthropicError("api_error", "Upstream request failed: "+err.Error(), 502)
 		return
 	}
-	defer resp.Body.Close()
+	// Closed by whoever reads it: this function, or the stream callback that outlives
+	// it and takes the body with it.
+	defer func() {
+		if resp != nil {
+			resp.Body.Close()
+		}
+	}()
 
 	for k, vals := range resp.Header {
 		for _, v := range vals {
@@ -851,18 +857,27 @@ func (c *ApiController) proxyAnthropicToolRequest(
 		c.Status(resp.StatusCode)
 		// Native Anthropic SSE passes through verbatim; capture usage from the
 		// Anthropic events (message_start/message_delta), not the OpenAI shape.
-		var capPrompt, capCompletion int
+		//
+		// THE CAPTURE AND THE BILLING BOTH RUN INSIDE THE STREAM. fasthttp drains this
+		// writer while it serialises the response, so the callback has not run when
+		// SendStreamWriter returns: the upstream body has to travel in (the defer above
+		// would otherwise close it before a byte was read) and the counts have to be
+		// used in here, or every streamed answer is billed as zero.
+		upstream := resp.Body
+		resp = nil
 		_ = c.SendStreamWriter(func(w *bufio.Writer) {
-			capPrompt, capCompletion = streamCaptureAnthropicUsage(
-				resp.Body, w, func() { _ = w.Flush() },
+			defer upstream.Close()
+			prompt, completion := streamCaptureAnthropicUsage(
+				upstream, w, func() { _ = w.Flush() },
 			)
-		})
-		if authUser != nil {
+			if authUser == nil {
+				return
+			}
 			rec := &usageRecord{
 				Owner: c.billingOrg(authUser), Organization: authUser.Owner, Model: request.Model, Provider: provider.Name,
 				Origin:       provider.Origin(),
-				PromptTokens: capPrompt, CompletionTokens: capCompletion,
-				TotalTokens: capPrompt + capCompletion, Currency: "USD",
+				PromptTokens: prompt, CompletionTokens: completion,
+				TotalTokens: prompt + completion, Currency: "USD",
 				Premium: isPremium, Stream: true, Status: "success",
 				ClientIP: c.Fiber().IP(), RequestID: requestId,
 			}
@@ -870,8 +885,8 @@ func (c *ApiController) proxyAnthropicToolRequest(
 			rec.BYO, rec.Account = providerBYO(provider, authUser)
 			recordUsage(rec)
 			recordTrace(c.Context(), rec, requestStartTime)
-			hold.settle(calculateCostCentsWithCache(request.Model, capPrompt, capCompletion, 0, 0))
-		}
+			hold.settle(calculateCostCentsWithCache(request.Model, prompt, completion, 0, 0))
+		})
 	} else {
 		c.Status(resp.StatusCode)
 		respBody, _ := io.ReadAll(resp.Body)
@@ -966,7 +981,13 @@ func (c *ApiController) proxyAnthropicViaOpenAI(
 		c.respondAnthropicError("api_error", "Upstream request failed: "+err.Error(), 502)
 		return
 	}
-	defer resp.Body.Close()
+	// Closed by whoever reads it: this function, or the stream callback that outlives
+	// it and takes the body with it.
+	defer func() {
+		if resp != nil {
+			resp.Body.Close()
+		}
+	}()
 
 	if request.Stream {
 		if resp.StatusCode != http.StatusOK {
@@ -979,8 +1000,14 @@ func (c *ApiController) proxyAnthropicViaOpenAI(
 		c.SetHeader("Connection", "keep-alive")
 		c.Status(http.StatusOK)
 
-		var prompt, completion int
+		// The translation and the billing both run inside the stream, for the reason
+		// the verbatim relay above states: the callback has not run when
+		// SendStreamWriter returns, so the body must travel in and the counts must be
+		// used in here.
+		upstream := resp.Body
+		resp = nil
 		_ = c.SendStreamWriter(func(w *bufio.Writer) {
+			defer upstream.Close()
 			emit := func(event string, data interface{}) error {
 				jsonData, mErr := json.Marshal(data)
 				if mErr != nil {
@@ -992,16 +1019,15 @@ func (c *ApiController) proxyAnthropicViaOpenAI(
 				_ = w.Flush()
 				return nil
 			}
-			prompt, completion, _ = translateOpenAIStream(resp.Body, emit, request.Model, requestId)
-		})
-
-		// Tokenizer fallback so a successful streamed tool call is never billed $0.
-		if prompt == 0 {
-			if pt, e := model.OpenaiNumTokensFromMessages(oaiReq.Messages, request.Model); e == nil {
-				prompt = pt
+			prompt, completion, _ := translateOpenAIStream(upstream, emit, request.Model, requestId)
+			// Tokenizer fallback so a successful streamed tool call is never billed $0.
+			if prompt == 0 {
+				if pt, e := model.OpenaiNumTokensFromMessages(oaiReq.Messages, request.Model); e == nil {
+					prompt = pt
+				}
 			}
-		}
-		c.recordAnthropicToolUsage(request, provider, authUser, isPremium, true, requestId, prompt, completion, requestStartTime, hold)
+			c.recordAnthropicToolUsage(request, provider, authUser, isPremium, true, requestId, prompt, completion, requestStartTime, hold)
+		})
 		return
 	}
 
