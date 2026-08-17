@@ -18,11 +18,8 @@ import (
 	stdcontext "context"
 	"errors"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
-
-	web "github.com/hanzoai/ai/web"
 
 	"github.com/hanzoai/ai/object"
 )
@@ -48,11 +45,12 @@ func TestAllowanceBoundsTheFreeRoute(t *testing.T) {
 	t.Cleanup(func() { object.SetSpent(nil) }) // never leak the hook into other tests
 
 	post := func(body string) (int, string) {
-		req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body))
-		p = p.with("Authorization", "Bearer tok")
-		rec := httptest.NewRecorder()
-		ctx.Input.CopyBody(1 << 20)
-		BalanceGateFilter(p.Ctx)
+		// The body is already in memory on a fasthttp request, so there is nothing to
+		// copy before the gate reads it.
+		p := ask(http.MethodPost, "/v1/chat/completions").
+			with("Authorization", "Bearer tok").
+			body([]byte(body))
+		p = p.through(BalanceGateFilter)
 		return p.status(), p.said()
 	}
 
@@ -136,12 +134,10 @@ func TestAllowanceLeavesThePaywallAlone(t *testing.T) {
 		return false, nil // "allowance left" must not rescue a caller with no money
 	})
 
-	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions",
-		strings.NewReader(`{"model":"gpt-4o","messages":[]}`))
-	p = p.with("Authorization", "Bearer tok")
-	rec := httptest.NewRecorder()
-	ctx.Input.CopyBody(1 << 20)
-	BalanceGateFilter(p.Ctx)
+	p := ask(http.MethodPost, "/v1/chat/completions").
+		with("Authorization", "Bearer tok").
+		body([]byte(`{"model":"gpt-4o","messages":[]}`))
+	p = p.through(BalanceGateFilter)
 
 	if p.status() != http.StatusPaymentRequired {
 		t.Fatalf("a priced model at $0 returned %d, want 402 — the paywall must hold", p.status())

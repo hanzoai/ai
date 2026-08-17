@@ -1,6 +1,8 @@
 package routers
 
 import (
+	"github.com/zap-proto/zip"
+
 	"strings"
 	"testing"
 )
@@ -30,7 +32,10 @@ var filterPaths = []struct {
 // The filters match by prefix, so a path qualifies when some registered pattern
 // starts with it — /v1/ai/nodes covers the member tunnel action beneath it.
 func TestFilterPathsAreServed(t *testing.T) {
-	patterns := App.Patterns()
+	// The live table, built the way the runtime builds it.
+	app := zip.New(zip.Config{DisableStartupMessage: true, ReadBufferSize: 32 << 10})
+	Register(app)
+	patterns := Patterns(app)
 	if len(patterns) == 0 {
 		t.Fatal("no routes registered; the instrument is broken, not the filters")
 	}

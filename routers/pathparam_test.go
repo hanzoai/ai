@@ -11,7 +11,7 @@ import (
 // literal "{id}". The spelling half of that was already fixed (openAPIPath);
 // this holds the other half.
 func TestTemplatedSegmentsAreDeclared(t *testing.T) {
-	doc := Document()
+	doc := Document(built())
 	paths, _ := doc["paths"].(map[string]any)
 	re := regexp.MustCompile(`\{(\w+)\}`)
 	bad := 0

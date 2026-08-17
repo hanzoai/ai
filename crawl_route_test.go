@@ -22,7 +22,6 @@ import (
 
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/controllers"
-	"github.com/hanzoai/ai/routers" // registers /v1/* routes (incl. /v1/crawl)
 	"github.com/zap-proto/zip"
 )
 
@@ -45,7 +44,7 @@ func TestCrawlRouteIsRegisteredAndFailClosed(t *testing.T) {
 		defer conf.AppConfig.Set("disablePreviewMode", prev)
 	}
 
-	app := zip.New(zip.Config{DisableStartupMessage: true})
+	app := zip.New(zip.Config{DisableStartupMessage: true, ReadBufferSize: 32 << 10})
 	routes(app)
 
 	req, _ := http.NewRequest(http.MethodPost, "http://example.com/v1/crawl",
@@ -83,7 +82,7 @@ func TestCrawlRouteIsRegisteredAndFailClosed(t *testing.T) {
 // 404, and fail-closed (error body) for an unauthenticated caller.
 func TestSearchRouteStillRegistered(t *testing.T) {
 
-	app := zip.New(zip.Config{DisableStartupMessage: true})
+	app := zip.New(zip.Config{DisableStartupMessage: true, ReadBufferSize: 32 << 10})
 	routes(app)
 
 	req, _ := http.NewRequest(http.MethodPost, "http://example.com/v1/search",

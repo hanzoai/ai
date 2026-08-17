@@ -41,7 +41,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/golang-jwt/jwt/v5"
+	"github.com/golang-jwt/jwt/v4"
 
 	iam "github.com/hanzoai/ai/internal/iam"
 )
@@ -85,7 +85,7 @@ func Token(t testing.TB, u iam.User) string {
 	if fail != nil {
 		t.Fatalf("authtest: %v", fail)
 	}
-	signed, err := jwt.NewWithClaims(jwt.SigningMethodRS256, &iam.Claims{
+	signed, err := jwt.NewWithClaims(jwt.SigningMethodRS256, iam.Claims{
 		User: u,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    issuer,

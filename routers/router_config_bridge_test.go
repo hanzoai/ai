@@ -15,6 +15,8 @@
 package routers
 
 import (
+	"github.com/zap-proto/zip"
+
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -33,12 +35,18 @@ import (
 // the handler's verdict (401/403/200/…), NEVER the router's 404. A retired
 // compound path matches no route and MUST 404. "*" mapping means no 405 either.
 func TestRouterConfigRoutesServeOverHTTP(t *testing.T) {
-	// init() has registered every route on App; InstallFilters() is NOT called in
-	// a test, so this exercises pure route dispatch (no balance/auth filter deps).
+	// Routes only, no filters: registerAPI puts the table on the app without the
+	// chain, so this exercises pure route dispatch and nothing a filter could
+	// answer first.
+	app := zip.New(zip.Config{DisableStartupMessage: true, ReadBufferSize: 32 << 10})
+	registerResources(app)
+	registerAPI(app)
 	serve := func(method, path string) int {
-		rec := httptest.NewRecorder()
-		App.ServeHTTP(rec, httptest.NewRequest(method, path, nil))
-		return rec.Code
+		resp, err := app.Fiber().Test(httptest.NewRequest(method, path, nil))
+		if err != nil {
+			t.Fatalf("%s %s: %v", method, path, err)
+		}
+		return resp.StatusCode
 	}
 
 	// The RESTful nouns must resolve to the bridge — anything but 404 proves the

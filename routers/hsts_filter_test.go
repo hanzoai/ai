@@ -27,9 +27,7 @@ const hsts = "max-age=31536000; includeSubDomains; preload"
 
 func TestHstsSetOnTLS(t *testing.T) {
 	p := ask(http.MethodGet, "/v1/health").secure()
-	if err := HstsFilter(p.Ctx); err != nil {
-		t.Fatal(err)
-	}
+	p = p.through(HstsFilter)
 	if got := p.replied("Strict-Transport-Security"); got != hsts {
 		t.Errorf("header = %q, want %q", got, hsts)
 	}
@@ -37,9 +35,7 @@ func TestHstsSetOnTLS(t *testing.T) {
 
 func TestHstsSetBehindAProxy(t *testing.T) {
 	p := ask(http.MethodGet, "/v1/health").with("X-Forwarded-Proto", "https")
-	if err := HstsFilter(p.Ctx); err != nil {
-		t.Fatal(err)
-	}
+	p = p.through(HstsFilter)
 	if got := p.replied("Strict-Transport-Security"); got != hsts {
 		t.Errorf("header = %q, want %q", got, hsts)
 	}
@@ -57,9 +53,7 @@ func TestHstsSetOnEveryRoute(t *testing.T) {
 	} {
 		t.Run(route, func(t *testing.T) {
 			p := ask(http.MethodGet, route).secure()
-			if err := HstsFilter(p.Ctx); err != nil {
-				t.Fatal(err)
-			}
+			p = p.through(HstsFilter)
 			if got := p.replied("Strict-Transport-Security"); got != hsts {
 				t.Errorf("header = %q, want %q", got, hsts)
 			}
@@ -71,9 +65,7 @@ func TestHstsSetOnEveryRoute(t *testing.T) {
 // HTTPS is how a misconfigured edge locks a domain out of itself.
 func TestHstsWithheldOnPlainHTTP(t *testing.T) {
 	p := ask(http.MethodGet, "/v1/health")
-	if err := HstsFilter(p.Ctx); err != nil {
-		t.Fatal(err)
-	}
+	p = p.through(HstsFilter)
 	if got := p.replied("Strict-Transport-Security"); got != "" {
 		t.Errorf("header = %q on a plain-HTTP request, want none", got)
 	}

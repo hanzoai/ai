@@ -22,8 +22,6 @@ import (
 	"testing"
 	"time"
 
-	web "github.com/hanzoai/ai/web"
-
 	"github.com/hanzoai/ai/object"
 )
 
@@ -323,10 +321,9 @@ func TestBalanceGateFilterExemptsReads(t *testing.T) {
 	t.Cleanup(func() { balanceGate = prev })
 
 	status := func(method, path string) int {
-		req := httptest.NewRequest(method, path, nil)
+		p := ask(method, path)
 		p = p.with("Authorization", "Bearer tok")
-		rec := httptest.NewRecorder()
-		BalanceGateFilter(p.Ctx)
+		p = p.through(BalanceGateFilter)
 		return p.status()
 	}
 
@@ -444,10 +441,9 @@ func TestBalanceGateFilterTransientReturns503(t *testing.T) {
 	balanceGate = bg
 	t.Cleanup(func() { balanceGate = prev })
 
-	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	p := ask(http.MethodPost, "/v1/chat/completions")
 	p = p.with("Authorization", "Bearer tok")
-	rec := httptest.NewRecorder()
-	BalanceGateFilter(p.Ctx)
+	p = p.through(BalanceGateFilter)
 
 	if p.status() != http.StatusServiceUnavailable {
 		t.Fatalf("transient billing failure on a metered write: status=%d, want 503", p.status())
@@ -485,14 +481,12 @@ func TestAZeroPricedModelIsNotRefusedByTheWalletGate(t *testing.T) {
 	t.Cleanup(func() { balanceGate = prev })
 
 	post := func(body string) int {
-		req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body))
+		p := ask(http.MethodPost, "/v1/chat/completions").body([]byte(body))
 		p = p.with("Authorization", "Bearer tok")
-		rec := httptest.NewRecorder()
 		// The SAME call the router makes at the top of ServeHTTP, above the filter
 		// chain — so this proves the body is actually there when the gate looks,
 		// rather than assuming it by setting the field by hand.
-		ctx.Input.CopyBody(1 << 20)
-		BalanceGateFilter(p.Ctx)
+		p = p.through(BalanceGateFilter)
 		return p.status()
 	}
 

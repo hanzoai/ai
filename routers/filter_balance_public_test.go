@@ -17,11 +17,7 @@ package routers
 import (
 	stdcontext "context"
 	"net/http"
-	"net/http/httptest"
-	"strings"
 	"testing"
-
-	web "github.com/hanzoai/ai/web"
 
 	"github.com/hanzoai/ai/object"
 )
@@ -58,13 +54,11 @@ func TestPublicLaneIsCountedOnceAndOnlyByTheLane(t *testing.T) {
 	})
 
 	post := func(path, body string, withCredential bool) int {
-		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+		p := ask(http.MethodPost, path).body([]byte(body))
 		if withCredential {
 			p = p.with("Authorization", "Bearer tok")
 		}
-		rec := httptest.NewRecorder()
-		ctx.Input.CopyBody(1 << 20)
-		BalanceGateFilter(p.Ctx)
+		p = p.through(BalanceGateFilter)
 		return p.status()
 	}
 

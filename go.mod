@@ -34,9 +34,11 @@ require (
 	github.com/baidubce/bce-qianfan-sdk/go/qianfan v0.0.14
 	github.com/carmel/gooxml v0.0.0-20220216072414-40ff56130850
 	github.com/cohere-ai/cohere-go/v2 v2.5.2
+	github.com/fasthttp/websocket v1.5.12
 	github.com/gage-technologies/mistral-go v1.1.0
 	github.com/go-git/go-git/v5 v5.19.1
 	github.com/go-sql-driver/mysql v1.10.0
+	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.1-0.20241114170450-2d3c2a9cc518
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674
 	github.com/hanzo-ds/go v1.0.1
@@ -76,6 +78,7 @@ require (
 	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/hunyuan v1.3.48
 	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/tbaas v1.1.13
 	github.com/ua-parser/uap-go v0.0.0-20251207011819-db9adb27a0b8
+	github.com/valyala/fasthttp v1.72.0
 	github.com/volcengine/volcengine-go-sdk v1.0.141
 	github.com/wangbin/jiebago v0.3.2
 	github.com/workweixin/weworkapi_golang v0.0.0-20200831071321-c1fdfd3d6e7d
@@ -118,7 +121,6 @@ require (
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/ethereum/c-kzg-4844/v2 v2.1.7 // indirect
-	github.com/fasthttp/websocket v1.5.12 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.1 // indirect
 	github.com/go-errors/errors v1.5.1 // indirect
 	github.com/go-faster/city v1.0.1 // indirect
@@ -191,7 +193,6 @@ require (
 	github.com/tinylib/msgp v1.6.4 // indirect
 	github.com/tjfoc/gmsm v1.4.1 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
-	github.com/valyala/fasthttp v1.72.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	github.com/xlab/treeprint v1.2.0 // indirect
 	github.com/yuin/gopher-lua v1.1.1 // indirect
