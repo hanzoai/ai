@@ -64,7 +64,12 @@ func armBreaker(t *testing.T, s funding.State) {
 
 // TestBreakerRefusesAFundedCallerAtTheCeiling is the proof the breaker works:
 // same caller, same funded ledger, one difference — a published ceiling that has
-// been reached — and the gate turns from admit to 402.
+// been reached — and the gate turns from admit to refuse.
+//
+// The refusal is 503, and the caller it lands on is the whole argument. This test
+// runs a FUNDED caller precisely because that is who the breaker stops: the
+// ceiling is a fact about the Hanzo bank account, so the one person guaranteed to
+// meet it is somebody whose own wallet is fine. 402 tells them otherwise.
 func TestBreakerRefusesAFundedCallerAtTheCeiling(t *testing.T) {
 	user := &iam.User{Owner: "acme", Name: "bob"}
 
@@ -91,17 +96,29 @@ func TestBreakerRefusesAFundedCallerAtTheCeiling(t *testing.T) {
 		t.Fatal("breaker at its ceiling admitted a request — the ceiling is not enforced")
 	}
 
-	// It must be a 402 (the caller is asked to wait for the day, not told the
-	// service is broken), and it must name the numbers an operator needs.
 	ae, ok := err.(*apiError)
 	if !ok {
 		t.Fatalf("breaker refusal is not a typed apiError: %T %v", err, err)
 	}
-	if ae.status != http.StatusPaymentRequired {
-		t.Fatalf("breaker refusal status = %d, want %d", ae.status, http.StatusPaymentRequired)
+	if ae.status == http.StatusPaymentRequired {
+		t.Fatal("the breaker billed OUR ceiling to a caller holding $1,000 — 402 says they owe " +
+			"money, and a client that acts on one goes to top up a balance that is already funded")
 	}
-	if !strings.Contains(err.Error(), "250.00") || !strings.Contains(err.Error(), "200.00") {
-		t.Fatalf("refusal does not report spend and ceiling in dollars: %q", err.Error())
+	if ae.status != http.StatusServiceUnavailable {
+		t.Fatalf("breaker refusal status = %d, want %d", ae.status, http.StatusServiceUnavailable)
+	}
+	if ae.code != codeSupply {
+		t.Fatalf("breaker refusal code = %q, want %q — the status is what a person sees and the "+
+			"code is what a client acts on, so both have to say whose problem this is", ae.code, codeSupply)
+	}
+
+	// The numbers are ours. They are what we pay to buy inference, they reach an
+	// operator through the counter and the treasury board, and a customer reading a
+	// refusal is not the audience for our cash position.
+	for _, ours := range []string{"250.00", "200.00", "CLOUD_DAILY_CASH_CEILING_CENTS"} {
+		if strings.Contains(err.Error(), ours) {
+			t.Errorf("the refusal a customer reads discloses %q: %q", ours, err.Error())
+		}
 	}
 
 	// ORDERING: the wallet was never opened. The breaker is a property of OUR bank

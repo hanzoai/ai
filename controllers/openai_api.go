@@ -422,11 +422,18 @@ func enforceBalanceGate(user *iam.User, ledger string, requestedModel string) er
 	// caller with a perfectly good platform balance is exactly who spends our cash
 	// once upstream promo credit is gone. Disarmed unless a ceiling is configured,
 	// so this is a no-op until someone deliberately arms it.
+	//
+	// Being our bank account, it refuses with supplyError (503) and not with
+	// billingError (402). The caller owes nothing, so 402 would send a funded org to
+	// top up a balance that is already funded, and its code would put a billing
+	// prompt in front of them. The figures stay on our side of the line for the same
+	// reason the envelope keeps a buy price out of an answer: they are what we pay to
+	// buy inference. The counter is what an operator reads.
 	if cash := funding.Current(); cash.Refuse() {
-		return billingError(
-			"daily upstream spend ceiling reached ($%.2f of $%.2f). "+
-				"Paid inference resumes at 00:00 UTC, or raise CLOUD_DAILY_CASH_CEILING_CENTS.",
-			float64(cash.TodayCents)/100, float64(cash.CeilingCents)/100,
+		supplyRefused.WithLabelValues("hanzo", reasonCeiling).Inc()
+		return supplyError(
+			"paid inference is temporarily unavailable. Your balance is not affected — " +
+				"nothing is owed and no action is needed. Retry shortly.",
 		)
 	}
 
@@ -1985,7 +1992,7 @@ func (c *ApiController) proxyToolRequest(
 
 	// For Claude/Anthropic providers, convert to Anthropic Messages API format
 	if provider.Type == "Claude" {
-		c.proxyToolRequestAnthropic(provider, request, requestStartTime, authUser, isPremium, orgId, requestId, hold)
+		c.proxyToolRequestAnthropic(provider, request, mk.model, requestStartTime, authUser, isPremium, orgId, requestId, hold)
 		return
 	}
 
@@ -2054,6 +2061,23 @@ func (c *ApiController) proxyToolRequest(
 	}
 	defer resp.Body.Close()
 
+	// ONE status decision, ahead of the split and ahead of every billing line
+	// below. Whether the caller asked for a stream does not change whose refusal
+	// this is, and nothing has been written yet either way — for a stream this is
+	// the last moment that is true, which is why the decision lives here rather
+	// than down in the relay.
+	//
+	// It also stands between a refusal and the billing below, which reads usage off
+	// the body and settles. An error body carries no usage, so anything reaching
+	// that code tokenizes the refusal itself and charges the caller for the round
+	// trip that turned them away — recorded as a success, since nothing down there
+	// looks at a status.
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		c.ResponseFailure(relay(mk.model, provider.Name, resp.StatusCode, b))
+		return
+	}
+
 	// Copy upstream response headers
 	for k, vals := range resp.Header {
 		for _, v := range vals {
@@ -2066,7 +2090,7 @@ func (c *ApiController) proxyToolRequest(
 		c.Ctx.ResponseWriter.Header().Set("Content-Type", "text/event-stream")
 		c.Ctx.ResponseWriter.Header().Set("Cache-Control", "no-cache")
 		c.Ctx.ResponseWriter.Header().Set("Connection", "keep-alive")
-		c.Ctx.ResponseWriter.WriteHeader(resp.StatusCode)
+		c.Ctx.ResponseWriter.WriteHeader(http.StatusOK)
 
 		// Copy the SSE stream to the client while capturing token usage (and the
 		// output text for a tokenizer fallback). This is the billing-critical core
@@ -2190,7 +2214,7 @@ func (c *ApiController) proxyToolRequest(
 		if model.InlinesReasoning(request.Model) {
 			out = stripReasoningBody(out)
 		}
-		c.Ctx.ResponseWriter.WriteHeader(resp.StatusCode)
+		c.Ctx.ResponseWriter.WriteHeader(http.StatusOK)
 		c.Ctx.Output.Body(out)
 	}
 	c.EnableRender = false
@@ -2282,9 +2306,13 @@ func resolveEndpointForPath(provider *object.Provider, apiPath string) (url stri
 // proxyToolRequestAnthropic handles tool-calling requests for Claude/Anthropic
 // providers by converting the OpenAI format to Anthropic Messages API format
 // and converting the response back.
+// sku is the model the CALLER named. request.Model already carries the upstream's
+// own id by the time this runs, and a refusal must name the SKU the caller can act
+// on rather than disclosing the id we buy under.
 func (c *ApiController) proxyToolRequestAnthropic(
 	provider *object.Provider,
 	request *openai.ChatCompletionRequest,
+	sku string,
 	requestStartTime time.Time,
 	authUser *iam.User,
 	isPremium bool,
@@ -2443,10 +2471,7 @@ func (c *ApiController) proxyToolRequestAnthropic(
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		log.Error("[proxyToolRequest] Anthropic error %d: %s", resp.StatusCode, string(respBody))
-		c.Ctx.ResponseWriter.WriteHeader(resp.StatusCode)
-		c.Ctx.Output.Body(respBody)
-		c.EnableRender = false
+		c.ResponseFailure(relay(sku, provider.Name, resp.StatusCode, respBody))
 		return
 	}
 
