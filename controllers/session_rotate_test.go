@@ -59,7 +59,7 @@ func TestAdoptingAnIdentityRotatesTheSession(t *testing.T) {
 	c, _, arrived := signingIn(t, m)
 	before := arrived.SessionID()
 
-	c.adoptSession(&iam.Claims{User: iam.User{Owner: "hanzo", Name: "alice"}})
+	c.SetSessionClaims(&iam.Claims{User: iam.User{Owner: "hanzo", Name: "alice"}})
 
 	after := c.Ctx.Input.CruSession.SessionID()
 	if after == before {
@@ -101,5 +101,5 @@ func TestAdoptingAnIdentityWithoutASessionManager(t *testing.T) {
 
 	// Must not panic, and must still be able to record the identity where a session
 	// exists to hold it.
-	c.adoptSession(&iam.Claims{User: iam.User{Owner: "hanzo", Name: "alice"}})
+	c.SetSessionClaims(&iam.Claims{User: iam.User{Owner: "hanzo", Name: "alice"}})
 }

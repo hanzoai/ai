@@ -109,7 +109,7 @@ func (c *ApiController) Responses() {
 			return
 		}
 		body = decoded
-		c.Ctx.Request.Header.Del("Content-Encoding")
+		c.Fiber().Request().Header.Del("Content-Encoding")
 	}
 
 	var request OpenAIResponsesRequest
@@ -141,7 +141,7 @@ func (c *ApiController) Responses() {
 	bridge := newResponsesBridgeWriter(original, &request, toolKinds)
 	c.Ctx.ResponseWriter.ResponseWriter = bridge
 	c.Body() = chatBody
-	c.Ctx.Request.Header.Del("Content-Length")
+	c.Fiber().Request().Header.Del("Content-Length")
 
 	c.ChatCompletions()
 	if err := bridge.Close(); err != nil && !c.Ctx.ResponseWriter.Started {
