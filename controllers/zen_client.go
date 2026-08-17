@@ -1191,6 +1191,19 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		if !down(err, strings.ToLower(err.Error())) || c.Ctx.Request.Context().Err() != nil {
 			return nil, ""
 		}
+		// THE FLOOR. A priced route is bought under `deny` — the vendor keeps
+		// nothing of what it carried — and every route in the pool is free, which
+		// is free BECAUSE the vendor keeps it. So this substitution would move a
+		// customer who chose and paid for the first term onto the second, and the
+		// whole notice of it is a header and an id they would have to remember
+		// their own request to compare against.
+		//
+		// The terms are not ours to trade for an answer. Refusing says the route is
+		// unavailable, which is true, and leaves the customer with the protection
+		// they bought.
+		if word, _ := fam.collection(sku); word == collectionDeny {
+			return nil, ""
+		}
 		return pool(sku)
 	}
 
@@ -1248,8 +1261,8 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	// is free in exchange for what the vendor keeps and somebody has to be able to
 	// say so — in a consent notice, in a log, in a policy page. Set before any byte
 	// of a stream goes out, which is the last moment a header can be set at all.
-	if served := servingFamily(sku); served != nil && served.terms != nil {
-		c.Ctx.Output.Header(headerCollection, collection(served.free(sku)))
+	if word, stated := servingFamily(sku).collection(sku); stated {
+		c.Ctx.Output.Header(headerCollection, word)
 	}
 
 	prompt, completion := 0, 0
