@@ -1258,7 +1258,12 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		c.SetHeader("Cache-Control", "no-cache")
 		c.SetHeader("Connection", "keep-alive")
 		c.Status(http.StatusOK)
-		prompt, completion, served, respID = c.relayZenStream(resp.Body, mk)
+		// The relay writes into the stream callback's writer, which is the only
+		// writer there is: the body is produced after the handler has said what the
+		// response will be, so the headers and the status above go on first.
+		_ = c.SendStreamWriter(func(w *bufio.Writer) {
+			prompt, completion, served, respID = c.relayZenStream(w, resp.Body, mk)
+		})
 	} else {
 		b, rErr := io.ReadAll(resp.Body)
 		if rErr != nil {

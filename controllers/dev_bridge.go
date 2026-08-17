@@ -26,8 +26,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/gorilla/websocket"
+	"github.com/fasthttp/websocket"
 	"github.com/hanzoai/ai/log"
+	"github.com/valyala/fasthttp"
 )
 
 const (
@@ -41,11 +42,11 @@ var globalBridgeConns int64
 // origin checking to prevent cross-site WebSocket hijacking. The global
 // UpGrader in tunnel.go accepts all origins for guacamole compatibility;
 // DevBridge must not share it.
-var devBridgeUpgrader = websocket.Upgrader{
+var devBridgeUpgrader = websocket.FastHTTPUpgrader{
 	ReadBufferSize:  4096,
 	WriteBufferSize: 4096,
-	CheckOrigin: func(r *http.Request) bool {
-		origin := r.Header.Get("Origin")
+	CheckOrigin: func(ctx *fasthttp.RequestCtx) bool {
+		origin := string(ctx.Request.Header.Peek("Origin"))
 		if origin == "" {
 			return true // non-browser clients (CLI, curl)
 		}
@@ -121,7 +122,6 @@ func validateCwd(raw string) (string, error) {
 // GET /api/dev-bridge?cwd=/path/to/project
 // GET /api/dev-bridge?remote=host:port&cwd=/path/to/project
 func (c *ApiController) DevBridge() {
-	ctx := c.Ctx
 
 	// --- auth: require authenticated session ---
 	// DevBridge route does not match the get-/update-/add-/delete- prefixes
@@ -140,8 +140,7 @@ func (c *ApiController) DevBridge() {
 	safeCwd, err := validateCwd(cwd)
 	if err != nil {
 		log.Error(fmt.Sprintf("DevBridge: invalid cwd %q: %s", cwd, err.Error()))
-		ctx.ResponseWriter.WriteHeader(http.StatusBadRequest)
-		_, _ = ctx.ResponseWriter.Write([]byte(fmt.Sprintf(`{"error":"invalid cwd: %s"}`, err.Error())))
+		_ = c.Bytes(http.StatusBadRequest, []byte(fmt.Sprintf(`{"error":"invalid cwd: %s"}`, err.Error())))
 		return
 	}
 
@@ -149,11 +148,9 @@ func (c *ApiController) DevBridge() {
 	if atomic.AddInt64(&globalBridgeConns, 1) > maxBridgeConnsGlobal {
 		atomic.AddInt64(&globalBridgeConns, -1)
 		log.Warn("DevBridge: global connection limit exceeded")
-		ctx.ResponseWriter.WriteHeader(http.StatusServiceUnavailable)
-		_, _ = ctx.ResponseWriter.Write([]byte(`{"error":"server at capacity"}`))
+		_ = c.Bytes(http.StatusServiceUnavailable, []byte(`{"error":"server at capacity"}`))
 		return
 	}
-	defer atomic.AddInt64(&globalBridgeConns, -1)
 
 	// --- per-user connection limit ---
 	userKey := GetUserName(user)
@@ -162,121 +159,133 @@ func (c *ApiController) DevBridge() {
 	if atomic.AddInt64(counter, 1) > maxBridgeConnsPerUser {
 		atomic.AddInt64(counter, -1)
 		log.Warn(fmt.Sprintf("DevBridge: connection limit exceeded for %s", userKey))
-		ctx.ResponseWriter.WriteHeader(http.StatusTooManyRequests)
-		_, _ = ctx.ResponseWriter.Write([]byte(`{"error":"too many concurrent connections"}`))
+		_ = c.Bytes(http.StatusTooManyRequests, []byte(`{"error":"too many concurrent connections"}`))
 		return
 	}
-	defer atomic.AddInt64(counter, -1)
+	// Both seats are taken. Releasing them is the CONNECTION's job now, not this
+	// function's: a hijacked socket outlives the handler that upgraded it, so a
+	// defer here would free a seat still in use and the limit would stop counting.
+	// Exactly one caller runs this — the session below on the way out, or the
+	// upgrade's own failure arm.
+	release := func() {
+		atomic.AddInt64(&globalBridgeConns, -1)
+		atomic.AddInt64(counter, -1)
+	}
 
-	ws, err := devBridgeUpgrader.Upgrade(ctx.ResponseWriter, ctx.Request, nil)
-	if err != nil {
+	// fasthttp hands the upgraded connection to a CALLBACK instead of returning
+	// it, because an upgrade IS a hijack: the socket is detached from the request
+	// and the session runs on it after this function is done. So the session lives
+	// in here, and so does everything whose lifetime is the connection's.
+	if err := devBridgeUpgrader.Upgrade(c.Fiber().RequestCtx(), func(ws *websocket.Conn) {
+		defer release()
+		defer ws.Close()
+
+		// Resolve binary path from env or PATH.
+		appServerBin := os.Getenv("HANZO_APP_SERVER_BIN")
+		if appServerBin == "" {
+			appServerBin = "hanzo-app-server"
+		}
+		cmd := exec.Command(appServerBin)
+		cmd.Dir = safeCwd
+
+		stdin, err := cmd.StdinPipe()
+		if err != nil {
+			log.Error(fmt.Sprintf("DevBridge: stdin pipe: %s", err.Error()))
+			writeWSError(ws, "failed to create stdin pipe")
+			return
+		}
+
+		stdout, err := cmd.StdoutPipe()
+		if err != nil {
+			log.Error(fmt.Sprintf("DevBridge: stdout pipe: %s", err.Error()))
+			writeWSError(ws, "failed to create stdout pipe")
+			return
+		}
+
+		if err := cmd.Start(); err != nil {
+			log.Error(fmt.Sprintf("DevBridge: start app-server: %s", err.Error()))
+			writeWSError(ws, "failed to start hanzo-app-server")
+			return
+		}
+
+		// --- process cleanup: always kill even on panic ---
+		defer func() {
+			_ = cmd.Process.Kill()
+			_ = cmd.Wait()
+		}()
+
+		var wsMu sync.Mutex
+		var wg sync.WaitGroup
+		done := make(chan struct{})
+		var doneOnce sync.Once
+		closeDone := func() { doneOnce.Do(func() { close(done) }) }
+
+		// WebSocket -> stdin: forward client JSON-RPC messages to app-server.
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			defer stdin.Close()
+			defer closeDone()
+			for {
+				select {
+				case <-done:
+					return
+				default:
+				}
+				_, message, err := ws.ReadMessage()
+				if err != nil {
+					log.Info(fmt.Sprintf("DevBridge: ws read closed: %s", err.Error()))
+					return
+				}
+				if _, err := stdin.Write(append(message, '\n')); err != nil {
+					log.Error(fmt.Sprintf("DevBridge: stdin write: %s", err.Error()))
+					return
+				}
+			}
+		}()
+
+		// stdout -> WebSocket: forward app-server JSON-RPC responses to client.
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			defer closeDone()
+			scanner := bufio.NewScanner(stdout)
+			scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
+			for scanner.Scan() {
+				select {
+				case <-done:
+					return
+				default:
+				}
+				wsMu.Lock()
+				err := ws.WriteMessage(websocket.TextMessage, scanner.Bytes())
+				wsMu.Unlock()
+				if err != nil {
+					log.Error(fmt.Sprintf("DevBridge: ws write: %s", err.Error()))
+					return
+				}
+			}
+			if err := scanner.Err(); err != nil {
+				log.Error(fmt.Sprintf("DevBridge: stdout scan: %s", err.Error()))
+			}
+		}()
+
+		// --- wait with timeout to prevent goroutine leak ---
+		waitCh := make(chan struct{})
+		go func() {
+			wg.Wait()
+			close(waitCh)
+		}()
+		select {
+		case <-waitCh:
+		case <-time.After(30 * time.Second):
+			log.Warn("DevBridge: goroutine wait timed out after 30s, forcing cleanup")
+			closeDone()
+			_ = ws.Close()
+		}
+	}); err != nil {
+		release()
 		log.Error(fmt.Sprintf("DevBridge: websocket upgrade failed: %s", err.Error()))
-		return
-	}
-	defer ws.Close()
-
-	// Resolve binary path from env or PATH.
-	appServerBin := os.Getenv("HANZO_APP_SERVER_BIN")
-	if appServerBin == "" {
-		appServerBin = "hanzo-app-server"
-	}
-	cmd := exec.Command(appServerBin)
-	cmd.Dir = safeCwd
-
-	stdin, err := cmd.StdinPipe()
-	if err != nil {
-		log.Error(fmt.Sprintf("DevBridge: stdin pipe: %s", err.Error()))
-		writeWSError(ws, "failed to create stdin pipe")
-		return
-	}
-
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		log.Error(fmt.Sprintf("DevBridge: stdout pipe: %s", err.Error()))
-		writeWSError(ws, "failed to create stdout pipe")
-		return
-	}
-
-	if err := cmd.Start(); err != nil {
-		log.Error(fmt.Sprintf("DevBridge: start app-server: %s", err.Error()))
-		writeWSError(ws, "failed to start hanzo-app-server")
-		return
-	}
-
-	// --- process cleanup: always kill even on panic ---
-	defer func() {
-		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
-	}()
-
-	var wsMu sync.Mutex
-	var wg sync.WaitGroup
-	done := make(chan struct{})
-	var doneOnce sync.Once
-	closeDone := func() { doneOnce.Do(func() { close(done) }) }
-
-	// WebSocket -> stdin: forward client JSON-RPC messages to app-server.
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		defer stdin.Close()
-		defer closeDone()
-		for {
-			select {
-			case <-done:
-				return
-			default:
-			}
-			_, message, err := ws.ReadMessage()
-			if err != nil {
-				log.Info(fmt.Sprintf("DevBridge: ws read closed: %s", err.Error()))
-				return
-			}
-			if _, err := stdin.Write(append(message, '\n')); err != nil {
-				log.Error(fmt.Sprintf("DevBridge: stdin write: %s", err.Error()))
-				return
-			}
-		}
-	}()
-
-	// stdout -> WebSocket: forward app-server JSON-RPC responses to client.
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		defer closeDone()
-		scanner := bufio.NewScanner(stdout)
-		scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
-		for scanner.Scan() {
-			select {
-			case <-done:
-				return
-			default:
-			}
-			wsMu.Lock()
-			err := ws.WriteMessage(websocket.TextMessage, scanner.Bytes())
-			wsMu.Unlock()
-			if err != nil {
-				log.Error(fmt.Sprintf("DevBridge: ws write: %s", err.Error()))
-				return
-			}
-		}
-		if err := scanner.Err(); err != nil {
-			log.Error(fmt.Sprintf("DevBridge: stdout scan: %s", err.Error()))
-		}
-	}()
-
-	// --- wait with timeout to prevent goroutine leak ---
-	waitCh := make(chan struct{})
-	go func() {
-		wg.Wait()
-		close(waitCh)
-	}()
-	select {
-	case <-waitCh:
-	case <-time.After(30 * time.Second):
-		log.Warn("DevBridge: goroutine wait timed out after 30s, forcing cleanup")
-		closeDone()
-		_ = ws.Close()
 	}
 }
 
