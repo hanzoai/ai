@@ -199,8 +199,7 @@ func utcDay(t time.Time) string { return t.UTC().Format("2006-01-02") }
 //
 // The address is hashed and never kept. It travels into a log line and a usage row,
 // and an address in either is a record of who visited that nothing here needs.
-func publicVisitor(r *http.Request) string {
-	addr := publicAddr(r)
+func publicVisitor(addr string) string {
 	if addr == "" {
 		return ""
 	}
@@ -210,37 +209,27 @@ func publicVisitor(r *http.Request) string {
 
 // publicAddr resolves the address to count by. See publicVisitor for why the peer
 // decides whether the forwarded header is believed.
-func publicAddr(r *http.Request) string {
-	// THE HOST ANSWERS THIS WHERE THERE IS ONE. Mounted in hanzoai/cloud, this
-	// module's routes are reached through an adapter and the peer does not survive
-	// the crossing, so everything below reads the same value for every caller — one
-	// bucket for the whole internet rather than one per visitor. cloud can see the
-	// connection and has already hardened the answer, so it gives it to us.
-	if host := object.ClientIP(); host != nil {
-		if addr := strings.TrimSpace(host(r)); addr != "" {
-			return addr
-		}
-	}
-
-	// Standalone from here: nothing is mounted in front, so the request is the only
-	// thing that knows.
-	peer := peerAddr(r)
+// publicAddr is the address a public visitor arrived from: the peer, unless the
+// peer is one of our own and Cloudflare named the real one.
+//
+// It takes the two values rather than a request because that is all it ever
+// read, and because the peer now survives: served natively, the connection is
+// right there. The host resolver this used to consult existed only to replace a
+// peer an adapter had thrown away.
+//
+// CF-Connecting-IP only. Cloudflare overwrites that at its edge, where
+// X-Forwarded-For merely gains an entry and keeps whatever the caller put in
+// front of it.
+func publicAddr(peer, cfConnecting string) string {
+	peer = strings.TrimSpace(peer)
 	if peer != "" && !internalAddr(peer) {
 		return peer
 	}
-	// Inside our own network the edge's header names the visitor. CF-Connecting-IP
-	// only: Cloudflare overwrites it at its edge, where X-Forwarded-For merely gains
-	// an entry and keeps whatever the caller put in front of it.
-	if cf := strings.TrimSpace(r.Header.Get("CF-Connecting-IP")); cf != "" {
+	if cf := strings.TrimSpace(cfConnecting); cf != "" {
 		return cf
 	}
 	// Neither a routable peer nor an edge header: everyone who arrives this way
-	// shares one count, and the lane closes for all of them once it is spent. That is
-	// the safe direction, and it is the LAST resort rather than the usual one — when
-	// it was the usual one, this comment described the collapse correctly and blamed
-	// a cause that was never measured, which reads as considered and is worse than
-	// silence. If a deployment lands here for real traffic, the host resolver above
-	// is missing, not the header.
+	// shares one count, and the lane closes for all of them once it is spent.
 	return peer
 }
 
@@ -288,7 +277,7 @@ func (c *ApiController) ChatCompletionsPublic() {
 		return
 	}
 
-	visitor := publicVisitor(c.Ctx.Request)
+	visitor := publicVisitor(publicAddr(c.Fiber().IP(), c.Header("CF-Connecting-IP")))
 	if visitor == "" {
 		c.publicRefuse(http.StatusForbidden, "invalid_request_error", "public_no_address",
 			"This request carries no address to count against.")
@@ -332,7 +321,7 @@ func (c *ApiController) ChatCompletionsPublic() {
 
 	// The visitor rides on the request, because the record of the call is what counts
 	// it and the record has no other way to know which stranger this was.
-	c.Ctx.Request = c.Ctx.Request.WithContext(withVisitor(c.Context(), visitor))
+	c.SetContext(withVisitor(c.Context(), visitor))
 
 	c.chatCompletions(callerPublic)
 }

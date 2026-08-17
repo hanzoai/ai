@@ -59,7 +59,7 @@ func (c *ApiController) bodyRetrieval() retrievalFlags {
 // retrievalStore names the store to search: the header if present, else the
 // body, else empty — which retrieveKnowledgeIfEnabled resolves to the default.
 func (c *ApiController) retrievalStore() string {
-	if v := c.Ctx.Request.Header.Get("X-Retrieval-Store"); v != "" {
+	if v := c.Header("X-Retrieval-Store"); v != "" {
 		return v
 	}
 	return c.bodyRetrieval().Store
@@ -89,7 +89,7 @@ func (c *ApiController) retrieveKnowledgeIfEnabled(
 	question, owner, store, lang string,
 ) []*model.RawMessage {
 	empty := []*model.RawMessage{}
-	token := bearerTokenFromRequest(c.Ctx.Request)
+	token := bearerToken(c.Header("Authorization"), c.Fiber().Cookies(iamTokenCookieName))
 	if !c.retrievalEnabled(token) {
 		return empty
 	}
@@ -122,20 +122,16 @@ func (c *ApiController) retrieveKnowledgeIfEnabled(
 	return out
 }
 
-func bearerTokenFromRequest(r *http.Request) string {
-	if r == nil {
-		return ""
-	}
-	h := r.Header.Get("Authorization")
-	if strings.HasPrefix(h, "Bearer ") {
-		return strings.TrimPrefix(h, "Bearer ")
+func bearerToken(authorization, iamCookie string) string {
+	if strings.HasPrefix(authorization, "Bearer ") {
+		return strings.TrimPrefix(authorization, "Bearer ")
 	}
 	// First-party cookie fallback: a browser cookie session carries no
 	// Authorization header, but Signin persisted the verified IAM access token as
 	// the hanzo_iam_token cookie so the stateless validator can re-derive identity
 	// when the in-memory the router session is gone (self-heal). See iamTokenCookieName.
-	if ck, err := r.Cookie(iamTokenCookieName); err == nil && ck != nil && ck.Value != "" {
-		return ck.Value
+	if iamCookie != "" {
+		return iamCookie
 	}
 	return ""
 }
