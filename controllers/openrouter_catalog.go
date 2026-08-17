@@ -314,6 +314,24 @@ func collection(free bool) string {
 	return collectionDeny
 }
 
+// collection is what this family lets the vendor keep of an exchange on one route,
+// in the same word openrouterTerms sends upstream and headerCollection reports back.
+// stated is false for a family that declares no terms: it says nothing about
+// collection, so there is nothing here to read and nothing to protect.
+//
+// ONE reading of the fact, asked by the two readers that need it — the header, which
+// asks the family that ANSWERED, and the fallback, which asks the family it was
+// about to move the request AWAY from. Each passes the family that owns its
+// question, which is why the family is the receiver rather than a global lookup: a
+// route this family cannot name reads as priced, and about a route we cannot name
+// `allow` is the one guess with a customer on the other end of it.
+func (f *modelFamily) collection(sku string) (word string, stated bool) {
+	if f == nil || f.terms == nil {
+		return "", false
+	}
+	return collection(f.free(sku)), true
+}
+
 // openrouterTerms states what OpenRouter may keep of this exchange, in its own
 // dialect: `provider.data_collection`.
 //
