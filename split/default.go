@@ -18,13 +18,21 @@ package split
 import (
 	"regexp"
 	"strings"
+	"sync"
 
-	"github.com/hanzoai/ai/model"
+	"github.com/pkoukk/tiktoken-go"
 )
 
 type DefaultSplitProvider struct {
 	TextType string
 }
+
+// tokenEncoder returns the ONE shared cl100k encoder the splitter budgets
+// with. Resolving an encoding walks model tables and can read files; doing it
+// once is the difference between a split and a stall.
+var tokenEncoder = sync.OnceValues(func() (*tiktoken.Tiktoken, error) {
+	return tiktoken.EncodingForModel("gpt-3.5-turbo")
+})
 
 func NewDefaultSplitProvider(textType string) (*DefaultSplitProvider, error) {
 	typ := "default"
@@ -43,6 +51,14 @@ func (p *DefaultSplitProvider) SplitText(text string) ([]string, error) {
 	var codeBlock strings.Builder
 	inCodeBlock := false
 	codeBlockLines := 0
+	sectionTokens := 0
+	// One encoder for the whole document; resolving it per line was most of a
+	// split's wall time.
+	enc, encErr := tokenEncoder()
+	if encErr != nil {
+		return nil, encErr
+	}
+	tokens := func(t string) int { return len(enc.Encode(t, nil, nil)) }
 
 	lines := strings.Split(text, "\n")
 	emptyLineCount := 0
@@ -55,6 +71,7 @@ func (p *DefaultSplitProvider) SplitText(text string) ([]string, error) {
 			if emptyLineCount >= 4 && currentSection.Len() > 0 {
 				sections = append(sections, currentSection.String())
 				currentSection.Reset()
+				sectionTokens = 0
 			}
 			continue
 		} else {
@@ -68,10 +85,12 @@ func (p *DefaultSplitProvider) SplitText(text string) ([]string, error) {
 					if currentSection.Len() > 0 {
 						sections = append(sections, currentSection.String())
 						currentSection.Reset()
+						sectionTokens = 0
 					}
 					sections = append(sections, codeBlock.String())
 				} else {
 					currentSection.WriteString(codeBlock.String())
+					sectionTokens += tokens(codeBlock.String())
 				}
 				codeBlock.Reset()
 				codeBlockLines = 0
@@ -88,6 +107,7 @@ func (p *DefaultSplitProvider) SplitText(text string) ([]string, error) {
 				if currentSection.Len() > 0 {
 					sections = append(sections, currentSection.String())
 					currentSection.Reset()
+					sectionTokens = 0
 				}
 				sections = append(sections, codeBlock.String())
 				codeBlock.Reset()
@@ -102,25 +122,27 @@ func (p *DefaultSplitProvider) SplitText(text string) ([]string, error) {
 				currentSection.Reset()
 			}
 			currentSection.WriteString(line + "\n")
+			sectionTokens = tokens(line)
 			continue
 		}
 
-		tokenSize, err := model.GetTokenSize("gpt-3.5-turbo", currentSection.String()+line)
-		if err != nil {
-			return nil, err
-		}
-
-		if tokenSize <= maxLength {
+		// The budget is a RUNNING count: each line is tokenized once and added.
+		// Re-tokenizing the whole accumulated section per line made splitting
+		// quadratic in section length — a changelog took a minute to split.
+		lineTokens := tokens(line)
+		if sectionTokens+lineTokens <= maxLength {
 			if currentSection.Len() > 0 {
 				currentSection.WriteString("\n")
 			}
 			currentSection.WriteString(line)
+			sectionTokens += lineTokens
 		} else {
 			if currentSection.Len() > 0 {
 				sections = append(sections, currentSection.String())
 				currentSection.Reset()
 			}
 			currentSection.WriteString(line)
+			sectionTokens = lineTokens
 		}
 	}
 
