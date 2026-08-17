@@ -1,9 +1,8 @@
 package controllers
 
 import (
+	"bytes"
 	"encoding/json"
-	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -112,9 +111,8 @@ func TestResponsesToChatRequestTools(t *testing.T) {
 
 func TestResponsesStreamTextWire(t *testing.T) {
 	req := &OpenAIResponsesRequest{Model: "zen4-coder", Stream: true}
-	recorder := httptest.NewRecorder()
-	bridge := newResponsesBridgeWriter(recorder, req, nil)
-	bridge.WriteHeader(http.StatusOK)
+	out := &bytes.Buffer{}
+	bridge := newResponsesBridge(out, req, nil)
 
 	upstream := strings.Join([]string{
 		`data: {"id":"chat_1","model":"qwen","choices":[{"delta":{"role":"assistant","content":"HANZO_"},"finish_reason":null}]}`,
@@ -135,8 +133,8 @@ func TestResponsesStreamTextWire(t *testing.T) {
 	if err := bridge.Close(); err != nil {
 		t.Fatal(err)
 	}
+	wire := out.String()
 
-	wire := recorder.Body.String()
 	assertInOrder(
 		t, wire,
 		`event: response.created`,
@@ -162,9 +160,8 @@ func TestResponsesStreamTextWire(t *testing.T) {
 
 func TestResponsesStreamFunctionCallWire(t *testing.T) {
 	req := &OpenAIResponsesRequest{Model: "zen4-coder", Stream: true}
-	recorder := httptest.NewRecorder()
-	bridge := newResponsesBridgeWriter(recorder, req, map[string]string{"shell_command": "function"})
-	bridge.WriteHeader(http.StatusOK)
+	out := &bytes.Buffer{}
+	bridge := newResponsesBridge(out, req, map[string]string{"shell_command": "function"})
 
 	upstream := strings.Join([]string{
 		`data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"shell_command","arguments":""}}]},"finish_reason":null}]}`,
@@ -180,8 +177,8 @@ func TestResponsesStreamFunctionCallWire(t *testing.T) {
 	if err := bridge.Close(); err != nil {
 		t.Fatal(err)
 	}
+	wire := out.String()
 
-	wire := recorder.Body.String()
 	assertInOrder(
 		t, wire,
 		`event: response.created`,
@@ -198,27 +195,28 @@ func TestResponsesStreamFunctionCallWire(t *testing.T) {
 	}
 }
 
+// A non-streaming answer is ONE body, so it is translated as one — by the function
+// the sink in Responses hands it to, not through the stream bridge. It used to go
+// through the bridge because the bridge was standing in for the response writer and
+// saw everything; it now sees only the stream, so this asks the translation
+// directly.
 func TestResponsesNonStreamingTranslation(t *testing.T) {
 	req := &OpenAIResponsesRequest{Model: "zen4-coder"}
-	recorder := httptest.NewRecorder()
-	bridge := newResponsesBridgeWriter(recorder, req, nil)
-	bridge.WriteHeader(http.StatusOK)
 	chat := `{"id":"chat_1","choices":[{"message":{"role":"assistant","content":"OK"},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":1,"total_tokens":4}}`
-	if _, err := bridge.Write([]byte(chat)); err != nil {
-		t.Fatal(err)
-	}
-	if err := bridge.Close(); err != nil {
+
+	body, err := openAIChatResponseToResponses([]byte(chat), req, nil)
+	if err != nil {
 		t.Fatal(err)
 	}
 	var got map[string]interface{}
-	if err := json.Unmarshal(recorder.Body.Bytes(), &got); err != nil {
+	if err := json.Unmarshal(body, &got); err != nil {
 		t.Fatal(err)
 	}
 	if got["object"] != "response" || got["status"] != "completed" {
 		t.Fatalf("response = %#v", got)
 	}
-	if strings.Contains(recorder.Body.String(), `"choices"`) {
-		t.Fatalf("chat response leaked: %s", recorder.Body.String())
+	if strings.Contains(string(body), `"choices"`) {
+		t.Fatalf("chat response leaked: %s", body)
 	}
 }
 
