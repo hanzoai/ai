@@ -16,9 +16,7 @@ package controllers
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
-	"mime/multipart"
 	"net/http"
 	"time"
 
@@ -52,73 +50,22 @@ const MaxTranscribeUpload = 25 << 20
 // not merely the bytes.
 const MaxSpeechInput = 4096
 
-// transcribeRequest is the OpenAI /v1/audio/transcriptions multipart request as
-// read from an HTTP request: the audio part, plus the fields beside it.
-type transcribeRequest struct {
-	file           multipart.File
-	model          string
-	language       string
-	responseFormat string
-	timings        []stt.Timing
-}
-
-// readTranscribeRequest parses the multipart body ONCE and reads every field
-// from it in one place.
+// The transcription form has ONE reader: parseTranscribeForm, in zap_audio.go.
+// It takes the body as a slice, which is what both transports hold — HTTP through
+// the zip context, ZAP as the message it was handed — so neither needs a request
+// object and neither carries its own copy of the parse.
 //
-// The parse has to come first, and putting all the reads behind it is the point.
-// the router resolves GetString through r.Form, and for multipart/form-data Go fills
-// r.Form only inside ParseMultipartForm. Nothing had called it, so a field read
-// came back empty unless something else had already parsed the body — and
-// reading the FILE was that something. `model` was read one line above the file
-// read, so it was always empty: this endpoint answered `requires a "model"
-// field` to every request that carried one, and every OpenAI client sends model
-// as a form field. Only a caller who happened to pass it in the query string got
-// through.
+// There were two. The HTTP leg read the same OpenAI form again through
+// *http.Request, with the bound expressed as a MaxBytesReader and its overflow
+// recovered by sniffing for *http.MaxBytesError in two places, because FormFile
+// re-parses and the error can surface from either. Same five fields, same limit,
+// twice — and its own comment said so.
 //
-// ParseMultipartForm also merges the URL query into r.Form, so a field passed
-// either way still resolves and the query-string spelling keeps working.
-//
-// A body that will not parse leaves the fields empty and returns the file error,
-// which the caller reports as the 400 it is.
-//
-// The upload bound is installed on the BODY, before the parse, so the bytes are
-// refused as they arrive rather than measured after they have been accepted: a
-// length checked afterwards has already cost the memory it was meant to
-// prevent, and a multipart body has no trustworthy length to check anyway
-// (Content-Length is the client's claim, and a chunked body states none).
-// oversize reports that the reader hit the bound, which the caller answers 413.
-//
-// The ZAP transport reads the same wire shape from a raw body in
-// parseTranscribeForm; both readers are tested against the OpenAI form and both
-// enforce MaxTranscribeUpload.
-func readTranscribeRequest(r *http.Request) (req transcribeRequest, oversize bool, err error) {
-	r.Body = http.MaxBytesReader(nil, r.Body, MaxTranscribeUpload)
-	parseErr := r.ParseMultipartForm(MaxTranscribeUpload)
-
-	req = transcribeRequest{
-		model:          r.Form.Get("model"),
-		language:       r.Form.Get("language"),
-		responseFormat: r.Form.Get("response_format"),
-	}
-	if req.timings, err = timingsOf(r.Form); err != nil {
-		return req, false, err
-	}
-	var tooLarge *http.MaxBytesError
-	if errors.As(parseErr, &tooLarge) {
-		return req, true, parseErr
-	}
-	file, _, err := r.FormFile("file")
-	if err != nil {
-		// FormFile re-parses on a body the bound already cut, so the overflow can
-		// surface here instead of above.
-		if errors.As(err, &tooLarge) {
-			return req, true, err
-		}
-		return req, false, err
-	}
-	req.file = file
-	return req, false, nil
-}
+// One thing genuinely goes with it: net/http's ParseMultipartForm merged the URL
+// query into the form, so `?model=whisper` beside a multipart body used to
+// resolve. Nothing crossing ZAP has a query string, so that spelling could never
+// have worked on both transports; the OpenAI contract is a form field, and it is
+// now the only way to send one.
 
 // audioSpeechRequest is the OpenAI /v1/audio/speech body: synthesize `input` with
 // `model`'s voice. Mirrors the OpenAI TTS API so the same client SDKs work unchanged.
@@ -325,9 +272,12 @@ func (c *ApiController) AudioTranscriptions() {
 		return
 	}
 
-	form, oversize, fileErr := readTranscribeRequest(c.Ctx.Request)
-	model := form.model
-	if oversize {
+	// The bound, then the parse — the same two steps in the same order as the ZAP
+	// transport (zapAudioTranscribeHandler), against the same reader. The body
+	// arrives as one slice, so the bound is a length and the parse is what it
+	// guards: parsing is what turns one body into three more copies of it.
+	body := c.Body()
+	if len(body) > MaxTranscribeUpload {
 		// Authenticate first, for the same reason the 400s below do: the size of a
 		// body is not something an unauthenticated caller gets to learn.
 		if authErr := c.authenticate(token); authErr != nil {
@@ -338,10 +288,17 @@ func (c *ApiController) AudioTranscriptions() {
 			"audio upload exceeds the %d MiB limit", MaxTranscribeUpload>>20))
 		return
 	}
+	form, formErr := parseTranscribeForm(body)
 	badReq := ""
-	if fileErr != nil {
+	switch {
+	case formErr != nil:
+		// The reader's own sentence, which names WHICH part is wrong — the HTTP leg
+		// used to flatten every parse failure into "requires a file part" and send a
+		// caller looking for a part they had already sent.
+		badReq = formErr.Error()
+	case form.audio == nil:
 		badReq = "audio request requires a \"file\" part"
-	} else if model == "" {
+	case form.model == "":
 		badReq = "audio request requires a \"model\" field"
 	}
 	if badReq != "" {
@@ -354,7 +311,7 @@ func (c *ApiController) AudioTranscriptions() {
 		c.ResponseErrorWithStatus(http.StatusBadRequest, badReq)
 		return
 	}
-	defer form.file.Close()
+	model := form.model
 
 	orgId := c.GetOrg()
 	provider, authUser, upstreamModel, isPremium, _, err := c.authResolveProvider(token, model, orgId)
@@ -394,7 +351,7 @@ func (c *ApiController) AudioTranscriptions() {
 	defer release()
 
 	startTime := time.Now().UTC()
-	heard, sttResult, err := sttProvider.ProcessAudio(form.file, c.Context(), c.GetAcceptLanguage(), form.timings)
+	heard, sttResult, err := sttProvider.ProcessAudio(form.audio, c.Context(), c.GetAcceptLanguage(), form.timings)
 	if err != nil {
 		c.recordAudioUsage(authUser, provider, model, isPremium, audioQuantity{}, "error", err.Error(), startTime)
 		c.ResponseError(err.Error())
