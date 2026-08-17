@@ -6,7 +6,7 @@ import (
 	"net/http"
 
 	"github.com/hanzoai/ai/object"
-	"github.com/hanzoai/ai/web"
+	"github.com/zap-proto/zip"
 )
 
 // AuthAvailableFilter refuses every request while this process cannot validate a
@@ -28,13 +28,15 @@ import (
 // of service entirely; identity being briefly unreachable should cost the requests
 // that need identity, not the process. Requests are refused while it is down and
 // served again on the first attempt that succeeds, with no restart.
-func AuthAvailableFilter(ctx *web.Context) {
+func AuthAvailableFilter(c *zip.Ctx) error {
 	if err := object.AuthReady(); err != nil {
-		ctx.Output.Header("Retry-After", "5")
-		ctx.Output.SetStatus(http.StatusServiceUnavailable)
-		_ = ctx.Output.JSON(map[string]string{
+		// Returning WITHOUT continuing is the refusal. It used to be implied by
+		// having written a response; now the chain stops because this says so.
+		c.SetHeader("Retry-After", "5")
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{
 			"status": "error",
 			"msg":    "identity is unavailable, so this request cannot be authenticated: " + err.Error(),
-		}, false, false)
+		})
 	}
+	return c.Continue()
 }

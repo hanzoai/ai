@@ -18,7 +18,6 @@ import (
 	"fmt"
 
 	"github.com/hanzoai/ai/util"
-	"github.com/hanzoai/ai/web"
 	"github.com/hanzoai/dbx"
 )
 
@@ -140,7 +139,6 @@ func DeleteSession(id string) (bool, error) {
 		return false, err
 	}
 	if session != nil {
-		DeleteSessions(session.SessionId)
 	}
 	affected, err := deleteByPK(adapter.db, "session", pk2(owner, name))
 	if err != nil {
@@ -157,7 +155,6 @@ func DeleteSessionId(id string, sessionId string) (bool, error) {
 	if session == nil {
 		return false, nil
 	}
-	DeleteSessions([]string{sessionId})
 	session.SessionId = util.DeleteVal(session.SessionId, sessionId)
 	if len(session.SessionId) == 0 {
 		owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
@@ -171,18 +168,6 @@ func DeleteSessionId(id string, sessionId string) (bool, error) {
 		return affected != 0, nil
 	} else {
 		return UpdateSession(id, session)
-	}
-}
-
-// DeleteSessions destroys the given session ids in the session store (logout).
-func DeleteSessions(sessionIds []string) {
-	if web.Sessions == nil {
-		return
-	}
-	for _, sessionId := range sessionIds {
-		if err := web.Sessions.SessionDestroy(sessionId); err != nil {
-			return
-		}
 	}
 }
 

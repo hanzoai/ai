@@ -19,10 +19,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
-	"time"
 
 	"github.com/hanzoai/ai/log"
-	"github.com/hanzoai/ai/web"
 
 	webtools "github.com/hanzoai/ai/agent/builtin_tool/web"
 	"github.com/hanzoai/ai/conf"
@@ -211,22 +209,14 @@ func doBootstrap() (err error) {
 	bootRateLimiter = routers.InitRateLimiter(routers.DefaultTierFunc)
 	log.Info("Per-key rate limiter initialized (tiers: free=10/min, starter=60/min, pro=300/min, enterprise=1000/min)")
 
-	// Filter chain on the ai router, in the same order as the standalone
-	// surface so the handler enforces the same rewrite/auth/tenant/balance
-	// pipeline. The router caches the request body itself (no CopyRequestBody
-	// knob), and the /swagger static is served at the edge, not here.
-	routers.InstallFilters()
-
-	// Session store. API requests authenticate per-request via bearer key/JWT;
-	// sessions back only the cookie web-admin flow, so their contents are
-	// incidental. An in-process memory store needs no filesystem (the runtime
-	// ships read-only) and suits the single-replica runtime. Built once and
-	// bound to the router so every request has a session bound before the
-	// filters run (setSessionUser needs a present store). SameSite=Lax.
-	if web.Sessions == nil {
-		web.Sessions = web.NewMemorySessions("cloud_session_id", 365*24*time.Hour)
-	}
-	routers.App.UseSessions(web.Sessions)
+	// The filter chain is installed with the ROUTES, by routers.Register, because
+	// the router walks its stack in registration order and a filter added after a
+	// route never runs before it. Boot is runtime init — the database, the
+	// providers, the queues — and no longer wires the surface.
+	//
+	// There is no session store. It was a per-pod in-memory store backing a cookie
+	// flow, written only by the auto-signin filter that is gone; identity is the
+	// verified IAM token, read where it is needed.
 
 	// Optional log adapter reconfig. Guarded: in the embedded binary there
 	// is no conf/app.conf, so logConfig is empty — json.Unmarshal("") would
@@ -256,10 +246,10 @@ func doBootstrap() (err error) {
 		log.Info("Billing queue started (Commerce endpoint configured)")
 	}
 
-	// Publish the router as the request handler. Every BeforeRouter filter
-	// inserted above runs on each request the unified binary forwards into
-	// /v1/ai/*; the session store was bound to the router above.
-	SetHandler(routers.App)
+	// Nothing to publish. The app IS the handler: ai.App builds it, registers every
+	// address on it, and stores it — so the socket and the ZAP transports reach one
+	// route table with one filter chain, rather than a handler being set here and
+	// found by whoever asks.
 
 	// Enso router flywheel (HIP-510): the learned-routing loop that trains on real
 	// traffic. Started HERE — in the SINGLE sync.Once boot sequence BOTH cmd/aid and

@@ -50,6 +50,19 @@ const MaxTranscribeUpload = 25 << 20
 // not merely the bytes.
 const MaxSpeechInput = 4096
 
+// MaxDecoded bounds what one request body may occupy in this process after it has
+// been DECOMPRESSED, in bytes.
+//
+// It is a different question from what the socket admits (zip.Config.BodyLimit,
+// set in app.go from the upload bound above): that caps what arrives, this caps
+// what it becomes. A zstd frame's ratio on repetitive input runs to thousands to
+// one, so a body small enough to accept can still ask for more heap than any pod
+// has — and the decoder's own default ceiling is 64 GiB. Stating it is the whole
+// protection.
+//
+// It lived in the in-house web router, which is gone. Both readers are here.
+const MaxDecoded int64 = 1 << 26
+
 // fits reports whether a transcription body is small enough to parse. Both
 // transports ask this, so the bound is one expression with one name rather than
 // the same comparison written twice, and it is answerable without standing up a

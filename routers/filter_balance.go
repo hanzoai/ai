@@ -32,7 +32,7 @@ import (
 	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
-	"github.com/hanzoai/ai/web"
+	"github.com/zap-proto/zip"
 )
 
 // ── Balance gate configuration ──────────────────────────────────────────────
@@ -146,15 +146,15 @@ func InitBalanceGate() {
 // known-insufficient balance is denied 402 (add credits), and a balance that cannot
 // be verified is denied 503 (retry) — both deny. AI is prepaid; a billing-backend
 // outage becomes a retryable 503, never free inference.
-func BalanceGateFilter(ctx *web.Context) {
+func BalanceGateFilter(c *zip.Ctx) error {
 	if balanceGate == nil {
-		return
+		return c.Continue()
 	}
 
-	path := ctx.Request.URL.Path
+	path := c.Path()
 
-	if isBalanceExempt(path, ctx.Request.Method) {
-		return
+	if isBalanceExempt(path, c.Method()) {
+		return c.Continue()
 	}
 
 	// Reads never spend — so a read is NEVER balance-gated; only mutating / metered
@@ -167,19 +167,19 @@ func BalanceGateFilter(ctx *web.Context) {
 	// deployments — which is the "can't see my own resources when broke" outage a new
 	// signup / expired trial hits on every product overview. Exempting reads can NEVER
 	// free a metered call, because no metered call is a read.
-	if isReadMethod(ctx.Request.Method) {
-		return
+	if isReadMethod(c.Method()) {
+		return c.Continue()
 	}
 
 	// Only enforce on API and v1 routes.
 	if !strings.HasPrefix(path, "/v1/") {
-		return
+		return c.Continue()
 	}
 
-	subject, namespace, userKey := resolveBillingKey(ctx)
+	subject, namespace, userKey := resolveBillingKey(c)
 	if subject == "" {
 		// Cannot identify the billing subject — let downstream auth filters handle rejection.
-		return
+		return c.Continue()
 	}
 
 	// A model priced at zero has nothing for a WALLET gate to refuse.
@@ -193,7 +193,7 @@ func BalanceGateFilter(ctx *web.Context) {
 	// Fails closed the same way its twin does: only a model whose price is FOUND and
 	// is zero skips. A body we cannot read, a model we cannot name, or a price we had
 	// to synthesize all leave the gate in force.
-	if m := requestedModel(ctx); m != "" && controllers.ModelCostsNothing(m, namespace) {
+	if m := requestedModel(c); m != "" && controllers.ModelCostsNothing(m, namespace) {
 		// Free is not unbounded. The wallet has nothing to refuse at zero, so the
 		// plan's ALLOWANCE is what bounds this lane: a count of calls per subject per
 		// period, held by the host. It is the one gate a free caller meets, and the
@@ -211,20 +211,18 @@ func BalanceGateFilter(ctx *web.Context) {
 		// name and returns the error only for one it can. A priced route never
 		// reaches this branch, so nothing here can free a metered call.
 		if spent := object.Spent(); spent != nil {
-			if out, err := spent(ctx.Request.Context(), subject, namespace); err == nil && out {
+			if out, err := spent(c.Context(), subject, namespace); err == nil && out {
 				log.Info("allowance: period allowance spent subject=%s namespace=%s path=%s",
 					subject, namespace, path)
-				ctx.ResponseWriter.Header().Set("Content-Type", "application/json")
-				ctx.ResponseWriter.WriteHeader(http.StatusPaymentRequired)
-				body := `{"error":{"message":"You've used your free messages for today. They reset at midnight UTC — or pick a plan at https://hanzo.ai/pricing to keep going now.","type":"insufficient_quota","code":"allowance_spent"}}`
-				ctx.ResponseWriter.Write([]byte(body))
-				return
+				c.SetHeader("Content-Type", "application/json")
+				return c.Bytes(http.StatusPaymentRequired, []byte(
+					`{"error":{"message":"You've used your free messages for today. They reset at midnight UTC — or pick a plan at https://hanzo.ai/pricing to keep going now.","type":"insufficient_quota","code":"allowance_spent"}}`))
 			}
 		}
-		return
+		return c.Continue()
 	}
 
-	sufficient, deny, balance := balanceGate.checkBalance(ctx.Request.Host, subject, namespace, userKey)
+	sufficient, deny, balance := balanceGate.checkBalance(c.Host(), subject, namespace, userKey)
 	if sufficient {
 		// Balance covers the call — but a plan also bounds how FAST a caller may burn
 		// its budget: the rolling-window AI-spend cap (Anthropic-style, resets
@@ -233,17 +231,15 @@ func BalanceGateFilter(ctx *web.Context) {
 		// any error (see RollingCapReaderFunc): a finance blip must never 429 a paying
 		// caller. Only a positively-computed over-cap denies, as HTTP 429.
 		if reader := object.RollingCapReader(); reader != nil {
-			if over, err := reader(ctx.Request.Context(), subject, namespace); err == nil && over {
+			if over, err := reader(c.Context(), subject, namespace); err == nil && over {
 				log.Info("rolling_cap: window cap exceeded subject=%s namespace=%s path=%s",
 					subject, namespace, path)
-				ctx.ResponseWriter.Header().Set("Content-Type", "application/json")
-				ctx.ResponseWriter.WriteHeader(http.StatusTooManyRequests)
-				body := `{"error":{"message":"You've reached your plan's usage limit for the moment. It resets shortly — or upgrade at https://hanzo.ai/pricing for a higher limit.","type":"rate_limit_error","code":"usage_cap_exceeded"}}`
-				ctx.ResponseWriter.Write([]byte(body))
-				return
+				c.SetHeader("Content-Type", "application/json")
+				return c.Bytes(http.StatusTooManyRequests, []byte(
+					`{"error":{"message":"You've reached your plan's usage limit for the moment. It resets shortly — or upgrade at https://hanzo.ai/pricing for a higher limit.","type":"rate_limit_error","code":"usage_cap_exceeded"}}`))
 			}
 		}
-		return
+		return c.Continue()
 	}
 
 	// Denied. checkBalance decided WHICH denial: a known-insufficient balance (402,
@@ -251,9 +247,8 @@ func BalanceGateFilter(ctx *web.Context) {
 	log.Info("balance_gate: deny subject=%s namespace=%s balance_cents=%d code=%s status=%d path=%s",
 		subject, namespace, balance, deny.Code, deny.Status, path)
 
-	ctx.ResponseWriter.Header().Set("Content-Type", "application/json")
-	ctx.ResponseWriter.WriteHeader(deny.Status)
-	ctx.ResponseWriter.Write(deny.ErrorJSON())
+	c.SetHeader("Content-Type", "application/json")
+	return c.Bytes(deny.Status, deny.ErrorJSON())
 }
 
 // isReadMethod reports whether an HTTP method only READS — it lists or fetches a
@@ -282,8 +277,8 @@ var balanceExemptNames = map[string]struct{}{
 // requestedModel reads the model a metered POST is asking for, or "" when the body
 // does not name one. The router caches the body, so this reads the cached copy and
 // never consumes the stream the handler is about to read.
-func requestedModel(ctx *web.Context) string {
-	body := ctx.Input.RequestBody
+func requestedModel(c *zip.Ctx) string {
+	body := c.Body()
 	if len(body) == 0 {
 		return ""
 	}
@@ -404,7 +399,7 @@ func isBalanceExempt(path, method string) bool {
 // skips). The userKey is the exact "owner/name" identity used for per-user
 // exemption matching (mirrors the controller backstop), independent of whether
 // the billing subject collapses to the org slug for a pooled org.
-func resolveBillingKey(ctx *web.Context) (subject, namespace, userKey string) {
+func resolveBillingKey(c *zip.Ctx) (subject, namespace, userKey string) {
 	// Balance enforcement disabled ⇒ balanceGate is nil (InitBalanceGate returns
 	// early when commerceEndpoint is unconfigured). RateLimitFilter calls this on
 	// EVERY authenticated /v1 request BEFORE BalanceGateFilter's own nil guard, so
@@ -419,13 +414,13 @@ func resolveBillingKey(ctx *web.Context) (subject, namespace, userKey string) {
 
 	// Source 1: session user from AutoSigninFilter. A cookie session carries no
 	// signed `orgs` claim, so it can never switch org — it always bills its home.
-	user := GetSessionUser(ctx)
+	user := GetSessionUser(c)
 	if user != nil && user.Owner != "" {
 		return user.PayerSubject(""), user.Owner, user.Owner + "/" + user.Name
 	}
 
 	// Source 2/3: Bearer token.
-	token := parseBearerToken(ctx)
+	token := parseBearerToken(c)
 	if token == "" {
 		return "", "", ""
 	}
@@ -435,7 +430,7 @@ func resolveBillingKey(ctx *web.Context) (subject, namespace, userKey string) {
 	// cache because the SAME token resolves to a DIFFERENT wallet in a different
 	// org: keying the cache on the token alone would serve one org's billing
 	// identity to a request made in another.
-	requested := strings.TrimSpace(ctx.Input.Header("X-Org-Id"))
+	requested := strings.TrimSpace(c.Header("X-Org-Id"))
 
 	// Widget keys (hz_) bill the OWNER ORG that minted the key (mirrors the
 	// controller's authResolveProvider): resolve that org here so the router

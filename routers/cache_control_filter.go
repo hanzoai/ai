@@ -18,14 +18,14 @@ package routers
 import (
 	"strings"
 
-	"github.com/hanzoai/ai/web"
+	"github.com/zap-proto/zip"
 )
 
 // CacheControlFilter adds Cache-Control headers to prevent caching of sensitive API endpoints
 // This ensures that sensitive data (like passwords, user chats, messages) are not cached
 // by intermediary proxies, SSL terminators, or browsers
-func CacheControlFilter(ctx *web.Context) {
-	path := ctx.Request.URL.Path
+func CacheControlFilter(c *zip.Ctx) error {
+	path := c.Path()
 
 	// List of sensitive endpoints that should not be cached
 	sensitiveEndpoints := []string{
@@ -42,12 +42,13 @@ func CacheControlFilter(ctx *web.Context) {
 			// - no-cache: requires revalidation before using cached response
 			// - must-revalidate: forces revalidation of stale cache
 			// - max-age=0: sets expiration time to zero
-			ctx.Output.Header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+			c.SetHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
 			// Set Pragma header for HTTP/1.0 compatibility
-			ctx.Output.Header("Pragma", "no-cache")
+			c.SetHeader("Pragma", "no-cache")
 			// Set Expires header to prevent caching in older browsers
-			ctx.Output.Header("Expires", "0")
+			c.SetHeader("Expires", "0")
 			break
 		}
 	}
+	return c.Continue()
 }

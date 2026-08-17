@@ -15,7 +15,7 @@
 package routers
 
 import (
-	"github.com/hanzoai/ai/web"
+	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/ai/object"
 )
@@ -32,12 +32,15 @@ import (
 // pass one to. It is a pure side effect: it never writes a response, never blocks,
 // never errors, and returns immediately, so its position in the filter chain cannot
 // affect any request's outcome.
-func TrafficTapFilter(ctx *web.Context) {
-	req := ctx.Request
-	if !object.TrafficShouldRecord(req.URL.Path, req.Method) {
-		return
+func TrafficTapFilter(c *zip.Ctx) error {
+	path := c.Path()
+	if !object.TrafficShouldRecord(path, c.Method()) {
+		return c.Continue()
 	}
-	country := req.Header.Get("CF-IPCountry")
-	region := req.Header.Get("CF-Region-Code")
-	object.GlobalTraffic.Record(country, region, object.TrafficServiceClass(req.URL.Path))
+	object.GlobalTraffic.Record(
+		c.Header("CF-IPCountry"),
+		c.Header("CF-Region-Code"),
+		object.TrafficServiceClass(path),
+	)
+	return c.Continue()
 }
