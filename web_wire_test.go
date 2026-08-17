@@ -29,10 +29,6 @@ import (
 // same /v1/* mount the unified binary uses, and returns the status code.
 func wiredStatus(t *testing.T, method, path, body string) int {
 	t.Helper()
-	wireTestSessions()
-	routers.InstallFilters()
-	SetHandler(routers.App)
-	defer SetHandler(nil)
 
 	app := zip.New(zip.Config{DisableStartupMessage: true})
 	routes(app)

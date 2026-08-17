@@ -31,7 +31,6 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/hanzoai/ai/web"
 	"github.com/klauspost/compress/zstd"
 )
 

@@ -31,29 +31,23 @@ import (
 // the real Bearer-credential auth.
 
 func TestGetSessionUserNilStoreNoPanic(t *testing.T) {
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest("POST", "/v1/chat/completions", nil)
-	req.Header.Set("Authorization", "Bearer sk-some-probe-token")
-	ctx := web.NewContext()
-	ctx.Reset(rec, req)
+	p := ask("POST", "/v1/chat/completions")
+	p = p.with("Authorization", "Bearer sk-some-probe-token")
 	// Deliberately DO NOT set ctx.Input.CruSession — this is the nil store the
 	// embedded binary can present.
 
-	if u := GetSessionUser(ctx); u != nil {
+	if u := GetSessionUser(p.Ctx); u != nil {
 		t.Fatalf("GetSessionUser(nil store) = %+v, want nil (no session ⇒ no user)", u)
 	}
 }
 
 func TestGetSessionUserForeignTypeNoPanic(t *testing.T) {
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest("POST", "/v1/chat/completions", nil)
-	ctx := web.NewContext()
-	ctx.Reset(rec, req)
+	p := ask("POST", "/v1/chat/completions")
 	// A session value that is NOT iam.Claims must not panic the type assertion.
 	sess := &fakeSession{data: map[interface{}]interface{}{"user": "not-a-claims-struct"}}
 	ctx.Input.CruSession = sess
 
-	if u := GetSessionUser(ctx); u != nil {
+	if u := GetSessionUser(p.Ctx); u != nil {
 		t.Fatalf("GetSessionUser(foreign type) = %+v, want nil (fail-secure)", u)
 	}
 }

@@ -23,7 +23,6 @@ import (
 
 	"github.com/hanzoai/ai/model"
 	"github.com/hanzoai/ai/object"
-	web "github.com/hanzoai/ai/web"
 )
 
 // debit is one charge the ai module made against the host's money hook.
@@ -56,10 +55,7 @@ func captureDebits(t *testing.T) *[]debit {
 // request so the trace path can read its remote address and context.
 func newAnswerController() *ApiController {
 	req := httptest.NewRequest("GET", "/v1/get-message-answer?id=acme/msg-1", nil)
-	ctx := web.NewContext()
-	ctx.Reset(httptest.NewRecorder(), req)
-	c := &ApiController{}
-	c.Init(ctx, "ApiController", "GetMessageAnswer", nil)
+	c := visit("GET", "/v1/")
 	return c
 }
 

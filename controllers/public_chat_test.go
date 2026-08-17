@@ -26,7 +26,6 @@ import (
 	"time"
 
 	"github.com/hanzoai/ai/object"
-	"github.com/hanzoai/ai/web"
 )
 
 // The lane is CLOSED unless a deployment arms it. Every other deployment of this
@@ -312,12 +311,7 @@ func publicCall(t *testing.T, remote, cf string) *httptest.ResponseRecorder {
 	if cf != "" {
 		r.Header.Set("CF-Connecting-IP", cf)
 	}
-	rec := httptest.NewRecorder()
-	ctx := web.NewContext()
-	ctx.Reset(rec, r)
-	ctx.Input.RequestBody = []byte(`{"messages":[{"role":"user","content":"hi"}]}`)
-	c := &ApiController{}
-	c.Init(ctx, "ApiController", "ChatCompletionsPublic", nil)
+	c := visit("GET", "/v1/")
 	c.ChatCompletionsPublic()
 	return rec
 }
@@ -329,9 +323,9 @@ func refusalOf(t *testing.T, rec *httptest.ResponseRecorder) (status int, code s
 		Error struct{ Message, Type, Code string } `json:"error"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
-		t.Fatalf("response is not the house envelope: %v (%s)", err, rec.Body.String())
+		t.Fatalf("response is not the house envelope: %v (%s)", err, sent(c))
 	}
-	return rec.Code, got.Error.Code
+	return answered(c), got.Error.Code
 }
 
 // A deployment that has not armed the lane does not serve it, and does not describe
@@ -392,12 +386,7 @@ func TestBearerOnThePublicLaneIsIgnored(t *testing.T) {
 	r.RemoteAddr = peer
 	r.Header.Set("Authorization", "Bearer sk-whatever")
 	r.Header.Set("X-Org-Id", "some-other-tenant")
-	rec := httptest.NewRecorder()
-	ctx := web.NewContext()
-	ctx.Reset(rec, r)
-	ctx.Input.RequestBody = []byte(`{"model":"claude-opus-5","messages":[]}`)
-	c := &ApiController{}
-	c.Init(ctx, "ApiController", "ChatCompletionsPublic", nil)
+	c := visit("GET", "/v1/")
 	c.ChatCompletionsPublic()
 
 	if status, code := refusalOf(t, rec); status != http.StatusPaymentRequired || code != "public_allowance_spent" {

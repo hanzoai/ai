@@ -29,9 +29,6 @@ import (
 // returns the status and the house error code, if the body carries one.
 func askPublicly(t *testing.T, peer string) (int, string) {
 	t.Helper()
-	routers.InstallFilters()
-	SetHandler(routers.App)
-	defer SetHandler(nil)
 
 	app := zip.New(zip.Config{DisableStartupMessage: true})
 	routes(app)
@@ -62,7 +59,6 @@ func askPublicly(t *testing.T, peer string) (int, string) {
 // evidence is the CODE in the body, which only this lane's handler writes. Reaching
 // it proves the request was routed to ChatCompletionsPublic and refused there.
 func TestPublicChatRouteIsWiredAndClosedByDefault(t *testing.T) {
-	wireTestSessions()
 	t.Setenv("PUBLIC_CHAT_DAILY", "")
 
 	status, code := askPublicly(t, "198.51.100.20")
@@ -91,7 +87,6 @@ func TestPublicChatRouteIsWiredAndClosedByDefault(t *testing.T) {
 // The typed code is the evidence either way: only this handler writes it, so reaching
 // it proves the request was routed here rather than 404ing as unregistered.
 func TestPublicChatRouteReachesTheHandlerWhenArmed(t *testing.T) {
-	wireTestSessions()
 	t.Setenv("PUBLIC_CHAT_DAILY", "1")
 
 	status, code := askPublicly(t, "198.51.100.21")

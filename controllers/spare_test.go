@@ -24,7 +24,6 @@ import (
 	"time"
 
 	"github.com/hanzoai/ai/object"
-	"github.com/hanzoai/ai/web"
 	"go.opentelemetry.io/otel/attribute"
 )
 
@@ -216,11 +215,7 @@ func (f *refuses) serve(t *testing.T) *httptest.Server {
 func (f *refuses) pipe(t *testing.T, fam *modelFamily, sku string) (*httptest.ResponseRecorder, []attempt) {
 	t.Helper()
 	body := []byte(`{"model":"` + sku + `","messages":[{"role":"user","content":"2+2?"}]}`)
-	rec := httptest.NewRecorder()
-	ctx := web.NewContext()
-	ctx.Reset(rec, httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(string(body))))
-	c := &ApiController{}
-	c.Init(ctx, "ApiController", "X", nil)
+	c := visit("POST", "/v1/chat/completions")
 	out := c.pipeToFamily(fam, "chat/completions", "openai", sku, body, false, "acme", nil, false, nil, time.Now())
 	return rec, out
 }
@@ -360,8 +355,8 @@ func TestOnlyAVendorThatCannotServeMovesTheRequest(t *testing.T) {
 				if refusedBy == nil && rec.Body.Len() == 0 {
 					t.Error("the refusal vanished")
 				}
-				if strings.Contains(rec.Body.String(), free) {
-					t.Errorf("a %d was answered with the free route:\n%s", tc.status, rec.Body.String())
+				if strings.Contains(sent(c), free) {
+					t.Errorf("a %d was answered with the free route:\n%s", tc.status, sent(c))
 				}
 				return
 			}
@@ -390,7 +385,7 @@ func TestASpareAnswerSaysWhichModelMadeIt(t *testing.T) {
 
 	var got map[string]any
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
-		t.Fatalf("not JSON: %v\n%s", err, rec.Body.String())
+		t.Fatalf("not JSON: %v\n%s", err, sent(c))
 	}
 	if got["model"] != free {
 		t.Errorf("model = %v, want %q — the client is told which model answered", got["model"], free)
@@ -406,9 +401,7 @@ func TestASpareAnswerSaysWhichModelMadeIt(t *testing.T) {
 func TestASpareRouteIsBilledAtNothing(t *testing.T) {
 	fam := &modelFamily{name: "openrouter", spares: []string{"vendor/big:free"}, loaded: true, fetchedAt: time.Now()}
 	c := &ApiController{}
-	ctx := web.NewContext()
-	ctx.Reset(httptest.NewRecorder(), httptest.NewRequest("POST", "/v1/x", nil))
-	c.Init(ctx, "ApiController", "X", nil)
+	c := visit("POST", "/v1/x")
 
 	if cents := c.recordFamilyUsage(fam, "vendor/big:free", "vendor/paid-a", nil, &mark{}, nil, false, false, "r1", 1000, 1000, time.Now(), nil, "success", ""); cents != 0 {
 		t.Errorf("a spare route billed %d cents", cents)
@@ -705,8 +698,8 @@ func TestARefusalCrossesToTheFamilyThatStillHasAFreeRoute(t *testing.T) {
 	if refusedBy != nil {
 		t.Errorf("the request was handed on after it had already been served: %v", refusedBy)
 	}
-	if !strings.Contains(rec.Body.String(), free) {
-		t.Errorf("the answer does not name the model that wrote it:\n%s", rec.Body.String())
+	if !strings.Contains(sent(c), free) {
+		t.Errorf("the answer does not name the model that wrote it:\n%s", sent(c))
 	}
 }
 
@@ -730,8 +723,8 @@ func TestAFamilysFreeIdIsServedFromThePool(t *testing.T) {
 	if refusedBy != nil {
 		t.Errorf("serving a free id handed the request on: %v", refusedBy)
 	}
-	if !strings.Contains(rec.Body.String(), free) {
-		t.Errorf("the answer does not name the route that wrote it:\n%s", rec.Body.String())
+	if !strings.Contains(sent(c), free) {
+		t.Errorf("the answer does not name the route that wrote it:\n%s", sent(c))
 	}
 }
 
@@ -834,11 +827,7 @@ func TestAnEmbeddingsRequestDoesNotWalkTheChatPool(t *testing.T) {
 	enso := otherFamily(t, vendor.URL)
 
 	body := []byte(`{"model":"enso-embed","input":"x"}`)
-	rec := httptest.NewRecorder()
-	ctx := web.NewContext()
-	ctx.Reset(rec, httptest.NewRequest("POST", "/v1/embeddings", strings.NewReader(string(body))))
-	c := &ApiController{}
-	c.Init(ctx, "ApiController", "X", nil)
+	c := visit("POST", "/v1/embeddings")
 	c.pipeToFamily(enso, "embeddings", "openai", "enso-embed", body, false, "acme", nil, false, nil, time.Now())
 
 	if len(fake.asked) != 1 {
@@ -993,11 +982,7 @@ func TestTheBudgetBoundsBorrowedRoutesNotOurOwn(t *testing.T) {
 
 	enso := otherFamily(t, vendor.URL)
 	body := []byte(`{"model":"enso-free","messages":[{"role":"user","content":"hi"}]}`)
-	rec := httptest.NewRecorder()
-	ctx := web.NewContext()
-	ctx.Reset(rec, httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(string(body))))
-	c := &ApiController{}
-	c.Init(ctx, "ApiController", "X", nil)
+	c := visit("POST", "/v1/chat/completions")
 	c.pipeToFamily(enso, "chat/completions", "openai", "enso-free", body, false, "acme", nil, false, nil, time.Now())
 
 	if asked[engineModel] == 0 {

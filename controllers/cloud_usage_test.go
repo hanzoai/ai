@@ -28,7 +28,6 @@ import (
 
 	"github.com/golang-jwt/jwt/v4"
 	iam "github.com/hanzoai/ai/internal/iam"
-	web "github.com/hanzoai/ai/web"
 )
 
 // newUsageController builds an ApiController for GetCloudUsages auth+scope tests:
@@ -37,7 +36,6 @@ import (
 // session principal. It reuses ctrlFakeSession (index_auth_test.go) so
 // GetSessionUser resolves without a live session manager.
 func newUsageController(url, authHeader, orgHeader string, user *iam.User) (*ApiController, *httptest.ResponseRecorder) {
-	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", url, nil)
 	if authHeader != "" {
 		req.Header.Set("Authorization", authHeader)
@@ -167,8 +165,8 @@ func TestRequirePrincipal_NoCredentialIs401(t *testing.T) {
 	if ok || user != nil {
 		t.Fatalf("RequirePrincipal with no credential = (%+v, %v), want (nil, false)", user, ok)
 	}
-	if rec.Code != http.StatusUnauthorized {
-		t.Errorf("no-credential status = %d, want 401", rec.Code)
+	if answered(c) != http.StatusUnauthorized {
+		t.Errorf("no-credential status = %d, want 401", answered(c))
 	}
 }
 
@@ -186,7 +184,7 @@ func TestRequirePrincipal_SessionUnchanged(t *testing.T) {
 		t.Errorf("resolved Owner = %q, want maxpower (the session principal)", user.Owner)
 	}
 	if rec.Body.Len() != 0 {
-		t.Errorf("session pass wrote a body %q, want none", rec.Body.String())
+		t.Errorf("session pass wrote a body %q, want none", sent(c))
 	}
 	if org, allOrgs, admin := c.resolveCloudUsageScope(user); org != "maxpower" || allOrgs || admin {
 		t.Errorf("session non-admin + ?org=all scope = (%q, %v, admin=%v), want (maxpower, false, admin=false)", org, allOrgs, admin)
@@ -214,7 +212,7 @@ func TestGetCloudUsagesBearerScope(t *testing.T) {
 			t.Fatalf("RequirePrincipal(bearer) = (%+v, %v), want the token principal", user, ok)
 		}
 		if rec.Body.Len() != 0 {
-			t.Fatalf("bearer auth wrote a denial body %q; the token must be accepted", rec.Body.String())
+			t.Fatalf("bearer auth wrote a denial body %q; the token must be accepted", sent(c))
 		}
 		if user.Owner != "maxpower" {
 			t.Fatalf("bearer resolved Owner = %q, want maxpower (from the token, not the X-Org-Id header)", user.Owner)
@@ -280,8 +278,8 @@ func TestGetCloudUsagesRejectsForgedBearer(t *testing.T) {
 	if user, ok := c.RequirePrincipal(); ok || user != nil {
 		t.Fatalf("forged bearer resolved a principal %+v — signature verification failed to reject it", user)
 	}
-	if rec.Code != http.StatusUnauthorized {
-		t.Errorf("forged bearer status = %d, want 401", rec.Code)
+	if answered(c) != http.StatusUnauthorized {
+		t.Errorf("forged bearer status = %d, want 401", answered(c))
 	}
 }
 
@@ -375,8 +373,8 @@ func TestGetCloudUsages_RejectsAnonymous(t *testing.T) {
 	} {
 		c, rec := newUsageController("/v1/get-cloud-usages", "", "", anon)
 		c.GetCloudUsages()
-		if rec.Code != http.StatusUnauthorized {
-			t.Errorf("anonymous %+v -> GetCloudUsages status = %d, want 401 (rejected before any warehouse read)", anon, rec.Code)
+		if answered(c) != http.StatusUnauthorized {
+			t.Errorf("anonymous %+v -> GetCloudUsages status = %d, want 401 (rejected before any warehouse read)", anon, answered(c))
 		}
 	}
 }
@@ -431,7 +429,7 @@ func assertBearerRejected(t *testing.T, token string) {
 	if user, ok := c.RequirePrincipal(); ok || user != nil {
 		t.Fatalf("malformed bearer resolved a principal %+v; want none", user)
 	}
-	if rec.Code != http.StatusUnauthorized {
-		t.Errorf("malformed bearer status = %d, want 401", rec.Code)
+	if answered(c) != http.StatusUnauthorized {
+		t.Errorf("malformed bearer status = %d, want 401", answered(c))
 	}
 }

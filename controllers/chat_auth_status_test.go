@@ -27,7 +27,6 @@ import (
 
 	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/object"
-	web "github.com/hanzoai/ai/web"
 )
 
 // This suite pins the money-path auth boundary for POST /v1/chat/completions.
@@ -76,19 +75,11 @@ func newChatController(authHeader, body string) (*ApiController, *httptest.Respo
 // SessionStart hook did not run, so CruSession is nil and any session read
 // dereferences nil — the pre-model panic the router renders as a 500.
 func newChatControllerSession(authHeader, body string, withSession bool) (*ApiController, *httptest.ResponseRecorder) {
-	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(body))
 	if authHeader != "" {
 		req.Header.Set("Authorization", authHeader)
 	}
-	ctx := web.NewContext()
-	ctx.Reset(rec, req)
-	ctx.Input.RequestBody = []byte(body)
-	if withSession {
-		ctx.Input.CruSession = &ctrlFakeSession{data: map[interface{}]interface{}{}}
-	}
-	c := &ApiController{}
-	c.Init(ctx, "ApiController", "X", nil)
+	c := visit("GET", "/v1/")
 	return c, rec
 }
 
@@ -106,16 +97,16 @@ func driveChatSession(t *testing.T, authHeader, body string, withSession bool) i
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				rec.Code = 500
+				answered(c) = 500
 				t.Logf("HANDLER PANIC (rendered 500): %v", r)
 			}
 		}()
 		c.ChatCompletions()
 	}()
-	if rec.Code == 0 {
+	if answered(c) == 0 {
 		return http.StatusOK // the router default when no explicit status was set
 	}
-	return rec.Code
+	return answered(c)
 }
 
 // setupChatMoneyPath installs the prod-faithful dependencies the money path needs:
@@ -308,16 +299,16 @@ func TestChatCompletionsAutoModelAuthBeforeRouting(t *testing.T) {
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				rec.Code = 500
+				answered(c) = 500
 				t.Logf("HANDLER PANIC: %v", r)
 			}
 		}()
 		c.ChatCompletions()
 	}()
-	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("unauth auto => %d, want 401", rec.Code)
+	if answered(c) != http.StatusUnauthorized {
+		t.Fatalf("unauth auto => %d, want 401", answered(c))
 	}
-	if h := rec.Header().Get(RoutedModelHeader); h != "" {
+	if h := c.Fiber().Response().Header.Peek(RoutedModelHeader); h != "" {
 		t.Fatalf("unauth auto set %s=%q — the router engine ran BEFORE auth (pre-auth side effect leaked)", RoutedModelHeader, h)
 	}
 

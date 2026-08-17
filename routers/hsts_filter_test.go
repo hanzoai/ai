@@ -1,5 +1,4 @@
-// Copyright 2023-2025 Hanzo AI Inc. All Rights Reserved.
-// Portions Copyright 2025 The OpenAgent Authors. All Rights Reserved.
+// Copyright 2023-2026 Hanzo AI Inc. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,103 +16,65 @@ package routers
 
 import (
 	"net/http"
-	"net/http/httptest"
 	"testing"
-
-	"github.com/hanzoai/ai/web"
 )
 
-func TestHstsFilter(t *testing.T) {
-	// Create a mock HTTPS request
-	req := httptest.NewRequest(http.MethodGet, "https://example.com/v1/health", nil)
-	resp := httptest.NewRecorder()
+// HSTS is a promise about TRANSPORT, so it is made only when the transport
+// deserves it — and there are two ways to learn that, which is why there are two
+// positive tests. Direct TLS is one; a proxy saying so on our behalf is the other,
+// and it is the one production actually uses.
+const hsts = "max-age=31536000; includeSubDomains; preload"
 
-	// Create a router context
-	ctx := web.NewContext()
-	ctx.Reset(resp, req)
-
-	// Apply the HSTS filter
-	HstsFilter(ctx)
-
-	// Check if the HSTS header is set correctly
-	hstsHeader := resp.Header().Get("Strict-Transport-Security")
-	expectedHeader := "max-age=31536000; includeSubDomains; preload"
-
-	if hstsHeader != expectedHeader {
-		t.Errorf("Expected HSTS header '%s', got '%s'", expectedHeader, hstsHeader)
+func TestHstsSetOnTLS(t *testing.T) {
+	p := ask(http.MethodGet, "/v1/health").secure()
+	if err := HstsFilter(p.Ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := p.replied("Strict-Transport-Security"); got != hsts {
+		t.Errorf("header = %q, want %q", got, hsts)
 	}
 }
 
-func TestHstsFilterOnMultipleRoutes(t *testing.T) {
-	routes := []string{
+func TestHstsSetBehindAProxy(t *testing.T) {
+	p := ask(http.MethodGet, "/v1/health").with("X-Forwarded-Proto", "https")
+	if err := HstsFilter(p.Ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := p.replied("Strict-Transport-Security"); got != hsts {
+		t.Errorf("header = %q, want %q", got, hsts)
+	}
+}
+
+// Every route, not one: HSTS belongs to the connection, so a path cannot earn it
+// or lose it.
+func TestHstsSetOnEveryRoute(t *testing.T) {
+	for _, route := range []string{
 		"/",
 		"/v1/",
 		"/v1/health",
-		"/swagger/",
-		"/storage/",
+		"/v1/models",
 		"/v1/chat/completions",
-	}
-
-	for _, route := range routes {
+	} {
 		t.Run(route, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, "https://example.com"+route, nil)
-			resp := httptest.NewRecorder()
-
-			ctx := web.NewContext()
-			ctx.Reset(resp, req)
-
-			HstsFilter(ctx)
-
-			hstsHeader := resp.Header().Get("Strict-Transport-Security")
-			if hstsHeader == "" {
-				t.Errorf("HSTS header not set for route: %s", route)
+			p := ask(http.MethodGet, route).secure()
+			if err := HstsFilter(p.Ctx); err != nil {
+				t.Fatal(err)
 			}
-
-			expectedHeader := "max-age=31536000; includeSubDomains; preload"
-			if hstsHeader != expectedHeader {
-				t.Errorf("Route %s: Expected HSTS header '%s', got '%s'", route, expectedHeader, hstsHeader)
+			if got := p.replied("Strict-Transport-Security"); got != hsts {
+				t.Errorf("header = %q, want %q", got, hsts)
 			}
 		})
 	}
 }
 
-func TestHstsFilterNotSetOnHTTP(t *testing.T) {
-	// Create a mock HTTP (non-HTTPS) request
-	req := httptest.NewRequest(http.MethodGet, "http://example.com/v1/health", nil)
-	resp := httptest.NewRecorder()
-
-	// Create a router context
-	ctx := web.NewContext()
-	ctx.Reset(resp, req)
-
-	// Apply the HSTS filter
-	HstsFilter(ctx)
-
-	// Check that HSTS header is NOT set on HTTP requests
-	hstsHeader := resp.Header().Get("Strict-Transport-Security")
-	if hstsHeader != "" {
-		t.Errorf("HSTS header should not be set on HTTP requests, got '%s'", hstsHeader)
+// And NOT on plain HTTP. Promising a year of HTTPS over a connection that is not
+// HTTPS is how a misconfigured edge locks a domain out of itself.
+func TestHstsWithheldOnPlainHTTP(t *testing.T) {
+	p := ask(http.MethodGet, "/v1/health")
+	if err := HstsFilter(p.Ctx); err != nil {
+		t.Fatal(err)
 	}
-}
-
-func TestHstsFilterWithXForwardedProto(t *testing.T) {
-	// Create a mock HTTP request with X-Forwarded-Proto header (common behind reverse proxies)
-	req := httptest.NewRequest(http.MethodGet, "http://example.com/v1/health", nil)
-	req.Header.Set("X-Forwarded-Proto", "https")
-	resp := httptest.NewRecorder()
-
-	// Create a router context
-	ctx := web.NewContext()
-	ctx.Reset(resp, req)
-
-	// Apply the HSTS filter
-	HstsFilter(ctx)
-
-	// Check if the HSTS header is set correctly when behind a reverse proxy
-	hstsHeader := resp.Header().Get("Strict-Transport-Security")
-	expectedHeader := "max-age=31536000; includeSubDomains; preload"
-
-	if hstsHeader != expectedHeader {
-		t.Errorf("Expected HSTS header '%s', got '%s'", expectedHeader, hstsHeader)
+	if got := p.replied("Strict-Transport-Security"); got != "" {
+		t.Errorf("header = %q on a plain-HTTP request, want none", got)
 	}
 }
