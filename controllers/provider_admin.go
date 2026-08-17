@@ -150,7 +150,7 @@ func (c *ApiController) ToggleAdminProvider() {
 		return
 	}
 	var req toggleProviderRequest
-	if err := json.Unmarshal(c.Ctx.Input.RequestBody, &req); err != nil {
+	if err := json.Unmarshal(c.Body(), &req); err != nil {
 		c.ResponseError(err.Error())
 		return
 	}
@@ -205,7 +205,7 @@ func (c *ApiController) SetPrimaryAdminProvider() {
 		return
 	}
 	var req setPrimaryRequest
-	if err := json.Unmarshal(c.Ctx.Input.RequestBody, &req); err != nil {
+	if err := json.Unmarshal(c.Body(), &req); err != nil {
 		c.ResponseError(err.Error())
 		return
 	}

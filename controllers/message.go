@@ -169,7 +169,7 @@ func (c *ApiController) UpdateMessage() {
 	isHitOnly := c.Input().Get("isHitOnly")
 
 	var message object.Message
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &message)
+	err := json.Unmarshal(c.Body(), &message)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -233,7 +233,7 @@ func (c *ApiController) UpdateMessage() {
 // @router /add-message [post]
 func (c *ApiController) AddMessage() {
 	var message object.Message
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &message)
+	err := json.Unmarshal(c.Body(), &message)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -429,7 +429,7 @@ func (c *ApiController) AddMessage() {
 // @router /delete-message [post]
 func (c *ApiController) DeleteMessage() {
 	var message object.Message
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &message)
+	err := json.Unmarshal(c.Body(), &message)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -448,7 +448,7 @@ func (c *ApiController) DeleteMessage() {
 
 func (c *ApiController) DeleteWelcomeMessage() {
 	var message *object.Message
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &message)
+	err := json.Unmarshal(c.Body(), &message)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return

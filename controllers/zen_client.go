@@ -991,7 +991,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		// The caller hung up. There is nobody left to serve, so offering the
 		// request to a second vendor would spend money answering an empty room —
 		// and would blame a healthy vendor for the client's disconnect.
-		if c.Ctx.Request.Context().Err() != nil {
+		if c.Context().Err() != nil {
 			c.EnableRender = false
 			return done()
 		}
@@ -1047,14 +1047,14 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	url := prov.ProviderUrl + "/v1/" + apiPath
 	// One build, one place to fail: the method, the URL and the headers do not vary
 	// by SKU, so a request that cannot be built cannot be built for any of them.
-	req, err := http.NewRequestWithContext(c.Ctx.Request.Context(), http.MethodPost, url, nil)
+	req, err := http.NewRequestWithContext(c.Context(), http.MethodPost, url, nil)
 	if err != nil {
 		// Our own request is malformed. Another vendor would not fix that.
 		c.zenError(dialect, "build "+fam.name+" request: "+err.Error(), http.StatusInternalServerError)
 		return done()
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if a := c.Ctx.Request.Header.Get("Accept"); a != "" {
+	if a := c.Header("Accept"); a != "" {
 		req.Header.Set("Accept", a)
 	}
 	if prov.ClientSecret != "" {
@@ -1088,7 +1088,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 			}
 			p = &object.Provider{Owner: "admin", Name: f.name, ProviderUrl: base, ClientSecret: f.serviceKey()}
 		}
-		r, rErr := http.NewRequestWithContext(c.Ctx.Request.Context(), http.MethodPost, p.ProviderUrl+"/v1/"+apiPath, nil)
+		r, rErr := http.NewRequestWithContext(c.Context(), http.MethodPost, p.ProviderUrl+"/v1/"+apiPath, nil)
 		if rErr != nil {
 			return nil, rErr
 		}
@@ -1130,7 +1130,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		}
 		tried := 0
 		for _, alt := range freeRoutes() {
-			if strings.EqualFold(alt.id, skip) || c.Ctx.Request.Context().Err() != nil {
+			if strings.EqualFold(alt.id, skip) || c.Context().Err() != nil {
 				continue
 			}
 			// The budget bounds how many BORROWED routes we ask, because each is a
@@ -1188,7 +1188,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		if billingNotice(body) {
 			return nil, ""
 		}
-		if !down(err, strings.ToLower(err.Error())) || c.Ctx.Request.Context().Err() != nil {
+		if !down(err, strings.ToLower(err.Error())) || c.Context().Err() != nil {
 			return nil, ""
 		}
 		return pool(sku)
@@ -1249,7 +1249,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	// say so — in a consent notice, in a log, in a policy page. Set before any byte
 	// of a stream goes out, which is the last moment a header can be set at all.
 	if served := servingFamily(sku); served != nil && served.terms != nil {
-		c.Ctx.Output.Header(headerCollection, collection(served.free(sku)))
+		c.SetHeader(headerCollection, collection(served.free(sku)))
 	}
 
 	prompt, completion := 0, 0
@@ -1274,8 +1274,8 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		if ct == "" {
 			ct = "application/json"
 		}
-		c.Ctx.Output.Header("Content-Type", ct)
-		c.Ctx.Output.Body(mk.stamp(b))
+		c.SetHeader("Content-Type", ct)
+		c.Bytes(http.StatusOK, mk.stamp(b))
 	}
 
 	// A stamped answer carries OUR id, so that is the id the client will thread back
@@ -1311,7 +1311,7 @@ func (c *ApiController) relayZenStream(body io.Reader, mk *mark) (prompt, comple
 	sc := bufio.NewScanner(body)
 	sc.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
 	for sc.Scan() {
-		line := sc.Bytes()
+		line := sc.Bytes(http.StatusOK, )
 		if bytes.HasPrefix(line, zenDataPrefix) {
 			payload := bytes.TrimSpace(line[len(zenDataPrefix):])
 			if len(payload) > 0 && payload[0] == '{' {
@@ -1471,9 +1471,9 @@ func (c *ApiController) recordFamilyUsage(fam *modelFamily, model, requested str
 		// relayed call stops being a guess.
 		CostNanoExact: mk.cogs(),
 	}
-	rec.bind(c.Ctx.Request.Context(), authUser)
+	rec.bind(c.Context(), authUser)
 	recordUsage(rec)
-	recordTrace(c.Ctx.Request.Context(), rec, start)
+	recordTrace(c.Context(), rec, start)
 	return cents
 }
 

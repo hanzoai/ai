@@ -63,7 +63,7 @@ func (c *ApiController) ExportMyRoutingData() {
 		c.ResponseError(err.Error())
 		return
 	}
-	c.Ctx.Output.Header("Content-Type", "application/x-ndjson")
+	c.SetHeader("Content-Type", "application/x-ndjson")
 	_ = writeRoutingLedgerJSONL(c.Ctx.ResponseWriter, events)
 	c.EnableRender = false
 }

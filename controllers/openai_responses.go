@@ -78,7 +78,7 @@ type responsesContentPart struct {
 // ChatCompletions and an installed ResponseWriter converts its OpenAI chat JSON
 // or SSE back into Responses JSON/SSE on the fly.
 func (c *ApiController) Responses() {
-	authHeader := c.Ctx.Request.Header.Get("Authorization")
+	authHeader := c.Header("Authorization")
 	if !strings.HasPrefix(authHeader, "Bearer ") {
 		c.ResponseErrorWithStatus(http.StatusUnauthorized, "Invalid API key format. Expected 'Bearer API_KEY'")
 		return
@@ -89,8 +89,8 @@ func (c *ApiController) Responses() {
 		return
 	}
 
-	body := c.Ctx.Input.RequestBody
-	if strings.EqualFold(strings.TrimSpace(c.Ctx.Request.Header.Get("Content-Encoding")), "zstd") {
+	body := c.Body()
+	if strings.EqualFold(strings.TrimSpace(c.Header("Content-Encoding")), "zstd") {
 		decoded, err := decodeResponsesZstd(body)
 		if err != nil {
 			// Authenticate before reporting, for the reason the 400 below gives.
@@ -140,7 +140,7 @@ func (c *ApiController) Responses() {
 	original := c.Ctx.ResponseWriter.ResponseWriter
 	bridge := newResponsesBridgeWriter(original, &request, toolKinds)
 	c.Ctx.ResponseWriter.ResponseWriter = bridge
-	c.Ctx.Input.RequestBody = chatBody
+	c.Body() = chatBody
 	c.Ctx.Request.Header.Del("Content-Length")
 
 	c.ChatCompletions()

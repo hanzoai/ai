@@ -147,7 +147,7 @@ func (c *ApiController) UpdateTask() {
 	id := c.Input().Get("id")
 
 	var task object.Task
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &task)
+	err := json.Unmarshal(c.Body(), &task)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -190,7 +190,7 @@ func (c *ApiController) UpdateTask() {
 // @router /add-task [post]
 func (c *ApiController) AddTask() {
 	var task object.Task
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &task)
+	err := json.Unmarshal(c.Body(), &task)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -214,7 +214,7 @@ func (c *ApiController) AddTask() {
 // @router /delete-task [post]
 func (c *ApiController) DeleteTask() {
 	var task object.Task
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &task)
+	err := json.Unmarshal(c.Body(), &task)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return

@@ -99,7 +99,7 @@ func (c *ApiController) GetSingleSession() {
 // @router /update-session [post]
 func (c *ApiController) UpdateSession() {
 	var session object.Session
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &session)
+	err := json.Unmarshal(c.Body(), &session)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -119,7 +119,7 @@ func (c *ApiController) UpdateSession() {
 // @router /add-session [post]
 func (c *ApiController) AddSession() {
 	var session object.Session
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &session)
+	err := json.Unmarshal(c.Body(), &session)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -138,7 +138,7 @@ func (c *ApiController) AddSession() {
 // @router /delete-session [post]
 func (c *ApiController) DeleteSession() {
 	var session object.Session
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &session)
+	err := json.Unmarshal(c.Body(), &session)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return

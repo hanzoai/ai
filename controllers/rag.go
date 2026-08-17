@@ -50,7 +50,7 @@ func (c *ApiController) RagEmbed() {
 	}
 
 	var req object.RagEmbedRequest
-	if err := json.Unmarshal(c.Ctx.Input.RequestBody, &req); err != nil {
+	if err := json.Unmarshal(c.Body(), &req); err != nil {
 		c.ResponseError(err.Error())
 		return
 	}
@@ -109,7 +109,7 @@ func (c *ApiController) ragQuery() {
 	}
 
 	var req object.RagQueryRequest
-	if err := json.Unmarshal(c.Ctx.Input.RequestBody, &req); err != nil {
+	if err := json.Unmarshal(c.Body(), &req); err != nil {
 		c.ResponseError(err.Error())
 		return
 	}
@@ -153,7 +153,7 @@ func (c *ApiController) RagDelete() {
 	}
 
 	var body ragDeleteBody
-	if err := json.Unmarshal(c.Ctx.Input.RequestBody, &body); err != nil {
+	if err := json.Unmarshal(c.Body(), &body); err != nil {
 		c.ResponseError(err.Error())
 		return
 	}

@@ -79,13 +79,13 @@ func (c *ApiController) pipeZenMedia(apiPath, model string, rawBody []byte, unit
 		return
 	}
 	reqID := uuid.NewString()
-	req, err := http.NewRequestWithContext(c.Ctx.Request.Context(), http.MethodPost, prov.ProviderUrl+"/v1/"+apiPath, bytes.NewReader(rawBody))
+	req, err := http.NewRequestWithContext(c.Context(), http.MethodPost, prov.ProviderUrl+"/v1/"+apiPath, bytes.NewReader(rawBody))
 	if err != nil {
 		c.zenError("openai", "build zen request: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if a := c.Ctx.Request.Header.Get("Accept"); a != "" {
+	if a := c.Header("Accept"); a != "" {
 		req.Header.Set("Accept", a)
 	}
 	if prov.ClientSecret != "" {
@@ -121,8 +121,8 @@ func (c *ApiController) pipeZenMedia(apiPath, model string, rawBody []byte, unit
 	if ct == "" {
 		ct = "application/json"
 	}
-	c.Ctx.Output.Header("Content-Type", ct)
-	c.Ctx.Output.Body(b)
+	c.SetHeader("Content-Type", ct)
+	c.Bytes(http.StatusOK, b)
 	c.recordZenMediaUsage(model, authUser, isPremium, reqID, units, start, hold, "success", "")
 	c.EnableRender = false
 }
@@ -148,9 +148,9 @@ func (c *ApiController) recordZenMediaUsage(model string, authUser *iam.User, is
 		Premium: isPremium, Status: status, ErrorMsg: errMsg,
 		ClientIP: c.Ctx.Request.RemoteAddr, RequestID: reqID, Account: "hanzo",
 	}
-	rec.bind(c.Ctx.Request.Context(), authUser)
+	rec.bind(c.Context(), authUser)
 	recordUsage(rec)
-	recordTrace(c.Ctx.Request.Context(), rec, start)
+	recordTrace(c.Context(), rec, start)
 }
 
 // AudioMedia serves the generative audio verbs — /v1/audio/voice (TTS), /music,
@@ -169,7 +169,7 @@ func (c *ApiController) AudioMedia() {
 	var req struct {
 		Model string `json:"model"`
 	}
-	if err := json.Unmarshal(c.Ctx.Input.RequestBody, &req); err != nil || req.Model == "" {
+	if err := json.Unmarshal(c.Body(), &req); err != nil || req.Model == "" {
 		if authErr := c.authenticate(token); authErr != nil {
 			c.ResponseAuthError(authErr)
 			return
@@ -178,7 +178,7 @@ func (c *ApiController) AudioMedia() {
 		return
 	}
 	verb := ""
-	switch p := c.Ctx.Request.URL.Path; {
+	switch p := c.Path(); {
 	case strings.HasSuffix(p, "/voice"):
 		verb = "voice"
 	case strings.HasSuffix(p, "/music"):
@@ -200,5 +200,5 @@ func (c *ApiController) AudioMedia() {
 		c.ResponseError("model \"" + req.Model + "\" does not serve the /v1/audio/" + verb + " endpoint")
 		return
 	}
-	c.serveZenMedia("audio/"+verb, req.Model, c.Ctx.Input.RequestBody, 1, orgId, authUser, isPremium, startTime)
+	c.serveZenMedia("audio/"+verb, req.Model, c.Body(), 1, orgId, authUser, isPremium, startTime)
 }

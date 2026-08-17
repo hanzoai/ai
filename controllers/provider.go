@@ -145,7 +145,7 @@ func (c *ApiController) UpdateProvider() {
 	id := c.Input().Get("id")
 
 	var provider object.Provider
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &provider)
+	err := json.Unmarshal(c.Body(), &provider)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -241,7 +241,7 @@ func sealPastedKey(id string, incoming *object.Provider) error {
 // @router /add-provider [post]
 func (c *ApiController) AddProvider() {
 	var provider object.Provider
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &provider)
+	err := json.Unmarshal(c.Body(), &provider)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -280,7 +280,7 @@ func (c *ApiController) DeleteProvider() {
 		return
 	}
 	var provider object.Provider
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &provider)
+	err := json.Unmarshal(c.Body(), &provider)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -307,7 +307,7 @@ func (c *ApiController) RefreshMcpTools() {
 		return
 	}
 	var provider object.Provider
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &provider)
+	err := json.Unmarshal(c.Body(), &provider)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return

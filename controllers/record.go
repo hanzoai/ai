@@ -106,7 +106,7 @@ func (c *ApiController) UpdateRecord() {
 	id := c.Input().Get("id")
 
 	var record object.Record
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &record)
+	err := json.Unmarshal(c.Body(), &record)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -125,7 +125,7 @@ func (c *ApiController) UpdateRecord() {
 // @router /add-record [post]
 func (c *ApiController) AddRecord() {
 	var record object.Record
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &record)
+	err := json.Unmarshal(c.Body(), &record)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -163,7 +163,7 @@ func (c *ApiController) AddRecords() {
 		syncEnabled = false
 	}
 	var records []*object.Record
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &records)
+	err := json.Unmarshal(c.Body(), &records)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -202,7 +202,7 @@ func (c *ApiController) AddRecords() {
 // @router /delete-record [post]
 func (c *ApiController) DeleteRecord() {
 	var record object.Record
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &record)
+	err := json.Unmarshal(c.Body(), &record)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return

@@ -160,7 +160,7 @@ func (c *ApiController) AddRoutingReward() {
 	}
 
 	var body routingRewardRequest
-	if err := json.Unmarshal(c.Ctx.Input.RequestBody, &body); err != nil {
+	if err := json.Unmarshal(c.Body(), &body); err != nil {
 		c.ResponseErrorWithStatus(http.StatusBadRequest, "invalid request body")
 		return
 	}

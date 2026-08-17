@@ -73,7 +73,7 @@ func (c *ApiController) ResponseError(error string, data ...interface{}) {
 // Bearer token returns 401, matching /v1/models. The router's Output.Body honors a
 // status set via SetStatus, so the body shape is unchanged.
 func (c *ApiController) ResponseErrorWithStatus(status int, error string, data ...interface{}) {
-	c.Ctx.Output.SetStatus(status)
+	c.Status(status)
 	c.ResponseError(error, data...)
 }
 
@@ -191,7 +191,7 @@ func (c *ApiController) ResponseAuthError(err error) {
 // completion that no provider could serve reached clients as a success whose body
 // had no choices in it.
 func (c *ApiController) ResponseFailure(err error) {
-	c.Ctx.Output.SetStatus(statusOf(err))
+	c.Status(statusOf(err))
 	c.Data["json"] = Response{Status: "error", Msg: err.Error(), Code: codeOf(err)}
 	c.ServeJSON()
 }
@@ -220,16 +220,16 @@ func (c *ApiController) ResponseAudio(audioData []byte, contentType string, file
 		filename = "audio.mp3"
 	}
 
-	c.Ctx.Output.Header("Content-Type", contentType)
-	c.Ctx.Output.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
-	err := c.Ctx.Output.Body(audioData)
+	c.SetHeader("Content-Type", contentType)
+	c.SetHeader("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
+	err := c.Bytes(http.StatusOK, audioData)
 	if err != nil {
 		responseError(c.Ctx, err.Error())
 	}
 }
 
 func (c *ApiController) GetAcceptLanguage() string {
-	language := c.Ctx.Request.Header.Get("Accept-Language")
+	language := c.Header("Accept-Language")
 	if len(language) > 2 {
 		language = language[0:2]
 	}

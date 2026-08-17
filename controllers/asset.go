@@ -102,7 +102,7 @@ func (c *ApiController) UpdateAsset() {
 	id := c.Input().Get("id")
 
 	var asset object.Asset
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &asset)
+	err := json.Unmarshal(c.Body(), &asset)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -120,7 +120,7 @@ func (c *ApiController) UpdateAsset() {
 // @router /add-asset [post]
 func (c *ApiController) AddAsset() {
 	var asset object.Asset
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &asset)
+	err := json.Unmarshal(c.Body(), &asset)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -138,7 +138,7 @@ func (c *ApiController) AddAsset() {
 // @router /delete-asset [post]
 func (c *ApiController) DeleteAsset() {
 	var asset object.Asset
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &asset)
+	err := json.Unmarshal(c.Body(), &asset)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return

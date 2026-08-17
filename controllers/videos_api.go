@@ -137,7 +137,7 @@ func (c *ApiController) VideosGenerations() {
 
 	var req videosGenerationsRequest
 	badReq := ""
-	if err := json.Unmarshal(c.Ctx.Input.RequestBody, &req); err != nil {
+	if err := json.Unmarshal(c.Body(), &req); err != nil {
 		badReq = fmt.Sprintf("Failed to parse request: %s", err.Error())
 	} else if req.Model == "" {
 		badReq = "videos request requires a \"model\" field"
@@ -190,7 +190,7 @@ func (c *ApiController) VideosGenerations() {
 	// the client polls zen directly; ai does not proxy the poll/download (a
 	// follow-on for the async engine path).
 	if provider.Type == "Zen" {
-		c.serveZenMedia("videos/generations", req.Model, c.Ctx.Input.RequestBody, 1, orgId, authUser, isPremium, startTime)
+		c.serveZenMedia("videos/generations", req.Model, c.Body(), 1, orgId, authUser, isPremium, startTime)
 		return
 	}
 
@@ -221,7 +221,7 @@ func (c *ApiController) VideosGenerations() {
 	// Create the upstream job. This is FAST — the async API returns a queued job
 	// id immediately (the minutes-long generation runs upstream). A short timeout
 	// bounds a wedged create; the request context cancels it if the client leaves.
-	ctx, cancel := context.WithTimeout(c.Ctx.Request.Context(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(c.Context(), 60*time.Second)
 	defer cancel()
 
 	upstreamID, upstreamStatus, err := model.CreateVideoDOAI(ctx, upstreamURL, provider.ClientSecret, model.VideoGenRequest{
@@ -292,7 +292,7 @@ func (c *ApiController) RetrieveVideo() {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(c.Ctx.Request.Context(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(c.Context(), 30*time.Second)
 	defer cancel()
 
 	upstreamURL := videoUpstreamBase(provider)
@@ -356,7 +356,7 @@ func (c *ApiController) VideoContent() {
 	}
 	defer releaseVideoSlot()
 
-	ctx, cancel := context.WithTimeout(c.Ctx.Request.Context(), 120*time.Second)
+	ctx, cancel := context.WithTimeout(c.Context(), 120*time.Second)
 	defer cancel()
 
 	upstreamURL := videoUpstreamBase(provider)
@@ -375,9 +375,9 @@ func (c *ApiController) VideoContent() {
 	if mime == "" {
 		mime = "video/mp4"
 	}
-	c.Ctx.Output.Header("Content-Type", mime)
-	c.Ctx.Output.Header("Content-Disposition", "inline; filename="+job.id+".mp4")
-	if err := c.Ctx.Output.Body(data); err != nil {
+	c.SetHeader("Content-Type", mime)
+	c.SetHeader("Content-Disposition", "inline; filename="+job.id+".mp4")
+	if err := c.Bytes(http.StatusOK, data); err != nil {
 		responseError(c.Ctx, err.Error())
 		return
 	}
@@ -492,7 +492,7 @@ func (c *ApiController) recordVideoUsage(authUser *iam.User, provider *object.Pr
 		ClientIP:     c.Ctx.Request.RemoteAddr,
 		RequestID:    uuid.NewString(),
 	}
-	rec.bind(c.Ctx.Request.Context(), authUser)
+	rec.bind(c.Context(), authUser)
 	recordUsage(rec)
-	recordTrace(c.Ctx.Request.Context(), rec, startTime)
+	recordTrace(c.Context(), rec, startTime)
 }

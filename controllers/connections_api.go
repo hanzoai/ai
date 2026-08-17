@@ -199,7 +199,7 @@ func (c *ApiController) AddAIConnection() {
 		Provider string `json:"provider"`
 		APIKey   string `json:"apiKey"`
 	}
-	if err := json.Unmarshal(c.Ctx.Input.RequestBody, &body); err != nil {
+	if err := json.Unmarshal(c.Body(), &body); err != nil {
 		c.ResponseError(err.Error())
 		return
 	}
