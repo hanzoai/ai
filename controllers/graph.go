@@ -73,7 +73,7 @@ func (c *ApiController) GetGraphs() {
 			return
 		}
 
-		paginator := util.NewPaginator(c.Ctx.Request, limit, count)
+		paginator := util.NewPaginator(c.PageAsked(), limit, count)
 		graphs, err := object.GetPaginationGraphs(owner, paginator.Offset(), limit, field, value, sortField, sortOrder)
 		if err != nil {
 			c.ResponseError(err.Error())

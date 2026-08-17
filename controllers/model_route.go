@@ -59,7 +59,7 @@ func (c *ApiController) GetModelRoutes() {
 			return
 		}
 
-		paginator := util.NewPaginator(c.Ctx.Request, limit, count)
+		paginator := util.NewPaginator(c.PageAsked(), limit, count)
 		routes, err := object.GetPaginationModelRoutes(owner, paginator.Offset(), limit, field, value, sortField, sortOrder)
 		if err != nil {
 			c.ResponseError(err.Error())

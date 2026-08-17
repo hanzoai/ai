@@ -430,6 +430,6 @@ func (c *ApiController) resolveProviderForPublic() (provider *object.Provider, a
 	// Type "application" marks a machine, so account.Payer resolves the billing
 	// subject to the org rather than looking for a person who does not exist.
 	authUser = &iam.User{Owner: publicOrg, Type: "application"}
-	c.Ctx.Input.SetParam("recordUserId", publicOrg+"/visitor")
+	c.Locals("recordUserId", publicOrg+"/visitor")
 	return provider, authUser, route.upstreamModel, nil
 }
