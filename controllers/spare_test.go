@@ -262,7 +262,7 @@ func restore(t *testing.T, fam *modelFamily) {
 // The snapshot is set directly: what is under test is what the pipe DOES with a
 // spare, not how discovery found one (TestDiscoveryCarriesTheSpareRoutes covers
 // that), and refreshing would put a second round trip inside every case below.
-func spareFamily(t *testing.T, url, free string) *modelFamily {
+func spareFamily(t *testing.T, url, free string, also ...string) *modelFamily {
 	t.Helper()
 	fam := freeFamily()
 	restore(t, fam)
@@ -272,6 +272,18 @@ func spareFamily(t *testing.T, url, free string) *modelFamily {
 	fam.spares = []string{free}
 	fam.byID = map[string]zenModel{free: {ID: free}}
 	fam.ids = []string{free}
+	// Routes a case may NAME but that are not spares. A route the family can price
+	// is what makes a terms assertion about that route rather than about an id
+	// discovery never found — the two read the same today and would stop reading the
+	// same the moment either rule moved.
+	for _, id := range also {
+		m := zenModel{ID: id}
+		if !strings.HasSuffix(id, ":free") {
+			m.Base.In, m.Base.Out = decimal.New(3, 0), decimal.New(15, 0)
+		}
+		fam.byID[id] = m
+		fam.ids = append(fam.ids, id)
+	}
 	fam.loaded = true
 	fam.fetchedAt = time.Now()
 	return fam
@@ -305,7 +317,11 @@ func otherFamily(t *testing.T, url string) *modelFamily {
 // wire, not about a branch nobody took.
 func TestOnlyAVendorThatCannotServeMovesTheRequest(t *testing.T) {
 	const free = "vendor/big:free"
-	const sku = "vendor/paid-a"
+	// A route bought under the SAME terms as the spare, so what is under test here
+	// is which refusals move a request and nothing else. Whether the terms permit
+	// the move at all is a separate rule with a test of its own
+	// (TestTermsAreNotTradedForAnAnswer).
+	const sku = "vendor/small:free"
 
 	// The 402 body is OpenRouter's own, measured from the live account.
 	const spent = `{"error":{"message":"Insufficient credits. Add more using https://openrouter.ai/settings/credits","code":402,"metadata":{"limit_source":"openrouter_credits"}}}`
@@ -342,7 +358,7 @@ func TestOnlyAVendorThatCannotServeMovesTheRequest(t *testing.T) {
 			fake := &refuses{status: tc.status, body: tc.body, free: free}
 			vendor := fake.serve(t)
 			defer vendor.Close()
-			fam := spareFamily(t, vendor.URL, free)
+			fam := spareFamily(t, vendor.URL, free, sku)
 
 			rec, refusedBy := fake.pipe(t, fam, sku)
 
@@ -375,18 +391,110 @@ func TestOnlyAVendorThatCannotServeMovesTheRequest(t *testing.T) {
 	}
 }
 
+// THE FLOOR. A priced route is bought under `deny` and every spare is free, which
+// is free BECAUSE the vendor keeps what it carried. Substituting one for the other
+// moves a customer who chose and PAID for the first term onto the second, and the
+// only notice of it is a header and an id they would have to remember their own
+// request to compare against.
+//
+// So a route under `deny` is not substituted at all. The customer keeps the
+// protection they bought and is told the route is unavailable, which is true. Every
+// refusal that WOULD have moved a request is exercised here, because the floor has
+// to hold on all of them or it is not a floor.
+func TestTermsAreNotTradedForAnAnswer(t *testing.T) {
+	const free = "vendor/big:free"
+	const paid = "vendor/paid-a"
+
+	for _, tc := range []struct {
+		name   string
+		status int
+		body   string
+	}{
+		{"out of credit", 402, `{"error":{"message":"Insufficient credits. Add more using https://openrouter.ai/settings/credits","code":402}}`},
+		{"vendor broken", 500, `{"error":{"message":"internal server error"}}`},
+		{"bad gateway", 502, `{"error":{"message":"bad gateway"}}`},
+		{"gateway timeout", 504, `{"error":{"message":"gateway timeout"}}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cooled.forget()
+			fake := &refuses{status: tc.status, body: tc.body, free: free}
+			vendor := fake.serve(t)
+			defer vendor.Close()
+			fam := spareFamily(t, vendor.URL, free, paid)
+
+			// The terms this route is really bought under — the assertion below is
+			// about `deny` and not merely about a route that happens not to move.
+			if word, stated := fam.collection(paid); !stated || word != collectionDeny {
+				t.Fatalf("%q is bought under (%q, stated=%v), want %q", paid, word, stated, collectionDeny)
+			}
+
+			rec, refusedBy := fake.pipe(t, fam, paid)
+
+			if len(fake.asked) != 1 {
+				t.Errorf("asked=%v — a route bought under %q was offered to a free one", fake.asked, collectionDeny)
+			}
+			if strings.Contains(rec.Body.String(), free) {
+				t.Errorf("the free route answered a %q route:\n%s", collectionDeny, rec.Body.String())
+			}
+			// The refusal has to reach somebody as itself. Handed back, another
+			// VENDOR may still be tried; what must never happen is a quiet downgrade.
+			if refusedBy == nil && rec.Body.Len() == 0 {
+				t.Error("the refusal vanished")
+			}
+		})
+	}
+
+	// The floor is about the TERMS, not about refusing to fall back: the same
+	// vendor, the same refusal, a route bought under `allow` — that one still moves.
+	// Without this the test above would pass on a relay that had simply stopped
+	// falling back at all.
+	t.Run("allow still moves", func(t *testing.T) {
+		cooled.forget()
+		const alsoFree = "vendor/small:free"
+		fake := &refuses{status: 402, body: `{"error":{"message":"Insufficient credits."}}`, free: free}
+		vendor := fake.serve(t)
+		defer vendor.Close()
+		fam := spareFamily(t, vendor.URL, free, alsoFree)
+
+		if word, stated := fam.collection(alsoFree); !stated || word != collectionAllow {
+			t.Fatalf("%q is bought under (%q, stated=%v), want %q", alsoFree, word, stated, collectionAllow)
+		}
+		if _, _ = fake.pipe(t, fam, alsoFree); len(fake.asked) != 2 {
+			t.Errorf("asked=%v — a route already under %q was not offered the spare", fake.asked, collectionAllow)
+		}
+	})
+}
+
+// The terms the caller is told are the terms the answer was served under, and after
+// the floor above a substitution can only ever be `allow` for `allow`.
+func TestTheHeaderStatesTheTermsThatServed(t *testing.T) {
+	cooled.forget()
+	const free = "vendor/big:free"
+	const alsoFree = "vendor/small:free"
+	fake := &refuses{status: 402, body: `{"error":{"message":"Insufficient credits."}}`, free: free}
+	vendor := fake.serve(t)
+	defer vendor.Close()
+
+	rec, _ := fake.pipe(t, spareFamily(t, vendor.URL, free, alsoFree), alsoFree)
+
+	if got := rec.Header().Get(headerCollection); got != collectionAllow {
+		t.Errorf("%s = %q, want %q — the spare that answered is served under %q",
+			headerCollection, got, collectionAllow, collectionAllow)
+	}
+}
+
 // The answer wears the model that MADE it. A downgrade the client cannot see is a
 // lie about what they got, so the one thing the relay must not do is stamp the
 // SKU that was asked for onto an answer a different model wrote.
 func TestASpareAnswerSaysWhichModelMadeIt(t *testing.T) {
 	cooled.forget()
 	const free = "vendor/big:free"
-	const sku = "vendor/paid-a"
+	const sku = "vendor/small:free"
 	fake := &refuses{status: 402, body: `{"error":{"message":"Insufficient credits."}}`, free: free}
 	vendor := fake.serve(t)
 	defer vendor.Close()
 
-	rec, _ := fake.pipe(t, spareFamily(t, vendor.URL, free), sku)
+	rec, _ := fake.pipe(t, spareFamily(t, vendor.URL, free, sku), sku)
 
 	var got map[string]any
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
