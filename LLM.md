@@ -34,8 +34,8 @@ integrations) · `object/kms.go` (secret resolution) · `web/` (React admin UI).
 ## Architecture
 
 Full-stack application:
-- **Backend:** Go 1.26 + native web router (`github.com/hanzoai/ai/web`, served as `routers.App`; upstream beego dropped), MySQL/MariaDB/PostgreSQL
-- **Frontend:** React + Ant Design v5, located in `web/`
+- **Backend:** Go 1.26 on `github.com/zap-proto/zip` (over fiber v3 / fasthttp), MySQL/MariaDB/PostgreSQL
+- **Frontend:** React + Ant Design v5, located in `web/` (the folder is the React app; the in-house Go router that used to share the name is gone)
 - **Auth:** Hanzo IAM SSO integration
 
 ## Directory Structure
@@ -107,11 +107,50 @@ cd web && yarn lint
 ## Key Conventions
 
 ### Backend (Go)
-- Framework: native web router (`github.com/hanzoai/ai/web`, served as `routers.App`) — controllers handle HTTP, objects contain business logic; upstream beego is dropped (no direct import — routing, config, logging, pagination are all native)
+- Framework: `zip`. An `ApiController` IS its request — it embeds `*zip.Ctx`, so there is no context to marry to a controller and no recorder to read afterwards. Controllers handle HTTP, objects hold the business logic.
 - New AI providers go in `model/` (implement the provider interface)
 - Database access via the native store in `object/`
 - Route registration: CRUD resources are GENERATED from the one table in `routers/resources.go`; `routers/router.go` holds only what is NOT a resource (the OpenAI-compatible surface and a few singletons). See "The /v1 resource surface" below.
 - i18n strings: avoid duplicate keys across frontend and backend
+
+#### Five things zip decides that the old router did not
+
+Each cost a real defect during the migration, and each is invisible: the code
+compiles, the types check, and the behaviour is wrong.
+
+- **A WRITE CARRIES ITS STATUS.** `c.JSON(code, v)` / `c.Bytes(code, b)` set the
+  status as they write, so setting one beforehand and writing after replaces it.
+  `c.Status` is for a response whose body is written by something that takes no
+  status — a stream — or that has no body at all. Everything else passes the status
+  to the one write. A refusal that arrives as 200 is worse than an outage: the
+  client reads it and believes it.
+
+- **A STREAMED BODY IS PRODUCED AFTER THE HANDLER RETURNS.** fasthttp drains the
+  writer handed to `SendStreamWriter` while it serialises the response, so the
+  callback has NOT run when the call comes back — measured, not assumed. Anything
+  the stream reads must outlive the handler (hand the upstream body to the
+  callback; a `defer` in the enclosing function closes it first and the client gets
+  nothing), and anything the stream learns must be used inside it (token counts read
+  outside are still zero, so a streamed answer bills no completion). The Ctx is
+  still the request's in there: fasthttp finishes writing before fiber releases it.
+
+- **`RequestURI` IS SET BY A SERVER, NOT BY A CALLER.** The fiber adaptor reads that
+  field, so a request CONSTRUCTED in process — which is every request crossing ZAP —
+  arrives at the router as `/` and 404s. `controllers.target` wraps a handler to
+  fill it in from the URL; both ZAP installers go through it.
+
+- **A BUFFERED WRITE IS NOT A DELIVERY.** Bytes leave at the flush. A `Write` that
+  returns n > 0 has reached a buffer, and an unchecked `Flush` reports a broken
+  connection as success — which is how `AnthropicWriter.StreamSent` came to tell the
+  failover loop an answer had reached a client it never reached.
+
+- **A PRINCIPAL IS A VERIFIED TOKEN, and there is nothing else to seed.** No session
+  store exists; `GetSessionClaims` parses the credential the request presents. So a
+  test that needs a caller PRESENTS one: `presenting(visit(method, target),
+  authtest.Bearer(t, user))`. `internal/authtest` is the ONE installer of the
+  verifier's certificate — two of them race over the same global. Corollary: any
+  predicate that used to mean "there is a session" now fires for ANY verified token,
+  a sibling brand's included.
 
 ### Frontend (React)
 - UI components use Ant Design v5
