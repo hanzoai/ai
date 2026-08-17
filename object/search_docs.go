@@ -23,6 +23,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/hanzoai/ai/conf"
@@ -581,21 +582,42 @@ func writeDocsToVector(indexName string, docs []DocIndex, replace bool, lang str
 		deleteAllVectorPoints(baseURL, apiKey, indexName)
 	}
 	const batchSize = 50
+	// Embeds within a batch run concurrently: each is an independent HTTP call
+	// to the gateway, and running them one at a time made ingest wall-time the
+	// sum of every round trip.
+	const embedWorkers = 8
 	for i := 0; i < len(docs); i += batchSize {
 		end := i + batchSize
 		if end > len(docs) {
 			end = len(docs)
 		}
-		points := make([]qdrantPoint, 0, end-i)
-		for _, doc := range docs[i:end] {
-			vec, embErr := embed(doc.Content)
-			if embErr != nil {
-				log.Warning("failed to embed document %s, skipping: %v", doc.ID, embErr)
+		batch := docs[i:end]
+		vecs := make([][]float32, len(batch))
+		var wg sync.WaitGroup
+		sem := make(chan struct{}, embedWorkers)
+		for j, doc := range batch {
+			wg.Add(1)
+			sem <- struct{}{}
+			go func(j int, content, id string) {
+				defer wg.Done()
+				defer func() { <-sem }()
+				vec, embErr := embed(content)
+				if embErr != nil {
+					log.Warning("failed to embed document %s, skipping: %v", id, embErr)
+					return
+				}
+				vecs[j] = vec
+			}(j, doc.Content, doc.ID)
+		}
+		wg.Wait()
+		points := make([]qdrantPoint, 0, len(batch))
+		for j, doc := range batch {
+			if vecs[j] == nil {
 				continue
 			}
 			points = append(points, qdrantPoint{
 				ID:     doc.ID,
-				Vector: vec,
+				Vector: vecs[j],
 				Payload: map[string]interface{}{
 					"id": doc.ID, "page_id": doc.PageID, "title": doc.Title,
 					"url": doc.URL, "content": doc.Content, "section": doc.Section,
