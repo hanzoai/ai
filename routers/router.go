@@ -217,7 +217,12 @@ func registerAPI(app *zip.App) {
 	route(app, "/v1/search", "POST:SearchDocs")
 	route(app, "/v1/index", "POST:IndexDocs")
 	route(app, "/v1/search/stats", "GET:SearchDocsStats")
-	route(app, "/v1/crawl", "POST:Crawl")
+	// NO /v1/crawl DOOR HERE. ai does not fetch the web itself — object.SetFetcher
+	// says so, and nothing in this module ever calls it — so this address was a door
+	// onto a capability only a host has. Standalone it could answer nothing; mounted,
+	// the host serves the same address with its own typed op, and one address claimed
+	// by two apps is something a fleet cannot route. The crawl ai DOES offer is the
+	// one its host feeds, over ZAP (zap_rag-search-crawl.go).
 
 	// File-scoped RAG — the ONE canonical uploaded-file RAG surface (consolidates
 	// the retired standalone chat-rag-api). Embed a file under a file_id, then
