@@ -26,6 +26,7 @@ package controllers
 
 import (
 	"encoding/json"
+	"net/http"
 
 	"github.com/hanzoai/ai/object"
 )
@@ -61,12 +62,12 @@ func (c *ApiController) RagEmbed() {
 
 	result, err := object.RagEmbedFile(auth.Owner, &req, c.GetAcceptLanguage())
 	if err != nil {
-		recordSearchUsage(auth, "index-docs", "rag-embed", "error", 0, c.Ctx.Request.RemoteAddr)
+		recordSearchUsage(auth, "index-docs", "rag-embed", "error", 0, c.Fiber().IP())
 		c.ResponseError(err.Error())
 		return
 	}
 
-	recordSearchUsage(auth, "index-docs", "rag-embed", "success", result.Chunks, c.Ctx.Request.RemoteAddr)
+	recordSearchUsage(auth, "index-docs", "rag-embed", "success", result.Chunks, c.Fiber().IP())
 	c.ResponseOk(result)
 }
 
@@ -116,16 +117,15 @@ func (c *ApiController) ragQuery() {
 
 	results, err := object.RagQuery(auth.Owner, &req, c.GetAcceptLanguage())
 	if err != nil {
-		recordSearchUsage(auth, "search-query", "rag", "error", 0, c.Ctx.Request.RemoteAddr)
+		recordSearchUsage(auth, "search-query", "rag", "error", 0, c.Fiber().IP())
 		c.ResponseError(err.Error())
 		return
 	}
 
-	recordSearchUsage(auth, "search-query", "rag", "success", len(results), c.Ctx.Request.RemoteAddr)
+	recordSearchUsage(auth, "search-query", "rag", "success", len(results), c.Fiber().IP())
 	// Raw array, matching the retired rag-api /query response shape (a list of
 	// scored chunks) so LibreChat's RAG client parses it unchanged.
-	c.Data["json"] = results
-	c.ServeJSON()
+	c.JSON(http.StatusOK, results)
 }
 
 // ragDeleteBody is the body for POST /rag/delete.
@@ -210,6 +210,5 @@ func (c *ApiController) RagContext() {
 		c.ResponseError(err.Error())
 		return
 	}
-	c.Data["json"] = results
-	c.ServeJSON()
+	c.JSON(http.StatusOK, results)
 }

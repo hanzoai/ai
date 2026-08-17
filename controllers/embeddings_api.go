@@ -109,7 +109,7 @@ func (c *ApiController) Embeddings() {
 			}
 			var ok2 bool
 			if hold, ok2 = reserveBudget(subject, est); !ok2 {
-				c.ResponseAuthError(billingError("%s", object.InsufficientBalance(c.Ctx.Request.Host, ledger, "cost").Message))
+				c.ResponseAuthError(billingError("%s", object.InsufficientBalance(c.Host(), ledger, "cost").Message))
 				return
 			}
 			// The fail-safe every other reserving surface already has: whatever
@@ -277,7 +277,7 @@ func (c *ApiController) Rerank() {
 			Currency:     "USD",
 			Premium:      isPremium,
 			Status:       "success",
-			ClientIP:     c.Ctx.Request.RemoteAddr,
+			ClientIP:     c.Fiber().IP(),
 			RequestID:    uuid.NewString(),
 		}
 		rec.bind(c.Context(), authUser)
@@ -312,7 +312,6 @@ func (c *ApiController) rejectPublishableKey() {
 	c.Status(403)
 	c.SetHeader("Content-Type", "application/json")
 	c.Bytes(http.StatusOK, []byte(`{"error":{"message":"Publishable keys (pk-) can only access read-only endpoints (/v1/models, /health). Use a secret key (sk-) for this endpoint.","type":"auth_error","code":403}}`))
-	c.EnableRender = false
 }
 
 // jsonResponse writes v as a 200 JSON body and disables the router's auto-render.
@@ -323,9 +322,8 @@ func (c *ApiController) jsonResponse(v interface{}) {
 		return
 	}
 	c.SetHeader("Content-Type", "application/json")
-	c.Ctx.ResponseWriter.WriteHeader(http.StatusOK)
+	c.Status(http.StatusOK)
 	c.Bytes(http.StatusOK, b)
-	c.EnableRender = false
 }
 
 // proxyJSON forwards a pre-marshalled JSON body to the provider's apiPath
@@ -365,7 +363,7 @@ func (c *ApiController) proxyJSON(provider *object.Provider, apiPath string, bod
 				Premium:   isPremium,
 				Status:    "error",
 				ErrorMsg:  err.Error(),
-				ClientIP:  c.Ctx.Request.RemoteAddr,
+				ClientIP:  c.Fiber().IP(),
 				RequestID: requestId,
 			}
 			errRecord.bind(c.Context(), authUser)
@@ -408,7 +406,7 @@ func (c *ApiController) proxyJSON(provider *object.Provider, apiPath string, bod
 			Currency:     "USD",
 			Premium:      isPremium,
 			Status:       status,
-			ClientIP:     c.Ctx.Request.RemoteAddr,
+			ClientIP:     c.Fiber().IP(),
 			RequestID:    requestId,
 		}
 		rec.bind(c.Context(), authUser)
@@ -418,12 +416,11 @@ func (c *ApiController) proxyJSON(provider *object.Provider, apiPath string, bod
 
 	for k, vals := range resp.Header {
 		for _, v := range vals {
-			c.Ctx.ResponseWriter.Header().Add(k, v)
+			c.Fiber().Response().Header.Add(k, v)
 		}
 	}
-	c.Ctx.ResponseWriter.WriteHeader(resp.StatusCode)
+	c.Status(resp.StatusCode)
 	c.Bytes(http.StatusOK, respBody)
-	c.EnableRender = false
 }
 
 // setJSONModel returns raw with its top-level "model" field replaced by model,

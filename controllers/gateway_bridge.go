@@ -45,7 +45,6 @@ import (
 // splits GET (read) vs PUT (write), /v1/org/settings GET/PUT/DELETE, and returns
 // 405 for a verb it does not own.
 func (c *ApiController) RouterConfigBridge() {
-	c.EnableRender = false
 	req := c.Ctx.Request
 
 	// nil router: this method IS a route inside routers.App, so it has nothing to
@@ -85,7 +84,7 @@ func (c *ApiController) RouterConfigBridge() {
 // render off) so the native handler's exact JSON/JSONL bytes reach the client.
 func (c *ApiController) writeBridgeRaw(status int, body []byte) {
 	c.SetHeader("Content-Type", "application/json; charset=utf-8")
-	c.Ctx.ResponseWriter.WriteHeader(status)
+	c.Status(status)
 	_ = c.Bytes(http.StatusOK, body)
 }
 

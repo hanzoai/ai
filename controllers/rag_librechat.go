@@ -34,6 +34,7 @@ package controllers
 import (
 	"encoding/json"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -122,10 +123,9 @@ func (c *ApiController) RagEmbedMultipart() {
 	filename := header.Filename
 	if !isKnownType(filename) {
 		// Match the retired rag-api: report the unsupported type, don't 500.
-		c.Data["json"] = map[string]interface{}{
+		c.JSON(http.StatusOK, map[string]interface{}{
 			"status": false, "known_type": false, "file_id": fileID, "filename": filename,
-		}
-		c.ServeJSON()
+		})
 		return
 	}
 
@@ -146,20 +146,19 @@ func (c *ApiController) RagEmbedMultipart() {
 	}
 	result, err := object.RagEmbedFile(auth.Owner, req, c.GetAcceptLanguage())
 	if err != nil {
-		recordSearchUsage(auth, "index-docs", "rag-embed", "error", 0, c.Ctx.Request.RemoteAddr)
+		recordSearchUsage(auth, "index-docs", "rag-embed", "error", 0, c.Fiber().IP())
 		c.ragCompatError(err.Error(), fileID)
 		return
 	}
-	recordSearchUsage(auth, "index-docs", "rag-embed", "success", result.Chunks, c.Ctx.Request.RemoteAddr)
+	recordSearchUsage(auth, "index-docs", "rag-embed", "success", result.Chunks, c.Fiber().IP())
 
-	c.Data["json"] = map[string]interface{}{
+	c.JSON(http.StatusOK, map[string]interface{}{
 		"status":     true,
 		"known_type": true,
 		"file_id":    fileID,
 		"filename":   filename,
 		"chunks":     result.Chunks,
-	}
-	c.ServeJSON()
+	})
 }
 
 // RagQueryCompat handles POST /v1/query — {file_id,query,k}. Returns LangChain
@@ -199,14 +198,13 @@ func (c *ApiController) ragQueryCompat() {
 
 	results, err := object.RagQuery(auth.Owner, &req, c.GetAcceptLanguage())
 	if err != nil {
-		recordSearchUsage(auth, "search-query", "rag", "error", 0, c.Ctx.Request.RemoteAddr)
+		recordSearchUsage(auth, "search-query", "rag", "error", 0, c.Fiber().IP())
 		c.ResponseError(err.Error())
 		return
 	}
-	recordSearchUsage(auth, "search-query", "rag", "success", len(results), c.Ctx.Request.RemoteAddr)
+	recordSearchUsage(auth, "search-query", "rag", "success", len(results), c.Fiber().IP())
 
-	c.Data["json"] = lcTuples(results)
-	c.ServeJSON()
+	c.JSON(http.StatusOK, lcTuples(results))
 }
 
 // RagDeleteDocuments handles DELETE /v1/documents — a JSON array of file_ids.
@@ -243,11 +241,10 @@ func (c *ApiController) RagDeleteDocuments() {
 		}
 		deleted++
 	}
-	c.Data["json"] = map[string]interface{}{
+	c.JSON(http.StatusOK, map[string]interface{}{
 		"message": "Documents deleted successfully",
 		"deleted": deleted,
-	}
-	c.ServeJSON()
+	})
 }
 
 // RagDocumentContext handles GET /v1/documents/:file_id/context — every chunk of
@@ -263,7 +260,7 @@ func (c *ApiController) RagDocumentContext() {
 		return
 	}
 
-	fileID := c.Ctx.Input.Param(":file_id")
+	fileID := c.Param("file_id")
 	if fileID == "" {
 		c.ResponseError("file_id must not be empty")
 		return
@@ -278,17 +275,15 @@ func (c *ApiController) RagDocumentContext() {
 	for _, r := range results {
 		docs = append(docs, lcResultToDocument(r))
 	}
-	c.Data["json"] = docs
-	c.ServeJSON()
+	c.JSON(http.StatusOK, docs)
 }
 
 // ragCompatError emits the retired rag-api's failure shape ({status:false,...})
 // so hanzo.chat's uploadVectors() surfaces a clean "File embedding failed".
 func (c *ApiController) ragCompatError(msg, fileID string) {
-	c.Data["json"] = map[string]interface{}{
+	c.JSON(http.StatusOK, map[string]interface{}{
 		"status": false, "known_type": true, "file_id": fileID, "detail": msg,
-	}
-	c.ServeJSON()
+	})
 }
 
 // saveUploadToTemp streams an uploaded file to a temp path, preserving the

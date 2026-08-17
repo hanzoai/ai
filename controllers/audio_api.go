@@ -522,7 +522,7 @@ func (c *ApiController) recordAudioUsage(authUser *iam.User, provider *object.Pr
 		ErrorMsg:     errMsg,
 		AudioSeconds: qty.seconds,
 		AudioChars:   qty.chars,
-		ClientIP:     c.Ctx.Request.RemoteAddr,
+		ClientIP:     c.Fiber().IP(),
 		RequestID:    uuid.NewString(),
 	}
 	rec.bind(c.Context(), authUser)

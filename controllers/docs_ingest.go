@@ -72,7 +72,7 @@ func (c *ApiController) IngestDocs() {
 	if object.IsAsyncIngestSource(req.Source) {
 		wfID, err := object.EnqueueIngest(c.Context(), auth.Owner, &req, lang)
 		if err == nil {
-			recordSearchUsage(auth, "index-docs", req.Source, "enqueued", 0, c.Ctx.Request.RemoteAddr)
+			recordSearchUsage(auth, "index-docs", req.Source, "enqueued", 0, c.Fiber().IP())
 			c.ResponseOk(&object.IngestStats{
 				Source:     req.Source,
 				Store:      req.Store,
@@ -91,12 +91,12 @@ func (c *ApiController) IngestDocs() {
 
 	stats, err := object.IngestSource(auth.Owner, &req, lang)
 	if err != nil {
-		recordSearchUsage(auth, "index-docs", req.Source, "error", 0, c.Ctx.Request.RemoteAddr)
+		recordSearchUsage(auth, "index-docs", req.Source, "error", 0, c.Fiber().IP())
 		c.ResponseError(err.Error())
 		return
 	}
 
-	recordSearchUsage(auth, "index-docs", req.Source, "success", stats.DocumentsIndexed, c.Ctx.Request.RemoteAddr)
+	recordSearchUsage(auth, "index-docs", req.Source, "success", stats.DocumentsIndexed, c.Fiber().IP())
 
 	// Purge Cloudflare edge cache for this index so retrieval doesn't serve
 	// stale results after ingest. Runs async to avoid blocking the response.

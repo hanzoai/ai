@@ -127,7 +127,7 @@ func (c *ApiController) GetStore() {
 	}
 
 	if store != nil {
-		host := c.Ctx.Request.Host
+		host := c.Host()
 		origin := getOriginFromHost(host)
 		err = store.Populate(origin, c.GetAcceptLanguage())
 		if err != nil {

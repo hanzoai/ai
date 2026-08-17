@@ -17,6 +17,7 @@ package controllers
 
 import (
 	"encoding/json"
+	"net/http"
 
 	"github.com/hanzoai/ai/object"
 )
@@ -36,8 +37,7 @@ func (c *ApiController) CommitRecord() {
 		return
 	}
 
-	c.Data["json"] = wrapActionResponse2(object.CommitRecord(&record, c.GetAcceptLanguage()))
-	c.ServeJSON()
+	c.JSON(http.StatusOK, wrapActionResponse2(object.CommitRecord(&record, c.GetAcceptLanguage())))
 }
 
 // CommitRecordSecond
@@ -55,8 +55,7 @@ func (c *ApiController) CommitRecordSecond() {
 		return
 	}
 
-	c.Data["json"] = wrapActionResponse(object.CommitRecordSecond(&record, c.GetAcceptLanguage()))
-	c.ServeJSON()
+	c.JSON(http.StatusOK, wrapActionResponse(object.CommitRecordSecond(&record, c.GetAcceptLanguage())))
 }
 
 // QueryRecord

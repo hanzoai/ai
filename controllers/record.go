@@ -17,6 +17,7 @@ package controllers
 
 import (
 	"encoding/json"
+	"net/http"
 	"strings"
 
 	"github.com/hanzoai/ai/object"
@@ -112,8 +113,7 @@ func (c *ApiController) UpdateRecord() {
 		return
 	}
 
-	c.Data["json"] = wrapActionResponse(object.UpdateRecord(id, &record, c.GetAcceptLanguage()))
-	c.ServeJSON()
+	c.JSON(http.StatusOK, wrapActionResponse(object.UpdateRecord(id, &record, c.GetAcceptLanguage())))
 }
 
 // AddRecord
@@ -141,8 +141,7 @@ func (c *ApiController) AddRecord() {
 		record.Count = 1
 	}
 
-	c.Data["json"] = wrapActionResponse2(object.AddRecord(&record, c.GetAcceptLanguage()))
-	c.ServeJSON()
+	c.JSON(http.StatusOK, wrapActionResponse2(object.AddRecord(&record, c.GetAcceptLanguage())))
 }
 
 // AddRecords
@@ -189,8 +188,7 @@ func (c *ApiController) AddRecords() {
 		}
 	}
 
-	c.Data["json"] = wrapActionResponse2(object.AddRecords(records, syncEnabled, c.GetAcceptLanguage()))
-	c.ServeJSON()
+	c.JSON(http.StatusOK, wrapActionResponse2(object.AddRecords(records, syncEnabled, c.GetAcceptLanguage())))
 }
 
 // DeleteRecord
@@ -208,6 +206,5 @@ func (c *ApiController) DeleteRecord() {
 		return
 	}
 
-	c.Data["json"] = wrapActionResponse(object.DeleteRecord(&record))
-	c.ServeJSON()
+	c.JSON(http.StatusOK, wrapActionResponse(object.DeleteRecord(&record)))
 }

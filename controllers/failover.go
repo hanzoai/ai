@@ -319,7 +319,7 @@ func (c *ApiController) recordRefusals(model string, tried []attempt, user *iam.
 			Stream:    stream,
 			Status:    "failover",
 			ErrorMsg:  a.err.Error(),
-			ClientIP:  c.Ctx.Request.RemoteAddr,
+			ClientIP:  c.Fiber().IP(),
 			RequestID: requestId,
 		}
 		rec.bind(c.Context(), user)

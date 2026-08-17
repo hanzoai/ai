@@ -177,7 +177,7 @@ func (c *ApiController) RequestModelAccess() {
 		c.ResponseUnauthorized(c.T("auth:Please sign in first"))
 		return
 	}
-	model := c.Ctx.Input.Param(":model")
+	model := c.Param("model")
 	if model == "" {
 		c.ResponseError("model is required")
 		return
@@ -199,7 +199,7 @@ func (c *ApiController) GetModelAccessStatus() {
 		c.ResponseUnauthorized(c.T("auth:Please sign in first"))
 		return
 	}
-	model := c.Ctx.Input.Param(":model")
+	model := c.Param("model")
 	owner, _, email := principalAccessIdentity(user)
 	c.ResponseOk(map[string]string{
 		"model":  model,

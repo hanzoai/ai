@@ -65,7 +65,6 @@ func (c *ApiController) ExportMyRoutingData() {
 	}
 	c.SetHeader("Content-Type", "application/x-ndjson")
 	_ = writeRoutingLedgerJSONL(c.Ctx.ResponseWriter, events)
-	c.EnableRender = false
 }
 
 // DeleteMyRoutingData deletes ALL of the caller's OWN org routing events — the

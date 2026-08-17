@@ -60,7 +60,7 @@ func (c *ApiController) serveZenMedia(apiPath, model string, rawBody []byte, uni
 			subject := authUser.PayerSubject(ledger)
 			var ok2 bool
 			if hold, ok2 = reserveBudget(subject, zm.unitCostCents(units)); !ok2 {
-				c.ResponseAuthError(billingError("%s", object.InsufficientBalance(c.Ctx.Request.Host, ledger, "cost").Message))
+				c.ResponseAuthError(billingError("%s", object.InsufficientBalance(c.Host(), ledger, "cost").Message))
 				return
 			}
 		}
@@ -124,7 +124,6 @@ func (c *ApiController) pipeZenMedia(apiPath, model string, rawBody []byte, unit
 	c.SetHeader("Content-Type", ct)
 	c.Bytes(http.StatusOK, b)
 	c.recordZenMediaUsage(model, authUser, isPremium, reqID, units, start, hold, "success", "")
-	c.EnableRender = false
 }
 
 // recordZenMediaUsage settles the budget hold at the discovered per-unit price and
@@ -146,7 +145,7 @@ func (c *ApiController) recordZenMediaUsage(model string, authUser *iam.User, is
 		Model: model, Provider: "zen",
 		Cost: float64(cents) / 100.0, Currency: "USD",
 		Premium: isPremium, Status: status, ErrorMsg: errMsg,
-		ClientIP: c.Ctx.Request.RemoteAddr, RequestID: reqID, Account: "hanzo",
+		ClientIP: c.Fiber().IP(), RequestID: reqID, Account: "hanzo",
 	}
 	rec.bind(c.Context(), authUser)
 	recordUsage(rec)

@@ -147,7 +147,6 @@ func (c *ApiController) Responses() {
 	if err := bridge.Close(); err != nil && !c.Ctx.ResponseWriter.Started {
 		c.ResponseErrorWithStatus(http.StatusBadGateway, err.Error())
 	}
-	c.EnableRender = false
 }
 
 // decodeResponsesZstd expands a zstd-framed Responses body, bounded by what it
