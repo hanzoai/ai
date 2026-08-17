@@ -6,6 +6,7 @@
 package controllers
 
 import (
+	"encoding/json"
 	"net/http"
 	"os"
 	"strings"
@@ -40,12 +41,39 @@ func widgetKeyOwner(token string) string {
 	return object.WidgetKeyOwner(token)
 }
 
+// retrievalFlags is the retrieval ask as the BODY carries it. A browser
+// preflights custom headers and the edge's CORS allow-list names only the
+// standard ones, so a public page cannot send X-Retrieval — the body is how it
+// asks. The header form stays for server-side callers; either spelling works.
+type retrievalFlags struct {
+	Retrieval bool   `json:"retrieval"`
+	Store     string `json:"retrieval_store"`
+}
+
+func (c *ApiController) bodyRetrieval() retrievalFlags {
+	var f retrievalFlags
+	_ = json.Unmarshal(c.Ctx.Input.RequestBody, &f)
+	return f
+}
+
+// retrievalStore names the store to search: the header if present, else the
+// body, else empty — which retrieveKnowledgeIfEnabled resolves to the default.
+func (c *ApiController) retrievalStore() string {
+	if v := c.Ctx.Request.Header.Get("X-Retrieval-Store"); v != "" {
+		return v
+	}
+	return c.bodyRetrieval().Store
+}
+
 // retrievalEnabled decides whether to augment the prompt with retrieved docs.
 func (c *ApiController) retrievalEnabled(token string) bool {
 	if v := c.Ctx.Request.Header.Get("X-Retrieval"); v != "" {
 		return v == "1" || strings.EqualFold(v, "true")
 	}
 	if c.Ctx.Request.Header.Get("X-Retrieval-Store") != "" {
+		return true
+	}
+	if f := c.bodyRetrieval(); f.Retrieval || f.Store != "" {
 		return true
 	}
 	if isWidgetKey(token) && strings.EqualFold(os.Getenv("WIDGET_RETRIEVAL"), "1") {
