@@ -1320,6 +1320,19 @@ func (c *ApiController) authResolveProvider(token, requestedModel, orgId string)
 			return
 		}
 
+	case isPublishableKey(token):
+		// Publishable key (pk-...) — the read-only credential class. It reaches
+		// only the surfaces that do not refuse it up front (embeddings; every
+		// generative handler rejects pk- before calling here), and it resolves
+		// and bills exactly as an IAM secret key: the org that minted the key
+		// pays. This is the credential the cloud deployment documents for its
+		// embed client — least privilege for a read-only endpoint.
+		provider, authUser, upstreamModel, err = resolveProviderFromIAMKey(token, requestedModel, lang)
+		if err != nil {
+			err = wrapAuth(err)
+			return
+		}
+
 	default:
 		// A secret key, and the STORE that owns it decides what it is. Two
 		// families share the sk- spelling: an upstream vendor key, which lives in
@@ -1437,7 +1450,7 @@ func (c *ApiController) chatCompletions(from caller) {
 		if isPublishableKey(token) {
 			c.Ctx.Output.SetStatus(403)
 			c.Ctx.Output.Header("Content-Type", "application/json")
-			c.Ctx.Output.Body([]byte(`{"error":{"message":"Publishable keys (pk-) can only access read-only endpoints (/v1/models, /health). Use a secret key (sk-) for completions.","type":"auth_error","code":403}}`))
+			c.Ctx.Output.Body([]byte(`{"error":{"message":"Publishable keys (pk-) can only access read-only endpoints (/v1/models, /v1/embeddings, /health). Use a secret key (sk-) for completions.","type":"auth_error","code":403}}`))
 			c.EnableRender = false
 			return
 		}
