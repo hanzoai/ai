@@ -140,7 +140,7 @@ func (c *ApiController) Responses() {
 	original := c.Ctx.ResponseWriter.ResponseWriter
 	bridge := newResponsesBridgeWriter(original, &request, toolKinds)
 	c.Ctx.ResponseWriter.ResponseWriter = bridge
-	c.Body() = chatBody
+	c.Fiber().Request().SetBody(chatBody)
 	c.Fiber().Request().Header.Del("Content-Length")
 
 	c.ChatCompletions()

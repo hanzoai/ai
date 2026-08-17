@@ -17,6 +17,7 @@ package controllers
 
 import (
 	"github.com/hanzoai/ai/object"
+	"github.com/zap-proto/fiber/v3/middleware/adaptor"
 )
 
 // GetPrometheusInfo
@@ -50,5 +51,5 @@ func (c *ApiController) GetMetrics() {
 		return
 	}
 
-	object.MetricsHandler().ServeHTTP(c.Ctx.ResponseWriter, c.Ctx.Request)
+	_ = adaptor.HTTPHandler(object.MetricsHandler())(c.Fiber())
 }

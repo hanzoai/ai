@@ -15,6 +15,7 @@
 package controllers
 
 import (
+	"bufio"
 	"encoding/json"
 	"io"
 
@@ -64,7 +65,9 @@ func (c *ApiController) ExportMyRoutingData() {
 		return
 	}
 	c.SetHeader("Content-Type", "application/x-ndjson")
-	_ = writeRoutingLedgerJSONL(c.Ctx.ResponseWriter, events)
+	_ = c.SendStreamWriter(func(w *bufio.Writer) {
+		_ = writeRoutingLedgerJSONL(w, events)
+	})
 }
 
 // DeleteMyRoutingData deletes ALL of the caller's OWN org routing events — the

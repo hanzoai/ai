@@ -841,9 +841,12 @@ func (c *ApiController) proxyAnthropicToolRequest(
 		c.Status(resp.StatusCode)
 		// Native Anthropic SSE passes through verbatim; capture usage from the
 		// Anthropic events (message_start/message_delta), not the OpenAI shape.
-		capPrompt, capCompletion := streamCaptureAnthropicUsage(
-			resp.Body, c.Ctx.ResponseWriter, c.Ctx.ResponseWriter.Flush,
-		)
+		var capPrompt, capCompletion int
+		_ = c.SendStreamWriter(func(w *bufio.Writer) {
+			capPrompt, capCompletion = streamCaptureAnthropicUsage(
+				resp.Body, w, func() { _ = w.Flush() },
+			)
+		})
 		if authUser != nil {
 			rec := &usageRecord{
 				Owner: c.billingOrg(authUser), Organization: authUser.Owner, Model: request.Model, Provider: provider.Name,
@@ -966,18 +969,21 @@ func (c *ApiController) proxyAnthropicViaOpenAI(
 		c.SetHeader("Connection", "keep-alive")
 		c.Status(http.StatusOK)
 
-		emit := func(event string, data interface{}) error {
-			jsonData, mErr := json.Marshal(data)
-			if mErr != nil {
-				return mErr
+		var prompt, completion int
+		_ = c.SendStreamWriter(func(w *bufio.Writer) {
+			emit := func(event string, data interface{}) error {
+				jsonData, mErr := json.Marshal(data)
+				if mErr != nil {
+					return mErr
+				}
+				if _, wErr := fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, jsonData); wErr != nil {
+					return wErr
+				}
+				_ = w.Flush()
+				return nil
 			}
-			if _, wErr := fmt.Fprintf(c.Ctx.ResponseWriter, "event: %s\ndata: %s\n\n", event, jsonData); wErr != nil {
-				return wErr
-			}
-			c.Ctx.ResponseWriter.Flush()
-			return nil
-		}
-		prompt, completion, _ := translateOpenAIStream(resp.Body, emit, request.Model, requestId)
+			prompt, completion, _ = translateOpenAIStream(resp.Body, emit, request.Model, requestId)
+		})
 
 		// Tokenizer fallback so a successful streamed tool call is never billed $0.
 		if prompt == 0 {
