@@ -367,8 +367,7 @@ func (c *ApiController) respondAnthropicError(errType string, message string, st
 	}
 
 	c.SetHeader("Content-Type", "application/json")
-	c.Status(status)
-	c.Bytes(http.StatusOK, jsonData)
+	c.Bytes(status, jsonData)
 }
 
 // anthropicErrorType maps an auth/routing/upstream error to its Anthropic wire
