@@ -182,6 +182,17 @@ func getVectorEndpoint() (string, string) {
 	return url, apiKey
 }
 
+// awaitTask blocks until a Hanzo Search task settles, checking every 200ms and
+// giving up after cap. WaitForTask's second parameter is the POLL INTERVAL —
+// handing it a duration meant as a deadline parks the caller for that long
+// before the first re-check, so every write costs the full "timeout".
+func awaitTask(client meilisearch.ServiceManager, taskUID int64, cap time.Duration) error {
+	ctx, cancel := context.WithTimeout(context.Background(), cap)
+	defer cancel()
+	_, err := client.WaitForTaskWithContext(ctx, taskUID, 200*time.Millisecond)
+	return err
+}
+
 // ensureSearchIndex creates the Hanzo Search index if it does not exist and configures it.
 func ensureSearchIndex(client meilisearch.ServiceManager, indexName string) error {
 	_, err := client.GetIndex(indexName)
@@ -193,8 +204,7 @@ func ensureSearchIndex(client meilisearch.ServiceManager, indexName string) erro
 		if createErr != nil {
 			return fmt.Errorf("failed to create index %s: %w", indexName, createErr)
 		}
-		_, err = client.WaitForTask(task.TaskUID, 30*time.Second)
-		if err != nil {
+		if err = awaitTask(client, task.TaskUID, 30*time.Second); err != nil {
 			return fmt.Errorf("failed waiting for index creation: %w", err)
 		}
 	}
@@ -207,8 +217,7 @@ func ensureSearchIndex(client meilisearch.ServiceManager, indexName string) erro
 	if err != nil {
 		return fmt.Errorf("failed to update index settings: %w", err)
 	}
-	_, err = client.WaitForTask(task.TaskUID, 30*time.Second)
-	if err != nil {
+	if err = awaitTask(client, task.TaskUID, 30*time.Second); err != nil {
 		return fmt.Errorf("failed waiting for settings update: %w", err)
 	}
 	return nil
@@ -534,7 +543,7 @@ func writeDocsToSearch(indexName string, docs []DocIndex, replace bool) (int, er
 		if delErr != nil {
 			return 0, fmt.Errorf("failed to clear index: %w", delErr)
 		}
-		if _, err = searchClient.WaitForTask(task.TaskUID, 60*time.Second); err != nil {
+		if err = awaitTask(searchClient, task.TaskUID, 60*time.Second); err != nil {
 			return 0, fmt.Errorf("failed waiting for index clear: %w", err)
 		}
 	}
@@ -543,7 +552,7 @@ func writeDocsToSearch(indexName string, docs []DocIndex, replace bool) (int, er
 	if err != nil {
 		return 0, fmt.Errorf("failed to index documents in Hanzo Search: %w", err)
 	}
-	if _, err = searchClient.WaitForTask(task.TaskUID, 120*time.Second); err != nil {
+	if err = awaitTask(searchClient, task.TaskUID, 120*time.Second); err != nil {
 		return 0, fmt.Errorf("failed waiting for Hanzo Search indexing: %w", err)
 	}
 	return len(docs), nil
