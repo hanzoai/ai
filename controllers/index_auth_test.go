@@ -16,47 +16,14 @@ package controllers
 
 import (
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"testing"
 
 	"github.com/hanzoai/ai/conf"
+	"github.com/hanzoai/ai/internal/authtest"
 	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/object"
 )
-
-// ctrlFakeSession is a minimal session.Store for controller auth tests — the router's
-// GetSession reads c.Ctx.Input.CruSession, so this lets GetSessionUser resolve
-// without a live session manager.
-type ctrlFakeSession struct{ data map[interface{}]interface{} }
-
-func (s *ctrlFakeSession) Set(k, v interface{}) error         { s.data[k] = v; return nil }
-func (s *ctrlFakeSession) Get(k interface{}) interface{}      { return s.data[k] }
-func (s *ctrlFakeSession) Delete(k interface{}) error         { delete(s.data, k); return nil }
-func (s *ctrlFakeSession) SessionID() string                  { return "test" }
-func (s *ctrlFakeSession) SessionRelease(http.ResponseWriter) {}
-func (s *ctrlFakeSession) Flush() error {
-	s.data = map[interface{}]interface{}{}
-	return nil
-}
-
-// newAuthController builds an ApiController wired to a recorder, an optional
-// session user, and an optional Authorization header.
-func newAuthController(method, path, authHeader string, user *iam.User) (*ApiController, *httptest.ResponseRecorder) {
-	req := httptest.NewRequest(method, path, nil)
-	if authHeader != "" {
-		req.Header.Set("Authorization", authHeader)
-	}
-	ctx := web.NewContext()
-	ctx.Reset(rec, req)
-	sess := &ctrlFakeSession{data: map[interface{}]interface{}{}}
-	if user != nil {
-		sess.data["user"] = iam.Claims{User: *user}
-	}
-	ctx.Input.CruSession = sess
-	c := visit("GET", "/v1/")
-	return c, rec
-}
 
 // forcePreviewOn deterministically enables preview mode for the duration of a
 // test, so the assertions below prove the auth denial holds EVEN under the
@@ -85,7 +52,7 @@ func forcePreviewOn(t *testing.T) {
 func TestRequireIndexAuthNoCredentialIsUnauthorized(t *testing.T) {
 	forcePreviewOn(t)
 
-	c, rec := newAuthController("POST", "/v1/rag/embed", "", nil)
+	c := visit(http.MethodPost, "/v1/rag/embed")
 	auth := c.requireIndexAuth()
 
 	if auth != nil {
@@ -101,7 +68,7 @@ func TestRequireIndexAuthNoCredentialIsUnauthorized(t *testing.T) {
 func TestRequireIndexAuthPublishableKeyForbidden(t *testing.T) {
 	forcePreviewOn(t)
 
-	c, rec := newAuthController("POST", "/v1/scrape", "Bearer pk-read-only-key", nil)
+	c := presenting(visit(http.MethodPost, "/v1/scrape"), "Bearer pk-read-only-key")
 	auth := c.requireIndexAuth()
 
 	if auth != nil {
@@ -112,20 +79,20 @@ func TestRequireIndexAuthPublishableKeyForbidden(t *testing.T) {
 	}
 }
 
-// TestRequireIndexAuthSessionAdminAllowed — a REAL session admin still passes and
+// TestRequireIndexAuthAdminAllowed — a real admin still passes and
 // is scoped to their OWN org (never a forced "admin" tenant).
-func TestRequireIndexAuthSessionAdminAllowed(t *testing.T) {
+func TestRequireIndexAuthAdminAllowed(t *testing.T) {
 	forcePreviewOn(t)
 
-	admin := &iam.User{Owner: "acme", Name: "root", IsAdmin: true}
-	c, _ := newAuthController("POST", "/v1/index", "", admin)
+	admin := iam.User{Owner: "acme", Name: "root", IsAdmin: true}
+	c := presenting(visit(http.MethodPost, "/v1/index"), authtest.Bearer(t, admin))
 	auth := c.requireIndexAuth()
 
 	if auth == nil {
-		t.Fatal("requireIndexAuth for a session admin returned nil; want the admin's searchAuth")
+		t.Fatal("requireIndexAuth for an admin returned nil; want the admin's searchAuth")
 	}
 	if auth.Owner != "acme" {
-		t.Errorf("session admin resolved Owner=%q, want %q (own org, not a forced admin tenant)", auth.Owner, "acme")
+		t.Errorf("admin resolved Owner=%q, want %q (own org, not a forced admin tenant)", auth.Owner, "acme")
 	}
 }
 
@@ -135,7 +102,7 @@ func TestRequireIndexAuthSessionAdminAllowed(t *testing.T) {
 func TestResolveSearchAuthNoCredentialIsUnauthorized(t *testing.T) {
 	forcePreviewOn(t)
 
-	c, rec := newAuthController("POST", "/v1/search", "", nil)
+	c := visit(http.MethodPost, "/v1/search")
 	auth := c.resolveSearchAuth()
 
 	if auth != nil {

@@ -75,3 +75,18 @@ func (s *stream) String() string {
 	_ = s.w.Flush()
 	return s.buf.String()
 }
+
+// presenting gives c the credential a caller arrives with.
+//
+// ONE VERB, because there is one way to be somebody here: a signed token, verified
+// the way production verifies it. Pass authtest.Bearer for a caller who should be
+// accepted, or the literal thing a test wants REFUSED — a publishable key, a forgery,
+// an empty string for nobody at all. What it replaced was four different harnesses
+// seeding a fake session store with whatever identity each test wanted to be true,
+// which is not an authorisation test but a test of the fake.
+func presenting(c *ApiController, authorization string) *ApiController {
+	if authorization != "" {
+		c.Fiber().Request().Header.Set("Authorization", authorization)
+	}
+	return c
+}

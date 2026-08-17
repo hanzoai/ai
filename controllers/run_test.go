@@ -119,7 +119,7 @@ func TestARevokedRunKeyStopsResolving(t *testing.T) {
 // ── the tenant, which is what a 402 is actually about ────────────────────────
 
 // A RUN KEY NAMES A BILLABLE TENANT. This is the property that separates working
-// from 402: authResolveProvider settles the payer, but GetOrg asks credentialUser
+// from 402: authResolveProvider settles the payer, but GetOrg asks principalUser
 // who the tenant is, and a tenant it cannot name falls back to the empty IAM_ORG
 // default — which reaches zen as no tenant at all and answers "a billable tenant
 // is required". A run key that authenticates and then cannot be billed is the
@@ -128,7 +128,7 @@ func TestARunKeyNamesTheTenantThatPays(t *testing.T) {
 	installRun(t, func(string) (Run, bool) { return Run{Org: "acme", ID: "r1"}, true })
 
 	c := runController(t, runPrefix+"live", "")
-	u := c.credentialUser()
+	u := c.principalUser()
 	if u == nil {
 		t.Fatal("a run key resolved to no tenant — every call it makes will 402 " +
 			`"a billable tenant is required"`)
@@ -163,7 +163,7 @@ func TestARunKeyCannotBeAimedAtAnotherTenantByHeader(t *testing.T) {
 // billed to a default.
 func TestAnUnknownRunKeyNamesNoTenant(t *testing.T) {
 	installRun(t, func(string) (Run, bool) { return Run{}, false })
-	if u := runController(t, runPrefix+"forged", "").credentialUser(); u != nil {
+	if u := runController(t, runPrefix+"forged", "").principalUser(); u != nil {
 		t.Fatalf("an unknown run key resolved to tenant %q", u.Owner)
 	}
 }

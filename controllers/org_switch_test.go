@@ -25,6 +25,7 @@ import (
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/hanzoai/account"
 
+	"github.com/hanzoai/ai/internal/authtest"
 	"github.com/hanzoai/ai/internal/iam"
 )
 
@@ -226,7 +227,7 @@ func TestThePublicLaneCannotBeSwitchedOntoATenant(t *testing.T) {
 // visitor onto a tenant's books.
 func mintUsageJWTWithOrgs(t *testing.T, owner, name string, orgs ...string) string {
 	t.Helper()
-	key := installUsageCert(t)
+	key := authtest.Signing(t)
 	claims := usageClaims(owner, name, "https://hanzo.id", "hanzo-cloud")
 	refs := make([]map[string]string, 0, len(orgs))
 	for _, org := range orgs {
