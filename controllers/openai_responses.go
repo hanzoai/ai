@@ -24,7 +24,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/hanzoai/ai/log"
-	"github.com/hanzoai/ai/web"
 	"github.com/hanzoai/go-openai"
 	"github.com/klauspost/compress/zstd"
 )
@@ -104,7 +103,7 @@ func (c *ApiController) Responses() {
 			// too big, and only one of those tells the caller to send less.
 			if errors.Is(err, zstd.ErrDecoderSizeExceeded) {
 				c.ResponseErrorWithStatus(http.StatusRequestEntityTooLarge, fmt.Sprintf(
-					"request body exceeds the %d MiB limit", web.MaxBody>>20))
+					"request body exceeds the %d MiB limit", MaxDecoded>>20))
 				return
 			}
 			c.ResponseErrorWithStatus(http.StatusBadRequest, "Failed to decompress zstd request: "+err.Error())
@@ -183,7 +182,7 @@ func (c *ApiController) Responses() {
 // expands to. It uses a pure-Go decoder because Cloud release binaries are built
 // with CGO_ENABLED=0. Current Codex clients compress large requests with zstd.
 //
-// The bound is web.MaxBody, the same ceiling every other body gets, and it has
+// The bound is MaxDecoded, the same ceiling every other body gets, and it has
 // to be stated: the decoder's own default is 64 GiB. Capping the COMPRESSED
 // input caps nothing that costs memory here — zstd's ratio on repetitive input
 // runs to thousands to one, so the 64 MiB that reaches this function is already
@@ -195,7 +194,7 @@ func (c *ApiController) Responses() {
 // naming the limit, rather than letting a half-expanded body fail later as an
 // unintelligible parse error.
 func decodeResponsesZstd(body []byte) ([]byte, error) {
-	decoder, err := zstd.NewReader(nil, zstd.WithDecoderMaxMemory(uint64(web.MaxBody)))
+	decoder, err := zstd.NewReader(nil, zstd.WithDecoderMaxMemory(uint64(MaxDecoded)))
 	if err != nil {
 		return nil, err
 	}

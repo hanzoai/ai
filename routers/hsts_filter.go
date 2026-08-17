@@ -16,19 +16,20 @@
 package routers
 
 import (
-	"github.com/hanzoai/ai/web"
+	"github.com/zap-proto/zip"
 )
 
 // HstsFilter adds HTTP Strict Transport Security header to HTTPS responses
 // This ensures browsers only access the website using HTTPS
-func HstsFilter(ctx *web.Context) {
+func HstsFilter(c *zip.Ctx) error {
 	// Only set HSTS header on HTTPS requests
 	// Check both the direct TLS connection and X-Forwarded-Proto header (for reverse proxies)
-	if ctx.Input.Scheme() == "https" || ctx.Request.Header.Get("X-Forwarded-Proto") == "https" {
+	if c.Fiber().Scheme() == "https" || c.Header("X-Forwarded-Proto") == "https" {
 		// Set HSTS header with:
 		// - max-age=31536000 (1 year in seconds)
 		// - includeSubDomains (apply to all subdomains)
 		// - preload (allow inclusion in browser preload lists)
-		ctx.Output.Header("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload")
+		c.SetHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload")
 	}
+	return c.Continue()
 }

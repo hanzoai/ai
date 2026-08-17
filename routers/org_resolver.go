@@ -19,7 +19,7 @@ import (
 
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/util"
-	"github.com/hanzoai/ai/web"
+	"github.com/zap-proto/zip"
 )
 
 // GetOrg resolves the organization for data-scoping in filters from the
@@ -34,10 +34,10 @@ import (
 //
 // Behind the gateway the injected X-Org-Id equals the JWT owner, so this
 // resolves identically — the gateway path is unaffected.
-func GetOrg(ctx *web.Context) string {
-	requested := strings.TrimSpace(ctx.Input.Header("X-Org-Id"))
+func GetOrg(c *zip.Ctx) string {
+	requested := strings.TrimSpace(c.Header("X-Org-Id"))
 
-	user := sessionOrBearerUser(ctx)
+	user := sessionOrBearerUser(c)
 	if user != nil && user.Owner != "" {
 		if requested != "" && (requested == user.Owner || util.IsSuperAdmin(user)) {
 			return requested

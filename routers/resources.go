@@ -15,11 +15,10 @@
 package routers
 
 import (
+	"github.com/zap-proto/zip"
 	"strings"
 
-	"github.com/hanzoai/ai/controllers"
 	"github.com/hanzoai/ai/object"
-	"github.com/hanzoai/ai/web"
 )
 
 // This file is the ONE declaration of the resource surface. Every CRUD route
@@ -383,16 +382,16 @@ func (r resource) member() string { return r.collection() + "/:owner/:name" }
 // controllers/zap_gateway_fallback.go carries that argument in full; this is the
 // note for anyone who counts the handlers, finds no prefix for the resources,
 // and reads the absence as unfinished work. It is the design.
-func registerResources(app *web.Router) {
+func registerResources(app *zip.App) {
 	for _, r := range resources {
 		if spec := collectionSpec(r); spec != "" {
-			app.Router(r.collection(), &controllers.ApiController{}, spec)
+			route(app, r.collection(), spec)
 		}
 		if spec := memberSpec(r); spec != "" {
-			app.Router(r.member(), &controllers.ApiController{}, spec)
+			route(app, r.member(), spec)
 		}
 		if r.global {
-			app.Router(r.collection()+"/global", &controllers.ApiController{}, "GET:GetGlobal"+r.plural())
+			route(app, r.collection()+"/global", "GET:GetGlobal"+r.plural())
 		}
 		// Actions that share a URL must be registered as ONE pattern with several
 		// verb:method pairs. Registering the same pattern twice leaves the second
@@ -415,7 +414,7 @@ func registerResources(app *web.Router) {
 			byPath[p] = append(byPath[p], verb+":"+a.method)
 		}
 		for _, p := range order {
-			app.Router(p, &controllers.ApiController{}, strings.Join(byPath[p], ";"))
+			route(app, p, strings.Join(byPath[p], ";"))
 		}
 	}
 	for _, s := range singletons {
@@ -425,7 +424,7 @@ func registerResources(app *web.Router) {
 				parts = append(parts, verb+":"+m)
 			}
 		}
-		app.Router(s.url(), &controllers.ApiController{}, strings.Join(parts, ";"))
+		route(app, s.url(), strings.Join(parts, ";"))
 	}
 }
 

@@ -20,7 +20,7 @@ import (
 	"strings"
 
 	"github.com/hanzoai/ai/object"
-	"github.com/hanzoai/ai/web"
+	"github.com/zap-proto/zip"
 )
 
 const (
@@ -30,17 +30,17 @@ const (
 	tenantContextEnvKey       = "tenant.env"
 )
 
-func getTenantHeader(ctx *web.Context, name string) string {
-	return strings.TrimSpace(ctx.Input.Header(name))
+func getTenantHeader(c *zip.Ctx, name string) string {
+	return strings.TrimSpace(c.Header(name))
 }
 
 // firstNonEmptyHeader returns the first non-empty value among the named headers.
 // A session id may arrive under either X-Session-Id (Hanzo convention) or the
 // OpenAI/librechat-style X-Conversation-Id — honor both so a client that sends
 // either turns the o11y sessions view on.
-func firstNonEmptyHeader(ctx *web.Context, names ...string) string {
+func firstNonEmptyHeader(c *zip.Ctx, names ...string) string {
 	for _, n := range names {
-		if v := getTenantHeader(ctx, n); v != "" {
+		if v := getTenantHeader(c, n); v != "" {
 			return v
 		}
 	}
@@ -53,27 +53,27 @@ func firstNonEmptyHeader(ctx *web.Context, names ...string) string {
 // client-controlled, so storing it verbatim would let any caller spoof a tenant.
 // GetOrg honors the header only for the principal's own org (or a global
 // admin), so the stored org is always the caller's real tenant.
-func TenantContextFilter(ctx *web.Context) {
+func TenantContextFilter(c *zip.Ctx) error {
 	// Canonical gateway-minted identity + browser sub-scopes — no X-IAM-*
 	// prefix (cloud middleware_identity injects X-User-Id/X-Org-Id; console2
 	// stamps X-Project-Id/X-Environment). The X-IAM-* variants were never sent,
 	// so user/project/env context was silently empty on the direct path.
-	orgID := GetOrg(ctx)
-	userID := getTenantHeader(ctx, "X-User-Id")
-	projectID := getTenantHeader(ctx, "X-Project-Id")
-	env := getTenantHeader(ctx, "X-Environment")
+	orgID := GetOrg(c)
+	userID := getTenantHeader(c, "X-User-Id")
+	projectID := getTenantHeader(c, "X-Project-Id")
+	env := getTenantHeader(c, "X-Environment")
 
 	if orgID != "" {
-		ctx.Input.SetData(tenantContextOrgIDKey, orgID)
+		c.Locals(tenantContextOrgIDKey, orgID)
 	}
 	if userID != "" {
-		ctx.Input.SetData(tenantContextUserIDKey, userID)
+		c.Locals(tenantContextUserIDKey, userID)
 	}
 	if projectID != "" {
-		ctx.Input.SetData(tenantContextProjectIDKey, projectID)
+		c.Locals(tenantContextProjectIDKey, projectID)
 	}
 	if env != "" {
-		ctx.Input.SetData(tenantContextEnvKey, env)
+		c.Locals(tenantContextEnvKey, env)
 	}
 
 	// Thread the observability attribution onto the Go REQUEST context so the
@@ -86,18 +86,20 @@ func TenantContextFilter(ctx *web.Context) {
 	attr := object.GenAIAttribution{
 		Org:         orgID,
 		Project:     projectID,
-		Session:     firstNonEmptyHeader(ctx, "X-Session-Id", "X-Conversation-Id"),
+		Session:     firstNonEmptyHeader(c, "X-Session-Id", "X-Conversation-Id"),
 		Environment: env,
-		APIKeyHash:  hashBearer(getTenantHeader(ctx, "Authorization")),
+		APIKeyHash:  hashBearer(getTenantHeader(c, "Authorization")),
 		// The person a service credential is acting for. Already read above for the
 		// router state; carrying it here is what lets a spend row name a human when
 		// the only credential on the call is an application's. Trusted only for a
 		// machine credential — usageRecord.bind is where that rule lives.
 		User: userID,
 	}
-	if ctx.Request != nil {
-		ctx.Request = ctx.Request.WithContext(object.WithGenAIAttribution(ctx.Request.Context(), attr))
-	}
+	// Onto the request's own context, which is what the handler reads: zip.SetContext
+	// replaces it, so every emit site downstream sees the attribution without
+	// re-reading router state.
+	c.SetContext(object.WithGenAIAttribution(c.Context(), attr))
+	return c.Continue()
 }
 
 // hashBearer returns a non-reversible ref for the caller credential: the SHA-256
@@ -112,11 +114,11 @@ func hashBearer(authz string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func getTenantContextValue(ctx *web.Context, key string) string {
-	if ctx == nil {
+func getTenantContextValue(c *zip.Ctx, key string) string {
+	if c == nil {
 		return ""
 	}
-	value := ctx.Input.GetData(key)
+	value := c.Locals(key)
 	text, ok := value.(string)
 	if !ok {
 		return ""
@@ -125,16 +127,16 @@ func getTenantContextValue(ctx *web.Context, key string) string {
 }
 
 // GetTenantOrgID returns the org from IAM web.
-func GetTenantOrgID(ctx *web.Context) string {
-	return getTenantContextValue(ctx, tenantContextOrgIDKey)
+func GetTenantOrgID(c *zip.Ctx) string {
+	return getTenantContextValue(c, tenantContextOrgIDKey)
 }
 
 // GetTenantUserID returns the user ID from IAM web.
-func GetTenantUserID(ctx *web.Context) string {
-	return getTenantContextValue(ctx, tenantContextUserIDKey)
+func GetTenantUserID(c *zip.Ctx) string {
+	return getTenantContextValue(c, tenantContextUserIDKey)
 }
 
 // GetTenantProjectID returns the project ID from IAM web.
-func GetTenantProjectID(ctx *web.Context) string {
-	return getTenantContextValue(ctx, tenantContextProjectIDKey)
+func GetTenantProjectID(c *zip.Ctx) string {
+	return getTenantContextValue(c, tenantContextProjectIDKey)
 }

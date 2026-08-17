@@ -16,9 +16,6 @@
 package routers
 
 import (
-	"crypto/md5"
-	"encoding/hex"
-	"fmt"
 	"net/http"
 	"strings"
 
@@ -26,7 +23,9 @@ import (
 	"github.com/hanzoai/ai/i18n"
 	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/util"
-	"github.com/hanzoai/ai/web"
+	"github.com/zap-proto/zip"
+
+	"github.com/hanzoai/ai/controllers"
 )
 
 type Response struct {
@@ -36,58 +35,57 @@ type Response struct {
 	Data2  interface{} `json:"data2"`
 }
 
-func GetSessionUser(ctx *web.Context) *iam.User {
-	// Twin of controllers.GetSessionClaims: a nil session store resolves to "no
-	// session user", never a panic. ctx.Input.Session dereferences CruSession
-	// directly, and CruSession is only populated by the router's SessionStart — which
-	// does NOT run when the embedded cloud binary serves these routes without the
-	// session hook. This function runs in the BeforeRouter filters (RateLimit,
-	// BalanceGate, Authz) via resolveBillingKey — BEFORE the controller — so a nil
-	// store here was a pre-model 500 on every /v1 request. Fail-secure: no session
-	// ⇒ no user ⇒ the filters bill/limit by the raw key and the controller enforces
-	// Bearer-credential auth (typed 401 for an invalid/absent credential).
-	if ctx == nil || ctx.Input == nil || ctx.Input.CruSession == nil {
+// GetSessionUser is the identity a FILTER sees, and it is the same identity the
+// handler sees: the request's verified IAM token, read by the one function that
+// reads it. Filters and handlers cannot disagree about who is calling.
+//
+// It used to read a per-pod in-memory session store, and its own comment recorded
+// the cost: the store is filled by a session hook that does not run when the
+// embedded binary serves these routes, so this answered nil on every request and
+// the filters billed and rate-limited by the raw key instead. A store that is nil
+// in production is not an identity source. The token always travels with the
+// request.
+func GetSessionUser(c *zip.Ctx) *iam.User {
+	if c == nil {
 		return nil
 	}
-	s := ctx.Input.Session("user")
-	if s == nil {
-		return nil
-	}
-
-	claims, ok := s.(iam.Claims)
-	if !ok {
-		return nil
-	}
-	return &claims.User
+	return (&controllers.ApiController{Ctx: c}).GetSessionUser()
 }
 
-func getUsername(ctx *web.Context) (username string) {
-	user := GetSessionUser(ctx)
-	if user != nil {
-		username = util.GetIdFromOwnerAndName(user.Owner, user.Name)
-	} else {
-		username, _ = getUsernameByClientIdSecret(ctx)
+// getUsername is who to attribute a recorded request to.
+//
+// The token, and only the token. It used to fall back to comparing a clientId and
+// clientSecret out of the query string against the configured pair — a credential
+// check of our own, for an attribution string. IAM mints credentials; this reads
+// the one presented.
+func getUsername(c *zip.Ctx) string {
+	user := GetSessionUser(c)
+	if user == nil {
+		return ""
 	}
-	return
+	return util.GetIdFromOwnerAndName(user.Owner, user.Name)
 }
 
-func responseError(ctx *web.Context, error string, data ...interface{}) {
-	// ctx.ResponseWriter.WriteHeader(http.StatusForbidden)
-
-	// Get language from Accept-Language header
-	language := ctx.Request.Header.Get("Accept-Language")
+// responseError writes the standard error envelope with its status, translated
+// into the caller's language.
+//
+// The status is a REQUIRED argument. It used to default to 200 with a second
+// function beside it for callers who wanted a real one — so a filter could deny a
+// request and still answer success, which is exactly what that second function's
+// comment warned about. One function, and every caller says what it means.
+func responseError(c *zip.Ctx, status int, msg string, data ...interface{}) error {
+	language := c.Header("Accept-Language")
 	if len(language) > 2 {
 		language = language[0:2]
 	}
 	language = conf.GetLanguage(language)
 
-	// Translate error message if it contains namespace prefix
-	translatedError := error
-	if strings.Contains(error, ":") {
-		translatedError = i18n.Translate(language, error)
+	translated := msg
+	if strings.Contains(msg, ":") {
+		translated = i18n.Translate(language, msg)
 	}
 
-	resp := Response{Status: "error", Msg: translatedError}
+	resp := Response{Status: "error", Msg: translated}
 	switch len(data) {
 	case 2:
 		resp.Data2 = data[1]
@@ -95,101 +93,27 @@ func responseError(ctx *web.Context, error string, data ...interface{}) {
 	case 1:
 		resp.Data = data[0]
 	}
-
-	err := ctx.Output.JSON(resp, true, false)
-	if err != nil {
-		panic(err)
-	}
+	return c.JSON(status, resp)
 }
 
-// responseErrorStatus writes the standard error envelope with an explicit HTTP
-// status. Filters use it so an auth/authz denial is a real 401/403, not The router's
-// default 200 — a denial must never look like success to a client. The body
-// shape is unchanged; only the status differs.
-func responseErrorStatus(ctx *web.Context, status int, error string, data ...interface{}) {
-	ctx.Output.SetStatus(status)
-	responseError(ctx, error, data...)
+// denyUnauthorized renders a 401: no credential, or one that did not verify.
+//
+// Returning the write WITHOUT continuing is the denial. A filter that wrote a body
+// and then let the chain run would have the handler answer over the top of it.
+func denyUnauthorized(c *zip.Ctx, msg string, data ...interface{}) error {
+	return responseError(c, http.StatusUnauthorized, msg, data...)
 }
 
-// denyUnauthorized renders a 401 (no/invalid credential).
-func denyUnauthorized(ctx *web.Context, error string, data ...interface{}) {
-	responseErrorStatus(ctx, http.StatusUnauthorized, error, data...)
+// denyForbidden renders a 403: verified, and not permitted.
+func denyForbidden(c *zip.Ctx, msg string, data ...interface{}) error {
+	return responseError(c, http.StatusForbidden, msg, data...)
 }
 
-// denyForbidden renders a 403 (authenticated but not permitted).
-func denyForbidden(ctx *web.Context, error string, data ...interface{}) {
-	responseErrorStatus(ctx, http.StatusForbidden, error, data...)
-}
-
-func setSessionUser(ctx *web.Context, userId string) {
-	owner, name, err := util.GetOwnerAndNameFromIdWithError(userId)
-	if err != nil {
-		panic(err)
-	}
-	claims := iam.Claims{
-		User: iam.User{
-			Owner:   owner,
-			Name:    name,
-			IsAdmin: true,
-		},
-	}
-	err = ctx.Input.CruSession.Set("user", claims)
-	if err != nil {
-		panic(err)
-	}
-
-	// https://github.com/beego/beego/issues/3445#issuecomment-455411915
-	ctx.Input.CruSession.SessionRelease(ctx.ResponseWriter)
-}
-
-func getUsernameByClientIdSecret(ctx *web.Context) (string, error) {
-	clientId, clientSecret, ok := ctx.Request.BasicAuth()
-	if !ok {
-		clientId = ctx.Input.Query("clientId")
-		clientSecret = ctx.Input.Query("clientSecret")
-	}
-
-	if clientId == "" || clientSecret == "" {
-		return "", nil
-	}
-
-	applicationName := conf.GetConfigString("IAM_APP_NAME")
-	if clientSecret != conf.GetConfigString("IAM_CLIENT_SECRET") {
-		return "", fmt.Errorf("Incorrect client secret for application: %s", applicationName)
-	}
-
-	return util.GetIdFromOwnerAndName("app", applicationName), nil
-}
-
-func getUsernameByAccessToken(accessTokenInput string) (string, error) {
-	applicationName := conf.GetConfigString("IAM_APP_NAME")
-	clientSecret := conf.GetConfigString("IAM_CLIENT_SECRET")
-	clientId := conf.GetConfigString("IAM_CLIENT_ID")
-	accessToken := getMd5HexDigest(clientId + ":" + clientSecret)
-	if accessTokenInput != accessToken {
-		return "", fmt.Errorf("Incorrect access token for application: %s", applicationName)
-	}
-
-	return util.GetIdFromOwnerAndName("app", applicationName), nil
-}
-
-func parseBearerToken(ctx *web.Context) string {
-	header := ctx.Request.Header.Get("Authorization")
-	tokens := strings.Split(header, " ")
-	if len(tokens) != 2 {
+// parseBearerToken reads the credential the caller presented.
+func parseBearerToken(c *zip.Ctx) string {
+	prefix, token, ok := strings.Cut(c.Header("Authorization"), " ")
+	if !ok || prefix != "Bearer" {
 		return ""
 	}
-
-	prefix := tokens[0]
-	if prefix != "Bearer" {
-		return ""
-	}
-
-	return tokens[1]
-}
-
-func getMd5HexDigest(s string) string {
-	hash := md5.Sum([]byte(s))
-	res := hex.EncodeToString(hash[:])
-	return res
+	return token
 }

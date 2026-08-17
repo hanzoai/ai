@@ -22,7 +22,7 @@ import (
 
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
-	"github.com/hanzoai/ai/web"
+	"github.com/zap-proto/zip"
 )
 
 func recordSystemInfo(systemInfo *util.SystemInfo) {
@@ -33,20 +33,24 @@ func recordSystemInfo(systemInfo *util.SystemInfo) {
 	object.MemoryUsage.WithLabelValues("memoryTotal").Set(float64(systemInfo.MemoryTotal))
 }
 
-func PrometheusFilter(ctx *web.Context) {
-	method := ctx.Input.Method()
-	path := ctx.Input.URL()
+func PrometheusFilter(c *zip.Ctx) error {
+	method := c.Method()
+	path := c.Path()
 	if strings.HasPrefix(path, "/v1/metrics") {
 		systemInfo, err := util.GetSystemInfo()
 		if err == nil {
 			recordSystemInfo(systemInfo)
 		}
-		return
+		return c.Continue()
 	}
 
-	if strings.HasPrefix(path, "/api") {
-		ctx.Input.SetData("startTime", time.Now())
+	// /v1, not /api. This service has never served an /api prefix — the brand rule
+	// is /v1 only — so the counter it guards has been reporting zero throughput for
+	// as long as it has existed.
+	if strings.HasPrefix(path, "/v1") {
+		c.Locals("startTime", time.Now())
 		object.TotalThroughput.Inc()
 		object.ApiThroughput.WithLabelValues(path, method).Inc()
 	}
+	return c.Continue()
 }
