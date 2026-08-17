@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"sync"
 	"testing"
 
@@ -135,14 +134,11 @@ func TestBalanceGateUnresolvedLedgerIsHome(t *testing.T) {
 // orgController builds a controller carrying an Authorization header and an
 // X-Org-Id, the two inputs billingOrg reads.
 func orgController(auth, requested string) *ApiController {
-	req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader("{}"))
-	if auth != "" {
-		req.Header.Set("Authorization", auth)
-	}
+	c := presenting(visit(http.MethodPost, "/v1/chat/completions"), auth)
+	c.Fiber().Request().SetBody([]byte("{}"))
 	if requested != "" {
-		req.Header.Set("X-Org-Id", requested)
+		c.Fiber().Request().Header.Set("X-Org-Id", requested)
 	}
-	c := visit("GET", "/v1/")
 	return c
 }
 
