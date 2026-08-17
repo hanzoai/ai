@@ -28,7 +28,7 @@ import (
 
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/log"
-	"github.com/hanzoai/ai/web"
+	"github.com/zap-proto/zip"
 	"golang.org/x/time/rate"
 )
 
@@ -227,27 +227,27 @@ func InitRateLimiter(tierFunc func(string) Tier) *RateLimiter {
 // Rate-limited paths: /v1/messages, /v1/messages,
 // and other /v1/ endpoints that carry a bearer token.
 // Excluded: health, metrics, models (read-only), static, UI routes.
-func RateLimitFilter(ctx *web.Context) {
+func RateLimitFilter(c *zip.Ctx) error {
 	if rateLimiterInstance == nil {
-		return
+		return c.Continue()
 	}
 
-	path := ctx.Request.URL.Path
+	path := c.Path()
 
 	// Skip paths that should never be rate-limited.
 	if isRateLimitExempt(path) {
-		return
+		return c.Continue()
 	}
 
 	// Only rate-limit API routes.
 	if !strings.HasPrefix(path, "/v1/") {
-		return
+		return c.Continue()
 	}
 
-	apiKey := extractAPIKey(ctx)
+	apiKey := extractAPIKey(c)
 	if apiKey == "" {
 		// No key means unauthenticated — other filters will handle auth errors.
-		return
+		return c.Continue()
 	}
 
 	// Rate-limit by the billing SUBJECT — the SAME identity the balance gate
@@ -257,7 +257,7 @@ func RateLimitFilter(ctx *web.Context) {
 	// "hanzo" catch-all get their OWN bucket and can't exhaust each other's rate
 	// limit. When no subject resolves (anonymous, sk-/pk- provider keys, JWT
 	// without owner), fall back to the raw key so traffic is still free-tier bucketed.
-	limitKey, _, _ := resolveBillingKey(ctx)
+	limitKey, _, _ := resolveBillingKey(c)
 	if limitKey == "" {
 		limitKey = apiKey
 	}
@@ -278,8 +278,12 @@ func RateLimitFilter(ctx *web.Context) {
 	}
 
 	if rateLimiterInstance.Allow(limitKey) {
-		charge(ctx, limitKey, path)
-		return
+		// Two ceilings, asked in the order a caller meets them. If the quota refuses,
+		// it has already answered and this must not answer over the top of it.
+		if proceed, err := charge(c, limitKey, path); !proceed {
+			return err
+		}
+		return c.Continue()
 	}
 
 	// Rate limit exceeded — log and respond with 429.
@@ -289,16 +293,13 @@ func RateLimitFilter(ctx *web.Context) {
 	log.Info("rate_limit_exceeded key=%s path=%s retry_after=%d total_allowed=%d total_denied=%d",
 		maskKey(limitKey), path, retryAfter, allowed, denied)
 
-	ctx.ResponseWriter.Header().Set("Retry-After", fmt.Sprintf("%d", retryAfter))
-	ctx.ResponseWriter.Header().Set("X-RateLimit-Remaining", "0")
-	ctx.ResponseWriter.Header().Set("Content-Type", "application/json")
-	ctx.ResponseWriter.WriteHeader(http.StatusTooManyRequests)
-
-	body := fmt.Sprintf(
+	c.SetHeader("Retry-After", fmt.Sprintf("%d", retryAfter))
+	c.SetHeader("X-RateLimit-Remaining", "0")
+	c.SetHeader("Content-Type", "application/json")
+	return c.Bytes(http.StatusTooManyRequests, []byte(fmt.Sprintf(
 		`{"error":{"message":"Rate limit exceeded. Retry after %d seconds.","type":"rate_limit_error","code":429}}`,
 		retryAfter,
-	)
-	ctx.ResponseWriter.Write([]byte(body))
+	)))
 }
 
 // isRateLimitExempt returns true for paths that should bypass rate limiting.
@@ -321,20 +322,20 @@ func isRateLimitExempt(path string) bool {
 //   - Authorization: Bearer <token>
 //   - X-API-Key: <token>
 //   - api_key query parameter
-func extractAPIKey(ctx *web.Context) string {
+func extractAPIKey(c *zip.Ctx) string {
 	// Bearer token
-	authHeader := ctx.Request.Header.Get("Authorization")
+	authHeader := c.Header("Authorization")
 	if strings.HasPrefix(authHeader, "Bearer ") {
 		return strings.TrimPrefix(authHeader, "Bearer ")
 	}
 
 	// X-API-Key header
-	if key := ctx.Request.Header.Get("X-API-Key"); key != "" {
+	if key := c.Header("X-API-Key"); key != "" {
 		return key
 	}
 
 	// Query parameter fallback
-	if key := ctx.Input.Query("api_key"); key != "" {
+	if key := c.Query("api_key"); key != "" {
 		return key
 	}
 

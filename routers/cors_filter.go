@@ -24,7 +24,7 @@ import (
 	"github.com/hanzoai/ai/conf"
 	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/object"
-	"github.com/hanzoai/ai/web"
+	"github.com/zap-proto/zip"
 )
 
 const (
@@ -87,79 +87,74 @@ func isStaticAllowedOrigin(origin string) bool {
 	return false
 }
 
-func setCorsHeaders(ctx *web.Context, origin string) {
+func setCorsHeaders(c *zip.Ctx, origin string) {
 	// Skip CORS when behind the KrakenD API gateway, which adds its own
 	// CORS headers.  KrakenD forwards requests with X-Forwarded-Host set;
 	// direct requests to the cloud-api service don't have this header.
-	if ctx.Input.Header("X-Forwarded-Host") != "" {
-		if ctx.Input.Method() == "OPTIONS" {
-			ctx.ResponseWriter.WriteHeader(http.StatusOK)
+	if c.Header("X-Forwarded-Host") != "" {
+		if c.Method() == "OPTIONS" {
+			c.Status(http.StatusOK)
 		}
 		return
 	}
-	ctx.Output.Header(headerAllowOrigin, origin)
-	ctx.Output.Header(headerAllowMethods, "GET, POST, DELETE, PUT, PATCH, OPTIONS")
-	ctx.Output.Header(
+	c.SetHeader(headerAllowOrigin, origin)
+	c.SetHeader(headerAllowMethods, "GET, POST, DELETE, PUT, PATCH, OPTIONS")
+	c.SetHeader(
 		headerAllowHeaders,
 		"Origin, X-Requested-With, Content-Type, Accept, Authorization, X-Org-Id, X-Project-Id, X-Environment, X-User-Id, X-User-Email, X-API-Version, X-SDK-Name, X-SDK-Version",
 	)
-	ctx.Output.Header(headerExposeHeaders, "Content-Length")
-	ctx.Output.Header(headerAllowCredentials, "true")
+	c.SetHeader(headerExposeHeaders, "Content-Length")
+	c.SetHeader(headerAllowCredentials, "true")
 
-	if ctx.Input.Method() == "OPTIONS" {
-		ctx.ResponseWriter.WriteHeader(http.StatusOK)
+	if c.Method() == "OPTIONS" {
+		c.Status(http.StatusOK)
 	}
 }
 
-func CorsFilter(ctx *web.Context) {
-	origin := ctx.Input.Header(headerOrigin)
+func CorsFilter(c *zip.Ctx) error {
+	origin := c.Header(headerOrigin)
 
 	// Reject empty and literal "null" origins (sandboxed iframes, data: URIs).
 	if origin == "" {
-		return
+		return c.Continue()
 	}
 	if origin == "null" {
-		ctx.ResponseWriter.WriteHeader(http.StatusForbidden)
-		responseError(ctx, "CORS error: null origin is not allowed")
-		return
+		return denyForbidden(c, "CORS error: null origin is not allowed")
 	}
 
 	// 1. Static allowlist — always works, even when IAM is down.
 	if isStaticAllowedOrigin(origin) {
-		setCorsHeaders(ctx, origin)
+		setCorsHeaders(c, origin)
 		if object.CloudHost == "" {
 			object.CloudHost = origin
 		}
-		return
+		return c.Continue()
 	}
 
 	// 2. Widget keys (hz_*) are public credentials validated by the gateway's
 	// widget security middleware (origin + rate limit). They don't use IAM
 	// OAuth flows, so skip the RedirectUri-based origin check.
-	if token := parseBearerToken(ctx); strings.HasPrefix(token, "hz_") {
-		setCorsHeaders(ctx, origin)
-		return
+	if token := parseBearerToken(c); strings.HasPrefix(token, "hz_") {
+		setCorsHeaders(c, origin)
+		return c.Continue()
 	}
 
 	// 3. Dynamic check via IAM application RedirectUris.
 	ok, err := isOriginAllowed(origin)
 	if err != nil {
 		// If IAM is not configured at all, reject — no more open fallback.
-		ctx.ResponseWriter.WriteHeader(http.StatusForbidden)
-		responseError(ctx, fmt.Sprintf("CORS error: %s, path: %s", err.Error(), ctx.Request.URL.Path))
-		return
+		return denyForbidden(c, fmt.Sprintf("CORS error: %s, path: %s", err.Error(), c.Path()))
 	}
 
 	if !ok {
-		ctx.ResponseWriter.WriteHeader(http.StatusForbidden)
-		responseError(ctx, fmt.Sprintf("CORS error: origin [%s] is not allowed, path: %s", origin, ctx.Request.URL.Path))
-		return
+		return denyForbidden(c, fmt.Sprintf("CORS error: origin [%s] is not allowed, path: %s", origin, c.Path()))
 	}
 
-	setCorsHeaders(ctx, origin)
+	setCorsHeaders(c, origin)
 	if object.CloudHost == "" {
 		object.CloudHost = origin
 	}
+	return c.Continue()
 }
 
 func isOriginAllowed(origin string) (bool, error) {

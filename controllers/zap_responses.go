@@ -50,7 +50,6 @@ import (
 	"github.com/hanzoai/ai/model"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
-	"github.com/hanzoai/ai/web"
 )
 
 // ── ZAP dispatch tables (group-local, collision-free) ───────────────────
@@ -102,7 +101,7 @@ func zapResponsesHandler(ctx context.Context, auth string, body []byte) (*zap.Me
 			// same answer as the HTTP transport.
 			if errors.Is(err, zstd.ErrDecoderSizeExceeded) {
 				return object.BuildCloudResponse(413, nil, fmt.Sprintf(
-					"request body exceeds the %d MiB limit", web.MaxBody>>20))
+					"request body exceeds the %d MiB limit", MaxDecoded>>20))
 			}
 			return object.BuildCloudResponse(400, nil, "Failed to decompress zstd request: "+err.Error())
 		}

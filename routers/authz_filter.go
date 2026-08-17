@@ -24,12 +24,12 @@ import (
 	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
-	"github.com/hanzoai/ai/web"
+	"github.com/zap-proto/zip"
 )
 
-func AuthzFilter(ctx *web.Context) {
-	method := ctx.Request.Method
-	urlPath := ctx.Request.URL.Path
+func AuthzFilter(c *zip.Ctx) error {
+	method := c.Method()
+	urlPath := c.Path()
 
 	// NOTE: there is deliberately NO adminDomain Host bypass here. A
 	// "Host == adminDomain → return before the gates" shortcut (an upstream
@@ -37,12 +37,14 @@ func AuthzFilter(ctx *web.Context) {
 	// CRITICAL, and trivially reachable via a spoofed Host header. The authz gates
 	// below run for EVERY request, regardless of Host.
 
-	if conf.IsDemoMode() {
-		if !isAllowedInDemoMode(method, urlPath) {
-			controllers.DenyRequest(ctx)
-		}
+	if conf.IsDemoMode() && !isAllowedInDemoMode(method, urlPath) {
+		// Denying and continuing was the old shape: DenyRequest wrote its refusal and
+		// the permission filter below then ran and could answer over the top of it.
+		// A refusal is the end of the request.
+		controllers.DenyRequest(c)
+		return nil
 	}
-	permissionFilter(ctx)
+	return permissionFilter(c)
 }
 
 // demoModeAllowed is what a demo visitor may change: talk to the assistant, and
@@ -184,11 +186,11 @@ func requiresPresentCredential(controllerName string) bool {
 // (defense in depth); the controller validates the credential. It deliberately
 // does not parse/verify, so it never rejects a valid credential type
 // (pk-/sk-/hz_/JWT/session) and never adds an IAM round-trip to the filter.
-func hasPresentCredential(ctx *web.Context) bool {
-	if GetSessionUser(ctx) != nil {
+func hasPresentCredential(c *zip.Ctx) bool {
+	if GetSessionUser(c) != nil {
 		return true
 	}
-	return parseBearerToken(ctx) != ""
+	return parseBearerToken(c) != ""
 }
 
 // sessionOrBearerUser resolves the request principal for the authz gate: the
@@ -207,11 +209,11 @@ func hasPresentCredential(ctx *web.Context) bool {
 //
 // AutoSigninFilter no-ops for /v1/ paths, so a console call that authenticates
 // with a Bearer credential (no cookie) would otherwise present no principal here.
-func sessionOrBearerUser(ctx *web.Context) *iam.User {
-	if u := GetSessionUser(ctx); u != nil {
+func sessionOrBearerUser(c *zip.Ctx) *iam.User {
+	if u := GetSessionUser(c); u != nil {
 		return u
 	}
-	token := parseBearerToken(ctx)
+	token := parseBearerToken(c)
 	if token == "" {
 		return nil
 	}
@@ -237,7 +239,7 @@ func sessionOrBearerUser(ctx *web.Context) *iam.User {
 // normalizedControllerName derives the controllerName the gate keys on from the
 // SAME normalized path the router dispatches to. the router path.Cleans the request path
 // before router matching (collapsing "//", "/./", "/../" and a trailing slash),
-// so a filter that keyed on the RAW path (strings.TrimPrefix of ctx.Request.URL.Path)
+// so a filter that keyed on the RAW path (strings.TrimPrefix of c.Path())
 // disagreed with the router: variants like "/v1/admin/providers/",
 // "/v1//admin/providers", "/v1/./admin/providers" and "/v1/admin/../admin/providers"
 // all dispatch to the gated controller yet, un-normalized, produced a controllerName
@@ -270,23 +272,32 @@ func normalizedControllerName(rawPath, method string) (name string, ok bool) {
 	return strings.TrimPrefix(cleaned, "/v1/"), true
 }
 
-func permissionFilter(ctx *web.Context) {
-	controllerName, ok := normalizedControllerName(ctx.Request.URL.Path, ctx.Request.Method)
+// isJwtLike reports whether a token looks like a JWT — three dot-separated
+// segments. It lived beside the auto-signin filter, which is gone; this is its only
+// caller, so it lives here now.
+func isJwtLike(token string) bool {
+	parts := strings.Split(token, ".")
+	return len(parts) == 3 && len(parts[0]) > 10 && len(parts[1]) > 10
+}
+
+func permissionFilter(c *zip.Ctx) error {
+	controllerName, ok := normalizedControllerName(c.Path(), c.Method())
 	if !ok {
-		return
+		return c.Continue()
 	}
 
 	// Platform-sensitive endpoints are gated FIRST — before the preview-mode
 	// bypass and the benign-read exempt list — so they are admin-gated regardless
 	// of configuration. Fail-secure: no principal => 401, wrong principal => 403.
 	if requiresSuperAdmin(controllerName) {
-		user := sessionOrBearerUser(ctx)
+		user := sessionOrBearerUser(c)
 		if user == nil {
-			denyUnauthorized(ctx, "auth:authentication required")
-		} else if !util.IsSuperAdmin(user) {
-			denyForbidden(ctx, "auth:this operation requires super admin privilege")
+			return denyUnauthorized(c, "auth:authentication required")
 		}
-		return
+		if !util.IsSuperAdmin(user) {
+			return denyForbidden(c, "auth:this operation requires super admin privilege")
+		}
+		return c.Continue()
 	}
 
 	// Write / ingest / scrape / RAG endpoints self-authenticate in their
@@ -298,9 +309,8 @@ func permissionFilter(ctx *web.Context) {
 	// (Bearer OR session) is required here; the controller performs the
 	// authoritative validation. This is an explicit set, NOT a blanket default,
 	// so health/metrics/wecom/memory stay reachable without a Bearer.
-	if requiresPresentCredential(controllerName) && !hasPresentCredential(ctx) {
-		denyUnauthorized(ctx, "auth:authentication required")
-		return
+	if requiresPresentCredential(controllerName) && !hasPresentCredential(c) {
+		return denyUnauthorized(c, "auth:authentication required")
 	}
 
 	disablePreviewMode := conf.DisablePreviewMode()
@@ -309,10 +319,10 @@ func permissionFilter(ctx *web.Context) {
 	isGetRequest := strings.HasPrefix(controllerName, "get-")
 
 	if !disablePreviewMode && isGetRequest {
-		return
+		return c.Continue()
 	}
 	if !isGetRequest && !isUpdateRequest {
-		return
+		return c.Continue()
 	}
 
 	exemptedPaths := []string{
@@ -352,13 +362,12 @@ func permissionFilter(ctx *web.Context) {
 
 	for _, exemptPath := range exemptedPaths {
 		if controllerName == exemptPath {
-			return
+			return c.Continue()
 		}
 	}
 
-	user := GetSessionUser(ctx)
-
-	if !util.IsAdmin(user) {
-		denyForbidden(ctx, "auth:this operation requires admin privilege")
+	if user := GetSessionUser(c); !util.IsAdmin(user) {
+		return denyForbidden(c, "auth:this operation requires admin privilege")
 	}
+	return c.Continue()
 }

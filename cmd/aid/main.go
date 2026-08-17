@@ -17,7 +17,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -28,17 +27,19 @@ import (
 	"github.com/hanzoai/ai/controllers"
 	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/object"
-	"github.com/hanzoai/ai/routers"
 	"github.com/hanzoai/ai/util"
 )
 
 func main() {
-	// Shared AI runtime bootstrap (DB, model config, balance/tier/rate-limit,
-	// router filter chain, billing queue) — the SAME sequence the unified
-	// cloud binary runs via ai.Mount, defined once in ai.Bootstrap. It ends
-	// by publishing routers.App via ai.SetHandler. A bootstrap
-	// failure is fatal for the standalone server.
-	if err := ai.Bootstrap(); err != nil {
+	// The app, and with it the shared runtime boot (DB, model config,
+	// balance/tier/rate-limit, billing queue) — the SAME sequence the unified cloud
+	// binary runs via ai.Mount, because ai.App is what runs it. A failure is fatal
+	// for the standalone server.
+	//
+	// No secret store: standalone resolves a provider's kms:// reference from the
+	// environment, which is what it did when boot never set one.
+	app, err := ai.App(nil)
+	if err != nil {
 		panic(err)
 	}
 	rlInstance := ai.RateLimiter()
@@ -90,31 +91,27 @@ func main() {
 	// Initialize ZAP node for native binary protocol.
 	// Listens on port 9999, connects to KV/SQL peers.
 	//
-	// routers.App is the fully-wrapped native router (its filters were installed by
-	// ai.Bootstrap above). The MsgType 200 gateway handler is BUILT around it, so
-	// every path the ad-hoc registry does not claim reaches the same route table the
-	// :8000 surface serves — with its verb and its path parameters intact. It is an
-	// argument, not a follow-up call: without it the gateway 404s everything and
-	// says nothing.
+	// ai.Handler is the same app this process serves, as an http.Handler. The MsgType
+	// 200 gateway handler is BUILT around it, so every path the ad-hoc registry does
+	// not claim reaches the same route table the :8000 surface serves — with its verb
+	// and its path parameters intact. It is an argument, not a follow-up call:
+	// without it the gateway 404s everything and says nothing.
 	object.InitZap()
-	controllers.InitZapHandlers(routers.App)
+	controllers.InitZapHandlers(ai.Handler())
 
 	// Inter-service ZAP transport for cloud operations (deploy, status, logs).
 	// Listens on CLOUD_ZAP_PORT (default 9320), separate from inference node.
 	controllers.InitInterserviceZap()
 
-	// (ai.SetHandler(routers.App) already ran inside ai.Bootstrap —
-	// the native router is published once, there.)
-
 	// Register the canonical HIP-0110 HTTP-over-ZAP terminal (luxfi/zap/forward)
 	// on the inference node so the ZAP gateway can route any HTTP request to the
-	// full HTTP surface. routers.App is the fully-wrapped native router:
-	// every BeforeRouter filter inserted above — including
+	// full HTTP surface. ai.Handler is the app itself, so
+	// every filter in the chain — including
 	// the balance gate (BalanceGateFilter) and all auth/tenant filters — runs on
 	// the bridged request before the route dispatches. Purely additive; the
 	// :8000 HTTP path and the existing ZAP handlers (MsgType 100/200) are
 	// untouched. Gated by ZAP_ENABLED via object.GetZapNode() returning nil.
-	controllers.InitForwardBridge(routers.App)
+	controllers.InitForwardBridge(ai.Handler())
 
 	go object.ClearThroughputPerSecond()
 
@@ -124,10 +121,10 @@ func main() {
 	// env and default OFF (ROUTER_TRAIN_ENABLED; ROUTER_PROBE_RPH+ROUTER_PROBE_TOKEN).
 	// See ai.Bootstrap (HIP-510).
 
-	// Serve the native router directly. The embedded cloud binary serves the
-	// same routers.App through zip; here the standalone owns the listener.
-	srv := &http.Server{Addr: fmt.Sprintf(":%v", port), Handler: routers.App}
-	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+	// Serve the app on its own listener. The embedded cloud binary mounts the same
+	// app; here the standalone owns the socket — and it is zip's listener, not a
+	// net/http server wrapping it, so there is one server for one app.
+	if err := app.Listen(fmt.Sprintf(":%v", port)); err != nil {
 		log.Error("http server on :%v exited: %v", port, err)
 	}
 }

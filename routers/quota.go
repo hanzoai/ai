@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/hanzoai/ai/log"
-	"github.com/hanzoai/ai/web"
+	"github.com/zap-proto/zip"
 )
 
 // Usage quotas.
@@ -156,17 +156,20 @@ var quotaInstance *Quota
 
 // charge bills one request to key's quota and refuses it when a period is spent.
 //
+// It reports whether the request may PROCEED. When it may not, the refusal has
+// already been written — the caller's job is to stop, not to write again.
+//
 // It runs only for a request the rate already admitted, so the two ceilings are
 // asked in the order a caller meets them: too fast is answered in seconds, too
 // much is answered with the instant the period rolls. Retry-After carries that
 // instant either way, so one header means one thing.
-func charge(ctx *web.Context, key, path string) {
+func charge(c *zip.Ctx, key, path string) (bool, error) {
 	if quotaInstance == nil {
-		return
+		return true, nil
 	}
 	ok, period, until := quotaInstance.Spend(key, time.Now())
 	if ok {
-		return
+		return true, nil
 	}
 
 	retryAfter := int(time.Until(until).Seconds()) + 1
@@ -174,11 +177,10 @@ func charge(ctx *web.Context, key, path string) {
 	log.Info("quota_exceeded key=%s path=%s period=%s retry_after=%d total_allowed=%d total_denied=%d",
 		maskKey(key), path, period, retryAfter, allowed, denied)
 
-	ctx.ResponseWriter.Header().Set("Retry-After", fmt.Sprintf("%d", retryAfter))
-	ctx.ResponseWriter.Header().Set("X-RateLimit-Remaining", "0")
-	ctx.ResponseWriter.Header().Set("Content-Type", "application/json")
-	ctx.ResponseWriter.WriteHeader(http.StatusTooManyRequests)
-	ctx.ResponseWriter.Write([]byte(fmt.Sprintf(
+	c.SetHeader("Retry-After", fmt.Sprintf("%d", retryAfter))
+	c.SetHeader("X-RateLimit-Remaining", "0")
+	c.SetHeader("Content-Type", "application/json")
+	return false, c.Bytes(http.StatusTooManyRequests, []byte(fmt.Sprintf(
 		`{"error":{"message":"Usage limit reached for this %s. It resets in %d seconds.","type":"quota_error","code":429}}`,
 		period, retryAfter,
 	)))

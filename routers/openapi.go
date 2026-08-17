@@ -45,7 +45,7 @@ import (
 //
 // The result is deterministic: it reads the route table and two package-level
 // tables, and nothing here reads the clock, the environment, or a random source.
-func Document() map[string]any {
+func Document(app *zip.App) map[string]any {
 	described := items()
 	said := map[string]Doc{}
 	for _, w := range wired {
@@ -53,7 +53,7 @@ func Document() map[string]any {
 	}
 
 	paths := map[string]any{}
-	for pattern, methods := range App.Patterns() {
+	for pattern, methods := range Patterns(app) {
 		path := openAPIPath(pattern)
 		for _, registered := range methods {
 			for _, verb := range expand(registered) {

@@ -14,7 +14,7 @@
 package routers
 
 import (
-	"github.com/hanzoai/ai/controllers"
+	"github.com/zap-proto/zip"
 )
 
 // init registers the /v1/finetune/* fine-tuning broker routes. They live in their
@@ -52,18 +52,18 @@ import (
 //
 // controllers/zap_finetune_test.go holds both reasons as tests, so a conversion
 // attempt goes red before it goes to the wire.
-func init() {
+func registerFinetune(app *zip.App) {
 	// Job lifecycle.
-	App.Router("/v1/finetune/jobs", &controllers.ApiController{}, "GET:ListFinetuneJobs;POST:CreateFinetuneJob")
-	App.Router("/v1/finetune/job", &controllers.ApiController{}, "GET:GetFinetuneJob")
-	App.Router("/v1/finetune/cancel", &controllers.ApiController{}, "POST:CancelFinetuneJob")
-	App.Router("/v1/finetune/deploy", &controllers.ApiController{}, "POST:DeployFinetuneJob")
+	route(app, "/v1/finetune/jobs", "GET:ListFinetuneJobs;POST:CreateFinetuneJob")
+	route(app, "/v1/finetune/job", "GET:GetFinetuneJob")
+	route(app, "/v1/finetune/cancel", "POST:CancelFinetuneJob")
+	route(app, "/v1/finetune/deploy", "POST:DeployFinetuneJob")
 
 	// Recommended defaults (the "Unsloth-class" presets brain).
-	App.Router("/v1/finetune/presets", &controllers.ApiController{}, "GET:GetFinetunePresets")
+	route(app, "/v1/finetune/presets", "GET:GetFinetunePresets")
 
 	// HuggingFace discovery (base-model + dataset pickers, private via KMS token).
-	App.Router("/v1/finetune/hf/models", &controllers.ApiController{}, "GET:SearchHfModels")
-	App.Router("/v1/finetune/hf/datasets", &controllers.ApiController{}, "GET:SearchHfDatasets")
-	App.Router("/v1/finetune/hf/repo", &controllers.ApiController{}, "GET:GetHfRepo")
+	route(app, "/v1/finetune/hf/models", "GET:SearchHfModels")
+	route(app, "/v1/finetune/hf/datasets", "GET:SearchHfDatasets")
+	route(app, "/v1/finetune/hf/repo", "GET:GetHfRepo")
 }
