@@ -18,7 +18,6 @@ package split
 import (
 	"fmt"
 	"regexp"
-	"sort"
 	"strings"
 )
 
@@ -28,12 +27,25 @@ func NewMarkdownSplitProvider() (*MarkdownSplitProvider, error) {
 	return &MarkdownSplitProvider{}, nil
 }
 
+// ExtractMarkdownTree returns the sections keyed by breadcrumb. Order lives in
+// extractMarkdownSections — the walk is the order.
 func ExtractMarkdownTree(markdownText string) map[string]string {
+	m, _ := extractMarkdownSections(markdownText)
+	return m
+}
+
+// extractMarkdownSections walks the document once and returns the sections
+// with their keys in DOCUMENT ORDER. A breadcrumb key ("A > B") is a composed
+// name, not a substring of the source, so order can only come from the walk
+// itself — searching the text for it finds nothing and costs a full scan per
+// probe, which on a long changelog turned one file into tens of seconds.
+func extractMarkdownSections(markdownText string) (map[string]string, []string) {
 	numberedHeadingPattern := regexp.MustCompile(`^(\d+(\.\d+)*\.)\s+(.+)$`)
 	hashHeadingPattern := regexp.MustCompile(`^(#{1,6})\s+(.+)$`)
 
 	lines := strings.Split(markdownText, "\n")
 	result := make(map[string]string)
+	var order []string
 
 	var currentKey string
 	var currentContent []string
@@ -53,10 +65,16 @@ func ExtractMarkdownTree(markdownText string) map[string]string {
 	flush := func() {
 		body := strings.TrimSpace(strings.Join(currentContent, "\n"))
 		if currentKey != "" {
+			if _, seen := result[currentKey]; !seen {
+				order = append(order, currentKey)
+			}
 			result[currentKey] = body
 			return
 		}
 		if body != "" {
+			if _, seen := result["root"]; !seen {
+				order = append(order, "root")
+			}
 			result["root"] = body
 		}
 	}
@@ -108,7 +126,7 @@ func ExtractMarkdownTree(markdownText string) map[string]string {
 
 	flush()
 
-	return result
+	return result, order
 }
 
 func ExtractTablesAndRemainder(markdownText string) (string, []string, error) {
@@ -170,24 +188,13 @@ func ExtractTablesWithContext(markdownText string, contextKey string) (string, [
 }
 
 func (p *MarkdownSplitProvider) SplitText(text string) ([]string, error) {
-	headingsMap := ExtractMarkdownTree(text)
-
-	// Ranging the map directly made the section ORDER random between runs —
-	// Go randomises map iteration, so the same document produced the same
-	// chunks in a different sequence every time. For a splitter that is not
-	// cosmetic: chunks are reassembled into context downstream, and document
-	// order is the only order that means anything.
-	//
-	// Sorted by where each heading appears in the source, so the result is the
-	// document's own order rather than the map's or the alphabet's ("Section
-	// 10" must not sort before "Section 9").
-	keys := make([]string, 0, len(headingsMap))
-	for key := range headingsMap {
-		keys = append(keys, key)
-	}
-	sort.Slice(keys, func(i, j int) bool {
-		return strings.Index(text, keys[i]) < strings.Index(text, keys[j])
-	})
+	// The walk visits headings in document order, and document order is the
+	// only order that means anything: chunks are reassembled into context
+	// downstream. (Sorting by strings.Index(text, key) looked equivalent and
+	// was not — a breadcrumb key is a composed name, not a substring, so every
+	// probe scanned the whole document to find nothing and the order stayed
+	// the map's.)
+	headingsMap, keys := extractMarkdownSections(text)
 
 	var sections []string
 
