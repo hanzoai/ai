@@ -20,30 +20,20 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hanzoai/ai/conf"
-	"github.com/hanzoai/ai/controllers"
 	"github.com/zap-proto/zip"
 )
 
-// TestCrawlRouteIsRegisteredAndFailClosed proves POST /v1/crawl is wired to the
-// real Crawl controller through the unified binary's /v1/* mount and is
-// auth-gated fail-closed:
-//   - NOT 404 → the route registered (the canonical /v1/crawl exists).
-//   - NOT 500 → no session/nil panic.
-//   - body {"status":"error"} with NO backend hit → requireIndexAuth rejected the
-//     unauthenticated request BEFORE any crawl, i.e. fail-closed. Preview mode is
-//     forced off so the reject branch (not the dev-preview admin bypass) runs.
-func TestCrawlRouteIsRegisteredAndFailClosed(t *testing.T) {
-
-	// Force fail-closed: with preview mode on (the default), requireIndexAuth
-	// grants dev admin and would proceed to the crawl backend. Off, an
-	// unauthenticated caller must be rejected outright.
-	if conf.AppConfig != nil {
-		prev := conf.AppConfig.String("disablePreviewMode")
-		_ = conf.AppConfig.Set("disablePreviewMode", "true")
-		defer conf.AppConfig.Set("disablePreviewMode", prev)
-	}
-
+// THIS SERVICE SERVES NO /v1/crawl, and that is the assertion.
+//
+// ai does not fetch the web: object.SetFetcher takes the crawl from whoever mounted
+// it, and nothing in this module ever calls it. A door here could therefore answer
+// nothing on its own — and where a host IS present, that host serves the same address
+// with its own typed operation, so registering it made one address the property of
+// two apps, which a fleet cannot route and a document must not pick a winner for.
+//
+// The crawl ai does offer is the one its host feeds, over ZAP
+// (controllers/zap_rag-search-crawl.go). That is a different door and it stays.
+func TestNoCrawlDoorHere(t *testing.T) {
 	app := zip.New(zip.Config{DisableStartupMessage: true, ReadBufferSize: 32 << 10})
 	routes(app)
 
@@ -56,30 +46,13 @@ func TestCrawlRouteIsRegisteredAndFailClosed(t *testing.T) {
 		t.Fatalf("Test: %v", err)
 	}
 	body, _ := io.ReadAll(resp.Body)
-	bs := string(body)
-
-	if resp.StatusCode == http.StatusNotFound {
-		t.Fatalf("POST /v1/crawl: 404 — route not registered. body=%q", bs)
-	}
-	if resp.StatusCode == http.StatusInternalServerError {
-		t.Fatalf("POST /v1/crawl: 500 (panic). body=%q", bs)
-	}
-	if strings.Contains(bs, "nil pointer") {
-		t.Fatalf("a nil dereference reached the body: %q", bs)
-	}
-	if strings.Contains(bs, `"success"`) {
-		t.Fatalf("POST /v1/crawl succeeded without auth — NOT fail-closed. body=%q", bs)
-	}
-	// requireIndexAuth rejected the unauthenticated caller at the auth layer,
-	// before any crawl backend call — the definitive fail-closed proof.
-	if !strings.Contains(bs, "admin privilege") {
-		t.Fatalf("POST /v1/crawl: expected requireIndexAuth rejection, got %q", bs)
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("POST /v1/crawl answered %d — this service registered a door onto a crawl it does not have. body=%q",
+			resp.StatusCode, string(body))
 	}
 }
 
-// TestSearchRouteStillRegistered guards that the native full-text /v1/search
-// (Meilisearch, SearchDocs) remains wired after the crawl consolidation — NOT
-// 404, and fail-closed (error body) for an unauthenticated caller.
 func TestSearchRouteStillRegistered(t *testing.T) {
 
 	app := zip.New(zip.Config{DisableStartupMessage: true, ReadBufferSize: 32 << 10})
@@ -106,6 +79,3 @@ func TestSearchRouteStillRegistered(t *testing.T) {
 		t.Fatalf("POST /v1/search: expected fail-closed auth rejection, got %q", bs)
 	}
 }
-
-// ensure the controllers package is linked (Crawl method exists).
-var _ = (&controllers.ApiController{}).Crawl
