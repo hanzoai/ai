@@ -7,18 +7,15 @@ package routers
 
 import (
 	"encoding/json"
-	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/hanzoai/ai/object"
-	web "github.com/hanzoai/ai/web"
 )
 
-func tapCtx(method, path, country, region, ip string) *web.Context {
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(method, path, nil)
+func tapCtx(method, path, country, region, ip string) probe {
+	p := ask(method, path)
 	if country != "" {
 		p = p.with("CF-IPCountry", country)
 	}
@@ -29,7 +26,7 @@ func tapCtx(method, path, country, region, ip string) *web.Context {
 		p = p.with("CF-Connecting-IP", ip)
 		p = p.with("X-Forwarded-For", ip)
 	}
-	return p.Ctx
+	return p
 }
 
 // TestTrafficTapFilter_RecordsGeoNotIP proves the tap folds the edge COUNTRY/REGION
@@ -42,9 +39,9 @@ func TestTrafficTapFilter_RecordsGeoNotIP(t *testing.T) {
 	agg := object.NewTrafficAggregator()
 	p := tapCtx("POST", "/v1/chat/completions", "US", "CA", "203.0.113.7")
 	agg.Record(
-		ctx.Request.Header.Get("CF-IPCountry"),
-		ctx.Request.Header.Get("CF-Region-Code"),
-		object.TrafficServiceClass(ctx.Request.URL.Path),
+		p.Header("CF-IPCountry"),
+		p.Header("CF-Region-Code"),
+		object.TrafficServiceClass(p.Path()),
 	)
 	g := agg.Globe(60, time.Now())
 
@@ -93,5 +90,5 @@ func TestTrafficTapFilter_SkipsNonProductTraffic(t *testing.T) {
 func TestTrafficTapFilter_RunsCleanWithoutHeaders(t *testing.T) {
 	p := tapCtx("POST", "/v1/chat/completions", "", "", "")
 	// Must not panic.
-	TrafficTapFilter(p.Ctx)
+	p = p.through(TrafficTapFilter)
 }

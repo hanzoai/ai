@@ -21,7 +21,6 @@ import (
 	"testing"
 
 	"github.com/hanzoai/ai/controllers"
-	"github.com/hanzoai/ai/routers" // registers /v1/* routes (incl. videos/generations)
 	"github.com/zap-proto/zip"
 )
 
@@ -34,7 +33,7 @@ import (
 // model, no endpoint).
 func TestVideosGenerationsRouteIsRegistered(t *testing.T) {
 
-	app := zip.New(zip.Config{DisableStartupMessage: true})
+	app := zip.New(zip.Config{DisableStartupMessage: true, ReadBufferSize: 32 << 10})
 	routes(app)
 
 	// No Authorization header → the handler's bearerToken() rejects with 401.

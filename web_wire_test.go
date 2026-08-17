@@ -20,7 +20,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hanzoai/ai/routers"
 	"github.com/zap-proto/zip"
 )
 
@@ -30,7 +29,7 @@ import (
 func wiredStatus(t *testing.T, method, path, body string) int {
 	t.Helper()
 
-	app := zip.New(zip.Config{DisableStartupMessage: true})
+	app := zip.New(zip.Config{DisableStartupMessage: true, ReadBufferSize: 32 << 10})
 	routes(app)
 
 	var r io.Reader

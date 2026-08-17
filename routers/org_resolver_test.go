@@ -25,10 +25,10 @@ import (
 // ingress — the spoofed org is never returned.
 func TestGetOrgIgnoresSpoofedHeaderWhenUnauth(t *testing.T) {
 	t.Setenv("IAM_ORG", "hanzo")
-	ctx, _ := newFilterCtx("POST", "/v1/chat/completions", nil)
-	ctx.Request.Header.Set("X-Org-Id", "victim-org")
+	q := asUser(t, "POST", "/v1/chat/completions", nil)
+	q = q.with("X-Org-Id", "victim-org")
 
-	if got := GetOrg(ctx); got == "victim-org" {
+	if got := GetOrg(q.Ctx); got == "victim-org" {
 		t.Fatal("spoofed X-Org-Id must NOT be honored without a verified principal")
 	} else if got != "hanzo" {
 		t.Errorf("unauth effective org = %q, want config default hanzo", got)
@@ -39,10 +39,10 @@ func TestGetOrgIgnoresSpoofedHeaderWhenUnauth(t *testing.T) {
 // ignored — they are always scoped to their own org.
 func TestGetOrgNonAdminScopedToOwnOrg(t *testing.T) {
 	user := &iam.User{Owner: "maxpower", Name: "dave", IsAdmin: true} // org admin, NOT global
-	ctx, _ := newFilterCtx("POST", "/v1/chat/completions", user)
-	ctx.Request.Header.Set("X-Org-Id", "victim-org")
+	q := asUser(t, "POST", "/v1/chat/completions", user)
+	q = q.with("X-Org-Id", "victim-org")
 
-	if got := GetOrg(ctx); got != "maxpower" {
+	if got := GetOrg(q.Ctx); got != "maxpower" {
 		t.Errorf("non-global principal effective org = %q, want own org maxpower (spoof ignored)", got)
 	}
 }
@@ -51,9 +51,9 @@ func TestGetOrgNonAdminScopedToOwnOrg(t *testing.T) {
 // org is fine (the gateway-injection case).
 func TestGetOrgOwnOrgHeaderHonored(t *testing.T) {
 	user := &iam.User{Owner: "maxpower", Name: "dave"}
-	ctx, _ := newFilterCtx("POST", "/v1/chat/completions", user)
-	ctx.Request.Header.Set("X-Org-Id", "maxpower")
-	if got := GetOrg(ctx); got != "maxpower" {
+	q := asUser(t, "POST", "/v1/chat/completions", user)
+	q = q.with("X-Org-Id", "maxpower")
+	if got := GetOrg(q.Ctx); got != "maxpower" {
 		t.Errorf("own-org header = %q, want maxpower", got)
 	}
 }
@@ -62,9 +62,9 @@ func TestGetOrgOwnOrgHeaderHonored(t *testing.T) {
 // org via the header (platform cross-org access).
 func TestGetOrgSuperAdminCrossOrg(t *testing.T) {
 	admin := &iam.User{Owner: "admin", Name: "admin", IsAdmin: true}
-	ctx, _ := newFilterCtx("POST", "/v1/chat/completions", admin)
-	ctx.Request.Header.Set("X-Org-Id", "some-tenant")
-	if got := GetOrg(ctx); got != "some-tenant" {
+	q := asUser(t, "POST", "/v1/chat/completions", admin)
+	q = q.with("X-Org-Id", "some-tenant")
+	if got := GetOrg(q.Ctx); got != "some-tenant" {
 		t.Errorf("super-admin cross-org = %q, want some-tenant", got)
 	}
 }
@@ -83,9 +83,9 @@ func TestHkKeyTakesAccessKeyResolutionPath(t *testing.T) {
 	}
 	t.Setenv("IAM_ORG", "hanzo")
 	t.Setenv("IAM_URL", "") // unconfigured → GetUserByAccessKey errors → nil principal
-	ctx, _ := newFilterCtxAuth("POST", "/v1/chat/completions", "sk-902abd8e-9f5e-49c0-baf7-220f771d299f")
-	ctx.Request.Header.Set("X-Org-Id", "victim-org")
-	if got := GetOrg(ctx); got == "victim-org" {
+	q := withKey("POST", "/v1/chat/completions", "sk-902abd8e-9f5e-49c0-baf7-220f771d299f")
+	q = q.with("X-Org-Id", "victim-org")
+	if got := GetOrg(q.Ctx); got == "victim-org" {
 		t.Fatal("an unresolvable sk- key must NOT let a spoofed X-Org-Id through (fail-secure)")
 	} else if got != "hanzo" {
 		t.Errorf("unresolvable sk- key effective org = %q, want config default hanzo", got)

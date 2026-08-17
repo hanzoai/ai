@@ -16,21 +16,18 @@ package routers
 
 import (
 	"net/http"
-	"net/http/httptest"
 	"testing"
 )
 
-func billingCtx(auth, requested string) *web.Context {
-	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+func billingCtx(auth, requested string) probe {
+	p := ask(http.MethodPost, "/v1/chat/completions")
 	if auth != "" {
 		p = p.with("Authorization", auth)
 	}
 	if requested != "" {
 		p = p.with("X-Org-Id", requested)
 	}
-	p := web.NewContext()
-	ctx.Reset(httptest.NewRecorder(), req)
-	return p.Ctx
+	return p
 }
 
 // TestUserKeyCacheIsScopedToTheOrg pins the reason the cache key grew an org
@@ -73,7 +70,7 @@ func TestResolveBillingKeyIgnoresAnUnbackedOrgHeader(t *testing.T) {
 	// The home answer, as the gate would have cached it on a first request.
 	bg.setUserKeyCache("sk-abc", "", "acme", "acme", "acme/user")
 
-	subject, namespace, _ := resolveBillingKey(billingCtx("Bearer sk-abc", ""))
+	subject, namespace, _ := resolveBillingKey(billingCtx("Bearer sk-abc", "").Ctx)
 	if subject != "acme" || namespace != "acme" {
 		t.Fatalf("home request = (%q, %q), want (acme, acme)", subject, namespace)
 	}
@@ -82,7 +79,7 @@ func TestResolveBillingKeyIgnoresAnUnbackedOrgHeader(t *testing.T) {
 	// if it were the switched org's, and it must not be served the switched org's
 	// wallet either — an sk- key has no membership proof, so it can only ever
 	// resolve its own owner.
-	subject, namespace, _ = resolveBillingKey(billingCtx("Bearer sk-abc", "zoo"))
+	subject, namespace, _ = resolveBillingKey(billingCtx("Bearer sk-abc", "zoo").Ctx)
 	if namespace == "zoo" {
 		t.Fatalf("an unbacked X-Org-Id moved the ledger to %q", namespace)
 	}

@@ -6,10 +6,7 @@ package routers
 
 import (
 	"net/http"
-	"net/http/httptest"
 	"testing"
-
-	web "github.com/hanzoai/ai/web"
 )
 
 // TestResolveBillingKey_NilGateNoPanic locks in the fix for the prod-down bug:
