@@ -21,7 +21,6 @@ import (
 	"time"
 
 	iam "github.com/hanzoai/ai/internal/iam"
-	"github.com/hanzoai/ai/web"
 )
 
 // signingIn builds a controller holding a live session, the way a request that is
@@ -29,7 +28,6 @@ import (
 func signingIn(t *testing.T, m *web.MemorySessions) (*ApiController, *httptest.ResponseRecorder, web.Store) {
 	t.Helper()
 	r := httptest.NewRequest(http.MethodPost, "/v1/ai/signin", nil)
-	rec := httptest.NewRecorder()
 	ctx := web.NewContext()
 	ctx.Reset(rec, r)
 
@@ -94,10 +92,7 @@ func TestAdoptingAnIdentityWithoutASessionManager(t *testing.T) {
 	t.Cleanup(func() { web.Sessions = prev })
 
 	r := httptest.NewRequest(http.MethodPost, "/v1/ai/signin", nil)
-	ctx := web.NewContext()
-	ctx.Reset(httptest.NewRecorder(), r)
-	c := &ApiController{}
-	c.Init(ctx, "ApiController", "Signin", nil)
+	c := visit("GET", "/v1/")
 
 	// Must not panic, and must still be able to record the identity where a session
 	// exists to hold it.

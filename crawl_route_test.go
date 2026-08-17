@@ -35,7 +35,6 @@ import (
 //     unauthenticated request BEFORE any crawl, i.e. fail-closed. Preview mode is
 //     forced off so the reject branch (not the dev-preview admin bypass) runs.
 func TestCrawlRouteIsRegisteredAndFailClosed(t *testing.T) {
-	wireTestSessions()
 
 	// Force fail-closed: with preview mode on (the default), requireIndexAuth
 	// grants dev admin and would proceed to the crawl backend. Off, an
@@ -45,10 +44,6 @@ func TestCrawlRouteIsRegisteredAndFailClosed(t *testing.T) {
 		_ = conf.AppConfig.Set("disablePreviewMode", "true")
 		defer conf.AppConfig.Set("disablePreviewMode", prev)
 	}
-
-	routers.InstallFilters()
-	SetHandler(routers.App)
-	defer SetHandler(nil)
 
 	app := zip.New(zip.Config{DisableStartupMessage: true})
 	routes(app)
@@ -87,11 +82,6 @@ func TestCrawlRouteIsRegisteredAndFailClosed(t *testing.T) {
 // (Meilisearch, SearchDocs) remains wired after the crawl consolidation — NOT
 // 404, and fail-closed (error body) for an unauthenticated caller.
 func TestSearchRouteStillRegistered(t *testing.T) {
-	wireTestSessions()
-
-	routers.InstallFilters()
-	SetHandler(routers.App)
-	defer SetHandler(nil)
 
 	app := zip.New(zip.Config{DisableStartupMessage: true})
 	routes(app)

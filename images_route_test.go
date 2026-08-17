@@ -33,11 +33,6 @@ import (
 // registration half of the fix: before it, the path 404'd (catalog-ware model,
 // no endpoint).
 func TestImagesGenerationsRouteIsRegistered(t *testing.T) {
-	wireTestSessions()
-
-	routers.InstallFilters()
-	SetHandler(routers.App)
-	defer SetHandler(nil)
 
 	app := zip.New(zip.Config{DisableStartupMessage: true})
 	routes(app)

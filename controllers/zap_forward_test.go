@@ -24,7 +24,6 @@ import (
 	"testing"
 	"time"
 
-	web "github.com/hanzoai/ai/web"
 	zaplib "github.com/luxfi/zap"
 	"github.com/luxfi/zap/forward"
 )

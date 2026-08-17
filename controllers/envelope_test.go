@@ -32,7 +32,6 @@ import (
 
 	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/object"
-	"github.com/hanzoai/ai/web"
 	"github.com/hanzoai/go-openai"
 )
 
@@ -173,16 +172,12 @@ func field(t *testing.T, event map[string]json.RawMessage, key string) string {
 // fix that only covers the buffered body leaks on nearly every request. This drives
 // the real relay — the function that writes the customer's bytes.
 func TestFamilyStreamIsOurs(t *testing.T) {
-	rec := httptest.NewRecorder()
-	ctx := web.NewContext()
-	ctx.Reset(rec, httptest.NewRequest("POST", "/v1/chat/completions", nil))
-	c := &ApiController{}
-	c.Init(ctx, "ApiController", "X", nil)
+	c := ask("POST", "/v1/chat/completions")
 
 	mk := ourMark()
 	prompt, completion, _, _ := c.relayZenStream(strings.NewReader(upstreamStream), mk)
 
-	out := rec.Body.String()
+	out := sent(c)
 	discloses(t, "streamed chat", []byte(out))
 
 	// Every chunk names us, the SKU, and one id — a client correlates on it, so it
@@ -390,14 +385,10 @@ func TestTheDoorKeepsWhatAClientActsOn(t *testing.T) {
 	})
 
 	t.Run("streamed delta", func(t *testing.T) {
-		rec := httptest.NewRecorder()
-		ctx := web.NewContext()
-		ctx.Reset(rec, httptest.NewRequest("POST", "/v1/chat/completions", nil))
-		c := &ApiController{}
-		c.Init(ctx, "ApiController", "X", nil)
+		c := ask("POST", "/v1/chat/completions")
 
 		c.relayZenStream(strings.NewReader(toolStream+"\n\ndata: [DONE]\n\n"), ourMark())
-		out := rec.Body.String()
+		out := sent(c)
 		discloses(t, "streamed tool call", []byte(out))
 		for _, need := range []string{`"name":"get_weather"`, `"id":"call_1"`, `"tool_calls"`} {
 			if !strings.Contains(out, need) {
@@ -459,16 +450,12 @@ func TestTheAnthropicDialectIsOurs(t *testing.T) {
 	})
 
 	t.Run("streamed", func(t *testing.T) {
-		rec := httptest.NewRecorder()
-		ctx := web.NewContext()
-		ctx.Reset(rec, httptest.NewRequest("POST", "/v1/messages", nil))
-		c := &ApiController{}
-		c.Init(ctx, "ApiController", "X", nil)
+		c := ask("POST", "/v1/messages")
 
 		mk := &mark{id: ourMsg, model: sku, seller: "hanzo", speaks: messageShape}
 		c.relayZenStream(strings.NewReader(anthropicStream), mk)
 
-		out := rec.Body.String()
+		out := sent(c)
 		discloses(t, "anthropic stream", []byte(out))
 		if !strings.Contains(out, "2 + 2 = 4") {
 			t.Errorf("the streamed answer was lost:\n%s", out)
@@ -526,16 +513,12 @@ func TestEveryRelayedDialectReachesTheDoor(t *testing.T) {
 			}
 
 			body := []byte(`{"model":"` + sku + `","messages":[{"role":"user","content":"2+2?"}]}`)
-			rec := httptest.NewRecorder()
-			ctx := web.NewContext()
-			ctx.Reset(rec, httptest.NewRequest("POST", "/v1/x", strings.NewReader(string(body))))
-			c := &ApiController{}
-			c.Init(ctx, "ApiController", "X", nil)
+			c := visit("POST", "/v1/x")
 
 			c.pipeToFamily(fam, relay.apiPath, relay.dialect, sku, body, relay.stream,
 				"", nil, false, nil, time.Now())
 
-			out := rec.Body.String()
+			out := sent(c)
 			if out == "" {
 				t.Fatal("nothing was relayed")
 			}
@@ -714,16 +697,12 @@ func TestPipeToFamilyIsOurs(t *testing.T) {
 			}
 
 			body := []byte(`{"model":"` + sku + `","messages":[{"role":"user","content":"2+2?"}]}`)
-			rec := httptest.NewRecorder()
-			ctx := web.NewContext()
-			ctx.Reset(rec, httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(string(body))))
-			c := &ApiController{}
-			c.Init(ctx, "ApiController", "X", nil)
+			c := visit("POST", "/v1/chat/completions")
 
 			c.pipeToFamily(fam, "chat/completions", "openai", sku, body, mode.stream,
 				"", nil, false, nil, time.Now())
 
-			out := rec.Body.String()
+			out := sent(c)
 			discloses(t, mode.name+" relay", []byte(out))
 
 			events := []map[string]json.RawMessage{}
@@ -815,11 +794,7 @@ func TestProxyToolRequestIsOurs(t *testing.T) {
 			}))
 			defer upstream.Close()
 
-			rec := httptest.NewRecorder()
-			ctx := web.NewContext()
-			ctx.Reset(rec, httptest.NewRequest("POST", "/v1/chat/completions", nil))
-			c := &ApiController{}
-			c.Init(ctx, "ApiController", "X", nil)
+			c := ask("POST", "/v1/chat/completions")
 
 			// The SKU the caller asked for. proxyToolRequest replaces it with the
 			// upstream's own name for the model before dialling, which is exactly why
@@ -831,7 +806,7 @@ func TestProxyToolRequestIsOurs(t *testing.T) {
 			}
 			c.proxyToolRequest(provider, &request, time.Now(), nil, false, "", nil)
 
-			out := rec.Body.String()
+			out := sent(c)
 			discloses(t, mode.name+" tool relay", []byte(out))
 			if strings.Contains(out, "qwen/qwen3-235b-a22b") {
 				t.Errorf("%s tool relay names the upstream's own model id:\n%s", mode.name, out)

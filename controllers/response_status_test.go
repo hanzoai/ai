@@ -17,18 +17,12 @@ package controllers
 import (
 	"net/http/httptest"
 	"testing"
-
-	web "github.com/hanzoai/ai/web"
 )
 
 // newRecorderController builds an ApiController wired to an httptest recorder so a
 // handler's HTTP status can be asserted directly.
 func newRecorderController() (*ApiController, *httptest.ResponseRecorder) {
-	rec := httptest.NewRecorder()
-	ctx := web.NewContext()
-	ctx.Reset(rec, httptest.NewRequest("GET", "/v1/x", nil))
-	c := &ApiController{}
-	c.Init(ctx, "ApiController", "X", nil)
+	c := ask("GET", "/v1/x")
 	return c, rec
 }
 
@@ -39,8 +33,8 @@ func newRecorderController() (*ApiController, *httptest.ResponseRecorder) {
 func TestResponseForbiddenAndUnauthorizedStatus(t *testing.T) {
 	c, rec := newRecorderController()
 	c.ResponseForbidden("auth:Unauthorized operation")
-	if rec.Code != 403 {
-		t.Errorf("ResponseForbidden status = %d, want 403", rec.Code)
+	if answered(c) != 403 {
+		t.Errorf("ResponseForbidden status = %d, want 403", answered(c))
 	}
 
 	c2, rec2 := newRecorderController()
