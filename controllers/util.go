@@ -30,7 +30,6 @@ import (
 	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
-	"github.com/hanzoai/ai/web"
 	"github.com/zap-proto/zip"
 )
 
@@ -328,8 +327,8 @@ func (c *ApiController) IsAdmin() bool {
 	return util.IsAdmin(user)
 }
 
-func DenyRequest(ctx *web.Context) {
-	ctx.Output.SetStatus(http.StatusForbidden)
+func DenyRequest(ctx *zip.Ctx) {
+	ctx.Status(http.StatusForbidden)
 	responseError(ctx, "auth:Unauthorized operation")
 }
 
@@ -356,8 +355,11 @@ func responseError(ctx *zip.Ctx, error string, data ...interface{}) {
 		resp.Data = data[0]
 	}
 
-	err := ctx.Output.JSON(resp, true, false)
-	if err != nil {
+	code := ctx.Fiber().Response().StatusCode()
+	if code < 400 {
+		code = http.StatusOK
+	}
+	if err := ctx.JSON(code, resp); err != nil {
 		panic(err)
 	}
 }
