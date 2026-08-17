@@ -15,8 +15,6 @@
 package controllers
 
 import (
-	"net/http"
-	"net/http/httptest"
 	"testing"
 
 	iam "github.com/hanzoai/ai/internal/iam"
@@ -70,32 +68,30 @@ func TestSessionNeedsSelfHeal(t *testing.T) {
 	}
 }
 
-// TestBearerTokenFromRequestCookieFallback verifies the self-heal credential
-// source: the hanzo_iam_token cookie is honored when no Authorization header is
-// present (the browser cookie-session case), the header still wins when both are
-// present, and a credential-less request yields no token.
-func TestBearerTokenFromRequestCookieFallback(t *testing.T) {
+// TestBearerTokenCookieFallback is the credential source, as its own truth table:
+// the Authorization header wins when both are present, the hanzo_iam_token cookie is
+// honoured when it is not (the browser cookie case, which is what self-heal reads),
+// and nothing yields nothing.
+//
+// It reads as a table because the function IS one — two values in, one out. It used
+// to build a request and set a header and a cookie on it to say the same thing.
+func TestBearerTokenCookieFallback(t *testing.T) {
 	const headerTok = "hdr.jwt.sig"
 	const cookieTok = "cookie.jwt.sig"
 
-	// Header present: header wins even if the cookie is also set.
-	r := httptest.NewRequest(http.MethodGet, "/v1/get-account", nil)
-	r.Header.Set("Authorization", "Bearer "+headerTok)
-	r.AddCookie(&http.Cookie{Name: iamTokenCookieName, Value: cookieTok})
-	if got := bearerToken(r); got != headerTok {
-		t.Errorf("header precedence: got %q, want %q", got, headerTok)
-	}
-
-	// Cookie only (no Authorization header): the self-heal path must resolve it.
-	r2 := httptest.NewRequest(http.MethodGet, "/v1/get-account", nil)
-	r2.AddCookie(&http.Cookie{Name: iamTokenCookieName, Value: cookieTok})
-	if got := bearerToken(r2); got != cookieTok {
-		t.Errorf("cookie fallback: got %q, want %q (a cookie-only browser must still carry a credential)", got, cookieTok)
-	}
-
-	// Neither: no credential.
-	r3 := httptest.NewRequest(http.MethodGet, "/v1/get-account", nil)
-	if got := bearerToken(r3); got != "" {
-		t.Errorf("no credential: got %q, want empty", got)
+	for _, tc := range []struct {
+		name          string
+		authorization string
+		cookie        string
+		want          string
+	}{
+		{"header wins over a cookie", "Bearer " + headerTok, cookieTok, headerTok},
+		{"cookie alone still carries one", "", cookieTok, cookieTok},
+		{"neither is no credential", "", "", ""},
+		{"a header that is not a Bearer names nothing", "Basic " + headerTok, "", ""},
+	} {
+		if got := bearerToken(tc.authorization, tc.cookie); got != tc.want {
+			t.Errorf("%s: bearerToken(%q, %q) = %q, want %q", tc.name, tc.authorization, tc.cookie, got, tc.want)
+		}
 	}
 }

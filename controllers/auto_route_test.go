@@ -157,6 +157,7 @@ func TestAutoRoutingHTTPContract(t *testing.T) {
 	}
 
 	body, _ := json.Marshal(chatReq("auto", "please refactor this function"))
+	rec := httptest.NewRecorder()
 	handler(rec, httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body)))
 
 	if got := rec.Header().Get(RoutedModelHeader); got != "glm-5.2" {
