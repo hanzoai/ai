@@ -127,7 +127,7 @@ func (c *ApiController) UpdateFile() {
 	id := c.Input().Get("id")
 
 	var file object.File
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &file)
+	err := json.Unmarshal(c.Body(), &file)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -151,7 +151,7 @@ func (c *ApiController) UpdateFile() {
 // @router /add-file [post]
 func (c *ApiController) AddFile() {
 	var file object.File
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &file)
+	err := json.Unmarshal(c.Body(), &file)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -175,7 +175,7 @@ func (c *ApiController) AddFile() {
 // @router /delete-file [post]
 func (c *ApiController) DeleteFile() {
 	var file object.File
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &file)
+	err := json.Unmarshal(c.Body(), &file)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -199,7 +199,7 @@ func (c *ApiController) DeleteFile() {
 // @router /refresh-file-vectors [post]
 func (c *ApiController) RefreshFileVectors() {
 	var file object.File
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &file)
+	err := json.Unmarshal(c.Body(), &file)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return

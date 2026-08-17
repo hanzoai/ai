@@ -75,7 +75,7 @@ func (c *ApiController) ImagesGenerations() {
 
 	var req imagesGenerationsRequest
 	badReq := ""
-	if err := json.Unmarshal(c.Ctx.Input.RequestBody, &req); err != nil {
+	if err := json.Unmarshal(c.Body(), &req); err != nil {
 		badReq = fmt.Sprintf("Failed to parse request: %s", err.Error())
 	} else if req.Model == "" {
 		badReq = "images request requires a \"model\" field"
@@ -121,7 +121,7 @@ func (c *ApiController) ImagesGenerations() {
 		if n > 10 {
 			n = 10
 		}
-		c.serveZenMedia("images/generations", req.Model, c.Ctx.Input.RequestBody, n, orgId, authUser, isPremium, startTime)
+		c.serveZenMedia("images/generations", req.Model, c.Body(), n, orgId, authUser, isPremium, startTime)
 		return
 	}
 
@@ -250,7 +250,7 @@ func (c *ApiController) recordImageUsage(authUser *iam.User, provider *object.Pr
 		ClientIP:     c.Ctx.Request.RemoteAddr,
 		RequestID:    uuid.NewString(),
 	}
-	rec.bind(c.Ctx.Request.Context(), authUser)
+	rec.bind(c.Context(), authUser)
 	recordUsage(rec)
-	recordTrace(c.Ctx.Request.Context(), rec, startTime)
+	recordTrace(c.Context(), rec, startTime)
 }

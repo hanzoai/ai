@@ -41,7 +41,7 @@ func (c *ApiController) UpdateTreeFile() {
 	key := c.Input().Get("key")
 
 	var file object.TreeFile
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &file)
+	err := json.Unmarshal(c.Body(), &file)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return

@@ -76,7 +76,7 @@ func applyMemoryIdentity(memory *object.Memory, org, userID string) {
 // (JWT "sub"), then the session.
 func (c *ApiController) memoryUserID() string {
 	return resolveMemoryUserID(
-		c.Ctx.Input.Header("X-User-Id"),
+		c.Header("X-User-Id"),
 		c.GetSessionUsername(),
 	)
 }
@@ -85,7 +85,7 @@ func (c *ApiController) memoryUserID() string {
 // "owner"), falling back to GetOrg (legacy X-Org-Id → session
 // owner → config default).
 func (c *ApiController) memoryOrg() string {
-	if v := strings.TrimSpace(c.Ctx.Input.Header("X-Org-Id")); v != "" {
+	if v := strings.TrimSpace(c.Header("X-Org-Id")); v != "" {
 		return v
 	}
 	return c.GetOrg()
@@ -130,7 +130,7 @@ func (c *ApiController) MemoryRemember() {
 		return
 	}
 	var req memoryRequest
-	if err := json.Unmarshal(c.Ctx.Input.RequestBody, &req); err != nil {
+	if err := json.Unmarshal(c.Body(), &req); err != nil {
 		c.ResponseError(err.Error())
 		return
 	}
@@ -285,7 +285,7 @@ func (c *ApiController) MemoryUpdate() {
 		return
 	}
 	var req memoryRequest
-	if err := json.Unmarshal(c.Ctx.Input.RequestBody, &req); err != nil {
+	if err := json.Unmarshal(c.Body(), &req); err != nil {
 		c.ResponseError(err.Error())
 		return
 	}
@@ -326,7 +326,7 @@ func (c *ApiController) MemoryDelete() {
 		return
 	}
 	var req memoryRequest
-	if err := json.Unmarshal(c.Ctx.Input.RequestBody, &req); err != nil {
+	if err := json.Unmarshal(c.Body(), &req); err != nil {
 		c.ResponseError(err.Error())
 		return
 	}

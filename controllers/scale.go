@@ -120,7 +120,7 @@ func (c *ApiController) GetPublicScales() {
 func (c *ApiController) UpdateScale() {
 	id := c.Input().Get("id")
 	var s object.Scale
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &s)
+	err := json.Unmarshal(c.Body(), &s)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -160,7 +160,7 @@ func (c *ApiController) UpdateScale() {
 // @router /add-scale [post]
 func (c *ApiController) AddScale() {
 	var s object.Scale
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &s)
+	err := json.Unmarshal(c.Body(), &s)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -184,7 +184,7 @@ func (c *ApiController) AddScale() {
 // @router /delete-scale [post]
 func (c *ApiController) DeleteScale() {
 	var s object.Scale
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &s)
+	err := json.Unmarshal(c.Body(), &s)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return

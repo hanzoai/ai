@@ -103,7 +103,7 @@ func (c *ApiController) UpdateNode() {
 	id := c.Input().Get("id")
 
 	var node object.Node
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &node)
+	err := json.Unmarshal(c.Body(), &node)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -122,7 +122,7 @@ func (c *ApiController) UpdateNode() {
 // @router /add-node [post]
 func (c *ApiController) AddNode() {
 	var node object.Node
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &node)
+	err := json.Unmarshal(c.Body(), &node)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -141,7 +141,7 @@ func (c *ApiController) AddNode() {
 // @router /delete-node [post]
 func (c *ApiController) DeleteNode() {
 	var node object.Node
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &node)
+	err := json.Unmarshal(c.Body(), &node)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return

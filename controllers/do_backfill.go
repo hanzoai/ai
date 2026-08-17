@@ -706,7 +706,7 @@ func (c *ApiController) PostBackfillDOUsage() {
 		Force:  doFlagTrue(c.Input().Get("force")),
 	}
 
-	ctx, cancel := context.WithTimeout(c.Ctx.Request.Context(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(c.Context(), 60*time.Second)
 	defer cancel()
 
 	plan, err := RunDOBackfill(ctx, opts)

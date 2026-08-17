@@ -114,7 +114,7 @@ func (c *ApiController) UpdateVector() {
 	id := c.Input().Get("id")
 
 	var vector object.Vector
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &vector)
+	err := json.Unmarshal(c.Body(), &vector)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -138,7 +138,7 @@ func (c *ApiController) UpdateVector() {
 // @router /add-vector [post]
 func (c *ApiController) AddVector() {
 	var vector object.Vector
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &vector)
+	err := json.Unmarshal(c.Body(), &vector)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -175,7 +175,7 @@ func (c *ApiController) AddVector() {
 // @router /delete-vector [post]
 func (c *ApiController) DeleteVector() {
 	var vector object.Vector
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &vector)
+	err := json.Unmarshal(c.Body(), &vector)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return

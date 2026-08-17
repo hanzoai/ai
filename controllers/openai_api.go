@@ -1307,7 +1307,7 @@ func (c *ApiController) authResolveProvider(token, requestedModel, orgId string)
 		// contract as the IAM key path. The raw X-Org-Id goes in unvalidated: the
 		// resolver holds the signed `orgs` claim and is the only place allowed to
 		// decide whether the request may act — and pay — in that org.
-		provider, authUser, upstreamModel, err = resolveProviderFromJwt(token, strings.TrimSpace(c.Ctx.Input.Header("X-Org-Id")), requestedModel, lang)
+		provider, authUser, upstreamModel, err = resolveProviderFromJwt(token, strings.TrimSpace(c.Header("X-Org-Id")), requestedModel, lang)
 		if err != nil {
 			err = wrapAuth(err)
 			return
@@ -1418,7 +1418,7 @@ func (c *ApiController) chatCompletions(from caller) {
 	var token string
 	if from == callerBearer {
 		// Extract Bearer token
-		authHeader := c.Ctx.Request.Header.Get("Authorization")
+		authHeader := c.Header("Authorization")
 		if !strings.HasPrefix(authHeader, "Bearer ") {
 			c.ResponseErrorWithStatus(401, c.T("openai:Invalid API key format. Expected 'Bearer API_KEY'"))
 			return
@@ -1428,9 +1428,9 @@ func (c *ApiController) chatCompletions(from caller) {
 
 		// Publishable keys (pk-) cannot access completions — reject early
 		if isPublishableKey(token) {
-			c.Ctx.Output.SetStatus(403)
-			c.Ctx.Output.Header("Content-Type", "application/json")
-			c.Ctx.Output.Body([]byte(`{"error":{"message":"Publishable keys (pk-) can only access read-only endpoints (/v1/models, /health). Use a secret key (sk-) for completions.","type":"auth_error","code":403}}`))
+			c.Status(403)
+			c.SetHeader("Content-Type", "application/json")
+			c.Bytes(http.StatusOK, []byte(`{"error":{"message":"Publishable keys (pk-) can only access read-only endpoints (/v1/models, /health). Use a secret key (sk-) for completions.","type":"auth_error","code":403}}`))
 			c.EnableRender = false
 			return
 		}
@@ -1444,7 +1444,7 @@ func (c *ApiController) chatCompletions(from caller) {
 	// from an unauthenticated caller must not return 200. A valid credential with
 	// a bad body gets 400 (not 200).
 	var request openai.ChatCompletionRequest
-	if err := json.Unmarshal(c.Ctx.Input.RequestBody, &request); err != nil {
+	if err := json.Unmarshal(c.Body(), &request); err != nil {
 		if from == callerBearer {
 			if authErr := c.authenticate(token); authErr != nil {
 				c.ResponseAuthError(authErr)
@@ -1517,8 +1517,8 @@ func (c *ApiController) chatCompletions(from caller) {
 		// Fold this request's TASK into the region's task-mix for the live-traffic
 		// globe — geo from the edge headers only (NO IP), aggregates only. Best-effort.
 		object.GlobalTraffic.RecordTask(
-			c.Ctx.Request.Header.Get("CF-IPCountry"),
-			c.Ctx.Request.Header.Get("CF-Region-Code"),
+			c.Header("CF-IPCountry"),
+			c.Header("CF-Region-Code"),
 			task,
 		)
 	} else if !isAutoModel(request.Model) {
@@ -1528,8 +1528,8 @@ func (c *ApiController) chatCompletions(from caller) {
 		task := recordExplicitRouting(request.Model, orgId, routingUser, requestId, &request)
 		routedTask, routingRecorded = task, true
 		object.GlobalTraffic.RecordTask(
-			c.Ctx.Request.Header.Get("CF-IPCountry"),
-			c.Ctx.Request.Header.Get("CF-Region-Code"),
+			c.Header("CF-IPCountry"),
+			c.Header("CF-Region-Code"),
 			task,
 		)
 	}
@@ -1619,7 +1619,7 @@ func (c *ApiController) chatCompletions(from caller) {
 	// running out of money and the product going dark.
 	var familyRefused []attempt
 	if fam := familyForProviderType(provider.Type); fam != nil {
-		familyRefused = c.pipeToFamily(fam, "chat/completions", "openai", request.Model, c.Ctx.Input.RequestBody, request.Stream, orgId, authUser, isPremium, hold, requestStartTime)
+		familyRefused = c.pipeToFamily(fam, "chat/completions", "openai", request.Model, c.Body(), request.Stream, orgId, authUser, isPremium, hold, requestStartTime)
 		if familyRefused == nil {
 			return
 		}
@@ -1754,7 +1754,7 @@ func (c *ApiController) chatCompletions(from caller) {
 
 	if route != nil {
 		modelResult, actualProvider, tried, err = ask{
-			ctx:       c.Ctx.Request.Context(),
+			ctx:       c.Context(),
 			route:     route,
 			org:       ledger,
 			model:     request.Model,
@@ -1801,10 +1801,10 @@ func (c *ApiController) chatCompletions(from caller) {
 				ClientIP:  c.Ctx.Request.RemoteAddr,
 				RequestID: requestId,
 			}
-			errRecord.bind(c.Ctx.Request.Context(), authUser)
+			errRecord.bind(c.Context(), authUser)
 			errRecord.BYO, errRecord.Account = providerBYO(provider, authUser)
 			recordUsage(errRecord)
-			recordTrace(c.Ctx.Request.Context(), errRecord, requestStartTime)
+			recordTrace(c.Context(), errRecord, requestStartTime)
 		}
 		c.ResponseError(err.Error())
 		return
@@ -1830,7 +1830,7 @@ func (c *ApiController) chatCompletions(from caller) {
 			ClientIP:         c.Ctx.Request.RemoteAddr,
 			RequestID:        requestId,
 		}
-		successRecord.bind(c.Ctx.Request.Context(), authUser)
+		successRecord.bind(c.Context(), authUser)
 		// Whether this call was "bring your own key" is a property of the row
 		// that SPENT a credential, not of the row auth resolved before failover
 		// moved the request. Reading the latter is how a call served on the
@@ -1838,7 +1838,7 @@ func (c *ApiController) chatCompletions(from caller) {
 		// the platform eating the upstream.
 		successRecord.BYO, successRecord.Account = providerBYO(actualProvider.row, authUser)
 		recordUsage(successRecord)
-		recordTrace(c.Ctx.Request.Context(), successRecord, requestStartTime)
+		recordTrace(c.Context(), successRecord, requestStartTime)
 		// Settle the reservation with the ACTUAL cost (this works identically for
 		// streaming and non-streaming non-tool responses — both have real token
 		// counts here from the QueryText pipeline).
@@ -1877,8 +1877,8 @@ func (c *ApiController) chatCompletions(from caller) {
 			return
 		}
 
-		c.Ctx.Output.Header("Content-Type", "application/json")
-		c.Ctx.Output.Body(jsonResponse)
+		c.SetHeader("Content-Type", "application/json")
+		c.Bytes(http.StatusOK, jsonResponse)
 	} else {
 		err = writer.Close(
 			modelResult.PromptTokenCount,
@@ -1896,7 +1896,7 @@ func (c *ApiController) chatCompletions(from caller) {
 	// goroutine after cheap gates, and is a no-op unless ROUTER_JUDGE_ENABLED. The
 	// prompt/response are passed transiently — never persisted (see router_judge.go).
 	if routingRecorded {
-		judgeRoutedResponse(c.Ctx.Request.UserAgent(), orgId, requestId, c.Ctx.Request.Header.Get("CF-IPCountry"), request.Model, routedTask, question, writer.MessageString())
+		judgeRoutedResponse(c.Ctx.Request.UserAgent(), orgId, requestId, c.Header("CF-IPCountry"), request.Model, routedTask, question, writer.MessageString())
 	}
 	c.EnableRender = false
 }
@@ -1949,8 +1949,8 @@ func (c *ApiController) ListModels() {
 		return
 	}
 
-	c.Ctx.Output.Header("Content-Type", "application/json")
-	c.Ctx.Output.Body(jsonResponse)
+	c.SetHeader("Content-Type", "application/json")
+	c.Bytes(http.StatusOK, jsonResponse)
 	c.EnableRender = false
 }
 
@@ -2044,10 +2044,10 @@ func (c *ApiController) proxyToolRequest(
 				ClientIP:  c.Ctx.Request.RemoteAddr,
 				RequestID: requestId,
 			}
-			errRecord.bind(c.Ctx.Request.Context(), authUser)
+			errRecord.bind(c.Context(), authUser)
 			errRecord.BYO, errRecord.Account = providerBYO(provider, authUser)
 			recordUsage(errRecord)
-			recordTrace(c.Ctx.Request.Context(), errRecord, requestStartTime)
+			recordTrace(c.Context(), errRecord, requestStartTime)
 		}
 		c.ResponseError(fmt.Sprintf("Upstream request failed: %s", err.Error()))
 		return
@@ -2114,10 +2114,10 @@ func (c *ApiController) proxyToolRequest(
 				ClientIP:         c.Ctx.Request.RemoteAddr,
 				RequestID:        requestId,
 			}
-			successRecord.bind(c.Ctx.Request.Context(), authUser)
+			successRecord.bind(c.Context(), authUser)
 			successRecord.BYO, successRecord.Account = providerBYO(provider, authUser)
 			recordUsage(successRecord)
-			recordTrace(c.Ctx.Request.Context(), successRecord, requestStartTime)
+			recordTrace(c.Context(), successRecord, requestStartTime)
 		}
 		hold.settle(actualCents)
 	} else {
@@ -2178,10 +2178,10 @@ func (c *ApiController) proxyToolRequest(
 				ClientIP:         c.Ctx.Request.RemoteAddr,
 				RequestID:        requestId,
 			}
-			successRecord.bind(c.Ctx.Request.Context(), authUser)
+			successRecord.bind(c.Context(), authUser)
 			successRecord.BYO, successRecord.Account = providerBYO(provider, authUser)
 			recordUsage(successRecord)
-			recordTrace(c.Ctx.Request.Context(), successRecord, requestStartTime)
+			recordTrace(c.Context(), successRecord, requestStartTime)
 		}
 		hold.settle(actualCents)
 
@@ -2191,7 +2191,7 @@ func (c *ApiController) proxyToolRequest(
 			out = stripReasoningBody(out)
 		}
 		c.Ctx.ResponseWriter.WriteHeader(resp.StatusCode)
-		c.Ctx.Output.Body(out)
+		c.Bytes(http.StatusOK, out)
 	}
 	c.EnableRender = false
 }
@@ -2445,7 +2445,7 @@ func (c *ApiController) proxyToolRequestAnthropic(
 	if resp.StatusCode != http.StatusOK {
 		log.Error("[proxyToolRequest] Anthropic error %d: %s", resp.StatusCode, string(respBody))
 		c.Ctx.ResponseWriter.WriteHeader(resp.StatusCode)
-		c.Ctx.Output.Body(respBody)
+		c.Bytes(http.StatusOK, respBody)
 		c.EnableRender = false
 		return
 	}
@@ -2541,10 +2541,10 @@ func (c *ApiController) proxyToolRequestAnthropic(
 			ClientIP:         c.Ctx.Request.RemoteAddr,
 			RequestID:        requestId,
 		}
-		successRecord.bind(c.Ctx.Request.Context(), authUser)
+		successRecord.bind(c.Context(), authUser)
 		successRecord.BYO, successRecord.Account = providerBYO(provider, authUser)
 		recordUsage(successRecord)
-		recordTrace(c.Ctx.Request.Context(), successRecord, requestStartTime)
+		recordTrace(c.Context(), successRecord, requestStartTime)
 	}
 	hold.settle(calculateCostCentsWithCache(request.Model, anthropicResp.Usage.InputTokens, anthropicResp.Usage.OutputTokens, 0, 0))
 
@@ -2585,7 +2585,7 @@ func (c *ApiController) proxyToolRequestAnthropic(
 		return
 	}
 
-	c.Ctx.Output.Header("Content-Type", "application/json")
-	c.Ctx.Output.Body(jsonResponse)
+	c.SetHeader("Content-Type", "application/json")
+	c.Bytes(http.StatusOK, jsonResponse)
 	c.EnableRender = false
 }

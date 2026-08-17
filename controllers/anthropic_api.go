@@ -366,9 +366,9 @@ func (c *ApiController) respondAnthropicError(errType string, message string, st
 		return
 	}
 
-	c.Ctx.Output.Header("Content-Type", "application/json")
+	c.SetHeader("Content-Type", "application/json")
 	c.Ctx.ResponseWriter.WriteHeader(status)
-	c.Ctx.Output.Body(jsonData)
+	c.Bytes(http.StatusOK, jsonData)
 	c.EnableRender = false
 }
 
@@ -394,9 +394,9 @@ func anthropicErrorType(err error) string {
 // @router /messages [post]
 func (c *ApiController) AnthropicMessages() {
 	// Extract token: prefer x-api-key, fall back to Authorization: Bearer
-	token := c.Ctx.Request.Header.Get("x-api-key")
+	token := c.Header("x-api-key")
 	if token == "" {
-		authHeader := c.Ctx.Request.Header.Get("Authorization")
+		authHeader := c.Header("Authorization")
 		if strings.HasPrefix(authHeader, "Bearer ") {
 			token = strings.TrimPrefix(authHeader, "Bearer ")
 		}
@@ -419,7 +419,7 @@ func (c *ApiController) AnthropicMessages() {
 	// probe-able 400. A valid credential with a bad body gets the precise 400.
 	var request AnthropicRequest
 	badReq := ""
-	if err := json.Unmarshal(c.Ctx.Input.RequestBody, &request); err != nil {
+	if err := json.Unmarshal(c.Body(), &request); err != nil {
 		badReq = fmt.Sprintf("Failed to parse request: %s", err.Error())
 	} else if request.Model == "" {
 		badReq = "model is required"
@@ -498,7 +498,7 @@ func (c *ApiController) AnthropicMessages() {
 	// carries on to the route's declared alternates below.
 	var familyRefused []attempt
 	if fam := familyForProviderType(provider.Type); fam != nil {
-		familyRefused = c.pipeToFamily(fam, "messages", "anthropic", request.Model, c.Ctx.Input.RequestBody, request.Stream, orgId, authUser, isPremium, hold, requestStartTime)
+		familyRefused = c.pipeToFamily(fam, "messages", "anthropic", request.Model, c.Body(), request.Stream, orgId, authUser, isPremium, hold, requestStartTime)
 		if familyRefused == nil {
 			return
 		}
@@ -618,7 +618,7 @@ func (c *ApiController) AnthropicMessages() {
 		// identity case — so there is no second, retry-less path that silently
 		// turns a 429 into a hard client 500.
 		modelResult, actualProvider, tried, err = ask{
-			ctx:       c.Ctx.Request.Context(),
+			ctx:       c.Context(),
 			route:     route,
 			org:       c.billingOrg(authUser),
 			model:     request.Model,
@@ -640,7 +640,7 @@ func (c *ApiController) AnthropicMessages() {
 			c.respondAnthropicError("api_error", fmt.Sprintf("Failed to get model provider: %s", err.Error()), 500)
 			return
 		}
-		err = retryTransient(c.Ctx.Request.Context(), currentRetryPolicy(), func() error {
+		err = retryTransient(c.Context(), currentRetryPolicy(), func() error {
 			if writer.StreamSent {
 				return errPartiallyWritten
 			}
@@ -675,10 +675,10 @@ func (c *ApiController) AnthropicMessages() {
 				ClientIP:  c.Ctx.Request.RemoteAddr,
 				RequestID: requestId,
 			}
-			errRecord.bind(c.Ctx.Request.Context(), authUser)
+			errRecord.bind(c.Context(), authUser)
 			errRecord.BYO, errRecord.Account = providerBYO(provider, authUser)
 			recordUsage(errRecord)
-			recordTrace(c.Ctx.Request.Context(), errRecord, requestStartTime)
+			recordTrace(c.Context(), errRecord, requestStartTime)
 		}
 		// Surface the real upstream status: a 429 stays a 429 (rate_limit_error)
 		// so the client retries with backoff instead of treating it as a fatal
@@ -708,12 +708,12 @@ func (c *ApiController) AnthropicMessages() {
 			ClientIP:         c.Ctx.Request.RemoteAddr,
 			RequestID:        requestId,
 		}
-		successRecord.bind(c.Ctx.Request.Context(), authUser)
+		successRecord.bind(c.Context(), authUser)
 		// The row that SPENT a credential decides whether this was the customer's
 		// own key — not the row auth resolved before failover moved the request.
 		successRecord.BYO, successRecord.Account = providerBYO(actualProvider.row, authUser)
 		recordUsage(successRecord)
-		recordTrace(c.Ctx.Request.Context(), successRecord, requestStartTime)
+		recordTrace(c.Context(), successRecord, requestStartTime)
 		hold.settle(calculateCostCentsWithCache(request.Model, modelResult.PromptTokenCount, modelResult.ResponseTokenCount, 0, 0))
 	}
 
@@ -742,8 +742,8 @@ func (c *ApiController) AnthropicMessages() {
 			return
 		}
 
-		c.Ctx.Output.Header("Content-Type", "application/json")
-		c.Ctx.Output.Body(jsonResponse)
+		c.SetHeader("Content-Type", "application/json")
+		c.Bytes(http.StatusOK, jsonResponse)
 	} else {
 		if err := writer.Close(
 			modelResult.PromptTokenCount,
@@ -855,10 +855,10 @@ func (c *ApiController) proxyAnthropicToolRequest(
 				Premium: isPremium, Stream: true, Status: "success",
 				ClientIP: c.Ctx.Request.RemoteAddr, RequestID: requestId,
 			}
-			rec.bind(c.Ctx.Request.Context(), authUser)
+			rec.bind(c.Context(), authUser)
 			rec.BYO, rec.Account = providerBYO(provider, authUser)
 			recordUsage(rec)
-			recordTrace(c.Ctx.Request.Context(), rec, requestStartTime)
+			recordTrace(c.Context(), rec, requestStartTime)
 			hold.settle(calculateCostCentsWithCache(request.Model, capPrompt, capCompletion, 0, 0))
 		}
 	} else {
@@ -881,13 +881,13 @@ func (c *ApiController) proxyAnthropicToolRequest(
 				Premium: isPremium, Stream: false, Status: "success",
 				ClientIP: c.Ctx.Request.RemoteAddr, RequestID: requestId,
 			}
-			rec.bind(c.Ctx.Request.Context(), authUser)
+			rec.bind(c.Context(), authUser)
 			rec.BYO, rec.Account = providerBYO(provider, authUser)
 			recordUsage(rec)
-			recordTrace(c.Ctx.Request.Context(), rec, requestStartTime)
+			recordTrace(c.Context(), rec, requestStartTime)
 			hold.settle(calculateCostCentsWithCache(request.Model, prompt, completion, 0, 0))
 		}
-		c.Ctx.Output.Body(respBody)
+		c.Bytes(http.StatusOK, respBody)
 	}
 	c.EnableRender = false
 }
@@ -948,10 +948,10 @@ func (c *ApiController) proxyAnthropicViaOpenAI(
 				Stream: request.Stream, Status: "error", ErrorMsg: err.Error(),
 				ClientIP: c.Ctx.Request.RemoteAddr, RequestID: requestId,
 			}
-			errRecord.bind(c.Ctx.Request.Context(), authUser)
+			errRecord.bind(c.Context(), authUser)
 			errRecord.BYO, errRecord.Account = providerBYO(provider, authUser)
 			recordUsage(errRecord)
-			recordTrace(c.Ctx.Request.Context(), errRecord, requestStartTime)
+			recordTrace(c.Context(), errRecord, requestStartTime)
 		}
 		c.respondAnthropicError("api_error", "Upstream request failed: "+err.Error(), 502)
 		return
@@ -1008,8 +1008,8 @@ func (c *ApiController) proxyAnthropicViaOpenAI(
 		c.respondAnthropicError("api_error", err.Error(), 500)
 		return
 	}
-	c.Ctx.Output.Header("Content-Type", "application/json")
-	c.Ctx.Output.Body(out)
+	c.SetHeader("Content-Type", "application/json")
+	c.Bytes(http.StatusOK, out)
 	c.recordAnthropicToolUsage(request, provider, authUser, isPremium, false, requestId, prompt, completion, requestStartTime, hold)
 	c.EnableRender = false
 }
@@ -1031,10 +1031,10 @@ func (c *ApiController) recordAnthropicToolUsage(
 			Currency: "USD", Premium: isPremium, Stream: stream, Status: "success",
 			ClientIP: c.Ctx.Request.RemoteAddr, RequestID: requestId,
 		}
-		rec.bind(c.Ctx.Request.Context(), authUser)
+		rec.bind(c.Context(), authUser)
 		rec.BYO, rec.Account = providerBYO(provider, authUser)
 		recordUsage(rec)
-		recordTrace(c.Ctx.Request.Context(), rec, requestStartTime)
+		recordTrace(c.Context(), rec, requestStartTime)
 	}
 	hold.settle(actualCents)
 }
@@ -1132,9 +1132,9 @@ func repeatable(msg string) bool {
 // @Description Anthropic-compatible token counting.
 // @router /messages/count_tokens [post]
 func (c *ApiController) AnthropicCountTokens() {
-	token := c.Ctx.Request.Header.Get("x-api-key")
+	token := c.Header("x-api-key")
 	if token == "" {
-		authHeader := c.Ctx.Request.Header.Get("Authorization")
+		authHeader := c.Header("Authorization")
 		if strings.HasPrefix(authHeader, "Bearer ") {
 			token = strings.TrimPrefix(authHeader, "Bearer ")
 		}
@@ -1149,7 +1149,7 @@ func (c *ApiController) AnthropicCountTokens() {
 	}
 
 	var request AnthropicRequest
-	parseErr := json.Unmarshal(c.Ctx.Input.RequestBody, &request)
+	parseErr := json.Unmarshal(c.Body(), &request)
 	if authErr := c.authenticate(token); authErr != nil {
 		c.respondAnthropicError("authentication_error", authErr.Error(), 401)
 		return
@@ -1183,7 +1183,7 @@ func (c *ApiController) AnthropicCountTokens() {
 	}
 
 	out, _ := json.Marshal(map[string]interface{}{"input_tokens": n})
-	c.Ctx.Output.Header("Content-Type", "application/json")
-	c.Ctx.Output.Body(out)
+	c.SetHeader("Content-Type", "application/json")
+	c.Bytes(http.StatusOK, out)
 	c.EnableRender = false
 }

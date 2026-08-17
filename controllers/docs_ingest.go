@@ -47,7 +47,7 @@ func (c *ApiController) IngestDocs() {
 	}
 
 	var req object.IngestRequest
-	if err := json.Unmarshal(c.Ctx.Input.RequestBody, &req); err != nil {
+	if err := json.Unmarshal(c.Body(), &req); err != nil {
 		c.ResponseError(err.Error())
 		return
 	}
@@ -70,7 +70,7 @@ func (c *ApiController) IngestDocs() {
 	// never a dependency: if the engine is unwired (TASKS_ADDR unset) OR any enqueue
 	// fails, fall through to running inline so ingest ALWAYS works.
 	if object.IsAsyncIngestSource(req.Source) {
-		wfID, err := object.EnqueueIngest(c.Ctx.Request.Context(), auth.Owner, &req, lang)
+		wfID, err := object.EnqueueIngest(c.Context(), auth.Owner, &req, lang)
 		if err == nil {
 			recordSearchUsage(auth, "index-docs", req.Source, "enqueued", 0, c.Ctx.Request.RemoteAddr)
 			c.ResponseOk(&object.IngestStats{

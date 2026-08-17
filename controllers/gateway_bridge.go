@@ -58,8 +58,8 @@ func (c *ApiController) RouterConfigBridge() {
 		req.Method,
 		req.URL.Path,
 		req.URL.RawQuery,
-		c.Ctx.Input.Header("Authorization"),
-		c.Ctx.Input.RequestBody,
+		c.Header("Authorization"),
+		c.Body(),
 	)
 	switch {
 	case err != nil:
@@ -84,9 +84,9 @@ func (c *ApiController) RouterConfigBridge() {
 // respondAnthropicError direct-write idiom (Content-Type, WriteHeader, Body,
 // render off) so the native handler's exact JSON/JSONL bytes reach the client.
 func (c *ApiController) writeBridgeRaw(status int, body []byte) {
-	c.Ctx.Output.Header("Content-Type", "application/json; charset=utf-8")
+	c.SetHeader("Content-Type", "application/json; charset=utf-8")
 	c.Ctx.ResponseWriter.WriteHeader(status)
-	_ = c.Ctx.Output.Body(body)
+	_ = c.Bytes(http.StatusOK, body)
 }
 
 // writeBridgeJSON encodes and relays a bridge-local envelope (the only responses

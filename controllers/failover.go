@@ -322,7 +322,7 @@ func (c *ApiController) recordRefusals(model string, tried []attempt, user *iam.
 			ClientIP:  c.Ctx.Request.RemoteAddr,
 			RequestID: requestId,
 		}
-		rec.bind(c.Ctx.Request.Context(), user)
-		recordTrace(c.Ctx.Request.Context(), rec, start)
+		rec.bind(c.Context(), user)
+		recordTrace(c.Context(), rec, start)
 	}
 }

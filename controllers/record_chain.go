@@ -30,7 +30,7 @@ import (
 // @router /commit-record [post]
 func (c *ApiController) CommitRecord() {
 	var record object.Record
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &record)
+	err := json.Unmarshal(c.Body(), &record)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -49,7 +49,7 @@ func (c *ApiController) CommitRecord() {
 // @router /commit-record-second [post]
 func (c *ApiController) CommitRecordSecond() {
 	var record object.Record
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &record)
+	err := json.Unmarshal(c.Body(), &record)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return

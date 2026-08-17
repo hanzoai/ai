@@ -238,7 +238,7 @@ func (c *ApiController) GetAIConnectionUsage() {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(c.Ctx.Request.Context(), 25*time.Second)
+	ctx, cancel := context.WithTimeout(c.Context(), 25*time.Second)
 	defer cancel()
 	res, err := imp.importUsage(ctx, key, from, to)
 	if err != nil {

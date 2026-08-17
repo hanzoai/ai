@@ -99,7 +99,7 @@ func (c *ApiController) GetConnection() {
 // @router /delete-connection [post]
 func (c *ApiController) DeleteConnection() {
 	var connection object.Connection
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &connection)
+	err := json.Unmarshal(c.Body(), &connection)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -127,7 +127,7 @@ func (c *ApiController) UpdateConnection() {
 	id := c.Input().Get("id")
 
 	var connection object.Connection
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &connection)
+	err := json.Unmarshal(c.Body(), &connection)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -146,7 +146,7 @@ func (c *ApiController) UpdateConnection() {
 // @router /add-connection [post]
 func (c *ApiController) AddConnection() {
 	var connection object.Connection
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &connection)
+	err := json.Unmarshal(c.Body(), &connection)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
