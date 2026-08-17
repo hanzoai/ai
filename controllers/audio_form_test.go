@@ -16,9 +16,7 @@ package controllers
 
 import (
 	"bytes"
-	"io"
 	"mime/multipart"
-	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -47,29 +45,27 @@ func openAITranscribeBody(t *testing.T, audio []byte, fields map[string]string) 
 	return body, w.FormDataContentType()
 }
 
-// TestReadTranscribeRequestReadsFormFields is the regression guard for the
-// defect that made /v1/audio/transcriptions unusable by every standard client.
-//
-// `model` was read with the router's GetString one line ABOVE the file read. the controller layer
-// resolves GetString through r.Form, and for multipart/form-data Go fills r.Form
-// only inside ParseMultipartForm — which the FILE read is what triggered. So the
-// field read happened before anything had parsed the body and came back empty,
-// and the endpoint answered `requires a "model" field` to a request carrying
-// exactly that. Measured against production before the fix: a form-field model
-// 400'd while the same call with ?model= in the query string went through.
-func TestReadTranscribeRequestReadsFormFields(t *testing.T) {
+// The transcription form is read from the BODY, by parseTranscribeForm, and these
+// pin what it takes off the wire. They used to drive a second reader that took an
+// *http.Request; there is one reader now, and it takes the slice both transports
+// already hold.
+
+// TestTranscribeFormReadsFields pins the fields beside the audio. The endpoint
+// once answered `requires a "model" field` to every request that carried one:
+// net/http fills r.Form only inside ParseMultipartForm, the field was read before
+// anything had parsed the body, and it came back empty. Reading the parse's own
+// output is what makes that unrepresentable.
+func TestTranscribeFormReadsFields(t *testing.T) {
 	audio := []byte("RIFF....WAVEfmt ")
-	body, ct := openAITranscribeBody(t, audio, map[string]string{
+	body, _ := openAITranscribeBody(t, audio, map[string]string{
 		"model":           "whisper",
 		"language":        "de",
 		"response_format": "text",
 	})
-	r := httptest.NewRequest("POST", "/v1/audio/transcriptions", body)
-	r.Header.Set("Content-Type", ct)
 
-	form, _, err := readTranscribeRequest(r)
+	form, err := parseTranscribeForm(body.Bytes())
 	if err != nil {
-		t.Fatalf("readTranscribeRequest: %v", err)
+		t.Fatalf("parseTranscribeForm: %v", err)
 	}
 	if form.model != "whisper" {
 		t.Errorf("model = %q, want whisper — a form field the OpenAI clients all send", form.model)
@@ -78,43 +74,21 @@ func TestReadTranscribeRequestReadsFormFields(t *testing.T) {
 		t.Errorf("language = %q, want de", form.language)
 	}
 	if form.responseFormat != "text" {
-		t.Errorf("response_format = %q, want text", form.responseFormat)
+		t.Errorf("responseFormat = %q, want text", form.responseFormat)
 	}
-	if form.file == nil {
-		t.Fatal("file part not read")
-	}
-	got, _ := io.ReadAll(form.file)
-	if !bytes.Equal(got, audio) {
-		t.Errorf("file bytes = %q, want %q", got, audio)
+	if form.audio == nil {
+		t.Error("no audio part was read")
 	}
 }
 
-// TestReadTranscribeRequestReadsQueryFields asserts the query-string spelling
-// keeps working. ParseMultipartForm merges the URL query into r.Form, so a
-// caller who passed ?model= (the only spelling that worked while the bug was
-// live) is not broken by the fix.
-func TestReadTranscribeRequestReadsQueryFields(t *testing.T) {
-	body, ct := openAITranscribeBody(t, []byte("x"), nil)
-	r := httptest.NewRequest("POST", "/v1/audio/transcriptions?model=whisper&language=fr", body)
-	r.Header.Set("Content-Type", ct)
-
-	form, _, err := readTranscribeRequest(r)
-	if err != nil {
-		t.Fatalf("readTranscribeRequest: %v", err)
-	}
-	if form.model != "whisper" {
-		t.Errorf("model = %q, want whisper (from the query string)", form.model)
-	}
-	if form.language != "fr" {
-		t.Errorf("language = %q, want fr (from the query string)", form.language)
-	}
-}
-
-// TestReadTranscribeRequestFormFieldBeatsNothing pins that the fields survive a
-// body with NO file part: the caller distinguishes "no file" from "no model",
-// so a missing file must not also blank the model (which would report the wrong
-// one of the two 400s).
-func TestReadTranscribeRequestFieldsSurviveMissingFile(t *testing.T) {
+// TestTranscribeFormFieldsSurviveMissingFile pins that the fields survive a body
+// with NO file part, because the caller distinguishes "no file" from "no model"
+// and reports a different 400 for each. A missing file that also blanked the model
+// would report the wrong one.
+//
+// A body without a file is not an ERROR here — it parses, and says so by leaving
+// audio nil. That is the caller's question to ask.
+func TestTranscribeFormFieldsSurviveMissingFile(t *testing.T) {
 	body := &bytes.Buffer{}
 	w := multipart.NewWriter(body)
 	if err := w.WriteField("model", "whisper"); err != nil {
@@ -123,32 +97,38 @@ func TestReadTranscribeRequestFieldsSurviveMissingFile(t *testing.T) {
 	if err := w.Close(); err != nil {
 		t.Fatal(err)
 	}
-	r := httptest.NewRequest("POST", "/v1/audio/transcriptions", body)
-	r.Header.Set("Content-Type", w.FormDataContentType())
 
-	form, _, err := readTranscribeRequest(r)
-	if err == nil {
-		t.Fatal("a body with no file part returned no error")
+	form, err := parseTranscribeForm(body.Bytes())
+	if err != nil {
+		t.Fatalf("a body with fields and no file did not parse: %v", err)
+	}
+	if form.audio != nil {
+		t.Error("audio is not nil for a body carrying no file part")
 	}
 	if form.model != "whisper" {
 		t.Errorf("model = %q, want whisper — the caller reports the FILE as missing, not the model", form.model)
 	}
 }
 
-// TestReadTranscribeRequestNonMultipart asserts a body that is not a multipart
-// form fails as a missing file rather than panicking on a nil r.Form.
-func TestReadTranscribeRequestNonMultipart(t *testing.T) {
-	r := httptest.NewRequest("POST", "/v1/audio/transcriptions", strings.NewReader(`{"model":"whisper"}`))
-	r.Header.Set("Content-Type", "application/json")
-
-	form, _, err := readTranscribeRequest(r)
+// TestTranscribeFormNonMultipart asserts a body that is not a multipart form is
+// refused as one, rather than read as an empty one — which would report a missing
+// file to a caller whose real mistake was the content type.
+func TestTranscribeFormNonMultipart(t *testing.T) {
+	_, err := parseTranscribeForm([]byte(`{"model":"whisper"}`))
 	if err == nil {
 		t.Fatal("a JSON body was accepted as a transcription form")
 	}
-	if form.model != "" {
-		t.Errorf("model = %q, want empty", form.model)
+	if !strings.Contains(err.Error(), "multipart") {
+		t.Errorf("refusal %q does not say what was wrong with the body", err.Error())
 	}
 }
+
+// The query-string spelling of a form field is GONE, and deliberately. net/http's
+// ParseMultipartForm merged the URL query into r.Form, so `?model=whisper` beside
+// a multipart body resolved — which was only ever reachable because the form-field
+// read above was broken. Nothing crossing ZAP carries a query string, so that
+// spelling could not work on both transports, and the OpenAI contract is a form
+// field. The test that pinned it is deleted rather than moved.
 
 // TestAudioResponseLabelTellsTheTruth is the regression guard for the API
 // lying about what it produced. /v1/audio/speech answered

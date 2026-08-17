@@ -50,6 +50,16 @@ const MaxTranscribeUpload = 25 << 20
 // not merely the bytes.
 const MaxSpeechInput = 4096
 
+// fits reports whether a transcription body is small enough to parse. Both
+// transports ask this, so the bound is one expression with one name rather than
+// the same comparison written twice, and it is answerable without standing up a
+// request — which is what the two tests on it do.
+//
+// Stated as the acceptance rather than the refusal, because AudioSpeech below
+// already has a local `oversize` and a package function of that name would sit
+// shadowed inside it, readable as the bound while being a string.
+func fits(body []byte) bool { return len(body) <= MaxTranscribeUpload }
+
 // The transcription form has ONE reader: parseTranscribeForm, in zap_audio.go.
 // It takes the body as a slice, which is what both transports hold — HTTP through
 // the zip context, ZAP as the message it was handed — so neither needs a request
@@ -277,7 +287,7 @@ func (c *ApiController) AudioTranscriptions() {
 	// arrives as one slice, so the bound is a length and the parse is what it
 	// guards: parsing is what turns one body into three more copies of it.
 	body := c.Body()
-	if len(body) > MaxTranscribeUpload {
+	if !fits(body) {
 		// Authenticate first, for the same reason the 400s below do: the size of a
 		// body is not something an unauthenticated caller gets to learn.
 		if authErr := c.authenticate(token); authErr != nil {

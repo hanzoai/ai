@@ -323,7 +323,7 @@ func (c *ApiController) ChatCompletionsPublic() {
 	// it and the record has no other way to know which stranger this was.
 	c.SetContext(withVisitor(c.Context(), visitor))
 
-	c.chatCompletions(callerPublic)
+	c.chatCompletions(callerPublic, nil)
 }
 
 // publicSpent refuses a visitor who has taken their day.
