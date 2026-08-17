@@ -305,7 +305,15 @@ func embedGatewayBaseIfConfigured() string {
 // gateway base is configured AND the provider is one of the known-broken defaults
 // — a healthy custom embedder is never touched.
 func forceGatewayEmbedder(p *Provider) {
-	if p == nil || !embedderNeedsHeal(p) {
+	if p == nil {
+		return
+	}
+	// HANZO_EMBED_BASE_URL is the operator's DECLARED embedder and wins over
+	// whatever record the store resolves — a row healed in an earlier era is
+	// still a row, and only the deployment knows where embeds belong today.
+	// Without the explicit declaration, only a known-broken record is touched.
+	explicit := strings.TrimSpace(os.Getenv("HANZO_EMBED_BASE_URL")) != ""
+	if !explicit && !embedderNeedsHeal(p) {
 		return
 	}
 	base := embedGatewayBaseIfConfigured()
