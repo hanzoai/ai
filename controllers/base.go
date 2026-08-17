@@ -53,110 +53,71 @@ func GetUserName(user *iam.User) string {
 	return user.Name
 }
 
+// Who this request is, and there is one answer.
+//
+// The credential is the IAM access token: an Authorization bearer, or the
+// first-party cookie a browser sign-in left (setIamTokenCookie). Both carry the
+// SAME signed token, and it is verified here — signature plus the iss/aud policy
+// — so identity is never taken on trust and a missing or unreadable credential
+// grants nothing.
+//
+// There is no session store behind this. There used to be, and the id it handed
+// the browser was itself a credential: a value an attacker could plant and then
+// have the victim's sign-in authenticate. A signed token cannot be fixated that
+// way — the client cannot choose one that verifies — so rotating an id on the way
+// in is no longer a property to remember, it is a shape the credential does not
+// have. IAM mints and revokes; ai reads.
 func (c *ApiController) GetSessionClaims() *iam.Claims {
-	// A nil session store must resolve to "no session user", never a panic. the router's
-	// c.GetSession dereferences Ctx.Input.CruSession directly (session.go), and
-	// CruSession is only populated by SessionStart — which does NOT run when the
-	// embedded cloud binary serves these routes without the router's session hook. On
-	// the chat hot path GetOrg/routingUserId read the session BEFORE credential
-	// auth, so a nil store there was a pre-model nil-deref that the router rendered as a
-	// 500 for EVERY request, unattributed probes included. Guarding here — the ONE
-	// funnel every session accessor passes through — turns that into the correct
-	// flow: no session ⇒ no principal ⇒ fall through to Bearer-credential auth,
-	// which returns a typed 401 for an invalid/absent credential. Fail-secure: a
-	// missing session grants nothing.
-	if c.Ctx == nil || c.Ctx.Input == nil || c.Ctx.Input.CruSession == nil {
+	token := bearerToken(c.Header("Authorization"), c.Fiber().Cookies(iamTokenCookieName))
+	if token == "" {
 		return nil
 	}
-
-	s := c.GetSession("user")
-	if s == nil {
+	claims, err := object.ParseAndValidateJWT(token)
+	if err != nil {
 		return nil
 	}
-
-	// The session value is written only as iam.Claims (SetSessionClaims); a foreign
-	// type is treated as "no session user" rather than panicking on the assertion.
-	claims, ok := s.(iam.Claims)
-	if !ok {
-		return nil
-	}
-	return &claims
+	return claims
 }
 
-// adoptSession puts an identity on this request's session. It is the ONE way a
-// session becomes somebody, and it rotates the id before writing the claims.
+// SetSessionClaims writes who the caller is for the rest of their visit, as the
+// cookie that carries their token. A nil claim ends the visit.
 //
-// The two steps are one call because their ORDER is the security property, and an
-// order is exactly what a later edit drops without noticing. Rotate-then-write is
-// not a convention to remember here; it is the only shape this operation has.
-//
-// Use it wherever a session GAINS an identity — sign-in, and the self-heal that
-// turns a guest into the subject a credential proves. Refreshing the claims of a
-// session that already carries that identity is a different act and keeps using
-// SetSessionClaims: nothing is being granted, so nothing needs a new name.
-func (c *ApiController) adoptSession(claims *iam.Claims) {
-	c.rotateSession()
-	c.SetSessionClaims(claims)
-}
-
-// rotateSession moves this request onto a NEW session id, and must be called by
-// every path that is about to put an identity on a session that did not carry one.
-//
-// The id is the credential for the cookie flow, so a caller must not keep the one
-// they arrived with across the moment they become somebody. An attacker who can
-// plant a value in the browser would otherwise choose the id that their victim's
-// sign-in authenticates, and would need to steal nothing at all.
-//
-// It rebinds BOTH handles the controller can write through — Input.CruSession, which
-// StartSession copies from, and CruSession itself if the request already bound it —
-// so a claim written afterwards lands on the new session and never on the old one.
-//
-// Best effort by design: a deployment with no session manager (the API flow, which
-// authenticates per request and holds no session) has nothing to rotate, and a
-// failure to mint an id must not be the thing that stops a sign-in. Either way no
-// identity has been written yet, so the caller is never left worse than before.
-func (c *ApiController) rotateSession() {
-	if web.Sessions == nil {
-		return
-	}
-	s, err := web.Sessions.RegenerateID(c.Ctx.ResponseWriter, c.Ctx.Input.CruSession)
-	if err != nil || s == nil {
-		log.Warn("session rotate failed, keeping the current id: %v", err)
-		return
-	}
-	c.Ctx.Input.CruSession = s
-	c.CruSession = s
-}
-
+// It takes claims rather than a token because the callers hold claims; the token
+// they were parsed from rides along on AccessToken, and that is what the browser
+// gets back.
 func (c *ApiController) SetSessionClaims(claims *iam.Claims) {
 	if claims == nil {
-		c.DelSession("user")
+		c.clearIamTokenCookie()
 		return
 	}
-
-	c.SetSession("user", *claims)
+	if claims.AccessToken != "" {
+		c.setIamTokenCookie(claims.AccessToken, claims.ExpiresAt.Time)
+	}
 }
 
+// GetSessionUser is the caller, or nil when the request carries no credential
+// this process can verify.
 func (c *ApiController) GetSessionUser() *iam.User {
 	claims := c.GetSessionClaims()
 	if claims == nil {
 		return nil
 	}
-
 	return &claims.User
 }
 
+// SetSessionUser refreshes the identity on the visit's own credential. A nil
+// user ends it.
 func (c *ApiController) SetSessionUser(user *iam.User) {
 	if user == nil {
-		c.DelSession("user")
+		c.SetSessionClaims(nil)
 		return
 	}
-
 	claims := c.GetSessionClaims()
-	if claims != nil {
-		claims.User = *user
-		c.SetSessionClaims(claims)
+	if claims == nil {
+		return
 	}
+	claims.User = *user
+	c.SetSessionClaims(claims)
 }
 
 func (c *ApiController) GetSessionUsername() string {

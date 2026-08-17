@@ -19,16 +19,16 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"strings"
 	"time"
+
+	fiber "github.com/zap-proto/fiber/v3"
 
 	"github.com/hanzoai/ai/conf"
 	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
-	"github.com/hanzoai/ai/web"
 )
 
 // iamTokenCookieName carries the caller's VERIFIED IAM access token (RS256 JWT)
@@ -94,14 +94,29 @@ func (c *ApiController) setIamTokenCookie(accessToken string, expiry time.Time) 
 			maxAge = secs
 		}
 	}
-	http.SetCookie(c.Ctx.ResponseWriter, &http.Cookie{
+	c.Fiber().Cookie(&fiber.Cookie{
 		Name:     iamTokenCookieName,
 		Value:    accessToken,
 		Path:     "/",
 		MaxAge:   maxAge,
 		Secure:   true,
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
+		HTTPOnly: true,
+		SameSite: "Lax",
+	})
+}
+
+// clearIamTokenCookie ends the visit: the browser stops presenting a handle that
+// no longer answers. Expiring it is half of sign-out; revoking the row is the
+// other half, and neither alone is enough.
+func (c *ApiController) clearIamTokenCookie() {
+	c.Fiber().Cookie(&fiber.Cookie{
+		Name:     iamTokenCookieName,
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		Secure:   true,
+		HTTPOnly: true,
+		SameSite: "Lax",
 	})
 }
 
@@ -172,19 +187,15 @@ func (c *ApiController) Signin() {
 	}
 
 	claims.AccessToken = token.AccessToken
-	// The session is becoming somebody, so it takes a new name on the way. adoptSession
-	// is what makes that one act rather than two a later edit could separate.
-	c.adoptSession(claims)
-	// Persist the verified access token so identity survives an in-memory session
-	// loss: a later get-account whose the router session is gone self-heals from this
-	// cookie to the canonical identity instead of falling back to an anonymous
-	// u-<hash> user. See iamTokenCookieName + GetAccount.
+	// Becoming somebody is ONE act: the browser is handed the verified token, and
+	// every later request re-derives identity from it. There is no second handle to
+	// keep in step, which is what there used to be.
 	c.setIamTokenCookie(token.AccessToken, token.Expiry)
 	userId := claims.User.Owner + "/" + claims.User.Name
 	c.Locals("recordUserId", userId)
 
-	// Record session ID
-	sessionId := c.Ctx.Input.CruSession.SessionID()
+	// Record the token this visit rides on, so sign-out can revoke exactly it.
+	sessionId := claims.ID
 	if sessionId != "" && userId != "" {
 		session := &object.Session{
 			Owner:     claims.User.Owner,
@@ -210,7 +221,12 @@ func (c *ApiController) Signout() {
 	// dereferencing a nil user (which panicked → HTTP 500).
 	user := c.GetSessionUser()
 	if user != nil {
-		_, err := object.DeleteSessionId(util.GetIdFromOwnerAndName(user.Owner, user.Name), c.Ctx.Input.CruSession.SessionID())
+		claims := c.GetSessionClaims()
+		jti := ""
+		if claims != nil {
+			jti = claims.ID
+		}
+		_, err := object.DeleteSessionId(util.GetIdFromOwnerAndName(user.Owner, user.Name), jti)
 		if err != nil {
 			c.ResponseError(err.Error())
 			return
@@ -222,9 +238,7 @@ func (c *ApiController) Signout() {
 	// End the session AND stop the browser presenting its handle. Deleting the row
 	// is what makes the id answer nothing; expiring the cookie is what stops a dead
 	// handle riding along for the rest of its year. Sign-out owes both.
-	if web.Sessions != nil {
-		web.Sessions.ClearCookie(c.Ctx.ResponseWriter)
-	}
+	c.clearIamTokenCookie()
 
 	c.ResponseOk()
 }
@@ -467,7 +481,7 @@ func (c *ApiController) GetAccount() {
 			// Rotating only at sign-in would leave a planted id to be authenticated
 			// here instead — the rule is the privilege change, not the route it
 			// arrives on.
-			c.adoptSession(&iam.Claims{User: *p})
+			c.SetSessionClaims(&iam.Claims{User: *p})
 		}
 	}
 

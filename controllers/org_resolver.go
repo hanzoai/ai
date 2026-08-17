@@ -31,7 +31,7 @@ import (
 // the process-local session already holds a stale anonymous guest that would
 // otherwise shadow it. Returns nil when no valid JWT credential is present.
 func (c *ApiController) credentialUser() *iam.User {
-	token := bearerTokenFromRequest(c.Ctx.Request)
+	token := bearerToken(c.Header("Authorization"), c.Fiber().Cookies(iamTokenCookieName))
 	if token == "" {
 		return nil
 	}
@@ -100,7 +100,7 @@ func (c *ApiController) principalIsOwnBrand() bool {
 	if c.GetSessionUser() != nil {
 		return true
 	}
-	token := bearerTokenFromRequest(c.Ctx.Request)
+	token := bearerToken(c.Header("Authorization"), c.Fiber().Cookies(iamTokenCookieName))
 	if token == "" || !isJwtToken(token) {
 		return false
 	}
@@ -119,7 +119,7 @@ func (c *ApiController) principalIsOwnBrand() bool {
 // Called ONLY on the switch path (a request that asked for an org other than its
 // own), so the dominant no-switch request never pays for this parse.
 func (c *ApiController) principalOrgs() []account.OrgRef {
-	token := bearerTokenFromRequest(c.Ctx.Request)
+	token := bearerToken(c.Header("Authorization"), c.Fiber().Cookies(iamTokenCookieName))
 	if token == "" || !isJwtToken(token) {
 		return nil
 	}

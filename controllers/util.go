@@ -404,7 +404,7 @@ func getContentHash(content string) string {
 }
 
 func (c *ApiController) getClientIp() string {
-	res := strings.Replace(util.GetIPFromRequest(c.Ctx.Request), ": ", "", -1)
+	res := strings.Replace(util.GetIPInfo(c.Fiber().IP()), ": ", "", -1)
 	return res
 }
 
