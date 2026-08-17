@@ -29,7 +29,7 @@ package ai
 
 import (
 	"net/http"
-	"sync"
+	"sync/atomic"
 
 	luxlog "github.com/luxfi/log"
 	"github.com/zap-proto/fiber/v3/middleware/adaptor"
@@ -103,6 +103,7 @@ func App(secrets object.SecretStore) (*zip.App, error) {
 
 	// Route wiring is a pure, dependency-free concern (separately tested).
 	routes(app)
+	built.Store(app)
 
 	// Runtime init (DB, providers, filters, billing) — the side that needs
 	// real infrastructure. A failure here is fatal for the AI surface, so it
@@ -151,130 +152,48 @@ func App(secrets object.SecretStore) (*zip.App, error) {
 // is the fallback for the rest of /v1/*. The composition root's
 // /v1/<name>/health routes (registered before MountAll) likewise win over this
 // glob, so liveness is unaffected.
+// routes puts every address this service serves on the app, natively.
+//
+// It used to be a GLOB. A single app.All("/v1/*", relay) caught everything and
+// forwarded it through a net/http adaptor into a second router that held the real
+// table, and a short list of "promoted" addresses was registered specifically so
+// the fleet document could at least NAME them — a glob tells a host a prefix and
+// nothing under it, so three operations that were authenticated, reachable and
+// answering in production had no generated SDK, no MCP tool and no CLI command,
+// and nothing said who served them.
+//
+// Every address is its own route now, so every one is described, and the boundary
+// the relay existed to cross is gone with it: no adaptor, no second router, no
+// context to stow and restore across it.
 func routes(app *zip.App) {
-	// Carry the request context ACROSS the zip→net/http boundary so the OTel SERVER
-	// span cloud stashed on the request (TracingMiddleware → zip SetContext, the Fiber
-	// user-context) reaches the ai handler. The plain zip.AdaptNetHTTP path uses
-	// adaptor.HTTPHandler, which DROPS the Fiber user-context at the fasthttp→net/http
-	// conversion — so controllers.emitGenAISpan started the gen_ai generation span from
-	// a span-less context and it ORPHANED a fresh trace root instead of nesting under
-	// the request span. o11y Observe then rendered every LLM call as an empty,
-	// observation-less trace. HTTPHandlerWithContext stows c.Context() on the request;
-	// handlerAdapter.ServeHTTP restores it onto r.Context() (below), so the generation
-	// span nests as a CHILD of the request server span. One boundary, one carry.
-	wrapped := adaptor.HTTPHandlerWithContext(handlerAdapter{})
-	relay := func(c *zip.Ctx) error { return wrapped(c.Fiber()) }
+	routers.Register(app)
+}
 
-	// NAME what the glob would otherwise swallow. Each promoted address is
-	// registered on the HOST's router at its real pattern, pointing at the SAME
-	// relay the glob below uses — so the request takes the identical path through
-	// the identical handler and only the host's ability to DESCRIBE it changes.
-	//
-	// This is the seam that lets an address be described without being
-	// reimplemented. A glob tells the host a prefix and nothing under it, so the
-	// fleet document printed `/v1/{wildcard1}` where the model catalogue and the
-	// limited-preview access flow are: three operations that were authenticated,
-	// reachable and answering in production while no generated SDK, no MCP tool and
-	// no CLI command existed for any of them, and while nothing said who served
-	// them. One address, one owner, one implementation — and now one description.
-	//
-	// /v1/models/providers joined them later and for the weaker of the two
-	// reasons — OWNERSHIP, not absence. Measured on the live document, it was
-	// already published: the emitter picks a path up either way, and an
-	// unpromoted one is attributed to the module path
-	// (`x-app: github.com/hanzoai/ai`, 314 operations) rather than to the app
-	// (`x-app: ai`). Promoting it puts the providers projection under the same
-	// owner as the catalogue it projects, which is the whole point of it being a
-	// sub-resource of /v1/models. Do NOT read this list as "these would 404
-	// otherwise" — promotion has never changed what is served, only who the
-	// document says serves it.
-	register := map[string]func(string, ...zip.Handler) zip.Router{
-		http.MethodGet:    app.Get,
-		http.MethodPost:   app.Post,
-		http.MethodPut:    app.Put,
-		http.MethodPatch:  app.Patch,
-		http.MethodDelete: app.Delete,
-	}
-	patterns := routers.App.Patterns()
-	for _, pattern := range promoted {
-		for _, method := range patterns[pattern] {
-			if add, ok := register[method]; ok {
-				add(pattern, relay)
-			}
-			// A verb with no host registrar keeps reaching the glob, exactly as it
-			// did before. Promotion is additive: it can leave an address as
-			// undescribed as it already was, never less served than it already was.
+// built is the app this process serves. One value, published by App, so the
+// standalone entrypoint and the ZAP transports reach the SAME one — with the same
+// route table and the same filter chain — instead of each finding its own.
+//
+// It replaced a registered http.Handler set by a SetHandler the boot sequence
+// called: the handler was a second router built at import time, and publishing it
+// was the last step of a two-router arrangement that no longer exists.
+var built atomic.Pointer[zip.App]
+
+// Handler is the HTTP surface as an http.Handler, for the ZAP transports that carry
+// an HTTP request over the binary protocol (controllers.InitZapHandlers and
+// InitForwardBridge). It is the same app the socket serves, so a bridged request
+// meets every filter a socketed one does.
+//
+// The router is resolved PER REQUEST, never captured. App.Fiber() hands out the
+// current generation's router and a generation is a projection — the next build
+// materialises a fresh one, and a captured pointer would keep serving the old
+// table. zip panics on the mirror-image mistake for the same reason.
+func Handler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		app := built.Load()
+		if app == nil {
+			http.Error(w, "ai runtime not initialized", http.StatusServiceUnavailable)
+			return
 		}
-	}
-
-	app.All("/v1/*", relay)
-}
-
-// promoted is the subset of this service's route table whose addresses the host
-// names on its own router. The methods are NOT listed: they are read from
-// [routers.App.Patterns], the live table, so this can never claim a verb the
-// service does not serve — and an entry naming a pattern the table does not hold
-// registers nothing and fails TestPromotedAddressesExistInTheRouteTable.
-//
-// WHY A SUBSET, and it is a safety boundary rather than a backlog. This service
-// registers ~190 addresses at BARE /v1/ paths, and the host mounts ~110 other
-// subsystems in the same namespace. Today the glob is registered LAST and is the
-// broadest pattern, so every one of those subsystems wins its own addresses by
-// specificity. Promoting an address turns it into a SPECIFIC route, and a
-// specific route that another subsystem also claims is decided by registration
-// order — silently. Promoting the whole table would need the host to refuse a
-// duplicate address at compose time, and it cannot yet.
-//
-// So an address joins this list when it is known not to be claimed elsewhere.
-// These are: nothing else in the fleet registers /v1/models or anything under it.
-var promoted = []string{
-	"/v1/models",
-	"/v1/models/providers",
-	"/v1/models/:model/access",
-}
-
-// handlerAdapter forwards each request under /v1/* to the registered runtime
-// handler (the the router ControllerRegister) or returns 503 if none. The path is
-// passed through unchanged: the router's routes are registered at the same bare /v1/*
-// paths the gateway forwards, so no rewrite is needed (and none must happen —
-// rewriting would desync from the /v1 route table).
-type handlerAdapter struct{}
-
-func (handlerAdapter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	h := getHandler()
-	if h == nil {
-		http.Error(w, "ai runtime not initialized", http.StatusServiceUnavailable)
-		return
-	}
-	// Restore the caller's request context — carrying cloud's OTel SERVER span —
-	// that adaptor.HTTPHandlerWithContext stowed on the request (mountRoutes), so the
-	// gen_ai generation span emitted downstream (controllers.emitGenAISpan) nests
-	// under the request span instead of orphaning a new trace root. Absent (a
-	// non-adapted caller, or a request that never opened a server span) leaves r
-	// untouched — never a panic, never a regression.
-	if ctx, ok := adaptor.LocalContextFromHTTPRequest(r); ok && ctx != nil {
-		r = r.WithContext(ctx)
-	}
-	h.ServeHTTP(w, r)
-}
-
-var (
-	hmu        sync.RWMutex
-	registered http.Handler
-)
-
-// SetHandler registers the ai runtime's public HTTP handler (typically
-// web.BeeApp.Handlers after routers/router.go init). Safe for
-// concurrent use; pass nil to deactivate.
-func SetHandler(h http.Handler) {
-	hmu.Lock()
-	registered = h
-	hmu.Unlock()
-}
-
-func getHandler() http.Handler {
-	hmu.RLock()
-	h := registered
-	hmu.RUnlock()
-	return h
+		adaptor.FiberApp(app.Fiber())(w, r)
+	})
 }
