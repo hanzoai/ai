@@ -36,6 +36,7 @@ import (
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/ai/conf"
+	"github.com/hanzoai/ai/controllers"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/routers"
 )
@@ -70,7 +71,21 @@ import (
 // argument and removes the whole dependency: ai now imports zip and nothing of
 // its host's.
 func App(secrets object.SecretStore) (*zip.App, error) {
-	app := zip.New(zip.Config{AppName: "ai"})
+	// THE BODY CEILING IS A TRANSPORT SETTING, AND IT HAS TO BE SAID. Left unset,
+	// fiber substitutes DefaultBodyLimit — 4 MiB — onto fasthttp's
+	// MaxRequestBodySize, and the socket then refuses a 25 MiB transcription
+	// upload before any handler runs. That is a 413 the audio endpoint never sees
+	// and cannot explain, on a limit it believes is its own.
+	//
+	// So the ceiling is stated ABOVE the product limit, not equal to it, and that
+	// gap is the point: an over-large upload reaches AudioTranscriptions, which
+	// authenticates before it reports the size — the size of a body is not
+	// something an unauthenticated caller gets to learn. Past the ceiling there is
+	// nothing to be gained by reading further and the socket cuts it.
+	app := zip.New(zip.Config{
+		AppName:   "ai",
+		BodyLimit: controllers.MaxTranscribeUpload + (1 << 20),
+	})
 	log := luxlog.Default()
 	if log == nil {
 		log = luxlog.New("module", "ai")

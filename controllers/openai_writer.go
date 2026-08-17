@@ -19,15 +19,22 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 
 	"github.com/hanzoai/ai/util"
-	"github.com/hanzoai/ai/web"
 	"github.com/hanzoai/go-openai"
 )
 
-// OpenAIWriter implements a writer that formats responses in OpenAI format
+// OpenAIWriter turns the upstream's event stream into OpenAI's, and writes the
+// result to `out`.
+//
+// It is an io.Writer with an io.Writer inside it, and the inner one is a FIELD
+// because the destination is a value the caller chooses, not a place to be
+// reached for. /v1/responses composes its own translating writer here and reads
+// the same chat stream in a second dialect; giving this type an http.ResponseWriter
+// meant that caller had to reach into the request context and swap what it found.
 type OpenAIWriter struct {
-	web.Response
+	out        io.Writer
 	Cleaner    Cleaner
 	Buffer     []byte
 	MessageBuf []byte
@@ -40,6 +47,23 @@ type OpenAIWriter struct {
 	// client asks for it; sending it unconditionally breaks clients that read
 	// choices[0] on every chunk.
 	IncludeUsage bool
+}
+
+// Flush pushes what has been written as far as the destination allows, and is
+// what makes the stream a stream: an event that sits in a buffer until the reply
+// ends has been typed, not streamed. Best-effort, like the http.Flusher assertion
+// it replaces — a destination that cannot flush (io.Discard, on the non-streaming
+// path) has nothing to push.
+//
+// Two shapes, because both are real here: a *bufio.Writer from the stream callback
+// returns an error, and a wrapper that forwards to one may not.
+func (w *OpenAIWriter) Flush() {
+	switch f := w.out.(type) {
+	case interface{ Flush() error }:
+		_ = f.Flush()
+	case interface{ Flush() }:
+		f.Flush()
+	}
 }
 
 // Write processes incoming data chunks and formats them for OpenAI compatibility
@@ -109,8 +133,8 @@ func (w *OpenAIWriter) Write(p []byte) (n int, err error) {
 		return 0, err
 	}
 
-	// Send as SSE data chunk - use ResponseWriter to avoid recursion
-	_, err = w.ResponseWriter.Write([]byte(fmt.Sprintf("data: %s\n\n", jsonData)))
+	// Out, not this writer: Write is the formatter, so writing to itself would recur.
+	_, err = w.out.Write([]byte(fmt.Sprintf("data: %s\n\n", jsonData)))
 	if err != nil {
 		return 0, err
 	}
@@ -171,7 +195,7 @@ func (w *OpenAIWriter) Close(promptTokens, completionTokens, totalTokens int) er
 			return err
 		}
 
-		_, err = w.ResponseWriter.Write([]byte(fmt.Sprintf("data: %s\n\n", jsonData)))
+		_, err = w.out.Write([]byte(fmt.Sprintf("data: %s\n\n", jsonData)))
 		if err != nil {
 			return err
 		}
@@ -199,14 +223,14 @@ func (w *OpenAIWriter) Close(promptTokens, completionTokens, totalTokens int) er
 				return err
 			}
 
-			_, err = w.ResponseWriter.Write([]byte(fmt.Sprintf("data: %s\n\n", usageData)))
+			_, err = w.out.Write([]byte(fmt.Sprintf("data: %s\n\n", usageData)))
 			if err != nil {
 				return err
 			}
 		}
 
 		// Final [DONE] marker for SSE
-		_, err = w.ResponseWriter.Write([]byte("data: [DONE]\n\n"))
+		_, err = w.out.Write([]byte("data: [DONE]\n\n"))
 		if err != nil {
 			return err
 		}
