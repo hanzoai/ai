@@ -37,7 +37,7 @@ import (
 // visit builds a controller for one request.
 func visit(method, path string) *ApiController {
 	return &ApiController{
-		Ctx: zip.New(zip.Config{DisableStartupMessage: true}).TestCtx(method, path),
+		Ctx: zip.New(zip.Config{DisableStartupMessage: true, ReadBufferSize: 32 << 10}).TestCtx(method, path),
 	}
 }
 

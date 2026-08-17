@@ -8,12 +8,10 @@ package routers
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/hanzoai/ai/object"
-	web "github.com/hanzoai/ai/web"
 )
 
 // TestTenantContextFilter_ThreadsAttribution proves the filter stashes the project
@@ -26,9 +24,9 @@ func TestTenantContextFilter_ThreadsAttribution(t *testing.T) {
 	p = p.with("X-Environment", "staging")
 	p = p.with("Authorization", "Bearer sk-secret-key")
 
-	TenantContextFilter(p.Ctx)
+	p = p.through(TenantContextFilter)
 
-	attr := object.GenAIAttributionFromContext(ctx.Request.Context())
+	attr := object.GenAIAttributionFromContext(p.left())
 	if attr.Project != "research" {
 		t.Fatalf("project not threaded onto request context: %q", attr.Project)
 	}
@@ -52,9 +50,9 @@ func TestTenantContextFilter_ThreadsAttribution(t *testing.T) {
 func TestTenantContextFilter_NoAttributionWhenBare(t *testing.T) {
 	p := ask("GET", "/v1/models")
 
-	TenantContextFilter(p.Ctx)
+	p = p.through(TenantContextFilter)
 
-	if got := object.GenAIAttributionFromContext(ctx.Request.Context()); got != (object.GenAIAttribution{}) {
+	if got := object.GenAIAttributionFromContext(p.left()); got != (object.GenAIAttribution{}) {
 		t.Fatalf("bare request must carry no attribution, got %+v", got)
 	}
 }
@@ -67,9 +65,9 @@ func TestTenantContextFilter_SessionAliasConversationID(t *testing.T) {
 	p = p.with("X-Conversation-Id", "thread-7")
 	p = p.with("Authorization", "Bearer sk-secret-key")
 
-	TenantContextFilter(p.Ctx)
+	p = p.through(TenantContextFilter)
 
-	if attr := object.GenAIAttributionFromContext(ctx.Request.Context()); attr.Session != "thread-7" {
+	if attr := object.GenAIAttributionFromContext(p.left()); attr.Session != "thread-7" {
 		t.Fatalf("session via X-Conversation-Id = %q, want \"thread-7\"", attr.Session)
 	}
 }

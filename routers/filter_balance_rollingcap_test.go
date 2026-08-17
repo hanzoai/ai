@@ -18,11 +18,8 @@ import (
 	stdcontext "context"
 	"errors"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
-
-	web "github.com/hanzoai/ai/web"
 
 	"github.com/hanzoai/ai/object"
 )
@@ -44,10 +41,9 @@ func TestRollingCapGate(t *testing.T) {
 	t.Cleanup(func() { object.SetRollingCapReader(nil) }) // never leak the hook into other tests
 
 	post := func() (int, string) {
-		req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+		p := ask(http.MethodPost, "/v1/chat/completions")
 		p = p.with("Authorization", "Bearer tok")
-		rec := httptest.NewRecorder()
-		BalanceGateFilter(p.Ctx)
+		p = p.through(BalanceGateFilter)
 		return p.status(), p.said()
 	}
 

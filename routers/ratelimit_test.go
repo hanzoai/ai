@@ -16,8 +16,6 @@ package routers
 
 import (
 	"net/http"
-	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 )
@@ -312,12 +310,10 @@ func TestAPageKeyIsThrottledOnItsOwnKey(t *testing.T) {
 	drive := func(key string) int {
 		served := 0
 		for i := 0; i < burst+5; i++ {
-			rec := httptest.NewRecorder()
-			p := web.NewContext()
-			req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(`{}`))
-			p = p.with("Authorization", "Bearer "+key)
-			ctx.Reset(rec, req)
-			RateLimitFilter(p.Ctx)
+			p := ask("POST", "/v1/chat/completions").
+				body([]byte(`{}`)).
+				with("Authorization", "Bearer "+key)
+			p = p.through(RateLimitFilter)
 			if p.status() != http.StatusTooManyRequests {
 				served++
 			}

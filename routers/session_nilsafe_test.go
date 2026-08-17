@@ -1,4 +1,4 @@
-// Copyright 2023-2025 Hanzo AI Inc. All Rights Reserved.
+// Copyright 2023-2026 Hanzo AI Inc. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,40 +14,48 @@
 
 package routers
 
-import (
-	"net/http/httptest"
-	"testing"
+// NO CREDENTIAL IS NO USER — never a panic, and never somebody.
+//
+// This used to guard a nil session store: GetSessionUser dereferenced a store that
+// the embedded binary never populated, so every /v1 request took a pre-model 500.
+// The store is gone and identity is the request's verified token, which changes
+// where the danger is but not that there is one — the filters ask this BEFORE any
+// controller, so an absent or unreadable credential has to resolve to "nobody"
+// rather than fault or, worse, resolve to somebody.
 
-	web "github.com/hanzoai/ai/web"
+import (
+	"net/http"
+	"testing"
 )
 
-// GetSessionUser is the session-read funnel the BeforeRouter filters (RateLimit,
-// BalanceGate, Authz) reach via resolveBillingKey — BEFORE the controller. If the
-// embedded cloud binary serves a request without the router's SessionStart having run,
-// CruSession is nil; the pre-fix code dereferenced it and the router rendered the
-// nil-deref as a 500 on EVERY /v1 request. These lock the fail-secure contract: a
-// nil (or foreign-typed) session store resolves to "no session user", never a
-// panic — so the filters fall through to raw-key limiting and the controller does
-// the real Bearer-credential auth.
-
-func TestGetSessionUserNilStoreNoPanic(t *testing.T) {
-	p := ask("POST", "/v1/chat/completions")
-	p = p.with("Authorization", "Bearer sk-some-probe-token")
-	// Deliberately DO NOT set ctx.Input.CruSession — this is the nil store the
-	// embedded binary can present.
-
-	if u := GetSessionUser(p.Ctx); u != nil {
-		t.Fatalf("GetSessionUser(nil store) = %+v, want nil (no session ⇒ no user)", u)
+func TestNoCredentialIsNobody(t *testing.T) {
+	for _, c := range []struct{ name, authz string }{
+		{"no header at all", ""},
+		{"an empty bearer", "Bearer "},
+		{"a bearer that is not a token", "Bearer not-a-jwt"},
+		{"a bare token with no scheme", "eyJhbGciOiJSUzI1NiJ9.e30.x"},
+		{"the wrong scheme", "Basic dXNlcjpwYXNz"},
+		{"three dots and nothing else", "Bearer ..."},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			q := ask(http.MethodPost, "/v1/chat/completions")
+			if c.authz != "" {
+				q = q.with("Authorization", c.authz)
+			}
+			if u := GetSessionUser(q.Ctx); u != nil {
+				t.Fatalf("resolved a user (%s/%s) from %q — an unverifiable credential must be nobody",
+					u.Owner, u.Name, c.authz)
+			}
+		})
 	}
 }
 
-func TestGetSessionUserForeignTypeNoPanic(t *testing.T) {
-	p := ask("POST", "/v1/chat/completions")
-	// A session value that is NOT iam.Claims must not panic the type assertion.
-	sess := &fakeSession{data: map[interface{}]interface{}{"user": "not-a-claims-struct"}}
-	ctx.Input.CruSession = sess
-
-	if u := GetSessionUser(p.Ctx); u != nil {
-		t.Fatalf("GetSessionUser(foreign type) = %+v, want nil (fail-secure)", u)
+// And the billing key derived from it is empty rather than a guess: the filters bill
+// and rate-limit by what this returns, so a fabricated subject would charge someone.
+func TestNoCredentialBillsNobody(t *testing.T) {
+	q := ask(http.MethodPost, "/v1/chat/completions")
+	subject, namespace, userKey := resolveBillingKey(q.Ctx)
+	if subject != "" || namespace != "" || userKey != "" {
+		t.Fatalf("an anonymous request resolved a billing subject (%q, %q, %q)", subject, namespace, userKey)
 	}
 }
