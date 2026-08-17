@@ -23,7 +23,9 @@ package controllers
 // function that writes them, for both the streamed and the buffered path.
 
 import (
+	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -859,6 +861,224 @@ func TestProxyToolRequestIsOurs(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// proxyJSON relays a provider's answer as its own bytes, and the request that
+// earned those bytes had its model rewritten to the upstream's id on the way out —
+// so the answer came back naming it. It is the same field in both directions: read
+// back the way it was written.
+func TestARelayedEmbeddingAnswersAsTheSku(t *testing.T) {
+	const upstreamID = "thenlper/gte-large"
+	var sent map[string]any
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &sent)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"object":"list","model":"` + upstreamID + `",` +
+			`"data":[{"object":"embedding","index":0,"embedding":[0.1,0.2]}],` +
+			`"usage":{"prompt_tokens":3,"total_tokens":3}}`))
+	}))
+	defer upstream.Close()
+
+	rec := httptest.NewRecorder()
+	ctx := web.NewContext()
+	ctx.Reset(rec, httptest.NewRequest("POST", "/v1/embeddings", nil))
+	c := &ApiController{}
+	c.Init(ctx, "ApiController", "X", nil)
+
+	provider := &object.Provider{
+		Owner: "admin", Name: "shared", Type: "OpenAI",
+		SubType: upstreamID, ProviderUrl: upstream.URL,
+	}
+	body := []byte(`{"model":"` + upstreamID + `","input":"hi"}`)
+	c.proxyJSON(provider, "embeddings", body, "enso-embed", nil, false, time.Now())
+
+	// Still bought under the upstream's own id.
+	if got, _ := sent["model"].(string); got != upstreamID {
+		t.Errorf("upstream was asked for %q, want %q", got, upstreamID)
+	}
+
+	out := rec.Body.String()
+	if strings.Contains(out, upstreamID) {
+		t.Errorf("the relayed answer names the id we buy under:\n%s", out)
+	}
+	var env map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(out), &env); err != nil {
+		t.Fatalf("answer is not JSON: %v\n%s", err, out)
+	}
+	if got := field(t, env, "model"); got != "enso-embed" {
+		t.Errorf("model = %q, want the SKU the caller asked for", got)
+	}
+	// The vectors are the product; relaying them is the whole job.
+	if !strings.Contains(out, "0.1") {
+		t.Errorf("the relay dropped the upstream's own payload:\n%s", out)
+	}
+}
+
+// The same relay on the native surface. Two doors, one rule — the twin is where a
+// fix to an HTTP path quietly stops being true.
+func TestAZapRelayedEmbeddingAnswersAsTheSku(t *testing.T) {
+	const upstreamID = "thenlper/gte-large"
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"object":"list","model":"` + upstreamID + `",` +
+			`"data":[{"object":"embedding","index":0,"embedding":[0.1,0.2]}],` +
+			`"usage":{"prompt_tokens":3,"total_tokens":3}}`))
+	}))
+	defer upstream.Close()
+
+	provider := &object.Provider{
+		Owner: "admin", Name: "shared", Type: "OpenAI",
+		SubType: upstreamID, ProviderUrl: upstream.URL,
+	}
+	body := []byte(`{"model":"` + upstreamID + `","input":"hi"}`)
+	msg, err := zapProxyJSON(context.Background(), provider, "embeddings", body, "enso-embed", nil, false, time.Now())
+	if err != nil {
+		t.Fatalf("zapProxyJSON: %v", err)
+	}
+
+	out := string(msg.Root().Bytes(object.CloudRespBody))
+	if strings.Contains(out, upstreamID) {
+		t.Errorf("the relayed answer names the id we buy under:\n%s", out)
+	}
+	if !strings.Contains(out, "enso-embed") {
+		t.Errorf("the relayed answer does not name the SKU the caller asked for:\n%s", out)
+	}
+}
+
+// The Anthropic tool proxy builds its own envelope rather than stamping a relayed
+// one, which is how it went on publishing the id we buy under after the chat path
+// stopped. It is handed the SKU separately, so every reader on our side of the
+// door — the envelope, the usage row, the price the hold settles at — reads that.
+func TestTheAnthropicToolProxyAnswersAsTheSku(t *testing.T) {
+	const upstreamID = "anthropic-claude-opus-4.5"
+	for _, mode := range []struct {
+		name   string
+		stream bool
+	}{
+		{"buffered", false},
+		{"streamed", true},
+	} {
+		t.Run(mode.name, func(t *testing.T) {
+			var sent map[string]any
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				body, _ := io.ReadAll(r.Body)
+				_ = json.Unmarshal(body, &sent)
+				_, _ = w.Write([]byte(`{"id":"msg_up","content":[{"type":"text","text":"ok"}],` +
+					`"stop_reason":"end_turn","usage":{"input_tokens":3,"output_tokens":1}}`))
+			}))
+			defer upstream.Close()
+
+			rec := httptest.NewRecorder()
+			ctx := web.NewContext()
+			ctx.Reset(rec, httptest.NewRequest("POST", "/v1/chat/completions", nil))
+			c := &ApiController{}
+			c.Init(ctx, "ApiController", "X", nil)
+
+			// What proxyToolRequest hands it: request.Model already rewritten to the
+			// upstream's own id, and the SKU carried separately.
+			request := openai.ChatCompletionRequest{Model: upstreamID, Stream: mode.stream}
+			provider := &object.Provider{
+				Owner: "admin", Name: "anthropic", Type: "Claude",
+				SubType: upstreamID, ProviderUrl: upstream.URL,
+			}
+			c.proxyToolRequestAnthropic(provider, &request, sku, time.Now(), nil, false, "", "req1", nil)
+
+			// The upstream is still dialled under its own id — this changes what the
+			// CALLER is told, not what we ask for.
+			if got, _ := sent["model"].(string); got != upstreamID {
+				t.Errorf("upstream was asked for %q, want %q", got, upstreamID)
+			}
+
+			out := rec.Body.String()
+			if strings.Contains(out, upstreamID) {
+				t.Errorf("%s answer names the id we buy under:\n%s", mode.name, out)
+			}
+			env := map[string]json.RawMessage{}
+			if mode.stream {
+				got := chunks(t, out)
+				if len(got) == 0 {
+					t.Fatalf("no SSE events:\n%s", out)
+				}
+				env = got[0]
+			} else if err := json.Unmarshal([]byte(out), &env); err != nil {
+				t.Fatalf("answer is not JSON: %v\n%s", err, out)
+			}
+			if got := field(t, env, "model"); got != sku {
+				t.Errorf("model = %q, want the SKU the caller asked for", got)
+			}
+		})
+	}
+}
+
+// What the ledger files, and therefore what the customer is charged. recordUsage
+// prices whatever record.Model names, so a row filed under the id we buy under is
+// priced as a model the catalogue has never heard of — which is not the model the
+// customer bought, and not the price it is sold at.
+//
+// The money is the assertion: the hold settles at the SKU's rate, read through the
+// same balance ledger a real request moves.
+func TestTheAnthropicToolProxyMetersTheSku(t *testing.T) {
+	const meterSku = "claude-opus-4-5"
+	const upstreamID = "anthropic-claude-opus-4.5"
+	const subject = "meter/anthropic"
+
+	// Non-vacuous: the two ids price differently, so settling at one is
+	// distinguishable from settling at the other.
+	skuCents := calculateCostCentsWithCache(meterSku, 100_000, 100_000, 0, 0)
+	upCents := calculateCostCentsWithCache(upstreamID, 100_000, 100_000, 0, 0)
+	if skuCents == upCents {
+		t.Fatalf("both ids price at %d cents — this test could not tell them apart", skuCents)
+	}
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"id":"msg_up","content":[{"type":"text","text":"ok"}],` +
+			`"stop_reason":"end_turn","usage":{"input_tokens":100000,"output_tokens":100000}}`))
+	}))
+	defer upstream.Close()
+
+	object.GlobalBalanceLedger.SetBalance(subject, 1_000_000)
+	hold, ok := reserveBudget(subject, 100)
+	if !ok {
+		t.Fatal("reserve against a funded subject must succeed")
+	}
+
+	// The debit's write — the row as the money path receives it.
+	var billed object.UsageEvent
+	prevUsage := object.UsageRecorder()
+	object.SetUsageRecorder(func(_ context.Context, u object.UsageEvent) error {
+		billed = u
+		return nil
+	})
+	t.Cleanup(func() { object.SetUsageRecorder(prevUsage) })
+
+	rec := httptest.NewRecorder()
+	ctx := web.NewContext()
+	ctx.Reset(rec, httptest.NewRequest("POST", "/v1/chat/completions", nil))
+	c := &ApiController{}
+	c.Init(ctx, "ApiController", "X", nil)
+
+	request := openai.ChatCompletionRequest{Model: upstreamID}
+	provider := &object.Provider{
+		Owner: "admin", Name: "anthropic", Type: "Claude",
+		SubType: upstreamID, ProviderUrl: upstream.URL,
+	}
+	user := &iam.User{Owner: "acme", Name: "z"}
+	c.proxyToolRequestAnthropic(provider, &request, meterSku, time.Now(), user, false, "", "req1", hold)
+
+	// The row the ledger files, and therefore the rate it is priced at.
+	if billed.Model != meterSku {
+		t.Errorf("the ledger filed model=%q, want %q — the model this call was sold as", billed.Model, meterSku)
+	}
+
+	// And the hold settles at the same model's rate, so the amount held and the
+	// amount billed cannot be two different opinions about one call.
+	avail, _ := object.GlobalBalanceLedger.Available(subject)
+	spent := int64(1_000_000) - avail
+	if spent != skuCents {
+		t.Errorf("spent %d cents, want %d — the SKU's rate; %q would have charged %d",
+			spent, skuCents, upstreamID, upCents)
 	}
 }
 
