@@ -77,10 +77,7 @@ func TestUpdateMessagePrices(t *testing.T) {
 			if err != nil {
 				panic(err)
 			}
-			messages, err := model.OpenaiRawMessagesToGptVisionMessages(rawMessages)
-			if err != nil {
-				panic(err)
-			}
+			messages := model.OpenaiRawMessagesToGptVisionMessages(rawMessages)
 			// https://github.com/sashabaranov/go-openai/pull/223#issuecomment-1494372875
 			promptTokenCount, err := model.OpenaiNumTokensFromMessages(messages, modelSubType)
 			if err != nil {
