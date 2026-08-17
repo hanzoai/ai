@@ -26,19 +26,25 @@ import (
 
 	zaplib "github.com/luxfi/zap"
 	"github.com/luxfi/zap/forward"
+	"github.com/zap-proto/fiber/v3/middleware/adaptor"
+	"github.com/zap-proto/zip"
 )
 
-// healthHandler builds the same fully-wrapped surface ai bridges in
-// production — a *web.Router (which is an http.Handler) — but
+// healthHandler builds the same kind of surface ai bridges in
+// production — a zip app behind fiber's net/http adaptor, exactly what
+// Handler() hands the bridge — but
 // scoped to the one always-present, auth-exempt route used here: GET
 // /v1/health → ApiController.Health → 200 + {"status":"ok",...}. Using the
 // real ControllerRegister + real controller method proves the bridge drives
 // the router routing and controller dispatch over ZAP, without booting ai's full
 // DB/adapter/filter stack (the production handle is the same type).
 func healthHandler() http.Handler {
-	r := web.NewRouter()
-	r.Router("/v1/health", &ApiController{}, "GET:Health")
-	return r
+	app := zip.New(zip.Config{DisableStartupMessage: true})
+	app.Get("/v1/health", func(c *zip.Ctx) error {
+		(&ApiController{Ctx: c}).Health()
+		return nil
+	})
+	return http.HandlerFunc(adaptor.FiberApp(app.Fiber()))
 }
 
 // TestForwardBridgeServesControllerHandler stands up two live ZAP nodes, registers

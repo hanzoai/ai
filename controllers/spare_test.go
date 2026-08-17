@@ -16,12 +16,13 @@ package controllers
 
 import (
 	"encoding/json"
-	"github.com/hanzoai/decimal"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/hanzoai/decimal"
 
 	"github.com/hanzoai/ai/object"
 	"go.opentelemetry.io/otel/attribute"
@@ -211,13 +212,15 @@ func (f *refuses) serve(t *testing.T) *httptest.Server {
 	}))
 }
 
-// pipe drives the real relay against that family and returns what the client got.
-func (f *refuses) pipe(t *testing.T, fam *modelFamily, sku string) (*httptest.ResponseRecorder, []attempt) {
+// pipe drives the real relay against that family and hands back the controller the
+// client's bytes landed on, plus what was attempted. The controller IS the response
+// here, so there is nothing else to carry.
+func (f *refuses) pipe(t *testing.T, fam *modelFamily, sku string) (*ApiController, []attempt) {
 	t.Helper()
 	body := []byte(`{"model":"` + sku + `","messages":[{"role":"user","content":"2+2?"}]}`)
-	c := visit("POST", "/v1/chat/completions")
+	c := visit(http.MethodPost, "/v1/chat/completions")
 	out := c.pipeToFamily(fam, "chat/completions", "openai", sku, body, false, "acme", nil, false, nil, time.Now())
-	return rec, out
+	return c, out
 }
 
 // restore returns fam to the state it holds now once the test ends.
@@ -339,7 +342,7 @@ func TestOnlyAVendorThatCannotServeMovesTheRequest(t *testing.T) {
 			defer vendor.Close()
 			fam := spareFamily(t, vendor.URL, free)
 
-			rec, refusedBy := fake.pipe(t, fam, sku)
+			c, refusedBy := fake.pipe(t, fam, sku)
 
 			moved := len(fake.asked) > 1
 			if moved != tc.moves {
@@ -352,7 +355,7 @@ func TestOnlyAVendorThatCannotServeMovesTheRequest(t *testing.T) {
 				// The refusal must reach somebody as itself: either relayed to the
 				// client, or handed back so another VENDOR can be tried. What it must
 				// never be is a quietly different model.
-				if refusedBy == nil && rec.Body.Len() == 0 {
+				if refusedBy == nil && sent(c) == "" {
 					t.Error("the refusal vanished")
 				}
 				if strings.Contains(sent(c), free) {
@@ -381,10 +384,10 @@ func TestASpareAnswerSaysWhichModelMadeIt(t *testing.T) {
 	vendor := fake.serve(t)
 	defer vendor.Close()
 
-	rec, _ := fake.pipe(t, spareFamily(t, vendor.URL, free), sku)
+	c, _ := fake.pipe(t, spareFamily(t, vendor.URL, free), sku)
 
 	var got map[string]any
-	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+	if err := json.Unmarshal([]byte(sent(c)), &got); err != nil {
 		t.Fatalf("not JSON: %v\n%s", err, sent(c))
 	}
 	if got["model"] != free {
@@ -400,8 +403,7 @@ func TestASpareAnswerSaysWhichModelMadeIt(t *testing.T) {
 // downgrade the customer did not choose is taking money for the outage.
 func TestASpareRouteIsBilledAtNothing(t *testing.T) {
 	fam := &modelFamily{name: "openrouter", spares: []string{"vendor/big:free"}, loaded: true, fetchedAt: time.Now()}
-	c := &ApiController{}
-	c := visit("POST", "/v1/x")
+	c := visit(http.MethodPost, "/v1/x")
 
 	if cents := c.recordFamilyUsage(fam, "vendor/big:free", "vendor/paid-a", nil, &mark{}, nil, false, false, "r1", 1000, 1000, time.Now(), nil, "success", ""); cents != 0 {
 		t.Errorf("a spare route billed %d cents", cents)
@@ -684,7 +686,7 @@ func TestARefusalCrossesToTheFamilyThatStillHasAFreeRoute(t *testing.T) {
 	spareFamily(t, vendor.URL, free)
 	enso := otherFamily(t, vendor.URL)
 
-	rec, refusedBy := fake.pipe(t, enso, "enso-flash")
+	c, refusedBy := fake.pipe(t, enso, "enso-flash")
 
 	if len(fake.asked) < 2 {
 		t.Fatalf("asked=%v — the refusal did not cross to the free family", fake.asked)
@@ -715,7 +717,7 @@ func TestAFamilysFreeIdIsServedFromThePool(t *testing.T) {
 	spareFamily(t, vendor.URL, free)
 	enso := otherFamily(t, vendor.URL)
 
-	rec, refusedBy := fake.pipe(t, enso, "enso-free")
+	c, refusedBy := fake.pipe(t, enso, "enso-free")
 
 	if len(fake.asked) != 1 || fake.asked[0] != free {
 		t.Fatalf("asked=%v, want exactly the pool's route — a free id is not a model any vendor holds", fake.asked)

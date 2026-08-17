@@ -18,10 +18,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"net/http/httptest"
+	"net/http"
 	"strings"
 	"testing"
 
+	"github.com/hanzoai/ai/internal/authtest"
 	iam "github.com/hanzoai/ai/internal/iam"
 
 	"github.com/hanzoai/ai/object"
@@ -29,22 +30,14 @@ import (
 
 func fptr(f float64) *float64 { return &f }
 
-// newRewardController builds an ApiController wired to an httptest recorder with a
-// request body and an optional session principal (via ctrlFakeSession, so
-// GetSessionUser resolves without a live session manager), for the reward
-// endpoints' status/scope tests.
-func newRewardController(method, url, body string, user *iam.User) (*ApiController, *httptest.ResponseRecorder) {
-	req := httptest.NewRequest(method, url, strings.NewReader(body))
-	ctx := web.NewContext()
-	ctx.Reset(rec, req)
-	ctx.Input.RequestBody = []byte(body)
-	sess := &ctrlFakeSession{data: map[interface{}]interface{}{}}
-	if user != nil {
-		sess.data["user"] = iam.Claims{User: *user}
-	}
-	ctx.Input.CruSession = sess
-	c := visit("GET", "/v1/")
-	return c, rec
+// feedback is a request at the reward endpoint, carrying a body and whatever
+// credential the caller presents. A principal is a token here, so a test that needs
+// one presents a real one rather than seeding a store.
+func feedback(t *testing.T, body, auth string) *ApiController {
+	t.Helper()
+	c := presenting(visit(http.MethodPost, "/v1/feedback"), auth)
+	c.Fiber().Request().SetBody([]byte(body))
+	return c
 }
 
 // TestResolveReward pins the /v1/feedback contract: the signal set maps to a reward
@@ -187,7 +180,7 @@ func TestAddRoutingRewardStatus(t *testing.T) {
 	prev := attachRoutingReward
 	t.Cleanup(func() { attachRoutingReward = prev })
 
-	acme := &iam.User{Owner: "acme", Name: "alice"}
+	acme := iam.User{Owner: "acme", Name: "alice"}
 	mustNotCall := func(string, string, float64) (bool, error) {
 		t.Fatalf("attachRoutingReward called on a reject path")
 		return false, nil
@@ -195,7 +188,7 @@ func TestAddRoutingRewardStatus(t *testing.T) {
 
 	// 401: no credential at all.
 	attachRoutingReward = mustNotCall
-	c, rec := newRewardController("POST", "/v1/feedback", `{"request_id":"r","reward":0.5}`, nil)
+	c := feedback(t, `{"request_id":"r","reward":0.5}`, "")
 	c.AddRoutingReward()
 	if answered(c) != 401 {
 		t.Errorf("no principal → %d, want 401", answered(c))
@@ -204,7 +197,7 @@ func TestAddRoutingRewardStatus(t *testing.T) {
 	// 400: malformed body, missing request_id, out-of-range reward.
 	for _, body := range []string{`{`, `{"reward":0.5}`, `{"request_id":"r","reward":1.5}`} {
 		attachRoutingReward = mustNotCall
-		c, rec := newRewardController("POST", "/v1/feedback", body, acme)
+		c := feedback(t, body, authtest.Bearer(t, acme))
 		c.AddRoutingReward()
 		if answered(c) != 400 {
 			t.Errorf("body %q → %d, want 400", body, answered(c))
@@ -219,7 +212,7 @@ func TestAddRoutingRewardStatus(t *testing.T) {
 		gotOrg, gotReq, gotReward = org, requestId, reward
 		return false, nil
 	}
-	c, rec = newRewardController("POST", "/v1/feedback", `{"request_id":"chatcmpl-abc","reward":0.5}`, acme)
+	c = feedback(t, `{"request_id":"chatcmpl-abc","reward":0.5}`, authtest.Bearer(t, acme))
 	c.AddRoutingReward()
 	if answered(c) != 404 {
 		t.Errorf("unknown request_id → %d, want 404", answered(c))
@@ -237,7 +230,7 @@ func TestAddRoutingRewardStatus(t *testing.T) {
 		gotReward = reward
 		return true, nil
 	}
-	c, rec = newRewardController("POST", "/v1/feedback", `{"request_id":"abc","signal":"rating","rating":3}`, acme)
+	c = feedback(t, `{"request_id":"abc","signal":"rating","rating":3}`, authtest.Bearer(t, acme))
 	c.AddRoutingReward()
 	if answered(c) != 200 {
 		t.Fatalf("found → %d, want 200 (body %s)", answered(c), sent(c))
@@ -249,7 +242,7 @@ func TestAddRoutingRewardStatus(t *testing.T) {
 		Status string              `json:"status"`
 		Data   routingRewardResult `json:"data"`
 	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+	if err := json.Unmarshal([]byte(sent(c)), &env); err != nil {
 		t.Fatalf("response not JSON: %v", err)
 	}
 	if env.Status != "ok" || env.Data.RequestId != "abc" || env.Data.Reward != 1 || !env.Data.Recorded {
@@ -258,7 +251,7 @@ func TestAddRoutingRewardStatus(t *testing.T) {
 
 	// dismiss: accepted (200) but records NOTHING — never reaches the attach.
 	attachRoutingReward = mustNotCall
-	c, rec = newRewardController("POST", "/v1/feedback", `{"request_id":"abc","signal":"dismiss"}`, acme)
+	c = feedback(t, `{"request_id":"abc","signal":"dismiss"}`, authtest.Bearer(t, acme))
 	c.AddRoutingReward()
 	if answered(c) != 200 {
 		t.Fatalf("dismiss → %d, want 200 (body %s)", answered(c), sent(c))
@@ -267,7 +260,7 @@ func TestAddRoutingRewardStatus(t *testing.T) {
 		Status string              `json:"status"`
 		Data   routingRewardResult `json:"data"`
 	}{}
-	_ = json.Unmarshal(rec.Body.Bytes(), &env)
+	_ = json.Unmarshal([]byte(sent(c)), &env)
 	if env.Data.Recorded {
 		t.Errorf("dismiss must not record, got recorded=true")
 	}

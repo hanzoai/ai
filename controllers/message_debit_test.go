@@ -16,7 +16,7 @@ package controllers
 
 import (
 	"context"
-	"net/http/httptest"
+	"net/http"
 	"strconv"
 	"sync"
 	"testing"
@@ -54,9 +54,7 @@ func captureDebits(t *testing.T) *[]debit {
 // newAnswerController builds the controller the answer handlers run on, with a live
 // request so the trace path can read its remote address and context.
 func newAnswerController() *ApiController {
-	req := httptest.NewRequest("GET", "/v1/get-message-answer?id=acme/msg-1", nil)
-	c := visit("GET", "/v1/")
-	return c
+	return visit(http.MethodGet, "/v1/get-message-answer?id=acme/msg-1")
 }
 
 // TestCasibaseChatAnswerIsOneDebit pins the money invariant of a casibase chat

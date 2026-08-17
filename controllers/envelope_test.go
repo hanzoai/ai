@@ -172,12 +172,13 @@ func field(t *testing.T, event map[string]json.RawMessage, key string) string {
 // fix that only covers the buffered body leaks on nearly every request. This drives
 // the real relay — the function that writes the customer's bytes.
 func TestFamilyStreamIsOurs(t *testing.T) {
-	c := ask("POST", "/v1/chat/completions")
+	c := visit("POST", "/v1/chat/completions")
 
 	mk := ourMark()
-	prompt, completion, _, _ := c.relayZenStream(strings.NewReader(upstreamStream), mk)
+	to := toStream()
+	prompt, completion, _, _ := c.relayZenStream(to.w, strings.NewReader(upstreamStream), mk)
 
-	out := sent(c)
+	out := to.String()
 	discloses(t, "streamed chat", []byte(out))
 
 	// Every chunk names us, the SKU, and one id — a client correlates on it, so it
@@ -385,10 +386,11 @@ func TestTheDoorKeepsWhatAClientActsOn(t *testing.T) {
 	})
 
 	t.Run("streamed delta", func(t *testing.T) {
-		c := ask("POST", "/v1/chat/completions")
+		c := visit("POST", "/v1/chat/completions")
 
-		c.relayZenStream(strings.NewReader(toolStream+"\n\ndata: [DONE]\n\n"), ourMark())
-		out := sent(c)
+		to := toStream()
+		c.relayZenStream(to.w, strings.NewReader(toolStream+"\n\ndata: [DONE]\n\n"), ourMark())
+		out := to.String()
 		discloses(t, "streamed tool call", []byte(out))
 		for _, need := range []string{`"name":"get_weather"`, `"id":"call_1"`, `"tool_calls"`} {
 			if !strings.Contains(out, need) {
@@ -450,12 +452,13 @@ func TestTheAnthropicDialectIsOurs(t *testing.T) {
 	})
 
 	t.Run("streamed", func(t *testing.T) {
-		c := ask("POST", "/v1/messages")
+		c := visit("POST", "/v1/messages")
 
 		mk := &mark{id: ourMsg, model: sku, seller: "hanzo", speaks: messageShape}
-		c.relayZenStream(strings.NewReader(anthropicStream), mk)
+		to := toStream()
+		c.relayZenStream(to.w, strings.NewReader(anthropicStream), mk)
 
-		out := sent(c)
+		out := to.String()
 		discloses(t, "anthropic stream", []byte(out))
 		if !strings.Contains(out, "2 + 2 = 4") {
 			t.Errorf("the streamed answer was lost:\n%s", out)
@@ -794,7 +797,7 @@ func TestProxyToolRequestIsOurs(t *testing.T) {
 			}))
 			defer upstream.Close()
 
-			c := ask("POST", "/v1/chat/completions")
+			c := visit("POST", "/v1/chat/completions")
 
 			// The SKU the caller asked for. proxyToolRequest replaces it with the
 			// upstream's own name for the model before dialling, which is exactly why
