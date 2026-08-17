@@ -20,52 +20,121 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"path/filepath"
+	"net/url"
+	"path"
 	"regexp"
 	"strings"
 
+	"github.com/hanzoai/ai/log"
+	"github.com/hanzoai/ai/proxy"
 	"github.com/hanzoai/go-openai"
 )
 
-func extractImagesURL(message string) ([]string, string) {
-	message = strings.Replace(message, "&nbsp;", " ", -1)
-	br := regexp.MustCompile(`<br\s*/?>`)
-	message = br.ReplaceAllString(message, " ")
+const (
+	// maxImageBytes bounds one fetched image. The body is held in memory and
+	// base64-encoded into the prompt, and its size is chosen by whoever wrote
+	// the URL.
+	maxImageBytes = 8 << 20
+	// maxImages bounds how many fetches one message can cause. A page of markup
+	// would otherwise turn a single completion into a burst of outbound requests.
+	maxImages = 8
+)
 
-	imgURL := regexp.MustCompile(`http[s]?://\S+\.(jpg|jpeg|png|gif|webp)`)
-	urls := imgURL.FindAllString(message, -1)
-	quote := regexp.MustCompile(`\"$`)
-	for i, url := range urls {
-		urls[i] = quote.ReplaceAllString(url, "")
-	}
+// imgTag matches an HTML image tag and captures its src attribute, quoted or not.
+var imgTag = regexp.MustCompile(`(?is)<img\s[^>]*?\bsrc\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)[^>]*>`)
 
-	message = imgURL.ReplaceAllString(message, "")
+// fetcher gets the images named by a message. Public refuses any address that is
+// not globally routable, which is what a URL taken from message text needs.
+var fetcher = proxy.Public
 
-	img := regexp.MustCompile(`<img[^>]+>`)
-	message = img.ReplaceAllString(message, "")
-	return urls, message
+// images returns the data: URLs of the images a message carries, and the message
+// with those tags removed. An image is taken only from the src of an <img> tag,
+// because that is the marker this pipeline writes when a message has one; a URL
+// sitting in prose or in a code block is text the model should read, not an
+// address to fetch.
+//
+// A tag whose src is not a fetchable image, or whose fetch fails, is left in the
+// message as written and contributes no image. There is no error to return: an
+// image the model would have liked is worth less than the answer.
+func images(message string) ([]string, string) {
+	var res []string
+	text := imgTag.ReplaceAllStringFunc(message, func(tag string) string {
+		if len(res) >= maxImages {
+			return tag
+		}
+		src := unquote(imgTag.FindStringSubmatch(tag)[1])
+		data, err := fetchImage(src)
+		if err != nil {
+			log.Warn("vision: skipping image %s: %s", src, err.Error())
+			return tag
+		}
+		res = append(res, data)
+		return ""
+	})
+	return res, text
 }
 
-func getImageRefinedText(text string) (string, error) {
-	ext := filepath.Ext(text)
-	if ext != "" {
-		ext = ext[1:]
+// fetchImage reads src and returns it as a data: URL.
+func fetchImage(src string) (string, error) {
+	ext, ok := imageExt(src)
+	if !ok {
+		return "", fmt.Errorf("not an image url: %q", src)
 	}
 
-	resp, err := http.Get(text)
+	resp, err := fetcher.Get(src)
 	if err != nil {
 		return "", err
 	}
 	defer resp.Body.Close()
 
-	data, err := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("%s: %s", src, resp.Status)
+	}
+
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxImageBytes+1))
 	if err != nil {
 		return "", err
 	}
+	if len(data) > maxImageBytes {
+		return "", fmt.Errorf("%s: image is larger than %d bytes", src, maxImageBytes)
+	}
 
-	base64Data := base64.StdEncoding.EncodeToString(data)
-	res := fmt.Sprintf("data:image/%s;base64,%s", ext, base64Data)
-	return res, nil
+	return fmt.Sprintf("data:image/%s;base64,%s", ext, base64.StdEncoding.EncodeToString(data)), nil
+}
+
+// imageExt returns the image extension src names and whether src is an address
+// worth fetching: an absolute http or https URL whose path ends in an image
+// extension.
+//
+// A src holding a placeholder — {s}.tile.example.org/{z}/{x}/{y}.png — names a
+// family of URLs the browser fills in at run time, not an image. Braces cannot
+// appear literally in a URL (RFC 3986 requires them encoded), so their presence
+// is the template itself saying so.
+func imageExt(src string) (string, bool) {
+	src = strings.TrimSpace(src)
+	if strings.ContainsAny(src, "{}") {
+		return "", false
+	}
+
+	u, err := url.Parse(src)
+	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+		return "", false
+	}
+
+	// The extension comes from the path, so a query string stays out of the
+	// media type it names.
+	switch ext := strings.ToLower(strings.TrimPrefix(path.Ext(u.Path), ".")); ext {
+	case "jpg", "jpeg", "png", "gif", "webp":
+		return ext, true
+	}
+	return "", false
+}
+
+func unquote(value string) string {
+	if len(value) >= 2 && (value[0] == '"' || value[0] == '\'') && value[len(value)-1] == value[0] {
+		return value[1 : len(value)-1]
+	}
+	return value
 }
 
 func IsVisionModel(subType string) bool {
@@ -106,7 +175,7 @@ func IsVisionModel(subType string) bool {
 // is the primary; zen3-omni (qwen3.5-397b-a17b) is the cheaper fallback.
 const VisionModelForImages = "zen5-omni"
 
-func OpenaiRawMessagesToGptVisionMessages(messages []*RawMessage) ([]openai.ChatCompletionMessage, error) {
+func OpenaiRawMessagesToGptVisionMessages(messages []*RawMessage) []openai.ChatCompletionMessage {
 	res := []openai.ChatCompletionMessage{}
 	for _, message := range messages {
 		var role string
@@ -120,7 +189,7 @@ func OpenaiRawMessagesToGptVisionMessages(messages []*RawMessage) ([]openai.Chat
 			role = openai.ChatMessageRoleUser
 		}
 
-		urls, messageText := extractImagesURL(message.Text)
+		imgs, messageText := images(message.Text)
 
 		item := openai.ChatCompletionMessage{
 			Role: role,
@@ -145,16 +214,11 @@ func OpenaiRawMessagesToGptVisionMessages(messages []*RawMessage) ([]openai.Chat
 			}
 		}
 
-		for _, url := range urls {
-			imageText, err := getImageRefinedText(url)
-			if err != nil {
-				return []openai.ChatCompletionMessage{}, err
-			}
-
+		for _, img := range imgs {
 			item.MultiContent = append(item.MultiContent, openai.ChatMessagePart{
 				Type: openai.ChatMessagePartTypeImageURL,
 				ImageURL: &openai.ChatMessageImageURL{
-					URL:    imageText,
+					URL:    img,
 					Detail: openai.ImageURLDetailAuto,
 				},
 			})
@@ -162,5 +226,5 @@ func OpenaiRawMessagesToGptVisionMessages(messages []*RawMessage) ([]openai.Chat
 
 		res = append(res, item)
 	}
-	return res, nil
+	return res
 }

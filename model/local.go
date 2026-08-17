@@ -227,10 +227,7 @@ func (p *LocalModelProvider) QueryText(question string, writer io.Writer, histor
 
 		var messages []openai.ChatCompletionMessage
 		if IsVisionModel(p.subType) {
-			messages, err = OpenaiRawMessagesToGptVisionMessages(rawMessages)
-			if err != nil {
-				return nil, err
-			}
+			messages = OpenaiRawMessagesToGptVisionMessages(rawMessages)
 		} else {
 			messages = OpenaiRawMessagesToMessages(rawMessages)
 		}

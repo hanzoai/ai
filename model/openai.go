@@ -332,10 +332,7 @@ func (p *OpenAiModelProvider) QueryText(question string, writer io.Writer, histo
 		var toolCalls []responses.ResponseFunctionToolCall
 
 		if IsVisionModel(model) {
-			messages, err = openaiRawMessagesToGptVisionMessages(rawMessages)
-			if err != nil {
-				return nil, err
-			}
+			messages = openaiRawMessagesToGptVisionMessages(rawMessages)
 		} else {
 			messages = openaiRawMessagesToMessages(rawMessages)
 		}
@@ -752,7 +749,7 @@ func openaiRawMessagesToMessages(messages []*RawMessage) responses.ResponseInput
 	return res
 }
 
-func openaiRawMessagesToGptVisionMessages(messages []*RawMessage) (responses.ResponseInputParam, error) {
+func openaiRawMessagesToGptVisionMessages(messages []*RawMessage) responses.ResponseInputParam {
 	var res responses.ResponseInputParam
 	for _, message := range messages {
 		var role responses.EasyInputMessageRole
@@ -797,7 +794,7 @@ func openaiRawMessagesToGptVisionMessages(messages []*RawMessage) (responses.Res
 			role = responses.EasyInputMessageRoleUser
 		}
 
-		urls, messageText := extractImagesURL(message.Text)
+		imgs, messageText := images(message.Text)
 
 		var itemContentList responses.ResponseInputMessageContentListParam
 		if len(messageText) > 0 {
@@ -810,14 +807,10 @@ func openaiRawMessagesToGptVisionMessages(messages []*RawMessage) (responses.Res
 				},
 			})
 		}
-		for _, url := range urls {
-			imageText, err := getImageRefinedText(url)
-			if err != nil {
-				return res, err
-			}
+		for _, img := range imgs {
 			itemContentList = append(itemContentList, responses.ResponseInputContentUnionParam{
 				OfInputImage: &responses.ResponseInputImageParam{
-					ImageURL: param.NewOpt[string](imageText),
+					ImageURL: param.NewOpt[string](img),
 				},
 			})
 		}
@@ -834,7 +827,7 @@ func openaiRawMessagesToGptVisionMessages(messages []*RawMessage) (responses.Res
 		}
 		res = append(res, item)
 	}
-	return res, nil
+	return res
 }
 
 func openaiNumTokensFromMessages(messages responses.ResponseInputParam, model string) (int, error) {
