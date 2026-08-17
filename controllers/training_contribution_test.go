@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/hanzoai/ai/internal/authtest"
 	iam "github.com/hanzoai/ai/internal/iam"
 )
 
@@ -32,17 +33,28 @@ import (
 // TestTrainingContribution_NoPrincipalIs401 pins the fail-closed gate: with neither a
 // session cookie nor a Bearer, BOTH the read and the write refuse (401) before any
 // org resolution or storage access — the consent surface is never anonymously reachable.
+// contributing is a request at one of the training-contribution endpoints, carrying
+// a body and whatever credential the caller presents.
+func contributing(t *testing.T, method, path, body, auth string) *ApiController {
+	t.Helper()
+	c := presenting(visit(method, path), auth)
+	if body != "" {
+		c.Fiber().Request().SetBody([]byte(body))
+	}
+	return c
+}
+
 func TestTrainingContribution_NoPrincipalIs401(t *testing.T) {
-	get, rec := newRewardController("GET", "/v1/get-training-contribution", "", nil)
+	get := contributing(t, http.MethodGet, "/v1/get-training-contribution", "", "")
 	get.GetTrainingContribution()
-	if rec.Code != http.StatusUnauthorized {
-		t.Errorf("GET no-principal = %d, want 401", rec.Code)
+	if answered(get) != http.StatusUnauthorized {
+		t.Errorf("GET no-principal = %d, want 401", answered(get))
 	}
 
-	put, rec2 := newRewardController("POST", "/v1/update-training-contribution", `{"enabled":true}`, nil)
+	put := contributing(t, http.MethodPost, "/v1/update-training-contribution", `{"enabled":true}`, "")
 	put.UpdateTrainingContribution()
-	if rec2.Code != http.StatusUnauthorized {
-		t.Errorf("POST no-principal = %d, want 401", rec2.Code)
+	if answered(put) != http.StatusUnauthorized {
+		t.Errorf("POST no-principal = %d, want 401", answered(put))
 	}
 }
 
@@ -50,18 +62,18 @@ func TestTrainingContribution_NoPrincipalIs401(t *testing.T) {
 // to the shared deployment org by anonymousSignin) can never read or flip that org's
 // opt-in: opting IN is a deliberate act by a REAL signed-in identity for its OWN org.
 func TestTrainingContribution_RejectsAnonymousGuest(t *testing.T) {
-	guest := &iam.User{Owner: "hanzo", Type: "anonymous-user", Name: "u-12345678"}
+	guest := iam.User{Owner: "hanzo", Type: "anonymous-user", Name: "u-12345678"}
 
-	get, rec := newRewardController("GET", "/v1/get-training-contribution", "", guest)
+	get := contributing(t, http.MethodGet, "/v1/get-training-contribution", "", authtest.Bearer(t, guest))
 	get.GetTrainingContribution()
-	if rec.Code != http.StatusUnauthorized {
-		t.Errorf("GET anonymous = %d, want 401", rec.Code)
+	if answered(get) != http.StatusUnauthorized {
+		t.Errorf("GET anonymous = %d, want 401", answered(get))
 	}
 
-	put, rec2 := newRewardController("POST", "/v1/update-training-contribution", `{"enabled":true}`, guest)
+	put := contributing(t, http.MethodPost, "/v1/update-training-contribution", `{"enabled":true}`, authtest.Bearer(t, guest))
 	put.UpdateTrainingContribution()
-	if rec2.Code != http.StatusUnauthorized {
-		t.Errorf("POST anonymous = %d, want 401", rec2.Code)
+	if answered(put) != http.StatusUnauthorized {
+		t.Errorf("POST anonymous = %d, want 401", answered(put))
 	}
 }
 
@@ -69,11 +81,11 @@ func TestTrainingContribution_RejectsAnonymousGuest(t *testing.T) {
 // signed-in principal whose org never set the flag reads enabled:false (opted OUT).
 func TestGetTrainingContribution_DefaultOff(t *testing.T) {
 	// A unique owner keeps the 60s org-settings cache from leaking another test's row.
-	user := &iam.User{Owner: "consent-default-off-org", Name: "dave"}
-	c, rec := newRewardController("GET", "/v1/get-training-contribution", "", user)
+	user := iam.User{Owner: "consent-default-off-org", Name: "dave"}
+	c := contributing(t, http.MethodGet, "/v1/get-training-contribution", "", authtest.Bearer(t, user))
 	c.GetTrainingContribution()
-	if rec.Code != http.StatusOK {
-		t.Fatalf("GET signed-in = %d, want 200 (body %s)", rec.Code, rec.Body.String())
+	if answered(c) != http.StatusOK {
+		t.Fatalf("GET signed-in = %d, want 200 (body %s)", answered(c), sent(c))
 	}
 
 	var env struct {
@@ -82,8 +94,8 @@ func TestGetTrainingContribution_DefaultOff(t *testing.T) {
 			Enabled bool `json:"enabled"`
 		} `json:"data"`
 	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
-		t.Fatalf("unmarshal: %v (body %s)", err, rec.Body.String())
+	if err := json.Unmarshal([]byte(sent(c)), &env); err != nil {
+		t.Fatalf("unmarshal: %v (body %s)", err, sent(c))
 	}
 	if env.Data.Enabled {
 		t.Errorf("default contribution = true, want false (privacy-safe default OFF)")

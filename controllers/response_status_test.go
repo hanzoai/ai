@@ -15,38 +15,31 @@
 package controllers
 
 import (
-	"net/http/httptest"
+	"net/http"
 	"testing"
 )
-
-// newRecorderController builds an ApiController wired to an httptest recorder so a
-// handler's HTTP status can be asserted directly.
-func newRecorderController() (*ApiController, *httptest.ResponseRecorder) {
-	c := ask("GET", "/v1/x")
-	return c, rec
-}
 
 // TestResponseForbiddenAndUnauthorizedStatus is the R5 mechanism assertion: the
 // controller auth-deny helpers emit REAL 403/401 statuses (not The router's default
 // 200). The controller deny sites (chat/message/scale) were converted from
 // c.ResponseError (HTTP 200) to these helpers.
 func TestResponseForbiddenAndUnauthorizedStatus(t *testing.T) {
-	c, rec := newRecorderController()
+	c := visit(http.MethodGet, "/v1/x")
 	c.ResponseForbidden("auth:Unauthorized operation")
 	if answered(c) != 403 {
 		t.Errorf("ResponseForbidden status = %d, want 403", answered(c))
 	}
 
-	c2, rec2 := newRecorderController()
+	c2 := visit(http.MethodGet, "/v1/x")
 	c2.ResponseUnauthorized("auth:Please sign in first")
-	if rec2.Code != 401 {
-		t.Errorf("ResponseUnauthorized status = %d, want 401", rec2.Code)
+	if answered(c2) != 401 {
+		t.Errorf("ResponseUnauthorized status = %d, want 401", answered(c2))
 	}
 
 	// Contrast: plain ResponseError still emits 200 (why the deny sites had to move).
-	c3, rec3 := newRecorderController()
+	c3 := visit(http.MethodGet, "/v1/x")
 	c3.ResponseError("some non-auth error")
-	if rec3.Code != 200 {
-		t.Errorf("plain ResponseError status = %d, want 200 (baseline)", rec3.Code)
+	if answered(c3) != 200 {
+		t.Errorf("plain ResponseError status = %d, want 200 (baseline)", answered(c3))
 	}
 }

@@ -70,7 +70,13 @@ func seedChat(t *testing.T, name, user, org string) {
 // serve (they are on the authz filter's benign-read exempt list).
 func post(t *testing.T, path, body string, user *iam.User) *ApiController {
 	t.Helper()
-	c := presenting(visit(http.MethodPost, path), authtest.Bearer(t, *user))
+	// A nil user is a caller who presents nothing, which several of these tests are
+	// about — so it must not be minted a credential.
+	auth := ""
+	if user != nil {
+		auth = authtest.Bearer(t, *user)
+	}
+	c := presenting(visit(http.MethodPost, path), auth)
 	c.Fiber().Request().SetBody([]byte(body))
 	return c
 }

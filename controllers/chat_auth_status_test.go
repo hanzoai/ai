@@ -19,9 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/http/httptest"
 	"os"
-	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -61,52 +59,41 @@ func balReader(cents int64, err error) object.BalanceReaderFunc {
 	return func(_ context.Context, _, _, _ string) (int64, error) { return cents, err }
 }
 
-// newChatController wires an ApiController to a recorder with a NON-nil router
-// session (prod runs SessionOn=true, so CruSession is normally populated) plus the
-// given Authorization header and body — the faithful shape of a gateway-forwarded
-// chat request.
-func newChatController(authHeader, body string) (*ApiController, *httptest.ResponseRecorder) {
-	return newChatControllerSession(authHeader, body, true)
+// newChatController is a gateway-forwarded chat request: the Authorization header
+// and the body, on a real context.
+//
+// It used to come in two, the second with a knob for whether the router's session
+// store was populated — a nil one was a real failure mode, and reproducing it took a
+// parameter. There is no such store now, so both settings built the same request and
+// the knob named nothing.
+func newChatController(authHeader, body string) *ApiController {
+	c := presenting(visit(http.MethodPost, "/v1/chat/completions"), authHeader)
+	c.Fiber().Request().SetBody([]byte(body))
+	return c
 }
 
-// newChatControllerSession is newChatController with an explicit knob for whether
-// the the router session store (CruSession) is populated. withSession=false reproduces
-// the embedded-cloud failure mode the bootstrap comment describes: the router's
-// SessionStart hook did not run, so CruSession is nil and any session read
-// dereferences nil — the pre-model panic the router renders as a 500.
-func newChatControllerSession(authHeader, body string, withSession bool) (*ApiController, *httptest.ResponseRecorder) {
-	req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(body))
-	if authHeader != "" {
-		req.Header.Set("Authorization", authHeader)
-	}
-	c := visit("GET", "/v1/")
-	return c, rec
-}
-
-// driveChat runs the real ChatCompletions handler and returns its HTTP status. A
-// panic (which the router's recover renders as 500) is converted to 500 so a regression
-// that reintroduces the pre-model panic fails LOUD as "got 500, want 401" rather
-// than crashing the suite.
-func driveChat(t *testing.T, authHeader, body string) int {
-	return driveChatSession(t, authHeader, body, true)
-}
-
-func driveChatSession(t *testing.T, authHeader, body string, withSession bool) int {
+// answering runs call and reports the status the controller answered with.
+//
+// A PANIC READS AS 500, which is what the chain's recover would render. Driven
+// directly there is no chain, so a regression that panics before auth should fail
+// here as "got 500, want 401" rather than take the suite down with it.
+func answering(t *testing.T, c *ApiController, call func()) (status int) {
 	t.Helper()
-	c, rec := newChatControllerSession(authHeader, body, withSession)
-	func() {
-		defer func() {
-			if r := recover(); r != nil {
-				answered(c) = 500
-				t.Logf("HANDLER PANIC (rendered 500): %v", r)
-			}
-		}()
-		c.ChatCompletions()
+	defer func() {
+		if r := recover(); r != nil {
+			status = http.StatusInternalServerError
+			t.Logf("handler panicked, read as 500: %v", r)
+		}
 	}()
-	if answered(c) == 0 {
-		return http.StatusOK // the router default when no explicit status was set
-	}
+	call()
 	return answered(c)
+}
+
+// driveChat runs the real ChatCompletions handler and reports its status.
+func driveChat(t *testing.T, authHeader, body string) int {
+	t.Helper()
+	c := newChatController(authHeader, body)
+	return answering(t, c, c.ChatCompletions)
 }
 
 // setupChatMoneyPath installs the prod-faithful dependencies the money path needs:
@@ -190,42 +177,6 @@ func TestChatCompletionsUnattributedNever500(t *testing.T) {
 	}
 }
 
-// TestChatCompletionsNilSessionNever500 reproduces the exact prod failure mode:
-// the embedded cloud binary serves these routes without the router having populated the
-// session store, so CruSession is nil. GetOrg/routingUserId read the session
-// BEFORE auth resolution (pre-model), so a nil store used to panic → a fast 500 for
-// EVERY request, unattributed ones included. The contract still holds with no
-// session: no/invalid credential → 401, valid-widget + malformed body → 400. Never
-// 500. (A real internal fault is covered separately and still 500s.)
-func TestChatCompletionsNilSessionNever500(t *testing.T) {
-	setupChatMoneyPath(t)
-
-	const goodBody = `{"model":"` + chatModel + `","messages":[{"role":"user","content":"hi"}]}`
-	cases := []struct {
-		name string
-		auth string
-		body string
-		want int
-	}{
-		{"no-credential", "", goodBody, http.StatusUnauthorized},
-		{"unknown-provider-key", "Bearer sk-totally-unknown-key", goodBody, http.StatusUnauthorized},
-		{"malformed-jwt", "Bearer aaaaaaaaaaaaa.bbbbbbbbbbbbb.cccccccccccc", goodBody, http.StatusUnauthorized},
-		{"expired-jwt", "Bearer eyJhbGciOiJSUzI1NiJ9.eyJpc3MiOiJodHRwczovL2hhbnpvLmlkIiwiZXhwIjoxMDAwfQ.badsig", goodBody, http.StatusUnauthorized},
-		{"malformed-body-valid-widget", "Bearer " + chatWidgetKey, `{not json`, http.StatusBadRequest},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got := driveChatSession(t, tc.auth, tc.body, false /* nil session store */)
-			if got == http.StatusInternalServerError {
-				t.Fatalf("%s (nil session) => 500 (the regression: a nil session store must resolve to 'no principal', not a server error)", tc.name)
-			}
-			if got != tc.want {
-				t.Fatalf("%s (nil session) => %d, want %d", tc.name, got, tc.want)
-			}
-		})
-	}
-}
-
 // TestChatCompletionsPrepaidGate proves the fix leaves the prepaid gate EXACTLY as
 // designed: an authed-but-unfunded principal is stopped at 402, a funded one is
 // admitted past the gate, and a genuine balance-backend fault is a real 500 (never
@@ -265,7 +216,7 @@ func TestAuthResolveProviderFundedProceeds(t *testing.T) {
 	setupChatMoneyPath(t)
 	object.SetBalanceReader(balReader(100_00, nil))
 
-	c, _ := newChatController("Bearer "+chatFundedKey, "")
+	c := newChatController("Bearer "+chatFundedKey, "")
 	provider, authUser, _, _, _, err := c.authResolveProvider(chatFundedKey, chatModel, chatOrg)
 	if err != nil {
 		t.Fatalf("funded authResolveProvider returned error %v (statusOf=%d); want nil (proceeds)", err, statusOf(err))
@@ -295,34 +246,21 @@ func TestChatCompletionsAutoModelAuthBeforeRouting(t *testing.T) {
 	body := `{"model":"auto","messages":[{"role":"user","content":"please refactor this function"}]}`
 
 	// Unauthenticated `auto`: 401 BEFORE routing — no side effect leaked.
-	c, rec := newChatController("Bearer sk-unknown-probe", body)
-	func() {
-		defer func() {
-			if r := recover(); r != nil {
-				answered(c) = 500
-				t.Logf("HANDLER PANIC: %v", r)
-			}
-		}()
-		c.ChatCompletions()
-	}()
-	if answered(c) != http.StatusUnauthorized {
-		t.Fatalf("unauth auto => %d, want 401", answered(c))
+	c := newChatController("Bearer sk-unknown-probe", body)
+	if got := answering(t, c, c.ChatCompletions); got != http.StatusUnauthorized {
+		t.Fatalf("unauth auto => %d, want 401", got)
 	}
-	if h := c.Fiber().Response().Header.Peek(RoutedModelHeader); h != "" {
+	if h := c.Fiber().Response().Header.Peek(RoutedModelHeader); len(h) != 0 {
 		t.Fatalf("unauth auto set %s=%q — the router engine ran BEFORE auth (pre-auth side effect leaked)", RoutedModelHeader, h)
 	}
 
 	// Authed `auto` (funded sk-): routing still runs and rewrites the model.
 	object.SetBalanceReader(balReader(100_00, nil))
-	c2, rec2 := newChatController("Bearer "+chatFundedKey, body)
-	func() {
-		defer func() { _ = recover() }()
-		c2.ChatCompletions()
-	}()
-	if rec2.Code == http.StatusUnauthorized {
+	c2 := newChatController("Bearer "+chatFundedKey, body)
+	if got := answering(t, c2, c2.ChatCompletions); got == http.StatusUnauthorized {
 		t.Fatalf("authed auto => 401; the pre-auth gate must not reject a valid credential")
 	}
-	if h := rec2.Header().Get(RoutedModelHeader); h == "" {
+	if h := c2.Fiber().Response().Header.Peek(RoutedModelHeader); len(h) == 0 {
 		t.Fatalf("authed auto did not set %s — routing must still run for an authenticated caller", RoutedModelHeader)
 	}
 }
