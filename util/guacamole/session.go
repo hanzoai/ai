@@ -18,7 +18,7 @@ package guacamole
 import (
 	"sync"
 
-	"github.com/gorilla/websocket"
+	"github.com/fasthttp/websocket"
 )
 
 type Session struct {
