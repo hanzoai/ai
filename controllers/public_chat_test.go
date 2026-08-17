@@ -17,8 +17,8 @@ package controllers
 import (
 	"context"
 	"encoding/json"
+	"net"
 	"net/http"
-	"net/http/httptest"
 	"strconv"
 	"strings"
 	"sync"
@@ -302,6 +302,17 @@ func publicCall(t *testing.T, remote, cf string) *ApiController {
 	return c
 }
 
+// visitorAt is the key the lane will count a caller by — the same composition the
+// handler performs, so a test seeds the count under the name the handler will look up.
+// The port is dropped because a peer resolves to an address on the wire.
+func visitorAt(peer, stated string) string {
+	host, _, err := net.SplitHostPort(peer)
+	if err != nil {
+		host = peer
+	}
+	return publicVisitor(publicAddr(host, stated))
+}
+
 // refusalOf reads the house envelope off a recorded response.
 func refusalOf(t *testing.T, c *ApiController) (status int, code string) {
 	t.Helper()
@@ -340,7 +351,7 @@ func TestSpentVisitorIsRefusedByTheLane(t *testing.T) {
 	t.Setenv("PUBLIC_CHAT_DAILY", "2")
 	servablePool(t)
 	const peer = "203.0.113.77:9000"
-	visitor := publicVisitor(req(peer, ""))
+	visitor := visitorAt(peer, "")
 
 	saved := publicCount
 	t.Cleanup(func() { publicCount = saved })
@@ -362,20 +373,19 @@ func TestBearerOnThePublicLaneIsIgnored(t *testing.T) {
 	t.Setenv("PUBLIC_CHAT_DAILY", "2")
 	servablePool(t)
 	const peer = "203.0.113.78:9000"
-	visitor := publicVisitor(req(peer, ""))
+	visitor := visitorAt(peer, "")
 
 	saved := publicCount
 	t.Cleanup(func() { publicCount = saved })
 	publicCount = &dayCount{day: utcDay(time.Now()), seen: map[string]int{visitor: 2}}
 
-	r := httptest.NewRequest(http.MethodPost, "/v1/chat/public", strings.NewReader(`{"model":"claude-opus-5","messages":[]}`))
-	r.RemoteAddr = peer
-	r.Header.Set("Authorization", "Bearer sk-whatever")
-	r.Header.Set("X-Org-Id", "some-other-tenant")
-	c := visit("GET", "/v1/")
+	c := from(visit(http.MethodPost, "/v1/chat/public"), peer)
+	c.Fiber().Request().SetBody([]byte(`{"model":"claude-opus-5","messages":[]}`))
+	c.Fiber().Request().Header.Set("Authorization", "Bearer sk-whatever")
+	c.Fiber().Request().Header.Set("X-Org-Id", "some-other-tenant")
 	c.ChatCompletionsPublic()
 
-	if status, code := refusalOf(t, rec); status != http.StatusPaymentRequired || code != "public_allowance_spent" {
+	if status, code := refusalOf(t, c); status != http.StatusPaymentRequired || code != "public_allowance_spent" {
 		t.Fatalf("a bearer changed the lane's answer: %d/%s, want 402/public_allowance_spent", status, code)
 	}
 }
@@ -465,7 +475,7 @@ func TestACallThatReachesNoModelChargesNobody(t *testing.T) {
 			t.Cleanup(func() { publicCount = saved })
 
 			const peer = "203.0.113.90:9000"
-			visitor := publicVisitor(req(peer, ""))
+			visitor := visitorAt(peer, "")
 
 			publicCall(t, peer, "")
 			if n := publicCount.seen[visitor]; n != 0 {
@@ -482,7 +492,7 @@ func TestTheLaneRefusesAtTheCeiling(t *testing.T) {
 	servablePool(t)
 
 	const peer = "203.0.113.91:9000"
-	visitor := publicVisitor(req(peer, ""))
+	visitor := visitorAt(peer, "")
 
 	saved := publicCount
 	publicCount = &dayCount{day: utcDay(time.Now()), seen: map[string]int{visitor: 5}}
@@ -510,44 +520,44 @@ func servablePool(t *testing.T) {
 
 // ---- who is calling ---------------------------------------------------------
 
-// THE HOST'S ANSWER WINS, because this module cannot see the connection. Mounted
-// behind cloud's adapter, r.RemoteAddr is the same value for every caller, so a
-// visitor derived from it is one visitor for the whole internet. This asserts the
-// resolver is consulted and believed even when the request itself carries an
-// address that would otherwise be taken.
-func TestTheHostResolvesWhoIsCalling(t *testing.T) {
-	prev := object.ClientIP()
-	object.SetClientIP(func(*http.Request) string { return "198.51.100.7" })
-	t.Cleanup(func() { object.SetClientIP(prev) })
-
-	// A routable peer that the standalone path WOULD have taken.
-	if got := publicAddr(req("203.0.113.9:41000", "")); got != "198.51.100.7" {
-		t.Fatalf("publicAddr = %q; the host's answer must win over anything read off the request", got)
+// THE HOST'S ANSWER WINS, and a live defect is why this is asserted. Run as a
+// subsystem, ai is reached over a unix socket: the peer is empty and identical for
+// everyone, so a visitor derived from it is one visitor for the whole internet and
+// the daily ceiling becomes one bucket. The host resolves the caller and stamps it.
+func TestTheHostStatesWhoIsCalling(t *testing.T) {
+	c := visit(http.MethodPost, "/v1/chat/public")
+	c.Fiber().Request().Header.Set(object.ClientIPHeader, "198.51.100.7")
+	c.Fiber().Request().Header.Set("CF-Connecting-IP", "203.0.113.200")
+	if got := c.stated(); got != "198.51.100.7" {
+		t.Fatalf("stated = %q; the host's hardened answer must win over the edge header", got)
 	}
-	// Two callers the host distinguishes must be two visitors.
-	object.SetClientIP(func(r *http.Request) string { return r.Header.Get("X-Test-Who") })
-	a := req("203.0.113.9:1", "")
-	a.Header.Set("X-Test-Who", "198.51.100.1")
-	b := req("203.0.113.9:1", "")
-	b.Header.Set("X-Test-Who", "198.51.100.2")
-	if publicVisitor(a) == publicVisitor(b) {
+	// A socket names nobody, so the stated address is what the lane counts by.
+	if got := publicAddr("", c.stated()); got != "198.51.100.7" {
+		t.Fatalf("publicAddr over a socket = %q, want the stated address", got)
+	}
+	// Two callers the host tells apart must be two visitors. This is the property the
+	// ceiling rests on, and the one that was lost.
+	if publicVisitor(publicAddr("", "198.51.100.1")) == publicVisitor(publicAddr("", "198.51.100.2")) {
 		t.Fatal("two callers the host told apart became one visitor")
 	}
 }
 
-// Standalone ai installs no resolver, and must keep reading the request itself —
-// otherwise a deployment with nothing in front of it has no visitor at all.
-func TestStandaloneStillReadsTheRequest(t *testing.T) {
-	prev := object.ClientIP()
-	object.SetClientIP(nil)
-	t.Cleanup(func() { object.SetClientIP(prev) })
-
-	if got := publicAddr(req("203.0.113.9:41000", "")); got != "203.0.113.9" {
-		t.Fatalf("standalone publicAddr = %q, want the socket peer 203.0.113.9", got)
+// A STRANGER CANNOT NAME ITSELF. Reached directly the peer is routable, and it is the
+// one thing on the request the caller could not write, so it decides — otherwise a
+// visitor mints a fresh ceiling per request by setting a header.
+func TestACallerCannotStateItsOwnAddress(t *testing.T) {
+	c := from(visit(http.MethodPost, "/v1/chat/public"), "203.0.113.9:41000")
+	c.Fiber().Request().Header.Set(object.ClientIPHeader, "198.51.100.255") // the forgery
+	if got := publicAddr(c.Fiber().IP(), c.stated()); got != "203.0.113.9" {
+		t.Fatalf("publicAddr = %q; a routable peer must beat anything the caller states", got)
 	}
-	// And an empty answer from a resolver must not blank the visitor out.
-	object.SetClientIP(func(*http.Request) string { return "" })
-	if got := publicAddr(req("203.0.113.9:41000", "")); got != "203.0.113.9" {
-		t.Fatalf("a resolver answering nothing left publicAddr = %q; want the fallback", got)
+}
+
+// Nothing in front and nothing stated: the peer is all there is, and it is enough —
+// otherwise a deployment with nothing before it has no visitor at all.
+func TestServedDirectlyTheLaneReadsThePeer(t *testing.T) {
+	c := from(visit(http.MethodPost, "/v1/chat/public"), "203.0.113.9:41000")
+	if got := publicAddr(c.Fiber().IP(), c.stated()); got != "203.0.113.9" {
+		t.Fatalf("direct publicAddr = %q, want the socket peer 203.0.113.9", got)
 	}
 }
