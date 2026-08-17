@@ -292,7 +292,7 @@ func deleteFileFromSearch(indexName, fileID string) error {
 		}
 		return err
 	}
-	if _, err = client.WaitForTask(task.TaskUID, 30*time.Second); err != nil {
+	if err = awaitTask(client, task.TaskUID, 30*time.Second); err != nil {
 		return err
 	}
 	return nil
