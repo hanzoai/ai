@@ -163,6 +163,23 @@ func TestImagesKeepsAQueryOutOfTheMediaType(t *testing.T) {
 	}
 }
 
+func TestImagesTakesAnInlineImageWithoutFetching(t *testing.T) {
+	_, requests := serve(t, png)
+	inline := "data:image/png;base64,iVBORw0KGgo="
+
+	imgs, text := images(fmt.Sprintf(`look: <img src="%s">`, inline))
+
+	if *requests != 0 {
+		t.Fatalf("an inline image caused %d requests", *requests)
+	}
+	if len(imgs) != 1 || imgs[0] != inline {
+		t.Fatalf("read %v, want the inline image", imgs)
+	}
+	if text != "look: " {
+		t.Fatalf("the base64 was left in the text: %q", text)
+	}
+}
+
 func TestImagesSkipsAnImageThatIsNotThere(t *testing.T) {
 	s, _ := serve(t, http.NotFound)
 	message := fmt.Sprintf(`read this <img src="%s/photo.png"> please`, s.URL)

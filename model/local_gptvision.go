@@ -76,6 +76,12 @@ func images(message string) ([]string, string) {
 
 // fetchImage reads src and returns it as a data: URL.
 func fetchImage(src string) (string, error) {
+	// A src that already carries the image is the answer, and reaches the model
+	// as an image rather than as a page of base64 in the text.
+	if strings.HasPrefix(src, "data:image/") {
+		return src, nil
+	}
+
 	ext, ok := imageExt(src)
 	if !ok {
 		return "", fmt.Errorf("not an image url: %q", src)
