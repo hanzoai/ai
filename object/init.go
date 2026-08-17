@@ -312,7 +312,10 @@ func forceGatewayEmbedder(p *Provider) {
 	if base == "" {
 		return
 	}
-	p.Type = "OpenAI"
+	// "Custom" is the type whose client honors ProviderUrl. "OpenAI" ignores
+	// it — that client is pinned to api.openai.com — so the heal used to aim
+	// at the gateway and fire at the very upstream it exists to avoid.
+	p.Type = "Custom"
 	p.ProviderUrl = base
 	p.SubType = defaultEmbedModel()
 	// Resolve the gateway key here (env-first, exactly as ResolveProviderSecret
