@@ -18,8 +18,10 @@ import (
 	"context"
 	"go/ast"
 	"go/token"
+	"net/http"
 	"testing"
 
+	"github.com/hanzoai/ai/internal/authtest"
 	iam "github.com/hanzoai/ai/internal/iam"
 
 	"github.com/hanzoai/ai/object"
@@ -68,8 +70,8 @@ func seedChat(t *testing.T, name, user, org string) {
 // serve (they are on the authz filter's benign-read exempt list).
 func post(t *testing.T, path, body string, user *iam.User) *ApiController {
 	t.Helper()
-	c, _ := newAuthController("POST", path, "", user)
-	c.Ctx.Input.RequestBody = []byte(body)
+	c := presenting(visit(http.MethodPost, path), authtest.Bearer(t, *user))
+	c.Fiber().Request().SetBody([]byte(body))
 	return c
 }
 
@@ -287,7 +289,7 @@ func TestUpdateChatCannotMoveAChatBetweenOrgs(t *testing.T) {
 
 	alice := &iam.User{Owner: "acme", Name: "alice"}
 	c := post(t, "/v1/update-chat", `{"organization":"victim-org","name":"chat_1","user":"alice","displayName":"renamed"}`, alice)
-	c.Ctx.Request.URL.RawQuery = "id=admin/chat_1"
+	c.Fiber().Request().URI().SetQueryString("id=admin/chat_1")
 	c.UpdateChat()
 
 	got := read("chat_1")
@@ -345,7 +347,7 @@ func TestUpdateChatCannotOverwriteAForeignRow(t *testing.T) {
 
 	mallory := &iam.User{Owner: "acme", Name: "mallory"}
 	c := post(t, "/v1/update-chat", `{"name":"chat_victim","user":"mallory","displayName":"owned"}`, mallory)
-	c.Ctx.Request.URL.RawQuery = "id=admin/chat_victim"
+	c.Fiber().Request().URI().SetQueryString("id=admin/chat_victim")
 	c.UpdateChat()
 
 	got := read("chat_victim")

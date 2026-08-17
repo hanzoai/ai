@@ -116,13 +116,13 @@ func TestFinetuneRefusesTheGatewayShapedRequest(t *testing.T) {
 			target += "?" + op.query
 		}
 		// A bearer and no session user — what a bridged request always is.
-		c, rec := newAuthController(op.method, target, "Bearer t", nil)
+		c := presenting(visit(op.method, target), "Bearer t")
 
 		op.call(c)
 
-		if rec.Code != http.StatusUnauthorized {
+		if answered(c) != http.StatusUnauthorized {
 			t.Errorf("%s %s: status = %d, want 401 — this group is reachable over ZAP after all, so the refusal needs revisiting",
-				op.method, op.path, rec.Code)
+				op.method, op.path, answered(c))
 		}
 	}
 }

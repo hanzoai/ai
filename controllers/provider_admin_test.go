@@ -17,10 +17,10 @@ package controllers
 import (
 	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/hanzoai/ai/internal/authtest"
 	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/object"
 )
@@ -162,22 +162,14 @@ func TestAdminProviderView_NeverSerializesSecrets(t *testing.T) {
 // definition (it collided when this file, from the provider-admin PR, was rebased
 // onto the branch that introduced index_auth_test.go).
 
-// newGuardController builds an ApiController with an httptest recorder and a session
-// optionally carrying `user` as the principal.
-func newGuardController(user *iam.User) (*ApiController, *httptest.ResponseRecorder) {
-	ctx := web.NewContext()
-	ctx.Reset(rec, httptest.NewRequest("POST", "/v1/admin/providers/toggle", nil))
-	sess := &ctrlFakeSession{data: map[interface{}]interface{}{}}
-	if user != nil {
-		sess.data["user"] = iam.Claims{User: *user}
-	}
-	ctx.Input.CruSession = sess
-	c := visit("GET", "/v1/")
-	return c, rec
+// toggling is a request at the provider-admin toggle, carrying auth. The endpoint is
+// named once here; who is calling is whatever credential the caller presents.
+func toggling(auth string) *ApiController {
+	return presenting(visit(http.MethodPost, "/v1/admin/providers/toggle"), auth)
 }
 
 func TestRequireSuperAdmin_NoPrincipal401(t *testing.T) {
-	c, rec := newGuardController(nil)
+	c := toggling("")
 	if c.RequireSuperAdmin() {
 		t.Error("RequireSuperAdmin() = true for no principal, want false (deny)")
 	}
@@ -188,7 +180,7 @@ func TestRequireSuperAdmin_NoPrincipal401(t *testing.T) {
 
 func TestRequireSuperAdmin_OrgAdminForbidden403(t *testing.T) {
 	orgAdmin := &iam.User{Owner: "maxpower", Name: "dave", IsAdmin: true}
-	c, rec := newGuardController(orgAdmin)
+	c := toggling(authtest.Bearer(t, *orgAdmin))
 	if c.RequireSuperAdmin() {
 		t.Error("RequireSuperAdmin() = true for an ORG admin, want false (not a platform admin)")
 	}
@@ -199,12 +191,12 @@ func TestRequireSuperAdmin_OrgAdminForbidden403(t *testing.T) {
 
 func TestRequireSuperAdmin_SuperAdminPasses(t *testing.T) {
 	superAdmin := &iam.User{Owner: "admin", Name: "admin", IsAdmin: true}
-	c, rec := newGuardController(superAdmin)
+	c := toggling(authtest.Bearer(t, *superAdmin))
 	if !c.RequireSuperAdmin() {
 		t.Error("RequireSuperAdmin() = false for a super admin, want true (pass)")
 	}
 	// Pass path writes nothing (the handler continues).
-	if rec.Body.Len() != 0 {
+	if sent(c) != "" {
 		t.Errorf("super-admin pass wrote a body %q, want none", sent(c))
 	}
 }

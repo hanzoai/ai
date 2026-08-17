@@ -17,68 +17,33 @@ package controllers
 import (
 	"crypto/rand"
 	"crypto/rsa"
-	"crypto/x509"
-	"crypto/x509/pkix"
-	"encoding/pem"
-	"math/big"
 	"net/http"
-	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/golang-jwt/jwt/v4"
+	"github.com/hanzoai/ai/internal/authtest"
 	iam "github.com/hanzoai/ai/internal/iam"
 )
 
-// newUsageController builds an ApiController for GetCloudUsages auth+scope tests:
-// a full request URL (carrying ?org=/?owner= query params), an optional
-// Authorization header, an optional X-Org-Id tenant header, and an optional
-// session principal. It reuses ctrlFakeSession (index_auth_test.go) so
-// GetSessionUser resolves without a live session manager.
-func newUsageController(url, authHeader, orgHeader string, user *iam.User) (*ApiController, *httptest.ResponseRecorder) {
-	req := httptest.NewRequest("GET", url, nil)
+// newUsageController builds an ApiController for the GetCloudUsages auth+scope
+// tests: the request URL (carrying ?org= / ?owner=), an optional Authorization
+// header and an optional X-Org-Id tenant header.
+//
+// IT TAKES NO PRINCIPAL. Identity here is a VERIFIED token, so a test that needs an
+// authenticated caller presents one — mintUsageJWT signs it against the installed
+// certificate and the code under test then authenticates exactly the way production
+// does. The fake session this used to seed could assert any identity it liked, which
+// made an authorisation test a test of a door nobody walks through.
+func newUsageController(url, authHeader, orgHeader string) *ApiController {
+	c := visit(http.MethodGet, url)
 	if authHeader != "" {
-		req.Header.Set("Authorization", authHeader)
+		c.Fiber().Request().Header.Set("Authorization", authHeader)
 	}
 	if orgHeader != "" {
-		req.Header.Set("X-Org-Id", orgHeader)
+		c.Fiber().Request().Header.Set("X-Org-Id", orgHeader)
 	}
-	ctx := web.NewContext()
-	ctx.Reset(rec, req)
-	sess := &ctrlFakeSession{data: map[interface{}]interface{}{}}
-	if user != nil {
-		sess.data["user"] = iam.Claims{User: *user}
-	}
-	ctx.Input.CruSession = sess
-	c := visit("GET", "/v1/")
-	return c, rec
-}
-
-// installUsageCert installs a fresh self-signed RSA cert as the IAM verification
-// key and returns the matching private key, so a test can mint tokens the REAL
-// principal path (credentialUser → ParseAndValidateJWT → iam.ParseJwtToken)
-// verifies. Each call rotates the installed cert, so use a minted token before
-// installing the next. Cleanup resets to a benign empty cert (fail-closed).
-func installUsageCert(t *testing.T) *rsa.PrivateKey {
-	t.Helper()
-	key, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		t.Fatalf("rsa key: %v", err)
-	}
-	tmpl := &x509.Certificate{
-		SerialNumber: big.NewInt(1),
-		Subject:      pkix.Name{CommonName: "usage-test"},
-		NotBefore:    time.Now().Add(-time.Hour),
-		NotAfter:     time.Now().Add(time.Hour),
-	}
-	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
-	if err != nil {
-		t.Fatalf("create cert: %v", err)
-	}
-	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
-	iam.InitConfig("", "", "", string(certPEM), "", "")
-	t.Cleanup(func() { iam.InitConfig("", "", "", "", "", "") })
-	return key
+	return c
 }
 
 // usageClaims builds a standard claim set: owner/name identity + iss/aud + a fresh
@@ -99,7 +64,7 @@ func usageClaims(owner, name, iss, aud string) jwt.MapClaims {
 // RS256 token for owner/name — the common case for the accept-and-scope tests.
 func mintUsageJWT(t *testing.T, owner, name string) string {
 	t.Helper()
-	key := installUsageCert(t)
+	key := authtest.Signing(t)
 	tok, err := jwt.NewWithClaims(jwt.SigningMethodRS256, usageClaims(owner, name, "https://hanzo.id", "hanzo-cloud")).SignedString(key)
 	if err != nil {
 		t.Fatalf("sign token: %v", err)
@@ -143,10 +108,11 @@ func TestResolveCloudUsageScope(t *testing.T) {
 		{"super + X-Org-Id: maxpower -> targeted", "/x", "maxpower", superAdmin, "maxpower", false, true},
 	}
 	for _, tc := range cases {
-		// Seed the principal as a SESSION user: a session is own-brand, so the scope
-		// mapping is exercised for a same-brand principal (the brand gate is proved
-		// separately in TestResolveCloudUsageScope_BrandScopedGodView).
-		c, _ := newUsageController(tc.url, "", tc.orgHeader, tc.user)
+		// The principal is an ARGUMENT here, not something on the request:
+		// resolveCloudUsageScope reads the resolved user and the request's params, so
+		// this table is a pure function of the two. Which credential produced the user
+		// is proved separately, over a real token.
+		c := newUsageController(tc.url, "", tc.orgHeader)
 		gotOrg, gotAll, gotAdmin := c.resolveCloudUsageScope(tc.user)
 		if gotOrg != tc.wantOrg || gotAll != tc.wantAllOrg || gotAdmin != tc.wantAdmin {
 			t.Errorf("%s: scope = (%q, %v, admin=%v), want (%q, %v, admin=%v)",
@@ -159,34 +125,13 @@ func TestResolveCloudUsageScope(t *testing.T) {
 // a session NOR a Bearer is denied a real 401 (never a 200, never a fabricated
 // principal). This is the fail-closed floor of the Bearer-enabled read.
 func TestRequirePrincipal_NoCredentialIs401(t *testing.T) {
-	c, rec := newUsageController("/v1/get-cloud-usages?org=all", "", "hanzo", nil)
+	c := newUsageController("/v1/get-cloud-usages?org=all", "", "hanzo")
 	user, ok := c.RequirePrincipal()
 	if ok || user != nil {
 		t.Fatalf("RequirePrincipal with no credential = (%+v, %v), want (nil, false)", user, ok)
 	}
 	if answered(c) != http.StatusUnauthorized {
 		t.Errorf("no-credential status = %d, want 401", answered(c))
-	}
-}
-
-// TestRequirePrincipal_SessionUnchanged — task test (c): the session-cookie path
-// is unchanged. A session principal resolves to itself and (being non-super)
-// scopes to its own org even with ?org=all — identical to the pre-change behavior.
-func TestRequirePrincipal_SessionUnchanged(t *testing.T) {
-	sessionUser := &iam.User{Owner: "maxpower", Name: "dave"}
-	c, rec := newUsageController("/v1/get-cloud-usages?org=all", "", "", sessionUser)
-	user, ok := c.RequirePrincipal()
-	if !ok || user == nil {
-		t.Fatalf("RequirePrincipal with a session = (%+v, %v), want a user", user, ok)
-	}
-	if user.Owner != "maxpower" {
-		t.Errorf("resolved Owner = %q, want maxpower (the session principal)", user.Owner)
-	}
-	if rec.Body.Len() != 0 {
-		t.Errorf("session pass wrote a body %q, want none", sent(c))
-	}
-	if org, allOrgs, admin := c.resolveCloudUsageScope(user); org != "maxpower" || allOrgs || admin {
-		t.Errorf("session non-admin + ?org=all scope = (%q, %v, admin=%v), want (maxpower, false, admin=false)", org, allOrgs, admin)
 	}
 }
 
@@ -204,13 +149,13 @@ func TestGetCloudUsagesBearerScope(t *testing.T) {
 
 	t.Run("non-admin bearer pinned despite ?org=all + X-Org-Id", func(t *testing.T) {
 		tok := mintUsageJWT(t, "maxpower", "dave")
-		c, rec := newUsageController("/v1/get-cloud-usages?org=all", "Bearer "+tok, "hanzo", nil)
+		c := newUsageController("/v1/get-cloud-usages?org=all", "Bearer "+tok, "hanzo")
 
 		user, ok := c.RequirePrincipal()
 		if !ok || user == nil {
 			t.Fatalf("RequirePrincipal(bearer) = (%+v, %v), want the token principal", user, ok)
 		}
-		if rec.Body.Len() != 0 {
+		if sent(c) != "" {
 			t.Fatalf("bearer auth wrote a denial body %q; the token must be accepted", sent(c))
 		}
 		if user.Owner != "maxpower" {
@@ -224,7 +169,7 @@ func TestGetCloudUsagesBearerScope(t *testing.T) {
 
 	t.Run("super-admin bearer god-view", func(t *testing.T) {
 		tok := mintUsageJWT(t, "admin", "z")
-		c, _ := newUsageController("/v1/get-cloud-usages?org=all", "Bearer "+tok, "", nil)
+		c := newUsageController("/v1/get-cloud-usages?org=all", "Bearer "+tok, "")
 
 		user, ok := c.RequirePrincipal()
 		if !ok || user == nil || user.Owner != "admin" {
@@ -237,7 +182,7 @@ func TestGetCloudUsagesBearerScope(t *testing.T) {
 
 	t.Run("super-admin bearer can target one org", func(t *testing.T) {
 		tok := mintUsageJWT(t, "admin", "z")
-		c, _ := newUsageController("/v1/get-cloud-usages?org=maxpower", "Bearer "+tok, "", nil)
+		c := newUsageController("/v1/get-cloud-usages?org=maxpower", "Bearer "+tok, "")
 
 		user, ok := c.RequirePrincipal()
 		if !ok || user == nil {
@@ -273,7 +218,7 @@ func TestGetCloudUsagesRejectsForgedBearer(t *testing.T) {
 		t.Fatalf("sign forged: %v", err)
 	}
 
-	c, rec := newUsageController("/v1/get-cloud-usages?org=all", "Bearer "+forged, "", nil)
+	c := newUsageController("/v1/get-cloud-usages?org=all", "Bearer "+forged, "")
 	if user, ok := c.RequirePrincipal(); ok || user != nil {
 		t.Fatalf("forged bearer resolved a principal %+v — signature verification failed to reject it", user)
 	}
@@ -295,7 +240,7 @@ func TestResolveCloudUsageScope_BrandScopedGodView(t *testing.T) {
 
 	t.Run("same-brand super-admin SESSION -> god-view", func(t *testing.T) {
 		superAdmin := &iam.User{Owner: "admin", Name: "z"}
-		c, _ := newUsageController("/v1/get-cloud-usages?org=all", "", "", superAdmin)
+		c := newUsageController("/v1/get-cloud-usages?org=all", "", "")
 		if org, allOrgs, admin := c.resolveCloudUsageScope(superAdmin); org != "" || !allOrgs || !admin {
 			t.Errorf("same-brand session super-admin scope = (%q, %v, admin=%v), want (\"\", true, admin=true)", org, allOrgs, admin)
 		}
@@ -303,7 +248,7 @@ func TestResolveCloudUsageScope_BrandScopedGodView(t *testing.T) {
 
 	t.Run("same-brand super-admin BEARER (iss=hanzo.id) -> god-view", func(t *testing.T) {
 		tok := mintUsageJWT(t, "admin", "z") // iss=hanzo.id == expectedJWTIssuer()
-		c, _ := newUsageController("/v1/get-cloud-usages?org=all", "Bearer "+tok, "", nil)
+		c := newUsageController("/v1/get-cloud-usages?org=all", "Bearer "+tok, "")
 		user, ok := c.RequirePrincipal()
 		if !ok || user == nil {
 			t.Fatalf("own-brand super-admin bearer not accepted")
@@ -314,13 +259,13 @@ func TestResolveCloudUsageScope_BrandScopedGodView(t *testing.T) {
 	})
 
 	t.Run("cross-brand super-admin BEARER (iss=lux.id) -> PINNED, not god-view", func(t *testing.T) {
-		key := installUsageCert(t)
+		key := authtest.Signing(t)
 		tok, err := jwt.NewWithClaims(jwt.SigningMethodRS256,
 			usageClaims("admin", "z", "https://lux.id", "lux-cloud")).SignedString(key)
 		if err != nil {
 			t.Fatalf("sign lux token: %v", err)
 		}
-		c, _ := newUsageController("/v1/get-cloud-usages?org=all", "Bearer "+tok, "", nil)
+		c := newUsageController("/v1/get-cloud-usages?org=all", "Bearer "+tok, "")
 
 		// The lux token is a VALID sign-in credential (trusted issuer + brand aud)...
 		user, ok := c.RequirePrincipal()
@@ -336,13 +281,13 @@ func TestResolveCloudUsageScope_BrandScopedGodView(t *testing.T) {
 	})
 
 	t.Run("cross-brand super-admin BEARER cannot target another org", func(t *testing.T) {
-		key := installUsageCert(t)
+		key := authtest.Signing(t)
 		tok, err := jwt.NewWithClaims(jwt.SigningMethodRS256,
 			usageClaims("admin", "z", "https://lux.id", "lux-cloud")).SignedString(key)
 		if err != nil {
 			t.Fatalf("sign lux token: %v", err)
 		}
-		c, _ := newUsageController("/v1/get-cloud-usages?org=maxpower", "Bearer "+tok, "", nil)
+		c := newUsageController("/v1/get-cloud-usages?org=maxpower", "Bearer "+tok, "")
 		user, _ := c.RequirePrincipal()
 		if org, allOrgs, admin := c.resolveCloudUsageScope(user); org != "admin" || allOrgs || admin {
 			t.Errorf("cross-brand admin + ?org=maxpower scope = (%q, %v, admin=%v), want (\"admin\", false, admin=false) — cannot target another tenant", org, allOrgs, admin)
@@ -356,7 +301,7 @@ func TestResolveCloudUsageScope_BrandScopedGodView(t *testing.T) {
 // the god-view.
 func TestResolveCloudUsageScope_EmptyOwner(t *testing.T) {
 	ghost := &iam.User{Owner: "", Name: "ghost"}
-	c, _ := newUsageController("/v1/get-cloud-usages?org=all", "", "", ghost)
+	c := newUsageController("/v1/get-cloud-usages?org=all", "", "")
 	if org, allOrgs, admin := c.resolveCloudUsageScope(ghost); org != "" || allOrgs || admin {
 		t.Errorf("empty-Owner scope = (%q, %v, admin=%v), want (\"\", false, admin=false) — empty org filter, NOT all-orgs", org, allOrgs, admin)
 	}
@@ -366,11 +311,20 @@ func TestResolveCloudUsageScope_EmptyOwner(t *testing.T) {
 // (anonymousSignin binds Owner=IAM_ORG) must not read org-aggregate spend. The
 // handler rejects it BEFORE any warehouse read, so this drives the real handler.
 func TestGetCloudUsages_RejectsAnonymous(t *testing.T) {
-	for _, anon := range []*iam.User{
+	for _, anon := range []iam.User{
 		{Owner: "hanzo", Type: "anonymous-user", Name: "someone"},
 		{Owner: "hanzo", Name: "u-12345678"}, // anonymous by u-<hash> username (len 10)
 	} {
-		c, rec := newUsageController("/v1/get-cloud-usages", "", "", anon)
+		c := newUsageController("/v1/get-cloud-usages", authtest.Bearer(t, anon), "")
+
+		// THE CREDENTIAL IS GOOD, and proving that first is what keeps the 401 below
+		// worth anything: a missing principal and an anonymous one are refused with the
+		// same sentence, so a token that failed to verify would pass this test without
+		// the handler ever reaching the check it is about.
+		if user, ok := c.RequirePrincipal(); !ok || user == nil {
+			t.Fatalf("the guest's own credential did not verify, so this proves nothing about %+v", anon)
+		}
+
 		c.GetCloudUsages()
 		if answered(c) != http.StatusUnauthorized {
 			t.Errorf("anonymous %+v -> GetCloudUsages status = %d, want 401 (rejected before any warehouse read)", anon, answered(c))
@@ -386,7 +340,7 @@ func TestRequirePrincipal_RejectsMalformedBearer(t *testing.T) {
 	t.Setenv("GATEWAY_ALLOWED_AUDIENCES", "hanzo-cloud")
 
 	t.Run("alg=none", func(t *testing.T) {
-		installUsageCert(t) // globalClient must be non-nil for the keyfunc to run
+		authtest.Signing(t) // the verifier needs its certificate for the keyfunc to run
 		tok, err := jwt.NewWithClaims(jwt.SigningMethodNone,
 			usageClaims("admin", "z", "https://hanzo.id", "hanzo-cloud")).
 			SignedString(jwt.UnsafeAllowNoneSignatureType)
@@ -397,7 +351,7 @@ func TestRequirePrincipal_RejectsMalformedBearer(t *testing.T) {
 	})
 
 	t.Run("HS256 confusion", func(t *testing.T) {
-		installUsageCert(t)
+		authtest.Signing(t)
 		tok, err := jwt.NewWithClaims(jwt.SigningMethodHS256,
 			usageClaims("admin", "z", "https://hanzo.id", "hanzo-cloud")).
 			SignedString([]byte("attacker-chosen-hmac-secret"))
@@ -408,7 +362,7 @@ func TestRequirePrincipal_RejectsMalformedBearer(t *testing.T) {
 	})
 
 	t.Run("expired", func(t *testing.T) {
-		key := installUsageCert(t)
+		key := authtest.Signing(t)
 		claims := usageClaims("admin", "z", "https://hanzo.id", "hanzo-cloud")
 		claims["iat"] = time.Now().Add(-2 * time.Hour).Unix()
 		claims["exp"] = time.Now().Add(-time.Hour).Unix()
@@ -424,7 +378,7 @@ func TestRequirePrincipal_RejectsMalformedBearer(t *testing.T) {
 // resolves no principal and writes a 401.
 func assertBearerRejected(t *testing.T, token string) {
 	t.Helper()
-	c, rec := newUsageController("/v1/get-cloud-usages?org=all", "Bearer "+token, "", nil)
+	c := newUsageController("/v1/get-cloud-usages?org=all", "Bearer "+token, "")
 	if user, ok := c.RequirePrincipal(); ok || user != nil {
 		t.Fatalf("malformed bearer resolved a principal %+v; want none", user)
 	}
