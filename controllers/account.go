@@ -577,7 +577,7 @@ func (c *ApiController) UpdatePreferences() {
 	}
 
 	incoming := map[string]interface{}{}
-	if err := json.Unmarshal(c.Ctx.Input.RequestBody, &incoming); err != nil {
+	if err := json.Unmarshal(c.Body(), &incoming); err != nil {
 		c.ResponseError(fmt.Sprintf("invalid preferences body: %v", err))
 		return
 	}

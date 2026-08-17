@@ -55,7 +55,7 @@ func (c *ApiController) resolveSearchAuth() *searchAuth {
 	// 2. Bearer token auth. Every failure below is an authentication failure and
 	// MUST be a real HTTP 401 (ResponseUnauthorized), never The router's default 200
 	// (plain ResponseError) — a denial must be unambiguous to the caller.
-	authHeader := c.Ctx.Request.Header.Get("Authorization")
+	authHeader := c.Header("Authorization")
 	if authHeader == "" {
 		c.ResponseUnauthorized("authentication required: provide a session cookie or Bearer token")
 		return nil
@@ -166,7 +166,7 @@ func (c *ApiController) requireIndexAuth() *searchAuth {
 	}
 
 	// Bearer token auth
-	authHeader := c.Ctx.Request.Header.Get("Authorization")
+	authHeader := c.Header("Authorization")
 	if authHeader != "" {
 		token := strings.TrimPrefix(authHeader, "Bearer ")
 
@@ -310,7 +310,7 @@ func (c *ApiController) SearchDocs() {
 	}
 
 	var req object.DocSearchRequest
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &req)
+	err := json.Unmarshal(c.Body(), &req)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -357,7 +357,7 @@ func (c *ApiController) IndexDocs() {
 	}
 
 	var req object.DocIndexRequest
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &req)
+	err := json.Unmarshal(c.Body(), &req)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return

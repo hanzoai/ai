@@ -222,7 +222,7 @@ func (c *ApiController) AdminGrantModelAccess() {
 		Model  string `json:"model"`
 		Status string `json:"status"`
 	}
-	if err := json.Unmarshal(c.Ctx.Input.RequestBody, &body); err != nil {
+	if err := json.Unmarshal(c.Body(), &body); err != nil {
 		c.ResponseError(err.Error())
 		return
 	}

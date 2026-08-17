@@ -486,12 +486,12 @@ func messageText(m openai.ChatCompletionMessage) string {
 // body: `X-Max-Cost` (USD per 1k tokens / per-1k, float) and `X-Max-Latency-Ms` (int).
 func (c *ApiController) sloFromHeaders() router.Slo {
 	var slo router.Slo
-	if v := c.Ctx.Request.Header.Get("X-Max-Cost"); v != "" {
+	if v := c.Header("X-Max-Cost"); v != "" {
 		if f, err := strconv.ParseFloat(v, 64); err == nil {
 			slo.MaxCost = f
 		}
 	}
-	if v := c.Ctx.Request.Header.Get("X-Max-Latency-Ms"); v != "" {
+	if v := c.Header("X-Max-Latency-Ms"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
 			slo.MaxLatencyMs = n
 		}

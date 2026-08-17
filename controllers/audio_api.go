@@ -156,7 +156,7 @@ func (c *ApiController) AudioSpeech() {
 	var req audioSpeechRequest
 	oversize := ""
 	badReq := ""
-	if err := json.Unmarshal(c.Ctx.Input.RequestBody, &req); err != nil {
+	if err := json.Unmarshal(c.Body(), &req); err != nil {
 		badReq = fmt.Sprintf("Failed to parse request: %s", err.Error())
 	} else if req.Model == "" {
 		badReq = "audio request requires a \"model\" field"
@@ -193,7 +193,7 @@ func (c *ApiController) AudioSpeech() {
 	}
 	// Zen family: /v1/audio/speech is the OpenAI-compat alias of zen's voice verb.
 	if provider.Type == "Zen" {
-		c.serveZenMedia("audio/voice", req.Model, c.Ctx.Input.RequestBody, 1, orgId, authUser, isPremium, time.Now().UTC())
+		c.serveZenMedia("audio/voice", req.Model, c.Body(), 1, orgId, authUser, isPremium, time.Now().UTC())
 		return
 	}
 	// Bind the resolved upstream model + the requested voice onto the provider before
@@ -226,7 +226,7 @@ func (c *ApiController) AudioSpeech() {
 	defer release()
 
 	startTime := time.Now().UTC()
-	audioData, ttsResult, err := ttsProvider.QueryAudio(req.Input, c.Ctx.Request.Context(), c.GetAcceptLanguage())
+	audioData, ttsResult, err := ttsProvider.QueryAudio(req.Input, c.Context(), c.GetAcceptLanguage())
 	spoken := audioQuantity{chars: ttsCharsOf(ttsResult, req.Input)}
 	if err != nil {
 		c.recordAudioUsage(authUser, provider, req.Model, isPremium, audioQuantity{}, "error", err.Error(), startTime)
@@ -394,7 +394,7 @@ func (c *ApiController) AudioTranscriptions() {
 	defer release()
 
 	startTime := time.Now().UTC()
-	heard, sttResult, err := sttProvider.ProcessAudio(form.file, c.Ctx.Request.Context(), c.GetAcceptLanguage(), form.timings)
+	heard, sttResult, err := sttProvider.ProcessAudio(form.file, c.Context(), c.GetAcceptLanguage(), form.timings)
 	if err != nil {
 		c.recordAudioUsage(authUser, provider, model, isPremium, audioQuantity{}, "error", err.Error(), startTime)
 		c.ResponseError(err.Error())
@@ -403,12 +403,12 @@ func (c *ApiController) AudioTranscriptions() {
 	c.recordAudioUsage(authUser, provider, model, isPremium, audioQuantity{seconds: sttSecondsOf(sttResult)}, "success", "", startTime)
 
 	if form.responseFormat == "text" {
-		c.Ctx.Output.Header("Content-Type", "text/plain; charset=utf-8")
-		c.Ctx.Output.Body([]byte(heard.Text))
+		c.SetHeader("Content-Type", "text/plain; charset=utf-8")
+		c.Bytes(http.StatusOK, []byte(heard.Text))
 		return
 	}
-	c.Ctx.Output.Header("Content-Type", "application/json")
-	c.Ctx.Output.Body(transcriptionBody(form.responseFormat, heard, sttSecondsOf(sttResult)))
+	c.SetHeader("Content-Type", "application/json")
+	c.Bytes(http.StatusOK, transcriptionBody(form.responseFormat, heard, sttSecondsOf(sttResult)))
 }
 
 // transcriptionResponse is the OpenAI /v1/audio/transcriptions body. `json`
@@ -525,7 +525,7 @@ func (c *ApiController) recordAudioUsage(authUser *iam.User, provider *object.Pr
 		ClientIP:     c.Ctx.Request.RemoteAddr,
 		RequestID:    uuid.NewString(),
 	}
-	rec.bind(c.Ctx.Request.Context(), authUser)
+	rec.bind(c.Context(), authUser)
 	recordUsage(rec)
-	recordTrace(c.Ctx.Request.Context(), rec, startTime)
+	recordTrace(c.Context(), rec, startTime)
 }

@@ -324,7 +324,7 @@ func (c *ApiController) ChatCompletionsPublic() {
 	// starve every visitor's tier. It may refuse; it may not admit, which is why its
 	// silence is not consulted.
 	if spent := object.Spent(); spent != nil {
-		if out, err := spent(c.Ctx.Request.Context(), visitor, publicOrg); err == nil && out {
+		if out, err := spent(c.Context(), visitor, publicOrg); err == nil && out {
 			c.publicSpent(visitor, "allowance")
 			return
 		}
@@ -332,7 +332,7 @@ func (c *ApiController) ChatCompletionsPublic() {
 
 	// The visitor rides on the request, because the record of the call is what counts
 	// it and the record has no other way to know which stranger this was.
-	c.Ctx.Request = c.Ctx.Request.WithContext(withVisitor(c.Ctx.Request.Context(), visitor))
+	c.Ctx.Request = c.Ctx.Request.WithContext(withVisitor(c.Context(), visitor))
 
 	c.chatCompletions(callerPublic)
 }
@@ -348,10 +348,10 @@ func (c *ApiController) publicSpent(visitor, by string) {
 // rolling cap and every auth refusal on this surface already answer with, so a client
 // reads one error and not a fourth dialect of one.
 func (c *ApiController) publicRefuse(status int, kind, code, message string) {
-	c.Ctx.Output.SetStatus(status)
-	c.Ctx.Output.Header("Content-Type", "application/json")
-	c.Ctx.Output.Header("Cache-Control", "no-store")
-	c.Ctx.Output.Body(publicErrorJSON(kind, code, message))
+	c.Status(status)
+	c.SetHeader("Content-Type", "application/json")
+	c.SetHeader("Cache-Control", "no-store")
+	c.Bytes(http.StatusOK, publicErrorJSON(kind, code, message))
 	c.EnableRender = false
 }
 

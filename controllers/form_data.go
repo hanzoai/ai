@@ -83,6 +83,6 @@ func (c *ApiController) GetFormData() {
 		return
 	}
 
-	c.Ctx.Output.Header("Content-Type", "application/json")
-	c.Ctx.Output.Body(body)
+	c.SetHeader("Content-Type", "application/json")
+	c.Bytes(http.StatusOK, body)
 }

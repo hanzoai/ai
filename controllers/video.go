@@ -142,7 +142,7 @@ func (c *ApiController) UpdateVideo() {
 	id := c.Input().Get("id")
 
 	var video object.Video
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &video)
+	err := json.Unmarshal(c.Body(), &video)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -173,7 +173,7 @@ func (c *ApiController) UpdateVideo() {
 // @router /add-video [post]
 func (c *ApiController) AddVideo() {
 	var video object.Video
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &video)
+	err := json.Unmarshal(c.Body(), &video)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -197,7 +197,7 @@ func (c *ApiController) AddVideo() {
 // @router /delete-video [post]
 func (c *ApiController) DeleteVideo() {
 	var video object.Video
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &video)
+	err := json.Unmarshal(c.Body(), &video)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return

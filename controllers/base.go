@@ -24,11 +24,21 @@ import (
 	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/object"
-	"github.com/hanzoai/ai/web"
+	"github.com/zap-proto/zip"
 )
 
+// ApiController is a request. It embeds the zip context, so a handler reads its
+// body, params, query and headers straight from the wire with no second object
+// in between.
+//
+// Identity is NOT taken from the embedded context. zip's User/IsAdmin/Org read
+// gateway-set X-User-* headers; ai derives the same facts from a principal it
+// verified itself (GetSessionUser, and credentialUser -> ParseAndValidateJWT,
+// which checks the signature and the iss/aud policy). The methods below shadow
+// the embedded ones deliberately: a verified principal is not interchangeable
+// with a header.
 type ApiController struct {
-	web.Controller
+	*zip.Ctx
 }
 
 func init() {
@@ -162,7 +172,7 @@ func (c *ApiController) GetRequestTenantOrgID() string {
 	if c == nil || c.Ctx == nil {
 		return ""
 	}
-	return strings.TrimSpace(c.Ctx.Input.Header("X-Org-Id"))
+	return strings.TrimSpace(c.Header("X-Org-Id"))
 }
 
 func (c *ApiController) GetRequestTenantProjectID() string {
@@ -171,7 +181,7 @@ func (c *ApiController) GetRequestTenantProjectID() string {
 	}
 	// Canonical project sub-scope (what console2 stamps); the X-IAM- variant was
 	// never sent.
-	return strings.TrimSpace(c.Ctx.Input.Header("X-Project-Id"))
+	return strings.TrimSpace(c.Header("X-Project-Id"))
 }
 
 // GetSessionOwner returns the organization (owner) of the authenticated user.
@@ -286,7 +296,7 @@ func (c *ApiController) Finish() {
 		startTime := c.Ctx.Input.GetData("startTime")
 		if startTime != nil {
 			latency := time.Since(startTime.(time.Time)).Milliseconds()
-			object.ApiLatency.WithLabelValues(c.Ctx.Input.URL(), c.Ctx.Input.Method()).Observe(float64(latency))
+			object.ApiLatency.WithLabelValues(c.Ctx.Input.URL(), c.Method()).Observe(float64(latency))
 		}
 	}
 	c.errorLogFilter()
@@ -307,20 +317,20 @@ func (c *ApiController) errorLogFilter() {
 			status = ""
 		}
 		if status == "error" {
-			method := c.Ctx.Input.Method()
+			method := c.Method()
 			path := c.Ctx.Input.URL()
 			query := ""
 			if c.Ctx.Request != nil && c.Ctx.Request.URL != nil {
 				query = redactQuery(c.Ctx.Request.URL.RawQuery)
 			}
-			body := redactBody(string(c.Ctx.Input.RequestBody))
+			body := redactBody(string(c.Body()))
 			if len(body) > 4096 {
 				body = body[:4096] + "...(truncated)"
 			}
 			// Never the raw header: this logged 417 replayable user JWTs in
 			// production. A fingerprint still correlates repeated failures from
 			// one credential without being usable. See logredact.go.
-			token := redactCredential(c.Ctx.Request.Header.Get("Authorization"))
+			token := redactCredential(c.Header("Authorization"))
 			respJSON, _ := json.Marshal(v)
 			respStr := string(respJSON)
 			if len(respStr) > 4096 {

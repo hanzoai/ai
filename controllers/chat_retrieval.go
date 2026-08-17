@@ -67,10 +67,10 @@ func (c *ApiController) retrievalStore() string {
 
 // retrievalEnabled decides whether to augment the prompt with retrieved docs.
 func (c *ApiController) retrievalEnabled(token string) bool {
-	if v := c.Ctx.Request.Header.Get("X-Retrieval"); v != "" {
+	if v := c.Header("X-Retrieval"); v != "" {
 		return v == "1" || strings.EqualFold(v, "true")
 	}
-	if c.Ctx.Request.Header.Get("X-Retrieval-Store") != "" {
+	if c.Header("X-Retrieval-Store") != "" {
 		return true
 	}
 	if f := c.bodyRetrieval(); f.Retrieval || f.Store != "" {

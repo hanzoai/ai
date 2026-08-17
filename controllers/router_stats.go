@@ -555,7 +555,7 @@ func (c *ApiController) UpdateTrainingContribution() {
 	}
 
 	var body trainingContributionBody
-	if err := json.Unmarshal(c.Ctx.Input.RequestBody, &body); err != nil {
+	if err := json.Unmarshal(c.Body(), &body); err != nil {
 		c.ResponseError(err.Error())
 		return
 	}

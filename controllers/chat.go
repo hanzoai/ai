@@ -181,7 +181,7 @@ func (c *ApiController) UpdateChat() {
 	id := c.Input().Get("id")
 
 	var chat object.Chat
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &chat)
+	err := json.Unmarshal(c.Body(), &chat)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -244,7 +244,7 @@ func (c *ApiController) UpdateChat() {
 // @router /add-chat [post]
 func (c *ApiController) AddChat() {
 	var chat object.Chat
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &chat)
+	err := json.Unmarshal(c.Body(), &chat)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -301,7 +301,7 @@ func (c *ApiController) AddChat() {
 // @router /delete-chat [post]
 func (c *ApiController) DeleteChat() {
 	var chat object.Chat
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &chat)
+	err := json.Unmarshal(c.Body(), &chat)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
