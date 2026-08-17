@@ -14,15 +14,6 @@
 
 package controllers
 
-import (
-	"encoding/json"
-	"net/http"
-
-	"github.com/hanzoai/account"
-
-	"github.com/hanzoai/ai/object"
-)
-
 // maxCrawlURLs bounds a single /v1/crawl request. Each URL is an outbound fetch,
 // so the batch is capped to keep latency and cost bounded.
 const maxCrawlURLs = 10
@@ -42,63 +33,3 @@ type crawlRequest struct {
 // @Description back" endpoint.
 // @Param body body controllers.crawlRequest true "Crawl request ({url} or {urls})"
 // @Success 200 {object} controllers.Response "{results: []object.CrawlResult}"
-// @router /crawl [post]
-func (c *ApiController) Crawl() {
-	// Write-level auth, fail-closed: crawl performs billable outbound fetches, so
-	// it is gated like /v1/scrape (rejects read-only pk-* / widget keys).
-	auth := c.requireIndexAuth()
-	if auth == nil {
-		return
-	}
-
-	var req crawlRequest
-	if err := json.Unmarshal(c.Body(), &req); err != nil {
-		c.ResponseError(err.Error())
-		return
-	}
-
-	// Merge single `url` and batch `urls` into one deduplicated, non-empty list.
-	urls := make([]string, 0, len(req.Urls)+1)
-	seen := map[string]struct{}{}
-	for _, u := range append([]string{req.URL}, req.Urls...) {
-		if u == "" {
-			continue
-		}
-		if _, dup := seen[u]; dup {
-			continue
-		}
-		seen[u] = struct{}{}
-		urls = append(urls, u)
-	}
-	if len(urls) == 0 {
-		c.ResponseError("url (or urls) must not be empty")
-		return
-	}
-	if len(urls) > maxCrawlURLs {
-		c.ResponseError("too many urls: at most 10 per request")
-		return
-	}
-
-	// Balance gate before the expensive crawl, against the billing SUBJECT within
-	// the org NAMESPACE — parity with the chat gate, the scrape gate, and the
-	// usage debit. (The balance filter also gates this path; this is the same
-	// belt-and-suspenders check /v1/scrape performs.)
-	if auth.Owner != "" {
-		balance, balanceErr := getUserBalance(account.PayerOf(auth.Owner, auth.UserID).Subject(), auth.Owner)
-		if balanceErr == nil && balance <= 0 {
-			c.ResponseError("insufficient balance for crawl operation. Add funds at https://hanzo.ai/billing")
-			return
-		}
-	}
-
-	results, err := object.Crawl(urls)
-	if err != nil {
-		recordSearchUsage(auth, "crawl", "crawl", "error", 0, c.Fiber().IP())
-		c.ResponseError(err.Error())
-		return
-	}
-
-	recordSearchUsage(auth, "crawl", "crawl", "success", len(results), c.Fiber().IP())
-
-	c.JSON(http.StatusOK, map[string]interface{}{"results": results})
-}
