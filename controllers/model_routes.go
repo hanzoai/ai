@@ -129,6 +129,10 @@ var modelRoutes = map[string]modelRoute{
 	// User-facing name == DO catalog id (already clean public names). owned_by
 	// defaults to the do-ai provider (surfaced), matching every other unbranded
 	// passthrough. Verified live: each returns real vectors (dims noted).
+	// text-embedding-qwen3 is the Hanzo-native embedder the knowledge stores
+	// default to (object/init.go defaultEmbedModel) — the route the catalog
+	// comment always promised. Verified live: 1024-dim, matching KB_EMBED_DIMS.
+	"text-embedding-qwen3":       {providerName: "do-ai", upstreamModel: "qwen3-embedding-0.6b"},       // 1024-dim
 	"bge-m3":                     {providerName: "do-ai", upstreamModel: "bge-m3"},                     // 1024-dim, multilingual
 	"e5-large-v2":                {providerName: "do-ai", upstreamModel: "e5-large-v2"},                // 1024-dim
 	"gte-large-en-v1.5":          {providerName: "do-ai", upstreamModel: "gte-large-en-v1.5"},          // 1024-dim
