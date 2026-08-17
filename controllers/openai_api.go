@@ -1701,16 +1701,9 @@ func (c *ApiController) chatCompletions(from caller) {
 		question = fmt.Sprintf("System: %s\n\nUser: %s", systemPrompt, question)
 	}
 
-	// Setup for streaming if enabled
-	if request.Stream {
-		c.SetHeader("Content-Type", "text/event-stream")
-		c.SetHeader("Cache-Control", "no-cache")
-		c.SetHeader("Connection", "keep-alive")
-	}
-
-	// Create custom writer for OpenAI format
+	// The OpenAI-shaped view of the stream. Its destination is bound below, where
+	// the body is produced.
 	writer := &OpenAIWriter{
-		Response:     *c.Ctx.ResponseWriter,
 		Buffer:       []byte{},
 		RequestID:    requestId,
 		Stream:       request.Stream,
@@ -1748,154 +1741,182 @@ func (c *ApiController) chatCompletions(from caller) {
 	// is recorded where someone reads it, and "everyone refused" comes back as
 	// an honest 503 naming the reason instead of an upstream 402 telling the
 	// customer THEY are out of money.
-	var modelResult *model.ModelResult
-	var actualProvider served
-	var tried []attempt
+	// EVERY BYTE OF THE BODY IS WRITTEN IN HERE. A fasthttp response is produced
+	// inside a stream callback rather than into a writer the handler holds, so the
+	// completion, its bookkeeping and its final chunk all have to run within one
+	// call. They run in the order they already ran — this is a wrap, not a
+	// reordering.
+	//
+	// `answered` carries what a bare `return` used to. Those returns are now
+	// returns from a closure, which would fall through to the judge below instead
+	// of skipping it. (Not `served` — that name is a type in this package.)
+	answered := false
+	complete := func(out io.Writer) {
+		writer.out = out
+		var modelResult *model.ModelResult
+		var actualProvider served
+		var tried []attempt
 
-	if route != nil {
-		modelResult, actualProvider, tried, err = ask{
-			ctx:       c.Context(),
-			route:     route,
-			org:       ledger,
-			model:     request.Model,
-			primary:   provider,
-			question:  question,
-			history:   history,
-			knowledge: knowledge,
-			lang:      c.GetAcceptLanguage(),
-			writer:    writer,
-			sent:      func() bool { return writer.StreamSent },
-			prior:     familyRefused,
-		}.serve()
-	} else {
-		// Model absent from the route table: call the provider auth resolved.
-		var modelProvider model.ModelProvider
-		modelProvider, err = provider.GetModelProvider(c.GetAcceptLanguage())
+		if route != nil {
+			modelResult, actualProvider, tried, err = ask{
+				ctx:       c.Context(),
+				route:     route,
+				org:       ledger,
+				model:     request.Model,
+				primary:   provider,
+				question:  question,
+				history:   history,
+				knowledge: knowledge,
+				lang:      c.GetAcceptLanguage(),
+				writer:    writer,
+				sent:      func() bool { return writer.StreamSent },
+				prior:     familyRefused,
+			}.serve()
+		} else {
+			// Model absent from the route table: call the provider auth resolved.
+			var modelProvider model.ModelProvider
+			modelProvider, err = provider.GetModelProvider(c.GetAcceptLanguage())
+			if err != nil {
+				c.ResponseError(fmt.Sprintf("Failed to get model provider: %s", err.Error()))
+				return
+			}
+			modelResult, err = modelProvider.QueryText(question, writer, history, "", knowledge, nil, c.GetAcceptLanguage())
+			actualProvider = served{provider.Name, provider.Origin(), provider}
+		}
+
+		// Every vendor that refused goes in the ledger, whether or not one of them
+		// eventually served. A failover nobody can see leaves the empty account
+		// empty. The family's own refusal is already recorded above, so skip it here.
+		if n := len(familyRefused); len(tried) > n {
+			c.recordRefusals(request.Model, tried[n:], authUser, isPremium, request.Stream, requestId, requestStartTime)
+		}
+
 		if err != nil {
-			c.ResponseError(fmt.Sprintf("Failed to get model provider: %s", err.Error()))
+			// Record failed usage
+			if authUser != nil {
+				errRecord := &usageRecord{
+					Owner:     ledger,
+					Model:     request.Model,
+					Provider:  actualProvider.name,
+					Origin:    actualProvider.origin,
+					Premium:   isPremium,
+					Stream:    request.Stream,
+					Status:    "error",
+					ErrorMsg:  err.Error(),
+					ClientIP:  c.Fiber().IP(),
+					RequestID: requestId,
+				}
+				errRecord.bind(c.Context(), authUser)
+				errRecord.BYO, errRecord.Account = providerBYO(provider, authUser)
+				recordUsage(errRecord)
+				recordTrace(c.Context(), errRecord, requestStartTime)
+			}
+			c.ResponseError(err.Error())
 			return
 		}
-		modelResult, err = modelProvider.QueryText(question, writer, history, "", knowledge, nil, c.GetAcceptLanguage())
-		actualProvider = served{provider.Name, provider.Origin(), provider}
-	}
 
-	// Every vendor that refused goes in the ledger, whether or not one of them
-	// eventually served. A failover nobody can see leaves the empty account
-	// empty. The family's own refusal is already recorded above, so skip it here.
-	if n := len(familyRefused); len(tried) > n {
-		c.recordRefusals(request.Model, tried[n:], authUser, isPremium, request.Stream, requestId, requestStartTime)
-	}
-
-	if err != nil {
-		// Record failed usage
+		// Record successful usage (actualProvider reflects which provider served the request)
 		if authUser != nil {
-			errRecord := &usageRecord{
-				Owner:     ledger,
-				Model:     request.Model,
-				Provider:  actualProvider.name,
-				Origin:    actualProvider.origin,
-				Premium:   isPremium,
-				Stream:    request.Stream,
-				Status:    "error",
-				ErrorMsg:  err.Error(),
-				ClientIP:  c.Fiber().IP(),
-				RequestID: requestId,
-			}
-			errRecord.bind(c.Context(), authUser)
-			errRecord.BYO, errRecord.Account = providerBYO(provider, authUser)
-			recordUsage(errRecord)
-			recordTrace(c.Context(), errRecord, requestStartTime)
-		}
-		c.ResponseError(err.Error())
-		return
-	}
-
-	// Record successful usage (actualProvider reflects which provider served the request)
-	if authUser != nil {
-		successRecord := &usageRecord{
-			Owner:            ledger,
-			Organization:     authUser.Owner,
-			Model:            request.Model,
-			Provider:         actualProvider.name,
-			Origin:           actualProvider.origin,
-			PromptTokens:     modelResult.PromptTokenCount,
-			CacheReadTokens:  modelResult.CacheReadTokenCount,
-			CacheWriteTokens: modelResult.CacheWriteTokenCount,
-			CompletionTokens: modelResult.ResponseTokenCount,
-			TotalTokens:      modelResult.TotalTokenCount,
-			Currency:         "USD",
-			Premium:          isPremium,
-			Stream:           request.Stream,
-			Status:           "success",
-			ClientIP:         c.Fiber().IP(),
-			RequestID:        requestId,
-		}
-		successRecord.bind(c.Context(), authUser)
-		// Whether this call was "bring your own key" is a property of the row
-		// that SPENT a credential, not of the row auth resolved before failover
-		// moved the request. Reading the latter is how a call served on the
-		// platform's key gets billed as BYO — 1% instead of the token cost, with
-		// the platform eating the upstream.
-		successRecord.BYO, successRecord.Account = providerBYO(actualProvider.row, authUser)
-		recordUsage(successRecord)
-		recordTrace(c.Context(), successRecord, requestStartTime)
-		// Settle the reservation with the ACTUAL cost (this works identically for
-		// streaming and non-streaming non-tool responses — both have real token
-		// counts here from the QueryText pipeline).
-		hold.settle(calculateCostCentsWithCache(request.Model, modelResult.PromptTokenCount, modelResult.ResponseTokenCount, 0, 0))
-	}
-
-	// Handle response based on streaming mode
-	if !request.Stream {
-		answer := writer.MessageString()
-
-		response := openai.ChatCompletionResponse{
-			ID:      "chatcmpl-" + requestId,
-			Object:  "chat.completion",
-			Created: util.GetCurrentUnixTime(),
-			Model:   request.Model,
-			Choices: []openai.ChatCompletionChoice{
-				{
-					Index: 0,
-					Message: openai.ChatCompletionMessage{
-						Role:    "assistant",
-						Content: answer,
-					},
-					FinishReason: openai.FinishReasonStop,
-				},
-			},
-			Usage: openai.Usage{
+			successRecord := &usageRecord{
+				Owner:            ledger,
+				Organization:     authUser.Owner,
+				Model:            request.Model,
+				Provider:         actualProvider.name,
+				Origin:           actualProvider.origin,
 				PromptTokens:     modelResult.PromptTokenCount,
+				CacheReadTokens:  modelResult.CacheReadTokenCount,
+				CacheWriteTokens: modelResult.CacheWriteTokenCount,
 				CompletionTokens: modelResult.ResponseTokenCount,
 				TotalTokens:      modelResult.TotalTokenCount,
-			},
+				Currency:         "USD",
+				Premium:          isPremium,
+				Stream:           request.Stream,
+				Status:           "success",
+				ClientIP:         c.Fiber().IP(),
+				RequestID:        requestId,
+			}
+			successRecord.bind(c.Context(), authUser)
+			// Whether this call was "bring your own key" is a property of the row
+			// that SPENT a credential, not of the row auth resolved before failover
+			// moved the request. Reading the latter is how a call served on the
+			// platform's key gets billed as BYO — 1% instead of the token cost, with
+			// the platform eating the upstream.
+			successRecord.BYO, successRecord.Account = providerBYO(actualProvider.row, authUser)
+			recordUsage(successRecord)
+			recordTrace(c.Context(), successRecord, requestStartTime)
+			// Settle the reservation with the ACTUAL cost (this works identically for
+			// streaming and non-streaming non-tool responses — both have real token
+			// counts here from the QueryText pipeline).
+			hold.settle(calculateCostCentsWithCache(request.Model, modelResult.PromptTokenCount, modelResult.ResponseTokenCount, 0, 0))
 		}
 
-		jsonResponse, err := json.Marshal(response)
-		if err != nil {
-			c.ResponseError(err.Error())
-			return
-		}
+		// Handle response based on streaming mode
+		if !request.Stream {
+			answer := writer.MessageString()
 
-		c.SetHeader("Content-Type", "application/json")
-		c.Bytes(http.StatusOK, jsonResponse)
-	} else {
-		err = writer.Close(
-			modelResult.PromptTokenCount,
-			modelResult.ResponseTokenCount,
-			modelResult.TotalTokenCount,
-		)
-		if err != nil {
-			c.ResponseError(err.Error())
-			return
+			response := openai.ChatCompletionResponse{
+				ID:      "chatcmpl-" + requestId,
+				Object:  "chat.completion",
+				Created: util.GetCurrentUnixTime(),
+				Model:   request.Model,
+				Choices: []openai.ChatCompletionChoice{
+					{
+						Index: 0,
+						Message: openai.ChatCompletionMessage{
+							Role:    "assistant",
+							Content: answer,
+						},
+						FinishReason: openai.FinishReasonStop,
+					},
+				},
+				Usage: openai.Usage{
+					PromptTokens:     modelResult.PromptTokenCount,
+					CompletionTokens: modelResult.ResponseTokenCount,
+					TotalTokens:      modelResult.TotalTokenCount,
+				},
+			}
+
+			jsonResponse, err := json.Marshal(response)
+			if err != nil {
+				c.ResponseError(err.Error())
+				return
+			}
+
+			c.SetHeader("Content-Type", "application/json")
+			c.Bytes(http.StatusOK, jsonResponse)
+		} else {
+			err = writer.Close(
+				modelResult.PromptTokenCount,
+				modelResult.ResponseTokenCount,
+				modelResult.TotalTokenCount,
+			)
+			if err != nil {
+				c.ResponseError(err.Error())
+				return
+			}
 		}
+		answered = true
 	}
+
+	if request.Stream {
+		// The headers go on before the callback: the first chunk commits the status
+		// line, and nothing can be added to it afterwards.
+		c.SetHeader("Content-Type", "text/event-stream")
+		c.SetHeader("Cache-Control", "no-cache")
+		c.SetHeader("Connection", "keep-alive")
+		_ = c.SendStreamWriter(func(bw *bufio.Writer) { complete(bw) })
+	} else {
+		// Nothing is streamed: OpenAIWriter accumulates into MessageBuf and the one
+		// JSON body is written by complete itself, so there is no stream to name.
+		complete(io.Discard)
+	}
+
 	// LLM-as-a-judge: score THIS served (prompt, response) into a dense quality
 	// reward for the enso router. Placed AFTER the reply is fully written (both
 	// stream and non-stream), so it never adds latency; the hook only spawns a
 	// goroutine after cheap gates, and is a no-op unless ROUTER_JUDGE_ENABLED. The
 	// prompt/response are passed transiently — never persisted (see router_judge.go).
-	if routingRecorded {
+	if answered && routingRecorded {
 		judgeRoutedResponse(c.Header("User-Agent"), orgId, requestId, c.Header("CF-IPCountry"), request.Model, routedTask, question, writer.MessageString())
 	}
 }
