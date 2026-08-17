@@ -428,6 +428,13 @@ func (c *ApiController) proxyJSON(provider *object.Provider, apiPath string, bod
 		}
 	}
 	c.Ctx.ResponseWriter.WriteHeader(resp.StatusCode)
+	// The request went upstream with its model rewritten to provider.SubType, and
+	// the answer comes back naming it. The caller asked for userModel, so that is
+	// the model the answer says it is — the same field, read back the way it was
+	// written. Everything else is the upstream's own bytes.
+	if out, err := setJSONModel(respBody, userModel); err == nil {
+		respBody = out
+	}
 	c.Ctx.Output.Body(respBody)
 	c.EnableRender = false
 }
