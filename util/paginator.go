@@ -16,8 +16,6 @@ package util
 
 import (
 	"math"
-	"net/http"
-	"strconv"
 )
 
 // Paginator turns the "p" page-number query parameter plus a page size and a
@@ -25,19 +23,22 @@ import (
 // the same "p" parameter and computes the same offset as the historical
 // list handlers.
 type Paginator struct {
-	request *http.Request
 	perPage int
 	nums    int64
 	page    int
+	asked   int
 }
 
-// NewPaginator builds a Paginator over a page size and total count. A per of
-// zero or less defaults to 10.
-func NewPaginator(req *http.Request, per int, nums int64) *Paginator {
+// NewPaginator builds a Paginator over the requested page, a page size and a
+// total count. A per of zero or less defaults to 10.
+//
+// The page arrives as a number rather than a request: reading "p" is the
+// caller's job, and it was the only thing this ever wanted a request for.
+func NewPaginator(page int, per int, nums int64) *Paginator {
 	if per <= 0 {
 		per = 10
 	}
-	return &Paginator{request: req, perPage: per, nums: nums}
+	return &Paginator{perPage: per, nums: nums, asked: page}
 }
 
 // Nums returns the total item count.
@@ -57,10 +58,7 @@ func (p *Paginator) currentPage() int {
 	if p.page != 0 {
 		return p.page
 	}
-	if p.request.Form == nil {
-		p.request.ParseForm()
-	}
-	page, _ := strconv.Atoi(p.request.Form.Get("p"))
+	page := p.asked
 	if n := p.pageCount(); page > n {
 		page = n
 	}

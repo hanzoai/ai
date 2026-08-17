@@ -73,7 +73,7 @@ func (c *ApiController) GetForms() {
 			return
 		}
 
-		paginator := util.NewPaginator(c.Ctx.Request, limit, count)
+		paginator := util.NewPaginator(c.PageAsked(), limit, count)
 		forms, err := object.GetPaginationForms(owner, paginator.Offset(), limit, field, value, sortField, sortOrder)
 		if err != nil {
 			c.ResponseError(err.Error())

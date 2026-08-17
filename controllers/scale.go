@@ -64,7 +64,7 @@ func (c *ApiController) GetScales() {
 			c.ResponseError(err.Error())
 			return
 		}
-		paginator := util.NewPaginator(c.Ctx.Request, limit, count)
+		paginator := util.NewPaginator(c.PageAsked(), limit, count)
 		scales, err := object.GetPaginationScales(owner, paginator.Offset(), limit, field, value, sortField, sortOrder)
 		if err != nil {
 			c.ResponseError(err.Error())

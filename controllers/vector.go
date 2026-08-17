@@ -79,7 +79,7 @@ func (c *ApiController) GetVectors() {
 			return
 		}
 
-		paginator := util.NewPaginator(c.Ctx.Request, limit, count)
+		paginator := util.NewPaginator(c.PageAsked(), limit, count)
 		vectors, err := object.GetPaginationVectors(owner, storeName, paginator.Offset(), limit, field, value, sortField, sortOrder)
 		if err != nil {
 			c.ResponseError(err.Error())

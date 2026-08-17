@@ -293,7 +293,7 @@ func wrapActionResponse2(affected bool, data interface{}, e ...error) *Response 
 
 func (c *ApiController) Finish() {
 	if strings.HasPrefix(c.Path(), "/api") {
-		startTime := c.Ctx.Input.GetData("startTime")
+		startTime := c.Locals("startTime")
 		if startTime != nil {
 			latency := time.Since(startTime.(time.Time)).Milliseconds()
 			object.ApiLatency.WithLabelValues(c.Path(), c.Method()).Observe(float64(latency))
