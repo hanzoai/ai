@@ -358,7 +358,7 @@ func (c *ApiController) ConnectAIProvider() {
 	redirectURI := aiOAuthRedirectURI(getOriginFromHost(c.Ctx.Request.Host), spec.name)
 	authorizeURL := aiAuthorizeURL(app, redirectURI, state, spec.name)
 
-	if c.Ctx.Input.Query("format") == "json" {
+	if c.Query("format") == "json" {
 		c.ResponseOk(map[string]string{"authorizeUrl": authorizeURL})
 		return
 	}
@@ -393,12 +393,12 @@ func (c *ApiController) CallbackAIProvider() {
 		c.Ctx.Redirect(http.StatusFound, successBase+"?ai_connect_error="+url.QueryEscape(spec.name)+"&reason="+url.QueryEscape(reason))
 	}
 
-	if errParam := c.Ctx.Input.Query("error"); errParam != "" {
+	if errParam := c.Query("error"); errParam != "" {
 		fail("authorization denied: " + errParam)
 		return
 	}
-	code := c.Ctx.Input.Query("code")
-	state := c.Ctx.Input.Query("state")
+	code := c.Query("code")
+	state := c.Query("state")
 	if code == "" || state == "" {
 		fail("missing code or state")
 		return
@@ -415,7 +415,7 @@ func (c *ApiController) CallbackAIProvider() {
 		return
 	}
 
-	token, _, err := exchangeAIOAuthCode(c.Ctx.Request.Context(), spec.name, app, code, aiOAuthRedirectURI(origin, spec.name))
+	token, _, err := exchangeAIOAuthCode(c.Context(), spec.name, app, code, aiOAuthRedirectURI(origin, spec.name))
 	if err != nil {
 		// Never log the code/token; the provider error class is enough to triage.
 		fail("token exchange failed")

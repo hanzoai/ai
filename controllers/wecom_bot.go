@@ -75,7 +75,7 @@ func (c *ApiController) WecomBotHandleMessage() {
 
 	wxcpt := wxbizjsonmsgcrypt.NewWXBizMsgCrypt(token, encodingAESKey, "", wxbizjsonmsgcrypt.JsonType)
 
-	postData := c.Ctx.Input.RequestBody
+	postData := c.Body()
 	plaintext, cryptErr := wxcpt.DecryptMsg(msgSignature, timestamp, nonce, postData)
 	if cryptErr != nil {
 		log.Error("[WechatWork Bot] Decrypt message error: %v", cryptErr)

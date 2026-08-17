@@ -113,7 +113,7 @@ func (c *ApiController) UpdateScan() {
 	id := c.Input().Get("id")
 
 	var scan object.Scan
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &scan)
+	err := json.Unmarshal(c.Body(), &scan)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -131,7 +131,7 @@ func (c *ApiController) UpdateScan() {
 // @router /add-scan [post]
 func (c *ApiController) AddScan() {
 	var scan object.Scan
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &scan)
+	err := json.Unmarshal(c.Body(), &scan)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -149,7 +149,7 @@ func (c *ApiController) AddScan() {
 // @router /delete-scan [post]
 func (c *ApiController) DeleteScan() {
 	var scan object.Scan
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &scan)
+	err := json.Unmarshal(c.Body(), &scan)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return

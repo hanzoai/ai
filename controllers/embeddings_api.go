@@ -65,7 +65,7 @@ func (c *ApiController) Embeddings() {
 		Model string `json:"model"`
 	}
 	badReq := ""
-	if err := json.Unmarshal(c.Ctx.Input.RequestBody, &head); err != nil {
+	if err := json.Unmarshal(c.Body(), &head); err != nil {
 		badReq = fmt.Sprintf("Failed to parse request: %s", err.Error())
 	} else if head.Model == "" {
 		badReq = "embeddings request requires a \"model\" field"
@@ -105,7 +105,7 @@ func (c *ApiController) Embeddings() {
 			subject := authUser.PayerSubject(ledger)
 			est := int64(1)
 			if zm, ok := fam.lookup(head.Model); ok {
-				est = zm.costCents(coarseTokenEstimate(c.Ctx.Input.RequestBody), 0)
+				est = zm.costCents(coarseTokenEstimate(c.Body()), 0)
 			}
 			var ok2 bool
 			if hold, ok2 = reserveBudget(subject, est); !ok2 {
@@ -120,7 +120,7 @@ func (c *ApiController) Embeddings() {
 			// running that would ever release them.
 			defer hold.settle(0)
 		}
-		refused := c.pipeToFamily(fam, "embeddings", "openai", head.Model, c.Ctx.Input.RequestBody, false, orgId, authUser, isPremium, hold, startTime)
+		refused := c.pipeToFamily(fam, "embeddings", "openai", head.Model, c.Body(), false, orgId, authUser, isPremium, hold, startTime)
 		if refused == nil {
 			return
 		}
@@ -135,7 +135,7 @@ func (c *ApiController) Embeddings() {
 
 	// Translate the user-facing model to the upstream id, preserving every other
 	// field (input, encoding_format, dimensions, user, …) for true passthrough.
-	body, err := setJSONModel(c.Ctx.Input.RequestBody, provider.SubType)
+	body, err := setJSONModel(c.Body(), provider.SubType)
 	if err != nil {
 		c.ResponseError(fmt.Sprintf("Failed to rewrite request: %s", err.Error()))
 		return
@@ -176,7 +176,7 @@ func (c *ApiController) Rerank() {
 		ReturnDocuments *bool             `json:"return_documents"`
 	}
 	badReq := ""
-	if err := json.Unmarshal(c.Ctx.Input.RequestBody, &raw); err != nil {
+	if err := json.Unmarshal(c.Body(), &raw); err != nil {
 		badReq = fmt.Sprintf("Failed to parse request: %s", err.Error())
 	} else if raw.Model == "" {
 		badReq = "rerank request requires a \"model\" field"
@@ -217,13 +217,13 @@ func (c *ApiController) Rerank() {
 
 	// Zen family: forward to the zen service, billed per call at the discovered price.
 	if provider.Type == "Zen" {
-		c.serveZenMedia("rerank", raw.Model, c.Ctx.Input.RequestBody, 1, orgId, authUser, isPremium, startTime)
+		c.serveZenMedia("rerank", raw.Model, c.Body(), 1, orgId, authUser, isPremium, startTime)
 		return
 	}
 
 	// Native rerank provider → proxy the request straight through.
 	if isNativeRerankProvider(provider.Type) {
-		body, rerr := setJSONModel(c.Ctx.Input.RequestBody, provider.SubType)
+		body, rerr := setJSONModel(c.Body(), provider.SubType)
 		if rerr != nil {
 			c.ResponseError(fmt.Sprintf("Failed to rewrite request: %s", rerr.Error()))
 			return
@@ -280,9 +280,9 @@ func (c *ApiController) Rerank() {
 			ClientIP:     c.Ctx.Request.RemoteAddr,
 			RequestID:    uuid.NewString(),
 		}
-		rec.bind(c.Ctx.Request.Context(), authUser)
+		rec.bind(c.Context(), authUser)
 		recordUsage(rec)
-		recordTrace(c.Ctx.Request.Context(), rec, startTime)
+		recordTrace(c.Context(), rec, startTime)
 	}
 
 	c.jsonResponse(map[string]interface{}{
@@ -298,7 +298,7 @@ func (c *ApiController) Rerank() {
 // bearerToken extracts the "Bearer <token>" credential or writes the standard
 // auth error and returns ok=false.
 func (c *ApiController) bearerToken() (string, bool) {
-	authHeader := c.Ctx.Request.Header.Get("Authorization")
+	authHeader := c.Header("Authorization")
 	if !strings.HasPrefix(authHeader, "Bearer ") {
 		c.ResponseErrorWithStatus(401, c.T("openai:Invalid API key format. Expected 'Bearer API_KEY'"))
 		return "", false
@@ -309,9 +309,9 @@ func (c *ApiController) bearerToken() (string, bool) {
 // rejectPublishableKey writes the 403 that read-only publishable (pk-) keys get
 // when they hit a privileged endpoint.
 func (c *ApiController) rejectPublishableKey() {
-	c.Ctx.Output.SetStatus(403)
-	c.Ctx.Output.Header("Content-Type", "application/json")
-	c.Ctx.Output.Body([]byte(`{"error":{"message":"Publishable keys (pk-) can only access read-only endpoints (/v1/models, /health). Use a secret key (sk-) for this endpoint.","type":"auth_error","code":403}}`))
+	c.Status(403)
+	c.SetHeader("Content-Type", "application/json")
+	c.Bytes(http.StatusOK, []byte(`{"error":{"message":"Publishable keys (pk-) can only access read-only endpoints (/v1/models, /health). Use a secret key (sk-) for this endpoint.","type":"auth_error","code":403}}`))
 	c.EnableRender = false
 }
 
@@ -322,9 +322,9 @@ func (c *ApiController) jsonResponse(v interface{}) {
 		c.ResponseError(fmt.Sprintf("Failed to encode response: %s", err.Error()))
 		return
 	}
-	c.Ctx.Output.Header("Content-Type", "application/json")
+	c.SetHeader("Content-Type", "application/json")
 	c.Ctx.ResponseWriter.WriteHeader(http.StatusOK)
-	c.Ctx.Output.Body(b)
+	c.Bytes(http.StatusOK, b)
 	c.EnableRender = false
 }
 
@@ -368,9 +368,9 @@ func (c *ApiController) proxyJSON(provider *object.Provider, apiPath string, bod
 				ClientIP:  c.Ctx.Request.RemoteAddr,
 				RequestID: requestId,
 			}
-			errRecord.bind(c.Ctx.Request.Context(), authUser)
+			errRecord.bind(c.Context(), authUser)
 			recordUsage(errRecord)
-			recordTrace(c.Ctx.Request.Context(), errRecord, startTime)
+			recordTrace(c.Context(), errRecord, startTime)
 		}
 		c.ResponseError(fmt.Sprintf("Upstream request failed: %s", err.Error()))
 		return
@@ -411,9 +411,9 @@ func (c *ApiController) proxyJSON(provider *object.Provider, apiPath string, bod
 			ClientIP:     c.Ctx.Request.RemoteAddr,
 			RequestID:    requestId,
 		}
-		rec.bind(c.Ctx.Request.Context(), authUser)
+		rec.bind(c.Context(), authUser)
 		recordUsage(rec)
-		recordTrace(c.Ctx.Request.Context(), rec, startTime)
+		recordTrace(c.Context(), rec, startTime)
 	}
 
 	for k, vals := range resp.Header {
@@ -422,7 +422,7 @@ func (c *ApiController) proxyJSON(provider *object.Provider, apiPath string, bod
 		}
 	}
 	c.Ctx.ResponseWriter.WriteHeader(resp.StatusCode)
-	c.Ctx.Output.Body(respBody)
+	c.Bytes(http.StatusOK, respBody)
 	c.EnableRender = false
 }
 

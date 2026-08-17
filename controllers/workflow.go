@@ -114,7 +114,7 @@ func (c *ApiController) UpdateWorkflow() {
 	id := c.Input().Get("id")
 
 	var workflow object.Workflow
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &workflow)
+	err := json.Unmarshal(c.Body(), &workflow)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -138,7 +138,7 @@ func (c *ApiController) UpdateWorkflow() {
 // @router /add-workflow [post]
 func (c *ApiController) AddWorkflow() {
 	var workflow object.Workflow
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &workflow)
+	err := json.Unmarshal(c.Body(), &workflow)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -162,7 +162,7 @@ func (c *ApiController) AddWorkflow() {
 // @router /delete-workflow [post]
 func (c *ApiController) DeleteWorkflow() {
 	var workflow object.Workflow
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &workflow)
+	err := json.Unmarshal(c.Body(), &workflow)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return

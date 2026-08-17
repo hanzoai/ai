@@ -123,7 +123,7 @@ func (c *ApiController) UpdateGraph() {
 	id := c.Input().Get("id")
 
 	var Graph object.Graph
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &Graph)
+	err := json.Unmarshal(c.Body(), &Graph)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -147,7 +147,7 @@ func (c *ApiController) UpdateGraph() {
 // @router /add-Graph [post]
 func (c *ApiController) AddGraph() {
 	var Graph object.Graph
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &Graph)
+	err := json.Unmarshal(c.Body(), &Graph)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -171,7 +171,7 @@ func (c *ApiController) AddGraph() {
 // @router /delete-Graph [post]
 func (c *ApiController) DeleteGraph() {
 	var Graph object.Graph
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &Graph)
+	err := json.Unmarshal(c.Body(), &Graph)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return

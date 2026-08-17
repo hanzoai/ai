@@ -98,7 +98,7 @@ func (c *ApiController) UpdateTemplate() {
 	id := c.Input().Get("id")
 
 	var template object.Template
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &template)
+	err := json.Unmarshal(c.Body(), &template)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -122,7 +122,7 @@ func (c *ApiController) UpdateTemplate() {
 // @router /add-template [post]
 func (c *ApiController) AddTemplate() {
 	var template object.Template
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &template)
+	err := json.Unmarshal(c.Body(), &template)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -146,7 +146,7 @@ func (c *ApiController) AddTemplate() {
 // @router /delete-template [post]
 func (c *ApiController) DeleteTemplate() {
 	var template object.Template
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &template)
+	err := json.Unmarshal(c.Body(), &template)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return

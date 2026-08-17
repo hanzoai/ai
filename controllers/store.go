@@ -151,7 +151,7 @@ func (c *ApiController) UpdateStore() {
 	id := c.Input().Get("id")
 
 	var store object.Store
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &store)
+	err := json.Unmarshal(c.Body(), &store)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -205,7 +205,7 @@ func (c *ApiController) UpdateStore() {
 // @router /add-store [post]
 func (c *ApiController) AddStore() {
 	var store object.Store
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &store)
+	err := json.Unmarshal(c.Body(), &store)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -271,7 +271,7 @@ func (c *ApiController) AddStore() {
 // @router /delete-store [post]
 func (c *ApiController) DeleteStore() {
 	var store object.Store
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &store)
+	err := json.Unmarshal(c.Body(), &store)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -300,7 +300,7 @@ func (c *ApiController) DeleteStore() {
 // @router /refresh-store-vectors [post]
 func (c *ApiController) RefreshStoreVectors() {
 	var store object.Store
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &store)
+	err := json.Unmarshal(c.Body(), &store)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return

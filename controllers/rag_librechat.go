@@ -192,7 +192,7 @@ func (c *ApiController) ragQueryCompat() {
 	}
 
 	var req object.RagQueryRequest
-	if err := json.Unmarshal(c.Ctx.Input.RequestBody, &req); err != nil {
+	if err := json.Unmarshal(c.Body(), &req); err != nil {
 		c.ResponseError(err.Error())
 		return
 	}
@@ -222,7 +222,7 @@ func (c *ApiController) RagDeleteDocuments() {
 	}
 
 	var fileIDs []string
-	if err := json.Unmarshal(c.Ctx.Input.RequestBody, &fileIDs); err != nil {
+	if err := json.Unmarshal(c.Body(), &fileIDs); err != nil {
 		c.ResponseError(err.Error())
 		return
 	}

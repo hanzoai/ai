@@ -114,7 +114,7 @@ func (c *ApiController) UpdateForm() {
 	id := c.Input().Get("id")
 
 	var form object.Form
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &form)
+	err := json.Unmarshal(c.Body(), &form)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -138,7 +138,7 @@ func (c *ApiController) UpdateForm() {
 // @router /add-form [post]
 func (c *ApiController) AddForm() {
 	var form object.Form
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &form)
+	err := json.Unmarshal(c.Body(), &form)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -162,7 +162,7 @@ func (c *ApiController) AddForm() {
 // @router /delete-form [post]
 func (c *ApiController) DeleteForm() {
 	var form object.Form
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &form)
+	err := json.Unmarshal(c.Body(), &form)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return

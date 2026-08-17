@@ -113,7 +113,7 @@ func (c *ApiController) UpdateArticle() {
 	id := c.Input().Get("id")
 
 	var article object.Article
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &article)
+	err := json.Unmarshal(c.Body(), &article)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -137,7 +137,7 @@ func (c *ApiController) UpdateArticle() {
 // @router /add-article [post]
 func (c *ApiController) AddArticle() {
 	var article object.Article
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &article)
+	err := json.Unmarshal(c.Body(), &article)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -161,7 +161,7 @@ func (c *ApiController) AddArticle() {
 // @router /delete-article [post]
 func (c *ApiController) DeleteArticle() {
 	var article object.Article
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &article)
+	err := json.Unmarshal(c.Body(), &article)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return

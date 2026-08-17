@@ -144,7 +144,7 @@ func (c *ApiController) principalOrgs() []account.OrgRef {
 // billingOrg, which differs for exactly one principal — a super admin acting
 // inside a customer tenant scopes to the customer and spends its own ledger.
 func (c *ApiController) GetOrg() string {
-	requested := strings.TrimSpace(c.Ctx.Input.Header("X-Org-Id"))
+	requested := strings.TrimSpace(c.Header("X-Org-Id"))
 
 	user := c.principalUser()
 	if user != nil && user.Owner != "" {
@@ -196,7 +196,7 @@ func (c *ApiController) billingOrg(user *iam.User) string {
 	if user.Owner == publicOrg {
 		return publicOrg
 	}
-	requested := strings.TrimSpace(c.Ctx.Input.Header("X-Org-Id"))
+	requested := strings.TrimSpace(c.Header("X-Org-Id"))
 	if requested == "" || requested == user.Owner {
 		// Dominant path: no switch asked for. Byte-identical to keying on
 		// user.Owner, and it never touches the claim.

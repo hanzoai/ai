@@ -51,7 +51,7 @@ func (c *ApiController) Crawl() {
 	}
 
 	var req crawlRequest
-	if err := json.Unmarshal(c.Ctx.Input.RequestBody, &req); err != nil {
+	if err := json.Unmarshal(c.Body(), &req); err != nil {
 		c.ResponseError(err.Error())
 		return
 	}

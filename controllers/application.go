@@ -106,7 +106,7 @@ func (c *ApiController) UpdateApplication() {
 	id := c.Input().Get("id")
 
 	var application object.Application
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &application)
+	err := json.Unmarshal(c.Body(), &application)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -136,7 +136,7 @@ func (c *ApiController) UpdateApplication() {
 // @router /add-application [post]
 func (c *ApiController) AddApplication() {
 	var application object.Application
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &application)
+	err := json.Unmarshal(c.Body(), &application)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -177,7 +177,7 @@ func (c *ApiController) AddApplication() {
 // @router /delete-application [post]
 func (c *ApiController) DeleteApplication() {
 	var application object.Application
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &application)
+	err := json.Unmarshal(c.Body(), &application)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -207,7 +207,7 @@ func (c *ApiController) DeployApplication() {
 	id := c.Input().Get("id")
 
 	var application object.Application
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &application)
+	err := json.Unmarshal(c.Body(), &application)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return

@@ -111,7 +111,7 @@ func (c *ApiController) AddModelRoute() {
 		return
 	}
 	var route object.ModelRoute
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &route)
+	err := json.Unmarshal(c.Body(), &route)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -147,7 +147,7 @@ func (c *ApiController) UpdateModelRoute() {
 	modelName := c.Input().Get("modelName")
 
 	var route object.ModelRoute
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &route)
+	err := json.Unmarshal(c.Body(), &route)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -174,7 +174,7 @@ func (c *ApiController) DeleteModelRoute() {
 		return
 	}
 	var route object.ModelRoute
-	err := json.Unmarshal(c.Ctx.Input.RequestBody, &route)
+	err := json.Unmarshal(c.Body(), &route)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
