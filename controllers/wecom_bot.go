@@ -18,6 +18,7 @@ package controllers
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 
 	"github.com/google/uuid"
 	"github.com/hanzoai/ai/log"
@@ -40,7 +41,7 @@ func (c *ApiController) WecomBotVerifyUrl() {
 
 	token, encodingAESKey, err := object.GetWecomBotTokenAndKey(botId)
 	if err != nil {
-		c.Ctx.ResponseWriter.Write([]byte(fmt.Sprintf("verify fail: %v", err)))
+		_ = c.Bytes(http.StatusOK, []byte(fmt.Sprintf("verify fail: %v", err)))
 		return
 	}
 
@@ -48,11 +49,11 @@ func (c *ApiController) WecomBotVerifyUrl() {
 
 	result, cryptErr := wxcpt.VerifyURL(msgSignature, timestamp, nonce, echoStr)
 	if cryptErr != nil {
-		c.Ctx.ResponseWriter.Write([]byte(fmt.Sprintf("verify fail: %v", cryptErr)))
+		_ = c.Bytes(http.StatusOK, []byte(fmt.Sprintf("verify fail: %v", cryptErr)))
 		return
 	}
 
-	c.Ctx.ResponseWriter.Write(result)
+	_ = c.Bytes(http.StatusOK, result)
 }
 
 // WecomBotHandleMessage process WeChat work bot messages
@@ -69,7 +70,7 @@ func (c *ApiController) WecomBotHandleMessage() {
 	token, encodingAESKey, err := object.GetWecomBotTokenAndKey(botId)
 	if err != nil {
 		log.Error("verify fail: %v", err)
-		c.Ctx.ResponseWriter.Write([]byte(fmt.Sprintf("verify fail: %v", err)))
+		_ = c.Bytes(http.StatusOK, []byte(fmt.Sprintf("verify fail: %v", err)))
 		return
 	}
 
@@ -79,14 +80,14 @@ func (c *ApiController) WecomBotHandleMessage() {
 	plaintext, cryptErr := wxcpt.DecryptMsg(msgSignature, timestamp, nonce, postData)
 	if cryptErr != nil {
 		log.Error("[WechatWork Bot] Decrypt message error: %v", cryptErr)
-		c.Ctx.ResponseWriter.Write([]byte("error"))
+		_ = c.Bytes(http.StatusOK, []byte("error"))
 		return
 	}
 
 	var message object.WecomBotMessage
 	if err := json.Unmarshal(plaintext, &message); err != nil {
 		log.Error("[WechatWork Bot] Parse message error: %v", err)
-		c.Ctx.ResponseWriter.Write([]byte("error"))
+		_ = c.Bytes(http.StatusOK, []byte("error"))
 		return
 	}
 
@@ -96,17 +97,17 @@ func (c *ApiController) WecomBotHandleMessage() {
 		responseMsg, cryptErr = c.handleTextMessage(&message, wxcpt, nonce, timestamp, c.GetAcceptLanguage())
 	default:
 		log.Error("[WechatWork Bot] Unsupported message type: %s", message.MsgType)
-		c.Ctx.ResponseWriter.Write([]byte("success"))
+		_ = c.Bytes(http.StatusOK, []byte("success"))
 		return
 	}
 
 	if cryptErr != nil {
 		log.Error("[WechatWork Bot] Handle message error: %v", cryptErr)
-		c.Ctx.ResponseWriter.Write([]byte("error"))
+		_ = c.Bytes(http.StatusOK, []byte("error"))
 		return
 	}
 
-	c.Ctx.ResponseWriter.Write([]byte(responseMsg))
+	_ = c.Bytes(http.StatusOK, []byte(responseMsg))
 }
 
 func (c *ApiController) handleTextMessage(message *object.WecomBotMessage, wxcpt *wxbizjsonmsgcrypt.WXBizMsgCrypt, nonce, timestamp string, lang string) (string, *wxbizjsonmsgcrypt.CryptError) {

@@ -1309,7 +1309,7 @@ func (c *ApiController) relayZenStream(body io.Reader, mk *mark) (prompt, comple
 	sc := bufio.NewScanner(body)
 	sc.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
 	for sc.Scan() {
-		line := sc.Bytes(http.StatusOK)
+		line := sc.Bytes()
 		if bytes.HasPrefix(line, zenDataPrefix) {
 			payload := bytes.TrimSpace(line[len(zenDataPrefix):])
 			if len(payload) > 0 && payload[0] == '{' {
