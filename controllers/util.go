@@ -53,7 +53,23 @@ func (c *ApiController) ResponseOk(data ...interface{}) {
 	c.JSON(http.StatusOK, resp)
 }
 
+// ResponseError writes the envelope with HTTP 200: the admin contract, where the
+// envelope's own Status field carries the failure and the transport says nothing.
+// The React admin reads that field, so this is the shape it expects.
 func (c *ApiController) ResponseError(error string, data ...interface{}) {
+	c.ResponseErrorWithStatus(http.StatusOK, error, data...)
+}
+
+// ResponseErrorWithStatus writes the envelope with an explicit HTTP status, which
+// is what the OpenAI-compatible /v1 handlers need: a missing or invalid Bearer
+// token is a 401 on the wire, not a 200 carrying a sad sentence.
+//
+// The status is an ARGUMENT of the write, and has to be. This used to set it on
+// the response and then call ResponseError to write the body — but a write takes
+// the status too, so the second one silently replaced the first with 200 and every
+// refusal in the service answered OK. A denial that arrives as a success is worse
+// than an outage: the client reads 200 and believes it.
+func (c *ApiController) ResponseErrorWithStatus(status int, error string, data ...interface{}) {
 	resp := Response{Status: "error", Msg: error}
 	switch len(data) {
 	case 2:
@@ -62,17 +78,7 @@ func (c *ApiController) ResponseError(error string, data ...interface{}) {
 	case 1:
 		resp.Data = data[0]
 	}
-	c.JSON(http.StatusOK, resp)
-}
-
-// ResponseErrorWithStatus writes the standard error envelope with an explicit
-// HTTP status code. Plain ResponseError emits HTTP 200, which is wrong for auth
-// failures; the OpenAI-compatible /v1 handlers use this so a missing or invalid
-// Bearer token returns 401, matching /v1/models. The router's Output.Body honors a
-// status set via SetStatus, so the body shape is unchanged.
-func (c *ApiController) ResponseErrorWithStatus(status int, error string, data ...interface{}) {
-	c.Status(status)
-	c.ResponseError(error, data...)
+	c.JSON(status, resp)
 }
 
 // apiError carries an HTTP status alongside the message so the OpenAI-compatible
@@ -189,8 +195,7 @@ func (c *ApiController) ResponseAuthError(err error) {
 // completion that no provider could serve reached clients as a success whose body
 // had no choices in it.
 func (c *ApiController) ResponseFailure(err error) {
-	c.Status(statusOf(err))
-	c.JSON(http.StatusOK, Response{Status: "error", Msg: err.Error(), Code: codeOf(err)})
+	c.JSON(statusOf(err), Response{Status: "error", Msg: err.Error(), Code: codeOf(err)})
 }
 
 // ResponseUnauthorized renders an authentication denial (no/invalid session or
@@ -221,7 +226,7 @@ func (c *ApiController) ResponseAudio(audioData []byte, contentType string, file
 	c.SetHeader("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
 	err := c.Bytes(http.StatusOK, audioData)
 	if err != nil {
-		responseError(c.Ctx, err.Error())
+		responseError(c.Ctx, http.StatusInternalServerError, err.Error())
 	}
 }
 
@@ -328,11 +333,14 @@ func (c *ApiController) IsAdmin() bool {
 }
 
 func DenyRequest(ctx *zip.Ctx) {
-	ctx.Status(http.StatusForbidden)
-	responseError(ctx, "auth:Unauthorized operation")
+	responseError(ctx, http.StatusForbidden, "auth:Unauthorized operation")
 }
 
-func responseError(ctx *zip.Ctx, error string, data ...interface{}) {
+// responseError writes the translated envelope with an explicit status. The status
+// used to arrive by being set on the response and read back here — which works, and
+// is the same side channel that made every refusal in this file answer 200 when a
+// write that carries its own status came along. Say it at the call.
+func responseError(ctx *zip.Ctx, status int, error string, data ...interface{}) {
 	// Get language from Accept-Language header
 	language := ctx.Header("Accept-Language")
 	if len(language) > 2 {
@@ -355,11 +363,7 @@ func responseError(ctx *zip.Ctx, error string, data ...interface{}) {
 		resp.Data = data[0]
 	}
 
-	code := ctx.Fiber().Response().StatusCode()
-	if code < 400 {
-		code = http.StatusOK
-	}
-	if err := ctx.JSON(code, resp); err != nil {
+	if err := ctx.JSON(status, resp); err != nil {
 		panic(err)
 	}
 }
