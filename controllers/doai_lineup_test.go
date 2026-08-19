@@ -122,13 +122,20 @@ func TestDOAILineupInYAML(t *testing.T) {
 	}
 }
 
-// TestBestVirtualModelCascade asserts the virtual `best` model (the "best
-// available coding model" that `hanzo code` defaults to) is a plain route whose
-// ordered fallback chain IS the quality ranking — resolving to glm-5.2 first and
-// cascading down the ranked list on the retryable conditions the deployed
-// failover loop (controllers/failover.go) advances on. This pins the DRY design:
-// `best` reuses the ONE fallback mechanism, not a parallel router.
-func TestBestVirtualModelCascade(t *testing.T) {
+// TestBestIsRetired is a ratchet. `best` was a virtual policy model whose
+// ordered fallback chain was its quality ranking, and it is gone: a superlative
+// names no product — it says which model is best without saying what it IS —
+// and it was a second answer to a question the enso family already answers,
+// since enso is the tier that routes. Nothing points at it now (cloud's
+// FallbackModel takes `enso`, and `hanzo code`'s DEFAULT_MODEL was already
+// `enso`, which is why the comment here claiming it defaulted to `best` was
+// stale), and production carried no request naming it in 24h.
+//
+// Asserted ABSENT rather than merely deleted, because this catalog is
+// hand-edited in two places that have to agree — this file and the prod
+// ConfigMap (universe/infra/k8s/cloud/models.yaml) — so a re-add would
+// republish a retired SKU to /v1/models with nothing to catch it.
+func TestBestIsRetired(t *testing.T) {
 	if err := InitModelConfig("../conf/models.yaml"); err != nil {
 		t.Fatalf("load conf/models.yaml: %v", err)
 	}
@@ -136,78 +143,31 @@ func TestBestVirtualModelCascade(t *testing.T) {
 	if cfg == nil {
 		t.Fatal("model config nil after init")
 	}
-
-	r := cfg.ResolveRoute("best")
-	if r == nil {
-		t.Fatal("`best` did not resolve — the virtual model is missing from the catalog")
+	if r := cfg.ResolveRoute("best"); r != nil {
+		t.Errorf("`best` is retired but still resolves to %s/%s", r.providerName, r.upstreamModel)
 	}
-	if r.providerName != "do-ai" || r.upstreamModel != "glm-5.2" {
-		t.Errorf("best primary = %s/%s, want do-ai/glm-5.2", r.providerName, r.upstreamModel)
-	}
-	// The fallback chain, IN ORDER, is the quality ranking.
-	wantChain := []struct{ provider, upstream string }{
-		{"do-ai", "deepseek-v4-pro"},
-		{"do-ai", "kimi-k2.6"},
-		{"do-ai", "deepseek-4-flash"},
-		{"do-ai", "qwen3.5-397b-a17b"},
-	}
-	if len(r.fallbacks) != len(wantChain) {
-		t.Fatalf("best has %d fallbacks, want %d (%v)", len(r.fallbacks), len(wantChain), r.fallbacks)
-	}
-	for i, want := range wantChain {
-		if r.fallbacks[i].providerName != want.provider || r.fallbacks[i].upstreamModel != want.upstream {
-			t.Errorf("best fallback[%d] = %s/%s, want %s/%s",
-				i, r.fallbacks[i].providerName, r.fallbacks[i].upstreamModel, want.provider, want.upstream)
-		}
-	}
-
-	// `best` is the model `hanzo code claude` runs on by default, and glm-5.2 —
-	// its primary — is served by DO at 262,144. Without a fallback that declares
-	// a bigger window, a long session hits that ceiling and the request is
-	// refused. deepseek-v4-pro is the one model DO serves at a true 1M
-	// (measured), so it must carry its window here: that declaration is what
-	// lets routeForPrompt send an oversized prompt to it instead of failing.
-	if got := r.fallbacks[0].contextWindow; got != 1000000 {
-		t.Errorf("best's deepseek-v4-pro fallback declares a %d window, want 1000000 — "+
-			"without it, `hanzo code claude` is capped at glm-5.2's 262144 and long "+
-			"sessions dead-end instead of routing to the model that can hold them", got)
-	}
-	// owned_by hanzo: it is a Hanzo policy model, so the upstream is never leaked
-	// in the /v1/models listing (publicProvider omits it) and model-sync leaves it
-	// alone (it manages only owned_by:"do-ai" passthroughs).
-	if r.ownedBy != "hanzo" {
-		t.Errorf("best owned_by = %q, want hanzo", r.ownedBy)
-	}
-	if publicProvider(*r) != "" {
-		t.Errorf("best must not leak its upstream provider in listing, got %q", publicProvider(*r))
-	}
-
-	// `best` is listed (not hidden) so the CLI's catalog resolver finds it.
-	listed := false
 	for _, m := range cfg.ListModels() {
 		if m.ID == "best" {
-			listed = true
-			if m.OwnedBy != "hanzo" {
-				t.Errorf("listed best owned_by = %q, want hanzo", m.OwnedBy)
-			}
+			t.Error("`best` is retired but is still published in the /v1/models listing")
 		}
 	}
-	if !listed {
-		t.Error("`best` missing from /v1/models listing — `hanzo code` catalog resolve would fail")
-	}
+}
 
-	// The ranking only degrades gracefully because the failover loop treats
-	// exactly these conditions as retryable (→ advance to the next rank). Pin the
-	// trigger set that makes `best` fall through instead of hard-failing.
+// TestFailoverAdvancesOnProviderFaults pins the trigger set the failover loop
+// (controllers/failover.go) treats as retryable — the conditions on which a
+// route advances to its next rank instead of hard-failing. It outlived `best`,
+// which is the point: this is the ONE fallback mechanism every route with a
+// chain uses, and it had only ever been demonstrated THROUGH that model.
+func TestFailoverAdvancesOnProviderFaults(t *testing.T) {
 	for _, err := range []error{
-		errors.New("error, status code: 429, status: 429 Too Many Requests"), // glm-5.2 rate-limited (observed live)
+		errors.New("error, status code: 429, status: 429 Too Many Requests"), // rate-limited (observed live)
 		errors.New("402 payment required"),
 		errors.New("403 this model is not available for your account"),
 		errors.New("insufficient_quota"),
 		unavailable("do-ai"), // the value the loop actually raises for a switched-off row
 	} {
 		if faultOf(err) != faultProvider {
-			t.Errorf("best cascade would NOT fire on %q (faultOf said request, not provider)", err)
+			t.Errorf("a cascade would NOT fire on %q (faultOf said request, not provider)", err)
 		}
 	}
 }
