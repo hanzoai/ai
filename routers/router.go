@@ -89,7 +89,10 @@ func registerAPI(app *zip.App) {
 
 	route(app, "/v1/dev-bridge", "GET:DevBridge")
 
-	route(app, "/v1/health", "GET:Health")
+	// No /v1/health here: the HOST owns it (cloud/serve.go), answering for
+	// every mounted plane with degradation detail. A second declaration in
+	// this table panics the mount — it took the AI instance down at
+	// v1.801.565, discovered only when the first lazy /v1 call arrived.
 	route(app, "/v1/metrics", "GET:GetMetrics")
 
 	// Unified chat — OpenAI-compatible completions with optional RAG.
