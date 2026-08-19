@@ -70,30 +70,6 @@ retry:
   max_backoff: 4s
 
 models:
-  # ── `best` — auto-routing "best available coding model" (quality-ranked) ─
-  # A virtual policy model: it resolves to the FIRST SERVABLE model in the
-  # chain below, cascading to the next rank when one is rate-limited, out of
-  # credit, agreement-gated, or down (402/403/429/quota/credit/5xx/unavailable)
-  # via the deployed failover machinery (controllers/failover.go). This is the
-  # DRY "one way": `best` is just a model whose fallback chain IS the quality
-  # reordering the list. `hanzo code` defaults to this model. A SuperAdmin can
-  # override the ranking at runtime WITHOUT a restart via a DB model_route for
-  # `best` (owner "built-in"), which resolves before this file and hot-reloads
-  # on write (60s cache); this file is the durable default. Future `cheap`/
-  # `fast` policy models are the same mechanism with a different order.
-  # NOTE: prod serves the catalog from the cloud-api-models ConfigMap
-  # (universe/infra/k8s/cloud/models.yaml) — keep `best` in sync there.
-  best:
-    context_window: 262144
-    provider: do-ai
-    upstream: glm-5.2
-    owned_by: hanzo
-    fallbacks:
-    - {provider: do-ai, upstream: deepseek-v4-pro, context_window: 1000000}
-    - {provider: do-ai, upstream: kimi-k2.6}
-    - {provider: do-ai, upstream: deepseek-4-flash}
-    - {provider: do-ai, upstream: qwen3.5-397b-a17b}
-    pricing: {input: 0.60, output: 2.20}
 
   # ── DO-AI models (non-premium, included in free credit) ────────────────
 
