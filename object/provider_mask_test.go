@@ -48,7 +48,7 @@ func TestTenantAdminNeverSeesPlatformUpstreamKeys(t *testing.T) {
 		t.Fatal("a tenant-org admin satisfies IsSuperAdmin — the platform predicate is not narrower than the tenant one")
 	}
 
-	got := GetMaskedProvider(upstream(), true, tenant)
+	got := GetMaskedProvider(upstream(), tenant)
 
 	for _, f := range []struct {
 		name, value string
@@ -74,7 +74,7 @@ func TestSuperAdminStillReadsUpstreamKeys(t *testing.T) {
 		t.Fatal("a member of the admin org is not recognised as super admin")
 	}
 
-	got := GetMaskedProvider(upstream(), true, super)
+	got := GetMaskedProvider(upstream(), super)
 
 	if got.ProviderKey != "sk-upstream-provider-key" {
 		t.Errorf("ProviderKey = %q, want it readable by the operator", got.ProviderKey)
@@ -91,7 +91,7 @@ func TestSuperAdminStillReadsUpstreamKeys(t *testing.T) {
 
 // An anonymous caller — no session — is the weakest identity there is.
 func TestAnonymousCallerSeesNoUpstreamKeys(t *testing.T) {
-	got := GetMaskedProvider(upstream(), true, nil)
+	got := GetMaskedProvider(upstream(), nil)
 
 	for name, value := range map[string]string{
 		"ClientSecret": got.ClientSecret,
@@ -113,7 +113,7 @@ func TestListedProvidersAreMaskedForTenantAdmins(t *testing.T) {
 	tenant := &iam.User{Owner: "maxpower", Name: "dave", IsAdmin: true}
 
 	rows := []*Provider{upstream(), upstream()}
-	for _, p := range GetMaskedProviders(rows, true, tenant) {
+	for _, p := range GetMaskedProviders(rows, tenant) {
 		if p.ProviderKey != SecretMask || p.UserKey != SecretMask {
 			t.Errorf("listed provider leaked keys: providerKey=%q userKey=%q", p.ProviderKey, p.UserKey)
 		}
