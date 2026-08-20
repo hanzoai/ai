@@ -135,7 +135,7 @@ func TestImageResponseData(t *testing.T) {
 }
 
 // TestImageUpstreamBase derives the async-invoke base from the provider URL via
-// the single resolveEndpointForPath map, with no trailing slash so the client's
+// the single endpoint map, with no trailing slash so the client's
 // "/async-invoke" join is clean.
 func TestImageUpstreamBase(t *testing.T) {
 	cases := []struct {

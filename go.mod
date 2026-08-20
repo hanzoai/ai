@@ -40,7 +40,7 @@ require (
 	github.com/go-sql-driver/mysql v1.10.0
 	github.com/google/uuid v1.6.1-0.20241114170450-2d3c2a9cc518
 	github.com/hanzo-ds/go v1.0.1
-	github.com/hanzoai/account v0.3.2
+	github.com/hanzoai/account v0.3.3
 	github.com/hanzoai/dashscopego v0.6.0
 	github.com/hanzoai/dbx v1.17.2
 	github.com/hanzoai/decimal v0.1.2

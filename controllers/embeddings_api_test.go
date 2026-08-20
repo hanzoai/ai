@@ -22,68 +22,47 @@ import (
 	"github.com/hanzoai/ai/object"
 )
 
-// TestResolveEndpointForPath asserts the single per-provider endpoint map
-// produces correct URLs for every API path AND that the chat/completions URLs
-// are byte-for-byte identical to the pre-refactor resolveUpstreamEndpoint — so
-// the proven chat gateway is unchanged while embeddings/rerank are added.
-func TestResolveEndpointForPath(t *testing.T) {
+// TestEndpoint asserts the single per-provider endpoint map produces the right
+// URL for every API path, chat included — one map, and every OpenAI-compatible
+// surface is built by varying the path alone.
+func TestEndpoint(t *testing.T) {
 	cases := []struct {
 		name     string
 		provider object.Provider
 		apiPath  string
 		wantURL  string
-		wantAuth string // full Authorization header, "" when Bearer apiKey is used
 	}{
-		// chat parity (must equal old resolveUpstreamEndpoint output)
-		{"openai-chat", object.Provider{Type: "OpenAI", ProviderUrl: "https://api.openai.com/v1", ClientSecret: "k"}, "chat/completions", "https://api.openai.com/v1/chat/completions", ""},
-		{"openai-no-url-chat", object.Provider{Type: "OpenAI", ClientSecret: "k"}, "chat/completions", "https://api.openai.com/v1/chat/completions", ""},
-		{"fireworks-chat", object.Provider{Type: "Fireworks", ClientSecret: "k"}, "chat/completions", "https://api.fireworks.ai/inference/v1/chat/completions", ""},
-		{"grok-chat", object.Provider{Type: "Grok", ClientSecret: "k"}, "chat/completions", "https://api.x.ai/v1/chat/completions", ""},
-		{"openrouter-chat", object.Provider{Type: "OpenRouter", ClientSecret: "k"}, "chat/completions", "https://openrouter.ai/api/v1/chat/completions", ""},
-		{"moonshot-chat", object.Provider{Type: "Moonshot", ClientSecret: "k"}, "chat/completions", "https://api.moonshot.cn/v1/chat/completions", ""},
-		{"gemini-chat", object.Provider{Type: "Gemini", ClientSecret: "k"}, "chat/completions", "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", ""},
-		{"azure-chat", object.Provider{Type: "Azure", ProviderUrl: "https://x.openai.azure.com", SubType: "dep1", ClientSecret: "k"}, "chat/completions", "https://x.openai.azure.com/openai/deployments/dep1/chat/completions?api-version=2024-02-01", "api-key k"},
-		{"do-chat", object.Provider{Type: "DigitalOcean", ProviderUrl: "https://inference.do-ai.run/v1", ClientSecret: "k"}, "chat/completions", "https://inference.do-ai.run/v1/chat/completions", ""},
-		{"local-no-v1-chat", object.Provider{Type: "Local", ProviderUrl: "http://host:11434", ClientSecret: "k"}, "chat/completions", "http://host:11434/v1/chat/completions", ""},
+		// chat
+		{"openai-chat", object.Provider{Type: "OpenAI", ProviderUrl: "https://api.openai.com/v1", ClientSecret: "k"}, "chat/completions", "https://api.openai.com/v1/chat/completions"},
+		{"openai-no-url-chat", object.Provider{Type: "OpenAI", ClientSecret: "k"}, "chat/completions", "https://api.openai.com/v1/chat/completions"},
+		{"fireworks-chat", object.Provider{Type: "Fireworks", ClientSecret: "k"}, "chat/completions", "https://api.fireworks.ai/inference/v1/chat/completions"},
+		{"grok-chat", object.Provider{Type: "Grok", ClientSecret: "k"}, "chat/completions", "https://api.x.ai/v1/chat/completions"},
+		{"openrouter-chat", object.Provider{Type: "OpenRouter", ClientSecret: "k"}, "chat/completions", "https://openrouter.ai/api/v1/chat/completions"},
+		{"moonshot-chat", object.Provider{Type: "Moonshot", ClientSecret: "k"}, "chat/completions", "https://api.moonshot.cn/v1/chat/completions"},
+		{"gemini-chat", object.Provider{Type: "Gemini", ClientSecret: "k"}, "chat/completions", "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"},
+		{"azure-chat", object.Provider{Type: "Azure", ProviderUrl: "https://x.openai.azure.com", SubType: "dep1", ClientSecret: "k"}, "chat/completions", "https://x.openai.azure.com/openai/deployments/dep1/chat/completions?api-version=2024-02-01"},
+		{"do-chat", object.Provider{Type: "DigitalOcean", ProviderUrl: "https://inference.do-ai.run/v1", ClientSecret: "k"}, "chat/completions", "https://inference.do-ai.run/v1/chat/completions"},
+		{"local-no-v1-chat", object.Provider{Type: "Local", ProviderUrl: "http://host:11434", ClientSecret: "k"}, "chat/completions", "http://host:11434/v1/chat/completions"},
 
 		// embeddings
-		{"openai-embed", object.Provider{Type: "OpenAI", ProviderUrl: "https://api.openai.com/v1", ClientSecret: "k"}, "embeddings", "https://api.openai.com/v1/embeddings", ""},
-		{"fireworks-embed", object.Provider{Type: "Fireworks", ClientSecret: "k"}, "embeddings", "https://api.fireworks.ai/inference/v1/embeddings", ""},
-		{"do-embed", object.Provider{Type: "DigitalOcean", ProviderUrl: "https://inference.do-ai.run/v1", ClientSecret: "k"}, "embeddings", "https://inference.do-ai.run/v1/embeddings", ""},
-		{"azure-embed", object.Provider{Type: "Azure", ProviderUrl: "https://x.openai.azure.com", SubType: "embdep", ClientSecret: "k"}, "embeddings", "https://x.openai.azure.com/openai/deployments/embdep/embeddings?api-version=2024-02-01", "api-key k"},
-		{"jina-embed", object.Provider{Type: "Jina", ClientSecret: "k"}, "embeddings", "https://api.jina.ai/v1/embeddings", ""},
+		{"openai-embed", object.Provider{Type: "OpenAI", ProviderUrl: "https://api.openai.com/v1", ClientSecret: "k"}, "embeddings", "https://api.openai.com/v1/embeddings"},
+		{"fireworks-embed", object.Provider{Type: "Fireworks", ClientSecret: "k"}, "embeddings", "https://api.fireworks.ai/inference/v1/embeddings"},
+		{"do-embed", object.Provider{Type: "DigitalOcean", ProviderUrl: "https://inference.do-ai.run/v1", ClientSecret: "k"}, "embeddings", "https://inference.do-ai.run/v1/embeddings"},
+		{"azure-embed", object.Provider{Type: "Azure", ProviderUrl: "https://x.openai.azure.com", SubType: "embdep", ClientSecret: "k"}, "embeddings", "https://x.openai.azure.com/openai/deployments/embdep/embeddings?api-version=2024-02-01"},
+		{"jina-embed", object.Provider{Type: "Jina", ClientSecret: "k"}, "embeddings", "https://api.jina.ai/v1/embeddings"},
 
 		// rerank
-		{"jina-rerank", object.Provider{Type: "Jina", ClientSecret: "k"}, "rerank", "https://api.jina.ai/v1/rerank", ""},
-		{"cohere-rerank", object.Provider{Type: "Cohere", ClientSecret: "k"}, "rerank", "https://api.cohere.com/v1/rerank", ""},
+		{"jina-rerank", object.Provider{Type: "Jina", ClientSecret: "k"}, "rerank", "https://api.jina.ai/v1/rerank"},
+		{"cohere-rerank", object.Provider{Type: "Cohere", ClientSecret: "k"}, "rerank", "https://api.cohere.com/v1/rerank"},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			p := tc.provider
-			url, apiKey, authHeader := resolveEndpointForPath(&p, tc.apiPath)
-			if url != tc.wantURL {
-				t.Fatalf("url = %q, want %q", url, tc.wantURL)
-			}
-			if authHeader != tc.wantAuth {
-				t.Fatalf("authHeader = %q, want %q", authHeader, tc.wantAuth)
-			}
-			if tc.wantAuth == "" && apiKey != "k" {
-				t.Fatalf("apiKey = %q, want %q", apiKey, "k")
+			if got := endpoint(&p, tc.apiPath); got != tc.wantURL {
+				t.Fatalf("url = %q, want %q", got, tc.wantURL)
 			}
 		})
-	}
-}
-
-// TestResolveUpstreamEndpointAliasesChat proves the chat wrapper delegates to
-// resolveEndpointForPath, so there is exactly one provider endpoint map.
-func TestResolveUpstreamEndpointAliasesChat(t *testing.T) {
-	p := object.Provider{Type: "OpenAI", ProviderUrl: "https://api.openai.com/v1", ClientSecret: "k"}
-	wantURL, wantKey, wantAuth := resolveEndpointForPath(&p, "chat/completions")
-	gotURL, gotKey, gotAuth := resolveUpstreamEndpoint(&p)
-	if gotURL != wantURL || gotKey != wantKey || gotAuth != wantAuth {
-		t.Fatalf("resolveUpstreamEndpoint diverged from resolveEndpointForPath: got (%q,%q,%q) want (%q,%q,%q)",
-			gotURL, gotKey, gotAuth, wantURL, wantKey, wantAuth)
 	}
 }
 

@@ -132,7 +132,7 @@ func EnsoProvider() *Provider { return familyProvider("enso", "Enso", "ENSO_URL"
 
 // OpenRouterProvider is the OpenRouter catalog's provider (OPENROUTER_URL /
 // OPENROUTER_API_KEY). Type "OpenRouter" already resolves to the OpenAI-compatible
-// upstream in resolveEndpointForPath, so serving needs nothing new — the catalog is a
+// upstream in endpoint, so serving needs nothing new — the catalog is a
 // discovered family, and the relay that carries it is the one ai already had.
 func OpenRouterProvider() *Provider {
 	return familyProvider("openrouter", "OpenRouter", "OPENROUTER_URL", "OPENROUTER_API_KEY")

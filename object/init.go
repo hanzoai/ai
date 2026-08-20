@@ -402,7 +402,7 @@ var seededLLMProviders = []Provider{
 		// zen3-video* routes (controllers/model_routes.go) resolve to this row;
 		// videos_api.go drives the SAME OpenAI Sora-style async /v1/videos API
 		// as do-ai (create → poll → download) against ProviderUrl. Type
-		// DigitalOcean reuses the custom-URL branch in resolveEndpointForPath so
+		// DigitalOcean reuses the custom-URL branch in endpoint so
 		// videoUpstreamBase yields the clean /v1 base. The zen3-video family is
 		// owned_by hanzo; the public owner travels in owned_by (hip-00NN).
 		Owner:        "admin",
