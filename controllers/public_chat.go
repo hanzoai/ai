@@ -53,6 +53,7 @@ import (
 
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/ai/address"
 	"github.com/hanzoai/ai/conf"
 	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/log"
@@ -245,7 +246,7 @@ func publicAddr(peer, stated string) string {
 //
 // TWO DEPLOYMENTS, ONE READ. As a subsystem the peer is the unix socket the host
 // reached us over — empty, and identical for everyone — so the host resolves the
-// caller and stamps it (object.ClientIPHeader). Served directly, nothing is in front
+// caller and stamps it (address.Header). Served directly, nothing is in front
 // but Cloudflare, which overwrites CF-Connecting-IP at its edge; X-Forwarded-For
 // merely gains an entry and keeps whatever the caller put in front of it, so that
 // one is never read.
@@ -253,7 +254,7 @@ func publicAddr(peer, stated string) string {
 // The host's answer wins where both are present: it is the hardened one, derived
 // from the connection it can actually see.
 func (c *ApiController) stated() string {
-	if addr := c.Header(object.ClientIPHeader); addr != "" {
+	if addr := c.Header(address.Header); addr != "" {
 		return addr
 	}
 	return c.Header("CF-Connecting-IP")

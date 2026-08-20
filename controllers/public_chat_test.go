@@ -25,6 +25,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hanzoai/ai/address"
 	"github.com/hanzoai/ai/object"
 )
 
@@ -526,7 +527,7 @@ func servablePool(t *testing.T) {
 // the daily ceiling becomes one bucket. The host resolves the caller and stamps it.
 func TestTheHostStatesWhoIsCalling(t *testing.T) {
 	c := visit(http.MethodPost, "/v1/chat/public")
-	c.Fiber().Request().Header.Set(object.ClientIPHeader, "198.51.100.7")
+	c.Fiber().Request().Header.Set(address.Header, "198.51.100.7")
 	c.Fiber().Request().Header.Set("CF-Connecting-IP", "203.0.113.200")
 	if got := c.stated(); got != "198.51.100.7" {
 		t.Fatalf("stated = %q; the host's hardened answer must win over the edge header", got)
@@ -547,7 +548,7 @@ func TestTheHostStatesWhoIsCalling(t *testing.T) {
 // visitor mints a fresh ceiling per request by setting a header.
 func TestACallerCannotStateItsOwnAddress(t *testing.T) {
 	c := from(visit(http.MethodPost, "/v1/chat/public"), "203.0.113.9:41000")
-	c.Fiber().Request().Header.Set(object.ClientIPHeader, "198.51.100.255") // the forgery
+	c.Fiber().Request().Header.Set(address.Header, "198.51.100.255") // the forgery
 	if got := publicAddr(c.Fiber().IP(), c.stated()); got != "203.0.113.9" {
 		t.Fatalf("publicAddr = %q; a routable peer must beat anything the caller states", got)
 	}
