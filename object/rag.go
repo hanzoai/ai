@@ -90,12 +90,10 @@ type RagQueryRequest struct {
 	Mode    string   `json:"mode,omitempty"` // hybrid (default) | fulltext | vector
 }
 
-// resolveRagStore returns the store slug, defaulting to RagFileStore.
-func resolveRagStore(store string) string {
-	if store == "" {
-		return RagFileStore
-	}
-	return store
+// resolveRagStore returns the store a RAG call acts on, defaulting to RagFileStore
+// and refusing a name a caller could not have been issued — see object.ResolveStore.
+func resolveRagStore(owner, store string) (string, error) {
+	return ResolveStore(owner, store, RagFileStore)
 }
 
 // mergeFileIDs unions the single FileID and the FileIDs slice, dropping empties
@@ -130,7 +128,10 @@ func RagEmbedFile(owner string, req *RagEmbedRequest, lang string) (*RagEmbedRes
 	if req.FileID == "" {
 		return nil, fmt.Errorf("file_id must not be empty")
 	}
-	store := resolveRagStore(req.Store)
+	store, err := resolveRagStore(owner, req.Store)
+	if err != nil {
+		return nil, err
+	}
 
 	name := req.Filename
 	if name == "" {
@@ -234,7 +235,10 @@ func RagQuery(owner string, req *RagQueryRequest, lang string) ([]DocSearchResul
 	if k <= 0 {
 		k = 4
 	}
-	store := resolveRagStore(req.Store)
+	store, err := resolveRagStore(owner, req.Store)
+	if err != nil {
+		return nil, err
+	}
 	searchReq := &DocSearchRequest{
 		Query:   req.Query,
 		Limit:   k,
@@ -251,7 +255,10 @@ func DeleteRagFile(owner, store, fileID, lang string) error {
 	if fileID == "" {
 		return fmt.Errorf("file_id must not be empty")
 	}
-	store = resolveRagStore(store)
+	store, err := resolveRagStore(owner, store)
+	if err != nil {
+		return err
+	}
 	indexName := GetSearchIndexName(owner, store)
 	var errs []string
 	if err := searchDeleteSink(indexName, fileID); err != nil {
@@ -272,7 +279,10 @@ func RagFileContext(owner, store, fileID string) ([]DocSearchResult, error) {
 	if fileID == "" {
 		return nil, fmt.Errorf("file_id must not be empty")
 	}
-	store = resolveRagStore(store)
+	store, err := resolveRagStore(owner, store)
+	if err != nil {
+		return nil, err
+	}
 	indexName := GetSearchIndexName(owner, store)
 	return fileContextSink(indexName, fileID)
 }

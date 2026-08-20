@@ -158,7 +158,7 @@ func (c *ApiController) VideosGenerations() {
 	startTime := time.Now().UTC()
 	orgId := c.GetOrg()
 
-	provider, authUser, upstreamModel, isPremium, _, err := c.authResolveProvider(token, req.Model, orgId)
+	provider, authUser, upstreamModel, isPremium, err := c.authResolveProvider(token, req.Model, orgId)
 	if err != nil {
 		c.ResponseAuthError(err)
 		return
@@ -390,6 +390,15 @@ func (c *ApiController) VideoContent() {
 // 404 with an identical message, so a caller can never confirm the existence of
 // another user's job. On any failure it writes the response and returns ok=false.
 func (c *ApiController) resolveOwnedVideoJob(token, id string) (*videoJob, *object.Provider, *iam.User, bool) {
+	// A publishable key is refused here for the reason it is refused at the
+	// generation door: it names an ORG and no person, so the ownership test below
+	// collapses to "same tenant" and every job in the org answers to it. A key that
+	// ships in a page would read whatever anyone in that org had generated.
+	if isPublishableKey(token) {
+		c.rejectPublishableKey()
+		return nil, nil, nil, false
+	}
+
 	job, found := videoJobs.get(id)
 	if !found {
 		// Authenticate first so an invalid credential is 401 (never a probe-able
@@ -403,7 +412,7 @@ func (c *ApiController) resolveOwnedVideoJob(token, id string) (*videoJob, *obje
 	}
 
 	orgId := c.GetOrg()
-	provider, authUser, _, _, _, err := c.authResolveProvider(token, job.userModel, orgId)
+	provider, authUser, _, _, err := c.authResolveProvider(token, job.userModel, orgId)
 	if err != nil {
 		c.ResponseAuthError(err)
 		return nil, nil, nil, false

@@ -147,7 +147,7 @@ func orgController(auth, requested string) *ApiController {
 // org, whatever X-Org-Id says.
 //
 // Only a JWT carries the signed `orgs` claim, so only a JWT can switch. Every
-// other credential — an sk- IAM key, an sk- provider key, an hz_ widget key, a
+// other credential — an sk- IAM key, an sk- provider key, a pk- publishable key, a
 // cookie session, no credential at all — resolves nil membership, and nil admits
 // nothing. That is what makes the raw header unspoofable here: a client that
 // stamps X-Org-Id on an API-key request moves no money.
@@ -162,7 +162,7 @@ func TestBillingOrgHoldsUnlessTheClaimSaysOtherwise(t *testing.T) {
 		{"header names the home org", "Bearer sk-abc", "hanzo"},
 		{"sk- IAM key cannot switch", "Bearer sk-abc", "acme"},
 		{"sk- provider key cannot switch", "Bearer sk-abc", "acme"},
-		{"hz_ widget key cannot switch", "Bearer hz_abc", "acme"},
+		{"pk- publishable key cannot switch", "Bearer pk-abc", "acme"},
 		{"no credential at all cannot switch", "", "acme"},
 		{"a token that is not a JWT cannot switch", "Bearer not.a.jwt", "acme"},
 	}
@@ -317,7 +317,7 @@ func TestGetOrgScopeHoldsWithoutAClaim(t *testing.T) {
 // the request runs, the meter records, and the wrong wallet pays with no error
 // anywhere. (Proven in account's own suite: TestEffectiveOrg_UnauthorizedOrgRefused.)
 //
-// But an sk-/hz- credential carries no membership set BY CONSTRUCTION. Its ask is
+// But an sk-/pk- credential carries no membership set BY CONSTRUCTION. Its ask is
 // not a bid for another wallet, because there is no other wallet it could name;
 // billing its own owner is the only possible answer. Passing those through
 // EffectiveOrg would refuse them too, and a stray X-Org-Id header would start
@@ -326,7 +326,7 @@ func TestGetOrgScopeHoldsWithoutAClaim(t *testing.T) {
 func TestBillingOrgHomeForCredentialsThatCannotSwitch(t *testing.T) {
 	user := &iam.User{Owner: "hanzo", Name: "z"}
 
-	for _, auth := range []string{"Bearer sk-abc", "Bearer hz-widget", ""} {
+	for _, auth := range []string{"Bearer sk-abc", "Bearer pk-abc", ""} {
 		c := orgController(auth, "initech")
 		if got := c.billingOrg(user); got != "hanzo" {
 			t.Fatalf("billingOrg = %q for credential %q; want home org — a credential with no claim set cannot switch and must still be billable", got, auth)

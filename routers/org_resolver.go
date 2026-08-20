@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"github.com/hanzoai/ai/conf"
+	"github.com/hanzoai/ai/controllers"
 	"github.com/hanzoai/ai/util"
 	"github.com/zap-proto/zip"
 )
@@ -43,6 +44,23 @@ func GetOrg(c *zip.Ctx) string {
 			return requested
 		}
 		return user.Owner
+	}
+
+	// A publishable key names a tenant and no person, so it answers scope here for
+	// the reason it does in the controller — and this layer has its own reason.
+	// Without it a pk- request is RECORDED against the deployment default while the
+	// controller bills the key's own org, so one request lands in two tenants' books
+	// and every customer's page traffic shows up in the platform's telemetry.
+	//
+	// Pinned to the key's org (X-Org-Id is not consulted) and definitive when IAM
+	// cannot confirm it: an unattributable key is attributed to NOBODY rather than
+	// to the platform. Same door, same memory, same answer as the controller.
+	if token := parseBearerToken(c); strings.HasPrefix(token, "pk-") {
+		org, err := controllers.PublishableOrg(token)
+		if err != nil {
+			return ""
+		}
+		return org
 	}
 
 	// No verified principal: never trust a client-supplied org header.

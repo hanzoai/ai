@@ -19,7 +19,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
 	"sync/atomic"
 	"testing"
 
@@ -45,7 +44,6 @@ import (
 // the prepaid gate, and it must not swallow a real server fault into a silent 401.
 
 const (
-	chatWidgetKey = "hz_chat_auth_probe"
 	chatFundedKey = "sk-chat-auth-funded"
 	chatModel     = "test-model-x" // deliberately NOT in any route table
 	chatOrg       = "acme"
@@ -98,9 +96,8 @@ func driveChat(t *testing.T, authHeader, body string) int {
 
 // setupChatMoneyPath installs the prod-faithful dependencies the money path needs:
 // a non-nil iam client (so an invalid JWT is an ERROR, not a nil-deref), an
-// in-memory provider store (so the sk- branch does a REAL lookup), one funded,
-// attributable provider-key principal, and a valid widget key. It restores all
-// global seams on cleanup.
+// in-memory provider store (so the sk- branch does a REAL lookup) and one funded,
+// attributable provider-key principal. It restores all global seams on cleanup.
 func setupChatMoneyPath(t *testing.T) {
 	t.Helper()
 	// Non-nil globalClient: any invalid/expired JWT verifies to an error (→401),
@@ -132,11 +129,7 @@ func setupChatMoneyPath(t *testing.T) {
 		t.Fatalf("seed provider: %v", err)
 	}
 
-	os.Setenv("WIDGET_KEYS", chatWidgetKey)
-	t.Cleanup(func() {
-		os.Unsetenv("WIDGET_KEYS")
-		object.SetBalanceReader(nil)
-	})
+	t.Cleanup(func() { object.SetBalanceReader(nil) })
 }
 
 // TestChatCompletionsUnattributedNever500 is the headline regression: every
@@ -161,7 +154,10 @@ func TestChatCompletionsUnattributedNever500(t *testing.T) {
 		{"expired-jwt", "Bearer eyJhbGciOiJSUzI1NiJ9.eyJpc3MiOiJodHRwczovL2hhbnpvLmlkIiwiZXhwIjoxMDAwfQ.badsig", goodBody, http.StatusUnauthorized},
 		{"unknown-iam-key", "Bearer sk-nonexistent-000000", goodBody, http.StatusUnauthorized},
 		{"malformed-body-no-credential", "Bearer ", `{not json`, http.StatusUnauthorized},
-		{"malformed-body-valid-widget", "Bearer " + chatWidgetKey, `{not json`, http.StatusBadRequest},
+		{"malformed-body-valid-credential", "Bearer " + chatFundedKey, `{not json`, http.StatusBadRequest},
+		// hz_ was once a credential of its own. It is not one now, so it must read
+		// as what it is — an unknown token — and never as a door left ajar.
+		{"retired-widget-key", "Bearer hz_chat_auth_probe", goodBody, http.StatusUnauthorized},
 	}
 
 	for _, tc := range cases {
@@ -217,7 +213,7 @@ func TestAuthResolveProviderFundedProceeds(t *testing.T) {
 	object.SetBalanceReader(balReader(100_00, nil))
 
 	c := newChatController("Bearer "+chatFundedKey, "")
-	provider, authUser, _, _, _, err := c.authResolveProvider(chatFundedKey, chatModel, chatOrg)
+	provider, authUser, _, _, err := c.authResolveProvider(chatFundedKey, chatModel, chatOrg)
 	if err != nil {
 		t.Fatalf("funded authResolveProvider returned error %v (statusOf=%d); want nil (proceeds)", err, statusOf(err))
 	}

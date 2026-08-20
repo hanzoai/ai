@@ -259,9 +259,9 @@ func IngestSource(owner string, req *IngestRequest, lang string) (*IngestStats, 
 	if owner == "" {
 		return nil, fmt.Errorf("owner must not be empty")
 	}
-	store := req.Store
-	if store == "" {
-		store = DefaultDocsStore
+	store, err := ResolveStore(owner, req.Store, DefaultDocsStore)
+	if err != nil {
+		return nil, err
 	}
 	source := req.Source
 	if source == "" {
@@ -344,9 +344,11 @@ func ingestUploadSource(owner, store string, req *IngestRequest, stats *IngestSt
 // already fans out to Vector+Search via IndexDocuments.
 func ingestCrawlSource(owner, store string, req *IngestRequest, stats *IngestStats, lang string) (*IngestStats, error) {
 	cr := *req.Crawl
-	if cr.Store == "" {
-		cr.Store = store
+	crStore, err := ResolveStore(owner, cr.Store, store)
+	if err != nil {
+		return stats, err
 	}
+	cr.Store = crStore
 	if cr.Tag == "" {
 		cr.Tag = req.Tag
 	}

@@ -16,30 +16,52 @@ package controllers
 
 import (
 	"encoding/json"
+	"net/http"
 	"testing"
 
 	"github.com/hanzoai/ai/object"
 )
 
-// TestResolveMemoryUserID proves identity comes from the gateway header first,
-// then the authenticated session — and is empty (caller denied) when neither is
-// present. The function has no access to the request body by construction.
-func TestResolveMemoryUserID(t *testing.T) {
-	if got := resolveMemoryUserID("alice", "session-bob"); got != "alice" {
-		t.Fatalf("header must win: got %q", got)
+// memoryController is a request that NAMES a victim in the two headers a gateway
+// would mint, and presents whatever credential the caller has.
+func memoryController(auth, org, user string) *ApiController {
+	c := presenting(visit(http.MethodPost, "/v1/memory/remember"), auth)
+	c.Fiber().Request().SetBody([]byte(`{"content":"hi"}`))
+	if org != "" {
+		c.Fiber().Request().Header.Set("X-Org-Id", org)
 	}
-	if got := resolveMemoryUserID("   ", "session-bob"); got != "session-bob" {
-		t.Fatalf("session fallback: got %q", got)
+	if user != "" {
+		c.Fiber().Request().Header.Set("X-User-Id", user)
 	}
-	if got := resolveMemoryUserID("", ""); got != "" {
-		t.Fatalf("unauthenticated must resolve empty: got %q", got)
+	return c
+}
+
+// TestMemoryIdentityIsTheCredentialNotTheHeader is the security assertion for a
+// per-person store: WHOSE memories a request touches is decided by the credential
+// it proved, never by what it wrote in a header.
+//
+// The headers below are exactly what a gateway mints — which is why they used to
+// be read. A gateway is not the only way to reach this controller, and on any
+// other route they are two strings the caller chose: read them and an
+// uncredentialed stranger addresses any user's memories by name, to read, to
+// overwrite, or to delete.
+func TestMemoryIdentityIsTheCredentialNotTheHeader(t *testing.T) {
+	c := memoryController("", "victim-org", "victim")
+
+	if got := c.memoryUserID(); got != "" {
+		t.Fatalf("X-User-Id reached the identity: got %q, want empty", got)
 	}
-	// Production priority: gateway X-User-Id (JWT sub) > legacy X-IAM-User-Id > session.
-	if got := resolveMemoryUserID("gw-sub", "iam-legacy", "session-user"); got != "gw-sub" {
-		t.Fatalf("gateway X-User-Id must win: got %q", got)
+	if org, user, ok := c.requireMemoryIdentity(); ok {
+		t.Fatalf("a caller with no credential was admitted as %q/%q", org, user)
 	}
-	if got := resolveMemoryUserID("", "iam-legacy", "session-user"); got != "iam-legacy" {
-		t.Fatalf("legacy X-IAM-User-Id fallback: got %q", got)
+
+	// Nor does an unverifiable credential become one by being present.
+	c = memoryController("Bearer not-a-real-credential", "victim-org", "victim")
+	if got := c.memoryUserID(); got != "" {
+		t.Fatalf("an unverifiable token yielded a user: %q", got)
+	}
+	if _, _, ok := c.requireMemoryIdentity(); ok {
+		t.Fatal("an unverifiable token was admitted")
 	}
 }
 
