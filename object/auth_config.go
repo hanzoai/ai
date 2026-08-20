@@ -108,6 +108,15 @@ func AuthAttempts() int {
 // resolveAuthConfig performs one attempt: read the application, read its cert, and
 // install the cert on the IAM SDK's client. Every failure is returned rather than
 // logged-and-swallowed, so the caller decides what it costs.
+//
+// THE READS GO THROUGH A CLIENT OF THEIR OWN, and the global is written ONCE, at
+// the end, only when there is a cert to write. Reading through the global meant
+// installing it twice — first certless, so the reads had somewhere to go, and again
+// with the answer — and a failure between the two left the process holding the
+// certless one. That is the state where every bearer fails to validate, which is
+// the exact fail-open this file exists to prevent, reached by the code meant to
+// prevent it. An attempt that fails now changes nothing at all: whatever was
+// established stays established, and AuthReady still reports the failure.
 func resolveAuthConfig() error {
 	endpoint := conf.GetConfigString("IAM_URL")
 	clientID := conf.GetConfigString("IAM_CLIENT_ID")
@@ -120,8 +129,8 @@ func resolveAuthConfig() error {
 		return nil
 	}
 
-	iam.InitConfig(endpoint, clientID, clientSecret, "", organization, application)
-	app, err := iam.GetApplication(application)
+	ask := iam.NewClient(endpoint, clientID, clientSecret, "", organization, application)
+	app, err := ask.GetApplication(application)
 	if err != nil {
 		return fmt.Errorf("read IAM application %q from %s: %w", application, endpoint, err)
 	}
@@ -129,7 +138,7 @@ func resolveAuthConfig() error {
 		return fmt.Errorf("IAM application %q does not exist at %s", application, endpoint)
 	}
 
-	cert, err := iam.GetCert(app.Cert)
+	cert, err := ask.GetCert(app.Cert)
 	if err != nil {
 		return fmt.Errorf("read cert %q for application %q: %w", app.Cert, application, err)
 	}

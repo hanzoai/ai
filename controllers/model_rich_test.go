@@ -286,12 +286,15 @@ models:
 
 // TestListModelsRichStaticPath covers the fallback path: listAvailableModels()
 // reading the real static route + pricing tables. gpt-4o is unbranded (provider
-// exposed + priced); glm-5 is unbranded with no static price; zen4 is branded
-// (provider omitted).
+// exposed + priced); glm-5 is unbranded with no static price; zen-scribe is
+// branded (provider omitted).
+//
+// It used to name zen4 for the branded case and to skip itself whenever a catalog
+// was loaded. zen4 left the static table when the Zen chat family moved to the zen
+// service, so on the one path where this ran it could only fail — and it did not
+// run, because the load that set the catalog came first in file order and the skip
+// took it every time.
 func TestListModelsRichStaticPath(t *testing.T) {
-	if GetModelConfig() != nil {
-		t.Skip("global model config set by another test; static path not exercised")
-	}
 	byID := indexModels(listAvailableModels())
 
 	gpt, ok := byID["gpt-4o"]
@@ -319,31 +322,39 @@ func TestListModelsRichStaticPath(t *testing.T) {
 		t.Errorf("glm-5 has no static pricing; must be omitted, got %+v", *glm.Pricing)
 	}
 
-	zen, ok := byID["zen4"]
+	zen, ok := byID["zen-scribe"]
 	if !ok {
-		t.Fatal("zen4 missing from static listing")
+		t.Fatal("zen-scribe missing from static listing")
 	}
 	if zen.Provider != "" {
-		t.Errorf("branded zen4 must NOT expose provider, got %q", zen.Provider)
+		t.Errorf("branded zen-scribe must NOT expose provider, got %q", zen.Provider)
 	}
 	if zen.OwnedBy != "hanzo" {
-		t.Errorf("zen4 owned_by want hanzo, got %q", zen.OwnedBy)
+		t.Errorf("zen-scribe owned_by want hanzo, got %q", zen.OwnedBy)
 	}
 }
 
-// TestNoStaticBrandedModels is the invariant after the Zen family moved to the
-// zen service: ai's static table holds NO branded (owned_by) model. The Zen
-// family — the only branded models — is discovered from zen's /v1/models and
-// served through the zen provider; zen's discovery surface carries no upstream,
-// so that is where the brand-leak guard now lives. A branded model reappearing
-// here means a zen SKU was re-hardcoded into ai, the exact drift this removed.
+// A NAME WE CLAIM IS A MODEL WE SERVE.
+//
+// owned_by is a claim of authorship, so putting one on a SKU somebody else runs
+// says we wrote a model we are reselling. The static table may therefore brand only
+// what comes out of our own service — hanzoai/speech, the CPU deployment behind
+// zen-voice-mini and the zen-scribe pair. Everything else it names is attributed to
+// the provider that serves it.
+//
+// The rule used to read "no branded model here at all", from when the Zen family
+// was entirely chat and moved wholesale to the zen service — which is still true of
+// the chat SKUs, and is what a branded route through any OTHER provider would mean:
+// one re-hardcoded here instead of discovered. Speech never moved. It is served
+// from a deployment we operate, so its names are ours in the way owned_by means,
+// and the honest form of the rule is about WHO SERVES a branded model rather than
+// about there being none.
 func TestNoStaticBrandedModels(t *testing.T) {
-	if GetModelConfig() != nil {
-		t.Skip("global model config set by another test; static path not exercised")
-	}
 	for _, m := range listAvailableModels() {
-		if route := modelRoutes[m.ID]; route.ownedBy != "" {
-			t.Errorf("static table has branded model %q (owned_by=%s) — zen SKUs must be dynamic, not hardcoded", m.ID, route.ownedBy)
+		route := modelRoutes[m.ID]
+		if route.ownedBy != "" && route.providerName != "speech" {
+			t.Errorf("static table brands %q (owned_by=%s) on provider %q — a SKU we do not serve is attributed, not claimed, and a zen SKU is discovered rather than hardcoded",
+				m.ID, route.ownedBy, route.providerName)
 		}
 	}
 }

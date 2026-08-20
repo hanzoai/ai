@@ -21,6 +21,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -213,12 +214,33 @@ var rateLimiterInstance *RateLimiter
 // InitRateLimiter creates the global rate limiter. Must be called once during
 // startup (before web.Run). Returns the instance so the caller can call
 // Stop() on shutdown.
+//
+// It says what it armed, and says it by READING tierLimits. Boot used to print the
+// tiers as prose from where it called this, and prose does not follow a table: the
+// line named a free tier of 10/min next to two tiers that no longer exist, and a
+// reader took it for the configuration. A boot line is evidence of what was armed,
+// so it comes from the thing that armed it.
 func InitRateLimiter(tierFunc func(string) Tier) *RateLimiter {
 	rateLimiterInstance = NewRateLimiter(tierFunc, 10*time.Minute)
 	// The quota is armed from the same call, on the same tierFunc, so a caller's
 	// rate and their ceiling can never be resolved from two different tiers.
 	quotaInstance = NewQuota(tierFunc, time.Hour)
+	log.Info("Per-key rate limiter initialized (tiers: %s)", tierRates())
 	return rateLimiterInstance
+}
+
+// tierRates renders the tier table cheapest-first, for the boot line.
+func tierRates() string {
+	tiers := make([]Tier, 0, len(tierLimits))
+	for t := range tierLimits {
+		tiers = append(tiers, t)
+	}
+	sort.Slice(tiers, func(i, j int) bool { return tierLimits[tiers[i]] < tierLimits[tiers[j]] })
+	rates := make([]string, 0, len(tiers))
+	for _, t := range tiers {
+		rates = append(rates, fmt.Sprintf("%s=%d/min", t, tierLimits[t]))
+	}
+	return strings.Join(rates, ", ")
 }
 
 // RateLimitFilter holds every /v1 request to a rate and a quota.

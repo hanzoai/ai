@@ -18,9 +18,7 @@ var speechSKUs = map[string]string{
 // prefers the YAML whenever one is loaded, which is always in production. So the
 // two have to agree, and this is what checks that they do.
 func TestSpeechCatalog(t *testing.T) {
-	if err := InitModelConfig("../conf/models.yaml"); err != nil {
-		t.Fatalf("load conf/models.yaml: %v", err)
-	}
+	useCatalog(t, "../conf/models.yaml")
 	cfg := GetModelConfig()
 	if cfg == nil {
 		t.Fatal("model config nil after init")
