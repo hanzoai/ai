@@ -29,8 +29,10 @@ COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=secret,id=gh_token \
     if [ -s /run/secrets/gh_token ]; then \
-      git config --global url."https://x-access-token:$(cat /run/secrets/gh_token)@github.com/".insteadOf "https://github.com/"; \
-    fi && \
+      export GIT_CONFIG_COUNT=1 \
+             GIT_CONFIG_KEY_0="url.https://x-access-token:$(cat /run/secrets/gh_token)@github.com/.insteadOf" \
+             GIT_CONFIG_VALUE_0="https://github.com/"; \
+    fi; \
     go mod download
 COPY . .
 RUN --mount=type=cache,target=/go/pkg/mod \
