@@ -886,6 +886,25 @@ func (r *usageRecord) reached() bool { return r.Provider != "" }
 // question from reached, and only the free allowance asks it — see recordUsage.
 func (r *usageRecord) answered() bool { return r.Status == "success" }
 
+// spent reports the tokens a call produced, for a call that then failed.
+//
+// reached() says a vendor ran the request; this says how much of it it ran. Without
+// both, a failure files a row naming a vendor and a quantity of zero, which prices a
+// half-generated answer at nothing and leaves us holding the invoice for it.
+//
+// The pipeline's own count is authoritative whenever it filled one. Otherwise the
+// prompt was already counted before the call went out — routeForPrompt sizes the route
+// with it — and the partial answer is whatever reached the writer before the stream
+// broke. Neither number is invented: one was measured on the way out, the other is the
+// text the vendor actually sent.
+func spent(res *model.ModelResult, name string, prompt int, partial string) (int, int) {
+	if res != nil && res.TotalTokenCount > 0 {
+		return res.PromptTokenCount, res.ResponseTokenCount
+	}
+	completion, _ := model.GetTokenSize(name, partial)
+	return prompt, completion
+}
+
 // payer answers who pays for this call. ONE rule, and it prefers the answer the gate
 // already computed over deriving a second one.
 //
@@ -1936,6 +1955,9 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 					ClientIP:  c.Fiber().IP(),
 					RequestID: requestId,
 				}
+				errRecord.PromptTokens, errRecord.CompletionTokens =
+					spent(modelResult, request.Model, promptTokens, writer.MessageString())
+				errRecord.TotalTokens = errRecord.PromptTokens + errRecord.CompletionTokens
 				errRecord.bind(c.Context(), authUser)
 				errRecord.BYO, errRecord.Account = providerBYO(provider, authUser)
 				recordUsage(errRecord)

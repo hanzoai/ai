@@ -83,6 +83,11 @@ func enqueued(t *testing.T, record *usageRecord) []map[string]any {
 
 	recordUsage(record)
 
+	// Both writers are in-process, so a body that is coming arrives immediately. Waiting
+	// out a fixed settling time would spend it on every call whether or not anything is
+	// in flight; going quiet is the actual signal, and the longer wait is only the bound
+	// on a machine slow enough that "immediately" is not.
+	deadline := time.After(2 * time.Second)
 	var out []map[string]any
 	for {
 		select {
@@ -92,7 +97,9 @@ func enqueued(t *testing.T, record *usageRecord) []map[string]any {
 				t.Fatalf("commerce received a body it cannot read: %v", err)
 			}
 			out = append(out, m)
-		case <-time.After(2 * time.Second):
+		case <-time.After(50 * time.Millisecond):
+			return out
+		case <-deadline:
 			return out
 		}
 	}
