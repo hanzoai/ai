@@ -88,9 +88,7 @@ func (c *ApiController) pipeZenMedia(apiPath, model string, rawBody []byte, unit
 	if a := c.Header("Accept"); a != "" {
 		req.Header.Set("Accept", a)
 	}
-	if prov.ClientSecret != "" {
-		req.Header.Set("Authorization", "Bearer "+prov.ClientSecret)
-	}
+	authorize(req, prov)
 	// Tenant attribution: zen needs a billable tenant, and ai — which settles the
 	// ledger — tells zen it fronts this call so zen meters without double-charging.
 	if orgId != "" {

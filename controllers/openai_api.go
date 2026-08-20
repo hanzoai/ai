@@ -2169,7 +2169,7 @@ func (c *ApiController) proxyToolRequest(
 	}
 
 	// Determine upstream endpoint and auth
-	upstreamURL, apiKey, authHeader := resolveUpstreamEndpoint(provider)
+	upstreamURL := endpoint(provider, "chat/completions")
 	if upstreamURL == "" {
 		c.ResponseError("No upstream endpoint configured for provider: " + provider.Name)
 		return
@@ -2189,11 +2189,7 @@ func (c *ApiController) proxyToolRequest(
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if authHeader != "" {
-		req.Header.Set("Authorization", authHeader)
-	} else if apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+apiKey)
-	}
+	authorize(req, provider)
 
 	client := &http.Client{Timeout: 120 * time.Second}
 	resp, err := client.Do(req)
@@ -2376,89 +2372,6 @@ func (c *ApiController) proxyToolRequest(
 	}
 }
 
-// resolveUpstreamEndpoint returns the chat completions URL, API key, and
-// optional full Authorization header for the given provider. It is a thin
-// alias over resolveEndpointForPath so chat, embeddings, and rerank all share
-// exactly one per-provider endpoint map.
-func resolveUpstreamEndpoint(provider *object.Provider) (url string, apiKey string, authHeader string) {
-	return resolveEndpointForPath(provider, "chat/completions")
-}
-
-// resolveEndpointForPath returns the upstream URL, API key, and optional full
-// Authorization header for the given provider and OpenAI-style API path
-// (e.g. "chat/completions", "embeddings", "rerank"). This is the single place
-// that knows each provider's base URL and auth scheme; every OpenAI-compatible
-// surface is built by varying apiPath only — no per-endpoint copy of provider
-// routing exists.
-func resolveEndpointForPath(provider *object.Provider, apiPath string) (url string, apiKey string, authHeader string) {
-	apiKey = provider.ClientSecret
-
-	switch provider.Type {
-	case "OpenAI":
-		baseURL := provider.ProviderUrl
-		if baseURL == "" {
-			baseURL = "https://api.openai.com/v1"
-		}
-		baseURL = strings.TrimRight(baseURL, "/")
-		if !strings.HasSuffix(baseURL, "/v1") {
-			baseURL += "/v1"
-		}
-		return baseURL + "/" + apiPath, apiKey, ""
-
-	case "Fireworks":
-		return "https://api.fireworks.ai/inference/v1/" + apiPath, apiKey, ""
-
-	case "Grok":
-		return "https://api.x.ai/v1/" + apiPath, apiKey, ""
-
-	case "OpenRouter":
-		return "https://openrouter.ai/api/v1/" + apiPath, apiKey, ""
-
-	case "Moonshot":
-		return "https://api.moonshot.cn/v1/" + apiPath, apiKey, ""
-
-	case "Gemini":
-		// Gemini exposes an OpenAI-compatible surface under /v1beta/openai.
-		return "https://generativelanguage.googleapis.com/v1beta/openai/" + apiPath, apiKey, ""
-
-	case "Jina":
-		// Jina AI: OpenAI-compatible /v1/embeddings and a native /v1/rerank.
-		return "https://api.jina.ai/v1/" + apiPath, apiKey, ""
-
-	case "Cohere":
-		// Cohere v1 exposes /v1/embeddings and /v1/rerank.
-		return "https://api.cohere.com/v1/" + apiPath, apiKey, ""
-
-	case "Azure":
-		baseURL := strings.TrimRight(provider.ProviderUrl, "/")
-		apiVersion := provider.ApiVersion
-		if apiVersion == "" {
-			apiVersion = "2024-02-01"
-		}
-		return fmt.Sprintf("%s/openai/deployments/%s/%s?api-version=%s",
-			baseURL, provider.SubType, apiPath, apiVersion), "", "api-key " + apiKey
-
-	case "Local", "Ollama", "DigitalOcean":
-		// Local/compatible providers with custom URLs.
-		baseURL := strings.TrimRight(provider.ProviderUrl, "/")
-		if baseURL == "" {
-			return "", "", ""
-		}
-		if strings.HasSuffix(baseURL, "/v1") {
-			return baseURL + "/" + apiPath, apiKey, ""
-		}
-		return baseURL + "/v1/" + apiPath, apiKey, ""
-
-	default:
-		// Any other OpenAI-compatible provider with a custom URL.
-		if provider.ProviderUrl != "" {
-			baseURL := strings.TrimRight(provider.ProviderUrl, "/")
-			return baseURL + "/" + apiPath, apiKey, ""
-		}
-		return "", "", ""
-	}
-}
-
 // proxyToolRequestAnthropic handles tool-calling requests for Claude/Anthropic
 // providers by converting the OpenAI format to Anthropic Messages API format
 // and converting the response back.
@@ -2480,7 +2393,6 @@ func (c *ApiController) proxyToolRequestAnthropic(
 	// See proxyToolRequest: the same wallet ChatCompletions gated and reserved on.
 	ledger := c.billingOrg(authUser)
 
-	apiKey := provider.ClientSecret
 	baseURL := provider.ProviderUrl
 	if baseURL == "" {
 		baseURL = "https://api.anthropic.com"
@@ -2609,7 +2521,7 @@ func (c *ApiController) proxyToolRequestAnthropic(
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("x-api-key", apiKey)
+	authorize(req, provider)
 	req.Header.Set("anthropic-version", "2023-06-01")
 
 	client := &http.Client{Timeout: 120 * time.Second}

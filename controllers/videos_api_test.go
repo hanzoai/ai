@@ -204,7 +204,7 @@ func TestNormalizeVideoStatus(t *testing.T) {
 }
 
 // TestVideoUpstreamBase derives the /videos base from the provider URL via the
-// single resolveEndpointForPath map, with no trailing slash so the client's
+// single endpoint map, with no trailing slash so the client's
 // "/videos" join is clean.
 func TestVideoUpstreamBase(t *testing.T) {
 	cases := []struct {
