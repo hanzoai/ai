@@ -51,6 +51,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/zap-proto/zip"
+
 	"github.com/hanzoai/ai/conf"
 	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/log"
@@ -187,6 +189,17 @@ func utcDay(t time.Time) string { return t.UTC().Format("2006-01-02") }
 
 // ---- who is asking --------------------------------------------------------
 
+// Visitor is who a caller this estate cannot name is, and the composition is the
+// whole of it: the address, then a digest of it. Empty when the request carries no
+// address at all — a socket peer with nothing in front of it naming one.
+//
+// It is exported because the router's ceilings ask the same question this lane does.
+// Two derivations of "who is this, roughly" would be two answers a caller could be
+// on either side of: bounded here, unbounded there, and one of them wrong.
+func Visitor(c *zip.Ctx) string {
+	return publicVisitor(publicAddr(c.Fiber().IP(), (&ApiController{Ctx: c}).stated()))
+}
+
 // publicVisitor is the only identity an anonymous caller has: a digest of the address
 // the edge observed.
 //
@@ -277,7 +290,7 @@ func (c *ApiController) ChatCompletionsPublic() {
 		return
 	}
 
-	visitor := publicVisitor(publicAddr(c.Fiber().IP(), c.stated()))
+	visitor := Visitor(c.Ctx)
 	if visitor == "" {
 		c.publicRefuse(http.StatusForbidden, "invalid_request_error", "public_no_address",
 			"This request carries no address to count against.")
