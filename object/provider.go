@@ -100,7 +100,17 @@ func GetMaskedProvider(provider *Provider, isMaskEnabled bool, user *iam.User) *
 	if provider.ClientSecret != "" {
 		provider.ClientSecret = SecretMask
 	}
-	if !util.IsAdmin(user) {
+	// These four fields are PLATFORM upstream credentials — the money that buys a
+	// call from OpenAI, Anthropic, OpenRouter, Fireworks. Whoever can read one can
+	// spend it directly, off our meter, so the predicate that unmasks them is the
+	// platform one: membership in the reserved admin org.
+	//
+	// IsAdmin is a TENANT fact — every customer who administers their own org
+	// satisfies it — and a global provider row belongs to no tenant. IsSuperAdmin is
+	// the narrower predicate IsAdmin's own doc comment names for exactly this
+	// operation ("provider/upstream-key config"), and it is the one predicate the
+	// whole estate agrees on: owner == AdminOrg.
+	if !util.IsSuperAdmin(user) {
 		if provider.ProviderKey != "" {
 			provider.ProviderKey = SecretMask
 		}
