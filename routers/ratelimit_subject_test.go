@@ -25,10 +25,10 @@ import (
 
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/ai/address"
 	"github.com/hanzoai/ai/controllers"
 	"github.com/hanzoai/ai/internal/authtest"
 	iam "github.com/hanzoai/ai/internal/iam"
-	"github.com/hanzoai/ai/object"
 )
 
 // The two ceilings, armed on the free tier and watching.
@@ -229,7 +229,7 @@ func TestWithBillingUnconfiguredCallersAreStillToldApart(t *testing.T) {
 		for i := 0; i < 2*burst(); i++ {
 			p := ask(http.MethodPost, "/v1/messages").
 				body([]byte(`{}`)).
-				with(object.ClientIPHeader, addr).
+				with(address.Header, addr).
 				through(RateLimitFilter)
 			if p.status() != http.StatusTooManyRequests {
 				served++
@@ -260,12 +260,12 @@ func TestAnonymousTrafficCannotCloseAPayingCallersLane(t *testing.T) {
 	for i := 0; i < 4*burst(); i++ {
 		ask(http.MethodPost, "/v1/messages").
 			body([]byte(`{}`)).
-			with(object.ClientIPHeader, shared).
+			with(address.Header, shared).
 			through(RateLimitFilter)
 	}
 
 	p := browser(t, iam.User{Owner: "acme", Name: "alice"}, "/v1/chat/completions").
-		with(object.ClientIPHeader, shared).
+		with(address.Header, shared).
 		through(RateLimitFilter)
 	if p.status() == http.StatusTooManyRequests {
 		t.Fatal("anonymous traffic from a shared address closed a named caller's lane")
@@ -288,7 +288,7 @@ func TestNobodyNamesTheirOwnBucket(t *testing.T) {
 		}
 		c.Fiber().RequestCtx().SetRemoteAddr(sock)
 		if stated != "" {
-			c.Fiber().Request().Header.Set(object.ClientIPHeader, stated)
+			c.Fiber().Request().Header.Set(address.Header, stated)
 		}
 		return controllers.Visitor(c)
 	}
