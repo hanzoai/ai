@@ -37,8 +37,8 @@ import (
 // billing machinery as ChatCompletions (see openai_api.go) — there is exactly
 // one auth+routing policy in the gateway and these handlers ride it:
 //
-//	bearer token → authResolveProvider() → resolveEndpointForPath(provider, path)
-//	             → proxy upstream → recordUsage()
+//	bearer token → authResolveProvider() → endpoint(provider, path)
+//	             → authorize(request, provider) → proxy upstream → recordUsage()
 //
 // Embeddings and the native-provider branch of Rerank are thin JSON proxies.
 // When no rerank-specific provider key is configured, Rerank falls back to a
@@ -330,7 +330,7 @@ func (c *ApiController) jsonResponse(v interface{}) {
 func (c *ApiController) proxyJSON(provider *object.Provider, apiPath string, body []byte, userModel string, authUser *iam.User, isPremium bool, startTime time.Time) {
 	requestId := uuid.NewString()
 
-	upstreamURL, apiKey, authHeader := resolveEndpointForPath(provider, apiPath)
+	upstreamURL := endpoint(provider, apiPath)
 	if upstreamURL == "" {
 		c.ResponseError("No upstream endpoint configured for provider: " + provider.Name)
 		return
@@ -342,11 +342,7 @@ func (c *ApiController) proxyJSON(provider *object.Provider, apiPath string, bod
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if authHeader != "" {
-		req.Header.Set("Authorization", authHeader)
-	} else if apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+apiKey)
-	}
+	authorize(req, provider)
 
 	client := &http.Client{Timeout: 120 * time.Second}
 	resp, err := client.Do(req)
@@ -487,7 +483,7 @@ func embedTexts(provider *object.Provider, upstreamModel string, texts []string)
 		return nil, err
 	}
 
-	upstreamURL, apiKey, authHeader := resolveEndpointForPath(provider, "embeddings")
+	upstreamURL := endpoint(provider, "embeddings")
 	if upstreamURL == "" {
 		return nil, fmt.Errorf("no embeddings endpoint configured for provider %s", provider.Name)
 	}
@@ -497,11 +493,7 @@ func embedTexts(provider *object.Provider, upstreamModel string, texts []string)
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if authHeader != "" {
-		req.Header.Set("Authorization", authHeader)
-	} else if apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+apiKey)
-	}
+	authorize(req, provider)
 
 	client := &http.Client{Timeout: 60 * time.Second}
 	resp, err := client.Do(req)

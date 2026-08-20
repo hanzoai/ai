@@ -246,7 +246,7 @@ func zapRerankHandler(ctx context.Context, auth string, body []byte) (*zap.Messa
 func zapProxyJSON(ctx context.Context, provider *object.Provider, apiPath string, body []byte, userModel string, authUser *iam.User, isPremium bool, startTime time.Time) (*zap.Message, error) {
 	requestId := uuid.NewString()
 
-	upstreamURL, apiKey, authHeader := resolveEndpointForPath(provider, apiPath)
+	upstreamURL := endpoint(provider, apiPath)
 	if upstreamURL == "" {
 		return object.BuildCloudResponse(502, nil, "no upstream endpoint configured for provider: "+provider.Name)
 	}
@@ -256,11 +256,7 @@ func zapProxyJSON(ctx context.Context, provider *object.Provider, apiPath string
 		return object.BuildCloudResponse(500, nil, "failed to create upstream request: "+err.Error())
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if authHeader != "" {
-		req.Header.Set("Authorization", authHeader)
-	} else if apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+apiKey)
-	}
+	authorize(req, provider)
 
 	client := &http.Client{Timeout: 120 * time.Second}
 	resp, err := client.Do(req)

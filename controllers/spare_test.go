@@ -239,7 +239,7 @@ func (f *refuses) pipeSince(t *testing.T, fam *modelFamily, sku string, start ti
 func restore(t *testing.T, fam *modelFamily) {
 	t.Helper()
 	fam.mu.RLock()
-	name, provider, prefix, owner := fam.name, fam.provider, fam.prefix, fam.owner
+	name, provider, prefix, owner := fam.name, fam.typ, fam.prefix, fam.owner
 	urlKey, keyKey, freeName := fam.urlKey, fam.keyKey, fam.freeName
 	providerFn, decode, spare, terms := fam.providerFn, fam.decode, fam.spare, fam.terms
 	windows, byID, ids, spares := fam.windows, fam.byID, fam.ids, fam.spares
@@ -249,7 +249,7 @@ func restore(t *testing.T, fam *modelFamily) {
 	t.Cleanup(func() {
 		fam.mu.Lock()
 		defer fam.mu.Unlock()
-		fam.name, fam.provider, fam.prefix, fam.owner = name, provider, prefix, owner
+		fam.name, fam.typ, fam.prefix, fam.owner = name, provider, prefix, owner
 		fam.urlKey, fam.keyKey, fam.freeName = urlKey, keyKey, freeName
 		fam.providerFn, fam.decode, fam.spare, fam.terms = providerFn, decode, spare, terms
 		fam.windows, fam.byID, fam.ids, fam.spares = windows, byID, ids, spares

@@ -101,12 +101,14 @@ func TestGateAndDebitAddressOneAccount(t *testing.T) {
 			want:   "acme/alice",
 		},
 		{
-			// A machine credential in the shared signup org. The gate resolves the org
-			// pool from Machine; the record has no machine flag, so the debit fell
-			// through to the signup org's per-person rule and drained a personal
-			// wallet instead.
+			// A machine credential in the shared signup org — the case where gate and
+			// debit once disagreed, because the gate inferred the org pool from a
+			// class the usage record could not express, so the debit fell through to
+			// the per-person rule and drained a personal wallet instead. Both now
+			// read the one signed ledger, which is what every real door supplies
+			// (the key door's keyUser projection, the token door's billing_account).
 			name:   "machine credential in the signup org",
-			user:   &iam.User{Owner: "hanzo", Name: "svc-indexer", Type: "application"},
+			user:   &iam.User{Owner: "hanzo", Name: "svc-indexer", Type: "application", BillingAccount: "org:hanzo"},
 			ledger: "hanzo",
 			want:   "hanzo",
 		},
@@ -193,7 +195,10 @@ func TestBindIsNilSafe(t *testing.T) {
 // found nothing, because every row was "attributed" to hanzo-cloud.
 func TestBindNamesOnlyAPerson(t *testing.T) {
 	person := &iam.User{Owner: "acme", Name: "alice"}
-	machine := &iam.User{Owner: "hanzo", Name: "hanzo-cloud", Type: "application"}
+	// Type carries ATTRIBUTION (which column the record fills); the signed ledger
+	// carries settlement. Both are present here because both are present on every
+	// real machine credential, and this test asserts they stay independent.
+	machine := &iam.User{Owner: "hanzo", Name: "hanzo-cloud", Type: "application", BillingAccount: "org:hanzo"}
 
 	// A header naming someone else, present on every case, so each one answers the
 	// same question: may THIS credential move its spend onto that name?

@@ -215,13 +215,13 @@ func imageResponseData(result *model.ImageGenResult) []map[string]string {
 
 // imageUpstreamBase returns the provider's base URL for the async image API
 // (the do-ai provider's ProviderUrl, e.g. https://inference.do-ai.run/v1). It
-// reuses resolveEndpointForPath so provider URL handling lives in exactly one
-// place; the async client appends /async-invoke itself, so the "" apiPath
-// yields the clean base with the provider's /v1 normalization applied.
+// reuses endpoint so provider URL handling lives in exactly one place; the async
+// client appends /async-invoke itself, so the empty path yields the clean base
+// with the provider's /v1 normalization applied.
 func imageUpstreamBase(provider *object.Provider) string {
-	base, _, _ := resolveEndpointForPath(provider, "")
-	// resolveEndpointForPath returns "<base>/" for the empty path; trim the
-	// trailing slash so the async client's "/async-invoke" join is clean.
+	base := endpoint(provider, "")
+	// endpoint returns "<base>/" for the empty path; trim the trailing slash so
+	// the async client's "/async-invoke" join is clean.
 	for len(base) > 0 && base[len(base)-1] == '/' {
 		base = base[:len(base)-1]
 	}

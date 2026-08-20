@@ -574,6 +574,8 @@ github.com/hanzo-ds/native v0.72.0 h1:lQhH2dza3foJCHN6scIVsEpqdj/xzI1N0QlI94vtWh
 github.com/hanzo-ds/native v0.72.0/go.mod h1:11FZtFdtfXMnmpybDEW6+uPRWFeC3TOT59YaV+lED+E=
 github.com/hanzoai/account v0.3.2 h1:6dC9ePgE73xZmIPckWfnFLYGbqtOoDV97iKs6wksbFY=
 github.com/hanzoai/account v0.3.2/go.mod h1:8OzIGRphAhlabOI74O4GoL3RM0y8mbUV0pQUKgXLjkw=
+github.com/hanzoai/account v0.3.3 h1:Kn45AOIQVS7BuYDKuM1OWsxlPj4EbOSVWTrMknjHVQA=
+github.com/hanzoai/account v0.3.3/go.mod h1:8OzIGRphAhlabOI74O4GoL3RM0y8mbUV0pQUKgXLjkw=
 github.com/hanzoai/authz v1.10.30 h1:UzJlpaC+2XAY8s2Ui3ziWBZmIUOCGIND5EchqbYPmEk=
 github.com/hanzoai/authz v1.10.30/go.mod h1:rhZo/LvDXdUZG3/6+ujfJ1RHgLyfOpw2te+ebX3KSFs=
 github.com/hanzoai/csqlite v0.1.0 h1:suwC3dh0INlfP/U0Es6cDf6JNQ+2+GVLLATPWCUux6k=

@@ -415,9 +415,7 @@ func zapServeZenMedia(apiPath, mdl string, rawBody []byte, units int, authUser *
 		return object.BuildCloudResponse(500, nil, "build zen request: "+err.Error())
 	}
 	hreq.Header.Set("Content-Type", "application/json")
-	if prov.ClientSecret != "" {
-		hreq.Header.Set("Authorization", "Bearer "+prov.ClientSecret)
-	}
+	authorize(hreq, prov)
 	// Tenant attribution: zen needs a billable tenant, and ai — which settles the
 	// ledger — tells zen it fronts this call so zen meters without double-charging.
 	if authUser != nil {

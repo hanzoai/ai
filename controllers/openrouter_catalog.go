@@ -58,7 +58,7 @@ import (
 // because discovery resolved it, never because its name looked a certain way.
 var openrouterFam = &modelFamily{
 	name:       "openrouter",
-	provider:   "OpenRouter",
+	typ:        "OpenRouter",
 	prefix:     "openrouter/",
 	owner:      "openrouter",
 	urlKey:     "OPENROUTER_URL",
