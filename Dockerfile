@@ -19,13 +19,12 @@ WORKDIR /go/src/hanzo-cloud
 # git, bypassing the public proxy. gh_token is the shared docker-build.yml BuildKit
 # secret; no-op when absent (local/dev).
 #
-# luxfi/* is PUBLIC and published to the Go module proxy, but its git tags are
-# transient — the remote re-tags, so a pinned tag (geth v1.17.12) later 404s on a
-# direct git fetch ("unknown revision"). Resolve luxfi through the proxy, which
-# holds each version immutably; GONOSUMDB skips the transparency log (whose stale
-# pre-re-tag hashes would mismatch), and go.sum still verifies the download.
-ENV GOPRIVATE=github.com/hanzoai/*,github.com/zap-proto/* \
-    GONOSUMDB=github.com/hanzoai/*,github.com/lux-private/*,github.com/zap-proto/*
+# Only the private hanzoai modules resolve straight from git; GOPRIVATE already
+# implies GONOPROXY and GONOSUMDB for them. Everything else — luxfi, zap-proto
+# and the rest — comes through the module proxy, which holds each version
+# immutably and verifies it against the checksum database, so a tag that moves
+# upstream cannot change the bytes this build compiles.
+ENV GOPRIVATE=github.com/hanzoai/*
 COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=secret,id=gh_token \
