@@ -409,8 +409,11 @@ func isBalanceExempt(path, method string) bool {
 //
 // It checks three sources in order:
 //  1. Session user (set by AutoSigninFilter for legacy auth)
-//  2. JWT Bearer token (parsed locally, no network call)
+//  2. JWT (parsed locally, no network call)
 //  3. IAM API key (sk- prefix, resolved via cached IAM lookup)
+//
+// Sources 2 and 3 read the credential through extractAPIKey, so a key names the
+// same payer on every transport this estate accepts it on.
 //
 // Returns ("", "", "") if the subject cannot be identified (fail-open: filter
 // skips). The userKey is the exact "owner/name" identity used for per-user
@@ -422,9 +425,9 @@ func resolveBillingKey(c *zip.Ctx) (subject, namespace, userKey string) {
 	// EVERY authenticated /v1 request BEFORE BalanceGateFilter's own nil guard, so
 	// without this check `balanceGate.getUserKeyCached` below nil-derefs and panics
 	// — a bare 500 on every authed request the moment Commerce is unwired. Resolve
-	// no billing subject instead (fail-open): RateLimitFilter then buckets by the
-	// raw key (its documented fallback) and nothing bills. A disabled billing
-	// subsystem must never crash a request.
+	// no billing subject instead (fail-open): RateLimitFilter then bounds the caller
+	// by the address they arrived from (its documented fallback) and nothing bills.
+	// A disabled billing subsystem must never crash a request.
 	if balanceGate == nil {
 		return "", "", ""
 	}
@@ -436,8 +439,13 @@ func resolveBillingKey(c *zip.Ctx) (subject, namespace, userKey string) {
 		return user.PayerSubject(""), user.Owner, user.Owner + "/" + user.Name
 	}
 
-	// Source 2/3: Bearer token.
-	token := parseBearerToken(c)
+	// Source 2/3: the key the caller presented, on WHICHEVER transport this estate
+	// accepts it — extractAPIKey names them, and naming them twice is how they drift.
+	// It used to read the Authorization bearer alone, so an sk- key arriving on
+	// x-api-key (the Anthropic wire protocol, /v1/messages, published in our own
+	// docs) named no payer here at all: the same credential, the same tenant, and a
+	// different answer depending on which header carried it.
+	token := extractAPIKey(c)
 	if token == "" {
 		return "", "", ""
 	}
