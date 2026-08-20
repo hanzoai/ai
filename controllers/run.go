@@ -16,19 +16,16 @@ package controllers
 // pays. It authenticates nobody. There is no user record behind it, nothing to log
 // in as, and no second door it opens.
 //
-// # It is the widget key's sibling, deliberately
+// # What it resolves to
 //
-// hz_ already proved this shape here: a machine bearer, prefix-dispatched, that
-// resolves to `iam.User{Type: "application"}` owned by the org that minted it, so
-// account.Payer bills the org account and the balance gate, the budget
-// reservation and the usage debit all engage exactly as for a person. This reuses
-// that shape and changes only where the answer comes from — a widget key is a
-// static list in KMS, a run key is minted per run and dies with it.
+// A machine bearer, prefix-dispatched, that resolves to an identity owned by the
+// org that started the run — so the balance gate, the budget reservation and the
+// usage debit all engage exactly as for a person. It is minted per run and dies
+// with it.
 //
-// It carries none of the widget caps (widgetMaxTokens, widgetAllowedModels). A
-// widget is an anonymous stranger on a public page and is fenced accordingly; a
-// run was started by an authenticated member of the org that pays for it, so it
-// buys what that org can afford and nothing else limits it.
+// Nothing caps it beyond that balance. A run was started by an authenticated member
+// of the org that pays for it, so it buys what that org can afford; the public lane,
+// which serves a stranger nobody can bill, is the one that carries a token ceiling.
 //
 // # What is NOT here
 //

@@ -38,7 +38,6 @@ import (
 	"strings"
 
 	"github.com/hanzoai/account"
-	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/luxfi/zap"
 
 	"github.com/hanzoai/ai/object"
@@ -138,43 +137,43 @@ func zapErr(status int, msg string) (*zap.Message, error) {
 	return object.BuildCloudResponse(uint32(status), nil, msg)
 }
 
-// zapBodyStore extracts the optional "store" field from a JSON body, falling
-// back to def (the native equivalent of resolveSearchStore's query param).
-func zapBodyStore(body []byte, def string) string {
+// zapBodyStore extracts the optional "store" field from a JSON body, falling back
+// to def (the native equivalent of resolveSearchStore's query param) and refusing
+// a name the caller could not have been issued — see object.ResolveStore.
+func zapBodyStore(owner string, body []byte, def string) (string, error) {
 	var s struct {
 		Store string `json:"store"`
 	}
 	_ = json.Unmarshal(body, &s)
-	if s.Store == "" {
-		return def
-	}
-	return s.Store
+	return object.ResolveStore(owner, s.Store, def)
 }
 
 // zapResolveSearchAuth mirrors ApiController.resolveSearchAuth for the ZAP
 // transport: identity from the Bearer token ONLY (no session cookie exists over
-// ZAP). Read-level: pk-*/sk-* IAM keys, hz_* widget keys, and iss/aud-validated
-// JWTs are all accepted; pk-* is read-only but valid here.
+// ZAP). Read-level: sk-*/pk-* IAM keys and iss/aud-validated JWTs are accepted;
+// pk-* is read-only but valid here.
 func zapResolveSearchAuth(auth string) (*searchAuth, *zapAuthErr) {
 	token := strings.TrimPrefix(auth, "Bearer ")
 	if token == "" {
 		return nil, &zapAuthErr{http.StatusUnauthorized, "authentication required: provide a Bearer token"}
 	}
 
-	if isIAMApiKey(token) || isPublishableKey(token) {
+	if isIAMApiKey(token) {
 		u, err := getUserByAccessKey(token)
 		if err != nil || u == nil {
 			return nil, &zapAuthErr{http.StatusUnauthorized, "API key validation failed"}
 		}
-		return &searchAuth{Owner: u.Owner, UserID: u.Owner + "/" + u.Name, User: u}, nil
+		return &searchAuth{Owner: u.Owner, UserID: u.Owner + "/" + u.Name}, nil
 	}
 
-	if isWidgetKey(token) {
-		if !validateWidgetKey(token) {
-			return nil, &zapAuthErr{http.StatusUnauthorized, "invalid widget key"}
+	// The publishable half has its own door: it answers with the org holding the
+	// key and never a person, which is why get-user above refuses a pk-.
+	if isPublishableKey(token) {
+		org, err := publishableOrg(token)
+		if err != nil {
+			return nil, &zapAuthErr{http.StatusUnauthorized, "publishable key validation failed"}
 		}
-		owner := widgetKeyOwner(token)
-		return &searchAuth{Owner: owner, UserID: owner + "/widget", User: &iam.User{Owner: owner, Name: "widget", Type: "widget-key"}}, nil
+		return &searchAuth{Owner: org, UserID: org + "/publishable"}, nil
 	}
 
 	if isJwtToken(token) {
@@ -183,7 +182,7 @@ func zapResolveSearchAuth(auth string) (*searchAuth, *zapAuthErr) {
 			return nil, &zapAuthErr{http.StatusUnauthorized, "invalid token: " + err.Error()}
 		}
 		u := &claims.User
-		return &searchAuth{Owner: u.Owner, UserID: u.Owner + "/" + u.Name, User: u}, nil
+		return &searchAuth{Owner: u.Owner, UserID: u.Owner + "/" + u.Name}, nil
 	}
 
 	return nil, &zapAuthErr{http.StatusUnauthorized, "unrecognized token format: expected pk-*, sk-*, or JWT"}
@@ -191,7 +190,7 @@ func zapResolveSearchAuth(auth string) (*searchAuth, *zapAuthErr) {
 
 // zapRequireIndexAuth mirrors ApiController.requireIndexAuth for ZAP: write-level
 // auth for index/scrape/crawl/ingest/delete. sk-*/JWT are permitted; pk-* is a
-// valid credential but read-only (403); widget/unknown are denied. There is no
+// valid credential but read-only (403); an unknown token is denied. There is no
 // session-admin or preview-mode fallback over ZAP — a no-credential caller must
 // never reach the admin tenant's index.
 func zapRequireIndexAuth(auth string) (*searchAuth, *zapAuthErr) {
@@ -205,7 +204,7 @@ func zapRequireIndexAuth(auth string) (*searchAuth, *zapAuthErr) {
 		if err != nil || u == nil {
 			return nil, &zapAuthErr{http.StatusUnauthorized, "API key validation failed"}
 		}
-		return &searchAuth{Owner: u.Owner, UserID: u.Owner + "/" + u.Name, User: u}, nil
+		return &searchAuth{Owner: u.Owner, UserID: u.Owner + "/" + u.Name}, nil
 	}
 
 	if isPublishableKey(token) {
@@ -218,7 +217,7 @@ func zapRequireIndexAuth(auth string) (*searchAuth, *zapAuthErr) {
 			return nil, &zapAuthErr{http.StatusUnauthorized, "invalid token: " + err.Error()}
 		}
 		u := &claims.User
-		return &searchAuth{Owner: u.Owner, UserID: u.Owner + "/" + u.Name, User: u}, nil
+		return &searchAuth{Owner: u.Owner, UserID: u.Owner + "/" + u.Name}, nil
 	}
 
 	return nil, &zapAuthErr{http.StatusUnauthorized, "this operation requires write authorization"}
@@ -255,7 +254,10 @@ func zapSearchHandler(_ context.Context, auth string, body []byte) (*zap.Message
 		return zapErr(http.StatusBadRequest, "query must not be empty")
 	}
 
-	store := zapBodyStore(body, "docs-hanzo-ai")
+	store, serr := zapBodyStore(sa.Owner, body, "docs-hanzo-ai")
+	if serr != nil {
+		return zapErr(http.StatusBadRequest, serr.Error())
+	}
 	results, err := object.SearchDocuments(sa.Owner, store, &req, "en")
 	if err != nil {
 		recordSearchUsage(sa, "search-query", req.Mode, "error", 0, "")
@@ -282,7 +284,10 @@ func zapIndexHandler(_ context.Context, auth string, body []byte) (*zap.Message,
 		return zapErr(http.StatusBadRequest, "documents must not be empty")
 	}
 
-	store := zapBodyStore(body, "docs-hanzo-ai")
+	store, serr := zapBodyStore(sa.Owner, body, "docs-hanzo-ai")
+	if serr != nil {
+		return zapErr(http.StatusBadRequest, serr.Error())
+	}
 	count, err := object.IndexDocuments(sa.Owner, store, &req, "en")
 	if err != nil {
 		recordSearchUsage(sa, "index-docs", "meilisearch", "error", 0, "")
@@ -302,7 +307,10 @@ func zapSearchStatsHandler(_ context.Context, auth string, body []byte) (*zap.Me
 		return zapErr(aerr.status, aerr.msg)
 	}
 
-	store := zapBodyStore(body, "docs-hanzo-ai")
+	store, serr := zapBodyStore(sa.Owner, body, "docs-hanzo-ai")
+	if serr != nil {
+		return zapErr(http.StatusBadRequest, serr.Error())
+	}
 	stats, err := object.GetDocIndexStats(sa.Owner, store)
 	if err != nil {
 		return zapErr(http.StatusInternalServerError, err.Error())
@@ -400,6 +408,11 @@ func zapIngestHandler(ctx context.Context, auth string, body []byte) (*zap.Messa
 	if err := json.Unmarshal(body, &req); err != nil {
 		return zapErr(http.StatusBadRequest, "invalid request: "+err.Error())
 	}
+	store, serr := object.ResolveStore(sa.Owner, req.Store, object.DefaultDocsStore)
+	if serr != nil {
+		return zapErr(http.StatusBadRequest, serr.Error())
+	}
+	req.Store = store
 
 	// Gate external/bulk sources (github/crawl/s3) on balance; pure inline
 	// "upload" is ungated, matching the the router IngestDocs handler.

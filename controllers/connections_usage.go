@@ -37,6 +37,7 @@ package controllers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -110,7 +111,7 @@ type ProviderUsageModelSpend struct {
 // Note/Currency; the handler owns Provider/Connected and the window fields.
 type providerUsageImporter interface {
 	provider() string
-	importUsage(ctx context.Context, apiKey string, from, to time.Time) (ProviderUsage, error)
+	importUsage(ctx context.Context, row *object.Provider, from, to time.Time) (ProviderUsage, error)
 }
 
 // providerUsageImporters is the closed registry: adding a provider = implement the
@@ -216,12 +217,7 @@ func (c *ApiController) GetAIConnectionUsage() {
 	}
 	out.Connected = true
 
-	key, err := unsealConnectionKey(row)
-	if err != nil {
-		c.ResponseErrorWithStatus(http.StatusServiceUnavailable, "could not access the connected key")
-		return
-	}
-	if strings.TrimSpace(key) == "" {
+	if err := authorizeUsage(map[string]string{}, row); err != nil {
 		// The row is active but the sealed key can't be resolved on this deployment
 		// (KMS unconfigured / secret tombstoned). Honest, not a crash.
 		out.Available = false
@@ -240,7 +236,7 @@ func (c *ApiController) GetAIConnectionUsage() {
 
 	ctx, cancel := context.WithTimeout(c.Context(), 25*time.Second)
 	defer cancel()
-	res, err := imp.importUsage(ctx, key, from, to)
+	res, err := imp.importUsage(ctx, row, from, to)
 	if err != nil {
 		// A genuine upstream failure → honest "unavailable" (typed error envelope), so the
 		// UI renders a retry state rather than fabricated zeros.
@@ -263,26 +259,39 @@ func (c *ApiController) GetAIConnectionUsage() {
 // GetProvider may return. It refuses to emit a bare "kms://…" reference (an unresolved
 // key on a KMS-less deployment) upstream, returning "" so the caller renders an honest
 // empty state instead of sending a reference to a provider API.
-func unsealConnectionKey(row *object.Provider) (string, error) {
-	if row == nil {
-		return "", fmt.Errorf("no connection")
+// errKeyUnreadable says the connection is real but its key cannot be read here
+// — a sealed reference this deployment cannot resolve. Callers render the honest
+// "connected, unavailable" state on it rather than a 500.
+var errKeyUnreadable = errors.New("the connected key cannot be read")
+
+// authorizeUsage stamps the connection's credential onto an outbound header set
+// and returns nothing but an error. It is the one place a BYO key is unsealed,
+// and it hands the value to no one: a function that returns a credential makes
+// every caller responsible for a secret, which is how one ends up in a log.
+func authorizeUsage(h map[string]string, row *object.Provider) error {
+	if row == nil || h == nil {
+		return errKeyUnreadable
 	}
 	cp := *row
 	if err := object.ResolveProviderSecret(&cp); err != nil {
-		// A reference we cannot unseal is, to this caller, the same fact as no
-		// connection: there is no key to import usage with. It renders the honest
-		// empty state ("connected, unavailable") rather than a 500 or — far worse
-		// — a bare reference sent to a provider API. Logged because a store that
-		// cannot resolve a sealed key is an operator problem even when the UI
-		// degrades gracefully.
+		// A reference that will not unseal is, to a caller, the same fact as no
+		// connection: there is no key to import usage with. Logged because a store
+		// that cannot resolve a sealed key is an operator problem even when the
+		// surface degrades honestly.
 		log.Warn("connections: could not unseal provider key", "provider", row.Name, "error", err)
-		return "", nil
+		return errKeyUnreadable
 	}
 	key := strings.TrimSpace(cp.ClientSecret)
-	if key == "" || strings.HasPrefix(key, "kms://") {
-		return "", nil
+	if key == "" {
+		return errKeyUnreadable
 	}
-	return key, nil
+	switch strings.ToLower(strings.TrimSpace(row.Type)) {
+	case "claude", "anthropic":
+		h["x-api-key"] = key
+	default:
+		h["Authorization"] = "Bearer " + key
+	}
+	return nil
 }
 
 // resolveProviderUsageWindow parses the ?from/?to params (RFC3339, YYYY-MM-DD, or unix
@@ -394,9 +403,12 @@ type openaiUsageImporter struct{ base string }
 
 func (openaiUsageImporter) provider() string { return "openai" }
 
-func (o openaiUsageImporter) importUsage(ctx context.Context, apiKey string, from, to time.Time) (ProviderUsage, error) {
+func (o openaiUsageImporter) importUsage(ctx context.Context, row *object.Provider, from, to time.Time) (ProviderUsage, error) {
 	limit := windowDayLimit(from, to, 180)
-	hdr := map[string]string{"Authorization": "Bearer " + apiKey}
+	hdr := map[string]string{}
+	if err := authorizeUsage(hdr, row); err != nil {
+		return ProviderUsage{}, err
+	}
 	build := func(path string, extra url.Values) string {
 		v := url.Values{}
 		v.Set("start_time", strconv.FormatInt(from.Unix(), 10))
@@ -550,14 +562,17 @@ type anthropicUsageImporter struct{ base string }
 
 func (anthropicUsageImporter) provider() string { return "anthropic" }
 
-func (a anthropicUsageImporter) importUsage(ctx context.Context, apiKey string, from, to time.Time) (ProviderUsage, error) {
+func (a anthropicUsageImporter) importUsage(ctx context.Context, row *object.Provider, from, to time.Time) (ProviderUsage, error) {
 	v := url.Values{}
 	v.Set("starting_at", from.UTC().Format(time.RFC3339))
 	v.Set("ending_at", to.UTC().Format(time.RFC3339))
 	v.Set("bucket_width", "1d")
 	v.Add("group_by[]", "model")
 	rawURL := strings.TrimRight(a.base, "/") + "/v1/organizations/usage_report/messages?" + v.Encode()
-	hdr := map[string]string{"x-api-key": apiKey, "anthropic-version": "2023-06-01"}
+	hdr := map[string]string{"anthropic-version": "2023-06-01"}
+	if err := authorizeUsage(hdr, row); err != nil {
+		return ProviderUsage{}, err
+	}
 
 	body, status, err := providerUsageGet(ctx, rawURL, hdr)
 	if err != nil {
@@ -646,7 +661,7 @@ type googleUsageImporter struct{}
 
 func (googleUsageImporter) provider() string { return "google" }
 
-func (googleUsageImporter) importUsage(_ context.Context, _ string, _, _ time.Time) (ProviderUsage, error) {
+func (googleUsageImporter) importUsage(_ context.Context, _ *object.Provider, _, _ time.Time) (ProviderUsage, error) {
 	return ProviderUsage{
 		Currency:  "usd",
 		Available: false,
@@ -671,8 +686,11 @@ type openrouterUsageImporter struct{ base string }
 
 func (openrouterUsageImporter) provider() string { return "openrouter" }
 
-func (o openrouterUsageImporter) importUsage(ctx context.Context, apiKey string, from, to time.Time) (ProviderUsage, error) {
-	hdr := map[string]string{"Authorization": "Bearer " + apiKey}
+func (o openrouterUsageImporter) importUsage(ctx context.Context, row *object.Provider, from, to time.Time) (ProviderUsage, error) {
+	hdr := map[string]string{}
+	if err := authorizeUsage(hdr, row); err != nil {
+		return ProviderUsage{}, err
+	}
 	root := strings.TrimRight(o.base, "/")
 	out := ProviderUsage{Currency: "usd"}
 
@@ -818,7 +836,7 @@ type deepseekUsageImporter struct{}
 
 func (deepseekUsageImporter) provider() string { return "deepseek" }
 
-func (deepseekUsageImporter) importUsage(_ context.Context, _ string, _, _ time.Time) (ProviderUsage, error) {
+func (deepseekUsageImporter) importUsage(_ context.Context, _ *object.Provider, _, _ time.Time) (ProviderUsage, error) {
 	return ProviderUsage{
 		Currency:  "usd",
 		Available: false,
@@ -836,7 +854,7 @@ type groqUsageImporter struct{}
 
 func (groqUsageImporter) provider() string { return "groq" }
 
-func (groqUsageImporter) importUsage(_ context.Context, _ string, _, _ time.Time) (ProviderUsage, error) {
+func (groqUsageImporter) importUsage(_ context.Context, _ *object.Provider, _, _ time.Time) (ProviderUsage, error) {
 	return ProviderUsage{
 		Currency:  "usd",
 		Available: false,

@@ -25,17 +25,21 @@ import (
 	"time"
 
 	"github.com/hanzoai/ai/conf"
-	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/object"
 )
 
 // searchAuth holds the validated identity for a search API request.
 // Every search/index/scrape endpoint must obtain this before processing.
+// It carries the two things every caller uses — the tenant whose index is read
+// and the identity the usage is billed to — and deliberately NOT the resolved
+// iam.User. Nothing read that user, and keeping a full principal here invites a
+// role check on a value some of these doors build from a PUBLIC key: a page key
+// names an org, never a person, and a struct that cannot carry a person cannot be
+// asked whether it is an admin.
 type searchAuth struct {
-	Owner  string    // organization that owns the search index
-	UserID string    // "owner/name" format for billing
-	User   *iam.User // nil for session-only auth without IAM lookup
+	Owner  string // organization that owns the search index
+	UserID string // "owner/name" format for billing
 }
 
 // resolveSearchAuth validates the caller's identity via session, JWT, or IAM API key.
@@ -45,11 +49,7 @@ func (c *ApiController) resolveSearchAuth() *searchAuth {
 	// 1. Session auth (highest trust -- user already authenticated via IAM SSO)
 	user := c.GetSessionUser()
 	if user != nil {
-		return &searchAuth{
-			Owner:  user.Owner,
-			UserID: user.Owner + "/" + user.Name,
-			User:   user,
-		}
+		return &searchAuth{Owner: user.Owner, UserID: user.Owner + "/" + user.Name}
 	}
 
 	// 2. Bearer token auth. Every failure below is an authentication failure and
@@ -79,47 +79,23 @@ func (c *ApiController) resolveSearchAuth() *searchAuth {
 			c.ResponseUnauthorized("invalid API key")
 			return nil
 		}
-		return &searchAuth{
-			Owner:  iamUser.Owner,
-			UserID: iamUser.Owner + "/" + iamUser.Name,
-			User:   iamUser,
-		}
+		return &searchAuth{Owner: iamUser.Owner, UserID: iamUser.Owner + "/" + iamUser.Name}
 	}
 
-	// 4. Publishable key (pk-*) -- validate via IAM (read-only access)
+	// 4. Publishable key (pk-*) -- read-only access for a key that ships in a page.
+	// It goes to IAM's publishable door, which answers with the ORG that holds the
+	// key and never a person; get-user above is the secret half's door and refuses
+	// a pk- outright, so asking it here denied every publishable caller. The owner
+	// rides the KEY, not the request Origin/Referer — a forgeable header must not
+	// let one page read another tenant's indexed store.
 	if isPublishableKey(token) {
-		iamUser, err := getUserByAccessKey(token)
+		org, err := publishableOrg(token)
 		if err != nil {
 			log.Warning("search auth: pk-* key validation failed: %s", err.Error())
 			c.ResponseUnauthorized("publishable key validation failed")
 			return nil
 		}
-		if iamUser == nil {
-			c.ResponseUnauthorized("invalid publishable key")
-			return nil
-		}
-		return &searchAuth{
-			Owner:  iamUser.Owner,
-			UserID: iamUser.Owner + "/" + iamUser.Name,
-			User:   iamUser,
-		}
-	}
-
-	// 4b. Widget key (hz_*) -- public widget RAG access.
-	// Owner is bound to the widget KEY (WIDGET_KEY_OWNERS), NOT the request
-	// Origin/Referer — a forgeable header must not let one widget read another
-	// tenant's indexed store.
-	if isWidgetKey(token) {
-		if !validateWidgetKey(token) {
-			c.ResponseUnauthorized("invalid widget key")
-			return nil
-		}
-		owner := widgetKeyOwner(token)
-		return &searchAuth{
-			Owner:  owner,
-			UserID: owner + "/widget",
-			User:   &iam.User{Owner: owner, Name: "widget", Type: "widget-key"},
-		}
+		return &searchAuth{Owner: org, UserID: org + "/publishable"}
 	}
 
 	// 5. JWT token -- validate via IAM OIDC (signature + iss/aud, R3)
@@ -130,25 +106,26 @@ func (c *ApiController) resolveSearchAuth() *searchAuth {
 			return nil
 		}
 		jwtUser := &claims.User
-		return &searchAuth{
-			Owner:  jwtUser.Owner,
-			UserID: jwtUser.Owner + "/" + jwtUser.Name,
-			User:   jwtUser,
-		}
+		return &searchAuth{Owner: jwtUser.Owner, UserID: jwtUser.Owner + "/" + jwtUser.Name}
 	}
 
 	c.ResponseUnauthorized("unrecognized token format: expected pk-*, sk-*, or JWT")
 	return nil
 }
 
-// resolveSearchStore determines the store name from the query parameter or request body field.
-// The store is scoped to the authenticated owner's namespace via GetSearchIndexName.
-func (c *ApiController) resolveSearchStore() string {
-	store := c.Input().Get("store")
-	if store == "" {
-		store = "docs-hanzo-ai"
+// resolveSearchStore determines the store the request acts on, from the query
+// parameter, and refuses a name the caller could not have been issued. The store
+// is scoped to the authenticated owner's namespace via GetSearchIndexName, and
+// object.ResolveStore is what keeps that scoping honest — a store that could push
+// the owner boundary is not a store. ok=false means the answer was already
+// written; the caller returns.
+func (c *ApiController) resolveSearchStore(owner string) (string, bool) {
+	store, err := object.ResolveStore(owner, c.Input().Get("store"), "docs-hanzo-ai")
+	if err != nil {
+		c.ResponseError(err.Error())
+		return "", false
 	}
-	return store
+	return store, true
 }
 
 // requireIndexAuth checks that the caller has write-level auth for index/scrape operations.
@@ -158,11 +135,7 @@ func (c *ApiController) requireIndexAuth() *searchAuth {
 	// Session admin has full access
 	if c.IsAdmin() {
 		user := c.GetSessionUser()
-		return &searchAuth{
-			Owner:  user.Owner,
-			UserID: user.Owner + "/" + user.Name,
-			User:   user,
-		}
+		return &searchAuth{Owner: user.Owner, UserID: user.Owner + "/" + user.Name}
 	}
 
 	// Bearer token auth
@@ -182,11 +155,7 @@ func (c *ApiController) requireIndexAuth() *searchAuth {
 				c.ResponseUnauthorized("invalid API key")
 				return nil
 			}
-			return &searchAuth{
-				Owner:  iamUser.Owner,
-				UserID: iamUser.Owner + "/" + iamUser.Name,
-				User:   iamUser,
-			}
+			return &searchAuth{Owner: iamUser.Owner, UserID: iamUser.Owner + "/" + iamUser.Name}
 		}
 
 		// pk-* publishable keys are a VALID credential but not permitted to write
@@ -204,11 +173,7 @@ func (c *ApiController) requireIndexAuth() *searchAuth {
 				return nil
 			}
 			jwtUser := &claims.User
-			return &searchAuth{
-				Owner:  jwtUser.Owner,
-				UserID: jwtUser.Owner + "/" + jwtUser.Name,
-				User:   jwtUser,
-			}
+			return &searchAuth{Owner: jwtUser.Owner, UserID: jwtUser.Owner + "/" + jwtUser.Name}
 		}
 	}
 
@@ -321,7 +286,10 @@ func (c *ApiController) SearchDocs() {
 		return
 	}
 
-	store := c.resolveSearchStore()
+	store, ok := c.resolveSearchStore(auth.Owner)
+	if !ok {
+		return
+	}
 
 	results, err := object.SearchDocuments(auth.Owner, store, &req, c.GetAcceptLanguage())
 	if err != nil {
@@ -367,7 +335,10 @@ func (c *ApiController) IndexDocs() {
 		return
 	}
 
-	store := c.resolveSearchStore()
+	store, ok := c.resolveSearchStore(auth.Owner)
+	if !ok {
+		return
+	}
 
 	count, err := object.IndexDocuments(auth.Owner, store, &req, c.GetAcceptLanguage())
 	if err != nil {
@@ -409,7 +380,10 @@ func (c *ApiController) SearchDocsStats() {
 		return
 	}
 
-	store := c.resolveSearchStore()
+	store, ok := c.resolveSearchStore(auth.Owner)
+	if !ok {
+		return
+	}
 
 	stats, err := object.GetDocIndexStats(auth.Owner, store)
 	if err != nil {
