@@ -137,11 +137,10 @@ func NewClientWithConf(config *AuthConfig) *Client {
 	return &Client{AuthConfig: *config, CustomHeaders: make(map[string]string)}
 }
 
-// resolveEndpoint returns an IAM base URL: the explicit value if set, else the
-// first non-empty IAM_ENDPOINT / IAM_ISSUER env var, else the https://hanzo.id
-// default. This is what lets a package-level helper reach IAM even when
-// InitConfig was never called.
-func resolveEndpoint(explicit string) string {
+// statedEndpoint returns the IAM base URL somebody actually STATED: the explicit
+// value if set, else the first non-empty IAM_ENDPOINT / IAM_ISSUER env var. Empty
+// means nobody said, and the caller decides what to do about that.
+func statedEndpoint(explicit string) string {
 	if explicit = strings.TrimSpace(explicit); explicit != "" {
 		return explicit
 	}
@@ -149,6 +148,20 @@ func resolveEndpoint(explicit string) string {
 		if v := strings.TrimSpace(os.Getenv(k)); v != "" {
 			return v
 		}
+	}
+	return ""
+}
+
+// resolveEndpoint is statedEndpoint plus the public default, for the READS — a
+// helper asking IAM about a user needs some host to ask, and this is what lets one
+// work when InitConfig was never called.
+//
+// It is deliberately not what decides a signature. A default is a guess, and a
+// guess is fine for "where do I look this up" and wrong for "whose key am I
+// trusting" — see ParseJwtToken.
+func resolveEndpoint(explicit string) string {
+	if e := statedEndpoint(explicit); e != "" {
+		return e
 	}
 	return "https://hanzo.id"
 }
