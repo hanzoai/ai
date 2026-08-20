@@ -90,10 +90,14 @@ type Provider struct {
 // a key.
 const SecretMask = "***"
 
-func GetMaskedProvider(provider *Provider, isMaskEnabled bool, user *iam.User) *Provider {
-	if !isMaskEnabled {
-		return provider
-	}
+// GetMaskedProvider returns the row with its credentials replaced by SecretMask,
+// keeping only what the caller is entitled to read.
+//
+// There is no "skip the masking" argument. It had one, every call site passed
+// true, and the false branch returned the row with every key in the clear — a
+// default that only had to be reached once to spend real money. A caller that
+// genuinely needs a live credential reads the row it already holds.
+func GetMaskedProvider(provider *Provider, user *iam.User) *Provider {
 	if provider == nil {
 		return nil
 	}
@@ -127,12 +131,9 @@ func GetMaskedProvider(provider *Provider, isMaskEnabled bool, user *iam.User) *
 	return provider
 }
 
-func GetMaskedProviders(providers []*Provider, isMaskEnabled bool, user *iam.User) []*Provider {
-	if !isMaskEnabled {
-		return providers
-	}
+func GetMaskedProviders(providers []*Provider, user *iam.User) []*Provider {
 	for _, provider := range providers {
-		provider = GetMaskedProvider(provider, isMaskEnabled, user)
+		GetMaskedProvider(provider, user)
 	}
 	return providers
 }
