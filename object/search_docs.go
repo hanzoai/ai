@@ -196,20 +196,25 @@ func awaitTask(client meilisearch.ServiceManager, taskUID int64, cap time.Durati
 	return err
 }
 
-// ensureSearchIndex creates the Hanzo Search index if it does not exist and configures it.
+// ensureSearchIndex creates the Hanzo Search index if it does not exist and
+// configures it. Settings are written ONCE, when the index is created — Hanzo
+// Search reindexes the WHOLE corpus on any settings write (unchanged or not),
+// which on a large index is 80-100s and blocked every ingest behind a settings
+// task that only ever restated attributes it already had. An existing index
+// already carries the right settings, so a settings write on it is pure cost.
 func ensureSearchIndex(client meilisearch.ServiceManager, indexName string) error {
-	_, err := client.GetIndex(indexName)
-	if err != nil {
-		task, createErr := client.CreateIndex(&meilisearch.IndexConfig{
-			Uid:        indexName,
-			PrimaryKey: "id",
-		})
-		if createErr != nil {
-			return fmt.Errorf("failed to create index %s: %w", indexName, createErr)
-		}
-		if err = awaitTask(client, task.TaskUID, 30*time.Second); err != nil {
-			return fmt.Errorf("failed waiting for index creation: %w", err)
-		}
+	if _, err := client.GetIndex(indexName); err == nil {
+		return nil // exists and configured; a settings write here only triggers a full reindex
+	}
+	task, createErr := client.CreateIndex(&meilisearch.IndexConfig{
+		Uid:        indexName,
+		PrimaryKey: "id",
+	})
+	if createErr != nil {
+		return fmt.Errorf("failed to create index %s: %w", indexName, createErr)
+	}
+	if err := awaitTask(client, task.TaskUID, 30*time.Second); err != nil {
+		return fmt.Errorf("failed waiting for index creation: %w", err)
 	}
 	index := client.Index(indexName)
 	task, err := index.UpdateSettings(&meilisearch.Settings{
