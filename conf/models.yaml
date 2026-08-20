@@ -33,21 +33,28 @@ router:
   endpoint: ""            # e.g. http://engine.hanzo.svc:3000 (zen-router via hanzo-engine)
   cost_ceiling: 0.0       # advisory per-1k cost cap, forwarded to the engine as SLO
   prefer:                 # task tag → ordered model ids; first servable wins ("default" = catch-all)
-    # zen champions stay FIRST (unchanged default/cost); the newly-enabled do-ai
-    # premium models are appended as CANDIDATES — reachable by the learned engine
-    # and the exploration floor, and as fallbacks when a champion is unservable.
-    # Only models VERIFIED to have the task's capability are listed (e.g. only
-    # confirmed-vision ids go in `vision`; gpt-5.6 has no tools so it stays out of
-    # tool-heavy code/reasoning; sonnet-5/deepseek-v4-pro/glm-5.2 reject images so
-    # they are absent from `vision`).
-    code: [zen4-coder, zen5-coder, qwen3-coder, gpt-5.3-codex, claude-opus-4-8, claude-sonnet-4-6, gpt-5.4, deepseek-v4-pro]
-    reasoning: [zen4-thinking, deepseek-reasoner, zen4-ultra, o3, gpt-5.5, claude-opus-4-8, deepseek-v4-pro]
-    math: [zen4-ultra, deepseek-reasoner, zen4-thinking, o3, gpt-5.5, deepseek-v4-pro]
-    creative: [zen4, zen4-max, claude-sonnet-4-5, claude-opus-4-8, gpt-5.5]
-    vision: [zen5-omni, zen3-omni, zen3-vl, claude-sonnet-4-6, gpt-4o, gpt-5.4, llama-4-maverick, nemotron-nano-vl]
-    long_context: [zen4-max, gpt-5.4, claude-sonnet-4-5, gpt-5.5, gpt-5.6-luna, claude-opus-4-8, deepseek-v4-pro]
-    cheap_chat: [zen4-mini, zen5-mini, gpt-4o-mini, claude-haiku-4-5]
-    default: [zen4, zen5, gpt-4o, gpt-4o-mini, kimi-k2.6, glm-5.2]
+    # A zen champion leads each list; the premium models follow as CANDIDATES —
+    # reachable by the learned engine and the exploration floor, and as fallbacks
+    # when a champion is unservable. Only models VERIFIED to have the task's
+    # capability are listed (gpt-5.6 has no tools, so it stays out of tool-heavy
+    # code/reasoning; deepseek-v4-pro and glm reject images, so they are absent
+    # from `vision`).
+    #
+    # EVERY id here is checked against GET /v1/models. It stopped being true and
+    # nothing said so: all eight lists led with a model that no longer exists
+    # (zen4* and zen3* were retired into the zen5 lineup), and `vision` had its
+    # top THREE dead with the live house vision SKU not listed at all. "First
+    # servable wins" is what hid it — the router walks past a dead champion and
+    # answers from a fallback, so the intended model silently never serves and
+    # the only symptom is a preference that does nothing.
+    code: [zen5-coder, zen5-pro, qwen3-coder, gpt-5.3-codex, claude-opus-4-8, claude-sonnet-4-6, gpt-5.4, deepseek-v4-pro]
+    reasoning: [zen5-pro, deepseek-reasoner, o3, gpt-5.5, claude-opus-4-8, deepseek-v4-pro]
+    math: [zen5-pro, deepseek-reasoner, o3, gpt-5.5, deepseek-v4-pro]
+    creative: [zen5, claude-opus-4-8, gpt-5.5, claude-sonnet-4-6]
+    vision: [zen-vl, claude-sonnet-4-6, gpt-4o, gpt-5.4, llama-4-maverick, nemotron-nano-vl]
+    long_context: [zen5, gpt-5.4, gpt-5.5, gpt-5.6-luna, claude-opus-4-8, deepseek-v4-pro]
+    cheap_chat: [zen5-mini, zen5-flash, gpt-4o-mini, claude-haiku-4-5]
+    default: [zen5, gpt-4o, gpt-4o-mini, kimi-k2.6, glm-5.2]
 
 default_pricing:
   input_per_million: 1.00
