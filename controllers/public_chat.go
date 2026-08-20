@@ -71,9 +71,9 @@ const publicOrg = "$public"
 // is a failure this endpoint is allowed to have.
 const publicVisitors = 200_000
 
-// publicMaxTokens caps one public answer. It is the widget cap: the same reason — an
-// unattributed completion cannot be billed to anyone — and therefore the same number.
-const publicMaxTokens = widgetMaxTokens
+// publicMaxTokens caps one public answer, for the reason the lane exists at all: an
+// unattributed completion cannot be billed to anyone, so it is bounded instead.
+const publicMaxTokens = 800
 
 // publicChatDaily is the ceiling and the switch at once: completions one visitor may
 // take per UTC day. 0 closes the lane.

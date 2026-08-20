@@ -1,4 +1,4 @@
-package controllers
+package object
 
 import (
 	"regexp"
@@ -14,7 +14,7 @@ var jwtish = regexp.MustCompile(`ey[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}`)
 const sampleJWT = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJoYW56by9vbGUiLCJvd25lciI6ImhhbnpvIn0.c2lnbmF0dXJlLXBsYWNlaG9sZGVy"
 
 func TestRedactCredentialKeepsNoKeyMaterial(t *testing.T) {
-	got := redactCredential("Bearer " + sampleJWT)
+	got := RedactCredential("Bearer " + sampleJWT)
 	if jwtish.MatchString(got) {
 		t.Fatalf("token survived redaction: %q", got)
 	}
@@ -31,27 +31,27 @@ func TestRedactCredentialIsStableAndDistinguishing(t *testing.T) {
 	// Stable: the same credential fingerprints identically, so repeated failures
 	// from one caller are still correlatable — the reason to fingerprint rather
 	// than drop the field.
-	a := redactCredential("Bearer " + sampleJWT)
-	if b := redactCredential("Bearer " + sampleJWT); a != b {
+	a := RedactCredential("Bearer " + sampleJWT)
+	if b := RedactCredential("Bearer " + sampleJWT); a != b {
 		t.Fatalf("not stable: %q vs %q", a, b)
 	}
 	// Distinguishing: a different credential must not collide.
-	if c := redactCredential("Bearer " + sampleJWT + "x"); a == c {
+	if c := RedactCredential("Bearer " + sampleJWT + "x"); a == c {
 		t.Fatal("two different tokens produced one fingerprint")
 	}
 }
 
 func TestRedactCredentialHandlesOddInput(t *testing.T) {
-	if got := redactCredential(""); got != "" {
+	if got := RedactCredential(""); got != "" {
 		t.Fatalf("empty header should stay empty, got %q", got)
 	}
 	// A bare token with no scheme still must not leak.
-	if got := redactCredential(sampleJWT); strings.Contains(got, sampleJWT) {
+	if got := RedactCredential(sampleJWT); strings.Contains(got, sampleJWT) {
 		t.Fatalf("schemeless token leaked: %q", got)
 	}
 	// A wrong scheme is worth seeing in a log — that is a real bug signal — but
 	// its credential is not.
-	got := redactCredential("Basic dXNlcjpwYXNzd29yZA==")
+	got := RedactCredential("Basic dXNlcjpwYXNzd29yZA==")
 	if !strings.HasPrefix(got, "Basic sha256:") || strings.Contains(got, "dXNlcjpwYXNz") {
 		t.Fatalf("basic creds mishandled: %q", got)
 	}
@@ -59,7 +59,7 @@ func TestRedactCredentialHandlesOddInput(t *testing.T) {
 
 func TestRedactBodyDropsPasswordsAndTokens(t *testing.T) {
 	body := `{"email":"a@b.com","password":"hunter2","api_key":"sk-live-abc","note":"keep me"}`
-	got := redactBody(body)
+	got := RedactBody(body)
 	for _, secret := range []string{"hunter2", "sk-live-abc"} {
 		if strings.Contains(got, secret) {
 			t.Fatalf("%q survived: %s", secret, got)
@@ -75,7 +75,7 @@ func TestRedactBodyDropsPasswordsAndTokens(t *testing.T) {
 }
 
 func TestRedactQueryDropsCredentialParams(t *testing.T) {
-	got := redactQuery("org=all&range=24h&api_key=sk-live-xyz&access_token=" + sampleJWT)
+	got := RedactQuery("org=all&range=24h&api_key=sk-live-xyz&access_token=" + sampleJWT)
 	if jwtish.MatchString(got) || strings.Contains(got, "sk-live-xyz") {
 		t.Fatalf("query credential survived: %s", got)
 	}
@@ -91,9 +91,9 @@ func TestRedactQueryDropsCredentialParams(t *testing.T) {
 // the full token in the token= field.
 func TestProductionLogLineHasNoJWT(t *testing.T) {
 	line := "API error: method=GET path=/v1/ai/usages/cloud query=" +
-		redactQuery("org=all&range=24h") +
-		" token=" + redactCredential("Bearer "+sampleJWT) +
-		" body=" + redactBody(`{"password":"hunter2"}`) +
+		RedactQuery("org=all&range=24h") +
+		" token=" + RedactCredential("Bearer "+sampleJWT) +
+		" body=" + RedactBody(`{"password":"hunter2"}`) +
 		" response={\"status\":\"error\"}"
 	if jwtish.MatchString(line) {
 		t.Fatalf("a JWT reached the log line: %s", line)

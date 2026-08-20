@@ -153,7 +153,7 @@ func TestOpenAIImporterHappyPath(t *testing.T) {
 	}})
 
 	imp := openaiUsageImporter{base: "https://api.openai.com/v1"}
-	out, err := imp.importUsage(context.Background(), "sk-admin-x", time.Unix(1735689600, 0), time.Unix(1735862400, 0))
+	out, err := imp.importUsage(context.Background(), &object.Provider{Type: "OpenAI", ClientSecret: "sk-admin-x"}, time.Unix(1735689600, 0), time.Unix(1735862400, 0))
 	if err != nil {
 		t.Fatalf("importUsage err: %v", err)
 	}
@@ -186,7 +186,7 @@ func TestOpenAIImporterAdminKeyGap(t *testing.T) {
 		"/v1/organization/usage/completions": {401, `{"error":{"message":"missing scope api.usage.read"}}`},
 	}})
 	imp := openaiUsageImporter{base: "https://api.openai.com/v1"}
-	out, err := imp.importUsage(context.Background(), "sk-proj-normal", time.Now().AddDate(0, 0, -30), time.Now())
+	out, err := imp.importUsage(context.Background(), &object.Provider{Type: "OpenAI", ClientSecret: "sk-proj-normal"}, time.Now().AddDate(0, 0, -30), time.Now())
 	if err != nil {
 		t.Fatalf("auth-gap should not error: %v", err)
 	}
@@ -204,7 +204,7 @@ func TestOpenAIImporterHonestEmpty(t *testing.T) {
 		"/v1/organization/usage/completions": {200, `{"data":[]}`},
 	}})
 	imp := openaiUsageImporter{base: "https://api.openai.com/v1"}
-	out, _ := imp.importUsage(context.Background(), "sk-admin-x", time.Now().AddDate(0, 0, -30), time.Now())
+	out, _ := imp.importUsage(context.Background(), &object.Provider{Type: "OpenAI", ClientSecret: "sk-admin-x"}, time.Now().AddDate(0, 0, -30), time.Now())
 	if out.Available {
 		t.Fatalf("empty period should be unavailable")
 	}
@@ -242,7 +242,7 @@ func TestAnthropicImporterTokensImportedSpendGap(t *testing.T) {
 		"/v1/organizations/usage_report/messages": {200, body},
 	}})
 	imp := anthropicUsageImporter{base: "https://api.anthropic.com"}
-	out, err := imp.importUsage(context.Background(), "sk-ant-admin-x", time.Now().AddDate(0, 0, -7), time.Now())
+	out, err := imp.importUsage(context.Background(), &object.Provider{Type: "OpenAI", ClientSecret: "sk-ant-admin-x"}, time.Now().AddDate(0, 0, -7), time.Now())
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -255,7 +255,7 @@ func TestAnthropicImporterTokensImportedSpendGap(t *testing.T) {
 }
 
 func TestGoogleImporterHonestGap(t *testing.T) {
-	out, err := googleUsageImporter{}.importUsage(context.Background(), "AIza-x", time.Now().AddDate(0, 0, -7), time.Now())
+	out, err := googleUsageImporter{}.importUsage(context.Background(), &object.Provider{Type: "OpenAI", ClientSecret: "AIza-x"}, time.Now().AddDate(0, 0, -7), time.Now())
 	if err != nil || out.Available {
 		t.Fatalf("google should be honest-unavailable: %+v err=%v", out, err)
 	}
@@ -276,32 +276,46 @@ func TestProviderUsageImporterRegistry(t *testing.T) {
 	}
 }
 
-func TestUnsealConnectionKeyCopiesAndRefusesRef(t *testing.T) {
-	// A plaintext key (dev / no KMS) is returned verbatim; the source row is not mutated.
-	row := &object.Provider{Name: "openai", ClientSecret: "sk-plain-123"}
-	got, err := unsealConnectionKey(row)
-	if err != nil || got != "sk-plain-123" {
-		t.Fatalf("plaintext key = %q err=%v", got, err)
+func TestAuthorizeUsageStampsAndRefusesRef(t *testing.T) {
+	// A plaintext key (dev / no KMS) is stamped; the source row is not mutated,
+	// and the value reaches the header rather than the caller.
+	row := &object.Provider{Name: "openai", Type: "OpenAI", ClientSecret: "sk-plain-123"}
+	h := map[string]string{}
+	if err := authorizeUsage(h, row); err != nil {
+		t.Fatalf("plaintext key refused: %v", err)
+	}
+	if h["Authorization"] != "Bearer sk-plain-123" {
+		t.Fatalf("Authorization = %q", h["Authorization"])
 	}
 	if row.ClientSecret != "sk-plain-123" {
 		t.Fatalf("source row mutated: %q", row.ClientSecret)
 	}
 
-	// An unresolved kms:// reference (KMS disabled) is NEVER emitted upstream.
-	ref := &object.Provider{Name: "openai", ClientSecret: "kms://byok_org_openai"}
-	got, err = unsealConnectionKey(ref)
-	if err != nil {
-		t.Fatalf("unexpected err: %v", err)
+	// Anthropic carries its own scheme.
+	ha := map[string]string{}
+	if err := authorizeUsage(ha, &object.Provider{Name: "anthropic", Type: "Claude", ClientSecret: "sk-ant-1"}); err != nil {
+		t.Fatalf("anthropic refused: %v", err)
 	}
-	if got != "" {
-		t.Fatalf("kms ref should resolve to empty, got %q", got)
+	if ha["x-api-key"] != "sk-ant-1" || ha["Authorization"] != "" {
+		t.Fatalf("anthropic headers = %v", ha)
+	}
+
+	// An unresolved kms:// reference is never stamped — the reference itself must
+	// not reach a provider, and the row is left as it was.
+	ref := &object.Provider{Name: "openai", Type: "OpenAI", ClientSecret: "kms://byok_org_openai"}
+	hr := map[string]string{}
+	if err := authorizeUsage(hr, ref); err == nil {
+		t.Fatal("an unresolvable reference was accepted")
+	}
+	if len(hr) != 0 {
+		t.Fatalf("headers written for an unresolvable reference: %v", hr)
 	}
 	if ref.ClientSecret != "kms://byok_org_openai" {
 		t.Fatalf("source ref mutated: %q", ref.ClientSecret)
 	}
 
-	if _, err := unsealConnectionKey(nil); err == nil {
-		t.Fatalf("nil row should error")
+	if err := authorizeUsage(map[string]string{}, nil); err == nil {
+		t.Fatal("nil row should refuse")
 	}
 }
 
@@ -355,7 +369,7 @@ func TestOpenRouterImporterActivityHappyPath(t *testing.T) {
 	imp := openrouterUsageImporter{base: "https://openrouter.ai/api/v1"}
 	from := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	to := time.Date(2026, 1, 31, 0, 0, 0, 0, time.UTC)
-	out, err := imp.importUsage(context.Background(), "sk-or-x", from, to)
+	out, err := imp.importUsage(context.Background(), &object.Provider{Type: "OpenAI", ClientSecret: "sk-or-x"}, from, to)
 	if err != nil {
 		t.Fatalf("importUsage err: %v", err)
 	}
@@ -387,7 +401,7 @@ func TestOpenRouterImporterCreditsFallback(t *testing.T) {
 		"/api/v1/credits":  {200, `{"data":{"total_credits":100.0,"total_usage":12.34}}`},
 	}})
 	imp := openrouterUsageImporter{base: "https://openrouter.ai/api/v1"}
-	out, err := imp.importUsage(context.Background(), "sk-or-normal", time.Now().AddDate(0, 0, -30), time.Now())
+	out, err := imp.importUsage(context.Background(), &object.Provider{Type: "OpenAI", ClientSecret: "sk-or-normal"}, time.Now().AddDate(0, 0, -30), time.Now())
 	if err != nil {
 		t.Fatalf("credits fallback should not error: %v", err)
 	}
@@ -410,7 +424,7 @@ func TestOpenRouterImporterActivityEmptyIsHonest(t *testing.T) {
 		"/api/v1/credits":  {200, `{"data":{"total_credits":100,"total_usage":50}}`},
 	}})
 	imp := openrouterUsageImporter{base: "https://openrouter.ai/api/v1"}
-	out, _ := imp.importUsage(context.Background(), "sk-or-x", time.Now().AddDate(0, 0, -30), time.Now())
+	out, _ := imp.importUsage(context.Background(), &object.Provider{Type: "OpenAI", ClientSecret: "sk-or-x"}, time.Now().AddDate(0, 0, -30), time.Now())
 	if out.Available || out.Totals.SpendCents != 0 {
 		t.Fatalf("empty activity should be honest-unavailable with zero spend: %+v", out)
 	}
@@ -420,7 +434,7 @@ func TestOpenRouterImporterActivityEmptyIsHonest(t *testing.T) {
 }
 
 func TestDeepSeekImporterHonestGap(t *testing.T) {
-	out, err := deepseekUsageImporter{}.importUsage(context.Background(), "sk-deepseek", time.Now().AddDate(0, 0, -7), time.Now())
+	out, err := deepseekUsageImporter{}.importUsage(context.Background(), &object.Provider{Type: "OpenAI", ClientSecret: "sk-deepseek"}, time.Now().AddDate(0, 0, -7), time.Now())
 	if err != nil || out.Available {
 		t.Fatalf("deepseek should be honest-unavailable: %+v err=%v", out, err)
 	}
@@ -430,7 +444,7 @@ func TestDeepSeekImporterHonestGap(t *testing.T) {
 }
 
 func TestGroqImporterHonestGap(t *testing.T) {
-	out, err := groqUsageImporter{}.importUsage(context.Background(), "gsk-x", time.Now().AddDate(0, 0, -7), time.Now())
+	out, err := groqUsageImporter{}.importUsage(context.Background(), &object.Provider{Type: "OpenAI", ClientSecret: "gsk-x"}, time.Now().AddDate(0, 0, -7), time.Now())
 	if err != nil || out.Available {
 		t.Fatalf("groq should be honest-unavailable: %+v err=%v", out, err)
 	}

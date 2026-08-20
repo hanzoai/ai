@@ -25,7 +25,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"sort"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -127,124 +127,6 @@ func isIAMApiKey(token string) bool {
 // Publishable keys are safe for client-side use and can only access read-only endpoints.
 func isPublishableKey(token string) bool {
 	return strings.HasPrefix(token, "pk-")
-}
-
-// isWidgetKey checks if a token is a widget key (hz_ prefix).
-// Widget keys provide restricted access for public-facing chat widgets
-// on Hanzo properties (docs.hanzo.ai, hanzo.ai). They bypass balance
-// checks but are limited to non-premium models with capped tokens.
-func isWidgetKey(token string) bool {
-	return strings.HasPrefix(token, "hz_")
-}
-
-// validateWidgetKey checks a widget key against KMS-stored valid keys.
-// Resolution order: KMS secret "WIDGET_KEYS" (comma-separated list),
-// then WIDGET_KEYS env var, then rejects. This replaces the former
-// hardcoded "hz_widget_public" check.
-func validateWidgetKey(token string) bool {
-	// Try KMS first
-	if keys, err := object.GetKMSSecret("WIDGET_KEYS"); err == nil && keys != "" {
-		for _, k := range strings.Split(keys, ",") {
-			if strings.TrimSpace(k) == token {
-				return true
-			}
-		}
-		return false
-	}
-
-	// Env var fallback (WIDGET_KEYS=hz_widget_public,hz_other_key)
-	if keys := os.Getenv("WIDGET_KEYS"); keys != "" {
-		for _, k := range strings.Split(keys, ",") {
-			if strings.TrimSpace(k) == token {
-				return true
-			}
-		}
-		return false
-	}
-
-	// No keys configured — reject all widget tokens
-	return false
-}
-
-// widgetMaxTokens caps the maximum tokens per widget request to control costs.
-const widgetMaxTokens = 800
-
-// Widget tenant resolution is bound to the widget KEY (see widgetKeyOwner in
-// chat_retrieval.go), never the request Origin/Referer — a forgeable header must
-// not select another tenant's data.
-
-// widgetAllowedModels defines which models widget keys can access.
-// Only cheap DO-AI models are allowed to keep costs minimal.
-//
-// A route priced at zero is reachable too, without being listed — see
-// widgetMayServe. The list exists to bound what a page-embedded key can spend,
-// and a route that spends nothing is already inside that bound.
-var widgetAllowedModels = map[string]bool{
-	"llama-3.1-8b":            true,
-	"llama-3.3-70b":           true,
-	"mistral-nemo":            true,
-	"gpt-4o-mini":             true,
-	"deepseek-r1-distill-70b": true,
-	"claude-3-5-haiku":        true,
-	"claude-haiku-4-5":        true,
-}
-
-// resolveProviderFromWidgetKey authenticates a widget key request.
-// Widget keys skip balance checks but are restricted to non-premium models
-// and have a token cap per request.
-func resolveProviderFromWidgetKey(token string, requestedModel string, lang string) (*object.Provider, string, error) {
-	// Validate the widget key against KMS-stored keys, with env var fallback.
-	if !validateWidgetKey(token) {
-		return nil, "", fmt.Errorf("invalid widget key")
-	}
-
-	// Look up the model in the routing table
-	route := resolveModelRoute(requestedModel)
-	if route == nil {
-		return nil, "", fmt.Errorf(
-			"model %q is not available for widget access",
-			requestedModel,
-		)
-	}
-
-	if !widgetMayServe(requestedModel) {
-		return nil, "", fmt.Errorf(
-			"model %q is not available for widget access. Allowed models: %s",
-			requestedModel, widgetAllowedModelsList(),
-		)
-	}
-
-	provider, err := object.GetModelProviderByName(route.providerName)
-	if err != nil {
-		return nil, "", fmt.Errorf("failed to get provider %q: %s", route.providerName, err.Error())
-	}
-	if provider == nil {
-		return nil, "", fmt.Errorf("provider %q not configured", route.providerName)
-	}
-
-	return provider, route.upstreamModel, nil
-}
-
-// widgetMayServe reports whether a key embedded in a public page may ask for this
-// model: one of the cheap ids named above, or any route priced at zero.
-//
-// The list bounds what such a key can SPEND, and a route the vendor charges
-// nothing for spends nothing — so admitting it keeps the bound rather than
-// widening it, and a logged-out page can be answered without a wallet behind it.
-// Read from the same price the ledger bills, and false for a model whose price
-// cannot be read, so an unknown id is never admitted on a guess.
-func widgetMayServe(model string) bool {
-	return widgetAllowedModels[strings.ToLower(model)] || costsNothing(model, "")
-}
-
-// widgetAllowedModelsList returns a comma-separated list of widget-allowed models.
-func widgetAllowedModelsList() string {
-	models := make([]string, 0, len(widgetAllowedModels))
-	for m := range widgetAllowedModels {
-		models = append(models, m)
-	}
-	sort.Strings(models)
-	return strings.Join(models, ", ")
 }
 
 // resolveProviderFromJwt validates a hanzo.id JWT token and returns the
@@ -492,6 +374,109 @@ func iamClientCreds() (string, string) {
 // credential resolver, one tenant, one billing subject, one IAM transport.
 func GetUserByAccessKey(accessKey string) (*iam.User, error) {
 	return getUserByAccessKey(accessKey)
+}
+
+// PublishableOrg resolves a publishable pk- to the org that holds it. Exported so
+// the router's tenant resolver answers a page key the same way the controller
+// does — ONE credential resolver, one tenant, one IAM transport, exactly as
+// GetUserByAccessKey is exported for the secret half.
+func PublishableOrg(accessKey string) (string, error) { return publishableOrg(accessKey) }
+
+// publishableKeyShape is the floor a pk- clears before this process will ask IAM
+// about it. IAM mints "pk-{live|test}-{random}", so anything outside this alphabet
+// and length is not a key this estate ever issued and needs no round trip to
+// refuse. The floor is deliberately wider than the mint: it exists to drop junk,
+// not to re-implement the key format, and a key whose shape is plausible is still
+// decided by IAM.
+var publishableKeyShape = regexp.MustCompile(`^pk-[A-Za-z0-9_-]{8,128}$`)
+
+const (
+	// How long a resolved org stays fresh, and how long a refusal is remembered.
+	// The refusal is shorter because a key can become valid — it was just minted,
+	// or IAM was briefly unreachable — and nothing should stay denied for a full
+	// positive lifetime over a blip.
+	publishableOrgTTL  = 5 * time.Minute
+	publishableDenyTTL = 30 * time.Second
+
+	// A bound on distinct keys remembered at once. The keys arriving here are
+	// whatever the internet sends, so the map must not grow with them.
+	publishableCacheMax = 8192
+)
+
+// publishableAnswer is what the door said about one key, refusals included.
+type publishableAnswer struct {
+	org      string
+	err      error
+	answered time.Time
+}
+
+var (
+	publishableMu    sync.RWMutex
+	publishableCache = map[string]publishableAnswer{}
+)
+
+// publishableOrg is resolveOrgFromPublishableKey with a memory, and it is what
+// every caller should use.
+//
+// REMEMBERING THE REFUSALS IS THE POINT. A publishable key ships in the source of
+// a page, so the keys presented here are whatever anyone cares to send. Asking IAM
+// about each one turns a public endpoint into a load generator aimed at the single
+// service every other credential path also depends on — and the way that failure
+// shows up is a pk- request resolving no org, which is the one answer an attacker
+// would like to induce. Two things stop it: a shape check that costs nothing, and
+// a remembered "no" that costs a map read.
+//
+// It is also what makes the doors AGREE. A single request can ask for this org
+// more than once — the tenant resolver and the model resolver both do — and two
+// live round trips can answer differently when IAM is flaky, leaving one request
+// scoped to one org and billed to another. One answer per key, shared.
+func publishableOrg(accessKey string) (string, error) {
+	if !publishableKeyShape.MatchString(accessKey) {
+		return "", authError("invalid publishable key")
+	}
+	publishableMu.RLock()
+	a, ok := publishableCache[accessKey]
+	publishableMu.RUnlock()
+	if ok && time.Since(a.answered) <= publishableFresh(a) {
+		return a.org, a.err
+	}
+	org, err := resolveOrgFromPublishableKey(accessKey)
+	publishableRemember(accessKey, publishableAnswer{org: org, err: err, answered: time.Now()})
+	return org, err
+}
+
+// publishableFresh is how long THIS answer stands.
+func publishableFresh(a publishableAnswer) time.Duration {
+	if a.err != nil {
+		return publishableDenyTTL
+	}
+	return publishableOrgTTL
+}
+
+// publishableRemember stores an answer, dropping what has expired when the map
+// reaches its bound and starting over if that was not enough.
+//
+// STARTING OVER IS INDUCIBLE, and saying otherwise would overstate what this is.
+// Refusals are remembered too, so enough shape-valid keys — none of which IAM has
+// to recognise — fill the bound while still fresh and force the reset, which costs
+// every live key a round trip. The shape floor drops junk for free, but past it an
+// attacker still buys one IAM call per distinct key. This is a latency and
+// duplicate-work optimisation; the ceiling on what reaches IAM is the rate limiter,
+// not this map.
+func publishableRemember(accessKey string, a publishableAnswer) {
+	publishableMu.Lock()
+	defer publishableMu.Unlock()
+	if len(publishableCache) >= publishableCacheMax {
+		for k, v := range publishableCache {
+			if time.Since(v.answered) > publishableFresh(v) {
+				delete(publishableCache, k)
+			}
+		}
+		if len(publishableCache) >= publishableCacheMax {
+			publishableCache = map[string]publishableAnswer{}
+		}
+	}
+	publishableCache[accessKey] = a
 }
 
 // resolveOrgFromPublishableKey resolves a publishable pk- to the ORG that holds
@@ -1250,15 +1235,16 @@ func recordTrace(ctx context.Context, record *usageRecord, startTime time.Time) 
 // body validity: a malformed (or field-incomplete) body from an unauthenticated
 // caller must never return 200/400 that confirms the endpoint or lets it be
 // probed. It is invoked only on the error path, so the happy path keeps a single
-// validation (authResolveProvider). It mirrors authResolveProvider's auth
-// branches EXACTLY and never grants on an unknown key (fail-secure).
+// validation (authResolveProvider).
+//
+// It is a strict SUBSET of authResolveProvider's branches, and the omissions are
+// the point: a pk- never reaches here (every generative door refuses it before
+// the body is read) and a run key authenticates only against the run table, so
+// neither is admitted by this check. A branch missing here can only REFUSE a
+// request the resolver would have taken — never admit one it would have refused —
+// which is the direction a credential check is allowed to be wrong in.
 func (c *ApiController) authenticate(token string) error {
 	switch {
-	case isWidgetKey(token):
-		if !validateWidgetKey(token) {
-			return authError("Widget authentication failed: invalid widget key")
-		}
-		return nil
 	case isJwtToken(token):
 		// Signature + issuer/audience validation (R3): a foreign-aud or
 		// wrong-issuer token is rejected here, not just signature-checked.
@@ -1327,13 +1313,12 @@ func providerKeyBillingUser(provider *object.Provider) (*iam.User, error) {
 // authResolveProvider authenticates a bearer token and resolves the requested
 // model to its upstream provider. It is the single auth + model-routing policy
 // for every OpenAI-compatible surface (chat, embeddings, rerank): each handler
-// calls it instead of re-implementing the widget/IAM/JWT/provider-key branches.
+// calls it instead of re-implementing the IAM/JWT/provider-key branches.
 //
 // Returns the resolved provider (with KMS-resolved secret), the billed user
-// (nil for widget/provider-key auth), the upstream model id, whether the route
-// is premium, and whether the caller used an anonymous widget key. Errors are
-// returned pre-formatted for ResponseError.
-func (c *ApiController) authResolveProvider(token, requestedModel, orgId string) (provider *object.Provider, authUser *iam.User, upstreamModel string, isPremium bool, isWidget bool, err error) {
+// (nil for provider-key auth), the upstream model id, and whether the route is
+// premium. Errors are returned pre-formatted for ResponseError.
+func (c *ApiController) authResolveProvider(token, requestedModel, orgId string) (provider *object.Provider, authUser *iam.User, upstreamModel string, isPremium bool, err error) {
 	lang := c.GetAcceptLanguage()
 
 	switch {
@@ -1349,36 +1334,6 @@ func (c *ApiController) authResolveProvider(token, requestedModel, orgId string)
 			return
 		}
 		c.Locals("recordUserId", authUser.Owner+"/run")
-		return
-
-	case isWidgetKey(token):
-		// Widget key (hz_...) — restricted, token-capped model access (isWidget
-		// caps MaxTokens to widgetMaxTokens downstream). It is NOT free: like an
-		// sk- provider key, a widget call bills the OWNER ORG that minted the key
-		// (widgetKeyOwner → WIDGET_KEY_OWNERS / WIDGET_DEFAULT_OWNER), so the
-		// balance gate + budget reservation + usage debit all engage exactly as
-		// for a normal principal. Type "application" marks it a machine, so
-		// account.Payer resolves the billing subject to the org account. An
-		// unattributable widget key (no owner mapping and no default owner) is a
-		// config error: refuse rather than spend the shared upstream for free —
-		// the same fail-secure invariant the sk- path enforces (every call that
-		// spends the shared upstream bills someone).
-		isWidget = true
-		var widgetUpstream string
-		provider, widgetUpstream, err = resolveProviderFromWidgetKey(token, requestedModel, lang)
-		if err != nil {
-			err = authError("Widget authentication failed: %s", err.Error())
-			return
-		}
-		owner := widgetKeyOwner(token)
-		if strings.TrimSpace(owner) == "" {
-			err = authError("widget key is not attributable to a billable owner")
-			return
-		}
-		authUser = &iam.User{Owner: owner, Type: "application"}
-		upstreamModel = widgetUpstream
-		c.Locals("recordUserId", owner+"/widget")
-		log.Info("Widget key access: owner=%s, model=%s, upstream=%s", owner, requestedModel, upstreamModel)
 		return
 
 	case isJwtToken(token):
@@ -1400,12 +1355,16 @@ func (c *ApiController) authResolveProvider(token, requestedModel, orgId string)
 		// the call bills that org as a machine — the same shape as a provider
 		// key. This is the credential the cloud deployment documents for its
 		// embed client: least privilege for a read-only endpoint.
-		org, kerr := resolveOrgFromPublishableKey(token)
+		org, kerr := publishableOrg(token)
 		if kerr != nil {
 			err = wrapAuth(kerr)
 			return
 		}
-		machine := &iam.User{Owner: org, Type: "application"}
+		machine := &iam.User{
+			Owner:          org,
+			Type:           iam.Machine, // attribution: no person is behind a page key
+			BillingAccount: account.Org(org).String(),
+		}
 		provider, authUser, upstreamModel, err = resolveProviderForUser(machine, org, requestedModel, lang)
 		if err != nil {
 			err = wrapAuth(err)
@@ -1490,7 +1449,6 @@ func (c *ApiController) authResolveProvider(token, requestedModel, orgId string)
 // @Title ChatCompletions
 // @Tag OpenAI Compatible API
 // @Description OpenAI compatible chat completions API. Accepts:
-//   - Widget key (hz_...)   — restricted models, no balance check, token-capped
 //   - IAM API key (sk-...)  — full model routing + billing
 //   - hanzo.id JWT token    — full model routing + billing
 //   - Provider API key      — direct provider access
@@ -1516,7 +1474,6 @@ type sink struct {
 // @Title ChatCompletions
 // @Tag OpenAI Compatible API
 // @Description OpenAI compatible chat completions API. Accepts:
-//   - Widget key (hz_...)   — restricted models, no balance check, token-capped
 //   - IAM API key (sk-...)  — full model routing + billing
 //   - hanzo.id JWT token    — full model routing + billing
 //   - Provider API key      — direct provider access
@@ -1666,7 +1623,6 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 		authUser      *iam.User
 		upstreamModel string
 		isPremium     bool
-		isWidget      bool
 		err           error
 	)
 	if from == callerPublic {
@@ -1674,7 +1630,7 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 		// what they may run; this settles only who runs it.
 		provider, authUser, upstreamModel, err = c.resolveProviderForPublic()
 	} else {
-		provider, authUser, upstreamModel, isPremium, isWidget, err = c.authResolveProvider(token, request.Model, orgId)
+		provider, authUser, upstreamModel, isPremium, err = c.authResolveProvider(token, request.Model, orgId)
 	}
 	if err != nil {
 		c.ResponseAuthError(err)
@@ -1685,11 +1641,11 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 	// here so the reservation below and every usage record at the tail of this
 	// handler key on the SAME wallet the gate inside authResolveProvider just read.
 	ledger := c.billingOrg(authUser)
-	if isWidget || from == callerPublic {
-		// Cap max_tokens for a caller nobody can be billed for — the widget's key
-		// holder and the public lane's visitor are the same case.
-		if request.MaxTokens == 0 || request.MaxTokens > widgetMaxTokens {
-			request.MaxTokens = widgetMaxTokens
+	if from == callerPublic {
+		// Cap max_tokens for a caller nobody can be billed for: the public lane
+		// serves a stranger, so the answer is bounded instead.
+		if request.MaxTokens == 0 || request.MaxTokens > publicMaxTokens {
+			request.MaxTokens = publicMaxTokens
 		}
 	}
 
@@ -1839,10 +1795,9 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 	// Enabled when any of the following is true:
 	//   - Request header `X-Retrieval: 1` or body field `retrieval=true`
 	//   - Header `X-Retrieval-Store` specifies a store
-	//   - Auth is a widget key AND WIDGET_RETRIEVAL=1 (auto-RAG for public widgets)
 	knowledge := c.retrieveKnowledgeIfEnabled(
 		question,
-		retrievalOwner(authUser, token),
+		retrievalOwner(authUser),
 		c.retrievalStore(),
 		c.GetAcceptLanguage(),
 	)
