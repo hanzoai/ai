@@ -210,7 +210,7 @@ func transcriptOpen(ctx context.Context, auth string, body []byte) (*zap.Message
 	}
 	ask, _ := json.Marshal(map[string]any{"model": model, "language": req.Language})
 	base := strings.TrimSuffix(provider.ProviderUrl, "/")
-	status, opened, err := transcriptCall(ctx, http.MethodPost, base+"/audio/transcript", provider.ClientSecret, ask, "application/json")
+	status, opened, err := transcriptCall(ctx, http.MethodPost, base+"/audio/transcript", provider, ask, "application/json")
 	// Every refusal from here on gives the slot back. A window that was never
 	// opened holds no capacity, and a slot kept for one would shrink the ceiling
 	// by one for the life of the process.
@@ -299,7 +299,7 @@ func transcriptPush(ctx context.Context, auth string, tid string, pcm []byte) (*
 		return msg, nil
 	}
 	start := time.Now().UTC()
-	status, answer, err := transcriptCall(ctx, http.MethodPost, s.at+"/audio/transcript/"+s.upstream, "", pcm, "application/octet-stream")
+	status, answer, err := transcriptCall(ctx, http.MethodPost, s.at+"/audio/transcript/"+s.upstream, nil, pcm, "application/octet-stream")
 	if err != nil {
 		return object.BuildCloudResponse(502, nil, "push: "+err.Error())
 	}
@@ -324,7 +324,7 @@ func transcriptClose(ctx context.Context, auth string, tid string) (*zap.Message
 		return msg, nil
 	}
 	start := time.Now().UTC()
-	status, answer, err := transcriptCall(ctx, http.MethodDelete, s.at+"/audio/transcript/"+s.upstream, "", nil, "")
+	status, answer, err := transcriptCall(ctx, http.MethodDelete, s.at+"/audio/transcript/"+s.upstream, nil, nil, "")
 	forget(tid)
 	if err != nil {
 		return object.BuildCloudResponse(502, nil, "close: "+err.Error())
@@ -447,7 +447,9 @@ func sweepTranscripts(now time.Time) {
 // the ack's, not a generation's.
 var transcriptClient = &http.Client{Timeout: 30 * time.Second}
 
-func transcriptCall(ctx context.Context, method, url, secret string, body []byte, ctype string) (int, []byte, error) {
+// provider is nil for a call inside an open window: the pod was reached with the
+// credential once, and the window's own address is what identifies it after that.
+func transcriptCall(ctx context.Context, method, url string, provider *object.Provider, body []byte, ctype string) (int, []byte, error) {
 	var reader io.Reader
 	if body != nil {
 		reader = bytes.NewReader(body)
@@ -459,9 +461,7 @@ func transcriptCall(ctx context.Context, method, url, secret string, body []byte
 	if ctype != "" {
 		req.Header.Set("Content-Type", ctype)
 	}
-	if secret != "" {
-		req.Header.Set("Authorization", "Bearer "+secret)
-	}
+	authorize(req, provider)
 	resp, err := transcriptClient.Do(req)
 	if err != nil {
 		return 0, nil, err
