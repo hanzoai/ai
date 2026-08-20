@@ -90,17 +90,31 @@ type Provider struct {
 // a key.
 const SecretMask = "***"
 
-func GetMaskedProvider(provider *Provider, isMaskEnabled bool, user *iam.User) *Provider {
-	if !isMaskEnabled {
-		return provider
-	}
+// GetMaskedProvider returns the row with its credentials replaced by SecretMask,
+// keeping only what the caller is entitled to read.
+//
+// There is no "skip the masking" argument. It had one, every call site passed
+// true, and the false branch returned the row with every key in the clear — a
+// default that only had to be reached once to spend real money. A caller that
+// genuinely needs a live credential reads the row it already holds.
+func GetMaskedProvider(provider *Provider, user *iam.User) *Provider {
 	if provider == nil {
 		return nil
 	}
 	if provider.ClientSecret != "" {
 		provider.ClientSecret = SecretMask
 	}
-	if !util.IsAdmin(user) {
+	// These four fields are PLATFORM upstream credentials — the money that buys a
+	// call from OpenAI, Anthropic, OpenRouter, Fireworks. Whoever can read one can
+	// spend it directly, off our meter, so the predicate that unmasks them is the
+	// platform one: membership in the reserved admin org.
+	//
+	// IsAdmin is a TENANT fact — every customer who administers their own org
+	// satisfies it — and a global provider row belongs to no tenant. IsSuperAdmin is
+	// the narrower predicate IsAdmin's own doc comment names for exactly this
+	// operation ("provider/upstream-key config"), and it is the one predicate the
+	// whole estate agrees on: owner == AdminOrg.
+	if !util.IsSuperAdmin(user) {
 		if provider.ProviderKey != "" {
 			provider.ProviderKey = SecretMask
 		}
@@ -117,12 +131,9 @@ func GetMaskedProvider(provider *Provider, isMaskEnabled bool, user *iam.User) *
 	return provider
 }
 
-func GetMaskedProviders(providers []*Provider, isMaskEnabled bool, user *iam.User) []*Provider {
-	if !isMaskEnabled {
-		return providers
-	}
+func GetMaskedProviders(providers []*Provider, user *iam.User) []*Provider {
 	for _, provider := range providers {
-		provider = GetMaskedProvider(provider, isMaskEnabled, user)
+		GetMaskedProvider(provider, user)
 	}
 	return providers
 }
