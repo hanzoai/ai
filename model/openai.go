@@ -361,9 +361,16 @@ func (p *OpenAiModelProvider) QueryText(question string, writer io.Writer, histo
 			Instructions: param.NewOpt[string](prompt),
 			Input:        responses.ResponseNewParamsInputUnion{OfInputItemList: messages},
 			Model:        model,
-			Temperature:  param.NewOpt[float64](float64(temperature)),
-			TopP:         param.NewOpt[float64](float64(topP)),
 			Reasoning:    shared.ReasoningParam{Summary: "auto"},
+		}
+		// A reasoning model REFUSES the sampling knobs: OpenAI answers 400
+		// "Unsupported parameter: 'temperature' is not supported with this
+		// model" and the whole call dies — which is what every gpt-5/o3 request
+		// through this path did, whatever the caller asked for. Send them only
+		// to models that accept them.
+		if samplesFreely(model) {
+			req.Temperature = param.NewOpt[float64](float64(temperature))
+			req.TopP = param.NewOpt[float64](float64(topP))
 		}
 		if agentInfo != nil && agentInfo.AgentClients != nil {
 			agentTools, err := reverseMcpToolsToOpenAi(agentInfo.AgentClients.Tools)
