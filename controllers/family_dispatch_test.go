@@ -19,18 +19,18 @@ func TestEveryFamilyResolvesToItsGatedPath(t *testing.T) {
 		t.Fatal("no families registered")
 	}
 	for _, f := range modelFamilies {
-		if f.provider == "" {
+		if f.typ == "" {
 			t.Errorf("family %q declares no provider Type, so no request can ever resolve to it", f.name)
 			continue
 		}
-		got := familyForProviderType(f.provider)
+		got := familyForProviderType(f.typ)
 		if got == nil {
 			t.Errorf("family %q (provider %q) does not resolve — its requests bypass pipeToFamily and the funding gate",
-				f.name, f.provider)
+				f.name, f.typ)
 			continue
 		}
 		if got != f {
-			t.Errorf("provider %q resolved to family %q, want %q", f.provider, got.name, f.name)
+			t.Errorf("provider %q resolved to family %q, want %q", f.typ, got.name, f.name)
 		}
 	}
 	// A provider Type no family claims must resolve to nil, not to some default family.

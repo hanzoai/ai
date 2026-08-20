@@ -66,7 +66,7 @@ const flagshipWindow = 1_000_000
 // two instances.
 type modelFamily struct {
 	name       string                  // "zen" | "enso" | "openrouter" — the brand label
-	provider   string                  // the object.Provider Type this family serves ("Zen" | "Enso" | "OpenRouter")
+	typ        string                  // the object.Provider Type this family serves ("Zen" | "Enso" | "OpenRouter")
 	prefix     string                  // public brand prefix for cold-start ownership (before first discovery)
 	owner      string                  // public /v1/models owned_by: "zenlm" (Zen LM) | "hanzo" (Hanzo)
 	urlKey     string                  // config key for the base URL ("ZEN_URL" | "ENSO_URL")
@@ -133,7 +133,7 @@ type modelFamily struct {
 
 var (
 	zenFam = &modelFamily{
-		name: "zen", provider: "Zen", prefix: "zen", owner: "zenlm", urlKey: "ZEN_URL", keyKey: "ZEN_API_KEY",
+		name: "zen", typ: "Zen", prefix: "zen", owner: "zenlm", urlKey: "ZEN_URL", keyKey: "ZEN_API_KEY",
 		freeName:   "zen-free",
 		providerFn: object.ZenProvider,
 		windows: map[string]int{
@@ -143,7 +143,7 @@ var (
 		},
 	}
 	ensoFam = &modelFamily{
-		name: "enso", provider: "Enso", prefix: "enso", owner: "hanzo", urlKey: "ENSO_URL", keyKey: "ENSO_API_KEY",
+		name: "enso", typ: "Enso", prefix: "enso", owner: "hanzo", urlKey: "ENSO_URL", keyKey: "ENSO_API_KEY",
 		freeName:   "enso-free",
 		providerFn: object.EnsoProvider,
 		// enso-pro is deliberately absent: the enso service serves enso, enso-flash
@@ -160,7 +160,7 @@ var (
 	// balance — so it is deliberately absent from modelFamilies below and is reached
 	// only through freeRoutes.
 	engineFam = &modelFamily{
-		name: "engine", provider: "Engine", prefix: "engine/", owner: "hanzo",
+		name: "engine", typ: "Engine", prefix: "engine/", owner: "hanzo",
 		urlKey: "ENGINE_URL", keyKey: "ENGINE_API_KEY",
 	}
 
@@ -180,34 +180,45 @@ func (f *modelFamily) window(model string) int {
 	return f.windows[strings.ToLower(strings.TrimSpace(model))]
 }
 
-// baseURL and serviceKey resolve through the family's OWN provider constructor —
-// the same one pipeToFamily forwards through — so the address that gates listing
-// is the address that serves. That constructor reads the admin row first and
-// falls back to deployment config, which is what makes admin.hanzo.ai the one
-// control: disabling a family there makes baseURL empty, so enabled() goes false
-// and its models leave /v1/models on the next resolution.
+// provider resolves the family to the record ai forwards through — its OWN
+// constructor where it has one, so the address that gates listing is the address
+// that serves. That constructor reads the admin row first and falls back to
+// deployment config, which is what makes admin.hanzo.ai the one control:
+// disabling a family there makes provider nil, so enabled() goes false and its
+// models leave /v1/models on the next resolution.
 //
-// Reading conf directly here (which is what these did) meant the console toggle
+// Reading conf directly here (which is what this did) meant the console toggle
 // moved a row that listing never consulted: a family could be disabled in the
 // admin UI and still be listed and served.
-func (f *modelFamily) baseURL() string {
+//
+// A family reached only by configuration — our own compute — has the same record
+// built for it here, so every caller holds one shape and the credential stays in
+// it: nothing in this file hands a key to anybody, it hands the record to
+// authorize.
+func (f *modelFamily) provider() *object.Provider {
 	if f.providerFn != nil {
-		if p := f.providerFn(); p != nil {
-			return strings.TrimRight(strings.TrimSpace(p.ProviderUrl), "/")
-		}
-		return ""
+		return f.providerFn()
 	}
-	return strings.TrimRight(strings.TrimSpace(conf.GetConfigString(f.urlKey)), "/")
+	base := strings.TrimRight(strings.TrimSpace(conf.GetConfigString(f.urlKey)), "/")
+	if base == "" {
+		return nil
+	}
+	return &object.Provider{
+		Owner:        "admin",
+		Name:         f.name,
+		Category:     "Model",
+		Type:         f.typ,
+		State:        "Active",
+		ProviderUrl:  base,
+		ClientSecret: strings.TrimSpace(conf.GetConfigString(f.keyKey)),
+	}
 }
 
-func (f *modelFamily) serviceKey() string {
-	if f.providerFn != nil {
-		if p := f.providerFn(); p != nil {
-			return strings.TrimSpace(p.ClientSecret)
-		}
-		return ""
+func (f *modelFamily) baseURL() string {
+	if p := f.provider(); p != nil {
+		return strings.TrimRight(strings.TrimSpace(p.ProviderUrl), "/")
 	}
-	return strings.TrimSpace(conf.GetConfigString(f.keyKey))
+	return ""
 }
 
 // enabled reports whether the family service is configured AND admin-enabled. When
@@ -229,7 +240,7 @@ func (f *modelFamily) enabled() bool { return f.baseURL() != "" }
 // exists is a family this resolves, and adding one cannot silently skip the gate.
 func familyForProviderType(t string) *modelFamily {
 	for _, f := range modelFamilies {
-		if f.provider == t {
+		if f.typ == t {
 			return f
 		}
 	}
@@ -587,19 +598,18 @@ var zenDiscoveryClient = &http.Client{Timeout: 15 * time.Second}
 // refresh fetches GET <family>/v1/models and swaps in a fresh snapshot. Best-effort:
 // on any error the previous snapshot stands.
 func (f *modelFamily) refresh() error {
-	base := f.baseURL()
-	if base == "" {
+	p := f.provider()
+	if p == nil {
 		return nil
 	}
+	base := strings.TrimRight(strings.TrimSpace(p.ProviderUrl), "/")
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/v1/models", nil)
 	if err != nil {
 		return err
 	}
-	if k := f.serviceKey(); k != "" {
-		req.Header.Set("Authorization", "Bearer "+k)
-	}
+	authorize(req, p)
 	resp, err := zenDiscoveryClient.Do(req)
 	if err != nil {
 		return err
@@ -1065,9 +1075,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	if a := c.Header("Accept"); a != "" {
 		req.Header.Set("Accept", a)
 	}
-	if prov.ClientSecret != "" {
-		req.Header.Set("Authorization", "Bearer "+prov.ClientSecret)
-	}
+	authorize(req, prov)
 	// Tenant attribution: the family needs a billable tenant, and ai — which settles
 	// the ledger — tells the family it fronts this call so it meters without
 	// double-charging.
@@ -1086,24 +1094,21 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	dispatch := func(f *modelFamily, s string) (*http.Response, error) {
 		p := prov
 		if f != fam {
-			// baseURL and serviceKey already encode the one address rule — the admin
-			// row where a family has one, configuration otherwise — so a family
-			// reached only by configuration (our own compute) resolves the same way
-			// as one with a provider row behind it.
-			base := f.baseURL()
-			if base == "" {
+			// provider already encodes the one address rule — the admin row where a
+			// family has one, configuration otherwise — so a family reached only by
+			// configuration (our own compute) resolves the same way as one with a
+			// provider row behind it.
+			p = f.provider()
+			if p == nil {
 				return nil, &apiError{status: http.StatusServiceUnavailable, msg: f.name + " service is not configured"}
 			}
-			p = &object.Provider{Owner: "admin", Name: f.name, ProviderUrl: base, ClientSecret: f.serviceKey()}
 		}
 		r, rErr := http.NewRequestWithContext(c.Context(), http.MethodPost, p.ProviderUrl+"/v1/"+apiPath, nil)
 		if rErr != nil {
 			return nil, rErr
 		}
 		r.Header = req.Header.Clone()
-		if p.ClientSecret != "" {
-			r.Header.Set("Authorization", "Bearer "+p.ClientSecret)
-		}
+		authorize(r, p)
 		b := withModel(rawBody, s)
 		if f.terms != nil {
 			b = f.terms(b, f.free(s))

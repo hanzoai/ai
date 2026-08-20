@@ -123,7 +123,7 @@ func zapGetGlobalProvidersHandler(_ context.Context, auth string, _ []byte) (*za
 	if err != nil {
 		return zapProviderError(200, err.Error())
 	}
-	return zapProviderOk(object.GetMaskedProviders(providers, true, user))
+	return zapProviderOk(object.GetMaskedProviders(providers, user))
 }
 
 // zapGetProvidersRequest carries the GetProviders query params over the native
@@ -172,7 +172,7 @@ func zapGetProvidersHandler(_ context.Context, auth string, body []byte) (*zap.M
 		if err != nil {
 			return zapProviderError(200, err.Error())
 		}
-		return zapProviderOk(object.GetMaskedProviders(providers, true, user))
+		return zapProviderOk(object.GetMaskedProviders(providers, user))
 	}
 
 	limit := util.ParseInt(req.PageSize)
@@ -189,7 +189,7 @@ func zapGetProvidersHandler(_ context.Context, auth string, body []byte) (*zap.M
 	if err != nil {
 		return zapProviderError(200, err.Error())
 	}
-	return zapProviderOk(object.GetMaskedProviders(providers, true, user), count)
+	return zapProviderOk(object.GetMaskedProviders(providers, user), count)
 }
 
 // zapGetProviderRequest carries the GetProvider id over the native body.
@@ -213,7 +213,7 @@ func zapGetProviderHandler(_ context.Context, auth string, body []byte) (*zap.Me
 	if err != nil {
 		return zapProviderError(200, err.Error())
 	}
-	return zapProviderOk(object.GetMaskedProvider(provider, true, user))
+	return zapProviderOk(object.GetMaskedProvider(provider, user))
 }
 
 // zapUpdateProviderRequest carries the UpdateProvider id (URL query in HTTP) plus
