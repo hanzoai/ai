@@ -284,6 +284,8 @@ github.com/cockroachdb/tokenbucket v0.0.0-20250429170803-42689b6311bb h1:3bCgBvB
 github.com/cockroachdb/tokenbucket v0.0.0-20250429170803-42689b6311bb/go.mod h1:7nc4anLGjupUW/PeY5qiNYsdNXj7zopG+eqsS7To5IQ=
 github.com/coder/websocket v1.8.14 h1:9L0p0iKiNOibykf283eHkKUHHrpG7f65OE3BhhO7v9g=
 github.com/coder/websocket v1.8.14/go.mod h1:NX3SzP+inril6yawo5CQXx8+fk145lPDC6pumgx0mVg=
+github.com/coder/websocket v1.8.15 h1:6B2JPeOGlpff2Uz6vOEH1Vzpi0iUz20A+lPVhPHtNUA=
+github.com/coder/websocket v1.8.15/go.mod h1:NX3SzP+inril6yawo5CQXx8+fk145lPDC6pumgx0mVg=
 github.com/cohere-ai/cohere-go/v2 v2.5.2 h1:1B828YKZgALD3wWhaDkrMwrISK/Rpzvj55sIhtd/UJ8=
 github.com/cohere-ai/cohere-go/v2 v2.5.2/go.mod h1:dlDCT66i8BqZDuuskFvYzsrc+O0M4l5J9Ibckoflvt4=
 github.com/consensys/gnark-crypto v0.20.1 h1:PXDUBvk8AzhvWowHLWBEAfUQcV1/aZgWIqD6eMpXmDg=
@@ -572,6 +574,8 @@ github.com/hanzo-ds/native v0.72.0 h1:lQhH2dza3foJCHN6scIVsEpqdj/xzI1N0QlI94vtWh
 github.com/hanzo-ds/native v0.72.0/go.mod h1:11FZtFdtfXMnmpybDEW6+uPRWFeC3TOT59YaV+lED+E=
 github.com/hanzoai/account v0.3.2 h1:6dC9ePgE73xZmIPckWfnFLYGbqtOoDV97iKs6wksbFY=
 github.com/hanzoai/account v0.3.2/go.mod h1:8OzIGRphAhlabOI74O4GoL3RM0y8mbUV0pQUKgXLjkw=
+github.com/hanzoai/authz v1.10.30 h1:UzJlpaC+2XAY8s2Ui3ziWBZmIUOCGIND5EchqbYPmEk=
+github.com/hanzoai/authz v1.10.30/go.mod h1:rhZo/LvDXdUZG3/6+ujfJ1RHgLyfOpw2te+ebX3KSFs=
 github.com/hanzoai/csqlite v0.1.0 h1:suwC3dh0INlfP/U0Es6cDf6JNQ+2+GVLLATPWCUux6k=
 github.com/hanzoai/csqlite v0.1.0/go.mod h1:H31a/O6VXuklR9UBkgY++bmAK5uzVfXPqU0F6P9Wsos=
 github.com/hanzoai/dashscopego v0.6.0 h1:sLUepwcnVajaDgzlgfuJWkZblBg9UIalkpFUjXHx0Fg=
@@ -606,6 +610,8 @@ github.com/hanzoai/types v0.1.0 h1:hxPueqy2QnVF3CbvAZ9CJE26pibT/Cb8ZYPhH/CNPwA=
 github.com/hanzoai/types v0.1.0/go.mod h1:3SEt7J/c5X3C/Uv9n9a+/U9+FGkMQwDSiHwENPFxQW4=
 github.com/hanzoai/vfs v0.6.6 h1:+4qrHjDOIqgUN1wryU9b5xphDKzTVyBa4CEwbhFSlYw=
 github.com/hanzoai/vfs v0.6.6/go.mod h1:OiiFWLgrTCMAJimUEgoSy1b/qXHpN34PN3RQwE49e1U=
+github.com/hanzoai/voice v0.1.1-0.20260815163030-0c26e48ac43f h1:teecBZ/CKRiT4HadFSxhQ3mqljB0LYXGUqoClKcybS8=
+github.com/hanzoai/voice v0.1.1-0.20260815163030-0c26e48ac43f/go.mod h1:c9TxsVgyCpedeOOlt23q+FPX201boYij3P7YhmULi/U=
 github.com/hanzokv/go/v9 v9.22.0 h1:zD4fh0NLBuVa8njIrXUivJCijlratzS1Yf7Y/uD5T00=
 github.com/hanzokv/go/v9 v9.22.0/go.mod h1:GV+nw+jX60sIrJ7LBkmOQw2WASXzkMstt52blcwNw6w=
 github.com/hanzos3/go v1.0.0 h1:wovg7HGKbp96PY2Yo1skh+YVFexyHbhK7BFQIGq5Xvo=
