@@ -146,6 +146,35 @@ func requiresSuperAdmin(controllerName string) bool {
 // explicit set — plus the rag/ and documents/ prefixes below — so the many
 // benign self-authing or intentionally-anonymous paths (chat, models, health,
 // metrics, wecom) are unaffected. Names are the path minus "/v1/".
+// anonymousEndpoints are reachable with no credential, on purpose. Each is a
+// surface whose whole job is to answer a stranger: the model catalogue a client
+// reads before it has a key, a health probe, a public view, and a provider
+// callback that authenticates by its own signature rather than by a caller.
+//
+// Measured against production before being written down — each of these answers
+// an unauthenticated request today, so this list records what is, not what
+// someone assumed. Anything not here needs a caller.
+var anonymousEndpoints = map[string]struct{}{
+	"models":           {}, // the catalogue a client reads before it has a key
+	"models/providers": {},
+	"health":           {}, // probes
+	"voice/health":     {},
+	"metrics":          {}, // scrape target
+	"traffic/globe":    {}, // public view
+	"chat/public":      {},
+}
+
+// isAnonymous reports whether an endpoint is reachable with no credential.
+// The bot callback carries its own bot id, so it is a prefix rather than a
+// name: the provider posts to a path this service does not choose, and the
+// signature on the body is what authenticates it.
+func isAnonymous(controllerName string) bool {
+	if _, ok := anonymousEndpoints[controllerName]; ok {
+		return true
+	}
+	return strings.HasPrefix(controllerName, "wecom-bot/callback")
+}
+
 var authRequiredEndpoints = map[string]struct{}{
 	"index": {}, "search": {}, "search/stats": {}, // doc index write + search
 	"docs/ingest": {},                                    // unified RAG ingest (github/crawl/s3)
@@ -327,6 +356,18 @@ func permissionFilter(c *zip.Ctx) error {
 		return c.Continue()
 	}
 	if !isGetRequest && !isUpdateRequest {
+		// A name that matches none of the verb prefixes used to pass with no
+		// credential at all, so whether an endpoint was reachable anonymously
+		// depended on what somebody called it. install-patch is the plain case:
+		// nothing about that name says "open", and nothing asked for a caller.
+		//
+		// The default is closed and the open ones are named. A new endpoint is
+		// gated by arriving, rather than by someone remembering to add it, and
+		// opening one is a line in this list — visible, and reviewable as a
+		// decision.
+		if !isAnonymous(controllerName) && !hasPresentCredential(c) {
+			return denyUnauthorized(c, "auth:authentication required")
+		}
 		return c.Continue()
 	}
 

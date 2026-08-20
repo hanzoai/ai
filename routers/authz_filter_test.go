@@ -499,3 +499,38 @@ func TestRouterRoundTrip_BypassBlocked(t *testing.T) {
 		}
 	}
 }
+
+// An endpoint whose name matches none of the verb prefixes used to pass with no
+// credential, so whether it was reachable anonymously depended on what somebody
+// had called it. install-patch is the plain case — nothing about that name says
+// open, and nothing asked for a caller.
+//
+// The default is closed now. These are the shapes that used to fall through.
+func TestAnUnprefixedEndpointNeedsACaller(t *testing.T) {
+	for _, p := range []struct{ method, path string }{
+		{"POST", "/v1/install-patch"},
+		{"POST", "/v1/feedback"},
+		{"POST", "/v1/dev-bridge"},
+	} {
+		q := asUser(t, p.method, p.path, nil)
+		q = q.through(permissionFilter)
+		if q.status() != http.StatusUnauthorized {
+			t.Errorf("anonymous %s %s = %d; an unnamed endpoint must ask for a caller", p.method, p.path, q.status())
+		}
+	}
+}
+
+// The paired control: the open ones stay open, so the refusal above is about
+// being unnamed and not about the branch being shut.
+func TestTheNamedOpenEndpointsStayOpen(t *testing.T) {
+	for _, p := range []struct{ method, path string }{
+		{"GET", "/v1/models"},
+		{"GET", "/v1/traffic/globe"},
+	} {
+		q := asUser(t, p.method, p.path, nil)
+		q = q.through(permissionFilter)
+		if q.status() == http.StatusUnauthorized {
+			t.Errorf("%s %s = 401; it is named open and must stay reachable", p.method, p.path)
+		}
+	}
+}
