@@ -102,7 +102,7 @@ var publicCount = &dayCount{}
 //
 // IT READS. Asking costs a visitor nothing and a visitor at the ceiling keeps their
 // count where it is, because refusals are not usage. The call itself is counted where
-// it is served (recordUsage), so a request that dies short of a model leaves this
+// it is answered (recordUsage), so a request that dies short of a model leaves this
 // map untouched.
 //
 // A closed lane and a caller with no address are spent by definition: neither names a
@@ -311,9 +311,10 @@ func (c *ApiController) ChatCompletionsPublic() {
 	}
 
 	// BOTH COUNTS ARE READ HERE AND TAKEN NOWHERE. A day is spent on answers, so the
-	// call is counted where it is served — recordUsage, which runs only for a call
-	// that came back — and this asks only whether the visitor is already out. A
-	// request that dies short of a model leaves them every call they arrived with.
+	// call is counted where it is answered — recordUsage, which fills an allowance only
+	// for a call that came back — and this asks only whether the visitor is already
+	// out. A request that dies short of a model leaves them every call they arrived
+	// with.
 	//
 	// OUR OWN BOUND FIRST, and it decides. It is kept in this process and asks
 	// nothing, so it holds while anything else is down.

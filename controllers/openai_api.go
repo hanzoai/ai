@@ -866,6 +866,26 @@ func (r *usageRecord) allowance() string {
 	return r.payer().Subject()
 }
 
+// reached answers whether a vendor was committed to this call — the question the money
+// turns on, since a vendor that ran a request invoices us for it whatever came back.
+//
+// Provider is where that fact already lives. Every emit site fills it from the row that
+// SERVED or REFUSED the request, and leaves it empty when the request died before any
+// vendor was chosen: an unresolvable route, a candidate list that ran out, a caller who
+// hung up. `served` says the same thing from the other side — a failed attempt carries
+// a name and nothing else.
+//
+// IT IS A NAME, NOT A RECEIPT. It says a vendor was committed to this request, not that
+// the vendor billed us for it — a 400 the upstream rejected on sight usually costs us
+// nothing. That is the honest limit of what a record knows here, and the error it makes
+// is the harmless one: a zero-cost row filed for a vendor that charged nothing, rather
+// than no row at all for one that did.
+func (r *usageRecord) reached() bool { return r.Provider != "" }
+
+// answered reports that a model produced a result for this call. It is a different
+// question from reached, and only the free allowance asks it — see recordUsage.
+func (r *usageRecord) answered() bool { return r.Status == "success" }
+
 // payer answers who pays for this call. ONE rule, and it prefers the answer the gate
 // already computed over deriving a second one.
 //
@@ -1019,19 +1039,42 @@ func usageBilledCents(record *usageRecord, costCents int64) int64 {
 	return costCents
 }
 
-// recordUsage serializes a usage record and enqueues it for reliable delivery
-// to Commerce. The queue handles retries with exponential backoff.
-// Only successful API calls are recorded (error status is filtered here).
+// recordUsage files what a call spent. It is the ONE chokepoint between a request and
+// the money: an exact debit on the org's wallet where this build is co-resident with
+// the ledger, or the same amount on its way to Commerce where it is not.
+//
+// A CALL THAT REACHED A VENDOR IS BILLED, ANSWER OR NO ANSWER. The rule here used to be
+// "success only", which reads as fairness and is not one: by the time a call fails the
+// request has been sent, the vendor has run it, and we have been invoiced for the tokens
+// it processed. Filing nothing does not undo any of that — it only removes the line that
+// says it happened, and leaves the spend with us.
+//
+// THE TRADE IS DELIBERATE AND IT FALLS ON THE CALLER. A request they broke costs them
+// what it cost us to try. Keeping our side answering is our job and stays our job; what
+// a caller does to their own request is theirs. The alternative prices a failing request
+// at zero, which is the one property an unbounded workload must never have — the cheapest
+// call in the catalogue would be the one that breaks, and whoever sends the most of them
+// would pay the least.
+//
+// WHAT IT COST IS THE SAME ONE COST. usageCostCents / usageBilledUSD are asked here for a
+// failure exactly as for a success, so the row and its o11y gen_ai span carry the
+// identical number and cannot disagree. A failure that came back with no tokens therefore
+// bills nothing — not because failure is free, but because that is what the meter reads,
+// and reading it is the whole point.
 func recordUsage(record *usageRecord) {
 	// Dense flywheel reward (HIP-510): score EVERY routed request's outcome and
 	// attach it to its routing decision, so the bandit learns from request-volume
-	// signal instead of sparse explicit thumbs. Runs BEFORE the success filter so an
-	// errored request scores 0 (the arm is penalized for failing). Dark-by-default,
-	// async, best-effort — never slows or fails the request.
+	// signal instead of sparse explicit thumbs. An errored request scores 0 (the arm
+	// is penalized for failing). Dark-by-default, async, best-effort — never slows or
+	// fails the request.
 	emitAutoRoutingReward(record)
 
-	// Only record successful calls
-	if record.Status != "success" {
+	// NOTHING WAS SPENT ON A CALL THAT NEVER LEFT, so nothing is filed for one. There is
+	// no invoice behind it and therefore no amount, and an amount is not a thing to
+	// invent because a row would look tidier with one. The call is still visible — the
+	// emit sites write the warehouse row and the span for it either way; what it does
+	// not get is a place in the money.
+	if !record.reached() {
 		return
 	}
 
@@ -1080,14 +1123,16 @@ func recordUsage(record *usageRecord) {
 	// the same margin usageBilledUSD renders below, so the debit and the count cannot
 	// hold different opinions about what this call was.
 	//
-	// IT IS COUNTED HERE BECAUSE HERE IS WHERE A CALL ANSWERED. The ceiling bounds
-	// SPEND; spend is incurred when a model is reached; and this function has already
-	// returned for anything that is not a success. A route that never resolved, a
-	// vendor that timed out, a pod mid-roll — none of them reach this line, so none of
-	// them costs a caller one of their calls. The gate upstream only READS the same
-	// count, so a refusal at the ceiling does not raise it either.
+	// THE ALLOWANCE COUNTS ANSWERS, WHICH IS WHY IT ASKS A DIFFERENT QUESTION THAN THE
+	// MONEY ABOVE. A ceiling of N calls a day is a promise about answers, and a caller
+	// whose day was emptied by a vendor's bad afternoon got none of them. There is also
+	// nothing to make them whole with: on the free lane the count IS the price, so
+	// charging a failure here would be charging the full price of a call for a failure,
+	// where a paid caller is charged what their failure actually cost — usually
+	// nothing. The gate upstream only READS the same count, so a refusal at the ceiling
+	// does not raise it either.
 	free := ""
-	if usageFree(record) {
+	if record.answered() && usageFree(record) {
 		free = record.allowance()
 		// The public lane keeps its own count in this process so its ceiling holds
 		// while the host is unreachable. Both counts rise at this one moment.
@@ -1128,11 +1173,18 @@ func recordUsage(record *usageRecord) {
 		return
 	}
 
+	// The SAME two facts the native event carries, in the shape Commerce reads them.
+	// `allowance` travels with `amount` because they are one answer to one question —
+	// what this call spent — and a writer that carried only the money would leave every
+	// free call on this path indistinguishable from a paid one that happened to round to
+	// zero. Which writer a build has is a deployment fact; what a call spent is not, and
+	// must not depend on it.
 	payload := map[string]interface{}{
 		"user":             subject,
 		"actor":            record.User,
 		"currency":         "usd",
 		"amount":           amount,
+		"allowance":        free,
 		"model":            record.Model,
 		"provider":         record.Provider,
 		"promptTokens":     record.PromptTokens,

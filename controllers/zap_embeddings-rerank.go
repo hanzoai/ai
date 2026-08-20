@@ -224,8 +224,13 @@ func zapRerankHandler(ctx context.Context, auth string, body []byte) (*zap.Messa
 			RequestID:    uuid.NewString(),
 		}
 		rec.bind(ctx, authUser)
-		go recordUsage(rec)
-		recordTrace(ctx, rec, startTime)
+		// One goroutine for both, in this order. They share the record — recordUsage
+		// stamps the honesty flag the span then reads — so they are sequenced rather
+		// than raced.
+		go func() {
+			recordUsage(rec)
+			recordTrace(ctx, rec, startTime)
+		}()
 	}
 
 	data, _ := json.Marshal(map[string]interface{}{
@@ -274,8 +279,10 @@ func zapProxyJSON(ctx context.Context, provider *object.Provider, apiPath string
 				RequestID:    requestId,
 			}
 			errRec.bind(context.Background(), authUser)
-			go recordUsage(errRec)
-			recordTrace(context.Background(), errRec, startTime)
+			go func() {
+				recordUsage(errRec)
+				recordTrace(context.Background(), errRec, startTime)
+			}()
 		}
 		return object.BuildCloudResponse(502, nil, "upstream request failed: "+err.Error())
 	}
@@ -314,8 +321,10 @@ func zapProxyJSON(ctx context.Context, provider *object.Provider, apiPath string
 			RequestID:    requestId,
 		}
 		rec.bind(ctx, authUser)
-		go recordUsage(rec)
-		recordTrace(ctx, rec, startTime)
+		go func() {
+			recordUsage(rec)
+			recordTrace(ctx, rec, startTime)
+		}()
 	}
 
 	// The HTTP twin's rule, on the twin surface: the request went upstream with its
