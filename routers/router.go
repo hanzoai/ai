@@ -25,6 +25,7 @@
 package routers
 
 import (
+	"github.com/hanzoai/ai/controllers"
 	"github.com/zap-proto/zip"
 )
 
@@ -158,6 +159,28 @@ func registerAPI(app *zip.App) {
 	route(app, "/v1/audio/voice", "POST:AudioMedia")
 	route(app, "/v1/audio/music", "POST:AudioMedia")
 	route(app, "/v1/audio/foley", "POST:AudioMedia")
+
+	// The same audio with the turns joined up: a spoken conversation over one
+	// socket, speaking the OpenAI realtime wire so clients written against it
+	// work unchanged. hanzoai/voice holds the conversation, hanzoai/speech holds
+	// the models, and this is the host — /v1/voice answered 404 in production
+	// while that service sat finished for want of anywhere to run.
+	//
+	// Adapted rather than routed to a controller: a WebSocket has no
+	// request/response pair to map a method onto, and its writer has to survive
+	// as far as Hijack. Two calls because a browser cannot put a header on a
+	// WebSocket — the bearer is spent on the POST, and what goes in the URL is a
+	// one-use ticket that carries no claims.
+	//
+	// Nil when no IAM is configured, and then none of this is served: a
+	// WebSocket does not observe the same-origin policy, so an ungated one is
+	// any page on the internet opening a microphone as whoever is signed in.
+	if h := controllers.VoiceHandler(); h != nil {
+		talk := zip.AdaptNetHTTP(h)
+		app.Post("/v1/voice/session", talk)
+		app.Get("/v1/voice", talk)
+		app.Get("/v1/voice/health", talk)
+	}
 
 	// The router-config surface — per-org settings (/v1/org/settings + /list), routing
 	// defaults (/v1/router/defaults), the policy noun (GET|PUT /v1/router/policy), the
