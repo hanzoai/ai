@@ -49,7 +49,7 @@ func (c *ApiController) GetGlobalProviders() {
 		return
 	}
 
-	c.ResponseOk(object.GetMaskedProviders(providers, true, user))
+	c.ResponseOk(object.GetMaskedProviders(providers, user))
 }
 
 // GetProviders
@@ -85,7 +85,7 @@ func (c *ApiController) GetProviders() {
 			return
 		}
 
-		providers = object.GetMaskedProviders(providers, true, user)
+		providers = object.GetMaskedProviders(providers, user)
 		c.ResponseOk(providers)
 	} else {
 		if !c.RequireAdmin() {
@@ -105,7 +105,7 @@ func (c *ApiController) GetProviders() {
 			return
 		}
 
-		providers = object.GetMaskedProviders(providers, true, user)
+		providers = object.GetMaskedProviders(providers, user)
 		c.ResponseOk(providers, paginator.Nums())
 	}
 }
@@ -127,7 +127,7 @@ func (c *ApiController) GetProvider() {
 		return
 	}
 
-	c.ResponseOk(object.GetMaskedProvider(provider, true, user))
+	c.ResponseOk(object.GetMaskedProvider(provider, user))
 }
 
 // UpdateProvider
