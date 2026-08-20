@@ -20,7 +20,7 @@
 // the ZAP auth seam (never the body), the org is the resolved principal's Owner
 // (never a client-supplied field), and every seal/no-leak invariant is preserved
 // by REUSING the same pure functions the HTTP handlers use — buildConnectionProvider,
-// connectionView, sealProviderSecret, persistConnection, unsealConnectionKey,
+// connectionView, sealProviderSecret, persistConnection, authorizeUsage,
 // providerUsageImporterFor. There is exactly one credential store and one seal path.
 //
 // Scope of this group (native cloud, MsgType 100):
@@ -179,7 +179,7 @@ func connDeleteCore(org, provider string) connOutcome {
 }
 
 // connUsageCore imports the org's usage for a connected account. The key is unsealed
-// SERVER-SIDE on a COPY of the row (unsealConnectionKey) and never returned; an
+// SERVER-SIDE on a COPY of the row (authorizeUsage) and never returned; an
 // unconnected account, an unreadable key, a missing importer, or a scope-denied
 // provider all degrade to an HONEST 200 ProviderUsage with connected/available flags +
 // a note — never a fabricated figure. A genuine upstream transport failure is a 502.
@@ -207,11 +207,7 @@ func connUsageCore(ctx context.Context, org, provider, fromRaw, toRaw string) co
 	}
 	out.Connected = true
 
-	key, err := unsealConnectionKey(row)
-	if err != nil {
-		return connOutcome{status: http.StatusServiceUnavailable, errMsg: "could not access the connected key"}
-	}
-	if strings.TrimSpace(key) == "" {
+	if err := authorizeUsage(map[string]string{}, row); err != nil {
 		out.Available = false
 		out.Note = "The connected key can't be read on this deployment yet."
 		return connOutcome{status: http.StatusOK, payload: out}
@@ -226,7 +222,7 @@ func connUsageCore(ctx context.Context, org, provider, fromRaw, toRaw string) co
 
 	ictx, cancel := context.WithTimeout(ctx, 25*time.Second)
 	defer cancel()
-	res, err := imp.importUsage(ictx, key, from, to)
+	res, err := imp.importUsage(ictx, row, from, to)
 	if err != nil {
 		return connOutcome{status: http.StatusBadGateway, errMsg: err.Error()}
 	}
