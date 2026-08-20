@@ -51,6 +51,12 @@ func (c *ApiController) IngestDocs() {
 		c.ResponseError(err.Error())
 		return
 	}
+	store, serr := object.ResolveStore(auth.Owner, req.Store, object.DefaultDocsStore)
+	if serr != nil {
+		c.ResponseError(serr.Error())
+		return
+	}
+	req.Store = store
 
 	// Gate external/bulk sources (github/crawl/s3) on balance, mirroring the
 	// scrape gate. Pure inline "upload" is ungated, matching /v1/index.

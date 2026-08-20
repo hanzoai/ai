@@ -17,12 +17,13 @@
 // list, recall, update, delete, facts) so the local on-disk backend and this
 // cloud backend are interchangeable behind one interface.
 //
-// SECURITY: org + userId are resolved ONLY from gateway-minted identity headers
-// (X-Org-Id = JWT "owner", X-User-Id = JWT "sub"; legacy X-IAM-* headers and the
-// authenticated session are fallbacks) — never from the request body. The
-// gateway strips client-supplied identity headers and re-sets them only from a
-// validated JWT, so they are trustworthy. Every storage call is scoped by
-// (org, userId).
+// SECURITY: org + userId are resolved ONLY from the credential this process
+// verified — never from a header, never from the request body. Every storage call
+// is scoped by (org, userId), and that pair is what decides whose memories a
+// request touches, so nothing a caller can write may contribute to it. A gateway
+// does mint identity headers from a validated token, but a gateway is not the only
+// way to reach this controller, and on any other route those headers are strings
+// the caller chose.
 
 package controllers
 
@@ -52,18 +53,6 @@ func (r *memoryRequest) target() string {
 	return strings.TrimSpace(r.Name)
 }
 
-// resolveMemoryUserID returns the first non-empty (trimmed) candidate. Callers
-// pass identity sources in priority order; the request body is never a
-// candidate, so body-supplied identity can never be honored.
-func resolveMemoryUserID(candidates ...string) string {
-	for _, candidate := range candidates {
-		if v := strings.TrimSpace(candidate); v != "" {
-			return v
-		}
-	}
-	return ""
-}
-
 // applyMemoryIdentity force-sets owner/userId from the authenticated identity,
 // overwriting anything an attacker may have placed on the struct. This is the
 // single chokepoint that guarantees a stored memory belongs to the caller.
@@ -72,29 +61,33 @@ func applyMemoryIdentity(memory *object.Memory, org, userID string) {
 	memory.UserId = userID
 }
 
-// memoryUserID resolves the caller's user id from the gateway-minted X-User-Id
-// (JWT "sub"), then the session.
+// memoryUserID is the caller's user id: the name on the VERIFIED principal, which
+// is what the session path and the native ZAP twin (zapMemoryIdentity) both key
+// on, so one person's memories are one set however they arrive.
+//
+// IT IS NOT READ FROM A HEADER. X-User-Id is minted by a gateway from a validated
+// token — true right up until this controller is reachable without passing through
+// one, and then it is a string the caller chose. This id decides WHOSE memories are
+// read, written and deleted, so the only thing allowed to answer is a credential
+// this process verified itself.
 func (c *ApiController) memoryUserID() string {
-	return resolveMemoryUserID(
-		c.Header("X-User-Id"),
-		c.GetSessionUsername(),
-	)
-}
-
-// memoryOrg resolves the caller's org from the gateway-minted X-Org-Id (JWT
-// "owner"), falling back to GetOrg (legacy X-Org-Id → session
-// owner → config default).
-func (c *ApiController) memoryOrg() string {
-	if v := strings.TrimSpace(c.Header("X-Org-Id")); v != "" {
-		return v
+	if user := c.principalUser(); user != nil {
+		if name := strings.TrimSpace(user.Name); name != "" {
+			return name
+		}
 	}
-	return c.GetOrg()
+	return c.GetSessionUsername()
 }
 
-// requireMemoryIdentity returns the trusted (org, userId) or writes an auth
+// requireMemoryIdentity returns the caller's own (org, userId) or writes an auth
 // error and returns ok=false.
+//
+// The org comes from GetOrg, which resolves it from the verified principal and
+// never from a client header — the same tenant every other surface acts in. Both
+// halves must be present: a request that names no person and no tenant is not
+// anonymous here, it is unauthenticated, and memory is per-person by construction.
 func (c *ApiController) requireMemoryIdentity() (string, string, bool) {
-	org := c.memoryOrg()
+	org := c.GetOrg()
 	userID := c.memoryUserID()
 	if org == "" || userID == "" {
 		c.ResponseError(c.T("auth:Please sign in first"))

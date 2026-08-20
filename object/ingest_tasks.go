@@ -145,8 +145,10 @@ func ingestOrgClient(org string) (tasksclient.Client, error) {
 // idempotency key: re-submitting the same source for the same store while it is still
 // running returns the existing handle instead of a duplicate crawl/clone.
 func ingestWorkflowID(owner string, req *IngestRequest) string {
-	store := req.Store
-	if store == "" {
+	// The id is derived, never dialed, so an unusable store yields the default here
+	// and the request is refused where it is acted on (IngestSource).
+	store, err := ResolveStore(owner, req.Store, DefaultDocsStore)
+	if err != nil {
 		store = DefaultDocsStore
 	}
 	key := req.Source

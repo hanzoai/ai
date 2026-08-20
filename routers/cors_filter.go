@@ -131,15 +131,7 @@ func CorsFilter(c *zip.Ctx) error {
 		return c.Continue()
 	}
 
-	// 2. Widget keys (hz_*) are public credentials validated by the gateway's
-	// widget security middleware (origin + rate limit). They don't use IAM
-	// OAuth flows, so skip the RedirectUri-based origin check.
-	if token := parseBearerToken(c); strings.HasPrefix(token, "hz_") {
-		setCorsHeaders(c, origin)
-		return c.Continue()
-	}
-
-	// 3. Dynamic check via IAM application RedirectUris.
+	// 2. Dynamic check via IAM application RedirectUris.
 	ok, err := isOriginAllowed(origin)
 	if err != nil {
 		// If IAM is not configured at all, reject — no more open fallback.
