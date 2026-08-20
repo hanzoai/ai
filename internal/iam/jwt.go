@@ -61,13 +61,20 @@ func ParseJwtToken(token string) (*Claims, error) { return ensureClient().ParseJ
 
 // ParseJwtToken verifies token against this client's IAM endpoint JWKS, falling
 // back to a configured certificate PEM only when JWKS is unreachable.
+//
+// The endpoint here is the STATED one, never the public default the read helpers
+// fall back to. A trust anchor is the one thing that must not be guessed: with the
+// default in play, a process configured with a certificate and no endpoint verified
+// every signature against keys fetched from a host nobody named — a guess overriding
+// a stated answer, on the security boundary — and carried an internet round trip
+// inside every parse to do it.
 func (c *Client) ParseJwtToken(token string) (*Claims, error) {
 	t, err := jwt.ParseWithClaims(token, &Claims{}, func(token *jwt.Token) (interface{}, error) {
 		switch token.Method.Alg() {
 		case jwt.SigningMethodES256.Alg(), jwt.SigningMethodES512.Alg(),
 			jwt.SigningMethodRS256.Alg(), jwt.SigningMethodRS512.Alg():
 			// Prefer JWKS (canonical, public keys) over any configured cert PEM.
-			if endpoint := c.endpoint(); endpoint != "" {
+			if endpoint := statedEndpoint(c.Endpoint); endpoint != "" {
 				kid, _ := token.Header["kid"].(string)
 				if pk, jwksErr := jwksPublicKey(endpoint, kid); jwksErr == nil {
 					return pk, nil

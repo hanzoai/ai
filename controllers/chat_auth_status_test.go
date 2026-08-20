@@ -22,7 +22,6 @@ import (
 	"sync/atomic"
 	"testing"
 
-	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/object"
 )
 
@@ -100,9 +99,10 @@ func driveChat(t *testing.T, authHeader, body string) int {
 // attributable provider-key principal. It restores all global seams on cleanup.
 func setupChatMoneyPath(t *testing.T) {
 	t.Helper()
-	// Non-nil globalClient: any invalid/expired JWT verifies to an error (→401),
-	// never a nil-pointer panic. Mirrors prod, which always has an iam client.
-	iam.InitConfig("", "", "", "", "", "")
+	// Nothing installs an iam client here, and nothing needs to: ensureClient builds
+	// one when none is configured, so a verify cannot meet nil. Installing a blank
+	// one — as this used to — replaced the process's client and never put it back,
+	// and every signed credential presented after it met a verifier with no key.
 
 	// Record routing decisions synchronously for the duration. These tests drive the
 	// REAL ChatCompletions handler, whose default routing sink is a detached goroutine

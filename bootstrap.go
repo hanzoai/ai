@@ -205,9 +205,9 @@ func doBootstrap() (err error) {
 	// DefaultTierFunc can resolve tiers through it.
 	routers.InitTierCache()
 
-	// Per-key rate limiting (env override → tier cache → zen-free).
+	// Per-key rate limiting (env override → tier cache → zen-free). It logs the
+	// tiers it armed, from the table it armed them from.
 	bootRateLimiter = routers.InitRateLimiter(routers.DefaultTierFunc)
-	log.Info("Per-key rate limiter initialized (tiers: free=10/min, starter=60/min, pro=300/min, enterprise=1000/min)")
 
 	// The filter chain is installed with the ROUTES, by routers.Register, because
 	// the router walks its stack in registration order and a filter added after a
