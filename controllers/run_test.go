@@ -27,9 +27,6 @@ func TestRunKeyIsNotMistakenForAnyOtherBearer(t *testing.T) {
 	if !isRunKey(runKey) {
 		t.Fatalf("%q is not recognised as a run key", runKey)
 	}
-	if isWidgetKey(runKey) {
-		t.Fatal("a run key reads as a widget key — it would take the hz_ branch and inherit its caps")
-	}
 	if isJwtToken(runKey) {
 		t.Fatal("a run key reads as a JWT — it would be sent to signature validation")
 	}
@@ -38,7 +35,7 @@ func TestRunKeyIsNotMistakenForAnyOtherBearer(t *testing.T) {
 	}
 	// And nothing else reads as a run key, so no existing credential is silently
 	// re-routed onto the new branch.
-	for _, other := range []string{"sk-live-123", "pk-live-123", "hz_widget_public", "a.b.c", ""} {
+	for _, other := range []string{"sk-live-123", "pk-live-123", "a.b.c", ""} {
 		if isRunKey(other) {
 			t.Fatalf("%q reads as a run key", other)
 		}

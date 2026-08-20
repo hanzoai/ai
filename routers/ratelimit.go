@@ -257,23 +257,17 @@ func RateLimitFilter(c *zip.Ctx) error {
 	// "hanzo" catch-all get their OWN bucket and can't exhaust each other's rate
 	// limit. When no subject resolves (anonymous, sk-/pk- provider keys, JWT
 	// without owner), fall back to the raw key so traffic is still free-tier bucketed.
+	//
+	// THAT FALLBACK IS ALSO WHAT CONTAINS A PAGE KEY. A publishable key ships in the
+	// source of a page anybody can view, so the traffic behind one is every visitor
+	// at once rather than one tenant; resolveBillingKey names no subject for it, and
+	// bucketing on the credential keeps a griefed page from spending the whole org's
+	// ceiling and taking down its API traffic and every other page it publishes. Two
+	// surfaces holding two keys fail independently, which is the reason to issue two.
+	// Billing is untouched — the org still pays for what its page serves. Who pays
+	// and who is throttled are different questions, and this is where they differ.
 	limitKey, _, _ := resolveBillingKey(c)
 	if limitKey == "" {
-		limitKey = apiKey
-	}
-	// A PAGE KEY buckets on the key, not on the org that pays for it.
-	//
-	// It is public by construction — it ships in the source of a page anybody can
-	// view — so the traffic behind one is every visitor at once rather than one
-	// tenant. Bucketing it with the org means a single griefed page spends the
-	// whole org's ceiling, taking down that org's own API traffic and every other
-	// page it publishes. Keying on the credential contains it to the surface that
-	// holds it, and lets two surfaces carry two keys that fail independently.
-	//
-	// Billing is untouched: the org still pays for what its page serves. Who pays
-	// and who is throttled are different questions, and this is the only place they
-	// are allowed to differ.
-	if strings.HasPrefix(apiKey, "hz_") {
 		limitKey = apiKey
 	}
 

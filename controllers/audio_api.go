@@ -156,7 +156,7 @@ func (c *ApiController) AudioSpeech() {
 	}
 
 	orgId := c.GetOrg()
-	provider, authUser, upstreamModel, isPremium, _, err := c.authResolveProvider(token, req.Model, orgId)
+	provider, authUser, upstreamModel, isPremium, err := c.authResolveProvider(token, req.Model, orgId)
 	if err != nil {
 		c.ResponseAuthError(err)
 		return
@@ -337,7 +337,7 @@ func (c *ApiController) AudioTranscriptions() {
 	model := form.model
 
 	orgId := c.GetOrg()
-	provider, authUser, upstreamModel, isPremium, _, err := c.authResolveProvider(token, model, orgId)
+	provider, authUser, upstreamModel, isPremium, err := c.authResolveProvider(token, model, orgId)
 	if err != nil {
 		c.ResponseAuthError(err)
 		return

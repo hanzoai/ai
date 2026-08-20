@@ -321,7 +321,7 @@ func TestAPageKeyIsThrottledOnItsOwnKey(t *testing.T) {
 		return served
 	}
 
-	siteServed := drive("hz_site_key")
+	siteServed := drive("pk-site-key")
 	if siteServed != burst {
 		t.Errorf("site key served %d of %d before throttling", siteServed, burst)
 	}
@@ -329,7 +329,7 @@ func TestAPageKeyIsThrottledOnItsOwnKey(t *testing.T) {
 	// THE POINT: the second page key still has its whole budget. Exhausting one
 	// surface cannot take the other down, which is the only thing that makes
 	// issuing two keys mean anything.
-	cliServed := drive("hz_cli_key")
+	cliServed := drive("pk-cli-key")
 	if cliServed != burst {
 		t.Errorf("a second page key served %d of %d — the two share a bucket", cliServed, burst)
 	}

@@ -166,15 +166,16 @@ func TestWriteEndpointWithCredentialPassesFilter(t *testing.T) {
 	}
 }
 
-// TestBenignPathsNotCredentialGated — intentionally-anonymous or
-// gateway-header-authed paths (health, metrics, memory, wecom) must NOT be
-// caught by the write-endpoint gate. The gate is an explicit set, not a blanket
-// default.
+// TestBenignPathsNotCredentialGated — intentionally-anonymous paths (health,
+// metrics, wecom) must NOT be caught by the write-endpoint gate. The gate is an
+// explicit set, not a blanket default.
+//
+// Memory is deliberately absent: it is per-person, so there is no anonymous
+// reading of it — see TestMemoryIsNeverAnonymous.
 func TestBenignPathsNotCredentialGated(t *testing.T) {
 	for _, p := range []struct{ method, path string }{
 		{"GET", "/v1/health"},
 		{"GET", "/v1/metrics"},
-		{"GET", "/v1/memory/search"},
 		{"POST", "/v1/wecom-bot/callback/bot1"},
 	} {
 		q := asUser(t, p.method, p.path, nil)
@@ -186,15 +187,17 @@ func TestBenignPathsNotCredentialGated(t *testing.T) {
 }
 
 // TestRequiresPresentCredentialClassification locks exactly which endpoints are
-// credential-gated — the write/ingest/scrape/RAG set — and which are not
-// (chat/models/memory/health and the unrelated query-record family, which must
-// NOT be caught by the "query" entry).
+// credential-gated — the write/ingest/scrape/RAG/memory set — and which are not
+// (chat/models/health and the unrelated query-record family, which must NOT be
+// caught by the "query" entry).
 func TestRequiresPresentCredentialClassification(t *testing.T) {
 	gated := []string{
 		"index", "search", "search/stats",
 		"docs/ingest", "embed", "query", "query_multiple", "documents",
 		"rag/embed", "rag/query", "rag/query-multiple", "rag/delete", "rag/context",
 		"documents/file-123/context",
+		"memory/remember", "memory/search", "memory/list", "memory/recall",
+		"memory/facts", "memory/update", "memory/delete",
 	}
 	for _, e := range gated {
 		if !requiresPresentCredential(e) {
@@ -203,13 +206,46 @@ func TestRequiresPresentCredentialClassification(t *testing.T) {
 	}
 	ungated := []string{
 		"chat/completions", "completions", "models", "messages",
-		"memory/search", "memory/remember", "health", "metrics",
+		"health", "metrics",
 		"get-account", "query-record", "query-record-second",
+		// "memory" alone is not the memory family; only the "memory/" prefix is,
+		// so an unrelated endpoint spelled with that word is unaffected.
+		"memory", "memorydump",
 	}
 	for _, e := range ungated {
 		if requiresPresentCredential(e) {
 			t.Errorf("%q must NOT require a present credential (benign/self-authing/unrelated)", e)
 		}
+	}
+}
+
+// MEMORY IS NEVER ANONYMOUS.
+//
+// Every verb under /v1/memory reads, writes or deletes ONE named person's store.
+// A caller with no credential has no store here, so there is nothing for it to be
+// doing — and letting it through meant a stranger could name any user in a header
+// and read, overwrite or delete their memories. The filter refuses first; the
+// controller resolves the person from the credential.
+func TestMemoryIsNeverAnonymous(t *testing.T) {
+	for _, p := range []struct{ method, path string }{
+		{"POST", "/v1/memory/remember"},
+		{"GET", "/v1/memory/search"},
+		{"GET", "/v1/memory/list"},
+		{"GET", "/v1/memory/recall"},
+		{"GET", "/v1/memory/facts"},
+		{"POST", "/v1/memory/update"},
+		{"POST", "/v1/memory/delete"},
+	} {
+		q := asUser(t, p.method, p.path, nil).through(permissionFilter)
+		if q.status() != http.StatusUnauthorized {
+			t.Errorf("anonymous %s %s = %d; want 401 — memory is per-person", p.method, p.path, q.status())
+		}
+	}
+
+	// A credentialed caller still passes the filter; the controller decides who.
+	q := asUser(t, "POST", "/v1/memory/remember", &iam.User{Owner: "acme", Name: "bob"}).through(permissionFilter)
+	if q.status() == http.StatusUnauthorized {
+		t.Error("a session-authed memory write was refused at the filter")
 	}
 }
 
