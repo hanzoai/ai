@@ -85,3 +85,22 @@ func RedactQuery(q string) string {
 		return m
 	})
 }
+
+// providerKeyToken matches the shape of an upstream provider credential wherever
+// it appears in free text — an error message, a panic, a relayed body. The JSON
+// rule above needs a field name to work with; an upstream that answers
+// "Invalid API key: sk-…" gives none, so shape is the only thing left to key on.
+//
+// Each prefix is a vendor's own published form, and the tail is long enough that
+// ordinary prose cannot reach it: twenty or more of the characters these keys are
+// built from. A short "sk-" in a sentence is left alone.
+var providerKeyToken = regexp.MustCompile(
+	`(?i)\b(sk-proj-|sk-or-v[0-9]-|sk-ant-|sk-|hf_|fw_|gsk_|dop_v[0-9]_|AIza)[A-Za-z0-9_\-]{20,}`)
+
+// RedactKeys removes provider credentials from text that is about to be logged or
+// returned. It replaces the whole token, not a suffix: a masked tail is still the
+// part a vendor prints to identify a key, and identifying a key to whoever is
+// reading is the thing being prevented.
+func RedactKeys(s string) string {
+	return providerKeyToken.ReplaceAllString(s, "[redacted]")
+}
