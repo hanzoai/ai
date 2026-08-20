@@ -84,11 +84,23 @@ func (c *ApiController) GetRecords() {
 // @Success 200 {object} object.Record The Response object
 // @router /get-record [get]
 func (c *ApiController) GetRecord() {
+	// Scoped like the list beside it. The id names an owner, but the lookup keys
+	// on a global row number and discards that half, so an id from one tenant
+	// reaches another tenant's row — and every row holds a request body. The
+	// caller's own owner is the one that decides, exactly as GetRecords does.
+	owner, allowed := c.GetScopedOwner()
+	if !allowed {
+		return
+	}
 	id := c.Input().Get("id")
 
 	record, err := object.GetRecord(id, c.GetAcceptLanguage())
 	if err != nil {
 		c.ResponseError(err.Error())
+		return
+	}
+	if record == nil || (owner != "" && record.Owner != owner) {
+		c.ResponseError("the record does not exist")
 		return
 	}
 
