@@ -78,32 +78,41 @@ func TestNilUserIsUnattributable(t *testing.T) {
 
 // TestServiceAccountKeySpendsThePool is the whole sk- thread in one assertion.
 //
-// A JWT carries `billing_account` and needs no shape rule. An API key carries no
-// claim at all: IAM's get-user?accessKey= answers with the user ROW, and its Type
-// is the only thing left that says machine-or-person. IAM writes "service-account"
-// there (internal/oidc/provision.go, /v1/iam/service-accounts), so a payer that
-// knows only "application" reads a service credential as a person — and in the
-// signup org a person pays personally, which for a service account is a wallet no
-// funding path can name.
-//
 // Measured on hanzo/guest, the anonymous chat free tier: /v1/audio/speech and
 // /v1/audio/transcriptions both answered 402 insufficient_balance against a pool
 // holding ~$149k, because the gate read hanzo/guest and the money was in hanzo.
+// IT IS FIXED BY THE CLAIM, NOT BY THE TYPE. IAM's key door answers with the
+// keyUser projection (compat.resolveUserByAccessKey), and that projection carries
+// billing_account and NOT type — the row's class never crosses the wire. So the
+// payer is what IAM computed and signed, and the shape rule is never reached.
+//
+// Two fixes landed for this one defect: the key door learned to STATE the payer,
+// and account.Payer learned to INFER one from User.Type. The second is the
+// forgeable one and is gone; this pins that the first is what actually carries a
+// first-party service key to its org pool.
 func TestServiceAccountKeySpendsThePool(t *testing.T) {
-	guest := &User{Owner: "hanzo", Name: "guest", Type: "service-account"}
+	// Exactly what the key door returns for hanzo/guest: no type, a signed ledger.
+	guest := &User{Owner: "hanzo", Name: "guest", BillingAccount: "org:hanzo"}
 	if got := guest.PayerSubject(""); got != "hanzo" {
 		t.Fatalf("service-account key pays %q, want the org pool %q", got, "hanzo")
 	}
-	// The OIDC client shape still resolves the same way — one predicate, two
-	// spellings, not two rules.
-	app := &User{Owner: "hanzo", Name: "svc", Type: "application"}
+	// The OIDC client shape resolves the same way, for the same reason: its token
+	// carries the claim too (oidc.machineBillingAccount).
+	app := &User{Owner: "hanzo", Name: "svc", BillingAccount: "org:hanzo"}
 	if got := app.PayerSubject(""); got != "hanzo" {
-		t.Fatalf("application key pays %q, want the org pool %q", got, "hanzo")
+		t.Fatalf("application token pays %q, want the org pool %q", got, "hanzo")
 	}
 	// And a PERSON in the same org still pays personally: the pool is not opened
 	// to strangers, which is the only reason the signup org is special.
 	human := &User{Owner: "hanzo", Name: "alice"}
 	if got := human.PayerSubject(""); got != "hanzo/alice" {
 		t.Fatalf("person pays %q, want %q", got, "hanzo/alice")
+	}
+	// THE NEGATIVE that matters: a row that merely CLAIMS to be a machine, with
+	// nothing signed, does not reach the platform's balance. This is the shape a
+	// planted or re-classed row would have, and no door produces it.
+	claimsToBeAMachine := &User{Owner: "hanzo", Name: "planted", Type: "service-account"}
+	if got := claimsToBeAMachine.PayerSubject(""); got == "hanzo" {
+		t.Fatal("an asserted class reached the platform pool")
 	}
 }

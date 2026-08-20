@@ -111,11 +111,14 @@ func TestZapEmbeddingsValidation(t *testing.T) {
 }
 
 // TestZapProxyJSONHappyPath drives the shared terminal (zapProxyJSON) against a
-// stubbed upstream provider: it must proxy the body, return the upstream status
-// verbatim, and pass the response bytes through unchanged. authUser is nil so
-// the metering path is exercised as a no-op (no DB), isolating proxy+encode.
+// stubbed upstream provider: it must proxy the body, carry the provider's
+// credential, return the upstream status verbatim, and pass the response bytes
+// through unchanged. authUser is nil so the metering path is exercised as a
+// no-op (no DB), isolating proxy+encode.
 func TestZapProxyJSONHappyPath(t *testing.T) {
+	var sawAuth string
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawAuth = r.Header.Get("Authorization")
 		// Assert the model rewrite / passthrough reached us as JSON.
 		var got map[string]interface{}
 		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
@@ -128,9 +131,10 @@ func TestZapProxyJSONHappyPath(t *testing.T) {
 	defer upstream.Close()
 
 	provider := &object.Provider{
-		Name:        "stub",
-		Type:        "OpenAI",
-		ProviderUrl: upstream.URL,
+		Name:         "stub",
+		Type:         "OpenAI",
+		ProviderUrl:  upstream.URL,
+		ClientSecret: "sk-stub",
 	}
 
 	msg, err := zapProxyJSON(context.Background(), provider, "embeddings",
@@ -149,5 +153,8 @@ func TestZapProxyJSONHappyPath(t *testing.T) {
 	}
 	if resp["object"] != "list" {
 		t.Fatalf("upstream body not passed through verbatim: %s", body)
+	}
+	if sawAuth != "Bearer sk-stub" {
+		t.Fatalf("upstream saw Authorization %q; the provider's credential did not reach it", sawAuth)
 	}
 }

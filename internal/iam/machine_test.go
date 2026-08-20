@@ -94,8 +94,11 @@ func TestMachineTokenReachesThePredicate(t *testing.T) {
 	if !account.IsMachine(app.User.Type) {
 		t.Fatal("a client-credentials token still reads as a person; the predicate never fires")
 	}
-	// And the money answer is unchanged either way: an application's payer is its
-	// org, so typing the credential moves attribution and never the debit.
+	// And the money answer is unchanged either way — because typing the credential
+	// moves ATTRIBUTION and never the debit. The payer comes from the signed
+	// billing_account IAM mints for this grant (oidc.machineBillingAccount), so
+	// the class this function infers is not an input to it.
+	app.User.BillingAccount = "org:hanzo"
 	if got := app.User.PayerSubject("hanzo"); got != "hanzo" {
 		t.Fatalf("machine pays %q, want the org pool", got)
 	}
