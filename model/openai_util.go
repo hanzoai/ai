@@ -61,6 +61,19 @@ func GetOpenAiMaxTokens(model string) int {
 	return res
 }
 
+// samplesFreely reports whether a model accepts `temperature` and `top_p`. The
+// reasoning families (o1/o3/o4, gpt-5) do not: they choose their own sampling
+// and REJECT the parameters outright rather than ignoring them.
+func samplesFreely(model string) bool {
+	m := strings.ToLower(model)
+	for _, family := range []string{"o1", "o3", "o4", "gpt-5"} {
+		if strings.HasPrefix(m, family) || strings.Contains(m, "/"+family) {
+			return false
+		}
+	}
+	return true
+}
+
 func getOpenAiModelType(model string) string {
 	// Chat model patterns (matched via contains for provider-prefixed names like "openai-gpt-5-nano")
 	chatPatterns := []string{
