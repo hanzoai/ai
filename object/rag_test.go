@@ -370,10 +370,26 @@ func TestMeiliQuoteEscapesInjection(t *testing.T) {
 }
 
 func TestResolveRagStoreDefault(t *testing.T) {
-	if resolveRagStore("") != RagFileStore {
-		t.Fatalf("empty store should default to %q", RagFileStore)
+	if got, err := resolveRagStore("acme", ""); err != nil || got != RagFileStore {
+		t.Fatalf("empty store should default to %q: got %q, %v", RagFileStore, got, err)
 	}
-	if resolveRagStore("custom") != "custom" {
-		t.Fatal("explicit store should pass through")
+	if got, err := resolveRagStore("acme", "custom"); err != nil || got != "custom" {
+		t.Fatalf("explicit store should pass through: got %q, %v", got, err)
+	}
+	// The default is ours and hyphenated; asking for it by name selects the same
+	// index, so it is admitted. Any OTHER hyphenated name is not.
+	if got, err := resolveRagStore("acme", RagFileStore); err != nil || got != RagFileStore {
+		t.Fatalf("naming the default should be the default: got %q, %v", got, err)
+	}
+	if _, err := resolveRagStore("acme", "rag-files-elsewhere"); err == nil {
+		t.Fatal("a hyphenated store a caller chose must be refused")
+	}
+	// A hyphenated owner keeps its default but may not choose — see
+	// TestAHyphenatedOwnerCannotChooseAStore for why.
+	if got, err := resolveRagStore("acme-rag", ""); err != nil || got != RagFileStore {
+		t.Fatalf("hyphenated owner lost its default: got %q, %v", got, err)
+	}
+	if _, err := resolveRagStore("acme-rag", "files"); err == nil {
+		t.Fatal("a hyphenated owner selected a store")
 	}
 }

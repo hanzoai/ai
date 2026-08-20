@@ -96,9 +96,12 @@ func init() {
 
 // zapRPSPrincipal resolves the request principal STRICTLY from its verified
 // credential — the ZAP analogue of principalUser (there is no session cookie on
-// the ZAP path). pk-/sk- IAM keys route through getUserByAccessKey; JWTs through
+// the ZAP path). sk- IAM keys route through getUserByAccessKey; JWTs through
 // object.ParseAndValidateJWT (signature + iss/aud, never raw iam.ParseJwtToken).
-// Returns nil for an empty/invalid/unsupported credential — fail-secure.
+// A pk- resolves to NO principal here and is meant to: it names an org, never a
+// person, so there is nothing for this function to return and nothing to be
+// mistaken for a role. Returns nil for an empty/invalid/unsupported credential —
+// fail-secure.
 func zapRPSPrincipal(auth string) *iam.User {
 	token := strings.TrimSpace(strings.TrimPrefix(auth, "Bearer "))
 	if token == "" {

@@ -782,37 +782,6 @@ func TestTermsFollowThePrice(t *testing.T) {
 	}
 }
 
-// A key embedded in a public page may ask for a route that costs nothing.
-//
-// The allowlist bounds what such a key can SPEND, so a route the vendor charges
-// nothing for is already inside the bound — which is what lets a logged-out page
-// be answered with no wallet behind it. An id whose price cannot be read stays out:
-// the bound is only kept by refusing what cannot be priced.
-func TestAPageKeyMayAskForWhatCostsNothing(t *testing.T) {
-	fam := openrouterFam
-	saved, savedLoaded, savedAt := fam.byID, fam.loaded, fam.fetchedAt
-	t.Cleanup(func() { fam.byID, fam.loaded, fam.fetchedAt = saved, savedLoaded, savedAt })
-	fam.byID = map[string]zenModel{
-		"vendor/free": {ID: "vendor/free"},
-		"vendor/paid": {ID: "vendor/paid", Base: zenTier{In: decimal.New(3, 0), Out: decimal.New(15, 0)}},
-	}
-	fam.loaded = true
-	fam.fetchedAt = time.Now()
-
-	if !widgetMayServe("vendor/free") {
-		t.Error("a route priced at zero is refused to a page key")
-	}
-	if widgetMayServe("vendor/paid") {
-		t.Error("a priced route is served to a page key")
-	}
-	if widgetMayServe("no-such-model-anywhere") {
-		t.Error("an unpriceable id is served to a page key — the bound is not kept")
-	}
-	if !widgetMayServe("llama-3.1-8b") {
-		t.Error("an explicitly allowed cheap id is refused")
-	}
-}
-
 // The listing says what a model answers WITH, because a price cannot.
 //
 // The free lineup carries music models and a content-safety classifier beside the

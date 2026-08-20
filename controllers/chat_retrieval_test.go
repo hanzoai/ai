@@ -20,46 +20,27 @@ import (
 	iam "github.com/hanzoai/ai/internal/iam"
 )
 
-// TestRetrievalOwnerBindsToKeyNotOrigin proves the RAG tenant is bound to the
-// authenticated principal / widget key — never a forgeable Origin. retrievalOwner
-// no longer even accepts an Origin, so a cross-tenant Origin spoof is impossible.
-func TestRetrievalOwnerBindsToKeyNotOrigin(t *testing.T) {
-	t.Setenv("WIDGET_KEY_OWNERS", "hz_lux_key=lux,hz_hanzo_key=hanzo")
-	t.Setenv("WIDGET_DEFAULT_OWNER", "hanzo")
-
-	// Authenticated user => own org, always.
-	if got := retrievalOwner(&iam.User{Owner: "maxpower", Name: "dave"}, "ignored"); got != "maxpower" {
+// TestRetrievalOwnerIsThePrincipalsOrg proves the RAG tenant is the org of the
+// principal the request already resolved to, and that there is no second way in.
+// retrievalOwner takes no token and no Origin, so a cross-tenant spoof has nothing
+// to spoof: whoever the credential resolved to is whose store is read.
+func TestRetrievalOwnerIsThePrincipalsOrg(t *testing.T) {
+	if got := retrievalOwner(&iam.User{Owner: "maxpower", Name: "dave"}); got != "maxpower" {
 		t.Errorf("authed user owner = %q, want maxpower", got)
 	}
 
-	// Widget key => the org BOUND TO THE KEY.
-	if got := retrievalOwner(nil, "hz_lux_key"); got != "lux" {
-		t.Errorf("widget hz_lux_key owner = %q, want lux", got)
-	}
-	if got := retrievalOwner(nil, "hz_hanzo_key"); got != "hanzo" {
-		t.Errorf("widget hz_hanzo_key owner = %q, want hanzo", got)
+	// A machine principal is its org just the same — this is the shape a
+	// publishable key resolves to once GetOrg has named its tenant.
+	if got := retrievalOwner(&iam.User{Owner: "acme", Type: iam.Machine}); got != "acme" {
+		t.Errorf("machine principal owner = %q, want acme", got)
 	}
 
-	// Unmapped widget key => the single safe default, NOT anything header-derived.
-	if got := retrievalOwner(nil, "hz_unknown_key"); got != "hanzo" {
-		t.Errorf("unmapped widget key owner = %q, want default hanzo", got)
+	// UNRESOLVED IS UNATTRIBUTABLE. No principal names no tenant, so the caller
+	// reads nothing rather than falling back to some configured default org.
+	if got := retrievalOwner(nil); got != "" {
+		t.Errorf("no principal => %q, want empty", got)
 	}
-
-	// Non-widget, non-authed (e.g. provider key) => empty (no RAG tenant).
-	if got := retrievalOwner(nil, "sk-providerkey"); got != "" {
-		t.Errorf("provider-key owner = %q, want empty", got)
-	}
-}
-
-// TestWidgetKeyOwnerCrossTenantIsolation is the security assertion: a widget key
-// bound to tenant A can never resolve to tenant B, no matter the request context
-// (there is no Origin input to influence it).
-func TestWidgetKeyOwnerCrossTenantIsolation(t *testing.T) {
-	t.Setenv("WIDGET_KEY_OWNERS", `{"hz_tenantA":"tenant-a","hz_tenantB":"tenant-b"}`)
-	if got := widgetKeyOwner("hz_tenantA"); got != "tenant-a" {
-		t.Errorf("hz_tenantA => %q, want tenant-a", got)
-	}
-	if got := widgetKeyOwner("hz_tenantB"); got != "tenant-b" {
-		t.Errorf("hz_tenantB => %q, want tenant-b", got)
+	if got := retrievalOwner(&iam.User{}); got != "" {
+		t.Errorf("principal with no org => %q, want empty", got)
 	}
 }

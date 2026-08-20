@@ -7,7 +7,6 @@ package controllers
 
 import (
 	"encoding/json"
-	"os"
 	"strings"
 
 	iam "github.com/hanzoai/ai/internal/iam"
@@ -16,28 +15,16 @@ import (
 	"github.com/hanzoai/ai/object"
 )
 
-// retrievalOwner returns the IAM org whose search index should be queried. The
-// tenant is bound to the AUTHENTICATED principal — the user's own org, or for a
-// public widget the org bound to the widget KEY. It is NEVER derived from the
-// request Origin/Referer, which a client can forge to read another tenant's RAG
-// store (cross-tenant disclosure).
-func retrievalOwner(authUser *iam.User, token string) string {
+// retrievalOwner returns the IAM org whose search index should be queried: the
+// org of the principal the request already resolved to. It is NEVER derived from
+// the request Origin/Referer, which a client can forge to read another tenant's
+// RAG store (cross-tenant disclosure). No principal means no tenant, and the
+// caller reads nothing.
+func retrievalOwner(authUser *iam.User) string {
 	if authUser != nil && authUser.Owner != "" {
 		return authUser.Owner
 	}
-	if isWidgetKey(token) {
-		return widgetKeyOwner(token)
-	}
 	return ""
-}
-
-// widgetKeyOwner resolves a widget key (hz_*) to its bound IAM org via the ONE
-// canonical resolver (object.WidgetKeyOwner) shared with the router balance gate,
-// so a widget key means the same org for both tenant isolation and billing. See
-// object/widget_owner.go for the resolution order (WIDGET_KEY_OWNERS →
-// WIDGET_DEFAULT_OWNER, KMS-or-env). Empty ⇒ unattributable ⇒ callers fail secure.
-func widgetKeyOwner(token string) string {
-	return object.WidgetKeyOwner(token)
 }
 
 // retrievalFlags is the retrieval ask as the BODY carries it. A browser
@@ -65,7 +52,7 @@ func (c *ApiController) retrievalStore() string {
 }
 
 // retrievalEnabled decides whether to augment the prompt with retrieved docs.
-func (c *ApiController) retrievalEnabled(token string) bool {
+func (c *ApiController) retrievalEnabled() bool {
 	if v := c.Header("X-Retrieval"); v != "" {
 		return v == "1" || strings.EqualFold(v, "true")
 	}
@@ -73,9 +60,6 @@ func (c *ApiController) retrievalEnabled(token string) bool {
 		return true
 	}
 	if f := c.bodyRetrieval(); f.Retrieval || f.Store != "" {
-		return true
-	}
-	if isWidgetKey(token) && strings.EqualFold(os.Getenv("WIDGET_RETRIEVAL"), "1") {
 		return true
 	}
 	return false
@@ -88,8 +72,7 @@ func (c *ApiController) retrieveKnowledgeIfEnabled(
 	question, owner, store, lang string,
 ) []*model.RawMessage {
 	empty := []*model.RawMessage{}
-	token := bearerToken(c.Header("Authorization"), c.Fiber().Cookies(iamTokenCookieName))
-	if !c.retrievalEnabled(token) {
+	if !c.retrievalEnabled() {
 		return empty
 	}
 	if owner == "" {
@@ -98,11 +81,15 @@ func (c *ApiController) retrieveKnowledgeIfEnabled(
 	if store == "" {
 		store = c.Input().Get("store")
 	}
-	if store == "" {
-		// Brand-neutral per-org default (white-label): the owner prefix on the index
-		// (`{owner}-{store}-docs`) is what isolates each org, so the store slug itself
-		// must NOT bake in a brand. Every org's assistant reads its OWN docs store.
-		store = object.DefaultDocsStore
+	// Brand-neutral per-org default (white-label): the owner prefix on the index
+	// (`{owner}-{store}-docs`) is what isolates each org, so the store slug itself
+	// must NOT bake in a brand. Every org's assistant reads its OWN docs store —
+	// and object.ResolveStore is what stops a caller naming its way out of that
+	// prefix. RAG is best-effort here, so a refused store reads no documents rather
+	// than failing the completion.
+	store, err := object.ResolveStore(owner, store, object.DefaultDocsStore)
+	if err != nil {
+		return empty
 	}
 
 	req := &object.DocSearchRequest{Query: question, Limit: 4}

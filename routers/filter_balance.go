@@ -449,26 +449,6 @@ func resolveBillingKey(c *zip.Ctx) (subject, namespace, userKey string) {
 	// identity to a request made in another.
 	requested := strings.TrimSpace(c.Header("X-Org-Id"))
 
-	// Widget keys (hz_) bill the OWNER ORG that minted the key (mirrors the
-	// controller's authResolveProvider): resolve that org here so the router
-	// balance gate applies to widget traffic too. An unattributable widget key (no
-	// owner mapping / default) resolves no subject — the controller refuses it
-	// (fail-secure), so it is never billed-free here either.
-	//
-	// It NAMES the org ledger rather than implying one. A widget key has no person
-	// by construction, and the org it bills is stated by the platform's own
-	// WIDGET_KEY_OWNERS mapping — not inferred from a class some row asserted. That
-	// distinction is the whole of the machine-flag removal: this credential may say
-	// "the org pays" because the operator said so, and it says it in the field that
-	// carries such statements.
-	if strings.HasPrefix(token, "hz_") {
-		owner := strings.TrimSpace(object.WidgetKeyOwner(token))
-		if owner == "" {
-			return "", "", ""
-		}
-		return account.Payer(account.Credential{Owner: owner, Account: account.Org(owner).String()}).Subject(), owner, owner + "/widget"
-	}
-
 	// A publishable key identifies an org for ingest and authenticates nobody, so
 	// there is no principal here to bill. Skip it in the router gate.
 	if strings.HasPrefix(token, "pk-") {

@@ -191,8 +191,8 @@ func codeOf(err error) string {
 }
 
 // wrapAuth tags an untyped error as a 401 auth failure, but leaves an already
-// typed apiError untouched — so the widget / provider-key branches of
-// authResolveProvider fail closed as 401 while the IAM / JWT branches keep the
+// typed apiError untouched — so the provider-key branch of
+// authResolveProvider fails closed as 401 while the IAM / JWT branches keep the
 // precise 400 / 402 / 500 status produced deeper in the routing policy.
 func wrapAuth(err error) error {
 	if err == nil {
