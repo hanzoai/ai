@@ -26,8 +26,8 @@ import (
 
 // principalUser is who is calling, resolved from the credential the request
 // presents — Authorization: Bearer, or the hanzo_iam_token cookie. nil for a request
-// carrying nothing this process can verify, and nil for a widget or provider key,
-// neither of which names a person.
+// carrying nothing this process can verify, and nil for a provider or publishable
+// key, neither of which names a person.
 //
 // ONE READ. This used to be two functions: a principalUser that asked for a session
 // first, and this one that deliberately BYPASSED the session because a stale
@@ -110,9 +110,9 @@ func (c *ApiController) principalIsOwnBrand() bool {
 // proof of membership — see account.EffectiveOrg.
 //
 // nil for every credential that carries no such claim: a cookie session, an sk-
-// IAM key, a widget (hz_) or provider (sk-) key, and any token minted before the
-// claim shipped. nil names no org, so all of those stay in their home org exactly
-// as they did before the claim existed.
+// IAM key, a provider (sk-) or publishable (pk-) key, and any token minted before
+// the claim shipped. nil names no org, so all of those stay in their home org
+// exactly as they did before the claim existed.
 //
 // Called ONLY on the switch path (a request that asked for an org other than its
 // own), so the dominant no-switch request never pays for this parse.
@@ -164,6 +164,35 @@ func (c *ApiController) GetOrg() string {
 		return org
 	}
 
+	// A PUBLISHABLE KEY ANSWERS SCOPE AND NOTHING ELSE. It names a tenant without
+	// naming a person, so it belongs to this question and not to principalUser: that
+	// function's answer is what RequireSuperAdmin, RequirePrincipal, the connections
+	// surface and the session self-heal all act on, and a key that ships in the
+	// source of a page must not reach any of them. Naming the TENANT and refusing to
+	// name a PERSON is the difference between the two key halves, and it is kept by
+	// answering here.
+	//
+	// A LIVE SESSION OUTRANKS IT. The key is a header and a session is a cookie, so
+	// one browser can carry both, and the search doors read the session first — a
+	// request that resolved to two different orgs depending on which door it entered
+	// would be scoped by one and billed by the other.
+	//
+	// It is PINNED to the org that holds the key: X-Org-Id is not consulted and no
+	// membership claim can widen it. And it is DEFINITIVE, including when it fails —
+	// a caller presenting a pk- has named a tenant, so if IAM cannot confirm which,
+	// the honest answer is none. Falling through to the deployment default would
+	// scope a customer's key to the platform's own org on an IAM hiccup.
+	if token := bearerToken(c.Header("Authorization"), c.Fiber().Cookies(iamTokenCookieName)); isPublishableKey(token) {
+		if u := c.GetSessionUser(); u != nil && u.Owner != "" {
+			return u.Owner
+		}
+		org, err := publishableOrg(token)
+		if err != nil {
+			return ""
+		}
+		return org
+	}
+
 	// No verified principal: never trust a client-supplied org header.
 	return conf.GetConfigString("IAM_ORG")
 }
@@ -173,7 +202,7 @@ func (c *ApiController) GetOrg() string {
 // It is account.LedgerOrg over this request's own credential.
 //
 // It is a function OF THE BILLED USER, not of the request alone. A provider (sk-)
-// or widget (hz_) key bills the org that MINTED it, which is not the request's
+// or publishable (pk-) key bills the org that MINTED it, which is not the request's
 // JWT principal; those credentials carry no membership claim, so principalOrgs
 // returns nil for them and they always resolve to their own owner.
 //
@@ -201,7 +230,7 @@ func (c *ApiController) billingOrg(user *iam.User) string {
 		return user.Owner
 	}
 	// A credential that carries NO membership set — sk- IAM key, sk- provider key,
-	// hz- widget key, no credential at all — cannot switch by construction. Its
+	// pk- publishable key, no credential at all — cannot switch by construction. Its
 	// ask is not a bid for someone else's wallet; there is no other wallet it
 	// could name. Billing its own owner is the only possible answer and the one
 	// it has always given, so an unrelated X-Org-Id header must not start

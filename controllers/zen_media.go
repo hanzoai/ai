@@ -188,7 +188,7 @@ func (c *ApiController) AudioMedia() {
 	}
 	startTime := time.Now().UTC()
 	orgId := c.GetOrg()
-	provider, authUser, _, isPremium, _, err := c.authResolveProvider(token, req.Model, orgId)
+	provider, authUser, _, isPremium, err := c.authResolveProvider(token, req.Model, orgId)
 	if err != nil {
 		c.ResponseAuthError(err)
 		return

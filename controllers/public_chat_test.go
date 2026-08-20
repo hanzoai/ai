@@ -283,8 +283,8 @@ func TestPublicOrgCannotBeMintedBySignup(t *testing.T) {
 
 // A public answer is capped, because nobody can be billed for a long one.
 func TestPublicAnswerIsCapped(t *testing.T) {
-	if publicMaxTokens <= 0 || publicMaxTokens != widgetMaxTokens {
-		t.Fatalf("publicMaxTokens = %d, want the widget cap %d", publicMaxTokens, widgetMaxTokens)
+	if publicMaxTokens != 800 {
+		t.Fatalf("publicMaxTokens = %d, want 800", publicMaxTokens)
 	}
 }
 

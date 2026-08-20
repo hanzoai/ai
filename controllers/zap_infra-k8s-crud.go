@@ -102,12 +102,17 @@ func registerZapInfraK8s() {
 // ── Identity + policy seam (STEP 1 / STEP 2 / STEP 4) ────────────────────────
 
 // zapInfraSuperAdmin resolves the principal STRICTLY from the auth token via the
-// shared zapResolveUser seam (pk-/sk- IAM keys → getUserByAccessKey, JWTs →
+// shared zapResolveUser seam (sk- IAM keys → getUserByAccessKey, JWTs →
 // object.ParseAndValidateJWT), then enforces util.IsSuperAdmin — the SAME
 // predicate the routers authz_filter applies to every infra CRUD endpoint. It is
 // the controller-side RequireSuperAdmin twin for the stateless ZAP wire:
 // fail-closed, no principal → 401, authenticated non-super-admin → 403. On
 // success it returns the resolved (owner, name).
+//
+// A pk- resolves to no principal and so is refused, which is the correct answer
+// and not an omission: a publishable key names an org, never a person, and this
+// gate asks whether a PERSON is a platform admin. Teaching it to resolve one would
+// hand platform sudo to a credential that ships in page source.
 func zapInfraSuperAdmin(auth string) (owner, name string, reject *zap.Message) {
 	if strings.TrimSpace(auth) == "" {
 		reject, _ = object.BuildCloudResponse(401, nil, "authentication required")

@@ -21,6 +21,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -142,6 +143,63 @@ const rrfK = 60
 // GetSearchIndexName returns the Hanzo Search index name for a given owner/store.
 func GetSearchIndexName(owner, store string) string {
 	return fmt.Sprintf("%s-%s-docs", owner, store)
+}
+
+// storeSlug is the shape a store a CALLER chose may take: lowercase letters,
+// digits and underscores, opening on a letter or digit.
+//
+// THE HYPHEN IS THE WHOLE REASON. An index is named "{owner}-{store}-docs", so a
+// store carrying a hyphen can push that boundary and land on another tenant's
+// index: org "acme" asking for "corp-docs-hanzo-ai" builds exactly the string org
+// "acme-corp" builds for "docs-hanzo-ai". Barred from the store, the last hyphen
+// before the suffix always delimits it and one index name has one reading —
+// whatever hyphens the OWNER contains, because the owner is not the part a caller
+// chooses. A slash is the same disclosure by a shorter route: the name goes into
+// the search backend's URL path unescaped, so "../" leaves the collection.
+var storeSlug = regexp.MustCompile(`^[a-z0-9][a-z0-9_]*$`)
+
+// ResolveStore is the store a request acts on: the one it asked for, or the one this
+// surface supplies when it asked for none.
+//
+// IT IS THE ONE PLACE A STORE DEFAULT IS APPLIED, because applying the default and
+// admitting the caller's choice are the same decision and splitting them is how a
+// surface ends up trusting a name nobody checked. A default is OURS — code, not
+// input — so it is taken as given, which is how the estate's own hyphenated names
+// keep working while no caller can spell one. Asking for the default by name is
+// the default, since it selects the identical index.
+//
+// IT TAKES THE OWNER because the thing being protected is the PAIR. An index name
+// is owner and store joined by the one character that separates them, so which
+// index a store reaches is never a fact about the store alone, and a rule that
+// cannot see the owner can only close half of the ambiguity.
+//
+// The two halves it closes:
+//
+//	The store may not carry a hyphen. Then the last hyphen before the suffix always
+//	delimits the store, so a caller cannot spell a longer owner than its own: org
+//	"acme" asking for "corp-docs-hanzo-ai" is refused, and org "acme-corp" keeps
+//	its index.
+//
+//	A HYPHENATED OWNER may not choose a store at all. That is the mirror, and the
+//	default is what opens it: a default may carry hyphens, so an org can be named
+//	to end where a victim's default begins — "acme-docs-hanzo" asking for "ai"
+//	spells the index "acme" gets from the default "docs-hanzo-ai". The refusal is
+//	exact rather than cautious: with a hyphen-free store, a collision needs the
+//	ASKING owner to contain a hyphen, so refusing that case removes the last one
+//	and no other request is affected. Such an org keeps its default store and can
+//	choose again once the hyphenated defaults are renamed and reindexed.
+func ResolveStore(owner, requested, def string) (string, error) {
+	r := strings.TrimSpace(requested)
+	if r == "" || r == def {
+		return def, nil
+	}
+	if !storeSlug.MatchString(r) {
+		return "", fmt.Errorf("store %q is not a valid name: lowercase letters, digits and underscores only", requested)
+	}
+	if strings.Contains(owner, "-") {
+		return "", fmt.Errorf("organization %q may not select a store; it is served by its default store %q", owner, def)
+	}
+	return r, nil
 }
 
 func getSearchClient() (meilisearch.ServiceManager, error) {

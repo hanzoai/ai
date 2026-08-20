@@ -467,16 +467,10 @@ func (c *ApiController) AnthropicMessages() {
 	orgId := c.GetOrg()
 
 	// Share the exact auth + model-routing policy used by /v1/chat/completions.
-	provider, authUser, upstreamModel, isPremium, isWidget, err := c.authResolveProvider(token, request.Model, orgId)
+	provider, authUser, upstreamModel, isPremium, err := c.authResolveProvider(token, request.Model, orgId)
 	if err != nil {
 		c.respondAnthropicError(anthropicErrorType(err), err.Error(), statusOf(err))
 		return
-	}
-	if isWidget {
-		// Cap max_tokens for anonymous widget requests.
-		if request.MaxTokens == 0 || request.MaxTokens > widgetMaxTokens {
-			request.MaxTokens = widgetMaxTokens
-		}
 	}
 
 	if provider.Category != "Model" {
