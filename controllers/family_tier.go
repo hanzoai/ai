@@ -118,11 +118,12 @@ func familyTierAllowed(subject, model string) bool {
 // familyTier returns "" → the gate fails safe to allow).
 func familyAccessSubject(orgId string, authUser *iam.User) string {
 	if authUser != nil {
-		return account.Payer(account.Credential{
-			Owner:   authUser.Owner,
-			Name:    authUser.Name,
-			Machine: account.IsMachine(authUser.Type),
-		}).Subject()
+		// Through the ONE seam, so the tier is read for the identical subject the
+		// balance gate bills. Building the credential here by hand dropped the
+		// signed billing_account claim — the field that actually decides — so the
+		// tier gate and the balance gate could address two different wallets for
+		// one request. That is the defect this seam exists to make unwritable.
+		return authUser.PayerSubject("")
 	}
 	return subjectFromOrg(orgId)
 }
