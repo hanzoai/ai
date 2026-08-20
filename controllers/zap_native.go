@@ -478,10 +478,13 @@ func zapChatHandler(ctx context.Context, auth string, body []byte) (*zap.Message
 				RequestID:    requestId,
 			}
 			errRec.bind(context.Background(), authUser)
-			go recordUsage(errRec)
-			// recordUsage drops non-success records — trace the error too so a
-			// failing ZAP chat is visible in the warehouse/o11y like the HTTP paths.
-			recordTrace(context.Background(), errRec, requestStartTime)
+			// One goroutine for both, in this order, exactly as the success path
+			// below. They share the record — recordUsage stamps the honesty flag
+			// the span then reads — so they are sequenced rather than raced.
+			go func() {
+				recordUsage(errRec)
+				recordTrace(context.Background(), errRec, requestStartTime)
+			}()
 		}
 		return object.BuildCloudResponse(502, nil, "provider error: "+err.Error())
 	}

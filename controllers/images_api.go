@@ -229,9 +229,9 @@ func imageUpstreamBase(provider *object.Provider) string {
 }
 
 // recordImageUsage records a single image-generation usage event for billing +
-// observability, mirroring the embeddings/rerank recording. imageCount drives
-// the per-image cost; only successful calls are billed (recordUsage filters
-// error status), but the trace is emitted either way.
+// observability, mirroring the embeddings/rerank recording. imageCount drives the
+// per-image cost, so a generation that failed before any image came back bills nothing
+// while still filing its row: recordUsage prices the outcome, it does not filter it.
 func (c *ApiController) recordImageUsage(authUser *iam.User, provider *object.Provider, userModel string, isPremium bool, imageCount int, status, errMsg string, startTime time.Time) {
 	if authUser == nil {
 		return

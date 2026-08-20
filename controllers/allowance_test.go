@@ -32,9 +32,15 @@ import (
 //
 // The position is what makes that impossible rather than merely fixed. The count is a
 // FIELD on the usage event (object.UsageEvent.Allowance), recordUsage is its only
-// producer, and recordUsage returns before it builds one for anything that is not a
-// success. There is no verb left that counts a call on its own, so no future edit can
+// producer, and recordUsage leaves that field empty for anything a model did not
+// answer. There is no verb left that counts a call on its own, so no future edit can
 // move counting back in front of the answer without first inventing one.
+//
+// The MONEY on that same event asks a different question and gets a different answer —
+// a call that reached a vendor is billed what it cost whether or not it came back (see
+// spend_test.go). A ceiling of N calls a day is a promise about answers; a bill is a
+// record of spend. Neither stands in for the other, which is why they read two
+// predicates and not one.
 
 // counted runs record through the chokepoint and reports every allowance subject the
 // events carried. An empty result is a call that counted nothing.
