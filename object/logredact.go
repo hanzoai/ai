@@ -1,4 +1,4 @@
-package controllers
+package object
 
 import (
 	"crypto/sha256"
@@ -33,7 +33,11 @@ import (
 // whole body, so a plaintext password would be written to the warehouse — which
 // the hashing rule exists to prevent, and a log is not an exception to it.
 var sensitiveJSONKey = regexp.MustCompile(
-	`(?i)"(password|passwd|pass|secret|token|access_token|refresh_token|id_token|api_key|apikey|client_secret|private_key|otp|code_verifier|card|cvv|cvc|ssn)"\s*:\s*"[^"]*"`)
+	// The separator between words is optional, so one entry covers snake, camel
+	// and kebab spellings of the same field. It listed only the snake forms, and
+	// the field an admin actually pastes an upstream key into is "clientSecret" —
+	// so the one key worth redacting most was the one that got through.
+	`(?i)"(password|passwd|pass|secret|token|access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?key|client[_-]?secret|private[_-]?key|otp|code[_-]?verifier|card|cvv|cvc|ssn)"\s*:\s*"[^"]*"`)
 
 // sensitiveQueryParam matches credential-bearing query parameters. A key in a URL
 // is already the worst place for one, and logging it makes it permanent.
@@ -43,7 +47,7 @@ var sensitiveQueryParam = regexp.MustCompile(
 // redactCredential turns an Authorization header into a correlatable fingerprint.
 // The scheme is kept because it is diagnostic (a "Basic" where a "Bearer" was
 // expected is a real bug) and carries no secret.
-func redactCredential(header string) string {
+func RedactCredential(header string) string {
 	h := strings.TrimSpace(header)
 	if h == "" {
 		return ""
@@ -63,7 +67,7 @@ func redactCredential(header string) string {
 // redactBody removes the values of credential-bearing JSON keys, leaving the rest
 // of the body readable — the point of logging a failing body is the shape of the
 // request, which survives redaction.
-func redactBody(body string) string {
+func RedactBody(body string) string {
 	return sensitiveJSONKey.ReplaceAllStringFunc(body, func(m string) string {
 		if i := strings.Index(m, ":"); i > 0 {
 			return m[:i+1] + `"[redacted]"`
@@ -73,7 +77,7 @@ func redactBody(body string) string {
 }
 
 // redactQuery removes credential values from a raw query string.
-func redactQuery(q string) string {
+func RedactQuery(q string) string {
 	return sensitiveQueryParam.ReplaceAllStringFunc(q, func(m string) string {
 		if i := strings.IndexByte(m, '='); i > 0 {
 			return m[:i+1] + "[redacted]"
