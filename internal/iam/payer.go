@@ -34,11 +34,15 @@ func (u *User) Payer(ledger string) account.Account {
 	if ledger == "" {
 		ledger = u.Owner
 	}
+	// User.Type is NOT passed. Who pays is answered by IAM at the identity
+	// boundary and carried in the signed billing_account claim; the row's class is
+	// a profile fact and stating it here made it an authority — in the signup org,
+	// an authority over the platform's own balance. account.Credential no longer
+	// has a field for it, so this cannot regress by omission.
 	return account.Payer(account.Credential{
 		Owner:   ledger,
 		Name:    u.Name,
 		Account: u.BillingAccount,
-		Machine: account.IsMachine(u.Type),
 	})
 }
 

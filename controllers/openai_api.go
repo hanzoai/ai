@@ -326,16 +326,24 @@ func tryCloudAgentKeyFallback(apiKey string) *iam.User {
 	if knownKey == "" || apiKey != knownKey {
 		return nil
 	}
-	// Typed, because this identity is assembled here rather than read from IAM and
-	// nothing downstream can tell the difference. Left unsaid it read as a PERSON:
+	// This identity is assembled HERE rather than read from IAM, so it must state
+	// what IAM would have stated for it. Left unsaid it read as a PERSON:
 	// account.Payer's shape rule hands a person in the signup org a personal
 	// wallet, and "hanzo" IS the signup org — so every call on this key addressed
 	// hanzo/cloud-agent, a wallet no funding path can name, which reads $0 while
 	// the org's balance sits one key away.
+	//
+	// The LEDGER is named outright and the type carries only attribution. In this
+	// org an org account is the platform's own balance, so which account pays is a
+	// statement the assembling code makes on the strength of the KMS secret it just
+	// verified — not something inferred from a class, which is a thing rows can
+	// also carry. This is the same reason the provider-key and widget identities
+	// name theirs.
 	return &iam.User{
-		Owner: "hanzo",
-		Name:  "cloud-agent",
-		Type:  iam.Machine,
+		Owner:          account.SignupOrg,
+		Name:           "cloud-agent",
+		Type:           iam.Machine, // attribution: no person behind this call
+		BillingAccount: account.Org(account.SignupOrg).String(),
 	}
 }
 
@@ -1291,17 +1299,29 @@ func (c *ApiController) authenticate(token string) error {
 // providerKeyBillingUser derives the billing identity for a provider-key (sk-)
 // caller: the org that OWNS the provider row the key belongs to (and therefore
 // minted the key). The sk- key is a machine credential, so it bills the OWNER
-// ORG — Type "application" marks it M2M (account.IsMachine), so account.Payer
-// resolves it to the org account for every org, never a per-person wallet no one
-// funds. A provider with no owner is
+// ORG — never a per-person wallet no one funds. A provider with no owner is
 // unattributable: return an auth error so the caller refuses rather than spend
 // the shared upstream key for free — the invariant is that every call spending
 // the shared upstream key bills someone.
+//
+// It NAMES that ledger rather than implying it through a class. This identity is
+// synthesized HERE, from a provider row this process just read — there is no
+// person and no token — so the org is a fact the calling code holds, and it says
+// so in the field that carries such statements. Marking it "application" and
+// letting the payer infer the org worked everywhere except the one org where it
+// mattered: in the signup org an org account is the platform's own balance, so an
+// inferred class was the difference between billing a tenant and spending Hanzo's
+// money. A stated ledger cannot be confused with an asserted class.
 func providerKeyBillingUser(provider *object.Provider) (*iam.User, error) {
 	if provider == nil || strings.TrimSpace(provider.Owner) == "" {
 		return nil, authError("provider key is not attributable to a billable owner")
 	}
-	return &iam.User{Owner: provider.Owner, Type: "application"}, nil
+	owner := strings.TrimSpace(provider.Owner)
+	return &iam.User{
+		Owner:          owner,
+		Type:           iam.Machine, // attribution: this call has no person behind it
+		BillingAccount: account.Org(owner).String(),
+	}, nil
 }
 
 // authResolveProvider authenticates a bearer token and resolves the requested
