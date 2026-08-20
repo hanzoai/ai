@@ -169,25 +169,14 @@ func TestTheCredentialStaysInAuthorize(t *testing.T) {
 }
 
 // TestNothingHandsBackACredential fails when a function returns a provider
-// secret. unsealConnectionKey is the one that does, and it is named here so the
-// exception is a decision on the record: it belongs to the BYO usage road, which
-// passes a bare key to importers that take header maps rather than requests. That
-// road wants the same treatment; it is not this one.
+// secret. There is no exception: a credential is applied where it is read, and
+// the BYO usage road obeys the same rule through authorizeUsage, which stamps a
+// header set and hands back only an error.
 func TestNothingHandsBackACredential(t *testing.T) {
-	const known = "unsealConnectionKey"
-	seen := false
 	for name, fn := range relayFuncs(t) {
-		if !returnsSecret(fn) {
-			continue
+		if returnsSecret(fn) {
+			t.Errorf("%s returns a provider secret; a credential is applied where it is read, never handed to a caller", name)
 		}
-		if name == known {
-			seen = true
-			continue
-		}
-		t.Errorf("%s returns a provider secret; a credential is applied where it is read, never handed to a caller", name)
-	}
-	if !seen {
-		t.Errorf("%s no longer returns a secret — delete it from this test so the next one is caught", known)
 	}
 }
 
