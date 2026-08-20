@@ -144,8 +144,8 @@ func requiresSuperAdmin(controllerName string) bool {
 // anonymous request. permissionFilter fails closed (401) when NO credential is
 // present; the controller does the authoritative validation. Kept as an
 // explicit set — plus the rag/ and documents/ prefixes below — so the many
-// benign self-authing or intentionally-anonymous paths (chat, models, memory,
-// health, metrics, wecom) are unaffected. Names are the path minus "/v1/".
+// benign self-authing or intentionally-anonymous paths (chat, models, health,
+// metrics, wecom) are unaffected. Names are the path minus "/v1/".
 var authRequiredEndpoints = map[string]struct{}{
 	"index": {}, "search": {}, "search/stats": {}, // doc index write + search
 	"docs/ingest": {},                                    // unified RAG ingest (github/crawl/s3)
@@ -177,6 +177,11 @@ func requiresPresentCredential(controllerName string) bool {
 	}
 	return strings.HasPrefix(controllerName, "rag/") ||
 		strings.HasPrefix(controllerName, "documents/") ||
+		// Memory is PER-PERSON: every verb reads, writes or deletes one named
+		// user's own store. There is nothing here for a caller with no credential
+		// to be doing, so an anonymous request is refused at the filter and the
+		// controller resolves the person from the credential.
+		strings.HasPrefix(controllerName, "memory/") ||
 		controllerName == "ai/connections" ||
 		strings.HasPrefix(controllerName, "ai/connections/")
 }
@@ -308,7 +313,7 @@ func permissionFilter(c *zip.Ctx) error {
 	// get- nor update-" branch below with NO central gate. A present credential
 	// (Bearer OR session) is required here; the controller performs the
 	// authoritative validation. This is an explicit set, NOT a blanket default,
-	// so health/metrics/wecom/memory stay reachable without a Bearer.
+	// so health/metrics/wecom stay reachable without a Bearer.
 	if requiresPresentCredential(controllerName) && !hasPresentCredential(c) {
 		return denyUnauthorized(c, "auth:authentication required")
 	}
