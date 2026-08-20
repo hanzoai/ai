@@ -43,21 +43,31 @@ func TestPayerSubject_UnattributableIsEmptyNeverThePool(t *testing.T) {
 }
 
 // Everything that legitimately has no name keeps its answer. A machine IS the org
-// acting, so it spends the org pool — and it reaches that answer before the
-// nameless rule is ever consulted, by its type and by the billing_account claim
-// IAM signs for it. Hanzo's own first-party services authenticate this way and all
-// live in the signup org, so this is the case that must not move.
+// acting, so it spends the org pool — and it reaches that answer through the
+// billing_account claim IAM signs for it, which is the ONLY way that answer is
+// reached. Hanzo's own first-party services authenticate this way and all live in
+// the signup org, so this is the case that must not move.
+//
+// The claim is the whole mechanism because the class never crosses the wire: the
+// key door returns the keyUser projection (billing_account, no type) and the token
+// door signs billing_account for every principal it mints. A row's asserted class
+// is not consulted, so in this org — where the org account is the platform's own
+// balance — nothing a row can say reaches it.
 func TestPayerSubject_MachinesAndTenantsAreUnaffected(t *testing.T) {
 	for _, c := range []struct {
 		what string
 		u    User
 		want string
 	}{
-		// The live pool consumers: first-party machines in the signup org.
-		{"a machine by type", User{Owner: "hanzo", Name: "hanzo-cloud", Type: "application"}, "hanzo"},
-		{"a service account", User{Owner: "hanzo", Name: "insights", Type: "service-account"}, "hanzo"},
-		{"a nameless machine", User{Owner: "hanzo", Type: "application"}, "hanzo"},
+		// The live pool consumers: first-party machines in the signup org. Each
+		// carries the signed ledger, which is what every real door hands us.
+		{"a machine token", User{Owner: "hanzo", Name: "hanzo-cloud", BillingAccount: "org:hanzo"}, "hanzo"},
+		{"a service-account key", User{Owner: "hanzo", Name: "insights", BillingAccount: "org:hanzo"}, "hanzo"},
+		{"a nameless machine", User{Owner: "hanzo", BillingAccount: "org:hanzo"}, "hanzo"},
 		{"a machine by signed claim", User{Owner: "hanzo", Name: "platform", BillingAccount: "org:hanzo"}, "hanzo"},
+		// …and the converse, which is the boundary: a class the row merely asserts,
+		// with nothing signed, does NOT reach the platform's balance.
+		{"a row that claims to be a machine", User{Owner: "hanzo", Name: "planted", Type: "service-account"}, "hanzo/planted"},
 		// A funded customer tenant. Its org is not the signup org, so every member
 		// pools — the name is never read there, and namelessness cannot be a defect.
 		{"the funded tenant", User{Owner: "maxpower", Name: "davelorenzini"}, "maxpower"},
