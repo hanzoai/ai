@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/hanzoai/ai/conf"
+	"github.com/hanzoai/ai/controllers"
 	"github.com/hanzoai/ai/log"
 	"github.com/zap-proto/zip"
 	"golang.org/x/time/rate"
@@ -220,13 +221,11 @@ func InitRateLimiter(tierFunc func(string) Tier) *RateLimiter {
 	return rateLimiterInstance
 }
 
-// RateLimitFilter is a BeforeRouter filter that enforces per-key rate
-// limits on API endpoints. It extracts the API key from the Authorization
-// header (Bearer token) or X-API-Key header.
+// RateLimitFilter holds every /v1 request to a rate and a quota.
 //
-// Rate-limited paths: /v1/messages, /v1/messages,
-// and other /v1/ endpoints that carry a bearer token.
-// Excluded: health, metrics, models (read-only), static, UI routes.
+// EVERY request, because the ceilings are asked about the CALLER rather than about
+// the credential they happened to carry — see limitSubject. The exceptions are the
+// paths isRateLimitExempt names and anything outside /v1, which is not this API.
 func RateLimitFilter(c *zip.Ctx) error {
 	if rateLimiterInstance == nil {
 		return c.Continue()
@@ -244,32 +243,7 @@ func RateLimitFilter(c *zip.Ctx) error {
 		return c.Continue()
 	}
 
-	apiKey := extractAPIKey(c)
-	if apiKey == "" {
-		// No key means unauthenticated — other filters will handle auth errors.
-		return c.Continue()
-	}
-
-	// Rate-limit by the billing SUBJECT — the SAME identity the balance gate
-	// bills against (resolveBillingKey is the one place this is derived). For a
-	// pooled org the subject is the org slug (one bucket for the whole org); for
-	// a personal-billing org it is "owner/name", so individuals in the shared
-	// "hanzo" catch-all get their OWN bucket and can't exhaust each other's rate
-	// limit. When no subject resolves (anonymous, sk-/pk- provider keys, JWT
-	// without owner), fall back to the raw key so traffic is still free-tier bucketed.
-	//
-	// THAT FALLBACK IS ALSO WHAT CONTAINS A PAGE KEY. A publishable key ships in the
-	// source of a page anybody can view, so the traffic behind one is every visitor
-	// at once rather than one tenant; resolveBillingKey names no subject for it, and
-	// bucketing on the credential keeps a griefed page from spending the whole org's
-	// ceiling and taking down its API traffic and every other page it publishes. Two
-	// surfaces holding two keys fail independently, which is the reason to issue two.
-	// Billing is untouched — the org still pays for what its page serves. Who pays
-	// and who is throttled are different questions, and this is where they differ.
-	limitKey, _, _ := resolveBillingKey(c)
-	if limitKey == "" {
-		limitKey = apiKey
-	}
+	limitKey := limitSubject(c)
 
 	if rateLimiterInstance.Allow(limitKey) {
 		// Two ceilings, asked in the order a caller meets them. If the quota refuses,
@@ -296,6 +270,69 @@ func RateLimitFilter(c *zip.Ctx) error {
 	)))
 }
 
+// unaddressed is the one bucket for a caller with neither a name nor an address —
+// a socket peer with nothing in front of it saying who reached us. There is no axis
+// left to tell such callers apart, so they share a lane and it closes for all of
+// them together. Sharing is the honest answer here; the alternative is a lane with
+// no bottom.
+const unaddressed = "visitor:unaddressed"
+
+// limitSubject is who a request is counted against, and every request has one.
+//
+// It used to be the credential, and only when the credential arrived on one of three
+// transports — so a caller who authenticated any other way was counted against
+// nothing at all. A cookie session is the plain case: it carries none of the three,
+// and the balance gate resolves a real payer from it, so the console and the chat
+// surface ran with no rate and no quota while the money side knew exactly who they
+// were. A ceiling has to be asked about the CALLER, never about the shape of the
+// string they happened to carry.
+//
+// Three answers, in the order of what a request PROVES:
+//
+//  1. The billing subject — resolveBillingKey, the one place identity is derived.
+//     Cookie session, JWT, IAM key: whoever pays for a call is who is throttled by
+//     it, so rate, quota and money name one tenant. For a pooled org that is the org
+//     slug and the org shares one bucket; for a personal-billing org it is
+//     "owner/name", so individuals in the shared "hanzo" catch-all cannot exhaust
+//     each other.
+//
+//  2. A publishable key IAM confirms. It authenticates nobody, so there is no
+//     subject to bill — but IAM ISSUED it, which is what a caller cannot do, and a
+//     page needs its own ceiling: bucketed with its org, one griefed page spends the
+//     whole org's rate and takes down that org's API traffic and every other page it
+//     publishes. Two surfaces holding two keys fail independently, which is the whole
+//     reason for issuing two. Who PAYS is unchanged — the org still does. Who is
+//     THROTTLED is a different question, and this is the one place the two differ.
+//     Asking the door costs nothing new: the tenant resolver asks it about the same
+//     key on the same request, through the same memory.
+//
+//  3. The address the caller arrived from. Nobody picks their own peer and nobody
+//     mints a fresh one per request, which is what a bucket must be for a ceiling to
+//     mean anything — a bucket the caller names is an empty allowance every time, and
+//     an unbounded map behind it. It is the same address, through the same function,
+//     that the public lane already counts an anonymous visitor by: the peer decides,
+//     and a stated address is believed only from a peer of our own. Hashed there, so
+//     no address reaches a log line.
+//
+// An unnamed caller is therefore never pooled with the deployment and never pooled
+// with a customer: junk arriving beside a paying caller is a different address than
+// the customer's name, and a paying caller whose key IAM does not own falls to their
+// own address rather than into a crowd.
+func limitSubject(c *zip.Ctx) string {
+	if subject, _, _ := resolveBillingKey(c); subject != "" {
+		return subject
+	}
+	if key := extractAPIKey(c); strings.HasPrefix(key, "pk-") {
+		if _, err := controllers.PublishableOrg(key); err == nil {
+			return key
+		}
+	}
+	if visitor := controllers.Visitor(c); visitor != "" {
+		return visitor
+	}
+	return unaddressed
+}
+
 // isRateLimitExempt returns true for paths that should bypass rate limiting.
 func isRateLimitExempt(path string) bool {
 	switch {
@@ -312,10 +349,15 @@ func isRateLimitExempt(path string) bool {
 	}
 }
 
-// extractAPIKey pulls the API key from the request. Supports:
+// extractAPIKey is the key a request presents, and the list below is the whole of
+// what this estate accepts it on:
 //   - Authorization: Bearer <token>
-//   - X-API-Key: <token>
+//   - X-API-Key: <token>  (the Anthropic wire protocol's x-api-key, /v1/messages)
 //   - api_key query parameter
+//
+// One list, read by both the identity this API bills (resolveBillingKey) and the
+// bucket it counts. A second list somewhere else is a transport where a credential
+// means one thing to the money and another to the ceiling.
 func extractAPIKey(c *zip.Ctx) string {
 	// Bearer token
 	authHeader := c.Header("Authorization")
@@ -339,9 +381,9 @@ func extractAPIKey(c *zip.Ctx) string {
 // ── Tier resolution ─────────────────────────────────────────────────────────
 
 // DefaultTierFunc resolves a rate-limit key to a Tier using a three-level
-// lookup. The key is the IAM org slug (resolved by RateLimitFilter via
-// resolveBillingKey) for authenticated traffic, or a raw API key for anonymous
-// traffic — both flow through the same path:
+// lookup. The key is whatever limitSubject named the caller: an IAM org slug when a
+// billing subject resolved, a confirmed page key, or a digest of the address the
+// caller arrived from when neither. All of them flow through the same path:
 //
 //  1. Static env-var overrides (RATE_LIMIT_TIERS) -- highest priority, for
 //     operator-managed mappings. Supports exact and prefix matching (works for
@@ -372,8 +414,12 @@ func DefaultTierFunc(key string) Tier {
 		}
 	}
 
-	// Level 2: Commerce-backed tier cache (keyed by org slug).
-	if tierCache != nil {
+	// Level 2: Commerce-backed tier cache (keyed by org slug). Only an ACCOUNT has a
+	// plan, so only a key that could name one is asked about: the buckets
+	// limitSubject gives callers it cannot name carry a colon, which an org slug
+	// cannot, so a lookup for one is a question about nobody — and asking it once per
+	// address seen would make a flood at this API a flood at commerce.
+	if tierCache != nil && !strings.Contains(key, ":") {
 		if tier, ok := tierCache.get(key); ok {
 			return tier
 		}
