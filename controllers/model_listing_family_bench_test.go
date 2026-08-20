@@ -32,9 +32,7 @@ func BenchmarkListWithFamily(b *testing.B) {
 	if cat == "" {
 		cat = "../conf/models.yaml"
 	}
-	if err := InitModelConfig(cat); err != nil {
-		b.Fatalf("load %s: %v", cat, err)
-	}
+	useCatalog(b, cat)
 
 	got := listAvailableModels()
 	b.Logf("catalog size: %d models", len(got))

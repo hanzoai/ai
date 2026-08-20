@@ -9,9 +9,7 @@ import (
 // the real catalog. Every SDK asks for this list on startup, so its per-call cost is
 // the ceiling on how many clients can come up at once.
 func BenchmarkListAvailableModels(b *testing.B) {
-	if err := InitModelConfig("../conf/models.yaml"); err != nil {
-		b.Fatalf("load conf/models.yaml: %v", err)
-	}
+	useCatalog(b, "../conf/models.yaml")
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		if got := listAvailableModels(); len(got) == 0 {
@@ -23,9 +21,7 @@ func BenchmarkListAvailableModels(b *testing.B) {
 // BenchmarkListModelsResponse measures the whole answer: build the list, wrap it, and
 // marshal the bytes that go on the wire.
 func BenchmarkListModelsResponse(b *testing.B) {
-	if err := InitModelConfig("../conf/models.yaml"); err != nil {
-		b.Fatalf("load conf/models.yaml: %v", err)
-	}
+	useCatalog(b, "../conf/models.yaml")
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		body, err := json.Marshal(modelListEnvelope(listAvailableModels()))
