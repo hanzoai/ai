@@ -281,9 +281,15 @@ func NewRecord(ctx *zip.Ctx) (*Record, error) {
 	if len(requestUri) > 1000 {
 		requestUri = requestUri[0:1000]
 	}
+	// The body is redacted BEFORE it is stored, not on the way out. A record is
+	// read by more surfaces than the one that wrote it, and a secret that was
+	// never written cannot be served by any of them. An admin saving a provider
+	// pastes an upstream key into this body on its way to being sealed, so the
+	// unredacted form would keep a plaintext copy of the very key that sealing
+	// exists to remove.
 	object := ""
 	if body := ctx.Body(); len(body) != 0 {
-		object = string(body)
+		object = RedactBody(string(body))
 	}
 	status, msg := "ok", ""
 	if code := ctx.Fiber().Response().StatusCode(); code >= 400 {
