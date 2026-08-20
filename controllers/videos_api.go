@@ -456,13 +456,13 @@ func videoJobResponse(job *videoJob) map[string]interface{} {
 
 // videoUpstreamBase returns the provider's base URL for the async video API (the
 // provider's ProviderUrl, e.g. https://spark-video.hanzo.ai/v1). It reuses
-// resolveEndpointForPath so provider URL handling lives in exactly one place; the
-// async client appends /videos itself, so the "" apiPath yields the clean base
-// with the provider's /v1 normalization applied.
+// endpoint so provider URL handling lives in exactly one place; the async client
+// appends /videos itself, so the empty path yields the clean base with the
+// provider's /v1 normalization applied.
 func videoUpstreamBase(provider *object.Provider) string {
-	base, _, _ := resolveEndpointForPath(provider, "")
-	// resolveEndpointForPath returns "<base>/" for the empty path; trim the
-	// trailing slash so the async client's "/videos" join is clean.
+	base := endpoint(provider, "")
+	// endpoint returns "<base>/" for the empty path; trim the trailing slash so
+	// the async client's "/videos" join is clean.
 	for len(base) > 0 && base[len(base)-1] == '/' {
 		base = base[:len(base)-1]
 	}

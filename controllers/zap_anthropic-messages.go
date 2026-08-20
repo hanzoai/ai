@@ -328,7 +328,6 @@ func zapAnthropicToolRequest(
 	if provider.Type == "Claude" || provider.Type == "Anthropic" {
 		fwd := *request
 		fwd.Stream = false
-		apiKey := provider.ClientSecret
 		baseURL := strings.TrimRight(provider.ProviderUrl, "/")
 		if baseURL == "" {
 			baseURL = "https://api.anthropic.com"
@@ -342,7 +341,7 @@ func zapAnthropicToolRequest(
 			return anthropicErr("api_error", "Failed to build upstream request: "+err.Error(), 500)
 		}
 		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("x-api-key", apiKey)
+		authorize(req, provider)
 		req.Header.Set("anthropic-version", "2023-06-01")
 
 		client := &http.Client{Timeout: 120 * time.Second}
@@ -386,7 +385,7 @@ func zapAnthropicToolRequest(
 		oaiReq.ReasoningEffort = re
 	}
 
-	upstreamURL, apiKey, authHeader := resolveUpstreamEndpoint(provider)
+	upstreamURL := endpoint(provider, "chat/completions")
 	if upstreamURL == "" {
 		return anthropicErr("api_error", "No upstream endpoint configured for provider: "+provider.Name, 500)
 	}
@@ -399,11 +398,7 @@ func zapAnthropicToolRequest(
 		return anthropicErr("api_error", "Failed to build upstream request: "+err.Error(), 500)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if authHeader != "" {
-		req.Header.Set("Authorization", authHeader)
-	} else if apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+apiKey)
-	}
+	authorize(req, provider)
 
 	client := &http.Client{Timeout: 120 * time.Second}
 	resp, err := client.Do(req)
