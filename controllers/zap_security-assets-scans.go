@@ -12,13 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Native ZAP handlers for the security assets / scans / patch / permission
-// route-group — the strangler migration of asset.go, scan.go, patch.go and
-// permission.go off the controller layer.
+// Native ZAP handlers for the security assets / scans / permission route-group —
+// the strangler migration of asset.go, scan.go and permission.go off the
+// controller layer.
 //
 // STRANGLER: each controller method (ApiController.GetAssets, GetAsset, UpdateAsset,
 // AddAsset, DeleteAsset, ScanAsset, ScanAssets, GetScans, GetScan, UpdateScan,
-// AddScan, DeleteScan, InstallPatch, GetPermissions, GetPermission,
+// AddScan, DeleteScan, GetPermissions, GetPermission,
 // UpdatePermission, AddPermission, DeletePermission) is re-implemented here as a
 // pure ZAP handler against object/ + iam directly — never wrapping the the controller layer
 // controller — mirroring zap_native.go:zapChatHandler and the app-deploy group
@@ -83,20 +83,11 @@ func registerZapSecurityAssetsScans() {
 	registerCloud("scan.add", zapAddScanHandler)
 	registerCloud("scan.delete", zapDeleteScanHandler)
 
-	registerCloud("patch.install", zapInstallPatchHandler)
-
 	registerCloud("permissions.list", zapGetPermissionsHandler)
 	registerCloud("permission.get", zapGetPermissionHandler)
 	registerCloud("permission.update", zapUpdatePermissionHandler)
 	registerCloud("permission.add", zapAddPermissionHandler)
 	registerCloud("permission.delete", zapDeletePermissionHandler)
-
-	// Gateway (MsgType 200) — /v1 path prefixes routing to the SAME handlers.
-	// lookupGatewayHandler resolves by longest matching prefix with a "+/" guard,
-	// so "/v1/scan-asset" never shadows "/v1/scan-assets" and "/v1/get-asset"
-	// never shadows "/v1/get-assets".
-
-	registerGatewayPath("/v1/install-patch", zapInstallPatchHandler)
 
 }
 
@@ -479,70 +470,6 @@ func zapDeleteScanHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 		return zapSecErr(http.StatusOK, err.Error())
 	}
 	return zapSecOk(success)
-}
-
-// ── patch.go parity ──────────────────────────────────────────────────────────
-
-// zapInstallPatchRequest carries the InstallPatch params over the native body.
-type zapInstallPatchRequest struct {
-	Provider string `json:"provider"`
-	PatchId  string `json:"patchId"`
-	Scan     string `json:"scan"`
-}
-
-// zapInstallPatchHandler mirrors ApiController.InstallPatch: validates the OS
-// Patch provider, loads the scan, stamps the async install command + Pending
-// state (clearing prior results), and persists it — 1:1 with the router path.
-func zapInstallPatchHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if zapSecPrincipal(auth) == nil {
-		return zapSecErr(http.StatusUnauthorized, "auth:Please sign in first")
-	}
-	var req zapInstallPatchRequest
-	if err := json.Unmarshal(body, &req); err != nil {
-		return zapSecErr(http.StatusBadRequest, "invalid request: "+err.Error())
-	}
-
-	if req.Provider == "" {
-		return zapSecErr(http.StatusOK, "Provider is required")
-	}
-	if req.PatchId == "" {
-		return zapSecErr(http.StatusOK, "Patch ID is required")
-	}
-	if req.Scan == "" {
-		return zapSecErr(http.StatusOK, "Scan parameter is required")
-	}
-
-	providerId := util.GetIdFromOwnerAndName("admin", req.Provider)
-	provider, err := object.GetProvider(providerId)
-	if err != nil {
-		return zapSecErr(http.StatusOK, err.Error())
-	}
-	if provider.Type != "OS Patch" {
-		return zapSecErr(http.StatusOK, "Provider must be of type 'OS Patch'")
-	}
-
-	scanObj, err := object.GetScan(req.Scan)
-	if err != nil {
-		return zapSecErr(http.StatusOK, err.Error())
-	}
-	if scanObj == nil {
-		return zapSecErr(http.StatusOK, "Scan not found")
-	}
-
-	scanObj.Command = "install:" + req.PatchId
-	scanObj.State = "Pending"
-	scanObj.UpdatedTime = util.GetCurrentTime()
-	scanObj.Runner = ""
-	scanObj.ErrorText = ""
-	scanObj.RawResult = ""
-	scanObj.Result = ""
-	scanObj.ResultSummary = ""
-
-	if _, err := object.UpdateScan(req.Scan, scanObj); err != nil {
-		return zapSecErr(http.StatusOK, err.Error())
-	}
-
-	return zapSecOk(map[string]interface{}{"status": "Pending"})
 }
 
 // ── permission.go parity ─────────────────────────────────────────────────────

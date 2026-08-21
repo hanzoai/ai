@@ -1126,7 +1126,7 @@ func TestOriginOfKeepsTheChain(t *testing.T) {
 }
 
 // TestOurIdJoinsTheLedger: the id a client correlates on is the id this call is
-// metered under, so a reward threaded back to /v1/feedback lands on the row that
+// metered under, so a reward threaded back to /v1/ai/feedback lands on the row that
 // paid for it. Relaying the aggregator's id put the client on one key and the ledger
 // on another.
 func TestOurIdJoinsTheLedger(t *testing.T) {

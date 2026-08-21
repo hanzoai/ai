@@ -14,25 +14,20 @@
 
 package controllers
 
-// LibreChat-compat RAG surface — the drop-in replacement for the retired
-// standalone chat-rag-api (danny-avila/rag_api fork). hanzo.chat's RAG client
-// (api/server/services/Files/VectorDB/crud.js + createContextHandlers.js) calls
-// a FIXED contract at RAG_API_URL:
+// The multipart file embed hanzo.chat's RAG client posts
+// (api/server/services/Files/VectorDB/crud.js uploadVectors):
 //
-//	POST   {base}/embed                     multipart(file_id,file[,entity_id])
-//	                                        -> {status, known_type, file_id, filename}
-//	POST   {base}/query                     {file_id,query,k} -> [[{page_content,metadata},score],...]
-//	POST   {base}/query_multiple            {file_ids,query,k} -> same tuple shape
-//	DELETE {base}/documents                 [file_id,...]
-//	GET    {base}/documents/{file_id}/context -> [{page_content,metadata},...]
+//	POST {base}/embed  multipart(file_id,file[,entity_id])
+//	                   -> {status, known_type, file_id, filename}
 //
-// Pointing RAG_API_URL at https://api.hanzo.ai/v1 makes these resolve here with
-// ZERO chat-repo change. The handlers are a thin HTTP projection over the ONE
-// canonical RAG logic (object.Rag*); they hold no retrieval logic of their own.
-// The native /v1/rag/* surface (controllers/rag.go) shares that same logic.
+// That request line is fixed by the client, not by us — a multipart form, not
+// JSON — which is why it is the one address here that is not a spelling of
+// /v1/ai/rag/embed. Everything the client READS it reads from the native
+// surface (${origin}/v1/ai/rag/*). The handler is a thin HTTP projection over
+// the ONE canonical RAG logic (object.Rag*); it holds no retrieval logic of its
+// own, and controllers/rag.go shares that same logic.
 
 import (
-	"encoding/json"
 	"io"
 	"net/http"
 	"os"
@@ -42,39 +37,6 @@ import (
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/txt"
 )
-
-// lcDocument mirrors LangChain's Document JSON ({page_content, metadata}) that
-// the retired rag-api returned and hanzo.chat's client parses (item[0].page_content).
-type lcDocument struct {
-	PageContent string                 `json:"page_content"`
-	Metadata    map[string]interface{} `json:"metadata"`
-}
-
-// lcResultToDocument converts a canonical DocSearchResult into the LangChain
-// Document shape, preserving file_id/title/url in metadata as the old rag-api did.
-func lcResultToDocument(r object.DocSearchResult) lcDocument {
-	return lcDocument{
-		PageContent: r.Content,
-		Metadata: map[string]interface{}{
-			"file_id": r.FileID,
-			"title":   r.Title,
-			"url":     r.URL,
-			"id":      r.ID,
-		},
-	}
-}
-
-// lcTuples renders results as [[document, score], ...]. The retired rag-api
-// returned (Document, distance) tuples; hanzo.chat only reads item[0], so the
-// score slot carries the rank position (lower = better) as a stable placeholder
-// — the client does not use it, and the native /v1/rag/query exposes real scores.
-func lcTuples(results []object.DocSearchResult) []interface{} {
-	out := make([]interface{}, 0, len(results))
-	for i, r := range results {
-		out = append(out, []interface{}{lcResultToDocument(r), i})
-	}
-	return out
-}
 
 // isKnownType reports whether the filename's extension is a parser-supported
 // type. hanzo.chat treats known_type=false as "filetype not supported".
@@ -97,8 +59,8 @@ func isKnownType(filename string) bool {
 // object.RagEmbedFile (same parse+chunk+index as the native surface).
 //
 // @Title RagEmbedMultipart
-// @Tag RAG API (LibreChat-compat)
-// @Description Multipart file embed (drop-in for the retired rag-api POST /embed).
+// @Tag RAG
+// @Description Multipart file embed — the form-encoded twin of /v1/ai/rag/embed.
 // @router /embed [post]
 func (c *ApiController) RagEmbedMultipart() {
 	auth := c.requireIndexAuth()
@@ -161,125 +123,8 @@ func (c *ApiController) RagEmbedMultipart() {
 	})
 }
 
-// RagQueryCompat handles POST /v1/query — {file_id,query,k}. Returns LangChain
-// (document,score) tuples.
-//
-// @Title RagQueryCompat
-// @Tag RAG API (LibreChat-compat)
-// @Description File-scoped query (drop-in for the retired rag-api POST /query).
-// @router /query [post]
-func (c *ApiController) RagQueryCompat() {
-	c.ragQueryCompat()
-}
-
-// RagQueryMultipleCompat handles POST /v1/query_multiple — {file_ids,query,k}.
-//
-// @Title RagQueryMultipleCompat
-// @Tag RAG API (LibreChat-compat)
-// @Description Multi-file query (drop-in for the retired rag-api POST /query_multiple).
-// @router /query_multiple [post]
-func (c *ApiController) RagQueryMultipleCompat() {
-	c.ragQueryCompat()
-}
-
-// ragQueryCompat is the shared read path for /v1/query and /v1/query_multiple.
-// The canonical RagQueryRequest already carries both file_id and file_ids.
-func (c *ApiController) ragQueryCompat() {
-	auth := c.resolveSearchAuth()
-	if auth == nil {
-		return
-	}
-
-	var req object.RagQueryRequest
-	if err := json.Unmarshal(c.Body(), &req); err != nil {
-		c.ResponseError(err.Error())
-		return
-	}
-
-	results, err := object.RagQuery(auth.Owner, &req, c.GetAcceptLanguage())
-	if err != nil {
-		recordSearchUsage(auth, "search-query", "rag", "error", 0, c.Fiber().IP())
-		c.ResponseError(err.Error())
-		return
-	}
-	recordSearchUsage(auth, "search-query", "rag", "success", len(results), c.Fiber().IP())
-
-	c.JSON(http.StatusOK, lcTuples(results))
-}
-
-// RagDeleteDocuments handles DELETE /v1/documents — a JSON array of file_ids.
-//
-// @Title RagDeleteDocuments
-// @Tag RAG API (LibreChat-compat)
-// @Description Delete files by id (drop-in for the retired rag-api DELETE /documents).
-// @router /documents [delete]
-func (c *ApiController) RagDeleteDocuments() {
-	auth := c.requireIndexAuth()
-	if auth == nil {
-		return
-	}
-
-	var fileIDs []string
-	if err := json.Unmarshal(c.Body(), &fileIDs); err != nil {
-		c.ResponseError(err.Error())
-		return
-	}
-	if len(fileIDs) == 0 {
-		c.ResponseError("expected a non-empty array of file_ids")
-		return
-	}
-
-	lang := c.GetAcceptLanguage()
-	deleted := 0
-	for _, id := range fileIDs {
-		if id == "" {
-			continue
-		}
-		if err := object.DeleteRagFile(auth.Owner, "", id, lang); err != nil {
-			c.ResponseError(err.Error())
-			return
-		}
-		deleted++
-	}
-	c.JSON(http.StatusOK, map[string]interface{}{
-		"message": "Documents deleted successfully",
-		"deleted": deleted,
-	})
-}
-
-// RagDocumentContext handles GET /v1/documents/:file_id/context — every chunk of
-// a file, as LangChain Documents (used when RAG_USE_FULL_CONTEXT is on).
-//
-// @Title RagDocumentContext
-// @Tag RAG API (LibreChat-compat)
-// @Description Full file context (drop-in for rag-api GET /documents/{id}/context).
-// @router /documents/:file_id/context [get]
-func (c *ApiController) RagDocumentContext() {
-	auth := c.resolveSearchAuth()
-	if auth == nil {
-		return
-	}
-
-	fileID := c.Param("file_id")
-	if fileID == "" {
-		c.ResponseError("file_id must not be empty")
-		return
-	}
-
-	results, err := object.RagFileContext(auth.Owner, "", fileID)
-	if err != nil {
-		c.ResponseError(err.Error())
-		return
-	}
-	docs := make([]lcDocument, 0, len(results))
-	for _, r := range results {
-		docs = append(docs, lcResultToDocument(r))
-	}
-	c.JSON(http.StatusOK, docs)
-}
-
-// ragCompatError emits the retired rag-api's failure shape ({status:false,...})
-// so hanzo.chat's uploadVectors() surfaces a clean "File embedding failed".
+// ragCompatError emits the failure shape ({status:false,...}) hanzo.chat's
+// uploadVectors() reads, so it surfaces a clean "File embedding failed".
 func (c *ApiController) ragCompatError(msg, fileID string) {
 	c.JSON(http.StatusOK, map[string]interface{}{
 		"status": false, "known_type": true, "file_id": fileID, "detail": msg,

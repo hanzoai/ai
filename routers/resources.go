@@ -101,7 +101,7 @@ type resource struct {
 
 // action is one non-CRUD operation on a resource.
 type action struct {
-	// name is the URL segment: "vectors" → POST /v1/rag/stores/:id/vectors.
+	// name is the URL segment: "vectors" → POST /v1/ai/stores/:id/vectors.
 	name string
 	// method is the controller method it dispatches to.
 	method string
@@ -327,10 +327,12 @@ var singletons = []singleton{
 
 	// The caller's own routing history: read it or erase it. "my" needs no
 	// saying — a caller can only ever reach its own.
-	{ns: "router", path: "data",
-		verbs: map[string]string{"GET": "ExportMyRoutingData", "DELETE": "DeleteMyRoutingData"},
-		keys: map[string]string{"GET": "export-my-routing-data",
-			"DELETE": "delete-my-routing-data"}},
+	//
+	// No keys: policyKey matches a singleton on ONE path segment, and this one has
+	// two, so the filters see the name the path gives them — "ai/router/data",
+	// which is how authz_filter.go's multi-segment entries are already spelled.
+	{ns: "ai", path: "router/data",
+		verbs: map[string]string{"GET": "ExportMyRoutingData", "DELETE": "DeleteMyRoutingData"}},
 
 	{ns: "ai", path: "training-contribution",
 		verbs: map[string]string{"GET": "GetTrainingContribution",

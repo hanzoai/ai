@@ -16,8 +16,9 @@ package controllers
 
 // File-scoped RAG API — the consolidated home of the retired standalone
 // chat-rag-api. This is the SINGLE canonical RAG surface for uploaded-file
-// retrieval: /v1/rag/embed (ingest one file), /v1/rag/query (retrieve within a
-// file), /v1/rag/query-multiple (across files), /v1/rag/delete, /v1/rag/context.
+// retrieval: /v1/ai/rag/embed (ingest one file), /v1/ai/rag/query (retrieve within
+// a file), /v1/ai/rag/query-multiple (across files), /v1/ai/rag/delete,
+// /v1/ai/rag/context.
 //
 // It reuses the exact auth (resolveSearchAuth / requireIndexAuth), billing
 // (recordSearchUsage), embedding, and Search+Vector storage the doc RAG uses —

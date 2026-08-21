@@ -14,9 +14,8 @@
 // limitations under the License.
 
 import React from "react";
-import {Alert, Button, Space, Table, Tag, Typography} from "antd";
+import {Alert, Space, Table, Tag, Typography} from "antd";
 import i18next from "i18next";
-import * as PatchBackend from "../backend/PatchBackend";
 import * as Setting from "../Setting";
 
 const {Text} = Typography;
@@ -87,49 +86,6 @@ class OsPatchResultRenderer extends React.Component {
     return null;
   }
 
-  getProviderFromContext() {
-    // Get provider from either provider prop or scan's provider
-    if (this.props.provider) {
-      return `${this.props.provider.owner}/${this.props.provider.name}`;
-    }
-    if (this.props.scan && this.props.scan.provider) {
-      return this.props.scan.provider;
-    }
-    return null;
-  }
-
-  handleInstallPatch(patchId) {
-    const provider = this.getProviderFromContext();
-    if (!provider) {
-      Setting.showMessage("error", i18next.t("scan:Provider not found"));
-      return;
-    }
-
-    if (!this.props.scan) {
-      Setting.showMessage("error", i18next.t("scan:Scan context not found"));
-      return;
-    }
-
-    const scan = `${this.props.scan.owner}/${this.props.scan.name}`;
-
-    // Call install API with scan parameter for async execution
-    PatchBackend.installPatch(provider, patchId, scan)
-      .then((res) => {
-        if (res.status === "ok") {
-          Setting.showMessage("success", i18next.t("scan:Patch installation started"));
-          // Trigger refresh to update scan state - the page's existing polling will show progress
-          if (this.props.onRefresh) {
-            this.props.onRefresh();
-          }
-        } else {
-          Setting.showMessage("error", `${i18next.t("scan:Failed to install patch")}: ${res.msg}`);
-        }
-      })
-      .catch((error) => {
-        Setting.showMessage("error", `${i18next.t("scan:Failed to install patch")}: ${error}`);
-      });
-  }
-
   render() {
     const {patches, error} = this.state;
 
@@ -196,31 +152,6 @@ class OsPatchResultRenderer extends React.Component {
           } catch (e) {
             return date;
           }
-        },
-      },
-      {
-        title: i18next.t("general:Action"),
-        key: "action",
-        width: "10%",
-        render: (text, record) => {
-          // Only show install button for available patches (not already installed)
-          const canInstall = record.status === "Available" || record.status === "Downloaded";
-          if (!canInstall) {
-            return null;
-          }
-
-          const patchId = this.getPatchId(record);
-          return (
-            <Button
-              type="primary"
-              size="small"
-              onClick={() => this.handleInstallPatch(patchId)}
-              disabled={!patchId || this.state.installingPatchId === patchId}
-              loading={this.state.installingPatchId === patchId}
-            >
-              {i18next.t("scan:Install")}
-            </Button>
-          );
         },
       },
     ];
