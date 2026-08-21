@@ -38,7 +38,7 @@ const PlatformOwner = "admin"
 
 func (c *Client) GetApplication(name string) (*Application, error) {
 	var application *Application
-	if err := c.get(Ref{Owner: PlatformOwner, Name: name}.path("applications"), nil, &application); err != nil {
+	if err := c.get("applications/get", Ref{Owner: PlatformOwner, Name: name}.query(), &application); err != nil {
 		return nil, err
 	}
 	return application, nil
