@@ -22,8 +22,8 @@ import (
 )
 
 // RouterConfigBridge is the HTTP transport binding for the RESTful router-config
-// nouns (/v1/router/{policy,defaults,ledger,rewards,artifact-meta} and
-// /v1/org/settings[/list]). It dispatches IN-PROCESS through dispatchGateway —
+// nouns (/v1/ai/router/{policy,defaults,ledger,rewards,artifact-meta} and
+// /v1/ai/org/settings[/list]). It dispatches IN-PROCESS through dispatchGateway —
 // the SAME canonical ZAP gateway registry (zap_registry.go) that the MsgType 200
 // handler serves over the gateway transport. The native ZAP
 // handler is the ONE and ONLY implementation of these routes; this is purely the
@@ -41,8 +41,8 @@ import (
 // (console, chat, app) already sends it. The dispatched handler returns a ZAP
 // message whose status is field 0 and body is field 4 (BuildCloudResponse /
 // BuildGatewayResponse layout); both are relayed verbatim. The route is mapped
-// "*" (any verb) because the native handler is method-aware: /v1/router/policy
-// splits GET (read) vs PUT (write), /v1/org/settings GET/PUT/DELETE, and returns
+// "*" (any verb) because the native handler is method-aware: /v1/ai/router/policy
+// splits GET (read) vs PUT (write), /v1/ai/org/settings GET/PUT/DELETE, and returns
 // 405 for a verb it does not own.
 func (c *ApiController) RouterConfigBridge() {
 	path := c.Path()

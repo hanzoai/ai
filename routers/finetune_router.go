@@ -17,12 +17,12 @@ import (
 	"github.com/zap-proto/zip"
 )
 
-// init registers the /v1/finetune/* fine-tuning broker routes. They live in their
+// init registers the /v1/ai/finetune/* fine-tuning broker routes. They live in their
 // OWN file (not router.go) on purpose: Go runs every init() in the `routers`
 // package before the router serves, so these registrations compose with the main route
 // table additively — the finetune surface is added without editing the shared
-// router.go. Verb:method pairs are semicolon-separated, exactly like the wecom-bot
-// route in router.go.
+// router.go. Verb:method pairs are semicolon-separated, exactly like the two-verb
+// routes in router.go.
 //
 // These 8 paths / 9 operations are HTTP routes and stay HTTP routes. They are not
 // registered for native ZAP dispatch (controllers/zap_registry.go), and that is a
@@ -30,7 +30,7 @@ import (
 //
 // The body-only registry cannot carry them. registerGatewayPath keys on the path
 // alone and hands the handler (ctx, auth, body) — no verb, no query. But
-// /v1/finetune/jobs answers GET (list) AND POST (create), so one registration
+// /v1/ai/finetune/jobs answers GET (list) AND POST (create), so one registration
 // necessarily answers both, silently, with whichever handler was passed; and
 // seven of the nine ops carry their whole input in the query string (?id, ?name,
 // ?q, ?baseModel …), which that handler never receives. The HTTP-shaped registry
@@ -54,16 +54,16 @@ import (
 // attempt goes red before it goes to the wire.
 func registerFinetune(app *zip.App) {
 	// Job lifecycle.
-	route(app, "/v1/finetune/jobs", "GET:ListFinetuneJobs;POST:CreateFinetuneJob")
-	route(app, "/v1/finetune/job", "GET:GetFinetuneJob")
-	route(app, "/v1/finetune/cancel", "POST:CancelFinetuneJob")
-	route(app, "/v1/finetune/deploy", "POST:DeployFinetuneJob")
+	route(app, "/v1/ai/finetune/jobs", "GET:ListFinetuneJobs;POST:CreateFinetuneJob")
+	route(app, "/v1/ai/finetune/job", "GET:GetFinetuneJob")
+	route(app, "/v1/ai/finetune/cancel", "POST:CancelFinetuneJob")
+	route(app, "/v1/ai/finetune/deploy", "POST:DeployFinetuneJob")
 
 	// Recommended defaults (the "Unsloth-class" presets brain).
-	route(app, "/v1/finetune/presets", "GET:GetFinetunePresets")
+	route(app, "/v1/ai/finetune/presets", "GET:GetFinetunePresets")
 
 	// HuggingFace discovery (base-model + dataset pickers, private via KMS token).
-	route(app, "/v1/finetune/hf/models", "GET:SearchHfModels")
-	route(app, "/v1/finetune/hf/datasets", "GET:SearchHfDatasets")
-	route(app, "/v1/finetune/hf/repo", "GET:GetHfRepo")
+	route(app, "/v1/ai/finetune/hf/models", "GET:SearchHfModels")
+	route(app, "/v1/ai/finetune/hf/datasets", "GET:SearchHfDatasets")
+	route(app, "/v1/ai/finetune/hf/repo", "GET:GetHfRepo")
 }

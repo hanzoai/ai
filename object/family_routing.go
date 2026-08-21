@@ -37,14 +37,14 @@ import (
 // NormalizeRequestId trims the id and strips the response-object "chatcmpl-" prefix,
 // so a caller may key on either the raw request id (as the usage ledger stores it) or
 // the response `id` field verbatim — one stored form, both inputs. Both the family
-// event write and the /v1/feedback join go through here, so they key identically.
+// event write and the /v1/ai/feedback join go through here, so they key identically.
 func NormalizeRequestId(s string) string {
 	return strings.TrimPrefix(strings.TrimSpace(s), "chatcmpl-")
 }
 
 // FamilyRoutingInput is everything needed to record one served family call. The
 // RoutedModel is the served upstream/arm (falls back to RequestedModel); ResponseId is
-// the client-visible response id the client threads back to /v1/feedback (the join
+// the client-visible response id the client threads back to /v1/ai/feedback (the join
 // key). The Shadow* fields drive the A/B pick and are NEVER stored — only the engine's
 // derived features + counterfactual model persist.
 type FamilyRoutingInput struct {

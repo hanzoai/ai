@@ -259,21 +259,21 @@ func TestBalanceExemptPaths(t *testing.T) {
 		// credits), so the usage panel never 402s.
 		"/v1/get-cloud-usages", "/v1/get-usages", "/v1/get-range-usages",
 		// Public marketing aggregate (router flywheel stats) — 200 on both the anon
-		// and authed path, same class as /v1/traffic/.
-		"/v1/router/stats",
+		// and authed path, same class as /v1/ai/traffic/.
+		"/v1/ai/router/stats",
 		// Feedback (the reward signal) is training metadata, not metered inference — a
 		// $0-balance caller (and the internal self-probe on :8000) must still score a past
 		// request.
-		"/v1/feedback",
+		"/v1/ai/feedback",
 		// The REST of the router-config surface — per-org policy/defaults/exports + org
 		// settings — is served over the router via RouterConfigBridge (→ the ONE native ZAP
 		// handler), so it DOES traverse this filter and MUST be exempt: config metadata,
 		// not metered inference. A $0-balance org has to read/write its own router config
 		// from the console; without these entries every unfunded org's Router → Policy tab
-		// 402s. /v1/org/settings is HasPrefix so /list is covered too.
-		"/v1/router/policy", "/v1/router/defaults", "/v1/router/ledger",
-		"/v1/router/rewards", "/v1/router/artifact-meta",
-		"/v1/org/settings", "/v1/org/settings/list",
+		// 402s. /v1/ai/org/settings is HasPrefix so /list is covered too.
+		"/v1/ai/router/policy", "/v1/ai/router/defaults", "/v1/ai/router/ledger",
+		"/v1/ai/router/rewards", "/v1/ai/router/artifact-meta",
+		"/v1/ai/org/settings", "/v1/ai/org/settings/list",
 	}
 	for _, p := range exempt {
 		if !isBalanceExempt(p, "GET") {
@@ -332,7 +332,7 @@ func TestBalanceGateFilterExemptsReads(t *testing.T) {
 	for _, p := range []string{
 		"/v1/chat/completions", // metered path, but a GET of it is still a read
 		"/v1/get-chats", "/v1/kms/orgs/acme/secrets",
-		"/v1/s3/buckets", "/v1/router/stats", "/v1/marketplace/listings",
+		"/v1/s3/buckets", "/v1/ai/router/stats", "/v1/marketplace/listings",
 	} {
 		if code := status(http.MethodGet, p); code == http.StatusPaymentRequired {
 			t.Errorf("GET %s must not be 402'd at $0 (reads never spend)", p)

@@ -35,12 +35,12 @@ func fptr(f float64) *float64 { return &f }
 // one presents a real one rather than seeding a store.
 func feedback(t *testing.T, body, auth string) *ApiController {
 	t.Helper()
-	c := presenting(visit(http.MethodPost, "/v1/feedback"), auth)
+	c := presenting(visit(http.MethodPost, "/v1/ai/feedback"), auth)
 	c.Fiber().Request().SetBody([]byte(body))
 	return c
 }
 
-// TestResolveReward pins the /v1/feedback contract: the signal set maps to a reward
+// TestResolveReward pins the /v1/ai/feedback contract: the signal set maps to a reward
 // server-side; `rating` (1..3) normalizes to [0,1]; `dismiss` records NOTHING; an
 // explicit reward overrides; a missing/unknown signal is rejected.
 func TestResolveReward(t *testing.T) {

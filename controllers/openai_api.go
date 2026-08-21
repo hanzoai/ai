@@ -1658,7 +1658,7 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 
 	// One request id, generated once here — it is the response id (`chatcmpl-<id>`),
 	// the usage-ledger request_id, AND the routing-event join key, so a later reward
-	// (POST /v1/feedback) can be tied back to THIS decision. Generated
+	// (POST /v1/ai/feedback) can be tied back to THIS decision. Generated
 	// before routing so resolveAutoModel can stamp it on the RoutingEvent.
 	requestId := uuid.NewString()
 

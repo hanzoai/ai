@@ -17,7 +17,7 @@ package object
 import "testing"
 
 // NormalizeRequestId is the ONE normalization the family-event write and the
-// /v1/feedback join share, so both key on the same value for either input form.
+// /v1/ai/feedback join share, so both key on the same value for either input form.
 func TestNormalizeRequestId(t *testing.T) {
 	cases := map[string]string{
 		"chatcmpl-abc123": "abc123",    // response id form
