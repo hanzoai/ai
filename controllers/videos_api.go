@@ -28,6 +28,7 @@ import (
 	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/model"
 	"github.com/hanzoai/ai/object"
+	"github.com/hanzoai/ai/upstream"
 )
 
 // This file completes the OpenAI-compatible surface alongside chat, embeddings,
@@ -469,7 +470,7 @@ func videoJobResponse(job *videoJob) map[string]interface{} {
 // appends /videos itself, so the empty path yields the clean base with the
 // provider's /v1 normalization applied.
 func videoUpstreamBase(provider *object.Provider) string {
-	base := endpoint(provider, "")
+	base := upstream.Endpoint(provider, "")
 	// endpoint returns "<base>/" for the empty path; trim the trailing slash so
 	// the async client's "/videos" join is clean.
 	for len(base) > 0 && base[len(base)-1] == '/' {
