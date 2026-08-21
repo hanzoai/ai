@@ -154,7 +154,7 @@ func panelScore(cfg *judgeConfig, models []string, task, prompt, response string
 	// Phase 1 — gather raw judge scores over HTTP with NO panel lock held, under the
 	// process-wide concurrency bound. Holding panelState.mu across these (up to 30s
 	// each, N per request) serialized ALL judged traffic on one global mutex AND blocked
-	// the /v1/router/judge-panel read path (PanelSnapshot); combined with the unbounded
+	// the /v1/ai/router/judge-panel read path (PanelSnapshot); combined with the unbounded
 	// self-call fan-out that wedged the writer under load. The calibration/stat updates
 	// that DO need the lock are pure in-memory and run in Phase 2 below.
 	type rawScore struct {
@@ -228,7 +228,7 @@ func panelScore(cfg *judgeConfig, models []string, task, prompt, response string
 // PanelJudge is one judge's public, in-process snapshot: its model id, current
 // reliability weight, running mean of RAW scores (the judge's own calibration
 // baseline), and how many scores it has observed. Scalars + a model id only — no
-// content, no PII — so it rides the public /v1/router/judge-panel surface the
+// content, no PII — so it rides the public /v1/ai/router/judge-panel surface the
 // world.hanzo.ai dashboard polls.
 type PanelJudge struct {
 	Model  string  `json:"model"`

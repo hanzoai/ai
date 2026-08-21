@@ -32,7 +32,6 @@ var securityGroupMethods = []string{
 	"assets.list", "asset.get", "asset.update", "asset.add", "asset.delete",
 	"asset.scan", "assets.scan",
 	"scans.list", "scan.get", "scan.update", "scan.add", "scan.delete",
-	"patch.install",
 	"permissions.list", "permission.get", "permission.update",
 	"permission.add", "permission.delete",
 }
@@ -88,10 +87,8 @@ func TestZapSecurityOkEnvelopeParity(t *testing.T) {
 	}
 }
 
-// TestZapSecurityRegistry asserts the group self-registered its full route set
-// into both shared registries and that the gateway longest-prefix match keeps the
-// look-alike singular/plural paths from shadowing one another
-// (/v1/scan-asset vs /v1/scan-assets, /v1/get-asset vs /v1/get-assets).
+// TestZapSecurityRegistry asserts the group self-registered its full native
+// method set into the shared registry.
 func TestZapSecurityRegistry(t *testing.T) {
 	for _, method := range securityGroupMethods {
 		if _, ok := lookupCloudHandler(method); !ok {
@@ -99,17 +96,8 @@ func TestZapSecurityRegistry(t *testing.T) {
 		}
 	}
 
-	gatewayPaths := []string{
-		"/v1/install-patch",
-	}
-	for _, path := range gatewayPaths {
-		if _, ok := lookupGatewayHandler(path); !ok {
-			t.Errorf("gateway path %q not registered", path)
-		}
-	}
-
-	// The plural/singular longest-prefix hazard this used to guard is gone with the
-	// compound names that caused it: /v1/content/assets and its member URL differ
-	// structurally, and the native router tells them apart by shape, not by which
-	// literal happens to be longer.
+	// This group claims no gateway path: every route it serves is a resource on
+	// routers.App, which the gateway fallback replays with its verb and its
+	// :owner/:name intact. The plural/singular longest-prefix hazard a prefix
+	// registration used to carry is gone with it.
 }

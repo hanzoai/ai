@@ -63,7 +63,7 @@ type DocSearchRequest struct {
 
 	// FileIDs restricts results to chunks of the given uploaded files. Empty
 	// means unrestricted (doc-wide search). Powers the file-scoped RAG surface
-	// (/v1/rag/query, /v1/rag/query-multiple) without a separate index.
+	// (/v1/ai/rag/query, /v1/ai/rag/query-multiple) without a separate index.
 	FileIDs []string `json:"file_ids,omitempty"`
 }
 

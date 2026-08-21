@@ -1318,7 +1318,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	// here and the streamed one settles from inside its own callback.
 	//
 	// A stamped answer carries OUR id, so that is the id the client will thread back
-	// to /v1/feedback and the id the reward has to join on. An embeddings list has no
+	// to /v1/ai/feedback and the id the reward has to join on. An embeddings list has no
 	// id of its own, so nothing is stamped and the join falls back to the internal
 	// reqID — which is honest: the client was handed no id to correlate on.
 	//
@@ -1438,7 +1438,7 @@ func sniffZenModel(payload []byte) string {
 
 // sniffZenId reads the response id the CLIENT sees — OpenAI's top-level "id"
 // (chatcmpl-…) or Anthropic's message id (msg_…, at "id" for messages or nested under
-// "message"). This is the exact id the client threads back to /v1/feedback, so it is
+// "message"). This is the exact id the client threads back to /v1/ai/feedback, so it is
 // the routing-event join key. "" when absent.
 func sniffZenId(payload []byte) string {
 	var p struct {
@@ -1578,7 +1578,7 @@ func (c *ApiController) recordFamilyRouting(model, served, respID, reqID string,
 	}
 	// The join key is the response id the client sees; fall back to the internal reqID
 	// when the family disclosed none (RecordFamilyRouting normalizes it identically to
-	// /v1/feedback so both sides key on the same value).
+	// /v1/ai/feedback so both sides key on the same value).
 	responseId := respID
 	if strings.TrimSpace(responseId) == "" {
 		responseId = reqID

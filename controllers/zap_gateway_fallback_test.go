@@ -81,32 +81,42 @@ func TestGatewayFallbackPreservesStatus(t *testing.T) {
 	}
 }
 
-// The /v1/ai namespace is where routers/resources.go generates the RESTful CRUD
-// surface: a collection at /v1/ai/<path> and a member at /v1/ai/<path>/:owner/:name
-// answering GET, PATCH, PUT and DELETE. A prefix registered anywhere in there
-// cannot pick the right handler — /v1/ai/stores/acme/thing prefix-matches
-// /v1/ai/stores and would reach the LIST handler with the id dropped — so the
-// whole namespace belongs to the router.
+// /v1/ai/<noun> IS a resource collection. routers/resources.go generates every
+// CRUD row at that exact address — a collection at /v1/ai/<path> and a member at
+// /v1/ai/<path>/:owner/:name answering GET, PATCH, PUT and DELETE — so a prefix
+// registered there claims the member URLs too: /v1/ai/stores/acme/thing
+// prefix-matches /v1/ai/stores and would reach the LIST handler with the id
+// dropped. A wrong handler, not an error.
+//
+// The address, not the namespace, is what carries the hazard. /v1/ai is now the
+// whole capability (HIP-0139 §3.1) and its deeper families — /v1/ai/rag/query,
+// /v1/ai/memory/list, /v1/ai/router/defaults — name a route, not a collection,
+// so a prefix there claims nothing the router owns. THREE segments is the line:
+// a collection is always /v1/<ns>/<path>, one segment for the noun, so nothing
+// four deep can swallow a member.
 //
 // This is the executable form of that. It fails the moment someone registers a
-// gateway prefix under /v1/ai, which is the one edit that would turn a correct
-// answer into a plausible wrong one with nothing else going red.
+// gateway prefix at a collection address, which is the one edit that would turn
+// a correct answer into a plausible wrong one with nothing else going red.
 func TestNoGatewayPrefixOverTheResourceNamespace(t *testing.T) {
-	const ns = "/v1/ai"
-	owns := func(p string) bool { return p == ns || strings.HasPrefix(p, ns+"/") }
+	// A collection address: exactly "/v1/ai/<noun>", nothing deeper.
+	collection := func(p string) bool {
+		rest, under := strings.CutPrefix(p, "/v1/ai/")
+		return under && rest != "" && !strings.Contains(rest, "/")
+	}
 
 	zapRegistryMu.RLock()
 	defer zapRegistryMu.RUnlock()
 	for p := range zapGatewayRegistry {
-		if owns(p) {
-			t.Errorf("gateway prefix %q sits over the generated resource surface; "+
+		if collection(p) {
+			t.Errorf("gateway prefix %q is a resource collection address; "+
 				"a path-only match cannot tell its verbs or its :owner/:name apart. "+
 				"Leave it to the router — see the file comment above", p)
 		}
 	}
 	for _, r := range zapGatewayRoutes {
-		if owns(r.prefix) {
-			t.Errorf("gateway route %q sits over the generated resource surface; "+
+		if collection(r.prefix) {
+			t.Errorf("gateway route %q is a resource collection address; "+
 				"the router already resolves method + path params there", r.prefix)
 		}
 	}

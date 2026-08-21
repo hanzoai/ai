@@ -33,9 +33,9 @@ import (
 // its name — /v1/get-store versus /v1/update-store are different prefixes, so a
 // path was a complete request description.
 //
-// It stops being workable the moment the surface is RESTful. /v1/rag/stores/:owner/:name
+// It stops being workable the moment the surface is RESTful. /v1/ai/stores/:owner/:name
 // answers GET, PATCH and DELETE at one path, and prefix matching cannot tell them
-// apart; worse, /v1/rag/stores/acme/thing prefix-matches /v1/rag/stores and would
+// apart; worse, /v1/ai/stores/acme/thing prefix-matches /v1/ai/stores and would
 // silently reach the LIST handler with the member's segments discarded. A wrong
 // handler, not an error.
 //

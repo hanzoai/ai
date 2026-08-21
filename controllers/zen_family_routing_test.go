@@ -144,7 +144,7 @@ func TestSniffZenModel(t *testing.T) {
 	}
 }
 
-// sniffZenId reads the response id the client sees — the /v1/feedback join key.
+// sniffZenId reads the response id the client sees — the /v1/ai/feedback join key.
 func TestSniffZenId(t *testing.T) {
 	cases := []struct {
 		name string

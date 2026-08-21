@@ -41,7 +41,7 @@ import (
 // "docs-hanzo-ai") would have shown Hanzo's slug on every org's store, so it is not.
 const DefaultDocsStore = "docs"
 
-// IngestRequest is the source-pluggable body for POST /v1/docs/ingest. Exactly
+// IngestRequest is the source-pluggable body for POST /v1/ai/rag/ingest. Exactly
 // one source is selected by the `source` discriminator; its matching sub-object
 // supplies the inputs. All sources land in the same Vector+Search index.
 type IngestRequest struct {
@@ -253,7 +253,7 @@ func IngestStoreStorage(store *Store, prefix, lang string) (int, int, error) {
 	return fileCount, docCount, fileErr
 }
 
-// IngestSource is the dispatcher behind POST /v1/docs/ingest. The owner is the
+// IngestSource is the dispatcher behind POST /v1/ai/rag/ingest. The owner is the
 // authenticated principal (tenant isolation); never trust client-supplied owner.
 func IngestSource(owner string, req *IngestRequest, lang string) (*IngestStats, error) {
 	if owner == "" {
