@@ -16,7 +16,7 @@
 import * as Setting from "../Setting";
 
 export function getGlobalVectors() {
-  return fetch(`${Setting.ServerUrl}/v1/rag/vectors/global`, {
+  return fetch(`${Setting.ServerUrl}/v1/ai/vectors/global`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -26,7 +26,7 @@ export function getGlobalVectors() {
 }
 
 export function getVectors(owner, storeName, page = "", pageSize = "", field = "", value = "", sortField = "", sortOrder = "") {
-  return fetch(`${Setting.ServerUrl}/v1/rag/vectors?owner=${owner}&store=${storeName}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
+  return fetch(`${Setting.ServerUrl}/v1/ai/vectors?owner=${owner}&store=${storeName}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -36,7 +36,7 @@ export function getVectors(owner, storeName, page = "", pageSize = "", field = "
 }
 
 export function getVector(owner, name) {
-  return fetch(`${Setting.ServerUrl}/v1/rag/vectors/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/ai/vectors/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -47,7 +47,7 @@ export function getVector(owner, name) {
 
 export function updateVector(owner, name, vector) {
   const newVector = Setting.deepCopy(vector);
-  return fetch(`${Setting.ServerUrl}/v1/rag/vectors/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/ai/vectors/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`, {
     method: "PATCH",
     credentials: "include",
     headers: {
@@ -59,7 +59,7 @@ export function updateVector(owner, name, vector) {
 
 export function addVector(vector) {
   const newVector = Setting.deepCopy(vector);
-  return fetch(`${Setting.ServerUrl}/v1/rag/vectors`, {
+  return fetch(`${Setting.ServerUrl}/v1/ai/vectors`, {
     method: "POST",
     credentials: "include",
     headers: {
@@ -71,7 +71,7 @@ export function addVector(vector) {
 
 export function deleteVector(vector) {
   const newVector = Setting.deepCopy(vector);
-  return fetch(`${Setting.ServerUrl}/v1/rag/vectors/${encodeURIComponent(vector.owner)}/${encodeURIComponent(vector.name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/ai/vectors/${encodeURIComponent(vector.owner)}/${encodeURIComponent(vector.name)}`, {
     method: "DELETE",
     credentials: "include",
     headers: {
@@ -82,7 +82,7 @@ export function deleteVector(vector) {
 }
 
 export function deleteAllVectors() {
-  return fetch(`${Setting.ServerUrl}/v1/rag/vectors/all`, {
+  return fetch(`${Setting.ServerUrl}/v1/ai/vectors/all`, {
     method: "DELETE",
     credentials: "include",
     headers: {

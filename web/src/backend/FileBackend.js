@@ -16,7 +16,7 @@
 import * as Setting from "../Setting";
 
 export function getGlobalFiles(page = "", pageSize = "", field = "", value = "", sortField = "", sortOrder = "") {
-  return fetch(`${Setting.ServerUrl}/v1/rag/files/global?p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
+  return fetch(`${Setting.ServerUrl}/v1/ai/files/global?p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -26,7 +26,7 @@ export function getGlobalFiles(page = "", pageSize = "", field = "", value = "",
 }
 
 export function getFiles(owner, store = "") {
-  return fetch(`${Setting.ServerUrl}/v1/rag/files?owner=${owner}&store=${store}`, {
+  return fetch(`${Setting.ServerUrl}/v1/ai/files?owner=${owner}&store=${store}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -36,7 +36,7 @@ export function getFiles(owner, store = "") {
 }
 
 export function getFile(owner, name) {
-  return fetch(`${Setting.ServerUrl}/v1/rag/files/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/ai/files/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -47,7 +47,7 @@ export function getFile(owner, name) {
 
 export function updateFile(owner, name, file) {
   const newFile = Setting.deepCopy(file);
-  return fetch(`${Setting.ServerUrl}/v1/rag/files/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/ai/files/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`, {
     method: "PATCH",
     credentials: "include",
     headers: {
@@ -59,7 +59,7 @@ export function updateFile(owner, name, file) {
 
 export function addFile(file) {
   const newFile = Setting.deepCopy(file);
-  return fetch(`${Setting.ServerUrl}/v1/rag/files`, {
+  return fetch(`${Setting.ServerUrl}/v1/ai/files`, {
     method: "POST",
     credentials: "include",
     headers: {
@@ -71,7 +71,7 @@ export function addFile(file) {
 
 export function deleteFile(file) {
   const newFile = Setting.deepCopy(file);
-  return fetch(`${Setting.ServerUrl}/v1/rag/files/${encodeURIComponent(file.owner)}/${encodeURIComponent(file.name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/ai/files/${encodeURIComponent(file.owner)}/${encodeURIComponent(file.name)}`, {
     method: "DELETE",
     credentials: "include",
     headers: {
@@ -83,7 +83,7 @@ export function deleteFile(file) {
 
 export function refreshFileVectors(file) {
   const newFile = Setting.deepCopy(file);
-  return fetch(`${Setting.ServerUrl}/v1/rag/files/${encodeURIComponent(file.owner)}/${encodeURIComponent(file.name)}/vectors`, {
+  return fetch(`${Setting.ServerUrl}/v1/ai/files/${encodeURIComponent(file.owner)}/${encodeURIComponent(file.name)}/vectors`, {
     method: "POST",
     credentials: "include",
     headers: {
