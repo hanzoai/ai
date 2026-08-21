@@ -485,7 +485,8 @@ func ttsCharsOf(result *tts.TextToSpeechResult, input string) int {
 // what it consumed. The record now carries what was used, and the Unpriced flag
 // is DERIVED from whether a rate is configured (recordUnpriced → audioPriced)
 // rather than asserted here — so the day a rate is set, this function does not
-// change. recordUsage filters error rows; the trace is emitted either way.
+// change. A transcription that failed carries no seconds and so bills nothing, and it
+// files its row all the same: recordUsage prices the outcome, it does not filter it.
 func (c *ApiController) recordAudioUsage(authUser *iam.User, provider *object.Provider, userModel string, isPremium bool, qty audioQuantity, status, errMsg string, startTime time.Time) {
 	if authUser == nil {
 		return

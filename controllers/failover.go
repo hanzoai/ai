@@ -337,9 +337,11 @@ func unavailable(provider string) error {
 // outage this exists to prevent: the failover worked, nobody noticed, and the
 // account stayed empty.
 //
-// The rows bill nothing. recordUsage settles only "success" and is not called
-// here; no budget hold is touched. The status is its own word — "failover", not
-// "error" — so dashboards that count failures keep counting the same thing and
+// The rows bill nothing: recordUsage is not called here, and no budget hold is
+// touched. The money for this request is settled ONCE, on the record the caller
+// writes for the outcome — served or failed — and an attempt that refused before
+// producing a token adds nothing to it. The status is its own word — "failover",
+// not "error" — so dashboards that count failures keep counting the same thing and
 // a refused ATTEMPT on a request that ultimately succeeded is not filed as a
 // failed request.
 func (c *ApiController) recordRefusals(model string, tried []attempt, user *iam.User, premium, stream bool, requestId string, start time.Time) {

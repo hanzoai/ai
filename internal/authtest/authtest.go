@@ -59,9 +59,15 @@ var (
 
 // install generates the key pair and points the verifier at its public half.
 //
-// The endpoint is left EMPTY on purpose: with no IAM to ask, ParseJwtToken falls
+// The endpoint is left EMPTY on purpose: with no IAM stated, ParseJwtToken falls
 // back to the configured certificate, which is the one thing a test can control.
-// Given an endpoint it would prefer that JWKS and never consult this key.
+// Given an endpoint it would prefer that JWKS and never consult this key — and it
+// used to be given one anyway, because the read helpers' public default stood in
+// for the endpoint nobody had stated. Every token minted here therefore went out
+// to hanzo.id to be verified, and passed only because that host publishes nine
+// keys and these tokens name no kid, so the lookup was ambiguous and the fallback
+// ran. One key published there would have failed this whole package, and so would
+// a machine that could not reach it.
 func install() {
 	key, fail = rsa.GenerateKey(rand.Reader, 2048)
 	if fail != nil {

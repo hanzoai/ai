@@ -15,13 +15,36 @@
 package ai
 
 import (
-	"io"
-	"net/http"
-	"strings"
 	"testing"
 
+	"github.com/hanzoai/ai/routers"
 	"github.com/zap-proto/zip"
 )
+
+// WHAT THIS SERVICE SERVES IS THE ROUTE TABLE, and these two ask it directly.
+//
+// They used to ask by sending a request and reading the status — 404 meant absent,
+// an auth refusal meant present. That stopped distinguishing anything the day the
+// filter chain closed by default: an unnamed /v1 address is refused BEFORE the
+// router gets to look for it, so a registered door and an absent one now answer the
+// same 401. Absence became untestable that way and presence became free, which is
+// the worse half — the search assertion below would have passed with the route
+// deleted.
+//
+// The table is the thing both were reaching for anyway, and it says which it is.
+
+// serves reports whether the app this process builds answers at pattern.
+func serves(t *testing.T, pattern string) bool {
+	t.Helper()
+	app := zip.New(zip.Config{DisableStartupMessage: true, ReadBufferSize: 32 << 10})
+	routes(app)
+	table := routers.Patterns(app)
+	if len(table) == 0 {
+		t.Fatal("no routes registered; the instrument is broken, not the routing")
+	}
+	_, ok := table[pattern]
+	return ok
+}
 
 // THIS SERVICE SERVES NO /v1/crawl, and that is the assertion.
 //
@@ -34,48 +57,13 @@ import (
 // The crawl ai does offer is the one its host feeds, over ZAP
 // (controllers/zap_rag-search-crawl.go). That is a different door and it stays.
 func TestNoCrawlDoorHere(t *testing.T) {
-	app := zip.New(zip.Config{DisableStartupMessage: true, ReadBufferSize: 32 << 10})
-	routes(app)
-
-	req, _ := http.NewRequest(http.MethodPost, "http://example.com/v1/crawl",
-		strings.NewReader(`{"url":"https://example.com"}`))
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := app.Fiber().Test(req)
-	if err != nil {
-		t.Fatalf("Test: %v", err)
-	}
-	body, _ := io.ReadAll(resp.Body)
-	_ = resp.Body.Close()
-	if resp.StatusCode != http.StatusNotFound {
-		t.Fatalf("POST /v1/crawl answered %d — this service registered a door onto a crawl it does not have. body=%q",
-			resp.StatusCode, string(body))
+	if serves(t, "/v1/crawl") {
+		t.Fatal("/v1/crawl is registered — this service put a door onto a crawl it does not have")
 	}
 }
 
 func TestSearchRouteStillRegistered(t *testing.T) {
-
-	app := zip.New(zip.Config{DisableStartupMessage: true, ReadBufferSize: 32 << 10})
-	routes(app)
-
-	req, _ := http.NewRequest(http.MethodPost, "http://example.com/v1/search",
-		strings.NewReader(`{"query":"hello"}`))
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := app.Fiber().Test(req)
-	if err != nil {
-		t.Fatalf("Test: %v", err)
-	}
-	body, _ := io.ReadAll(resp.Body)
-	bs := string(body)
-
-	if resp.StatusCode == http.StatusNotFound {
-		t.Fatalf("POST /v1/search: 404 — native search route lost. body=%q", bs)
-	}
-	if resp.StatusCode == http.StatusInternalServerError {
-		t.Fatalf("POST /v1/search: 500 (panic). body=%q", bs)
-	}
-	if !strings.Contains(bs, "authentication required") {
-		t.Fatalf("POST /v1/search: expected fail-closed auth rejection, got %q", bs)
+	if !serves(t, "/v1/search") {
+		t.Fatal("/v1/search is not registered — the native search route was lost")
 	}
 }

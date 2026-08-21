@@ -44,15 +44,17 @@ type UsageEvent struct {
 	Currency string // default "usd"
 	Model    string
 	Provider string
-	// Allowance is the subject whose free-call allowance this call counts against.
-	// It is set only when the call debited nothing; empty says the call spent money
-	// instead.
+	// Allowance is the subject whose free-call allowance this call counts against. It
+	// is set only when a model ANSWERED and charged nothing for doing so. Empty means
+	// this call spent no allowance: it spent money, or it reached a vendor and came
+	// back with an error, which is billed at what it cost and counts against no
+	// ceiling.
 	//
 	// ONE EVENT SAYS WHAT A CALL SPENT — money, or one of a plan's free calls — so
 	// counting a free call and recording that a call happened are the same act and
-	// cannot come apart. recordUsage is its only producer, and it has already
-	// returned for anything that did not answer, which is what makes a count
-	// impossible without a model behind it.
+	// cannot come apart. recordUsage is its only producer, and it fills this field
+	// only for a call a model answered, which is what makes a count impossible
+	// without a model behind it.
 	//
 	// The allowance bounds exactly the calls a wallet cannot: the ones that cost
 	// nothing. So a zero amount IS the free call, said in the currency the bound is

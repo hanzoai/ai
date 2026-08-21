@@ -68,14 +68,22 @@ func tokenCostNano(model string, promptTokens, completionTokens, cacheReadTokens
 }
 
 // tokenProviderCostNano is the exact PROVIDER-COGS token cost in nano-USD: the same
-// arithmetic as tokenCostNano at the model's COGS rates (which default to the price
-// rates when no COGS is configured, giving cost == billed ⇒ margin 0). Cache COGS is
-// not separately configured, so pass 0 and let tokenNanoAt default cache-read to 10%
-// of the COGS input rate and cache-write to it — mirroring the price path exactly.
-func tokenProviderCostNano(model string, promptTokens, completionTokens, cacheReadTokens, cacheWriteTokens int) int64 {
+// arithmetic as tokenCostNano at the model's COGS rates. Cache COGS is not separately
+// configured, so pass 0 and let tokenNanoAt default cache-read to 10% of the COGS input
+// rate and cache-write to it — mirroring the price path exactly.
+//
+// Nil when the model states no COGS. Reading the customer price there and calling it a
+// cost makes every such call report margin exactly zero, which is not a small error in
+// the last digit: it is the difference between a business whose costs are visible and
+// one whose ledger says it earns nothing on everything it sells.
+func tokenProviderCostNano(model string, promptTokens, completionTokens, cacheReadTokens, cacheWriteTokens int) *int64 {
 	price := getModelPrice(model)
-	return tokenNanoAt(price.costInputPerMillion(), price.costOutputPerMillion(), 0, 0,
+	if !price.costed() {
+		return nil
+	}
+	cost := tokenNanoAt(price.costInputPerMillion(), price.costOutputPerMillion(), 0, 0,
 		promptTokens, completionTokens, cacheReadTokens, cacheWriteTokens)
+	return &cost
 }
 
 // usageCostNano is the authoritative billable cost of a call in nano-USD — the exact twin
@@ -119,7 +127,10 @@ func usageBilledNano(record *usageRecord, costNano int64) int64 {
 // and MarginNano = BilledNano − CostNano. Computed once (usageMargin) so the ledger, the
 // cloud_usage row, and the o11y span read identical figures and can never drift.
 type costMargin struct {
-	CostNano   int64 // provider COGS to Hanzo (0 for BYO — the customer paid the upstream)
+	// CostNano is the provider COGS to Hanzo, and NIL where no cost is known — see
+	// providerCostNano. It is a pointer for the same reason MarginNano is: the row has
+	// to be able to say it does not know, and an int64 can only say zero.
+	CostNano   *int64
 	BilledNano int64 // what Hanzo debits the org (full for served, 1% platform fee for BYO)
 	// MarginNano is BilledNano − CostNano, and it is NIL when that subtraction has
 	// no meaning. An unpriced model has no configured rate, so the COGS leg is the
@@ -129,27 +140,34 @@ type costMargin struct {
 	MarginNano *int64
 }
 
-// providerCostNano is Hanzo's cost of goods sold for a call, in nano-USD. A BYO call is
-// 0 — the customer paid the upstream with their own key, so Hanzo carries no provider
-// cost and the platform fee is pure margin. A Hanzo-served call is the per-unit cost for
-// image/video (whose COGS equals their price today ⇒ zero margin) or the token cost at
-// COGS rates otherwise (which default to price ⇒ zero margin unless a real COGS is set).
-func providerCostNano(record *usageRecord) int64 {
+// providerCostNano is Hanzo's cost of goods sold for a call, in nano-USD, and NIL where
+// that cost is not known.
+//
+// Zero and unknown are different answers and the caller must be able to tell them apart.
+// Zero is a fact: a BYO call was paid upstream with the customer's own key, a free route
+// is charged nothing, speech runs on hardware already bought. Nil is the absence of one:
+// image and video have a per-unit PRICE table and no vendor invoice behind it, and a
+// token model that states no COGS has told us nothing about what it costs.
+//
+// The tempting substitution is the customer price, which is always to hand. It reads as
+// a complete answer, arrives at margin zero for every such call, and is wrong in the
+// direction that hides the entire cost of the business.
+func providerCostNano(record *usageRecord) *int64 {
 	if record.BYO || record.Free {
-		return 0
+		return new(int64)
 	}
 	switch {
 	case record.VideoCount > 0:
-		return videoCostCents(record.Model, record.VideoCount) * 10_000_000 // 1¢ = 1e7 nano
+		return nil // the per-unit table is a price; no vendor invoice is known
 	case record.ImageCount > 0:
-		return imageCostCents(record.Model, record.ImageCount) * 10_000_000
+		return nil
 	case recordIsAudio(record):
 		// Speech runs on hardware we already own, so there is no upstream invoice
 		// to pass through: COGS is 0 and the margin on an audio call is the whole
 		// price. Stated explicitly rather than reached by falling through to token
 		// math that happens to yield 0 on a record with no tokens — the two agree
 		// today by accident, and only one of them is the reason.
-		return 0
+		return new(int64)
 	default:
 		return tokenProviderCostNano(record.Model, record.PromptTokens, record.CompletionTokens,
 			record.CacheReadTokens, record.CacheWriteTokens)
@@ -172,12 +190,13 @@ func usageMargin(record *usageRecord) costMargin {
 		billed = *record.BilledNanoExact
 	}
 	if record.CostNanoExact != nil {
-		cost = *record.CostNanoExact
+		cost = record.CostNanoExact
 	}
 	m := costMargin{CostNano: cost, BilledNano: billed}
-	// A caller that STATED its COGS has a real one, unpriced model or not.
-	if record.CostNanoExact != nil || !recordUnpriced(record) {
-		margin := billed - cost
+	// Margin is the subtraction of two known numbers. A stated COGS is one whatever the
+	// price table knows; a derived one requires both a real cost and a real price.
+	if cost != nil && (record.CostNanoExact != nil || !recordUnpriced(record)) {
+		margin := billed - *cost
 		m.MarginNano = &margin
 	}
 	return m
