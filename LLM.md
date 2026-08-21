@@ -504,52 +504,52 @@ Three distinct products, no overlap. Do NOT add a fourth crawl path.
   the list is zeroed, so a NEW upstream secret field is fail-secure. Credential
   struct slices (MfaAccounts/ManagedAccounts/MfaItems/FaceIds) are nilled.
 
-## OPEN DEFECT — recorded COGS is retail, so margin is structurally 0
+## Cost: known, zero, or not known — three answers, never two
 
-**Not fixed. Do not "fix" it by editing the enso rates; the rates are correct.**
+An unregistered COGS used to read back as the CUSTOMER PRICE. `costInputPerMillion()`
+returned the price when no cost rate was set, so `tokenProviderCostNano` computed cost
+== billed and every such call recorded `margin_nano == 0`. For the Enso family that was
+every call: 1,296 rows checked, all of them zero. It is not a rounding error — it is a
+ledger reporting a business that earns nothing on everything it sells.
 
-Every `hanzo.cloud_usage` row for the Enso family (1,296 rows checked, ClickHouse
-at `datastore.hanzo.svc`) has `billed_nano == cost_nano` and `margin_nano == 0`.
-The recorded cost is RETAIL, not what the upstream actually cost us.
+The shape of the fix is that **cost is optional and margin follows it**:
 
-The mechanism is a deliberate fallback used outside the case it was written for:
+- `controllers/model_pricing.go` — `modelPrice.costed()` reports whether the model
+  states what it costs us, and it requires BOTH legs. Half a COGS is not a COGS: an
+  input rate with no output rate prices the completion — the expensive half — at zero.
+  `costInputPerMillion()` / `costOutputPerMillion()` now return the configured rate and
+  nothing else; there is no path that reads one without first asking `costed()`.
+- `controllers/billing_nano.go` — `tokenProviderCostNano` and `providerCostNano` return
+  `*int64`, nil where no cost is known. `costMargin.CostNano` is a pointer for the same
+  reason `MarginNano` already was: the row has to be able to say it does not know, and
+  an int64 can only say zero. `usageMargin` reports a margin only when both sides are
+  real.
+- `controllers/zap_native.go` + `object/cloud_usage.go` — the warehouse column is
+  `Int64`, so an unknown cost writes 0 and sets `uncosted = 1` beside it. Query
+  `uncosted = 0` for rows whose cost is a fact.
+- `controllers/telemetry.go` — the span emits `provider_cost` only when there is one,
+  the way it already treated margin. It no longer asserts a COGS it does not have.
 
-- `controllers/model_pricing.go:43-57` — `costInputPerMillion()` /
-  `costOutputPerMillion()` return `CostInPerMillion` / `CostOutPerMillion` when
-  set, **else the customer price**.
-- `controllers/billing_nano.go:75-79` — `tokenProviderCostNano` computes COGS at
-  exactly those rates, so a model with no registered COGS reports cost == billed.
-- `controllers/billing_nano.go:124-135` — `providerCostNano` feeds that into
-  `costMargin`, which the ledger, the `cloud_usage` row, and the o11y span all
-  read.
+**Zero and unknown are different answers.** Zero is a fact: BYO (the customer paid the
+upstream with their own key), a free route, speech on hardware we already own. Nil is
+the absence of one: image and video have a per-unit PRICE table and no vendor invoice
+behind it, and a token model that states no COGS has told us nothing.
 
-For Enso no COGS rate is registered, so the fallback fires on every call. The
-real COGS is known and lives in the Enso catalog: `1.392 / 2.784` $/MTok on the
-`deepseek-v4-pro` anchor (enso and enso-ultra) and `0.112 / 0.224` on
-`deepseek-4-flash`. Against billed 4/20 the true margin is roughly 2.9x in /
-7.2x out — recorded as zero.
+### What still has no COGS
 
-A channel to carry the exact figure already exists and is simply not populated:
-`controllers/trace_export.go:40-41` takes `BilledNano` / `CostNano` with
-`0 = recompute from rates`, surfaced as `CostNanoExact` in
-`controllers/openai_api.go:557-558`. The serving side knows its per-arm cost —
-for enso-ultra the fan-out means COGS is the real sum of the arms that ran, which
-only the server can total — so pushing the exact value is the right seam. Falling
-back to rate math cannot express a fan-out cost at all.
+The mechanism no longer lies, but a rate nobody has entered is still a rate nobody has
+entered. Enso's real figures are known and live in the Enso catalog: `1.392 / 2.784`
+$/MTok on the `deepseek-v4-pro` anchor (enso, enso-ultra) and `0.112 / 0.224` on
+`deepseek-4-flash`. Against billed 4/20 that is roughly 2.9x in / 7.2x out. Until those
+are registered the rows read `uncosted = 1`, which is the honest answer and a visible
+one — `SELECT count() ... WHERE uncosted = 1` is the backlog.
 
-Consequences, in order of severity:
+For enso-ultra the fan-out means COGS is the sum of the arms that ran, which only the
+server can total. `controllers/trace_export.go` carries `BilledNano`/`CostNano` and
+surfaces as `CostNanoExact`; a stated cost wins over the rate table in `usageMargin`.
+Rate math cannot express a fan-out cost at all, so that is the right seam for it.
 
-1. **The admin cockpit's below-cost check cannot work for these models.** It
-   compares price against a "cost" that IS the price, so the difference is
-   always exactly zero: it can neither fire on a genuine below-cost sale nor
-   stay quiet honestly. This is the likely source of its misfiring.
-2. Margin reporting reads 0 for the whole family, so gross margin is understated
-   wherever it aggregates `margin_nano`.
-3. The zero is indistinguishable from a real zero-margin sale (BYO calls
-   legitimately record `CostNano = 0`), so nothing downstream can tell "we did
-   not compute this" from "this genuinely earned nothing".
+The admin cockpit's below-cost check compared price against a "cost" that WAS the price,
+so its difference was always exactly zero and it could neither fire honestly nor stay
+quiet honestly. It now has a cost to compare against, or a flag saying there is none.
 
-The fallback is defensible as a default — a new model with no COGS should not
-report imaginary profit — but it is silent, and silence is what let it stand.
-Whatever the fix, an unregistered COGS should be *distinguishable* from a
-measured one rather than quietly equal to price.

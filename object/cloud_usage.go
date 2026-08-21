@@ -81,7 +81,8 @@ const cloudUsageTableDDL = `
 		cost_nano Int64,
 		billed_nano Int64,
 		margin_nano Int64,
-		unpriced UInt8
+		unpriced UInt8,
+		uncosted UInt8
 	) ENGINE = ReplacingMergeTree()
 	ORDER BY (timestamp, organization, user_id, id)
 	TTL timestamp + INTERVAL 2 YEAR`
@@ -129,6 +130,11 @@ var cloudUsageColumnMigrations = []string{
 	// unpriced = 1 when the model had no configured price and billed at the default,
 	// so the honest "priced?" flag is queryable in the warehouse, not just the span.
 	`ALTER TABLE hanzo.cloud_usage ADD COLUMN IF NOT EXISTS unpriced UInt8`,
+	// uncosted = 1 when no COGS was known for the call, so cost_nano holds 0 because
+	// nobody told us rather than because the call was free. The two are opposite facts
+	// that the Int64 column alone spells the same way, and a SUM that cannot tell them
+	// apart reports a business with no costs.
+	`ALTER TABLE hanzo.cloud_usage ADD COLUMN IF NOT EXISTS uncosted UInt8`,
 	// project is the caller's org SUB-SCOPE (X-Project-Id); it lets the per-org
 	// metrics board narrow WITHIN an org by project. Additive: a pre-existing row
 	// carries '' (the org's default project == whole-org view).
@@ -182,7 +188,7 @@ var CloudUsageColumns = []string{
 	"cost_cents", "currency", "status", "error_msg",
 	"is_premium", "is_stream", "client_ip",
 	"byo", "fee_cents", "account",
-	"cost_nano", "billed_nano", "margin_nano", "unpriced",
+	"cost_nano", "billed_nano", "margin_nano", "unpriced", "uncosted",
 }
 
 // CloudUsageInsert is the usage-row INSERT, derived from CloudUsageColumns.

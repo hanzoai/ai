@@ -80,3 +80,49 @@ func TestUsageRowCarriesAttribution(t *testing.T) {
 			"them is the measurement")
 	}
 }
+
+// A row whose cost nobody knows must not read as a row that cost nothing. cost_nano is
+// an Int64 and spells both facts "0", so the flag beside it is the only thing that keeps
+// a SUM over the column from reporting a business with no costs at all.
+func TestUncostedRowSaysSoRatherThanReadingAsFree(t *testing.T) {
+	withMarginPricing(t)
+
+	row := func(rec *usageRecord) map[string]any {
+		values := cloudUsageValues(rec, time.Now())
+		at := map[string]any{}
+		for i, c := range object.CloudUsageColumns {
+			if i < len(values) {
+				at[c] = values[i]
+			}
+		}
+		return at
+	}
+
+	// "zeromargin" states a price and no COGS: what it cost us is not known here.
+	unknown := row(&usageRecord{Model: "zeromargin", PromptTokens: 1000, CompletionTokens: 500, Status: "success"})
+	if unknown["uncosted"] != uint8(1) {
+		t.Errorf("uncosted = %v, want 1 — no COGS is configured for this model", unknown["uncosted"])
+	}
+	if unknown["cost_nano"] != int64(0) {
+		t.Errorf("cost_nano = %v, want 0 alongside uncosted=1", unknown["cost_nano"])
+	}
+	if unknown["margin_nano"] != int64(0) {
+		t.Errorf("margin_nano = %v, want 0 — billed minus an unknown is not a margin", unknown["margin_nano"])
+	}
+
+	// A free route cost us a known zero, which is the opposite fact and must not be
+	// flagged as unknown.
+	free := row(&usageRecord{Model: "zeromargin", Free: true, PromptTokens: 1000, CompletionTokens: 500, Status: "success"})
+	if free["uncosted"] != uint8(0) {
+		t.Errorf("uncosted = %v on a free route, want 0 — its cost is a known zero", free["uncosted"])
+	}
+
+	// "marginmodel" states a real COGS, so the row carries it and is not flagged.
+	known := row(&usageRecord{Model: "marginmodel", PromptTokens: 1000, CompletionTokens: 500, Status: "success"})
+	if known["uncosted"] != uint8(0) {
+		t.Errorf("uncosted = %v, want 0 — this model states its COGS", known["uncosted"])
+	}
+	if known["cost_nano"] != int64(5_000_000) {
+		t.Errorf("cost_nano = %v, want 5000000 at the configured COGS rates", known["cost_nano"])
+	}
+}

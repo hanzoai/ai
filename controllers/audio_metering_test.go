@@ -109,8 +109,12 @@ func TestAudioShipsWithNoRates(t *testing.T) {
 func TestAudioProviderCostIsZero(t *testing.T) {
 	withAudioRates(t, map[string]int64{"whisper": 60}, nil)
 	rec := &usageRecord{Model: "whisper", AudioSeconds: 60}
-	if got := providerCostNano(rec); got != 0 {
-		t.Errorf("provider COGS = %d nano, want 0 (our own hardware, no invoice)", got)
+	got := providerCostNano(rec)
+	if got == nil {
+		t.Fatal("speech COGS is a known zero, not an unknown — we own the hardware")
+	}
+	if *got != 0 {
+		t.Errorf("provider COGS = %d nano, want 0 (our own hardware, no invoice)", *got)
 	}
 	if got := usageCostNano(rec); got != 60*10_000_000 {
 		t.Errorf("billed = %d nano, want %d", got, 60*10_000_000)
