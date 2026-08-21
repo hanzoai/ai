@@ -20,7 +20,6 @@ import (
 	"testing"
 
 	"github.com/hanzoai/ai/object"
-	"github.com/hanzoai/ai/upstream"
 )
 
 // TestEndpoint asserts the single per-provider endpoint map produces the right
@@ -60,7 +59,7 @@ func TestEndpoint(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			p := tc.provider
-			if got := upstream.Endpoint(&p, tc.apiPath); got != tc.wantURL {
+			if got := endpoint(&p, tc.apiPath); got != tc.wantURL {
 				t.Fatalf("url = %q, want %q", got, tc.wantURL)
 			}
 		})

@@ -28,7 +28,6 @@ import (
 	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/model"
 	"github.com/hanzoai/ai/object"
-	"github.com/hanzoai/ai/upstream"
 	"github.com/hanzoai/go-openai"
 )
 
@@ -178,21 +177,6 @@ type AnthropicWriter struct {
 	headerSent bool
 }
 
-// Flush satisfies http.Flusher.
-//
-// It has to be written out even though the embedded *bufio.Writer already has a
-// Flush, because that one returns an error and http.Flusher requires a method
-// returning nothing. The promoted method therefore made this type LOOK
-// flushable while failing the interface assertion, and every streaming model
-// adapter begins by asserting exactly that — so /v1/messages answered
-// "writer does not implement http.Flusher" for every request, tools or not,
-// streaming or not, while /v1/chat/completions beside it was fine.
-func (w *AnthropicWriter) Flush() {
-	if w.Writer != nil {
-		_ = w.Writer.Flush()
-	}
-}
-
 // Write processes incoming data chunks from the model provider.
 func (w *AnthropicWriter) Write(p []byte) (n int, err error) {
 	var content string
@@ -336,7 +320,7 @@ func (w *AnthropicWriter) Close(promptTokens, completionTokens, totalTokens int)
 		return err
 	}
 
-	return w.Writer.Flush()
+	return w.Flush()
 }
 
 // writeSSE writes a single SSE event with the given event name and JSON data.
@@ -374,7 +358,7 @@ func (w *AnthropicWriter) writeSSE(event string, data interface{}) error {
 		return err
 	}
 	pending := w.Buffered()
-	if err := w.Writer.Flush(); err != nil {
+	if err := w.Flush(); err != nil {
 		if w.Buffered() < pending {
 			w.StreamSent = true
 		}
@@ -859,7 +843,7 @@ func (c *ApiController) proxyAnthropicToolRequest(
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
-	upstream.Authorize(req, provider)
+	authorize(req, provider)
 	req.Header.Set("anthropic-version", "2023-06-01")
 
 	client := &http.Client{Timeout: 120 * time.Second}
@@ -982,7 +966,7 @@ func (c *ApiController) proxyAnthropicViaOpenAI(
 		oaiReq.StreamOptions = &openai.StreamOptions{IncludeUsage: true}
 	}
 
-	upstreamURL := upstream.Endpoint(provider, "chat/completions")
+	upstreamURL := endpoint(provider, "chat/completions")
 	if upstreamURL == "" {
 		c.respondAnthropicError("api_error", "No upstream endpoint configured for provider: "+provider.Name, 500)
 		return
@@ -1000,7 +984,7 @@ func (c *ApiController) proxyAnthropicViaOpenAI(
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
-	upstream.Authorize(req, provider)
+	authorize(req, provider)
 
 	client := &http.Client{Timeout: 120 * time.Second}
 	resp, err := client.Do(req)

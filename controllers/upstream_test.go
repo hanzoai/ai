@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package upstream
+package controllers
 
 import (
 	"go/ast"
@@ -64,7 +64,7 @@ func TestAuthorize(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			Authorize(req, tc.provider)
+			authorize(req, tc.provider)
 			for header, want := range tc.want {
 				if got := req.Header.Get(header); got != want {
 					t.Fatalf("%s = %q, want %q", header, got, want)
@@ -86,12 +86,12 @@ func TestAuthorizeReplacesACarriedCredential(t *testing.T) {
 	}
 	req.Header.Set("Authorization", "Bearer first")
 
-	Authorize(req, &object.Provider{Type: "Zen", ClientSecret: "second"})
+	authorize(req, &object.Provider{Type: "Zen", ClientSecret: "second"})
 	if got := req.Header.Values("Authorization"); len(got) != 1 || got[0] != "Bearer second" {
 		t.Fatalf("Authorization = %q, want exactly [\"Bearer second\"]", got)
 	}
 
-	Authorize(req, &object.Provider{Type: "Zen"})
+	authorize(req, &object.Provider{Type: "Zen"})
 	if got := req.Header.Get("Authorization"); got != "Bearer second" {
 		t.Fatalf("a keyless provider changed the header to %q", got)
 	}
@@ -102,7 +102,7 @@ func TestAuthorizeReplacesACarriedCredential(t *testing.T) {
 // it before sending anything — the relay refuses rather than guessing a host.
 func TestEndpointRefusesAnUnknownAddress(t *testing.T) {
 	for _, typ := range []string{"Local", "Ollama", "DigitalOcean", "SomethingNew"} {
-		if got := Endpoint(&object.Provider{Type: typ, ClientSecret: "k"}, "chat/completions"); got != "" {
+		if got := endpoint(&object.Provider{Type: typ, ClientSecret: "k"}, "chat/completions"); got != "" {
 			t.Fatalf("%s with no address resolved to %q, want \"\"", typ, got)
 		}
 	}
@@ -124,7 +124,7 @@ func TestEndpointStatesTheFixedAddresses(t *testing.T) {
 	}
 	for typ, want := range fixed {
 		p := object.Provider{Type: typ, ProviderUrl: "https://attacker.example/v1", ClientSecret: "k"}
-		if got := Endpoint(&p, "embeddings"); got != want {
+		if got := endpoint(&p, "embeddings"); got != want {
 			t.Fatalf("%s: a row moved the address to %q, want %q", typ, got, want)
 		}
 	}
@@ -133,40 +133,38 @@ func TestEndpointStatesTheFixedAddresses(t *testing.T) {
 // ── the rule ──────────────────────────────────────────────────────────────────
 
 // A provider credential is applied by the thing that makes the call and is never
-// handed back to a caller. The assertions below are that sentence, checked
-// against the relay's own source rather than remembered:
+// handed back to a caller. The three assertions below are that sentence, checked
+// against the package's own source rather than remembered:
 //
-//	Authorize returns nothing        — there is nothing to hand back.
-//	Endpoint never sees the secret   — asking WHERE cannot yield a credential.
+//	authorize returns nothing        — there is nothing to hand back.
+//	endpoint never sees the secret   — asking WHERE cannot yield a credential.
 //	nothing else reaching an upstream reads one.
 //
-// The third is what keeps the count at one, and it is why this test reads the
-// controllers directory as well as this one. Authorize used to live there; the
-// rule has to follow the credential across the boundary, or extracting a function
-// would be a way to escape it.
-
+// The third is what keeps the count at one. When these calls move behind egress —
+// which holds the credential and dials itself — authorize is the single body that
+// changes.
 func TestTheCredentialStaysInAuthorize(t *testing.T) {
 	fns := relayFuncs(t)
 
-	got, ok := fns["Authorize"]
+	got, ok := fns["authorize"]
 	if !ok {
-		t.Fatal("Authorize is gone; the credential has moved somewhere this test cannot see")
+		t.Fatal("authorize is gone; the credential has moved somewhere this test cannot see")
 	}
 	if n := got.Type.Results.NumFields(); n != 0 {
-		t.Errorf("Authorize declares %d result(s); it must return nothing so a caller has no credential to carry", n)
+		t.Errorf("authorize declares %d result(s); it must return nothing so a caller has no credential to carry", n)
 	}
 
-	if e, ok := fns["Endpoint"]; !ok {
-		t.Fatal("Endpoint is gone")
+	if e, ok := fns["endpoint"]; !ok {
+		t.Fatal("endpoint is gone")
 	} else if readsSecret(e) {
-		t.Error("Endpoint reads a provider secret; asking where a call goes must not yield a credential")
+		t.Error("endpoint reads a provider secret; asking where a call goes must not yield a credential")
 	}
 
 	for name, fn := range fns {
-		if name == "Authorize" || !reachesUpstream(fn) || !readsSecret(fn) {
+		if name == "authorize" || !reachesUpstream(fn) || !readsSecret(fn) {
 			continue
 		}
-		t.Errorf("%s builds an upstream request AND reads a provider secret; Authorize is the one place that does both", name)
+		t.Errorf("%s builds an upstream request AND reads a provider secret; authorize is the one place that does both", name)
 	}
 }
 
@@ -182,33 +180,28 @@ func TestNothingHandsBackACredential(t *testing.T) {
 	}
 }
 
-// relayFuncs parses every non-test source on the relay — this package AND the
-// controllers that call it — and returns each top-level function and method by
-// name. It reads both directories because the rule it serves is about the relay,
-// not about a package: moving a credential read across a package boundary must
-// not move it out of view.
+// relayFuncs parses the package's own non-test sources and returns every
+// top-level function and method by name.
 func relayFuncs(t *testing.T) map[string]*ast.FuncDecl {
 	t.Helper()
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatal(err)
+	}
 	fset := token.NewFileSet()
 	out := map[string]*ast.FuncDecl{}
-	for _, dir := range []string{".", "../controllers"} {
-		entries, err := os.ReadDir(dir)
-		if err != nil {
-			t.Fatal(err)
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || filepath.Ext(name) != ".go" || strings.HasSuffix(name, "_test.go") {
+			continue
 		}
-		for _, e := range entries {
-			name := e.Name()
-			if e.IsDir() || filepath.Ext(name) != ".go" || strings.HasSuffix(name, "_test.go") {
-				continue
-			}
-			file, err := parser.ParseFile(fset, filepath.Join(dir, name), nil, 0)
-			if err != nil {
-				t.Fatalf("parse %s: %v", name, err)
-			}
-			for _, d := range file.Decls {
-				if fn, ok := d.(*ast.FuncDecl); ok && fn.Body != nil {
-					out[fn.Name.Name] = fn
-				}
+		file, err := parser.ParseFile(fset, name, nil, 0)
+		if err != nil {
+			t.Fatalf("parse %s: %v", name, err)
+		}
+		for _, d := range file.Decls {
+			if fn, ok := d.(*ast.FuncDecl); ok && fn.Body != nil {
+				out[fn.Name.Name] = fn
 			}
 		}
 	}
