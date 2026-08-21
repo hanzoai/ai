@@ -181,54 +181,77 @@ func (c *Client) endpoint() string { return resolveEndpoint(c.Endpoint) }
 // GetUrl builds a /v1/iam/<path> URL with the given query params. Hanzo IAM
 // serves its JSON API under /v1/iam/ only (the iam-v1 /api/ prefix is retired).
 //
-// `path` addresses a RESOURCE — "users", "certs/get", "permissions/delete". The
-// verb spellings this service used to pass here ("get-cert") were never the
-// builder's convention; they lived at the call sites, and they are gone from
-// IAM's router, so a request built from one now 404s.
+// `path` is an ADDRESS: a collection ("users") or one record under it
+// ("certs/admin/cert-hanzo"). Query params scope a COLLECTION — `?owner=` on a
+// list — and never identify a record. The verb spellings that used to be passed
+// here, first "get-cert" and then "certs/get", are both gone from IAM's router,
+// so a request built from either now 404s.
 func (c *Client) GetUrl(path string, queryMap map[string]string) string {
 	query := ""
 	for k, v := range queryMap {
 		query += fmt.Sprintf("%s=%s&", url.QueryEscape(k), url.QueryEscape(v))
 	}
 	query = strings.TrimRight(query, "&")
+	if query == "" {
+		return fmt.Sprintf("%s/v1/iam/%s", c.endpoint(), path)
+	}
 	return fmt.Sprintf("%s/v1/iam/%s?%s", c.endpoint(), path, query)
 }
 
-// get GETs /v1/iam/<path> and decodes the response into out.
+// send issues method against /v1/iam/<path>, with body marshaled as JSON when
+// there is one, and decodes a success response into out. A nil out discards the
+// response body, for a write whose only interesting outcome is whether it failed.
 //
 // IAM's native routes answer with the typed value itself — an Application, a
 // {"users":[…]} page — not the {status, data} envelope the retired verb surface
 // wrapped everything in. So the body is decoded straight into out; reaching for
 // a `data` field here would find none and yield a zero value that reads exactly
 // like a successful read of an empty record.
-func (c *Client) get(path string, params map[string]string, out any) error {
-	req, err := http.NewRequest(http.MethodGet, c.GetUrl(path, params), nil)
+func (c *Client) send(method, path string, params map[string]string, body, out any) error {
+	var payload io.Reader
+	if body != nil {
+		postBytes, err := json.Marshal(body)
+		if err != nil {
+			return err
+		}
+		payload = bytes.NewReader(postBytes)
+	}
+	req, err := http.NewRequest(method, c.GetUrl(path, params), payload)
 	if err != nil {
 		return err
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
 	}
 	return c.exchange(req, out)
 }
 
-// post POSTs body as JSON to /v1/iam/<path> and decodes the response into out.
-// A nil out discards the response body, for a write whose only interesting
-// outcome is whether it failed.
+// get reads: a collection scoped by params, or one record whose key is already
+// in path.
 //
-// The method is stated per call site, never inferred from whether there is a
-// body. Some IAM reads are POSTs (providers/get, tokens/get, sessions/get) and
-// some are GETs, and the difference is not cosmetic: IAM weighs a request as a
-// READ from its method, so guessing it wrong turns a read into an unauthorized
-// write.
-func (c *Client) post(path string, params map[string]string, body, out any) error {
-	postBytes, err := json.Marshal(body)
-	if err != nil {
-		return err
-	}
-	req, err := http.NewRequest(http.MethodPost, c.GetUrl(path, params), bytes.NewReader(postBytes))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	return c.exchange(req, out)
+// THE METHOD IS HALF THE REQUEST. IAM weighs a request as a READ from its HTTP
+// method, so the same lookup shaped as a POST is authorized as a write and a
+// read-scoped grant does not fire — a 403 that reads like a permissions
+// regression while the only thing wrong is the verb.
+func (c *Client) get(path string, params map[string]string, out any) error {
+	return c.send(http.MethodGet, path, params, nil, out)
+}
+
+// post creates: the collection is the address and the record is the body.
+func (c *Client) post(path string, params map[string]string, in, out any) error {
+	return c.send(http.MethodPost, path, params, in, out)
+}
+
+// put replaces the record path names. The key is in the URL, so a body naming a
+// different record cannot move the write off the one addressed.
+func (c *Client) put(path string, in, out any) error {
+	return c.send(http.MethodPut, path, nil, in, out)
+}
+
+// remove deletes the record path names. The key is the whole input; there is no
+// body.
+func (c *Client) remove(path string, out any) error {
+	return c.send(http.MethodDelete, path, nil, nil, out)
 }
 
 // exchange authenticates req, sends it, and decodes a success body into out.
@@ -283,18 +306,22 @@ func (c *Client) GetId(name string) string { return c.OrganizationName + "/" + n
 // Ref addresses one record by the (owner, name) pair every owner-scoped IAM
 // entity is keyed on — a cert, a permission, a provider.
 //
-// The two halves travel SEPARATELY. The retired surface took them joined, as
-// `?id=<owner>%2F<name>`, and the native routes have no `id` parameter at all:
-// a request still spelling one omits both required fields and is refused for
-// the missing key rather than for the obsolete spelling.
+// THE KEY IS THE ADDRESS, and it has been spelled three ways. The oldest surface
+// joined it into `?id=<owner>%2F<name>`; the noun-verb surface split it into
+// `?owner=&name=`; the routes IAM serves today take neither, because both halves
+// are path segments under the collection. That progression is why this renders in
+// exactly one place: a stale spelling does not 404, it addresses the COLLECTION
+// with parameters nothing reads, and the caller is answered for every record
+// instead of the one it asked for — at 200, which no status check can catch.
 type Ref struct {
 	Owner string `json:"owner"`
 	Name  string `json:"name"`
 }
 
-// query renders the ref as the query parameters a GET addresses a record with.
-func (r Ref) query() map[string]string {
-	return map[string]string{"owner": r.Owner, "name": r.Name}
+// path renders the ref as the address of one record under a collection:
+// "certs" + (admin, cert-hanzo) -> "certs/admin/cert-hanzo".
+func (r Ref) path(collection string) string {
+	return collection + "/" + url.PathEscape(r.Owner) + "/" + url.PathEscape(r.Name)
 }
 
 // DoGetResponse GETs url and returns the decoded IAM envelope, erroring on a

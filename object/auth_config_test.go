@@ -78,13 +78,17 @@ func TestAuthReady_ResolvesAndThenStopsFetching(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
 		w.Header().Set("Content-Type", "application/json")
-		// IAM's noun routes answer with the record itself. There is no {status,
-		// data} envelope to unwrap — a fixture that wrapped one would decode to a
+		// IAM's routes answer with the record itself. There is no {status, data}
+		// envelope to unwrap — a fixture that wrapped one would decode to a
 		// zero-valued record, which reads as a successful read of a blank cert.
+		//
+		// One record is addressed by its key IN THE PATH, so the collection is the
+		// prefix and the (owner, name) pair follows it. The default arm below 404s,
+		// which is what a stale spelling gets from the real thing.
 		switch {
-		case strings.Contains(r.URL.Path, "applications/get"):
+		case strings.HasPrefix(r.URL.Path, "/v1/iam/applications/"):
 			_, _ = w.Write([]byte(`{"name":"hanzo-cloud","cert":"cert-hanzo"}`))
-		case strings.Contains(r.URL.Path, "certs/get"):
+		case strings.HasPrefix(r.URL.Path, "/v1/iam/certs/"):
 			_, _ = w.Write([]byte(`{"name":"cert-hanzo","certificate":"-----BEGIN CERTIFICATE-----\nnot-a-real-cert\n-----END CERTIFICATE-----"}`))
 		default:
 			w.WriteHeader(http.StatusNotFound)
