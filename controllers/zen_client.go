@@ -1326,6 +1326,21 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	// The learning ledger records this served family call (source="family") and, when
 	// the engine endpoint is configured, the shadow A/B pick — off the hot path, no
 	// prompt text ever stored (the ledger holds none).
+	// READ THE REQUEST WHILE IT IS STILL OURS. A streamed answer settles from
+	// inside fasthttp's writer, which runs after this handler returned; fiber has
+	// recycled the request by then, so reaching through `c` there is a
+	// use-after-free — and it does not fail the one request, it SIGSEGVs the whole
+	// plugin process, so every other call in flight dies with it. Measured in
+	// production: `DefaultCtx.App()` nil-dereferenced under
+	// recordFamilyUsage -> billingOrg -> Ctx.Header, twelve times an hour, each one
+	// answering `mount /v1: http: read response: EOF` to whoever was mid-answer.
+	//
+	// So the three request-derived facts a usage row needs are read HERE, on the
+	// request's own goroutine, and travel by value. recordFamilyUsage takes no
+	// receiver for the same reason: with no `c` in scope it cannot reach a request
+	// at all, which is a compile-time property rather than a rule to remember.
+	w := whence{ledger: c.billingOrg(authUser), ip: c.Fiber().IP(), ctx: c.Context()}
+
 	settle := func(prompt, completion int, served, respID string) {
 		if mk.id != "" {
 			respID = mk.id
@@ -1333,7 +1348,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		if prompt == 0 {
 			prompt = coarseTokenEstimate(rawBody)
 		}
-		cents := c.recordFamilyUsage(fam, sku, requested, prov, mk, authUser, isPremium, stream, reqID, prompt, completion, start, hold, "success", "")
+		cents := recordFamilyUsage(w, fam, sku, requested, prov, mk, authUser, isPremium, stream, reqID, prompt, completion, start, hold, "success", "")
 		c.recordFamilyRouting(model, served, respID, reqID, rawBody, orgId, authUser, prompt, completion, cents, start)
 	}
 
@@ -1521,7 +1536,21 @@ func coarseTokenEstimate(body []byte) int {
 // when a spare route answered in its place. Both travel because the ledger is
 // answering two questions — what did we serve, and was it what was asked for — and
 // a row that can only answer the first cannot be read as a downgrade at all.
-func (c *ApiController) recordFamilyUsage(fam *modelFamily, model, requested string, prov *object.Provider, mk *mark, authUser *iam.User, isPremium, stream bool, reqID string, prompt, completion int, start time.Time, hold *budgetHold, status, errMsg string) int64 {
+// whence is what the REQUEST said, read on the request's own goroutine and
+// carried by value. A usage row needs exactly three things from the request, and
+// all three are only safe to read before the handler returns — see the capture in
+// pipeToFamily for what reading them later costs.
+type whence struct {
+	ledger string          // billingOrg: X-Org-Id, the bearer, the session cookie
+	ip     string          // the peer, fiber's own read
+	ctx    context.Context // what the usage row and its span hang off
+}
+
+// recordFamilyUsage takes NO RECEIVER, deliberately. It is called from inside a
+// stream writer that outlives the request, so a `c` in scope here is a request
+// this function must not touch — and the way to keep a rule like that is to leave
+// nothing to touch.
+func recordFamilyUsage(w whence, fam *modelFamily, model, requested string, prov *object.Provider, mk *mark, authUser *iam.User, isPremium, stream bool, reqID string, prompt, completion int, start time.Time, hold *budgetHold, status, errMsg string) int64 {
 	// The vendor charges nothing for a spare route — that is the whole reason it can
 	// answer while the account is empty — so it is billed at nothing. Charging
 	// retail for a downgrade the customer did not choose would be taking money for
@@ -1541,20 +1570,20 @@ func (c *ApiController) recordFamilyUsage(fam *modelFamily, model, requested str
 		return cents
 	}
 	rec := &usageRecord{
-		Owner: c.billingOrg(authUser), Organization: authUser.Owner,
+		Owner: w.ledger, Organization: authUser.Owner,
 		Model: model, Requested: requested, Free: free, Provider: fam.name, Origin: originOf(prov, mk),
 		PromptTokens: prompt, CompletionTokens: completion, TotalTokens: prompt + completion,
 		Cost: float64(cents) / 100.0, Currency: "USD",
 		Premium: isPremium, Stream: stream, Status: status, ErrorMsg: errMsg,
-		ClientIP: c.Fiber().IP(), RequestID: reqID, Account: "hanzo",
+		ClientIP: w.ip, RequestID: reqID, Account: "hanzo",
 		// What the call cost us to buy, when the answer stated it, beside what we
 		// charged for it. usageMargin reads this as the COGS, so the margin on a
 		// relayed call stops being a guess.
 		CostNanoExact: mk.cogs(),
 	}
-	rec.bind(c.Context(), authUser)
+	rec.bind(w.ctx, authUser)
 	recordUsage(rec)
-	recordTrace(c.Context(), rec, start)
+	recordTrace(w.ctx, rec, start)
 	return cents
 }
 

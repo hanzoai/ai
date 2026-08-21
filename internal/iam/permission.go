@@ -47,7 +47,7 @@ type Permission struct {
 // GetPermission fetches a permission by name within the client's organization.
 func (c *Client) GetPermission(name string) (*Permission, error) {
 	var permission *Permission
-	if err := c.get("permissions/get", Ref{Owner: c.OrganizationName, Name: name}.query(), &permission); err != nil {
+	if err := c.get(Ref{Owner: c.OrganizationName, Name: name}.path("permissions"), nil, &permission); err != nil {
 		return nil, err
 	}
 	return permission, nil
@@ -64,38 +64,35 @@ func (c *Client) GetPermissions() ([]*Permission, error) {
 	return page.Permissions, nil
 }
 
-// writePermission posts permission to one of the permissions write routes. The
-// record IS the request body — the retired surface also carried its key in an
-// `?id=`, which the native routes read off the body instead.
+// AddPermission creates a permission. The collection is the address and the
+// record is the body — a create is the one write with no key to put in the URL,
+// because the record it is about does not exist yet.
 //
-// Success is the absence of a refusal. The old envelope reported it as the
+// Success is the absence of a refusal. The retired envelope reported it as the
 // string "Affected" in `data`; the native writes answer with the stored record,
 // so there is nothing left to compare against and a 2xx is the whole answer.
-func (c *Client) writePermission(path string, permission *Permission) (bool, error) {
-	permission.Owner = c.OrganizationName
-	if err := c.post(path, nil, permission, nil); err != nil {
-		return false, err
-	}
-	return true, nil
-}
-
 func (c *Client) AddPermission(permission *Permission) (bool, error) {
-	return c.writePermission("permissions", permission)
+	permission.Owner = c.OrganizationName
+	err := c.post("permissions", nil, permission, nil)
+	return err == nil, err
 }
 
+// UpdatePermission replaces a stored permission. The record still travels as the
+// body, but the URL is what says WHICH record — so a body whose owner or name
+// disagrees can no longer move the write onto a different one.
 func (c *Client) UpdatePermission(permission *Permission) (bool, error) {
-	return c.writePermission("permissions/update", permission)
+	permission.Owner = c.OrganizationName
+	ref := Ref{Owner: permission.Owner, Name: permission.Name}
+	err := c.put(ref.path("permissions"), permission, nil)
+	return err == nil, err
 }
 
-// DeletePermission removes a permission. Delete takes only the (owner, name)
-// key, not the record: the route's input is the key alone, and posting a whole
-// permission at it would rely on the extra fields being ignored.
+// DeletePermission removes a permission. The key is the whole input and it is in
+// the URL, so there is no body at all — nothing for a stray field to act on.
 func (c *Client) DeletePermission(permission *Permission) (bool, error) {
 	ref := Ref{Owner: c.OrganizationName, Name: permission.Name}
-	if err := c.post("permissions/delete", nil, ref, nil); err != nil {
-		return false, err
-	}
-	return true, nil
+	err := c.remove(ref.path("permissions"), nil)
+	return err == nil, err
 }
 
 // Package-level helpers.

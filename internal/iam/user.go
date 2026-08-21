@@ -311,7 +311,7 @@ type ProductInfo struct {
 // GetUser fetches a single user by name within the client's organization.
 func (c *Client) GetUser(name string) (*User, error) {
 	var user *User
-	if err := c.get("users/get", Ref{Owner: c.OrganizationName, Name: name}.query(), &user); err != nil {
+	if err := c.get(Ref{Owner: c.OrganizationName, Name: name}.path("users"), nil, &user); err != nil {
 		return nil, err
 	}
 	return user, nil
@@ -331,6 +331,12 @@ func (c *Client) GetUsers() ([]*User, error) {
 
 // UpdateUser writes user back to IAM.
 //
+// The record is named in the URL like every other one: PUT /v1/iam/users/<owner>/
+// <name>. The body still carries the record under `user`, because that is the
+// shape of the write — what the record should BECOME — while the address says
+// WHICH record, and the address outranks anything the body claims about its own
+// identity.
+//
 // It is a WHOLE-RECORD write, and the caller must hand over a record it read
 // rather than one it assembled: every field present replaces what is stored.
 // The retired surface took a `columns` list and touched only those, which is
@@ -347,7 +353,7 @@ func (c *Client) UpdateUser(user *User) error {
 	if user.Owner == "" {
 		user.Owner = c.OrganizationName
 	}
-	return c.post("users/update", nil, struct {
+	return c.put(Ref{Owner: user.Owner, Name: user.Name}.path("users"), struct {
 		User *User `json:"user"`
 	}{User: user}, nil)
 }
