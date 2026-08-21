@@ -131,9 +131,11 @@ func TestGetUserByAccessKeyRelaysReasonOnNon200(t *testing.T) {
 	if err == nil {
 		t.Fatal("an unknown key must be an error, got nil")
 	}
-	// The holder must be told what to DO. keyRefusal turns key_unknown into
-	// "not recognized … mint a new one"; a bare status number tells them nothing.
-	if !strings.Contains(err.Error(), "not recognized") {
+	// The holder must be told what to DO. keyRefusal turns key_unknown into the one
+	// cure that fits every case behind that code — mint a new key — and a bare status
+	// number tells them nothing. The sentence deliberately does not guess whether the
+	// key was revoked, replaced, or never resolved at all; see keyRefusal.
+	if !strings.Contains(err.Error(), "does not resolve") || !strings.Contains(err.Error(), "mint a new one") {
 		t.Errorf("non-200 dropped IAM's reason — want the key_unknown refusal, got: %v", err)
 	}
 	if strings.Contains(err.Error(), "returned status") {
