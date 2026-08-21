@@ -18,10 +18,25 @@
 // upstream and settles one. Left alone, fast mode is a way for a customer to
 // spend 3x our money at 1x their price.
 //
-// Either the losing attempts get real usage rows — not the "failover" status,
-// which exists precisely to record a refusal that cost nothing — or the budget
-// hold is reserved N-fold up front. That is a decision about money and it
-// belongs at the call site, which is why this package does not quietly make it.
+// THE RULE, and why the failover ledger cannot be reused for it:
+//
+// controllers.recordRefusals bills nothing, and its comment says exactly why —
+// "an attempt that refused before producing a token adds nothing to it". That is
+// right for failover, where a loser ERRORED: no tokens, no upstream charge, and
+// the "failover" status exists to record a refusal that cost nothing.
+//
+// A hedge loser is the opposite case wearing the same shape. It was CANCELLED
+// mid-generation, so the upstream produced tokens and billed us for them. It
+// costs real money and must write a REAL usage row, with the token count it
+// actually reached before Race cancelled it — never the "failover" status, which
+// would file a genuine charge as a free refusal and make fast mode invisible in
+// the ledger the team reads.
+//
+// So each attempt needs its own writer, not a shared one: the loser's token count
+// is on ITS writer, and a single writer reset between attempts (which is what
+// failover does, controllers/openai_writer.go) destroys exactly the number the
+// row needs. That is a call-site decision about money, which is why this package
+// names it and does not quietly make it.
 //
 // FIRST BYTE WINS, and that is the only definition of "fastest" a stream can act
 // on. A provider that will finish sooner but has not started is not yet the
