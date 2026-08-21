@@ -39,7 +39,6 @@ import (
 	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/model"
 	"github.com/hanzoai/ai/object"
-	"github.com/hanzoai/ai/upstream"
 	"github.com/hanzoai/ai/util"
 	"github.com/hanzoai/go-openai"
 )
@@ -2223,7 +2222,7 @@ func (c *ApiController) proxyToolRequest(
 	}
 
 	// Determine upstream endpoint and auth
-	upstreamURL := upstream.Endpoint(provider, "chat/completions")
+	upstreamURL := endpoint(provider, "chat/completions")
 	if upstreamURL == "" {
 		c.ResponseError("No upstream endpoint configured for provider: " + provider.Name)
 		return
@@ -2243,7 +2242,7 @@ func (c *ApiController) proxyToolRequest(
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
-	upstream.Authorize(req, provider)
+	authorize(req, provider)
 
 	client := &http.Client{Timeout: 120 * time.Second}
 	resp, err := client.Do(req)
@@ -2575,7 +2574,7 @@ func (c *ApiController) proxyToolRequestAnthropic(
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
-	upstream.Authorize(req, provider)
+	authorize(req, provider)
 	req.Header.Set("anthropic-version", "2023-06-01")
 
 	client := &http.Client{Timeout: 120 * time.Second}

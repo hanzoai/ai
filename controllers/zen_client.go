@@ -44,7 +44,6 @@ import (
 	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/object"
-	"github.com/hanzoai/ai/upstream"
 	"github.com/hanzoai/decimal"
 	"github.com/hanzoai/money"
 )
@@ -610,7 +609,7 @@ func (f *modelFamily) refresh() error {
 	if err != nil {
 		return err
 	}
-	upstream.Authorize(req, p)
+	authorize(req, p)
 	resp, err := zenDiscoveryClient.Do(req)
 	if err != nil {
 		return err
@@ -1076,7 +1075,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	if a := c.Header("Accept"); a != "" {
 		req.Header.Set("Accept", a)
 	}
-	upstream.Authorize(req, prov)
+	authorize(req, prov)
 	// Tenant attribution: the family needs a billable tenant, and ai — which settles
 	// the ledger — tells the family it fronts this call so it meters without
 	// double-charging.
@@ -1109,7 +1108,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 			return nil, rErr
 		}
 		r.Header = req.Header.Clone()
-		upstream.Authorize(r, p)
+		authorize(r, p)
 		b := withModel(rawBody, s)
 		if f.terms != nil {
 			b = f.terms(b, f.free(s))
