@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -304,18 +305,28 @@ func Crawl4AIResultToScrapeResult(result Crawl4AIResult) ScrapeResult {
 			Section: currentSection,
 		})
 	}
-	// Extract links from the Hanzo Crawl links map
-	if internalLinks, ok := result.Links["internal"]; ok {
-		for _, link := range internalLinks {
-			if href, _ := link["href"].(string); href != "" {
-				sr.Links = append(sr.Links, href)
+	// Extract links from the Hanzo Crawl links map, RESOLVED against the page they
+	// were found on. They arrive as raw hrefs, and on a docs site those are
+	// root-relative — "/guide/install". Left raw, url.Parse gives such an href an
+	// empty hostname, it fails the same-domain test the caller applies, and the
+	// crawl never learns the page exists. A page a crawl never learns about is one
+	// it can delete while the site is still serving it. ScrapeResult.Links holds
+	// absolute URLs whichever engine produced it.
+	base, baseErr := url.Parse(result.URL)
+	for _, group := range []string{"internal", "external"} {
+		for _, link := range result.Links[group] {
+			href, _ := link["href"].(string)
+			if href == "" {
+				continue
 			}
-		}
-	}
-	if externalLinks, ok := result.Links["external"]; ok {
-		for _, link := range externalLinks {
-			if href, _ := link["href"].(string); href != "" {
-				sr.Links = append(sr.Links, href)
+			if baseErr != nil {
+				sr.Dropped++
+				continue
+			}
+			if resolved := resolveHref(href, base); resolved != "" {
+				sr.Links = append(sr.Links, resolved)
+			} else if pageHref(href) {
+				sr.Dropped++
 			}
 		}
 	}
