@@ -41,6 +41,7 @@ import (
 	"github.com/luxfi/zap"
 
 	"github.com/hanzoai/ai/object"
+	"github.com/hanzoai/ai/upstream"
 )
 
 // ── Group self-registration ───────────────────────────────────────────────
@@ -251,7 +252,7 @@ func zapRerankHandler(ctx context.Context, auth string, body []byte) (*zap.Messa
 func zapProxyJSON(ctx context.Context, provider *object.Provider, apiPath string, body []byte, userModel string, authUser *iam.User, isPremium bool, startTime time.Time) (*zap.Message, error) {
 	requestId := uuid.NewString()
 
-	upstreamURL := endpoint(provider, apiPath)
+	upstreamURL := upstream.Endpoint(provider, apiPath)
 	if upstreamURL == "" {
 		return object.BuildCloudResponse(502, nil, "no upstream endpoint configured for provider: "+provider.Name)
 	}
@@ -261,7 +262,7 @@ func zapProxyJSON(ctx context.Context, provider *object.Provider, apiPath string
 		return object.BuildCloudResponse(500, nil, "failed to create upstream request: "+err.Error())
 	}
 	req.Header.Set("Content-Type", "application/json")
-	authorize(req, provider)
+	upstream.Authorize(req, provider)
 
 	client := &http.Client{Timeout: 120 * time.Second}
 	resp, err := client.Do(req)
