@@ -82,6 +82,49 @@ type DocSearchResult struct {
 type DocIndexRequest struct {
 	Documents []DocIndex `json:"documents"`
 	Replace   bool       `json:"replace,omitempty"`
+
+	// Mirror declares the corpus these documents are the WHOLE of. Set, the write
+	// is a mirror of it: whatever it holds that these documents omit is removed,
+	// so a page taken off a site stops being retrieved and cited. Nil — the
+	// default — the write only adds, which is the only honest thing a source that
+	// sees part of a corpus at a time can do.
+	//
+	// It is bounded, so mirroring one source never reaches another sharing the
+	// index. That is what separates it from Replace, which empties the index
+	// whoever else is in it.
+	Mirror *Mirror `json:"mirror,omitempty"`
+}
+
+// Mirror bounds what a write may remove. BOTH bounds are required, and a prune
+// crosses neither.
+type Mirror struct {
+	// Tag is the source the documents belong to.
+	Tag string `json:"tag"`
+
+	// Root is the URL they live under, and it is not redundant with Tag. A crawl
+	// tags by hostname when asked for no tag, so a docs tree and a blog on one
+	// host carry the SAME tag — bounded by tag alone, each crawl would delete the
+	// other's pages. A crawl is authoritative over the subtree it started from
+	// and nothing else, and this is that subtree.
+	Root string `json:"root"`
+}
+
+// under reports whether u lies inside the subtree at root, boundary included:
+// ".../docs" holds ".../docs/a" and ".../docs#x" and does NOT hold
+// ".../docsearch".
+func under(root, u string) bool {
+	root = strings.TrimRight(root, "/")
+	if u == root {
+		return true
+	}
+	if !strings.HasPrefix(u, root) {
+		return false
+	}
+	switch u[len(root)] {
+	case '/', '#', '?':
+		return true
+	}
+	return false
 }
 
 // DocChatRequest is the request body for RAG chat over documentation.
@@ -564,6 +607,19 @@ var (
 	vectorDeleteSink = deleteFileFromVector
 	// fileContextSink fetches all stored chunks of a file_id from Hanzo Search.
 	fileContextSink = fetchFileChunksFromSearch
+	// staleSink lists the ids inside a mirror's bounds that the write omits, with
+	// the count of ids inside those bounds at all.
+	staleSink = staleTagIDs
+	// pruneSink removes ids from Hanzo Search (keyword).
+	pruneSink = deleteIDsFromSearch
+	// vectorPruneSink removes ids from Hanzo Vector (semantic).
+	vectorPruneSink = deleteIDsFromVector
+	// peakSink notes a corpus size and returns the largest that corpus has been.
+	peakSink = recordPeak
+	// peaksSink lists every recorded peak carrying a tag.
+	peaksSink = peaks
+	// peakResetSink forgets an index's peaks, which is what a Replace does.
+	peakResetSink = clearPeaks
 )
 
 // resolveEmbedder resolves the admin-context embedding provider ONCE and returns
@@ -644,7 +700,14 @@ func writeDocsToVector(indexName string, docs []DocIndex, replace bool, lang str
 		return fmt.Errorf("ensure Hanzo Vector collection: %w", err)
 	}
 	if replace {
-		deleteAllVectorPoints(baseURL, apiKey, indexName)
+		if err = deleteAllVectorPoints(baseURL, apiKey, indexName); err != nil {
+			return fmt.Errorf("clear Hanzo Vector collection: %w", err)
+		}
+		// The clear drops the collection itself, so the upserts below have nowhere
+		// to land until it exists again.
+		if err = ensureVectorCollection(baseURL, apiKey, indexName, len(sampleVector)); err != nil {
+			return fmt.Errorf("recreate Hanzo Vector collection: %w", err)
+		}
 	}
 	const batchSize = 50
 	// Embeds within a batch run concurrently: each is an independent HTTP call
@@ -681,11 +744,9 @@ func writeDocsToVector(indexName string, docs []DocIndex, replace bool, lang str
 				continue
 			}
 			points = append(points, qdrantPoint{
-				// Hanzo Vector accepts only unsigned-integer or UUID point ids;
-				// the chunk id is a hex hash, so it rides as a deterministic
-				// UUID (same id → same point → upsert stays an upsert) and the
-				// payload keeps the original for reads.
-				ID:     uuid.NewSHA1(uuid.NameSpaceOID, []byte(doc.ID)).String(),
+				// The payload keeps the original id for reads; the point id is
+				// derived, and derived in ONE place so deletes hit what writes made.
+				ID:     vectorPointID(doc.ID),
 				Vector: vecs[j],
 				Payload: map[string]interface{}{
 					"id": doc.ID, "page_id": doc.PageID, "title": doc.Title,
@@ -784,9 +845,23 @@ func SearchDocuments(owner, store string, req *DocSearchRequest, lang string) ([
 // best-effort so a missing embedding provider never drops the document.
 func IndexDocuments(owner, store string, req *DocIndexRequest, lang string) (int, error) {
 	if len(req.Documents) == 0 {
+		// Nothing written means nothing known, so a mirror of nothing removes
+		// nothing. A crawl that came back empty must not empty the index.
 		return 0, nil
 	}
 	indexName := GetSearchIndexName(owner, store)
+	// Read the tag's stored ids BEFORE writing: afterwards a document that just
+	// arrived and one that was always there are the same row.
+	var stale []string
+	if req.Mirror != nil {
+		var mErr error
+		if stale, mErr = mirrorStale(indexName, req.Mirror, req.Documents); mErr != nil {
+			// The documents are still written; the write simply stays additive,
+			// which is where the index already was. A stale index beats a hole.
+			log.Warning("mirror of %s in %s skipped, indexing additively: %v", req.Mirror.Root, indexName, mErr)
+			stale = nil
+		}
+	}
 	count, err := indexSink(indexName, req.Documents, req.Replace)
 	if err != nil {
 		return 0, err
@@ -794,7 +869,591 @@ func IndexDocuments(owner, store string, req *DocIndexRequest, lang string) (int
 	if err := vectorSink(indexName, req.Documents, req.Replace, lang); err != nil {
 		log.Warning("vector indexing skipped for %s: %v", indexName, err)
 	}
+	if req.Replace {
+		// The corpus has just been stated outright, so how big it used to be says
+		// nothing about how big it is.
+		if err := peakResetSink(indexName); err != nil {
+			log.Warning("could not clear corpus peaks for %s: %v", indexName, err)
+		}
+	}
+	// Prune AFTER the write, so what sits between them is a SUPERSET of the tag
+	// and never a subset: a mirror interrupted here leaves pages that should have
+	// gone, never a gap where a live page should be, and the next crawl converges.
+	if len(stale) > 0 {
+		if err := prune(indexName, stale); err != nil {
+			log.Warning("mirror of %s in %s left %d stale doc(s): %v", req.Mirror.Root, indexName, len(stale), err)
+		} else {
+			log.Info("mirror of %s in %s removed %d stale doc(s)", req.Mirror.Root, indexName, len(stale))
+		}
+	}
 	return count, nil
+}
+
+// mirrorStale is what a mirror of tag would remove: the ids stored under that
+// tag that this write does not carry.
+//
+// It REFUSES when the write carries no document under the tag at all. That reads
+// as "every page of this site is gone", which is the one answer no caller ever
+// means and the one that empties a corpus.
+// absent reports whether an error means the thing simply is not there, which for
+// every reader here is the same as finding it empty.
+func absent(err error) bool {
+	if err == nil {
+		return false
+	}
+	e := strings.ToLower(err.Error())
+	return strings.Contains(e, "index_not_found") || strings.Contains(e, "document_not_found")
+}
+
+// pruneFloor is the corpus size below which one pass may remove whatever it
+// likes. See mirrorLimit.
+const pruneFloor = 8
+
+// extent is what the store already holds inside a mirror's bounds.
+type extent struct {
+	stale []string // ids the write does not carry
+	docs  int      // documents inside the bounds
+	pages int      // distinct pages those documents belong to
+
+	// outside counts, for each scope the listing was asked about, the distinct
+	// pages inside THAT scope that lie outside the mirror's bounds. This pass
+	// cannot touch them, so they survive it — and counted per scope rather than
+	// once for the whole tag, they credit a scope only with mass that scope
+	// actually contains.
+	outside map[string]int
+}
+
+// inScope reports whether a stored row lies inside a ceiling's subtree.
+//
+// A mirror deletes by URL containment, so a row with no URL at all — an uploaded
+// file's chunks, which no crawl reaches and no mirror can remove — is inside no
+// scope whatever. That is not a detail: counting unreachable rows as mass credits
+// a ceiling with pages that were never at risk, and then DELETING them by some
+// other route shrinks that credit and freezes a mirror that did nothing wrong.
+//
+// The empty scope root is the tag's whole URL space, the weakest ancestor there
+// is, and it contains every row that has a URL.
+func inScope(scopeRoot, u string) bool {
+	if u == "" {
+		return false
+	}
+	if scopeRoot == "" {
+		return true
+	}
+	return under(scopeRoot, u)
+}
+
+// peak is the largest a corpus under one (tag, root) has been.
+type peak struct {
+	ID    string `json:"id"`
+	Tag   string `json:"tag"`
+	Root  string `json:"root"`
+	Pages int    `json:"pages"`
+}
+
+// peakIndex is where corpus peaks live: BESIDE the documents, never among them.
+//
+// A peak is a fact about a CORPUS, not about any document in it. Kept on the
+// documents it would be one fact written in a thousand places, and a record
+// sitting in the docs index would answer searches. Its own index is the same
+// store the mirror already talks to, so it costs no new dependency and no new
+// credential, and nothing reads it but this. The name cannot collide with a docs
+// index: those end in "-docs", and a caller may not spell a store with a hyphen.
+func peakIndex(indexName string) string { return indexName + "-peak" }
+
+// peakID names a peak record. The fields are length-prefixed because both are
+// free text a caller supplies: joined by a separator either could contain, the
+// tag record of tag "a\n" and the root record of (tag "a", root "\n") derive the
+// same key.
+func peakID(tag, root string) string {
+	return hashID(fmt.Sprintf("%d:%s%d:%s", len(tag), tag, len(root), root))
+}
+
+// peaks lists every recorded peak carrying a tag.
+func peaks(indexName, tag string) ([]peak, error) {
+	client, err := getSearchClient()
+	if err != nil {
+		return nil, err
+	}
+	index := client.Index(peakIndex(indexName))
+	const page = int64(1000)
+	const maxRounds = 100
+	var out []peak
+	for round := 0; round < maxRounds; round++ {
+		var resp meilisearch.DocumentsResult
+		if err := index.GetDocuments(&meilisearch.DocumentsQuery{
+			Limit:  page,
+			Offset: int64(round) * page,
+		}, &resp); err != nil {
+			if absent(err) {
+				return nil, nil
+			}
+			return nil, err
+		}
+		for _, hit := range resp.Results {
+			var pk peak
+			if decErr := hit.DecodeInto(&pk); decErr != nil {
+				return nil, fmt.Errorf("undecodable peak in %s: %w", indexName, decErr)
+			}
+			if pk.Tag == tag {
+				out = append(out, pk)
+			}
+		}
+		if int64(len(resp.Results)) < page {
+			return out, nil
+		}
+	}
+	return nil, fmt.Errorf("listing peaks in %s did not end after %d pages", indexName, maxRounds)
+}
+
+// recordPeak notes that a corpus was seen at pages and returns the largest it has
+// ever been. It only ever rises; mirrorCoverage says why.
+//
+// It is called BEFORE the refusals, so a REFUSED pass records too. That is
+// deliberate and load-bearing, not an oversight to tidy up later: what gets
+// recorded is the corpus's true size — the larger of what is stored and what the
+// crawl carries — never the thin number a degraded crawl came back with. Moving
+// this behind the checks would mean a run of refused passes taught the ceiling
+// nothing, and the first pass that squeaked through would set it from a corpus
+// nobody had measured since. The write must not move.
+func recordPeak(indexName, tag, root string, pages int) (int, error) {
+	client, err := getSearchClient()
+	if err != nil {
+		return 0, err
+	}
+	name := peakIndex(indexName)
+	id := peakID(tag, root)
+	var stored peak
+	if getErr := client.Index(name).GetDocument(id, nil, &stored); getErr != nil && !absent(getErr) {
+		return 0, getErr
+	}
+	if stored.Pages >= pages {
+		return stored.Pages, nil // already at least this high; nothing to write
+	}
+	if err := ensurePeakIndex(client, name); err != nil {
+		return 0, err
+	}
+	pk := "id"
+	task, err := client.Index(name).AddDocuments(
+		[]peak{{ID: id, Tag: tag, Root: root, Pages: pages}},
+		&meilisearch.DocumentOptions{PrimaryKey: &pk})
+	if err != nil {
+		return 0, err
+	}
+	if err := awaitTask(client, task.TaskUID, 30*time.Second); err != nil {
+		return 0, err
+	}
+	return pages, nil
+}
+
+// ensurePeakIndex creates the peak index if it is not there. It carries no
+// searchable or filterable settings because nothing ever searches it — every
+// read is a lookup by primary key.
+func ensurePeakIndex(client meilisearch.ServiceManager, name string) error {
+	if _, err := client.GetIndex(name); err == nil {
+		return nil
+	}
+	task, err := client.CreateIndex(&meilisearch.IndexConfig{Uid: name, PrimaryKey: "id"})
+	if err != nil {
+		return fmt.Errorf("failed to create index %s: %w", name, err)
+	}
+	return awaitTask(client, task.TaskUID, 30*time.Second)
+}
+
+// clearPeaks forgets every peak for an index. A Replace states the whole corpus
+// outright, so what that corpus used to be stops being evidence about what it is
+// — and this is the one deliberate act that lets a genuinely shrunken corpus
+// start converging again.
+func clearPeaks(indexName string) error {
+	client, err := getSearchClient()
+	if err != nil {
+		return err
+	}
+	task, err := client.DeleteIndex(peakIndex(indexName))
+	if err != nil {
+		if absent(err) {
+			return nil
+		}
+		return err
+	}
+	return awaitTask(client, task.TaskUID, 30*time.Second)
+}
+
+// mirrorCoverage and mirrorLimit are BOTH load-bearing, and neither is the
+// other's special case. Coverage counts PAGES and catches a crawl that saw too
+// little of the corpus; the limit counts DOCUMENTS and catches what coverage
+// cannot, because coverage's live side is derived from the crawl's own page ids
+// — inflate those and coverage is satisfied while the documents still drain.
+// Deleting either re-opens the other's blind spot.
+
+// mirrorCoverage refuses a mirror whose crawl covered too little of what is
+// already stored.
+//
+// This is the backstop for the one thing the crawl cannot prove about itself.
+// The frontier proves a crawl READ everything it DISCOVERED; nothing proves it
+// discovered everything there is, and nothing can, because a crawl only ever
+// sees the links its source reported. A docs shell that renders its nav in the
+// browser has no href to find. A crawl service that renames the field its links
+// arrive in returns none. Either way the crawl reports one page, no unread URLs
+// and no errors — a flawless crawl of a site that appears to be one page long,
+// and from inside the crawl that is indistinguishable from a site that is.
+//
+// From outside it is not, because the store already knows how many pages this
+// corpus spans. So ask it. A write covering at most half of them is not a site
+// that lost the rest; it is a crawl that could not see them.
+//
+// It is the same boundary mirrorLimit draws, at the other granularity: no pass
+// may remove more than half the PAGES, just as none may remove more than half
+// the DOCUMENTS. Pages need no floor to go with it, which is the point — the
+// proportion still means something at three pages, where a count of documents
+// has to stand down. A page is also the unit this failure arrives in: losing the
+// links on one page loses whole pages, never a scattering of sections.
+//
+// It is measured against the largest that corpus has recently been — its PEAK —
+// and not the size it happens to be right now. That difference is the whole
+// defence against a SEQUENCE. Measured against the current size, halving is
+// legal every single time, so twenty pages reach one in five individually legal
+// steps: no errors, nothing unread, each pass looking exactly like a site that
+// shed half its pages. A site progressively unlinking pages it still serves — a
+// nav migrating to JavaScript section by section over a week of deploys — walks
+// that ladder without anyone doing anything wrong. Against the peak, the second
+// step is refused and the ladder never starts.
+//
+// The peak only ever RISES. It is deliberately not allowed to settle back to
+// whatever the last pass happened to see, because a mark that follows the corpus
+// down is no mark at all — that is the drain again, one indirection later. It
+// does not age out either: a slow enough drain would simply outwait any clock.
+//
+// So the cost is a real one, stated plainly: a corpus that genuinely loses more
+// than half its pages stops converging until someone states the new corpus
+// outright with Replace, which clears the peak. A prune wrongly refused costs
+// staleness; a prune wrongly allowed costs the corpus. That is the trade, and it
+// is not close.
+func mirrorCoverage(livePages, peakPages int, scope string) error {
+	if livePages*2 < peakPages {
+		return fmt.Errorf("pass leaves %d pages in %s, against %d at its largest; refusing to read the rest as deleted", livePages, scope, peakPages)
+	}
+	return nil
+}
+
+// mirrorLimit refuses a prune that would take most of a corpus in one pass.
+//
+// mirrorStale already refuses a crawl offering NO document under the bounds,
+// because "every page is gone" is an answer no caller means. A crawl offering
+// two documents against two hundred stored is the same answer one notch weaker,
+// and earns the same refusal. This is the backstop for the truncation nobody has
+// enumerated yet: a crawl can go wrong in a way no signal catches, and this still
+// keeps the damage to a fraction of the corpus.
+//
+// Two bounds, because either alone is wrong. A ratio alone would deny a small
+// site any real edit — three of five pages retired is 60% and perfectly
+// ordinary. A floor alone would wave through nine hundred deletions in a corpus
+// of a thousand. Together: under the floor, absolute size makes the ratio
+// meaningless and ordinary churn passes; over it, no single pass takes more
+// than half.
+//
+// The floor is about one page's worth of documents — a page indexes as itself
+// plus one document per section — so a page or two may always come and go, and
+// if that judgement is ever wrong the cost is a re-crawl.
+//
+// A refusal is not a failure: the write still lands, the index simply stays
+// additive, and the log names the shape. A corpus that really did lose most of
+// itself is retired deliberately with Replace, by someone who meant it.
+func mirrorLimit(stale, stored int, m *Mirror) error {
+	// The ratio applies once the CORPUS clears the floor, not once the deletion
+	// does. Gated the other way round, a corpus of ten was exempt whenever the
+	// prune was eight or fewer — which is eighty per cent of it, at exactly the
+	// size where a proportion is the only thing left to judge by.
+	if stored > pruneFloor && stale*2 > stored {
+		return fmt.Errorf("refusing to remove %d of %d documents under %s in one pass", stale, stored, m.Root)
+	}
+	return nil
+}
+
+func mirrorStale(indexName string, m *Mirror, docs []DocIndex) ([]string, error) {
+	if m.Tag == "" || m.Root == "" {
+		return nil, fmt.Errorf("a mirror needs both a tag and a root; got %q and %q", m.Tag, m.Root)
+	}
+	live := make(map[string]bool, len(docs))
+	livePages := make(map[string]bool)
+	for _, d := range docs {
+		// A document outside the bounds is no part of this mirror. Writing it is
+		// fine; letting it widen what the mirror removes is not.
+		if d.Tag == m.Tag && under(m.Root, d.URL) {
+			live[d.ID] = true
+			// Every document a page produces — the page and one per section — carries
+			// that page's id, so this counts PAGES READ rather than documents
+			// written. A single page with forty sections is still one page. A
+			// document with no page of its own stands for one, exactly as it is
+			// counted on the stored side.
+			if page := d.PageID; page != "" {
+				livePages[page] = true
+			} else {
+				livePages[d.ID] = true
+			}
+		}
+	}
+	if len(live) == 0 {
+		return nil, fmt.Errorf("no document lies in %q under %s", m.Tag, m.Root)
+	}
+	// The scopes that can legitimately constrain this pass are exactly the roots
+	// that CONTAIN it, because a mirror deletes exactly the rows under its own
+	// root. Ancestry IS that containment relation, so there is no third scope to
+	// escape to: a deeper root is still inside every root above it.
+	//
+	// Keying the ceiling on the pass's own root alone let a caller step around it
+	// by adding a path segment — a root never seen before starts from whatever is
+	// there now, which is already the reduced count the last step left. Keying it
+	// on the whole tag did not bind either: the tag credits a pass with every page
+	// under it, and the pages a nested walk consumes are exactly the ones NOT in
+	// that credit, so any sibling corpus under the same tag handed the walk all the
+	// headroom it wanted. Measured per ancestor, every subtree is judged on its own
+	// mass, and a sibling corpus credits nothing to the subtree being drained.
+	recorded, err := peaksSink(indexName, m.Tag)
+	if err != nil {
+		return nil, fmt.Errorf("corpus peaks unavailable: %w", err)
+	}
+	scopes := []string{m.Root, ""}
+	ceiling := map[string]int{}
+	proper := false
+	for _, pk := range recorded {
+		if pk.Root == "" || pk.Root == m.Root || !under(pk.Root, m.Root) {
+			continue
+		}
+		ceiling[pk.Root] = pk.Pages
+		scopes = append(scopes, pk.Root)
+		proper = true
+	}
+	e, err := staleSink(indexName, m, live, scopes)
+	if err != nil {
+		return nil, err
+	}
+	// What survives this pass inside a scope: the pages of that scope it cannot
+	// touch, plus the ones it read. Every live page is under m.Root, and m.Root is
+	// inside every scope here, so the live count applies to all of them.
+	survivors := func(scope string) int { return e.outside[scope] + len(livePages) }
+
+	// Note how big each scope is BEFORE judging the pass, and judge against the
+	// largest it has ever been. A pass can only measure itself against the store
+	// as it stands, and a rule that only ever looks at now cannot see a sequence.
+	own := e.pages
+	if v := survivors(m.Root); v > own {
+		own = v
+	}
+	high, err := peakSink(indexName, m.Tag, m.Root, own)
+	if err != nil {
+		// Without the history there is no way to tell a shrinking site from a
+		// shrinking crawl, so nothing is removed.
+		return nil, fmt.Errorf("corpus peak unavailable: %w", err)
+	}
+	ceiling[m.Root] = high
+
+	// The tag record is the weakest ancestor — the whole URL space of the tag. It
+	// is recorded ALWAYS, so it can never be seeded fresh from an already reduced
+	// count, and applied only when no narrower recorded root contains this pass.
+	// With a narrower one present it would add nothing but a coarser number, and a
+	// coarser number is exactly what mass shrinking somewhere else under the tag
+	// turns into a refusal of a pass that did nothing wrong.
+	whole := e.outside[""] + e.pages
+	if v := survivors(""); v > whole {
+		whole = v
+	}
+	tagHigh, err := peakSink(indexName, m.Tag, "", whole)
+	if err != nil {
+		return nil, fmt.Errorf("tag peak unavailable: %w", err)
+	}
+	if !proper {
+		ceiling[""] = tagHigh
+	}
+
+	// Two refusals, asking opposite questions of the same pass: did the crawl see
+	// enough of the corpus to speak for it, and is it taking too much of it. The
+	// first is asked once per ancestor, and the pass must clear every one.
+	for _, scope := range scopes {
+		highWater, ok := ceiling[scope]
+		if !ok {
+			continue
+		}
+		name := scope
+		if scope == "" {
+			name = fmt.Sprintf("tag %q", m.Tag)
+		}
+		if err := mirrorCoverage(survivors(scope), highWater, name); err != nil {
+			return nil, err
+		}
+	}
+	if err := mirrorLimit(len(e.stale), e.docs, m); err != nil {
+		return nil, err
+	}
+	return e.stale, nil
+}
+
+// prune removes the given ids from BOTH stores.
+//
+// Vector goes FIRST because the ids were read from the keyword store: erase them
+// there while the vector delete is still failing and the only record of what is
+// left to remove goes with them. This order makes a failure retry cleanly on the
+// next crawl instead of stranding embeddings that answer for deleted pages.
+func prune(indexName string, ids []string) error {
+	if err := vectorPruneSink(indexName, ids); err != nil {
+		return err
+	}
+	return pruneSink(indexName, ids)
+}
+
+// staleTagIDs returns the ids inside the mirror's bounds that live does not
+// contain.
+//
+// The listing is filtered by tag AND every row is checked against it again on
+// the way out. The filter is the control; the second check is what holds if it
+// silently does not apply, because everything this returns gets deleted and a
+// filter that quietly matched everything would take the whole index with it.
+// It also returns how much lies inside the bounds at all — documents, and the
+// distinct pages they belong to — which is what the two refusals are measured
+// against.
+//
+// The listing is read before the write and the delete happens after it, so a
+// page added in between is listed as stale and removed, and the next crawl puts
+// it back. That window is one crawl wide and self-heals; closing it would need a
+// transaction the search backend does not offer.
+func staleTagIDs(indexName string, m *Mirror, live map[string]bool, scopes []string) (extent, error) {
+	if m.Tag == "" || m.Root == "" {
+		return extent{}, fmt.Errorf("refusing to prune on an unbounded mirror")
+	}
+	client, err := getSearchClient()
+	if err != nil {
+		return extent{}, err
+	}
+	index := client.Index(indexName)
+	const page = int64(1000)
+	// A backend that ignores Offset returns the same page forever. Bound the walk
+	// and fail rather than spin: an error withholds the prune, which is the safe
+	// end of a listing that cannot be trusted to terminate.
+	const maxRounds = 1000
+	var out extent
+	pages := make(map[string]bool)
+	// One survivor set per scope. The listing already visits every row carrying
+	// the tag, so counting them per scope costs no extra read — the same reason
+	// the tag-wide count was free.
+	outside := make(map[string]map[string]bool, len(scopes))
+	for _, sc := range scopes {
+		outside[sc] = map[string]bool{}
+	}
+	for round := 0; round < maxRounds; round++ {
+		var resp meilisearch.DocumentsResult
+		if err := index.GetDocuments(&meilisearch.DocumentsQuery{
+			Filter: buildMeiliFilter(m.Tag, nil),
+			Fields: []string{"id", "tag", "url", "page_id"},
+			Limit:  page,
+			Offset: int64(round) * page,
+		}, &resp); err != nil {
+			if absent(err) {
+				return extent{}, nil // nothing stored yet, so nothing is stale
+			}
+			return extent{}, err
+		}
+		for _, hit := range resp.Results {
+			row := make(map[string]interface{})
+			if decErr := hit.DecodeInto(&row); decErr != nil {
+				// One unreadable row and the whole prune is off. Skipping it would
+				// price a partial listing as a complete one, and a prune reading a
+				// partial listing deletes everything the missing rows held.
+				return extent{}, fmt.Errorf("undecodable document in %s: %w", indexName, decErr)
+			}
+			id, _ := row["id"].(string)
+			rowTag, _ := row["tag"].(string)
+			rowURL, _ := row["url"].(string)
+			rowPage, _ := row["page_id"].(string)
+			if id == "" || rowTag != m.Tag {
+				continue
+			}
+			// A row with no page id of its own stands for a page of its own.
+			if rowPage == "" {
+				rowPage = id
+			}
+			if !under(m.Root, rowURL) {
+				// Untouched by this pass, so it survives — and it survives INSIDE
+				// whichever scopes contain it, and no others.
+				for _, sc := range scopes {
+					if inScope(sc, rowURL) {
+						outside[sc][rowPage] = true
+					}
+				}
+				continue
+			}
+			out.docs++
+			pages[rowPage] = true
+			if !live[id] {
+				out.stale = append(out.stale, id)
+			}
+		}
+		if int64(len(resp.Results)) < page {
+			out.pages = len(pages)
+			out.outside = make(map[string]int, len(outside))
+			for sc, set := range outside {
+				out.outside[sc] = len(set)
+			}
+			return out, nil
+		}
+	}
+	return extent{}, fmt.Errorf("listing %s under %s did not end after %d pages", indexName, m.Root, maxRounds)
+}
+
+// deleteIDsFromSearch removes documents from Hanzo Search by primary key.
+func deleteIDsFromSearch(indexName string, ids []string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	client, err := getSearchClient()
+	if err != nil {
+		return err
+	}
+	index := client.Index(indexName)
+	task, err := index.DeleteDocuments(ids, nil)
+	if err != nil {
+		if absent(err) {
+			return nil
+		}
+		return err
+	}
+	return awaitTask(client, task.TaskUID, 60*time.Second)
+}
+
+// deleteIDsFromVector removes the points of the given document ids from Hanzo
+// Vector. A point id is derived from the document id, so what goes is exactly
+// the set named — there is no filter here to widen.
+func deleteIDsFromVector(indexName string, ids []string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	baseURL, apiKey := getVectorEndpoint()
+	const batch = 1000
+	for i := 0; i < len(ids); i += batch {
+		end := i + batch
+		if end > len(ids) {
+			end = len(ids)
+		}
+		points := make([]string, 0, end-i)
+		for _, id := range ids[i:end] {
+			points = append(points, vectorPointID(id))
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		err := deleteVectorPoints(ctx, baseURL, apiKey, indexName, map[string]interface{}{"points": points})
+		cancel()
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// vectorPointID is the Hanzo Vector point a document id occupies. Hanzo Vector
+// accepts only unsigned-integer or UUID point ids and a chunk id is a hex hash,
+// so it rides as a deterministic UUID: same id, same point, so a write stays an
+// upsert and a delete finds what the write put there. Both sides call HERE —
+// derive it twice and the day they disagree is the day deletes silently miss.
+func vectorPointID(docID string) string {
+	return uuid.NewSHA1(uuid.NameSpaceOID, []byte(docID)).String()
 }
 
 // upsertVectorPoints sends a batch of points to Hanzo Vector.
@@ -826,13 +1485,17 @@ func upsertVectorPoints(baseURL, apiKey, collectionName string, points []qdrantP
 	return nil
 }
 
-// deleteAllVectorPoints removes all points from a Qdrant collection.
-func deleteAllVectorPoints(baseURL, apiKey, collectionName string) {
+// deleteAllVectorPoints drops a Qdrant collection outright.
+//
+// It reports failure rather than swallowing it. A Replace whose vector half
+// quietly failed leaves embeddings for documents the keyword half no longer
+// holds, and since the stale set is read FROM the keyword store, nothing can
+// ever find them again — they answer queries about deleted pages forever.
+func deleteAllVectorPoints(baseURL, apiKey, collectionName string) error {
 	url := fmt.Sprintf("%s/collections/%s", baseURL, collectionName)
 	req, err := http.NewRequest(http.MethodDelete, url, nil)
 	if err != nil {
-		log.Warning("failed to build qdrant delete request: %v", err)
-		return
+		return fmt.Errorf("failed to build Hanzo Vector delete request: %w", err)
 	}
 	if apiKey != "" {
 		req.Header.Set("api-key", apiKey)
@@ -840,18 +1503,28 @@ func deleteAllVectorPoints(baseURL, apiKey, collectionName string) {
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Warning("qdrant delete request failed: %v", err)
-		return
+		return fmt.Errorf("Hanzo Vector delete request failed: %w", err)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusNotFound {
+		return nil // absent is the state we were asking for
+	}
+	body, _ := io.ReadAll(resp.Body)
+	return fmt.Errorf("Hanzo Vector delete returned %d: %s", resp.StatusCode, string(body))
 }
 
 // deleteVectorPointsByFilter removes the points matching a payload filter from a
-// Qdrant collection (e.g. all chunks of one file_id). A missing collection is
-// treated as success (nothing to delete).
+// Qdrant collection (e.g. all chunks of one file_id).
 func deleteVectorPointsByFilter(ctx context.Context, baseURL, apiKey, collectionName string, filter *qdrantFilter) error {
+	return deleteVectorPoints(ctx, baseURL, apiKey, collectionName, map[string]interface{}{"filter": filter})
+}
+
+// deleteVectorPoints posts one delete selector — a payload filter, or an
+// explicit list of point ids — to a Hanzo Vector collection. A missing
+// collection is treated as success (nothing to delete).
+func deleteVectorPoints(ctx context.Context, baseURL, apiKey, collectionName string, selector map[string]interface{}) error {
 	url := fmt.Sprintf("%s/collections/%s/points/delete", baseURL, collectionName)
-	body, err := json.Marshal(map[string]interface{}{"filter": filter})
+	body, err := json.Marshal(selector)
 	if err != nil {
 		return fmt.Errorf("failed to marshal Hanzo Vector delete body: %w", err)
 	}
