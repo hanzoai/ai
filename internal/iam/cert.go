@@ -48,7 +48,7 @@ type Cert struct {
 // only thing wrong is the verb.
 func (c *Client) GetCert(name string) (*Cert, error) {
 	var cert *Cert
-	if err := c.get("certs/get", Ref{Owner: PlatformOwner, Name: name}.query(), &cert); err != nil {
+	if err := c.get(Ref{Owner: PlatformOwner, Name: name}.path("certs"), nil, &cert); err != nil {
 		return nil, err
 	}
 	return cert, nil

@@ -23,7 +23,7 @@ import (
 )
 
 // TestGetUserByAccessKeyUsesCanonicalPath locks the regression that broke
-// API-key resolution: the lookup MUST hit IAM's canonical /v1/iam/users/get,
+// API-key resolution: the lookup MUST hit IAM's key door, /v1/iam/keys/principal,
 // never the legacy /api/get-user (which the @hanzo/id SPA ingress serves as
 // HTML, producing "invalid character '<'" on JSON decode). It also asserts the
 // resolved org owner is parsed back out.
