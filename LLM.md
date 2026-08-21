@@ -535,14 +535,30 @@ upstream with their own key), a free route, speech on hardware we already own. N
 the absence of one: image and video have a per-unit PRICE table and no vendor invoice
 behind it, and a token model that states no COGS has told us nothing.
 
+### Where a cost is registered
+
+`object.ModelRoute.CostInPerMillion` / `CostOutPerMillion` — the route row, which the
+admin cockpit already reads and writes. It is the only place, and the configured PRICE
+tables are deliberately not consulted as a substitute.
+
+The family leg used to make that unreachable for zen/enso: `familyModelPrice` returned
+first and short-circuited the resolver, and the family wire (`zenWireModel`) carries no
+cost field, so an enso model could not be given a COGS at all without restating its
+price. `getModelPriceForOrgOK` now completes an uncosted family price from
+`registeredCost`. Price and cost resolve independently, because they are independent
+facts: the family owns what we charge, the route row owns what it costs us.
+
 ### What still has no COGS
 
 The mechanism no longer lies, but a rate nobody has entered is still a rate nobody has
 entered. Enso's real figures are known and live in the Enso catalog: `1.392 / 2.784`
 $/MTok on the `deepseek-v4-pro` anchor (enso, enso-ultra) and `0.112 / 0.224` on
-`deepseek-4-flash`. Against billed 4/20 that is roughly 2.9x in / 7.2x out. Until those
-are registered the rows read `uncosted = 1`, which is the honest answer and a visible
-one — `SELECT count() ... WHERE uncosted = 1` is the backlog.
+`deepseek-4-flash`. Against billed 4/20 that is roughly 2.9x in / 7.2x out.
+
+Registering them is an operator action on the route row — set both legs; one leg alone
+is ignored by `costed()`. Until then the rows read `uncosted = 1`, which is the honest
+answer and a visible one: `SELECT count() FROM hanzo.cloud_usage WHERE uncosted = 1`
+is the backlog, and it should fall as rates are entered.
 
 For enso-ultra the fan-out means COGS is the sum of the arms that ran, which only the
 server can total. `controllers/trace_export.go` carries `BilledNano`/`CostNano` and
