@@ -26,7 +26,7 @@ type Organization struct {
 // GetOrganization fetches an organization by name.
 func (c *Client) GetOrganization(name string) (*Organization, error) {
 	var organization *Organization
-	if err := c.get("organizations/get", Ref{Owner: PlatformOwner, Name: name}.query(), &organization); err != nil {
+	if err := c.get(Ref{Owner: PlatformOwner, Name: name}.path("organizations"), nil, &organization); err != nil {
 		return nil, err
 	}
 	return organization, nil
