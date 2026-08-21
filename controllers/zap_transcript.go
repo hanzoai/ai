@@ -61,7 +61,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/hanzoai/account"
 	"github.com/hanzoai/ai/object"
-	"github.com/hanzoai/ai/upstream"
 	"github.com/luxfi/zap"
 )
 
@@ -462,7 +461,7 @@ func transcriptCall(ctx context.Context, method, url string, provider *object.Pr
 	if ctype != "" {
 		req.Header.Set("Content-Type", ctype)
 	}
-	upstream.Authorize(req, provider)
+	authorize(req, provider)
 	resp, err := transcriptClient.Do(req)
 	if err != nil {
 		return 0, nil, err

@@ -14,6 +14,12 @@
 
 package iam
 
+import (
+	"encoding/json"
+	"fmt"
+	"strings"
+)
+
 // User mirrors the Hanzo IAM server's User JSON model. The FULL field set is
 // reproduced deliberately (not a slim projection): object/redact.go reflects
 // over every field by its json tag as a fail-secure secret-redaction control,
@@ -310,8 +316,15 @@ type ProductInfo struct {
 
 // GetUser fetches a single user by name within the client's organization.
 func (c *Client) GetUser(name string) (*User, error) {
+	url := c.GetUrl("get-user", map[string]string{
+		"id": fmt.Sprintf("%s/%s", c.OrganizationName, name),
+	})
+	bytes, err := c.DoGetBytes(url)
+	if err != nil {
+		return nil, err
+	}
 	var user *User
-	if err := c.get("users/get", Ref{Owner: c.OrganizationName, Name: name}.query(), &user); err != nil {
+	if err = json.Unmarshal(bytes, &user); err != nil {
 		return nil, err
 	}
 	return user, nil
@@ -319,41 +332,42 @@ func (c *Client) GetUser(name string) (*User, error) {
 
 // GetUsers lists all users in the client's organization.
 func (c *Client) GetUsers() ([]*User, error) {
-	var page struct {
-		Users []*User `json:"users"`
-		Total int     `json:"total"`
-	}
-	if err := c.get("users", map[string]string{"owner": c.OrganizationName}, &page); err != nil {
+	url := c.GetUrl("get-users", map[string]string{"owner": c.OrganizationName})
+	bytes, err := c.DoGetBytes(url)
+	if err != nil {
 		return nil, err
 	}
-	return page.Users, nil
+	var users []*User
+	if err = json.Unmarshal(bytes, &users); err != nil {
+		return nil, err
+	}
+	return users, nil
 }
 
-// UpdateUser writes user back to IAM.
-//
-// It is a WHOLE-RECORD write, and the caller must hand over a record it read
-// rather than one it assembled: every field present replaces what is stored.
-// The retired surface took a `columns` list and touched only those, which is
-// what the two callers here used to scope a write to `properties`; the native
-// route has no such parameter, so the narrowing is gone and only the read the
-// caller started from keeps the rest of the record intact.
-//
-// What a stale copy cannot damage, IAM protects itself: the password digest,
-// the key secret, the MFA material, the OIDC subject, the creation stamp and
-// the lockout counters are all carried from the stored row and any value in the
-// body is ignored. The exposure is the ordinary profile — a display name edited
-// after the caller's copy was taken would be written back to its older value.
-func (c *Client) UpdateUser(user *User) error {
+// UpdateUserForColumns updates only the named columns of user.
+func (c *Client) UpdateUserForColumns(user *User, columns []string) (bool, error) {
 	if user.Owner == "" {
 		user.Owner = c.OrganizationName
 	}
-	return c.post("users/update", nil, struct {
-		User *User `json:"user"`
-	}{User: user}, nil)
+	queryMap := map[string]string{"id": user.GetId()}
+	if len(columns) != 0 {
+		queryMap["columns"] = strings.Join(columns, ",")
+	}
+	postBytes, err := json.Marshal(user)
+	if err != nil {
+		return false, err
+	}
+	resp, err := c.DoPost("update-user", queryMap, postBytes, false, false)
+	if err != nil {
+		return false, err
+	}
+	return resp.Data == "Affected", nil
 }
 
 // Package-level helpers operate on the configured (or env-derived) global client.
 
 func GetUser(name string) (*User, error) { return ensureClient().GetUser(name) }
 func GetUsers() ([]*User, error)         { return ensureClient().GetUsers() }
-func UpdateUser(user *User) error        { return ensureClient().UpdateUser(user) }
+func UpdateUserForColumns(user *User, columns []string) (bool, error) {
+	return ensureClient().UpdateUserForColumns(user, columns)
+}

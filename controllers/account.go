@@ -629,8 +629,8 @@ func (c *ApiController) UpdatePreferences() {
 	}
 	user.Properties[preferencesKey] = string(merged)
 
-	// A whole-record write, over the user this request already read.
-	if err := iam.UpdateUser(user); err != nil {
+	// Column-scoped update: only `properties` is written.
+	if _, err := iam.UpdateUserForColumns(user, []string{"properties"}); err != nil {
 		c.ResponseError(err.Error())
 		return
 	}

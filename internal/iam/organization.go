@@ -14,6 +14,11 @@
 
 package iam
 
+import (
+	"encoding/json"
+	"fmt"
+)
+
 // Organization is the subset of the IAM Organization model ai reads. It is a
 // read-only response (GetOrganization), so a projection is correct: json
 // unmarshal ignores the fields ai does not consume.
@@ -25,8 +30,15 @@ type Organization struct {
 
 // GetOrganization fetches an organization by name.
 func (c *Client) GetOrganization(name string) (*Organization, error) {
+	url := c.GetUrl("get-organization", map[string]string{
+		"id": fmt.Sprintf("%s/%s", PlatformOwner, name),
+	})
+	bytes, err := c.DoGetBytes(url)
+	if err != nil {
+		return nil, err
+	}
 	var organization *Organization
-	if err := c.get("organizations/get", Ref{Owner: PlatformOwner, Name: name}.query(), &organization); err != nil {
+	if err = json.Unmarshal(bytes, &organization); err != nil {
 		return nil, err
 	}
 	return organization, nil

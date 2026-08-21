@@ -303,7 +303,7 @@ func zapUpdatePreferencesHandler(ctx context.Context, auth string, body []byte) 
 	}
 	user.Properties[preferencesKey] = string(merged)
 
-	if err := iam.UpdateUser(user); err != nil {
+	if _, err := iam.UpdateUserForColumns(user, []string{"properties"}); err != nil {
 		return zapAccountErr(500, err.Error())
 	}
 

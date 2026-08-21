@@ -12,16 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package upstream is the one place that knows where a provider lives and how a
-// call proves it may reach one. It is a leaf on purpose: it depends on object and
-// the standard library and nothing else, so a second door — hanzoai/egress, which
-// exists so that callers never hold a vendor key — reaches the same addresses and
-// the same credential scheme by importing them rather than restating them.
-//
-// A copy would not stay a copy. Provider addresses and auth schemes are facts
-// about vendors, and two files holding them drift in the direction that is hardest
-// to notice: the door that is wrong sends a credential to the wrong host.
-package upstream
+package controllers
 
 import (
 	"fmt"
@@ -37,7 +28,7 @@ import (
 // credential is applied to a request and never handed back, so the number of
 // places that can mishandle it is one.
 
-// Endpoint returns the upstream URL for a provider and an OpenAI-style API path
+// endpoint returns the upstream URL for a provider and an OpenAI-style API path
 // ("chat/completions", "embeddings", "rerank"). It is the single place that knows
 // each provider's address, so every OpenAI-compatible surface is built by varying
 // path alone and no per-endpoint copy of provider routing exists.
@@ -50,7 +41,7 @@ import (
 // Moonshot, Gemini, Jina and Cohere, whose single public address is stated here
 // rather than taken from a row. Changing that would move traffic — and a
 // credential — to a different host, so it stays as it is.
-func Endpoint(provider *object.Provider, path string) string {
+func endpoint(provider *object.Provider, path string) string {
 	switch provider.Type {
 	case "OpenAI":
 		base := provider.ProviderUrl
@@ -116,7 +107,7 @@ func Endpoint(provider *object.Provider, path string) string {
 	}
 }
 
-// Authorize applies a provider's credential to an outbound request and returns
+// authorize applies a provider's credential to an outbound request and returns
 // nothing. It is the one place on the relay that reads a provider secret, and the
 // header it writes is the only form that secret takes: there is no value for a
 // caller to log, echo into an error, or forward somewhere it does not belong.
@@ -128,7 +119,7 @@ func Endpoint(provider *object.Provider, path string) string {
 //
 // A nil provider means the call carries no credential (a session already opened
 // with one), which is a fact about the call, not a mistake to guard against.
-func Authorize(req *http.Request, provider *object.Provider) {
+func authorize(req *http.Request, provider *object.Provider) {
 	if provider == nil {
 		return
 	}
