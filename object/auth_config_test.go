@@ -8,6 +8,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/hanzoai/ai/internal/authtest"
+	iam "github.com/hanzoai/ai/internal/iam"
 )
 
 // A deployment that names no IAM is deliberately running without auth, and
@@ -118,6 +121,37 @@ func TestAuthReady_ResolvesAndThenStopsFetching(t *testing.T) {
 	}
 	if calls != after {
 		t.Fatalf("a resolved cert was re-fetched %d time(s) — the hot auth path must carry no IAM round trip", calls-after)
+	}
+}
+
+// A FAILED ATTEMPT COSTS THE ATTEMPT AND NOTHING ELSE.
+//
+// The resolution used to reach IAM through the process-wide client, which meant
+// installing that client certless first so the reads had somewhere to go. A failure
+// between then and the answer left the certless one in place, and from that point
+// every bearer token in the process failed to validate — including ones that had
+// been validating a moment earlier. An IAM blip is supposed to cost the requests
+// during the blip; this made it cost authentication itself, permanently, which is
+// the fail-open the whole file is written against.
+//
+// So it is stated as the property a caller would notice: a credential that verified
+// before an attempt still verifies after one that failed.
+func TestAuthReady_AFailedAttemptLeavesTheCertAlone(t *testing.T) {
+	ResetAuthReady()
+	who := iam.User{Owner: "acme", Name: "alice"}
+	token := authtest.Token(t, who)
+	if _, err := iam.ParseJwtToken(token); err != nil {
+		t.Fatalf("the credential did not verify before the attempt: %v", err)
+	}
+
+	t.Setenv("IAM_URL", "http://127.0.0.1:1")
+	t.Setenv("IAM_APP_NAME", "hanzo-cloud")
+	if AuthReady() == nil {
+		t.Fatal("expected the unreachable endpoint to fail")
+	}
+
+	if _, err := iam.ParseJwtToken(token); err != nil {
+		t.Fatalf("a failed attempt threw away the established cert: %v", err)
 	}
 }
 

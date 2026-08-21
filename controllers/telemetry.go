@@ -126,7 +126,7 @@ type genAISpanFields struct {
 // per-component split for token-billed calls, nil for image/video). This keeps the o11y
 // attribute contract unit-testable without a pricing table. Message capture is gated by
 // the caller (captureMessages) — PII is emitted only on opt-in.
-func buildGenAISpanFields(record *usageRecord, totalCostUSD, billedCostUSD, providerCostUSD float64, marginUSD *float64, breakdown *costBreakdown, captureMessages bool) genAISpanFields {
+func buildGenAISpanFields(record *usageRecord, totalCostUSD, billedCostUSD float64, providerCostUSD, marginUSD *float64, breakdown *costBreakdown, captureMessages bool) genAISpanFields {
 	model := record.Model
 	if model == "" {
 		model = "unknown"
@@ -151,12 +151,14 @@ func buildGenAISpanFields(record *usageRecord, totalCostUSD, billedCostUSD, prov
 		attribute.Int(attrGenAIOutputTokens, record.CompletionTokens),
 		attribute.Int(attrGenAITotalTokens, record.TotalTokens),
 		// total_cost = full customer-price cost (analytics). billed_cost = what the
-		// ledger charged (== total for Hanzo-served, ~1% fee for BYO). provider_cost =
-		// Hanzo's COGS (0 for BYO). These three are always emitted so the o11y cost
-		// views have the columns and Observe reconciles; margin is conditional below.
+		// ledger charged (== total for Hanzo-served, ~1% fee for BYO). Both are always
+		// known, so both are always emitted; provider_cost and margin are conditional
+		// below because a cost we were never told is not a cost of zero.
 		attribute.Float64(attrO11yTotalCost, totalCostUSD),
 		attribute.Float64(attrO11yBilledCost, billedCostUSD),
-		attribute.Float64(attrO11yProviderCost, providerCostUSD),
+	}
+	if providerCostUSD != nil {
+		attrs = append(attrs, attribute.Float64(attrO11yProviderCost, *providerCostUSD))
 	}
 
 	// Margin, only when it is computable. An unpriced model's COGS is the
@@ -296,12 +298,15 @@ func genAICaptureMessages() bool {
 // batched/async, so this never blocks the request.
 // genAIMoney is the money view of one call as the o11y span reports it, in USD.
 type genAIMoney struct {
-	total    float64 // the FULL provider cost of the call (analytics)
-	billed   float64 // what the ledger actually charged
-	provider float64 // Hanzo's COGS to serve it
-	// margin is billed − provider, and NIL when the COGS was invented (an unpriced
-	// model). The span then carries no margin attribute at all, beside the
-	// priced=false it already emits — honest, rather than a fabricated loss.
+	total  float64 // the FULL provider cost of the call (analytics)
+	billed float64 // what the ledger actually charged
+	// provider is Hanzo's COGS to serve the call, and NIL where no cost is known —
+	// see providerCostNano. A span that always carries the attribute has to put a
+	// number in it, and the only number to hand is the customer price, which reports
+	// every such call as costing exactly what it earned.
+	provider *float64
+	// margin is billed − provider, and NIL when either side is unknown. The span then
+	// carries no margin attribute at all, beside the priced=false it already emits.
 	margin *float64
 }
 
@@ -317,9 +322,12 @@ type genAIMoney struct {
 func spanMoney(record *usageRecord) genAIMoney {
 	mg := usageMargin(record)
 	money := genAIMoney{
-		total:    float64(usageCostCents(record)) / 100.0,
-		billed:   float64(mg.BilledNano) / 1e9,
-		provider: float64(mg.CostNano) / 1e9,
+		total:  float64(usageCostCents(record)) / 100.0,
+		billed: float64(mg.BilledNano) / 1e9,
+	}
+	if mg.CostNano != nil {
+		provider := float64(*mg.CostNano) / 1e9
+		money.provider = &provider
 	}
 	if mg.MarginNano != nil {
 		margin := float64(*mg.MarginNano) / 1e9

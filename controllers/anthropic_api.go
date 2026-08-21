@@ -1152,8 +1152,10 @@ func upstreamErrorMessage(body []byte) string {
 			Message string `json:"message"`
 		} `json:"error"`
 	}
-	if json.Unmarshal(body, &nested) == nil && repeatable(nested.Error.Message) {
-		return nested.Error.Message
+	if json.Unmarshal(body, &nested) == nil {
+		if said := sayable(nested.Error.Message); said != "" {
+			return said
+		}
 	}
 	// The flatter shapes: {"error":"..."} , {"message":"..."} , {"detail":"..."}.
 	var flat struct {
@@ -1162,8 +1164,8 @@ func upstreamErrorMessage(body []byte) string {
 		Detail  string `json:"detail"`
 	}
 	if json.Unmarshal(body, &flat) == nil {
-		for _, said := range []string{flat.Error, flat.Message, flat.Detail} {
-			if repeatable(said) {
+		for _, raw := range []string{flat.Error, flat.Message, flat.Detail} {
+			if said := sayable(raw); said != "" {
 				return said
 			}
 		}
@@ -1173,21 +1175,26 @@ func upstreamErrorMessage(body []byte) string {
 
 // repeatable reports whether a sentence is one we may hand a caller: non-empty,
 // and naming no provider we buy from — by name, or by a link into their console.
-func repeatable(msg string) bool {
+func sayable(msg string) string {
 	s := strings.ToLower(strings.TrimSpace(msg))
 	if s == "" {
-		return false
+		return ""
 	}
 	if strings.Contains(s, "http://") || strings.Contains(s, "https://") {
-		return false
+		return ""
 	}
 	for _, vendor := range []string{"openrouter", "openai", "anthropic", "together",
 		"fireworks", "groq", "deepseek", "digitalocean"} {
 		if strings.Contains(s, vendor) {
-			return false
+			return ""
 		}
 	}
-	return true
+	// Naming an upstream and disclosing its credential are different harms, so
+	// the vendor check above does not cover this one: a refusal that quotes the
+	// key back carries no vendor name and no URL, and used to be repeated
+	// verbatim. Returning the scrubbed message rather than a yes/no is what makes
+	// the unscrubbed form unavailable to a caller.
+	return object.RedactKeys(strings.TrimSpace(msg))
 }
 
 // AnthropicCountTokens implements POST /v1/messages/count_tokens. Claude Code

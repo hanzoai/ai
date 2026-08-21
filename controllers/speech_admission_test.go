@@ -644,6 +644,32 @@ func calledAt(n ast.Node, name string) int {
 // ends in one of these, whatever else it does first.
 var speechWork = []string{"ProcessAudio", "QueryAudio"}
 
+// speechAdmission names the ways a door takes a bounded per-tenant share of that
+// capacity before spending it.
+//
+// There are two because the work has two shapes. A request holds a decode slot for
+// as long as one call runs, and admitSpeech is that slot. A conversation holds a
+// room for as long as somebody is talking, and NewFloorspace is that room —
+// hanzoai/voice owns the session, so the host states the ceiling and the library
+// enters it at every turn. Both divide one ceiling per org and both refuse rather
+// than queue.
+//
+// Naming only the first read the second as absence, and said so: it told us
+// /v1/voice was unbounded and one tenant could have all of it, which is not true —
+// voice.Floorspace(voice.Capacity, voice.Share) bounds it at four sessions, two per
+// org. What IS true, and is not this rule's to state, is that those two ceilings
+// count separately over the same upstream decode pool.
+var speechAdmission = []string{"admitSpeech", "NewFloorspace"}
+
+// admitsAt returns where n first takes admission, or -1.
+func admitsAt(n ast.Node) int {
+	at := -1
+	for _, a := range speechAdmission {
+		at = earlier(at, calledAt(n, a))
+	}
+	return at
+}
+
 // TestSpeechWorkRunsUnderAdmission is the completeness rule: a limit that one URL
 // gets around is not a limit.
 //
@@ -675,7 +701,7 @@ func TestSpeechWorkRunsUnderAdmission(t *testing.T) {
 				continue
 			}
 			doors++
-			admit := calledAt(fn, "admitSpeech")
+			admit := admitsAt(fn)
 			if admit < 0 {
 				t.Errorf("%s.%s spends speech capacity and takes no admission — "+
 					"one tenant can have all of it through this door", name, fn.Name.Name)
@@ -730,7 +756,7 @@ func TestChargingForSpeechRequiresAdmission(t *testing.T) {
 
 	charging := 0
 	for name, file := range files {
-		fileAdmits := calledAt(file, "admitSpeech") >= 0
+		fileAdmits := admitsAt(file) >= 0
 		for _, decl := range file.Decls {
 			fn, ok := decl.(*ast.FuncDecl)
 			if !ok {
@@ -751,7 +777,7 @@ func TestChargingForSpeechRequiresAdmission(t *testing.T) {
 					"this route is unbounded, and one tenant can have all of it", name, fn.Name.Name, name)
 				continue
 			}
-			if admit := calledAt(fn, "admitSpeech"); admit >= 0 && charge < admit {
+			if admit := admitsAt(fn); admit >= 0 && charge < admit {
 				t.Errorf("%s.%s charges before admission; a refused request would be billed", name, fn.Name.Name)
 			}
 		}

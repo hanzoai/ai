@@ -506,7 +506,10 @@ func TestPricedTurnStillReportsItsMargin(t *testing.T) {
 	if mg.MarginNano == nil {
 		t.Fatal("a priced turn must still report its margin")
 	}
-	if want := mg.BilledNano - mg.CostNano; *mg.MarginNano != want {
+	if mg.CostNano == nil {
+		t.Fatal("marginmodel configures a real COGS, so the cost must be known")
+	}
+	if want := mg.BilledNano - *mg.CostNano; *mg.MarginNano != want {
 		t.Errorf("margin = %d, want billed − cost = %d", *mg.MarginNano, want)
 	}
 	if sm := spanMoney(rec).margin; sm == nil {
