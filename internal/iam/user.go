@@ -331,13 +331,11 @@ func (c *Client) GetUsers() ([]*User, error) {
 
 // UpdateUser writes user back to IAM.
 //
-// THE KEY IS IN THE BODY HERE, and alone among the record writes. Every other
-// entity moved its (owner, name) into the URL; the user update did not, because
-// IAM's input for it nests the record under `user` and a path segment binds only
-// onto a top-level field — a ":owner/:name" would bind nothing and leave the body
-// as the sole target, which is the one thing the path form exists to prevent. So
-// this stays POST /v1/iam/users/update until that input carries the key at top
-// level. It is the exception IAM states, not one taken here.
+// The record is named in the URL like every other one: PUT /v1/iam/users/<owner>/
+// <name>. The body still carries the record under `user`, because that is the
+// shape of the write — what the record should BECOME — while the address says
+// WHICH record, and the address outranks anything the body claims about its own
+// identity.
 //
 // It is a WHOLE-RECORD write, and the caller must hand over a record it read
 // rather than one it assembled: every field present replaces what is stored.
@@ -355,7 +353,7 @@ func (c *Client) UpdateUser(user *User) error {
 	if user.Owner == "" {
 		user.Owner = c.OrganizationName
 	}
-	return c.post("users/update", nil, struct {
+	return c.put(Ref{Owner: user.Owner, Name: user.Name}.path("users"), struct {
 		User *User `json:"user"`
 	}{User: user}, nil)
 }

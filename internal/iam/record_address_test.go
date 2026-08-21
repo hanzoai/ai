@@ -67,12 +67,15 @@ func TestEachRecordOperationAddressesItsKeyByMethodAndPath(t *testing.T) {
 			http.MethodDelete, "http://iam.test/v1/iam/permissions/hanzo/p",
 		},
 		{
-			// The exception IAM states, not one taken here: its update input nests
-			// the record under `user`, and a path segment binds only onto a
-			// top-level field. Pinned so the day that input carries the key at top
-			// level, this is the one line that has to move.
-			"write a user", func(c *Client) error { return c.UpdateUser(&User{Name: "z"}) },
-			http.MethodPost, "http://iam.test/v1/iam/users/update",
+			// The user write is addressed like every other record. It was the one
+			// exception for a while: IAM's input nested the record under `user`, and
+			// a path segment binds only onto a top-level field, so ":owner/:name"
+			// would have bound nothing and left the body as the sole target — the
+			// one thing the path form exists to prevent. IAM's UpdateInput carries
+			// the key at top level now (json:"-" url:"owner"), bound from the URL
+			// and outranking whatever the body claims, so the exception is closed.
+			"write a user", func(c *Client) error { return c.UpdateUser(&User{Owner: "acme", Name: "z"}) },
+			http.MethodPut, "http://iam.test/v1/iam/users/acme/z",
 		},
 	} {
 		t.Run(tc.what, func(t *testing.T) {
