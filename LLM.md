@@ -190,6 +190,47 @@ compiles, the types check, and the behaviour is wrong.
 | `web/src/App.js` | Frontend root component |
 | `web/src/backend/` | API client helpers |
 
+## hedge — ask several providers, keep the first answer
+
+`hedge.Race(ctx, dst, attempts...)` is the primitive behind fast mode. Tail
+latency is not the average: a provider that usually answers in 400ms occasionally
+takes eight seconds, and a request cannot know which it drew until it has already
+waited. Asking three and keeping the first cuts that tail.
+
+**No provider changes, and none are needed.** Every provider already writes into
+an `io.Writer`, so `Race` hands each attempt a different one and only lets the
+winner's reach the caller. `ModelProvider` is untouched — the seam was already
+the right shape.
+
+**FIRST BYTE WINS**, the only definition of fastest a stream can act on. A
+provider that will finish sooner but has not started is not the winner: the
+caller waits on bytes, not completion, and by the time completion is knowable the
+response has arrived and there was nothing to race.
+
+Two cases decide whether hedging helps or hurts, and both are pinned by tests
+verified against a deliberately broken implementation:
+
+- An EMPTY write does not claim. A provider flushing a zero-length chunk while
+  still waiting upstream would otherwise win having said nothing, leaving the
+  caller on the SLOWEST attempt with the others cancelled — the opposite of the
+  point.
+- A FAST FAILURE is not a win. `Race` returns when the attempt that CLAIMED the
+  stream finishes, not when the first attempt returns; an upstream 503 in 1ms
+  produced no bytes, so the caller is still waiting on whoever answers.
+
+Losers are cancelled — that is what stops the upstream call, which is what stops
+the cost — and `Race` does not wait for them to unwind, because waiting on a
+provider we are abandoning hands it exactly the latency this removes.
+
+**It meters itself.** Each upstream call writes its own `api-usage` row and the
+plan windows count rows, so a three-way hedge draws three units of allowance with
+no change to the billing path. That is the agreed policy: the customer pays for
+all N, which makes fast mode self-limiting.
+
+NOT WIRED YET. Putting it on the completion path touches six `QueryText` call
+sites, and `controllers/failover.go` already does something adjacent — read that
+before adding a second mechanism beside it.
+
 ## The /v1 resource surface — ONE table, no compound routes
 
 The published OpenAPI description is GENERATED from that same table:
