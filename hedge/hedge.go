@@ -9,9 +9,19 @@
 // others.
 //
 // It costs what it sounds like: N upstream calls for one answer. That is the
-// whole trade, it is the customer's to make per request, and it meters itself —
-// every upstream call writes its own usage row, so a three-way hedge draws down
-// three units of allowance with no change to the billing path.
+// whole trade and it is the customer's to make per request — BUT NOTHING HERE
+// BILLS FOR IT, and a caller must arrange that before wiring this up.
+//
+// The completion path writes ONE usage record, for the provider that served
+// (controllers/openai_api.go), and recordRefusals bills nothing for the rest
+// (controllers/failover.go). So a three-way hedge burns three real completions
+// upstream and settles one. Left alone, fast mode is a way for a customer to
+// spend 3x our money at 1x their price.
+//
+// Either the losing attempts get real usage rows — not the "failover" status,
+// which exists precisely to record a refusal that cost nothing — or the budget
+// hold is reserved N-fold up front. That is a decision about money and it
+// belongs at the call site, which is why this package does not quietly make it.
 //
 // FIRST BYTE WINS, and that is the only definition of "fastest" a stream can act
 // on. A provider that will finish sooner but has not started is not yet the
