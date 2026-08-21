@@ -60,7 +60,7 @@ func InstallFilters(app *zip.App) {
 	// Live request-geo tap: folds each inbound hit into the in-process traffic
 	// aggregate (edge country/region + service class only — never an IP). A pure
 	// side effect that never blocks or writes, so it rides high in the chain to
-	// count load-balancer hits honestly. Powers /v1/traffic/globe.
+	// count load-balancer hits honestly. Powers /v1/ai/traffic/globe.
 	app.Use(zip.H(TrafficTapFilter))
 	app.Use(zip.H(HstsFilter))
 	app.Use(zip.H(CacheControlFilter))

@@ -94,10 +94,10 @@ import (
 // who or what scored a request. router/stats' by_source is the routing-decision
 // origin (heuristic|explore|override|…), not the reward origin, and reward_rate
 // counts a judge reward exactly like a human one. The three automated/human sources
-// separate by seam: the probe posts liveness over /v1/feedback under a
+// separate by seam: the probe posts liveness over /v1/ai/feedback under a
 // service key + User-Agent hanzo-router-probe/1; the judge scores organic turns
 // in-process (this file) for consenting orgs at the sample rate; humans POST
-// /v1/feedback. If a future schema adds a reward_source column, runJudge is the one
+// /v1/ai/feedback. If a future schema adds a reward_source column, runJudge is the one
 // place to stamp "judge" — a single line — without touching the reward path.
 const judgeUserAgent = "hanzo-router-judge/1"
 

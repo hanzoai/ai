@@ -121,8 +121,8 @@ var superAdminEndpoints = map[string]struct{}{
 	"admin/reload-model-config": {}, "admin/refresh-model-pricing": {},
 	// DO usage backfill — writes the platform-wide financial ledger (cloud_usage).
 	"admin/usage/backfill-do": {},
-	// Per-org settings is served ZAP-native (/v1/org/settings, super-admin gated in the
-	// handler) — no controller route, so no filter entry.
+	// Per-org settings is served ZAP-native (/v1/ai/org/settings, super-admin gated in
+	// the handler) — no controller route, so no filter entry.
 	// Routing-decision + reward training exports are NOT hard super-admin-gated here:
 	// they accept EITHER a super admin OR a KMS-provisioned ROUTER_ADMIN_TOKEN service
 	// token (spark's retrain). The handler (routerAdminAuthorized) is authoritative;
@@ -143,9 +143,9 @@ func requiresSuperAdmin(controllerName string) bool {
 // self-authenticate in-controller AND must never be reachable by a fully
 // anonymous request. permissionFilter fails closed (401) when NO credential is
 // present; the controller does the authoritative validation. Kept as an
-// explicit set — plus the rag/ and documents/ prefixes below — so the many
-// benign self-authing or intentionally-anonymous paths (chat, models, health,
-// metrics, wecom) are unaffected. Names are the path minus "/v1/".
+// explicit set — plus the ai/rag/ prefix below — so the many benign self-authing
+// or intentionally-anonymous paths (chat, models, health, metrics) are
+// unaffected. Names are the path minus "/v1/".
 // anonymousEndpoints are reachable with no credential, on purpose. Each is a
 // surface whose whole job is to answer a stranger: the model catalogue a client
 // reads before it has a key, a health probe, a public view, and a provider
@@ -160,39 +160,33 @@ var anonymousEndpoints = map[string]struct{}{
 	"health":           {}, // probes
 	"voice/health":     {},
 	"metrics":          {}, // scrape target
-	"traffic/globe":    {}, // public view
+	"ai/traffic/globe": {}, // public view
 	"chat/public":      {},
 }
 
 // isAnonymous reports whether an endpoint is reachable with no credential.
-// The bot callback carries its own bot id, so it is a prefix rather than a
-// name: the provider posts to a path this service does not choose, and the
-// signature on the body is what authenticates it.
 func isAnonymous(controllerName string) bool {
-	if _, ok := anonymousEndpoints[controllerName]; ok {
-		return true
-	}
-	return strings.HasPrefix(controllerName, "wecom-bot/callback")
+	_, ok := anonymousEndpoints[controllerName]
+	return ok
 }
 
 var authRequiredEndpoints = map[string]struct{}{
 	"index": {}, "search": {}, "search/stats": {}, // doc index write + search
-	"docs/ingest": {},                                    // unified RAG ingest (github/crawl/s3)
-	"embed":       {}, "query": {}, "query_multiple": {}, // librechat-compat RAG
-	"documents": {}, // librechat-compat DELETE documents
-	// The routing-defaults read (/v1/router/defaults), the router-policy read/write
-	// (/v1/router/policy), and the training-data exports (/v1/router/{ledger,rewards})
+	"embed": {}, // the multipart file embed hanzo.chat posts
+	// The routing-defaults read (/v1/ai/router/defaults), the router-policy read/write
+	// (/v1/ai/router/policy), and the training-data exports (/v1/ai/router/{ledger,rewards})
 	// are ZAP-native now — self-authing in their handlers, no controller route to gate here.
-	"export-my-routing-data": {}, // self-scoped routing-data export — org-admin gated in controller, never anonymous
-	"delete-my-routing-data": {}, // self-scoped routing-data delete — org-admin gated in controller, never anonymous
+	// The caller's own routing export/erase is a two-segment singleton, so it is named
+	// by its path like the admin/ entries above.
+	"ai/router/data": {}, // self-scoped routing-data export + delete — org-admin gated in controller, never anonymous
 }
 
 // requiresPresentCredential reports whether controllerName is a write/ingest/
 // scrape/RAG endpoint that must fail closed for an anonymous caller. It matches
-// the explicit set plus the native /v1/ai/* family, the librechat-compat
-// /v1/documents/{id}/context read, and the AI login-manager /v1/ai/connections*
-// family (org-scoped: a present credential is required at the filter; the
-// controller does the authoritative per-org check — NOT a super-admin gate).
+// the explicit set plus the RAG family (/v1/ai/rag/*, ingest included), memory,
+// and the AI login-manager /v1/ai/connections* family (org-scoped: a present
+// credential is required at the filter; the controller does the authoritative
+// per-org check — NOT a super-admin gate).
 func requiresPresentCredential(controllerName string) bool {
 	if _, ok := authRequiredEndpoints[controllerName]; ok {
 		return true
@@ -204,13 +198,12 @@ func requiresPresentCredential(controllerName string) bool {
 	if strings.HasPrefix(controllerName, "ai/connections/") && strings.HasSuffix(controllerName, "/callback") {
 		return false
 	}
-	return strings.HasPrefix(controllerName, "rag/") ||
-		strings.HasPrefix(controllerName, "documents/") ||
+	return strings.HasPrefix(controllerName, "ai/rag/") ||
 		// Memory is PER-PERSON: every verb reads, writes or deletes one named
 		// user's own store. There is nothing here for a caller with no credential
 		// to be doing, so an anonymous request is refused at the filter and the
 		// controller resolves the person from the credential.
-		strings.HasPrefix(controllerName, "memory/") ||
+		strings.HasPrefix(controllerName, "ai/memory/") ||
 		controllerName == "ai/connections" ||
 		strings.HasPrefix(controllerName, "ai/connections/")
 }
@@ -342,7 +335,7 @@ func permissionFilter(c *zip.Ctx) error {
 	// get- nor update-" branch below with NO central gate. A present credential
 	// (Bearer OR session) is required here; the controller performs the
 	// authoritative validation. This is an explicit set, NOT a blanket default,
-	// so health/metrics/wecom stay reachable without a Bearer.
+	// so health and metrics stay reachable without a Bearer.
 	if requiresPresentCredential(controllerName) && !hasPresentCredential(c) {
 		return denyUnauthorized(c, "auth:authentication required")
 	}

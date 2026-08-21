@@ -22,7 +22,7 @@ import "strings"
 // or below ChunkSize characters and overlapping consecutive chunks by
 // ChunkOverlap characters.
 //
-// It exists so the Hanzo RAG surface (/v1/rag/*, controllers/rag.go →
+// It exists so the Hanzo RAG surface (/v1/ai/rag/*, controllers/rag.go →
 // object.Rag*) chunks documents identically to the retired standalone rag-api
 // (danny-avila fork), which configured RecursiveCharacterTextSplitter with
 // CHUNK_SIZE=1500 / CHUNK_OVERLAP=100. Chunking is a splitting concern, so it

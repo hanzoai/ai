@@ -25,7 +25,7 @@ import (
 // memoryController is a request that NAMES a victim in the two headers a gateway
 // would mint, and presents whatever credential the caller has.
 func memoryController(auth, org, user string) *ApiController {
-	c := presenting(visit(http.MethodPost, "/v1/memory/remember"), auth)
+	c := presenting(visit(http.MethodPost, "/v1/ai/memory/remember"), auth)
 	c.Fiber().Request().SetBody([]byte(`{"content":"hi"}`))
 	if org != "" {
 		c.Fiber().Request().Header.Set("X-Org-Id", org)

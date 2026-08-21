@@ -32,7 +32,7 @@ import (
 // dimension. Record's signature is the proof: it takes a country code, a region
 // code, and a service class — there is nowhere to put an IP. Geo comes from the edge
 // (Cloudflare CF-IPCountry / CF-Region-Code); CF-Connecting-IP is never read. This
-// is why the /v1/traffic/globe endpoint is safe to serve publicly, unauthenticated.
+// is why the /v1/ai/traffic/globe endpoint is safe to serve publicly, unauthenticated.
 //
 // MEMORY BOUND: a fixed ring of TrafficBuckets minute-buckets (24h). A slot is
 // reused every TrafficBuckets minutes and reset on reuse, so memory is
@@ -391,7 +391,7 @@ func TrafficServiceClass(path string) string {
 
 // TrafficShouldRecord selects which requests count toward the aggregate: genuine
 // inbound /v1 API calls only. OPTIONS preflights, health/metrics probes, and the
-// globe poll itself (world.hanzo.ai hits /v1/traffic/globe every ~12s) are excluded
+// globe poll itself (world.hanzo.ai hits /v1/ai/traffic/globe every ~12s) are excluded
 // so the marketing rate reflects real product traffic, not self-noise.
 func TrafficShouldRecord(path, method string) bool {
 	if method == "OPTIONS" {
@@ -403,7 +403,7 @@ func TrafficShouldRecord(path, method string) bool {
 	switch {
 	case path == "/v1/health", path == "/v1/metrics":
 		return false
-	case strings.HasPrefix(path, "/v1/traffic/"):
+	case strings.HasPrefix(path, "/v1/ai/traffic/"):
 		return false
 	}
 	return true

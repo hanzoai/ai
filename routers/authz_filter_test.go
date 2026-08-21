@@ -123,19 +123,15 @@ func withKey(method, path, key string) probe {
 // central gate. This is the second layer behind requireIndexAuth.
 func TestWriteEndpointsRequireCredential(t *testing.T) {
 	cases := []struct{ method, path string }{
-		{"POST", "/v1/rag/embed"},
-		{"POST", "/v1/rag/query"},
-		{"POST", "/v1/rag/delete"},
-		{"GET", "/v1/rag/context"},
+		{"POST", "/v1/ai/rag/ingest"},
+		{"POST", "/v1/ai/rag/embed"},
+		{"POST", "/v1/ai/rag/query"},
+		{"POST", "/v1/ai/rag/delete"},
+		{"GET", "/v1/ai/rag/context"},
 		{"POST", "/v1/index"},
 		{"POST", "/v1/search"},
 		{"GET", "/v1/search/stats"},
-		{"POST", "/v1/docs/ingest"},
 		{"POST", "/v1/embed"},
-		{"POST", "/v1/query"},
-		{"POST", "/v1/query_multiple"},
-		{"DELETE", "/v1/documents"},
-		{"GET", "/v1/documents/file-123/context"},
 	}
 	for _, tc := range cases {
 		q := asUser(t, tc.method, tc.path, nil) // no user, no bearer
@@ -151,10 +147,10 @@ func TestWriteEndpointsRequireCredential(t *testing.T) {
 // the coarse presence gate must never reject a credential-bearing request.
 func TestWriteEndpointWithCredentialPassesFilter(t *testing.T) {
 	// Bearer present (validity is the controller's job).
-	q := withKey("POST", "/v1/rag/embed", "sk-some-key")
+	q := withKey("POST", "/v1/ai/rag/embed", "sk-some-key")
 	q = q.through(permissionFilter)
 	if q.status() != http.StatusOK || len(q.said()) != 0 {
-		t.Errorf("credentialed /v1/rag/embed wrote a denial (code=%d, body=%q); want filter pass-through", q.status(), q.said())
+		t.Errorf("credentialed /v1/ai/rag/embed wrote a denial (code=%d, body=%q); want filter pass-through", q.status(), q.said())
 	}
 
 	// Session present, no Bearer — also passes.
@@ -167,7 +163,7 @@ func TestWriteEndpointWithCredentialPassesFilter(t *testing.T) {
 }
 
 // TestBenignPathsNotCredentialGated — intentionally-anonymous paths (health,
-// metrics, wecom) must NOT be caught by the write-endpoint gate. The gate is an
+// metrics) must NOT be caught by the write-endpoint gate. The gate is an
 // explicit set, not a blanket default.
 //
 // Memory is deliberately absent: it is per-person, so there is no anonymous
@@ -176,7 +172,6 @@ func TestBenignPathsNotCredentialGated(t *testing.T) {
 	for _, p := range []struct{ method, path string }{
 		{"GET", "/v1/health"},
 		{"GET", "/v1/metrics"},
-		{"POST", "/v1/wecom-bot/callback/bot1"},
 	} {
 		q := asUser(t, p.method, p.path, nil)
 		q = q.through(permissionFilter)
@@ -188,16 +183,14 @@ func TestBenignPathsNotCredentialGated(t *testing.T) {
 
 // TestRequiresPresentCredentialClassification locks exactly which endpoints are
 // credential-gated — the write/ingest/scrape/RAG/memory set — and which are not
-// (chat/models/health and the unrelated query-record family, which must NOT be
-// caught by the "query" entry).
+// (chat/models/health and the unrelated query-record family).
 func TestRequiresPresentCredentialClassification(t *testing.T) {
 	gated := []string{
-		"index", "search", "search/stats",
-		"docs/ingest", "embed", "query", "query_multiple", "documents",
-		"rag/embed", "rag/query", "rag/query-multiple", "rag/delete", "rag/context",
-		"documents/file-123/context",
-		"memory/remember", "memory/search", "memory/list", "memory/recall",
-		"memory/facts", "memory/update", "memory/delete",
+		"index", "search", "search/stats", "embed",
+		"ai/rag/ingest", "ai/rag/embed", "ai/rag/query", "ai/rag/query-multiple",
+		"ai/rag/delete", "ai/rag/context",
+		"ai/memory/remember", "ai/memory/search", "ai/memory/list", "ai/memory/recall",
+		"ai/memory/facts", "ai/memory/update", "ai/memory/delete",
 	}
 	for _, e := range gated {
 		if !requiresPresentCredential(e) {
@@ -208,9 +201,9 @@ func TestRequiresPresentCredentialClassification(t *testing.T) {
 		"chat/completions", "completions", "models", "messages",
 		"health", "metrics",
 		"get-account", "query-record", "query-record-second",
-		// "memory" alone is not the memory family; only the "memory/" prefix is,
-		// so an unrelated endpoint spelled with that word is unaffected.
-		"memory", "memorydump",
+		// "ai/memory" alone is not the memory family; only the "ai/memory/" prefix
+		// is, so an unrelated endpoint spelled with that word is unaffected.
+		"ai/memory", "ai/memorydump",
 	}
 	for _, e := range ungated {
 		if requiresPresentCredential(e) {
@@ -221,20 +214,20 @@ func TestRequiresPresentCredentialClassification(t *testing.T) {
 
 // MEMORY IS NEVER ANONYMOUS.
 //
-// Every verb under /v1/memory reads, writes or deletes ONE named person's store.
+// Every verb under /v1/ai/memory reads, writes or deletes ONE named person's store.
 // A caller with no credential has no store here, so there is nothing for it to be
 // doing — and letting it through meant a stranger could name any user in a header
 // and read, overwrite or delete their memories. The filter refuses first; the
 // controller resolves the person from the credential.
 func TestMemoryIsNeverAnonymous(t *testing.T) {
 	for _, p := range []struct{ method, path string }{
-		{"POST", "/v1/memory/remember"},
-		{"GET", "/v1/memory/search"},
-		{"GET", "/v1/memory/list"},
-		{"GET", "/v1/memory/recall"},
-		{"GET", "/v1/memory/facts"},
-		{"POST", "/v1/memory/update"},
-		{"POST", "/v1/memory/delete"},
+		{"POST", "/v1/ai/memory/remember"},
+		{"GET", "/v1/ai/memory/search"},
+		{"GET", "/v1/ai/memory/list"},
+		{"GET", "/v1/ai/memory/recall"},
+		{"GET", "/v1/ai/memory/facts"},
+		{"POST", "/v1/ai/memory/update"},
+		{"POST", "/v1/ai/memory/delete"},
 	} {
 		q := asUser(t, p.method, p.path, nil).through(permissionFilter)
 		if q.status() != http.StatusUnauthorized {
@@ -243,7 +236,7 @@ func TestMemoryIsNeverAnonymous(t *testing.T) {
 	}
 
 	// A credentialed caller still passes the filter; the controller decides who.
-	q := asUser(t, "POST", "/v1/memory/remember", &iam.User{Owner: "acme", Name: "bob"}).through(permissionFilter)
+	q := asUser(t, "POST", "/v1/ai/memory/remember", &iam.User{Owner: "acme", Name: "bob"}).through(permissionFilter)
 	if q.status() == http.StatusUnauthorized {
 		t.Error("a session-authed memory write was refused at the filter")
 	}
@@ -502,15 +495,14 @@ func TestRouterRoundTrip_BypassBlocked(t *testing.T) {
 
 // An endpoint whose name matches none of the verb prefixes used to pass with no
 // credential, so whether it was reachable anonymously depended on what somebody
-// had called it. install-patch is the plain case — nothing about that name says
+// had called it. A bare noun is the plain case — nothing about such a name says
 // open, and nothing asked for a caller.
 //
 // The default is closed now. These are the shapes that used to fall through.
 func TestAnUnprefixedEndpointNeedsACaller(t *testing.T) {
 	for _, p := range []struct{ method, path string }{
-		{"POST", "/v1/install-patch"},
-		{"POST", "/v1/feedback"},
-		{"POST", "/v1/dev-bridge"},
+		{"POST", "/v1/ai/feedback"},
+		{"POST", "/v1/ai/org/settings"},
 	} {
 		q := asUser(t, p.method, p.path, nil)
 		q = q.through(permissionFilter)
@@ -525,7 +517,7 @@ func TestAnUnprefixedEndpointNeedsACaller(t *testing.T) {
 func TestTheNamedOpenEndpointsStayOpen(t *testing.T) {
 	for _, p := range []struct{ method, path string }{
 		{"GET", "/v1/models"},
-		{"GET", "/v1/traffic/globe"},
+		{"GET", "/v1/ai/traffic/globe"},
 	} {
 		q := asUser(t, p.method, p.path, nil)
 		q = q.through(permissionFilter)

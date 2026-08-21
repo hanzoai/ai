@@ -16,7 +16,7 @@
 import * as Setting from "../Setting";
 
 export function getStorageProviders(owner) {
-  return fetch(`${Setting.ServerUrl}/v1/rag/stores/providers?owner=${owner}`, {
+  return fetch(`${Setting.ServerUrl}/v1/ai/stores/providers?owner=${owner}`, {
     method: "GET",
     credentials: "include",
     headers: {
