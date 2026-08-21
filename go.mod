@@ -80,7 +80,6 @@ require (
 	github.com/valyala/fasthttp v1.72.0
 	github.com/volcengine/volcengine-go-sdk v1.0.141
 	github.com/wangbin/jiebago v0.3.2
-	github.com/workweixin/weworkapi_golang v0.0.0-20200831071321-c1fdfd3d6e7d
 	github.com/zap-proto/fiber/v3 v3.2.1
 	go.opentelemetry.io/otel/sdk v1.44.0
 	golang.org/x/net v0.57.0

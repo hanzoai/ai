@@ -431,7 +431,16 @@ func getModelPriceForOrg(model string, orgId string) modelPrice {
 // is byte-identical to getModelPriceForOrg; nothing about billing changes.
 func getModelPriceForOrgOK(model string, orgId string) (modelPrice, bool) {
 	// Zen family: the discovered retail price is the source of truth (hip-00NN).
+	//
+	// What the call COSTS us is a separate fact, and the family wire carries no cost
+	// field — so a family price arrives priced and uncosted, and the cost is completed
+	// from where costs are registered. Resolving the two together would make restating
+	// the price the only way to state a family model's COGS, which is how the cost came
+	// to BE the price.
 	if p, ok := familyModelPrice(model); ok {
+		if !p.costed() {
+			p.CostInPerMillion, p.CostOutPerMillion = registeredCost(model, orgId)
+		}
 		return p, true
 	}
 
@@ -469,6 +478,28 @@ func getModelPriceForOrgOK(model string, orgId string) (modelPrice, bool) {
 
 	// Default: conservative pricing for unknown models — the ONE synthesized price.
 	return modelPrice{InputPerMillion: 1.00, OutputPerMillion: 4.00}, false
+}
+
+// registeredCost is what an operator has recorded that a model costs us, per 1M tokens,
+// and 0,0 when nobody has recorded anything.
+//
+// The route row is the one place a COGS is registered — object.ModelRoute carries the
+// pair, and the admin cockpit reads and writes it there. The configured PRICE tables are
+// deliberately not consulted: a price is what we charge, and reaching for it here is the
+// substitution this function exists to avoid.
+//
+// Both legs or neither, matching costed(): a row that names only the input rate would
+// leave the completion — the expensive half — at zero and report the call as almost pure
+// margin.
+func registeredCost(model, orgId string) (float64, float64) {
+	route, err := object.ResolveModelRouteFromDB(strings.ToLower(model), orgId)
+	if err != nil || route == nil {
+		return 0, 0
+	}
+	if route.CostInPerMillion > 0 && route.CostOutPerMillion > 0 {
+		return route.CostInPerMillion, route.CostOutPerMillion
+	}
+	return 0, 0
 }
 
 // unpricedWarned dedupes the unpriced-model warning to once per model id, so a popular

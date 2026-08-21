@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Native ZAP handlers for the /v1/memory/* route group (strangler migration of
+// Native ZAP handlers for the /v1/ai/memory/* route group (strangler migration of
 // controllers/memory.go). Pure ZAP: no controller, no http writer. The
 // logic is re-implemented against object/ + the shared ZAP auth seam, mirroring
 // controllers.ApiController's Memory* methods EXACTLY:
@@ -38,7 +38,7 @@
 // READ-PARAM NOTE: read endpoints (search/list/recall/facts) take q/kind/limit.
 // The body-only handler signature carries (ctx, auth, body) and no query string,
 // so these are read from the JSON body — the native-ZAP shape. The seven exact
-// /v1/memory/* paths below are registered body-only, so a gateway GET carrying
+// /v1/ai/memory/* paths below are registered body-only, so a gateway GET carrying
 // ?q= reaches the handler with the query dropped: callers pass the params as a
 // JSON body. Org scoping + envelope are unaffected.
 
@@ -72,13 +72,13 @@ func registerZapMemory() {
 
 	// Longest-prefix wins in lookupGatewayHandler, so the seven exact paths
 	// each resolve to their own handler.
-	registerGatewayPath("/v1/memory/remember", zapMemoryRememberHandler)
-	registerGatewayPath("/v1/memory/search", zapMemorySearchHandler)
-	registerGatewayPath("/v1/memory/list", zapMemoryListHandler)
-	registerGatewayPath("/v1/memory/recall", zapMemoryRecallHandler)
-	registerGatewayPath("/v1/memory/facts", zapMemoryFactsHandler)
-	registerGatewayPath("/v1/memory/update", zapMemoryUpdateHandler)
-	registerGatewayPath("/v1/memory/delete", zapMemoryDeleteHandler)
+	registerGatewayPath("/v1/ai/memory/remember", zapMemoryRememberHandler)
+	registerGatewayPath("/v1/ai/memory/search", zapMemorySearchHandler)
+	registerGatewayPath("/v1/ai/memory/list", zapMemoryListHandler)
+	registerGatewayPath("/v1/ai/memory/recall", zapMemoryRecallHandler)
+	registerGatewayPath("/v1/ai/memory/facts", zapMemoryFactsHandler)
+	registerGatewayPath("/v1/ai/memory/update", zapMemoryUpdateHandler)
+	registerGatewayPath("/v1/ai/memory/delete", zapMemoryDeleteHandler)
 }
 
 // ── Identity (the ONE auth seam) ─────────────────────────────────────────

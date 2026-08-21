@@ -46,14 +46,6 @@
 // package-level registries (registerCloud / registerGatewayPath) defined in
 // zap_registry.go; it never edits a shared registration file. The same routes stay
 // live on routers.App, which also backs the gateway fallback.
-//
-// wecom_bot.go is intentionally NOT migrated here: /v1/wecom-bot/callback/:botId is
-// a public external WeChat-Work webhook whose inputs are a :botId PATH segment and
-// msg_signature/timestamp/nonce/echostr QUERY params carrying an encrypted body —
-// none of which the canonical zapHandler(ctx, auth, body) signature can carry, and
-// there is no native ZAP client for a WeChat webhook. It stays on routers.App, which
-// resolves the :botId segment and the query; re-implementing its crypto here uncalled
-// would be dead code.
 
 package controllers
 
@@ -132,10 +124,10 @@ func registerZapVerticalsAndMisc() {
 	registerGatewayPath("/v1/metrics", zapGetMetricsHandler)
 
 	// Per-org settings (super-admin) — ONE RESTful noun, method-aware: GET/PUT/DELETE
-	// /v1/org/settings + GET /v1/org/settings/list. HTTP-shaped (registerGatewayRoute)
+	// /v1/ai/org/settings + GET /v1/ai/org/settings/list. HTTP-shaped (registerGatewayRoute)
 	// so the one prefix carries every verb; the handler dispatches by method + the
-	// /list sub-path. The /v1/org/settings prefix also matches /v1/org/settings/list.
-	registerGatewayRoute("/v1/org/settings", zapOrgSettingsHandler)
+	// /list sub-path. The /v1/ai/org/settings prefix also matches /v1/ai/org/settings/list.
+	registerGatewayRoute("/v1/ai/org/settings", zapOrgSettingsHandler)
 
 }
 
@@ -832,7 +824,7 @@ func zapGetActivitiesHandler(_ context.Context, auth string, body []byte) (*zap.
 //
 // ONE RESTful noun, method-aware — the SOLE implementation of the per-org settings
 // surface (the the router org_settings.go controller was deleted). GET/PUT/DELETE
-// /v1/org/settings + GET /v1/org/settings/list. Super-admin gated ONCE at the top.
+// /v1/ai/org/settings + GET /v1/ai/org/settings/list. Super-admin gated ONCE at the top.
 // Owner is the ?owner= query param (the controller handlers read ?owner; a bare
 // OrgSettings body carries it as a fallback), never an identity source.
 //
@@ -849,8 +841,8 @@ func zapOrgSettingsHandler(_ context.Context, method, path, query, auth string, 
 		return deny, nil
 	}
 
-	// /v1/org/settings/list — every row for an owner (default "admin").
-	if strings.HasPrefix(path, "/v1/org/settings/list") {
+	// /v1/ai/org/settings/list — every row for an owner (default "admin").
+	if strings.HasPrefix(path, "/v1/ai/org/settings/list") {
 		if strings.ToUpper(method) != http.MethodGet {
 			return zapMiscError(http.StatusMethodNotAllowed, "method not allowed: "+method)
 		}

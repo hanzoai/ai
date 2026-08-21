@@ -23,7 +23,7 @@ import (
 )
 
 // Router IMPROVEMENT surface: the flywheel getting smarter OVER TIME, for the
-// investor/customer world.hanzo.ai view. Like /v1/router/stats it emits AGGREGATES
+// investor/customer world.hanzo.ai view. Like /v1/ai/router/stats it emits AGGREGATES
 // ONLY over the RoutingEvent ledger + the append-only retrain log — never raw events,
 // prompt-derived data, or per-request rows. The public platform scope additionally
 // emits NO model ids (only the task mix, which is safe): tasks are what customers do,
@@ -47,7 +47,7 @@ type historyWindow struct {
 
 // historyDay is one UTC calendar day's aggregate. cost_saved_index is that day's
 // proportional saved index (baseline blended $/MTok minus routed, summed over priced
-// events — the same honest proxy as /v1/router/stats, never a billed dollar figure);
+// events — the same honest proxy as /v1/ai/router/stats, never a billed dollar figure);
 // cumulative_cost_saved is the running total through this day (the investor curve).
 // by_task is the day's task histogram (safe on every scope).
 type historyDay struct {
@@ -266,7 +266,7 @@ func computeRouterHistory(events []*object.RoutingEvent, retrains []*object.Rout
 }
 
 // GetRouterHistory returns the router-improvement time-series. Two scopes, one route,
-// mirroring /v1/router/stats:
+// mirroring /v1/ai/router/stats:
 //
 //   - ?scope=platform — PUBLIC-safe aggregate over ALL orgs, no authentication. Emits
 //     the daily reward/cost-saved/adoption series (task mix included, model ids NOT)

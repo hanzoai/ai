@@ -44,13 +44,13 @@ func decodeCloudRPS(t *testing.T, msg *zap.Message) (uint32, Response) {
 // canonical registry: the multi-verb policy noun as an HTTP-shaped ROUTE (method
 // aware), the single-verb nouns as body-only PATHS, and the native cloud methods.
 func TestZapRPSRoutesRegistered(t *testing.T) {
-	if len(lookupGatewayRoutes("/v1/router/policy")) == 0 {
-		t.Error("/v1/router/policy not registered as an HTTP-shaped gateway route")
+	if len(lookupGatewayRoutes("/v1/ai/router/policy")) == 0 {
+		t.Error("/v1/ai/router/policy not registered as an HTTP-shaped gateway route")
 	}
 	for _, p := range []string{
-		"/v1/router/stats", "/v1/router/defaults", "/v1/router/ledger",
-		"/v1/router/rewards", "/v1/router/artifact-meta", "/v1/feedback",
-		"/v1/traffic/globe",
+		"/v1/ai/router/stats", "/v1/ai/router/defaults", "/v1/ai/router/ledger",
+		"/v1/ai/router/rewards", "/v1/ai/router/artifact-meta",
+		"/v1/ai/traffic/globe",
 	} {
 		if _, ok := lookupGatewayHandler(p); !ok {
 			t.Errorf("gateway path %q not registered", p)
@@ -75,7 +75,7 @@ func TestZapRPSOldCompoundPathsGone(t *testing.T) {
 	for _, p := range []string{
 		"/v1/get-router-policy", "/v1/update-router-policy",
 		"/v1/get-routing-defaults", "/v1/export-routing-ledger",
-		"/v1/export-routing-rewards", "/v1/router/publish-artifact-meta",
+		"/v1/export-routing-rewards", "/v1/ai/router/publish-artifact-meta",
 		"/v1/add-routing-reward",
 		"/v1/get-org-settings", "/v1/update-org-settings", "/v1/delete-org-settings",
 		"/v1/add-org-settings", "/v1/get-org-settings-list",
@@ -89,16 +89,16 @@ func TestZapRPSOldCompoundPathsGone(t *testing.T) {
 	}
 }
 
-// TestZapRouterPolicyMethodAware proves the one /v1/router/policy noun dispatches by
+// TestZapRouterPolicyMethodAware proves the one /v1/ai/router/policy noun dispatches by
 // method: GET → the read (admin-gated, so 403 for a non-admin under non-preview),
 // and any unsupported verb → 405.
 func TestZapRouterPolicyMethodAware(t *testing.T) {
-	if st, _ := decodeCloudRPS(t, okMsg(zapRouterPolicyHandler(context.Background(), http.MethodPatch, "/v1/router/policy", "", "", nil))); st != http.StatusMethodNotAllowed {
-		t.Errorf("PATCH /v1/router/policy: status = %d, want 405", st)
+	if st, _ := decodeCloudRPS(t, okMsg(zapRouterPolicyHandler(context.Background(), http.MethodPatch, "/v1/ai/router/policy", "", "", nil))); st != http.StatusMethodNotAllowed {
+		t.Errorf("PATCH /v1/ai/router/policy: status = %d, want 405", st)
 	}
 	if !conf.IsPreviewMode() {
-		if st, _ := decodeCloudRPS(t, okMsg(zapRouterPolicyHandler(context.Background(), http.MethodGet, "/v1/router/policy", "", "", nil))); st != http.StatusForbidden {
-			t.Errorf("GET /v1/router/policy non-admin: status = %d, want 403", st)
+		if st, _ := decodeCloudRPS(t, okMsg(zapRouterPolicyHandler(context.Background(), http.MethodGet, "/v1/ai/router/policy", "", "", nil))); st != http.StatusForbidden {
+			t.Errorf("GET /v1/ai/router/policy non-admin: status = %d, want 403", st)
 		}
 	}
 }

@@ -47,12 +47,12 @@ func forcePreviewOn(t *testing.T) {
 // TestRequireIndexAuthNoCredentialIsUnauthorized is the F1 core assertion: a
 // NO-CREDENTIAL caller to an index/scrape/ingest write must be denied 401 and
 // must NOT resolve to the admin tenant — EVEN in preview mode. This is the exact
-// hole (preview → {Owner:"admin"}) that let unauthenticated /v1/rag/embed and
+// hole (preview → {Owner:"admin"}) that let unauthenticated /v1/ai/rag/embed and
 // /v1/scrape reach the admin knowledge base + browser engine.
 func TestRequireIndexAuthNoCredentialIsUnauthorized(t *testing.T) {
 	forcePreviewOn(t)
 
-	c := visit(http.MethodPost, "/v1/rag/embed")
+	c := visit(http.MethodPost, "/v1/ai/rag/embed")
 	auth := c.requireIndexAuth()
 
 	if auth != nil {
