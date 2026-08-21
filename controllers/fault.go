@@ -499,6 +499,11 @@ type attempt struct {
 	// produced nothing, and is what keeps its ledger row free.
 	prompt     int
 	completion int
+	// row is the provider whose credential was spent, carried for the same
+	// reason served.row is: whether this call was the customer's own key is a
+	// property of the row that PAID, and a beaten provider is billed from its
+	// own row rather than the one auth resolved before the race began.
+	row *object.Provider
 }
 
 // candidates orders the providers a route may be offered to, best first, and
