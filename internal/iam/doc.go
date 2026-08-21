@@ -33,17 +33,22 @@
 // back to a lazily-built client from IAM_ENDPOINT / IAM_ISSUER (default
 // https://hanzo.id) so a read never nil-panics when InitConfig was skipped.
 //
-// # A record is addressed by its noun
+// # A record is addressed by its key, and the method says what to do with it
 //
-// IAM serves `/v1/iam/<plural>` with `/get`, `/update` and `/delete` under it —
-// `applications/get`, `permissions`, `users/update`. The `<verb>-<noun>`
-// spellings this client used to build ("get-cert") are gone from its router, and
-// three things about the replacement are easy to get wrong in a way that does
-// not announce itself:
+// IAM serves a collection at `/v1/iam/<plural>` and one record at
+// `/v1/iam/<plural>/<owner>/<name>`. There is no verb anywhere in a path: GET
+// lists or reads, POST creates, PUT replaces, DELETE removes. Two generations of
+// spelling are gone from its router — the `<verb>-<noun>` forms ("get-cert") and
+// then the verb SEGMENTS ("certs/get", "permissions/delete") — and three things
+// about the replacement are easy to get wrong in a way that does not announce
+// itself:
 //
-// THE KEY IS TWO PARAMETERS. `?owner=&name=`, never the joined `?id=<owner>/<name>`
-// — which is not a parameter these routes read, so a request still spelling it
-// states no owner at all.
+// THE KEY IS THE PATH. Both halves are segments under the collection, and
+// neither `?owner=&name=` nor the joined `?id=<owner>/<name>` is read by these
+// routes. That is worse than a 404: a request still carrying the key in its
+// query addresses the COLLECTION, which answers — at 200 — with a listing, or
+// with whatever a keyless write does. No status check can see it. Build a record
+// address with Ref.path and there is no second way to spell one.
 //
 // THERE IS NO ENVELOPE. A route answers with the record itself, or with the
 // collection under its own name ({"users":[…]}). The retired surface wrapped
@@ -53,7 +58,9 @@
 // THE METHOD IS AUTHORIZED, NOT JUST ROUTED. IAM decides whether a request is a
 // READ from its HTTP method, so a record fetched with the wrong verb is weighed
 // as a write and read-scoped grants do not fire. That answers 403, not 405 or
-// 404 — a refusal that reads like a permissions regression. Most single-record
-// reads are GETs; a few (providers/get, tokens/get, sessions/get, roles/get)
-// are POSTs. Read the registration in the IAM package before adding a call.
+// 404 — a refusal that reads like a permissions regression.
+//
+// The one record write still addressed by a verb is `POST users/update`, because
+// IAM's input for it nests the record under `user` and a path segment binds only
+// onto a top-level field. See UpdateUser.
 package iam
