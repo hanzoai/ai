@@ -26,8 +26,8 @@ import (
 // contract can be tested without a live DB. Production reads the DB.
 var getRoutingEvents = object.GetRoutingEvents
 
-// The routing-defaults read (GET /v1/router/defaults) and the training-data exports
-// (GET /v1/router/{ledger,rewards}) are served ZAP-native — the ONE implementation —
+// The routing-defaults read (GET /v1/ai/router/defaults) and the training-data exports
+// (GET /v1/ai/router/{ledger,rewards}) are served ZAP-native — the ONE implementation —
 // in controllers/zap_router-policy-stats.go (zapGetRoutingDefaultsHandler,
 // zapExportRouting{Ledger,Rewards}Handler); the exports enforce the SAME super-admin-OR-
 // ROUTER_ADMIN_TOKEN gate via zapRPSRouterAdminAuthorized. No controller twin.

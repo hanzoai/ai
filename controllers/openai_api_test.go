@@ -115,7 +115,10 @@ func TestKeyRefusal_NamesTheCauseAndTheCure(t *testing.T) {
 		code  string
 		wants []string
 	}{
-		{"key_unknown", []string{"not recognized", "revoked or replaced", "mint a new one"}},
+		// The cure, and NOT a cause: this code is the same answer for a revoked
+		// key, a replaced one, and one that never resolved at all, so a sentence
+		// naming any of them would be a guess the resolver cannot support.
+		{"key_unknown", []string{"does not resolve", "mint a new one"}},
 		{"key_wrong_door", []string{"not a secret key", "sk-"}},
 		{"key_expired", []string{"expired", "mint a new one"}},
 		{"key_not_publishable", []string{"not a publishable key"}},

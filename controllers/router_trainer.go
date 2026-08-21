@@ -31,7 +31,7 @@ import (
 // This CLOSES the router flywheel end-to-end using ONLY shipped mechanisms and
 // real reward data — no separate ML engine, no fabricated model:
 //
-//	feedback → reward:  clients (and the self-probe) POST /v1/feedback,
+//	feedback → reward:  clients (and the self-probe) POST /v1/ai/feedback,
 //	                    which lands on the RoutingEvent row (object.AttachRoutingReward).
 //	fit:                per (task, model) empirical mean reward over the rewarded
 //	                    ledger — the honest bandit statistic (fitRouterHeads, pure).
@@ -42,7 +42,7 @@ import (
 //	                    folds (org > "*" > conf), so the router immediately prefers
 //	                    the empirically-best model. No engine reload, no restart.
 //	publish:            RouterArtifactMeta upserts the verdict for "*", which
-//	                    /v1/router/stats and the world.hanzo.ai flywheel panel read.
+//	                    /v1/ai/router/stats and the world.hanzo.ai flywheel panel read.
 //
 // It is the "holdout_reward" gate kind (honest: it is a reward-mean regression
 // gate over the org's own ledger, not routerbench). Off unless enabled.

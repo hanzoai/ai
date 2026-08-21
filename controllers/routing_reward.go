@@ -35,7 +35,7 @@ var (
 	getRewardedRoutingEvents = object.GetRewardedRoutingEvents
 )
 
-// routingRewardRequest is the /v1/feedback body: the request id (the gateway's own
+// routingRewardRequest is the /v1/ai/feedback body: the request id (the gateway's own
 // response id — the chatcmpl-/msg id the client received) plus a client feedback
 // signal the SERVER maps to a reward. The canonical shapes (clients code to these):
 //
@@ -44,7 +44,7 @@ var (
 //	{request_id, signal:"dismiss"}                 (NO reward — analytics only)
 //
 // Reward (an explicit 0..1) stays accepted as an internal override. No prompt text is
-// ever accepted or stored. `/v1/feedback` is the ONE reward endpoint (the old
+// ever accepted or stored. `/v1/ai/feedback` is the ONE reward endpoint (the old
 // `/v1/add-routing-reward` alias was dropped) — one endpoint, one server-owned reward mapping.
 type routingRewardRequest struct {
 	RequestId string   `json:"request_id"`
@@ -250,7 +250,7 @@ type rewardTuple struct {
 	At       string          `json:"at"`
 }
 
-// The rewarded-tuple export (GET /v1/router/rewards) is served ZAP-native — the ONE
+// The rewarded-tuple export (GET /v1/ai/router/rewards) is served ZAP-native — the ONE
 // implementation — by zapExportRoutingRewardsHandler in zap_router-policy-stats.go
 // (same super-admin-OR-ROUTER_ADMIN_TOKEN gate, same getRewardedRoutingEvents +
 // writeRoutingRewardsJSONL below). No controller twin.

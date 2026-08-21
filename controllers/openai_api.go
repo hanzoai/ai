@@ -636,8 +636,20 @@ const keysURL = "https://console.hanzo.ai/api-keys"
 func keyRefusal(code, msg, key string) error {
 	switch code {
 	case "key_unknown":
-		return fmt.Errorf("API key %s is not recognized — it was revoked or replaced. "+
-			"Mint a new one at "+keysURL, keyHint(key))
+		// IT SAYS WHAT IS KNOWN, WHICH IS THAT THE KEY DOES NOT RESOLVE.
+		//
+		// This code carries no history. It is the same answer for a key that was
+		// revoked, one that was replaced, and one that never resolved from the
+		// moment it was issued — and the third really happens: a service account's
+		// credential was written to a column nothing reads, so it answered this
+		// code for its entire life (iam internal/serviceaccounts). Saying "it was
+		// revoked or replaced" turned that into a hunt for a revocation nobody
+		// performed, on keys that had never worked once.
+		//
+		// The cure is the same either way, so the sentence keeps it and drops the
+		// story it cannot support.
+		return fmt.Errorf("API key %s does not resolve — mint a new one at "+
+			keysURL, keyHint(key))
 	case "key_wrong_door":
 		return fmt.Errorf("API key %s is not a secret key. A publishable pk- key "+
 			"identifies an org for ingest and cannot authenticate a request; "+
@@ -1646,7 +1658,7 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 
 	// One request id, generated once here — it is the response id (`chatcmpl-<id>`),
 	// the usage-ledger request_id, AND the routing-event join key, so a later reward
-	// (POST /v1/feedback) can be tied back to THIS decision. Generated
+	// (POST /v1/ai/feedback) can be tied back to THIS decision. Generated
 	// before routing so resolveAutoModel can stamp it on the RoutingEvent.
 	requestId := uuid.NewString()
 
