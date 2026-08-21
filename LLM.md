@@ -222,10 +222,18 @@ Losers are cancelled — that is what stops the upstream call, which is what sto
 the cost — and `Race` does not wait for them to unwind, because waiting on a
 provider we are abandoning hands it exactly the latency this removes.
 
-**It meters itself.** Each upstream call writes its own `api-usage` row and the
-plan windows count rows, so a three-way hedge draws three units of allowance with
-no change to the billing path. That is the agreed policy: the customer pays for
-all N, which makes fast mode self-limiting.
+**It does NOT meter itself, and this is the open blocker.** An earlier version of
+this note claimed each upstream call writes its own `api-usage` row. It does not:
+the completion path writes ONE usage record for the provider that served
+(`controllers/openai_api.go:1996-2027`) and `recordRefusals` bills nothing for
+the rest (`controllers/failover.go:340-343`) — that status exists to record a
+refusal that cost nothing. A three-way hedge therefore burns three completions
+and settles one, which is a customer spending 3x our money at 1x their price.
+
+The agreed policy is that the customer pays for all N, so wiring fast mode
+requires one of: losing attempts writing REAL usage rows, or the budget hold at
+`openai_api.go:1768-1783` reserved N-fold up front. Until that exists, hedging
+must not be reachable from a customer request.
 
 NOT WIRED YET. Putting it on the completion path touches six `QueryText` call
 sites, and `controllers/failover.go` already does something adjacent — read that
