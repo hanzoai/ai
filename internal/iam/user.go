@@ -311,7 +311,7 @@ type ProductInfo struct {
 // GetUser fetches a single user by name within the client's organization.
 func (c *Client) GetUser(name string) (*User, error) {
 	var user *User
-	if err := c.get("users/get", Ref{Owner: c.OrganizationName, Name: name}.query(), &user); err != nil {
+	if err := c.get(Ref{Owner: c.OrganizationName, Name: name}.path("users"), nil, &user); err != nil {
 		return nil, err
 	}
 	return user, nil
@@ -330,6 +330,14 @@ func (c *Client) GetUsers() ([]*User, error) {
 }
 
 // UpdateUser writes user back to IAM.
+//
+// THE KEY IS IN THE BODY HERE, and alone among the record writes. Every other
+// entity moved its (owner, name) into the URL; the user update did not, because
+// IAM's input for it nests the record under `user` and a path segment binds only
+// onto a top-level field — a ":owner/:name" would bind nothing and leave the body
+// as the sole target, which is the one thing the path form exists to prevent. So
+// this stays POST /v1/iam/users/update until that input carries the key at top
+// level. It is the exception IAM states, not one taken here.
 //
 // It is a WHOLE-RECORD write, and the caller must hand over a record it read
 // rather than one it assembled: every field present replaces what is stored.
