@@ -24,22 +24,22 @@ import (
 // Resolution is now lazy and retrying, and the door answers 503. What must NOT
 // change, and is what this file holds, is that none of these bodies ever resolves.
 //
-// WHAT THESE FIXTURES ARE. Each is a way the application read fails against IAM's
-// noun surface:
+// WHAT THESE FIXTURES ARE. Each is a way the application read fails against the
+// surface IAM serves, where a record is addressed by its key in the path:
 //
 //	curl -u "hanzo-cloud:$IAM_CLIENT_SECRET" \
-//	  'http://127.0.0.1:18090/v1/iam/applications/get?owner=admin&name=hanzo-cloud'
+//	  'http://127.0.0.1:18090/v1/iam/applications/admin/hanzo-cloud'
 //	  -> 403 {"status":403,"error":"forbidden"}
-//	curl 'http://127.0.0.1:18090/v1/iam/applications/get?owner=admin&name=hanzo-cloud'
+//	curl 'http://127.0.0.1:18090/v1/iam/applications/admin/hanzo-cloud'
 //	  -> 401 {"status":401,"error":"authentication required"}
-//	curl 'http://127.0.0.1:18090/v1/iam/applications/get?id=admin/hanzo-cloud'
+//	curl 'http://127.0.0.1:18090/v1/iam/applications/get?owner=admin&name=hanzo-cloud'
 //	  -> 404 {"status":404,"error":"Cannot GET /v1/iam/applications/get"}
 //
 // THE STATUS IS NOW THE VERDICT. The retired verb surface reported its outcome
 // inside a {status, msg} envelope and answered HTTP 200 whatever happened, so the
-// client read the envelope and ignored the transport. The noun routes refuse with
-// the real code, which is why each fixture carries one — and why the last is here
-// at all: a request built the old way is not forbidden or unauthenticated, it
+// client read the envelope and ignored the transport. The routes refuse with the
+// real code, which is why each fixture carries one — and why the last is here at
+// all: a request built the old way is not forbidden or unauthenticated, it
 // addresses nothing, and 404 is a shape this boundary had never had to survive.
 //
 // A body is still checked alongside the status, because the 200s are the dangerous
