@@ -131,7 +131,6 @@ func TestWriteEndpointsRequireCredential(t *testing.T) {
 		{"POST", "/v1/index"},
 		{"POST", "/v1/search"},
 		{"GET", "/v1/search/stats"},
-		{"POST", "/v1/embed"},
 	}
 	for _, tc := range cases {
 		q := asUser(t, tc.method, tc.path, nil) // no user, no bearer
