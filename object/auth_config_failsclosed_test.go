@@ -32,8 +32,8 @@ import (
 //	  -> 403 {"status":403,"error":"forbidden"}
 //	curl 'http://127.0.0.1:18090/v1/iam/applications/get?owner=admin&name=hanzo-cloud'
 //	  -> 401 {"status":401,"error":"authentication required"}
-//	curl 'http://127.0.0.1:18090/v1/iam/get-application?id=admin/hanzo-cloud'
-//	  -> 404 {"status":404,"error":"Cannot GET /v1/iam/get-application"}
+//	curl 'http://127.0.0.1:18090/v1/iam/applications/get?id=admin/hanzo-cloud'
+//	  -> 404 {"status":404,"error":"Cannot GET /v1/iam/applications/get"}
 //
 // THE STATUS IS NOW THE VERDICT. The retired verb surface reported its outcome
 // inside a {status, msg} envelope and answered HTTP 200 whatever happened, so the
@@ -57,7 +57,7 @@ type failure struct {
 var liveIAMBodies = map[string]failure{
 	"authz Guard forbade the read (the outage)": {403, `{"status":403,"error":"forbidden"}`},
 	"unauthenticated read":                      {401, `{"status":401,"error":"authentication required"}`},
-	"a request built the retired way":           {404, `{"status":404,"error":"Cannot GET /v1/iam/get-application"}`},
+	"a request built the retired way":           {404, `{"status":404,"error":"Cannot GET /v1/iam/applications/get"}`},
 	"empty body":                                {200, ``},
 	"HTML error page from a proxy":              {200, `<html><body>502 Bad Gateway</body></html>`},
 	"an error envelope served as a record":      {200, `{"status":"error","msg":"please sign in first"}`},
