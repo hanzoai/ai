@@ -233,22 +233,53 @@ Losers are cancelled — that is what stops the upstream call, which is what sto
 the cost — and `Race` does not wait for them to unwind, because waiting on a
 provider we are abandoning hands it exactly the latency this removes.
 
-**It does NOT meter itself, and this is the open blocker.** An earlier version of
-this note claimed each upstream call writes its own `api-usage` row. It does not:
-the completion path writes ONE usage record for the provider that served
-(`controllers/openai_api.go:1996-2027`) and `recordRefusals` bills nothing for
-the rest (`controllers/failover.go:340-343`) — that status exists to record a
-refusal that cost nothing. A three-way hedge therefore burns three completions
-and settles one, which is a customer spending 3x our money at 1x their price.
+### One ledger path each, because the two losers are opposite cases
 
-The agreed policy is that the customer pays for all N, so wiring fast mode
-requires one of: losing attempts writing REAL usage rows, or the budget hold at
-`openai_api.go:1768-1783` reserved N-fold up front. Until that exists, hedging
-must not be reachable from a customer request.
+`ask.fan` (`controllers/hedged.go`) carries a request into fast mode: how many to
+ask, where the winner's bytes go, and how to make and adopt a writer. `serve()`
+dispatches on it, so a caller sets a NUMBER rather than choosing a code path, and
+a fan too narrow to race falls back to the cascade with its retry and demotion
+intact. **Nothing sets it yet** — the mechanism ships inert, and
+`TestWithoutAFanNothingChanges` is what says so.
 
-NOT WIRED YET. Putting it on the completion path touches six `QueryText` call
-sites, and `controllers/failover.go` already does something adjacent — read that
-before adding a second mechanism beside it.
+A raced loser and a failover refusal wear the same shape and mean the opposite
+thing, which is the whole design:
+
+- A REFUSAL errored. No tokens, no upstream charge — `recordRefusals` writes a
+  `"failover"` row that bills nothing, and that is correct.
+- A RACED LOSER was CANCELLED mid-generation. The vendor produced tokens and
+  charged us. Filing it as a refusal records a real charge as free and makes fast
+  mode invisible in the ledger the team reads.
+
+So a beaten provider never appears in the attempts `race()` returns — the caller
+records those as refusals — and settles through `fan.bill` instead.
+
+**Each attempt needs its OWN writer.** The loser's token count is on ITS writer,
+and one writer shared across attempts holds exactly one answer: the winner's. A
+shared writer therefore bills every loser for the winner's tokens AND glues its
+half-sentence to the winner's answer on the client's wire — both failures show up
+in `TestEachRacerIsBilledFromItsOwnWriter`, verified against a deliberately
+shared fork. `OpenAIWriter.fork`/`adopt` are that pair: forks copy the dialect
+and start the buffers empty; the winner's is adopted so the non-streaming body
+and the tail chunk come from the provider that actually served.
+
+**THE BILL ARRIVES LATE, and that is the shape rather than a wrinkle.** `Race`
+returns when the winner finishes, not when the losers do — so at that moment a
+loser has typically not even started, and reading its outcome is both a missing
+bill and a data race. (The first draft did exactly this; the test caught it.)
+`settle` therefore runs on its own goroutine, and `fan.bill` must close over
+VALUES: by the time it fires the handler has returned and, on fasthttp, the
+request has been recycled.
+
+**Cancellation is a WRITE ERROR, not a context.** `QueryText` takes no context,
+so a loser's only stop signal is `hedge.ErrLost` on its next write. One that
+checks its write error stops there; one that does not runs to completion and
+bills us for all of it. Either way the tokens are real — which is the argument
+for billing them.
+
+Still open: the switch. A request has no `fast` field yet, so nothing constructs
+a fan. hanzo.chat follows `web_search`; hanzo.app follows `base` and must resolve
+its in-flight merge on the three AI-path files first.
 
 ## The /v1 resource surface — ONE table, no compound routes
 
