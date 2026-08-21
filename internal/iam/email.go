@@ -23,9 +23,16 @@ type emailForm struct {
 	Receivers []string `json:"receivers"`
 }
 
-// SendEmail sends an email via IAM's configured mail provider (/v1/iam/send-email).
-// This proxies mail through IAM exactly as ai did via the old SDK; it is not
-// identity, but keeping the REST call preserves behavior with no new coupling.
+// SendEmail sends an email via IAM's configured mail provider.
+//
+// IT HAS NO ROUTE. `/v1/iam/send-email` was part of the verb surface IAM
+// retired, and mail is not an identity concern, so nothing replaced it under a
+// noun — the whole router carries no mail address of any kind. Every call here
+// reaches a 404, and it still speaks the {status, data} envelope because there
+// is no native shape to speak instead.
+//
+// Re-homing this is a decision about where transactional mail belongs, not a
+// spelling change, so it is deliberately not made here.
 func (c *Client) SendEmail(title, content, sender string, receivers ...string) error {
 	postBytes, err := json.Marshal(emailForm{
 		Title:     title,
