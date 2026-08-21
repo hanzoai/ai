@@ -9,9 +9,34 @@
 // others.
 //
 // It costs what it sounds like: N upstream calls for one answer. That is the
-// whole trade, it is the customer's to make per request, and it meters itself —
-// every upstream call writes its own usage row, so a three-way hedge draws down
-// three units of allowance with no change to the billing path.
+// whole trade and it is the customer's to make per request — BUT NOTHING HERE
+// BILLS FOR IT, and a caller must arrange that before wiring this up.
+//
+// The completion path writes ONE usage record, for the provider that served
+// (controllers/openai_api.go), and recordRefusals bills nothing for the rest
+// (controllers/failover.go). So a three-way hedge burns three real completions
+// upstream and settles one. Left alone, fast mode is a way for a customer to
+// spend 3x our money at 1x their price.
+//
+// THE RULE, and why the failover ledger cannot be reused for it:
+//
+// controllers.recordRefusals bills nothing, and its comment says exactly why —
+// "an attempt that refused before producing a token adds nothing to it". That is
+// right for failover, where a loser ERRORED: no tokens, no upstream charge, and
+// the "failover" status exists to record a refusal that cost nothing.
+//
+// A hedge loser is the opposite case wearing the same shape. It was CANCELLED
+// mid-generation, so the upstream produced tokens and billed us for them. It
+// costs real money and must write a REAL usage row, with the token count it
+// actually reached before Race cancelled it — never the "failover" status, which
+// would file a genuine charge as a free refusal and make fast mode invisible in
+// the ledger the team reads.
+//
+// So each attempt needs its own writer, not a shared one: the loser's token count
+// is on ITS writer, and a single writer reset between attempts (which is what
+// failover does, controllers/openai_writer.go) destroys exactly the number the
+// row needs. That is a call-site decision about money, which is why this package
+// names it and does not quietly make it.
 //
 // FIRST BYTE WINS, and that is the only definition of "fastest" a stream can act
 // on. A provider that will finish sooner but has not started is not yet the
