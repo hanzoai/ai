@@ -192,6 +192,7 @@ func (a ask) settle(over []shot, done <-chan shot, rest int) []attempt {
 			status:   upstreamHTTPStatus(s.err),
 			fault:    faultOf(s.err),
 			err:      s.err,
+			row:      s.row,
 		}
 		if at.err == nil {
 			// It answered and lost the race. Not a refusal at all — but it is

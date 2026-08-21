@@ -1766,6 +1766,10 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 	// balance >= estimated cost and reserves it atomically. It is settled with
 	// the ACTUAL cost when the request completes (deferred fail-safe release).
 	var hold *budgetHold
+	// wide is how many providers this request may be offered to AT ONCE. It is
+	// decided with the reservation and never after: what a race costs is N
+	// completions, so the hold either covers them or the request is not raced.
+	wide := 1
 	if authUser != nil {
 		subject := authUser.PayerSubject(ledger)
 		// Clamp the upstream completion ceiling BEFORE reserving so the proxied
@@ -1775,7 +1779,7 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 		request.MaxTokens = clampMaxTokens(request.MaxTokens)
 		est := estimateRequestCostCents(request.Model, estimatePromptTokens(&request), request.MaxTokens)
 		var ok bool
-		if hold, ok = reserveBudget(subject, est); !ok {
+		if hold, wide, ok = c.widthFor(authUser, subject, est); !ok {
 			c.ResponseAuthError(billingError("%s", object.InsufficientBalance(c.Host(), ledger, "request cost").Message))
 			return
 		}
@@ -1924,12 +1928,30 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 	// `answered` carries what a bare `return` used to. Those returns are now
 	// returns from a closure, which would fall through to the judge below instead
 	// of skipping it. (Not `served` — that name is a type in this package.)
+	// Built HERE, not inside complete: it reads the caller's IP and holds it, and
+	// a provider beaten in a race is billed long after this handler is done with
+	// the request that named it.
+	billRaced := c.billRaced(request.Model, authUser, isPremium, request.Stream, requestId, requestStartTime)
+
 	answered := false
 	complete := func(out io.Writer) {
 		writer.out = out
 		var modelResult *model.ModelResult
 		var actualProvider served
 		var tried []attempt
+
+		// Fast mode, when the reservation covered it. Nil is the cascade, which
+		// is what every ordinary request gets.
+		var race *fan
+		if wide > 1 {
+			race = &fan{
+				n:     wide,
+				to:    out,
+				fork:  func(o io.Writer) io.Writer { return writer.fork(o) },
+				adopt: writer.adopt,
+				bill:  billRaced,
+			}
+		}
 
 		if route != nil {
 			modelResult, actualProvider, tried, err = ask{
@@ -1943,6 +1965,8 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 				knowledge: knowledge,
 				lang:      c.GetAcceptLanguage(),
 				writer:    writer,
+				prompt:    promptTokens,
+				fan:       race,
 				sent:      func() bool { return writer.StreamSent },
 				prior:     familyRefused,
 			}.serve()
