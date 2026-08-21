@@ -7,79 +7,72 @@ import (
 	"testing"
 )
 
-// THREE THINGS MOVE TOGETHER, and only the first is a rename.
+// Every record operation is pinned to its exact request line, because IAM's
+// surface is NOT uniform across collections and cannot be derived from one of
+// them.
 //
-// IAM retired the verb segments from its paths: `certs/get` became
-// GET /v1/iam/certs/<owner>/<name>, `permissions/update` became a PUT there,
-// `permissions/delete` a DELETE. Converting the ADDRESS alone leaves two live
-// defects, and neither shows up as a failure:
+// What IAM registers: applications, permissions and users answer /get on a GET
+// with the key in the query; certs answers ITS /get on a POST with the key in
+// the body; organizations have no per-record route at all, only the older
+// get-organization, which replies inside a {status, msg, data} envelope. The
+// writes are POSTs to /update and /delete.
 //
-// THE QUERY IT WAS SCOPED BY. `?owner=&name=` used to say which record. These
-// routes do not read it, so a caller that keeps sending it addresses the
-// COLLECTION — and gets answered, at 200, about every record instead of the one
-// it named. There is no status to check.
-//
-// THE METHOD. IAM decides read-from-write BY METHOD. A read shaped as a POST is
-// weighed as a write, so a read-scoped grant does not fire and the answer is
-// 403 — which reads like a permissions regression while the only thing wrong is
-// the verb.
-//
-// So this asserts the exact request line for every record operation. Equality,
-// not a substring: a partial match is precisely what each of the wrong spellings
-// above would still satisfy.
+// A spelling this client invents for itself does not fail loudly. Addressing a
+// record as path segments — certs/admin/cert-hanzo — 404s, and that is the good
+// case: address the COLLECTION with parameters nothing reads and IAM answers
+// about every record at 200, which no status check catches. So this asserts
+// equality, not a substring: a partial match is exactly what each wrong spelling
+// would still satisfy.
 func TestEachRecordOperationAddressesItsKeyByMethodAndPath(t *testing.T) {
 	for _, tc := range []struct {
 		what   string
 		call   func(*Client) error
 		method string
 		url    string
+		reply  string
 	}{
 		{
 			"read a cert", func(c *Client) error { _, err := c.GetCert("cert-hanzo"); return err },
-			http.MethodGet, "http://iam.test/v1/iam/certs/admin/cert-hanzo",
+			http.MethodPost, "http://iam.test/v1/iam/certs/get", "",
 		},
 		{
 			"read an application", func(c *Client) error { _, err := c.GetApplication("hanzo-cloud"); return err },
-			http.MethodGet, "http://iam.test/v1/iam/applications/admin/hanzo-cloud",
+			http.MethodGet, "http://iam.test/v1/iam/applications/get?name=hanzo-cloud&owner=admin", "",
 		},
 		{
+			// The only read that is not a native route, and the only one whose
+			// verdict is in the body: a miss is 200 with a null data.
 			"read an organization", func(c *Client) error { _, err := c.GetOrganization("hanzo"); return err },
-			http.MethodGet, "http://iam.test/v1/iam/organizations/admin/hanzo",
+			http.MethodGet, "http://iam.test/v1/iam/get-organization?id=admin%2Fhanzo",
+			`{"status":"ok","data":{"owner":"admin","name":"hanzo"}}`,
 		},
 		{
 			"read a user", func(c *Client) error { _, err := c.GetUser("z"); return err },
-			http.MethodGet, "http://iam.test/v1/iam/users/hanzo/z",
+			http.MethodGet, "http://iam.test/v1/iam/users/get?name=z&owner=hanzo", "",
 		},
 		{
 			"read a permission", func(c *Client) error { _, err := c.GetPermission("p"); return err },
-			http.MethodGet, "http://iam.test/v1/iam/permissions/hanzo/p",
+			http.MethodGet, "http://iam.test/v1/iam/permissions/get?name=p&owner=hanzo", "",
 		},
 		{
 			"create a permission", func(c *Client) error { _, err := c.AddPermission(&Permission{Name: "p"}); return err },
-			http.MethodPost, "http://iam.test/v1/iam/permissions",
+			http.MethodPost, "http://iam.test/v1/iam/permissions", "",
 		},
 		{
 			"replace a permission", func(c *Client) error { _, err := c.UpdatePermission(&Permission{Name: "p"}); return err },
-			http.MethodPut, "http://iam.test/v1/iam/permissions/hanzo/p",
+			http.MethodPost, "http://iam.test/v1/iam/permissions/update", "",
 		},
 		{
 			"remove a permission", func(c *Client) error { _, err := c.DeletePermission(&Permission{Name: "p"}); return err },
-			http.MethodDelete, "http://iam.test/v1/iam/permissions/hanzo/p",
+			http.MethodPost, "http://iam.test/v1/iam/permissions/delete", "",
 		},
 		{
-			// The user write is addressed like every other record. It was the one
-			// exception for a while: IAM's input nested the record under `user`, and
-			// a path segment binds only onto a top-level field, so ":owner/:name"
-			// would have bound nothing and left the body as the sole target — the
-			// one thing the path form exists to prevent. IAM's UpdateInput carries
-			// the key at top level now (json:"-" url:"owner"), bound from the URL
-			// and outranking whatever the body claims, so the exception is closed.
 			"write a user", func(c *Client) error { return c.UpdateUser(&User{Owner: "acme", Name: "z"}) },
-			http.MethodPut, "http://iam.test/v1/iam/users/acme/z",
+			http.MethodPost, "http://iam.test/v1/iam/users/update", "",
 		},
 	} {
 		t.Run(tc.what, func(t *testing.T) {
-			cap := &capture{}
+			cap := &capture{body: tc.reply}
 			SetHttpClient(cap)
 			t.Cleanup(func() { SetHttpClient(&http.Client{}) })
 
@@ -91,9 +84,8 @@ func TestEachRecordOperationAddressesItsKeyByMethodAndPath(t *testing.T) {
 				t.Fatalf("want 1 request, got %d: %v", len(cap.urls), cap.urls)
 			}
 			if cap.methods[0] != tc.method {
-				t.Errorf("%s used %s, want %s — IAM authorizes on the method, so the wrong\n"+
-					"one is a 403 that reads like a permissions regression",
-					tc.what, cap.methods[0], tc.method)
+				t.Errorf("%s used %s, want %s — IAM registers this route on %s only,\n"+
+					"so the other verb is a 404", tc.what, cap.methods[0], tc.method, tc.method)
 			}
 			if cap.urls[0] != tc.url {
 				t.Errorf("%s asked %q, want %q", tc.what, cap.urls[0], tc.url)
