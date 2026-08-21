@@ -14,8 +14,6 @@
 
 package iam
 
-import "fmt"
-
 // Organization is the subset of the IAM Organization model ai reads. It is a
 // read-only response (GetOrganization), so a projection is correct: json
 // unmarshal ignores the fields ai does not consume.
@@ -25,28 +23,13 @@ type Organization struct {
 	DisplayName string `json:"displayName"`
 }
 
-// GetOrganization reads one organization.
-//
-// IAM serves no per-record route for organizations — only the listing and the
-// older get-organization, which answers inside a {status, msg, data} envelope
-// and reports a miss as 200 with a null data. So the envelope is decoded and an
-// absent record is turned into an error here; read straight into Organization it
-// would be a zero-valued success.
+// GetOrganization fetches an organization by name.
 func (c *Client) GetOrganization(name string) (*Organization, error) {
-	var envelope struct {
-		Msg  string        `json:"msg"`
-		Data *Organization `json:"data"`
-	}
-	if err := c.get("get-organization", map[string]string{"id": PlatformOwner + "/" + name}, &envelope); err != nil {
+	var organization *Organization
+	if err := c.get(Ref{Owner: PlatformOwner, Name: name}.path("organizations"), nil, &organization); err != nil {
 		return nil, err
 	}
-	if envelope.Data == nil {
-		if envelope.Msg == "" {
-			envelope.Msg = "organization not found"
-		}
-		return nil, fmt.Errorf("iam: get organization %q: %s", name, envelope.Msg)
-	}
-	return envelope.Data, nil
+	return organization, nil
 }
 
 // GetOrganization uses the configured (or env-derived) client.
