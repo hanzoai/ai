@@ -26,29 +26,17 @@ type Cert struct {
 	Certificate     string `json:"certificate"`
 }
 
-// GetCert fetches a signing certificate by name from the PLATFORM partition,
-// which is where certs live — the same partition GetApplication reads from.
+// GetCert reads a signing certificate from the platform partition, where certs
+// live — the same partition GetApplication reads. An application's `cert` field
+// is a bare name and the row is owned by admin, so the owner is that constant
+// and never the caller's own tenant.
 //
-// It used to qualify the id with c.OrganizationName, the caller's own tenant.
-// That is the wrong owner and it was silent: the application read resolves
-// admin/<app>, the application's `cert` field is a bare name, and the cert row
-// is written owner=admin — so a deployment whose IAM_ORG was anything but
-// "admin" asked for <tenant>/<cert>, got "the entity does not exist", and could
-// not establish the key every bearer token is validated against. The store had
-// the cert the whole time; only the question was addressed to the wrong tenant.
-//
-// Both reads now name the partition through one constant, so an application and
-// its own certificate can no longer be looked up in two different places.
-//
-// The read is a GET, and that is load-bearing rather than incidental: IAM
-// decides whether a request is a READ from its method, so the same call shaped
-// as a POST is weighed as a write and the self-read grant that lets an
-// application fetch the one cert its own row names does not fire. That answers
-// 403, not 404 — a refusal that reads like a permissions regression while the
-// only thing wrong is the verb.
+// certs is the one collection whose /get IAM answers on POST; applications,
+// permissions and users all answer theirs on GET. The key travels in the body
+// because that is where this route reads it.
 func (c *Client) GetCert(name string) (*Cert, error) {
 	var cert *Cert
-	if err := c.get(Ref{Owner: PlatformOwner, Name: name}.path("certs"), nil, &cert); err != nil {
+	if err := c.post("certs/get", nil, Ref{Owner: PlatformOwner, Name: name}, &cert); err != nil {
 		return nil, err
 	}
 	return cert, nil
