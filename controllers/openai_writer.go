@@ -168,6 +168,50 @@ func (w *OpenAIWriter) Reset() {
 	w.Cleaner = *NewCleaner(w.Cleaner.bufferSize)
 }
 
+// fork makes a writer for ONE raced attempt, over that attempt's own share of
+// the stream.
+//
+// Everything about the DIALECT is copied — the request id, the model, whether
+// this is a stream, whether the client asked for a usage chunk — because every
+// attempt is answering the same request and must speak the same way. Everything
+// about the ANSWER starts empty, because that is the whole reason a race cannot
+// share one writer: the losers' token counts are what the ledger needs, and one
+// set of buffers holds exactly one of them.
+//
+// StreamSent starts false for the same reason it is never cleared by Reset. It
+// records that bytes reached the CLIENT, and for a fork that has not yet won the
+// race, none have.
+func (w *OpenAIWriter) fork(out io.Writer) *OpenAIWriter {
+	return &OpenAIWriter{
+		out:          out,
+		Cleaner:      *NewCleaner(w.Cleaner.bufferSize),
+		Buffer:       []byte{},
+		RequestID:    w.RequestID,
+		Stream:       w.Stream,
+		Model:        w.Model,
+		IncludeUsage: w.IncludeUsage,
+	}
+}
+
+// adopt takes the winning attempt's answer as this writer's own, so the handler
+// that has held this writer all along reads what actually served: the message
+// body for a non-streaming reply, and StreamSent for whether Close still owes
+// the client a final chunk.
+//
+// `out` is deliberately NOT adopted. The winner wrote through the race's shared
+// stream, which is spent the moment the race resolves; this writer's own
+// destination is the response body, and the tail belongs there directly.
+func (w *OpenAIWriter) adopt(won io.Writer) {
+	o, ok := won.(*OpenAIWriter)
+	if !ok || o == nil {
+		return
+	}
+	w.Buffer = o.Buffer
+	w.MessageBuf = o.MessageBuf
+	w.Cleaner = o.Cleaner
+	w.StreamSent = o.StreamSent
+}
+
 // Close finalizes the stream by sending completion message and DONE marker
 func (w *OpenAIWriter) Close(promptTokens, completionTokens, totalTokens int) error {
 	if !w.Stream {
