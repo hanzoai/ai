@@ -47,7 +47,7 @@ type Permission struct {
 // GetPermission fetches a permission by name within the client's organization.
 func (c *Client) GetPermission(name string) (*Permission, error) {
 	var permission *Permission
-	if err := c.get(Ref{Owner: c.OrganizationName, Name: name}.path("permissions"), nil, &permission); err != nil {
+	if err := c.get("permissions/get", Ref{Owner: c.OrganizationName, Name: name}.query(), &permission); err != nil {
 		return nil, err
 	}
 	return permission, nil
@@ -77,21 +77,17 @@ func (c *Client) AddPermission(permission *Permission) (bool, error) {
 	return err == nil, err
 }
 
-// UpdatePermission replaces a stored permission. The record still travels as the
-// body, but the URL is what says WHICH record — so a body whose owner or name
-// disagrees can no longer move the write onto a different one.
+// UpdatePermission replaces a stored permission. The record is the body, and its
+// owner and name are the key IAM writes to.
 func (c *Client) UpdatePermission(permission *Permission) (bool, error) {
 	permission.Owner = c.OrganizationName
-	ref := Ref{Owner: permission.Owner, Name: permission.Name}
-	err := c.put(ref.path("permissions"), permission, nil)
+	err := c.post("permissions/update", nil, permission, nil)
 	return err == nil, err
 }
 
-// DeletePermission removes a permission. The key is the whole input and it is in
-// the URL, so there is no body at all — nothing for a stray field to act on.
+// DeletePermission removes a permission. The key is the whole input.
 func (c *Client) DeletePermission(permission *Permission) (bool, error) {
-	ref := Ref{Owner: c.OrganizationName, Name: permission.Name}
-	err := c.remove(ref.path("permissions"), nil)
+	err := c.post("permissions/delete", nil, Ref{Owner: c.OrganizationName, Name: permission.Name}, nil)
 	return err == nil, err
 }
 
