@@ -12,6 +12,20 @@ on:
 jobs:
   cicd:
     uses: hanzoai/ci/.hanzo/workflows/build.yml@v1
+    with:
+      # Not on a tag. A tag here is cut from a commit this same gate already
+      # passed on main, so a tag build re-proves a proven tree — and on this
+      # repo that is the 3108-package link storm build.yml's `tests` input was
+      # added to avoid. It is not only wasted time: `publish` below is gated
+      # `needs: cicd`, so for as long as the gate stands between a tag and its
+      # release, anything that makes it fail or time out on a tag ref takes the
+      # release with it silently. v1.833.108 and .109 are tagged on the forge
+      # and absent from GitHub, which is what that looks like from outside.
+      #
+      # STRING, not boolean, and the comparison is against 'false' — see the
+      # input's own note in build.yml: git.hanzo.ai resolves every boolean
+      # workflow_call input to false, including an explicitly passed true.
+      tests: ${{ github.ref_type != 'tag' }}
     secrets: inherit
 
   # A release nobody can resolve is not a release. `go` reaches this module at
