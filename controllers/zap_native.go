@@ -305,6 +305,15 @@ func cloudUsageValues(record *usageRecord, startTime time.Time) []any {
 	if m.MarginNano != nil {
 		marginNano = *m.MarginNano
 	}
+	// cost_nano is Int64, so a cost nobody knows writes 0 and says so in the column
+	// beside it. Without that flag the row is indistinguishable from a call that
+	// genuinely cost nothing, and a SUM over the column quietly under-reports what the
+	// business spent — which is the whole question the column exists to answer.
+	costNano := int64(0)
+	uncosted := uint8(1)
+	if m.CostNano != nil {
+		costNano, uncosted = *m.CostNano, 0
+	}
 	// Honest "priced?" flag — self-contained (this writer runs independent of
 	// recordUsage's stamp): 1 when the model billed at the conservative default.
 	unpriced := uint8(0)
@@ -327,7 +336,7 @@ func cloudUsageValues(record *usageRecord, startTime time.Time) []any {
 		record.Status, record.ErrorMsg,
 		premium, stream, record.ClientIP,
 		byo, feeCents, record.Account,
-		m.CostNano, m.BilledNano, marginNano, unpriced,
+		costNano, m.BilledNano, marginNano, unpriced, uncosted,
 	}
 }
 

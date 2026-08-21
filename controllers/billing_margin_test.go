@@ -14,11 +14,14 @@
 
 package controllers
 
-import "testing"
+import (
+	"strconv"
+	"testing"
+)
 
 // withMarginPricing pins globalModelConfig to a hand-built table so usageMargin
 // resolves deterministic prices/COGS (no live DB, no YAML). "marginmodel" prices at
-// 10/30 $/1M with a genuine 2/6 COGS; "zeromargin" configures no COGS so cost defaults
+// 10/30 $/1M with a genuine 2/6 COGS; "zeromargin" configures no COGS so no cost
 // to price. Restores the previous config on cleanup.
 func withMarginPricing(t *testing.T) {
 	t.Helper()
@@ -41,46 +44,68 @@ func withMarginPricing(t *testing.T) {
 // load-bearing cases — price≠cost ⇒ margin>0, unset cost ⇒ margin 0, and the BYO fee
 // path (billed still the 1% fee, COGS 0, so margin == the fee) — plus cache-token COGS
 // defaulting. nanoPerToken(perM)=perM×1000, so a $10/1M input rate is 10000 nano/token.
+// sameNano and showNano let these cases distinguish a cost of zero from no cost at
+// all — the two facts an int64 alone spells the same way. nano, which names a known
+// amount, already lives in answer_debit_test.go.
+func sameNano(got, want *int64) bool {
+	if got == nil || want == nil {
+		return got == want
+	}
+	return *got == *want
+}
+
+func showNano(v *int64) string {
+	if v == nil {
+		return "unknown"
+	}
+	return strconv.FormatInt(*v, 10)
+}
+
 func TestUsageMargin(t *testing.T) {
 	withMarginPricing(t)
 
 	cases := []struct {
-		name                             string
-		rec                              usageRecord
-		wantCost, wantBilled, wantMargin int64
+		name       string
+		rec        usageRecord
+		wantCost   *int64 // nil = no COGS is known for this call
+		wantBilled int64
+		wantMargin *int64 // nil = billed − cost has no meaning
 	}{
 		{
 			// billed 1000·10000 + 500·30000 = 25,000,000 ; cost 1000·2000 + 500·6000 = 5,000,000.
 			name:       "served, price>cost ⇒ margin>0",
 			rec:        usageRecord{Model: "marginmodel", PromptTokens: 1000, CompletionTokens: 500},
-			wantCost:   5_000_000,
+			wantCost:   nano(5_000_000),
 			wantBilled: 25_000_000,
-			wantMargin: 20_000_000,
+			wantMargin: nano(20_000_000),
 		},
 		{
-			// COGS unset ⇒ cost accessor defaults to price ⇒ cost == billed ⇒ margin 0.
-			name:       "served, cost unset ⇒ margin 0",
+			// No COGS configured, so nothing here knows what the call cost. Reading the
+			// customer price as the cost would report this call — and every call on
+			// every model that states no COGS — as earning exactly nothing.
+			name:       "served, no COGS configured ⇒ cost unknown, no margin",
 			rec:        usageRecord{Model: "zeromargin", PromptTokens: 1000, CompletionTokens: 500},
-			wantCost:   25_000_000,
+			wantCost:   nil,
 			wantBilled: 25_000_000,
-			wantMargin: 0,
+			wantMargin: nil,
 		},
 		{
 			// BYO: billed = ceil(25,000,000/100) = 250,000 (unchanged 1% fee); COGS 0 (the
 			// customer paid the upstream), so the whole fee is margin.
 			name:       "BYO, fee path unchanged ⇒ margin == fee",
 			rec:        usageRecord{Model: "marginmodel", PromptTokens: 1000, CompletionTokens: 500, BYO: true},
-			wantCost:   0,
+			wantCost:   nano(0),
 			wantBilled: 250_000,
-			wantMargin: 250_000,
+			wantMargin: nano(250_000),
 		},
 		{
-			// BYO margin is the fee regardless of whether a COGS is configured.
+			// BYO margin is the fee regardless of whether a COGS is configured: the
+			// customer paid the upstream, so our cost is a known zero, not an unknown.
 			name:       "BYO, no COGS configured ⇒ margin == fee",
 			rec:        usageRecord{Model: "zeromargin", PromptTokens: 1000, CompletionTokens: 500, BYO: true},
-			wantCost:   0,
+			wantCost:   nano(0),
 			wantBilled: 250_000,
-			wantMargin: 250_000,
+			wantMargin: nano(250_000),
 		},
 		{
 			// Cache COGS is not separately configured: cache-read defaults to 10% of the
@@ -89,31 +114,36 @@ func TestUsageMargin(t *testing.T) {
 			// cost   5,000,000  + 2000·200  + 100·2000  = 5,600,000.
 			name:       "served, cache tokens ⇒ COGS cache defaulting",
 			rec:        usageRecord{Model: "marginmodel", PromptTokens: 1000, CompletionTokens: 500, CacheReadTokens: 2000, CacheWriteTokens: 100},
-			wantCost:   5_600_000,
+			wantCost:   nano(5_600_000),
 			wantBilled: 28_000_000,
-			wantMargin: 22_400_000,
+			wantMargin: nano(22_400_000),
 		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			m := usageMargin(&tc.rec)
-			if m.CostNano != tc.wantCost {
-				t.Errorf("CostNano = %d, want %d", m.CostNano, tc.wantCost)
+			if !sameNano(m.CostNano, tc.wantCost) {
+				t.Errorf("CostNano = %s, want %s", showNano(m.CostNano), showNano(tc.wantCost))
 			}
 			if m.BilledNano != tc.wantBilled {
 				t.Errorf("BilledNano = %d, want %d", m.BilledNano, tc.wantBilled)
 			}
-			if m.MarginNano == nil || *m.MarginNano != tc.wantMargin {
-				t.Errorf("MarginNano = %d, want %d", m.MarginNano, tc.wantMargin)
+			if !sameNano(m.MarginNano, tc.wantMargin) {
+				t.Errorf("MarginNano = %s, want %s", showNano(m.MarginNano), showNano(tc.wantMargin))
 			}
-			// Invariant: margin is always billed − cost, by construction.
-			if m.MarginNano == nil || *m.MarginNano != m.BilledNano-m.CostNano {
-				t.Errorf("MarginNano %d != BilledNano %d − CostNano %d", m.MarginNano, m.BilledNano, m.CostNano)
+			// Invariant: where a margin is reported it is billed − cost, and a margin is
+			// reported only where a cost is known.
+			if m.MarginNano != nil {
+				if m.CostNano == nil {
+					t.Error("MarginNano reported with no CostNano — billed minus nothing")
+				} else if *m.MarginNano != m.BilledNano-*m.CostNano {
+					t.Errorf("MarginNano %d != BilledNano %d − CostNano %d", *m.MarginNano, m.BilledNano, *m.CostNano)
+				}
 			}
 			// BYO never charges COGS; the billed amount stays the fee path's output.
-			if tc.rec.BYO && m.CostNano != 0 {
-				t.Errorf("BYO CostNano = %d, want 0 (customer paid the upstream)", m.CostNano)
+			if tc.rec.BYO && (m.CostNano == nil || *m.CostNano != 0) {
+				t.Errorf("BYO CostNano = %s, want a known 0 (customer paid the upstream)", showNano(m.CostNano))
 			}
 		})
 	}
