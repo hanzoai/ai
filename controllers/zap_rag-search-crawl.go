@@ -98,7 +98,6 @@ var zapRagSearchCrawlGateway = map[string]zapRSCHandler{
 	"/v1/ai/rag/query":          zapRagQueryHandler,
 	"/v1/ai/rag/delete":         zapRagDeleteHandler,
 	"/v1/ai/rag/context":        zapRagContextHandler,
-	"/v1/embed":                 zapRagEmbedHandler,
 }
 
 // ── Shared response + auth seam ─────────────────────────────────────────
