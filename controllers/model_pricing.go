@@ -25,36 +25,38 @@ import (
 
 // modelPrice defines per-model economics in dollars per 1M tokens. Input/Output/Cache*
 // are the CUSTOMER PRICE (what the org is billed); CostIn/CostOut are the PROVIDER COGS
-// (what it costs Hanzo to serve the call). Cost defaults to price when unset (0), so a
-// model that declares only a price bills identically and books a zero margin — a real
-// margin appears only where a genuinely lower COGS is configured.
+// (what it costs Hanzo to serve the call). The two are independent facts: a price is
+// what we chose to charge, a cost is what an upstream invoices us, and a model may
+// state one without the other. Where CostIn/CostOut are unset the cost is not known —
+// see costed — and no margin is reported for it.
 type modelPrice struct {
 	InputPerMillion      float64 // $ per 1M input tokens (customer price)
 	OutputPerMillion     float64 // $ per 1M output tokens (customer price)
 	CacheReadPerMillion  float64 // $ per 1M cache-read tokens (0 = use InputPerMillion)
 	CacheWritePerMillion float64 // $ per 1M cache-write tokens (0 = use InputPerMillion)
-	CostInPerMillion     float64 // $ per 1M input tokens (provider COGS; 0 = use InputPerMillion)
-	CostOutPerMillion    float64 // $ per 1M output tokens (provider COGS; 0 = use OutputPerMillion)
+	CostInPerMillion     float64 // $ per 1M input tokens (provider COGS; 0 = not known)
+	CostOutPerMillion    float64 // $ per 1M output tokens (provider COGS; 0 = not known)
 }
 
-// costInputPerMillion is the effective provider COGS for input tokens: the explicit
-// CostInPerMillion when set, else the customer price. The default keeps a model that
-// configures no COGS byte-identical to before COGS existed (cost == price ⇒ margin 0).
-func (p modelPrice) costInputPerMillion() float64 {
-	if p.CostInPerMillion > 0 {
-		return p.CostInPerMillion
-	}
-	return p.InputPerMillion
+// costed reports whether this model states what it costs us to serve.
+//
+// Both legs, because half a COGS is not a COGS: a rate on the input leg and nothing on
+// the output leg would price the completion — the expensive half — at zero and read as
+// enormous margin.
+//
+// The rates are what an upstream invoices us. Where they are not configured, nothing
+// here knows them, and the honest report is that nobody asked the vendor rather than a
+// number chosen so the arithmetic completes. Every caller of costInputPerMillion asks
+// this first; there is no path that reads a rate without knowing whether it is one.
+func (p modelPrice) costed() bool {
+	return p.CostInPerMillion > 0 && p.CostOutPerMillion > 0
 }
 
-// costOutputPerMillion is the effective provider COGS for output tokens: CostOutPerMillion
-// when set, else the customer price (same zero-margin default).
-func (p modelPrice) costOutputPerMillion() float64 {
-	if p.CostOutPerMillion > 0 {
-		return p.CostOutPerMillion
-	}
-	return p.OutputPerMillion
-}
+// costInputPerMillion is the provider COGS for input tokens. Ask costed first.
+func (p modelPrice) costInputPerMillion() float64 { return p.CostInPerMillion }
+
+// costOutputPerMillion is the provider COGS for output tokens. Ask costed first.
+func (p modelPrice) costOutputPerMillion() float64 { return p.CostOutPerMillion }
 
 // modelPricingInfo is the public, omitempty pricing block embedded in the
 // /v1/models response (modelInfo.Pricing). It is expressed in US dollars per

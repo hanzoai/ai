@@ -22,13 +22,27 @@ import (
 	"testing"
 )
 
-// withCatalog loads a config naming exactly the given models and restores whatever
-// the package held when the test ends.
+// useCatalog loads the catalog at path and restores whatever the package held when
+// the test ends. It is how this package loads one, and the restore is why.
+//
+// The config is a process-wide singleton the listing is a function of, so a test
+// that loads one and walks away has changed the answer for everything after it.
+// That is not hypothetical: the two tests covering the STATIC table — the fallback
+// consulted only when NO catalog is loaded — found one loaded and skipped
+// themselves. In file order the load came first every time, so neither had run in
+// however long, and running either on its own showed it failing.
+func useCatalog(tb testing.TB, path string) {
+	tb.Helper()
+	prev := globalModelConfig
+	tb.Cleanup(func() { globalModelConfig = prev })
+	if err := InitModelConfig(path); err != nil {
+		tb.Fatalf("load %s: %v", path, err)
+	}
+}
+
+// withCatalog loads a config naming exactly the given models.
 func withCatalog(t *testing.T, models ...string) {
 	t.Helper()
-	prev := globalModelConfig
-	t.Cleanup(func() { globalModelConfig = prev })
-
 	yaml := "version: 1\nmodels:\n"
 	for _, m := range models {
 		yaml += fmt.Sprintf("  %s:\n    provider: do-ai\n    upstream: %s\n", m, m)
@@ -37,9 +51,7 @@ func withCatalog(t *testing.T, models ...string) {
 	if err := os.WriteFile(path, []byte(yaml), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := InitModelConfig(path); err != nil {
-		t.Fatal(err)
-	}
+	useCatalog(t, path)
 }
 
 func lists(t *testing.T, id string) bool {
