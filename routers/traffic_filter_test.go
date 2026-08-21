@@ -71,7 +71,7 @@ func TestTrafficTapFilter_SkipsNonProductTraffic(t *testing.T) {
 		{"OPTIONS", "/v1/chat/completions"},
 		{"GET", "/v1/health"},
 		{"GET", "/v1/metrics"},
-		{"GET", "/v1/traffic/globe"},
+		{"GET", "/v1/ai/traffic/globe"},
 	}
 	for _, c := range skip {
 		if object.TrafficShouldRecord(c.path, c.method) {

@@ -182,13 +182,13 @@ func BalanceGateFilter(c *zip.Ctx) error {
 		return c.Continue()
 	}
 
-	// An inline upload spends nothing: /v1/docs/ingest with source "upload" (or
+	// An inline upload spends nothing: /v1/ai/rag/ingest with source "upload" (or
 	// unset, its default) indexes bytes the caller already has into the caller's
 	// own store — no scrape, no crawl, no model. The controller's own gate prices
 	// exactly the sources that DO spend (github/crawl/s3) and deliberately admits
 	// upload; refusing it here made this gate and that one give different answers
 	// to the same question. Same body requestedModel reads.
-	if path == "/v1/docs/ingest" {
+	if path == "/v1/ai/rag/ingest" {
 		var req struct {
 			Source string `json:"source"`
 		}
@@ -334,16 +334,16 @@ func isBalanceExempt(path, method string) bool {
 		return true
 	// Public marketing aggregate — the world.hanzo.ai live-traffic globe. It exposes
 	// only country/region counts + throughput rates (no IPs, no org/user), needs no
-	// auth and no balance. Same class as /v1/router/stats?scope=platform.
-	case strings.HasPrefix(path, "/v1/traffic/"):
+	// auth and no balance. Same class as /v1/ai/router/stats?scope=platform.
+	case strings.HasPrefix(path, "/v1/ai/traffic/"):
 		return true
 	// Public marketing aggregate — the router flywheel stats the world.hanzo.ai /
 	// console dashboards render (model/throughput/country counts; no org/user rows).
-	// Same class as /v1/traffic/: no balance needed. Explicitly exempt so it is 200 on
+	// Same class as /v1/ai/traffic/: no balance needed. Explicitly exempt so it is 200 on
 	// BOTH the anon and the authed path — a $0-balance org's dashboard must never 402
 	// where an anon viewer sees 200. (The read-method skip in BalanceGateFilter covers
 	// it too; this states the intent at the source and is method-independent.)
-	case path == "/v1/router/stats":
+	case path == "/v1/ai/router/stats":
 		return true
 	// Model + pricing CATALOG listings are metadata, not metered inference:
 	// a caller must still be authenticated (the auth filters enforce that —
@@ -370,29 +370,29 @@ func isBalanceExempt(path, method string) bool {
 	// caller must be able to score a past request even at $0 balance (the outcome
 	// label is exactly how the enso loop learns). Auth still required (the handler
 	// self-auths); only the balance 402 is skipped.
-	case path == "/v1/feedback":
+	case path == "/v1/ai/feedback":
 		return true
-	// The router-config surface (/v1/router/{policy,defaults,ledger,rewards,artifact-meta}
-	// + /v1/org/settings) is routing METADATA — per-org policy/allowlist/dial, the export
+	// The router-config surface (/v1/ai/router/{policy,defaults,ledger,rewards,artifact-meta}
+	// + /v1/ai/org/settings) is routing METADATA — per-org policy/allowlist/dial, the export
 	// endpoints, the org settings — NOT metered inference. It is served over the router via
 	// RouterConfigBridge → the ONE native ZAP handler, so it DOES traverse this filter and
-	// must be balance-exempt exactly like /v1/router/stats + /v1/feedback: a $0-balance org
+	// must be balance-exempt exactly like /v1/ai/router/stats + /v1/ai/feedback: a $0-balance org
 	// has to read/write its own router config from the console (auth is still enforced — the
 	// handler self-auths). Dropping these from the exempt list would 402 every unfunded
 	// org's Router → Policy tab.
-	case path == "/v1/router/policy" ||
-		path == "/v1/router/defaults" ||
-		path == "/v1/router/ledger" ||
-		path == "/v1/router/rewards" ||
-		path == "/v1/router/artifact-meta" ||
-		strings.HasPrefix(path, "/v1/org/settings"):
+	case path == "/v1/ai/router/policy" ||
+		path == "/v1/ai/router/defaults" ||
+		path == "/v1/ai/router/ledger" ||
+		path == "/v1/ai/router/rewards" ||
+		path == "/v1/ai/router/artifact-meta" ||
+		strings.HasPrefix(path, "/v1/ai/org/settings"):
 		return true
 	// Router observability READS — the savings/quality aggregate + the improvement
 	// time-series. Marketing/metadata, not metered inference (same class as
-	// /v1/router/defaults): the public platform scope is unauthenticated (the
+	// /v1/ai/router/defaults): the public platform scope is unauthenticated (the
 	// no-subject path already passes), and an authenticated org-scope read must not
 	// 402 a $0-balance org either.
-	case path == "/v1/router/stats" || path == "/v1/router/history" || path == "/v1/router/judge-panel":
+	case path == "/v1/ai/router/stats" || path == "/v1/ai/router/history" || path == "/v1/ai/router/judge-panel":
 		return true
 	default:
 		return false

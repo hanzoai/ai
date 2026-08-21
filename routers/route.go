@@ -34,7 +34,7 @@ import (
 // table written twice, in two orders, for someone to reconcile later.
 
 // verbs is the registrar for each verb a mapping may name. "*" is any verb, which
-// is what a method-aware handler asks for: /v1/router/policy splits GET from PUT
+// is what a method-aware handler asks for: /v1/ai/router/policy splits GET from PUT
 // itself and answers 405 for a verb it does not own.
 func verbs(app *zip.App) map[string]func(string, ...zip.Handler) zip.Router {
 	return map[string]func(string, ...zip.Handler) zip.Router{

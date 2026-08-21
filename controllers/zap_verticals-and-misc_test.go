@@ -60,15 +60,15 @@ func TestZapMiscWriteGateRejection(t *testing.T) {
 }
 
 // TestZapMiscSuperAdminGateRejection asserts the RESTful org-settings surface
-// (/v1/org/settings + /list) fails closed with 401 for an anonymous caller on EVERY
+// (/v1/ai/org/settings + /list) fails closed with 401 for an anonymous caller on EVERY
 // verb, before any DB access — the ZAP-native super-admin gate. It also proves the one
 // noun dispatches through the canonical registry as an HTTP-shaped (method-aware) route.
 func TestZapMiscSuperAdminGateRejection(t *testing.T) {
 	for _, tc := range []struct{ method, path string }{
-		{"GET", "/v1/org/settings"},
-		{"PUT", "/v1/org/settings"},
-		{"DELETE", "/v1/org/settings"},
-		{"GET", "/v1/org/settings/list"},
+		{"GET", "/v1/ai/org/settings"},
+		{"PUT", "/v1/ai/org/settings"},
+		{"DELETE", "/v1/ai/org/settings"},
+		{"GET", "/v1/ai/org/settings/list"},
 	} {
 		msg, err := zapOrgSettingsHandler(context.Background(), tc.method, tc.path, "owner=acme", "", []byte("{}"))
 		if err != nil {
@@ -78,8 +78,8 @@ func TestZapMiscSuperAdminGateRejection(t *testing.T) {
 			t.Errorf("%s %s: empty auth status = %d, want 401", tc.method, tc.path, got)
 		}
 	}
-	if len(lookupGatewayRoutes("/v1/org/settings")) == 0 {
-		t.Error("/v1/org/settings not registered as an HTTP-shaped gateway route")
+	if len(lookupGatewayRoutes("/v1/ai/org/settings")) == 0 {
+		t.Error("/v1/ai/org/settings not registered as an HTTP-shaped gateway route")
 	}
 }
 
@@ -90,7 +90,7 @@ func TestZapMiscAuthz(t *testing.T) {
 	orgAdmin := &iam.User{Owner: "acme", Name: "boss", IsAdmin: true}
 	plain := &iam.User{Owner: "acme", Name: "alice"}
 
-	// Super-admin endpoint (the RESTful /v1/org/settings noun): nil → 401, org-admin
+	// Super-admin endpoint (the RESTful /v1/ai/org/settings noun): nil → 401, org-admin
 	// (not super) → 403, super → open.
 	if deny := zapMiscAuthz("org/settings", nil); deny == nil || vmiscStatus(deny) != 401 {
 		t.Errorf("org-settings nil principal not 401")

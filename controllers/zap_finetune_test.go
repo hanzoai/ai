@@ -23,12 +23,12 @@ import (
 //
 // A group that stayed off the native registry for a reason nobody wrote down
 // decays into "we just never got to it", which reads as an invitation. These
-// tests hold the two facts that make /v1/finetune/* the wrong shape for the
+// tests hold the two facts that make /v1/ai/finetune/* the wrong shape for the
 // registry, so the day someone tries to convert it the build says so first.
 //
 //  1. The body-only registry is keyed on PATH ALONE — registerGatewayPath takes a
 //     zapHandler(ctx, auth, body), which has no argument for the verb or the
-//     query. /v1/finetune/jobs answers GET (list) AND POST (create), so one
+//     query. /v1/ai/finetune/jobs answers GET (list) AND POST (create), so one
 //     registration necessarily answers both; and seven of the nine ops carry
 //     their entire input in the query string, which that handler never sees.
 //  2. The group authenticates on the CONSOLE SESSION COOKIE
@@ -48,15 +48,15 @@ var finetuneOps = []struct {
 	method, path, query string
 	call                func(*ApiController)
 }{
-	{"GET", "/v1/finetune/jobs", "", (*ApiController).ListFinetuneJobs},
-	{"POST", "/v1/finetune/jobs", "", (*ApiController).CreateFinetuneJob},
-	{"GET", "/v1/finetune/job", "id=acme/j1", (*ApiController).GetFinetuneJob},
-	{"POST", "/v1/finetune/cancel", "id=acme/j1", (*ApiController).CancelFinetuneJob},
-	{"POST", "/v1/finetune/deploy", "id=acme/j1", (*ApiController).DeployFinetuneJob},
-	{"GET", "/v1/finetune/presets", "baseModel=zen&method=lora", (*ApiController).GetFinetunePresets},
-	{"GET", "/v1/finetune/hf/models", "q=llama&limit=5", (*ApiController).SearchHfModels},
-	{"GET", "/v1/finetune/hf/datasets", "q=alpaca&limit=5", (*ApiController).SearchHfDatasets},
-	{"GET", "/v1/finetune/hf/repo", "id=zenlm/zen&kind=model", (*ApiController).GetHfRepo},
+	{"GET", "/v1/ai/finetune/jobs", "", (*ApiController).ListFinetuneJobs},
+	{"POST", "/v1/ai/finetune/jobs", "", (*ApiController).CreateFinetuneJob},
+	{"GET", "/v1/ai/finetune/job", "id=acme/j1", (*ApiController).GetFinetuneJob},
+	{"POST", "/v1/ai/finetune/cancel", "id=acme/j1", (*ApiController).CancelFinetuneJob},
+	{"POST", "/v1/ai/finetune/deploy", "id=acme/j1", (*ApiController).DeployFinetuneJob},
+	{"GET", "/v1/ai/finetune/presets", "baseModel=zen&method=lora", (*ApiController).GetFinetunePresets},
+	{"GET", "/v1/ai/finetune/hf/models", "q=llama&limit=5", (*ApiController).SearchHfModels},
+	{"GET", "/v1/ai/finetune/hf/datasets", "q=alpaca&limit=5", (*ApiController).SearchHfDatasets},
+	{"GET", "/v1/ai/finetune/hf/repo", "id=zenlm/zen&kind=model", (*ApiController).GetHfRepo},
 }
 
 // No group claims a finetune path in either gateway registry. This is the
@@ -75,31 +75,31 @@ func TestFinetuneHasNoNativeZapClaim(t *testing.T) {
 
 // Reason 1, mechanically: the body-only registry's key space has no verb
 // dimension. One prefix claims the list op and the create op identically, so a
-// single registerGatewayPath("/v1/finetune/jobs", h) routes POST-create traffic
+// single registerGatewayPath("/v1/ai/finetune/jobs", h) routes POST-create traffic
 // into whichever handler h happens to be — a wrong handler, not an error. That
 // is the exact failure zap_gateway_fallback.go was written to stop.
 func TestFinetuneJobsMultiplexesTwoVerbsAtOnePath(t *testing.T) {
 	verbs := map[string]bool{}
 	for _, op := range finetuneOps {
-		if op.path == "/v1/finetune/jobs" {
+		if op.path == "/v1/ai/finetune/jobs" {
 			verbs[op.method] = true
 		}
 	}
 	if !verbs["GET"] || !verbs["POST"] {
-		t.Fatalf("expected /v1/finetune/jobs to carry both GET and POST, got %v", verbs)
+		t.Fatalf("expected /v1/ai/finetune/jobs to carry both GET and POST, got %v", verbs)
 	}
 	// Both ops live at one path, and prefixMatch — all the body-only registry
 	// consults — cannot tell them apart.
-	if !prefixMatch("/v1/finetune/jobs", "/v1/finetune/jobs") {
+	if !prefixMatch("/v1/ai/finetune/jobs", "/v1/ai/finetune/jobs") {
 		t.Fatal("prefixMatch must claim the path it is keyed on")
 	}
 
-	// The near miss that makes the group look safer than it is: /v1/finetune/job
-	// is a real sibling, and it must not swallow /v1/finetune/jobs. Longest-prefix
+	// The near miss that makes the group look safer than it is: /v1/ai/finetune/job
+	// is a real sibling, and it must not swallow /v1/ai/finetune/jobs. Longest-prefix
 	// matching only gets this right because prefixMatch demands a segment
 	// boundary; lose that and the singular route eats the plural one.
-	if prefixMatch("/v1/finetune/job", "/v1/finetune/jobs") {
-		t.Error("/v1/finetune/job must not claim /v1/finetune/jobs — the segment boundary is gone")
+	if prefixMatch("/v1/ai/finetune/job", "/v1/ai/finetune/jobs") {
+		t.Error("/v1/ai/finetune/job must not claim /v1/ai/finetune/jobs — the segment boundary is gone")
 	}
 }
 

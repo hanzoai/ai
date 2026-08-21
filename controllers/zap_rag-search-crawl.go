@@ -73,41 +73,32 @@ var zapRagSearchCrawlCloud = map[string]zapRSCHandler{
 	"scrape":             zapScrapeHandler,
 	"scrape.preview":     zapCrawlHandler, // deprecated alias of crawl
 	"crawl":              zapCrawlHandler,
-	"docs.ingest":        zapIngestHandler,
+	"rag.ingest":         zapIngestHandler,
 	"rag.embed":          zapRagEmbedHandler,
 	"rag.query":          zapRagQueryHandler,
 	"rag.query-multiple": zapRagQueryHandler,
 	"rag.delete":         zapRagDeleteHandler,
 	"rag.context":        zapRagContextHandler,
-	// LibreChat-compat native methods.
-	"embed":             zapRagEmbedHandler,
-	"query":             zapRagQueryCompatHandler,
-	"query-multiple":    zapRagQueryCompatHandler,
-	"documents.delete":  zapDocumentsDeleteHandler,
-	"documents.context": zapDocumentContextHandler,
+	// The multipart file embed hanzo.chat posts, as a native method.
+	"embed": zapRagEmbedHandler,
 }
 
 // zapRagSearchCrawlGateway maps gateway path → handler (MsgType 200). init ranges
 // over this to registerGatewayPath(path, h); lookup matches longest-prefix so
-// "/v1/search/stats" wins over "/v1/search" and "/v1/rag/query-multiple" over
-// "/v1/rag/query".
+// "/v1/search/stats" wins over "/v1/search" and "/v1/ai/rag/query-multiple" over
+// "/v1/ai/rag/query".
 var zapRagSearchCrawlGateway = map[string]zapRSCHandler{
-	"/v1/search/stats":       zapSearchStatsHandler,
-	"/v1/search":             zapSearchHandler,
-	"/v1/index":              zapIndexHandler,
-	"/v1/crawl":              zapCrawlHandler,
-	"/v1/docs/ingest":        zapIngestHandler,
-	"/v1/rag/embed":          zapRagEmbedHandler,
-	"/v1/rag/query-multiple": zapRagQueryHandler,
-	"/v1/rag/query":          zapRagQueryHandler,
-	"/v1/rag/delete":         zapRagDeleteHandler,
-	"/v1/rag/context":        zapRagContextHandler,
-	"/v1/embed":              zapRagEmbedHandler,
-	"/v1/query_multiple":     zapRagQueryCompatHandler,
-	"/v1/query":              zapRagQueryCompatHandler,
-	// "/v1/documents" and "/v1/documents/{id}/context" share a prefix; the
-	// body-shape router picks delete (JSON array) vs context (JSON object).
-	"/v1/documents": zapDocumentsGatewayHandler,
+	"/v1/search/stats":          zapSearchStatsHandler,
+	"/v1/search":                zapSearchHandler,
+	"/v1/index":                 zapIndexHandler,
+	"/v1/crawl":                 zapCrawlHandler,
+	"/v1/ai/rag/ingest":         zapIngestHandler,
+	"/v1/ai/rag/embed":          zapRagEmbedHandler,
+	"/v1/ai/rag/query-multiple": zapRagQueryHandler,
+	"/v1/ai/rag/query":          zapRagQueryHandler,
+	"/v1/ai/rag/delete":         zapRagDeleteHandler,
+	"/v1/ai/rag/context":        zapRagContextHandler,
+	"/v1/embed":                 zapRagEmbedHandler,
 }
 
 // ── Shared response + auth seam ─────────────────────────────────────────
@@ -396,7 +387,7 @@ func zapCrawlHandler(_ context.Context, auth string, body []byte) (*zap.Message,
 	return zapRaw(map[string]interface{}{"results": results})
 }
 
-// ── /v1/docs/ingest ─────────────────────────────────────────────────────
+// ── /v1/ai/rag/ingest ───────────────────────────────────────────────────
 
 func zapIngestHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
 	sa, aerr := zapRequireIndexAuth(auth)
@@ -450,7 +441,7 @@ func zapIngestHandler(ctx context.Context, auth string, body []byte) (*zap.Messa
 	return zapOk(stats)
 }
 
-// ── /v1/rag/embed  +  /v1/embed (native JSON body) ──────────────────────
+// ── /v1/ai/rag/embed  +  /v1/embed (native JSON body) ───────────────────
 //
 // The native/JSON embed path: file_id + inline content or a url to fetch+parse.
 // (The LibreChat multipart-file upload used by hanzo.chat is served by routers.App;
@@ -481,7 +472,7 @@ func zapRagEmbedHandler(_ context.Context, auth string, body []byte) (*zap.Messa
 	return zapOk(result)
 }
 
-// ── /v1/rag/query  +  /v1/rag/query-multiple ────────────────────────────
+// ── /v1/ai/rag/query  +  /v1/ai/rag/query-multiple ──────────────────────
 
 func zapRagQueryHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
 	sa, aerr := zapResolveSearchAuth(auth)
@@ -504,7 +495,7 @@ func zapRagQueryHandler(_ context.Context, auth string, body []byte) (*zap.Messa
 	return zapRaw(results)
 }
 
-// ── /v1/rag/delete ──────────────────────────────────────────────────────
+// ── /v1/ai/rag/delete ───────────────────────────────────────────────────
 
 func zapRagDeleteHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
 	sa, aerr := zapRequireIndexAuth(auth)
@@ -538,7 +529,7 @@ func zapRagDeleteHandler(_ context.Context, auth string, body []byte) (*zap.Mess
 	return zapOk(map[string]interface{}{"deleted": deleted})
 }
 
-// ── /v1/rag/context ─────────────────────────────────────────────────────
+// ── /v1/ai/rag/context ──────────────────────────────────────────────────
 
 func zapRagContextHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
 	sa, aerr := zapResolveSearchAuth(auth)
@@ -560,106 +551,4 @@ func zapRagContextHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 		return zapErr(http.StatusInternalServerError, err.Error())
 	}
 	return zapRaw(results)
-}
-
-// ── LibreChat-compat: /v1/query, /v1/query_multiple ─────────────────────
-// Same retrieval path as /v1/rag/query, but rendered as the LangChain
-// [[{page_content,metadata},score],…] tuple shape hanzo.chat's RAG client parses.
-
-func zapRagQueryCompatHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	sa, aerr := zapResolveSearchAuth(auth)
-	if aerr != nil {
-		return zapErr(aerr.status, aerr.msg)
-	}
-
-	var req object.RagQueryRequest
-	if err := json.Unmarshal(body, &req); err != nil {
-		return zapErr(http.StatusBadRequest, "invalid request: "+err.Error())
-	}
-
-	results, err := object.RagQuery(sa.Owner, &req, "en")
-	if err != nil {
-		recordSearchUsage(sa, "search-query", "rag", "error", 0, "")
-		return zapErr(http.StatusInternalServerError, err.Error())
-	}
-
-	recordSearchUsage(sa, "search-query", "rag", "success", len(results), "")
-	return zapRaw(lcTuples(results))
-}
-
-// ── LibreChat-compat: DELETE /v1/documents  (JSON array of file_ids) ─────
-
-func zapDocumentsDeleteHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	sa, aerr := zapRequireIndexAuth(auth)
-	if aerr != nil {
-		return zapErr(aerr.status, aerr.msg)
-	}
-
-	var fileIDs []string
-	if err := json.Unmarshal(body, &fileIDs); err != nil {
-		return zapErr(http.StatusBadRequest, "invalid request: "+err.Error())
-	}
-	if len(fileIDs) == 0 {
-		return zapErr(http.StatusBadRequest, "expected a non-empty array of file_ids")
-	}
-
-	deleted := 0
-	for _, id := range fileIDs {
-		if id == "" {
-			continue
-		}
-		if err := object.DeleteRagFile(sa.Owner, "", id, "en"); err != nil {
-			return zapErr(http.StatusInternalServerError, err.Error())
-		}
-		deleted++
-	}
-	return zapRaw(map[string]interface{}{
-		"message": "Documents deleted successfully",
-		"deleted": deleted,
-	})
-}
-
-// ── LibreChat-compat: GET /v1/documents/:file_id/context ────────────────
-// Native body carries {file_id[,store]}; returns []lcDocument.
-
-func zapDocumentContextHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	sa, aerr := zapResolveSearchAuth(auth)
-	if aerr != nil {
-		return zapErr(aerr.status, aerr.msg)
-	}
-
-	var p struct {
-		FileID string `json:"file_id"`
-		Store  string `json:"store"`
-	}
-	_ = json.Unmarshal(body, &p)
-	if p.FileID == "" {
-		return zapErr(http.StatusBadRequest, "file_id must not be empty")
-	}
-
-	results, err := object.RagFileContext(sa.Owner, p.Store, p.FileID)
-	if err != nil {
-		return zapErr(http.StatusInternalServerError, err.Error())
-	}
-	docs := make([]lcDocument, 0, len(results))
-	for _, r := range results {
-		docs = append(docs, lcResultToDocument(r))
-	}
-	return zapRaw(docs)
-}
-
-// zapDocumentsGatewayHandler routes the shared "/v1/documents" gateway prefix:
-// a bare "/v1/documents" is the DELETE-by-array endpoint; a
-// "/v1/documents/{id}/context" sub-path is the full-context read. The gateway
-// carries the request method/path, but this file's handler signature is
-// body-only, so we disambiguate by body shape (a JSON array → delete; a JSON
-// object with file_id → context). Registering the two concrete methods
-// (documents.delete / documents.context) on the HTTP-shaped registry
-// (registerGatewayRoute) would make the body sniff unnecessary.
-func zapDocumentsGatewayHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
-	trimmed := strings.TrimSpace(string(body))
-	if strings.HasPrefix(trimmed, "[") {
-		return zapDocumentsDeleteHandler(ctx, auth, body)
-	}
-	return zapDocumentContextHandler(ctx, auth, body)
 }

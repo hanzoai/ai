@@ -26,7 +26,7 @@ import (
 	"github.com/hanzoai/ai/util"
 )
 
-// finetune.go is the `/v1/finetune/*` broker surface — the ONE API the console's
+// finetune.go is the `/v1/ai/finetune/*` broker surface — the ONE API the console's
 // Training page drives. It owns the whole lifecycle against the cluster training
 // operator (hanzo-ml/trainer) and inference (hanzo-ml/kserve): browse/search
 // HuggingFace, recommend efficient defaults, submit a real TrainJob, stream status,

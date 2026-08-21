@@ -26,11 +26,11 @@ import (
 // as country/region points with per-service-class counts, plus headline throughput
 // rates.
 //
-// It is AUTH-exempt and BALANCE-exempt exactly like /v1/router/stats?scope=platform:
+// It is AUTH-exempt and BALANCE-exempt exactly like /v1/ai/router/stats?scope=platform:
 //   - auth: the controller name "traffic/globe" is neither a get-/update- CRUD name
 //     nor a super-admin/present-credential endpoint, so the authz filter passes it
 //     through, and this handler requires no principal.
-//   - balance: isBalanceExempt("/v1/traffic/...") returns true.
+//   - balance: isBalanceExempt("/v1/ai/traffic/...") returns true.
 //
 // It exposes ONLY aggregates — counts, rates, and country/region centroids — and
 // NEVER any IP, per-request row, org, or user dimension (see object/traffic.go).

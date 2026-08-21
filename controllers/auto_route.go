@@ -45,7 +45,7 @@ var sessionRoutingLookup = object.GetCachedOrgSessionRouting
 //
 //  1. the org's own OrgSettings row (if set) wins;
 //  2. else the reserved "*" GlobalDefaultOwner row — the SINGLE source of truth
-//     for the platform-wide routing default, edited via /v1/org/settings
+//     for the platform-wide routing default, edited via /v1/ai/org/settings
 //     from admin.hanzo.ai;
 //  3. else the DEPRECATED ROUTER_ENABLED env, honored only while the global row
 //     is unset (see deprecatedGlobalRouterEnv).
@@ -79,7 +79,7 @@ func deprecatedGlobalRouterEnv() string {
 		return object.AutoRoutingUnset
 	}
 	routerEnabledEnvOnce.Do(func() {
-		log.Warning("ROUTER_ENABLED env is DEPRECATED: set the GlobalDefaultOwner (%q) OrgSettings.AutoRouting row via /v1/org/settings (admin.hanzo.ai); env honored as a fallback only because the global row is unset", object.GlobalDefaultOwner)
+		log.Warning("ROUTER_ENABLED env is DEPRECATED: set the GlobalDefaultOwner (%q) OrgSettings.AutoRouting row via /v1/ai/org/settings (admin.hanzo.ai); env honored as a fallback only because the global row is unset", object.GlobalDefaultOwner)
 	})
 	return object.AutoRoutingEnabled
 }

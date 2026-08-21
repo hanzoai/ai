@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Memory controller — the cloud /v1/memory/* surface of the unified memory
+// Memory controller — the cloud /v1/ai/memory/* surface of the unified memory
 // interface. Mirrors the hanzo-mcp memory tool's actions (remember, search,
 // list, recall, update, delete, facts) so the local on-disk backend and this
 // cloud backend are interchangeable behind one interface.
