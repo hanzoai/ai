@@ -612,8 +612,8 @@ func TestASpareRouteIsBilledAtNothing(t *testing.T) {
 	if got := usageCostNano(free); got != 0 {
 		t.Errorf("a free route costs %d nano — the customer would be billed for the outage", got)
 	}
-	if got := providerCostNano(free); got != 0 {
-		t.Errorf("a free route has COGS of %d nano", got)
+	if got := providerCostNano(free); got == nil || *got != 0 {
+		t.Errorf("a free route has COGS of %v nano, want a known 0", got)
 	}
 	if recordUnpriced(free) {
 		t.Error("a free route reads as unpriced — its price is zero, which is a price")
@@ -655,7 +655,7 @@ func TestAFallbackIsVisibleInTheLedgerAndTheSpan(t *testing.T) {
 	// The span: the two standard model attributes stop agreeing, and one
 	// attribute states the cause so a reader does not have to infer it.
 	got := map[string]string{}
-	for _, a := range buildGenAISpanFields(row, 0, 0, 0, nil, nil, false).attrs {
+	for _, a := range buildGenAISpanFields(row, 0, 0, usdPtr(0), nil, nil, false).attrs {
 		if a.Value.Type() == attribute.STRING {
 			got[string(a.Key)] = a.Value.AsString()
 		}
@@ -671,7 +671,7 @@ func TestAFallbackIsVisibleInTheLedgerAndTheSpan(t *testing.T) {
 	// An ordinary generation carries none of it: absent IS the signal, so the
 	// attribute stays a filter rather than something to interpret.
 	plain := &usageRecord{Model: "vendor/paid-a", Provider: "openrouter", Status: "success"}
-	for _, a := range buildGenAISpanFields(plain, 0, 0, 0, nil, nil, false).attrs {
+	for _, a := range buildGenAISpanFields(plain, 0, 0, usdPtr(0), nil, nil, false).attrs {
 		if string(a.Key) == attrFallback {
 			t.Error("an ordinary generation is tagged as a fallback")
 		}
