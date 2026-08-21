@@ -13,3 +13,66 @@ jobs:
   cicd:
     uses: hanzoai/ci/.hanzo/workflows/build.yml@v1
     secrets: inherit
+
+  # A release nobody can resolve is not a release. `go` reaches this module at
+  # github.com/hanzoai/ai — through proxy.golang.org, which reads GitHub — so a
+  # version tagged only here is invisible to every build in the fleet, and the
+  # first anyone hears of it is `unknown revision` on a pin they just took.
+  #
+  # This history cannot fast-forward that address: an early commit carries a
+  # build artifact bigger than GitHub accepts in a pack, so the release goes
+  # over as ONE commit whose tree IS the release, parented on the tip already
+  # there. Same tree, same module hash, so go.sum holds from either address.
+  #
+  # Fails the release when it cannot publish. A version that resolves nowhere
+  # should not look shipped.
+  publish:
+    needs: cicd
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: [hanzo-build-linux-amd64]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Publish the release where go looks for it
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+        run: |
+          set -euo pipefail
+          v="${GITHUB_REF#refs/tags/}"
+          : "${GH_PAT:?a credential is required to publish $v}"
+          url="https://x-access-token:${GH_PAT}@github.com/hanzoai/ai.git"
+
+          # Idempotent: the version is a fact, not an action, so a re-run of a
+          # release that already landed is a success and not a second commit.
+          if git ls-remote --exit-code --tags "$url" "refs/tags/$v" >/dev/null 2>&1; then
+            echo ">> $v is already there"
+            exit 0
+          fi
+
+          mirror="$(mktemp -d)"
+          idx="$(mktemp)"; rm -f "$idx"
+          git clone --quiet --depth 1 --branch main "$url" "$mirror"
+
+          # Clear, then lay the release down from the INDEX rather than from
+          # `git archive`, which honours export-ignore and would quietly ship a
+          # module missing files the build needs.
+          git -C "$mirror" rm -rq .
+          GIT_INDEX_FILE="$idx" git read-tree HEAD
+          GIT_INDEX_FILE="$idx" git checkout-index -a -f --prefix="$mirror/"
+
+          # -f because clearing the mirror leaves the release's own data files
+          # looking untracked, and an ignore rule matches them: a plain `add -A`
+          # drops them and publishes a module that compiles nowhere.
+          git -C "$mirror" add -Af
+
+          git -C "$mirror" -c user.name=Hanzo -c user.email=dev@hanzo.ai \
+            commit --quiet --allow-empty -m "$v — one commit carrying the release tree"
+          git -C "$mirror" -c user.name=Hanzo -c user.email=dev@hanzo.ai \
+            tag -a "$v" -m "$v"
+          git -C "$mirror" push --quiet origin HEAD:main
+          git -C "$mirror" push --quiet origin "$v"
+
+          # The receipt is that `go` can see it, not that git said ok.
+          git ls-remote --exit-code --tags "$url" "refs/tags/$v" >/dev/null
+          echo ">> published $v"
