@@ -33,7 +33,7 @@ func TestGetUserByAccessKeyUsesCanonicalPath(t *testing.T) {
 		gotPath = r.URL.Path
 		gotAccessKey = r.URL.Query().Get("accessKey")
 		w.Header().Set("Content-Type", "application/json")
-		// Mirror resolve-user's shape: status:ok + data:{owner,name}. This door
+		// Mirror the principal door's shape: status:ok + data:{owner,name}. It
 		// kept the original envelope when it was re-homed, so unlike the record
 		// routes it is still {status, data} and not the bare object.
 		_, _ = w.Write([]byte(`{"status":"ok","msg":"","data":{"owner":"maxpower","name":"maxpower"}}`))
@@ -54,13 +54,11 @@ func TestGetUserByAccessKeyUsesCanonicalPath(t *testing.T) {
 	// Key resolution has its OWN door. It used to ride on the user read as
 	// `get-user?accessKey=`, which reached an authentication boundary through a
 	// CRUD verb whose target was a credential rather than the owner/name that a
-	// read authorizes on. That verb is gone from IAM's router: asking it now
-	// resolves no key at all, and every gateway sk- fails closed.
-	if gotPath != "/v1/iam/resolve-user" {
-		t.Errorf("IAM path = %q, want /v1/iam/resolve-user", gotPath)
-	}
-	if strings.Contains(gotPath, "get-user") {
-		t.Errorf("IAM path %q still asks the retired verb, which resolves nothing", gotPath)
+	// read authorizes on. That verb is gone from IAM's router: asking any
+	// address but this one resolves no key at all, and every gateway sk- fails
+	// closed — which is why this is an equality and not a pattern.
+	if gotPath != "/v1/iam/keys/principal" {
+		t.Errorf("IAM path = %q, want /v1/iam/keys/principal", gotPath)
 	}
 	if strings.HasPrefix(gotPath, "/api/") {
 		t.Errorf("IAM path %q uses the legacy /api/ alias — forbidden, breaks key resolution via SPA ingress", gotPath)

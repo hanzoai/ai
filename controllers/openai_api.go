@@ -550,7 +550,12 @@ func getUserByAccessKey(accessKey string) (*iam.User, error) {
 	// pk- has a separate door (resolveOrgFromPublishableKey) that yields an org
 	// and never a person, so the browser-safe disclosure and this one are never
 	// behind a single authorization decision.
-	reqURL := fmt.Sprintf("%s/v1/iam/resolve-user?accessKey=%s", iamEndpoint, url.QueryEscape(accessKey))
+	//
+	// The segments name things — a key, its principal — and the method says the
+	// verb. IAM refuses a new verb-noun address outright; the one sibling that
+	// still reads as one (resolve-key, below) is a frozen spelling live
+	// consumers hard-code, and that list only ever shrinks.
+	reqURL := fmt.Sprintf("%s/v1/iam/keys/principal?accessKey=%s", iamEndpoint, url.QueryEscape(accessKey))
 
 	// Auth is client_secret_basic (RFC 6749 §2.3.1) — the ONE transport IAM reads
 	// to establish a confidential-APP principal. Key resolution is a
