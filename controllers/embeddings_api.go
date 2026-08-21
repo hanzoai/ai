@@ -29,6 +29,7 @@ import (
 	iam "github.com/hanzoai/ai/internal/iam"
 
 	"github.com/hanzoai/ai/object"
+	"github.com/hanzoai/ai/upstream"
 )
 
 // This file completes the OpenAI-compatible surface alongside chat: the
@@ -37,8 +38,8 @@ import (
 // billing machinery as ChatCompletions (see openai_api.go) — there is exactly
 // one auth+routing policy in the gateway and these handlers ride it:
 //
-//	bearer token → authResolveProvider() → endpoint(provider, path)
-//	             → authorize(request, provider) → proxy upstream → recordUsage()
+//	bearer token → authResolveProvider() → upstream.Endpoint(provider, path)
+//	             → upstream.Authorize(request, provider) → proxy upstream → recordUsage()
 //
 // Embeddings and the native-provider branch of Rerank are thin JSON proxies.
 // When no rerank-specific provider key is configured, Rerank falls back to a
@@ -330,7 +331,7 @@ func (c *ApiController) jsonResponse(v interface{}) {
 func (c *ApiController) proxyJSON(provider *object.Provider, apiPath string, body []byte, userModel string, authUser *iam.User, isPremium bool, startTime time.Time) {
 	requestId := uuid.NewString()
 
-	upstreamURL := endpoint(provider, apiPath)
+	upstreamURL := upstream.Endpoint(provider, apiPath)
 	if upstreamURL == "" {
 		c.ResponseError("No upstream endpoint configured for provider: " + provider.Name)
 		return
@@ -342,7 +343,7 @@ func (c *ApiController) proxyJSON(provider *object.Provider, apiPath string, bod
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
-	authorize(req, provider)
+	upstream.Authorize(req, provider)
 
 	client := &http.Client{Timeout: 120 * time.Second}
 	resp, err := client.Do(req)
@@ -483,7 +484,7 @@ func embedTexts(provider *object.Provider, upstreamModel string, texts []string)
 		return nil, err
 	}
 
-	upstreamURL := endpoint(provider, "embeddings")
+	upstreamURL := upstream.Endpoint(provider, "embeddings")
 	if upstreamURL == "" {
 		return nil, fmt.Errorf("no embeddings endpoint configured for provider %s", provider.Name)
 	}
@@ -493,7 +494,7 @@ func embedTexts(provider *object.Provider, upstreamModel string, texts []string)
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	authorize(req, provider)
+	upstream.Authorize(req, provider)
 
 	client := &http.Client{Timeout: 60 * time.Second}
 	resp, err := client.Do(req)
