@@ -34,7 +34,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/txt"
 )
 
@@ -52,75 +51,6 @@ func isKnownType(filename string) bool {
 	}
 	// Source-code / plaintext-ish files are parsed as plain text.
 	return true
-}
-
-// RagEmbedMultipart handles POST /v1/embed — the multipart upload hanzo.chat's
-// uploadVectors() sends. It saves the upload to a temp file, then reuses
-// object.RagEmbedFile (same parse+chunk+index as the native surface).
-//
-// @Title RagEmbedMultipart
-// @Tag RAG
-// @Description Multipart file embed — the form-encoded twin of /v1/ai/rag/embed.
-// @router /embed [post]
-func (c *ApiController) RagEmbedMultipart() {
-	auth := c.requireIndexAuth()
-	if auth == nil {
-		return
-	}
-
-	fileID := c.GetString("file_id")
-	if fileID == "" {
-		c.ragCompatError("file_id is required", "")
-		return
-	}
-	entityID := c.GetString("entity_id") // reserved for shared-resource scoping
-
-	f, header, err := c.GetFile("file")
-	if err != nil {
-		c.ragCompatError("file is required: "+err.Error(), fileID)
-		return
-	}
-	defer f.Close()
-
-	filename := header.Filename
-	if !isKnownType(filename) {
-		// Match the retired rag-api: report the unsupported type, don't 500.
-		c.JSON(http.StatusOK, map[string]interface{}{
-			"status": false, "known_type": false, "file_id": fileID, "filename": filename,
-		})
-		return
-	}
-
-	tmpPath, err := saveUploadToTemp(f, filename)
-	if err != nil {
-		c.ragCompatError("failed to buffer upload: "+err.Error(), fileID)
-		return
-	}
-	defer os.Remove(tmpPath)
-
-	// URL as a local path -> object.RagEmbedFile parses via txt.GetParsedTextFromUrl
-	// (which treats a non-http url as a path), the SAME parser doc-ingest uses.
-	req := &object.RagEmbedRequest{
-		FileID:   fileID,
-		Filename: filename,
-		URL:      tmpPath,
-		Tag:      entityID,
-	}
-	result, err := object.RagEmbedFile(auth.Owner, req, c.GetAcceptLanguage())
-	if err != nil {
-		recordSearchUsage(auth, "index-docs", "rag-embed", "error", 0, c.Fiber().IP())
-		c.ragCompatError(err.Error(), fileID)
-		return
-	}
-	recordSearchUsage(auth, "index-docs", "rag-embed", "success", result.Chunks, c.Fiber().IP())
-
-	c.JSON(http.StatusOK, map[string]interface{}{
-		"status":     true,
-		"known_type": true,
-		"file_id":    fileID,
-		"filename":   filename,
-		"chunks":     result.Chunks,
-	})
 }
 
 // ragCompatError emits the failure shape ({status:false,...}) hanzo.chat's
