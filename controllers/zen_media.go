@@ -25,6 +25,7 @@ import (
 	"github.com/google/uuid"
 	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/object"
+	"github.com/hanzoai/ai/upstream"
 	"github.com/hanzoai/decimal"
 	"github.com/hanzoai/money"
 )
@@ -88,7 +89,7 @@ func (c *ApiController) pipeZenMedia(apiPath, model string, rawBody []byte, unit
 	if a := c.Header("Accept"); a != "" {
 		req.Header.Set("Accept", a)
 	}
-	authorize(req, prov)
+	upstream.Authorize(req, prov)
 	// Tenant attribution: zen needs a billable tenant, and ai — which settles the
 	// ledger — tells zen it fronts this call so zen meters without double-charging.
 	if orgId != "" {

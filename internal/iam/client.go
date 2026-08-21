@@ -178,19 +178,124 @@ func ensureClient() *Client {
 // endpoint returns the client's endpoint, resolved from env when unset.
 func (c *Client) endpoint() string { return resolveEndpoint(c.Endpoint) }
 
-// GetUrl builds a /v1/iam/<action> URL with the given query params. Hanzo IAM
+// GetUrl builds a /v1/iam/<path> URL with the given query params. Hanzo IAM
 // serves its JSON API under /v1/iam/ only (the iam-v1 /api/ prefix is retired).
-func (c *Client) GetUrl(action string, queryMap map[string]string) string {
+//
+// `path` addresses a RESOURCE — "users", "certs/get", "permissions/delete". The
+// verb spellings this service used to pass here ("get-cert") were never the
+// builder's convention; they lived at the call sites, and they are gone from
+// IAM's router, so a request built from one now 404s.
+func (c *Client) GetUrl(path string, queryMap map[string]string) string {
 	query := ""
 	for k, v := range queryMap {
 		query += fmt.Sprintf("%s=%s&", url.QueryEscape(k), url.QueryEscape(v))
 	}
 	query = strings.TrimRight(query, "&")
-	return fmt.Sprintf("%s/v1/iam/%s?%s", c.endpoint(), action, query)
+	return fmt.Sprintf("%s/v1/iam/%s?%s", c.endpoint(), path, query)
+}
+
+// get GETs /v1/iam/<path> and decodes the response into out.
+//
+// IAM's native routes answer with the typed value itself — an Application, a
+// {"users":[…]} page — not the {status, data} envelope the retired verb surface
+// wrapped everything in. So the body is decoded straight into out; reaching for
+// a `data` field here would find none and yield a zero value that reads exactly
+// like a successful read of an empty record.
+func (c *Client) get(path string, params map[string]string, out any) error {
+	req, err := http.NewRequest(http.MethodGet, c.GetUrl(path, params), nil)
+	if err != nil {
+		return err
+	}
+	return c.exchange(req, out)
+}
+
+// post POSTs body as JSON to /v1/iam/<path> and decodes the response into out.
+// A nil out discards the response body, for a write whose only interesting
+// outcome is whether it failed.
+//
+// The method is stated per call site, never inferred from whether there is a
+// body. Some IAM reads are POSTs (providers/get, tokens/get, sessions/get) and
+// some are GETs, and the difference is not cosmetic: IAM weighs a request as a
+// READ from its method, so guessing it wrong turns a read into an unauthorized
+// write.
+func (c *Client) post(path string, params map[string]string, body, out any) error {
+	postBytes, err := json.Marshal(body)
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequest(http.MethodPost, c.GetUrl(path, params), bytes.NewReader(postBytes))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	return c.exchange(req, out)
+}
+
+// exchange authenticates req, sends it, and decodes a success body into out.
+//
+// The STATUS decides the outcome. The verb surface reported its verdict inside
+// the envelope and answered 200 regardless, so this client used to ignore the
+// transport entirely; the native routes answer 401/403/404 for real, and reading
+// an error body as a record is how a refusal becomes a zero-valued success.
+func (c *Client) exchange(req *http.Request, out any) error {
+	req.SetBasicAuth(c.ClientId, c.ClientSecret)
+	for k, v := range c.CustomHeaders {
+		req.Header.Set(k, v)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	respBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("iam: %s %s: %s", req.Method, req.URL.Path, refusal(resp.StatusCode, respBytes))
+	}
+	if out == nil {
+		return nil
+	}
+	return json.Unmarshal(respBytes, out)
+}
+
+// refusal renders what IAM said about a non-2xx. zip's error body is
+// {"status":<code>,"code":"…","error":"<message>"}; anything else (an empty
+// body, a proxy's HTML) is reported as the status plus whatever arrived, so a
+// failure is never described more precisely than it was observed.
+func refusal(status int, body []byte) string {
+	var e struct {
+		Msg string `json:"error"`
+	}
+	if err := json.Unmarshal(body, &e); err == nil && e.Msg != "" {
+		return fmt.Sprintf("%d %s", status, e.Msg)
+	}
+	if len(body) == 0 {
+		return fmt.Sprintf("%d (empty body)", status)
+	}
+	return fmt.Sprintf("%d %s", status, string(body))
 }
 
 // GetId returns "<org>/<name>".
 func (c *Client) GetId(name string) string { return c.OrganizationName + "/" + name }
+
+// Ref addresses one record by the (owner, name) pair every owner-scoped IAM
+// entity is keyed on — a cert, a permission, a provider.
+//
+// The two halves travel SEPARATELY. The retired surface took them joined, as
+// `?id=<owner>%2F<name>`, and the native routes have no `id` parameter at all:
+// a request still spelling one omits both required fields and is refused for
+// the missing key rather than for the obsolete spelling.
+type Ref struct {
+	Owner string `json:"owner"`
+	Name  string `json:"name"`
+}
+
+// query renders the ref as the query parameters a GET addresses a record with.
+func (r Ref) query() map[string]string {
+	return map[string]string{"owner": r.Owner, "name": r.Name}
+}
 
 // DoGetResponse GETs url and returns the decoded IAM envelope, erroring on a
 // non-"ok" status.

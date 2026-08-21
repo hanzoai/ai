@@ -25,6 +25,7 @@ import (
 	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/model"
 	"github.com/hanzoai/ai/object"
+	"github.com/hanzoai/ai/upstream"
 )
 
 // This file completes the OpenAI-compatible surface alongside chat and
@@ -219,7 +220,7 @@ func imageResponseData(result *model.ImageGenResult) []map[string]string {
 // client appends /async-invoke itself, so the empty path yields the clean base
 // with the provider's /v1 normalization applied.
 func imageUpstreamBase(provider *object.Provider) string {
-	base := endpoint(provider, "")
+	base := upstream.Endpoint(provider, "")
 	// endpoint returns "<base>/" for the empty path; trim the trailing slash so
 	// the async client's "/async-invoke" join is clean.
 	for len(base) > 0 && base[len(base)-1] == '/' {

@@ -24,46 +24,52 @@ import (
 // Resolution is now lazy and retrying, and the door answers 503. What must NOT
 // change, and is what this file holds, is that none of these bodies ever resolves.
 //
-// WHY THESE FIXTURES ARE REAL. Each body below is the VERBATIM response the live
-// IAM emitted, captured 2026-07-27 against the in-cluster service:
+// WHAT THESE FIXTURES ARE. Each is a way the application read fails against IAM's
+// noun surface:
 //
-//	kubectl -n hanzo port-forward svc/iam 18090:80
 //	curl -u "hanzo-cloud:$IAM_CLIENT_SECRET" \
-//	  'http://127.0.0.1:18090/v1/iam/get-application?id=admin/hanzo-cloud'
-//	  -> {"status":403,"error":"forbidden"}
+//	  'http://127.0.0.1:18090/v1/iam/applications/get?owner=admin&name=hanzo-cloud'
+//	  -> 403 {"status":403,"error":"forbidden"}
+//	curl 'http://127.0.0.1:18090/v1/iam/applications/get?owner=admin&name=hanzo-cloud'
+//	  -> 401 {"status":401,"error":"authentication required"}
 //	curl 'http://127.0.0.1:18090/v1/iam/get-application?id=admin/hanzo-cloud'
-//	  -> {"status":401,"error":"authentication required"}
-//	curl 'http://127.0.0.1:18090/v1/iam/get-account'
-//	  -> {"status":"error","msg":"please sign in first"}
+//	  -> 404 {"status":404,"error":"Cannot GET /v1/iam/get-application"}
 //
-// They are recorded ground truth, not our idea of what IAM returns — which matters,
-// because our idea of what IAM returns is exactly what was wrong. Note the first two
-// carry `status` as a NUMBER while the third carries it as a STRING: IAM serves two
-// different envelopes on one surface (the zip framework's error body from the authz
-// Guard, and the string-status body from the handler), and the client's
-// Response.Status is a string. That type flip is what produced
+// THE STATUS IS NOW THE VERDICT. The retired verb surface reported its outcome
+// inside a {status, msg} envelope and answered HTTP 200 whatever happened, so the
+// client read the envelope and ignored the transport. The noun routes refuse with
+// the real code, which is why each fixture carries one — and why the last is here
+// at all: a request built the old way is not forbidden or unauthenticated, it
+// addresses nothing, and 404 is a shape this boundary had never had to survive.
 //
-//	json: cannot unmarshal number into Go struct field Response.status of type string
-//
-// If IAM's envelope is unified later, these fixtures should be re-captured from the
-// live service rather than edited to match a new assumption.
+// A body is still checked alongside the status, because the 200s are the dangerous
+// ones. An error envelope decoded as a record yields a zero-valued one, and a blank
+// cert that arrives without complaint is precisely the fail-open this file exists to
+// prevent.
 
-// liveIAMBodies are the captured responses, keyed by what produced them.
-var liveIAMBodies = map[string]string{
-	"authz Guard forbade the read (the outage)": `{"status":403,"error":"forbidden"}`,
-	"unauthenticated read":                      `{"status":401,"error":"authentication required"}`,
-	"string-status handler error":               `{"status":"error","msg":"please sign in first"}`,
-	"empty body":                                ``,
-	"HTML error page from a proxy":              `<html><body>502 Bad Gateway</body></html>`,
+// failure is one way the read can fail: what IAM answered, and with which status.
+type failure struct {
+	status int
+	body   string
 }
 
-// replay is an iam.HttpClient that answers every request with one fixed body.
-type replay struct{ body string }
+// liveIAMBodies are those responses, keyed by what produced them.
+var liveIAMBodies = map[string]failure{
+	"authz Guard forbade the read (the outage)": {403, `{"status":403,"error":"forbidden"}`},
+	"unauthenticated read":                      {401, `{"status":401,"error":"authentication required"}`},
+	"a request built the retired way":           {404, `{"status":404,"error":"Cannot GET /v1/iam/get-application"}`},
+	"empty body":                                {200, ``},
+	"HTML error page from a proxy":              {200, `<html><body>502 Bad Gateway</body></html>`},
+	"an error envelope served as a record":      {200, `{"status":"error","msg":"please sign in first"}`},
+}
+
+// replay is an iam.HttpClient that answers every request with one fixed response.
+type replay struct{ answer failure }
 
 func (r replay) Do(*http.Request) (*http.Response, error) {
 	return &http.Response{
-		StatusCode: http.StatusOK, // the envelope, not the transport, carries IAM's verdict
-		Body:       io.NopCloser(bytes.NewReader([]byte(r.body))),
+		StatusCode: r.answer.status,
+		Body:       io.NopCloser(bytes.NewReader([]byte(r.answer.body))),
 		Header:     http.Header{"Content-Type": []string{"application/json"}},
 	}, nil
 }
@@ -78,16 +84,17 @@ func TestResolveAuthConfigFailsClosed(t *testing.T) {
 	t.Setenv("IAM_ORG", "hanzo")
 	t.Setenv("IAM_APP_NAME", "hanzo-cloud")
 
-	for name, body := range liveIAMBodies {
+	for name, answer := range liveIAMBodies {
 		t.Run(name, func(t *testing.T) {
-			iam.SetHttpClient(replay{body: body})
+			iam.SetHttpClient(replay{answer: answer})
 			t.Cleanup(func() { iam.SetHttpClient(&http.Client{}) })
 
 			ResetAuthReady()
 			err := resolveAuthConfig()
 			if err == nil {
-				t.Fatalf("resolveAuthConfig returned nil for %s (body %q) — "+
-					"auth would be silently disabled and every bearer would 401", name, body)
+				t.Fatalf("resolveAuthConfig returned nil for %s (%d %q) — "+
+					"auth would be silently disabled and every bearer would 401",
+					name, answer.status, answer.body)
 			}
 			// The operator has to be able to act on this without a debugger.
 			if !strings.Contains(err.Error(), "hanzo-cloud") {
@@ -110,7 +117,7 @@ func TestAuthReadyReportsRatherThanEndingTheProcess(t *testing.T) {
 	ResetAuthReady()
 	t.Setenv("IAM_URL", "http://iam.hanzo.svc")
 	t.Setenv("IAM_APP_NAME", "hanzo-cloud")
-	iam.SetHttpClient(replay{body: liveIAMBodies["authz Guard forbade the read (the outage)"]})
+	iam.SetHttpClient(replay{answer: liveIAMBodies["authz Guard forbade the read (the outage)"]})
 	t.Cleanup(func() { iam.SetHttpClient(&http.Client{}) })
 
 	err := AuthReady()

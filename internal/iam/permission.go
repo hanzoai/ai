@@ -14,11 +14,6 @@
 
 package iam
 
-import (
-	"encoding/json"
-	"fmt"
-)
-
 // Permission mirrors the IAM server's Permission JSON model. ai marshals a
 // client-supplied permission into this type and posts it back on
 // add/update/delete, so the full field set is kept for a lossless round-trip
@@ -51,15 +46,8 @@ type Permission struct {
 
 // GetPermission fetches a permission by name within the client's organization.
 func (c *Client) GetPermission(name string) (*Permission, error) {
-	url := c.GetUrl("get-permission", map[string]string{
-		"id": fmt.Sprintf("%s/%s", c.OrganizationName, name),
-	})
-	bytes, err := c.DoGetBytes(url)
-	if err != nil {
-		return nil, err
-	}
 	var permission *Permission
-	if err = json.Unmarshal(bytes, &permission); err != nil {
+	if err := c.get("permissions/get", Ref{Owner: c.OrganizationName, Name: name}.query(), &permission); err != nil {
 		return nil, err
 	}
 	return permission, nil
@@ -67,44 +55,47 @@ func (c *Client) GetPermission(name string) (*Permission, error) {
 
 // GetPermissions lists all permissions in the client's organization.
 func (c *Client) GetPermissions() ([]*Permission, error) {
-	url := c.GetUrl("get-permissions", map[string]string{"owner": c.OrganizationName})
-	bytes, err := c.DoGetBytes(url)
-	if err != nil {
+	var page struct {
+		Permissions []*Permission `json:"permissions"`
+	}
+	if err := c.get("permissions", map[string]string{"owner": c.OrganizationName}, &page); err != nil {
 		return nil, err
 	}
-	var permissions []*Permission
-	if err = json.Unmarshal(bytes, &permissions); err != nil {
-		return nil, err
-	}
-	return permissions, nil
+	return page.Permissions, nil
 }
 
-func (c *Client) modifyPermission(action string, permission *Permission) (bool, error) {
-	queryMap := map[string]string{
-		"id": fmt.Sprintf("%s/%s", permission.Owner, permission.Name),
-	}
+// writePermission posts permission to one of the permissions write routes. The
+// record IS the request body — the retired surface also carried its key in an
+// `?id=`, which the native routes read off the body instead.
+//
+// Success is the absence of a refusal. The old envelope reported it as the
+// string "Affected" in `data`; the native writes answer with the stored record,
+// so there is nothing left to compare against and a 2xx is the whole answer.
+func (c *Client) writePermission(path string, permission *Permission) (bool, error) {
 	permission.Owner = c.OrganizationName
-	postBytes, err := json.Marshal(permission)
-	if err != nil {
+	if err := c.post(path, nil, permission, nil); err != nil {
 		return false, err
 	}
-	resp, err := c.DoPost(action, queryMap, postBytes, false, false)
-	if err != nil {
-		return false, err
-	}
-	return resp.Data == "Affected", nil
+	return true, nil
 }
 
 func (c *Client) AddPermission(permission *Permission) (bool, error) {
-	return c.modifyPermission("add-permission", permission)
+	return c.writePermission("permissions", permission)
 }
 
 func (c *Client) UpdatePermission(permission *Permission) (bool, error) {
-	return c.modifyPermission("update-permission", permission)
+	return c.writePermission("permissions/update", permission)
 }
 
+// DeletePermission removes a permission. Delete takes only the (owner, name)
+// key, not the record: the route's input is the key alone, and posting a whole
+// permission at it would rely on the extra fields being ignored.
 func (c *Client) DeletePermission(permission *Permission) (bool, error) {
-	return c.modifyPermission("delete-permission", permission)
+	ref := Ref{Owner: c.OrganizationName, Name: permission.Name}
+	if err := c.post("permissions/delete", nil, ref, nil); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // Package-level helpers.

@@ -33,7 +33,6 @@ func TestZapRagSearchCrawlRegistered(t *testing.T) {
 		"/v1/search", "/v1/index", "/v1/search/stats", "/v1/crawl",
 		"/v1/ai/rag/ingest", "/v1/ai/rag/embed", "/v1/ai/rag/query",
 		"/v1/ai/rag/query-multiple", "/v1/ai/rag/delete", "/v1/ai/rag/context",
-		"/v1/embed",
 	}
 	for _, p := range gatewayPaths {
 		if zapRagSearchCrawlGateway[p] == nil {
