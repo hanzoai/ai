@@ -23,11 +23,14 @@ import (
 // constructs one client-side to delete by tag, and reads Name/CreatedTime/
 // FileSize/Url off the list response, so the full field set is kept.
 //
-// NOTE: these resource calls proxy file storage through IAM's /v1/iam/
-// upload/list/delete endpoints — the same behavior ai had via the old SDK.
-// Re-homing file storage to S3 directly is a possible future cleanup, but is
-// out of scope for decoupling from the retired iam-v1 module: keeping the REST
-// calls preserves behavior exactly.
+// NONE OF THESE HAVE A ROUTE. They proxied file storage through IAM's
+// upload/list/delete verbs, and IAM has no resource entity at all now — not a
+// renamed one, not a moved one: no `resources` package, no address in its
+// router. So there is nothing to migrate them TO, and they still speak the
+// {status, data} envelope because no native shape exists to speak instead.
+//
+// Re-homing file storage (S3 directly is the obvious candidate) is a change of
+// where this data lives, not a change of spelling, so it is not made here.
 type Resource struct {
 	Owner       string `json:"owner"`
 	Name        string `json:"name"`

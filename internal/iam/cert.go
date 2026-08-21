@@ -14,11 +14,6 @@
 
 package iam
 
-import (
-	"encoding/json"
-	"fmt"
-)
-
 // Cert is the subset of the IAM Cert model ai reads. ai consumes the PEM in
 // Certificate (to verify token signatures when JWKS is unavailable).
 type Cert struct {
@@ -44,16 +39,16 @@ type Cert struct {
 //
 // Both reads now name the partition through one constant, so an application and
 // its own certificate can no longer be looked up in two different places.
+//
+// The read is a GET, and that is load-bearing rather than incidental: IAM
+// decides whether a request is a READ from its method, so the same call shaped
+// as a POST is weighed as a write and the self-read grant that lets an
+// application fetch the one cert its own row names does not fire. That answers
+// 403, not 404 — a refusal that reads like a permissions regression while the
+// only thing wrong is the verb.
 func (c *Client) GetCert(name string) (*Cert, error) {
-	url := c.GetUrl("get-cert", map[string]string{
-		"id": fmt.Sprintf("%s/%s", PlatformOwner, name),
-	})
-	bytes, err := c.DoGetBytes(url)
-	if err != nil {
-		return nil, err
-	}
 	var cert *Cert
-	if err = json.Unmarshal(bytes, &cert); err != nil {
+	if err := c.get("certs/get", Ref{Owner: PlatformOwner, Name: name}.query(), &cert); err != nil {
 		return nil, err
 	}
 	return cert, nil
