@@ -60,6 +60,7 @@ import (
 
 	"github.com/hanzoai/ai/model"
 	"github.com/hanzoai/ai/object"
+	"github.com/hanzoai/ai/upstream"
 )
 
 // ── Group self-registration ───────────────────────────────────────────────
@@ -455,7 +456,7 @@ func zapVideoServeZen(mdl string, rawBody []byte, authUser *iam.User, isPremium 
 		return object.BuildCloudResponse(500, nil, "build zen request: "+err.Error())
 	}
 	hreq.Header.Set("Content-Type", "application/json")
-	authorize(hreq, prov)
+	upstream.Authorize(hreq, prov)
 	// Tenant attribution: zen needs a billable tenant, and ai — which settles the
 	// ledger — tells zen it fronts this call so zen meters without double-charging.
 	if authUser != nil {
