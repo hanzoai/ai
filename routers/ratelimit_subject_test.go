@@ -123,7 +123,7 @@ func iamDoor(t *testing.T, users map[string]iam.User, orgs map[string]string) {
 				json.NewEncoder(w).Encode(map[string]any{"status": "ok", "data": u})
 				return
 			}
-		case "/v1/iam/resolve-key":
+		case "/v1/iam/keys/org":
 			if org, ok := orgs[r.URL.Query().Get("accessKey")]; ok {
 				json.NewEncoder(w).Encode(map[string]any{"status": "ok", "data": map[string]string{"org": org}})
 				return
