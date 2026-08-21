@@ -277,9 +277,33 @@ checks its write error stops there; one that does not runs to completion and
 bills us for all of it. Either way the tokens are real — which is the argument
 for billing them.
 
-Still open: the switch. A request has no `fast` field yet, so nothing constructs
-a fan. hanzo.chat follows `web_search`; hanzo.app follows `base` and must resolve
-its in-flight merge on the three AI-path files first.
+### The switch, and why it is decided with the reservation
+
+A request asks with `"fast": true` in the body, or `X-Fast: 1` for callers with
+no browser in the way — the body form exists because a page cannot send a custom
+header past the edge's CORS allow-list, exactly as `retrieval` works
+(`controllers/fast.go`).
+
+**What a race costs is settled WITH the hold, never after.** `widthFor` reserves
+`est × fastWidth` before anything is spent, because N attempts is N completions
+and a hold sized for one is a promise the ledger cannot keep — the losers' rows
+land later and take the balance past the point the gate said it would stop.
+`fastWidth` is 2: the tail this cuts is one provider drawing a slow response
+while another would have answered normally, and a second opinion removes most of
+it for one extra completion rather than two.
+
+Two refusals that are deliberately NOT refusals:
+
+- **Cannot afford the race** → serve the ordinary request. The caller asked to go
+  faster, not to be turned away, and a new way for a funded account to be told no
+  is worse than quietly being normal speed.
+- **Nobody to bill** → never race. The public lane makes no reservation, so
+  hedging there spends N completions on a stranger and settles none.
+
+Still open: the toggle in the products. hanzo.chat follows `web_search`;
+hanzo.app follows `base` and must resolve its in-flight merge on the three
+AI-path files first. The API accepts the field today, so either can ship the
+control without waiting on the gateway.
 
 ## The /v1 resource surface — ONE table, no compound routes
 
