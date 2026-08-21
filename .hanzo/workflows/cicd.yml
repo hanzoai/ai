@@ -16,11 +16,17 @@ jobs:
       # Not on a tag. A tag here is cut from a commit this same gate already
       # passed on main, so a tag build re-proves a proven tree — and on this
       # repo that is the 3108-package link storm build.yml's `tests` input was
-      # added to avoid. It is not only wasted time: `publish` below is gated
-      # `needs: cicd`, so for as long as the gate stands between a tag and its
-      # release, anything that makes it fail or time out on a tag ref takes the
-      # release with it silently. v1.833.108 and .109 are tagged on the forge
-      # and absent from GitHub, which is what that looks like from outside.
+      # added to avoid. hanzoai/cloud passes this same expression for the same
+      # reason.
+      #
+      # This was first written down as the cause of a publish gap, and it is
+      # NOT — recorded here because the wrong version of this comment shipped
+      # for one commit. v1.833.108 and .109 were tagged and never reached
+      # GitHub, but .111 was tagged BEFORE this line existed and published on
+      # its own, and both .108 and .109 build and vet clean, so neither a
+      # failing gate nor a tag-ref gate explains it. The lane is intermittent,
+      # not broken, and the cause needs a run's logs to name. What this line
+      # actually buys is one gate run per release instead of two.
       #
       # STRING, not boolean, and the comparison is against 'false' — see the
       # input's own note in build.yml: git.hanzo.ai resolves every boolean
