@@ -286,7 +286,7 @@ func TestMapPlanToTier(t *testing.T) {
 	}
 }
 
-// A page key is throttled on the KEY, not on the org that pays for it.
+// A page key IAM issued is throttled on the KEY, not on the org that pays for it.
 //
 // It is public by construction — it ships in the source of a page anybody can view
 // — so the traffic behind one is every visitor at once rather than one tenant.
@@ -297,11 +297,16 @@ func TestMapPlanToTier(t *testing.T) {
 //
 // Who PAYS is unchanged — the org still does. Who is THROTTLED is a different
 // question, and this is the one place the two are allowed to differ.
+//
+// ISSUED is what earns the key its own lane. A string beginning pk- is something
+// anyone can type, and a lane per typed string is no lane at all — so the door is
+// asked, and a key it does not know falls back to the caller's address like any
+// other unnamed traffic.
 func TestAPageKeyIsThrottledOnItsOwnKey(t *testing.T) {
-	prev := rateLimiterInstance
-	t.Cleanup(func() { rateLimiterInstance = prev })
-	rateLimiterInstance = NewRateLimiter(func(string) Tier { return TierZenFree }, time.Hour)
-	t.Cleanup(rateLimiterInstance.Stop)
+	const site, cli, typed = "pk-live-site-key", "pk-live-cli-key", "pk-live-not-a-key"
+	iamDoor(t, nil, map[string]string{site: "acme", cli: "acme"})
+	billing(t)
+	ceilings(t)
 
 	// The limiter admits a burst of a fifth of the per-minute allowance, then
 	// refills; the burst is what a page's visitors hit at once.
@@ -321,7 +326,7 @@ func TestAPageKeyIsThrottledOnItsOwnKey(t *testing.T) {
 		return served
 	}
 
-	siteServed := drive("pk-site-key")
+	siteServed := drive(site)
 	if siteServed != burst {
 		t.Errorf("site key served %d of %d before throttling", siteServed, burst)
 	}
@@ -329,8 +334,17 @@ func TestAPageKeyIsThrottledOnItsOwnKey(t *testing.T) {
 	// THE POINT: the second page key still has its whole budget. Exhausting one
 	// surface cannot take the other down, which is the only thing that makes
 	// issuing two keys mean anything.
-	cliServed := drive("pk-cli-key")
+	cliServed := drive(cli)
 	if cliServed != burst {
 		t.Errorf("a second page key served %d of %d — the two share a bucket", cliServed, burst)
+	}
+
+	// A key IAM never issued buys nothing: the lane it lands in is the caller's
+	// address, which the two real keys have already left untouched.
+	if typedServed := drive(typed); typedServed != burst {
+		t.Errorf("an unissued page key served %d of %d", typedServed, burst)
+	}
+	if again := drive("pk-live-also-not-a-key"); again != 0 {
+		t.Errorf("a second unissued page key served %d — typing a new string minted a new lane", again)
 	}
 }

@@ -68,9 +68,7 @@ func TestDOAILineupStaticRoutes(t *testing.T) {
 // published per-1M rate. This guards against route/pricing drift between the
 // static map and the shipped YAML.
 func TestDOAILineupInYAML(t *testing.T) {
-	if err := InitModelConfig("../conf/models.yaml"); err != nil {
-		t.Fatalf("load conf/models.yaml: %v", err)
-	}
+	useCatalog(t, "../conf/models.yaml")
 	cfg := GetModelConfig()
 	if cfg == nil {
 		t.Fatal("model config nil after init")
@@ -136,9 +134,7 @@ func TestDOAILineupInYAML(t *testing.T) {
 // ConfigMap (universe/infra/k8s/cloud/models.yaml) — so a re-add would
 // republish a retired SKU to /v1/models with nothing to catch it.
 func TestBestIsRetired(t *testing.T) {
-	if err := InitModelConfig("../conf/models.yaml"); err != nil {
-		t.Fatalf("load conf/models.yaml: %v", err)
-	}
+	useCatalog(t, "../conf/models.yaml")
 	cfg := GetModelConfig()
 	if cfg == nil {
 		t.Fatal("model config nil after init")

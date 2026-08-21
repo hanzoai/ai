@@ -185,8 +185,13 @@ func zapResponsesHandler(ctx context.Context, auth string, body []byte) (*zap.Me
 				RequestID:    requestId,
 			}
 			errRec.bind(context.Background(), authUser)
-			go recordUsage(errRec)
-			recordTrace(context.Background(), errRec, requestStartTime)
+			// One goroutine for both, in this order, exactly as the success path
+			// below. They share the record — recordUsage stamps the honesty flag
+			// the span then reads — so they are sequenced rather than raced.
+			go func() {
+				recordUsage(errRec)
+				recordTrace(context.Background(), errRec, requestStartTime)
+			}()
 		}
 		return object.BuildCloudResponse(502, nil, "provider error: "+err.Error())
 	}

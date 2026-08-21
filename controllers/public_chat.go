@@ -51,6 +51,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/zap-proto/zip"
+
+	"github.com/hanzoai/ai/address"
 	"github.com/hanzoai/ai/conf"
 	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/log"
@@ -99,7 +102,7 @@ var publicCount = &dayCount{}
 //
 // IT READS. Asking costs a visitor nothing and a visitor at the ceiling keeps their
 // count where it is, because refusals are not usage. The call itself is counted where
-// it is served (recordUsage), so a request that dies short of a model leaves this
+// it is answered (recordUsage), so a request that dies short of a model leaves this
 // map untouched.
 //
 // A closed lane and a caller with no address are spent by definition: neither names a
@@ -187,6 +190,17 @@ func utcDay(t time.Time) string { return t.UTC().Format("2006-01-02") }
 
 // ---- who is asking --------------------------------------------------------
 
+// Visitor is who a caller this estate cannot name is, and the composition is the
+// whole of it: the address, then a digest of it. Empty when the request carries no
+// address at all — a socket peer with nothing in front of it naming one.
+//
+// It is exported because the router's ceilings ask the same question this lane does.
+// Two derivations of "who is this, roughly" would be two answers a caller could be
+// on either side of: bounded here, unbounded there, and one of them wrong.
+func Visitor(c *zip.Ctx) string {
+	return publicVisitor(publicAddr(c.Fiber().IP(), (&ApiController{Ctx: c}).stated()))
+}
+
 // publicVisitor is the only identity an anonymous caller has: a digest of the address
 // the edge observed.
 //
@@ -232,7 +246,7 @@ func publicAddr(peer, stated string) string {
 //
 // TWO DEPLOYMENTS, ONE READ. As a subsystem the peer is the unix socket the host
 // reached us over — empty, and identical for everyone — so the host resolves the
-// caller and stamps it (object.ClientIPHeader). Served directly, nothing is in front
+// caller and stamps it (address.Header). Served directly, nothing is in front
 // but Cloudflare, which overwrites CF-Connecting-IP at its edge; X-Forwarded-For
 // merely gains an entry and keeps whatever the caller put in front of it, so that
 // one is never read.
@@ -240,7 +254,7 @@ func publicAddr(peer, stated string) string {
 // The host's answer wins where both are present: it is the hardened one, derived
 // from the connection it can actually see.
 func (c *ApiController) stated() string {
-	if addr := c.Header(object.ClientIPHeader); addr != "" {
+	if addr := c.Header(address.Header); addr != "" {
 		return addr
 	}
 	return c.Header("CF-Connecting-IP")
@@ -277,7 +291,7 @@ func (c *ApiController) ChatCompletionsPublic() {
 		return
 	}
 
-	visitor := publicVisitor(publicAddr(c.Fiber().IP(), c.stated()))
+	visitor := Visitor(c.Ctx)
 	if visitor == "" {
 		c.publicRefuse(http.StatusForbidden, "invalid_request_error", "public_no_address",
 			"This request carries no address to count against.")
@@ -297,9 +311,10 @@ func (c *ApiController) ChatCompletionsPublic() {
 	}
 
 	// BOTH COUNTS ARE READ HERE AND TAKEN NOWHERE. A day is spent on answers, so the
-	// call is counted where it is served — recordUsage, which runs only for a call
-	// that came back — and this asks only whether the visitor is already out. A
-	// request that dies short of a model leaves them every call they arrived with.
+	// call is counted where it is answered — recordUsage, which fills an allowance only
+	// for a call that came back — and this asks only whether the visitor is already
+	// out. A request that dies short of a model leaves them every call they arrived
+	// with.
 	//
 	// OUR OWN BOUND FIRST, and it decides. It is kept in this process and asks
 	// nothing, so it holds while anything else is down.
