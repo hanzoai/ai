@@ -20,12 +20,12 @@
 // directly, mirroring zap_native.go:zapChatHandler.
 //
 // Routes are RESTful nouns (method-aware where a noun carries several verbs):
-//   GET|PUT /v1/router/policy        — read the effective policy / upsert the org override
-//   GET     /v1/router/defaults      — the caller's resolved routing defaults
-//   GET     /v1/router/rewards       — rewarded training tuples (JSONL, admin/token)
-//   GET     /v1/router/ledger        — the routing-decision ledger (JSONL, admin/token)
-//   POST    /v1/router/artifact-meta — record a retrain run (super admin)
-//   GET     /v1/router/stats · POST /v1/feedback · GET /v1/traffic/globe (unchanged)
+//   GET|PUT /v1/ai/router/policy        — read the effective policy / upsert the org override
+//   GET     /v1/ai/router/defaults      — the caller's resolved routing defaults
+//   GET     /v1/ai/router/rewards       — rewarded training tuples (JSONL, admin/token)
+//   GET     /v1/ai/router/ledger        — the routing-decision ledger (JSONL, admin/token)
+//   POST    /v1/ai/router/artifact-meta — record a retrain run (super admin)
+//   GET     /v1/ai/router/stats · POST /v1/ai/feedback · GET /v1/ai/traffic/globe (unchanged)
 // The group self-registers into the ONE canonical registry (zap_registry.go) from
 // init(): the multi-verb policy noun as an HTTP-shaped ROUTE (method/path/query
 // aware, registerGatewayRoute), the single-verb nouns as body-only PATHS
@@ -61,7 +61,7 @@ import (
 // ── ZAP dispatch registration ────────────────────────────────────────────
 //
 // Self-registers into the ONE canonical registry (zap_registry.go) from init():
-//   - the multi-verb policy noun (/v1/router/policy) as an HTTP-shaped ROUTE
+//   - the multi-verb policy noun (/v1/ai/router/policy) as an HTTP-shaped ROUTE
 //     (registerGatewayRoute → zapGatewayHandler: method/path/query aware, so GET-read
 //     and PUT-write share the one noun), and
 //   - the single-verb nouns as body-only PATHS (registerGatewayPath → zapHandler).
@@ -82,14 +82,18 @@ func init() {
 	registerCloud("training.update-contribution", zapUpdateTrainingContributionHandler)
 
 	// Gateway (MsgType 200) — RESTful nouns. Method-aware policy route first.
-	registerGatewayRoute("/v1/router/policy", zapRouterPolicyHandler)
-	registerGatewayPath("/v1/router/stats", zapGetRouterStatsHandler)
-	registerGatewayPath("/v1/router/defaults", zapGetRoutingDefaultsHandler)
-	registerGatewayPath("/v1/router/ledger", zapExportRoutingLedgerHandler)
-	registerGatewayPath("/v1/router/rewards", zapExportRoutingRewardsHandler)
-	registerGatewayPath("/v1/router/artifact-meta", zapPublishRouterArtifactMetaHandler)
-	registerGatewayPath("/v1/feedback", zapAddRoutingRewardHandler)
-	registerGatewayPath("/v1/traffic/globe", zapGetTrafficGlobeHandler)
+	registerGatewayRoute("/v1/ai/router/policy", zapRouterPolicyHandler)
+	registerGatewayPath("/v1/ai/router/stats", zapGetRouterStatsHandler)
+	registerGatewayPath("/v1/ai/router/defaults", zapGetRoutingDefaultsHandler)
+	registerGatewayPath("/v1/ai/router/ledger", zapExportRoutingLedgerHandler)
+	registerGatewayPath("/v1/ai/router/rewards", zapExportRoutingRewardsHandler)
+	registerGatewayPath("/v1/ai/router/artifact-meta", zapPublishRouterArtifactMetaHandler)
+	registerGatewayPath("/v1/ai/traffic/globe", zapGetTrafficGlobeHandler)
+	// No gateway path for /v1/ai/feedback: it is a resource COLLECTION address, and
+	// a body-only prefix there would claim the member URLs of any row the resource
+	// table ever generates at that noun (zap_gateway_fallback_test.go holds the
+	// line). The reward POST reaches routers.App through the fallback, with every
+	// filter intact; the native method above is unaffected.
 }
 
 // ── Shared seams (identity + response envelope parity) ───────────────────
@@ -263,7 +267,7 @@ func zapUpdateRouterPolicyHandler(_ context.Context, auth string, body []byte) (
 	return zapRPSOk(policy)
 }
 
-// zapRouterPolicyHandler is the HTTP-shaped entrypoint for /v1/router/policy: GET
+// zapRouterPolicyHandler is the HTTP-shaped entrypoint for /v1/ai/router/policy: GET
 // reads the effective policy, PUT upserts the caller's own org override. One noun,
 // two verbs — the reason this route is method-aware (registerGatewayRoute) rather
 // than body-only. Both delegate to the same read/write logic the router and ZAP shared.

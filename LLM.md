@@ -217,9 +217,29 @@ registration path, and no route is written by hand.
                                                          DELETE …/<owner>/<name>            delete
     GET    /v1/<ns>/<resource>/global          cross-tenant list (where a resource has one)
 
-Namespaces are the subsystems that own the data, so a reader can tell what a route
-touches from its prefix: `auth` (this backend's own account/session objects),
-`rag`, `chat`, `ai`, `content`, `compute`, `work`, `ops`.
+The namespace is `ai` for every row, and for every other route this service
+serves. HIP-0139 §3.1: a capability answers at ONE address, `/v1/<name>`, and a
+second top-level address is a second capability or a misfiled route — never an
+alias. So `/v1/router/*`, `/v1/org/settings`, `/v1/finetune/*`, `/v1/memory/*`,
+`/v1/rag/*`, `/v1/docs/ingest`, `/v1/feedback` and `/v1/traffic/globe` are all
+under `/v1/ai/…` now (ingest under `/v1/ai/rag/`, since it writes the index rag
+reads). The groupings in the table — retrieval, chat, models, content, compute,
+work, ops — are how it is READ, not a second prefix.
+
+Two families stay outside `/v1/ai` because a protocol, not this repo, fixes
+their spelling (§3.2): the OpenAI/Anthropic wire (`/v1/chat/completions`,
+`/v1/completions`, `/v1/embeddings`, `/v1/messages`, `/v1/models`,
+`/v1/images/*`, `/v1/audio/*`, `/v1/videos/*`, `/v1/responses`, `/v1/rerank`),
+and `POST /v1/embed`, the multipart form hanzo.chat posts.
+
+**`/v1/ai/<noun>` is a resource collection address.** Nothing may register a ZAP
+gateway PREFIX there: the registry matches on path alone, so a prefix at a
+collection swallows that collection's `:owner/:name` members and answers with
+the LIST handler — a wrong answer, not an error. Deeper addresses
+(`/v1/ai/rag/query`, `/v1/ai/router/defaults`) are routes, not collections, and
+are safe. `TestNoGatewayPrefixOverTheResourceNamespace` holds the line; it is
+why `/v1/ai/feedback` has no gateway prefix and reaches routers.App through the
+fallback instead.
 
 Three things about this that are easy to get wrong:
 
@@ -404,19 +424,20 @@ tenant index. `object/rag.go` holds the file-scoped logic (`RagEmbedFile`,
 `txt.GetParsedTextFromUrl` (PDF/CSV/XLSX/PPTX/…). Uploaded files default to the
 `rag-files` store so they don't pollute curated docs.
 
-**Two HTTP projections over the one logic** (`controllers/rag.go`,
-`controllers/rag_librechat.go`):
-- Native (canonical): `POST /v1/rag/embed`, `/v1/rag/query`,
-  `/v1/rag/query-multiple`, `/v1/rag/delete`, `GET /v1/rag/context`.
-- LibreChat-compat (drop-in for the retired rag-api's fixed contract):
-  `POST /v1/embed` (multipart), `/v1/query`, `/v1/query_multiple`,
-  `DELETE /v1/documents`, `GET /v1/documents/:file_id/context`. Returns the
-  LangChain `[[{page_content,metadata},score],…]` tuple shape hanzo.chat parses.
+**One address family** (`controllers/rag.go`): `POST /v1/ai/rag/ingest`,
+`/v1/ai/rag/embed`, `/v1/ai/rag/query`, `/v1/ai/rag/query-multiple`,
+`/v1/ai/rag/delete`, `GET /v1/ai/rag/context`. Ingest and embed are two ways in
+to the one index; the rest read it back.
 
-**Migration**: point hanzo.chat's `RAG_API_URL` at `https://api.hanzo.ai/v1` —
-no chat-repo change. Auth/billing reuse the doc-RAG path
-(`resolveSearchAuth`/`requireIndexAuth` + `recordSearchUsage`); owner is the
-authenticated principal (tenant isolation), never a client-supplied field.
+The one exception is `POST /v1/embed` (`controllers/rag_librechat.go`) — the
+MULTIPART form hanzo.chat's `uploadVectors()` posts. Its request line is fixed
+by that client, not by us, which is why it is not a spelling of
+`/v1/ai/rag/embed`. Everything hanzo.chat READS it reads from the native family.
+
+**Migration**: hanzo.chat's RAG client calls `${origin}/v1/ai/rag/*` directly.
+Auth/billing reuse the doc-RAG path (`resolveSearchAuth`/`requireIndexAuth` +
+`recordSearchUsage`); owner is the authenticated principal (tenant isolation),
+never a client-supplied field.
 
 ## Search / Crawl / Web-search — THREE orthogonal products, ONE way each
 

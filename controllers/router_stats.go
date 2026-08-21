@@ -475,7 +475,7 @@ func (c *ApiController) GetRouterStats() {
 	c.ResponseOk(stats)
 }
 
-// PublishRouterArtifactMeta (POST /v1/router/artifact-meta) is served ZAP-native —
+// PublishRouterArtifactMeta (POST /v1/ai/router/artifact-meta) is served ZAP-native —
 // the ONE implementation — by zapPublishRouterArtifactMetaHandler in
 // zap_router-policy-stats.go: super-admin gated, UpsertRouterArtifactMeta + the
 // best-effort AppendRouterTrainingLog timeline append (world.hanzo.ai Model-Improvement

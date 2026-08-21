@@ -19,9 +19,9 @@ import (
 func TestZapRagSearchCrawlRegistered(t *testing.T) {
 	cloudMethods := []string{
 		"search", "search.index", "search.stats",
-		"scrape", "scrape.preview", "crawl", "docs.ingest",
-		"rag.embed", "rag.query", "rag.query-multiple", "rag.delete", "rag.context",
-		"embed", "query", "query-multiple", "documents.delete", "documents.context",
+		"scrape", "scrape.preview", "crawl",
+		"rag.ingest", "rag.embed", "rag.query", "rag.query-multiple", "rag.delete", "rag.context",
+		"embed",
 	}
 	for _, m := range cloudMethods {
 		if zapRagSearchCrawlCloud[m] == nil {
@@ -30,10 +30,10 @@ func TestZapRagSearchCrawlRegistered(t *testing.T) {
 	}
 
 	gatewayPaths := []string{
-		"/v1/search", "/v1/index", "/v1/search/stats",
-		"/v1/crawl", "/v1/docs/ingest",
-		"/v1/rag/embed", "/v1/rag/query", "/v1/rag/query-multiple", "/v1/rag/delete", "/v1/rag/context",
-		"/v1/embed", "/v1/query", "/v1/query_multiple", "/v1/documents",
+		"/v1/search", "/v1/index", "/v1/search/stats", "/v1/crawl",
+		"/v1/ai/rag/ingest", "/v1/ai/rag/embed", "/v1/ai/rag/query",
+		"/v1/ai/rag/query-multiple", "/v1/ai/rag/delete", "/v1/ai/rag/context",
+		"/v1/embed",
 	}
 	for _, p := range gatewayPaths {
 		if zapRagSearchCrawlGateway[p] == nil {
@@ -53,16 +53,14 @@ func TestZapRagSearchCrawlAuthRejection(t *testing.T) {
 		"search.stats": zapSearchStatsHandler,
 		"rag.query":    zapRagQueryHandler,
 		"rag.context":  zapRagContextHandler,
-		"query":        zapRagQueryCompatHandler,
 	}
 	writeHandlers := map[string]zapRSCHandler{
-		"index":            zapIndexHandler,
-		"scrape":           zapScrapeHandler,
-		"crawl":            zapCrawlHandler,
-		"docs.ingest":      zapIngestHandler,
-		"rag.embed":        zapRagEmbedHandler,
-		"rag.delete":       zapRagDeleteHandler,
-		"documents.delete": zapDocumentsDeleteHandler,
+		"index":      zapIndexHandler,
+		"scrape":     zapScrapeHandler,
+		"crawl":      zapCrawlHandler,
+		"rag.ingest": zapIngestHandler,
+		"rag.embed":  zapRagEmbedHandler,
+		"rag.delete": zapRagDeleteHandler,
 	}
 
 	body := []byte(`{"query":"hi","url":"https://example.com","file_id":"f1","documents":[{"id":"1"}],"source":"upload"}`)

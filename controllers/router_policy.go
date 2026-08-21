@@ -122,7 +122,7 @@ func confRouterPolicy() (map[string][]string, float64) {
 	return cfg.ConfRouterPolicy()
 }
 
-// The router-policy read/write endpoints (GET|PUT /v1/router/policy) are served
+// The router-policy read/write endpoints (GET|PUT /v1/ai/router/policy) are served
 // ZAP-native — the ONE implementation — by zapGet/UpdateRouterPolicyHandler in
 // controllers/zap_router-policy-stats.go, which call the shared resolvedRouterPolicy
 // + enabledModelsSet + the fold helpers below. There is deliberately no controller twin:

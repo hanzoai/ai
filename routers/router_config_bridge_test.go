@@ -53,14 +53,14 @@ func TestRouterConfigRoutesServeOverHTTP(t *testing.T) {
 	// route is wired (the handler's own auth/verdict is asserted in the controllers
 	// package; here we only prove the transport binding exists).
 	live := []struct{ method, path string }{
-		{http.MethodGet, "/v1/router/policy"},
-		{http.MethodPut, "/v1/router/policy"}, // method-aware: PUT must also route
-		{http.MethodGet, "/v1/router/defaults"},
-		{http.MethodGet, "/v1/router/ledger"},
-		{http.MethodGet, "/v1/router/rewards"},
-		{http.MethodPost, "/v1/router/artifact-meta"},
-		{http.MethodGet, "/v1/org/settings"},
-		{http.MethodGet, "/v1/org/settings/list"}, // distinct segment count — own route
+		{http.MethodGet, "/v1/ai/router/policy"},
+		{http.MethodPut, "/v1/ai/router/policy"}, // method-aware: PUT must also route
+		{http.MethodGet, "/v1/ai/router/defaults"},
+		{http.MethodGet, "/v1/ai/router/ledger"},
+		{http.MethodGet, "/v1/ai/router/rewards"},
+		{http.MethodPost, "/v1/ai/router/artifact-meta"},
+		{http.MethodGet, "/v1/ai/org/settings"},
+		{http.MethodGet, "/v1/ai/org/settings/list"}, // distinct segment count — own route
 	}
 	for _, r := range live {
 		if code := serve(r.method, r.path); code == http.StatusNotFound {
@@ -75,7 +75,7 @@ func TestRouterConfigRoutesServeOverHTTP(t *testing.T) {
 	for _, p := range []string{
 		"/v1/get-router-policy", "/v1/update-router-policy",
 		"/v1/get-routing-defaults", "/v1/export-routing-ledger",
-		"/v1/export-routing-rewards", "/v1/router/publish-artifact-meta",
+		"/v1/export-routing-rewards", "/v1/ai/router/publish-artifact-meta",
 		"/v1/add-routing-reward",
 		"/v1/get-org-settings", "/v1/update-org-settings", "/v1/delete-org-settings",
 		"/v1/add-org-settings", "/v1/get-org-settings-list",

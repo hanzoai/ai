@@ -54,7 +54,7 @@ type OrgSettings struct {
 
 	// DefaultSessionRouting is the admin-settable default for whether new chat
 	// sessions default to auto-routing in the client (console/chat/app/desktop
-	// read it via /v1/router/defaults). Same three-state as AutoRouting:
+	// read it via /v1/ai/router/defaults). Same three-state as AutoRouting:
 	// "" (unset) → "*" row then conf default (disabled), "enabled", "disabled".
 	DefaultSessionRouting string `json:"defaultSessionRouting"`
 
@@ -113,7 +113,7 @@ type OrgSettings struct {
 	// Judge* configure the LLM-as-a-judge dense-reward path (the Mean-Field Judge
 	// Panel). They are PLATFORM-GLOBAL, not per-org: read ONLY from the "*"
 	// GlobalDefaultOwner row (like the trainer's "*" RouterPrefer), live-tunable at
-	// admin.hanzo.ai via /v1/org/settings — no env, no restart. NO secret
+	// admin.hanzo.ai via /v1/ai/org/settings — no env, no restart. NO secret
 	// lives here: the judge presents the gateway's existing internal service bearer
 	// (ROUTER_PROBE_TOKEN, env/KMS), never a DB value. Every field is fail-safe to
 	// the built-in default when unset (GetCachedJudgeConfig):
@@ -129,7 +129,7 @@ type OrgSettings struct {
 	// RouterMeanField* configure the congestion-aware mean-field routing LAYER
 	// (controllers/router_meanfield.go). PLATFORM-GLOBAL like the Judge* knobs: read
 	// ONLY from the "*" GlobalDefaultOwner row, live-tunable at admin.hanzo.ai via
-	// /v1/org/settings — no env, no restart. The layer is a pure best-response
+	// /v1/ai/org/settings — no env, no restart. The layer is a pure best-response
 	// equilibrium that spreads `auto` load across near-equal-preference models instead
 	// of stampeding the single champion. It is DISABLED by default so live routing is
 	// byte-identical until an admin opts in (GetCachedMeanFieldConfig):

@@ -8,7 +8,7 @@ package controllers
 import "github.com/hanzoai/ai/object"
 
 // Read-only view of the LIVE Mean-Field Judge Panel (router_judge_panel.go) for the
-// world.hanzo.ai dashboard. Same class as /v1/router/stats?scope=platform: PUBLIC,
+// world.hanzo.ai dashboard. Same class as /v1/ai/router/stats?scope=platform: PUBLIC,
 // platform-global, aggregates-only — model ids + scalars, no content, no PII, no org
 // data — so the world widget polls it unauthenticated exactly like router-stats.
 
@@ -35,7 +35,7 @@ var publishedJudgeBenchmark = judgeBenchmark{
 	SingleAdversary: 0.110, // one adversarial single judge (pure noise)
 }
 
-// judgePanelState is the /v1/router/judge-panel wire contract (world.hanzo.ai depends
+// judgePanelState is the /v1/ai/router/judge-panel wire contract (world.hanzo.ai depends
 // on this shape — do not deviate). `models` + `enabled` + `sampleRate` are the
 // configured/dynamic posture; `judges` is the LIVE in-process calibration state (empty
 // ⇒ available:false); `benchmark` is the static published proof above.
@@ -68,7 +68,7 @@ func buildJudgePanelState(cfg object.JudgeConfig, judges []PanelJudge) judgePane
 // GlobalDefaultOwner row, the live in-process per-judge calibration (weight/mean/n),
 // and the static published benchmark. PUBLIC-safe and platform-global (model ids +
 // scalars only), so it rides the same unauthenticated, balance-exempt class as
-// /v1/router/stats?scope=platform — the world widget polls it with no auth. The judge
+// /v1/ai/router/stats?scope=platform — the world widget polls it with no auth. The judge
 // state is a single in-process population (not per-org), so there is nothing to scope;
 // ?scope=platform is accepted for symmetry with router-stats.
 //

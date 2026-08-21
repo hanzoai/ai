@@ -34,7 +34,7 @@ func TestTrafficServiceClass(t *testing.T) {
 		"/v1/audio/speech":                  SvcMedia,
 		"/v1/generate-text-to-speech-audio": SvcMedia,
 		"/v1/process-speech-to-text":        SvcMedia,
-		"/v1/rag/query":                     SvcOther,
+		"/v1/ai/rag/query":                  SvcOther,
 		"/v1/get-account":                   SvcOther,
 	}
 	for path, want := range cases {
@@ -59,7 +59,7 @@ func TestTrafficShouldRecord(t *testing.T) {
 		{"/v1/chat/completions", "OPTIONS"}, // preflight
 		{"/v1/health", "GET"},               // probe
 		{"/v1/metrics", "GET"},              // probe
-		{"/v1/traffic/globe", "GET"},        // the poll itself must not self-count
+		{"/v1/ai/traffic/globe", "GET"},     // the poll itself must not self-count
 		{"/healthz", "GET"},                 // non-/v1
 		{"/", "GET"},                        // non-/v1
 	}
