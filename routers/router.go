@@ -253,10 +253,6 @@ func registerAPI(app *zip.App) {
 	route(app, "/v1/ai/rag/delete", "POST:RagDelete")
 	route(app, "/v1/ai/rag/context", "GET:RagContext")
 
-	// The multipart embed hanzo.chat's uploadVectors() posts — a fixed external
-	// contract, not a spelling of ours. Thin projection over the same object.Rag*
-	// logic as /v1/ai/rag/embed.
-
 	// Memory subsystem — cloud backend of the unified memory interface.
 	// Per-user scoped; identity comes from gateway IAM headers, never the body.
 	route(app, "/v1/ai/memory/remember", "POST:MemoryRemember")
