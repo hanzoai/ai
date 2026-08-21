@@ -181,8 +181,8 @@ func TestGetUserByAccessKey_SurfacesTheRefusalCode(t *testing.T) {
 	if err == nil {
 		t.Fatal("an unresolvable key must still fail")
 	}
-	if !strings.Contains(err.Error(), "not recognized") || !strings.Contains(err.Error(), "Mint a new one") {
-		t.Fatalf("error = %q, want the actionable revoked-key message", err)
+	if !strings.Contains(err.Error(), "does not resolve") || !strings.Contains(err.Error(), "mint a new one") {
+		t.Fatalf("error = %q, want the actionable key_unknown message", err)
 	}
 	if strings.Contains(err.Error(), "dead-beef") {
 		t.Fatalf("SECRET LEAK: %q", err)
@@ -226,7 +226,7 @@ func TestGetUserByAccessKey_RetiredPrefixGetsTheActionableRefusal(t *testing.T) 
 	}
 
 	got := err.Error()
-	for _, want := range []string{"not recognized", "Mint a new one"} {
+	for _, want := range []string{"does not resolve", "mint a new one"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("refusal %q does not say %q — the holder is left without the cure", got, want)
 		}
