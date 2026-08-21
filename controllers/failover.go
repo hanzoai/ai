@@ -77,6 +77,15 @@ type ask struct {
 	lang      string
 
 	writer io.Writer
+	// prompt is the prompt's token count, already measured by the caller. Only a
+	// raced attempt reads it: a loser is billed for the prompt the vendor did
+	// accept plus whatever it produced before losing, and re-counting it here
+	// would be a second answer to a question the caller already asked.
+	prompt int
+	// fan carries this request into fast mode: several providers at once, first
+	// answer wins. Nil is the cascade, which is what every request that does not
+	// ask for fast mode gets.
+	fan *fan
 	// sent reports whether any byte has reached the client. Once it has, this
 	// request is committed and can never be moved.
 	sent func() bool
@@ -99,6 +108,17 @@ type ask struct {
 // the ones that failed. A failover nobody can see is half a fix: the empty
 // account that caused it stays empty.
 func (a ask) serve() (*model.ModelResult, served, []attempt, error) {
+	// Fast mode asks several at once; everything else takes them in turn. One
+	// entry point either way, so a caller sets a number rather than choosing a
+	// code path — and a fan too narrow to race falls back here by itself.
+	if a.fan != nil && a.fan.n > 1 {
+		return a.race()
+	}
+	return a.cascade()
+}
+
+// cascade is the failover loop itself: one provider at a time, in order.
+func (a ask) cascade() (*model.ModelResult, served, []attempt, error) {
 	tried := a.prior
 	for _, c := range candidates(a.org, a.route, a.prior) {
 		// The caller hung up. Offering the request to another vendor would spend
@@ -344,6 +364,12 @@ func unavailable(provider string) error {
 // not "error" — so dashboards that count failures keep counting the same thing and
 // a refused ATTEMPT on a request that ultimately succeeded is not filed as a
 // failed request.
+//
+// A PROVIDER BEATEN IN A RACE NEVER ARRIVES HERE, and must not: it was cancelled
+// mid-generation, so the vendor produced tokens and charged us, and this row
+// would file a real charge as a free refusal. ask.race keeps them out of the
+// attempts it returns and settles them through fan.bill instead — one ledger
+// path each, so neither rule can be applied to the other's case.
 func (c *ApiController) recordRefusals(model string, tried []attempt, user *iam.User, premium, stream bool, requestId string, start time.Time) {
 	if user == nil {
 		return

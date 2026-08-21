@@ -492,6 +492,13 @@ type attempt struct {
 	status   int
 	fault    fault
 	err      error
+	// prompt and completion are what this attempt SPENT, and are set only where
+	// spending happened without serving: a provider raced and beaten, which was
+	// cancelled mid-generation and charged us for the tokens it had reached. A
+	// refusal leaves them zero, which is the true count for an attempt that
+	// produced nothing, and is what keeps its ledger row free.
+	prompt     int
+	completion int
 }
 
 // candidates orders the providers a route may be offered to, best first, and
