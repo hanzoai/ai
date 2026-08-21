@@ -37,9 +37,11 @@ type ModelRoute struct {
 	Hidden      bool    `json:"hidden"`               // excluded from /api/models listing
 	InputPrice  float64 `json:"inputPricePerMillion"` // custom customer price (0 = use default)
 	OutputPrice float64 `json:"outputPricePerMillion"`
-	// Provider COGS override ($/1M tokens): what it costs Hanzo to serve, distinct from
-	// the customer price above. 0 ⇒ cost defaults to the price (zero margin). Additive
-	// columns synced by dbx (ALTER TABLE ADD COLUMN) — no manual migration.
+	// Provider COGS ($/1M tokens): what it costs Hanzo to serve, distinct from the
+	// customer price above and the ONE place a cost is registered. Unset ⇒ the cost is
+	// not known and no margin is reported for the call — it does not fall back to the
+	// price. Both legs or neither. Additive columns synced by dbx (ALTER TABLE ADD
+	// COLUMN) — no manual migration.
 	CostInPerMillion  float64 `json:"costInPerMillion"`
 	CostOutPerMillion float64 `json:"costOutPerMillion"`
 	Enabled           bool    `json:"enabled"`
