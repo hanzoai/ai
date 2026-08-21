@@ -4,9 +4,9 @@ package iam
 
 import (
 	"bytes"
-	"encoding/json"
 	"io"
 	"net/http"
+	"strings"
 	"testing"
 )
 
@@ -21,30 +21,28 @@ import (
 // token is validated against never got established, and the failure named a
 // missing certificate rather than a misaddressed lookup.
 //
-// It is asserted on the REQUEST rather than on a response, because the defect was
-// never in what IAM returned — it was in which tenant we asked. The two reads
-// carry their key differently (the application in the query, the cert in the
-// body), so both are checked where that route actually reads it.
+// It is asserted on the REQUEST URL rather than on a response, because the defect
+// was never in what IAM returned — it was in which tenant we asked.
+//
+// The pair now travels as two PATH SEGMENTS under the collection. Neither the
+// joined `?id=<owner>/<name>` of the first surface nor the split `?owner=&name=`
+// of the second is a parameter these routes read, so a request still carrying
+// either states no record at all — and lands on the COLLECTION, which answers.
+// That is why this asserts the whole URL rather than a substring of it: every
+// wrong spelling here is a wrong ANSWER at 200, never a status to check.
 
 // capture is an iam.HttpClient that records each request and answers a minimal
-// body. It keeps the method and the sent body alongside the URL, because on
-// these routes the key rides in the query or in the body depending on which.
+// body. The method is recorded alongside the URL because it is half of what
+// IAM authorizes on.
 type capture struct {
 	urls    []string
 	methods []string
-	sent    []string
 	body    string
 }
 
 func (c *capture) Do(r *http.Request) (*http.Response, error) {
 	c.urls = append(c.urls, r.URL.String())
 	c.methods = append(c.methods, r.Method)
-	out := ""
-	if r.Body != nil {
-		b, _ := io.ReadAll(r.Body)
-		out = string(b)
-	}
-	c.sent = append(c.sent, out)
 	body := c.body
 	if body == "" {
 		body = `{"name":"x"}`
@@ -76,29 +74,37 @@ func TestCertAndApplicationShareThePlatformPartition(t *testing.T) {
 	}
 
 	for i, want := range []string{
-		"http://iam.test/v1/iam/applications/get?name=hanzo-cloud&owner=admin",
-		"http://iam.test/v1/iam/certs/get",
+		"http://iam.test/v1/iam/applications/admin/hanzo-cloud",
+		"http://iam.test/v1/iam/certs/admin/cert-hanzo",
 	} {
 		if cap.urls[i] != want {
-			t.Errorf("request %d asked %q, want %q", i, cap.urls[i], want)
+			t.Errorf("request %d asked %q, want %q — the cert and its application must be\n"+
+				"addressed in the same (platform) partition, by key, in the path", i, cap.urls[i], want)
+		}
+	}
+	// The tenant org must appear as NEITHER owner: a cert addressed under the
+	// caller's own org is the exact miss this pins.
+	for i, u := range cap.urls {
+		if strings.Contains(u, "/hanzo/") {
+			t.Errorf("request %d (%q) addressed the TENANT org; certs and apps are platform-owned", i, u)
+		}
+	}
+	// And no key rides in the query. Both retired spellings put it there, and
+	// neither is read: a request carrying one addresses the collection and gets
+	// a listing back at 200.
+	for i, u := range cap.urls {
+		if strings.Contains(u, "?") {
+			t.Errorf("request %d (%q) carries a query; a record's key belongs in the path", i, u)
 		}
 	}
 
-	// The application names its key in the query; the cert names its own in the
-	// body. Both must say the PLATFORM owner — a cert asked for under the
-	// caller's own org is the exact miss this pins.
-	if got := cap.urls[0]; got != "http://iam.test/v1/iam/applications/get?name=hanzo-cloud&owner="+PlatformOwner {
-		t.Errorf("the application read asked %q; apps are platform-owned", got)
-	}
-	var ref Ref
-	if err := json.Unmarshal([]byte(cap.sent[1]), &ref); err != nil {
-		t.Fatalf("the cert read sent %q, which is not a key: %v", cap.sent[1], err)
-	}
-	if ref.Owner != PlatformOwner {
-		t.Errorf("the cert read asked owner %q, want %q — certs are platform-owned, not the tenant's",
-			ref.Owner, PlatformOwner)
-	}
-	if ref.Name != "cert-hanzo" {
-		t.Errorf("the cert read asked name %q, want %q", ref.Name, "cert-hanzo")
+	// Both reads are GETs. IAM weighs a request as a READ from its method, so the
+	// same lookup posted is weighed as a write and the self-read grant an
+	// application relies on to fetch its own signing cert does not fire — a 403
+	// on bootstrap that reads like a permissions regression.
+	for i, m := range cap.methods {
+		if m != http.MethodGet {
+			t.Errorf("request %d used %s; a record read must be a GET or it is authorized as a write", i, m)
+		}
 	}
 }
