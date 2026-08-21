@@ -39,7 +39,6 @@ import (
 	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/model"
 	"github.com/hanzoai/ai/object"
-	"github.com/hanzoai/ai/upstream"
 	"github.com/hanzoai/ai/util"
 	"github.com/hanzoai/go-openai"
 )
@@ -533,30 +532,18 @@ func resolveOrgFromPublishableKey(accessKey string) (string, error) {
 
 // getUserByAccessKey looks up a user by their IAM API key via Hanzo IAM.
 func getUserByAccessKey(accessKey string) (*iam.User, error) {
+	// Call IAM's get-user endpoint with accessKey query parameter
 	iamEndpoint := conf.GetConfigString("IAM_URL")
 	if iamEndpoint == "" {
 		return nil, fmt.Errorf("IAM_URL is not configured")
 	}
 	iamEndpoint = strings.TrimRight(iamEndpoint, "/")
 
-	// Per global rule: /v1/ only, never /api/. A path under /api/ is intercepted
-	// by the @hanzo/id SPA ingress and returns HTML, which broke API-key
-	// resolution once ("invalid character '<'").
-	//
-	// This is the SECRET-key door, and it is its own route rather than a CRUD
-	// read. Resolving a key used to ride on the user read as
-	// `get-user?accessKey=` — an authentication boundary reached through a verb
-	// whose target was a credential rather than the owner/name that read
-	// authorizes on. It resolves an sk- to the full principal; the publishable
-	// pk- has a separate door (resolveOrgFromPublishableKey) that yields an org
-	// and never a person, so the browser-safe disclosure and this one are never
-	// behind a single authorization decision.
-	//
-	// The segments name things — a key, its principal — and the method says the
-	// verb. IAM refuses a new verb-noun address outright; the one sibling that
-	// still reads as one (resolve-key, below) is a frozen spelling live
-	// consumers hard-code, and that list only ever shrinks.
-	reqURL := fmt.Sprintf("%s/v1/iam/keys/principal?accessKey=%s", iamEndpoint, url.QueryEscape(accessKey))
+	// Per global rule: /v1/ only, never /api/. IAM serves at /v1/iam/get-user.
+	// The legacy /api/get-user path is intercepted by the @hanzo/id SPA ingress
+	// and returns HTML, which broke API-key resolution ("invalid character
+	// '<'").
+	reqURL := fmt.Sprintf("%s/v1/iam/get-user?accessKey=%s", iamEndpoint, url.QueryEscape(accessKey))
 
 	// Auth is client_secret_basic (RFC 6749 §2.3.1) — the ONE transport IAM reads
 	// to establish a confidential-APP principal. Key resolution is a
@@ -2223,7 +2210,7 @@ func (c *ApiController) proxyToolRequest(
 	}
 
 	// Determine upstream endpoint and auth
-	upstreamURL := upstream.Endpoint(provider, "chat/completions")
+	upstreamURL := endpoint(provider, "chat/completions")
 	if upstreamURL == "" {
 		c.ResponseError("No upstream endpoint configured for provider: " + provider.Name)
 		return
@@ -2243,7 +2230,7 @@ func (c *ApiController) proxyToolRequest(
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
-	upstream.Authorize(req, provider)
+	authorize(req, provider)
 
 	client := &http.Client{Timeout: 120 * time.Second}
 	resp, err := client.Do(req)
@@ -2575,7 +2562,7 @@ func (c *ApiController) proxyToolRequestAnthropic(
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
-	upstream.Authorize(req, provider)
+	authorize(req, provider)
 	req.Header.Set("anthropic-version", "2023-06-01")
 
 	client := &http.Client{Timeout: 120 * time.Second}

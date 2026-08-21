@@ -14,6 +14,11 @@
 
 package iam
 
+import (
+	"encoding/json"
+	"fmt"
+)
+
 // Application is the subset of the IAM Application model ai reads: DisplayName,
 // the signing cert name, and the OAuth redirect allowlist. Read-only response
 // (GetApplication), so a projection is correct.
@@ -37,8 +42,15 @@ type Application struct {
 const PlatformOwner = "admin"
 
 func (c *Client) GetApplication(name string) (*Application, error) {
+	url := c.GetUrl("get-application", map[string]string{
+		"id": fmt.Sprintf("%s/%s", PlatformOwner, name),
+	})
+	bytes, err := c.DoGetBytes(url)
+	if err != nil {
+		return nil, err
+	}
 	var application *Application
-	if err := c.get("applications/get", Ref{Owner: PlatformOwner, Name: name}.query(), &application); err != nil {
+	if err = json.Unmarshal(bytes, &application); err != nil {
 		return nil, err
 	}
 	return application, nil

@@ -78,17 +78,13 @@ func TestAuthReady_ResolvesAndThenStopsFetching(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
 		w.Header().Set("Content-Type", "application/json")
-		// IAM's noun routes answer with the record itself. There is no {status,
-		// data} envelope to unwrap — a fixture that wrapped one would decode to a
-		// zero-valued record, which reads as a successful read of a blank cert.
 		switch {
-		case strings.Contains(r.URL.Path, "applications/get"):
-			_, _ = w.Write([]byte(`{"name":"hanzo-cloud","cert":"cert-hanzo"}`))
-		case strings.Contains(r.URL.Path, "certs/get"):
-			_, _ = w.Write([]byte(`{"name":"cert-hanzo","certificate":"-----BEGIN CERTIFICATE-----\nnot-a-real-cert\n-----END CERTIFICATE-----"}`))
+		case strings.Contains(r.URL.Path, "get-application"):
+			_, _ = w.Write([]byte(`{"status":"ok","data":{"name":"hanzo-cloud","cert":"cert-hanzo"}}`))
+		case strings.Contains(r.URL.Path, "get-cert"):
+			_, _ = w.Write([]byte(`{"status":"ok","data":{"name":"cert-hanzo","certificate":"-----BEGIN CERTIFICATE-----\nnot-a-real-cert\n-----END CERTIFICATE-----"}}`))
 		default:
-			w.WriteHeader(http.StatusNotFound)
-			_, _ = w.Write([]byte(`{"status":404,"error":"unexpected path ` + r.URL.Path + `"}`))
+			_, _ = w.Write([]byte(`{"status":"error","msg":"unexpected path ` + r.URL.Path + `"}`))
 		}
 	}))
 	defer srv.Close()
