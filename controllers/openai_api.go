@@ -481,7 +481,7 @@ func publishableRemember(accessKey string, a publishableAnswer) {
 }
 
 // resolveOrgFromPublishableKey resolves a publishable pk- to the ORG that holds
-// it, via IAM's publishable door (/v1/iam/resolve-key) — the exact dual of
+// it, via IAM's publishable door (/v1/iam/keys/org) — the exact dual of
 // getUserByAccessKey, which answers only for secret keys and refuses a pk- as
 // key_wrong_door. Same confidential Basic transport, same envelope, same typed
 // refusals; the answer is an org and never a person.
@@ -491,7 +491,7 @@ func resolveOrgFromPublishableKey(accessKey string) (string, error) {
 		return "", fmt.Errorf("IAM_URL is not configured")
 	}
 	iamEndpoint = strings.TrimRight(iamEndpoint, "/")
-	reqURL := fmt.Sprintf("%s/v1/iam/resolve-key?accessKey=%s", iamEndpoint, url.QueryEscape(accessKey))
+	reqURL := fmt.Sprintf("%s/v1/iam/keys/org?accessKey=%s", iamEndpoint, url.QueryEscape(accessKey))
 	clientId, clientSecret := iamClientCreds()
 	if clientId == "" || clientSecret == "" {
 		return "", fmt.Errorf("IAM client credentials are not configured")
