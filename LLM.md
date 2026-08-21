@@ -131,8 +131,19 @@ compiles, the types check, and the behaviour is wrong.
   the stream reads must outlive the handler (hand the upstream body to the
   callback; a `defer` in the enclosing function closes it first and the client gets
   nothing), and anything the stream learns must be used inside it (token counts read
-  outside are still zero, so a streamed answer bills no completion). The Ctx is
-  still the request's in there: fasthttp finishes writing before fiber releases it.
+  outside are still zero, so a streamed answer bills no completion).
+
+  **AND THE CTX IN THERE IS NOT THE REQUEST'S — this line used to say it was, and
+  production refuted it.** The claim was that fasthttp finishes writing before
+  fiber releases the request, so reading `c` from the callback was safe. Measured
+  on api.hanzo.ai: `DefaultCtx.App()` nil-dereferenced under
+  `recordFamilyUsage -> billingOrg -> Ctx.Header`, twelve times an hour. It does
+  not fail the one request either — a SIGSEGV takes the whole plugin process, so
+  every other call in flight dies with it and each one answers
+  `mount /v1: http: read response: EOF`. Read what the stream needs from the
+  request BEFORE the handler returns and let it travel by value; `whence` in
+  `zen_client.go` is that shape, and `recordFamilyUsage` takes no receiver so
+  there is nothing to reach through.
 
 - **`RequestURI` IS SET BY A SERVER, NOT BY A CALLER.** The fiber adaptor reads that
   field, so a request CONSTRUCTED in process — which is every request crossing ZAP —
