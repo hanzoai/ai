@@ -118,7 +118,7 @@ func iamDoor(t *testing.T, users map[string]iam.User, orgs map[string]string) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
-		case "/v1/iam/resolve-user":
+		case "/v1/iam/keys/principal":
 			if u, ok := users[r.URL.Query().Get("accessKey")]; ok {
 				json.NewEncoder(w).Encode(map[string]any{"status": "ok", "data": u})
 				return
