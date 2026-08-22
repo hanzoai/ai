@@ -1206,3 +1206,92 @@ func TestBillingReadsTheSnapshotAndNeverTheVendor(t *testing.T) {
 		t.Errorf("the billing path dialled the vendor %d time(s) — a debit must not wait on one", asked)
 	}
 }
+
+// A deny-terms route falls onto our OWN compute, and onto nothing borrowed.
+//
+// The floor exists because a borrowed free route is free BECAUSE the vendor keeps
+// what it carried, so answering a paid `deny` request with one would trade away the
+// term the customer bought. That reasoning is about the vendor, not about falling
+// back: on our own compute there is nobody to keep anything, so the substitution
+// costs the customer nothing they paid for.
+//
+// Both routes answer here. A borrowed one being passed over is therefore a CHOICE
+// and not a route that happened to be unavailable — which is the only way to tell
+// the floor is still standing rather than merely unexercised.
+func TestADenyRouteFallsOntoOurOwnComputeAndNothingBorrowed(t *testing.T) {
+	cooled.forget()
+	const free = "vendor/big:free"
+	const paid = "vendor/paid-a"
+
+	asked := map[string]int{}
+	vendor := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var in struct {
+			Model string `json:"model"`
+		}
+		b := make([]byte, r.ContentLength)
+		_, _ = r.Body.Read(b)
+		_ = json.Unmarshal(b, &in)
+		asked[in.Model]++
+		if in.Model == engineModel || in.Model == free {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id":"1","model":"` + in.Model + `","choices":[{"index":0,"message":{"role":"assistant","content":"ok"}}]}`))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusPaymentRequired)
+		_, _ = w.Write([]byte(`{"error":{"message":"Insufficient credits. Add more using https://openrouter.ai/settings/credits","code":402}}`))
+	}))
+	defer vendor.Close()
+
+	fam := spareFamily(t, vendor.URL, free, paid)
+	restore(t, engineFam)
+	t.Setenv("TEST_ENGINE_URL", vendor.URL)
+	engineFam.urlKey = "TEST_ENGINE_URL"
+	engineFam.providerFn = nil
+
+	if word, stated := fam.collection(paid); !stated || word != collectionDeny {
+		t.Fatalf("%q is bought under (%q, stated=%v), want %q", paid, word, stated, collectionDeny)
+	}
+
+	body := []byte(`{"model":"` + paid + `","messages":[{"role":"user","content":"2+2?"}]}`)
+	c := visit(http.MethodPost, "/v1/chat/completions")
+	c.Fiber().Request().SetBody(body)
+	c.pipeToFamily(fam, "chat/completions", "openai", paid, body, false, "acme", nil, false, nil, time.Now())
+
+	if asked[engineModel] == 0 {
+		t.Errorf("our own compute was never asked: %v — a %q route has nowhere to fall that keeps its terms",
+			asked, collectionDeny)
+	}
+	if asked[free] != 0 {
+		t.Errorf("a borrowed free route answered a %q route: %v", collectionDeny, asked)
+	}
+}
+
+// And where we serve nothing ourselves, the refusal stands exactly as it did — the
+// walk is narrowed to our own routes, and there are none, so nothing is offered.
+func TestADenyRouteWithNoComputeOfOurOwnStillRefuses(t *testing.T) {
+	cooled.forget()
+	const free = "vendor/big:free"
+	const paid = "vendor/paid-a"
+
+	fake := &refuses{
+		status: http.StatusPaymentRequired,
+		body:   `{"error":{"message":"Insufficient credits. Add more using https://openrouter.ai/settings/credits","code":402}}`,
+		free:   free,
+	}
+	vendor := fake.serve(t)
+	defer vendor.Close()
+	fam := spareFamily(t, vendor.URL, free, paid)
+
+	restore(t, engineFam)
+	engineFam.urlKey = "TEST_ENGINE_URL_UNSET"
+	engineFam.providerFn = nil
+	if len(ownRoutes()) != 0 {
+		t.Fatalf("ownRoutes()=%v, want none — this case is about having no compute of our own", ownRoutes())
+	}
+
+	if _, _ = fake.pipe(t, fam, paid); len(fake.asked) != 1 {
+		t.Errorf("asked=%v — a %q route was offered a spare with no route of our own to fall to",
+			fake.asked, collectionDeny)
+	}
+}
