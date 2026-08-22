@@ -17,21 +17,41 @@ package util
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/ua-parser/uap-go/uaparser"
 )
 
-var Parser *uaparser.Parser
-
-func InitParser() {
-	var err error
-	Parser, err = uaparser.New()
+// parser is built on FIRST USE, not on somebody remembering to build it.
+//
+// It used to be a package variable filled by an InitParser() called from
+// bootstrap, which made every caller depend on an ordering it could not see: a
+// path that ran before bootstrap got there — or any test — dereferenced nil and
+// took a SIGSEGV. Adding a chat reads the user agent, so that is a 500 on
+// add-chat with a stack trace instead of a description. A test had already worked
+// around it by calling InitParser itself when it found the variable empty, which
+// is the ordering problem stated out loud.
+//
+// Built once, by whoever asks first. The regex set costs a moment to compile and
+// the answer never changes after that.
+var parser = sync.OnceValue(func() *uaparser.Parser {
+	p, err := uaparser.New()
 	if err != nil {
-		panic(err)
+		return nil
 	}
-}
+	return p
+})
 
+// GetDescFromUserAgent renders a user agent as "browser | os | device".
+//
+// An agent it cannot read is not worth a panic on the request that carried it:
+// the description is a nicety beside whatever the caller actually asked for, so
+// an unbuildable parser yields no description and nothing else changes.
 func GetDescFromUserAgent(userAgent string) string {
-	client := Parser.Parse(userAgent)
+	p := parser()
+	if p == nil {
+		return ""
+	}
+	client := p.Parse(userAgent)
 	return fmt.Sprintf("%s | %s | %s", client.UserAgent.ToString(), client.Os.ToString(), client.Device.ToString())
 }
