@@ -317,6 +317,28 @@ func freeRoutes() []spare {
 	return out
 }
 
+// ownRoutes are the free routes this deployment serves ITSELF — the subset a request
+// may fall onto without trading away the terms it was bought under.
+//
+// A borrowed free route is free BECAUSE the vendor keeps what it carried, which is
+// why a priced route bought under `deny` cannot be answered by one. There is no
+// vendor on our own compute, so there is nobody to keep anything and nothing to
+// trade: the customer's terms survive the substitution. It is the same pool, read
+// for the one property that makes a route safe to fall onto here, so a route added
+// there is considered here too.
+//
+// Empty when we serve nothing ourselves, and then a deny-terms refusal stands as it
+// always did.
+func ownRoutes() []spare {
+	var out []spare
+	for _, s := range freeRoutes() {
+		if s.fam == engineFam {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
 // inPool reports that a route is one the pool serves, whichever family carries it.
 // It is what prices a pool answer at nothing: every route in the pool is there
 // BECAUSE it costs nothing, so billing one would charge for the thing that makes it
@@ -1134,7 +1156,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	// answer — and bounded because every try is a round trip the caller waits
 	// through, so worst-case latency is a property of spareTries rather than of how
 	// many free routes a vendor happens to advertise.
-	pool := func(skip string) (*http.Response, string) {
+	pool := func(routes []spare, skip string) (*http.Response, string) {
 		// The pool holds routes that hold a CONVERSATION. An embeddings request has
 		// no free chat route to fall to, and offering it three anyway spends three
 		// round trips of the caller's time to be told three times that a chat model
@@ -1143,7 +1165,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 			return nil, ""
 		}
 		tried := 0
-		for _, alt := range freeRoutes() {
+		for _, alt := range routes {
 			if strings.EqualFold(alt.id, skip) || c.Context().Err() != nil {
 				continue
 			}
@@ -1225,19 +1247,23 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 			return nil, ""
 		}
 		// THE FLOOR. A priced route is bought under `deny` — the vendor keeps
-		// nothing of what it carried — and every route in the pool is free, which
-		// is free BECAUSE the vendor keeps it. So this substitution would move a
-		// customer who chose and paid for the first term onto the second, and the
-		// whole notice of it is a header and an id they would have to remember
-		// their own request to compare against.
+		// nothing of what it carried — and a BORROWED free route is free BECAUSE the
+		// vendor keeps it. Answering one with the other would move a customer who
+		// chose and paid for the first term onto the second, and the whole notice of
+		// it is a header and an id they would have to remember their own request to
+		// compare against. The terms are not ours to trade for an answer.
 		//
-		// The terms are not ours to trade for an answer. Refusing says the route is
-		// unavailable, which is true, and leaves the customer with the protection
-		// they bought.
+		// What the floor bounds is WHERE such a request may fall, not whether it may.
+		// Our own compute has no vendor to keep anything, so falling onto it trades
+		// nothing away and the protection the customer bought still holds. A
+		// deny-terms request therefore walks our own routes and no others — and where
+		// we serve nothing ourselves that list is empty, so the refusal stands
+		// exactly as it did before.
+		routes := freeRoutes()
 		if word, _ := fam.collection(sku); word == collectionDeny {
-			return nil, ""
+			routes = ownRoutes()
 		}
-		return pool(sku)
+		return pool(routes, sku)
 	}
 
 	// A free router is served by CHOOSING. The caller named the family's free id,
@@ -1251,7 +1277,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	// would say the free id, the row would say the route, and nothing would join them.
 	var resp *http.Response
 	if fam.frontDoor(sku) {
-		r, alt := pool("")
+		r, alt := pool(freeRoutes(), "")
 		if r == nil {
 			return refused(&apiError{status: http.StatusServiceUnavailable,
 				msg: fmt.Sprintf("model %q: no free route answered", model)})
