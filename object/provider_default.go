@@ -72,16 +72,6 @@ func GetModelProviderByProviderKey(providerKey string, lang string) (model.Model
 	return modelProvider, nil
 }
 
-func getFilteredProviders(providers []*Provider, needStorage bool) []*Provider {
-	res := []*Provider{}
-	for _, provider := range providers {
-		if (needStorage && provider.Category == "Storage") || (!needStorage && provider.Category != "Storage") {
-			res = append(res, provider)
-		}
-	}
-	return res
-}
-
 func GetDefaultStorageProvider() (*Provider, error) {
 	provider := Provider{Owner: "admin", Category: "Storage"}
 	existed, err := getOne(adapter.db, "provider", &provider, pk2(provider.Owner, provider.Name))
