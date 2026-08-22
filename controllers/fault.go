@@ -190,13 +190,22 @@ func faultOfStatus(status int, err error) fault {
 		return faultProvider
 
 	case http.StatusUnauthorized: // 401
-		// OUR credential for this vendor is bad, revoked, or wrong-scoped.
-		// Cascading would paper over it: traffic silently drains onto whichever
-		// vendor still works, the dead key is never noticed, and the first
-		// person to find out is whoever reads the bill. A revoked key and a
-		// stolen key look identical from here, which is the other reason this
-		// must surface rather than route around.
-		return faultRequest
+		// OUR credential for this vendor is dead, revoked or wrong-scoped — which
+		// is a fact about the VENDOR, exactly as an empty account is, so it fails
+		// over like one. The caller's own credential was checked at our edge long
+		// before any vendor was dialled; nothing about their request is wrong.
+		//
+		// This used to stop the cascade, on the reasoning that failing over would
+		// paper over a dead key and the first to notice would be whoever reads the
+		// bill. The intent was right and the mechanism was the wrong one: SURFACING
+		// and SERVING are separate jobs, and the surfacing job already has its own
+		// machinery — announce() counts cloud_supply_refused{reason="credential"}
+		// and logs at ERROR, on the very next line, whichever way this classifies.
+		// Measured, the coupling cost what it was meant to prevent: DO_AI_API_KEY
+		// died and 93 routes answered 401 to CUSTOMERS for days, which is louder
+		// than any alert and aimed at the wrong people, while the metric that was
+		// supposed to raise a hand had been sitting there the whole time.
+		return faultProvider
 
 	case http.StatusForbidden: // 403
 		// 403 splits, and the split is not cosmetic.
@@ -212,7 +221,10 @@ func faultOfStatus(status int, err error) fault {
 		if lacksModel(strings.ToLower(err.Error())) {
 			return faultProvider
 		}
-		return faultRequest
+		// "you may not use this key" — our misconfiguration, and a fact about this
+		// vendor rather than about the request, so it moves on for the same reason
+		// 401 does and is counted by the same announce().
+		return faultProvider
 
 	case http.StatusBadRequest, // 400 — malformed; every vendor says the same
 		http.StatusNotFound,              // 404 — the route names a model this vendor has not got
@@ -359,10 +371,31 @@ func cooldownFor(err error) time.Duration {
 	if lacksModel(msg) {
 		return 0 // healthy vendor, absent item
 	}
-	if broke(err, msg) {
+	// A DEAD CREDENTIAL RESTS AS LONG AS AN EMPTY ACCOUNT, because it is the same
+	// operational class: broke() is "only a human with a credit card clears it",
+	// and this is "only a human with a new key clears it". Neither clears itself in
+	// seconds, so resting it briefly would put the whole fleet back on a vendor
+	// that cannot answer, every few seconds, for as long as the key stays dead.
+	if credentialRefusal(err) || broke(err, msg) {
 		return coolBroke
 	}
 	return coolBusy
+}
+
+// credentialRefusal reports the vendor refusing OUR key rather than the request.
+// Read from the STATUS only, never the text, for the reason broke() gives: an
+// upstream quotes the request back, so a caller asking about being unauthorized
+// must not be able to rest a healthy vendor for five minutes by asking it.
+//
+// A 403 that means "this account does not carry that MODEL" is excluded — that
+// vendor is perfectly well and stocks everything else, which is why lacksModel is
+// consulted before this in both callers.
+func credentialRefusal(err error) bool {
+	switch upstreamHTTPStatus(err) {
+	case http.StatusUnauthorized, http.StatusForbidden:
+		return !lacksModel(strings.ToLower(err.Error()))
+	}
+	return false
 }
 
 // broke reports the refusal that only a human with a credit card clears, as
@@ -550,6 +583,9 @@ func candidates(org string, route *modelRoute, prior []attempt) []candidate {
 	for _, fb := range route.fallbacks {
 		add(fb.providerName, fb.upstreamModel)
 	}
+	for _, c := range openrouterTail(route) {
+		add(c.provider, c.upstream)
+	}
 
 	queue := append(ready, resting...)
 
@@ -571,6 +607,76 @@ func candidates(org string, route *modelRoute, prior []attempt) []candidate {
 		queue = queue[:maxProviders]
 	}
 	return queue
+}
+
+// openrouterTail is the alternate EVERY route ends in, derived rather than typed
+// out. The route table declares 121 routes and, before this, not one `fallbacks:`
+// entry — so a vendor that could not serve simply ended the request, which is what
+// a dead DO_AI_API_KEY turned into 93 models refusing customers.
+//
+// Two rungs, and the second is the one that always exists:
+//
+//   - THE SAME MODEL ON OPENROUTER, and only where OpenRouter's own discovered
+//     catalog confirms the id. The id is derived from the upstream one — do-ai
+//     spells `openai-gpt-4o` where OpenRouter spells `openai/gpt-4o` — but a
+//     derivation is a guess, and the vendors disagree often enough (`claude-4.5-sonnet`
+//     against `claude-3.5-sonnet`) that guessing would add a hop that 404s. lookup()
+//     is the catalog as last discovered, so a wrong guess contributes nothing and a
+//     right one needs no table to be maintained.
+//   - THE FREE POOL, which needs no mapping at all: freeRoutes() is the platform's
+//     one curated list of routes that cost nothing and answer, best first, and its
+//     ids are OpenRouter's own. That is the floor under every model.
+//
+// It is skipped for a route already served BY openrouter — the family's own
+// `spared` already offers the pool there, and a second offer would be two answers
+// to one question.
+//
+// A PREMIUM route gets the first rung and NOT the free pool. Substituting a free
+// model for one somebody chose and paid for trades terms that are not ours to
+// trade, and the caller would learn of it from a header they would have to
+// remember their own request to compare against — the same argument `spared`
+// already makes when it refuses a `collectionDeny` route. Same model elsewhere is
+// not that trade; a smaller free one is.
+func openrouterTail(route *modelRoute) []candidate {
+	if route == nil || route.providerName == freeFamily().name || !freeFamily().enabled() {
+		return nil
+	}
+	var out []candidate
+	if id, ok := openrouterEquivalent(route.upstreamModel); ok {
+		out = append(out, candidate{freeFamily().name, id})
+	}
+	if route.premium {
+		return out
+	}
+	for _, sp := range freeRoutes() {
+		if sp.fam == freeFamily() {
+			out = append(out, candidate{freeFamily().name, sp.id})
+			break // ONE floor: the queue is capped anyway, and the pool's own walk is spared's job
+		}
+	}
+	return out
+}
+
+// openrouterEquivalent maps an upstream id onto OpenRouter's spelling of the same
+// model, and answers false unless the discovered catalog actually carries it.
+// `openai-gpt-4o` -> `openai/gpt-4o`; an id that is already vendor-qualified is
+// tried as-is first, which is what makes this work for a route whose upstream
+// happens to be spelled OpenRouter's way already.
+func openrouterEquivalent(upstream string) (string, bool) {
+	u := strings.ToLower(strings.TrimSpace(upstream))
+	if u == "" {
+		return "", false
+	}
+	tries := []string{u}
+	if i := strings.Index(u, "-"); i > 0 && !strings.Contains(u, "/") {
+		tries = append(tries, u[:i]+"/"+u[i+1:])
+	}
+	for _, t := range tries {
+		if _, ok := freeFamily().lookup(t); ok {
+			return t, true
+		}
+	}
+	return "", false
 }
 
 // codeExhausted is the machine name of "we could not serve this". It is OUR
