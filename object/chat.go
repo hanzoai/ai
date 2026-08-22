@@ -59,6 +59,15 @@ func GetGlobalChats() ([]*Chat, error) {
 }
 
 func GetChats(owner string, storeName string, user string) ([]*Chat, error) {
+	// The adapter is nil before the DB is initialised — during boot, in the
+	// standalone runtime with no driverName, and in every unit test — so reading
+	// through it turns a missing dependency into a SIGSEGV at whatever call site
+	// asked first. This one is reached from anonymous sign-in, so the crash landed
+	// on GET /v1/ai/account. The caller returns this error rather than carrying on,
+	// which stops the sequence here instead of at whichever read came next.
+	if adapter == nil || adapter.db == nil {
+		return nil, fmt.Errorf("chat store is not initialised")
+	}
 	chats := []*Chat{}
 	err := findAll(adapter.db, "chat", &chats, dbx.HashExp{"owner": owner, "user": user, "store": storeName}, "updated_time DESC")
 	if err != nil {
