@@ -130,6 +130,68 @@ func TestEndpointStatesTheFixedAddresses(t *testing.T) {
 	}
 }
 
+// TestEndpointBuildsFromTheRow covers the OTHER half of Endpoint: the providers
+// whose address IS taken from the row. The fixed-address test above pins the
+// seven that ignore ProviderUrl; these are the ones that honour it, and they were
+// the untested half — 44.8% of the function, and the only half where a malformed
+// row can decide where a credential is sent.
+//
+// The shapes that matter are all normalisation. A row is typed by a human and
+// arrives with or without a scheme suffix, with or without a trailing slash, and
+// the same provider must resolve to one address either way — otherwise the same
+// account reaches two hosts depending on how someone punctuated a field.
+func TestEndpointBuildsFromTheRow(t *testing.T) {
+	cases := []struct {
+		name     string
+		provider object.Provider
+		path     string
+		want     string
+	}{
+		// OpenAI with no row address falls back to the public API. This is the
+		// only provider with a default, because it is the only one whose public
+		// address is also the overwhelmingly common one.
+		{"openai default", object.Provider{Type: "OpenAI"}, "chat/completions",
+			"https://api.openai.com/v1/chat/completions"},
+		// /v1 is appended when absent and NOT doubled when present — a row
+		// holding either spelling names one address.
+		{"openai adds v1", object.Provider{Type: "OpenAI", ProviderUrl: "https://proxy.example"}, "embeddings",
+			"https://proxy.example/v1/embeddings"},
+		{"openai keeps one v1", object.Provider{Type: "OpenAI", ProviderUrl: "https://proxy.example/v1"}, "embeddings",
+			"https://proxy.example/v1/embeddings"},
+		{"openai trims the slash", object.Provider{Type: "OpenAI", ProviderUrl: "https://proxy.example/v1/"}, "embeddings",
+			"https://proxy.example/v1/embeddings"},
+
+		// Azure names a DEPLOYMENT, not a model, and carries the api-version in
+		// the query. SubType is the deployment name.
+		{"azure default version", object.Provider{Type: "Azure", ProviderUrl: "https://x.openai.azure.com", SubType: "gpt4o"}, "chat/completions",
+			"https://x.openai.azure.com/openai/deployments/gpt4o/chat/completions?api-version=2024-02-01"},
+		{"azure honours ApiVersion", object.Provider{Type: "Azure", ProviderUrl: "https://x.openai.azure.com/", SubType: "gpt4o", ApiVersion: "2025-01-01"}, "chat/completions",
+			"https://x.openai.azure.com/openai/deployments/gpt4o/chat/completions?api-version=2025-01-01"},
+
+		// Local/Ollama/DigitalOcean resolve only WITH a row address — the
+		// refusal when it is absent is pinned above.
+		{"local adds v1", object.Provider{Type: "Local", ProviderUrl: "http://127.0.0.1:11434"}, "chat/completions",
+			"http://127.0.0.1:11434/v1/chat/completions"},
+		{"ollama keeps one v1", object.Provider{Type: "Ollama", ProviderUrl: "http://127.0.0.1:11434/v1"}, "embeddings",
+			"http://127.0.0.1:11434/v1/embeddings"},
+		{"digitalocean trims the slash", object.Provider{Type: "DigitalOcean", ProviderUrl: "https://inference.do.example/v1/"}, "embeddings",
+			"https://inference.do.example/v1/embeddings"},
+
+		// Anything else OpenAI-compatible is taken verbatim from the row — no
+		// /v1 is assumed, because an unknown provider has not told us it uses one.
+		{"unknown type verbatim", object.Provider{Type: "SomethingNew", ProviderUrl: "https://vendor.example/api/"}, "rerank",
+			"https://vendor.example/api/rerank"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := Endpoint(&tc.provider, tc.path); got != tc.want {
+				t.Fatalf("Endpoint = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 // ── the rule ──────────────────────────────────────────────────────────────────
 
 // A provider credential is applied by the thing that makes the call and is never
