@@ -117,19 +117,3 @@ func RefineMessageImage(message *object.Message, lang string) error {
 	message.FileName = message.Name + "." + ext
 	return nil
 }
-
-func storeImage(message *object.Message, origin string, lang string) error {
-	err := RefineMessageImage(message, lang)
-	if err != nil {
-		return err
-	}
-	err = object.RefineMessageFiles(message, origin, lang)
-	if err != nil {
-		return err
-	}
-	_, err = object.UpdateMessage(message.GetId(), message, false)
-	if err != nil {
-		return err
-	}
-	return nil
-}

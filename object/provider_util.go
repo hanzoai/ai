@@ -144,20 +144,6 @@ func SetDefaultVodClient(lang string) error {
 	return err
 }
 
-func getActiveCloudProviders(owner string) ([]*Provider, error) {
-	providers, err := GetProviders("admin")
-	if err != nil {
-		return nil, err
-	}
-	res := []*Provider{}
-	for _, provider := range providers {
-		if provider.ClientId != "" && provider.ClientSecret != "" && (provider.Category == "Public Cloud" || provider.Category == "Private Cloud") && provider.State == "Active" {
-			res = append(res, provider)
-		}
-	}
-	return res, nil
-}
-
 func GetActiveBlockchainProvider(owner string) (*Provider, error) {
 	providers, err := GetProviders(owner)
 	if err != nil {

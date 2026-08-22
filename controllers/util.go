@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"regexp"
 	"strings"
 
 	"github.com/hanzoai/ai/conf"
@@ -417,11 +416,6 @@ func getOriginFromHost(host string) string {
 	}
 
 	return fmt.Sprintf("%s%s", protocol, host)
-}
-
-func removeHtmlTags(s string) string {
-	re := regexp.MustCompile(`<[^>]+>`)
-	return re.ReplaceAllString(s, "")
 }
 
 func getContentHash(content string) string {
