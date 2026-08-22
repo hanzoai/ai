@@ -164,3 +164,24 @@ func TestPrintChatUsers(t *testing.T) {
 	}
 	fmt.Println(concatenatedUsers)
 }
+
+// A store that was never initialised answers an error, and does not crash.
+//
+// The adapter is nil before the DB is up — during boot, in the standalone runtime
+// with no driverName, and in every unit test — and this read is on the anonymous
+// sign-in path, so an unguarded one landed as a panic on GET /v1/ai/account and a
+// 500 for a caller who had asked for nothing unusual. The caller returns this
+// error rather than carrying on, so the sequence stops here.
+func TestChatsWithoutAStoreAnswerAnErrorRatherThanCrash(t *testing.T) {
+	saved := adapter
+	adapter = nil
+	t.Cleanup(func() { adapter = saved })
+
+	chats, err := GetChats("admin", "", "someone")
+	if err == nil {
+		t.Fatal("GetChats answered no error with no store behind it")
+	}
+	if chats != nil {
+		t.Errorf("chats=%v, want none", chats)
+	}
+}
