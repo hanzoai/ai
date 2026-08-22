@@ -1295,3 +1295,99 @@ func TestADenyRouteWithNoComputeOfOurOwnStillRefuses(t *testing.T) {
 			fake.asked, collectionDeny)
 	}
 }
+
+// The route that just refused is not offered the same request again.
+//
+// The pool holds the free routes, and a free route that fell over is IN it — so
+// without the skip the walk would open by asking the one vendor already known to
+// be unable to answer, spending a whole round trip of the caller's time to be
+// told a second time.
+func TestTheRouteThatRefusedIsNotAskedAgain(t *testing.T) {
+	cooled.forget()
+	const free = "vendor/big:free"
+
+	asked := map[string]int{}
+	vendor := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var in struct {
+			Model string `json:"model"`
+		}
+		b := make([]byte, r.ContentLength)
+		_, _ = r.Body.Read(b)
+		_ = json.Unmarshal(b, &in)
+		asked[in.Model]++
+		if in.Model == engineModel {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id":"1","model":"` + engineModel + `","choices":[{"index":0,"message":{"role":"assistant","content":"ok"}}]}`))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"error":{"message":"internal server error"}}`))
+	}))
+	defer vendor.Close()
+
+	fam := spareFamily(t, vendor.URL, free)
+	restore(t, engineFam)
+	t.Setenv("TEST_ENGINE_URL", vendor.URL)
+	engineFam.urlKey = "TEST_ENGINE_URL"
+	engineFam.providerFn = nil
+
+	body := []byte(`{"model":"` + free + `","messages":[{"role":"user","content":"2+2?"}]}`)
+	c := visit(http.MethodPost, "/v1/chat/completions")
+	c.Fiber().Request().SetBody(body)
+	c.pipeToFamily(fam, "chat/completions", "openai", free, body, false, "acme", nil, false, nil, time.Now())
+
+	if asked[free] != 1 {
+		t.Errorf("the refusing route was asked %d times, want 1 — the walk offered it its own request back", asked[free])
+	}
+	if asked[engineModel] == 0 {
+		t.Errorf("the walk stopped at the route that had already refused: %v", asked)
+	}
+}
+
+// A route the transport cannot reach at all is stepped over, not the end of the
+// walk. A pool whose borrowed vendor is unreachable still reaches our own.
+func TestAnUnreachableRouteIsSteppedOver(t *testing.T) {
+	cooled.forget()
+
+	askedEngine := 0
+	engine := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		askedEngine++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"1","model":"` + engineModel + `","choices":[{"index":0,"message":{"role":"assistant","content":"ok"}}]}`))
+	}))
+	defer engine.Close()
+
+	// The vendor being asked answers, and refuses with its own failure.
+	refuser := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte(`{"error":{"message":"bad gateway"}}`))
+	}))
+	defer refuser.Close()
+
+	// The borrowed pool points at a port nothing is listening on, so every borrowed
+	// route fails in the transport rather than with a status.
+	free := freeFamily()
+	restore(t, free)
+	free.spares = []string{"v/a:free", "v/b:free"}
+	free.loaded, free.fetchedAt = true, time.Now()
+	free.providerFn = func() *object.Provider {
+		return &object.Provider{Owner: "admin", Name: "openrouter", Type: "OpenRouter", ProviderUrl: "http://127.0.0.1:1"}
+	}
+
+	restore(t, engineFam)
+	t.Setenv("TEST_ENGINE_URL", engine.URL)
+	engineFam.urlKey = "TEST_ENGINE_URL"
+	engineFam.providerFn = nil
+
+	fam := otherFamily(t, refuser.URL)
+	body := []byte(`{"model":"enso","messages":[{"role":"user","content":"2+2?"}]}`)
+	c := visit(http.MethodPost, "/v1/chat/completions")
+	c.Fiber().Request().SetBody(body)
+	c.pipeToFamily(fam, "chat/completions", "openai", "enso", body, false, "acme", nil, false, nil, time.Now())
+
+	if askedEngine == 0 {
+		t.Error("an unreachable borrowed route ended the walk; our own route is the one that cannot be withdrawn")
+	}
+}
