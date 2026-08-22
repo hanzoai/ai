@@ -16,6 +16,7 @@ package routers
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -127,5 +128,86 @@ func TestNoReaderAndNoEndpointSaysSo(t *testing.T) {
 	object.SetTierReader(nil)
 	if _, err := (&TierCache{}).commerceTierLookup("acme"); err == nil {
 		t.Fatal("expected an error when nothing can answer, got nil")
+	}
+}
+
+// The cache exists when a tier can be READ, and the two routes to one are not
+// the same route. A host that installs a reader and configures no endpoint can
+// answer every question the cache would ask, so building the cache only when an
+// endpoint is set would leave that host silently on the lowest tier — the same
+// outcome as having no reader at all, arrived at from the opposite direction.
+func TestTheCacheExistsWheneverATierCanBeRead(t *testing.T) {
+	reader := func(context.Context, string, string) (string, error) { return "pro", nil }
+
+	for _, c := range []struct {
+		what     string
+		endpoint string
+		reader   object.TierReaderFunc
+		want     bool
+	}{
+		{"a reader and no endpoint (co-resident host)", "", reader, true},
+		{"an endpoint and no reader (standalone ai)", "http://commerce.invalid", nil, true},
+		{"both", "http://commerce.invalid", reader, true},
+		{"neither — nothing can answer", "", nil, false},
+	} {
+		t.Setenv("commerceEndpoint", c.endpoint)
+		object.SetTierReader(c.reader)
+		tierCache = nil
+
+		InitTierCache()
+
+		if got := tierCache != nil; got != c.want {
+			t.Errorf("%s: cache built = %v, want %v", c.what, got, c.want)
+		}
+		tierCache = nil
+		object.SetTierReader(nil)
+	}
+}
+
+// Every way the lookup can fail must RETURN an error, because the caller's only
+// signal is that error: refreshAsync logs it and caches the lowest tier. A path
+// that fails quietly caches the same free tier with nothing said, which is the
+// shape a paying customer being rate-limited as free had in the first place.
+func TestEveryFailureIsReportedRatherThanCachedQuietly(t *testing.T) {
+	// A server that is already closed, to get a transport failure rather than a
+	// status: nothing is listening, so Do returns before any HTTP happens.
+	dead := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	deadURL, deadClient := dead.URL, dead.Client()
+	dead.Close()
+
+	prose := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, "not found")
+	}))
+	defer prose.Close()
+
+	refused := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer refused.Close()
+
+	for _, c := range []struct {
+		what   string
+		reader object.TierReaderFunc
+		tc     *TierCache
+	}{
+		{
+			"the co-resident reader itself failed",
+			func(context.Context, string, string) (string, error) { return "", errors.New("commerce is down") },
+			&TierCache{},
+		},
+		{"nothing is listening", nil, &TierCache{endpoint: deadURL, client: deadClient}},
+		{"the body is prose, not json", nil, &TierCache{endpoint: prose.URL, client: prose.Client()}},
+		{"the edge refused", nil, &TierCache{endpoint: refused.URL, client: refused.Client()}},
+	} {
+		object.SetTierReader(c.reader)
+		tier, err := c.tc.commerceTierLookup("acme")
+		object.SetTierReader(nil)
+
+		if err == nil {
+			t.Errorf("%s: returned tier %q and no error — the failure would cache silently", c.what, tier)
+		}
+		if tier != TierZenFree {
+			t.Errorf("%s: tier = %q, want %q on a failed read", c.what, tier, TierZenFree)
+		}
 	}
 }
