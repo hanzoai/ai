@@ -155,9 +155,20 @@ func TestBadRequestDoesNotFailOver(t *testing.T) {
 	}
 }
 
-// A dead credential must break loudly rather than drain traffic onto whichever
-// vendor still works while nobody notices the bill.
-func TestUnauthorizedDoesNotFailOver(t *testing.T) {
+// A DEAD CREDENTIAL FAILS OVER, AND IS STILL LOUD. Those are two jobs, and this
+// used to do the second by refusing to do the first.
+//
+// The refusal is a fact about the VENDOR — our key will not open it — and the
+// caller's own credential was checked at our edge long before any vendor was
+// dialled, so nothing about their request is wrong. announce() counts
+// cloud_supply_refused{reason="credential"} and logs at ERROR whichever way the
+// request goes, so surfacing costs the failover nothing.
+//
+// Measured, the old coupling cost exactly what it was meant to prevent:
+// DO_AI_API_KEY died and 93 routes answered 401 to CUSTOMERS for days — louder
+// than any alert and aimed at the wrong people — while the metric that was meant
+// to raise a hand had been sitting there the whole time.
+func TestUnauthorizedFailsOverAndIsStillLoud(t *testing.T) {
 	cooled.forget()
 	t.Cleanup(cooled.forget)
 	quick(t)
@@ -166,15 +177,23 @@ func TestUnauthorizedDoesNotFailOver(t *testing.T) {
 	f.install(t)
 
 	var w buffer
-	_, _, _, err := newAsk(route("do-ai", "anthropic"), &w, nil).serve()
-	if err == nil {
-		t.Fatal("a 401 must surface")
+	_, served, tried, err := newAsk(route("do-ai", "anthropic"), &w, nil).serve()
+	if err != nil {
+		t.Fatalf("a dead key of ours must not become the customer's error: %v", err)
 	}
-	if len(f.asked) != 1 {
-		t.Errorf("asked %v — a bad key of ours must not be hidden behind somebody else's", f.asked)
+	if served.name != "anthropic" {
+		t.Errorf("served by %q, want anthropic — the request must reach a vendor that can answer", served.name)
 	}
-	if cooled.cooling(credential{"", "do-ai"}) {
-		t.Error("a 401 is our fault, not the vendor's — demoting it would blame the wrong party")
+	if len(f.asked) != 2 {
+		t.Errorf("asked %v — the dead vendor is tried once, then the request moves", f.asked)
+	}
+	if len(tried) != 1 || tried[0].status != 401 {
+		t.Errorf("the 401 must be RECORDED as an attempt, not swallowed: %+v", tried)
+	}
+	// Rested like an empty account: both need a human, and neither clears itself
+	// in seconds, so the fleet must not return to it every few seconds.
+	if !cooled.cooling(credential{"", "do-ai"}) {
+		t.Error("a vendor whose key is dead must be demoted, or every request pays its 401 first")
 	}
 }
 
@@ -264,12 +283,20 @@ func TestARefusalRestsOneAccount(t *testing.T) {
 		t.Error("another vendor inherited it")
 	}
 
-	// A refusal that is OUR fault says nothing about the vendor's account.
-	if d := cooled.rest("org-a", "do-ai", apiErr(401, "invalid api key")); d != 0 {
-		t.Errorf("a 401 rested the vendor for %v — that is our dead key, not their problem", d)
+	// A DEAD KEY RESTS AS LONG AS AN EMPTY ACCOUNT. It is the same operational
+	// class — one needs a human with a credit card, the other a human with a new
+	// key — and neither clears itself in seconds, so a short rest would put every
+	// request back on a vendor that cannot answer.
+	if d := cooled.rest("org-a", "do-ai", apiErr(401, "invalid api key")); d != coolBroke {
+		t.Errorf("a 401 rested the vendor for %v, want %v", d, coolBroke)
 	}
-	if cooled.cooling(credential{"org-a", "do-ai"}) {
-		t.Error("a 401 must not demote the vendor it was sent to")
+	if !cooled.cooling(credential{"org-a", "do-ai"}) {
+		t.Error("the vendor whose key is dead must be resting")
+	}
+	// And it is still ONE account's problem: another tenant's credential for the
+	// same vendor is untouched.
+	if cooled.cooling(credential{"org-b", "do-ai"}) {
+		t.Error("another tenant inherited our dead key")
 	}
 }
 

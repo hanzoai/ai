@@ -264,7 +264,7 @@ func announce(model string, a attempt) {
 	switch {
 	case a.status == http.StatusUnauthorized:
 		supplyRefused.WithLabelValues(a.provider, reasonCredential).Inc()
-		log.Error("provider=%s rejected our credential (401) serving model=%s — this key is dead or revoked, and the request was NOT sent elsewhere: %v",
+		log.Error("provider=%s rejected our credential (401) serving model=%s — this key is dead or revoked; the request FAILED OVER, so customers are being served and only this vendor is idle. Rotate it: %v",
 			a.provider, model, a.err)
 	case a.status == http.StatusPaymentRequired:
 		supplyRefused.WithLabelValues(a.provider, reasonFunding).Inc()
