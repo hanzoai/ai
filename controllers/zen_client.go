@@ -317,6 +317,48 @@ func freeRoutes() []spare {
 	return out
 }
 
+// fallback names where a request its vendor refused may be offered next, and an
+// empty list means the refusal stands as itself.
+//
+// It is the WHOLE of the decision and none of the walking. Three facts settle it
+// and not one of them needs a socket, a clock or a request: who the refusal is
+// about, whether the vendor can serve at all, and the terms the route was bought
+// under. Kept apart from the walk so the policy can be read — and asserted —
+// without standing a vendor up to refuse.
+func fallback(fam *modelFamily, sku string, err error, body []byte) []spare {
+	// Our own spend gate, relayed by a service that fronts for us, wears the same
+	// 402 and means the opposite thing: the CUSTOMER owes money. That has to reach
+	// them, and answering it with a free model would tell somebody their payment
+	// problem had fixed itself.
+	if billingNotice(body) {
+		return nil
+	}
+	// Only a vendor that cannot serve AT ALL moves a request — its account with us
+	// spent, or its own failure. A malformed body (400), a model it has not got
+	// (404), refused content (422) and a rate limit (429) all stay where they are,
+	// so none of them can quietly hand the caller a smaller model in place of an
+	// error.
+	if err == nil || !down(err, strings.ToLower(err.Error())) {
+		return nil
+	}
+	// THE FLOOR. A priced route is bought under `deny` — the vendor keeps nothing
+	// of what it carried — and a BORROWED free route is free BECAUSE the vendor
+	// keeps it. Answering one with the other would move a customer who chose and
+	// paid for the first term onto the second, and the whole notice of it is a
+	// header and an id they would have to remember their own request to compare
+	// against. The terms are not ours to trade for an answer.
+	//
+	// What the floor bounds is WHERE such a request may fall, not whether it may.
+	// Our own compute has no vendor to keep anything, so falling onto it trades
+	// nothing away and the protection the customer bought still holds. Where this
+	// deployment serves nothing itself that list is empty, and the refusal stands
+	// exactly as it did before.
+	if word, _ := fam.collection(sku); word == collectionDeny {
+		return ownRoutes()
+	}
+	return freeRoutes()
+}
+
 // ownRoutes are the free routes this deployment serves ITSELF — the subset a request
 // may fall onto without trading away the terms it was bought under.
 //
@@ -1236,32 +1278,9 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	// through, so worst-case latency stays a property of spareTries rather than of
 	// how many free routes a vendor happens to advertise.
 	spared := func(err error, body []byte) (*http.Response, string) {
-		// Our own spend gate, relayed by a service that fronts for us, wears the
-		// same 402 and means the opposite thing: the CUSTOMER owes money. That has
-		// to reach them. Answering it with a free model would tell somebody their
-		// payment problem had fixed itself.
-		if billingNotice(body) {
+		routes := fallback(fam, sku, err, body)
+		if len(routes) == 0 || c.Context().Err() != nil {
 			return nil, ""
-		}
-		if !down(err, strings.ToLower(err.Error())) || c.Context().Err() != nil {
-			return nil, ""
-		}
-		// THE FLOOR. A priced route is bought under `deny` — the vendor keeps
-		// nothing of what it carried — and a BORROWED free route is free BECAUSE the
-		// vendor keeps it. Answering one with the other would move a customer who
-		// chose and paid for the first term onto the second, and the whole notice of
-		// it is a header and an id they would have to remember their own request to
-		// compare against. The terms are not ours to trade for an answer.
-		//
-		// What the floor bounds is WHERE such a request may fall, not whether it may.
-		// Our own compute has no vendor to keep anything, so falling onto it trades
-		// nothing away and the protection the customer bought still holds. A
-		// deny-terms request therefore walks our own routes and no others — and where
-		// we serve nothing ourselves that list is empty, so the refusal stands
-		// exactly as it did before.
-		routes := freeRoutes()
-		if word, _ := fam.collection(sku); word == collectionDeny {
-			routes = ownRoutes()
 		}
 		return pool(routes, sku)
 	}
