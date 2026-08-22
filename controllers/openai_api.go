@@ -922,11 +922,24 @@ func (r *usageRecord) answered() bool { return r.Status == "success" }
 // with it — and the partial answer is whatever reached the writer before the stream
 // broke. Neither number is invented: one was measured on the way out, the other is the
 // text the vendor actually sent.
-func spent(res *model.ModelResult, name string, prompt int, partial string) (int, int) {
+func spent(res *model.ModelResult, name string, prompt int, partial string, err error) (int, int) {
 	if res != nil && res.TotalTokenCount > 0 {
 		return res.PromptTokenCount, res.ResponseTokenCount
 	}
 	completion, _ := model.GetTokenSize(name, partial)
+	if completion == 0 && !ran(err) {
+		// Nothing came back and nobody ran it: the vendor reported no meter of its
+		// own, no text reached the caller, and the refusal is one that arrives at
+		// the door. The prompt was measured on the way out — routeForPrompt sizes
+		// the route with it — but measuring a prompt is not a vendor processing it,
+		// and there is no invoice behind this to pass on.
+		//
+		// It is the same reasoning recordUsage states for a call that never left,
+		// applied to the quantity rather than the row. Left unsaid, the charge
+		// scales with the prompt, so the larger the request the more it costs to be
+		// turned away.
+		return 0, 0
+	}
 	return prompt, completion
 }
 
@@ -2005,7 +2018,7 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 					RequestID: requestId,
 				}
 				errRecord.PromptTokens, errRecord.CompletionTokens =
-					spent(modelResult, request.Model, promptTokens, writer.MessageString())
+					spent(modelResult, request.Model, promptTokens, writer.MessageString(), err)
 				errRecord.TotalTokens = errRecord.PromptTokens + errRecord.CompletionTokens
 				errRecord.bind(c.Context(), authUser)
 				errRecord.BYO, errRecord.Account = providerBYO(provider, authUser)
