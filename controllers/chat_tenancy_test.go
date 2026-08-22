@@ -41,9 +41,6 @@ func chatPlane(t *testing.T, dsn string) func(name string) *object.Chat {
 	// AddChat stamps a user-agent descriptor, which boot's InitParser makes possible.
 	// Stand the plane up the way boot does, or the real handler nil-derefs on a path
 	// production never takes and the test measures the wrong thing.
-	if util.Parser == nil {
-		util.InitParser()
-	}
 	return func(name string) *object.Chat {
 		got, err := object.GetChat(util.GetIdFromOwnerAndName(chatOwner, name))
 		if err != nil {
