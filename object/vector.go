@@ -79,19 +79,6 @@ func getVector(owner string, name string) (*Vector, error) {
 	}
 }
 
-func getVectorByIndex(owner string, store string, file string, index int) (*Vector, error) {
-	vector := Vector{Owner: owner, Store: store, File: file, Index: index}
-	existed, err := getOne(adapter.db, "vector", &vector, pk2(vector.Owner, vector.Name))
-	if err != nil {
-		return &vector, err
-	}
-	if existed {
-		return &vector, nil
-	} else {
-		return nil, nil
-	}
-}
-
 func GetVector(id string) (*Vector, error) {
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
 	if err != nil {
