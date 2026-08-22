@@ -243,6 +243,54 @@ func faultOfStatus(status int, err error) fault {
 	return faultRequest
 }
 
+// ran reports whether a vendor processed the request before it failed.
+//
+// This is the money's question, and it is NOT faultOf's. faultOf asks where the
+// request goes next; this asks whether anyone did work we were invoiced for, and
+// the two come apart in both directions: a 401 moves the request along (provider
+// fault) having run nothing, while a stream that breaks with bytes already on the
+// wire stops the cascade (request fault) having run plenty.
+//
+// The statuses below are the ones a vendor answers at the door — it read the
+// envelope, not the letter. A prompt longer than the context, a key it will not
+// honour, an account with no money, a model it does not carry: in each the vendor
+// spent nothing on us and sends no invoice, so there is none to pass on. An error
+// carrying no status at all never got a response — the request either never left
+// this process or the transport failed before any vendor answered.
+//
+// Everything else counts as run, which keeps a 5xx and a timeout billed as they
+// are today: those can consume the prompt before failing, and the vendor's meter
+// is the one that decides.
+func ran(err error) bool {
+	if err == nil {
+		return true
+	}
+	// Bytes are already on the wire, so something at the other end produced them.
+	if errors.Is(err, errPartiallyWritten) {
+		return true
+	}
+	if status := upstreamHTTPStatus(err); status != 0 {
+		return !refusedAtDoor(status)
+	}
+	return false
+}
+
+// refusedAtDoor reports a status a vendor returns without running the request.
+func refusedAtDoor(status int) bool {
+	switch status {
+	case http.StatusBadRequest, // 400 — malformed, never parsed
+		http.StatusUnauthorized,          // 401 — our key is not honoured
+		http.StatusPaymentRequired,       // 402 — the account has no money
+		http.StatusForbidden,             // 403 — key or catalogue, neither ran
+		http.StatusNotFound,              // 404 — this vendor has not got the model
+		http.StatusRequestEntityTooLarge, // 413 — longer than the context
+		http.StatusUnprocessableEntity,   // 422 — content refused
+		http.StatusTooManyRequests:       // 429 — turned away before a slot
+		return true
+	}
+	return false
+}
+
 // moneyText, busyText and reachText are the refusals that arrive with no HTTP
 // status to read — a vendor whose client stringifies its errors, or a transport
 // failure that never got a response at all.
