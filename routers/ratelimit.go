@@ -15,6 +15,7 @@
 package routers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -30,6 +31,7 @@ import (
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/controllers"
 	"github.com/hanzoai/ai/log"
+	"github.com/hanzoai/ai/object"
 	"github.com/zap-proto/zip"
 	"golang.org/x/time/rate"
 )
@@ -523,8 +525,8 @@ var tierCache *TierCache
 // DefaultTierFunc falls back to env-var overrides or TierZenFree.
 func InitTierCache() {
 	endpoint := conf.GetConfigString("commerceEndpoint")
-	if endpoint == "" {
-		log.Info("tier_cache: commerceEndpoint not configured, Commerce tier lookup disabled")
+	if endpoint == "" && object.TierReader() == nil {
+		log.Info("tier_cache: no commerce reader and no commerceEndpoint, Commerce tier lookup disabled")
 		return
 	}
 	endpoint = strings.TrimRight(endpoint, "/")
@@ -634,6 +636,32 @@ type commerceTierResponse struct {
 // Returns TierZenFree on any error (fail-open: rate limiting must never deny
 // service because Commerce is down).
 func (tc *TierCache) commerceTierLookup(orgKey string) (Tier, error) {
+	// Native path FIRST, the same order controllers.commerceFamilyTier reads in: a
+	// co-resident host (cloud) installs object.TierReader, and the plan is then read
+	// straight through the in-process commerce transport.
+	//
+	// The HTTP route below is answered by the cloud edge, which resolves the payer
+	// from a verified IAM identity. A service token names no payer, so in-cluster
+	// that route can only answer "sign in" — and every caller then reads as the
+	// lowest tier regardless of what they pay for. So the reader is asked when it is
+	// there, and the HTTP route is what a STANDALONE ai has instead of one.
+	//
+	// The plan name lands in the same mapPlanToTier as the decoded HTTP body: one
+	// spelling of a tier, whichever transport carried it.
+	if r := object.TierReader(); r != nil {
+		// An org slug is its own namespace — subject and tenant are one value here,
+		// which is why the HTTP path below sends the same string as both.
+		name, err := r(context.Background(), orgKey, orgKey)
+		if err != nil {
+			return TierZenFree, fmt.Errorf("native tier read: %w", err)
+		}
+		return mapPlanToTier(name), nil
+	}
+
+	if tc.endpoint == "" {
+		return TierZenFree, fmt.Errorf("no commerce reader and no commerceEndpoint")
+	}
+
 	// All commerce endpoints live under /v1/. Canonical path is /billing/tier,
 	// keyed by the org slug as the `user` query parameter.
 	endpoint := fmt.Sprintf("%s/v1/billing/tier?user=%s", tc.endpoint, url.QueryEscape(orgKey))
