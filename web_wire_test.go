@@ -19,7 +19,9 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/zap-proto/fiber/v3"
 	"github.com/zap-proto/zip"
 )
 
@@ -38,7 +40,13 @@ func wiredStatus(t *testing.T, method, path, body string) int {
 	}
 	req, _ := http.NewRequest(method, "http://example.com"+path, r)
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := app.Fiber().Test(req)
+	// What is asserted here is that a route DISPATCHES — that it reaches a handler
+	// rather than 404-ing — so how long the handler then takes is not the subject.
+	// fiber's default allows one second, and /v1/ai/version reads the repository
+	// on its first call (~1.3s cold, once per process), so the default turned a
+	// slow first read into a routing failure reported against a route that routes
+	// perfectly well. A generous budget still fails a genuine hang.
+	resp, err := app.Fiber().Test(req, fiber.TestConfig{Timeout: 30 * time.Second, FailOnTimeout: true})
 	if err != nil {
 		t.Fatalf("Test %s %s: %v", method, path, err)
 	}
