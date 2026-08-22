@@ -129,39 +129,6 @@ func zapRequireSuperAdmin(auth string) (*iam.User, *zap.Message) {
 	return user, nil
 }
 
-func zapGetModelRoutes(q url.Values) (*zap.Message, error) {
-	owner := q.Get("owner")
-	if owner == "" {
-		owner = "admin"
-	}
-	limit := q.Get("pageSize")
-	page := q.Get("p")
-	field := q.Get("field")
-	value := q.Get("value")
-	sortField := q.Get("sortField")
-	sortOrder := q.Get("sortOrder")
-
-	if limit == "" || page == "" {
-		routes, err := object.GetModelRoutes(owner)
-		if err != nil {
-			return zapGwError(200, err.Error())
-		}
-		return zapGwOk(routes)
-	}
-
-	lim := util.ParseInt(limit)
-	count, err := object.GetModelRouteCount(owner, field, value)
-	if err != nil {
-		return zapGwError(200, err.Error())
-	}
-	offset := zapPageOffset(page, lim)
-	routes, err := object.GetPaginationModelRoutes(owner, offset, lim, field, value, sortField, sortOrder)
-	if err != nil {
-		return zapGwError(200, err.Error())
-	}
-	return zapGwOk(routes, count)
-}
-
 // zapPageOffset mirrors pagination.SetPaginator().Offset(): page is 1-based,
 // clamped to >= 1 (unset or garbage → 1), and the offset is (page-1)*perPage.
 func zapPageOffset(page string, perPage int) int {
@@ -170,60 +137,6 @@ func zapPageOffset(page string, perPage int) int {
 		p = 1
 	}
 	return (p - 1) * perPage
-}
-
-func zapGetModelRoute(q url.Values) (*zap.Message, error) {
-	owner := q.Get("owner")
-	modelName := q.Get("modelName")
-	if owner == "" || modelName == "" {
-		return zapGwError(200, "owner and modelName are required")
-	}
-	route, err := object.GetModelRoute(owner, modelName)
-	if err != nil {
-		return zapGwError(200, err.Error())
-	}
-	return zapGwOk(route)
-}
-
-func zapAddModelRoute(body []byte) (*zap.Message, error) {
-	var route object.ModelRoute
-	if err := json.Unmarshal(body, &route); err != nil {
-		return zapGwError(200, err.Error())
-	}
-	if route.Owner == "" {
-		route.Owner = "admin"
-	}
-	success, err := object.AddModelRoute(&route)
-	if err != nil {
-		return zapGwError(200, err.Error())
-	}
-	return zapGwOk(success)
-}
-
-func zapUpdateModelRoute(q url.Values, body []byte) (*zap.Message, error) {
-	owner := q.Get("owner")
-	modelName := q.Get("modelName")
-	var route object.ModelRoute
-	if err := json.Unmarshal(body, &route); err != nil {
-		return zapGwError(200, err.Error())
-	}
-	success, err := object.UpdateModelRoute(owner, modelName, &route)
-	if err != nil {
-		return zapGwError(200, err.Error())
-	}
-	return zapGwOk(success)
-}
-
-func zapDeleteModelRoute(body []byte) (*zap.Message, error) {
-	var route object.ModelRoute
-	if err := json.Unmarshal(body, &route); err != nil {
-		return zapGwError(200, err.Error())
-	}
-	success, err := object.DeleteModelRoute(&route)
-	if err != nil {
-		return zapGwError(200, err.Error())
-	}
-	return zapGwOk(success)
 }
 
 // ── Per-model access, self-scoped (model_access.go) ────────────────────────────
