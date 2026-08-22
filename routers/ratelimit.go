@@ -520,9 +520,14 @@ type TierCache struct {
 var tierCache *TierCache
 
 // InitTierCache reads Commerce connection parameters from app config and
-// creates the tier cache. Must be called once during startup. If Commerce
-// is not configured (no commerceEndpoint), the cache is not created and
-// DefaultTierFunc falls back to env-var overrides or TierZenFree.
+// creates the tier cache. Must be called once during startup.
+//
+// The cache exists when a tier can be READ, by either route: the reader a
+// co-resident host installs, or the HTTP endpoint a standalone ai is given.
+// Keying its existence on the endpoint alone would leave a host that installs a
+// reader and configures no endpoint able to read every tier and asking for none.
+// With neither, there is nothing to ask and DefaultTierFunc falls back to
+// env-var overrides or TierZenFree.
 func InitTierCache() {
 	endpoint := conf.GetConfigString("commerceEndpoint")
 	if endpoint == "" && object.TierReader() == nil {
