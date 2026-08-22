@@ -251,16 +251,8 @@ func faultOfStatus(status int, err error) fault {
 // fault) having run nothing, while a stream that breaks with bytes already on the
 // wire stops the cascade (request fault) having run plenty.
 //
-// The statuses below are the ones a vendor answers at the door — it read the
-// envelope, not the letter. A prompt longer than the context, a key it will not
-// honour, an account with no money, a model it does not carry: in each the vendor
-// spent nothing on us and sends no invoice, so there is none to pass on. An error
-// carrying no status at all never got a response — the request either never left
-// this process or the transport failed before any vendor answered.
-//
-// Everything else counts as run, which keeps a 5xx and a timeout billed as they
-// are today: those can consume the prompt before failing, and the vendor's meter
-// is the one that decides.
+// An error carrying no status at all never got a response: the request either
+// never left this process or the transport failed before any vendor answered.
 func ran(err error) bool {
 	if err == nil {
 		return true
@@ -270,13 +262,19 @@ func ran(err error) bool {
 		return true
 	}
 	if status := upstreamHTTPStatus(err); status != 0 {
-		return !refusedAtDoor(status)
+		return ranStatus(status)
 	}
 	return false
 }
 
-// refusedAtDoor reports a status a vendor returns without running the request.
-func refusedAtDoor(status int) bool {
+// ranStatus reports whether a vendor that answered with this status had
+// processed the request when it did.
+//
+// The listed ones are refusals it can decide from the request alone, so it spent
+// nothing on us and sends no invoice for them. Everything else counts as run,
+// which keeps a 5xx and a timeout billed as they are today: those can consume the
+// prompt before failing, and the vendor's own meter is what settles it.
+func ranStatus(status int) bool {
 	switch status {
 	case http.StatusBadRequest, // 400 — malformed, never parsed
 		http.StatusUnauthorized,          // 401 — our key is not honoured
@@ -286,9 +284,9 @@ func refusedAtDoor(status int) bool {
 		http.StatusRequestEntityTooLarge, // 413 — longer than the context
 		http.StatusUnprocessableEntity,   // 422 — content refused
 		http.StatusTooManyRequests:       // 429 — turned away before a slot
-		return true
+		return false
 	}
-	return false
+	return true
 }
 
 // moneyText, busyText and reachText are the refusals that arrive with no HTTP
