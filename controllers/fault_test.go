@@ -97,13 +97,14 @@ func TestFaultOf(t *testing.T) {
 		{"no access to model", errors.New("your account does not have access to model xyz"), faultProvider, "same fact, other wording"},
 
 		// ── OUR mistake: must NOT cascade ────────────────────────────────
-		{"401 typed", apiErr(401, "invalid api key"), faultRequest,
-			"our credential is dead; cascading hides it and we pay a second vendor for the first one's broken key"},
-		{"401 untyped", errors.New("HTTP 401 Unauthorized"), faultRequest, "same, no status"},
-		{"403 plain", apiErr(403, "you do not have permission to use this key"), faultRequest,
-			"not a catalogue fact — a credential fact"},
-		{"403 insufficient permissions", apiErr(403, "insufficient permissions for this operation"), faultRequest,
-			"the exact trap a bare `insufficient` substring would turn into a five-vendor spend"},
+		{"401 typed", apiErr(401, "invalid api key"), faultProvider,
+			"our credential is dead, which is a fact about THIS vendor — the caller's own was checked at our edge. announce() counts it as reasonCredential and logs at ERROR either way, so failing over costs the alert nothing and saves the request"},
+		{"401 untyped", errors.New("HTTP 401 Unauthorized"), faultRequest,
+			"NO status, so this is the text talking, and the text is a guess. A vendor quotes the request back, so treating the word as a credential fact lets a prompt about being unauthorized move itself to another vendor — the trap moneyText is already narrow for. The status path is where 401 is a fact"},
+		{"403 plain", apiErr(403, "you do not have permission to use this key"), faultProvider,
+			"a credential fact rather than a catalogue one, and both are facts about this vendor; the request is fine and another vendor can serve it"},
+		{"403 insufficient permissions", apiErr(403, "insufficient permissions for this operation"), faultProvider,
+			"still not `insufficient funds` — the point of that trap was never to stop the cascade but to keep this out of broke(), which it still is: it demotes nobody and spends no money leg"},
 		{"400 bad request", apiErr(400, "invalid 'messages': empty"), faultRequest, "malformed everywhere"},
 		{"404 unknown model", apiErr(404, "model not found: gpt-99"), faultRequest,
 			"a bad route entry we need to SEE, not paper over"},
@@ -161,7 +162,10 @@ func TestCooldownFor(t *testing.T) {
 		{"503 rests briefly", apiErr(503, "unavailable"), coolBusy},
 		{"transport rests briefly", errors.New("connection refused"), coolBusy},
 		{"absent model does NOT rest", apiErr(403, "this model is not available for your account"), 0},
-		{"401 does NOT rest", apiErr(401, "invalid api key"), 0},
+		// A dead key needs a human exactly as an empty account does; resting it
+		// briefly would put the fleet back on it every few seconds for as long as
+		// it stays dead.
+		{"401 rests LONG", apiErr(401, "invalid api key"), coolBroke},
 		{"400 does NOT rest", apiErr(400, "bad request"), 0},
 
 		// The status is the evidence; the text is read only where the status is
@@ -659,4 +663,69 @@ func TestAProxiedRequestFaultKeepsItsStatus(t *testing.T) {
 	if answered(c) != http.StatusBadRequest {
 		t.Errorf("status=%d, want 400 — the request itself is wrong and the caller can fix it", answered(c))
 	}
+}
+
+// catalogOf points the family at a stub catalog carrying exactly these ids and
+// warms it, so a test can ask what a route falls back to with no live vendor.
+func catalogOf(t *testing.T, ids ...string) {
+	t.Helper()
+	var b strings.Builder
+	b.WriteString(`{"data":[`)
+	for i, id := range ids {
+		if i > 0 {
+			b.WriteString(",")
+		}
+		fmt.Fprintf(&b, `{"id":%q,"context_length":8192,"architecture":{"input_modalities":["text"]},`+
+			`"pricing":{"prompt":"0.000001","completion":"0.000002"}}`, id)
+	}
+	b.WriteString(`]}`)
+	withOpenRouter(t, b.String())
+	openrouterFam.fresh() // discover once, so lookup() answers from the snapshot
+}
+
+// EVERY ROUTE ENDS SOMEWHERE. The route table declares 121 routes and no
+// `fallbacks:` at all, so before the derived tail a vendor that could not serve
+// ended the request — which is how one dead DO key answered 93 models' worth of
+// customers with a 401.
+func TestOpenRouterTailIsDerived(t *testing.T) {
+	cooled.forget()
+	t.Cleanup(cooled.forget)
+
+	t.Run("the same model on OpenRouter, when its catalog carries it", func(t *testing.T) {
+		catalogOf(t, "openai/gpt-4o")
+		r := route("do-ai")
+		r.upstreamModel = "openai-gpt-4o"
+		got := names(candidates("", r, nil))
+		if len(got) < 2 || got[1] != "openrouter" {
+			t.Fatalf("got %v — do-ai must fall over to openrouter", got)
+		}
+	})
+
+	t.Run("a guess the catalog does not confirm is not offered", func(t *testing.T) {
+		catalogOf(t, "anthropic/claude-3.5-sonnet") // NOT what do-ai spells
+		r := route("do-ai")
+		r.upstreamModel = "anthropic-claude-4.5-sonnet"
+		for _, c := range candidates("", r, nil) {
+			if c.provider == "openrouter" && c.upstream == "anthropic/claude-4.5-sonnet" {
+				t.Fatal("a derived id must be confirmed by the catalog, never guessed onto the wire")
+			}
+		}
+	})
+
+	t.Run("openrouter's own routes get no second tail", func(t *testing.T) {
+		catalogOf(t, "openai/gpt-4o")
+		r := route("openrouter")
+		r.upstreamModel = "openai/gpt-4o"
+		if got := names(candidates("", r, nil)); len(got) != 1 {
+			t.Fatalf("got %v — the family's own spared already offers the pool", got)
+		}
+	})
+
+	t.Run("an unconfigured OpenRouter adds nothing", func(t *testing.T) {
+		r := route("do-ai")
+		r.upstreamModel = "openai-gpt-4o"
+		if got := names(candidates("", r, nil)); len(got) != 1 {
+			t.Fatalf("got %v — a deployment without OpenRouter must route exactly as before", got)
+		}
+	})
 }
