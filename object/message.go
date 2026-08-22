@@ -241,6 +241,14 @@ func GetNearMessageCount(user string, limitMinutes int) (int, error) {
 }
 
 func getMessage(owner, name string) (*Message, error) {
+	// The adapter is nil before the DB is up — during boot, in the standalone
+	// runtime with no driverName, and in every unit test — so reading through it
+	// turns a missing dependency into a SIGSEGV at whatever call site asked first.
+	// This one is reached from the welcome-message delete, whose caller returns the
+	// error rather than carrying on.
+	if adapter == nil || adapter.db == nil {
+		return nil, fmt.Errorf("message store is not initialised")
+	}
 	message := Message{Owner: owner, Name: name}
 	existed, err := getOne(adapter.db, "message", &message, pk2(message.Owner, message.Name))
 	if err != nil {

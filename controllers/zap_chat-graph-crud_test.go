@@ -177,3 +177,68 @@ func TestZapProviderOkEnvelopeReuse(t *testing.T) {
 		t.Errorf("ok body = %s, want %s", got, want)
 	}
 }
+
+// Every ADMIN-GATED method in the group refuses an anonymous caller, and the
+// sweep is the point: the four write routes above are the ones somebody
+// remembered, and a route added later inherits nothing from that list. The global
+// listings and every graph route are here too, and were not.
+//
+// The per-user chat and message routes are deliberately NOT here: they are on the
+// filter's exempt list because they are scoped to the caller's own data, and the
+// list itself is pinned below so a route cannot join it quietly.
+//
+// No ORM adapter is initialised, so a handler that got past its gate would reach
+// the store rather than answer — which means a missing gate shows up here as a
+// panic, the loudest failure available.
+func TestEveryAdminGatedChatGraphMethodRefusesAnAnonymousCaller(t *testing.T) {
+	// The PRODUCTION posture. Preview mode is a deliberately open developer one —
+	// reads default-open so a developer can exercise every surface without seeding
+	// roles — and production turns it off (DISABLE_PREVIEW_MODE=true, set in
+	// universe), which is the configuration whose refusals are worth pinning.
+	t.Setenv("DISABLE_PREVIEW_MODE", "true")
+
+	for _, method := range []string{
+		"chats.global.list", "messages.global.list", "messages.delete",
+		"graphs.global.list", "graphs.list", "graphs.get",
+		"graphs.update", "graphs.add", "graphs.delete",
+	} {
+		t.Run(method, func(t *testing.T) {
+			h, ok := lookupCloudHandler(method)
+			if !ok {
+				t.Fatalf("method %q is not registered", method)
+			}
+			msg, err := h(context.Background(), "", []byte("{}"))
+			if err != nil {
+				t.Fatalf("%s answered an error rather than a refusal: %v", method, err)
+			}
+			switch got := msg.Root().Uint32(object.CloudRespStatus); got {
+			case 401, 403:
+			default:
+				t.Errorf("%s answered %d to a caller with no credential, want 401 or 403", method, got)
+			}
+		})
+	}
+}
+
+// The exempt list is stated here as well as declared, because it is the one place
+// the admin gate is deliberately not applied: a route added to it is a route that
+// stops requiring an admin, and that should be a decision somebody makes rather
+// than a line that slips into a map.
+func TestTheExemptRoutesAreExactlyTheseOnes(t *testing.T) {
+	want := map[string]struct{}{
+		"get-chats": {}, "get-chat": {},
+		"update-chat": {}, "add-chat": {}, "delete-chat": {},
+		"get-messages": {}, "get-message": {},
+		"update-message": {}, "add-message": {}, "delete-welcome-message": {},
+	}
+	for name := range zapChatGraphExempt {
+		if _, ok := want[name]; !ok {
+			t.Errorf("%q was added to the exempt list — it no longer requires an admin", name)
+		}
+	}
+	for name := range want {
+		if _, ok := zapChatGraphExempt[name]; !ok {
+			t.Errorf("%q left the exempt list — it now requires an admin", name)
+		}
+	}
+}
