@@ -156,7 +156,6 @@ func doBootstrap() (err error) {
 	proxy.InitHttpClient()
 	util.InitMaxmindFiles()
 	util.InitIpDb()
-	util.InitParser()
 	object.InitCleanupChats()
 	object.InitStoreCount()
 	object.InitCommitRecordsTask()
