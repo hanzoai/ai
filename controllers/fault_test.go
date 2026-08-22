@@ -729,3 +729,35 @@ func TestOpenRouterTailIsDerived(t *testing.T) {
 		}
 	})
 }
+
+// ran is the money's question and faultOf is the routing one, and they are NOT
+// the same question. These are the two cases where they disagree most, so if
+// ran ever collapses back into faultOf this is what notices.
+//
+// A partial write is the important half. Bytes on the wire mean a vendor
+// produced them, and it stops the cascade (request fault) — so a reader that
+// took "does not fail over" to mean "did no work" would refuse to bill an answer
+// the customer actually received and we were actually invoiced for.
+func TestRanAndFaultOfAnswerDifferentQuestions(t *testing.T) {
+	for _, c := range []struct {
+		what      string
+		err       error
+		ran       bool
+		failsOver bool
+	}{
+		{"a call that succeeded", nil, true, false},
+		{"a stream that broke with bytes already sent", errPartiallyWritten, true, false},
+		{"a dead key of ours", apiErr(401, "invalid api key"), false, true},
+		{"an account with no money", apiErr(402, "insufficient credits"), false, true},
+		{"a prompt longer than the context", apiErr(413, "payload too large"), false, false},
+		{"the vendor broke while running it", apiErr(500, "internal server error"), true, true},
+		{"nothing was ever dialled", errors.New("failed to get model provider: unsupported type"), false, false},
+	} {
+		if got := ran(c.err); got != c.ran {
+			t.Errorf("%s: ran = %v, want %v", c.what, got, c.ran)
+		}
+		if got := faultOf(c.err) == faultProvider; got != c.failsOver {
+			t.Errorf("%s: fails over = %v, want %v", c.what, got, c.failsOver)
+		}
+	}
+}
