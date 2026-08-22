@@ -208,7 +208,7 @@ func (a ask) settle(over []shot, done <-chan shot, rest int) []attempt {
 			if t, ok := s.out.(said); ok {
 				partial = t.MessageString()
 			}
-			at.prompt, at.completion = spent(s.res, a.model, a.prompt, partial)
+			at.prompt, at.completion = spent(s.res, a.model, a.prompt, partial, s.err)
 		}
 		if d := cooled.rest(a.org, s.c.provider, s.err); d > 0 {
 			log.Warn("hedge: demoting provider=%s for %s after status=%d", s.c.provider, d, at.status)
