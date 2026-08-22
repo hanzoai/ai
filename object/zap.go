@@ -67,6 +67,16 @@ const (
 	CloudRespStatus = 0
 	CloudRespBody   = 4
 	CloudRespError  = 12
+	// ── Gateway response layout ─────────────────────────────────────
+	// Response: status(0:Uint32) + body(4:Bytes) + headers(12:Bytes)
+	//
+	// The same three slots as the cloud response, and the third is NOT the same
+	// field: a gateway answer carries headers where a cloud answer carries an
+	// error. Named here rather than borrowed, so the slot that means two things
+	// says which one it means at each use.
+	GatewayRespStatus  = 0
+	GatewayRespBody    = 4
+	GatewayRespHeaders = 12
 	// ── Sidecar message layout (matches ORM driver) ─────────────────
 	sidecarReqPath    = 4
 	sidecarReqBody    = 12
@@ -374,12 +384,12 @@ func DocdbEnabled() bool {
 func BuildGatewayResponse(status uint32, body []byte, headers []byte) (*zap.Message, error) {
 	b := zap.NewBuilder(len(body) + len(headers) + 64)
 	obj := b.StartObject(20)
-	obj.SetUint32(0, status)
+	obj.SetUint32(GatewayRespStatus, status)
 	if len(body) > 0 {
-		obj.SetBytes(4, body)
+		obj.SetBytes(GatewayRespBody, body)
 	}
 	if len(headers) > 0 {
-		obj.SetBytes(12, headers)
+		obj.SetBytes(GatewayRespHeaders, headers)
 	}
 	obj.FinishAsRoot()
 	data := b.FinishWithFlags(MsgTypeHTTPRequest << 8)
