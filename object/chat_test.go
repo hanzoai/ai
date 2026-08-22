@@ -111,7 +111,6 @@ func TestUpdateChatDescs(t *testing.T) {
 	requireStore(t)
 	InitConfig()
 	util.InitIpDb()
-	util.InitParser()
 	chats, err := GetGlobalChats()
 	if err != nil {
 		panic(err)
