@@ -24,6 +24,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-git/go-git/v5"
@@ -185,7 +186,25 @@ func GetSystemInfo() (*SystemInfo, error) {
 }
 
 // GetVersionInfo get git current commit and repo release version
-func GetVersionInfo() (*VersionInfo, error) {
+// GetVersionInfo reports the version of the RUNNING binary.
+//
+// Read ONCE. Answering it means opening the repository, resolving every tag to a
+// revision and then walking the commit log to count the offset — measured on this
+// repo, 410 tags and 2,759 commits, at ~1.3s. That was paid per request on
+// /v1/ai/version, which is a second and a third of work to answer a question
+// whose answer cannot change: the binary serving the request was built from one
+// commit and will not be rebuilt while it runs.
+//
+// It also cost a test. fiber's Test() allows one second, so the handler sat just
+// the wrong side of the budget and passed or failed on how warm the page cache
+// was and how many other packages were compiling at the time —
+// TestWiredResourceRouteDispatches, reported against GET /v1/ai/version, which
+// was the honest address of the fault all along.
+func GetVersionInfo() (*VersionInfo, error) { return versionOnce() }
+
+var versionOnce = sync.OnceValues(readVersionInfo)
+
+func readVersionInfo() (*VersionInfo, error) {
 	res := &VersionInfo{
 		Version:      "",
 		CommitId:     "",
