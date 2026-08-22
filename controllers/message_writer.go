@@ -33,10 +33,6 @@ type RefinedWriter struct {
 	searchBuf     []byte
 }
 
-func newRefinedWriter(w *bufio.Writer) *RefinedWriter {
-	return &RefinedWriter{w, *NewCleaner(6), []byte{}, []byte{}, []byte{}, []byte{}, []byte{}}
-}
-
 func (w *RefinedWriter) Write(p []byte) (n int, err error) {
 	var eventType string
 	var data string

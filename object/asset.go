@@ -166,14 +166,6 @@ func DeleteAsset(asset *Asset) (bool, error) {
 	return affected != 0, nil
 }
 
-func deleteAssets(owner string) (bool, error) {
-	affected, err := deleteWhere(adapter.db, "asset", dbx.HashExp{"owner": owner})
-	if err != nil {
-		return false, err
-	}
-	return affected != 0, nil
-}
-
 func (a *Asset) processAssetParams(assetDb *Asset) {
 	if a.Password == SecretMask {
 		a.Password = assetDb.Password
