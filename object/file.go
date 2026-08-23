@@ -47,12 +47,7 @@ type File struct {
 }
 
 func GetGlobalFiles() ([]*File, error) {
-	files := []*File{}
-	err := findAll(adapter.db, "file", &files, nil, "owner ASC", "created_time DESC")
-	if err != nil {
-		return files, err
-	}
-	return files, nil
+	return allRows[File]("file")
 }
 
 func GetFiles(owner string) ([]*File, error) {
@@ -143,18 +138,11 @@ func getFileName(storeName string, objectKey string) string {
 }
 
 func GetFileCount(owner, field, value string) (int64, error) {
-	session := GetDbQuery(owner, -1, -1, field, value, "", "")
-	return queryCount(session, "file")
+	return rowCount("file", owner, field, value)
 }
 
 func GetPaginationFiles(owner string, offset, limit int, field, value, sortField, sortOrder string) ([]*File, error) {
-	files := []*File{}
-	session := GetDbQuery(owner, offset, limit, field, value, sortField, sortOrder)
-	err := queryFind(session, "file", &files)
-	if err != nil {
-		return files, err
-	}
-	return files, nil
+	return rowsPage[File]("file", owner, offset, limit, field, value, sortField, sortOrder)
 }
 
 func updateFileStatus(owner string, storeName string, objectKey string, status FileStatus, errorText string, tokenCount int) error {
