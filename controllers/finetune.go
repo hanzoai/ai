@@ -19,7 +19,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/hanzoai/ai/cluster"
 	"github.com/hanzoai/ai/object"
@@ -354,7 +353,7 @@ func (c *ApiController) CancelFinetuneJob() {
 			return
 		}
 	}
-	job.FinishedTime = time.Now().Format(time.RFC3339)
+	job.FinishedTime = util.GetCurrentTime()
 	job.Status = "cancelled"
 	c.meterFinetuneTerminal(job)
 	if _, err := object.UpdateFinetuneJob(job.Owner, job.Name, job); err != nil {
@@ -449,7 +448,7 @@ func (c *ApiController) meterFinetuneTerminal(job *object.FinetuneJob) bool {
 		return false
 	}
 	start := firstNonEmptyStr(job.StartedTime, job.CreatedTime)
-	finish := firstNonEmptyStr(job.FinishedTime, time.Now().Format(time.RFC3339))
+	finish := firstNonEmptyStr(job.FinishedTime, util.GetCurrentTime())
 	gpuSeconds := object.GpuSecondsForRun(start, finish, job.GpuCount, job.NumNodes)
 	if gpuSeconds <= 0 {
 		job.Metered = true

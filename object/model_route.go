@@ -18,6 +18,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/hanzoai/ai/util"
+
 	"github.com/hanzoai/dbx"
 )
 
@@ -87,7 +89,7 @@ func GetPaginationModelRoutes(owner string, offset, limit int, field, value, sor
 }
 
 func AddModelRoute(route *ModelRoute) (bool, error) {
-	route.CreatedTime = time.Now().Format(time.RFC3339)
+	route.CreatedTime = util.GetCurrentTime()
 	route.UpdatedTime = route.CreatedTime
 	err := insertRow(adapter.db, route)
 	if err != nil {
@@ -108,7 +110,7 @@ func UpdateModelRoute(owner string, modelName string, route *ModelRoute) (bool, 
 	if existing == nil || route == nil {
 		return false, nil
 	}
-	route.UpdatedTime = time.Now().Format(time.RFC3339)
+	route.UpdatedTime = util.GetCurrentTime()
 	route.Owner = owner
 	route.ModelName = modelName
 	if err := adapter.db.Model(route).Update(); err != nil {
