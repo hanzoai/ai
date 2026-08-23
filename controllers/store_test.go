@@ -4,9 +4,11 @@ package controllers
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	iam "github.com/hanzoai/ai/internal/iam"
@@ -18,10 +20,10 @@ import (
 // model synced, in about 20ms.
 //
 // It is a store and not a stand-in for one. A handler tested against a double
-// proves that the double was called; tested against this it proves the row it
-// wrote can be read back, which is the only version of the claim worth making.
-// SQLite is what this deployment runs for a single instance anyway, so the
-// dialect under test is a dialect in use rather than one chosen for tests.
+// proves the double was called; tested against this it proves the row it wrote
+// can be read back, which is the only version of the claim worth making. SQLite
+// is what a single instance runs anyway, so the dialect under test is one in use
+// rather than one chosen for tests.
 func withStore(t *testing.T) {
 	t.Helper()
 	t.Setenv("driverName", "sqlite")
@@ -29,28 +31,59 @@ func withStore(t *testing.T) {
 	object.InitConfig()
 }
 
-// asUser stands up the ONE thing a principal cannot be built without: IAM, which
-// is where an sk- key is exchanged for the person it belongs to. It is an
-// external service, so it is doubled here — and only it. Everything the handler
-// then does happens for real.
+// people is the IAM double's registry: one key per person, so a test can hold
+// more than one of them at a time.
 //
-// Returns the credential to hand the handler.
-func asUser(t *testing.T, user *iam.User) string {
+// It exists because IAM_URL is a single value. An earlier version of this helper
+// stood up a server per user and pointed IAM_URL at the newest, which quietly
+// made every credential in the test resolve to whoever was created last — so a
+// test could believe it was refusing Bob while asking as Bob throughout, and pass
+// for a reason it never stated. One server, keyed.
+type people struct {
+	mu sync.Mutex
+	by map[string]*iam.User
+	n  int
+}
+
+// asUser registers a person with the IAM double and returns the credential that
+// resolves to them.
+//
+// IAM is the ONE thing doubled here, because an sk- key is exchanged for its
+// principal there and nowhere else. Everything the handler then does happens for
+// real. The double holds to Basic credentials the way IAM does — it derives the
+// calling app from them alone — so a test cannot pass through a door production
+// keeps shut.
+func (p *people) asUser(t *testing.T, user *iam.User) string {
 	t.Helper()
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.n++
+	key := fmt.Sprintf("sk-test-%d", p.n)
+	p.by[key] = user
+	return "Bearer " + key
+}
+
+// withIAM stands up the double for one test and points the resolver at it.
+func withIAM(t *testing.T) *people {
+	t.Helper()
+	p := &people{by: map[string]*iam.User{}}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
 		if r.URL.Path != "/v1/iam/keys/principal" {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
 		if id, secret, ok := r.BasicAuth(); !ok || id == "" || secret == "" {
-			// IAM derives the calling APP from Basic credentials alone; without
-			// them it yields no principal at all. Held to that here so a test
-			// cannot pass through a door production does not open.
-			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]any{"status": "error", "code": "unauthorized", "msg": "authentication required"})
 			return
 		}
-		w.Header().Set("Content-Type", "application/json")
+		p.mu.Lock()
+		user, known := p.by[r.URL.Query().Get("accessKey")]
+		p.mu.Unlock()
+		if !known {
+			_ = json.NewEncoder(w).Encode(map[string]any{"status": "error", "code": "key_unknown", "msg": "the entity does not exist"})
+			return
+		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"status": "ok", "data": user})
 	}))
 	t.Cleanup(srv.Close)
@@ -58,7 +91,7 @@ func asUser(t *testing.T, user *iam.User) string {
 	t.Setenv("IAM_URL", srv.URL)
 	t.Setenv("IAM_CLIENT_ID", "hanzo-test")
 	t.Setenv("IAM_CLIENT_SECRET", "test-secret")
-	return "Bearer sk-test-key"
+	return p
 }
 
 // seedDefaultStore gives the deployment the one row a chat cannot be created
