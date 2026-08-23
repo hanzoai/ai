@@ -79,6 +79,10 @@ func (c *ApiController) GetApplications() {
 // @Success 200 {object} object.Application The Response object
 // @router /get-application [get]
 func (c *ApiController) GetApplication() {
+	caller, ok := c.RequireSignedInUser()
+	if !ok {
+		return
+	}
 	id := c.Input().Get("id")
 
 	res, err := object.GetApplication(id)
@@ -86,11 +90,16 @@ func (c *ApiController) GetApplication() {
 		c.ResponseError(err.Error())
 		return
 	}
-
-	if res != nil {
-		cluster.Describe([]*object.Application{res}, c.GetAcceptLanguage())
+	// The listing beside this one scopes to the caller's organization; addressing
+	// one application by id has to answer the same way, all the more so because the
+	// description attached below reads the live namespace — its services, its
+	// addresses, and which credentials each deployment expects.
+	if res == nil || !reaches(caller, res.Owner) {
+		c.ResponseError(c.T("general:The application does not exist"))
+		return
 	}
 
+	cluster.Describe([]*object.Application{res}, c.GetAcceptLanguage())
 	c.ResponseOk(res)
 }
 
