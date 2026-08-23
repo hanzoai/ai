@@ -16,7 +16,6 @@
 package scan
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"os/exec"
@@ -92,72 +91,12 @@ func NewNucleiScanProvider(clientId string) (*NucleiScanProvider, error) {
 }
 
 func (p *NucleiScanProvider) Scan(target string, command string) (string, error) {
-	if target == "" {
-		return "", fmt.Errorf("%s scan target cannot be empty", getHostnamePrefix())
-	}
-
-	// Validate target to prevent command injection
-	target = strings.TrimSpace(target)
-	if strings.ContainsAny(target, ";&|`$") {
-		return "", fmt.Errorf("%s invalid characters in scan target", getHostnamePrefix())
-	}
-
-	// Use default command if empty
-	if command == "" {
-		command = "-u %s -jsonl"
-	}
-
-	// Validate command to prevent command injection
-	command = strings.TrimSpace(command)
-	if strings.ContainsAny(command, ";&|`") {
-		return "", fmt.Errorf("%s invalid characters in scan command", getHostnamePrefix())
-	}
-
-	// Ensure -jsonl flag is present for structured output
-	if !strings.Contains(command, "-jsonl") && !strings.Contains(command, "-json") {
-		command = command + " -jsonl"
-	}
-
-	// Replace %s with target, or append target if no %s placeholder
-	var args []string
-	if strings.Contains(command, "%s") {
-		// Replace %s with target
-		cmdStr := strings.Replace(command, "%s", target, -1)
-		args = strings.Fields(cmdStr)
-	} else {
-		// No %s placeholder, append target with -u flag if not already present
-		args = strings.Fields(command)
-		if !contains(args, "-u") && !contains(args, "-target") && !contains(args, "-l") {
-			args = append(args, "-u", target)
-		}
-	}
-
-	// Run nuclei with custom command options
-	cmd := exec.Command(p.nucleiPath, args...)
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	fmt.Printf("%s [Nuclei] Executing nuclei scan: %s %s\n", getHostnamePrefix(), p.nucleiPath, strings.Join(args, " "))
-	err := cmd.Run()
-	if err != nil {
-		// Nuclei may return non-zero exit code even when scan completes successfully
-		// Check if we got any output
-		if stdout.Len() == 0 {
-			return "", fmt.Errorf("%s nuclei scan failed: %v, stderr: %s", getHostnamePrefix(), err, stderr.String())
-		}
-		// Log the error but continue with parsing
-		fmt.Printf("%s [Nuclei] Scan completed with warnings: %v\n", getHostnamePrefix(), err)
-	}
-	fmt.Printf("%s [Nuclei] Scan completed successfully\n", getHostnamePrefix())
-
-	result := stdout.String()
-	if result == "" {
-		result = "Scan completed with no vulnerabilities found"
-	}
-
-	return result, nil
+	return scanner{
+		name: "nuclei", bin: p.nucleiPath,
+		defaultArgs: "-u %s -jsonl",
+		jsonFlags:   []string{"-jsonl", "-json"}, addJSON: "-jsonl",
+		targetFlags: []string{"-u", "-target", "-l"}, addTarget: "-u",
+	}.run(target, command)
 }
 
 // contains checks if a string slice contains a specific value
