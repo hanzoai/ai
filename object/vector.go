@@ -139,14 +139,6 @@ func DeleteVector(vector *Vector) (bool, error) {
 	return affected != 0, nil
 }
 
-func DeleteVectorsByStore(owner string, storeName string) (bool, error) {
-	affected, err := deleteWhere(adapter.db, "vector", dbx.NewExp("owner = {:p0} AND store = {:p1}", dbx.Params{"p0": owner, "p1": storeName}))
-	if err != nil {
-		return false, err
-	}
-	return affected != 0, nil
-}
-
 func DeleteVectorsByFile(owner string, storeName string, fileKey string) (bool, error) {
 	affected, err := deleteWhere(adapter.db, "vector", dbx.NewExp("owner = {:p0} AND store = {:p1} AND file = {:p2}", dbx.Params{"p0": owner, "p1": storeName, "p2": fileKey}))
 	if err != nil {

@@ -83,13 +83,8 @@ func AnalyzeTask(task *Task, lang string) (*TaskResult, error) {
 	log.Info("[analyze-task] prompt built task=%s fullPromptLen=%d runes (rubric+template+document)", taskID, promptRunes)
 	var answer string
 	aiStart := time.Now()
-	if strings.Contains(strings.ToLower(task.Name), "demo") {
-		log.Info("[analyze-task] using GetAnswerFake (task name contains \"demo\") task=%s", taskID)
-		answer, _, err = GetAnswerFake(task.Provider, question, lang)
-	} else {
-		log.Info("[analyze-task] calling AI model task=%s provider=%s (this may take several minutes)...", taskID, task.Provider)
-		answer, _, err = GetAnswer(task.Provider, question, lang)
-	}
+	log.Info("[analyze-task] calling AI model task=%s provider=%s (this may take several minutes)...", taskID, task.Provider)
+	answer, _, err = GetAnswer(task.Provider, question, lang)
 	aiElapsed := time.Since(aiStart)
 	if err != nil {
 		log.Error("[analyze-task] AI call failed task=%s after %v: %v", taskID, aiElapsed, err)
