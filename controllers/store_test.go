@@ -51,10 +51,10 @@ type people struct {
 	orgs map[string]string // publishable key -> the org it names
 	n    int
 
-	// The signing half. IAM mints three kinds of credential and each of its doors
-	// refuses the others', so one double serves all three rather than a second
-	// standing up beside it: sk- keys and pk- keys answer at the key doors above,
-	// and a signed token is verified against the JWKS this publishes.
+	// The signing half. IAM mints three kinds of credential and each of its key
+	// endpoints refuses the others', so one double serves all three rather than a
+	// second standing up beside it: sk- keys and pk- keys answer at the endpoints
+	// above, and a signed token is verified against the JWKS this publishes.
 	key    *rsa.PrivateKey
 	issuer string
 }
@@ -92,7 +92,7 @@ const (
 
 // asOrg registers a publishable key with the IAM double and returns it.
 //
-// The publishable door is the dual of the secret one: it answers an ORG and
+// The publishable endpoint is the dual of the secret one: it answers an ORG and
 // never a person, which is what makes a pk- safe to put in a browser.
 func (p *people) asOrg(t *testing.T, org string) string {
 	t.Helper()
@@ -157,7 +157,7 @@ func withIAM(t *testing.T) *people {
 		org, isOrg := p.orgs[key]
 		p.mu.Unlock()
 
-		// Each door answers for its own kind of key and refuses the other's, which
+		// Each endpoint answers for its own kind of key and refuses the other's, which
 		// is how IAM keeps a publishable key from authenticating anything.
 		if r.URL.Path == "/v1/iam/keys/org" {
 			switch {
