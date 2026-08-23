@@ -22,6 +22,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hanzoai/ai/util"
+
 	"github.com/hanzoai/ai/model"
 	"github.com/openai/openai-go/v2"
 )
@@ -68,7 +70,7 @@ func (p *OpenAIFileSystemStorageProvider) PutObject(user string, parent string, 
 	object := &Object{
 		Key:          key,
 		Url:          "",
-		LastModified: time.Now().Format(time.RFC3339),
+		LastModified: util.GetCurrentTime(),
 		Size:         file.Bytes,
 	}
 	return addFileToCache(file.ID, p.storeId, object)
