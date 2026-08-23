@@ -30,7 +30,12 @@ func GetRangeUsages(rangeType string, count int, user string, storeName string, 
 	if err != nil {
 		return nil, err
 	}
-	now := time.Now()
+	// UTC, because the daily report beside this one is UTC and a day has to start
+	// in one place. Truncate works on absolute time either way, so the instant was
+	// already the same — but Format renders in the time's own location, so the two
+	// labelled that one instant as two different days, and the range view read a
+	// day behind the daily one wherever the deployment is not on UTC.
+	now := time.Now().UTC()
 	var startDateTime time.Time
 	switch rangeType {
 	case "Hour":
