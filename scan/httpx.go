@@ -100,6 +100,8 @@ func (p *HttpxScanProvider) Scan(target string, command string) (string, error) 
 		defaultArgs: "-u %s -json",
 		jsonFlags:   []string{"-json", "-jsonl"}, addJSON: "-json",
 		targetFlags: []string{"-u", "-target", "-l"}, addTarget: "-u",
+		// -t is a thread count here, so it is not one of these.
+		offLimits: []string{"-config", "-rl-file"},
 	}.run(target, command)
 }
 

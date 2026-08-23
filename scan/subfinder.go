@@ -75,6 +75,7 @@ func (p *SubfinderScanProvider) Scan(target string, command string) (string, err
 		defaultArgs: "-d %s -json",
 		jsonFlags:   []string{"-json", "-oJ"}, addJSON: "-json",
 		targetFlags: []string{"-d", "-domain", "-dL"}, addTarget: "-d",
+		offLimits: []string{"-config", "-pc", "-provider-config"},
 	}.run(target, command)
 }
 
