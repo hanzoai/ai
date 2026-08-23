@@ -51,7 +51,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"strings"
 
 	"github.com/luxfi/zap"
 
@@ -93,32 +92,6 @@ func registerZapSecurityAssetsScans() {
 
 // ── Shared seams (group-local: identity + response envelope parity) ──────────
 
-// zapSecPrincipal resolves the request principal STRICTLY from its verified
-// credential — the ZAP analogue of the session/GetScopedOwner principal (there
-// is no session cookie on the ZAP path). pk-/sk- IAM keys route through
-// getUserByAccessKey; JWTs through object.ParseAndValidateJWT (signature +
-// iss/aud, never raw iam.ParseJwtToken). Returns nil for an empty / invalid /
-// unsupported credential — fail-secure.
-func zapSecPrincipal(auth string) *iam.User {
-	token := strings.TrimSpace(strings.TrimPrefix(auth, "Bearer "))
-	if token == "" {
-		return nil
-	}
-	if isIAMApiKey(token) {
-		if user, err := getUserByAccessKey(token); err == nil && user != nil {
-			return user
-		}
-		return nil
-	}
-	if isJwtToken(token) {
-		if claims, err := object.ParseAndValidateJWT(token); err == nil && claims != nil {
-			u := claims.User
-			return &u
-		}
-	}
-	return nil
-}
-
 // zapSecErr renders the ResponseError envelope ({status:"error", msg}) at
 // the given status. Business errors mirror ResponseError (HTTP 200 body); auth
 // failures use 401 like ResponseUnauthorized.
@@ -145,7 +118,7 @@ type zapListParams struct {
 // zapGetAssetsHandler mirrors ApiController.GetAssets (org-scoped via
 // GetScopedOwner, masked, list-vs-paginate branch on pageSize/p).
 func zapGetAssetsHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	user := zapSecPrincipal(auth)
+	user := zapPrincipal(auth)
 	if user == nil {
 		return zapSecErr(http.StatusUnauthorized, "auth:Please sign in first")
 	}
@@ -190,7 +163,7 @@ type zapSecIDRequest struct {
 
 // zapGetAssetHandler mirrors ApiController.GetAsset.
 func zapGetAssetHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if zapSecPrincipal(auth) == nil {
+	if zapPrincipal(auth) == nil {
 		return zapSecErr(http.StatusUnauthorized, "auth:Please sign in first")
 	}
 	var req zapSecIDRequest
@@ -215,7 +188,7 @@ type zapUpdateAssetRequest struct {
 
 // zapUpdateAssetHandler mirrors ApiController.UpdateAsset.
 func zapUpdateAssetHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if zapSecPrincipal(auth) == nil {
+	if zapPrincipal(auth) == nil {
 		return zapSecErr(http.StatusUnauthorized, "auth:Please sign in first")
 	}
 	var req zapUpdateAssetRequest
@@ -231,7 +204,7 @@ func zapUpdateAssetHandler(_ context.Context, auth string, body []byte) (*zap.Me
 
 // zapAddAssetHandler mirrors ApiController.AddAsset.
 func zapAddAssetHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if zapSecPrincipal(auth) == nil {
+	if zapPrincipal(auth) == nil {
 		return zapSecErr(http.StatusUnauthorized, "auth:Please sign in first")
 	}
 	var asset object.Asset
@@ -247,7 +220,7 @@ func zapAddAssetHandler(_ context.Context, auth string, body []byte) (*zap.Messa
 
 // zapDeleteAssetHandler mirrors ApiController.DeleteAsset.
 func zapDeleteAssetHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if zapSecPrincipal(auth) == nil {
+	if zapPrincipal(auth) == nil {
 		return zapSecErr(http.StatusUnauthorized, "auth:Please sign in first")
 	}
 	var asset object.Asset
@@ -277,7 +250,7 @@ type zapScanAssetRequest struct {
 // HTTP path passes has no analogue on the ZAP wire, so language defaults to "en"
 // (parity with zapChatHandler).
 func zapScanAssetHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if zapSecPrincipal(auth) == nil {
+	if zapPrincipal(auth) == nil {
 		return zapSecErr(http.StatusUnauthorized, "auth:Please sign in first")
 	}
 	var req zapScanAssetRequest
@@ -301,7 +274,7 @@ type zapScanAssetsRequest struct {
 
 // zapScanAssetsHandler mirrors ApiController.ScanAssets.
 func zapScanAssetsHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	user := zapSecPrincipal(auth)
+	user := zapPrincipal(auth)
 	if user == nil {
 		return zapSecErr(http.StatusUnauthorized, "auth:Please sign in first")
 	}
@@ -324,7 +297,7 @@ func zapScanAssetsHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 // zapGetScansHandler mirrors ApiController.GetScans (org-scoped, optional asset
 // filter, list-vs-paginate branch on pageSize/p).
 func zapGetScansHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	user := zapSecPrincipal(auth)
+	user := zapPrincipal(auth)
 	if user == nil {
 		return zapSecErr(http.StatusUnauthorized, "auth:Please sign in first")
 	}
@@ -372,7 +345,7 @@ func zapGetScansHandler(_ context.Context, auth string, body []byte) (*zap.Messa
 
 // zapGetScanHandler mirrors ApiController.GetScan.
 func zapGetScanHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if zapSecPrincipal(auth) == nil {
+	if zapPrincipal(auth) == nil {
 		return zapSecErr(http.StatusUnauthorized, "auth:Please sign in first")
 	}
 	var req zapSecIDRequest
@@ -396,7 +369,7 @@ type zapUpdateScanRequest struct {
 
 // zapUpdateScanHandler mirrors ApiController.UpdateScan.
 func zapUpdateScanHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if zapSecPrincipal(auth) == nil {
+	if zapPrincipal(auth) == nil {
 		return zapSecErr(http.StatusUnauthorized, "auth:Please sign in first")
 	}
 	var req zapUpdateScanRequest
@@ -412,7 +385,7 @@ func zapUpdateScanHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 
 // zapAddScanHandler mirrors ApiController.AddScan.
 func zapAddScanHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if zapSecPrincipal(auth) == nil {
+	if zapPrincipal(auth) == nil {
 		return zapSecErr(http.StatusUnauthorized, "auth:Please sign in first")
 	}
 	var scan object.Scan
@@ -428,7 +401,7 @@ func zapAddScanHandler(_ context.Context, auth string, body []byte) (*zap.Messag
 
 // zapDeleteScanHandler mirrors ApiController.DeleteScan.
 func zapDeleteScanHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if zapSecPrincipal(auth) == nil {
+	if zapPrincipal(auth) == nil {
 		return zapSecErr(http.StatusUnauthorized, "auth:Please sign in first")
 	}
 	var scan object.Scan
@@ -446,7 +419,7 @@ func zapDeleteScanHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 
 // zapGetPermissionsHandler mirrors ApiController.GetPermissions.
 func zapGetPermissionsHandler(_ context.Context, auth string, _ []byte) (*zap.Message, error) {
-	if zapSecPrincipal(auth) == nil {
+	if zapPrincipal(auth) == nil {
 		return zapSecErr(http.StatusUnauthorized, "auth:Please sign in first")
 	}
 	permissions, err := iam.GetPermissions()
@@ -459,7 +432,7 @@ func zapGetPermissionsHandler(_ context.Context, auth string, _ []byte) (*zap.Me
 // zapGetPermissionHandler mirrors ApiController.GetPermission (id → name split,
 // then iam.GetPermission by name).
 func zapGetPermissionHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if zapSecPrincipal(auth) == nil {
+	if zapPrincipal(auth) == nil {
 		return zapSecErr(http.StatusUnauthorized, "auth:Please sign in first")
 	}
 	var req zapSecIDRequest
@@ -481,7 +454,7 @@ func zapGetPermissionHandler(_ context.Context, auth string, body []byte) (*zap.
 
 // zapUpdatePermissionHandler mirrors ApiController.UpdatePermission.
 func zapUpdatePermissionHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if zapSecPrincipal(auth) == nil {
+	if zapPrincipal(auth) == nil {
 		return zapSecErr(http.StatusUnauthorized, "auth:Please sign in first")
 	}
 	var permission iam.Permission
@@ -497,7 +470,7 @@ func zapUpdatePermissionHandler(_ context.Context, auth string, body []byte) (*z
 
 // zapAddPermissionHandler mirrors ApiController.AddPermission.
 func zapAddPermissionHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if zapSecPrincipal(auth) == nil {
+	if zapPrincipal(auth) == nil {
 		return zapSecErr(http.StatusUnauthorized, "auth:Please sign in first")
 	}
 	var permission iam.Permission
@@ -513,7 +486,7 @@ func zapAddPermissionHandler(_ context.Context, auth string, body []byte) (*zap.
 
 // zapDeletePermissionHandler mirrors ApiController.DeletePermission.
 func zapDeletePermissionHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if zapSecPrincipal(auth) == nil {
+	if zapPrincipal(auth) == nil {
 		return zapSecErr(http.StatusUnauthorized, "auth:Please sign in first")
 	}
 	var permission iam.Permission
