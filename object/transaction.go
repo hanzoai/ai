@@ -29,7 +29,6 @@ import (
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/util"
-	"github.com/robfig/cron/v3"
 )
 
 var CloudHost = ""
@@ -256,7 +255,7 @@ func retryFailedTransactionNoError() {
 }
 
 func InitMessageTransactionRetry() {
-	cronJob := cron.New()
+	cronJob := newCron()
 	schedule := "@every 5m"
 	_, err := cronJob.AddFunc(schedule, retryFailedTransactionNoError)
 	if err != nil {

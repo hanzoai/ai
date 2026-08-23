@@ -23,7 +23,6 @@ import (
 	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/util"
 	"github.com/hanzoai/dbx"
-	"github.com/robfig/cron/v3"
 )
 
 type Param struct {
@@ -305,7 +304,7 @@ func InitCommitRecordsTask() {
 	// Run once immediately on startup
 	go ScanNeedCommitRecords()
 	// Create cron job
-	cronJob := cron.New()
+	cronJob := newCron()
 	schedule := "@every 5m"
 	_, err := cronJob.AddFunc(schedule, ScanNeedCommitRecords)
 	if err != nil {
