@@ -254,39 +254,7 @@ func (p *OsPatchScanProvider) ListAvailablePatches() ([]*WindowsPatch, error) {
 		}
 	`
 
-	fmt.Printf("%s [OS Patch] Executing PowerShell command:\n%s\n", getHostnamePrefix(), psCommand)
-	output, err := p.runPowerShell(psCommand)
-	if err != nil {
-		return nil, fmt.Errorf("%s failed to list patches: %v", getHostnamePrefix(), err)
-	}
-	fmt.Printf("%s [OS Patch] PowerShell output:\n%s\n", getHostnamePrefix(), output)
-
-	// Extract JSON from output, removing any non-JSON lines (e.g., interactive prompts)
-	output = extractJSON(output)
-
-	// Parse JSON output
-	var patches []*WindowsPatch
-	output = strings.TrimSpace(output)
-	if output == "" || output == "null" {
-		return []*WindowsPatch{}, nil
-	}
-
-	// Handle both single object and array of objects
-	if strings.HasPrefix(output, "[") {
-		err = json.Unmarshal([]byte(output), &patches)
-	} else {
-		var patch WindowsPatch
-		err = json.Unmarshal([]byte(output), &patch)
-		if err == nil {
-			patches = []*WindowsPatch{&patch}
-		}
-	}
-
-	if err != nil {
-		return nil, fmt.Errorf("%s failed to parse patches JSON: %v", getHostnamePrefix(), err)
-	}
-
-	return patches, nil
+	return p.patchesFrom(psCommand, "patches")
 }
 
 // ListInstalledPatches returns all recently installed patches, including those with "Pending restart" status
@@ -326,39 +294,7 @@ func (p *OsPatchScanProvider) ListInstalledPatches() ([]*WindowsPatch, error) {
 		}
 	`
 
-	fmt.Printf("%s [OS Patch] Executing PowerShell command:\n%s\n", getHostnamePrefix(), psCommand)
-	output, err := p.runPowerShell(psCommand)
-	if err != nil {
-		return nil, fmt.Errorf("%s failed to list installed patches: %v", getHostnamePrefix(), err)
-	}
-	fmt.Printf("%s [OS Patch] PowerShell output:\n%s\n", getHostnamePrefix(), output)
-
-	// Extract JSON from output, removing any non-JSON lines (e.g., interactive prompts)
-	output = extractJSON(output)
-
-	// Parse JSON output
-	var patches []*WindowsPatch
-	output = strings.TrimSpace(output)
-	if output == "" || output == "null" {
-		return []*WindowsPatch{}, nil
-	}
-
-	// Handle both single object and array of objects
-	if strings.HasPrefix(output, "[") {
-		err = json.Unmarshal([]byte(output), &patches)
-	} else {
-		var patch WindowsPatch
-		err = json.Unmarshal([]byte(output), &patch)
-		if err == nil {
-			patches = []*WindowsPatch{&patch}
-		}
-	}
-
-	if err != nil {
-		return nil, fmt.Errorf("%s failed to parse installed patches JSON: %v", getHostnamePrefix(), err)
-	}
-
-	return patches, nil
+	return p.patchesFrom(psCommand, "installed patches")
 }
 
 // InstallPatch installs a specific patch by patch ID (KB number or title)
@@ -493,4 +429,42 @@ func (p *OsPatchScanProvider) GetResultSummary(result string) string {
 	}
 
 	return "No patches found"
+}
+
+// patchesFrom runs a PowerShell script and reads the patches it printed.
+//
+// The script decides WHAT is listed — what is available to install, or what has
+// been installed already — and that is the whole of the difference between the
+// two callers. This decides nothing except how to read the answer: PowerShell
+// prints a lone object bare rather than as a one-element array, so both shapes
+// are accepted, and an empty result is an empty list rather than a failure.
+//
+// `what` names the listing in a refusal, because "failed to list patches" and
+// "failed to list installed patches" are different things to be told.
+func (p *OsPatchScanProvider) patchesFrom(psCommand, what string) ([]*WindowsPatch, error) {
+	fmt.Printf("%s [OS Patch] Executing PowerShell command:\n%s\n", getHostnamePrefix(), psCommand)
+	output, err := p.runPowerShell(psCommand)
+	if err != nil {
+		return nil, fmt.Errorf("%s failed to list %s: %v", getHostnamePrefix(), what, err)
+	}
+	fmt.Printf("%s [OS Patch] PowerShell output:\n%s\n", getHostnamePrefix(), output)
+
+	output = strings.TrimSpace(extractJSON(output))
+	if output == "" || output == "null" {
+		return []*WindowsPatch{}, nil
+	}
+
+	var patches []*WindowsPatch
+	if strings.HasPrefix(output, "[") {
+		err = json.Unmarshal([]byte(output), &patches)
+	} else {
+		var one WindowsPatch
+		if err = json.Unmarshal([]byte(output), &one); err == nil {
+			patches = []*WindowsPatch{&one}
+		}
+	}
+	if err != nil {
+		return nil, fmt.Errorf("%s failed to parse %s JSON: %v", getHostnamePrefix(), what, err)
+	}
+	return patches, nil
 }
