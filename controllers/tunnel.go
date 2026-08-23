@@ -67,6 +67,19 @@ func (c *ApiController) AddNodeTunnel() {
 		return
 	}
 
+	// The connection inherits the node's owner, so naming another tenant's node
+	// here files a connection in their organization — which is refused at the
+	// tunnel, but should never have been created.
+	node, err := object.GetNode(nodeId)
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+	if node == nil || !reaches(user, node.Owner) {
+		c.ResponseError(c.T("general:The node does not exist"))
+		return
+	}
+
 	connection := &object.Connection{
 		Creator:       user.Name,
 		ClientIp:      c.getClientIp(),
@@ -75,7 +88,6 @@ func (c *ApiController) AddNodeTunnel() {
 		UserAgentDesc: util.GetDescFromUserAgent(c.getUserAgent()),
 	}
 
-	var err error
 	connection, err = object.CreateConnection(connection, nodeId, mode)
 	if err != nil {
 		c.ResponseError(err.Error())
@@ -98,60 +110,66 @@ func (c *ApiController) AddNodeTunnel() {
 // @Success 200 {object} Response
 // @router /get-node-tunnel [get]
 func (c *ApiController) GetNodeTunnel() {
-	// The upgrade hands the socket to a callback: fasthttp hijacks the connection,
-	// so the session outlives this function and has to run inside it.
+	// A tunnel is an interactive session on a machine. Who is asking, and whether
+	// the connection they named is theirs, are decided HERE — before the socket is
+	// handed over — for two reasons that happen to point the same way.
+	//
+	// The session is not the request. The upgrade hijacks the connection and
+	// fasthttp runs the callback on it after this function has returned, so the
+	// request and every input on it are gone by the time the session starts: they
+	// have to be read now and carried in. And a refusal needs a request to refuse
+	// on. Once the socket is up there is no status left to send — only a websocket
+	// close a client may not be listening for.
+	caller, ok := c.RequireSignedInUser()
+	if !ok {
+		return
+	}
+
+	width := c.Input().Get("width")
+	height := c.Input().Get("height")
+	dpi := c.Input().Get("dpi")
+	connectionId := c.Input().Get("connectionId")
+
+	username := c.Input().Get("username")
+	password := c.Input().Get("password")
+
+	intWidth, err := strconv.Atoi(width)
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+	intHeight, err := strconv.Atoi(height)
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+
+	// The store answers a missing row with (nil, nil) — its convention everywhere —
+	// so a connection that is not there arrives as a nil value beside a nil error.
+	// A connection the caller's org does not reach answers the same way as one that
+	// does not exist: from where they stand the two are the same fact, and telling
+	// them apart would confirm another tenant's connections by name.
+	connection, err := object.GetConnection(connectionId)
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+	if connection == nil || !reaches(caller, connection.Owner) {
+		c.ResponseError(c.T("general:The connection does not exist"))
+		return
+	}
+
+	node, err := object.GetNode(connection.Node)
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+	if node == nil {
+		c.ResponseError(c.T("general:The node does not exist"))
+		return
+	}
+
 	if err := UpGrader.Upgrade(c.Fiber().RequestCtx(), func(ws *websocket.Conn) {
-
-		width := c.Input().Get("width")
-		height := c.Input().Get("height")
-		dpi := c.Input().Get("dpi")
-		connectionId := c.Input().Get("connectionId")
-
-		username := c.Input().Get("username")
-		password := c.Input().Get("password")
-
-		intWidth, err := strconv.Atoi(width)
-		if err != nil {
-			guacamole.Disconnect(ws, ParametersError, err.Error())
-			return
-		}
-		intHeight, err := strconv.Atoi(height)
-		if err != nil {
-			guacamole.Disconnect(ws, ParametersError, err.Error())
-			return
-		}
-
-		// A ROW THAT IS NOT THERE IS NOT AN ERROR HERE, AND THAT IS THE WHOLE HAZARD.
-		//
-		// The store answers a missing row with (nil, nil) — its convention
-		// everywhere — so err is nil and the value is nil together. This runs
-		// inside the websocket upgrade callback, on a hijacked connection, in a
-		// goroutine of its own: the router's recover wrapped the handler that has
-		// already returned and cannot see a panic raised here. An unrecovered panic
-		// in a goroutine ends the PROCESS, so a dereference on this line is a
-		// request that stops the service for everybody.
-		//
-		// reason() is used rather than err.Error() for the same reason: on the
-		// not-found path there is no error to ask for a message.
-		reason := func(err error, absent string) string {
-			if err != nil {
-				return err.Error()
-			}
-			return absent
-		}
-
-		connection, err := object.GetConnection(connectionId)
-		if err != nil || connection == nil {
-			guacamole.Disconnect(ws, ConnectionNotFound, reason(err, "connection not found"))
-			return
-		}
-
-		node, err := object.GetNode(connection.Node)
-		if err != nil || node == nil {
-			guacamole.Disconnect(ws, NodeNotFound, reason(err, "node not found"))
-			return
-		}
-
 		if node.RemoteUsername == "" {
 			node.RemoteUsername = username
 			node.RemotePassword = password
@@ -242,26 +260,27 @@ func (c *ApiController) GetNodeTunnel() {
 }
 
 func (c *ApiController) TunnelMonitor() {
-	// The upgrade hands the socket to a callback: fasthttp hijacks the connection,
-	// so the session outlives this function and has to run inside it.
+	// A monitor mirrors somebody's screen, so it answers the same two questions
+	// GetNodeTunnel does, in the same place and for the same reasons: the request
+	// is gone once the socket is hijacked, and a refusal needs a request to refuse
+	// on.
+	caller, ok := c.RequireSignedInUser()
+	if !ok {
+		return
+	}
+	connectionId := c.Input().Get("connectionId")
+
+	connection, err := object.GetConnection(connectionId)
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+	if connection == nil || !reaches(caller, connection.Owner) {
+		c.ResponseError(c.T("general:The connection does not exist"))
+		return
+	}
+
 	if err := UpGrader.Upgrade(c.Fiber().RequestCtx(), func(ws *websocket.Conn) {
-		connectionId := c.Input().Get("connectionId")
-
-		// Same hazard as GetNodeTunnel above: a missing row is (nil, nil), and this
-		// callback runs on a hijacked connection where a panic ends the process
-		// rather than the request. The socket is already taken over by the upgrade,
-		// so the refusal goes down the tunnel; an HTTP response body has nowhere
-		// left to be written.
-		connection, err := object.GetConnection(connectionId)
-		if err != nil || connection == nil {
-			reason := "connection not found"
-			if err != nil {
-				reason = err.Error()
-			}
-			guacamole.Disconnect(ws, ConnectionNotFound, reason)
-			return
-		}
-
 		if connection.Status != object.Connected {
 			guacamole.Disconnect(ws, NodeNotActive, "Connection offline")
 			return
@@ -283,8 +302,11 @@ func (c *ApiController) TunnelMonitor() {
 
 		tunnel, err := guacamole.NewTunnel(addr, configuration)
 		if err != nil {
+			// The client has been told; the session is over. This runs in the
+			// hijack goroutine, so a panic here would take the process with it
+			// rather than end this one monitor.
 			guacamole.Disconnect(ws, NewTunnelError, err.Error())
-			panic(err)
+			return
 		}
 
 		guacSession := &guacamole.Session{
@@ -318,10 +340,11 @@ func (c *ApiController) TunnelMonitor() {
 
 			_, err = tunnel.WriteAndFlush(message)
 			if err != nil {
-				err := object.CloseConnection(connectionId, Normal, "Normal user exit")
-				if err != nil {
-					c.ResponseError(err.Error())
-					return
+				// The socket is hijacked and the session is ending, so there is no
+				// response left to write this on — the same reason the sibling loop
+				// in GetNodeTunnel logs here.
+				if err := object.CloseConnection(connectionId, Normal, "Normal user exit"); err != nil {
+					log.Error(fmt.Sprintf("TunnelMonitor():object.CloseConnection() error: %s", err.Error()))
 				}
 				return
 			}
