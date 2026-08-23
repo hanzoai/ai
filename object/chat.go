@@ -120,15 +120,7 @@ func AddChat(chat *Chat) (bool, error) {
 	//		chat.User2 = provider.Name
 	//	}
 	//}
-	err := insertRow(adapter.db, chat)
-	affected := int64(1)
-	if err != nil {
-		affected = 0
-	}
-	if err != nil {
-		return false, err
-	}
-	return affected != 0, nil
+	return addRow(chat)
 }
 
 func DeleteChat(chat *Chat) (bool, error) {
