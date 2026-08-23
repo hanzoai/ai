@@ -91,19 +91,11 @@ func GetPaginationNodes(owner string, offset, limit int, field, value, sortField
 }
 
 func getNode(owner string, name string) (*Node, error) {
+	// An empty key names no row, and is answered without asking.
 	if owner == "" || name == "" {
 		return nil, nil
 	}
-	node := Node{Owner: owner, Name: name}
-	existed, err := getOne(adapter.db, "node", &node, pk2(node.Owner, node.Name))
-	if err != nil {
-		return &node, err
-	}
-	if existed {
-		return &node, nil
-	} else {
-		return nil, nil
-	}
+	return getRow[Node]("node", owner, name)
 }
 
 func GetNode(id string) (*Node, error) {
