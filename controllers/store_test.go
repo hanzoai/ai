@@ -40,9 +40,24 @@ func withStore(t *testing.T) {
 // test could believe it was refusing Bob while asking as Bob throughout, and pass
 // for a reason it never stated. One server, keyed.
 type people struct {
-	mu sync.Mutex
-	by map[string]*iam.User
-	n  int
+	mu   sync.Mutex
+	by   map[string]*iam.User
+	orgs map[string]string // publishable key -> the org it names
+	n    int
+}
+
+// asOrg registers a publishable key with the IAM double and returns it.
+//
+// The publishable door is the dual of the secret one: it answers an ORG and
+// never a person, which is what makes a pk- safe to put in a browser.
+func (p *people) asOrg(t *testing.T, org string) string {
+	t.Helper()
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.n++
+	key := fmt.Sprintf("pk-test-%d-%s", p.n, org)
+	p.orgs[key] = org
+	return key
 }
 
 // asUser registers a person with the IAM double and returns the credential that
@@ -66,10 +81,10 @@ func (p *people) asUser(t *testing.T, user *iam.User) string {
 // withIAM stands up the double for one test and points the resolver at it.
 func withIAM(t *testing.T) *people {
 	t.Helper()
-	p := &people{by: map[string]*iam.User{}}
+	p := &people{by: map[string]*iam.User{}, orgs: map[string]string{}}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		if r.URL.Path != "/v1/iam/keys/principal" {
+		if r.URL.Path != "/v1/iam/keys/principal" && r.URL.Path != "/v1/iam/keys/org" {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
@@ -77,14 +92,33 @@ func withIAM(t *testing.T) *people {
 			_ = json.NewEncoder(w).Encode(map[string]any{"status": "error", "code": "unauthorized", "msg": "authentication required"})
 			return
 		}
+		key := r.URL.Query().Get("accessKey")
 		p.mu.Lock()
-		user, known := p.by[r.URL.Query().Get("accessKey")]
+		user, isPerson := p.by[key]
+		org, isOrg := p.orgs[key]
 		p.mu.Unlock()
-		if !known {
-			_ = json.NewEncoder(w).Encode(map[string]any{"status": "error", "code": "key_unknown", "msg": "the entity does not exist"})
+
+		// Each door answers for its own kind of key and refuses the other's, which
+		// is how IAM keeps a publishable key from authenticating anything.
+		if r.URL.Path == "/v1/iam/keys/org" {
+			switch {
+			case isOrg:
+				_ = json.NewEncoder(w).Encode(map[string]any{"status": "ok", "data": map[string]any{"org": org}})
+			case isPerson:
+				_ = json.NewEncoder(w).Encode(map[string]any{"status": "error", "code": "key_wrong_door", "msg": "that is a secret key"})
+			default:
+				_ = json.NewEncoder(w).Encode(map[string]any{"status": "error", "code": "key_unknown", "msg": "the entity does not exist"})
+			}
 			return
 		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"status": "ok", "data": user})
+		switch {
+		case isPerson:
+			_ = json.NewEncoder(w).Encode(map[string]any{"status": "ok", "data": user})
+		case isOrg:
+			_ = json.NewEncoder(w).Encode(map[string]any{"status": "error", "code": "key_wrong_door", "msg": "that is a publishable key"})
+		default:
+			_ = json.NewEncoder(w).Encode(map[string]any{"status": "error", "code": "key_unknown", "msg": "the entity does not exist"})
+		}
 	}))
 	t.Cleanup(srv.Close)
 
