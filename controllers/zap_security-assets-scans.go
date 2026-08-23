@@ -92,14 +92,6 @@ func registerZapSecurityAssetsScans() {
 
 // ── Shared seams (group-local: identity + response envelope parity) ──────────
 
-// zapSecErr renders the ResponseError envelope ({status:"error", msg}) at
-// the given status. Business errors mirror ResponseError (HTTP 200 body); auth
-// failures use 401 like ResponseUnauthorized.
-func zapSecErr(status int, msg string) (*zap.Message, error) {
-	b, _ := json.Marshal(Response{Status: "error", Msg: msg})
-	return object.BuildCloudResponse(uint32(status), b, msg)
-}
-
 // ── asset.go parity ──────────────────────────────────────────────────────────
 
 // zapListParams is the body-decoded projection of the query params shared
@@ -120,12 +112,12 @@ type zapListParams struct {
 func zapGetAssetsHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
 	user := zapPrincipal(auth)
 	if user == nil {
-		return zapSecErr(http.StatusUnauthorized, "auth:Please sign in first")
+		return zapError(http.StatusUnauthorized, "auth:Please sign in first")
 	}
 	var p zapListParams
 	if len(body) > 0 {
 		if err := json.Unmarshal(body, &p); err != nil {
-			return zapSecErr(http.StatusBadRequest, "invalid request: "+err.Error())
+			return zapError(http.StatusBadRequest, "invalid request: "+err.Error())
 		}
 	}
 	owner := util.ScopeOwner(user.Owner, p.Owner)
@@ -133,7 +125,7 @@ func zapGetAssetsHandler(_ context.Context, auth string, body []byte) (*zap.Mess
 	if p.PageSize == "" || p.P == "" {
 		assets, err := object.GetAssets(owner)
 		if err != nil {
-			return zapSecErr(http.StatusOK, err.Error())
+			return zapError(http.StatusOK, err.Error())
 		}
 		return zapOk(object.GetMaskedAssets(assets, true))
 	}
@@ -142,7 +134,7 @@ func zapGetAssetsHandler(_ context.Context, auth string, body []byte) (*zap.Mess
 	page := util.ParseInt(p.P)
 	count, err := object.GetAssetCount(owner, p.Field, p.Value)
 	if err != nil {
-		return zapSecErr(http.StatusOK, err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
 	offset := (page - 1) * limit
 	if offset < 0 {
@@ -150,7 +142,7 @@ func zapGetAssetsHandler(_ context.Context, auth string, body []byte) (*zap.Mess
 	}
 	assets, err := object.GetPaginationAssets(owner, offset, limit, p.Field, p.Value, p.SortField, p.SortOrder)
 	if err != nil {
-		return zapSecErr(http.StatusOK, err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
 	return zapOk(object.GetMaskedAssets(assets, true), count)
 }
@@ -158,17 +150,17 @@ func zapGetAssetsHandler(_ context.Context, auth string, body []byte) (*zap.Mess
 // zapGetAssetHandler mirrors ApiController.GetAsset.
 func zapGetAssetHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
 	if zapPrincipal(auth) == nil {
-		return zapSecErr(http.StatusUnauthorized, "auth:Please sign in first")
+		return zapError(http.StatusUnauthorized, "auth:Please sign in first")
 	}
 	var req zapIDRequest
 	if len(body) > 0 {
 		if err := json.Unmarshal(body, &req); err != nil {
-			return zapSecErr(http.StatusBadRequest, "invalid request: "+err.Error())
+			return zapError(http.StatusBadRequest, "invalid request: "+err.Error())
 		}
 	}
 	asset, err := object.GetAsset(req.ID)
 	if err != nil {
-		return zapSecErr(http.StatusOK, err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
 	return zapOk(object.GetMaskedAsset(asset, true))
 }
@@ -183,49 +175,27 @@ type zapUpdateAssetRequest struct {
 // zapUpdateAssetHandler mirrors ApiController.UpdateAsset.
 func zapUpdateAssetHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
 	if zapPrincipal(auth) == nil {
-		return zapSecErr(http.StatusUnauthorized, "auth:Please sign in first")
+		return zapError(http.StatusUnauthorized, "auth:Please sign in first")
 	}
 	var req zapUpdateAssetRequest
 	if err := json.Unmarshal(body, &req); err != nil {
-		return zapSecErr(http.StatusBadRequest, "invalid request: "+err.Error())
+		return zapError(http.StatusBadRequest, "invalid request: "+err.Error())
 	}
 	success, err := object.UpdateAsset(req.ID, &req.Asset)
 	if err != nil {
-		return zapSecErr(http.StatusOK, err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
 	return zapOk(success)
 }
 
 // zapAddAssetHandler mirrors ApiController.AddAsset.
 func zapAddAssetHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if zapPrincipal(auth) == nil {
-		return zapSecErr(http.StatusUnauthorized, "auth:Please sign in first")
-	}
-	var asset object.Asset
-	if err := json.Unmarshal(body, &asset); err != nil {
-		return zapSecErr(http.StatusBadRequest, "invalid request: "+err.Error())
-	}
-	success, err := object.AddAsset(&asset)
-	if err != nil {
-		return zapSecErr(http.StatusOK, err.Error())
-	}
-	return zapOk(success)
+	return zapWrite(auth, body, object.AddAsset)
 }
 
 // zapDeleteAssetHandler mirrors ApiController.DeleteAsset.
 func zapDeleteAssetHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if zapPrincipal(auth) == nil {
-		return zapSecErr(http.StatusUnauthorized, "auth:Please sign in first")
-	}
-	var asset object.Asset
-	if err := json.Unmarshal(body, &asset); err != nil {
-		return zapSecErr(http.StatusBadRequest, "invalid request: "+err.Error())
-	}
-	success, err := object.DeleteAsset(&asset)
-	if err != nil {
-		return zapSecErr(http.StatusOK, err.Error())
-	}
-	return zapOk(success)
+	return zapWrite(auth, body, object.DeleteAsset)
 }
 
 // zapScanAssetRequest carries the ScanAsset params (the router URL query) over the
@@ -245,15 +215,15 @@ type zapScanAssetRequest struct {
 // (parity with zapChatHandler).
 func zapScanAssetHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
 	if zapPrincipal(auth) == nil {
-		return zapSecErr(http.StatusUnauthorized, "auth:Please sign in first")
+		return zapError(http.StatusUnauthorized, "auth:Please sign in first")
 	}
 	var req zapScanAssetRequest
 	if err := json.Unmarshal(body, &req); err != nil {
-		return zapSecErr(http.StatusBadRequest, "invalid request: "+err.Error())
+		return zapError(http.StatusBadRequest, "invalid request: "+err.Error())
 	}
 	scanResult, err := object.ScanAsset(req.Provider, req.Scan, req.TargetMode, req.Target, req.Asset, req.Command, req.SaveToScan, "en")
 	if err != nil {
-		return zapSecErr(http.StatusOK, err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
 	return zapOk(scanResult)
 }
@@ -270,18 +240,18 @@ type zapScanAssetsRequest struct {
 func zapScanAssetsHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
 	user := zapPrincipal(auth)
 	if user == nil {
-		return zapSecErr(http.StatusUnauthorized, "auth:Please sign in first")
+		return zapError(http.StatusUnauthorized, "auth:Please sign in first")
 	}
 	var req zapScanAssetsRequest
 	if len(body) > 0 {
 		if err := json.Unmarshal(body, &req); err != nil {
-			return zapSecErr(http.StatusBadRequest, "invalid request: "+err.Error())
+			return zapError(http.StatusBadRequest, "invalid request: "+err.Error())
 		}
 	}
 	owner := util.ScopeOwner(user.Owner, req.Owner)
 	success, err := object.ScanAssetsFromProvider(owner, req.Provider)
 	if err != nil {
-		return zapSecErr(http.StatusOK, err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
 	return zapOk(success)
 }
@@ -293,12 +263,12 @@ func zapScanAssetsHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 func zapGetScansHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
 	user := zapPrincipal(auth)
 	if user == nil {
-		return zapSecErr(http.StatusUnauthorized, "auth:Please sign in first")
+		return zapError(http.StatusUnauthorized, "auth:Please sign in first")
 	}
 	var p zapListParams
 	if len(body) > 0 {
 		if err := json.Unmarshal(body, &p); err != nil {
-			return zapSecErr(http.StatusBadRequest, "invalid request: "+err.Error())
+			return zapError(http.StatusBadRequest, "invalid request: "+err.Error())
 		}
 	}
 	owner := util.ScopeOwner(user.Owner, p.Owner)
@@ -307,7 +277,7 @@ func zapGetScansHandler(_ context.Context, auth string, body []byte) (*zap.Messa
 	if p.Asset != "" {
 		scans, err := object.GetScansByAsset(owner, p.Asset)
 		if err != nil {
-			return zapSecErr(http.StatusOK, err.Error())
+			return zapError(http.StatusOK, err.Error())
 		}
 		return zapOk(scans)
 	}
@@ -315,7 +285,7 @@ func zapGetScansHandler(_ context.Context, auth string, body []byte) (*zap.Messa
 	if p.PageSize == "" || p.P == "" {
 		scans, err := object.GetScans(owner)
 		if err != nil {
-			return zapSecErr(http.StatusOK, err.Error())
+			return zapError(http.StatusOK, err.Error())
 		}
 		return zapOk(scans)
 	}
@@ -324,7 +294,7 @@ func zapGetScansHandler(_ context.Context, auth string, body []byte) (*zap.Messa
 	page := util.ParseInt(p.P)
 	count, err := object.GetScanCount(owner, p.Field, p.Value)
 	if err != nil {
-		return zapSecErr(http.StatusOK, err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
 	offset := (page - 1) * limit
 	if offset < 0 {
@@ -332,7 +302,7 @@ func zapGetScansHandler(_ context.Context, auth string, body []byte) (*zap.Messa
 	}
 	scans, err := object.GetPaginationScans(owner, offset, limit, p.Field, p.Value, p.SortField, p.SortOrder)
 	if err != nil {
-		return zapSecErr(http.StatusOK, err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
 	return zapOk(scans, count)
 }
@@ -340,17 +310,17 @@ func zapGetScansHandler(_ context.Context, auth string, body []byte) (*zap.Messa
 // zapGetScanHandler mirrors ApiController.GetScan.
 func zapGetScanHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
 	if zapPrincipal(auth) == nil {
-		return zapSecErr(http.StatusUnauthorized, "auth:Please sign in first")
+		return zapError(http.StatusUnauthorized, "auth:Please sign in first")
 	}
 	var req zapIDRequest
 	if len(body) > 0 {
 		if err := json.Unmarshal(body, &req); err != nil {
-			return zapSecErr(http.StatusBadRequest, "invalid request: "+err.Error())
+			return zapError(http.StatusBadRequest, "invalid request: "+err.Error())
 		}
 	}
 	scan, err := object.GetScan(req.ID)
 	if err != nil {
-		return zapSecErr(http.StatusOK, err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
 	return zapOk(scan)
 }
@@ -364,49 +334,27 @@ type zapUpdateScanRequest struct {
 // zapUpdateScanHandler mirrors ApiController.UpdateScan.
 func zapUpdateScanHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
 	if zapPrincipal(auth) == nil {
-		return zapSecErr(http.StatusUnauthorized, "auth:Please sign in first")
+		return zapError(http.StatusUnauthorized, "auth:Please sign in first")
 	}
 	var req zapUpdateScanRequest
 	if err := json.Unmarshal(body, &req); err != nil {
-		return zapSecErr(http.StatusBadRequest, "invalid request: "+err.Error())
+		return zapError(http.StatusBadRequest, "invalid request: "+err.Error())
 	}
 	success, err := object.UpdateScan(req.ID, &req.Scan)
 	if err != nil {
-		return zapSecErr(http.StatusOK, err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
 	return zapOk(success)
 }
 
 // zapAddScanHandler mirrors ApiController.AddScan.
 func zapAddScanHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if zapPrincipal(auth) == nil {
-		return zapSecErr(http.StatusUnauthorized, "auth:Please sign in first")
-	}
-	var scan object.Scan
-	if err := json.Unmarshal(body, &scan); err != nil {
-		return zapSecErr(http.StatusBadRequest, "invalid request: "+err.Error())
-	}
-	success, err := object.AddScan(&scan)
-	if err != nil {
-		return zapSecErr(http.StatusOK, err.Error())
-	}
-	return zapOk(success)
+	return zapWrite(auth, body, object.AddScan)
 }
 
 // zapDeleteScanHandler mirrors ApiController.DeleteScan.
 func zapDeleteScanHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if zapPrincipal(auth) == nil {
-		return zapSecErr(http.StatusUnauthorized, "auth:Please sign in first")
-	}
-	var scan object.Scan
-	if err := json.Unmarshal(body, &scan); err != nil {
-		return zapSecErr(http.StatusBadRequest, "invalid request: "+err.Error())
-	}
-	success, err := object.DeleteScan(&scan)
-	if err != nil {
-		return zapSecErr(http.StatusOK, err.Error())
-	}
-	return zapOk(success)
+	return zapWrite(auth, body, object.DeleteScan)
 }
 
 // ── permission.go parity ─────────────────────────────────────────────────────
@@ -414,11 +362,11 @@ func zapDeleteScanHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 // zapGetPermissionsHandler mirrors ApiController.GetPermissions.
 func zapGetPermissionsHandler(_ context.Context, auth string, _ []byte) (*zap.Message, error) {
 	if zapPrincipal(auth) == nil {
-		return zapSecErr(http.StatusUnauthorized, "auth:Please sign in first")
+		return zapError(http.StatusUnauthorized, "auth:Please sign in first")
 	}
 	permissions, err := iam.GetPermissions()
 	if err != nil {
-		return zapSecErr(http.StatusOK, err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
 	return zapOk(permissions)
 }
@@ -427,21 +375,21 @@ func zapGetPermissionsHandler(_ context.Context, auth string, _ []byte) (*zap.Me
 // then iam.GetPermission by name).
 func zapGetPermissionHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
 	if zapPrincipal(auth) == nil {
-		return zapSecErr(http.StatusUnauthorized, "auth:Please sign in first")
+		return zapError(http.StatusUnauthorized, "auth:Please sign in first")
 	}
 	var req zapIDRequest
 	if len(body) > 0 {
 		if err := json.Unmarshal(body, &req); err != nil {
-			return zapSecErr(http.StatusBadRequest, "invalid request: "+err.Error())
+			return zapError(http.StatusBadRequest, "invalid request: "+err.Error())
 		}
 	}
 	_, name, err := util.GetOwnerAndNameFromIdWithError(req.ID)
 	if err != nil {
-		return zapSecErr(http.StatusOK, err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
 	permission, err := iam.GetPermission(name)
 	if err != nil {
-		return zapSecErr(http.StatusOK, err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
 	return zapOk(permission)
 }
@@ -449,15 +397,15 @@ func zapGetPermissionHandler(_ context.Context, auth string, body []byte) (*zap.
 // zapUpdatePermissionHandler mirrors ApiController.UpdatePermission.
 func zapUpdatePermissionHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
 	if zapPrincipal(auth) == nil {
-		return zapSecErr(http.StatusUnauthorized, "auth:Please sign in first")
+		return zapError(http.StatusUnauthorized, "auth:Please sign in first")
 	}
 	var permission iam.Permission
 	if err := json.Unmarshal(body, &permission); err != nil {
-		return zapSecErr(http.StatusBadRequest, "invalid request: "+err.Error())
+		return zapError(http.StatusBadRequest, "invalid request: "+err.Error())
 	}
 	success, err := iam.UpdatePermission(&permission)
 	if err != nil {
-		return zapSecErr(http.StatusOK, err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
 	return zapOk(success)
 }
@@ -465,15 +413,15 @@ func zapUpdatePermissionHandler(_ context.Context, auth string, body []byte) (*z
 // zapAddPermissionHandler mirrors ApiController.AddPermission.
 func zapAddPermissionHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
 	if zapPrincipal(auth) == nil {
-		return zapSecErr(http.StatusUnauthorized, "auth:Please sign in first")
+		return zapError(http.StatusUnauthorized, "auth:Please sign in first")
 	}
 	var permission iam.Permission
 	if err := json.Unmarshal(body, &permission); err != nil {
-		return zapSecErr(http.StatusBadRequest, "invalid request: "+err.Error())
+		return zapError(http.StatusBadRequest, "invalid request: "+err.Error())
 	}
 	success, err := iam.AddPermission(&permission)
 	if err != nil {
-		return zapSecErr(http.StatusOK, err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
 	return zapOk(success)
 }
@@ -481,15 +429,15 @@ func zapAddPermissionHandler(_ context.Context, auth string, body []byte) (*zap.
 // zapDeletePermissionHandler mirrors ApiController.DeletePermission.
 func zapDeletePermissionHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
 	if zapPrincipal(auth) == nil {
-		return zapSecErr(http.StatusUnauthorized, "auth:Please sign in first")
+		return zapError(http.StatusUnauthorized, "auth:Please sign in first")
 	}
 	var permission iam.Permission
 	if err := json.Unmarshal(body, &permission); err != nil {
-		return zapSecErr(http.StatusBadRequest, "invalid request: "+err.Error())
+		return zapError(http.StatusBadRequest, "invalid request: "+err.Error())
 	}
 	success, err := iam.DeletePermission(&permission)
 	if err != nil {
-		return zapSecErr(http.StatusOK, err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
 	return zapOk(success)
 }
