@@ -576,10 +576,14 @@ github.com/hanzoai/authz v1.10.30 h1:UzJlpaC+2XAY8s2Ui3ziWBZmIUOCGIND5EchqbYPmEk
 github.com/hanzoai/authz v1.10.30/go.mod h1:rhZo/LvDXdUZG3/6+ujfJ1RHgLyfOpw2te+ebX3KSFs=
 github.com/hanzoai/csqlite v0.1.0 h1:suwC3dh0INlfP/U0Es6cDf6JNQ+2+GVLLATPWCUux6k=
 github.com/hanzoai/csqlite v0.1.0/go.mod h1:H31a/O6VXuklR9UBkgY++bmAK5uzVfXPqU0F6P9Wsos=
+github.com/hanzoai/csqlite v0.1.2 h1:4DzdgUfKADhzEP66Y30/HwepuBLrwt7NsemJMfrPGl4=
+github.com/hanzoai/csqlite v0.1.2/go.mod h1:H31a/O6VXuklR9UBkgY++bmAK5uzVfXPqU0F6P9Wsos=
 github.com/hanzoai/dashscopego v0.6.0 h1:sLUepwcnVajaDgzlgfuJWkZblBg9UIalkpFUjXHx0Fg=
 github.com/hanzoai/dashscopego v0.6.0/go.mod h1:ciV938pktk0Tw6ssGYzEdxwS8OaHgv3xCWiy7W5664E=
 github.com/hanzoai/dbx v1.17.2 h1:EBADhGuOMxCsc4eHj5cJmtE9c7tSKaviyl8URx31NOQ=
 github.com/hanzoai/dbx v1.17.2/go.mod h1:u7f8kFoy1tS6YRzVNEurA/NlkRF9Uq9ZhDEqOchFtSM=
+github.com/hanzoai/dbx v1.17.4 h1:Mmz3W0rTPq2Xd+DHJol7lgQJwQ55VLyjzsjr72OZSrk=
+github.com/hanzoai/dbx v1.17.4/go.mod h1:liXahVRbQt+5u7Nq5DzU2tJ4uic8Pb2YsWEE40ZrQhk=
 github.com/hanzoai/decimal v0.1.2 h1:QUprOn6BSxQCZfj9YwISV+ouPoN0S9p6LZYk7O7JIYA=
 github.com/hanzoai/decimal v0.1.2/go.mod h1:jTNufaSe93avQTuXYP3ns2THBtRPR2SbaC0EdODLAFI=
 github.com/hanzoai/go-cosyvoice v1.0.0 h1:XS68KB2VMCmHdAMpcdbkZhK20ZOTPAYm2N1Gx67yJpE=
@@ -602,6 +606,8 @@ github.com/hanzoai/sqlcipher v0.1.1 h1:GARjSiUEa1lwhd1/f87XRaujZBG5s1ZwxrZW2Es/A
 github.com/hanzoai/sqlcipher v0.1.1/go.mod h1:F0soUYM1i4sawOZUpRvVnWoUayPbeGVlGq01VXy9Aqg=
 github.com/hanzoai/sqlite v0.5.1 h1:vGoBPfYppd6bCxc8y5wwXvfY66WOH3HAUcSu04FmuA0=
 github.com/hanzoai/sqlite v0.5.1/go.mod h1:7hlAtZspL0Ggx/j0cSo6npPFtUeikvIxnMDb7yTaJD0=
+github.com/hanzoai/sqlite v0.5.5 h1:gNHHZKCy6FjLNa+YMyGqGwzBxkIuZ7B7PnXXS19bR9U=
+github.com/hanzoai/sqlite v0.5.5/go.mod h1:6MOvr13PLL+ajbg6SGf1nSvqDsCNzKIvwrLo429LFUY=
 github.com/hanzoai/tasks v1.52.9 h1:HneORQe/7KF5orVirmHfweFMFTMeuAmRRj8daUhqQQM=
 github.com/hanzoai/tasks v1.52.9/go.mod h1:2GdohcUvJa39vef4Y1xYys90iUDCEuadbQjO4XAEqR8=
 github.com/hanzoai/types v0.1.0 h1:hxPueqy2QnVF3CbvAZ9CJE26pibT/Cb8ZYPhH/CNPwA=
