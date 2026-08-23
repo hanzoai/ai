@@ -149,22 +149,7 @@ func (c *ApiController) UpdateFile() {
 // @Param body body object.File true "The details of the file object"
 // @Success 200 {object} controllers.Response The Response object
 // @router /add-file [post]
-func (c *ApiController) AddFile() {
-	var file object.File
-	err := json.Unmarshal(c.Body(), &file)
-	if err != nil {
-		c.ResponseError(err.Error())
-		return
-	}
-
-	success, err := object.AddFile(&file)
-	if err != nil {
-		c.ResponseError(err.Error())
-		return
-	}
-
-	c.ResponseOk(success)
-}
+func (c *ApiController) AddFile() { stored(c, object.AddFile) }
 
 // DeleteFile
 // @Title DeleteFile

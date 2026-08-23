@@ -173,22 +173,7 @@ func (c *ApiController) AddVector() {
 // @Param body body object.Vector true "The details of the vector"
 // @Success 200 {object} controllers.Response The Response object
 // @router /delete-vector [post]
-func (c *ApiController) DeleteVector() {
-	var vector object.Vector
-	err := json.Unmarshal(c.Body(), &vector)
-	if err != nil {
-		c.ResponseError(err.Error())
-		return
-	}
-
-	success, err := object.DeleteVector(&vector)
-	if err != nil {
-		c.ResponseError(err.Error())
-		return
-	}
-
-	c.ResponseOk(success)
-}
+func (c *ApiController) DeleteVector() { stored(c, object.DeleteVector) }
 
 // DeleteAllVectors
 // @Title DeleteAllVectors
