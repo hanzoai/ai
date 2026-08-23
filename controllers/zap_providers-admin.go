@@ -177,18 +177,13 @@ func zapGetProvidersHandler(_ context.Context, auth string, body []byte) (*zap.M
 	return zapOk(object.GetMaskedProviders(providers, user), count)
 }
 
-// zapGetProviderRequest carries the GetProvider id over the native body.
-type zapGetProviderRequest struct {
-	ID string `json:"id"`
-}
-
 // zapGetProviderHandler mirrors ApiController.GetProvider.
 func zapGetProviderHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
 	user, deny := zapProviderSuperAdmin(auth)
 	if deny != nil {
 		return deny, nil
 	}
-	var req zapGetProviderRequest
+	var req zapIDRequest
 	if len(body) > 0 {
 		if err := json.Unmarshal(body, &req); err != nil {
 			return zapProviderError(400, "invalid request: "+err.Error())
