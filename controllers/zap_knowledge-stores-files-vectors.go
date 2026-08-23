@@ -63,7 +63,6 @@ import (
 	"github.com/luxfi/zap"
 
 	iam "github.com/hanzoai/ai/internal/iam"
-	"github.com/hanzoai/ai/log"
 
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/object"
@@ -678,8 +677,7 @@ func zapActivateFileHandler(_ context.Context, auth string, body []byte) (*zap.M
 		return zapOk(false)
 	}
 	path := fmt.Sprintf("%s/%s", cacheDir, p.Key)
-	cacheMap[prefix] = path
-	log.Info("%v", cacheMap)
+	rememberPath(prefix, path)
 
 	if !util.FileExist(getAppPath(p.Filename)) {
 		util.CopyFile(getAppPath(p.Filename), getAppPath(prefix))
@@ -690,7 +688,7 @@ func zapActivateFileHandler(_ context.Context, auth string, body []byte) (*zap.M
 func zapGetActiveFileHandler(_ context.Context, _ string, body []byte) (*zap.Message, error) {
 	p := zapDecodeParams(body)
 	res := ""
-	if v, ok := cacheMap[p.Prefix]; ok {
+	if v, ok := cachedPath(p.Prefix); ok {
 		res = v
 	}
 	return zapOk(res)
