@@ -89,12 +89,7 @@ type Video struct {
 }
 
 func GetGlobalVideos() ([]*Video, error) {
-	videos := []*Video{}
-	err := findAll(adapter.db, "video", &videos, nil, "owner ASC", "created_time DESC")
-	if err != nil {
-		return videos, err
-	}
-	return videos, nil
+	return allRows[Video]("video")
 }
 
 func GetVideos(owner string, lang string) ([]*Video, error) {
@@ -225,8 +220,7 @@ func (v *Video) refineVideoAndCoverUrl(lang string) error {
 }
 
 func GetVideoCount(owner string, field string, value string) (int64, error) {
-	session := GetDbQuery(owner, -1, -1, field, value, "", "")
-	return queryCount(session, "video")
+	return rowCount("video", owner, field, value)
 }
 
 func GetPaginationVideos(owner string, offset int, limit int, field string, value string, sortField string, sortOrder string, lang string) ([]*Video, error) {

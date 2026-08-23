@@ -62,12 +62,7 @@ func GetMaskedForms(forms []*Form, isMaskEnabled bool) []*Form {
 }
 
 func GetGlobalForms() ([]*Form, error) {
-	forms := []*Form{}
-	err := findAll(adapter.db, "form", &forms, nil, "owner ASC", "created_time DESC")
-	if err != nil {
-		return forms, err
-	}
-	return forms, nil
+	return allRows[Form]("form")
 }
 
 func GetForms(owner string) ([]*Form, error) {
@@ -120,16 +115,9 @@ func (form *Form) GetId() string {
 }
 
 func GetFormCount(owner string, field, value string) (int64, error) {
-	session := GetDbQuery(owner, -1, -1, field, value, "", "")
-	return queryCount(session, "form")
+	return rowCount("form", owner, field, value)
 }
 
 func GetPaginationForms(owner string, offset, limit int, field, value, sortField, sortOrder string) ([]*Form, error) {
-	forms := []*Form{}
-	session := GetDbQuery(owner, offset, limit, field, value, sortField, sortOrder)
-	err := queryFind(session, "form", &forms)
-	if err != nil {
-		return forms, err
-	}
-	return forms, nil
+	return rowsPage[Form]("form", owner, offset, limit, field, value, sortField, sortOrder)
 }
