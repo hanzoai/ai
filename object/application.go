@@ -128,15 +128,7 @@ func AddApplication(application *Application) (bool, error) {
 	if application.Status == "" {
 		application.Status = StatusNotDeployed
 	}
-	err := insertRow(adapter.db, application)
-	affected := int64(1)
-	if err != nil {
-		affected = 0
-	}
-	if err != nil {
-		return false, err
-	}
-	return affected != 0, nil
+	return addRow(application)
 }
 
 // DeleteApplication removes the record. Tearing down what the record deployed is

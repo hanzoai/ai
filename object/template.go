@@ -96,15 +96,7 @@ func UpdateTemplate(id string, template *Template) (bool, error) {
 	}
 	template.Owner = owner
 	template.Name = name
-	err = adapter.db.Model(template).Update()
-	affected := int64(1)
-	if err != nil {
-		affected = 0
-	}
-	if err != nil {
-		return false, err
-	}
-	return affected != 0, nil
+	return updated(template)
 }
 
 func AddTemplate(template *Template) (bool, error) {
@@ -114,15 +106,7 @@ func AddTemplate(template *Template) (bool, error) {
 	if template.UpdatedTime == "" {
 		template.UpdatedTime = util.GetCurrentTime()
 	}
-	err := insertRow(adapter.db, template)
-	affected := int64(1)
-	if err != nil {
-		affected = 0
-	}
-	if err != nil {
-		return false, err
-	}
-	return affected != 0, nil
+	return addRow(template)
 }
 
 func DeleteTemplate(template *Template) (bool, error) {
