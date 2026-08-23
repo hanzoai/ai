@@ -23,17 +23,17 @@ import (
 )
 
 // TestGetUserByAccessKeyUsesCanonicalPath locks the regression that broke
-// API-key resolution: the lookup MUST hit IAM's key door, /v1/iam/keys/principal,
-// never the legacy /api/get-user (which the @hanzo/id SPA ingress serves as
-// HTML, producing "invalid character '<'" on JSON decode). It also asserts the
-// resolved org owner is parsed back out.
+// API-key resolution: the lookup MUST hit IAM's key endpoint,
+// /v1/iam/keys/principal, never the legacy /api/get-user (which the @hanzo/id SPA
+// ingress serves as HTML, producing "invalid character '<'" on JSON decode). It
+// also asserts the resolved org owner is parsed back out.
 func TestGetUserByAccessKeyUsesCanonicalPath(t *testing.T) {
 	var gotPath, gotAccessKey string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
 		gotAccessKey = r.URL.Query().Get("accessKey")
 		w.Header().Set("Content-Type", "application/json")
-		// Mirror the principal door's shape: status:ok + data:{owner,name}. It
+		// Mirror the principal endpoint's shape: status:ok + data:{owner,name}. It
 		// kept the original envelope when it was re-homed, so unlike the record
 		// routes it is still {status, data} and not the bare object.
 		_, _ = w.Write([]byte(`{"status":"ok","msg":"","data":{"owner":"maxpower","name":"maxpower"}}`))
@@ -51,7 +51,7 @@ func TestGetUserByAccessKeyUsesCanonicalPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("getUserByAccessKey returned error: %v", err)
 	}
-	// Key resolution has its OWN door. It used to ride on the user read as
+	// Key resolution has its OWN endpoint. It used to ride on the user read as
 	// `get-user?accessKey=`, which reached an authentication boundary through a
 	// CRUD verb whose target was a credential rather than the owner/name that a
 	// read authorizes on. That verb is gone from IAM's router: asking any

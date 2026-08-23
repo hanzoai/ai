@@ -28,7 +28,7 @@
 //   - Path. KMS_ENDPOINT carried an `/api` prefix, so every call went to
 //     `/api/v1/kms/...`. Measured from the running pod: **404**. On the correct
 //     `/v1/...` path the universal-auth credentials came back **401**. Both
-//     doors shut.
+//     refused.
 //   - Target. The standalone deployment it aimed at reports
 //     `secrets plane disabled` at boot and has its ZAP port closed, while the
 //     embedded KMS in this very binary answers `{"ready":true}`.

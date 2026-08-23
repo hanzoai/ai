@@ -132,7 +132,7 @@ func (c *ApiController) clearIamTokenCookie() {
 // reached production twice (see object.AuthReady for both).
 //
 // Resolution now happens on first use and retries, and a request that cannot be
-// authenticated is refused with 503 at the door rather than served without
+// authenticated is refused with 503 at the edge rather than served without
 // authentication. The security property is unchanged; only the cost of an IAM blip
 // is — the requests during it, instead of the process.
 func InitAuthConfig() error { return object.AuthReady() }
@@ -477,10 +477,10 @@ func (c *ApiController) GetAccount() {
 	// keeps its guest session and flows to the anonymous branch below.
 	if sessionNeedsSelfHeal(c.GetSessionUser()) {
 		if p := c.principalUser(); p != nil && !util.IsAnonymousUser(p) {
-			// The second door onto the same grant: a guest id becomes a signed-in one.
-			// Rotating only at sign-in would leave a planted id to be authenticated
-			// here instead — the rule is the privilege change, not the route it
-			// arrives on.
+			// The second entry point onto the same grant: a guest id becomes a
+			// signed-in one. Rotating only at sign-in would leave a planted id to be
+			// authenticated here instead — the rule is the privilege change, not the
+			// route it arrives on.
 			c.SetSessionClaims(&iam.Claims{User: *p})
 		}
 	}

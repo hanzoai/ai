@@ -14,7 +14,7 @@
 
 package controllers
 
-// Tests for the multipart embed door. uploadVectors reads {status,known_type},
+// Tests for the multipart embed endpoint. uploadVectors reads {status,known_type},
 // and a type it cannot parse must come back as known_type=false rather than a
 // 500 — the predicate that decides is pure, so it is unit-testable here.
 

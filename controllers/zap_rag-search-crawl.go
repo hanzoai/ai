@@ -284,7 +284,7 @@ func zapResolveSearchAuth(auth string) (*searchAuth, *zapAuthErr) {
 		return &searchAuth{Owner: u.Owner, UserID: u.Owner + "/" + u.Name}, nil
 	}
 
-	// The publishable half has its own door: it answers with the org holding the
+	// The publishable half has its own endpoint: it answers with the org holding the
 	// key and never a person, which is why get-user above refuses a pk-.
 	if isPublishableKey(token) {
 		org, err := publishableOrg(token)

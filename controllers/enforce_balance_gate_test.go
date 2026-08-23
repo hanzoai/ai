@@ -131,7 +131,7 @@ func TestOurSpendCeilingIsNotTheCallersBill(t *testing.T) {
 		t.Error("the refusal carries no code, so nothing downstream can tell it from a 503 that " +
 			"means every provider refused")
 	}
-	// Our cash position is what we pay to buy inference. The envelope door keeps it
+	// Our cash position is what we pay to buy inference. The envelope keeps it
 	// out of a served answer; a refusal must not carry it out the other way.
 	for _, tell := range []string{
 		fmt.Sprintf("%.2f", float64(cash.CeilingCents)/100),

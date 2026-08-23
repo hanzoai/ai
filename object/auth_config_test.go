@@ -25,7 +25,7 @@ func TestAuthReady_NoIAMConfigured(t *testing.T) {
 }
 
 // IAM unreachable does NOT end the process and does NOT resolve. It reports the
-// failure, which the door turns into 503 — never into "no principal", which is the
+// failure, which the edge turns into 503 — never into "no principal", which is the
 // 401-everything fail-open this replaced.
 func TestAuthReady_UnreachableIAMFailsClosedWithoutPanicking(t *testing.T) {
 	ResetAuthReady()

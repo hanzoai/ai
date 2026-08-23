@@ -35,7 +35,7 @@ import (
 //
 // So: resolve it LAZILY, retry a failure, and fail CLOSED at the request.
 // Unresolved is not "no principal" — that is precisely the 401-everything
-// fail-open — it is 503 SERVICE UNAVAILABLE at the door (AuthAvailableFilter),
+// fail-open — it is 503 SERVICE UNAVAILABLE at the edge (AuthAvailableFilter),
 // before any filter reads a token. The security property is unchanged: a request
 // is never served with authentication silently switched off. What changes is that
 // an IAM blip costs the requests during the blip instead of the process, and the
