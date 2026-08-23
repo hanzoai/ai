@@ -80,12 +80,28 @@ func getProxyHttpClient() *http.Client {
 	}
 }
 
+// GetHttpClient answers the client a URL should be fetched with, and always
+// answers one.
+//
+// The two package clients are filled by InitHttpClient at boot, so anything
+// running before that line got nil and dereferenced it — a panic rather than a
+// request. Three tests already worked around it by calling InitHttpClient
+// themselves, which is the ordering problem stated out loud.
+//
+// The fallback is http.DefaultClient, which is what the non-proxy path resolves
+// to anyway; a deployment that configured a proxy still gets it, because by then
+// InitHttpClient has run.
 func GetHttpClient(url string) *http.Client {
 	if strings.Contains(url, "githubusercontent.com") || strings.Contains(url, "googleusercontent.com") || strings.Contains(url, "github.com") {
-		return ProxyHttpClient
-	} else {
+		if ProxyHttpClient != nil {
+			return ProxyHttpClient
+		}
+		return http.DefaultClient
+	}
+	if DefaultHttpClient != nil {
 		return DefaultHttpClient
 	}
+	return http.DefaultClient
 }
 
 // Local returns the client to use for a base URL, or nil to take the verifying
