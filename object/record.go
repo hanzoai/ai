@@ -101,8 +101,7 @@ type Response struct {
 }
 
 func GetRecordCount(owner, field, value string) (int64, error) {
-	session := GetDbQuery(owner, -1, -1, field, value, "", "")
-	return queryCount(session, "record")
+	return rowCount("record", owner, field, value)
 }
 
 func GetRecords(owner string) ([]*Record, error) {
@@ -152,13 +151,7 @@ func getValidAndNeedCommitRecords(records []*Record) ([]*Record, []int, []interf
 }
 
 func GetPaginationRecords(owner string, offset, limit int, field, value, sortField, sortOrder string) ([]*Record, error) {
-	records := []*Record{}
-	session := GetDbQuery(owner, offset, limit, field, value, sortField, sortOrder)
-	err := queryFind(session, "record", &records)
-	if err != nil {
-		return records, err
-	}
-	return records, nil
+	return rowsPage[Record]("record", owner, offset, limit, field, value, sortField, sortOrder)
 }
 
 // GetRecord retrieves a record by its ID or owner/name format.

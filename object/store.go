@@ -101,12 +101,7 @@ type Store struct {
 }
 
 func GetGlobalStores() ([]*Store, error) {
-	stores := []*Store{}
-	err := findAll(adapter.db, "store", &stores, nil, "owner ASC", "created_time DESC")
-	if err != nil {
-		return stores, err
-	}
-	return stores, nil
+	return allRows[Store]("store")
 }
 
 func GetStores(owner string) ([]*Store, error) {

@@ -79,18 +79,11 @@ func GetModelRoute(owner string, modelName string) (*ModelRoute, error) {
 }
 
 func GetModelRouteCount(owner, field, value string) (int64, error) {
-	session := GetDbQuery(owner, -1, -1, field, value, "", "")
-	return queryCount(session, "model_route")
+	return rowCount("model_route", owner, field, value)
 }
 
 func GetPaginationModelRoutes(owner string, offset, limit int, field, value, sortField, sortOrder string) ([]*ModelRoute, error) {
-	routes := []*ModelRoute{}
-	session := GetDbQuery(owner, offset, limit, field, value, sortField, sortOrder)
-	err := queryFind(session, "model_route", &routes)
-	if err != nil {
-		return routes, err
-	}
-	return routes, nil
+	return rowsPage[ModelRoute]("model_route", owner, offset, limit, field, value, sortField, sortOrder)
 }
 
 func AddModelRoute(route *ModelRoute) (bool, error) {

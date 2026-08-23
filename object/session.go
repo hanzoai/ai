@@ -43,18 +43,11 @@ func GetSessions(owner string) ([]*Session, error) {
 }
 
 func GetPaginationSessions(owner string, offset, limit int, field, value, sortField, sortOrder string) ([]*Session, error) {
-	sessions := []*Session{}
-	session := GetDbQuery(owner, offset, limit, field, value, sortField, sortOrder)
-	err := queryFind(session, "session", &sessions)
-	if err != nil {
-		return sessions, err
-	}
-	return sessions, nil
+	return rowsPage[Session]("session", owner, offset, limit, field, value, sortField, sortOrder)
 }
 
 func GetSessionCount(owner, field, value string) (int64, error) {
-	session := GetDbQuery(owner, -1, -1, field, value, "", "")
-	return queryCount(session, "session")
+	return rowCount("session", owner, field, value)
 }
 
 func GetSession(id string) (*Session, error) {
