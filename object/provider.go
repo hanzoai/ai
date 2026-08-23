@@ -303,81 +303,57 @@ func GetDefaultKubernetesProvider(lang string) (*Provider, error) {
 	return nil, fmt.Errorf("%s", i18n.Translate(lang, "object:no Kubernetes provider found"))
 }
 
-func (p *Provider) GetStorageProviderObj(vectorStoreId string, lang string) (storage.StorageProvider, error) {
-	pProvider, err := storage.GetStorageProvider(p.Type, p.ClientId, p.ClientSecret, p.Name, vectorStoreId, lang)
+// supported turns a provider constructor's answer into one answer.
+//
+// Every constructor below reports an unknown Type the same way — no error and no
+// provider — so a nil that arrives without one means we do not speak that type,
+// which is an error rather than a nil to carry off. That is the whole of what the
+// seven differed in nothing but, and each still names its own message because the
+// keys are what the locale files hold.
+func supported[T any](made T, err error, key string, providerType string, lang string) (T, error) {
+	var none T
 	if err != nil {
-		return nil, err
+		return none, err
 	}
-	if pProvider == nil {
-		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:the storage provider type: %s is not supported"), p.Type))
+	if any(made) == nil {
+		return none, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, key), providerType))
 	}
-	return pProvider, nil
+	return made, nil
+}
+
+func (p *Provider) GetStorageProviderObj(vectorStoreId string, lang string) (storage.StorageProvider, error) {
+	made, err := storage.GetStorageProvider(p.Type, p.ClientId, p.ClientSecret, p.Name, vectorStoreId, lang)
+	return supported(made, err, "object:the storage provider type: %s is not supported", p.Type, lang)
 }
 
 func (p *Provider) GetModelProvider(lang string) (model.ModelProvider, error) {
-	pProvider, err := model.GetModelProvider(p.Type, p.SubType, p.ClientId, p.ClientSecret, p.UserKey, p.Temperature, p.TopP, p.TopK, p.FrequencyPenalty, p.PresencePenalty, p.ProviderUrl, p.ApiVersion, p.CompatibleProvider, p.InputPricePerThousandTokens, p.OutputPricePerThousandTokens, p.Currency, p.EnableThinking)
-	if err != nil {
-		return nil, err
-	}
-	if pProvider == nil {
-		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:the model provider type: %s is not supported"), p.Type))
-	}
-	return pProvider, nil
+	made, err := model.GetModelProvider(p.Type, p.SubType, p.ClientId, p.ClientSecret, p.UserKey, p.Temperature, p.TopP, p.TopK, p.FrequencyPenalty, p.PresencePenalty, p.ProviderUrl, p.ApiVersion, p.CompatibleProvider, p.InputPricePerThousandTokens, p.OutputPricePerThousandTokens, p.Currency, p.EnableThinking)
+	return supported(made, err, "object:the model provider type: %s is not supported", p.Type, lang)
 }
 
 func (p *Provider) GetEmbeddingProvider(lang string) (embedding.EmbeddingProvider, error) {
-	pProvider, err := embedding.GetEmbeddingProvider(p.Type, p.SubType, p.ClientId, p.ClientSecret, p.ProviderUrl, p.ApiVersion, p.InputPricePerThousandTokens, p.Currency, lang)
-	if err != nil {
-		return nil, err
-	}
-	if pProvider == nil {
-		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:the embedding provider type: %s is not supported"), p.Type))
-	}
-	return pProvider, nil
+	made, err := embedding.GetEmbeddingProvider(p.Type, p.SubType, p.ClientId, p.ClientSecret, p.ProviderUrl, p.ApiVersion, p.InputPricePerThousandTokens, p.Currency, lang)
+	return supported(made, err, "object:the embedding provider type: %s is not supported", p.Type, lang)
 }
 
 func (p *Provider) GetAgentProvider(lang string) (agent.AgentProvider, error) {
-	pProvider, err := agent.GetAgentProvider(p.Type, p.SubType, p.Text, p.McpTools, lang)
-	if err != nil {
-		return nil, err
-	}
-	if pProvider == nil {
-		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "agent:the agent provider type: %s is not supported"), p.Type))
-	}
-	return pProvider, nil
+	made, err := agent.GetAgentProvider(p.Type, p.SubType, p.Text, p.McpTools, lang)
+	return supported(made, err, "agent:the agent provider type: %s is not supported", p.Type, lang)
 }
 
 func (p *Provider) GetTextToSpeechProvider(lang string, format string) (tts.TextToSpeechProvider, error) {
-	pProvider, err := tts.GetTextToSpeechProvider(p.Type, p.SubType, p.ClientId, p.ClientSecret, p.ProviderUrl, p.ApiVersion, p.InputPricePerThousandTokens, p.Currency, p.Flavor, format, lang)
-	if err != nil {
-		return nil, err
-	}
-	if pProvider == nil {
-		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:the TTS provider type: %s is not supported"), p.Type))
-	}
-	return pProvider, nil
+	made, err := tts.GetTextToSpeechProvider(p.Type, p.SubType, p.ClientId, p.ClientSecret, p.ProviderUrl, p.ApiVersion, p.InputPricePerThousandTokens, p.Currency, p.Flavor, format, lang)
+	return supported(made, err, "object:the TTS provider type: %s is not supported", p.Type, lang)
 }
 
 func (p *Provider) GetSpeechToTextProvider(lang string) (stt.SpeechToTextProvider, error) {
-	pProvider, err := stt.GetSpeechToTextProvider(p.Type, p.SubType, p.ClientSecret, p.ProviderUrl, p.Flavor)
-	if err != nil {
-		return nil, err
-	}
-	if pProvider == nil {
-		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:the STT provider type: %s is not supported"), p.Type))
-	}
-	return pProvider, nil
+	made, err := stt.GetSpeechToTextProvider(p.Type, p.SubType, p.ClientSecret, p.ProviderUrl, p.Flavor)
+	return supported(made, err, "object:the STT provider type: %s is not supported", p.Type, lang)
 }
 
 func (p *Provider) GetScanProvider(lang string) (scan.ScanProvider, error) {
-	pProvider, err := scan.GetScanProvider(p.Type, p.ClientId, lang)
-	if err != nil {
-		return nil, err
-	}
-	if pProvider == nil {
-		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:the scan provider type: %s is not supported"), p.Type))
-	}
-	return pProvider, nil
+	made, err := scan.GetScanProvider(p.Type, p.ClientId, lang)
+	return supported(made, err, "object:the scan provider type: %s is not supported", p.Type, lang)
 }
 
 func GetModelProviderFromContext(owner string, name string, lang string) (*Provider, model.ModelProvider, error) {
