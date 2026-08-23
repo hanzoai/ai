@@ -1815,7 +1815,7 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 		if familyRefused == nil {
 			return
 		}
-		c.recordRefusals(request.Model, familyRefused, authUser, isPremium, request.Stream, requestId, requestStartTime)
+		recordRefusals(c.takeSnapshot(authUser), request.Model, familyRefused, authUser, isPremium, request.Stream, requestId, requestStartTime)
 	}
 
 	// ── Tool-calling pass-through ──────────────────────────────────────
@@ -1999,7 +1999,7 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 		// eventually served. A failover nobody can see leaves the empty account
 		// empty. The family's own refusal is already recorded above, so skip it here.
 		if n := len(familyRefused); len(tried) > n {
-			c.recordRefusals(request.Model, tried[n:], authUser, isPremium, request.Stream, requestId, requestStartTime)
+			recordRefusals(c.takeSnapshot(authUser), request.Model, tried[n:], authUser, isPremium, request.Stream, requestId, requestStartTime)
 		}
 
 		if err != nil {

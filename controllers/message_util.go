@@ -16,6 +16,7 @@
 package controllers
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"path/filepath"
@@ -51,6 +52,35 @@ func (c *ApiController) ResponseErrorStream(message *object.Message, errorText s
 		c.ResponseError(err.Error())
 		return
 	}
+}
+
+// streamError records a failure on the message and tells the client through the
+// stream's own writer.
+//
+// It is the in-stream counterpart of ResponseErrorStream, and the difference is
+// which connection is still there to answer on. Once a streamed body is being
+// produced, fasthttp is draining the writer from its own goroutine and the
+// request context has been released — so the error event goes out through w, and
+// the language has to be carried in rather than read off a header.
+func streamError(w *bufio.Writer, message *object.Message, errorText string, lang string) {
+	if message != nil {
+		var err error
+		if !message.IsAlerted {
+			err = message.SendErrorEmail(errorText, lang)
+			if err != nil {
+				errorText = fmt.Sprintf("%s\n%s", errorText, err.Error())
+			}
+		}
+		if message.ErrorText != errorText || !message.IsAlerted || err != nil {
+			message.ErrorText = errorText
+			message.IsAlerted = true
+			if _, err = object.UpdateMessage(message.GetId(), message, false); err != nil {
+				errorText = fmt.Sprintf("%s\n%s", errorText, err.Error())
+			}
+		}
+	}
+	_, _ = w.WriteString(fmt.Sprintf("event: myerror\ndata: %s\n\n", errorText))
+	_ = w.Flush()
 }
 
 func refineQuestionTextViaParsingUrlContent(question string, lang string) (string, error) {
