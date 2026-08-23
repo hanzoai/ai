@@ -41,8 +41,7 @@ type Scan struct {
 }
 
 func GetScanCount(owner, field, value string) (int64, error) {
-	session := GetDbQuery(owner, -1, -1, field, value, "", "")
-	return queryCount(session, "scan")
+	return rowCount("scan", owner, field, value)
 }
 
 func GetScans(owner string) ([]*Scan, error) {
@@ -50,13 +49,7 @@ func GetScans(owner string) ([]*Scan, error) {
 }
 
 func GetPaginationScans(owner string, offset, limit int, field, value, sortField, sortOrder string) ([]*Scan, error) {
-	scans := []*Scan{}
-	session := GetDbQuery(owner, offset, limit, field, value, sortField, sortOrder)
-	err := queryFind(session, "scan", &scans)
-	if err != nil {
-		return scans, err
-	}
-	return scans, nil
+	return rowsPage[Scan]("scan", owner, offset, limit, field, value, sortField, sortOrder)
 }
 
 func GetScansByAsset(owner string, assetName string) ([]*Scan, error) {

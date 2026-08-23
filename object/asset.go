@@ -64,8 +64,7 @@ func GetMaskedAssets(assets []*Asset, isMaskEnabled bool) []*Asset {
 }
 
 func GetAssetCount(owner, field, value string) (int64, error) {
-	session := GetDbQuery(owner, -1, -1, field, value, "", "")
-	return queryCount(session, "asset")
+	return rowCount("asset", owner, field, value)
 }
 
 func GetAssets(owner string) ([]*Asset, error) {
@@ -73,13 +72,7 @@ func GetAssets(owner string) ([]*Asset, error) {
 }
 
 func GetPaginationAssets(owner string, offset, limit int, field, value, sortField, sortOrder string) ([]*Asset, error) {
-	assets := []*Asset{}
-	session := GetDbQuery(owner, offset, limit, field, value, sortField, sortOrder)
-	err := queryFind(session, "asset", &assets)
-	if err != nil {
-		return assets, err
-	}
-	return assets, nil
+	return rowsPage[Asset]("asset", owner, offset, limit, field, value, sortField, sortOrder)
 }
 
 func getAsset(owner string, name string) (*Asset, error) {

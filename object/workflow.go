@@ -55,12 +55,7 @@ func GetMaskedWorkflows(workflows []*Workflow, isMaskEnabled bool) []*Workflow {
 }
 
 func GetGlobalWorkflows() ([]*Workflow, error) {
-	workflows := []*Workflow{}
-	err := findAll(adapter.db, "workflow", &workflows, nil, "owner ASC", "created_time DESC")
-	if err != nil {
-		return workflows, err
-	}
-	return workflows, nil
+	return allRows[Workflow]("workflow")
 }
 
 func GetWorkflows(owner string) ([]*Workflow, error) {
