@@ -155,18 +155,12 @@ func zapGetAssetsHandler(_ context.Context, auth string, body []byte) (*zap.Mess
 	return zapOk(object.GetMaskedAssets(assets, true), count)
 }
 
-// zapSecIDRequest carries a single `id` (owner/name) over the native body — the
-// ZAP twin of the the router URL query param.
-type zapSecIDRequest struct {
-	ID string `json:"id"`
-}
-
 // zapGetAssetHandler mirrors ApiController.GetAsset.
 func zapGetAssetHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
 	if zapPrincipal(auth) == nil {
 		return zapSecErr(http.StatusUnauthorized, "auth:Please sign in first")
 	}
-	var req zapSecIDRequest
+	var req zapIDRequest
 	if len(body) > 0 {
 		if err := json.Unmarshal(body, &req); err != nil {
 			return zapSecErr(http.StatusBadRequest, "invalid request: "+err.Error())
@@ -348,7 +342,7 @@ func zapGetScanHandler(_ context.Context, auth string, body []byte) (*zap.Messag
 	if zapPrincipal(auth) == nil {
 		return zapSecErr(http.StatusUnauthorized, "auth:Please sign in first")
 	}
-	var req zapSecIDRequest
+	var req zapIDRequest
 	if len(body) > 0 {
 		if err := json.Unmarshal(body, &req); err != nil {
 			return zapSecErr(http.StatusBadRequest, "invalid request: "+err.Error())
@@ -435,7 +429,7 @@ func zapGetPermissionHandler(_ context.Context, auth string, body []byte) (*zap.
 	if zapPrincipal(auth) == nil {
 		return zapSecErr(http.StatusUnauthorized, "auth:Please sign in first")
 	}
-	var req zapSecIDRequest
+	var req zapIDRequest
 	if len(body) > 0 {
 		if err := json.Unmarshal(body, &req); err != nil {
 			return zapSecErr(http.StatusBadRequest, "invalid request: "+err.Error())
