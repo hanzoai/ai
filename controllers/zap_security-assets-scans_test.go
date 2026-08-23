@@ -68,7 +68,7 @@ func TestZapSecurityBogusTokenRejected(t *testing.T) {
 // data2 — the console frontend contract the native path must preserve.
 func TestZapSecurityOkEnvelopeParity(t *testing.T) {
 	data := []string{"asset-a", "asset-b"}
-	msg, err := zapSecOk(data)
+	msg, err := zapOk(data)
 	if err != nil {
 		t.Fatalf("zapSecOk: %v", err)
 	}
@@ -80,7 +80,7 @@ func TestZapSecurityOkEnvelopeParity(t *testing.T) {
 		t.Errorf("ok body = %s, want %s", got, want)
 	}
 
-	msg2, _ := zapSecOk(data, int64(2))
+	msg2, _ := zapOk(data, int64(2))
 	want2, _ := json.Marshal(Response{Status: "ok", Data: data, Data2: int64(2)})
 	if got := msg2.Root().Bytes(object.CloudRespBody); string(got) != string(want2) {
 		t.Errorf("paginated body = %s, want %s", got, want2)
