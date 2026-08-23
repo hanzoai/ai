@@ -169,7 +169,7 @@ func (c *ApiController) RequireSessionOwner() (string, bool) {
 
 // reach answers how far a listing may see: one organization, or every one of
 // them. The reserved org reaches every tenant, so its answer is the empty filter;
-// every other caller reaches only their own org. Both doors use it, which is why
+// every other caller reaches only their own org. Both surfaces use it, which is why
 // it takes the resolved user rather than reading a session.
 func reach(user *iam.User) string {
 	if util.IsSuperAdmin(user) {
@@ -208,12 +208,12 @@ func (c *ApiController) takeSnapshot(user *iam.User) snapshot {
 //
 // The name arrives three ways — a user parameter, a selected user, and a
 // field/value pair naming "user" — so it is resolved here rather than per branch
-// and per door. An admin may name someone; anyone else gets their own rows
+// and per surface. An admin may name someone; anyone else gets their own rows
 // whichever way they asked, which is what the third way used to skip. reach()
 // then confines the answer to the caller's own tenant, so an admin naming a name
 // is an admin of THAT name's organization or of nobody.
 //
-// A door with no field/value pair passes both empty.
+// A surface with no field/value pair passes both empty.
 func whose(caller *iam.User, user, selectedUser, field, value string) string {
 	who := user
 	if field == "user" {
@@ -249,7 +249,7 @@ func (c *ApiController) GetScopedOwner() (string, bool) {
 }
 
 // notYourStore is what a caller bound to one store is told when they ask for
-// another. Both doors say it; only the shape of the saying differs.
+// another. Both surfaces say it; only the shape of the saying differs.
 const notYourStore = "controllers:You can only access data from your assigned store"
 
 // bound answers which store a caller may read, and whether they asked for one
