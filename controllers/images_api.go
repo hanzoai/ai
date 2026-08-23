@@ -160,7 +160,7 @@ func (c *ApiController) ImagesGenerations() {
 	ctx, cancel := context.WithTimeout(context.Background(), 130*time.Second)
 	defer cancel()
 
-	upstreamURL := imageUpstreamBase(provider)
+	upstreamURL := upstreamBase(provider)
 	if upstreamURL == "" {
 		c.ResponseError("No upstream endpoint configured for provider: " + provider.Name)
 		return
@@ -214,15 +214,15 @@ func imageResponseData(result *model.ImageGenResult) []map[string]string {
 	return data
 }
 
-// imageUpstreamBase returns the provider's base URL for the async image API
+// upstreamBase returns the provider's base URL for the async image API
 // (the do-ai provider's ProviderUrl, e.g. https://inference.do-ai.run/v1). It
 // reuses endpoint so provider URL handling lives in exactly one place; the async
 // client appends /async-invoke itself, so the empty path yields the clean base
 // with the provider's /v1 normalization applied.
-func imageUpstreamBase(provider *object.Provider) string {
+func upstreamBase(provider *object.Provider) string {
 	base := upstream.Endpoint(provider, "")
 	// endpoint returns "<base>/" for the empty path; trim the trailing slash so
-	// the async client's "/async-invoke" join is clean.
+	// the caller's join — "/async-invoke", "/videos" — is clean.
 	for len(base) > 0 && base[len(base)-1] == '/' {
 		base = base[:len(base)-1]
 	}
