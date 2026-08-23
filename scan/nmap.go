@@ -73,20 +73,11 @@ func IsNmapAvailable(clientId string) bool {
 }
 
 func NewNmapScanProvider(clientId string) (*NmapScanProvider, error) {
-	provider := &NmapScanProvider{
-		nmapPath: clientId,
+	path, err := binPath(clientId, "nmap")
+	if err != nil {
+		return nil, err
 	}
-
-	// If clientId is empty, try to find nmap in system PATH
-	if provider.nmapPath == "" {
-		nmapPath, err := exec.LookPath("nmap")
-		if err != nil {
-			return nil, fmt.Errorf("%s nmap not found in system PATH, please specify the path to nmap binary", getHostnamePrefix())
-		}
-		provider.nmapPath = nmapPath
-	}
-
-	return provider, nil
+	return &NmapScanProvider{nmapPath: path}, nil
 }
 
 func (p *NmapScanProvider) Scan(target string, command string) (string, error) {
