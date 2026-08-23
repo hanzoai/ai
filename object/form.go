@@ -19,7 +19,6 @@ import (
 
 	"github.com/hanzoai/ai/i18n"
 	"github.com/hanzoai/ai/util"
-	"github.com/hanzoai/dbx"
 )
 
 type FormItem struct {
@@ -72,12 +71,7 @@ func GetGlobalForms() ([]*Form, error) {
 }
 
 func GetForms(owner string) ([]*Form, error) {
-	forms := []*Form{}
-	err := findAll(adapter.db, "form", &forms, dbx.HashExp{"owner": owner}, "created_time DESC")
-	if err != nil {
-		return forms, err
-	}
-	return forms, nil
+	return rowsOf[Form]("form", owner)
 }
 
 func getForm(owner, name string) (*Form, error) {
@@ -85,11 +79,7 @@ func getForm(owner, name string) (*Form, error) {
 }
 
 func GetForm(id string) (*Form, error) {
-	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
-	if err != nil {
-		return nil, err
-	}
-	return getForm(owner, name)
+	return rowAt[Form]("form", id)
 }
 
 func UpdateForm(id string, form *Form, lang string) (bool, error) {

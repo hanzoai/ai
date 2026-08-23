@@ -71,11 +71,7 @@ func getVector(owner, name string) (*Vector, error) {
 }
 
 func GetVector(id string) (*Vector, error) {
-	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
-	if err != nil {
-		return nil, err
-	}
-	return getVector(owner, name)
+	return rowAt[Vector]("vector", id)
 }
 
 func UpdateVector(id string, vector *Vector, lang string) (bool, error) {

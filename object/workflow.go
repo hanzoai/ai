@@ -20,7 +20,6 @@ import (
 
 	"github.com/hanzoai/ai/bpmn"
 	"github.com/hanzoai/ai/util"
-	"github.com/hanzoai/dbx"
 )
 
 type Workflow struct {
@@ -65,12 +64,7 @@ func GetGlobalWorkflows() ([]*Workflow, error) {
 }
 
 func GetWorkflows(owner string) ([]*Workflow, error) {
-	workflows := []*Workflow{}
-	err := findAll(adapter.db, "workflow", &workflows, dbx.HashExp{"owner": owner}, "created_time DESC")
-	if err != nil {
-		return workflows, err
-	}
-	return workflows, nil
+	return rowsOf[Workflow]("workflow", owner)
 }
 
 func getWorkflow(owner string, name string) (*Workflow, error) {
