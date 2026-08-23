@@ -428,9 +428,14 @@ func forget(tid string) {
 	liveMu.Unlock()
 }
 
-// sweepTranscripts drops records for sessions speech has already collected.
-// Called from open, under the lock, for the reason speech sweeps there too:
-// there is then no clock to run and no task to supervise.
+// sweepTranscripts drops records for sessions speech has already collected. It
+// runs from open, for the reason speech sweeps there too: there is then no clock
+// to run and no task to supervise.
+//
+// The caller holds liveMu. Admitting decides on this map and then writes it, so
+// one lock spans both — taken again in here it would deadlock, and left out
+// entirely it would be a map written from one request while another reads it,
+// which is a runtime fatal error no recover answers for.
 func sweepTranscripts(now time.Time) {
 	for id, s := range live {
 		if now.Sub(s.touched) > transcriptIdle {
