@@ -353,29 +353,23 @@ func AddMessage(message *Message) (bool, error) {
 	}
 	message.TextTokenCount = size
 	err = insertRow(adapter.db, message)
-	affected := int64(1)
-	if err != nil {
-		affected = 0
-	}
 	if err != nil {
 		return false, err
 	}
-	if affected != 0 {
-		var chat *Chat
-		chat, err = getChat(message.Owner, message.Chat)
+	var chat *Chat
+	chat, err = getChat(message.Owner, message.Chat)
+	if err != nil {
+		return false, err
+	}
+	if chat != nil {
+		chat.UpdatedTime = util.GetCurrentTime()
+		chat.MessageCount += 1
+		_, err = UpdateChat(chat.GetId(), chat)
 		if err != nil {
 			return false, err
 		}
-		if chat != nil {
-			chat.UpdatedTime = util.GetCurrentTime()
-			chat.MessageCount += 1
-			_, err = UpdateChat(chat.GetId(), chat)
-			if err != nil {
-				return false, err
-			}
-		}
 	}
-	return affected != 0, nil
+	return true, nil
 }
 
 func DeleteMessage(message *Message) (bool, error) {

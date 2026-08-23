@@ -105,15 +105,7 @@ func AddSession(session *Session) (bool, error) {
 	}
 	if dbSession == nil {
 		session.CreatedTime = util.GetCurrentTime()
-		err = insertRow(adapter.db, session)
-		affected := int64(1)
-		if err != nil {
-			affected = 0
-		}
-		if err != nil {
-			return false, err
-		}
-		return affected != 0, nil
+		return addRow(session)
 	} else {
 		m := make(map[string]struct{})
 		for _, v := range dbSession.SessionId {
