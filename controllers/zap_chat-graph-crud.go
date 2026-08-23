@@ -130,7 +130,7 @@ func zapChatGraphAuthz(name string, user *iam.User) *zap.Message {
 		return nil
 	}
 	if !util.IsAdmin(user) {
-		msg, _ := zapProviderError(403, "this operation requires admin privilege")
+		msg, _ := zapError(int(403), "this operation requires admin privilege")
 		return msg
 	}
 	return nil
@@ -172,11 +172,11 @@ func zapIsCurrentUser(user *iam.User, input string) *zap.Message {
 		username = user.Name
 	}
 	if !isName(username) || !isName(input) {
-		msg, _ := zapProviderError(403, "Unauthorized operation")
+		msg, _ := zapError(int(403), "Unauthorized operation")
 		return msg
 	}
 	if !util.IsAdmin(user) && username != input {
-		msg, _ := zapProviderError(403, "Unauthorized operation")
+		msg, _ := zapError(int(403), "Unauthorized operation")
 		return msg
 	}
 	return nil
@@ -194,7 +194,7 @@ func zapEnforceStoreIsolation(user *iam.User, requested string) (string, *zap.Me
 		return user.Homepage, nil
 	}
 	if requested != user.Homepage {
-		msg, _ := zapProviderError(200, "You can only access data from your assigned store")
+		msg, _ := zapError(int(200), "You can only access data from your assigned store")
 		return "", msg
 	}
 	return requested, nil
@@ -238,14 +238,14 @@ func zapGetGlobalChatsHandler(_ context.Context, auth string, body []byte) (*zap
 	var req zapListChatsRequest
 	if len(body) > 0 {
 		if err := json.Unmarshal(body, &req); err != nil {
-			return zapProviderError(400, "invalid request: "+err.Error())
+			return zapError(int(400), "invalid request: "+err.Error())
 		}
 	}
 
 	if req.PageSize == "" || req.Page == "" {
 		chats, err := object.GetGlobalChats()
 		if err != nil {
-			return zapProviderError(200, err.Error())
+			return zapError(int(200), err.Error())
 		}
 		return zapOk(chats)
 	}
@@ -253,12 +253,12 @@ func zapGetGlobalChatsHandler(_ context.Context, auth string, body []byte) (*zap
 	limit := util.ParseInt(req.PageSize)
 	count, err := object.GetChatCount("", req.Field, req.Value, req.Store)
 	if err != nil {
-		return zapProviderError(200, err.Error())
+		return zapError(int(200), err.Error())
 	}
 	offset := paginationOffset(util.ParseInt(req.Page), limit)
 	chats, err := object.GetPaginationChats("", offset, limit, req.Field, req.Value, req.SortField, req.SortOrder, req.Store)
 	if err != nil {
-		return zapProviderError(200, err.Error())
+		return zapError(int(200), err.Error())
 	}
 	return zapOk(chats, count)
 }
@@ -274,7 +274,7 @@ func zapGetChatsHandler(_ context.Context, auth string, body []byte) (*zap.Messa
 	var req zapListChatsRequest
 	if len(body) > 0 {
 		if err := json.Unmarshal(body, &req); err != nil {
-			return zapProviderError(400, "invalid request: "+err.Error())
+			return zapError(int(400), "invalid request: "+err.Error())
 		}
 	}
 
@@ -287,7 +287,7 @@ func zapGetChatsHandler(_ context.Context, auth string, body []byte) (*zap.Messa
 		u = req.SelectedUser
 	}
 	if !isAdmin && u != req.SelectedUser && req.SelectedUser != "" {
-		return zapProviderError(200, "You can only view your own chats")
+		return zapError(int(200), "You can only view your own chats")
 	}
 
 	storeName, deny := zapEnforceStoreIsolation(user, req.Store)
@@ -303,7 +303,7 @@ func zapGetChatsHandler(_ context.Context, auth string, body []byte) (*zap.Messa
 		chats, err = object.GetChats("admin", storeName, u)
 	}
 	if err != nil {
-		return zapProviderError(200, err.Error())
+		return zapError(int(200), err.Error())
 	}
 
 	if req.StartTime != "" || req.EndTime != "" {
@@ -327,16 +327,16 @@ func zapGetChatHandler(_ context.Context, auth string, body []byte) (*zap.Messag
 	var req zapIDRequest
 	if len(body) > 0 {
 		if err := json.Unmarshal(body, &req); err != nil {
-			return zapProviderError(400, "invalid request: "+err.Error())
+			return zapError(int(400), "invalid request: "+err.Error())
 		}
 	}
 
 	chat, err := object.GetChat(req.ID)
 	if err != nil {
-		return zapProviderError(200, err.Error())
+		return zapError(int(200), err.Error())
 	}
 	if chat == nil {
-		return zapProviderError(200, "Chat not found")
+		return zapError(int(200), "Chat not found")
 	}
 
 	if !util.IsAdmin(user) && !conf.IsPreviewMode() {
@@ -345,7 +345,7 @@ func zapGetChatHandler(_ context.Context, auth string, body []byte) (*zap.Messag
 			username = user.Name
 		}
 		if username != chat.User {
-			return zapProviderError(403, "Unauthorized operation")
+			return zapError(int(403), "Unauthorized operation")
 		}
 	}
 	return zapOk(chat)
@@ -366,7 +366,7 @@ func zapUpdateChatHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 	}
 	var req zapUpdateChatRequest
 	if err := json.Unmarshal(body, &req); err != nil {
-		return zapProviderError(400, "invalid request: "+err.Error())
+		return zapError(int(400), "invalid request: "+err.Error())
 	}
 	chat := req.Chat
 	if deny := zapIsCurrentUser(user, chat.User); deny != nil {
@@ -375,16 +375,16 @@ func zapUpdateChatHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 
 	_, name, err := util.GetOwnerAndNameFromIdWithError(req.ID)
 	if err != nil {
-		return zapProviderError(200, err.Error())
+		return zapError(int(200), err.Error())
 	}
 	id := util.GetIdFromOwnerAndName(chatOwner, name)
 
 	originalChat, err := object.GetChat(id)
 	if err != nil {
-		return zapProviderError(200, err.Error())
+		return zapError(int(200), err.Error())
 	}
 	if originalChat == nil {
-		return zapProviderError(200, "The chat: "+id+" is not found")
+		return zapError(int(200), "The chat: "+id+" is not found")
 	}
 	if deny := zapIsCurrentUser(user, originalChat.User); deny != nil {
 		return deny, nil
@@ -398,7 +398,7 @@ func zapUpdateChatHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 
 	success, err := object.UpdateChat(id, &chat)
 	if err != nil {
-		return zapProviderError(200, err.Error())
+		return zapError(int(200), err.Error())
 	}
 	return zapOk(success)
 }
@@ -413,7 +413,7 @@ func zapAddChatHandler(_ context.Context, auth string, body []byte) (*zap.Messag
 	}
 	var chat object.Chat
 	if err := json.Unmarshal(body, &chat); err != nil {
-		return zapProviderError(400, "invalid request: "+err.Error())
+		return zapError(int(400), "invalid request: "+err.Error())
 	}
 	if deny := zapIsCurrentUser(user, chat.User); deny != nil {
 		return deny, nil
@@ -431,17 +431,17 @@ func zapAddChatHandler(_ context.Context, auth string, body []byte) (*zap.Messag
 	if chat.Store == "" {
 		store, err := object.GetDefaultStore("admin")
 		if err != nil {
-			return zapProviderError(200, err.Error())
+			return zapError(int(200), err.Error())
 		}
 		if store == nil {
-			return zapProviderError(200, "The default store is not found")
+			return zapError(int(200), "The default store is not found")
 		}
 		chat.Store = store.Name
 	}
 
 	success, err := object.AddChat(&chat)
 	if err != nil {
-		return zapProviderError(200, err.Error())
+		return zapError(int(200), err.Error())
 	}
 	return zapOk(success)
 }
@@ -455,7 +455,7 @@ func zapDeleteChatHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 	}
 	var chat object.Chat
 	if err := json.Unmarshal(body, &chat); err != nil {
-		return zapProviderError(400, "invalid request: "+err.Error())
+		return zapError(int(400), "invalid request: "+err.Error())
 	}
 	if deny := zapIsCurrentUser(user, chat.User); deny != nil {
 		return deny, nil
@@ -465,10 +465,10 @@ func zapDeleteChatHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 
 	storedChat, err := object.GetChat(chat.GetId())
 	if err != nil {
-		return zapProviderError(200, err.Error())
+		return zapError(int(200), err.Error())
 	}
 	if storedChat == nil {
-		return zapProviderError(200, "The chat: "+chat.GetId()+" is not found")
+		return zapError(int(200), "The chat: "+chat.GetId()+" is not found")
 	}
 	if deny := zapIsCurrentUser(user, storedChat.User); deny != nil {
 		return deny, nil
@@ -476,12 +476,12 @@ func zapDeleteChatHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 
 	success, err := object.DeleteChat(&chat)
 	if err != nil {
-		return zapProviderError(200, err.Error())
+		return zapError(int(200), err.Error())
 	}
 	message := object.Message{Owner: chat.Owner, Chat: chat.Name}
 	success, err = object.DeleteMessagesByChat(&message)
 	if err != nil {
-		return zapProviderError(200, err.Error())
+		return zapError(int(200), err.Error())
 	}
 	return zapOk(success)
 }
@@ -507,23 +507,23 @@ type zapListMessagesRequest struct {
 func zapGetGlobalMessagesHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
 	user := zapPrincipal(auth)
 	if user == nil {
-		return zapProviderError(401, "Please sign in first")
+		return zapError(int(401), "Please sign in first")
 	}
 	if !util.IsAdmin(user) {
-		return zapProviderError(403, "this operation requires admin privilege")
+		return zapError(int(403), "this operation requires admin privilege")
 	}
 	owner := user.Owner
 	var req zapListMessagesRequest
 	if len(body) > 0 {
 		if err := json.Unmarshal(body, &req); err != nil {
-			return zapProviderError(400, "invalid request: "+err.Error())
+			return zapError(int(400), "invalid request: "+err.Error())
 		}
 	}
 
 	if req.PageSize == "" || req.Page == "" {
 		messages, err := object.GetGlobalMessages()
 		if err != nil {
-			return zapProviderError(200, err.Error())
+			return zapError(int(200), err.Error())
 		}
 		return zapOk(messages)
 	}
@@ -531,12 +531,12 @@ func zapGetGlobalMessagesHandler(_ context.Context, auth string, body []byte) (*
 	limit := util.ParseInt(req.PageSize)
 	count, err := object.GetMessageCount(owner, req.Field, req.Value, req.Store)
 	if err != nil {
-		return zapProviderError(200, err.Error())
+		return zapError(int(200), err.Error())
 	}
 	offset := paginationOffset(util.ParseInt(req.Page), limit)
 	messages, err := object.GetPaginationMessages(owner, offset, limit, req.Field, req.Value, req.SortField, req.SortOrder, req.Store)
 	if err != nil {
-		return zapProviderError(200, err.Error())
+		return zapError(int(200), err.Error())
 	}
 	return zapOk(messages, count)
 }
@@ -546,7 +546,7 @@ func zapGetGlobalMessagesHandler(_ context.Context, auth string, body []byte) (*
 func zapGetMessagesHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
 	user := zapPrincipal(auth)
 	if user == nil {
-		return zapProviderError(401, "Please sign in first")
+		return zapError(int(401), "Please sign in first")
 	}
 	if deny := zapChatGraphAuthz("get-messages", user); deny != nil {
 		return deny, nil
@@ -554,7 +554,7 @@ func zapGetMessagesHandler(_ context.Context, auth string, body []byte) (*zap.Me
 	var req zapListMessagesRequest
 	if len(body) > 0 {
 		if err := json.Unmarshal(body, &req); err != nil {
-			return zapProviderError(400, "invalid request: "+err.Error())
+			return zapError(int(400), "invalid request: "+err.Error())
 		}
 	}
 
@@ -567,20 +567,20 @@ func zapGetMessagesHandler(_ context.Context, auth string, body []byte) (*zap.Me
 		u = req.SelectedUser
 	}
 	if !isAdmin && u != req.SelectedUser && req.SelectedUser != "" {
-		return zapProviderError(200, "You can only view your own messages")
+		return zapError(int(200), "You can only view your own messages")
 	}
 
 	if req.Chat == "" {
 		messages, err := object.GetMessages(user.Owner, u, "")
 		if err != nil {
-			return zapProviderError(200, err.Error())
+			return zapError(int(200), err.Error())
 		}
 		return zapOk(messages)
 	}
 
 	messages, err := object.GetChatMessages(req.Chat)
 	if err != nil {
-		return zapProviderError(200, err.Error())
+		return zapError(int(200), err.Error())
 	}
 	return zapOk(messages)
 }
@@ -595,16 +595,16 @@ func zapGetMessageHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 	var req zapIDRequest
 	if len(body) > 0 {
 		if err := json.Unmarshal(body, &req); err != nil {
-			return zapProviderError(400, "invalid request: "+err.Error())
+			return zapError(int(400), "invalid request: "+err.Error())
 		}
 	}
 
 	message, err := object.GetMessage(req.ID)
 	if err != nil {
-		return zapProviderError(200, err.Error())
+		return zapError(int(200), err.Error())
 	}
 	if message == nil {
-		return zapProviderError(200, "Message not found")
+		return zapError(int(200), "Message not found")
 	}
 
 	if !util.IsAdmin(user) && !conf.IsPreviewMode() {
@@ -613,7 +613,7 @@ func zapGetMessageHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 			username = user.Name
 		}
 		if username != message.User {
-			return zapProviderError(403, "Unauthorized operation")
+			return zapError(int(403), "Unauthorized operation")
 		}
 	}
 	return zapOk(message)
@@ -636,7 +636,7 @@ func zapUpdateMessageHandler(_ context.Context, auth string, body []byte) (*zap.
 	}
 	var req zapUpdateMessageRequest
 	if err := json.Unmarshal(body, &req); err != nil {
-		return zapProviderError(400, "invalid request: "+err.Error())
+		return zapError(int(400), "invalid request: "+err.Error())
 	}
 	message := req.Message
 	if deny := zapIsCurrentUser(user, message.User); deny != nil {
@@ -645,17 +645,17 @@ func zapUpdateMessageHandler(_ context.Context, auth string, body []byte) (*zap.
 
 	_, name, err := util.GetOwnerAndNameFromIdWithError(req.ID)
 	if err != nil {
-		return zapProviderError(200, err.Error())
+		return zapError(int(200), err.Error())
 	}
 	id := util.GetIdFromOwnerAndName(chatOwner, name)
 	message.Owner = chatOwner
 
 	storedMessage, err := object.GetMessage(id)
 	if err != nil {
-		return zapProviderError(200, err.Error())
+		return zapError(int(200), err.Error())
 	}
 	if storedMessage == nil {
-		return zapProviderError(200, "The message: "+id+" is not found")
+		return zapError(int(200), "The message: "+id+" is not found")
 	}
 	if deny := zapIsCurrentUser(user, storedMessage.User); deny != nil {
 		return deny, nil
@@ -664,14 +664,14 @@ func zapUpdateMessageHandler(_ context.Context, auth string, body []byte) (*zap.
 
 	if message.NeedNotify {
 		if err := message.SendEmail("en", user.Owner); err != nil {
-			return zapProviderError(200, err.Error())
+			return zapError(int(200), err.Error())
 		}
 		message.NeedNotify = false
 	}
 
 	success, err := object.UpdateMessage(id, &message, req.IsHitOnly)
 	if err != nil {
-		return zapProviderError(200, err.Error())
+		return zapError(int(200), err.Error())
 	}
 	return zapOk(success)
 }
@@ -691,7 +691,7 @@ func zapAddMessageHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 	}
 	var message object.Message
 	if err := json.Unmarshal(body, &message); err != nil {
-		return zapProviderError(400, "invalid request: "+err.Error())
+		return zapError(int(400), "invalid request: "+err.Error())
 	}
 	if deny := zapIsCurrentUser(user, message.User); deny != nil {
 		return deny, nil
@@ -702,7 +702,7 @@ func zapAddMessageHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 	id := util.GetIdFromOwnerAndName(message.Owner, message.Name)
 	originMessage, err := object.GetMessage(id)
 	if err != nil {
-		return zapProviderError(200, err.Error())
+		return zapError(int(200), err.Error())
 	}
 	// If originMessage is non-nil this is an edit — drop all later messages. It
 	// rewrites a STORED turn, so that row's own user authorizes it.
@@ -711,7 +711,7 @@ func zapAddMessageHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 			return deny, nil
 		}
 		if err = object.DeleteAllLaterMessages(id); err != nil {
-			return zapProviderError(200, err.Error())
+			return zapError(int(200), err.Error())
 		}
 	}
 
@@ -719,7 +719,7 @@ func zapAddMessageHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 	if message.IsRegenerated {
 		messages, err := object.GetChatMessages(message.Chat)
 		if err != nil {
-			return zapProviderError(200, err.Error())
+			return zapError(int(200), err.Error())
 		}
 		var lastAIMessage *object.Message
 		var lastUserMessage *object.Message
@@ -750,12 +750,12 @@ func zapAddMessageHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 				addMessageAfterSuccess = false
 			}
 			if _, err = object.DeleteMessage(lastAIMessage); err != nil {
-				return zapProviderError(200, err.Error())
+				return zapError(int(200), err.Error())
 			}
 		}
 		if lastUserMessage != nil {
 			if _, err = object.DeleteMessage(lastUserMessage); err != nil {
-				return zapProviderError(200, err.Error())
+				return zapError(int(200), err.Error())
 			}
 		}
 	}
@@ -764,54 +764,54 @@ func zapAddMessageHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 	if message.Chat == "" {
 		chat, err = zapAddInitialChat(user.Owner, message.User, message.Store)
 		if err != nil {
-			return zapProviderError(200, err.Error())
+			return zapError(int(200), err.Error())
 		}
 		message.Chat = chat.Name
 	} else {
 		chatId := util.GetId(message.Owner, message.Chat)
 		chat, err = object.GetChat(chatId)
 		if err != nil {
-			return zapProviderError(200, err.Error())
+			return zapError(int(200), err.Error())
 		}
 		if chat == nil {
-			return zapProviderError(200, "chat:The chat: "+chatId+" is not found")
+			return zapError(int(200), "chat:The chat: "+chatId+" is not found")
 		}
 	}
 	// A turn's org is its CHAT's org — the row the usage plane reads.
 	message.Organization = chat.Organization
 
 	if err = object.RefineMessageFiles(&message, "", "en"); err != nil {
-		return zapProviderError(200, err.Error())
+		return zapError(int(200), err.Error())
 	}
 
 	message.CreatedTime = util.GetCurrentTimeWithMilli()
 
 	if message.Text == "" {
-		return zapProviderError(200, "The question should not be empty")
+		return zapError(int(200), "The question should not be empty")
 	}
 
 	storeId := util.GetId(message.Owner, message.Store)
 	store, err := object.GetStore(storeId)
 	if err != nil {
-		return zapProviderError(200, err.Error())
+		return zapError(int(200), err.Error())
 	}
 	if store != nil {
 		contains, forbiddenWord := store.ContainsForbiddenWords(message.Text)
 		if contains {
-			return zapProviderError(200, "Your message contains a forbidden word: \""+forbiddenWord+"\"")
+			return zapError(int(200), "Your message contains a forbidden word: \""+forbiddenWord+"\"")
 		}
 	}
 
 	success, err := object.AddMessage(&message)
 	if err != nil {
-		return zapProviderError(200, err.Error())
+		return zapError(int(200), err.Error())
 	}
 
 	if success && addMessageAfterSuccess {
 		chatId := util.GetId(message.Owner, message.Chat)
 		chat, err = object.GetChat(chatId)
 		if err != nil {
-			return zapProviderError(200, err.Error())
+			return zapError(int(200), err.Error())
 		}
 		if chat != nil && chat.Type == "AI" {
 			modelProvider := chat.ModelProvider
@@ -838,7 +838,7 @@ func zapAddMessageHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 				ModelProvider: modelProvider,
 			}
 			if _, err = object.AddMessage(answerMessage); err != nil {
-				return zapProviderError(200, err.Error())
+				return zapError(int(200), err.Error())
 			}
 		}
 	}
@@ -859,7 +859,7 @@ func zapDeleteMessageHandler(_ context.Context, auth string, body []byte) (*zap.
 	}
 	var message object.Message
 	if err := json.Unmarshal(body, &message); err != nil {
-		return zapProviderError(400, "invalid request: "+err.Error())
+		return zapError(int(400), "invalid request: "+err.Error())
 	}
 	if deny := zapIsCurrentUser(user, message.User); deny != nil {
 		return deny, nil
@@ -869,7 +869,7 @@ func zapDeleteMessageHandler(_ context.Context, auth string, body []byte) (*zap.
 
 	success, err := object.DeleteMessage(&message)
 	if err != nil {
-		return zapProviderError(200, err.Error())
+		return zapError(int(200), err.Error())
 	}
 	return zapOk(success)
 }
@@ -885,16 +885,16 @@ func zapDeleteWelcomeMessageHandler(_ context.Context, auth string, body []byte)
 	}
 	var reqMessage object.Message
 	if err := json.Unmarshal(body, &reqMessage); err != nil {
-		return zapProviderError(400, "invalid request: "+err.Error())
+		return zapError(int(400), "invalid request: "+err.Error())
 	}
 
 	id := util.GetIdFromOwnerAndName(chatOwner, reqMessage.Name)
 	message, err := object.GetMessage(id)
 	if err != nil {
-		return zapProviderError(200, err.Error())
+		return zapError(int(200), err.Error())
 	}
 	if message == nil {
-		return zapProviderError(200, "Message not found")
+		return zapError(int(200), "Message not found")
 	}
 
 	username := ""
@@ -902,16 +902,16 @@ func zapDeleteWelcomeMessageHandler(_ context.Context, auth string, body []byte)
 		username = user.Name
 	}
 	if username == "" || username != message.User {
-		return zapProviderError(200, "No permission")
+		return zapError(int(200), "No permission")
 	}
 
 	if message.Author != "AI" || message.ReplyTo != "Welcome" {
-		return zapProviderError(200, "No permission")
+		return zapError(int(200), "No permission")
 	}
 
 	success, err := object.DeleteMessage(message)
 	if err != nil {
-		return zapProviderError(200, err.Error())
+		return zapError(int(200), err.Error())
 	}
 	return zapOk(success)
 }
@@ -937,7 +937,7 @@ func zapGetGlobalGraphsHandler(_ context.Context, auth string, _ []byte) (*zap.M
 	}
 	graphs, err := object.GetGlobalGraphs()
 	if err != nil {
-		return zapProviderError(200, err.Error())
+		return zapError(int(200), err.Error())
 	}
 	return zapOk(object.GetMaskedGraphs(graphs, true))
 }
@@ -950,12 +950,12 @@ func zapGetGraphsHandler(_ context.Context, auth string, body []byte) (*zap.Mess
 		return deny, nil
 	}
 	if user == nil {
-		return zapProviderError(401, "Please sign in first")
+		return zapError(int(401), "Please sign in first")
 	}
 	var req zapListGraphsRequest
 	if len(body) > 0 {
 		if err := json.Unmarshal(body, &req); err != nil {
-			return zapProviderError(400, "invalid request: "+err.Error())
+			return zapError(int(400), "invalid request: "+err.Error())
 		}
 	}
 
@@ -967,7 +967,7 @@ func zapGetGraphsHandler(_ context.Context, auth string, body []byte) (*zap.Mess
 	if req.PageSize == "" || req.Page == "" {
 		graphs, err := object.GetGraphs(owner)
 		if err != nil {
-			return zapProviderError(200, err.Error())
+			return zapError(int(200), err.Error())
 		}
 		return zapOk(object.GetMaskedGraphs(graphs, true))
 	}
@@ -975,12 +975,12 @@ func zapGetGraphsHandler(_ context.Context, auth string, body []byte) (*zap.Mess
 	limit := util.ParseInt(req.PageSize)
 	count, err := object.GetGraphCount(owner, req.Field, req.Value)
 	if err != nil {
-		return zapProviderError(200, err.Error())
+		return zapError(int(200), err.Error())
 	}
 	offset := paginationOffset(util.ParseInt(req.Page), limit)
 	graphs, err := object.GetPaginationGraphs(owner, offset, limit, req.Field, req.Value, req.SortField, req.SortOrder)
 	if err != nil {
-		return zapProviderError(200, err.Error())
+		return zapError(int(200), err.Error())
 	}
 	return zapOk(graphs, count)
 }
@@ -997,18 +997,18 @@ func zapGetGraphHandler(_ context.Context, auth string, body []byte) (*zap.Messa
 	var req zapIDRequest
 	if len(body) > 0 {
 		if err := json.Unmarshal(body, &req); err != nil {
-			return zapProviderError(400, "invalid request: "+err.Error())
+			return zapError(int(400), "invalid request: "+err.Error())
 		}
 	}
 
 	graph, err := object.GetGraph(req.ID)
 	if err != nil {
-		return zapProviderError(200, err.Error())
+		return zapError(int(200), err.Error())
 	}
 
 	if graph != nil && graph.Category == "Chats" && graph.Text == "" {
 		if err = new(ApiController).generateChatGraphData(req.ID, graph); err != nil {
-			return zapProviderError(200, err.Error())
+			return zapError(int(200), err.Error())
 		}
 	}
 	return zapOk(object.GetMaskedGraph(graph, true))
@@ -1028,11 +1028,11 @@ func zapUpdateGraphHandler(_ context.Context, auth string, body []byte) (*zap.Me
 	}
 	var req zapUpdateGraphRequest
 	if err := json.Unmarshal(body, &req); err != nil {
-		return zapProviderError(400, "invalid request: "+err.Error())
+		return zapError(int(400), "invalid request: "+err.Error())
 	}
 	success, err := object.UpdateGraph(req.ID, &req.Graph)
 	if err != nil {
-		return zapProviderError(200, err.Error())
+		return zapError(int(200), err.Error())
 	}
 	return zapOk(success)
 }
@@ -1045,11 +1045,11 @@ func zapAddGraphHandler(_ context.Context, auth string, body []byte) (*zap.Messa
 	}
 	var graph object.Graph
 	if err := json.Unmarshal(body, &graph); err != nil {
-		return zapProviderError(400, "invalid request: "+err.Error())
+		return zapError(int(400), "invalid request: "+err.Error())
 	}
 	success, err := object.AddGraph(&graph)
 	if err != nil {
-		return zapProviderError(200, err.Error())
+		return zapError(int(200), err.Error())
 	}
 	return zapOk(success)
 }
@@ -1062,11 +1062,11 @@ func zapDeleteGraphHandler(_ context.Context, auth string, body []byte) (*zap.Me
 	}
 	var graph object.Graph
 	if err := json.Unmarshal(body, &graph); err != nil {
-		return zapProviderError(400, "invalid request: "+err.Error())
+		return zapError(int(400), "invalid request: "+err.Error())
 	}
 	success, err := object.DeleteGraph(&graph)
 	if err != nil {
-		return zapProviderError(200, err.Error())
+		return zapError(int(200), err.Error())
 	}
 	return zapOk(success)
 }

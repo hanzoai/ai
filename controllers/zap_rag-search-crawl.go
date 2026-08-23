@@ -130,10 +130,34 @@ func zapOk(data ...interface{}) (*zap.Message, error) {
 	return object.BuildCloudResponse(http.StatusOK, b, "")
 }
 
-// zapError is THE cloud refusal: {status:"error", msg} at the status given.
+// zapWrite is the shape a "take a row and store it" handler has: a signed-in
+// caller, a body that decodes to the row, and a store call that says whether it
+// landed. The store call arrives as a value, so adding a table is naming one.
+func zapWrite[T any](auth string, body []byte, store func(*T) (bool, error)) (*zap.Message, error) {
+	if zapPrincipal(auth) == nil {
+		return zapError(http.StatusUnauthorized, "auth:Please sign in first")
+	}
+	var row T
+	if err := json.Unmarshal(body, &row); err != nil {
+		return zapError(http.StatusBadRequest, "invalid request: "+err.Error())
+	}
+	stored, err := store(&row)
+	if err != nil {
+		return zapError(http.StatusOK, err.Error())
+	}
+	return zapOk(stored)
+}
+
+// zapError is THE cloud refusal, and it says so twice: in the envelope every
+// client parses, and in the response's own error slot every diagnostic reads.
+//
+// Five of these existed and disagreed about which of the two to fill. One filled
+// neither but the slot — so an endpoint that answered success in an envelope
+// answered failure with an empty body, and a client parsing {status, msg} got
+// nothing at all from the one reply it most needed to read.
 func zapError(status int, msg string) (*zap.Message, error) {
 	b, _ := json.Marshal(Response{Status: "error", Msg: msg})
-	return object.BuildCloudResponse(uint32(status), b, "")
+	return object.BuildCloudResponse(uint32(status), b, msg)
 }
 
 // zapRaw marshals a bare payload (endpoints that write c.Data["json"] directly,
@@ -141,10 +165,6 @@ func zapError(status int, msg string) (*zap.Message, error) {
 func zapRaw(data interface{}) (*zap.Message, error) {
 	b, _ := json.Marshal(data)
 	return object.BuildCloudResponse(http.StatusOK, b, "")
-}
-
-func zapErr(status int, msg string) (*zap.Message, error) {
-	return object.BuildCloudResponse(uint32(status), nil, msg)
 }
 
 // zapBodyStore extracts the optional "store" field from a JSON body, falling back
@@ -253,25 +273,25 @@ func zapBalanceGate(auth *searchAuth) *zapAuthErr {
 func zapSearchHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
 	sa, aerr := zapResolveSearchAuth(auth)
 	if aerr != nil {
-		return zapErr(aerr.status, aerr.msg)
+		return zapError(aerr.status, aerr.msg)
 	}
 
 	var req object.DocSearchRequest
 	if err := json.Unmarshal(body, &req); err != nil {
-		return zapErr(http.StatusBadRequest, "invalid request: "+err.Error())
+		return zapError(http.StatusBadRequest, "invalid request: "+err.Error())
 	}
 	if req.Query == "" {
-		return zapErr(http.StatusBadRequest, "query must not be empty")
+		return zapError(http.StatusBadRequest, "query must not be empty")
 	}
 
 	store, serr := zapBodyStore(sa.Owner, body, "docs-hanzo-ai")
 	if serr != nil {
-		return zapErr(http.StatusBadRequest, serr.Error())
+		return zapError(http.StatusBadRequest, serr.Error())
 	}
 	results, err := object.SearchDocuments(sa.Owner, store, &req, "en")
 	if err != nil {
 		recordSearchUsage(sa, "search-query", req.Mode, "error", 0, "")
-		return zapErr(http.StatusInternalServerError, err.Error())
+		return zapError(http.StatusInternalServerError, err.Error())
 	}
 
 	recordSearchUsage(sa, "search-query", req.Mode, "success", len(results), "")
@@ -283,25 +303,25 @@ func zapSearchHandler(_ context.Context, auth string, body []byte) (*zap.Message
 func zapIndexHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
 	sa, aerr := zapRequireIndexAuth(auth)
 	if aerr != nil {
-		return zapErr(aerr.status, aerr.msg)
+		return zapError(aerr.status, aerr.msg)
 	}
 
 	var req object.DocIndexRequest
 	if err := json.Unmarshal(body, &req); err != nil {
-		return zapErr(http.StatusBadRequest, "invalid request: "+err.Error())
+		return zapError(http.StatusBadRequest, "invalid request: "+err.Error())
 	}
 	if len(req.Documents) == 0 {
-		return zapErr(http.StatusBadRequest, "documents must not be empty")
+		return zapError(http.StatusBadRequest, "documents must not be empty")
 	}
 
 	store, serr := zapBodyStore(sa.Owner, body, "docs-hanzo-ai")
 	if serr != nil {
-		return zapErr(http.StatusBadRequest, serr.Error())
+		return zapError(http.StatusBadRequest, serr.Error())
 	}
 	count, err := object.IndexDocuments(sa.Owner, store, &req, "en")
 	if err != nil {
 		recordSearchUsage(sa, "index-docs", "meilisearch", "error", 0, "")
-		return zapErr(http.StatusInternalServerError, err.Error())
+		return zapError(http.StatusInternalServerError, err.Error())
 	}
 
 	recordSearchUsage(sa, "index-docs", "meilisearch", "success", count, "")
@@ -314,16 +334,16 @@ func zapIndexHandler(_ context.Context, auth string, body []byte) (*zap.Message,
 func zapSearchStatsHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
 	sa, aerr := zapResolveSearchAuth(auth)
 	if aerr != nil {
-		return zapErr(aerr.status, aerr.msg)
+		return zapError(aerr.status, aerr.msg)
 	}
 
 	store, serr := zapBodyStore(sa.Owner, body, "docs-hanzo-ai")
 	if serr != nil {
-		return zapErr(http.StatusBadRequest, serr.Error())
+		return zapError(http.StatusBadRequest, serr.Error())
 	}
 	stats, err := object.GetDocIndexStats(sa.Owner, store)
 	if err != nil {
-		return zapErr(http.StatusInternalServerError, err.Error())
+		return zapError(http.StatusInternalServerError, err.Error())
 	}
 	return zapOk(stats)
 }
@@ -333,25 +353,25 @@ func zapSearchStatsHandler(_ context.Context, auth string, body []byte) (*zap.Me
 func zapScrapeHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
 	sa, aerr := zapRequireIndexAuth(auth)
 	if aerr != nil {
-		return zapErr(aerr.status, aerr.msg)
+		return zapError(aerr.status, aerr.msg)
 	}
 
 	var req object.ScrapeRequest
 	if err := json.Unmarshal(body, &req); err != nil {
-		return zapErr(http.StatusBadRequest, "invalid request: "+err.Error())
+		return zapError(http.StatusBadRequest, "invalid request: "+err.Error())
 	}
 	if req.URL == "" {
-		return zapErr(http.StatusBadRequest, "url must not be empty")
+		return zapError(http.StatusBadRequest, "url must not be empty")
 	}
 
 	if gerr := zapBalanceGate(sa); gerr != nil {
-		return zapErr(gerr.status, gerr.msg)
+		return zapError(gerr.status, gerr.msg)
 	}
 
 	stats, err := object.ScrapeAndIndex(sa.Owner, &req, "en")
 	if err != nil {
 		recordSearchUsage(sa, "scrape", "crawl", "error", 0, "")
-		return zapErr(http.StatusInternalServerError, err.Error())
+		return zapError(http.StatusInternalServerError, err.Error())
 	}
 
 	recordSearchUsage(sa, "scrape", stats.Engine, "success", stats.PagesScraped, "")
@@ -363,12 +383,12 @@ func zapScrapeHandler(_ context.Context, auth string, body []byte) (*zap.Message
 func zapCrawlHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
 	sa, aerr := zapRequireIndexAuth(auth)
 	if aerr != nil {
-		return zapErr(aerr.status, aerr.msg)
+		return zapError(aerr.status, aerr.msg)
 	}
 
 	var req crawlRequest
 	if err := json.Unmarshal(body, &req); err != nil {
-		return zapErr(http.StatusBadRequest, "invalid request: "+err.Error())
+		return zapError(http.StatusBadRequest, "invalid request: "+err.Error())
 	}
 
 	// Merge single `url` and batch `urls` into one deduplicated, non-empty list
@@ -386,20 +406,20 @@ func zapCrawlHandler(_ context.Context, auth string, body []byte) (*zap.Message,
 		urls = append(urls, u)
 	}
 	if len(urls) == 0 {
-		return zapErr(http.StatusBadRequest, "url (or urls) must not be empty")
+		return zapError(http.StatusBadRequest, "url (or urls) must not be empty")
 	}
 	if len(urls) > maxCrawlURLs {
-		return zapErr(http.StatusBadRequest, "too many urls: at most 10 per request")
+		return zapError(http.StatusBadRequest, "too many urls: at most 10 per request")
 	}
 
 	if gerr := zapBalanceGate(sa); gerr != nil {
-		return zapErr(gerr.status, gerr.msg)
+		return zapError(gerr.status, gerr.msg)
 	}
 
 	results, err := object.Crawl(urls)
 	if err != nil {
 		recordSearchUsage(sa, "crawl", "crawl4ai", "error", 0, "")
-		return zapErr(http.StatusInternalServerError, err.Error())
+		return zapError(http.StatusInternalServerError, err.Error())
 	}
 
 	recordSearchUsage(sa, "crawl", "crawl4ai", "success", len(results), "")
@@ -411,16 +431,16 @@ func zapCrawlHandler(_ context.Context, auth string, body []byte) (*zap.Message,
 func zapIngestHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
 	sa, aerr := zapRequireIndexAuth(auth)
 	if aerr != nil {
-		return zapErr(aerr.status, aerr.msg)
+		return zapError(aerr.status, aerr.msg)
 	}
 
 	var req object.IngestRequest
 	if err := json.Unmarshal(body, &req); err != nil {
-		return zapErr(http.StatusBadRequest, "invalid request: "+err.Error())
+		return zapError(http.StatusBadRequest, "invalid request: "+err.Error())
 	}
 	store, serr := object.ResolveStore(sa.Owner, req.Store, object.DefaultDocsStore)
 	if serr != nil {
-		return zapErr(http.StatusBadRequest, serr.Error())
+		return zapError(http.StatusBadRequest, serr.Error())
 	}
 	req.Store = store
 
@@ -428,7 +448,7 @@ func zapIngestHandler(ctx context.Context, auth string, body []byte) (*zap.Messa
 	// "upload" is ungated, matching the the router IngestDocs handler.
 	if req.Source != "" && req.Source != "upload" {
 		if gerr := zapBalanceGate(sa); gerr != nil {
-			return zapErr(gerr.status, gerr.msg)
+			return zapError(gerr.status, gerr.msg)
 		}
 	}
 
@@ -452,7 +472,7 @@ func zapIngestHandler(ctx context.Context, auth string, body []byte) (*zap.Messa
 	stats, err := object.IngestSource(sa.Owner, &req, "en")
 	if err != nil {
 		recordSearchUsage(sa, "index-docs", req.Source, "error", 0, "")
-		return zapErr(http.StatusInternalServerError, err.Error())
+		return zapError(http.StatusInternalServerError, err.Error())
 	}
 
 	recordSearchUsage(sa, "index-docs", req.Source, "success", stats.DocumentsIndexed, "")
@@ -470,21 +490,21 @@ func zapIngestHandler(ctx context.Context, auth string, body []byte) (*zap.Messa
 func zapRagEmbedHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
 	sa, aerr := zapRequireIndexAuth(auth)
 	if aerr != nil {
-		return zapErr(aerr.status, aerr.msg)
+		return zapError(aerr.status, aerr.msg)
 	}
 
 	var req object.RagEmbedRequest
 	if err := json.Unmarshal(body, &req); err != nil {
-		return zapErr(http.StatusBadRequest, "invalid request: "+err.Error())
+		return zapError(http.StatusBadRequest, "invalid request: "+err.Error())
 	}
 	if req.FileID == "" {
-		return zapErr(http.StatusBadRequest, "file_id must not be empty")
+		return zapError(http.StatusBadRequest, "file_id must not be empty")
 	}
 
 	result, err := object.RagEmbedFile(sa.Owner, &req, "en")
 	if err != nil {
 		recordSearchUsage(sa, "index-docs", "rag-embed", "error", 0, "")
-		return zapErr(http.StatusInternalServerError, err.Error())
+		return zapError(http.StatusInternalServerError, err.Error())
 	}
 
 	recordSearchUsage(sa, "index-docs", "rag-embed", "success", result.Chunks, "")
@@ -496,18 +516,18 @@ func zapRagEmbedHandler(_ context.Context, auth string, body []byte) (*zap.Messa
 func zapRagQueryHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
 	sa, aerr := zapResolveSearchAuth(auth)
 	if aerr != nil {
-		return zapErr(aerr.status, aerr.msg)
+		return zapError(aerr.status, aerr.msg)
 	}
 
 	var req object.RagQueryRequest
 	if err := json.Unmarshal(body, &req); err != nil {
-		return zapErr(http.StatusBadRequest, "invalid request: "+err.Error())
+		return zapError(http.StatusBadRequest, "invalid request: "+err.Error())
 	}
 
 	results, err := object.RagQuery(sa.Owner, &req, "en")
 	if err != nil {
 		recordSearchUsage(sa, "search-query", "rag", "error", 0, "")
-		return zapErr(http.StatusInternalServerError, err.Error())
+		return zapError(http.StatusInternalServerError, err.Error())
 	}
 
 	recordSearchUsage(sa, "search-query", "rag", "success", len(results), "")
@@ -519,12 +539,12 @@ func zapRagQueryHandler(_ context.Context, auth string, body []byte) (*zap.Messa
 func zapRagDeleteHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
 	sa, aerr := zapRequireIndexAuth(auth)
 	if aerr != nil {
-		return zapErr(aerr.status, aerr.msg)
+		return zapError(aerr.status, aerr.msg)
 	}
 
 	var b ragDeleteBody
 	if err := json.Unmarshal(body, &b); err != nil {
-		return zapErr(http.StatusBadRequest, "invalid request: "+err.Error())
+		return zapError(http.StatusBadRequest, "invalid request: "+err.Error())
 	}
 
 	ids := b.FileIDs
@@ -532,7 +552,7 @@ func zapRagDeleteHandler(_ context.Context, auth string, body []byte) (*zap.Mess
 		ids = append(ids, b.FileID)
 	}
 	if len(ids) == 0 {
-		return zapErr(http.StatusBadRequest, "file_id or file_ids must be provided")
+		return zapError(http.StatusBadRequest, "file_id or file_ids must be provided")
 	}
 
 	deleted := 0
@@ -541,7 +561,7 @@ func zapRagDeleteHandler(_ context.Context, auth string, body []byte) (*zap.Mess
 			continue
 		}
 		if err := object.DeleteRagFile(sa.Owner, b.Store, id, "en"); err != nil {
-			return zapErr(http.StatusInternalServerError, err.Error())
+			return zapError(http.StatusInternalServerError, err.Error())
 		}
 		deleted++
 	}
@@ -553,7 +573,7 @@ func zapRagDeleteHandler(_ context.Context, auth string, body []byte) (*zap.Mess
 func zapRagContextHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
 	sa, aerr := zapResolveSearchAuth(auth)
 	if aerr != nil {
-		return zapErr(aerr.status, aerr.msg)
+		return zapError(aerr.status, aerr.msg)
 	}
 
 	var p struct {
@@ -562,12 +582,12 @@ func zapRagContextHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 	}
 	_ = json.Unmarshal(body, &p)
 	if p.FileID == "" {
-		return zapErr(http.StatusBadRequest, "file_id must not be empty")
+		return zapError(http.StatusBadRequest, "file_id must not be empty")
 	}
 
 	results, err := object.RagFileContext(sa.Owner, p.Store, p.FileID)
 	if err != nil {
-		return zapErr(http.StatusInternalServerError, err.Error())
+		return zapError(http.StatusInternalServerError, err.Error())
 	}
 	return zapRaw(results)
 }
