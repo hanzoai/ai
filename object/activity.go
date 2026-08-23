@@ -60,6 +60,9 @@ func getTargetfieldValue(record *Record, fieldName string) (string, error) {
 }
 
 func GetActivities(days int, user string, fieldNames []string, lang string) (map[string][]*Activity, error) {
+	if days < 1 {
+		return nil, fmt.Errorf("days must be at least 1, got %d", days)
+	}
 	records, err := getAllRecords()
 	if err != nil {
 		return nil, err

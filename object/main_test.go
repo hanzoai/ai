@@ -5,6 +5,7 @@ package object
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -51,6 +52,21 @@ func TestMain(m *testing.M) {
 // that reads or writes real rows: without it such a test reaches a nil store and
 // panics, and a panic aborts the entire package binary — which is how one
 // missing database used to hide every other result in this package.
+// withStore gives a test a real, empty SQLite store — the same shape the
+// controllers helper of this name gives, spelled again because a test helper
+// cannot cross a package boundary here: anything both packages shared would have
+// to import object, and object's own in-package tests cannot import it back.
+//
+// requireStore, below, is the other half of the pair: it SKIPS when no seeded
+// database is present, which is right for a test that reads existing data and
+// wrong for one that wants to prove behaviour.
+func withStore(t *testing.T) {
+	t.Helper()
+	t.Setenv("driverName", "sqlite")
+	t.Setenv("dataSourceName", filepath.Join(t.TempDir(), "store.db"))
+	InitConfig()
+}
+
 func requireStore(t *testing.T) {
 	t.Helper()
 	if reason := probeStore(); reason != "" {
