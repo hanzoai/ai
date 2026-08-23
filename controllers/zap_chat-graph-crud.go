@@ -186,18 +186,14 @@ func zapIsCurrentUser(user *iam.User, input string) *zap.Message {
 // bound to a store via Homepage is forced to that store for an unscoped/"All"
 // request and denied for a different one. Returns the enforced store name and nil,
 // or ("", denial).
+// zapEnforceStoreIsolation applies the same rule and refuses on the native door.
 func zapEnforceStoreIsolation(user *iam.User, requested string) (string, *zap.Message) {
-	if user == nil || user.Homepage == "" {
-		return requested, nil
-	}
-	if requested == "" || requested == "All" {
-		return user.Homepage, nil
-	}
-	if requested != user.Homepage {
-		msg, _ := zapError(200, "You can only access data from your assigned store")
+	store, ok := bound(user, requested)
+	if !ok {
+		msg, _ := zapError(200, notYourStore)
 		return "", msg
 	}
-	return requested, nil
+	return store, nil
 }
 
 // paginationOffset computes the DB offset the pagination.SetPaginator would,
@@ -278,17 +274,7 @@ func zapGetChatsHandler(_ context.Context, auth string, body []byte) (*zap.Messa
 		}
 	}
 
-	// Whose chats to list, resolved once — the same rule the HTTP door applies.
-	who := req.User
-	if req.Field == "user" {
-		who = req.Value
-	}
-	if req.SelectedUser != "" && req.SelectedUser != "null" {
-		who = req.SelectedUser
-	}
-	if !util.IsAdmin(user) {
-		who = user.Name
-	}
+	who := whose(user, req.User, req.SelectedUser, req.Field, req.Value)
 
 	storeName, deny := zapEnforceStoreIsolation(user, req.Store)
 	if deny != nil {
@@ -552,14 +538,7 @@ func zapGetMessagesHandler(_ context.Context, auth string, body []byte) (*zap.Me
 		}
 	}
 
-	// Whose messages, resolved once — the rule the HTTP door applies.
-	who := req.User
-	if req.SelectedUser != "" && req.SelectedUser != "null" {
-		who = req.SelectedUser
-	}
-	if !util.IsAdmin(user) {
-		who = user.Name
-	}
+	who := whose(user, req.User, req.SelectedUser, "", "")
 
 	if req.Chat == "" {
 		messages, err := object.GetMessages(chatOwner, reach(user), who, "")
