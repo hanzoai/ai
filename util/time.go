@@ -37,11 +37,18 @@ func GetCurrentTimeWithMilli() string {
 	return tm.Format("2006-01-02T15:04:05.999Z07:00")
 }
 
+// GetCurrentTimeEx answers now, but never at or before timestamp — it is what
+// keeps the messages of one chat in the order they were written.
+//
+// A timestamp it cannot read is simply not a lower bound, so the answer is now.
+// Its callers pass a stored row's CreatedTime, and a row written before that
+// field existed carries the empty string: panicking made every answer in such a
+// chat fail on a field nobody is looking at.
 func GetCurrentTimeEx(timestamp string) string {
 	tm := time.Now()
 	inputTime, err := time.Parse(time.RFC3339, timestamp)
 	if err != nil {
-		panic(err)
+		return tm.Format("2006-01-02T15:04:05.999Z07:00")
 	}
 
 	if !tm.After(inputTime.Add(1 * time.Millisecond)) {
@@ -51,11 +58,14 @@ func GetCurrentTimeEx(timestamp string) string {
 	return tm.Format("2006-01-02T15:04:05.999Z07:00")
 }
 
+// GetCurrentTimeBasedOnLastMilli answers now, but never at or before timestamp,
+// which is how a batch of records gets distinct times in the order it was given.
+// A timestamp it cannot read is not a lower bound; the answer is now.
 func GetCurrentTimeBasedOnLastMilli(timestamp string) string {
 	tm := time.Now()
 	inputTime, err := time.Parse("2006-01-02T15:04:05.999Z07:00", timestamp)
 	if err != nil {
-		panic(err)
+		return tm.Format("2006-01-02T15:04:05.999Z07:00")
 	}
 
 	if !tm.After(inputTime.Add(1 * time.Millisecond)) {

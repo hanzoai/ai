@@ -85,9 +85,13 @@ func FindMaxmind(ipstr string) (*LocationInfo, error) {
 
 	if maxmindCityDB != nil {
 		// Look up geo information
+		// A lookup that fails means we do not know where this address is, which is
+		// what the Null the info already carries says. This runs on the audit path
+		// for every request, so a database that cannot answer for one address must
+		// not be that request's undoing.
 		record, err := maxmindCityDB.City(ip)
 		if err != nil {
-			panic("Get location info failed " + err.Error())
+			return info, nil
 		}
 		// Get country, region, city in English
 		if val, ok := record.Country.Names["en"]; ok && val != "" {
@@ -109,7 +113,7 @@ func FindMaxmind(ipstr string) (*LocationInfo, error) {
 		// Look up ASN/ISP information
 		asnRecord, err := maxmindASNDB.ASN(ip)
 		if err != nil {
-			panic("Get ASN info failed " + err.Error())
+			return info, nil
 		}
 		info.Isp = asnRecord.AutonomousSystemOrganization
 	}

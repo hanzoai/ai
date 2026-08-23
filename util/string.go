@@ -59,12 +59,18 @@ func ParseIntWithError(s string) (int, error) {
 	return i, nil
 }
 
+// ParseFloat reads a number, and answers 0 for anything that is not one — the
+// same answer ParseInt gives, for the same reason.
+//
+// Its call sites read the start and end of a subtitle out of a speech service's
+// reply. A field that is not a number there is that service having a bad day, and
+// a timing of zero is a subtitle that starts at the beginning; a panic is the
+// whole upload failing on somebody else's JSON.
 func ParseFloat(s string) float64 {
 	f, err := strconv.ParseFloat(s, 64)
 	if err != nil {
-		panic(err)
+		return 0
 	}
-
 	return f
 }
 
@@ -115,12 +121,15 @@ func WriteBytesToPath(b []byte, path string) error {
 	return os.WriteFile(path, b, 0o644)
 }
 
+// DecodeBase64 reads base64, and answers the empty string for anything that is
+// not. Its callers decode a field out of an upstream reply and hand the result
+// straight to JsonToStruct, which already reports what it cannot read — so a
+// malformed reply is that call failing rather than the request dying.
 func DecodeBase64(s string) string {
 	res, err := base64.StdEncoding.DecodeString(s)
 	if err != nil {
-		panic(err)
+		return ""
 	}
-
 	return string(res)
 }
 

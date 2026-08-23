@@ -172,7 +172,11 @@ func newLocationInfo(str []byte) *LocationInfo {
 			Isp:     string(fields[4]),
 		}
 	default:
-		panic("unexpected ip info:" + string(str))
+		// A row this reader cannot make sense of is one address it cannot place, and
+		// the Null below is what "we do not know" already looks like here. It is read
+		// on the audit path for every request, so one odd row in the database must
+		// not be that request's undoing.
+		info = &LocationInfo{}
 	}
 
 	if len(info.Country) == 0 {
