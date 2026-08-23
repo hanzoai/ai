@@ -115,17 +115,8 @@ func GetTasks(owner string) ([]*Task, error) {
 	return tasks, nil
 }
 
-func getTask(owner string, name string) (*Task, error) {
-	task := Task{Owner: owner, Name: name}
-	existed, err := getOne(adapter.db, "task", &task, pk2(task.Owner, task.Name))
-	if err != nil {
-		return &task, err
-	}
-	if existed {
-		return &task, nil
-	} else {
-		return nil, nil
-	}
+func getTask(owner, name string) (*Task, error) {
+	return getRow[Task]("task", owner, name)
 }
 
 func GetTask(id string) (*Task, error) {
@@ -159,41 +150,19 @@ func UpdateTask(id string, task *Task) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	_, err = getTask(owner, name)
-	if err != nil {
-		return false, err
-	}
 	if task == nil {
 		return false, nil
 	}
-	task.Owner = owner
-	task.Name = name
-	err = adapter.db.Model(task).Update()
-	if err != nil {
-		return false, err
-	}
-	// return affected != 0
-	return true, nil
+	task.Owner, task.Name = owner, name
+	return updated(task)
 }
 
 func AddTask(task *Task) (bool, error) {
-	err := insertRow(adapter.db, task)
-	affected := int64(1)
-	if err != nil {
-		affected = 0
-	}
-	if err != nil {
-		return false, err
-	}
-	return affected != 0, nil
+	return addRow(task)
 }
 
 func DeleteTask(task *Task) (bool, error) {
-	affected, err := deleteByPK(adapter.db, "task", pk2(task.Owner, task.Name))
-	if err != nil {
-		return false, err
-	}
-	return affected != 0, nil
+	return deleteRow("task", task.Owner, task.Name)
 }
 
 func (task *Task) GetId() string {
