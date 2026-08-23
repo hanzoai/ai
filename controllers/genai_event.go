@@ -25,7 +25,7 @@ import (
 )
 
 const (
-	// insightsIngestPath is the SDK capture door, so gateway traffic and SDK
+	// insightsIngestPath is the SDK capture endpoint, so gateway traffic and SDK
 	// traffic arrive through the same path and normalize identically.
 	insightsIngestPath = "/i/v0/e/"
 	genAIEventTimeout  = 5 * time.Second

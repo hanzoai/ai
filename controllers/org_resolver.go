@@ -64,7 +64,7 @@ func (c *ApiController) principalUser() *iam.User {
 	// and a tenant it cannot name falls back to the IAM_ORG default — which is
 	// empty, so the call reaches zen with no tenant and 402s "a billable tenant is
 	// required". Authenticating and then failing to bill is the same split that
-	// bug was, arriving by a different door.
+	// bug was, arriving on a different credential.
 	//
 	// It resolves to a machine and never to a person: there is no user record
 	// behind a run key, so nothing here can be logged in as, and Type
@@ -173,9 +173,9 @@ func (c *ApiController) GetOrg() string {
 	// answering here.
 	//
 	// A LIVE SESSION OUTRANKS IT. The key is a header and a session is a cookie, so
-	// one browser can carry both, and the search doors read the session first — a
-	// request that resolved to two different orgs depending on which door it entered
-	// would be scoped by one and billed by the other.
+	// one browser can carry both, and the search endpoints read the session first — a
+	// request that resolved to two different orgs depending on which endpoint it
+	// entered would be scoped by one and billed by the other.
 	//
 	// It is PINNED to the org that holds the key: X-Org-Id is not consulted and no
 	// membership claim can widen it. And it is DEFINITIVE, including when it fails —

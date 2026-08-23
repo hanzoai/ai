@@ -105,8 +105,9 @@ func TestGateAndDebitAddressOneAccount(t *testing.T) {
 			// debit once disagreed, because the gate inferred the org pool from a
 			// class the usage record could not express, so the debit fell through to
 			// the per-person rule and drained a personal wallet instead. Both now
-			// read the one signed ledger, which is what every real door supplies
-			// (the key door's keyUser projection, the token door's billing_account).
+			// read the one signed ledger, which is what every real endpoint supplies
+			// (the key endpoint's keyUser projection, the token endpoint's
+			// billing_account).
 			name:   "machine credential in the signup org",
 			user:   &iam.User{Owner: "hanzo", Name: "svc-indexer", Type: "application", BillingAccount: "org:hanzo"},
 			ledger: "hanzo",

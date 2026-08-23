@@ -124,7 +124,7 @@ func TestTheDefaultIsOursAndAskingForItIsTheDefault(t *testing.T) {
 	}
 	// Naming a DIFFERENT deployment default is not naming this surface's default.
 	if _, err := ResolveStore("acme", "rag-files", "docs-hanzo-ai"); err == nil {
-		t.Fatal("one surface's default was admitted at another's door")
+		t.Fatal("one surface's default was admitted for another surface")
 	}
 }
 

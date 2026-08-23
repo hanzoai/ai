@@ -294,9 +294,9 @@ var videoPricePerVideoCents = map[string]int64{
 //     does not grow) that is 0.91 CPU-seconds per audio-second, and 2.83 at one.
 //
 // So the two are not one product priced by one number, and the direction is worth
-// stating plainly: the SAME audio costs multiples more through the streaming door,
-// and costs LESS per second the busier the pod is. A single per-minute rate would
-// sell live transcription under water while leaving batch overpriced.
+// stating plainly: the SAME audio costs multiples more through the streaming
+// endpoint, and costs LESS per second the busier the pod is. A single per-minute
+// rate would sell live transcription under water while leaving batch overpriced.
 //
 // The batch side has no clean CPU-second figure yet — the earlier one was measured
 // against a contended box and is withdrawn rather than quoted. Setting a rate needs

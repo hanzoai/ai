@@ -31,7 +31,7 @@
 // visitor's usage lands in the one counter that reports a free tier, but a lane that
 // admitted on its silence would be unbounded exactly when the host is down.
 //
-// A DAY IS SPENT ON ANSWERS. Both counts are read at the door and raised where the
+// A DAY IS SPENT ON ANSWERS. Both counts are read on arrival and raised where the
 // call is served, so a visitor pays for what they got and never for a route that was
 // missing, a vendor that hung, or a pod being rolled.
 //
@@ -393,7 +393,7 @@ func publicErrorJSON(kind, code, message string) []byte {
 // route with orgId "" ⇒ empty subject ⇒ admit) is never degraded here". Passing $public
 // degraded it to nil, and a direct path with no route left is not a downgrade, it is a
 // lane that answers nothing. It refused for a reason that cannot apply: the funding
-// gate asks the catalog what a family SKU costs, and the pool's id is a FRONT DOOR
+// gate asks the catalog what a family SKU costs, and the pool's id is an ALIAS
 // rather than a discovered SKU, so the lookup misses and an undescribed id is refused
 // by design. The pool IS the routes that cost nothing; there is no spend to protect.
 func publicPoolRoute() (*modelRoute, error) {
