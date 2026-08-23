@@ -49,8 +49,6 @@ import (
 
 	"github.com/luxfi/zap"
 
-	iam "github.com/hanzoai/ai/internal/iam"
-
 	"github.com/hanzoai/ai/cluster"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
@@ -92,31 +90,6 @@ var zapApplicationDeployGateway = map[string]zapApplicationDeployFn{}
 
 // ── Shared seams (identity + response envelope parity) ───────────────────
 
-// zapAppPrincipal resolves the request principal STRICTLY from its verified
-// credential — the ZAP analogue of principalUser (there is no session cookie on
-// the ZAP path). pk-/sk- IAM keys route through getUserByAccessKey; JWTs through
-// object.ParseAndValidateJWT (signature + iss/aud, never raw iam.ParseJwtToken).
-// Returns nil for an empty/invalid/unsupported credential — fail-secure.
-func zapAppPrincipal(auth string) *iam.User {
-	token := strings.TrimSpace(strings.TrimPrefix(auth, "Bearer "))
-	if token == "" {
-		return nil
-	}
-	if isIAMApiKey(token) {
-		if user, err := getUserByAccessKey(token); err == nil && user != nil {
-			return user
-		}
-		return nil
-	}
-	if isJwtToken(token) {
-		if claims, err := object.ParseAndValidateJWT(token); err == nil && claims != nil {
-			u := claims.User
-			return &u
-		}
-	}
-	return nil
-}
-
 // ── get-applications (org-scoped, mirrors GetScopedOwner) ────────────────
 
 // zapListAppParams is the body-decoded projection of the query params.
@@ -131,7 +104,7 @@ type zapListAppParams struct {
 }
 
 func zapGetApplicationsHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	user := zapAppPrincipal(auth)
+	user := zapPrincipal(auth)
 	if user == nil {
 		return zapError(http.StatusUnauthorized, "auth:Please sign in first")
 	}
@@ -176,7 +149,7 @@ func zapGetApplicationsHandler(_ context.Context, auth string, body []byte) (*za
 // ── get-application ──────────────────────────────────────────────────────
 
 func zapGetApplicationHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if zapAppPrincipal(auth) == nil {
+	if zapPrincipal(auth) == nil {
 		return zapError(http.StatusUnauthorized, "auth:Please sign in first")
 	}
 	var p struct {
@@ -218,7 +191,7 @@ func zapAppPayload(body []byte) (string, *object.Application, error) {
 }
 
 func zapUpdateApplicationHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if zapAppPrincipal(auth) == nil {
+	if zapPrincipal(auth) == nil {
 		return zapError(http.StatusUnauthorized, "auth:Please sign in first")
 	}
 	id, application, err := zapAppPayload(body)
@@ -241,7 +214,7 @@ func zapUpdateApplicationHandler(_ context.Context, auth string, body []byte) (*
 // ── add-application ──────────────────────────────────────────────────────
 
 func zapAddApplicationHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if zapAppPrincipal(auth) == nil {
+	if zapPrincipal(auth) == nil {
 		return zapError(http.StatusUnauthorized, "auth:Please sign in first")
 	}
 	var application object.Application
@@ -271,7 +244,7 @@ func zapAddApplicationHandler(_ context.Context, auth string, body []byte) (*zap
 // ── delete-application ───────────────────────────────────────────────────
 
 func zapDeleteApplicationHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if zapAppPrincipal(auth) == nil {
+	if zapPrincipal(auth) == nil {
 		return zapError(http.StatusUnauthorized, "auth:Please sign in first")
 	}
 	var application object.Application
@@ -293,7 +266,7 @@ func zapDeleteApplicationHandler(_ context.Context, auth string, body []byte) (*
 // ── deploy-application (update + synchronous deploy) ─────────────────────
 
 func zapDeployApplicationHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if zapAppPrincipal(auth) == nil {
+	if zapPrincipal(auth) == nil {
 		return zapError(http.StatusUnauthorized, "auth:Please sign in first")
 	}
 	id, application, err := zapAppPayload(body)
@@ -339,7 +312,7 @@ func zapDeployApplicationHandler(_ context.Context, auth string, body []byte) (*
 // ── undeploy-application (synchronous undeploy) ──────────────────────────
 
 func zapUndeployApplicationHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if zapAppPrincipal(auth) == nil {
+	if zapPrincipal(auth) == nil {
 		return zapError(http.StatusUnauthorized, "auth:Please sign in first")
 	}
 	var p struct {
@@ -372,7 +345,7 @@ func zapUndeployApplicationHandler(_ context.Context, auth string, body []byte) 
 // ── get-k8s-status (super admin, mirrors RequireSuperAdmin) ──────────────
 
 func zapGetK8sStatusHandler(_ context.Context, auth string, _ []byte) (*zap.Message, error) {
-	user := zapAppPrincipal(auth)
+	user := zapPrincipal(auth)
 	if user == nil {
 		return zapError(http.StatusUnauthorized, "auth:Please sign in first")
 	}
