@@ -111,9 +111,29 @@ type zapAuthErr struct {
 
 // zapOk marshals the Response{status:"ok",data:…} envelope the c.ResponseOk
 // HTTP path returns.
-func zapOk(data interface{}) (*zap.Message, error) {
-	b, _ := json.Marshal(Response{Status: "ok", Data: data})
+// zapOk is THE cloud answer: {status:"ok"} at 200, carrying whatever the handler
+// has to hand back.
+//
+// It is variadic because the second payload is the paginator's count and most
+// answers have no such thing — one call shape rather than an Ok and an Ok2 that
+// differ by an argument. Nine of these existed, one per group, identical but for
+// whether they wrote `switch` or `if` and `200` or http.StatusOK.
+func zapOk(data ...interface{}) (*zap.Message, error) {
+	resp := Response{Status: "ok"}
+	if len(data) > 0 {
+		resp.Data = data[0]
+	}
+	if len(data) > 1 {
+		resp.Data2 = data[1]
+	}
+	b, _ := json.Marshal(resp)
 	return object.BuildCloudResponse(http.StatusOK, b, "")
+}
+
+// zapError is THE cloud refusal: {status:"error", msg} at the status given.
+func zapError(status int, msg string) (*zap.Message, error) {
+	b, _ := json.Marshal(Response{Status: "error", Msg: msg})
+	return object.BuildCloudResponse(uint32(status), b, "")
 }
 
 // zapRaw marshals a bare payload (endpoints that write c.Data["json"] directly,

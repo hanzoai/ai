@@ -119,42 +119,12 @@ func zapSecPrincipal(auth string) *iam.User {
 	return nil
 }
 
-// zapSecOk renders the ResponseOk envelope ({status:"ok", data[, data2]})
-// as a 200 cloud response, preserving the exact JSON shape the HTTP handlers
-// return. The variadic mirrors ResponseOk: a second arg becomes Data2 (the
-// pagination count for the list handlers).
-func zapSecOk(data ...interface{}) (*zap.Message, error) {
-	resp := Response{Status: "ok"}
-	switch len(data) {
-	case 2:
-		resp.Data2 = data[1]
-		fallthrough
-	case 1:
-		resp.Data = data[0]
-	}
-	b, _ := json.Marshal(resp)
-	return object.BuildCloudResponse(http.StatusOK, b, "")
-}
-
 // zapSecErr renders the ResponseError envelope ({status:"error", msg}) at
 // the given status. Business errors mirror ResponseError (HTTP 200 body); auth
 // failures use 401 like ResponseUnauthorized.
 func zapSecErr(status int, msg string) (*zap.Message, error) {
 	b, _ := json.Marshal(Response{Status: "error", Msg: msg})
 	return object.BuildCloudResponse(uint32(status), b, msg)
-}
-
-// zapSecScopedOwner mirrors ApiController.GetScopedOwner: a non-admin principal
-// is always scoped to its own org; the reserved `admin` org may target a
-// specific owner via the body's `owner` field. The scope decision derives ONLY
-// from the verified principal, never from a client owner field for a tenant.
-func zapSecScopedOwner(user *iam.User, requestedOwner string) string {
-	if user.Owner == "admin" {
-		if o := strings.TrimSpace(requestedOwner); o != "" {
-			return o
-		}
-	}
-	return user.Owner
 }
 
 // ── asset.go parity ──────────────────────────────────────────────────────────
@@ -185,14 +155,14 @@ func zapGetAssetsHandler(_ context.Context, auth string, body []byte) (*zap.Mess
 			return zapSecErr(http.StatusBadRequest, "invalid request: "+err.Error())
 		}
 	}
-	owner := zapSecScopedOwner(user, p.Owner)
+	owner := util.ScopeOwner(user.Owner, p.Owner)
 
 	if p.PageSize == "" || p.P == "" {
 		assets, err := object.GetAssets(owner)
 		if err != nil {
 			return zapSecErr(http.StatusOK, err.Error())
 		}
-		return zapSecOk(object.GetMaskedAssets(assets, true))
+		return zapOk(object.GetMaskedAssets(assets, true))
 	}
 
 	limit := util.ParseInt(p.PageSize)
@@ -209,7 +179,7 @@ func zapGetAssetsHandler(_ context.Context, auth string, body []byte) (*zap.Mess
 	if err != nil {
 		return zapSecErr(http.StatusOK, err.Error())
 	}
-	return zapSecOk(object.GetMaskedAssets(assets, true), count)
+	return zapOk(object.GetMaskedAssets(assets, true), count)
 }
 
 // zapSecIDRequest carries a single `id` (owner/name) over the native body — the
@@ -233,7 +203,7 @@ func zapGetAssetHandler(_ context.Context, auth string, body []byte) (*zap.Messa
 	if err != nil {
 		return zapSecErr(http.StatusOK, err.Error())
 	}
-	return zapSecOk(object.GetMaskedAsset(asset, true))
+	return zapOk(object.GetMaskedAsset(asset, true))
 }
 
 // zapUpdateAssetRequest carries the UpdateAsset id (URL query in HTTP) plus the
@@ -256,7 +226,7 @@ func zapUpdateAssetHandler(_ context.Context, auth string, body []byte) (*zap.Me
 	if err != nil {
 		return zapSecErr(http.StatusOK, err.Error())
 	}
-	return zapSecOk(success)
+	return zapOk(success)
 }
 
 // zapAddAssetHandler mirrors ApiController.AddAsset.
@@ -272,7 +242,7 @@ func zapAddAssetHandler(_ context.Context, auth string, body []byte) (*zap.Messa
 	if err != nil {
 		return zapSecErr(http.StatusOK, err.Error())
 	}
-	return zapSecOk(success)
+	return zapOk(success)
 }
 
 // zapDeleteAssetHandler mirrors ApiController.DeleteAsset.
@@ -288,7 +258,7 @@ func zapDeleteAssetHandler(_ context.Context, auth string, body []byte) (*zap.Me
 	if err != nil {
 		return zapSecErr(http.StatusOK, err.Error())
 	}
-	return zapSecOk(success)
+	return zapOk(success)
 }
 
 // zapScanAssetRequest carries the ScanAsset params (the router URL query) over the
@@ -318,7 +288,7 @@ func zapScanAssetHandler(_ context.Context, auth string, body []byte) (*zap.Mess
 	if err != nil {
 		return zapSecErr(http.StatusOK, err.Error())
 	}
-	return zapSecOk(scanResult)
+	return zapOk(scanResult)
 }
 
 // zapScanAssetsRequest carries the ScanAssets params over the native body. Owner
@@ -341,12 +311,12 @@ func zapScanAssetsHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 			return zapSecErr(http.StatusBadRequest, "invalid request: "+err.Error())
 		}
 	}
-	owner := zapSecScopedOwner(user, req.Owner)
+	owner := util.ScopeOwner(user.Owner, req.Owner)
 	success, err := object.ScanAssetsFromProvider(owner, req.Provider)
 	if err != nil {
 		return zapSecErr(http.StatusOK, err.Error())
 	}
-	return zapSecOk(success)
+	return zapOk(success)
 }
 
 // ── scan.go parity ───────────────────────────────────────────────────────────
@@ -364,7 +334,7 @@ func zapGetScansHandler(_ context.Context, auth string, body []byte) (*zap.Messa
 			return zapSecErr(http.StatusBadRequest, "invalid request: "+err.Error())
 		}
 	}
-	owner := zapSecScopedOwner(user, p.Owner)
+	owner := util.ScopeOwner(user.Owner, p.Owner)
 
 	// Asset filter short-circuit (parity with GetScansByAsset).
 	if p.Asset != "" {
@@ -372,7 +342,7 @@ func zapGetScansHandler(_ context.Context, auth string, body []byte) (*zap.Messa
 		if err != nil {
 			return zapSecErr(http.StatusOK, err.Error())
 		}
-		return zapSecOk(scans)
+		return zapOk(scans)
 	}
 
 	if p.PageSize == "" || p.P == "" {
@@ -380,7 +350,7 @@ func zapGetScansHandler(_ context.Context, auth string, body []byte) (*zap.Messa
 		if err != nil {
 			return zapSecErr(http.StatusOK, err.Error())
 		}
-		return zapSecOk(scans)
+		return zapOk(scans)
 	}
 
 	limit := util.ParseInt(p.PageSize)
@@ -397,7 +367,7 @@ func zapGetScansHandler(_ context.Context, auth string, body []byte) (*zap.Messa
 	if err != nil {
 		return zapSecErr(http.StatusOK, err.Error())
 	}
-	return zapSecOk(scans, count)
+	return zapOk(scans, count)
 }
 
 // zapGetScanHandler mirrors ApiController.GetScan.
@@ -415,7 +385,7 @@ func zapGetScanHandler(_ context.Context, auth string, body []byte) (*zap.Messag
 	if err != nil {
 		return zapSecErr(http.StatusOK, err.Error())
 	}
-	return zapSecOk(scan)
+	return zapOk(scan)
 }
 
 // zapUpdateScanRequest carries the UpdateScan id plus the scan payload.
@@ -437,7 +407,7 @@ func zapUpdateScanHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 	if err != nil {
 		return zapSecErr(http.StatusOK, err.Error())
 	}
-	return zapSecOk(success)
+	return zapOk(success)
 }
 
 // zapAddScanHandler mirrors ApiController.AddScan.
@@ -453,7 +423,7 @@ func zapAddScanHandler(_ context.Context, auth string, body []byte) (*zap.Messag
 	if err != nil {
 		return zapSecErr(http.StatusOK, err.Error())
 	}
-	return zapSecOk(success)
+	return zapOk(success)
 }
 
 // zapDeleteScanHandler mirrors ApiController.DeleteScan.
@@ -469,7 +439,7 @@ func zapDeleteScanHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 	if err != nil {
 		return zapSecErr(http.StatusOK, err.Error())
 	}
-	return zapSecOk(success)
+	return zapOk(success)
 }
 
 // ── permission.go parity ─────────────────────────────────────────────────────
@@ -483,7 +453,7 @@ func zapGetPermissionsHandler(_ context.Context, auth string, _ []byte) (*zap.Me
 	if err != nil {
 		return zapSecErr(http.StatusOK, err.Error())
 	}
-	return zapSecOk(permissions)
+	return zapOk(permissions)
 }
 
 // zapGetPermissionHandler mirrors ApiController.GetPermission (id → name split,
@@ -506,7 +476,7 @@ func zapGetPermissionHandler(_ context.Context, auth string, body []byte) (*zap.
 	if err != nil {
 		return zapSecErr(http.StatusOK, err.Error())
 	}
-	return zapSecOk(permission)
+	return zapOk(permission)
 }
 
 // zapUpdatePermissionHandler mirrors ApiController.UpdatePermission.
@@ -522,7 +492,7 @@ func zapUpdatePermissionHandler(_ context.Context, auth string, body []byte) (*z
 	if err != nil {
 		return zapSecErr(http.StatusOK, err.Error())
 	}
-	return zapSecOk(success)
+	return zapOk(success)
 }
 
 // zapAddPermissionHandler mirrors ApiController.AddPermission.
@@ -538,7 +508,7 @@ func zapAddPermissionHandler(_ context.Context, auth string, body []byte) (*zap.
 	if err != nil {
 		return zapSecErr(http.StatusOK, err.Error())
 	}
-	return zapSecOk(success)
+	return zapOk(success)
 }
 
 // zapDeletePermissionHandler mirrors ApiController.DeletePermission.
@@ -554,5 +524,5 @@ func zapDeletePermissionHandler(_ context.Context, auth string, body []byte) (*z
 	if err != nil {
 		return zapSecErr(http.StatusOK, err.Error())
 	}
-	return zapSecOk(success)
+	return zapOk(success)
 }

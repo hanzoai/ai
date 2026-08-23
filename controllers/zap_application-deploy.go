@@ -117,31 +117,6 @@ func zapAppPrincipal(auth string) *iam.User {
 	return nil
 }
 
-// zapAppOk renders the ResponseOk envelope ({status:"ok", data[, data2]}) as
-// a 200 cloud response, preserving the exact JSON shape the HTTP handlers return.
-// The variadic mirrors ResponseOk: a second arg becomes Data2 (the pagination
-// count for GetApplications).
-func zapAppOk(data ...interface{}) (*zap.Message, error) {
-	resp := Response{Status: "ok"}
-	switch len(data) {
-	case 2:
-		resp.Data2 = data[1]
-		fallthrough
-	case 1:
-		resp.Data = data[0]
-	}
-	b, _ := json.Marshal(resp)
-	return object.BuildCloudResponse(http.StatusOK, b, "")
-}
-
-// zapAppError renders the ResponseError envelope ({status:"error", msg}) at
-// the given status. Business errors mirror ResponseError (HTTP 200 body); auth
-// failures use 401/403 like ResponseUnauthorized / ResponseForbidden.
-func zapAppError(status int, msg string) (*zap.Message, error) {
-	b, _ := json.Marshal(Response{Status: "error", Msg: msg})
-	return object.BuildCloudResponse(uint32(status), b, "")
-}
-
 // ── get-applications (org-scoped, mirrors GetScopedOwner) ────────────────
 
 // zapListAppParams is the body-decoded projection of the query params.
@@ -158,7 +133,7 @@ type zapListAppParams struct {
 func zapGetApplicationsHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
 	user := zapAppPrincipal(auth)
 	if user == nil {
-		return zapAppError(http.StatusUnauthorized, "auth:Please sign in first")
+		return zapError(http.StatusUnauthorized, "auth:Please sign in first")
 	}
 
 	var p zapListAppParams
@@ -177,32 +152,32 @@ func zapGetApplicationsHandler(_ context.Context, auth string, body []byte) (*za
 	if p.PageSize == "" || p.P == "" {
 		applications, err := object.GetApplications(owner)
 		if err != nil {
-			return zapAppError(http.StatusOK, err.Error())
+			return zapError(http.StatusOK, err.Error())
 		}
 		cluster.Describe(applications, "en")
-		return zapAppOk(applications)
+		return zapOk(applications)
 	}
 
 	limit := util.ParseInt(p.PageSize)
 	page := util.ParseInt(p.P)
 	count, err := object.GetApplicationCount(owner, p.Field, p.Value)
 	if err != nil {
-		return zapAppError(http.StatusOK, err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
 	offset := (page - 1) * limit
 	applications, err := object.GetPaginationApplications(owner, offset, limit, p.Field, p.Value, p.SortField, p.SortOrder)
 	if err != nil {
-		return zapAppError(http.StatusOK, err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
 	cluster.Describe(applications, "en")
-	return zapAppOk(applications, count)
+	return zapOk(applications, count)
 }
 
 // ── get-application ──────────────────────────────────────────────────────
 
 func zapGetApplicationHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
 	if zapAppPrincipal(auth) == nil {
-		return zapAppError(http.StatusUnauthorized, "auth:Please sign in first")
+		return zapError(http.StatusUnauthorized, "auth:Please sign in first")
 	}
 	var p struct {
 		Id string `json:"id"`
@@ -213,12 +188,12 @@ func zapGetApplicationHandler(_ context.Context, auth string, body []byte) (*zap
 
 	res, err := object.GetApplication(p.Id)
 	if err != nil {
-		return zapAppError(http.StatusOK, err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
 	if res != nil {
 		cluster.Describe([]*object.Application{res}, "en")
 	}
-	return zapAppOk(res)
+	return zapOk(res)
 }
 
 // ── update-application ───────────────────────────────────────────────────
@@ -244,64 +219,64 @@ func zapAppPayload(body []byte) (string, *object.Application, error) {
 
 func zapUpdateApplicationHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
 	if zapAppPrincipal(auth) == nil {
-		return zapAppError(http.StatusUnauthorized, "auth:Please sign in first")
+		return zapError(http.StatusUnauthorized, "auth:Please sign in first")
 	}
 	id, application, err := zapAppPayload(body)
 	if err != nil {
-		return zapAppError(http.StatusOK, err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
 
 	application.Manifest, err = cluster.Manifest(application, "en")
 	if err != nil {
-		return zapAppError(http.StatusOK, err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
 
 	success, err := object.UpdateApplication(id, application)
 	if err != nil {
-		return zapAppError(http.StatusOK, err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
-	return zapAppOk(success)
+	return zapOk(success)
 }
 
 // ── add-application ──────────────────────────────────────────────────────
 
 func zapAddApplicationHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
 	if zapAppPrincipal(auth) == nil {
-		return zapAppError(http.StatusUnauthorized, "auth:Please sign in first")
+		return zapError(http.StatusUnauthorized, "auth:Please sign in first")
 	}
 	var application object.Application
 	if err := json.Unmarshal(body, &application); err != nil {
-		return zapAppError(http.StatusOK, err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
 
 	if application.Template == "" {
-		return zapAppError(http.StatusOK, "application:Missing required parameters")
+		return zapError(http.StatusOK, "application:Missing required parameters")
 	}
 
 	template, err := object.GetTemplate(util.GetIdFromOwnerAndName(application.Owner, application.Template))
 	if err != nil {
-		return zapAppError(http.StatusOK, err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
 	if template == nil {
-		return zapAppError(http.StatusOK, "application:The Template not found")
+		return zapError(http.StatusOK, "application:The Template not found")
 	}
 
 	success, err := object.AddApplication(&application)
 	if err != nil {
-		return zapAppError(http.StatusOK, err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
-	return zapAppOk(success)
+	return zapOk(success)
 }
 
 // ── delete-application ───────────────────────────────────────────────────
 
 func zapDeleteApplicationHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
 	if zapAppPrincipal(auth) == nil {
-		return zapAppError(http.StatusUnauthorized, "auth:Please sign in first")
+		return zapError(http.StatusUnauthorized, "auth:Please sign in first")
 	}
 	var application object.Application
 	if err := json.Unmarshal(body, &application); err != nil {
-		return zapAppError(http.StatusOK, err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
 
 	// Best-effort teardown of what the record deployed, then drop the record. An
@@ -310,62 +285,62 @@ func zapDeleteApplicationHandler(_ context.Context, auth string, body []byte) (*
 
 	success, err := object.DeleteApplication(&application)
 	if err != nil {
-		return zapAppError(http.StatusOK, err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
-	return zapAppOk(success)
+	return zapOk(success)
 }
 
 // ── deploy-application (update + synchronous deploy) ─────────────────────
 
 func zapDeployApplicationHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
 	if zapAppPrincipal(auth) == nil {
-		return zapAppError(http.StatusUnauthorized, "auth:Please sign in first")
+		return zapError(http.StatusUnauthorized, "auth:Please sign in first")
 	}
 	id, application, err := zapAppPayload(body)
 	if err != nil {
-		return zapAppError(http.StatusOK, err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
 
 	originalApplication, err := object.GetApplication(id)
 	if err != nil {
-		return zapAppError(http.StatusOK, err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
 	if originalApplication == nil {
-		return zapAppError(http.StatusOK, fmt.Sprintf("The application: %s is not found", id))
+		return zapError(http.StatusOK, fmt.Sprintf("The application: %s is not found", id))
 	}
 
 	application.Manifest, err = cluster.Manifest(application, "en")
 	if err != nil {
-		return zapAppError(http.StatusOK, err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
 
 	success, err := object.UpdateApplication(id, application)
 	if err != nil {
-		return zapAppError(http.StatusOK, err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
 	if !success {
-		return zapAppError(http.StatusOK, "application:Failed to update application")
+		return zapError(http.StatusOK, "application:Failed to update application")
 	}
 
 	// Parity with UpdateApplication: only the error is checked (the sync deploy's
 	// bool is advisory there too).
 	_, err = cluster.DeploySync(application, "en")
 	if err != nil {
-		return zapAppError(http.StatusOK, err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
 
 	updatedApplication, err := object.GetApplication(id)
 	if err != nil {
-		return zapAppError(http.StatusOK, err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
-	return zapAppOk(updatedApplication)
+	return zapOk(updatedApplication)
 }
 
 // ── undeploy-application (synchronous undeploy) ──────────────────────────
 
 func zapUndeployApplicationHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
 	if zapAppPrincipal(auth) == nil {
-		return zapAppError(http.StatusUnauthorized, "auth:Please sign in first")
+		return zapError(http.StatusUnauthorized, "auth:Please sign in first")
 	}
 	var p struct {
 		Id string `json:"id"`
@@ -376,22 +351,22 @@ func zapUndeployApplicationHandler(_ context.Context, auth string, body []byte) 
 
 	application, err := object.GetApplication(p.Id)
 	if err != nil {
-		return zapAppError(http.StatusOK, err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
 	if application == nil {
-		return zapAppError(http.StatusOK, fmt.Sprintf("The application: %s is not found", p.Id))
+		return zapError(http.StatusOK, fmt.Sprintf("The application: %s is not found", p.Id))
 	}
 
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(p.Id)
 	if err != nil {
-		return zapAppError(http.StatusOK, err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
 
 	success, err := cluster.UndeploySync(owner, name, application.Namespace, "en")
 	if err != nil {
-		return zapAppError(http.StatusOK, err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
-	return zapAppOk(success)
+	return zapOk(success)
 }
 
 // ── get-k8s-status (super admin, mirrors RequireSuperAdmin) ──────────────
@@ -399,15 +374,15 @@ func zapUndeployApplicationHandler(_ context.Context, auth string, body []byte) 
 func zapGetK8sStatusHandler(_ context.Context, auth string, _ []byte) (*zap.Message, error) {
 	user := zapAppPrincipal(auth)
 	if user == nil {
-		return zapAppError(http.StatusUnauthorized, "auth:Please sign in first")
+		return zapError(http.StatusUnauthorized, "auth:Please sign in first")
 	}
 	if !util.IsSuperAdmin(user) {
-		return zapAppError(http.StatusForbidden, "auth:this operation requires super admin privilege")
+		return zapError(http.StatusForbidden, "auth:this operation requires super admin privilege")
 	}
 
 	status, err := cluster.Status("en")
 	if err != nil {
-		return zapAppError(http.StatusOK, err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
-	return zapAppOk(status)
+	return zapOk(status)
 }
