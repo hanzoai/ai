@@ -164,21 +164,6 @@ func zapRequireSignedIn(auth string) (*iam.User, *zap.Message) {
 	return user, nil
 }
 
-// zapKSFVEnforceStoreIsolation mirrors ApiController.EnforceStoreIsolation.
-func zapKSFVEnforceStoreIsolation(user *iam.User, requested string) (string, *zap.Message) {
-	if user == nil || user.Homepage == "" {
-		return requested, nil
-	}
-	if requested == "" || requested == "All" {
-		return user.Homepage, nil
-	}
-	if requested != user.Homepage {
-		msg, _ := zapError(http.StatusOK, "controllers:You can only access data from your assigned store")
-		return "", msg
-	}
-	return requested, nil
-}
-
 // zapKSFVLang mirrors GetAcceptLanguage on a carrier that has no Accept-Language
 // header: an optional body "language", defaulting to "en" (as zapChatHandler).
 func zapKSFVLang(lang string) string {
@@ -801,7 +786,7 @@ func zapGetVectorsHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 	owner := user.Owner
 	p := zapDecodeParams(body)
 
-	storeName, isoDeny := zapKSFVEnforceStoreIsolation(user, p.Store)
+	storeName, isoDeny := zapEnforceStoreIsolation(user, p.Store)
 	if isoDeny != nil {
 		return isoDeny, nil
 	}
