@@ -76,19 +76,11 @@ func GetPaginationAssets(owner string, offset, limit int, field, value, sortFiel
 }
 
 func getAsset(owner string, name string) (*Asset, error) {
+	// An empty key names no row, and is answered without asking.
 	if owner == "" || name == "" {
 		return nil, nil
 	}
-	asset := Asset{Owner: owner, Name: name}
-	existed, err := getOne(adapter.db, "asset", &asset, pk2(asset.Owner, asset.Name))
-	if err != nil {
-		return &asset, err
-	}
-	if existed {
-		return &asset, nil
-	} else {
-		return nil, nil
-	}
+	return getRow[Asset]("asset", owner, name)
 }
 
 func GetAsset(id string) (*Asset, error) {
