@@ -87,6 +87,9 @@ func (p *NucleiScanProvider) Scan(target string, command string) (string, error)
 		defaultArgs: "-u %s -jsonl",
 		jsonFlags:   []string{"-jsonl", "-json"}, addJSON: "-jsonl",
 		targetFlags: []string{"-u", "-target", "-l"}, addTarget: "-u",
+		// A nuclei template is executable YAML, and these three name where to
+		// load one from.
+		offLimits: []string{"-t", "-templates", "-w", "-workflows", "-tp", "-template-path", "-config"},
 	}.run(target, command)
 }
 

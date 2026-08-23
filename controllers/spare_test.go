@@ -564,10 +564,10 @@ func TestAnAnswerWearsTheSkuThatWasAskedFor(t *testing.T) {
 // The free alias is the same rule from the other side: the caller names an id
 // no vendor holds, the pool picks a route, and the answer comes back wearing the id
 // that was named rather than the route that was chosen.
-func TestTheFreeDoorAnswersInTheNameItWasCalledBy(t *testing.T) {
+func TestTheFreeAliasAnswersInTheNameItWasCalledBy(t *testing.T) {
 	cooled.forget()
 	const free = "vendor/big:free"
-	const door = "enso-free"
+	const alias = "enso-free"
 	fake := &refuses{status: 500, body: `{"error":{"message":"unused"}}`, free: free}
 	vendor := fake.serve(t)
 	defer vendor.Close()
@@ -575,7 +575,7 @@ func TestTheFreeDoorAnswersInTheNameItWasCalledBy(t *testing.T) {
 	spareFamily(t, vendor.URL, free)
 	enso := otherFamily(t, vendor.URL)
 
-	c, _ := fake.pipe(t, enso, door)
+	c, _ := fake.pipe(t, enso, alias)
 
 	if len(fake.asked) != 1 || fake.asked[0] != free {
 		t.Fatalf("asked=%v — the pool did not choose a route", fake.asked)
@@ -584,8 +584,8 @@ func TestTheFreeDoorAnswersInTheNameItWasCalledBy(t *testing.T) {
 	if err := json.Unmarshal([]byte(sent(c)), &got); err != nil {
 		t.Fatalf("not JSON: %v\n%s", err, sent(c))
 	}
-	if got["model"] != door {
-		t.Errorf("model = %v, want %q — the id the caller called", got["model"], door)
+	if got["model"] != alias {
+		t.Errorf("model = %v, want %q — the id the caller called", got["model"], alias)
 	}
 	if got["model"] == free {
 		t.Errorf("the envelope names %q, the route the pool chose", free)
@@ -894,7 +894,7 @@ func TestAFamilysFreeIdIsServedFromThePool(t *testing.T) {
 		t.Errorf("serving a free id handed the request on: %v", refusedBy)
 	}
 	// The pool's route wrote the answer and the answer does not name it — which id
-	// it DOES wear is TestTheFreeDoorAnswersInTheNameItWasCalledBy.
+	// it DOES wear is TestTheFreeAliasAnswersInTheNameItWasCalledBy.
 	if strings.Contains(sent(c), free) {
 		t.Errorf("the answer names the route the pool chose:\n%s", sent(c))
 	}
