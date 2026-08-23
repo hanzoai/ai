@@ -22,6 +22,8 @@ import (
 	"path/filepath"
 	"regexp"
 
+	"github.com/hanzoai/ai/util"
+
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/txt"
 )
@@ -90,7 +92,14 @@ func refineQuestionTextViaParsingUrlContent(question string, lang string) (strin
 		return question, nil
 	}
 
+	// The href came out of the question a person typed, so it is a request for a
+	// document and not yet an address. Every reader downstream takes a scheme-less
+	// string as a path on this machine's disk, and an address inside this network
+	// is our own neighbours — neither is something the answer may go and read.
 	href := urls[1]
+	if err := util.Fetchable(href); err != nil {
+		return "", err
+	}
 	ext := filepath.Ext(href)
 	content, err := txt.GetParsedTextFromUrl(href, ext, lang)
 	if err != nil {
