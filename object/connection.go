@@ -147,23 +147,11 @@ func UpdateConnection(id string, connection *Connection, columns ...string) (boo
 }
 
 func DeleteConnection(connection *Connection) (bool, error) {
-	affected, err := deleteByPK(adapter.db, "connection", pk2(connection.Owner, connection.Name))
-	if err != nil {
-		return false, err
-	}
-	return affected != 0, nil
+	return deleteRow("connection", connection.Owner, connection.Name)
 }
 
 func AddConnection(connection *Connection) (bool, error) {
-	err := insertRow(adapter.db, connection)
-	affected := int64(1)
-	if err != nil {
-		affected = 0
-	}
-	if err != nil {
-		return false, err
-	}
-	return affected != 0, nil
+	return addRow(connection)
 }
 
 func CreateConnection(connection *Connection, nodeId string, mode string) (*Connection, error) {

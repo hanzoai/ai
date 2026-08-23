@@ -66,17 +66,8 @@ func getVectorsByProvider(relatedStores []string, provider string) ([]*Vector, e
 	return vectors, nil
 }
 
-func getVector(owner string, name string) (*Vector, error) {
-	vector := Vector{Owner: owner, Name: name}
-	existed, err := getOne(adapter.db, "vector", &vector, pk2(vector.Owner, vector.Name))
-	if err != nil {
-		return &vector, err
-	}
-	if existed {
-		return &vector, nil
-	} else {
-		return nil, nil
-	}
+func getVector(owner, name string) (*Vector, error) {
+	return getRow[Vector]("vector", owner, name)
 }
 
 func GetVector(id string) (*Vector, error) {
@@ -132,11 +123,7 @@ func AddVector(vector *Vector) (bool, error) {
 }
 
 func DeleteVector(vector *Vector) (bool, error) {
-	affected, err := deleteByPK(adapter.db, "vector", pk2(vector.Owner, vector.Name))
-	if err != nil {
-		return false, err
-	}
-	return affected != 0, nil
+	return deleteRow("vector", vector.Owner, vector.Name)
 }
 
 func DeleteVectorsByFile(owner string, storeName string, fileKey string) (bool, error) {

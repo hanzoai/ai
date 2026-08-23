@@ -22,6 +22,29 @@ import (
 
 // getOne fetches a single row by composite PK (owner, name) into dst.
 // Returns (existed bool, err error).
+// getRow reads the one row a table holds for an (owner, name), or nil when it
+// holds none.
+//
+// Nine tables had this written out for them — the same ten lines with the type
+// and the table name changed — so a correction to how a missing row is told from
+// a failed read had nine places to be made and nine chances to be made in eight.
+// The store guard is one of those corrections: reading through a nil adapter is a
+// SIGSEGV rather than an error, and it belongs here rather than nine times.
+func getRow[T any](table, owner, name string) (*T, error) {
+	if adapter == nil || adapter.db == nil {
+		return nil, fmt.Errorf("%s store is not initialised", table)
+	}
+	var row T
+	existed, err := getOne(adapter.db, table, &row, pk2(owner, name))
+	if err != nil {
+		return &row, err
+	}
+	if existed {
+		return &row, nil
+	}
+	return nil, nil
+}
+
 func getOne(db *dbx.DB, table string, dst interface{}, pk dbx.HashExp) (bool, error) {
 	err := db.Select().From(table).Where(pk).One(dst)
 	if err != nil {
@@ -46,6 +69,47 @@ func findAll(db *dbx.DB, table string, dst interface{}, where dbx.Expression, or
 }
 
 // insertRow inserts a struct model.
+// updated writes a row back over the key it carries.
+func updated(row any) (bool, error) {
+	if adapter == nil || adapter.db == nil {
+		return false, fmt.Errorf("store is not initialised")
+	}
+	if err := adapter.db.Model(row).Update(); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// deleteRow removes the one row a table holds for an (owner, name) and says
+// whether there was one to remove.
+func deleteRow(table, owner, name string) (bool, error) {
+	if adapter == nil || adapter.db == nil {
+		return false, fmt.Errorf("%s store is not initialised", table)
+	}
+	affected, err := deleteByPK(adapter.db, table, pk2(owner, name))
+	if err != nil {
+		return false, err
+	}
+	return affected != 0, nil
+}
+
+// addRow inserts one row and says whether it landed.
+//
+// Twelve tables had this written out, and each copy computed the answer through a
+// counter: set to one, zeroed on the error the function had already returned on,
+// then compared to zero. The counter could not hold any other value, so the
+// comparison could not have any other outcome — five lines of arithmetic to say
+// what "the insert did not fail" says.
+func addRow(row any) (bool, error) {
+	if adapter == nil || adapter.db == nil {
+		return false, fmt.Errorf("store is not initialised")
+	}
+	if err := insertRow(adapter.db, row); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 func insertRow(db *dbx.DB, model interface{}) error {
 	return db.Model(model).Insert()
 }

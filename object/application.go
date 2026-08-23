@@ -80,16 +80,7 @@ func GetPaginationApplications(owner string, offset, limit int, field, value, so
 }
 
 func getApplication(owner, name string) (*Application, error) {
-	application := Application{Owner: owner, Name: name}
-	existed, err := getOne(adapter.db, "application", &application, pk2(application.Owner, application.Name))
-	if err != nil {
-		return &application, err
-	}
-	if existed {
-		return &application, nil
-	} else {
-		return nil, nil
-	}
+	return getRow[Application]("application", owner, name)
 }
 
 func GetApplication(id string) (*Application, error) {
@@ -151,9 +142,5 @@ func AddApplication(application *Application) (bool, error) {
 // DeleteApplication removes the record. Tearing down what the record deployed is
 // cluster.Undeploy, which the caller runs first.
 func DeleteApplication(application *Application) (bool, error) {
-	affected, err := deleteByPK(adapter.db, "application", pk2(application.Owner, application.Name))
-	if err != nil {
-		return false, err
-	}
-	return affected != 0, nil
+	return deleteRow("application", application.Owner, application.Name)
 }
