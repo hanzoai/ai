@@ -72,11 +72,27 @@ func GetModelProviderByProviderKey(providerKey string, lang string) (model.Model
 	return modelProvider, nil
 }
 
-func GetDefaultStorageProvider() (*Provider, error) {
-	provider := Provider{Owner: "admin", Category: "Storage"}
-	existed, err := getOne(adapter.db, "provider", &provider, pk2(provider.Owner, provider.Name))
+// defaultProvider answers the provider marked default in a category, looking in
+// this deployment's own store and then in the shared one. A category with no
+// default is (nil, nil) — the store's convention for a row that is not there.
+//
+// Three of the six below used to ask a different question: owner and NAME, on a
+// value whose Name is never set. That matches the row called "" in the admin org,
+// which is no row, so storage, video and speech-to-text answered "no default"
+// however many were marked one. GetDefaultModelProvider is still its own — it
+// carries a state filter, for the reason written there.
+func defaultProvider(category string) (*Provider, error) {
+	provider := Provider{Owner: "admin", Category: category, IsDefault: true}
+	where := dbx.HashExp{"is_default": true, "category": category}
+
+	existed, err := getOne(adapter.db, "provider", &provider, where)
 	if err != nil {
 		return &provider, err
+	}
+	if providerAdapter != nil && !existed {
+		if existed, err = getOne(providerAdapter.db, "provider", &provider, where); err != nil {
+			return &provider, err
+		}
 	}
 	if !existed {
 		return nil, nil
@@ -84,17 +100,17 @@ func GetDefaultStorageProvider() (*Provider, error) {
 	return &provider, nil
 }
 
-func GetDefaultVideoProvider() (*Provider, error) {
-	provider := Provider{Owner: "admin", Category: "Video"}
-	existed, err := getOne(adapter.db, "provider", &provider, pk2(provider.Owner, provider.Name))
-	if err != nil {
-		return &provider, err
-	}
-	if !existed {
-		return nil, nil
-	}
-	return &provider, nil
-}
+func GetDefaultStorageProvider() (*Provider, error) { return defaultProvider("Storage") }
+
+func GetDefaultVideoProvider() (*Provider, error) { return defaultProvider("Video") }
+
+func GetDefaultEmbeddingProvider() (*Provider, error) { return defaultProvider("Embedding") }
+
+func GetDefaultAgentProvider() (*Provider, error) { return defaultProvider("Agent") }
+
+func GetDefaultTextToSpeechProvider() (*Provider, error) { return defaultProvider("Text-to-Speech") }
+
+func GetDefaultSpeechToTextProvider() (*Provider, error) { return defaultProvider("Speech-to-Text") }
 
 func GetDefaultModelProvider() (*Provider, error) {
 	provider := Provider{Owner: "admin", Category: "Model", IsDefault: true}
@@ -175,78 +191,6 @@ func SetPrimaryModelProvider(name string) error {
 	// change touched many records, so flush everything (empty name = full flush).
 	InvalidateProviderNameCache("")
 	return nil
-}
-
-func GetDefaultEmbeddingProvider() (*Provider, error) {
-	provider := Provider{Owner: "admin", Category: "Embedding", IsDefault: true}
-	existed, err := getOne(adapter.db, "provider", &provider, dbx.HashExp{"is_default": true, "category": provider.Category})
-	if err != nil {
-		return &provider, err
-	}
-	if providerAdapter != nil && !existed {
-		existed, err = getOne(providerAdapter.db, "provider", &provider, dbx.HashExp{"is_default": true, "category": provider.Category})
-		if err != nil {
-			return &provider, err
-		}
-	}
-	if !existed {
-		return nil, nil
-	}
-	return &provider, nil
-}
-
-func GetDefaultAgentProvider() (*Provider, error) {
-	provider := Provider{Owner: "admin", Category: "Agent", IsDefault: true}
-	existed, err := getOne(adapter.db, "provider", &provider, dbx.HashExp{"is_default": true, "category": provider.Category})
-	if err != nil {
-		return &provider, err
-	}
-	if providerAdapter != nil && !existed {
-		existed, err = getOne(providerAdapter.db, "provider", &provider, dbx.HashExp{"is_default": true, "category": provider.Category})
-		if err != nil {
-			return &provider, err
-		}
-	}
-	if !existed {
-		return nil, nil
-	}
-	return &provider, nil
-}
-
-func GetDefaultTextToSpeechProvider() (*Provider, error) {
-	provider := Provider{Owner: "admin", Category: "Text-to-Speech", IsDefault: true}
-	existed, err := getOne(adapter.db, "provider", &provider, dbx.HashExp{"is_default": true, "category": provider.Category})
-	if err != nil {
-		return &provider, err
-	}
-	if providerAdapter != nil && !existed {
-		existed, err = getOne(providerAdapter.db, "provider", &provider, dbx.HashExp{"is_default": true, "category": provider.Category})
-		if err != nil {
-			return &provider, err
-		}
-	}
-	if !existed {
-		return nil, nil
-	}
-	return &provider, nil
-}
-
-func GetDefaultSpeechToTextProvider() (*Provider, error) {
-	provider := Provider{Owner: "admin", Category: "Speech-to-Text"}
-	existed, err := getOne(adapter.db, "provider", &provider, pk2(provider.Owner, provider.Name))
-	if err != nil {
-		return &provider, err
-	}
-	if providerAdapter != nil && !existed {
-		existed, err = getOne(providerAdapter.db, "provider", &provider, pk2(provider.Owner, provider.Name))
-		if err != nil {
-			return &provider, err
-		}
-	}
-	if !existed {
-		return nil, nil
-	}
-	return &provider, nil
 }
 
 // providerByNameEntry caches a provider lookup by name to avoid per-request DB queries.
