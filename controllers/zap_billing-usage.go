@@ -70,7 +70,7 @@ func init() { registerZapBillingUsage() }
 // when authorized, else the refusal message to return verbatim. Admin here is
 // ORG-level (util.IsAdmin) — the same check c.IsAdmin() runs — NOT super admin.
 func zapRequireUsageAdmin(auth string) (*iam.User, *zap.Message) {
-	user := zapPrincipalUser(auth)
+	user := zapPrincipal(auth)
 	if user == nil {
 		m, _ := zapGwError(401, "auth:Please sign in first")
 		return nil, m
