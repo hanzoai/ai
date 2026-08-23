@@ -19,7 +19,6 @@ import (
 	"text/template"
 
 	"github.com/hanzoai/ai/util"
-	"github.com/hanzoai/dbx"
 )
 
 type Template struct {
@@ -46,12 +45,7 @@ type templateConfigOption struct {
 }
 
 func GetTemplates(owner string) ([]*Template, error) {
-	templates := []*Template{}
-	err := findAll(adapter.db, "template", &templates, dbx.HashExp{"owner": owner}, "created_time DESC")
-	if err != nil {
-		return templates, err
-	}
-	return templates, nil
+	return rowsOf[Template]("template", owner)
 }
 
 func GetTemplateCount(owner, field, value string) (int64, error) {
@@ -70,11 +64,7 @@ func GetPaginationTemplates(owner string, offset, limit int, field, value, sortF
 }
 
 func GetTemplate(id string) (*Template, error) {
-	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
-	if err != nil {
-		return nil, err
-	}
-	return getTemplate(owner, name)
+	return rowAt[Template]("template", id)
 }
 
 func getTemplate(owner, name string) (*Template, error) {

@@ -18,7 +18,6 @@ import (
 	"fmt"
 
 	"github.com/hanzoai/ai/util"
-	"github.com/hanzoai/dbx"
 )
 
 type Asset struct {
@@ -70,12 +69,7 @@ func GetAssetCount(owner, field, value string) (int64, error) {
 }
 
 func GetAssets(owner string) ([]*Asset, error) {
-	assets := []*Asset{}
-	err := findAll(adapter.db, "asset", &assets, dbx.HashExp{"owner": owner}, "created_time DESC")
-	if err != nil {
-		return assets, err
-	}
-	return assets, nil
+	return rowsOf[Asset]("asset", owner)
 }
 
 func GetPaginationAssets(owner string, offset, limit int, field, value, sortField, sortOrder string) ([]*Asset, error) {
