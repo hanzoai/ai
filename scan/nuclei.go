@@ -74,20 +74,11 @@ func IsNucleiAvailable(clientId string) bool {
 }
 
 func NewNucleiScanProvider(clientId string) (*NucleiScanProvider, error) {
-	provider := &NucleiScanProvider{
-		nucleiPath: clientId,
+	path, err := binPath(clientId, "nuclei")
+	if err != nil {
+		return nil, err
 	}
-
-	// If clientId is empty, try to find nuclei in system PATH
-	if provider.nucleiPath == "" {
-		nucleiPath, err := exec.LookPath("nuclei")
-		if err != nil {
-			return nil, fmt.Errorf("%s nuclei not found in system PATH, please specify the path to nuclei binary", getHostnamePrefix())
-		}
-		provider.nucleiPath = nucleiPath
-	}
-
-	return provider, nil
+	return &NucleiScanProvider{nucleiPath: path}, nil
 }
 
 func (p *NucleiScanProvider) Scan(target string, command string) (string, error) {

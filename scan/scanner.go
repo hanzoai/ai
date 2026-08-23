@@ -105,3 +105,20 @@ func (s scanner) run(target, command string) (string, error) {
 	}
 	return "Scan completed with no hosts found", nil
 }
+
+// binPath answers where a scanner's binary is: the path the caller gave, or the
+// one on PATH, or a refusal that names what is missing.
+//
+// Four constructors had this, each naming its own tool three times in the same
+// sentence, which is three chances for one of them to name a different tool than
+// the one it went looking for.
+func binPath(given, bin string) (string, error) {
+	if given != "" {
+		return given, nil
+	}
+	found, err := exec.LookPath(bin)
+	if err != nil {
+		return "", fmt.Errorf("%s %s not found in system PATH, please specify the path to %s binary", getHostnamePrefix(), bin, bin)
+	}
+	return found, nil
+}
