@@ -110,8 +110,8 @@ func (p *people) asOrg(t *testing.T, org string) string {
 // IAM is the ONE thing doubled here, because an sk- key is exchanged for its
 // principal there and nowhere else. Everything the handler then does happens for
 // real. The double holds to Basic credentials the way IAM does — it derives the
-// calling app from them alone — so a test cannot pass through a door production
-// keeps shut.
+// calling app from them alone — so a test cannot be admitted where production
+// refuses.
 func (p *people) asUser(t *testing.T, user *iam.User) string {
 	t.Helper()
 	p.mu.Lock()

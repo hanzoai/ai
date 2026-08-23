@@ -69,7 +69,7 @@ func ensoTierRank(tier string) int {
 // paid tiers are go, dev, pro, max, team and business, so a subscriber on any of
 // go/dev/max/team/business was scored FREE and refused every SKU carrying a trial or
 // paid floor. We rejected customers who were already paying us — the money was in the
-// account and the door was shut.
+// account and the SKU was refused.
 //
 // So the default is inverted: a plan is PAID unless it is explicitly free. That is the
 // safe direction here, because a tier is not a payment. The balance gate

@@ -54,7 +54,7 @@ func GetOrg(c *zip.Ctx) string {
 	//
 	// Pinned to the key's org (X-Org-Id is not consulted) and definitive when IAM
 	// cannot confirm it: an unattributable key is attributed to NOBODY rather than
-	// to the platform. Same door, same memory, same answer as the controller.
+	// to the platform. Same endpoint, same memory, same answer as the controller.
 	if token := parseBearerToken(c); strings.HasPrefix(token, "pk-") {
 		org, err := controllers.PublishableOrg(token)
 		if err != nil {

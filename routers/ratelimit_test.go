@@ -299,9 +299,9 @@ func TestMapPlanToTier(t *testing.T) {
 // question, and this is the one place the two are allowed to differ.
 //
 // ISSUED is what earns the key its own lane. A string beginning pk- is something
-// anyone can type, and a lane per typed string is no lane at all — so the door is
-// asked, and a key it does not know falls back to the caller's address like any
-// other unnamed traffic.
+// anyone can type, and a lane per typed string is no lane at all — so IAM is asked,
+// and a key it does not know falls back to the caller's address like any other
+// unnamed traffic.
 func TestAPageKeyIsThrottledOnItsOwnKey(t *testing.T) {
 	const site, cli, typed = "pk-live-site-key", "pk-live-cli-key", "pk-live-not-a-key"
 	iamDoor(t, nil, map[string]string{site: "acme", cli: "acme"})

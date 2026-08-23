@@ -14,7 +14,7 @@
 
 package controllers
 
-// envelope.go — the door a relayed completion leaves through.
+// envelope.go — the envelope a relayed completion leaves in.
 //
 // Two paths relay an answer produced elsewhere (pipeToFamily, proxyToolRequest) and
 // an answer arrives wearing whoever produced it: an id in someone else's shape,
@@ -28,7 +28,7 @@ package controllers
 // dropped — an allowlist, so a sub-provider nobody here has heard of cannot leak by
 // not being on a list of names to hide.
 //
-// The chain is not lost, only unpublished: the door keeps what it took (mark.upstream)
+// The chain is not lost, only unpublished: the mark keeps what it took (mark.upstream)
 // and the usage row records it as the origin of the call.
 
 import (
@@ -81,7 +81,7 @@ var (
 )
 
 // shape is the envelope a relay speaks. A mark is minted for exactly one, at the
-// door it belongs to, because the dialect is decided there and nowhere else.
+// endpoint it belongs to, because the dialect is decided there and nowhere else.
 type shape int
 
 const (
@@ -115,7 +115,7 @@ type mark struct {
 	// send the ledger back to inventing one for a call that had a real one.
 	cost *int64
 	// speaks is the envelope shape this relay carries. Every relayed dialect has
-	// one; a dialect with no mark is a dialect with no door, which is how the
+	// one; a dialect with no mark is a dialect with no envelope, which is how the
 	// Anthropic path and the embeddings path went on publishing `provider`,
 	// `gen-` ids and `native_finish_reason` after the chat path stopped.
 	speaks shape
@@ -142,7 +142,7 @@ func seller(provider *object.Provider, user *iam.User) string {
 
 // originOf answers who actually served a call: the upstream the envelope disclosed,
 // when it disclosed one, else the host we dialled. It is the question the ledger's
-// origin column already asks, and after the door it is the only place the specific
+// origin column already asks, and after the envelope it is the only place the specific
 // answer survives — the customer stops reading it, metering keeps it.
 //
 // A nil mark is a path that relays no envelope (the provider-SDK failover loop builds

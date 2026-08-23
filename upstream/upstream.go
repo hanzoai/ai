@@ -14,13 +14,13 @@
 
 // Package upstream is the one place that knows where a provider lives and how a
 // call proves it may reach one. It is a leaf on purpose: it depends on object and
-// the standard library and nothing else, so a second door — hanzoai/egress, which
+// the standard library and nothing else, so a second caller — hanzoai/egress, which
 // exists so that callers never hold a vendor key — reaches the same addresses and
 // the same credential scheme by importing them rather than restating them.
 //
 // A copy would not stay a copy. Provider addresses and auth schemes are facts
 // about vendors, and two files holding them drift in the direction that is hardest
-// to notice: the door that is wrong sends a credential to the wrong host.
+// to notice: the copy that is wrong sends a credential to the wrong host.
 package upstream
 
 import (
@@ -123,7 +123,7 @@ func Endpoint(provider *object.Provider, path string) string {
 //
 // The scheme belongs to the provider, not to the surface calling it. Azure names
 // its key in the Authorization value, Anthropic sends it in a header of its own,
-// and everything else carries a bearer token — so any door that reaches an
+// and everything else carries a bearer token — so any caller that reaches an
 // Anthropic upstream sends x-api-key without having to remember to.
 //
 // A nil provider means the call carries no credential (a session already opened

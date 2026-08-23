@@ -1,20 +1,20 @@
 package controllers
 
-// run.go admits ONE more kind of bearer at the inference door: a token that
+// run.go admits ONE more kind of bearer at the inference edge: a token that
 // stands for a RUN rather than for a person.
 //
 // # Why a fourth spelling exists
 //
 // An autonomous coding run executes model output inside a sandbox. Whatever
 // credential that box holds is, for the length of the run, in the hands of the
-// model — so it must not be an identity. Every other bearer this door accepts is
+// model — so it must not be an identity. Every other bearer this edge accepts is
 // one: a hanzo.id JWT names a user, an sk- key resolves through IAM to a user,
 // and both open every other org-scoped surface the platform has. Handing either
 // to a sandbox is handing it /v1/kms/secrets.
 //
 // A run key names an ACT: this run may buy inference, and the org that started it
 // pays. It authenticates nobody. There is no user record behind it, nothing to log
-// in as, and no second door it opens.
+// in as, and no second surface it opens.
 //
 // # What it resolves to
 //
@@ -75,8 +75,8 @@ var runs atomic.Pointer[func(token string) (Run, bool)]
 //
 // This is the same seam shape model.SetContextWindowResolver uses, for the same
 // reason: this package states WHAT it needs to know without importing where the
-// answer lives, so the orchestrator depends on the inference door and never the
-// reverse.
+// answer lives, so the orchestrator depends on the inference package and never
+// the reverse.
 func SetRunResolver(f func(token string) (Run, bool)) {
 	if f == nil {
 		runs.Store(nil)
