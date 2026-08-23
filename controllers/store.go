@@ -17,8 +17,10 @@ package controllers
 
 import (
 	"encoding/json"
+	"fmt"
 	"sort"
 
+	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
 )
@@ -29,6 +31,27 @@ import (
 // @Description get global stores
 // @Success 200 {array} object.Store The Response object
 // @router /get-global-stores [get]
+// storeFor resolves the store an id names, for a caller entitled to write it.
+//
+// A request body says WHICH store to act on; it does not say what that store
+// currently is. The default flag is the sharp case — it is read here, from the
+// stored row, so a body cannot declare itself non-default to walk past the guard
+// that keeps one default store in place.
+//
+// A store the caller's org does not reach answers the same way as one that is not
+// there, which is deliberate: the two are the same fact from where the caller
+// stands, and distinguishing them would confirm another tenant's stores by name.
+func storeFor(user *iam.User, id string) (*object.Store, error) {
+	stored, err := object.GetStore(id)
+	if err != nil {
+		return nil, err
+	}
+	if stored == nil || !reaches(user, stored.Owner) {
+		return nil, fmt.Errorf("the store: %s does not exist", id)
+	}
+	return stored, nil
+}
+
 func (c *ApiController) GetGlobalStores() {
 	// Every tenant's store configuration in one answer is a platform read, so it
 	// asks for the platform predicate — the reserved org — rather than a tenant's
@@ -152,6 +175,10 @@ func (c *ApiController) GetStore() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /update-store [post]
 func (c *ApiController) UpdateStore() {
+	caller, ok := c.RequireSignedInUser()
+	if !ok {
+		return
+	}
 	id := c.Input().Get("id")
 
 	var store object.Store
@@ -161,11 +188,12 @@ func (c *ApiController) UpdateStore() {
 		return
 	}
 
-	oldStore, err := object.GetStore(id)
+	oldStore, err := storeFor(caller, id)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
 	}
+	store.Owner = oldStore.Owner
 
 	if oldStore.IsDefault && !store.IsDefault {
 		c.ResponseError(c.T("store:given that there must be one default store in Hanzo Cloud, you cannot set this store to non-default. You can directly set another store as default"))
@@ -274,6 +302,10 @@ func (c *ApiController) AddStore() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /delete-store [post]
 func (c *ApiController) DeleteStore() {
+	caller, ok := c.RequireSignedInUser()
+	if !ok {
+		return
+	}
 	var store object.Store
 	err := json.Unmarshal(c.Body(), &store)
 	if err != nil {
@@ -281,12 +313,17 @@ func (c *ApiController) DeleteStore() {
 		return
 	}
 
-	if store.IsDefault {
+	stored, err := storeFor(caller, store.GetId())
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+	if stored.IsDefault {
 		c.ResponseError(c.T("store:Cannot delete the default store"))
 		return
 	}
 
-	success, err := object.DeleteStore(&store)
+	success, err := object.DeleteStore(stored)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
