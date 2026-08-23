@@ -49,18 +49,11 @@ func GetTemplates(owner string) ([]*Template, error) {
 }
 
 func GetTemplateCount(owner, field, value string) (int64, error) {
-	session := GetDbQuery(owner, -1, -1, field, value, "", "")
-	return queryCount(session, "template")
+	return rowCount("template", owner, field, value)
 }
 
 func GetPaginationTemplates(owner string, offset, limit int, field, value, sortField, sortOrder string) ([]*Template, error) {
-	templates := []*Template{}
-	session := GetDbQuery(owner, offset, limit, field, value, sortField, sortOrder)
-	err := queryFind(session, "template", &templates)
-	if err != nil {
-		return templates, err
-	}
-	return templates, nil
+	return rowsPage[Template]("template", owner, offset, limit, field, value, sortField, sortOrder)
 }
 
 func GetTemplate(id string) (*Template, error) {

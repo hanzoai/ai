@@ -50,12 +50,7 @@ type Chat struct {
 }
 
 func GetGlobalChats() ([]*Chat, error) {
-	chats := []*Chat{}
-	err := findAll(adapter.db, "chat", &chats, nil, "owner ASC", "created_time DESC")
-	if err != nil {
-		return chats, err
-	}
-	return chats, nil
+	return allRows[Chat]("chat")
 }
 
 func GetChats(owner string, storeName string, user string) ([]*Chat, error) {

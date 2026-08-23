@@ -59,18 +59,11 @@ func GetApplications(owner string) ([]*Application, error) {
 }
 
 func GetApplicationCount(owner, field, value string) (int64, error) {
-	session := GetDbQuery(owner, -1, -1, field, value, "", "")
-	return queryCount(session, "application")
+	return rowCount("application", owner, field, value)
 }
 
 func GetPaginationApplications(owner string, offset, limit int, field, value, sortField, sortOrder string) ([]*Application, error) {
-	applications := []*Application{}
-	session := GetDbQuery(owner, offset, limit, field, value, sortField, sortOrder)
-	err := queryFind(session, "application", &applications)
-	if err != nil {
-		return applications, err
-	}
-	return applications, nil
+	return rowsPage[Application]("application", owner, offset, limit, field, value, sortField, sortOrder)
 }
 
 func getApplication(owner, name string) (*Application, error) {

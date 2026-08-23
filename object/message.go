@@ -184,12 +184,7 @@ func ReleaseMessageAnswer(message *Message) {
 }
 
 func GetGlobalMessages() ([]*Message, error) {
-	messages := []*Message{}
-	err := findAll(adapter.db, "message", &messages, nil, "owner ASC", "created_time DESC")
-	if err != nil {
-		return messages, err
-	}
-	return messages, nil
+	return allRows[Message]("message")
 }
 
 func GetGlobalFailMessages() ([]*Message, error) {
