@@ -23,6 +23,9 @@ import (
 //     request context, in a goroutine of their own.
 //   - Every package map written at runtime is written under a lock. A concurrent
 //     map write is a runtime fatal error, which no recover answers for.
+//   - Every stored timestamp is written by util, so they all have one shape. They
+//     are TEXT columns ordered as text, and a shape that varies is an order that
+//     is not time.
 //
 // Each ends the PROCESS rather than the request, which is why none of them is a
 // comment.
@@ -391,4 +394,75 @@ func callerHoldsIt(fn *ast.FuncDecl) bool {
 	}
 	doc := strings.ToLower(fn.Doc.Text())
 	return strings.Contains(doc, "caller holds") || strings.Contains(doc, "caller must hold")
+}
+
+// A stored timestamp is written by util and nowhere else.
+//
+// These are TEXT columns and the store orders them as text, so the SHAPE decides
+// the order — the offset it carries, and how many places the fraction has. One
+// writer is what keeps that shape the same for every row, and it is also where
+// the two rules live: UTC, and a fixed three places. A time formatted at the call
+// site is a row that sorts against the others by accident.
+func TestEveryStoredTimestampIsWrittenByUtil(t *testing.T) {
+	s := read(t, ".", "../controllers", "../scan", "../storage", "../model", "../cluster")
+	s.funcs(func(path string, fn *ast.FuncDecl) {
+		ast.Inspect(fn.Body, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			sel, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok || sel.Sel.Name != "Format" || len(call.Args) != 1 {
+				return true
+			}
+			// time.Now()... .Format(<a stored timestamp's layout>).
+			//
+			// The layout is what makes it one of these columns. A time rendered any
+			// other way is a different kind of string — a version label is minute
+			// granularity and nothing orders it — so only the two shapes these
+			// columns hold are in scope.
+			if !madeFromNow(sel.X) || !storedLayout(call.Args[0]) {
+				return true
+			}
+			t.Errorf("%s: %s formats a time where it is used; a stored timestamp is "+
+				"written by util so every row has one shape, and these columns are "+
+				"ordered as text", s.at(call.Pos()), fn.Name.Name)
+			return true
+		})
+	})
+}
+
+// storedLayout reports whether a layout is one a stored timestamp is written in:
+// time.RFC3339, or the millisecond form beside it.
+func storedLayout(arg ast.Expr) bool {
+	switch a := arg.(type) {
+	case *ast.SelectorExpr:
+		if id, ok := a.X.(*ast.Ident); ok && id.Name == "time" {
+			return a.Sel.Name == "RFC3339"
+		}
+	case *ast.BasicLit:
+		return strings.Contains(a.Value, "15:04:05")
+	}
+	return false
+}
+
+// madeFromNow reports whether an expression is rooted in time.Now().
+func madeFromNow(e ast.Expr) bool {
+	for {
+		switch x := e.(type) {
+		case *ast.CallExpr:
+			if sel, ok := x.Fun.(*ast.SelectorExpr); ok {
+				if id, ok := sel.X.(*ast.Ident); ok && id.Name == "time" && sel.Sel.Name == "Now" {
+					return true
+				}
+				e = sel.X
+				continue
+			}
+			return false
+		case *ast.SelectorExpr:
+			e = x.X
+		default:
+			return false
+		}
+	}
 }

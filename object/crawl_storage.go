@@ -23,6 +23,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/hanzoai/ai/util"
+
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/log"
 	hs3 "github.com/hanzos3/go"
@@ -122,7 +124,7 @@ func ArchiveCrawlResult(owner, jobID string, results []ScrapeResult, rawResults 
 	archive := CrawlArchive{
 		Owner:      owner,
 		JobID:      jobID,
-		Timestamp:  time.Now().UTC().Format(time.RFC3339),
+		Timestamp:  util.GetCurrentTime(),
 		Results:    results,
 		RawResults: rawResults,
 	}

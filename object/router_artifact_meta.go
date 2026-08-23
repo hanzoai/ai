@@ -14,7 +14,7 @@
 package object
 
 import (
-	"time"
+	"github.com/hanzoai/ai/util"
 
 	"github.com/hanzoai/dbx"
 )
@@ -69,7 +69,7 @@ func UpsertRouterArtifactMeta(m *RouterArtifactMeta) error {
 	if adapter == nil || adapter.db == nil {
 		return nil
 	}
-	m.UpdatedTime = time.Now().UTC().Format(time.RFC3339)
+	m.UpdatedTime = util.GetCurrentTime()
 	existing, err := GetRouterArtifactMeta(m.Owner)
 	if err != nil {
 		return err

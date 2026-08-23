@@ -22,7 +22,8 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
-	"time"
+
+	"github.com/hanzoai/ai/util"
 )
 
 // WindowsPatch represents a Windows update patch
@@ -310,7 +311,7 @@ func (p *OsPatchScanProvider) InstallPatch(patchId string) (*InstallProgress, er
 		Status:          "Starting",
 		PercentComplete: 0,
 		IsComplete:      false,
-		StartTime:       time.Now().Format(time.RFC3339),
+		StartTime:       util.GetCurrentTime(),
 	}
 
 	var psCommand string
@@ -363,7 +364,7 @@ func (p *OsPatchScanProvider) InstallPatch(patchId string) (*InstallProgress, er
 		progress.Status = "Failed"
 		progress.Error = err.Error()
 		progress.IsComplete = true
-		progress.EndTime = time.Now().Format(time.RFC3339)
+		progress.EndTime = util.GetCurrentTime()
 		return progress, fmt.Errorf("%s failed to install patch: %v", getHostnamePrefix(), err)
 	}
 	fmt.Printf("%s [OS Patch] PowerShell output:\n%s\n", getHostnamePrefix(), output)
@@ -377,7 +378,7 @@ func (p *OsPatchScanProvider) InstallPatch(patchId string) (*InstallProgress, er
 			progress.Status = "Failed"
 			progress.Error = fmt.Sprintf("%s failed to parse result: %v", getHostnamePrefix(), err)
 			progress.IsComplete = true
-			progress.EndTime = time.Now().Format(time.RFC3339)
+			progress.EndTime = util.GetCurrentTime()
 			return progress, fmt.Errorf("%s failed to parse install result: %v", getHostnamePrefix(), err)
 		}
 
@@ -391,7 +392,7 @@ func (p *OsPatchScanProvider) InstallPatch(patchId string) (*InstallProgress, er
 
 	progress.PercentComplete = 100
 	progress.IsComplete = true
-	progress.EndTime = time.Now().Format(time.RFC3339)
+	progress.EndTime = util.GetCurrentTime()
 
 	return progress, nil
 }
