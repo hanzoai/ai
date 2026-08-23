@@ -123,24 +123,7 @@ func (c *ApiController) GetFileMy() {
 // @Param body body  object.File true "The details of the file object"
 // @Success 200 {object} controllers.Response The Response object
 // @router /update-file [post]
-func (c *ApiController) UpdateFile() {
-	id := c.Input().Get("id")
-
-	var file object.File
-	err := json.Unmarshal(c.Body(), &file)
-	if err != nil {
-		c.ResponseError(err.Error())
-		return
-	}
-
-	success, err := object.UpdateFile(id, &file)
-	if err != nil {
-		c.ResponseError(err.Error())
-		return
-	}
-
-	c.ResponseOk(success)
-}
+func (c *ApiController) UpdateFile() { replaced(c, object.UpdateFile) }
 
 // AddFile
 // @Title AddFile

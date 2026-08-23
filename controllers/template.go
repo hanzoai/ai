@@ -16,8 +16,6 @@
 package controllers
 
 import (
-	"encoding/json"
-
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
 )
@@ -94,24 +92,7 @@ func (c *ApiController) GetTemplate() {
 // @Param body body object.Template true "The details of the template"
 // @Success 200 {object} controllers.Response The Response object
 // @router /update-template [post]
-func (c *ApiController) UpdateTemplate() {
-	id := c.Input().Get("id")
-
-	var template object.Template
-	err := json.Unmarshal(c.Body(), &template)
-	if err != nil {
-		c.ResponseError(err.Error())
-		return
-	}
-
-	success, err := object.UpdateTemplate(id, &template)
-	if err != nil {
-		c.ResponseError(err.Error())
-		return
-	}
-
-	c.ResponseOk(success)
-}
+func (c *ApiController) UpdateTemplate() { replaced(c, object.UpdateTemplate) }
 
 // AddTemplate
 // @Title AddTemplate
