@@ -62,20 +62,11 @@ func IsSubfinderAvailable(clientId string) bool {
 }
 
 func NewSubfinderScanProvider(clientId string) (*SubfinderScanProvider, error) {
-	provider := &SubfinderScanProvider{
-		subfinderPath: clientId,
+	path, err := binPath(clientId, "subfinder")
+	if err != nil {
+		return nil, err
 	}
-
-	// If clientId is empty, try to find subfinder in system PATH
-	if provider.subfinderPath == "" {
-		subfinderPath, err := exec.LookPath("subfinder")
-		if err != nil {
-			return nil, fmt.Errorf("%s subfinder not found in system PATH, please specify the path to subfinder binary", getHostnamePrefix())
-		}
-		provider.subfinderPath = subfinderPath
-	}
-
-	return provider, nil
+	return &SubfinderScanProvider{subfinderPath: path}, nil
 }
 
 func (p *SubfinderScanProvider) Scan(target string, command string) (string, error) {
