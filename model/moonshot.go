@@ -111,14 +111,5 @@ func (p *MoonshotModelProvider) QueryText(question string, writer io.Writer, his
 		return nil, err
 	}
 
-	modelResult, err := localProvider.QueryText(question, writer, history, prompt, knowledgeMessages, agentInfo, lang)
-	if err != nil {
-		return nil, err
-	}
-
-	err = p.calculatePrice(modelResult, lang)
-	if err != nil {
-		return nil, err
-	}
-	return modelResult, nil
+	return answerVia(localProvider, p.calculatePrice, question, writer, history, prompt, knowledgeMessages, agentInfo, lang)
 }
