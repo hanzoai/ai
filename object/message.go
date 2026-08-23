@@ -379,11 +379,7 @@ func AddMessage(message *Message) (bool, error) {
 }
 
 func DeleteMessage(message *Message) (bool, error) {
-	affected, err := deleteByPK(adapter.db, "message", pk2(message.Owner, message.Name))
-	if err != nil {
-		return false, err
-	}
-	return affected != 0, nil
+	return deleteRow("message", message.Owner, message.Name)
 }
 
 func DeleteAllLaterMessages(messageId string) error {

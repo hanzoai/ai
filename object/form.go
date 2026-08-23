@@ -80,17 +80,8 @@ func GetForms(owner string) ([]*Form, error) {
 	return forms, nil
 }
 
-func getForm(owner string, name string) (*Form, error) {
-	form := Form{Owner: owner, Name: name}
-	existed, err := getOne(adapter.db, "form", &form, pk2(form.Owner, form.Name))
-	if err != nil {
-		return &form, err
-	}
-	if existed {
-		return &form, nil
-	} else {
-		return nil, nil
-	}
+func getForm(owner, name string) (*Form, error) {
+	return getRow[Form]("form", owner, name)
 }
 
 func GetForm(id string) (*Form, error) {
@@ -127,23 +118,11 @@ func UpdateForm(id string, form *Form, lang string) (bool, error) {
 }
 
 func AddForm(form *Form) (bool, error) {
-	err := insertRow(adapter.db, form)
-	affected := int64(1)
-	if err != nil {
-		affected = 0
-	}
-	if err != nil {
-		return false, err
-	}
-	return affected != 0, nil
+	return addRow(form)
 }
 
 func DeleteForm(form *Form) (bool, error) {
-	affected, err := deleteByPK(adapter.db, "form", pk2(form.Owner, form.Name))
-	if err != nil {
-		return false, err
-	}
-	return affected != 0, nil
+	return deleteRow("form", form.Owner, form.Name)
 }
 
 func (form *Form) GetId() string {

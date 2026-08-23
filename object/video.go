@@ -112,17 +112,8 @@ func GetVideos(owner string, lang string) ([]*Video, error) {
 	return videos, nil
 }
 
-func getVideo(owner string, name string) (*Video, error) {
-	v := Video{Owner: owner, Name: name}
-	existed, err := getOne(adapter.db, "video", &v, pk2(v.Owner, v.Name))
-	if err != nil {
-		return &v, err
-	}
-	if existed {
-		return &v, nil
-	} else {
-		return nil, nil
-	}
+func getVideo(owner, name string) (*Video, error) {
+	return getRow[Video]("video", owner, name)
 }
 
 func GetVideo(id string, lang string) (*Video, error) {
@@ -160,41 +151,19 @@ func UpdateVideo(id string, video *Video) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	_, err = getVideo(owner, name)
-	if err != nil {
-		return false, err
-	}
 	if video == nil {
 		return false, nil
 	}
-	video.Owner = owner
-	video.Name = name
-	err = adapter.db.Model(video).Update()
-	if err != nil {
-		return false, err
-	}
-	// return affected != 0
-	return true, nil
+	video.Owner, video.Name = owner, name
+	return updated(video)
 }
 
 func AddVideo(video *Video) (bool, error) {
-	err := insertRow(adapter.db, video)
-	affected := int64(1)
-	if err != nil {
-		affected = 0
-	}
-	if err != nil {
-		return false, err
-	}
-	return affected != 0, nil
+	return addRow(video)
 }
 
 func DeleteVideo(video *Video) (bool, error) {
-	affected, err := deleteByPK(adapter.db, "video", pk2(video.Owner, video.Name))
-	if err != nil {
-		return false, err
-	}
-	return affected != 0, nil
+	return deleteRow("video", video.Owner, video.Name)
 }
 
 func (video *Video) GetId() string {

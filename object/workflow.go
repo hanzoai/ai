@@ -141,11 +141,7 @@ func AddWorkflow(workflow *Workflow, lang string) (bool, error) {
 }
 
 func DeleteWorkflow(workflow *Workflow) (bool, error) {
-	affected, err := deleteByPK(adapter.db, "workflow", pk2(workflow.Owner, workflow.Name))
-	if err != nil {
-		return false, err
-	}
-	return affected != 0, nil
+	return deleteRow("workflow", workflow.Owner, workflow.Name)
 }
 
 func (workflow *Workflow) GetId() string {

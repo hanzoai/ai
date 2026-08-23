@@ -79,17 +79,8 @@ func GetArticles(owner string) ([]*Article, error) {
 	return articles, nil
 }
 
-func getArticle(owner string, name string) (*Article, error) {
-	article := Article{Owner: owner, Name: name}
-	existed, err := getOne(adapter.db, "article", &article, pk2(article.Owner, article.Name))
-	if err != nil {
-		return &article, err
-	}
-	if existed {
-		return &article, nil
-	} else {
-		return nil, nil
-	}
+func getArticle(owner, name string) (*Article, error) {
+	return getRow[Article]("article", owner, name)
 }
 
 func GetArticle(id string) (*Article, error) {
@@ -120,41 +111,19 @@ func UpdateArticle(id string, article *Article) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	_, err = getArticle(owner, name)
-	if err != nil {
-		return false, err
-	}
 	if article == nil {
 		return false, nil
 	}
-	article.Owner = owner
-	article.Name = name
-	err = adapter.db.Model(article).Update()
-	if err != nil {
-		return false, err
-	}
-	// return affected != 0
-	return true, nil
+	article.Owner, article.Name = owner, name
+	return updated(article)
 }
 
 func AddArticle(article *Article) (bool, error) {
-	err := insertRow(adapter.db, article)
-	affected := int64(1)
-	if err != nil {
-		affected = 0
-	}
-	if err != nil {
-		return false, err
-	}
-	return affected != 0, nil
+	return addRow(article)
 }
 
 func DeleteArticle(article *Article) (bool, error) {
-	affected, err := deleteByPK(adapter.db, "article", pk2(article.Owner, article.Name))
-	if err != nil {
-		return false, err
-	}
-	return affected != 0, nil
+	return deleteRow("article", article.Owner, article.Name)
 }
 
 func (article *Article) GetId() string {

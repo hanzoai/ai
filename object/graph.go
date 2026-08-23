@@ -82,17 +82,8 @@ func GetGraphs(owner string) ([]*Graph, error) {
 	return graphs, nil
 }
 
-func getGraph(owner string, name string) (*Graph, error) {
-	graph := Graph{Owner: owner, Name: name}
-	existed, err := getOne(adapter.db, "graph", &graph, pk2(graph.Owner, graph.Name))
-	if err != nil {
-		return &graph, err
-	}
-	if existed {
-		return &graph, nil
-	} else {
-		return nil, nil
-	}
+func getGraph(owner, name string) (*Graph, error) {
+	return getRow[Graph]("graph", owner, name)
 }
 
 func GetGraph(id string) (*Graph, error) {
@@ -108,41 +99,19 @@ func UpdateGraph(id string, graph *Graph) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	_, err = getGraph(owner, name)
-	if err != nil {
-		return false, err
-	}
 	if graph == nil {
 		return false, nil
 	}
-	graph.Owner = owner
-	graph.Name = name
-	err = adapter.db.Model(graph).Update()
-	if err != nil {
-		return false, err
-	}
-	// return affected != 0
-	return true, nil
+	graph.Owner, graph.Name = owner, name
+	return updated(graph)
 }
 
 func AddGraph(graph *Graph) (bool, error) {
-	err := insertRow(adapter.db, graph)
-	affected := int64(1)
-	if err != nil {
-		affected = 0
-	}
-	if err != nil {
-		return false, err
-	}
-	return affected != 0, nil
+	return addRow(graph)
 }
 
 func DeleteGraph(graph *Graph) (bool, error) {
-	affected, err := deleteByPK(adapter.db, "graph", pk2(graph.Owner, graph.Name))
-	if err != nil {
-		return false, err
-	}
-	return affected != 0, nil
+	return deleteRow("graph", graph.Owner, graph.Name)
 }
 
 func (graph *Graph) GetId() string {

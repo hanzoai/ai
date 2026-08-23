@@ -182,23 +182,11 @@ func UpdateNode(id string, node *Node) (bool, error) {
 }
 
 func AddNode(node *Node) (bool, error) {
-	err := insertRow(adapter.db, node)
-	affected := int64(1)
-	if err != nil {
-		affected = 0
-	}
-	if err != nil {
-		return false, err
-	}
-	return affected != 0, nil
+	return addRow(node)
 }
 
 func DeleteNode(node *Node) (bool, error) {
-	affected, err := deleteByPK(adapter.db, "node", pk2(node.Owner, node.Name))
-	if err != nil {
-		return false, err
-	}
-	return affected != 0, nil
+	return deleteRow("node", node.Owner, node.Name)
 }
 
 func (node *Node) getId() string {
