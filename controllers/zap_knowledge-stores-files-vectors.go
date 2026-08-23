@@ -128,36 +128,11 @@ var zapKnowledgeGateway = map[string]zapKnowledgeHandlerFn{}
 
 // ── Shared seams (identity + response envelope + param parity) ───────────
 
-// zapKSFVPrincipal resolves the request principal STRICTLY from its verified
-// credential — the ZAP analogue of GetSessionUser (there is no session cookie on
-// the ZAP path). pk-/sk- IAM keys route through getUserByAccessKey; JWTs through
-// object.ParseAndValidateJWT (signature + iss/aud, never raw iam.ParseJwtToken).
-// Returns nil for an empty/invalid/unsupported credential — fail-secure.
-func zapKSFVPrincipal(auth string) *iam.User {
-	token := strings.TrimSpace(strings.TrimPrefix(auth, "Bearer "))
-	if token == "" {
-		return nil
-	}
-	if isIAMApiKey(token) {
-		if user, err := getUserByAccessKey(token); err == nil && user != nil {
-			return user
-		}
-		return nil
-	}
-	if isJwtToken(token) {
-		if claims, err := object.ParseAndValidateJWT(token); err == nil && claims != nil {
-			u := claims.User
-			return &u
-		}
-	}
-	return nil
-}
-
 // zapKSFVScopedOwner mirrors GetScopedOwner: authenticated principal required;
 // the admin org may target another owner via a body "owner" field, every other
 // principal is scoped to its own org. Returns (owner, user, nil) or (…, deny).
 func zapKSFVScopedOwner(auth string, bodyOwner string) (string, *iam.User, *zap.Message) {
-	user := zapKSFVPrincipal(auth)
+	user := zapPrincipal(auth)
 	if user == nil {
 		msg, _ := zapError(http.StatusUnauthorized, "auth:Please sign in first")
 		return "", nil, msg
@@ -168,7 +143,7 @@ func zapKSFVScopedOwner(auth string, bodyOwner string) (string, *iam.User, *zap.
 // zapKSFVRequireAdmin mirrors ApiController.RequireAdmin (preview passes; else an
 // org-level admin principal is required).
 func zapKSFVRequireAdmin(auth string) (*iam.User, *zap.Message) {
-	user := zapKSFVPrincipal(auth)
+	user := zapPrincipal(auth)
 	if conf.IsPreviewMode() {
 		return user, nil
 	}
@@ -182,7 +157,7 @@ func zapKSFVRequireAdmin(auth string) (*iam.User, *zap.Message) {
 // zapKSFVRequireSignedIn mirrors RequireSignedIn / RequireSessionOwner: a
 // principal is required, else 401.
 func zapKSFVRequireSignedIn(auth string) (*iam.User, *zap.Message) {
-	user := zapKSFVPrincipal(auth)
+	user := zapPrincipal(auth)
 	if user == nil {
 		msg, _ := zapError(http.StatusUnauthorized, "auth:Please sign in first")
 		return nil, msg
