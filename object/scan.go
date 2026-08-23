@@ -62,19 +62,11 @@ func GetScansByAsset(owner string, assetName string) ([]*Scan, error) {
 }
 
 func getScan(owner string, name string) (*Scan, error) {
+	// An empty key names no row, and is answered without asking.
 	if owner == "" || name == "" {
 		return nil, nil
 	}
-	scan := Scan{Owner: owner, Name: name}
-	existed, err := getOne(adapter.db, "scan", &scan, pk2(scan.Owner, scan.Name))
-	if err != nil {
-		return &scan, err
-	}
-	if existed {
-		return &scan, nil
-	} else {
-		return nil, nil
-	}
+	return getRow[Scan]("scan", owner, name)
 }
 
 func GetScan(id string) (*Scan, error) {
