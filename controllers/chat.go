@@ -88,7 +88,11 @@ func (c *ApiController) GetGlobalChats() {
 // @Success 200 {array} object.Chat The Response object
 // @router /get-chats [get]
 func (c *ApiController) GetChats() {
-	user := c.Input().Get("user")
+	caller, ok := c.RequireSignedInUser()
+	if !ok {
+		return
+	}
+
 	field := c.Input().Get("field")
 	value := c.Input().Get("value")
 	selectedUser := c.Input().Get("selectedUser")
@@ -96,33 +100,29 @@ func (c *ApiController) GetChats() {
 	startTime := c.Input().Get("startTime")
 	endTime := c.Input().Get("endTime")
 
-	if c.IsAdmin() {
-		user = ""
+	// Whose chats to list arrives three ways — ?user, ?selectedUser, and
+	// ?field=user&value — so it is resolved once, here, rather than per branch. An
+	// admin may name someone; anyone else gets their own chats whichever way they
+	// asked. reach() then confines the answer to the caller's own tenant, so an
+	// admin naming a name is an admin of THAT name's org or nobody.
+	who := c.Input().Get("user")
+	if field == "user" {
+		who = value
 	}
-
-	if selectedUser != "" && selectedUser != "null" && c.IsAdmin() {
-		user = selectedUser
+	if selectedUser != "" && selectedUser != "null" {
+		who = selectedUser
 	}
-
-	if !c.IsAdmin() && user != selectedUser && selectedUser != "" {
-		c.ResponseError(c.T("controllers:You can only view your own chats"))
-		return
+	if !util.IsAdmin(caller) {
+		who = caller.Name
 	}
 
 	// Apply store isolation based on user's Homepage field
-	var ok bool
 	storeName, ok = c.EnforceStoreIsolation(storeName)
 	if !ok {
 		return
 	}
 
-	var chats []*object.Chat
-	var err error
-	if field == "user" {
-		chats, err = object.GetChats("admin", storeName, value)
-	} else {
-		chats, err = object.GetChats("admin", storeName, user)
-	}
+	chats, err := object.GetChats(chatOwner, reach(caller), storeName, who)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return

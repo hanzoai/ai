@@ -58,18 +58,26 @@ func (c *ApiController) GetGlobalVideos() {
 // @Success 200 {array} object.Video The Response object
 // @router /get-videos [get]
 func (c *ApiController) GetVideos() {
-	owner, allowed := c.GetScopedOwner()
-	if !allowed {
+	user, ok := c.RequireSignedInUser()
+	if !ok {
 		return
 	}
+
+	// UploadVideo stores the uploader's user name in Owner, so a listing scopes on
+	// the USER, not the organization — which is why GetScopedOwner's answer never
+	// matched a row here. The reserved org lists whoever it names, or everyone;
+	// every other caller gets their own uploads.
+	owner := user.Name
+	if util.IsSuperAdmin(user) {
+		owner = c.Input().Get("owner")
+	}
+
 	limit := c.Input().Get("pageSize")
 	page := c.Input().Get("p")
 	field := c.Input().Get("field")
 	value := c.Input().Get("value")
 	sortField := c.Input().Get("sortField")
 	sortOrder := c.Input().Get("sortOrder")
-
-	owner = ""
 
 	if limit == "" || page == "" {
 		videos, err := object.GetVideos(owner, c.GetAcceptLanguage())
