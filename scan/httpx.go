@@ -87,20 +87,11 @@ func IsHttpxAvailable(clientId string) bool {
 }
 
 func NewHttpxScanProvider(clientId string) (*HttpxScanProvider, error) {
-	provider := &HttpxScanProvider{
-		httpxPath: clientId,
+	path, err := binPath(clientId, "httpx")
+	if err != nil {
+		return nil, err
 	}
-
-	// If clientId is empty, try to find httpx in system PATH
-	if provider.httpxPath == "" {
-		httpxPath, err := exec.LookPath("httpx")
-		if err != nil {
-			return nil, fmt.Errorf("%s httpx not found in system PATH, please specify the path to httpx binary", getHostnamePrefix())
-		}
-		provider.httpxPath = httpxPath
-	}
-
-	return provider, nil
+	return &HttpxScanProvider{httpxPath: path}, nil
 }
 
 func (p *HttpxScanProvider) Scan(target string, command string) (string, error) {
