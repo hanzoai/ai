@@ -147,14 +147,3 @@ func PrepareTextToSpeech(storeId, providerId, messageId, text string, lang strin
 	}
 	return message, chat, ttsProvider, context.Background(), nil
 }
-
-func UpdateChatStats(chat *Chat, ttsResult *tts.TextToSpeechResult) error {
-	chat.TokenCount += ttsResult.TokenCount
-	chat.Price += ttsResult.Price
-	if chat.Currency == "" {
-		chat.Currency = ttsResult.Currency
-	}
-	chat.UpdatedTime = util.GetCurrentTime()
-	_, err := UpdateChat(chat.GetId(), chat)
-	return err
-}
