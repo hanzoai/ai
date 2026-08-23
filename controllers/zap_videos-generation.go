@@ -165,7 +165,7 @@ func zapVideosGenerateHandler(ctx context.Context, auth string, body []byte) (*z
 		provider.SubType = req.Model
 	}
 
-	upstreamURL := videoUpstreamBase(provider)
+	upstreamURL := upstreamBase(provider)
 	if upstreamURL == "" {
 		return object.BuildCloudResponse(502, nil, "No upstream endpoint configured for provider: "+provider.Name)
 	}
@@ -251,7 +251,7 @@ func zapVideoRetrieve(ctx context.Context, auth, id string) (*zap.Message, error
 	pollCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	upstreamURL := videoUpstreamBase(provider)
+	upstreamURL := upstreamBase(provider)
 	status, errStr, err := model.RetrieveVideoDOAI(pollCtx, upstreamURL, provider.ClientSecret, job.upstreamID)
 	if err != nil {
 		return object.BuildCloudResponse(502, nil, "Video status poll failed: "+err.Error())
@@ -313,7 +313,7 @@ func zapVideoContent(ctx context.Context, auth, id string) (*zap.Message, error)
 	dlCtx, cancel := context.WithTimeout(ctx, 120*time.Second)
 	defer cancel()
 
-	upstreamURL := videoUpstreamBase(provider)
+	upstreamURL := upstreamBase(provider)
 	data, _, err := model.DownloadVideoBytesDOAI(dlCtx, upstreamURL, provider.ClientSecret, job.upstreamID)
 	if err != nil {
 		return object.BuildCloudResponse(502, nil, "Video download failed: "+err.Error())
@@ -466,7 +466,7 @@ func zapVideoServeZen(mdl string, rawBody []byte, authUser *iam.User, isPremium 
 
 	resp, err := zenPipeClient.Do(hreq)
 	if err != nil {
-		zapRecordVideoZenUsage(mdl, authUser, isPremium, reqID, units, start, hold, "error", err.Error())
+		zapRecordZenMediaUsage(mdl, authUser, isPremium, reqID, units, start, hold, "error", err.Error())
 		return object.BuildCloudResponse(502, nil, "zen request failed: "+err.Error())
 	}
 	defer resp.Body.Close()
@@ -480,32 +480,6 @@ func zapVideoServeZen(mdl string, rawBody []byte, authUser *iam.User, isPremium 
 		return object.BuildCloudResponse(uint32(resp.StatusCode), nil, upstreamErrorMessage(b))
 	}
 
-	zapRecordVideoZenUsage(mdl, authUser, isPremium, reqID, units, start, hold, "success", "")
+	zapRecordZenMediaUsage(mdl, authUser, isPremium, reqID, units, start, hold, "success", "")
 	return object.BuildCloudResponse(200, b, "")
-}
-
-// zapRecordVideoZenUsage settles the hold at the discovered per-clip price and
-// records the served (or failed) call, mirroring recordZenMediaUsage. A model
-// absent from the cache settles to zero (released).
-func zapRecordVideoZenUsage(mdl string, authUser *iam.User, isPremium bool, reqID string, units int, start time.Time, hold *budgetHold, status, errMsg string) {
-	var cents int64
-	if status == "success" {
-		if zm, ok := zenFam.lookup(mdl); ok {
-			cents = zm.unitCostCents(units)
-		}
-	}
-	hold.settle(cents)
-	if authUser == nil {
-		return
-	}
-	rec := &usageRecord{
-		Owner: authUser.Owner, Organization: authUser.Owner,
-		Model: mdl, Provider: "zen",
-		Cost: float64(cents) / 100.0, Currency: "USD",
-		Premium: isPremium, Status: status, ErrorMsg: errMsg,
-		RequestID: reqID, Account: "hanzo",
-	}
-	rec.bind(context.Background(), authUser)
-	recordUsage(rec)
-	recordTrace(context.Background(), rec, start)
 }
