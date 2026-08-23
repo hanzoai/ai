@@ -99,11 +99,19 @@ func AddModelRoute(route *ModelRoute) (bool, error) {
 }
 
 func UpdateModelRoute(owner string, modelName string, route *ModelRoute) (bool, error) {
+	// An update whose key names no row writes nothing, and dbx's model update
+	// discards the result — so without this the call reports that it wrote.
+	existing, err := GetModelRoute(owner, modelName)
+	if err != nil {
+		return false, err
+	}
+	if existing == nil || route == nil {
+		return false, nil
+	}
 	route.UpdatedTime = time.Now().Format(time.RFC3339)
 	route.Owner = owner
 	route.ModelName = modelName
-	err := adapter.db.Model(route).Update()
-	if err != nil {
+	if err := adapter.db.Model(route).Update(); err != nil {
 		return false, err
 	}
 	// Invalidate cache on write
