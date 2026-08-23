@@ -135,7 +135,7 @@ func zapImagesHandler(ctx context.Context, auth string, body []byte) (*zap.Messa
 	genCtx, cancel := context.WithTimeout(context.Background(), 130*time.Second)
 	defer cancel()
 
-	upstreamURL := imageUpstreamBase(provider)
+	upstreamURL := upstreamBase(provider)
 	if upstreamURL == "" {
 		return object.BuildCloudResponse(502, nil, "No upstream endpoint configured for provider: "+provider.Name)
 	}

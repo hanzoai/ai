@@ -218,7 +218,7 @@ func TestVideoUpstreamBase(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			p := tc.prov
-			if got := videoUpstreamBase(&p); got != tc.want {
+			if got := upstreamBase(&p); got != tc.want {
 				t.Errorf("videoUpstreamBase = %q, want %q", got, tc.want)
 			}
 		})
