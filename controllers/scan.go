@@ -110,6 +110,10 @@ func (c *ApiController) GetScan() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /update-scan [post]
 func (c *ApiController) UpdateScan() {
+	caller, ok := c.RequireSignedInUser()
+	if !ok {
+		return
+	}
 	id := c.Input().Get("id")
 
 	var scan object.Scan
@@ -118,6 +122,17 @@ func (c *ApiController) UpdateScan() {
 		c.ResponseError(err.Error())
 		return
 	}
+
+	stored, err := object.GetScan(id)
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+	if stored == nil || !reaches(caller, stored.Owner) {
+		c.ResponseError(c.T("general:The scan does not exist"))
+		return
+	}
+	scan.Owner = stored.Owner
 
 	c.ResponseOk(object.UpdateScan(id, &scan))
 }
@@ -130,12 +145,20 @@ func (c *ApiController) UpdateScan() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /add-scan [post]
 func (c *ApiController) AddScan() {
+	owner, allowed := c.GetScopedOwner()
+	if !allowed {
+		return
+	}
 	var scan object.Scan
 	err := json.Unmarshal(c.Body(), &scan)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
 	}
+	// A scan is filed into the organization the caller belongs to, the same one
+	// GetScans reads back. The owner arrived on the body, so any organization
+	// could be named as the one a scan was run for.
+	scan.Owner = owner
 
 	c.ResponseOk(object.AddScan(&scan))
 }
