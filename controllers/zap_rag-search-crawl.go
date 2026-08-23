@@ -130,6 +130,27 @@ func zapOk(data ...interface{}) (*zap.Message, error) {
 	return object.BuildCloudResponse(http.StatusOK, b, "")
 }
 
+// stored is the HTTP shape of the same thing zapWrite is over ZAP: decode the
+// body into a row, hand it to the store, answer with what the store said.
+//
+// It is a function rather than a method because a method cannot take a type
+// parameter, and the fourteen handlers that had this written out keep their own
+// names and signatures — the router finds them by name, and a name is the whole
+// of what it needs from them.
+func stored[T any](c *ApiController, store func(*T) (bool, error)) {
+	var row T
+	if err := json.Unmarshal(c.Body(), &row); err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+	ok, err := store(&row)
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+	c.ResponseOk(ok)
+}
+
 // zapWrite is the shape a "take a row and store it" handler has: a signed-in
 // caller, a body that decodes to the row, and a store call that says whether it
 // landed. The store call arrives as a value, so adding a table is naming one.

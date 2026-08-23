@@ -145,22 +145,7 @@ func (c *ApiController) UpdateGraph() {
 // @Param body body object.Graph true "The details of the Graph"
 // @Success 200 {object} controllers.Response The Response object
 // @router /add-Graph [post]
-func (c *ApiController) AddGraph() {
-	var Graph object.Graph
-	err := json.Unmarshal(c.Body(), &Graph)
-	if err != nil {
-		c.ResponseError(err.Error())
-		return
-	}
-
-	success, err := object.AddGraph(&Graph)
-	if err != nil {
-		c.ResponseError(err.Error())
-		return
-	}
-
-	c.ResponseOk(success)
-}
+func (c *ApiController) AddGraph() { stored(c, object.AddGraph) }
 
 // DeleteGraph
 // @Title DeleteGraph
@@ -169,19 +154,4 @@ func (c *ApiController) AddGraph() {
 // @Param body body object.Graph true "The details of the Graph"
 // @Success 200 {object} controllers.Response The Response object
 // @router /delete-Graph [post]
-func (c *ApiController) DeleteGraph() {
-	var Graph object.Graph
-	err := json.Unmarshal(c.Body(), &Graph)
-	if err != nil {
-		c.ResponseError(err.Error())
-		return
-	}
-
-	success, err := object.DeleteGraph(&Graph)
-	if err != nil {
-		c.ResponseError(err.Error())
-		return
-	}
-
-	c.ResponseOk(success)
-}
+func (c *ApiController) DeleteGraph() { stored(c, object.DeleteGraph) }

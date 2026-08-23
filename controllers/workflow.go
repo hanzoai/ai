@@ -160,19 +160,4 @@ func (c *ApiController) AddWorkflow() {
 // @Param body body object.Workflow true "The details of the workflow"
 // @Success 200 {object} controllers.Response The Response object
 // @router /delete-workflow [post]
-func (c *ApiController) DeleteWorkflow() {
-	var workflow object.Workflow
-	err := json.Unmarshal(c.Body(), &workflow)
-	if err != nil {
-		c.ResponseError(err.Error())
-		return
-	}
-
-	success, err := object.DeleteWorkflow(&workflow)
-	if err != nil {
-		c.ResponseError(err.Error())
-		return
-	}
-
-	c.ResponseOk(success)
-}
+func (c *ApiController) DeleteWorkflow() { stored(c, object.DeleteWorkflow) }

@@ -135,22 +135,7 @@ func (c *ApiController) UpdateArticle() {
 // @Param body body object.Article true "The details of the article"
 // @Success 200 {object} controllers.Response The Response object
 // @router /add-article [post]
-func (c *ApiController) AddArticle() {
-	var article object.Article
-	err := json.Unmarshal(c.Body(), &article)
-	if err != nil {
-		c.ResponseError(err.Error())
-		return
-	}
-
-	success, err := object.AddArticle(&article)
-	if err != nil {
-		c.ResponseError(err.Error())
-		return
-	}
-
-	c.ResponseOk(success)
-}
+func (c *ApiController) AddArticle() { stored(c, object.AddArticle) }
 
 // DeleteArticle
 // @Title DeleteArticle
@@ -159,19 +144,4 @@ func (c *ApiController) AddArticle() {
 // @Param body body object.Article true "The details of the article"
 // @Success 200 {object} controllers.Response The Response object
 // @router /delete-article [post]
-func (c *ApiController) DeleteArticle() {
-	var article object.Article
-	err := json.Unmarshal(c.Body(), &article)
-	if err != nil {
-		c.ResponseError(err.Error())
-		return
-	}
-
-	success, err := object.DeleteArticle(&article)
-	if err != nil {
-		c.ResponseError(err.Error())
-		return
-	}
-
-	c.ResponseOk(success)
-}
+func (c *ApiController) DeleteArticle() { stored(c, object.DeleteArticle) }
