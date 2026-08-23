@@ -140,9 +140,9 @@ func zapKSFVScopedOwner(auth string, bodyOwner string) (string, *iam.User, *zap.
 	return util.ScopeOwner(user.Owner, bodyOwner), user, nil
 }
 
-// zapKSFVRequireAdmin mirrors ApiController.RequireAdmin (preview passes; else an
+// zapRequireAdmin mirrors ApiController.RequireAdmin (preview passes; else an
 // org-level admin principal is required).
-func zapKSFVRequireAdmin(auth string) (*iam.User, *zap.Message) {
+func zapRequireAdmin(auth string) (*iam.User, *zap.Message) {
 	user := zapPrincipal(auth)
 	if conf.IsPreviewMode() {
 		return user, nil
@@ -154,9 +154,9 @@ func zapKSFVRequireAdmin(auth string) (*iam.User, *zap.Message) {
 	return user, nil
 }
 
-// zapKSFVRequireSignedIn mirrors RequireSignedIn / RequireSessionOwner: a
+// zapRequireSignedIn mirrors RequireSignedIn / RequireSessionOwner: a
 // principal is required, else 401.
-func zapKSFVRequireSignedIn(auth string) (*iam.User, *zap.Message) {
+func zapRequireSignedIn(auth string) (*iam.User, *zap.Message) {
 	user := zapPrincipal(auth)
 	if user == nil {
 		msg, _ := zapError(http.StatusUnauthorized, "auth:Please sign in first")
@@ -289,7 +289,7 @@ func zapGetGlobalStoresHandler(_ context.Context, auth string, body []byte) (*za
 		return zapOk(stores)
 	}
 
-	if _, deny := zapKSFVRequireAdmin(auth); deny != nil {
+	if _, deny := zapRequireAdmin(auth); deny != nil {
 		return deny, nil
 	}
 	count, err := object.GetStoreCount(p.Name, p.Field, p.Value)
@@ -369,7 +369,7 @@ func zapDecodeStoreWithId(body []byte) (*object.Store, string, error) {
 }
 
 func zapUpdateStoreHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if _, deny := zapKSFVRequireSignedIn(auth); deny != nil {
+	if _, deny := zapRequireSignedIn(auth); deny != nil {
 		return deny, nil
 	}
 	store, id, err := zapDecodeStoreWithId(body)
@@ -456,7 +456,7 @@ func zapAddStoreHandler(_ context.Context, auth string, body []byte) (*zap.Messa
 }
 
 func zapDeleteStoreHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if _, deny := zapKSFVRequireSignedIn(auth); deny != nil {
+	if _, deny := zapRequireSignedIn(auth); deny != nil {
 		return deny, nil
 	}
 	var store object.Store
@@ -474,7 +474,7 @@ func zapDeleteStoreHandler(_ context.Context, auth string, body []byte) (*zap.Me
 }
 
 func zapRefreshStoreVectorsHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if _, deny := zapKSFVRequireSignedIn(auth); deny != nil {
+	if _, deny := zapRequireSignedIn(auth); deny != nil {
 		return deny, nil
 	}
 	var store object.Store
@@ -506,7 +506,7 @@ func zapGetStoreNamesHandler(_ context.Context, auth string, body []byte) (*zap.
 // ── storage providers ────────────────────────────────────────────────────
 
 func zapGetStorageProvidersHandler(_ context.Context, auth string, _ []byte) (*zap.Message, error) {
-	if _, deny := zapKSFVRequireSignedIn(auth); deny != nil {
+	if _, deny := zapRequireSignedIn(auth); deny != nil {
 		return deny, nil
 	}
 	providers, err := getStorageProviders()
@@ -529,7 +529,7 @@ func zapGetGlobalFilesHandler(_ context.Context, auth string, body []byte) (*zap
 		return zapOk(files)
 	}
 
-	if _, deny := zapKSFVRequireAdmin(auth); deny != nil {
+	if _, deny := zapRequireAdmin(auth); deny != nil {
 		return deny, nil
 	}
 	count, err := object.GetFileCount("", p.Field, p.Value)
@@ -572,7 +572,7 @@ func zapGetFileHandler(_ context.Context, _ string, body []byte) (*zap.Message, 
 }
 
 func zapUpdateFileHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if _, deny := zapKSFVRequireSignedIn(auth); deny != nil {
+	if _, deny := zapRequireSignedIn(auth); deny != nil {
 		return deny, nil
 	}
 	p := zapDecodeParams(body)
@@ -592,7 +592,7 @@ func zapUpdateFileHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 }
 
 func zapAddFileHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if _, deny := zapKSFVRequireSignedIn(auth); deny != nil {
+	if _, deny := zapRequireSignedIn(auth); deny != nil {
 		return deny, nil
 	}
 	var file object.File
@@ -607,7 +607,7 @@ func zapAddFileHandler(_ context.Context, auth string, body []byte) (*zap.Messag
 }
 
 func zapDeleteFileHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if _, deny := zapKSFVRequireSignedIn(auth); deny != nil {
+	if _, deny := zapRequireSignedIn(auth); deny != nil {
 		return deny, nil
 	}
 	p := zapDecodeParams(body)
@@ -623,7 +623,7 @@ func zapDeleteFileHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 }
 
 func zapRefreshFileVectorsHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if _, deny := zapKSFVRequireSignedIn(auth); deny != nil {
+	if _, deny := zapRequireSignedIn(auth); deny != nil {
 		return deny, nil
 	}
 	p := zapDecodeParams(body)
@@ -639,7 +639,7 @@ func zapRefreshFileVectorsHandler(_ context.Context, auth string, body []byte) (
 }
 
 func zapUploadFileHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	user, deny := zapKSFVRequireSignedIn(auth)
+	user, deny := zapRequireSignedIn(auth)
 	if deny != nil {
 		return deny, nil
 	}
@@ -668,7 +668,7 @@ func zapUploadFileHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 // ── file activation cache ────────────────────────────────────────────────
 
 func zapActivateFileHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if _, deny := zapKSFVRequireSignedIn(auth); deny != nil {
+	if _, deny := zapRequireSignedIn(auth); deny != nil {
 		return deny, nil
 	}
 	p := zapDecodeParams(body)
@@ -699,7 +699,7 @@ func zapGetActiveFileHandler(_ context.Context, _ string, body []byte) (*zap.Mes
 // ── tree files ───────────────────────────────────────────────────────────
 
 func zapUpdateTreeFileHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	user, deny := zapKSFVRequireSignedIn(auth)
+	user, deny := zapRequireSignedIn(auth)
 	if deny != nil {
 		return deny, nil
 	}
@@ -721,7 +721,7 @@ func zapUpdateTreeFileHandler(_ context.Context, auth string, body []byte) (*zap
 }
 
 func zapAddTreeFileHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	user, deny := zapKSFVRequireSignedIn(auth)
+	user, deny := zapRequireSignedIn(auth)
 	if deny != nil {
 		return deny, nil
 	}
@@ -758,7 +758,7 @@ func zapAddTreeFileHandler(_ context.Context, auth string, body []byte) (*zap.Me
 }
 
 func zapDeleteTreeFileHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	user, deny := zapKSFVRequireSignedIn(auth)
+	user, deny := zapRequireSignedIn(auth)
 	if deny != nil {
 		return deny, nil
 	}
@@ -788,7 +788,7 @@ func zapGetGlobalVectorsHandler(_ context.Context, _ string, _ []byte) (*zap.Mes
 }
 
 func zapGetVectorsHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	user, deny := zapKSFVRequireSignedIn(auth)
+	user, deny := zapRequireSignedIn(auth)
 	if deny != nil {
 		return deny, nil
 	}
@@ -829,7 +829,7 @@ func zapGetVectorHandler(_ context.Context, _ string, body []byte) (*zap.Message
 }
 
 func zapUpdateVectorHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if _, deny := zapKSFVRequireSignedIn(auth); deny != nil {
+	if _, deny := zapRequireSignedIn(auth); deny != nil {
 		return deny, nil
 	}
 	p := zapDecodeParams(body)
@@ -849,7 +849,7 @@ func zapUpdateVectorHandler(_ context.Context, auth string, body []byte) (*zap.M
 }
 
 func zapAddVectorHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if _, deny := zapKSFVRequireSignedIn(auth); deny != nil {
+	if _, deny := zapRequireSignedIn(auth); deny != nil {
 		return deny, nil
 	}
 	var vector object.Vector
@@ -873,7 +873,7 @@ func zapAddVectorHandler(_ context.Context, auth string, body []byte) (*zap.Mess
 }
 
 func zapDeleteVectorHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if _, deny := zapKSFVRequireSignedIn(auth); deny != nil {
+	if _, deny := zapRequireSignedIn(auth); deny != nil {
 		return deny, nil
 	}
 	var vector object.Vector
@@ -888,7 +888,7 @@ func zapDeleteVectorHandler(_ context.Context, auth string, body []byte) (*zap.M
 }
 
 func zapDeleteAllVectorsHandler(_ context.Context, auth string, _ []byte) (*zap.Message, error) {
-	user, deny := zapKSFVRequireSignedIn(auth)
+	user, deny := zapRequireSignedIn(auth)
 	if deny != nil {
 		return deny, nil
 	}
