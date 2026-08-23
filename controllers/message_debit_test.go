@@ -89,10 +89,9 @@ func TestCasibaseChatAnswerIsOneDebit(t *testing.T) {
 		ModelProvider: "openai-gpt4",
 	}
 
-	c := newAnswerController()
 	// The two meter points of one casibase answer, in handler order
 	// (message_answer.go: recordCasibaseChatUsage, then AddTransactionForMessage).
-	c.recordCasibaseChatUsage(chat, provider, result)
+	recordCasibaseChatUsage(context.Background(), "", chat, provider, result)
 	if err := object.AddTransactionForMessage(message); err != nil {
 		t.Fatalf("AddTransactionForMessage: %v", err)
 	}
@@ -118,8 +117,8 @@ func TestCasibaseChatAnswerIsOneDebit(t *testing.T) {
 func TestCasibaseChatTraceDoesNotCharge(t *testing.T) {
 	got := captureDebits(t)
 
-	c := newAnswerController()
-	c.recordCasibaseChatUsage(
+	recordCasibaseChatUsage(
+		context.Background(), "",
 		&object.Chat{Owner: "acme", Organization: "acme", User: "alice"},
 		&object.Provider{Name: "openai-gpt4"},
 		&model.ModelResult{PromptTokenCount: 100, ResponseTokenCount: 200, TotalTokenCount: 300, TotalPrice: 0.00132, Currency: "USD"},

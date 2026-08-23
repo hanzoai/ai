@@ -174,11 +174,10 @@ func field(t *testing.T, event map[string]json.RawMessage, key string) string {
 // fix that only covers the buffered body leaks on nearly every request. This drives
 // the real relay — the function that writes the customer's bytes.
 func TestFamilyStreamIsOurs(t *testing.T) {
-	c := visit("POST", "/v1/chat/completions")
 
 	mk := ourMark()
 	to := toStream()
-	prompt, completion, _, _ := c.relayZenStream(to.w, strings.NewReader(upstreamStream), mk)
+	prompt, completion, _, _ := relayZenStream(to.w, strings.NewReader(upstreamStream), mk)
 
 	out := to.String()
 	discloses(t, "streamed chat", []byte(out))
@@ -388,10 +387,9 @@ func TestTheDoorKeepsWhatAClientActsOn(t *testing.T) {
 	})
 
 	t.Run("streamed delta", func(t *testing.T) {
-		c := visit("POST", "/v1/chat/completions")
 
 		to := toStream()
-		c.relayZenStream(to.w, strings.NewReader(toolStream+"\n\ndata: [DONE]\n\n"), ourMark())
+		relayZenStream(to.w, strings.NewReader(toolStream+"\n\ndata: [DONE]\n\n"), ourMark())
 		out := to.String()
 		discloses(t, "streamed tool call", []byte(out))
 		for _, need := range []string{`"name":"get_weather"`, `"id":"call_1"`, `"tool_calls"`} {
@@ -454,11 +452,10 @@ func TestTheAnthropicDialectIsOurs(t *testing.T) {
 	})
 
 	t.Run("streamed", func(t *testing.T) {
-		c := visit("POST", "/v1/messages")
 
 		mk := &mark{id: ourMsg, model: sku, seller: "hanzo", speaks: messageShape}
 		to := toStream()
-		c.relayZenStream(to.w, strings.NewReader(anthropicStream), mk)
+		relayZenStream(to.w, strings.NewReader(anthropicStream), mk)
 
 		out := to.String()
 		discloses(t, "anthropic stream", []byte(out))
