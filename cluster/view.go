@@ -251,7 +251,12 @@ func describeCredentials(deployments []appsv1.Deployment) []object.EnvVariable {
 					}
 				}
 				if isCredential {
-					value := env.Value
+					// What a view of credentials is FOR is knowing which ones a
+					// deployment expects and where each comes from — never what any of
+					// them is. A variable set inline carries its value in the pod spec,
+					// so reading env.Value here put the credential itself in the answer;
+					// the two ValueFrom branches were already saying the useful thing.
+					value := "set on the deployment"
 					if env.ValueFrom != nil {
 						if env.ValueFrom.SecretKeyRef != nil {
 							value = fmt.Sprintf("Secret: %s.%s", env.ValueFrom.SecretKeyRef.Name, env.ValueFrom.SecretKeyRef.Key)

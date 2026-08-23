@@ -265,7 +265,11 @@ func UpdateRecordFields(id string, fields map[string]interface{}, lang string) (
 func NewRecord(ctx *zip.Ctx) (*Record, error) {
 	ip := strings.Replace(util.GetIPInfo(ctx.Fiber().IP()), ": ", "", -1)
 	action := strings.TrimPrefix(ctx.Path(), "/v1/")
-	requestUri := util.FilterQuery(string(ctx.Fiber().Request().RequestURI()), []string{"accessToken"})
+	// The query is redacted by the same rule the body is, rather than by a list of
+	// one name: a credential in a URL is the worst place for one, and a record is
+	// read by more surfaces than the one that wrote it. Redaction keeps the shape
+	// of the request, which is what an audit trail is for.
+	requestUri := RedactQuery(string(ctx.Fiber().Request().RequestURI()))
 	if len(requestUri) > 1000 {
 		requestUri = requestUri[0:1000]
 	}
