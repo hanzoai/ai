@@ -18,7 +18,6 @@ import (
 	"fmt"
 
 	"github.com/hanzoai/ai/util"
-	"github.com/hanzoai/dbx"
 )
 
 type Block struct {
@@ -71,12 +70,7 @@ func GetGlobalArticles() ([]*Article, error) {
 }
 
 func GetArticles(owner string) ([]*Article, error) {
-	articles := []*Article{}
-	err := findAll(adapter.db, "article", &articles, dbx.HashExp{"owner": owner}, "created_time DESC")
-	if err != nil {
-		return articles, err
-	}
-	return articles, nil
+	return rowsOf[Article]("article", owner)
 }
 
 func getArticle(owner, name string) (*Article, error) {
@@ -84,11 +78,7 @@ func getArticle(owner, name string) (*Article, error) {
 }
 
 func GetArticle(id string) (*Article, error) {
-	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
-	if err != nil {
-		return nil, err
-	}
-	return getArticle(owner, name)
+	return rowAt[Article]("article", id)
 }
 
 func GetArticleCount(owner, field, value string) (int64, error) {
