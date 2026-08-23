@@ -89,19 +89,11 @@ func GetPaginationConnections(owner, status string, offset, limit int, field, va
 }
 
 func getConnection(owner string, name string) (*Connection, error) {
+	// An empty key names no row, and is answered without asking.
 	if owner == "" || name == "" {
 		return nil, nil
 	}
-	connection := Connection{Owner: owner, Name: name}
-	existed, err := getOne(adapter.db, "connection", &connection, pk2(connection.Owner, connection.Name))
-	if err != nil {
-		return &connection, err
-	}
-	if existed {
-		return &connection, nil
-	} else {
-		return nil, nil
-	}
+	return getRow[Connection]("connection", owner, name)
 }
 
 func GetConnection(id string) (*Connection, error) {
