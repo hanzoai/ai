@@ -187,12 +187,7 @@ func zapKSFVScopedOwner(auth string, bodyOwner string) (string, *iam.User, *zap.
 		msg, _ := zapKSFVStatusError(http.StatusUnauthorized, "auth:Please sign in first")
 		return "", nil, msg
 	}
-	if user.Owner == "admin" {
-		if requested := strings.TrimSpace(bodyOwner); requested != "" {
-			return requested, user, nil
-		}
-	}
-	return user.Owner, user, nil
+	return util.ScopeOwner(user.Owner, bodyOwner), user, nil
 }
 
 // zapKSFVRequireAdmin mirrors ApiController.RequireAdmin (preview passes; else an

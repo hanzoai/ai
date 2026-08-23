@@ -22,7 +22,6 @@ import (
 	"github.com/luxfi/zap"
 
 	"github.com/hanzoai/ai/object"
-	"github.com/hanzoai/ai/util"
 )
 
 // funcPtr returns the code pointer of a handler so two handler values can be
@@ -106,25 +105,6 @@ func TestZapInfraRegistered(t *testing.T) {
 		// check can't distinguish them — assert the exact handler pointer resolves.
 		if funcPtr(h) != funcPtr(c.want) {
 			t.Errorf("path %q resolved to the wrong handler", c.path)
-		}
-	}
-}
-
-// TestZapScopedOwner mirrors GetScopedOwner: the admin org may target a specific
-// owner via the body's "owner" field; every other identity is pinned to its own
-// org regardless of what the body claims.
-func TestZapScopedOwner(t *testing.T) {
-	cases := []struct {
-		owner, requested, want string
-	}{
-		{util.AdminOrg, "acme", "acme"},      // super admin targets a tenant
-		{util.AdminOrg, "  ", util.AdminOrg}, // blank request → own org
-		{util.AdminOrg, "", util.AdminOrg},
-		{"acme", "attacker", "acme"}, // non-admin can never override (defensive)
-	}
-	for _, c := range cases {
-		if got := zapInfraScopedOwner(c.owner, c.requested); got != c.want {
-			t.Errorf("zapInfraScopedOwner(%q,%q)=%q, want %q", c.owner, c.requested, got, c.want)
 		}
 	}
 }
