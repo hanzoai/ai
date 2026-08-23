@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hanzoai/ai/i18n"
 	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/model"
 	"github.com/hanzoai/ai/util"
@@ -307,6 +308,12 @@ func RefineMessageFiles(message *Message, origin string, lang string) error {
 		store, err := GetDefaultStore("admin")
 		if err != nil {
 			return err
+		}
+		// GetDefaultStore answers (nil, nil) when there is no store to be the default
+		// one — a fresh deployment, before anything is configured — so absence arrives
+		// as a nil value beside a nil error, and the read below is on a field.
+		if store == nil {
+			return fmt.Errorf("%s", i18n.Translate(lang, "object:There is no default store"))
 		}
 		obj, err := store.GetImageProviderObj(lang)
 		if err != nil {
