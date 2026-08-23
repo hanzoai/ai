@@ -136,22 +136,7 @@ func (c *ApiController) UpdateForm() {
 // @Param body body object.Form true "The details of the form"
 // @Success 200 {object} controllers.Response The Response object
 // @router /add-form [post]
-func (c *ApiController) AddForm() {
-	var form object.Form
-	err := json.Unmarshal(c.Body(), &form)
-	if err != nil {
-		c.ResponseError(err.Error())
-		return
-	}
-
-	success, err := object.AddForm(&form)
-	if err != nil {
-		c.ResponseError(err.Error())
-		return
-	}
-
-	c.ResponseOk(success)
-}
+func (c *ApiController) AddForm() { stored(c, object.AddForm) }
 
 // DeleteForm
 // @Title DeleteForm
@@ -160,19 +145,4 @@ func (c *ApiController) AddForm() {
 // @Param body body object.Form true "The details of the form"
 // @Success 200 {object} controllers.Response The Response object
 // @router /delete-form [post]
-func (c *ApiController) DeleteForm() {
-	var form object.Form
-	err := json.Unmarshal(c.Body(), &form)
-	if err != nil {
-		c.ResponseError(err.Error())
-		return
-	}
-
-	success, err := object.DeleteForm(&form)
-	if err != nil {
-		c.ResponseError(err.Error())
-		return
-	}
-
-	c.ResponseOk(success)
-}
+func (c *ApiController) DeleteForm() { stored(c, object.DeleteForm) }
