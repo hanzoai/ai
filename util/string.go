@@ -27,12 +27,22 @@ import (
 	"time"
 )
 
+// ParseInt reads a whole number, and answers 0 for anything that is not one.
+//
+// It used to panic, and it is read from REQUEST INPUT at most of its call sites —
+// pageSize, p, limit — so "?pageSize=abc" was a panic recovered into a 500 with a
+// stack trace, on every paged listing in the module. A value that is not a number
+// is not a page size.
+//
+// 0 is the right answer because 0 is what every caller here already handles:
+// NewPaginator reads a size of zero or less as "use the default", and
+// paginationOffset floors a negative offset at zero. Nothing downstream had to
+// change to stop crashing.
 func ParseInt(s string) int {
 	i, err := strconv.Atoi(s)
 	if err != nil {
-		panic(err)
+		return 0
 	}
-
 	return i
 }
 
@@ -58,9 +68,18 @@ func ParseFloat(s string) float64 {
 	return f
 }
 
+// GetOwnerAndNameFromIdNoCheck splits an id at its FIRST slash, so a name may
+// itself contain slashes — which is what "no check" means here and why the
+// checked form is not a drop-in for it.
+//
+// It used to index the second half unconditionally. An id carrying no slash
+// yields one piece, so that read was out of range, and the id arrives on a query
+// parameter: GET /v1/ai/get-file?id=x panicked, and the router turned it into a
+// 500 with a stack trace where a malformed id deserves an answer. An id that
+// names no name now names none, and the read below it finds nothing.
 func GetOwnerAndNameFromIdNoCheck(id string) (string, string) {
-	tokens := strings.SplitN(id, "/", 2)
-	return tokens[0], tokens[1]
+	owner, name, _ := strings.Cut(id, "/")
+	return owner, name
 }
 
 func GetOwnerAndNameFromIdWithError(id string) (string, string, error) {
