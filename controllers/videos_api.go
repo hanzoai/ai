@@ -391,7 +391,7 @@ func (c *ApiController) VideoContent() {
 // another user's job. On any failure it writes the response and returns ok=false.
 func (c *ApiController) resolveOwnedVideoJob(token, id string) (*videoJob, *object.Provider, *iam.User, bool) {
 	// A publishable key is refused here for the reason it is refused at the
-	// generation door: it names an ORG and no person, so the ownership test below
+	// generation endpoint: it names an ORG and no person, so the ownership test below
 	// collapses to "same tenant" and every job in the org answers to it. A key that
 	// ships in a page would read whatever anyone in that org had generated.
 	if isPublishableKey(token) {

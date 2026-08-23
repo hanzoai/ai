@@ -134,7 +134,7 @@ var resources = []resource{
 	// permissions, providers and sessions at /v1/iam/*; cloud proxies that WHOLE
 	// subtree to it (cloud/iam_edge.go — `app.Group("/v1/iam").All("/*")`). ai
 	// inherited the same five words for its own things, so each one had to be
-	// answered separately: is this IAM's row reached through a second door, or
+	// answered separately: is this IAM's row reached through a second address, or
 	// ai's own row wearing IAM's word?
 	//
 	// permissions was the first. Every handler in controllers/permission.go is an

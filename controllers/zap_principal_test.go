@@ -49,7 +49,7 @@ func TestWhatACredentialHasToLookLikeToNameSomebody(t *testing.T) {
 	// A value can be shaped like both — an sk- prefix and three long dot-separated
 	// parts — and it is read as the key it claims to be. Falling through to JWT
 	// validation after failing as a key would let a caller choose which of the two
-	// doors to be judged at.
+	// credentials to be judged as.
 	t.Run("a value shaped like both is judged as a key", func(t *testing.T) {
 		both := "sk-aaaaaaaaaaaaaa.bbbbbbbbbbbbbb.cccccccccccccc"
 		if !isIAMApiKey(both) || !isJwtToken(both) {
