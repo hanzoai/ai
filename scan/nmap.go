@@ -16,7 +16,6 @@
 package scan
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"os/exec"
@@ -81,59 +80,15 @@ func NewNmapScanProvider(clientId string) (*NmapScanProvider, error) {
 }
 
 func (p *NmapScanProvider) Scan(target string, command string) (string, error) {
-	if target == "" {
-		return "", fmt.Errorf("%s scan target cannot be empty", getHostnamePrefix())
-	}
-
-	// Validate target to prevent command injection
-	target = strings.TrimSpace(target)
-	if strings.ContainsAny(target, ";&|`$") {
-		return "", fmt.Errorf("%s invalid characters in scan target", getHostnamePrefix())
-	}
-
-	// Use default command if empty
-	if command == "" {
-		command = "-sn %s"
-	}
-
-	// Validate command to prevent command injection
-	command = strings.TrimSpace(command)
-	if strings.ContainsAny(command, ";&|`$") {
-		return "", fmt.Errorf("%s invalid characters in scan command", getHostnamePrefix())
-	}
-
-	// Replace %s with target, or append target if no %s placeholder
-	var args []string
-	if strings.Contains(command, "%s") {
-		// Replace %s with target using strings.Replace for safety
-		cmdStr := strings.Replace(command, "%s", target, -1)
-		args = strings.Fields(cmdStr)
-	} else {
-		// No %s placeholder, append target at the end
-		args = strings.Fields(command)
-		args = append(args, target)
-	}
-
-	// Run nmap with custom command options
-	cmd := exec.Command(p.nmapPath, args...)
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	fmt.Printf("%s [Nmap] Executing nmap scan: %s %s\n", getHostnamePrefix(), p.nmapPath, strings.Join(args, " "))
-	err := cmd.Run()
-	if err != nil {
-		return "", fmt.Errorf("%s nmap scan failed: %v, stderr: %s", getHostnamePrefix(), err, stderr.String())
-	}
-	fmt.Printf("%s [Nmap] Scan completed successfully\n", getHostnamePrefix())
-
-	result := stdout.String()
-	if result == "" {
-		result = "Scan completed with no output"
-	}
-
-	return result, nil
+	return scanner{
+		name: "nmap", bin: p.nmapPath,
+		defaultArgs: "-sn %s",
+		// nmap's output is read from stdout, so nothing here asks for a format.
+		jsonFlags: nil, addJSON: "",
+		targetFlags: nil, addTarget: "",
+		// NSE runs Lua off the disk; --datadir points nmap at its own.
+		offLimits: []string{"-script", "-script-args-file", "-datadir", "-resume"},
+	}.run(target, command)
 }
 
 func (p *NmapScanProvider) ParseResult(rawResult string) (string, error) {
