@@ -56,8 +56,9 @@ func (e envelope) ok(t *testing.T, what string) {
 // what makes the delete a delete.
 func TestAChatLivesAndDiesThroughItsHandlers(t *testing.T) {
 	withStore(t)
+	iamd := withIAM(t)
 	seedDefaultStore(t)
-	auth := asUser(t, &iam.User{Owner: "acme", Name: "alice"})
+	auth := iamd.asUser(t, &iam.User{Owner: "acme", Name: "alice"})
 
 	status, env := call(t, "chats.add", auth, `{"name":"c1","user":"alice","displayName":"First","store":"default"}`)
 	if status != 200 {
@@ -117,13 +118,14 @@ func TestAChatLivesAndDiesThroughItsHandlers(t *testing.T) {
 // real here, so the row genuinely exists while the refusal happens.
 func TestOneUsersChatIsNotAnothersToTouch(t *testing.T) {
 	withStore(t)
+	iamd := withIAM(t)
 	seedDefaultStore(t)
-	alice := asUser(t, &iam.User{Owner: "acme", Name: "alice"})
+	alice := iamd.asUser(t, &iam.User{Owner: "acme", Name: "alice"})
 	if status, env := call(t, "chats.add", alice, `{"name":"c1","user":"alice","displayName":"Alice's","store":"default"}`); status != 200 || env.Status != "ok" {
 		t.Fatalf("seed: status=%d %s", status, env.Msg)
 	}
 
-	bob := asUser(t, &iam.User{Owner: "acme", Name: "bob"})
+	bob := iamd.asUser(t, &iam.User{Owner: "acme", Name: "bob"})
 	for _, tc := range []struct{ what, method, body string }{
 		{"add as someone else", "chats.add", `{"name":"c2","user":"alice"}`},
 		{"update someone else's", "chats.update", `{"id":"` + chatOwner + `/c1","chat":{"name":"c1","user":"alice"}}`},
