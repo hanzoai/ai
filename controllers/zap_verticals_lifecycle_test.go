@@ -18,9 +18,9 @@ import (
 // to empty is what makes a delete a delete.
 func TestTheVerticalRowsLiveAndDieThroughTheirHandlers(t *testing.T) {
 	for _, tc := range []struct {
-		what                          string
-		list, get, add, update, del   string
-		row, renamed                  string
+		what                        string
+		list, get, add, update, del string
+		row, renamed                string
 	}{
 		{
 			what: "a form",
