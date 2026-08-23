@@ -3,14 +3,20 @@
 package controllers
 
 import (
+	"crypto/rand"
+	"crypto/rsa"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
+	"github.com/golang-jwt/jwt/v4"
 	iam "github.com/hanzoai/ai/internal/iam"
 
 	"github.com/hanzoai/ai/object"
@@ -44,7 +50,45 @@ type people struct {
 	by   map[string]*iam.User
 	orgs map[string]string // publishable key -> the org it names
 	n    int
+
+	// The signing half. IAM mints three kinds of credential and each of its doors
+	// refuses the others', so one double serves all three rather than a second
+	// standing up beside it: sk- keys and pk- keys answer at the key doors above,
+	// and a signed token is verified against the JWKS this publishes.
+	key    *rsa.PrivateKey
+	issuer string
 }
+
+// signedIn is the credential a browser or first-party client carries: a token IAM
+// signed, verified here against the keys IAM publishes and then against the
+// issuer and audience policy. Reaching past that check to plant a user would test
+// a handler against an identity the real one cannot produce, and would keep
+// passing if the verification were removed.
+func (p *people) signedIn(t *testing.T, user *iam.User) string {
+	t.Helper()
+	claims := &iam.Claims{
+		User: *user,
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:    p.issuer,
+			Audience:  jwt.ClaimStrings{iamTestAudience},
+			Subject:   user.Name,
+			IssuedAt:  jwt.NewNumericDate(time.Now().Add(-time.Minute)),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
+		},
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+	token.Header["kid"] = iamTestKid
+	signed, err := token.SignedString(p.key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return "Bearer " + signed
+}
+
+const (
+	iamTestKid      = "test-key"
+	iamTestAudience = "hanzo-test"
+)
 
 // asOrg registers a publishable key with the IAM double and returns it.
 //
@@ -81,9 +125,24 @@ func (p *people) asUser(t *testing.T, user *iam.User) string {
 // withIAM stands up the double for one test and points the resolver at it.
 func withIAM(t *testing.T) *people {
 	t.Helper()
-	p := &people{by: map[string]*iam.User{}, orgs: map[string]string{}}
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := &people{by: map[string]*iam.User{}, orgs: map[string]string{}, key: key}
+	jwks := map[string]any{"keys": []map[string]string{{
+		"kty": "RSA",
+		"kid": iamTestKid,
+		"n":   base64.RawURLEncoding.EncodeToString(key.PublicKey.N.Bytes()),
+		"e":   base64.RawURLEncoding.EncodeToString(big.NewInt(int64(key.PublicKey.E)).Bytes()),
+	}}}
+
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/v1/iam/.well-known/jwks" {
+			_ = json.NewEncoder(w).Encode(jwks)
+			return
+		}
 		if r.URL.Path != "/v1/iam/keys/principal" && r.URL.Path != "/v1/iam/keys/org" {
 			w.WriteHeader(http.StatusNotFound)
 			return
@@ -122,7 +181,15 @@ func withIAM(t *testing.T) *people {
 	}))
 	t.Cleanup(srv.Close)
 
+	p.issuer = srv.URL
 	t.Setenv("IAM_URL", srv.URL)
+	// IAM_ENDPOINT is the trust anchor a signature is verified against, and it is
+	// deliberately never guessed — unset, verification falls through to a
+	// certificate PEM and reports "not valid PEM", which reads like a key problem
+	// and is a missing address.
+	t.Setenv("IAM_ENDPOINT", srv.URL)
+	t.Setenv("JWT_ISSUER", srv.URL)
+	t.Setenv("IAM_AUDIENCE", iamTestAudience)
 	t.Setenv("IAM_CLIENT_ID", "hanzo-test")
 	t.Setenv("IAM_CLIENT_SECRET", "test-secret")
 	return p

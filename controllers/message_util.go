@@ -28,31 +28,39 @@ import (
 	"github.com/hanzoai/ai/txt"
 )
 
-func (c *ApiController) ResponseErrorStream(message *object.Message, errorText string) {
+// noteFailure records a failure on the message and answers the text to tell the
+// client. Recording it and telling them are separate things: there is one way to
+// record, and two connections a client may be listening on.
+func noteFailure(message *object.Message, errorText string, lang string) string {
+	if message == nil {
+		return errorText
+	}
 	var err error
-	if message != nil {
-		if !message.IsAlerted {
-			err = message.SendErrorEmail(errorText, c.GetAcceptLanguage())
-			if err != nil {
-				errorText = fmt.Sprintf("%s\n%s", errorText, err.Error())
-			}
-		}
-
-		if message.ErrorText != errorText || !message.IsAlerted || err != nil {
-			message.ErrorText = errorText
-			message.IsAlerted = true
-			_, err = object.UpdateMessage(message.GetId(), message, false)
-			if err != nil {
-				errorText = fmt.Sprintf("%s\n%s", errorText, err.Error())
-			}
+	if !message.IsAlerted {
+		if err = message.SendErrorEmail(errorText, lang); err != nil {
+			errorText = fmt.Sprintf("%s\n%s", errorText, err.Error())
 		}
 	}
+	if message.ErrorText != errorText || !message.IsAlerted || err != nil {
+		message.ErrorText = errorText
+		message.IsAlerted = true
+		if _, err = object.UpdateMessage(message.GetId(), message, false); err != nil {
+			errorText = fmt.Sprintf("%s\n%s", errorText, err.Error())
+		}
+	}
+	return errorText
+}
 
-	event := fmt.Sprintf("event: myerror\ndata: %s\n\n", errorText)
-	err = c.Bytes(c.Fiber().Response().StatusCode(), []byte(event))
-	if err != nil {
+// errorEvent is the one shape a failure takes on a chat stream.
+func errorEvent(text string) string {
+	return fmt.Sprintf("event: myerror\ndata: %s\n\n", text)
+}
+
+// ResponseErrorStream tells a client still holding the request's own connection.
+func (c *ApiController) ResponseErrorStream(message *object.Message, errorText string) {
+	text := noteFailure(message, errorText, c.GetAcceptLanguage())
+	if err := c.Bytes(c.Fiber().Response().StatusCode(), []byte(errorEvent(text))); err != nil {
 		c.ResponseError(err.Error())
-		return
 	}
 }
 
@@ -65,23 +73,7 @@ func (c *ApiController) ResponseErrorStream(message *object.Message, errorText s
 // request context has been released — so the error event goes out through w, and
 // the language has to be carried in rather than read off a header.
 func streamError(w *bufio.Writer, message *object.Message, errorText string, lang string) {
-	if message != nil {
-		var err error
-		if !message.IsAlerted {
-			err = message.SendErrorEmail(errorText, lang)
-			if err != nil {
-				errorText = fmt.Sprintf("%s\n%s", errorText, err.Error())
-			}
-		}
-		if message.ErrorText != errorText || !message.IsAlerted || err != nil {
-			message.ErrorText = errorText
-			message.IsAlerted = true
-			if _, err = object.UpdateMessage(message.GetId(), message, false); err != nil {
-				errorText = fmt.Sprintf("%s\n%s", errorText, err.Error())
-			}
-		}
-	}
-	_, _ = w.WriteString(fmt.Sprintf("event: myerror\ndata: %s\n\n", errorText))
+	_, _ = w.WriteString(errorEvent(noteFailure(message, errorText, lang)))
 	_ = w.Flush()
 }
 
