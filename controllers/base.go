@@ -23,6 +23,7 @@ import (
 	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/object"
+	"github.com/hanzoai/ai/util"
 	"github.com/zap-proto/zip"
 )
 
@@ -174,14 +175,7 @@ func (c *ApiController) GetScopedOwner() (string, bool) {
 		return "", false
 	}
 
-	if user.Owner == "admin" {
-		requestedOwner := strings.TrimSpace(c.Input().Get("owner"))
-		if requestedOwner != "" {
-			return requestedOwner, true
-		}
-	}
-
-	return user.Owner, true
+	return util.ScopeOwner(user.Owner, c.Input().Get("owner")), true
 }
 
 // EnforceStoreIsolation enforces store isolation based on user's Homepage field.
