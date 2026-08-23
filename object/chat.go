@@ -102,21 +102,11 @@ func UpdateChat(id string, chat *Chat) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	_, err = getChat(owner, name)
-	if err != nil {
-		return false, err
-	}
 	if chat == nil {
 		return false, nil
 	}
-	chat.Owner = owner
-	chat.Name = name
-	err = adapter.db.Model(chat).Update()
-	if err != nil {
-		return false, err
-	}
-	// return affected != 0
-	return true, nil
+	chat.Owner, chat.Name = owner, name
+	return updated(chat)
 }
 
 func AddChat(chat *Chat) (bool, error) {
@@ -142,11 +132,7 @@ func AddChat(chat *Chat) (bool, error) {
 }
 
 func DeleteChat(chat *Chat) (bool, error) {
-	affected, err := deleteByPK(adapter.db, "chat", pk2(chat.Owner, chat.Name))
-	if err != nil {
-		return false, err
-	}
-	return affected != 0, nil
+	return deleteRow("chat", chat.Owner, chat.Name)
 }
 
 func (chat *Chat) GetId() string {

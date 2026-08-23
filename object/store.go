@@ -164,41 +164,19 @@ func UpdateStore(id string, store *Store) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	_, err = getStore(owner, name)
-	if err != nil {
-		return false, err
-	}
 	if store == nil {
 		return false, nil
 	}
-	store.Owner = owner
-	store.Name = name
-	err = adapter.db.Model(store).Update()
-	if err != nil {
-		return false, err
-	}
-	// return affected != 0
-	return true, nil
+	store.Owner, store.Name = owner, name
+	return updated(store)
 }
 
 func AddStore(store *Store) (bool, error) {
-	err := insertRow(adapter.db, store)
-	affected := int64(1)
-	if err != nil {
-		affected = 0
-	}
-	if err != nil {
-		return false, err
-	}
-	return affected != 0, nil
+	return addRow(store)
 }
 
 func DeleteStore(store *Store) (bool, error) {
-	affected, err := deleteByPK(adapter.db, "store", pk2(store.Owner, store.Name))
-	if err != nil {
-		return false, err
-	}
-	return affected != 0, nil
+	return deleteRow("store", store.Owner, store.Name)
 }
 
 func (store *Store) GetId() string {
