@@ -32,8 +32,8 @@ import (
 //
 // So [Document] is the ONE accessor, and it is a whole document rather than a
 // fragment somebody else completes. hanzoai/cloud reaches this surface through a
-// single `/v1/*` door and publishes what comes back as the fleet's contract, so
-// what it asks for is everything an operation owes a reader: the address, the
+// single `/v1/*` entry point and publishes what comes back as the fleet's contract,
+// so what it asks for is everything an operation owes a reader: the address, the
 // verb, the sentence, and — where this service declares one — the body.
 //
 // Membership comes from [App.Patterns], the live route table, because that is

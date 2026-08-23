@@ -22,7 +22,7 @@
 // invites is not a compile error — the stamp lands under one name, the read looks
 // under another, finds nothing, and falls back to the socket peer, which behind an
 // in-cluster ingress is one value for everyone. That is the defect the const below
-// records, arriving a second time by a different door. A single symbol cannot
+// records, arriving a second time in a different form. A single symbol cannot
 // diverge from itself, so the two sides now agree by construction rather than by
 // care, and the name can be changed in one edit.
 //

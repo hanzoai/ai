@@ -12,8 +12,8 @@ import (
 // A publishable key names an ORG and never a person.
 //
 // That is the whole reason a pk- is safe to put in a browser: it says which org
-// an ingest belongs to and carries no authority to act as anybody. The door that
-// answers it is a different door from the secret one, and each refuses the
+// an ingest belongs to and carries no authority to act as anybody. The endpoint
+// that answers it is a different one from the secret key's, and each refuses the
 // other's key — so a pk- cannot authenticate a request even if a caller sends it
 // where an sk- belongs.
 func TestAPublishableKeyNamesAnOrgAndNeverAPerson(t *testing.T) {
@@ -28,13 +28,13 @@ func TestAPublishableKeyNamesAnOrgAndNeverAPerson(t *testing.T) {
 		t.Errorf("org = %q, want acme", org)
 	}
 
-	// The same key at the secret door names nobody, and says why.
+	// The same key at the secret endpoint names nobody, and says why.
 	if u := zapPrincipal("Bearer " + key); u != nil {
 		t.Errorf("a publishable key resolved to a person: %+v", u)
 	}
 }
 
-// And a secret key is refused at the publishable door, so the two are not
+// And a secret key is refused at the publishable endpoint, so the two are not
 // interchangeable in either direction.
 func TestASecretKeyIsRefusedAtThePublishableDoor(t *testing.T) {
 	iamd := withIAM(t)
@@ -42,11 +42,11 @@ func TestASecretKeyIsRefusedAtThePublishableDoor(t *testing.T) {
 
 	org, err := resolveOrgFromPublishableKey(secret)
 	if err == nil {
-		t.Fatalf("a secret key resolved to org %q at the publishable door", org)
+		t.Fatalf("a secret key resolved to org %q at the publishable endpoint", org)
 	}
 	// The refusal says which key it is and what to use instead, because being
 	// told "does not resolve" for a key that resolves perfectly well at the other
-	// door sends somebody to mint a replacement they do not need.
+	// endpoint sends somebody to mint a replacement they do not need.
 	if !strings.Contains(err.Error(), "publishable") {
 		t.Errorf("refusal = %q, want it to name the two kinds of key", err)
 	}

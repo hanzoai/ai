@@ -85,7 +85,7 @@ func TestNothingGeneratedBillsOnlyThePrompt(t *testing.T) {
 	}
 }
 
-// A refusal at the door bills NOTHING, and the amount it would otherwise bill
+// A refusal at the edge bills NOTHING, and the amount it would otherwise bill
 // grows with the prompt: the longer the request, the more it costs to be turned
 // away for being too long. There is no invoice behind any of these — the vendor
 // read the envelope and stopped — so there is nothing to pass on.
@@ -117,7 +117,7 @@ func (errUnrecognised) Error() string { return "failed to get model provider: un
 
 // The same thing through the whole path, because the unit above only proves the
 // arithmetic. serve() names a provider even when the request is refused at the
-// door, and a named provider is what reached() reports — so the record files, and
+// edge, and a named provider is what reached() reports — so the record files, and
 // what it files has to be nothing.
 func TestARefusalAtTheDoorFilesNoCharge(t *testing.T) {
 	for _, refusal := range []struct {

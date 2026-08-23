@@ -561,7 +561,7 @@ func TestAnAnswerWearsTheSkuThatWasAskedFor(t *testing.T) {
 	}
 }
 
-// The free front door is the same rule from the other side: the caller names an id
+// The free alias is the same rule from the other side: the caller names an id
 // no vendor holds, the pool picks a route, and the answer comes back wearing the id
 // that was named rather than the route that was chosen.
 func TestTheFreeDoorAnswersInTheNameItWasCalledBy(t *testing.T) {

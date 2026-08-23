@@ -29,7 +29,7 @@ var (
 	appDir   string
 	cacheMap = map[string]string{}
 
-	// cacheMap is reached from both doors — the HTTP handlers here and the ZAP
+	// cacheMap is reached from both surfaces — the HTTP handlers here and the ZAP
 	// twins — so concurrent callers are the ordinary case. A Go map wants a guard
 	// under those conditions, and cacheMu is it. Read through cachedPath and write
 	// through rememberPath; nothing else touches the map.

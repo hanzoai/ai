@@ -14,7 +14,7 @@
 
 package controllers
 
-// What the streaming transcript door has to be true for, stated as the failures
+// What the streaming transcript endpoint has to be true for, stated as the failures
 // it prevents: a session's pushes reach the process that holds its window, one
 // tenant cannot push audio into another's session, and the audio billed is the
 // audio received — once, and all of it.
@@ -270,7 +270,7 @@ func TestAFreshSessionSurvivesTheSweep(t *testing.T) {
 // TestTranscriptDoesNotSwallowTranscriptions. "/v1/audio/transcript" is a literal
 // prefix of "/v1/audio/transcriptions", and the gateway consults the HTTP-shaped
 // registry FIRST — so a prefix rule that matched on characters rather than on path
-// segments would route every batch transcription into the streaming door, where it
+// segments would route every batch transcription into the streaming endpoint, where it
 // is a session id nobody opened. The batch endpoint is the one paying customers
 // already use.
 func TestTranscriptDoesNotSwallowTranscriptions(t *testing.T) {
@@ -288,7 +288,7 @@ func TestTranscriptDoesNotSwallowTranscriptions(t *testing.T) {
 	// segment boundaries and not about the registry being empty.
 	for _, path := range []string{"/v1/audio/transcript", "/v1/audio/transcript/ats_x"} {
 		if len(lookupGatewayRoutes(path)) == 0 {
-			t.Fatalf("%s is claimed by nobody — the streaming door is not registered", path)
+			t.Fatalf("%s is claimed by nobody — the streaming endpoint is not registered", path)
 		}
 	}
 }
@@ -298,7 +298,7 @@ func TestTranscriptDoesNotSwallowTranscriptions(t *testing.T) {
 // An abandoned session holds its admission slot until the sweep runs, and the
 // sweep runs on open. Order it after admission and the failure is permanent: once
 // the ceiling is full of abandoned sessions every open is refused BEFORE reaching
-// the sweep that would free them, so the door stays shut with nothing running and
+// the sweep that would free them, so the endpoint refuses with nothing running and
 // no way back except a restart.
 //
 // The control is that the same ceiling refuses when the sessions are LIVE, so this
@@ -341,7 +341,7 @@ func TestAbandonedSessionsDoNotShutTheDoorForGood(t *testing.T) {
 	fill(2 * transcriptIdle)
 	release, refused := admitSession("acme")
 	if refused != nil {
-		t.Fatalf("the ceiling is still full of sessions nobody is using: %v — the door never reopens", refused)
+		t.Fatalf("the ceiling is still full of sessions nobody is using: %v — the endpoint never admits again", refused)
 	}
 	release()
 }

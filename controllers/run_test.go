@@ -2,7 +2,7 @@ package controllers
 
 // run_test.go pins the properties that make a run key safe to hand to a sandbox.
 // Every one of them is about what the token CANNOT do, because the token's whole
-// justification is that it is weaker than every other bearer this door accepts.
+// justification is that it is weaker than every other bearer this edge accepts.
 
 import (
 	"net/http"

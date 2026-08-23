@@ -34,7 +34,7 @@ import (
 // authenticated caller presents one — mintUsageJWT signs it against the installed
 // certificate and the code under test then authenticates exactly the way production
 // does. The fake session this used to seed could assert any identity it liked, which
-// made an authorisation test a test of a door nobody walks through.
+// made an authorisation test a test of a path production never takes.
 func newUsageController(url, authHeader, orgHeader string) *ApiController {
 	c := visit(http.MethodGet, url)
 	if authHeader != "" {

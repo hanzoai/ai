@@ -411,7 +411,7 @@ func TestExhausted(t *testing.T) {
 // upstreamErrorMessage returns is published to the customer. It used to return the
 // whole raw body when it could not find error.message — which put the vendor's
 // name and our buy price back into an answer, through the one path the envelope
-// door does not sit on.
+// does not sit on.
 func TestARefusalDoesNotQuoteTheUpstreamsBodyBack(t *testing.T) {
 	// An aggregator's 402, in a shape upstreamErrorMessage cannot read, carrying
 	// exactly what envelope.go strips from a successful answer.
