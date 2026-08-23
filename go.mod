@@ -42,7 +42,7 @@ require (
 	github.com/hanzo-ds/go v1.0.1
 	github.com/hanzoai/account v0.3.3
 	github.com/hanzoai/dashscopego v0.6.0
-	github.com/hanzoai/dbx v1.17.2
+	github.com/hanzoai/dbx v1.17.4
 	github.com/hanzoai/decimal v0.1.2
 	github.com/hanzoai/go-cosyvoice v1.0.0
 	github.com/hanzoai/go-openai v1.41.0
@@ -50,7 +50,7 @@ require (
 	github.com/hanzoai/money v0.2.5
 	github.com/hanzoai/pdf v1.2.0
 	github.com/hanzoai/search-go v0.36.0
-	github.com/hanzoai/sqlite v0.5.1
+	github.com/hanzoai/sqlite v0.5.5
 	github.com/hanzoai/tasks v1.52.9
 	github.com/hanzoai/voice v0.1.1-0.20260815163030-0c26e48ac43f
 	github.com/hanzos3/go v1.0.0
@@ -145,7 +145,7 @@ require (
 	github.com/grandcat/zeroconf v1.0.0 // indirect
 	github.com/hanzo-ds/native v0.72.0 // indirect
 	github.com/hanzoai/authz v1.10.30 // indirect
-	github.com/hanzoai/csqlite v0.1.0 // indirect
+	github.com/hanzoai/csqlite v0.1.2 // indirect
 	github.com/hanzoai/go-openai-realtime v1.0.0 // indirect
 	github.com/hanzoai/go-openai-realtime/contrib/ws-gorilla v1.0.0 // indirect
 	github.com/hanzoai/sqlcipher v0.1.1 // indirect

@@ -85,7 +85,21 @@ func (c *ApiController) GetMessageAnswer() {
 	// A generation that ends without an answer releases at once, so a failure is
 	// retryable now rather than when the lease runs out. A process that dies never
 	// gets here — that is what the lease is for.
-	defer object.ReleaseMessageAnswer(message)
+	//
+	// WHICH exit releases it is the whole point. The generation does not happen in
+	// this function: it happens in the stream writer, which fasthttp runs after
+	// this function has returned. A release on this function's exit therefore drops
+	// the claim with the answer still being written — the row's text is empty until
+	// the very end, which is exactly the condition the release tests and the next
+	// claim tests — so a second request would generate the same turn and take a
+	// second debit for it. Everything that returns before a generation starts
+	// releases here; once the writer takes over, it owns the claim.
+	generating := false
+	defer func() {
+		if !generating {
+			object.ReleaseMessageAnswer(message)
+		}
+	}()
 
 	if strings.HasPrefix(message.ErrorText, "error, status code: 400, message: The response was filtered due to the prompt triggering") {
 		c.ResponseErrorStream(message, message.ErrorText)
@@ -233,7 +247,11 @@ func (c *ApiController) GetMessageAnswer() {
 	// taken here, while the request is still ours, and answers travel out through w.
 	snap := c.takeSnapshot(nil)
 
+	generating = true
 	_ = c.SendStreamWriter(func(w *bufio.Writer) {
+		// The claim travels with the generation, and is dropped when it ends.
+		defer object.ReleaseMessageAnswer(message)
+
 		writer := &RefinedWriter{w, *NewCleaner(6), []byte{}, []byte{}, []byte{}, []byte{}, []byte{}}
 
 		if questionMessage != nil {
