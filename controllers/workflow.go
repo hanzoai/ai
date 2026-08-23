@@ -19,7 +19,6 @@ import (
 	"encoding/json"
 
 	"github.com/hanzoai/ai/object"
-	"github.com/hanzoai/ai/util"
 )
 
 // GetGlobalWorkflows
@@ -46,41 +45,8 @@ func (c *ApiController) GetGlobalWorkflows() {
 // @Success 200 {array} object.Workflow The Response object
 // @router /get-workflows [get]
 func (c *ApiController) GetWorkflows() {
-	owner, allowed := c.GetScopedOwner()
-	if !allowed {
-		return
-	}
-	limit := c.Input().Get("pageSize")
-	page := c.Input().Get("p")
-	field := c.Input().Get("field")
-	value := c.Input().Get("value")
-	sortField := c.Input().Get("sortField")
-	sortOrder := c.Input().Get("sortOrder")
-
-	if limit == "" || page == "" {
-		workflows, err := object.GetWorkflows(owner)
-		if err != nil {
-			c.ResponseError(err.Error())
-			return
-		}
-
-		c.ResponseOk(object.GetMaskedWorkflows(workflows, true))
-	} else {
-		limit := util.ParseInt(limit)
-		count, err := object.GetWorkflowCount(owner, field, value)
-		if err != nil {
-			c.ResponseError(err.Error())
-			return
-		}
-
-		paginator := util.NewPaginator(c.PageAsked(), limit, count)
-		workflows, err := object.GetPaginationWorkflows(owner, paginator.Offset(), limit, field, value, sortField, sortOrder)
-		if err != nil {
-			c.ResponseError(err.Error())
-			return
-		}
-		c.ResponseOk(workflows, paginator.Nums())
-	}
+	listed(c, table[object.Workflow]{all: object.GetWorkflows, mask: object.GetMaskedWorkflows,
+		count: object.GetWorkflowCount, page: object.GetPaginationWorkflows})
 }
 
 // GetWorkflow

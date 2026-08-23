@@ -19,7 +19,6 @@ import (
 	"encoding/json"
 
 	"github.com/hanzoai/ai/object"
-	"github.com/hanzoai/ai/util"
 )
 
 // GetGlobalForms
@@ -46,41 +45,8 @@ func (c *ApiController) GetGlobalForms() {
 // @Success 200 {array} object.Form The Response object
 // @router /get-forms [get]
 func (c *ApiController) GetForms() {
-	owner, allowed := c.GetScopedOwner()
-	if !allowed {
-		return
-	}
-	limit := c.Input().Get("pageSize")
-	page := c.Input().Get("p")
-	field := c.Input().Get("field")
-	value := c.Input().Get("value")
-	sortField := c.Input().Get("sortField")
-	sortOrder := c.Input().Get("sortOrder")
-
-	if limit == "" || page == "" {
-		forms, err := object.GetForms(owner)
-		if err != nil {
-			c.ResponseError(err.Error())
-			return
-		}
-
-		c.ResponseOk(object.GetMaskedForms(forms, true))
-	} else {
-		limit := util.ParseInt(limit)
-		count, err := object.GetFormCount(owner, field, value)
-		if err != nil {
-			c.ResponseError(err.Error())
-			return
-		}
-
-		paginator := util.NewPaginator(c.PageAsked(), limit, count)
-		forms, err := object.GetPaginationForms(owner, paginator.Offset(), limit, field, value, sortField, sortOrder)
-		if err != nil {
-			c.ResponseError(err.Error())
-			return
-		}
-		c.ResponseOk(forms, paginator.Nums())
-	}
+	listed(c, table[object.Form]{all: object.GetForms, mask: object.GetMaskedForms,
+		count: object.GetFormCount, page: object.GetPaginationForms})
 }
 
 // GetForm
