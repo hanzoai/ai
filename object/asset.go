@@ -135,15 +135,7 @@ func UpdateAsset(id string, asset *Asset) (bool, error) {
 }
 
 func AddAsset(asset *Asset) (bool, error) {
-	err := insertRow(adapter.db, asset)
-	affected := int64(1)
-	if err != nil {
-		affected = 0
-	}
-	if err != nil {
-		return false, err
-	}
-	return affected != 0, nil
+	return addRow(asset)
 }
 
 func addAssets(assets []*Asset) (bool, error) {
@@ -159,11 +151,7 @@ func addAssets(assets []*Asset) (bool, error) {
 }
 
 func DeleteAsset(asset *Asset) (bool, error) {
-	affected, err := deleteByPK(adapter.db, "asset", pk2(asset.Owner, asset.Name))
-	if err != nil {
-		return false, err
-	}
-	return affected != 0, nil
+	return deleteRow("asset", asset.Owner, asset.Name)
 }
 
 func (a *Asset) processAssetParams(assetDb *Asset) {

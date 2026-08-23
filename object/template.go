@@ -78,16 +78,7 @@ func GetTemplate(id string) (*Template, error) {
 }
 
 func getTemplate(owner, name string) (*Template, error) {
-	template := Template{Owner: owner, Name: name}
-	existed, err := getOne(adapter.db, "template", &template, pk2(template.Owner, template.Name))
-	if err != nil {
-		return &template, err
-	}
-	if existed {
-		return &template, nil
-	} else {
-		return nil, nil
-	}
+	return getRow[Template]("template", owner, name)
 }
 
 func UpdateTemplate(id string, template *Template) (bool, error) {
@@ -135,11 +126,7 @@ func AddTemplate(template *Template) (bool, error) {
 }
 
 func DeleteTemplate(template *Template) (bool, error) {
-	affected, err := deleteByPK(adapter.db, "template", pk2(template.Owner, template.Name))
-	if err != nil {
-		return false, err
-	}
-	return affected != 0, nil
+	return deleteRow("template", template.Owner, template.Name)
 }
 
 // Render the template with the given data.
