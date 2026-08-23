@@ -86,28 +86,30 @@ func zapGwError(status uint32, msg string) (*zap.Message, error) {
 	return object.BuildGatewayResponse(status, b, nil)
 }
 
-// ── Identity: the ONE auth seam, returning the full principal ──────────────────
+// zapPrincipal resolves a credential to the person it belongs to, and is the ONE
+// place a ZAP handler learns who is asking.
 //
-// zapResolveUser (zap_native.go) returns only "owner/name"; the authz checks here
-// need the whole *iam.User (IsSuperAdmin, name/email for access keying). This
-// composes the SAME verified resolvers — object.ParseAndValidateJWT (signature +
-// iss/aud) for JWTs, getUserByAccessKey for pk-/sk- IAM keys — and never trusts
-// the body. Mirrors principalUser (org_resolver.go) for the Bearer-only path.
-func zapPrincipalUser(auth string) *iam.User {
-	token := strings.TrimPrefix(auth, "Bearer ")
+// Five groups had a copy of this — four of them identical, the fifth differing in
+// two ways that both mattered a little. It reads the API key FIRST, and stops
+// there: a credential that declares itself a key by its prefix is only ever
+// evaluated as one, so a value that is shaped like both cannot be offered to JWT
+// validation after failing as a key. And the token is trimmed, because the space
+// around a credential is not part of it.
+func zapPrincipal(auth string) *iam.User {
+	token := strings.TrimSpace(strings.TrimPrefix(auth, "Bearer "))
 	if token == "" {
 		return nil
-	}
-	if isJwtToken(token) {
-		claims, err := object.ParseAndValidateJWT(token)
-		if err != nil || claims == nil {
-			return nil
-		}
-		return &claims.User
 	}
 	if isIAMApiKey(token) {
 		if user, err := getUserByAccessKey(token); err == nil && user != nil {
 			return user
+		}
+		return nil
+	}
+	if isJwtToken(token) {
+		if claims, err := object.ParseAndValidateJWT(token); err == nil && claims != nil {
+			u := claims.User
+			return &u
 		}
 	}
 	return nil
@@ -117,7 +119,7 @@ func zapPrincipalUser(auth string) *iam.User {
 // principal → 401, authenticated non-super-admin → 403. Returns the user when
 // authorized, else the refusal message to return verbatim.
 func zapRequireSuperAdmin(auth string) (*iam.User, *zap.Message) {
-	user := zapPrincipalUser(auth)
+	user := zapPrincipal(auth)
 	if user == nil {
 		m, _ := zapGwError(401, "auth:Please sign in first")
 		return nil, m
@@ -155,7 +157,7 @@ func zapModelAccessSelfHandler(ctx context.Context, method, path, query, auth st
 		// here is what made that sibling unreachable in production.
 		return nil, errDecline
 	}
-	user := zapPrincipalUser(auth)
+	user := zapPrincipal(auth)
 	if user == nil {
 		return zapGwError(401, "auth:Please sign in first")
 	}

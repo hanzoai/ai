@@ -122,7 +122,7 @@ func TestIsCurrentUserRefusesANonName(t *testing.T) {
 }
 
 // TestZapIsCurrentUserRefusesANonName is the SAME hole on the ZAP twin plane, where
-// it is worse: zapPrincipalUser("") resolves to nil for a caller with no credential
+// it is worse: zapPrincipal("") resolves to nil for a caller with no credential
 // at all, so username was "" and the guard compared "" against a body-supplied "".
 // The existing ZapIsCurrentUser test never passed "" and so never saw it.
 //
