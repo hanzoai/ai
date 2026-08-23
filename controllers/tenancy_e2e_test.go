@@ -44,7 +44,7 @@ func seedTwoTenants(t *testing.T) {
 // answer. Without a credential there is nobody to answer it for.
 func TestListingChatsNeedsACredential(t *testing.T) {
 	withStore(t)
-	withSignIn(t)
+	withIAM(t)
 	seedTwoTenants(t)
 
 	c := visit("GET", "/v1/ai/get-chats?user=alice&store=s1")
@@ -60,10 +60,10 @@ func TestListingChatsNeedsACredential(t *testing.T) {
 // And with one, it answers for the caller's own tenant.
 func TestListingChatsSeesOneTenant(t *testing.T) {
 	withStore(t)
-	signIn := withSignIn(t)
+	people := withIAM(t)
 	seedTwoTenants(t)
 
-	acme := signIn(&iam.User{Owner: "acme", Name: "alice", IsAdmin: true})
+	acme := people.signedIn(t, &iam.User{Owner: "acme", Name: "alice", IsAdmin: true})
 	c := as(visit("GET", "/v1/ai/get-chats?store=s1"), acme)
 	c.GetChats()
 	body := sent(c)
@@ -89,10 +89,10 @@ func TestListingChatsSeesOneTenant(t *testing.T) {
 // for one by name is asking for whoever's it is.
 func TestReadingATranscriptByName(t *testing.T) {
 	withStore(t)
-	signIn := withSignIn(t)
+	people := withIAM(t)
 	seedTwoTenants(t)
 
-	acme := signIn(&iam.User{Owner: "acme", Name: "alice"})
+	acme := people.signedIn(t, &iam.User{Owner: "acme", Name: "alice"})
 	c := as(visit("GET", "/v1/ai/get-messages?chat=c-other"), acme)
 	c.GetMessages()
 	if strings.Contains(sent(c), "secret of other") {
@@ -110,13 +110,13 @@ func TestReadingATranscriptByName(t *testing.T) {
 // every customer's own admin satisfies.
 func TestTheCrossTenantListingsAskThePlatform(t *testing.T) {
 	withStore(t)
-	signIn := withSignIn(t)
+	people := withIAM(t)
 	seedTwoTenants(t)
 	if _, err := object.AddStore(&object.Store{Owner: "acme", Name: "s1"}); err != nil {
 		t.Fatal(err)
 	}
 
-	tenantAdmin := signIn(&iam.User{Owner: "acme", Name: "dave", IsAdmin: true})
+	tenantAdmin := people.signedIn(t, &iam.User{Owner: "acme", Name: "dave", IsAdmin: true})
 	for _, call := range []struct {
 		name string
 		run  func(*ApiController)
@@ -140,7 +140,7 @@ func TestTheCrossTenantListingsAskThePlatform(t *testing.T) {
 	}
 
 	// The reserved org is the platform, and reaches across.
-	sudo := signIn(&iam.User{Owner: util.AdminOrg, Name: "z"})
+	sudo := people.signedIn(t, &iam.User{Owner: util.AdminOrg, Name: "z"})
 	c := as(visit("GET", "/v1/ai/get-global-stores"), sudo)
 	c.GetGlobalStores()
 	if answered(c) != 200 {
@@ -152,7 +152,7 @@ func TestTheCrossTenantListingsAskThePlatform(t *testing.T) {
 // person — not for their organization, which is what the column does not hold.
 func TestListingVideosSeesYourOwn(t *testing.T) {
 	withStore(t)
-	signIn := withSignIn(t)
+	people := withIAM(t)
 	for _, v := range []*object.Video{
 		{Owner: "alice", Name: "v-alice", DisplayName: "alice's"},
 		{Owner: "bob", Name: "v-bob", DisplayName: "bob's"},
@@ -168,7 +168,7 @@ func TestListingVideosSeesYourOwn(t *testing.T) {
 		t.Errorf("an unsigned request answered %d: %s", answered(c), sent(c))
 	}
 
-	alice := signIn(&iam.User{Owner: "acme", Name: "alice"})
+	alice := people.signedIn(t, &iam.User{Owner: "acme", Name: "alice"})
 	c = as(visit("GET", "/v1/ai/get-videos"), alice)
 	c.GetVideos()
 	body := sent(c)
@@ -185,14 +185,14 @@ func TestListingVideosSeesYourOwn(t *testing.T) {
 // to change it.
 func TestAStoreWriteReadsTheStoredRow(t *testing.T) {
 	withStore(t)
-	signIn := withSignIn(t)
+	people := withIAM(t)
 	if _, err := object.AddStore(&object.Store{
 		Owner: "acme", Name: "s1", DisplayName: "acme's store", IsDefault: true,
 	}); err != nil {
 		t.Fatal(err)
 	}
 
-	alice := signIn(&iam.User{Owner: "acme", Name: "alice", IsAdmin: true})
+	alice := people.signedIn(t, &iam.User{Owner: "acme", Name: "alice", IsAdmin: true})
 
 	// A body declaring itself non-default does not walk past the guard that keeps
 	// one default store in place.
@@ -206,7 +206,7 @@ func TestAStoreWriteReadsTheStoredRow(t *testing.T) {
 	}
 
 	// And another tenant cannot name it at all.
-	other := signIn(&iam.User{Owner: "other", Name: "bob", IsAdmin: true})
+	other := people.signedIn(t, &iam.User{Owner: "other", Name: "bob", IsAdmin: true})
 	c = as(visit("POST", "/v1/ai/delete-store"), other)
 	c.Fiber().Request().SetBody([]byte(`{"owner":"acme","name":"s1","isDefault":false}`))
 	c.DeleteStore()
