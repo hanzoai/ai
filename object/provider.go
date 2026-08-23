@@ -227,7 +227,11 @@ func UpdateProvider(id string, provider *Provider) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	if provider == nil {
+	// getProvider answers (nil, nil) for a name no row matches. There is nothing to
+	// update, which is what false says — and it has to be said here: the merge below
+	// reads the stored row to fill in the secrets a request sends masked, so an
+	// absent one is a dereference on the ordinary edit-form round trip.
+	if provider == nil || providerDb == nil {
 		return false, nil
 	}
 	provider.processProviderParams(providerDb)
@@ -238,7 +242,6 @@ func UpdateProvider(id string, provider *Provider) (bool, error) {
 		if err != nil {
 			return false, err
 		}
-		// return affected != 0
 		return true, nil
 	}
 	provider.Owner = owner
@@ -247,7 +250,6 @@ func UpdateProvider(id string, provider *Provider) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	// return affected != 0
 	return true, nil
 }
 
