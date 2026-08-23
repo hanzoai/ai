@@ -64,12 +64,7 @@ func GetMaskedGraphs(graphs []*Graph, isMaskEnabled bool) []*Graph {
 }
 
 func GetGlobalGraphs() ([]*Graph, error) {
-	graphs := []*Graph{}
-	err := findAll(adapter.db, "graph", &graphs, nil, "owner ASC", "created_time DESC")
-	if err != nil {
-		return graphs, err
-	}
-	return graphs, nil
+	return allRows[Graph]("graph")
 }
 
 func GetGraphs(owner string) ([]*Graph, error) {
@@ -109,16 +104,9 @@ func (graph *Graph) GetId() string {
 }
 
 func GetGraphCount(owner string, field, value string) (int64, error) {
-	session := GetDbQuery(owner, -1, -1, field, value, "", "")
-	return queryCount(session, "graph")
+	return rowCount("graph", owner, field, value)
 }
 
 func GetPaginationGraphs(owner string, offset, limit int, field, value, sortField, sortOrder string) ([]*Graph, error) {
-	graphs := []*Graph{}
-	session := GetDbQuery(owner, offset, limit, field, value, sortField, sortOrder)
-	err := queryFind(session, "graph", &graphs)
-	if err != nil {
-		return graphs, err
-	}
-	return graphs, nil
+	return rowsPage[Graph]("graph", owner, offset, limit, field, value, sortField, sortOrder)
 }

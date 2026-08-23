@@ -79,8 +79,7 @@ type Node struct {
 }
 
 func GetNodeCount(owner, field, value string) (int64, error) {
-	session := GetDbQuery(owner, -1, -1, field, value, "", "")
-	return queryCount(session, "node")
+	return rowCount("node", owner, field, value)
 }
 
 func GetNodes(owner string) ([]*Node, error) {
@@ -88,13 +87,7 @@ func GetNodes(owner string) ([]*Node, error) {
 }
 
 func GetPaginationNodes(owner string, offset, limit int, field, value, sortField, sortOrder string) ([]*Node, error) {
-	nodes := []*Node{}
-	session := GetDbQuery(owner, offset, limit, field, value, sortField, sortOrder)
-	err := queryFind(session, "node", &nodes)
-	if err != nil {
-		return nodes, err
-	}
-	return nodes, nil
+	return rowsPage[Node]("node", owner, offset, limit, field, value, sortField, sortOrder)
 }
 
 func getNode(owner string, name string) (*Node, error) {
