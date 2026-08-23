@@ -147,3 +147,72 @@ func TestTheCrossTenantListingsAskThePlatform(t *testing.T) {
 		t.Errorf("the platform was refused its own listing: %d %s", answered(c), sent(c))
 	}
 }
+
+// A video row is owned by whoever uploaded it, so a listing answers for that
+// person — not for their organization, which is what the column does not hold.
+func TestListingVideosSeesYourOwn(t *testing.T) {
+	withStore(t)
+	signIn := withSignIn(t)
+	for _, v := range []*object.Video{
+		{Owner: "alice", Name: "v-alice", DisplayName: "alice's"},
+		{Owner: "bob", Name: "v-bob", DisplayName: "bob's"},
+	} {
+		if _, err := object.AddVideo(v); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	c := visit("GET", "/v1/ai/get-videos")
+	c.GetVideos()
+	if answered(c) != 401 {
+		t.Errorf("an unsigned request answered %d: %s", answered(c), sent(c))
+	}
+
+	alice := signIn(&iam.User{Owner: "acme", Name: "alice"})
+	c = as(visit("GET", "/v1/ai/get-videos"), alice)
+	c.GetVideos()
+	body := sent(c)
+	if !strings.Contains(body, "v-alice") {
+		t.Errorf("alice could not see her own video: %s", body)
+	}
+	if strings.Contains(body, "v-bob") {
+		t.Errorf("alice saw someone else's video: %s", body)
+	}
+}
+
+// A store write says WHICH store to act on. What that store currently is — the
+// default flag above all — is read from the row, not from the request that wants
+// to change it.
+func TestAStoreWriteReadsTheStoredRow(t *testing.T) {
+	withStore(t)
+	signIn := withSignIn(t)
+	if _, err := object.AddStore(&object.Store{
+		Owner: "acme", Name: "s1", DisplayName: "acme's store", IsDefault: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	alice := signIn(&iam.User{Owner: "acme", Name: "alice", IsAdmin: true})
+
+	// A body declaring itself non-default does not walk past the guard that keeps
+	// one default store in place.
+	c := as(visit("POST", "/v1/ai/delete-store"), alice)
+	c.Fiber().Request().SetBody([]byte(`{"owner":"acme","name":"s1","isDefault":false}`))
+	c.DeleteStore()
+	if stored, err := object.GetStore("acme/s1"); err != nil {
+		t.Fatal(err)
+	} else if stored == nil {
+		t.Error("the default store was deleted by a request that said it was not default")
+	}
+
+	// And another tenant cannot name it at all.
+	other := signIn(&iam.User{Owner: "other", Name: "bob", IsAdmin: true})
+	c = as(visit("POST", "/v1/ai/delete-store"), other)
+	c.Fiber().Request().SetBody([]byte(`{"owner":"acme","name":"s1","isDefault":false}`))
+	c.DeleteStore()
+	if stored, err := object.GetStore("acme/s1"); err != nil {
+		t.Fatal(err)
+	} else if stored == nil {
+		t.Error("another organization deleted this one's store")
+	}
+}
