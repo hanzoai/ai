@@ -46,6 +46,9 @@ type UserUsage struct {
 }
 
 func GetUsages(days int, user string, storeName string) ([]*Usage, error) {
+	if days < 1 {
+		return nil, fmt.Errorf("days must be at least 1, got %d", days)
+	}
 	messages, err := GetGlobalMessagesByStoreName(storeName)
 	if err != nil {
 		return nil, err
@@ -202,7 +205,7 @@ func GetUsageMetadata(lang string, orgName ...string) (*UsageMetadata, error) {
 func GetUsers(storeName, user string) ([]string, error) {
 	users := []string{}
 	userMap := map[string]bool{}
-	messages, err := GetMessages("admin", user, storeName)
+	messages, err := GetMessages("admin", "", user, storeName)
 	if err != nil {
 		return nil, err
 	}
@@ -216,7 +219,7 @@ func GetUsers(storeName, user string) ([]string, error) {
 }
 
 func GetUserTableInfos(storeName, user string) ([]*UserUsage, error) {
-	messages, err := GetMessages("admin", user, storeName)
+	messages, err := GetMessages("admin", "", user, storeName)
 	if err != nil {
 		return nil, err
 	}

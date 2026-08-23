@@ -370,13 +370,16 @@ func unavailable(provider string) error {
 // would file a real charge as a free refusal. ask.race keeps them out of the
 // attempts it returns and settles them through fan.bill instead — one ledger
 // path each, so neither rule can be applied to the other's case.
-func (c *ApiController) recordRefusals(model string, tried []attempt, user *iam.User, premium, stream bool, requestId string, start time.Time) {
+// recordRefusals logs every vendor that refused. Its caller runs inside a stream
+// writer, where the request context is already released, so it reads the
+// request's outliving parts from a snapshot.
+func recordRefusals(snap snapshot, model string, tried []attempt, user *iam.User, premium, stream bool, requestId string, start time.Time) {
 	if user == nil {
 		return
 	}
 	for _, a := range tried {
 		rec := &usageRecord{
-			Owner:     c.billingOrg(user),
+			Owner:     snap.org,
 			Model:     model,
 			Provider:  a.provider,
 			Origin:    a.origin,
@@ -384,10 +387,10 @@ func (c *ApiController) recordRefusals(model string, tried []attempt, user *iam.
 			Stream:    stream,
 			Status:    "failover",
 			ErrorMsg:  a.err.Error(),
-			ClientIP:  c.Fiber().IP(),
+			ClientIP:  snap.ip,
 			RequestID: requestId,
 		}
-		rec.bind(c.Context(), user)
-		recordTrace(c.Context(), rec, start)
+		rec.bind(snap.ctx, user)
+		recordTrace(snap.ctx, rec, start)
 	}
 }

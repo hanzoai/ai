@@ -1419,7 +1419,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		resp = nil
 		_ = c.SendStreamWriter(func(w *bufio.Writer) {
 			defer upstream.Close()
-			settle(c.relayZenStream(w, upstream, mk))
+			settle(relayZenStream(w, upstream, mk))
 		})
 		return done()
 	}
@@ -1448,7 +1448,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 // ours (a non-nil mark), stamps each event before it goes out. Every chunk of one
 // completion is stamped from the same mark, so the id a client correlates on holds
 // for the whole stream.
-func (c *ApiController) relayZenStream(w *bufio.Writer, body io.Reader, mk *mark) (prompt, completion int, served, respID string) {
+func relayZenStream(w *bufio.Writer, body io.Reader, mk *mark) (prompt, completion int, served, respID string) {
 	sc := bufio.NewScanner(body)
 	sc.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
 	for sc.Scan() {

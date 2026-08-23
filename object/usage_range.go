@@ -23,6 +23,9 @@ import (
 )
 
 func GetRangeUsages(rangeType string, count int, user string, storeName string, lang string) ([]*Usage, error) {
+	if count < 1 {
+		return nil, fmt.Errorf("count must be at least 1, got %d", count)
+	}
 	messages, err := GetGlobalMessagesByStoreName(storeName)
 	if err != nil {
 		return nil, err

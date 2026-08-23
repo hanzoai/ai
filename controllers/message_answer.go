@@ -17,6 +17,7 @@ package controllers
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -221,9 +222,17 @@ func (c *ApiController) GetMessageAnswer() {
 		embeddingResult = &embedding.EmbeddingResult{}
 	}
 
-	// The answer is streamed: zip holds the connection open and hands the
-	// writer in, so each event reaches the client as it is produced. Every
-	// return below ends the stream exactly where it used to end the reply.
+	// The answer is streamed: zip holds the connection open and hands the writer
+	// in, so each event reaches the client as it is produced. Every return below
+	// ends the stream exactly where it used to end the reply.
+	//
+	// fasthttp drains that writer from ITS OWN goroutine once the handler has
+	// returned and fiber has released the request context, so nothing inside may
+	// reach through c — a header read there is a nil dereference, and a panic in
+	// that goroutine is not the router's to recover. Everything the stream needs is
+	// taken here, while the request is still ours, and answers travel out through w.
+	snap := c.takeSnapshot(nil)
+
 	_ = c.SendStreamWriter(func(w *bufio.Writer) {
 		writer := &RefinedWriter{w, *NewCleaner(6), []byte{}, []byte{}, []byte{}, []byte{}, []byte{}}
 
@@ -234,14 +243,14 @@ func (c *ApiController) GetMessageAnswer() {
 
 			_, err = object.UpdateMessage(questionMessage.GetId(), questionMessage, false)
 			if err != nil {
-				c.ResponseErrorStream(message, err.Error())
+				streamError(w, message, err.Error(), snap.lang)
 				return
 			}
 		}
 
 		history, err := object.GetRecentRawMessages(chat.Name, message.CreatedTime, store.MemoryLimit)
 		if err != nil {
-			c.ResponseErrorStream(message, err.Error())
+			streamError(w, message, err.Error(), snap.lang)
 			return
 		}
 
@@ -262,7 +271,7 @@ func (c *ApiController) GetMessageAnswer() {
 				question, err = getQuestionWithCarriers(question, store.SuggestionCount, chat.NeedTitle)
 			}
 			if err != nil {
-				c.ResponseErrorStream(message, err.Error())
+				streamError(w, message, err.Error(), snap.lang)
 				return
 			}
 		}
@@ -277,20 +286,20 @@ func (c *ApiController) GetMessageAnswer() {
 				AgentClients:  agentClients,
 				AgentMessages: messages,
 			}
-			modelResult, err = model.QueryTextWithTools(modelProviderObj, question, writer, history, prompt, knowledge, agentInfo, c.GetAcceptLanguage())
+			modelResult, err = model.QueryTextWithTools(modelProviderObj, question, writer, history, prompt, knowledge, agentInfo, snap.lang)
 		} else {
 			if isReasonModel(modelProvider.SubType) {
-				modelResult, err = QueryCarrierText(question, writer, history, prompt, knowledge, modelProviderObj, chat.NeedTitle, store.SuggestionCount, c.GetAcceptLanguage())
+				modelResult, err = QueryCarrierText(question, writer, history, prompt, knowledge, modelProviderObj, chat.NeedTitle, store.SuggestionCount, snap.lang)
 			} else {
-				modelResult, err = modelProviderObj.QueryText(question, writer, history, prompt, knowledge, nil, c.GetAcceptLanguage())
+				modelResult, err = modelProviderObj.QueryText(question, writer, history, prompt, knowledge, nil, snap.lang)
 			}
 		}
 		if err != nil {
 			if strings.Contains(err.Error(), "write tcp") {
-				c.ResponseError(err.Error())
+				streamError(w, message, err.Error(), snap.lang)
 				return
 			}
-			c.ResponseErrorStream(message, err.Error())
+			streamError(w, message, err.Error(), snap.lang)
 			return
 		}
 
@@ -306,13 +315,13 @@ func (c *ApiController) GetMessageAnswer() {
 			writer.buf = append(writer.buf, []byte(cleanedData)...)
 			jsonData, err := ConvertMessageDataToJSON(cleanedData)
 			if err != nil {
-				c.ResponseErrorStream(message, err.Error())
+				streamError(w, message, err.Error(), snap.lang)
 				return
 			}
 
 			_, err = writer.Writer.Write([]byte(fmt.Sprintf("event: message\ndata: %s\n\n", jsonData)))
 			if err != nil {
-				c.ResponseErrorStream(message, err.Error())
+				streamError(w, message, err.Error(), snap.lang)
 				return
 			}
 
@@ -325,7 +334,7 @@ func (c *ApiController) GetMessageAnswer() {
 		event := fmt.Sprintf("event: end\ndata: %s\n\n", "end")
 		_, err = w.Write([]byte(event))
 		if err != nil {
-			c.ResponseErrorStream(message, err.Error())
+			streamError(w, message, err.Error(), snap.lang)
 			return
 		}
 
@@ -350,14 +359,14 @@ func (c *ApiController) GetMessageAnswer() {
 		// org (the store owner), not a bearer principal — this path is session/store-
 		// scoped. Trace only: this completion's ONE debit is AddTransactionForMessage
 		// below.
-		c.recordCasibaseChatUsage(chat, modelProvider, modelResult)
+		recordCasibaseChatUsage(snap.ctx, snap.ip, chat, modelProvider, modelResult)
 
 		textAnswer := answer
 		textSuggestions := []object.Suggestion{}
 		textTitle := ""
 		textAnswer, textSuggestions, textTitle, err = parseAnswerWithCarriers(answer, store.SuggestionCount, chat.NeedTitle)
 		if err != nil {
-			c.ResponseErrorStream(message, err.Error())
+			streamError(w, message, err.Error(), snap.lang)
 			return
 		}
 
@@ -380,20 +389,20 @@ func (c *ApiController) GetMessageAnswer() {
 		// condition every claim tests, and the claim itself lapses at the end of its lease.
 		// Settling first also covers a persist below that fails after the debit landed.
 		if err = object.SettleMessageAnswer(message); err != nil {
-			c.ResponseErrorStream(message, err.Error())
+			streamError(w, message, err.Error(), snap.lang)
 			return
 		}
 
 		// Add transaction for message with price
 		err = object.AddTransactionForMessage(message)
 		if err != nil {
-			c.ResponseErrorStream(message, err.Error())
+			streamError(w, message, err.Error(), snap.lang)
 			return
 		}
 
 		_, err = object.UpdateMessage(message.GetId(), message, false)
 		if err != nil {
-			c.ResponseErrorStream(message, err.Error())
+			streamError(w, message, err.Error(), snap.lang)
 			return
 		}
 
@@ -422,7 +431,7 @@ func (c *ApiController) GetMessageAnswer() {
 
 		_, err = object.UpdateChat(chat.GetId(), chat)
 		if err != nil {
-			c.ResponseErrorStream(message, err.Error())
+			streamError(w, message, err.Error(), snap.lang)
 			return
 		}
 	})
@@ -615,7 +624,12 @@ func (c *ApiController) GetAnswer() {
 // A non-USD legacy float (message.Currency can be CNY on some providers) is not a
 // dollar amount, so it is left to the recompute and flagged Unpriced until the
 // legacy-price rip folds currency.
-func (c *ApiController) recordCasibaseChatUsage(chat *object.Chat, provider *object.Provider, r *model.ModelResult) {
+// recordCasibaseChatUsage lands a chat turn in the usage warehouse. It takes the
+// client address and a context rather than reading them off a controller: it is
+// called from inside a stream writer, which fasthttp drains from its own
+// goroutine after the handler has returned and the request context has been
+// released, so anything reached through the controller there is already gone.
+func recordCasibaseChatUsage(ctx context.Context, clientIP string, chat *object.Chat, provider *object.Provider, r *model.ModelResult) {
 	if chat == nil || r == nil {
 		return
 	}
@@ -641,12 +655,12 @@ func (c *ApiController) recordCasibaseChatUsage(chat *object.Chat, provider *obj
 		Currency:         "USD",
 		Status:           "success",
 		Unpriced:         !usd,
-		ClientIP:         c.Fiber().IP(),
+		ClientIP:         clientIP,
 		RequestID:        uuid.NewString(),
 	}
 	if usd {
 		billed := usdToNano(r.TotalPrice)
 		rec.BilledNanoExact = &billed
 	}
-	recordTrace(c.Context(), rec, time.Now().UTC())
+	recordTrace(ctx, rec, time.Now().UTC())
 }

@@ -18,9 +18,9 @@ package controllers
 import (
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/hanzoai/ai/conf"
-	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/util"
 )
 
@@ -28,7 +28,28 @@ var (
 	cacheDir string
 	appDir   string
 	cacheMap = map[string]string{}
+
+	// cacheMap is reached from both doors — the HTTP handlers here and the ZAP
+	// twins — so concurrent callers are the ordinary case. A Go map wants a guard
+	// under those conditions, and cacheMu is it. Read through cachedPath and write
+	// through rememberPath; nothing else touches the map.
+	cacheMu sync.RWMutex
 )
+
+// cachedPath answers where a prefix's file was put, if it has been.
+func cachedPath(prefix string) (string, bool) {
+	cacheMu.RLock()
+	defer cacheMu.RUnlock()
+	v, ok := cacheMap[prefix]
+	return v, ok
+}
+
+// rememberPath records where a prefix's file was put.
+func rememberPath(prefix, path string) {
+	cacheMu.Lock()
+	defer cacheMu.Unlock()
+	cacheMap[prefix] = path
+}
 
 func init() {
 	cacheDir = conf.GetConfigString("cacheDir")
@@ -85,8 +106,7 @@ func (c *ApiController) ActivateFile() {
 	}
 
 	path := fmt.Sprintf("%s/%s", cacheDir, key)
-	cacheMap[prefix] = path
-	log.Info("%v", cacheMap)
+	rememberPath(prefix, path)
 
 	if !util.FileExist(getAppPath(filename)) {
 		util.CopyFile(getAppPath(filename), getAppPath(prefix))
@@ -106,7 +126,7 @@ func (c *ApiController) GetActiveFile() {
 	prefix := c.Input().Get("prefix")
 
 	res := ""
-	if v, ok := cacheMap[prefix]; ok {
+	if v, ok := cachedPath(prefix); ok {
 		res = v
 	}
 

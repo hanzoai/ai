@@ -304,7 +304,7 @@ func (c *ApiController) addInitialChat(organization string, userName string, sto
 }
 
 func (c *ApiController) addInitialChatAndMessage(user *iam.User) error {
-	chats, err := object.GetChats("admin", "", user.Name)
+	chats, err := object.GetChats("admin", user.Owner, "", user.Name)
 	if err != nil {
 		return err
 	}
