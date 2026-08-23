@@ -188,22 +188,7 @@ func (c *ApiController) UpdateTask() {
 // @Param body body object.Task true "The details of the task"
 // @Success 200 {object} controllers.Response The Response object
 // @router /add-task [post]
-func (c *ApiController) AddTask() {
-	var task object.Task
-	err := json.Unmarshal(c.Body(), &task)
-	if err != nil {
-		c.ResponseError(err.Error())
-		return
-	}
-
-	success, err := object.AddTask(&task)
-	if err != nil {
-		c.ResponseError(err.Error())
-		return
-	}
-
-	c.ResponseOk(success)
-}
+func (c *ApiController) AddTask() { stored(c, object.AddTask) }
 
 // DeleteTask
 // @Title DeleteTask

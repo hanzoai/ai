@@ -120,22 +120,7 @@ func (c *ApiController) UpdateTemplate() {
 // @Param body body object.Template true "The details of the template"
 // @Success 200 {object} controllers.Response The Response object
 // @router /add-template [post]
-func (c *ApiController) AddTemplate() {
-	var template object.Template
-	err := json.Unmarshal(c.Body(), &template)
-	if err != nil {
-		c.ResponseError(err.Error())
-		return
-	}
-
-	success, err := object.AddTemplate(&template)
-	if err != nil {
-		c.ResponseError(err.Error())
-		return
-	}
-
-	c.ResponseOk(success)
-}
+func (c *ApiController) AddTemplate() { stored(c, object.AddTemplate) }
 
 // DeleteTemplate
 // @Title DeleteTemplate
@@ -144,19 +129,4 @@ func (c *ApiController) AddTemplate() {
 // @Param body body object.Template true "The details of the template"
 // @Success 200 {object} controllers.Response The Response object
 // @router /delete-template [post]
-func (c *ApiController) DeleteTemplate() {
-	var template object.Template
-	err := json.Unmarshal(c.Body(), &template)
-	if err != nil {
-		c.ResponseError(err.Error())
-		return
-	}
-
-	success, err := object.DeleteTemplate(&template)
-	if err != nil {
-		c.ResponseError(err.Error())
-		return
-	}
-
-	c.ResponseOk(success)
-}
+func (c *ApiController) DeleteTemplate() { stored(c, object.DeleteTemplate) }

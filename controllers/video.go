@@ -171,22 +171,7 @@ func (c *ApiController) UpdateVideo() {
 // @Param body body object.Video true "The details of the video"
 // @Success 200 {object} controllers.Response The Response object
 // @router /add-video [post]
-func (c *ApiController) AddVideo() {
-	var video object.Video
-	err := json.Unmarshal(c.Body(), &video)
-	if err != nil {
-		c.ResponseError(err.Error())
-		return
-	}
-
-	success, err := object.AddVideo(&video)
-	if err != nil {
-		c.ResponseError(err.Error())
-		return
-	}
-
-	c.ResponseOk(success)
-}
+func (c *ApiController) AddVideo() { stored(c, object.AddVideo) }
 
 // DeleteVideo
 // @Title DeleteVideo
@@ -195,22 +180,7 @@ func (c *ApiController) AddVideo() {
 // @Param body body object.Video true "The details of the video"
 // @Success 200 {object} controllers.Response The Response object
 // @router /delete-video [post]
-func (c *ApiController) DeleteVideo() {
-	var video object.Video
-	err := json.Unmarshal(c.Body(), &video)
-	if err != nil {
-		c.ResponseError(err.Error())
-		return
-	}
-
-	success, err := object.DeleteVideo(&video)
-	if err != nil {
-		c.ResponseError(err.Error())
-		return
-	}
-
-	c.ResponseOk(success)
-}
+func (c *ApiController) DeleteVideo() { stored(c, object.DeleteVideo) }
 
 func updateVideoCoverUrl(id string, videoId string, lang string) error {
 	for i := 0; i < 30; i++ {
