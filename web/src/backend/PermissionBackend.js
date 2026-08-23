@@ -18,7 +18,7 @@ import * as Setting from "../Setting";
 // Permissions belong to the IAM service, so these go to /v1/iam/permissions —
 // its published surface, and the same place PermissionUtil sends the user to
 // review what it just created. ai used to re-serve them from its own address by
-// proxying every call to IAM; that door is gone, and there is only this one.
+// proxying every call to IAM; that address is gone, and there is only this one.
 
 export function getPermissions(owner) {
   return fetch(`${Setting.ServerUrl}/v1/iam/permissions?owner=${owner}`, {

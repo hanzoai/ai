@@ -67,10 +67,10 @@ import (
 
 const transcriptPath = "/v1/audio/transcript"
 
-// transcriptCeiling is the largest push this door forwards, matching the ceiling
+// transcriptCeiling is the largest push this endpoint forwards, matching the ceiling
 // speech itself enforces (transcript.CEILING = 2 s of pcm16). Checked here as
 // well because a body that is refused upstream still crossed the wire, and this
-// is the door that is reachable from outside the cluster.
+// is the endpoint that is reachable from outside the cluster.
 const transcriptCeiling = 64 * 1024
 
 // transcriptIdle is how long an untouched session is kept. speech collects its
@@ -114,7 +114,7 @@ type session struct {
 // process that did not open the session — there is nothing here another replica
 // could usefully read.
 //
-// `here` is what makes that legible instead of mysterious. Every id this door
+// `here` is what makes that legible instead of mysterious. Every id this endpoint
 // hands out names the process that minted it, so an id presented to a DIFFERENT
 // instance is answered "opened by another instance" rather than "no such
 // transcript" — the same 404 an expired session gets, which is exactly the
@@ -149,7 +149,7 @@ func zapTranscriptHandler(ctx context.Context, method, path, query, auth string,
 	return object.BuildCloudResponse(405, nil, "the transcript endpoint takes POST to open and push, DELETE to close")
 }
 
-// zapTranscriptCloudHandler is the native-cloud (MsgType 100) door onto the same
+// zapTranscriptCloudHandler is the native-cloud (MsgType 100) entry point onto the same
 // three calls. A method name is not a URL, so the call it means travels in the
 // body alongside its arguments.
 func zapTranscriptCloudHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
@@ -188,7 +188,7 @@ func transcriptOpen(ctx context.Context, auth string, body []byte) (*zap.Message
 	if err != nil {
 		return object.BuildCloudResponse(401, nil, err.Error())
 	}
-	// The SAME prepaid gate every other audio door takes. It runs at OPEN, so a
+	// The SAME prepaid gate every other audio endpoint takes. It runs at OPEN, so a
 	// caller with no balance is refused before a window exists to push into —
 	// the alternative is discovering it 250 ms at a time.
 	if gateErr := enforceBalanceGate(authUser, "", req.Model); gateErr != nil {
@@ -263,7 +263,7 @@ func transcriptOpen(ctx context.Context, auth string, body []byte) (*zap.Message
 // ONE function, because the ORDER is the property. An abandoned session holds its
 // slot until the sweep runs, and the sweep runs on open — so a sweep placed AFTER
 // admission can never run once the ceiling is full of abandoned sessions: every
-// open is refused before reaching it, and the door stays shut for good with
+// open is refused before reaching it, and the endpoint refuses for good with
 // nothing running and no way back but a restart. Written as two steps at the call
 // site, that ordering is a comment; written here, it is a function a test can
 // call.

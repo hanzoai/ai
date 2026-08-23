@@ -46,9 +46,9 @@ import (
 //
 // What would reopen this: a fine-tuning client that carries an IAM bearer instead
 // of a console session. The move then is RequirePrincipal on these handlers — one
-// identity answer for both doors — not a second registry entry. Until then the
-// fallback dispatches them through this router with every filter intact, which is
-// the right answer for a surface with one caller.
+// identity answer for both entry points — not a second registry entry. Until then
+// the fallback dispatches them through this router with every filter intact, which
+// is the right answer for a surface with one caller.
 //
 // controllers/zap_finetune_test.go holds both reasons as tests, so a conversion
 // attempt goes red before it goes to the wire.

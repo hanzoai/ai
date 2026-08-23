@@ -194,7 +194,7 @@ func registerAPI(app *zip.App) {
 
 	// Per-request reward signal for the enso training loop: clients POST an outcome
 	// keyed by the request_id they hold, scoped to their own org. /v1/ai/feedback is
-	// the signal-typed front door ({request_id, signal: up|down|regenerate|switch|…})
+	// the signal-typed entry point ({request_id, signal: up|down|regenerate|switch|…})
 	// onto the ONE reward join; the engine's online LinUCB observe is driven from here.
 	route(app, "/v1/ai/feedback", "POST:AddRoutingReward")
 
@@ -232,9 +232,9 @@ func registerAPI(app *zip.App) {
 	route(app, "/v1/search", "POST:SearchDocs")
 	route(app, "/v1/index", "POST:IndexDocs")
 	route(app, "/v1/search/stats", "GET:SearchDocsStats")
-	// NO /v1/crawl DOOR HERE. ai does not fetch the web itself — object.SetFetcher
-	// says so, and nothing in this module ever calls it — so this address was a door
-	// onto a capability only a host has. Standalone it could answer nothing; mounted,
+	// NO /v1/crawl ROUTE HERE. ai does not fetch the web itself — object.SetFetcher
+	// says so, and nothing in this module ever calls it — so this address reached a
+	// capability only a host has. Standalone it could answer nothing; mounted,
 	// the host serves the same address with its own typed op, and one address claimed
 	// by two apps is something a fleet cannot route. The crawl ai DOES offer is the
 	// one its host feeds, over ZAP (zap_rag-search-crawl.go).

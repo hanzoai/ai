@@ -68,7 +68,7 @@ import (
 // terms it can act on.
 //
 // WHOSE ceiling it is comes from the credential, and never from the wire. Every
-// door resolves identity first and keys the share on what that identity proves:
+// endpoint resolves identity first and keys the share on what that identity proves:
 // c.billingOrg(authUser) and authUser.Owner on the OpenAI-shaped routes — the
 // same expression each of those already bills, so the tenant that pays for a call
 // is the tenant whose share it spends — and c.GetOrg() / orgOf(who) on the legacy
@@ -252,7 +252,7 @@ func admitSpeech(org string) (release func(), refused error) {
 }
 
 // orgOf names the tenant in an "owner/name" identity — the shape zapResolveUser
-// answers with on the legacy doors, which verify a principal but hand back only
+// answers with on the legacy endpoints, which verify a principal but hand back only
 // its address. The org is the verified owner, so this reads an attested value
 // rather than deriving a new one.
 func orgOf(who string) string {

@@ -21,7 +21,7 @@ import (
 //
 // The cure was a panic in an init(), which traded that for an outage of everything
 // in the process whenever IAM blinked (twice in production — see auth_config.go).
-// Resolution is now lazy and retrying, and the door answers 503. What must NOT
+// Resolution is now lazy and retrying, and the edge answers 503. What must NOT
 // change, and is what this file holds, is that none of these bodies ever resolves.
 //
 // WHAT THESE FIXTURES ARE. Each is a way the application read fails against the
@@ -105,7 +105,7 @@ func TestResolveAuthConfigFailsClosed(t *testing.T) {
 }
 
 // AuthReady REPORTS the failure rather than ending the process, and keeps
-// reporting it — so the caller (the door, which answers 503) decides what an
+// reporting it — so the caller (the edge, which answers 503) decides what an
 // unreachable identity costs.
 //
 // This replaces a test that asserted a panic. The panic was the right answer to the

@@ -327,7 +327,7 @@ const unaddressed = "visitor:unaddressed"
 //     publishes. Two surfaces holding two keys fail independently, which is the whole
 //     reason for issuing two. Who PAYS is unchanged — the org still does. Who is
 //     THROTTLED is a different question, and this is the one place the two differ.
-//     Asking the door costs nothing new: the tenant resolver asks it about the same
+//     Asking IAM costs nothing new: the tenant resolver asks it about the same
 //     key on the same request, through the same memory.
 //
 //  3. The address the caller arrived from. Nobody picks their own peer and nobody

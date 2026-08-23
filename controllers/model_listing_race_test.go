@@ -24,7 +24,7 @@ import (
 	iam "github.com/hanzoai/ai/internal/iam"
 )
 
-// One build is shared by every door, so the readers are concurrent HTTP handlers
+// One build is shared by every endpoint, so the readers are concurrent HTTP handlers
 // and the writer is a config reload. This holds the memo to that: run it under
 // -race and neither the held slice nor the held body may be touched while another
 // caller is reading it.

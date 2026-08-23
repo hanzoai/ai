@@ -639,12 +639,12 @@ func calledAt(n ast.Node, name string) int {
 }
 
 // speechWork names the two calls that spend speech capacity: the provider
-// interfaces that transcribe and synthesize. Every door to the models — the
+// interfaces that transcribe and synthesize. Every endpoint onto the models — the
 // OpenAI-shaped pair, the legacy store-bound pair, and both of their ZAP twins —
 // ends in one of these, whatever else it does first.
 var speechWork = []string{"ProcessAudio", "QueryAudio"}
 
-// speechAdmission names the ways a door takes a bounded per-tenant share of that
+// speechAdmission names the ways an endpoint takes a bounded per-tenant share of that
 // capacity before spending it.
 //
 // There are two because the work has two shapes. A request holds a decode slot for
@@ -675,11 +675,11 @@ func admitsAt(n ast.Node) int {
 //
 // It finds every function that spends speech capacity and requires admission
 // before it. Nothing else can state this — a limit is invisible from inside the
-// handler that lacks it, and four doors to these models (the legacy store-bound
-// STT and TTS routes and their ZAP twins) were in exactly that position: bounded
-// siblings next to them, and no bound at all on themselves.
+// handler that lacks it, and four endpoints onto these models (the legacy
+// store-bound STT and TTS routes and their ZAP twins) were in exactly that
+// position: bounded siblings next to them, and no bound at all on themselves.
 //
-// Written as a discovery rather than a list, so a door added later is bound by
+// Written as a discovery rather than a list, so an endpoint added later is bound by
 // this the moment it calls a provider, not when someone remembers it exists.
 func TestSpeechWorkRunsUnderAdmission(t *testing.T) {
 	_, files := speechSource(t)
@@ -704,7 +704,7 @@ func TestSpeechWorkRunsUnderAdmission(t *testing.T) {
 			admit := admitsAt(fn)
 			if admit < 0 {
 				t.Errorf("%s.%s spends speech capacity and takes no admission — "+
-					"one tenant can have all of it through this door", name, fn.Name.Name)
+					"one tenant can have all of it through this endpoint", name, fn.Name.Name)
 				continue
 			}
 			if admit > work {
@@ -713,12 +713,12 @@ func TestSpeechWorkRunsUnderAdmission(t *testing.T) {
 			}
 		}
 	}
-	// Self-test the instrument against a known positive: four doors reach these
+	// Self-test the instrument against a known positive: four endpoints reach these
 	// models today — the OpenAI-shaped speech and transcribe handlers, over HTTP
 	// and over ZAP. A discovery that quietly finds nothing reads exactly like a
 	// rule that passed.
 	if doors < 4 {
-		t.Fatalf("found only %d speech doors; the walk is broken, not the code", doors)
+		t.Fatalf("found only %d speech endpoints; the walk is broken, not the code", doors)
 	}
 }
 
@@ -812,7 +812,7 @@ func TestAdmissionKeyComesFromTheCredential(t *testing.T) {
 	//                            returns, which it produces only from a validated
 	//                            API key or a signature-checked JWT.
 	//   org                    — the pass-through parameter of admitSession, which
-	//                            is the streaming door's entry point (it sweeps
+	//                            is the streaming endpoint's entry point (it sweeps
 	//                            abandoned sessions first, and that ORDER is why it
 	//                            exists). Its own call sites are walked below, so
 	//                            this weakens nothing: the value still has to be

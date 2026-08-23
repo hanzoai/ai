@@ -330,9 +330,9 @@ const toolStream = `data: {"id":"` + upstreamID + `","provider":"` + subProvider
 	`"function":{"name":"get_weather","arguments":"{\"city\":\"SF\"}"}}]}}]}`
 
 // The allowlist tests elsewhere in this file walk the OUTPUT and check each key
-// against the same set the door filtered by. That answers "did the door apply its
-// list", which it always did — it cannot answer "is the list right", because
-// narrowing the list narrows the output and the check with it.
+// against the same set the envelope filtered by. That answers "did the envelope
+// apply its list", which it always did — it cannot answer "is the list right",
+// because narrowing the list narrows the output and the check with it.
 //
 // Measured: delete "tool_calls" from messageFields and every one of those tests
 // stays green while function calling stops working for every relayed response.
@@ -400,7 +400,7 @@ func TestTheDoorKeepsWhatAClientActsOn(t *testing.T) {
 	})
 }
 
-// B1. The Anthropic dialect had no door at all — it was relayed verbatim, which
+// B1. The Anthropic dialect had no envelope at all — it was relayed verbatim, which
 // means every tell the chat path stopped publishing kept going out on the
 // endpoint agents actually use.
 func TestTheAnthropicDialectIsOurs(t *testing.T) {
@@ -478,7 +478,7 @@ func TestTheAnthropicDialectIsOurs(t *testing.T) {
 	})
 }
 
-// The door has to be REACHED, not just be correct. Both dialects were already
+// The envelope has to be REACHED, not just be correct. Both dialects were already
 // normalisable before this: what was missing was that pipeToFamily minted no mark
 // for either, so every assertion above would have gone on passing while the wire
 // carried the upstream whole. This drives the real relay for all three dialects.
@@ -532,7 +532,7 @@ func TestEveryRelayedDialectReachesTheDoor(t *testing.T) {
 	}
 }
 
-// B2. Embeddings had no door either, and its `model` was whatever the upstream
+// B2. Embeddings had no envelope either, and its `model` was whatever the upstream
 // called the model rather than the SKU the caller asked for.
 func TestTheEmbeddingsDialectIsOurs(t *testing.T) {
 	mk := &mark{model: "enso-embed", seller: "hanzo", speaks: listShape}
@@ -777,7 +777,7 @@ func TestToolStreamIsOurs(t *testing.T) {
 
 // TestProxyToolRequestIsOurs drives the second relay end to end — the path a tool
 // call or an image takes to an OpenAI-compatible upstream. Same wiring argument as
-// the family test: the door has to be reached, not just be correct.
+// the family test: the envelope has to be reached, not just be correct.
 func TestProxyToolRequestIsOurs(t *testing.T) {
 	for _, mode := range []struct {
 		name   string
@@ -887,7 +887,7 @@ func TestARelayedEmbeddingAnswersAsTheSku(t *testing.T) {
 	}
 }
 
-// The same relay on the native surface. Two doors, one rule — the twin is where a
+// The same relay on the native surface. Two surfaces, one rule — the twin is where a
 // fix to an HTTP path quietly stops being true.
 func TestAZapRelayedEmbeddingAnswersAsTheSku(t *testing.T) {
 	const upstreamID = "thenlper/gte-large"
@@ -920,8 +920,8 @@ func TestAZapRelayedEmbeddingAnswersAsTheSku(t *testing.T) {
 
 // The Anthropic tool proxy builds its own envelope rather than stamping a relayed
 // one, which is how it went on publishing the id we buy under after the chat path
-// stopped. It is handed the SKU separately, so every reader on our side of the
-// door — the envelope, the usage row, the price the hold settles at — reads that.
+// stopped. It is handed the SKU separately, so every reader on our side — the
+// envelope, the usage row, the price the hold settles at — reads that.
 func TestTheAnthropicToolProxyAnswersAsTheSku(t *testing.T) {
 	const upstreamID = "anthropic-claude-opus-4.5"
 	for _, mode := range []struct {
@@ -1139,9 +1139,9 @@ func TestOurIdJoinsTheLedger(t *testing.T) {
 	}
 }
 
-// TestStampLeavesWhatIsNotOursAlone: the door rewrites completion envelopes and
+// TestStampLeavesWhatIsNotOursAlone: the stamp rewrites completion envelopes and
 // nothing else. An SSE terminator, an Anthropic event, an unmarked relay — all pass
-// through as they arrived, because a door that rewrites what it does not understand
+// through as they arrived, because a stamp that rewrites what it does not understand
 // breaks more than it fixes.
 func TestStampLeavesWhatIsNotOursAlone(t *testing.T) {
 	var none *mark

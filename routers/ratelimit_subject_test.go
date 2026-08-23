@@ -140,9 +140,9 @@ func iamDoor(t *testing.T, users map[string]iam.User, orgs map[string]string) {
 // THE WIRE A KEY ARRIVES ON DOES NOT CHANGE WHO IS CALLING.
 //
 // /v1/messages is the Anthropic protocol and carries its sk- key on x-api-key. That
-// is a published door and the key behind it is an ordinary IAM key, so the ceilings
-// must count the call against the tenant that owns it — the same tenant, and the same
-// bucket, as if the very same key had come in on Authorization.
+// is a published endpoint and the key behind it is an ordinary IAM key, so the
+// ceilings must count the call against the tenant that owns it — the same tenant,
+// and the same bucket, as if the very same key had come in on Authorization.
 func TestAKeyNamesItsTenantOnEveryTransport(t *testing.T) {
 	const key = "sk-owned-by-acme"
 	iamDoor(t, map[string]iam.User{key: {Owner: "acme", Name: "alice"}}, nil)

@@ -64,7 +64,7 @@ func upper(s string) string {
 // A guest is stamped two ways and either alone is authoritative — a session copy
 // or a token claim may carry one without the other. A caller with no user at all
 // is a different state, and saying "anonymous" for it would let an unauthenticated
-// request through a door that admits guests.
+// request through a surface that admits guests.
 func TestRecognisingAGuest(t *testing.T) {
 	if IsAnonymousUser(nil) {
 		t.Error("no user at all was called a guest")

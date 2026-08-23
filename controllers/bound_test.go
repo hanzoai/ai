@@ -8,7 +8,7 @@ import (
 	iam "github.com/hanzoai/ai/internal/iam"
 )
 
-// A user bound to one store reads that store and no other. Both doors ask this,
+// A user bound to one store reads that store and no other. Both surfaces ask it,
 // and it was spelled three times before they did.
 func TestWhichStoreACallerMayRead(t *testing.T) {
 	bounded := &iam.User{Owner: "acme", Name: "alice", Homepage: "s1"}
