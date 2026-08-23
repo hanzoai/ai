@@ -119,13 +119,7 @@ func zapScopedOwner(user *iam.User, q url.Values) (string, bool, *zap.Message) {
 		m, _ := zapGwError(401, "auth:Please sign in first")
 		return "", false, m
 	}
-	if user.Owner == "admin" {
-		requested := strings.TrimSpace(q.Get("owner"))
-		if requested != "" {
-			return requested, true, nil
-		}
-	}
-	return user.Owner, true, nil
+	return util.ScopeOwner(user.Owner, q.Get("owner")), true, nil
 }
 
 // zapSessionUsername mirrors ApiController.GetSessionUsername: the bare user.Name
