@@ -16,10 +16,7 @@
 package controllers
 
 import (
-	"encoding/json"
-
 	"github.com/hanzoai/ai/object"
-	"github.com/hanzoai/ai/util"
 )
 
 // GetGlobalGraphs
@@ -46,41 +43,8 @@ func (c *ApiController) GetGlobalGraphs() {
 // @Success 200 {array} object.Graph The Response object
 // @router /get-graphs [get]
 func (c *ApiController) GetGraphs() {
-	owner, allowed := c.GetScopedOwner()
-	if !allowed {
-		return
-	}
-	limit := c.Input().Get("pageSize")
-	page := c.Input().Get("p")
-	field := c.Input().Get("field")
-	value := c.Input().Get("value")
-	sortField := c.Input().Get("sortField")
-	sortOrder := c.Input().Get("sortOrder")
-
-	if limit == "" || page == "" {
-		graphs, err := object.GetGraphs(owner)
-		if err != nil {
-			c.ResponseError(err.Error())
-			return
-		}
-
-		c.ResponseOk(object.GetMaskedGraphs(graphs, true))
-	} else {
-		limit := util.ParseInt(limit)
-		count, err := object.GetGraphCount(owner, field, value)
-		if err != nil {
-			c.ResponseError(err.Error())
-			return
-		}
-
-		paginator := util.NewPaginator(c.PageAsked(), limit, count)
-		graphs, err := object.GetPaginationGraphs(owner, paginator.Offset(), limit, field, value, sortField, sortOrder)
-		if err != nil {
-			c.ResponseError(err.Error())
-			return
-		}
-		c.ResponseOk(graphs, paginator.Nums())
-	}
+	listed(c, table[object.Graph]{all: object.GetGraphs, mask: object.GetMaskedGraphs,
+		count: object.GetGraphCount, page: object.GetPaginationGraphs})
 }
 
 // GetGraph
@@ -119,24 +83,7 @@ func (c *ApiController) GetGraph() {
 // @Param body body object.Graph true "The details of the Graph"
 // @Success 200 {object} controllers.Response The Response object
 // @router /update-Graph [post]
-func (c *ApiController) UpdateGraph() {
-	id := c.Input().Get("id")
-
-	var Graph object.Graph
-	err := json.Unmarshal(c.Body(), &Graph)
-	if err != nil {
-		c.ResponseError(err.Error())
-		return
-	}
-
-	success, err := object.UpdateGraph(id, &Graph)
-	if err != nil {
-		c.ResponseError(err.Error())
-		return
-	}
-
-	c.ResponseOk(success)
-}
+func (c *ApiController) UpdateGraph() { replaced(c, object.UpdateGraph) }
 
 // AddGraph
 // @Title AddGraph
