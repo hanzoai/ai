@@ -18,7 +18,6 @@ import (
 	"fmt"
 
 	"github.com/hanzoai/ai/util"
-	"github.com/hanzoai/dbx"
 )
 
 type Service struct {
@@ -85,12 +84,7 @@ func GetNodeCount(owner, field, value string) (int64, error) {
 }
 
 func GetNodes(owner string) ([]*Node, error) {
-	nodes := []*Node{}
-	err := findAll(adapter.db, "node", &nodes, dbx.HashExp{"owner": owner}, "created_time DESC")
-	if err != nil {
-		return nodes, err
-	}
-	return nodes, nil
+	return rowsOf[Node]("node", owner)
 }
 
 func GetPaginationNodes(owner string, offset, limit int, field, value, sortField, sortOrder string) ([]*Node, error) {
