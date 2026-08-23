@@ -139,15 +139,7 @@ func AddAsset(asset *Asset) (bool, error) {
 }
 
 func addAssets(assets []*Asset) (bool, error) {
-	err := insertRow(adapter.db, assets)
-	affected := int64(1)
-	if err != nil {
-		affected = 0
-	}
-	if err != nil {
-		return false, err
-	}
-	return affected != 0, nil
+	return addRow(assets)
 }
 
 func DeleteAsset(asset *Asset) (bool, error) {
