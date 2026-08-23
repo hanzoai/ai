@@ -131,7 +131,7 @@ func getValidAndNeedCommitRecords(records []*Record) ([]*Record, []int, []interf
 	var needCommitIdx []int
 	var data []interface{}
 	recordTime := util.GetCurrentTimeWithMilli()
-	for i, record := range records {
+	for _, record := range records {
 		ok, err := prepareRecord(record, providerFirst, providerSecond)
 		if err != nil {
 			return nil, nil, nil, err
@@ -144,7 +144,10 @@ func getValidAndNeedCommitRecords(records []*Record) ([]*Record, []int, []interf
 		validRecords = append(validRecords, record)
 		data = append(data, map[string]interface{}{"name": record.Name})
 		if record.NeedCommit {
-			needCommitIdx = append(needCommitIdx, i)
+			// validRecords and data are appended in lockstep, and the commit results
+			// come back one per VALID record — so this index addresses those, not the
+			// raw input slice a dropped record makes shorter.
+			needCommitIdx = append(needCommitIdx, len(validRecords)-1)
 		}
 	}
 	return validRecords, needCommitIdx, data, nil
@@ -378,7 +381,7 @@ func AddRecords(records []*Record, syncEnabled bool, lang string) (bool, interfa
 		if syncEnabled {
 			var needCommitRecords []*Record
 			for _, idx := range needCommitRecordsIdx {
-				needCommitRecords = append(needCommitRecords, records[idx])
+				needCommitRecords = append(needCommitRecords, validRecords[idx])
 			}
 			_, commitResults := CommitRecords(needCommitRecords, lang)
 			for i, idx := range needCommitRecordsIdx {
