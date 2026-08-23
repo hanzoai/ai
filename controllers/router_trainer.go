@@ -22,6 +22,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hanzoai/ai/util"
+
 	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/object"
 )
@@ -262,7 +264,7 @@ func runRouterTraining() error {
 	margin := envFloat("ROUTER_TRAIN_MARGIN", trainDefaultMargin)
 	since := ""
 	if w := envDuration("ROUTER_TRAIN_WINDOW", 0); w > 0 {
-		since = time.Now().UTC().Add(-w).Format(time.RFC3339)
+		since = util.GetTimeAgo(w)
 	}
 
 	// One read of the whole rewarded ledger, partitioned by owner.
@@ -319,7 +321,7 @@ func trainScope(scopeOwner string, events []*object.RoutingEvent, minEvents int,
 	meta := &object.RouterArtifactMeta{
 		Owner:       scopeOwner,
 		Version:     version,
-		TrainedTime: time.Now().UTC().Format(time.RFC3339),
+		TrainedTime: util.GetCurrentTime(),
 		Events:      res.Events,
 		GatePassed:  res.Passed,
 		GateKind:    "holdout",

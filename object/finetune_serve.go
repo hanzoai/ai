@@ -17,7 +17,8 @@ package object
 import (
 	"fmt"
 	"strings"
-	"time"
+
+	"github.com/hanzoai/ai/util"
 )
 
 // RegisterServedModel writes the Provider + ModelRoute that make a served fine-tune
@@ -34,7 +35,7 @@ func RegisterServedModel(job *FinetuneJob, serviceName, modelId, base string) er
 	provider := &Provider{
 		Owner:              job.Owner,
 		Name:               serviceName,
-		CreatedTime:        time.Now().Format(time.RFC3339),
+		CreatedTime:        util.GetCurrentTime(),
 		DisplayName:        firstNonEmpty(job.DisplayName, job.Name) + " (fine-tune)",
 		Category:           "Model",
 		Type:               "Local",
