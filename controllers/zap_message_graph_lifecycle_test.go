@@ -16,8 +16,9 @@ import (
 // claim is the same one: the row a write reports is the row a read returns.
 func TestAMessageLivesAndDiesThroughItsHandlers(t *testing.T) {
 	withStore(t)
+	iamd := withIAM(t)
 	seedDefaultStore(t)
-	auth := asUser(t, &iam.User{Owner: "acme", Name: "alice"})
+	auth := iamd.asUser(t, &iam.User{Owner: "acme", Name: "alice"})
 
 	// A message belongs to a chat, and the handler refuses one that is not there.
 	_, seed := call(t, "chats.add", auth, `{"name":"c1","user":"alice","store":"default"}`)
@@ -60,8 +61,9 @@ func TestAMessageLivesAndDiesThroughItsHandlers(t *testing.T) {
 // separately in the sweep.
 func TestAGraphLivesAndDiesForAnAdmin(t *testing.T) {
 	withStore(t)
+	iamd := withIAM(t)
 	seedDefaultStore(t)
-	admin := asUser(t, &iam.User{Owner: "acme", Name: "root", IsAdmin: true})
+	admin := iamd.asUser(t, &iam.User{Owner: "acme", Name: "root", IsAdmin: true})
 
 	_, env := call(t, "graphs.add", admin, `{"owner":"acme","name":"g1","displayName":"First graph","text":"{}"}`)
 	env.ok(t, "add")
