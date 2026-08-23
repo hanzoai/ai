@@ -170,15 +170,7 @@ func UpdateNode(id string, node *Node) (bool, error) {
 	}
 	node.Owner = owner
 	node.Name = name
-	err = adapter.db.Model(node).Update()
-	affected := int64(1)
-	if err != nil {
-		affected = 0
-	}
-	if err != nil {
-		return false, err
-	}
-	return affected != 0, nil
+	return updated(node)
 }
 
 func AddNode(node *Node) (bool, error) {
