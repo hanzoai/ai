@@ -34,10 +34,10 @@ import (
 // A request that arrives before the app is built is answered 503, not 500 and not a
 // silence.
 //
-// This is the ZAP transports' door — they take the HTTP surface as an http.Handler
-// — and it can be asked before ai.App has stored anything. The honest answer is that
-// the service cannot answer yet, which a caller can retry; the failure to avoid is a
-// nil dereference dressed as a 500.
+// This is the ZAP transports' entry point — they take the HTTP surface as an
+// http.Handler — and it can be asked before ai.App has stored anything. The honest
+// answer is that the service cannot answer yet, which a caller can retry; the failure
+// to avoid is a nil dereference dressed as a 500.
 func TestHandlerRefusesBeforeTheAppIsBuilt(t *testing.T) {
 	built.Store(nil)
 

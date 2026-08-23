@@ -23,9 +23,9 @@ package routers
 // reading the host's router alone published `/v1/{wildcard1}` and seven operations
 // for the whole model API — no generated SDK carried chat completions, no MCP tool
 // list carried one, and the CLI grew a `{wildcard1}` command because that is what
-// the document named. The host can ask what is behind its own door; what it needs
-// back is what every published operation owes a reader: the address, the verb, and
-// a sentence.
+// the document named. The host can ask what is behind its own entry point; what it
+// needs back is what every published operation owes a reader: the address, the verb,
+// and a sentence.
 //
 // [App.Patterns] answers the first two, from the live route table. This answers
 // the third for the hand-written half of the surface, and it answers it from the

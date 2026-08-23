@@ -28,7 +28,7 @@ import (
 // The ceiling exists to bound SPEND. Spend is incurred when a model is reached, so a
 // request that reaches none — an unresolvable route, a vendor that timed out, a pod
 // being rolled — must cost a caller nothing. It used to cost them a call: the count
-// was taken at the door, by the gate, before route selection had even run.
+// was taken on arrival, by the gate, before route selection had even run.
 //
 // The position is what makes that impossible rather than merely fixed. The count is a
 // FIELD on the usage event (object.UsageEvent.Allowance), recordUsage is its only

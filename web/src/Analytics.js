@@ -16,7 +16,7 @@ import React from "react";
 import {useLocation} from "react-router-dom";
 import {AnalyticsProvider, ErrorBoundary, usePageview} from "@hanzo/event/react";
 
-// The ONE Hanzo Cloud telemetry front door — POST api.hanzo.ai/v1/event. Cloud
+// The ONE Hanzo Cloud telemetry endpoint — POST api.hanzo.ai/v1/event. Cloud
 // fans the one batched stream out to the web (analytics), product (insights) and
 // error (sentry) lenses; the client never sends the org — Cloud resolves the
 // tenant server-side from the session or the publishable ingest key.

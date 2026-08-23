@@ -81,17 +81,17 @@ func TestNilUserIsUnattributable(t *testing.T) {
 // Measured on hanzo/guest, the anonymous chat free tier: /v1/audio/speech and
 // /v1/audio/transcriptions both answered 402 insufficient_balance against a pool
 // holding ~$149k, because the gate read hanzo/guest and the money was in hanzo.
-// IT IS FIXED BY THE CLAIM, NOT BY THE TYPE. IAM's key door answers with the
+// IT IS FIXED BY THE CLAIM, NOT BY THE TYPE. IAM's key endpoint answers with the
 // keyUser projection (compat.resolveUserByAccessKey), and that projection carries
 // billing_account and NOT type — the row's class never crosses the wire. So the
 // payer is what IAM computed and signed, and the shape rule is never reached.
 //
-// Two fixes landed for this one defect: the key door learned to STATE the payer,
+// Two fixes landed for this one defect: the key endpoint learned to STATE the payer,
 // and account.Payer learned to INFER one from User.Type. The second is the
 // forgeable one and is gone; this pins that the first is what actually carries a
 // first-party service key to its org pool.
 func TestServiceAccountKeySpendsThePool(t *testing.T) {
-	// Exactly what the key door returns for hanzo/guest: no type, a signed ledger.
+	// Exactly what the key endpoint returns for hanzo/guest: no type, a signed ledger.
 	guest := &User{Owner: "hanzo", Name: "guest", BillingAccount: "org:hanzo"}
 	if got := guest.PayerSubject(""); got != "hanzo" {
 		t.Fatalf("service-account key pays %q, want the org pool %q", got, "hanzo")
@@ -110,7 +110,7 @@ func TestServiceAccountKeySpendsThePool(t *testing.T) {
 	}
 	// THE NEGATIVE that matters: a row that merely CLAIMS to be a machine, with
 	// nothing signed, does not reach the platform's balance. This is the shape a
-	// planted or re-classed row would have, and no door produces it.
+	// planted or re-classed row would have, and no endpoint produces it.
 	claimsToBeAMachine := &User{Owner: "hanzo", Name: "planted", Type: "service-account"}
 	if got := claimsToBeAMachine.PayerSubject(""); got == "hanzo" {
 		t.Fatal("an asserted class reached the platform pool")

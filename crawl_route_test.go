@@ -26,9 +26,9 @@ import (
 // They used to ask by sending a request and reading the status — 404 meant absent,
 // an auth refusal meant present. That stopped distinguishing anything the day the
 // filter chain closed by default: an unnamed /v1 address is refused BEFORE the
-// router gets to look for it, so a registered door and an absent one now answer the
-// same 401. Absence became untestable that way and presence became free, which is
-// the worse half — the search assertion below would have passed with the route
+// router gets to look for it, so a registered endpoint and an absent one now answer
+// the same 401. Absence became untestable that way and presence became free, which
+// is the worse half — the search assertion below would have passed with the route
 // deleted.
 //
 // The table is the thing both were reaching for anyway, and it says which it is.
@@ -49,16 +49,17 @@ func serves(t *testing.T, pattern string) bool {
 // THIS SERVICE SERVES NO /v1/crawl, and that is the assertion.
 //
 // ai does not fetch the web: object.SetFetcher takes the crawl from whoever mounted
-// it, and nothing in this module ever calls it. A door here could therefore answer
-// nothing on its own — and where a host IS present, that host serves the same address
-// with its own typed operation, so registering it made one address the property of
-// two apps, which a fleet cannot route and a document must not pick a winner for.
+// it, and nothing in this module ever calls it. An endpoint here could therefore
+// answer nothing on its own — and where a host IS present, that host serves the same
+// address with its own typed operation, so registering it made one address the
+// property of two apps, which a fleet cannot route and a document must not pick a
+// winner for.
 //
 // The crawl ai does offer is the one its host feeds, over ZAP
-// (controllers/zap_rag-search-crawl.go). That is a different door and it stays.
+// (controllers/zap_rag-search-crawl.go). That is a different address and it stays.
 func TestNoCrawlDoorHere(t *testing.T) {
 	if serves(t, "/v1/crawl") {
-		t.Fatal("/v1/crawl is registered — this service put a door onto a crawl it does not have")
+		t.Fatal("/v1/crawl is registered — this service put an endpoint onto a crawl it does not have")
 	}
 }
 

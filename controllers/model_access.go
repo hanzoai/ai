@@ -89,7 +89,7 @@ func grantAllows(zm zenModel, ok bool, orgId string, authUser *iam.User) bool {
 
 // tierMessage is the refusal for a caller whose PLAN does not include the SKU.
 // It names the floor and the cure — upgrading — because the old shared message
-// sent every refused caller to the access waitlist, a door that cannot open for
+// sent every refused caller to the access waitlist, a remedy that cannot help
 // someone whose plan is the blocker.
 func tierMessage(model, need string) string {
 	if need == "" {
