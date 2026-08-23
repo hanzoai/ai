@@ -28,7 +28,7 @@ var scanJobCron *cron.Cron
 
 // InitScanJobProcessor initializes the scan job processor with a cron job
 func InitScanJobProcessor() {
-	scanJobCron = cron.New()
+	scanJobCron = newCron()
 	// Run every second
 	_, err := scanJobCron.AddFunc("@every 1s", processPendingScans)
 	if err != nil {

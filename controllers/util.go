@@ -27,6 +27,7 @@ import (
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/i18n"
 	iam "github.com/hanzoai/ai/internal/iam"
+	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
 	"github.com/zap-proto/zip"
@@ -385,8 +386,12 @@ func responseError(ctx *zip.Ctx, status int, error string, data ...interface{}) 
 		resp.Data = data[0]
 	}
 
+	// A refusal that cannot be written is not something a panic improves: the client
+	// either receives the bytes or the connection is already gone. This is also the
+	// function the router's recover reaches for when reporting a panic, so raising
+	// one here would answer a panic with a panic.
 	if err := ctx.JSON(status, resp); err != nil {
-		panic(err)
+		log.Error("responseError: %v", err)
 	}
 }
 
