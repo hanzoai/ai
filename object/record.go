@@ -241,15 +241,7 @@ func UpdateRecord(id string, record *Record, lang string) (bool, error) {
 		record.Transaction2 = ""
 	}
 	record.Id = int(p.Id)
-	err = adapter.db.Model(record).Update()
-	affected := int64(1)
-	if err != nil {
-		affected = 0
-	}
-	if err != nil {
-		return false, err
-	}
-	return affected != 0, nil
+	return updated(record)
 }
 
 func UpdateRecordInternal(id int, record Record) error {
@@ -344,10 +336,6 @@ func AddRecord(record *Record, lang string) (bool, interface{}, error) {
 		record.Count = 1
 	}
 	err = insertRow(adapter.db, record)
-	affected := int64(1)
-	if err != nil {
-		affected = 0
-	}
 	if err != nil {
 		return false, nil, err
 	}
@@ -360,7 +348,7 @@ func AddRecord(record *Record, lang string) (bool, interface{}, error) {
 			data = commitResult
 		}
 	}
-	return affected != 0, data, nil
+	return true, data, nil
 }
 
 func AddRecords(records []*Record, syncEnabled bool, lang string) (bool, interface{}, error) {

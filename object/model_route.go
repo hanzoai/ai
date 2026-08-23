@@ -97,16 +97,12 @@ func AddModelRoute(route *ModelRoute) (bool, error) {
 	route.CreatedTime = time.Now().Format(time.RFC3339)
 	route.UpdatedTime = route.CreatedTime
 	err := insertRow(adapter.db, route)
-	affected := int64(1)
-	if err != nil {
-		affected = 0
-	}
 	if err != nil {
 		return false, err
 	}
 	// Invalidate cache on write
 	invalidateModelRouteCache()
-	return affected != 0, nil
+	return true, nil
 }
 
 func UpdateModelRoute(owner string, modelName string, route *ModelRoute) (bool, error) {
