@@ -14,6 +14,20 @@ var httpxLike = scanner{
 	defaultArgs: "-u %s -json",
 	jsonFlags:   []string{"-json", "-jsonl"}, addJSON: "-json",
 	targetFlags: []string{"-u", "-target", "-l"}, addTarget: "-u",
+	offLimits: []string{"-config", "-rl-file"},
+}
+
+// The real four, so what this file asserts is what those tools are handed.
+var nmapLike = scanner{
+	name: "nmap", bin: "/usr/bin/nmap", defaultArgs: "-sn %s",
+	offLimits: []string{"-script", "-script-args-file", "-datadir", "-resume"},
+}
+
+var nucleiLike = scanner{
+	name: "nuclei", bin: "/usr/bin/nuclei", defaultArgs: "-u %s -jsonl",
+	jsonFlags: []string{"-jsonl", "-json"}, addJSON: "-jsonl",
+	targetFlags: []string{"-u", "-target", "-l"}, addTarget: "-u",
+	offLimits: []string{"-t", "-templates", "-w", "-workflows", "-tp", "-template-path", "-config"},
 }
 
 // A scan target reaches this from a request and is handed to a process, so what
@@ -105,5 +119,72 @@ func TestEveryScannerRefusesTheSameThings(t *testing.T) {
 				t.Errorf("argv = %v, want the target in it", args)
 			}
 		})
+	}
+}
+
+// A scan command reaches a security tool as its arguments, and those tools can
+// write files and run scripts. Whoever may file a scan is an org's own admin —
+// so without this, being an admin of your own organization is being able to write
+// a file and execute a script on the machine the scan runs on.
+func TestAScanCannotWriteAFileOrRunAScript(t *testing.T) {
+	// Writing to the disk is refused for every one of them: results are read from
+	// STDOUT, so a flag that sends output to a file breaks the feature it is in.
+	for _, s := range []scanner{httpxLike, nmapLike, nucleiLike} {
+		for _, command := range []string{
+			"-oN /tmp/x %s", "-oA /tmp/x %s", "-oX/tmp/x %s", "-oN=/tmp/x %s",
+			"--output /tmp/x %s", "-o /tmp/x %s", "-u %s -srd /tmp/out",
+			"-u %s --store-response-dir /tmp/out", "-u %s -or /tmp/x",
+			"--stylesheet /tmp/x %s",
+		} {
+			if _, err := s.argv("example.com", command); err == nil {
+				t.Errorf("%s allowed %q", s.name, command)
+			}
+		}
+	}
+
+	// Running something off the disk is refused per tool, because the flag that
+	// does it is the tool's own.
+	for _, c := range []struct {
+		s       scanner
+		command string
+	}{
+		{nmapLike, "--script /tmp/evil.nse %s"},
+		{nmapLike, "--script=http-vuln %s"},
+		{nmapLike, "-script /tmp/x %s"},
+		{nmapLike, "--datadir /tmp/x %s"},
+		{nmapLike, "--script-args-file /tmp/x %s"},
+		{nucleiLike, "-u %s -t /tmp/templates"},
+		{nucleiLike, "-u %s -w /tmp/wf.yaml"},
+		{nucleiLike, "-u %s --template-path /tmp/t"},
+		{httpxLike, "-u %s -config /tmp/c.yaml"},
+	} {
+		if _, err := c.s.argv("example.com", c.command); err == nil {
+			t.Errorf("%s allowed %q", c.s.name, c.command)
+		}
+	}
+
+	// The same short flag is not the same thing twice: -t names nuclei's
+	// templates, which execute, and httpx's thread count, which does not.
+	if _, err := httpxLike.argv("example.com", "-u %s -t 40"); err != nil {
+		t.Errorf("httpx was refused a thread count: %v", err)
+	}
+
+	// And what a scan is actually made of still goes through.
+	for _, c := range []struct {
+		s       scanner
+		command string
+	}{
+		{httpxLike, ""},
+		{httpxLike, "-u %s -json"},
+		{httpxLike, "-u %s -silent -status-code"},
+		{httpxLike, "-l hosts.txt -json"},
+		{nmapLike, "-sn %s"},
+		{nmapLike, "-sV -p 80,443 %s"},
+		{nmapLike, "-T4 --top-ports 100 %s"},
+		{nucleiLike, "-u %s -jsonl -severity high"},
+	} {
+		if _, err := c.s.argv("example.com", c.command); err != nil {
+			t.Errorf("%s refused %q: %v", c.s.name, c.command, err)
+		}
 	}
 }

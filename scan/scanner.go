@@ -26,6 +26,21 @@ type scanner struct {
 	addJSON     string   // appended when none of them was
 	targetFlags []string // any of these means the target is already named
 	addTarget   string   // used to name it when none of them was
+
+	// offLimits are this tool's flags that write to the disk or run something off
+	// it. Per tool, because the same short flag is not the same thing twice: -t is
+	// nuclei's templates and httpx's thread count. writesFiles is the part every
+	// tool shares.
+	offLimits []string
+}
+
+// writesFiles are the flags that send a tool's output to the disk. Every scanner
+// here is read from STDOUT, so one of these breaks the feature it is used in —
+// which is what makes refusing them safe rather than a judgement call.
+var writesFiles = []string{
+	"-oN", "-oX", "-oS", "-oG", "-oA", "-o", "-output",
+	"-sr", "-srd", "-store-response", "-store-response-dir",
+	"-or", "-ot", "-stylesheet",
 }
 
 // argv validates the target and the command, and renders what the scanner runs.
@@ -50,16 +65,21 @@ func (s scanner) argv(target, command string) ([]string, error) {
 	if strings.ContainsAny(command, ";&|`") {
 		return nil, fmt.Errorf("%s invalid characters in scan command", getHostnamePrefix())
 	}
-
-	asked := false
-	for _, f := range s.jsonFlags {
-		if strings.Contains(command, f) {
-			asked = true
-			break
-		}
+	if flag := s.reachesTheFilesystem(command); flag != "" {
+		return nil, fmt.Errorf("%s scan command may not use %s", getHostnamePrefix(), flag)
 	}
-	if !asked {
-		command = command + " " + s.addJSON
+
+	if s.addJSON != "" {
+		asked := false
+		for _, f := range s.jsonFlags {
+			if strings.Contains(command, f) {
+				asked = true
+				break
+			}
+		}
+		if !asked {
+			command = command + " " + s.addJSON
+		}
 	}
 
 	// The target goes where the command says, or after it when the command does
@@ -72,6 +92,9 @@ func (s scanner) argv(target, command string) ([]string, error) {
 		if contains(args, f) {
 			return args, nil
 		}
+	}
+	if s.addTarget == "" {
+		return append(args, target), nil
 	}
 	return append(args, s.addTarget, target), nil
 }
@@ -121,4 +144,31 @@ func binPath(given, bin string) (string, error) {
 		return "", fmt.Errorf("%s %s not found in system PATH, please specify the path to %s binary", getHostnamePrefix(), bin, bin)
 	}
 	return found, nil
+}
+
+// reachesTheFilesystem answers which of those a command uses, if any.
+//
+// Matched on the flag, before its value and before the target is substituted, so
+// "-oN", "-oN/tmp/x" and "-oN=/tmp/x" are one thing.
+func (s scanner) reachesTheFilesystem(command string) string {
+	denied := append(append([]string{}, writesFiles...), s.offLimits...)
+	for _, field := range strings.Fields(command) {
+		if !strings.HasPrefix(field, "-") {
+			continue
+		}
+		flag := field
+		if i := strings.IndexAny(flag, "=:"); i > 0 {
+			flag = flag[:i]
+		}
+		bare := strings.TrimLeft(flag, "-")
+		for _, d := range denied {
+			// A long flag is spelled with one dash or two, and a value may be
+			// attached with no space at all.
+			want := strings.TrimLeft(d, "-")
+			if bare == want || (len(want) > 1 && strings.HasPrefix(bare, want)) {
+				return d
+			}
+		}
+	}
+	return ""
 }
