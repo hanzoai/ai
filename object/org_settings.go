@@ -20,6 +20,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/hanzoai/ai/util"
+
 	"github.com/hanzoai/dbx"
 )
 
@@ -289,7 +291,7 @@ func GetOrgSettings(owner string) (*OrgSettings, error) {
 }
 
 func AddOrgSettings(s *OrgSettings) (bool, error) {
-	s.CreatedTime = time.Now().Format(time.RFC3339)
+	s.CreatedTime = util.GetCurrentTime()
 	s.UpdatedTime = s.CreatedTime
 	err := insertRow(adapter.db, s)
 	if err != nil {
@@ -300,7 +302,7 @@ func AddOrgSettings(s *OrgSettings) (bool, error) {
 }
 
 func UpdateOrgSettings(owner string, s *OrgSettings) (bool, error) {
-	s.UpdatedTime = time.Now().Format(time.RFC3339)
+	s.UpdatedTime = util.GetCurrentTime()
 	s.Owner = owner
 	err := adapter.db.Model(s).Update()
 	if err != nil {
