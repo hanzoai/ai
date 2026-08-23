@@ -125,11 +125,3 @@ func UpdateFinetuneJob(owner string, name string, job *FinetuneJob) (bool, error
 	}
 	return true, nil
 }
-
-func DeleteFinetuneJob(job *FinetuneJob) (bool, error) {
-	affected, err := deleteByPK(adapter.db, "finetune_job", pk2(job.Owner, job.Name))
-	if err != nil {
-		return false, err
-	}
-	return affected != 0, nil
-}

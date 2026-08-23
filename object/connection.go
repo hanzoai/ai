@@ -88,15 +88,6 @@ func GetPaginationConnections(owner, status string, offset, limit int, field, va
 	return connections, nil
 }
 
-func GetSessionsByStatus(statuses []string) ([]*Connection, error) {
-	connections := []*Connection{}
-	err := adapter.db.Select().From("connection").Where(dbx.In("status", toInterfaceSlice(statuses)...)).All(&connections)
-	if err != nil {
-		return connections, err
-	}
-	return connections, nil
-}
-
 func getConnection(owner string, name string) (*Connection, error) {
 	if owner == "" || name == "" {
 		return nil, nil
@@ -161,14 +152,6 @@ func DeleteConnection(connection *Connection) (bool, error) {
 		return false, err
 	}
 	return affected != 0, nil
-}
-
-func DeleteConnectionById(id string) (bool, error) {
-	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
-	if err != nil {
-		return false, err
-	}
-	return DeleteConnection(&Connection{Owner: owner, Name: name})
 }
 
 func AddConnection(connection *Connection) (bool, error) {

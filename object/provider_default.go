@@ -195,24 +195,6 @@ func GetDefaultEmbeddingProvider() (*Provider, error) {
 	return &provider, nil
 }
 
-func GetDefaultBlockchainProvider() (*Provider, error) {
-	provider := Provider{Owner: "admin", Category: "Blockchain", IsDefault: true}
-	existed, err := getOne(adapter.db, "provider", &provider, dbx.HashExp{"is_default": true, "category": provider.Category})
-	if err != nil {
-		return &provider, err
-	}
-	if providerAdapter != nil && !existed {
-		existed, err = getOne(providerAdapter.db, "provider", &provider, dbx.HashExp{"is_default": true, "category": provider.Category})
-		if err != nil {
-			return &provider, err
-		}
-	}
-	if !existed {
-		return nil, nil
-	}
-	return &provider, nil
-}
-
 func GetDefaultAgentProvider() (*Provider, error) {
 	provider := Provider{Owner: "admin", Category: "Agent", IsDefault: true}
 	existed, err := getOne(adapter.db, "provider", &provider, dbx.HashExp{"is_default": true, "category": provider.Category})

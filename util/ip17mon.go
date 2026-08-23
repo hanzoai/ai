@@ -39,15 +39,6 @@ func Init(dataFile string) (err error) {
 	return
 }
 
-// Init defaut locator with data
-func InitWithData(data []byte) {
-	if std != nil {
-		return
-	}
-	std = NewLocatorWithData(data)
-	return
-}
-
 // Find locationInfo by ip string
 // It will return err when ipstr is not a valid format
 func Find(ipstr string) (*LocationInfo, error) {

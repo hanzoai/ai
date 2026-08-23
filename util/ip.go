@@ -18,7 +18,6 @@ package util
 import (
 	"errors"
 	"fmt"
-	"net/http"
 	"os"
 	"strings"
 
@@ -113,21 +112,4 @@ func GetIPInfo(clientIP string) string {
 	}
 
 	return res
-}
-
-func GetIPFromRequest(req *http.Request) string {
-	clientIP := req.Header.Get("x-forwarded-for")
-	if clientIP == "" {
-		ipPort := strings.Split(req.RemoteAddr, ":")
-		if len(ipPort) >= 1 && len(ipPort) <= 2 {
-			clientIP = ipPort[0]
-		} else if len(ipPort) > 2 {
-			idx := strings.LastIndex(req.RemoteAddr, ":")
-			clientIP = req.RemoteAddr[0:idx]
-			clientIP = strings.TrimLeft(clientIP, "[")
-			clientIP = strings.TrimRight(clientIP, "]")
-		}
-	}
-
-	return GetIPInfo(clientIP)
 }
