@@ -186,7 +186,7 @@ func zapIsCurrentUser(user *iam.User, input string) *zap.Message {
 // bound to a store via Homepage is forced to that store for an unscoped/"All"
 // request and denied for a different one. Returns the enforced store name and nil,
 // or ("", denial).
-// zapEnforceStoreIsolation applies the same rule and refuses on the native door.
+// zapEnforceStoreIsolation applies the same rule and refuses on the ZAP surface.
 func zapEnforceStoreIsolation(user *iam.User, requested string) (string, *zap.Message) {
 	store, ok := bound(user, requested)
 	if !ok {
