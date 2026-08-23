@@ -256,7 +256,7 @@ const freeID = "free"
 
 // frontDoor reports that this id is a name this family publishes for the pool — its
 // own branded one, and, for the family that HOLDS the pool, the platform's unbranded
-// one. A front door is not a model any vendor has: it is a name for a choice.
+// one. Such an id is not a model any vendor has: it is a name for a choice.
 func (f *modelFamily) frontDoor(model string) bool {
 	m := strings.ToLower(strings.TrimSpace(model))
 	if f.freeName != "" && m == strings.ToLower(f.freeName) {
