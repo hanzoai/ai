@@ -30,6 +30,14 @@ import (
 // @Success 200 {array} object.Store The Response object
 // @router /get-global-stores [get]
 func (c *ApiController) GetGlobalStores() {
+	// Every tenant's store configuration in one answer is a platform read, so it
+	// asks for the platform predicate — the reserved org — rather than a tenant's
+	// own admin flag. Both branches ask; the listing is the same disclosure
+	// whether or not a page size came with it.
+	if !c.RequireSuperAdmin() {
+		return
+	}
+
 	name := c.Input().Get("name")
 	limit := c.Input().Get("pageSize")
 	page := c.Input().Get("p")
@@ -47,10 +55,6 @@ func (c *ApiController) GetGlobalStores() {
 
 		c.ResponseOk(stores)
 	} else {
-		if !c.RequireAdmin() {
-			return
-		}
-
 		limit := util.ParseInt(limit)
 		count, err := object.GetStoreCount(name, field, value)
 		if err != nil {

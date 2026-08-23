@@ -373,7 +373,7 @@ func zapAddInitialChat(organization string, userName string, storeName string) (
 }
 
 func zapAddInitialChatAndMessage(user *iam.User) error {
-	chats, err := object.GetChats("admin", "", user.Name)
+	chats, err := object.GetChats("admin", user.Owner, "", user.Name)
 	if err != nil {
 		return err
 	}

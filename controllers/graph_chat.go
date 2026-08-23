@@ -21,7 +21,7 @@ import (
 
 func (c *ApiController) generateChatGraphData(id string, graph *object.Graph) error {
 	// Get filtered chats
-	chats, err := object.GetChats("admin", graph.Store, "")
+	chats, err := object.GetChats("admin", "", graph.Store, "")
 	if err != nil {
 		return err
 	}
