@@ -119,23 +119,11 @@ func UpdateScan(id string, scan *Scan) (bool, error) {
 }
 
 func AddScan(scan *Scan) (bool, error) {
-	err := insertRow(adapter.db, scan)
-	affected := int64(1)
-	if err != nil {
-		affected = 0
-	}
-	if err != nil {
-		return false, err
-	}
-	return affected != 0, nil
+	return addRow(scan)
 }
 
 func DeleteScan(scan *Scan) (bool, error) {
-	affected, err := deleteByPK(adapter.db, "scan", pk2(scan.Owner, scan.Name))
-	if err != nil {
-		return false, err
-	}
-	return affected != 0, nil
+	return deleteRow("scan", scan.Owner, scan.Name)
 }
 
 func (scan *Scan) GetId() string {
