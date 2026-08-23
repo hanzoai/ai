@@ -108,21 +108,6 @@ func zapRPSOrg(user *iam.User) string {
 	return conf.GetConfigString("IAM_ORG")
 }
 
-// zapRPSRequireAdmin mirrors ApiController.RequireAdmin: preview mode passes; else
-// an ORG-level admin principal is required. Returns (user, nil) on pass, or
-// (nil, errResponse) on refusal (403 for a non-admin, matching ResponseForbidden).
-func zapRPSRequireAdmin(auth string) (*iam.User, *zap.Message) {
-	user := zapPrincipal(auth)
-	if conf.IsPreviewMode() {
-		return user, nil
-	}
-	if !util.IsAdmin(user) {
-		msg, _ := zapError(http.StatusForbidden, "auth:this operation requires admin privilege")
-		return nil, msg
-	}
-	return user, nil
-}
-
 // zapRPSRequireSuperAdmin mirrors ApiController.RequireSuperAdmin: no principal →
 // 401, authenticated non-super-admin → 403.
 func zapRPSRequireSuperAdmin(auth string) (*iam.User, *zap.Message) {
@@ -157,7 +142,7 @@ func zapRPSRouterAdminAuthorized(auth string) (*iam.User, *zap.Message) {
 // ── router policy ────────────────────────────────────────────────────────
 
 func zapGetRouterPolicyHandler(_ context.Context, auth string, _ []byte) (*zap.Message, error) {
-	user, deny := zapRPSRequireAdmin(auth)
+	user, deny := zapRequireAdmin(auth)
 	if deny != nil {
 		return deny, nil
 	}
@@ -169,7 +154,7 @@ func zapGetRouterPolicyHandler(_ context.Context, auth string, _ []byte) (*zap.M
 }
 
 func zapUpdateRouterPolicyHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	user, deny := zapRPSRequireAdmin(auth)
+	user, deny := zapRequireAdmin(auth)
 	if deny != nil {
 		return deny, nil
 	}
@@ -451,7 +436,7 @@ func zapGetTrafficGlobeHandler(_ context.Context, _ string, body []byte) (*zap.M
 // ── training contribution opt-in ─────────────────────────────────────────
 
 func zapGetTrainingContributionHandler(_ context.Context, auth string, _ []byte) (*zap.Message, error) {
-	user, deny := zapRPSRequireAdmin(auth)
+	user, deny := zapRequireAdmin(auth)
 	if deny != nil {
 		return deny, nil
 	}
@@ -462,7 +447,7 @@ func zapGetTrainingContributionHandler(_ context.Context, auth string, _ []byte)
 }
 
 func zapUpdateTrainingContributionHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	user, deny := zapRPSRequireAdmin(auth)
+	user, deny := zapRequireAdmin(auth)
 	if deny != nil {
 		return deny, nil
 	}
