@@ -122,15 +122,6 @@ func zapScopedOwner(user *iam.User, q url.Values) (string, bool, *zap.Message) {
 	return util.ScopeOwner(user.Owner, q.Get("owner")), true, nil
 }
 
-// zapSessionUsername mirrors ApiController.GetSessionUsername: the bare user.Name
-// (NOT owner/name) — the value the the router ownership checks compare against.
-func zapSessionUsername(user *iam.User) string {
-	if user == nil {
-		return ""
-	}
-	return user.Name
-}
-
 // ── Multipart / form decoding over the gateway body ────────────────────────────
 //
 // The gateway HTTP-over-ZAP projection hands the native handler the raw request
