@@ -18,7 +18,6 @@ import (
 	"fmt"
 
 	"github.com/hanzoai/ai/util"
-	"github.com/hanzoai/dbx"
 )
 
 type GraphNode struct {
@@ -74,12 +73,7 @@ func GetGlobalGraphs() ([]*Graph, error) {
 }
 
 func GetGraphs(owner string) ([]*Graph, error) {
-	graphs := []*Graph{}
-	err := findAll(adapter.db, "graph", &graphs, dbx.HashExp{"owner": owner}, "created_time DESC")
-	if err != nil {
-		return graphs, err
-	}
-	return graphs, nil
+	return rowsOf[Graph]("graph", owner)
 }
 
 func getGraph(owner, name string) (*Graph, error) {
@@ -87,11 +81,7 @@ func getGraph(owner, name string) (*Graph, error) {
 }
 
 func GetGraph(id string) (*Graph, error) {
-	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
-	if err != nil {
-		return nil, err
-	}
-	return getGraph(owner, name)
+	return rowAt[Graph]("graph", id)
 }
 
 func UpdateGraph(id string, graph *Graph) (bool, error) {

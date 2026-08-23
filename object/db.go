@@ -17,6 +17,7 @@ import (
 	"database/sql"
 	"fmt"
 
+	"github.com/hanzoai/ai/util"
 	"github.com/hanzoai/dbx"
 )
 
@@ -91,6 +92,28 @@ func deleteRow(table, owner, name string) (bool, error) {
 		return false, err
 	}
 	return affected != 0, nil
+}
+
+// rowsOf lists what a table holds for one owner, newest first.
+func rowsOf[T any](table, owner string) ([]*T, error) {
+	if adapter == nil || adapter.db == nil {
+		return nil, fmt.Errorf("%s store is not initialised", table)
+	}
+	rows := []*T{}
+	if err := findAll(adapter.db, table, &rows, dbx.HashExp{"owner": owner}, "created_time DESC"); err != nil {
+		return rows, err
+	}
+	return rows, nil
+}
+
+// rowAt reads the row an id names — the same read as getRow, reached by the
+// joined form the API speaks in rather than by the pair.
+func rowAt[T any](table, id string) (*T, error) {
+	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
+	if err != nil {
+		return nil, err
+	}
+	return getRow[T](table, owner, name)
 }
 
 // addRow inserts one row and says whether it landed.

@@ -56,12 +56,7 @@ func GetGlobalFiles() ([]*File, error) {
 }
 
 func GetFiles(owner string) ([]*File, error) {
-	files := []*File{}
-	err := findAll(adapter.db, "file", &files, dbx.HashExp{"owner": owner}, "created_time DESC")
-	if err != nil {
-		return files, err
-	}
-	return files, nil
+	return rowsOf[File]("file", owner)
 }
 
 func GetFilesByStore(owner string, store string) ([]*File, error) {
