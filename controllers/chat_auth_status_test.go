@@ -156,7 +156,7 @@ func TestChatCompletionsUnattributedNever500(t *testing.T) {
 		{"malformed-body-no-credential", "Bearer ", `{not json`, http.StatusUnauthorized},
 		{"malformed-body-valid-credential", "Bearer " + chatFundedKey, `{not json`, http.StatusBadRequest},
 		// hz_ was once a credential of its own. It is not one now, so it must read
-		// as what it is — an unknown token — and never as a door left ajar.
+		// as what it is — an unknown token — and never as a credential that still works.
 		{"retired-widget-key", "Bearer hz_chat_auth_probe", goodBody, http.StatusUnauthorized},
 	}
 

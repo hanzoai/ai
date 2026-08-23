@@ -147,7 +147,7 @@ func TestCeilingHoldsPerVisitor(t *testing.T) {
 }
 
 // A CALL THAT WAS NOT SERVED COSTS NOTHING. Reading the ceiling is what the lane does
-// at the door, and reading it can never raise it — so a visitor refused by a route
+// on arrival, and reading it can never raise it — so a visitor refused by a route
 // that would not resolve, a vendor that never answered, or a pod mid-roll keeps every
 // call they arrived with.
 func TestReadingTheCeilingNeverRaisesIt(t *testing.T) {
@@ -224,10 +224,10 @@ func TestVisitorMapIsBounded(t *testing.T) {
 // number a visitor is shown, and "51 of 50" is a lie about a limit that held.
 //
 // ADMISSION MAY OVERSHOOT, and that is the trade this lane makes deliberately. The
-// ceiling is read at the door and raised where the call was served, so calls in
+// ceiling is read on arrival and raised where the call was served, so calls in
 // flight for one visitor can all be admitted by the same last unit — a ceiling of
 // five occasionally serving six. Overshoot is generous and bounded by how many calls
-// one caller has open at once. The strict version — take at the door — charged a
+// one caller has open at once. The strict version — take on arrival — charged a
 // visitor for a route that never resolved and a vendor that never answered, which is
 // a defect the visitor feels and we never see.
 func TestTheCountNeverRunsPastTheCeiling(t *testing.T) {
@@ -395,7 +395,7 @@ func TestBearerOnThePublicLaneIsIgnored(t *testing.T) {
 
 // THE DEFECT THIS CLOSES. The lane shipped resolving its route with orgId=$public.
 // resolveModelRouteForOrg degrades a route whenever the org yields a subject — that is
-// the AUTO-ROUTER's preference gate — and the free pool's id is a FRONT DOOR rather
+// the AUTO-ROUTER's preference gate — and the free pool's id is an ALIAS rather
 // than a discovered SKU, so the funding gate's catalog lookup misses and refuses an
 // id it cannot describe. The route came back nil and the armed lane answered "the free
 // pool has no route on this deployment" for every visitor.
@@ -431,14 +431,14 @@ func TestRouteSelectionIsNotGivenAnOrg(t *testing.T) {
 
 // ---- nothing is charged for a call we cannot serve -------------------------
 
-// THE DEFECT THIS CLOSES. The lane took the visitor's call at the door, before it
+// THE DEFECT THIS CLOSES. The lane took the visitor's call on arrival, before it
 // knew anything could answer one. A misconfigured pool therefore refused every caller
 // AND spent their day on the way out — the ceiling emptied without a model ever being
 // reached, and the host's half of that count PERSISTS, so a pod restart does not
 // undo it.
 //
 // A day is spent on answers. Both ends of the lane are checked here: the pool with no
-// route, which is refused at the door, and the pool that HAS a route whose provider
+// route, which is refused on arrival, and the pool that HAS a route whose provider
 // then fails to stand up — the shape of every vendor outage. Neither costs a visitor
 // anything, because neither reaches the record of a served call, which is the only
 // thing that counts one.

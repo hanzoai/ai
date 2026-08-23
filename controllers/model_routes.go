@@ -518,7 +518,7 @@ type modelCatalog struct {
 	err    error
 }
 
-// listing is the held catalogue every door answers from.
+// listing is the held catalogue every endpoint answers from.
 var listing modelCatalog
 
 // get returns the held models, the public body, and the error from marshalling it.

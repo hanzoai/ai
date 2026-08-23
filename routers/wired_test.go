@@ -22,7 +22,7 @@ import (
 
 // EVERY PUBLISHED OPERATION SAYS SOMETHING ABOUT ITSELF.
 //
-// [Document] is what hanzoai/cloud relays through a single `/v1/*` door and
+// [Document] is what hanzoai/cloud relays through a single `/v1/*` entry point and
 // publishes as the fleet's contract, so an operation with no sentence there is one
 // no generated SDK, MCP tool or CLI command can describe, and nothing downstream
 // can supply it. The other half of the old bijection — prose about a route nobody

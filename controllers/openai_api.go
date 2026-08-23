@@ -408,7 +408,7 @@ const (
 	publishableCacheMax = 8192
 )
 
-// publishableAnswer is what the door said about one key, refusals included.
+// publishableAnswer is what the endpoint said about one key, refusals included.
 type publishableAnswer struct {
 	org      string
 	err      error
@@ -431,8 +431,8 @@ var (
 // would like to induce. Two things stop it: a shape check that costs nothing, and
 // a remembered "no" that costs a map read.
 //
-// It is also what makes the doors AGREE. A single request can ask for this org
-// more than once — the tenant resolver and the model resolver both do — and two
+// It is also what makes the two resolvers AGREE. A single request can ask for this
+// org more than once — the tenant resolver and the model resolver both do — and two
 // live round trips can answer differently when IAM is flaky, leaving one request
 // scoped to one org and billed to another. One answer per key, shared.
 func publishableOrg(accessKey string) (string, error) {
@@ -485,7 +485,7 @@ func publishableRemember(accessKey string, a publishableAnswer) {
 }
 
 // resolveOrgFromPublishableKey resolves a publishable pk- to the ORG that holds
-// it, via IAM's publishable door (/v1/iam/keys/org) — the exact dual of
+// it, via IAM's publishable endpoint (/v1/iam/keys/org) — the exact dual of
 // getUserByAccessKey, which answers only for secret keys and refuses a pk- as
 // key_wrong_door. Same confidential Basic transport, same envelope, same typed
 // refusals; the answer is an org and never a person.
@@ -547,12 +547,12 @@ func getUserByAccessKey(accessKey string) (*iam.User, error) {
 	// by the @hanzo/id SPA ingress and returns HTML, which broke API-key
 	// resolution once ("invalid character '<'").
 	//
-	// This is the SECRET-key door, and it is its own route rather than a CRUD
+	// This is the SECRET-key endpoint, and it is its own route rather than a CRUD
 	// read. Resolving a key used to ride on the user read as
 	// `get-user?accessKey=` — an authentication boundary reached through a verb
 	// whose target was a credential rather than the owner/name that read
 	// authorizes on. It resolves an sk- to the full principal; the publishable
-	// pk- has a separate door (resolveOrgFromPublishableKey) that yields an org
+	// pk- has a separate endpoint (resolveOrgFromPublishableKey) that yields an org
 	// and never a person, so the browser-safe disclosure and this one are never
 	// behind a single authorization decision.
 	//
@@ -934,7 +934,7 @@ func spent(res *model.ModelResult, name string, prompt int, partial string, err 
 	if completion == 0 && !ran(err) {
 		// Nothing came back and nobody ran it: the vendor reported no meter of its
 		// own, no text reached the caller, and the refusal is one that arrives at
-		// the door. The prompt was measured on the way out — routeForPrompt sizes
+		// the edge. The prompt was measured on the way out — routeForPrompt sizes
 		// the route with it — but measuring a prompt is not a vendor processing it,
 		// and there is no invoice behind this to pass on.
 		//
@@ -1351,7 +1351,7 @@ func recordTrace(ctx context.Context, record *usageRecord, startTime time.Time) 
 // validation (authResolveProvider).
 //
 // It is a strict SUBSET of authResolveProvider's branches, and the omissions are
-// the point: a pk- never reaches here (every generative door refuses it before
+// the point: a pk- never reaches here (every generative endpoint refuses it before
 // the body is read) and a run key authenticates only against the run table, so
 // neither is admitted by this check. A branch missing here can only REFUSE a
 // request the resolver would have taken — never admit one it would have refused —
@@ -1438,7 +1438,7 @@ func (c *ApiController) authResolveProvider(token, requestedModel, orgId string)
 	case isRunKey(token):
 		// Run key (hrun_...) — an autonomous run buying inference on the ledger of
 		// the org that started it. It resolves to a machine principal and to NO
-		// user, so it authenticates nobody and opens no other door; see run.go.
+		// user, so it authenticates nobody and opens no other surface; see run.go.
 		// The org rides the TOKEN, never orgId, so a run cannot be pointed at
 		// another tenant's balance by a header.
 		provider, authUser, upstreamModel, err = resolveProviderFromRunKey(token, requestedModel, lang)
@@ -1464,7 +1464,7 @@ func (c *ApiController) authResolveProvider(token, requestedModel, orgId string)
 		// Publishable key (pk-...) — the read-only credential class. It reaches
 		// only the surfaces that do not refuse it up front (embeddings; every
 		// generative handler rejects pk- before calling here). IAM's publishable
-		// door answers with the ORG that holds the key and never a person, so
+		// endpoint answers with the ORG that holds the key and never a person, so
 		// the call bills that org as a machine — the same shape as a provider
 		// key. This is the credential the cloud deployment documents for its
 		// embed client: least privilege for a read-only endpoint.
@@ -1596,11 +1596,11 @@ type sink struct {
 // @router /chat [post]
 func (c *ApiController) ChatCompletions() { c.chatCompletions(callerBearer, nil) }
 
-// caller says which door a completion arrived at, and therefore what is taken from
+// caller says which address a completion arrived at, and therefore what is taken from
 // the request and what is decided for it. It is an unexported type with no decoded
-// form, so no header, body or query can produce one: a request cannot elect its own
-// door. callerPublic is reachable only from ChatCompletionsPublic, after that lane's
-// ceiling has admitted the call.
+// form, so no header, body or query can produce one: the route decides it and the
+// request cannot. callerPublic is reachable only from ChatCompletionsPublic, after
+// that lane's ceiling has admitted the call.
 type caller int
 
 const (
@@ -1608,8 +1608,9 @@ const (
 	callerPublic               // no credential; the public lane decided everything
 )
 
-// chatCompletions is the one completion pipeline. Both doors run it; they differ only
-// in who the caller is, which is a value passed in rather than a fact re-derived here.
+// chatCompletions is the one completion pipeline. Both entry points run it; they
+// differ only in who the caller is, which is a value passed in rather than a fact
+// re-derived here.
 func (c *ApiController) chatCompletions(from caller, to *sink) {
 	var token string
 	if from == callerBearer {
@@ -2236,7 +2237,7 @@ func (c *ApiController) proxyToolRequest(
 	// so the two can never be given different arguments.
 	ledger := c.billingOrg(authUser)
 
-	// The answer leaves through our door (envelope.go): our id, the SKU the caller
+	// The answer is stamped on the way out (envelope.go): our id, the SKU the caller
 	// asked for, the seller. The SKU has to be read BEFORE the line below, which
 	// replaces it with the upstream's own name for the model — that name is what the
 	// upstream needs and what this path used to hand back to the caller.

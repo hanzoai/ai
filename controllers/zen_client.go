@@ -108,7 +108,7 @@ type modelFamily struct {
 	// caller can name, and the route a refusal from this family falls to. It is
 	// branded per family because that is where a caller looks for it, and it is
 	// served from the SAME pool for all of them, because a route that costs nothing
-	// is not made different by whose name is on the door.
+	// is not made different by whose name is on it.
 	freeName string
 
 	// terms states, in the family's own dialect, what the vendor may keep of an
@@ -1107,7 +1107,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	rawBody = withModel(rawBody, model)
 	reqID := uuid.NewString()
 	// The family relays whoever it bought the inference from, so the answer leaves
-	// through our door wearing our id, the SKU asked for, and the seller (see
+	// in our envelope wearing our id, the SKU asked for, and the seller (see
 	// envelope.go). The id is the one this call is already metered under, which is
 	// also what the reward join keys on, so the customer, the ledger and the routing
 	// event all name this completion the same way.

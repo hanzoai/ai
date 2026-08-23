@@ -181,7 +181,7 @@ func zapAudioSpeechHandler(ctx context.Context, auth string, body []byte) (*zap.
 
 // zapRecordAudioUsage mirrors ApiController.recordAudioUsage (STEP 6), quantity
 // and all: the ZAP transport meters the same units through the same cost
-// switches, so a call bills identically whichever door it arrived by. Errors
+// switches, so a call bills identically whichever address it arrived at. Errors
 // trace either way.
 func zapRecordAudioUsage(ctx context.Context, authUser *iam.User, provider *object.Provider, userModel string, isPremium bool, qty audioQuantity, status, errMsg string, startTime time.Time) {
 	if authUser == nil {
