@@ -204,6 +204,30 @@ func (c *ApiController) takeSnapshot(user *iam.User) snapshot {
 	}
 }
 
+// whose answers which person's rows a listing is for.
+//
+// The name arrives three ways — a user parameter, a selected user, and a
+// field/value pair naming "user" — so it is resolved here rather than per branch
+// and per door. An admin may name someone; anyone else gets their own rows
+// whichever way they asked, which is what the third way used to skip. reach()
+// then confines the answer to the caller's own tenant, so an admin naming a name
+// is an admin of THAT name's organization or of nobody.
+//
+// A door with no field/value pair passes both empty.
+func whose(caller *iam.User, user, selectedUser, field, value string) string {
+	who := user
+	if field == "user" {
+		who = value
+	}
+	if selectedUser != "" && selectedUser != "null" {
+		who = selectedUser
+	}
+	if !util.IsAdmin(caller) {
+		who = caller.Name
+	}
+	return who
+}
+
 // reaches reports whether a caller may act on a row owned by owner. It is reach()
 // asked about a single row rather than a whole listing: an empty reach covers
 // every tenant, any other reach covers only itself.
@@ -224,26 +248,36 @@ func (c *ApiController) GetScopedOwner() (string, bool) {
 	return util.ScopeOwner(user.Owner, c.Input().Get("owner")), true
 }
 
-// EnforceStoreIsolation enforces store isolation based on user's Homepage field.
-// Returns the enforced store name and true if isolation check passes, or empty string and false if access denied.
-func (c *ApiController) EnforceStoreIsolation(requestedStoreName string) (string, bool) {
-	user := c.GetSessionUser()
-	if user == nil || user.Homepage == "" {
-		// No user or no Homepage binding, no isolation
-		return requestedStoreName, true
-	}
+// notYourStore is what a caller bound to one store is told when they ask for
+// another. Both doors say it; only the shape of the saying differs.
+const notYourStore = "controllers:You can only access data from your assigned store"
 
-	// User is bound to a specific store via Homepage
-	if requestedStoreName == "" || requestedStoreName == "All" {
-		// Force the store to be their bound store
+// bound answers which store a caller may read, and whether they asked for one
+// they may not.
+//
+// A user bound to a store through Homepage reads that store and no other: asking
+// for none, or for "All", gives them theirs, and naming a different one is
+// refused. A user with no binding reads whatever they asked for.
+func bound(user *iam.User, requested string) (string, bool) {
+	if user == nil || user.Homepage == "" {
+		return requested, true
+	}
+	if requested == "" || requested == "All" {
 		return user.Homepage, true
-	} else if requestedStoreName != user.Homepage {
-		// User is trying to access a different store, deny access
-		c.ResponseError(c.T("controllers:You can only access data from your assigned store"))
+	}
+	if requested != user.Homepage {
 		return "", false
 	}
+	return requested, true
+}
 
-	return requestedStoreName, true
+// EnforceStoreIsolation applies that rule and refuses on the request.
+func (c *ApiController) EnforceStoreIsolation(requestedStoreName string) (string, bool) {
+	store, ok := bound(c.GetSessionUser(), requestedStoreName)
+	if !ok {
+		c.ResponseError(c.T(notYourStore))
+	}
+	return store, ok
 }
 
 // FilterStoresByHomepage filters stores based on user's Homepage field.
