@@ -107,15 +107,7 @@ func UpdateScan(id string, scan *Scan) (bool, error) {
 	}
 	scan.Owner = owner
 	scan.Name = name
-	err = adapter.db.Model(scan).Update()
-	affected := int64(1)
-	if err != nil {
-		affected = 0
-	}
-	if err != nil {
-		return false, err
-	}
-	return affected != 0, nil
+	return updated(scan)
 }
 
 func AddScan(scan *Scan) (bool, error) {
