@@ -176,7 +176,7 @@ func TestChatsWithoutAStoreAnswerAnErrorRatherThanCrash(t *testing.T) {
 	adapter = nil
 	t.Cleanup(func() { adapter = saved })
 
-	chats, err := GetChats("admin", "", "someone")
+	chats, err := GetChats("admin", "", "", "someone")
 	if err == nil {
 		t.Fatal("GetChats answered no error with no store behind it")
 	}
