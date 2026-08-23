@@ -47,6 +47,27 @@ type LocalModelProvider struct {
 	currency                     string
 }
 
+// answerVia asks a provider that speaks the OpenAI dialect and prices what came
+// back.
+//
+// Nine providers reach their upstream this way: build a local provider pointed at
+// the upstream's base URL, ask it, then price the answer against that provider's
+// own table. What differs between them is the URL, the key and the dialect; what
+// did not differ was this — ask, stop on a refusal, price, stop on a refusal —
+// written out nine times.
+func answerVia(local ModelProvider, price func(*ModelResult, string) error,
+	question string, writer io.Writer, history []*RawMessage, prompt string,
+	knowledgeMessages []*RawMessage, agentInfo *AgentInfo, lang string) (*ModelResult, error) {
+	result, err := local.QueryText(question, writer, history, prompt, knowledgeMessages, agentInfo, lang)
+	if err != nil {
+		return nil, err
+	}
+	if err := price(result, lang); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
 func NewLocalModelProvider(typ string, subType string, secretKey string, temperature float32, topP float32, frequencyPenalty float32, presencePenalty float32, providerUrl string, compatibleProvider string, inputPricePerThousandTokens float64, outputPricePerThousandTokens float64, Currency string) (*LocalModelProvider, error) {
 	p := &LocalModelProvider{
 		typ:                          typ,
