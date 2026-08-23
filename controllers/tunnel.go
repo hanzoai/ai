@@ -121,15 +121,34 @@ func (c *ApiController) GetNodeTunnel() {
 			return
 		}
 
+		// A ROW THAT IS NOT THERE IS NOT AN ERROR HERE, AND THAT IS THE WHOLE HAZARD.
+		//
+		// The store answers a missing row with (nil, nil) — its convention
+		// everywhere — so err is nil and the value is nil together. This runs
+		// inside the websocket upgrade callback, on a hijacked connection, in a
+		// goroutine of its own: the router's recover wrapped the handler that has
+		// already returned and cannot see a panic raised here. An unrecovered panic
+		// in a goroutine ends the PROCESS, so a dereference on this line is a
+		// request that stops the service for everybody.
+		//
+		// reason() is used rather than err.Error() for the same reason: on the
+		// not-found path there is no error to ask for a message.
+		reason := func(err error, absent string) string {
+			if err != nil {
+				return err.Error()
+			}
+			return absent
+		}
+
 		connection, err := object.GetConnection(connectionId)
-		if err != nil {
-			guacamole.Disconnect(ws, ConnectionNotFound, err.Error())
+		if err != nil || connection == nil {
+			guacamole.Disconnect(ws, ConnectionNotFound, reason(err, "connection not found"))
 			return
 		}
 
 		node, err := object.GetNode(connection.Node)
 		if err != nil || node == nil {
-			guacamole.Disconnect(ws, NodeNotFound, err.Error())
+			guacamole.Disconnect(ws, NodeNotFound, reason(err, "node not found"))
 			return
 		}
 
@@ -228,9 +247,18 @@ func (c *ApiController) TunnelMonitor() {
 	if err := UpGrader.Upgrade(c.Fiber().RequestCtx(), func(ws *websocket.Conn) {
 		connectionId := c.Input().Get("connectionId")
 
+		// Same hazard as GetNodeTunnel above: a missing row is (nil, nil), and this
+		// callback runs on a hijacked connection where a panic ends the process
+		// rather than the request. The socket is already taken over by the upgrade,
+		// so the refusal goes down the tunnel; an HTTP response body has nowhere
+		// left to be written.
 		connection, err := object.GetConnection(connectionId)
-		if err != nil {
-			c.ResponseError(err.Error())
+		if err != nil || connection == nil {
+			reason := "connection not found"
+			if err != nil {
+				reason = err.Error()
+			}
+			guacamole.Disconnect(ws, ConnectionNotFound, reason)
 			return
 		}
 
