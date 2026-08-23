@@ -23,7 +23,7 @@ import (
 
 func dot(vec1, vec2 []float32) float32 {
 	if len(vec1) != len(vec2) {
-		panic("Vector lengths do not match")
+		return 0
 	}
 	dotProduct := float32(0.0)
 	for i := range vec1 {
@@ -40,7 +40,15 @@ func norm(vec []float32) float32 {
 	return float32(math.Sqrt(float64(normSquared)))
 }
 
+// cosineSimilarity measures two vectors of the SAME dimension. Vectors of
+// different dimensions are not far apart — they are in different spaces, having
+// been embedded by different models — so the answer is 0 and the odd one ranks
+// last. A store that has changed embedding model holds both, and a search across
+// it used to be a panic rather than a result.
 func cosineSimilarity(vec1, vec2 []float32, vec1Norm float32) float32 {
+	if len(vec1) != len(vec2) {
+		return 0.0
+	}
 	dotProduct := dot(vec1, vec2)
 	vec2Norm := norm(vec2)
 	if vec2Norm == 0 {
