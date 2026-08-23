@@ -133,32 +133,10 @@ func registerZapVerticalsAndMisc() {
 
 // ── Shared envelope + gates (parity with util.go + routers/authz_filter.go) ─────
 
-// zapMiscOk mirrors ApiController.ResponseOk: the {status:"ok",data,data2} envelope
-// with the SAME 0/1/2-arg semantics (data2 carries the pagination count).
-func zapMiscOk(data ...interface{}) (*zap.Message, error) {
-	resp := Response{Status: "ok"}
-	switch len(data) {
-	case 2:
-		resp.Data2 = data[1]
-		fallthrough
-	case 1:
-		resp.Data = data[0]
-	}
-	body, _ := json.Marshal(resp)
-	return object.BuildCloudResponse(200, body, "")
-}
-
 // zapMiscDeny builds the {status:"error"} envelope at an explicit HTTP status.
 func zapMiscDeny(status uint32, msg string) *zap.Message {
-	body, _ := json.Marshal(Response{Status: "error", Msg: msg})
-	m, _ := object.BuildCloudResponse(status, body, "")
+	m, _ := zapError(int(status), msg)
 	return m
-}
-
-// zapMiscError mirrors ApiController.ResponseError (business errors ride HTTP 200
-// with status:"error" in the body, like ServeJSON; auth denials pass 401/403).
-func zapMiscError(status uint32, msg string) (*zap.Message, error) {
-	return zapMiscDeny(status, msg), nil
 }
 
 // zapMiscSuperAdmin is the group's slice of routers/authz_filter.go
@@ -232,12 +210,7 @@ func zapMiscScopedOwner(user *iam.User, requestedOwner string) (string, *zap.Mes
 	if user == nil {
 		return "", zapMiscDeny(401, "Please sign in first")
 	}
-	if user.Owner == "admin" {
-		if r := strings.TrimSpace(requestedOwner); r != "" {
-			return r, nil
-		}
-	}
-	return user.Owner, nil
+	return util.ScopeOwner(user.Owner, requestedOwner), nil
 }
 
 // zapMiscListRequest carries the list/pagination + filter params the GET
@@ -275,9 +248,9 @@ func zapGetGlobalFormsHandler(_ context.Context, auth string, _ []byte) (*zap.Me
 	}
 	forms, err := object.GetGlobalForms()
 	if err != nil {
-		return zapMiscError(200, err.Error())
+		return zapError(int(200), err.Error())
 	}
-	return zapMiscOk(object.GetMaskedForms(forms, true))
+	return zapOk(object.GetMaskedForms(forms, true))
 }
 
 func zapGetFormsHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
@@ -297,21 +270,21 @@ func zapGetFormsHandler(_ context.Context, auth string, body []byte) (*zap.Messa
 	if req.PageSize == "" || req.Page == "" {
 		forms, err := object.GetForms(owner)
 		if err != nil {
-			return zapMiscError(200, err.Error())
+			return zapError(int(200), err.Error())
 		}
-		return zapMiscOk(object.GetMaskedForms(forms, true))
+		return zapOk(object.GetMaskedForms(forms, true))
 	}
 	limit := util.ParseInt(req.PageSize)
 	count, err := object.GetFormCount(owner, req.Field, req.Value)
 	if err != nil {
-		return zapMiscError(200, err.Error())
+		return zapError(int(200), err.Error())
 	}
 	offset := paginationOffset(util.ParseInt(req.Page), limit)
 	forms, err := object.GetPaginationForms(owner, offset, limit, req.Field, req.Value, req.SortField, req.SortOrder)
 	if err != nil {
-		return zapMiscError(200, err.Error())
+		return zapError(int(200), err.Error())
 	}
-	return zapMiscOk(forms, count)
+	return zapOk(forms, count)
 }
 
 func zapGetFormHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
@@ -324,9 +297,9 @@ func zapGetFormHandler(_ context.Context, auth string, body []byte) (*zap.Messag
 	}
 	form, err := object.GetForm(req.ID)
 	if err != nil {
-		return zapMiscError(200, err.Error())
+		return zapError(int(200), err.Error())
 	}
-	return zapMiscOk(object.GetMaskedForm(form, true))
+	return zapOk(object.GetMaskedForm(form, true))
 }
 
 func zapUpdateFormHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
@@ -335,14 +308,14 @@ func zapUpdateFormHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 	}
 	var form object.Form
 	if err := json.Unmarshal(body, &form); err != nil {
-		return zapMiscError(400, "invalid request: "+err.Error())
+		return zapError(int(400), "invalid request: "+err.Error())
 	}
 	id := util.GetId(form.Owner, form.Name)
 	success, err := object.UpdateForm(id, &form, "en")
 	if err != nil {
-		return zapMiscError(200, err.Error())
+		return zapError(int(200), err.Error())
 	}
-	return zapMiscOk(success)
+	return zapOk(success)
 }
 
 func zapAddFormHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
@@ -351,13 +324,13 @@ func zapAddFormHandler(_ context.Context, auth string, body []byte) (*zap.Messag
 	}
 	var form object.Form
 	if err := json.Unmarshal(body, &form); err != nil {
-		return zapMiscError(400, "invalid request: "+err.Error())
+		return zapError(int(400), "invalid request: "+err.Error())
 	}
 	success, err := object.AddForm(&form)
 	if err != nil {
-		return zapMiscError(200, err.Error())
+		return zapError(int(200), err.Error())
 	}
-	return zapMiscOk(success)
+	return zapOk(success)
 }
 
 func zapDeleteFormHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
@@ -366,13 +339,13 @@ func zapDeleteFormHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 	}
 	var form object.Form
 	if err := json.Unmarshal(body, &form); err != nil {
-		return zapMiscError(400, "invalid request: "+err.Error())
+		return zapError(int(400), "invalid request: "+err.Error())
 	}
 	success, err := object.DeleteForm(&form)
 	if err != nil {
-		return zapMiscError(200, err.Error())
+		return zapError(int(200), err.Error())
 	}
-	return zapMiscOk(success)
+	return zapOk(success)
 }
 
 // ── form_data.go parity (proxies to the blockchain provider, returns raw JSON) ──
@@ -393,39 +366,39 @@ func zapGetFormDataHandler(_ context.Context, auth string, body []byte) (*zap.Me
 
 	formObj, err := object.GetForm(util.GetId(owner, req.Form))
 	if err != nil {
-		return zapMiscError(200, err.Error())
+		return zapError(int(200), err.Error())
 	}
 	if formObj == nil {
-		return zapMiscError(200, fmt.Sprintf("The form: %s is not found", util.GetId(owner, req.Form)))
+		return zapError(int(200), fmt.Sprintf("The form: %s is not found", util.GetId(owner, req.Form)))
 	}
 
 	jsonData, err := json.Marshal(formObj)
 	if err != nil {
-		return zapMiscError(200, "Failed to serialize formObj: "+err.Error())
+		return zapError(int(200), "Failed to serialize formObj: "+err.Error())
 	}
 
 	blockchainProvider, err := object.GetActiveBlockchainProvider("admin")
 	if err != nil {
-		return zapMiscError(200, err.Error())
+		return zapError(int(200), err.Error())
 	}
 	if blockchainProvider == nil {
-		return zapMiscError(200, "The default blockchain provider is not found")
+		return zapError(int(200), "The default blockchain provider is not found")
 	}
 	chainserverUrl := blockchainProvider.ProviderUrl
 	if chainserverUrl == "" {
-		return zapMiscError(200, "The default blockchain providers' Provider URL cannot be empty. The default value is: 'http://localhost:13900'")
+		return zapError(int(200), "The default blockchain providers' Provider URL cannot be empty. The default value is: 'http://localhost:13900'")
 	}
 
 	url := fmt.Sprintf("%s/api/get-form-data?pageSize=%s&p=%s", chainserverUrl, req.PageSize, req.Page)
 	resp, err := http.Post(url, "application/json", bytes.NewReader(jsonData))
 	if err != nil {
-		return zapMiscError(200, "HTTP request failed: "+err.Error())
+		return zapError(int(200), "HTTP request failed: "+err.Error())
 	}
 	defer resp.Body.Close()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return zapMiscError(200, "Failed to read response body: "+err.Error())
+		return zapError(int(200), "Failed to read response body: "+err.Error())
 	}
 	// The chainserver already returns the {status,data,...} JSON the console expects;
 	// pass it through verbatim (the controller handler writes it to the body directly).
@@ -440,9 +413,9 @@ func zapGetGlobalArticlesHandler(_ context.Context, auth string, _ []byte) (*zap
 	}
 	articles, err := object.GetGlobalArticles()
 	if err != nil {
-		return zapMiscError(200, err.Error())
+		return zapError(int(200), err.Error())
 	}
-	return zapMiscOk(object.GetMaskedArticles(articles, true))
+	return zapOk(object.GetMaskedArticles(articles, true))
 }
 
 func zapGetArticlesHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
@@ -462,21 +435,21 @@ func zapGetArticlesHandler(_ context.Context, auth string, body []byte) (*zap.Me
 	if req.PageSize == "" || req.Page == "" {
 		articles, err := object.GetArticles(owner)
 		if err != nil {
-			return zapMiscError(200, err.Error())
+			return zapError(int(200), err.Error())
 		}
-		return zapMiscOk(object.GetMaskedArticles(articles, true))
+		return zapOk(object.GetMaskedArticles(articles, true))
 	}
 	limit := util.ParseInt(req.PageSize)
 	count, err := object.GetArticleCount(owner, req.Field, req.Value)
 	if err != nil {
-		return zapMiscError(200, err.Error())
+		return zapError(int(200), err.Error())
 	}
 	offset := paginationOffset(util.ParseInt(req.Page), limit)
 	articles, err := object.GetPaginationArticles(owner, offset, limit, req.Field, req.Value, req.SortField, req.SortOrder)
 	if err != nil {
-		return zapMiscError(200, err.Error())
+		return zapError(int(200), err.Error())
 	}
-	return zapMiscOk(articles, count)
+	return zapOk(articles, count)
 }
 
 func zapGetArticleHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
@@ -489,9 +462,9 @@ func zapGetArticleHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 	}
 	article, err := object.GetArticle(req.ID)
 	if err != nil {
-		return zapMiscError(200, err.Error())
+		return zapError(int(200), err.Error())
 	}
-	return zapMiscOk(object.GetMaskedArticle(article, true))
+	return zapOk(object.GetMaskedArticle(article, true))
 }
 
 func zapUpdateArticleHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
@@ -500,14 +473,14 @@ func zapUpdateArticleHandler(_ context.Context, auth string, body []byte) (*zap.
 	}
 	var article object.Article
 	if err := json.Unmarshal(body, &article); err != nil {
-		return zapMiscError(400, "invalid request: "+err.Error())
+		return zapError(int(400), "invalid request: "+err.Error())
 	}
 	id := util.GetId(article.Owner, article.Name)
 	success, err := object.UpdateArticle(id, &article)
 	if err != nil {
-		return zapMiscError(200, err.Error())
+		return zapError(int(200), err.Error())
 	}
-	return zapMiscOk(success)
+	return zapOk(success)
 }
 
 func zapAddArticleHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
@@ -516,13 +489,13 @@ func zapAddArticleHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 	}
 	var article object.Article
 	if err := json.Unmarshal(body, &article); err != nil {
-		return zapMiscError(400, "invalid request: "+err.Error())
+		return zapError(int(400), "invalid request: "+err.Error())
 	}
 	success, err := object.AddArticle(&article)
 	if err != nil {
-		return zapMiscError(200, err.Error())
+		return zapError(int(200), err.Error())
 	}
-	return zapMiscOk(success)
+	return zapOk(success)
 }
 
 func zapDeleteArticleHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
@@ -531,13 +504,13 @@ func zapDeleteArticleHandler(_ context.Context, auth string, body []byte) (*zap.
 	}
 	var article object.Article
 	if err := json.Unmarshal(body, &article); err != nil {
-		return zapMiscError(400, "invalid request: "+err.Error())
+		return zapError(int(400), "invalid request: "+err.Error())
 	}
 	success, err := object.DeleteArticle(&article)
 	if err != nil {
-		return zapMiscError(200, err.Error())
+		return zapError(int(200), err.Error())
 	}
-	return zapMiscOk(success)
+	return zapOk(success)
 }
 
 // ── scale.go parity (its own admin/preview/username ownership logic) ────────────
@@ -548,9 +521,9 @@ func zapGetGlobalScalesHandler(_ context.Context, auth string, _ []byte) (*zap.M
 	}
 	scales, err := object.GetGlobalScales()
 	if err != nil {
-		return zapMiscError(200, err.Error())
+		return zapError(int(200), err.Error())
 	}
-	return zapMiscOk(object.GetMaskedScales(scales, true))
+	return zapOk(object.GetMaskedScales(scales, true))
 }
 
 func zapGetScalesHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
@@ -580,21 +553,21 @@ func zapGetScalesHandler(_ context.Context, auth string, body []byte) (*zap.Mess
 	if req.PageSize == "" || req.Page == "" {
 		scales, err := object.GetScales(owner)
 		if err != nil {
-			return zapMiscError(200, err.Error())
+			return zapError(int(200), err.Error())
 		}
-		return zapMiscOk(object.GetMaskedScales(scales, true))
+		return zapOk(object.GetMaskedScales(scales, true))
 	}
 	limit := util.ParseInt(req.PageSize)
 	count, err := object.GetScaleCount(owner, req.Field, req.Value)
 	if err != nil {
-		return zapMiscError(200, err.Error())
+		return zapError(int(200), err.Error())
 	}
 	offset := paginationOffset(util.ParseInt(req.Page), limit)
 	scales, err := object.GetPaginationScales(owner, offset, limit, req.Field, req.Value, req.SortField, req.SortOrder)
 	if err != nil {
-		return zapMiscError(200, err.Error())
+		return zapError(int(200), err.Error())
 	}
-	return zapMiscOk(scales, count)
+	return zapOk(scales, count)
 }
 
 func zapGetScaleHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
@@ -608,10 +581,10 @@ func zapGetScaleHandler(_ context.Context, auth string, body []byte) (*zap.Messa
 	}
 	s, err := object.GetScale(req.ID)
 	if err != nil {
-		return zapMiscError(200, err.Error())
+		return zapError(int(200), err.Error())
 	}
 	if s == nil {
-		return zapMiscOk(nil)
+		return zapOk(nil)
 	}
 	if !util.IsAdmin(user) && !conf.IsPreviewMode() {
 		username := ""
@@ -619,10 +592,10 @@ func zapGetScaleHandler(_ context.Context, auth string, body []byte) (*zap.Messa
 			username = user.Name
 		}
 		if s.Owner != username {
-			return zapMiscError(403, "Unauthorized operation")
+			return zapError(int(403), "Unauthorized operation")
 		}
 	}
-	return zapMiscOk(object.GetMaskedScale(s, true))
+	return zapOk(object.GetMaskedScale(s, true))
 }
 
 func zapGetPublicScalesHandler(_ context.Context, auth string, _ []byte) (*zap.Message, error) {
@@ -632,13 +605,13 @@ func zapGetPublicScalesHandler(_ context.Context, auth string, _ []byte) (*zap.M
 	}
 	// The controller requires a signed-in username (GetSessionUsername != "").
 	if user == nil || user.Name == "" {
-		return zapMiscError(401, "Please sign in first")
+		return zapError(int(401), "Please sign in first")
 	}
 	scales, err := object.GetPublicScales("admin")
 	if err != nil {
-		return zapMiscError(200, err.Error())
+		return zapError(int(200), err.Error())
 	}
-	return zapMiscOk(object.GetMaskedScales(scales, true))
+	return zapOk(object.GetMaskedScales(scales, true))
 }
 
 func zapUpdateScaleHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
@@ -648,15 +621,15 @@ func zapUpdateScaleHandler(_ context.Context, auth string, body []byte) (*zap.Me
 	}
 	var s object.Scale
 	if err := json.Unmarshal(body, &s); err != nil {
-		return zapMiscError(400, "invalid request: "+err.Error())
+		return zapError(int(400), "invalid request: "+err.Error())
 	}
 	id := util.GetId(s.Owner, s.Name)
 	existing, err := object.GetScale(id)
 	if err != nil {
-		return zapMiscError(200, err.Error())
+		return zapError(int(200), err.Error())
 	}
 	if existing == nil {
-		return zapMiscError(200, "The task does not exist")
+		return zapError(int(200), "The task does not exist")
 	}
 	isAdmin := util.IsAdmin(user)
 	if !isAdmin {
@@ -672,14 +645,14 @@ func zapUpdateScaleHandler(_ context.Context, auth string, body []byte) (*zap.Me
 			username = user.Name
 		}
 		if existing.Owner != username {
-			return zapMiscError(403, "Unauthorized operation")
+			return zapError(int(403), "Unauthorized operation")
 		}
 	}
 	success, err := object.UpdateScale(id, &s)
 	if err != nil {
-		return zapMiscError(200, err.Error())
+		return zapError(int(200), err.Error())
 	}
-	return zapMiscOk(success)
+	return zapOk(success)
 }
 
 func zapAddScaleHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
@@ -689,7 +662,7 @@ func zapAddScaleHandler(_ context.Context, auth string, body []byte) (*zap.Messa
 	}
 	var s object.Scale
 	if err := json.Unmarshal(body, &s); err != nil {
-		return zapMiscError(400, "invalid request: "+err.Error())
+		return zapError(int(400), "invalid request: "+err.Error())
 	}
 	if !util.IsAdmin(user) {
 		s.State = object.ScaleStatePublic
@@ -700,9 +673,9 @@ func zapAddScaleHandler(_ context.Context, auth string, body []byte) (*zap.Messa
 	}
 	success, err := object.AddScale(&s)
 	if err != nil {
-		return zapMiscError(200, err.Error())
+		return zapError(int(200), err.Error())
 	}
-	return zapMiscOk(success)
+	return zapOk(success)
 }
 
 func zapDeleteScaleHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
@@ -712,7 +685,7 @@ func zapDeleteScaleHandler(_ context.Context, auth string, body []byte) (*zap.Me
 	}
 	var s object.Scale
 	if err := json.Unmarshal(body, &s); err != nil {
-		return zapMiscError(400, "invalid request: "+err.Error())
+		return zapError(int(400), "invalid request: "+err.Error())
 	}
 	if !util.IsAdmin(user) {
 		username := ""
@@ -721,20 +694,20 @@ func zapDeleteScaleHandler(_ context.Context, auth string, body []byte) (*zap.Me
 		}
 		existing, err := object.GetScale(s.GetId())
 		if err != nil {
-			return zapMiscError(200, err.Error())
+			return zapError(int(200), err.Error())
 		}
 		if existing == nil {
-			return zapMiscError(200, "The task does not exist")
+			return zapError(int(200), "The task does not exist")
 		}
 		if existing.Owner != username {
-			return zapMiscError(403, "Unauthorized operation")
+			return zapError(int(403), "Unauthorized operation")
 		}
 	}
 	success, err := object.DeleteScale(&s)
 	if err != nil {
-		return zapMiscError(200, err.Error())
+		return zapError(int(200), err.Error())
 	}
-	return zapMiscOk(success)
+	return zapOk(success)
 }
 
 // ── system_info.go parity ──────────────────────────────────────────────────────
@@ -745,9 +718,9 @@ func zapGetSystemInfoHandler(_ context.Context, auth string, _ []byte) (*zap.Mes
 	}
 	systemInfo, err := util.GetSystemInfo()
 	if err != nil {
-		return zapMiscError(200, err.Error())
+		return zapError(int(200), err.Error())
 	}
-	return zapMiscOk(systemInfo)
+	return zapOk(systemInfo)
 }
 
 func zapGetVersionInfoHandler(_ context.Context, auth string, _ []byte) (*zap.Message, error) {
@@ -760,18 +733,18 @@ func zapGetVersionInfoHandler(_ context.Context, auth string, _ []byte) (*zap.Me
 		errInfo = "Git error: " + err.Error()
 	}
 	if versionInfo.Version != "" || versionInfo.CommitId != "" {
-		return zapMiscOk(versionInfo)
+		return zapOk(versionInfo)
 	}
 	versionInfo, err = util.GetVersionInfoFromFile()
 	if err != nil {
 		errInfo = errInfo + ", File error: " + err.Error()
-		return zapMiscError(200, errInfo)
+		return zapError(int(200), errInfo)
 	}
-	return zapMiscOk(versionInfo)
+	return zapOk(versionInfo)
 }
 
 func zapHealthHandler(_ context.Context, _ string, _ []byte) (*zap.Message, error) {
-	return zapMiscOk()
+	return zapOk()
 }
 
 // ── prometheus.go parity (self-guards with RequireAdmin) ────────────────────────
@@ -782,9 +755,9 @@ func zapGetPrometheusInfoHandler(_ context.Context, auth string, _ []byte) (*zap
 	}
 	prometheusInfo, err := object.GetPrometheusInfo()
 	if err != nil {
-		return zapMiscError(200, err.Error())
+		return zapError(int(200), err.Error())
 	}
-	return zapMiscOk(prometheusInfo)
+	return zapOk(prometheusInfo)
 }
 
 // zapGetMetricsHandler mirrors ApiController.GetMetrics: the Prometheus text
@@ -815,9 +788,9 @@ func zapGetActivitiesHandler(_ context.Context, auth string, body []byte) (*zap.
 	fields := strings.Split(req.Field, ",")
 	activities, err := object.GetActivities(days, req.SelectedUser, fields, "en")
 	if err != nil {
-		return zapMiscError(200, err.Error())
+		return zapError(int(200), err.Error())
 	}
-	return zapMiscOk(activities)
+	return zapOk(activities)
 }
 
 // ── org_settings.go parity (super-admin gated, PATCH-merge upsert) ──────────────
@@ -844,7 +817,7 @@ func zapOrgSettingsHandler(_ context.Context, method, path, query, auth string, 
 	// /v1/ai/org/settings/list — every row for an owner (default "admin").
 	if strings.HasPrefix(path, "/v1/ai/org/settings/list") {
 		if strings.ToUpper(method) != http.MethodGet {
-			return zapMiscError(http.StatusMethodNotAllowed, "method not allowed: "+method)
+			return zapError(int(http.StatusMethodNotAllowed), "method not allowed: "+method)
 		}
 		owner := zapOrgSettingsOwner(query, nil)
 		if owner == "" {
@@ -852,39 +825,39 @@ func zapOrgSettingsHandler(_ context.Context, method, path, query, auth string, 
 		}
 		settings, err := object.GetOrgSettingsList(owner)
 		if err != nil {
-			return zapMiscError(200, err.Error())
+			return zapError(int(200), err.Error())
 		}
-		return zapMiscOk(settings)
+		return zapOk(settings)
 	}
 
 	switch strings.ToUpper(method) {
 	case http.MethodGet:
 		owner := zapOrgSettingsOwner(query, nil)
 		if owner == "" {
-			return zapMiscError(200, "owner is required")
+			return zapError(int(200), "owner is required")
 		}
 		settings, err := object.GetOrgSettings(owner)
 		if err != nil {
-			return zapMiscError(200, err.Error())
+			return zapError(int(200), err.Error())
 		}
-		return zapMiscOk(settings)
+		return zapOk(settings)
 
 	case http.MethodPut:
 		owner := zapOrgSettingsOwner(query, body)
 		if owner == "" {
-			return zapMiscError(200, "owner is required")
+			return zapError(int(200), "owner is required")
 		}
 		// Upsert keys on owner only, so a never-configured org still takes effect.
 		existing, err := object.GetOrgSettings(owner)
 		if err != nil {
-			return zapMiscError(200, err.Error())
+			return zapError(int(200), err.Error())
 		}
 		target := existing
 		if target == nil {
 			target = &object.OrgSettings{Owner: owner}
 		}
 		if err := json.Unmarshal(body, target); err != nil { // PATCH-merge onto the row
-			return zapMiscError(400, "invalid request: "+err.Error())
+			return zapError(int(400), "invalid request: "+err.Error())
 		}
 		target.Owner = owner
 		var success bool
@@ -894,22 +867,22 @@ func zapOrgSettingsHandler(_ context.Context, method, path, query, auth string, 
 			success, err = object.UpdateOrgSettings(owner, target)
 		}
 		if err != nil {
-			return zapMiscError(200, err.Error())
+			return zapError(int(200), err.Error())
 		}
-		return zapMiscOk(success)
+		return zapOk(success)
 
 	case http.MethodDelete:
 		owner := zapOrgSettingsOwner(query, body)
 		if owner == "" {
-			return zapMiscError(200, "owner is required")
+			return zapError(int(200), "owner is required")
 		}
 		success, err := object.DeleteOrgSettings(&object.OrgSettings{Owner: owner})
 		if err != nil {
-			return zapMiscError(200, err.Error())
+			return zapError(int(200), err.Error())
 		}
-		return zapMiscOk(success)
+		return zapOk(success)
 	}
-	return zapMiscError(http.StatusMethodNotAllowed, "method not allowed: "+method)
+	return zapError(int(http.StatusMethodNotAllowed), "method not allowed: "+method)
 }
 
 // zapOrgSettingsOwner resolves the target org from the ?owner= query, falling back to
@@ -940,5 +913,5 @@ func zapGetAgentsDashboardUrlHandler(_ context.Context, auth string, _ []byte) (
 	if dashboardUrl == "" {
 		dashboardUrl = "http://localhost:8080/ui"
 	}
-	return zapMiscOk(dashboardUrl)
+	return zapOk(dashboardUrl)
 }

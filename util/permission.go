@@ -36,6 +36,29 @@ const (
 // provider config (upstream API keys) or cross-tenant data.
 const AdminOrg = "admin"
 
+// ScopeOwner answers WHICH ORG a request acts on: the one it asked for when the
+// caller is entitled to ask, and the caller's own otherwise.
+//
+// The entitlement is membership of the reserved org and nothing else, which is
+// the same predicate IsSuperAdmin reads — a tenant's own admin administers that
+// tenant and may not name another. An owner arriving on a request is therefore a
+// REQUEST rather than a fact, and this is where it stops being one.
+//
+// It takes the two values it needs and no more. How the caller was resolved,
+// where the requested owner arrived — a body, a query, a path — and what a
+// refusal should look like are each the caller's own business; five groups had
+// written this rule out five times to keep those differences local, and had
+// already drifted on whether the reserved org is spelled by its constant. One
+// rule, one place; the shapes around it stay where they are.
+func ScopeOwner(callerOrg, requested string) string {
+	if callerOrg == AdminOrg {
+		if r := strings.TrimSpace(requested); r != "" {
+			return r
+		}
+	}
+	return callerOrg
+}
+
 func IsAnonymousUserByUsername(username string) bool {
 	return strings.HasPrefix(username, "u-") && len(username) == 10
 }

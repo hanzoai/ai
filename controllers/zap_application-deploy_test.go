@@ -108,7 +108,7 @@ func TestZapApplicationDeployAuthRejection(t *testing.T) {
 func TestZapAppOkEnvelope(t *testing.T) {
 	apps := []*object.Application{{Owner: "admin", Name: "a"}, {Owner: "admin", Name: "b"}}
 
-	msg, err := zapAppOk(apps)
+	msg, err := zapOk(apps)
 	st, env := decodeCloudApp(t, msg, err)
 	if st != 200 || env.Status != "ok" {
 		t.Fatalf("single-arg: status=%d envelope=%q, want 200/ok", st, env.Status)
@@ -117,7 +117,7 @@ func TestZapAppOkEnvelope(t *testing.T) {
 		t.Errorf("single-arg: Data2 = %v, want nil", env.Data2)
 	}
 
-	msg, err = zapAppOk(apps, 7)
+	msg, err = zapOk(apps, 7)
 	st, env = decodeCloudApp(t, msg, err)
 	if st != 200 || env.Status != "ok" {
 		t.Fatalf("two-arg: status=%d envelope=%q, want 200/ok", st, env.Status)

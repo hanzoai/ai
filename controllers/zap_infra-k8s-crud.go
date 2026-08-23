@@ -137,18 +137,6 @@ func zapInfraSuperAdmin(auth string) (owner, name string, reject *zap.Message) {
 	return owner, name, nil
 }
 
-// zapInfraScopedOwner is the ZAP twin of ApiController.GetScopedOwner for the
-// super-admin case: the "admin" org may target a specific owner (the body's
-// "owner" field, the query-param twin); absent that, the caller's own org.
-func zapInfraScopedOwner(owner, requestedOwner string) string {
-	if owner == util.AdminOrg {
-		if r := strings.TrimSpace(requestedOwner); r != "" {
-			return r
-		}
-	}
-	return owner
-}
-
 // ── Request/response shapes (STEP 3 / STEP 7) ────────────────────────────────
 
 // infraListParams is the field set the HTTP list handlers read from the query
@@ -195,13 +183,6 @@ func (p infraListParams) paged() (offset, limit int, ok bool) {
 	return (page - 1) * limit, limit, true
 }
 
-// zapOk2 encodes the two-value Response{status:ok,data,data2} the HTTP list
-// handlers return via c.ResponseOk(data, count).
-func zapOk2(data, data2 interface{}) (*zap.Message, error) {
-	b, _ := json.Marshal(Response{Status: "ok", Data: data, Data2: data2})
-	return object.BuildCloudResponse(200, b, "")
-}
-
 // zapActionResponse encodes wrapActionResponse — the exact envelope node.go /
 // image.go return for add/update/delete (Affected / Unaffected / error).
 func zapActionResponse(affected bool, err error) (*zap.Message, error) {
@@ -213,7 +194,7 @@ func zapActionResponse(affected bool, err error) (*zap.Message, error) {
 // add/update/delete, which return c.ResponseOk(affected, err) verbatim (Data =
 // affected, Data2 = err) — preserved exactly, including that shape.
 func zapActionOk(affected bool, err error) (*zap.Message, error) {
-	return zapOk2(affected, err)
+	return zapOk(affected, err)
 }
 
 // ── Nodes ────────────────────────────────────────────────────────────────────
@@ -224,7 +205,7 @@ func zapGetNodesHandler(ctx context.Context, auth string, body []byte) (*zap.Mes
 		return reject, nil
 	}
 	p := decodeInfraListParams(body)
-	owner = zapInfraScopedOwner(owner, p.Owner)
+	owner = util.ScopeOwner(owner, p.Owner)
 
 	if offset, limit, ok := p.paged(); ok {
 		count, err := object.GetNodeCount(owner, p.Field, p.Value)
@@ -235,7 +216,7 @@ func zapGetNodesHandler(ctx context.Context, auth string, body []byte) (*zap.Mes
 		if err != nil {
 			return zapErr(500, err.Error())
 		}
-		return zapOk2(nodes, count)
+		return zapOk(nodes, count)
 	}
 	nodes, err := object.GetMaskedNodes(object.GetNodes(owner))
 	if err != nil {
