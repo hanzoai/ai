@@ -14,7 +14,7 @@
 package object
 
 import (
-	"time"
+	"github.com/hanzoai/ai/util"
 
 	"github.com/google/uuid"
 	"github.com/hanzoai/dbx"
@@ -57,7 +57,7 @@ func AppendRouterTrainingLog(row *RouterTrainingLog) error {
 		row.Id = uuid.NewString()
 	}
 	if row.LoggedTime == "" {
-		row.LoggedTime = time.Now().UTC().Format(time.RFC3339)
+		row.LoggedTime = util.GetCurrentTime()
 	}
 	return insertRow(adapter.db, row)
 }
