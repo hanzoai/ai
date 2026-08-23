@@ -145,14 +145,14 @@ func memoryLimitOr(raw, def int) int {
 func zapMemoryRememberHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
 	org, userID, err := zapMemoryIdentity(auth)
 	if err != nil {
-		return zapErr(statusOf(err), err.Error())
+		return zapError(statusOf(err), err.Error())
 	}
 	req, err := decodeMemoryRequest(body)
 	if err != nil {
-		return zapErr(400, err.Error())
+		return zapError(400, err.Error())
 	}
 	if strings.TrimSpace(req.Content) == "" {
-		return zapErr(400, "The memory content should not be empty")
+		return zapError(400, "The memory content should not be empty")
 	}
 
 	memory := &object.Memory{Content: req.Content, Kind: req.Kind, Metadata: req.Metadata}
@@ -161,10 +161,10 @@ func zapMemoryRememberHandler(ctx context.Context, auth string, body []byte) (*z
 
 	affected, err := object.AddMemory(memory)
 	if err != nil {
-		return zapErr(500, err.Error())
+		return zapError(500, err.Error())
 	}
 	if !affected {
-		return zapErr(500, "Failed to store the memory")
+		return zapError(500, "Failed to store the memory")
 	}
 	return zapOk(memory)
 }
@@ -172,15 +172,15 @@ func zapMemoryRememberHandler(ctx context.Context, auth string, body []byte) (*z
 func zapMemorySearchHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
 	org, userID, err := zapMemoryIdentity(auth)
 	if err != nil {
-		return zapErr(statusOf(err), err.Error())
+		return zapError(statusOf(err), err.Error())
 	}
 	p := decodeReadParams(body)
 	if p.Q == "" {
-		return zapErr(400, "The search query should not be empty")
+		return zapError(400, "The search query should not be empty")
 	}
 	results, err := object.SearchMemories(org, userID, p.Q, p.Kind, memoryLimitOr(p.Limit, 20), "en")
 	if err != nil {
-		return zapErr(500, err.Error())
+		return zapError(500, err.Error())
 	}
 	return zapOk(results)
 }
@@ -188,12 +188,12 @@ func zapMemorySearchHandler(ctx context.Context, auth string, body []byte) (*zap
 func zapMemoryListHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
 	org, userID, err := zapMemoryIdentity(auth)
 	if err != nil {
-		return zapErr(statusOf(err), err.Error())
+		return zapError(statusOf(err), err.Error())
 	}
 	p := decodeReadParams(body)
 	memories, err := object.RecallMemories(org, userID, p.Kind, memoryLimitOr(p.Limit, 100))
 	if err != nil {
-		return zapErr(500, err.Error())
+		return zapError(500, err.Error())
 	}
 	return zapOk(memories)
 }
@@ -201,20 +201,20 @@ func zapMemoryListHandler(ctx context.Context, auth string, body []byte) (*zap.M
 func zapMemoryRecallHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
 	org, userID, err := zapMemoryIdentity(auth)
 	if err != nil {
-		return zapErr(statusOf(err), err.Error())
+		return zapError(statusOf(err), err.Error())
 	}
 	p := decodeReadParams(body)
 	limit := memoryLimitOr(p.Limit, 20)
 	if p.Q != "" {
 		results, err := object.SearchMemories(org, userID, p.Q, p.Kind, limit, "en")
 		if err != nil {
-			return zapErr(500, err.Error())
+			return zapError(500, err.Error())
 		}
 		return zapOk(results)
 	}
 	memories, err := object.RecallMemories(org, userID, p.Kind, limit)
 	if err != nil {
-		return zapErr(500, err.Error())
+		return zapError(500, err.Error())
 	}
 	return zapOk(memories)
 }
@@ -222,12 +222,12 @@ func zapMemoryRecallHandler(ctx context.Context, auth string, body []byte) (*zap
 func zapMemoryFactsHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
 	org, userID, err := zapMemoryIdentity(auth)
 	if err != nil {
-		return zapErr(statusOf(err), err.Error())
+		return zapError(statusOf(err), err.Error())
 	}
 	p := decodeReadParams(body)
 	facts, err := object.GetFacts(org, userID, memoryLimitOr(p.Limit, 100))
 	if err != nil {
-		return zapErr(500, err.Error())
+		return zapError(500, err.Error())
 	}
 	return zapOk(facts)
 }
@@ -235,28 +235,28 @@ func zapMemoryFactsHandler(ctx context.Context, auth string, body []byte) (*zap.
 func zapMemoryUpdateHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
 	org, userID, err := zapMemoryIdentity(auth)
 	if err != nil {
-		return zapErr(statusOf(err), err.Error())
+		return zapError(statusOf(err), err.Error())
 	}
 	req, err := decodeMemoryRequest(body)
 	if err != nil {
-		return zapErr(400, err.Error())
+		return zapError(400, err.Error())
 	}
 	if req.target() == "" {
-		return zapErr(400, "The memory id should not be empty")
+		return zapError(400, "The memory id should not be empty")
 	}
 
 	existing, err := object.GetMemoryByIdScoped(org, userID, req.target())
 	if err != nil {
-		return zapErr(500, err.Error())
+		return zapError(500, err.Error())
 	}
 	if existing == nil {
-		return zapErr(404, "The memory was not found")
+		return zapError(404, "The memory was not found")
 	}
 
 	patch := &object.Memory{Content: req.Content, Kind: req.Kind, Metadata: req.Metadata}
 	affected, err := object.UpdateMemoryScoped(org, userID, existing.Name, patch, "en")
 	if err != nil {
-		return zapErr(500, err.Error())
+		return zapError(500, err.Error())
 	}
 	return zapOk(affected)
 }
@@ -264,27 +264,27 @@ func zapMemoryUpdateHandler(ctx context.Context, auth string, body []byte) (*zap
 func zapMemoryDeleteHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
 	org, userID, err := zapMemoryIdentity(auth)
 	if err != nil {
-		return zapErr(statusOf(err), err.Error())
+		return zapError(statusOf(err), err.Error())
 	}
 	req, err := decodeMemoryRequest(body)
 	if err != nil {
-		return zapErr(400, err.Error())
+		return zapError(400, err.Error())
 	}
 	if req.target() == "" {
-		return zapErr(400, "The memory id should not be empty")
+		return zapError(400, "The memory id should not be empty")
 	}
 
 	existing, err := object.GetMemoryByIdScoped(org, userID, req.target())
 	if err != nil {
-		return zapErr(500, err.Error())
+		return zapError(500, err.Error())
 	}
 	if existing == nil {
-		return zapErr(404, "The memory was not found")
+		return zapError(404, "The memory was not found")
 	}
 
 	affected, err := object.DeleteMemoryScoped(org, userID, existing.Name)
 	if err != nil {
-		return zapErr(500, err.Error())
+		return zapError(500, err.Error())
 	}
 	return zapOk(affected)
 }

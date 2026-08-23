@@ -210,17 +210,17 @@ func zapGetNodesHandler(ctx context.Context, auth string, body []byte) (*zap.Mes
 	if offset, limit, ok := p.paged(); ok {
 		count, err := object.GetNodeCount(owner, p.Field, p.Value)
 		if err != nil {
-			return zapErr(500, err.Error())
+			return zapError(500, err.Error())
 		}
 		nodes, err := object.GetMaskedNodes(object.GetPaginationNodes(owner, offset, limit, p.Field, p.Value, p.SortField, p.SortOrder))
 		if err != nil {
-			return zapErr(500, err.Error())
+			return zapError(500, err.Error())
 		}
 		return zapOk(nodes, count)
 	}
 	nodes, err := object.GetMaskedNodes(object.GetNodes(owner))
 	if err != nil {
-		return zapErr(500, err.Error())
+		return zapError(500, err.Error())
 	}
 	return zapOk(nodes)
 }
@@ -231,7 +231,7 @@ func zapGetNodeHandler(ctx context.Context, auth string, body []byte) (*zap.Mess
 	}
 	node, err := object.GetMaskedNode(object.GetNode(infraId(body)))
 	if err != nil {
-		return zapErr(500, err.Error())
+		return zapError(500, err.Error())
 	}
 	return zapOk(node)
 }
@@ -242,7 +242,7 @@ func zapAddNodeHandler(ctx context.Context, auth string, body []byte) (*zap.Mess
 	}
 	var node object.Node
 	if err := json.Unmarshal(body, &node); err != nil {
-		return zapErr(400, err.Error())
+		return zapError(400, err.Error())
 	}
 	return zapActionResponse(object.AddNode(&node))
 }
@@ -253,7 +253,7 @@ func zapUpdateNodeHandler(ctx context.Context, auth string, body []byte) (*zap.M
 	}
 	var node object.Node
 	if err := json.Unmarshal(body, &node); err != nil {
-		return zapErr(400, err.Error())
+		return zapError(400, err.Error())
 	}
 	return zapActionResponse(object.UpdateNode(infraId(body), &node))
 }
@@ -264,7 +264,7 @@ func zapDeleteNodeHandler(ctx context.Context, auth string, body []byte) (*zap.M
 	}
 	var node object.Node
 	if err := json.Unmarshal(body, &node); err != nil {
-		return zapErr(400, err.Error())
+		return zapError(400, err.Error())
 	}
 	return zapActionResponse(object.DeleteNode(&node))
 }
@@ -281,7 +281,7 @@ func zapDeleteNodeHandler(ctx context.Context, auth string, body []byte) (*zap.M
 func zapAddNodeTunnelHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
 	id, err := zapResolveUser(auth)
 	if err != nil {
-		return zapErr(401, err.Error())
+		return zapError(401, err.Error())
 	}
 	name := id
 	if i := strings.IndexByte(id, '/'); i >= 0 {
@@ -294,14 +294,14 @@ func zapAddNodeTunnelHandler(ctx context.Context, auth string, body []byte) (*za
 	}
 	if len(body) > 0 {
 		if err := json.Unmarshal(body, &req); err != nil {
-			return zapErr(400, err.Error())
+			return zapError(400, err.Error())
 		}
 	}
 
 	connection := &object.Connection{Creator: name}
 	connection, err = object.CreateConnection(connection, req.NodeId, req.Mode)
 	if err != nil {
-		return zapErr(500, err.Error())
+		return zapError(500, err.Error())
 	}
 	return zapOk(connection)
 }
@@ -314,7 +314,7 @@ func zapAddNodeTunnelHandler(ctx context.Context, auth string, body []byte) (*za
 // is otherwise identical to the HTTP path.
 func zapGetVmDashboardUrlHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
 	if _, err := zapResolveUser(auth); err != nil {
-		return zapErr(401, err.Error())
+		return zapError(401, err.Error())
 	}
 	dashboardUrl := os.Getenv("VM_DASHBOARD_URL")
 	if dashboardUrl == "" {

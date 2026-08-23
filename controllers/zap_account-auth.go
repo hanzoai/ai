@@ -92,11 +92,6 @@ func zapAccountOk(httpStatus uint32, data interface{}) (*zap.Message, error) {
 	return object.BuildCloudResponse(httpStatus, body, "")
 }
 
-func zapAccountErr(httpStatus uint32, msg string) (*zap.Message, error) {
-	body, _ := json.Marshal(Response{Status: "error", Msg: msg})
-	return object.BuildCloudResponse(httpStatus, body, msg)
-}
-
 // ── identity seam ───────────────────────────────────────────────────────────
 
 // zapAccountPrincipal resolves the request principal STRICTLY from the bearer
@@ -145,10 +140,10 @@ func zapSigninHandler(ctx context.Context, auth string, body []byte) (*zap.Messa
 		Host  string `json:"host"`
 	}
 	if err := json.Unmarshal(body, &req); err != nil {
-		return zapAccountErr(400, "invalid request: "+err.Error())
+		return zapError(int(400), "invalid request: "+err.Error())
 	}
 	if req.Code == "" {
-		return zapAccountErr(400, "code required")
+		return zapError(int(400), "code required")
 	}
 
 	host := req.Host
@@ -158,17 +153,17 @@ func zapSigninHandler(ctx context.Context, auth string, body []byte) (*zap.Messa
 	brand := resolveBrandIAM(host)
 	authClient, err := brandAuthClient(brand)
 	if err != nil {
-		return zapAccountErr(500, err.Error())
+		return zapError(int(500), err.Error())
 	}
 
 	token, err := authClient.GetOAuthToken(req.Code, req.State)
 	if err != nil {
-		return zapAccountErr(401, err.Error())
+		return zapError(int(401), err.Error())
 	}
 
 	claims, err := authClient.ParseJwtToken(token.AccessToken)
 	if err != nil {
-		return zapAccountErr(401, err.Error())
+		return zapError(int(401), err.Error())
 	}
 
 	// Same downgrade rule as the router path: a bare/loosely-typed principal that
@@ -180,7 +175,7 @@ func zapSigninHandler(ctx context.Context, auth string, body []byte) (*zap.Messa
 	}
 
 	if err := zapAddInitialChatAndMessage(&claims.User); err != nil {
-		return zapAccountErr(500, err.Error())
+		return zapError(int(500), err.Error())
 	}
 
 	claims.AccessToken = token.AccessToken
@@ -211,7 +206,7 @@ func zapSignoutHandler(ctx context.Context, auth string, body []byte) (*zap.Mess
 func zapGetAccountHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
 	user, err := zapAccountPrincipal(auth)
 	if err != nil {
-		return zapAccountErr(401, "Please sign in first")
+		return zapError(int(401), "Please sign in first")
 	}
 
 	// Fetch fresh user data from IAM for non-anonymous users, scoped to the
@@ -219,7 +214,7 @@ func zapGetAccountHandler(ctx context.Context, auth string, body []byte) (*zap.M
 	// nil refresh keeps the credential identity rather than erroring.
 	if !util.IsAnonymousUser(user) {
 		if fresh, ferr := refreshSessionUser(zapBrandHost, user); ferr != nil {
-			return zapAccountErr(500, ferr.Error())
+			return zapError(int(500), ferr.Error())
 		} else if fresh != nil {
 			user = fresh
 		}
@@ -261,27 +256,27 @@ func zapNeedsPasswordChange(user *iam.User) bool {
 func zapUpdatePreferencesHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
 	user, err := zapAccountPrincipal(auth)
 	if err != nil {
-		return zapAccountErr(401, "Please sign in first")
+		return zapError(int(401), "Please sign in first")
 	}
 	if util.IsAnonymousUser(user) {
-		return zapAccountErr(401, "auth:please sign in first")
+		return zapError(int(401), "auth:please sign in first")
 	}
 
 	incoming := map[string]interface{}{}
 	if err := json.Unmarshal(body, &incoming); err != nil {
-		return zapAccountErr(400, fmt.Sprintf("invalid preferences body: %v", err))
+		return zapError(int(400), fmt.Sprintf("invalid preferences body: %v", err))
 	}
 
 	// Resolve the user from IAM by the principal identity (never the body).
 	fresh, err := refreshSessionUser(zapBrandHost, user)
 	if err != nil {
-		return zapAccountErr(500, err.Error())
+		return zapError(int(500), err.Error())
 	}
 	if fresh != nil {
 		user = fresh
 	}
 	if user == nil {
-		return zapAccountErr(401, "auth:user not found")
+		return zapError(int(401), "auth:user not found")
 	}
 
 	prefs := map[string]interface{}{}
@@ -296,7 +291,7 @@ func zapUpdatePreferencesHandler(ctx context.Context, auth string, body []byte) 
 
 	merged, err := json.Marshal(prefs)
 	if err != nil {
-		return zapAccountErr(500, err.Error())
+		return zapError(int(500), err.Error())
 	}
 	if user.Properties == nil {
 		user.Properties = map[string]string{}
@@ -304,7 +299,7 @@ func zapUpdatePreferencesHandler(ctx context.Context, auth string, body []byte) 
 	user.Properties[preferencesKey] = string(merged)
 
 	if err := iam.UpdateUser(user); err != nil {
-		return zapAccountErr(500, err.Error())
+		return zapError(int(500), err.Error())
 	}
 
 	return zapAccountOk(200, prefs)
