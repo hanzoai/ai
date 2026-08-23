@@ -40,12 +40,7 @@ type Vector struct {
 }
 
 func GetGlobalVectors() ([]*Vector, error) {
-	vectors := []*Vector{}
-	err := findAll(adapter.db, "vector", &vectors, nil, "owner ASC", "created_time DESC")
-	if err != nil {
-		return vectors, err
-	}
-	return vectors, nil
+	return allRows[Vector]("vector")
 }
 
 func GetVectors(owner string) ([]*Vector, error) {
