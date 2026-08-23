@@ -177,6 +177,14 @@ func reach(user *iam.User) string {
 	return user.Owner
 }
 
+// reaches reports whether a caller may act on a row owned by owner. It is reach()
+// asked about a single row rather than a whole listing: an empty reach covers
+// every tenant, any other reach covers only itself.
+func reaches(user *iam.User, owner string) bool {
+	r := reach(user)
+	return r == "" || r == owner
+}
+
 // GetScopedOwner resolves owner from the authenticated session.
 // Non-admin users are always scoped to their own org, ignoring request owner params.
 // Super admins can optionally target a specific owner via query parameter.

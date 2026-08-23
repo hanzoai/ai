@@ -187,30 +187,40 @@ func CommitRecords(records []*Record, lang string) (int, []map[string]interface{
 	// Lock the mutex to prevent concurrent
 	scanNeedCommitRecordsMutex.Lock()
 	defer scanNeedCommitRecordsMutex.Unlock()
-	for _, record := range records {
-		// Get the record from the database to ensure it is up-to-date
-		record, err := GetRecord(record.getId(), lang)
+	for _, given := range records {
+		// The stored row is read back so the commit acts on what the chain will see.
+		// It is a SEPARATE value from the one we were given: GetRecord answers
+		// (nil, nil) for a row that is not there, and the name an error reports has
+		// to come from the record we hold rather than the one we were looking for.
+		stored, err := GetRecord(given.getId(), lang)
 		if err != nil {
 			data = append(data, map[string]interface{}{
-				"name":       record.Name,
+				"name":       given.Name,
 				"error_text": err.Error(),
 			})
 			continue
 		}
-		if record.Block != "" {
+		if stored == nil {
 			data = append(data, map[string]interface{}{
-				"name":        record.Name,
-				"provider":    record.Provider,
-				"block":       record.Block,
-				"transaction": record.Transaction,
-				"block_hash":  record.BlockHash,
+				"name":       given.Name,
+				"error_text": fmt.Sprintf(i18n.Translate(lang, "object:the record: %s does not exist"), given.getId()),
 			})
 			continue
 		}
-		recordAffected, commitResult, err := CommitRecord(record, lang)
+		if stored.Block != "" {
+			data = append(data, map[string]interface{}{
+				"name":        stored.Name,
+				"provider":    stored.Provider,
+				"block":       stored.Block,
+				"transaction": stored.Transaction,
+				"block_hash":  stored.BlockHash,
+			})
+			continue
+		}
+		recordAffected, commitResult, err := CommitRecord(stored, lang)
 		if err != nil {
 			data = append(data, map[string]interface{}{
-				"name":       record.Name,
+				"name":       stored.Name,
 				"error_text": err.Error(),
 			})
 		} else {
