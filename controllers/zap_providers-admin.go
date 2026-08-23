@@ -89,21 +89,6 @@ func zapProviderSuperAdmin(auth string) (*iam.User, *zap.Message) {
 	return user, nil
 }
 
-// zapProviderOk emits the the router {status:"ok",data[,data2]} envelope (ResponseOk
-// and its paginated ResponseOk(list, count) form). Shared by the provider and
-// chat-graph groups — one provider envelope, not a per-group fork.
-func zapProviderOk(data ...interface{}) (*zap.Message, error) {
-	resp := Response{Status: "ok"}
-	if len(data) > 0 {
-		resp.Data = data[0]
-	}
-	if len(data) > 1 {
-		resp.Data2 = data[1]
-	}
-	body, _ := json.Marshal(resp)
-	return object.BuildCloudResponse(200, body, "")
-}
-
 // zapProviderError emits {status:"error",msg} at an explicit status (controller
 // ResponseError is 200-with-error-body; auth denials use real 401/403).
 func zapProviderError(status uint32, msg string) (*zap.Message, error) {
@@ -123,7 +108,7 @@ func zapGetGlobalProvidersHandler(_ context.Context, auth string, _ []byte) (*za
 	if err != nil {
 		return zapProviderError(200, err.Error())
 	}
-	return zapProviderOk(object.GetMaskedProviders(providers, user))
+	return zapOk(object.GetMaskedProviders(providers, user))
 }
 
 // zapGetProvidersRequest carries the GetProviders query params over the native
@@ -172,7 +157,7 @@ func zapGetProvidersHandler(_ context.Context, auth string, body []byte) (*zap.M
 		if err != nil {
 			return zapProviderError(200, err.Error())
 		}
-		return zapProviderOk(object.GetMaskedProviders(providers, user))
+		return zapOk(object.GetMaskedProviders(providers, user))
 	}
 
 	limit := util.ParseInt(req.PageSize)
@@ -189,7 +174,7 @@ func zapGetProvidersHandler(_ context.Context, auth string, body []byte) (*zap.M
 	if err != nil {
 		return zapProviderError(200, err.Error())
 	}
-	return zapProviderOk(object.GetMaskedProviders(providers, user), count)
+	return zapOk(object.GetMaskedProviders(providers, user), count)
 }
 
 // zapGetProviderRequest carries the GetProvider id over the native body.
@@ -213,7 +198,7 @@ func zapGetProviderHandler(_ context.Context, auth string, body []byte) (*zap.Me
 	if err != nil {
 		return zapProviderError(200, err.Error())
 	}
-	return zapProviderOk(object.GetMaskedProvider(provider, user))
+	return zapOk(object.GetMaskedProvider(provider, user))
 }
 
 // zapUpdateProviderRequest carries the UpdateProvider id (URL query in HTTP) plus
@@ -243,7 +228,7 @@ func zapUpdateProviderHandler(_ context.Context, auth string, body []byte) (*zap
 	if err != nil {
 		return zapProviderError(200, err.Error())
 	}
-	return zapProviderOk(success)
+	return zapOk(success)
 }
 
 // zapAddProviderHandler mirrors ApiController.AddProvider: the org owner is the
@@ -270,7 +255,7 @@ func zapAddProviderHandler(_ context.Context, auth string, body []byte) (*zap.Me
 	if err != nil {
 		return zapProviderError(200, err.Error())
 	}
-	return zapProviderOk(success)
+	return zapOk(success)
 }
 
 // zapDeleteProviderHandler mirrors ApiController.DeleteProvider (super-admin only).
@@ -286,7 +271,7 @@ func zapDeleteProviderHandler(_ context.Context, auth string, body []byte) (*zap
 	if err != nil {
 		return zapProviderError(200, err.Error())
 	}
-	return zapProviderOk(success)
+	return zapOk(success)
 }
 
 // zapRefreshMcpToolsHandler mirrors ApiController.RefreshMcpTools (super-admin only).
@@ -301,7 +286,7 @@ func zapRefreshMcpToolsHandler(_ context.Context, auth string, body []byte) (*za
 	if err := object.RefreshMcpTools(&provider); err != nil {
 		return zapProviderError(200, err.Error())
 	}
-	return zapProviderOk(&provider)
+	return zapOk(&provider)
 }
 
 // ── provider_admin.go parity ─────────────────────────────────────────────────
@@ -315,7 +300,7 @@ func zapGetAdminProvidersHandler(_ context.Context, auth string, _ []byte) (*zap
 	if err != nil {
 		return zapProviderError(200, err.Error())
 	}
-	return zapProviderOk(views)
+	return zapOk(views)
 }
 
 // zapToggleAdminProviderHandler mirrors ApiController.ToggleAdminProvider.
@@ -343,7 +328,7 @@ func zapToggleAdminProviderHandler(_ context.Context, auth string, body []byte) 
 	if err != nil {
 		return zapProviderError(200, err.Error())
 	}
-	return zapProviderOk(toAdminProviderView(updated, modelCountByProvider()))
+	return zapOk(toAdminProviderView(updated, modelCountByProvider()))
 }
 
 // zapSetPrimaryAdminProviderHandler mirrors ApiController.SetPrimaryAdminProvider.
@@ -371,7 +356,7 @@ func zapSetPrimaryAdminProviderHandler(_ context.Context, auth string, body []by
 	if err != nil {
 		return zapProviderError(200, err.Error())
 	}
-	return zapProviderOk(views)
+	return zapOk(views)
 }
 
 // ── models_providers.go parity ───────────────────────────────────────────────
@@ -380,5 +365,5 @@ func zapSetPrimaryAdminProviderHandler(_ context.Context, auth string, body []by
 // secret-free name set projected from the served catalog, deliberately ungated
 // (parity with the route the authz filter leaves out of superAdminEndpoints).
 func zapGetModelProvidersHandler(_ context.Context, _ string, _ []byte) (*zap.Message, error) {
-	return zapProviderOk(modelProviders{Providers: listRouteProviders()})
+	return zapOk(modelProviders{Providers: listRouteProviders()})
 }

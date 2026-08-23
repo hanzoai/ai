@@ -247,7 +247,7 @@ func zapGetGlobalChatsHandler(_ context.Context, auth string, body []byte) (*zap
 		if err != nil {
 			return zapProviderError(200, err.Error())
 		}
-		return zapProviderOk(chats)
+		return zapOk(chats)
 	}
 
 	limit := util.ParseInt(req.PageSize)
@@ -260,7 +260,7 @@ func zapGetGlobalChatsHandler(_ context.Context, auth string, body []byte) (*zap
 	if err != nil {
 		return zapProviderError(200, err.Error())
 	}
-	return zapProviderOk(chats, count)
+	return zapOk(chats, count)
 }
 
 // zapGetChatsHandler mirrors ApiController.GetChats (admin sees all users; a
@@ -309,7 +309,7 @@ func zapGetChatsHandler(_ context.Context, auth string, body []byte) (*zap.Messa
 	if req.StartTime != "" || req.EndTime != "" {
 		chats = object.FilterChatsByTimeRange(chats, req.StartTime, req.EndTime)
 	}
-	return zapProviderOk(chats)
+	return zapOk(chats)
 }
 
 // zapIDRequest carries a single id (URL query in the GET handlers).
@@ -348,7 +348,7 @@ func zapGetChatHandler(_ context.Context, auth string, body []byte) (*zap.Messag
 			return zapProviderError(403, "Unauthorized operation")
 		}
 	}
-	return zapProviderOk(chat)
+	return zapOk(chat)
 }
 
 // zapUpdateChatRequest carries the id (URL query in HTTP) plus the chat payload.
@@ -400,7 +400,7 @@ func zapUpdateChatHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 	if err != nil {
 		return zapProviderError(200, err.Error())
 	}
-	return zapProviderOk(success)
+	return zapOk(success)
 }
 
 // zapAddChatHandler mirrors ApiController.AddChat: self-or-admin, timestamps + IP/
@@ -443,7 +443,7 @@ func zapAddChatHandler(_ context.Context, auth string, body []byte) (*zap.Messag
 	if err != nil {
 		return zapProviderError(200, err.Error())
 	}
-	return zapProviderOk(success)
+	return zapOk(success)
 }
 
 // zapDeleteChatHandler mirrors ApiController.DeleteChat (deletes the chat and its
@@ -483,7 +483,7 @@ func zapDeleteChatHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 	if err != nil {
 		return zapProviderError(200, err.Error())
 	}
-	return zapProviderOk(success)
+	return zapOk(success)
 }
 
 // ── message.go parity ────────────────────────────────────────────────────────
@@ -525,7 +525,7 @@ func zapGetGlobalMessagesHandler(_ context.Context, auth string, body []byte) (*
 		if err != nil {
 			return zapProviderError(200, err.Error())
 		}
-		return zapProviderOk(messages)
+		return zapOk(messages)
 	}
 
 	limit := util.ParseInt(req.PageSize)
@@ -538,7 +538,7 @@ func zapGetGlobalMessagesHandler(_ context.Context, auth string, body []byte) (*
 	if err != nil {
 		return zapProviderError(200, err.Error())
 	}
-	return zapProviderOk(messages, count)
+	return zapOk(messages, count)
 }
 
 // zapGetMessagesHandler mirrors ApiController.GetMessages (signed-in; admin sees
@@ -575,14 +575,14 @@ func zapGetMessagesHandler(_ context.Context, auth string, body []byte) (*zap.Me
 		if err != nil {
 			return zapProviderError(200, err.Error())
 		}
-		return zapProviderOk(messages)
+		return zapOk(messages)
 	}
 
 	messages, err := object.GetChatMessages(req.Chat)
 	if err != nil {
 		return zapProviderError(200, err.Error())
 	}
-	return zapProviderOk(messages)
+	return zapOk(messages)
 }
 
 // zapGetMessageHandler mirrors ApiController.GetMessage (ownership check for a
@@ -616,7 +616,7 @@ func zapGetMessageHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 			return zapProviderError(403, "Unauthorized operation")
 		}
 	}
-	return zapProviderOk(message)
+	return zapOk(message)
 }
 
 // zapUpdateMessageRequest carries the id + isHitOnly (URL query in HTTP) plus the
@@ -673,7 +673,7 @@ func zapUpdateMessageHandler(_ context.Context, auth string, body []byte) (*zap.
 	if err != nil {
 		return zapProviderError(200, err.Error())
 	}
-	return zapProviderOk(success)
+	return zapOk(success)
 }
 
 // zapAddMessageHandler mirrors ApiController.AddMessage: it edits-in-place (drops
@@ -843,7 +843,7 @@ func zapAddMessageHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 		}
 	}
 
-	return zapProviderOk(chat)
+	return zapOk(chat)
 }
 
 // zapAddMessageHandler reuses the shared zapAddInitialChat twin defined in
@@ -871,7 +871,7 @@ func zapDeleteMessageHandler(_ context.Context, auth string, body []byte) (*zap.
 	if err != nil {
 		return zapProviderError(200, err.Error())
 	}
-	return zapProviderOk(success)
+	return zapOk(success)
 }
 
 // zapDeleteWelcomeMessageHandler mirrors ApiController.DeleteWelcomeMessage: only
@@ -913,7 +913,7 @@ func zapDeleteWelcomeMessageHandler(_ context.Context, auth string, body []byte)
 	if err != nil {
 		return zapProviderError(200, err.Error())
 	}
-	return zapProviderOk(success)
+	return zapOk(success)
 }
 
 // ── graph.go / graph_chat.go parity ──────────────────────────────────────────
@@ -939,7 +939,7 @@ func zapGetGlobalGraphsHandler(_ context.Context, auth string, _ []byte) (*zap.M
 	if err != nil {
 		return zapProviderError(200, err.Error())
 	}
-	return zapProviderOk(object.GetMaskedGraphs(graphs, true))
+	return zapOk(object.GetMaskedGraphs(graphs, true))
 }
 
 // zapGetGraphsHandler mirrors ApiController.GetGraphs: signed-in, owner resolved
@@ -969,7 +969,7 @@ func zapGetGraphsHandler(_ context.Context, auth string, body []byte) (*zap.Mess
 		if err != nil {
 			return zapProviderError(200, err.Error())
 		}
-		return zapProviderOk(object.GetMaskedGraphs(graphs, true))
+		return zapOk(object.GetMaskedGraphs(graphs, true))
 	}
 
 	limit := util.ParseInt(req.PageSize)
@@ -982,7 +982,7 @@ func zapGetGraphsHandler(_ context.Context, auth string, body []byte) (*zap.Mess
 	if err != nil {
 		return zapProviderError(200, err.Error())
 	}
-	return zapProviderOk(graphs, count)
+	return zapOk(graphs, count)
 }
 
 // zapGetGraphHandler mirrors ApiController.GetGraph, including the lazy word-cloud
@@ -1011,7 +1011,7 @@ func zapGetGraphHandler(_ context.Context, auth string, body []byte) (*zap.Messa
 			return zapProviderError(200, err.Error())
 		}
 	}
-	return zapProviderOk(object.GetMaskedGraph(graph, true))
+	return zapOk(object.GetMaskedGraph(graph, true))
 }
 
 // zapUpdateGraphRequest carries the id (URL query in HTTP) plus the graph payload.
@@ -1034,7 +1034,7 @@ func zapUpdateGraphHandler(_ context.Context, auth string, body []byte) (*zap.Me
 	if err != nil {
 		return zapProviderError(200, err.Error())
 	}
-	return zapProviderOk(success)
+	return zapOk(success)
 }
 
 // zapAddGraphHandler mirrors ApiController.AddGraph (org-admin gated).
@@ -1051,7 +1051,7 @@ func zapAddGraphHandler(_ context.Context, auth string, body []byte) (*zap.Messa
 	if err != nil {
 		return zapProviderError(200, err.Error())
 	}
-	return zapProviderOk(success)
+	return zapOk(success)
 }
 
 // zapDeleteGraphHandler mirrors ApiController.DeleteGraph (org-admin gated).
@@ -1068,5 +1068,5 @@ func zapDeleteGraphHandler(_ context.Context, auth string, body []byte) (*zap.Me
 	if err != nil {
 		return zapProviderError(200, err.Error())
 	}
-	return zapProviderOk(success)
+	return zapOk(success)
 }
