@@ -197,9 +197,17 @@ func GetGlobalFailMessages() ([]*Message, error) {
 	return messages, nil
 }
 
+// GetGlobalMessagesByStoreName returns a store's messages oldest first.
+//
+// The order is the contract, not a detail: GetUsages walks these once, moving a
+// day counter forward and never back, so a message out of time order is counted
+// on the wrong day and every day after it. Sorting by owner first put them out of
+// order the moment a store held messages from more than one — which it does, since
+// a spoken answer is stored under its provider's owner while a chat's is stored
+// under the namespace every chat shares.
 func GetGlobalMessagesByStoreName(storeName string) ([]*Message, error) {
 	messages := []*Message{}
-	err := findAll(adapter.db, "message", &messages, dbx.HashExp{"store": storeName}, "owner ASC", "created_time ASC")
+	err := findAll(adapter.db, "message", &messages, dbx.HashExp{"store": storeName}, "created_time ASC")
 	if err != nil {
 		return messages, err
 	}
