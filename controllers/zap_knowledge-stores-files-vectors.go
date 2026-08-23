@@ -63,7 +63,6 @@ import (
 	"github.com/luxfi/zap"
 
 	iam "github.com/hanzoai/ai/internal/iam"
-	"github.com/hanzoai/ai/log"
 
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/object"
@@ -369,7 +368,8 @@ func zapDecodeStoreWithId(body []byte) (*object.Store, string, error) {
 }
 
 func zapUpdateStoreHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if _, deny := zapRequireSignedIn(auth); deny != nil {
+	caller, deny := zapRequireSignedIn(auth)
+	if deny != nil {
 		return deny, nil
 	}
 	store, id, err := zapDecodeStoreWithId(body)
@@ -377,10 +377,12 @@ func zapUpdateStoreHandler(_ context.Context, auth string, body []byte) (*zap.Me
 		return zapError(http.StatusOK, err.Error())
 	}
 
-	oldStore, err := object.GetStore(id)
+	oldStore, err := storeFor(caller, id)
 	if err != nil {
 		return zapError(http.StatusOK, err.Error())
 	}
+	store.Owner = oldStore.Owner
+
 	if oldStore.IsDefault && !store.IsDefault {
 		return zapError(http.StatusOK, "store:given that there must be one default store in Hanzo Cloud, you cannot set this store to non-default. You can directly set another store as default")
 	}
@@ -456,17 +458,22 @@ func zapAddStoreHandler(_ context.Context, auth string, body []byte) (*zap.Messa
 }
 
 func zapDeleteStoreHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if _, deny := zapRequireSignedIn(auth); deny != nil {
+	caller, deny := zapRequireSignedIn(auth)
+	if deny != nil {
 		return deny, nil
 	}
 	var store object.Store
 	if err := json.Unmarshal(body, &store); err != nil {
 		return zapError(http.StatusOK, err.Error())
 	}
-	if store.IsDefault {
+	stored, err := storeFor(caller, store.GetId())
+	if err != nil {
+		return zapError(http.StatusOK, err.Error())
+	}
+	if stored.IsDefault {
 		return zapError(http.StatusOK, "store:Cannot delete the default store")
 	}
-	success, err := object.DeleteStore(&store)
+	success, err := object.DeleteStore(stored)
 	if err != nil {
 		return zapError(http.StatusOK, err.Error())
 	}
@@ -678,8 +685,7 @@ func zapActivateFileHandler(_ context.Context, auth string, body []byte) (*zap.M
 		return zapOk(false)
 	}
 	path := fmt.Sprintf("%s/%s", cacheDir, p.Key)
-	cacheMap[prefix] = path
-	log.Info("%v", cacheMap)
+	rememberPath(prefix, path)
 
 	if !util.FileExist(getAppPath(p.Filename)) {
 		util.CopyFile(getAppPath(p.Filename), getAppPath(prefix))
@@ -690,7 +696,7 @@ func zapActivateFileHandler(_ context.Context, auth string, body []byte) (*zap.M
 func zapGetActiveFileHandler(_ context.Context, _ string, body []byte) (*zap.Message, error) {
 	p := zapDecodeParams(body)
 	res := ""
-	if v, ok := cacheMap[p.Prefix]; ok {
+	if v, ok := cachedPath(p.Prefix); ok {
 		res = v
 	}
 	return zapOk(res)

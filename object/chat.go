@@ -53,7 +53,11 @@ func GetGlobalChats() ([]*Chat, error) {
 	return allRows[Chat]("chat")
 }
 
-func GetChats(owner string, storeName string, user string) ([]*Chat, error) {
+// GetChats lists chats, narrowed by whichever of org, store and user the caller
+// named; an empty one means unconstrained. org is the TENANT — Owner is the
+// namespace every chat shares, so org is the only axis that separates one
+// customer's chats from another's, and leaving it empty asks for every tenant's.
+func GetChats(owner string, org string, storeName string, user string) ([]*Chat, error) {
 	// The adapter is nil before the DB is initialised — during boot, in the
 	// standalone runtime with no driverName, and in every unit test — so reading
 	// through it turns a missing dependency into a SIGSEGV at whatever call site
@@ -64,7 +68,10 @@ func GetChats(owner string, storeName string, user string) ([]*Chat, error) {
 		return nil, fmt.Errorf("chat store is not initialised")
 	}
 	chats := []*Chat{}
-	err := findAll(adapter.db, "chat", &chats, dbx.HashExp{"owner": owner, "user": user, "store": storeName}, "updated_time DESC")
+	err := findAll(adapter.db, "chat", &chats,
+		narrow(dbx.HashExp{"owner": owner}, map[string]string{
+			"organization": org, "store": storeName, "user": user,
+		}), "updated_time DESC")
 	if err != nil {
 		return chats, err
 	}

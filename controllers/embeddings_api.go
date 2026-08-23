@@ -128,7 +128,7 @@ func (c *ApiController) Embeddings() {
 		// table does not describe them — so the honest answer is the refusal
 		// itself, naming the vendor and the reason rather than forwarding an
 		// upstream 402 that tells the customer THEY are out of money.
-		c.recordRefusals(head.Model, refused, authUser, isPremium, false, uuid.NewString(), startTime)
+		recordRefusals(c.takeSnapshot(authUser), head.Model, refused, authUser, isPremium, false, uuid.NewString(), startTime)
 		c.ResponseFailure(exhausted(head.Model, refused))
 		return
 	}

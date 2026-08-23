@@ -16,6 +16,7 @@
 package controllers
 
 import (
+	"context"
 	"encoding/gob"
 	"strings"
 	"time"
@@ -164,6 +165,51 @@ func (c *ApiController) RequireSessionOwner() (string, bool) {
 	}
 	c.ResponseUnauthorized(c.T("auth:Please sign in first"))
 	return "", false
+}
+
+// reach answers how far a listing may see: one organization, or every one of
+// them. The reserved org reaches every tenant, so its answer is the empty filter;
+// every other caller reaches only their own org. Both doors use it, which is why
+// it takes the resolved user rather than reading a session.
+func reach(user *iam.User) string {
+	if util.IsSuperAdmin(user) {
+		return ""
+	}
+	return user.Owner
+}
+
+// snapshot is the part of a request that outlives it.
+//
+// A streamed body is produced by fasthttp draining the writer from its own
+// goroutine, after the handler has returned and fiber has released the request
+// context. Everything a stream writer needs is therefore taken while the request
+// is still ours and carried in — reaching back through the controller there
+// dereferences a released context, in a goroutine whose panic the router never
+// sees.
+type snapshot struct {
+	lang string
+	ip   string
+	org  string
+	ctx  context.Context
+}
+
+// takeSnapshot reads the request's outliving parts. Call it before handing a
+// closure to SendStreamWriter, never inside one.
+func (c *ApiController) takeSnapshot(user *iam.User) snapshot {
+	return snapshot{
+		lang: c.GetAcceptLanguage(),
+		ip:   c.Fiber().IP(),
+		org:  c.billingOrg(user),
+		ctx:  context.WithoutCancel(c.Context()),
+	}
+}
+
+// reaches reports whether a caller may act on a row owned by owner. It is reach()
+// asked about a single row rather than a whole listing: an empty reach covers
+// every tenant, any other reach covers only itself.
+func reaches(user *iam.User, owner string) bool {
+	r := reach(user)
+	return r == "" || r == owner
 }
 
 // GetScopedOwner resolves owner from the authenticated session.

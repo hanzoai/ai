@@ -387,12 +387,17 @@ func (w *AnthropicWriter) writeSSE(event string, data interface{}) error {
 // ── Handler ─────────────────────────────────────────────────────────────────
 
 // respondAnthropicError writes an Anthropic-shaped error JSON and stops.
-func (c *ApiController) respondAnthropicError(errType string, message string, status int) {
+// anthropicErrorBody is the error shape the API documents. Which connection it
+// travels on is a separate question, answered by the two functions below.
+func anthropicErrorBody(errType string, message string) ([]byte, error) {
 	body := AnthropicErrorBody{Type: "error"}
 	body.Error.Type = errType
 	body.Error.Message = message
+	return json.Marshal(body)
+}
 
-	jsonData, err := json.Marshal(body)
+func (c *ApiController) respondAnthropicError(errType string, message string, status int) {
+	jsonData, err := anthropicErrorBody(errType, message)
 	if err != nil {
 		c.Status(500)
 		return
@@ -400,6 +405,19 @@ func (c *ApiController) respondAnthropicError(errType string, message string, st
 
 	c.SetHeader("Content-Type", "application/json")
 	c.Bytes(status, jsonData)
+}
+
+// streamAnthropicError sends the same body as an `error` event. Once a stream is
+// being produced the reply is no longer the controller's to write — the request
+// context has been released and the client is reading events — so the failure
+// goes out on the stream's own writer.
+func streamAnthropicError(w *bufio.Writer, errType string, message string) {
+	jsonData, err := anthropicErrorBody(errType, message)
+	if err != nil {
+		return
+	}
+	_, _ = fmt.Fprintf(w, "event: error\ndata: %s\n\n", jsonData)
+	_ = w.Flush()
 }
 
 // anthropicErrorType maps an auth/routing/upstream error to its Anthropic wire
@@ -535,7 +553,7 @@ func (c *ApiController) AnthropicMessages() {
 		if familyRefused == nil {
 			return
 		}
-		c.recordRefusals(request.Model, familyRefused, authUser, isPremium, request.Stream, requestId, requestStartTime)
+		recordRefusals(c.takeSnapshot(authUser), request.Model, familyRefused, authUser, isPremium, request.Stream, requestId, requestStartTime)
 	}
 
 	// ── Tool-calling proxy ────────────────────────────────────────────────
@@ -625,11 +643,24 @@ func (c *ApiController) AnthropicMessages() {
 		c.SetHeader("Connection", "keep-alive")
 	}
 
-	// The answer is produced once and delivered two ways. Streaming, zip holds
-	// the connection and hands the writer in; otherwise the writer only
-	// accumulates and the reply goes out whole at the end, so the sink it was
-	// given is never written to.
+	// The answer is produced once and delivered two ways. Streaming, zip holds the
+	// connection and hands the writer in; otherwise the writer only accumulates and
+	// the reply goes out whole at the end, so the sink it was given is never
+	// written to.
+	//
+	// Which way it goes decides what run may touch. Streamed, fasthttp drains w
+	// from its own goroutine once this handler has returned and the request context
+	// is gone — so run reads the snapshot rather than the controller, and a failure
+	// travels out through fail(), which knows which connection is still open.
+	snap := c.takeSnapshot(authUser)
 	run := func(w *bufio.Writer) {
+		fail := func(errType string, message string, status int) {
+			if request.Stream {
+				streamAnthropicError(w, errType, message)
+				return
+			}
+			c.respondAnthropicError(errType, message, status)
+		}
 		writer := &AnthropicWriter{
 			Writer:    w,
 			Buffer:    []byte{},
@@ -656,15 +687,15 @@ func (c *ApiController) AnthropicMessages() {
 			// identity case — so there is no second, retry-less path that silently
 			// turns a 429 into a hard client 500.
 			modelResult, actualProvider, tried, err = ask{
-				ctx:       c.Context(),
+				ctx:       snap.ctx,
 				route:     route,
-				org:       c.billingOrg(authUser),
+				org:       snap.org,
 				model:     request.Model,
 				primary:   provider,
 				question:  question,
 				history:   history,
 				knowledge: knowledge,
-				lang:      c.GetAcceptLanguage(),
+				lang:      snap.lang,
 				writer:    writer,
 				sent:      func() bool { return writer.StreamSent },
 				prior:     familyRefused,
@@ -673,17 +704,17 @@ func (c *ApiController) AnthropicMessages() {
 			// Model not in the route table: call the resolved provider directly, on
 			// the SAME retry policy failover uses, typing the error at the boundary.
 			var modelProvider model.ModelProvider
-			modelProvider, err = provider.GetModelProvider(c.GetAcceptLanguage())
+			modelProvider, err = provider.GetModelProvider(snap.lang)
 			if err != nil {
-				c.respondAnthropicError("api_error", fmt.Sprintf("Failed to get model provider: %s", err.Error()), 500)
+				fail("api_error", fmt.Sprintf("Failed to get model provider: %s", err.Error()), 500)
 				return
 			}
-			err = retryTransient(c.Context(), currentRetryPolicy(), func() error {
+			err = retryTransient(snap.ctx, currentRetryPolicy(), func() error {
 				if writer.StreamSent {
 					return errPartiallyWritten
 				}
 				writer.Reset()
-				res, e := modelProvider.QueryText(question, writer, history, "", knowledge, nil, c.GetAcceptLanguage())
+				res, e := modelProvider.QueryText(question, writer, history, "", knowledge, nil, snap.lang)
 				if e != nil {
 					return wrapUpstreamError(e)
 				}
@@ -696,13 +727,13 @@ func (c *ApiController) AnthropicMessages() {
 		// Every vendor that refused goes in the ledger, whether or not one of them
 		// eventually served. The family's own refusal is already recorded above.
 		if n := len(familyRefused); len(tried) > n {
-			c.recordRefusals(request.Model, tried[n:], authUser, isPremium, request.Stream, requestId, requestStartTime)
+			recordRefusals(snap, request.Model, tried[n:], authUser, isPremium, request.Stream, requestId, requestStartTime)
 		}
 
 		if err != nil {
 			if authUser != nil {
 				errRecord := &usageRecord{
-					Owner:     c.billingOrg(authUser),
+					Owner:     snap.org,
 					Model:     request.Model,
 					Provider:  actualProvider.name,
 					Origin:    actualProvider.origin,
@@ -710,26 +741,26 @@ func (c *ApiController) AnthropicMessages() {
 					Stream:    request.Stream,
 					Status:    "error",
 					ErrorMsg:  err.Error(),
-					ClientIP:  c.Fiber().IP(),
+					ClientIP:  snap.ip,
 					RequestID: requestId,
 				}
-				errRecord.bind(c.Context(), authUser)
+				errRecord.bind(snap.ctx, authUser)
 				errRecord.BYO, errRecord.Account = providerBYO(provider, authUser)
 				recordUsage(errRecord)
-				recordTrace(c.Context(), errRecord, requestStartTime)
+				recordTrace(snap.ctx, errRecord, requestStartTime)
 			}
 			// Surface the real upstream status: a 429 stays a 429 (rate_limit_error)
 			// so the client retries with backoff instead of treating it as a fatal
 			// 500 and stopping. Status typed at the provider boundary.
 			st := statusForModelError(err)
-			c.respondAnthropicError(anthropicErrorTypeForStatus(st), err.Error(), st)
+			fail(anthropicErrorTypeForStatus(st), err.Error(), st)
 			return
 		}
 
 		// Record successful usage (actualProvider reflects which provider served the request).
 		if authUser != nil {
 			successRecord := &usageRecord{
-				Owner:            c.billingOrg(authUser),
+				Owner:            snap.org,
 				Organization:     authUser.Owner,
 				Model:            request.Model,
 				Provider:         actualProvider.name,
@@ -743,15 +774,15 @@ func (c *ApiController) AnthropicMessages() {
 				Premium:          isPremium,
 				Stream:           request.Stream,
 				Status:           "success",
-				ClientIP:         c.Fiber().IP(),
+				ClientIP:         snap.ip,
 				RequestID:        requestId,
 			}
-			successRecord.bind(c.Context(), authUser)
+			successRecord.bind(snap.ctx, authUser)
 			// The row that SPENT a credential decides whether this was the customer's
 			// own key — not the row auth resolved before failover moved the request.
 			successRecord.BYO, successRecord.Account = providerBYO(actualProvider.row, authUser)
 			recordUsage(successRecord)
-			recordTrace(c.Context(), successRecord, requestStartTime)
+			recordTrace(snap.ctx, successRecord, requestStartTime)
 			hold.settle(calculateCostCentsWithCache(request.Model, modelResult.PromptTokenCount, modelResult.ResponseTokenCount, 0, 0))
 		}
 
@@ -776,7 +807,7 @@ func (c *ApiController) AnthropicMessages() {
 
 			jsonResponse, err := json.Marshal(response)
 			if err != nil {
-				c.respondAnthropicError("api_error", err.Error(), 500)
+				fail("api_error", err.Error(), 500)
 				return
 			}
 
@@ -788,7 +819,7 @@ func (c *ApiController) AnthropicMessages() {
 				modelResult.ResponseTokenCount,
 				modelResult.TotalTokenCount,
 			); err != nil {
-				c.respondAnthropicError("api_error", err.Error(), 500)
+				fail("api_error", err.Error(), 500)
 				return
 			}
 		}
@@ -909,6 +940,7 @@ func (c *ApiController) proxyAnthropicToolRequest(
 		// used in here, or every streamed answer is billed as zero.
 		upstream := resp.Body
 		resp = nil
+		snap := c.takeSnapshot(authUser)
 		_ = c.SendStreamWriter(func(w *bufio.Writer) {
 			defer upstream.Close()
 			prompt, completion := streamCaptureAnthropicUsage(
@@ -918,17 +950,17 @@ func (c *ApiController) proxyAnthropicToolRequest(
 				return
 			}
 			rec := &usageRecord{
-				Owner: c.billingOrg(authUser), Organization: authUser.Owner, Model: request.Model, Provider: provider.Name,
+				Owner: snap.org, Organization: authUser.Owner, Model: request.Model, Provider: provider.Name,
 				Origin:       provider.Origin(),
 				PromptTokens: prompt, CompletionTokens: completion,
 				TotalTokens: prompt + completion, Currency: "USD",
 				Premium: isPremium, Stream: true, Status: "success",
-				ClientIP: c.Fiber().IP(), RequestID: requestId,
+				ClientIP: snap.ip, RequestID: requestId,
 			}
-			rec.bind(c.Context(), authUser)
+			rec.bind(snap.ctx, authUser)
 			rec.BYO, rec.Account = providerBYO(provider, authUser)
 			recordUsage(rec)
-			recordTrace(c.Context(), rec, requestStartTime)
+			recordTrace(snap.ctx, rec, requestStartTime)
 			hold.settle(calculateCostCentsWithCache(request.Model, prompt, completion, 0, 0))
 		})
 	} else {
@@ -1045,6 +1077,7 @@ func (c *ApiController) proxyAnthropicViaOpenAI(
 		// used in here.
 		upstream := resp.Body
 		resp = nil
+		snap := c.takeSnapshot(authUser)
 		_ = c.SendStreamWriter(func(w *bufio.Writer) {
 			defer upstream.Close()
 			emit := func(event string, data interface{}) error {
@@ -1065,7 +1098,7 @@ func (c *ApiController) proxyAnthropicViaOpenAI(
 					prompt = pt
 				}
 			}
-			c.recordAnthropicToolUsage(request, provider, authUser, isPremium, true, requestId, prompt, completion, requestStartTime, hold)
+			recordAnthropicToolUsage(snap, request, provider, authUser, isPremium, true, requestId, prompt, completion, requestStartTime, hold)
 		})
 		return
 	}
@@ -1087,13 +1120,17 @@ func (c *ApiController) proxyAnthropicViaOpenAI(
 	}
 	c.SetHeader("Content-Type", "application/json")
 	c.Bytes(http.StatusOK, out)
-	c.recordAnthropicToolUsage(request, provider, authUser, isPremium, false, requestId, prompt, completion, requestStartTime, hold)
+	recordAnthropicToolUsage(c.takeSnapshot(authUser), request, provider, authUser, isPremium, false, requestId, prompt, completion, requestStartTime, hold)
 }
 
 // recordAnthropicToolUsage settles the budget hold and records usage + trace for a
 // translated Anthropic tool request. Shared by the streaming and non-streaming
 // paths so billing lives in exactly one place.
-func (c *ApiController) recordAnthropicToolUsage(
+// recordAnthropicToolUsage bills a tool call. One of its two callers runs inside
+// a stream writer, where the request context is already released, so it reads the
+// request's outliving parts from a snapshot rather than from a controller.
+func recordAnthropicToolUsage(
+	snap snapshot,
 	request *AnthropicRequest, provider *object.Provider, authUser *iam.User,
 	isPremium, stream bool, requestId string, prompt, completion int,
 	requestStartTime time.Time, hold *budgetHold,
@@ -1101,16 +1138,16 @@ func (c *ApiController) recordAnthropicToolUsage(
 	actualCents := calculateCostCentsWithCache(request.Model, prompt, completion, 0, 0)
 	if authUser != nil {
 		rec := &usageRecord{
-			Owner: c.billingOrg(authUser), Organization: authUser.Owner, Model: request.Model, Provider: provider.Name,
+			Owner: snap.org, Organization: authUser.Owner, Model: request.Model, Provider: provider.Name,
 			Origin:       provider.Origin(),
 			PromptTokens: prompt, CompletionTokens: completion, TotalTokens: prompt + completion,
 			Currency: "USD", Premium: isPremium, Stream: stream, Status: "success",
-			ClientIP: c.Fiber().IP(), RequestID: requestId,
+			ClientIP: snap.ip, RequestID: requestId,
 		}
-		rec.bind(c.Context(), authUser)
+		rec.bind(snap.ctx, authUser)
 		rec.BYO, rec.Account = providerBYO(provider, authUser)
 		recordUsage(rec)
-		recordTrace(c.Context(), rec, requestStartTime)
+		recordTrace(snap.ctx, rec, requestStartTime)
 	}
 	hold.settle(actualCents)
 }
