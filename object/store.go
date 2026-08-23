@@ -110,12 +110,7 @@ func GetGlobalStores() ([]*Store, error) {
 }
 
 func GetStores(owner string) ([]*Store, error) {
-	stores := []*Store{}
-	err := findAll(adapter.db, "store", &stores, dbx.HashExp{"owner": owner}, "created_time DESC")
-	if err != nil {
-		return stores, err
-	}
-	return stores, nil
+	return rowsOf[Store]("store", owner)
 }
 
 func GetDefaultStore(owner string) (*Store, error) {

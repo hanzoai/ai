@@ -46,12 +46,7 @@ func GetScanCount(owner, field, value string) (int64, error) {
 }
 
 func GetScans(owner string) ([]*Scan, error) {
-	scans := []*Scan{}
-	err := findAll(adapter.db, "scan", &scans, dbx.HashExp{"owner": owner}, "created_time DESC")
-	if err != nil {
-		return scans, err
-	}
-	return scans, nil
+	return rowsOf[Scan]("scan", owner)
 }
 
 func GetPaginationScans(owner string, offset, limit int, field, value, sortField, sortOrder string) ([]*Scan, error) {
