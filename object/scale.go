@@ -58,12 +58,7 @@ func GetMaskedScales(scales []*Scale, isMaskEnabled bool) []*Scale {
 }
 
 func GetGlobalScales() ([]*Scale, error) {
-	scales := []*Scale{}
-	err := findAll(adapter.db, "scale", &scales, nil, "owner ASC", "created_time DESC")
-	if err != nil {
-		return scales, err
-	}
-	return scales, nil
+	return allRows[Scale]("scale")
 }
 
 func GetScales(owner string) ([]*Scale, error) {
@@ -143,16 +138,9 @@ func (s *Scale) GetId() string {
 }
 
 func GetScaleCount(owner string, field, value string) (int64, error) {
-	session := GetDbQuery(owner, -1, -1, field, value, "", "")
-	return queryCount(session, "scale")
+	return rowCount("scale", owner, field, value)
 }
 
 func GetPaginationScales(owner string, offset, limit int, field, value, sortField, sortOrder string) ([]*Scale, error) {
-	scales := []*Scale{}
-	session := GetDbQuery(owner, offset, limit, field, value, sortField, sortOrder)
-	err := queryFind(session, "scale", &scales)
-	if err != nil {
-		return scales, err
-	}
-	return scales, nil
+	return rowsPage[Scale]("scale", owner, offset, limit, field, value, sortField, sortOrder)
 }

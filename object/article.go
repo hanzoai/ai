@@ -61,12 +61,7 @@ func GetMaskedArticles(articles []*Article, isMaskEnabled bool) []*Article {
 }
 
 func GetGlobalArticles() ([]*Article, error) {
-	articles := []*Article{}
-	err := findAll(adapter.db, "article", &articles, nil, "owner ASC", "created_time DESC")
-	if err != nil {
-		return articles, err
-	}
-	return articles, nil
+	return allRows[Article]("article")
 }
 
 func GetArticles(owner string) ([]*Article, error) {
@@ -82,18 +77,11 @@ func GetArticle(id string) (*Article, error) {
 }
 
 func GetArticleCount(owner, field, value string) (int64, error) {
-	session := GetDbQuery(owner, -1, -1, field, value, "", "")
-	return queryCount(session, "article")
+	return rowCount("article", owner, field, value)
 }
 
 func GetPaginationArticles(owner string, offset, limit int, field, value, sortField, sortOrder string) ([]*Article, error) {
-	articles := []*Article{}
-	session := GetDbQuery(owner, offset, limit, field, value, sortField, sortOrder)
-	err := queryFind(session, "article", &articles)
-	if err != nil {
-		return articles, err
-	}
-	return articles, nil
+	return rowsPage[Article]("article", owner, offset, limit, field, value, sortField, sortOrder)
 }
 
 func UpdateArticle(id string, article *Article) (bool, error) {

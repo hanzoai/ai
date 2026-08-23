@@ -94,6 +94,45 @@ func deleteRow(table, owner, name string) (bool, error) {
 	return affected != 0, nil
 }
 
+// rowCount counts what a table holds for one owner under a filter.
+//
+// The -1, -1 is "no page" — GetDbQuery reads a non-negative offset and limit as a
+// window and anything else as the whole set — and it was spelled out at
+// twenty-three call sites, along with the two empty sort fields a count has no
+// use for. A convention repeated is a convention that can be misremembered once.
+func rowCount(table, owner, field, value string) (int64, error) {
+	if adapter == nil || adapter.db == nil {
+		return 0, fmt.Errorf("%s store is not initialised", table)
+	}
+	return queryCount(GetDbQuery(owner, -1, -1, field, value, "", ""), table)
+}
+
+// rowsPage lists one page of a table — the ordering and filtering the query
+// carries, applied to the rows one owner holds.
+func rowsPage[T any](table, owner string, offset, limit int, field, value, sortField, sortOrder string) ([]*T, error) {
+	if adapter == nil || adapter.db == nil {
+		return nil, fmt.Errorf("%s store is not initialised", table)
+	}
+	rows := []*T{}
+	if err := queryFind(GetDbQuery(owner, offset, limit, field, value, sortField, sortOrder), table, &rows); err != nil {
+		return rows, err
+	}
+	return rows, nil
+}
+
+// allRows lists every row a table holds, across owners, grouped by owner and
+// newest first within each.
+func allRows[T any](table string) ([]*T, error) {
+	if adapter == nil || adapter.db == nil {
+		return nil, fmt.Errorf("%s store is not initialised", table)
+	}
+	rows := []*T{}
+	if err := findAll(adapter.db, table, &rows, nil, "owner ASC", "created_time DESC"); err != nil {
+		return rows, err
+	}
+	return rows, nil
+}
+
 // rowsOf lists what a table holds for one owner, newest first.
 func rowsOf[T any](table, owner string) ([]*T, error) {
 	if adapter == nil || adapter.db == nil {
