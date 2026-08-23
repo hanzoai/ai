@@ -219,7 +219,8 @@
     "the storage provider type: %s is not supported": "the storage provider type: %s is not supported",
     "there is no active blockchain provider": "there is no active blockchain provider",
     "unable to extract host": "unable to extract host",
-    "undeployment timeout: application did not undeploy within 10 minutes": "undeployment timeout: application did not undeploy within 10 minutes"
+    "undeployment timeout: application did not undeploy within 10 minutes": "undeployment timeout: application did not undeploy within 10 minutes",
+    "There is no default store": "There is no default store"
   },
   "openai": {
     "Invalid API key format. Expected 'Bearer API_KEY'": "Invalid API key format. Expected 'Bearer API_KEY'",
