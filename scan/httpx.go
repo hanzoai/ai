@@ -16,7 +16,6 @@
 package scan
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"os/exec"
@@ -105,72 +104,12 @@ func NewHttpxScanProvider(clientId string) (*HttpxScanProvider, error) {
 }
 
 func (p *HttpxScanProvider) Scan(target string, command string) (string, error) {
-	if target == "" {
-		return "", fmt.Errorf("%s scan target cannot be empty", getHostnamePrefix())
-	}
-
-	// Validate target to prevent command injection
-	target = strings.TrimSpace(target)
-	if strings.ContainsAny(target, ";&|`$") {
-		return "", fmt.Errorf("%s invalid characters in scan target", getHostnamePrefix())
-	}
-
-	// Use default command if empty
-	if command == "" {
-		command = "-u %s -json"
-	}
-
-	// Validate command to prevent command injection
-	command = strings.TrimSpace(command)
-	if strings.ContainsAny(command, ";&|`") {
-		return "", fmt.Errorf("%s invalid characters in scan command", getHostnamePrefix())
-	}
-
-	// Ensure -json flag is present for structured output
-	if !strings.Contains(command, "-json") && !strings.Contains(command, "-jsonl") {
-		command = command + " -json"
-	}
-
-	// Replace %s with target, or append target if no %s placeholder
-	var args []string
-	if strings.Contains(command, "%s") {
-		// Replace %s with target
-		cmdStr := strings.Replace(command, "%s", target, -1)
-		args = strings.Fields(cmdStr)
-	} else {
-		// No %s placeholder, append target with -u flag if not already present
-		args = strings.Fields(command)
-		if !contains(args, "-u") && !contains(args, "-target") && !contains(args, "-l") {
-			args = append(args, "-u", target)
-		}
-	}
-
-	// Run httpx with custom command options
-	cmd := exec.Command(p.httpxPath, args...)
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	fmt.Printf("%s [httpx] Executing httpx scan: %s %s\n", getHostnamePrefix(), p.httpxPath, strings.Join(args, " "))
-	err := cmd.Run()
-	if err != nil {
-		// httpx may return non-zero exit code even when scan completes successfully
-		// Check if we got any output
-		if stdout.Len() == 0 {
-			return "", fmt.Errorf("%s httpx scan failed: %v, stderr: %s", getHostnamePrefix(), err, stderr.String())
-		}
-		// Log the error but continue with parsing
-		fmt.Printf("%s [httpx] Scan completed with warnings: %v\n", getHostnamePrefix(), err)
-	}
-	fmt.Printf("%s [httpx] Scan completed successfully\n", getHostnamePrefix())
-
-	result := stdout.String()
-	if result == "" {
-		result = "Scan completed with no hosts found"
-	}
-
-	return result, nil
+	return scanner{
+		name: "httpx", bin: p.httpxPath,
+		defaultArgs: "-u %s -json",
+		jsonFlags:   []string{"-json", "-jsonl"}, addJSON: "-json",
+		targetFlags: []string{"-u", "-target", "-l"}, addTarget: "-u",
+	}.run(target, command)
 }
 
 func (p *HttpxScanProvider) ParseResult(rawResult string) (string, error) {
