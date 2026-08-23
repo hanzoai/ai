@@ -234,8 +234,25 @@ func TestGetMessageAnswerClaimsBeforeItGenerates(t *testing.T) {
 	if claim == token.NoPos {
 		t.Fatal("GetMessageAnswer never claims the message; two concurrent requests both generate and both charge")
 	}
-	if n := countSelectorCalls(body, "object", "ReleaseMessageAnswer"); n != 1 {
-		t.Errorf("GetMessageAnswer releases the claim %d times, want exactly 1 (a failed generation must be retryable before the lease runs out)", n)
+	// The claim is dropped when the generation ENDS, and the generation does not
+	// end in this function: it ends in the stream writer, which fasthttp runs after
+	// this function has returned. So there are two releases at the two exits — one
+	// for the paths that return before a generation starts, one for the generation
+	// itself — and the first is conditional on the second not having taken over.
+	//
+	// A single unconditional release on this function's own exit reads as tidier
+	// and drops the claim with the answer still being written: the row's text is
+	// empty until the very end, which is exactly what a release tests for and what
+	// the next claim tests for, so the same turn is generated and charged again.
+	stream := firstCallPos(body, "c", "SendStreamWriter")
+	if stream == token.NoPos {
+		t.Fatal("GetMessageAnswer no longer streams its answer; this test's reasoning about when the generation ends needs revisiting")
+	}
+	if n := countSelectorCalls(body, "object", "ReleaseMessageAnswer"); n != 2 {
+		t.Errorf("GetMessageAnswer releases the claim %d times, want 2 — one before a generation starts, one when it ends", n)
+	}
+	if at := lastCallPos(body, "object", "ReleaseMessageAnswer"); at < stream {
+		t.Errorf("every release of the claim is at pos %d, before the stream writer at pos %d — nothing releases it when the generation ends", at, stream)
 	}
 
 	for _, spend := range []struct{ what, pkg, fn string }{
@@ -256,6 +273,28 @@ func TestGetMessageAnswerClaimsBeforeItGenerates(t *testing.T) {
 }
 
 // firstCallPos reports the position of the first pkg.Name(...) call.
+// lastCallPos is firstCallPos's mirror: where the LAST such call is. It answers
+// "does anything do this after that", which is the question when a function hands
+// work to a callback that outlives it.
+func lastCallPos(n ast.Node, pkg, name string) token.Pos {
+	found := token.NoPos
+	ast.Inspect(n, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || sel.Sel.Name != name {
+			return true
+		}
+		if ident, ok := sel.X.(*ast.Ident); ok && ident.Name == pkg && call.Pos() > found {
+			found = call.Pos()
+		}
+		return true
+	})
+	return found
+}
+
 func firstCallPos(n ast.Node, pkg, name string) token.Pos {
 	found := token.NoPos
 	ast.Inspect(n, func(node ast.Node) bool {
