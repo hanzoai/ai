@@ -79,11 +79,11 @@ func init() {
 func zapProviderSuperAdmin(auth string) (*iam.User, *zap.Message) {
 	user, err := zapAccountPrincipal(auth)
 	if err != nil || user == nil {
-		msg, _ := zapError(int(401), "authentication required")
+		msg, _ := zapError(401, "authentication required")
 		return nil, msg
 	}
 	if !util.IsSuperAdmin(user) {
-		msg, _ := zapError(int(403), "this operation requires super admin privilege")
+		msg, _ := zapError(403, "this operation requires super admin privilege")
 		return nil, msg
 	}
 	return user, nil
@@ -99,7 +99,7 @@ func zapGetGlobalProvidersHandler(_ context.Context, auth string, _ []byte) (*za
 	}
 	providers, err := object.GetGlobalProviders()
 	if err != nil {
-		return zapError(int(200), err.Error())
+		return zapError(200, err.Error())
 	}
 	return zapOk(object.GetMaskedProviders(providers, user))
 }
@@ -127,7 +127,7 @@ func zapGetProvidersHandler(_ context.Context, auth string, body []byte) (*zap.M
 	var req zapGetProvidersRequest
 	if len(body) > 0 {
 		if err := json.Unmarshal(body, &req); err != nil {
-			return zapError(int(400), "invalid request: "+err.Error())
+			return zapError(400, "invalid request: "+err.Error())
 		}
 	}
 
@@ -141,14 +141,14 @@ func zapGetProvidersHandler(_ context.Context, auth string, body []byte) (*zap.M
 		if storeName == "" || storeName == "All" {
 			storeName = user.Homepage
 		} else if storeName != user.Homepage {
-			return zapError(int(200), "You can only access data from your assigned store")
+			return zapError(200, "You can only access data from your assigned store")
 		}
 	}
 
 	if req.PageSize == "" || req.Page == "" {
 		providers, err := object.GetProviders(owner)
 		if err != nil {
-			return zapError(int(200), err.Error())
+			return zapError(200, err.Error())
 		}
 		return zapOk(object.GetMaskedProviders(providers, user))
 	}
@@ -156,7 +156,7 @@ func zapGetProvidersHandler(_ context.Context, auth string, body []byte) (*zap.M
 	limit := util.ParseInt(req.PageSize)
 	count, err := object.GetProviderCount(owner, storeName, req.Field, req.Value)
 	if err != nil {
-		return zapError(int(200), err.Error())
+		return zapError(200, err.Error())
 	}
 	page := util.ParseInt(req.Page)
 	offset := (page - 1) * limit
@@ -165,7 +165,7 @@ func zapGetProvidersHandler(_ context.Context, auth string, body []byte) (*zap.M
 	}
 	providers, err := object.GetPaginationProviders(owner, storeName, offset, limit, req.Field, req.Value, req.SortField, req.SortOrder)
 	if err != nil {
-		return zapError(int(200), err.Error())
+		return zapError(200, err.Error())
 	}
 	return zapOk(object.GetMaskedProviders(providers, user), count)
 }
@@ -179,12 +179,12 @@ func zapGetProviderHandler(_ context.Context, auth string, body []byte) (*zap.Me
 	var req zapIDRequest
 	if len(body) > 0 {
 		if err := json.Unmarshal(body, &req); err != nil {
-			return zapError(int(400), "invalid request: "+err.Error())
+			return zapError(400, "invalid request: "+err.Error())
 		}
 	}
 	provider, err := object.GetProvider(req.ID)
 	if err != nil {
-		return zapError(int(200), err.Error())
+		return zapError(200, err.Error())
 	}
 	return zapOk(object.GetMaskedProvider(provider, user))
 }
@@ -203,18 +203,18 @@ func zapUpdateProviderHandler(_ context.Context, auth string, body []byte) (*zap
 	}
 	var req zapUpdateProviderRequest
 	if err := json.Unmarshal(body, &req); err != nil {
-		return zapError(int(400), "invalid request: "+err.Error())
+		return zapError(400, "invalid request: "+err.Error())
 	}
 	// Same sealing as the controller twin — a key typed into the admin UI goes to KMS
 	// under the name the row's existing reference declares, never to the database
 	// as plaintext. Shared function, so the two transports cannot drift on the
 	// question of where a secret lives.
 	if err := sealPastedKey(req.ID, &req.Provider); err != nil {
-		return zapError(int(200), err.Error())
+		return zapError(200, err.Error())
 	}
 	success, err := object.UpdateProvider(req.ID, &req.Provider)
 	if err != nil {
-		return zapError(int(200), err.Error())
+		return zapError(200, err.Error())
 	}
 	return zapOk(success)
 }
@@ -230,18 +230,18 @@ func zapAddProviderHandler(_ context.Context, auth string, body []byte) (*zap.Me
 	}
 	var provider object.Provider
 	if err := json.Unmarshal(body, &provider); err != nil {
-		return zapError(int(400), "invalid request: "+err.Error())
+		return zapError(400, "invalid request: "+err.Error())
 	}
 	provider.Owner = user.Owner
 
 	// One seal, shared with the controller twin — no row yet, so "" id.
 	if err := sealPastedKey("", &provider); err != nil {
-		return zapError(int(200), err.Error())
+		return zapError(200, err.Error())
 	}
 
 	success, err := object.AddProvider(&provider)
 	if err != nil {
-		return zapError(int(200), err.Error())
+		return zapError(200, err.Error())
 	}
 	return zapOk(success)
 }
@@ -253,11 +253,11 @@ func zapDeleteProviderHandler(_ context.Context, auth string, body []byte) (*zap
 	}
 	var provider object.Provider
 	if err := json.Unmarshal(body, &provider); err != nil {
-		return zapError(int(400), "invalid request: "+err.Error())
+		return zapError(400, "invalid request: "+err.Error())
 	}
 	success, err := object.DeleteProvider(&provider)
 	if err != nil {
-		return zapError(int(200), err.Error())
+		return zapError(200, err.Error())
 	}
 	return zapOk(success)
 }
@@ -269,10 +269,10 @@ func zapRefreshMcpToolsHandler(_ context.Context, auth string, body []byte) (*za
 	}
 	var provider object.Provider
 	if err := json.Unmarshal(body, &provider); err != nil {
-		return zapError(int(400), "invalid request: "+err.Error())
+		return zapError(400, "invalid request: "+err.Error())
 	}
 	if err := object.RefreshMcpTools(&provider); err != nil {
-		return zapError(int(200), err.Error())
+		return zapError(200, err.Error())
 	}
 	return zapOk(&provider)
 }
@@ -286,7 +286,7 @@ func zapGetAdminProvidersHandler(_ context.Context, auth string, _ []byte) (*zap
 	}
 	views, err := listAdminModelProviders()
 	if err != nil {
-		return zapError(int(200), err.Error())
+		return zapError(200, err.Error())
 	}
 	return zapOk(views)
 }
@@ -298,23 +298,23 @@ func zapToggleAdminProviderHandler(_ context.Context, auth string, body []byte) 
 	}
 	var req toggleProviderRequest
 	if err := json.Unmarshal(body, &req); err != nil {
-		return zapError(int(400), "invalid request: "+err.Error())
+		return zapError(400, "invalid request: "+err.Error())
 	}
 
 	provider, err := getAdminModelProvider(req.Name)
 	if err != nil {
-		return zapError(int(200), err.Error())
+		return zapError(200, err.Error())
 	}
 
 	provider.State = stateForEnabled(req.Enabled)
 	if _, err := object.UpdateProvider(provider.GetId(), provider); err != nil {
-		return zapError(int(200), err.Error())
+		return zapError(200, err.Error())
 	}
 	object.InvalidateProviderNameCache(provider.Name)
 
 	updated, err := getAdminModelProvider(req.Name)
 	if err != nil {
-		return zapError(int(200), err.Error())
+		return zapError(200, err.Error())
 	}
 	return zapOk(toAdminProviderView(updated, modelCountByProvider()))
 }
@@ -326,23 +326,23 @@ func zapSetPrimaryAdminProviderHandler(_ context.Context, auth string, body []by
 	}
 	var req setPrimaryRequest
 	if err := json.Unmarshal(body, &req); err != nil {
-		return zapError(int(400), "invalid request: "+err.Error())
+		return zapError(400, "invalid request: "+err.Error())
 	}
 
 	provider, err := getAdminModelProvider(req.Name)
 	if err != nil {
-		return zapError(int(200), err.Error())
+		return zapError(200, err.Error())
 	}
 	if !object.ModelProviderUsable(provider) {
-		return zapError(int(200), "the provider must be enabled before it can be made primary")
+		return zapError(200, "the provider must be enabled before it can be made primary")
 	}
 	if err := object.SetPrimaryModelProvider(req.Name); err != nil {
-		return zapError(int(200), err.Error())
+		return zapError(200, err.Error())
 	}
 
 	views, err := listAdminModelProviders()
 	if err != nil {
-		return zapError(int(200), err.Error())
+		return zapError(200, err.Error())
 	}
 	return zapOk(views)
 }
