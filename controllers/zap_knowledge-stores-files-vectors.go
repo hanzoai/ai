@@ -153,38 +153,13 @@ func zapKSFVPrincipal(auth string) *iam.User {
 	return nil
 }
 
-// zapKSFVOk renders the ResponseOk envelope ({status:"ok", data}) as a 200
-// cloud response, preserving the exact JSON shape the HTTP handlers return.
-func zapKSFVOk(data interface{}) (*zap.Message, error) {
-	b, _ := json.Marshal(Response{Status: "ok", Data: data})
-	return object.BuildCloudResponse(http.StatusOK, b, "")
-}
-
-// zapKSFVOk2 mirrors ResponseOk(data, data2) (paginator nums / populate error).
-func zapKSFVOk2(data, data2 interface{}) (*zap.Message, error) {
-	b, _ := json.Marshal(Response{Status: "ok", Data: data, Data2: data2})
-	return object.BuildCloudResponse(http.StatusOK, b, "")
-}
-
-// zapKSFVError mirrors ResponseError (HTTP 200 error envelope).
-func zapKSFVError(msg string) (*zap.Message, error) {
-	b, _ := json.Marshal(Response{Status: "error", Msg: msg})
-	return object.BuildCloudResponse(http.StatusOK, b, "")
-}
-
-// zapKSFVStatusError mirrors ResponseErrorWithStatus (401/403 auth failures).
-func zapKSFVStatusError(status int, msg string) (*zap.Message, error) {
-	b, _ := json.Marshal(Response{Status: "error", Msg: msg})
-	return object.BuildCloudResponse(uint32(status), b, "")
-}
-
 // zapKSFVScopedOwner mirrors GetScopedOwner: authenticated principal required;
 // the admin org may target another owner via a body "owner" field, every other
 // principal is scoped to its own org. Returns (owner, user, nil) or (…, deny).
 func zapKSFVScopedOwner(auth string, bodyOwner string) (string, *iam.User, *zap.Message) {
 	user := zapKSFVPrincipal(auth)
 	if user == nil {
-		msg, _ := zapKSFVStatusError(http.StatusUnauthorized, "auth:Please sign in first")
+		msg, _ := zapError(http.StatusUnauthorized, "auth:Please sign in first")
 		return "", nil, msg
 	}
 	return util.ScopeOwner(user.Owner, bodyOwner), user, nil
@@ -198,7 +173,7 @@ func zapKSFVRequireAdmin(auth string) (*iam.User, *zap.Message) {
 		return user, nil
 	}
 	if !util.IsAdmin(user) {
-		msg, _ := zapKSFVStatusError(http.StatusForbidden, "auth:this operation requires admin privilege")
+		msg, _ := zapError(http.StatusForbidden, "auth:this operation requires admin privilege")
 		return nil, msg
 	}
 	return user, nil
@@ -209,7 +184,7 @@ func zapKSFVRequireAdmin(auth string) (*iam.User, *zap.Message) {
 func zapKSFVRequireSignedIn(auth string) (*iam.User, *zap.Message) {
 	user := zapKSFVPrincipal(auth)
 	if user == nil {
-		msg, _ := zapKSFVStatusError(http.StatusUnauthorized, "auth:Please sign in first")
+		msg, _ := zapError(http.StatusUnauthorized, "auth:Please sign in first")
 		return nil, msg
 	}
 	return user, nil
@@ -224,7 +199,7 @@ func zapKSFVEnforceStoreIsolation(user *iam.User, requested string) (string, *za
 		return user.Homepage, nil
 	}
 	if requested != user.Homepage {
-		msg, _ := zapKSFVError("controllers:You can only access data from your assigned store")
+		msg, _ := zapError(http.StatusOK, "controllers:You can only access data from your assigned store")
 		return "", msg
 	}
 	return requested, nil
@@ -334,9 +309,9 @@ func zapGetGlobalStoresHandler(_ context.Context, auth string, body []byte) (*za
 	if !paged {
 		stores, err := object.GetGlobalStores()
 		if err != nil {
-			return zapKSFVError(err.Error())
+			return zapError(http.StatusOK, err.Error())
 		}
-		return zapKSFVOk(stores)
+		return zapOk(stores)
 	}
 
 	if _, deny := zapKSFVRequireAdmin(auth); deny != nil {
@@ -344,19 +319,19 @@ func zapGetGlobalStoresHandler(_ context.Context, auth string, body []byte) (*za
 	}
 	count, err := object.GetStoreCount(p.Name, p.Field, p.Value)
 	if err != nil {
-		return zapKSFVError(err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
 	stores, err := object.GetPaginationStores(offset, limit, p.Name, p.Field, p.Value, p.SortField, p.SortOrder)
 	if err != nil {
-		return zapKSFVError(err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
 	sort.SliceStable(stores, func(i, j int) bool {
 		return stores[i].IsDefault && !stores[j].IsDefault
 	})
 	if err = object.PopulateStoreCounts(stores); err != nil {
-		return zapKSFVError(err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
-	return zapKSFVOk2(stores, count)
+	return zapOk(stores, count)
 }
 
 func zapGetStoresHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
@@ -367,10 +342,10 @@ func zapGetStoresHandler(_ context.Context, auth string, body []byte) (*zap.Mess
 	}
 	stores, err := object.GetStores(owner)
 	if err != nil {
-		return zapKSFVError(err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
 	stores = FilterStoresByHomepage(stores, user)
-	return zapKSFVOk(stores)
+	return zapOk(stores)
 }
 
 func zapGetStoreHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
@@ -384,7 +359,7 @@ func zapGetStoreHandler(_ context.Context, auth string, body []byte) (*zap.Messa
 		store, err = object.GetStore(p.Id)
 	}
 	if err != nil {
-		return zapKSFVError(err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
 
 	// Populate builds absolute URLs from the request origin. ZAP has no Host, so
@@ -393,10 +368,10 @@ func zapGetStoreHandler(_ context.Context, auth string, body []byte) (*zap.Messa
 	if store != nil && strings.TrimSpace(p.Host) != "" {
 		origin := getOriginFromHost(p.Host)
 		if err = store.Populate(origin, zapKSFVLang(p.Language)); err != nil {
-			return zapKSFVOk2(store, err.Error())
+			return zapOk(store, err.Error())
 		}
 	}
-	return zapKSFVOk(store)
+	return zapOk(store)
 }
 
 // zapDecodeStoreWithId decodes the store object from the body and resolves the
@@ -424,44 +399,44 @@ func zapUpdateStoreHandler(_ context.Context, auth string, body []byte) (*zap.Me
 	}
 	store, id, err := zapDecodeStoreWithId(body)
 	if err != nil {
-		return zapKSFVError(err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
 
 	oldStore, err := object.GetStore(id)
 	if err != nil {
-		return zapKSFVError(err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
 	if oldStore.IsDefault && !store.IsDefault {
-		return zapKSFVError("store:given that there must be one default store in Hanzo Cloud, you cannot set this store to non-default. You can directly set another store as default")
+		return zapError(http.StatusOK, "store:given that there must be one default store in Hanzo Cloud, you cannot set this store to non-default. You can directly set another store as default")
 	}
 
 	success, err := object.UpdateStore(id, store)
 	if err != nil {
-		return zapKSFVError(err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
 
 	if !oldStore.IsDefault && store.IsDefault {
 		stores, err := object.GetGlobalStores()
 		if err != nil {
-			return zapKSFVError(err.Error())
+			return zapError(http.StatusOK, err.Error())
 		}
 		for _, store2 := range stores {
 			if store2.GetId() != store.GetId() && store2.IsDefault {
 				store2.IsDefault = false
 				success, err = object.UpdateStore(store2.GetId(), store2)
 				if err != nil {
-					return zapKSFVError(err.Error())
+					return zapError(http.StatusOK, err.Error())
 				}
 			}
 		}
 	}
-	return zapKSFVOk(success)
+	return zapOk(success)
 }
 
 func zapAddStoreHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
 	var store object.Store
 	if err := json.Unmarshal(body, &store); err != nil {
-		return zapKSFVError(err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
 
 	// A store is created into the same org GetStores reads back, and no other. The
@@ -477,12 +452,12 @@ func zapAddStoreHandler(_ context.Context, auth string, body []byte) (*zap.Messa
 	store.Owner = owner
 
 	if err := object.SyncDefaultProvidersToStore(&store); err != nil {
-		return zapKSFVError(err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
 	if store.ModelProvider == "" {
 		modelProvider, err := object.GetDefaultModelProvider()
 		if err != nil {
-			return zapKSFVError(err.Error())
+			return zapError(http.StatusOK, err.Error())
 		}
 		if modelProvider != nil {
 			store.ModelProvider = modelProvider.Name
@@ -491,7 +466,7 @@ func zapAddStoreHandler(_ context.Context, auth string, body []byte) (*zap.Messa
 	if store.EmbeddingProvider == "" {
 		embeddingProvider, err := object.GetDefaultEmbeddingProvider()
 		if err != nil {
-			return zapKSFVError(err.Error())
+			return zapError(http.StatusOK, err.Error())
 		}
 		if embeddingProvider != nil {
 			store.EmbeddingProvider = embeddingProvider.Name
@@ -500,9 +475,9 @@ func zapAddStoreHandler(_ context.Context, auth string, body []byte) (*zap.Messa
 
 	success, err := object.AddStore(&store)
 	if err != nil {
-		return zapKSFVError(err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
-	return zapKSFVOk(success)
+	return zapOk(success)
 }
 
 func zapDeleteStoreHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
@@ -511,16 +486,16 @@ func zapDeleteStoreHandler(_ context.Context, auth string, body []byte) (*zap.Me
 	}
 	var store object.Store
 	if err := json.Unmarshal(body, &store); err != nil {
-		return zapKSFVError(err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
 	if store.IsDefault {
-		return zapKSFVError("store:Cannot delete the default store")
+		return zapError(http.StatusOK, "store:Cannot delete the default store")
 	}
 	success, err := object.DeleteStore(&store)
 	if err != nil {
-		return zapKSFVError(err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
-	return zapKSFVOk(success)
+	return zapOk(success)
 }
 
 func zapRefreshStoreVectorsHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
@@ -529,14 +504,14 @@ func zapRefreshStoreVectorsHandler(_ context.Context, auth string, body []byte) 
 	}
 	var store object.Store
 	if err := json.Unmarshal(body, &store); err != nil {
-		return zapKSFVError(err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
 	p := zapDecodeParams(body)
 	ok, err := object.RefreshStoreVectors(&store, zapKSFVLang(p.Language))
 	if err != nil {
-		return zapKSFVError(err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
-	return zapKSFVOk(ok)
+	return zapOk(ok)
 }
 
 func zapGetStoreNamesHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
@@ -547,10 +522,10 @@ func zapGetStoreNamesHandler(_ context.Context, auth string, body []byte) (*zap.
 	}
 	storeNames, err := object.GetStoresByFields(owner, "name", "display_name")
 	if err != nil {
-		return zapKSFVError(err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
 	storeNames = FilterStoresByHomepage(storeNames, user)
-	return zapKSFVOk(storeNames)
+	return zapOk(storeNames)
 }
 
 // ── storage providers ────────────────────────────────────────────────────
@@ -561,9 +536,9 @@ func zapGetStorageProvidersHandler(_ context.Context, auth string, _ []byte) (*z
 	}
 	providers, err := getStorageProviders()
 	if err != nil {
-		return zapKSFVError(err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
-	return zapKSFVOk(providers)
+	return zapOk(providers)
 }
 
 // ── files ────────────────────────────────────────────────────────────────
@@ -574,9 +549,9 @@ func zapGetGlobalFilesHandler(_ context.Context, auth string, body []byte) (*zap
 	if !paged {
 		files, err := object.GetGlobalFiles()
 		if err != nil {
-			return zapKSFVError(err.Error())
+			return zapError(http.StatusOK, err.Error())
 		}
-		return zapKSFVOk(files)
+		return zapOk(files)
 	}
 
 	if _, deny := zapKSFVRequireAdmin(auth); deny != nil {
@@ -584,13 +559,13 @@ func zapGetGlobalFilesHandler(_ context.Context, auth string, body []byte) (*zap
 	}
 	count, err := object.GetFileCount("", p.Field, p.Value)
 	if err != nil {
-		return zapKSFVError(err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
 	files, err := object.GetPaginationFiles("", offset, limit, p.Field, p.Value, p.SortField, p.SortOrder)
 	if err != nil {
-		return zapKSFVError(err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
-	return zapKSFVOk2(files, count)
+	return zapOk(files, count)
 }
 
 func zapGetFilesHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
@@ -607,18 +582,18 @@ func zapGetFilesHandler(_ context.Context, auth string, body []byte) (*zap.Messa
 		files, err = object.GetFiles(owner)
 	}
 	if err != nil {
-		return zapKSFVError(err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
-	return zapKSFVOk(files)
+	return zapOk(files)
 }
 
 func zapGetFileHandler(_ context.Context, _ string, body []byte) (*zap.Message, error) {
 	p := zapDecodeParams(body)
 	file, err := object.GetFile(p.Id)
 	if err != nil {
-		return zapKSFVError(err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
-	return zapKSFVOk(file)
+	return zapOk(file)
 }
 
 func zapUpdateFileHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
@@ -628,7 +603,7 @@ func zapUpdateFileHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 	p := zapDecodeParams(body)
 	var file object.File
 	if err := json.Unmarshal(body, &file); err != nil {
-		return zapKSFVError(err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
 	id := p.Id
 	if id == "" {
@@ -636,9 +611,9 @@ func zapUpdateFileHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 	}
 	success, err := object.UpdateFile(id, &file)
 	if err != nil {
-		return zapKSFVError(err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
-	return zapKSFVOk(success)
+	return zapOk(success)
 }
 
 func zapAddFileHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
@@ -647,13 +622,13 @@ func zapAddFileHandler(_ context.Context, auth string, body []byte) (*zap.Messag
 	}
 	var file object.File
 	if err := json.Unmarshal(body, &file); err != nil {
-		return zapKSFVError(err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
 	success, err := object.AddFile(&file)
 	if err != nil {
-		return zapKSFVError(err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
-	return zapKSFVOk(success)
+	return zapOk(success)
 }
 
 func zapDeleteFileHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
@@ -663,13 +638,13 @@ func zapDeleteFileHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 	p := zapDecodeParams(body)
 	var file object.File
 	if err := json.Unmarshal(body, &file); err != nil {
-		return zapKSFVError(err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
 	success, err := object.DeleteFile(&file, zapKSFVLang(p.Language))
 	if err != nil {
-		return zapKSFVError(err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
-	return zapKSFVOk(success)
+	return zapOk(success)
 }
 
 func zapRefreshFileVectorsHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
@@ -679,13 +654,13 @@ func zapRefreshFileVectorsHandler(_ context.Context, auth string, body []byte) (
 	p := zapDecodeParams(body)
 	var file object.File
 	if err := json.Unmarshal(body, &file); err != nil {
-		return zapKSFVError(err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
 	ok, err := object.RefreshFileVectors(&file, zapKSFVLang(p.Language))
 	if err != nil {
-		return zapKSFVError(err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
-	return zapKSFVOk(ok)
+	return zapOk(ok)
 }
 
 func zapUploadFileHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
@@ -697,22 +672,22 @@ func zapUploadFileHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 	p := zapDecodeParams(body)
 
 	if p.File == "" || p.FileType == "" || p.Name == "" {
-		return zapKSFVError("application:Missing required parameters")
+		return zapError(http.StatusOK, "application:Missing required parameters")
 	}
 	if !strings.Contains(p.File, ",") {
-		return zapKSFVError("resource:Invalid file data format")
+		return zapError(http.StatusOK, "resource:Invalid file data format")
 	}
 	fileBytes, err := zapDecodeBase64File(p.File)
 	if err != nil {
-		return zapKSFVError(err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
 
 	filePath := fmt.Sprintf("cloud/avatars/%s/%s", userName, p.Name)
 	fileUrl, err := object.UploadFileToStorageSafe(userName, "file", "UploadStoreAvatar", filePath, fileBytes)
 	if err != nil {
-		return zapKSFVError(err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
-	return zapKSFVOk(fileUrl)
+	return zapOk(fileUrl)
 }
 
 // ── file activation cache ────────────────────────────────────────────────
@@ -725,7 +700,7 @@ func zapActivateFileHandler(_ context.Context, auth string, body []byte) (*zap.M
 
 	prefix := getCachePrefix(p.Filename)
 	if prefix == "" {
-		return zapKSFVOk(false)
+		return zapOk(false)
 	}
 	path := fmt.Sprintf("%s/%s", cacheDir, p.Key)
 	cacheMap[prefix] = path
@@ -734,7 +709,7 @@ func zapActivateFileHandler(_ context.Context, auth string, body []byte) (*zap.M
 	if !util.FileExist(getAppPath(p.Filename)) {
 		util.CopyFile(getAppPath(p.Filename), getAppPath(prefix))
 	}
-	return zapKSFVOk(true)
+	return zapOk(true)
 }
 
 func zapGetActiveFileHandler(_ context.Context, _ string, body []byte) (*zap.Message, error) {
@@ -743,7 +718,7 @@ func zapGetActiveFileHandler(_ context.Context, _ string, body []byte) (*zap.Mes
 	if v, ok := cacheMap[p.Prefix]; ok {
 		res = v
 	}
-	return zapKSFVOk(res)
+	return zapOk(res)
 }
 
 // ── tree files ───────────────────────────────────────────────────────────
@@ -757,17 +732,17 @@ func zapUpdateTreeFileHandler(_ context.Context, auth string, body []byte) (*zap
 
 	var file object.TreeFile
 	if err := json.Unmarshal(body, &file); err != nil {
-		return zapKSFVError(err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
 
 	lang := zapKSFVLang(p.Language)
 	res := object.UpdateTreeFile(p.Store, p.Key, &file)
 	if res {
 		if err := zapAddRecordForFile(user, "Update", p.Store, p.Key, "", true, lang); err != nil {
-			return zapKSFVError(err.Error())
+			return zapError(http.StatusOK, err.Error())
 		}
 	}
-	return zapKSFVOk(res)
+	return zapOk(res)
 }
 
 func zapAddTreeFileHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
@@ -783,28 +758,28 @@ func zapAddTreeFileHandler(_ context.Context, auth string, body []byte) (*zap.Me
 	var file multipart.File
 	if p.IsLeaf {
 		if p.File == "" {
-			return zapKSFVError("resource:Invalid file data format")
+			return zapError(http.StatusOK, "resource:Invalid file data format")
 		}
 		fileBytes, err := zapDecodeBase64File(p.File)
 		if err != nil {
-			return zapKSFVError(err.Error())
+			return zapError(http.StatusOK, err.Error())
 		}
 		file = zapBytesFile{bytes.NewReader(fileBytes)}
 	}
 
 	res, bs, err := object.AddTreeFile(p.Store, userName, p.Key, p.IsLeaf, p.Filename, file, lang)
 	if err != nil {
-		return zapKSFVError(err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
 	if res {
 		if err = addFileToCache(p.Key, p.Filename, bs); err != nil {
-			return zapKSFVError(err.Error())
+			return zapError(http.StatusOK, err.Error())
 		}
 		if err = zapAddRecordForFile(user, "Add", p.Store, p.Key, p.Filename, p.IsLeaf, lang); err != nil {
-			return zapKSFVError(err.Error())
+			return zapError(http.StatusOK, err.Error())
 		}
 	}
-	return zapKSFVOk(res)
+	return zapOk(res)
 }
 
 func zapDeleteTreeFileHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
@@ -817,14 +792,14 @@ func zapDeleteTreeFileHandler(_ context.Context, auth string, body []byte) (*zap
 
 	res, err := object.DeleteTreeFile(p.Store, p.Key, p.IsLeaf, lang)
 	if err != nil {
-		return zapKSFVError(err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
 	if res {
 		if err = zapAddRecordForFile(user, "Delete", p.Store, p.Key, "", p.IsLeaf, lang); err != nil {
-			return zapKSFVError(err.Error())
+			return zapError(http.StatusOK, err.Error())
 		}
 	}
-	return zapKSFVOk(res)
+	return zapOk(res)
 }
 
 // ── vectors ──────────────────────────────────────────────────────────────
@@ -832,9 +807,9 @@ func zapDeleteTreeFileHandler(_ context.Context, auth string, body []byte) (*zap
 func zapGetGlobalVectorsHandler(_ context.Context, _ string, _ []byte) (*zap.Message, error) {
 	vectors, err := object.GetGlobalVectors()
 	if err != nil {
-		return zapKSFVError(err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
-	return zapKSFVOk(vectors)
+	return zapOk(vectors)
 }
 
 func zapGetVectorsHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
@@ -854,28 +829,28 @@ func zapGetVectorsHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 	if !paged {
 		vectors, err := object.GetVectors(owner)
 		if err != nil {
-			return zapKSFVError(err.Error())
+			return zapError(http.StatusOK, err.Error())
 		}
-		return zapKSFVOk(vectors)
+		return zapOk(vectors)
 	}
 	count, err := object.GetVectorCount(owner, storeName, p.Field, p.Value)
 	if err != nil {
-		return zapKSFVError(err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
 	vectors, err := object.GetPaginationVectors(owner, storeName, offset, limit, p.Field, p.Value, p.SortField, p.SortOrder)
 	if err != nil {
-		return zapKSFVError(err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
-	return zapKSFVOk2(vectors, count)
+	return zapOk(vectors, count)
 }
 
 func zapGetVectorHandler(_ context.Context, _ string, body []byte) (*zap.Message, error) {
 	p := zapDecodeParams(body)
 	vector, err := object.GetVector(p.Id)
 	if err != nil {
-		return zapKSFVError(err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
-	return zapKSFVOk(vector)
+	return zapOk(vector)
 }
 
 func zapUpdateVectorHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
@@ -885,7 +860,7 @@ func zapUpdateVectorHandler(_ context.Context, auth string, body []byte) (*zap.M
 	p := zapDecodeParams(body)
 	var vector object.Vector
 	if err := json.Unmarshal(body, &vector); err != nil {
-		return zapKSFVError(err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
 	id := p.Id
 	if id == "" {
@@ -893,9 +868,9 @@ func zapUpdateVectorHandler(_ context.Context, auth string, body []byte) (*zap.M
 	}
 	success, err := object.UpdateVector(id, &vector, zapKSFVLang(p.Language))
 	if err != nil {
-		return zapKSFVError(err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
-	return zapKSFVOk(success)
+	return zapOk(success)
 }
 
 func zapAddVectorHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
@@ -904,12 +879,12 @@ func zapAddVectorHandler(_ context.Context, auth string, body []byte) (*zap.Mess
 	}
 	var vector object.Vector
 	if err := json.Unmarshal(body, &vector); err != nil {
-		return zapKSFVError(err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
 	if vector.Provider == "" {
 		embeddingProvider, err := object.GetDefaultEmbeddingProvider()
 		if err != nil {
-			return zapKSFVError(err.Error())
+			return zapError(http.StatusOK, err.Error())
 		}
 		if embeddingProvider != nil {
 			vector.Provider = embeddingProvider.Name
@@ -917,9 +892,9 @@ func zapAddVectorHandler(_ context.Context, auth string, body []byte) (*zap.Mess
 	}
 	success, err := object.AddVector(&vector)
 	if err != nil {
-		return zapKSFVError(err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
-	return zapKSFVOk(success)
+	return zapOk(success)
 }
 
 func zapDeleteVectorHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
@@ -928,13 +903,13 @@ func zapDeleteVectorHandler(_ context.Context, auth string, body []byte) (*zap.M
 	}
 	var vector object.Vector
 	if err := json.Unmarshal(body, &vector); err != nil {
-		return zapKSFVError(err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
 	success, err := object.DeleteVector(&vector)
 	if err != nil {
-		return zapKSFVError(err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
-	return zapKSFVOk(success)
+	return zapOk(success)
 }
 
 func zapDeleteAllVectorsHandler(_ context.Context, auth string, _ []byte) (*zap.Message, error) {
@@ -946,17 +921,17 @@ func zapDeleteAllVectorsHandler(_ context.Context, auth string, _ []byte) (*zap.
 
 	vectors, err := object.GetVectors(owner)
 	if err != nil {
-		return zapKSFVError(err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
 	allSuccess := true
 	for i := range vectors {
 		success, err := object.DeleteVector(vectors[i])
 		if err != nil {
-			return zapKSFVError(err.Error())
+			return zapError(http.StatusOK, err.Error())
 		}
 		if !success {
 			allSuccess = false
 		}
 	}
-	return zapKSFVOk(allSuccess)
+	return zapOk(allSuccess)
 }

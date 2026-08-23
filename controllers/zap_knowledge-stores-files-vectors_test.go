@@ -96,7 +96,7 @@ func TestZapKnowledgeRegistry(t *testing.T) {
 // the console frontend contract the native path must preserve byte-for-byte.
 func TestZapKnowledgeOkEnvelopeParity(t *testing.T) {
 	data := []string{"store-a", "store-b"}
-	msg, err := zapKSFVOk(data)
+	msg, err := zapOk(data)
 	if err != nil {
 		t.Fatalf("zapKSFVOk: %v", err)
 	}
@@ -108,7 +108,7 @@ func TestZapKnowledgeOkEnvelopeParity(t *testing.T) {
 		t.Errorf("ok body = %s, want %s", got, want)
 	}
 
-	msg2, _ := zapKSFVOk2(data, int64(2))
+	msg2, _ := zapOk(data, int64(2))
 	want2, _ := json.Marshal(Response{Status: "ok", Data: data, Data2: int64(2)})
 	if got := msg2.Root().Bytes(object.CloudRespBody); string(got) != string(want2) {
 		t.Errorf("paginated body = %s, want %s", got, want2)
