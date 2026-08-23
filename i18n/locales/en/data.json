@@ -96,7 +96,8 @@
     "Failed to update": "Failed to update",
     "The task does not exist": "The task does not exist",
     "The connection does not exist": "The connection does not exist",
-    "The node does not exist": "The node does not exist"
+    "The node does not exist": "The node does not exist",
+    "The application does not exist": "The application does not exist"
   },
   "message_answer": {
     "object.GetNearestKnowledge() error, %s": "object.GetNearestKnowledge() error, %s"
