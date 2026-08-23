@@ -205,18 +205,30 @@ func GetGlobalMessagesByStoreName(storeName string) ([]*Message, error) {
 	return messages, nil
 }
 
-func GetChatMessages(chat string) ([]*Message, error) {
+// GetChatMessages returns one chat's transcript, confined to org. A chat name is
+// unique across the whole store rather than within a tenant, so the name alone
+// addresses any customer's conversation; org is what makes the answer the
+// caller's. Empty asks across every tenant, which is the reserved org's to ask.
+func GetChatMessages(chat string, org string) ([]*Message, error) {
 	messages := []*Message{}
-	err := findAll(adapter.db, "message", &messages, dbx.HashExp{"chat": chat}, "created_time ASC")
+	err := findAll(adapter.db, "message", &messages,
+		narrow(dbx.HashExp{"chat": chat}, map[string]string{"organization": org}),
+		"created_time ASC")
 	if err != nil {
 		return messages, err
 	}
 	return messages, nil
 }
 
-func GetMessages(owner string, user string, storeName string) ([]*Message, error) {
+// GetMessages lists messages, narrowed by whichever of org, user and store the
+// caller named; an empty one means unconstrained. As with a chat, Owner is the
+// namespace every message shares and org is the tenant.
+func GetMessages(owner string, org string, user string, storeName string) ([]*Message, error) {
 	messages := []*Message{}
-	err := findAll(adapter.db, "message", &messages, dbx.HashExp{"owner": owner, "user": user, "store": storeName}, "created_time DESC")
+	err := findAll(adapter.db, "message", &messages,
+		narrow(dbx.HashExp{"owner": owner}, map[string]string{
+			"organization": org, "user": user, "store": storeName,
+		}), "created_time DESC")
 	if err != nil {
 		return messages, err
 	}
@@ -356,7 +368,7 @@ func DeleteAllLaterMessages(messageId string) error {
 		return err
 	}
 	// Get all messages for this chat
-	allMessages, err := GetChatMessages(originMessage.Chat)
+	allMessages, err := GetChatMessages(originMessage.Chat, originMessage.Organization)
 	if err != nil {
 		return err
 	}
