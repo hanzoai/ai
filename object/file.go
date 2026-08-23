@@ -73,17 +73,8 @@ func GetFilesByStore(owner string, store string) ([]*File, error) {
 	return files, nil
 }
 
-func getFile(owner string, name string) (*File, error) {
-	file := File{Owner: owner, Name: name}
-	existed, err := getOne(adapter.db, "file", &file, pk2(file.Owner, file.Name))
-	if err != nil {
-		return &file, err
-	}
-	if existed {
-		return &file, nil
-	} else {
-		return nil, nil
-	}
+func getFile(owner, name string) (*File, error) {
+	return getRow[File]("file", owner, name)
 }
 
 func GetFile(id string) (*File, error) {
@@ -110,15 +101,7 @@ func UpdateFile(id string, file *File) (bool, error) {
 }
 
 func AddFile(file *File) (bool, error) {
-	err := insertRow(adapter.db, file)
-	affected := int64(1)
-	if err != nil {
-		affected = 0
-	}
-	if err != nil {
-		return false, err
-	}
-	return affected != 0, nil
+	return addRow(file)
 }
 
 func DeleteFile(file *File, lang string) (bool, error) {

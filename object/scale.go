@@ -131,23 +131,11 @@ func UpdateScale(id string, scale *Scale) (bool, error) {
 }
 
 func AddScale(scale *Scale) (bool, error) {
-	err := insertRow(adapter.db, scale)
-	affected := int64(1)
-	if err != nil {
-		affected = 0
-	}
-	if err != nil {
-		return false, err
-	}
-	return affected != 0, nil
+	return addRow(scale)
 }
 
 func DeleteScale(scale *Scale) (bool, error) {
-	affected, err := deleteByPK(adapter.db, "scale", pk2(scale.Owner, scale.Name))
-	if err != nil {
-		return false, err
-	}
-	return affected != 0, nil
+	return deleteRow("scale", scale.Owner, scale.Name)
 }
 
 func (s *Scale) GetId() string {
