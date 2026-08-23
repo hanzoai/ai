@@ -217,20 +217,6 @@ func updateVideoCoverUrl(id string, videoId string, lang string) error {
 	return nil
 }
 
-func startCoverUrlJob(id string, videoId string, lang string) {
-	err := object.SetDefaultVodClient(lang)
-	if err != nil {
-		panic(err)
-	}
-
-	go func(id string, videoId string) {
-		err = updateVideoCoverUrl(id, videoId, lang)
-		if err != nil {
-			panic(err)
-		}
-	}(id, videoId)
-}
-
 func copyBuffer(original *bytes.Buffer) *bytes.Buffer {
 	bufCopy := make([]byte, original.Len())
 	copy(bufCopy, original.Bytes())
@@ -401,8 +387,6 @@ func (c *ApiController) UploadVideo() {
 		c.ResponseError(err.Error())
 		return
 	}
-
-	// startCoverUrlJob(id, videoId)
 
 	c.ResponseOk(fileId)
 }

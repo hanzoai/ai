@@ -46,3 +46,22 @@ func TestOnlyAnAlphanumericNameReachesAnIdentifierPosition(t *testing.T) {
 		})
 	}
 }
+
+// The two number readers answer the same way for something that is not a number,
+// because a caller that does not check one does not check the other either.
+func TestReadingSomethingThatIsNotANumber(t *testing.T) {
+	for _, s := range []string{"", "abc", "1.2.3", "NaN%", " ", "1e", "--4"} {
+		if got := ParseInt(s); got != 0 {
+			t.Errorf("ParseInt(%q) = %d, want 0", s, got)
+		}
+		if got := ParseFloat(s); got != 0 {
+			t.Errorf("ParseFloat(%q) = %v, want 0", s, got)
+		}
+	}
+	if got := ParseFloat("1250.5"); got != 1250.5 {
+		t.Errorf("ParseFloat lost a real number: %v", got)
+	}
+	if got := ParseInt("42"); got != 42 {
+		t.Errorf("ParseInt lost a real number: %v", got)
+	}
+}

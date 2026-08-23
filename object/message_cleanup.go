@@ -18,7 +18,6 @@ import (
 	"fmt"
 
 	"github.com/hanzoai/ai/log"
-	"github.com/robfig/cron/v3"
 )
 
 func getChatMessagesFromMessages(chat string, messages []*Message) []*Message {
@@ -109,7 +108,7 @@ func cleanupChatsNoError() {
 
 func InitCleanupChats() {
 	cleanupChatsNoError()
-	cronJob := cron.New()
+	cronJob := newCron()
 	schedule := fmt.Sprintf("@every %ds", 3600)
 	_, err := cronJob.AddFunc(schedule, cleanupChatsNoError)
 	if err != nil {

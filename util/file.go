@@ -96,8 +96,12 @@ func downloadMaxmindFiles(cityExists, asnExists bool) {
 	// Update status in util package
 	MaxmindDownloadInProgress = false
 
+	// This runs in a goroutine of its own, started at boot and finishing whenever
+	// the download does, so a panic here ends the PROCESS minutes later with no
+	// request to blame it on. Nothing needs the geo database: a lookup without one
+	// answers Null, which is what an unknown location is.
 	if err := InitMaxmindDb(); err != nil {
-		panic("Failed to initialize MaxMind database")
+		fmt.Println("Failed to initialize MaxMind database:", err)
 	}
 }
 
