@@ -149,8 +149,8 @@ func TestImageUpstreamBase(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			p := tc.prov
-			if got := imageUpstreamBase(&p); got != tc.want {
-				t.Errorf("imageUpstreamBase = %q, want %q", got, tc.want)
+			if got := upstreamBase(&p); got != tc.want {
+				t.Errorf("upstreamBase = %q, want %q", got, tc.want)
 			}
 		})
 	}

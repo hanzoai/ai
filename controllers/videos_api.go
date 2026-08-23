@@ -28,7 +28,6 @@ import (
 	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/model"
 	"github.com/hanzoai/ai/object"
-	"github.com/hanzoai/ai/upstream"
 )
 
 // This file completes the OpenAI-compatible surface alongside chat, embeddings,
@@ -201,7 +200,7 @@ func (c *ApiController) VideosGenerations() {
 		provider.SubType = req.Model
 	}
 
-	upstreamURL := videoUpstreamBase(provider)
+	upstreamURL := upstreamBase(provider)
 	if upstreamURL == "" {
 		c.ResponseError("No upstream endpoint configured for provider: " + provider.Name)
 		return
@@ -296,7 +295,7 @@ func (c *ApiController) RetrieveVideo() {
 	ctx, cancel := context.WithTimeout(c.Context(), 30*time.Second)
 	defer cancel()
 
-	upstreamURL := videoUpstreamBase(provider)
+	upstreamURL := upstreamBase(provider)
 	status, errMsg, err := model.RetrieveVideoDOAI(ctx, upstreamURL, provider.ClientSecret, job.upstreamID)
 	if err != nil {
 		c.ResponseError(fmt.Sprintf("Video status poll failed: %s", err.Error()))
@@ -360,7 +359,7 @@ func (c *ApiController) VideoContent() {
 	ctx, cancel := context.WithTimeout(c.Context(), 120*time.Second)
 	defer cancel()
 
-	upstreamURL := videoUpstreamBase(provider)
+	upstreamURL := upstreamBase(provider)
 	data, mime, err := model.DownloadVideoBytesDOAI(ctx, upstreamURL, provider.ClientSecret, job.upstreamID)
 	if err != nil {
 		c.ResponseError(fmt.Sprintf("Video download failed: %s", err.Error()))
@@ -462,21 +461,6 @@ func videoJobResponse(job *videoJob) map[string]interface{} {
 		resp["progress"] = 0
 	}
 	return resp
-}
-
-// videoUpstreamBase returns the provider's base URL for the async video API (the
-// provider's ProviderUrl, e.g. https://spark-video.hanzo.ai/v1). It reuses
-// endpoint so provider URL handling lives in exactly one place; the async client
-// appends /videos itself, so the empty path yields the clean base with the
-// provider's /v1 normalization applied.
-func videoUpstreamBase(provider *object.Provider) string {
-	base := upstream.Endpoint(provider, "")
-	// endpoint returns "<base>/" for the empty path; trim the trailing slash so
-	// the async client's "/videos" join is clean.
-	for len(base) > 0 && base[len(base)-1] == '/' {
-		base = base[:len(base)-1]
-	}
-	return base
 }
 
 // recordVideoUsage records a single video-generation usage event for billing +
