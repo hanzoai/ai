@@ -98,34 +98,6 @@ func init() {
 
 // ── Shared seams (identity + response envelope parity) ───────────────────
 
-// zapRPSPrincipal resolves the request principal STRICTLY from its verified
-// credential — the ZAP analogue of principalUser (there is no session cookie on
-// the ZAP path). sk- IAM keys route through getUserByAccessKey; JWTs through
-// object.ParseAndValidateJWT (signature + iss/aud, never raw iam.ParseJwtToken).
-// A pk- resolves to NO principal here and is meant to: it names an org, never a
-// person, so there is nothing for this function to return and nothing to be
-// mistaken for a role. Returns nil for an empty/invalid/unsupported credential —
-// fail-secure.
-func zapRPSPrincipal(auth string) *iam.User {
-	token := strings.TrimSpace(strings.TrimPrefix(auth, "Bearer "))
-	if token == "" {
-		return nil
-	}
-	if isIAMApiKey(token) {
-		if user, err := getUserByAccessKey(token); err == nil && user != nil {
-			return user
-		}
-		return nil
-	}
-	if isJwtToken(token) {
-		if claims, err := object.ParseAndValidateJWT(token); err == nil && claims != nil {
-			u := claims.User
-			return &u
-		}
-	}
-	return nil
-}
-
 // zapRPSOrg mirrors GetOrg for the ZAP path: the org is the verified principal's
 // Owner, never a client field. No verified principal → the IAM_ORG default (as
 // GetOrg does when there is no principal).
@@ -140,7 +112,7 @@ func zapRPSOrg(user *iam.User) string {
 // an ORG-level admin principal is required. Returns (user, nil) on pass, or
 // (nil, errResponse) on refusal (403 for a non-admin, matching ResponseForbidden).
 func zapRPSRequireAdmin(auth string) (*iam.User, *zap.Message) {
-	user := zapRPSPrincipal(auth)
+	user := zapPrincipal(auth)
 	if conf.IsPreviewMode() {
 		return user, nil
 	}
@@ -154,7 +126,7 @@ func zapRPSRequireAdmin(auth string) (*iam.User, *zap.Message) {
 // zapRPSRequireSuperAdmin mirrors ApiController.RequireSuperAdmin: no principal →
 // 401, authenticated non-super-admin → 403.
 func zapRPSRequireSuperAdmin(auth string) (*iam.User, *zap.Message) {
-	user := zapRPSPrincipal(auth)
+	user := zapPrincipal(auth)
 	if user == nil {
 		msg, _ := zapError(http.StatusUnauthorized, "auth:Please sign in first")
 		return nil, msg
@@ -314,7 +286,7 @@ func zapGetRouterStatsHandler(_ context.Context, auth string, body []byte) (*zap
 		return zapOk(stats)
 	}
 
-	user := zapRPSPrincipal(auth)
+	user := zapPrincipal(auth)
 	if user == nil {
 		return zapError(http.StatusUnauthorized, "auth:Please sign in first")
 	}
@@ -367,7 +339,7 @@ func zapPublishRouterArtifactMetaHandler(_ context.Context, auth string, body []
 // ── routing defaults ─────────────────────────────────────────────────────
 
 func zapGetRoutingDefaultsHandler(_ context.Context, auth string, _ []byte) (*zap.Message, error) {
-	org := zapRPSOrg(zapRPSPrincipal(auth))
+	org := zapRPSOrg(zapPrincipal(auth))
 
 	autoActive := false
 	if cfg := GetModelConfig(); cfg != nil {
@@ -423,7 +395,7 @@ func zapExportRoutingRewardsHandler(_ context.Context, auth string, body []byte)
 // ── routing reward (feedback) ────────────────────────────────────────────
 
 func zapAddRoutingRewardHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	user := zapRPSPrincipal(auth)
+	user := zapPrincipal(auth)
 	if user == nil {
 		return zapError(http.StatusUnauthorized, "auth:Please sign in first")
 	}
