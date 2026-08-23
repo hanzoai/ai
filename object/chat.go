@@ -77,24 +77,11 @@ func GetChats(owner string, storeName string, user string) ([]*Chat, error) {
 }
 
 func getChat(owner, name string) (*Chat, error) {
-	chat := Chat{Owner: owner, Name: name}
-	existed, err := getOne(adapter.db, "chat", &chat, pk2(chat.Owner, chat.Name))
-	if err != nil {
-		return nil, err
-	}
-	if existed {
-		return &chat, nil
-	} else {
-		return nil, nil
-	}
+	return getRow[Chat]("chat", owner, name)
 }
 
 func GetChat(id string) (*Chat, error) {
-	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
-	if err != nil {
-		return nil, err
-	}
-	return getChat(owner, name)
+	return rowAt[Chat]("chat", id)
 }
 
 func UpdateChat(id string, chat *Chat) (bool, error) {

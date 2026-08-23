@@ -120,11 +120,7 @@ func getTask(owner, name string) (*Task, error) {
 }
 
 func GetTask(id string) (*Task, error) {
-	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
-	if err != nil {
-		return nil, err
-	}
-	return getTask(owner, name)
+	return rowAt[Task]("task", id)
 }
 
 // GetTaskEffectiveScale returns rubric text: from referenced Scale.Text when Task.Scale is set.
