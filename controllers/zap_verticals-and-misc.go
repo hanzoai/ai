@@ -232,12 +232,7 @@ func zapMiscScopedOwner(user *iam.User, requestedOwner string) (string, *zap.Mes
 	if user == nil {
 		return "", zapMiscDeny(401, "Please sign in first")
 	}
-	if user.Owner == "admin" {
-		if r := strings.TrimSpace(requestedOwner); r != "" {
-			return r, nil
-		}
-	}
-	return user.Owner, nil
+	return util.ScopeOwner(user.Owner, requestedOwner), nil
 }
 
 // zapMiscListRequest carries the list/pagination + filter params the GET
