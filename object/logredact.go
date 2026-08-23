@@ -41,8 +41,13 @@ var sensitiveJSONKey = regexp.MustCompile(
 
 // sensitiveQueryParam matches credential-bearing query parameters. A key in a URL
 // is already the worst place for one, and logging it makes it permanent.
+//
+// The separator between words is optional, as in the JSON rule above and for the
+// same reason: it listed only the snake spellings, so accessToken — the one this
+// module puts in a URL itself — went straight through, `token` not matching
+// inside it because there is no word boundary after "access".
 var sensitiveQueryParam = regexp.MustCompile(
-	`(?i)\b(access_token|refresh_token|id_token|api_key|apikey|token|secret|client_secret|password|code|otp)=[^&\s]*`)
+	`(?i)\b(access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?key|client[_-]?secret|private[_-]?key|token|secret|password|passwd|code[_-]?verifier|otp)=[^&\s]*`)
 
 // redactCredential turns an Authorization header into a correlatable fingerprint.
 // The scheme is kept because it is diagnostic (a "Basic" where a "Bearer" was

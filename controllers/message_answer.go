@@ -621,7 +621,11 @@ func (c *ApiController) GetAnswer() {
 
 	_, err = object.UpdateChat(chat.GetId(), chat)
 	if err != nil {
-		c.ResponseOk(err.Error())
+		// A failure is reported as one, the way the streamed path beside this
+		// reports the same write. Handed to ResponseOk it came back at status ok in
+		// the field that carries the answer, so the store's error text was read as
+		// what the assistant said.
+		c.ResponseError(err.Error())
 		return
 	}
 
