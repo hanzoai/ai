@@ -19,7 +19,6 @@ import (
 	"strings"
 
 	"github.com/hanzoai/ai/util"
-	"github.com/hanzoai/dbx"
 )
 
 // Application.Status values. The four middle ones are the pod phases a
@@ -56,12 +55,7 @@ type applicationConfigOption struct {
 }
 
 func GetApplications(owner string) ([]*Application, error) {
-	applications := []*Application{}
-	err := findAll(adapter.db, "application", &applications, dbx.HashExp{"owner": owner}, "created_time DESC")
-	if err != nil {
-		return applications, err
-	}
-	return applications, nil
+	return rowsOf[Application]("application", owner)
 }
 
 func GetApplicationCount(owner, field, value string) (int64, error) {
@@ -84,11 +78,7 @@ func getApplication(owner, name string) (*Application, error) {
 }
 
 func GetApplication(id string) (*Application, error) {
-	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
-	if err != nil {
-		return nil, err
-	}
-	return getApplication(owner, name)
+	return rowAt[Application]("application", id)
 }
 
 // UpdateApplication writes the record. The Manifest field is rendered from the
