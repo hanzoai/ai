@@ -144,19 +144,6 @@ func zapSecErr(status int, msg string) (*zap.Message, error) {
 	return object.BuildCloudResponse(uint32(status), b, msg)
 }
 
-// zapSecScopedOwner mirrors ApiController.GetScopedOwner: a non-admin principal
-// is always scoped to its own org; the reserved `admin` org may target a
-// specific owner via the body's `owner` field. The scope decision derives ONLY
-// from the verified principal, never from a client owner field for a tenant.
-func zapSecScopedOwner(user *iam.User, requestedOwner string) string {
-	if user.Owner == "admin" {
-		if o := strings.TrimSpace(requestedOwner); o != "" {
-			return o
-		}
-	}
-	return user.Owner
-}
-
 // ── asset.go parity ──────────────────────────────────────────────────────────
 
 // zapListParams is the body-decoded projection of the query params shared
@@ -185,7 +172,7 @@ func zapGetAssetsHandler(_ context.Context, auth string, body []byte) (*zap.Mess
 			return zapSecErr(http.StatusBadRequest, "invalid request: "+err.Error())
 		}
 	}
-	owner := zapSecScopedOwner(user, p.Owner)
+	owner := util.ScopeOwner(user.Owner, p.Owner)
 
 	if p.PageSize == "" || p.P == "" {
 		assets, err := object.GetAssets(owner)
@@ -341,7 +328,7 @@ func zapScanAssetsHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 			return zapSecErr(http.StatusBadRequest, "invalid request: "+err.Error())
 		}
 	}
-	owner := zapSecScopedOwner(user, req.Owner)
+	owner := util.ScopeOwner(user.Owner, req.Owner)
 	success, err := object.ScanAssetsFromProvider(owner, req.Provider)
 	if err != nil {
 		return zapSecErr(http.StatusOK, err.Error())
@@ -364,7 +351,7 @@ func zapGetScansHandler(_ context.Context, auth string, body []byte) (*zap.Messa
 			return zapSecErr(http.StatusBadRequest, "invalid request: "+err.Error())
 		}
 	}
-	owner := zapSecScopedOwner(user, p.Owner)
+	owner := util.ScopeOwner(user.Owner, p.Owner)
 
 	// Asset filter short-circuit (parity with GetScansByAsset).
 	if p.Asset != "" {
