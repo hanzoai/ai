@@ -14,7 +14,7 @@
 package object
 
 import (
-	"time"
+	"github.com/hanzoai/ai/util"
 
 	"github.com/google/uuid"
 	"github.com/hanzoai/dbx"
@@ -68,7 +68,7 @@ func AddRoutingEvent(e *RoutingEvent) error {
 		e.Id = uuid.NewString()
 	}
 	if e.CreatedTime == "" {
-		e.CreatedTime = time.Now().UTC().Format(time.RFC3339)
+		e.CreatedTime = util.GetCurrentTime()
 	}
 	return insertRow(adapter.db, e)
 }
@@ -123,7 +123,7 @@ func AttachRoutingReward(org, requestId string, reward float64) (found bool, err
 	}
 	if _, err = updateCols(adapter.db, "routing_event", where, dbx.Params{
 		"reward":        reward,
-		"rewarded_time": time.Now().UTC().Format(time.RFC3339),
+		"rewarded_time": util.GetCurrentTime(),
 	}); err != nil {
 		return false, err
 	}
@@ -144,7 +144,7 @@ func AttachRoutingRewardIfUnset(org, requestId string, reward float64) (set bool
 	where := dbx.HashExp{"owner": org, "request_id": requestId, "rewarded_time": ""}
 	n, err := updateCols(adapter.db, "routing_event", where, dbx.Params{
 		"reward":        reward,
-		"rewarded_time": time.Now().UTC().Format(time.RFC3339),
+		"rewarded_time": util.GetCurrentTime(),
 	})
 	if err != nil {
 		return false, err

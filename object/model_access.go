@@ -15,7 +15,7 @@
 package object
 
 import (
-	"time"
+	"github.com/hanzoai/ai/util"
 
 	"github.com/hanzoai/dbx"
 )
@@ -120,7 +120,7 @@ func UpsertModelAccess(owner, user, email, model, status string) (*ModelAccess, 
 	if err != nil {
 		return nil, err
 	}
-	now := time.Now().Format(time.RFC3339)
+	now := util.GetCurrentTime()
 	if existing != nil {
 		if existing.Status == ModelAccessGranted && status == ModelAccessRequested {
 			return existing, nil // never downgrade a grant

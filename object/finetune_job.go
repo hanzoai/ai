@@ -15,7 +15,8 @@ package object
 
 import (
 	"fmt"
-	"time"
+
+	"github.com/hanzoai/ai/util"
 
 	"github.com/hanzoai/dbx"
 )
@@ -106,7 +107,7 @@ func GetFinetuneJob(owner string, name string) (*FinetuneJob, error) {
 }
 
 func AddFinetuneJob(job *FinetuneJob) (bool, error) {
-	job.CreatedTime = time.Now().Format(time.RFC3339)
+	job.CreatedTime = util.GetCurrentTime()
 	job.UpdatedTime = job.CreatedTime
 	err := insertRow(adapter.db, job)
 	if err != nil {
@@ -116,7 +117,7 @@ func AddFinetuneJob(job *FinetuneJob) (bool, error) {
 }
 
 func UpdateFinetuneJob(owner string, name string, job *FinetuneJob) (bool, error) {
-	job.UpdatedTime = time.Now().Format(time.RFC3339)
+	job.UpdatedTime = util.GetCurrentTime()
 	job.Owner = owner
 	job.Name = name
 	err := adapter.db.Model(job).Update()
