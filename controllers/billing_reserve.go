@@ -56,7 +56,7 @@ type sseStreamChunk struct {
 // clients. This is the billing-critical core of the streaming tool path: it
 // guarantees a streamed tool call yields real token counts to bill.
 //
-// mk is the door every event leaves through (envelope.go): each chunk goes out in
+// mk is what stamps every event on the way out (envelope.go): each chunk goes out in
 // our envelope, stamped from the one mark, so the id holds for the whole stream.
 func streamCaptureUsage(r io.Reader, w io.Writer, flush func(), clientWantsUsage bool, strip *model.ReasoningStripper, mk *mark) (prompt, completion, total int, completionText string) {
 	scanner := bufio.NewScanner(r)

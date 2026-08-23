@@ -34,7 +34,7 @@ import (
 // It carries the two things every caller uses — the tenant whose index is read
 // and the identity the usage is billed to — and deliberately NOT the resolved
 // iam.User. Nothing read that user, and keeping a full principal here invites a
-// role check on a value some of these doors build from a PUBLIC key: a page key
+// role check on a value some of these endpoints build from a PUBLIC key: a page key
 // names an org, never a person, and a struct that cannot carry a person cannot be
 // asked whether it is an admin.
 type searchAuth struct {
@@ -83,11 +83,11 @@ func (c *ApiController) resolveSearchAuth() *searchAuth {
 	}
 
 	// 4. Publishable key (pk-*) -- read-only access for a key that ships in a page.
-	// It goes to IAM's publishable door, which answers with the ORG that holds the
-	// key and never a person; get-user above is the secret half's door and refuses
-	// a pk- outright, so asking it here denied every publishable caller. The owner
-	// rides the KEY, not the request Origin/Referer — a forgeable header must not
-	// let one page read another tenant's indexed store.
+	// It goes to IAM's publishable endpoint, which answers with the ORG that holds
+	// the key and never a person; get-user above is the secret half's endpoint and
+	// refuses a pk- outright, so asking it here denied every publishable caller. The
+	// owner rides the KEY, not the request Origin/Referer — a forgeable header must
+	// not let one page read another tenant's indexed store.
 	if isPublishableKey(token) {
 		org, err := publishableOrg(token)
 		if err != nil {

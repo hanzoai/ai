@@ -49,10 +49,10 @@ func TestPayerSubject_UnattributableIsEmptyNeverThePool(t *testing.T) {
 // the signup org, so this is the case that must not move.
 //
 // The claim is the whole mechanism because the class never crosses the wire: the
-// key door returns the keyUser projection (billing_account, no type) and the token
-// door signs billing_account for every principal it mints. A row's asserted class
-// is not consulted, so in this org — where the org account is the platform's own
-// balance — nothing a row can say reaches it.
+// key endpoint returns the keyUser projection (billing_account, no type) and the
+// token endpoint signs billing_account for every principal it mints. A row's
+// asserted class is not consulted, so in this org — where the org account is the
+// platform's own balance — nothing a row can say reaches it.
 func TestPayerSubject_MachinesAndTenantsAreUnaffected(t *testing.T) {
 	for _, c := range []struct {
 		what string
@@ -60,7 +60,7 @@ func TestPayerSubject_MachinesAndTenantsAreUnaffected(t *testing.T) {
 		want string
 	}{
 		// The live pool consumers: first-party machines in the signup org. Each
-		// carries the signed ledger, which is what every real door hands us.
+		// carries the signed ledger, which is what every real endpoint hands us.
 		{"a machine token", User{Owner: "hanzo", Name: "hanzo-cloud", BillingAccount: "org:hanzo"}, "hanzo"},
 		{"a service-account key", User{Owner: "hanzo", Name: "insights", BillingAccount: "org:hanzo"}, "hanzo"},
 		{"a nameless machine", User{Owner: "hanzo", BillingAccount: "org:hanzo"}, "hanzo"},

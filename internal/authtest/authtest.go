@@ -26,7 +26,8 @@
 // issuer policy. Nothing is bypassed and no seam is added to reach around.
 //
 // The tests that used to fabricate an identity were not testing authorisation —
-// they were testing a door. This is the door everyone else uses.
+// they were testing an entry point of their own. This is the entry point everyone
+// else uses.
 //
 // The key is generated once per process and never leaves it, so a token minted here
 // is worth nothing anywhere else. It lives under internal/ and only tests import it.
