@@ -277,11 +277,19 @@ func UpdateMessage(id string, message *Message, isHitOnly bool) (bool, error) {
 		}
 		message.TextTokenCount = size
 	}
+	// The id is what was authorized; the body is only what to write. Both branches
+	// key on it. The xorm form this replaced did — ID(core.PK{owner, name}) on each
+	// — and without it an update names its own target: a body carrying another
+	// message's name writes that message, and a body carrying no name writes
+	// nothing while reporting that it wrote.
+	message.Owner = owner
+	message.Name = name
 	if isHitOnly {
-		err = adapter.db.Model(message).Exclude().Update()
+		// A hit changes the suggestions and nothing else, which is what the same
+		// branch said as Cols("suggestions"). Exclude() with no arguments excludes
+		// nothing, so it had come to write the whole row.
+		err = adapter.db.Model(message).Update("Suggestions")
 	} else {
-		message.Owner = owner
-		message.Name = name
 		err = adapter.db.Model(message).Update()
 	}
 	if err != nil {
