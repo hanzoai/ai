@@ -168,7 +168,7 @@ func TestZapChatGraphDecodeError(t *testing.T) {
 // envelope: a list payload round-trips as {status:"ok",data:…}.
 func TestZapProviderOkEnvelopeReuse(t *testing.T) {
 	data := []string{"a", "b"}
-	msg, err := zapProviderOk(data)
+	msg, err := zapOk(data)
 	if err != nil {
 		t.Fatalf("zapProviderOk: %v", err)
 	}

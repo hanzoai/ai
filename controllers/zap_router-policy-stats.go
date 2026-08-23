@@ -136,20 +136,6 @@ func zapRPSOrg(user *iam.User) string {
 	return conf.GetConfigString("IAM_ORG")
 }
 
-// zapRPSOk renders the ResponseOk envelope ({status:"ok", data}) as a 200
-// cloud response, preserving the exact JSON shape the HTTP handlers return.
-func zapRPSOk(data interface{}) (*zap.Message, error) {
-	b, _ := json.Marshal(Response{Status: "ok", Data: data})
-	return object.BuildCloudResponse(http.StatusOK, b, "")
-}
-
-// zapRPSError renders the ResponseError envelope ({status:"error", msg}) at
-// the given status, mirroring ResponseError / ResponseErrorWithStatus body shape.
-func zapRPSError(status int, msg string) (*zap.Message, error) {
-	b, _ := json.Marshal(Response{Status: "error", Msg: msg})
-	return object.BuildCloudResponse(uint32(status), b, "")
-}
-
 // zapRPSRequireAdmin mirrors ApiController.RequireAdmin: preview mode passes; else
 // an ORG-level admin principal is required. Returns (user, nil) on pass, or
 // (nil, errResponse) on refusal (403 for a non-admin, matching ResponseForbidden).
@@ -159,7 +145,7 @@ func zapRPSRequireAdmin(auth string) (*iam.User, *zap.Message) {
 		return user, nil
 	}
 	if !util.IsAdmin(user) {
-		msg, _ := zapRPSError(http.StatusForbidden, "auth:this operation requires admin privilege")
+		msg, _ := zapError(http.StatusForbidden, "auth:this operation requires admin privilege")
 		return nil, msg
 	}
 	return user, nil
@@ -170,11 +156,11 @@ func zapRPSRequireAdmin(auth string) (*iam.User, *zap.Message) {
 func zapRPSRequireSuperAdmin(auth string) (*iam.User, *zap.Message) {
 	user := zapRPSPrincipal(auth)
 	if user == nil {
-		msg, _ := zapRPSError(http.StatusUnauthorized, "auth:Please sign in first")
+		msg, _ := zapError(http.StatusUnauthorized, "auth:Please sign in first")
 		return nil, msg
 	}
 	if !util.IsSuperAdmin(user) {
-		msg, _ := zapRPSError(http.StatusForbidden, "auth:this operation requires super admin privilege")
+		msg, _ := zapError(http.StatusForbidden, "auth:this operation requires super admin privilege")
 		return nil, msg
 	}
 	return user, nil
@@ -205,9 +191,9 @@ func zapGetRouterPolicyHandler(_ context.Context, auth string, _ []byte) (*zap.M
 	}
 	policy, err := resolvedRouterPolicy(zapRPSOrg(user))
 	if err != nil {
-		return zapRPSError(http.StatusOK, err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
-	return zapRPSOk(policy)
+	return zapOk(policy)
 }
 
 func zapUpdateRouterPolicyHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
@@ -217,17 +203,17 @@ func zapUpdateRouterPolicyHandler(_ context.Context, auth string, body []byte) (
 	}
 	org := zapRPSOrg(user)
 	if org == "" {
-		return zapRPSError(http.StatusOK, "auth:Please sign in first")
+		return zapError(http.StatusOK, "auth:Please sign in first")
 	}
 
 	var reqBody routerPolicyBody
 	if err := json.Unmarshal(body, &reqBody); err != nil {
-		return zapRPSError(http.StatusOK, err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
 
 	existing, err := object.GetOrgSettings(org)
 	if err != nil {
-		return zapRPSError(http.StatusOK, err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
 	// The FOUR router-policy fields this endpoint owns (empty/nil CLEARS that override).
 	prefer := object.JSONMap[[]string](reqBody.Prefer)
@@ -241,7 +227,7 @@ func zapUpdateRouterPolicyHandler(_ context.Context, auth string, body []byte) (
 			RouterQualityBias:   reqBody.QualityBias,
 		}
 		if _, err := object.AddOrgSettings(&row); err != nil {
-			return zapRPSError(http.StatusOK, err.Error())
+			return zapError(http.StatusOK, err.Error())
 		}
 	} else {
 		// MUTATE the existing row — touch ONLY the four owned fields, so every OTHER
@@ -256,15 +242,15 @@ func zapUpdateRouterPolicyHandler(_ context.Context, auth string, body []byte) (
 		existing.RouterEnabledModels = enabled
 		existing.RouterQualityBias = reqBody.QualityBias
 		if _, err := object.UpdateOrgSettings(org, existing); err != nil {
-			return zapRPSError(http.StatusOK, err.Error())
+			return zapError(http.StatusOK, err.Error())
 		}
 	}
 
 	policy, err := resolvedRouterPolicy(org)
 	if err != nil {
-		return zapRPSError(http.StatusOK, err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
-	return zapRPSOk(policy)
+	return zapOk(policy)
 }
 
 // zapRouterPolicyHandler is the HTTP-shaped entrypoint for /v1/ai/router/policy: GET
@@ -278,7 +264,7 @@ func zapRouterPolicyHandler(ctx context.Context, method, _, _, auth string, body
 	case http.MethodPut:
 		return zapUpdateRouterPolicyHandler(ctx, auth, body)
 	}
-	return zapRPSError(http.StatusMethodNotAllowed, "method not allowed: "+method)
+	return zapError(http.StatusMethodNotAllowed, "method not allowed: "+method)
 }
 
 // ── router stats + artifact meta ─────────────────────────────────────────
@@ -321,16 +307,16 @@ func zapGetRouterStatsHandler(_ context.Context, auth string, body []byte) (*zap
 	if p.Scope == scopePlatform {
 		events, err := getRoutingEvents("", sinceStr)
 		if err != nil {
-			return zapRPSError(http.StatusOK, err.Error())
+			return zapError(http.StatusOK, err.Error())
 		}
 		stats := computeRouterStats(events, blendedPriceForOrg(""), windowStart, now, scopePlatform, "", false, tunedRouterPrefer(""))
 		attachRetrainMeta(&stats, object.GlobalDefaultOwner)
-		return zapRPSOk(stats)
+		return zapOk(stats)
 	}
 
 	user := zapRPSPrincipal(auth)
 	if user == nil {
-		return zapRPSError(http.StatusUnauthorized, "auth:Please sign in first")
+		return zapError(http.StatusUnauthorized, "auth:Please sign in first")
 	}
 
 	org := user.Owner
@@ -342,7 +328,7 @@ func zapGetRouterStatsHandler(_ context.Context, auth string, body []byte) (*zap
 
 	events, err := getRoutingEvents(org, sinceStr)
 	if err != nil {
-		return zapRPSError(http.StatusOK, err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
 	stats := computeRouterStats(events, blendedPriceForOrg(org), windowStart, now, scopeOrg, org, true, tunedRouterPrefer(org))
 	metaOwner := org
@@ -353,7 +339,7 @@ func zapGetRouterStatsHandler(_ context.Context, auth string, body []byte) (*zap
 	if stats.Retrain == nil && metaOwner != object.GlobalDefaultOwner {
 		attachRetrainMeta(&stats, object.GlobalDefaultOwner)
 	}
-	return zapRPSOk(stats)
+	return zapOk(stats)
 }
 
 func zapPublishRouterArtifactMetaHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
@@ -362,20 +348,20 @@ func zapPublishRouterArtifactMetaHandler(_ context.Context, auth string, body []
 	}
 	var meta object.RouterArtifactMeta
 	if err := json.Unmarshal(body, &meta); err != nil {
-		return zapRPSError(http.StatusOK, err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
 	if meta.Owner == "" {
 		meta.Owner = object.GlobalDefaultOwner
 	}
 	if err := object.UpsertRouterArtifactMeta(&meta); err != nil {
-		return zapRPSError(http.StatusOK, err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
 	// Parity with the (deleted) the router PublishRouterArtifactMeta: also append to the
 	// IMMUTABLE retrain timeline the world.hanzo.ai Model-Improvement panel plots. The
 	// upsert above is the source of truth for "latest per scope"; this append is the
 	// history. Best-effort — a log failure must never fail the publish.
 	_ = object.AppendRouterTrainingLog(object.NewRouterTrainingLog(&meta))
-	return zapRPSOk(meta)
+	return zapOk(meta)
 }
 
 // ── routing defaults ─────────────────────────────────────────────────────
@@ -387,7 +373,7 @@ func zapGetRoutingDefaultsHandler(_ context.Context, auth string, _ []byte) (*za
 	if cfg := GetModelConfig(); cfg != nil {
 		autoActive = cfg.AutoRoutingActive(effectiveAutoRouting(org))
 	}
-	return zapRPSOk(routingDefaults{
+	return zapOk(routingDefaults{
 		AutoRoutingActive:     autoActive,
 		DefaultSessionRouting: effectiveSessionRouting(org) == object.AutoRoutingEnabled,
 	})
@@ -405,11 +391,11 @@ func zapExportRoutingLedgerHandler(_ context.Context, auth string, body []byte) 
 	}
 	events, err := getRoutingEvents(p.Org, p.Since)
 	if err != nil {
-		return zapRPSError(http.StatusOK, err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
 	var buf bytes.Buffer
 	if err := writeRoutingLedgerJSONL(&buf, events); err != nil {
-		return zapRPSError(http.StatusInternalServerError, err.Error())
+		return zapError(http.StatusInternalServerError, err.Error())
 	}
 	// Raw JSONL stream (not the {status:ok} envelope), matching the the router export.
 	return object.BuildCloudResponse(http.StatusOK, buf.Bytes(), "")
@@ -425,11 +411,11 @@ func zapExportRoutingRewardsHandler(_ context.Context, auth string, body []byte)
 	}
 	events, err := getRewardedRoutingEvents(p.Org, p.Since)
 	if err != nil {
-		return zapRPSError(http.StatusOK, err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
 	var buf bytes.Buffer
 	if err := writeRoutingRewardsJSONL(&buf, events); err != nil {
-		return zapRPSError(http.StatusInternalServerError, err.Error())
+		return zapError(http.StatusInternalServerError, err.Error())
 	}
 	return object.BuildCloudResponse(http.StatusOK, buf.Bytes(), "")
 }
@@ -439,40 +425,40 @@ func zapExportRoutingRewardsHandler(_ context.Context, auth string, body []byte)
 func zapAddRoutingRewardHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
 	user := zapRPSPrincipal(auth)
 	if user == nil {
-		return zapRPSError(http.StatusUnauthorized, "auth:Please sign in first")
+		return zapError(http.StatusUnauthorized, "auth:Please sign in first")
 	}
 	if util.IsAnonymousUser(user) {
-		return zapRPSError(http.StatusUnauthorized, "auth:Please sign in first")
+		return zapError(http.StatusUnauthorized, "auth:Please sign in first")
 	}
 
 	var reqBody routingRewardRequest
 	if err := json.Unmarshal(body, &reqBody); err != nil {
-		return zapRPSError(http.StatusBadRequest, "invalid request body")
+		return zapError(http.StatusBadRequest, "invalid request body")
 	}
 	requestId := normalizeRequestId(reqBody.RequestId)
 	if requestId == "" {
-		return zapRPSError(http.StatusBadRequest, "request_id is required")
+		return zapError(http.StatusBadRequest, "request_id is required")
 	}
 	reward, record, err := resolveReward(reqBody.Reward, reqBody.Rating, reqBody.Signal)
 	if err != nil {
-		return zapRPSError(http.StatusBadRequest, err.Error())
+		return zapError(http.StatusBadRequest, err.Error())
 	}
 	if !record {
-		return zapRPSOk(routingRewardResult{RequestId: requestId, Recorded: false})
+		return zapOk(routingRewardResult{RequestId: requestId, Recorded: false})
 	}
 	if !trainingOptedIn(user.Owner) {
-		return zapRPSOk(routingRewardResult{RequestId: requestId, Recorded: false})
+		return zapOk(routingRewardResult{RequestId: requestId, Recorded: false})
 	}
 
 	found, err := attachRoutingReward(user.Owner, requestId, reward)
 	if err != nil {
-		return zapRPSError(http.StatusOK, err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
 	if !found {
-		return zapRPSError(http.StatusNotFound, "unknown request_id")
+		return zapError(http.StatusNotFound, "unknown request_id")
 	}
 	forwardRewardToEngine(user.Owner, requestId, reward)
-	return zapRPSOk(routingRewardResult{RequestId: requestId, Reward: reward, Recorded: true})
+	return zapOk(routingRewardResult{RequestId: requestId, Reward: reward, Recorded: true})
 }
 
 // ── traffic globe (public) ───────────────────────────────────────────────
@@ -487,7 +473,7 @@ func zapGetTrafficGlobeHandler(_ context.Context, _ string, body []byte) (*zap.M
 			windowMin = p.Window
 		}
 	}
-	return zapRPSOk(object.GlobalTraffic.Globe(windowMin, time.Now()))
+	return zapOk(object.GlobalTraffic.Globe(windowMin, time.Now()))
 }
 
 // ── training contribution opt-in ─────────────────────────────────────────
@@ -498,7 +484,7 @@ func zapGetTrainingContributionHandler(_ context.Context, auth string, _ []byte)
 		return deny, nil
 	}
 	org := zapRPSOrg(user)
-	return zapRPSOk(trainingContributionBody{
+	return zapOk(trainingContributionBody{
 		Enabled: object.GetCachedOrgTrainingContribution(org) == object.TrainingContributionEnabled,
 	})
 }
@@ -510,12 +496,12 @@ func zapUpdateTrainingContributionHandler(_ context.Context, auth string, body [
 	}
 	org := zapRPSOrg(user)
 	if org == "" {
-		return zapRPSError(http.StatusOK, "auth:Please sign in first")
+		return zapError(http.StatusOK, "auth:Please sign in first")
 	}
 
 	var reqBody trainingContributionBody
 	if err := json.Unmarshal(body, &reqBody); err != nil {
-		return zapRPSError(http.StatusOK, err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
 	value := object.TrainingContributionDisabled
 	if reqBody.Enabled {
@@ -524,18 +510,18 @@ func zapUpdateTrainingContributionHandler(_ context.Context, auth string, body [
 
 	existing, err := object.GetOrgSettings(org)
 	if err != nil {
-		return zapRPSError(http.StatusOK, err.Error())
+		return zapError(http.StatusOK, err.Error())
 	}
 	if existing == nil {
 		row := object.OrgSettings{Owner: org, TrainingContribution: value}
 		if _, err := object.AddOrgSettings(&row); err != nil {
-			return zapRPSError(http.StatusOK, err.Error())
+			return zapError(http.StatusOK, err.Error())
 		}
 	} else {
 		existing.TrainingContribution = value
 		if _, err := object.UpdateOrgSettings(org, existing); err != nil {
-			return zapRPSError(http.StatusOK, err.Error())
+			return zapError(http.StatusOK, err.Error())
 		}
 	}
-	return zapRPSOk(trainingContributionBody{Enabled: reqBody.Enabled})
+	return zapOk(trainingContributionBody{Enabled: reqBody.Enabled})
 }

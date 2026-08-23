@@ -192,7 +192,7 @@ func TestZapMiscAgentsDashboardHappyPath(t *testing.T) {
 // contract), including the two-value paginated form.
 func TestZapMiscOkEnvelope(t *testing.T) {
 	data := []string{"a", "b"}
-	msg, err := zapMiscOk(data)
+	msg, err := zapOk(data)
 	if err != nil {
 		t.Fatalf("zapMiscOk: %v", err)
 	}
@@ -201,7 +201,7 @@ func TestZapMiscOkEnvelope(t *testing.T) {
 		t.Errorf("ok body = %s, want %s", got, want)
 	}
 
-	msg2, _ := zapMiscOk(data, 42)
+	msg2, _ := zapOk(data, 42)
 	want2, _ := json.Marshal(Response{Status: "ok", Data: data, Data2: 42})
 	if got := vmiscBody(msg2); string(got) != string(want2) {
 		t.Errorf("ok paged body = %s, want %s", got, want2)
