@@ -57,6 +57,19 @@ func getOne(db *dbx.DB, table string, dst interface{}, pk dbx.HashExp) (bool, er
 	return true, nil
 }
 
+// narrow adds each named column to a filter, skipping the ones left empty. Empty
+// means unconstrained: these columns are always populated on a stored row, so
+// matching the empty string would match nothing — which is never what a caller
+// means by leaving a value out.
+func narrow(where dbx.HashExp, optional map[string]string) dbx.HashExp {
+	for col, v := range optional {
+		if v != "" {
+			where[col] = v
+		}
+	}
+	return where
+}
+
 // findAll fetches all rows from table matching the where clause into dst slice.
 func findAll(db *dbx.DB, table string, dst interface{}, where dbx.Expression, orderBy ...string) error {
 	q := db.Select().From(table)

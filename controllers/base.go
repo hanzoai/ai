@@ -166,6 +166,17 @@ func (c *ApiController) RequireSessionOwner() (string, bool) {
 	return "", false
 }
 
+// reach answers how far a listing may see: one organization, or every one of
+// them. The reserved org reaches every tenant, so its answer is the empty filter;
+// every other caller reaches only their own org. Both doors use it, which is why
+// it takes the resolved user rather than reading a session.
+func reach(user *iam.User) string {
+	if util.IsSuperAdmin(user) {
+		return ""
+	}
+	return user.Owner
+}
+
 // GetScopedOwner resolves owner from the authenticated session.
 // Non-admin users are always scoped to their own org, ignoring request owner params.
 // Super admins can optionally target a specific owner via query parameter.

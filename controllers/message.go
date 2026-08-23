@@ -30,14 +30,14 @@ import (
 // @Success 200 {array} object.Message The Response object
 // @router /get-global-messages [get]
 func (c *ApiController) GetGlobalMessages() {
-	_, ok := c.RequireSignedIn()
-	if !ok {
+	// This reads every organization's messages, so it asks whether the caller is a
+	// platform admin — membership of the reserved org. IsAdmin answers a narrower
+	// question, "does this person administer their OWN org", which every customer's
+	// owner also answers yes to.
+	if !c.RequireSuperAdmin() {
 		return
 	}
-	if !c.IsAdmin() {
-		c.ResponseForbidden(c.T("auth:this operation requires admin privilege"))
-		return
-	}
+
 	owner := c.GetSessionOwner()
 	limit := c.Input().Get("pageSize")
 	page := c.Input().Get("p")
@@ -81,31 +81,25 @@ func (c *ApiController) GetGlobalMessages() {
 // @Success 200 {array} object.Message The Response object
 // @router /get-Messages [get]
 func (c *ApiController) GetMessages() {
-	_, ok := c.RequireSignedIn()
+	caller, ok := c.RequireSignedInUser()
 	if !ok {
 		return
 	}
 
-	user := c.Input().Get("user")
 	chat := c.Input().Get("chat")
 	selectedUser := c.Input().Get("selectedUser")
 
-	if c.IsAdmin() {
-		user = ""
+	// Whose messages, resolved once — the rule GetChats applies, applied here.
+	who := c.Input().Get("user")
+	if selectedUser != "" && selectedUser != "null" {
+		who = selectedUser
 	}
-
-	if selectedUser != "" && selectedUser != "null" && c.IsAdmin() {
-		user = selectedUser
-	}
-
-	if !c.IsAdmin() && user != selectedUser && selectedUser != "" {
-		c.ResponseError(c.T("controllers:You can only view your own messages"))
-		return
+	if !util.IsAdmin(caller) {
+		who = caller.Name
 	}
 
 	if chat == "" {
-		owner := c.GetSessionOwner()
-		messages, err := object.GetMessages(owner, user, "")
+		messages, err := object.GetMessages(chatOwner, reach(caller), who, "")
 		if err != nil {
 			c.ResponseError(err.Error())
 			return
@@ -114,7 +108,9 @@ func (c *ApiController) GetMessages() {
 		return
 	}
 
-	messages, err := object.GetChatMessages(chat)
+	// A chat name addresses a conversation in any tenant, so the transcript is
+	// confined to the caller's org rather than served on the name alone.
+	messages, err := object.GetChatMessages(chat, reach(caller))
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -268,7 +264,7 @@ func (c *ApiController) AddMessage() {
 
 	addMessageAfterSuccess := true
 	if message.IsRegenerated {
-		messages, err := object.GetChatMessages(message.Chat)
+		messages, err := object.GetChatMessages(message.Chat, message.Organization)
 		if err != nil {
 			c.ResponseError(err.Error())
 			return

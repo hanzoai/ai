@@ -278,16 +278,16 @@ func zapGetChatsHandler(_ context.Context, auth string, body []byte) (*zap.Messa
 		}
 	}
 
-	isAdmin := util.IsAdmin(user)
-	u := req.User
-	if isAdmin {
-		u = ""
+	// Whose chats to list, resolved once — the same rule the HTTP door applies.
+	who := req.User
+	if req.Field == "user" {
+		who = req.Value
 	}
-	if req.SelectedUser != "" && req.SelectedUser != "null" && isAdmin {
-		u = req.SelectedUser
+	if req.SelectedUser != "" && req.SelectedUser != "null" {
+		who = req.SelectedUser
 	}
-	if !isAdmin && u != req.SelectedUser && req.SelectedUser != "" {
-		return zapError(200, "You can only view your own chats")
+	if !util.IsAdmin(user) {
+		who = user.Name
 	}
 
 	storeName, deny := zapEnforceStoreIsolation(user, req.Store)
@@ -295,13 +295,7 @@ func zapGetChatsHandler(_ context.Context, auth string, body []byte) (*zap.Messa
 		return deny, nil
 	}
 
-	var chats []*object.Chat
-	var err error
-	if req.Field == "user" {
-		chats, err = object.GetChats("admin", storeName, req.Value)
-	} else {
-		chats, err = object.GetChats("admin", storeName, u)
-	}
+	chats, err := object.GetChats(chatOwner, reach(user), storeName, who)
 	if err != nil {
 		return zapError(200, err.Error())
 	}
@@ -558,27 +552,24 @@ func zapGetMessagesHandler(_ context.Context, auth string, body []byte) (*zap.Me
 		}
 	}
 
-	isAdmin := util.IsAdmin(user)
-	u := req.User
-	if isAdmin {
-		u = ""
+	// Whose messages, resolved once — the rule the HTTP door applies.
+	who := req.User
+	if req.SelectedUser != "" && req.SelectedUser != "null" {
+		who = req.SelectedUser
 	}
-	if req.SelectedUser != "" && req.SelectedUser != "null" && isAdmin {
-		u = req.SelectedUser
-	}
-	if !isAdmin && u != req.SelectedUser && req.SelectedUser != "" {
-		return zapError(200, "You can only view your own messages")
+	if !util.IsAdmin(user) {
+		who = user.Name
 	}
 
 	if req.Chat == "" {
-		messages, err := object.GetMessages(user.Owner, u, "")
+		messages, err := object.GetMessages(chatOwner, reach(user), who, "")
 		if err != nil {
 			return zapError(200, err.Error())
 		}
 		return zapOk(messages)
 	}
 
-	messages, err := object.GetChatMessages(req.Chat)
+	messages, err := object.GetChatMessages(req.Chat, reach(user))
 	if err != nil {
 		return zapError(200, err.Error())
 	}
@@ -717,7 +708,7 @@ func zapAddMessageHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 
 	addMessageAfterSuccess := true
 	if message.IsRegenerated {
-		messages, err := object.GetChatMessages(message.Chat)
+		messages, err := object.GetChatMessages(message.Chat, message.Organization)
 		if err != nil {
 			return zapError(200, err.Error())
 		}
