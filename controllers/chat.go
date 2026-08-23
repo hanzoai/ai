@@ -100,21 +100,7 @@ func (c *ApiController) GetChats() {
 	startTime := c.Input().Get("startTime")
 	endTime := c.Input().Get("endTime")
 
-	// Whose chats to list arrives three ways — ?user, ?selectedUser, and
-	// ?field=user&value — so it is resolved once, here, rather than per branch. An
-	// admin may name someone; anyone else gets their own chats whichever way they
-	// asked. reach() then confines the answer to the caller's own tenant, so an
-	// admin naming a name is an admin of THAT name's org or nobody.
-	who := c.Input().Get("user")
-	if field == "user" {
-		who = value
-	}
-	if selectedUser != "" && selectedUser != "null" {
-		who = selectedUser
-	}
-	if !util.IsAdmin(caller) {
-		who = caller.Name
-	}
+	who := whose(caller, c.Input().Get("user"), selectedUser, field, value)
 
 	// Apply store isolation based on user's Homepage field
 	storeName, ok = c.EnforceStoreIsolation(storeName)

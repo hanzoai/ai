@@ -89,14 +89,7 @@ func (c *ApiController) GetMessages() {
 	chat := c.Input().Get("chat")
 	selectedUser := c.Input().Get("selectedUser")
 
-	// Whose messages, resolved once — the rule GetChats applies, applied here.
-	who := c.Input().Get("user")
-	if selectedUser != "" && selectedUser != "null" {
-		who = selectedUser
-	}
-	if !util.IsAdmin(caller) {
-		who = caller.Name
-	}
+	who := whose(caller, c.Input().Get("user"), selectedUser, "", "")
 
 	if chat == "" {
 		messages, err := object.GetMessages(chatOwner, reach(caller), who, "")
