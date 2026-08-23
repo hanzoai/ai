@@ -34,6 +34,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hanzoai/ai/util"
+
 	"github.com/hanzoai/ai/log"
 )
 
@@ -91,12 +93,21 @@ type githubRepoResponse struct {
 	DefaultBranch string `json:"default_branch"`
 }
 
-// resolveGitHubToken resolves the auth token for private repos: explicit request
-// token first, then env GITHUB_TOKEN, then KMS secret GITHUB_TOKEN. Empty = use
-// the unauthenticated public API.
-func resolveGitHubToken(explicit string) string {
+// resolveGitHubToken resolves the credential a repository is read with: the one
+// the request supplied, or — for the platform's own ingests — the platform's.
+// Empty means the unauthenticated public API.
+//
+// Which repository is read comes from the request, so whose credential reads it
+// has to be the requester's. Falling back to the platform's for everyone spent
+// the platform's own access on a target the caller chose, and put whatever it
+// could reach into the caller's index. The reserved org IS the platform, so its
+// ingests still reach the platform's repositories.
+func resolveGitHubToken(explicit, owner string) string {
 	if explicit != "" {
 		return explicit
+	}
+	if owner != util.AdminOrg {
+		return ""
 	}
 	if v := strings.TrimSpace(os.Getenv("GITHUB_TOKEN")); v != "" {
 		return v
@@ -176,7 +187,7 @@ func IngestGitHub(owner, store string, gh *GitHubIngestRequest, replace bool, ta
 	if err != nil {
 		return stats, err
 	}
-	token := resolveGitHubToken(gh.Token)
+	token := resolveGitHubToken(gh.Token, owner)
 	ref := strings.TrimSpace(gh.Ref)
 	if ref == "" {
 		ref, err = githubDefaultBranch(repoOwner, repoName, token)

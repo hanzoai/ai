@@ -58,8 +58,11 @@ func ValidateTransactionForMessage(message *Message) error {
 	if message.Owner != "" && !strings.Contains(userId, "/") {
 		userId = message.Owner + "/" + userId
 	}
-	// Convert price (dollars float64) to cents for comparison
-	priceCents := int64(math.Round(message.Price * 100))
+	// A call that costs anything needs at least a cent behind it, so this rounds UP.
+	// To nearest, everything under half a cent priced at zero — and zero is covered
+	// by an empty wallet, since the comparison below is "available < required". The
+	// cheapest calls were therefore free, and free is repeatable.
+	priceCents := int64(math.Ceil(message.Price * 100))
 	cur := strings.ToLower(message.Currency)
 	if cur == "" {
 		cur = "usd"
