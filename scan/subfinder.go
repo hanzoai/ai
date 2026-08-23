@@ -16,7 +16,6 @@
 package scan
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"os/exec"
@@ -80,72 +79,12 @@ func NewSubfinderScanProvider(clientId string) (*SubfinderScanProvider, error) {
 }
 
 func (p *SubfinderScanProvider) Scan(target string, command string) (string, error) {
-	if target == "" {
-		return "", fmt.Errorf("%s scan target cannot be empty", getHostnamePrefix())
-	}
-
-	// Validate target to prevent command injection
-	target = strings.TrimSpace(target)
-	if strings.ContainsAny(target, ";&|`$") {
-		return "", fmt.Errorf("%s invalid characters in scan target", getHostnamePrefix())
-	}
-
-	// Use default command if empty
-	if command == "" {
-		command = "-d %s -json"
-	}
-
-	// Validate command to prevent command injection
-	command = strings.TrimSpace(command)
-	if strings.ContainsAny(command, ";&|`") {
-		return "", fmt.Errorf("%s invalid characters in scan command", getHostnamePrefix())
-	}
-
-	// Ensure -json flag is present for structured output
-	if !strings.Contains(command, "-json") && !strings.Contains(command, "-oJ") {
-		command = command + " -json"
-	}
-
-	// Replace %s with target, or append target if no %s placeholder
-	var args []string
-	if strings.Contains(command, "%s") {
-		// Replace %s with target
-		cmdStr := strings.Replace(command, "%s", target, -1)
-		args = strings.Fields(cmdStr)
-	} else {
-		// No %s placeholder, append target with -d flag if not already present
-		args = strings.Fields(command)
-		if !contains(args, "-d") && !contains(args, "-domain") && !contains(args, "-dL") {
-			args = append(args, "-d", target)
-		}
-	}
-
-	// Run subfinder with custom command options
-	cmd := exec.Command(p.subfinderPath, args...)
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	fmt.Printf("%s [Subfinder] Executing subfinder scan: %s %s\n", getHostnamePrefix(), p.subfinderPath, strings.Join(args, " "))
-	err := cmd.Run()
-	if err != nil {
-		// Subfinder may return non-zero exit code even when scan completes successfully
-		// Check if we got any output
-		if stdout.Len() == 0 {
-			return "", fmt.Errorf("%s subfinder scan failed: %v, stderr: %s", getHostnamePrefix(), err, stderr.String())
-		}
-		// Log the error but continue with parsing
-		fmt.Printf("%s [Subfinder] Scan completed with warnings: %v\n", getHostnamePrefix(), err)
-	}
-	fmt.Printf("%s [Subfinder] Scan completed successfully\n", getHostnamePrefix())
-
-	result := stdout.String()
-	if result == "" {
-		result = "Scan completed with no subdomains found"
-	}
-
-	return result, nil
+	return scanner{
+		name: "subfinder", bin: p.subfinderPath,
+		defaultArgs: "-d %s -json",
+		jsonFlags:   []string{"-json", "-oJ"}, addJSON: "-json",
+		targetFlags: []string{"-d", "-domain", "-dL"}, addTarget: "-d",
+	}.run(target, command)
 }
 
 func (p *SubfinderScanProvider) ParseResult(rawResult string) (string, error) {
