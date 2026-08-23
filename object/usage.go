@@ -46,6 +46,9 @@ type UserUsage struct {
 }
 
 func GetUsages(days int, user string, storeName string) ([]*Usage, error) {
+	if days < 1 {
+		return nil, fmt.Errorf("days must be at least 1, got %d", days)
+	}
 	messages, err := GetGlobalMessagesByStoreName(storeName)
 	if err != nil {
 		return nil, err
