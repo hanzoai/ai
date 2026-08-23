@@ -18,11 +18,23 @@ package txt
 import (
 	"io"
 	"io/ioutil"
+	"os"
 	"path/filepath"
 
 	"github.com/hanzoai/ai/util"
 )
 
+// getTempFilePathFromUrl downloads a document to a temp file and returns its
+// path. The caller removes the file; this closes the handle.
+//
+// It used to do neither. The handle stayed open for the life of the process, so
+// every remote document parsed leaked a descriptor — and on Unix the caller's
+// os.Remove does not reclaim the bytes while a descriptor is still open, so the
+// disk went with it. A service parsing documents runs out of descriptors and then
+// fails at everything that needs one, including accepting a connection.
+//
+// A copy that fails takes the file with it. Its path is never returned, so the
+// caller has nothing to remove and would leave it behind.
 func getTempFilePathFromUrl(url string) (string, error) {
 	buffer, err := util.DownloadFile(url)
 	if err != nil {
@@ -33,9 +45,10 @@ func getTempFilePathFromUrl(url string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	defer file.Close()
 
-	_, err = io.Copy(file, buffer)
-	if err != nil {
+	if _, err = io.Copy(file, buffer); err != nil {
+		_ = os.Remove(file.Name())
 		return "", err
 	}
 
