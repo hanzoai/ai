@@ -41,6 +41,7 @@ import (
 	"github.com/luxfi/zap"
 
 	"github.com/hanzoai/ai/object"
+	"github.com/hanzoai/ai/util"
 )
 
 // ── Per-group registration tables (collision-free, own file) ────────────
@@ -128,6 +129,72 @@ func zapOk(data ...interface{}) (*zap.Message, error) {
 	}
 	b, _ := json.Marshal(resp)
 	return object.BuildCloudResponse(http.StatusOK, b, "")
+}
+
+// table is what a table can be READ as: everything one owner holds, a page of
+// it, how many there are, and how a row is masked before it leaves.
+//
+// Four functions rather than four copies of the handler that calls them. The
+// paging arithmetic — which page was asked for, where that page starts, how many
+// there are altogether — is the part worth having in one place; it was written
+// out per table and is the kind of arithmetic that is wrong quietly.
+type table[T any] struct {
+	all   func(owner string) ([]*T, error)
+	mask  func([]*T, bool) []*T
+	count func(owner, field, value string) (int64, error)
+	page  func(owner string, offset, limit int, field, value, sortField, sortOrder string) ([]*T, error)
+}
+
+// listed answers a read of one table: the whole of an owner's rows when no page
+// was asked for, and a page with its count when one was.
+func listed[T any](c *ApiController, l table[T]) {
+	owner, allowed := c.GetScopedOwner()
+	if !allowed {
+		return
+	}
+	limit, page := c.Input().Get("pageSize"), c.Input().Get("p")
+	field, value := c.Input().Get("field"), c.Input().Get("value")
+	sortField, sortOrder := c.Input().Get("sortField"), c.Input().Get("sortOrder")
+
+	if limit == "" || page == "" {
+		rows, err := l.all(owner)
+		if err != nil {
+			c.ResponseError(err.Error())
+			return
+		}
+		c.ResponseOk(l.mask(rows, true))
+		return
+	}
+	n := util.ParseInt(limit)
+	count, err := l.count(owner, field, value)
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+	paginator := util.NewPaginator(c.PageAsked(), n, count)
+	rows, err := l.page(owner, paginator.Offset(), n, field, value, sortField, sortOrder)
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+	c.ResponseOk(rows, paginator.Nums())
+}
+
+// replaced writes a row over the one the request's id names. It is stored() with
+// a key: the row arrives in the body and the id says which row it replaces.
+func replaced[T any](c *ApiController, store func(string, *T) (bool, error)) {
+	id := c.Input().Get("id")
+	var row T
+	if err := json.Unmarshal(c.Body(), &row); err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+	ok, err := store(id, &row)
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+	c.ResponseOk(ok)
 }
 
 // stored is the HTTP shape of the same thing zapWrite is over ZAP: decode the

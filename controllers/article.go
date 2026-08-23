@@ -16,8 +16,6 @@
 package controllers
 
 import (
-	"encoding/json"
-
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
 )
@@ -109,24 +107,7 @@ func (c *ApiController) GetArticle() {
 // @Param body body object.Article true "The details of the article"
 // @Success 200 {object} controllers.Response The Response object
 // @router /update-article [post]
-func (c *ApiController) UpdateArticle() {
-	id := c.Input().Get("id")
-
-	var article object.Article
-	err := json.Unmarshal(c.Body(), &article)
-	if err != nil {
-		c.ResponseError(err.Error())
-		return
-	}
-
-	success, err := object.UpdateArticle(id, &article)
-	if err != nil {
-		c.ResponseError(err.Error())
-		return
-	}
-
-	c.ResponseOk(success)
-}
+func (c *ApiController) UpdateArticle() { replaced(c, object.UpdateArticle) }
 
 // AddArticle
 // @Title AddArticle
