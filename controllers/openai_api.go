@@ -19,6 +19,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -206,7 +207,10 @@ func tryCloudAgentKeyFallback(apiKey string) *iam.User {
 	if knownKey == "" {
 		knownKey = strings.TrimSpace(os.Getenv("CLOUD_AGENT_KEY"))
 	}
-	if knownKey == "" || apiKey != knownKey {
+	// A secret is compared in constant time, as the two other places in this module
+	// that compare one already do: an ordinary != stops at the first differing
+	// byte, and how long it took is a measurement a caller can make.
+	if knownKey == "" || subtle.ConstantTimeCompare([]byte(apiKey), []byte(knownKey)) != 1 {
 		return nil
 	}
 	// This identity is assembled HERE rather than read from IAM, so it must state

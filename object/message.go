@@ -430,9 +430,13 @@ func GetRecentRawMessages(chat string, createdTime string, memoryLimit int) ([]*
 			}
 		}
 		rawMessage := &model.RawMessage{
-			Text:           message.Text,
-			Author:         message.Author,
-			TextTokenCount: message.TextTokenCount,
+			Text:   message.Text,
+			Author: message.Author,
+			// The count just computed, not the stored one it was computed because of.
+			// Reading the stored zero back made the recompute above dead code and told
+			// the history trimmer that an untallied message costs nothing, so a window
+			// meant to be bounded carried whatever those messages happened to be.
+			TextTokenCount: rawTextTokenCount,
 		}
 		res = append(res, rawMessage)
 	}
