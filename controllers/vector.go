@@ -98,6 +98,9 @@ func (c *ApiController) GetVector() {
 		c.ResponseError(err.Error())
 		return
 	}
+	if vector != nil && !reachable(c, vector.Owner) {
+		return
+	}
 
 	c.ResponseOk(vector)
 }

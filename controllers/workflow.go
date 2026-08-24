@@ -64,6 +64,9 @@ func (c *ApiController) GetWorkflow() {
 		c.ResponseError(err.Error())
 		return
 	}
+	if workflow != nil && !reachable(c, workflow.Owner) {
+		return
+	}
 
 	c.ResponseOk(object.GetMaskedWorkflow(workflow, true))
 }
