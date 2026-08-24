@@ -198,6 +198,9 @@ func zapUpdateApplicationHandler(_ context.Context, auth string, body []byte) (*
 	if err != nil {
 		return zapError(http.StatusOK, err.Error())
 	}
+	if deny := zapReachable(auth, id, theirOrg); deny != nil {
+		return deny, nil
+	}
 
 	application.Manifest, err = cluster.Manifest(application, "en")
 	if err != nil {
@@ -221,6 +224,9 @@ func zapAddApplicationHandler(_ context.Context, auth string, body []byte) (*zap
 	if err := json.Unmarshal(body, &application); err != nil {
 		return zapError(http.StatusOK, err.Error())
 	}
+	// Filed into the caller's own organization — the one the template below is
+	// looked up under, and the one the listing reads back.
+	application.Owner = theirOrg(zapPrincipal(auth))
 
 	if application.Template == "" {
 		return zapError(http.StatusOK, "application:Missing required parameters")
@@ -247,16 +253,29 @@ func zapDeleteApplicationHandler(_ context.Context, auth string, body []byte) (*
 	if zapPrincipal(auth) == nil {
 		return zapError(http.StatusUnauthorized, "auth:Please sign in first")
 	}
-	var application object.Application
-	if err := json.Unmarshal(body, &application); err != nil {
+	var body_ object.Application
+	if err := json.Unmarshal(body, &body_); err != nil {
 		return zapError(http.StatusOK, err.Error())
+	}
+	id := util.GetIdFromOwnerAndName(body_.Owner, body_.Name)
+	if deny := zapReachable(auth, id, theirOrg); deny != nil {
+		return deny, nil
+	}
+	// The stored row, not the body's copy: what is torn down is the namespace this
+	// application was deployed in, and the body does not decide that.
+	application, err := object.GetApplication(id)
+	if err != nil {
+		return zapError(http.StatusOK, err.Error())
+	}
+	if application == nil {
+		return zapError(http.StatusOK, fmt.Sprintf("the application: %s does not exist", id))
 	}
 
 	// Best-effort teardown of what the record deployed, then drop the record. An
 	// org with no Kubernetes provider still deletes its applications.
 	_, _ = cluster.Undeploy(application.Owner, application.Name, application.Namespace, "en")
 
-	success, err := object.DeleteApplication(&application)
+	success, err := object.DeleteApplication(application)
 	if err != nil {
 		return zapError(http.StatusOK, err.Error())
 	}
@@ -272,6 +291,9 @@ func zapDeployApplicationHandler(_ context.Context, auth string, body []byte) (*
 	id, application, err := zapAppPayload(body)
 	if err != nil {
 		return zapError(http.StatusOK, err.Error())
+	}
+	if deny := zapReachable(auth, id, theirOrg); deny != nil {
+		return deny, nil
 	}
 
 	originalApplication, err := object.GetApplication(id)
