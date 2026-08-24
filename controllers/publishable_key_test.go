@@ -3,6 +3,8 @@
 package controllers
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -122,5 +124,111 @@ func TestAnExplicitCredentialBeatsTheCookie(t *testing.T) {
 				t.Errorf("bearerToken(%q, %q) = %q, want %q", tc.header, tc.cookie, got, tc.want)
 			}
 		})
+	}
+}
+
+// The publishable resolver asks IAM at ONE address, and it is not a verb.
+//
+// This is the dual of TestGetUserByAccessKeyUsesCanonicalPath. Key resolution
+// used to ride on a verb-noun address; IAM answers 410 there now, and the two
+// kinds of key were split onto endpoints of their own — a secret names a
+// principal, a publishable names only an org. Asking anywhere else resolves no
+// key at all, and a pk- that resolves to nothing bills nobody, so this is an
+// equality and not a pattern.
+func TestResolveOrgFromPublishableKeyUsesCanonicalPath(t *testing.T) {
+	var gotPath, gotAccessKey, gotAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotAccessKey = r.URL.Query().Get("accessKey")
+		gotAuth = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"ok","msg":"","data":{"org":"acme","scope":"ingest"}}`))
+	}))
+	defer srv.Close()
+
+	t.Setenv("IAM_URL", srv.URL)
+	t.Setenv("IAM_CLIENT_ID", "hanzo-cloud")
+	t.Setenv("IAM_CLIENT_SECRET", "s3cr3t")
+
+	org, err := resolveOrgFromPublishableKey("pk-canonical-test")
+	if err != nil {
+		t.Fatalf("resolveOrgFromPublishableKey: %v", err)
+	}
+	if gotPath != "/v1/iam/keys/org" {
+		t.Errorf("IAM path = %q, want /v1/iam/keys/org", gotPath)
+	}
+	if strings.HasPrefix(gotPath, "/api/") {
+		t.Errorf("IAM path %q uses the legacy /api/ alias", gotPath)
+	}
+	if gotAccessKey != "pk-canonical-test" {
+		t.Errorf("accessKey query = %q, want pk-canonical-test", gotAccessKey)
+	}
+	// Resolving a key is a credential boundary IAM opens only to a confidential
+	// app, and it reads that from Basic. A bearer resolves to a principal holding
+	// no such capability, so the answer would be a refusal rather than an org.
+	if !strings.HasPrefix(gotAuth, "Basic ") {
+		t.Errorf("Authorization = %q, want client_secret_basic", gotAuth)
+	}
+	if org != "acme" {
+		t.Errorf("org = %q, want acme", org)
+	}
+}
+
+// An IAM that cannot answer must not resolve to an org — including the second
+// time it is asked.
+//
+// A pk- names a tenant, so when IAM cannot confirm WHICH, the honest answer is
+// none: GetOrg returns "" and the request is refused rather than scoped to the
+// deployment's own org, which would bill a customer's traffic to the platform.
+// The answer is CACHED, so the refusal has to be remembered AS a refusal — a
+// cached ("", nil) would turn one IAM hiccup into a lasting empty org that every
+// later request reads as an answer.
+func TestAPublishableKeyRefusedByIAMNeverResolvesToAnOrg(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"status":"error","msg":"server_error"}`))
+	}))
+	defer srv.Close()
+
+	t.Setenv("IAM_URL", srv.URL)
+	t.Setenv("IAM_CLIENT_ID", "hanzo-cloud")
+	t.Setenv("IAM_CLIENT_SECRET", "s3cr3t")
+
+	const key = "pk-refused-by-iam-0001"
+	for _, when := range []string{"first ask", "from the cache"} {
+		org, err := publishableOrg(key)
+		if err == nil {
+			t.Fatalf("%s: a refused key resolved to %q", when, org)
+		}
+		if org != "" {
+			t.Errorf("%s: refusal carried org %q, want none", when, org)
+		}
+	}
+}
+
+// A shape that is not a publishable key never reaches IAM at all, so a public
+// endpoint cannot be used to aim traffic at the one service every other
+// credential path also depends on.
+func TestAKeyOfTheWrongShapeNeverReachesIAM(t *testing.T) {
+	asked := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		asked = true
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"ok","data":{"org":"acme"}}`))
+	}))
+	defer srv.Close()
+
+	t.Setenv("IAM_URL", srv.URL)
+	t.Setenv("IAM_CLIENT_ID", "hanzo-cloud")
+	t.Setenv("IAM_CLIENT_SECRET", "s3cr3t")
+
+	for _, bad := range []string{"", "sk-0123456789abcdef", "not-a-key", "pk-"} {
+		if org, err := publishableOrg(bad); err == nil {
+			t.Errorf("%q resolved to org %q", bad, org)
+		}
+	}
+	if asked {
+		t.Error("a malformed key was sent to IAM")
 	}
 }
