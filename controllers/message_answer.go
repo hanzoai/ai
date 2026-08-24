@@ -40,6 +40,10 @@ import (
 // @Success 200 {stream} string "An event stream of message answers in JSON format"
 // @router /get-message-answer [get]
 func (c *ApiController) GetMessageAnswer() {
+	caller, ok := c.RequireSignedInUser()
+	if !ok {
+		return
+	}
 	id := c.Input().Get("id")
 
 	c.SetHeader("Content-Type", "text/event-stream")
@@ -54,6 +58,15 @@ func (c *ApiController) GetMessageAnswer() {
 
 	if message == nil {
 		c.ResponseErrorStream(message, fmt.Sprintf("The message: %s is not found", id))
+		return
+	}
+
+	// Whose message this is, before anything is generated for it. This path runs a
+	// model and takes the debit for it, so naming somebody else's unanswered
+	// message would spend their balance. Organization is what says whose it is —
+	// Owner is the namespace every message shares.
+	if !reaches(caller, message.Organization) {
+		c.ResponseErrorStream(nil, c.T("general:The message does not exist"))
 		return
 	}
 
@@ -166,8 +179,8 @@ func (c *ApiController) GetMessageAnswer() {
 		return
 	}
 
-	_, ok := c.CheckSignedIn()
-	if !ok {
+	_, signedIn := c.CheckSignedIn()
+	if !signedIn {
 		var count int
 		count, err = object.GetNearMessageCount(message.User, store.LimitMinutes)
 		if err != nil {
