@@ -102,7 +102,7 @@ func (c *ApiController) UpdateForm() {
 // @Param body body object.Form true "The details of the form"
 // @Success 200 {object} controllers.Response The Response object
 // @router /add-form [post]
-func (c *ApiController) AddForm() { stored(c, object.AddForm) }
+func (c *ApiController) AddForm() { stored(c, c.GetScopedOwner, object.AddForm) }
 
 // DeleteForm
 // @Title DeleteForm
@@ -111,4 +111,4 @@ func (c *ApiController) AddForm() { stored(c, object.AddForm) }
 // @Param body body object.Form true "The details of the form"
 // @Success 200 {object} controllers.Response The Response object
 // @router /delete-form [post]
-func (c *ApiController) DeleteForm() { stored(c, object.DeleteForm) }
+func (c *ApiController) DeleteForm() { stored(c, c.GetScopedOwner, object.DeleteForm) }
