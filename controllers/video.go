@@ -226,6 +226,11 @@ func updateVideoCoverUrl(id string, videoId string) error {
 			if err != nil {
 				return err
 			}
+			// This poll outlives the answer the upload gave, so the row it is filling
+			// in can be deleted while it waits.
+			if v == nil {
+				return nil
+			}
 			if v.CoverUrl != "" {
 				break
 			}
