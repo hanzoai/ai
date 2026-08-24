@@ -37,9 +37,15 @@ func GetAudioFromVideo(inputBuffer *bytes.Buffer) (*bytes.Buffer, error) {
 	tmpInputFile.Close()
 
 	tmpOutputFileName := strings.Replace(tmpInputFile.Name(), ".mp4", ".mp3", 1)
+
+	// The removal is registered before ffmpeg runs, not after it has worked.
+	// ffmpeg leaves a partial file behind when it fails, and every return between
+	// here and the end used to be a file left in the temp directory — one per
+	// upload that would not convert.
+	defer os.Remove(tmpOutputFileName)
+
 	cmd := exec.Command("ffmpeg", "-i", tmpInputFile.Name(), "-q:a", "0", "-map", "a", tmpOutputFileName)
-	err = cmd.Run()
-	if err != nil {
+	if err = cmd.Run(); err != nil {
 		return nil, err
 	}
 
@@ -47,15 +53,14 @@ func GetAudioFromVideo(inputBuffer *bytes.Buffer) (*bytes.Buffer, error) {
 	if err != nil {
 		return nil, err
 	}
+	// And the handle is closed however the copy below ends. Registered after it
+	// was opened, so it also runs BEFORE the removal above.
+	defer tmpOutputFile.Close()
 
 	outputBuffer := bytes.NewBuffer(nil)
-	_, err = io.Copy(outputBuffer, tmpOutputFile)
-	if err != nil {
+	if _, err = io.Copy(outputBuffer, tmpOutputFile); err != nil {
 		return nil, err
 	}
-
-	defer tmpOutputFile.Close()
-	defer os.Remove(tmpOutputFileName)
 
 	return outputBuffer, nil
 }
