@@ -78,6 +78,11 @@ func UpdateVector(id string, vector *Vector, lang string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	// The row being replaced, which the check below does not cover: that one reads
+	// the value handed in.
+	if oldVector == nil {
+		return false, nil
+	}
 	if vector == nil {
 		return false, nil
 	}
