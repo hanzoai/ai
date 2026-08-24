@@ -27,9 +27,8 @@ import (
 // @Success 200 {array} object.Article The Response object
 // @router /get-global-articles [get]
 func (c *ApiController) GetGlobalArticles() {
-	articles, err := object.GetGlobalArticles()
-	if err != nil {
-		c.ResponseError(err.Error())
+	articles, ok := within(c, object.GetGlobalArticles, object.GetArticles)
+	if !ok {
 		return
 	}
 

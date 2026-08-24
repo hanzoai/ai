@@ -26,9 +26,8 @@ import (
 // @Success 200 {array} object.Graph The Response object
 // @router /get-global-graphs [get]
 func (c *ApiController) GetGlobalGraphs() {
-	graphs, err := object.GetGlobalGraphs()
-	if err != nil {
-		c.ResponseError(err.Error())
+	graphs, ok := within(c, object.GetGlobalGraphs, object.GetGraphs)
+	if !ok {
 		return
 	}
 
