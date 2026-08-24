@@ -740,6 +740,30 @@ func ownedBy(row any, owner string) error {
 	return nil
 }
 
+// zapReachable refuses an id outside what the caller's own listing would show.
+//
+// It is replaced()'s rule on this surface, as a check rather than a wrapper: the
+// handlers here carry the id INSIDE the body, in a wrapper of their own, so there
+// is no id to hand a helper before the body is decoded. Two lines each, and the
+// rule is still written once.
+func zapReachable(auth string, id string, whose func(*iam.User) string) *zap.Message {
+	user := zapPrincipal(auth)
+	if user == nil {
+		msg, _ := zapError(http.StatusUnauthorized, "auth:Please sign in first")
+		return msg
+	}
+	owner, _, err := util.GetOwnerAndNameFromIdWithError(id)
+	if err != nil {
+		msg, _ := zapError(http.StatusBadRequest, err.Error())
+		return msg
+	}
+	if mine := whose(user); mine != "" && owner != mine {
+		msg, _ := zapError(http.StatusOK, fmt.Sprintf("the record: %s does not exist", id))
+		return msg
+	}
+	return nil
+}
+
 // The two axes a table can belong to. Named, because "u.Owner" at a call site is
 // a field and "theirOrg" is the decision. (orgOf is taken, and is a different
 // thing: the owner half of an "owner/name" identity.)

@@ -181,6 +181,9 @@ func zapUpdateAssetHandler(_ context.Context, auth string, body []byte) (*zap.Me
 	if err := json.Unmarshal(body, &req); err != nil {
 		return zapError(http.StatusBadRequest, "invalid request: "+err.Error())
 	}
+	if deny := zapReachable(auth, req.ID, theirOrg); deny != nil {
+		return deny, nil
+	}
 	success, err := object.UpdateAsset(req.ID, &req.Asset)
 	if err != nil {
 		return zapError(http.StatusOK, err.Error())
@@ -339,6 +342,9 @@ func zapUpdateScanHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 	var req zapUpdateScanRequest
 	if err := json.Unmarshal(body, &req); err != nil {
 		return zapError(http.StatusBadRequest, "invalid request: "+err.Error())
+	}
+	if deny := zapReachable(auth, req.ID, theirOrg); deny != nil {
+		return deny, nil
 	}
 	success, err := object.UpdateScan(req.ID, &req.Scan)
 	if err != nil {
