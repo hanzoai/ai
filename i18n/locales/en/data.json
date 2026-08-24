@@ -99,7 +99,9 @@
     "The node does not exist": "The node does not exist",
     "The application does not exist": "The application does not exist",
     "The scan does not exist": "The scan does not exist",
-    "The asset does not exist": "The asset does not exist"
+    "The asset does not exist": "The asset does not exist",
+    "The file does not exist": "The file does not exist",
+    "The message does not exist": "The message does not exist"
   },
   "message_answer": {
     "object.GetNearestKnowledge() error, %s": "object.GetNearestKnowledge() error, %s"

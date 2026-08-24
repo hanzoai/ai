@@ -77,6 +77,10 @@ func (c *ApiController) GetWorkflow() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /update-workflow [post]
 func (c *ApiController) UpdateWorkflow() {
+	owner, allowed := c.GetScopedOwner()
+	if !allowed {
+		return
+	}
 	id := c.Input().Get("id")
 
 	var workflow object.Workflow
@@ -85,6 +89,9 @@ func (c *ApiController) UpdateWorkflow() {
 		c.ResponseError(err.Error())
 		return
 	}
+	// Whose row this is, not what the body said — the same answer this table's
+	// listing uses.
+	workflow.Owner = owner
 
 	success, err := object.UpdateWorkflow(id, &workflow, c.GetAcceptLanguage())
 	if err != nil {
@@ -103,12 +110,19 @@ func (c *ApiController) UpdateWorkflow() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /add-workflow [post]
 func (c *ApiController) AddWorkflow() {
+	owner, allowed := c.GetScopedOwner()
+	if !allowed {
+		return
+	}
 	var workflow object.Workflow
 	err := json.Unmarshal(c.Body(), &workflow)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
 	}
+	// Whose row this is, not what the body said — the same answer this table's
+	// listing uses.
+	workflow.Owner = owner
 
 	success, err := object.AddWorkflow(&workflow, c.GetAcceptLanguage())
 	if err != nil {

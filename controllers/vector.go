@@ -111,6 +111,10 @@ func (c *ApiController) GetVector() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /update-vector [post]
 func (c *ApiController) UpdateVector() {
+	owner, allowed := c.GetScopedOwner()
+	if !allowed {
+		return
+	}
 	id := c.Input().Get("id")
 
 	var vector object.Vector
@@ -119,6 +123,9 @@ func (c *ApiController) UpdateVector() {
 		c.ResponseError(err.Error())
 		return
 	}
+	// Whose row this is, not what the body said — the same answer this table's
+	// listing uses.
+	vector.Owner = owner
 
 	success, err := object.UpdateVector(id, &vector, c.GetAcceptLanguage())
 	if err != nil {
@@ -137,12 +144,19 @@ func (c *ApiController) UpdateVector() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /add-vector [post]
 func (c *ApiController) AddVector() {
+	owner, allowed := c.GetScopedOwner()
+	if !allowed {
+		return
+	}
 	var vector object.Vector
 	err := json.Unmarshal(c.Body(), &vector)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
 	}
+	// Whose row this is, not what the body said — the same answer this table's
+	// listing uses.
+	vector.Owner = owner
 
 	if vector.Provider == "" {
 		var embeddingProvider *object.Provider

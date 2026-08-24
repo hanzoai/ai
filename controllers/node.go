@@ -81,6 +81,11 @@ func (c *ApiController) GetNodes() {
 // @Success 200 {object} object.Node The Response object
 // @router /get-node [get]
 func (c *ApiController) GetNode() {
+	// The listing beside this one asks for the platform admin; one node by name is
+	// the same disclosure, an item at a time.
+	if !c.RequireSuperAdmin() {
+		return
+	}
 	id := c.Input().Get("id")
 
 	node, err := object.GetMaskedNode(object.GetNode(id))
@@ -101,6 +106,12 @@ func (c *ApiController) GetNode() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /update-node [post]
 func (c *ApiController) UpdateNode() {
+	// A node is a machine, and the row carries the credentials to reach it. Listing
+	// them asks for the platform admin, so writing one asks the same — the reads
+	// were gated and the writes were not, on the same table.
+	if !c.RequireSuperAdmin() {
+		return
+	}
 	id := c.Input().Get("id")
 
 	var node object.Node
@@ -121,6 +132,12 @@ func (c *ApiController) UpdateNode() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /add-node [post]
 func (c *ApiController) AddNode() {
+	// A node is a machine, and the row carries the credentials to reach it. Listing
+	// them asks for the platform admin, so writing one asks the same — the reads
+	// were gated and the writes were not, on the same table.
+	if !c.RequireSuperAdmin() {
+		return
+	}
 	var node object.Node
 	err := json.Unmarshal(c.Body(), &node)
 	if err != nil {
@@ -139,6 +156,12 @@ func (c *ApiController) AddNode() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /delete-node [post]
 func (c *ApiController) DeleteNode() {
+	// A node is a machine, and the row carries the credentials to reach it. Listing
+	// them asks for the platform admin, so writing one asks the same — the reads
+	// were gated and the writes were not, on the same table.
+	if !c.RequireSuperAdmin() {
+		return
+	}
 	var node object.Node
 	err := json.Unmarshal(c.Body(), &node)
 	if err != nil {

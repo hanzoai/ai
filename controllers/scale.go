@@ -118,6 +118,10 @@ func (c *ApiController) GetPublicScales() {
 // UpdateScale
 // @router /update-scale [post]
 func (c *ApiController) UpdateScale() {
+	owner, signedIn := c.RequireSignedIn()
+	if !signedIn {
+		return
+	}
 	id := c.Input().Get("id")
 	var s object.Scale
 	err := json.Unmarshal(c.Body(), &s)
@@ -125,6 +129,9 @@ func (c *ApiController) UpdateScale() {
 		c.ResponseError(err.Error())
 		return
 	}
+	// Whose row this is, not what the body said — the same answer this table's
+	// listing uses.
+	s.Owner = owner
 	existing, err := object.GetScale(id)
 	if err != nil {
 		c.ResponseError(err.Error())
@@ -159,12 +166,19 @@ func (c *ApiController) UpdateScale() {
 // AddScale
 // @router /add-scale [post]
 func (c *ApiController) AddScale() {
+	owner, signedIn := c.RequireSignedIn()
+	if !signedIn {
+		return
+	}
 	var s object.Scale
 	err := json.Unmarshal(c.Body(), &s)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
 	}
+	// Whose row this is, not what the body said — the same answer this table's
+	// listing uses.
+	s.Owner = owner
 	if !c.IsAdmin() {
 		s.State = object.ScaleStatePublic
 	} else if s.State == object.ScaleStateHidden {
@@ -183,12 +197,19 @@ func (c *ApiController) AddScale() {
 // DeleteScale
 // @router /delete-scale [post]
 func (c *ApiController) DeleteScale() {
+	owner, signedIn := c.RequireSignedIn()
+	if !signedIn {
+		return
+	}
 	var s object.Scale
 	err := json.Unmarshal(c.Body(), &s)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
 	}
+	// Whose row this is, not what the body said — the same answer this table's
+	// listing uses.
+	s.Owner = owner
 	if !c.IsAdmin() {
 		username := c.GetSessionUsername()
 		id := s.GetId()
