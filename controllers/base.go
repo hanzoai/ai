@@ -40,6 +40,16 @@ import (
 // with a header.
 type ApiController struct {
 	*zip.Ctx
+
+	// Which organization this request acts in, answered once. Resolving it
+	// validates the caller's credential, and for an IAM API key it asks IAM — so a
+	// handler that asks four times pays four times, and if IAM answers one of them
+	// and not the next, one request is attributed to two tenants. A controller is
+	// built per request (routers/route.go) and nothing that outlives the request
+	// reaches through it, so this is that request's own answer for as long as the
+	// caller is the same one.
+	org      string
+	orgKnown bool
 }
 
 func init() {
@@ -87,6 +97,10 @@ func (c *ApiController) GetSessionClaims() *iam.Claims {
 // they were parsed from rides along on AccessToken, and that is what the browser
 // gets back.
 func (c *ApiController) SetSessionClaims(claims *iam.Claims) {
+	// Who the caller is decides which organization the request acts in, so the
+	// answer above stops being this request's answer here.
+	c.orgKnown = false
+
 	if claims == nil {
 		c.clearIamTokenCookie()
 		return
@@ -200,10 +214,12 @@ type snapshot struct {
 // takeSnapshot reads the request's outliving parts. Call it before handing a
 // closure to SendStreamWriter, never inside one.
 func (c *ApiController) takeSnapshot(user *iam.User) snapshot {
+	// A snapshot exists to be read after the handler returns, and each of these
+	// begins life as a view of the connection's buffer. Cloned, they are ours.
 	return snapshot{
-		lang: c.GetAcceptLanguage(),
-		ip:   c.Fiber().IP(),
-		org:  c.billingOrg(user),
+		lang: strings.Clone(c.GetAcceptLanguage()),
+		ip:   strings.Clone(c.Fiber().IP()),
+		org:  strings.Clone(c.billingOrg(user)),
 		ctx:  context.WithoutCancel(c.Context()),
 	}
 }
