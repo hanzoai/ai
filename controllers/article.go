@@ -107,7 +107,7 @@ func (c *ApiController) GetArticle() {
 // @Param body body object.Article true "The details of the article"
 // @Success 200 {object} controllers.Response The Response object
 // @router /update-article [post]
-func (c *ApiController) UpdateArticle() { replaced(c, object.UpdateArticle) }
+func (c *ApiController) UpdateArticle() { replaced(c, c.GetScopedOwner, object.UpdateArticle) }
 
 // AddArticle
 // @Title AddArticle
@@ -116,7 +116,7 @@ func (c *ApiController) UpdateArticle() { replaced(c, object.UpdateArticle) }
 // @Param body body object.Article true "The details of the article"
 // @Success 200 {object} controllers.Response The Response object
 // @router /add-article [post]
-func (c *ApiController) AddArticle() { stored(c, object.AddArticle) }
+func (c *ApiController) AddArticle() { stored(c, c.GetScopedOwner, object.AddArticle) }
 
 // DeleteArticle
 // @Title DeleteArticle
@@ -125,4 +125,4 @@ func (c *ApiController) AddArticle() { stored(c, object.AddArticle) }
 // @Param body body object.Article true "The details of the article"
 // @Success 200 {object} controllers.Response The Response object
 // @router /delete-article [post]
-func (c *ApiController) DeleteArticle() { stored(c, object.DeleteArticle) }
+func (c *ApiController) DeleteArticle() { stored(c, c.GetScopedOwner, object.DeleteArticle) }

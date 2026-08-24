@@ -188,7 +188,7 @@ func (c *ApiController) UpdateTask() {
 // @Param body body object.Task true "The details of the task"
 // @Success 200 {object} controllers.Response The Response object
 // @router /add-task [post]
-func (c *ApiController) AddTask() { stored(c, object.AddTask) }
+func (c *ApiController) AddTask() { stored(c, c.RequireSignedIn, object.AddTask) }
 
 // DeleteTask
 // @Title DeleteTask

@@ -123,7 +123,7 @@ func (c *ApiController) GetFileMy() {
 // @Param body body  object.File true "The details of the file object"
 // @Success 200 {object} controllers.Response The Response object
 // @router /update-file [post]
-func (c *ApiController) UpdateFile() { replaced(c, object.UpdateFile) }
+func (c *ApiController) UpdateFile() { replaced(c, c.GetScopedOwner, object.UpdateFile) }
 
 // AddFile
 // @Title AddFile
@@ -132,7 +132,7 @@ func (c *ApiController) UpdateFile() { replaced(c, object.UpdateFile) }
 // @Param body body object.File true "The details of the file object"
 // @Success 200 {object} controllers.Response The Response object
 // @router /add-file [post]
-func (c *ApiController) AddFile() { stored(c, object.AddFile) }
+func (c *ApiController) AddFile() { stored(c, c.GetScopedOwner, object.AddFile) }
 
 // DeleteFile
 // @Title DeleteFile
