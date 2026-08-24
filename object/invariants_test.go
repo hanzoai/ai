@@ -93,6 +93,14 @@ func TestNoAbsentRowIsDereferenced(t *testing.T) {
 	absent := map[string]bool{}
 	declarations := map[string]int{}
 	s.funcs(func(_ string, fn *ast.FuncDecl) {
+		// A method is not the package function of the same name. object.GetVideo(id)
+		// answers a row and an error; (c *ApiController) GetVideo() answers a request
+		// and takes nothing, so it never appears as the right-hand side of the
+		// two-value assignment this looks for. Counting them as one name made every
+		// store read whose handler mirrors it unresolvable, which is most of them.
+		if fn.Recv != nil {
+			return
+		}
 		declarations[fn.Name.Name]++
 		ast.Inspect(fn.Body, func(n ast.Node) bool {
 			ret, ok := n.(*ast.ReturnStmt)
@@ -108,6 +116,46 @@ func TestNoAbsentRowIsDereferenced(t *testing.T) {
 		})
 	})
 
+	// A function that answers with another's answer carries that answer's absence:
+	//   func getVideo(o, n string) (*Video, error) { return getRow[Video](...) }
+	// The literal (nil, nil) is two hops from GetVideo, but nil is what GetVideo's
+	// callers hold, so follow the hops to a fixpoint.
+	through := map[string][]string{}
+	s.funcs(func(_ string, fn *ast.FuncDecl) {
+		// Methods are left out here for the same reason they are left out above: a
+		// call names only the selector, so marking a method's name would answer for
+		// every package function that shares it. (p *Provider) GetModelProvider is a
+		// method and there is no function by that name, so provider.GetModelProvider
+		// must not inherit an absence from anywhere.
+		if fn.Recv != nil {
+			return
+		}
+		ast.Inspect(fn.Body, func(n ast.Node) bool {
+			ret, ok := n.(*ast.ReturnStmt)
+			if !ok || len(ret.Results) != 1 {
+				return true
+			}
+			if call, ok := ret.Results[0].(*ast.CallExpr); ok {
+				through[fn.Name.Name] = append(through[fn.Name.Name], called(call.Fun))
+			}
+			return true
+		})
+	})
+	for moved := true; moved; {
+		moved = false
+		for name, calls := range through {
+			if absent[name] {
+				continue
+			}
+			for _, c := range calls {
+				if absent[c] {
+					absent[name], moved = true, true
+					break
+				}
+			}
+		}
+	}
+
 	shared := []string{}
 	for name := range absent {
 		if declarations[name] > 1 {
@@ -115,9 +163,10 @@ func TestNoAbsentRowIsDereferenced(t *testing.T) {
 		}
 	}
 	sort.Strings(shared)
-	// A store function and the HTTP handler mirroring its name — object.GetRecord
-	// and ApiController.GetRecord — which this module does on purpose.
-	known := []string{"GetFinetuneJob", "GetModelRoute", "GetModelRoutes", "GetRecord"}
+	// Nothing is ambiguous now that a method and a package function are told apart,
+	// so nothing is skipped. A name that lands here later is two package functions
+	// genuinely sharing one name, which is worth seeing.
+	known := []string{}
 	if strings.Join(shared, ",") != strings.Join(known, ",") {
 		t.Errorf("the set of names two declarations share has changed:\n  now: %v\n  was: %v\n"+
 			"a shared name cannot be told apart by reading the syntax, so it is skipped — "+
@@ -257,6 +306,13 @@ func called(fun ast.Expr) string {
 		return f.Sel.Name
 	case *ast.Ident:
 		return f.Name
+	// A generic call names its function under the type it was instantiated with:
+	// getRow[Video](...) is an IndexExpr wrapping the identifier. Every store read
+	// in this module is one of those, so not unwrapping them hid all of them.
+	case *ast.IndexExpr:
+		return called(f.X)
+	case *ast.IndexListExpr:
+		return called(f.X)
 	}
 	return ""
 }
