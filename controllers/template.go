@@ -92,7 +92,7 @@ func (c *ApiController) GetTemplate() {
 // @Param body body object.Template true "The details of the template"
 // @Success 200 {object} controllers.Response The Response object
 // @router /update-template [post]
-func (c *ApiController) UpdateTemplate() { replaced(c, object.UpdateTemplate) }
+func (c *ApiController) UpdateTemplate() { replaced(c, c.GetScopedOwner, object.UpdateTemplate) }
 
 // AddTemplate
 // @Title AddTemplate
@@ -101,7 +101,7 @@ func (c *ApiController) UpdateTemplate() { replaced(c, object.UpdateTemplate) }
 // @Param body body object.Template true "The details of the template"
 // @Success 200 {object} controllers.Response The Response object
 // @router /add-template [post]
-func (c *ApiController) AddTemplate() { stored(c, object.AddTemplate) }
+func (c *ApiController) AddTemplate() { stored(c, c.GetScopedOwner, object.AddTemplate) }
 
 // DeleteTemplate
 // @Title DeleteTemplate
@@ -110,4 +110,4 @@ func (c *ApiController) AddTemplate() { stored(c, object.AddTemplate) }
 // @Param body body object.Template true "The details of the template"
 // @Success 200 {object} controllers.Response The Response object
 // @router /delete-template [post]
-func (c *ApiController) DeleteTemplate() { stored(c, object.DeleteTemplate) }
+func (c *ApiController) DeleteTemplate() { stored(c, c.GetScopedOwner, object.DeleteTemplate) }

@@ -126,4 +126,4 @@ func (c *ApiController) AddWorkflow() {
 // @Param body body object.Workflow true "The details of the workflow"
 // @Success 200 {object} controllers.Response The Response object
 // @router /delete-workflow [post]
-func (c *ApiController) DeleteWorkflow() { stored(c, object.DeleteWorkflow) }
+func (c *ApiController) DeleteWorkflow() { stored(c, c.GetScopedOwner, object.DeleteWorkflow) }
