@@ -88,8 +88,12 @@ type Video struct {
 	PlayAuth       string         `db:"-" json:"playAuth"`
 }
 
+// The public listing is the rows that say they are public. The page has always
+// drawn exactly this set — it drew it in the browser, after every row had already
+// crossed the network — so the set is unchanged and the rows it discards are no
+// longer sent. IsPublic is the row's own answer; ask the table for it.
 func GetGlobalVideos() ([]*Video, error) {
-	return allRows[Video]("video")
+	return rowsWhere[Video]("video", dbx.HashExp{"is_public": true})
 }
 
 func GetVideos(owner string, lang string) ([]*Video, error) {
@@ -111,34 +115,41 @@ func getVideo(owner, name string) (*Video, error) {
 	return getRow[Video]("video", owner, name)
 }
 
-func GetVideo(id string, lang string) (*Video, error) {
+// GetVideo reads the row and nothing else. Handing back a credential that plays
+// the video is a separate act with a separate cost — the VOD service can spend a
+// minute admitting a fresh upload — so it is a separate call, made once the
+// caller is known to be allowed the video.
+func GetVideo(id string) (*Video, error) {
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
 	if err != nil {
 		return nil, err
 	}
-	v, err := getVideo(owner, name)
-	if err != nil {
-		return nil, err
+	return getVideo(owner, name)
+}
+
+// Play attaches the credential that plays this video. While the VOD service is
+// still admitting an upload it reports "AuditStatus is Init", which is the one
+// answer worth waiting on; a video that never finishes admitting comes back
+// without a credential rather than as an error, as it always has.
+func (v *Video) Play(lang string) error {
+	if v == nil || v.VideoId == "" {
+		return nil
 	}
-	if v != nil && v.VideoId != "" {
-		err = SetDefaultVodClient(lang)
-		if err != nil {
-			return nil, err
-		}
-		maxRetries := 30
-		for i := 0; i < maxRetries; i++ {
-			v.PlayAuth, err = video.GetVideoPlayAuth(v.VideoId)
-			if err == nil {
-				return v, nil
-			}
-			if !strings.Contains(err.Error(), "and AuditStatus is Init.") {
-				return nil, err
-			}
-			fmt.Printf("GetVideoPlayAuth() error, video: %s, try time: %d, error: %v\n", name, i, err)
-			time.Sleep(2 * time.Second)
-		}
+	if err := SetDefaultVodClient(lang); err != nil {
+		return err
 	}
-	return v, nil
+	for i := 0; i < 30; i++ {
+		auth, err := video.GetVideoPlayAuth(v.VideoId)
+		if err == nil {
+			v.PlayAuth = auth
+			return nil
+		}
+		if !strings.Contains(err.Error(), "and AuditStatus is Init.") {
+			return err
+		}
+		time.Sleep(2 * time.Second)
+	}
+	return nil
 }
 
 func UpdateVideo(id string, video *Video) (bool, error) {

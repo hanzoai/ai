@@ -116,21 +116,39 @@ func (c *ApiController) GetVideos() {
 func (c *ApiController) GetVideo() {
 	id := c.Input().Get("id")
 
-	video, err := object.GetVideo(id, c.GetAcceptLanguage())
+	v, err := object.GetVideo(id)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
 	}
+	if v == nil {
+		c.ResponseOk(nil)
+		return
+	}
 
-	if video != nil {
-		err = video.Populate(c.GetAcceptLanguage())
-		if err != nil {
-			c.ResponseError(err.Error())
+	// The row says whether it is public, and the public listing links straight
+	// here, so a public video answers anyone. Every other video answers the person
+	// whose uploads it is among — the name this table's listing scopes on — or a
+	// platform admin. A caller who is allowed neither gets the same answer as one
+	// asking for a video that is not there, which is all they are owed.
+	if !v.IsPublic {
+		user := c.GetSessionUser()
+		if user == nil || (user.Name != v.Owner && !util.IsSuperAdmin(user)) {
+			c.ResponseOk(nil)
 			return
 		}
 	}
 
-	c.ResponseOk(video)
+	if err = v.Play(c.GetAcceptLanguage()); err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+	if err = v.Populate(c.GetAcceptLanguage()); err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+
+	c.ResponseOk(v)
 }
 
 // UpdateVideo
@@ -152,6 +170,12 @@ func (c *ApiController) UpdateVideo() {
 	}
 
 	id := c.Input().Get("id")
+	// The id names the row that gets written, so the id is what has to belong to
+	// the caller. Stamping the body's Owner reads like the check and is not one:
+	// UpdateVideo takes the row's owner from the id and overwrites the stamp.
+	if !writable(c, owner, id) {
+		return
+	}
 
 	var video object.Video
 	err := json.Unmarshal(c.Body(), &video)
@@ -159,9 +183,6 @@ func (c *ApiController) UpdateVideo() {
 		c.ResponseError(err.Error())
 		return
 	}
-	// Whose row this is, not what the body said — the same answer this table's
-	// listing uses.
-	video.Owner = owner
 
 	if util.IsVideoNormalUser(user) {
 		if len(video.Remarks) > 0 || len(video.Remarks2) > 0 || video.State != "Draft" {
@@ -197,11 +218,11 @@ func (c *ApiController) AddVideo() { stored(c, c.RequireSignedIn, object.AddVide
 // @router /delete-video [post]
 func (c *ApiController) DeleteVideo() { stored(c, c.RequireSignedIn, object.DeleteVideo) }
 
-func updateVideoCoverUrl(id string, videoId string, lang string) error {
+func updateVideoCoverUrl(id string, videoId string) error {
 	for i := 0; i < 30; i++ {
 		coverUrl := video.GetVideoCoverUrl(videoId)
 		if coverUrl != "" {
-			v, err := object.GetVideo(id, lang)
+			v, err := object.GetVideo(id)
 			if err != nil {
 				return err
 			}
@@ -389,7 +410,7 @@ func (c *ApiController) UploadVideo() {
 
 	id := util.GetIdFromOwnerAndName(userName, fileId)
 
-	err = updateVideoCoverUrl(id, videoId, c.GetAcceptLanguage())
+	err = updateVideoCoverUrl(id, videoId)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
