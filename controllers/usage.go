@@ -28,7 +28,7 @@ import (
 // @Success 200 {array} object.Usage The Response object
 // @router /get-usages [get]
 func (c *ApiController) GetUsages() {
-	_, ok := c.RequireSignedIn()
+	caller, ok := c.RequireSignedInUser()
 	if !ok {
 		return
 	}
@@ -41,7 +41,7 @@ func (c *ApiController) GetUsages() {
 	user := c.Input().Get("selectedUser")
 	storeName := c.Input().Get("store")
 
-	usages, err := object.GetUsages(days, user, storeName)
+	usages, err := object.GetUsages(days, reach(caller), user, storeName)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -64,7 +64,7 @@ func (c *ApiController) GetUsages() {
 // @Success 200 {array} object.Usage The Response object
 // @router /get-range-usages [get]
 func (c *ApiController) GetRangeUsages() {
-	_, ok := c.RequireSignedIn()
+	caller, ok := c.RequireSignedInUser()
 	if !ok {
 		return
 	}
@@ -78,7 +78,7 @@ func (c *ApiController) GetRangeUsages() {
 	user := c.Input().Get("user")
 	storeName := c.Input().Get("store")
 
-	usages, err := object.GetRangeUsages(rangeType, count, user, storeName, c.GetAcceptLanguage())
+	usages, err := object.GetRangeUsages(rangeType, count, reach(caller), user, storeName, c.GetAcceptLanguage())
 	if err != nil {
 		c.ResponseError(err.Error())
 		return

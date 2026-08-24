@@ -45,11 +45,11 @@ type UserUsage struct {
 	Price        float64 `json:"price"`
 }
 
-func GetUsages(days int, user string, storeName string) ([]*Usage, error) {
+func GetUsages(days int, org string, user string, storeName string) ([]*Usage, error) {
 	if days < 1 {
 		return nil, fmt.Errorf("days must be at least 1, got %d", days)
 	}
-	messages, err := GetGlobalMessagesByStoreName(storeName)
+	messages, err := GetGlobalMessagesByStoreName(org, storeName)
 	if err != nil {
 		return nil, err
 	}

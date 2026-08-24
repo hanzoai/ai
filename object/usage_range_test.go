@@ -23,11 +23,11 @@ func TestBothUsageReportsAgreeOnToday(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	daily, err := GetUsages(1, "All", "s1")
+	daily, err := GetUsages(1, "", "All", "s1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	ranged, err := GetRangeUsages("Day", 1, "All", "s1", "en")
+	ranged, err := GetRangeUsages("Day", 1, "", "All", "s1", "en")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,12 +51,12 @@ func TestBothUsageReportsAgreeOnToday(t *testing.T) {
 func TestARangeWeDoNotReport(t *testing.T) {
 	withStore(t)
 	for _, rangeType := range []string{"", "Decade", "day", "HOUR"} {
-		if _, err := GetRangeUsages(rangeType, 3, "All", "s1", "en"); err == nil {
+		if _, err := GetRangeUsages(rangeType, 3, "", "All", "s1", "en"); err == nil {
 			t.Errorf("%q was reported on", rangeType)
 		}
 	}
 	for _, rangeType := range []string{"Hour", "Day", "Week", "Month"} {
-		got, err := GetRangeUsages(rangeType, 3, "All", "s1", "en")
+		got, err := GetRangeUsages(rangeType, 3, "", "All", "s1", "en")
 		if err != nil {
 			t.Errorf("%s: %v", rangeType, err)
 			continue
