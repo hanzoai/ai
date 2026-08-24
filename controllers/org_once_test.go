@@ -72,3 +72,31 @@ func TestAnOrgReadFromAHeaderIsOurs(t *testing.T) {
 		t.Errorf("the organization held from the first read now reads %q", held)
 	}
 }
+
+// And who the caller is, for the same reason: answering parses the credential and
+// verifies its signature, twice per ask, and one handler asks six times. A
+// credential that changes between two asks is the visible form of a second parse.
+func TestTheRequestsCallerIsResolvedOnce(t *testing.T) {
+	withStore(t)
+	people := withIAM(t)
+
+	val := people.signedIn(t, &iam.User{Owner: "acme", Name: "val"})
+	other := people.signedIn(t, &iam.User{Owner: "acme", Name: "mallory"})
+
+	c := as(visit("GET", "/v1/ai/get-account"), val)
+	if got := c.GetSessionUsername(); got != "val" {
+		t.Fatalf("first answer = %q, want val", got)
+	}
+
+	// A different credential on the same request.
+	c.Fiber().Request().Header.Set("Authorization", other)
+	if got := c.GetSessionUsername(); got != "val" {
+		t.Errorf("second answer = %q — the credential was parsed again", got)
+	}
+
+	// Until the session itself is written, which is the one thing that changes it.
+	c.SetSessionClaims(nil)
+	if got := c.GetSessionUsername(); got == "val" {
+		t.Errorf("after the session was cleared, the answer is still %q", got)
+	}
+}
