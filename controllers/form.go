@@ -64,6 +64,9 @@ func (c *ApiController) GetForm() {
 		c.ResponseError(err.Error())
 		return
 	}
+	if form != nil && !reachable(c, form.Owner) {
+		return
+	}
 
 	c.ResponseOk(object.GetMaskedForm(form, true))
 }
