@@ -43,7 +43,7 @@ func TestGetUserByAccessKeyUsesClientSecretBasic(t *testing.T) {
 	const (
 		clientID     = "hanzo-cloud"
 		clientSecret = "s3cr3t"
-		accessKey    = "sk-testkey"
+		accessKey    = "sk-test-000000000000000000000000000000ab"
 	)
 
 	var gotQuery url.Values
@@ -105,7 +105,7 @@ func TestGetUserByAccessKeyRefusalIsAnError(t *testing.T) {
 	t.Setenv("IAM_CLIENT_ID", "hanzo-cloud")
 	t.Setenv("IAM_CLIENT_SECRET", "s3cr3t")
 
-	if _, err := GetUserByAccessKey("sk-testkey"); err == nil {
+	if _, err := GetUserByAccessKey("sk-test-000000000000000000000000000000ab"); err == nil {
 		t.Fatal("a refused resolution must be an error, got nil")
 	}
 }
@@ -127,7 +127,7 @@ func TestGetUserByAccessKeyRelaysReasonOnNon200(t *testing.T) {
 	t.Setenv("IAM_CLIENT_ID", "hanzo-cloud")
 	t.Setenv("IAM_CLIENT_SECRET", "s3cr3t")
 
-	_, err := GetUserByAccessKey("sk-testkey")
+	_, err := GetUserByAccessKey("sk-test-000000000000000000000000000000ab")
 	if err == nil {
 		t.Fatal("an unknown key must be an error, got nil")
 	}
@@ -161,7 +161,7 @@ func TestGetUserByAccessKeyRequiresCredentials(t *testing.T) {
 		t.Skip("a client credential is configured out-of-band; nothing to fail closed on")
 	}
 
-	if _, err := GetUserByAccessKey("sk-testkey"); err == nil {
+	if _, err := GetUserByAccessKey("sk-test-000000000000000000000000000000ab"); err == nil {
 		t.Fatal("missing client credentials must be an error, got nil")
 	}
 }
