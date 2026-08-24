@@ -324,7 +324,10 @@ func zapGetChatHandler(_ context.Context, auth string, body []byte) (*zap.Messag
 	if err != nil {
 		return zapError(200, err.Error())
 	}
-	if chat == nil {
+	// A chat in another organization is not this caller's, and answers the way a
+	// chat that is not there answers — zapIsCurrentUser is not asked of an admin,
+	// and an admin administers ONE organization.
+	if chat == nil || !reaches(user, chat.Organization) {
 		return zapError(200, "Chat not found")
 	}
 
@@ -372,7 +375,10 @@ func zapUpdateChatHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 	if err != nil {
 		return zapError(200, err.Error())
 	}
-	if originalChat == nil {
+	// A chat in another organization is not this caller's, and answers the way a
+	// chat that is not there answers — zapIsCurrentUser is not asked of an admin,
+	// and an admin administers ONE organization.
+	if originalChat == nil || !reaches(user, originalChat.Organization) {
 		return zapError(200, "The chat: "+id+" is not found")
 	}
 	if deny := zapIsCurrentUser(user, originalChat.User); deny != nil {
@@ -456,7 +462,10 @@ func zapDeleteChatHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 	if err != nil {
 		return zapError(200, err.Error())
 	}
-	if storedChat == nil {
+	// A chat in another organization is not this caller's, and answers the way a
+	// chat that is not there answers — zapIsCurrentUser is not asked of an admin,
+	// and an admin administers ONE organization.
+	if storedChat == nil || !reaches(user, storedChat.Organization) {
 		return zapError(200, "The chat: "+chat.GetId()+" is not found")
 	}
 	if deny := zapIsCurrentUser(user, storedChat.User); deny != nil {

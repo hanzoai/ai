@@ -147,7 +147,7 @@ func (c *ApiController) GetChat() {
 		return
 	}
 
-	if chat == nil {
+	if chat == nil || chat.Organization != c.GetOrg() {
 		c.ResponseError("Chat not found")
 		return
 	}
@@ -202,7 +202,10 @@ func (c *ApiController) UpdateChat() {
 		c.ResponseError(err.Error())
 		return
 	}
-	if originalChat == nil {
+	// A chat in another organization is not this caller's, and answers the way a
+	// chat that is not there answers. The user check is not asked of an admin, and
+	// an admin administers ONE organization.
+	if originalChat == nil || originalChat.Organization != c.GetOrg() {
 		c.ResponseError(fmt.Sprintf("The chat: %s is not found", id))
 		return
 	}
@@ -318,7 +321,10 @@ func (c *ApiController) DeleteChat() {
 		c.ResponseError(err.Error())
 		return
 	}
-	if storedChat == nil {
+	// A chat in another organization is not this caller's, and answers the way a
+	// chat that is not there answers. The user check is not asked of an admin, and
+	// an admin administers ONE organization.
+	if storedChat == nil || storedChat.Organization != c.GetOrg() {
 		c.ResponseError(fmt.Sprintf("The chat: %s is not found", chat.GetId()))
 		return
 	}
