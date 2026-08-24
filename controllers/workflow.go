@@ -28,9 +28,8 @@ import (
 // @Success 200 {array} object.Workflow The Response object
 // @router /get-global-workflows [get]
 func (c *ApiController) GetGlobalWorkflows() {
-	workflows, err := object.GetGlobalWorkflows()
-	if err != nil {
-		c.ResponseError(err.Error())
+	workflows, ok := within(c, object.GetGlobalWorkflows, object.GetWorkflows)
+	if !ok {
 		return
 	}
 
