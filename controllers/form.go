@@ -77,6 +77,10 @@ func (c *ApiController) GetForm() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /update-form [post]
 func (c *ApiController) UpdateForm() {
+	owner, allowed := c.GetScopedOwner()
+	if !allowed {
+		return
+	}
 	id := c.Input().Get("id")
 
 	var form object.Form
@@ -85,6 +89,9 @@ func (c *ApiController) UpdateForm() {
 		c.ResponseError(err.Error())
 		return
 	}
+	// Whose row this is, not what the body said — the same answer this table's
+	// listing uses.
+	form.Owner = owner
 
 	success, err := object.UpdateForm(id, &form, c.GetAcceptLanguage())
 	if err != nil {

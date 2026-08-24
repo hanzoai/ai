@@ -116,6 +116,10 @@ func (c *ApiController) GetRecord() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /update-record [post]
 func (c *ApiController) UpdateRecord() {
+	owner, allowed := c.GetScopedOwner()
+	if !allowed {
+		return
+	}
 	id := c.Input().Get("id")
 
 	var record object.Record
@@ -124,6 +128,9 @@ func (c *ApiController) UpdateRecord() {
 		c.ResponseError(err.Error())
 		return
 	}
+	// An audit row belongs to the organization that filed it, the one GetRecords
+	// reads back — not to whichever the body names.
+	record.Owner = owner
 
 	c.JSON(http.StatusOK, wrapActionResponse(object.UpdateRecord(id, &record, c.GetAcceptLanguage())))
 }
@@ -136,12 +143,19 @@ func (c *ApiController) UpdateRecord() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /add-record [post]
 func (c *ApiController) AddRecord() {
+	owner, allowed := c.GetScopedOwner()
+	if !allowed {
+		return
+	}
 	var record object.Record
 	err := json.Unmarshal(c.Body(), &record)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
 	}
+	// An audit row belongs to the organization that filed it, the one GetRecords
+	// reads back — not to whichever the body names.
+	record.Owner = owner
 
 	if record.ClientIp == "" {
 		record.ClientIp = c.getClientIp()
@@ -173,11 +187,22 @@ func (c *ApiController) AddRecords() {
 	} else {
 		syncEnabled = false
 	}
+	owner, allowed := c.GetScopedOwner()
+	if !allowed {
+		return
+	}
 	var records []*object.Record
 	err := json.Unmarshal(c.Body(), &records)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
+	}
+	// Every row in the batch belongs to the organization that filed it, the same as
+	// one filed on its own.
+	for _, record := range records {
+		if record != nil {
+			record.Owner = owner
+		}
 	}
 
 	if len(records) == 0 {
@@ -211,12 +236,19 @@ func (c *ApiController) AddRecords() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /delete-record [post]
 func (c *ApiController) DeleteRecord() {
+	owner, allowed := c.GetScopedOwner()
+	if !allowed {
+		return
+	}
 	var record object.Record
 	err := json.Unmarshal(c.Body(), &record)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
 	}
+	// An audit row belongs to the organization that filed it, the one GetRecords
+	// reads back — not to whichever the body names.
+	record.Owner = owner
 
 	c.JSON(http.StatusOK, wrapActionResponse(object.DeleteRecord(&record)))
 }

@@ -142,6 +142,10 @@ func (c *ApiController) GetVideo() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /update-video [post]
 func (c *ApiController) UpdateVideo() {
+	owner, signedIn := c.RequireSignedIn()
+	if !signedIn {
+		return
+	}
 	user, ok := c.RequireSignedInUser()
 	if !ok {
 		return
@@ -155,6 +159,9 @@ func (c *ApiController) UpdateVideo() {
 		c.ResponseError(err.Error())
 		return
 	}
+	// Whose row this is, not what the body said — the same answer this table's
+	// listing uses.
+	video.Owner = owner
 
 	if util.IsVideoNormalUser(user) {
 		if len(video.Remarks) > 0 || len(video.Remarks2) > 0 || video.State != "Draft" {

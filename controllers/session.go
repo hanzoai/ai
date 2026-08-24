@@ -99,12 +99,19 @@ func (c *ApiController) GetSingleSession() {
 // @Success 200 {array} string The Response object
 // @router /update-session [post]
 func (c *ApiController) UpdateSession() {
+	owner, allowed := c.GetScopedOwner()
+	if !allowed {
+		return
+	}
 	var session object.Session
 	err := json.Unmarshal(c.Body(), &session)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
 	}
+	// Whose row this is, not what the body said — the same answer this table's
+	// listing uses.
+	session.Owner = owner
 
 	c.JSON(http.StatusOK, wrapActionResponse(object.UpdateSession(util.GetIdFromOwnerAndName(session.Owner, session.Name), &session)))
 }
@@ -118,12 +125,19 @@ func (c *ApiController) UpdateSession() {
 // @Success 200 {array} string The Response object
 // @router /add-session [post]
 func (c *ApiController) AddSession() {
+	owner, allowed := c.GetScopedOwner()
+	if !allowed {
+		return
+	}
 	var session object.Session
 	err := json.Unmarshal(c.Body(), &session)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
 	}
+	// Whose row this is, not what the body said — the same answer this table's
+	// listing uses.
+	session.Owner = owner
 
 	c.JSON(http.StatusOK, wrapActionResponse(object.AddSession(&session)))
 }
@@ -136,12 +150,19 @@ func (c *ApiController) AddSession() {
 // @Success 200 {array} string The Response object
 // @router /delete-session [post]
 func (c *ApiController) DeleteSession() {
+	owner, allowed := c.GetScopedOwner()
+	if !allowed {
+		return
+	}
 	var session object.Session
 	err := json.Unmarshal(c.Body(), &session)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
 	}
+	// Whose row this is, not what the body said — the same answer this table's
+	// listing uses.
+	session.Owner = owner
 
 	if len(session.SessionId) == 0 {
 		c.ResponseError(c.T("controllers:No sessions to delete"))
