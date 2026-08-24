@@ -3,6 +3,10 @@
 package scan
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -187,4 +191,124 @@ func TestAScanCannotWriteAFileOrRunAScript(t *testing.T) {
 			t.Errorf("%s refused %q: %v", c.s.name, c.command, err)
 		}
 	}
+}
+
+// ZAP writes its findings through -quickout and this reads them from stdout, so
+// that flag is how the feature works rather than something to refuse. Where it
+// points is the part that matters.
+func TestZapWritesItsFindingsToStdoutAndNowhereElse(t *testing.T) {
+	zap := scanner{
+		name: "zap", bin: "/usr/bin/zap",
+		defaultArgs: "-cmd -quickurl %s -quickout /dev/stdout -quickprogress",
+		emptyResult: "Scan completed with no alerts found",
+		pinned:      map[string]string{"-quickout": "/dev/stdout"},
+		offLimits: []string{"-configfile", "-dir", "-installdir", "-addoninstall",
+			"-addoninstallall", "-addonupdate", "-script", "-session", "-newsession"},
+	}
+
+	// The default is the point: it uses the flag, and it is allowed.
+	if _, err := zap.argv("https://example.com", ""); err != nil {
+		t.Errorf("the default scan was refused: %v", err)
+	}
+	if _, err := zap.argv("https://example.com", "-cmd -quickurl %s -quickout /dev/stdout"); err != nil {
+		t.Errorf("stdout was refused: %v", err)
+	}
+
+	// Anywhere else is a file this process wrote because somebody asked it to.
+	for _, command := range []string{
+		"-cmd -quickurl %s -quickout /tmp/x",
+		"-cmd -quickurl %s -quickout=/tmp/x",
+		"-cmd -quickurl %s --quickout /etc/cron.d/x",
+	} {
+		if _, err := zap.argv("https://example.com", command); err == nil {
+			t.Errorf("%q was allowed", command)
+		}
+	}
+
+	// And ZAP's own ways to load code stay shut.
+	for _, command := range []string{
+		"-cmd -script /tmp/x.js %s", "-cmd -addoninstall /tmp/x.zap %s",
+		"-cmd -dir /tmp/home %s", "-cmd -configfile /tmp/c.conf %s",
+	} {
+		if _, err := zap.argv("https://example.com", command); err == nil {
+			t.Errorf("%q was allowed", command)
+		}
+	}
+}
+
+// Each scanner says its own words for finding nothing, because each parser reads
+// its own back.
+func TestAScanThatFoundNothingSaysSo(t *testing.T) {
+	zap := scanner{name: "zap", emptyResult: "Scan completed with no alerts found"}
+	if got := zap.emptyResult; got != "Scan completed with no alerts found" {
+		t.Errorf("zap says %q", got)
+	}
+	if httpxLike.emptyResult != "" {
+		t.Errorf("httpx overrides the shared words with %q", httpxLike.emptyResult)
+	}
+}
+
+// Every scanner runs through the one builder.
+//
+// Two did not. nmap and ZAP each carried their own copy of "validate the target,
+// substitute it, split on spaces, exec" — so neither had the flag rules, and
+// adding them would have meant writing the same thing three times and hoping the
+// third stayed in step. The copies are the reason the rules were missing, not a
+// side effect of it.
+//
+// A Scan method is now one statement: hand this tool's flags to the builder.
+func TestEveryScannerRunsThroughTheOneBuilder(t *testing.T) {
+	fset := token.NewFileSet()
+	paths, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	checked := 0
+	for _, path := range paths {
+		if strings.HasSuffix(path, "_test.go") {
+			continue
+		}
+		file, err := parser.ParseFile(fset, path, nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// os_patch is not one of these. Its command names an OPERATION —
+		// "install:<id>", or a listing — and the PowerShell it runs is built in
+		// code, with the one value that reaches it validated against a pattern and
+		// then escaped. Nothing a caller writes becomes a flag.
+		if path == "os_patch.go" {
+			continue
+		}
+		for _, decl := range file.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok || fn.Name.Name != "Scan" || fn.Recv == nil || fn.Body == nil {
+				continue
+			}
+			checked++
+			if len(fn.Body.List) != 1 {
+				t.Errorf("%s: %s builds its own command line in %d statements; hand its "+
+					"flags to scanner{...}.run instead, so the rules about what a command "+
+					"may ask for are written once", fset.Position(fn.Pos()), path, len(fn.Body.List))
+				continue
+			}
+			ret, ok := fn.Body.List[0].(*ast.ReturnStmt)
+			if !ok || len(ret.Results) != 1 {
+				t.Errorf("%s: %s does not return the builder's answer", fset.Position(fn.Pos()), path)
+				continue
+			}
+			call, ok := ret.Results[0].(*ast.CallExpr)
+			if !ok {
+				t.Errorf("%s: %s does not call the builder", fset.Position(fn.Pos()), path)
+				continue
+			}
+			sel, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok || sel.Sel.Name != "run" {
+				t.Errorf("%s: %s calls something other than the builder", fset.Position(fn.Pos()), path)
+			}
+		}
+	}
+	if checked == 0 {
+		t.Fatal("found no scanners")
+	}
+	t.Logf("%d scanners checked", checked)
 }
