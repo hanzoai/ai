@@ -171,10 +171,19 @@ func (c *ApiController) AddScan() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /delete-scan [post]
 func (c *ApiController) DeleteScan() {
+	caller, ok := c.RequireSignedInUser()
+	if !ok {
+		return
+	}
 	var scan object.Scan
 	err := json.Unmarshal(c.Body(), &scan)
 	if err != nil {
 		c.ResponseError(err.Error())
+		return
+	}
+
+	if !reaches(caller, scan.Owner) {
+		c.ResponseError(c.T("general:The scan does not exist"))
 		return
 	}
 
