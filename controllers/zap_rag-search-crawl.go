@@ -190,19 +190,30 @@ func listed[T any](c *ApiController, l table[T]) {
 // where the table belongs to organizations, RequireSignedIn where it belongs to
 // people. The reads were scoped and the writes were not, so a row could be
 // replaced by naming an id outside what its own listing would ever show.
+// Whether the caller may write the row this id names. The id is what decides
+// which row a store touches, so this is where ownership has to be settled: a
+// store that takes the row's Owner from the id overwrites whatever the
+// controller stamped on the body, and the stamp then says nothing at all.
+func writable(c *ApiController, mine, id string) bool {
+	owner, _, err := util.GetOwnerAndNameFromIdWithError(id)
+	if err != nil {
+		c.ResponseError(err.Error())
+		return false
+	}
+	if mine != "" && owner != mine {
+		c.ResponseError(fmt.Sprintf("the record: %s does not exist", id))
+		return false
+	}
+	return true
+}
+
 func replaced[T any](c *ApiController, whose func() (string, bool), store func(string, *T) (bool, error)) {
 	mine, ok := whose()
 	if !ok {
 		return
 	}
 	id := c.Input().Get("id")
-	owner, _, err := util.GetOwnerAndNameFromIdWithError(id)
-	if err != nil {
-		c.ResponseError(err.Error())
-		return
-	}
-	if mine != "" && owner != mine {
-		c.ResponseError(fmt.Sprintf("the record: %s does not exist", id))
+	if !writable(c, mine, id) {
 		return
 	}
 	var row T
