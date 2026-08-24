@@ -99,11 +99,23 @@ func (c *ApiController) GetAsset() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /update-asset [post]
 func (c *ApiController) UpdateAsset() {
+	caller, ok := c.RequireSignedInUser()
+	if !ok {
+		return
+	}
 	id := c.Input().Get("id")
+	owner, _, err := util.GetOwnerAndNameFromIdWithError(id)
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+	if !reaches(caller, owner) {
+		c.ResponseError(c.T("general:The asset does not exist"))
+		return
+	}
 
 	var asset object.Asset
-	err := json.Unmarshal(c.Body(), &asset)
-	if err != nil {
+	if err = json.Unmarshal(c.Body(), &asset); err != nil {
 		c.ResponseError(err.Error())
 		return
 	}
@@ -119,12 +131,19 @@ func (c *ApiController) UpdateAsset() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /add-asset [post]
 func (c *ApiController) AddAsset() {
+	owner, allowed := c.GetScopedOwner()
+	if !allowed {
+		return
+	}
 	var asset object.Asset
 	err := json.Unmarshal(c.Body(), &asset)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
 	}
+	// Filed into the caller's own organization, the one GetAssets reads back —
+	// which is what the ZAP twin says too.
+	asset.Owner = owner
 
 	c.ResponseOk(object.AddAsset(&asset))
 }
@@ -137,10 +156,18 @@ func (c *ApiController) AddAsset() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /delete-asset [post]
 func (c *ApiController) DeleteAsset() {
+	caller, ok := c.RequireSignedInUser()
+	if !ok {
+		return
+	}
 	var asset object.Asset
 	err := json.Unmarshal(c.Body(), &asset)
 	if err != nil {
 		c.ResponseError(err.Error())
+		return
+	}
+	if !reaches(caller, asset.Owner) {
+		c.ResponseError(c.T("general:The asset does not exist"))
 		return
 	}
 
