@@ -971,6 +971,10 @@ func zapGetGraphHandler(_ context.Context, auth string, body []byte) (*zap.Messa
 		}
 	}
 
+	if deny := zapReachable(auth, req.ID, theirOrg); deny != nil {
+		return deny, nil
+	}
+
 	graph, err := object.GetGraph(req.ID)
 	if err != nil {
 		return zapError(200, err.Error())
