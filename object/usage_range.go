@@ -22,11 +22,11 @@ import (
 	"github.com/hanzoai/ai/model"
 )
 
-func GetRangeUsages(rangeType string, count int, user string, storeName string, lang string) ([]*Usage, error) {
+func GetRangeUsages(rangeType string, count int, org string, user string, storeName string, lang string) ([]*Usage, error) {
 	if count < 1 {
 		return nil, fmt.Errorf("count must be at least 1, got %d", count)
 	}
-	messages, err := GetGlobalMessagesByStoreName(storeName)
+	messages, err := GetGlobalMessagesByStoreName(org, storeName)
 	if err != nil {
 		return nil, err
 	}
