@@ -87,6 +87,9 @@ func (c *ApiController) GetSingleSession() {
 		c.ResponseError(err.Error())
 		return
 	}
+	if session != nil && !reachable(c, session.Owner) {
+		return
+	}
 
 	c.ResponseOk(session)
 }
