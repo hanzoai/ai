@@ -3,6 +3,8 @@
 package controllers
 
 import (
+	"context"
+
 	"strings"
 	"testing"
 
@@ -92,5 +94,50 @@ func TestATableWithNoOwnerIsRefused(t *testing.T) {
 	}
 	if err := ownedBy(nil, "acme"); err == nil {
 		t.Error("nothing at all was stored anyway")
+	}
+}
+
+// The ZAP surface files a row the same way the HTTP one does. Two of the four
+// tables that reach it are the scan surface, so a scan filed either way lands in
+// the organization that filed it.
+func TestTheZapSurfaceWritesWhereTheListingLooksToo(t *testing.T) {
+	withStore(t)
+	people := withIAM(t)
+	key := people.asUser(t, &iam.User{Owner: "acme", Name: "alice", IsAdmin: true})
+
+	if _, err := zapAddScanHandler(context.Background(), key,
+		[]byte(`{"owner":"other","name":"s1","provider":"nmap","state":"Pending"}`)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := zapAddAssetHandler(context.Background(), key,
+		[]byte(`{"owner":"other","name":"a1"}`)); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, id := range []string{"other/s1", "other/a1"} {
+		var landed bool
+		if strings.HasSuffix(id, "s1") {
+			row, err := object.GetScan(id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			landed = row != nil
+		} else {
+			row, err := object.GetAsset(id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			landed = row != nil
+		}
+		if landed {
+			t.Errorf("%s was written into the organization the body named", id)
+		}
+	}
+
+	// And into the caller's own, which is where its listing looks.
+	if row, err := object.GetScan("acme/s1"); err != nil {
+		t.Fatal(err)
+	} else if row == nil {
+		t.Error("the scan was not written into the caller's own organization")
 	}
 }
