@@ -171,6 +171,10 @@ func (c *ApiController) RequireSessionOwner() (string, bool) {
 // them. The reserved org reaches every tenant, so its answer is the empty filter;
 // every other caller reaches only their own org. Both surfaces use it, which is why
 // it takes the resolved user rather than reading a session.
+// reach answers WHICH organization a caller reads within: the empty string for the
+// reserved org, which narrows to nothing and so reads them all, and the caller's own
+// otherwise. It needs a caller — there is no organization without one, and the empty
+// string already means every organization, so it cannot double as "nobody".
 func reach(user *iam.User) string {
 	if util.IsSuperAdmin(user) {
 		return ""
@@ -232,6 +236,9 @@ func whose(caller *iam.User, user, selectedUser, field, value string) string {
 // asked about a single row rather than a whole listing: an empty reach covers
 // every tenant, any other reach covers only itself.
 func reaches(user *iam.User, owner string) bool {
+	if user == nil {
+		return false
+	}
 	r := reach(user)
 	return r == "" || r == owner
 }
@@ -242,6 +249,29 @@ func reaches(user *iam.User, owner string) bool {
 // organization. The coarse filter these reads sit behind asks only whether the
 // caller administers SOME organization, which every customer's own admin
 // satisfies; it never asks which one.
+// The rows a listing named "global" may show this caller: the whole table for the
+// reserved org, and the caller's own organization for everybody else. The word
+// global was doing the scoping, and the filter these sit behind asks whether the
+// caller administers an organization rather than which one.
+func within[T any](c *ApiController, all func() ([]*T, error), mine func(string) ([]*T, error)) ([]*T, bool) {
+	caller, ok := c.RequireSignedInUser()
+	if !ok {
+		return nil, false
+	}
+	var rows []*T
+	var err error
+	if org := reach(caller); org == "" {
+		rows, err = all()
+	} else {
+		rows, err = mine(org)
+	}
+	if err != nil {
+		c.ResponseError(err.Error())
+		return nil, false
+	}
+	return rows, true
+}
+
 func reachable(c *ApiController, owner string) bool {
 	if reaches(c.GetSessionUser(), owner) {
 		return true

@@ -149,3 +149,103 @@ func TestAZapReadByIdStaysInsideTheCallersOrg(t *testing.T) {
 		}
 	}
 }
+
+// A chat's tenant is its Organization — Owner is the namespace every chat shares
+// — so a listing that scoped on Owner, or on nothing, showed every organization's
+// conversations to any organization's admin.
+func TestTheGlobalChatListingStaysInsideTheCallersOrg(t *testing.T) {
+	withStore(t)
+	people := withIAM(t)
+
+	for _, c := range []*object.Chat{
+		{Owner: chatOwner, Name: "theirs", Organization: "victim", DisplayName: "victim-conversation"},
+		{Owner: chatOwner, Name: "ours", Organization: "acme", DisplayName: "acme-conversation"},
+	} {
+		if _, err := object.AddChat(c); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	mallory := people.signedIn(t, &iam.User{Owner: "acme", Name: "mallory", IsAdmin: true})
+
+	// Both shapes of the listing: the whole set, and a page of it.
+	for _, target := range []string{
+		"/v1/ai/get-global-chats",
+		"/v1/ai/get-global-chats?p=1&pageSize=100",
+	} {
+		c := as(visit("GET", target), mallory)
+		c.GetGlobalChats()
+		body := sent(c)
+		if strings.Contains(body, "victim-conversation") {
+			t.Errorf("%s carried another organization's chat: %s", target, body)
+		}
+		if !strings.Contains(body, "acme-conversation") {
+			t.Errorf("%s did not carry the caller's own chat: %s", target, body)
+		}
+	}
+
+	// The reserved org reads every organization's.
+	root := people.signedIn(t, &iam.User{Owner: "admin", Name: "root", IsAdmin: true})
+	c := as(visit("GET", "/v1/ai/get-global-chats"), root)
+	c.GetGlobalChats()
+	if !strings.Contains(sent(c), "victim-conversation") {
+		t.Errorf("the reserved org was not shown every organization: %s", sent(c))
+	}
+}
+
+// The listings named "global" were the whole table, and the word was doing the
+// scoping. They show the reserved org everything and everybody else their own.
+func TestAGlobalListingStaysInsideTheCallersOrg(t *testing.T) {
+	withStore(t)
+	people := withIAM(t)
+
+	mark := "kind-of-private-marker"
+	for _, org := range []string{"victim", "acme"} {
+		name := org + "-row"
+		if _, err := object.AddArticle(&object.Article{Owner: org, Name: name, DisplayName: mark}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := object.AddForm(&object.Form{Owner: org, Name: name, DisplayName: mark}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := object.AddGraph(&object.Graph{Owner: org, Name: name, Text: mark}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := object.AddVector(&object.Vector{Owner: org, Name: name, Text: mark}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := object.AddWorkflow(&object.Workflow{Owner: org, Name: name, Text: mark}, "en"); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	mallory := people.signedIn(t, &iam.User{Owner: "acme", Name: "mallory", IsAdmin: true})
+	root := people.signedIn(t, &iam.User{Owner: "admin", Name: "root", IsAdmin: true})
+
+	for _, listing := range []struct {
+		route string
+		call  func(*ApiController)
+	}{
+		{"get-global-articles", (*ApiController).GetGlobalArticles},
+		{"get-global-forms", (*ApiController).GetGlobalForms},
+		{"get-global-graphs", (*ApiController).GetGlobalGraphs},
+		{"get-global-vectors", (*ApiController).GetGlobalVectors},
+		{"get-global-workflows", (*ApiController).GetGlobalWorkflows},
+	} {
+		c := as(visit("GET", "/v1/ai/"+listing.route), mallory)
+		listing.call(c)
+		body := sent(c)
+		if strings.Contains(body, `"victim-row"`) {
+			t.Errorf("%s carried another organization's row: %s", listing.route, body)
+		}
+		if !strings.Contains(body, `"acme-row"`) {
+			t.Errorf("%s did not carry the caller's own row: %s", listing.route, body)
+		}
+
+		c = as(visit("GET", "/v1/ai/"+listing.route), root)
+		listing.call(c)
+		if !strings.Contains(sent(c), `"victim-row"`) {
+			t.Errorf("%s did not show the reserved org every organization: %s", listing.route, sent(c))
+		}
+	}
+}

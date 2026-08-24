@@ -238,8 +238,17 @@ func zapGetGlobalChatsHandler(_ context.Context, auth string, body []byte) (*zap
 		}
 	}
 
+	// Same answer as the HTTP twin: the tenant is the Organization, and the
+	// reserved org reads every one of them. Which organization is a question about
+	// a caller, so there has to be one — the filter above lets an unnamed reader
+	// through while preview is on.
+	if user == nil {
+		return zapError(401, "auth:Please sign in first")
+	}
+	org := reach(user)
+
 	if req.PageSize == "" || req.Page == "" {
-		chats, err := object.GetGlobalChats()
+		chats, err := object.GetPaginationChats("", org, -1, -1, req.Field, req.Value, req.SortField, req.SortOrder, req.Store)
 		if err != nil {
 			return zapError(200, err.Error())
 		}
@@ -247,12 +256,12 @@ func zapGetGlobalChatsHandler(_ context.Context, auth string, body []byte) (*zap
 	}
 
 	limit := util.ParseInt(req.PageSize)
-	count, err := object.GetChatCount("", req.Field, req.Value, req.Store)
+	count, err := object.GetChatCount("", org, req.Field, req.Value, req.Store)
 	if err != nil {
 		return zapError(200, err.Error())
 	}
 	offset := paginationOffset(util.ParseInt(req.Page), limit)
-	chats, err := object.GetPaginationChats("", offset, limit, req.Field, req.Value, req.SortField, req.SortOrder, req.Store)
+	chats, err := object.GetPaginationChats("", org, offset, limit, req.Field, req.Value, req.SortField, req.SortOrder, req.Store)
 	if err != nil {
 		return zapError(200, err.Error())
 	}
