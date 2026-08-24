@@ -158,6 +158,10 @@ func zapGetAssetHandler(_ context.Context, auth string, body []byte) (*zap.Messa
 			return zapError(http.StatusBadRequest, "invalid request: "+err.Error())
 		}
 	}
+	if deny := zapReachable(auth, req.ID, theirOrg); deny != nil {
+		return deny, nil
+	}
+
 	asset, err := object.GetAsset(req.ID)
 	if err != nil {
 		return zapError(http.StatusOK, err.Error())
@@ -321,6 +325,10 @@ func zapGetScanHandler(_ context.Context, auth string, body []byte) (*zap.Messag
 			return zapError(http.StatusBadRequest, "invalid request: "+err.Error())
 		}
 	}
+	if deny := zapReachable(auth, req.ID, theirOrg); deny != nil {
+		return deny, nil
+	}
+
 	scan, err := object.GetScan(req.ID)
 	if err != nil {
 		return zapError(http.StatusOK, err.Error())
