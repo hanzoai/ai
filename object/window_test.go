@@ -11,10 +11,10 @@ func TestAWindowShorterThanADayIsRefused(t *testing.T) {
 		if _, err := GetActivities(n, "u", []string{"user"}, "en"); err == nil {
 			t.Errorf("GetActivities(%d) answered no error", n)
 		}
-		if _, err := GetUsages(n, "u", "s"); err == nil {
+		if _, err := GetUsages(n, "", "u", "s"); err == nil {
 			t.Errorf("GetUsages(%d) answered no error", n)
 		}
-		if _, err := GetRangeUsages("Day", n, "u", "s", "en"); err == nil {
+		if _, err := GetRangeUsages("Day", n, "", "u", "s", "en"); err == nil {
 			t.Errorf("GetRangeUsages(Day, %d) answered no error", n)
 		}
 	}

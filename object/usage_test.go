@@ -42,7 +42,7 @@ func TestDailyUsageCountsEachDayItsOwn(t *testing.T) {
 		}
 	}
 
-	usages, err := GetUsages(3, "All", "s1")
+	usages, err := GetUsages(3, "", "All", "s1")
 	if err != nil {
 		t.Fatal(err)
 	}
