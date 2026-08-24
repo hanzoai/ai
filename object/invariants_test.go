@@ -7,6 +7,7 @@ import (
 	"go/parser"
 	"go/token"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -465,4 +466,52 @@ func madeFromNow(e ast.Expr) bool {
 			return false
 		}
 	}
+}
+
+// A db tag names a column and nothing else.
+//
+// xorm's tag said what a field was STORED AS — "json varchar(1000)" — and dbx
+// reads the same tag as the column's NAME. One survived the migration, so a
+// column was created called that, and every statement naming it failed to parse:
+// no connection this module tried to create was ever stored.
+func TestADbTagNamesAColumn(t *testing.T) {
+	s := read(t, ".")
+	bad := 0
+	for path, file := range s.files {
+		for _, decl := range file.Decls {
+			gd, ok := decl.(*ast.GenDecl)
+			if !ok || gd.Tok != token.TYPE {
+				continue
+			}
+			for _, spec := range gd.Specs {
+				ts, ok := spec.(*ast.TypeSpec)
+				if !ok {
+					continue
+				}
+				st, ok := ts.Type.(*ast.StructType)
+				if !ok {
+					continue
+				}
+				for _, field := range st.Fields.List {
+					if field.Tag == nil {
+						continue
+					}
+					tag := field.Tag.Value
+					m := regexp.MustCompile(`db:"([^"]*)"`).FindStringSubmatch(tag)
+					if m == nil {
+						continue
+					}
+					// "pk" is this module's own marker; anything else is a name, and a
+					// name has no spaces or parentheses in it.
+					if v := m[1]; v != "pk" && strings.ContainsAny(v, " (") {
+						bad++
+						t.Errorf("%s: %s.%s has db:%q — a db tag is a column NAME, and that "+
+							"is a storage type from the ORM this one replaced",
+							path, ts.Name.Name, field.Names[0].Name, v)
+					}
+				}
+			}
+		}
+	}
+	_ = bad
 }
