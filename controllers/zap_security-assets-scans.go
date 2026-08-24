@@ -190,12 +190,12 @@ func zapUpdateAssetHandler(_ context.Context, auth string, body []byte) (*zap.Me
 
 // zapAddAssetHandler mirrors ApiController.AddAsset.
 func zapAddAssetHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	return zapWrite(auth, body, object.AddAsset)
+	return zapWrite(auth, body, theirOrg, object.AddAsset)
 }
 
 // zapDeleteAssetHandler mirrors ApiController.DeleteAsset.
 func zapDeleteAssetHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	return zapWrite(auth, body, object.DeleteAsset)
+	return zapWrite(auth, body, theirOrg, object.DeleteAsset)
 }
 
 // zapScanAssetRequest carries the ScanAsset params (the router URL query) over the
@@ -349,12 +349,12 @@ func zapUpdateScanHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 
 // zapAddScanHandler mirrors ApiController.AddScan.
 func zapAddScanHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	return zapWrite(auth, body, object.AddScan)
+	return zapWrite(auth, body, theirOrg, object.AddScan)
 }
 
 // zapDeleteScanHandler mirrors ApiController.DeleteScan.
 func zapDeleteScanHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	return zapWrite(auth, body, object.DeleteScan)
+	return zapWrite(auth, body, theirOrg, object.DeleteScan)
 }
 
 // ── permission.go parity ─────────────────────────────────────────────────────
