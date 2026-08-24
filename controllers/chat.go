@@ -42,6 +42,15 @@ const chatOwner = "admin"
 // @Success 200 {array} object.Chat The Response object
 // @router /get-global-chats [get]
 func (c *ApiController) GetGlobalChats() {
+	caller, ok := c.RequireSignedInUser()
+	if !ok {
+		return
+	}
+	// A chat's tenant is its Organization; Owner is the namespace every chat
+	// shares, so it says nothing about whose chat this is. The reserved org reads
+	// every organization's, which is what reach answers with an empty string.
+	org := reach(caller)
+
 	limit := c.Input().Get("pageSize")
 	page := c.Input().Get("p")
 	field := c.Input().Get("field")
@@ -51,7 +60,7 @@ func (c *ApiController) GetGlobalChats() {
 	store := c.Input().Get("store")
 
 	if limit == "" || page == "" {
-		chats, err := object.GetGlobalChats()
+		chats, err := object.GetPaginationChats("", org, -1, -1, field, value, sortField, sortOrder, store)
 		if err != nil {
 			c.ResponseError(err.Error())
 			return
@@ -60,13 +69,13 @@ func (c *ApiController) GetGlobalChats() {
 		c.ResponseOk(chats)
 	} else {
 		limit := util.ParseInt(limit)
-		count, err := object.GetChatCount("", field, value, store)
+		count, err := object.GetChatCount("", org, field, value, store)
 		if err != nil {
 			c.ResponseError(err.Error())
 			return
 		}
 		paginator := util.NewPaginator(c.PageAsked(), limit, count)
-		chats, err := object.GetPaginationChats("", paginator.Offset(), limit, field, value, sortField, sortOrder, store)
+		chats, err := object.GetPaginationChats("", org, paginator.Offset(), limit, field, value, sortField, sortOrder, store)
 		if err != nil {
 			c.ResponseError(err.Error())
 			return

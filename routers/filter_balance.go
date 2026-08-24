@@ -419,7 +419,42 @@ func isBalanceExempt(path, method string) bool {
 // skips). The userKey is the exact "owner/name" identity used for per-user
 // exemption matching (mirrors the controller backstop), independent of whether
 // the billing subject collapses to the org slug for a pooled org.
+//
+// Only source 3 leaves this process. billingKey below answers the other two and
+// the cache, and says whether its answer is final, so a caller who has to be
+// asked about can be told apart from one already known — and the ceiling that
+// decides whether this request may spend a round trip is reachable without
+// spending one.
 func resolveBillingKey(c *zip.Ctx) (subject, namespace, userKey string) {
+	subject, namespace, userKey, held := billingKey(c)
+	if held {
+		return subject, namespace, userKey
+	}
+
+	// IAM API key (sk- prefix): resolve via IAM. An API key carries no signed
+	// membership set, so it never switches — it bills the org that owns it.
+	//
+	// The MISS is cached too, and deliberately: an upstream vendor key wears the
+	// same sk- spelling and IAM will never own it, so caching only the hit would
+	// buy a fresh IAM round-trip on every request such a caller makes. A miss
+	// resolves no subject, which is the fail-open this gate already takes — the
+	// controller still bills that call against its provider row.
+	token := extractAPIKey(c)
+	requested := strings.TrimSpace(c.Header("X-Org-Id"))
+	subject, namespace, userKey = balanceGate.resolveIAMKeySubject(token)
+	balanceGate.setUserKeyCache(token, requested, subject, namespace, userKey)
+	return subject, namespace, userKey
+}
+
+// billingKey is resolveBillingKey without the round trip: it answers from a
+// session, from a token this process can parse itself, and from a key it has
+// already resolved.
+//
+// held says the answer is FINAL. A held answer includes a held MISS — "" is what a
+// vendor key resolves to here, and re-asking IAM about one on every request is
+// exactly what the cache exists to stop, so an empty subject that came from the
+// cache is an answer and not an absence.
+func billingKey(c *zip.Ctx) (subject, namespace, userKey string, held bool) {
 	// Balance enforcement disabled ⇒ balanceGate is nil (InitBalanceGate returns
 	// early when commerceEndpoint is unconfigured). RateLimitFilter calls this on
 	// EVERY authenticated /v1 request BEFORE BalanceGateFilter's own nil guard, so
@@ -429,14 +464,14 @@ func resolveBillingKey(c *zip.Ctx) (subject, namespace, userKey string) {
 	// by the address they arrived from (its documented fallback) and nothing bills.
 	// A disabled billing subsystem must never crash a request.
 	if balanceGate == nil {
-		return "", "", ""
+		return "", "", "", true
 	}
 
 	// Source 1: session user from AutoSigninFilter. A cookie session carries no
 	// signed `orgs` claim, so it can never switch org — it always bills its home.
 	user := GetSessionUser(c)
 	if user != nil && user.Owner != "" {
-		return user.PayerSubject(""), user.Owner, user.Owner + "/" + user.Name
+		return user.PayerSubject(""), user.Owner, user.Owner + "/" + user.Name, true
 	}
 
 	// Source 2/3: the key the caller presented, on WHICHEVER transport this estate
@@ -447,7 +482,7 @@ func resolveBillingKey(c *zip.Ctx) (subject, namespace, userKey string) {
 	// different answer depending on which header carried it.
 	token := extractAPIKey(c)
 	if token == "" {
-		return "", "", ""
+		return "", "", "", true
 	}
 
 	// The org the caller asked to act in. Unvalidated here — only the JWT branch
@@ -460,12 +495,12 @@ func resolveBillingKey(c *zip.Ctx) (subject, namespace, userKey string) {
 	// A publishable key identifies an org for ingest and authenticates nobody, so
 	// there is no principal here to bill. Skip it in the router gate.
 	if strings.HasPrefix(token, "pk-") {
-		return "", "", ""
+		return "", "", "", true
 	}
 
 	// Check key cache first.
 	if s, ns, uk, ok := balanceGate.getUserKeyCached(token, requested); ok {
-		return s, ns, uk
+		return s, ns, uk, true
 	}
 
 	// JWT token: parse locally (cheap, no network). Signature + iss/aud
@@ -474,7 +509,7 @@ func resolveBillingKey(c *zip.Ctx) (subject, namespace, userKey string) {
 	if isJwtTokenLike(token) {
 		claims, err := object.ParseAndValidateJWT(token)
 		if err != nil {
-			return "", "", ""
+			return "", "", "", true
 		}
 		if claims.User.Owner != "" {
 			// This is the ONE auth path that can honor an org switch, because it is
@@ -491,7 +526,7 @@ func resolveBillingKey(c *zip.Ctx) (subject, namespace, userKey string) {
 			// rejects rather than serving free.
 			effective, orgErr := account.EffectiveOrg(claims.User.Owner, claims.Orgs, requested)
 			if orgErr != nil {
-				return "", "", ""
+				return "", "", "", true
 			}
 			ledger := account.LedgerOrg(
 				effective,
@@ -511,26 +546,18 @@ func resolveBillingKey(c *zip.Ctx) (subject, namespace, userKey string) {
 			// it keys per-user exemption matching, not money.
 			userKey = claims.User.Owner + "/" + claims.User.Name
 			balanceGate.setUserKeyCache(token, requested, subject, ledger, userKey)
-			return subject, ledger, userKey
+			return subject, ledger, userKey, true
 		}
-		return "", "", ""
+		return "", "", "", true
 	}
 
-	// IAM API key (sk- prefix): resolve via IAM (cached). An API key carries no
-	// signed membership set, so it never switches — it bills the org that owns it.
-	//
-	// The MISS is cached too, and deliberately: an upstream vendor key wears the
-	// same sk- spelling and IAM will never own it, so caching only the hit would
-	// buy a fresh IAM round-trip on every request such a caller makes. A miss
-	// resolves no subject, which is the fail-open this gate already takes — the
-	// controller still bills that call against its provider row.
+	// An sk- this process has not resolved. Only IAM can say who holds it, so this
+	// is the one answer billingKey does not have.
 	if strings.HasPrefix(token, "sk-") {
-		subject, namespace, userKey = balanceGate.resolveIAMKeySubject(token)
-		balanceGate.setUserKeyCache(token, requested, subject, namespace, userKey)
-		return subject, namespace, userKey
+		return "", "", "", false
 	}
 
-	return "", "", ""
+	return "", "", "", true
 }
 
 // isJwtTokenLike checks if a token looks like a JWT (3 dot-separated segments).

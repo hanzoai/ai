@@ -94,7 +94,7 @@ func TestGetPaginationChatsByMessages_SortFieldCannotReachOrderBy(t *testing.T) 
 
 	for _, payload := range sortPayloads {
 		for _, stmt := range captureSQL(t, func() {
-			_, _ = getPaginationChatsByMessages("", 0, 10, "needle", payload, "ascend", "")
+			_, _ = getPaginationChatsByMessages("", "", 0, 10, "needle", payload, "ascend", "")
 		}) {
 			assertNoPayloadLeak(t, payload, stmt)
 		}
@@ -170,7 +170,7 @@ func TestOtherSortSites_LegitimateSortFieldsStillSort(t *testing.T) {
 		"displayName": "display_name",
 	} {
 		chatSQL := captureSQL(t, func() {
-			_, _ = getPaginationChatsByMessages("", 0, 10, "needle", field, "descend", "")
+			_, _ = getPaginationChatsByMessages("", "", 0, 10, "needle", field, "descend", "")
 		})
 		if len(chatSQL) == 0 {
 			t.Fatalf("sortField=%q: chat query emitted no SQL", field)

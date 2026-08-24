@@ -20,6 +20,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -365,5 +366,54 @@ func TestExemptPathsAreStillExempt(t *testing.T) {
 	}
 	if rate, quota := seen(); rate != 0 || quota != 0 {
 		t.Fatalf("exempt paths met the ceilings %d and %d time(s), want none", rate, quota)
+	}
+}
+
+// AN OVER-LIMIT REQUEST ASKS IAM NOTHING.
+//
+// A key this process has not resolved can only be named by IAM, and that round trip
+// is what admission BUYS — never what decides it. Asking first put the lookup ahead
+// of every ceiling: a flood of well-formed keys nobody owns bought one lookup each,
+// aimed at the single service every other credential path also depends on, and each
+// answer took a place in the resolver's memory. All of it before a ceiling had said
+// a word.
+//
+// Thirty-six requests carrying thirty-six keys IAM does not know. The ceiling is
+// twelve, and IAM is asked twelve times.
+func TestAnOverLimitRequestAsksIAMNothing(t *testing.T) {
+	var asks int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt64(&asks, 1)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "error", "code": "key_unknown", "msg": "no such key"})
+	}))
+	t.Cleanup(srv.Close)
+	t.Setenv("IAM_URL", srv.URL)
+	t.Setenv("IAM_CLIENT_ID", "hanzo-ai")
+	t.Setenv("IAM_CLIENT_SECRET", "secret")
+
+	billing(t)
+	ceilings(t)
+
+	served := 0
+	for i := 0; i < 3*burst(); i++ {
+		// The shape IAM mints, so what this measures is the ORDER and not the floor
+		// that drops junk before it: every one of these keys is worth a lookup, and
+		// only the ones inside the ceiling get to buy one.
+		p := ask(http.MethodPost, "/v1/messages").
+			body([]byte(`{}`)).
+			with("x-api-key", fmt.Sprintf("sk-live-%032x", i)).
+			through(RateLimitFilter)
+		if p.status() != http.StatusTooManyRequests {
+			served++
+		}
+	}
+
+	if served != burst() {
+		t.Fatalf("a flood of unknown keys was served %d of %d; the ceiling is %d", served, 3*burst(), burst())
+	}
+	if got := int(atomic.LoadInt64(&asks)); got != burst() {
+		t.Fatalf("IAM was asked about %d of %d keys; only the %d inside the ceiling may buy a lookup",
+			got, 3*burst(), burst())
 	}
 }
