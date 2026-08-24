@@ -173,7 +173,7 @@ func (c *ApiController) AddVector() {
 // @Param body body object.Vector true "The details of the vector"
 // @Success 200 {object} controllers.Response The Response object
 // @router /delete-vector [post]
-func (c *ApiController) DeleteVector() { stored(c, object.DeleteVector) }
+func (c *ApiController) DeleteVector() { stored(c, c.GetScopedOwner, object.DeleteVector) }
 
 // DeleteAllVectors
 // @Title DeleteAllVectors
