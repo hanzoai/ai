@@ -83,7 +83,7 @@ func (c *ApiController) GetGraph() {
 // @Param body body object.Graph true "The details of the Graph"
 // @Success 200 {object} controllers.Response The Response object
 // @router /update-Graph [post]
-func (c *ApiController) UpdateGraph() { replaced(c, object.UpdateGraph) }
+func (c *ApiController) UpdateGraph() { replaced(c, c.GetScopedOwner, object.UpdateGraph) }
 
 // AddGraph
 // @Title AddGraph
@@ -92,7 +92,7 @@ func (c *ApiController) UpdateGraph() { replaced(c, object.UpdateGraph) }
 // @Param body body object.Graph true "The details of the Graph"
 // @Success 200 {object} controllers.Response The Response object
 // @router /add-Graph [post]
-func (c *ApiController) AddGraph() { stored(c, object.AddGraph) }
+func (c *ApiController) AddGraph() { stored(c, c.GetScopedOwner, object.AddGraph) }
 
 // DeleteGraph
 // @Title DeleteGraph
@@ -101,4 +101,4 @@ func (c *ApiController) AddGraph() { stored(c, object.AddGraph) }
 // @Param body body object.Graph true "The details of the Graph"
 // @Success 200 {object} controllers.Response The Response object
 // @router /delete-Graph [post]
-func (c *ApiController) DeleteGraph() { stored(c, object.DeleteGraph) }
+func (c *ApiController) DeleteGraph() { stored(c, c.GetScopedOwner, object.DeleteGraph) }

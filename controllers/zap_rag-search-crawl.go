@@ -34,7 +34,9 @@ package controllers
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"reflect"
 	"strings"
 
 	"github.com/hanzoai/account"
@@ -182,19 +184,37 @@ func listed[T any](c *ApiController, l table[T]) {
 
 // replaced writes a row over the one the request's id names. It is stored() with
 // a key: the row arrives in the body and the id says which row it replaces.
-func replaced[T any](c *ApiController, store func(string, *T) (bool, error)) {
+//
+// `whose` is the same answer the LISTING for this table uses — GetScopedOwner
+// where the table belongs to organizations, RequireSignedIn where it belongs to
+// people. The reads were scoped and the writes were not, so a row could be
+// replaced by naming an id outside what its own listing would ever show.
+func replaced[T any](c *ApiController, whose func() (string, bool), store func(string, *T) (bool, error)) {
+	mine, ok := whose()
+	if !ok {
+		return
+	}
 	id := c.Input().Get("id")
+	owner, _, err := util.GetOwnerAndNameFromIdWithError(id)
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+	if mine != "" && owner != mine {
+		c.ResponseError(fmt.Sprintf("the record: %s does not exist", id))
+		return
+	}
 	var row T
 	if err := json.Unmarshal(c.Body(), &row); err != nil {
 		c.ResponseError(err.Error())
 		return
 	}
-	ok, err := store(id, &row)
+	ok2, err := store(id, &row)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
 	}
-	c.ResponseOk(ok)
+	c.ResponseOk(ok2)
 }
 
 // stored is the HTTP shape of the same thing zapWrite is over ZAP: decode the
@@ -204,18 +224,30 @@ func replaced[T any](c *ApiController, store func(string, *T) (bool, error)) {
 // parameter, and the fourteen handlers that had this written out keep their own
 // names and signatures — the router finds them by name, and a name is the whole
 // of what it needs from them.
-func stored[T any](c *ApiController, store func(*T) (bool, error)) {
+// `whose` is the same answer the LISTING for this table uses, so a row is written
+// where that listing would look for it. It arrives as a function because the two
+// answers differ per table and both already exist: GetScopedOwner for a table
+// that belongs to organizations, RequireSignedIn for one that belongs to people.
+func stored[T any](c *ApiController, whose func() (string, bool), store func(*T) (bool, error)) {
+	mine, ok := whose()
+	if !ok {
+		return
+	}
 	var row T
 	if err := json.Unmarshal(c.Body(), &row); err != nil {
 		c.ResponseError(err.Error())
 		return
 	}
-	ok, err := store(&row)
+	if err := ownedBy(&row, mine); err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+	ok2, err := store(&row)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
 	}
-	c.ResponseOk(ok)
+	c.ResponseOk(ok2)
 }
 
 // zapWrite is the shape a "take a row and store it" handler has: a signed-in
@@ -678,4 +710,24 @@ func zapRagContextHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 		return zapError(http.StatusInternalServerError, err.Error())
 	}
 	return zapRaw(results)
+}
+
+// ownedBy writes whose row this is, over whatever the request said.
+//
+// The row is a type parameter, so the field is found by name rather than through
+// an interface the nine tables would each have to implement. A type with no Owner
+// to write is refused rather than stored unscoped: a table that arrives here
+// without one is a table nobody decided the ownership of, and silence is how that
+// would go unnoticed.
+func ownedBy(row any, owner string) error {
+	v := reflect.ValueOf(row)
+	if v.Kind() != reflect.Ptr || v.IsNil() {
+		return fmt.Errorf("cannot say who owns a %T", row)
+	}
+	field := v.Elem().FieldByName("Owner")
+	if !field.IsValid() || field.Kind() != reflect.String || !field.CanSet() {
+		return fmt.Errorf("a %T has no owner to write", row)
+	}
+	field.SetString(owner)
+	return nil
 }
