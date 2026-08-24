@@ -10,6 +10,7 @@ import (
 
 	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/object"
+	"github.com/luxfi/zap"
 )
 
 // The listings for these tables are scoped and the writes were not, so a row
@@ -139,5 +140,68 @@ func TestTheZapSurfaceWritesWhereTheListingLooksToo(t *testing.T) {
 		t.Fatal(err)
 	} else if row == nil {
 		t.Error("the scan was not written into the caller's own organization")
+	}
+}
+
+// The application and scan surfaces answer the same on both surfaces. An
+// application is a manifest and a namespace to apply it in; a scan is a command
+// line handed to a security tool. Neither reaches another organization's.
+func TestBothSurfacesAgreeOnWhoseApplicationAndScan(t *testing.T) {
+	withStore(t)
+	people := withIAM(t)
+	key := people.asUser(t, &iam.User{Owner: "acme", Name: "alice", IsAdmin: true})
+
+	for _, seed := range []func() error{
+		func() error {
+			_, err := object.AddTemplate(&object.Template{Owner: "other", Name: "t", Manifest: "kind: ConfigMap"})
+			return err
+		},
+		func() error {
+			_, err := object.AddApplication(&object.Application{Owner: "other", Name: "theirs", Template: "t", DisplayName: "theirs"})
+			return err
+		},
+		func() error {
+			_, err := object.AddScan(&object.Scan{Owner: "other", Name: "theirs", Provider: "nmap"})
+			return err
+		},
+	} {
+		if err := seed(); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Reaching another organization's application by id.
+	for _, run := range []func(context.Context, string, []byte) (*zap.Message, error){
+		zapUpdateApplicationHandler,
+		zapDeployApplicationHandler,
+	} {
+		if _, err := run(context.Background(), key,
+			[]byte(`{"id":"other/theirs","owner":"other","name":"theirs","template":"t","displayName":"taken over"}`)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	app, err := object.GetApplication("other/theirs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if app.DisplayName != "theirs" {
+		t.Errorf("another organization's application was rewritten to %q", app.DisplayName)
+	}
+	// The namespace is derived either way, which is the other rule, not this one.
+	if app.Namespace != "hanzo-cloud-theirs" {
+		t.Errorf("its namespace became %q", app.Namespace)
+	}
+
+	// And its scan.
+	if _, err := zapUpdateScanHandler(context.Background(), key,
+		[]byte(`{"id":"other/theirs","scan":{"owner":"other","name":"theirs","command":"-oN /tmp/x %s"}}`)); err != nil {
+		t.Fatal(err)
+	}
+	scan, err := object.GetScan("other/theirs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if scan.Command != "" {
+		t.Errorf("another organization's scan command became %q", scan.Command)
 	}
 }
