@@ -28,9 +28,8 @@ const PublicVideoListPage = (props) => {
     }
     VideoBackend.getGlobalVideos()
       .then((res) => {
-        let videos = res.data || [];
-        videos = videos.filter((video) => video.isPublic === true);
-        setVideos(videos);
+        // The listing is the public rows; the server decides that now.
+        setVideos(res.data || []);
       });
   }, [props.account]);
 
