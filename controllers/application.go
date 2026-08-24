@@ -20,6 +20,7 @@ import (
 	"fmt"
 
 	"github.com/hanzoai/ai/cluster"
+	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
 )
@@ -78,6 +79,23 @@ func (c *ApiController) GetApplications() {
 // @Param id query string true "The id of application"
 // @Success 200 {object} object.Application The Response object
 // @router /get-application [get]
+// applicationFor resolves the application an id names, for a caller entitled to
+// act on it.
+//
+// An application is a manifest and a namespace to apply it in, so acting on
+// somebody else's is creating objects in their cluster space. One the caller's
+// organization does not reach answers the same way as one that is not there.
+func applicationFor(user *iam.User, id string) (*object.Application, error) {
+	application, err := object.GetApplication(id)
+	if err != nil {
+		return nil, err
+	}
+	if application == nil || !reaches(user, application.Owner) {
+		return nil, fmt.Errorf("the application: %s does not exist", id)
+	}
+	return application, nil
+}
+
 func (c *ApiController) GetApplication() {
 	caller, ok := c.RequireSignedInUser()
 	if !ok {
@@ -112,7 +130,15 @@ func (c *ApiController) GetApplication() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /update-application [post]
 func (c *ApiController) UpdateApplication() {
+	caller, ok := c.RequireSignedInUser()
+	if !ok {
+		return
+	}
 	id := c.Input().Get("id")
+	if _, err := applicationFor(caller, id); err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
 
 	var application object.Application
 	err := json.Unmarshal(c.Body(), &application)
@@ -144,12 +170,19 @@ func (c *ApiController) UpdateApplication() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /add-application [post]
 func (c *ApiController) AddApplication() {
+	owner, allowed := c.GetScopedOwner()
+	if !allowed {
+		return
+	}
 	var application object.Application
 	err := json.Unmarshal(c.Body(), &application)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
 	}
+	// Filed into the caller's own organization — the one GetApplications reads
+	// back — and the template below is looked up under it.
+	application.Owner = owner
 
 	if application.Template == "" {
 		c.ResponseError(c.T("application:Missing required parameters"))
@@ -185,8 +218,19 @@ func (c *ApiController) AddApplication() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /delete-application [post]
 func (c *ApiController) DeleteApplication() {
-	var application object.Application
-	err := json.Unmarshal(c.Body(), &application)
+	caller, ok := c.RequireSignedInUser()
+	if !ok {
+		return
+	}
+	var body object.Application
+	err := json.Unmarshal(c.Body(), &body)
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+	// The stored row, not the body's copy: what is torn down is the namespace this
+	// application was deployed in, and the body does not decide that.
+	application, err := applicationFor(caller, util.GetIdFromOwnerAndName(body.Owner, body.Name))
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -196,7 +240,7 @@ func (c *ApiController) DeleteApplication() {
 	// org with no Kubernetes provider still deletes its applications.
 	_, _ = cluster.Undeploy(application.Owner, application.Name, application.Namespace, c.GetAcceptLanguage())
 
-	success, err := object.DeleteApplication(&application)
+	success, err := object.DeleteApplication(application)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -213,6 +257,10 @@ func (c *ApiController) DeleteApplication() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /deploy-application [post]
 func (c *ApiController) DeployApplication() {
+	caller, ok := c.RequireSignedInUser()
+	if !ok {
+		return
+	}
 	id := c.Input().Get("id")
 
 	var application object.Application
@@ -222,14 +270,8 @@ func (c *ApiController) DeployApplication() {
 		return
 	}
 
-	originalApplication, err := object.GetApplication(id)
-	if err != nil {
+	if _, err := applicationFor(caller, id); err != nil {
 		c.ResponseError(err.Error())
-		return
-	}
-
-	if originalApplication == nil {
-		c.ResponseError(fmt.Sprintf("The application: %s is not found", id))
 		return
 	}
 
@@ -273,16 +315,15 @@ func (c *ApiController) DeployApplication() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /undeploy-application [post]
 func (c *ApiController) UndeployApplication() {
-	id := c.Input().Get("id")
-
-	application, err := object.GetApplication(id)
-	if err != nil {
-		c.ResponseError(err.Error())
+	caller, ok := c.RequireSignedInUser()
+	if !ok {
 		return
 	}
+	id := c.Input().Get("id")
 
-	if application == nil {
-		c.ResponseError(fmt.Sprintf("The application: %s is not found", id))
+	application, err := applicationFor(caller, id)
+	if err != nil {
+		c.ResponseError(err.Error())
 		return
 	}
 
