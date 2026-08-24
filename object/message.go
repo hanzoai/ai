@@ -205,9 +205,16 @@ func GetGlobalFailMessages() ([]*Message, error) {
 // order the moment a store held messages from more than one — which it does, since
 // a spoken answer is stored under its provider's owner while a chat's is stored
 // under the namespace every chat shares.
-func GetGlobalMessagesByStoreName(storeName string) ([]*Message, error) {
+// The organization narrows it because a store's NAME is what a message carries,
+// and a name belongs to whoever chose it: two organizations may each keep a store
+// called "docs", and a report that asks by name alone counts both as one. An empty
+// organization is the reserved org, which reads them all; an empty store name is
+// every store within it.
+func GetGlobalMessagesByStoreName(org string, storeName string) ([]*Message, error) {
 	messages := []*Message{}
-	err := findAll(adapter.db, "message", &messages, dbx.HashExp{"store": storeName}, "created_time ASC")
+	err := findAll(adapter.db, "message", &messages,
+		narrow(dbx.HashExp{}, map[string]string{"organization": org, "store": storeName}),
+		"created_time ASC")
 	if err != nil {
 		return messages, err
 	}
