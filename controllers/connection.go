@@ -89,6 +89,9 @@ func (c *ApiController) GetConnection() {
 		c.ResponseError(err.Error())
 		return
 	}
+	if connection != nil && !reachable(c, connection.Owner) {
+		return
+	}
 
 	c.ResponseOk(connection)
 }

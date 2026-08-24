@@ -111,6 +111,9 @@ func (c *ApiController) GetFileMy() {
 		c.ResponseError(err.Error())
 		return
 	}
+	if file != nil && !reachable(c, file.Owner) {
+		return
+	}
 
 	c.ResponseOk(file)
 }
