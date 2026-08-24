@@ -572,7 +572,14 @@ func zapUpdateFileHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 	if err := json.Unmarshal(body, &file); err != nil {
 		return zapError(http.StatusOK, err.Error())
 	}
+	// Whose row this is, not what the body said — the same answer this table's
+	// listing uses.
+	file.Owner = theirOrg(zapPrincipal(auth))
 	id := p.Id
+	// The id names which row, and it names one of the caller's own.
+	if deny := zapReachable(auth, id, theirOrg); deny != nil {
+		return deny, nil
+	}
 	if id == "" {
 		id = file.GetId()
 	}
@@ -591,6 +598,9 @@ func zapAddFileHandler(_ context.Context, auth string, body []byte) (*zap.Messag
 	if err := json.Unmarshal(body, &file); err != nil {
 		return zapError(http.StatusOK, err.Error())
 	}
+	// Whose row this is, not what the body said — the same answer this table's
+	// listing uses.
+	file.Owner = theirOrg(zapPrincipal(auth))
 	success, err := object.AddFile(&file)
 	if err != nil {
 		return zapError(http.StatusOK, err.Error())
@@ -607,6 +617,9 @@ func zapDeleteFileHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 	if err := json.Unmarshal(body, &file); err != nil {
 		return zapError(http.StatusOK, err.Error())
 	}
+	// Whose row this is, not what the body said — the same answer this table's
+	// listing uses.
+	file.Owner = theirOrg(zapPrincipal(auth))
 	success, err := object.DeleteFile(&file, zapKSFVLang(p.Language))
 	if err != nil {
 		return zapError(http.StatusOK, err.Error())
@@ -828,7 +841,14 @@ func zapUpdateVectorHandler(_ context.Context, auth string, body []byte) (*zap.M
 	if err := json.Unmarshal(body, &vector); err != nil {
 		return zapError(http.StatusOK, err.Error())
 	}
+	// Whose row this is, not what the body said — the same answer this table's
+	// listing uses.
+	vector.Owner = theirOrg(zapPrincipal(auth))
 	id := p.Id
+	// The id names which row, and it names one of the caller's own.
+	if deny := zapReachable(auth, id, theirOrg); deny != nil {
+		return deny, nil
+	}
 	if id == "" {
 		id = vector.GetId()
 	}
@@ -847,6 +867,9 @@ func zapAddVectorHandler(_ context.Context, auth string, body []byte) (*zap.Mess
 	if err := json.Unmarshal(body, &vector); err != nil {
 		return zapError(http.StatusOK, err.Error())
 	}
+	// Whose row this is, not what the body said — the same answer this table's
+	// listing uses.
+	vector.Owner = theirOrg(zapPrincipal(auth))
 	if vector.Provider == "" {
 		embeddingProvider, err := object.GetDefaultEmbeddingProvider()
 		if err != nil {
@@ -871,6 +894,9 @@ func zapDeleteVectorHandler(_ context.Context, auth string, body []byte) (*zap.M
 	if err := json.Unmarshal(body, &vector); err != nil {
 		return zapError(http.StatusOK, err.Error())
 	}
+	// Whose row this is, not what the body said — the same answer this table's
+	// listing uses.
+	vector.Owner = theirOrg(zapPrincipal(auth))
 	success, err := object.DeleteVector(&vector)
 	if err != nil {
 		return zapError(http.StatusOK, err.Error())
