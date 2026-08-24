@@ -247,3 +247,79 @@ func TestTheZapTwinsWriteWhereTheListingLooks(t *testing.T) {
 		t.Error("the form was not written into the caller's own organization")
 	}
 }
+
+// A connection is a session on a machine, and a tunnel is opened by asking
+// whether the CONNECTION is yours. So which node a connection reaches decides
+// whose it is — taking that off the body lets one name your organization while
+// pointing at another's machine.
+func TestAConnectionBelongsToTheNodeItReaches(t *testing.T) {
+	withStore(t)
+	people := withIAM(t)
+	if _, err := object.AddNode(&object.Node{Owner: "other", Name: "theirs"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := object.AddNode(&object.Node{Owner: "acme", Name: "mine"}); err != nil {
+		t.Fatal(err)
+	}
+
+	alice := people.signedIn(t, &iam.User{Owner: "acme", Name: "alice", IsAdmin: true})
+
+	// Their machine, named as ours.
+	c := as(visit("POST", "/v1/ai/add-connection"), alice)
+	c.Fiber().Request().SetBody([]byte(`{"owner":"acme","name":"c1","node":"other/theirs","protocol":"ssh"}`))
+	c.AddConnection()
+	if got, err := object.GetConnection("acme/c1"); err != nil {
+		t.Fatal(err)
+	} else if got != nil {
+		t.Errorf("a connection was filed onto another organization's machine: %+v", got)
+	}
+
+	// Our own machine is reachable, and the connection belongs to it.
+	c = as(visit("POST", "/v1/ai/add-connection"), alice)
+	c.Fiber().Request().SetBody([]byte(`{"owner":"other","name":"c2","node":"acme/mine","protocol":"ssh"}`))
+	c.AddConnection()
+	got, err := object.GetConnection("acme/c2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil {
+		t.Fatalf("a connection to our own machine was refused: %s", sent(c))
+	}
+	if got.Owner != "acme" {
+		t.Errorf("it was filed under %q", got.Owner)
+	}
+}
+
+// An asset is filed and reached the same way its listing reads it back.
+func TestAnAssetIsFiledWhereItsListingLooks(t *testing.T) {
+	withStore(t)
+	people := withIAM(t)
+	alice := people.signedIn(t, &iam.User{Owner: "acme", Name: "alice", IsAdmin: true})
+
+	c := as(visit("POST", "/v1/ai/add-asset"), alice)
+	c.Fiber().Request().SetBody([]byte(`{"owner":"other","name":"a1"}`))
+	c.AddAsset()
+	if got, err := object.GetAsset("other/a1"); err != nil {
+		t.Fatal(err)
+	} else if got != nil {
+		t.Error("it was filed into the organization the body named")
+	}
+	if got, err := object.GetAsset("acme/a1"); err != nil {
+		t.Fatal(err)
+	} else if got == nil {
+		t.Error("it was not filed into the caller's own organization")
+	}
+
+	// And another organization's is out of reach.
+	if _, err := object.AddAsset(&object.Asset{Owner: "other", Name: "theirs"}); err != nil {
+		t.Fatal(err)
+	}
+	c = as(visit("POST", "/v1/ai/delete-asset"), alice)
+	c.Fiber().Request().SetBody([]byte(`{"owner":"other","name":"theirs"}`))
+	c.DeleteAsset()
+	if got, err := object.GetAsset("other/theirs"); err != nil {
+		t.Fatal(err)
+	} else if got == nil {
+		t.Error("another organization's asset was deleted")
+	}
+}
