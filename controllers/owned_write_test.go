@@ -205,3 +205,45 @@ func TestBothSurfacesAgreeOnWhoseApplicationAndScan(t *testing.T) {
 		t.Errorf("another organization's scan command became %q", scan.Command)
 	}
 }
+
+// The remaining tables answer the same on both surfaces too. Each row is written
+// where its own listing looks, whichever surface filed it.
+func TestTheZapTwinsWriteWhereTheListingLooks(t *testing.T) {
+	withStore(t)
+	people := withIAM(t)
+	key := people.asUser(t, &iam.User{Owner: "acme", Name: "alice", IsAdmin: true})
+
+	for _, c := range []struct {
+		what  string
+		run   func(context.Context, string, []byte) (*zap.Message, error)
+		body  string
+		there func() (bool, error)
+	}{
+		{"a form", zapAddFormHandler, `{"owner":"other","name":"f1"}`,
+			func() (bool, error) { r, err := object.GetForm("other/f1"); return r != nil, err }},
+		{"an article", zapAddArticleHandler, `{"owner":"other","name":"a1"}`,
+			func() (bool, error) { r, err := object.GetArticle("other/a1"); return r != nil, err }},
+		{"a graph", zapAddGraphHandler, `{"owner":"other","name":"g1"}`,
+			func() (bool, error) { r, err := object.GetGraph("other/g1"); return r != nil, err }},
+		{"a vector", zapAddVectorHandler, `{"owner":"other","name":"v1"}`,
+			func() (bool, error) { r, err := object.GetVector("other/v1"); return r != nil, err }},
+	} {
+		if _, err := c.run(context.Background(), key, []byte(c.body)); err != nil {
+			t.Fatalf("%s: %v", c.what, err)
+		}
+		landed, err := c.there()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if landed {
+			t.Errorf("%s was written into the organization the body named", c.what)
+		}
+	}
+
+	// And into the caller's own.
+	if r, err := object.GetForm("acme/f1"); err != nil {
+		t.Fatal(err)
+	} else if r == nil {
+		t.Error("the form was not written into the caller's own organization")
+	}
+}
