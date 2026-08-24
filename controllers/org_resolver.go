@@ -142,7 +142,20 @@ func (c *ApiController) principalOrgs() []account.OrgRef {
 // billingOrg, which differs for exactly one principal — a super admin acting
 // inside a customer tenant scopes to the customer and spends its own ledger.
 func (c *ApiController) GetOrg() string {
-	requested := strings.TrimSpace(c.Header("X-Org-Id"))
+	if c.orgKnown {
+		return c.org
+	}
+	c.org, c.orgKnown = c.resolveOrg(), true
+	return c.org
+}
+
+func (c *ApiController) resolveOrg() string {
+	// Cloned because a header value is a VIEW of the connection's buffer, which
+	// fasthttp refills with the next request on that connection — fiber's own doc
+	// says it is valid only while the handler runs. An organization read from one
+	// is stored on rows and carried into work that outlives the handler, so it has
+	// to be a value of ours rather than a window onto somebody else's request.
+	requested := strings.Clone(strings.TrimSpace(c.Header("X-Org-Id")))
 
 	user := c.principalUser()
 	if user != nil && user.Owner != "" {
