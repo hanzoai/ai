@@ -387,13 +387,23 @@ func GetUserByAccessKey(accessKey string) (*iam.User, error) {
 // GetUserByAccessKey is exported for the secret half.
 func PublishableOrg(accessKey string) (string, error) { return publishableOrg(accessKey) }
 
-// publishableKeyShape is the floor a pk- clears before this process will ask IAM
-// about it. IAM mints "pk-{live|test}-{random}", so anything outside this alphabet
-// and length is not a key this estate ever issued and needs no round trip to
-// refuse. The floor is deliberately wider than the mint: it exists to drop junk,
-// not to re-implement the key format, and a key whose shape is plausible is still
-// decided by IAM.
-var publishableKeyShape = regexp.MustCompile(`^pk-[A-Za-z0-9_-]{8,128}$`)
+// The floor a key clears before this process will ask IAM about it. IAM mints
+// "{pk|sk}-{live|test}-{random}" (iam internal/keys.Mint), so anything outside
+// this alphabet and length is not a key this estate ever issued and needs no round
+// trip to refuse. The floor is deliberately wider than the mint: it exists to drop
+// junk, not to re-implement the key format, and a key whose shape is plausible is
+// still decided by IAM.
+//
+// The two halves carry their own prefix rather than sharing one pattern, so the
+// publishable resolver still refuses a secret locally and the secret resolver still
+// refuses a publishable — each answers about its own kind of key, and asking the
+// wrong one is a question this process can settle without IAM.
+const keyBody = `-[A-Za-z0-9_-]{8,128}$`
+
+var (
+	publishableKeyShape = regexp.MustCompile(`^pk` + keyBody)
+	secretKeyShape      = regexp.MustCompile(`^sk` + keyBody)
+)
 
 const (
 	// How long a resolved org stays fresh, and how long a refusal is remembered.
@@ -537,6 +547,21 @@ func resolveOrgFromPublishableKey(accessKey string) (string, error) {
 
 // getUserByAccessKey looks up a user by their IAM API key via Hanzo IAM.
 func getUserByAccessKey(accessKey string) (*iam.User, error) {
+	// The dual of the floor publishableOrg applies to a pk-, and it is here rather
+	// than at any one call site because this is the ONE place a secret key is
+	// resolved: the controller, the balance gate and the authz filter all arrive
+	// through it, and a floor at one door is a floor nobody else stands behind.
+	//
+	// It refuses in IAM's OWN words. A holder who presents a retired spelling, a
+	// typo, or another vendor's key needs the one sentence that ends the problem —
+	// mint a new key — and which side of the wire decided that is no business of
+	// theirs. Saying it here also leaves nothing to probe: a shape this estate never
+	// mints and a key it minted and revoked answer identically, so the floor cannot
+	// be used to learn the format.
+	if !secretKeyShape.MatchString(accessKey) {
+		return nil, keyRefusal("key_unknown", "", accessKey)
+	}
+
 	iamEndpoint := conf.GetConfigString("IAM_URL")
 	if iamEndpoint == "" {
 		return nil, fmt.Errorf("IAM_URL is not configured")

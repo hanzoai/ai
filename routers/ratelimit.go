@@ -112,6 +112,25 @@ func (rl *RateLimiter) Allow(apiKey string) bool {
 	return false
 }
 
+// Open reports whether a lane still has room, spending nothing.
+//
+// It is what a caller this process cannot yet NAME has to clear before the round
+// trip that names them. Allow would spend a token on the address lane and then the
+// named request would spend a second one from its own; Open asks the same question
+// and leaves the accounting to whichever lane ends up carrying the request.
+func (rl *RateLimiter) Open(apiKey string) bool {
+	rl.mu.RLock()
+	entry, ok := rl.keys[apiKey]
+	rl.mu.RUnlock()
+
+	// A lane nobody has spent from is open, and asking must not bring it into
+	// being: a question about a bucket is not a request against it.
+	if !ok {
+		return true
+	}
+	return entry.limiter.Tokens() >= 1
+}
+
 // RetryAfter returns the number of seconds until the next token is available
 // for the given API key. Returns 0 if the key has no entry.
 func (rl *RateLimiter) RetryAfter(apiKey string) int {
@@ -311,14 +330,17 @@ const unaddressed = "visitor:unaddressed"
 // were. A ceiling has to be asked about the CALLER, never about the shape of the
 // string they happened to carry.
 //
-// Three answers, in the order of what a request PROVES:
+// Three answers, in the order of what a request PROVES — and the first is asked
+// twice, because half of it is free and half of it costs an IAM round trip:
 //
 //  1. The billing subject — resolveBillingKey, the one place identity is derived.
 //     Cookie session, JWT, IAM key: whoever pays for a call is who is throttled by
 //     it, so rate, quota and money name one tenant. For a pooled org that is the org
 //     slug and the org shares one bucket; for a personal-billing org it is
 //     "owner/name", so individuals in the shared "hanzo" catch-all cannot exhaust
-//     each other.
+//     each other. A session, a token this process parses itself and a key it has
+//     already resolved all answer for nothing (billingKey) and are asked FIRST; the
+//     key it has not seen is asked LAST, behind the lane in (3).
 //
 //  2. A publishable key IAM confirms. It authenticates nobody, so there is no
 //     subject to bill — but IAM ISSUED it, which is what a caller cannot do, and a
@@ -343,6 +365,27 @@ const unaddressed = "visitor:unaddressed"
 // the customer's name, and a paying caller whose key IAM does not own falls to their
 // own address rather than into a crowd.
 func limitSubject(c *zip.Ctx) string {
+	if subject, _, _, _ := billingKey(c); subject != "" {
+		return subject
+	}
+
+	// Nothing this process already holds names the caller, so the answer costs an
+	// IAM round trip — and a round trip is what admission BUYS, never what decides
+	// it. The lane below is where such a caller is counted until they are named, so
+	// a flood of keys nobody owns drains it and is then refused having asked IAM
+	// nothing at all — and takes no place in the resolver's bounded memory, which
+	// keys that name no one would otherwise fill.
+	//
+	// A caller who IS named pays this nothing: their answer was held, and they
+	// returned above.
+	lane := controllers.Visitor(c)
+	if lane == "" {
+		lane = unaddressed
+	}
+	if !rateLimiterInstance.Open(lane) {
+		return lane
+	}
+
 	if subject, _, _ := resolveBillingKey(c); subject != "" {
 		return subject
 	}
@@ -351,10 +394,7 @@ func limitSubject(c *zip.Ctx) string {
 			return key
 		}
 	}
-	if visitor := controllers.Visitor(c); visitor != "" {
-		return visitor
-	}
-	return unaddressed
+	return lane
 }
 
 // isRateLimitExempt returns true for paths that should bypass rate limiting.
