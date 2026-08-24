@@ -51,11 +51,19 @@ func (message *Message) SendEmail(lang string, orgName ...string) error {
 	if err != nil {
 		return err
 	}
+	if user == nil {
+		return fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:IAM user: [%s] doesn't exist"), message.User))
+	}
 	username := user.Name
 	receiverEmail := user.Email
 	questionMessage, err := GetMessage(util.GetId("admin", message.ReplyTo))
 	if err != nil {
 		return err
+	}
+	// The mail quotes the question this answers, so there is nothing to send when
+	// the question has been deleted.
+	if questionMessage == nil {
+		return fmt.Errorf("%s", i18n.Translate(lang, "general:The message does not exist"))
 	}
 	question := questionMessage.Text
 	content := fmt.Sprintf(`<!DOCTYPE html>
