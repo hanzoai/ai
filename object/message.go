@@ -390,6 +390,10 @@ func DeleteAllLaterMessages(messageId string) error {
 	if err != nil {
 		return err
 	}
+	// Nothing is later than a message that is not there.
+	if originMessage == nil {
+		return nil
+	}
 	// Get all messages for this chat
 	allMessages, err := GetChatMessages(originMessage.Chat, originMessage.Organization)
 	if err != nil {
