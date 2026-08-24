@@ -417,6 +417,10 @@ func (c *ApiController) AddMessage() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /delete-message [post]
 func (c *ApiController) DeleteMessage() {
+	caller, ok := c.RequireSignedInUser()
+	if !ok {
+		return
+	}
 	var message object.Message
 	err := json.Unmarshal(c.Body(), &message)
 	if err != nil {
@@ -425,6 +429,19 @@ func (c *ApiController) DeleteMessage() {
 	}
 
 	message.Owner = chatOwner
+
+	// Owner is the namespace every message shares, so it says nothing about whose
+	// message this is — Organization does. The stored row is what carries it; the
+	// body carries whatever it likes.
+	stored, err := object.GetMessage(message.GetId())
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+	if stored == nil || !reaches(caller, stored.Organization) {
+		c.ResponseError(c.T("general:The message does not exist"))
+		return
+	}
 
 	success, err := object.DeleteMessage(&message)
 	if err != nil {
@@ -436,10 +453,29 @@ func (c *ApiController) DeleteMessage() {
 }
 
 func (c *ApiController) DeleteWelcomeMessage() {
+	caller, ok := c.RequireSignedInUser()
+	if !ok {
+		return
+	}
 	var message *object.Message
 	err := json.Unmarshal(c.Body(), &message)
 	if err != nil {
 		c.ResponseError(err.Error())
+		return
+	}
+	if message == nil {
+		c.ResponseError(c.T("general:The message does not exist"))
+		return
+	}
+	// Organization is what says whose message this is; Owner is the namespace they
+	// all share.
+	stored, err := object.GetMessage(message.GetId())
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+	if stored == nil || !reaches(caller, stored.Organization) {
+		c.ResponseError(c.T("general:The message does not exist"))
 		return
 	}
 
