@@ -135,15 +135,19 @@ func rowsPage[T any](table, owner string, offset, limit int, field, value, sortF
 
 // allRows lists every row a table holds, across owners, grouped by owner and
 // newest first within each.
-func allRows[T any](table string) ([]*T, error) {
+func rowsWhere[T any](table string, where dbx.Expression) ([]*T, error) {
 	if adapter == nil || adapter.db == nil {
 		return nil, fmt.Errorf("%s store is not initialised", table)
 	}
 	rows := []*T{}
-	if err := findAll(adapter.db, table, &rows, nil, "owner ASC", "created_time DESC"); err != nil {
+	if err := findAll(adapter.db, table, &rows, where, "owner ASC", "created_time DESC"); err != nil {
 		return rows, err
 	}
 	return rows, nil
+}
+
+func allRows[T any](table string) ([]*T, error) {
+	return rowsWhere[T](table, nil)
 }
 
 // rowsOf lists what a table holds for one owner, newest first.
