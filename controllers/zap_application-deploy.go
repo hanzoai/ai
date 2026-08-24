@@ -159,6 +159,10 @@ func zapGetApplicationHandler(_ context.Context, auth string, body []byte) (*zap
 		_ = json.Unmarshal(body, &p)
 	}
 
+	if deny := zapReachable(auth, p.Id, theirOrg); deny != nil {
+		return deny, nil
+	}
+
 	res, err := object.GetApplication(p.Id)
 	if err != nil {
 		return zapError(http.StatusOK, err.Error())
