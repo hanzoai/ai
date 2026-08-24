@@ -235,6 +235,12 @@ func (c *ApiController) AddMessage() {
 
 	message.Owner = chatOwner
 
+	// The organization this request acts in, settled once from the caller. It is
+	// what a new chat is filed under just below, so it is also what says which
+	// existing chats this request may touch — Owner is the namespace every chat
+	// shares and names none of them.
+	org := c.GetOrg()
+
 	id := util.GetIdFromOwnerAndName(message.Owner, message.Name)
 	originMessage, err := object.GetMessage(id)
 	if err != nil {
@@ -257,7 +263,11 @@ func (c *ApiController) AddMessage() {
 
 	addMessageAfterSuccess := true
 	if message.IsRegenerated {
-		messages, err := object.GetChatMessages(message.Chat, message.Organization)
+		// Whose chat this is comes from the caller, not the body. This branch deletes
+		// the two turns it replaces, and the organization it reads with is what says
+		// which chat of that name it reads — an empty one asks every organization.
+		// The body's Organization is not settled until the chat below is resolved.
+		messages, err := object.GetChatMessages(message.Chat, org)
 		if err != nil {
 			c.ResponseError(err.Error())
 			return
@@ -306,7 +316,7 @@ func (c *ApiController) AddMessage() {
 	}
 	var chat *object.Chat
 	if message.Chat == "" {
-		chat, err = c.addInitialChat(c.GetOrg(), message.User, message.Store)
+		chat, err = c.addInitialChat(org, message.User, message.Store)
 		if err != nil {
 			c.ResponseError(err.Error())
 			return
@@ -321,7 +331,9 @@ func (c *ApiController) AddMessage() {
 			return
 		}
 
-		if chat == nil {
+		// A chat of this name in another organization is not this caller's to add a
+		// turn to, and answers the way a chat of that name that is not there answers.
+		if chat == nil || chat.Organization != org {
 			c.ResponseError(fmt.Sprintf("chat:The chat: %s is not found", chatId))
 			return
 		}
