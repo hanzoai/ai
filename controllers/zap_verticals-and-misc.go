@@ -310,6 +310,9 @@ func zapUpdateFormHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 	if err := json.Unmarshal(body, &form); err != nil {
 		return zapError(400, "invalid request: "+err.Error())
 	}
+	// Whose row this is, not what the body said — the same answer this table's
+	// listing uses.
+	form.Owner = theirOrg(zapPrincipal(auth))
 	id := util.GetId(form.Owner, form.Name)
 	success, err := object.UpdateForm(id, &form, "en")
 	if err != nil {
@@ -326,6 +329,9 @@ func zapAddFormHandler(_ context.Context, auth string, body []byte) (*zap.Messag
 	if err := json.Unmarshal(body, &form); err != nil {
 		return zapError(400, "invalid request: "+err.Error())
 	}
+	// Whose row this is, not what the body said — the same answer this table's
+	// listing uses.
+	form.Owner = theirOrg(zapPrincipal(auth))
 	success, err := object.AddForm(&form)
 	if err != nil {
 		return zapError(200, err.Error())
@@ -341,6 +347,9 @@ func zapDeleteFormHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 	if err := json.Unmarshal(body, &form); err != nil {
 		return zapError(400, "invalid request: "+err.Error())
 	}
+	// Whose row this is, not what the body said — the same answer this table's
+	// listing uses.
+	form.Owner = theirOrg(zapPrincipal(auth))
 	success, err := object.DeleteForm(&form)
 	if err != nil {
 		return zapError(200, err.Error())
@@ -475,6 +484,9 @@ func zapUpdateArticleHandler(_ context.Context, auth string, body []byte) (*zap.
 	if err := json.Unmarshal(body, &article); err != nil {
 		return zapError(400, "invalid request: "+err.Error())
 	}
+	// Whose row this is, not what the body said — the same answer this table's
+	// listing uses.
+	article.Owner = theirOrg(zapPrincipal(auth))
 	id := util.GetId(article.Owner, article.Name)
 	success, err := object.UpdateArticle(id, &article)
 	if err != nil {
@@ -491,6 +503,9 @@ func zapAddArticleHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 	if err := json.Unmarshal(body, &article); err != nil {
 		return zapError(400, "invalid request: "+err.Error())
 	}
+	// Whose row this is, not what the body said — the same answer this table's
+	// listing uses.
+	article.Owner = theirOrg(zapPrincipal(auth))
 	success, err := object.AddArticle(&article)
 	if err != nil {
 		return zapError(200, err.Error())
@@ -506,6 +521,9 @@ func zapDeleteArticleHandler(_ context.Context, auth string, body []byte) (*zap.
 	if err := json.Unmarshal(body, &article); err != nil {
 		return zapError(400, "invalid request: "+err.Error())
 	}
+	// Whose row this is, not what the body said — the same answer this table's
+	// listing uses.
+	article.Owner = theirOrg(zapPrincipal(auth))
 	success, err := object.DeleteArticle(&article)
 	if err != nil {
 		return zapError(200, err.Error())
@@ -623,6 +641,9 @@ func zapUpdateScaleHandler(_ context.Context, auth string, body []byte) (*zap.Me
 	if err := json.Unmarshal(body, &s); err != nil {
 		return zapError(400, "invalid request: "+err.Error())
 	}
+	// Whose row this is, not what the body said — the same answer this table's
+	// listing uses.
+	s.Owner = theirOrg(zapPrincipal(auth))
 	id := util.GetId(s.Owner, s.Name)
 	existing, err := object.GetScale(id)
 	if err != nil {
@@ -664,6 +685,9 @@ func zapAddScaleHandler(_ context.Context, auth string, body []byte) (*zap.Messa
 	if err := json.Unmarshal(body, &s); err != nil {
 		return zapError(400, "invalid request: "+err.Error())
 	}
+	// Whose row this is, not what the body said — the same answer this table's
+	// listing uses.
+	s.Owner = theirOrg(zapPrincipal(auth))
 	if !util.IsAdmin(user) {
 		s.State = object.ScaleStatePublic
 	} else if s.State == object.ScaleStateHidden {
@@ -687,6 +711,9 @@ func zapDeleteScaleHandler(_ context.Context, auth string, body []byte) (*zap.Me
 	if err := json.Unmarshal(body, &s); err != nil {
 		return zapError(400, "invalid request: "+err.Error())
 	}
+	// Whose row this is, not what the body said — the same answer this table's
+	// listing uses.
+	s.Owner = theirOrg(zapPrincipal(auth))
 	if !util.IsAdmin(user) {
 		username := ""
 		if user != nil {
