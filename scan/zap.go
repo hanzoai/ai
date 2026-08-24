@@ -16,7 +16,6 @@
 package scan
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"os/exec"
@@ -128,66 +127,19 @@ func NewZapScanProvider(clientId string) (*ZapScanProvider, error) {
 }
 
 func (p *ZapScanProvider) Scan(target string, command string) (string, error) {
-	if target == "" {
-		return "", fmt.Errorf("%s scan target cannot be empty", getHostnamePrefix())
-	}
-
-	// Validate target to prevent command injection
-	target = strings.TrimSpace(target)
-	if strings.ContainsAny(target, ";&|`$") {
-		return "", fmt.Errorf("%s invalid characters in scan target", getHostnamePrefix())
-	}
-
-	// Use default command if empty
-	// ZAP quick scan with JSON output
-	if command == "" {
-		command = "-cmd -quickurl %s -quickout /dev/stdout -quickprogress"
-	}
-
-	// Validate command to prevent command injection
-	command = strings.TrimSpace(command)
-	if strings.ContainsAny(command, ";&|`") {
-		return "", fmt.Errorf("%s invalid characters in scan command", getHostnamePrefix())
-	}
-
-	// Replace %s with target, or append target if no %s placeholder
-	var args []string
-	if strings.Contains(command, "%s") {
-		// Replace %s with target
-		cmdStr := strings.Replace(command, "%s", target, -1)
-		args = strings.Fields(cmdStr)
-	} else {
-		// No %s placeholder, append target
-		args = strings.Fields(command)
-		args = append(args, target)
-	}
-
-	// Run ZAP with custom command options
-	cmd := exec.Command(p.zapPath, args...)
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	fmt.Printf("%s [ZAP] Executing ZAP scan: %s %s\n", getHostnamePrefix(), p.zapPath, strings.Join(args, " "))
-	err := cmd.Run()
-	if err != nil {
-		// ZAP may return non-zero exit code even when scan completes successfully
-		// Check if we got any output
-		if stdout.Len() == 0 {
-			return "", fmt.Errorf("%s ZAP scan failed: %v, stderr: %s", getHostnamePrefix(), err, stderr.String())
-		}
-		// Log the error but continue with parsing
-		fmt.Printf("%s [ZAP] Scan completed with warnings: %v\n", getHostnamePrefix(), err)
-	}
-	fmt.Printf("%s [ZAP] Scan completed successfully\n", getHostnamePrefix())
-
-	result := stdout.String()
-	if result == "" {
-		result = "Scan completed with no alerts found"
-	}
-
-	return result, nil
+	return scanner{
+		name: "zap", bin: p.zapPath,
+		defaultArgs: "-cmd -quickurl %s -quickout /dev/stdout -quickprogress",
+		emptyResult: "Scan completed with no alerts found",
+		// ZAP writes its findings through -quickout and this reads them from
+		// stdout, so that flag is how the feature works and /dev/stdout is the only
+		// place it may point.
+		pinned: map[string]string{"-quickout": "/dev/stdout"},
+		// A ZAP add-on and a ZAP script are code, and -dir/-installdir name where
+		// it is loaded from.
+		offLimits: []string{"-configfile", "-dir", "-installdir", "-addoninstall",
+			"-addoninstallall", "-addonupdate", "-script", "-session", "-newsession"},
+	}.run(target, command)
 }
 
 func (p *ZapScanProvider) ParseResult(rawResult string) (string, error) {
