@@ -129,12 +129,15 @@ func (chat *Chat) GetId() string {
 // construction, so neither caller de-duplicates and the SQL is the same on every
 // driver. The pattern is bound, and "%"+value+"%" is what dbx.Like builds — it
 // escapes nothing, so this matches byte for byte.
-func chatsMatchingMessages(owner, value, store string) *dbx.SelectQuery {
+func chatsMatchingMessages(owner, org, value, store string) *dbx.SelectQuery {
 	q := adapter.db.Select("chat.*").From("chat").Where(dbx.Exists(dbx.NewExp(
 		"SELECT 1 FROM message WHERE message.owner = chat.owner AND message.chat = chat.name AND message.text LIKE {:text}",
 		dbx.Params{"text": "%" + value + "%"})))
 	if owner != "" {
 		q = q.AndWhere(dbx.NewExp("chat.owner = {:owner}", dbx.Params{"owner": owner}))
+	}
+	if org != "" {
+		q = q.AndWhere(dbx.NewExp("chat.organization = {:org}", dbx.Params{"org": org}))
 	}
 	if store != "" {
 		q = q.AndWhere(dbx.NewExp("chat.store = {:store}", dbx.Params{"store": store}))
@@ -142,29 +145,32 @@ func chatsMatchingMessages(owner, value, store string) *dbx.SelectQuery {
 	return q
 }
 
-func getChatCountByMessages(owner string, value string, store string) (int64, error) {
+func getChatCountByMessages(owner string, org string, value string, store string) (int64, error) {
 	var count int64
-	err := chatsMatchingMessages(owner, value, store).Select("COUNT(*)").Row(&count)
+	err := chatsMatchingMessages(owner, org, value, store).Select("COUNT(*)").Row(&count)
 	return count, err
 }
 
-func GetChatCount(owner string, field string, value string, store string) (int64, error) {
+func GetChatCount(owner string, org string, field string, value string, store string) (int64, error) {
 	if field == "messages" && value != "" {
-		return getChatCountByMessages(owner, value, store)
+		return getChatCountByMessages(owner, org, value, store)
 	}
 	q := GetDbQuery(owner, -1, -1, field, value, "", "")
+	if org != "" {
+		q = q.AndWhere(dbx.HashExp{"organization": org})
+	}
 	if store != "" {
 		q = q.AndWhere(dbx.HashExp{"store": store})
 	}
 	return queryCount(q, "chat")
 }
 
-func getPaginationChatsByMessages(owner string, offset, limit int, value, sortField, sortOrder, store string) ([]*Chat, error) {
+func getPaginationChatsByMessages(owner string, org string, offset, limit int, value, sortField, sortOrder, store string) ([]*Chat, error) {
 	chats := []*Chat{}
 	// Same whitelist as GetDbQuery — searching by message text changes which
 	// chats come back, not who supplies the sort column. The "chat." prefix is
 	// not itself a guard: a comma opens a second ORDER BY term.
-	q := chatsMatchingMessages(owner, value, store).
+	q := chatsMatchingMessages(owner, org, value, store).
 		OrderBy("chat." + sortColumn(sortField, sortOrder) + sortDirection(sortOrder))
 	if offset != -1 && limit != -1 {
 		q = q.Offset(int64(offset)).Limit(int64(limit))
@@ -176,12 +182,15 @@ func getPaginationChatsByMessages(owner string, offset, limit int, value, sortFi
 	return chats, nil
 }
 
-func GetPaginationChats(owner string, offset, limit int, field, value, sortField, sortOrder string, store string) ([]*Chat, error) {
+func GetPaginationChats(owner string, org string, offset, limit int, field, value, sortField, sortOrder string, store string) ([]*Chat, error) {
 	if field == "messages" && value != "" {
-		return getPaginationChatsByMessages(owner, offset, limit, value, sortField, sortOrder, store)
+		return getPaginationChatsByMessages(owner, org, offset, limit, value, sortField, sortOrder, store)
 	}
 	chats := []*Chat{}
 	q := GetDbQuery(owner, offset, limit, field, value, sortField, sortOrder)
+	if org != "" {
+		q = q.AndWhere(dbx.HashExp{"organization": org})
+	}
 	if store != "" {
 		q = q.AndWhere(dbx.HashExp{"store": store})
 	}

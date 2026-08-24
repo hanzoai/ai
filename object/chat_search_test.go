@@ -33,7 +33,7 @@ func TestGetPaginationChatsByMessages_ReturnsMatchingChats(t *testing.T) {
 		}
 	}
 
-	chats, err := getPaginationChatsByMessages("acme", 0, 10, "needle", "name", "ascend", "")
+	chats, err := getPaginationChatsByMessages("acme", "", 0, 10, "needle", "name", "ascend", "")
 	if err != nil {
 		t.Fatalf("search: %v", err)
 	}
@@ -46,7 +46,7 @@ func TestGetPaginationChatsByMessages_ReturnsMatchingChats(t *testing.T) {
 	}
 
 	// The count beside it feeds the paginator and must agree.
-	count, err := getChatCountByMessages("acme", "needle", "")
+	count, err := getChatCountByMessages("acme", "", "needle", "")
 	if err != nil {
 		t.Fatalf("count: %v", err)
 	}
