@@ -144,6 +144,10 @@ func (c *ApiController) GetTask() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /update-task [post]
 func (c *ApiController) UpdateTask() {
+	owner, signedIn := c.RequireSignedIn()
+	if !signedIn {
+		return
+	}
 	id := c.Input().Get("id")
 
 	var task object.Task
@@ -152,6 +156,9 @@ func (c *ApiController) UpdateTask() {
 		c.ResponseError(err.Error())
 		return
 	}
+	// Whose row this is, not what the body said — the same answer this table's
+	// listing uses.
+	task.Owner = owner
 
 	existingTask, err := object.GetTask(id)
 	if err != nil {
@@ -198,12 +205,19 @@ func (c *ApiController) AddTask() { stored(c, c.RequireSignedIn, object.AddTask)
 // @Success 200 {object} controllers.Response The Response object
 // @router /delete-task [post]
 func (c *ApiController) DeleteTask() {
+	owner, signedIn := c.RequireSignedIn()
+	if !signedIn {
+		return
+	}
 	var task object.Task
 	err := json.Unmarshal(c.Body(), &task)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
 	}
+	// Whose row this is, not what the body said — the same answer this table's
+	// listing uses.
+	task.Owner = owner
 
 	// Check ownership for non-admins
 	if !c.IsAdmin() {
@@ -245,10 +259,19 @@ func (c *ApiController) AnalyzeTask() {
 	id := c.Input().Get("id")
 	log.Info("[analyze-task] HTTP request id=%s user=%s", id, c.GetSessionUsername())
 
+	owner, signedIn := c.RequireSignedIn()
+	if !signedIn {
+		return
+	}
 	task, err := object.GetTask(id)
 	if err != nil {
 		log.Error("[analyze-task] GetTask failed id=%s: %v", id, err)
 		c.ResponseError(err.Error())
+		return
+	}
+	// A task belongs to the person who filed it, which is what GetTasks reads back.
+	if task != nil && task.Owner != owner && !util.IsSuperAdmin(c.GetSessionUser()) {
+		c.ResponseError(c.T("general:The task does not exist"))
 		return
 	}
 	if task == nil {

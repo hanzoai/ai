@@ -118,7 +118,8 @@ func TestEveryHttpWriteSaysWhoseRowItIs(t *testing.T) {
 	says := regexp.MustCompile(`GetScopedOwner\(|RequireSignedIn\(|RequireSessionOwner\(|` +
 		`reaches\(|storeFor\(|applicationFor\(|whose\(|RequireSuperAdmin\(|` +
 		`stored\(c, |replaced\(c, |listed\(c, |ownedBy\(|connectionFor\(|` +
-		`IsCurrentUser\(|requireMemoryIdentity\(|GetSessionUser\(`)
+		`IsCurrentUser\(|requireMemoryIdentity\(|GetSessionUser\(|GetOrg\(|` +
+		`requireIndexAuth\(|RequirePrincipal\(|requireConnectionOrg\(`)
 	writes := regexp.MustCompile(`object\.(Add|Update|Delete)\w+\(`)
 
 	// NOT YET ANSWERED.
@@ -130,46 +131,16 @@ func TestEveryHttpWriteSaysWhoseRowItIs(t *testing.T) {
 	//
 	// The list is here so the build catches a NEW one. Removing a name is the
 	// point; adding one needs a reason beside it.
+	// These are not endpoints a caller addresses. Each is named with the reason.
 	named := map[string]string{
-		"account.go:Signin":                          "not yet answered",
-		"account.go:addInitialChat":                  "not yet answered",
-		"account.go:addInitialChatAndMessage":        "not yet answered",
-		"connections_api.go:DeleteAIConnection":      "not yet answered",
-		"file.go:DeleteFile":                         "not yet answered",
-		"finetune.go:CancelFinetuneJob":              "not yet answered",
-		"finetune.go:CreateFinetuneJob":              "not yet answered",
-		"finetune.go:DeployFinetuneJob":              "not yet answered",
-		"finetune.go:refreshFinetuneJob":             "not yet answered",
-		"form.go:UpdateForm":                         "not yet answered",
-		"graph_chat.go:generateChatGraphData":        "not yet answered",
-		"message.go:DeleteMessage":                   "not yet answered",
-		"message.go:DeleteWelcomeMessage":            "not yet answered",
-		"message_answer.go:GetMessageAnswer":         "not yet answered",
-		"node.go:AddNode":                            "not yet answered",
-		"node.go:DeleteNode":                         "not yet answered",
-		"node.go:UpdateNode":                         "not yet answered",
-		"rag.go:RagDelete":                           "not yet answered",
-		"record.go:AddRecord":                        "not yet answered",
-		"record.go:AddRecords":                       "not yet answered",
-		"record.go:DeleteRecord":                     "not yet answered",
-		"record.go:UpdateRecord":                     "not yet answered",
-		"router_stats.go:UpdateTrainingContribution": "not yet answered",
-		"routing_defaults.go:DeleteMyRoutingData":    "not yet answered",
-		"scale.go:AddScale":                          "not yet answered",
-		"scale.go:DeleteScale":                       "not yet answered",
-		"scale.go:UpdateScale":                       "not yet answered",
-		"scan.go:DeleteScan":                         "not yet answered",
-		"session.go:AddSession":                      "not yet answered",
-		"session.go:DeleteSession":                   "not yet answered",
-		"session.go:UpdateSession":                   "not yet answered",
-		"task.go:AnalyzeTask":                        "not yet answered",
-		"task.go:DeleteTask":                         "not yet answered",
-		"task.go:UpdateTask":                         "not yet answered",
-		"vector.go:AddVector":                        "not yet answered",
-		"vector.go:UpdateVector":                     "not yet answered",
-		"video.go:UpdateVideo":                       "not yet answered",
-		"workflow.go:AddWorkflow":                    "not yet answered",
-		"workflow.go:UpdateWorkflow":                 "not yet answered",
+		// The sign-in flow: the rows it makes belong to the identity it has just
+		// authenticated, which is the only identity it has.
+		"account.go:Signin":                   "creates rows for the identity it just authenticated",
+		"account.go:addInitialChat":           "helper; the caller passes the authenticated identity in",
+		"account.go:addInitialChatAndMessage": "helper; the caller passes the authenticated identity in",
+		// Internal helpers, reached only from a handler that has already decided.
+		"finetune.go:refreshFinetuneJob":      "helper; its caller resolved the job",
+		"graph_chat.go:generateChatGraphData": "helper; its caller resolved the graph",
 	}
 
 	fset := token.NewFileSet()
