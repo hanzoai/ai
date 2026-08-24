@@ -236,6 +236,20 @@ func reaches(user *iam.User, owner string) bool {
 	return r == "" || r == owner
 }
 
+// Whether the caller reaches the row that was just read, for the reads that name
+// one by id. A row they do not reach answers exactly the way a row that is not
+// there answers, so an id tells nobody what exists outside their own
+// organization. The coarse filter these reads sit behind asks only whether the
+// caller administers SOME organization, which every customer's own admin
+// satisfies; it never asks which one.
+func reachable(c *ApiController, owner string) bool {
+	if reaches(c.GetSessionUser(), owner) {
+		return true
+	}
+	c.ResponseOk(nil)
+	return false
+}
+
 // GetScopedOwner resolves owner from the authenticated session.
 // Non-admin users are always scoped to their own org, ignoring request owner params.
 // Super admins can optionally target a specific owner via query parameter.

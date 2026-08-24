@@ -95,6 +95,9 @@ func (c *ApiController) GetArticle() {
 		c.ResponseError(err.Error())
 		return
 	}
+	if article != nil && !reachable(c, article.Owner) {
+		return
+	}
 
 	c.ResponseOk(object.GetMaskedArticle(article, true))
 }
