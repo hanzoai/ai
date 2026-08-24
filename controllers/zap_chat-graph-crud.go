@@ -1000,6 +1000,11 @@ func zapUpdateGraphHandler(_ context.Context, auth string, body []byte) (*zap.Me
 	if err := json.Unmarshal(body, &req); err != nil {
 		return zapError(400, "invalid request: "+err.Error())
 	}
+	// The id names which graph, and it names one of the caller's own.
+	if deny := zapReachable(auth, req.ID, theirOrg); deny != nil {
+		return deny, nil
+	}
+	req.Graph.Owner = theirOrg(user)
 	success, err := object.UpdateGraph(req.ID, &req.Graph)
 	if err != nil {
 		return zapError(200, err.Error())
@@ -1017,6 +1022,9 @@ func zapAddGraphHandler(_ context.Context, auth string, body []byte) (*zap.Messa
 	if err := json.Unmarshal(body, &graph); err != nil {
 		return zapError(400, "invalid request: "+err.Error())
 	}
+	// Whose row this is, not what the body said — the same answer this table's
+	// listing uses.
+	graph.Owner = theirOrg(zapPrincipal(auth))
 	success, err := object.AddGraph(&graph)
 	if err != nil {
 		return zapError(200, err.Error())
@@ -1034,6 +1042,9 @@ func zapDeleteGraphHandler(_ context.Context, auth string, body []byte) (*zap.Me
 	if err := json.Unmarshal(body, &graph); err != nil {
 		return zapError(400, "invalid request: "+err.Error())
 	}
+	// Whose row this is, not what the body said — the same answer this table's
+	// listing uses.
+	graph.Owner = theirOrg(zapPrincipal(auth))
 	success, err := object.DeleteGraph(&graph)
 	if err != nil {
 		return zapError(200, err.Error())
