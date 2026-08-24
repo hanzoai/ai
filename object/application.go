@@ -85,17 +85,36 @@ func UpdateApplication(id string, application *Application) (bool, error) {
 		return false, nil
 	}
 	application.UpdatedTime = util.GetCurrentTime()
-	_, err = getApplication(owner, name)
+	// getApplication answers (nil, nil) for a row that is not there, and this read
+	// discarded the value — so an update against a name nobody has wrote nothing
+	// and reported that it had.
+	existing, err := getApplication(owner, name)
 	if err != nil {
 		return false, err
 	}
+	if existing == nil {
+		return false, nil
+	}
 	application.Owner = owner
 	application.Name = name
+	// The namespace is decided here, from the name, and never taken from the
+	// request. It is where this application's manifest is applied, and a manifest
+	// carries any kind, so which namespace an application uses is this module's
+	// answer rather than a field a request fills in. Add generated it and update
+	// wrote whatever arrived — the same field answering to two different things.
+	application.Namespace = namespaceFor(name)
 	err = adapter.db.Model(application).Update()
 	if err != nil {
 		return false, err
 	}
 	return true, nil
+}
+
+// namespaceFor answers which namespace an application's manifest is applied in.
+// One application, one namespace, derived from its name — so a caller names an
+// application and never a namespace.
+func namespaceFor(name string) string {
+	return fmt.Sprintf(NamespaceFormat, strings.ReplaceAll(name, "_", "-"))
 }
 
 func AddApplication(application *Application) (bool, error) {
@@ -105,8 +124,7 @@ func AddApplication(application *Application) (bool, error) {
 	if application.UpdatedTime == "" {
 		application.UpdatedTime = util.GetCurrentTime()
 	}
-	// Generate namespace name based on application owner and name
-	application.Namespace = fmt.Sprintf(NamespaceFormat, strings.ReplaceAll(application.Name, "_", "-"))
+	application.Namespace = namespaceFor(application.Name)
 	// Set initial status
 	if application.Status == "" {
 		application.Status = StatusNotDeployed
