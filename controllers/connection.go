@@ -17,8 +17,10 @@ package controllers
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 
+	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
 )
@@ -99,14 +101,23 @@ func (c *ApiController) GetConnection() {
 // @Success 200 {object} Response
 // @router /delete-connection [post]
 func (c *ApiController) DeleteConnection() {
-	var connection object.Connection
-	err := json.Unmarshal(c.Body(), &connection)
+	caller, ok := c.RequireSignedInUser()
+	if !ok {
+		return
+	}
+	var body object.Connection
+	err := json.Unmarshal(c.Body(), &body)
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+	connection, err := connectionFor(caller, util.GetIdFromOwnerAndName(body.Owner, body.Name))
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
 	}
 
-	affected, err := object.DeleteConnection(&connection)
+	affected, err := object.DeleteConnection(connection)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -124,7 +135,15 @@ func (c *ApiController) DeleteConnection() {
 // @Success 200 {object} Response
 // @router /update-connection [post]
 func (c *ApiController) UpdateConnection() {
+	caller, ok := c.RequireSignedInUser()
+	if !ok {
+		return
+	}
 	id := c.Input().Get("id")
+	if _, err := connectionFor(caller, id); err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
 
 	var connection object.Connection
 	err := json.Unmarshal(c.Body(), &connection)
@@ -143,13 +162,46 @@ func (c *ApiController) UpdateConnection() {
 // @Param   body    body   object.Connection true "The connection object"
 // @Success 200 {object} Response
 // @router /add-connection [post]
+// connectionFor resolves the connection an id names, for a caller entitled to act
+// on it. A connection is a session on a machine, so it is one their organization
+// reaches — and one out of reach answers as one that is not there.
+func connectionFor(user *iam.User, id string) (*object.Connection, error) {
+	connection, err := object.GetConnection(id)
+	if err != nil {
+		return nil, err
+	}
+	if connection == nil || !reaches(user, connection.Owner) {
+		return nil, fmt.Errorf("the connection: %s does not exist", id)
+	}
+	return connection, nil
+}
+
 func (c *ApiController) AddConnection() {
+	caller, ok := c.RequireSignedInUser()
+	if !ok {
+		return
+	}
 	var connection object.Connection
 	err := json.Unmarshal(c.Body(), &connection)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
 	}
+
+	// A connection belongs to the node it reaches, which is what CreateConnection
+	// says too. Taking the owner off the body instead lets a connection name one
+	// organization while pointing at another's node — and a tunnel is opened by
+	// asking whether the CONNECTION is yours.
+	node, err := object.GetNode(connection.Node)
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+	if node == nil || !reaches(caller, node.Owner) {
+		c.ResponseError(c.T("general:The node does not exist"))
+		return
+	}
+	connection.Owner = node.Owner
 
 	c.JSON(http.StatusOK, wrapActionResponse(object.AddConnection(&connection)))
 }
@@ -162,7 +214,15 @@ func (c *ApiController) AddConnection() {
 // @Success 200 {object} Response
 // @router /start-connection [post]
 func (c *ApiController) StartConnection() {
+	caller, ok := c.RequireSignedInUser()
+	if !ok {
+		return
+	}
 	connectionId := c.Input().Get("id")
+	if _, err := connectionFor(caller, connectionId); err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
 
 	connection := &object.Connection{
 		Status:    object.Connected,

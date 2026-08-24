@@ -52,7 +52,12 @@ type Connection struct {
 	Code          int        `json:"code"`
 	Message       string     `json:"message"`
 	Mode          string     `json:"mode"`
-	Operations    StringList `db:"json varchar(1000)" json:"operations"`
+	// No db tag: StringList carries its own serialisation, as it does on every
+	// other field of this type. The tag here was xorm's — "json varchar(1000)" told
+	// xorm the storage TYPE, and dbx reads a db tag as the column NAME, so it made
+	// a column called that and put it in every statement. The INSERT would not
+	// parse, which is every connection this module has tried to create.
+	Operations    StringList `json:"operations"`
 	Reviewed      bool       `json:"reviewed"`
 	CommandCount  int64      `json:"commandCount"`
 }
