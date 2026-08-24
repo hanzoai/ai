@@ -32,6 +32,15 @@ type scanner struct {
 	// nuclei's templates and httpx's thread count. writesFiles is the part every
 	// tool shares.
 	offLimits []string
+
+	// emptyResult is what a scan that found nothing says, because each parser
+	// recognises its own words for it.
+	emptyResult string
+
+	// pinned are flags whose value is fixed. ZAP writes its findings through
+	// -quickout and this reads them from stdout, so that flag is how the feature
+	// works and /dev/stdout is the only place it may point.
+	pinned map[string]string
 }
 
 // writesFiles are the flags that send a tool's output to the disk. Every scanner
@@ -67,6 +76,10 @@ func (s scanner) argv(target, command string) ([]string, error) {
 	}
 	if flag := s.reachesTheFilesystem(command); flag != "" {
 		return nil, fmt.Errorf("%s scan command may not use %s", getHostnamePrefix(), flag)
+	}
+	if flag, want, got := s.movedAPinnedValue(command); flag != "" {
+		return nil, fmt.Errorf("%s scan command may only use %s %s, not %s",
+			getHostnamePrefix(), flag, want, got)
 	}
 
 	if s.addJSON != "" {
@@ -126,6 +139,9 @@ func (s scanner) run(target, command string) (string, error) {
 	if out := stdout.String(); out != "" {
 		return out, nil
 	}
+	if s.emptyResult != "" {
+		return s.emptyResult, nil
+	}
 	return "Scan completed with no hosts found", nil
 }
 
@@ -171,4 +187,29 @@ func (s scanner) reachesTheFilesystem(command string) string {
 		}
 	}
 	return ""
+}
+
+// movedAPinnedValue answers which pinned flag a command points somewhere else.
+func (s scanner) movedAPinnedValue(command string) (flag, want, got string) {
+	if len(s.pinned) == 0 {
+		return "", "", ""
+	}
+	fields := strings.Fields(command)
+	for i, field := range fields {
+		name, value := field, ""
+		if j := strings.IndexAny(name, "="); j > 0 {
+			name, value = name[:j], name[j+1:]
+		} else if i+1 < len(fields) {
+			value = fields[i+1]
+		}
+		for pin, only := range s.pinned {
+			if strings.TrimLeft(name, "-") != strings.TrimLeft(pin, "-") {
+				continue
+			}
+			if value != only {
+				return pin, only, value
+			}
+		}
+	}
+	return "", "", ""
 }
