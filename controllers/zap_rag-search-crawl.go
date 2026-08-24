@@ -42,6 +42,7 @@ import (
 	"github.com/hanzoai/account"
 	"github.com/luxfi/zap"
 
+	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
 )
@@ -253,13 +254,20 @@ func stored[T any](c *ApiController, whose func() (string, bool), store func(*T)
 // zapWrite is the shape a "take a row and store it" handler has: a signed-in
 // caller, a body that decodes to the row, and a store call that says whether it
 // landed. The store call arrives as a value, so adding a table is naming one.
-func zapWrite[T any](auth string, body []byte, store func(*T) (bool, error)) (*zap.Message, error) {
-	if zapPrincipal(auth) == nil {
+// `whose` names the axis, as stored() does on the other surface: theirOrg where a
+// table belongs to organizations, themselves where it belongs to people. So a row
+// is written where that table's listing looks for it, whichever surface filed it.
+func zapWrite[T any](auth string, body []byte, whose func(*iam.User) string, store func(*T) (bool, error)) (*zap.Message, error) {
+	user := zapPrincipal(auth)
+	if user == nil {
 		return zapError(http.StatusUnauthorized, "auth:Please sign in first")
 	}
 	var row T
 	if err := json.Unmarshal(body, &row); err != nil {
 		return zapError(http.StatusBadRequest, "invalid request: "+err.Error())
+	}
+	if err := ownedBy(&row, whose(user)); err != nil {
+		return zapError(http.StatusOK, err.Error())
 	}
 	stored, err := store(&row)
 	if err != nil {
@@ -731,3 +739,9 @@ func ownedBy(row any, owner string) error {
 	field.SetString(owner)
 	return nil
 }
+
+// The two axes a table can belong to. Named, because "u.Owner" at a call site is
+// a field and "theirOrg" is the decision. (orgOf is taken, and is a different
+// thing: the owner half of an "owner/name" identity.)
+func theirOrg(u *iam.User) string   { return u.Owner }
+func themselves(u *iam.User) string { return u.Name }
