@@ -232,3 +232,77 @@ func TestAKeyOfTheWrongShapeNeverReachesIAM(t *testing.T) {
 		t.Error("a malformed key was sent to IAM")
 	}
 }
+
+// A shape that is not a secret key never reaches IAM either — the dual of
+// TestAKeyOfTheWrongShapeNeverReachesIAM, at the resolver every generative call
+// arrives through.
+//
+// A secret key rides on the endpoints the whole internet can reach, so whatever is
+// sent lands here. IAM mints "sk-{live|test}-{random}", and a string outside that
+// alphabet and length is not a key this estate ever issued: it is settled in this
+// process rather than turned into a lookup aimed at the one service every other
+// credential path also depends on.
+func TestASecretOfTheWrongShapeNeverReachesIAM(t *testing.T) {
+	asked := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		asked = true
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"ok","data":{"owner":"acme","name":"alice"}}`))
+	}))
+	defer srv.Close()
+
+	t.Setenv("IAM_URL", srv.URL)
+	t.Setenv("IAM_CLIENT_ID", "hanzo-cloud")
+	t.Setenv("IAM_CLIENT_SECRET", "s3cr3t")
+
+	bad := []string{
+		"",
+		"sk-",
+		"sk-short",                          // inside the floor's length
+		"not-a-key",                         // no prefix at all
+		"pk-live-0123456789abcdef01234567",  // the other half's key, at this door
+		"sk-live-0123456789abcdef 01234567", // a space is not in the alphabet
+		"sk-live-" + strings.Repeat("a", 200),
+	}
+	for _, key := range bad {
+		if u, err := getUserByAccessKey(key); err == nil {
+			t.Errorf("%q resolved to %+v", key, u)
+		}
+	}
+	if asked {
+		t.Error("a malformed key was sent to IAM")
+	}
+}
+
+// AND THE FLOOR PASSES WHAT IAM MINTS.
+//
+// A floor that refused everything would satisfy the test above while resolving no
+// key at all, so the shape IAM actually issues is asked about here and has to reach
+// the endpoint. keys.Mint spells it "sk-{live|test}-{16 random bytes, hex}".
+func TestAMintedSecretReachesIAM(t *testing.T) {
+	asked := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		asked = true
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"ok","data":{"owner":"acme","name":"alice"}}`))
+	}))
+	defer srv.Close()
+
+	t.Setenv("IAM_URL", srv.URL)
+	t.Setenv("IAM_CLIENT_ID", "hanzo-cloud")
+	t.Setenv("IAM_CLIENT_SECRET", "s3cr3t")
+
+	for _, env := range []string{"live", "test"} {
+		key := "sk-" + env + "-" + strings.Repeat("0f", 16)
+		u, err := getUserByAccessKey(key)
+		if err != nil {
+			t.Fatalf("%q: %v", key, err)
+		}
+		if u == nil || u.Owner != "acme" {
+			t.Fatalf("%q resolved to %+v, want acme/alice", key, u)
+		}
+	}
+	if !asked {
+		t.Error("a minted key never reached IAM")
+	}
+}
