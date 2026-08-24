@@ -179,7 +179,7 @@ func (c *ApiController) UpdateVideo() {
 // @Param body body object.Video true "The details of the video"
 // @Success 200 {object} controllers.Response The Response object
 // @router /add-video [post]
-func (c *ApiController) AddVideo() { stored(c, object.AddVideo) }
+func (c *ApiController) AddVideo() { stored(c, c.RequireSignedIn, object.AddVideo) }
 
 // DeleteVideo
 // @Title DeleteVideo
@@ -188,7 +188,7 @@ func (c *ApiController) AddVideo() { stored(c, object.AddVideo) }
 // @Param body body object.Video true "The details of the video"
 // @Success 200 {object} controllers.Response The Response object
 // @router /delete-video [post]
-func (c *ApiController) DeleteVideo() { stored(c, object.DeleteVideo) }
+func (c *ApiController) DeleteVideo() { stored(c, c.RequireSignedIn, object.DeleteVideo) }
 
 func updateVideoCoverUrl(id string, videoId string, lang string) error {
 	for i := 0; i < 30; i++ {
