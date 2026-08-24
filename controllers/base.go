@@ -50,6 +50,13 @@ type ApiController struct {
 	// caller is the same one.
 	org      string
 	orgKnown bool
+
+	// And who the caller is, for the same reason. Answering parses the credential
+	// and verifies its signature — twice per ask, since the issuer and audience are
+	// checked from the token again — and one handler asks six times. Dropped
+	// alongside the organization, by the one call that changes the answer.
+	claims      *iam.Claims
+	claimsKnown bool
 }
 
 func init() {
@@ -79,6 +86,14 @@ func GetUserName(user *iam.User) string {
 // in is no longer a property to remember, it is a shape the credential does not
 // have. IAM mints and revokes; ai reads.
 func (c *ApiController) GetSessionClaims() *iam.Claims {
+	if c.claimsKnown {
+		return c.claims
+	}
+	c.claims, c.claimsKnown = c.resolveClaims(), true
+	return c.claims
+}
+
+func (c *ApiController) resolveClaims() *iam.Claims {
 	token := bearerToken(c.Header("Authorization"), c.Fiber().Cookies(iamTokenCookieName))
 	if token == "" {
 		return nil
@@ -97,9 +112,9 @@ func (c *ApiController) GetSessionClaims() *iam.Claims {
 // they were parsed from rides along on AccessToken, and that is what the browser
 // gets back.
 func (c *ApiController) SetSessionClaims(claims *iam.Claims) {
-	// Who the caller is decides which organization the request acts in, so the
-	// answer above stops being this request's answer here.
-	c.orgKnown = false
+	// Who the caller is decides which organization the request acts in, so both
+	// answers above stop being this request's answers here.
+	c.orgKnown, c.claimsKnown = false, false
 
 	if claims == nil {
 		c.clearIamTokenCookie()
