@@ -117,7 +117,10 @@ func (p *people) asUser(t *testing.T, user *iam.User) string {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.n++
-	key := fmt.Sprintf("sk-test-%d", p.n)
+	// The shape IAM mints — keys.Mint writes "sk-{live|test}-{16 random bytes, hex}"
+	// — because a double that hands out a shape production refuses admits tests
+	// where the real thing would not.
+	key := fmt.Sprintf("sk-test-%032x", p.n)
 	p.by[key] = user
 	return "Bearer " + key
 }
