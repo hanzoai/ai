@@ -201,12 +201,18 @@ func TestGetUserByAccessKey_SurfacesTheRefusalCode(t *testing.T) {
 // This pins that the retired hk- spelling gets exactly that sentence, and NOT the bare
 // "IAM error: the entity does not exist" relay, which sent people looking for a deleted
 // organization.
+//
+// WHICH SIDE OF THE WIRE SAID IT IS NO BUSINESS OF THE HOLDER'S. hk- is not a shape
+// this estate mints, so the floor in getUserByAccessKey settles it here and spends no
+// round trip — in IAM's own words, so the sentence and the cure are identical either
+// way. That also leaves nothing to probe: a spelling we never minted and a key we
+// minted and revoked answer the same, so the floor cannot be read for the format.
 func TestGetUserByAccessKey_RetiredPrefixGetsTheActionableRefusal(t *testing.T) {
 	const key = "hk-2ff139c7-4dd5-4f23-9de1-df7b67331b6e"
 
-	var gotAccessKey string
+	asked := false
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotAccessKey = r.URL.Query().Get("accessKey")
+		asked = true
 		w.Header().Set("Content-Type", "application/json")
 		// What IAM answers for any shape it does not mint (store.UserByAccessKey).
 		_, _ = w.Write([]byte(`{"status":"error","msg":"the entity does not exist","code":"key_unknown"}`))
@@ -221,8 +227,8 @@ func TestGetUserByAccessKey_RetiredPrefixGetsTheActionableRefusal(t *testing.T) 
 	if err == nil || user != nil {
 		t.Fatalf("getUserByAccessKey(%q) = (%v, %v); a retired prefix must never resolve", keyHint(key), user, err)
 	}
-	if gotAccessKey != key {
-		t.Fatalf("IAM was asked for %q, want the presented key — the refusal must come from IAM, not a local shape test", gotAccessKey)
+	if asked {
+		t.Error("a prefix this estate does not mint was sent to IAM")
 	}
 
 	got := err.Error()
