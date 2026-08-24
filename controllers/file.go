@@ -142,10 +142,18 @@ func (c *ApiController) AddFile() { stored(c, c.GetScopedOwner, object.AddFile) 
 // @Success 200 {object} controllers.Response The Response object
 // @router /delete-file [post]
 func (c *ApiController) DeleteFile() {
+	caller, ok := c.RequireSignedInUser()
+	if !ok {
+		return
+	}
 	var file object.File
 	err := json.Unmarshal(c.Body(), &file)
 	if err != nil {
 		c.ResponseError(err.Error())
+		return
+	}
+	if !reaches(caller, file.Owner) {
+		c.ResponseError(c.T("general:The file does not exist"))
 		return
 	}
 
