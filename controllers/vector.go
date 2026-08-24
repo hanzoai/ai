@@ -29,9 +29,8 @@ import (
 // @Success 200 {array} object.Vector The Response object
 // @router /get-global-vectors [get]
 func (c *ApiController) GetGlobalVectors() {
-	vectors, err := object.GetGlobalVectors()
-	if err != nil {
-		c.ResponseError(err.Error())
+	vectors, ok := within(c, object.GetGlobalVectors, object.GetVectors)
+	if !ok {
 		return
 	}
 
