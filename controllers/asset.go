@@ -86,6 +86,9 @@ func (c *ApiController) GetAsset() {
 		c.ResponseError(err.Error())
 		return
 	}
+	if asset != nil && !reachable(c, asset.Owner) {
+		return
+	}
 
 	c.ResponseOk(object.GetMaskedAsset(asset, true))
 }

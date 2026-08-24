@@ -80,6 +80,9 @@ func (c *ApiController) GetTemplate() {
 		c.ResponseError(err.Error())
 		return
 	}
+	if res != nil && !reachable(c, res.Owner) {
+		return
+	}
 
 	c.ResponseOk(res)
 }

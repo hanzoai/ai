@@ -62,6 +62,9 @@ func (c *ApiController) GetGraph() {
 		c.ResponseError(err.Error())
 		return
 	}
+	if Graph != nil && !reachable(c, Graph.Owner) {
+		return
+	}
 
 	// Auto-generate data for Chats category if Text is empty
 	if Graph != nil && Graph.Category == "Chats" && Graph.Text == "" {
