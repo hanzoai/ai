@@ -15,11 +15,13 @@
 package controllers
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/object"
+	"github.com/luxfi/zap"
 )
 
 // These reads name a row by id and sit behind the coarse filter, which asks only
@@ -103,5 +105,47 @@ func TestAByIdReadStaysInsideTheCallersOrg(t *testing.T) {
 	c.GetTemplate()
 	if !strings.Contains(sent(c), mark) {
 		t.Errorf("the organization that owns it was refused: %s", sent(c))
+	}
+}
+
+// The same question on the other surface. These twins take the id out of the
+// payload instead of the query, and two of them asked only whether the caller was
+// signed in at all.
+func TestAZapReadByIdStaysInsideTheCallersOrg(t *testing.T) {
+	withStore(t)
+	people := withIAM(t)
+
+	mark := "kind-of-private-marker"
+	if _, err := object.AddAsset(&object.Asset{Owner: "victim", Name: "r", DisplayName: mark}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := object.AddScan(&object.Scan{Owner: "victim", Name: "r", DisplayName: mark}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := object.AddGraph(&object.Graph{Owner: "victim", Name: "r", Text: mark}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := object.AddApplication(&object.Application{Owner: "victim", Name: "r", DisplayName: mark}); err != nil {
+		t.Fatal(err)
+	}
+
+	mallory := people.signedIn(t, &iam.User{Owner: "acme", Name: "mallory", IsAdmin: true})
+
+	for _, read := range []struct {
+		name string
+		call func(context.Context, string, []byte) (*zap.Message, error)
+	}{
+		{"assets.get-one", zapGetAssetHandler},
+		{"scans.get-one", zapGetScanHandler},
+		{"graphs.get-one", zapGetGraphHandler},
+		{"applications.get-one", zapGetApplicationHandler},
+	} {
+		msg, err := read.call(context.Background(), mallory, []byte(`{"id":"victim/r"}`))
+		if err != nil {
+			t.Fatalf("%s: %v", read.name, err)
+		}
+		if got := string(msg.Root().Bytes(object.CloudRespBody)); strings.Contains(got, mark) {
+			t.Errorf("%s answered another organization's row: %s", read.name, got)
+		}
 	}
 }
