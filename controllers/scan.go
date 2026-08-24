@@ -97,6 +97,9 @@ func (c *ApiController) GetScan() {
 		c.ResponseError(err.Error())
 		return
 	}
+	if scan != nil && !reachable(c, scan.Owner) {
+		return
+	}
 
 	c.ResponseOk(scan)
 }
