@@ -528,6 +528,14 @@ func (c *ApiController) GetAnswer() {
 		c.ResponseError(err.Error())
 		return
 	}
+	// A chat of this name in another organization is not this caller's to answer
+	// into: the turns below are filed under the chat's organization, so the answer
+	// and what it costs would land there. It cannot be treated as absent and made
+	// afresh either — the name is half the key, so a new one would collide.
+	if chat != nil && chat.Organization != c.GetOrg() {
+		c.ResponseError(fmt.Sprintf("chat:The chat: %s is not found", chatName))
+		return
+	}
 	if chat == nil {
 		org := c.GetOrg()
 		currentTime := util.GetCurrentTime()
