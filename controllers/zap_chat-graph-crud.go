@@ -855,6 +855,17 @@ func zapDeleteMessageHandler(_ context.Context, auth string, body []byte) (*zap.
 
 	message.Owner = chatOwner
 
+	// Owner is the namespace every message shares, so it says nothing about whose
+	// message this is — Organization does, and only the STORED row carries it. The
+	// body carries whatever it likes, including the user checked above.
+	stored, err := object.GetMessage(message.GetId())
+	if err != nil {
+		return zapError(200, err.Error())
+	}
+	if stored == nil || !reaches(user, stored.Organization) {
+		return zapError(200, "The message does not exist")
+	}
+
 	success, err := object.DeleteMessage(&message)
 	if err != nil {
 		return zapError(200, err.Error())
