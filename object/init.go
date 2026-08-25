@@ -373,14 +373,7 @@ var seededLLMProviders = []Provider{
 		ProviderUrl:  "https://inference.do-ai.run/v1",
 		ClientSecret: "kms://DO_AI_API_KEY",
 		State:        "Active",
-		// NOT the router. Nothing on the request path reads this: a model reaches a
-		// vendor through modelRoutes, and 93 of those name do-ai. This is the ONE
-		// usable primary that GetDefaultModelProvider answers with — store, KB and
-		// RAG default-model resolution — and store.go uses that record directly
-		// without asking whether it is usable. Clearing it here leaves that lookup
-		// with nothing, because every other seeded Model row is Disabled or serves
-		// video or speech. Moving the fleet off a vendor is the routes, not this.
-		IsDefault: true,
+		IsDefault:    true, // primary router (DO-first)
 	},
 	{
 		Owner:        "admin",
@@ -391,14 +384,8 @@ var seededLLMProviders = []Provider{
 		SubType:      "accounts/fireworks/models/deepseek-v3p2",
 		ProviderUrl:  "https://api.fireworks.ai/inference/v1",
 		ClientSecret: "kms://FIREWORKS_API_KEY",
-		// Active because the routes table sends models here: 17 name fireworks and
-		// 5 name openai-direct, and a Disabled Model provider resolves to nil — so
-		// those models answered "provider not configured in database" rather than
-		// being served. A provider the catalog routes to is one the catalog can
-		// reach. Its key is the kms:// reference above; State stays an operator's
-		// to change, and is never re-synced from here on an existing row.
-		State:     "Active",
-		IsDefault: false,
+		State:        "Disabled", // opt-in via /v1/admin/providers/toggle
+		IsDefault:    false,
 	},
 	{
 		Owner:        "admin",
@@ -409,14 +396,8 @@ var seededLLMProviders = []Provider{
 		SubType:      "gpt-5",
 		ProviderUrl:  "https://api.openai.com/v1",
 		ClientSecret: "kms://OPENAI_API_KEY",
-		// Active because the routes table sends models here: 17 name fireworks and
-		// 5 name openai-direct, and a Disabled Model provider resolves to nil — so
-		// those models answered "provider not configured in database" rather than
-		// being served. A provider the catalog routes to is one the catalog can
-		// reach. Its key is the kms:// reference above; State stays an operator's
-		// to change, and is never re-synced from here on an existing row.
-		State:     "Active",
-		IsDefault: false,
+		State:        "Disabled", // opt-in via /v1/admin/providers/toggle
+		IsDefault:    false,
 	},
 	{
 		// Zen video served on OUR GB10 (spark) via Hanzo Studio. The
