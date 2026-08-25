@@ -207,3 +207,36 @@ func TestTheChatFamilyStaysInsideTheCallersOrg(t *testing.T) {
 		t.Error("chats.delete destroyed another organization's chat")
 	}
 }
+
+// Deleting a turn on the ZAP surface never read the row it destroys: it took a
+// name from the body, and the user it checked came from the body too — a value
+// the caller chooses. Its HTTP twin reads the stored row and asks whose it is.
+func TestTheZapTurnDeleteStaysInsideTheCallersOrg(t *testing.T) {
+	withStore(t)
+	people := withIAM(t)
+
+	m := &object.Message{
+		Owner: chatOwner, Name: "m1", Organization: "victim", Chat: "c1",
+		User: "val", Author: "val", Text: "their words",
+	}
+	m.CreatedTime = util.GetCurrentTime()
+	if _, err := object.AddMessage(m); err != nil {
+		t.Fatal(err)
+	}
+
+	// An admin — of a different organization. The write gate asks for an admin and
+	// nothing asks which organization's.
+	mallory := people.signedIn(t, &iam.User{Owner: "acme", Name: "mallory", IsAdmin: true})
+	if _, err := zapDeleteMessageHandler(context.Background(), mallory,
+		[]byte(`{"owner":"admin","name":"m1","user":"mallory"}`)); err != nil {
+		t.Fatal(err)
+	}
+
+	still, err := object.GetMessage(util.GetIdFromOwnerAndName(chatOwner, "m1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if still == nil {
+		t.Error("another organization's turn was destroyed by naming it")
+	}
+}
