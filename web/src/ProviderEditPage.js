@@ -194,7 +194,7 @@ class ProviderEditPage extends React.Component {
       this.updateProviderField("type", value);
       // Type-specific subType defaults (keeping all the original logic)
       const typeSubTypeMap = {
-        Model: {OpenAI: "gpt-4", Gemini: "gemini-pro", OpenRouter: "openai/gpt-4", iFlytek: "spark-v2.0", "Baidu Cloud": "ernie-4.0-8k", MiniMax: "abab5-chat", Claude: "claude-opus-4-0", "Hugging Face": "gpt2", ChatGLM: "chatglm2-6b", Ollama: "llama3.3:70b", Local: "custom-model", Azure: "gpt-4", Cohere: "command", Dummy: "Dummy", "Alibaba Cloud": "qwen-long", Moonshot: "Moonshot-v1-8k", "Amazon Bedrock": "Claude", Baichuan: "Baichuan2-Turbo", "Volcano Engine": "Doubao-lite-4k", DeepSeek: "deepseek-chat", StepFun: "step-1-8k", "Tencent Cloud": "hunyuan-turbo", Yi: "yi-lightning", "Silicon Flow": "deepseek-ai/DeepSeek-R1", GitHub: "gpt-4o", Writer: "palmyra-x5"},
+        Model: {OpenAI: "gpt-4", Gemini: "gemini-pro", OpenRouter: "openai/gpt-4", iFlytek: "spark-v2.0", "Baidu Cloud": "ernie-4.0-8k", MiniMax: "abab5-chat", Anthropic: "claude-opus-4-0", "Hugging Face": "gpt2", ChatGLM: "chatglm2-6b", Ollama: "llama3.3:70b", Local: "custom-model", Azure: "gpt-4", Cohere: "command", Dummy: "Dummy", "Alibaba Cloud": "qwen-long", Moonshot: "Moonshot-v1-8k", "Amazon Bedrock": "Claude", Baichuan: "Baichuan2-Turbo", "Volcano Engine": "Doubao-lite-4k", DeepSeek: "deepseek-chat", StepFun: "step-1-8k", "Tencent Cloud": "hunyuan-turbo", Yi: "yi-lightning", "Silicon Flow": "deepseek-ai/DeepSeek-R1", GitHub: "gpt-4o", Writer: "palmyra-x5"},
         Embedding: {OpenAI: "AdaSimilarity", Gemini: "embedding-001", "Hugging Face": "sentence-transformers/all-MiniLM-L6-v2", Cohere: "embed-english-v2.0", "Baidu Cloud": "Embedding-V1", Local: "custom-embedding", Azure: "AdaSimilarity", Dummy: "Dummy"},
         Agent: {MCP: "Default", A2A: "Default"},
         "Text-to-Speech": {"Alibaba Cloud": "cosyvoice-v1"},
@@ -312,7 +312,7 @@ class ProviderEditPage extends React.Component {
               <input type="password" disabled={isRemote} className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-zinc-500 disabled:opacity-50" value={p.clientSecret || ""} onChange={e => this.updateProviderField("clientSecret", e.target.value)} />
             </Field>
           )}
-          {p.category === "Model" && p.type === "Claude" && Setting.getThinkingModelMaxTokens(p.subType) !== 0 && (
+          {p.category === "Model" && p.type === "Anthropic" && Setting.getThinkingModelMaxTokens(p.subType) !== 0 && (
             <>
               <Field label={Setting.getLabel(i18next.t("provider:Enable thinking"), i18next.t("provider:Enable thinking - Tooltip"))}>
                 <label className="relative inline-flex items-center cursor-pointer">
