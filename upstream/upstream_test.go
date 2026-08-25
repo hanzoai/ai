@@ -44,7 +44,7 @@ func TestAuthorize(t *testing.T) {
 			map[string]string{"Authorization": "", "x-api-key": ""}},
 		{"azure", &object.Provider{Type: "Azure", ClientSecret: "k"},
 			map[string]string{"Authorization": "api-key k"}},
-		{"claude", &object.Provider{Type: "Anthropic", ClientSecret: "k"},
+		{"claude", &object.Provider{Type: "Claude", ClientSecret: "k"},
 			map[string]string{"x-api-key": "k", "Authorization": ""}},
 		{"anthropic", &object.Provider{Type: "Anthropic", ClientSecret: "k"},
 			map[string]string{"x-api-key": "k", "Authorization": ""}},

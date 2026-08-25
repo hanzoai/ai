@@ -375,7 +375,7 @@ func GetModelProviderByNameForOrg(orgId, name string) (*Provider, error) {
 	return &cp, nil
 }
 
-// GetModelProviderByType retrieves a model provider by its type (e.g. "OpenAI", "Anthropic", "Fireworks").
+// GetModelProviderByType retrieves a model provider by its type (e.g. "OpenAI", "Claude", "Fireworks").
 func GetModelProviderByType(providerType string) (*Provider, error) {
 	provider := &Provider{}
 	existed, err := getOne(adapter.db, "provider", provider, dbx.HashExp{"category": "Model", "type": providerType})

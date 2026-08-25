@@ -82,8 +82,8 @@ func GetModelProvider(typ string, subType string, clientId string, clientSecret 
 		p, err = NewAzureModelProvider(typ, subType, clientId, clientSecret, temperature, topP, frequencyPenalty, presencePenalty, providerUrl, apiVersion)
 	} else if typ == "Hugging Face" {
 		p, err = NewHuggingFaceModelProvider(subType, clientSecret, temperature)
-	} else if typ == "Anthropic" {
-		p, err = NewAnthropicModelProvider(subType, clientSecret, enableThinking, topK)
+	} else if typ == "Claude" {
+		p, err = NewClaudeModelProvider(subType, clientSecret, enableThinking, topK)
 	} else if typ == "Grok" {
 		p, err = NewGrokModelProvider(subType, clientSecret, temperature, topP)
 	} else if typ == "OpenRouter" {
