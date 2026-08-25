@@ -293,7 +293,7 @@ func TestAuthorizeUsageStampsAndRefusesRef(t *testing.T) {
 
 	// Anthropic carries its own scheme.
 	ha := map[string]string{}
-	if err := authorizeUsage(ha, &object.Provider{Name: "anthropic", Type: "Claude", ClientSecret: "sk-ant-1"}); err != nil {
+	if err := authorizeUsage(ha, &object.Provider{Name: "anthropic", Type: "Anthropic", ClientSecret: "sk-ant-1"}); err != nil {
 		t.Fatalf("anthropic refused: %v", err)
 	}
 	if ha["x-api-key"] != "sk-ant-1" || ha["Authorization"] != "" {
