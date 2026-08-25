@@ -68,7 +68,7 @@ func TestAnUnreadableUpstreamAnswerIsNotHandedOver(t *testing.T) {
 	// The org's own provider for this route, native Anthropic, pointed at an
 	// upstream that cuts the answer off.
 	if _, err := object.AddProvider(&object.Provider{
-		Owner: "acme", Name: "do-ai", Category: "Model", Type: "Claude",
+		Owner: "acme", Name: "do-ai", Category: "Model", Type: "Anthropic",
 		SubType: "claude-opus-4-5", ProviderUrl: truncating(t), ProviderKey: "k",
 		State: "Active",
 	}); err != nil {
@@ -101,7 +101,7 @@ func TestTheZapSurfaceAlsoRefusesAnUnreadableAnswer(t *testing.T) {
 	t.Setenv("commerceToken", "test-svc-token")
 
 	if _, err := object.AddProvider(&object.Provider{
-		Owner: "acme", Name: "do-ai", Category: "Model", Type: "Claude",
+		Owner: "acme", Name: "do-ai", Category: "Model", Type: "Anthropic",
 		SubType: "claude-opus-4-5", ProviderUrl: truncating(t), ProviderKey: "k",
 		State: "Active",
 	}); err != nil {
