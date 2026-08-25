@@ -947,7 +947,7 @@ func TestTheAnthropicToolProxyAnswersAsTheSku(t *testing.T) {
 			// upstream's own id, and the SKU carried separately.
 			request := openai.ChatCompletionRequest{Model: upstreamID, Stream: mode.stream}
 			provider := &object.Provider{
-				Owner: "admin", Name: "anthropic", Type: "Anthropic",
+				Owner: "admin", Name: "anthropic", Type: "Claude",
 				SubType: upstreamID, ProviderUrl: upstream.URL,
 			}
 			c.proxyToolRequestAnthropic(provider, &request, sku, time.Now(), nil, false, "", "req1", nil)
@@ -1024,7 +1024,7 @@ func TestTheAnthropicToolProxyMetersTheSku(t *testing.T) {
 
 	request := openai.ChatCompletionRequest{Model: upstreamID}
 	provider := &object.Provider{
-		Owner: "admin", Name: "anthropic", Type: "Anthropic",
+		Owner: "admin", Name: "anthropic", Type: "Claude",
 		SubType: upstreamID, ProviderUrl: upstream.URL,
 	}
 	user := &iam.User{Owner: "acme", Name: "z"}
