@@ -373,7 +373,14 @@ var seededLLMProviders = []Provider{
 		ProviderUrl:  "https://inference.do-ai.run/v1",
 		ClientSecret: "kms://DO_AI_API_KEY",
 		State:        "Active",
-		IsDefault:    true, // primary router (DO-first)
+		// NOT the router. Nothing on the request path reads this: a model reaches a
+		// vendor through modelRoutes, and 93 of those name do-ai. This is the ONE
+		// usable primary that GetDefaultModelProvider answers with — store, KB and
+		// RAG default-model resolution — and store.go uses that record directly
+		// without asking whether it is usable. Clearing it here leaves that lookup
+		// with nothing, because every other seeded Model row is Disabled or serves
+		// video or speech. Moving the fleet off a vendor is the routes, not this.
+		IsDefault: true,
 	},
 	{
 		Owner:        "admin",
