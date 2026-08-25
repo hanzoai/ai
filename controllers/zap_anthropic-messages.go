@@ -326,7 +326,7 @@ func zapAnthropicToolRequest(
 	requestId := uuid.NewString()
 
 	// Native Anthropic upstream: forward the raw request verbatim (non-stream).
-	if provider.Type == "Claude" || provider.Type == "Anthropic" {
+	if model.Vendor(provider.Type) == model.Anthropic {
 		fwd := *request
 		fwd.Stream = false
 		baseURL := strings.TrimRight(provider.ProviderUrl, "/")
