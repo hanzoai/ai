@@ -763,7 +763,7 @@ export function getOtherProviderInfo() {
         logo: `${StaticBaseUrl}/img/social_huggingface.png`,
         url: "https://huggingface.co/",
       },
-      "Claude": {
+      "Anthropic": {
         logo: `${StaticBaseUrl}/img/social_claude.png`,
         url: "https://www.anthropic.com/claude",
       },
@@ -1244,7 +1244,7 @@ export function getProviderTypeOptions(category) {
         {id: "OpenAI", name: "OpenAI"},
         {id: "Gemini", name: "Gemini"},
         {id: "Hugging Face", name: "Hugging Face"},
-        {id: "Claude", name: "Claude"},
+        {id: "Anthropic", name: "Anthropic"},
         {id: "Grok", name: "Grok"},
         {id: "OpenRouter", name: "OpenRouter"},
         {id: "Baidu Cloud", name: "Baidu Cloud"},
@@ -1511,7 +1511,7 @@ export function getModelSubTypeOptions(type) {
       {id: "baichuan-inc/Baichuan2-13B-Chat", name: "baichuan-inc/Baichuan2-13B-Chat"},
       {id: "THUDM/chatglm2-6b", name: "THUDM/chatglm2-6b"},
     ];
-  } else if (type === "Claude") {
+  } else if (type === "Anthropic") {
     return [
       {id: "claude-opus-4-5", name: "claude-opus-4-5"},
       {id: "claude-opus-4-1", name: "claude-opus-4-1"},
