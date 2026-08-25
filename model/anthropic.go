@@ -28,18 +28,18 @@ import (
 	"github.com/hanzoai/ai/proxy"
 )
 
-type ClaudeModelProvider struct {
+type AnthropicModelProvider struct {
 	subType        string
 	secretKey      string
 	budgetTokens   int
 	enableThinking bool
 }
 
-func NewClaudeModelProvider(subType string, secretKey string, enableThinking bool, budgetTokens int) (*ClaudeModelProvider, error) {
-	return &ClaudeModelProvider{subType: subType, secretKey: secretKey, enableThinking: enableThinking, budgetTokens: budgetTokens}, nil
+func NewAnthropicModelProvider(subType string, secretKey string, enableThinking bool, budgetTokens int) (*AnthropicModelProvider, error) {
+	return &AnthropicModelProvider{subType: subType, secretKey: secretKey, enableThinking: enableThinking, budgetTokens: budgetTokens}, nil
 }
 
-func (p *ClaudeModelProvider) GetPricing() string {
+func (p *AnthropicModelProvider) GetPricing() string {
 	return `URL:
 https://docs.anthropic.com/en/docs/about-claude/pricing
 
@@ -57,7 +57,7 @@ https://docs.anthropic.com/en/docs/about-claude/pricing
 `
 }
 
-func (p *ClaudeModelProvider) calculatePrice(modelResult *ModelResult, lang string) error {
+func (p *AnthropicModelProvider) calculatePrice(modelResult *ModelResult, lang string) error {
 	var inputPricePerThousandTokens, outputPricePerThousandTokens float64
 	priceTable := map[string][]float64{
 		"claude-opus-4-5":            {0.005, 0.025},
@@ -91,7 +91,7 @@ func (p *ClaudeModelProvider) calculatePrice(modelResult *ModelResult, lang stri
 	return nil
 }
 
-func (p *ClaudeModelProvider) QueryText(question string, writer io.Writer, history []*RawMessage, prompt string, knowledgeMessages []*RawMessage, agentInfo *AgentInfo, lang string) (*ModelResult, error) {
+func (p *AnthropicModelProvider) QueryText(question string, writer io.Writer, history []*RawMessage, prompt string, knowledgeMessages []*RawMessage, agentInfo *AgentInfo, lang string) (*ModelResult, error) {
 	client := anthropic.NewClient(
 		option.WithAPIKey(p.secretKey),
 		option.WithHTTPClient(proxy.ProxyHttpClient),
