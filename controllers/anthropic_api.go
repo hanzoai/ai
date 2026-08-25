@@ -964,7 +964,15 @@ func (c *ApiController) proxyAnthropicToolRequest(
 			hold.settle(calculateCostCentsWithCache(request.Model, prompt, completion, 0, 0))
 		})
 	} else {
-		respBody, _ := io.ReadAll(resp.Body)
+		// A body that could not be read is not a success. Handing back what arrived
+		// gives the caller truncated JSON under a 200, and the counts parsed from it
+		// are whatever survived — which settles the hold at whatever that came to,
+		// for an answer the upstream did charge us for.
+		respBody, err := io.ReadAll(resp.Body)
+		if err != nil {
+			c.respondAnthropicRefusal(relay(request.Model, provider.Name, http.StatusBadGateway, nil))
+			return
+		}
 		var usage struct {
 			Usage struct {
 				InputTokens  int `json:"input_tokens"`
