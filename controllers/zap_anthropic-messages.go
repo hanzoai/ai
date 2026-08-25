@@ -352,7 +352,12 @@ func zapAnthropicToolRequest(
 			return anthropicErr("api_error", "Upstream request failed: "+err.Error(), 502)
 		}
 		defer resp.Body.Close()
-		respBody, _ := io.ReadAll(resp.Body)
+		// Same as the HTTP twin: a body that could not be read is not a success, and
+		// the counts parsed from a partial one settle the hold at whatever survived.
+		respBody, rErr := io.ReadAll(resp.Body)
+		if rErr != nil {
+			return anthropicErr("api_error", "upstream response could not be read", http.StatusBadGateway)
+		}
 		if resp.StatusCode != http.StatusOK {
 			return anthropicErr(anthropicErrorTypeForStatus(resp.StatusCode), upstreamErrorMessage(respBody), resp.StatusCode)
 		}
