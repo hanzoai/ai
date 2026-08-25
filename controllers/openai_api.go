@@ -2272,7 +2272,7 @@ func (c *ApiController) proxyToolRequest(
 	request.Model = provider.SubType
 
 	// For Claude/Anthropic providers, convert to Anthropic Messages API format
-	if model.Vendor(provider.Type) == model.Anthropic {
+	if provider.Type == "Anthropic" {
 		c.proxyToolRequestAnthropic(provider, request, mk.model, requestStartTime, authUser, isPremium, orgId, requestId, hold)
 		return
 	}
