@@ -16,7 +16,6 @@ package object
 
 import (
 	"fmt"
-	"github.com/hanzoai/dbx"
 	"os"
 	"path/filepath"
 	"strings"
@@ -26,7 +25,6 @@ import (
 )
 
 func InitDb() {
-	nameAnthropicByItsVendor()
 	modelProviderName, embeddingProviderName, ttsProviderName, sttProviderName := initBuiltInProviders()
 	initLLMProviders()
 	initBuiltInStore(modelProviderName, embeddingProviderName, ttsProviderName, sttProviderName)
@@ -463,28 +461,6 @@ func SeededModelProviders() map[string]Provider {
 		m[p.Name] = p
 	}
 	return m
-}
-
-// nameAnthropicByItsVendor renames the provider type Claude to Anthropic.
-//
-// Anthropic is the vendor a request is bought from; Claude is what that vendor
-// serves. They were one word here, so a provider row said the model where it
-// meant the company, and every place that branched on it had to know both. The
-// seed reconciler below cannot do this: it only reaches the rows the seed names,
-// and an organization's own BYOK row is named by nobody.
-func nameAnthropicByItsVendor() {
-	if adapter == nil || adapter.db == nil {
-		return
-	}
-	res, err := adapter.db.Update("provider",
-		dbx.Params{"type": "Anthropic"}, dbx.HashExp{"type": "Claude"}).Execute()
-	if err != nil {
-		fmt.Printf("[init] WARNING: could not rename the Claude provider type: %v\n", err)
-		return
-	}
-	if n, _ := res.RowsAffected(); n > 0 {
-		fmt.Printf("[init] provider type Claude -> Anthropic on %d row(s)\n", n)
-	}
 }
 
 // initLLMProviders applies seededLLMProviders to the store on every boot.

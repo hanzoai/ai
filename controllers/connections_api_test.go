@@ -30,7 +30,7 @@ const rawConnKey = "sk-raw-super-secret-do-not-persist-1234567890"
 func TestConnectionSpecs(t *testing.T) {
 	want := map[string]struct{ typ, name string }{
 		"openai":    {"OpenAI", "openai"},
-		"anthropic": {"Anthropic", "anthropic"},
+		"anthropic": {"Claude", "anthropic"},
 		"google":    {"Gemini", "google"},
 		// OpenAI-compatible providers all type as "OpenAI" pointed at their own URL.
 		"mistral":     {"OpenAI", "mistral"},

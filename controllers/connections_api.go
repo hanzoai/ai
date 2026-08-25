@@ -38,7 +38,7 @@ import (
 
 // aiConnSpec maps a consumer-provider slug to the object.Provider shape the row is
 // stored as. Type strings are the canonical ones the completion paths already key
-// on: "OpenAI" (openai_api.go), "Anthropic" (anthropic_api.go), "Gemini"
+// on: "OpenAI" (openai_api.go), "Claude" (anthropic_api.go), "Gemini"
 // (embeddings_api.go / openai_api.go). Category is always "Model", matching the
 // seeded provider rows in object.initLLMProviders.
 type aiConnSpec struct {
@@ -56,7 +56,7 @@ type aiConnSpec struct {
 // is only the default model; the router overwrites it per request.
 var aiConnSpecs = map[string]aiConnSpec{
 	"openai":      {name: "openai", typ: "OpenAI", subType: "gpt-5", providerURL: "https://api.openai.com/v1", label: "OpenAI"},
-	"anthropic":   {name: "anthropic", typ: "Anthropic", subType: "claude-opus-4-8", providerURL: "https://api.anthropic.com", label: "Anthropic"},
+	"anthropic":   {name: "anthropic", typ: "Claude", subType: "claude-opus-4-8", providerURL: "https://api.anthropic.com", label: "Anthropic"},
 	"google":      {name: "google", typ: "Gemini", subType: "gemini-2.5-pro", providerURL: "https://generativelanguage.googleapis.com/v1beta/openai", label: "Google Gemini"},
 	"openrouter":  {name: "openrouter", typ: "OpenRouter", subType: "openrouter/auto", providerURL: "https://openrouter.ai/api/v1", label: "OpenRouter"},
 	"deepseek":    {name: "deepseek", typ: "DeepSeek", subType: "deepseek-chat", providerURL: "https://api.deepseek.com/v1", label: "DeepSeek"},

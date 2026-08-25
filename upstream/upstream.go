@@ -135,7 +135,7 @@ func Authorize(req *http.Request, provider *object.Provider) {
 	switch provider.Type {
 	case "Azure":
 		req.Header.Set("Authorization", "api-key "+provider.ClientSecret)
-	case "Anthropic":
+	case "Claude", "Anthropic":
 		req.Header.Set("x-api-key", provider.ClientSecret)
 	default:
 		if provider.ClientSecret != "" {
