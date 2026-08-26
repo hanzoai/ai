@@ -63,63 +63,57 @@ type ModelProvider interface {
 	QueryText(question string, writer io.Writer, history []*RawMessage, prompt string, knowledgeMessages []*RawMessage, agentInfo *AgentInfo, lang string) (*ModelResult, error)
 }
 
-// Vendor names WHO serves a call, never WHAT is served. Anthropic is a vendor;
-// Claude is one of the things Anthropic sells, and confusing the two is what let
-// those words drift into two names for one company.
-//
-// Most members are companies. A few name something a deployment runs or stands in
-// for rather than buys from — Local, Ollama, Dummy, Word2Vec — and they belong to
-// the same set because they sit in the same column and answer the same question:
-// which code reaches the upstream.
+// Upstream names what serves a call, never what is served: Anthropic serves
+// Claude, OpenAI serves GPT. Some are third-party APIs, some are our own compute
+// — Hanzo and Zen run on our GPUs — and some are a runner a deployment starts
+// itself, like Ollama or Local. All of them answer the same question, which is
+// the code that carries a request out.
 //
 // The set is closed and each member has one spelling, held by the compiler.
-type Vendor string
+type Upstream string
 
 const (
-	AlibabaCloud  Vendor = "Alibaba Cloud"
-	AmazonBedrock Vendor = "Amazon Bedrock"
-	Anthropic     Vendor = "Anthropic"
-	Azure         Vendor = "Azure"
-	Baichuan      Vendor = "Baichuan"
-	BaiduCloud    Vendor = "Baidu Cloud"
-	ChatGLM       Vendor = "ChatGLM"
-	Cohere        Vendor = "Cohere"
-	DeepSeek      Vendor = "DeepSeek"
-	DigitalOcean  Vendor = "DigitalOcean"
-	Dummy         Vendor = "Dummy"
-	Fireworks     Vendor = "Fireworks"
-	Gemini        Vendor = "Gemini"
-	GitHub        Vendor = "GitHub"
-	Grok          Vendor = "Grok"
-	Jina          Vendor = "Jina"
-	Hanzo         Vendor = "Hanzo"
-	HuggingFace   Vendor = "Hugging Face"
-	IFlytek       Vendor = "iFlytek"
-	Local         Vendor = "Local"
-	MiniMax       Vendor = "MiniMax"
-	Mistral       Vendor = "Mistral"
-	Moonshot      Vendor = "Moonshot"
-	Ollama        Vendor = "Ollama"
-	OpenAI        Vendor = "OpenAI"
-	OpenRouter    Vendor = "OpenRouter"
-	SiliconFlow   Vendor = "Silicon Flow"
-	StepFun       Vendor = "StepFun"
-	TencentCloud  Vendor = "Tencent Cloud"
-	VolcanoEngine Vendor = "Volcano Engine"
-	Word2Vec      Vendor = "Word2Vec"
-	Writer        Vendor = "Writer"
-	Yi            Vendor = "Yi"
-	Zen           Vendor = "Zen"
+	AlibabaCloud  Upstream = "Alibaba Cloud"
+	AmazonBedrock Upstream = "Amazon Bedrock"
+	Anthropic     Upstream = "Anthropic"
+	Azure         Upstream = "Azure"
+	Baichuan      Upstream = "Baichuan"
+	BaiduCloud    Upstream = "Baidu Cloud"
+	ChatGLM       Upstream = "ChatGLM"
+	Cohere        Upstream = "Cohere"
+	DeepSeek      Upstream = "DeepSeek"
+	DigitalOcean  Upstream = "DigitalOcean"
+	Dummy         Upstream = "Dummy"
+	Fireworks     Upstream = "Fireworks"
+	Gemini        Upstream = "Gemini"
+	GitHub        Upstream = "GitHub"
+	Grok          Upstream = "Grok"
+	Jina          Upstream = "Jina"
+	Hanzo         Upstream = "Hanzo"
+	HuggingFace   Upstream = "Hugging Face"
+	IFlytek       Upstream = "iFlytek"
+	Local         Upstream = "Local"
+	MiniMax       Upstream = "MiniMax"
+	Mistral       Upstream = "Mistral"
+	Moonshot      Upstream = "Moonshot"
+	Ollama        Upstream = "Ollama"
+	OpenAI        Upstream = "OpenAI"
+	OpenRouter    Upstream = "OpenRouter"
+	SiliconFlow   Upstream = "Silicon Flow"
+	StepFun       Upstream = "StepFun"
+	TencentCloud  Upstream = "Tencent Cloud"
+	VolcanoEngine Upstream = "Volcano Engine"
+	Word2Vec      Upstream = "Word2Vec"
+	Writer        Upstream = "Writer"
+	Yi            Upstream = "Yi"
+	Zen           Upstream = "Zen"
 )
 
-// Spec is what a provider row says about reaching its vendor: which vendor, which
-// model, the credentials, and the dials. It replaces seventeen positional
-// arguments that existed only to carry one record across a package boundary —
-// where two floats of the same type sat side by side and nothing but their order
-// told them apart.
+// Spec is what a provider row says about reaching its upstream: which upstream,
+// which model, the credentials, and the dials.
 type Spec struct {
-	Vendor Vendor
-	Model  string // the vendor's own name for it, e.g. claude-opus-4-5
+	Upstream Upstream
+	Model    string // the vendor's own name for it, e.g. claude-opus-4-5
 
 	ClientID string
 	Secret   string
@@ -141,23 +135,20 @@ type Spec struct {
 	Currency    string
 }
 
-// vendors answers, for each vendor, with the provider that speaks to it.
-//
-// A table rather than a ladder of thirty-one branches: adding a vendor is a row,
-// the key IS the name so no two rows can disagree about one, and a vendor absent
-// from the map is absent rather than falling out of the bottom of an if.
-var vendors = map[Vendor]func(Spec) (ModelProvider, error){
+// upstreams answers, for each upstream, with the provider that speaks to it.
+// Adding one is a row, and the key is the name.
+var upstreams = map[Upstream]func(Spec) (ModelProvider, error){
 	Ollama: func(s Spec) (ModelProvider, error) {
 		return NewLocalModelProvider("Custom-think", "custom-model", "randomString", s.Temperature, s.TopP, 0, 0, s.URL, s.Model, s.InputPrice, s.OutputPrice, s.Currency)
 	},
 	Local: func(s Spec) (ModelProvider, error) {
-		return NewLocalModelProvider(string(s.Vendor), s.Model, s.Secret, s.Temperature, s.TopP, s.Frequency, s.Presence, s.URL, s.Compatible, s.InputPrice, s.OutputPrice, s.Currency)
+		return NewLocalModelProvider(string(s.Upstream), s.Model, s.Secret, s.Temperature, s.TopP, s.Frequency, s.Presence, s.URL, s.Compatible, s.InputPrice, s.OutputPrice, s.Currency)
 	},
 	OpenAI: func(s Spec) (ModelProvider, error) {
 		return NewOpenAiModelProvider(s.Model, s.Secret, s.URL, s.Temperature, s.TopP, s.Frequency, s.Presence)
 	},
 	DigitalOcean: func(s Spec) (ModelProvider, error) {
-		return NewLocalModelProvider(string(s.Vendor), s.Model, s.Secret, s.Temperature, s.TopP, s.Frequency, s.Presence, s.URL, "", s.InputPrice, s.OutputPrice, s.Currency)
+		return NewLocalModelProvider(string(s.Upstream), s.Model, s.Secret, s.Temperature, s.TopP, s.Frequency, s.Presence, s.URL, "", s.InputPrice, s.OutputPrice, s.Currency)
 	},
 	Fireworks: func(s Spec) (ModelProvider, error) {
 		return NewFireworksProvider(s.Model, s.Secret, s.Temperature, s.TopP, s.Frequency, s.Presence)
@@ -166,7 +157,7 @@ var vendors = map[Vendor]func(Spec) (ModelProvider, error){
 		return NewGeminiModelProvider(s.Model, s.Secret, s.Temperature, s.TopP, s.TopK)
 	},
 	Azure: func(s Spec) (ModelProvider, error) {
-		return NewAzureModelProvider(string(s.Vendor), s.Model, s.ClientID, s.Secret, s.Temperature, s.TopP, s.Frequency, s.Presence, s.URL, s.APIVersion)
+		return NewAzureModelProvider(string(s.Upstream), s.Model, s.ClientID, s.Secret, s.Temperature, s.TopP, s.Frequency, s.Presence, s.URL, s.APIVersion)
 	},
 	HuggingFace: func(s Spec) (ModelProvider, error) {
 		return NewHuggingFaceModelProvider(s.Model, s.Secret, s.Temperature)
@@ -219,28 +210,28 @@ var vendors = map[Vendor]func(Spec) (ModelProvider, error){
 		return NewSiliconFlowProvider(s.Model, s.Secret, s.Temperature, s.TopP)
 	},
 	Zen: func(s Spec) (ModelProvider, error) {
-		return NewLocalModelProvider(string(s.Vendor), s.Model, s.Secret, s.Temperature, s.TopP, s.Frequency, s.Presence, s.URL, "openai", s.InputPrice, s.OutputPrice, s.Currency)
+		return NewLocalModelProvider(string(s.Upstream), s.Model, s.Secret, s.Temperature, s.TopP, s.Frequency, s.Presence, s.URL, "openai", s.InputPrice, s.OutputPrice, s.Currency)
 	},
 	Hanzo: func(s Spec) (ModelProvider, error) {
-		return NewLocalModelProvider(string(s.Vendor), s.Model, s.Secret, s.Temperature, s.TopP, s.Frequency, s.Presence, s.URL, "openai", s.InputPrice, s.OutputPrice, s.Currency)
+		return NewLocalModelProvider(string(s.Upstream), s.Model, s.Secret, s.Temperature, s.TopP, s.Frequency, s.Presence, s.URL, "openai", s.InputPrice, s.OutputPrice, s.Currency)
 	},
 	Dummy: func(s Spec) (ModelProvider, error) { return NewDummyModelProvider(s.Model) },
 	GitHub: func(s Spec) (ModelProvider, error) {
-		return NewGitHubModelProvider(string(s.Vendor), s.Model, s.Secret, s.Temperature, s.TopP, s.Frequency, s.Presence)
+		return NewGitHubModelProvider(string(s.Upstream), s.Model, s.Secret, s.Temperature, s.TopP, s.Frequency, s.Presence)
 	},
 	Writer: func(s Spec) (ModelProvider, error) {
 		return NewWriterModelProvider(s.Model, s.Secret, s.Temperature, s.TopP)
 	},
 }
 
-// Open reaches the vendor a spec names.
+// Open reaches the upstream a spec names.
 //
-// A vendor this build does not speak to answers (nil, nil) — absent, the same
-// answer a row that is not there gives — which the caller turns into "the model
-// provider type: %s is not supported". An error means the vendor is known and
+// An upstream this build does not speak to answers (nil, nil) — absent, the same
+// answer a row that is not there gives, which the caller reports as "the model
+// provider type: %s is not supported". An error means the upstream is known and
 // could not be reached.
 func Open(s Spec) (ModelProvider, error) {
-	reach, ok := vendors[s.Vendor]
+	reach, ok := upstreams[s.Upstream]
 	if !ok {
 		return nil, nil
 	}

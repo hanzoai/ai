@@ -184,10 +184,8 @@ func (c *ApiController) UpdateMessage() {
 		c.ResponseError(err.Error())
 		return
 	}
-	// A turn in another organization is not this caller's to write over, and it
-	// answers the way a turn that is not there answers. The user check below cannot
-	// stand in for this one: it is not asked of an admin at all, and an admin
-	// administers ONE organization.
+	// Which organization the turn belongs to. The user check below is not asked of
+	// an admin, so this is what keeps an admin inside their own.
 	if storedMessage == nil || storedMessage.Organization != c.GetOrg() {
 		c.ResponseError(fmt.Sprintf("The message: %s is not found", id))
 		return
