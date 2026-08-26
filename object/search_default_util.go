@@ -44,7 +44,7 @@ func norm(vec []float32) float32 {
 // different dimensions are not far apart — they are in different spaces, having
 // been embedded by different models — so the answer is 0 and the odd one ranks
 // last. A store that has changed embedding model holds both, and a search across
-// it used to be a panic rather than a result.
+// it answers rather than panicking on the length mismatch.
 func cosineSimilarity(vec1, vec2 []float32, vec1Norm float32) float32 {
 	if len(vec1) != len(vec2) {
 		return 0.0
