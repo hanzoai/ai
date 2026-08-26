@@ -62,10 +62,10 @@ Billed by the upstream per synthesized character; unpriced here (the usage row i
 }
 
 // speechRequest is the OpenAI /v1/audio/speech body. response_format carries the
-// caller's requested container: it used to be hardcoded to mp3 here while the
-// handler labelled the response from the REQUEST, so asking for opus returned
-// `Content-Type: audio/opus` wrapping an MP3. The request is forwarded, and what
-// the upstream actually produced is reported back on the result — an upstream
+// caller's requested container. Hardcoding it here while the handler labels the
+// response from the REQUEST is how `Content-Type: audio/opus` comes to wrap an
+// MP3. The request is forwarded, and what the upstream actually produced is
+// reported back on the result — an upstream
 // that ignores the field is then described truthfully rather than taken at its
 // word.
 type speechRequest struct {

@@ -638,10 +638,10 @@ func candidates(org string, route *modelRoute, prior []attempt) []candidate {
 	// The cap bounds THIS route, and a refusal from outside the route does not
 	// spend one of its places.
 	//
-	// The two are different quantities and the arithmetic used to conflate them.
-	// A declared route is exactly as wide as the cap — primary, Fallback1,
-	// Fallback2 — so subtracting the family pipe's one refusal meant a model
-	// served by the family could never reach its own last alternate: an operator
+	// The two are different quantities and are not netted against each other. A
+	// declared route is exactly as wide as the cap — primary, Fallback1,
+	// Fallback2 — so subtracting the family pipe's one refusal would leave a model
+	// served by the family unable to reach its own last alternate: an operator
 	// declared three and got two, silently, and only on the requests where the
 	// alternates were the entire point.
 	//
