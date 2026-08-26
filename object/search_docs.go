@@ -870,8 +870,8 @@ func IndexDocuments(owner, store string, req *DocIndexRequest, lang string) (int
 		log.Warning("vector indexing skipped for %s: %v", indexName, err)
 	}
 	if req.Replace {
-		// The corpus has just been stated outright, so how big it used to be says
-		// nothing about how big it is.
+		// The corpus has just been stated outright, so an earlier peak says nothing
+		// about its size.
 		if err := peakResetSink(indexName); err != nil {
 			log.Warning("could not clear corpus peaks for %s: %v", indexName, err)
 		}
