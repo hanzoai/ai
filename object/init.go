@@ -322,9 +322,9 @@ func forceGatewayEmbedder(p *Provider) {
 	if base == "" {
 		return
 	}
-	// "Custom" is the type whose client honors ProviderUrl. "OpenAI" ignores
-	// it — that client is pinned to api.openai.com — so the heal used to aim
-	// at the gateway and fire at the very upstream it exists to avoid.
+	// "Custom" is the type whose client honors ProviderUrl. "OpenAI" ignores it —
+	// that client is pinned to api.openai.com — so aiming the heal at the gateway
+	// under that type fires at the upstream the gateway exists to avoid.
 	p.Type = "Custom"
 	p.ProviderUrl = base
 	p.SubType = defaultEmbedModel()

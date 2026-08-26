@@ -38,10 +38,9 @@ func GetAudioFromVideo(inputBuffer *bytes.Buffer) (*bytes.Buffer, error) {
 
 	tmpOutputFileName := strings.Replace(tmpInputFile.Name(), ".mp4", ".mp3", 1)
 
-	// The removal is registered before ffmpeg runs, not after it has worked.
-	// ffmpeg leaves a partial file behind when it fails, and every return between
-	// here and the end used to be a file left in the temp directory — one per
-	// upload that would not convert.
+	// Registered before ffmpeg runs, not after it has worked: ffmpeg leaves a
+	// partial file behind when it fails, and every return between here and the end
+	// would otherwise leave it in the temp directory.
 	defer os.Remove(tmpOutputFileName)
 
 	cmd := exec.Command("ffmpeg", "-i", tmpInputFile.Name(), "-q:a", "0", "-map", "a", tmpOutputFileName)

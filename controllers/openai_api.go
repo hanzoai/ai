@@ -2370,8 +2370,7 @@ func (c *ApiController) proxyToolRequest(
 	}
 
 	// WHAT AN ANSWER COST IS SETTLED IN ONE PLACE. Where the token counts come from
-	// differs between the two shapes; nothing after that does, and it used to be
-	// written out twice.
+	// differs between the two shapes; nothing after that does.
 	settle := func(streamed bool, prompt, completion, total int) {
 		if total == 0 {
 			total = prompt + completion

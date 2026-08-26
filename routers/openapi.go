@@ -282,9 +282,8 @@ func items() map[string]any {
 // misleads.
 //
 // The refusals are written out rather than pointed at a shared Response Object,
-// because a $ref binds this document to component definitions it does not carry:
-// the two it used to name lived in a hand-authored spec, and when that spec was
-// deleted every operation here kept pointing at nothing.
+// because a $ref binds this document to component definitions it does not carry,
+// and an operation pointing at a definition that is not here resolves to nothing.
 // The `data` argument is what THIS operation puts in the envelope's data field.
 // Nil means the operation has not said — the envelope alone, which is what every
 // operation used to publish.
