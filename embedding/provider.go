@@ -32,47 +32,70 @@ type EmbeddingProvider interface {
 	QueryVector(text string, ctx context.Context, lang string) ([]float32, *EmbeddingResult, error)
 }
 
-func GetEmbeddingProvider(typ string, subType string, clientId string, clientSecret string, providerUrl string, apiVersion string, pricePerThousandTokens float64, currency string, lang string) (EmbeddingProvider, error) {
-	var p EmbeddingProvider
-	var err error
-	if typ == "OpenAI" {
-		p, err = NewOpenAiEmbeddingProvider(typ, subType, clientSecret)
-	} else if typ == "Gemini" {
-		p, err = NewGeminiEmbeddingProvider(subType, clientSecret)
-	} else if typ == "Hugging Face" {
-		p, err = NewHuggingFaceEmbeddingProvider(subType, clientSecret)
-	} else if typ == "Cohere" {
-		p, err = NewCohereEmbeddingProvider(subType, clientId, clientSecret)
-	} else if typ == "Baidu Cloud" {
-		p, err = NewBaiduCloudEmbeddingProvider(subType, clientId, clientSecret)
-	} else if typ == "Ollama" {
-		p, err = NewLocalEmbeddingProvider("Custom", "custom-embedding", "randomString", providerUrl, subType, pricePerThousandTokens, currency)
-	} else if typ == "Local" {
-		p, err = NewLocalEmbeddingProvider(typ, subType, clientSecret, providerUrl, subType, pricePerThousandTokens, currency)
-	} else if typ == "Custom" {
-		// An OpenAI-compatible endpoint named by ProviderUrl, billed upstream —
-		// the client honors the URL and no local price table is consulted.
-		p, err = NewLocalEmbeddingProvider(typ, subType, clientSecret, providerUrl, subType, pricePerThousandTokens, currency)
-	} else if typ == "Azure" {
-		p, err = NewAzureEmbeddingProvider(typ, subType, clientId, clientSecret, providerUrl, apiVersion)
-	} else if typ == "MiniMax" {
-		p, err = NewMiniMaxEmbeddingProvider(typ, subType, clientSecret, providerUrl)
-	} else if typ == "Alibaba Cloud" {
-		p, err = NewAlibabacloudEmbeddingProvider(typ, subType, clientSecret, providerUrl)
-	} else if typ == "Tencent Cloud" {
-		p, err = NewTencentCloudEmbeddingProvider(clientId, clientSecret, lang)
-	} else if typ == "Jina" {
-		p, err = NewJinaEmbeddingProvider(subType, clientSecret)
-	} else if typ == "Word2Vec" {
-		p, err = NewWord2VecEmbeddingProvider(typ, subType, lang)
-	} else if typ == "Dummy" {
-		p, err = NewDummyEmbeddingProvider(subType)
-	}
+// Spec is what a provider row says about reaching its vendor for embeddings. The
+// vendor names are model.Vendor because a vendor is a company, not a category:
+// OpenAI sells models and embeddings and is one name for one company.
+type Spec struct {
+	Vendor model.Vendor
+	Model  string
 
-	if err != nil {
-		return nil, err
+	ClientID string
+	Secret   string
+
+	URL        string
+	APIVersion string
+
+	Price    float64 // per thousand tokens
+	Currency string
+	Lang     string
+}
+
+// vendors answers, for each vendor, with the embedding provider that reaches it.
+var vendors = map[model.Vendor]func(Spec) (EmbeddingProvider, error){
+	model.OpenAI: func(s Spec) (EmbeddingProvider, error) {
+		return NewOpenAiEmbeddingProvider(string(s.Vendor), s.Model, s.Secret)
+	},
+	model.Gemini:      func(s Spec) (EmbeddingProvider, error) { return NewGeminiEmbeddingProvider(s.Model, s.Secret) },
+	model.HuggingFace: func(s Spec) (EmbeddingProvider, error) { return NewHuggingFaceEmbeddingProvider(s.Model, s.Secret) },
+	model.Cohere: func(s Spec) (EmbeddingProvider, error) {
+		return NewCohereEmbeddingProvider(s.Model, s.ClientID, s.Secret)
+	},
+	model.BaiduCloud: func(s Spec) (EmbeddingProvider, error) {
+		return NewBaiduCloudEmbeddingProvider(s.Model, s.ClientID, s.Secret)
+	},
+	model.Ollama: func(s Spec) (EmbeddingProvider, error) {
+		return NewLocalEmbeddingProvider("Custom", "custom-embedding", "randomString", s.URL, s.Model, s.Price, s.Currency)
+	},
+	model.Local: func(s Spec) (EmbeddingProvider, error) {
+		return NewLocalEmbeddingProvider(string(s.Vendor), s.Model, s.Secret, s.URL, s.Model, s.Price, s.Currency)
+	},
+	model.Azure: func(s Spec) (EmbeddingProvider, error) {
+		return NewAzureEmbeddingProvider(string(s.Vendor), s.Model, s.ClientID, s.Secret, s.URL, s.APIVersion)
+	},
+	model.MiniMax: func(s Spec) (EmbeddingProvider, error) {
+		return NewMiniMaxEmbeddingProvider(string(s.Vendor), s.Model, s.Secret, s.URL)
+	},
+	model.AlibabaCloud: func(s Spec) (EmbeddingProvider, error) {
+		return NewAlibabacloudEmbeddingProvider(string(s.Vendor), s.Model, s.Secret, s.URL)
+	},
+	model.TencentCloud: func(s Spec) (EmbeddingProvider, error) {
+		return NewTencentCloudEmbeddingProvider(s.ClientID, s.Secret, s.Lang)
+	},
+	model.Jina: func(s Spec) (EmbeddingProvider, error) { return NewJinaEmbeddingProvider(s.Model, s.Secret) },
+	model.Word2Vec: func(s Spec) (EmbeddingProvider, error) {
+		return NewWord2VecEmbeddingProvider(string(s.Vendor), s.Model, s.Lang)
+	},
+	model.Dummy: func(s Spec) (EmbeddingProvider, error) { return NewDummyEmbeddingProvider(s.Model) },
+}
+
+// Open reaches the vendor a spec names, answering (nil, nil) for one this build
+// does not speak to — the same absence the model side gives.
+func Open(s Spec) (EmbeddingProvider, error) {
+	reach, ok := vendors[s.Vendor]
+	if !ok {
+		return nil, nil
 	}
-	return p, nil
+	return reach(s)
 }
 
 func GetDefaultEmbeddingResult(modelSubType string, text string) (*EmbeddingResult, error) {

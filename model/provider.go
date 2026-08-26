@@ -63,10 +63,16 @@ type ModelProvider interface {
 	QueryText(question string, writer io.Writer, history []*RawMessage, prompt string, knowledgeMessages []*RawMessage, agentInfo *AgentInfo, lang string) (*ModelResult, error)
 }
 
-// Vendor names WHO a call is bought from — the company, never the model it
-// serves. Anthropic is a vendor; Claude is one of the things Anthropic sells. The
-// set is closed and each member has one spelling, so a provider row cannot say
-// one where it means the other, which is what let those two words drift apart.
+// Vendor names WHO serves a call, never WHAT is served. Anthropic is a vendor;
+// Claude is one of the things Anthropic sells, and confusing the two is what let
+// those words drift into two names for one company.
+//
+// Most members are companies. A few name something a deployment runs or stands in
+// for rather than buys from — Local, Ollama, Dummy, Word2Vec — and they belong to
+// the same set because they sit in the same column and answer the same question:
+// which code reaches the upstream.
+//
+// The set is closed and each member has one spelling, held by the compiler.
 type Vendor string
 
 const (
@@ -85,6 +91,7 @@ const (
 	Gemini        Vendor = "Gemini"
 	GitHub        Vendor = "GitHub"
 	Grok          Vendor = "Grok"
+	Jina          Vendor = "Jina"
 	Hanzo         Vendor = "Hanzo"
 	HuggingFace   Vendor = "Hugging Face"
 	IFlytek       Vendor = "iFlytek"
@@ -99,6 +106,7 @@ const (
 	StepFun       Vendor = "StepFun"
 	TencentCloud  Vendor = "Tencent Cloud"
 	VolcanoEngine Vendor = "Volcano Engine"
+	Word2Vec      Vendor = "Word2Vec"
 	Writer        Vendor = "Writer"
 	Yi            Vendor = "Yi"
 	Zen           Vendor = "Zen"
