@@ -35,6 +35,12 @@ func withStore(t *testing.T) {
 	t.Setenv("driverName", "sqlite")
 	t.Setenv("dataSourceName", filepath.Join(t.TempDir(), "store.db"))
 	object.InitConfig()
+
+	// The store is new; the provider resolution caches are process-wide and are
+	// not. A row a previous test wrote — its name, its state, the URL of a server
+	// that has since closed — answers for the one this test just seeded until the
+	// TTL runs out. Flushed here so a fresh store means a fresh answer.
+	object.InvalidateProviderNameCache("")
 }
 
 // people is the IAM double's registry: one key per person, so a test can hold
