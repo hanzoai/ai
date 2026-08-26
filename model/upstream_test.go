@@ -23,7 +23,7 @@ func TestEveryRowIsANamedUpstream(t *testing.T) {
 	named := map[Upstream]bool{}
 	for _, v := range []Upstream{
 		AlibabaCloud, AmazonBedrock, Anthropic, Azure, Baichuan, BaiduCloud,
-		ChatGLM, Cohere, DeepSeek, DigitalOcean, Dummy, Fireworks, Gemini,
+		ChatGLM, Cohere, DeepSeek, DigitalOcean, Dummy, Enso, Fireworks, Gemini,
 		GitHub, Grok, Hanzo, HuggingFace, IFlytek, Jina, Local, MiniMax,
 		Mistral, Moonshot, Ollama, OpenAI, OpenRouter, SiliconFlow, StepFun,
 		TencentCloud, VolcanoEngine, Word2Vec, Writer, Yi, Zen,
