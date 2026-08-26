@@ -16,23 +16,33 @@ package model
 
 import "testing"
 
-// Every vendor this package names can be reached, and the map is the only place
-// that says so — a constant without a row would be a name nothing answers to.
-func TestEveryNamedVendorIsReachable(t *testing.T) {
-	named := []Vendor{
+// A vendor is named once and answered somewhere. The names are shared across
+// categories — OpenAI sells models and embeddings and is one company — so a name
+// need not be reachable HERE: Jina and Word2Vec are embedding vendors and this
+// table is models. What must hold is the other direction. Every row in this table
+// is a NAMED vendor, so no row can be keyed by a spelling the constants do not
+// hold, which is the drift the type exists to stop.
+func TestEveryRowIsANamedVendor(t *testing.T) {
+	named := map[Vendor]bool{}
+	for _, v := range []Vendor{
 		AlibabaCloud, AmazonBedrock, Anthropic, Azure, Baichuan, BaiduCloud,
 		ChatGLM, Cohere, DeepSeek, DigitalOcean, Dummy, Fireworks, Gemini,
-		GitHub, Grok, Hanzo, HuggingFace, IFlytek, Local, MiniMax, Mistral,
-		Moonshot, Ollama, OpenAI, OpenRouter, SiliconFlow, StepFun,
-		TencentCloud, VolcanoEngine, Writer, Yi, Zen,
-	}
-	if len(named) != len(vendors) {
-		t.Errorf("%d vendors named here, %d in the table", len(named), len(vendors))
-	}
-	for _, v := range named {
-		if _, ok := vendors[v]; !ok {
-			t.Errorf("vendor %q is named but nothing answers to it", v)
+		GitHub, Grok, Hanzo, HuggingFace, IFlytek, Jina, Local, MiniMax,
+		Mistral, Moonshot, Ollama, OpenAI, OpenRouter, SiliconFlow, StepFun,
+		TencentCloud, VolcanoEngine, Word2Vec, Writer, Yi, Zen,
+	} {
+		if named[v] {
+			t.Errorf("vendor %q is named twice", v)
 		}
+		named[v] = true
+	}
+	for v := range vendors {
+		if !named[v] {
+			t.Errorf("the table is keyed by %q, which is not a named vendor", v)
+		}
+	}
+	if len(vendors) == 0 {
+		t.Fatal("no vendors — this check is reading nothing")
 	}
 }
 
