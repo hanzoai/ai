@@ -202,9 +202,8 @@ func (c *ApiController) UpdateChat() {
 		c.ResponseError(err.Error())
 		return
 	}
-	// A chat in another organization is not this caller's, and answers the way a
-	// chat that is not there answers. The user check is not asked of an admin, and
-	// an admin administers ONE organization.
+	// Which organization the chat belongs to. The user check below is not asked of
+	// an admin, so this is what keeps an admin inside their own.
 	if originalChat == nil || originalChat.Organization != c.GetOrg() {
 		c.ResponseError(fmt.Sprintf("The chat: %s is not found", id))
 		return
@@ -321,9 +320,8 @@ func (c *ApiController) DeleteChat() {
 		c.ResponseError(err.Error())
 		return
 	}
-	// A chat in another organization is not this caller's, and answers the way a
-	// chat that is not there answers. The user check is not asked of an admin, and
-	// an admin administers ONE organization.
+	// Which organization the chat belongs to. The user check below is not asked of
+	// an admin, so this is what keeps an admin inside their own.
 	if storedChat == nil || storedChat.Organization != c.GetOrg() {
 		c.ResponseError(fmt.Sprintf("The chat: %s is not found", chat.GetId()))
 		return
