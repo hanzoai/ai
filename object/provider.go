@@ -350,7 +350,17 @@ func (p *Provider) GetModelProvider(lang string) (model.ModelProvider, error) {
 }
 
 func (p *Provider) GetEmbeddingProvider(lang string) (embedding.EmbeddingProvider, error) {
-	made, err := embedding.GetEmbeddingProvider(p.Type, p.SubType, p.ClientId, p.ClientSecret, p.ProviderUrl, p.ApiVersion, p.InputPricePerThousandTokens, p.Currency, lang)
+	made, err := embedding.Open(embedding.Spec{
+		Vendor:     model.Vendor(p.Type),
+		Model:      p.SubType,
+		ClientID:   p.ClientId,
+		Secret:     p.ClientSecret,
+		URL:        p.ProviderUrl,
+		APIVersion: p.ApiVersion,
+		Price:      p.InputPricePerThousandTokens,
+		Currency:   p.Currency,
+		Lang:       lang,
+	})
 	return supported(made, err, "object:the embedding provider type: %s is not supported", p.Type, lang)
 }
 
