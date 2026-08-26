@@ -50,10 +50,9 @@ func truncating(t *testing.T) string {
 	return srv.URL
 }
 
-// An answer this process could not finish reading is not one it can hand over. It
-// used to go back under a 200 as truncated JSON, and the token counts parsed out
-// of it settled the hold — so an answer the upstream charged for was delivered
-// broken and billed as whatever survived the cut.
+// An answer this process could not finish reading is not one it can hand over:
+// truncated JSON under a 200, with the token counts parsed out of it settling the
+// hold.
 func TestAnUnreadableUpstreamAnswerIsNotHandedOver(t *testing.T) {
 	withStore(t)
 	people := withIAM(t)

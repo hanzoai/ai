@@ -24,10 +24,8 @@ import (
 // A provider the routes send models to is one a deployment can reach.
 //
 // A Model provider at State Disabled resolves to nil, so a route naming one
-// answers "provider not configured in database" — the model is in the catalog and
-// cannot be served. Seventeen routes named fireworks that way and five named
-// openai-direct, which is a catalog claiming models for a year of boots and a
-// seed quietly declining to serve them.
+// answers "provider not configured in database": the model is in the catalog and
+// cannot be served.
 func TestEveryRoutedProviderIsOneADeploymentCanReach(t *testing.T) {
 	seeded := object.SeededModelProviders()
 
