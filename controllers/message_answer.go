@@ -251,7 +251,7 @@ func (c *ApiController) GetMessageAnswer() {
 
 	// The answer is streamed: zip holds the connection open and hands the writer
 	// in, so each event reaches the client as it is produced. Every return below
-	// ends the stream exactly where it used to end the reply.
+	// ends the stream.
 	//
 	// fasthttp drains that writer from ITS OWN goroutine once the handler has
 	// returned and fiber has released the request context, so nothing inside may

@@ -89,10 +89,10 @@ const answerLease = 15 * time.Minute
 // ClaimMessageAnswer takes the exclusive right to generate this message's answer and
 // reports whether this caller got it.
 //
-// It is ONE conditional UPDATE, so the database decides the winner. The condition is
-// the same fact the handler used to test in memory — the answer is not written yet —
-// but tested and acted on in a single statement, because between a read and a write
-// two concurrent requests both see an unanswered message and both generate it.
+// It is ONE conditional UPDATE, so the database decides the winner. The condition —
+// the answer is not written yet — is tested and acted on in a single statement,
+// because between a read and a write two concurrent requests both see an
+// unanswered message and both generate it.
 //
 // This is the module's ONLY exactly-once guarantee for an answer, and the debit rides
 // on it: the ledger has none. It mints its own entry id per debit and reads no key we
