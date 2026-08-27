@@ -16,10 +16,9 @@ package object
 
 import "testing"
 
-// Anthropic is the vendor; Claude is what it serves. A row written when the two
-// were one word is renamed to the vendor — including an organization's own, which
-// the seed reconciler never reaches because the seed does not name it.
-func TestAProviderIsNamedByItsVendor(t *testing.T) {
+// The provider type names the upstream: Anthropic serves Claude. Every row is
+// settled on it, including an organization's own, which the seed never names.
+func TestAProviderIsNamedByItsUpstream(t *testing.T) {
 	withStore(t)
 
 	for _, p := range []*Provider{
@@ -32,7 +31,7 @@ func TestAProviderIsNamedByItsVendor(t *testing.T) {
 		}
 	}
 
-	nameAnthropicByItsVendor()
+	renameClaudeToAnthropic()
 
 	for _, want := range []struct{ owner, name, typ string }{
 		{"admin", "anthropic", "Anthropic"},
