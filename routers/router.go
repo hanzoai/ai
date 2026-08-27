@@ -163,6 +163,20 @@ func registerAPI(app *zip.App) {
 	// WebSocket — the bearer is spent on the POST, and what goes in the URL is a
 	// one-use ticket that carries no claims.
 	//
+	// It stays adapted until hanzoai/voice publishes handlers rather than a
+	// router, which is an upstream change and not one this repo can make: Routes
+	// (serve.go:108) is the ONLY exported method on *Voice, and the three it
+	// registers — session, talk, health (serve.go:116, 141, 184) — are
+	// unexported, so there is nothing here to bind a native route to. The socket
+	// is the second half: coder/websocket's Accept refuses a writer that is not
+	// an http.Hijacker (accept.go:130).
+	//
+	// So h is an *http.ServeMux, and these three paths are matched twice, by two
+	// routers that disagree about paths. voice_mux_test.go measures where:
+	// GET /v1/voice/ matches this /v1/voice route, reaches the mux, which has no
+	// pattern for it and answers out of net/http — "404 page not found",
+	// text/plain, nosniff — the one 404 on this surface that is not RFC 9457.
+	//
 	// Nil when no IAM is configured, and then none of this is served: a
 	// WebSocket does not observe the same-origin policy, so an ungated one is
 	// any page on the internet opening a microphone as whoever is signed in.

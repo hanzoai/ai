@@ -684,7 +684,9 @@ func recordCasibaseChatUsage(ctx context.Context, clientIP string, chat *object.
 	if provider != nil {
 		providerName = provider.Name
 	}
-	usd := r.Currency == "" || r.Currency == "USD"
+	// A result that names no price is UNPRICED, not free. Currency alone cannot say
+	// so — empty reads as USD here — which is why the client states it outright.
+	usd := !r.Unpriced && (r.Currency == "" || r.Currency == "USD")
 	rec := &usageRecord{
 		Owner:            org,
 		Organization:     org,

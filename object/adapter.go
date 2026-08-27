@@ -205,6 +205,12 @@ func (a *Adapter) createTable() {
 	// table whose per-org router/judge config the trainer reads at boot and on
 	// cadence; idempotent, so it is a no-op once the rows are clean.
 	backfillNullScalars(a.db, "org_settings", &OrgSettings{})
+	// Routes are configuration — tens of rows, not millions — so the whole-model
+	// sweep is the cheap option here rather than the expensive one, and every column
+	// added to a route from now on is repaired without another line. Priced is the
+	// one that needs it today: a bool cannot take NULL, so without this every read
+	// of a route written before the column fails outright rather than reading false.
+	backfillNullScalars(a.db, "model_route", &ModelRoute{})
 	// The message table is the largest here and a whole-model sweep costs a scan per
 	// column, so it is repaired one field at a time. These are the columns added since
 	// message rows existed: a NULL claimed_time would make its row unclaimable — a

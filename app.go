@@ -15,11 +15,11 @@
 // Package ai mounts the Hanzo AI subsystem (LLM control plane, RAG,
 // model hub, MCP management) into the unified cloud binary per HIP-0106.
 //
-// The legacy entry point at ~/work/hanzo/ai/main.go registers the
-// existing the router ControllerRegister tree. Mount adapts that same
-// ControllerRegister onto a zip.App via zip.AdaptNetHTTP so the routes
-// continue to operate unchanged while running under the canonical
-// zip-driven cloud entry.
+// App builds the zip.App and routers.Register binds every route onto it
+// natively; there is no net/http router underneath and nothing is adapted onto
+// zip. The adaptation runs the other way, once, at Handler: a host that wants
+// an http.Handler gets the whole App exposed as one. The only net/http left
+// inside is the /v1/voice trio, and routers/router.go says why.
 //
 // All ~309 X-Org-Id call-sites inside controllers/* continue to read
 // gateway-minted identity headers (X-Org-Id, X-User-Id, X-User-Email)
