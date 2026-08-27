@@ -20,29 +20,29 @@ import (
 	"github.com/hanzoai/ai/model"
 )
 
-// The vendors here are model.Vendor because a vendor is a company, not a
+// The upstreams here are model.Upstream because a vendor is a company, not a
 // category: OpenAI sells models and embeddings under one name. This table serves
 // the ones that sell embeddings, which includes two — Jina, Word2Vec — that sell
 // no model, and that is why a name is not required to answer in both places.
 func TestEmbeddingVendorsAreTheSameNames(t *testing.T) {
-	for _, v := range []model.Vendor{model.OpenAI, model.Gemini, model.Cohere, model.Jina, model.Word2Vec} {
-		if _, ok := vendors[v]; !ok {
+	for _, v := range []model.Upstream{model.OpenAI, model.Gemini, model.Cohere, model.Jina, model.Word2Vec} {
+		if _, ok := upstreams[v]; !ok {
 			t.Errorf("no embedding provider answers to %q", v)
 		}
 	}
-	if len(vendors) == 0 {
-		t.Fatal("no vendors — this check is reading nothing")
+	if len(upstreams) == 0 {
+		t.Fatal("no upstreams — this check is reading nothing")
 	}
 }
 
-// A vendor this build does not speak to is absent, not an error — the same answer
-// the model side gives, which the caller turns into "not supported".
-func TestAnUnknownEmbeddingVendorIsAbsent(t *testing.T) {
-	made, err := Open(Spec{Vendor: "Nobody", Model: "m"})
+// An upstream this build does not speak to is absent, not an error — the answer
+// the model side gives.
+func TestAnUnknownEmbeddingUpstreamIsAbsent(t *testing.T) {
+	made, err := Open(Spec{Upstream: "Nobody", Model: "m"})
 	if err != nil {
-		t.Errorf("an unknown vendor answered with an error: %v", err)
+		t.Errorf("an unknown upstream answered with an error: %v", err)
 	}
 	if made != nil {
-		t.Errorf("an unknown vendor answered with a provider: %#v", made)
+		t.Errorf("an unknown upstream answered with a provider: %#v", made)
 	}
 }
