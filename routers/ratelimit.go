@@ -281,8 +281,9 @@ func RateLimitFilter(c *zip.Ctx) error {
 		return c.Continue()
 	}
 
-	// Only rate-limit API routes.
-	if !strings.HasPrefix(path, "/v1/") {
+	// Only rate-limit API routes. Folded: the router matches case-blind, so a
+	// lowercase-literal test reads /V1/ as "not an API route".
+	if !strings.HasPrefix(strings.ToLower(path), "/v1/") {
 		return c.Continue()
 	}
 
