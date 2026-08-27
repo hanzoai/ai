@@ -84,6 +84,7 @@ const (
 	DeepSeek      Upstream = "DeepSeek"
 	DigitalOcean  Upstream = "DigitalOcean"
 	Dummy         Upstream = "Dummy"
+	Enso          Upstream = "Enso"
 	Fireworks     Upstream = "Fireworks"
 	Gemini        Upstream = "Gemini"
 	GitHub        Upstream = "GitHub"
@@ -210,6 +211,9 @@ var upstreams = map[Upstream]func(Spec) (ModelProvider, error){
 		return NewSiliconFlowProvider(s.Model, s.Secret, s.Temperature, s.TopP)
 	},
 	Zen: func(s Spec) (ModelProvider, error) {
+		return NewLocalModelProvider(string(s.Upstream), s.Model, s.Secret, s.Temperature, s.TopP, s.Frequency, s.Presence, s.URL, "openai", s.InputPrice, s.OutputPrice, s.Currency)
+	},
+	Enso: func(s Spec) (ModelProvider, error) {
 		return NewLocalModelProvider(string(s.Upstream), s.Model, s.Secret, s.Temperature, s.TopP, s.Frequency, s.Presence, s.URL, "openai", s.InputPrice, s.OutputPrice, s.Currency)
 	},
 	Hanzo: func(s Spec) (ModelProvider, error) {
