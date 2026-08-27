@@ -279,9 +279,8 @@ type singleton struct {
 	keys map[string]string
 }
 
-// singletons is every non-CRUD endpoint that used to sit at the top level in
-// compound form. Same rule as resources: the noun is in the path, the verb is
-// the HTTP method, and the subsystem owns the namespace.
+// singletons is every non-CRUD endpoint. Same rule as resources: the noun is in
+// the path, the verb is the HTTP method, and the subsystem owns the namespace.
 var singletons = []singleton{
 	// ai's own auth singletons. Under /v1/ai for the reason above: /v1/iam is
 	// proxied wholesale to the IAM service, so signin registered there is dead.
