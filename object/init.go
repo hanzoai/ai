@@ -26,7 +26,7 @@ import (
 )
 
 func InitDb() {
-	nameAnthropicByItsVendor()
+	renameClaudeToAnthropic()
 	modelProviderName, embeddingProviderName, ttsProviderName, sttProviderName := initBuiltInProviders()
 	initLLMProviders()
 	initBuiltInStore(modelProviderName, embeddingProviderName, ttsProviderName, sttProviderName)
@@ -373,13 +373,10 @@ var seededLLMProviders = []Provider{
 		ProviderUrl:  "https://inference.do-ai.run/v1",
 		ClientSecret: "kms://DO_AI_API_KEY",
 		State:        "Active",
-		// NOT the router. Nothing on the request path reads this: a model reaches a
-		// vendor through modelRoutes, and 93 of those name do-ai. This is the ONE
-		// usable primary that GetDefaultModelProvider answers with — store, KB and
-		// RAG default-model resolution — and store.go uses that record directly
-		// without asking whether it is usable. Clearing it here leaves that lookup
-		// with nothing, because every other seeded Model row is Disabled or serves
-		// video or speech. Moving the fleet off a vendor is the routes, not this.
+		// The one usable primary GetDefaultModelProvider answers with, which store,
+		// KB and RAG resolve their default model from — store.go uses that record
+		// directly without asking whether it is usable. It is not the router:
+		// modelRoutes decides which upstream serves a model.
 		IsDefault: true,
 	},
 	{
@@ -391,12 +388,9 @@ var seededLLMProviders = []Provider{
 		SubType:      "accounts/fireworks/models/deepseek-v3p2",
 		ProviderUrl:  "https://api.fireworks.ai/inference/v1",
 		ClientSecret: "kms://FIREWORKS_API_KEY",
-		// Active because the routes table sends models here: 17 name fireworks and
-		// 5 name openai-direct, and a Disabled Model provider resolves to nil — so
-		// those models answered "provider not configured in database" rather than
-		// being served. A provider the catalog routes to is one the catalog can
-		// reach. Its key is the kms:// reference above; State stays an operator's
-		// to change, and is never re-synced from here on an existing row.
+		// Active because modelRoutes sends models here, and a Disabled Model
+		// provider resolves to nil. Its key is the kms:// reference above. State is
+		// an operator's to change and is never re-synced onto a row that exists.
 		State:     "Active",
 		IsDefault: false,
 	},
@@ -409,12 +403,9 @@ var seededLLMProviders = []Provider{
 		SubType:      "gpt-5",
 		ProviderUrl:  "https://api.openai.com/v1",
 		ClientSecret: "kms://OPENAI_API_KEY",
-		// Active because the routes table sends models here: 17 name fireworks and
-		// 5 name openai-direct, and a Disabled Model provider resolves to nil — so
-		// those models answered "provider not configured in database" rather than
-		// being served. A provider the catalog routes to is one the catalog can
-		// reach. Its key is the kms:// reference above; State stays an operator's
-		// to change, and is never re-synced from here on an existing row.
+		// Active because modelRoutes sends models here, and a Disabled Model
+		// provider resolves to nil. Its key is the kms:// reference above. State is
+		// an operator's to change and is never re-synced onto a row that exists.
 		State:     "Active",
 		IsDefault: false,
 	},
@@ -484,21 +475,17 @@ func SeededModelProviders() map[string]Provider {
 	return m
 }
 
-// nameAnthropicByItsVendor renames the provider type Claude to Anthropic.
-//
-// Anthropic is the vendor a request is bought from; Claude is what that vendor
-// serves. They were one word here, so a provider row said the model where it
-// meant the company, and every place that branched on it had to know both. The
-// seed reconciler below cannot do this: it only reaches the rows the seed names,
-// and an organization's own BYOK row is named by nobody.
-func nameAnthropicByItsVendor() {
+// renameClaudeToAnthropic settles the provider type on the upstream's own name:
+// Anthropic serves Claude. It runs over every row, including an organization's
+// own, which the seed reconciler below never reaches.
+func renameClaudeToAnthropic() {
 	if adapter == nil || adapter.db == nil {
 		return
 	}
 	res, err := adapter.db.Update("provider",
 		dbx.Params{"type": "Anthropic"}, dbx.HashExp{"type": "Claude"}).Execute()
 	if err != nil {
-		fmt.Printf("[init] WARNING: could not rename the Claude provider type: %v\n", err)
+		fmt.Printf("[init] WARNING: could not settle the provider type: %v\n", err)
 		return
 	}
 	if n, _ := res.RowsAffected(); n > 0 {
