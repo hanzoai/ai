@@ -38,9 +38,7 @@
 //     Host header have no ZAP carrier, so they are decoded from the ONE JSON
 //     body — the same pattern zapBalanceHandler / zap_router-policy-stats use.
 //     Identity is ALWAYS the resolved credential (auth), NEVER a body field.
-//   - The gateway table below is EMPTY, and the note that used to describe
-//     overlapping /v1/get-store… prefixes described entries that are not there.
-//     It is empty on purpose: these resources live at
+//   - The gateway table below is EMPTY, on purpose: these resources live at
 //     /v1/ai/{stores,files,tree-files,vectors}, where a member answers four verbs
 //     at /:owner/:name and a path-only matcher would pick the wrong handler
 //     (zap_gateway_fallback.go). The MsgType 100 method names are this group's
