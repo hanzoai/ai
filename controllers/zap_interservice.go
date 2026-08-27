@@ -33,8 +33,11 @@ import (
 	"github.com/hanzoai/ai/log"
 	"github.com/luxfi/zap"
 
+	iam "github.com/hanzoai/ai/internal/iam"
+
 	"github.com/hanzoai/ai/cluster"
 	"github.com/hanzoai/ai/object"
+	"github.com/hanzoai/ai/util"
 )
 
 // MsgTypeCloudOps is the ZAP message type for inter-service cloud operations.
@@ -79,13 +82,21 @@ func StopInterserviceZap() {
 func handleCloudOps(ctx context.Context, from string, msg *zap.Message) (*zap.Message, error) {
 	root := msg.Root()
 	method := root.Text(object.CloudReqMethod)
+	auth := root.Text(object.CloudReqAuth)
 	body := root.Bytes(object.CloudReqBody)
+
+	// The message carries an auth field because these opcodes act on a cluster.
+	// Reading it is what makes the field mean anything.
+	user := zapPrincipal(auth)
+	if user == nil {
+		return buildOpsResponse(401, nil, "auth:Please sign in first")
+	}
 
 	switch method {
 	case "deploy":
-		return opsDeployHandler(body)
+		return opsDeployHandler(user, body)
 	case "undeploy":
-		return opsUndeployHandler(body)
+		return opsUndeployHandler(user, body)
 	case "status":
 		return opsStatusHandler()
 	default:
@@ -99,7 +110,7 @@ func buildOpsResponse(status uint32, body []byte, errMsg string) (*zap.Message, 
 
 // ── deploy ──────────────────────────────────────────────────────────────
 
-func opsDeployHandler(body []byte) (*zap.Message, error) {
+func opsDeployHandler(user *iam.User, body []byte) (*zap.Message, error) {
 	var params struct {
 		ID string `json:"id"`
 	}
@@ -114,7 +125,7 @@ func opsDeployHandler(body []byte) (*zap.Message, error) {
 	if err != nil {
 		return buildOpsResponse(500, nil, err.Error())
 	}
-	if app == nil {
+	if app == nil || !reaches(user, app.Owner) {
 		return buildOpsResponse(404, nil, "application not found: "+params.ID)
 	}
 
@@ -137,11 +148,10 @@ func opsDeployHandler(body []byte) (*zap.Message, error) {
 
 // ── undeploy ────────────────────────────────────────────────────────────
 
-func opsUndeployHandler(body []byte) (*zap.Message, error) {
+func opsUndeployHandler(user *iam.User, body []byte) (*zap.Message, error) {
 	var params struct {
-		Owner     string `json:"owner"`
-		Name      string `json:"name"`
-		Namespace string `json:"namespace"`
+		Owner string `json:"owner"`
+		Name  string `json:"name"`
 	}
 	if err := json.Unmarshal(body, &params); err != nil {
 		return buildOpsResponse(400, nil, "invalid body: "+err.Error())
@@ -150,7 +160,19 @@ func opsUndeployHandler(body []byte) (*zap.Message, error) {
 		return buildOpsResponse(400, nil, "owner and name required")
 	}
 
-	ok, err := cluster.UndeploySync(params.Owner, params.Name, params.Namespace, "en")
+	// The namespace comes from the application's own row, the way the HTTP twin
+	// takes it. A namespace named by the caller is a namespace of their choosing,
+	// and undeploy deletes the whole of one.
+	id := util.GetIdFromOwnerAndName(params.Owner, params.Name)
+	app, err := object.GetApplication(id)
+	if err != nil {
+		return buildOpsResponse(500, nil, err.Error())
+	}
+	if app == nil || !reaches(user, app.Owner) {
+		return buildOpsResponse(404, nil, "application not found: "+id)
+	}
+
+	ok, err := cluster.UndeploySync(params.Owner, params.Name, app.Namespace, "en")
 	if err != nil {
 		return buildOpsResponse(500, nil, "undeploy failed: "+err.Error())
 	}
