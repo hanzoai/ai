@@ -16,6 +16,7 @@ package controllers
 
 import (
 	"errors"
+	"github.com/hanzoai/ai/object"
 	"net/http"
 
 	openai "github.com/hanzoai/go-openai"
@@ -69,7 +70,10 @@ func wrapUpstreamError(err error) error {
 		return nil
 	}
 	if status := upstreamHTTPStatus(err); status != 0 {
-		return &apiError{status: status, msg: err.Error()}
+		// A vendor's rejection text is its own words, and a 401 from one names the
+		// key it refused. This reaches the caller through ResponseFailure, so the
+		// key is taken out before it becomes a message.
+		return &apiError{status: status, msg: object.RedactKeys(err.Error())}
 	}
 	return err
 }
