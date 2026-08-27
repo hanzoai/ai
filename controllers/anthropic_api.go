@@ -848,7 +848,7 @@ func (c *ApiController) proxyAnthropicToolRequest(
 	// fully translate the request Anthropic→OpenAI (messages incl. tool_use /
 	// tool_result / images, tools, tool_choice) and translate the response
 	// OpenAI→Anthropic (SSE events or JSON) — never a raw OpenAI passthrough.
-	if model.Vendor(provider.Type) != model.Anthropic {
+	if model.Upstream(provider.Type) != model.Anthropic {
 		oaiReq := &openai.ChatCompletionRequest{
 			Model:      provider.SubType,
 			Messages:   anthropicToOpenAIMessages(request),

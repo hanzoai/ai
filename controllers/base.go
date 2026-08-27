@@ -274,16 +274,13 @@ func reaches(user *iam.User, owner string) bool {
 	return r == "" || r == owner
 }
 
-// Whether the caller reaches the row that was just read, for the reads that name
-// one by id. A row they do not reach answers exactly the way a row that is not
-// there answers, so an id tells nobody what exists outside their own
-// organization. The coarse filter these reads sit behind asks only whether the
-// caller administers SOME organization, which every customer's own admin
-// satisfies; it never asks which one.
+// Whether the caller reaches the row just read, for the reads that name one by
+// id. A row they do not reach answers the way a row that is not there answers, so
+// an id says nothing about what exists outside their own organization. The filter
+// these sit behind asks whether the caller administers an organization, not which
+// one, so the row is asked here.
 // The rows a listing named "global" may show this caller: the whole table for the
-// reserved org, and the caller's own organization for everybody else. The word
-// global was doing the scoping, and the filter these sit behind asks whether the
-// caller administers an organization rather than which one.
+// reserved org, the caller's own organization for everybody else.
 func within[T any](c *ApiController, all func() ([]*T, error), mine func(string) ([]*T, error)) ([]*T, bool) {
 	caller, ok := c.RequireSignedInUser()
 	if !ok {

@@ -32,12 +32,12 @@ type EmbeddingProvider interface {
 	QueryVector(text string, ctx context.Context, lang string) ([]float32, *EmbeddingResult, error)
 }
 
-// Spec is what a provider row says about reaching its vendor for embeddings. The
-// vendor names are model.Vendor because a vendor is a company, not a category:
-// OpenAI sells models and embeddings and is one name for one company.
+// Spec is what a provider row says about reaching its upstream for embeddings.
+// The names are model.Upstream: OpenAI serves models and embeddings, and one
+// thing has one name.
 type Spec struct {
-	Vendor model.Vendor
-	Model  string
+	Upstream model.Upstream
+	Model    string
 
 	ClientID string
 	Secret   string
@@ -50,10 +50,10 @@ type Spec struct {
 	Lang     string
 }
 
-// vendors answers, for each vendor, with the embedding provider that reaches it.
-var vendors = map[model.Vendor]func(Spec) (EmbeddingProvider, error){
+// upstreams answers, for each upstream, with the embedding provider that reaches it.
+var upstreams = map[model.Upstream]func(Spec) (EmbeddingProvider, error){
 	model.OpenAI: func(s Spec) (EmbeddingProvider, error) {
-		return NewOpenAiEmbeddingProvider(string(s.Vendor), s.Model, s.Secret)
+		return NewOpenAiEmbeddingProvider(string(s.Upstream), s.Model, s.Secret)
 	},
 	model.Gemini:      func(s Spec) (EmbeddingProvider, error) { return NewGeminiEmbeddingProvider(s.Model, s.Secret) },
 	model.HuggingFace: func(s Spec) (EmbeddingProvider, error) { return NewHuggingFaceEmbeddingProvider(s.Model, s.Secret) },
@@ -67,31 +67,31 @@ var vendors = map[model.Vendor]func(Spec) (EmbeddingProvider, error){
 		return NewLocalEmbeddingProvider("Custom", "custom-embedding", "randomString", s.URL, s.Model, s.Price, s.Currency)
 	},
 	model.Local: func(s Spec) (EmbeddingProvider, error) {
-		return NewLocalEmbeddingProvider(string(s.Vendor), s.Model, s.Secret, s.URL, s.Model, s.Price, s.Currency)
+		return NewLocalEmbeddingProvider(string(s.Upstream), s.Model, s.Secret, s.URL, s.Model, s.Price, s.Currency)
 	},
 	model.Azure: func(s Spec) (EmbeddingProvider, error) {
-		return NewAzureEmbeddingProvider(string(s.Vendor), s.Model, s.ClientID, s.Secret, s.URL, s.APIVersion)
+		return NewAzureEmbeddingProvider(string(s.Upstream), s.Model, s.ClientID, s.Secret, s.URL, s.APIVersion)
 	},
 	model.MiniMax: func(s Spec) (EmbeddingProvider, error) {
-		return NewMiniMaxEmbeddingProvider(string(s.Vendor), s.Model, s.Secret, s.URL)
+		return NewMiniMaxEmbeddingProvider(string(s.Upstream), s.Model, s.Secret, s.URL)
 	},
 	model.AlibabaCloud: func(s Spec) (EmbeddingProvider, error) {
-		return NewAlibabacloudEmbeddingProvider(string(s.Vendor), s.Model, s.Secret, s.URL)
+		return NewAlibabacloudEmbeddingProvider(string(s.Upstream), s.Model, s.Secret, s.URL)
 	},
 	model.TencentCloud: func(s Spec) (EmbeddingProvider, error) {
 		return NewTencentCloudEmbeddingProvider(s.ClientID, s.Secret, s.Lang)
 	},
 	model.Jina: func(s Spec) (EmbeddingProvider, error) { return NewJinaEmbeddingProvider(s.Model, s.Secret) },
 	model.Word2Vec: func(s Spec) (EmbeddingProvider, error) {
-		return NewWord2VecEmbeddingProvider(string(s.Vendor), s.Model, s.Lang)
+		return NewWord2VecEmbeddingProvider(string(s.Upstream), s.Model, s.Lang)
 	},
 	model.Dummy: func(s Spec) (EmbeddingProvider, error) { return NewDummyEmbeddingProvider(s.Model) },
 }
 
-// Open reaches the vendor a spec names, answering (nil, nil) for one this build
+// Open reaches the upstream a spec names, answering (nil, nil) for one this build
 // does not speak to — the same absence the model side gives.
 func Open(s Spec) (EmbeddingProvider, error) {
-	reach, ok := vendors[s.Vendor]
+	reach, ok := upstreams[s.Upstream]
 	if !ok {
 		return nil, nil
 	}

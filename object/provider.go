@@ -328,7 +328,7 @@ func (p *Provider) GetStorageProviderObj(vectorStoreId string, lang string) (sto
 
 func (p *Provider) GetModelProvider(lang string) (model.ModelProvider, error) {
 	made, err := model.Open(model.Spec{
-		Vendor:      model.Vendor(p.Type),
+		Upstream:    model.Upstream(p.Type),
 		Model:       p.SubType,
 		ClientID:    p.ClientId,
 		Secret:      p.ClientSecret,
@@ -351,7 +351,7 @@ func (p *Provider) GetModelProvider(lang string) (model.ModelProvider, error) {
 
 func (p *Provider) GetEmbeddingProvider(lang string) (embedding.EmbeddingProvider, error) {
 	made, err := embedding.Open(embedding.Spec{
-		Vendor:     model.Vendor(p.Type),
+		Upstream:   model.Upstream(p.Type),
 		Model:      p.SubType,
 		ClientID:   p.ClientId,
 		Secret:     p.ClientSecret,
