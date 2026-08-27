@@ -290,6 +290,13 @@ func TestNormalizedControllerName_CollapsesVariants(t *testing.T) {
 		{"/v1/ai/providers/", "get-providers"},
 		{"/v1//ai/providers", "get-providers"},
 		{"/v1/ai/./providers", "get-providers"},
+		// The router leaves fiber's CaseSensitive false, so these dispatch to the
+		// same handler. A gate that reads them as some other name, or as not an API
+		// route at all, is a gate the caller chooses to skip by holding shift.
+		{"/V1/admin/providers", "admin/providers"},
+		{"/v1/ADMIN/providers", "admin/providers"},
+		{"/V1/ADMIN/PROVIDERS", "admin/providers"},
+		{"/V1/ai/providers", "get-providers"},
 	}
 	for _, c := range cases {
 		got, ok := normalizedControllerName(c.raw, "GET")

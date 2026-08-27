@@ -289,7 +289,13 @@ func normalizedControllerName(rawPath, method string) (name string, ok bool) {
 	// path.Clean resolves ".", ".." and duplicate slashes on the absolute request
 	// path exactly as the router does before dispatch. path.Clean("/v1/admin/providers/")
 	// == "/v1/admin/providers"; path.Clean("/v1//admin/providers") == "/v1/admin/providers".
-	cleaned := path.Clean(rawPath)
+	// Folded because the ROUTER folds it. zip leaves fiber's CaseSensitive at its
+	// default of false, so /V1/... and /v1/... dispatch to the same handler while
+	// Ctx.Path() hands back whatever the caller sent — so a prefix test against a
+	// lowercase literal reads /V1/ as "not an API route" and lets it past
+	// ungoverned. The name is only ever compared with route names and policy keys,
+	// which are lowercase, so folding it cannot change what it addresses.
+	cleaned := strings.ToLower(path.Clean(rawPath))
 	if !strings.HasPrefix(cleaned, "/v1/") {
 		return "", false
 	}
