@@ -518,7 +518,10 @@ func resolveOrgFromPublishableKey(accessKey string) (string, error) {
 	req.SetBasicAuth(clientId, clientSecret)
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("IAM request failed: %w", err)
+		// The key travels in the query string, so a transport failure carries it:
+		// *url.Error prints the whole URL. Redacted before it becomes an error value,
+		// because from here it is logged and wrapped further.
+		return "", fmt.Errorf("IAM request failed: %s", object.RedactKeys(err.Error()))
 	}
 	defer resp.Body.Close()
 	var result struct {
@@ -608,7 +611,10 @@ func getUserByAccessKey(accessKey string) (*iam.User, error) {
 	req.SetBasicAuth(clientId, clientSecret)
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("IAM request failed: %w", err)
+		// The key travels in the query string, so a transport failure carries it:
+		// *url.Error prints the whole URL. Redacted before it becomes an error value,
+		// because from here it is logged and wrapped further.
+		return nil, fmt.Errorf("IAM request failed: %s", object.RedactKeys(err.Error()))
 	}
 	defer resp.Body.Close()
 
