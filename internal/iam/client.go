@@ -183,9 +183,8 @@ func (c *Client) endpoint() string { return resolveEndpoint(c.Endpoint) }
 //
 // `path` is an ADDRESS: a collection ("users") or one record under it
 // ("certs/admin/cert-hanzo"). Query params scope a COLLECTION — `?owner=` on a
-// list — and never identify a record. The verb spellings that used to be passed
-// here, first "get-cert" and then "certs/get", are both gone from IAM's router,
-// so a request built from either now 404s.
+// list — and never identify a record. A verb in the path — "get-cert",
+// "certs/get" — is not an address IAM's router carries, and 404s.
 func (c *Client) GetUrl(path string, queryMap map[string]string) string {
 	query := ""
 	for k, v := range queryMap {

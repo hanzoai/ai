@@ -18,11 +18,9 @@ package object
 //
 // It reads through the ONE crawl the HOST supplies (SetFetcher), which is
 // the same code the answer engine's read stage grounds on. There is no crawl
-// SERVICE to call: this used to dial crawl.hanzo.svc.cluster.local:11235, a name
-// that does not resolve, so every request returned success:false and the endpoint
-// looked merely unlucky rather than unwired.
+// SERVICE to call, and no address to dial for one.
 //
-// The native fetch is also strictly safer than the dial it replaces: apps/crawl
+// The native fetch is also strictly safer than a dial out: apps/crawl
 // carries a guarded dialer that refuses non-public addresses on EVERY hop,
 // including redirects, so a caller-supplied URL cannot be aimed at the cluster's
 // own internals. That is the property an SSRF-facing endpoint has to have, and

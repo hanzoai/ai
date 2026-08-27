@@ -189,7 +189,7 @@ func (c *ApiController) Signin() {
 	claims.AccessToken = token.AccessToken
 	// Becoming somebody is ONE act: the browser is handed the verified token, and
 	// every later request re-derives identity from it. There is no second handle to
-	// keep in step, which is what there used to be.
+	// keep in step with it.
 	c.setIamTokenCookie(token.AccessToken, token.Expiry)
 	userId := claims.User.Owner + "/" + claims.User.Name
 	c.Locals("recordUserId", userId)
