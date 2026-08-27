@@ -222,9 +222,22 @@ func CalculateOpenAIModelPrice(model string, modelResult *ModelResult, lang stri
 		modelResult.Currency = "USD"
 		return nil
 	default:
-		// inputPricePerThousandTokens = 0
-		// outputPricePerThousandTokens = 0
-		return fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "embedding:calculatePrice() error: unknown model type: %s"), model))
+		// A model this table has never heard of is not an error. It is every model
+		// served from our own hardware and every vendor free tier — the table lists
+		// what OpenAI retails, and nobody adds a free model to a retail price list.
+		// Refusing here failed a request that had ALREADY succeeded upstream, so the
+		// caller paid the latency, we paid the tokens, and the answer was thrown away
+		// to report a price.
+		//
+		// This client is not the price authority. A route states what a call costs
+		// (object.ModelRoute.Priced) and the completion path bills from that; what
+		// belongs here is only whether THIS client knew a price, which is now said
+		// plainly instead of thrown. Zero with no flag would be a lie in the other
+		// direction — an empty Currency reads as USD downstream, so an unknown model
+		// would bill as free rather than as unknown.
+		modelResult.Unpriced = true
+		modelResult.TotalPrice = 0
+		return nil
 	}
 
 	inputPrice := getPrice(modelResult.PromptTokenCount, inputPricePerThousandTokens)

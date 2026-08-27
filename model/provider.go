@@ -31,6 +31,25 @@ type ModelResult struct {
 	TotalPrice         float64
 	Currency           string
 
+	// Unpriced says NO price was stated for this call, so TotalPrice is an absence
+	// rather than an amount.
+	//
+	// A client prices from a table of models it knows, and it cannot know a model
+	// served from our own hardware or from a vendor's free tier. Reporting nothing
+	// for those used to mean returning an error, which failed the whole request —
+	// the call succeeded upstream and the caller got a pricing message instead of an
+	// answer. Reporting a bare zero would be worse: an empty Currency reads as USD
+	// downstream, so an unknown model would bill as costing nothing rather than as
+	// unknown.
+	//
+	// Stated as the NEGATIVE deliberately, unlike a route's Priced. The safe zero
+	// value differs because the risk does: a route that defaulted to priced-at-zero
+	// would give inference away, while a result that defaulted to unpriced would
+	// stop billing every client that never sets it. Zero here means priced, which is
+	// what every existing client already means. The usage warehouse has carried this
+	// same word all along and can now be told the truth.
+	Unpriced bool
+
 	// CacheReadTokenCount and CacheWriteTokenCount are the prompt tokens a
 	// provider served from, and wrote to, its prompt cache.
 	//

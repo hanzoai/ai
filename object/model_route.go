@@ -39,6 +39,22 @@ type ModelRoute struct {
 	Hidden      bool    `json:"hidden"`               // excluded from /api/models listing
 	InputPrice  float64 `json:"inputPricePerMillion"` // custom customer price (0 = use default)
 	OutputPrice float64 `json:"outputPricePerMillion"`
+	// Priced says the two prices above ARE the answer, zero included.
+	//
+	// Without it a price of zero is indistinguishable from no price at all, because
+	// the lookup consults this row only when a price exceeds zero — so a route can
+	// name a provider but can never say the call costs the caller nothing. A model
+	// served from our own hardware, at no marginal cost, was refused for insufficient
+	// balance for exactly that reason.
+	//
+	// A discovered SKU needs no such field: being in the family's catalog is what
+	// makes its price an answer, and the number is then free to be zero. This is the
+	// same fact for a route that is declared rather than discovered, which is why it
+	// qualifies the existing numbers instead of restating price as a second flag.
+	//
+	// Unset ⇒ the previous reading exactly: zero means unstated and resolution falls
+	// through to config and then to the static table. Additive column synced by dbx.
+	Priced bool `json:"priced"`
 	// Provider COGS ($/1M tokens): what it costs Hanzo to serve, distinct from the
 	// customer price above and the ONE place a cost is registered. Unset ⇒ the cost is
 	// not known and no margin is reported for the call — it does not fall back to the
