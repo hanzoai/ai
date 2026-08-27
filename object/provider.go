@@ -327,12 +327,40 @@ func (p *Provider) GetStorageProviderObj(vectorStoreId string, lang string) (sto
 }
 
 func (p *Provider) GetModelProvider(lang string) (model.ModelProvider, error) {
-	made, err := model.GetModelProvider(p.Type, p.SubType, p.ClientId, p.ClientSecret, p.UserKey, p.Temperature, p.TopP, p.TopK, p.FrequencyPenalty, p.PresencePenalty, p.ProviderUrl, p.ApiVersion, p.CompatibleProvider, p.InputPricePerThousandTokens, p.OutputPricePerThousandTokens, p.Currency, p.EnableThinking)
+	made, err := model.Open(model.Spec{
+		Vendor:      model.Vendor(p.Type),
+		Model:       p.SubType,
+		ClientID:    p.ClientId,
+		Secret:      p.ClientSecret,
+		UserKey:     p.UserKey,
+		URL:         p.ProviderUrl,
+		APIVersion:  p.ApiVersion,
+		Compatible:  p.CompatibleProvider,
+		Temperature: p.Temperature,
+		TopP:        p.TopP,
+		TopK:        p.TopK,
+		Frequency:   p.FrequencyPenalty,
+		Presence:    p.PresencePenalty,
+		Thinking:    p.EnableThinking,
+		InputPrice:  p.InputPricePerThousandTokens,
+		OutputPrice: p.OutputPricePerThousandTokens,
+		Currency:    p.Currency,
+	})
 	return supported(made, err, "object:the model provider type: %s is not supported", p.Type, lang)
 }
 
 func (p *Provider) GetEmbeddingProvider(lang string) (embedding.EmbeddingProvider, error) {
-	made, err := embedding.GetEmbeddingProvider(p.Type, p.SubType, p.ClientId, p.ClientSecret, p.ProviderUrl, p.ApiVersion, p.InputPricePerThousandTokens, p.Currency, lang)
+	made, err := embedding.Open(embedding.Spec{
+		Vendor:     model.Vendor(p.Type),
+		Model:      p.SubType,
+		ClientID:   p.ClientId,
+		Secret:     p.ClientSecret,
+		URL:        p.ProviderUrl,
+		APIVersion: p.ApiVersion,
+		Price:      p.InputPricePerThousandTokens,
+		Currency:   p.Currency,
+		Lang:       lang,
+	})
 	return supported(made, err, "object:the embedding provider type: %s is not supported", p.Type, lang)
 }
 

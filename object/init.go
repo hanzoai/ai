@@ -391,8 +391,14 @@ var seededLLMProviders = []Provider{
 		SubType:      "accounts/fireworks/models/deepseek-v3p2",
 		ProviderUrl:  "https://api.fireworks.ai/inference/v1",
 		ClientSecret: "kms://FIREWORKS_API_KEY",
-		State:        "Disabled", // opt-in via /v1/admin/providers/toggle
-		IsDefault:    false,
+		// Active because the routes table sends models here: 17 name fireworks and
+		// 5 name openai-direct, and a Disabled Model provider resolves to nil — so
+		// those models answered "provider not configured in database" rather than
+		// being served. A provider the catalog routes to is one the catalog can
+		// reach. Its key is the kms:// reference above; State stays an operator's
+		// to change, and is never re-synced from here on an existing row.
+		State:     "Active",
+		IsDefault: false,
 	},
 	{
 		Owner:        "admin",
@@ -403,8 +409,14 @@ var seededLLMProviders = []Provider{
 		SubType:      "gpt-5",
 		ProviderUrl:  "https://api.openai.com/v1",
 		ClientSecret: "kms://OPENAI_API_KEY",
-		State:        "Disabled", // opt-in via /v1/admin/providers/toggle
-		IsDefault:    false,
+		// Active because the routes table sends models here: 17 name fireworks and
+		// 5 name openai-direct, and a Disabled Model provider resolves to nil — so
+		// those models answered "provider not configured in database" rather than
+		// being served. A provider the catalog routes to is one the catalog can
+		// reach. Its key is the kms:// reference above; State stays an operator's
+		// to change, and is never re-synced from here on an existing row.
+		State:     "Active",
+		IsDefault: false,
 	},
 	{
 		// Zen video served on OUR GB10 (spark) via Hanzo Studio. The
