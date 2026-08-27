@@ -445,8 +445,13 @@ func getModelPriceForOrgOK(model string, orgId string) (modelPrice, bool) {
 	}
 
 	// Check DB route pricing first (org-specific -> global)
+	//
+	// Priced is what lets the answer be zero: a route that states its price is the
+	// price, and a route that states nothing still reads as unstated at zero, so the
+	// fall-through to config and the static table is unchanged for every row written
+	// before the column existed.
 	dbRoute, err := object.ResolveModelRouteFromDB(strings.ToLower(model), orgId)
-	if err == nil && dbRoute != nil && (dbRoute.InputPrice > 0 || dbRoute.OutputPrice > 0) {
+	if err == nil && dbRoute != nil && (dbRoute.Priced || dbRoute.InputPrice > 0 || dbRoute.OutputPrice > 0) {
 		return modelPrice{
 			InputPerMillion:   dbRoute.InputPrice,
 			OutputPerMillion:  dbRoute.OutputPrice,
