@@ -70,6 +70,7 @@ func (w *OpenAIWriter) Flush() {
 func (w *OpenAIWriter) Write(p []byte) (n int, err error) {
 	// Parse the incoming SSE message format
 	var content string
+	var reasoning bool
 
 	if bytes.HasPrefix(p, []byte("event: message\ndata: ")) {
 		prefix := []byte("event: message\ndata: ")
@@ -79,10 +80,21 @@ func (w *OpenAIWriter) Write(p []byte) (n int, err error) {
 		// Add content to message buffer
 		w.MessageBuf = append(w.MessageBuf, []byte(content)...)
 	} else if bytes.HasPrefix(p, []byte("event: reason\ndata: ")) {
-		// We don't expose reason data in OpenAI format, but we'll store it
+		// Reasoning is a FIELD, and it stays one. It is deliberately kept out of
+		// MessageBuf — the answer is the answer — and streamed below as
+		// reasoning_content, which is the same shape the upstream sent and the
+		// name every client that renders thinking already reads.
+		//
+		// It used to fall through to the content delta beneath this switch, which
+		// meant the comment here ("we don't expose reason data") was true of the
+		// buffered answer and false of the stream: a caller reading the same model
+		// non-streaming got "ok", and streaming got the whole chain-of-thought
+		// followed by "ok". Measured against GLM-5.1, whose upstream separates the
+		// two perfectly.
 		prefix := []byte("event: reason\ndata: ")
 		suffix := []byte("\n\n")
 		content = string(bytes.TrimSuffix(bytes.TrimPrefix(p, prefix), suffix))
+		reasoning = true
 	} else {
 		// If we can't parse, just store the raw bytes and attempt to clean
 		content = w.Cleaner.CleanString(string(p))
@@ -109,6 +121,9 @@ func (w *OpenAIWriter) Write(p []byte) (n int, err error) {
 	// Omitting it breaks their parser with "Cannot read properties of undefined
 	// (reading 'role')" and the reply never renders.
 	delta := openai.ChatCompletionStreamChoiceDelta{Content: content}
+	if reasoning {
+		delta = openai.ChatCompletionStreamChoiceDelta{ReasoningContent: content}
+	}
 	if !w.StreamSent {
 		delta.Role = "assistant"
 	}
