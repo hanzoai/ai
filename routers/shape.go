@@ -18,6 +18,7 @@ import (
 	"reflect"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/hanzoai/ai/controllers"
 )
@@ -139,17 +140,52 @@ func ref(t reflect.Type, named map[string]reflect.Type) map[string]any {
 // object is unqualified because it holds the nouns this service is about — a
 // reader seeing "Store" in an ai document does not need to be told which Store.
 func component(t reflect.Type) string {
+	name := exported(t.Name())
 	pkg := t.PkgPath()
 	if i := strings.LastIndex(pkg, "/"); i >= 0 {
 		pkg = pkg[i+1:]
 	}
+	if n, ok := shortPkg[pkg]; ok {
+		pkg = n
+	}
 	if pkg == "" || pkg == "object" {
-		if n, ok := published[t.Name()]; ok {
+		if n, ok := published[name]; ok {
 			return n
 		}
-		return t.Name()
+		return name
 	}
-	return pkg + "." + t.Name()
+	return pkg + "." + name
+}
+
+// shortPkg is the name a package is KNOWN by, where the last segment of its
+// import path is not it.
+//
+// A schema name reaches every generated SDK as a class name, so it has to be a
+// legal identifier in nine languages. "go-openai" is a repository name and it
+// carries a hyphen, which is not; "openai" is what the package calls itself and
+// what a reader of the wire format already knows.
+//
+// controllers is where this service's handlers live, which is a fact about this
+// repository's layout and not about the API. A client holding one of these types
+// is holding an ai shape, so that is the word it is published under.
+var shortPkg = map[string]string{
+	"go-openai":   "openai",
+	"controllers": "ai",
+}
+
+// exported is a type's name as a schema name.
+//
+// An unexported Go type is unexported to this repository, not to the wire: the
+// shape crosses either way, and a generator asked for a class named modelList
+// either lowercases a class or, in a language with no such convention, emits
+// something a reader cannot connect to the ModelList in the document.
+func exported(name string) string {
+	if name == "" {
+		return ""
+	}
+	r := []rune(name)
+	r[0] = unicode.ToUpper(r[0])
+	return string(r)
 }
 
 // published is the wire name for a type whose Go name is a word another product
