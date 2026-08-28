@@ -624,10 +624,22 @@ func modelListing(user *iam.User) ([]byte, error) {
 // the provider's /v1/models even when remote_models is disabled; an empty
 // `models` list tells Codex to retain its safe built-in fallback metadata
 // instead of failing to decode the otherwise-valid OpenAI `data` list.
-func modelListEnvelope(models []modelInfo) map[string]interface{} {
-	return map[string]interface{}{
-		"object": "list",
-		"data":   models,
-		"models": []interface{}{},
-	}
+func modelListEnvelope(models []modelInfo) modelList {
+	return modelList{Object: "list", Data: models, Models: []modelInfo{}}
+}
+
+// modelList is the catalogue as /v1/models answers it.
+//
+// It is a struct rather than the map it used to be so the shape is READABLE:
+// this is the most-called address on the surface, and a map literal has no type
+// for the published document to reflect, so every generated client handed the
+// caller an untyped bag where the catalogue should be.
+//
+// Models is the empty array a long-retired client read the list from. It stays
+// empty and it stays present — dropping it changes the wire — and it is []T
+// rather than nil so it marshals as [] the way it always has.
+type modelList struct {
+	Object string      `json:"object"`
+	Data   []modelInfo `json:"data"`
+	Models []modelInfo `json:"models"`
 }
