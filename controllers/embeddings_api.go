@@ -255,14 +255,11 @@ func (c *ApiController) Rerank() {
 	}
 	returnDocs := raw.ReturnDocuments != nil && *raw.ReturnDocuments
 
-	out := make([]map[string]interface{}, 0, topN)
+	out := make([]rankedDoc, 0, topN)
 	for _, r := range results[:topN] {
-		entry := map[string]interface{}{
-			"index":           r.Index,
-			"relevance_score": r.Score,
-		}
+		entry := rankedDoc{Index: r.Index, Score: r.Score}
 		if returnDocs {
-			entry["document"] = map[string]string{"text": docs[r.Index]}
+			entry.Document = &rankedText{Text: docs[r.Index]}
 		}
 		out = append(out, entry)
 	}
@@ -285,12 +282,33 @@ func (c *ApiController) Rerank() {
 		recordTrace(c.Context(), rec, startTime)
 	}
 
-	c.jsonResponse(map[string]interface{}{
-		"object":  "list",
-		"model":   raw.Model,
-		"results": out,
-		"usage":   map[string]int{"total_tokens": 0},
-	})
+	c.jsonResponse(ranking{Object: "list", Model: raw.Model, Results: out})
+}
+
+// ranking is what /v1/rerank answers: the documents in relevance order.
+type ranking struct {
+	Object  string      `json:"object"`
+	Model   string      `json:"model"`
+	Results []rankedDoc `json:"results"`
+	Usage   rankUsage   `json:"usage"`
+}
+
+// rankedDoc is one document's place in the ranking. Document is a pointer so it
+// is absent unless the caller asked for the text back.
+type rankedDoc struct {
+	Index    int         `json:"index"`
+	Score    float64     `json:"relevance_score"`
+	Document *rankedText `json:"document,omitempty"`
+}
+
+type rankedText struct {
+	Text string `json:"text"`
+}
+
+// rankUsage is the ranking's token cost. Reranking is scored from embeddings
+// already paid for, so the count is zero and says so rather than being omitted.
+type rankUsage struct {
+	Total int `json:"total_tokens"`
 }
 
 // ── Shared helpers ────────────────────────────────────────────────────────
