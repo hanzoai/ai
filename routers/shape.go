@@ -18,6 +18,8 @@ import (
 	"reflect"
 	"strings"
 	"time"
+
+	"github.com/hanzoai/ai/controllers"
 )
 
 // The envelope told the truth and said nothing.
@@ -176,8 +178,7 @@ var published = map[string]string{
 // components is every schema the document refers to, closed over its own
 // references: reflecting Store names Provider, reflecting Provider names
 // whatever Provider holds, and so on until nothing new appears.
-func components(roots []reflect.Type) map[string]any {
-	named := map[string]reflect.Type{}
+func components(roots []reflect.Type, named map[string]reflect.Type) map[string]any {
 	for _, t := range roots {
 		named[component(t)] = t
 	}
@@ -210,6 +211,32 @@ func result(data map[string]any) map[string]any {
 				"properties": map[string]any{"data": data},
 			},
 		},
+	}
+}
+
+// answer is the Responses Object for a hand-written route, built from the Go
+// value its handler writes.
+//
+// Every named struct becomes a $ref, at the root and inside it, because sharing
+// is the point: object.Memory answers five of these operations and a client
+// should get ONE type it can pass between them, not five structurally identical
+// ones it cannot. A slice or a map has no name to share and inlines.
+//
+// 401 and 403 are stated for the same reason [op] states them: refusal is part of
+// the contract, and a client generated from a document that names only the happy
+// answer has nowhere to put the other one.
+func answer(a controllers.Answer, named map[string]reflect.Type) map[string]any {
+	s := ref(reflect.TypeOf(a.Shape), named)
+	if a.Data {
+		s = result(s)
+	}
+	return map[string]any{
+		"200": map[string]any{
+			"description": "Success.",
+			"content":     map[string]any{"application/json": map[string]any{"schema": s}},
+		},
+		"401": map[string]any{"description": "No credential, or one this service does not accept."},
+		"403": map[string]any{"description": "A valid credential that may not do this."},
 	}
 }
 

@@ -1316,7 +1316,13 @@ func (c *ApiController) AnthropicCountTokens() {
 		}
 	}
 
-	out, _ := json.Marshal(map[string]interface{}{"input_tokens": n})
+	out, _ := json.Marshal(tokenCount{Input: n})
 	c.SetHeader("Content-Type", "application/json")
 	c.Bytes(http.StatusOK, out)
+}
+
+// tokenCount is what /v1/messages/count_tokens answers: what the prompt would
+// cost before it is sent.
+type tokenCount struct {
+	Input int `json:"input_tokens"`
 }

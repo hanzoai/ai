@@ -15,6 +15,8 @@
 package controllers
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -129,24 +131,27 @@ func TestVideoJobResponse(t *testing.T) {
 	// queued
 	q := &videoJob{id: "video_abc", userModel: "zen3-video", createdAt: time.Now(), status: "queued"}
 	rq := videoJobResponse(q)
-	if rq["id"] != "video_abc" || rq["object"] != "video" || rq["model"] != "zen3-video" {
+	if rq.ID != "video_abc" || rq.Object != "video" || rq.Model != "zen3-video" {
 		t.Fatalf("queued projection wrong: %+v", rq)
 	}
-	if rq["status"] != "queued" || rq["progress"] != 0 {
+	if rq.Status != "queued" || rq.Progress != 0 {
 		t.Errorf("queued status/progress wrong: %+v", rq)
 	}
-	if _, hasErr := rq["error"]; hasErr {
+	if rq.Error != nil {
 		t.Errorf("queued job must not carry error: %+v", rq)
 	}
-	if _, hasCreated := rq["created_at"]; !hasCreated {
+	if rq.CreatedAt == 0 {
 		t.Errorf("projection must carry created_at")
 	}
-	// The upstream id must never appear anywhere in the projection.
+	// The upstream id must never appear anywhere in the projection — asked of the
+	// JSON the client actually receives, so a nested field is covered too.
 	q.upstreamID = "upstream_secret_id"
-	for k, v := range videoJobResponse(q) {
-		if s, ok := v.(string); ok && s == "upstream_secret_id" {
-			t.Errorf("projection leaked upstream id at key %q", k)
-		}
+	sent, err := json.Marshal(videoJobResponse(q))
+	if err != nil {
+		t.Fatalf("projection does not marshal: %v", err)
+	}
+	if strings.Contains(string(sent), "upstream_secret_id") {
+		t.Errorf("projection leaked upstream id: %s", sent)
 	}
 
 	// completed → progress 100, no error
@@ -158,7 +163,7 @@ func TestVideoJobResponse(t *testing.T) {
 		t.Fatal("second markCompleted must be idempotent (first=false)")
 	}
 	rc := videoJobResponse(c)
-	if rc["status"] != "completed" || rc["progress"] != 100 {
+	if rc.Status != "completed" || rc.Progress != 100 {
 		t.Errorf("completed projection wrong: %+v", rc)
 	}
 
@@ -172,11 +177,10 @@ func TestVideoJobResponse(t *testing.T) {
 	}
 	f.setFailureReason("upstream said nope")
 	rf := videoJobResponse(f)
-	if rf["status"] != "failed" {
+	if rf.Status != "failed" {
 		t.Errorf("failed status wrong: %+v", rf)
 	}
-	errObj, ok := rf["error"].(map[string]interface{})
-	if !ok || errObj["message"] != "upstream said nope" {
+	if rf.Error == nil || rf.Error.Message != "upstream said nope" {
 		t.Errorf("failed error projection wrong: %+v", rf)
 	}
 }
