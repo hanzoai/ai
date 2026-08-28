@@ -276,4 +276,15 @@ func registerAPI(app *zip.App) {
 	route(app, "/v1/ai/memory/facts", "GET:MemoryFacts")
 	route(app, "/v1/ai/memory/update", "POST:MemoryUpdate")
 	route(app, "/v1/ai/memory/delete", "POST:MemoryDelete")
+
+	// Personas — who an agent answers as. One namespace: the catalogue compiled
+	// into this binary plus the caller's own saved personas, theirs winning on a
+	// name collision, so editing a stock persona is a save and reverting is a
+	// delete. `system` returns the ready system turn so a client never has to
+	// know how a persona becomes a prompt.
+	route(app, "/v1/persona/list", "GET:PersonaList")
+	route(app, "/v1/persona/get", "GET:PersonaGet")
+	route(app, "/v1/persona/system", "GET:PersonaSystem")
+	route(app, "/v1/persona/save", "POST:PersonaSave")
+	route(app, "/v1/persona/delete", "POST:PersonaDelete")
 }

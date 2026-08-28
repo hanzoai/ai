@@ -186,6 +186,7 @@ func (a *Adapter) createTable() {
 		&Provider{}, &Record{}, &Scale{}, &Scan{}, &Session{}, &Store{},
 		&Task{}, &Template{}, &Vector{}, &Video{}, &Workflow{},
 		&Memory{},             // cloud memory backend (per-user scoped)
+		&Persona{},            // personas a caller saved; the catalogue ships in the binary
 		&OrgSettings{},        // per-org feature overrides (auto-routing, …)
 		&RoutingEvent{},       // privacy-preserving auto-routing decision ledger (training)
 		&RouterArtifactMeta{}, // latest retrain outcome per scope (upsert, one row/owner)
