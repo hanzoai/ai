@@ -208,7 +208,30 @@ func exported(name string) string {
 // because renaming a Go type to settle a document is the tail wagging the dog.
 var published = map[string]string{
 	"Record": "Audit",
-	"Usage":  "Tally",
+
+	// Five more, all settled the same way and all settled on accuracy. Each of
+	// these names was already claimed by a shape a published client is bound to,
+	// and ours arrived today — so ours is the one that is still free to be right.
+	//
+	//	Usage is {date, userCount, chatCount, tokenCount, price} — a day's counts,
+	//	priced. affiliate's is money owed and money paid. Ours counts.
+	//
+	//	Application is a Template plus parameters, deployed and served. affiliate's
+	//	is somebody asking to join a programme. Ours is a program.
+	//
+	//	Scan is {targetMode, target, asset} — a job that goes and looks. security's
+	//	is {content, path}, one file that was looked at.
+	//
+	//	Suggestion is {text, isHit} — a string offered while typing, flagged if it
+	//	matched. guide's is a recommended action with a rationale.
+	//
+	//	Form is {formItems, position, category, url} — how a page is laid out.
+	//	company's is a document with a signature on it.
+	"Usage":       "Count",
+	"Application": "App",
+	"Scan":        "Sweep",
+	"Suggestion":  "Candidate",
+	"Form":        "Layout",
 }
 
 // components is every schema the document refers to, closed over its own
