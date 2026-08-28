@@ -306,7 +306,7 @@ func (c *ApiController) SearchDocs() {
 	c.SetHeader("Vary", "Accept-Encoding, Authorization")
 
 	// Return {hits: [...]} envelope matching the TypeScript client's HanzoSearchResponse type.
-	c.JSON(http.StatusOK, map[string]interface{}{"hits": results})
+	c.JSON(http.StatusOK, docHits{Hits: results})
 }
 
 // IndexDocs
@@ -391,4 +391,9 @@ func (c *ApiController) SearchDocsStats() {
 	}
 
 	c.ResponseOk(stats)
+}
+
+// docHits is what /v1/ai/search answers: the matching chunks, scored.
+type docHits struct {
+	Hits []object.DocSearchResult `json:"hits"`
 }

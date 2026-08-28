@@ -789,26 +789,80 @@ func (t *responsesStreamTranslator) finish() error {
 	})
 }
 
-func (t *responsesStreamTranslator) resource(status string, output []interface{}) map[string]interface{} {
+func (t *responsesStreamTranslator) resource(status string, output []interface{}) responsesResource {
 	total := t.totalTokens
 	if total == 0 {
 		total = t.promptTokens + t.completionTokens
 	}
-	return map[string]interface{}{
-		"id": t.responseID, "object": "response", "created_at": t.createdAt, "status": status,
-		"model": t.request.Model, "output": output, "error": nil, "incomplete_details": nil,
-		"instructions": t.request.Instructions, "max_output_tokens": t.request.MaxOutputTokens,
-		"metadata": t.request.Metadata, "parallel_tool_calls": t.request.ParallelToolCalls,
-		"previous_response_id": nil, "reasoning": jsonOrNil(t.request.Reasoning),
-		"store": t.request.Store, "temperature": t.request.Temperature,
-		"text": jsonOrNil(t.request.Text), "tool_choice": jsonOrNil(t.request.ToolChoice),
-		"tools": t.request.Tools, "top_p": t.request.TopP,
-		"usage": map[string]interface{}{
-			"input_tokens": t.promptTokens, "input_tokens_details": map[string]int{"cached_tokens": 0},
-			"output_tokens": t.completionTokens, "output_tokens_details": map[string]int{"reasoning_tokens": 0},
-			"total_tokens": total,
+	return responsesResource{
+		ID: t.responseID, Object: "response", CreatedAt: t.createdAt, Status: status,
+		Model: t.request.Model, Output: output,
+		Instructions: t.request.Instructions, MaxOutputTokens: t.request.MaxOutputTokens,
+		Metadata: t.request.Metadata, ParallelToolCalls: t.request.ParallelToolCalls,
+		Reasoning: jsonOrNil(t.request.Reasoning),
+		Store:     t.request.Store, Temperature: t.request.Temperature,
+		Text: jsonOrNil(t.request.Text), ToolChoice: jsonOrNil(t.request.ToolChoice),
+		Tools: t.request.Tools, TopP: t.request.TopP,
+		Usage: responsesUsage{
+			InputTokens:   t.promptTokens,
+			InputDetails:  responsesInputDetails{},
+			OutputTokens:  t.completionTokens,
+			OutputDetails: responsesOutputDetails{},
+			TotalTokens:   total,
 		},
 	}
+}
+
+// responsesResource is one answer from /v1/responses.
+//
+// Error, IncompleteDetails and PreviousResponseID are `any` and carry no
+// omitempty because the OpenAI Responses API sends them as an explicit null
+// rather than omitting them, which is what the map this replaced did by setting
+// the key to nil.
+//
+// Output is the one field with no shape to state: it is a union — a message, a
+// tool call, a reasoning item — and each element says which it is in its own
+// `type`. An empty schema is the honest answer for a union; a guessed one would
+// send every client down the wrong branch.
+type responsesResource struct {
+	ID                 string            `json:"id"`
+	Object             string            `json:"object"`
+	CreatedAt          int64             `json:"created_at"`
+	Status             string            `json:"status"`
+	Model              string            `json:"model"`
+	Output             []interface{}     `json:"output"`
+	Error              interface{}       `json:"error"`
+	IncompleteDetails  interface{}       `json:"incomplete_details"`
+	Instructions       string            `json:"instructions"`
+	MaxOutputTokens    int               `json:"max_output_tokens"`
+	Metadata           map[string]string `json:"metadata"`
+	ParallelToolCalls  *bool             `json:"parallel_tool_calls"`
+	PreviousResponseID interface{}       `json:"previous_response_id"`
+	Reasoning          interface{}       `json:"reasoning"`
+	Store              bool              `json:"store"`
+	Temperature        *float32          `json:"temperature"`
+	Text               interface{}       `json:"text"`
+	ToolChoice         interface{}       `json:"tool_choice"`
+	Tools              []responsesTool   `json:"tools"`
+	TopP               *float32          `json:"top_p"`
+	Usage              responsesUsage    `json:"usage"`
+}
+
+// responsesUsage is what the answer cost.
+type responsesUsage struct {
+	InputTokens   int                    `json:"input_tokens"`
+	InputDetails  responsesInputDetails  `json:"input_tokens_details"`
+	OutputTokens  int                    `json:"output_tokens"`
+	OutputDetails responsesOutputDetails `json:"output_tokens_details"`
+	TotalTokens   int                    `json:"total_tokens"`
+}
+
+type responsesInputDetails struct {
+	CachedTokens int `json:"cached_tokens"`
+}
+
+type responsesOutputDetails struct {
+	ReasoningTokens int `json:"reasoning_tokens"`
 }
 
 func jsonOrNil(raw json.RawMessage) interface{} {
