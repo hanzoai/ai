@@ -736,9 +736,10 @@ func (c *ApiController) RefreshModelPricing() {
 
 	cfg.fetchLivePricing()
 
-	c.ResponseOk(struct {
-		LastPricingRefresh time.Time `json:"lastPricingRefresh"`
-	}{
-		LastPricingRefresh: cfg.LastPricingRefresh().UTC(),
-	})
+	c.ResponseOk(pricingRefresh{LastPricingRefresh: cfg.LastPricingRefresh().UTC()})
+}
+
+// pricingRefresh is when the catalogue's rates last came from the pricing service.
+type pricingRefresh struct {
+	LastPricingRefresh time.Time `json:"lastPricingRefresh"`
 }

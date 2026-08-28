@@ -19,6 +19,8 @@ import (
 	"strings"
 
 	"github.com/zap-proto/zip"
+
+	"github.com/hanzoai/ai/controllers"
 )
 
 // The published API description of this service is DERIVED from the router that
@@ -48,8 +50,17 @@ import (
 func Document(app *zip.App) map[string]any {
 	described := items()
 	said := map[string]Doc{}
+	// Every named type the document ends up referring to, gathered as the paths are
+	// built rather than from a list beside them, so a shape cannot be published
+	// without its components.
+	named := map[string]reflect.Type{}
+	answered := map[string]map[string]any{}
 	for _, w := range wired {
-		said[w.Method+" "+openAPIPath(w.Path)] = Doc{Summary: w.Summary, Description: w.Description}
+		path := openAPIPath(w.Path)
+		said[w.Method+" "+path] = Doc{Summary: w.Summary, Description: w.Description}
+		if a, ok := controllers.Answers()[w.Handler]; ok {
+			answered[w.Method+" "+path] = answer(a, named)
+		}
 	}
 
 	paths := map[string]any{}
@@ -81,6 +92,18 @@ func Document(app *zip.App) map[string]any {
 				}
 				if d.Description != "" {
 					o["description"] = d.Description
+				}
+				// A hand-written route's own body. Only where the generated half said
+				// nothing: an operation the resource table describes is described by
+				// the table, and this cannot overrule it.
+				if _, told := o["responses"]; !told {
+					r, ok := answered[verb+" "+path]
+					if !ok {
+						r = answered["* "+path]
+					}
+					if r != nil {
+						o["responses"] = r
+					}
 				}
 				// Named HERE because this is the one place that knows both the verb
 				// and the address. items() builds operations before it knows which
@@ -136,7 +159,7 @@ func Document(app *zip.App) map[string]any {
 			roots = append(roots, reflect.TypeOf(r.shape))
 		}
 	}
-	schemas := components(roots)
+	schemas := components(roots, named)
 	schemas["Envelope"] = envelope()
 
 	return map[string]any{
