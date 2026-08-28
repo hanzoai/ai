@@ -434,33 +434,49 @@ func (c *ApiController) resolveOwnedVideoJob(token, id string) (*videoJob, *obje
 
 // videoJobResponse projects a job into the OpenAI Sora-shaped video object the
 // client sees. It never exposes the upstream id, provider, or key.
-func videoJobResponse(job *videoJob) map[string]interface{} {
+func videoJobResponse(job *videoJob) videoStatus {
 	job.mu.Lock()
 	status := job.status
 	failure := job.failureReason
 	job.mu.Unlock()
 
-	resp := map[string]interface{}{
-		"id":         job.id,
-		"object":     "video",
-		"model":      job.userModel,
-		"status":     status,
-		"created_at": job.createdAt.Unix(),
+	resp := videoStatus{
+		ID:        job.id,
+		Object:    "video",
+		Model:     job.userModel,
+		Status:    status,
+		CreatedAt: job.createdAt.Unix(),
 	}
 	switch status {
 	case "completed":
-		resp["progress"] = 100
+		resp.Progress = 100
 	case "failed":
-		resp["progress"] = 0
-		errObj := map[string]interface{}{"message": "Video generation failed."}
+		reason := "Video generation failed."
 		if failure != "" {
-			errObj["message"] = failure
+			reason = failure
 		}
-		resp["error"] = errObj
-	default:
-		resp["progress"] = 0
+		resp.Error = &videoFailure{Message: reason}
 	}
 	return resp
+}
+
+// videoStatus is one generation job, as /v1/videos answers it.
+//
+// Error is a pointer so it is absent on a job that has not failed, which is what
+// the map it replaced did by not setting the key.
+type videoStatus struct {
+	ID        string        `json:"id"`
+	Object    string        `json:"object"`
+	Model     string        `json:"model"`
+	Status    string        `json:"status"`
+	CreatedAt int64         `json:"created_at"`
+	Progress  int           `json:"progress"`
+	Error     *videoFailure `json:"error,omitempty"`
+}
+
+// videoFailure is why a job did not produce a video.
+type videoFailure struct {
+	Message string `json:"message"`
 }
 
 // recordVideoUsage records a single video-generation usage event for billing +
