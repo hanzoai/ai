@@ -55,19 +55,6 @@ func TestZapChatGraphAdminGateRejection(t *testing.T) {
 	}
 }
 
-// TestZapGlobalMessagesRequiresSignedIn asserts the admin-only global-messages read
-// fails closed with 401 for an anonymous caller before any DB access (parity with
-// GetGlobalMessages' RequireSignedIn).
-func TestZapGlobalMessagesRequiresSignedIn(t *testing.T) {
-	msg, err := zapGetGlobalMessagesHandler(context.Background(), "", nil)
-	if err != nil {
-		t.Fatalf("unexpected err: %v", err)
-	}
-	if got := msg.Root().Uint32(object.CloudRespStatus); got != 401 {
-		t.Errorf("empty auth status = %d, want 401", got)
-	}
-}
-
 // TestZapChatGraphRegistry asserts the group self-registered its full route set
 // into both registries and that dispatch routes correctly, including the
 // longest-prefix resolution for the shared-prefix pairs (/v1/get-chat ⊂
@@ -76,7 +63,7 @@ func TestZapGlobalMessagesRequiresSignedIn(t *testing.T) {
 func TestZapChatGraphRegistry(t *testing.T) {
 	cloudMethods := []string{
 		"chats.global.list", "chats.list", "chats.get", "chats.update", "chats.add", "chats.delete",
-		"messages.global.list", "messages.list", "messages.get", "messages.update", "messages.add", "messages.delete", "messages.welcome.delete",
+		"messages.list", "messages.get", "messages.update", "messages.add", "messages.delete", "messages.welcome.delete",
 		"graphs.global.list", "graphs.list", "graphs.get", "graphs.update", "graphs.add", "graphs.delete",
 	}
 	for _, method := range cloudMethods {
@@ -198,7 +185,7 @@ func TestEveryAdminGatedChatGraphMethodRefusesAnAnonymousCaller(t *testing.T) {
 	t.Setenv("DISABLE_PREVIEW_MODE", "true")
 
 	for _, method := range []string{
-		"chats.global.list", "messages.global.list", "messages.delete",
+		"chats.global.list", "messages.delete",
 		"graphs.global.list", "graphs.list", "graphs.get",
 		"graphs.update", "graphs.add", "graphs.delete",
 	} {
