@@ -190,7 +190,14 @@ var resources = []resource{
 
 	// ── chat ── conversations and messages.
 	{ns: "ai", path: "chats", one: "Chat", shape: object.Chat{}, global: true},
-	{ns: "ai", path: "messages", one: "Message", shape: object.Message{}, global: true, actions: []action{
+	// NO `global` HERE, and it is the one resource without it. Every other global
+	// listing narrows by reach(caller) — a caller sees their own organization, the
+	// reserved org sees all — so the scope lives in the query. The message one read
+	// the whole table, which under per-organization storage answers for whichever
+	// database the adapter holds rather than for every tenant. Cross-tenant AI
+	// observation is the gen_ai span plane in o11y, which is org-scoped by
+	// construction and built for the question.
+	{ns: "ai", path: "messages", one: "Message", shape: object.Message{}, actions: []action{
 		{name: "answer", method: "GetMessageAnswer", verb: "GET"},
 		{name: "welcome", method: "DeleteWelcomeMessage", verb: "DELETE", collection: true},
 	}},
