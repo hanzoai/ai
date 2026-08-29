@@ -23,55 +23,6 @@ import (
 	"github.com/hanzoai/ai/util"
 )
 
-// GetGlobalMessages
-// @Title GetGlobalMessages
-// @Tag Message API
-// @Description get global messages
-// @Success 200 {array} object.Message The Response object
-// @router /get-global-messages [get]
-func (c *ApiController) GetGlobalMessages() {
-	// This reads every organization's messages, so it asks whether the caller is a
-	// platform admin — membership of the reserved org. IsAdmin answers a narrower
-	// question, "does this person administer their OWN org", which every customer's
-	// owner also answers yes to.
-	if !c.RequireSuperAdmin() {
-		return
-	}
-
-	owner := c.GetSessionOwner()
-	limit := c.Input().Get("pageSize")
-	page := c.Input().Get("p")
-	field := c.Input().Get("field")
-	value := c.Input().Get("value")
-	sortField := c.Input().Get("sortField")
-	sortOrder := c.Input().Get("sortOrder")
-	store := c.Input().Get("store")
-
-	if limit == "" || page == "" {
-		messages, err := object.GetGlobalMessages()
-		if err != nil {
-			c.ResponseError(err.Error())
-			return
-		}
-		c.ResponseOk(messages)
-	} else {
-		limit := util.ParseInt(limit)
-		count, err := object.GetMessageCount(owner, field, value, store)
-		if err != nil {
-			c.ResponseError(err.Error())
-			return
-		}
-		paginator := util.NewPaginator(c.PageAsked(), limit, count)
-		messages, err := object.GetPaginationMessages(owner, paginator.Offset(), limit, field, value, sortField, sortOrder, store)
-		if err != nil {
-			c.ResponseError(err.Error())
-			return
-		}
-
-		c.ResponseOk(messages, paginator.Nums())
-	}
-}
-
 // GetMessages
 // @Title GetMessages
 // @Tag Message API
