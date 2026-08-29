@@ -81,7 +81,6 @@ func registerZapChatGraphCrud() {
 	registerCloud("chats.add", zapAddChatHandler)
 	registerCloud("chats.delete", zapDeleteChatHandler)
 
-	registerCloud("messages.global.list", zapGetGlobalMessagesHandler)
 	registerCloud("messages.list", zapGetMessagesHandler)
 	registerCloud("messages.get", zapGetMessageHandler)
 	registerCloud("messages.update", zapUpdateMessageHandler)
@@ -495,45 +494,6 @@ type zapListMessagesRequest struct {
 	User         string `json:"user"`
 	Chat         string `json:"chat"`
 	SelectedUser string `json:"selectedUser"`
-}
-
-// zapGetGlobalMessagesHandler mirrors ApiController.GetGlobalMessages (signed-in +
-// admin only; owner-scoped pagination).
-func zapGetGlobalMessagesHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	user := zapPrincipal(auth)
-	if user == nil {
-		return zapError(401, "Please sign in first")
-	}
-	if !util.IsAdmin(user) {
-		return zapError(403, "this operation requires admin privilege")
-	}
-	owner := user.Owner
-	var req zapListMessagesRequest
-	if len(body) > 0 {
-		if err := json.Unmarshal(body, &req); err != nil {
-			return zapError(400, "invalid request: "+err.Error())
-		}
-	}
-
-	if req.PageSize == "" || req.Page == "" {
-		messages, err := object.GetGlobalMessages()
-		if err != nil {
-			return zapError(200, err.Error())
-		}
-		return zapOk(messages)
-	}
-
-	limit := util.ParseInt(req.PageSize)
-	count, err := object.GetMessageCount(owner, req.Field, req.Value, req.Store)
-	if err != nil {
-		return zapError(200, err.Error())
-	}
-	offset := paginationOffset(util.ParseInt(req.Page), limit)
-	messages, err := object.GetPaginationMessages(owner, offset, limit, req.Field, req.Value, req.SortField, req.SortOrder, req.Store)
-	if err != nil {
-		return zapError(200, err.Error())
-	}
-	return zapOk(messages, count)
 }
 
 // zapGetMessagesHandler mirrors ApiController.GetMessages (signed-in; admin sees

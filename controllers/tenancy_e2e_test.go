@@ -123,7 +123,6 @@ func TestTheCrossTenantListingsAskThePlatform(t *testing.T) {
 		at   string
 	}{
 		{"GetGlobalStores", (*ApiController).GetGlobalStores, "/v1/ai/get-global-stores"},
-		{"GetGlobalMessages", (*ApiController).GetGlobalMessages, "/v1/ai/get-global-messages"},
 	} {
 		// No credential at all.
 		c := visit("GET", call.at)
