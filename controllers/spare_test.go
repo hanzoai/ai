@@ -306,6 +306,37 @@ func otherFamily(t *testing.T, url string) *modelFamily {
 	}
 }
 
+// A brand's free door is answered by the platform pool, so it stands whether or not
+// that brand's own service is configured: the pool is what serves it, and the vendor
+// is not. zen-free and enso-free are ours in front of one pool, not routes their
+// vendors publish, so an unreachable vendor has nothing to say about them.
+func TestAFreeDoorStandsWithoutItsVendor(t *testing.T) {
+	spareFamily(t, "http://vendor.invalid", "free-route")
+	fam := otherFamily(t, "") // no base URL: the brand's own service is unreachable
+
+	if fam.enabled() {
+		t.Fatal("want a family whose own service is unconfigured")
+	}
+	if !fam.serves(fam.freeName) {
+		t.Errorf("%q refused while the pool holds routes", fam.freeName)
+	}
+}
+
+// And it closes when there is nothing behind it. A door onto an empty pool is a
+// refusal that arrives later, so it is refused here instead.
+func TestAFreeDoorClosesOnAnEmptyPool(t *testing.T) {
+	pool := freeFamily()
+	restore(t, pool)
+	pool.spares, pool.loaded, pool.fetchedAt = nil, true, time.Now()
+	restore(t, engineFam)
+	engineFam.providerFn = func() *object.Provider { return nil }
+
+	fam := otherFamily(t, "")
+	if fam.serves(fam.freeName) {
+		t.Errorf("%q opened onto an empty pool", fam.freeName)
+	}
+}
+
 // THE DISCRIMINATION, which is the whole design. A vendor that cannot serve at all
 // — its account with us spent, or its own failure — moves the request to a free
 // route, because a route it charges nothing for is subject to neither. Everything
