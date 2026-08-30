@@ -803,14 +803,16 @@ func (f *modelFamily) snapshot() []zenModel {
 // before the first discovery completes (cold start). The prefix is the public brand,
 // not a confidential mapping. False when the family is not configured.
 func (f *modelFamily) serves(model string) bool {
-	if !f.enabled() {
-		return false
-	}
 	// The family's own free id is served by choosing from the platform pool, so it
-	// belongs to this family whether or not its vendor has ever heard of it — but
-	// only while the pool actually holds something to choose.
+	// belongs to this family whether or not its vendor is configured or has ever
+	// heard of it — but only while the pool actually holds something to choose.
+	// It is asked before the vendor is, because the pool is what answers it and the
+	// vendor is not: a brand whose service is unreachable still has a free door.
 	if f.frontDoor(model) {
 		return len(freeRoutes()) > 0
+	}
+	if !f.enabled() {
+		return false
 	}
 	f.fresh()
 	if _, ok := f.lookup(model); ok {
