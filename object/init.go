@@ -17,6 +17,7 @@ package object
 import (
 	"fmt"
 	"github.com/hanzoai/dbx"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -44,7 +45,7 @@ func initModelAccessSeed() {
 	const org = "hanzo"
 	for _, m := range []string{"enso", "enso-ultra"} {
 		if _, err := GrantModelAccess(org, "", "", m); err != nil {
-			fmt.Printf("initModelAccessSeed: org-grant %s %s failed: %v\n", org, m, err)
+			slog.Warn("model access seed: org grant failed", "org", org, "model", m, "err", err)
 		}
 	}
 }
@@ -225,7 +226,7 @@ func initBuiltInProviders() (string, string, string, string) {
 		// the next boot. An operator's intentional self-hosted repoint is left alone.
 		realEmbed(embeddingProvider)
 		if _, uerr := UpdateProvider("admin/"+embeddingProvider.Name, embeddingProvider); uerr != nil {
-			fmt.Printf("[init] WARNING: failed to upgrade embedding provider %q to a real embedder: %v\n", embeddingProvider.Name, uerr)
+			slog.Warn("embedding provider not upgraded to a real embedder", "provider", embeddingProvider.Name, "err", uerr)
 		}
 	}
 	ttsProviderName := "Browser Built-In"
@@ -485,11 +486,11 @@ func renameClaudeToAnthropic() {
 	res, err := adapter.db.Update("provider",
 		dbx.Params{"type": "Anthropic"}, dbx.HashExp{"type": "Claude"}).Execute()
 	if err != nil {
-		fmt.Printf("[init] WARNING: could not settle the provider type: %v\n", err)
+		slog.Warn("provider type not settled", "err", err)
 		return
 	}
 	if n, _ := res.RowsAffected(); n > 0 {
-		fmt.Printf("[init] provider type Claude -> Anthropic on %d row(s)\n", n)
+		slog.Info("provider type migrated", "from", "Claude", "to", "Anthropic", "rows", n)
 	}
 }
 
@@ -513,7 +514,7 @@ func initLLMProviders() {
 	for _, p := range seededLLMProviders {
 		existing, err := getProvider("admin", p.Name)
 		if err != nil {
-			fmt.Printf("[init] WARNING: failed to check provider %q: %v\n", p.Name, err)
+			slog.Warn("provider not read", "provider", p.Name, "err", err)
 			continue
 		}
 		if existing != nil {
@@ -530,17 +531,17 @@ func initLLMProviders() {
 			// silently revert that decision on the next boot.
 			needsUpdate := false
 			if existing.Type != p.Type {
-				fmt.Printf("[init] Fixing provider %q type: %q -> %q\n", p.Name, existing.Type, p.Type)
+				slog.Info("provider type corrected", "provider", p.Name, "from", existing.Type, "to", p.Type)
 				existing.Type = p.Type
 				needsUpdate = true
 			}
 			if existing.SubType != p.SubType {
-				fmt.Printf("[init] Fixing provider %q model: %q -> %q\n", p.Name, existing.SubType, p.SubType)
+				slog.Info("provider model corrected", "provider", p.Name, "from", existing.SubType, "to", p.SubType)
 				existing.SubType = p.SubType
 				needsUpdate = true
 			}
 			if p.ProviderUrl != "" && existing.ProviderUrl != p.ProviderUrl {
-				fmt.Printf("[init] Fixing provider %q url: %q -> %q\n", p.Name, existing.ProviderUrl, p.ProviderUrl)
+				slog.Info("provider url corrected", "provider", p.Name, "from", existing.ProviderUrl, "to", p.ProviderUrl)
 				existing.ProviderUrl = p.ProviderUrl
 				needsUpdate = true
 			}
@@ -548,14 +549,14 @@ func initLLMProviders() {
 			// (resolved at call time) and the stored value differs. Never clobber
 			// a real stored secret with an empty seed value.
 			if p.ClientSecret != "" && existing.ClientSecret != p.ClientSecret {
-				fmt.Printf("[init] Fixing provider %q secret reference -> %q\n", p.Name, p.ClientSecret)
+				slog.Info("provider secret reference resynced", "provider", p.Name)
 				existing.ClientSecret = p.ClientSecret
 				needsUpdate = true
 			}
 			if needsUpdate {
 				_, err = UpdateProvider("admin/"+p.Name, existing)
 				if err != nil {
-					fmt.Printf("[init] WARNING: failed to update provider %q: %v\n", p.Name, err)
+					slog.Warn("provider not updated", "provider", p.Name, "err", err)
 				}
 			}
 			continue
@@ -565,9 +566,9 @@ func initLLMProviders() {
 		p.CreatedTime = util.GetCurrentTime()
 		_, err = AddProvider(&p)
 		if err != nil && !isDuplicateKeyErr(err) {
-			fmt.Printf("[init] WARNING: failed to create provider %q: %v\n", p.Name, err)
+			slog.Warn("provider not created", "provider", p.Name, "err", err)
 		} else {
-			fmt.Printf("[init] Created LLM provider: %s (%s)\n", p.Name, p.DisplayName)
+			slog.Info("llm provider created", "provider", p.Name, "display", p.DisplayName)
 		}
 	}
 	pruneFamilySeeds()
@@ -604,17 +605,17 @@ func pruneFamilySeeds() {
 	for name, seed := range familySeedRows {
 		row, err := getProvider("admin", name)
 		if err != nil {
-			fmt.Printf("[init] WARNING: failed to check provider %q: %v\n", name, err)
+			slog.Warn("provider not read", "provider", name, "err", err)
 			continue
 		}
 		if row == nil || row.Type != seed.typ || row.ProviderUrl != seed.url {
 			continue // absent, or an operator's own override — leave it alone
 		}
 		if _, err := DeleteProvider(row); err != nil {
-			fmt.Printf("[init] WARNING: failed to delete stale %q provider row: %v\n", name, err)
+			slog.Warn("stale provider row not deleted", "provider", name, "err", err)
 			continue
 		}
-		fmt.Printf("[init] Removed stale %q family provider row — %s now resolves from configuration\n", name, name)
+		slog.Info("stale family provider row removed; the family resolves from configuration", "provider", name)
 	}
 }
 

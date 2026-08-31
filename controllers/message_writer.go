@@ -75,7 +75,6 @@ func (w *RefinedWriter) Write(p []byte) (n int, err error) {
 	}
 
 	if eventType == "tool" || eventType == "search" {
-		fmt.Print(data)
 		n, err := w.Writer.Write([]byte(fmt.Sprintf("event: %s\ndata: %s\n\n", eventType, data)))
 		_ = w.Writer.Flush()
 		return n, err
@@ -85,7 +84,6 @@ func (w *RefinedWriter) Write(p []byte) (n int, err error) {
 		w.writerCleaner.AddData(data)
 		if w.writerCleaner.dataTimes == w.writerCleaner.bufferSize {
 			cleanedData := w.writerCleaner.GetCleanedData()
-			fmt.Print(cleanedData)
 			jsonData, err := ConvertMessageDataToJSON(cleanedData)
 			if err != nil {
 				return 0, err
@@ -95,7 +93,6 @@ func (w *RefinedWriter) Write(p []byte) (n int, err error) {
 		return 0, nil
 	}
 
-	fmt.Print(data)
 	jsonData, err := ConvertMessageDataToJSON(data)
 	if err != nil {
 		return 0, err
