@@ -115,7 +115,6 @@ func (store *Store) Populate(origin string, lang string) error {
 		}
 		tokens := strings.Split(strings.Trim(object.Key, "/"), "/")
 		store.createPathIfNotExisted(tokens, size, url, lastModifiedTime, isLeaf)
-		// fmt.Printf("%s, %d, %v\n", object.Key, object.Size, object.LastModified)
 	}
 	return nil
 }

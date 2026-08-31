@@ -19,6 +19,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os/exec"
 	"regexp"
 	"strings"
@@ -358,7 +359,7 @@ func (p *OsPatchScanProvider) InstallPatch(patchId string) (*InstallProgress, er
 	`, escapedTitle, escapedTitle, escapedTitle)
 	}
 
-	fmt.Printf("%s [OS Patch] Executing PowerShell command:\n%s\n", getHostnamePrefix(), psCommand)
+	slog.Debug("executing powershell", "host", hostname(), "scanner", "os_patch", "command", psCommand)
 	output, err := p.runPowerShell(psCommand)
 	if err != nil {
 		progress.Status = "Failed"
@@ -367,7 +368,7 @@ func (p *OsPatchScanProvider) InstallPatch(patchId string) (*InstallProgress, er
 		progress.EndTime = util.GetCurrentTime()
 		return progress, fmt.Errorf("%s failed to install patch: %v", getHostnamePrefix(), err)
 	}
-	fmt.Printf("%s [OS Patch] PowerShell output:\n%s\n", getHostnamePrefix(), output)
+	slog.Debug("powershell output", "host", hostname(), "scanner", "os_patch", "output", output)
 
 	// Parse the result
 	var result map[string]interface{}
@@ -408,7 +409,7 @@ func (p *OsPatchScanProvider) GetResultSummary(result string) string {
 	err := json.Unmarshal([]byte(result), &patches)
 	if err != nil {
 		// Log the error but return empty string instead of failing
-		fmt.Printf("%s [OS Patch] Unable to parse patch results for summary: %v\n", getHostnamePrefix(), err)
+		slog.Warn("patch results not parsed for summary", "host", hostname(), "scanner", "os_patch", "err", err)
 		return ""
 	}
 
@@ -443,12 +444,12 @@ func (p *OsPatchScanProvider) GetResultSummary(result string) string {
 // `what` names the listing in a refusal, because "failed to list patches" and
 // "failed to list installed patches" are different things to be told.
 func (p *OsPatchScanProvider) patchesFrom(psCommand, what string) ([]*WindowsPatch, error) {
-	fmt.Printf("%s [OS Patch] Executing PowerShell command:\n%s\n", getHostnamePrefix(), psCommand)
+	slog.Debug("executing powershell", "host", hostname(), "scanner", "os_patch", "command", psCommand)
 	output, err := p.runPowerShell(psCommand)
 	if err != nil {
 		return nil, fmt.Errorf("%s failed to list %s: %v", getHostnamePrefix(), what, err)
 	}
-	fmt.Printf("%s [OS Patch] PowerShell output:\n%s\n", getHostnamePrefix(), output)
+	slog.Debug("powershell output", "host", hostname(), "scanner", "os_patch", "output", output)
 
 	output = strings.TrimSpace(extractJSON(output))
 	if output == "" || output == "null" {

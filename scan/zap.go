@@ -18,6 +18,7 @@ package scan
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os/exec"
 	"strings"
 )
@@ -144,7 +145,7 @@ func (p *ZapScanProvider) Scan(target string, command string) (string, error) {
 
 func (p *ZapScanProvider) ParseResult(rawResult string) (string, error) {
 	// Parse the XML/JSON output into structured data
-	fmt.Printf("%s [ZAP] Parsing scan results\n", getHostnamePrefix())
+	slog.Info("parsing scan results", "host", hostname(), "scanner", "zap")
 
 	if rawResult == "" || rawResult == "Scan completed with no alerts found" {
 		emptyResult := &ZapScanResult{
@@ -171,11 +172,7 @@ func (p *ZapScanProvider) ParseResult(rawResult string) (string, error) {
 	}
 
 	alertCount := parsedResult.Summary.TotalAlerts
-	alertWord := "alerts"
-	if alertCount == 1 {
-		alertWord = "alert"
-	}
-	fmt.Printf("%s [ZAP] Successfully parsed %d %s\n", getHostnamePrefix(), alertCount, alertWord)
+	slog.Info("scan results parsed", "host", hostname(), "scanner", "zap", "alerts", alertCount)
 
 	return string(jsonBytes), nil
 }
@@ -197,7 +194,7 @@ func (p *ZapScanProvider) parseZapOutput(output string) *ZapScanResult {
 	if err != nil {
 		// If JSON parsing fails, try to extract structured data from text output
 		// For now, return basic result
-		fmt.Printf("%s [ZAP] Unable to parse output as JSON, returning raw text: %v\n", getHostnamePrefix(), err)
+		slog.Warn("output not json, returning raw text", "host", hostname(), "scanner", "zap", "err", err)
 		return result
 	}
 
@@ -376,7 +373,7 @@ func (p *ZapScanProvider) GetResultSummary(result string) string {
 	err := json.Unmarshal([]byte(result), &scanResult)
 	if err != nil {
 		// Log the error but return empty string instead of failing
-		fmt.Printf("%s [ZAP] Unable to parse scan results for summary: %v\n", getHostnamePrefix(), err)
+		slog.Warn("scan results not parsed for summary", "host", hostname(), "scanner", "zap", "err", err)
 		return ""
 	}
 
