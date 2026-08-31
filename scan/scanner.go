@@ -5,6 +5,7 @@ package scan
 import (
 	"bytes"
 	"fmt"
+	"log/slog"
 	"os/exec"
 	"strings"
 )
@@ -127,14 +128,14 @@ func (s scanner) run(target, command string) (string, error) {
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 
-	fmt.Printf("%s [%s] Executing %s scan: %s %s\n", getHostnamePrefix(), s.name, s.name, s.bin, strings.Join(args, " "))
+	slog.Info("scan starting", "host", hostname(), "scanner", s.name, "bin", s.bin, "args", strings.Join(args, " "))
 	if err := cmd.Run(); err != nil {
 		if stdout.Len() == 0 {
 			return "", fmt.Errorf("%s %s scan failed: %v, stderr: %s", getHostnamePrefix(), s.name, err, stderr.String())
 		}
-		fmt.Printf("%s [%s] Scan completed with warnings: %v\n", getHostnamePrefix(), s.name, err)
+		slog.Warn("scan completed with warnings", "host", hostname(), "scanner", s.name, "err", err)
 	}
-	fmt.Printf("%s [%s] Scan completed successfully\n", getHostnamePrefix(), s.name)
+	slog.Info("scan completed", "host", hostname(), "scanner", s.name)
 
 	if out := stdout.String(); out != "" {
 		return out, nil

@@ -18,6 +18,7 @@ package scan
 import (
 	"fmt"
 	"os"
+	"strings"
 )
 
 var cachedHostnamePrefix string
@@ -34,6 +35,10 @@ func getHostnamePrefix() string {
 	}
 	return cachedHostnamePrefix
 }
+
+// hostname is the bare name, for a log field. getHostnamePrefix brackets the same
+// value for the error strings that still carry it inline.
+func hostname() string { return strings.Trim(getHostnamePrefix(), "[]") }
 
 type ScanProvider interface {
 	Scan(target string, command string) (string, error)
