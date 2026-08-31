@@ -18,6 +18,7 @@ package scan
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os/exec"
 	"regexp"
 	"strings"
@@ -93,7 +94,7 @@ func (p *NmapScanProvider) Scan(target string, command string) (string, error) {
 
 func (p *NmapScanProvider) ParseResult(rawResult string) (string, error) {
 	// Parse the raw output into structured data
-	fmt.Printf("%s [Nmap] Parsing scan results\n", getHostnamePrefix())
+	slog.Info("parsing scan results", "host", hostname(), "scanner", "nmap")
 	parsedResult := p.parseNmapOutput(rawResult)
 
 	// Convert to JSON
@@ -101,7 +102,7 @@ func (p *NmapScanProvider) ParseResult(rawResult string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("%s failed to marshal nmap result: %v", getHostnamePrefix(), err)
 	}
-	fmt.Printf("%s [Nmap] Successfully parsed %d host(s)\n", getHostnamePrefix(), len(parsedResult.Hosts))
+	slog.Info("scan results parsed", "host", hostname(), "scanner", "nmap", "hosts", len(parsedResult.Hosts))
 
 	return string(jsonBytes), nil
 }
@@ -219,7 +220,7 @@ func (p *NmapScanProvider) GetResultSummary(result string) string {
 	err := json.Unmarshal([]byte(result), &scanResult)
 	if err != nil {
 		// Log the error but return empty string instead of failing
-		fmt.Printf("%s [Nmap] Unable to parse scan results for summary: %v\n", getHostnamePrefix(), err)
+		slog.Warn("scan results not parsed for summary", "host", hostname(), "scanner", "nmap", "err", err)
 		return ""
 	}
 

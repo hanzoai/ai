@@ -18,7 +18,7 @@ package video
 import (
 	"bytes"
 	"errors"
-	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/alibabacloud-go/tea/tea"
@@ -132,7 +132,7 @@ func GetVideoCoverUrl(videoId string) string {
 
 	resp, err := VodClient.GetVideoInfo(request)
 	if err != nil {
-		fmt.Println(err)
+		slog.Warn("vod: video info not read", "video", videoId, "err", err)
 		return err.Error()
 	}
 	// resp.Body.Video is three dereferences on a response we do not control;
@@ -155,17 +155,19 @@ func GetVideoFileUrl(videoId string) string {
 
 	resp, err := VodClient.GetMezzanineInfo(request)
 	if err != nil {
-		fmt.Println(err)
+		slog.Warn("vod: mezzanine info not read", "video", videoId, "err", err)
 		return err.Error()
 	}
 	if resp == nil || resp.Body == nil || resp.Body.Mezzanine == nil {
 		return ""
 	}
 
+	// err is nil on this path, so it is not the thing to report — a mezzanine that
+	// carries no url is an absent file, which is what the nil checks above answer.
 	downloadUrl := tea.StringValue(resp.Body.Mezzanine.FileURL)
 	if downloadUrl == "" {
-		fmt.Println(err)
-		return err.Error()
+		slog.Warn("vod: mezzanine carries no file url", "video", videoId)
+		return ""
 	}
 
 	return downloadUrl

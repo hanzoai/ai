@@ -18,6 +18,7 @@ import (
 	"database/sql"
 	"flag"
 	"fmt"
+	"log/slog"
 	"runtime"
 
 	_ "github.com/go-sql-driver/mysql" // mysql
@@ -196,7 +197,7 @@ func (a *Adapter) createTable() {
 		if err := a.db.Sync(m); err != nil {
 			// Log and continue so one bad model can't block the rest; a table
 			// that genuinely failed to create will surface at first use.
-			fmt.Printf("createTable: sync %T failed: %v\n", m, err)
+			slog.Warn("table not synced", "model", fmt.Sprintf("%T", m), "err", err)
 		}
 	}
 	// dbx.Sync's ALTER TABLE ADD COLUMN carries no default, so rows that predate a

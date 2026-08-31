@@ -18,6 +18,7 @@ package scan
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os/exec"
 	"strings"
 )
@@ -107,7 +108,7 @@ func (p *HttpxScanProvider) Scan(target string, command string) (string, error) 
 
 func (p *HttpxScanProvider) ParseResult(rawResult string) (string, error) {
 	// Parse the JSON output into structured data
-	fmt.Printf("%s [httpx] Parsing scan results\n", getHostnamePrefix())
+	slog.Info("parsing scan results", "host", hostname(), "scanner", "httpx")
 
 	if rawResult == "" || rawResult == "Scan completed with no hosts found" {
 		emptyResult := &HttpxScanResult{
@@ -135,11 +136,7 @@ func (p *HttpxScanProvider) ParseResult(rawResult string) (string, error) {
 	}
 
 	hostCount := len(parsedResult.Hosts)
-	hostWord := "hosts"
-	if hostCount == 1 {
-		hostWord = "host"
-	}
-	fmt.Printf("%s [httpx] Successfully parsed %d %s\n", getHostnamePrefix(), hostCount, hostWord)
+	slog.Info("scan results parsed", "host", hostname(), "scanner", "httpx", "hosts", hostCount)
 
 	return string(jsonBytes), nil
 }
@@ -207,7 +204,7 @@ func (p *HttpxScanProvider) GetResultSummary(result string) string {
 	err := json.Unmarshal([]byte(result), &scanResult)
 	if err != nil {
 		// Log the error but return empty string instead of failing
-		fmt.Printf("%s [httpx] Unable to parse scan results for summary: %v\n", getHostnamePrefix(), err)
+		slog.Warn("scan results not parsed for summary", "host", hostname(), "scanner", "httpx", "err", err)
 		return ""
 	}
 

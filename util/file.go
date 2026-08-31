@@ -17,8 +17,8 @@ package util
 
 import (
 	"bytes"
-	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -83,14 +83,14 @@ func downloadMaxmindFiles(cityExists, asnExists bool) {
 	if !cityExists {
 		cityErr := downloadAndSave("GeoLite2-City")
 		if cityErr != nil {
-			fmt.Println("Failed to download GeoLite2-City database")
+			slog.Warn("geolite2 city database not downloaded")
 		}
 	}
 
 	if !asnExists {
 		asnErr := downloadAndSave("GeoLite2-ASN")
 		if asnErr != nil {
-			fmt.Println("Failed to download GeoLite2-ASN database")
+			slog.Warn("geolite2 asn database not downloaded")
 		}
 	}
 	// Update status in util package
@@ -101,7 +101,7 @@ func downloadMaxmindFiles(cityExists, asnExists bool) {
 	// request to blame it on. Nothing needs the geo database: a lookup without one
 	// answers Null, which is what an unknown location is.
 	if err := InitMaxmindDb(); err != nil {
-		fmt.Println("Failed to initialize MaxMind database:", err)
+		slog.Warn("maxmind database not initialised", "err", err)
 	}
 }
 

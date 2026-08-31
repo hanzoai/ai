@@ -18,6 +18,7 @@ package scan
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os/exec"
 	"strings"
 )
@@ -81,7 +82,7 @@ func (p *SubfinderScanProvider) Scan(target string, command string) (string, err
 
 func (p *SubfinderScanProvider) ParseResult(rawResult string) (string, error) {
 	// Parse the JSON output into structured data
-	fmt.Printf("%s [Subfinder] Parsing scan results\n", getHostnamePrefix())
+	slog.Info("parsing scan results", "host", hostname(), "scanner", "subfinder")
 
 	if rawResult == "" || rawResult == "Scan completed with no subdomains found" {
 		emptyResult := &SubfinderScanResult{
@@ -107,11 +108,7 @@ func (p *SubfinderScanProvider) ParseResult(rawResult string) (string, error) {
 	}
 
 	subdomainCount := len(parsedResult.Subdomains)
-	subdomainWord := "subdomains"
-	if subdomainCount == 1 {
-		subdomainWord = "subdomain"
-	}
-	fmt.Printf("%s [Subfinder] Successfully parsed %d %s\n", getHostnamePrefix(), subdomainCount, subdomainWord)
+	slog.Info("scan results parsed", "host", hostname(), "scanner", "subfinder", "subdomains", subdomainCount)
 
 	return string(jsonBytes), nil
 }
@@ -164,7 +161,7 @@ func (p *SubfinderScanProvider) GetResultSummary(result string) string {
 	err := json.Unmarshal([]byte(result), &scanResult)
 	if err != nil {
 		// Log the error but return empty string instead of failing
-		fmt.Printf("%s [Subfinder] Unable to parse scan results for summary: %v\n", getHostnamePrefix(), err)
+		slog.Warn("scan results not parsed for summary", "host", hostname(), "scanner", "subfinder", "err", err)
 		return ""
 	}
 

@@ -16,7 +16,7 @@
 package contest
 
 import (
-	"fmt"
+	"log/slog"
 	"regexp"
 	"strings"
 
@@ -26,7 +26,7 @@ import (
 )
 
 func deleteExistingStore(name string) error {
-	fmt.Printf("checking if store exists: admin/%s\n", name)
+	slog.Info("checking store", "store", name)
 
 	storeId := util.GetId("admin", name)
 	store, err := object.GetStore(storeId)
@@ -35,18 +35,18 @@ func deleteExistingStore(name string) error {
 	}
 
 	if store == nil {
-		fmt.Printf("store does not exist: admin/%s\n", name)
+		slog.Info("store absent", "store", name)
 		return nil
 	}
 
-	fmt.Printf("found existing store, preparing to delete: admin/%s\n", name)
+	slog.Info("deleting existing store", "store", name)
 
 	_, err = object.DeleteStore(store)
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf("successfully deleted store: admin/%s\n", name)
+	slog.Info("store deleted", "store", name)
 	return nil
 }
 
