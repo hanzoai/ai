@@ -48,8 +48,8 @@ func TestPayerHonoursTheClaim(t *testing.T) {
 		want: "hanzo",
 	}, {
 		name: "plain member has no claim and spends their own wallet",
-		user: &User{Owner: "hanzo", Name: "zachkelling@gmail.com"},
-		want: "hanzo/zachkelling@gmail.com",
+		user: &User{Owner: "hanzo", Name: "gracehopper@example.com"},
+		want: "hanzo/gracehopper@example.com",
 	}, {
 		name: "a claim naming ANOTHER tenant's ledger is refused, not billed",
 		user: &User{Owner: "hanzo", Name: "z", BillingAccount: "org:acme"},
