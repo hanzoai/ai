@@ -151,6 +151,11 @@ func registerAPI(app *zip.App) {
 	route(app, "/v1/audio/music", "POST:AudioMedia")
 	route(app, "/v1/audio/foley", "POST:AudioMedia")
 
+	// 3D Generation & Spatial Gaussian Splats (/v1/3d/generations, /v1/3d/:id, /v1/3d/:id/content).
+	route(app, "/v1/3d/generations", "POST:ThreeDGenerations")
+	route(app, "/v1/3d/:id", "GET:RetrieveThreeD")
+	route(app, "/v1/3d/:id/content", "GET:ThreeDContent")
+
 	// The same audio with the turns joined up: a spoken conversation over one
 	// socket, speaking the OpenAI realtime wire so clients written against it
 	// work unchanged. hanzoai/voice holds the conversation, hanzoai/speech holds
