@@ -202,3 +202,28 @@ func TestNormalizeMemoryKind(t *testing.T) {
 		}
 	}
 }
+
+// Every memory accessor reads through the adapter, and the adapter is nil
+// before the DB is initialised. Unguarded, the read is a nil dereference rather
+// than an answer: GET /v1/ai/memory/list panicked in listMemoriesScoped and the
+// recover turned it into a 500 whose body named no cause, on a route a chat
+// client calls to draw a panel. Each accessor asks `store()` first, so an
+// uninitialised store is an error the caller can report.
+func TestMemoryWithoutAStoreAnswersAnErrorRatherThanCrash(t *testing.T) {
+	saved := adapter
+	adapter = nil
+	t.Cleanup(func() { adapter = saved })
+
+	if _, err := GetMemories("hanzo", "z"); err == nil {
+		t.Error("GetMemories answered no error with no store behind it")
+	}
+	if _, err := RecallMemories("hanzo", "z", "", 20); err == nil {
+		t.Error("RecallMemories answered no error with no store behind it")
+	}
+	if _, err := CountMemories("hanzo", "z"); err == nil {
+		t.Error("CountMemories answered no error with no store behind it")
+	}
+	if _, err := DeleteMemoryScoped("hanzo", "z", "one"); err == nil {
+		t.Error("DeleteMemoryScoped answered no error with no store behind it")
+	}
+}
