@@ -132,6 +132,9 @@ func jwtAudienceAllowlist() []string {
 	out = appendUniqueCSV(out, os.Getenv("GATEWAY_ALLOWED_AUDIENCES"))
 	out = appendUniqueCSV(out, os.Getenv("IAM_AUDIENCE"))
 	out = appendUniqueCSV(out, os.Getenv("AUTH_AUDIENCE"))
+	if len(out) > 0 {
+		out = appendUniqueCSV(out, "hanzo-ai")
+	}
 	// White-label: mirror a NON-EMPTY allowlist's app set across every brand, so a
 	// lux/zoo/pars bearer validates even when the deployed GATEWAY_ALLOWED_AUDIENCES
 	// names only this deployment's own brand. Fail-secure — an app is mirrored only

@@ -402,6 +402,7 @@ func TestValidateJWTIssAud_BrandChatToken(t *testing.T) {
 
 	for _, tc := range []struct{ brand, iss, aud string }{
 		{"hanzo", "https://hanzo.id", "hanzo-chat"},
+		{"hanzo", "https://hanzo.id", "hanzo-ai"},
 		{"lux", "https://lux.id", "lux-chat"},
 		{"zoo", "https://zoolabs.id", "zoo-chat"},
 		{"pars", "https://pars.id", "pars-chat"},
