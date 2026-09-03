@@ -15,6 +15,7 @@
 package controllers
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -139,5 +140,45 @@ func TestMergeModelsReadsPremiumFromThePrice(t *testing.T) {
 	}
 	if byID["vendor/free"].Premium {
 		t.Error("a SKU the family charges nothing for is premium")
+	}
+}
+
+// TestMergeModelsListsOneRowPerID is the invariant /v1/models is keyed by: an id
+// already in the base list is REPLACED, never appended beside itself.
+//
+// The empty-lineup path is where it broke. A family with nothing discovered still
+// publishes its free id, and that append had no dedupe — harmless while the free
+// pool was empty, because freeInfo returns nothing then and nothing was appended,
+// and three duplicate rows the moment a route existed. Enabling our own compute
+// (ENGINE_URL) is exactly what makes one exist, so the bug surfaced as "turning on
+// the engine duplicates the free SKUs" rather than as anything about listing.
+func TestMergeModelsListsOneRowPerID(t *testing.T) {
+	t.Setenv("TEST_FAM_ENGINE_URL", "http://engine.invalid") // a route exists, so freeInfo speaks
+	prev := engineFam
+	engineFam = &modelFamily{
+		name: "engine", prefix: "engine/", owner: "hanzo", urlKey: "TEST_FAM_ENGINE_URL",
+	}
+	t.Cleanup(func() { engineFam = prev })
+
+	fam := &modelFamily{
+		name: "zen", prefix: "zen", owner: "zenlm", urlKey: "TEST_FAM_ZEN_URL",
+		freeName: "zen-free",
+	}
+	fam.loaded = true
+	fam.fetchedAt = time.Now() // fresh, and byID is empty — the empty-lineup path
+
+	// The base already carries the id, as it does when an earlier family or the
+	// priced catalog listed it.
+	base := []modelInfo{{ID: "zen-free", Object: "model", OwnedBy: "hanzo"}}
+	out := fam.mergeModels(base)
+
+	seen := map[string]int{}
+	for _, m := range out {
+		seen[strings.ToLower(m.ID)]++
+	}
+	for id, n := range seen {
+		if n > 1 {
+			t.Errorf("%q listed %d times — /v1/models is keyed by id, so a second row is a second answer", id, n)
+		}
 	}
 }

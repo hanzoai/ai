@@ -876,15 +876,16 @@ func (f *modelFamily) passthroughRoute(model string) *modelRoute {
 func (f *modelFamily) mergeModels(base []modelInfo) []modelInfo {
 	zs := f.snapshot()
 	now := time.Now().Unix()
-	if len(zs) == 0 {
-		// A family whose own lineup is empty still publishes its free id: that id is
-		// served from the platform pool, not from anything this family discovered.
-		if infos := f.freeInfo(now); len(infos) > 0 {
-			base = append(base, infos...)
-			sort.Slice(base, func(i, j int) bool { return base[i].ID < base[j].ID })
-		}
-		return base
-	}
+	// ONE id, ONE entry, on every path through this function. An id already in
+	// base is REPLACED rather than appended beside itself: /v1/models is keyed by
+	// id, so a second row for one id is not extra information — it is two answers
+	// to the same question, and a client building a map keeps whichever it read
+	// last.
+	//
+	// The free ids used to be appended blind on the empty-lineup path below, which
+	// was invisible while the pool was empty (freeInfo returns nothing then, so
+	// nothing was appended) and became three duplicate rows the moment a route
+	// existed — enabling our own compute is exactly what makes one exist.
 	idx := make(map[string]int, len(base))
 	for i, m := range base {
 		idx[strings.ToLower(m.ID)] = i
@@ -897,6 +898,15 @@ func (f *modelFamily) mergeModels(base []modelInfo) []modelInfo {
 			idx[k] = len(base)
 			base = append(base, info)
 		}
+	}
+	if len(zs) == 0 {
+		// A family whose own lineup is empty still publishes its free id: that id is
+		// served from the platform pool, not from anything this family discovered.
+		for _, info := range f.freeInfo(now) {
+			upsert(info)
+		}
+		sort.Slice(base, func(i, j int) bool { return base[i].ID < base[j].ID })
+		return base
 	}
 	for _, z := range zs {
 		owner := z.OwnedBy
