@@ -5,6 +5,9 @@ package routers
 // wired is every hand-written route in this package, with the sentence lifted
 // from the Go doc comment on the handler it names. See cmd/routerdoc.
 var wired = []wire{
+	{"/v1/3d/:id", "GET", "RetrieveThreeD", "Implements GET /v1/3d/:id (Retrieve 3D status).", "Implements GET /v1/3d/:id (Retrieve 3D status)."},
+	{"/v1/3d/:id/content", "GET", "ThreeDContent", "Implements GET /v1/3d/:id/content (Download 3D splat/glb content).", "Implements GET /v1/3d/:id/content (Download 3D splat/glb content)."},
+	{"/v1/3d/generations", "POST", "ThreeDGenerations", "Implements POST /v1/3d/generations (Text/Image to 3D & Gaussian Splats).", "Implements POST /v1/3d/generations (Text/Image to 3D & Gaussian Splats)."},
 	{"/v1/admin/model-access", "GET", "AdminListModelAccess", "Lists the gated-model access rows, filtered to one org by ?owner.", "Lists the gated-model access rows, filtered to one org by\n?owner. SuperAdmin only; without ?owner it returns every org's rows."},
 	{"/v1/admin/model-access", "POST", "AdminGrantModelAccess", "Grants — or records a request for — one org or user's access to a gated model.", "Grants — or records a request for — one org or user's access\nto a gated model. SuperAdmin only, at platform scope. The body is {owner, user,\nemail?, model, status?}: an empty user grants the whole org, and status defaults to\n\"granted\"."},
 	{"/v1/admin/providers", "GET", "GetAdminProviders", "List admin-owned Model providers as a clean management view (enabled/primary/keyPresent/modelCount).", "List admin-owned Model providers as a clean management view\n(enabled/primary/keyPresent/modelCount). Never returns secret material.\nSuper-admin gated (see routers/authz_filter.go superAdminEndpoints)."},
