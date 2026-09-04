@@ -57,6 +57,8 @@ var allowedOriginSuffixes = []string{
 	"zoo.network",
 	"zoo.id",
 	"zoo.cloud",
+	"zoolabs.io",
+	"zoolabs.id",
 	"pars.id",
 	"pars.ai",
 	"pars.cloud",
