@@ -258,7 +258,8 @@ func TestJwtAudienceAllowlistFromEnv(t *testing.T) {
 	for _, a := range got {
 		seen[a]++
 	}
-	for _, want := range []string{"hanzo-app", "hanzo-console", "hanzo-cloud", "https://api.hanzo.ai"} {
+	// hanzo-ai is this plane's own audience and is always on an enforced allowlist.
+	for _, want := range []string{"hanzo-app", "hanzo-console", "hanzo-cloud", "https://api.hanzo.ai", "hanzo-ai"} {
 		if seen[want] != 1 {
 			t.Errorf("env audience %q must appear exactly once, count=%d in %v", want, seen[want], got)
 		}
@@ -268,7 +269,7 @@ func TestJwtAudienceAllowlistFromEnv(t *testing.T) {
 	// an entry is legitimate only if the env named it or it is a known brand's
 	// spelling of an app the env named.
 	allowed := map[string]bool{}
-	for _, e := range []string{"hanzo-app", "hanzo-console", "hanzo-cloud", "https://api.hanzo.ai"} {
+	for _, e := range []string{"hanzo-app", "hanzo-console", "hanzo-cloud", "https://api.hanzo.ai", "hanzo-ai"} {
 		allowed[e] = true
 		if _, app, ok := splitBrandApp(e); ok {
 			for _, b := range brandNames {
