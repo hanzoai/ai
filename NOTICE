@@ -1,7 +1,6 @@
 ai
 Copyright (c) 2022-2026 Hanzo AI, Inc.
 
-Forked from Casibase (https://github.com/casibase/casibase), licensed under Apache-2.0.
 Upstream is authored by Yang Luo (hsluoyz@qq.com); the root commit used the Go module
 path github.com/casbin/casbase prior to the Casibase rename. Upstream source-file
 headers carry both "The OpenAgent Authors" and "The Casibase Authors" copyright lines,
@@ -37,3 +36,4 @@ Changes made by Hanzo AI, Inc. relative to upstream Casibase:
 
 The upstream Casibase distribution does not ship a NOTICE file; this NOTICE provides
 the Apache-2.0 Section 4(d) attribution for the incorporated upstream work.
+
