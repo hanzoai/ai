@@ -566,6 +566,8 @@ type responsesStreamTranslator struct {
 	promptTokens     int
 	completionTokens int
 	totalTokens      int
+	sawFinishReason  bool
+	sawUsage         bool
 }
 
 func newResponsesStreamTranslator(emit func(string, interface{}) error, request *OpenAIResponsesRequest, toolKinds map[string]string) *responsesStreamTranslator {
@@ -602,6 +604,12 @@ func (t *responsesStreamTranslator) handleChunk(chunk *openaiStreamChunk) error 
 		}
 		if chunk.Usage.TotalTokens > 0 {
 			t.totalTokens = chunk.Usage.TotalTokens
+		}
+	}
+	if chunk.Usage != nil {
+		t.sawUsage = true
+		if t.sawFinishReason {
+			return t.finish()
 		}
 	}
 	for i := range chunk.Choices {
@@ -685,11 +693,29 @@ func (t *responsesStreamTranslator) handleChunk(chunk *openaiStreamChunk) error 
 				}
 			}
 		}
-		// Do not finish on finish_reason. OpenAI-compatible providers commonly
-		// send the usage-only chunk *after* the terminal choice chunk and before
-		// [DONE]. Finishing here emitted response.completed with zero usage and
-		// made the later accounting chunk impossible to apply. [DONE] (or the
-		// bridge Close fallback) is the authoritative end of the stream.
+		// The end of the answer, in whichever order the two signals arrive.
+		//
+		// finish_reason alone is not enough: providers commonly send the
+		// usage-only chunk *after* the terminal choice chunk, and finishing on
+		// finish_reason alone published response.completed with zero usage and
+		// made that accounting chunk impossible to apply.
+		//
+		// Waiting only for [DONE] is not enough either, and that is what broke
+		// clients: an OpenAI-compatible provider is free to end the stream
+		// without one. When that happened the terminal events were never sent —
+		// response.output_text.done, .content_part.done, .output_item.done and
+		// .completed — so every delta arrived and the response never closed.
+		// A client reading the Responses stream to spec waits forever, retries,
+		// and reports the stream as truncated.
+		//
+		// So: whichever of the two arrives second finishes the response, and
+		// the bridge Close stays the backstop for a stream that sends neither.
+		if choice.FinishReason != "" {
+			t.sawFinishReason = true
+			if t.sawUsage {
+				return t.finish()
+			}
+		}
 	}
 	return nil
 }
